@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    # Runs on push too: PRs opened with the default GITHUB_TOKEN don't fire pull_request,
+    # and the required `check` status is satisfied by any run on the head commit.
+    name: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node
+        if: hashFiles('package.json') != ''
+        uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - name: Install Node deps
+        if: hashFiles('package.json') != ''
+        run: |
+          if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
+          elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile
+          elif [ -f package-lock.json ]; then npm ci
+          else npm install; fi
+
+      - name: Set up uv
+        if: hashFiles('pyproject.toml', 'requirements.txt') != ''
+        uses: astral-sh/setup-uv@v7
+      - name: Install Python deps
+        if: hashFiles('pyproject.toml') != ''
+        run: uv sync
+
+      - name: Set up Go
+        if: hashFiles('go.mod') != ''
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
+
+      - run: scripts/check.sh

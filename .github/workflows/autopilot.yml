@@ -1,0 +1,75 @@
+name: Autopilot
+
+# No-touch merge path:
+#   push to claude/*       -> open a PR if none exists
+#   any ready PR           -> enable auto-merge (squash); merges when required checks pass
+#   label `hold` on a PR   -> disable auto-merge (the one brake)
+#
+# Uses AUTOMATION_TOKEN (fine-grained PAT or app token) when set, so PRs it opens
+# trigger pull_request workflows like Claude Review. Falls back to GITHUB_TOKEN.
+
+on:
+  push:
+    branches: ["claude/**"]
+  pull_request_target:
+    types: [opened, reopened, ready_for_review, labeled, unlabeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: autopilot-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open-pr:
+    if: github.event_name == 'push' && !github.event.deleted
+    runs-on: ubuntu-latest
+    outputs:
+      pr: ${{ steps.pr.outputs.number }}
+    steps:
+      - id: pr
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          BASE: ${{ github.event.repository.default_branch }}
+        run: |
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            ahead=$(gh api "repos/$GH_REPO/compare/$BASE...$BRANCH" --jq .ahead_by)
+            if [ "$ahead" = "0" ]; then echo "Nothing to merge."; exit 0; fi
+            title=$(gh api "repos/$GH_REPO/commits/$BRANCH" --jq '.commit.message | split("\n")[0]')
+            body=$(gh api "repos/$GH_REPO/compare/$BASE...$BRANCH" --jq '[.commits[].commit.message | split("\n")[0] | "- " + .] | join("\n")')
+            printf 'Opened automatically by Autopilot.\n\n## Commits\n%s\n\nAdd the "hold" label to stop auto-merge.\n' "$body" > pr-body.md
+            url=$(gh pr create --head "$BRANCH" --base "$BASE" --title "$title" --body-file pr-body.md)
+            number=${url##*/}
+          fi
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+  auto-merge:
+    needs: [open-pr]
+    if: |
+      always() && (
+        (github.event_name == 'push' && needs.open-pr.outputs.pr != '') ||
+        (github.event_name == 'pull_request_target' &&
+         github.event.pull_request.head.repo.full_name == github.repository)
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - env:
+          GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number || needs.open-pr.outputs.pr }}
+        run: |
+          read -r draft hold < <(gh pr view "$PR" --json isDraft,labels \
+            --jq '[.isDraft, ([.labels[].name] | index("hold") != null)] | @tsv')
+          if [ "$draft" = "true" ] || [ "$hold" = "true" ]; then
+            gh pr merge "$PR" --disable-auto 2>/dev/null || true
+            echo "Draft or on hold; auto-merge off."
+            exit 0
+          fi
+          if ! gh pr merge "$PR" --auto --squash --delete-branch; then
+            echo "::warning::Could not enable auto-merge. Run scripts/configure-github.sh once (enables auto-merge + required checks)."
+          fi

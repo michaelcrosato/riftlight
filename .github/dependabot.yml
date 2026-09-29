@@ -1,0 +1,11 @@
+version: 2
+# Autopilot auto-merges these once CI passes. Add an entry per ecosystem as the stack grows
+# (npm, uv, gomod, cargo, docker).
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

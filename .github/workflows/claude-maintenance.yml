@@ -1,0 +1,53 @@
+name: Claude Maintenance
+
+# Weekly unattended sweep: Claude finds the single highest-value improvement
+# (failing/flaky tests, outdated deps, dead code, missing tests, doc drift) and ships it.
+# Run on demand with a custom focus from the Actions tab.
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      focus:
+        description: "Optional focus for this run"
+        required: false
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  id-token: write
+
+concurrency:
+  group: claude-maintenance
+  cancel-in-progress: false
+
+jobs:
+  sweep:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            You are doing unattended maintenance on ${{ github.repository }}. Follow AGENTS.md.
+            Focus: ${{ inputs.focus || 'pick the single highest-value improvement' }}
+
+            1. Survey: open issues labeled `claude` with no linked PR, failing or flaky tests,
+               outdated dependencies, missing tests for existing behavior, stale docs.
+            2. Pick ONE item that fits in a small, focused PR. If an open PR already covers it, pick another.
+            3. Implement on a new branch `claude/maintenance-<topic>`, run scripts/check.sh until it passes,
+               commit with a Conventional Commit message, and push. Autopilot opens the PR and auto-merges it.
+            4. If there is genuinely nothing worth doing, stop without changes.
+          claude_args: |
+            --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
+            --max-turns 120
+            --allowedTools "Bash,Edit,Write,MultiEdit,Read,Glob,Grep,WebFetch,WebSearch"

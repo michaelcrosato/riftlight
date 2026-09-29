@@ -1,0 +1,25 @@
+name: Task for Claude
+description: Describe an outcome; Claude implements it and ships a PR that auto-merges on green.
+labels: [claude]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What should be true when this is done? Describe the outcome, not the steps.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: How to verify it's done (tests that should pass, behavior to observe, commands to run).
+      placeholder: |
+        - [ ] ...
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: Relevant files, links, constraints, prior decisions. Optional.
