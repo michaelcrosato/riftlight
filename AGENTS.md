@@ -47,5 +47,23 @@ script and CI pick them up with no extra config.
 
 ## Stack
 
-No application code yet. The first feature PR picks the stack; record the
-choice, layout, and any non-obvious conventions here in the same PR.
+WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
+(`three/webgpu` + `three/tsl`), `@dimforge/rapier3d-compat@0.20.0`, local GLBs.
+**Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
+the game API and the agent tooling.
+
+| Path | What |
+| --- | --- |
+| `src/engine/` | Engine (public API in `src/engine/index.ts`) |
+| `src/engine/render/PixelRenderer.ts` | The one `WebGPURenderer` + `RenderPipeline`, pixel/raw modes, capture |
+| `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
+| `src/game/coinGarden.ts` | Demo game, a complete example of the `Game` API |
+| `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`) |
+| `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
+| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`) |
+
+Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
+`ShaderPass`, `RenderPixelatedPass`, `(Raw)ShaderMaterial`, `onBeforeCompile` or GLSL;
+all shader logic in TSL; no React or external engines; version pins exact. Pixel
+snapping is camera/presentation only, never physics. Any rendering change must keep
+`npm run test:e2e` green on both the WebGPU and WebGL 2 fallback scenarios.

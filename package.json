@@ -1,0 +1,32 @@
+{
+  "name": "pixel-engine",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint . && node scripts/forbidden-apis.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "xvfb-run -a -s \"-screen 0 1280x720x24\" node scripts/e2e.mjs",
+    "assets": "node scripts/generate-assets.mjs"
+  },
+  "dependencies": {
+    "@dimforge/rapier3d-compat": "0.20.0",
+    "three": "0.186.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/three": "0.186.0",
+    "eslint": "10.11.0",
+    "globals": "17.12.0",
+    "playwright-core": "1.56.1",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.71.0",
+    "vite": "8.3.1",
+    "vitest": "5.0.2"
+  }
+}

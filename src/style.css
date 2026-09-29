@@ -1,0 +1,90 @@
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: #0d0e16; /* letterbox */
+  overflow: hidden;
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+#app {
+  position: fixed;
+  inset: 0;
+}
+
+canvas[data-engine-canvas] {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.debug-ui {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 10;
+  min-width: 220px;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #f4f4f4;
+  background: rgb(26 28 44 / 0.85);
+  border: 2px solid #566c86;
+}
+
+.debug-ui .row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.debug-ui span {
+  color: #94b0c2;
+}
+
+.debug-ui b[data-backend='webgpu'] {
+  color: #a7f070;
+}
+
+.debug-ui b[data-backend='webgl2'] {
+  color: #ffcd75;
+}
+
+.debug-ui .game {
+  margin-top: 4px;
+  color: #ffcd75;
+}
+
+.debug-ui .buttons {
+  display: flex;
+  gap: 6px;
+  margin: 6px 0 4px;
+}
+
+.debug-ui button {
+  flex: 1;
+  font: inherit;
+  color: #1a1c2c;
+  background: #94b0c2;
+  border: 0;
+  padding: 3px 4px;
+  cursor: pointer;
+}
+
+.debug-ui button:hover {
+  background: #f4f4f4;
+}
+
+.debug-ui .keys {
+  color: #566c86;
+  font-size: 11px;
+}
+
+.fatal {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #ef7d57;
+  padding: 24px;
+  text-align: center;
+}

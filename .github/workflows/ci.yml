@@ -54,3 +54,25 @@ jobs:
           bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
 
       - run: scripts/check.sh
+
+  e2e:
+    # Real-browser verification: native WebGPU (SwiftShader Vulkan) and WebGL 2 fallback.
+    name: e2e
+    needs: check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: lts/*
+      - run: npm ci
+      - run: npx playwright-core install --with-deps chromium
+      - run: npm run build
+      - run: npm run test:e2e
+      - if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-frames
+          path: .scratch/e2e/
+          if-no-files-found: ignore

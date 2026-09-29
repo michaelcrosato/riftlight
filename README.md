@@ -1,7 +1,25 @@
 # claude-code-cloud-usage-credits-test
 
-A repository set up for **100% AI-driven development**: agents write, verify, open PRs,
-fix CI, and merge. Humans set direction through issues.
+**Pixel Engine**: a WebGPU-first 3D engine that renders authentic 2D pixel art, designed
+for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
+post-processing (with its built-in WebGL 2 fallback), Rapier physics, local GLB assets.
+Demo: *Coin Garden*.
+
+```bash
+npm ci
+npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320)
+npm run build        # production build
+npm run lint && npm run typecheck && npm test
+npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
+```
+
+Controls: WASD/arrows move, Space jump, **P** Pixel ↔ Raw 3D, **R** 480×270 ↔ 320×180,
+**~** toggle debug UI. Engine architecture and the game API: [`docs/ENGINE.md`](docs/ENGINE.md).
+
+---
+
+The repository is set up for **100% AI-driven development**: agents write, verify, open
+PRs, fix CI, and merge. Humans set direction through issues.
 
 ## How work flows
 
