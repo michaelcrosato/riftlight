@@ -1,8 +1,22 @@
-/** Minimal keyboard input: held state plus edge-triggered presses consumed once per frame. */
+/**
+ * Keyboard + pointer input.
+ * - Keys: held state, per-frame presses (`wasPressed`) and queued presses for fixed-step
+ *   code (`consumePress`).
+ * - Pointer: accumulated movement per frame (while a button is held or the pointer is
+ *   locked), wheel delta per frame, optional pointer lock (first-person).
+ */
 export class Input {
   private readonly held = new Set<string>();
   private readonly pressed = new Set<string>();
   private readonly queued = new Set<string>();
+  /** Pointer movement this frame, in CSS pixels (drag or pointer lock). */
+  readonly mouseDelta = { x: 0, y: 0 };
+  /** Wheel ticks this frame (+1 = scroll down / zoom out). */
+  wheel = 0;
+  mouseButtons = 0;
+  private lockTarget: HTMLElement | null = null;
+  /** When true, clicking the canvas requests pointer lock (first-person / free camera). */
+  wantsPointerLock = false;
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
@@ -14,14 +28,45 @@ export class Input {
       this.held.add(e.code);
     });
     target.addEventListener('keyup', (e) => this.held.delete(e.code));
-    target.addEventListener('blur', () => this.held.clear());
+    target.addEventListener('blur', () => {
+      this.held.clear();
+      this.mouseButtons = 0;
+    });
+  }
+
+  /** Listen for pointer input on the game canvas. */
+  attachPointer(el: HTMLElement): void {
+    this.lockTarget = el;
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('pointerdown', (e) => {
+      this.mouseButtons = e.buttons;
+      if (this.wantsPointerLock && document.pointerLockElement !== el) void el.requestPointerLock?.();
+    });
+    window.addEventListener('pointerup', (e) => (this.mouseButtons = e.buttons));
+    window.addEventListener('pointermove', (e) => {
+      if (this.mouseButtons === 0 && document.pointerLockElement !== el) return;
+      this.mouseDelta.x += e.movementX;
+      this.mouseDelta.y += e.movementY;
+    });
+    el.addEventListener(
+      'wheel',
+      (e) => {
+        e.preventDefault();
+        this.wheel += Math.sign(e.deltaY);
+      },
+      { passive: false },
+    );
+  }
+
+  get pointerLocked(): boolean {
+    return this.lockTarget !== null && document.pointerLockElement === this.lockTarget;
   }
 
   isDown(...codes: string[]): boolean {
     return codes.some((c) => this.held.has(c));
   }
 
-  /** True once per physical key press. */
+  /** True once per physical key press (valid for the current render frame). */
   wasPressed(...codes: string[]): boolean {
     return codes.some((c) => this.pressed.has(c));
   }
@@ -36,6 +81,12 @@ export class Input {
     return hit;
   }
 
+  /** Drop queued presses (e.g. when a menu or mode swallows input). */
+  clearQueued(...codes: string[]): void {
+    if (codes.length === 0) this.queued.clear();
+    for (const c of codes) this.queued.delete(c);
+  }
+
   /** -1..1 on each axis from WASD / arrow keys (x = right, y = forward). */
   moveAxis(): { x: number; y: number } {
     const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
@@ -47,6 +98,9 @@ export class Input {
   /** Call at the end of each rendered frame. */
   endFrame(): void {
     this.pressed.clear();
+    this.mouseDelta.x = 0;
+    this.mouseDelta.y = 0;
+    this.wheel = 0;
   }
 
   /** Test hook: simulate a key being held (true) or released (false). */
@@ -60,6 +114,13 @@ export class Input {
     } else {
       this.held.delete(code);
     }
+  }
+
+  /** Test hook: inject pointer movement / wheel for the next frame. */
+  addPointer(dx: number, dy: number, wheel = 0): void {
+    this.mouseDelta.x += dx;
+    this.mouseDelta.y += dy;
+    this.wheel += wheel;
   }
 }
 

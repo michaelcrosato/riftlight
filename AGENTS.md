@@ -55,12 +55,15 @@ the game API and the agent tooling.
 | Path | What |
 | --- | --- |
 | `src/engine/` | Engine (public API in `src/engine/index.ts`) |
-| `src/engine/render/PixelRenderer.ts` | The one `WebGPURenderer` + `RenderPipeline`, pixel/raw modes, capture |
+| `src/engine/render/PixelRenderer.ts` | The one `WebGPURenderer` + `RenderPipeline`, pixel/raw modes, filters, capture |
+| `src/engine/render/filters.ts` | TSL post filters (palettes, dither, CRT, LCD, VHS, …) |
+| `src/engine/camera.ts` | Camera presets: iso, topdown, side, third, first, free/fixed |
+| `src/engine/character/` | `PlatformerCharacter` moveset + default key map |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
-| `src/game/coinGarden.ts` | Demo game, a complete example of the `Game` API |
-| `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`) |
+| `src/game/playground.ts` | Demo game: a station for every move, a complete example of the `Game` API |
+| `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig + clips in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
-| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`) |
+| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
 `ShaderPass`, `RenderPixelatedPass`, `(Raw)ShaderMaterial`, `onBeforeCompile` or GLSL;

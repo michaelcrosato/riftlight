@@ -1,11 +1,12 @@
 import { AmbientLight, Color, DirectionalLight, Scene, Vector3 } from 'three/webgpu';
 import { loadModel } from './assets';
-import { FollowCamera, type FollowCameraOptions } from './camera';
+import { CAMERA_PRESETS, type CameraConfig, type CameraPreset, type CameraRig, FreeRig, OrthoRig, createCameraRig } from './camera';
 import { DebugUI } from './DebugUI';
 import { RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Input } from './input';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
+import { FILTER_IDS, FILTER_PRESETS, getFilter } from './render/filters';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 
 export interface GameContext {
@@ -13,7 +14,7 @@ export interface GameContext {
   readonly scene: Scene;
   readonly physics: Physics;
   readonly input: Input;
-  readonly camera: FollowCamera;
+  readonly camera: CameraRig;
   readonly loadModel: typeof loadModel;
   readonly palette: typeof PALETTE;
   /** Seconds since start (render clock). */
@@ -34,6 +35,8 @@ export interface Game {
   update?(ctx: GameContext, dt: number): void;
   /** World position the camera follows. */
   cameraTarget(ctx: GameContext): Vector3;
+  /** First-person eye position (defaults to cameraTarget + 0.7 up). */
+  eyePosition?(ctx: GameContext): Vector3;
   /** One-line status for the debug UI (score, lives...). */
   status?(ctx: GameContext): string;
 }
@@ -43,14 +46,23 @@ export interface EngineOptions {
   resolution?: Resolution;
   mode?: RenderMode;
   edges?: EdgeSettings;
-  camera?: FollowCameraOptions;
+  /** Camera preset + parameters. Pick one per game; not meant to change during play. */
+  camera?: CameraConfig;
+  /** Post filters (ids from FILTERS) applied in Pixel mode, in order. */
+  filters?: readonly string[];
   /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
   forceWebGL?: boolean;
   debugUI?: boolean;
   background?: number;
 }
 
-/** Read engine options from the URL: ?backend=webgl&mode=raw&res=320&debug=0 */
+/**
+ * Read engine options from the URL:
+ *   ?backend=webgl  ?mode=raw  ?res=320  ?debug=0
+ *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
+ *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
+ *   ?filters=crt,lcd  or  ?look=handheld (a FILTER_PRESETS name)
+ */
 export function optionsFromUrl(search = location.search): Partial<EngineOptions> {
   const p = new URLSearchParams(search);
   const opts: Partial<EngineOptions> = {};
@@ -58,6 +70,24 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (p.get('mode') === 'raw') opts.mode = 'raw';
   if (p.get('res') === '320') opts.resolution = RESOLUTIONS.compare;
   if (p.get('debug') === '0') opts.debugUI = false;
+  let camera: CameraConfig = {};
+  const cam = p.get('cam');
+  if (cam) {
+    try {
+      camera = JSON.parse(cam) as CameraConfig;
+    } catch {
+      console.warn('Ignoring invalid ?cam= JSON');
+    }
+  }
+  const preset = p.get('camera');
+  if (preset && (CAMERA_PRESETS as readonly string[]).includes(preset)) camera.preset = preset as CameraPreset;
+  const zoom = Number(p.get('zoom'));
+  if (zoom > 0) camera.zoom = zoom;
+  if (Object.keys(camera).length) opts.camera = camera;
+  const look = p.get('look');
+  if (look && FILTER_PRESETS[look]) opts.filters = FILTER_PRESETS[look];
+  const filters = p.get('filters');
+  if (filters) opts.filters = filters.split(',').filter((id) => getFilter(id));
   return opts;
 }
 
@@ -67,6 +97,8 @@ export class Engine {
   readonly ambient: AmbientLight;
   readonly context: GameContext;
   debug: DebugUI | null = null;
+  /** Freeze simulation, animation and camera (rendering continues). For tooling, capture and pause menus. */
+  paused = false;
   frame = 0;
   time = 0;
   private lastTime = -1;
@@ -80,7 +112,7 @@ export class Engine {
     readonly game: Game,
     readonly renderer: PixelRenderer,
     readonly physics: Physics,
-    readonly camera: FollowCamera,
+    readonly camera: CameraRig,
     readonly scene: Scene,
   ) {
     const clock = () => this.time;
@@ -116,7 +148,7 @@ export class Engine {
 
   static async start(game: Game, options: EngineOptions = {}): Promise<Engine> {
     const container = options.container ?? document.body;
-    const camera = new FollowCamera(options.camera);
+    const camera = createCameraRig(options.camera);
     const scene = new Scene();
     const [renderer, physics] = await Promise.all([
       PixelRenderer.create({
@@ -126,12 +158,22 @@ export class Engine {
         resolution: options.resolution,
         mode: options.mode,
         edges: options.edges,
+        filters: options.filters,
         forceWebGL: options.forceWebGL,
       }),
       Physics.create(),
     ]);
     const engine = new Engine(game, renderer, physics, camera, scene);
     scene.background = new Color(options.background ?? PALETTE.night);
+
+    engine.input.attachPointer(renderer.renderer.domElement);
+    if (camera instanceof FreeRig) {
+      camera.onFix = (config) => {
+        const json = JSON.stringify(config);
+        console.info(`[camera] fixed. Use: camera: ${json}  or  ?cam=${encodeURIComponent(json)}`);
+        void navigator.clipboard?.writeText(json).catch(() => {});
+      };
+    }
 
     await game.setup(engine.context);
     camera.teleport(game.cameraTarget(engine.context));
@@ -151,6 +193,28 @@ export class Engine {
     return next;
   }
 
+  /** Every filter id the engine ships (see render/filters.ts). */
+  get availableFilters(): readonly string[] {
+    return FILTER_IDS;
+  }
+
+  get filters(): readonly string[] {
+    return this.renderer.filters;
+  }
+
+  setFilters(ids: readonly string[]): void {
+    this.renderer.setFilters(ids);
+  }
+
+  /** Cycle through FILTER_PRESETS ([ and ] keys). */
+  cycleLook(step: 1 | -1): string {
+    const names = Object.keys(FILTER_PRESETS);
+    const current = names.findIndex((n) => FILTER_PRESETS[n]!.join() === this.renderer.filters.join());
+    const next = names[(current + step + names.length) % names.length]!;
+    this.renderer.setFilters(FILTER_PRESETS[next]!);
+    return next;
+  }
+
   /** Snapshot for tests, tooling and agents. */
   state() {
     const r = this.renderer;
@@ -167,8 +231,13 @@ export class Engine {
       gpuErrors: r.gpuErrors.map((e) => ({ ...e })),
       target: target.toArray(),
       camera: this.camera.camera.position.toArray(),
-      /** Visible world extents of the orthographic camera (what's in frame). */
-      view: (({ left, right, top, bottom }) => ({ left, right, top, bottom }))(this.camera.camera),
+      cameraRig: this.camera.describe(),
+      /** Visible world extents of an orthographic camera (what's in frame). */
+      view:
+        this.camera instanceof OrthoRig
+          ? (({ left, right, top, bottom }) => ({ left, right, top, bottom }))(this.camera.camera)
+          : null,
+      filters: [...r.filters],
       status: this.game.status?.(this.context) ?? '',
     };
   }
@@ -183,12 +252,29 @@ export class Engine {
     if (this.input.wasPressed('KeyP')) this.toggleMode();
     if (this.input.wasPressed('KeyR')) this.toggleResolution();
     if (this.input.wasPressed('Backquote')) this.debug?.toggle();
+    if (this.input.wasPressed('BracketRight')) this.cycleLook(1);
+    if (this.input.wasPressed('BracketLeft')) this.cycleLook(-1);
+    this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
 
+    if (this.paused) {
+      this.renderer.render();
+      this.input.endFrame();
+      this.frame++;
+      return;
+    }
     this.physics.update(dt, (fixedDt) => this.game.fixedUpdate?.(ctx, fixedDt));
     this.game.update?.(ctx, dt);
 
     const target = this.game.cameraTarget(ctx);
-    this.camera.update(target, dt, this.renderer.resolution);
+    const eye = this.game.eyePosition?.(ctx) ?? target.clone().setY(target.y + 0.7);
+    this.camera.update({
+      target,
+      eye,
+      dt,
+      resolution: this.renderer.resolution,
+      input: this.input,
+      world: { raycast: (from, dir, max) => this.physics.raycast(from, dir, max, ['character', 'noCamera']) },
+    });
 
     // Keep the shadow frustum centred on the action, moved in whole shadow texels so
     // shadow edges don't crawl while the camera follows the player.

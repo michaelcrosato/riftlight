@@ -22,9 +22,9 @@ post-processing addons, React/external engines, and version drift from the pins.
 ## Rendering architecture
 
 ```
-Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/normal edges ─▶ output color transform ─▶ nearest-neighbor presentation
-  MeshToonNodeMaterial   pixelationPass renders       (same pass: MRT color     (TSL, PixelationNode)    RenderPipeline                   canvas = internal × integer scale,
-  3-band gradient         at internal res into a       + normal + depth, nearest                          (sRGB, no tone mapping)          NearestFilter sampling, letterboxed
+Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/normal edges ─▶ output color transform ─▶ [TSL filters] ─▶ nearest-neighbor presentation
+  MeshToonNodeMaterial   pixelationPass renders       (same pass: MRT color     (TSL, PixelationNode)    renderOutput()          palettes, dither,   canvas = internal × integer scale,
+  3-band gradient         at internal res into a       + normal + depth, nearest                          (sRGB, no tone mapping)  CRT, LCD, VHS, …    NearestFilter sampling, letterboxed
                           nearest-filtered target)     filtered, no 2nd downsample)
 ```
 
@@ -40,16 +40,16 @@ Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/
   Letterboxed and centered. The orthographic camera's view height is fixed in world units,
   so framing is identical at both resolutions. Math lives in `src/engine/framing.ts` (unit-tested).
 - **Raw 3D mode** (`P`). Swaps the pipeline's `outputNode` from the pixelation pass to a
-  plain full-res `pass()`. Same renderer, pipeline, canvas, camera, physics, animation,
-  lighting and framing.
+  plain full-res `pass()` (output transform only, no filters). Same renderer, pipeline,
+  canvas, camera, physics, animation, lighting and framing.
 - **Edges.** Depth/silhouette edges 0.45, normal (internal crease) edges 0.08. Both are
   uniforms, so tune with `renderer.setEdges({ depth, normal })`.
 - **Lighting.** One `DirectionalLight` (hard `BasicShadowMap` shadows) + modest
   `AmbientLight`, 3-band `MeshToonNodeMaterial` (`TOON_BANDS`), `ContactShadow` blobs under
   characters. Every color comes from `PALETTE` (Sweetie 16).
-- **Pixel alignment is presentation only.** `FollowCamera` snaps its own position to whole
-  art pixels in its view plane (both modes, so toggling never moves the view). Rapier bodies
-  are never snapped; visuals are interpolated between fixed 60 Hz steps.
+- **Pixel alignment is presentation only.** Orthographic camera presets snap their own
+  position to whole art pixels in the view plane (both modes, so toggling never moves the
+  view). Rapier bodies are never snapped; visuals are interpolated between fixed 60 Hz steps.
 - **GPU errors.** `renderer.onError` is captured into `renderer.gpuErrors` and shown in the
   debug UI. It must stay at 0. In r186 only the WebGPU backend reports through `onError`
   (uncaptured validation errors); on the WebGL 2 fallback the counter stays 0, so rely on
@@ -57,43 +57,132 @@ Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/
 - **Compat shim.** `webgpuCompat.ts` drops three r186's identity `swizzle: 'rgba'` from
   texture views, which Chromium ≤ 141 rejects (black screen otherwise).
 
+## Camera presets
+
+A game picks **one** preset (`EngineOptions.camera`, or `?camera=` / `?cam=` in the URL).
+Presets are not meant to change during play; the debug UI's picker reloads the page.
+
+| Preset | Projection | Controls | Zoom |
+| --- | --- | --- | --- |
+| `iso` (default) | ortho, 32° pitch / 45° yaw (both configurable) | follows player | wheel / `+` `-` |
+| `topdown` | ortho, straight down, screen-up = −Z | follows player | wheel / `+` `-` |
+| `side` | ortho, straight side-on; **locks the player to their Z lane** | follows player | wheel / `+` `-` |
+| `third` | perspective orbit; pulls in when walls block the view | drag or Q/E to orbit | wheel / `+` `-` (distance) |
+| `first` | perspective at the eyes; hides the player model; player strafes | click to lock mouse, Q/E turn | **none** |
+| `free` | authoring fly-cam | WASD, Q/E down/up, drag or click to look, Shift fast, Enter = fix | wheel (FOV) |
+| `fixed` | a frozen view (what `free` produces) | none | wheel |
+
+Free-camera workflow: start with `?camera=free`, fly to the shot you want, press **Enter**.
+The view freezes, the player gets control, and the config (e.g.
+`{"preset":"fixed","projection":"perspective","position":[3,6,9],"target":[0,1,0],"fov":55,"zoom":1}`)
+is printed to the console, copied to the clipboard and shown in the debug UI. Paste it into
+`EngineOptions.camera`, or pass it as `?cam=<json>`. Press Enter again to unfix.
+
+Config keys (`CameraConfig`): `preset`, `zoom`, `minZoom`, `maxZoom`, `viewHeight` (ortho),
+`pitch`/`yaw` (iso, third, first), `fov`, `distance` (third), `position`/`target`/`projection`
+(fixed/free), `stiffness` (follow smoothing). Movement is always camera-relative through
+`camera.groundBasis()`.
+
+## Filters
+
+Post filters are TSL functions applied in display space after the output color transform,
+in any order, in Pixel mode only. Pixel-space effects (dither, palettes, LCD grid, grain)
+work per **art pixel**, so they stay authentic at any integer scale. Set them with
+`EngineOptions.filters`, `engine.setFilters(ids)`, `?filters=a,b` or `?look=<preset>`; the
+debug UI has a checkbox for each, and `[` / `]` cycle the looks.
+
+| Group | Filters |
+| --- | --- |
+| Palette / hardware | `sweetie16`, `pico8`, `nes`, `c64`, `zx`, `ega`, `cga`, `gameboy`, `gbpocket`, `virtualboy`, `onebit`, `dither`, `posterize` |
+| Color | `grayscale`, `sepia`, `invert`, `bleach`, `sunset`, `moonlight`, `thermal`, `nightvision` |
+| Display | `scanlines`, `lcd`, `crt` (curved, masked, vignetted), `vignette` |
+| Signal | `chromatic`, `grain`, `vhs`, `ntsc` |
+| Stylize | `bloom`, `halftone`, `sketch` |
+
+Looks (`FILTER_PRESETS`): `arcade`, `handheld`, `famicom`, `home_computer`, `vhs_rental`,
+`spectrum`, `mac_classic`, `pico`, `dream`, `spooky`. Add a filter by appending a
+`FilterDef` to `FILTERS` in `src/engine/render/filters.ts`; the e2e suite picks it up
+automatically on both backends.
+
+## Characters: the moveset
+
+`PlatformerCharacter` (`src/engine/character/`) is a Mario-64-style controller (and then
+some) on Rapier's kinematic character controller, driven by the hero rig's baked clips
+(`scripts/assets/hero.mjs`: jointed body with elbows/knees and a pelvis root, 57 clips).
+`readMoveInput(ctx, hero)` maps the default keys, camera-relative for every preset.
+
+| Key | Action |
+| --- | --- |
+| WASD / arrows | walk → run (Mario-style turning; reverse at speed = **skid**) |
+| Shift | walk / tiptoe |
+| Space | jump · again on landing = **double**, then **triple** (front flip) · while skidding = **side flip** · **wall kick** off walls |
+| C / Ctrl (hold) | **crouch**, crouch-walk · while running = **crouch slide** · + Space = **backflip** · running + C + Space = **long jump** · in the air (press) = **ground pound** |
+| Z | **prone** / crawl (fits 0.75-high gaps); again to **get up** (only with headroom) |
+| X | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
+| F (hold) | **grab** a block, then pull (move away) or push (move toward) |
+| J | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
+| V / B | **wave** / **sit** |
+
+Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **fall**, soft
+**land** or **hard landing** (drops > 5.5, face-plant + get-up), **ledge grab** → hang →
+**shimmy** (A/D) → **pull up** (toward wall / Space) or **drop** (C / away), **climb**
+colliders tagged `climbable` in any direction and **climb over the top**, **push** colliders
+tagged `pushable` by walking into them, **slope slide** on steep or `slippery` ground,
+**dive → belly slide → get up**, **victory** via `hero.celebrate()`.
+
+Tag colliders with `physics.tag(collider, ...)`: `climbable`, `pushable`, `grabbable`,
+`slippery`, `noLedge`, `noCamera`. `hero.state`, `hero.anim` and `hero.stats` expose what
+the character is doing. The simpler `CharacterController` remains for games that only need
+walk + jump.
+
 ## Making a game
 
 A game implements `Game` (`src/engine/Engine.ts`) and is started with `Engine.start`:
 
 ```ts
-import { CharacterController, Engine, type Game, type GameContext, toonMaterial } from './engine';
-import { BoxGeometry, Mesh, Vector3 } from 'three/webgpu';
+import { Engine, type Game, type GameContext, PlatformerCharacter, readMoveInput, toonMaterial } from './engine';
+import { BoxGeometry, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 
 class MyGame implements Game {
   readonly name = 'My Game';
-  hero!: CharacterController;
-  model = new Mesh(new BoxGeometry(0.6, 1.6, 0.6).translate(0, 0.8, 0), toonMaterial(0x3b5dc9));
+  hero!: PlatformerCharacter;
+  model!: Object3D;
 
-  async setup({ scene, physics, palette }: GameContext) {
+  async setup(ctx: GameContext) {
+    const { scene, physics, palette } = ctx;
     const floor = new Mesh(new BoxGeometry(20, 1, 20), toonMaterial(palette.green));
     floor.position.y = -0.5;
     floor.receiveShadow = true;
-    scene.add(floor, this.model);
+    scene.add(floor);
     physics.addStaticBox({ position: [0, -0.5, 0], halfExtents: [10, 0.5, 10] });
-    this.hero = new CharacterController(physics, { position: [0, 0, 0] });
+    const ledge = physics.addStaticBox({ position: [4, 1.25, 0], halfExtents: [1, 1.25, 2] });
+    physics.tag(ledge, 'noLedge'); // or 'climbable', 'pushable', ...
+    const hero = await ctx.loadModel('assets/hero.glb', { castShadow: false });
+    this.model = hero.scene;
+    scene.add(this.model);
+    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 0], lockDepth: ctx.camera.lockDepth });
+    this.hero.attachModel(this.model, hero.animations);
+    this.model.visible = !ctx.camera.hidesTarget;
   }
-  fixedUpdate({ input, camera }: GameContext, dt: number) {
-    const a = input.moveAxis();
-    const { right, forward } = camera.groundBasis();
-    const move = right.multiplyScalar(a.x).addScaledVector(forward, a.y);
-    this.hero.setInput(move, input.consumePress('Space'), input.isDown('Space'));
-    this.hero.fixedUpdate(dt);
+  fixedUpdate(ctx: GameContext, dt: number) {
+    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero));
   }
-  update({ physics }: GameContext) {
-    this.model.position.copy(this.hero.interpolatedFeet(physics.alpha));
+  update(ctx: GameContext, dt: number) {
+    this.hero.updateVisual(this.model, dt, ctx.physics.alpha);
   }
   cameraTarget() {
-    return this.model.position.clone().add(new Vector3(0, 0.8, 0));
+    return this.model.position.clone().add(new Vector3(0, 0.9, 0));
+  }
+  eyePosition(ctx: GameContext) {
+    return this.hero.eye(ctx.physics.alpha);
   }
 }
 
-Engine.start(new MyGame(), { container: document.getElementById('app')! });
+Engine.start(new MyGame(), {
+  container: document.getElementById('app')!,
+  camera: { preset: 'side', zoom: 1.2 },
+  filters: ['nes', 'scanlines'],
+});
 ```
 
 Rules of thumb for good-looking results:
@@ -106,7 +195,7 @@ Rules of thumb for good-looking results:
 - Put movement and forces in `fixedUpdate`; animation, pickups and UI in `update`.
 - Use `input.consumePress` in `fixedUpdate` (never drops a press); use `wasPressed` in `update`.
 - New assets: extend `scripts/generate-assets.mjs` (deterministic) or drop GLBs into
-  `public/assets/`. See `src/game/coinGarden.ts` for a complete example.
+  `public/assets/`. See `src/game/playground.ts` for a complete example.
 
 ## Tooling for agents
 
@@ -114,9 +203,19 @@ Rules of thumb for good-looking results:
   GPU errors, camera, player target and game status.
 - `await window.__PIXEL_ENGINE__.renderer.capture()`: RGBA8 readback of the exact frame
   the pipeline presents, which lets you see what you built.
-- `window.__PIXEL_ENGINE__.input.setKey(code, down)`: drive input from scripts.
-- `npm run test:e2e`: runs the production build in Chromium under three scenarios (native
-  WebGPU, natural WebGL 2 fallback, forced fallback) and checks backend, zero GPU/console
-  errors, pixel-perfect blocks, the Raw-mode invariants, 320×180 framing and gameplay.
-  Frames are written to `.scratch/e2e/*.png`. Needs `xvfb-run`: headless Chromium loses
-  the WebGPU device when a canvas presents.
+- `window.__PIXEL_ENGINE__.input.setKey(code, down)` / `.addPointer(dx, dy, wheel)`: drive
+  input from scripts.
+- `window.__PIXEL_ENGINE__.paused = true`: freeze simulation and animation (rendering
+  continues), e.g. to capture an exact pose.
+- `engine.setFilters(ids)`, `engine.availableFilters`, `engine.camera.setZoom(z)`,
+  `engine.camera.describe()`.
+- `npm run test:e2e` runs the production build in Chromium. Suites:
+  - three backend paths (native WebGPU, natural WebGL 2 fallback, forced fallback)
+  - every camera preset, including zoom, the side lane and free → fix → `?cam=`
+  - every filter on both backends
+  - every move in `scripts/e2e-moves.mjs`
+
+  Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
+  Chromium loses the WebGPU device when a canvas presents. Run one suite with
+  `npm run test:e2e -- moves`.
+- `npm run build:single` writes `dist-single/pixel-engine.html`, one self-contained offline file.

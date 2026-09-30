@@ -88,3 +88,52 @@ canvas[data-engine-canvas] {
   padding: 24px;
   text-align: center;
 }
+
+.debug-ui {
+  max-width: 300px;
+  max-height: calc(100% - 16px);
+  overflow-y: auto;
+}
+
+.debug-ui select {
+  font: inherit;
+  font-size: 11px;
+  background: #333c57;
+  color: #f4f4f4;
+  border: 1px solid #566c86;
+}
+
+.debug-ui details {
+  margin: 4px 0;
+}
+
+.debug-ui summary {
+  cursor: pointer;
+  color: #94b0c2;
+}
+
+.debug-ui .filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px 8px;
+  font-size: 11px;
+  margin-top: 4px;
+}
+
+.debug-ui .filters label {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.debug-ui .fixed {
+  color: #a7f070;
+  font-size: 11px;
+  word-break: break-all;
+}
+
+.debug-ui .fixed:empty {
+  display: none;
+}

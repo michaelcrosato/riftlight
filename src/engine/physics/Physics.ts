@@ -33,6 +33,7 @@ export interface BoxOptions {
 export class Physics {
   readonly world: RAPIER.World;
   private readonly bindings: Binding[] = [];
+  private readonly tags = new Map<number, Set<string>>();
   private accumulator = 0;
   /** Interpolation factor between the previous and current physics step, 0..1. */
   alpha = 0;
@@ -127,6 +128,49 @@ export class Physics {
       body,
     );
     return body;
+  }
+
+  /**
+   * Tag a collider with gameplay semantics the character controller understands:
+   * 'climbable' (ladders/vines), 'pushable', 'grabbable', 'slippery', 'noLedge',
+   * 'character', 'noCamera' (camera rays pass through). Games may add their own.
+   */
+  tag(collider: RAPIER.Collider, ...tags: string[]): RAPIER.Collider {
+    let set = this.tags.get(collider.handle);
+    if (!set) this.tags.set(collider.handle, (set = new Set()));
+    for (const t of tags) set.add(t);
+    return collider;
+  }
+
+  hasTag(collider: RAPIER.Collider | null | undefined, tag: string): boolean {
+    return !!collider && (this.tags.get(collider.handle)?.has(tag) ?? false);
+  }
+
+  /** Distance along `dir` (unit) from `from` to the first collider not carrying any of `ignoreTags`. */
+  raycast(from: Vector3, dir: Vector3, maxDistance: number, ignoreTags: string[] = []): number | null {
+    const hit = this.castRay(from, dir, maxDistance, ignoreTags);
+    return hit ? hit.distance : null;
+  }
+
+  /** Ray cast returning distance, hit collider and surface normal. */
+  castRay(
+    from: Vector3,
+    dir: Vector3,
+    maxDistance: number,
+    ignoreTags: string[] = [],
+    exclude?: RAPIER.RigidBody,
+  ): { distance: number; collider: RAPIER.Collider; normal: Vector3; point: Vector3 } | null {
+    const ray = new RAPIER.Ray({ x: from.x, y: from.y, z: from.z }, { x: dir.x, y: dir.y, z: dir.z });
+    const predicate = ignoreTags.length ? (c: RAPIER.Collider) => !ignoreTags.some((t) => this.hasTag(c, t)) : undefined;
+    const hit = this.world.castRayAndGetNormal(ray, maxDistance, true, undefined, undefined, undefined, exclude, predicate);
+    if (!hit) return null;
+    const n = hit.normal;
+    return {
+      distance: hit.timeOfImpact,
+      collider: hit.collider,
+      normal: new Vector3(n.x, n.y, n.z),
+      point: from.clone().addScaledVector(dir, hit.timeOfImpact),
+    };
   }
 
   /** Distance straight down from `origin` to the first collider (excluding `exclude`). */

@@ -14,8 +14,19 @@ npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
 ```
 
-Controls: WASD/arrows move, Space jump, **P** Pixel ↔ Raw 3D, **R** 480×270 ↔ 320×180,
-**~** toggle debug UI. Engine architecture and the game API: [`docs/ENGINE.md`](docs/ENGINE.md).
+Demo: *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
+ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull blocks).
+
+- **Moves:** WASD move · Shift walk · Space jump (double/triple, side flip, wall kick) ·
+  C crouch (backflip, long jump, ground pound) · Z prone/crawl · X lie down · F grab/pull ·
+  J punch-punch-kick / dive · V wave · B sit.
+- **Cameras** (one per game): `?camera=iso|topdown|side|third|first|free`. Wheel or `+`/`-`
+  zoom (not in first person). In `free` mode press Enter to fix the view and get a config.
+- **Looks:** 32 TSL filters (`?filters=crt,lcd`, `?look=handheld`, `[` `]` to cycle).
+- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
+
+Architecture, the camera and filter lists, the moveset and the game API are in
+[`docs/ENGINE.md`](docs/ENGINE.md).
 
 ---
 

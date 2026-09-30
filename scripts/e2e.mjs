@@ -2,20 +2,29 @@
 //
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
-// Scenarios:
+//   npm run test:e2e -- <suite>   run one suite: webgpu | webgl-fallback | webgl-forced |
+//                                 cameras | filters-webgpu | filters-webgl | moves
+//
+// Core suites (one per backend path):
 //   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
 //   webgl-fallback  navigator.gpu disabled -> WebGPURenderer's built-in WebGL 2 backend
 //   webgl-forced    ?backend=webgl debug override
+// Each asserts: expected backend in state + debug UI, zero GPU errors, zero console
+// errors/warnings, gameplay responds to input, Raw 3D toggle keeps the same renderer/
+// canvas/camera/character, pixel mode is blocky while raw mode is not, 320x180 keeps framing.
 //
-// Each scenario asserts: expected backend in state + debug UI, zero GPU errors, zero
-// console errors/warnings, gameplay responds to input (move, jump, coin pickup),
-// Raw 3D toggle keeps the same renderer/canvas/camera/character, pixel mode really is
-// blocky (scale x scale uniform blocks) while raw mode is not, and 320x180 keeps framing.
-// Screenshots land in .scratch/e2e/.
+// cameras         every camera preset renders, zooms (except first person), moves the
+//                 character in its own basis; side locks the lane; free → fix → reload as fixed.
+// filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
+//                 with zero errors; Raw 3D mode bypasses filters.
+// moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
+//
+// Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
+import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 
 const PORT = 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -191,8 +200,8 @@ async function stableCamera(page) {
   }
 }
 
-async function runScenario(browserExe, s) {
-  console.log(`\n▶ ${s.name}`);
+
+async function openPage(browserExe, s, query = '') {
   const headless = !process.env.DISPLAY; // headful under xvfb-run; headless only as a last resort
   const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless });
   const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1 });
@@ -204,10 +213,25 @@ async function runScenario(browserExe, s) {
     logs.push(`${m.type()}: ${m.text()}`);
   });
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+  const sep = s.url.includes('?') ? '&' : '?';
+  await page.goto(query ? `${s.url}${sep}${query}` : s.url);
+  await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+  return { browser, page, logs };
+}
 
+const dist = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
+
+function checkClean(st, logs, label = '') {
+  check(st.gpuErrors.length === 0, `${label}zero GPU errors${st.gpuErrors.length ? ': ' + JSON.stringify(st.gpuErrors) : ''}`);
+  check(logs.length === 0, `${label}zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
+}
+
+async function runCore(browserExe, s) {
+  console.log(`\n▶ ${s.name}`);
+  let ctx;
   try {
-    await page.goto(s.url);
-    await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+    ctx = await openPage(browserExe, s);
+    const { page, logs } = ctx;
     let st = await state(page);
 
     check(st.backend === s.backend, `backend is "${st.backend}" (expected "${s.backend}")`);
@@ -217,14 +241,13 @@ async function runScenario(browserExe, s) {
     check(st.resolution.width === 480 && st.resolution.height === 270, 'default internal resolution 480×270');
     check(st.framing.integer && st.framing.scale === 2 && st.framing.canvasWidth === 960, `integer scale ${st.framing.scale}× at 960×540`);
 
-    // Idle → let physics settle.
     await waitFrames(page, 30);
-    const renderer0 = await page.evaluate(() => {
+    const canvases = await page.evaluate(() => {
       window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer;
       window.__canvasRef = document.querySelector('canvas[data-engine-canvas]');
       return document.querySelectorAll('canvas').length;
     });
-    check(renderer0 === 1, 'exactly one canvas');
+    check(canvases === 1, 'exactly one canvas');
 
     await stableCamera(page);
     const pixelShot = await capture(page, `${s.name}-pixel-480.png`);
@@ -245,13 +268,11 @@ async function runScenario(browserExe, s) {
         document.querySelector('canvas[data-engine-canvas]') === window.__canvasRef,
     );
     check(same, 'same WebGPURenderer instance and canvas after toggle');
-    const dist = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
     check(dist(before.camera, raw.camera) < 1e-6, 'camera unchanged by mode toggle');
     check(dist(before.target, raw.target) < 1e-3, 'character unchanged by mode toggle');
     check(raw.framing.canvasWidth === before.framing.canvasWidth, 'framing unchanged by mode toggle');
     const rawShot = await capture(page, `${s.name}-raw.png`);
     const rawBlocks = blockUniformity(rawShot, 2);
-    // Flat areas are uniform in any mode; raw mode shows up as many more mixed blocks at edges.
     check(1 - rawBlocks > 10 * (1 - pixelBlocks) && 1 - rawBlocks > 0.01, `raw mode is full-res: ${((1 - rawBlocks) * 100).toFixed(1)}% mixed 2×2 blocks vs ${((1 - pixelBlocks) * 100).toFixed(2)}% in pixel mode`);
     await page.keyboard.press('KeyP');
     await waitFrames(page, 3);
@@ -269,7 +290,7 @@ async function runScenario(browserExe, s) {
     await page.keyboard.press('KeyR');
     await waitFrames(page, 3);
 
-    // Gameplay: move, jump, coins.
+    // Gameplay: move, jump, coin pickup.
     const p0 = (await state(page)).target;
     await hold(page, 'KeyA', 700);
     await waitFrames(page, 10);
@@ -279,52 +300,210 @@ async function runScenario(browserExe, s) {
     const yBefore = (await state(page)).target[1];
     await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', true));
     let peak = yBefore;
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 15; i++) {
       await page.waitForTimeout(40);
       peak = Math.max(peak, (await state(page)).target[1]);
     }
     await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', false));
     check(peak - yBefore > 0.8, `character jumps (peak +${(peak - yBefore).toFixed(2)})`);
 
-    // Walk to the coin at (-2, 0, 2) from spawn area and check pickup counter moves.
-    const coinsBefore = (await state(page)).status;
-    await page.evaluate(() => {
-      const g = window.__PIXEL_ENGINE__.game;
-      g.hero.teleport([-2, 0, 2.6]);
-    });
-    await hold(page, 'KeyW', 400);
+    const coinsBefore = await page.evaluate(() => window.__PIXEL_ENGINE__.game.collected);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.teleport([0, 0, 6]));
     await waitFrames(page, 10);
-    const coinsAfter = (await state(page)).status;
-    check(coinsAfter !== coinsBefore, `coin pickup updates status (${coinsBefore} → ${coinsAfter})`);
+    const coinsAfter = await page.evaluate(() => window.__PIXEL_ENGINE__.game.collected);
+    check(coinsAfter === coinsBefore + 1, `coin pickup (${coinsBefore} → ${coinsAfter})`);
 
     // Regression: teleporting next to a wall must not let the next step tunnel into it.
-    // Mist block spans x ∈ [-2.5, 0.5] at z = -7; capsule radius 0.3.
+    // Ledge block spans x ∈ [5.3, 7.7] at z = 0; capsule radius 0.3.
     await page.evaluate(() => {
       const hero = window.__PIXEL_ENGINE__.game.hero;
-      hero.teleport([0.85, 0, -7]);
-      hero.velocity.x = -60;
+      hero.teleport([8.05, 0, 0]);
+      hero.facing = -Math.PI / 2;
+      hero.hvel.set(-60, 0, 0);
     });
     await waitFrames(page, 10);
     const wallX = await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.feet.x);
-    check(wallX > 0.7, `teleport next to a wall doesn't penetrate it (feet x = ${wallX.toFixed(3)})`);
+    check(wallX > 7.9, `teleport next to a wall doesn't penetrate it (feet x = ${wallX.toFixed(3)})`);
 
     await capture(page, `${s.name}-after-play.png`);
     st = await state(page);
-    check(st.gpuErrors.length === 0, `zero GPU errors${st.gpuErrors.length ? ': ' + JSON.stringify(st.gpuErrors) : ''}`);
-    check(logs.length === 0, `zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
+    checkClean(st, logs);
     await writeFile(new URL(`${s.name}-state.json`, OUT), JSON.stringify(st, null, 2));
   } catch (e) {
-    check(false, `scenario crashed: ${e.message}\n    ${logs.join('\n    ')}`);
+    check(false, `scenario crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {
-    await browser.close();
+    await ctx?.browser.close();
+  }
+}
+
+async function runCameras(browserExe) {
+  const s = SCENARIOS[0];
+  for (const preset of ['iso', 'topdown', 'side', 'third', 'first', 'free']) {
+    console.log(`\n▶ cameras: ${preset}`);
+    let ctx;
+    try {
+      ctx = await openPage(browserExe, s, `camera=${preset}`);
+      const { page, logs } = ctx;
+      await waitFrames(page, 20);
+      let st = await state(page);
+      check(st.cameraRig.preset === preset, `rig preset is ${st.cameraRig.preset}`);
+      const ui = await page.locator('[data-f="camera"]').textContent();
+      check(ui.startsWith(preset), `debug UI shows camera "${ui}"`);
+      const frame = await capture(page, `camera-${preset}.png`);
+      check(colorCount(frame) > 8, `renders (${colorCount(frame)} colors)`);
+
+      // Zoom: wheel up = zoom in, for every preset except first person.
+      await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(0, 0, -4));
+      await waitFrames(page, 3);
+      const zoomed = (await state(page)).cameraRig;
+      if (preset === 'first') check(zoomed.zoom === 1 && zoomed.zoomable === false, 'first person does not zoom');
+      else check(zoomed.zoom > 1.4, `wheel zooms in (zoom ${zoomed.zoom})`);
+      if (preset !== 'first') {
+        await page.evaluate(() => window.__PIXEL_ENGINE__.camera.setZoom(1));
+      }
+
+      if (preset === 'free') {
+        const c0 = (await state(page)).camera;
+        const t0 = (await state(page)).target;
+        await hold(page, 'KeyW', 500);
+        await waitFrames(page, 5);
+        st = await state(page);
+        check(dist(c0, st.camera) > 0.5, 'free camera flies with WASD');
+        check(dist(t0, st.target) < 0.05, 'character stays put while the camera flies');
+        await page.keyboard.press('Enter');
+        await waitFrames(page, 3);
+        st = await state(page);
+        check(st.cameraRig.fixed === true, 'Enter fixes the camera');
+        const config = st.cameraRig.config;
+        const fixedCam = st.camera;
+        await hold(page, 'KeyD', 600);
+        await waitFrames(page, 5);
+        st = await state(page);
+        check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
+        check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
+        // Reload with the printed config as a 'fixed' preset.
+        await page.goto(`${s.url}?cam=${encodeURIComponent(JSON.stringify(config))}`);
+        await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+        st = await state(page);
+        check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
+        await capture(page, 'camera-fixed.png');
+      } else {
+        const t0 = (await state(page)).target;
+        await hold(page, 'KeyD', 700);
+        await waitFrames(page, 10);
+        st = await state(page);
+        check(dist(t0, st.target) > 0.8, `D moves the character (${dist(t0, st.target).toFixed(2)})`);
+        if (preset === 'side') {
+          const z0 = st.target[2];
+          await hold(page, 'KeyW', 500);
+          await waitFrames(page, 10);
+          check(Math.abs((await state(page)).target[2] - z0) < 0.05, 'side-scroller keeps the depth lane');
+        }
+        if (preset === 'third' || preset === 'first') {
+          const yaw0 = st.cameraRig.yaw;
+          await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(160, 0));
+          await waitFrames(page, 3);
+          check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'mouse turns the camera');
+        }
+        if (preset === 'first') {
+          check(await page.evaluate(() => window.__PIXEL_ENGINE__.game.heroModel.visible === false), 'player model hidden in first person');
+        }
+      }
+      checkClean(await state(page), logs);
+    } catch (e) {
+      check(false, `camera ${preset} crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+    } finally {
+      await ctx?.browser.close();
+    }
+  }
+}
+
+function meanDiff(a, b) {
+  let sum = 0;
+  for (let i = 0; i < a.pixels.length; i += 4) {
+    sum += Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]);
+  }
+  return sum / (a.pixels.length / 4) / 3;
+}
+
+async function runFilters(browserExe, s, label) {
+  console.log(`\n▶ ${label}`);
+  let ctx;
+  try {
+    ctx = await openPage(browserExe, s, 'debug=0');
+    const { page, logs } = ctx;
+    await page.evaluate(() => (window.__PIXEL_ENGINE__.paused = true)); // identical frames apart from the filter
+    await waitFrames(page, 3);
+    const base = await capture(page, `${label}-none.png`);
+    const ids = await page.evaluate(() => [...window.__PIXEL_ENGINE__.availableFilters]);
+    let ok = 0;
+    for (const id of ids) {
+      const before = logs.length;
+      await page.evaluate((id) => window.__PIXEL_ENGINE__.setFilters([id]), id);
+      await waitFrames(page, 3);
+      const f = await capture(page, `${label}-${id}.png`);
+      const d = meanDiff(base, f);
+      const errs = (await state(page)).gpuErrors.length;
+      const good = d > 0.5 && errs === 0 && logs.length === before && colorCount(f) >= 2;
+      if (good) ok++;
+      else check(false, `filter ${id}: diff ${d.toFixed(2)}, gpuErrors ${errs}, ${logs.slice(before).join(' | ')}`);
+    }
+    check(ok === ids.length, `${ok}/${ids.length} filters compile, render and change the frame`);
+
+    // Stacks and raw-mode bypass.
+    await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters(['gameboy', 'lcd', 'vignette']));
+    await waitFrames(page, 3);
+    check(meanDiff(base, await capture(page, `${label}-stack.png`)) > 0.5, 'a 3-filter stack renders');
+    await page.keyboard.press('KeyP');
+    await waitFrames(page, 3);
+    const rawFiltered = await capture(page, `${label}-raw-filtered.png`);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters([]));
+    await waitFrames(page, 3);
+    const rawPlain = await capture(page, `${label}-raw-plain.png`);
+    check(meanDiff(rawFiltered, rawPlain) < 0.01, 'Raw 3D mode bypasses filters');
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `${label} crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}
+
+async function runMoves(browserExe) {
+  console.log('\n▶ moves (third-person camera)');
+  let ctx;
+  try {
+    ctx = await openPage(browserExe, SCENARIOS[0], 'camera=third&debug=0');
+    const { page, logs } = ctx;
+    await page.evaluate(PAGE_HELPERS);
+    for (const [name, body] of MOVES) {
+      const r = await page
+        .evaluate(`(async () => { const T = window.__T; ${body} })()`)
+        .catch((e) => ({ ok: false, detail: e.message }));
+      check(r.ok, `${name}${r.ok ? '' : ': ' + JSON.stringify(r.detail).slice(0, 300)}`);
+    }
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `moves crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
   }
 }
 
 await mkdir(OUT, { recursive: true });
 const exe = await resolveExecutable();
 const server = await startServer();
+const suites = {
+  webgpu: () => runCore(exe, SCENARIOS[0]),
+  'webgl-fallback': () => runCore(exe, SCENARIOS[1]),
+  'webgl-forced': () => runCore(exe, SCENARIOS[2]),
+  cameras: () => runCameras(exe),
+  'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
+  'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
+  moves: () => runMoves(exe),
+};
 try {
-  for (const s of SCENARIOS) if (!only || s.name === only) await runScenario(exe, s);
+  for (const [name, run] of Object.entries(suites)) if (!only || name === only) await run();
 } finally {
   server.kill();
 }

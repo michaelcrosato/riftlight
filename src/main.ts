@@ -1,10 +1,10 @@
 import './style.css';
 import { Engine, optionsFromUrl } from './engine';
-import { CoinGarden } from './game/coinGarden';
+import { Playground } from './game/playground';
 
 const container = document.getElementById('app')!;
 
-Engine.start(new CoinGarden(), { container, ...optionsFromUrl() })
+Engine.start(new Playground(), { container, ...optionsFromUrl() })
   .then((engine) => {
     // Handle for tests, tooling and agents: window.__PIXEL_ENGINE__.state()
     (window as unknown as { __PIXEL_ENGINE__: Engine }).__PIXEL_ENGINE__ = engine;

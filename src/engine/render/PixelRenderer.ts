@@ -9,9 +9,10 @@ import {
   UnsignedByteType,
   WebGPURenderer,
 } from 'three/webgpu';
-import { pass, uniform } from 'three/tsl';
+import { pass, renderOutput, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
 import { type Framing, type Resolution, RESOLUTIONS, computeFraming } from '../framing';
+import { applyFilters, getFilter } from './filters';
 import { installWebGPUCompat } from './webgpuCompat';
 
 export type BackendName = 'WebGPU' | 'WebGL 2 fallback';
@@ -33,6 +34,8 @@ export interface PixelRendererOptions {
   resolution?: Resolution;
   mode?: RenderMode;
   edges?: EdgeSettings;
+  /** Post filters (ids from FILTERS), applied in order in Pixel mode. */
+  filters?: readonly string[];
   /** Debug/test override: skip native WebGPU and use WebGPURenderer's WebGL 2 backend. */
   forceWebGL?: boolean;
 }
@@ -55,10 +58,12 @@ export interface GpuErrorRecord {
  *
  * Pixel mode:  toon/node scene → pixelationPass (scene pass at internal res into a
  *              nearest-filtered MRT target, then depth/normal edge detection in TSL)
- *              → RenderPipeline output color transform → nearest-neighbor presentation
- *              at an integer multiple of the internal resolution.
- * Raw mode:    the same scene/camera through a plain full-resolution `pass()`; same
- *              pipeline, same canvas size, same framing. Only `outputNode` changes.
+ *              → output color transform (renderOutput) → optional TSL filter stack
+ *              (palettes, dithering, CRT, …) → nearest-neighbor presentation at an
+ *              integer multiple of the internal resolution.
+ * Raw mode:    the same scene/camera through a plain full-resolution `pass()` and the
+ *              output color transform only; same pipeline, same canvas size, same
+ *              framing. Only `outputNode` changes.
  *
  * Native WebGPU is always attempted first; WebGPURenderer falls back to its built-in
  * WebGL 2 backend when WebGPU is unavailable. There is no second renderer.
@@ -80,6 +85,8 @@ export class PixelRenderer {
   private readonly normalEdge = uniform(DEFAULT_EDGES.normal);
   private readonly pixelNode;
   private readonly rawNode;
+  private _filters: string[];
+  private readonly outputCache = new Map<string, ReturnType<typeof renderOutput>>();
   private readonly onResize = () => this.layout();
   private resizeObserver: ResizeObserver | null = null;
   private dprQuery: MediaQueryList | null = null;
@@ -93,6 +100,7 @@ export class PixelRenderer {
     const edges = options.edges ?? DEFAULT_EDGES;
     this.depthEdge.value = edges.depth;
     this.normalEdge.value = edges.normal;
+    this._filters = (options.filters ?? []).filter((id) => getFilter(id));
 
     this.renderer = new WebGPURenderer({
       antialias: false,
@@ -114,8 +122,11 @@ export class PixelRenderer {
 
     this.pixelNode = pixelationPass(options.scene, options.camera, this.pixelSize, this.normalEdge, this.depthEdge);
     this.rawNode = pass(options.scene, options.camera);
-    this.pipeline = new RenderPipeline(this.renderer, this.outputFor(this._mode));
-    this.pipeline.outputColorTransform = true;
+    this.pipeline = new RenderPipeline(this.renderer);
+    // The output color transform is applied explicitly (renderOutput) so filters can run
+    // after it, in display space.
+    this.pipeline.outputColorTransform = false;
+    this.pipeline.outputNode = this.outputFor(this._mode);
   }
 
   static async create(options: PixelRendererOptions): Promise<PixelRenderer> {
@@ -143,7 +154,23 @@ export class PixelRenderer {
   setMode(mode: RenderMode): void {
     if (mode === this._mode) return;
     this._mode = mode;
-    this.pipeline.outputNode = this.outputFor(mode);
+    this.rebuildOutput();
+  }
+
+  get filters(): readonly string[] {
+    return this._filters;
+  }
+
+  /** Replace the filter stack (ids from FILTERS, applied in order; Pixel mode only). */
+  setFilters(ids: readonly string[]): void {
+    const next = ids.filter((id) => getFilter(id));
+    if (next.join() === this._filters.join()) return;
+    this._filters = next;
+    this.rebuildOutput();
+  }
+
+  private rebuildOutput(): void {
+    this.pipeline.outputNode = this.outputFor(this._mode);
     this.pipeline.needsUpdate = true;
   }
 
@@ -250,7 +277,18 @@ export class PixelRenderer {
   }
 
   private outputFor(mode: RenderMode) {
-    return mode === 'pixel' ? this.pixelNode : this.rawNode;
+    const key = mode === 'pixel' ? `pixel:${this._filters.join(',')}` : 'raw';
+    let node = this.outputCache.get(key);
+    if (!node) {
+      const toneMapping = this.renderer.toneMapping;
+      const colorSpace = this.renderer.outputColorSpace;
+      node =
+        mode === 'pixel'
+          ? applyFilters(renderOutput(this.pixelNode, toneMapping, colorSpace), this._filters, { pixelSize: this.pixelSize })
+          : renderOutput(this.rawNode, toneMapping, colorSpace);
+      this.outputCache.set(key, node!);
+    }
+    return node!;
   }
 
   private recordGpuError(info: unknown): void {
