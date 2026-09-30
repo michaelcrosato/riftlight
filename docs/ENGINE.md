@@ -51,7 +51,9 @@ Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/
   art pixels in its view plane (both modes, so toggling never moves the view). Rapier bodies
   are never snapped; visuals are interpolated between fixed 60 Hz steps.
 - **GPU errors.** `renderer.onError` is captured into `renderer.gpuErrors` and shown in the
-  debug UI. It must stay at 0.
+  debug UI. It must stay at 0. In r186 only the WebGPU backend reports through `onError`
+  (uncaptured validation errors); on the WebGL 2 fallback the counter stays 0, so rely on
+  the console check in `npm run test:e2e` there.
 - **Compat shim.** `webgpuCompat.ts` drops three r186's identity `swizzle: 'rgba'` from
   texture views, which Chromium ≤ 141 rejects (black screen otherwise).
 
@@ -98,6 +100,7 @@ Rules of thumb for good-looking results:
 
 - Use `PALETTE` colors only, via `toonMaterial(color)`. Load GLBs with `ctx.loadModel`;
   their materials are converted to toon automatically, so only base colors matter.
+  Clones are skeleton-aware (`SkeletonUtils.clone`), so skinned GLBs work too.
 - Chunky, low-poly shapes read best at 480×270. Aim for features ≥ 0.25 world units
   (≈ 5 art pixels at the default view height of 13.5).
 - Put movement and forces in `fixedUpdate`; animation, pickups and UI in `update`.

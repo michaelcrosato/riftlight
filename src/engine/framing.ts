@@ -64,8 +64,9 @@ export function computeFraming(
       canvasHeight,
       cssWidth,
       cssHeight,
-      offsetX: Math.floor((viewportWidth - cssWidth) / 2),
-      offsetY: Math.floor((viewportHeight - cssHeight) / 2),
+      // Offsets in whole *device* pixels so art pixels never straddle device pixels at fractional DPR.
+      offsetX: Math.floor((deviceWidth - canvasWidth) / 2) / dpr,
+      offsetY: Math.floor((deviceHeight - canvasHeight) / 2) / dpr,
     };
   }
 

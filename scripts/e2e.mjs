@@ -262,7 +262,7 @@ async function runScenario(browserExe, s) {
     await waitFrames(page, 5);
     st = await state(page);
     check(st.resolution.width === 320 && st.framing.scale === 3, `R switches to 320×180 at ${st.framing.scale}×`);
-    check(st.framing.cssWidth === before.framing.cssWidth, 'on-screen size stable across resolutions');
+    check(JSON.stringify(st.view) === JSON.stringify(before.view), 'framing stable across resolutions (same visible world extents)');
     const shot320 = await capture(page, `${s.name}-pixel-320.png`);
     const blocks320 = blockUniformity(shot320, 3);
     check(blocks320 > 0.995, `320×180 is blocky at 3×: ${(blocks320 * 100).toFixed(1)}%`);
@@ -296,6 +296,17 @@ async function runScenario(browserExe, s) {
     await waitFrames(page, 10);
     const coinsAfter = (await state(page)).status;
     check(coinsAfter !== coinsBefore, `coin pickup updates status (${coinsBefore} → ${coinsAfter})`);
+
+    // Regression: teleporting next to a wall must not let the next step tunnel into it.
+    // Mist block spans x ∈ [-2.5, 0.5] at z = -7; capsule radius 0.3.
+    await page.evaluate(() => {
+      const hero = window.__PIXEL_ENGINE__.game.hero;
+      hero.teleport([0.85, 0, -7]);
+      hero.velocity.x = -60;
+    });
+    await waitFrames(page, 10);
+    const wallX = await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.feet.x);
+    check(wallX > 0.7, `teleport next to a wall doesn't penetrate it (feet x = ${wallX.toFixed(3)})`);
 
     await capture(page, `${s.name}-after-play.png`);
     st = await state(page);

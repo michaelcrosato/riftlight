@@ -1,5 +1,6 @@
 import type { AnimationClip, Object3D } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { toonify, type ToonifyOptions } from './render/toon';
 
 export interface Model {
@@ -21,7 +22,7 @@ export async function loadModel(url: string, options?: ToonifyOptions): Promise<
     cache.set(url, pending);
   }
   const model = await pending;
-  const scene = model.scene.clone(true);
+  const scene = clone(model.scene); // skeleton-aware: cloned SkinnedMeshes get their own bones
   toonify(scene, options);
   return { scene, animations: model.animations };
 }

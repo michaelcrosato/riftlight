@@ -2,7 +2,7 @@ import { AmbientLight, Color, DirectionalLight, Scene, Vector3 } from 'three/web
 import { loadModel } from './assets';
 import { FollowCamera, type FollowCameraOptions } from './camera';
 import { DebugUI } from './DebugUI';
-import { RESOLUTIONS, type Resolution } from './framing';
+import { RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Input } from './input';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
@@ -71,6 +71,10 @@ export class Engine {
   time = 0;
   private lastTime = -1;
   private readonly sunDirection = new Vector3(-0.55, 1, 0.35).normalize();
+  // Light-space axes perpendicular to the sun, for snapping the shadow frustum to texels.
+  private readonly sunRight = new Vector3().crossVectors(new Vector3(0, 1, 0), this.sunDirection).normalize();
+  private readonly sunUp = new Vector3().crossVectors(this.sunDirection, this.sunRight).normalize();
+  private readonly sunFocus = new Vector3();
 
   private constructor(
     readonly game: Game,
@@ -163,6 +167,8 @@ export class Engine {
       gpuErrors: r.gpuErrors.map((e) => ({ ...e })),
       target: target.toArray(),
       camera: this.camera.camera.position.toArray(),
+      /** Visible world extents of the orthographic camera (what's in frame). */
+      view: (({ left, right, top, bottom }) => ({ left, right, top, bottom }))(this.camera.camera),
       status: this.game.status?.(this.context) ?? '',
     };
   }
@@ -184,9 +190,17 @@ export class Engine {
     const target = this.game.cameraTarget(ctx);
     this.camera.update(target, dt, this.renderer.resolution);
 
-    // Keep the shadow frustum centred on the action.
-    this.sun.target.position.copy(this.camera.focus);
-    this.sun.position.copy(this.camera.focus).addScaledVector(this.sunDirection, 25);
+    // Keep the shadow frustum centred on the action, moved in whole shadow texels so
+    // shadow edges don't crawl while the camera follows the player.
+    const sc = this.sun.shadow.camera;
+    const texel = (sc.right - sc.left) / this.sun.shadow.mapSize.x;
+    const f = this.camera.focus;
+    const r = snapToGrid(f.dot(this.sunRight), texel);
+    const u = snapToGrid(f.dot(this.sunUp), texel);
+    const d = f.dot(this.sunDirection);
+    this.sunFocus.copy(this.sunRight).multiplyScalar(r).addScaledVector(this.sunUp, u).addScaledVector(this.sunDirection, d);
+    this.sun.target.position.copy(this.sunFocus);
+    this.sun.position.copy(this.sunFocus).addScaledVector(this.sunDirection, 25);
 
     this.renderer.render();
     this.debug?.update(this.game.status?.(ctx) ?? '');

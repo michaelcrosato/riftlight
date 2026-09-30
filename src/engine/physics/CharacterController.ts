@@ -42,7 +42,7 @@ export class CharacterController {
   private current: AnimationAction | null = null;
 
   constructor(
-    physics: Physics,
+    private readonly physics: Physics,
     options: CharacterOptions,
   ) {
     const { radius = 0.3, halfHeight = 0.5, speed = 5, jumpSpeed = 10, gravity = -30 } = options;
@@ -90,6 +90,9 @@ export class CharacterController {
     const [x, y, z] = position;
     this.body.setTranslation({ x, y: y + this.footOffset, z }, true);
     this.body.setNextKinematicTranslation({ x, y: y + this.footOffset, z });
+    // Colliders only follow bodies on world.step(); without this the next
+    // computeColliderMovement would collide from the old position.
+    this.physics.world.propagateModifiedBodyPositionsToColliders();
     this.velocity.set(0, 0, 0);
     this.prevFeet.set(x, y, z);
   }

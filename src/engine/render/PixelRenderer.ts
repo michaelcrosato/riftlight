@@ -81,6 +81,8 @@ export class PixelRenderer {
   private readonly pixelNode;
   private readonly rawNode;
   private readonly onResize = () => this.layout();
+  private resizeObserver: ResizeObserver | null = null;
+  private dprQuery: MediaQueryList | null = null;
   private captureTarget: RenderTarget | null = null;
 
   private constructor(options: PixelRendererOptions) {
@@ -130,7 +132,7 @@ export class PixelRenderer {
           : 'navigator.gpu unavailable';
     }
     pr.layout();
-    window.addEventListener('resize', pr.onResize);
+    pr.observeLayout();
     return pr;
   }
 
@@ -182,6 +184,25 @@ export class PixelRenderer {
     style.top = `${f.offsetY}px`;
   }
 
+  /** Relayout when the container resizes or the device pixel ratio changes (zoom, monitor move). */
+  private observeLayout(): void {
+    window.addEventListener('resize', this.onResize);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(this.onResize);
+      this.resizeObserver.observe(this.container);
+    }
+    const watchDpr = () => {
+      this.dprQuery?.removeEventListener('change', onDprChange);
+      this.dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+      this.dprQuery.addEventListener('change', onDprChange);
+    };
+    const onDprChange = () => {
+      watchDpr();
+      this.layout();
+    };
+    watchDpr();
+  }
+
   render(): void {
     this.pipeline.render();
   }
@@ -219,6 +240,8 @@ export class PixelRenderer {
 
   dispose(): void {
     window.removeEventListener('resize', this.onResize);
+    this.resizeObserver?.disconnect();
+    this.dprQuery = null;
     this.renderer.setAnimationLoop(null);
     this.pipeline.dispose();
     this.captureTarget?.dispose();
