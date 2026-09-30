@@ -12,6 +12,8 @@ npm run build        # production build
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
+npm run anim -- check          # animation metrics for every clip
+npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
 ```
 
 Demo: *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
@@ -22,7 +24,12 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   J punch-punch-kick / dive · V wave · B sit.
 - **Cameras** (one per game): `?camera=iso|topdown|side|third|first|free`. Wheel or `+`/`-`
   zoom (not in first person). In `free` mode press Enter to fix the view and get a config.
-- **Looks:** 32 TSL filters (`?filters=crt,lcd`, `?look=handheld`, `[` `]` to cycle).
+  The debug UI's picker switches presets live and leaves the player where they are.
+- **Looks:** 35 TSL filters, including the console eras `8bit`, `16bit` and `ps1` (with
+  vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, and `[` `]` to cycle.
+- **Animation:** 57 hero clips written as data, with foot IK and a gait generator. They are
+  measured and drawn as PNG contact sheets by `npm run anim`, and previewed in the
+  **Animation Lab** (`/lab.html`). See [`docs/ANIMATION.md`](docs/ANIMATION.md).
 - **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.

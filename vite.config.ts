@@ -4,6 +4,8 @@ export default defineConfig({
   build: {
     target: 'es2022',
     rolldownOptions: {
+      // Two pages: the game and the Animation Lab (/lab.html).
+      input: { main: 'index.html', lab: 'lab.html' },
       output: {
         codeSplitting: {
           groups: [

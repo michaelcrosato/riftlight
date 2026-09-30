@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, getFilter } from './filters';
+import { vertexSnap } from './toon';
 
 describe('filter registry', () => {
   it('has unique ids and at least 30 filters', () => {
@@ -20,5 +21,14 @@ describe('filter registry', () => {
         expect(c).toBeLessThanOrEqual(0xffffff);
       }
     }
+  });
+
+  it('ships 8-bit, 16-bit and PS1 era filters; PS1 toggles vertex snapping', () => {
+    for (const id of ['8bit', '16bit', 'ps1']) expect(getFilter(id)).toBeDefined();
+    const ps1 = getFilter('ps1')!;
+    ps1.setActive?.(true);
+    expect(vertexSnap.enabled.value).toBe(1);
+    ps1.setActive?.(false);
+    expect(vertexSnap.enabled.value).toBe(0);
   });
 });

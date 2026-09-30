@@ -50,7 +50,9 @@ script and CI pick them up with no extra config.
 WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
 (`three/webgpu` + `three/tsl`), `@dimforge/rapier3d-compat@0.20.0`, local GLBs.
 **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
-the game API and the agent tooling.
+the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
+animations**: never guess a pose. Run `npm run anim -- check` and look at the contact sheet
+(`npm run anim -- sheet <clip>`) after every change.
 
 | Path | What |
 | --- | --- |
@@ -59,9 +61,13 @@ the game API and the agent tooling.
 | `src/engine/render/filters.ts` | TSL post filters (palettes, dither, CRT, LCD, VHS, …) |
 | `src/engine/camera.ts` | Camera presets: iso, topdown, side, third, first, free/fixed |
 | `src/engine/character/` | `PlatformerCharacter` moveset + default key map |
+| `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, metrics, contact sheets |
+| `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`animations.ts`) |
+| `scripts/anim.ts` | `npm run anim -- check / sheet / overview / pose`: measure and look at animations |
+| `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Demo game: a station for every move, a complete example of the `Game` API |
-| `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig + clips in `scripts/assets/hero.mjs` |
+| `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
 | `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs` |
 

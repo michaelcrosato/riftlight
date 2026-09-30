@@ -109,7 +109,7 @@ export class PlatformerCharacter {
 
   private readonly physics: Physics;
   private readonly runSpeed: number;
-  private readonly laneZ: number | null;
+  private laneZ: number | null;
   private readonly prevFeet = new Vector3();
   private peakY = 0;
   private lastLandTime = -1;
@@ -177,6 +177,11 @@ export class PlatformerCharacter {
   eye(alpha = 1): Vector3 {
     const eyeHeight = this.stance === 'stand' ? 1.45 : this.stance === 'crouch' ? 0.85 : 0.35;
     return this.interpolatedFeet(alpha).add(new Vector3(0, eyeHeight, 0)).addScaledVector(this.forward, this.stance === 'prone' ? 0.5 : 0.12);
+  }
+
+  /** Side-scroller lane lock on/off (locks to the current Z). */
+  setLockDepth(on: boolean): void {
+    this.laneZ = on ? this.body.translation().z : null;
   }
 
   teleport(position: [number, number, number]): void {
@@ -993,7 +998,14 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ animation
 
+  /** Drive `model` with `clips`. Call again (e.g. on hot reload) to swap the clip set. */
   attachModel(model: Object3D, clips: readonly AnimationClip[]): void {
+    if (this.mixer) {
+      this.mixer.stopAllAction();
+      this.mixer.uncacheRoot(this.mixer.getRoot());
+    }
+    this.actions.clear();
+    this.current = null;
     this.mixer = new AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('Idle', 0);
@@ -1001,6 +1013,12 @@ export class PlatformerCharacter {
 
   clipDuration(name: string, fallback: number): number {
     return this.actions.get(name)?.getClip().duration ?? fallback;
+  }
+
+  /** Playback rate that makes a locomotion clip's feet match ground speed `s`. */
+  private rate(name: string, s: number, authored: number, min = 0.3): number {
+    const speed = (this.actions.get(name)?.getClip().userData.speed as number | undefined) ?? authored;
+    return Math.max(min, s / Math.abs(speed));
   }
 
   /** Name of the clip the current state wants. */
@@ -1013,15 +1031,15 @@ export class PlatformerCharacter {
       case 'teeter': return { name: 'Teeter' };
       case 'walk':
         if (this.stepAnim) return { name: this.stepAnim.name, once: true, fade: 0.05 };
-        return s < 1.4 ? { name: 'Tiptoe', speed: Math.max(0.5, s / 1.2) } : { name: 'Walk', speed: s / 2.6 };
-      case 'run': return { name: 'Run', speed: s / 6 };
+        return s < 1.4 ? { name: 'Tiptoe', speed: this.rate('Tiptoe', s, 1.2, 0.5) } : { name: 'Walk', speed: this.rate('Walk', s, 2) };
+      case 'run': return { name: 'Run', speed: this.rate('Run', s, 6) };
       case 'skid': return { name: 'Skid', once: true };
       case 'crouch': return { name: 'Crouch' };
-      case 'crouchWalk': return { name: 'CrouchWalk', speed: Math.max(0.4, s / 1.4) };
+      case 'crouchWalk': return { name: 'CrouchWalk', speed: this.rate('CrouchWalk', s, 1.4, 0.4) };
       case 'crouchSlide': return { name: 'CrouchSlide' };
       case 'proneDown': return { name: 'ProneDown', once: true };
       case 'prone': return { name: 'Prone' };
-      case 'crawl': return { name: 'Crawl', speed: Math.max(0.5, s / 0.9) };
+      case 'crawl': return { name: 'Crawl', speed: this.rate('Crawl', s, 0.9, 0.5) };
       case 'getUpFront': return { name: 'GetUpFront', once: true };
       case 'lieDown': return { name: 'LieDown', once: true };
       case 'lying': return { name: this.stateTime > 6 ? 'Sleep' : 'LieIdle', fade: 0.6 };

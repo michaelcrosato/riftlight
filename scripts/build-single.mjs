@@ -10,6 +10,8 @@ const outDir = `${root}dist-single`;
 await rm(tmp, { recursive: true, force: true });
 await build({
   root,
+  // Game page only (vite.config.ts also builds the Animation Lab, which needs code splitting).
+  configFile: false,
   logLevel: 'warn',
   publicDir: false,
   build: {

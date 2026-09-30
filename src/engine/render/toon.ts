@@ -8,7 +8,29 @@ import {
   NearestFilter,
   type Object3D,
   RedFormat,
+  Vector2,
 } from 'three/webgpu';
+import { floor, mix, modelViewProjection, uniform, vec4 } from 'three/tsl';
+
+/**
+ * PS1-style vertex snapping ("wobble"): clip-space vertices snap to the internal pixel
+ * grid. Off by default; the `ps1` filter switches it on (PixelRenderer drives these).
+ */
+export const vertexSnap = {
+  enabled: uniform(0),
+  /** Internal resolution (art pixels). */
+  resolution: uniform(new Vector2(480, 270)),
+};
+
+function snappedClipPosition() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL swizzles aren't typed on Node
+  const clip = modelViewProjection as any;
+  const half = vertexSnap.resolution.mul(0.5) as typeof clip;
+  const snapped: typeof clip = floor(clip.xy.div(clip.w).mul(half).add(0.5)).div(half).mul(clip.w);
+  // Branch-free on purpose: a select() here let TSL scope `clip` inside one branch, which
+  // collapsed every vertex whenever snapping was off.
+  return vec4(mix(clip.xy, snapped, vertexSnap.enabled), clip.z, clip.w);
+}
 
 /**
  * 3-band toon ramp (shadow / mid / lit). Sampled with NearestFilter so light falls
@@ -37,6 +59,7 @@ export function toonMaterial(color: ColorRepresentation): MeshToonNodeMaterial {
   let mat = materialCache.get(key);
   if (!mat) {
     mat = new MeshToonNodeMaterial({ color: key, gradientMap: toonGradient() });
+    mat.vertexNode = snappedClipPosition();
     mat.name = `toon-${key.toString(16).padStart(6, '0')}`;
     materialCache.set(key, mat);
   }

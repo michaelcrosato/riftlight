@@ -37,3 +37,22 @@ export {
 } from './render/PixelRenderer';
 export { ContactShadow } from './render/ContactShadow';
 export { toonMaterial, toonify, toonGradient, TOON_BANDS } from './render/toon';
+export {
+  analyzeClip,
+  compileClip,
+  compileClips,
+  gaitClip,
+  mirror,
+  placeFeet,
+  renderSheet,
+  sampleClip,
+  validateClip,
+  type ClipDef,
+  type ClipReport,
+  type FootGoal,
+  type GaitSpec,
+  type Key,
+  type Pose,
+  type RigSpec,
+  type SheetImage,
+} from './animation';

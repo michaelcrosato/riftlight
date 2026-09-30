@@ -12,7 +12,8 @@ import {
 import { pass, renderOutput, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
 import { type Framing, type Resolution, RESOLUTIONS, computeFraming } from '../framing';
-import { applyFilters, getFilter } from './filters';
+import { FILTERS, applyFilters, getFilter } from './filters';
+import { vertexSnap } from './toon';
 import { installWebGPUCompat } from './webgpuCompat';
 
 export type BackendName = 'WebGPU' | 'WebGL 2 fallback';
@@ -144,6 +145,7 @@ export class PixelRenderer {
     }
     pr.layout();
     pr.observeLayout();
+    pr.syncFilterEffects();
     return pr;
   }
 
@@ -172,6 +174,12 @@ export class PixelRenderer {
   private rebuildOutput(): void {
     this.pipeline.outputNode = this.outputFor(this._mode);
     this.pipeline.needsUpdate = true;
+    this.syncFilterEffects();
+  }
+
+  /** Filters with effects outside the post pass (PS1 vertex snap) follow the active stack. */
+  private syncFilterEffects(): void {
+    for (const f of FILTERS) f.setActive?.(this._mode === 'pixel' && this._filters.includes(f.id));
   }
 
   toggleMode(): RenderMode {
@@ -186,6 +194,15 @@ export class PixelRenderer {
   setResolution(resolution: Resolution): void {
     this._resolution = resolution;
     this.layout();
+  }
+
+  /**
+   * Point both passes at a different camera (camera preset hot-swap). The pipeline,
+   * canvas and all nodes stay the same; only the camera the scene is rendered with changes.
+   */
+  setCamera(camera: Camera): void {
+    (this.pixelNode as unknown as { camera: Camera }).camera = camera;
+    (this.rawNode as unknown as { camera: Camera }).camera = camera;
   }
 
   get edges(): EdgeSettings {
@@ -203,6 +220,7 @@ export class PixelRenderer {
     const f = computeFraming(rect.width, rect.height, window.devicePixelRatio, this._resolution);
     this.framing = f;
     this.pixelSize.value = f.scale; // pixelation pass renders at canvas / scale = internal res
+    vertexSnap.resolution.value.set(this._resolution.width, this._resolution.height);
     this.renderer.setSize(f.canvasWidth, f.canvasHeight, false);
     const style = this.renderer.domElement.style;
     style.width = `${f.cssWidth}px`;

@@ -1,4 +1,4 @@
-import { CAMERA_PRESETS, FreeRig } from './camera';
+import { CAMERA_PRESETS, type CameraPreset, FreeRig } from './camera';
 import type { Engine } from './Engine';
 import { RESOLUTIONS } from './framing';
 import { FILTERS, FILTER_PRESETS } from './render/filters';
@@ -6,7 +6,7 @@ import { FILTERS, FILTER_PRESETS } from './render/filters';
 /**
  * DOM overlay (not rendered through the pixel pipeline, so it stays legible).
  * Shows backend, render mode, resolution/scale, camera preset + zoom, FPS, GPU errors,
- * game status; lets you pick filters and (via reload) a camera preset.
+ * game status; lets you pick filters and swap the camera preset (player stays put).
  */
 export class DebugUI {
   readonly root: HTMLDivElement;
@@ -35,7 +35,7 @@ export class DebugUI {
         <button data-a="mode" title="P">Pixel / Raw 3D</button>
         <button data-a="res" title="R">480 / 320</button>
       </div>
-      <div class="row"><span>Camera preset</span><select data-a="camera" title="Reloads: presets are chosen per game">${presets}</select></div>
+      <div class="row"><span>Camera preset</span><select data-a="camera" title="Swaps the camera; the player stays where they are">${presets}</select></div>
       <div class="row"><span>Look</span><select data-a="look" title="[ and ] cycle">${looks}<option value="">custom</option></select></div>
       <details><summary>Filters</summary><div class="filters">${filters}</div></details>
       <div class="fixed" data-f="fixed"></div>
@@ -47,10 +47,7 @@ export class DebugUI {
     const cam = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
     cam.value = engine.camera.preset;
     cam.addEventListener('change', () => {
-      const url = new URL(location.href);
-      url.searchParams.set('camera', cam.value);
-      url.searchParams.delete('cam');
-      location.href = url.toString();
+      engine.setCamera({ preset: cam.value as CameraPreset });
     });
 
     const look = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!;
@@ -64,7 +61,7 @@ export class DebugUI {
       });
     }
     // Controls never keep keyboard focus: game keys (Space, S, F, …) must not toggle a
-    // checkbox, press a button or change the camera <select> (which reloads the page).
+    // checkbox, press a button or change the camera <select>.
     for (const el of this.root.querySelectorAll<HTMLElement>('button, select, input')) {
       el.addEventListener('change', () => el.blur());
       if (el.tagName !== 'SELECT') el.addEventListener('pointerup', () => setTimeout(() => el.blur(), 0));
@@ -105,6 +102,8 @@ export class DebugUI {
     this.set('errors', String(r.gpuErrors.length));
     this.set('game', gameStatus);
 
+    const camSelect = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
+    if (camSelect.value !== c.preset && document.activeElement !== camSelect) camSelect.value = c.preset;
     const look = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!;
     const match = Object.keys(FILTER_PRESETS).find((n) => FILTER_PRESETS[n]!.join() === r.filters.join()) ?? '';
     if (look.value !== match && document.activeElement !== look) look.value = match;

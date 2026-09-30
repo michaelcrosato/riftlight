@@ -3,7 +3,7 @@
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
 //   npm run test:e2e -- <suite>   run one suite: webgpu | webgl-fallback | webgl-forced |
-//                                 cameras | filters-webgpu | filters-webgl | touch | moves
+//                                 cameras | camera-swap | filters-webgpu | filters-webgl | touch | moves | lab
 //
 // Core suites (one per backend path):
 //   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
@@ -19,6 +19,8 @@
 //                 with zero errors; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
+// lab             Animation Lab (/lab.html): every clip plays with clean metrics, views,
+//                 scrubbing, contact sheets and the agent API; frames of a few clips saved.
 //
 // Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
@@ -419,6 +421,47 @@ async function runCameras(browserExe) {
   }
 }
 
+async function runCameraSwap(browserExe) {
+  console.log('\n▶ camera hot-swap keeps the player');
+  let ctx;
+  try {
+    ctx = await openPage(browserExe, SCENARIOS[0]);
+    const { page, logs } = ctx;
+    // Move somewhere and pick up a coin so there is state to lose.
+    await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.teleport([-4, 0, 5]));
+    await waitFrames(page, 10);
+    await hold(page, 'KeyD', 400);
+    await waitFrames(page, 20);
+    const renderer0 = await page.evaluate(() => (window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer, true));
+    const before = await page.evaluate(() => ({ feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(), coins: window.__PIXEL_ENGINE__.game.collected, url: location.href }));
+    check(renderer0 && before.coins >= 1, `setup: player at ${before.feet.map((v) => v.toFixed(2))}, ${before.coins} coin(s)`);
+    for (const preset of ['topdown', 'side', 'third', 'first', 'free', 'fixed', 'iso']) {
+      await page.selectOption('[data-a="camera"]', preset);
+      await waitFrames(page, 8);
+      const now = await page.evaluate(() => ({
+        feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(),
+        coins: window.__PIXEL_ENGINE__.game.collected,
+        preset: window.__PIXEL_ENGINE__.camera.preset,
+        sameRenderer: window.__PIXEL_ENGINE__.renderer.renderer === window.__rendererRef,
+        visible: window.__PIXEL_ENGINE__.game.heroModel.visible,
+        url: location.search,
+      }));
+      const frame = await capture(page, `swap-${preset}.png`);
+      const moved = dist(before.feet, now.feet);
+      check(
+        now.preset === preset && moved < 0.05 && now.coins === before.coins && now.sameRenderer && colorCount(frame) > 8 && now.url.includes(`camera=${preset}`),
+        `→ ${preset}: player stayed (moved ${moved.toFixed(3)}), coins ${now.coins}, same renderer, renders, URL synced`,
+      );
+      check(now.visible === (preset !== 'first'), `→ ${preset}: player model ${now.visible ? 'shown' : 'hidden'}`);
+    }
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `camera swap crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}
+
 function meanDiff(a, b) {
   let sum = 0;
   for (let i = 0; i < a.pixels.length; i += 4) {
@@ -436,6 +479,7 @@ async function runFilters(browserExe, s, label) {
     await page.evaluate(() => (window.__PIXEL_ENGINE__.paused = true)); // identical frames apart from the filter
     await waitFrames(page, 3);
     const base = await capture(page, `${label}-none.png`);
+    check(colorCount(base) > 8, `unfiltered frame has real content (${colorCount(base)} colors)`);
     const ids = await page.evaluate(() => [...window.__PIXEL_ENGINE__.availableFilters]);
     let ok = 0;
     for (const id of ids) {
@@ -557,6 +601,57 @@ async function runMoves(browserExe) {
   }
 }
 
+async function runLab(browserExe) {
+  console.log('\n▶ lab (Animation Lab)');
+  let ctx;
+  try {
+    ctx = await openPage(browserExe, { ...SCENARIOS[0], url: `${BASE}lab.html` }, 'view=three&paused=1&debug=0');
+    const { page, logs } = ctx;
+    await page.waitForFunction(() => window.__ANIM_LAB__, null, { timeout: 30000 });
+    const clips = await page.evaluate(() => window.__ANIM_LAB__.clips());
+    check(clips.length >= 50, `lab lists ${clips.length} clips`);
+    const bad = await page.evaluate(() =>
+      window.__ANIM_LAB__
+        .clips()
+        .map((n) => [n, window.__ANIM_LAB__.metrics(n).problems])
+        .filter(([, p]) => p.length),
+    );
+    check(bad.length === 0, `every clip passes its metrics${bad.length ? ': ' + JSON.stringify(bad).slice(0, 400) : ''}`);
+    await page.evaluate(() => {
+      window.__ANIM_LAB__.select('Run');
+      window.__ANIM_LAB__.seek(3);
+    });
+    await waitFrames(page, 3);
+    const st = await page.evaluate(() => window.__ANIM_LAB__.state());
+    check(st.clip === 'Run' && st.frame === 3 && !st.playing, `select + seek: ${JSON.stringify(st)}`);
+    const pose = await page.evaluate(() => window.__ANIM_LAB__.pose());
+    check(pose.Pelvis && pose.FootR && pose.Pelvis.world[1] > 0.3, 'pose() returns joint rotations and world positions');
+    for (const [clip, frame, view] of [['Idle', 0, 'three'], ['Run', 3, 'side'], ['Backflip', 12, 'side'], ['Crawl', 9, 'three'], ['Punch', 4, 'front']]) {
+      await page.click(`[data-v="${view}"]`);
+      await page.evaluate(([c, f]) => {
+        window.__ANIM_LAB__.select(c);
+        window.__ANIM_LAB__.seek(f);
+      }, [clip, frame]);
+      await waitFrames(page, 4);
+      const frameImg = await capture(page, `lab-${clip}-${view}.png`);
+      check(colorCount(frameImg) > 8, `${clip} f${frame} renders in the ${view} view`);
+    }
+    const sheet = await page.evaluate(() => window.__ANIM_LAB__.sheet('Walk'));
+    check(sheet.startsWith('data:image/png') && sheet.length > 10000, 'contact sheet renders in the browser');
+    await writeFile(new URL('lab-sheet-Walk.png', OUT), Buffer.from(sheet.split(',')[1], 'base64'));
+    await page.click('[data-a="play"]');
+    const f0 = (await page.evaluate(() => window.__ANIM_LAB__.state())).frame;
+    await waitFrames(page, 10);
+    const f1 = (await page.evaluate(() => window.__ANIM_LAB__.state())).frame;
+    check(f1 !== f0, 'play button advances the clip');
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `lab crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}
+
 await mkdir(OUT, { recursive: true });
 const exe = await resolveExecutable();
 const server = await startServer();
@@ -565,10 +660,12 @@ const suites = {
   'webgl-fallback': () => runCore(exe, SCENARIOS[1]),
   'webgl-forced': () => runCore(exe, SCENARIOS[2]),
   cameras: () => runCameras(exe),
+  'camera-swap': () => runCameraSwap(exe),
   'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
   'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
   touch: () => runTouch(exe),
   moves: () => runMoves(exe),
+  lab: () => runLab(exe),
 };
 try {
   for (const [name, run] of Object.entries(suites)) if (!only || name === only) await run();

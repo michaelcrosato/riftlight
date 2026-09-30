@@ -1,5 +1,6 @@
 import { AnimationMixer, BoxGeometry, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
+  compileClips,
   ContactShadow,
   type Game,
   type GameContext,
@@ -9,6 +10,8 @@ import {
   readMoveInput,
   toonMaterial,
 } from '../engine';
+import { HERO_CLIPS } from './hero/animations';
+import { HERO_RIG } from './hero/rig';
 
 /**
  * Demo: "Move Playground" — a data-driven island with a station for every move.
@@ -170,8 +173,19 @@ export class Playground implements Game {
     this.heroModel = hero.scene;
     scene.add(this.heroModel, this.heroShadow);
     this.hero = new PlatformerCharacter(physics, { position: LEVEL.spawn, lockDepth: ctx.camera.lockDepth });
-    this.hero.attachModel(this.heroModel, hero.animations);
+    // Animations are data (src/game/hero/animations.ts), compiled against the model's rig.
+    this.hero.attachModel(this.heroModel, compileClips(HERO_CLIPS, HERO_RIG, this.heroModel));
+    // Edit animations.ts while the game runs: clips recompile and swap in place.
+    import.meta.hot?.accept('./hero/animations', (mod) => {
+      const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
+      if (clips) this.hero.attachModel(this.heroModel, compileClips(clips, HERO_RIG, this.heroModel));
+    });
     this.heroModel.position.set(...LEVEL.spawn);
+    this.heroModel.visible = !ctx.camera.hidesTarget;
+  }
+
+  onCameraChange(ctx: GameContext): void {
+    this.hero.setLockDepth(ctx.camera.lockDepth);
     this.heroModel.visible = !ctx.camera.hidesTarget;
   }
 

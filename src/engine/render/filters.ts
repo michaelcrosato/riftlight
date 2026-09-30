@@ -32,6 +32,7 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { dotScreen } from 'three/addons/tsl/display/DotScreenNode.js';
 import { sobel } from 'three/addons/tsl/display/SobelOperatorNode.js';
 import { PALETTE } from '../palette';
+import { vertexSnap } from './toon';
 
 /**
  * Post-processing filters, all TSL, applied in display (sRGB) space after the pipeline's
@@ -50,8 +51,10 @@ export interface FilterContext {
 export interface FilterDef {
   readonly id: string;
   readonly label: string;
-  readonly group: 'palette' | 'color' | 'display' | 'signal' | 'stylize';
+  readonly group: 'era' | 'palette' | 'color' | 'display' | 'signal' | 'stylize';
   apply(color: N, fx: FilterContext): N;
+  /** Side effects outside the post pass (e.g. PS1 vertex snapping), toggled with the filter. */
+  setActive?(active: boolean): void;
 }
 
 // float() on every channel: an all-integer vec3 (e.g. pure white) would otherwise be int-typed.
@@ -114,7 +117,74 @@ export const PALETTES = {
   nes: [0x000000, 0xfcfcfc, 0xbcbcbc, 0x7c7c7c, 0xa4e4fc, 0x3cbcfc, 0x0078f8, 0x0000fc, 0xb8b8f8, 0x6888fc, 0x0058f8, 0x0000bc, 0xd8b8f8, 0x9878f8, 0x6844fc, 0x4428bc, 0xf8b8f8, 0xf878f8, 0xd800cc, 0x940084, 0xf8a4c0, 0xf85898, 0xe40058, 0xa80020, 0xf0d0b0, 0xf87858, 0xf83800, 0xa81000, 0xfce0a8, 0xfca044, 0xe45c10, 0x881400, 0xf8d878, 0xf8b800, 0xac7c00, 0x503000, 0xd8f878, 0xb8f818, 0x00b800, 0x007800, 0xb8f8b8, 0x58d854, 0x00a800, 0x006800, 0xb8f8d8, 0x58f898, 0x00a844, 0x005800, 0x00fcfc, 0x00e8d8, 0x008888, 0x004058],
 } as const;
 
+/** PlayStation 1 4×4 dither table, in 8-bit color units (psx-spx). */
+const PS1_DITHER = [
+  [-4, 0, -3, 1],
+  [2, -2, 3, -1],
+  [-3, 1, -4, 0],
+  [3, -1, 2, -2],
+];
+
+const ps1Dither = (fx: FilterContext): N => {
+  const a = artCoord(fx);
+  const x = mod(a.x, 4);
+  const y = mod(a.y, 4);
+  const rowVec = (r: number): N => (vec4 as N)(...PS1_DITHER[r]!.map((v) => float(v)));
+  let row: N = rowVec(0);
+  for (let r = 1; r < 4; r++) row = select(y.equal(float(r)), rowVec(r), row);
+  const oneHot = vec4(
+    select(x.equal(float(0)), float(1), float(0)),
+    select(x.equal(float(1)), float(1), float(0)),
+    select(x.equal(float(2)), float(1), float(0)),
+    select(x.equal(float(3)), float(1), float(0)),
+  );
+  return dot(row, oneHot);
+};
+
+/** Sample the frame at the centre of `factor`×`factor` art-pixel blocks (lower effective res). */
+const blockSample = (c: N, fx: FilterContext, factor: number): N => {
+  const tex = convertToTexture(c);
+  const block = fx.pixelSize.mul(float(factor));
+  const centre = floor(screenCoordinate.xy.div(block)).add(0.5).mul(block);
+  return tex.sample(centre.div(screenSize));
+};
+
 export const FILTERS: readonly FilterDef[] = [
+  // ---- console eras ----
+  {
+    id: '8bit',
+    label: '8-bit console (NES era)',
+    group: 'era',
+    // Half the art resolution (2×2 art pixels per dot), NES palette, light ordered dither.
+    apply: (c, fx) => {
+      const low = blockSample(c, fx, 2);
+      const a = floor(screenCoordinate.xy.div(fx.pixelSize.mul(2)));
+      const d = bayer4(a).sub(0.5).mul(0.05);
+      return vec4(nearest(clamp(low.rgb.add(d), 0, 1), PALETTES.nes), 1);
+    },
+  },
+  {
+    id: '16bit',
+    label: '16-bit console (Mega Drive / SNES era)',
+    group: 'era',
+    // 9-bit color (8 levels per channel, 512 colors) with ordered dither per art pixel.
+    apply: (c, fx) => vec4(floor(clamp(c.rgb.add(ditherOffset(fx, 1 / 7)), 0, 1).mul(7).add(0.5)).div(7), c.a),
+  },
+  {
+    id: 'ps1',
+    label: 'PS1 (15-bit dither + vertex wobble)',
+    group: 'era',
+    // 15-bit color with the PlayStation's 4×4 dither table; also snaps vertices to the
+    // pixel grid (the classic PS1 wobble) while active.
+    apply: (c, fx) => {
+      const v = clamp(c.rgb.mul(255).add(ps1Dither(fx)), float(0), float(255));
+      return vec4(floor(v.div(8)).mul(8).div(255), c.a);
+    },
+    setActive: (active) => {
+      vertexSnap.enabled.value = active ? 1 : 0;
+    },
+  },
+
   // ---- palette / hardware looks ----
   paletteFilter('sweetie16', 'Sweetie 16 palette', PALETTES.sweetie16, 0.08),
   paletteFilter('pico8', 'PICO-8', PALETTES.pico8),
@@ -306,6 +376,9 @@ export function getFilter(id: string): FilterDef | undefined {
 /** Named stacks that read well together. */
 export const FILTER_PRESETS: Record<string, readonly string[]> = {
   none: [],
+  eight_bit: ['8bit'],
+  sixteen_bit: ['16bit', 'scanlines'],
+  playstation: ['ps1'],
   arcade: ['crt'],
   handheld: ['gameboy', 'lcd'],
   famicom: ['nes', 'scanlines'],

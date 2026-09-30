@@ -1,0 +1,80 @@
+.lab-panel {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 11;
+  width: 300px;
+  max-height: calc(100% - 16px);
+  overflow: auto;
+  padding: 10px 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #f4f4f4;
+  background: rgb(26 28 44 / 0.9);
+  border: 2px solid #566c86;
+  box-sizing: border-box;
+}
+
+.lab-panel h1 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: #ffcd75;
+}
+
+.lab-panel .row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  margin: 6px 0;
+}
+
+.lab-panel select,
+.lab-panel button {
+  font: inherit;
+  color: #f4f4f4;
+  background: #333c57;
+  border: 1px solid #566c86;
+  padding: 2px 6px;
+}
+
+.lab-panel button.on {
+  background: #3b5dc9;
+}
+
+.lab-panel input[type='range'] {
+  width: 100%;
+}
+
+.lab-panel .readout,
+.lab-panel .notes,
+.lab-panel .hint {
+  color: #94b0c2;
+}
+
+.lab-panel .metrics {
+  margin: 6px 0;
+  padding: 6px;
+  white-space: pre-wrap;
+  background: #1a1c2c;
+  border-left: 3px solid #38b764;
+}
+
+.lab-panel .metrics[data-bad='true'] {
+  border-left-color: #b13e53;
+}
+
+.lab-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: auto;
+  background: rgb(13 14 22 / 0.92);
+  cursor: zoom-out;
+}
+
+.lab-sheet canvas {
+  display: block;
+  margin: 16px auto;
+  image-rendering: pixelated;
+}

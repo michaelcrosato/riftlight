@@ -60,7 +60,11 @@ Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/
 ## Camera presets
 
 A game picks **one** preset (`EngineOptions.camera`, or `?camera=` / `?cam=` in the URL).
-Presets are not meant to change during play; the debug UI's picker reloads the page.
+For reviewing, `engine.setCamera(config)` (and the debug UI's picker) hot-swaps the
+preset **without touching the world**: the player stays where they are, and so do coins,
+physics and the renderer. Switching to `free`/`fixed` starts from the current view. The
+game's `onCameraChange(ctx)` hook re-applies anything preset-specific, such as the side
+lane lock or hiding the model in first person. The URL is updated with `?camera=`.
 
 | Preset | Projection | Controls | Zoom |
 | --- | --- | --- | --- |
@@ -93,13 +97,14 @@ debug UI has a checkbox for each, and `[` / `]` cycle the looks.
 
 | Group | Filters |
 | --- | --- |
+| Console eras | `8bit` (NES: half resolution, NES palette, light dither), `16bit` (Mega Drive/SNES: 9-bit colour, 512 colours, ordered dither), `ps1` (15-bit colour with the PlayStation's 4×4 dither table **and vertex wobble**: toon materials snap clip-space vertices to the art-pixel grid while it's on) |
 | Palette / hardware | `sweetie16`, `pico8`, `nes`, `c64`, `zx`, `ega`, `cga`, `gameboy`, `gbpocket`, `virtualboy`, `onebit`, `dither`, `posterize` |
 | Color | `grayscale`, `sepia`, `invert`, `bleach`, `sunset`, `moonlight`, `thermal`, `nightvision` |
 | Display | `scanlines`, `lcd`, `crt` (curved, masked, vignetted), `vignette` |
 | Signal | `chromatic`, `grain`, `vhs`, `ntsc` |
 | Stylize | `bloom`, `halftone`, `sketch` |
 
-Looks (`FILTER_PRESETS`): `arcade`, `handheld`, `famicom`, `home_computer`, `vhs_rental`,
+Looks (`FILTER_PRESETS`): `eight_bit`, `sixteen_bit` (+ scanlines), `playstation`, `arcade`, `handheld`, `famicom`, `home_computer`, `vhs_rental`,
 `spectrum`, `mac_classic`, `pico`, `dream`, `spooky`. Add a filter by appending a
 `FilterDef` to `FILTERS` in `src/engine/render/filters.ts`; the e2e suite picks it up
 automatically on both backends.
@@ -146,7 +151,8 @@ walk + jump.
 A game implements `Game` (`src/engine/Engine.ts`) and is started with `Engine.start`:
 
 ```ts
-import { Engine, type Game, type GameContext, PlatformerCharacter, readMoveInput, toonMaterial } from './engine';
+import { compileClips, Engine, type Game, type GameContext, PlatformerCharacter, readMoveInput, toonMaterial } from './engine';
+import { HERO_CLIPS, HERO_RIG } from './game/hero';
 import { BoxGeometry, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 
 class MyGame implements Game {
@@ -167,7 +173,8 @@ class MyGame implements Game {
     this.model = hero.scene;
     scene.add(this.model);
     this.hero = new PlatformerCharacter(physics, { position: [0, 0, 0], lockDepth: ctx.camera.lockDepth });
-    this.hero.attachModel(this.model, hero.animations);
+    // Clips are data (docs/ANIMATION.md), compiled against the model's joints.
+    this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model));
     this.model.visible = !ctx.camera.hidesTarget;
   }
   fixedUpdate(ctx: GameContext, dt: number) {
@@ -203,6 +210,19 @@ Rules of thumb for good-looking results:
 - New assets: extend `scripts/generate-assets.mjs` (deterministic) or drop GLBs into
   `public/assets/`. See `src/game/playground.ts` for a complete example.
 
+## Animation
+
+Clips are data in `src/game/hero/animations.ts`, with foot IK and a procedural gait
+generator. They are checked by metrics (floor contact, foot slide, loop seams, joint limits)
+and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is in
+**[docs/ANIMATION.md](ANIMATION.md)**:
+
+- `npm run anim -- check` prints metrics for every clip and exits 1 on problems.
+- `npm run anim -- sheet Run` writes `.scratch/anim/Run.png`. Read the PNG to see the
+  animation.
+- `/lab.html` previews a clip in the real renderer: scrub, views, skeleton, hot reload, and
+  `window.__ANIM_LAB__`.
+
 ## Tooling for agents
 
 - `window.__PIXEL_ENGINE__.state()`: backend, mode, resolution, framing, frame count,
@@ -220,6 +240,8 @@ Rules of thumb for good-looking results:
   - every camera preset, including zoom, the side lane and free → fix → `?cam=`
   - every filter on both backends
   - every move in `scripts/e2e-moves.mjs`
+  - camera hot-swap keeps the player in place
+  - the Animation Lab (every clip, views, sheets, API)
 
   Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
   Chromium loses the WebGPU device when a canvas presents. Run one suite with

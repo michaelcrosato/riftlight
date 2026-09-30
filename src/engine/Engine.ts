@@ -1,4 +1,4 @@
-import { AmbientLight, Color, DirectionalLight, Scene, Vector3 } from 'three/webgpu';
+import { AmbientLight, Color, DirectionalLight, OrthographicCamera, Scene, Vector3 } from 'three/webgpu';
 import { loadModel } from './assets';
 import { CAMERA_PRESETS, type CameraConfig, type CameraPreset, type CameraRig, FreeRig, OrthoRig, createCameraRig } from './camera';
 import { DebugUI } from './DebugUI';
@@ -40,6 +40,12 @@ export interface Game {
   eyePosition?(ctx: GameContext): Vector3;
   /** One-line status for the debug UI (score, lives...). */
   status?(ctx: GameContext): string;
+  /**
+   * Called after `engine.setCamera()` swapped the camera preset mid-game. The world,
+   * physics and player are untouched; adjust anything that depends on the preset
+   * (e.g. side-scroller lane lock, hiding the player model in first person).
+   */
+  onCameraChange?(ctx: GameContext): void;
 }
 
 export interface EngineOptions {
@@ -124,16 +130,19 @@ export class Engine {
     readonly game: Game,
     readonly renderer: PixelRenderer,
     readonly physics: Physics,
-    readonly camera: CameraRig,
+    public camera: CameraRig,
     readonly scene: Scene,
   ) {
     const clock = () => this.time;
+    const rig = () => this.camera;
     this.context = {
       engine: this,
       scene,
       physics,
       input: this.input,
-      camera,
+      get camera() {
+        return rig();
+      },
       loadModel,
       palette: PALETTE,
       get time() {
@@ -179,13 +188,7 @@ export class Engine {
     scene.background = new Color(options.background ?? PALETTE.night);
 
     engine.input.attachPointer(renderer.renderer.domElement);
-    if (camera instanceof FreeRig) {
-      camera.onFix = (config) => {
-        const json = JSON.stringify(config);
-        console.info(`[camera] fixed. Use: camera: ${json}  or  ?cam=${encodeURIComponent(json)}`);
-        void navigator.clipboard?.writeText(json).catch(() => {});
-      };
-    }
+    engine.wireRig(camera);
 
     await game.setup(engine.context);
     camera.teleport(game.cameraTarget(engine.context));
@@ -202,6 +205,58 @@ export class Engine {
 
     renderer.setAnimationLoop((t) => engine.tick(t));
     return engine;
+  }
+
+  /**
+   * Swap the camera preset mid-game (review tool: presets are a per-game choice). The
+   * player, physics and the rest of the world are left exactly as they are. `free` and
+   * `fixed` without an explicit position start from the view currently on screen.
+   * Keeps `?camera=` in the URL in sync so a reload restores the preset.
+   */
+  setCamera(config: CameraConfig): CameraRig {
+    const preset = config.preset ?? 'iso';
+    const old = this.camera;
+    let cfg: CameraConfig = { ...config, preset };
+    if ((preset === 'free' || preset === 'fixed') && !config.position) {
+      const dir = old.camera.getWorldDirection(new Vector3());
+      const pos = old.camera.position.clone();
+      if (old.preset === 'first') pos.addScaledVector(dir, -3).add(new Vector3(0, 1, 0)); // step out of the head
+      const ortho = old.camera instanceof OrthographicCamera;
+      cfg = {
+        ...cfg,
+        position: pos.toArray() as [number, number, number],
+        target: pos.clone().addScaledVector(dir, 10).toArray() as [number, number, number],
+        projection: config.projection ?? (ortho ? 'ortho' : 'perspective'),
+        ...(ortho ? { viewHeight: (old.camera as OrthographicCamera).top * 2 } : {}),
+      };
+    }
+    const rig = createCameraRig(cfg);
+    rig.teleport(this.game.cameraTarget(this.context));
+    rig.focus.copy(old.focus);
+    this.renderer.setCamera(rig.camera);
+    this.camera = rig;
+    this.wireRig(rig);
+    if (preset !== 'first' && document.pointerLockElement) document.exitPointerLock?.();
+    this.game.onCameraChange?.(this.context);
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('camera', preset);
+      url.searchParams.delete('cam');
+      history.replaceState(null, '', url);
+    } catch {
+      /* file:// or sandboxed: URL sync is best-effort */
+    }
+    return rig;
+  }
+
+  private wireRig(rig: CameraRig): void {
+    if (rig instanceof FreeRig) {
+      rig.onFix = (config) => {
+        const json = JSON.stringify(config);
+        console.info(`[camera] fixed. Use: camera: ${json}  or  ?cam=${encodeURIComponent(json)}`);
+        void navigator.clipboard?.writeText(json).catch(() => {});
+      };
+    }
   }
 
   toggleMode(): RenderMode {
