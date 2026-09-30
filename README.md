@@ -9,6 +9,7 @@ Demo: *Coin Garden*.
 npm ci
 npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320)
 npm run build        # production build
+npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
 ```

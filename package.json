@@ -12,7 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "xvfb-run -a -s \"-screen 0 1280x720x24\" node scripts/e2e.mjs",
-    "assets": "node scripts/generate-assets.mjs"
+    "assets": "node scripts/generate-assets.mjs",
+    "build:single": "node scripts/build-single.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.20.0",

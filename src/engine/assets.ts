@@ -28,6 +28,9 @@ export async function loadModel(url: string, options?: ToonifyOptions): Promise<
 }
 
 function resolveAsset(url: string): string {
+  // Single-file builds (npm run build:single) embed assets as data URIs in this map.
+  const embedded = (globalThis as { __PIXEL_ASSETS__?: Record<string, string> }).__PIXEL_ASSETS__?.[url];
+  if (embedded) return embedded;
   if (/^(https?:|data:|blob:|\/)/.test(url)) return url;
   return `${import.meta.env.BASE_URL}${url}`;
 }
