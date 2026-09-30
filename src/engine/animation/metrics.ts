@@ -16,6 +16,10 @@ export interface ClipReport {
   /** Lowest sole point over the clip (m) and the frame it happens. Negative = through the floor. */
   minSoleY: number;
   minSoleFrame: number;
+  /** Lowest point of any other body part (knees, hands, head...), where and when. */
+  minBodyY: number;
+  minBodyMesh: string;
+  minBodyFrame: number;
   /** Frames (of grounded clips) where neither sole is within 5 cm of the floor. */
   floatingFrames: number;
   /** Mean horizontal slip of the planted foot, m/s (0 = perfectly planted). */
@@ -41,6 +45,8 @@ export interface SampledFrame {
   soles: Record<string, { minY: number; centre: Vector3; contact: Vector3; verts: Vector3[] }>;
   /** Centres of trace points (meshes or joints). */
   trace: Record<string, Vector3>;
+  /** Lowest non-sole mesh this frame. */
+  body: { minY: number; mesh: string };
 }
 
 /** Pose `model` with `clip` at each frame (30 fps authoring frames) and record world positions. */
@@ -50,6 +56,10 @@ export function sampleFrames(model: Object3D, rig: RigSpec, clip: AnimationClip,
   action.play();
   const out: SampledFrame[] = [];
   const box = new Box3();
+  const bodyMeshes: Mesh[] = [];
+  model.traverse((o) => {
+    if ((o as Mesh).isMesh && !rig.soles.includes(o.name)) bodyMeshes.push(o as Mesh);
+  });
   for (const f of frames) {
     mixer.setTime(Math.min(f / rig.fps, clip.duration - 1e-6));
     model.updateMatrixWorld(true);
@@ -68,7 +78,12 @@ export function sampleFrames(model: Object3D, rig: RigSpec, clip: AnimationClip,
       if ((o as Mesh).isMesh) trace[t] = box.setFromObject(o, true).getCenter(new Vector3());
       else trace[t] = o.getWorldPosition(new Vector3());
     }
-    out.push({ frame: f, joints, soles, trace });
+    const body = { minY: Infinity, mesh: '' };
+    for (const m of bodyMeshes) {
+      const y = box.setFromObject(m, true).min.y;
+      if (y < body.minY) Object.assign(body, { minY: y, mesh: m.name });
+    }
+    out.push({ frame: f, joints, soles, trace, body });
   }
   action.stop();
   mixer.uncacheRoot(model);
@@ -94,6 +109,11 @@ export function analyzeClip(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
     if (def.grounded && low > 0.05) floatingFrames++;
   }
   if (minSoleY < -0.03) problems.push(`feet go ${(-minSoleY * 100).toFixed(0)} cm through the floor at f${minSoleFrame}`);
+  let minBody = { y: Infinity, mesh: '', frame: 0 };
+  for (const s of samples) if (s.body.minY < minBody.y) minBody = { y: s.body.minY, mesh: s.body.mesh, frame: s.frame };
+  const bodyMsg = `${minBody.mesh} goes ${(-minBody.y * 100).toFixed(0)} cm through the floor at f${minBody.frame}`;
+  if (minBody.y < -0.05) problems.push(bodyMsg);
+  else if (minBody.y < -0.02) warnings.push(bodyMsg);
   if (def.grounded && floatingFrames > 0) warnings.push(`${floatingFrames} frame(s) with both feet off the ground (grounded clip)`);
 
   // Foot sliding: sole vertices touching the floor in consecutive frames should move
@@ -122,6 +142,8 @@ export function analyzeClip(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
   const footSlide = slideN ? slideSum / slideN : 0;
   if (def.grounded && footSlide > 0.6) problems.push(`planted foot slides ${footSlide.toFixed(2)} m/s`);
   else if (def.grounded && footSlide > 0.3) warnings.push(`planted foot slides ${footSlide.toFixed(2)} m/s`);
+  // Clips with a feet track put feet on the floor somewhere; dragging them is worth a look.
+  else if (!def.grounded && !def.fast && def.feet?.length && footSlide > 0.6) warnings.push(`feet drag along the floor at ${footSlide.toFixed(2)} m/s`);
 
   // Loop seam and angular speed, from the authored data.
   const poses = frames.map((f) => sampleClip(def, f, rig));
@@ -129,8 +151,15 @@ export function analyzeClip(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
   if (def.loop) {
     const a = sampleClip(def, 0, rig);
     const b = sampleClip(def, def.frames - 1e-3, rig);
-    for (const j of rig.joints) for (let k = 0; k < 3; k++) loopSeam = Math.max(loopSeam, Math.abs(wrap(a[j]!.r[k]! - b[j]!.r[k]!)));
+    let posSeam = 0;
+    for (const j of rig.joints) {
+      for (let k = 0; k < 3; k++) {
+        loopSeam = Math.max(loopSeam, Math.abs(wrap(a[j]!.r[k]! - b[j]!.r[k]!)));
+        posSeam = Math.max(posSeam, Math.abs(a[j]!.p[k]! - b[j]!.p[k]!), Math.abs(a[j]!.s[k]! - b[j]!.s[k]!));
+      }
+    }
     if (loopSeam > 3) problems.push(`loop seam: joints jump up to ${loopSeam.toFixed(0)}° between last and first frame`);
+    if (posSeam > 0.01) problems.push(`loop seam: position/squash jumps by ${posSeam.toFixed(3)} between last and first frame`);
   }
   let maxAngularSpeed = { joint: '', degPerSec: 0, frame: 0 };
   for (let i = 1; i < poses.length; i++) {
@@ -170,6 +199,9 @@ export function analyzeClip(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
     speed: def.speed ?? null,
     minSoleY,
     minSoleFrame,
+    minBodyY: minBody.y,
+    minBodyMesh: minBody.mesh,
+    minBodyFrame: minBody.frame,
     floatingFrames,
     footSlide,
     loopSeam,

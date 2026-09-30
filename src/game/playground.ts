@@ -1,6 +1,6 @@
 import { AnimationMixer, BoxGeometry, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
-  compileClips,
+  compileClip,
   ContactShadow,
   type Game,
   type GameContext,
@@ -10,6 +10,8 @@ import {
   readMoveInput,
   toonMaterial,
 } from '../engine';
+import { restPoseOf } from '../engine/animation';
+import { HERO_MODEL } from './hero';
 import { HERO_CLIPS } from './hero/animations';
 import { HERO_RIG } from './hero/rig';
 
@@ -145,7 +147,7 @@ export class Playground implements Game {
     const [tree, coin, hero] = await Promise.all([
       loadModel('assets/tree.glb'),
       loadModel('assets/coin.glb', { castShadow: false }),
-      loadModel('assets/hero.glb', { castShadow: false }),
+      loadModel(HERO_MODEL, { castShadow: false }),
     ]);
 
     LEVEL.trees.forEach(([x, y, z], i) => {
@@ -174,11 +176,14 @@ export class Playground implements Game {
     scene.add(this.heroModel, this.heroShadow);
     this.hero = new PlatformerCharacter(physics, { position: LEVEL.spawn, lockDepth: ctx.camera.lockDepth });
     // Animations are data (src/game/hero/animations.ts), compiled against the model's rig.
-    this.hero.attachModel(this.heroModel, compileClips(HERO_CLIPS, HERO_RIG, this.heroModel));
+    // Capture the rest pose once, before anything plays: recompiling later must not read
+    // whatever pose is on screen.
+    const rest = restPoseOf(this.heroModel, HERO_RIG);
+    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
     // Edit animations.ts while the game runs: clips recompile and swap in place.
     import.meta.hot?.accept('./hero/animations', (mod) => {
       const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
-      if (clips) this.hero.attachModel(this.heroModel, compileClips(clips, HERO_RIG, this.heroModel));
+      if (clips) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
     });
     this.heroModel.position.set(...LEVEL.spawn);
     this.heroModel.visible = !ctx.camera.hidesTarget;

@@ -28,8 +28,9 @@ animations.ts ──► ClipDef (keys, feet track, layers) ──► compileClip
 | metric | meaning | problem / warning |
 | --- | --- | --- |
 | `soleMin` (+ frame) | lowest point of either shoe | < −3 cm: feet through the floor (every clip, airborne too; the capsule bottom is the floor) |
-| `slide` | how fast floor-touching sole vertices move, compared with the clip's `speed` | grounded clips: > 0.6 m/s problem, > 0.3 m/s warning |
-| `seam°` | largest joint jump between the last and first frame of a loop | > 3° |
+| body (+ mesh, frame) | lowest point of any other part (knees, hands, head, hat) | < −5 cm problem, < −2 cm warning |
+| `slide` | how fast floor-touching sole vertices move, compared with the clip's `speed` | grounded clips: > 0.6 m/s problem, > 0.3 m/s warning; other clips with a feet track: > 0.6 m/s warning ("feet drag") |
+| `seam°` | largest joint jump between the last and first frame of a loop | > 3°, or > 0.01 in position/squash |
 | `fastest` | fastest joint rotation | > 1200°/s warning, unless the clip is `fast: true` |
 | limits | joint angles outside `rig.limits` | warning |
 | `pelvisY` | how much the body bobs | — |
@@ -98,7 +99,14 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
     emits a **feet track**. Wherever two neighbouring keys both have goals, the legs are
     re-solved **every frame**, so feet stay planted or roll through transitions (kneel → stand,
     sit → lie). `null` means the legs follow the keyed angles (airborne, lying).
-  - The solve includes the root's offset, pitch and squash. Knees never fold past 150°.
+  - The ankle position accounts for the root's offset, rotation and squash. It is exact for
+    pitch; yaw and roll are approximated, because the solve stays in the leg's own plane.
+    The foot's sole angle ignores squash.
+  - Knees never fold past 150°. Gaits also keep the swinging ankle out of the last 10°, so
+    legs don't whip.
+  - `validateClip` rejects keys whose legs don't match their own feet goals. Build keys
+    with `track()` or `placeFeet()`, and the hand-off between keyed and solved legs stays
+    continuous.
 - **Locomotion comes from `gaitClip`**, not keys. You describe the gait:
   - `speed`, `frames` per cycle, `stance` fraction, `hip` height, `bob`, `squash`
   - `lift`, `heelStrike`, `toeOff`, `tiptoe`, `lean`, `twist`, `sway`
@@ -110,7 +118,11 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
   playback so the feet match the real ground speed.
 - **Layers** add a sine wave on one channel (breathing, sway). For loops, `period` must divide
   `frames`.
-- `mirrorClip(clip, 'ShimmyLeft', RIG)` builds the other side's clip.
+- `mirrorClip(clip, 'ShimmyLeft', RIG)` builds the other side's clip, including its feet
+  track.
+- Somersaults (`somersault()` / `spinRoot()` in `animations.ts`) turn the body around its
+  middle, not the hips, so the head stays inside the character's capsule.
+- `blend(a, b, t)` and `offset(pose, deltas)` build pose variations.
 - `fast: true` marks snappy moves (flips, punches, launches), so the fast-rotation warning is
   skipped. `grounded: true` turns on the slide and floating checks. `notes` is printed on
   sheets and in the Lab.
@@ -128,6 +140,9 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
    - limits
    - `legs` geometry (for IK and gaits)
 3. Write its `ClipDef[]` and register it in `CHARACTERS` in `scripts/anim.ts`.
-4. At runtime, pass `compileClips(defs, rig, model)` to
-   `PlatformerCharacter.attachModel(model, clips)`. Calling it again swaps the clip set; the
-   playground does this on hot reload.
+4. At runtime, capture `const rest = restPoseOf(model, rig)` **once, before anything plays**.
+   Then pass `defs.map((d) => compileClip(d, rig, rest))` to
+   `PlatformerCharacter.attachModel(model, clips)`. `compileClips(defs, rig, model)` is a
+   shortcut that reads the rest pose from the model, so only use it on a model that hasn't
+   animated yet. Calling `attachModel` again swaps the clip set; the playground does this on
+   hot reload, using the saved rest pose.

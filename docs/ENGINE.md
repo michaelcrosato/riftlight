@@ -62,9 +62,13 @@ Toon/node scene ─▶ WebGPU scene pass ─▶ low-res pixelation ─▶ depth/
 A game picks **one** preset (`EngineOptions.camera`, or `?camera=` / `?cam=` in the URL).
 For reviewing, `engine.setCamera(config)` (and the debug UI's picker) hot-swaps the
 preset **without touching the world**: the player stays where they are, and so do coins,
-physics and the renderer. Switching to `free`/`fixed` starts from the current view. The
-game's `onCameraChange(ctx)` hook re-applies anything preset-specific, such as the side
-lane lock or hiding the model in first person. The URL is updated with `?camera=`.
+physics and the renderer. Switching back to the game's own preset restores its configured
+zoom and angles. Switching to `free`/`fixed` starts from the current view and keeps its
+field of view. The game's `onCameraChange(ctx)` hook re-applies anything preset-specific,
+such as the side lane lock or hiding the model in first person.
+
+The URL is kept in sync. Normal presets use `?camera=`. `free`/`fixed` write their full
+config to `?cam=`, so a reload brings back the same shot.
 
 | Preset | Projection | Controls | Zoom |
 | --- | --- | --- | --- |

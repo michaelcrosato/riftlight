@@ -66,7 +66,6 @@ const STAND_BODY: Pose = {
   ...arm('R', 6, 9, 22, 10),
   ...arm('L', 6, 9, 22, 10),
 };
-const STAND = F(STAND_BODY, STAND_FEET);
 const STAND_IN: Pose = { ...STAND_BODY, ...pelvis([0, 0, 0], [0, -0.035, 0]), Torso: [2, 0, 0], Head: [-2, 0, 0], ...arm('R', 4, 12, 20, 10), ...arm('L', 4, 12, 20, 10) };
 
 const Idle: ClipDef = {
@@ -149,11 +148,12 @@ const Walk = gaitClip(RIG, {
   name: 'Walk',
   frames: 12,
   speed: 2,
-  stance: 0.58,
+  stance: 0.53,
   hip: -0.07,
   bob: 0.025,
   squash: 0.03,
-  lift: 0.1,
+  lift: 0.09,
+  liftPeak: 0.35,
   heelStrike: 15,
   toeOff: 25,
   lean: 7,
@@ -196,7 +196,6 @@ const SKID_BODY: Pose = {
   ...arm('R', -115, 45, 25, 0),
   ...arm('L', -95, 55, 30, 0),
 };
-const SKID = F(SKID_BODY, SKID_FEET);
 const Skid: ClipDef = {
   name: 'Skid',
   frames: 18,
@@ -243,7 +242,6 @@ const CROUCH_BODY: Pose = {
   ...arm('R', -35, 16, 45, 15),
   ...arm('L', -35, 16, 45, 15),
 };
-const CROUCH = F(CROUCH_BODY, CROUCH_FEET);
 const Crouch: ClipDef = {
   name: 'Crouch',
   frames: 40,
@@ -259,15 +257,15 @@ const Crouch: ClipDef = {
 
 const CrouchWalk = gaitClip(RIG, {
   name: 'CrouchWalk',
-  frames: 20,
+  frames: 16,
   speed: 1.4,
   stance: 0.62,
-  hip: -0.28,
+  hip: -0.24,
   bob: 0.012,
-  lift: 0.06,
+  lift: 0.05,
   dangle: 0.2,
   heelStrike: 5,
-  toeOff: 20,
+  toeOff: 10,
   lean: 36,
   twist: 8,
   head: -14,
@@ -314,8 +312,12 @@ const Prone: ClipDef = {
 };
 
 // Plank: hands and toes on the floor, body straight — the bridge between crouch and prone.
-const PLANK_FEET: FeetGoals = { R: { z: -0.72, pitch: 70, pivot: 'ball' }, L: { z: -0.72, pitch: 70, pivot: 'ball' } };
-const PLANK: Pose = { ...pelvis([62, 0, 0], [0, -0.3, -0.15]), Torso: [18, 0, 0], Head: [-50, 0, 0], ...arms(-110, 22, 10) };
+const PLANK_FEET: FeetGoals = { R: { z: -0.62, pitch: 70, pivot: 'ball' }, L: { z: -0.62, pitch: 70, pivot: 'ball' } };
+const PLANK: Pose = { ...pelvis([62, 0, 0], [0, -0.18, -0.15]), Torso: [10, 0, 0], Head: [-45, 0, 0], ...arms(-74, 18, 5) };
+
+// Halfway between plank and prone: chest low, elbows bent, toes still dug in.
+const LOWERED: Pose = { ...pelvis([80, 0, 0], [0, -0.36, -0.2]), Torso: [0, 0, 0], Head: [-50, 0, 0], ...arms(-105, 26, 75) };
+const LOWERED_FEET: FeetGoals = { R: { z: -0.85, pitch: 80, pivot: 'ball' }, L: { z: -0.85, pitch: 80, pivot: 'ball' } };
 
 const ProneDown: ClipDef = {
   name: 'ProneDown',
@@ -325,6 +327,7 @@ const ProneDown: ClipDef = {
     [4, { ...CROUCH_BODY, Torso: [62, 0, 0], Head: [-40, 0, 0], ...arms(-90, 20, 10) }, CROUCH_FEET],
     [7, { ...PLANK, ...pelvis([40, 0, 0], [0, -0.2, -0.12]) }, { R: { z: -0.3, y: 0.08, pitch: 50, pivot: 'ball' }, L: { z: -0.3, y: 0.08, pitch: 50, pivot: 'ball' } }],
     [10, PLANK, PLANK_FEET, 'out'],
+    [13, LOWERED, LOWERED_FEET],
     [16, PRONE_BODY, null],
   ]),
   notes: 'Hands to the floor, kick the feet back, lower flat.',
@@ -337,10 +340,10 @@ const crawl = (s: 1 | -1): Pose => {
     ...pelvis([90, 0, s * -4], [0, PRONE_Y, -0.3]),
     Torso: [-4, s * 8, 0],
     Head: [-55, s * -6, 0],
-    ...arm(a, -165, 25, 70),
-    ...arm(b, -120, 22, 35),
+    ...arm(a, -172, 25, 30),
+    ...arm(b, -135, 22, 50),
     ...leg(a, 5, 6, 10, 70),
-    ...leg(b, -35, 45, 70, 50),
+    ...leg(b, 0, 50, 70, 50),
   };
 };
 const Crawl: ClipDef = {
@@ -361,6 +364,7 @@ const GetUpFront: ClipDef = {
   frames: 21,
   ...track([
     [0, PRONE_BODY, null],
+    [3, LOWERED, LOWERED_FEET],
     [6, PLANK, PLANK_FEET],
     [10, { ...PLANK, ...pelvis([35, 0, 0], [0, -0.22, -0.12]), Torso: [40, 0, 0], ...arms(-80, 20, 10) }, { R: { z: -0.2, y: 0.1, pitch: 40, pivot: 'ball' }, L: { z: -0.2, y: 0.1, pitch: 40, pivot: 'ball' } }],
     [14, { ...CROUCH_BODY, Torso: [50, 0, 0], ...arms(-50, 20, 20) }, CROUCH_FEET, 'out'],
@@ -395,9 +399,9 @@ const Sit: ClipDef = {
 
 // On the back: pelvis tipped −90, head toward −Z, centred over the physics ball.
 const BACK_BODY: Pose = {
-  ...pelvis([-90, 0, 0], [0, 0.16 - 0.62, 0.3]),
+  ...pelvis([-90, 0, 0], [0, 0.19 - 0.62, 0.3]),
   Torso: [0, 0, 0],
-  Head: [8, 0, 0],
+  Head: [30, 0, 0],
   ...arm('R', -8, 28, 20),
   ...arm('L', -8, 28, 20),
   ...leg('R', -5, 6, 6, -15),
@@ -422,20 +426,20 @@ const LieIdle: ClipDef = {
   loop: true,
   keys: [
     [0, BACK_BODY],
-    [30, { ...BACK_BODY, Torso: [-3, 0, 0], Head: [10, 0, 0] }],
+    [30, { ...BACK_BODY, Torso: [-3, 0, 0], Head: [32, 0, 0] }],
     [60, BACK_BODY],
   ],
   notes: 'Resting on the back.',
 };
 
-const SLEEP_BODY: Pose = { ...BACK_BODY, Head: [5, 25, -10], ...arm('R', -160, 30, 110), ...arm('L', -10, 20, 30), ...leg('L', -30, 10, 60, -10) };
+const SLEEP_BODY: Pose = { ...BACK_BODY, Head: [32, 12, -4], ...arm('R', -140, 50, 120), ...arm('L', -10, 20, 30), ...leg('L', -30, 10, 60, -10) };
 const Sleep: ClipDef = {
   name: 'Sleep',
   frames: 90,
   loop: true,
   keys: [
     [0, SLEEP_BODY],
-    [45, { ...SLEEP_BODY, ...pelvis([-90, 0, 0], [0, 0.17 - 0.62, 0.3], [1.04, 1, 1.08]), Head: [8, 25, -10] }],
+    [45, { ...SLEEP_BODY, ...pelvis([-90, 0, 0], [0, 0.205 - 0.62, 0.3], [1.03, 1, 1.03]), Head: [34, 12, -4] }],
     [90, SLEEP_BODY],
   ],
   notes: 'Snoozing: hand behind the head, one knee up, big slow breaths.',
@@ -499,14 +503,38 @@ const DoubleJump: ClipDef = {
   notes: 'Second jump: "hoo!" star pose, arms and legs spread wide.',
 };
 
-const TUCK = (flip: number, roll = 0): Pose => ({
-  ...pelvis([flip, 0, roll], [0, 0.3, 0]),
-  Torso: [30, 0, 0],
-  Head: [20, 0, 0],
-  ...arms(-55, 18, 100, 20),
-  ...leg('R', -115, 8, 140, 30),
-  ...leg('L', -115, 8, 140, 30),
-});
+const TUCK_BODY: Pose = {
+  Torso: [62, 0, 0],
+  Head: [45, 0, 0],
+  ...arms(-40, 14, 100, 20),
+  ...leg('R', -128, 8, 145, 30),
+  ...leg('L', -128, 8, 145, 30),
+};
+
+/**
+ * Root for a body spinning `angle` degrees about X (flip) or Z (cartwheel) around its
+ * middle (`pivot`, relative to the hips) instead of the hips, lifted by `lift`.
+ */
+function spinRoot(axis: 'x' | 'z', angle: number, pivot: V3 = [0, 0.2, 0.25], lift = 0.15): Pose {
+  const a = (angle * Math.PI) / 180;
+  const [, cy, cz] = pivot;
+  if (axis === 'x') {
+    const y = cy * Math.cos(a) - cz * Math.sin(a);
+    const z = cy * Math.sin(a) + cz * Math.cos(a);
+    return pelvis([angle, 0, 0], [0, lift + cy - y, cz - z]);
+  }
+  return pelvis([0, 0, angle], [cy * Math.sin(a), lift + cy - cy * Math.cos(a), 0]);
+}
+
+/** Keys (≤ 30° apart, eased overall) for a somersault from `from` to `to` degrees. */
+function somersault(axis: 'x' | 'z', from: number, to: number, f0: number, f1: number, body: Pose, pivot?: V3, shape: 'linear' | 'inOut' | 'out' = 'linear'): TrackKey[] {
+  const n = Math.max(2, Math.ceil(Math.abs(to - from) / 30));
+  const ease = (u: number) => (shape === 'inOut' ? u * u * (3 - 2 * u) : shape === 'out' ? 1 - (1 - u) * (1 - u) : u);
+  return Array.from({ length: n + 1 }, (_, i): TrackKey => {
+    const u = i / n;
+    return [f0 + (f1 - f0) * u, { ...body, ...spinRoot(axis, from + (to - from) * ease(u), pivot) }, null, 'linear'];
+  });
+}
 
 const TripleJump: ClipDef = {
   name: 'TripleJump',
@@ -515,10 +543,8 @@ const TripleJump: ClipDef = {
   ...track([
     [0, LAUNCH_BODY, LAUNCH_FEET],
     [3, { ...STRETCH, ...arms(-170, 20, 5), ...pelvis([10, 0, 0], [0, 0.24, 0], [0.92, 1.1, 0.92]) }, null, 'in'],
-    [6, TUCK(90), null, 'linear'],
-    [12, TUCK(220), null, 'linear'],
-    [18, TUCK(330), null, 'out'],
-    [23, { ...pelvis([360, 0, 0], [0, 0.2, 0]), Torso: [-6, 0, 0], Head: [-10, 0, 0], ...arms(-150, 60, 10), ...leg('R', -20, 15, 20, 40), ...leg('L', 5, 15, 20, 40) }, null],
+    ...somersault('x', 30, 345, 5, 18, TUCK_BODY, undefined, 'out'),
+    [23, { ...pelvis([360, 0, 0], [0, 0.18, 0]), Torso: [-6, 0, 0], Head: [-10, 0, 0], ...arms(-150, 60, 10), ...leg('R', -20, 15, 20, 40), ...leg('L', 5, 15, 20, 40) }, null],
     [30, { ...DESCEND, ...pelvis([360, 0, 0], [0, 0.1, 0]) }, null],
   ]),
   notes: 'Triple jump: tucked front somersault, opening into a star.',
@@ -531,15 +557,14 @@ const Backflip: ClipDef = {
   ...track([
     [0, CROUCH_BODY, CROUCH_FEET],
     [3, { ...pelvis([-25, 0, 0], [0, 0.24, 0], [0.92, 1.1, 0.92]), Torso: [-25, 0, 0], Head: [-35, 0, 0], ...arms(-175, 15, 0), ...leg('R', 10, 4, 5, 50), ...leg('L', 10, 4, 5, 50) }, null, 'in'],
-    [8, TUCK(-120), null, 'linear'],
-    [14, TUCK(-240), null, 'linear'],
-    [20, TUCK(-335), null, 'out'],
-    [25, { ...pelvis([-360, 0, 0], [0, 0.2, 0]), Torso: [0, 0, 0], Head: [0, 0, 0], ...arms(-120, 55, 20), ...leg('R', -25, 8, 30, 30), ...leg('L', -15, 8, 25, 30) }, null],
+    ...somersault('x', -40, -345, 6, 20, TUCK_BODY, undefined, 'out'),
+    [25, { ...pelvis([-360, 0, 0], [0, 0.18, 0]), Torso: [0, 0, 0], Head: [0, 0, 0], ...arms(-120, 55, 20), ...leg('R', -25, 8, 30, 30), ...leg('L', -15, 8, 25, 30) }, null],
     [30, { ...DESCEND, ...pelvis([-360, 0, 0], [0, 0.1, 0]) }, null],
   ]),
   notes: 'Backflip from a crouch: arch back, tuck, full backward somersault.',
 };
 
+const SIDE_TUCK: Pose = { Torso: [20, 0, 0], Head: [25, 0, 0], ...arms(-150, 10, 40), ...leg('R', -60, 5, 100, 30), ...leg('L', -60, 5, 100, 30) };
 const SideFlip: ClipDef = {
   name: 'SideFlip',
   frames: 26,
@@ -547,9 +572,8 @@ const SideFlip: ClipDef = {
   ...track([
     [0, SKID_BODY, SKID_FEET],
     [3, { ...STRETCH, ...arms(-170, 25, 0), ...pelvis([0, 0, 20], [0, 0.3, 0], [0.92, 1.1, 0.92]) }, null, 'in'],
-    [8, { ...pelvis([0, 0, 120], [0, 0.3, 0]), Torso: [10, 0, 0], Head: [10, 0, 0], ...arms(-160, 10, 30), ...leg('R', -30, 5, 60, 30), ...leg('L', -30, 5, 60, 30) }, null, 'linear'],
-    [14, { ...pelvis([0, 0, 250], [0, 0.3, 0]), Torso: [10, 0, 0], Head: [10, 0, 0], ...arms(-160, 10, 30), ...leg('R', -30, 5, 60, 30), ...leg('L', -30, 5, 60, 30) }, null, 'out'],
-    [20, { ...pelvis([0, 0, 360], [0, 0.2, 0]), Torso: [0, 0, 0], ...arms(-120, 60, 10), ...leg('R', -20, 15, 20, 40), ...leg('L', 5, 15, 20, 40) }, null],
+    ...somersault('z', 30, 345, 5, 17, SIDE_TUCK, [0, 0.35, 0], 'out'),
+    [20, { ...pelvis([0, 0, 360], [0, 0.18, 0]), Torso: [0, 0, 0], ...arms(-120, 60, 10), ...leg('R', -20, 15, 20, 40), ...leg('L', 5, 15, 20, 40) }, null],
     [26, { ...DESCEND, ...pelvis([0, 0, 360], [0, 0.1, 0]) }, null],
   ]),
   notes: 'Side somersault after a skid-turn: a cartwheel flip, arms overhead.',
@@ -664,8 +688,7 @@ const GroundPoundSpin: ClipDef = {
   frames: 9,
   fast: true,
   keys: [
-    [0, TUCK(0), 'linear'],
-    [9, TUCK(360)],
+    ...somersault('x', 0, 360, 0, 9, TUCK_BODY).map(([f, body, , ease]): Key => [f, body, ease]),
   ],
   notes: 'Mid-air somersault before the ground pound.',
 };
@@ -676,7 +699,7 @@ const GroundPound: ClipDef = {
   fast: true,
   frames: 10,
   keys: [
-    [0, TUCK(0)],
+    [0, { ...TUCK_BODY, ...spinRoot('x', 360) }],
     [3, { ...POUND, ...pelvis([0, 0, 0], [0, 0.3, 0], [0.92, 1.12, 0.92]) }, 'out'],
     [10, POUND],
   ],
@@ -1055,5 +1078,3 @@ export const HERO_CLIPS: readonly ClipDef[] = [
   Wave, Victory, Hurt,
 ];
 
-/** The standing pose, for tools (T-pose-free previews). */
-export { STAND, CROUCH, SKID };

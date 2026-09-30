@@ -3,9 +3,10 @@ import { type Resolution, snapToGrid, worldUnitsPerPixel } from './framing';
 import type { Input } from './input';
 
 /**
- * Camera presets. A game picks ONE at startup (EngineOptions.camera / `?camera=`); they
- * are not meant to be switched during play. `free` is an authoring tool: fly around,
- * press Enter to fix the view, and paste the printed `fixed` config into your game.
+ * Camera presets. A game picks ONE at startup (EngineOptions.camera / `?camera=`). For
+ * reviewing, `engine.setCamera()` swaps presets live without touching the world. `free`
+ * is an authoring tool: fly around, press Enter to fix the view, and paste the printed
+ * `fixed` config into your game.
  */
 export type CameraPreset = 'iso' | 'topdown' | 'side' | 'third' | 'first' | 'free' | 'fixed';
 

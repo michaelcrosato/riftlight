@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import type { Object3D } from 'three/webgpu';
+import { Euler, type Object3D, Vector3 } from 'three/webgpu';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HERO_CLIPS } from '../../game/hero/animations';
 import { HERO_RIG } from '../../game/hero/rig';
@@ -42,6 +42,18 @@ describe('foot IK', () => {
     expect(upper + lower + foot).toBeCloseTo(0, 4); // sole flat
   });
 
+  it('plants the ankle exactly through a pitched root, and within 1 cm when it also yaws', () => {
+    for (const [r, tol] of [[[25, 0, 0], 1e-4], [[-30, 0, 0], 1e-4], [[25, 10, 0], 0.01]] as const) {
+      const root = { r: [...r] as [number, number, number], p: [0, -0.15, -0.05] as [number, number, number] };
+      const { upper, lower } = legIK(legs, 'L', root, { z: 0.1 });
+      const [ly, lz] = ankleOf(upper, lower);
+      const v = new Vector3(legs.L.hip[0], ly, lz).applyEuler(new Euler(r[0] * RAD, r[1] * RAD, r[2] * RAD, 'XYZ'));
+      // the solve is planar (lateral offsets ignored), hence the yaw tolerance
+      expect(Math.abs(legs.rootHeight + root.p[1] + v.y - legs.ankle)).toBeLessThan(tol);
+      expect(Math.abs(root.p[2] + v.z - 0.1)).toBeLessThan(tol);
+    }
+  });
+
   it('placeFeet keeps authored leg spread and replaces the swing', () => {
     const pose = placeFeet({ LegR: [10, 5, -20] }, HERO_RIG, { R: { z: 0 } });
     const leg = pose.LegR as { r: number[] };
@@ -63,6 +75,18 @@ describe('pose helpers', () => {
     const m = mirrorClip(clip, 'B', HERO_RIG);
     expect(m.name).toBe('B');
     expect(m.keys[0]![1].ArmL).toEqual({ r: [0, -0, 40], p: [-0, 0, 0], s: [1, 1, 1] });
+  });
+
+  it('mirrorClip also mirrors the feet track', () => {
+    const clip: ClipDef = { name: 'A', frames: 10, keys: [[0, {}]], feet: [[0, { R: { z: 0.2, x: -0.1 } }]] };
+    expect(mirrorClip(clip, 'B', HERO_RIG).feet).toEqual([[0, { L: { z: 0.2, x: 0.1 } }]]);
+  });
+
+  it('validation catches keys that do not match their feet goals', () => {
+    const clip: ClipDef = { name: 'P', frames: 10, keys: [[0, { Pelvis: { p: [0, -0.2, 0] } }], [10, {}]], feet: [[0, { R: { z: 0 } }], [10, {}]] };
+    expect(validateClip(clip, HERO_RIG).join('\n')).toMatch(/doesn't match its feet goals/);
+    const fixed: ClipDef = { ...clip, keys: [[0, placeFeet({ Pelvis: { p: [0, -0.2, 0] } }, HERO_RIG, { R: { z: 0 } })], [10, {}]] };
+    expect(validateClip(fixed, HERO_RIG)).toEqual([]);
   });
 
   it('samples loops seamlessly and eases between keys', () => {

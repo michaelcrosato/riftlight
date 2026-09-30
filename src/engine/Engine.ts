@@ -1,4 +1,4 @@
-import { AmbientLight, Color, DirectionalLight, OrthographicCamera, Scene, Vector3 } from 'three/webgpu';
+import { AmbientLight, Color, DirectionalLight, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
 import { loadModel } from './assets';
 import { CAMERA_PRESETS, type CameraConfig, type CameraPreset, type CameraRig, FreeRig, OrthoRig, createCameraRig } from './camera';
 import { DebugUI } from './DebugUI';
@@ -118,6 +118,8 @@ export class Engine {
   /** Freeze simulation, animation and camera (rendering continues). For tooling, capture and pause menus. */
   paused = false;
   frame = 0;
+  /** The game's own camera config; switching back to its preset restores zoom, yaw etc. */
+  private startCamera: CameraConfig = {};
   time = 0;
   private lastTime = -1;
   private readonly sunDirection = new Vector3(-0.55, 1, 0.35).normalize();
@@ -185,6 +187,7 @@ export class Engine {
       Physics.create(),
     ]);
     const engine = new Engine(game, renderer, physics, camera, scene);
+    engine.startCamera = { ...options.camera, preset: camera.preset };
     scene.background = new Color(options.background ?? PALETTE.night);
 
     engine.input.attachPointer(renderer.renderer.domElement);
@@ -216,7 +219,8 @@ export class Engine {
   setCamera(config: CameraConfig): CameraRig {
     const preset = config.preset ?? 'iso';
     const old = this.camera;
-    let cfg: CameraConfig = { ...config, preset };
+    // Back to the game's own preset: restore its configured zoom, angles, view height...
+    let cfg: CameraConfig = preset === this.startCamera.preset ? { ...this.startCamera, ...config, preset } : { ...config, preset };
     if ((preset === 'free' || preset === 'fixed') && !config.position) {
       const dir = old.camera.getWorldDirection(new Vector3());
       const pos = old.camera.position.clone();
@@ -227,7 +231,7 @@ export class Engine {
         position: pos.toArray() as [number, number, number],
         target: pos.clone().addScaledVector(dir, 10).toArray() as [number, number, number],
         projection: config.projection ?? (ortho ? 'ortho' : 'perspective'),
-        ...(ortho ? { viewHeight: (old.camera as OrthographicCamera).top * 2 } : {}),
+        ...(ortho ? { viewHeight: (old.camera as OrthographicCamera).top * 2 } : { fov: config.fov ?? (old.camera as PerspectiveCamera).fov }),
       };
     }
     const rig = createCameraRig(cfg);
@@ -239,9 +243,15 @@ export class Engine {
     if (preset !== 'first' && document.pointerLockElement) document.exitPointerLock?.();
     this.game.onCameraChange?.(this.context);
     try {
+      // free/fixed need their full config (position, target...) to come back on reload.
       const url = new URL(location.href);
-      url.searchParams.set('camera', preset);
-      url.searchParams.delete('cam');
+      if (preset === 'free' || preset === 'fixed') {
+        url.searchParams.set('cam', JSON.stringify(cfg));
+        url.searchParams.delete('camera');
+      } else {
+        url.searchParams.set('camera', preset);
+        url.searchParams.delete('cam');
+      }
       history.replaceState(null, '', url);
     } catch {
       /* file:// or sandboxed: URL sync is best-effort */

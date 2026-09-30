@@ -10,7 +10,7 @@ import {
   RedFormat,
   Vector2,
 } from 'three/webgpu';
-import { floor, mix, modelViewProjection, uniform, vec4 } from 'three/tsl';
+import { abs, floor, max, mix, modelViewProjection, sign, uniform, vec4 } from 'three/tsl';
 
 /**
  * PS1-style vertex snapping ("wobble"): clip-space vertices snap to the internal pixel
@@ -26,7 +26,9 @@ function snappedClipPosition() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL swizzles aren't typed on Node
   const clip = modelViewProjection as any;
   const half = vertexSnap.resolution.mul(0.5) as typeof clip;
-  const snapped: typeof clip = floor(clip.xy.div(clip.w).mul(half).add(0.5)).div(half).mul(clip.w);
+  // |w| ≥ 1e-5 (keeping its sign) so vertices at the eye plane can't turn into NaN.
+  const w = max(abs(clip.w), 1e-5).mul(sign(sign(clip.w).add(0.5))) as typeof clip;
+  const snapped: typeof clip = floor(clip.xy.div(w).mul(half).add(0.5)).div(half).mul(w);
   // Branch-free on purpose: a select() here let TSL scope `clip` inside one branch, which
   // collapsed every vertex whenever snapping was off.
   return vec4(mix(clip.xy, snapped, vertexSnap.enabled), clip.z, clip.w);

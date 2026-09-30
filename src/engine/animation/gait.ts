@@ -184,8 +184,20 @@ function clear(goal: FootGoal, legs: LegRig, side: Side, root: JointPose, height
     let lowest = Infinity;
     for (const y of [-legs.ankle, legs.top ?? 0]) for (const z of [-legs.heel, legs.ball]) lowest = Math.min(lowest, ankleY + y * c - z * sn);
     if (lowest >= height - 1e-4) return;
-    goal.y = Math.min(start + maxRaise, (goal.y ?? 0) + (height - lowest));
+    goal.y = Math.min(start + maxRaise, (goal.y ?? 0) + (height - lowest), highestAnkle(goal, legs, root) - legs.ankle);
   }
+}
+
+/**
+ * Highest the ankle may go at the goal's z while staying out of the knee's fold limit
+ * (with a little margin), so the leg never whips through the IK clamp.
+ */
+function highestAnkle(goal: FootGoal, legs: LegRig, root: JointPose): number {
+  const bend = (180 - 140) * (Math.PI / 180); // keep the knee under ~140° (IK allows 150°)
+  const minD = Math.sqrt(legs.upper ** 2 + legs.lower ** 2 - 2 * legs.upper * legs.lower * Math.cos(bend));
+  const hipY = legs.rootHeight + (root.p?.[1] ?? 0);
+  const dz = goal.z - (root.p?.[2] ?? 0);
+  return hipY - Math.sqrt(Math.max(0, minD * minD - dz * dz));
 }
 
 /** Where a foot is at its own phase (0 = heel strike). */

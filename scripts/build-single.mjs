@@ -10,8 +10,6 @@ const outDir = `${root}dist-single`;
 await rm(tmp, { recursive: true, force: true });
 await build({
   root,
-  // Game page only (vite.config.ts also builds the Animation Lab, which needs code splitting).
-  configFile: false,
   logLevel: 'warn',
   publicDir: false,
   build: {
@@ -21,7 +19,8 @@ await build({
     cssCodeSplit: false,
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     chunkSizeWarningLimit: 8000,
-    rolldownOptions: { output: { codeSplitting: false } },
+    // Game page only (vite.config.ts also builds the Animation Lab); one chunk.
+    rolldownOptions: { input: `${root}index.html`, output: { codeSplitting: false } },
   },
 });
 

@@ -1,7 +1,7 @@
 import { applyEase } from './ease';
-import { applyFeet } from './ik';
+import { applyFeet, placeFeet } from './ik';
 import { resolveJoint, type ResolvedJoint } from './joint';
-import type { ClipDef, Ease, Euler, JointPose, Key, Pose, RigSpec, Vec3 } from './types';
+import type { ClipDef, Ease, Euler, FeetGoals, FeetKey, FootGoalDef, JointPose, Key, Pose, RigSpec, Vec3 } from './types';
 
 export { applyEase } from './ease';
 export { REST_JOINT, resolveJoint, type ResolvedJoint } from './joint';
@@ -28,6 +28,13 @@ export function mirrorClip(clip: ClipDef, name: string, rig: Pick<RigSpec, 'mirr
       joint: rig.mirror[l.joint] ?? l.joint,
       amplitude: l.channel === 'ry' || l.channel === 'rz' || l.channel === 'px' ? -l.amplitude : l.amplitude,
     })),
+    feet: clip.feet?.map(([f, goals, ease]): FeetKey => {
+      const flip = (g: FootGoalDef | undefined) => g && { ...g, ...(g.x === undefined ? {} : { x: -g.x }) };
+      const m: FeetGoals = {};
+      if (goals.L) m.R = flip(goals.L);
+      if (goals.R) m.L = flip(goals.R);
+      return ease ? [f, m, ease] : [f, m];
+    }),
   };
 }
 
@@ -57,31 +64,6 @@ export function offset(pose: Pose, deltas: Pose): Pose {
     };
   }
   return out;
-}
-
-export interface GaitPoses {
-  /** Leading RIGHT foot touches down (heel strike). */
-  contact: Pose;
-  /** Weight drops onto the right foot. */
-  down: Pose;
-  /** Left leg passes the right. */
-  passing: Pose;
-  /** Push off, body at its highest. */
-  up: Pose;
-}
-
-/**
- * Classic 8-key locomotion cycle (Richard Williams): contact → down → passing → up on the
- * right foot, then the mirrored four on the left, looping back to contact.
- */
-export function gaitKeys(frames: number, poses: GaitPoses, rig: Pick<RigSpec, 'mirror'>, ease: Ease = 'linear'): Key[] {
-  const q = frames / 8;
-  const seq = [poses.contact, poses.down, poses.passing, poses.up];
-  const keys: Key[] = [];
-  seq.forEach((p, i) => keys.push([i * q, p, ease]));
-  seq.forEach((p, i) => keys.push([(i + 4) * q, mirror(p, rig), ease]));
-  keys.push([frames, poses.contact, ease]);
-  return keys;
 }
 
 /**
@@ -158,6 +140,26 @@ export function validateClip(clip: ClipDef, rig: RigSpec): string[] {
       pf = f;
     }
     if (clip.feet[0]![0] !== 0) errors.push(`${clip.name}: first feet key must be at frame 0`);
+    // A key that has feet goals must already be solved for them (use track() / placeFeet),
+    // otherwise the legs pop when the feet track takes over.
+    if (rig.legs) {
+      for (const [f, goals] of clip.feet) {
+        const key = clip.keys.find((k) => k[0] === f);
+        if (!key) continue;
+        const solved = placeFeet(key[1], rig, goals);
+        for (const side of ['R', 'L'] as const) {
+          if (!goals[side]) continue;
+          for (const j of [rig.legs[side].upper, rig.legs[side].lower, rig.legs[side].foot]) {
+            const want = resolveJoint(solved[j]).r[0];
+            const have = resolveJoint(key[1][j]).r[0];
+            if (Math.abs(want - have) > 0.5) {
+              errors.push(`${clip.name}: key at frame ${f} doesn't match its feet goals (${j} ${have.toFixed(0)}° vs ${want.toFixed(0)}°); build it with track() or placeFeet()`);
+              break;
+            }
+          }
+        }
+      }
+    }
   }
   if (clip.keys.length && clip.keys[0]![0] !== 0) errors.push(`${clip.name}: first key must be at frame 0`);
   for (const l of clip.layers ?? []) {

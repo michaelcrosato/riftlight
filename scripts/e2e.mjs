@@ -13,6 +13,8 @@
 // errors/warnings, gameplay responds to input, Raw 3D toggle keeps the same renderer/
 // canvas/camera/character, pixel mode is blocky while raw mode is not, 320x180 keeps framing.
 //
+// camera-swap     live preset swaps keep the player, coins and renderer (WebGPU + WebGL 2);
+//                 a swapped-to fixed view survives reload.
 // cameras         every camera preset renders, zooms (except first person), moves the
 //                 character in its own basis; side locks the lane; free → fix → reload as fixed.
 // filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
@@ -421,11 +423,11 @@ async function runCameras(browserExe) {
   }
 }
 
-async function runCameraSwap(browserExe) {
-  console.log('\n▶ camera hot-swap keeps the player');
+async function runCameraSwap(browserExe, s) {
+  console.log(`\n▶ camera hot-swap keeps the player (${s.backend})`);
   let ctx;
   try {
-    ctx = await openPage(browserExe, SCENARIOS[0]);
+    ctx = await openPage(browserExe, s);
     const { page, logs } = ctx;
     // Move somewhere and pick up a coin so there is state to lose.
     await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.teleport([-4, 0, 5]));
@@ -449,12 +451,27 @@ async function runCameraSwap(browserExe) {
       const frame = await capture(page, `swap-${preset}.png`);
       const moved = dist(before.feet, now.feet);
       check(
-        now.preset === preset && moved < 0.05 && now.coins === before.coins && now.sameRenderer && colorCount(frame) > 8 && now.url.includes(`camera=${preset}`),
+        now.preset === preset &&
+          moved < 0.05 &&
+          now.coins === before.coins &&
+          now.sameRenderer &&
+          colorCount(frame) > 8 &&
+          (preset === 'free' || preset === 'fixed' ? decodeURIComponent(now.url).includes(`"preset":"${preset}"`) : now.url.includes(`camera=${preset}`)),
         `→ ${preset}: player stayed (moved ${moved.toFixed(3)}), coins ${now.coins}, same renderer, renders, URL synced`,
       );
       check(now.visible === (preset !== 'first'), `→ ${preset}: player model ${now.visible ? 'shown' : 'hidden'}`);
     }
+    // A swapped-to fixed view survives a reload (its full config is in ?cam=).
+    await page.selectOption('[data-a="camera"]', 'third');
+    await waitFrames(page, 20);
+    await page.selectOption('[data-a="camera"]', 'fixed');
+    await waitFrames(page, 4);
+    const fixedAt = await page.evaluate(() => window.__PIXEL_ENGINE__.camera.camera.position.toArray());
     checkClean(await state(page), logs);
+    await page.reload();
+    await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+    const reloaded = await page.evaluate(() => ({ preset: window.__PIXEL_ENGINE__.camera.preset, pos: window.__PIXEL_ENGINE__.camera.camera.position.toArray() }));
+    check(reloaded.preset === 'fixed' && dist(fixedAt, reloaded.pos) < 0.01, `fixed view survives a reload (moved ${dist(fixedAt, reloaded.pos).toFixed(3)})`);
   } catch (e) {
     check(false, `camera swap crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {
@@ -660,7 +677,10 @@ const suites = {
   'webgl-fallback': () => runCore(exe, SCENARIOS[1]),
   'webgl-forced': () => runCore(exe, SCENARIOS[2]),
   cameras: () => runCameras(exe),
-  'camera-swap': () => runCameraSwap(exe),
+  'camera-swap': async () => {
+    await runCameraSwap(exe, SCENARIOS[0]);
+    await runCameraSwap(exe, SCENARIOS[1]);
+  },
   'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
   'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
   touch: () => runTouch(exe),

@@ -30,6 +30,7 @@ import {
   type RigSpec,
 } from '../engine';
 import { restPoseOf, sampleClip, type RestPose, type SheetImage } from '../engine/animation';
+import { HERO_MODEL } from '../game/hero';
 import { HERO_CLIPS } from '../game/hero/animations';
 import { HERO_RIG } from '../game/hero/rig';
 
@@ -65,6 +66,8 @@ class AnimationLab implements Game {
   action: AnimationAction | null = null;
   clipName = 'Idle';
   frame = 0;
+  /** Frames played since the clip was picked (keeps growing across loops, for the treadmill). */
+  played = 0;
   playing = true;
   speed = 1;
   treadmill = true;
@@ -81,7 +84,7 @@ class AnimationLab implements Game {
     this.grid.position.y = 0.002;
     ctx.scene.add(this.grid);
 
-    const [hero, probe] = await Promise.all([ctx.loadModel('assets/hero.glb'), ctx.loadModel('assets/hero.glb', { castShadow: false })]);
+    const [hero, probe] = await Promise.all([ctx.loadModel(HERO_MODEL), ctx.loadModel(HERO_MODEL, { castShadow: false })]);
     this.model = hero.scene;
     this.probe = probe.scene;
     ctx.scene.add(this.model);
@@ -135,6 +138,7 @@ class AnimationLab implements Game {
     this.action.setLoop(LoopRepeat, Infinity).play();
     if (!keepFrame) this.frame = 0;
     this.seek(Math.min(this.frame, this.def.frames));
+    this.played = this.frame;
     this.onChange?.();
   }
 
@@ -162,13 +166,19 @@ class AnimationLab implements Game {
   update(_ctx: GameContext, dt: number): void {
     if (!this.action) return;
     if (this.playing) {
-      const next = this.frame + dt * this.rig.fps * this.speed;
-      if (!this.def.loop && next >= this.def.frames) this.seek(0);
-      else this.seek(next);
+      const step = dt * this.rig.fps * this.speed;
+      const next = this.frame + step;
+      if (!this.def.loop && next >= this.def.frames) {
+        this.seek(0);
+        this.played = 0;
+      } else {
+        this.seek(next);
+        this.played += step;
+      }
     }
-    // Treadmill: the floor grid scrolls at the clip's ground speed, so planted feet
-    // should stick to the grid lines.
-    const travel = this.treadmill ? ((this.def.speed ?? 0) * this.frame) / this.rig.fps : 0;
+    // Treadmill: the floor grid scrolls at the clip's ground speed (continuously across
+    // loops), so planted feet stick to the grid lines.
+    const travel = this.treadmill ? ((this.def.speed ?? 0) * this.played) / this.rig.fps : 0;
     this.grid.position.z = -(((travel % 0.5) + 0.5) % 0.5);
     this.model.updateMatrixWorld(true);
     const pos = this.skeleton.geometry.getAttribute('position') as BufferAttribute;
@@ -269,13 +279,17 @@ function ui(engine: Engine, lab: AnimationLab): void {
   const step = (d: number) => {
     lab.playing = false;
     lab.seek(Math.round((lab.frame + d) * 2) / 2);
+    lab.played = lab.frame;
   };
+  // Buttons must not keep keyboard focus, or Space would press them as well.
+  panel.addEventListener('click', (e) => (e.target instanceof HTMLButtonElement ? e.target.blur() : undefined));
   $('[data-a="prev"]').addEventListener('click', () => step(-1));
   $('[data-a="next"]').addEventListener('click', () => step(1));
   $<HTMLSelectElement>('[data-a="speed"]').addEventListener('change', (e) => (lab.speed = Number((e.target as HTMLSelectElement).value)));
   scrub.addEventListener('input', () => {
     lab.playing = false;
     lab.seek(Number(scrub.value));
+    lab.played = lab.frame;
   });
   panel.querySelectorAll<HTMLButtonElement>('[data-v]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.v as View)));
   $<HTMLInputElement>('[data-a="skeleton"]').addEventListener('change', (e) => (lab.skeleton.visible = (e.target as HTMLInputElement).checked));
@@ -284,10 +298,13 @@ function ui(engine: Engine, lab: AnimationLab): void {
   mode.addEventListener('click', () => (mode.textContent = engine.toggleMode() === 'pixel' ? 'Raw 3D' : 'Pixel'));
   $('[data-a="sheet"]').addEventListener('click', () => showSheet(lab.sheet()));
   window.addEventListener('keydown', (e) => {
-    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;
     if (e.key === ',') step(-1);
     if (e.key === '.') step(1);
-    if (e.key === ' ') lab.playing = !lab.playing;
+    if (e.key === ' ') {
+      e.preventDefault();
+      lab.playing = !lab.playing;
+    }
   });
 
   function setView(v: View) {
@@ -357,6 +374,7 @@ Engine.start(lab, { container, ...optionsFromUrl(), filters: [] })
       seek: (f) => {
         lab.playing = false;
         lab.seek(f);
+        lab.played = lab.frame;
       },
       state: () => ({ clip: lab.clipName, frame: lab.frame, frames: lab.def.frames, playing: lab.playing, speed: lab.speed }),
       pose: () => {
