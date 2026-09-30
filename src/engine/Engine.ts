@@ -4,6 +4,7 @@ import { CAMERA_PRESETS, type CameraConfig, type CameraPreset, type CameraRig, F
 import { DebugUI } from './DebugUI';
 import { RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Input } from './input';
+import { TouchControls } from './TouchControls';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FILTER_IDS, FILTER_PRESETS, getFilter } from './render/filters';
@@ -53,6 +54,8 @@ export interface EngineOptions {
   /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
   forceWebGL?: boolean;
   debugUI?: boolean;
+  /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
+  touch?: boolean;
   background?: number;
 }
 
@@ -70,13 +73,21 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (p.get('mode') === 'raw') opts.mode = 'raw';
   if (p.get('res') === '320') opts.resolution = RESOLUTIONS.compare;
   if (p.get('debug') === '0') opts.debugUI = false;
+  if (p.get('touch') === '1') opts.touch = true;
+  if (p.get('touch') === '0') opts.touch = false;
   let camera: CameraConfig = {};
   const cam = p.get('cam');
   if (cam) {
     try {
-      camera = JSON.parse(cam) as CameraConfig;
+      const parsed: unknown = JSON.parse(cam);
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) camera = parsed as CameraConfig;
+      else console.warn('Ignoring ?cam=: expected a JSON object');
     } catch {
       console.warn('Ignoring invalid ?cam= JSON');
+    }
+    if (camera.preset && !(CAMERA_PRESETS as readonly string[]).includes(camera.preset)) {
+      console.warn(`Ignoring unknown camera preset "${camera.preset}"`);
+      delete camera.preset;
     }
   }
   const preset = p.get('camera');
@@ -97,6 +108,7 @@ export class Engine {
   readonly ambient: AmbientLight;
   readonly context: GameContext;
   debug: DebugUI | null = null;
+  touch: TouchControls | null = null;
   /** Freeze simulation, animation and camera (rendering continues). For tooling, capture and pause menus. */
   paused = false;
   frame = 0;
@@ -178,6 +190,15 @@ export class Engine {
     await game.setup(engine.context);
     camera.teleport(game.cameraTarget(engine.context));
     if (options.debugUI !== false) engine.debug = new DebugUI(engine);
+    if (options.touch ?? TouchControls.wanted()) {
+      engine.touch = new TouchControls(container, engine.input, undefined, [
+        { label: '⚙', code: 'Backquote' },
+        { label: 'P', code: 'KeyP' },
+        { label: 'R', code: 'KeyR' },
+        { label: '◐', code: 'BracketRight' },
+      ]);
+      if (engine.debug?.visible) engine.debug.toggle(); // small screens: panel behind the ⚙ button
+    }
 
     renderer.setAnimationLoop((t) => engine.tick(t));
     return engine;

@@ -76,6 +76,9 @@ const HANG_DROP = 1.72; // feet below the ledge top while hanging
 const GRAVITY = -32;
 const UP = new Vector3(0, 1, 0);
 const IGNORE = ['character'];
+/** Spawn/teleport this far above the given feet height: starting in exact contact with the
+ *  ground can leave Rapier's KCC with a degenerate contact (it stops moving). */
+const SPAWN_LIFT = 0.03;
 
 interface Ledge {
   y: number;
@@ -84,6 +87,8 @@ interface Ledge {
 }
 
 export class PlatformerCharacter {
+  /** States whose facing is set by the wall/ledge/block, not by a first-person view. */
+  private static readonly ATTACHED = new Set<MoveState>(['climb', 'hang', 'pullUp', 'push', 'grab', 'pull']);
   readonly body: RAPIER.RigidBody;
   readonly collider: RAPIER.Collider;
   readonly kcc: RAPIER.KinematicCharacterController;
@@ -130,7 +135,8 @@ export class PlatformerCharacter {
   constructor(physics: Physics, options: PlatformerOptions) {
     this.physics = physics;
     this.runSpeed = options.runSpeed ?? 6.5;
-    const [x, y, z] = options.position;
+    const [x, y0, z] = options.position;
+    const y = y0 + SPAWN_LIFT;
     this.laneZ = options.lockDepth ? z : null;
     this.body = physics.world.createRigidBody(
       RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(x, y + HALF.stand + RADIUS, z),
@@ -174,7 +180,8 @@ export class PlatformerCharacter {
   }
 
   teleport(position: [number, number, number]): void {
-    const [x, y, z] = position;
+    const [x, y0, z] = position;
+    const y = y0 + SPAWN_LIFT;
     this.setStance('stand', true);
     this.setFeet(new Vector3(x, y, z), true);
     this.hvel.set(0, 0, 0);
@@ -195,7 +202,7 @@ export class PlatformerCharacter {
       this.stepAnim.t -= dt;
       if (this.stepAnim.t <= 0) this.stepAnim = null;
     }
-    if (input.face && input.face.lengthSq() > 0) {
+    if (input.face && input.face.lengthSq() > 0 && !PlatformerCharacter.ATTACHED.has(this.state)) {
       // First person: body always faces the view direction.
       this.facing = Math.atan2(input.face.x, input.face.z);
     }
@@ -239,6 +246,7 @@ export class PlatformerCharacter {
         if (this.stateTime > this.lockDuration()) this.enter(input.crouch && this.state !== 'hardLand' ? 'crouch' : 'idle');
         break;
       case 'lieDown':
+        if (this.stance !== 'prone') this.setStance('prone');
         this.decel(dt, 30);
         this.move(dt);
         if (this.stateTime > 1.0) this.enter('lying');
@@ -294,6 +302,8 @@ export class PlatformerCharacter {
         this.stepSlide(dt, input);
         break;
     }
+    // Fall height is measured from the last place we stood (or the jump apex).
+    if (this.grounded && !this.isAirborne()) this.peakY = this.feet.y;
   }
 
   // ------------------------------------------------------------------ ground
@@ -312,7 +322,10 @@ export class PlatformerCharacter {
     if (input.sit) return this.enter('sit');
     if (input.wave) return this.startEmote('Wave');
     if (input.crouch) {
-      if (this.speed > 4) return this.enter('crouchSlide');
+      if (this.speed > 4) {
+        this.setStance('crouch');
+        return this.enter('crouchSlide');
+      }
       if (this.setStance('crouch')) return this.enter(mag > 0.1 ? 'crouchWalk' : 'crouch');
     }
 
@@ -368,6 +381,7 @@ export class PlatformerCharacter {
   }
 
   private stepCrouch(dt: number, input: MoveInput): void {
+    if (this.stance === 'stand') this.setStance('crouch');
     if (!this.grounded) return this.startFall();
     if (input.jump) return this.jump('Backflip', input);
     if (input.attack) return this.startAttack(input);
@@ -385,10 +399,7 @@ export class PlatformerCharacter {
   }
 
   private stepProne(dt: number, input: MoveInput): void {
-    if (!this.grounded) {
-      this.setStance('stand', true);
-      return this.startFall();
-    }
+    if (!this.grounded) return this.startFall();
     if (input.prone || input.jump) return this.getUpFrom('front');
     if (input.lie) return; // already down
     this.groundMove(dt, input, 1.0, 8, 3);
@@ -465,6 +476,7 @@ export class PlatformerCharacter {
   }
 
   jump(kind: JumpKind, input?: MoveInput): void {
+    if (!this.setStance('stand')) return; // no headroom: stay down
     const f = this.forward;
     switch (kind) {
       case 'Jump': this.vy = 10.5; break;
@@ -477,8 +489,7 @@ export class PlatformerCharacter {
       case 'WallKick': this.vy = 12.5; this.hvel.copy(f).multiplyScalar(5); break;
       case 'JumpKick': break;
     }
-    if (input?.face) this.hvel.copy(input.move).multiplyScalar(this.runSpeed * 0.8).setY(0);
-    this.setStance('stand', true);
+    if (input?.face && (kind === 'Jump' || kind === 'JumpUp')) this.hvel.copy(input.move).multiplyScalar(this.runSpeed * 0.8).setY(0);
     this.jumpKind = kind;
     this.lastJump = kind;
     this.grounded = false;
@@ -488,8 +499,8 @@ export class PlatformerCharacter {
   }
 
   private startFall(): void {
-    this.setStance('stand', true);
-    this.peakY = Math.max(this.peakY, this.feet.y);
+    this.setStance('stand'); // keep a smaller stance if there's no headroom
+    this.peakY = this.feet.y;
     this.enter('fall');
   }
 
@@ -572,6 +583,7 @@ export class PlatformerCharacter {
     if (this.grounded && this.poundDelay <= 0) {
       this.stats.landings++;
       this.lastLandTime = this.clock;
+      this.peakY = this.feet.y;
       this.enter('groundPoundLand');
     }
   }
@@ -603,11 +615,26 @@ export class PlatformerCharacter {
     if (!wall || Math.abs(wall.normal.y) > 0.3) return null;
     if (['noLedge', 'climbable', 'pushable', 'grabbable'].some((t) => this.physics.hasTag(wall.collider, t))) return null;
     const probe = wall.point.clone().addScaledVector(dir, 0.15).setY(feet.y + 2.3);
+    // Nothing may overhang the wall between chest height and the probe (slabs, ceilings).
+    const outside = wall.point.clone().addScaledVector(dir, -0.05);
+    if (this.physics.castRay(outside, UP, probe.y - outside.y, IGNORE, this.body)) return null;
     const top = this.physics.castRay(probe, new Vector3(0, -1, 0), 1.3, IGNORE, this.body);
     if (!top || top.normal.y < 0.7) return null;
     const y = probe.y - top.distance;
     if (y < feet.y + 1.3 || y > feet.y + 2.25) return null;
-    return { y, normal: wall.normal.setY(0).normalize(), point: wall.point };
+    const normal = wall.normal.setY(0).normalize();
+    if (!this.roomToStandOn(wall.point, normal, y)) return null;
+    return { y, normal, point: wall.point };
+  }
+
+  /** Crouch-height clearance where a pull-up / climb top-out would put the character. */
+  private roomToStandOn(wallPoint: Vector3, normal: Vector3, y: number): boolean {
+    const spot = wallPoint.clone().addScaledVector(normal, -(RADIUS + 0.25)).setY(y + 0.05);
+    const need = 2 * (HALF.crouch + RADIUS);
+    for (const [dx, dz] of [[0, 0], [0.25, 0], [-0.25, 0], [0, 0.25], [0, -0.25]] as const) {
+      if (this.physics.castRay(spot.clone().add(new Vector3(dx, 0, dz)), UP, need, IGNORE, this.body)) return false;
+    }
+    return true;
   }
 
   private grabLedge(ledge: Ledge): void {
@@ -700,7 +727,11 @@ export class PlatformerCharacter {
       const top = this.physics.castRay(chest.clone().addScaledVector(f, RADIUS + 0.45).setY(chest.y + 1.3), new Vector3(0, -1, 0), 2.2, IGNORE, this.body);
       if (top && top.normal.y > 0.7) {
         const n = f.clone().negate();
-        return this.startPullUp({ y: chest.y + 1.3 - top.distance, normal: n, point: chest.clone().addScaledVector(f, RADIUS + 0.05) });
+        const point = chest.clone().addScaledVector(f, RADIUS + 0.05);
+        const y = chest.y + 1.3 - top.distance;
+        if (this.roomToStandOn(point, n, y)) return this.startPullUp({ y, normal: n, point });
+        this.vy = 0; // blocked above: hang on at the top of the wall
+        return;
       }
       return this.startFall();
     }
@@ -764,6 +795,10 @@ export class PlatformerCharacter {
 
   private stepBlock(dt: number, input: MoveInput): void {
     const release = (next: MoveState = 'idle') => {
+      if (this.block) {
+        const v = this.block.linvel();
+        this.block.setLinvel({ x: 0, y: v.y, z: 0 }, true);
+      }
       this.block = null;
       this.blockCollider = null;
       this.grabbing = false;
@@ -922,7 +957,9 @@ export class PlatformerCharacter {
     const grow = HALF[stance] > HALF[this.stance];
     if (grow && !force) {
       const need = 2 * (HALF[stance] + RADIUS) + 0.02;
-      for (const [dx, dz] of [[0, 0], [0.2, 0], [-0.2, 0], [0, 0.2], [0, -0.2]] as const) {
+      const r = RADIUS * 0.95;
+      const d = r * Math.SQRT1_2;
+      for (const [dx, dz] of [[0, 0], [r, 0], [-r, 0], [0, r], [0, -r], [d, d], [d, -d], [-d, d], [-d, -d]] as const) {
         const origin = feet.clone().add(new Vector3(dx, 0.25, dz));
         if (this.physics.castRay(origin, UP, need - 0.25, IGNORE, this.body)) return false;
       }
@@ -937,7 +974,8 @@ export class PlatformerCharacter {
     if (state !== this.state) this.stateTime = 0;
     if (state !== 'idle' && state !== 'teeter') this.idleTime = 0;
     this.state = state;
-    if (['idle', 'walk', 'run', 'skid', 'jump', 'fall', 'hang', 'climb', 'push', 'grab', 'pull', 'emote', 'attack', 'land', 'hardLand', 'slide'].includes(state) && this.stance !== 'stand') {
+    const standing = ['idle', 'walk', 'run', 'skid', 'jump', 'fall', 'hang', 'climb', 'push', 'grab', 'pull', 'emote', 'land', 'hardLand', 'slide'];
+    if ((standing.includes(state) || (state === 'attack' && this.attackStep !== 3)) && this.stance !== 'stand') {
       if (!this.setStance('stand')) this.setStance('crouch');
     }
   }

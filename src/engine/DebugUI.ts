@@ -63,8 +63,16 @@ export class DebugUI {
         engine.setFilters(box.checked ? [...current, box.value] : current);
       });
     }
-    // Keep keyboard focus on the game after using a control.
-    for (const el of this.root.querySelectorAll<HTMLElement>('button, select, input')) el.addEventListener('change', () => el.blur());
+    // Controls never keep keyboard focus: game keys (Space, S, F, …) must not toggle a
+    // checkbox, press a button or change the camera <select> (which reloads the page).
+    for (const el of this.root.querySelectorAll<HTMLElement>('button, select, input')) {
+      el.addEventListener('change', () => el.blur());
+      if (el.tagName !== 'SELECT') el.addEventListener('pointerup', () => setTimeout(() => el.blur(), 0));
+      el.addEventListener('keydown', (e) => {
+        e.preventDefault();
+        el.blur();
+      });
+    }
     engine.renderer.container.appendChild(this.root);
   }
 

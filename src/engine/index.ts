@@ -14,6 +14,7 @@ export {
 export { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, applyFilters, getFilter, type FilterDef } from './render/filters';
 export { loadModel, type Model } from './assets';
 export { Input } from './input';
+export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
 export { RESOLUTIONS, computeFraming, type Framing, type Resolution } from './framing';
 export { Physics, RAPIER, FIXED_DT, type BoxOptions } from './physics/Physics';

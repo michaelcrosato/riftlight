@@ -123,6 +123,12 @@ some) on Rapier's kinematic character controller, driven by the hero rig's baked
 | J | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
 | V / B | **wave** / **sit** |
 
+**Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
+joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
+**X** lie down; drag on the game to orbit/look, pinch to zoom; top bar ⚙ debug panel,
+**P** Pixel/Raw, **R** resolution, **◐** cycle looks (`TouchControls`, `input.analog`).
+Landscape works best.
+
 Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **fall**, soft
 **land** or **hard landing** (drops > 5.5, face-plant + get-up), **ledge grab** → hang →
 **shimmy** (A/D) → **pull up** (toward wall / Space) or **drop** (C / away), **climb**

@@ -351,7 +351,7 @@ export class FreeRig extends CameraRig {
 
   protected step(u: CameraUpdate): void {
     this.focus.copy(u.target);
-    if (u.input.wasPressed('Enter', 'NumpadEnter')) this.setFixed(!this.fixed);
+    if (this.preset === 'free' && u.input.wasPressed('Enter', 'NumpadEnter')) this.setFixed(!this.fixed);
     if (this.fixed) return;
     this.yaw -= u.input.mouseDelta.x * 0.003;
     this.pitch = MathUtils.clamp(this.pitch - u.input.mouseDelta.y * 0.003, -1.55, 1.55);

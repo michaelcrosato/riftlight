@@ -114,7 +114,7 @@ export const MOVES = [
     return { ok: k === 'SideFlip', detail: k };`],
   ['crouch + crouch walk', `
     await T.place([0, 0, 4]);
-    T.set(['KeyC'], true); const a = await T.until(h => h.state === 'crouch', 800);
+    T.set(['KeyC'], true); const a = await T.until(h => h.state === 'crouch' && h.stance === 'crouch', 800);
     T.set(['KeyD'], true); const b = await T.until(h => h.state === 'crouchWalk', 800); T.set(['KeyD', 'KeyC'], false);
     const c = await T.until(h => h.state === 'idle' && h.stance === 'stand', 1500);
     return { ok: a.ok && b.ok && c.ok, detail: [a.seen, b.seen, c.seen] };`],

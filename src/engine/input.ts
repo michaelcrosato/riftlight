@@ -17,6 +17,8 @@ export class Input {
   private lockTarget: HTMLElement | null = null;
   /** When true, clicking the canvas requests pointer lock (first-person / free camera). */
   wantsPointerLock = false;
+  /** Analog stick (touch joystick / gamepad), -1..1 per axis; overrides keys when active. */
+  readonly analog = { x: 0, y: 0 };
 
   constructor(target: Window = window) {
     target.addEventListener('keydown', (e) => {
@@ -34,19 +36,59 @@ export class Input {
     });
   }
 
-  /** Listen for pointer input on the game canvas. */
+  /**
+   * Listen for pointer input on the game canvas. Only pointers that went down on the
+   * canvas drive the camera (so a touch joystick doesn't orbit it). Two canvas touches
+   * pinch to zoom (emitted as wheel ticks).
+   */
   attachPointer(el: HTMLElement): void {
     this.lockTarget = el;
+    const active = new Map<number, { x: number; y: number }>();
+    let pinch = 0;
+    const spread = () => {
+      const [a, b] = [...active.values()];
+      return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+    };
+    el.style.touchAction = 'none';
     el.addEventListener('contextmenu', (e) => e.preventDefault());
     el.addEventListener('pointerdown', (e) => {
-      this.mouseButtons = e.buttons;
-      if (this.wantsPointerLock && document.pointerLockElement !== el) void el.requestPointerLock?.();
+      active.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      capture(el, e.pointerId);
+      this.mouseButtons = e.buttons || 1;
+      pinch = spread();
+      if (this.wantsPointerLock && e.pointerType === 'mouse' && document.pointerLockElement !== el) void el.requestPointerLock?.();
     });
-    window.addEventListener('pointerup', (e) => (this.mouseButtons = e.buttons));
+    const end = (e: PointerEvent) => {
+      active.delete(e.pointerId);
+      pinch = spread();
+      if (active.size === 0) this.mouseButtons = 0;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
     window.addEventListener('pointermove', (e) => {
-      if (this.mouseButtons === 0 && document.pointerLockElement !== el) return;
-      this.mouseDelta.x += e.movementX;
-      this.mouseDelta.y += e.movementY;
+      const locked = document.pointerLockElement === el;
+      const p = active.get(e.pointerId);
+      if (!p && !locked) return;
+      if (p && active.size >= 2) {
+        p.x = e.clientX;
+        p.y = e.clientY;
+        const d = spread();
+        if (pinch > 0 && Math.abs(d - pinch) > 24) {
+          this.wheel += d > pinch ? -1 : 1; // spread fingers = zoom in
+          pinch = d;
+        }
+        return;
+      }
+      if (p) {
+        // Positions, not movementX: movementX isn't reliable for touch on all mobile browsers.
+        this.mouseDelta.x += e.clientX - p.x;
+        this.mouseDelta.y += e.clientY - p.y;
+        p.x = e.clientX;
+        p.y = e.clientY;
+      } else {
+        this.mouseDelta.x += e.movementX;
+        this.mouseDelta.y += e.movementY;
+      }
     });
     el.addEventListener(
       'wheel',
@@ -89,6 +131,10 @@ export class Input {
 
   /** -1..1 on each axis from WASD / arrow keys (x = right, y = forward). */
   moveAxis(): { x: number; y: number } {
+    if (Math.hypot(this.analog.x, this.analog.y) > 0.12) {
+      const len = Math.hypot(this.analog.x, this.analog.y);
+      return len > 1 ? { x: this.analog.x / len, y: this.analog.y / len } : { ...this.analog };
+    }
     const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
     const y = (this.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (this.isDown('KeyS', 'ArrowDown') ? 1 : 0);
     const len = Math.hypot(x, y);
@@ -126,4 +172,13 @@ export class Input {
 
 function isGameKey(code: string): boolean {
   return code.startsWith('Arrow') || code === 'Space';
+}
+
+/** Pointer capture is best-effort: it throws if the pointer is already gone. */
+function capture(el: Element, pointerId: number): void {
+  try {
+    el.setPointerCapture(pointerId);
+  } catch {
+    /* pointer no longer active */
+  }
 }

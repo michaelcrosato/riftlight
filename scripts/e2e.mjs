@@ -3,7 +3,7 @@
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
 //   npm run test:e2e -- <suite>   run one suite: webgpu | webgl-fallback | webgl-forced |
-//                                 cameras | filters-webgpu | filters-webgl | moves
+//                                 cameras | filters-webgpu | filters-webgl | touch | moves
 //
 // Core suites (one per backend path):
 //   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
@@ -17,6 +17,7 @@
 //                 character in its own basis; side locks the lane; free → fix → reload as fixed.
 // filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
 //                 with zero errors; Raw 3D mode bypasses filters.
+// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
 //
 // Frames land in .scratch/e2e/.
@@ -469,6 +470,72 @@ async function runFilters(browserExe, s, label) {
   }
 }
 
+async function runTouch(browserExe) {
+  console.log('\n▶ touch (phone-sized landscape, on-screen controls)');
+  const s = SCENARIOS[0];
+  const headless = !process.env.DISPLAY;
+  const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless });
+  try {
+    const page = await browser.newPage({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, hasTouch: true });
+    const logs = [];
+    page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
+    page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+    await page.goto(`${s.url}?touch=1&camera=third`);
+    await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+    check(await page.locator('.touch-ui .stick').isVisible(), 'joystick visible');
+    check((await page.locator('.touch-ui .pad button').count()) >= 6, 'action buttons visible');
+    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display === 'none'), 'debug panel starts hidden behind ⚙');
+
+    // Joystick: drag up (forward) from its centre.
+    const stick = await page.locator('.touch-ui .stick').boundingBox();
+    const cx = stick.x + stick.width / 2;
+    const cy = stick.y + stick.height / 2;
+    const t0 = (await state(page)).target;
+    await page.mouse.move(cx, cy);
+    await page.mouse.down();
+    await page.mouse.move(cx, cy - 60, { steps: 4 });
+    await page.waitForTimeout(800);
+    const mid = await page.evaluate(() => ({ ...window.__PIXEL_ENGINE__.input.analog }));
+    await page.mouse.up();
+    await waitFrames(page, 5);
+    const t1 = (await state(page)).target;
+    check(mid.y > 0.8, `joystick drives the analog axis (y = ${mid.y.toFixed(2)})`);
+    check(dist(t0, t1) > 1, `joystick moves the character (${dist(t0, t1).toFixed(2)})`);
+    check(await page.evaluate(() => window.__PIXEL_ENGINE__.input.analog.y === 0), 'joystick recentres on release');
+
+    // A button = jump.
+    const jumps0 = await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps);
+    const a = await page.locator('.touch-ui .pad button').first().boundingBox();
+    await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
+    await page.mouse.down();
+    await waitFrames(page, 4);
+    await page.mouse.up();
+    await waitFrames(page, 10);
+    check((await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps)) > jumps0, 'A button jumps');
+
+    // Drag on the game to orbit the camera.
+    const yaw0 = (await state(page)).cameraRig.yaw;
+    await page.mouse.move(420, 120);
+    await page.mouse.down();
+    await page.mouse.move(560, 120, { steps: 6 });
+    await page.mouse.up();
+    await waitFrames(page, 3);
+    check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'dragging the game orbits the camera');
+
+    // ⚙ shows the debug panel.
+    await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerdown');
+    await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerup');
+    await waitFrames(page, 3);
+    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none'), '⚙ opens the debug panel');
+    await capture(page, 'touch-landscape.png');
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `touch crashed: ${e.message}`);
+  } finally {
+    await browser.close();
+  }
+}
+
 async function runMoves(browserExe) {
   console.log('\n▶ moves (third-person camera)');
   let ctx;
@@ -500,6 +567,7 @@ const suites = {
   cameras: () => runCameras(exe),
   'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
   'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
+  touch: () => runTouch(exe),
   moves: () => runMoves(exe),
 };
 try {

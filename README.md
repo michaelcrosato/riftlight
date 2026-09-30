@@ -24,6 +24,8 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   zoom (not in first person). In `free` mode press Enter to fix the view and get a config.
 - **Looks:** 32 TSL filters (`?filters=crt,lcd`, `?look=handheld`, `[` `]` to cycle).
 - **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
+- **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
+  (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
 
 Architecture, the camera and filter lists, the moveset and the game API are in
 [`docs/ENGINE.md`](docs/ENGINE.md).

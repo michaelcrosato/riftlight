@@ -137,3 +137,114 @@ canvas[data-engine-canvas] {
 .debug-ui .fixed:empty {
   display: none;
 }
+
+/* ---------- touch controls ---------- */
+#app {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.touch-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+.touch-ui .stick {
+  position: absolute;
+  left: max(16px, env(safe-area-inset-left));
+  bottom: max(16px, env(safe-area-inset-bottom));
+  width: 128px;
+  height: 128px;
+  border-radius: 50%;
+  background: rgb(26 28 44 / 0.35);
+  border: 2px solid rgb(148 176 194 / 0.5);
+  pointer-events: auto;
+  touch-action: none;
+}
+
+.touch-ui .knob {
+  position: absolute;
+  left: 34px;
+  top: 34px;
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: rgb(244 244 244 / 0.55);
+}
+
+.touch-ui .pad {
+  position: absolute;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: repeat(3, 58px);
+  gap: 8px;
+  direction: rtl;
+  pointer-events: auto;
+}
+
+.touch-ui button {
+  touch-action: none;
+  pointer-events: auto;
+  font: inherit;
+  color: #f4f4f4;
+  background: rgb(26 28 44 / 0.45);
+  border: 2px solid rgb(148 176 194 / 0.55);
+}
+
+.touch-ui .pad button {
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  direction: ltr;
+  line-height: 1.1;
+}
+
+.touch-ui .pad button b {
+  font-size: 18px;
+}
+
+.touch-ui .pad button small {
+  font-size: 9px;
+  color: #94b0c2;
+}
+
+.touch-ui .pad button:first-child {
+  background: rgb(177 62 83 / 0.6);
+}
+
+.touch-ui button.on {
+  background: rgb(244 244 244 / 0.6);
+  color: #1a1c2c;
+}
+
+.touch-ui .bar {
+  position: absolute;
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+  display: flex;
+  gap: 6px;
+}
+
+.touch-ui .bar button {
+  min-width: 40px;
+  height: 36px;
+  border-radius: 6px;
+  font-size: 16px;
+}
+
+@media (pointer: coarse) {
+  .debug-ui {
+    font-size: 11px;
+    max-width: 260px;
+  }
+}

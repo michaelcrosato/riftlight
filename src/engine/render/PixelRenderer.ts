@@ -286,6 +286,7 @@ export class PixelRenderer {
         mode === 'pixel'
           ? applyFilters(renderOutput(this.pixelNode, toneMapping, colorSpace), this._filters, { pixelSize: this.pixelSize })
           : renderOutput(this.rawNode, toneMapping, colorSpace);
+      if (this.outputCache.size > 16) this.outputCache.clear(); // bound it; nodes rebuild on demand
       this.outputCache.set(key, node!);
     }
     return node!;

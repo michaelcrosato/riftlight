@@ -162,7 +162,7 @@ export class Physics {
   ): { distance: number; collider: RAPIER.Collider; normal: Vector3; point: Vector3 } | null {
     const ray = new RAPIER.Ray({ x: from.x, y: from.y, z: from.z }, { x: dir.x, y: dir.y, z: dir.z });
     const predicate = ignoreTags.length ? (c: RAPIER.Collider) => !ignoreTags.some((t) => this.hasTag(c, t)) : undefined;
-    const hit = this.world.castRayAndGetNormal(ray, maxDistance, true, undefined, undefined, undefined, exclude, predicate);
+    const hit = this.world.castRayAndGetNormal(ray, maxDistance, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, exclude, predicate);
     if (!hit) return null;
     const n = hit.normal;
     return {
