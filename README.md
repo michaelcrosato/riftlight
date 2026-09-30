@@ -14,6 +14,8 @@ npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
 npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
+npm run anim -- curves Run     # motion curves (graph editor) PNG
+npm run film -- run-stop --gif # film a move in the real game → .scratch/film/
 ```
 
 Demo: *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
@@ -28,8 +30,9 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
 - **Looks:** 35 TSL filters, including the console eras `8bit`, `16bit` and `ps1` (with
   vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, and `[` `]` to cycle.
 - **Animation:** 57 hero clips written as data, with foot IK and a gait generator. They are
-  measured and drawn as PNG contact sheets by `npm run anim`, and previewed in the
-  **Animation Lab** (`/lab.html`). See [`docs/ANIMATION.md`](docs/ANIMATION.md).
+  measured and drawn as PNG contact sheets and motion curves by `npm run anim`, filmed in the
+  real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See
+  [`docs/ANIMATION.md`](docs/ANIMATION.md).
 - **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.

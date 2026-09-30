@@ -1,5 +1,8 @@
 import { AnimationMixer, type AnimationClip, type BufferGeometry, Color, type Material, type Mesh, type Object3D, SRGBColorSpace, Vector3 } from 'three/webgpu';
-import { drawText, GLYPH_H, textWidth } from './font';
+import { GLYPH_H, textWidth } from './font';
+import { BAD, Canvas, CELL_BG, CENTRE, CONTACT, DIM, GRID, GROUND, LEFT, RIGHT, TEXT, WARN, type Rect, type RGB, type SheetImage } from './raster';
+
+export type { SheetImage } from './raster';
 import type { ClipReport } from './metrics';
 import type { ClipDef, RigSpec } from './types';
 
@@ -29,13 +32,10 @@ export interface SheetOptions {
   trails?: boolean;
   /** Metrics to print under the sheet. */
   report?: ClipReport;
+  /** A previous version of the clip: its skeleton and paths are drawn in magenta. */
+  ghost?: AnimationClip;
 }
 
-export interface SheetImage {
-  width: number;
-  height: number;
-  data: Uint8ClampedArray;
-}
 
 interface View {
   name: ViewName;
@@ -59,21 +59,6 @@ const VIEWS: Record<ViewName, View> = {
   top: makeView('top', 'TOP', new Vector3(0, -1, 0), new Vector3(0, 0, 1)), // facing screen-up
   three: makeView('three', '3/4', new Vector3(1, -0.55, -1.1), new Vector3(0, 1, 0)),
 };
-
-const BG: RGB = [36, 40, 56];
-const CELL_BG: RGB = [44, 49, 68];
-const GRID: RGB = [58, 64, 88];
-const GROUND: RGB = [140, 146, 170];
-const TEXT: RGB = [230, 232, 240];
-const DIM: RGB = [150, 156, 180];
-const RIGHT: RGB = [239, 125, 87];
-const LEFT: RGB = [115, 239, 247];
-const CENTRE: RGB = [255, 205, 117];
-const CONTACT: RGB = [56, 183, 100];
-const BAD: RGB = [255, 70, 90];
-const WARN: RGB = [255, 205, 117];
-
-type RGB = [number, number, number];
 
 interface Tri {
   v: Float32Array; // 9 floats, world space
@@ -183,105 +168,6 @@ export function defaultFrames(def: ClipDef, max = 12): number[] {
   return Array.from({ length: n }, (_, i) => round1(def.loop ? (i * def.frames) / n : (i * def.frames) / Math.max(1, n - 1)));
 }
 
-class Canvas {
-  readonly data: Uint8ClampedArray;
-  readonly depth: Float32Array;
-  readonly ids: Uint16Array;
-  constructor(
-    readonly width: number,
-    readonly height: number,
-  ) {
-    this.data = new Uint8ClampedArray(width * height * 4);
-    this.depth = new Float32Array(width * height).fill(-Infinity);
-    this.ids = new Uint16Array(width * height);
-    this.rect(0, 0, width, height, BG);
-  }
-
-  set(x: number, y: number, c: RGB, a = 1): void {
-    x = Math.floor(x);
-    y = Math.floor(y);
-    if (x < 0 || y < 0 || x >= this.width || y >= this.height) return;
-    const i = (y * this.width + x) * 4;
-    const d = this.data;
-    d[i] = d[i]! + (c[0] - d[i]!) * a;
-    d[i + 1] = d[i + 1]! + (c[1] - d[i + 1]!) * a;
-    d[i + 2] = d[i + 2]! + (c[2] - d[i + 2]!) * a;
-    d[i + 3] = 255;
-  }
-
-  rect(x: number, y: number, w: number, h: number, c: RGB, a = 1): void {
-    for (let yy = Math.max(0, y); yy < Math.min(this.height, y + h); yy++) for (let xx = Math.max(0, x); xx < Math.min(this.width, x + w); xx++) this.set(xx, yy, c, a);
-  }
-
-  line(x0: number, y0: number, x1: number, y1: number, c: RGB, a = 1, thick = 1): void {
-    const n = Math.max(1, Math.ceil(Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0))));
-    for (let i = 0; i <= n; i++) {
-      const x = x0 + ((x1 - x0) * i) / n;
-      const y = y0 + ((y1 - y0) * i) / n;
-      if (thick <= 1) this.set(x, y, c, a);
-      else this.rect(Math.round(x - thick / 2), Math.round(y - thick / 2), thick, thick, c, a);
-    }
-  }
-
-  text(s: string, x: number, y: number, c: RGB, scale = 1): void {
-    drawText(s, x, y, (px, py) => this.set(px, py, c), scale);
-  }
-
-  tri(ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, c: RGB, id: number, clip: Rect): void {
-    const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-    if (Math.abs(area) < 1e-9) return;
-    const x0 = Math.max(clip.x, Math.floor(Math.min(ax, bx, cx)));
-    const x1 = Math.min(clip.x + clip.w - 1, Math.ceil(Math.max(ax, bx, cx)));
-    const y0 = Math.max(clip.y, Math.floor(Math.min(ay, by, cy)));
-    const y1 = Math.min(clip.y + clip.h - 1, Math.ceil(Math.max(ay, by, cy)));
-    for (let y = y0; y <= y1; y++) {
-      const py = y + 0.5;
-      for (let x = x0; x <= x1; x++) {
-        const px = x + 0.5;
-        const w0 = ((bx - px) * (cy - py) - (by - py) * (cx - px)) / area;
-        const w1 = ((cx - px) * (ay - py) - (cy - py) * (ax - px)) / area;
-        const w2 = 1 - w0 - w1;
-        if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
-        const z = w0 * az + w1 * bz + w2 * cz;
-        const k = y * this.width + x;
-        if (z <= this.depth[k]!) continue;
-        this.depth[k] = z;
-        this.ids[k] = id;
-        this.set(x, y, c);
-      }
-    }
-  }
-
-  /** Cel outlines: darken covered pixels whose neighbour belongs to another mesh. */
-  outline(clip: Rect): void {
-    const edges: number[] = [];
-    for (let y = clip.y; y < clip.y + clip.h; y++) {
-      for (let x = clip.x; x < clip.x + clip.w; x++) {
-        const k = y * this.width + x;
-        const id = this.ids[k]!;
-        if (!id) continue;
-        const n = [x > clip.x ? this.ids[k - 1] : 0, x < clip.x + clip.w - 1 ? this.ids[k + 1] : 0, y > clip.y ? this.ids[k - this.width] : 0, y < clip.y + clip.h - 1 ? this.ids[k + this.width] : 0];
-        if (n.some((v) => v !== id)) edges.push(k);
-      }
-    }
-    for (const k of edges) {
-      const i = k * 4;
-      const outer = [k - 1, k + 1, k - this.width, k + this.width].some((q) => this.ids[q] === 0);
-      const f = outer ? 0.25 : 0.6;
-      this.data[i] = this.data[i]! * f;
-      this.data[i + 1] = this.data[i + 1]! * f;
-      this.data[i + 2] = this.data[i + 2]! * f;
-    }
-  }
-}
-
-interface Rect {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-
 interface Bounds {
   minX: number;
   maxX: number;
@@ -336,6 +222,8 @@ export function renderSheet(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
   const cycles = def.loop && def.speed ? 2 : 1;
   const allFrames = Array.from({ length: Math.round(def.frames * cycles * 2) + 1 }, (_, i) => i / 2).filter((f) => !def.loop || f < def.frames * cycles);
   const trailSnaps = trails ? snapshots(model, rig, clip, allFrames, !!def.loop) : [];
+  const ghostSnaps = options.ghost ? snapshots(model, rig, options.ghost, frames) : null;
+  const ghostTrail = options.ghost && trails ? snapshots(model, rig, options.ghost, allFrames, !!def.loop) : null;
   const bones = boneList(model, rig);
   const speed = def.speed ?? 0;
   const travel = (frame: number) => (speed * frame) / rig.fps;
@@ -370,6 +258,7 @@ export function renderSheet(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
     def.grounded ? 'GROUNDED' : '',
     def.fast ? 'FAST' : '',
     'SKELETON: R=ORANGE L=CYAN',
+    options.ghost ? 'MAGENTA = PREVIOUS VERSION' : '',
   ].filter(Boolean).join('  ');
   cv.text(info, M, M + 2 * GLYPH_H + 4, DIM);
 
@@ -387,6 +276,7 @@ export function renderSheet(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
       drawGround(cv, row.view, toScreen, rect);
       drawMesh(cv, row.view, snap, toScreen, rect, 0);
       cv.outline(rect);
+      if (ghostSnaps) drawSkeleton(cv, ghostSnaps[i]!, bones, toScreen, 0.9, GHOST);
       if (skeleton) drawSkeleton(cv, snap, bones, toScreen, 0.85);
       drawContacts(cv, row.view, snap, toScreen);
       const label = `${keyFrames.has(snap.frame) ? '*' : ''}${round1(snap.frame)}`;
@@ -416,19 +306,27 @@ export function renderSheet(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
         cv.line(pa[0], pa[1], pb[0], pb[1], col, 0.55);
       }
     });
-    // paths
-    for (const name of rig.trace) {
-      const col = sideColor(name.replace(/(Glove|Shoe)/, ''));
+    // paths, with a dot on every frame: the spacing of the dots is the timing (bunched =
+    // slow, easing in or out; spread = fast). The previous version, if any, is magenta.
+    const path = (snapsToDraw: Snapshot[], name: string, col: RGB, dots: boolean) => {
       let prev: [number, number, number] | null = null;
-      for (const s of trailSnaps) {
+      for (const s of snapsToDraw) {
         const p = s.trace.get(name);
         if (!p) continue;
         const q = toScreen(p.x, p.y, p.z + travel(s.frame));
         if (prev) cv.line(prev[0], prev[1], q[0], q[1], col, 0.9, 2);
+        if (dots && Number.isInteger(s.frame)) cv.rect(Math.round(q[0]) - 2, Math.round(q[1]) - 2, 5, 5, [255, 255, 255], 0.85);
         prev = q;
       }
-    }
-    cv.text(speed ? `WORLD SPACE AT ${speed} M/S: A PLANTED FOOT IS A DOT, SLIDING SMEARS` : 'IN PLACE', rect.x + 2, rect.y + rect.h + 3, DIM);
+    };
+    if (ghostTrail) for (const name of rig.trace) path(ghostTrail, name, GHOST, false);
+    for (const name of rig.trace) path(trailSnaps, name, sideColor(name.replace(/(Glove|Shoe)/, '')), true);
+    cv.text(
+      `${speed ? `WORLD SPACE AT ${speed} M/S: A PLANTED FOOT IS A DOT, SLIDING SMEARS` : 'IN PLACE'}.  DOTS = ONE PER FRAME (BUNCHED = SLOW)${ghostTrail ? '.  MAGENTA = PREVIOUS VERSION' : ''}`,
+      rect.x + 2,
+      rect.y + rect.h + 3,
+      DIM,
+    );
     y += trailH + 10;
   }
 
@@ -491,17 +389,20 @@ function drawMesh(cv: Canvas, view: View, snap: Snapshot, toScreen: ToScreen, re
   }
 }
 
-function drawSkeleton(cv: Canvas, snap: Snapshot, bones: [string, string][], toScreen: ToScreen, alpha: number): void {
+function drawSkeleton(cv: Canvas, snap: Snapshot, bones: [string, string][], toScreen: ToScreen, alpha: number, color?: RGB): void {
   for (const [a, b] of bones) {
     const pa = toScreen(...xyz(snap.joints.get(a)!));
     const pb = toScreen(...xyz(snap.joints.get(b)!));
-    cv.line(pa[0], pa[1], pb[0], pb[1], sideColor(b), alpha);
+    cv.line(pa[0], pa[1], pb[0], pb[1], color ?? sideColor(b), alpha, color ? 2 : 1);
   }
   for (const [name, p] of snap.joints) {
     const q = toScreen(p.x, p.y, p.z);
-    cv.rect(Math.round(q[0]) - 1, Math.round(q[1]) - 1, 3, 3, sideColor(name), alpha);
+    cv.rect(Math.round(q[0]) - 1, Math.round(q[1]) - 1, 3, 3, color ?? sideColor(name), alpha);
   }
 }
+
+/** Previous version of a clip (skeleton and paths). */
+const GHOST: RGB = [255, 70, 220];
 
 function drawContacts(cv: Canvas, view: View, snap: Snapshot, toScreen: ToScreen): void {
   if (view.name === 'top') return;

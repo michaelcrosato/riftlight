@@ -51,8 +51,11 @@ WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
 (`three/webgpu` + `three/tsl`), `@dimforge/rapier3d-compat@0.20.0`, local GLBs.
 **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
 the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
-animations**: never guess a pose. Run `npm run anim -- check` and look at the contact sheet
-(`npm run anim -- sheet <clip>`) after every change.
+animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
+the contact sheet and motion curves (`npm run anim -- sheet <clip> --compare`, `curves <clip>
+--compare`). For anything that plays in the game, also look at a film
+(`npm run film -- <scenario>`): it shows transitions, blends and speed matching, which
+isolated clips can't.
 
 | Path | What |
 | --- | --- |
@@ -63,7 +66,8 @@ animations**: never guess a pose. Run `npm run anim -- check` and look at the co
 | `src/engine/character/` | `PlatformerCharacter` moveset + default key map |
 | `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, metrics, contact sheets |
 | `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`animations.ts`) |
-| `scripts/anim.ts` | `npm run anim -- check / sheet / overview / pose`: measure and look at animations |
+| `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
+| `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF) |
 | `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Demo game: a station for every move, a complete example of the `Game` API |

@@ -127,10 +127,18 @@ export class PlatformerCharacter {
   private block: RAPIER.RigidBody | null = null;
   private blockCollider: RAPIER.Collider | null = null;
   private stepAnim: { name: string; t: number } | null = null;
+  /** Stick tilt (0..1) last ground step: a gentle tilt tiptoes. */
+  private stick = 0;
   private poundDelay = 0;
   private mixer: AnimationMixer | null = null;
   private readonly actions = new Map<string, AnimationAction>();
   private current: AnimationAction | null = null;
+  /**
+   * Blend weights we drive ourselves. three's crossFadeFrom restarts the outgoing clip's
+   * fade from full weight, so a clip that was only partly faded in snaps to 100% (a pop)
+   * whenever states change faster than the fade.
+   */
+  private readonly fades = new Map<AnimationAction, { from: number; to: number; t: number; duration: number }>();
 
   constructor(physics: Physics, options: PlatformerOptions) {
     this.physics = physics;
@@ -315,6 +323,7 @@ export class PlatformerCharacter {
 
   private stepGround(dt: number, input: MoveInput): void {
     const mag = Math.min(1, input.move.length());
+    this.stick = mag;
     if (!this.grounded) {
       this.coyote += dt;
       if (this.coyote > 0.1) return this.startFall();
@@ -334,11 +343,12 @@ export class PlatformerCharacter {
       if (this.setStance('crouch')) return this.enter(mag > 0.1 ? 'crouchWalk' : 'crouch');
     }
 
-    // Skid-turn when reversing at speed.
+    // Skid-turn when reversing at speed; brake (the same skid) when letting go at a run.
     if (!input.face && mag > 0.2 && this.speed > 4.5) {
       const want = Math.atan2(input.move.x, input.move.z);
       if (Math.abs(angleDiff(want, this.facing)) > 2.3) return this.enter('skid');
     }
+    if (!input.face && mag < 0.1 && this.state === 'run' && this.speed > 5) return this.enter('skid');
 
     const max = input.walk ? 2.2 : this.runSpeed;
     this.groundMove(dt, input, max, 45);
@@ -375,15 +385,20 @@ export class PlatformerCharacter {
     this.decel(dt, 18);
     this.move(dt);
     const want = input.move.lengthSq() > 0.04 ? Math.atan2(input.move.x, input.move.z) : null;
-    if (input.jump && want !== null) {
+    const reversing = want !== null && Math.abs(angleDiff(want, this.facing)) > 1.6;
+    if (input.jump) {
+      if (!reversing) return this.groundJump(input);
       this.facing = want;
       return this.jump('SideFlip', input);
     }
+    // Braking, then pushing ahead again: run on.
+    if (want !== null && !reversing) return this.enter(this.speed > 3.2 ? 'run' : 'walk');
     if (this.speed < 0.8) {
       if (want !== null) this.facing = want;
-      this.enter('walk');
+      this.enter(want !== null ? 'walk' : 'idle');
     }
   }
+
 
   private stepCrouch(dt: number, input: MoveInput): void {
     if (this.stance === 'stand') this.setStance('crouch');
@@ -1005,10 +1020,18 @@ export class PlatformerCharacter {
       this.mixer.uncacheRoot(this.mixer.getRoot());
     }
     this.actions.clear();
+    this.fades.clear();
     this.current = null;
     this.mixer = new AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
     this.play('Idle', 0);
+  }
+
+  /** Tooling: every clip currently contributing to the pose, with its blend weight and time (s). */
+  animationMix(): { name: string; weight: number; time: number; rate: number }[] {
+    return [...this.actions.values()]
+      .filter((a) => a.isScheduled() && a.getEffectiveWeight() > 0.001)
+      .map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight(), time: a.time, rate: a.getEffectiveTimeScale() }));
   }
 
   clipDuration(name: string, fallback: number): number {
@@ -1031,7 +1054,11 @@ export class PlatformerCharacter {
       case 'teeter': return { name: 'Teeter' };
       case 'walk':
         if (this.stepAnim) return { name: this.stepAnim.name, once: true, fade: 0.05 };
-        return s < 1.4 ? { name: 'Tiptoe', speed: this.rate('Tiptoe', s, 1.2, 0.5) } : { name: 'Walk', speed: this.rate('Walk', s, 2) };
+        // Tiptoe on a gentle tilt (not just while speeding up or slowing down, which would
+        // flash it for a frame at every start and stop); keep the current gait once let go.
+        return (this.stick > 0.1 ? this.stick < 0.5 : this.anim === 'Tiptoe')
+          ? { name: 'Tiptoe', speed: this.rate('Tiptoe', s, 1.2, 0.5) }
+          : { name: 'Walk', speed: this.rate('Walk', s, 2) };
       case 'run': return { name: 'Run', speed: this.rate('Run', s, 6) };
       case 'skid': return { name: 'Skid', once: true };
       case 'crouch': return { name: 'Crouch' };
@@ -1074,6 +1101,14 @@ export class PlatformerCharacter {
     model.rotation.y += snap ? diff : diff * Math.min(1, dt * 16);
     const a = this.animationFor();
     this.play(a.name, a.fade ?? 0.12, a.speed ?? 1, a.once ?? false);
+    for (const [action, f] of this.fades) {
+      f.t += dt;
+      const u = Math.min(1, f.t / f.duration);
+      action.setEffectiveWeight(f.from + (f.to - f.from) * u);
+      if (u < 1) continue;
+      this.fades.delete(action);
+      if (f.to === 0) action.stop();
+    }
     this.mixer?.update(dt);
   }
 
@@ -1083,14 +1118,40 @@ export class PlatformerCharacter {
     if (!next) return;
     next.timeScale = speed;
     if (next === this.current) return;
-    next.reset();
+    const prev = this.current;
+    // Everything else still contributing fades out from the weight it has now.
+    for (const a of this.actions.values()) {
+      if (a === next || !a.isScheduled()) continue;
+      const w = a.getEffectiveWeight();
+      if (fade > 0 && w > 0.001) this.fades.set(a, { from: w, to: 0, t: 0, duration: fade });
+      else {
+        this.fades.delete(a);
+        a.stop();
+      }
+    }
+    // A loop that is still fading out keeps its time (no restart); anything else starts over.
+    const w0 = next.isScheduled() ? next.getEffectiveWeight() : 0;
+    if (once || w0 <= 0.001) {
+      next.reset();
+      // Locomotion → locomotion (Walk, Run, Tiptoe…): start in step with the outgoing
+      // stride, so the planted foot stays the planted foot.
+      const stride = (c: AnimationAction | null) => c?.getClip().userData.speed !== undefined;
+      if (!once && prev && stride(prev) && stride(next)) next.time = (prev.time / prev.getClip().duration) * next.getClip().duration;
+    }
     next.setLoop(once ? LoopOnce : LoopRepeat, Infinity);
     next.clampWhenFinished = once;
+    next.enabled = true;
     next.play();
-    if (this.current && fade > 0) next.crossFadeFrom(this.current, fade, false);
-    else this.current?.stop();
+    if (fade > 0) {
+      next.setEffectiveWeight(w0);
+      this.fades.set(next, { from: w0, to: 1, t: 0, duration: fade * (1 - w0) });
+    } else {
+      this.fades.delete(next);
+      next.setEffectiveWeight(1);
+    }
     this.current = next;
   }
+
 }
 
 function angleDiff(a: number, b: number): number {

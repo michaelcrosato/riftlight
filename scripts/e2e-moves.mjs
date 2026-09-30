@@ -71,6 +71,11 @@ export const MOVES = [
     T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300); T.set(['KeyD'], false);
     T.set(['KeyA'], true); const r = await T.until(h => h.state === 'skid', 800); T.set(['KeyA'], false);
     return { ok: r.ok, detail: r.seen };`],
+  ['brake to a stop from a run', `
+    await T.place([-6, 0, 10], Math.PI / 2);
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run' && h.speed > 5.5, 2500); T.set(['KeyD'], false);
+    const r = await T.until(h => h.state === 'skid', 300); const s = await T.until(h => h.state === 'idle', 2000);
+    return { ok: r.ok && s.ok, detail: { brake: r.seen, stop: s.seen } };`],
   ['step up stairs', `
     await T.place([-1.4, 0, 0], -Math.PI / 2);
     T.set(['KeyA'], true); const r = await T.until(h => h.feet.y > 1.3, 5000); T.set(['KeyA'], false);

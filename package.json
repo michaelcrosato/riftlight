@@ -14,7 +14,8 @@
     "test:e2e": "xvfb-run -a -s \"-screen 0 1280x720x24\" node scripts/e2e.mjs",
     "assets": "node scripts/generate-assets.mjs",
     "build:single": "node scripts/build-single.mjs",
-    "anim": "tsx scripts/anim.ts"
+    "anim": "tsx scripts/anim.ts",
+    "film": "tsx scripts/film.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.20.0",

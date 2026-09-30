@@ -610,6 +610,21 @@ async function runMoves(browserExe) {
         .catch((e) => ({ ok: false, detail: e.message }));
       check(r.ok, `${name}${r.ok ? '' : ': ' + JSON.stringify(r.detail).slice(0, 300)}`);
     }
+    // Engine.step (npm run film): frame-exact manual time, and capture still works in it
+    const stepped = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      await window.__T.place([0, 0, 4], Math.PI / 2);
+      const f0 = e.frame;
+      const x0 = e.game.hero.feet.x;
+      e.input.setKey('KeyD', true);
+      e.step(30);
+      e.input.setKey('KeyD', false);
+      const r = { frames: e.frame - f0, moved: +(e.game.hero.feet.x - x0).toFixed(2), manual: e.manual };
+      const shot = await e.renderer.capture();
+      e.manual = false;
+      return { ...r, captured: shot.width > 0 };
+    });
+    check(stepped.frames === 30 && stepped.moved > 1 && stepped.manual && stepped.captured, `Engine.step advances exactly 30 frames and captures (${JSON.stringify(stepped)})`);
     checkClean(await state(page), logs);
   } catch (e) {
     check(false, `moves crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
@@ -656,6 +671,8 @@ async function runLab(browserExe) {
     const sheet = await page.evaluate(() => window.__ANIM_LAB__.sheet('Walk'));
     check(sheet.startsWith('data:image/png') && sheet.length > 10000, 'contact sheet renders in the browser');
     await writeFile(new URL('lab-sheet-Walk.png', OUT), Buffer.from(sheet.split(',')[1], 'base64'));
+    const curves = await page.evaluate(() => window.__ANIM_LAB__.curves('Jump'));
+    check(curves.startsWith('data:image/png') && curves.length > 10000, 'motion curves render in the browser');
     await page.click('[data-a="play"]');
     const f0 = (await page.evaluate(() => window.__ANIM_LAB__.state())).frame;
     await waitFrames(page, 10);

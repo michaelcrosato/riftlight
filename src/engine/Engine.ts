@@ -117,6 +117,11 @@ export class Engine {
   touch: TouchControls | null = null;
   /** Freeze simulation, animation and camera (rendering continues). For tooling, capture and pause menus. */
   paused = false;
+  /**
+   * Tooling: the render loop stops driving the game; advance it yourself with `step()`.
+   * Frame-exact and independent of how fast the browser renders (filmstrips, replays).
+   */
+  manual = false;
   frame = 0;
   /** The game's own camera config; switching back to its preset restores zoom, yaw etc. */
   private startCamera: CameraConfig = {};
@@ -328,10 +333,25 @@ export class Engine {
     };
   }
 
+  /**
+   * Tooling: switch to manual time and advance `n` frames of `dt` seconds (simulation,
+   * animation, camera). Nothing is drawn; call `renderer.capture()` to see the result.
+   */
+  step(n = 1, dt = 1 / 60): void {
+    this.manual = true;
+    for (let i = 0; i < n; i++) {
+      this.time += dt;
+      this.advance(dt);
+      this.input.endFrame();
+      this.frame++;
+    }
+  }
+
   private tick(timeMs: number): void {
     const t = timeMs / 1000;
     const dt = this.lastTime < 0 ? 1 / 60 : Math.min(t - this.lastTime, 0.1);
     this.lastTime = t;
+    if (this.manual) return;
     this.time += dt;
     const ctx = this.context;
 
@@ -348,6 +368,16 @@ export class Engine {
       this.frame++;
       return;
     }
+    this.advance(dt);
+    this.renderer.render();
+    this.debug?.update(this.game.status?.(ctx) ?? '');
+    this.input.endFrame();
+    this.frame++;
+  }
+
+  /** One frame of simulation, game logic, camera and light (no drawing). */
+  private advance(dt: number): void {
+    const ctx = this.context;
     this.physics.update(dt, (fixedDt) => this.game.fixedUpdate?.(ctx, fixedDt));
     this.game.update?.(ctx, dt);
 
@@ -373,10 +403,5 @@ export class Engine {
     this.sunFocus.copy(this.sunRight).multiplyScalar(r).addScaledVector(this.sunUp, u).addScaledVector(this.sunDirection, d);
     this.sun.target.position.copy(this.sunFocus);
     this.sun.position.copy(this.sunFocus).addScaledVector(this.sunDirection, 25);
-
-    this.renderer.render();
-    this.debug?.update(this.game.status?.(ctx) ?? '');
-    this.input.endFrame();
-    this.frame++;
   }
 }
