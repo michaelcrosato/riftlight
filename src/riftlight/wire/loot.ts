@@ -342,7 +342,7 @@ export class RealLoot implements LootPort {
     const key = `${save.seed}:${visit}:${depth}`;
     if (key === this.stockKey) return;
     this.stockKey = key;
-    const kinds: VendorKind[] = ['smith', 'gems'];
+    const kinds: VendorKind[] = ['smith', 'gems', 'gamble'];
     this.store.stocks = Object.fromEntries(kinds.map((k) => [k, vendorStock(save.seed, depth, visit, k)]));
     this.store.vendor = { kind: 'smith', stock: this.store.stocks.smith ?? [] };
   }

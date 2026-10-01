@@ -264,6 +264,7 @@ interface TownReport {
   soldGold: number;
   bought: string[];
   spent: number;
+  gambled: number;
   allocated: number;
   before: { dps: number; ehp: number; score: number };
   after: { dps: number; ehp: number; score: number };
@@ -303,7 +304,7 @@ interface DepthRow {
   dps: number;
   ehp: number;
   found: Record<string, number>;
-  town: { equipped: number; socketed: number; bought: number; spent: number; sold: number; soldGold: number; allocated: number };
+  town: { equipped: number; socketed: number; bought: number; spent: number; gambled: number; sold: number; soldGold: number; allocated: number };
   points: number;
   /** Who killed the bot, and when (seconds into the attempt). */
   killers: string[];
@@ -356,7 +357,7 @@ async function campaign(page: Page): Promise<void> {
     const row: DepthRow = {
       depth: d, name: '', cleared: false, attempts: 0, deaths: 0, timeouts: 0, time: 0, totalTime: 0, levelBefore: before.level, levelAfter: before.level, xp: 0,
       goldBefore: before.gold, goldAfter: before.gold, goldEarned: 0, kills: 0, damageTaken: 0, gems: [], gearScore: 0, dps: 0, ehp: 0, found: {},
-      town: { equipped: 0, socketed: 0, bought: 0, spent: 0, sold: 0, soldGold: 0, allocated: 0 }, points: 0, wallSeconds: 0, killers: [], farmed: 0, farmTime: 0, farmDeaths: 0,
+      town: { equipped: 0, socketed: 0, bought: 0, spent: 0, gambled: 0, sold: 0, soldGold: 0, allocated: 0 }, points: 0, wallSeconds: 0, killers: [], farmed: 0, farmTime: 0, farmDeaths: 0,
     };
     const frames: Frame[] = [];
     for (let attempt = 0; attempt < tries && !row.cleared; attempt++) {
@@ -381,6 +382,7 @@ async function campaign(page: Page): Promise<void> {
       row.town.socketed += town.t.socketed.length;
       row.town.bought += town.t.bought.length;
       row.town.spent += town.t.spent;
+      row.town.gambled += town.t.gambled ?? 0;
       row.town.sold += town.t.sold;
       row.town.soldGold += town.t.soldGold;
       row.town.allocated += town.t.allocated;
@@ -498,7 +500,7 @@ function campaignLine(r: DepthRow): string {
     `${gem?.id ?? '-'} ${gem?.level ?? 0}`,
     `gear ${r.gearScore}`,
     `dps ${r.dps.toFixed(0)} ehp ${r.ehp.toFixed(0)}`,
-    `gold ${r.goldAfter}`,
+    `gold ${r.goldAfter} (spent ${r.town.spent}${r.town.gambled ? `, ${r.town.gambled} gambles` : ''})`,
     `found ${found || '-'}`,
     ...(r.killers.length ? [`killed by ${r.killers.join(', ')}`] : []),
     ...(r.left && !r.cleared ? [`left: ${r.left}`] : []),

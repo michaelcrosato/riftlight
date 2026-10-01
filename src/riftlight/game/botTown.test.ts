@@ -8,7 +8,7 @@ import { requiredLevel } from '../loot/itemMods';
 import { gemItem, starterSockets } from '../loot/sockets';
 import { defaultTree, pointBudget } from '../tree/tree';
 import { HERO_BASE_STATS, levelMods, starterWeapon } from '../wire/progression';
-import { evaluate, gearScore, rig, townVisit } from './botTown';
+import { evaluate, GAMBLING, gearScore, rig, townVisit } from './botTown';
 import { killXp } from './progress';
 import { newSave } from './save';
 
@@ -86,6 +86,29 @@ describe('the bot in town', () => {
     expect(save.hero.gold).toBe(400 - r.spent + r.soldGold);
     expect(save.hero.gold).toBeGreaterThanOrEqual(0);
     if (r.bought.length) expect(r.spent).toBeGreaterThan(0);
+  });
+
+  it('spends surplus gold at the gamble tab, keeping a reserve, and wears what beats its gear', () => {
+    const save = newSave(9);
+    save.hero.level = 30;
+    save.deepest = 16;
+    save.hero.gold = 200_000;
+    save.hero.skills = starterSockets(new Rng(9));
+    const r = townVisit(save, { sheet: heroSheet(30), points: 0, depth: 17, visit: 2 });
+    expect(r.gambled).toBeGreaterThan(0);
+    expect(r.gambled).toBeLessThanOrEqual(GAMBLING.perVisit);
+    expect(r.bought.filter((b) => b.includes('gamble'))).toHaveLength(r.gambled);
+    expect(save.hero.gold).toBe(200_000 - r.spent + r.soldGold);
+    expect(save.hero.gold).toBeGreaterThan(0);
+    // a naked hero puts gambled gear on
+    expect(Object.keys(save.hero.equipment).length).toBeGreaterThan(0);
+    // a poor one does not gamble at all
+    const poor = newSave(9);
+    poor.hero.level = 30;
+    poor.deepest = 16;
+    poor.hero.gold = 100;
+    poor.hero.skills = starterSockets(new Rng(9));
+    expect(townVisit(poor, { sheet: heroSheet(30), points: 0, depth: 17, visit: 2 }).gambled).toBe(0);
   });
 });
 
