@@ -69,6 +69,7 @@ export const STATES = {
   },
   run: { step: stepGround, anim: gait, stance: 'stand', feet: 'lock', lean: true },
   skid: { step: stepSkid, anim: () => ({ name: 'Skid', once: true }), stance: 'stand', feet: 'ik' },
+  skidTurn: { step: stepSkidTurn, anim: () => ({ name: 'SkidTurn', once: true, fade: 0.06 }), stance: 'stand', snapFacing: true, feet: 'lock' },
   bonk: {
     step: stepLocked,
     anim: () => ({ name: 'Hurt', once: true, fade: 0.1 }),
@@ -283,8 +284,38 @@ function stepSkid(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   // Braking, then pushing ahead again: run on.
   if (want !== null && !reversing) return c.enter(c.speed > G.runAbove ? 'run' : 'walk');
   if (c.speed < K.endSpeed) {
-    if (want !== null) c.facing = want;
-    c.enter(want !== null ? 'walk' : 'idle');
+    if (want === null) return c.enter('idle');
+    // stick still reversed: turn round with a hop
+    c.turnFrom = c.facing;
+    c.turnTo = want;
+    c.enter('skidTurn');
+  }
+}
+
+/**
+ * Turning round out of a skid: the SkidTurn clip hops, and the facing turns only while both
+ * feet are off the floor (`spinFrom`..`spinTo` s), so they never skate round on it. Then it
+ * runs off the other way.
+ */
+function stepSkidTurn(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const K = T.skid;
+  if (!c.grounded) {
+    c.coyote += dt;
+    if (c.coyote > G.coyote) return startFall(c);
+  } else c.coyote = 0;
+  if (c.consumeJump(input)) {
+    c.facing = c.turnTo;
+    return groundJump(c, input);
+  }
+  const spin = MathUtils.smoothstep(c.stateTime, K.spinFrom, K.spinTo);
+  if (spin < 1) {
+    c.facing = c.turnFrom + angleDiff(c.turnTo, c.turnFrom) * spin;
+    c.decel(dt, K.turnDecel);
+  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.runSpeed, G.accel);
+  c.move(dt);
+  if (c.stateTime >= K.turnEnd) {
+    if (c.speed > G.stopSpeed || input.move.lengthSq() > T.skid.stickMinSq) c.enter(c.speed > G.runAbove ? 'run' : 'walk');
+    else c.enter('idle');
   }
 }
 

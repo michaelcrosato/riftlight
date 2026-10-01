@@ -118,6 +118,8 @@ export class PlatformerCharacter {
   /** @internal Where the stick points (yaw), or the facing when it's let go: the head looks there. */ heading = 0;
   /** @internal How hard the last landing was (0..1, from the fall speed): the landing squash. */ landImpact = 0;
   /** @internal The current skid is a brake (stick let go at a run), not a turn-around. */ braking = false;
+  /** @internal Turning round after a skid: from this facing to that one. */ turnFrom = 0;
+  /** @internal */ turnTo = 0;
   /** @internal */ stepAnim: { name: string; t: number } | null = null;
   /** @internal */ ledge: Ledge | null = null;
   /** @internal */ ledgeCooldown = 0;

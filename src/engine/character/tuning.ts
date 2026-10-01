@@ -141,6 +141,11 @@ export const TUNING = {
     /** Stick (squared tilt) that counts as steering during a skid. */
     stickMinSq: 0.04,
     endSpeed: 0.8,
+    /** Turning round after a skid (SkidTurn): the facing turns while the feet are off the floor. */
+    spinFrom: 0.09,
+    spinTo: 0.2,
+    /** ... and runs off (or stands) this long after it starts: just after the landing. */
+    turnEnd: 0.27,
   },
 
   /** Crouch, crouch walk and crouch slide. */
