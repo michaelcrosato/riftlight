@@ -29,6 +29,9 @@ export const LEECH_RATE = 0.2;
 export const BLOCK_STAGGER = 6;
 /** Attacks per second a skill's `castTime` is authored for; a weapon's `attack.speed.base` scales attack times from it. */
 export const REFERENCE_APS = 1.4;
+/** Skill tags that name a weapon class: such skills need `weapon.<class>` (a flag from the equipped weapon). */
+export const WEAPON_CLASSES = ['bow', 'wand'] as const;
+
 /** Energy shield starts recharging after this long without being hit, at 33% per second. */
 export const ES_DELAY = 2;
 

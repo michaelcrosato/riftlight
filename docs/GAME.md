@@ -165,7 +165,9 @@ so the mod shows on the item / node and does nothing): charges (`endurance.max`,
 `power.max`, `charge.duration`, `charge.onKill`), curses (`curse.count`, `curse.duration`,
 `curse.effect`, `curse.immune`), totems and traps (`totem.count`, `totem.life`, `totem.speed`,
 `trap.count`, `trap.speed`), `mana.reservation`, `aura.radius`, `stun.duration`,
-`shatter.chance`, `explosion.damage`, `dodge.cooldown` (the roll has no cooldown), and the level
+`shatter.chance`, `explosion.damage`, `dodge.cooldown` (the roll has no cooldown), the weapon
+class flags no skill asks for yet (`weapon.sword`, `weapon.axe`, `weapon.mace`, `weapon.dagger`,
+`weapon.staff`, `weapon.sceptre`, `weapon.twohand`; only `bow` and `wand` gate skills), and the level
 mechanic affixes (`brazier.area`, `brazier.damage`, `brazier.selfIgnite`, `collapse.bonusLoot`,
 `collapse.fallImmune`, `echo.damage`, `echo.delay`, `echo.repeatsSkills`, `gate.damage`,
 `haste.duration`, `lantern.duration`, `mire.immune`, `pylon.chain`, `thorns.immune`,

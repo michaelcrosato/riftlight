@@ -7,6 +7,7 @@ import { HERO_RIG } from '../../game/hero/rig';
 import type { Mod } from '../core/mods';
 import type { Combat } from '../combat/Combat';
 import { StatQuery } from '../combat/stats';
+import { WEAPON_CLASSES } from '../combat/tuning';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
 import { Actor } from './Actor';
@@ -105,8 +106,7 @@ export function compileHeroClips(model: Object3D, defs: readonly ClipDef[]): Ani
 
 const tmp = new Vector3();
 
-/** Skill tags that name a weapon class: such skills need `weapon.<class>` (KEYSTONE-style flag from the equipped weapon). */
-export const WEAPON_CLASSES = ['bow', 'wand'] as const;
+export { WEAPON_CLASSES } from '../combat/tuning';
 
 /**
  * The hero's ARPG controller: twin-stick / mouse movement and aim, a buffered 3-hit basic
