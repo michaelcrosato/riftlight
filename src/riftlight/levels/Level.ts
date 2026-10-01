@@ -1,6 +1,7 @@
 import { type AmbientLight, Color, type DirectionalLight, Group, type Mesh, type Node, type Object3D, type Scene, Vector3 } from 'three/webgpu';
 import { fog, max, positionWorld, rangeFogFactor, smoothstep, uniform } from 'three/tsl';
 import type { AudioManager } from '../../engine/audio/AudioManager';
+import { disposeObject } from '../../engine/lifecycle';
 import type { Particles } from '../../engine/particles/Particles';
 import { type Physics, RAPIER } from '../../engine/physics/Physics';
 import type { LightHandle, LightPool, LightRequestOptions } from '../../engine/render/lights';
@@ -275,7 +276,10 @@ class LevelRuntime implements Level {
     if (physics && this.body) physics.world.removeRigidBody(this.body);
     // The engine resets scene.fog on unload, not a fog node: ours goes with the level.
     if (this.ctx.world) (this.ctx.world.scene as Scene & { fogNode: Node | null }).fogNode = null;
+    // Removed from the scene here, so the engine's unload won't see it: free it ourselves
+    // (merged level geometry; shared materials and geometries are kept).
     this.root.removeFromParent();
+    disposeObject(this.root);
   }
 
   // ------------------------------------------------------------------ mechanics context
