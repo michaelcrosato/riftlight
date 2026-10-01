@@ -52,6 +52,8 @@ export interface MenuHost {
   sound(s: 'click' | 'move'): void;
   /** Open a game view on top of the menu (pause → inventory, skills, tree: touch and pad players have no hotkeys). */
   openPanel(id: 'inventory' | 'skills' | 'tree' | 'character'): unknown;
+  /** Photo mode (the showcase): optional, so other hosts can leave it out. */
+  photoMode?(): void;
 }
 
 const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
@@ -81,6 +83,7 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'button', id: 'tree', label: 'Passive tree', onClick: () => h.openPanel('tree'), hint: 'spend passive points (P)' },
       { kind: 'button', id: 'character', label: 'Character', onClick: () => h.openPanel('character'), hint: 'stats and where they come from (C)' },
       { kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) },
+      ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: 'Photo mode', onClick: () => h.photoMode!(), hint: 'free camera, filters, save a PNG (O)' }] : []),
       { kind: 'button', id: 'dev', label: 'Dev', onClick: () => h.openMenu(devMenu(h)), hint: 'debug and agent tools' },
       { kind: 'gap', id: 'g' },
       { kind: 'button', id: 'quit', label: 'Save & Quit', onClick: () => h.saveAndQuit(), accent: 'plum' },

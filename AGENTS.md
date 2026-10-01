@@ -77,6 +77,7 @@ isolated clips can't.
 | `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Movement demo (`?game=playground`): a station for every move, a complete example of the `Game` API |
+| `src/riftlight/showcase/` | Other genres inside Riftlight, as templates: a side-scroller (`?game=arcade`), a first-person gallery, photo mode (docs/GAME.md, *Showcase*) |
 | `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`) and their stubs (`stubs/`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`). See docs/GAME.md, Game shell |
 | `src/riftlight/town/` | Emberfall, the town hub: layout as data, the primitive kit, townsfolk models on the hero rig and their clips as data (`npm run anim -- check` covers them) |
 | `src/riftlight/ui/` | Pixel HUD, menus, panels and the UI kit on the engine Hud (`ui/tree`, `ui/items` are the tree and loot views) |

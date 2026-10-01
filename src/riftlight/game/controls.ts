@@ -49,6 +49,8 @@ export const KEYS = {
   tree: ['KeyP'],
   character: ['KeyC'],
   codex: ['KeyK'],
+  /** Photo mode (the showcase): free camera, filters, PNG capture. */
+  photo: ['KeyO'],
   confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ', 'PadA'],
   back: ['Escape', 'Backspace', 'PadB'],
   up: ['ArrowUp', 'KeyW'],

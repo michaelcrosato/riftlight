@@ -13,6 +13,7 @@
 import type { SaveData } from '../core/types';
 import { NORMAL, sanitizeTuning } from './difficulty';
 import { emptyStats } from './progress';
+import { sanitizeShowcase } from '../showcase/save';
 
 export const SAVE_VERSION = 1;
 export const SAVE_FORMAT = 'riftlight-save';
@@ -99,6 +100,8 @@ export function migrate(raw: unknown): SaveData {
     stats,
     // grid cells of the inventory and stash (loot keeps items where the player put them)
     ...(r.positions && typeof r.positions === 'object' && !Array.isArray(r.positions) ? { positions: r.positions as NonNullable<SaveData['positions']> } : {}),
+    // the showcase's records (arcade times, the bestiary), cleaned
+    ...(r.showcase ? { showcase: sanitizeShowcase(r.showcase) } : {}),
   };
 }
 

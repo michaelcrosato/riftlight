@@ -423,6 +423,8 @@ export interface SaveData {
   codex?: string[];
   /** Lifetime counters for the save slot (game shell). Optional: older saves lack it. */
   stats?: SaveStats;
+  /** The showcase's records: arcade best times, the bestiary (showcase/save.ts). Optional. */
+  showcase?: import('../showcase/save').ShowcaseSave;
 }
 
 /** Per-slot lifetime counters kept by the game shell (title screen, playtests, codex). */
