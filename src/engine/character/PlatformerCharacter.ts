@@ -283,7 +283,7 @@ export class PlatformerCharacter {
       case 'proneDown':
         this.decel(dt, 20);
         this.move(dt);
-        if (this.stateTime > 0.6) this.enter('prone');
+        if (this.stateTime > this.clipDuration('ProneDown', 0.6)) this.enter('prone');
         break;
       case 'prone':
       case 'crawl':
@@ -304,7 +304,7 @@ export class PlatformerCharacter {
         if (this.stance !== 'prone') this.setStance('prone');
         this.decel(dt, 30);
         this.move(dt);
-        if (this.stateTime > 1.0) this.enter('lying');
+        if (this.stateTime > this.clipDuration('LieDown', 1.0)) this.enter('lying');
         break;
       case 'lying':
         this.decel(dt, 30);
@@ -811,7 +811,7 @@ export class PlatformerCharacter {
   }
 
   private stepPullUp(): void {
-    const dur = 0.9;
+    const dur = this.clipDuration('PullUp', 0.9);
     const t = Math.min(1, this.stateTime / dur);
     const up = MathUtils.smoothstep(t, 0, 0.55);
     const over = MathUtils.smoothstep(t, 0.4, 0.85);
