@@ -56,6 +56,12 @@ export class HeroAnimator {
     return this.clips.get(name)?.duration ?? 0;
   }
 
+  /** Whether a clip loops. */
+  isLoop(name: string): boolean {
+    const c = this.clips.get(name);
+    return !!c && isLoop(c);
+  }
+
   /** Ground speed a locomotion clip is authored for. */
   speedOf(name: string): number {
     return (this.clips.get(name)?.userData.speed as number | undefined) ?? 0;
@@ -151,7 +157,9 @@ export class HeroAnimator {
   get current(): string {
     let best: Slot | null = null;
     for (const s of this.slots) if (!best || s.weight > best.weight) best = s;
-    return best?.parts.find((p) => p.action)?.clip ?? 'Idle';
+    // a split pose reports what the arms are doing (the action), not the legs
+    const parts = best?.parts ?? [];
+    return (parts.length > 1 ? parts[parts.length - 1] : parts[0])?.clip ?? 'Idle';
   }
 }
 

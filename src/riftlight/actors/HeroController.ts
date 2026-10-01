@@ -19,7 +19,7 @@ import { attachSword } from './sword';
 export const HERO_TUNING = {
   /** Base run speed comes from the `move.speed` stat; these shape how it feels. */
   turnRate: 22,
-  /** A press is kept this long while the hero is busy (input buffer), seconds. */
+  /** Input buffer: a press made while busy waits, and is kept this long once the hero is free (s). */
   buffer: 0.2,
   /** After a combo step ends, the next press continues the chain within this window. */
   comboWindow: 0.55,
@@ -143,6 +143,8 @@ export class HeroController {
   private camera: Camera | null = null;
   /** Stepping in toward a melee target (the legs run under the swing). */
   private lunging = false;
+  /** Last game time the hero was busy (an action or a roll): the buffer counts from here. */
+  private busyUntil = -Infinity;
 
   constructor(o: HeroOptions) {
     this.combat = o.combat;
@@ -283,7 +285,9 @@ export class HeroController {
     if (input.consumeAny(HERO_KEYS.dodge)) this.buffer('dodge', -1);
     for (let i = 0; i < HERO_KEYS.slots.length; i++) if (input.consumeAny(HERO_KEYS.slots[i]!)) this.buffer('slot', i);
     if (input.consumeAny(HERO_KEYS.attack)) this.buffer('attack', -1);
-    if (this.buffered && this.time - this.buffered.at > HERO_TUNING.buffer) this.buffered = null;
+    // a press waits while the hero is busy, then stays good for `buffer` seconds
+    if (this.action || this.state === 'dodge') this.busyUntil = this.time;
+    if (this.buffered && this.time - Math.max(this.buffered.at, this.busyUntil) > HERO_TUNING.buffer) this.buffered = null;
     const attackHeld = input.anyDown(HERO_KEYS.attack);
 
     if (a.stopped) {
@@ -417,7 +421,7 @@ export class HeroController {
     const len = this.animator.duration(clip);
     const timing = COMBAT_TIMING[clip];
     const frames = Math.max(1, len * 30);
-    const duration = skill.channel ? skill.castTime : skill.castTime;
+    const duration = skill.castTime;
     const hitAt = skill.def.hitAt ?? (timing ? timing.hit / frames : 0.5);
     const cancelAt = timing ? Math.max(hitAt, timing.cancel / frames) : Math.max(hitAt, 0.7);
     // turn instantly toward the aim
@@ -579,8 +583,11 @@ export class HeroController {
     } else if (this.action) {
       const act = this.action;
       const len = an.duration(act.clip);
-      if (this.state === 'channel') an.advance(act.clip, k, act.skill.speed);
-      else an.setTime(act.clip, Math.min(len, (act.t / Math.max(0.01, act.duration)) * len));
+      if (this.state === 'channel') {
+        // looping channels (whirlwind) keep spinning; others hold their release pose (beams)
+        if (an.isLoop(act.clip)) an.advance(act.clip, k, act.skill.speed);
+        else an.setTime(act.clip, (COMBAT_TIMING[act.clip]?.hit ?? len * 30 * 0.5) / 30);
+      } else an.setTime(act.clip, Math.min(len, (act.t / Math.max(0.01, act.duration)) * len));
       // legs keep running under a cast when moving; attacks own the whole body
       const melee = act.skill.tags.includes('melee');
       const moving = v > HERO_TUNING.idleBelow && act.skill.moveDuringCast > 0 && !act.skill.def.leap && (!melee || this.lunging);
