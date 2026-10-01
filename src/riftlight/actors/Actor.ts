@@ -4,6 +4,9 @@ import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, AilmentType, DamageType, Faction, GameEventBus, Hit, HitResult } from '../core/types';
 import { AILMENTS } from '../combat/ailments';
+import { CHARGE_TYPES, Charges, chargeChance } from '../combat/charges';
+import { Curses } from '../combat/curses';
+import { StatusFx } from '../combat/statusFx';
 import { mitigate, mitigateDot, type AilmentApplication, type Defender } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
 import { ACTOR_BASE, BLOCK_STAGGER, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
@@ -71,6 +74,11 @@ export interface ActorOptions {
   tags?: readonly string[];
   /** Per-frame visual hook (procedural bob, look-at...); skipped while frozen. */
   animate?: (actor: Actor, dt: number) => void;
+  /**
+   * Share this sheet instead of making one (`base` and `mods` are then ignored): a trap's
+   * stand-in caster fights with its owner's live stats (combat/Combat.ts `proxyOf`).
+   */
+  sheet?: StatSheet;
 }
 
 let nextId = 1;
@@ -137,6 +145,21 @@ export class Actor implements ActorLike {
   gone = false;
   /** Counters for tools and tests. */
   readonly counters = { hitsTaken: 0, damageTaken: 0, kills: 0, evaded: 0, blocked: 0 };
+  /** Endurance, frenzy and power charges (combat/charges.ts): the `charges` stat source. */
+  readonly charges: Charges;
+  /** Curses on this actor (combat/curses.ts): `curse:<id>` stat sources. */
+  readonly curses: Curses;
+  /**
+   * Reserved share (0..1) of the mana pool (of life with `skills.costLife`) per aura skill id:
+   * an active aura holds its reservation instead of paying a cost per toggle.
+   */
+  readonly reserved = new Map<string, number>();
+  /** Orbiting charge pips and curse runes, made on first need. */
+  private statusFx: StatusFx | null = null;
+  /** The charge / curse visuals (null until the actor first has either). */
+  get status(): StatusFx | null {
+    return this.statusFx;
+  }
   private readonly leechPool = { life: 0, mana: 0 };
   private sinceHit = 99;
   private sinceKill = 99;
@@ -155,10 +178,14 @@ export class Actor implements ActorLike {
     this.tags = o.tags ?? [];
     this.animate = o.animate ?? null;
     this.death = o.death ?? (o.faction === 'hero' ? 'anim' : 'ragdoll');
-    this.stats = new StatSheet();
-    const base = { ...ACTOR_BASE, ...o.base };
-    this.stats.set('base', Object.entries(base).map(([stat, v]) => flat(stat, v)));
-    for (const [source, mods] of Object.entries(o.mods ?? {})) this.stats.set(source, mods);
+    this.stats = o.sheet ?? new StatSheet();
+    if (!o.sheet) {
+      const base = { ...ACTOR_BASE, ...o.base };
+      this.stats.set('base', Object.entries(base).map(([stat, v]) => flat(stat, v)));
+      for (const [source, mods] of Object.entries(o.mods ?? {})) this.stats.set(source, mods);
+    }
+    this.charges = new Charges(this.stats);
+    this.curses = new Curses(this.stats);
     this.body = o.body ?? new Group();
     this.mixer = o.mixer ?? null;
     this.brain = o.brain ?? null;
@@ -184,6 +211,49 @@ export class Actor implements ActorLike {
   }
   get maxEs(): number {
     return Math.max(0, this.stats.get('es'));
+  }
+
+  // ------------------------------------------------------------------ reservation (auras)
+
+  /** True when reservations come out of life (`skills.costLife`, Blood Magic) instead of mana. */
+  get reservesLife(): boolean {
+    return this.stats.has('skills.costLife');
+  }
+  /** Total reserved share of the pool (0..1). */
+  get reservedFraction(): number {
+    let f = 0;
+    for (const v of this.reserved.values()) f += v;
+    return Math.min(1, f);
+  }
+  /** Mana the actor can actually fill (max minus reservations). */
+  get unreservedMana(): number {
+    return this.maxMana * (this.reservesLife ? 1 : 1 - this.reservedFraction);
+  }
+  /** Life the actor can actually fill (Blood Magic reservations come out of life). */
+  get unreservedLife(): number {
+    return this.reservesLife ? Math.max(1, this.maxLife * (1 - this.reservedFraction)) : this.maxLife;
+  }
+  /** Could `key` reserve `fraction` of the pool (its own current reservation is given back first)? */
+  canReserve(key: string, fraction: number): boolean {
+    const others = this.reservedFraction - (this.reserved.get(key) ?? 0);
+    // Blood Magic keeps at least one point of life
+    return others + fraction <= (this.reservesLife ? 0.95 : 1) + 1e-9;
+  }
+  /** Reserve `fraction` of the pool for `key` (an aura); false (nothing reserved) when it doesn't fit. */
+  reserve(key: string, fraction: number): boolean {
+    if (fraction <= 0) return true;
+    if (!this.canReserve(key, fraction)) return false;
+    this.reserved.set(key, fraction);
+    this.clampPools();
+    return true;
+  }
+  unreserve(key: string): void {
+    this.reserved.delete(key);
+  }
+  private clampPools(): void {
+    if (!this.reserved.size) return;
+    this.mana = Math.min(this.mana, this.unreservedMana);
+    if (this.reservesLife) this.life = Math.min(this.life, this.unreservedLife);
   }
   /** Strongest active ailment of a kind (0 if none). */
   ailment(id: AilmentType): number {
@@ -279,8 +349,19 @@ export class Actor implements ActorLike {
 
   /** The killer side: called by the hit pipeline when this actor kills something. */
   onKill(): void {
+    // a trap's stand-in caster kills for its owner; a totem's kills count for both
+    if (this.owner && (this.tags.includes('proxy') || this.tags.includes('totem'))) {
+      this.owner.onKill();
+      if (this.tags.includes('proxy')) return;
+    }
     this.sinceKill = 0;
     this.counters.kills++;
+    // charges on kill (`charge.onKill`, scoped by the charge's tag); no roll without a chance
+    const q = new StatQuery(this.stats);
+    for (const type of CHARGE_TYPES) {
+      const c = chargeChance(q, type, 'onKill');
+      if (c > 0 && this.rng.chance(c)) this.charges.gain(type);
+    }
     // "+N life / mana / energy shield gained on kill" (gear, tree)
     const life = this.stats.get('life.onKill');
     if (life > 0) this.heal(life * Math.max(0, new StatQuery(this.stats).scale('life.recovery')));
@@ -349,6 +430,10 @@ export class Actor implements ActorLike {
     this.deadFor = 0;
     this.velocity.set(0, 0, 0);
     this.ailments.length = 0;
+    this.charges.clear();
+    this.curses.clear();
+    this.statusFx?.dispose();
+    this.statusFx = null;
     this.endMotion(true);
     if (killer instanceof Actor) killer.onKill();
     this.events?.emit('death', { actor: this });
@@ -383,6 +468,8 @@ export class Actor implements ActorLike {
     this.sinceKill += dt;
     this.iframes = Math.max(0, this.iframes - dt);
     for (const [key, until] of this.buffs) if (this.time >= until) this.removeBuff(key);
+    this.charges.tick(dt);
+    this.curses.tick(this.time);
     // ailments: tick damage over time, expire
     let dot = 0;
     let dotSource: ActorLike | null = null;
@@ -423,6 +510,7 @@ export class Actor implements ActorLike {
     const recovery = Math.max(0, q.scale('life.recovery')); // life regen and leech
     this.life = Math.min(maxLife, this.life + Math.max(0, this.stats.get('life.regen') + this.stats.get('life.regen.pct') * maxLife) * recovery * dt);
     this.mana = Math.min(maxMana, this.mana + Math.max(0, this.stats.get('mana.regen')) * dt);
+    this.clampPools();
     const rate = LEECH_RATE * Math.max(0, q.scale('leech.rate'));
     const lifeLeech = Math.min(this.leechPool.life, maxLife * rate * recovery * dt);
     const manaLeech = Math.min(this.leechPool.mana, maxMana * rate * dt);
@@ -430,6 +518,7 @@ export class Actor implements ActorLike {
     this.leechPool.mana -= manaLeech;
     this.life = Math.min(maxLife, this.life + lifeLeech);
     this.mana = Math.min(maxMana, this.mana + manaLeech);
+    this.clampPools();
     this.esTimer += dt;
     const maxEs = this.maxEs;
     if (this.esTimer >= ES_DELAY && this.es < maxEs) this.es = Math.min(maxEs, this.es + maxEs * 0.33 * Math.max(0, q.scale('es.recharge')) * dt);
@@ -493,10 +582,14 @@ export class Actor implements ActorLike {
     if (this.mixer && !frozen) this.mixer.update(dt * Math.max(0, 1 - this.chill));
     if (this.animate && !frozen) this.animate(this, dt * Math.max(0, 1 - this.chill));
     this.fx.update(dt);
+    // charge pips and curse runes follow the body (made on first need)
+    if (this.statusFx || this.charges.total || this.curses.list.length) (this.statusFx ??= new StatusFx(this)).update(dt);
   }
 
   /** Free what this actor owns (cloned materials, the mover's physics). The body is removed by the owner. */
   dispose(): void {
+    this.statusFx?.dispose();
+    this.statusFx = null;
     this.fx.dispose();
     this.mover.dispose?.();
     this.body.removeFromParent();

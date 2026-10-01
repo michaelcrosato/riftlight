@@ -43,6 +43,8 @@ export interface Hit {
   /** Per-ailment multipliers on top (`bleed.damage`, `chill.effect`...; 1 = base). */
   readonly ailmentEffects?: Partial<Record<AilmentType, number>>;
   readonly ailmentDuration?: number;
+  /** Per-ailment duration multipliers on top (`stun.duration`, `freeze.duration`...; 1 = base). */
+  readonly ailmentDurations?: Partial<Record<AilmentType, number>>;
   /** Culling strike: a target left below this fraction of its life dies. */
   readonly cull?: number;
 }
@@ -88,7 +90,12 @@ export type Delivery =
   | { kind: 'dash'; distance: number; hitWidth: number }
   | { kind: 'summon'; genome: 'minion' | string; count: number; duration: number }
   | { kind: 'aura'; radius: number }
-  | { kind: 'trap'; radius: number; arm: number; duration: number };
+  | { kind: 'trap'; radius: number; arm: number; duration: number }
+  /** A hex on an area: every enemy in `radius` around the aim point gets the skill's `curse` effect. */
+  | { kind: 'curse'; radius: number };
+
+/** Endurance, frenzy and power charges (combat/charges.ts). */
+export type ChargeType = 'endurance' | 'frenzy' | 'power';
 
 export type Effect =
   | { kind: 'damage'; base: Partial<Record<DamageType, [number, number]>>; effectiveness?: number }
@@ -97,7 +104,15 @@ export type Effect =
   | { kind: 'buff'; mods: readonly Mod[]; duration: number; target: 'self' | 'allies' | 'enemies' }
   | { kind: 'light'; color: number; intensity: number; radius: number; duration: number }
   | { kind: 'sound'; sound: string }
-  | { kind: 'particles'; preset: string; count?: number };
+  | { kind: 'particles'; preset: string; count?: number }
+  /** A curse: `mods` on every enemy the delivery reaches for `duration` s (combat/curses.ts). */
+  | { kind: 'curse'; mods: readonly Mod[]; duration: number; color?: string }
+  /**
+   * Gain (count > 0) or consume (count < 0, 'all' types allowed) charges: on cast, or with
+   * `chance` on each landed hit (`on: 'hit'`). Consuming ones add `perCharge` mods × the charges
+   * consumed to that cast (Discharge).
+   */
+  | { kind: 'charges'; charge: ChargeType | 'all'; count: number; on?: 'cast' | 'hit'; chance?: number; perCharge?: readonly Mod[] };
 
 /** An active skill gem, as data. */
 export interface SkillDef extends Entry {
@@ -353,6 +368,8 @@ export interface GameEvents extends Record<string, unknown> {
   mechanic: { id: string; event: string; at?: Vector3 };
   levelClear: { depth: number; time: number };
   death: { actor: ActorLike };
+  /** A curse landed on (or was shrugged off by) a target (combat/curses.ts). */
+  curse: { target: ActorLike; source: ActorLike | null; curse: string; outcome: 'applied' | 'refreshed' | 'immune' };
   /** A skill or effect wants a dynamic light (see LightRequest). A light pool claims it. */
   light: LightRequest;
 }

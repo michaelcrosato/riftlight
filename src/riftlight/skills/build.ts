@@ -2,7 +2,7 @@ import { inc, more, type Mod, type StatSheet } from '../core/mods';
 import type { AilmentType, DamageType, Delivery, Effect } from '../core/types';
 import type { DamageSpec, Range } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
-import { REFERENCE_APS } from '../combat/tuning';
+import { PLACEMENT, REFERENCE_APS, WEAPON_CLASS_TAGS } from '../combat/tuning';
 import { SKILLS } from './actives';
 import { SUPPORTS } from './supports';
 import type { ResolvedSkill, SkillGem, SupportGem, SupportLink } from './types';
@@ -59,6 +59,11 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
     applied.push(s);
     for (const t of s.gem.changes?.addTags ?? []) if (!tags.includes(t)) tags.push(t);
   }
+  // attacks carry the equipped weapon's class (`weapon.axe` → 'axe', `weapon.twohand` → 'twohand'),
+  // so passives and affixes scoped to a weapon class reach them
+  if (tags.includes('attack')) for (const [stat, tag] of Object.entries(WEAPON_CLASS_TAGS)) if (!tags.includes(tag) && actorStats.has(stat)) tags.push(tag);
+  // a totem or trap support turns the skill into something you place (the first one wins)
+  const placement = applied.find((a) => a.gem.placement)?.gem.placement ?? null;
 
   const mods: Mod[] = [...levelMods(def.perLevel ?? (tags.includes('damage') ? DEFAULT_PER_LEVEL : []), level - 1)];
   let costMultiplier = 1;
@@ -85,8 +90,12 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
   const area = Math.max(0.05, q.scale('area', tags));
   const radius = Math.sqrt(area);
   const duration = Math.max(0, q.scale('duration', tags));
+  // traps are thrown faster with `trap.speed`
+  const throwSpeed = tags.includes('trap') ? Math.max(0.05, q.scale('trap.speed', tags)) : 1;
+  // auras reserve a share of the pool; reservation supports (Enlighten) and `mana.reservation` shrink it
+  const reservation = def.reserve ? Math.min(1, Math.max(0, def.reserve * costMultiplier * q.scale('mana.reservation', tags))) : 0;
 
-  return {
+  const resolved: ResolvedSkill = {
     id: def.id,
     def,
     level,
@@ -96,7 +105,7 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
     mods,
     cost: Math.round(def.cost * (1 + COST_PER_LEVEL * (level - 1)) * costMultiplier * q.scale('cost', tags) * 10) / 10,
     cooldown: def.cooldown / Math.max(0.05, q.scale('cooldown.recovery', tags)),
-    castTime: def.castTime / speed,
+    castTime: def.castTime / speed / throwSpeed,
     speed,
     delivery: applyChanges(def.delivery, q, tags, change, radius, duration),
     area,
@@ -108,6 +117,21 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
     anims: def.combo?.length ? def.combo : [def.anim],
     channel: def.channel === true,
     moveDuringCast: def.moveDuringCast ?? (tags.includes('spell') ? 0.4 : 0.15),
+    reservation,
+    placement: null,
+  };
+  if (!placement) return resolved;
+  // placing: a quick plant (`totem.speed`) or a throw; the totem / trap then uses the skill itself
+  const totem = placement === 'totem';
+  return {
+    ...resolved,
+    placement,
+    inner: resolved,
+    castTime: totem ? PLACEMENT.totemTime / Math.max(0.05, q.scale('totem.speed', tags)) : resolved.castTime,
+    anims: [totem ? PLACEMENT.totemAnim : PLACEMENT.trapAnim],
+    channel: false,
+    repeats: 1,
+    moveDuringCast: totem ? 0.2 : 0.4,
   };
 }
 
@@ -133,6 +157,8 @@ function applyChanges(d: Delivery, q: StatQuery, tags: readonly string[], c: { p
     case 'nova':
       return { ...d, radius: d.radius * radius };
     case 'aura':
+      return { ...d, radius: d.radius * radius * Math.max(0.1, q.scale('aura.radius', tags)) };
+    case 'curse':
       return { ...d, radius: d.radius * radius };
     case 'trap':
       return { ...d, radius: d.radius * radius, duration: d.duration * duration, arm: d.arm * Math.max(0, q.scale('trap.arm', tags)) };

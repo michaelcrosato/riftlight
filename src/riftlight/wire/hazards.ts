@@ -8,6 +8,7 @@ import type { AilmentType, DamageType } from '../core/types';
 import type { Level } from '../levels/Level';
 import { MONSTER_SKILLS, type MonsterEvent } from '../monsters';
 import { buildSkill } from '../skills/build';
+import { SKILLS } from '../skills/actives';
 import type { SkillGem } from '../skills/types';
 import { type LiveTelegraph, makeTelegraph, type MonsterUnit, monsterGem } from './monsters';
 import { WIRE_TUNING } from './tuning';
@@ -144,6 +145,10 @@ export class Hazards {
         return;
       case 'heal':
         return void src.heal(e.amount);
+      case 'hex':
+        // a curse gem through combat (its hex circle, the curse limit, `curse.immune`)
+        if (SKILLS.has(e.curse)) this.host.world.combat.cast(src, buildSkill(e.curse, [], src.stats), e.at);
+        return;
       case 'hazard':
         return this.pattern(unit, e.id, e.at, e.data ?? {});
     }

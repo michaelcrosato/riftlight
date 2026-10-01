@@ -49,6 +49,11 @@ export interface SkillGem extends SkillDef {
   readonly target?: 'self' | 'aim' | 'ahead';
   /** Damage dealt per tick of channels/zones as a fraction of a full hit. */
   readonly tickDamage?: number;
+  /**
+   * Auras: the share of maximum mana (life with Blood Magic) the aura reserves while it is on,
+   * instead of a cost per toggle. Scaled by `mana.reservation` and the supports' cost multipliers.
+   */
+  readonly reserve?: number;
   readonly look: SkillLook;
 }
 
@@ -58,6 +63,11 @@ export interface SupportGem extends SupportDef {
   readonly excludes?: readonly string[];
   /** Per gem level above 1 (values × (level − 1)). */
   readonly perLevel?: readonly Mod[];
+  /**
+   * The linked skill is no longer used directly: the hero places a totem that casts it
+   * (combat/totems.ts) or throws a trap that releases it at the first enemy that comes near.
+   */
+  readonly placement?: 'totem' | 'trap';
 }
 
 /** A linked support, as an id or with its gem level. */
@@ -102,4 +112,10 @@ export interface ResolvedSkill {
   readonly anims: readonly string[];
   readonly channel: boolean;
   readonly moveDuringCast: number;
+  /** Share of the mana (or life) pool an aura reserves while on (0 for everything else). */
+  readonly reservation: number;
+  /** Set by a totem or trap support: using the skill places one, which uses `inner`. */
+  readonly placement: 'totem' | 'trap' | null;
+  /** The skill a placed totem casts / a trap releases (`placement` set). */
+  readonly inner?: ResolvedSkill;
 }

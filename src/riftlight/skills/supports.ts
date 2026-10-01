@@ -107,8 +107,25 @@ export const SUPPORT_GEMS: readonly SupportGem[] = [
     mods: [inc('life', 0.45, ['minion'])], costMultiplier: 1.3 }),
   s({ id: 'minion-speed', name: 'Minion Speed', description: 'Minions move and attack faster.', requires: ['minion'],
     mods: [inc('move.speed', 0.3, ['minion']), inc('attack.speed', 0.2, ['minion']), inc('cast.speed', 0.2, ['minion'])], costMultiplier: 1.2 }),
+  // ---------------------------------------------------------------- totems & traps (placement)
+  // `placement` turns the linked skill into something you place: a totem that casts it at
+  // whatever comes in reach (combat/totems.ts), or a trap that releases it at the first enemy
+  // to come near (combat/deliveries/trap.ts). The added tag lets `totem` / `trap` mods scale it.
+  s({ id: 'spell-totem', name: 'Spell Totem', description: 'Plant a totem that casts the spell for you.', requires: ['spell'], excludes: ['movement', 'channel', 'minion', 'aura', 'trap', 'totem', 'zone', 'warcry'],
+    mods: [more('damage', -0.1)], changes: { addTags: ['totem'] }, placement: 'totem', costMultiplier: 1.4, perLevel: [more('damage', 0.01)] }),
+  s({ id: 'ballista-totem', name: 'Ballista Totem', description: 'Plant a ballista that fires the projectile attack for you.', requires: ['attack', 'projectile'], excludes: ['movement', 'channel', 'trap', 'totem'],
+    mods: [more('attack.speed', -0.1)], changes: { addTags: ['totem'] }, placement: 'totem', costMultiplier: 1.4, perLevel: [more('damage', 0.01)] }),
+  s({ id: 'trap-support', name: 'Trap', description: 'Throw the skill as a trap: it goes off at the first enemy that comes near.', requires: ['damage'], excludes: ['melee', 'movement', 'channel', 'minion', 'aura', 'trap', 'totem', 'zone', 'buff', 'warcry'],
+    mods: [more('damage', 0.1, ['trap'])], changes: { addTags: ['trap'] }, placement: 'trap', costMultiplier: 1.2 }),
+  // ---------------------------------------------------------------- charges
+  s({ id: 'power-charge-on-crit', name: 'Power Charge on Critical', description: 'Critical strikes may grant a power charge.', requires: DMG, tags: ['charge'],
+    mods: [flat('charge.onCrit', 0.4, ['power'])], costMultiplier: 1.1 }),
+  s({ id: 'endurance-charge-on-stun', name: 'Endurance Charge on Melee Stun', description: 'Stunning an enemy grants an endurance charge; stuns last longer.', requires: ['melee'], tags: ['charge'],
+    mods: [flat('charge.onStun', 1, ['endurance']), flat('charge.onHit', 0.05, ['endurance']), inc('stun.duration', 0.3)], costMultiplier: 1.1 }),
+  s({ id: 'frenzy-charge-on-hit', name: 'Frenzy Charge on Hit', description: 'Attacks may grant a frenzy charge on hit.', requires: ['attack'], tags: ['charge'],
+    mods: [flat('charge.onHit', 0.2, ['frenzy'])], costMultiplier: 1.1 }),
   // ---------------------------------------------------------------- auras
-  s({ id: 'enlighten', name: 'Enlighten', description: 'Auras and buffs cost less mana.', requires: ['buff'],
+  s({ id: 'enlighten', name: 'Enlighten', description: 'Auras reserve less, buffs cost less mana.', requires: ['buff'],
     mods: [], costMultiplier: 0.7 }),
 ];
 

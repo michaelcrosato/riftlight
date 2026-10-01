@@ -16,6 +16,8 @@ export class BodyFx {
   private flashLeft = 0;
   private flashTime = 0;
   private lit = false;
+  /** A standing emissive tint (curses): RGB 0..1 × strength, under the hit flash. */
+  private tintRgb: [number, number, number] | null = null;
   // ragdoll
   private ragdoll: { v: Vector3; spin: Vector3; ground: number; t: number; bounces: number } | null = null;
   ragdollDone = false;
@@ -29,6 +31,25 @@ export class BodyFx {
   flash(seconds = 0.08): void {
     this.ensureClones();
     this.flashLeft = this.flashTime = seconds;
+  }
+
+  /**
+   * A standing tint (a cursed monster glows in the curse's colour): `color` (hex) at strength
+   * `k` (emissive 0..1), or null to clear. The hit flash still wins while it runs.
+   */
+  tint(color: number | null, k = 0.3): void {
+    if (color === null) {
+      if (!this.tintRgb) return;
+      this.tintRgb = null;
+      if (!this.flashLeft) this.setEmissive(0);
+      return;
+    }
+    this.ensureClones();
+    this.tintRgb = [(((color >> 16) & 255) / 255) * k, (((color >> 8) & 255) / 255) * k, ((color & 255) / 255) * k];
+  }
+
+  get tinted(): boolean {
+    return this.tintRgb !== null;
   }
 
   get flashing(): boolean {
@@ -51,7 +72,8 @@ export class BodyFx {
       this.flashLeft = Math.max(0, this.flashLeft - dt);
       const k = this.flashLeft > 0 ? 0.6 + 0.4 * (this.flashLeft / this.flashTime) : 0;
       this.setEmissive(k);
-    } else if (this.lit) this.setEmissive(0);
+    } else if (this.tintRgb) this.setEmissiveRgb(...this.tintRgb);
+    else if (this.lit) this.setEmissive(0);
     const r = this.ragdoll;
     if (!r || this.ragdollDone) return;
     r.t += dt;
@@ -104,9 +126,13 @@ export class BodyFx {
   }
 
   private setEmissive(k: number): void {
+    this.setEmissiveRgb(k, k, k * 0.9);
+  }
+
+  private setEmissiveRgb(r: number, g: number, b: number): void {
     if (!this.clones) return;
-    for (const m of this.clones) m.emissive?.setRGB(k, k, k * 0.9);
-    this.lit = k > 0;
+    for (const m of this.clones) m.emissive?.setRGB(r, g, b);
+    this.lit = r > 0 || g > 0 || b > 0;
   }
 
   dispose(): void {

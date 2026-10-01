@@ -66,11 +66,11 @@ export const STAT_NAMES: Readonly<Record<string, string>> = {
   // Riftlight mechanics (docs/GAME.md, "The 12 designed levels")
   'brazier.damage': 'brazier explosion damage',
   'brazier.area': 'brazier explosion area',
-  'brazier.selfIgnite': 'brazier explosions also ignite you',
+  'brazier.selfIgnite': 'brazier explosions set you alight instead of hurting you',
   'explosion.damage': 'damage of explosions you cause',
   'echo.damage': 'echo damage',
   'echo.delay': 'echo delay',
-  'lantern.duration': 'lantern duration',
+  'lantern.duration': 'duration of lantern buffs',
   'wind.resist': 'resistance to wind push',
   'well.resist': 'resistance to gravity well pull',
   'well.immune': 'immune to gravity wells',
@@ -79,15 +79,20 @@ export const STAT_NAMES: Readonly<Record<string, string>> = {
   'thorns.reflect': 'physical damage reflected to attackers',
   'thorns.immune': 'immune to vine traps',
   'pylon.chain': 'additional pylon chains',
-  'shatter.chance': 'chance to shatter frozen enemies',
+  'shatter.chance': 'chance for enemies you kill to shatter',
   'collapse.bonusLoot': 'collapse bonus loot',
   'collapse.fallImmune': 'crumbling floors hold under you',
-  'echo.repeatsSkills': 'your echo repeats skills too',
+  'echo.repeatsSkills': 'your echo repeats every skill twice',
   'gate.damage': 'damage after crossing a riftgate',
   'block.spells': 'block applies to spells',
   'leech.instant': 'life leech is instant',
   'minion.life': 'minion life',
   'curse.immune': 'unaffected by curses',
+  'charge.onKill': 'chance to gain a charge on kill',
+  'charge.onHit': 'chance to gain a charge on hit',
+  'charge.onCrit': 'chance to gain a charge on critical strike',
+  'charge.onStun': 'chance to gain a charge when you stun',
+  'stun.duration': 'stun duration',
 };
 
 /** Stats whose flat values are fractions, shown as percentages. */
@@ -108,6 +113,10 @@ export const PERCENT_STATS: ReadonlySet<string> = new Set([
   'poison.chance',
   'shatter.chance',
   'thorns.reflect',
+  'charge.onKill',
+  'charge.onHit',
+  'charge.onCrit',
+  'charge.onStun',
 ]);
 
 const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;

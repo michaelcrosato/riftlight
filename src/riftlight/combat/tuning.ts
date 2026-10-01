@@ -17,6 +17,8 @@ export const ACTOR_BASE: Readonly<Record<string, number>> = {
   accuracy: 400,
   'damage.taken': 1,
   mass: 1,
+  /** Multiplier on every action (animation, wind-ups, cooldown ticks): Temporal Chains slows it. */
+  'action.speed': 1,
 };
 
 /** Seconds a "recently" condition lasts. */
@@ -31,6 +33,31 @@ export const BLOCK_STAGGER = 6;
 export const REFERENCE_APS = 1.4;
 /** Skill tags that name a weapon class: such skills need `weapon.<class>` (a flag from the equipped weapon). */
 export const WEAPON_CLASSES = ['bow', 'wand'] as const;
+/**
+ * The equipped weapon's class flags (loot/itemMods.ts) and the tag each adds to attack skills
+ * (skills/build.ts), so `inc('damage', 0.2, ['axe'])` or `['twohand']` scope to attacks made
+ * with that weapon. Every class is here; `WEAPON_CLASSES` are the ones skills require.
+ */
+export const WEAPON_CLASS_TAGS: Readonly<Record<string, string>> = {
+  'weapon.sword': 'sword',
+  'weapon.axe': 'axe',
+  'weapon.mace': 'mace',
+  'weapon.dagger': 'dagger',
+  'weapon.staff': 'staff',
+  'weapon.sceptre': 'sceptre',
+  'weapon.wand': 'wand',
+  'weapon.bow': 'bow',
+  'weapon.twohand': 'twohand',
+};
+
+/** Placing a skill through a totem or trap support (skills/build.ts, combat/totems.ts). */
+export const PLACEMENT = {
+  /** Seconds to plant a totem at 100% `totem.speed`. */
+  totemTime: 0.6,
+  /** Hero clips for planting and throwing. */
+  totemAnim: 'CastBig',
+  trapAnim: 'Cast',
+} as const;
 
 /** Energy shield starts recharging after this long without being hit, at 33% per second. */
 export const ES_DELAY = 2;

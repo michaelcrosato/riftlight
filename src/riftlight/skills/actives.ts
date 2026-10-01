@@ -71,11 +71,15 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
     look: { color: 'sand', glow: ['sand', 'orange'], burst: 'impact', sound: { impact: 'explode' }, shake: 0.4 },
   }),
   g({
-    id: 'frenzy', name: 'Frenzy Strikes', description: 'Quick strikes; every hit grants a short attack speed frenzy.',
+    id: 'frenzy', name: 'Frenzy Strikes', description: 'Quick strikes; every hit grants a short attack speed frenzy, and may grant a frenzy charge.',
     tags: ['attack', 'melee', 'strike', 'physical', 'damage', 'buff', 'duration'],
     cost: 5, cooldown: 0, castTime: 0.3, anim: 'Slash1', combo: ['Slash1', 'Slash2'], moveDuringCast: 0.2,
     delivery: { kind: 'strike', range: 2.2, arc: 90 },
-    effects: [{ kind: 'damage', base: {}, effectiveness: 0.85 }, { kind: 'buff', mods: [inc('attack.speed', 0.25), inc('move.speed', 0.1)], duration: 3, target: 'self' }],
+    effects: [
+      { kind: 'damage', base: {}, effectiveness: 0.85 },
+      { kind: 'buff', mods: [inc('attack.speed', 0.25), inc('move.speed', 0.1)], duration: 3, target: 'self' },
+      { kind: 'charges', charge: 'frenzy', count: 1, on: 'hit', chance: 0.25 },
+    ],
     look: { color: 'red', glow: ['red', 'orange'], burst: 'spark', sound: { cast: 'swing', hit: 'hit' }, shake: 0.06 },
   }),
   // ------------------------------------------------------------------ bows & projectile attacks
@@ -231,12 +235,28 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
   }),
   // ------------------------------------------------------------------ auras, buffs, warcries
   g({
-    id: 'haste-aura', name: 'Haste', description: 'An aura that speeds up you and your allies. Toggle.',
+    id: 'haste-aura', name: 'Haste', description: 'An aura that speeds up you and your allies. Toggle; reserves 25% of your mana.',
     tags: ['spell', 'aura', 'area', 'buff'],
-    cost: 15, cooldown: 0.5, castTime: 0.5, anim: 'CastBig', moveDuringCast: 0.4, target: 'self',
+    cost: 0, reserve: 0.25, cooldown: 0.5, castTime: 0.5, anim: 'CastBig', moveDuringCast: 0.4, target: 'self',
     delivery: { kind: 'aura', radius: 6 },
     effects: [{ kind: 'buff', mods: [inc('attack.speed', 0.15), inc('cast.speed', 0.15), inc('move.speed', 0.12)], duration: 0, target: 'allies' }],
     look: { color: 'lime', glow: ['lime', 'green'], burst: 'sparkle', sound: { cast: 'cast' } },
+  }),
+  g({
+    id: 'wrath', name: 'Wrath', description: 'An aura of storms: you and your allies add lightning to every hit. Toggle; reserves 35% of your mana.',
+    tags: ['spell', 'aura', 'area', 'buff', 'lightning'],
+    cost: 0, reserve: 0.35, cooldown: 0.5, castTime: 0.5, anim: 'CastBig', moveDuringCast: 0.4, target: 'self',
+    delivery: { kind: 'aura', radius: 6 },
+    effects: [{ kind: 'buff', mods: [flat('added.lightning.min', 2, ['attack']), flat('added.lightning.max', 16, ['attack']), flat('added.lightning.min', 1, ['spell']), flat('added.lightning.max', 10, ['spell']), inc('lightning.damage', 0.15)], duration: 0, target: 'allies' }],
+    look: { color: 'cyan', glow: ['white', 'cyan', 'sky'], burst: 'zap', sound: { cast: 'zap' } },
+  }),
+  g({
+    id: 'determination', name: 'Determination', description: 'An aura of iron resolve: much more armour for you and your allies. Toggle; reserves 40% of your mana.',
+    tags: ['spell', 'aura', 'area', 'buff'],
+    cost: 0, reserve: 0.4, cooldown: 0.5, castTime: 0.5, anim: 'CastBig', moveDuringCast: 0.4, target: 'self',
+    delivery: { kind: 'aura', radius: 6 },
+    effects: [{ kind: 'buff', mods: [flat('armour', 120), more('armour', 0.3)], duration: 0, target: 'allies' }],
+    look: { color: 'sand', glow: ['white', 'sand', 'orange'], burst: 'impactSmall', sound: { cast: 'block' } },
   }),
   g({
     id: 'molten-shell', name: 'Molten Shell', description: 'Harden your skin with molten rock, then blast nearby foes.',
@@ -260,6 +280,71 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
       { kind: 'knockback', force: 4 },
     ],
     look: { color: 'red', glow: ['white', 'red'], burst: 'shout', sound: { cast: 'crit' }, shake: 0.25 },
+  }),
+  g({
+    id: 'enduring-cry', name: 'Enduring Cry', description: 'A defiant roar: gain two endurance charges and regenerate life for a moment.',
+    tags: ['warcry', 'area', 'buff', 'duration', 'charge'],
+    cost: 8, cooldown: 8, castTime: 0.6, anim: 'Shout', moveDuringCast: 0, target: 'self',
+    delivery: { kind: 'nova', radius: 4 },
+    effects: [
+      { kind: 'charges', charge: 'endurance', count: 2 },
+      { kind: 'buff', mods: [flat('life.regen.pct', 0.025)], duration: 4, target: 'self' },
+      { kind: 'knockback', force: 3 },
+    ],
+    look: { color: 'orange', glow: ['white', 'orange', 'red'], burst: 'shout', sound: { cast: 'crit' }, shake: 0.2 },
+  }),
+  g({
+    id: 'discharge', name: 'Discharge', description: 'Release every charge you hold in one storm around you: much more damage for each charge spent.',
+    tags: ['spell', 'area', 'nova', 'lightning', 'fire', 'damage', 'charge'],
+    cost: 12, cooldown: 1, castTime: 0.65, anim: 'CastBig', moveDuringCast: 0.1, crit: 0.06, target: 'self',
+    delivery: { kind: 'nova', radius: 3.6 },
+    effects: [
+      { kind: 'damage', base: { lightning: [4, 16], fire: [4, 8] }, effectiveness: 1 },
+      { kind: 'charges', charge: 'all', count: -99, perCharge: [more('damage', 0.6)] },
+      { kind: 'ailment', ailment: 'shock', chance: 0.3 },
+      { kind: 'knockback', force: 4 },
+    ],
+    look: { color: 'cyan', glow: ['white', 'cyan', 'sand', 'orange'], burst: 'zap', sound: { cast: 'zap', hit: 'zap' }, light: { color: 'cyan', intensity: 8, radius: 6 }, shake: 0.3 },
+  }),
+  // ------------------------------------------------------------------ curses
+  // A curse is a hex on an area at the aim point (the `curse` delivery): every enemy inside gets
+  // the curse's mods for its duration, scaled by `curse.effect` / `curse.duration`. A caster
+  // keeps 1 + `curse.count` curses on a target; `curse.immune` targets shrug them off.
+  g({
+    id: 'vulnerability', name: 'Vulnerability', description: 'Curse an area: enemies take much more physical damage and damage over time.',
+    tags: ['spell', 'curse', 'area', 'duration', 'physical'],
+    cost: 10, cooldown: 0, castTime: 0.5, anim: 'Cast', moveDuringCast: 0.4, target: 'aim',
+    delivery: { kind: 'curse', radius: 3 },
+    effects: [{ kind: 'curse', mods: [inc('damage.taken', 0.3, ['physical']), inc('damage.taken', 0.3, ['dot'])], duration: 6 }],
+    perLevel: [inc('curse.effect', 0.015)],
+    look: { color: 'red', glow: ['red', 'orange', 'plum'], burst: 'hex', sound: { cast: 'cast', impact: 'hex' } },
+  }),
+  g({
+    id: 'elemental-weakness', name: 'Elemental Weakness', description: 'Curse an area: enemies lose a quarter of their fire, cold and lightning resistance.',
+    tags: ['spell', 'curse', 'area', 'duration', 'elemental'],
+    cost: 10, cooldown: 0, castTime: 0.5, anim: 'Cast', moveDuringCast: 0.4, target: 'aim',
+    delivery: { kind: 'curse', radius: 3 },
+    effects: [{ kind: 'curse', mods: [flat('res.fire', -0.25), flat('res.cold', -0.25), flat('res.lightning', -0.25)], duration: 6 }],
+    perLevel: [inc('curse.effect', 0.015)],
+    look: { color: 'cyan', glow: ['cyan', 'sky', 'white'], burst: 'hex', sound: { cast: 'cast', impact: 'hex' } },
+  }),
+  g({
+    id: 'enfeeble', name: 'Enfeeble', description: 'Curse an area: enemies deal much less damage and miss more often.',
+    tags: ['spell', 'curse', 'area', 'duration'],
+    cost: 10, cooldown: 0, castTime: 0.5, anim: 'Cast', moveDuringCast: 0.4, target: 'aim',
+    delivery: { kind: 'curse', radius: 3 },
+    effects: [{ kind: 'curse', mods: [more('damage', -0.3), more('accuracy', -0.25)], duration: 6 }],
+    perLevel: [inc('curse.effect', 0.015)],
+    look: { color: 'lime', glow: ['lime', 'green', 'plum'], burst: 'hex', sound: { cast: 'cast', impact: 'hex' } },
+  }),
+  g({
+    id: 'temporal-chains', name: 'Temporal Chains', description: 'Curse an area: enemies act and move much more slowly.',
+    tags: ['spell', 'curse', 'area', 'duration'],
+    cost: 12, cooldown: 0, castTime: 0.55, anim: 'Cast', moveDuringCast: 0.4, target: 'aim',
+    delivery: { kind: 'curse', radius: 3 },
+    effects: [{ kind: 'curse', mods: [more('action.speed', -0.3), more('move.speed', -0.3)], duration: 5 }],
+    perLevel: [inc('curse.effect', 0.015)],
+    look: { color: 'sand', glow: ['sand', 'white', 'mist'], burst: 'hex', sound: { cast: 'cast', impact: 'hex' } },
   }),
   // ------------------------------------------------------------------ traps & mines
   g({

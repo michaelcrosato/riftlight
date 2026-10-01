@@ -70,6 +70,34 @@ export const CANONICAL_STATS: Readonly<Record<string, string>> = {
   'ailment.damage': 'inc/more: every damage-over-time ailment (with <ailment>.damage)',
   'dodge.recovery': 'inc/more: a quicker dodge roll',
   'dodge.distance': 'inc/more: a longer dodge roll',
+  '<ailment>.duration': 'inc/more: duration of that ailment (stun.duration, freeze.duration...)',
+  'action.speed': 'more: every action (animation, wind-ups); base 1 (Temporal Chains)',
+  // charges (combat/charges.ts)
+  'endurance.max': 'flat: more endurance charges (base 3); each: 4% physical reduction, +4% elemental resistances',
+  'frenzy.max': 'flat: more frenzy charges (base 3); each: 4% more damage, 4% attack and cast speed',
+  'power.max': 'flat: more power charges (base 3); each: 40% increased crit chance, +5% crit multiplier',
+  'charge.duration': 'inc/more: how long charges last (base 10 s)',
+  'charge.onKill': 'flat chance per kill to gain a charge; scope it with the charge tag (endurance / frenzy / power)',
+  'charge.onHit': 'flat chance per landed hit to gain a charge (scoped by the charge tag)',
+  'charge.onCrit': 'flat chance per critical strike to gain a charge (scoped by the charge tag)',
+  'charge.onStun': 'flat chance per stun dealt to gain a charge (scoped by the charge tag)',
+  // curses (combat/curses.ts)
+  'curse.count': 'flat: more curses you keep on one target (base 1)',
+  'curse.duration': 'inc/more: how long your curses last',
+  'curse.effect': 'inc/more: the strength of your curses',
+  'curse.immune': 'flag: curses do nothing to this actor',
+  // totems and traps (combat/totems.ts, combat/deliveries/trap.ts)
+  'totem.count': 'flat: more totems at once (base 1)',
+  'totem.life': 'inc/more: totem life (base 60% of yours)',
+  'totem.speed': 'inc/more: totem placement speed',
+  'trap.count': 'flat: more traps armed at once (base 3)',
+  'trap.speed': 'inc/more: trap throwing speed',
+  'trap.arm': 'inc/more: trap arming time',
+  // auras
+  'mana.reservation': 'inc/more: mana (life with Blood Magic) your auras reserve',
+  'aura.radius': 'inc/more: aura radius',
+  'thorns.reflect': 'flat fraction of melee damage taken dealt back to the attacker (and harsher Thornweave vines)',
+  'shatter.chance': 'flat chance for an enemy you kill to shatter (Frostglass)',
 };
 
 /** Canonical name of one stat (aliases resolved; `chance.<x>` → `<x>.chance`). */

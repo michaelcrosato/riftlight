@@ -237,6 +237,7 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
     ailmentEffect: noAilments ? 0 : q.scale('ailment.effect', spec.tags) * critAilments,
     ailmentEffects: noAilments ? undefined : ailmentScaling(q, spec.tags),
     ailmentDuration: q.scale('ailment.duration', spec.tags),
+    ailmentDurations: noAilments ? undefined : ailmentDurationScaling(q, spec.tags),
     cull: q.has('cull', spec.tags) ? 0.1 : undefined,
   };
 }
@@ -247,6 +248,16 @@ export function ailmentScaling(q: StatQuery, tags: readonly string[]): Partial<R
   for (const def of AILMENTS.all()) {
     // ailment.damage: every damage-over-time ailment (ignite, poison, bleed)
     const k = q.scale(def.dotType ? [`${def.id}.damage`, `${def.id}.effect`, 'ailment.damage'] : [`${def.id}.damage`, `${def.id}.effect`], tags);
+    if (k !== 1) (out ??= {})[def.id] = k;
+  }
+  return out;
+}
+
+/** `<ailment>.duration` per ailment (`stun.duration`, `freeze.duration`...), when any is set. */
+export function ailmentDurationScaling(q: StatQuery, tags: readonly string[]): Partial<Record<AilmentType, number>> | undefined {
+  let out: Partial<Record<AilmentType, number>> | undefined;
+  for (const def of AILMENTS.all()) {
+    const k = q.scale(`${def.id}.duration`, tags);
     if (k !== 1) (out ??= {})[def.id] = k;
   }
   return out;
@@ -399,7 +410,7 @@ export function rollAilments(hit: Hit, byType: Damage, d: Defender, rng: Rng): A
     const landed = def.always || (def.threshold?.(dmg, d.maxLife * thresholdScale(d, def)) ?? false) || (chance > 0 && rng.chance(chance));
     if (!landed) continue;
     if (avoid > 0 && rng.chance(avoid)) continue;
-    out.push(ailmentFrom(def, dmg, d.maxLife, (hit.ailmentEffect ?? 1) * (hit.ailmentEffects?.[def.id] ?? 1), hit.ailmentDuration ?? 1));
+    out.push(ailmentFrom(def, dmg, d.maxLife, (hit.ailmentEffect ?? 1) * (hit.ailmentEffects?.[def.id] ?? 1), (hit.ailmentDuration ?? 1) * (hit.ailmentDurations?.[def.id] ?? 1)));
   }
   return out;
 }

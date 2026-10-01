@@ -41,6 +41,8 @@ export const COMBAT_SFX = {
   /** Block: a metallic clank. */
   block: { wave: 'square', duty: 0.5, freq: 520, freqEnd: 480, attack: 0.001, decay: 0.12, volume: 0.15, layers: [{ wave: 'noise', freq: 6000, decay: 0.04, volume: 0.1 }] },
   /** Monster death pop. */
+  /** A curse lands: a low, wobbling fall. */
+  hex: { wave: 'square', duty: 0.5, freq: 330, freqEnd: 110, vibrato: { depth: 4, rate: 12 }, attack: 0.01, decay: 0.32, volume: 0.12 },
   die: { wave: 'square', duty: 0.25, freq: 300, freqEnd: 60, attack: 0.002, decay: 0.25, volume: 0.18, layers: [{ wave: 'noise', freq: 1200, freqEnd: 200, decay: 0.2, volume: 0.15 }] },
 } satisfies Record<string, SoundDef>;
 
@@ -66,6 +68,8 @@ export const COMBAT_PARTICLES = {
   shout: { count: [20, 28], life: [0.2, 0.4], speed: [5, 8], spread: 90, flatten: 0.1, drag: 4, size: [3, 1], colors: ['white', 'red', 'plum'], radius: 0.3 },
   arrows: { count: [18, 24], life: [0.25, 0.4], speed: [7, 10], direction: [0, -1, 0], spread: 8, size: [1, 1], colors: ['sand', 'white'], radius: 1.6 },
   death: { count: [12, 18], life: [0.3, 0.6], speed: [1.5, 3.5], spread: 180, gravity: 3, drag: 2, size: [3, 1], colors: ['white', 'mist', 'slate', 'night'], radius: 0.3 },
+  /** Curse runes rising out of the hex circle (coloured per curse by the burst). */
+  hex: { count: [16, 22], life: [0.35, 0.7], speed: [0.6, 1.8], direction: [0, 1, 0], spread: 70, gravity: -1.5, drag: 1.5, size: [3, 1], colors: ['plum', 'red', 'white'], radius: 0.9 },
   blood: { count: [6, 9], life: [0.2, 0.4], speed: [2, 4], spread: 50, gravity: 12, drag: 1.5, size: [2, 1], colors: ['red', 'plum'], radius: 0.1 },
 } satisfies Record<string, ParticlePreset>;
 

@@ -235,7 +235,8 @@ export class Riftlight implements Game, MenuHost {
       }
     });
     on('kill', ({ target, rank }) => {
-      if (!this.hero || target === this.hero.actor) return;
+      // monsters only: the hero's minions and totems die too
+      if (!this.hero || target === this.hero.actor || target.faction !== 'monster') return;
       // `xp.gain` is a multiplier stat (base 1): shrines, mechanic rewards, gear
       const gain = this.hero.actor.stats.get('xp.gain');
       const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp) * (gain > 0 ? gain : 1)));

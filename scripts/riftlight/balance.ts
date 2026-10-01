@@ -166,7 +166,7 @@ function staticReaders(): Set<string> {
   };
   walk(join(ROOT, 'src/riftlight'));
   for (const t of DAMAGE_TYPES) for (const k of [`${t}.damage`, `res.${t}`, `res.max.${t}`, `pen.${t}`, `added.${t}.min`, `added.${t}.max`, `weapon.${t}.min`, `weapon.${t}.max`, `no.${t}`]) names.add(k);
-  for (const a of AILMENTS.all()) for (const k of [`${a.id}.chance`, `avoid.${a.id}`, `${a.id}.threshold`, `${a.id}.damage`, `${a.id}.effect`]) names.add(k);
+  for (const a of AILMENTS.all()) for (const k of [`${a.id}.chance`, `avoid.${a.id}`, `${a.id}.threshold`, `${a.id}.damage`, `${a.id}.effect`, `${a.id}.duration`]) names.add(k);
   for (const c of WEAPON_CLASSES) names.add(`weapon.${c}`); // HeroController: skills tagged bow / wand need one
   return names;
 }

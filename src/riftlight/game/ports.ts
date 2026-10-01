@@ -171,6 +171,8 @@ export interface Vitals {
   maxMana: number;
   es: number;
   maxEs: number;
+  /** Mana held by active auras (the globe shows it as a sealed cap). Optional. */
+  reserved?: number;
 }
 
 export interface HeroPort {

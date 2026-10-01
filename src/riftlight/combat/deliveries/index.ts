@@ -1,6 +1,7 @@
 import type { Delivery } from '../../core/types';
 import { aura } from './aura';
 import { beam } from './beam';
+import { curse } from './curse';
 import { dash } from './dash';
 import { nova } from './nova';
 import { projectile } from './projectile';
@@ -24,6 +25,7 @@ export const DELIVERIES: Readonly<Record<Delivery['kind'], DeliveryImpl>> = {
   summon,
   aura,
   trap,
+  curse,
 };
 
 export type { CastContext, CastOptions, CombatEffect, DeliveryImpl } from './types';
