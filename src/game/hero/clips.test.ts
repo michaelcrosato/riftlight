@@ -11,11 +11,11 @@ const PENDING: Record<string, string> = {
   PushIdle: 'pending: leaning on a block or wall without moving it (next workstream)',
 };
 
-/** Source of everything that picks hero clips by name: the character and the playground. */
+/** Source of everything that picks hero clips by name: the character, the playground and Riftlight's hero and skills. */
 function players(): string {
-  const dir = new URL('../../engine/character/', import.meta.url);
-  const files = readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
-  return [...files.map((f) => readFileSync(new URL(f, dir), 'utf8')), readFileSync(new URL('../playground.ts', import.meta.url), 'utf8')].join('\n');
+  const dirs = ['../../engine/character/', '../../riftlight/actors/', '../../riftlight/skills/'].map((d) => new URL(d, import.meta.url));
+  const files = dirs.flatMap((dir) => readdirSync(dir).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts')).map((f) => new URL(f, dir)));
+  return [...files.map((f) => readFileSync(f, 'utf8')), readFileSync(new URL('../playground.ts', import.meta.url), 'utf8')].join('\n');
 }
 
 describe('hero clips', () => {

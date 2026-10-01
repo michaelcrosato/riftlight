@@ -9,6 +9,7 @@ import { Hang, ShimmyRight, ShimmyLeft, PullUp, ClimbIdle, Climb } from './ledge
 import { Push, PushIdle, Grab, Pull } from './block';
 import { Punch, Punch2, Kick, SweepKick, JumpKick } from './attacks';
 import { Wave, Victory, Hurt } from './emotes';
+import { COMBAT_CLIPS } from './combat';
 
 export const HERO_CLIPS: readonly ClipDef[] = [
   Idle, IdleLook, Teeter,
@@ -21,4 +22,5 @@ export const HERO_CLIPS: readonly ClipDef[] = [
   Push, PushIdle, Grab, Pull,
   Punch, Punch2, Kick, SweepKick, JumpKick,
   Wave, Victory, Hurt,
+  ...COMBAT_CLIPS,
 ];
