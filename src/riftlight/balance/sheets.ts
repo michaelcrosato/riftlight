@@ -165,7 +165,7 @@ export function monsterSheet(m: MonsterInput, a: Assumptions, extra: readonly Mo
   sheet.set('genome', m.mods);
   sheet.set('depth', depthMods(m.depth));
   // bosses follow the depth curve, whatever their parts (wire/progression.ts bossBudget)
-  if (m.rank === 'boss') sheet.set('boss', bossBudget(m.mods));
+  if (m.rank === 'boss') sheet.set('boss', bossBudget(m.mods, m.depth));
   if (extra.length) sheet.set('phase', extra);
   return sheet;
 }

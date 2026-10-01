@@ -24,6 +24,8 @@ export const WIRE_TUNING = {
     life: 34,
     /** Multipliers on the rank's life and damage (RANK.boss is 30× life, 2× damage: too long a fight for one hero). */
     bossLife: 0.37,
+    /** Share of `bossLife` the first boss has; it ramps to all of it by depth 5 (onboarding, like SCALING's early ramp). */
+    bossLifeEarly: 0.7,
     bossDamage: 0.95,
     /** A boss's armour and block from its parts are capped here (the depth's own armour comes on top). */
     bossArmour: 40,

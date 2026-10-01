@@ -160,7 +160,7 @@ function monsterScale(mods: readonly Mod[], depth: number, boss: boolean): { lif
   sheet.set('base', Object.entries(monsterBase(depth)).map(([stat, value]) => flat(stat, value)));
   sheet.set('genome', mods);
   sheet.set('depth', monsterDepthMods(depth));
-  if (boss) sheet.set('boss', bossBudget(mods));
+  if (boss) sheet.set('boss', bossBudget(mods, depth));
   return { life: sheet.get('life'), damage: new StatQuery(sheet).scale('damage') };
 }
 

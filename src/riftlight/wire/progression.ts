@@ -53,16 +53,18 @@ export function monsterDepthMods(depth: number): Mod[] {
 /**
  * A boss's life and damage follow the depth curve, not its parts: whatever its genome's mods
  * (rank, plan, parts, archetype) multiply life and damage by, the `boss` source brings it to
- * RANK.boss × the boss budget (WIRE_TUNING), so each boss is a modest step up from the last
+ * RANK.boss × the boss budget (WIRE_TUNING; the first bosses ramp in over depths 1–5), so each boss is a modest step up from the last
  * (SCALING.monsterLife / monsterDamage per depth) instead of a jagged one.
  */
-export function bossBudget(genomeMods: readonly Mod[]): Mod[] {
+export function bossBudget(genomeMods: readonly Mod[], depth = 5): Mod[] {
   const sheet = new StatSheet();
   sheet.set('genome', genomeMods);
   const q = new StatQuery(sheet);
   const life = Math.max(0.05, q.scale('life'));
   const damage = Math.max(0.05, q.scale('damage'));
-  const out = [more('life', (RANK.boss.life * M.bossLife) / life - 1), more('damage', (RANK.boss.damage * M.bossDamage) / damage - 1)];
+  // the first bosses ramp in with the depth curves (depth 1: bossLifeEarly of the budget, all of it by 5)
+  const ramp = M.bossLifeEarly + (1 - M.bossLifeEarly) * Math.min(1, Math.max(0, depth - 1) / 4);
+  const out = [more('life', (RANK.boss.life * M.bossLife * ramp) / life - 1), more('damage', (RANK.boss.damage * M.bossDamage) / damage - 1)];
   // armour plating and shields from parts and elite mods: kept, but never a wall (Kryssa's
   // Armoured shell made her 4× slower to kill than the boss before her)
   const armour = sheet.get('armour');
