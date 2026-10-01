@@ -514,7 +514,8 @@ input.dispose();            // removes every window / canvas listener (engine.di
 
 The `systems` e2e suite switches playground ↔ sandbox six times and checks that bodies,
 colliders, controllers, triggers, tags, scene objects and GPU geometries/textures all return
-to the same numbers. `?game=sandbox` opens the sandbox; `window.__PIXEL_GAMES__` holds both.
+to the same numbers. The page at `/` runs Riftlight (docs/GAME.md); `?game=playground` and
+`?game=sandbox` open the engine demos, and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
 
 ### Input: gamepads and press timing
 
@@ -585,7 +586,7 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   current state: it starts a fresh node frame, so the scene pass re-renders even when the
   loop already rendered in this animation frame (otherwise passes render once per frame).
 - `?debug=1` shows the debug panel in a production build (it is on by default only in dev);
-  `` ` `` creates it on demand. `?game=sandbox` opens the second demo level.
+  `` ` `` creates it on demand. `?game=playground` / `?game=sandbox` open the engine demos (`/` is Riftlight).
 - `engine.audio.counts` / `.log` (sounds played, even when silent), `engine.particles.alive`,
   `engine.physics.counts()`, `engine.hud.canvas`, `engine.input.queuedPresses`.
 - `hero.animationMix()`: the clips currently contributing to the pose, with their blend

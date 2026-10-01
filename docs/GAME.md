@@ -651,7 +651,7 @@ band radii can change how many slots a band holds (and so which slots exist).
 | `npm run level -- map <n\|seed>` · `validate 1..60` · `rift <seed> <depth>` · `themes` | top-down map PNG with spawns, mechanic elements and critical path, plus bypass validation (the exit is reachable without using the mechanic); theme swatches |
 | `npm run combat -- dps <skill> [supports]` | a skill with its supports resolved: hit breakdown, crits, ailments, DPS, mana per second (text or `--json`) |
 | `npm run balance` | headless combat sim, build × depth: time-to-kill and damage taken, plotted to PNG and CSV |
-| `npm run playtest -- <level>` | a bot plays the real game frame-exactly and reports clear time, deaths and loot, with a film |
+| `npm run playtest -- <depth> [--runs n] [--film]` | a bot plays the real game frame-exactly and reports clear time, deaths, damage taken and loot, with a film (see Game shell) |
 | `npm run inspect -- <glb\|genome\|item>` | any asset as a turntable PNG plus counts: triangles, joints, materials, bounds |
 
 ## Loot
@@ -924,3 +924,126 @@ placeholder, and names it after its mechanics: *Rift 37: Frostglass Embers Gloom
 emit `skill` for every hero skill use and `kill` for every death (Echoes, Bloodmoon,
 Frostglass, Thornweave, Gravewell listen); include `level.targets()` in hit queries; and
 implement `hooks.applyHit`, `replaySkill`, `teleport`, `dropLoot`, `onFall`.
+they aren't 1.0. Details (presets, steps, the mods each slider sets): Game shell below.
+
+## Game shell (`game/`, `town/`, `ui/`)
+
+`Riftlight` (`src/riftlight/game/Riftlight.ts`) is the one `Game` the page runs at `/`. It owns
+the flow, the town, the HUD and menus, saves, the difficulty sliders, the camera, music, the dev
+tools and the agent API, and it reaches gameplay only through **ports**. Every port has a stub
+in `game/stubs/`, so the whole loop plays today; integration swaps the real modules in:
+
+```ts
+new Riftlight();                                             // all stubs
+new Riftlight({ hero: combatHero, levels: buildLevels, monsters, loot, tree });  // real systems
+```
+
+### Flow
+
+```
+title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Import / Settings
+  └▶ town (Emberfall): talk to Vex at the obelisk ─▶ rift menu (every cleared depth + the next)
+       └▶ level: name card "III · GALE" ─▶ fight ─▶ all monsters dead = clear (time, autosave)
+            ├▶ portal ─▶ loot window (what's still on the floor: take all / leave) ─▶ town
+            └▶ death ─▶ recap (killer, damage by type, worst enemies, tip, penalty) ─▶ town
+```
+
+- **Stages swap inside the game**, not through `engine.loadGame`: the town is built once and
+  hidden while a level runs; the hero (model, clips, stats), HUD, music and the light pool
+  survive; a level is a root object the shell adds and disposes. `loadGame` would rebuild and
+  re-upload the town and the hero on every trip home.
+- **Lights** come from a fixed pool of 8 point lights (`game/lights.ts`): the count never
+  changes, so toon materials never recompile when stages swap.
+- **Pause**: modal panels (pause, tuning, tree, codex, recap, loot window) freeze the world
+  inside the game (`worldPaused`); the vendor, stash and inventory leave the town running.
+- **Death penalty** (`progress.ts` `DEATH_PENALTY`): 10% of the XP into the current level and
+  15% of carried gold; never a level. **Run progression**: `deepest` cleared depth unlocks the
+  next; designed levels 1–12, rifts after.
+- **Camera**: the iso preset at 42° pitch (`RIFTLIGHT_OPTIONS`), zoom 1.08 in levels and 1.22
+  in town (times the settings zoom; the wheel adjusts it), smooth follow with a lead of 22% of
+  the way to the aim point (max 1.6 m), screen shake from `services.shake`.
+- **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
+  arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
+  boss song near a boss. UI and game sounds are `rl.*` SFX data.
+
+### Ports (`game/ports.ts`)
+
+| port | real system | what the shell calls |
+| --- | --- | --- |
+| `HeroFactory` / `HeroPort` | combat/actors | `create(services, save.hero)`; `enter(stage, at, yaw)`, `fixedUpdate(dt, HeroIntent)`, `update`, `vitals()`, `skills()`, `buffs()`, `setLevel`, `setMods(source, mods)`, `restore`, `emote` |
+| `LevelPort` / `LevelHandle` | levels | `spec(depth, seed)`, `mechanics()`, `build(spec, deps)`; handle: `layout`, `origin`, `start`, `exit`, `exitOpen`, `progress()`, `boss()`, `explored()`, `telegraphs()`, `monsters()`, `spawn(seed, at, rank)` |
+| `MonsterPort` / `MonsterHandle` | monsters | `genome(seed, depth, rank)`, `build(genome, {stage, at, depth, mods})`; handle: `actor`, `telegraph()`, `fixedUpdate(dt, {hero, enabled})` |
+| `LootPort` | loot | `rollDrops(kill, rng)`, `spawn`, `ground()`, `pickup`, `gearMods()`, `load/write(save)`, `give`, views: inventory, stash, vendor, crafting |
+| `TreePort` | tree | `mods(allocated)` (the `tree` source), `points(level)`, `view(host, {respec})` |
+
+Ports talk to each other through `GameEvents` (`hit`, `kill`, `death`, `gold`, `loot`,
+`levelClear`, `mechanic`): the shell turns `hit` into damage numbers, the recap and shake;
+`kill` into XP (`SCALING.monsterXp × RANK.xp`), streaks and stats; `mechanic` into codex
+unlocks. Views are `Panel`s drawn on the pixel HUD (`ui/kit.ts` `UiCanvas`) that receive
+`UiEvent`s (nav, confirm, back, pointer, wheel) built from keys, mouse, touch and pads alike;
+`PanelHost` gives them the save, gold, sounds and `changed('tree' | 'gear')`.
+
+### Saves (`game/save.ts`)
+
+`localStorage` `riftlight:slot:<0..2>` holds `{ format: 'riftlight-save', version, slot,
+savedAt, data: SaveData }`; `riftlight:meta` remembers the last slot (Continue). Every access is
+in try/catch; blocked storage (or `?save=memory`) keeps saves in memory for the session.
+`migrate()` upgrades older shapes step by step (v0 = pre-release saves) and fills missing fields;
+a save from a newer build is refused, not mangled. Export / import is the same envelope as a
+JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on town entry and
+level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
+playtime, best time per depth). Device settings (look, quality, zoom, damage numbers, loot
+filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the engine's audio store.
+
+### The difficulty sliders
+
+Pause → **Tuning**: hero damage / life / speed and enemy damage / life / speed, each 0.25×–4× on
+a log scale (1.0 in the middle; ←/→ nudge 0.05 below 1×, 0.1 to 2×, 0.25 above), presets Story,
+Normal, Hard, Nightmare, and Reset. `difficultyMods(t, side)` turns them into `more` mods
+(`damage`; `life` + `es`; `move.speed` + `attack.speed` + `cast.speed`) applied as the
+`difficulty` source of the hero and of every monster at spawn; moving a slider re-applies it to
+live monsters and keeps their life fraction. Saved per slot and shown in the HUD corner
+("E.LIFE 1.50X") whenever a slider isn't 1.0.
+
+### Agent API: `window.__RIFTLIGHT__`
+
+Typed as `RiftlightApi` (`game/api.ts`). Steps go through `Engine.step`, frame-exact.
+
+| call | does |
+| --- | --- |
+| `state()` | screen, ui stack, depth, level time, cleared/exit/dead, hero (level, xp, gold, pools, position), monsters, loot, boss, difficulty, codex, session counters |
+| `newRun({slot, seed})`, `continueRun(slot?)`, `toTown()`, `toTitle()`, `await enterDepth(n)` | flow |
+| `step(n, intent?)`, `moveTo(x, z)`, `talkTo('vex')`, `interact()`, `press('Escape')` | drive the hero and the menus |
+| `fight({skills})`, `collectGold()`, `pickupAll()`, `killAll()` | level helpers |
+| `spawn({seed, x, z, rank})`, `give({xp, gold, items, levels})`, `setDifficulty({...})`, `dev` (god, ai, hitboxes) | dev tools |
+| `hero(stat?, tags?)`, `actors()`, `loot()`, `log()` | inspect (`hero('damage')` returns `explain` sources) |
+| `ui.stack()`, `ui.open(id)`, `ui.close()`, `ui.widgets()`, `ui.click(id)` | menus as data |
+| `save(slot)`, `load(slot)`, `exportSave(slot)`, `importSave(slot, json)`, `slots()` | saves |
+| `bot.run({maxFrames})`, `bot.start()`, `bot.advance(n)`, `bot.report()`, `bot.decide()` | the playtest bot |
+
+`?seed=123` makes new runs reproducible; `?save=memory` keeps tests out of localStorage. The
+pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
+AI off, hitboxes, time of day).
+
+### The playtest bot (`game/bot.ts`, `npm run playtest`)
+
+A scripted player that only uses the ports, so it plays the stubs now and the real systems
+later: it dodges telegraphs about to land on it (and rolls), fights the nearest monster with the
+basic attack and skills that pay off (cleave on 2+, nova on 3+, war cry for packs and bosses,
+dash to close gaps), walks to loot, follows the critical path with grid BFS on the level
+layout, and walks into the portal. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
+five times and prints clear time, deaths, damage taken, kills, XP, gold, items and stuck events;
+JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`.
+
+### Town (`town/`)
+
+Emberfall is data in `TOWN_LAYOUT` (screen-space metres, `iso()` maps them onto the 45° ground)
+built from primitives by `town/kit.ts` and merged to one mesh per material. Townsfolk wear the
+hero rig with their own meshes (`npcModel.ts`) and play clips written as data (`npcClips.ts`:
+Hammer, HammerRest, Nod, Shuffle, Greet, CountCoins, Meditate, Bless, StaffIdle, Gesture; the
+villagers use the hero's Idle and Walk). `npm run anim -- check` measures them with the hero;
+`--character brann` (ilsa, oru, vex, villager, villager2) selects one for `sheet` / `curves`.
+At runtime (`npcs.ts`) they turn their heads toward the hero, bark when you come near, react
+when talked to (Brann rests his hammer and nods, Oru blesses, Vex points at the obelisk;
+Ilsa waves as you come near) and open their view: Brann the crafting bench, Ilsa the vendor, Oru the tree respec,
+Vex the rift menu, the chest the stash.
