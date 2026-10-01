@@ -1,8 +1,11 @@
 import { MathUtils, Vector3 } from 'three/webgpu';
 import type { RAPIER } from '../physics/Physics';
-import { angleDiff, turnToward } from './motion';
+import { angleDiff, approach, turnToward } from './motion';
+import type { AnimRequest } from './animator';
 import type { JumpKind, Ledge, MoveInput, PlatformerCharacter, Stance } from './PlatformerCharacter';
 import { TUNING as T } from './tuning';
+
+export type { AnimRequest } from './animator';
 
 /**
  * PlatformerCharacter's state machine as one table: everything a state is, in one entry.
@@ -16,6 +19,10 @@ import { TUNING as T } from './tuning';
  *   attached    facing comes from the wall / ledge / block, not from a first-person view
  *   snapFacing  the model turns to the facing at once (no smoothing)
  *   lock        locked for this long (s), decelerating, then idle (or crouch if held)
+ *   feet        runtime foot placement while grounded: 'ik' puts the soles on the real ground
+ *               (stairs, slopes); 'lock' also keeps planted feet planted through blends and
+ *               turns (not for states whose feet are meant to slide)
+ *   lean        the body leans into turns and into acceleration
  *
  * Shared physics and probes (move, setStance, rays, ledge detection) live in the core,
  * PlatformerCharacter.ts; numbers live in tuning.ts.
@@ -29,16 +36,11 @@ export interface StateDef {
   attached?: boolean;
   snapFacing?: boolean;
   lock?(c: PlatformerCharacter): number;
+  feet?: FeetMode | ((c: PlatformerCharacter) => FeetMode | undefined);
+  lean?: boolean;
 }
 
-export interface AnimRequest {
-  name: string;
-  once?: boolean;
-  /** Playback rate (negative plays backwards). */
-  speed?: number;
-  /** Fade-in seconds (default 0.12). */
-  fade?: number;
-}
+export type FeetMode = 'ik' | 'lock';
 
 const G = T.ground;
 const DOWN = new Vector3(0, -1, 0);
@@ -52,47 +54,51 @@ export const STATES = {
     step: stepGround,
     anim: (c) => {
       if (c.stepAnim) return { name: c.stepAnim.name, once: true };
+      if (c.leaning) return { name: 'PushIdle', fade: 0.2 }; // pushing against a wall
       return { name: c.idleTime > G.lookAfter && c.idleTime % G.lookEvery < G.lookFor ? 'IdleLook' : 'Idle' };
     },
     stance: 'stand',
+    feet: 'lock',
   },
-  teeter: { step: stepGround, anim: () => ({ name: 'Teeter' }) },
+  teeter: { step: stepGround, anim: () => ({ name: 'Teeter' }), feet: 'lock' },
   walk: {
     step: stepGround,
-    anim: (c) => {
-      if (c.stepAnim) return { name: c.stepAnim.name, once: true, fade: 0.05 };
-      // Tiptoe on a gentle tilt (not just while speeding up or slowing down, which would
-      // flash it for a frame at every start and stop); keep the current gait once let go.
-      const s = c.speed;
-      return (c.stick > G.deadzone ? c.stick < G.tiptoeBelow : c.anim === 'Tiptoe')
-        ? { name: 'Tiptoe', speed: c.rate('Tiptoe', s, 1.2, 0.5) }
-        : { name: 'Walk', speed: c.rate('Walk', s, 2) };
-    },
+    anim: (c) => (c.stepAnim ? { name: c.stepAnim.name, once: true, fade: 0.05 } : gait(c)),
     stance: 'stand',
+    feet: 'lock',
+    lean: true,
   },
-  run: { step: stepGround, anim: (c) => ({ name: 'Run', speed: c.rate('Run', c.speed, 6) }), stance: 'stand' },
-  skid: { step: stepSkid, anim: () => ({ name: 'Skid', once: true }), stance: 'stand' },
+  run: { step: stepGround, anim: gait, stance: 'stand', feet: 'lock', lean: true },
+  skid: { step: stepSkid, anim: () => ({ name: 'Skid', once: true }), stance: 'stand', feet: 'ik' },
+  skidTurn: { step: stepSkidTurn, anim: () => ({ name: 'SkidTurn', once: true, fade: 0.06 }), stance: 'stand', snapFacing: true, feet: 'lock' },
   bonk: {
     step: stepLocked,
     anim: () => ({ name: 'Hurt', once: true, fade: 0.1 }),
     stance: 'stand',
     lock: (c) => c.clipDuration('Hurt', 0.67),
+    feet: 'lock',
   },
 
   // ---- crouch, prone
-  crouch: { step: stepCrouch, anim: () => ({ name: 'Crouch' }) },
-  crouchWalk: { step: stepCrouch, anim: (c) => ({ name: 'CrouchWalk', speed: c.rate('CrouchWalk', c.speed, 1.4, 0.4) }) },
-  crouchSlide: { step: stepCrouchSlide, anim: () => ({ name: 'CrouchSlide' }) },
-  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }) },
+  crouch: { step: stepCrouch, anim: () => ({ name: 'Crouch' }), feet: 'lock' },
+  crouchWalk: { step: stepCrouch, anim: (c) => ({ name: 'CrouchWalk', speed: c.rate('CrouchWalk', c.speed, 1.4, 0.4) }), feet: 'lock' },
+  crouchSlide: { step: stepCrouchSlide, anim: () => ({ name: 'CrouchSlide' }), feet: 'ik' },
+  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }), feet: 'lock' },
   prone: { step: stepProne, anim: () => ({ name: 'Prone' }) },
   crawl: { step: stepProne, anim: (c) => ({ name: 'Crawl', speed: c.rate('Crawl', c.speed, 0.9, 0.5) }) },
-  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7) },
+  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7), feet: 'lock' },
 
   // ---- lying, sitting
-  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }) },
+  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }), feet: 'lock' },
   lying: { step: stepLying, anim: (c) => ({ name: c.stateTime > T.rest.sleepAfter ? 'Sleep' : 'LieIdle', fade: 0.6 }) },
-  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8) },
-  sit: { step: stepSit, anim: () => ({ name: 'Sit', fade: 0.3 }) },
+  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8), feet: 'lock' },
+  // sits down (SitDown), sits, and stands up again (StandUp): the feet step, never slide
+  sit: {
+    step: stepSit,
+    anim: (c) => (c.stateTime < c.clipDuration('SitDown', 0.53) ? { name: 'SitDown', once: true, fade: 0.1 } : { name: 'Sit', fade: 0.1 }),
+    feet: 'lock',
+  },
+  standUp: { step: stepLocked, anim: () => ({ name: 'StandUp', once: true, fade: 0.1 }), lock: (c) => c.clipDuration('StandUp', 0.53), feet: 'lock' },
 
   // ---- in the air
   jump: {
@@ -101,8 +107,20 @@ export const STATES = {
     stance: 'stand',
     airborne: true,
     snapToGround: false,
+    // the launch frame is still on the ground: the feet push off from where they stand
+    // (not a wall kick or any other jump that starts in the air)
+    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 && c.speed < 1 && c.supported() ? 'lock' : undefined),
   },
   fall: { step: stepAir, anim: () => ({ name: 'Fall', fade: 0.25 }), stance: 'stand', airborne: true },
+  wallSlide: { step: stepWallSlide, anim: () => ({ name: 'WallSlide', fade: 0.1 }), stance: 'stand', airborne: true, attached: true },
+  hurt: {
+    step: stepHurt,
+    anim: () => ({ name: 'Hurt', once: true, fade: 0.05 }),
+    stance: 'stand',
+    airborne: true,
+    snapToGround: false,
+    feet: (c) => (c.grounded && c.vy <= 0 ? 'ik' : undefined),
+  },
   dive: { step: stepAir, anim: () => ({ name: 'Dive', once: true }), airborne: true },
   groundPound: {
     step: stepGroundPound,
@@ -114,17 +132,20 @@ export const STATES = {
     anim: () => ({ name: 'Land', once: true, fade: 0.05 }),
     stance: 'stand',
     lock: () => T.lock.land,
+    feet: 'lock',
   },
   hardLand: {
     step: stepLocked,
     anim: () => ({ name: 'HardLand', once: true, fade: 0.05 }),
     stance: 'stand',
     lock: (c) => c.clipDuration('HardLand', 1.3),
+    feet: 'lock',
   },
   groundPoundLand: {
     step: stepLocked,
     anim: () => ({ name: 'GroundPoundLand', once: true, fade: 0.03 }),
     lock: (c) => c.clipDuration('GroundPoundLand', 0.5),
+    feet: 'lock',
   },
   bellySlide: { step: stepBellySlide, anim: () => ({ name: 'BellySlide' }) },
 
@@ -147,9 +168,10 @@ export const STATES = {
   },
 
   // ---- blocks
-  push: { step: stepBlock, anim: () => ({ name: 'Push' }), stance: 'stand', attached: true, snapFacing: true },
-  grab: { step: stepBlock, anim: () => ({ name: 'Grab' }), stance: 'stand', attached: true, snapFacing: true },
-  pull: { step: stepBlock, anim: () => ({ name: 'Pull' }), stance: 'stand', attached: true, snapFacing: true },
+  // a crate that won't move (against a wall, another crate): lean on it
+  push: { step: stepBlock, anim: (c) => ({ name: c.leaning ? 'PushIdle' : 'Push', fade: 0.2 }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
+  grab: { step: stepBlock, anim: () => ({ name: 'Grab' }), stance: 'stand', attached: true, snapFacing: true, feet: 'lock' },
+  pull: { step: stepBlock, anim: () => ({ name: 'Pull' }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
 
   // ---- slopes
   slide: { step: stepSlide, anim: () => ({ name: 'Slide' }), stance: 'stand' },
@@ -159,8 +181,9 @@ export const STATES = {
     step: stepAttack,
     anim: (c) => ({ name: attackClip(c), once: true, fade: 0.04 }),
     stance: (c) => (c.attackStep !== 3 ? 'stand' : undefined), // the sweep kick stays low
+    feet: (c) => (c.attackStep !== 3 ? 'lock' : 'ik'), // the sweep kick's foot sweeps the floor
   },
-  emote: { step: stepEmote, anim: (c) => ({ name: c.emoteClip, once: true }), stance: 'stand' },
+  emote: { step: stepEmote, anim: (c) => ({ name: c.emoteClip, once: true }), stance: 'stand', feet: 'lock' },
 } satisfies Record<string, StateDef>;
 
 export type MoveState = keyof typeof STATES;
@@ -170,14 +193,29 @@ export function stateDef(state: MoveState): StateDef {
   return STATES[state];
 }
 
+/** The state's foot placement mode right now (the table's `feet`). */
+export function feetMode(c: PlatformerCharacter): FeetMode | undefined {
+  const f = stateDef(c.state).feet;
+  return typeof f === 'function' ? f(c) : f;
+}
+
+/**
+ * Walking and running: the locomotion blend space (Tiptoe / Walk / Run by speed, phase
+ * synced). A gentle stick tilt tiptoes; once the stick is let go the share stays as it was.
+ */
+function gait(c: PlatformerCharacter): AnimRequest {
+  return { name: c.speed > G.runAbove ? 'Run' : 'Walk', gait: { speed: c.speed, tiptoe: c.tiptoe } };
+}
+
 // ------------------------------------------------------------------ ground
 
 function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   const mag = Math.min(1, input.move.length());
   c.stick = mag;
+  if (mag > G.deadzone) c.tiptoe = mag < G.tiptoeBelow ? 1 : 0;
   if (!c.grounded) {
     c.coyote += dt;
-    if (c.coyote > G.coyote) return startFall(c);
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
   } else c.coyote = 0;
 
   if (c.consumeJump(input)) return groundJump(c, input);
@@ -208,8 +246,8 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
     return c.enter('skid');
   }
 
-  const max = input.walk ? G.walkSpeed : c.runSpeed;
-  c.groundMove(dt, input, max, G.accel);
+  const max = input.walk ? G.walkSpeed : c.uphillSpeed();
+  c.groundMove(dt, input, max);
 
   if (checkClimb(c, input)) return;
   if (checkPush(c, input)) return;
@@ -227,9 +265,11 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
   }
 
   const s = c.speed;
+  c.leaning = false;
   if (s < G.stopSpeed && mag >= G.deadzone && c.wallHit > 0) {
-    // Walking into a wall: stand against it instead of walking on the spot.
+    // Walking into a wall: lean on it (PushIdle) instead of walking on the spot.
     if (c.state !== 'idle') c.enter('idle');
+    c.leaning = true;
     c.idleTime = 0;
   } else if (s < G.stopSpeed && mag < G.deadzone) {
     if (c.state !== 'idle' && c.state !== 'teeter') c.enter('idle');
@@ -249,7 +289,7 @@ function stepSkid(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   // Skidding off an edge: fall, with the same grace period as walking off one.
   if (!c.grounded) {
     c.coyote += dt;
-    if (c.coyote > G.coyote) return startFall(c);
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
   } else c.coyote = 0;
   c.decel(dt, c.braking ? K.brakeDecel : K.turnDecel);
   if (c.braking && !c.groundAhead(K.edgeLookahead)) c.decel(dt, K.edgeDecel); // don't brake over an edge
@@ -264,8 +304,38 @@ function stepSkid(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   // Braking, then pushing ahead again: run on.
   if (want !== null && !reversing) return c.enter(c.speed > G.runAbove ? 'run' : 'walk');
   if (c.speed < K.endSpeed) {
-    if (want !== null) c.facing = want;
-    c.enter(want !== null ? 'walk' : 'idle');
+    if (want === null) return c.enter('idle');
+    // stick still reversed: turn round with a hop
+    c.turnFrom = c.facing;
+    c.turnTo = want;
+    c.enter('skidTurn');
+  }
+}
+
+/**
+ * Turning round out of a skid: the SkidTurn clip hops, and the facing turns only while both
+ * feet are off the floor (`spinFrom`..`spinTo` s), so they never skate round on it. Then it
+ * runs off the other way.
+ */
+function stepSkidTurn(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const K = T.skid;
+  if (!c.grounded) {
+    c.coyote += dt;
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
+  } else c.coyote = 0;
+  if (c.consumeJump(input)) {
+    c.facing = c.turnTo;
+    return groundJump(c, input);
+  }
+  const spin = MathUtils.smoothstep(c.stateTime, K.spinFrom, K.spinTo);
+  if (spin < 1) {
+    c.facing = c.turnFrom + angleDiff(c.turnTo, c.turnFrom) * spin;
+    c.decel(dt, K.turnDecel);
+  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.uphillSpeed());
+  c.move(dt);
+  if (c.stateTime >= K.turnEnd) {
+    if (c.speed > G.stopSpeed || input.move.lengthSq() > T.skid.stickMinSq) c.enter(c.speed > G.runAbove ? 'run' : 'walk');
+    else c.enter('idle');
   }
 }
 
@@ -281,6 +351,49 @@ function stepLocked(c: PlatformerCharacter, dt: number, input: MoveInput): void 
 function bonk(c: PlatformerCharacter): void {
   c.hvel.set(0, 0, 0);
   c.enter('bonk');
+}
+
+/**
+ * Knocked back (PlatformerCharacter.hurt): an arc away from the hit, no control for
+ * `hurt.stun` seconds, sliding to a stop once down; then back to standing (or falling).
+ */
+function stepHurt(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const H = T.hurt;
+  if (c.grounded && c.vy <= 0) c.decel(dt, H.groundDecel);
+  else c.vy = Math.max(c.vy + T.gravity * dt, T.maxFall);
+  c.move(dt);
+  if (c.grounded && c.vy < 0) c.vy = 0;
+  if (c.stateTime < H.stun) return;
+  if (!c.grounded) return startFall(c);
+  c.peakY = c.feetY();
+  c.enter(input.move.lengthSq() > G.deadzone * G.deadzone ? 'walk' : 'idle');
+}
+
+/** @internal Start a knockback: see PlatformerCharacter.hurt. */
+export function startHurt(c: PlatformerCharacter, from: Vector3, strength: number): void {
+  const H = T.hurt;
+  // let go of whatever it holds or hangs on
+  if (c.block) {
+    const v = c.block.linvel();
+    c.block.setLinvel({ x: 0, y: v.y, z: 0 }, true);
+  }
+  c.block = null;
+  c.blockCollider = null;
+  c.grabbing = false;
+  c.ledge = null;
+  c.setStance('stand');
+  const away = c.tmpVec.set(-from.x, 0, -from.z);
+  if (away.lengthSq() < 1e-6) away.copy(c.fwd()).negate();
+  away.normalize();
+  c.facing = Math.atan2(-away.x, -away.z); // face the hit
+  c.hvel.copy(away).multiplyScalar(H.knockback * strength);
+  c.vy = H.lift * strength;
+  c.grounded = false;
+  c.jumpBuffer = 0;
+  c.ledgeCooldown = H.stun;
+  c.invulnerable = H.invulnerable;
+  c.stats.hurts++;
+  c.enter('hurt');
 }
 
 // ------------------------------------------------------------------ crouch, prone, lying
@@ -350,7 +463,7 @@ function stepLying(c: PlatformerCharacter, dt: number, input: MoveInput): void {
 function stepSit(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   c.decel(dt, T.rest.decel);
   c.move(dt);
-  if (input.sit || input.jump || input.move.lengthSq() > T.rest.wakeStickSq) c.enter('idle');
+  if (input.sit || input.jump || input.move.lengthSq() > T.rest.wakeStickSq) c.enter('standUp');
   else if (input.lie) c.enter('lieDown');
 }
 
@@ -443,15 +556,27 @@ function startFall(c: PlatformerCharacter): void {
   c.enter('fall');
 }
 
+/** Walked (or skidded) off an edge: fall, moving on this step (a step standing still is a hitch). */
+function fallNow(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  startFall(c);
+  stepAir(c, dt, input);
+}
+
 function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   const A = T.air;
-  // Air control: steer velocity toward input; facing follows slowly.
+  // Air control (Mario 64): momentum is kept. The stick bends the path a little, adds speed
+  // only up to a modest cap, and pulling back against the motion slows it gently; it can't
+  // turn a jump round. Facing follows slowly.
   const mag = Math.min(1, input.move.length());
   const noSteer = c.state === 'dive' || c.jumpKind === 'Backflip' || c.jumpKind === 'LongJump';
   if (mag > G.deadzone && !noSteer) {
-    const want = c.tmpVec.copy(input.move).setY(0).normalize().multiplyScalar(Math.max(c.speed, c.runSpeed * A.steerSpeed * mag));
-    c.hvel.lerp(want, 1 - Math.exp(-A.steerRate * dt));
-    if (!input.face) c.facing = turnToward(c.facing, Math.atan2(input.move.x, input.move.z), A.turnRate * dt);
+    const want = Math.atan2(input.move.x, input.move.z);
+    if (input.face) {
+      // first person: strafe in the air, but no faster than the same cap
+      const target = c.tmpVec.copy(input.move).setY(0).normalize().multiplyScalar(Math.max(c.speed, c.runSpeed * A.maxSteerSpeed * mag));
+      c.hvel.lerp(target, 1 - Math.exp(-A.strafeRate * dt));
+    } else airSteer(c, dt, want, mag);
+    if (!input.face) c.facing = turnToward(c.facing, want, A.turnRate * dt);
   }
 
   // Variable jump height: releasing jump while rising cuts the arc (not for flips).
@@ -487,8 +612,78 @@ function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   if (c.vy < A.grabBelowVy && c.state !== 'dive' && c.ledgeCooldown === 0) {
     if (checkClimb(c, input, true)) return;
     const ledge = c.findLedge(c.feetInto(c.tmpFeet), c.fwd());
-    if (ledge) grabLedge(c, ledge);
+    if (ledge) return grabLedge(c, ledge);
   }
+  if (c.vy < 0 && c.state !== 'dive' && c.ledgeCooldown === 0) checkWallSlide(c, input);
+}
+
+// ------------------------------------------------------------------ walls (slide, kick)
+
+/** Falling while pushing into a wall: slide down it, facing it (a jump kicks off). */
+function checkWallSlide(c: PlatformerCharacter, input: MoveInput): boolean {
+  const W = T.wallSlide;
+  const mag = input.move.length();
+  if (input.face || mag < W.minStick) return false;
+  const dir = c.tmpVec.copy(input.move).setY(0).normalize();
+  const hit = c.ray(c.probe(T.probes.chest), dir, T.body.radius + W.reach);
+  if (!hit || Math.abs(hit.normal.y) > T.probes.wallY || c.physics.hasTag(hit.collider, 'climbable')) return false;
+  const n = hit.normal.setY(0).normalize();
+  if (-dir.dot(n) < W.pushIn) return false;
+  c.wallNormal.copy(n);
+  c.facing = Math.atan2(-n.x, -n.z);
+  c.hvel.set(0, 0, 0);
+  c.vy = Math.max(c.vy, -W.speed);
+  c.enter('wallSlide');
+  return true;
+}
+
+function stepWallSlide(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const W = T.wallSlide;
+  if (input.jump) return wallKick(c);
+  const n = c.wallNormal;
+  const into = -(input.move.x * n.x + input.move.z * n.z);
+  const hit = c.ray(c.probe(T.probes.chest), c.tmpVec.copy(n).negate(), T.body.radius + W.holdReach);
+  if (input.crouchPressed || into < W.letGo || !hit || Math.abs(hit.normal.y) > T.probes.wallY) {
+    // let go (or ran out of wall): fall away from it
+    c.hvel.copy(n).multiplyScalar(W.pushOff);
+    c.ledgeCooldown = W.cooldown;
+    return startFall(c);
+  }
+  n.copy(hit.normal).setY(0).normalize();
+  c.facing = Math.atan2(-n.x, -n.z);
+  // a ledge within reach (the top of the wall) is grabbed
+  if (c.ledgeCooldown === 0) {
+    const ledge = c.findLedge(c.feetInto(c.tmpFeet), c.fwd());
+    if (ledge) return grabLedge(c, ledge);
+  }
+  // friction: a slow slide whatever the speed it started at
+  c.vy = c.vy > -W.speed ? Math.max(c.vy + T.gravity * dt, -W.speed) : approach(c.vy, -W.speed, W.friction * dt);
+  c.hvel.copy(n).multiplyScalar(-W.press); // stay against the wall
+  c.peakY = c.feetY(); // sliding down a wall is not a fall: no hard landing at the bottom
+  c.move(dt);
+  if (c.grounded && c.vy <= 0) land(c, input);
+}
+
+/** Bend the air velocity toward `want` (yaw), speed up toward the cap, or brake against it. */
+function airSteer(c: PlatformerCharacter, dt: number, want: number, mag: number): void {
+  const A = T.air;
+  const speed = c.speed;
+  const cap = c.runSpeed * A.maxSteerSpeed * mag;
+  if (speed < 0.1) {
+    // from (nearly) standing still: drift the way the stick points
+    const s = Math.min(cap, speed + A.accel * mag * dt);
+    c.hvel.set(Math.sin(want) * s, 0, Math.cos(want) * s);
+    return;
+  }
+  const dir = Math.atan2(c.hvel.x, c.hvel.z);
+  const off = angleDiff(want, dir);
+  let s = speed;
+  let heading = dir;
+  if (Math.abs(off) < A.brakeAngle) {
+    heading = turnToward(dir, want, A.steerRate * mag * dt);
+    if (s < cap) s = Math.min(cap, s + A.accel * mag * dt);
+  } else s = approach(s, 0, A.brake * mag * dt);
+  c.hvel.set(Math.sin(heading) * s, 0, Math.cos(heading) * s);
 }
 
 function wallKick(c: PlatformerCharacter): void {
@@ -524,6 +719,7 @@ function stepGroundPound(c: PlatformerCharacter, dt: number): void {
 
 function land(c: PlatformerCharacter, input: MoveInput): void {
   const drop = c.peakY - c.feetY();
+  c.landImpact = MathUtils.clamp(-c.vy / T.visual.impactFullVy, T.visual.impactMin, 1);
   c.stats.landings++;
   c.lastLandTime = c.clock;
   c.vy = 0;
@@ -739,6 +935,8 @@ function stepBlock(c: PlatformerCharacter, dt: number, input: MoveInput): void {
 
   const block: RAPIER.RigidBody = c.block!;
   const blockVel = block.linvel();
+  // pushing a crate that doesn't move (blocked): lean on it
+  c.leaning = v > 0 && c.stateTime > T.block.stuckAfter && Math.hypot(blockVel.x, blockVel.z) < T.block.stuckSpeed;
   const push = f.clone().multiplyScalar(v);
   block.setLinvel({ x: push.x, y: Math.min(blockVel.y, 0), z: push.z }, true);
   // Keep a steady gap to the block and move with it (the block is excluded from the sweep).

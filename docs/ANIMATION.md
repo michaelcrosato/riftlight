@@ -8,7 +8,7 @@ per family:
 | --- | --- |
 | `helpers.ts` | `arm`, `arms`, `leg`, `pelvis`, `squash`, `F`, `track`, `flat`, `spinRoot`, `somersault` |
 | `standing.ts` | Idle, IdleLook, Teeter (and `STAND_BODY` / `STAND_FEET`) |
-| `locomotion.ts` | Tiptoe, Walk, Run, Skid, StepUp, StepDown |
+| `locomotion.ts` | Tiptoe, Walk, Run, Skid, SkidTurn, StepUp, StepDown |
 | `crouch.ts` | Crouch, CrouchWalk, CrouchSlide, ProneDown, Prone, Crawl, GetUpFront, Sit, LieDown, LieIdle, Sleep, GetUp |
 | `air.ts` | jumps and flips, WallKick, WallSlide, Fall, Dive, BellySlide, ground pound, Land, HardLand, Slide |
 | `ledge.ts` | Hang, ShimmyRight/Left, PullUp, Climb, ClimbIdle |
@@ -21,8 +21,10 @@ goes in its family's file and in that list. `src/game/hero/animations.ts` re-exp
 `HERO_CLIPS`, so hot reload and older imports keep working. Poses shared between families
 (`STAND_BODY`, `CROUCH_BODY`, `SKID_BODY`, `STRETCH`, `DESCEND`, …) are exported from their family.
 A unit test (`src/game/hero/clips.test.ts`) fails when a clip is never played by the character
-or the playground, unless it is listed there as pending (WallSlide, PushIdle for now).
-At runtime (and in the tools) the clips are compiled against the model's joints.
+or the playground, unless it is listed there as pending (nothing is, now).
+At runtime (and in the tools) the clips are compiled against the model's joints, and the
+game adds procedural layers on top of them (see [At runtime](#at-runtime-blend-space-foot-placement-procedural-layers)).
+A clip is authored on flat ground; stairs, slopes, leaning and landing squash are not in it.
 
 ```
 clips/*.ts ──► ClipDef (keys, feet track, layers) ──► compileClip() ──► three.js AnimationClip
@@ -118,6 +120,8 @@ longer version's frames.
 - `npm run film -- list` shows the named scenarios:
   - idle, walk, run-stop, bonk, skid, jump, run-jump, triple-jump, backflip, long-jump, side-flip
   - crouch, crawl, punches, ground-pound, dive, lie-down, sit, stairs, ledge, climb, hard-land
+  - ramp (walk up and down the 15° ramp), ramp-run, wall-slide (slide down a wall, then wall
+    kick), push-wall (lean on a wall: PushIdle), hurt (run onto the spike pad)
 - Films use the game's iso camera turned to yaw 0, so the keys move along the axes:
   W = −Z, S = +Z, A = −X, D = +X (place yaw: 0 = facing +Z, 90 = facing +X).
 - Several names run in one browser session. `all` films every scenario.
@@ -134,12 +138,16 @@ longer version's frames.
     that follows the hero.
   - Under the cells, a timeline: state and clip bands, ground speed, fastest joint, sole
     height above the ground, planted-foot slip.
-  - A JSON log of every frame.
+  - A JSON log of every frame, including `footPlacement` (pelvis drop, and per foot the
+    offset, pitch, lock and step state: why a foot is where it is).
   - `--gif` also writes an animated GIF, for a human to watch.
 - The console prints the state/clip timeline and flags:
   - **pop**: a joint jumps in one frame, 3× faster than the frames around it.
   - **slip**: a planted foot slides more than 0.5 m/s outside skid and slide states.
   - **sink**: a foot goes more than 3 cm into the ground.
+  - Sole height and slip are measured along the normal of the ground under each foot, so a
+    flat foot on a ramp reads 0; rays that start inside a collider (a foot in a step) are
+    ignored.
   - **float**: both feet are more than 4 cm up while standing or walking.
 - Options:
   - `--view side|front|three|back|game` (the default is side, relative to the hero's facing)
@@ -216,6 +224,8 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
 - **Locomotion comes from `gaitClip`**, not keys. You describe the gait:
   - `speed`, `frames` per cycle, `stance` fraction, `hip` height, `bob`, `squash`
   - `lift`, `heelStrike`, `toeOff`, `tiptoe`, `lean`, `twist`, `sway`
+  - `plant` (0..1): how much of the swing's end matches ground speed, so the foot arrives
+    still in the world instead of skating at touchdown (Tiptoe, Walk and Run use 1)
   - arm `swing`, `elbow`, `pump`, `spread`, `forward`, `lag`
 
   From that, each foot is planted and slides back at exactly `speed` during stance, then
@@ -233,6 +243,93 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
   skipped. `grounded: true` turns on the slide and floating checks. `notes` is printed on
   sheets and in the Lab.
 
+## At runtime: blend space, foot placement, procedural layers
+
+`PlatformerCharacter` plays clips through an `Animator` (`src/engine/character/animator.ts`).
+Each frame it runs, in order:
+
+1. **The mixer.** Cross-fades are re-blended by `RotationBlend` so a joint never flips.
+2. **The locomotion blend space.** Walking and running aren't separate clips that cross-fade.
+   They are one 1D blend space over Tiptoe, Walk and Run (`TUNING.gait`):
+   - All three clips share a single phase. It advances at ground speed ÷ the blended stride
+     length, so the feet match the ground at every speed.
+   - Walk turns into Run across a speed band (`blend: [2.8, 4.2]` m/s, smoothstepped). The
+     Tiptoe share comes from the stick tilt, so a gentle tilt still tiptoes.
+   - A state asks for it with `{ gait: { speed, tiptoe } }` in its `AnimRequest`.
+   - Entering from a standstill starts the phase with the forward foot at the matching
+     stance point (`ClipDef.stance`, written by `gaitClip`). The first step is therefore a
+     step, not a snap.
+3. **Procedural pose layers** (`src/engine/animation/poseLayers.ts`, numbers in
+   `TUNING.visual` and `TUNING.layers`):
+   - **lean**: roll into turns (turn rate × speed) and pitch into acceleration, about the
+     feet. Only states marked `lean: true` lean.
+   - **look**: the head turns toward the direction of travel, or toward `hero.lookAt` when
+     set. The playground points it at the nearest coin. The torso takes 30% of the turn.
+   - **impact**: landing on the move adds a squash (pelvis drop, squash, torso bend),
+     scaled by the landing speed, without locking input.
+   - **cap**: a springy hat, when the rig names `spine.cap` (a joint no clip animates). The
+     hero's `Cap` sits under `Head` with the Hat and Brim on it: it tips against the head's
+     acceleration (`capGain` deg per m/s², a spring of `capStiffness`/`capDamping`, at most
+     `capMax`) and settles. `poseLayers.test.ts` checks it lags and settles.
+4. **Foot placement** (`src/engine/animation/footPlacement.ts`, numbers in `TUNING.feet`
+   and `FOOT_PLACEMENT_DEFAULTS`). The state table's `feet` field picks the mode:
+   - `'ik'`: each foot keeps the clip's height above the *real* ground. A heel ray and a toe
+     ray find the slope or the step edge under it. The pelvis drops for the lower foot, the
+     foot pitches to the slope, and the legs are re-solved (two-bone IK plus hip abduction).
+     Swinging feet look ahead, so they clear a step up instead of clipping it. A gait's
+     swinging foot knows where it will land instead (`SwingInfo` from the blend space's
+     phase, stance and stride): it travels from the ground it took off from to the ground at
+     the landing point over the swing (`swingUp`, `swingDown`), in world space, so the body
+     stepping up or down under it doesn't move it.
+   - The pelvis drops for the lower planted foot on a critically damped spring in world space
+     (`dropRate`); starting over (a landing) it starts from the drop that leaves the legs as
+     the clip has them, not from none or all of it.
+   - Every correction a foot gets (its terrain offset, the lock's, the slope pitch) goes
+     through a `PopGuard` (`src/engine/animation/popGuard.ts`): it follows its target's own
+     speed up to `guardMove` m/s / `guardPitch` deg/s, and a faster jump (a correction
+     switching on, a new target) eases over in a few frames instead of one. A locked foot's
+     hold and a re-planting step are never held back. The drawn body height (`groundRoot`)
+     is guarded the same way where it is lowered toward lower ground ahead.
+   - `'lock'`: like `'ik'`, but a foot the clip puts on the ground **stays where it landed in
+     the world**. When the body drifts more than `maxDrift` from it, or the foot is about to
+     go out of reach, it takes a quick step (`stepTime`, `stepLift`). Starts, stops, idles,
+     skid-turns and blends therefore don't skate. Feet in swing (moving faster than the
+     body) are never locked. A lock holds the point that touched first (heel or toe) and
+     lets go when the foot is clearly lifted (`release` × `contact`). A re-planting step
+     goes from where the foot stands in the world to where the clip has it (its duration
+     grows with the distance, `stepSpeed`), lifted. A foot planted across a step's edge stands
+     on the lower step unless its middle is over the higher one.
+   - Leave it unset (airborne states) for clip feet only. Mode changes fade, and the mode
+     follows the interpolated render position, not the physics step.
+
+   Clips are authored on flat ground, so *never* bake a slope or a step into a clip. The
+   game puts the feet on the terrain. `hero.footPlacement()` (logged by `npm run film`)
+   says what it did. The PlatformerCharacter unit tests and `footPlacement.test.ts` cover
+   stairs, slopes and locking.
+
+Because the mixer only writes joints whose blended value changed, the animator snapshots the
+animated pose after the mixer and restores it before the next update. Without that, layers
+would accumulate. Layers capture the clip's feet *before* leaning, so a lean never moves a
+planted foot.
+
+States that exist for the feel:
+
+| state | clip | what |
+| --- | --- | --- |
+| `skidTurn` | SkidTurn | the end of a reversing skid: a hop round to the new direction, feet locked |
+| `wallSlide` | WallSlide | falling while pushing into a wall slides down it; jump = wall kick |
+| `push` (`leaning`) | PushIdle | pushing a wall or a crate that won't move: lean on it |
+| `hurt` | Hurt | `hero.hurt(fromDirection, strength)`: knocked back in an arc, then invulnerable |
+| `sit`, `standUp` | SitDown → Sit, StandUp | sitting down and getting up step the feet (one at a time) instead of sliding them, feet locked |
+
+**Known limit: stairs.** The playground stairs have 28 cm risers on 0.8 m treads (half a
+leg). The gait keeps its stride, so the trailing foot sometimes leaves the lower tread while
+the pelvis is still low for it, and its toe skims the next tread's top or nose on the way
+up: `npm run film -- stairs` reports that as a few one-frame "slips" of a swinging foot
+(sole within 1.5 cm of a surface, moving at swing speed) and a few-cm "sinks" at a riser,
+not a planted foot sliding. A real fix is a stair gait (lift first, then swing) rather
+than more foot-placement rules.
+
 ## Adding a character
 
 1. Build a jointed rig (see `scripts/assets/hero.mjs`). Joints are named `Object3D`s, meshes
@@ -248,7 +345,8 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
 3. Write its `ClipDef[]` and register it in `CHARACTERS` in `scripts/anim.ts`.
 4. At runtime, capture `const rest = restPoseOf(model, rig)` **once, before anything plays**.
    Then pass `defs.map((d) => compileClip(d, rig, rest))` to
-   `PlatformerCharacter.attachModel(model, clips)`. `compileClips(defs, rig, model)` is a
+   `PlatformerCharacter.attachModel(model, clips, rig)`. Passing the `rig` turns on foot
+   placement and the pose layers; for the look layer it needs `spine: { torso, head }`. `compileClips(defs, rig, model)` is a
    shortcut that reads the rest pose from the model, so only use it on a model that hasn't
    animated yet. Calling `attachModel` again swaps the clip set; the playground does this on
    hot reload, using the saved rest pose.

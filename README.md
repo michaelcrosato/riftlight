@@ -63,7 +63,7 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   once; the art width follows the screen (`aspect: 'adaptive'`, portrait phones fill the
   screen); the loop is capped at `maxFps` 60; `quality` low/medium/high sets the shadow map
   (auto: low on phones, lowered once on a slow start); a lost GPU device is recovered. Build
-  (gzip): three 270 kB, Rapier 28 kB JS + 774 kB `.wasm` (streamed), game 43 kB.
+  (gzip): three 271 kB, Rapier 28 kB JS + 774 kB `.wasm` (streamed), engine and game 111 kB.
   Details in [`docs/ENGINE.md`](docs/ENGINE.md).
 
 Architecture, the camera and filter lists, the moveset and the game API are in

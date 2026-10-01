@@ -178,21 +178,21 @@ automatically on both backends.
 
 `PlatformerCharacter` (`src/engine/character/`) is a Mario-64-style controller (and then
 some) on Rapier's kinematic character controller, driven by the hero rig's baked clips
-(`scripts/assets/hero.mjs`: jointed body with elbows/knees and a pelvis root, 57 clips).
+(`scripts/assets/hero.mjs`: jointed body with elbows/knees, a pelvis root and a springy cap, 60 clips).
 `readMoveInput(ctx, hero, out?)` maps the default keys, camera-relative for every preset; pass
 a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 
 | Key | Action |
 | --- | --- |
-| WASD / arrows | walk → run (Mario-style turning; reverse at speed = **skid**) |
+| WASD / arrows | tiptoe → walk → run (speed follows the stick's tilt; Mario-style turning; reverse at speed = **skid**, then a hop round = **skid turn**) |
 | Shift | walk / tiptoe |
-| Space | jump · again on landing = **double**, then **triple** (front flip; a press up to 0.12 s before touchdown counts) · while skidding = **side flip** · **wall kick** off walls |
+| Space | jump · again on landing = **double**, then **triple** (front flip; a press up to 0.12 s before touchdown counts) · while skidding = **side flip** · **wall kick** off walls (also from a **wall slide**) |
 | C / Ctrl (hold) | **crouch**, crouch-walk · while running = **crouch slide** · + Space = **backflip** · running + C + Space = **long jump** · in the air (press) = **ground pound** |
 | Z | **prone** / crawl (fits 0.75-high gaps); again to **get up** (only with headroom) |
 | X | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
 | F (hold) | **grab** a block, then pull (move away) or push (move toward) |
 | J | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
-| V / B | **wave** / **sit** |
+| V / B | **wave** / **sit** (sits down; B, Space or the stick stands up again) |
 
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
 joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
@@ -201,21 +201,53 @@ joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G*
 the buttons are `EngineOptions.touchButtons`).
 Landscape works best.
 
-Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **fall**, soft
+Automatic moves: **step up / step down** (autostep 0.4; Rapier's autostep alone misses a
+riser met at speed, so `riseAhead` lifts the body onto a flat step found just ahead and holds
+it there while it crosses the edge, `TUNING.body.stepAssist`), **teeter** at edges, **fall**, soft
 **land** or **hard landing** (drops > 5.5, face-plant + get-up), **ledge grab** → hang →
 **shimmy** (A/D) → **pull up** (toward wall / Space) or **drop** (C / away), **climb**
 colliders tagged `climbable` in any direction and **climb over the top**, **push** colliders
 tagged `pushable` by walking into them, **slope slide** on steep or `slippery` ground,
 **dive → belly slide → get up**, **victory** via `hero.celebrate()`. Walls take away the speed that
 runs into them (at a glancing angle the hero slides along at the real speed); running head-on
-into a wall at full speed **bonks** (stops dead and reels back), walking into one stands against it.
+into a wall at full speed **bonks** (stops dead and reels back), walking into one **leans on it**
+(PushIdle; so does pushing a crate that's stuck). Falling while pushing into a wall
+**wall-slides** down it (Space kicks off, letting go of the stick drops away).
+
+**Weight (Mario 64).** Speed builds over about 0.65 s to the top (fast from a standstill,
+slow for the last metres per second). Turns are tight at walking pace and wide at full speed
+(a ~1.3 m arc). The stick's tilt is squared, so a gentle tilt tiptoes. In the air the hero
+keeps their momentum and can only nudge it. **Uphill slows the run**: the grade 0.9 m
+ahead (stairs count by their average climb) lowers the top speed by up to 60% between
+grades 0.2 and 0.33 (the 15° ramp runs at ~4.8 m/s, the playground stairs at ~3.3);
+downhill and gentle slopes keep full speed, and ground too steep to stand on slides you
+back (`TUNING.ground.uphill`). A jump takes off on the physics step it is pressed (the
+jump's own step runs right away, not one step later). Every number is in `TUNING.ground` and
+`TUNING.air`, with the reasoning next to it.
+
+`hero.teleport(position)` starts over: idle, no momentum, no jump chain, and the animator
+restarts (no blends, no locked feet, no procedural memory), so what happens after a
+teleport doesn't depend on what came before it (films and e2e rely on that).
+
+**Getting hurt.** `hero.hurt(fromDirection, strength = 1)` knocks the hero back, away from
+`fromDirection` (e.g. enemy position − hero position; only the horizontal part counts), in
+an arc. It plays Hurt, takes control away for `TUNING.hurt.stun` s and lets go of ledges,
+walls and blocks. Then `hero.invulnerable` counts down (`TUNING.hurt.invulnerable` s);
+while it is above 0, `hurt()` returns false and does nothing. `hero.stats.hurts` counts
+hits. The playground's spike pad uses it and blinks the hero while invulnerable.
+
+**Presentation.** `hero.lookAt = vector | null` turns the head (and a little of the torso)
+toward a point of interest; otherwise it looks where it's going. Pass the rig to
+`attachModel(model, clips, HERO_RIG)` to get runtime foot placement on stairs and slopes,
+foot locking, leaning into turns and landing squash (docs/ANIMATION.md, "At runtime").
 
 How it's built (`src/engine/character/`):
 
 | file | what |
 | --- | --- |
-| `PlatformerCharacter.ts` | the core and the public API: body and KCC sweep (walls take speed away), probes, ledge detection, stance, animation playback |
-| `states.ts` | `STATES`: one entry per state, `{ step, anim, stance, airborne, snapToGround, attached, snapFacing, lock }`; `MoveState` is its keys |
+| `PlatformerCharacter.ts` | the core and the public API: body and KCC sweep (walls take speed away), probes, ledge detection, stance, `hurt()` |
+| `animator.ts` | animation playback: cross-fades, the Tiptoe/Walk/Run blend space, pose layers and foot placement |
+| `states.ts` | `STATES`: one entry per state, `{ step, anim, stance, airborne, snapToGround, attached, snapFacing, lock, feet, lean }`; `MoveState` is its keys. `feet` picks foot placement (`'ik'` on the real ground, `'lock'` planted in the world), `lean` turns on leaning into turns |
 | `tuning.ts` | `TUNING`: every speed, acceleration, jump velocity, timing and threshold, documented |
 | `controls.ts` | default key map, `readMoveInput` |
 
@@ -258,7 +290,8 @@ class MyGame implements Game {
     scene.add(this.model);
     this.hero = new PlatformerCharacter(physics, { position: [0, 0, 0], lockDepth: ctx.camera.lockDepth });
     // Clips are data (docs/ANIMATION.md), compiled against the model's joints.
-    this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model));
+    // With the rig: feet placed on the real ground, leaning, looking, landing squash.
+    this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model), HERO_RIG);
     this.model.visible = !ctx.camera.hidesTarget;
   }
   fixedUpdate(ctx: GameContext, dt: number) {
@@ -589,6 +622,10 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   `` ` `` creates it on demand. `?game=playground` / `?game=sandbox` open the engine demos (`/` is Riftlight).
 - `engine.audio.counts` / `.log` (sounds played, even when silent), `engine.particles.alive`,
   `engine.physics.counts()`, `engine.hud.canvas`, `engine.input.queuedPresses`.
+- `hero.footPlacement()`: what runtime foot placement did this frame: pelvis drop, and per
+  foot the offset from the clip, pitch, lock and step state. `npm run film` logs it.
+- `physics.castDown(x, y, z, maxDistance, out, ignoreTags?, exclude?)`: a non-allocating
+  ray straight down that fills `out` with the hit height, normal and collider handle.
 - `hero.animationMix()`: the clips currently contributing to the pose, with their blend
   weight, time and rate. Blends are driven by `PlatformerCharacter` (rotations re-blended by
   `RotationBlend` so they never flip), not three's
@@ -626,9 +663,13 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
 
 ## Bundle
 
-`npm run build` (gzipped): `three` 270 kB, Rapier JS 28 kB + `rapier_wasm3d_bg.wasm` 774 kB
+`npm run build` (gzipped): `three` 271 kB, Rapier JS 28 kB + `rapier_wasm3d_bg.wasm` 774 kB
 (fetched and compiled while it streams, in parallel with the renderer and models), engine
-and game 43 kB, page 3 kB. With `@dimforge/rapier3d-compat` the wasm was base64 inside a
+and game 111 kB, page 0.5 kB. The engine and game part is a `hero` chunk of 64 kB (the
+engine, the animation toolkit and every hero clip as data; the Animation Lab loads it too),
+`main` 40 kB (the playground and game systems), the pixel font 7 kB (JS + CSS) and the
+Riftlight stat registry 2 kB. The Lab page adds 8 kB, the skill-tree page (`tree.html`)
+31 kB. With `@dimforge/rapier3d-compat` the wasm was base64 inside a
 1,094 kB JS chunk, decoded and compiled only after the whole chunk had been parsed.
 `vite.config.ts` has a tiny `rapier-wasm-stub` plugin: wasm-bindgen's bundler build
 imports the `.wasm` as an ES module, which the plugin stubs out so `initRapier()` can

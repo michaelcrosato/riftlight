@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AnimationClip, Object3D, Vector3, VectorKeyframeTrack } from 'three/webgpu';
 import { Physics, RAPIER } from '../physics/Physics';
 import { type MoveInput, PlatformerCharacter } from './PlatformerCharacter';
+import { TUNING } from './tuning';
 
 // Deterministic fixed-step simulations of the real controller on Rapier (no renderer).
 
@@ -78,6 +79,23 @@ describe('PlatformerCharacter', () => {
     const off = run(p, h, inp({ move: new Vector3(1, 0, 0) }), 90);
     expect(off).toContain('fall');
     expect(off).not.toContain('hardLand');
+  });
+
+  it('a jump takes off on the step it is pressed; a ground pound counts from there', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    run(p, h, inp(), 20);
+    run(p, h, inp({ jump: true, jumpHeld: true }), 1);
+    expect(h.state).toBe('jump');
+    expect(h.feet.y).toBeGreaterThan(0.1); // already off the ground
+    expect(h.stateTime).toBeCloseTo(DT, 6); // and its clock counts that step
+    // a short hop (released at once): crouch as it slows, on its 7th step (past poundAfter)
+    run(p, h, inp({ jumpHeld: true }), 1);
+    run(p, h, inp(), 4);
+    expect(h.stateTime).toBeCloseTo(6 * DT, 6);
+    expect(7 * DT).toBeGreaterThan(TUNING.air.poundAfter);
+    run(p, h, inp({ crouch: true, crouchPressed: true }), 1);
+    expect(h.state).toBe('groundPound');
   });
 
   it('does not pull up into an overhang', async () => {
@@ -227,7 +245,8 @@ describe('PlatformerCharacter', () => {
     box(p, [0, 1.5, -6], [3, 1.5, 0.5]); // wall face at z = -5.5
     const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
     h.facing = Math.PI;
-    const seen = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 60);
+    // 5.2 m to the wall: about a second at the speed building up over ~0.65 s
+    const seen = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 90);
     expect(seen).toContain('run');
     expect(seen).toContain('bonk');
     expect(h.feet.z).toBeGreaterThan(-5.25);
@@ -246,7 +265,12 @@ describe('PlatformerCharacter', () => {
     expect(g.speed).toBeGreaterThan(3);
   });
 
-  it('steps and slopes are not walls: running up them keeps its speed', async () => {
+  it('steps and slopes are not walls: running up them only slows to the uphill speed', async () => {
+    // This used to assert that running up keeps full speed (6+ m/s). Mario 64 slows down
+    // going uphill (TUNING.ground.uphill), so now: steps and slopes still never stop the run
+    // the way a wall does (the speed never drops below the uphill cap for that grade), the
+    // run gets to the top, and on the flat before them it is full speed.
+    const U = TUNING.ground.uphill;
     for (const stairs of [true, false]) {
       const p = await setup();
       if (stairs) for (let i = 0; i < 5; i++) box(p, [3 + 0.8 * i, 0.14 * (i + 1), 0], [0.4, 0.14 * (i + 1), 2]);
@@ -254,16 +278,146 @@ describe('PlatformerCharacter', () => {
         const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(5, 0, 0).setRotation({ x: 0, y: 0, z: Math.sin(0.2), w: Math.cos(0.2) }));
         p.world.createCollider(RAPIER.ColliderDesc.cuboid(3, 0.3, 3), b);
       }
-      const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+      // a run-up to full speed (it builds over ~0.65 s), then up the stairs or the slope
+      const h = new PlatformerCharacter(p, { position: [-4, 0, 0] });
       h.facing = Math.PI / 2;
+      let flat = 0;
       let slowest = Infinity;
-      for (let k = 0; k < 70; k++) {
+      for (let k = 0; k < 240 && h.feet.x < 6.3; k++) {
         run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
-        if (k > 15) slowest = Math.min(slowest, h.speed);
+        if (h.feet.x < 0.5) flat = Math.max(flat, h.speed);
+        if (h.feet.x > 2.5) slowest = Math.min(slowest, h.speed);
       }
+      expect(flat).toBeGreaterThan(h.runSpeed * 0.95);
       expect(h.feet.y).toBeGreaterThan(0.5);
-      expect(slowest).toBeGreaterThan(6);
+      expect(slowest).toBeGreaterThan(h.runSpeed * (1 - U.slow) * 0.95);
+      expect(slowest).toBeLessThan(h.runSpeed * 0.9); // and it did slow down
     }
+  });
+
+  it('uphill slows the run more the steeper it is; downhill keeps full speed', async () => {
+    const top = async (deg: number, uphill: boolean) => {
+      const p = await setup();
+      const a = (deg * Math.PI) / 180;
+      const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(8, 0, 0).setRotation({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) }));
+      p.world.createCollider(RAPIER.ColliderDesc.cuboid(6, 0.3, 3), b);
+      // up: run into the slope from below; down: start on top and run off its high end the other way
+      const h = new PlatformerCharacter(p, uphill ? { position: [-2, 0, 0] } : { position: [11, 6 * Math.sin(a) + 1, 0] });
+      h.facing = uphill ? Math.PI / 2 : -Math.PI / 2;
+      let speed = 0;
+      for (let k = 0; k < 200; k++) {
+        run(p, h, inp({ move: new Vector3(uphill ? 1 : -1, 0, 0) }), 1);
+        if (h.feet.x > 4 && h.feet.x < 10) speed = h.speed;
+      }
+      return speed;
+    };
+    const gentle = await top(8, true);
+    const ramp = await top(15, true);
+    const steep = await top(25, true);
+    expect(gentle).toBeGreaterThan(6); // a gentle slope barely slows
+    expect(ramp).toBeLessThan(gentle);
+    expect(steep).toBeLessThan(ramp);
+    expect(await top(15, false)).toBeGreaterThan(6); // downhill: full speed
+  });
+
+  it('runs up stairs and off their top without a hitch', async () => {
+    // Rapier's autostep doesn't catch a riser lower than the capsule's radius: the round
+    // bottom rode up the edge like a slope, at a quarter of the speed for two steps, on
+    // every stair. And walking off an edge used to stand still for the step it started falling.
+    const p = await setup();
+    for (let i = 0; i < 5; i++) box(p, [3 + 0.8 * i, 0.14 * (i + 1), 0], [0.4, 0.14 * (i + 1), 2]);
+    const h = new PlatformerCharacter(p, { position: [-4, 0, 0] });
+    h.facing = Math.PI / 2;
+    run(p, h, inp({ move: new Vector3(1, 0, 0) }), 66);
+    let last = h.feet.x;
+    let worst = Infinity;
+    const seen = new Set<string>();
+    for (let k = 0; k < 160 && !seen.has('fall'); k++) {
+      run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
+      // each step covers the ground its speed says (the speed itself eases down uphill)
+      if (h.state !== 'fall') worst = Math.min(worst, (h.feet.x - last) / DT / h.speed);
+      last = h.feet.x;
+      seen.add(h.state);
+    }
+    expect(seen).toContain('fall'); // ran off the top step
+    expect(worst).toBeGreaterThan(0.9);
+  });
+
+  it('runs smoothly on flat ground: no step where the controller stalls', async () => {
+    // Pushing a grounded capsule down into the floor every step made Rapier's KCC return
+    // almost no movement every ~20 steps (a hitch, and planted feet skating by a step).
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [-6, 0, 10] });
+    h.facing = Math.PI / 2;
+    run(p, h, inp({ move: new Vector3(1, 0, 0) }), 60);
+    let last = h.feet.x;
+    let slowest = Infinity;
+    for (let k = 0; k < 120; k++) {
+      run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
+      slowest = Math.min(slowest, (h.feet.x - last) / DT);
+      last = h.feet.x;
+    }
+    expect(slowest).toBeGreaterThan(h.runSpeed * 0.95);
+  });
+
+  it('falling while pushing into a wall slides down it; a jump kicks off it', async () => {
+    const p = await setup();
+    box(p, [0, 5, -2], [2, 5, 0.25]); // a tall wall (no ledge in reach), face at z = -1.75
+    const h = new PlatformerCharacter(p, { position: [0, 4, -1.2] });
+    h.facing = Math.PI;
+    const into = new Vector3(0, 0, -1);
+    const seen = run(p, h, inp({ move: into }), 30);
+    expect(seen).toContain('wallSlide');
+    expect(h.state).toBe('wallSlide');
+    expect(h.vy).toBeGreaterThanOrEqual(-3.01); // a slow slide, not a fall
+    expect(Math.cos(h.facing)).toBeLessThan(-0.9); // facing the wall
+    run(p, h, inp({ move: into, jump: true, jumpHeld: true }), 1);
+    expect(h.jumpKind).toBe('WallKick');
+    expect(h.hvel.z).toBeGreaterThan(3); // off the wall
+    // letting go of the stick drops off the wall instead
+    const g = new PlatformerCharacter(p, { position: [1, 4, -1.2] });
+    g.facing = Math.PI;
+    run(p, g, inp({ move: into }), 20);
+    expect(g.state).toBe('wallSlide');
+    run(p, g, inp(), 2);
+    expect(g.state).toBe('fall');
+  });
+
+  it('walking into a wall leans on it (PushIdle)', async () => {
+    const p = await setup();
+    box(p, [0, 1.5, -3], [3, 1.5, 0.5]); // wall face at z = -2.5
+    const h = new PlatformerCharacter(p, { position: [0, 0, -1.5] });
+    h.facing = Math.PI;
+    run(p, h, inp({ move: new Vector3(0, 0, -1), walk: true }), 90);
+    expect(h.state).toBe('idle');
+    expect(h.animationFor().name).toBe('PushIdle');
+    run(p, h, inp(), 2);
+    expect(h.animationFor().name).not.toBe('PushIdle');
+  });
+
+  it('hurt: knocked back away from the hit, no control for a moment, then invulnerable', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    run(p, h, inp(), 10);
+    // hit from +X: knocked toward -X, facing the hit, in the air
+    expect(h.hurt(new Vector3(1, 0, 0))).toBe(true);
+    expect(h.state).toBe('hurt');
+    expect(Math.sin(h.facing)).toBeGreaterThan(0.9);
+    // holding the stick toward the hit does nothing while stunned
+    const toward = inp({ move: new Vector3(1, 0, 0) });
+    run(p, h, toward, 20);
+    expect(h.state).toBe('hurt');
+    expect(h.feet.x).toBeLessThan(-0.8);
+    // a second hit while invulnerable is ignored
+    expect(h.invulnerable).toBeGreaterThan(0);
+    expect(h.hurt(new Vector3(-1, 0, 0))).toBe(false);
+    // after the stun, control is back
+    const seen = run(p, h, toward, 40);
+    expect(seen).toContain('walk');
+    expect(h.stats.hurts).toBe(1);
+    // and once the invulnerability is over it can be hurt again
+    run(p, h, inp(), 90);
+    expect(h.hurt(new Vector3(0, 0, 1), 0.5)).toBe(true);
   });
 
   it('blend weights stay finite and complete through fast state changes, even with dt = 0', async () => {

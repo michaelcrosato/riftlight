@@ -198,6 +198,29 @@ export const MOVES = [
     T.set(['KeyD'], false);
     await T.until(h => h.grounded && h.state !== 'jump', 3000);
     return { ok: kicked, detail: T.snap() };`],
+  ['wall slide → wall kick', `
+    await T.place([-5.6, 0, -9], Math.PI / 2);
+    T.set(['KeyD'], true); await T.tap('Space');
+    const a = await T.until(h => h.state === 'wallSlide', 2000);
+    const vy = window.__PIXEL_ENGINE__.game.hero.vy;
+    await T.tap('Space'); const k = T.snap().jumpKind; T.set(['KeyD'], false);
+    await T.until(h => h.grounded && h.state !== 'jump', 3000);
+    return { ok: a.ok && vy >= -3.1 && k === 'WallKick', detail: { seen: a.seen, vy, k } };`],
+  ['lean on a wall (PushIdle)', `
+    await T.place([0, 0, -6.6], Math.PI);
+    T.set(['KeyW', 'ShiftLeft'], true); const r = await T.until(h => h.state === 'idle' && h.anim === 'PushIdle', 3000); T.set(['KeyW', 'ShiftLeft'], false);
+    const b = await T.until(h => h.anim === 'Idle', 1000);
+    return { ok: r.ok && b.ok, detail: { a: r.seen, b: b.seen, s: T.snap() } };`],
+  ['hurt by the spike pad: knockback, stun, invulnerable', `
+    await T.place([9, 0, 12.4], 0);
+    const g = window.__PIXEL_ENGINE__.game;
+    const before = g.hurts;
+    T.set(['KeyS'], true); const r = await T.until(h => h.state === 'hurt', 2000);
+    const z0 = T.snap().feet[2]; const inv = g.hero.invulnerable;
+    await T.wait(300); const z1 = T.snap().feet[2]; const still = g.hero.state === 'hurt';
+    T.set(['KeyS'], false);
+    const b = await T.until(h => h.state === 'idle', 2000);
+    return { ok: r.ok && g.hurts === before + 1 && inv > 1 && still && z1 < z0 - 0.5 && b.ok, detail: { seen: r.seen, z0, z1, inv, still, hurts: g.hurts - before } };`],
   ['dive → belly slide → get up', `
     await T.place([-6, 0, 10], Math.PI / 2);
     T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.tap('Space');

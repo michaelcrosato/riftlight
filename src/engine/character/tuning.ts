@@ -18,6 +18,12 @@ export const TUNING = {
     kccOffset: 0.02,
     autostepHeight: 0.4,
     autostepMinWidth: 0.15,
+    /**
+     * Stepping up (PlatformerCharacter.riseAhead): a riser found by a ray `low` m above the
+     * feet, within `ahead` m of where this step's move takes the capsule; its top probed
+     * `onto` m past the edge must be flat (normal y ≥ `flat`) and at least `min` m up.
+     */
+    stepAssist: { low: 0.04, ahead: 0.08, onto: 0.06, flat: 0.9, min: 0.03 },
     snapToGround: 0.35,
     maxSlopeClimbDeg: 46,
     minSlopeSlideDeg: 40,
@@ -31,6 +37,8 @@ export const TUNING = {
     /** Ground rays start this high above the feet and reach `groundDown` below that. */
     groundUp: 0.3,
     groundDown: 0.8,
+    /** Grounded with ground this close under the middle of the feet: supported (no gravity). */
+    supportDown: 0.12,
     /** "Ground ahead" rays (teeter, braking) reach this far down. */
     aheadDown: 0.9,
     /** A surface whose normal has |y| below this is a wall; above `floorY` it's a floor. */
@@ -52,20 +60,79 @@ export const TUNING = {
     ledgeOut: 0.05,
   },
   /** Presentation: the model turns toward the facing at this rate (1/s; snapFacing states turn at once), default fade-in (s). */
-  visual: { turnRate: 16, fade: 0.12 },
+  visual: {
+    turnRate: 16,
+    fade: 0.12,
+    /**
+     * With foot placement, going down a step the drawn body sinks with the ground under it
+     * and up to `rootAhead` m ahead (averaged over `rootSamples` points), fully once the
+     * ground ahead is `rootDrop` m lower, instead of staying up with the capsule on the edge
+     * (the feet would float). On the flat and going up it is where the capsule is (up a step
+     * early, as the body is). It follows at up to `rootSpeed` m/s (a slope); faster (a step)
+     * eases over at `rootRate` (rad/s, critically damped).
+     */
+    rootAhead: 0.35,
+    rootSamples: 8,
+    rootDrop: 0.15,
+    rootRate: 18,
+    rootSpeed: 2,
+    /** Lean into turns: roll (deg) per (rad/s of turning × m/s), at most `maxRoll`. */
+    leanRoll: 0.55,
+    maxRoll: 14,
+    /** Lean into acceleration: pitch (deg) per m/s², at most `maxPitch` either way. */
+    leanAccel: 0.7,
+    maxPitch: 7,
+    /** How fast the lean follows (1/s), and how much the acceleration it reads is smoothed (1/s). */
+    leanRate: 8,
+    accelSmoothing: 10,
+    /** Head turns toward where it's going (or `lookAt`): at most this far (deg), at this rate (1/s). */
+    maxLook: 50,
+    lookRate: 9,
+    /** Landing on the move: squash rises over `impactRise` s and settles over `impactFall` s;
+     *  a landing at `impactFullVy` m/s (down) squashes fully, a soft one at least `impactMin`. */
+    impactRise: 0.05,
+    impactFall: 0.22,
+    impactFullVy: 16,
+    impactMin: 0.35,
+  },
+  /** The locomotion blend space (animator.ts): its clips, by role. */
+  gait: { tiptoe: 'Tiptoe', walk: 'Walk', run: 'Run', blend: [2.8, 4.2] },
+  /** Runtime foot placement (src/engine/animation/footPlacement.ts); anything not set here uses its defaults. */
+  feet: { maxDrift: 0.14, stepTime: 0.15, stepLift: 0.06 },
+  /** Procedural layers (src/engine/animation/poseLayers.ts): landing squash at full impact. */
+  layers: { impactDrop: 0.12, impactSquash: 0.1, impactTorso: 14 },
   gravity: -32,
   /** Terminal fall speed (m/s, downward). */
   maxFall: -30,
 
-  /** Walking and running (Mario-style: turn toward the stick, speed builds along facing). */
+  /**
+   * Walking and running (Mario-style: turn toward the stick, speed builds along facing).
+   *
+   * Weight, Mario 64 style: speed builds over ~0.65 s to the top (it was 0.14 s at a flat
+   * 45 m/s²), but the acceleration is highest from a standstill (`accel`, 16 m/s²) and falls
+   * to `accelTop` (6 m/s²) near full speed. A small stick input asks for a small speed and
+   * gets there in under 0.1 s, so it stays snappy; only the last metres per second take time.
+   * Turning is quick at walking pace (`turnRate`, 12 rad/s; ×`slowTurnBoost` from a near
+   * standstill) and slower at full speed (`turnRateTop`, 5 rad/s: a running turn is a ~1.3 m
+   * radius arc, not a pivot); turning the stick right round at speed still skids. The stick's
+   * tilt is squared (`stickCurve`, as Mario 64 does), so a gentle tilt tiptoes slowly.
+   */
   ground: {
     runSpeed: 6.5,
     /** Top speed with the walk modifier held. */
     walkSpeed: 2.2,
-    accel: 45,
-    /** Slowing down (stick let go) is this much quicker than speeding up. */
+    /** Acceleration (m/s²) from a standstill, falling linearly to `accelTop` at run speed. */
+    accel: 16,
+    accelTop: 6,
+    /** Slowing down: stick let go (m/s²), or eased back to a slower speed. */
+    brake: 20,
+    /** States that pass their own acceleration slow down this much quicker than they speed up. */
     brakeFactor: 1.3,
-    turnRate: 14,
+    /** Turn rate (rad/s) standing to walking, falling linearly to `turnRateTop` at run speed. */
+    turnRate: 12,
+    turnRateTop: 5,
+    /** Speed asked for = top speed × tilt^stickCurve. */
+    stickCurve: 2,
     /** First person (strafing): velocity follows the stick at this rate (1/s). */
     strafeResponse: 12,
     /** Side-scroller lane lock: close this share of the drift off the lane per step. */
@@ -83,6 +150,15 @@ export const TUNING = {
     tiptoeBelow: 0.5,
     /** Grace period for jumping after walking off an edge. */
     coyote: 0.1,
+    /**
+     * Uphill (Mario 64): running up a slope or stairs, the top speed drops by up to `slow`
+     * of run speed, easing in from a grade (rise per metre `ahead` m on, smoothed at `rate`
+     * 1/s) of `from` to `to`; the top speed follows at `ease` (share of run speed per
+     * second). The 15° ramp (grade 0.27) runs at ~4.8 m/s, the playground stairs (0.35) at
+     * ~3.3: one stair per stride instead of two or three. Downhill and gentle slopes keep full speed; ground too steep
+     * to stand on slides you back down (checkSlope).
+     */
+    uphill: { from: 0.2, to: 0.33, slow: 0.6, ahead: 0.9, rate: 6, ease: 3 },
     /** Look this far ahead for ground: none = teeter at the edge. */
     teeterLookahead: 0.45,
     /** Idle this long and the character lies down and dozes off. */
@@ -114,6 +190,11 @@ export const TUNING = {
     /** Stick (squared tilt) that counts as steering during a skid. */
     stickMinSq: 0.04,
     endSpeed: 0.8,
+    /** Turning round after a skid (SkidTurn): the facing turns while the feet are off the floor. */
+    spinFrom: 0.09,
+    spinTo: 0.2,
+    /** ... and runs off (or stands) this long after it starts: just after the landing. */
+    turnEnd: 0.27,
   },
 
   /** Crouch, crouch walk and crouch slide. */
@@ -155,14 +236,26 @@ export const TUNING = {
     forwardAbove: 0.5,
     /** A jump pressed this long before touchdown still jumps on landing. */
     buffer: 0.12,
+    /** The feet stay planted (foot locking) for this long after a jump starts: the launch step (its clock reads one step). */
+    launchFeet: 0.02,
   },
 
-  /** In the air. */
+  /**
+   * In the air. Mario 64 keeps a jump's momentum: the stick bends the path (`steerRate`,
+   * rad/s at full tilt), adds speed only up to `maxSteerSpeed` × run speed (`accel` m/s²),
+   * and pulling back against the motion (more than `brakeAngle` rad off it) slows it at
+   * `brake` m/s², so a full-speed jump can't be turned round before it lands (it could be
+   * reversed outright before). Facing follows the stick at `turnRate`.
+   */
   air: {
-    /** Air control: steer toward the stick at this rate (1/s), up to `steerSpeed` × run speed. */
-    steerRate: 3,
-    steerSpeed: 0.7,
-    turnRate: 4,
+    steerRate: 2.2,
+    maxSteerSpeed: 0.7,
+    accel: 7,
+    brake: 6,
+    brakeAngle: 2,
+    /** First person: strafing in the air follows the stick at this rate (1/s). */
+    strafeRate: 3,
+    turnRate: 3,
     /** Releasing jump while rising multiplies gravity by this (variable jump height). */
     shortHopGravity: 2.2,
     /** Falling faster than this (m/s down) turns a jump into a fall. */
@@ -206,6 +299,38 @@ export const TUNING = {
     checkReach: 0.15,
     /** cos of the widest angle between velocity and wall normal that is still head-on (~30°). */
     headOnCos: 0.87,
+  },
+
+  /** Sliding down a wall: falling while pushing into it. A jump kicks off (wall kick). */
+  wallSlide: {
+    /** Stick tilt, and how squarely into the wall it must point (cos), to start sliding. */
+    minStick: 0.5,
+    pushIn: 0.6,
+    /** A wall within this reach of the capsule at chest height (to start, and to stay on it). */
+    reach: 0.25,
+    holdReach: 0.35,
+    /** Slide speed (m/s, down) and how fast a quicker fall slows to it (m/s²). */
+    speed: 3,
+    friction: 40,
+    /** Pressing into the wall at this speed keeps it in contact. */
+    press: 0.5,
+    /** The stick under this (along the wall's inward direction) lets go; pushed off at `pushOff`. */
+    letGo: 0.2,
+    pushOff: 1.2,
+    cooldown: 0.3,
+  },
+
+  /** Getting hurt (PlatformerCharacter.hurt): knocked back in an arc, no control, then invulnerable. */
+  hurt: {
+    /** Knockback speed (m/s, away from the hit) and lift (m/s up) at strength 1. */
+    knockback: 4.5,
+    lift: 6,
+    /** No control for this long (s). */
+    stun: 0.4,
+    /** Hits are ignored for this long (s). */
+    invulnerable: 1.5,
+    /** Once down, sliding to a stop at this rate (m/s²). */
+    groundDecel: 18,
   },
 
   /** Ledge grab, hang, shimmy, pull up. */
@@ -275,6 +400,9 @@ export const TUNING = {
     /** Keep this gap to the block, closing `gapGain` of the difference per step. */
     gap: 0.03,
     gapGain: 0.3,
+    /** Pushing for this long (s) with the block moving slower than `stuckSpeed`: it's stuck (lean on it). */
+    stuckAfter: 0.25,
+    stuckSpeed: 0.2,
   },
   /** Slope sliding on steep or 'slippery' ground. */
   slope: {
