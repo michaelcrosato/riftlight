@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# PostToolUse hook for Edit/Write: format the touched file if a formatter for it
-# is installed. Best-effort and silent; never blocks.
+# PostToolUse hook for Edit/Write: apply ESLint's autofixes (prefer-const and friends) to
+# the touched JS/TS file. The repo has no formatter; lint is the style gate. About 1 s,
+# silent, never blocks: whatever it can't fix, the Stop hook's fast checks report.
 set -uo pipefail
 
 file=$(jq -r '.tool_input.file_path // empty')
@@ -8,17 +9,7 @@ file=$(jq -r '.tool_input.file_path // empty')
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 
 case "$file" in
-  *.ts|*.tsx|*.js|*.jsx|*.mjs|*.cjs|*.css|*.scss|*.html|*.vue|*.svelte|*.md|*.yml|*.yaml|*.json)
-    if [[ -x node_modules/.bin/biome ]]; then
-      node_modules/.bin/biome format --write "$file"
-    elif [[ -x node_modules/.bin/prettier ]]; then
-      node_modules/.bin/prettier --write --log-level silent "$file"
-    fi ;;
-  *.py)
-    if command -v uvx >/dev/null; then uvx ruff format -q "$file"
-    elif command -v ruff >/dev/null; then ruff format -q "$file"; fi ;;
-  *.go) command -v gofmt >/dev/null && gofmt -w "$file" ;;
-  *.rs) command -v rustfmt >/dev/null && rustfmt --edition 2021 "$file" ;;
-  *.sh) command -v shfmt >/dev/null && shfmt -w -i 2 "$file" ;;
+  *.ts|*.mjs|*.js)
+    [[ -x node_modules/.bin/eslint ]] && node_modules/.bin/eslint --fix --no-warn-ignored "$file" ;;
 esac >/dev/null 2>&1
 exit 0
