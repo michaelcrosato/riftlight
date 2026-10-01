@@ -177,9 +177,10 @@ export function stack(images: readonly SheetImage[], bg: RGB = [36, 40, 56]): Sh
 
 export interface MonsterCheck {
   genome: Genome;
-  /** Build time (ms) with a cold clip cache, and with the clips cached. */
+  /** `buildMonster` time (ms); a second build of the same shape; generating + compiling every clip of the shape. */
   ms: number;
   msCached: number;
+  clipMs: number;
   clips: (ClipReport & { errors: string[] })[];
   problems: string[];
   warnings: string[];
@@ -191,6 +192,10 @@ export interface MonsterCheck {
  */
 export function checkMonster(genome: Genome, built?: BuiltMonster): MonsterCheck {
   const m = built ?? buildMonster(genome);
+  const t0 = performance.now();
+  const defs = m.defs;
+  const compiled = m.clips;
+  const clipMs = performance.now() - t0;
   const t = performance.now();
   const probe = buildMonster(genome).object;
   const msCached = performance.now() - t;
@@ -198,9 +203,9 @@ export function checkMonster(genome: Genome, built?: BuiltMonster): MonsterCheck
   probe.updateMatrixWorld(true);
   const problems: string[] = [];
   const warnings: string[] = [];
-  const clips = m.defs.map((def, i) => {
+  const clips = defs.map((def, i) => {
     const errors = validateClip(def, m.rig);
-    const report = analyzeClip(probe, m.rig, def, m.clips[i]!);
+    const report = analyzeClip(probe, m.rig, def, compiled[i]!);
     for (const e of errors) problems.push(`${def.name}: ${e}`);
     for (const p of report.problems) problems.push(`${def.name}: ${p}`);
     for (const w of report.warnings) warnings.push(`${def.name}: ${w}`);
@@ -213,5 +218,5 @@ export function checkMonster(genome: Genome, built?: BuiltMonster): MonsterCheck
   if (size.y < 0.15 || size.y > 12) problems.push(`height ${size.y.toFixed(2)} m out of range`);
   if (box.min.y < -0.05) problems.push(`rest pose goes ${(-box.min.y * 100).toFixed(0)} cm below the floor`);
   if (!(m.radius > 0) || !(m.height > 0)) problems.push('radius/height not positive');
-  return { genome, ms: m.ms, msCached, clips, problems, warnings };
+  return { genome, ms: m.ms, msCached, clipMs, clips, problems, warnings };
 }

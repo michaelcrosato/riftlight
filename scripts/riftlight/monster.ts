@@ -88,7 +88,7 @@ function summary(m: BuiltMonster) {
     budget: +genomeBudget(Number(flags.get('depth') ?? 1), g.rank).toFixed(2),
     skills: m.skills,
     stats: m.stats.map((s) => describeMod(s)),
-    clips: Object.values(m.meta).map((c) => ({ name: c.name, kind: c.kind, frames: c.frames, loop: c.loop, speed: c.speed, hitFrame: c.hitFrame })),
+    clips: m.clipNames.map((n) => m.clipInfo(n)!).map((c) => ({ name: c.name, kind: c.kind, frames: c.frames, loop: c.loop, speed: c.speed, hitFrame: c.hitFrame })),
     radius: +m.radius.toFixed(3),
     height: +m.height.toFixed(3),
     joints: m.rig.joints.length,
@@ -152,7 +152,7 @@ function main(): void {
       for (let i = 0; i < n; i++) {
         const o = options();
         const g = generateGenome(base.fork(i), { plan: o.plan ?? plans[i % plans.length], ...o });
-        const m = buildMonster(g, { clips: false });
+        const m = buildMonster(g);
         m.object.scale.setScalar(1);
         imgs.push(renderPortrait(m.object, { width: 150, height: 150, yaw: 35 + (i % 3) * 10, label: `${g.plan}`, sublabel: `${g.archetype} ${g.rank === 'normal' ? '' : g.rank}` }));
         rows.push({ i, plan: g.plan, archetype: g.archetype, parts: g.parts.map((p) => p.part) });
@@ -174,25 +174,27 @@ function main(): void {
       let warned = 0;
       const times: number[] = [];
       const cached: number[] = [];
+      const clipTimes: number[] = [];
       const out: unknown[] = [];
       for (const g of genomes) {
         const r = checkMonster(g);
         times.push(r.ms);
         cached.push(r.msCached);
+        clipTimes.push(r.clipMs);
         if (r.problems.length) bad++;
         if (r.warnings.length) warned++;
-        out.push({ plan: g.plan, archetype: g.archetype, rank: g.rank, ms: +r.ms.toFixed(1), problems: r.problems, warnings: r.warnings });
+        out.push({ plan: g.plan, archetype: g.archetype, rank: g.rank, ms: +r.ms.toFixed(2), clipMs: +r.clipMs.toFixed(1), problems: r.problems, warnings: r.warnings });
         if (!json && r.problems.length) for (const p of r.problems) console.log(`  ✗ ${g.plan}/${g.archetype} (seed ${g.seed}): ${p}`);
       }
-      times.sort((a, b) => a - b);
-      cached.sort((a, b) => a - b);
+      for (const v of [times, cached, clipTimes]) v.sort((a, b) => a - b);
       const stat = (v: number[]) => ({ median: +v[Math.floor(v.length / 2)]!.toFixed(2), p95: +v[Math.floor(v.length * 0.95)]!.toFixed(2), max: +v[v.length - 1]!.toFixed(2) });
-      const result = { monsters: genomes.length, withProblems: bad, withWarnings: warned, buildMs: stat(times), cachedBuildMs: stat(cached) };
+      const result = { monsters: genomes.length, withProblems: bad, withWarnings: warned, buildMs: stat(times), cachedBuildMs: stat(cached), allClipsMs: stat(clipTimes) };
       if (json) console.log(JSON.stringify({ ...result, monsters: out }, null, 2));
       else {
         console.log(`\n${genomes.length} monsters (${PLANS.size} plans × ${ARCHETYPES.size} archetypes, ${n} random, ${BOSSES.size} bosses)`);
-        console.log(`build ms (new shape, clips generated): median ${result.buildMs.median}  p95 ${result.buildMs.p95}  max ${result.buildMs.max}`);
-        console.log(`build ms (shape cached, e.g. pack members): median ${result.cachedBuildMs.median}  p95 ${result.cachedBuildMs.p95}  max ${result.cachedBuildMs.max}`);
+        console.log(`buildMonster ms (new shape):            median ${result.buildMs.median}  p95 ${result.buildMs.p95}  max ${result.buildMs.max}`);
+        console.log(`buildMonster ms (shape seen, pack mate): median ${result.cachedBuildMs.median}  p95 ${result.cachedBuildMs.p95}  max ${result.cachedBuildMs.max}`);
+        console.log(`all clips of a new shape ms (lazy, on first play, once per shape): median ${result.allClipsMs.median}  p95 ${result.allClipsMs.p95}  max ${result.allClipsMs.max}`);
         console.log(`${bad} with problems, ${warned} with warnings`);
       }
       if (bad) process.exitCode = 1;

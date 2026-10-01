@@ -35,14 +35,13 @@ export interface BakeContext {
 }
 
 export function bake(ctx: BakeContext, template: ClipDef, options: BakeOptions): MonsterClipDef {
-  const names = ctx.kin.names;
   const step = options.step ?? 1;
   const keys: Key[] = [];
   const clearance = options.clearance ?? 0.008;
   const last = template.loop ? template.frames - 1e-9 : template.frames + 1e-9;
-  for (let f = 0; f < last; f += step) keys.push([round(f), toPose(poseAt(ctx, template, f, options.feet, clearance), names), 'linear']);
+  for (let f = 0; f < last; f += step) keys.push([round(f), toPose(poseAt(ctx, template, f, options.feet, clearance)), 'linear']);
   if (template.loop) keys.push([template.frames, keys[0]![1], 'linear']);
-  else if (keys[keys.length - 1]![0] !== template.frames) keys.push([template.frames, toPose(poseAt(ctx, template, template.frames, options.feet, clearance), names), 'linear']);
+  else if (keys[keys.length - 1]![0] !== template.frames) keys.push([template.frames, toPose(poseAt(ctx, template, template.frames, options.feet, clearance)), 'linear']);
   return {
     name: template.name,
     frames: template.frames,
@@ -91,20 +90,12 @@ function solveFeet(ctx: BakeContext, pose: PoseMap, f: number, feet: FeetFn | un
   }
 }
 
-function toPose(pose: PoseMap, names: readonly string[]): Record<string, JointPose> {
-  const out: Record<string, JointPose> = {};
-  for (const n of names) {
-    const j = pose[n];
-    if (!j) continue;
-    const moved = j.r[0] || j.r[1] || j.r[2] || j.p[0] || j.p[1] || j.p[2] || j.s[0] !== 1 || j.s[1] !== 1 || j.s[2] !== 1;
-    if (!moved) continue;
-    out[n] = { r: [round(j.r[0]), round(j.r[1]), round(j.r[2])], p: [round4(j.p[0]), round4(j.p[1]), round4(j.p[2])], s: [round4(j.s[0]), round4(j.s[1]), round4(j.s[2])] };
-  }
-  return out;
+/** The solved pose as a key pose (fresh objects per frame, so no copy is needed). */
+function toPose(pose: PoseMap): Record<string, JointPose> {
+  return pose;
 }
 
 const round = (v: number) => Math.round(v * 100) / 100;
-const round4 = (v: number) => Math.round(v * 10000) / 10000;
 
 /** Feet planted where the plan stands them (scaled with the root for grow-in spawns). */
 export function planted(scale: (f: number) => number = () => 1): FeetFn {

@@ -125,7 +125,7 @@ class MonsterLab implements Game {
     this.holder.add(this.current.built.object);
     this.mode = 'single';
     this.rebuildSkeleton();
-    this.play(this.current.built.meta[this.clip] ? this.clip : 'Idle');
+    this.play(this.current.built.clipNames.includes(this.clip) ? this.clip : 'Idle');
     this.frame();
     this.changed();
   }
@@ -175,7 +175,7 @@ class MonsterLab implements Game {
     const spacing = Math.max(1.8, ...this.children.map((c) => c.built.radius * 2.6));
     this.children.forEach((c, i) => {
       c.built.object.position.set(((i % 3) - 1) * spacing, 0, (Math.floor(i / 3) - 1) * spacing);
-      c.runtime.play(this.clip in c.built.meta ? this.clip : 'Idle', { fade: 0 });
+      c.runtime.play(c.built.clipNames.includes(this.clip) ? this.clip : 'Idle', { fade: 0 });
       this.holder.add(c.built.object);
     });
     this.mode = 'grid';
@@ -213,23 +213,24 @@ class MonsterLab implements Game {
 
   play(name: string): void {
     const all = [this.current, ...this.children];
-    if (!this.current.built.meta[name]) return;
+    if (!this.current.built.clipNames.includes(name)) return;
     this.clip = name;
-    for (const s of all) if (s.built.meta[name]) s.runtime.play(name, { fade: 0, restart: true });
+    for (const s of all) if (s.built.clipNames.includes(name)) s.runtime.play(name, { fade: 0, restart: true });
     this.playing = true;
     this.changed();
   }
 
   /** Current frame of the current clip (30 fps). */
   get frameNo(): number {
-    const a = this.current.runtime.mixer.existingAction(this.current.built.clips.find((c) => c.name === this.clip)!);
+    const clip = this.current.built.clip(this.clip);
+    const a = clip && this.current.runtime.mixer.existingAction(clip);
     return a ? a.time * 30 : 0;
   }
 
   seek(frame: number): void {
     this.playing = false;
     for (const s of [this.current, ...this.children]) {
-      const clip = s.built.clips.find((c) => c.name === this.clip);
+      const clip = s.built.clip(this.clip);
       const a = clip && s.runtime.mixer.existingAction(clip);
       if (!a) continue;
       a.paused = false;
@@ -244,7 +245,7 @@ class MonsterLab implements Game {
     for (const s of this.mode === 'grid' ? this.children : [this.current]) {
       const events = s.runtime.update(step, {});
       // one-shot clips loop in the lab after a short beat
-      if (events.some((e) => e.type === 'end') && s.built.meta[this.clip]?.kind !== 'idle') setTimeout(() => s.runtime.play(this.clip, { fade: 0, restart: true }), 400);
+      if (events.some((e) => e.type === 'end') && s.built.clipInfo(this.clip)?.kind !== 'idle') setTimeout(() => s.runtime.play(this.clip, { fade: 0, restart: true }), 400);
     }
     if (this.turntable) this.holder.rotation.y += dt * 0.6;
     this.updateSkeleton();
@@ -338,12 +339,12 @@ class MonsterLab implements Game {
   sheet(name = this.clip): SheetImage {
     const probe = buildMonster(this.current.genome);
     probe.object.scale.setScalar(1);
-    const i = probe.defs.findIndex((d) => d.name === name);
-    return renderSheet(probe.object, probe.rig, probe.defs[i]!, probe.clips[i]!, { views: ['side', 'three'], trails: !!probe.defs[i]!.loop });
+    const def = probe.clipDef(name) ?? probe.clipDef('Idle')!;
+    return renderSheet(probe.object, probe.rig, def, probe.clip(def.name)!, { views: ['side', 'three'], trails: !!def.loop });
   }
 
   portrait(): SheetImage {
-    const probe = buildMonster(this.current.genome, { clips: false });
+    const probe = buildMonster(this.current.genome);
     probe.object.scale.setScalar(1);
     return renderPortrait(probe.object, { width: 240, height: 240, skeleton: probe.rig.joints });
   }
@@ -448,9 +449,9 @@ function ui(engine: Engine, lab: MonsterLab): void {
     sel('archetype').value = lab.options.archetype ?? '';
     sel('rank').value = lab.options.rank ?? 'normal';
     sel('tags').value = lab.options.tags?.[0] ?? '';
-    const clips = Object.keys(m.meta);
+    const clips = m.clipNames;
     if (sel('clip').dataset.list !== clips.join()) {
-      sel('clip').innerHTML = clips.map((c) => opt(c, `${c}${m.meta[c]!.hitFrame !== null ? ` (hit f${m.meta[c]!.hitFrame})` : ''}`)).join('');
+      sel('clip').innerHTML = clips.map((c) => opt(c, `${c}${m.clipInfo(c)!.hitFrame !== null ? ` (hit f${m.clipInfo(c)!.hitFrame})` : ''}`)).join('');
       sel('clip').dataset.list = clips.join();
     }
     sel('clip').value = lab.clip;
@@ -562,7 +563,7 @@ Engine.start(lab, { container, ...optionsFromUrl(), filters: [] })
       crossover: () => lab.crossover(),
       evolve: (a) => lab.evolve(a),
       select: (i) => lab.select(i),
-      clips: () => Object.keys(lab.current.built.meta),
+      clips: () => [...lab.current.built.clipNames],
       play: (n) => lab.play(n),
       pause: () => {
         lab.playing = false;

@@ -1,13 +1,13 @@
 import { type AnimationClip, Box3, Euler, Group, Mesh, Object3D, Quaternion, RingGeometry, Vector3 } from 'three/webgpu';
-import { compileClip, restPoseOf, sampleClip, type LegRig, type RigSpec, type Vec3 } from '../../engine/animation';
+import { compileClip, sampleClip, type ClipDef, type LegRig, type RigSpec, type Vec3 } from '../../engine/animation';
 import type { RestPose } from '../../engine/animation';
 import { more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import { RANK } from '../core/scaling';
 import type { Genome } from '../core/types';
-import { generateClips } from './anim';
-import type { BakeContext } from './anim/bake';
-import { Kinematics } from './anim/ik';
+import { clipBuilders, plantedFeet } from './anim';
+import { poseAt, type BakeContext } from './anim/bake';
+import { Kinematics, type PoseMap } from './anim/ik';
 import { ARCHETYPES } from './brains/archetypes';
 import { ELITE_MODS } from './brains/elite';
 import { boltFor, MONSTER_SKILLS } from './brains/skills';
@@ -25,22 +25,75 @@ import type { BuiltMonster, ClipMeta, MeshOpts, MonsterClipDef, MonsterPartConte
  * builds its clips once. Deterministic: the same genome always gives the same monster.
  */
 export interface BuildOptions {
-  /** Generate and compile clips (default true). Without, only Idle is generated for the pose. */
-  clips?: boolean;
+  /** Generate and compile every clip now instead of on first use (default false). */
+  eager?: boolean;
   /** Extra MONSTER_SKILLS ids whose clips it needs (boss scripts). */
   extraSkills?: readonly string[];
 }
 
-interface CachedClips {
-  defs: MonsterClipDef[];
-  clips: AnimationClip[];
-}
-const clipCache = new Map<string, CachedClips>();
-const CACHE_MAX = 96;
+/**
+ * The clips of one body shape, generated and compiled lazily and shared by every monster
+ * of that shape (AnimationClips bind by joint name, so any copy can play them).
+ */
+class ClipSet {
+  readonly names: string[];
+  private readonly makers: Map<string, () => MonsterClipDef>;
+  private readonly defs = new Map<string, MonsterClipDef>();
+  private readonly clips = new Map<string, AnimationClip>();
+  private readonly metas = new Map<string, ClipMeta>();
 
+  constructor(
+    readonly ctx: BakeContext,
+    anims: readonly string[],
+    weapon: boolean,
+    readonly rig: RigSpec,
+    readonly rest: RestPose,
+  ) {
+    this.makers = clipBuilders(ctx, anims, { weapon });
+    this.names = [...this.makers.keys()];
+  }
+
+  def(name: string): MonsterClipDef | null {
+    let d = this.defs.get(name);
+    if (!d) {
+      const make = this.makers.get(name);
+      if (!make) return null;
+      this.defs.set(name, (d = make()));
+    }
+    return d;
+  }
+
+  clip(name: string): AnimationClip | null {
+    let c = this.clips.get(name);
+    if (!c) {
+      const d = this.def(name);
+      if (!d) return null;
+      this.clips.set(name, (c = tagClip(compileClip(d, this.rig, this.rest), d)));
+    }
+    return c;
+  }
+
+  meta(name: string): ClipMeta | null {
+    let m = this.metas.get(name);
+    if (!m) {
+      const d = this.def(name);
+      if (!d) return null;
+      this.metas.set(name, (m = metaOf(d)));
+    }
+    return m;
+  }
+}
+
+const clipCache = new Map<string, ClipSet>();
+const CACHE_MAX = 128;
+
+/** Forget every cached clip set (tests, benchmarks). */
 export function clearMonsterCache(): void {
   clipCache.clear();
 }
+
+/** A one-frame "stand" template: the stance with feet planted. */
+const STAND: ClipDef = { name: 'Stand', frames: 1, keys: [[0, {}]] };
 
 export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltMonster {
   const t0 = performance.now();
@@ -72,52 +125,62 @@ export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltM
     part.build(partContext(socket, part, joints, genome, rng.fork(socket.id)));
   }
 
-  // ---- rig
+  // ---- rig and clips (lazy, shared per shape)
   const rig = rigOf(sk);
-  const rest = restPoseOf(object, rig);
+  const rest = restOf(sk);
   const skills = [...new Set([...resolveSkills(genome, sk, bySlot), ...(options.extraSkills ?? []).filter((s) => MONSTER_SKILLS.has(s))])];
   const anims = [...new Set(skills.flatMap((id) => (MONSTER_SKILLS.has(id) ? [MONSTER_SKILLS.get(id).anim, MONSTER_SKILLS.get(id).loopAnim ?? ''] : [])).filter(Boolean))];
-  const wantClips = options.clips ?? true;
-  const key = `${shapeKey(genome, anims)}|${wantClips ? 'all' : 'idle'}`;
-  let cached = clipCache.get(key);
-  if (!cached) {
-    const ctx = bakeContext(sk, joints);
-    const defs = wantClips ? generateClips(ctx, anims, { weapon: bySlot.has('weapon') && bySlot.get('weapon')!.id !== 'weapon.staff' && bySlot.get('weapon')!.id !== 'weapon.orb' }) : generateClips(ctx, [], { weapon: false }).slice(0, 1);
-    cached = { defs, clips: defs.map((d) => tagClip(compileClip(d, rig, rest), d)) };
+  const weapon = bySlot.get('weapon');
+  const key = shapeKey(genome, anims);
+  let set = clipCache.get(key);
+  if (!set) {
+    set = new ClipSet(bakeContext(sk, joints), anims, !!weapon && weapon.id !== 'weapon.staff' && weapon.id !== 'weapon.orb', rig, rest);
     if (clipCache.size >= CACHE_MAX) clipCache.delete(clipCache.keys().next().value!);
-    clipCache.set(key, cached);
+    clipCache.set(key, set);
   }
+  const clips = set;
+  if (options.eager) for (const n of clips.names) clips.clip(n);
 
   // ---- elite / boss dressing
   if (genome.rank !== 'normal' || genome.elite.length) addAura(object, sk, genome);
 
-  // Static pose: the first Idle frame, so an un-animated model already stands right.
-  applyPose(object, rig, rest, cached.defs[0]!);
+  // Static pose: standing with planted feet, so an un-animated model already looks right.
+  applyResolved(object, rig, rest, poseAt(clips.ctx, STAND, 0, plantedFeet(sk)));
   object.scale.setScalar(genome.scale);
 
-  const meta: Record<string, ClipMeta> = {};
-  for (const d of cached.defs) meta[d.name] = metaOf(d);
+  const stats = statsOf(genome, bySlot);
+  const ms = performance.now() - t0;
   return {
     genome,
     object,
     rig,
     rest,
     skeleton: sk,
-    defs: cached.defs,
-    clips: cached.clips,
-    meta,
-    stats: statsOf(genome, bySlot),
+    clipNames: clips.names,
+    clip: (name) => clips.clip(name),
+    clipDef: (name) => clips.def(name),
+    clipInfo: (name) => clips.meta(name),
+    get defs() {
+      return clips.names.map((n) => clips.def(n)!);
+    },
+    get clips() {
+      return clips.names.map((n) => clips.clip(n)!);
+    },
+    get meta() {
+      return Object.fromEntries(clips.names.map((n) => [n, clips.meta(n)!]));
+    },
+    stats,
     skills,
     radius: sk.radius * genome.scale,
     height: sk.height * genome.scale,
     cost: genomeCost(genome),
-    ms: performance.now() - t0,
+    ms,
   };
 }
 
 /** World move speeds (m/s) of the walk and run clips at this monster's scale. */
 export function moveSpeeds(m: BuiltMonster): { walk: number; run: number } {
-  return { walk: (m.meta.Walk?.speed ?? 1) * m.genome.scale, run: (m.meta.Run?.speed ?? 2) * m.genome.scale };
+  return { walk: (m.clipInfo('Walk')?.speed ?? 1) * m.genome.scale, run: (m.clipInfo('Run')?.speed ?? 2) * m.genome.scale };
 }
 
 // ---------------------------------------------------------------- meshes
@@ -279,11 +342,27 @@ function metaOf(d: MonsterClipDef): ClipMeta {
   };
 }
 
+/** Rest transforms straight from the skeleton (what restPoseOf would read off the fresh model). */
+function restOf(sk: Skeleton): RestPose {
+  const rest: RestPose = { position: {}, quaternion: {}, scale: {} };
+  for (const j of sk.joints) {
+    rest.position[j.name] = [...j.pos];
+    rest.quaternion[j.name] = j.yaw ? new Quaternion().setFromAxisAngle(Y, j.yaw * RAD) : new Quaternion();
+    rest.scale[j.name] = [1, 1, 1];
+  }
+  return rest;
+}
+
 /** Pose joints directly (no mixer) to a clip frame. */
-export function applyPose(object: Object3D, rig: RigSpec, rest: RestPose, def: MonsterClipDef, frame = 0): void {
-  const pose = sampleClip(def, frame, rig);
+export function applyPose(object: Object3D, rig: RigSpec, rest: RestPose, def: ClipDef, frame = 0): void {
+  applyResolved(object, rig, rest, sampleClip(def, frame, rig));
+}
+
+function applyResolved(object: Object3D, rig: RigSpec, rest: RestPose, pose: PoseMap): void {
+  const byName = new Map<string, Object3D>();
+  object.traverse((o) => byName.set(o.name, o));
   for (const j of rig.joints) {
-    const o = object.getObjectByName(j);
+    const o = byName.get(j);
     const p = pose[j];
     if (!o || !p) continue;
     const rp = rest.position[j]!;

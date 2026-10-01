@@ -325,12 +325,21 @@ export interface ClipMeta {
 
 export interface BuiltMonster {
   readonly genome: Genome;
-  /** Root object (scaled by genome.scale). Joints are named Object3Ds under it. */
+  /** Root object (scaled by genome.scale), standing in its idle pose. Joints are named Object3Ds under it. */
   readonly object: Object3D;
   readonly rig: RigSpec;
-  /** Rest transforms captured before posing: compile extra clips against this. */
+  /** Rest transforms of the joints (the base every clip is compiled against). */
   readonly rest: RestPose;
   readonly skeleton: Skeleton;
+  /** Names of every clip this monster has (Idle, Walk, Run, Hit, Death, Spawn + attacks). */
+  readonly clipNames: readonly string[];
+  /** One clip, generated and compiled on first use (cached per body shape). Null if unknown. */
+  clip(name: string): AnimationClip | null;
+  /** One clip's definition (baked on first use). */
+  clipDef(name: string): MonsterClipDef | null;
+  /** One clip's metadata: kind, frames, speed, hit frame/time, wind-up. */
+  clipInfo(name: string): ClipMeta | null;
+  /** All clip definitions / compiled clips / metadata, in `clipNames` order (generates every clip). */
   readonly defs: readonly MonsterClipDef[];
   readonly clips: readonly AnimationClip[];
   readonly meta: Readonly<Record<string, ClipMeta>>;
@@ -343,6 +352,6 @@ export interface BuiltMonster {
   readonly height: number;
   /** Power spent on parts, for inspectors. */
   readonly cost: number;
-  /** Milliseconds the build took. */
+  /** Milliseconds `buildMonster` took (clips are generated lazily, see `clip`). */
   readonly ms: number;
 }

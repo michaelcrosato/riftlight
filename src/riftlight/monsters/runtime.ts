@@ -69,20 +69,30 @@ export class MonsterRuntime {
   constructor(readonly monster: BuiltMonster) {
     this.object = monster.object;
     this.mixer = new AnimationMixer(this.object);
-    for (const c of monster.clips) this.actions.set(c.name, this.mixer.clipAction(c));
     for (const j of monster.rig.joints) this.joints.set(j, this.object.getObjectByName(j)!);
     this.play('Idle', { fade: 0 });
   }
 
   has(name: string): boolean {
-    return this.actions.has(name);
+    return this.monster.clipNames.includes(name);
+  }
+
+  /** The mixer action for a clip (compiling the clip on first use). */
+  action(name: string): AnimationAction | null {
+    let a = this.actions.get(name);
+    if (!a) {
+      const clip = this.monster.clip(name);
+      if (!clip) return null;
+      this.actions.set(name, (a = this.mixer.clipAction(clip)));
+    }
+    return a;
   }
 
   /** Cross-fade to a clip. One-shot clips (attacks, hit, death, spawn) hold their last frame. */
   play(name: string, o: { fade?: number; rate?: number; restart?: boolean } = {}): AnimationAction | null {
-    const next = this.actions.get(name);
+    const next = this.action(name);
     if (!next) return null;
-    const meta = this.monster.meta[name];
+    const meta = this.monster.clipInfo(name);
     if (next === this.current && !o.restart) {
       if (o.rate !== undefined) next.timeScale = o.rate;
       return next;
@@ -108,12 +118,11 @@ export class MonsterRuntime {
    * to the clip's authored speed (feet stay planted at any speed).
    */
   locomote(speed: number): void {
-    const meta = this.monster.meta;
     const s = this.monster.genome.scale;
     if (speed < 0.05) return void this.play('Idle', { fade: 0.2 });
-    const walk = (meta.Walk?.speed ?? 1) * s;
-    const run = (meta.Run?.speed ?? walk * 2) * s;
-    const useRun = speed > (walk + run) / 2 && this.actions.has('Run');
+    const walk = (this.monster.clipInfo('Walk')?.speed ?? 1) * s;
+    const run = (this.monster.clipInfo('Run')?.speed ?? walk * 2) * s;
+    const useRun = speed > (walk + run) / 2 && this.has('Run');
     const clip = useRun ? 'Run' : 'Walk';
     const base = useRun ? run : walk;
     this.play(clip, { fade: 0.2, rate: Math.min(2.5, Math.max(0.35, speed / base)) });
@@ -138,7 +147,7 @@ export class MonsterRuntime {
     this.mixer.update(dt);
     const act = this.current;
     if (act) {
-      const meta = this.monster.meta[this.currentName];
+      const meta = this.monster.clipInfo(this.currentName);
       const t = act.time;
       if (meta?.hitTime !== null && meta?.hitTime !== undefined && this.prevTime < meta.hitTime && t >= meta.hitTime) events.push({ type: 'hit', clip: this.currentName });
       if (meta && !meta.loop && t >= act.getClip().duration - 1e-4 && this.prevTime < act.getClip().duration - 1e-4) events.push({ type: 'end', clip: this.currentName });
@@ -156,7 +165,7 @@ export class MonsterRuntime {
     const head = sk.roles.head ? this.joints.get(sk.roles.head) : null;
     let yaw = 0;
     let pitch = 0;
-    if (head && target && this.monster.meta[this.currentName]?.kind !== 'death') {
+    if (head && target && this.monster.clipInfo(this.currentName)?.kind !== 'death') {
       this.object.updateMatrixWorld(true);
       const local = _v.copy(target).applyMatrix4(_m.copy(this.object.matrixWorld).invert());
       const from = head.getWorldPosition(new Vector3()).applyMatrix4(_m);
