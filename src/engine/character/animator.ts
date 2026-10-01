@@ -177,6 +177,16 @@ export class Animator {
     return active.map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight() / total, time: a.time, rate: a.getEffectiveTimeScale() }));
   }
 
+  /** Start over with `name` playing alone, no blends, no procedural memory (a teleport, a respawn). */
+  restart(name: string): void {
+    for (const l of this.layers.values()) if (l.active) this.stop(l);
+    this.current = null;
+    if (this.gait) this.gait.tiptoe = 0;
+    this.feet?.reset();
+    this.pose?.reset();
+    this.play({ name }, 0);
+  }
+
   /** Switch to (or keep playing) what `req` asks for, fading over `fade` seconds. */
   play(req: AnimRequest, fade: number): void {
     const gait = req.gait && this.gait ? this.gait : null;

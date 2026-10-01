@@ -269,7 +269,21 @@ export class PlatformerCharacter {
     this.vy = 0;
     this.prevFeet.set(x, y, z);
     this.peakY = y;
+    // nothing about where it was carries over: the ground, the animation
+    this.climb = 0;
+    this.uphillShare = 1;
+    this.riseHold = 0;
     this.enter('idle');
+    this.animator?.restart('Idle');
+    const p = this.procedural;
+    p.lean.roll = p.lean.pitch = p.look = p.impact = 0;
+    this.lastYaw = null;
+    this.accel = 0;
+    this.lastVisualSpeed = 0;
+    this.landImpact = 0;
+    this.impactTime = Infinity;
+    this.impactStrength = 0;
+    this.rootStarted = false;
   }
 
   /** Jump right now (no headroom: nothing happens). Normally the state machine decides. */

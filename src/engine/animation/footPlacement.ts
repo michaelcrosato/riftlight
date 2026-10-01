@@ -432,6 +432,17 @@ export class FootPlacement {
           N0.set(HIT.nx, HIT.ny, HIT.nz);
         } else if (HIT.id !== id || N0.dot(N1.set(HIT.nx, HIT.ny, HIT.nz)) < 0.995) same = false;
       }
+      // across a step's edge (heel and toe on different heights): it stands on the edge only
+      // if its middle is over the higher step; otherwise it is on the lower one (its tip just
+      // touching the riser), not standing on its toe tip with the rest of it in the air
+      const g0 = f.g[0];
+      const g1 = f.g[1];
+      if (g0 !== null && g1 !== null && g0 !== undefined && g1 !== undefined && Math.abs(g1 - g0) > 0.05 && Math.min(f.h[0], f.h[1]) < T.contact && !f.swinging) {
+        V1.addVectors(f.pts[0], f.pts[1]).multiplyScalar(0.5);
+        const hi = g1 > g0 ? 1 : 0;
+        const lo = Math.min(g0, g1);
+        if (this.ground(V1.x + f.cx, V1.z + f.cz, root.y) && Math.abs(HIT.y - root.y - lo) < 0.02) f.g[hi] = lo;
+      }
       // planted (as animated): its lowest sole point is near the floor; a re-planting step is
       // a swing, whatever the animation says
       const low = Math.min(f.h[0], f.h[1]);
@@ -461,9 +472,11 @@ export class FootPlacement {
       const gh = f.g[0] ?? null;
       const gt = f.g[1] ?? null;
       let ground = gh === null ? (gt ?? -Infinity) : gt === null ? gh : same ? gh + ((gt - gh) * L.heel) / (L.heel + L.ball) : Math.max(gh, gt);
-      // a swinging foot clears what is just ahead of it, too (a riser it is about to cross)
+      // a swinging foot clears what is just ahead of it, too (a riser it is about to cross);
+      // a gait's swing knows where it lands instead (looking ahead, it sees the step after)
+      const si = input.swing?.[f.side] ?? null;
       const reach = T.lookahead + Math.max(0, f.fwd) * T.lookaheadTime;
-      const look = Math.max(1 - planted, f.swing);
+      const look = si ? 0 : Math.max(1 - planted, f.swing);
       if (look > 0 && reach > 0) {
         const fx = f.pts[1].x - f.pts[0].x;
         const fz = f.pts[1].z - f.pts[0].z;
@@ -478,7 +491,6 @@ export class FootPlacement {
       }
       f.ground = ground;
       // a gait's swinging foot: from the ground it took off from to where it will land
-      const si = input.swing?.[f.side] ?? null;
       if (!si && planted > 0.5 && Number.isFinite(ground)) f.takeoff = root.y + ground;
       if (si && this.landing(f, si, root)) {
         const land = HIT.y;
