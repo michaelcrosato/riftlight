@@ -401,7 +401,7 @@ export class PixelRenderer {
     this.resizeObserver?.disconnect();
     this.dprQuery = null;
     this._renderer.setAnimationLoop(null);
-    for (const key of [...this.outputCache.keys()]) this.evict(key);
+    for (const key of [...this.outputCache.keys()]) this.evict(key, true);
     this._pipeline.dispose();
     this.captureTarget?.dispose();
     this._renderer.dispose();
@@ -466,11 +466,11 @@ export class PixelRenderer {
   }
 
   /** Drop a cached output graph and free the render targets only it owns. */
-  private evict(key: string): void {
+  private evict(key: string, force = false): void {
     const entry = this.outputCache.get(key);
     if (!entry) return;
     this.outputCache.delete(key);
-    if (entry.node === this._pipeline.outputNode) return; // still on screen (raw ↔ pixel race)
+    if (!force && entry.node === this._pipeline.outputNode) return; // still on screen
     // RTTs (art targets, convertToTexture) and TSL display nodes with their own targets
     // (bloom, …) override Node.dispose; the shared scene passes must survive. Iterative
     // with a visited set: filter graphs share sub-nodes heavily (palette searches).
