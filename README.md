@@ -3,11 +3,23 @@
 **Pixel Engine**: a WebGPU-first 3D engine that renders authentic 2D pixel art, designed
 for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
 post-processing (with its built-in WebGL 2 fallback), Rapier physics, local GLB assets.
-Demo: *Coin Garden*.
+
+The page at `/` is **Riftlight**, the showcase hack-and-slash ARPG ([`docs/GAME.md`](docs/GAME.md)):
+a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper,
+levels with monsters, loot and bosses, the death recap, save slots and the difficulty sliders
+(Esc → Tuning). The movement demo is `/?game=playground` (and `?game=sandbox`).
+
+- **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
+  1–4 (or Q E R T, RMB = 1) skills · F talk / pick up / portal · I inventory · P passive tree ·
+  C character · K codex · Esc pause. Pads: left stick, A attack, B dodge, X Y LB RB skills,
+  RT interact, Back inventory, Start pause; prompts switch to pad glyphs. Phones get A/B/1/2/F/≡.
+- **For agents:** `window.__RIFTLIGHT__` drives and inspects the game frame-exactly
+  (`newRun`, `enterDepth`, `step`, `state`, `bot.run`...); `npm run playtest -- 1 --film` lets
+  the playtest bot play a level and reports clear time, deaths and loot.
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1, ?game=sandbox)
+npm run dev          # http://localhost:5173  (?game=playground|sandbox, ?seed=7, ?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1)
 npm run build        # production build
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
@@ -17,9 +29,10 @@ npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
 npm run anim -- curves Run     # motion curves (graph editor) PNG
 npm run film -- run-stop --gif # film a move in the real game → .scratch/film/
+npm run playtest -- 1 --runs 3 --film   # the Riftlight bot plays depth 1 → .scratch/playtest/
 ```
 
-Demo: *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
+Engine demo (`?game=playground`): *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
 ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull blocks).
 
 - **Moves:** WASD move · Shift walk · Space jump (double/triple, side flip, wall kick) ·
@@ -40,7 +53,7 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
   **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
   second demo level.
-- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI (on by default in dev, or
+- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7) · ~ debug UI (on by default in dev, or
   `?debug=1`) · M mute. Hotkeys are configurable (`EngineOptions.debugKeys`).
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
