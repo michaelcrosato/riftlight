@@ -251,15 +251,20 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
 - `engine.setFilters(ids)`, `engine.availableFilters`, `engine.camera.setZoom(z)`,
   `engine.camera.describe()`.
 - `npm run test:e2e` runs the production build in Chromium. Suites:
-  - three backend paths (native WebGPU, natural WebGL 2 fallback, forced fallback)
+  - the backend paths (native WebGPU, natural WebGL 2 fallback, forced fallback)
   - every camera preset, including zoom, the side lane and free → fix → `?cam=`
   - every filter on both backends
   - every move in `scripts/e2e-moves.mjs`
   - camera hot-swap keeps the player in place
-  - the Animation Lab (every clip, views, sheets, curves, API)
+  - the Animation Lab (clips, views, sheets, curves, API)
   - `Engine.step()` manual time
+  - the tools: `build:single` runs from `file://` with no errors or requests, `film` writes
+    its PNG + JSON
 
   Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
   Chromium loses the WebGPU device when a canvas presents. Run one suite with
-  `npm run test:e2e -- moves`.
+  `npm run test:e2e -- moves`, a CI group with `-- @core` (`@cameras`, `@filters`), and set
+  `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
+  frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
+  never for a fixed number of rendered frames when they can avoid it.
 - `npm run build:single` writes `dist-single/pixel-engine.html`, one self-contained offline file.

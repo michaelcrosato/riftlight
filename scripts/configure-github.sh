@@ -4,8 +4,11 @@
 #
 # - ensures a `main` branch exists and is the default
 # - enables auto-merge, squash-only merges, delete-branch-on-merge
-# - lets Actions open PRs (Autopilot fallback when AUTOMATION_TOKEN is unset)
-# - ruleset on the default branch: PRs required, `check` must pass, no force-push/deletion
+# - lets Actions open PRs (Autopilot fallback when AUTOMATION_TOKEN is unset, auto-revert)
+# - ruleset on the default branch: changes go through PRs, no force-push/deletion.
+#   Deliberately NO required status checks: PRs merge at once, CI runs on main after the
+#   merge, and a red main is reverted automatically (.github/workflows/claude-ci-autofix.yml).
+#   Re-running this script removes a required check an older version added.
 # - creates the `claude` and `hold` labels
 set -euo pipefail
 
@@ -55,10 +58,7 @@ ruleset=$(cat <<'JSON'
         "require_code_owner_review": false,
         "require_last_push_approval": false,
         "required_review_thread_resolution": false,
-        "allowed_merge_methods": ["squash"] } },
-    { "type": "required_status_checks", "parameters": {
-        "strict_required_status_checks_policy": false,
-        "required_status_checks": [ { "context": "check" } ] } }
+        "allowed_merge_methods": ["squash"] } }
   ]
 }
 JSON
@@ -68,7 +68,7 @@ if [[ -n "$existing" ]]; then
 else
   gh api -X POST "repos/$repo/rulesets" --input - <<<"$ruleset" >/dev/null
 fi
-echo "Ruleset 'autopilot': PR + passing 'check' required on default branch"
+echo "Ruleset 'autopilot': PRs required on the default branch, no required status checks"
 
 gh label create claude --repo "$repo" --color D97757 --description "Claude implements this" --force >/dev/null
 gh label create hold --repo "$repo" --color B60205 --description "Stop auto-merge" --force >/dev/null
