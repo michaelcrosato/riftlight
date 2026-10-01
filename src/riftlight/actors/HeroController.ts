@@ -72,6 +72,8 @@ interface ActionState {
   skill: ResolvedSkill;
   slot: number;
   clip: string;
+  /** The animator's name for this playthrough (`clip`, or its alias when the clip restarts). */
+  anim: string;
   /** Seconds into the action (game time scaled by action speed). */
   t: number;
   duration: number;
@@ -145,6 +147,11 @@ export class HeroController {
   private lunging = false;
   /** Last game time the hero was busy (an action or a roll): the buffer counts from here. */
   private busyUntil = -Infinity;
+  /** Animator names of the current roll / hit react playthroughs (see `fresh`). */
+  private rollAnim = 'Roll';
+  private reactAnim = 'HitReact';
+  /** The animator name each one-shot clip used last. */
+  private readonly lastAnim = new Map<string, string>();
 
   constructor(o: HeroOptions) {
     this.combat = o.combat;
@@ -426,10 +433,12 @@ export class HeroController {
     const cancelAt = timing ? Math.max(hitAt, timing.cancel / frames) : Math.max(hitAt, 0.7);
     // turn instantly toward the aim
     a.facing = Math.atan2(this.aim.x - a.position.x, this.aim.z - a.position.z);
+    const anim = this.fresh(clip);
     this.action = {
       skill,
       slot,
       clip,
+      anim,
       t: 0,
       duration,
       hitTime: duration * hitAt,
@@ -442,7 +451,7 @@ export class HeroController {
     this.state = skill.tags.includes('attack') ? 'attack' : 'cast';
     if (slot < 0) this.stats.attacks++;
     else this.stats.casts++;
-    this.animator.setTime(clip, 0);
+    this.animator.setTime(anim, 0);
     this.comboUntil = 0;
     return true;
   }
@@ -454,8 +463,20 @@ export class HeroController {
     a.facing = Math.atan2(dir.x, dir.z);
     this.state = 'dodge';
     this.stats.dodges++;
-    this.animator.setTime('Roll', 0);
+    this.rollAnim = this.fresh('Roll');
+    this.animator.setTime(this.rollAnim, 0);
     this.combat.cast(a, this.dodgeSkill, a.position.clone().addScaledVector(dir, 4));
+  }
+
+  /**
+   * The animator name for a new playthrough of `clip`: the clip itself, or its alias when the
+   * last playthrough may still be on screen, so the restart blends instead of popping.
+   */
+  private fresh(clip: string): string {
+    const last = this.lastAnim.get(clip);
+    const next = last === clip ? `${clip}~2` : clip;
+    this.lastAnim.set(clip, next);
+    return next;
   }
 
   private fail(text: string): false {
@@ -521,7 +542,8 @@ export class HeroController {
     const lost = this.lastLife - a.life;
     if (lost > a.maxLife * HERO_TUNING.hitReactShare && !this.action && this.state !== 'dodge') {
       this.hitReact = this.animator.duration('HitReact');
-      this.animator.setTime('HitReact', 0);
+      this.reactAnim = this.fresh('HitReact');
+      this.animator.setTime(this.reactAnim, 0);
     }
     this.lastLife = a.life;
   }
@@ -576,28 +598,30 @@ export class HeroController {
       an.setTime('Triumph', this.victoryT);
       an.play({ full: 'Triumph' }, HERO_TUNING.fadeMove);
     } else if (this.state === 'dodge') {
-      const len = an.duration('Roll');
+      const roll = this.rollAnim;
+      const len = an.duration(roll);
       const total = this.dodgeSkill.castTime * 0.8;
-      an.setTime('Roll', Math.min(len, an.time('Roll') + (frozen ? 0 : (dt * len) / Math.max(0.05, total))));
-      an.play({ full: 'Roll' }, 0.04);
+      an.setTime(roll, Math.min(len, an.time(roll) + (frozen ? 0 : (dt * len) / Math.max(0.05, total))));
+      an.play({ full: roll }, 0.05);
     } else if (this.action) {
       const act = this.action;
-      const len = an.duration(act.clip);
+      const name = act.anim;
+      const len = an.duration(name);
       if (this.state === 'channel') {
         // looping channels (whirlwind) keep spinning; others hold their release pose (beams)
-        if (an.isLoop(act.clip)) an.advance(act.clip, k, act.skill.speed);
-        else an.setTime(act.clip, (COMBAT_TIMING[act.clip]?.hit ?? len * 30 * 0.5) / 30);
-      } else an.setTime(act.clip, Math.min(len, (act.t / Math.max(0.01, act.duration)) * len));
+        if (an.isLoop(name)) an.advance(name, k, act.skill.speed);
+        else an.setTime(name, (COMBAT_TIMING[act.clip]?.hit ?? len * 30 * 0.5) / 30);
+      } else an.setTime(name, Math.min(len, (act.t / Math.max(0.01, act.duration)) * len));
       // legs keep running under a cast when moving; attacks own the whole body
       const melee = act.skill.tags.includes('melee');
       const moving = v > HERO_TUNING.idleBelow && act.skill.moveDuringCast > 0 && !act.skill.def.leap && (!melee || this.lunging);
       const spin = act.clip === 'Spin';
-      if (moving && !spin) an.play({ lower: loco === 'Idle' ? 'Walk' : loco, upper: act.clip }, HERO_TUNING.fadeAction);
-      else an.play({ full: act.clip }, HERO_TUNING.fadeAction);
+      if (moving && !spin) an.play({ lower: loco === 'Idle' ? 'Walk' : loco, upper: name }, HERO_TUNING.fadeAction);
+      else an.play({ full: name }, HERO_TUNING.fadeAction);
     } else if (this.hitReact > 0) {
       this.hitReact -= k;
-      an.advance('HitReact', k);
-      an.play(v > HERO_TUNING.idleBelow ? { lower: loco === 'Idle' ? 'Walk' : loco, upper: 'HitReact' } : { full: 'HitReact' }, 0.05);
+      an.advance(this.reactAnim, k);
+      an.play(v > HERO_TUNING.idleBelow ? { lower: loco === 'Idle' ? 'Walk' : loco, upper: this.reactAnim } : { full: this.reactAnim }, 0.05);
     } else {
       an.play({ full: loco }, this.state === 'idle' ? HERO_TUNING.fadeOut : HERO_TUNING.fadeMove);
     }

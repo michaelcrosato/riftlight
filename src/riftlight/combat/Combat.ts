@@ -135,7 +135,10 @@ export class Combat {
       }),
       this.events.on('kill', () => void this.stats.kills++),
     );
+    // a corpse that finishes its flicker leaves a puff (chained: the level may listen too)
+    const previous = this.actors.onRemove;
     this.actors.onRemove = (a) => {
+      previous?.(a);
       if (a.death === 'ragdoll' && a.deadFor >= 0) this.burst('smoke', a.body.position);
     };
   }

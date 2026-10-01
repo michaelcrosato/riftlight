@@ -47,31 +47,50 @@ export class HeroAnimator {
     for (const c of clips) this.clips.set(c.name, c);
   }
 
+  /**
+   * A clip by name. `Name~2` is an alias: the same clip as its own action with its own clock,
+   * so an action that restarts its own clip (a second roll, the same spell again after a
+   * cancel) crossfades from the old playthrough instead of jumping back to frame 0.
+   */
+  private clip(name: string): AnimationClip | undefined {
+    let c = this.clips.get(name);
+    if (!c && name.includes('~')) {
+      const base = this.clips.get(name.split('~')[0]!);
+      if (base) {
+        c = base.clone();
+        c.name = name;
+        c.userData = { ...base.userData };
+        this.clips.set(name, c);
+      }
+    }
+    return c;
+  }
+
   has(name: string): boolean {
-    return this.clips.has(name);
+    return !!this.clip(name);
   }
 
   /** Clip length in seconds (at rate 1). */
   duration(name: string): number {
-    return this.clips.get(name)?.duration ?? 0;
+    return this.clip(name)?.duration ?? 0;
   }
 
   /** Whether a clip loops. */
   isLoop(name: string): boolean {
-    const c = this.clips.get(name);
+    const c = this.clip(name);
     return !!c && isLoop(c);
   }
 
   /** Ground speed a locomotion clip is authored for. */
   speedOf(name: string): number {
-    return (this.clips.get(name)?.userData.speed as number | undefined) ?? 0;
+    return (this.clip(name)?.userData.speed as number | undefined) ?? 0;
   }
 
   private action(name: string, part: BodyPart): AnimationAction {
     const key = part === 'full' ? name : `${name}:${part}`;
     let a = this.actions.get(key);
     if (!a) {
-      const clip = this.clips.get(name);
+      const clip = this.clip(name);
       if (!clip) throw new Error(`HeroAnimator: no clip "${name}"`);
       a = this.mixer.clipAction(part === 'full' ? clip : partClip(clip, part));
       a.play();
@@ -149,7 +168,7 @@ export class HeroAnimator {
   /** What contributes to the pose now (film / tooling, like PlatformerCharacter.animationMix). */
   mix(): { name: string; weight: number; time: number; rate: number }[] {
     const out: { name: string; weight: number; time: number; rate: number }[] = [];
-    for (const s of this.slots) for (const p of s.parts) out.push({ name: p.clip, weight: s.weight, time: p.action.time, rate: 1 });
+    for (const s of this.slots) for (const p of s.parts) out.push({ name: p.clip.split('~')[0]!, weight: s.weight, time: p.action.time, rate: 1 });
     return out.sort((a, b) => b.weight - a.weight);
   }
 
@@ -157,9 +176,9 @@ export class HeroAnimator {
   get current(): string {
     let best: Slot | null = null;
     for (const s of this.slots) if (!best || s.weight > best.weight) best = s;
-    // a split pose reports what the arms are doing (the action), not the legs
+    // a split pose reports what the arms are doing (the action), not the legs; aliases by their clip
     const parts = best?.parts ?? [];
-    return (parts.length > 1 ? parts[parts.length - 1] : parts[0])?.clip ?? 'Idle';
+    return ((parts.length > 1 ? parts[parts.length - 1] : parts[0])?.clip ?? 'Idle').split('~')[0]!;
   }
 }
 
