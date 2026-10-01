@@ -110,6 +110,13 @@ interface Coin {
 }
 
 /** HUD coin icon (pixel art as data: one character per pixel). */
+/** The live playground's clip hot-reload: one accept handler for the module, however many times levels load. */
+let reloadClips: ((clips: typeof HERO_CLIPS) => void) | null = null;
+import.meta.hot?.accept('./hero/animations', (mod) => {
+  const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
+  if (clips) reloadClips?.(clips);
+});
+
 const COIN_ICON = ['..ooo..', '.oyyyo.', 'oyywyyo', 'oyywyyo', 'oyywyyo', '.oyyyo.', '..ooo..'];
 const COIN_COLORS = { o: 'orange', y: 'sand', w: 'white' } as const;
 const PUNCHES = new Set(['Punch', 'Punch2', 'Kick', 'SweepKick', 'JumpKick']);
@@ -220,10 +227,7 @@ export class Playground implements Game {
     this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
     // Edit a clip file (hero/clips/*.ts, re-exported by hero/animations.ts) while the game
     // runs: clips recompile and swap in place.
-    import.meta.hot?.accept('./hero/animations', (mod) => {
-      const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
-      if (clips && !this.disposed) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
-    });
+    reloadClips = (clips) => !this.disposed && this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
     this.heroModel.position.set(...LEVEL.spawn);
     this.heroModel.visible = !ctx.camera.hidesTarget;
     this.seen = { ...this.seen, jumps: this.hero.stats.jumps, landings: this.hero.stats.landings };

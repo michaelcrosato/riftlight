@@ -346,7 +346,9 @@ const MY_SONG: Song = {
 
 `parseSong` throws on a typo (bad note, uneven pattern), so `npm test` catches it. Browsers
 allow sound only after a user gesture: the AudioContext is created on the first key /
-pointer / touch input. Before that, and without Web Audio (headless), every call is a
+pointer / touch input (`touchend` / `click` on iOS), and the engine keeps listening until it
+is actually running; it resumes again after the tab comes back or iOS interrupts audio
+(at the next input if the browser insists on one). Before that, and without Web Audio (headless), every call is a
 silent no-op that still counts plays in `audio.counts` / `audio.log`, so tests can assert on
 sounds. Volumes and mute live in `localStorage` (`pixel-engine:audio`), with try/catch.
 
@@ -370,8 +372,11 @@ Presets are data (`presets.ts`: `dust`, `skid`, `sparkle`, `smoke`, `impact`). S
 whole **art pixels** (converted with the camera's world size of one art pixel at the focus),
 colors are `PALETTE` names stepped over each particle's life, never blended. Each preset is
 one pooled CPU simulation (`ParticlePool`, unit-tested) drawn as **one instanced
-`SpriteNodeMaterial` draw call** from a reused instance buffer. Particles freeze with
-`paused`, advance with `step()`, and are cleared when a level unloads.
+`SpriteNodeMaterial` draw call** from a reused instance buffer. Emitters are keyed by
+preset name, or by content for inline preset objects (building the same literal every frame
+stays one emitter); `register` under an existing name frees the old emitter. Vary bursts
+with the options (`count`, `direction`, `speed`, `scale`, `colors`) rather than new presets.
+Particles freeze with `paused`, advance with `step()`, and are cleared when a level unloads.
 
 ### Pixel HUD (`src/engine/hud/`)
 
@@ -420,19 +425,36 @@ character, ray casts or the camera. It reports dynamic and kinematic bodies (set
 await engine.loadGame(new Level2());                      // same renderer, camera, input, audio
 await engine.loadGame(new Level3(), { camera: { preset: 'side' } });
 engine.dispose();                                         // stop and free everything
+
+// A level door, from the game's own code: the swap happens after this frame.
+physics.trigger({ box: [1, 1.5, 0.3] }, door, { tag: 'character', once: true, onEnter: () => void ctx.engine.loadGame(new Level2()) });
 ```
 
-`loadGame` calls the old game's optional `dispose(ctx)` hook, then removes every scene
+`loadGame` can be called from anywhere, including the running game's `update`,
+`fixedUpdate` or a trigger callback: it never swaps games in the middle of a frame. Loads
+run one at a time and the latest call wins (an older load stops after its `setup()`, and
+the newer one unloads what it built); `dispose()` during a load lets that `setup()` finish
+on a live world and then frees everything.
+
+Unloading calls the old game's optional `dispose(ctx)` hook, then removes every scene
 object that is not engine-owned (`userData.engineOwned`: the lights, the particle group) and
-disposes its geometry, materials and textures, except resources marked `userData.shared`
+disposes its geometry, materials and textures (also textures used only inside TSL node
+graphs, and skinned meshes' bone textures), except resources marked `userData.shared`
 (cached toon materials, the toon gradient, GLB geometry and textures that other clones
-share). It clears physics, particles, the HUD and music, resets input, and only resumes the
-loop once the new `setup()` resolved. Use `Game.dispose` for anything else the game owns
-(DOM, timers, listeners). Physics on its own:
+share). It clears physics, particles, the HUD and music, resets input, and resets the
+scene background, fog and the sun / ambient light colors and intensities to the engine
+defaults. **Carried over** between levels: filters, render mode, resolution, quality,
+volumes / mute, the debug panel and the camera rig (unless `camera` is passed; it is applied
+before `setup()`, so `ctx.camera` is already the new preset there). While a level loads the
+render loop keeps drawing (paused while its pipelines precompile), but the game does not
+advance, engine hotkeys are ignored, and keys pressed meanwhile are dropped, so nothing
+fires on the first frame; that frame is a normal 1/60 s step. Use `Game.dispose` for
+anything else the game owns (DOM, timers, listeners). Physics on its own:
 
 ```ts
 physics.remove(body);       // or a collider; a static collider takes its empty fixed body along
 physics.clear();            // all bodies, colliders, joints, character controllers, triggers, tags, bindings
+                            // (safe from a fixedUpdate or trigger callback: that step loop stops)
 physics.counts();           // { bodies, colliders, tags, bindings, triggers, controllers }: leak checks
 input.dispose();            // removes every window / canvas listener (engine.dispose does it)
 ```
@@ -443,7 +465,9 @@ to the same numbers. `?game=sandbox` opens the sandbox; `window.__PIXEL_GAMES__`
 
 ### Input: gamepads and press timing
 
-Standard-mapping gamepads need no setup: the left stick feeds `input.moveAxis()` (radial
+Gamepads with the W3C **standard** mapping (`gamepad.mapping === 'standard'`, what Chrome,
+Firefox and Safari report for Xbox / PlayStation / Switch Pro and most others) need no
+setup; pads with an unknown layout are ignored rather than guessed at. For them: the left stick feeds `input.moveAxis()` (radial
 deadzone 0.2, `applyDeadzone`), the right stick turns into pointer movement (camera look,
 `input.gamepadLookSpeed`), and buttons press key codes through `input.gamepadButtons`
 (`GAMEPAD_BUTTONS`: A Space · B C · X J · Y F · LB Z · RB X · LT Shift · RT C · Back V ·
@@ -452,8 +476,8 @@ Start B · d-pad arrows), so `KEYMAP` / `readMoveInput` work unchanged. Remap wi
 
 `consumePress` keeps a press for at most `input.pressWindow` = **150 ms of game time**, so a
 jump pressed during a hitch still lands, but presses never pile up. While `engine.paused` is
-true (or a level is loading) game time (`ctx.time`) stops and queued presses are dropped, so
-nothing fires on resume.
+true (or a level is loading, including the start-up loading screen) game time (`ctx.time`)
+stops and queued presses are dropped, so nothing fires on resume.
 
 ### Textured and vertex-colored toon materials
 

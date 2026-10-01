@@ -23,7 +23,9 @@ export interface PlayOptions {
 const STORAGE_KEY = 'pixel-engine:audio';
 const DEFAULTS: AudioSettings = { master: 0.8, sfx: 1, music: 0.6, muted: false };
 const LOOKAHEAD = 0.25; // seconds of music scheduled ahead of the audio clock
-const UNLOCK_EVENTS = ['pointerdown', 'keydown', 'touchend', 'mousedown'] as const;
+// Events that count as a user activation somewhere (iOS Safari: touchend / click, not
+// pointerdown on touch). Listeners stay until the context actually runs.
+const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'click', 'keydown'] as const;
 
 /**
  * Web Audio for games: procedural retro sound effects (`SFX`, data), a small chiptune
@@ -49,7 +51,8 @@ export class AudioManager {
   private readonly buffers = new WeakMap<SoundDef, AudioBuffer>();
   private readonly files = new Map<string, AudioBuffer>();
   private readonly pendingFiles = new Map<string, ArrayBuffer>();
-  private readonly unlockListeners = new AbortController();
+  private unlockListeners: AbortController | null = null;
+  private readonly lifetime = new AbortController();
   private song: { def: Song; parsed: ParsedSong; start: number; nextStep: number; cache: Map<string, AudioBuffer> } | null = null;
   private songName: string | null = null;
   private readonly musicSources = new Set<AudioBufferSourceNode>();
@@ -58,7 +61,13 @@ export class AudioManager {
   constructor(target: EventTarget | null = typeof window !== 'undefined' ? window : null) {
     this.settings = { ...DEFAULTS, ...readSettings() };
     if (!AudioManager.supported || !target) return;
-    for (const type of UNLOCK_EVENTS) target.addEventListener(type, () => this.unlock(), { capture: true, signal: this.unlockListeners.signal });
+    this.target = target;
+    this.armUnlock();
+    // Coming back to the tab (iOS also suspends / 'interrupts' audio on calls and
+    // backgrounding): try to resume; if the browser wants a gesture, the listeners wait for it.
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', () => document.visibilityState === 'visible' && this.resume(), { signal: this.lifetime.signal });
+    }
   }
 
   /** Web Audio exists in this environment. */
@@ -106,11 +115,42 @@ export class AudioManager {
         for (const [name, data] of this.pendingFiles) void this.decode(name, data);
         this.pendingFiles.clear();
       }
-      if (this.context.state === 'suspended') void this.context.resume().catch(() => {});
-      this.unlockListeners.abort();
+      this.resume();
     } catch {
       this.context = null; // no audio device: stay silent
     }
+  }
+
+  private target: EventTarget | null = null;
+
+  /** Listen for the next user input (until the context is running). */
+  private armUnlock(): void {
+    if (this.unlockListeners || this.disposed || !this.target) return;
+    const ac = (this.unlockListeners = new AbortController());
+    for (const type of UNLOCK_EVENTS) this.target.addEventListener(type, () => this.unlock(), { capture: true, signal: ac.signal });
+  }
+
+  private disarmUnlock(): void {
+    this.unlockListeners?.abort();
+    this.unlockListeners = null;
+  }
+
+  /** Resume a suspended / interrupted context; stop listening for input once it runs. */
+  private resume(): void {
+    const ctx = this.context;
+    if (!ctx || this.disposed) return;
+    if (!ctx.onstatechange) {
+      // iOS 'interrupted', or a browser suspending audio: wait for the next gesture again.
+      ctx.onstatechange = () => (ctx.state === 'running' ? this.disarmUnlock() : this.armUnlock());
+    }
+    if (ctx.state === 'running') return this.disarmUnlock();
+    this.armUnlock();
+    void ctx
+      .resume()
+      .then(() => {
+        if (ctx.state === 'running') this.disarmUnlock();
+      })
+      .catch(() => {}); // not allowed without a gesture: the listeners stay armed
   }
 
   /** Add or replace a sound effect (data, see SoundDef). */
@@ -233,7 +273,8 @@ export class AudioManager {
   /** Stop everything and close the AudioContext. */
   dispose(): void {
     this.disposed = true;
-    this.unlockListeners.abort();
+    this.disarmUnlock();
+    this.lifetime.abort();
     this.stopMusic();
     void this.context?.close().catch(() => {});
     this.context = null;

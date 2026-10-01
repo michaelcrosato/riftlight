@@ -37,6 +37,10 @@ export class Physics {
   private readonly bindings: Binding[] = [];
   private readonly tags = new Map<number, Set<string>>();
   private readonly triggers: Trigger[] = [];
+  /** Reused copy of `triggers` while their callbacks may add or remove triggers. */
+  private readonly triggerSnapshot: Trigger[] = [];
+  /** Bumped by clear(): a step loop that sees it change stops (the world it stepped is gone). */
+  private generation = 0;
   /** Character controllers created on `world`, so `clear()` can free them. */
   private readonly controllers = new Set<RAPIER.KinematicCharacterController>();
   private accumulator = 0;
@@ -78,16 +82,19 @@ export class Physics {
    */
   update(dt: number, fixedUpdate?: (dt: number) => void): void {
     this.accumulator = Math.min(this.accumulator + dt, FIXED_DT * MAX_STEPS_PER_FRAME);
+    const generation = this.generation;
     while (this.accumulator >= FIXED_DT) {
       for (const b of this.bindings) {
         b.prevPos.copy(b.currPos);
         b.prevRot.copy(b.currRot);
       }
       fixedUpdate?.(FIXED_DT);
+      if (generation !== this.generation) break; // clear() ran inside the step: stop
       this.world.step();
       this.steps++;
       for (const b of this.bindings) this.readBody(b);
       this.updateTriggers();
+      if (generation !== this.generation) break; // a trigger callback cleared the world
       this.accumulator -= FIXED_DT;
     }
     this.alpha = this.accumulator / FIXED_DT;
@@ -237,7 +244,9 @@ export class Physics {
    *   physics.trigger({ sphere: 0.6 }, [0, 1, 6], { tag: 'character', once: true, onEnter: () => collect() });
    */
   trigger(shape: TriggerShape, at: readonly [number, number, number] | Vector3, options: TriggerOptions = {}): Trigger {
-    const t = new Trigger(shape, at, options, (x) => {
+    const tag = options.tag;
+    const accept = tag ? (c: RAPIER.Collider) => this.hasTag(c, tag) : () => true;
+    const t = new Trigger(shape, at, options, accept, (x) => {
       const i = this.triggers.indexOf(x);
       if (i >= 0) this.triggers.splice(i, 1);
     });
@@ -247,11 +256,17 @@ export class Physics {
 
   /** Run every trigger's overlap query now (Physics.update does this after each step). */
   updateTriggers(): void {
-    if (this.triggers.length === 0) return;
-    for (const t of [...this.triggers]) {
-      const tag = t.options.tag;
-      t.update(this.world, tag ? (c) => this.hasTag(c, tag) : () => true);
+    const n = this.triggers.length;
+    if (n === 0) return;
+    const list = this.triggerSnapshot;
+    for (let i = 0; i < n; i++) list[i] = this.triggers[i]!;
+    list.length = n;
+    const generation = this.generation;
+    for (let i = 0; i < n; i++) {
+      list[i]!.update(this.world); // skips triggers removed by an earlier callback
+      if (generation !== this.generation) break;
     }
+    list.length = 0;
   }
 
   /**
@@ -279,6 +294,8 @@ export class Physics {
    * binding goes, and the step accumulator resets. The `world` object itself is kept.
    */
   clear(): void {
+    this.generation++;
+    for (const t of this.triggers) t.removed = true; // an in-flight updateTriggers skips them
     this.triggers.length = 0;
     const bodies: RAPIER.RigidBody[] = [];
     this.world.bodies.forEach((b) => bodies.push(b));

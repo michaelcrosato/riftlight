@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { rng } from '../audio/synth';
 import { PALETTE } from '../palette';
+import { OrthographicCamera, Vector3 } from 'three/webgpu';
+import { Particles } from './Particles';
 import { ParticlePool, type ParticlePreset } from './pool';
 import { PARTICLES } from './presets';
 
@@ -55,5 +57,34 @@ describe('ParticlePool', () => {
       for (const c of p.colors) expect(PALETTE, name).toHaveProperty(c);
       expect(p.size.every((s) => Number.isInteger(s) && s >= 0), name).toBe(true);
     }
+  });
+});
+
+describe('Particles emitters', () => {
+  const make = () => new Particles(() => ({ camera: new OrthographicCamera(-12, 12, 6.75, -6.75), focus: new Vector3(), height: 270 }));
+
+  it('an inline preset object built every frame reuses one emitter (one pool, one draw call)', () => {
+    const fx = make();
+    for (let i = 0; i < 20; i++) {
+      fx.burst({ count: 3, life: 0.5, speed: 1, size: [2, 1], colors: ['white'] }, [0, 0, 0]);
+      fx.update(1 / 60);
+    }
+    expect(fx.emitterCount).toBe(1);
+    expect(fx.group.children.length).toBe(1);
+    fx.burst({ count: 3, life: 0.5, speed: 1, size: [2, 1], colors: ['red'] }, [0, 0, 0]);
+    expect(fx.emitterCount).toBe(2); // different content: its own emitter
+  });
+
+  it('re-registering a name frees the old emitter instead of orphaning it', () => {
+    const fx = make();
+    fx.register('puff', { count: 4, life: 1, speed: 1, size: [2, 1], colors: ['white'] });
+    fx.burst('puff', [0, 0, 0]);
+    const old = fx.group.children[0];
+    fx.register('puff', { count: 8, life: 1, speed: 1, size: [3, 1], colors: ['sand'] });
+    expect(fx.emitterCount).toBe(0);
+    expect(old?.parent).toBeNull();
+    expect(fx.burst('puff', [0, 0, 0])).toBe(8);
+    expect(fx.emitterCount).toBe(1);
+    fx.dispose();
   });
 });

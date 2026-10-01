@@ -100,3 +100,32 @@ describe('Physics triggers', () => {
     expect(entered).toBe(1);
   });
 });
+
+describe('Physics.clear() from inside a step (level unloads from game code)', () => {
+  it('a trigger callback that clears the world stops the other triggers and the step loop', async () => {
+    const p = await Physics.create();
+    const fired: string[] = [];
+    const body = p.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(0, 0, 0));
+    p.world.createCollider(RAPIER.ColliderDesc.ball(0.3), body);
+    const first = p.trigger({ sphere: 1 }, [0, 0, 0], { onEnter: () => (fired.push('door'), p.clear()) });
+    const second = p.trigger({ sphere: 1 }, [0, 0, 0], { onEnter: () => fired.push('second') });
+    const steps0 = p.steps;
+    p.update(FIXED_DT * 4); // 4 steps due, the first one clears the world
+    expect(fired).toEqual(['door']);
+    expect(first.removed && second.removed).toBe(true);
+    expect(p.steps - steps0).toBe(1);
+    expect(p.counts()).toEqual(baseline);
+  });
+
+  it('fixedUpdate that clears the world ends the frame without stepping a stale world', async () => {
+    const p = await Physics.create();
+    p.addDynamicBox({ position: [0, 3, 0], halfExtents: [0.5, 0.5, 0.5] });
+    let calls = 0;
+    p.update(FIXED_DT * 3, () => {
+      calls++;
+      p.clear();
+    });
+    expect(calls).toBe(1);
+    expect(p.counts()).toEqual(baseline);
+  });
+});

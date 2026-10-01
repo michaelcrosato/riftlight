@@ -73,6 +73,13 @@ describe('Gamepad', () => {
     expect(input.moveAxis().x).toBe(-1);
   });
 
+  it('ignores pads without the standard mapping (unknown layouts)', () => {
+    const input = new Input(target());
+    input.beginFrame(0, 1 / 60, [{ ...pad([1, 0, 0, 0], [0]), mapping: '' }]);
+    expect(input.moveAxis()).toEqual({ x: 0, y: 0 });
+    expect(input.isDown('Space')).toBe(false);
+  });
+
   it('right stick turns into pointer movement for the camera', () => {
     const input = new Input(target());
     input.beginFrame(0, 0.5, [pad([0, 0, 1, 0])]);

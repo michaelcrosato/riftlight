@@ -39,13 +39,22 @@ export class Trigger {
   /** A disabled trigger reports nothing (everything inside exits on the next step). */
   enabled = true;
   removed = false;
+  /** Built once; Rapier converts it for each query. */
   readonly shape: RAPIER.Shape;
   private readonly rotation: RAPIER.Rotation;
+  // Reused every step (no per-step allocations).
+  private readonly now = new Map<number, RAPIER.Collider>();
+  private readonly at = { x: 0, y: 0, z: 0 };
+  private readonly collect = (c: RAPIER.Collider): boolean => {
+    if (this.accept(c) && (!this.options.filter || this.options.filter(c))) this.now.set(c.handle, c);
+    return true;
+  };
 
   constructor(
     readonly def: TriggerShape,
     at: readonly [number, number, number] | Vector3,
     readonly options: TriggerOptions,
+    private readonly accept: (c: RAPIER.Collider) => boolean,
     private readonly detach: (t: Trigger) => void,
   ) {
     this.position = at instanceof Vector3 ? at.clone() : new Vector3(at[0], at[1], at[2]);
@@ -63,22 +72,16 @@ export class Trigger {
   }
 
   /** Physics: refresh overlaps after a step and fire callbacks. */
-  update(world: RAPIER.World, accept: (c: RAPIER.Collider) => boolean): void {
+  update(world: RAPIER.World): void {
     if (this.removed) return;
-    const now = new Map<number, RAPIER.Collider>();
+    const now = this.now;
+    now.clear();
     const o = this.options;
     if (this.enabled) {
-      const p = this.position;
-      world.intersectionsWithShape(
-        { x: p.x, y: p.y, z: p.z },
-        this.rotation,
-        this.shape,
-        (c) => {
-          if (accept(c) && (!o.filter || o.filter(c))) now.set(c.handle, c);
-          return true;
-        },
-        o.includeStatic ? undefined : RAPIER.QueryFilterFlags.EXCLUDE_FIXED,
-      );
+      this.at.x = this.position.x;
+      this.at.y = this.position.y;
+      this.at.z = this.position.z;
+      world.intersectionsWithShape(this.at, this.rotation, this.shape, this.collect, o.includeStatic ? undefined : RAPIER.QueryFilterFlags.EXCLUDE_FIXED);
     }
     for (const [h, c] of this.inside) {
       if (now.has(h)) continue;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { BoxGeometry, DataTexture, Group, Mesh, MeshBasicMaterial, Scene } from 'three/webgpu';
+import { Bone, BoxGeometry, DataTexture, Group, Mesh, MeshBasicMaterial, MeshBasicNodeMaterial, Scene, Skeleton, SkinnedMesh } from 'three/webgpu';
+import { texture, uv } from 'three/tsl';
 import { DEFAULT_DEBUG_KEYS, resolveDebugKeys } from './debugKeys';
 import { clearScene, countObjects, disposeObject } from './lifecycle';
 import { toonMaterial } from './render/toon';
@@ -22,6 +23,24 @@ describe('level lifecycle helpers', () => {
     const [g, sg, m, t, tm] = [disposals(geo), disposals(sharedGeo), disposals(own), disposals(map), disposals(toon)];
     disposeObject(root);
     expect([g.n, sg.n, m.n, t.n, tm.n]).toEqual([1, 0, 1, 1, 0]);
+  });
+
+  it('disposes textures used only inside TSL node graphs, and skeletons', () => {
+    const tex = new DataTexture(new Uint8Array(4), 1, 1);
+    const shared = new DataTexture(new Uint8Array(4), 1, 1);
+    shared.userData.shared = true;
+    const mat = new MeshBasicNodeMaterial();
+    mat.colorNode = texture(tex, uv().mul(2)).mul(texture(shared));
+    const bone = new Bone();
+    const skinned = new SkinnedMesh(new BoxGeometry(), new MeshBasicMaterial());
+    skinned.add(bone);
+    skinned.bind(new Skeleton([bone]));
+    let skeletonDisposed = 0;
+    const dispose = skinned.skeleton.dispose.bind(skinned.skeleton);
+    skinned.skeleton.dispose = () => (skeletonDisposed++, dispose());
+    const [t, s] = [disposals(tex), disposals(shared)];
+    disposeObject(new Group().add(new Mesh(new BoxGeometry(), mat), skinned));
+    expect([t.n, s.n, skeletonDisposed]).toEqual([1, 0, 1]);
   });
 
   it('clearScene keeps engine-owned objects', () => {
