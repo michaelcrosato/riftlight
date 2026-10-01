@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parseSong } from '../../engine/audio/music';
 import { StatSheet } from '../core/mods';
 import { SCALING } from '../core/scaling';
 import type { Hit, HitResult } from '../core/types';
@@ -15,6 +16,7 @@ import {
 } from './difficulty';
 import { addXp, applyDeath, deathPenalty, levelTitle, recordClear, roman, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker } from './recap';
+import { SONGS, SOUNDS } from './audio';
 import { exportSave, type KeyValueStore, migrate, newSave, parseSave, SAVE_VERSION, SaveStore } from './save';
 
 class MemoryStore implements KeyValueStore {
@@ -162,5 +164,19 @@ describe('recap', () => {
     expect(out.killer).toBe('Ember Imp');
     expect(out.tip).toMatch(/critical/);
     expect(out.tip).toMatch(/fire/i);
+  });
+});
+
+describe('audio data', () => {
+  it('every song parses (no bad notes, even patterns) and the combat layer matches the level loop', () => {
+    for (const [name, song] of Object.entries(SONGS)) expect(parseSong(song).notes.length, name).toBeGreaterThan(10);
+    const level = parseSong(SONGS.level);
+    const combat = parseSong(SONGS.combat);
+    expect(combat.length).toBe(level.length);
+    expect(combat.stepTime).toBe(level.stepTime);
+  });
+
+  it('has the UI sounds the shell plays', () => {
+    for (const s of ['click', 'move', 'open', 'close', 'equip', 'error', 'buy', 'levelUp']) expect(SOUNDS).toHaveProperty(s);
   });
 });
