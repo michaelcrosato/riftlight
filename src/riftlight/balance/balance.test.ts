@@ -167,7 +167,8 @@ describe('balance: progression, choices, outliers', () => {
       expect(r.clear.total).toBeCloseTo(r.clear.walk + r.clear.packs + r.clear.boss, 6);
       expect(r.ttk.boss).toBeGreaterThan(r.ttk.normal);
     }
-  });
+    // Simulates a build matrix: ~1 s alone, past vitest's 5 s default on a loaded machine.
+  }, 30_000);
 
   it('finds jumps and builds far from the others', () => {
     const row = (build: string, depth: number, boss: number): Row =>
