@@ -1,7 +1,8 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import type { Actor } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
-import { discDecal, ringDecal } from '../combat/visuals';
+import { createTelegraph } from '../combat/telegraph';
+import { ringDecal } from '../combat/visuals';
 import { inc, more } from '../core/mods';
 import type { Rng } from '../core/rng';
 import type { AilmentType, DamageType } from '../core/types';
@@ -300,7 +301,7 @@ export class Hazards {
 
   /** A telegraphed circle that lands after `delay`. */
   strike(src: Actor, at: Vector3, radius: number, delay: number, type: DamageType, mult: number, o: { ailment?: AilmentType } = {}): void {
-    const tele = makeTelegraph(this.host.root, { shape: 'circle', size: radius, at: 'target' }, at, at, delay, COLOR[type], src);
+    const tele = makeTelegraph(this.host.root, { shape: 'circle', size: radius, at: 'target' }, at, at, delay, type, src);
     let t = 0;
     let landed = false;
     this.effects.push({
@@ -377,9 +378,9 @@ export class Hazards {
 
   /** A damaging patch of ground (molten trails, ice, thorns). */
   zone(src: Actor, at: Vector3, radius: number, duration: number, type: DamageType, mult: number, ailment?: AilmentType): void {
-    const mesh = discDecal(COLOR[type]);
-    mesh.position.set(at.x, 0.04, at.z);
-    mesh.scale.setScalar(radius);
+    // a lasting patch: the telegraph look held calm (rim + stipple), never an opaque disc
+    const mesh = createTelegraph({ shape: 'circle', size: radius }, type, 1, { zone: true }).object;
+    mesh.position.set(at.x, 0.01, at.z);
     this.host.root.add(mesh);
     let t = 0;
     let tick = 0;
@@ -496,7 +497,7 @@ export class Hazards {
   beams(unit: MonsterUnit, count: number, length: number, speed: number, duration: number, key: string): void {
     const src = unit.actor;
     const lines = Array.from({ length: count }, () => {
-      const tele = makeTelegraph(this.host.root, { shape: 'line', size: length, width: 0.45, at: 'self' }, src.position, src.position.clone().add(new Vector3(0, 0, 1)), 0.01, 0x9b5de5, src);
+      const tele = makeTelegraph(this.host.root, { shape: 'line', size: length, width: 0.45, at: 'self' }, src.position, src.position.clone().add(new Vector3(0, 0, 1)), 0.01, 'lightning', src);
       tele.decal?.update(1);
       return tele;
     });

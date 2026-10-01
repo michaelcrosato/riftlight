@@ -8,6 +8,7 @@
 import type { HudColor, PaletteColor } from '../../engine';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
 import { UI, type UiCanvas } from './kit';
+import type { BannerKind, Box, HudLayout } from './layout';
 
 export interface FeedLine {
   text: string;
@@ -42,7 +43,8 @@ export interface HudModel {
   /** Gold counter roll-up target vs shown. */
   goldShown: number;
   feed: readonly FeedLine[];
-  card: { title: string; subtitle: string; age: number } | null;
+  /** The centre banner (level card, LEVEL CLEAR, level-up: `BannerQueue.current`). */
+  card: { title: string; subtitle: string; age: number; kind?: BannerKind; duration?: number } | null;
   streak: { count: number; age: number } | null;
   /** HUD-corner difficulty labels (only non-1.0 sliders). */
   difficulty: readonly string[];
@@ -56,9 +58,59 @@ export interface HudModel {
 
 const ORB_R = 22;
 
+/**
+ * Where the fixed HUD goes on a screen of `W` × `H` art pixels. A narrow screen (a phone in
+ * portrait is 124 wide) gets the compact set: small orbs above the corners of a tight bar, a
+ * small minimap, a shorter boss bar.
+ */
+export function hudGeometry(W: number, H: number) {
+  const compact = W < 300;
+  const slot = compact ? 16 : 20;
+  const gap = compact ? 2 : 3;
+  const split = compact ? 2 : 6;
+  const barW = 6 * (slot + gap) + split;
+  const bx = Math.floor((W - barW) / 2) + 3;
+  const by = H - slot - (compact ? 5 : 7);
+  const orbR = compact ? 12 : ORB_R;
+  const orbY = compact ? by - 12 - orbR : H - 30;
+  const orbX = compact ? orbR + 4 : 30;
+  const map = compact ? { w: 44, h: 34 } : { w: 84, h: 64 };
+  const bossW = Math.min(200, W - 30);
+  return { compact, slot, gap, split, barW, bx, by, orbR, orbY, orbX, map, bossW };
+}
+
+/**
+ * The zones the fixed HUD covers for this model: world overlays (loot labels, damage numbers)
+ * are placed around them (`HudLayout`). Matches what `drawHud` draws.
+ */
+export function hudZones(W: number, H: number, m: HudModel): Box[] {
+  const g = hudGeometry(W, H);
+  const z: Box[] = [];
+  z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
+  z.push({ x: g.orbX - g.orbR - 3, y: g.orbY - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
+  z.push({ x: W - g.orbX - g.orbR - 3, y: g.orbY - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
+  if (m.minimap) z.push({ x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 });
+  z.push({ x: 4, y: 4, w: Math.min(W / 2, 90), h: 12 + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
+  if (m.boss) z.push({ x: Math.floor((W - g.bossW) / 2) - 2, y: 5, w: g.bossW + 20, h: 20 });
+  const b = bannerRect(W, m);
+  if (b) z.push(b);
+  return z;
+}
+
+/** The banner's rect (null when none shows). */
+function bannerRect(W: number, m: HudModel): Box | null {
+  const c = m.card;
+  if (!c || c.age < 0 || c.age >= (c.duration ?? 4)) return null;
+  const big = (c.kind ?? 'card') !== 'levelup' && W >= 300;
+  // a phone: under the minimap and the level label
+  const y = W < 300 ? (m.boss ? 60 : 50) : m.boss ? 34 : big ? 24 : 26;
+  const h = big ? 34 : 22;
+  const w = Math.min(W - 8, big ? 280 : 200);
+  return { x: Math.floor((W - w) / 2), y, w, h };
+}
+
 /** One liquid orb: per-column fill with a travelling wave on the surface. */
-function orb(ui: UiCanvas, cx: number, cy: number, frac: number, fill: PaletteColor, light: PaletteColor, dark: PaletteColor, t: number, wobble: number): void {
-  const r = ORB_R;
+function orb(ui: UiCanvas, cx: number, cy: number, frac: number, fill: PaletteColor, light: PaletteColor, dark: PaletteColor, t: number, wobble: number, r = ORB_R): void {
   // frame
   for (let dy = -r - 2; dy <= r + 2; dy++) {
     const w = Math.floor(Math.sqrt(Math.max(0, (r + 2) * (r + 2) - dy * dy)));
@@ -85,18 +137,18 @@ function orb(ui: UiCanvas, cx: number, cy: number, frac: number, fill: PaletteCo
     if (dx > r * 0.62) ui.rect(cx + dx, Math.max(top + 1, cy + 4), 1, Math.max(0, bottom - Math.max(top + 1, cy + 4)), dark);
   }
   // glass highlight
-  ui.rect(cx - 12, cy - 15, 4, 2, 'white');
-  ui.rect(cx - 15, cy - 12, 2, 4, 'white');
-  ui.rect(cx - 10, cy - 13, 2, 1, 'mist');
+  const k = r / ORB_R;
+  ui.rect(cx - Math.round(12 * k), cy - Math.round(15 * k), Math.max(2, Math.round(4 * k)), 2, 'white');
+  ui.rect(cx - Math.round(15 * k), cy - Math.round(12 * k), 2, Math.max(2, Math.round(4 * k)), 'white');
+  if (r >= 16) ui.rect(cx - 10, cy - 13, 2, 1, 'mist');
 }
 
 /**
  * Mana reserved by auras: the top of the mana orb is sealed off (a dark hatch with a bright rim
  * at its edge), so the liquid can only fill what is left.
  */
-function reservedCap(ui: UiCanvas, cx: number, cy: number, frac: number): void {
+function reservedCap(ui: UiCanvas, cx: number, cy: number, frac: number, r = ORB_R): void {
   if (frac <= 0.001) return;
-  const r = ORB_R;
   const edge = cy - r + Math.round(2 * r * Math.min(1, frac));
   for (let dy = -r; cy + dy < edge; dy++) {
     const w = Math.floor(Math.sqrt(Math.max(0, r * r - dy * dy)));
@@ -111,9 +163,9 @@ function reservedCap(ui: UiCanvas, cx: number, cy: number, frac: number): void {
 }
 
 /** Energy shield: a cyan ring segment around the life orb, clockwise from the top. */
-function shieldRing(ui: UiCanvas, cx: number, cy: number, frac: number): void {
+function shieldRing(ui: UiCanvas, cx: number, cy: number, frac: number, r = ORB_R): void {
   if (frac <= 0) return;
-  const R = ORB_R + 4;
+  const R = r + 4;
   const steps = 72;
   for (let i = 0; i < steps * frac; i++) {
     const a = -Math.PI / 2 + (i / steps) * Math.PI * 2;
@@ -121,13 +173,15 @@ function shieldRing(ui: UiCanvas, cx: number, cy: number, frac: number): void {
   }
 }
 
-const SLOT = 20;
-
-function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, key: string, pad: string, t: number): void {
+function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, key: string, pad: string, t: number, SLOT = 20): void {
   ui.rect(x - 1, y - 1, SLOT + 2, SLOT + 2, 'ink');
   ui.rect(x, y, SLOT, SLOT, s.id ? 'slate' : 'night');
   ui.rect(x + 1, y + 1, SLOT - 2, SLOT - 2, 'navy');
-  if (s.icon && s.colors) ui.sprite(x + 2, y + 4, s.icon, s.colors as Record<string, HudColor>, 2);
+  if (s.icon && s.colors) {
+    const iw = Math.max(...s.icon.map((r) => r.length));
+    const sc = iw * 2 <= SLOT - 4 ? 2 : 1;
+    ui.sprite(x + Math.floor((SLOT - iw * sc) / 2), y + Math.floor((SLOT - s.icon.length * sc) / 2), s.icon, s.colors as Record<string, HudColor>, sc);
+  }
   else if (s.id) ui.text(x + SLOT / 2, y + 7, s.name.slice(0, 2).toUpperCase(), { align: 'center' });
   // cooldown sweep: a dark shutter that drops away
   if (s.remaining > 0 && s.cooldown > 0) {
@@ -138,14 +192,16 @@ function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, key: st
     for (let row = 0; row < SLOT - 2; row += 2) ui.rect(x + 1, y + 1 + row, SLOT - 2, 1, 'navy');
   } else if (s.remaining <= 0 && s.cooldown > 0 && t % 1 < 0.04) ui.outline(x, y, SLOT, SLOT, 'white');
   if (s.cost > 0) ui.mini(x + SLOT - 1, y + 1, String(s.cost), s.usable ? 'sky' : 'red', 'right', 'ink');
-  ui.glyph(x + 1, y + SLOT - 4, key, pad);
+  if (key) ui.glyph(x + 1, y + SLOT - 4, key, pad);
 }
 
-export function drawHud(ui: UiCanvas, m: HudModel): void {
+export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const W = ui.w;
   const H = ui.h;
   const t = m.time;
   ui.pad = m.pad;
+  const g = hudGeometry(W, H);
+  const SLOT = g.slot;
 
   // hurt flash: red corners
   if (m.hurt > 0.05) {
@@ -163,27 +219,28 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
   const v = m.vitals;
   const lifeFrac = v.maxLife > 0 ? v.life / v.maxLife : 0;
   const low = lifeFrac < 0.3;
-  const lx = 30;
-  const ly = H - 30;
-  orb(ui, lx, ly, lifeFrac, low && t % 0.6 < 0.3 ? 'orange' : 'red', 'orange', 'plum', t, low ? 1 : 0);
-  shieldRing(ui, lx, ly, v.maxEs > 0 ? v.es / v.maxEs : 0);
-  ui.mini(lx, ly + ORB_R + 3 - 33, `${Math.ceil(v.life)}`, 'white', 'center', 'ink');
-  const mx = W - 30;
-  orb(ui, mx, ly, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0);
-  reservedCap(ui, mx, ly, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0);
-  ui.mini(mx, ly + ORB_R + 3 - 33, `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
+  const lx = g.orbX;
+  const ly = g.orbY;
+  const r = g.orbR;
+  orb(ui, lx, ly, lifeFrac, low && t % 0.6 < 0.3 ? 'orange' : 'red', 'orange', 'plum', t, low ? 1 : 0, r);
+  shieldRing(ui, lx, ly, v.maxEs > 0 ? v.es / v.maxEs : 0, r);
+  ui.mini(lx, ly + r + 3 - (g.compact ? 18 : 33), `${Math.ceil(v.life)}`, 'white', 'center', 'ink');
+  const mx = W - g.orbX;
+  orb(ui, mx, ly, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0, r);
+  reservedCap(ui, mx, ly, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0, r);
+  ui.mini(mx, ly + r + 3 - (g.compact ? 18 : 33), `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
 
   // skill bar: attack, dodge, then the four skills
   const order: [string, string][] = [['LMB', 'A'], ['SPC', 'B'], ['1', 'X'], ['2', 'Y'], ['3', 'LB'], ['4', 'RB']];
   const slots = [m.skills.find((s) => s.slot === 'attack'), m.skills.find((s) => s.slot === 'dodge'), ...[0, 1, 2, 3].map((i) => m.skills.find((s) => s.slot === i))];
-  const barW = slots.length * (SLOT + 3) + 6;
-  const bx = Math.floor((W - barW) / 2) + 3;
-  const by = H - SLOT - 7;
+  const barW = g.barW;
+  const bx = g.bx;
+  const by = g.by;
   ui.rect(bx - 5, by - 4, barW + 4, SLOT + 10, 'ink');
   ui.rect(bx - 4, by - 3, barW + 2, SLOT + 8, 'night');
   slots.forEach((s, i) => {
-    const x = bx + i * (SLOT + 3) + (i >= 2 ? 6 : 0);
-    if (s) skillSlot(ui, x, by, s, order[i]![0], order[i]![1], t);
+    const x = bx + i * (SLOT + g.gap) + (i >= 2 ? g.split : 0);
+    if (s) skillSlot(ui, x, by, s, g.compact ? '' : order[i]![0], g.compact ? '' : order[i]![1], t, SLOT);
     else {
       ui.rect(x, by, SLOT, SLOT, 'ink');
       ui.rect(x + 1, by + 1, SLOT - 2, SLOT - 2, 'night');
@@ -196,12 +253,13 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
   const flash = m.levelUpAge < 1.2 && Math.floor(m.levelUpAge * 10) % 2 === 0;
   ui.bar(xx, xy, xw, 3, m.xp, flash ? 'white' : UI.xp, 'night');
   for (let i = 1; i < 10; i++) ui.rect(xx + Math.round((xw * i) / 10), xy, 1, 3, 'ink');
-  ui.text(xx - 3, xy - 2, `${m.level}`, { align: 'right', color: flash ? 'white' : 'sand' });
+  if (g.compact) ui.mini(xx + xw / 2, xy - 7, `LV ${m.level}`, flash ? 'white' : 'sand', 'center', 'ink');
+  else ui.text(xx - 3, xy - 2, `${m.level}`, { align: 'right', color: flash ? 'white' : 'sand' });
 
   // buffs above the life orb
   m.buffs.forEach((b, i) => {
     const x = 6 + i * 13;
-    const y = H - 70;
+    const y = g.compact ? ly - r - 16 : H - 70;
     ui.rect(x, y, 11, 11, 'ink');
     ui.rect(x + 1, y + 1, 9, 9, b.debuff ? 'plum' : 'night');
     ui.rect(x + 3, y + 3, 5, 5, b.color);
@@ -209,23 +267,25 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
     if (b.stacks && b.stacks > 1) ui.mini(x + 11, y - 2, String(b.stacks), 'white', 'right', 'ink');
   });
 
-  // gold, top-right under the minimap
-  const gy = m.minimap ? 74 : 6;
-  ui.sprite(W - 66, gy, ['.ooo.', 'oyyyo', 'oywyo', 'oyyyo', '.ooo.'], { o: 'orange', y: 'sand', w: 'white' });
-  ui.text(W - 58, gy - 1, String(Math.round(m.goldShown)), { color: 'sand' });
-
-  // minimap
-  if (m.minimap) drawMinimap(ui, m.minimap, W - 88, 4, 84, 64, t);
+  // minimap, gold under it (top-right); the counter glows while it rolls up
+  const mw = g.map.w;
+  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, 4, mw, g.map.h, t);
+  const gy = m.minimap ? g.map.h + 10 : 6;
+  const gold = String(Math.round(m.goldShown));
+  const gw = ui.measure(gold) + 8;
+  ui.sprite(W - 6 - gw, gy, ['.ooo.', 'oyyyo', 'oywyo', 'oyyyo', '.ooo.'], { o: 'orange', y: 'sand', w: 'white' });
+  ui.text(W - 6, gy - 1, gold, { color: m.goldShown < m.gold - 0.5 ? 'white' : 'sand', align: 'right' });
 
   // top-left: where you are, the clock, progress, difficulty
-  ui.text(6, 6, m.levelLabel, { color: 'sand' });
-  let ty = 16;
+  if (g.compact) ui.mini(4, 5, m.levelLabel, 'sand', 'left', 'ink');
+  else ui.text(6, 6, m.levelLabel, { color: 'sand' });
+  let ty = g.compact ? 12 : 16;
   if (m.timer) {
-    ui.mini(6, ty, m.timer, 'mist');
+    ui.mini(g.compact ? 4 : 6, ty, m.timer, 'mist');
     ty += 7;
   }
   if (m.progress && m.progress.total > 0) {
-    ui.mini(6, ty, `${m.progress.killed}/${m.progress.total} SLAIN`, m.progress.killed >= m.progress.total ? 'lime' : 'mist');
+    ui.mini(g.compact ? 4 : 6, ty, `${m.progress.killed}/${m.progress.total}${g.compact ? '' : ' SLAIN'}`, m.progress.killed >= m.progress.total ? 'lime' : 'mist');
     ty += 7;
   }
   if (m.difficulty.length) {
@@ -240,25 +300,43 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
 
   // boss bar
   if (m.boss) {
-    const bw = 200;
+    const bw = g.bossW;
     const x = Math.floor((W - bw) / 2);
     const y = 18;
-    ui.text(W / 2, y - 11, m.boss.name.toUpperCase(), { align: 'center', color: 'orange' });
+    const name = m.boss.name.toUpperCase();
+    if (ui.measure(name) <= W - 8) ui.text(W / 2, y - 11, name, { align: 'center', color: 'orange' });
+    else ui.mini(W / 2, y - 8, name.split(',')[0]!, 'orange', 'center', 'ink');
     ui.bar(x, y, bw, 5, m.boss.life / m.boss.maxLife, 'red', 'plum');
     for (const p of m.boss.phases) ui.rect(x + Math.round(bw * p), y - 2, 1, 9, 'white');
     for (let i = 0; i <= m.boss.phase; i++) ui.rect(x + bw + 4 + i * 5, y, 3, 5, 'orange');
   }
 
-  // loot feed (right, above the mana orb)
-  m.feed.forEach((f, i) => {
-    if (f.t > 4) return;
-    const y = H - 66 - i * 9;
+  // loot feed (right, above the mana orb): newest first, at most 4 (2 on a phone), each line
+  // placed around whatever else is there (the prompt, labels) and cut to fit
+  const feedBottom = g.compact ? ly - r - 10 : H - 66;
+  let shown = 0;
+  for (const f of m.feed) {
+    if (f.t > 4 || shown >= (g.compact ? 2 : 4)) continue;
     const blink = f.t < 0.15;
-    ui.text(W - 6, y, f.text, { align: 'right', color: blink ? 'white' : f.t > 3.4 ? 'slate' : f.color });
-  });
+    const color = blink ? 'white' : f.t > 3.4 ? 'slate' : f.color;
+    const maxW = g.compact ? W - 8 : Math.min(W / 2, 240);
+    let text = f.text;
+    const mini = g.compact || ui.measure(text) > maxW;
+    const width = (s: string) => (mini ? s.length * 4 - 1 : ui.measure(s));
+    while (text.length > 4 && width(text) > maxW) text = text.slice(0, -2);
+    if (text !== f.text) text = `${text.slice(0, -1)}.`;
+    const w = width(text);
+    const h = mini ? 6 : 8;
+    const want = { x: W - 6 - w, y: feedBottom - shown * (h + 2), w, h };
+    const at = layout ? layout.place(want, { tries: 3, step: h + 2 }) : want;
+    if (!at) continue;
+    shown++;
+    if (mini) ui.mini(W - 6, at.y, text, color, 'right', 'ink');
+    else ui.text(W - 6, at.y, text, { align: 'right', color });
+  }
 
   // kill streak
-  if (m.streak && m.streak.count >= 3 && m.streak.age < 3) {
+  if (m.streak && m.streak.count >= 3 && m.streak.age < 3 && !g.compact) {
     const s = m.streak.age < 0.12 ? 3 : 2;
     const x = 8;
     const y = Math.floor(H / 2) - 20;
@@ -266,28 +344,39 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
     ui.text(x, y + 8 * s, m.streak.count >= 10 ? 'RAMPAGE' : m.streak.count >= 6 ? 'SLAUGHTER' : 'STREAK', { color: m.streak.age > 2.5 ? 'slate' : 'white' });
   }
 
-  // level name card
-  if (m.card && m.card.age < 4) {
-    const a = m.card.age;
-    const y = 30;
-    const w = Math.min(ui.measure(m.card.title, 2) + 30, W - 20);
-    const open = Math.min(1, a / 0.25) * Math.min(1, (4 - a) / 0.4);
-    const ww = Math.round(w * open);
-    ui.rect(W / 2 - ww / 2, y - 6, ww, 34, 'ink');
-    ui.rect(W / 2 - ww / 2, y - 6, ww, 1, 'sand');
-    ui.rect(W / 2 - ww / 2, y + 27, ww, 1, 'sand');
-    if (open > 0.9) {
-      ui.text(W / 2, y, m.card.title, { align: 'center', scale: 2, color: 'sand', shadow: 'plum' });
-      ui.text(W / 2, y + 17, m.card.subtitle.toUpperCase(), { align: 'center', color: 'mist' });
-    }
-  }
+  drawBanner(ui, m);
+}
 
-  // level-up toast + tree hint
-  if (m.levelUpAge < 4) {
-    const y = 96;
-    ui.text(W / 2, y, `LEVEL ${m.level}!`, { align: 'center', scale: 2, color: m.levelUpAge % 0.3 < 0.15 && m.levelUpAge < 1 ? 'white' : 'lime', shadow: 'green' });
-    ui.prompt(W / 2, y + 18, 'P', 'START', 'FOR THE PASSIVE TREE', 'mist', 'center');
-  }
+/**
+ * The centre banner: the level card and LEVEL CLEAR are a framed plate that opens sideways;
+ * a level-up is a smaller plate with its hint on one line, so it never covers the fight.
+ */
+function drawBanner(ui: UiCanvas, m: HudModel): void {
+  const c = m.card;
+  const rect = bannerRect(ui.w, m);
+  if (!c || !rect) return;
+  const W = ui.w;
+  const a = c.age;
+  const dur = c.duration ?? 4;
+  const kind = c.kind ?? 'card';
+  const open = Math.min(1, a / 0.2) * Math.min(1, (dur - a) / 0.3);
+  const ww = Math.max(2, Math.round(rect.w * open));
+  const x = Math.round(W / 2 - ww / 2);
+  const accent: PaletteColor = kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
+  ui.rect(x, rect.y, ww, rect.h, 'ink');
+  ui.rect(x, rect.y, ww, 1, accent);
+  ui.rect(x, rect.y + rect.h - 1, ww, 1, accent);
+  if (open < 0.9) return;
+  const big = rect.h > 30;
+  const scale = big && ui.measure(c.title, 2) <= rect.w - 8 ? 2 : 1;
+  const flash = kind === 'levelup' && a < 0.6 && a % 0.2 < 0.1;
+  const titleColor: PaletteColor = flash ? 'white' : kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
+  const ty = rect.y + (big ? 6 : 4) + (scale === 1 && big ? 3 : 0);
+  ui.text(W / 2, ty, c.title, { align: 'center', scale, color: titleColor, shadow: kind === 'levelup' ? 'green' : 'plum' });
+  const sub = c.subtitle.toUpperCase();
+  const sy = rect.y + rect.h - (big ? 11 : 9);
+  if (ui.measure(sub) <= rect.w - 6) ui.text(W / 2, sy, sub, { align: 'center', color: 'mist' });
+  else ui.mini(W / 2, sy + 1, sub, 'mist', 'center');
 }
 
 function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, t: number): void {

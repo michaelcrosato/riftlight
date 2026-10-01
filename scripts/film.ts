@@ -86,9 +86,14 @@ export const SCENARIOS: Record<string, string> = {
   'arena-skills': 'place 0 0 3.5 180; tap Q; wait 34; tap E; wait 40; tap R; until idle 120; wait 20',
   'arena-run-cast': 'place -8 0 2 90; down D; wait 20; tap Q; wait 26; up D; until idle 40; wait 10',
   'arena-whirlwind': 'place 0 0 2.5 180; down F; wait 70; up F; until idle 40; wait 10',
+  // Rift Runner, the arcade side-scroller (?game=arcade, src/riftlight/showcase/arcade): its moves in context
+  'arcade-pit': 'place 8 0 0 90; down D; wait 26; tap SPACE; until grounded 90; wait 10; up D; wait 20',
+  'arcade-ledge': 'place 18 0 0 90; down D; wait 14; tap SPACE; until grounded 90; tap SPACE; until grounded 120; up D; wait 25',
+  'arcade-chimney': 'place 36.8 0 0 90; down D; wait 6; tap SPACE; until wallSlide 60; up D; tap SPACE; until grounded 120; wait 20',
+  'arcade-pound': 'place 45.5 5.4 0 90; wait 10; tap SPACE; wait 14; tap C; until grounded 150; wait 40',
 };
 /** Scenarios that run in another game than the playground (`?game=`). */
-const SCENARIO_GAME = (name: string): string | null => (name.startsWith('arena') ? 'arena' : null);
+const SCENARIO_GAME = (name: string): string | null => (name.startsWith('arena') ? 'arena' : name.startsWith('arcade') ? 'arcade' : null);
 
 const KEYS: Record<string, string> = {
   W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', SPACE: 'Space', SHIFT: 'ShiftLeft', C: 'KeyC', J: 'KeyJ', F: 'KeyF', Z: 'KeyZ', X: 'KeyX', B: 'KeyB', V: 'KeyV',
@@ -168,6 +173,7 @@ window.__FILM = (() => {
     key(code, down) { e.input.setKey(code, down); },
     place(x, y, z, yawDeg) {
       this.release();
+      if (typeof g.skipIntro === 'function') g.skipIntro(); // games with a READY/GO intro (the arcade)
       e.step(1);
       hero.teleport([x, y, z]);
       hero.facing = (yawDeg * Math.PI) / 180;

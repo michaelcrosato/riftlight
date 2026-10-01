@@ -9,13 +9,36 @@
 //   life fraction kept) → the boss kills the hero → recap names it → town with the penalty
 //   → save → reload → Continue → same run. Zero console errors and GPU errors.
 //
-// Frames land in .scratch/e2e/riftlight-*.png. Self-contained: e2e.mjs passes its helpers in.
+// Frames land in .scratch/e2e/riftlight-*.png (`*-hud.png`: the frame with the pixel HUD on
+// top, which `renderer.capture()` leaves out: the logo, menus, bars). Self-contained: e2e.mjs
+// passes its helpers in.
+import { writeFile } from 'node:fs/promises';
 
 /**
  * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, check, capture, state, checkClean, colorCount }
  */
 export async function runRiftlight(h) {
-  const { exe, scenario: s, openPage, check, capture, state, checkClean, colorCount } = h;
+  const { exe, scenario: s, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT } = h;
+  /** The presented frame with the HUD canvas composited on top, written as `file`. */
+  const captureWithHud = async (page, file) => {
+    const frame = await capture(page, file.replace(/-hud\.png$/, '.png'));
+    const hud = await page.evaluate(() => {
+      const c = document.querySelector('canvas[data-hud]');
+      return c && c.width ? { w: c.width, h: c.height, data: [...c.getContext('2d').getImageData(0, 0, c.width, c.height).data] } : null;
+    });
+    if (hud && encodePng && OUT) {
+      const px = frame.pixels;
+      const sx = frame.width / hud.w;
+      const sy = frame.height / hud.h;
+      for (let y = 0; y < frame.height; y++)
+        for (let x = 0; x < frame.width; x++) {
+          const i = (Math.floor(y / sy) * hud.w + Math.floor(x / sx)) * 4;
+          if (hud.data[i + 3]) px.set(hud.data.slice(i, i + 3), (y * frame.width + x) * 4);
+        }
+      await writeFile(new URL(file, OUT), encodePng(frame));
+    }
+    return frame;
+  };
   const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
   console.log(`\n▶ riftlight (${s.backend})`);
   let ctx;
@@ -30,7 +53,7 @@ export async function runRiftlight(h) {
     let rs = await st();
     check(rs.screen === 'title' && rs.ui.includes('title'), `opens on the title screen (${rs.screen}, ui ${rs.ui.join(',')})`);
     await R(() => window.__PIXEL_ENGINE__.step(20));
-    const title = await capture(page, `riftlight-${tag}-title.png`);
+    const title = await captureWithHud(page, `riftlight-${tag}-title-hud.png`);
     check(colorCount(title) > 16, `title renders the town behind the logo (${colorCount(title)} colours)`);
     const hudPixels = await R(() => {
       const c = document.querySelector('canvas[data-hud]');
@@ -69,7 +92,7 @@ export async function runRiftlight(h) {
     });
     check(roster.real === roster.total, `every monster is a real animated genome (${roster.real}/${roster.total})`);
     check(!!roster.boss && roster.boss.alive && roster.boss.life === roster.boss.maxLife && roster.boss.maxLife > 0, `a boss spawned on level 1 (${roster.boss?.name}, ${roster.boss?.maxLife} life)`);
-    await capture(page, `riftlight-${tag}-level.png`);
+    await captureWithHud(page, `riftlight-${tag}-level-hud.png`);
 
     // ---------------------------------------------------------------- fight with the basic attack
     await R(() => {

@@ -1,11 +1,15 @@
-import { type Object3D, Vector3 } from 'three/webgpu';
+import { Mesh, MeshBasicNodeMaterial, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
+import { color, float, step, uv } from 'three/tsl';
+import type { LightHandle } from '../../engine/render/lights';
+import { PALETTE } from '../../engine/palette';
+import { TELEGRAPH_COLORS } from '../combat/telegraph';
 import type { PaletteColor } from '../../engine/palette';
 import { Actor } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
 import { flat, more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import { type Rank, RANK, SCALING } from '../core/scaling';
-import type { ActorLike, Genome, HitResult } from '../core/types';
+import type { ActorLike, DamageType, Genome, HitResult } from '../core/types';
 import type { MonsterBuildOptions, MonsterHandle, MonsterPort, ShellServices, Telegraph } from '../game/ports';
 import {
   ARCHETYPES,
@@ -28,7 +32,7 @@ import {
   MonsterRuntime,
   type TelegraphSpec,
 } from '../monsters';
-import type { Telegraph as Decal } from '../monsters/telegraph';
+import type { Telegraph as Decal, TelegraphColor } from '../monsters/telegraph';
 import { buildSkill } from '../skills/build';
 import type { SkillGem, SkillLook } from '../skills/types';
 import { type GridStage, StageMover } from './stage';
@@ -122,6 +126,13 @@ export function monsterGem(def: MonsterSkillDef): SkillGem {
   return g;
 }
 
+/** The damage type a monster skill mostly deals (telegraph colour). */
+export function skillDamageType(def: MonsterSkillDef): DamageType {
+  const dmg = def.effects.find((e) => e.kind === 'damage');
+  const t = dmg && dmg.kind === 'damage' ? Object.keys(dmg.base)[0] : undefined;
+  return t === 'fire' || t === 'cold' || t === 'lightning' || t === 'chaos' ? t : 'physical';
+}
+
 export { bossBudget } from './progression';
 
 /** Bosses picked by the level (designed or generated), found again by genome at build time. */
@@ -173,8 +184,46 @@ class TelegraphState implements LiveTelegraph {
   }
 }
 
+// ---------------------------------------------------------------- presence (shadow, light)
+
+let shadowGeometry: PlaneGeometry | null = null;
+let shadowMaterial: MeshBasicNodeMaterial | null = null;
+/**
+ * A hard-edged blob shadow under a monster (the hero's `ContactShadow` look), one draw call,
+ * with one geometry and one material shared by every monster: a pack waking up or an add
+ * spawning mid-fight builds no shader.
+ */
+function monsterShadow(radius: number): Mesh {
+  if (!shadowGeometry) {
+    shadowGeometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+    shadowGeometry.userData.shared = true;
+  }
+  if (!shadowMaterial) {
+    shadowMaterial = new MeshBasicNodeMaterial({ transparent: true, depthWrite: false });
+    shadowMaterial.colorNode = color(PALETTE.ink);
+    shadowMaterial.opacityNode = float(1).sub(step(0.5, uv().sub(0.5).length())).mul(0.5);
+    shadowMaterial.name = 'monster-shadow';
+    shadowMaterial.userData.shared = true;
+  }
+  const m = new Mesh(shadowGeometry, shadowMaterial);
+  m.name = 'MonsterShadow';
+  m.renderOrder = 1;
+  m.castShadow = false;
+  m.receiveShadow = false;
+  m.scale.set(Math.min(2.4, radius * 1.8), 1, Math.min(2.4, radius * 1.8));
+  return m;
+}
+
+/** Elites glow: a light from the pool in their aura's colour (bosses brighter and first). */
+const ELITE_LIGHT: Readonly<Record<Rank, { intensity: number; radius: number; priority: number } | null>> = {
+  normal: null,
+  magic: { intensity: 2.2, radius: 3.5, priority: 1.1 },
+  rare: { intensity: 3.2, radius: 4.5, priority: 1.4 },
+  boss: { intensity: 5, radius: 7, priority: 2.5 },
+};
+
 /** Build a telegraph decal + state (monsters and hazards share it). */
-export function makeTelegraph(root: Object3D, spec: TelegraphSpec, from: Vector3, to: Vector3, seconds: number, color: number, source?: ActorLike): LiveTelegraph {
+export function makeTelegraph(root: Object3D, spec: TelegraphSpec, from: Vector3, to: Vector3, seconds: number, color: TelegraphColor, source?: ActorLike): LiveTelegraph {
   const decal = createTelegraph(spec, color, 1);
   let at: Vector3;
   let dir: { x: number; z: number } | undefined;
@@ -225,12 +274,17 @@ export class MonsterUnit implements MonsterHandle {
   private pending: LiveTelegraph | null = null;
   private tele: LiveTelegraph | null = null;
   private glow = 0;
+  private teleType: DamageType = 'physical';
   private wantFacing: number | null = null;
   private deadT = -1;
   private hitAnimUntil = 0;
   private time = 0;
   private dieAt = -1;
   private readonly mover: StageMover;
+  private readonly shadow: Mesh;
+  private glowLight: LightHandle | null = null;
+  /** A light under a big telegraph, brightening as the wind-up runs out. */
+  private teleLight: LightHandle | null = null;
   private readonly tmp = new Vector3();
   private readonly flow = new Vector3();
   removed = false;
@@ -245,6 +299,8 @@ export class MonsterUnit implements MonsterHandle {
     const eager = host.loading;
     this.built = this.boss ? buildMonster(this.boss.genome, { eager, extraSkills: bossSkills(this.boss) }) : buildMonster(genome, { eager });
     this.object = this.built.object;
+    // what it was built from, for whoever only sees the actor's body (the bestiary records kills by it)
+    this.object.userData.genome = this.boss?.genome ?? genome;
     this.runtime = new MonsterRuntime(this.built);
     this.rank = genome.rank;
     this.name = this.boss?.name ?? monsterName(genome);
@@ -292,6 +348,14 @@ export class MonsterUnit implements MonsterHandle {
     this.brain = this.boss ? new BossBrain(this.boss, brainOpts) : new MonsterBrain({ ...brainOpts, archetype: genome.archetype, elite: genome.elite });
     this.object.position.copy(o.at);
     this.object.rotation.y = this.actor.facing;
+    this.shadow = monsterShadow(radius);
+    this.shadow.position.set(o.at.x, 0.015, o.at.z);
+    host.root.add(this.shadow);
+    const glow = ELITE_LIGHT[this.rank];
+    if (glow && !this.add) {
+      const hex = this.object.getObjectByName('EliteAura') ? genome.palette.glow : PALETTE.white;
+      this.glowLight = host.services.ctx.lights.request({ follow: this.object, offset: [0, 0.9 * Math.max(1, genome.scale), 0], color: hex, intensity: glow.intensity, radius: glow.radius + radius, priority: glow.priority, flicker: 'pulse', name: `elite:${this.rank}` });
+    }
   }
 
   // ------------------------------------------------------------- MonsterHandle
@@ -387,6 +451,8 @@ export class MonsterUnit implements MonsterHandle {
       this.tele = this.pending;
       this.pending = null;
       this.tele.t = 0;
+      this.teleType = skillDamageType(def);
+      this.tele.decal?.tint?.(this.teleType);
       this.tele.total = windup + (def.role === 'leap' ? windup * 0.5 : 0);
       act.lockAim = true;
       if (this.tele.kind === 'circle') act.aim.copy(this.tele.at);
@@ -413,8 +479,8 @@ export class MonsterUnit implements MonsterHandle {
 
   showTelegraph(spec: TelegraphSpec, from: Vector3, to: Vector3, seconds: number): void {
     this.pending?.decal?.dispose();
-    const color = this.rank === 'boss' ? 0xb13e53 : 0xef7d57;
-    this.pending = makeTelegraph(this.host.root, spec, from, to, seconds, color, this.actor);
+    // coloured by damage type once the skill is known (useSkill tints it)
+    this.pending = makeTelegraph(this.host.root, spec, from, to, seconds, 'physical', this.actor);
   }
 
   setGlow(amount: number): void {
@@ -530,10 +596,12 @@ export class MonsterUnit implements MonsterHandle {
   private animate(dt: number): void {
     const a = this.actor;
     const rt = this.runtime;
+    this.shadow.position.set(this.object.position.x, 0.015, this.object.position.z);
     if (!a.alive || a.deadFor >= 0) {
       this.corpse(dt);
       return;
     }
+    this.updateTeleLight();
     const f = this.host.focus();
     if (Math.hypot(a.position.x - f.x, a.position.z - f.z) > M.animateRange) return;
     if (this.tele) this.tele.decal?.update(this.tele.total > 0 ? this.tele.t / this.tele.total : 1);
@@ -555,10 +623,19 @@ export class MonsterUnit implements MonsterHandle {
     const len = this.built.clip('Death')?.duration ?? 0.8;
     if (this.deadT < len + M.corpse) this.runtime.update(dt);
     else {
+      // the corpse burns away in pixels (a glowing front in its rim colour), settling a little;
+      // bodies without dissolving materials sink into the floor instead
       const s = this.deadT - len - M.corpse;
       const p = this.actor.mover.position;
-      this.actor.mover.teleport(p.x, -Math.min(2, s * 1.2) * Math.max(0.5, this.genome.scale), p.z);
-      if (s > 1.2) this.actor.gone = true;
+      const k = s / M.dissolve;
+      this.shadow.visible = k < 0.5;
+      if (this.actor.fx.dissolve(k)) {
+        this.actor.mover.teleport(p.x, -Math.min(0.25, s * 0.3) * Math.max(0.5, this.genome.scale), p.z);
+        if (s > M.dissolve + 0.05) this.actor.gone = true;
+      } else {
+        this.actor.mover.teleport(p.x, -Math.min(2, s * 1.2) * Math.max(0.5, this.genome.scale), p.z);
+        if (s > 1.2) this.actor.gone = true;
+      }
     }
   }
 
@@ -586,6 +663,10 @@ export class MonsterUnit implements MonsterHandle {
 
   /** Died: the Death clip, the brain's last word (pack, elite death effects), then the corpse sinks. */
   onDeath(): void {
+    this.glowLight?.release();
+    this.glowLight = null;
+    this.teleLight?.release();
+    this.teleLight = null;
     this.act = null;
     this.tele?.decal?.dispose();
     this.tele = null;
@@ -601,8 +682,35 @@ export class MonsterUnit implements MonsterHandle {
   dispose(): void {
     this.tele?.decal?.dispose();
     this.pending?.decal?.dispose();
+    this.glowLight?.release();
+    this.teleLight?.release();
+    this.shadow.removeFromParent();
     this.runtime.dispose();
     this.object.removeFromParent();
+  }
+
+  /**
+   * Big telegraphs (bosses, and any circle of 2 m or more) light the floor they cover in their
+   * damage colour, ramping up to the hit: the arena flashes before it hurts.
+   */
+  private updateTeleLight(): void {
+    const tl = this.tele;
+    const big = tl && tl.kind === 'circle' && (this.rank === 'boss' || tl.radius >= 2);
+    if (!tl || !big || tl.t >= tl.total) {
+      if (this.teleLight) {
+        this.teleLight.release();
+        this.teleLight = null;
+      }
+      return;
+    }
+    const k = Math.min(1, tl.t / Math.max(0.01, tl.total));
+    const hex = TELEGRAPH_COLORS[this.teleType].rim;
+    if (!this.teleLight || !this.teleLight.alive) {
+      this.teleLight = this.host.services.ctx.lights.request({ position: [tl.at.x, 1, tl.at.z], color: hex, intensity: 1, radius: tl.radius + 2, priority: 3, fadeIn: 0.1, flicker: 'none', name: 'telegraph' });
+    }
+    this.teleLight.position.set(tl.at.x, 1, tl.at.z);
+    this.teleLight.color.setHex(hex);
+    this.teleLight.intensity = 1 + 5 * k * k;
   }
 }
 

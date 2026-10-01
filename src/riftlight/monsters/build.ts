@@ -12,7 +12,7 @@ import { ARCHETYPES } from './brains/archetypes';
 import { ELITE_MODS } from './brains/elite';
 import { boltFor, MONSTER_SKILLS } from './brains/skills';
 import { genomeCost, genomeTags, headAnchors, shapeKey } from './genome';
-import { bodyMaterial, cachedGeometry, glowMaterial, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere } from './geometry';
+import { auraMaterial, bodyMaterial, cachedGeometry, glowMaterial, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere } from './geometry';
 import { PARTS } from './parts';
 import { PLANS } from './plans';
 import type { BuiltMonster, ClipMeta, MeshOpts, MonsterClipDef, MonsterPartContext, MonsterPartDef, PaletteSlot, ShapeDef, Skeleton, Slot, SocketDef } from './types';
@@ -117,7 +117,7 @@ export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltM
 
   // ---- body shapes and parts
   const colour = (slot: PaletteSlot) => genome.palette[slot];
-  for (const s of sk.shapes) addShape(joints.get(s.joint)!, s, colour(s.color));
+  for (const s of sk.shapes) addShape(joints.get(s.joint)!, s, colour(s.color), genome.palette.glow);
   const rng = new Rng(genome.seed);
   for (const socket of sk.sockets) {
     const part = bySlot.get(socket.slot);
@@ -200,9 +200,9 @@ const SHAPE_GEOMETRY: Record<ShapeDef['kind'], [string, () => import('three/webg
   taper: ['u:taper', unitCyl],
 };
 
-function addShape(joint: Object3D, s: ShapeDef, hex: number): void {
+function addShape(joint: Object3D, s: ShapeDef, hex: number, rim: number): void {
   const [key, make] = s.kind === 'taper' ? [`u:taper:${(s.taper ?? 1).toFixed(2)}`, taperCyl(Math.round((s.taper ?? 1) * 100) / 100)] : SHAPE_GEOMETRY[s.kind];
-  const mesh = new Mesh(cachedGeometry(key, make), bodyMaterial(hex));
+  const mesh = new Mesh(cachedGeometry(key, make), bodyMaterial(hex, rim));
   mesh.name = s.name;
   mesh.position.set(...s.at);
   if (s.rot) mesh.quaternion.setFromEuler(_e.set(s.rot[0] * RAD, s.rot[1] * RAD, s.rot[2] * RAD, 'XYZ'));
@@ -228,7 +228,7 @@ function partContext(socket: SocketDef, part: MonsterPartDef, joints: Map<string
     add(key: string, make, color: PaletteSlot, o: MeshOpts = {}): Mesh {
       const geo = cachedGeometry(`${key}`, make, mirror);
       const hex = genome.palette[color];
-      const mesh = new Mesh(geo, o.glow ? glowMaterial(hex) : bodyMaterial(hex));
+      const mesh = new Mesh(geo, o.glow ? glowMaterial(hex) : bodyMaterial(hex, genome.palette.glow));
       mesh.name = o.name ?? `${part.id}:${socket.id}:${n++}`;
       const at = o.at ?? [0, 0, 0];
       const rot = o.rot ?? [0, 0, 0];
@@ -255,10 +255,12 @@ function addAura(object: Group, sk: Skeleton, genome: Genome): void {
   const hex = elite ? (ELITE_MODS.get(elite).glow ?? genome.palette.glow) : genome.palette.glow;
   const r = Math.max(0.35, sk.radius * (genome.rank === 'boss' ? 1.15 : 1));
   const ring = new Mesh(
-    cachedGeometry('u:ring', () => new RingGeometry(0.82, 1, 20, 1).rotateX(-Math.PI / 2)),
-    glowMaterial(hex),
+    cachedGeometry('u:aura', () => new RingGeometry(0.7, 1, 40, 1).rotateX(-Math.PI / 2)),
+    auraMaterial(hex),
   );
   ring.name = 'EliteAura';
+  ring.renderOrder = -1;
+  ring.userData.noFlash = true;
   ring.position.y = 0.012;
   ring.scale.setScalar(r);
   object.add(ring);

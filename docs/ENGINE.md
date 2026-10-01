@@ -127,6 +127,10 @@ config to `?cam=`, so a reload brings back the same shot.
 | `free` | authoring fly-cam | WASD, Q/E down/up, drag or click to look, Shift fast, Enter = fix | wheel (FOV) |
 | `fixed` | a frozen view (what `free` produces) | none | wheel |
 
+A game may also swap presets as part of play (Riftlight's arcade cabinet goes `side`, its
+Hall of Beasts `first`, its photo mode `free`): pass `engine.setCamera(config, { syncUrl: false })`
+so a reload still starts with the game's own camera (docs/GAME.md, *Showcase*).
+
 Free-camera workflow: start with `?camera=free`, fly to the shot you want, press **Enter**.
 The view freezes, the player gets control, and the config (e.g.
 `{"preset":"fixed","projection":"perspective","position":[3,6,9],"target":[0,1,0],"fov":55,"zoom":1}`)
@@ -548,7 +552,8 @@ input.dispose();            // removes every window / canvas listener (engine.di
 The `systems` e2e suite switches playground ↔ sandbox six times and checks that bodies,
 colliders, controllers, triggers, tags, scene objects and GPU geometries/textures all return
 to the same numbers. The page at `/` runs Riftlight (docs/GAME.md); `?game=playground` and
-`?game=sandbox` open the engine demos, and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
+`?game=sandbox` open the engine demos (`?game=arcade` is Riftlight's side-scroller on its own, a
+template for that genre), and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
 
 ### Input: gamepads and press timing
 
@@ -572,6 +577,16 @@ stops and queued presses are dropped, so nothing fires on resume.
 nearest filtering, no mipmaps: crisp texels) and its **vertex colors**, on the same 3-band
 toon material: `color × map × vertex color`. By hand:
 `toonMaterial(palette.white, { map: pixelTexture(tex), vertexColors: true })`.
+
+Two more options make bodies read in dark scenes and leave with style (TSL, cached per option
+set like every toon material; the colour is a uniform, so every rim colour shares one shader):
+
+- `rim: 0xrrggbb`: a hard-banded rim light on grazing, upward-facing surfaces, added to the
+  emissive (so `material.emissive` hit flashes still work). Riftlight's monsters use their
+  glow colour.
+- `dissolve: true`: the material reads its own `dissolve` property (0 solid … 1 gone) through
+  a material reference and discards a per-art-pixel noise below it, with a 1-pixel glowing
+  front. Set it on per-body clones (`m.clone()` then `m.dissolve = 0`), never on the cached one.
 
 ### Engine options for shipping a game
 
@@ -649,6 +664,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   - `riftlight-levels` (`scripts/e2e-riftlight-levels.mjs`, `@filters`): Riftlight levels 1, 6,
     12 and a rift build and render, the light pool keeps 8 lights with no shader builds while
     lights move, the hero walks start → exit with `Engine.step`, the boss opens the portal
+  - `riftlight-showcase` (`scripts/e2e-riftlight-showcase.mjs`, `@cameras`): Riftlight's arcade
+    side-scroller (scripted run to the flag), first-person Hall of Beasts and photo mode
+    (a gameboy PNG), on WebGPU and the WebGL 2 fallback
   - `systems` (`scripts/e2e-systems.mjs`, in the `@filters` group): HUD framing, audio unlock and
     hero sounds, particles, coin triggers, gamepad, pause, hotkeys, `loadGame` without leaks,
     textured toon materials, `dispose()`, on WebGPU and the WebGL 2 fallback

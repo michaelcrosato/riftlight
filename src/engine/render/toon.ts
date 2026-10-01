@@ -11,7 +11,7 @@ import {
   type Texture,
   Vector2,
 } from 'three/webgpu';
-import { abs, floor, max, mix, modelViewProjection, sign, uniform, vec4 } from 'three/tsl';
+import { abs, clamp, float, floor, hash, materialEmissive, materialReference, max, mix, modelViewProjection, normalView, screenCoordinate, sign, step, uniform, vec4 } from 'three/tsl';
 
 /**
  * PS1-style vertex snapping ("wobble"): clip-space vertices snap to the internal pixel
@@ -62,6 +62,50 @@ export interface ToonMaterialOptions {
   map?: Texture | null;
   /** Multiply by the geometry's `color` attribute (vertex colors). */
   vertexColors?: boolean;
+  /**
+   * A hard-banded rim light in this colour (hex) on grazing, upward-facing surfaces: a
+   * silhouette that reads against dark floors (monsters in dark levels). Added to the
+   * emissive, so `material.emissive` (hit flashes) still works on top. Same shader for
+   * every rim colour (the colour is a uniform).
+   */
+  rim?: number;
+  /**
+   * Pixel dissolve: the material reads its own `dissolve` property (0 = solid, 1 = gone)
+   * and discards a per-art-pixel noise pattern below it, with a 1-pixel glowing front in
+   * the rim colour (or white). Set it on per-body clones (`material.dissolve = 0.4`), not on
+   * the shared cached material.
+   */
+  dissolve?: boolean;
+}
+
+/** A toon material made with `dissolve: true` has this property. */
+export type DissolvableMaterial = MeshToonNodeMaterial & { dissolve: number };
+
+/** Rim band: surfaces whose view normal is this far from facing the camera light up. */
+const RIM_THRESHOLD = 0.45;
+const RIM_STRENGTH = 1;
+
+function addRimAndDissolve(material: MeshToonNodeMaterial, rim: number | undefined, dissolve: boolean): void {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- node slots and TSL operators aren't typed on Node
+  const mat = material as any;
+  const rimColor = uniform(new Color(rim ?? 0xffffff));
+  if (rim !== undefined) {
+    // 1 − n·v in view space (orthographic and perspective alike: the view axis is +Z),
+    // hard-banded like the toon ramp; only surfaces facing sideways or up (a back/top light)
+    const nz = clamp(normalView.z, 0, 1);
+    const band = step(RIM_THRESHOLD, float(1).sub(nz)).mul(step(-0.15, normalView.y));
+    mat.emissiveNode = materialEmissive.add(rimColor.mul(band.mul(RIM_STRENGTH)));
+  }
+  if (dissolve) {
+    (mat as DissolvableMaterial).dissolve = 0;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL operators aren't typed on reference nodes
+    const amount: any = materialReference('dissolve', 'float');
+    const noise = hash(floor(screenCoordinate.x).add(floor(screenCoordinate.y).mul(1291)));
+    mat.maskNode = noise.greaterThanEqual(amount);
+    // the front: a pixel band just above the threshold glows
+    const front = step(noise, amount.add(0.08)).mul(step(0.001, amount));
+    mat.emissiveNode = (mat.emissiveNode ?? materialEmissive).add(rimColor.mul(front.mul(2)));
+  }
 }
 
 /**
@@ -88,12 +132,13 @@ export function toonMaterial(color: ColorRepresentation, options: ToonMaterialOp
   const hex = new Color(color).getHex();
   const map = options.map ?? null;
   const vertexColors = options.vertexColors === true;
-  const key = `${hex}|${map?.uuid ?? ''}|${vertexColors ? 'vc' : ''}`;
+  const key = `${hex}|${map?.uuid ?? ''}|${vertexColors ? 'vc' : ''}|${options.rim ?? ''}|${options.dissolve ? 'd' : ''}`;
   let mat = materialCache.get(key);
   if (!mat) {
     mat = new MeshToonNodeMaterial({ color: hex, gradientMap: toonGradient(), map: map ? pixelTexture(map) : null, vertexColors });
     mat.vertexNode = snappedClipPosition();
-    mat.name = `toon-${hex.toString(16).padStart(6, '0')}${map ? '-tex' : ''}${vertexColors ? '-vc' : ''}`;
+    if (options.rim !== undefined || options.dissolve) addRimAndDissolve(mat, options.rim, options.dissolve === true);
+    mat.name = `toon-${hex.toString(16).padStart(6, '0')}${map ? '-tex' : ''}${vertexColors ? '-vc' : ''}${options.rim !== undefined ? '-rim' : ''}${options.dissolve ? '-dis' : ''}`;
     mat.userData.shared = !map || map.userData.shared === true;
     materialCache.set(key, mat);
     const cached = mat;

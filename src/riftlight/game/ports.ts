@@ -408,6 +408,12 @@ export interface Panel {
   readonly title: string;
   /** Preferred size in art pixels; the shell centres it, frames it and adds the title bar. */
   readonly size: { readonly w: number; readonly h: number };
+  /**
+   * Optional: the room there is (art pixels inside the frame) before `size` is read, every
+   * frame. A panel that can lay itself out narrower (a phone in portrait is 124 wide) adapts
+   * here; the shell clamps whatever `size` says to the room either way.
+   */
+  fit?(w: number, h: number): void;
   draw(ui: UiCanvas, rect: { x: number; y: number; w: number; h: number }, time: number): void;
   /** Return true when the event was used (the shell then stops routing it). */
   input?(e: UiEvent): boolean;

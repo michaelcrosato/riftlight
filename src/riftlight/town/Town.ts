@@ -64,7 +64,8 @@ export interface Interactable {
   readonly verb: string;
   readonly position: Vector3;
   readonly radius: number;
-  readonly action: NpcAction | 'stash';
+  /** `showcase`: one of the showcase pieces (arcade, bestiary), by `id` (showcase/Showcase.ts). */
+  readonly action: NpcAction | 'stash' | 'showcase';
   readonly npc?: Npc;
 }
 
@@ -100,6 +101,8 @@ export class Town implements StageWorld {
   private readonly sky = new Color(PALETTE.sky);
   active = false;
   readonly interactables: Interactable[] = [];
+  /** Things added after the build (showcase props): shown, updated and lit with the town. */
+  private readonly extensions: TownExtension[] = [];
 
   constructor(private readonly services: ShellServices) {
     this.rng = services.rng.fork('town');
@@ -524,10 +527,24 @@ export class Town implements StageWorld {
     this.services.ctx.audio.play(name, { volume: volume * Math.max(0.1, 1 - d / 16) });
   }
 
+  /**
+   * Add something built elsewhere (the showcase's arcade cabinet and bestiary): its meshes,
+   * the blockers actors collide with, interactables, and hooks that run with the town's own
+   * activate / deactivate / update.
+   */
+  extend(ext: TownExtension): void {
+    if (ext.root) this.root.add(ext.root);
+    if (ext.blockers) this.blockers.push(...ext.blockers);
+    if (ext.interactables) this.interactables.push(...ext.interactables);
+    this.extensions.push(ext);
+    if (this.active) ext.activate?.();
+  }
+
   // ---------------------------------------------------------------- stage
 
   /** Show the town and borrow its lights. */
   activate(): void {
+    for (const e of this.extensions) e.activate?.();
     this.active = true;
     this.root.visible = true;
     const L = this.services.lights;
@@ -543,6 +560,7 @@ export class Town implements StageWorld {
   }
 
   deactivate(): void {
+    for (const e of this.extensions) e.deactivate?.();
     this.active = false;
     this.root.visible = false;
     for (const l of this.lights) this.services.lights.release(l);
@@ -622,6 +640,7 @@ export class Town implements StageWorld {
     if (this.dayLength > 0) this.dayTime = (this.dayTime + dt / this.dayLength) % 1;
     const night = this.applySky();
     for (const n of this.npcs) n.update(dt, hero);
+    for (const e of this.extensions) e.update?.(dt, night);
     this.cat.update(dt, hero, this.blockers);
     const t = this.time;
     // obelisk crystal: bob, spin, pulse
@@ -700,6 +719,17 @@ export class Town implements StageWorld {
     this.deactivate();
     this.root.removeFromParent();
   }
+}
+
+/** See `Town.extend`. */
+export interface TownExtension {
+  readonly root?: Object3D;
+  readonly blockers?: readonly Blocker[];
+  readonly interactables?: readonly Interactable[];
+  activate?(): void;
+  deactivate?(): void;
+  /** Per frame while the town is active; `night` is 0..1. */
+  update?(dt: number, night: number): void;
 }
 
 function smooth(a: number, b: number, t: number): number {

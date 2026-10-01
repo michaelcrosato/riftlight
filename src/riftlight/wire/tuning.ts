@@ -43,6 +43,8 @@ export const WIRE_TUNING = {
     turnRate: 9,
     /** Corpses: seconds after the Death clip ends before they sink away. */
     corpse: 0.7,
+    /** Seconds the corpse takes to dissolve after lying still for `corpse`. */
+    dissolve: 0.65,
     /** Animate monsters only this close to the camera focus (others hold their pose). */
     animateRange: 26,
     /** Adds called mid-fight (summons, splits): drop nothing, count toward the level total. */

@@ -1,7 +1,7 @@
 import { type Material, type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import type { Rng } from '../core/rng';
 
-type Emissive = Material & { emissive?: { setRGB(r: number, g: number, b: number): void }; emissiveIntensity?: number };
+type Emissive = Material & { emissive?: { setRGB(r: number, g: number, b: number): void }; emissiveIntensity?: number; dissolve?: number };
 
 /**
  * Juice on an actor's body: a white hit flash (an emissive pulse), and for monsters a
@@ -26,6 +26,22 @@ export class BodyFx {
   static readonly REST = 0.35;
 
   constructor(private readonly body: Object3D) {}
+
+  /**
+   * Pixel dissolve, 0 (solid) → 1 (gone), on materials made with `dissolve: true` (monster
+   * bodies): a per-art-pixel noise eats the body with a glowing front. Returns false when the
+   * body has none (the caller hides it another way).
+   */
+  dissolve(amount: number): boolean {
+    this.ensureClones();
+    let any = false;
+    for (const m of this.clones!) {
+      if (m.dissolve === undefined) continue;
+      m.dissolve = Math.min(1, Math.max(0, amount));
+      any = true;
+    }
+    return any;
+  }
 
   /** White flash for `seconds`. */
   flash(seconds = 0.08): void {
@@ -116,6 +132,8 @@ export class BodyFx {
         if (!c) {
           c = m.clone() as Emissive;
           c.userData = { ...m.userData, shared: false };
+          // per-material properties a node graph reads by reference (Material.copy skips them)
+          if ((m as Emissive).dissolve !== undefined) c.dissolve = 0;
           own.set(m, c);
           this.clones!.push(c);
         }

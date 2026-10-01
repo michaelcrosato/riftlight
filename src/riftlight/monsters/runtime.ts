@@ -125,7 +125,8 @@ export class MonsterRuntime {
     const useRun = speed > (walk + run) / 2 && this.has('Run');
     const clip = useRun ? 'Run' : 'Walk';
     const base = useRun ? run : walk;
-    this.play(clip, { fade: 0.2, rate: Math.min(2.5, Math.max(0.35, speed / base)) });
+    // up to 3.2× before the feet slide: small bodies chasing at pack speed stay planted
+    this.play(clip, { fade: 0.2, rate: Math.min(3.2, Math.max(0.35, speed / base)) });
   }
 
   /** Recoil from a hit coming from world direction `from` (towards the monster). */
