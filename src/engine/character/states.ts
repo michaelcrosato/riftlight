@@ -109,7 +109,7 @@ export const STATES = {
     snapToGround: false,
     // the launch frame is still on the ground: the feet push off from where they stand
     // (not a wall kick or any other jump that starts in the air)
-    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 && c.supported() ? 'lock' : undefined),
+    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 && c.speed < 1 && c.supported() ? 'lock' : undefined),
   },
   fall: { step: stepAir, anim: () => ({ name: 'Fall', fade: 0.25 }), stance: 'stand', airborne: true },
   wallSlide: { step: stepWallSlide, anim: () => ({ name: 'WallSlide', fade: 0.1 }), stance: 'stand', airborne: true, attached: true },

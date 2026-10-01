@@ -69,8 +69,9 @@ export interface FootPlacementTuning {
   release: number;
   /** Locked feet: re-plant with a step once the animation is this far away (m). */
   maxDrift: number;
-  /** The re-plant step: duration (s) and lift (m). */
+  /** The re-plant step: shortest duration (s), top speed (m/s: a longer way takes longer), and lift (m). */
   stepTime: number;
+  stepSpeed: number;
   stepLift: number;
   /** A released foot returns to the animation at this rate (1/s). */
   releaseRate: number;
@@ -133,6 +134,7 @@ export const FOOT_PLACEMENT_DEFAULTS: FootPlacementTuning = {
   release: 2,
   maxDrift: 0.14,
   stepTime: 0.15,
+  stepSpeed: 1.2,
   stepLift: 0.06,
   releaseRate: 16,
   maxSpread: 25,
@@ -217,6 +219,10 @@ interface Foot {
   sx: number;
   sz: number;
   sref: number;
+  /** How long this re-plant step takes (s). */
+  stepTime: number;
+  /** Last frame: how high its lower end was, as the clip has it (over flat ground). */
+  lastLow: number;
   /** Last frame: heel and toe (world x, z, with the correction) and whether either was down. */
   readonly last: [Vector3, Vector3];
   wasDown: boolean;
@@ -291,7 +297,7 @@ export class FootPlacement {
         side, upper, lower, foot,
         rest: [upper.quaternion.clone(), lower.quaternion.clone(), foot.quaternion.clone()],
         mAnkle: new Vector3(), mPts: [new Vector3(), new Vector3()], mPitch: 0,
-        gw: 0, gr: 0, uw: 0, pitch: 0, ref: -1, ax: 0, az: 0, cx: 0, cz: 0, step: -1, sx: 0, sz: 0, sref: 0,
+        gw: 0, gr: 0, uw: 0, pitch: 0, ref: -1, ax: 0, az: 0, cx: 0, cz: 0, step: -1, sx: 0, sz: 0, sref: 0, stepTime: 0.15, lastLow: 0,
         last: [new Vector3(), new Vector3()], wasDown: false, lastAnim: new Vector3(), hasLastAnim: false, swinging: false, fwd: 0, swing: 0, takeoff: 0, ground: 0, target: 0,
         ankle: new Vector3(), pts: [new Vector3(), new Vector3()], h: [0, 0], g: [null, null], used: 0, planted: 0, lift: 0,
       };
@@ -565,7 +571,7 @@ export class FootPlacement {
         f.step = -1;
       } else if (f.step >= 0) {
         // the lift eases in and out; the foot moves once it is clear of the floor
-        f.step = Math.min(1, f.step + dt / T.stepTime);
+        f.step = Math.min(1, f.step + dt / f.stepTime);
         const e = smoothstep(f.step, 0.2, 0.8); // (moving only while clear of the floor)
         // from where it stood (in the world) to where the clip has it now
         const p = f.pts[f.sref]!;
@@ -574,9 +580,13 @@ export class FootPlacement {
         f.lift = T.stepLift * Math.sin(Math.PI * f.step) ** 2;
         if (f.step >= 1) f.step = -1;
       } else if (f.ref >= 0) {
-        // lifted off (clearly: a blend that lifts it a hair for a frame doesn't count): back
-        // to the animation, in the air
-        if (Math.min(e0, e1) > T.contact * T.release) f.ref = -1;
+        // lifted off: back to the animation, in the air. Clearly lifted, or on its way up (a
+        // blend that lifts it a hair for a frame and puts it back doesn't count)
+        // (rising as the clip has it: not the terrain under it changing; a gait's lift-off
+        // is its own business)
+        const low = Math.min(e0, e1);
+        const rising = !input.swing && low > T.contact && Math.min(f.h[0], f.h[1]) > f.lastLow + 0.002;
+        if (low > T.contact * T.release || rising) f.ref = -1;
         else {
           // the foot pivots on whichever end is lower: a lifting heel rolls onto the toe, a
           // toe coming down after a heel strike onto the heel. The end it stood on holds this
@@ -595,11 +605,16 @@ export class FootPlacement {
           f.upper.getWorldPosition(V1);
           V1.y += this.drop;
           const far = V1.distanceTo(V2.set(f.ankle.x + f.cx, f.ankle.y + f.used, f.ankle.z + f.cz)) > (L.upper + L.lower) * 0.97;
+          const drifted = far || f.cx * f.cx + f.cz * f.cz > T.maxDrift * T.maxDrift;
+          // the clip is already lifting it (a hop, a kick): let it go where the clip takes it
+          if (drifted && Math.min(e0, e1) > T.contact) f.ref = -1;
           // (one foot at a time, though the next may lift as the last one comes down)
-          if ((far || f.cx * f.cx + f.cz * f.cz > T.maxDrift * T.maxDrift) && (other.step < 0 || other.step > 0.6)) {
+          else if (drifted && (other.step < 0 || other.step > 0.6)) {
             f.sref = f.ref;
             f.ref = -1;
             f.step = 0;
+            // (a longer way takes longer: no faster than `stepSpeed`)
+            f.stepTime = Math.max(T.stepTime, Math.hypot(f.cx, f.cz) / T.stepSpeed);
             f.sx = f.ax;
             f.sz = f.az;
           }
@@ -625,6 +640,7 @@ export class FootPlacement {
         f.cz *= r;
       }
       f.wasDown = on0 || on1;
+      f.lastLow = Math.min(f.h[0], f.h[1]);
       for (let j = 0; j < 2; j++) f.last[j]!.set(f.pts[j]!.x + f.cx, 0, f.pts[j]!.z + f.cz);
     }
 
@@ -652,7 +668,7 @@ export class FootPlacement {
       undo[at + 2] = (f.ankle.z - CUR.z) * w;
       undo[at + 3] = (f.mPitch - solePitch(f.foot)) * DEG * w;
       // (a locked foot's hold and a re-planting step: never held back)
-      const free = f.ref >= 0 || f.step >= 0 ? 1e3 : T.guardMove;
+      const free = f.ref >= 0 ? 1e3 : f.step >= 0 ? T.guardMove * 2 : T.guardMove;
       this.legGuard.setMaxSpeed(at, free);
       this.legGuard.setMaxSpeed(at + 2, free);
     }

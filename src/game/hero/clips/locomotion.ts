@@ -59,7 +59,7 @@ export const Run = gaitClip(RIG, {
   dangle: 0.4,
   swingDelay: 0.15,
   swingReach: 0.08,
-  plant: 1,
+  plant: 0.15,
   toeOff: 30,
   lean: 18,
   twist: 16,
