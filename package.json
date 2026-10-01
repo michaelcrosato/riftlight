@@ -15,7 +15,8 @@
     "assets": "node scripts/generate-assets.mjs",
     "build:single": "node scripts/build-single.mjs",
     "anim": "tsx scripts/anim.ts",
-    "film": "tsx scripts/film.ts"
+    "film": "tsx scripts/film.ts",
+    "loot": "tsx scripts/riftlight/loot.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",

@@ -53,6 +53,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runSystems } from './e2e-systems.mjs';
+import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1008,6 +1009,11 @@ const SUITES = {
     await runSystems({ ...helpers, scenario: SCENARIOS[0] });
     await runSystems({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-loot': async (exe) => {
+    const helpers = { exe, openPage, check, capture, checkClean, encodePng, OUT };
+    await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -1015,7 +1021,7 @@ const SUITES = {
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
   '@cameras': ['cameras', 'camera-swap', 'lab'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
