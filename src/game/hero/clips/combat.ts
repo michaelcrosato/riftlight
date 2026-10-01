@@ -71,7 +71,7 @@ export const COMBAT_TIMING: Readonly<Record<string, { hit: number; cancel: numbe
   BowDraw: { hit: 12, cancel: 13, draw: [3, 5] },
   BowRelease: { hit: 6, cancel: 7, draw: [1, 2.5] },
   Roll: { hit: 1, cancel: 12 },
-  Charge: { hit: 2, cancel: 11 },
+  Charge: { hit: 2, cancel: 13 },
   Shout: { hit: 9, cancel: 12 },
 };
 
@@ -212,7 +212,11 @@ export const LeapSlam: ClipDef = {
     [7, F({ ...pelvis([-2, 0, 0], [0, 0, 0.02], [0.94, 1.1, 0.94]), Torso: [-8, 0, 0], Head: [-14, 0, 0], ...arm('R', -172, 15, 30, -10), ...arm('L', -155, 20, 30, 0) }, { R: { z: -0.03, pitch: 50, pivot: 'ball' }, L: { z: 0.06, pitch: 50, pivot: 'ball' } }), null],
     [13, { ...pelvis([-12, 0, 0], [0, 0.05, 0]), ...TUCK_SWORD }, null],
     [17, { ...pelvis([4, 0, 0], [0, 0.06, 0]), Torso: [26, 0, 0], Head: [-24, 0, 0], ...arm('R', -150, 12, 20, -30), ...arm('L', -140, 14, 25, 0), ...leg('R', -40, 6, 70, 30), ...leg('L', -36, 6, 60, 30) }, null, 'in'],
-    [19.6, SMASH_BODY, SMASH_FEET, 'out'],
+    // (the arc lands at 19.6; the soles touch a beat later, once the drawn body has caught up
+    // with the physics, so they don't skate the last of the leap's ground speed)
+    [18.6, { ...pelvis([8, 0, 0], [0, -0.1, 0.03]), Torso: [34, 0, 0], Head: [-26, 0, 0], ...arm('R', -120, 12, 12, -40), ...arm('L', -112, 14, 18, 0) }, { R: { z: -0.03, y: 0.08, pitch: 30, pivot: 'ball' }, L: { z: 0.06, y: 0.07 } }, 'linear'],
+    [19.6, { ...SMASH_BODY, ...pelvis([10, 0, 0], [0, -0.2, 0.04], squash(0.05)) }, { R: { z: -0.03, y: 0.03, pitch: 28, pivot: 'ball' }, L: { z: 0.06, y: 0.03 } }, 'linear'],
+    [20.6, SMASH_BODY, SMASH_FEET, 'out'],
     [23, { ...SMASH_BODY, ...pelvis([10, 0, 0], [0, -0.24, 0.04], squash(0.05)) }, SMASH_FEET, 'inOut'],
     [28, COMBAT_BODY, COMBAT_FEET],
   ]),
@@ -337,7 +341,7 @@ export const CastBigWeapon: ClipDef = {
  * The game draws the string to the right hand between COMBAT_TIMING's `draw` frames and lets
  * it go at `hit`.
  */
-const BOW_FEET: FeetGoals = { R: { z: -0.08 }, L: { z: 0.1 } };
+const BOW_FEET: FeetGoals = COMBAT_FEET;
 const SIDE_ON: Pose = { ...pelvis([0, -40, 0], [0, -0.08, 0]), Torso: [4, -15, 0], Head: [-4, 50, 0] };
 /** Bow arm raised and bent (nocking), then pushed out to the target. */
 const BOW_UP = arm('L', -72, 55, 50, 0);
@@ -435,7 +439,7 @@ function blendFeet(a: FeetGoals, b: FeetGoals, t: number): FeetGoals {
 // them; the body then rises up over them: they slide back under it in the clip exactly as
 // fast as the roll's root motion carries the body on (ROLL_PROFILE's tail), so in the world
 // they stay planted.
-const ROLL_LAND: FeetGoals = { R: { z: 0.19, y: 0.01 }, L: { z: 0.26, y: 0.01 } };
+const ROLL_LAND: FeetGoals = { R: { z: 0.22, y: 0.01 }, L: { z: 0.25, y: 0.01 } };
 const ROLL_RISE: FeetGoals = { R: { z: 0.08, y: 0 }, L: { z: 0.16 } };
 export const Roll: ClipDef = {
   name: 'Roll',
@@ -471,12 +475,14 @@ export const Charge: ClipDef = {
   frames: 14,
   ...track([
     [0, COMBAT_BODY, COMBAT_FEET],
-    [1, stance({ ...pelvis([10, 12, 0], [0, -0.16, 0], squash(0.05)), Torso: [20, 14, 0], Head: [-24, -10, 0], ...arm('L', -45, 30, 110, 10), ...arm('R', 0, 20, 60, -10) }), COMBAT_FEET, 'out'],
+    [1, stance({ ...pelvis([10, 12, 0], [0, -0.16, 0], squash(0.05)), Torso: [20, 14, 0], Head: [-24, -10, 0], ...arm('L', -42, 28, 100, 10), ...arm('R', -18, 21, 64, -10) }), COMBAT_FEET, 'out'],
     [2, CHARGE_BODY, BOUND, 'inOut'],
     [6, { ...CHARGE_BODY, ...pelvis([20, 18, 0], [0, -0.06, 0.04]), ...arm('L', -58, 30, 120, 10), ...arm('R', 24, 22, 60, -10) }, BOUND2, 'inOut'],
-    [10, { ...CHARGE_BODY, ...pelvis([16, 18, 0], [0, -0.08, 0.04]), ...arm('L', -52, 30, 120, 10), ...arm('R', 10, 22, 60, -10) }, { R: { z: -0.2, y: 0.08, pitch: 30, pivot: 'ball' }, L: { z: 0.28, y: 0.04 } }, 'in'],
-    // brake: heels dig in ahead, body back
-    [12, stance({ ...pelvis([-6, 10, 0], [0, -0.14, -0.04], squash(0.04)), Torso: [-4, 10, 0], Head: [-12, -6, 0], ...arm('L', -60, 36, 80, 10), ...arm('R', -10, 30, 50, -10) }), { R: { z: -0.12, pitch: 20, pivot: 'ball' }, L: { z: 0.2, pitch: -15, pivot: 'heel' } }, 'inOut'],
+    [9.5, { ...CHARGE_BODY, ...pelvis([16, 18, 0], [0, -0.08, 0.04]), ...arm('L', -52, 30, 120, 10), ...arm('R', 10, 22, 60, -10) }, { R: { z: -0.2, y: 0.08, pitch: 30, pivot: 'ball' }, L: { z: 0.28, y: 0.05 } }, 'inOut'],
+    // the feet reach down ahead as the dash brakes (DASH_PROFILE stops it at ~12.6)
+    [11.5, stance({ ...pelvis([2, 12, 0], [0, -0.12, -0.02], squash(0.03)), Torso: [6, 12, 0], Head: [-16, -8, 0], ...arm('L', -58, 34, 95, 10), ...arm('R', -4, 28, 54, -10) }), { R: { z: -0.12, y: 0.03, pitch: 20, pivot: 'ball' }, L: { z: 0.2, y: 0.03, pitch: -12, pivot: 'heel' } }, 'out'],
+    // brake: heels dig in, the body leans back over them
+    [12.6, stance({ ...pelvis([-6, 10, 0], [0, -0.14, -0.04], squash(0.04)), Torso: [-4, 10, 0], Head: [-12, -6, 0], ...arm('L', -60, 36, 80, 10), ...arm('R', -10, 30, 50, -10) }), { R: { z: -0.12, pitch: 20, pivot: 'ball' }, L: { z: 0.2, pitch: -15, pivot: 'heel' } }, 'inOut'],
     [14, COMBAT_BODY, COMBAT_FEET],
   ]),
   notes: 'Drop the shoulder, explode off the back foot (dash from 2), drive in scissoring bounds, brake heels-first leaning back, recover.',

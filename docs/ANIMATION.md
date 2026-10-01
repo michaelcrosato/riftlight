@@ -15,6 +15,7 @@ per family:
 | `block.ts` | Push, PushIdle, Grab, Pull |
 | `attacks.ts` | Punch, Punch2, Kick, SweepKick, JumpKick |
 | `emotes.ts` | Wave, Victory, Hurt |
+| `combat.ts` | Riftlight's hero: Slash1–3, Slam, LeapSlam, Spin, Cast, CastBig, CastWeapon, CastBigWeapon, BowDraw, BowRelease, Roll, Charge, Shout, HitReact, Death, Triumph; `COMBAT_TIMING` (hit, cancel, land and bow `draw` frames) |
 
 `clips/index.ts` lists them in `HERO_CLIPS` (the order the tools and the Lab use); a new clip
 goes in its family's file and in that list. `src/game/hero/animations.ts` re-exports
@@ -133,13 +134,18 @@ longer version's frames.
   - `wait n`
   - `until STATE [max]` (or `until grounded`). An `until` that gives up is listed as an
     `until` issue and the film exits 1, so a scenario that never reaches its state fails.
+  - In the Riftlight arena (`--game arena`, `arena-*` scenarios): `skills a,b+support,...`
+    (the skill bar), `weapon CLASS [2h]` (sword, axe, mace, sceptre, dagger, wand, staff, bow),
+    `hurt SHARE [dx dz]` (lose that share of life, shoved away from dx, dz), `kill`. `place`
+    there also revives, refills mana, clears cooldowns and puts back the default bar and sword.
 - Output in `.scratch/film/`:
   - A PNG filmstrip. Each cell shows state, dominant clip and blend partner, from a camera
     that follows the hero.
   - Under the cells, a timeline: state and clip bands, ground speed, fastest joint, sole
     height above the ground, planted-foot slip.
   - A JSON log of every frame, including `footPlacement` (pelvis drop, and per foot the
-    offset, pitch, lock and step state: why a foot is where it is).
+    offset, pitch, lock and step state: why a foot is where it is), the model's `yaw` and
+    `modelY` (hops and lifts), and the planted slip per foot (`slipRL`).
   - `--gif` also writes an animated GIF, for a human to watch.
 - The console prints the state/clip timeline and flags:
   - **pop**: a joint jumps in one frame, 3× faster than the frames around it.
@@ -164,6 +170,10 @@ longer version's frames.
 Other commands:
 
 - `npm run anim -- overview [clips]` shows every clip as a side-view strip in one PNG.
+- `sheet` and `curves` draw the hero with a weapon in hand: the sword for combat clips, the
+  bow (its string drawn as in the game) for `Bow*`, or `--weapon <class|none>`. Metrics
+  (`check`) never count the weapon. A sheet's `onPose` hook (`SheetOptions`) is where such
+  pose-driven parts update.
 - `npm run anim -- pose Run 3` prints JSON: the authored rotations and the world positions of
   every joint and sole.
 - `--json` makes any command's output machine-readable.
@@ -297,7 +307,8 @@ Each frame it runs, in order:
      body) are never locked. A lock holds the point that touched first (heel or toe) and
      lets go when the foot is clearly lifted (`release` × `contact`). A re-planting step
      goes from where the foot stands in the world to where the clip has it (its duration
-     grows with the distance, `stepSpeed`), lifted. A foot planted across a step's edge stands
+     grows with the distance, `stepSpeed`), lifted (with `settleSteps`, Riftlight's hero: it finishes even if
+     locking stops meanwhile, and the foot is locked again on the frame it comes down). A foot planted across a step's edge stands
      on the lower step unless its middle is over the higher one.
    - Leave it unset (airborne states) for clip feet only. Mode changes fade, and the mode
      follows the interpolated render position, not the physics step.

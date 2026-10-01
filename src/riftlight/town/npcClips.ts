@@ -53,17 +53,36 @@ export const Hammer: ClipDef = {
 };
 
 const REST: Pose = { ...STAND_BODY, ...pelvis([0, 0, 0], [0, -0.03, 0]), Torso: [-2, 0, 0], Head: [-6, 0, 0], ...arm('R', -150, 26, 140, 20), ...arm('L', 8, 14, 30, 10) };
+/** Brann talking: the free hand makes his points (a raised palm, a jab, a shrug), his weight rocks, the hammer bobs on his shoulder. */
+const talk = (lean: number, hand: Pose, head: [number, number, number]): Pose => ({
+  ...REST,
+  ...pelvis([0, lean * 1.5, lean], [0, -0.03 - Math.abs(lean) * 0.003, 0]),
+  Torso: [-2 + Math.abs(lean) * 0.5, -lean, -lean * 1.2],
+  Head: head,
+  ...hand,
+});
 export const HammerRest: ClipDef = {
   name: 'HammerRest',
-  frames: 60,
+  frames: 90,
   loop: true,
   grounded: true,
   ...track([
     [0, REST, STAND_FEET],
-    [30, { ...REST, ...pelvis([0, 0, 0], [0, -0.04, 0]), Torso: [-4, 2, 0], Head: [-8, 4, 0] }, STAND_FEET],
-    [60, REST, STAND_FEET],
+    // "listen": palm up and out, head tilted
+    [10, talk(2, { ...arm('L', -38, 26, 70, -20, -40) }, [-8, 6, 6]), STAND_FEET, 'out'],
+    [22, talk(2, { ...arm('L', -44, 30, 64, -24, -40) }, [-6, 8, 8]), STAND_FEET],
+    // a jab to make the point, a nod of the chin with it
+    [28, talk(-1, { ...arm('L', -62, 12, 40, 0, 10) }, [4, -2, 0]), STAND_FEET, 'out'],
+    [31, talk(-1, { ...arm('L', -54, 12, 52, 4, 10) }, [-2, -2, 0]), STAND_FEET],
+    [34, talk(-1, { ...arm('L', -63, 12, 38, 0, 10) }, [5, -2, 0]), STAND_FEET, 'out'],
+    [42, talk(-2, { ...arm('L', -30, 18, 60, 6) }, [-6, -6, -4]), STAND_FEET],
+    // a shrug: shoulders up, the hammer rises with them, then settles
+    [58, { ...talk(0, { ...arm('L', -18, 34, 80, -30, -30) }, [-10, 0, 8]), ...pelvis([0, 0, 0], [0, -0.015, 0]), ...arm('R', -156, 26, 146, 24) }, STAND_FEET, 'outBack'],
+    [66, talk(0, { ...arm('L', -16, 30, 76, -26, -30) }, [-8, 2, 6]), STAND_FEET],
+    [90, REST, STAND_FEET],
   ]),
-  notes: 'Talking: hammer resting on his shoulder, chest out, slow breath.',
+  layers: [{ joint: 'Torso', channel: 'rx', amplitude: 1.2, period: 45 }],
+  notes: 'Talking: hammer on his shoulder; the free hand makes his points (palm up, a jab, a shrug), weight rocking, breathing.',
 };
 
 export const Nod: ClipDef = {
@@ -186,14 +205,17 @@ export const Meditate: ClipDef = {
 const blessUp = (k: number): Pose => ({ ...LOTUS, ...pelvis([0, 0, 0], [0, 0.42 + 0.1 * k, 0]), Torso: [-6 * k, 0, 0], Head: [-14 * k, 0, 0], ...arms(-44 - 66 * k, 12 + 48 * k, 62 - 40 * k, -24 - 20 * k) });
 export const Bless: ClipDef = {
   name: 'Bless',
-  frames: 54,
+  frames: 60,
   keys: [
     [0, LOTUS],
-    [14, blessUp(1), 'out'],
-    [32, { ...blessUp(1), Head: [-18, 0, 0] }],
-    [54, LOTUS],
+    // gathering: sinks a little, hands drawn in to the chest, head bowed
+    [8, { ...LOTUS, ...pelvis([0, 0, 0], [0, 0.39, 0]), Torso: [6, 0, 0], Head: [16, 0, 0], ...arms(-58, -8, 110, 10) }, 'inOut'],
+    [18, blessUp(1.08), 'outBack'],
+    [24, blessUp(1)],
+    [38, { ...blessUp(1), Head: [-18, 0, 0], ...pelvis([0, 0, 0], [0, 0.53, 0]) }, 'inOut'],
+    [60, LOTUS],
   ],
-  notes: 'Arms open, palms up, rising a little: a blessing.',
+  notes: 'Gathers in (sinks, hands to the chest, head bowed), then opens: arms wide, palms up, rising, and settles: a blessing.',
 };
 
 // ------------------------------------------------------------------ Vex, the rift keeper
@@ -201,33 +223,51 @@ export const Bless: ClipDef = {
 const STAFF_L: Pose = { ...arm('L', -12, 10, 58, -44), HandL: [44, 0, -10] };
 const KEEPER: Pose = { ...STAND_BODY, ...pelvis([0, 0, 0], [0, -0.02, 0]), Torso: [-2, 0, 0], Head: [-6, 0, 0], ...STAFF_L, ...arm('R', 4, 8, 40, 20) };
 
+const keeper = (lean: number, p: Pose): Pose => ({ ...KEEPER, ...pelvis([0, lean, lean * 0.8], [0, -0.02 - Math.abs(lean) * 0.003, 0]), Torso: [-2, -lean * 0.6, -lean], ...p });
 export const StaffIdle: ClipDef = {
   name: 'StaffIdle',
-  frames: 90,
+  frames: 120,
   loop: true,
   grounded: true,
   ...track([
     [0, KEEPER, STAND_FEET],
-    [30, { ...KEEPER, Torso: [-3, 4, 0], Head: [-8, 16, 0] }, STAND_FEET],
-    [60, { ...KEEPER, Torso: [-2, -3, 0], Head: [-4, -12, 0], ...arm('R', 2, 10, 46, 24) }, STAND_FEET],
-    [90, KEEPER, STAND_FEET],
+    // weight onto the staff side, a slow look right across the plaza
+    [24, keeper(3, { Head: [-8, 22, 2] }), STAND_FEET, 'inOut'],
+    [40, keeper(3, { Head: [-6, 26, 2] }), STAND_FEET],
+    // the staff lifted a hair and tapped down twice: impatience
+    [50, keeper(1, { ...arm('L', -16, 10, 64, -44), HandL: [44, 0, -10], Head: [0, 6, 0] }), STAND_FEET, 'out'],
+    [54, keeper(1, { ...STAFF_L, Head: [2, 4, 0] }), STAND_FEET, 'in'],
+    [58, keeper(1, { ...arm('L', -15, 10, 63, -44), HandL: [44, 0, -10], Head: [0, 4, 0] }), STAND_FEET, 'out'],
+    [62, keeper(1, { ...STAFF_L, Head: [2, 2, 0] }), STAND_FEET, 'in'],
+    // weight back, look left, the free hand rubs the chin
+    [84, keeper(-3, { Head: [-4, -20, -2], ...arm('R', -70, -10, 140, 30) }), STAND_FEET, 'inOut'],
+    [100, keeper(-3, { Head: [-6, -24, -2], ...arm('R', -72, -12, 136, 20) }), STAND_FEET],
+    [120, KEEPER, STAND_FEET],
   ]),
-  notes: 'Upright, staff planted, scanning the plaza.',
+  layers: [{ joint: 'Torso', channel: 'rx', amplitude: 1, period: 60 }],
+  notes: 'Upright, staff planted: weight shifts, a slow scan of the plaza, two impatient staff taps, a hand to the chin.',
 };
 
 const point = (k: number): Pose => ({ ...KEEPER, Torso: [-4, -18 * k, 0], Head: [-10, -34 * k, 0], ...arm('R', 4 - 100 * k, 8 + 62 * k, 40 - 30 * k, 20 - 26 * k) });
 export const Gesture: ClipDef = {
   name: 'Gesture',
-  frames: 60,
+  frames: 66,
   grounded: true,
   ...track([
     [0, KEEPER, STAND_FEET],
-    [12, point(1.04), STAND_FEET, 'out'],
+    // the head turns first, then the arm follows: draw back, sweep out past the mark, settle on it
+    [5, { ...KEEPER, Torso: [-2, 4, 0], Head: [-10, -30, 0], ...arm('R', 10, 10, 70, 30) }, STAND_FEET, 'in'],
+    [12, point(1.1), STAND_FEET, 'out'],
     [16, point(1), STAND_FEET],
-    [40, { ...point(1), Head: [-14, -30, 0] }, STAND_FEET],
-    [60, KEEPER, STAND_FEET],
+    // two emphatic pumps: "that way, there"
+    [22, { ...point(0.93), Head: [-4, -30, 0] }, STAND_FEET, 'inOut'],
+    [26, point(1.02), STAND_FEET, 'out'],
+    [30, { ...point(0.94), Head: [-6, -31, 0] }, STAND_FEET, 'inOut'],
+    [34, point(1.02), STAND_FEET, 'out'],
+    [46, { ...point(1), Head: [-14, -30, 0] }, STAND_FEET],
+    [66, KEEPER, STAND_FEET],
   ]),
-  notes: 'Sweeps an arm toward the obelisk: "the rift is that way".',
+  notes: 'Head first, then the arm sweeps toward the obelisk, overshoots, settles; two emphatic pumps: "the rift is that way".',
 };
 
 /** Clips per townsperson (the town compiles these; the anim CLI checks them). */

@@ -74,7 +74,8 @@ class Dash extends EffectBase {
       vz: c.dir.z * speed,
       left: time,
       total: time,
-      profile: dodge ? ROLL_PROFILE : DASH_PROFILE,
+      // (the hero's clips are matched to these; monsters animate their own dashes)
+      profile: caster.faction !== 'hero' ? undefined : dodge ? ROLL_PROFILE : DASH_PROFILE,
       onStep: (a) => this.along(a, d.hitWidth),
       onEnd: () => {
         this.done = true;

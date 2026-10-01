@@ -177,4 +177,42 @@ describe('HeroController', () => {
     expect(w.hero.state).not.toBe('cast');
     expect(w.hero.feedback?.text).toBe('NO MANA');
   });
+  it('shows the equipped weapon class; a staff points in casts, with the same hit frame', async () => {
+    const w = await world();
+    expect(w.hero.weapons.kind).toBe('sword');
+    const castHit = async (staff: boolean) => {
+      const v = await world({ mods: staff ? [{ stat: 'weapon.staff', kind: 'flag', value: 1 }] : [] });
+      v.step(1);
+      v.input.press('KeyQ'); // fireball: a Cast
+      let frames = 0;
+      while (v.combat.effects.length === 0 && frames < 60) {
+        v.step(1);
+        frames++;
+      }
+      return { kind: v.hero.weapons.kind, clip: v.hero.anim, frames };
+    };
+    const bare = await castHit(false);
+    const staff = await castHit(true);
+    expect(staff.kind).toBe('staff');
+    expect(bare.clip).toBe('Cast');
+    expect(staff.clip).toBe('CastWeapon');
+    expect(staff.frames).toBe(bare.frames);
+  });
+  it('the drawn body hops round a big standing turn; gameplay faces the aim at once', async () => {
+    const w = await world();
+    w.dummy(-1.2, 1); // 50° round to the hero's right (inside the auto-aim cone)
+    w.step(1);
+    w.input.press('KeyJ');
+    w.step(1);
+    const aim = w.hero.facing;
+    const model = w.hero.model;
+    expect(Math.abs(Math.atan2(Math.sin(model.rotation.y - aim), Math.cos(model.rotation.y - aim)))).toBeGreaterThan(0.3); // not there yet
+    let lifted = 0;
+    for (let i = 0; i < 8; i++) {
+      w.step(1);
+      lifted = Math.max(lifted, model.position.y - w.hero.actor.position.y);
+    }
+    expect(lifted).toBeGreaterThan(0.02); // a hop, not a pivot on planted feet
+    expect(Math.abs(Math.atan2(Math.sin(model.rotation.y - aim), Math.cos(model.rotation.y - aim)))).toBeLessThan(0.05);
+  });
 });

@@ -45,15 +45,15 @@ export const HERO_TUNING = {
    * landed through blends and attacks; when the body moves on more than `maxDrift` m they
    * re-plant with a quick step.
    */
-  feet: { maxDrift: 0.16, stepTime: 0.12, stepLift: 0.07, fadeOut: 0 },
+  feet: { maxDrift: 0.16, stepTime: 0.12, stepLift: 0.07, fadeOut: 0, settleSteps: true },
   /**
    * The drawn body turns toward the gameplay facing (which snaps to the aim at once): at
    * `viewTurnRate` (1/s) for small corrections and while running; a standing turn of more
    * than `hopTurn` degrees is a quick hop round instead (`hopTime` s, `hopHeight` m), so
    * planted feet never pivot on the floor.
    */
-  viewTurnRate: 30,
-  hopTurn: 24,
+  viewTurnRate: 12,
+  hopTurn: 8,
   hopTime: 0.1,
   hopHeight: 0.03,
   /** Whirlwind: full turns per second at skill speed 1 (the model spins; the clip holds the pose), spin-up time (s). */
@@ -63,6 +63,8 @@ export const HERO_TUNING = {
   lungeHop: 0.07,
   rollPush: 0.075,
   liftFall: 30,
+  /** Knocked back hard: the body staggers this high off the floor while the shove lasts (m). */
+  staggerHop: 0.035,
   /** A standing start at a run springs off for `startTime` s, `startHop` m up. */
   startHop: 0.04,
   startTime: 0.08,
@@ -763,7 +765,9 @@ export class HeroController {
     } else if (this.hitReact > 0) {
       this.hitReact -= k;
       an.advance(this.reactAnim, k);
-      an.play(v > HERO_TUNING.idleBelow ? { lower: loco === 'Idle' ? 'Walk' : loco, upper: this.reactAnim } : { full: this.reactAnim }, 0.05);
+      // (legs walk under the react only when the player walks, not when the blow shoves the body)
+      const walking = v > HERO_TUNING.idleBelow && this.moveWish.lengthSq() > 0.04;
+      an.play(walking ? { lower: loco === 'Idle' ? 'Walk' : loco, upper: this.reactAnim } : { full: this.reactAnim }, 0.05);
     } else {
       // out of an airborne pose (the whirlwind's skimming feet) the feet come down quickly
       const fade = this.state !== 'idle' ? HERO_TUNING.fadeMove : this.lastClip === 'Spin' ? HERO_TUNING.fadeMove : HERO_TUNING.fadeOut;
@@ -826,13 +830,13 @@ export class HeroController {
       // the target may move on during the hop (a new aim): keep heading for it
       h.to += wrapAngle(target - h.to);
       this.viewYaw = h.from + (h.to - h.from) * smooth(u);
-      lift = T.hopHeight * Math.min(1, 1.6 * Math.sin(Math.PI * u));
+      lift = T.hopHeight * Math.min(1, 2.5 * Math.sin(Math.PI * u));
       if (u >= 1) this.hop = null;
     } else {
       const d = wrapAngle(target - this.viewYaw);
       if (standing && Math.abs(d) > (T.hopTurn * Math.PI) / 180) {
         this.hop = { t: k, time: T.hopTime, from: this.viewYaw, to: this.viewYaw + d };
-        lift = T.hopHeight * Math.min(1, 1.6 * Math.sin((Math.PI * k) / T.hopTime));
+        lift = T.hopHeight * Math.min(1, 2.5 * Math.sin((Math.PI * k) / T.hopTime));
         this.viewYaw += d * smooth(k / T.hopTime);
       } else this.viewYaw += d * (1 - Math.exp(-T.viewTurnRate * k));
     }
@@ -858,6 +862,8 @@ export class HeroController {
       want = T.startHop;
     }
     if (this.lunging) want = T.lungeHop;
+    // shoved (knockback): the feet stagger off the floor instead of being dragged along it
+    if (this.actor.impulse.lengthSq() > 1.5) want = Math.max(want, T.staggerHop);
     else if (this.state === 'dodge') {
       const frame = (this.animator.time(this.rollAnim) / Math.max(1e-3, this.animator.duration(this.rollAnim))) * 14;
       if (frame < 2.5) want = T.rollPush;
@@ -903,12 +909,16 @@ export class HeroController {
     let lock = lift < 0.012 && !this.hop && this.spinAngle === 0;
     if (this.state === 'dodge') {
       const frame = (this.animator.time(this.rollAnim) / Math.max(1e-3, this.animator.duration(this.rollAnim))) * 14;
-      ik = frame >= ROLL_DOWN - 1;
+      ik = frame >= ROLL_DOWN - 2.5;
       lock = frame >= ROLL_DOWN;
     }
-    // a dash or a leap flies the body: the clip has the feet (a leap's stay planted until the
+    // a dash drives the body along the floor: the feet follow the clip's bounds on the real
+    // ground, unlocked; a leap flies it: the clip has the feet (they stay planted until the
     // body actually leaves the ground)
-    if (this.actor.motion && this.state !== 'dodge' && (!this.action?.skill.def.leap || this.airborne())) ik = lock = false;
+    if (this.actor.motion && this.state !== 'dodge') {
+      if (!this.action?.skill.def.leap) lock = false;
+      else if (this.airborne()) ik = lock = false;
+    }
     f.ik = ik;
     f.lock = ik && lock;
     return f;
