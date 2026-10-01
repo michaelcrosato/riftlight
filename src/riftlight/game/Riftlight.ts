@@ -50,10 +50,10 @@ import { TouchPad } from './touch';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
-/** Camera framing per stage (zoom on the iso preset; the settings zoom multiplies it). */
 /**
- * Camera zoom per screen, the aim lead, and `portrait`: a screen taller than wide (a phone in
- * portrait, 124 art pixels across) zooms out by this much so the fight around the hero fits.
+ * Camera framing per stage (zoom on the iso preset; the settings zoom multiplies it), the aim
+ * lead, and `portrait`: a screen taller than wide (a phone in portrait, 124 art pixels across)
+ * zooms out by this much so the fight around the hero fits.
  */
 export const CAMERA = { title: 1.0, town: 1.22, level: 1.08, lead: 0.22, leadMax: 1.6, portrait: 0.8 } as const;
 

@@ -62,7 +62,7 @@ export interface TouchFrame {
   /** A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, interact and ≡ only. */
   showcase?: boolean;
   skills: readonly SkillSlotView[];
-  /** The interaction on offer ('TALK', 'PICK UP'...), or null. */
+  /** The interaction on offer (`Riftlight.interactOffer`: TALK, OPEN, TAKE, GO and its target), or null. */
   interact: { verb: string; name: string } | null;
 }
 
