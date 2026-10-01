@@ -191,6 +191,12 @@ export class Engine {
   /** False while a game's setup() is running (start, loadGame): nothing advances. */
   private ready = false;
   private disposed = false;
+  /** Incremented by every loadGame() and by dispose(): a load that is no longer the latest stops. */
+  private loadToken = 0;
+  /** The load in flight (loads run one at a time), if any. */
+  private loading: Promise<void> | null = null;
+  /** What a level may change and the next level starts from again (see unloadGame). */
+  private defaults!: { background: Scene['background']; sun: [number, number]; ambient: [number, number] };
   /**
    * Tooling: the render loop stops driving the game; advance it yourself with `step()`.
    * Frame-exact and independent of how fast the browser renders (filmstrips, replays).
@@ -361,6 +367,11 @@ export class Engine {
       const engine = new Engine(game, renderer, physics, camera, scene, options);
       engine.startCamera = { ...options.camera, preset: camera.preset };
       scene.background = new Color(options.background ?? PALETTE.night);
+      engine.defaults = {
+        background: scene.background,
+        sun: [engine.sun.color.getHex(), engine.sun.intensity],
+        ambient: [engine.ambient.color.getHex(), engine.ambient.intensity],
+      };
       camera.setAspect(renderer.resolution.width / renderer.resolution.height);
 
       engine.input.attachPointer(renderer.renderer.domElement);
@@ -373,7 +384,7 @@ export class Engine {
       camera.teleport(game.cameraTarget(engine.context));
       engine.updateView(0); // place camera + shadow box before compiling and the first frame
       await renderer.precompile();
-      engine.ready = true;
+      engine.becomeReady();
       engine.finishStart(container, options);
       loading?.set(1);
       return engine;
@@ -398,7 +409,7 @@ export class Engine {
       this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
       if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⚙ button
     }
-    this.renderer.setAnimationLoop((t) => this.tick(t));
+    this.renderer.setAnimationLoop(this.loop);
   }
 
   /**
@@ -546,53 +557,107 @@ export class Engine {
 
   /**
    * Unload the running game and start `game` in the same engine (renderer, canvas,
-   * camera rig, input, audio context and debug UI stay). The old game's `dispose(ctx)`
-   * runs first; then every scene object that is not engine-owned is removed and its GPU
-   * resources freed, and physics (bodies, colliders, controllers, triggers, tags),
-   * particles, HUD and music are cleared. Nothing advances until the new `setup()` has
-   * resolved and its pipelines are compiled. Pass `camera` to switch the camera preset.
+   * camera rig, input, audio context and debug UI stay).
+   *
+   * Safe to call from anywhere, including a game's own hooks (a level door in `update`,
+   * `fixedUpdate` or a trigger's `onEnter`): the swap waits for the current frame to end.
+   * Loads run one at a time, and only the latest one wins: a newer `loadGame()` (or
+   * `dispose()`) makes an older one stop after its `setup()`, and the newer one unloads
+   * whatever it built. The returned promise resolves when the level runs (or was superseded).
+   *
+   * Unloading calls the old game's `dispose(ctx)`, removes every scene object that is not
+   * engine-owned and frees its GPU resources, clears physics (bodies, colliders,
+   * controllers, triggers, tags), particles, HUD and music, and resets the scene
+   * background, fog and the sun / ambient light to the engine defaults. Filters, render
+   * mode, resolution, quality, volumes and the camera rig carry over; pass `camera` to
+   * switch the preset (applied before `setup()`, so `ctx.camera` is already the new one).
+   * Nothing advances while loading, and input made while loading is dropped.
    */
   async loadGame(game: Game, options: { camera?: CameraConfig } = {}): Promise<void> {
     if (this.disposed) throw new Error('Engine.loadGame: engine was disposed');
-    if (game.assets) preloadModels(game.assets);
-    this.ready = false;
-    this.unloadGame();
-    this._game = game;
-    await game.setup(this.context);
-    if (options.camera) {
-      this.startCamera = { ...options.camera, preset: options.camera.preset ?? 'iso' };
-      this.setCamera(this.startCamera);
-    }
-    this.camera.teleport(game.cameraTarget(this.context));
-    this.updateView(0);
-    // Compile the new level's pipelines with the loop stopped: precompile renders into the
-    // pixel pass's MRT target, and a frame drawn meanwhile would build the output pipeline
-    // against that target (invalid on WebGPU, GL errors on WebGL 2).
-    this.renderer.setAnimationLoop(null);
+    const token = ++this.loadToken;
+    const live = () => token === this.loadToken && !this.disposed;
+    const previous = this.loading;
+    const run = (async () => {
+      if (previous) await previous.catch(() => {}); // one load at a time
+      await Promise.resolve(); // never swap in the middle of a frame (called from a game hook)
+      if (!live()) return;
+      if (game.assets) preloadModels(game.assets);
+      this.ready = false;
+      this.unloadGame();
+      this._game = game;
+      if (options.camera) this.useCamera(options.camera);
+      await game.setup(this.context);
+      if (!live()) return; // superseded: the newer load (or dispose) unloads what setup built
+      this.camera.teleport(game.cameraTarget(this.context));
+      this.updateView(0);
+      // Compile the new level's pipelines with the loop stopped: precompile renders into the
+      // pixel pass's MRT target, and a frame drawn meanwhile would build the output pipeline
+      // against that target (invalid on WebGPU, GL errors on WebGL 2).
+      this.renderer.setAnimationLoop(null);
+      try {
+        await this.renderer.precompile();
+      } finally {
+        // A newer load stops and restarts the loop itself; a disposed engine has none.
+        if (!this.disposed) this.renderer.setAnimationLoop(this.loop);
+      }
+      if (!live()) return;
+      this.becomeReady();
+    })();
+    this.loading = run;
     try {
-      await this.renderer.precompile();
+      await run;
     } finally {
-      if (!this.disposed) this.renderer.setAnimationLoop((t) => this.tick(t));
+      if (this.loading === run) this.loading = null;
     }
-    this.ready = true;
   }
 
-  /** Stop the loop and free everything: game, scene, physics, audio, input listeners, DOM, GPU. */
+  /**
+   * Stop the loop and free everything: game, scene, physics, audio, input listeners, DOM,
+   * GPU. With a `loadGame()` in flight, the world and GPU resources are freed once its
+   * `setup()` has finished (it never runs against a freed physics world or renderer).
+   */
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.loadToken++;
     this.renderer.setAnimationLoop(null);
     this.ready = false;
-    this.unloadGame();
-    this.particles.dispose();
-    this.hud.dispose();
     this.audio.dispose();
     this.debug?.root.remove();
     this.touch?.root.remove();
     this.input.dispose();
-    this.physics.dispose();
-    this.renderer.dispose();
+    const free = () => {
+      this.unloadGame();
+      this.particles.dispose();
+      this.hud.dispose();
+      this.physics.dispose();
+      this.renderer.dispose();
+    };
+    if (this.loading) void this.loading.then(free, free);
+    else free();
   }
+
+  /** Switch the camera preset for a level that is loading (no game hooks, no URL sync). */
+  private useCamera(config: CameraConfig): void {
+    this.startCamera = { ...config, preset: config.preset ?? 'iso' };
+    const rig = createCameraRig(this.startCamera);
+    rig.setAspect(this.renderer.resolution.width / this.renderer.resolution.height);
+    rig.focus.copy(this.camera.focus);
+    this.renderer.setCamera(rig.camera);
+    this.camera = rig;
+    this.wireRig(rig);
+  }
+
+  /** Start running the game: nothing pressed or timed while loading carries over. */
+  private becomeReady(): void {
+    this.input.clearQueued();
+    this.input.endFrame();
+    this.lastTime = -1; // the first frame is 1/60 s, not a 0.1 s catch-up
+    this.ready = true;
+  }
+
+  private readonly loop = (t: number) => this.tick(t);
 
   private unloadGame(): void {
     this.game.dispose?.(this.context);
@@ -602,6 +667,16 @@ export class Engine {
     clearScene(this.scene);
     this.physics.clear();
     this.input.reset();
+    // What levels commonly tweak goes back to the engine defaults.
+    const d = this.defaults;
+    if (d) {
+      this.scene.background = d.background;
+      this.scene.fog = null;
+      this.sun.color.setHex(d.sun[0]);
+      this.sun.intensity = d.sun[1];
+      this.ambient.color.setHex(d.ambient[0]);
+      this.ambient.intensity = d.ambient[1];
+    }
   }
 
   private tick(timeMs: number): void {
@@ -618,11 +693,12 @@ export class Engine {
     this.input.beginFrame(this.time, dt);
     if (!running) this.input.clearQueued(); // presses made during a pause never fire later
 
-    this.handleDebugKeys();
+    if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
     this.audio.update();
 
     if (running) this.advance(dt);
+    if (this.disposed) return; // a game hook disposed the engine during this frame
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
     // The status line is only built while the panel is on screen.
@@ -673,7 +749,9 @@ export class Engine {
   private advance(dt: number): void {
     const ctx = this.context;
     this.physics.update(dt, this.fixedStep);
+    if (!this.ready) return; // a hook disposed the engine mid-frame
     this.game.update?.(ctx, dt);
+    if (!this.ready) return;
     this.particles.update(dt);
     this.updateView(dt);
   }
@@ -691,7 +769,9 @@ export class Engine {
     this.updateShadow();
   }
 
-  private readonly fixedStep = (fixedDt: number) => this.game.fixedUpdate?.(this.context, fixedDt);
+  private readonly fixedStep = (fixedDt: number) => {
+    if (this.ready) this.game.fixedUpdate?.(this.context, fixedDt);
+  };
 
   /**
    * Fit the sun's shadow box to what the camera sees: ortho presets cover the visible

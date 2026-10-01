@@ -355,13 +355,102 @@ export async function runSystems(h) {
     await waitFrames(page, 3);
     checkClean(await state(page), logs);
 
-    // dispose(): everything goes, nothing throws.
-    const disposed = await E(() => {
+    // ---------------------------------------------------------------- loadGame edge cases
+    // A level door: loadGame from the running game's own update() and from a trigger's
+    // onEnter (inside the fixed step). The swap waits for the frame to end.
+    const doors = await E(async () => {
       const e = window.__PIXEL_ENGINE__;
-      e.dispose();
-      return { canvases: document.querySelectorAll('canvas').length, debug: !!document.querySelector('.debug-ui'), counts: (() => { try { return e.physics.counts(); } catch { return 'freed'; } })() };
+      const G = window.__PIXEL_GAMES__;
+      e.manual = false;
+      const out = {};
+      let pending = null;
+      const g = e.game; // the sandbox
+      const update = g.update.bind(g);
+      g.update = (ctx, dt) => {
+        update(ctx, dt);
+        if (!pending) pending = e.loadGame(G.playground());
+      };
+      await new Promise((r) => {
+        const poll = () => (pending ? r() : requestAnimationFrame(poll));
+        poll();
+      });
+      await pending;
+      out.fromUpdate = e.game.name;
+      pending = null;
+      const f = e.game.hero.feet;
+      e.physics.trigger({ sphere: 1.5 }, [f.x, f.y + 0.8, f.z], { tag: 'character', once: true, onEnter: () => (pending = e.loadGame(G.sandbox())) });
+      await new Promise((r) => {
+        const poll = () => (pending ? r() : requestAnimationFrame(poll));
+        poll();
+      });
+      await pending;
+      out.fromTrigger = e.game.name;
+      return out;
     });
-    check(disposed.canvases === 0 && !disposed.debug, `engine.dispose() removes canvases and UI (${JSON.stringify(disposed)})`);
+    check(doors.fromUpdate === 'Move Playground' && doors.fromTrigger === 'Sandbox', `loadGame from update() and from a trigger's onEnter (${JSON.stringify(doors)})`);
+    await waitFrames(page, 5);
+    checkClean(await state(page), logs, 'level doors: ');
+
+    // Two loads at once: the latest wins and nothing of the other level is left over.
+    await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const G = window.__PIXEL_GAMES__;
+      await Promise.allSettled([e.loadGame(G.sandbox()), e.loadGame(G.playground())]);
+    });
+    await waitFrames(page, 10);
+    const both = await E(probe);
+    const base = seen.playground[0];
+    const sameWorld = ['game', 'bodies', 'colliders', 'tags', 'bindings', 'triggers', 'controllers', 'children', 'objects'].every((k) => both[k] === base[k]);
+    // GPU counts can only be lower (the sandbox never rendered), never higher.
+    check(sameWorld && both.geometries <= base.geometries && both.textures <= base.textures, `concurrent loadGame(sandbox) + loadGame(playground): only the playground is left (${JSON.stringify(both)})`);
+    checkClean(await state(page), logs, 'concurrent loads: ');
+
+    // Input made while a level loads does not fire once it runs.
+    const loadInput = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const mode = e.renderer.mode;
+      const game = window.__PIXEL_GAMES__.playground();
+      const setup = game.setup.bind(game);
+      game.setup = async (ctx) => {
+        e.input.setKey('Space', true); // pressed while the level loads
+        e.input.setKey('KeyP', true);
+        await setup(ctx);
+        await new Promise((r) => setTimeout(r, 250)); // a slow load: the clock moves on
+      };
+      await e.loadGame(game);
+      const steps0 = e.physics.steps;
+      await new Promise((r) => requestAnimationFrame(r)); // the engine ticks first in this frame
+      const firstSteps = e.physics.steps - steps0;
+      await new Promise((r) => setTimeout(r, 300));
+      e.input.setKey('Space', false);
+      e.input.setKey('KeyP', false);
+      return { jumps: e.game.hero.stats.jumps, mode: e.renderer.mode === mode, firstSteps };
+    });
+    check(loadInput.jumps === 0 && loadInput.mode, `presses made while loading are dropped (jumps ${loadInput.jumps}, P ignored ${loadInput.mode})`);
+    check(loadInput.firstSteps <= 1, `the first frame after loading is one 1/60 s step, not a stale-clock catch-up (${loadInput.firstSteps} physics steps)`);
+
+    // dispose() while a load is in flight: setup finishes on a live world, then all is freed.
+    const disposed = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const p = e.loadGame(window.__PIXEL_GAMES__.sandbox());
+      await new Promise((r) => setTimeout(r, 0));
+      e.dispose();
+      const settled = await p.then(() => 'resolved', (err) => `rejected: ${err?.message}`);
+      await new Promise((r) => setTimeout(r, 200));
+      return {
+        settled,
+        canvases: document.querySelectorAll('canvas').length,
+        debug: !!document.querySelector('.debug-ui'),
+        counts: (() => {
+          try {
+            return e.physics.counts();
+          } catch {
+            return 'freed';
+          }
+        })(),
+      };
+    });
+    check(disposed.settled === 'resolved' && disposed.canvases === 0 && !disposed.debug, `engine.dispose() during a loadGame: the load settles, canvases and UI go (${JSON.stringify(disposed)})`);
     await page.waitForTimeout(300);
     check(logs.length === 0, `no errors after dispose${logs.length ? ': ' + logs.join(' | ') : ''}`);
   } catch (e) {
