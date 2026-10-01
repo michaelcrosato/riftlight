@@ -836,14 +836,15 @@ tiers and values. Writes `.scratch/balance/endless.json`; exit 1 on any problem.
 **The tuned curve** (`npm run playtest -- campaign`, normal): the target is a challenge. Depths 1–4
 are onboarding (0–1 deaths), 5–12 cost a few deaths with farming in between, the boss is the
 hardest fight of each level, and the bot stops in the rifts around depth 18–25, where better gear
-or a better build would go on. Measured: seed 1 clears the twelve designed levels with 3 deaths
-(Korrak twice, a Bloodmoon blast) and stops at rift 24; seed 2 with 3 (Vexithas, Korrak, a
-pack) and stops at rift 16 (Gale + Embers rifts are its wall). Story clears all 24 with one death;
-hard stops at depth 11 (Vexithas). Hero level 4 after depth 1, ~15 after 6, ~29 after 12, ~39
-after 20; gold carried stays around 5–17k (the gamble tab and honed gems spend it). Monster life
+or a better build would go on. Measured: seed 1 clears the twelve designed levels with 2 deaths
+(a Bloodmoon wisp, Korrak) and stops at rift 17 (bosses: the Gate Warden, the Unmaker); seed 2
+with 1 death (Gravewell) and stops at rift 20. Story clears all 24 with one death; hard stops at
+depth 11 (Vexithas, three times). Hero level 4 after depth 1, ~15 after 6, ~27 after 12, ~37
+after 19; gold carried stays around 5–17k (the gamble tab and honed gems spend it). Monster life
 and damage (`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 27% / 23% a
 depth through the designed levels and 18% (+3%) / 11.5% in the rifts; bosses are 0.37 × / 0.95 ×
-`RANK.boss` life / damage (`WIRE_TUNING.monster.bossLife` / `bossDamage`); level mechanics hurt on
+`RANK.boss` life / damage (`WIRE_TUNING.monster.bossLife` / `bossDamage`; boss life ramps in from
+70% at depth 1 to all of it by depth 5, `bossLifeEarly`); level mechanics hurt on
 the gentler `SCALING.hazardDamage` (20% / 11%). Seeds vary a lot (a rift's mechanic mix, the
 gems the bot finds): check at least two.
 
