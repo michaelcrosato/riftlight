@@ -30,16 +30,16 @@ export interface StatusHost {
 
 export const STATUS_FX = {
   /** Orbit radius (m) beyond the actor's radius, height of the pip ring (m), pip size (m). */
-  orbit: 0.42,
-  height: 1.15,
-  pip: 0.16,
+  orbit: 0.6,
+  height: 1.2,
+  pip: 0.3,
   /** Radians per second around the body. */
   spin: 2.6,
   /** Rune circle radius as a multiple of the actor's radius. */
-  rune: 1.9,
+  rune: 2.6,
   /** Body tint strength (emissive) of a cursed actor, and its pulse. */
-  tint: 0.32,
-  pulse: 0.12,
+  tint: 0.42,
+  pulse: 0.16,
 } as const;
 
 const geos = new Map<string, BufferGeometry>();
@@ -131,9 +131,11 @@ export class StatusFx {
         p.visible = true;
         const a = this.t * STATUS_FX.spin + (i / Math.max(1, n)) * Math.PI * 2;
         const r = h.radius + STATUS_FX.orbit;
-        p.position.set(Math.sin(a) * r, STATUS_FX.height + Math.sin(this.t * 3 + i * 1.7) * 0.12, Math.cos(a) * r);
-        const s = STATUS_FX.pip * (1 + 0.15 * Math.sin(this.t * 8 + i));
-        p.scale.set(s, s * 1.4, s);
+        // three kinds ride three heights, so a full set reads as rings of colour
+        const lane = CHARGE_TYPES.indexOf(type) - 1;
+        p.position.set(Math.sin(a) * r, STATUS_FX.height + lane * 0.22 + Math.sin(this.t * 3 + i * 1.7) * 0.06, Math.cos(a) * r);
+        const s = STATUS_FX.pip * (1 + 0.12 * Math.sin(this.t * 8 + i));
+        p.scale.set(s, s * 1.5, s);
         p.rotation.y = this.t * 4 + i;
       }
     }
@@ -150,8 +152,8 @@ export class StatusFx {
     if (!this.rune) {
       this.shade = mesh(geo('curse-shade', () => new RingGeometry(0.15, 1.05, 24, 1).rotateX(-Math.PI / 2)), 'ink');
       this.shade.renderOrder = 1;
-      this.rune = mesh(geo('curse-rune', () => new RingGeometry(0.82, 1, 6, 1).rotateX(-Math.PI / 2)), color);
-      this.runeInner = mesh(geo('curse-rune-inner', () => new RingGeometry(0.45, 0.58, 3, 1).rotateX(-Math.PI / 2)), color);
+      this.rune = mesh(geo('curse-rune', () => new RingGeometry(0.74, 1, 6, 1).rotateX(-Math.PI / 2)), color);
+      this.runeInner = mesh(geo('curse-rune-inner', () => new RingGeometry(0.4, 0.56, 3, 1).rotateX(-Math.PI / 2)), color);
       this.rune.renderOrder = this.runeInner.renderOrder = 2;
       this.shard = mesh(geo('curse-shard', () => new OctahedronGeometry(0.5, 0)), color);
       for (const m of [this.shade, this.rune, this.runeInner, this.shard]) {
@@ -175,7 +177,7 @@ export class StatusFx {
     this.runeInner!.rotation.y = -this.t * 1.6;
     // one shard per curse would crowd small monsters: one, bigger with more curses
     this.shard!.position.set(0, this.headY + 0.35 + Math.sin(this.t * 2.5) * 0.08, 0);
-    const s = 0.2 + 0.05 * Math.min(3, n - 1);
+    const s = 0.26 + 0.05 * Math.min(3, n - 1);
     this.shard!.scale.set(s, s * 1.6, s);
     this.shard!.rotation.y = this.t * 3;
     h.fx.tint(PALETTE[color], STATUS_FX.tint + STATUS_FX.pulse * Math.sin(this.t * 6));

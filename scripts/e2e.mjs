@@ -5,7 +5,7 @@
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight | riftlight-tree | riftlight-loot | tools |
-//     systems | riftlight-levels | riftlight-combat | riftlight-monsters;  groups: @core | @cameras | @filters
+//     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -46,6 +46,8 @@
 //                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
 //                 their JSON, CSV and PNGs.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
+// riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
+//                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
 // systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials, engine.dispose().
@@ -77,6 +79,7 @@ import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
 import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
 import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
+import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1106,6 +1109,11 @@ const SUITES = {
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-builds': async (exe) => {
+    const helpers = { exe, openPage, check, capture, state, colorCount, checkClean, OUT };
+    await runRiftlightBuilds({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightBuilds({ ...helpers, scenario: SCENARIOS[1] });
+  },
   'riftlight-monsters': async (exe) => {
     const helpers = { exe, openPage, until, check, capture, state, colorCount, checkClean, OUT };
     await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[0] });
@@ -1117,7 +1125,7 @@ const SUITES = {
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight', 'riftlight-combat'],
-  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };
 const grouped = Object.values(GROUPS).flat();

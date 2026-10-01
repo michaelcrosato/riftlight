@@ -32,7 +32,7 @@ export const TOTEM_TUNING = {
   /** Seconds a totem stands (× the skill's duration multiplier). */
   duration: 12,
   /** How far from the hero it is planted toward the aim (m). */
-  reach: 4,
+  reach: 2.5,
   /** Seconds between casts as a multiple of the skill's cast time. */
   castRate: 1.1,
 } as const;
@@ -96,29 +96,37 @@ const part = (g: BoxGeometry, color: number, x: number, y: number, z: number, to
 };
 
 /**
- * A carved totem pole: stone foot, wooden pole, two stacked faces with glowing eyes in the
- * skill's colour and a crest. `face` is the upper head (it nods when the totem casts).
+ * A carved totem pole about as tall as the hero: stone foot, dark pole, two stacked sand-
+ * coloured faces banded in plum, glowing eyes and a crest in the skill's colour, and two
+ * glowing "wings" so it reads as magic at a glance. `face` is the upper head (it nods when
+ * the totem casts); the ring under it turns.
  */
 export function totemBody(skill: ResolvedSkill): { root: Object3D; face: Object3D; eyes: Mesh[]; ring: Mesh } {
   const color = PALETTE[skill.def.look.color];
   const root = new Group();
   root.name = 'totem';
-  const wood = PALETTE.orange;
+  const carved = PALETTE.sand;
   const dark = PALETTE.plum;
-  root.add(part(box(0.7, 0.22, 0.7), PALETTE.slate, 0, 0.11, 0), part(box(0.26, 1.1, 0.26), wood, 0, 0.75, 0));
-  // lower face
+  root.add(part(box(0.8, 0.25, 0.8), PALETTE.slate, 0, 0.125, 0), part(box(0.3, 1.75, 0.3), dark, 0, 1.0, 0));
+  // lower face with a jaw and side wings
   const low = new Group();
-  low.position.y = 0.95;
-  low.add(part(box(0.46, 0.36, 0.36), dark, 0, 0, 0), part(box(0.3, 0.06, 0.04), PALETTE.sand, 0, -0.08, 0.19));
-  // upper face (nods on cast) with glowing eyes and a crest
+  low.position.y = 1.05;
+  low.add(
+    part(box(0.5, 0.42, 0.4), carved, 0, 0, 0),
+    part(box(0.56, 0.08, 0.44), dark, 0, 0.2, 0),
+    part(box(0.34, 0.08, 0.05), dark, 0, -0.1, 0.21),
+    part(box(0.36, 0.1, 0.1), color, -0.42, 0.06, 0, false),
+    part(box(0.36, 0.1, 0.1), color, 0.42, 0.06, 0, false),
+  );
+  // upper face (nods on cast): glowing eyes and a crest
   const face = new Group();
-  face.position.y = 1.42;
-  const eyes = [part(box(0.1, 0.07, 0.04), color, -0.1, 0.05, 0.21, false), part(box(0.1, 0.07, 0.04), color, 0.1, 0.05, 0.21, false)];
-  face.add(part(box(0.52, 0.44, 0.4), wood, 0, 0, 0), part(box(0.66, 0.08, 0.16), dark, 0, 0.27, 0), part(box(0.08, 0.3, 0.08), color, 0, 0.42, 0, false), ...eyes);
+  face.position.y = 1.62;
+  const eyes = [part(box(0.12, 0.08, 0.05), color, -0.11, 0.04, 0.22, false), part(box(0.12, 0.08, 0.05), color, 0.11, 0.04, 0.22, false)];
+  face.add(part(box(0.56, 0.48, 0.42), carved, 0, 0, 0), part(box(0.7, 0.09, 0.18), dark, 0, 0.29, 0), part(box(0.1, 0.36, 0.1), color, 0, 0.5, 0, false), ...eyes);
   root.add(low, face);
   const ring = ringDecal(skill.def.look.color, 0.8, 12);
   ring.position.y = 0.03;
-  ring.scale.setScalar(0.62);
+  ring.scale.setScalar(0.7);
   root.add(ring);
   return { root, face, eyes, ring };
 }
@@ -205,7 +213,7 @@ export class TotemEffect extends EffectBase {
       body.face.position.z = nod * 0.06;
       for (const e of body.eyes) e.scale.setScalar(1 + nod * 0.8);
       body.ring.rotation.y = t * 1.2;
-      body.ring.scale.setScalar(0.62 * (1 + 0.06 * Math.sin(t * 4)));
+      body.ring.scale.setScalar(0.7 * (1 + 0.06 * Math.sin(t * 4)));
     };
     combat.actors.add(actor);
     this.actor = actor;
