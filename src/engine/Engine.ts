@@ -565,7 +565,15 @@ export class Engine {
     }
     this.camera.teleport(game.cameraTarget(this.context));
     this.updateView(0);
-    await this.renderer.precompile();
+    // Compile the new level's pipelines with the loop stopped: precompile renders into the
+    // pixel pass's MRT target, and a frame drawn meanwhile would build the output pipeline
+    // against that target (invalid on WebGPU, GL errors on WebGL 2).
+    this.renderer.setAnimationLoop(null);
+    try {
+      await this.renderer.precompile();
+    } finally {
+      if (!this.disposed) this.renderer.setAnimationLoop((t) => this.tick(t));
+    }
     this.ready = true;
   }
 
