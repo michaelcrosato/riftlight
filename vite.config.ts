@@ -28,7 +28,7 @@ export default defineConfig({
     target: 'es2022',
     rolldownOptions: {
       // Two pages: the game and the Animation Lab (/lab.html).
-      input: { main: 'index.html', lab: 'lab.html' },
+      input: { main: 'index.html', lab: 'lab.html', tree: 'tree.html' },
       output: {
         codeSplitting: {
           groups: [
