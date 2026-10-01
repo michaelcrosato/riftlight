@@ -55,6 +55,7 @@ export interface FootPlacementTuning {
   /** Fade in / out (s). */
   fadeIn: number;
   fadeOut: number;
+
   /** Smoothing rates (1/s): a foot's terrain offset, the pelvis drop, the slope pitch. */
   footRate: number;
   dropRate: number;
@@ -93,7 +94,7 @@ export const FOOT_PLACEMENT_DEFAULTS: FootPlacementTuning = {
   minNormalY: 0.55,
   maxDrop: 0.36,
   maxRaise: 0.45,
-  fadeIn: 0.05,
+  fadeIn: 0,
   fadeOut: 0.1,
   footRate: 22,
   dropRate: 30,
@@ -289,8 +290,9 @@ export class FootPlacement {
       this.started = true;
     }
     this.lastRoot.copy(root);
-    const fade = input.ik ? T.fadeIn : T.fadeOut;
-    this.weight = fade > 0 ? approach(this.weight, input.ik ? 1 : 0, dt / fade) : input.ik ? 1 : 0;
+    const ik = input.ik;
+    const fade = ik ? T.fadeIn : T.fadeOut;
+    this.weight = fade > 0 ? approach(this.weight, ik ? 1 : 0, dt / fade) : ik ? 1 : 0;
     if (this.weight <= 0) {
       this.reset();
       this.started = true;
@@ -298,7 +300,7 @@ export class FootPlacement {
     }
     // eased, so joints start and stop following the corrections gently
     const w = this.weight * this.weight * (3 - 2 * this.weight);
-    const locking = input.lock && input.ik && this.weight >= 0.999;
+    const locking = input.lock && ik && this.weight >= 0.999;
     this.model.updateMatrixWorld(true);
     const M = this.model.matrixWorld;
     const L = this.legs;
@@ -311,7 +313,7 @@ export class FootPlacement {
       f.pts[0].copy(f.mPts[0]).applyMatrix4(M);
       f.pts[1].copy(f.mPts[1]).applyMatrix4(M);
       for (let i = 0; i < 2; i++) f.h[i] = f.pts[i]!.y - root.y;
-      if (!input.ik) continue;
+      if (!ik) continue;
       let same = true;
       let id = -1;
       let ny = 1;
@@ -382,8 +384,10 @@ export class FootPlacement {
       f.gw += (root.y + rel - f.gw) * k(T.footRate);
       f.gr += (rel - f.gr) * k(T.footRate);
       const smooth = root.y + planted * (f.gw - root.y) + (1 - planted) * f.gr;
-      // out of the ground: at once for a swinging foot (a riser), gently for a planted one
-      const out = Number.isFinite(floor) ? Math.max(smooth, Math.min(root.y + floor, f.uw + (planted > 0.5 ? T.liftRate * dt : Infinity))) : smooth;
+      // out of the ground: at once for a swinging foot or a step edge under it, gently for a
+      // planted one a blend pushed in a little
+      const edge = gh !== null && gt !== null && Math.abs(gt - gh) > 0.05 && !same;
+      const out = Number.isFinite(floor) ? Math.max(smooth, Math.min(root.y + floor, f.uw + (planted > 0.5 && !edge ? T.liftRate * dt : Infinity))) : smooth;
       f.used = clamp(out - root.y, -T.maxDrop, T.maxRaise);
       f.uw = root.y + f.used;
     }
@@ -392,7 +396,7 @@ export class FootPlacement {
     // nor pulls it down; it is lifted over the terrain instead)
     let dropTarget = 0;
     for (const f of this.feet) dropTarget = Math.min(dropTarget, f.used * f.planted);
-    if (input.ik) {
+    if (ik) {
       const body = root.y + clamp(dropTarget, -T.maxDrop, 0);
       this.bodyY = this.fresh ? body : this.bodyY + (body - this.bodyY) * k(T.dropRate);
       this.drop = clamp(this.bodyY - root.y, -T.maxDrop, 0);

@@ -177,7 +177,8 @@ window.__FILM = (() => {
         // the ground under the sole's centre, as a plane (its normal), so a foot flat on a slope
         // reads as on the ground, not half in it
         const hit = e.physics.castRay(new V(cx / pos.count, top + 0.3, cz / pos.count), down, 3, noTags, hero.body);
-        if (!hit || hit.normal.y < 0.3) return { verts, ground: null, h: null };
+        // (a ray that starts inside something, e.g. a tree trunk the foot is in, finds no floor)
+        if (!hit || hit.normal.y < 0.3 || hit.distance < 0.01) return { verts, ground: null, h: null };
         const n = hit.normal, p = hit.point;
         const h = [];
         for (let i = 0; i < verts.length; i += 3) h.push(+(verts[i + 1] - (p.y - (n.x * (verts[i] - p.x) + n.z * (verts[i + 2] - p.z)) / n.y)).toFixed(4));

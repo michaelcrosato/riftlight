@@ -165,6 +165,8 @@ export class PlatformerCharacter {
   private readonly groundProbe: GroundProbe = (x, y, z, maxDown, out: GroundHit) => this.physics.castDown(x, y, z, maxDown, out, IGNORE, this.body);
   /** Procedural layers' inputs, reused every frame, and what they remember between frames. */
   private readonly procedural: ProceduralInput = { lean: { roll: 0, pitch: 0 }, look: 0, impact: 0, feet: { ik: false, lock: false, speed: 0 } };
+  /** Foot placement as it was before the last fixed step (see fixedUpdate). */
+  private readonly feetBefore = { ik: false, lock: false };
   private lastYaw: number | null = null;
   private lastVisualSpeed = 0;
   private accel = 0;
@@ -264,6 +266,10 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ main step
 
   fixedUpdate(dt: number, input: MoveInput): void {
+    // what the feet were doing where this step starts: the model is drawn between there and
+    // where it ends (render interpolation), so foot placement follows whichever is closer
+    this.feetBefore.ik = this.feetIK();
+    this.feetBefore.lock = feetMode(this) === 'lock';
     this.clock += dt;
     this.stateTime += dt;
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
@@ -600,11 +606,16 @@ export class PlatformerCharacter {
     }
     anim.play(a, a.fade ?? T.visual.fade);
     this.anim = anim.dominant(a);
-    anim.update(dt, this.proceduralInput(model, dt));
+    anim.update(dt, this.proceduralInput(model, dt, alpha));
+  }
+
+  /** Foot placement on: a state with feet, on the ground (through brief no-ground moments: autosteps, edges). */
+  private feetIK(): boolean {
+    return !!feetMode(this) && (this.grounded || this.coyote < T.ground.coyote || this.state === 'jump');
   }
 
   /** The procedural layers' inputs for this frame (numbers in tuning.ts `visual`). */
-  private proceduralInput(model: Object3D, dt: number): ProceduralInput {
+  private proceduralInput(model: Object3D, dt: number, alpha: number): ProceduralInput {
     const V = T.visual;
     const def = stateDef(this.state);
     const p = this.procedural;
@@ -642,8 +653,11 @@ export class PlatformerCharacter {
     this.impactTime += dt;
     const t = this.impactTime;
     p.impact = feet && this.grounded ? this.impactStrength * (t < V.impactRise ? smooth(t / V.impactRise) : 1 - smooth((t - V.impactRise) / V.impactFall)) : 0;
-    p.feet.ik = !!feet && (this.grounded || this.state === 'jump');
-    p.feet.lock = feet === 'lock';
+    // the model is drawn closer to where the last fixed step started, or where it ended: a
+    // landing (or a launch) shows on the frame the drawn feet reach (or leave) the ground
+    const before = alpha < 0.5;
+    p.feet.ik = before ? this.feetBefore.ik : this.feetIK();
+    p.feet.lock = before ? this.feetBefore.lock : feet === 'lock';
     p.feet.speed = speed;
     return p;
   }
