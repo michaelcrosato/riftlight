@@ -137,7 +137,8 @@ export class PlaytestBot {
     let td = Infinity;
     for (const m of monsters) {
       if ((this.blocked.get(m.actor.id) ?? -1) > this.frame) continue; // can't get to it (across a pit): later
-      const d = m.actor.position.distanceTo(p) - (m.rank === 'boss' ? 3 : 0); // bosses first when close
+      // bosses first when close; summoners (and necromancer elites) before the adds they keep calling
+      const d = m.actor.position.distanceTo(p) - (m.rank === 'boss' ? 3 : 0) - (calls(m) ? 6 : 0);
       if (d < td) {
         td = d;
         target = m;
@@ -413,6 +414,12 @@ export class PlaytestBot {
     }
     return true;
   }
+}
+
+/** A monster that keeps adding monsters: a summoner, or an elite with Necromancer. */
+function calls(m: MonsterHandle): boolean {
+  const g = m.genome as Partial<MonsterHandle['genome']> | undefined;
+  return !!g && (g.archetype === 'summoner' || (g.elite ?? []).includes('necromancer'));
 }
 
 function walkable(L: LayoutLike, c: { x: number; z: number }): boolean {
