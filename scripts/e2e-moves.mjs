@@ -68,9 +68,10 @@ export const MOVES = [
     return { ok: s.state === 'walk' && ['Tiptoe', 'Walk'].includes(s.anim), detail: s };`],
   ['skid turn', `
     await T.place([-4, 0, 6]);
-    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300); T.set(['KeyD'], false);
-    T.set(['KeyA'], true); const r = await T.until(h => h.state === 'skid', 800); T.set(['KeyA'], false);
-    return { ok: r.ok, detail: r.seen };`],
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300);
+    T.set(['KeyA'], true); T.set(['KeyD'], false); // straight into reverse (letting go alone would brake)
+    const r = await T.until(h => h.state === 'skid', 800); const turned = await T.until(h => Math.sin(h.facing) < -0.7, 1500); T.set(['KeyA'], false);
+    return { ok: r.ok && turned.ok, detail: { skid: r.seen, turned: turned.seen } };`],
   ['brake to a stop from a run', `
     await T.place([-6, 0, 10], Math.PI / 2);
     T.set(['KeyD'], true); await T.until(h => h.state === 'run' && h.speed > 5.5, 2500); T.set(['KeyD'], false);
@@ -113,8 +114,8 @@ export const MOVES = [
     return { ok: k === 'LongJump', detail: k };`],
   ['side flip (skid + jump)', `
     await T.place([-6, 0, 10], Math.PI / 2);
-    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300); T.set(['KeyD'], false);
-    T.set(['KeyA'], true); await T.until(h => h.state === 'skid', 800); await T.tap('Space'); const k = T.snap().jumpKind; T.set(['KeyA'], false);
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300);
+    T.set(['KeyA'], true); T.set(['KeyD'], false); await T.until(h => h.state === 'skid', 800); await T.tap('Space'); const k = T.snap().jumpKind; T.set(['KeyA'], false);
     await T.until(h => h.grounded && h.state !== 'jump', 2500);
     return { ok: k === 'SideFlip', detail: k };`],
   ['crouch + crouch walk', `

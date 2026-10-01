@@ -58,8 +58,11 @@ interface Panel {
 }
 
 export function renderCurves(model: Object3D, rig: RigSpec, def: ClipDef, clip: AnimationClip, options: CurveOptions = {}): SheetImage {
-  const cycles = options.cycles ?? (def.loop ? 2 : 1);
-  const span = def.frames * cycles;
+  const cycles = Math.max(1, Math.round(options.cycles ?? (def.loop ? 2 : 1)));
+  const unknown = (options.joints ?? []).filter((j) => !rig.joints.includes(j));
+  if (unknown.length) throw new Error(`unknown joint(s) ${unknown.join(', ')}; the rig has ${rig.joints.join(', ')}`);
+  // a previous version of a different length is drawn on its own frames, not cut off
+  const span = Math.max(def.frames, options.compare?.def.frames ?? 0) * cycles;
   const step = 0.5;
   const times = Array.from({ length: Math.round(span / step) + 1 }, (_, i) => i * step);
   const wrap = (f: number) => (def.loop ? f % def.frames : Math.min(f, def.frames));

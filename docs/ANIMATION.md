@@ -88,13 +88,15 @@ and hot-reloads on save.
 (easing in or out, hang time); spread dots mean fast. Even spacing everywhere is robotic.
 
 **Versions**: every `sheet` and `curves` run saves the clip to `.scratch/anim/history/`. So
-`--compare` and `diff` always refer to the last *different* version you rendered.
+`--compare` and `diff` always refer to the last *different* version you rendered. If the
+length changed, `diff` compares the two on a scaled timeline: its frame numbers are on the
+longer version's frames.
 
 **Film** (`npm run film`, `scripts/film.ts`): the real game in Chromium, advanced one exact
 1/60 s frame at a time with `Engine.step()`, driven by a small input script:
 
 - `npm run film -- list` shows the named scenarios:
-  - run-stop, skid, jump, triple-jump, backflip, long-jump, side-flip
+  - idle, walk, run-stop, skid, jump, run-jump, triple-jump, backflip, long-jump, side-flip
   - crouch, crawl, punches, ground-pound, dive, lie-down, sit, stairs, ledge, climb, hard-land
 - Several names run in one browser session. `all` films every scenario.
 - A scenario is just a script. You can pass your own:
@@ -124,6 +126,9 @@ and hot-reloads on save.
   - `--look snes`
   - `--webgpu` (under xvfb)
   - `--preview` (serve the production build)
+  - `--cols` (filmstrip columns)
+  - `--out` and `--name` (where the files go)
+  - `--verbose` (progress and page console)
 
 Other commands:
 

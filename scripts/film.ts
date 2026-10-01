@@ -91,7 +91,7 @@ const jobs: { name: string; script: string }[] = names.every((n) => SCENARIOS[n]
   ? names.map((n) => ({ name: n, script: SCENARIOS[n]! }))
   : [{ name: opt('name', 'custom'), script: target }];
 const view = opt('view', 'side');
-const every = Math.max(1, Number(opt('every', '2')));
+const every = Math.max(1, Math.round(Number(opt('every', '2'))) || 2);
 const outDir = resolve(ROOT, opt('out', '.scratch/film'));
 
 type Cmd = { op: string; keys: string[]; n: number[]; word: string };
@@ -315,11 +315,9 @@ async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<
       if (t % 20 === 0) log(`frame ${t} ${s.state} ${s.anim}`);
       t++;
     };
-    const held = new Set<string>();
     for (const c of cmds) {
       if (c.op === 'place') {
         const [x = 0, y = 0, z = 0, yaw = 0] = c.n;
-        held.clear();
         await page.evaluate(`__FILM.place(${x}, ${y}, ${z}, ${yaw})`);
         recording = true;
         // frame 0: the settled pose
@@ -330,11 +328,7 @@ async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<
       }
       if (!recording) throw new Error('script must start with `place`');
       const set = async (keys: string[], down: boolean) => {
-        for (const k of keys) {
-          await page.evaluate(`__FILM.key(${JSON.stringify(k)}, ${down})`);
-          if (down) held.add(k);
-          else held.delete(k);
-        }
+        for (const k of keys) await page.evaluate(`__FILM.key(${JSON.stringify(k)}, ${down})`);
       };
       if (c.op === 'down') await set(c.keys, true);
       else if (c.op === 'up') await set(c.keys, false);
@@ -636,7 +630,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[]): vo
       for (let y2 = 0; y2 < s.size; y2++) d.set(s.data.subarray(y2 * s.size * 4, (y2 + 1) * s.size * 4), ((y2 + off) * size + off) * 4);
       return { width: size, height: size, data: d };
     });
-    writeFileSync(`${base}.gif`, encodeGif(frames, Math.round((every * 100) / 60), Math.max(1, Math.floor(360 / size))));
+    writeFileSync(`${base}.gif`, encodeGif(frames, (every * 100) / 60, Math.max(1, Math.floor(360 / size))));
     written.push(`${base}.gif`);
   }
   console.log(`wrote ${written.map((f) => f.replace(`${ROOT}/`, '')).join(', ')}`);

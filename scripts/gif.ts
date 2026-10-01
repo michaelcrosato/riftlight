@@ -7,6 +7,7 @@ export interface GifFrame {
   data: Uint8ClampedArray | Uint8Array;
 }
 
+/** `delayCs` may be fractional (e.g. 3.33 for 30 fps): frames alternate 3/4 cs to keep time. */
 export function encodeGif(frames: GifFrame[], delayCs: number, scale = 1): Buffer {
   const w = frames[0]!.width * scale;
   const h = frames[0]!.height * scale;
@@ -46,8 +47,11 @@ export function encodeGif(frames: GifFrame[], delayCs: number, scale = 1): Buffe
     push((c >> 16) & 0xff, (c >> 8) & 0xff, c & 0xff);
   }
   push(0x21, 0xff, 11, ...Buffer.from('NETSCAPE2.0'), 3, 1, 0, 0, 0); // loop forever
+  let clock = 0;
   for (const f of frames) {
-    push(0x21, 0xf9, 4, 0, delayCs & 0xff, (delayCs >> 8) & 0xff, 0, 0);
+    const delay = Math.round(clock + delayCs) - Math.round(clock);
+    clock += delayCs;
+    push(0x21, 0xf9, 4, 0, delay & 0xff, (delay >> 8) & 0xff, 0, 0);
     push(0x2c);
     u16(0);
     u16(0);

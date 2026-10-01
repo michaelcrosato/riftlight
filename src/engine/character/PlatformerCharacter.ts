@@ -129,6 +129,8 @@ export class PlatformerCharacter {
   private stepAnim: { name: string; t: number } | null = null;
   /** Stick tilt (0..1) last ground step: a gentle tilt tiptoes. */
   private stick = 0;
+  /** The current skid is a brake (stick let go at a run), not a turn-around. */
+  private braking = false;
   private poundDelay = 0;
   private mixer: AnimationMixer | null = null;
   private readonly actions = new Map<string, AnimationAction>();
@@ -346,9 +348,16 @@ export class PlatformerCharacter {
     // Skid-turn when reversing at speed; brake (the same skid) when letting go at a run.
     if (!input.face && mag > 0.2 && this.speed > 4.5) {
       const want = Math.atan2(input.move.x, input.move.z);
-      if (Math.abs(angleDiff(want, this.facing)) > 2.3) return this.enter('skid');
+      if (Math.abs(angleDiff(want, this.facing)) > 2.3) {
+        this.braking = false;
+        return this.enter('skid');
+      }
     }
-    if (!input.face && mag < 0.1 && this.state === 'run' && this.speed > 5) return this.enter('skid');
+    // (never toward a drop: letting go near an edge stops short, as before)
+    if (!input.face && mag < 0.1 && this.state === 'run' && this.speed > 5 && this.groundAhead(0.9)) {
+      this.braking = true;
+      return this.enter('skid');
+    }
 
     const max = input.walk ? 2.2 : this.runSpeed;
     this.groundMove(dt, input, max, 45);
@@ -382,7 +391,13 @@ export class PlatformerCharacter {
   }
 
   private stepSkid(dt: number, input: MoveInput): void {
-    this.decel(dt, 18);
+    // Skidding off an edge: fall, with the same grace period as walking off one.
+    if (!this.grounded) {
+      this.coyote += dt;
+      if (this.coyote > 0.1) return this.startFall();
+    } else this.coyote = 0;
+    this.decel(dt, this.braking ? 28 : 18);
+    if (this.braking && !this.groundAhead(0.35)) this.decel(dt, 60); // don't brake over an edge
     this.move(dt);
     const want = input.move.lengthSq() > 0.04 ? Math.atan2(input.move.x, input.move.z) : null;
     const reversing = want !== null && Math.abs(angleDiff(want, this.facing)) > 1.6;
@@ -398,6 +413,7 @@ export class PlatformerCharacter {
       this.enter(want !== null ? 'walk' : 'idle');
     }
   }
+
 
 
   private stepCrouch(dt: number, input: MoveInput): void {
@@ -1029,9 +1045,10 @@ export class PlatformerCharacter {
 
   /** Tooling: every clip currently contributing to the pose, with its blend weight and time (s). */
   animationMix(): { name: string; weight: number; time: number; rate: number }[] {
-    return [...this.actions.values()]
-      .filter((a) => a.isScheduled() && a.getEffectiveWeight() > 0.001)
-      .map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight(), time: a.time, rate: a.getEffectiveTimeScale() }));
+    const active = [...this.actions.values()].filter((a) => a.isScheduled() && a.getEffectiveWeight() > 0.001);
+    // three normalises weights that sum past 1, so report the shares it actually uses
+    const total = Math.max(1, active.reduce((sum, a) => sum + a.getEffectiveWeight(), 0));
+    return active.map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight() / total, time: a.time, rate: a.getEffectiveTimeScale() }));
   }
 
   clipDuration(name: string, fallback: number): number {
@@ -1103,7 +1120,7 @@ export class PlatformerCharacter {
     this.play(a.name, a.fade ?? 0.12, a.speed ?? 1, a.once ?? false);
     for (const [action, f] of this.fades) {
       f.t += dt;
-      const u = Math.min(1, f.t / f.duration);
+      const u = f.duration > 0 ? Math.min(1, f.t / f.duration) : 1;
       action.setEffectiveWeight(f.from + (f.to - f.from) * u);
       if (u < 1) continue;
       this.fades.delete(action);
@@ -1130,6 +1147,8 @@ export class PlatformerCharacter {
       }
     }
     // A loop that is still fading out keeps its time (no restart); anything else starts over.
+    // (a one-shot re-entered mid fade-out restarts its time but keeps its weight: dropping
+    // the weight instead would leave the total under 1, which three fills with the bind pose)
     const w0 = next.isScheduled() ? next.getEffectiveWeight() : 0;
     if (once || w0 <= 0.001) {
       next.reset();
@@ -1142,7 +1161,7 @@ export class PlatformerCharacter {
     next.clampWhenFinished = once;
     next.enabled = true;
     next.play();
-    if (fade > 0) {
+    if (fade > 0 && w0 < 1) {
       next.setEffectiveWeight(w0);
       this.fades.set(next, { from: w0, to: 1, t: 0, duration: fade * (1 - w0) });
     } else {

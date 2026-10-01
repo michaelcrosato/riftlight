@@ -8,11 +8,13 @@
 //   curves <clip...> [opts]      PNG motion curves (graph editor) → .scratch/anim/<clip>.curves.png
 //        --joints ArmR,LegL  --cycles 1  --width 900
 //   diff <clip...>               what changed since the previous version you rendered
+//                                (frames are on the longer version's timeline, scaled)
 //   overview [clip...]           one PNG, a side-view strip per clip → .scratch/anim/overview.png
 //   pose <clip> <frame>          JSON: authored joint rotations + world positions at that frame
 //
 // Options for every command: --json (machine-readable output), --out <dir>.
-// sheet and curves take --compare: draw the previous version of the clip in grey. Every
+// sheet and curves take --compare: draw the previous version of the clip (magenta skeleton
+// and paths on sheets, grey curves). Every
 // sheet/curves run records the clip in .scratch/anim/history/, so "previous" is the last
 // *different* version you rendered.
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
@@ -332,4 +334,8 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
-await main();
+try {
+  await main();
+} catch (e) {
+  fail(e instanceof Error ? e.message : String(e));
+}

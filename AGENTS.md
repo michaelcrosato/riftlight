@@ -64,7 +64,7 @@ isolated clips can't.
 | `src/engine/render/filters.ts` | TSL post filters (palettes, dither, CRT, LCD, VHS, …) |
 | `src/engine/camera.ts` | Camera presets: iso, topdown, side, third, first, free/fixed |
 | `src/engine/character/` | `PlatformerCharacter` moveset + default key map |
-| `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, metrics, contact sheets |
+| `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, metrics, contact sheets, motion curves |
 | `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`animations.ts`) |
 | `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
 | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF) |

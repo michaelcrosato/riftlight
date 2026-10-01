@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Vector3 } from 'three/webgpu';
+import { AnimationClip, Object3D, Vector3, VectorKeyframeTrack } from 'three/webgpu';
 import { Physics, RAPIER } from '../physics/Physics';
 import { type MoveInput, PlatformerCharacter } from './PlatformerCharacter';
 
@@ -134,5 +134,80 @@ describe('PlatformerCharacter', () => {
     expect(body.translation().z).toBeLessThan(-3);
     run(p, h, inp(), 2);
     expect(Math.abs(body.linvel().z)).toBeLessThan(0.5);
+  });
+
+  it('brakes (skids) to a stop when the stick is let go at a run', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    run(p, h, inp({ move: new Vector3(0, 0, 1) }), 60);
+    const z0 = h.feet.z;
+    const seen = run(p, h, inp(), 90);
+    expect(seen).toContain('skid');
+    expect(h.state).toBe('idle');
+    expect(h.feet.z - z0).toBeLessThan(1.2);
+  });
+
+  it('turn-around skid + jump is a side flip; brake + jump is a normal jump', async () => {
+    for (const [move, kind] of [[new Vector3(0, 0, -1), 'SideFlip'], [new Vector3(), 'Jump']] as const) {
+      const p = await setup();
+      const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+      run(p, h, inp({ move: new Vector3(0, 0, 1) }), 60);
+      run(p, h, inp({ move }), 4);
+      expect(h.state).toBe('skid');
+      run(p, h, inp({ move, jump: true, jumpHeld: true }), 1);
+      expect(h.jumpKind).toBe(kind);
+    }
+  });
+
+  it('never brakes off a ledge, and never jumps from mid-air after running off one', async () => {
+    let braked = 0;
+    for (const release of [0.4, 0.8, 1.2, 1.6, 2.2]) {
+      const p = await Physics.create();
+      box(p, [0, -0.5, 0], [2, 0.5, 4]); // platform ends at z = 4
+      box(p, [0, -10.5, 0], [40, 0.5, 40]);
+      const h = new PlatformerCharacter(p, { position: [0, 0, -3.5] });
+      run(p, h, inp(), 10);
+      let k = 0;
+      while (h.feet.z < 4 - release && k++ < 300) run(p, h, inp({ move: new Vector3(0, 0, 1) }), 1);
+      const seen = run(p, h, inp(), 120);
+      if (seen.has('fall')) expect(seen).not.toContain('skid'); // too close to stop: run off, don't skid off
+      else expect(h.feet.y).toBeGreaterThan(-0.05);
+      if (seen.has('skid')) braked++;
+    }
+    expect(braked).toBeGreaterThan(0); // far enough from the edge, it does brake
+    // off the edge at a run: a late jump press does nothing
+    const p = await Physics.create();
+    box(p, [0, -0.5, 0], [2, 0.5, 4]);
+    box(p, [0, -10.5, 0], [40, 0.5, 40]);
+    const h = new PlatformerCharacter(p, { position: [0, 0, -3.5] });
+    run(p, h, inp(), 10); // settle onto the platform
+    let k = 0;
+    while (h.grounded && k++ < 300) run(p, h, inp({ move: new Vector3(0, 0, 1) }), 1);
+    run(p, h, inp(), 12); // past the coyote time
+    expect(h.grounded).toBe(false);
+    const air = run(p, h, inp({ jump: true, jumpHeld: true }), 2);
+    expect(air).not.toContain('jump');
+  });
+
+  it('blend weights stay finite and complete through fast state changes, even with dt = 0', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    const model = new Object3D();
+    const joint = new Object3D();
+    joint.name = 'J';
+    model.add(joint);
+    const clip = (name: string, y: number) => new AnimationClip(name, 1, [new VectorKeyframeTrack('J.position', [0, 1], [0, y, 0, 0, y, 0])]);
+    h.attachModel(model, ['Idle', 'Fall', 'Land', 'Run', 'Walk'].map((n, i) => clip(n, i)));
+    const states = ['fall', 'land', 'fall', 'fall', 'idle', 'run', 'fall', 'land', 'idle'] as const;
+    for (const [i, st] of states.entries()) {
+      for (const dt of [0, 0, DT, i % 2 ? 0 : DT / 3]) {
+        h.state = st;
+        h.updateVisual(model, dt, 1);
+        const mix = h.animationMix();
+        expect(mix.every((m) => Number.isFinite(m.weight))).toBe(true);
+        expect(Number.isFinite(joint.position.y)).toBe(true);
+        expect(mix.reduce((sum, m) => sum + m.weight, 0)).toBeGreaterThan(0.99);
+      }
+    }
   });
 });

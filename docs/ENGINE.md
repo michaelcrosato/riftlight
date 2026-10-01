@@ -242,7 +242,8 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   advance exactly `n` frames of 1/60 s: simulation, animation and camera. Then
   `renderer.capture()` shows the result. Recordings are frame-exact however slowly the
   browser renders. `npm run film` is built on it (see docs/ANIMATION.md). Set
-  `manual = false` to hand time back to the render loop.
+  `manual = false` to hand time back to the render loop. `step()` ignores `paused` and the
+  engine hotkeys (P, R, `, [ ]); it only advances the game.
 - `hero.animationMix()`: the clips currently contributing to the pose, with their blend
   weight, time and rate. Blends are driven by `PlatformerCharacter`, not three's
   `crossFadeFrom`: every outgoing clip fades from the weight it has *now*, and
