@@ -14,6 +14,13 @@ export const SCALING = {
   monsterXp: (level: number) => Math.round(6 * Math.pow(level, 1.35)),
   /** XP needed to go from `level` to `level + 1`. */
   xpToNext: (level: number) => Math.round(40 * Math.pow(level, 2.25) + 60 * level),
+  /**
+   * Hero level a skill or support gem of `gemLevel` needs: fast early (2, 4, 6, 9, 12 …),
+   * gem level 10 at 25 and 20 at 70. Socketed gems earn the XP the hero earns, and
+   * `gemXpToNext` is the hero XP between two requirements, so a gem socketed from the start
+   * is ready for each level just as the hero reaches it.
+   */
+  gemLevelReq: (gemLevel: number) => (gemLevel <= 1 ? 1 : Math.round(1 + 69 * Math.pow((Math.min(20, gemLevel) - 1) / 19, 1.4))),
   /** Gold per normal kill (before rarity/elite multipliers). */
   gold: (depth: number) => Math.round(2 + depth * 1.5 + Math.pow(depth, 1.3)),
   /** Power budget a generator may spend on a monster / pack / level (see GAME.md rule 4). */
@@ -35,3 +42,14 @@ export const RANK = {
   boss: { life: 30, damage: 2, xp: 60, gold: 30, drops: 12 },
 } as const;
 export type Rank = keyof typeof RANK;
+
+/**
+ * Gem XP from `gemLevel` to the next: the hero XP between the two levels' requirements
+ * (`SCALING.gemLevelReq`), so gem levels and their requirements agree. 0 at the cap (20).
+ */
+export function gemXpToNext(gemLevel: number): number {
+  if (gemLevel >= 20) return 0;
+  let xp = 0;
+  for (let l = SCALING.gemLevelReq(gemLevel); l < SCALING.gemLevelReq(gemLevel + 1); l++) xp += SCALING.xpToNext(l);
+  return Math.max(1, xp);
+}

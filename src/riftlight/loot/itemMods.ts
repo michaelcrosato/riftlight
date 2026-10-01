@@ -15,6 +15,7 @@
  * Armour pieces and shields give flat `armour`, `evasion`, `energy.shield`, `block.chance`.
  */
 import { flag, flat, type Mod, type StatSheet } from '../core/mods';
+import { SCALING } from '../core/scaling';
 import { DAMAGE_TYPES, type DamageType, type Item, type ItemBase } from '../core/types';
 import { AFFIXES, BASES, UNIQUES } from './content';
 
@@ -186,10 +187,10 @@ export function applyEquipment(sheet: StatSheet, equipment: Equipment): void {
 
 /**
  * Level needed to equip: uniques use their level; other items their base level or 80% of
- * their highest affix tier's level, whichever is higher. Gems need 1 + 3 per gem level.
+ * their highest affix tier's level, whichever is higher. Gems: `SCALING.gemLevelReq`.
  */
 export function requiredLevel(item: Item): number {
-  if (item.gem) return Math.max(1, 1 + (item.gem.level - 1) * 3);
+  if (item.gem) return SCALING.gemLevelReq(item.gem.level);
   const base = baseOf(item);
   if (base.slot === 'currency') return 0;
   if (item.unique) return UNIQUES.get(item.unique).level;

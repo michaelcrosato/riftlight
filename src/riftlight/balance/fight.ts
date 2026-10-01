@@ -6,6 +6,7 @@
 import type { Mod, StatSheet } from '../core/mods';
 import type { Defender } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
+import { SCALING } from '../core/scaling';
 import { MINION_BASE, MINION_STRIKE } from '../combat/minions';
 import { LEECH_RATE } from '../combat/tuning';
 import { MONSTER_SKILLS } from '../monsters/brains/skills';
@@ -17,8 +18,15 @@ import type { BuildArchetype } from './builds';
 import { skillDps } from './dps';
 import { heroSheet, minionSheet, monsterSheet, type HeroSetup, type MonsterInput, type RecordingSheet } from './sheets';
 
-/** Highest gem level a hero of `level` can equip (loot: gems need 1 + 3 per gem level). */
-export const gemLevelFor = (level: number): number => Math.max(1, Math.min(MAX_GEM_LEVEL, Math.floor((level - 1) / 3) + 1));
+/**
+ * Highest gem level a hero of `level` can equip (`SCALING.gemLevelReq`). Gems earn the hero's
+ * XP and their XP curve follows the requirement, so a gem socketed from the start is there.
+ */
+export const gemLevelFor = (level: number): number => {
+  let g = 1;
+  while (g < MAX_GEM_LEVEL && SCALING.gemLevelReq(g + 1) <= level) g++;
+  return g;
+};
 
 export interface HeroLoadout {
   readonly build: BuildArchetype;

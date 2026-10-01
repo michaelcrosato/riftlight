@@ -265,6 +265,15 @@ export class RealLoot implements LootPort {
     save.hero.skills = this.store.skills.map((x) => ({ ...x, supports: [...x.supports] }));
   }
 
+  setSockets(skills: SaveData['hero']['skills']): void {
+    this.quiet++;
+    try {
+      this.store.setSkills(normalizeSockets(skills));
+    } finally {
+      this.quiet--;
+    }
+  }
+
   give(rng: Rng, level: number, rarity: Rarity = 'rare'): Item | null {
     const item = rollItem(rng, { itemLevel: Math.max(1, level), rarity });
     const r = pickUp(this.store.state, item);

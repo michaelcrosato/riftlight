@@ -17,6 +17,7 @@ import { describeMod } from '../core/mods';
 import type { Rank } from '../core/scaling';
 import type { DifficultyTuning } from '../core/types';
 import type { Menu } from '../ui/menu';
+import { gemProgress, normalizeSockets } from '../loot/sockets';
 import { type BotIntent, type BotReport, PlaytestBot } from './bot';
 import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
@@ -205,6 +206,15 @@ export function createApi(game: Riftlight) {
     const s = game.session;
     return { depth: ss.depth, cleared: ss.outcome === 'cleared', time: +ss.time.toFixed(2), frames: ss.frames, deaths: ss.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome: ss.outcome };
   };
+  /** Socketed gems: id, level, XP toward the next level (0..1) and whether it waits on the hero's level. */
+  const gems = () =>
+    normalizeSockets(game.save.hero.skills).flatMap((sock) =>
+      [sock.gem, ...sock.supports].flatMap((g, i) => {
+        if (!g?.gem) return [];
+        const p = gemProgress(g, game.save.hero.level)!;
+        return [{ slot: sock.slot, link: i - 1, id: g.gem.id, support: g.gem.support, level: p.level, xp: p.xp, next: p.next, fraction: +p.fraction.toFixed(3), waiting: p.waiting }];
+      }),
+    );
   const runBot = (o: { maxFrames?: number } = {}): BotReport => {
     botStart();
     return botAdvance(o.maxFrames ?? 60 * 60 * 3).report;
@@ -383,6 +393,7 @@ export function createApi(game: Riftlight) {
     log(n = 50) {
       return game.log.slice(-n);
     },
+    gems,
     bot: {
       run: runBot,
       start: botStart,

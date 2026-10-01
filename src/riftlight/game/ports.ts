@@ -361,6 +361,8 @@ export interface LootPort {
   /** Restore from / write into a save. */
   load(save: SaveData): void;
   write(save: SaveData): void;
+  /** The shell changed the skill sockets (gems earned XP or levelled): take them as they are (optional). */
+  setSockets?(skills: SaveData['hero']['skills']): void;
   /** Dev / agent API: create an item. */
   give(rng: Rng, level: number, rarity?: Item['rarity']): Item | null;
   /** Counts for the HUD and the bot. */

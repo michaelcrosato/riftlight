@@ -31,7 +31,7 @@ import { LOOT_SOUNDS } from '../../loot/data/sounds';
 import { itemClass, itemColour } from '../../loot/filter';
 import { addItem, dropAt, emptyGrid, equip, equipItem, findItem, type Grid, gridOf, itemAt, itemSize, type LootState, removeItem, replaceItem, setGrid, STASH_TABS, transfer, unequip } from '../../loot/inventory';
 import { baseOf, EQUIP_SLOTS, type EquipSlot, isEquipment, requiredLevel } from '../../loot/itemMods';
-import { autoSocket, gemAt, isGem, setSocket, SKILL_SLOTS, skillNumbers, socketBlocker, SUPPORT_LINKS, supportApplies, type SkillNumbers } from '../../loot/sockets';
+import { autoSocket, gemAt, gemProgress, isGem, setSocket, SKILL_SLOTS, skillNumbers, socketBlocker, SUPPORT_LINKS, supportApplies, type SkillNumbers } from '../../loot/sockets';
 import { buy, buyPrice, sell, sellPrice, type VendorKind } from '../../loot/vendor';
 import { SKILLS } from '../../skills/actives';
 import { miniRows, type UiEvent } from '../kit';
@@ -1230,6 +1230,15 @@ export class ItemsUi {
       p.rect(a.x + a.w, a.y + 9, 3 + SUPPORT_LINKS * 13 - 3, 1, sock.gem ? PALETTE.slate : UI.cellEdge);
       this.drawSocket(p, a, sock.gem, cur, s, -1);
       for (let l = 0; l < SUPPORT_LINKS; l++) this.drawSocket(p, this.socketRect(s, l), sock.supports[l] ?? null, cur, s, l, sock.gem && sock.supports[l] ? supportApplies(sock, sock.supports[l]!) === false : false);
+      // gem XP: a bar under every socketed gem (full and orange while it waits on the hero's level)
+      for (let l = -1; l < SUPPORT_LINKS; l++) {
+        const gem = l < 0 ? sock.gem : (sock.supports[l] ?? null);
+        const prog = gem ? gemProgress(gem, this.store.heroLevel) : null;
+        if (!prog) continue;
+        const g = this.socketRect(s, l);
+        p.rect(g.x, g.y + g.h, g.w, 1, PALETTE.night);
+        p.rect(g.x, g.y + g.h, Math.max(prog.xp > 0 ? 1 : 0, Math.round(g.w * prog.fraction)), 1, prog.max ? PALETTE.sand : prog.waiting ? PALETTE.orange : PALETTE.cyan);
+      }
       const n = nums[s];
       const tx = r.x + 72;
       const chars = Math.floor((r.x + r.w - 3 - tx + 1) / 4);
@@ -1243,16 +1252,20 @@ export class ItemsUi {
     // details of the selected slot: a pocket `npm run combat -- dps`
     const top = r.y + HEADER + 2 + SKILL_SLOTS * 21 + 1;
     p.rect(r.x + 4, top, r.w - 8, 1, PALETTE.slate);
-    const lines = this.skillLines(nums[this.skillSlot] ?? null, Math.floor((r.w - 10) / 6));
+    const lines = this.skillLines(nums[this.skillSlot] ?? null, Math.floor((r.w - 10) / 6), this.store.skills[this.skillSlot]?.gem ?? null);
     lines.slice(0, 6).forEach((l, i) => p.text(r.x + 5, top + 4 + i * 9, l.text, l.color));
   }
 
   /** The detail lines for one slot (also the skill panel's test surface). */
-  skillLines(n: SkillNumbers | null, chars = 20): { text: string; color: number }[] {
+  skillLines(n: SkillNumbers | null, chars = 20, gem: Item | null = null): { text: string; color: number }[] {
     if (!n) {
       return [{ text: `SKILL ${this.skillSlot + 1}: EMPTY`, color: UI.dim }, ...wrapChars(this.narrow ? 'HOLD A GEM IN YOUR BAG TO SOCKET IT' : 'RIGHT-CLICK A GEM IN YOUR BAG TO SOCKET IT', chars).map((t) => ({ text: t, color: PALETTE.slate }))];
     }
-    const out: { text: string; color: number }[] = [{ text: `${n.name.toUpperCase()} LV${n.level}`.slice(0, chars), color: UI.title }];
+    // the gem's XP toward its next level when it fits on the title line
+    const prog = gem ? gemProgress(gem, this.store.heroLevel) : null;
+    const title = `${n.name.toUpperCase()} LV${n.level}`;
+    const xp = !prog ? '' : prog.max ? ' MAX' : prog.waiting ? ` NEEDS L${prog.nextReq}` : ` ${Math.floor(prog.fraction * 100)}%XP`;
+    const out: { text: string; color: number }[] = [{ text: (title.length + xp.length <= chars ? title + xp : title).slice(0, chars), color: UI.title }];
     if (n.hit > 0) {
       out.push({ text: `HIT ${fmt(n.hit)} ${(n.types[0] ?? '').toUpperCase()}`.slice(0, chars), color: PALETTE.white });
       out.push({ text: `DPS ${fmt(n.dps)} ${fmt(n.hitsPerSecond)}/S`.slice(0, chars), color: PALETTE.lime });
@@ -1372,7 +1385,7 @@ export class ItemsUi {
               ? `${right}: take out`
               : undefined;
     let extra: { text: string; color: number }[] | undefined;
-    if (t.kind === 'socket' && t.link < 0) extra = this.skillLines(this.numbers()[t.slot] ?? null, 30).slice(1);
+    if (t.kind === 'socket' && t.link < 0) extra = this.skillLines(this.numbers()[t.slot] ?? null, 30, item).slice(1);
     else if (t.kind === 'socket') {
       const ok = supportApplies(this.store.skills[t.slot]!, item);
       if (ok === false) extra = [{ text: `Doesn't support ${this.store.skills[t.slot]!.gem!.name}`, color: UI.bad }];

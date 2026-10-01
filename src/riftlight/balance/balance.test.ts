@@ -61,8 +61,9 @@ describe('balance: sheets and scaling', () => {
     expect(skillDps(off.sheet, off.skill, t.defender).hit!.critMultiplier).toBeCloseTo(2.5);
   });
 
-  it('gives the highest gem level the hero can equip', () => {
-    expect([1, 3, 4, 31, 60, 100].map(gemLevelFor)).toEqual([1, 1, 2, 11, 20, 20]);
+  it('gives the highest gem level the hero can equip (SCALING.gemLevelReq)', () => {
+    expect([1, 3, 4, 31, 60, 100].map(gemLevelFor)).toEqual([1, 2, 3, 11, 18, 20]);
+    for (const level of [1, 7, 25, 70]) expect(SCALING.gemLevelReq(gemLevelFor(level))).toBeLessThanOrEqual(level);
   });
 });
 

@@ -92,6 +92,25 @@ export async function runRiftlight(h) {
     check(rs.monsters.killed === rs.monsters.total && rs.monsters.total > 0, `killed every monster with the basic attack (${rs.monsters.killed}/${rs.monsters.total} in ${fight.frames} frames)`);
     check(rs.cleared && rs.exitOpen, `the level is clear and the portal open (cleared ${rs.cleared}, exit ${rs.exitOpen})`);
     check(rs.hero.xp > 0 || rs.hero.level > 1, `XP gained (level ${rs.hero.level}, xp ${rs.hero.xp})`);
+
+    // ---------------------------------------------------------------- gem XP: socketed gems earn the hero's XP and level up
+    const gemsAfterFight = await R(() => window.__RIFTLIGHT__.gems());
+    const cleave0 = gemsAfterFight.find((g) => g.id === 'cleave');
+    check(!!cleave0 && (cleave0.xp > 0 || cleave0.level > 1) && gemsAfterFight.every((g) => g.xp > 0 || g.level > 1), `every socketed gem earned XP from the kills (${gemsAfterFight.map((g) => `${g.id} L${g.level} ${g.xp}/${g.next}`).join(', ')})`);
+    const gemUp = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const before = rl.gems().find((g) => g.id === 'cleave');
+      const heroBefore = rl.state().hero.level;
+      rl.give({ levels: 3 }); // three hero levels' XP: the gem earns it too and meets its next requirement
+      const after = rl.gems().find((g) => g.id === 'cleave');
+      const saved = rl.game.save.hero.skills[0].gem.gem;
+      const slot = rl.game.hero.hc?.slots?.[0];
+      return { before, after, heroBefore, hero: rl.state().hero.level, saved, slot: slot ? { id: slot.id, level: slot.level } : null, notes: rl.log(40).filter((l) => l.type === 'gem').map((l) => l.text), bag: rl.game.ports.loot.store.skills[0].gem.gem.level };
+    });
+    check(gemUp.after.level > gemUp.before.level, `a gem levelled up with the hero (cleave ${gemUp.before.level} → ${gemUp.after.level}, hero ${gemUp.heroBefore} → ${gemUp.hero})`);
+    check(gemUp.notes.some((t) => t.startsWith(`cleave level ${gemUp.after.level}`)), `the level-up was announced (${gemUp.notes.join('; ')})`);
+    check(gemUp.saved.level === gemUp.after.level && gemUp.bag === gemUp.after.level && gemUp.saved.xp === gemUp.after.xp, `the save and the skill panel carry the gem's level and XP (save L${gemUp.saved.level} ${gemUp.saved.xp} xp, panel L${gemUp.bag})`);
+    check(!gemUp.slot || (gemUp.slot.id === 'cleave' && gemUp.slot.level >= gemUp.after.level), `the skill bar re-slotted at the new level (${JSON.stringify(gemUp.slot)})`);
     const gold0 = rs.hero.gold;
     // Real drops: gold falls from about half the kills and the fight walks over most of it.
     // (The real loot, skills and tree flows are in e2e-riftlight-items.mjs.)
