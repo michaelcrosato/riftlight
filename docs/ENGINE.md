@@ -445,8 +445,8 @@ ctx.lights.describe();   // every request with its score, slot and fade level
   and is unit-tested in `lights.test.ts`; the `riftlight-levels` e2e suite checks a constant
   8 lights in the scene and **zero new node builds** while 24 requests move and change
   colour, on WebGPU and the WebGL 2 fallback.
-- **Cost.** CPU: one pass over the requests per frame, ~0.1 ms for 60+ requests (the timer's
-  resolution). GPU: every lit fragment loops over all `size` lights, so cost grows linearly
+- **Cost.** CPU: one pass over the requests per frame, 0.02–0.07 ms for 60–67 requests
+  (average of 200 updates, measured by the e2e suite). GPU: every lit fragment loops over all `size` lights, so cost grows linearly
   with the pool, which is why quality caps it; the scene renders at the art resolution
   (480×270 ≈ 130 k fragments), so even 16 lights are cheap on real GPUs. Measured on
   SwiftShader (CPU rendering, shared machine, noisy), median ms per captured level frame on

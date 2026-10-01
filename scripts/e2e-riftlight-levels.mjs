@@ -8,7 +8,7 @@
 //   build      the level builds (layout, critical path, mechanics) and renders a lit frame
 //   lights     the light pool keeps a constant number of PointLights (quality medium: 8);
 //              moving and recolouring many light requests compiles no new shaders; the
-//              pool's CPU update stays well under a millisecond
+//              pool's CPU update (average of 200) stays under a millisecond
 //   walk       the placeholder hero walks start → exit along the critical path with
 //              Engine.step (frame-exact), lights follow (the pool re-assigns), no errors
 //   portal     killing the boss opens the exit portal (levelClear) and the hero takes it
@@ -64,7 +64,7 @@ export async function runRiftlightLevels(h) {
         const hero = lab.hero.position;
         const reqs = [];
         for (let i = 0; i < 24; i++) reqs.push(e.lights.request({ position: [hero.x + Math.cos(i) * 4, 1.5, hero.z + Math.sin(i) * 4], color: 0xff0000 + i * 0x0a0a, intensity: 4 + (i % 5), radius: 5, flicker: i % 2 ? 'torch' : 'spell' }));
-        let maxUpdate = 0;
+        let maxUpdate;
         const assigned0 = e.lights.stats().assignments;
         // Only the lights change between these frames (the game doesn't advance), so any
         // new node build here would be the lights' fault.
@@ -75,9 +75,13 @@ export async function runRiftlightLevels(h) {
             r.intensity = 3 + ((i + k) % 7);
           }
           for (let f = 0; f < 8; f++) e.lights.update(1 / 60, hero, 20);
-          maxUpdate = Math.max(maxUpdate, e.lights.stats().updateMs);
           await e.renderer.capture();
         }
+        // CPU cost: the average over many updates (single samples are at the timer's 0.1 ms
+        // resolution and catch GC pauses on a busy machine).
+        const t0 = performance.now();
+        for (let f = 0; f < 200; f++) e.lights.update(1 / 60, hero, 20);
+        maxUpdate = (performance.now() - t0) / 200;
         const after = nodes();
         const st = e.lights.stats();
         for (const r of reqs) r.release();
@@ -88,7 +92,7 @@ export async function runRiftlightLevels(h) {
       check(lights.requests > lights.size0 && lights.lit === 8, `${label}${lights.requests} light requests share the 8 lights (${lights.lit} lit)`);
       check(lights.reassigned > 0, `${label}moving requests re-assign lights (${lights.reassigned} hand-overs)`);
       check(lights.before > 0 && lights.after === lights.before, `${label}moving + recolouring lights compiles no shaders (node builds ${lights.before} → ${lights.after})`);
-      check(lights.maxUpdate < 2, `${label}pool update costs ${lights.maxUpdate.toFixed(3)} ms CPU`);
+      check(lights.maxUpdate < 1, `${label}pool update costs ${lights.maxUpdate.toFixed(3)} ms CPU per frame (${lights.requests} requests, average of 200)`);
 
       // ---------------------------------------------------------- walk start → exit
       const walk = await E(async () => {
