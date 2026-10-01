@@ -33,7 +33,7 @@ export type MoveState =
   | 'dive' | 'bellySlide' | 'groundPound' | 'groundPoundLand'
   | 'hang' | 'pullUp' | 'climb'
   | 'push' | 'grab' | 'pull'
-  | 'slide' | 'attack' | 'emote';
+  | 'slide' | 'attack' | 'emote' | 'bonk';
 
 export type JumpKind = 'Jump' | 'JumpUp' | 'DoubleJump' | 'TripleJump' | 'Backflip' | 'SideFlip' | 'LongJump' | 'WallKick' | 'JumpKick';
 
@@ -79,6 +79,10 @@ const IGNORE = ['character'];
 /** Spawn/teleport this far above the given feet height: starting in exact contact with the
  *  ground can leave Rapier's KCC with a degenerate contact (it stops moving). */
 const SPAWN_LIFT = 0.03;
+/** Running into a wall faster than this (m/s, the part of the velocity into the wall) bonks. */
+const BONK_SPEED = 5;
+/** Obstacles that reach this high above the feet are walls; lower ones are steps (autostep 0.4). */
+const WALL_CHECK_HEIGHT = 0.45;
 
 interface Ledge {
   y: number;
@@ -111,6 +115,10 @@ export class PlatformerCharacter {
   private readonly runSpeed: number;
   private laneZ: number | null;
   private readonly prevFeet = new Vector3();
+  private readonly collision = new RAPIER.CharacterCollision();
+  private readonly tmpFeet = new Vector3();
+  private readonly tmpOrigin = new Vector3();
+  private readonly tmpDir = new Vector3();
   private peakY = 0;
   private lastLandTime = -1;
   private lastJump: JumpKind | null = null;
@@ -167,8 +175,13 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ queries
 
   get feet(): Vector3 {
+    return this.feetInto(new Vector3());
+  }
+
+  /** `feet` without allocating: writes the feet position into `target`. */
+  feetInto(target: Vector3): Vector3 {
     const t = this.body.translation();
-    return new Vector3(t.x, t.y - HALF[this.stance] - RADIUS, t.z);
+    return target.set(t.x, t.y - HALF[this.stance] - RADIUS, t.z);
   }
 
   interpolatedFeet(alpha: number): Vector3 {
@@ -256,6 +269,7 @@ export class PlatformerCharacter {
       case 'land':
       case 'groundPoundLand':
       case 'hardLand':
+      case 'bonk':
         this.decel(dt, 30);
         this.move(dt);
         if (this.stateTime > this.lockDuration()) this.enter(input.crouch && this.state !== 'hardLand' ? 'crouch' : 'idle');
@@ -370,6 +384,7 @@ export class PlatformerCharacter {
     const beforeY = this.prevFeet.y;
     this.move(dt);
     if (!this.grounded) return; // handled next step (coyote)
+    if (this.wallHeadOn && this.wallHit > BONK_SPEED && !input.face && !this.wallIsInteractive()) return this.bonk();
     const dy = this.feet.y - beforeY;
     if (this.speed < 4.5 && this.speed > 0.3) {
       if (dy > 0.08) this.stepAnim = { name: 'StepUp', t: 0.25 };
@@ -377,7 +392,11 @@ export class PlatformerCharacter {
     }
 
     const s = this.speed;
-    if (s < 0.3 && mag < 0.1) {
+    if (s < 0.3 && mag >= 0.1 && this.wallHit > 0) {
+      // Walking into a wall: stand against it instead of walking on the spot.
+      if (this.state !== 'idle') this.enter('idle');
+      this.idleTime = 0;
+    } else if (s < 0.3 && mag < 0.1) {
       if (this.state !== 'idle' && this.state !== 'teeter') this.enter('idle');
       this.idleTime += dt;
       const teeter = !this.groundAhead(0.45);
@@ -450,6 +469,18 @@ export class PlatformerCharacter {
       return;
     }
     this.enter(side === 'front' ? 'getUpFront' : 'getUp');
+  }
+
+  /** Ran into a wall at speed: stop dead and reel back (Mario's bonk). */
+  private bonk(): void {
+    this.hvel.set(0, 0, 0);
+    this.enter('bonk');
+  }
+
+  /** The wall hit by the last move is something to push, grab or climb (not a bonk). */
+  private wallIsInteractive(): boolean {
+    const c = this.wallCollider;
+    return !!c && ['pushable', 'grabbable', 'climbable'].some((t) => this.physics.hasTag(c, t));
   }
 
   private startEmote(clip: string): void {
@@ -940,7 +971,7 @@ export class PlatformerCharacter {
       this.hvel.lerp(target, 1 - Math.exp(-12 * dt));
       return;
     }
-    let speed = this.speed;
+    let speed = this.speed + this.wallSlip;
     if (mag > 0.1) {
       const want = Math.atan2(input.move.x, input.move.z);
       const rate = speed < 2 ? turnRate * 1.6 : turnRate;
@@ -959,8 +990,23 @@ export class PlatformerCharacter {
   }
 
   private lastBonk = false;
+  /** Speed (m/s) the last move lost against a wall: the part of the velocity into it. */
+  private wallHit = 0;
+  private wallCollider: RAPIER.Collider | null = null;
+  /**
+   * Speed the last move lost sliding along a wall at a glancing angle. groundMove builds on
+   * it again, so steering along a wall doesn't bleed the run away step after step; the
+   * realised `speed` is still the slower slide.
+   */
+  private wallSlip = 0;
+  private wallHeadOn = false;
 
-  /** Sweep the capsule by the current velocity with Rapier's KCC. */
+  /**
+   * Sweep the capsule by the current velocity with Rapier's KCC. Walls the KCC slid along
+   * take away the part of the velocity that points into them, so `speed` (and every
+   * decision built on it: run, skid, long and triple jumps, playback rates) is the speed
+   * the character really moves at. Steps and slopes don't count as walls.
+   */
   private move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
     if (gravity && !this.isAirborne() && this.state !== 'climb') this.vy = Math.min(this.vy, 0) + GRAVITY * dt;
     const desired = { x: this.hvel.x * dt, y: this.vy * dt, z: this.hvel.z * dt };
@@ -973,8 +1019,40 @@ export class PlatformerCharacter {
     this.grounded = this.kcc.computedGrounded();
     this.lastBonk = desired.y > 0 && m.y < desired.y * 0.5;
     if (this.grounded && this.vy < 0 && !this.isAirborne()) this.vy = 0;
+    this.loseSpeedToWalls();
     const t = this.body.translation();
     this.body.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z });
+  }
+
+  private loseSpeedToWalls(): void {
+    this.wallHit = 0;
+    this.wallCollider = null;
+    this.wallSlip = 0;
+    const before = this.speed;
+    for (let i = 0, n = this.kcc.numComputedCollisions(); i < n; i++) {
+      const c = this.kcc.computedCollision(i, this.collision);
+      if (!c?.collider || Math.abs(c.normal1.y) > 0.3) continue; // floor, ceiling or slope
+      const len = Math.hypot(c.normal1.x, c.normal1.z);
+      const nx = c.normal1.x / len; // out of the wall, toward the character
+      const nz = c.normal1.z / len;
+      const into = -(this.hvel.x * nx + this.hvel.z * nz);
+      if (into <= 1e-4) continue;
+      // A riser the autostep climbs is not a wall: walls still stand above step height.
+      const feet = this.feetInto(this.tmpFeet);
+      this.tmpOrigin.set(feet.x, feet.y + WALL_CHECK_HEIGHT, feet.z);
+      this.tmpDir.set(-nx, 0, -nz);
+      const wall = this.physics.castRay(this.tmpOrigin, this.tmpDir, RADIUS + 0.15, IGNORE, this.body);
+      if (!wall || Math.abs(wall.normal.y) > 0.3) continue;
+      this.hvel.x += nx * into;
+      this.hvel.z += nz * into;
+      if (into > this.wallHit) {
+        this.wallHit = into;
+        this.wallCollider = c.collider;
+      }
+    }
+    // Head-on (within ~30°) the wall stops you; at a glancing angle you slide along it.
+    this.wallHeadOn = this.wallHit > 0 && this.wallHit >= before * 0.87;
+    if (this.wallHit > 0 && !this.wallHeadOn) this.wallSlip = before - this.speed;
   }
 
   private setFeet(feet: Vector3, immediate = false): void {
@@ -1010,7 +1088,7 @@ export class PlatformerCharacter {
     if (state !== this.state) this.stateTime = 0;
     if (state !== 'idle' && state !== 'teeter') this.idleTime = 0;
     this.state = state;
-    const standing = ['idle', 'walk', 'run', 'skid', 'jump', 'fall', 'hang', 'climb', 'push', 'grab', 'pull', 'emote', 'land', 'hardLand', 'slide'];
+    const standing = ['idle', 'walk', 'run', 'skid', 'jump', 'fall', 'hang', 'climb', 'push', 'grab', 'pull', 'emote', 'land', 'hardLand', 'slide', 'bonk'];
     if ((standing.includes(state) || (state === 'attack' && this.attackStep !== 3)) && this.stance !== 'stand') {
       if (!this.setStance('stand')) this.setStance('crouch');
     }
@@ -1023,6 +1101,7 @@ export class PlatformerCharacter {
       case 'groundPoundLand': return this.clipDuration('GroundPoundLand', 0.5);
       case 'getUp': return this.clipDuration('GetUp', 0.8);
       case 'getUpFront': return this.clipDuration('GetUpFront', 0.7);
+      case 'bonk': return this.clipDuration('Hurt', 0.67);
       default: return 0.3;
     }
   }
@@ -1106,6 +1185,7 @@ export class PlatformerCharacter {
       case 'slide': return { name: 'Slide' };
       case 'attack': return { name: this.attackClip(), once: true, fade: 0.04 };
       case 'emote': return { name: this.emoteClip, once: true };
+      case 'bonk': return { name: 'Hurt', once: true, fade: 0.1 };
     }
   }
 

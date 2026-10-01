@@ -47,6 +47,7 @@ export const SCENARIOS: Record<string, string> = {
   idle: 'place 0 0 4 90; wait 120',
   walk: 'place -6 0 10 90; hold D+SHIFT 70; wait 30',
   'run-stop': 'place -6 0 10 90; hold D 75; wait 45',
+  bonk: 'place -3 0 13 90; hold S+D 70; wait 30',
   skid: 'place -6 0 10 90; down D; wait 45; up D; hold A 30; wait 30',
   jump: 'place 0 0 4 90; tap SPACE; until land 90; wait 30',
   'run-jump': 'place -6 0 10 90; down D; wait 35; tap SPACE; until land 90; wait 20; up D; wait 30',

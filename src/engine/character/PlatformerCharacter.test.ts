@@ -189,6 +189,50 @@ describe('PlatformerCharacter', () => {
     expect(air).not.toContain('jump');
   });
 
+  it('running into a wall loses the speed into it and bonks; walking into it stands', async () => {
+    const p = await setup();
+    box(p, [0, 1.5, -6], [3, 1.5, 0.5]); // wall face at z = -5.5
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    h.facing = Math.PI;
+    const seen = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 60);
+    expect(seen).toContain('run');
+    expect(seen).toContain('bonk');
+    expect(h.feet.z).toBeGreaterThan(-5.25);
+    expect(h.speed).toBeLessThan(0.3);
+    // still holding into the wall after the bonk: stands against it, never runs on the spot
+    const after = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 60);
+    expect(after).not.toContain('run');
+    expect(after).not.toContain('walk');
+    expect(h.state).toBe('idle');
+    expect(h.speed).toBeLessThan(0.3);
+    // at a glancing angle the wall only takes the part of the speed that points into it
+    const g = new PlatformerCharacter(p, { position: [-2.5, 0, -4.9] });
+    g.facing = Math.PI;
+    run(p, g, inp({ move: new Vector3(0.6, 0, -0.8) }), 50);
+    expect(g.state).toBe('run');
+    expect(g.speed).toBeGreaterThan(3);
+  });
+
+  it('steps and slopes are not walls: running up them keeps its speed', async () => {
+    for (const stairs of [true, false]) {
+      const p = await setup();
+      if (stairs) for (let i = 0; i < 5; i++) box(p, [3 + 0.8 * i, 0.14 * (i + 1), 0], [0.4, 0.14 * (i + 1), 2]);
+      else {
+        const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(5, 0, 0).setRotation({ x: 0, y: 0, z: Math.sin(0.2), w: Math.cos(0.2) }));
+        p.world.createCollider(RAPIER.ColliderDesc.cuboid(3, 0.3, 3), b);
+      }
+      const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+      h.facing = Math.PI / 2;
+      let slowest = Infinity;
+      for (let k = 0; k < 70; k++) {
+        run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
+        if (k > 15) slowest = Math.min(slowest, h.speed);
+      }
+      expect(h.feet.y).toBeGreaterThan(0.5);
+      expect(slowest).toBeGreaterThan(6);
+    }
+  });
+
   it('blend weights stay finite and complete through fast state changes, even with dt = 0', async () => {
     const p = await setup();
     const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
