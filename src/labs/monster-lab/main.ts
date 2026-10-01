@@ -66,6 +66,8 @@ class MonsterLab implements Game {
   children: Shown[] = [];
   parentB: Genome | null = null;
   mode: 'single' | 'grid' = 'single';
+  /** Grid spacing of the evolve view (m). */
+  spacing = 2;
   seed: string | number = 1;
   options: GenomeOptions = {};
   clip = 'Idle';
@@ -172,7 +174,7 @@ class MonsterLab implements Game {
       return this.parentB && i % 3 === 2 ? crossover(m, this.parentB, r.fork('x')) : m;
     });
     this.children = genomes.map((g) => this.make(g));
-    const spacing = Math.max(1.8, ...this.children.map((c) => c.built.radius * 2.6));
+    const spacing = (this.spacing = Math.max(1.8, ...this.children.map((c) => c.built.radius * 2.6)));
     this.children.forEach((c, i) => {
       c.built.object.position.set(((i % 3) - 1) * spacing, 0, (Math.floor(i / 3) - 1) * spacing);
       c.runtime.play(c.built.clipNames.includes(this.clip) ? this.clip : 'Idle', { fade: 0 });
@@ -262,9 +264,11 @@ class MonsterLab implements Game {
   // ------------------------------------------------------------- view
 
   frame(): void {
-    const h = this.mode === 'grid' ? Math.max(...this.children.map((c) => c.built.height)) : this.current.built.height;
-    const r = this.mode === 'grid' ? Math.max(...this.children.map((c) => c.built.radius * 2.6)) * 1.6 : this.current.built.radius;
-    const d = Math.max(3.2, h * 2.6, r * 3.4);
+    const grid = this.mode === 'grid';
+    const h = grid ? Math.max(...this.children.map((c) => c.built.height)) : this.current.built.height;
+    const r = this.current.built.radius;
+    // grid: fit the 3×3 spacing (30° fov → ~3.7 m tall per 7 m away), single: the monster
+    const d = grid ? Math.max(6, this.spacing * 5.2, h * 3) : Math.max(3.2, h * 2.6, r * 3.4);
     const cam: CameraConfig = { preset: 'fixed', projection: 'perspective', fov: 30, position: [d * 0.62, h * 0.55 + d * 0.42, d * 0.78], target: [0, h * 0.42, 0] };
     this.ctx.engine.setCamera(cam);
   }
