@@ -2,7 +2,8 @@
  * Render quality presets. Pure data + decisions (no DOM, no three.js): unit-tested.
  *
  * The pixel pipeline is cheap by design (the scene and every art-pixel filter render at
- * the art resolution), so quality only trades the shadow map size. `auto` picks `low` on
+ * the art resolution), so quality trades the shadow map size and the number of dynamic
+ * point lights (`ctx.lights`, render/lights.ts). `auto` picks `low` on
  * phones/tablets and `medium` elsewhere, then lowers it once if the first seconds of play
  * run well below the frame-rate target.
  */
@@ -14,6 +15,8 @@ export const QUALITY_LEVELS: readonly QualityLevel[] = ['low', 'medium', 'high']
 export interface QualitySettings {
   /** Directional-light shadow map size (texels per side). */
   readonly shadowMapSize: number;
+  /** Real point lights in the dynamic light pool (`ctx.lights`); constant per level. */
+  readonly lights: number;
 }
 
 /**
@@ -21,9 +24,9 @@ export interface QualitySettings {
  * pixels: 512² is about one shadow texel per art pixel, 1024² is finer than the art can show.
  */
 export const QUALITY: Readonly<Record<QualityLevel, QualitySettings>> = {
-  low: { shadowMapSize: 256 },
-  medium: { shadowMapSize: 512 },
-  high: { shadowMapSize: 1024 },
+  low: { shadowMapSize: 256, lights: 4 },
+  medium: { shadowMapSize: 512, lights: 8 },
+  high: { shadowMapSize: 1024, lights: 16 },
 };
 
 /** Starting level for `auto`: phones and tablets (coarse pointer, no hover) start low. */

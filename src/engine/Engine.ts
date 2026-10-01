@@ -26,6 +26,7 @@ import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
 import { FILTER_IDS, FILTER_PRESETS, getFilter } from './render/filters';
+import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 
 export interface GameContext {
@@ -44,6 +45,11 @@ export interface GameContext {
   readonly particles: Particles;
   /** Pixel HUD text and icons in art pixels (src/engine/hud). */
   readonly hud: Hud;
+  /**
+   * Dynamic point lights: `lights.request({ position, color, intensity, radius, flicker })`
+   * (src/engine/render/lights.ts). A fixed pool sized by quality, created on first use.
+   */
+  readonly lights: LightPool;
 }
 
 /**
@@ -184,6 +190,8 @@ export class Engine {
   readonly hud: Hud;
   debug: DebugUI | null = null;
   touch: TouchControls | null = null;
+  /** The dynamic light pool, created on first use of `ctx.lights` / `engine.lights`. */
+  private _lights: LightPool | null = null;
   /** Active engine hotkeys (from EngineOptions.debugKeys). */
   debugKeys: DebugKeyMap = resolveDebugKeys();
   private _game: Game;
@@ -244,6 +252,7 @@ export class Engine {
     this._game = game;
     const clock = () => this.time;
     const rig = () => this.camera;
+    const lights = () => this.lights;
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
     this.hud = new Hud(renderer.container);
     this.context = {
@@ -262,6 +271,9 @@ export class Engine {
       audio: this.audio,
       particles: this.particles,
       hud: this.hud,
+      get lights() {
+        return lights();
+      },
     };
 
     this.cameraUpdate = {
@@ -317,6 +329,19 @@ export class Engine {
     this._paused = value;
   }
 
+  /**
+   * The dynamic light pool (render/lights.ts), engine-owned: its lights stay in the scene
+   * across levels, so loading another level never changes the light count (no recompiles).
+   * Created on first use; sized by quality.
+   */
+  get lights(): LightPool {
+    if (!this._lights) {
+      this._lights = new LightPool({ size: QUALITY[this._quality].lights, parent: this.scene });
+      this._lights.group.userData.engineOwned = true;
+    }
+    return this._lights;
+  }
+
   /** The quality level in use (see `EngineOptions.quality`). */
   get quality(): QualityLevel {
     return this._quality;
@@ -326,6 +351,7 @@ export class Engine {
     this._quality = level;
     this.sun.shadow.mapSize.setScalar(QUALITY[level].shadowMapSize); // the shadow map resizes itself
     this.shadowRadius = 0; // re-fit (texel snapping depends on the map size)
+    this._lights?.resize(QUALITY[level].lights); // one recompile of lit materials
   }
 
   /** Frame cap of the render loop (0 = display rate). */
@@ -664,6 +690,7 @@ export class Engine {
     this.audio.stopMusic();
     this.particles.clear();
     this.hud.clear();
+    this._lights?.clear();
     clearScene(this.scene);
     this.physics.clear();
     this.input.reset();
@@ -754,6 +781,14 @@ export class Engine {
     if (!this.ready) return;
     this.particles.update(dt);
     this.updateView(dt);
+    this._lights?.update(dt, this.camera.focus, this.lightRange());
+  }
+
+  /** How far from the camera focus a light can matter: half the view diagonal. */
+  private lightRange(): number {
+    const cam = this.camera.camera;
+    if (cam instanceof OrthographicCamera) return 0.5 * Math.hypot(cam.right - cam.left, cam.top - cam.bottom) / cam.zoom + 2;
+    return 24;
   }
 
   /** Camera follow + shadow box for the current game state. */

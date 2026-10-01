@@ -67,8 +67,11 @@ and 273 → 16 ms on the WebGL 2 fallback.
   shadows), perspective presets a box reaching ~29 units ahead of the camera. It moves in
   whole shadow texels, with a slope-scaled depth bias in texels so every map size is
   acne-free.
+- **Dynamic lights.** `ctx.lights` is a fixed pool of `PointLight`s shared by any number of
+  light requests (see *Dynamic lights* under Game systems).
 - **Quality** (`EngineOptions.quality`, `?quality=`, `engine.setQuality()`): the shadow map
-  size, `low` 256² · `medium` 512² · `high` 1024². At the iso art scale 512² is about one
+  size, `low` 256² · `medium` 512² · `high` 1024², and the dynamic light pool, `low` 4 ·
+  `medium` 8 · `high` 16 point lights. At the iso art scale 512² is about one
   shadow texel per art pixel. `auto` (default) starts `low` on touch devices and `medium`
   elsewhere, then lowers once if the first ~3 s of play run below 75% of the frame-rate
   target (straight to `low` below 40%). `engine.quality` is the level in use.
@@ -400,6 +403,56 @@ offsets from the `anchor` (`top-left` default, `top`, `top-right`, `left`, `cent
 `bottom-left`, `bottom`, `bottom-right`); `hud.measure(text, scale)` gives the size. It only
 repaints when the content or layout changed, and `renderer.capture()` does not include it.
 
+### Dynamic lights (`src/engine/render/lights.ts`)
+
+Torches, spells, projectiles, loot beams and glowing monsters all want a light, but every
+light a toon material sees is compiled into its shader: adding or removing lights
+recompiles every lit material. `ctx.lights` (`LightPool`) solves both: it keeps a **fixed
+number of real `PointLight`s** in the scene (quality `low` 4 · `medium` 8 · `high` 16, unused
+ones at intensity 0) and hands them, every frame, to the most important of any number of
+**light requests**.
+
+```ts
+const torch = ctx.lights.request({
+  position: [3, 1.6, 4], color: 0xffa040, intensity: 6, radius: 7, // radius = PointLight.distance
+  flicker: 'torch',                       // none | torch | candle | brazier | pulse | strobe | spell
+});
+torch.position.set(4, 1.6, 4);            // move it, recolour it: uniforms only, no recompiles
+torch.update({ color: 0xff4040, intensity: 9 });
+torch.release();                          // fades out, frees its light
+
+ctx.lights.request({ follow: projectileMesh, color: 0xffb060, intensity: 6, priority: 3 }); // follows an object
+ctx.lights.request({ position: at, color: 0xffffff, intensity: 14, radius: 9, lifetime: 0.4, fadeIn: 0.02 }); // a flash
+ctx.lights.stats();      // { size, requests, lit, assignments, waiting, updateMs }
+ctx.lights.describe();   // every request with its score, slot and fade level
+```
+
+- **Assignment.** Each frame a request scores `intensity × priority × proximity` to the
+  camera focus (`1 / (1 + (d / max(4, radius))²)`, zero beyond the visible range + its
+  radius). The top `size` requests get a light. A request that already holds one scores
+  ×1.35 (**hysteresis**), so two similar torches never trade a light back and forth.
+- **No pops.** A light changes hands only after its old owner has **faded out**
+  (`fadeOut`, default 0.2 s, twice as fast while a new request waits); the new owner
+  **fades in** (`fadeIn`, 0.25 s). Fades are smoothstepped; levels never jump by more than
+  `dt / fade` per frame (unit-tested).
+- **Priority** puts important lights first: the hero's light 8, a projectile 3, a loot beam 2,
+  a torch 1. `lifetime` releases flashes by themselves. `follow` + `offset` track an object.
+- **Engine-owned.** The pool is created on first use of `ctx.lights` and stays in the scene
+  across `loadGame` (its requests are released on unload), so a new level never changes the
+  light count. `engine.setQuality()` resizes it: one recompile of lit materials, on purpose.
+  `new LightPool({ size, parent })` + `pool.update(dt, focus, range)` makes a private one.
+- **Logic is pure.** `LightAssigner` (the slot/fade/hysteresis logic) has no three.js in it
+  and is unit-tested in `lights.test.ts`; the `riftlight-levels` e2e suite checks a constant
+  8 lights in the scene and **zero new node builds** while 24 requests move and change
+  colour, on WebGPU and the WebGL 2 fallback.
+- **Cost.** CPU: one pass over the requests per frame, 0.02–0.07 ms for 60–67 requests
+  (average of 200 updates, measured by the e2e suite). GPU: every lit fragment loops over all `size` lights, so cost grows linearly
+  with the pool, which is why quality caps it; the scene renders at the art resolution
+  (480×270 ≈ 130 k fragments), so even 16 lights are cheap on real GPUs. Measured on
+  SwiftShader (CPU rendering, shared machine, noisy), median ms per captured level frame on
+  the WebGL 2 fallback: 0 lights ~67–84, 8 lights ~101, 16 lights ~116–133; WebGPU on
+  SwiftShader varied more between runs than between pool sizes.
+
 ### Triggers and collision events
 
 ```ts
@@ -554,6 +607,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   - `Engine.step()` manual time
   - the tools: `build:single` runs from `file://` with no errors or requests, `film` writes
     its PNG + JSON
+  - `riftlight-levels` (`scripts/e2e-riftlight-levels.mjs`, `@filters`): Riftlight levels 1, 6,
+    12 and a rift build and render, the light pool keeps 8 lights with no shader builds while
+    lights move, the hero walks start → exit with `Engine.step`, the boss opens the portal
   - `systems` (`scripts/e2e-systems.mjs`, in the `@filters` group): HUD framing, audio unlock and
     hero sounds, particles, coin triggers, gamepad, pause, hotkeys, `loadGame` without leaks,
     textured toon materials, `dispose()`, on WebGPU and the WebGL 2 fallback

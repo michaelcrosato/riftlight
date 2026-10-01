@@ -3,6 +3,7 @@ import { Engine, type Game, optionsFromUrl } from './engine';
 import { Playground } from './game/playground';
 import { Sandbox } from './game/sandbox';
 import { LootLab } from './riftlight/loot/lootlab';
+import { LevelLab } from './riftlight/levels/levelLab';
 
 const container = document.getElementById('app')!;
 
@@ -11,6 +12,7 @@ const GAMES: Record<string, () => Game> = {
   playground: () => new Playground(),
   sandbox: () => new Sandbox(),
   lootlab: () => new LootLab(),
+  levellab: () => new LevelLab(), // Riftlight levels: ?game=levellab&depth=N
 };
 const pick = new URLSearchParams(location.search).get('game') ?? 'playground';
 

@@ -60,6 +60,19 @@ export {
   type RenderMode,
 } from './render/PixelRenderer';
 export { ContactShadow } from './render/ContactShadow';
+export {
+  FLICKER_PRESETS,
+  LIGHT_POOL_SIZES,
+  LightAssigner,
+  LightPool,
+  flicker,
+  type AssignItem,
+  type FlickerPreset,
+  type LightHandle,
+  type LightPoolOptions,
+  type LightPoolStats,
+  type LightRequestOptions,
+} from './render/lights';
 export { pixelTexture, toonMaterial, toonify, toonGradient, TOON_BANDS, type ToonMaterialOptions } from './render/toon';
 export {
   analyzeClip,
