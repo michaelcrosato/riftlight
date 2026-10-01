@@ -366,10 +366,17 @@ export class PixelRenderer {
    * Render the current frame through the full pipeline into an offscreen target and read
    * it back. Output is identical to what the canvas presents (same pipeline, same size),
    * so tests and agents can inspect frames even where canvas screenshots don't work.
+   *
+   * Always shows the scene as it is now: pass nodes (the scene / pixelation pass) render
+   * at most once per node frame, which normally advances once per animation frame, so a
+   * capture right after `engine.step()` in a frame that already rendered would get that
+   * earlier render back. Starting a fresh node frame forces the passes to re-render.
    */
   async capture(): Promise<CapturedFrame> {
     const { canvasWidth: width, canvasHeight: height } = this.framing;
     const r = this._renderer;
+    const nodeFrame = (r as unknown as { _nodes?: { nodeFrame?: { frameId: number } } })._nodes?.nodeFrame;
+    if (nodeFrame) nodeFrame.frameId++;
     const target = (this.captureTarget ??= new RenderTarget(width, height, { type: UnsignedByteType, depthBuffer: false }));
     target.setSize(width, height);
     const previous = r.getRenderTarget();

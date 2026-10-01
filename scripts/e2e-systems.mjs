@@ -240,6 +240,24 @@ export async function runSystems(h) {
     check(pad.axisRest.x === 0 && pad.axisRest.y === 0, 'stick deadzone reads as centred');
     check(pad.jumped === 1, 'gamepad A jumps');
 
+    // ---------------------------------------------------------------- capture freshness
+    // renderer.capture() right after engine.step() in a frame the loop already rendered
+    // must show the stepped state, not the frame rendered before the step (npm run film).
+    const fresh = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      e.manual = false;
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); // the loop rendered this frame
+      e.game.hero.teleport([-8.2, 1.4, 0]);
+      e.step(30);
+      const a = await e.renderer.capture();
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const b = await e.renderer.capture();
+      let sum = 0;
+      for (let i = 0; i < a.pixels.length; i += 4) sum += Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]);
+      return sum / (a.pixels.length / 4) / 3;
+    });
+    check(fresh < 0.05, `capture() right after step() shows the stepped frame (diff to a later capture ${fresh.toFixed(3)})`);
+
     // ---------------------------------------------------------------- pause
     await E(() => (window.__PIXEL_ENGINE__.manual = false));
     await waitFrames(page, 5);
@@ -352,13 +370,8 @@ export async function runSystems(h) {
     await ctx?.browser.close();
   }
 
-  /**
-   * Capture after the next animation frame. The scene pass renders at most once per
-   * renderer frame, so a capture issued in the same frame as a previous render (e.g.
-   * right after engine.step()) can show that earlier render.
-   */
+  /** A capture of the current state (renderer.capture() starts a fresh node frame). */
   async function freshCapture(page, file) {
-    await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
     return capture(page, file);
   }
 

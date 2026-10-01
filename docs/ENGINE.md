@@ -504,9 +504,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   `renderer.capture()` shows the result. Recordings are frame-exact however slowly the
   browser renders. `npm run film` is built on it (see docs/ANIMATION.md). Set
   `manual = false` to hand time back to the render loop. `step()` ignores `paused` and the
-  engine hotkeys (P, R, `, [ ], M); it only advances the game. The scene pass renders at
-  most once per animation frame, so wait one `requestAnimationFrame` between a capture and
-  the next if the scene changed in between (the `systems` suite's `freshCapture`).
+  engine hotkeys (P, R, `, [ ], M); it only advances the game. `capture()` always shows the
+  current state: it starts a fresh node frame, so the scene pass re-renders even when the
+  loop already rendered in this animation frame (otherwise passes render once per frame).
 - `?debug=1` shows the debug panel in a production build (it is on by default only in dev);
   `` ` `` creates it on demand. `?game=sandbox` opens the second demo level.
 - `engine.audio.counts` / `.log` (sounds played, even when silent), `engine.particles.alive`,
