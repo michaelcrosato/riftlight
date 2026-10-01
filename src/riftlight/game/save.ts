@@ -97,6 +97,8 @@ export function migrate(raw: unknown): SaveData {
     settings: r.settings && typeof r.settings === 'object' ? (r.settings as Record<string, unknown>) : {},
     codex: arr<string>(r.codex).filter((s) => typeof s === 'string'),
     stats,
+    // grid cells of the inventory and stash (loot keeps items where the player put them)
+    ...(r.positions && typeof r.positions === 'object' && !Array.isArray(r.positions) ? { positions: r.positions as NonNullable<SaveData['positions']> } : {}),
   };
 }
 

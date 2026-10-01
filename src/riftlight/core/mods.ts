@@ -111,6 +111,22 @@ export class StatSheet {
     return out;
   }
 
+  /**
+   * An independent copy: base values, every source and the conditions. Tooltips and tools
+   * ("compared to equipped", skill numbers) change the copy, never the actor's sheet.
+   */
+  clone(): StatSheet {
+    const out = new StatSheet(Object.fromEntries(this.base));
+    for (const [source, mods] of this.sources) out.sources.set(source, mods);
+    for (const c of this.conditions) out.conditions.add(c);
+    return out;
+  }
+
+  /** Every source key currently set (inspectors). */
+  sourceKeys(): string[] {
+    return [...this.sources.keys()];
+  }
+
   /** Every stat name any source mentions. */
   stats(): string[] {
     const s = new Set(this.base.keys());
