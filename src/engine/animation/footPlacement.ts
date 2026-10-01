@@ -86,6 +86,12 @@ export interface FootPlacementTuning {
   liftRate: number;
   /** Largest sideways correction (m) the legs are asked to reach. */
   maxReach: number;
+  /**
+   * A foot moving forward faster than `swingShare` × the body's speed + `swingSpeed` (m/s)
+   * is swinging, even when it passes low: it doesn't lock.
+   */
+  swingShare: number;
+  swingSpeed: number;
 }
 
 export const FOOT_PLACEMENT_DEFAULTS: FootPlacementTuning = {
@@ -110,6 +116,8 @@ export const FOOT_PLACEMENT_DEFAULTS: FootPlacementTuning = {
   lookaheadTime: 0.07,
   liftRate: 0.7,
   maxReach: 0.3,
+  swingShare: 0.75,
+  swingSpeed: 4.5,
 };
 
 export interface FootPlacementInput {
@@ -168,6 +176,11 @@ interface Foot {
   /** Last frame: heel and toe (world x, z, with the correction) and whether either was down. */
   readonly last: [Vector3, Vector3];
   wasDown: boolean;
+  /** Last frame: the sole's middle as the clips placed it (world), and whether that is set. */
+  readonly lastAnim: Vector3;
+  hasLastAnim: boolean;
+  /** Moving forward (along the body's facing) faster than the body: still swinging. */
+  swinging: boolean;
   // per-frame scratch
   readonly ankle: Vector3;
   readonly pts: [Vector3, Vector3];
@@ -218,7 +231,7 @@ export class FootPlacement {
         rest: [upper.quaternion.clone(), lower.quaternion.clone(), foot.quaternion.clone()],
         mAnkle: new Vector3(), mPts: [new Vector3(), new Vector3()], mPitch: 0,
         gw: 0, gr: 0, uw: 0, pitch: 0, ref: -1, ax: 0, az: 0, cx: 0, cz: 0, step: -1, sx: 0, sz: 0,
-        last: [new Vector3(), new Vector3()], wasDown: false,
+        last: [new Vector3(), new Vector3()], wasDown: false, lastAnim: new Vector3(), hasLastAnim: false, swinging: false,
         ankle: new Vector3(), pts: [new Vector3(), new Vector3()], h: [0, 0], g: [null, null], used: 0, planted: 0, lift: 0,
       };
     };
@@ -247,6 +260,7 @@ export class FootPlacement {
       f.cx = f.cz = 0;
       f.step = -1;
       f.wasDown = false;
+      f.hasLastAnim = false;
     }
   }
 
@@ -308,11 +322,18 @@ export class FootPlacement {
 
     // ---- terrain under each foot (where the clips put it); fading out (in the air, say) the
     // last offsets just fade with the weight
+    FWD.set(0, 0, 1).transformDirection(M).setY(0).normalize();
     for (const f of this.feet) {
       f.ankle.copy(f.mAnkle).applyMatrix4(M);
       f.pts[0].copy(f.mPts[0]).applyMatrix4(M);
       f.pts[1].copy(f.mPts[1]).applyMatrix4(M);
       for (let i = 0; i < 2; i++) f.h[i] = f.pts[i]!.y - root.y;
+      // a foot the clips move forward clearly faster than the body is swinging, however low
+      V1.addVectors(f.pts[0], f.pts[1]).multiplyScalar(0.5);
+      const fwd = f.hasLastAnim && dt > 0 ? ((V1.x - f.lastAnim.x) * FWD.x + (V1.z - f.lastAnim.z) * FWD.z) / dt : 0;
+      f.swinging = fwd > (input.speed ?? 0) * T.swingShare + T.swingSpeed;
+      f.lastAnim.copy(V1);
+      f.hasLastAnim = true;
       if (!ik) continue;
       let same = true;
       let id = -1;
@@ -444,14 +465,15 @@ export class FootPlacement {
           f.upper.getWorldPosition(V1);
           V1.y += this.drop;
           const far = V1.distanceTo(V2.set(f.ankle.x + f.cx, f.ankle.y + f.used, f.ankle.z + f.cz)) > (L.upper + L.lower) * 0.97;
-          if ((far || f.cx * f.cx + f.cz * f.cz > T.maxDrift * T.maxDrift) && other.step < 0) {
+          // (one foot at a time, though the next may lift as the last one comes down)
+          if ((far || f.cx * f.cx + f.cz * f.cz > T.maxDrift * T.maxDrift) && (other.step < 0 || other.step > 0.6)) {
             f.ref = -1;
             f.step = 0;
             f.sx = f.cx;
             f.sz = f.cz;
           }
         }
-      } else if (on0 || on1) {
+      } else if ((on0 || on1) && !f.swinging) {
         // touches down: lock where it is now (with whatever correction it still has); a foot
         // that was already on the floor last frame stays where it was then
         f.ref = on0 && (!on1 || e0 <= e1) ? 0 : 1;
