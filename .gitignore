@@ -9,7 +9,7 @@
 CLAUDE.local.md
 
 # Dependencies / build output
-node_modules/
+node_modules
 .venv/
 __pycache__/
 *.pyc

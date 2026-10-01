@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Stop hook: before Claude ends a turn with unshipped work, run the fast checks.
-# On failure, block the stop and hand the failure back so Claude keeps going.
+# Stop hook (.claude/settings.json): before Claude ends a turn with unshipped work, run
+# the fast checks (scripts/check.sh --fast, ~15-20 s). Silent when they pass. On failure,
+# block the stop and hand the failure back so Claude keeps going.
 # Caps itself at 3 blocks per session so it can never loop forever.
 set -uo pipefail
 
@@ -10,9 +11,10 @@ session_id=$(jq -r '.session_id // "unknown"' <<<"$input")
 
 cd "${CLAUDE_PROJECT_DIR:-$(git rev-parse --show-toplevel)}" || exit 0
 
-# Nothing to verify if the tree is clean and nothing is ahead of upstream.
+# Nothing to verify if the tree is clean and nothing is ahead of upstream (or, for a
+# branch never pushed, of the remote default branch).
 dirty=$(git status --porcelain 2>/dev/null)
-ahead=$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)
+ahead=$(git rev-list --count '@{upstream}..HEAD' 2>/dev/null || git rev-list --count 'origin/HEAD..HEAD' 2>/dev/null || git rev-list --count 'origin/main..HEAD' 2>/dev/null || echo 0)
 if [[ -z "$dirty" && "$ahead" == "0" ]]; then
   exit 0
 fi

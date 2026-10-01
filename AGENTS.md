@@ -16,16 +16,21 @@ merge. Optimize for throughput with a green main branch.
    checks fail. For UI or runtime behavior, actually run it.
 5. **Ship**: commit (Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`,
    `refactor:`, `test:`, `ci:`), push, and open a PR. Pushing a `claude/*`
-   branch auto-opens a PR and enables auto-merge (`.github/workflows/autopilot.yml`).
-6. **Drive to green**: CI failures and review comments are your job. Fix and push
-   until the PR merges.
+   branch auto-opens a PR and merges it right away (`.github/workflows/autopilot.yml`).
+   Merges don't wait for CI: there are no required checks, by choice. That is why
+   step 4 matters.
+6. **Drive to green**: CI then runs on `main`. If it goes red, the merge is reverted
+   automatically and the change has to land again with a fix
+   (`.github/workflows/claude-ci-autofix.yml`). CI failures, revert PRs and review
+   issues about your change are your job.
 
 ## Commands
 
 | Task | Command |
 | --- | --- |
-| All checks (lint, types, tests, build) | `scripts/check.sh` |
-| Fast checks only | `scripts/check.sh --fast` |
+| All checks (lint, types, tests, models, clip metrics, build) | `scripts/check.sh` |
+| Fast checks only (Stop hook) | `scripts/check.sh --fast` |
+| Browser e2e (CI runs the groups in parallel) | `npm run build && npm run test:e2e [-- <suite or @group>]` |
 | Install deps | `scripts/session-start.sh` (runs automatically in cloud sessions) |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs
@@ -35,12 +40,13 @@ script and CI pick them up with no extra config.
 
 ## Rules
 
-- **Green main is the only hard rule.** Everything merges through CI.
+- **Green main is the only hard rule.** Everything merges through a PR; CI runs on
+  `main` after each merge and a red `main` is reverted automatically.
 - Never skip, disable, or weaken a test to get green. Fix the cause.
 - Never commit secrets. Use environment variables; document them in `README.md`.
 - Never force-push the default branch or rewrite shared history.
 - Keep PRs focused: one concern per PR. Several small PRs beat one large one.
-- Label a PR `hold` to stop auto-merge on it.
+- Label a PR `hold` to stop Autopilot merging it.
 - If blocked on something only a human can do (credentials, billing, account
   settings), say exactly what is needed in the PR or issue and move on to
   the next task.

@@ -1,5 +1,5 @@
 version: 2
-# Autopilot auto-merges these once CI passes. Add an entry per ecosystem as the stack grows
+# Autopilot merges these right away (CI on main reverts a bad one). Add an entry per ecosystem as the stack grows
 # (npm, uv, gomod, cargo, docker).
 updates:
   - package-ecosystem: github-actions
