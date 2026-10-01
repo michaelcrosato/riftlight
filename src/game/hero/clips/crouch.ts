@@ -175,6 +175,41 @@ export const Sit: ClipDef = {
   notes: 'Sitting on the floor, leaning back on the hands.',
 };
 
+// Sitting down and getting up again: the feet step, they don't slide (a cross-fade from
+// standing to sitting dragged them forward along the floor).
+const SIT_DOWN: Parameters<typeof track>[0] = [
+  [0, STAND_BODY, STAND_FEET],
+  // squat over the feet where they stand
+  [8, { ...CROUCH_BODY, ...arms(-10, 30, 20) }, STAND_FEET, 'out'],
+  // sit back, stepping each foot out in front (lifted, one after the other)
+  [11, { ...CROUCH_BODY, ...pelvis([-6, 0, 0], [0, -0.4, -0.06]), Torso: [24, 0, 0], ...arms(20, 30, 20) }, { R: { z: 0.36, y: 0.08, pitch: -15 }, L: { z: -0.03, pitch: 30, pivot: 'ball' } }],
+  [12, { ...CROUCH_BODY, ...pelvis([-5, 0, 0], [0, -0.43, -0.04]), Torso: [16, 0, 0], ...arms(25, 30, 20) }, { R: { z: 0.46, y: 0.025, pitch: -20, pivot: 'heel' }, L: { z: 0.2, y: 0.08, pitch: -5 } }],
+  [13, { ...SIT_BODY, ...pelvis([-4, 0, 0], [0, -0.46, -0.02]), Torso: [6, 0, 0] }, { R: SIT_FEET.R!, L: { z: 0.32, y: 0.07, pitch: -15 } }],
+  [14, { ...SIT_BODY, ...pelvis([-2, 0, 0], [0, -0.48, -0.01]), Torso: [0, 0, 0] }, { R: SIT_FEET.R!, L: { z: 0.42, y: 0.025, pitch: -20, pivot: 'heel' } }],
+  [16, SIT_BODY, SIT_FEET],
+];
+export const SitDown: ClipDef = {
+  name: 'SitDown',
+  frames: 16,
+  ...track(SIT_DOWN),
+  notes: 'Squats, steps the feet out one at a time and sits.',
+};
+export const StandUp: ClipDef = {
+  name: 'StandUp',
+  frames: 16,
+  ...track([
+    [0, SIT_BODY, SIT_FEET],
+    [2, { ...SIT_BODY, Torso: [24, 0, 0], ...arms(-50, 20, 20) }, SIT_FEET, 'out'],
+    // pull each foot in under the body (lifted, one after the other)
+    [5, { ...SIT_BODY, Torso: [34, 0, 0], ...arms(-60, 20, 20) }, { R: { z: 0.3, y: 0.07, pitch: -10 }, L: SIT_FEET.L! }],
+    [7, { ...CROUCH_BODY, ...pelvis([0, 0, 0], [0, -0.4, -0.04]), Torso: [42, 0, 0], ...arms(-55, 20, 20) }, { R: { z: 0.14 }, L: { z: 0.26, y: 0.07 } }],
+    [9, { ...CROUCH_BODY, ...pelvis([0, 0, 0], [0, -0.32, -0.08]), Torso: [44, 0, 0], ...arms(-50, 20, 20) }, flat(0.14, 0.1)],
+    // and stand up over them
+    [16, STAND_BODY, flat(0.14, 0.1)],
+  ]),
+  notes: 'Leans forward, pulls the feet under one at a time, stands.',
+};
+
 // On the back: pelvis tipped −90, head toward −Z, centred over the physics ball.
 const BACK_BODY: Pose = {
   ...pelvis([-90, 0, 0], [0, 0.2 - 0.62, 0.3]),
@@ -189,15 +224,7 @@ export const LieDown: ClipDef = {
   name: 'LieDown',
   frames: 30,
   ...track([
-    [0, STAND_BODY, STAND_FEET],
-    // squat over the feet where they stand
-    [8, { ...CROUCH_BODY, ...arms(-10, 30, 20) }, STAND_FEET, 'out'],
-    // sit back, stepping each foot out in front (lifted, one after the other)
-    [11, { ...CROUCH_BODY, ...pelvis([-6, 0, 0], [0, -0.4, -0.06]), Torso: [24, 0, 0], ...arms(20, 30, 20) }, { R: { z: 0.36, y: 0.08, pitch: -15 }, L: { z: -0.03, pitch: 30, pivot: 'ball' } }],
-    [12, { ...CROUCH_BODY, ...pelvis([-5, 0, 0], [0, -0.43, -0.04]), Torso: [16, 0, 0], ...arms(25, 30, 20) }, { R: { z: 0.46, y: 0.025, pitch: -20, pivot: 'heel' }, L: { z: 0.2, y: 0.08, pitch: -5 } }],
-    [13, { ...SIT_BODY, ...pelvis([-4, 0, 0], [0, -0.46, -0.02]), Torso: [6, 0, 0] }, { R: SIT_FEET.R!, L: { z: 0.32, y: 0.07, pitch: -15 } }],
-    [14, { ...SIT_BODY, ...pelvis([-2, 0, 0], [0, -0.48, -0.01]), Torso: [0, 0, 0] }, { R: SIT_FEET.R!, L: { z: 0.42, y: 0.025, pitch: -20, pivot: 'heel' } }],
-    [16, SIT_BODY, SIT_FEET],
+    ...SIT_DOWN,
     [18, SIT_BODY, SIT_FEET],
     // lie back: the legs lift a little as the body rolls back, and settle straight
     [20, { ...SIT_BODY, ...pelvis([-15, 0, 0], [0, -0.5, 0.05]), Torso: [0, 0, 0], ...arms(0, 30, 25) }, { R: { z: 0.48, y: 0.04, pitch: -24, pivot: 'heel' }, L: { z: 0.44, y: 0.04, pitch: -24, pivot: 'heel' } }],
@@ -241,8 +268,8 @@ export const GetUp: ClipDef = {
     [6, { ...SIT_BODY, Torso: [18, 0, 0], ...arms(-40, 20, 20) }, { R: { z: 0.46, y: 0.05, pitch: -20, pivot: 'heel' }, L: { z: 0.42, y: 0.05, pitch: -20, pivot: 'heel' } }],
     [8, { ...SIT_BODY, Torso: [30, 0, 0], ...arms(-60, 20, 20) }, SIT_FEET, 'out'],
     // pull each foot in under the body (lifted, one after the other)
-    [10, { ...SIT_BODY, Torso: [36, 0, 0], ...arms(-60, 20, 20) }, { R: { z: 0.3, y: 0.07 }, L: SIT_FEET.L! }],
-    [12, { ...CROUCH_BODY, ...pelvis([0, 0, 0], [0, -0.4, -0.04]), Torso: [42, 0, 0], ...arms(-55, 20, 20) }, { R: { z: 0.14 }, L: { z: 0.26, y: 0.07 } }],
+    [11, { ...SIT_BODY, Torso: [36, 0, 0], ...arms(-60, 20, 20) }, { R: { z: 0.3, y: 0.07, pitch: -10 }, L: SIT_FEET.L! }],
+    [13, { ...CROUCH_BODY, ...pelvis([0, 0, 0], [0, -0.4, -0.04]), Torso: [42, 0, 0], ...arms(-55, 20, 20) }, { R: { z: 0.14 }, L: { z: 0.26, y: 0.07 } }],
     [15, { ...CROUCH_BODY, ...pelvis([0, 0, 0], [0, -0.3, -0.08]), Torso: [45, 0, 0], ...arms(-50, 20, 20) }, flat(0.14, 0.1)],
     // and stand up over them
     [24, STAND_BODY, flat(0.14, 0.1)],

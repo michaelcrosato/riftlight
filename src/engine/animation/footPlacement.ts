@@ -212,10 +212,11 @@ interface Foot {
   /** Horizontal correction (world) currently applied. */
   cx: number;
   cz: number;
-  /** Re-plant step: progress 0..1 (−1 = not stepping), and the correction it started from. */
+  /** Re-plant step: progress 0..1 (−1 = not stepping), where (world x, z) the sole point it stood on started, and which point. */
   step: number;
   sx: number;
   sz: number;
+  sref: number;
   /** Last frame: heel and toe (world x, z, with the correction) and whether either was down. */
   readonly last: [Vector3, Vector3];
   wasDown: boolean;
@@ -290,7 +291,7 @@ export class FootPlacement {
         side, upper, lower, foot,
         rest: [upper.quaternion.clone(), lower.quaternion.clone(), foot.quaternion.clone()],
         mAnkle: new Vector3(), mPts: [new Vector3(), new Vector3()], mPitch: 0,
-        gw: 0, gr: 0, uw: 0, pitch: 0, ref: -1, ax: 0, az: 0, cx: 0, cz: 0, step: -1, sx: 0, sz: 0,
+        gw: 0, gr: 0, uw: 0, pitch: 0, ref: -1, ax: 0, az: 0, cx: 0, cz: 0, step: -1, sx: 0, sz: 0, sref: 0,
         last: [new Vector3(), new Vector3()], wasDown: false, lastAnim: new Vector3(), hasLastAnim: false, swinging: false, fwd: 0, swing: 0, takeoff: 0, ground: 0, target: 0,
         ankle: new Vector3(), pts: [new Vector3(), new Vector3()], h: [0, 0], g: [null, null], used: 0, planted: 0, lift: 0,
       };
@@ -412,7 +413,9 @@ export class FootPlacement {
       f.swinging = fwd > (input.speed ?? 0) * T.swingShare + T.swingSpeed;
       f.fwd = fwd;
       const sp = input.speed ?? 0;
-      f.swing = sp > 0.3 ? smoothstep(fwd, sp * 0.4, sp * 1.1) : 0;
+      // (relative to the body: a planted foot goes back as fast as it goes forward, a swinging
+      // one forward, one sliding along with it (a skid) not at all)
+      f.swing = sp > 0.3 ? smoothstep(fwd - sp, sp * 0.2, sp * 0.8) : 0;
       f.lastAnim.copy(V1);
       f.hasLastAnim = true;
       if (!ik) continue;
@@ -563,9 +566,11 @@ export class FootPlacement {
       } else if (f.step >= 0) {
         // the lift eases in and out; the foot moves once it is clear of the floor
         f.step = Math.min(1, f.step + dt / T.stepTime);
-        const e = smoothstep(f.step, 0.25, 0.9);
-        f.cx = f.sx * (1 - e);
-        f.cz = f.sz * (1 - e);
+        const e = smoothstep(f.step, 0.2, 0.8); // (moving only while clear of the floor)
+        // from where it stood (in the world) to where the clip has it now
+        const p = f.pts[f.sref]!;
+        f.cx = (f.sx - p.x) * (1 - e);
+        f.cz = (f.sz - p.z) * (1 - e);
         f.lift = T.stepLift * Math.sin(Math.PI * f.step) ** 2;
         if (f.step >= 1) f.step = -1;
       } else if (f.ref >= 0) {
@@ -592,10 +597,11 @@ export class FootPlacement {
           const far = V1.distanceTo(V2.set(f.ankle.x + f.cx, f.ankle.y + f.used, f.ankle.z + f.cz)) > (L.upper + L.lower) * 0.97;
           // (one foot at a time, though the next may lift as the last one comes down)
           if ((far || f.cx * f.cx + f.cz * f.cz > T.maxDrift * T.maxDrift) && (other.step < 0 || other.step > 0.6)) {
+            f.sref = f.ref;
             f.ref = -1;
             f.step = 0;
-            f.sx = f.cx;
-            f.sz = f.cz;
+            f.sx = f.ax;
+            f.sz = f.az;
           }
         }
       } else if ((on0 || on1) && !f.swinging) {

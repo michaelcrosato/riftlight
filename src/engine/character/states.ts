@@ -83,16 +83,22 @@ export const STATES = {
   crouch: { step: stepCrouch, anim: () => ({ name: 'Crouch' }), feet: 'lock' },
   crouchWalk: { step: stepCrouch, anim: (c) => ({ name: 'CrouchWalk', speed: c.rate('CrouchWalk', c.speed, 1.4, 0.4) }), feet: 'lock' },
   crouchSlide: { step: stepCrouchSlide, anim: () => ({ name: 'CrouchSlide' }), feet: 'ik' },
-  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }), feet: 'ik' },
+  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }), feet: 'lock' },
   prone: { step: stepProne, anim: () => ({ name: 'Prone' }) },
   crawl: { step: stepProne, anim: (c) => ({ name: 'Crawl', speed: c.rate('Crawl', c.speed, 0.9, 0.5) }) },
-  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7), feet: 'ik' },
+  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7), feet: 'lock' },
 
   // ---- lying, sitting
-  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }), feet: 'ik' },
+  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }), feet: 'lock' },
   lying: { step: stepLying, anim: (c) => ({ name: c.stateTime > T.rest.sleepAfter ? 'Sleep' : 'LieIdle', fade: 0.6 }) },
-  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8), feet: 'ik' },
-  sit: { step: stepSit, anim: () => ({ name: 'Sit', fade: 0.3 }), feet: 'ik' },
+  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8), feet: 'lock' },
+  // sits down (SitDown), sits, and stands up again (StandUp): the feet step, never slide
+  sit: {
+    step: stepSit,
+    anim: (c) => (c.stateTime < c.clipDuration('SitDown', 0.53) ? { name: 'SitDown', once: true, fade: 0.1 } : { name: 'Sit', fade: 0.1 }),
+    feet: 'lock',
+  },
+  standUp: { step: stepLocked, anim: () => ({ name: 'StandUp', once: true, fade: 0.1 }), lock: (c) => c.clipDuration('StandUp', 0.53), feet: 'lock' },
 
   // ---- in the air
   jump: {
@@ -457,7 +463,7 @@ function stepLying(c: PlatformerCharacter, dt: number, input: MoveInput): void {
 function stepSit(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   c.decel(dt, T.rest.decel);
   c.move(dt);
-  if (input.sit || input.jump || input.move.lengthSq() > T.rest.wakeStickSq) c.enter('idle');
+  if (input.sit || input.jump || input.move.lengthSq() > T.rest.wakeStickSq) c.enter('standUp');
   else if (input.lie) c.enter('lieDown');
 }
 
