@@ -676,7 +676,7 @@ band radii can change how many slots a band holds (and so which slots exist).
 | `npm run level -- map <n\|seed>` · `validate 1..60` · `rift <seed> <depth>` · `themes` | top-down map PNG with spawns, mechanic elements and critical path, plus bypass validation (the exit is reachable without using the mechanic); theme swatches |
 | `npm run combat -- dps <skill> [supports]` | a skill with its supports resolved: hit breakdown, crits, ailments, DPS, mana per second (text or `--json`) |
 | `npm run balance [-- --depths 1-12,20 --builds melee,bow --raw --json]` | headless combat sim over the real code, build × depth: time to kill normal/magic/rare/boss, damage taken, hits and time to die, clear time, the XP curve; PNG charts, CSV, JSON and the worst outliers (see Balance below) |
-| `npm run playtest -- <depth> [--runs n] [--film]` | a bot plays the real game frame-exactly and reports clear time, deaths, damage taken and loot, with a film (see Game shell) |
+| `npm run playtest -- <depth> [--runs n] [--film]` · `campaign [--to n] [--difficulty d]` | a bot plays the real game frame-exactly and reports clear time, deaths, damage taken and loot, with a film; `campaign` plays a whole run with town visits (gear, gems, vendor, tree) and charts it (see Game shell) |
 | `npm run inspect -- <hero\|file.glb\|clip:Run\|monster:7\|boss:4\|npc:brann\|prop:brazier\|item:3>` · `diff <a> [b]` | any asset as an 8-angle turntable, a rig overlay with joint names and counts (triangles, draw calls, materials, bounds, joints, clips) with warnings; diffs two assets or two versions (docs/ENGINE.md, *Tooling for agents*) |
 
 ### Balance (`npm run balance`)
@@ -695,7 +695,9 @@ and every 4th to 60, ~25 s.
   gear, no tree) and **geared**: the best of 12 rares per slot rolled at the depth's item level
   (`rollItem`, equip level respected) and a tree grown greedily (`TreePlanner`: the path to a
   notable or frontier node with the best score gain per point; no respec). Gem level is the
-  highest the hero can equip.
+  highest the hero can equip (`SCALING.gemLevelReq`; socketed gems earn the hero's XP, so a gem
+  socketed from the start is there). Minions grow with their summoner's level
+  (`combat/minions.ts` `minionLevelMods`: they wear no gear).
 - **Real code**: `buildSkill`, `expectedHit` (through `balance/dps.ts`, which `npm run combat`
   uses too), `StatSheet` with `treeMods`-style node mods and `itemMods`, the monsters' genome
   stats and skills (`MONSTER_SKILLS`), boss phases and enrage, `SCALING`/`RANK`, `addXp` /
@@ -712,11 +714,20 @@ and every 4th to 60, ~25 s.
   or *read only outside the sim*.
 
 Example (seed 1, default depths): the summary prints
-`! geared minion: boss TTK 981× slower than the others (24/24 depths, worst at depth 28)`,
-`! depth 12 boss TTK 13× depth 11 (naked, every build)`,
-`! 4 geared builds die to the boss (no potions), all but one by depth 24`,
-`! 4 geared builds are one-shot by the boss's biggest hit, all but one by depth 36`. Tune
-`core/scaling.ts`, rerun, compare the CSVs.
+`! naked minion: boss TTK 134× faster than the others` (minions grow with the summoner's level,
+not gear, so a naked summoner is the only build that works naked) and
+`! 4 geared builds die to the boss (no potions), all but one by depth 28`. Geared builds clear
+within 2.5× of each other through depth 20; past ~24 the caster falls behind (spells scale only
+6% a gem level, attacks with their weapons). Tune `core/scaling.ts`, rerun, compare the CSVs.
+
+**The tuned curve** (`npm run playtest -- campaign`, seed 1, normal): hero level 4 after depth 1,
+15 after 6, 26 after 12, 44 after 20 (2–3 levels a depth early, `SCALING.xpPenalty` and the
+area levels slow it later); main gem level 3 → 10 → 14; an upgrade equipped almost every
+visit, rares from depth 1 and 2–10 a level by the rifts, a unique every three or four levels.
+The bot clears the twelve designed levels with one death, dies now and then from rift 13, and
+stops at rift 21 (three tries with farming in between). Monster life and damage
+(`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 25% / 20% a depth
+through the designed levels and 18% (+4%) / 13% in the rifts.
 
 ## Loot
 
@@ -761,16 +772,20 @@ U vendor, Alt filter).
 **Rarity math** (`loot/generate.ts`, numbers in one place):
 
 - Boost `B = SCALING.rarityBoost(depth) × (1 + item.rarity)`, times a rank factor for drops
-  (magic 1.25, rare 1.7, boss 2.5). Weights: normal 700, magic 250·B, rare 45·B^1.5,
-  unique 5·B². At B = 1 that is 70 / 25 / 4.5 / 0.5%.
+  (magic 1.25, rare 1.7, boss 2.5). Weights: normal 700, magic 250·B, rare 50·B^1.5,
+  unique 3·B². At B = 1 that is 70 / 25 / 5 / 0.3%; `rarityBoost` is 1 + 0.07·depth, so by
+  depth 10 about 1 equipment drop in 9 is rare and the campaign bot finds 2–5 rares a level and
+  a unique every few levels.
 - Affix count: magic 1–2 (at most 1 prefix + 1 suffix), rare 4–6 (50/35/15%; at most 3 + 3).
 - Tiers: a tier is open once `itemLevel ≥ tier.level`; weight = `0.85^index × ramp`, with
   `ramp = clamp((itemLevel − tier.level + 4) / 16, 0.25, 1)`, so fresh tiers are rare and
   weaker tiers stay common. Bases more than 30 levels under the item level drop at 0.35×.
 - Drops per kill: `0.22 × RANK.drops × (1 + item.quantity)` items at item level
   `SCALING.monsterLevel(depth)`; 22% currency, 6% gems, the rest equipment; bosses always
-  drop a rare or better. Gold: 45% of normal kills (every elite), `SCALING.gold(depth) ×
-  RANK.gold × 0.6–1.4 × (1 + gold.find)`.
+  drop a rare or better. Gold: 25% of normal kills (every elite), `SCALING.gold(depth) ×
+  RANK.gold × 0.6–1.4 × (1 + gold.find)`: a town visit's gold pays for a respec of ~5–10
+  points (`respecCost`: eight kills' gold a point) or a handful of gems (priced by the depth
+  they are sold at). Find stats are hero multipliers (base 1): drops use the part above 1.
 - Everything is a pure function of an `Rng`: `rollItem(rng, { itemLevel, base?, rarity?,
   rarityBoost })`, `rollDrops(rng, { depth, rank, itemRarity, itemQuantity })`.
 
@@ -934,9 +949,9 @@ it toggles with `stats.setCondition`. Every mechanic emits `mechanic { id, event
 | Mire | mud pools, haste pads beside the road | `inMud` slow | haste, hasteChain | chained haste (move/attack speed) |
 | Echoes | resonance crystals (solid) | replays hero skills 2 s later (`hooks.replaySkill`) | record, replay | full-damage echoes + damage buff near crystals |
 | Riftgates | paired gates in far-apart critical rooms | teleports any actor (`hooks.teleport`) | teleport | shortcuts + rift-haste |
-| Bloodmoon | blood altars (solid) | monsters explode on death (`kill`), red tint | explode, chain, pact | chain xp.gain; pact spares + heals the hero |
+| Bloodmoon | blood altars (solid) | monsters explode on death (`kill`), red tint; blasts landing on the hero together hurt 1/k each | explode, chain, pact | chain xp.gain; pact spares + heals the hero |
 | Gravewell | wells (radius 2–3) | pulsing pull (hero resists) | pulse, shard | gravity shards: area, xp.gain |
-| Collapse | crumbling floor zones (+ loot caches) | floor drops into the void behind the hero | crumble, cache, bonusLoot | caches; bonus loot for clears under par |
+| Collapse | crumbling floor zones (+ loot caches) | floor drops into the void behind the hero and rises back 9 s later (nothing is cut off for good); a fall returns the hero to solid floor | crumble, cache, bonusLoot | caches; bonus loot for clears under par |
 
 `excludes`: gloom ↔ bloodmoon (both relight the level), frostglass ↔ mire (both are floor
 surfaces), riftgates ↔ collapse (gates over vanishing floor). **Add a mechanic:** write a
@@ -1049,7 +1064,8 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
 
 Ports talk to each other through `GameEvents` (`hit`, `kill`, `death`, `gold`, `loot`,
 `levelClear`, `mechanic`): the shell turns `hit` into damage numbers, the recap and shake;
-`kill` into XP (`SCALING.monsterXp × RANK.xp`), streaks and stats; `mechanic` into codex
+`kill` into XP (`SCALING.monsterXp × RANK.xp × SCALING.xpPenalty`, less for a hero who has
+outlevelled the area) and gem XP, streaks and stats; `mechanic` into codex
 unlocks. Views are `Panel`s drawn on the pixel HUD (`ui/kit.ts` `UiCanvas`) that receive
 `UiEvent`s (nav, confirm, back, tab, key, pointer, wheel) built from keys, mouse, touch and
 pads alike; `PanelHost` gives them the save, gold, sounds and
@@ -1135,6 +1151,16 @@ DPS, cost, cooldown, cast time, area / projectiles, links that don't fit: a pock
 supports: [{ gem, level }] }`, null for an empty slot; the level adds gear's `skill.level` mods
 that fit the skill's tags, as the panel's numbers do).
 
+**Gem levels.** Socketed gems (skills and supports) earn the XP the hero earns (PoE-style), kept
+on the item as `gem.xp` (an optional field: older saves load at 0). A gem of level *g* needs hero
+level `SCALING.gemLevelReq(g)` (2, 4, 6, 9, 12 … 25 at gem 10, 70 at gem 20), and
+`gemXpToNext(g)` is the hero XP between two requirements, so a gem socketed from the start is
+ready for each level as the hero reaches it; a gem that is ready early holds a full bar ("levels
+up at hero level N") until then. On a kill the shell runs `addGemXp(save.hero.skills, xp,
+level)`, hands the sockets to the loot port (`LootPort.setSockets`), re-slots the bar and shows
+a "CLEAVE REACHED LEVEL 4" toast. The skill panel draws an XP bar under every socketed gem and
+the title line shows the main gem's XP; the gem tooltip shows `Experience x/y (z%)`.
+
 **Loot in the world.** Drops are R3's `rollDrops` with the hero's `item.rarity`,
 `item.quantity` and `gold.find`, shown by `WorldLoot` (arcs, landing sounds, beams; lights from
 the engine's `ctx.lights` pool) under the stage's root. The shell draws the labels (framed for
@@ -1183,7 +1209,8 @@ Typed as `RiftlightApi` (`game/api.ts`). Steps go through `Engine.step`, frame-e
 | `hero(stat?, tags?)`, `actors()`, `loot()`, `log()` | inspect (`hero('damage')` returns `explain` sources) |
 | `ui.stack()`, `ui.open(id)`, `ui.close()`, `ui.widgets()`, `ui.click(id)` | menus as data |
 | `save(slot)`, `load(slot)`, `exportSave(slot)`, `importSave(slot, json)`, `slots()` | saves |
-| `bot.run({maxFrames})`, `bot.start()`, `bot.advance(n)`, `bot.report()`, `bot.decide()` | the playtest bot |
+| `bot.run({maxFrames})`, `bot.start()`, `bot.advance(n)`, `bot.report()`, `bot.decide()`, `bot.town()` | the playtest bot (`town()`: its town visit) |
+| `gems()`, `gearScore()` | socketed gems with level and XP; item power of what the hero wears |
 
 `?seed=123` makes new runs reproducible; `?save=memory` keeps tests out of localStorage. The
 pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
@@ -1201,7 +1228,30 @@ between), gives up for a while on a monster it can't reach or can't hurt, walks 
 for ever: a full bag or a drop out of reach is left), follows grid BFS routes that go cell by
 cell after a corner stopped it, and walks into the portal once the level is clear. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
 five times and prints clear time, deaths, damage taken, kills, XP, gold, items and stuck events;
-JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`.
+JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`. Summoners (and
+Necromancer elites) are fought before the adds they keep calling.
+
+**In town** (`game/botTown.ts`, `bot.town()` in the agent API) the bot plays like a player:
+`townVisit(save, { sheet, points, depth, visit })` works on the save through the loot, socket and
+tree functions the windows use, judging every choice on a clone of the hero's StatSheet
+(`evaluate`: log DPS of the bar, weighted by slot, with pack reach and mana sustain, plus log
+effective life against the depth's hits). It sockets better skill gems of the same role and the
+best fitting supports, equips upgrades slot by slot (level requirements, two hands, a melee main
+skill keeps a melee weapon), sells everything left in the bag, buys supports and gear the vendors
+have that beat what it wears, and spends its passive points with the greedy `TreePlanner`
+(`tree/planner.ts`, shared with the balance sim).
+
+**The campaign** (`npm run playtest -- campaign [--to 24] [--tries 3] [--difficulty hard]
+[--film] [--resume save.json]`): one bot plays a fresh run from depth 1 through the designed
+levels into the rifts, carrying its save: a town visit before every level, the level, and on a
+death (the game's penalty) a farming run of the depth before, then another try; it stops at
+`--to` or at a depth that beats it `--tries` times. Per depth it reports the clear time,
+deaths (and who killed it), hero level, gem levels, gear score, DPS and effective life, gold and
+the items found by rarity, as `.scratch/playtest/campaign.json` and `campaign.png`, and writes the
+save after every depth (`campaign-save-NN.json`, for `--resume`). `--difficulty` takes a preset
+or `enemyLife=1.5,playerDamage=0.8` and is applied like the Tuning panel (both modes). A
+campaign to the wall (~depth 21) takes about 12 minutes; exit 1 when it does not clear the 12
+designed levels.
 
 ### Town (`town/`)
 
