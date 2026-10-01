@@ -413,7 +413,8 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   private fall(a: ActorLike): void {
     if (!(a instanceof Actor)) return;
     if (a.faction === 'hero') {
-      this.applyHit(a, { source: null, skill: 'fall', tags: ['fall', 'physical'], damage: { physical: a.maxLife * 0.15 }, crit: false });
+      // `collapse.fallImmune` (Collapse Runner, Featherfall Sash): climb back out unhurt
+      if (!a.stats.has('collapse.fallImmune')) this.applyHit(a, { source: null, skill: 'fall', tags: ['fall', 'physical'], damage: { physical: a.maxLife * 0.15 }, crit: false });
       a.mover.teleport(this.lastSafe.x, 0, this.lastSafe.z);
       a.position.copy(a.mover.position);
       a.impulse.set(0, 0, 0);
@@ -465,7 +466,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     const hc = this.hero?.hc;
     if (!hc || actor !== hc.actor || !hc.actor.alive) return;
     const s = [hc.basic, ...hc.slots].find((x): x is ResolvedSkill => !!x && x.id === skillId);
-    if (!s || s.tags.includes('movement') || s.def.leap || s.def.teleport || s.channel || s.delivery.kind === 'summon' || s.delivery.kind === 'aura') return;
+    if (!s || s.placement || s.tags.includes('movement') || s.def.leap || s.def.teleport || s.channel || s.delivery.kind === 'summon' || s.delivery.kind === 'aura') return;
     const echo: ResolvedSkill = { ...s, id: `echo:${s.id}`, mods: [...s.mods, more('damage', o.damageScale - 1)] };
     const a = hc.actor;
     const foe = this.world.actors.nearest(o.at, 9, (x) => x.alive && a.hostileTo(x) && !isProp(x));

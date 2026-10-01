@@ -30,7 +30,7 @@ export const ELITE_MODS = new Registry<MonsterEliteDef>('elite mods', [
   E({ id: 'splitter', name: 'Splitter', description: 'Splits into two smaller copies when it dies.', tags: ['summon'], mods: [], behaviour: 'split', glow: 0x38b764, cost: 2, ranks: ['magic', 'rare'] }),
   E({ id: 'frenzied', name: 'Frenzied', description: 'Every nearby ally death drives it into a frenzy.', tags: ['offensive', 'blood'], mods: [inc('attack.speed', 0.5, undefined, 'frenzy'), inc('move.speed', 0.3, undefined, 'frenzy')], behaviour: 'frenzy', glow: 0xb13e53, cost: 1 }),
   E({ id: 'berserker', name: 'Berserker', description: 'Hits much harder below half life.', tags: ['offensive'], mods: [more('damage', 0.6, undefined, 'lowLife'), inc('attack.speed', 0.25, undefined, 'lowLife')], behaviour: 'lowLife', glow: 0xef7d57, cost: 1 }),
-  E({ id: 'juggernaut', name: 'Juggernaut', description: 'Unstoppable: immune to knockback and stuns, extra life.', tags: ['defensive'], mods: [more('life', 0.4), flag('knockbackImmune'), flag('stunImmune'), inc('move.speed', -0.15)], glow: 0x566c86, cost: 2 }),
+  E({ id: 'juggernaut', name: 'Juggernaut', description: 'Unstoppable: immune to knockback and stuns, extra life.', tags: ['defensive'], mods: [more('life', 0.4), flag('knockbackImmune'), flag('stunImmune'), flag('curse.immune'), inc('move.speed', -0.15)], glow: 0x566c86, cost: 2 }),
   E({ id: 'vengeful', name: 'Vengeful', description: 'Retaliates with a shockwave after taking heavy damage.', tags: ['offensive'], mods: [], behaviour: 'vengeful', glow: 0xffcd75, cost: 2 }),
   E({ id: 'arcane-beams', name: 'Arcane Beams', description: 'Rotating beams of arcane energy sweep around it.', tags: ['offensive', 'arcane'], mods: [], behaviour: 'beams', glow: 0x9b5de5, cost: 3 }),
   E({ id: 'molten-trail', name: 'Molten Trail', description: 'Leaves burning ground wherever it walks.', tags: ['offensive', 'fire'], mods: [flat('res.fire', 0.3)], behaviour: 'trail:fire', glow: 0xef7d57, cost: 2, excludes: ['totem'] }),
@@ -44,6 +44,8 @@ export const ELITE_MODS = new Registry<MonsterEliteDef>('elite mods', [
   E({ id: 'ghostly', name: 'Ghostly', description: 'Fades in and out of phase; hard to hit while phased.', tags: ['defensive', 'shadow'], mods: [flat('evasion.chance', 0.5, undefined, 'phased'), inc('move.speed', 0.2, undefined, 'phased')], behaviour: 'phase', glow: 0x94b0c2, cost: 1 }),
   E({ id: 'gravity-well', name: 'Gravity Well', description: 'Pulls you towards it every few seconds.', tags: ['control', 'void'], mods: [], behaviour: 'pull', glow: 0x5d275d, cost: 2 }),
   E({ id: 'armoured', name: 'Armoured', description: 'Thick plating: lots of armour.', tags: ['defensive', 'construct'], mods: [flat('armour', 120), more('armour', 0.5)], glow: 0x94b0c2, cost: 1 }),
+  E({ id: 'hexproof', name: 'Hexproof', description: 'Shrugs off every curse.', tags: ['defensive', 'arcane'], mods: [flag('curse.immune')], glow: 0xf4f4f4, cost: 1 }),
+  E({ id: 'hexer', name: 'Hexer', description: 'Curses you with Enfeeble every few seconds.', tags: ['control', 'shadow'], mods: [], behaviour: 'hex:enfeeble', glow: 0x5d275d, cost: 2 }),
   E({ id: 'empowering', name: 'Empowering', description: 'Its aura makes nearby monsters hit harder.', tags: ['aura', 'support'], mods: [], behaviour: 'aura:empower', glow: 0xffcd75, cost: 2 }),
 ]);
 
@@ -197,6 +199,13 @@ export const ELITE_BEHAVIOURS: Readonly<Record<string, EliteBehaviour>> = {
   pull: {
     update(c, dt) {
       if (c.host.target && every(c, dt, 'cd', 6)) c.host.body.emit?.({ type: 'pull', at: pos(c), radius: 7, force: 6 });
+    },
+  },
+  /** 'hex:<curse gem>': curse its target every 8 s while it is within 10 m (heroes with `curse.immune` shrug it off). */
+  hex: {
+    update(c, dt) {
+      const t = c.host.target;
+      if (t && every(c, dt, 'cd', 8) && t.position.distanceTo(c.host.body.actor.position) < 10) c.host.body.emit?.({ type: 'hex', at: t.position.clone(), curse: c.param || 'enfeeble' });
     },
   },
 };

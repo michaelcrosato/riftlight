@@ -75,9 +75,10 @@ Five rules, applied to every system:
 - `Actor`: owns a `StatSheet`, life, mana, energy shield, a faction, a body (`Object3D`
   plus rig) and a brain (hero input or monster AI), and receives hits.
 - `SkillDef`: `{ id, tags, cost, cooldown, castTime, anim, delivery, effects[] }`.
-  - **Delivery:** `strike | slam | projectile | nova | beam | dash | summon | aura | trap`.
+  - **Delivery:** `strike | slam | projectile | nova | beam | dash | summon | aura | trap | curse`.
   - **Effects:** `damage`, `ailment`, `knockback`, `buff`, `spawn`, `light`, `sound`,
-    `particles`.
+    `particles`, `curse` (mods on the enemies a curse reaches), `charges` (gain or spend
+    charges on use or on hit).
   - **Supports** are `SupportDef { id, requires: tags, mods, deliveryChanges }`, for example
     "+2 projectiles" or "chain".
 - `ItemBase`, `Affix` (tier ranges by item level), `Item` (rolled), `UniqueDef`.
@@ -160,19 +161,39 @@ says what each non-obvious stat does, `STAT_ALIASES` maps the names other system
 out, so loot, the tree and the balance sim can keep their data. `npx tsx
 scripts/riftlight/stat-names.ts` lists every name loot and the tree emit.
 
-**Emitted but read by nothing yet** (deliberately: each needs a system that doesn't exist yet,
-so the mod shows on the item / node and does nothing): charges (`endurance.max`, `frenzy.max`,
-`power.max`, `charge.duration`, `charge.onKill`), curses (`curse.count`, `curse.duration`,
-`curse.effect`, `curse.immune`), totems and traps (`totem.count`, `totem.life`, `totem.speed`,
-`trap.count`, `trap.speed`), `mana.reservation`, `aura.radius`, `stun.duration`,
-`shatter.chance`, `explosion.damage`, `dodge.cooldown` (the roll has no cooldown), the weapon
-class flags no skill asks for yet (`weapon.sword`, `weapon.axe`, `weapon.mace`, `weapon.dagger`,
-`weapon.staff`, `weapon.sceptre`, `weapon.twohand`; only `bow` and `wand` gate skills), and the level
-mechanic affixes (`brazier.area`, `brazier.damage`, `brazier.selfIgnite`, `collapse.bonusLoot`,
-`collapse.fallImmune`, `echo.damage`, `echo.delay`, `echo.repeatsSkills`, `gate.damage`,
-`haste.duration`, `lantern.duration`, `mire.immune`, `pylon.chain`, `thorns.immune`,
-`thorns.reflect`, `well.immune`, `well.resist`, `wind.resist`): the mechanics in
-`levels/mechanics/` would read them off the hero's sheet.
+**Every stat loot and the tree emit is read** (`npm run balance` lists none that nothing reads).
+The build systems below read the last of them; `dodge.cooldown` (the roll has no cooldown) became
+`dodge.recovery` in the tree data instead.
+
+### Build systems: charges, curses, totems, traps, auras
+
+What the deep end of the tree and the build-defining loot plug into. Each is a small module in
+`combat/`, and each is visible: pips, runes, totems, traps and the mana globe say what is going on.
+
+| system | where | stats | what it does |
+| --- | --- | --- | --- |
+| charges | `combat/charges.ts` (`Actor.charges`) | `endurance.max`, `frenzy.max`, `power.max` (+ base 3), `charge.duration` (base 10 s), `charge.onKill` / `onHit` / `onCrit` / `onStun` (chances, scoped by the charge's tag: `flat('charge.onKill', 0.1, ['frenzy'])`) | per charge: endurance 4% physical reduction and +4% elemental resistances; frenzy 4% more damage, 4% attack and cast speed; power 40% increased crit chance, +5% crit multiplier. One timer per kind, refreshed on gain; the `charges` stat source. Pips orbit the hero (orange, lime, cyan; one height per kind) and the HUD buff row shows each kind with its count |
+| curses | `combat/curses.ts` (`Actor.curses`), `combat/deliveries/curse.ts` | `curse.count` (+ base 1 per target), `curse.effect`, `curse.duration`, `curse.immune` | a curse gem hexes an area at the aim point; each enemy inside gets the curse as a `curse:<id>` source. The oldest of a caster's curses makes way past its limit. Cursed actors stand on a turning rune circle in the curse's colour, with a shard over the head and a tint. `curse.immune` (Hexproof and Juggernaut elites, a corruption) shrugs them off; a Hexer elite curses the hero (Enfeeble) |
+| totems | `combat/totems.ts` | `totem.count` (+ base 1), `totem.life` (60% of yours), `totem.speed` (planting) | a totem support makes the skill plant a carved pole that casts it at the nearest enemy in reach, for 12 s × duration, with a snapshot of your stats; monsters can break it. Its hits carry `totem` (Ancestral Bond's `cannotDealDamage.self` spares them); its kills count for you |
+| traps | `combat/deliveries/trap.ts` | `trap.count` (+ base 3 armed), `trap.speed` (throwing), `trap.arm` | trap and mine skills, and any skill with the Trap support: thrown at the aim, armed, sprung by the first enemy that comes near. A supported skill is released from the trap at that enemy (a stand-in caster with your live sheet, `proxyOf`) |
+| auras | `combat/deliveries/aura.ts`, `Actor.reserve` | `mana.reservation`, `aura.effect`, `aura.radius`, `auras.selfOnly` | an aura gem's `reserve` (Haste 25%, Wrath 35%, Determination 40%) × the supports' cost multipliers (Enlighten) × `mana.reservation` is held while it is on, instead of a cost per toggle; it won't turn on without room. Blood Magic reserves life. The mana globe seals the reserved share off |
+
+Gems that use them: **Vulnerability**, **Elemental Weakness**, **Enfeeble**, **Temporal Chains**
+(curses), **Discharge** (spends every charge: 60% more damage per charge), **Enduring Cry**
+(+2 endurance), **Frenzy Strikes** (a frenzy charge on 25% of hits), **Wrath** and
+**Determination** (auras); supports **Spell Totem**, **Ballista Totem**, **Trap**, **Power Charge
+on Critical**, **Endurance Charge on Melee Stun**, **Frenzy Charge on Hit**. A support's
+`placement: 'totem' | 'trap'` turns its skill into one (`ResolvedSkill.placement` and `.inner`).
+
+Smaller stats: `<ailment>.duration` (`stun.duration`: the support above, Might passives) scales
+that ailment's duration; attacks carry the equipped weapon's class as a tag (`weapon.axe` →
+`axe`, `weapon.twohand` → `twohand`: `WEAPON_CLASS_TAGS`), so class-scoped passives reach them;
+`thorns.reflect` deals that share of melee damage taken back to the attacker; `action.speed`
+(base 1) slows everything an actor does (Temporal Chains).
+
+`npm run test:e2e -- riftlight-builds` shows each of them in the arena and a mechanic affix in
+level 1, with frames in `.scratch/e2e/riftlight-builds-*.png`; `combat/builds.test.ts` and
+`levels/affixes.test.ts` pin the numbers.
 
 ### Add a skill
 
@@ -477,12 +498,13 @@ both over combat's `Actor`; tests use fakes. **Packs** (`Pack`): a leader (the b
 followers; an alert spreads to every member within 14 m; followers get flanking slots fanned
 around the leader's line to the target; deaths re-elect the leader and notify the rest.
 
-**Elite mods** (`brains/elite.ts`, 24): `EliteModDef`s with `Mod`s and a `behaviour` hook
+**Elite mods** (`brains/elite.ts`, 26): `EliteModDef`s with `Mod`s and a `behaviour` hook
 (`ELITE_BEHAVIOURS`: `start`, `update`, `onHitTaken`, `onHitDealt`, `onDeath`,
 `onAllyDeath`) that act through the body: hasted, vampiric, fire-enchanted, frost-aura,
 teleporter, shielded, splitter, frenzied, berserker, juggernaut, vengeful, arcane-beams,
 molten-trail, storm-caller, venomous, thorned, regenerating, volatile, necromancer,
-mirror-image, ghostly, gravity-well, armoured, empowering. Conditional mods
+mirror-image, ghostly, gravity-well, armoured, empowering, hexproof (`curse.immune`), hexer (curses
+you with Enfeeble every 8 s). Conditional mods
 (`when: 'shielded' | 'lowLife' | 'frenzy' | 'phased' | 'enraged'`) switch on with
 `body.setCondition`.
 
@@ -937,6 +959,25 @@ it toggles with `stats.setCondition`. Every mechanic emits `mechanic { id, event
 | Bloodmoon | blood altars (solid) | monsters explode on death (`kill`), red tint | explode, chain, pact | chain xp.gain; pact spares + heals the hero |
 | Gravewell | wells (radius 2–3) | pulsing pull (hero resists) | pulse, shard | gravity shards: area, xp.gain |
 | Collapse | crumbling floor zones (+ loot caches) | floor drops into the void behind the hero | crumble, cache, bonusLoot | caches; bonus loot for clears under par |
+
+**Loot that bends a mechanic** (the power-leveller's side: affixes and uniques in
+`loot/data/`, read off the hero's sheet by the mechanic with `heroScale` / `heroFlat` /
+`heroHas` in `mechanics/common.ts`; `levels/affixes.test.ts` checks each):
+
+| mechanic | stats | effect |
+| --- | --- | --- |
+| Embers | `brazier.area`, `brazier.damage`, `explosion.damage`, `brazier.selfIgnite` | wider blasts and chain reach; harder blasts on monsters; blasts set the hero alight (`ignited` for 6 s, Emberheart's more damage) instead of hurting it |
+| Gloom | `lantern.duration` | lantern XP and the all-lit shrine buff last longer |
+| Gale | `wind.resist` (negative on Galecaller), `inWind` | less (or more) push from gusts; `inWind` while in a gust (Galecaller's extra projectile, the Galeborn prefix) |
+| Frostglass | `shatter.chance` | the hero's kills shatter off the ice too |
+| Thornweave | `thorns.immune`, `thorns.reflect` | vines part for the hero (no damage, no slow); vines hurt monsters (1 + 3 × reflect)× harder |
+| Stormspire | `pylon.chain`, `nearPylon` | an arc leaps from each monster it hits to that many more; `nearPylon` within 4 m of a pylon (the Pylonbound prefix) |
+| Mire | `mire.immune`, `haste.duration` | mud never slows the hero; haste pads last longer |
+| Echoes | `echo.damage`, `echo.delay`, `echo.repeatsSkills` | stronger, sooner echoes; every cast echoes twice |
+| Riftgates | `gate.damage`, `recentlyGated` | gates tear at monsters passing through and empower the hero for 4 s; `recentlyGated` for 4 s |
+| Bloodmoon | `explosion.damage` | corpse explosions hit harder |
+| Gravewell | `well.immune`, `well.resist` | the pull skips or weakens on the hero |
+| Collapse | `collapse.bonusLoot`, `collapse.fallImmune` | more items from caches and the under-par bonus; falls (any level) cost no life |
 
 `excludes`: gloom ↔ bloodmoon (both relight the level), frostglass ↔ mire (both are floor
 surfaces), riftgates ↔ collapse (gates over vanishing floor). **Add a mechanic:** write a

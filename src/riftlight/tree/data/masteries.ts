@@ -34,7 +34,7 @@ export const MASTERIES = new Registry<MasteryDef>('mastery', [
     tags: ['evasion', 'movement'],
     options: [
       { id: 'evade', mods: [inc('evasion', 0.3)] },
-      { id: 'roll', mods: [inc('dodge.cooldown', -0.2)] },
+      { id: 'roll', mods: [inc('dodge.recovery', 0.2)] },
       { id: 'speed', mods: [inc('move.speed', 0.05)] },
     ],
   },

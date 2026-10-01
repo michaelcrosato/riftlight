@@ -52,7 +52,9 @@ export type MonsterEvent =
   | { type: 'phase'; phase: number }
   | { type: 'hazard'; id: string; at: Vector3; data?: Readonly<Record<string, number | string>> }
   | { type: 'roar'; at: Vector3 }
-  | { type: 'heal'; amount: number };
+  | { type: 'heal'; amount: number }
+  /** Cast a curse gem (skills/actives.ts) at a point (elite Hexer). */
+  | { type: 'hex'; at: Vector3; curse: string };
 
 /** What brains can ask about the world around them. */
 export interface BrainWorld {

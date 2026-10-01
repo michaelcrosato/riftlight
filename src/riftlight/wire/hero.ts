@@ -6,6 +6,7 @@ import { Actor } from '../actors/Actor';
 import { HERO_KEYS } from '../actors/controls';
 import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { AILMENTS } from '../combat/ailments';
+import { CHARGE_TYPES, CHARGES } from '../combat/charges';
 import type { Mod, StatSheet } from '../core/mods';
 import type { SaveData } from '../core/types';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
@@ -187,7 +188,7 @@ export class RealHero implements HeroPort {
 
   vitals(): Vitals {
     const a = this.actor;
-    return { life: a.life, maxLife: a.maxLife, mana: a.mana, maxMana: a.maxMana, es: a.es, maxEs: a.maxEs };
+    return { life: a.life, maxLife: a.maxLife, mana: a.mana, maxMana: a.maxMana, es: a.es, maxEs: a.maxEs, reserved: a.reservesLife ? 0 : a.maxMana - a.unreservedMana };
   }
 
   skills(): readonly SkillSlotView[] {
@@ -197,7 +198,10 @@ export class RealHero implements HeroPort {
       if (!s) return { slot, id: null, name: '', cost: 0, cooldown: 0, remaining: 0, usable: false };
       const cost = s.channel ? s.cost * 0.25 : s.cost;
       const pool = a.stats.has('skills.costLife') ? a.life - 1 : a.mana + (a.stats.has('es.protectsMana') ? a.es : 0);
-      return { slot, id: s.id, name: s.def.name, ...skillIcon(s), cost: Math.round(s.cost), cooldown: s.cooldown, remaining: hc.cooldowns.get(s.id) ?? 0, usable: pool >= cost, tags: s.tags };
+      // an aura reserves instead of costing: usable while on (to turn it off) or when its reservation fits
+      const aura = s.delivery.kind === 'aura' && s.reservation > 0;
+      const usable = aura ? hc.auraOn(s.id) || a.canReserve(s.id, s.reservation) : pool >= cost;
+      return { slot, id: s.id, name: s.def.name, ...skillIcon(s), cost: Math.round(s.cost), cooldown: s.cooldown, remaining: hc.cooldowns.get(s.id) ?? 0, usable, tags: s.tags };
     };
     const out = [0, 1, 2, 3].map((i) => view(i, hc.slots[i] ?? null));
     out.push(view('attack', hc.basic));
@@ -226,6 +230,13 @@ export class RealHero implements HeroPort {
       const shrine = b.source.startsWith('shrine:');
       add(b.source, b.source.split(':').pop()!.replace(/-/g, ' '), b.remaining, shrine ? 'cyan' : 'lime');
     }
+    // charges: one icon per kind held, the count as stacks
+    for (const t of CHARGE_TYPES) {
+      const n = a.charges.count[t];
+      if (n > 0) add(`charge:${t}`, `${CHARGES[t].name} charges`, a.charges.left[t], CHARGES[t].color, false, n);
+    }
+    // curses on the hero (monster hexes)
+    for (const c of a.curses.list) add(`curse:${c.id}`, c.name, Math.max(0, c.until - a.time), c.color, true);
     const ailments = new Map<string, { left: number; n: number }>();
     for (const x of a.ailments) {
       const cur = ailments.get(x.id);
@@ -359,6 +370,8 @@ export class RealHero implements HeroPort {
     if (!a.alive || a.deadFor >= 0) this.hc.revive();
     for (const key of [...a.buffs.keys()]) a.removeBuff(key);
     a.ailments.length = 0;
+    a.charges.clear();
+    a.curses.clear();
     a.hitStop = 0;
     a.iframes = 0;
     a.impulse.set(0, 0, 0);

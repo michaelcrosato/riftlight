@@ -22,7 +22,7 @@ describe('gem data', () => {
   });
   it('every delivery kind is used by at least one skill', () => {
     const kinds = new Set(ACTIVE_SKILLS.map((s) => s.delivery.kind));
-    expect([...kinds].sort()).toEqual(['aura', 'beam', 'dash', 'nova', 'projectile', 'slam', 'strike', 'summon', 'trap']);
+    expect([...kinds].sort()).toEqual(['aura', 'beam', 'curse', 'dash', 'nova', 'projectile', 'slam', 'strike', 'summon', 'trap']);
   });
   it("a skill is tagged 'damage' exactly when it has a damage effect, and 'attack' or 'spell' when it scales", () => {
     for (const s of ACTIVE_SKILLS) {

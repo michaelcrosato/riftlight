@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box } from './common';
+import { asMechanicLevel, box, heroScale, monsterScaleDamage } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -13,6 +13,13 @@ import type { LevelMechanicDef } from './types';
  * speedrunners take every shortcut (each jump also grants a short rift-haste).
  */
 const COOLDOWN = 1.5;
+/**
+ * `gate.damage` (Gatewarden's Key, the Gatekeeper suffix): passing a gate tears at monsters
+ * (chaos damage, × the bonus) and empowers the hero (increased damage by the bonus) for a moment;
+ * the hero is `recentlyGated` meanwhile either way.
+ */
+const GATED = 4;
+const TEAR = 25;
 
 export const RIFTGATES: LevelMechanicDef = {
   id: 'riftgates',
@@ -99,11 +106,16 @@ export const RIFTGATES: LevelMechanicDef = {
       });
     }
     const cooldown = new WeakMap<ActorLike, number>();
+    let gatedUntil = -1;
     const to = new Vector3();
     return {
       update() {
         const t = level.time();
         for (const g of gates.values()) g.core.scale.x = 1.35 * (0.9 + 0.1 * Math.sin(t * 5 + g.id));
+        if (gatedUntil >= 0 && t >= gatedUntil) {
+          gatedUntil = -1;
+          level.hero()?.stats.setCondition('recentlyGated', false);
+        }
       },
       affect(actor) {
         const t = level.time();
@@ -120,11 +132,21 @@ export const RIFTGATES: LevelMechanicDef = {
           level.burst('rift', [to.x, 1, to.z]);
           level.sound('warp');
           level.emit('riftgates', 'teleport', to.clone());
-          if (actor.faction === 'hero') level.buff(actor, 'mechanic:riftgates:haste', [inc('move.speed', 0.3)], 3);
+          const bonus = heroScale(level.hero(), 'gate.damage') - 1;
+          if (actor.faction === 'hero') {
+            level.buff(actor, 'mechanic:riftgates:haste', [inc('move.speed', 0.3)], 3);
+            if (bonus > 0) level.buff(actor, 'mechanic:riftgates:empower', [inc('damage', bonus)], GATED);
+            actor.stats.setCondition('recentlyGated', true);
+            gatedUntil = t + GATED;
+          } else if (actor.faction === 'monster' && bonus > 0) {
+            level.damage(actor, { chaos: monsterScaleDamage(level.depth, TEAR) * bonus }, 'riftgates', { from: to });
+            level.emit('riftgates', 'tear', to.clone());
+          }
           return;
         }
       },
       dispose() {
+        level.hero()?.stats.setCondition('recentlyGated', false);
         for (const g of gates.values()) g.light?.release();
       },
     };

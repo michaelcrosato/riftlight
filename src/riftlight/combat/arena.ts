@@ -89,7 +89,8 @@ class DummyBrain implements Brain {
 export function parseSlots(param: string | null): SlotSpec[] {
   const list = param ? param.split(',') : ARENA.slots;
   return list.map((entry) => {
-    const [skill, ...supports] = entry.split('+');
+    // a '+' in a query string arrives as a space (URLSearchParams): accept both
+    const [skill, ...supports] = entry.trim().split(/[+ ]+/);
     return { skill: skill!, supports };
   });
 }

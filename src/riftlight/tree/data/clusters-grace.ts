@@ -44,7 +44,7 @@ export const GRACE_CLUSTERS = [
       N('ghost-step', 'Ghost Step', [inc('evasion', 0.35), inc('move.speed', 0.03)], 'Strike where I was. I am elsewhere.'),
       N('blur', 'Blur', [inc('evasion', 0.3), flat('evasion', 40)], 'Hard to hit what you cannot see.'),
       N('catlike', 'Catlike', [inc('evasion', 0.25), inc('dodge.distance', 0.15)], 'Always lands on its feet. Never where you expect.'),
-      N('sidestep', 'Sidestep', [inc('evasion', 0.2), inc('dodge.cooldown', -0.15)], 'A half step is enough.'),
+      N('sidestep', 'Sidestep', [inc('evasion', 0.2), inc('dodge.recovery', 0.15)], 'A half step is enough.'),
     ],
   }),
   T({
@@ -52,10 +52,10 @@ export const GRACE_CLUSTERS = [
     name: 'Swiftfoot',
     tags: ['movement'],
     shapes: ['hook', 'zigzag', 'line', 'fork'],
-    pool: [R('move.speed', 'inc', 3), R('dodge.cooldown', 'inc', 1, undefined, undefined, true), R('dodge.distance', 'inc', 1)],
+    pool: [R('move.speed', 'inc', 3), R('dodge.recovery', 'inc', 1), R('dodge.distance', 'inc', 1)],
     notables: [
       N('quicksilver', 'Quicksilver', [inc('move.speed', 0.08)], 'Already gone.'),
-      N('tumbler', 'Tumbler', [inc('dodge.cooldown', -0.2), inc('dodge.distance', 0.2)], 'Roll, roll, and roll again.'),
+      N('tumbler', 'Tumbler', [inc('dodge.recovery', 0.2), inc('dodge.distance', 0.2)], 'Roll, roll, and roll again.'),
       N('wind-at-your-back', 'Wind at Your Back', [inc('move.speed', 0.06), inc('projectile.speed', 0.1)], 'Ride the gusts; they know the way.'),
       N('fleetfoot', 'Fleetfoot', [inc('move.speed', 0.1, undefined, 'notHitRecently')], 'Untouched, unstoppable.'),
     ],

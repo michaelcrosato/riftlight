@@ -5,7 +5,7 @@ import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { VOID } from '../layout/grid';
 import { tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, VelocityTracker } from './common';
+import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, resistFactor, VelocityTracker } from './common';
 import type { LevelMechanicDef, MechanicElement } from './types';
 
 /**
@@ -145,11 +145,16 @@ export const GALE: LevelMechanicDef = {
         }
         if (!lane || !gusting(lane, t)) {
           actor.stats.setCondition('tailwind', false);
+          actor.stats.setCondition('inWind', false);
           return;
         }
         const d = dir(lane);
-        actor.stats.setCondition('tailwind', actor.faction === 'hero' && v.dot(d) > 1);
-        const accel = actor.faction === 'hero' ? 10 : 18;
+        const hero = actor.faction === 'hero';
+        actor.stats.setCondition('tailwind', hero && v.dot(d) > 1);
+        // `inWind`: standing in a gust (Galecaller's extra projectile, the Galeborn prefix)
+        actor.stats.setCondition('inWind', true);
+        // `wind.resist` (the Anchor suffix, Featherfall Sash; Galecaller lowers it to ride gusts harder)
+        const accel = hero ? 10 * resistFactor(actor, 'wind.resist') : 18;
         actor.push(d.clone().multiplyScalar(accel * dt));
         pushedAt.set(actor, t);
       },
@@ -157,6 +162,7 @@ export const GALE: LevelMechanicDef = {
         for (const a of level.actors()) {
           a.stats.remove('mechanic:gale');
           a.stats.setCondition('tailwind', false);
+          a.stats.setCondition('inWind', false);
         }
       },
     };

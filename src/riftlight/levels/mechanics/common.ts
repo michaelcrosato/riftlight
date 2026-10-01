@@ -179,6 +179,41 @@ export function monsterScaleDamage(depth: number, base: number): number {
   return Math.round(base * SCALING.monsterLife(depth));
 }
 
+// ------------------------------------------------------------------ mechanic affixes
+
+/**
+ * How loot and passives bend a mechanic: the level reads these off the hero's StatSheet (the
+ * affixes and uniques in loot/data that name a mechanic). `inc`/`more` stats are multipliers
+ * (base 1), flat stats are plain numbers, flags are on/off.
+ *
+ *   heroScale(hero, 'brazier.damage')   1.6 with "+60% brazier damage"
+ *   heroFlat(hero, 'pylon.chain')       3 with Stormspire Conductor
+ *   heroHas(hero, 'well.immune')        true with Gravewell Anchor
+ */
+export function heroScale(hero: ActorLike | null, stat: string): number {
+  if (!hero) return 1;
+  // (1 + Σinc) × Π(1 + more), the last override wins (as combat's StatQuery.scale)
+  let inc = 0;
+  let more = 1;
+  let over: number | undefined;
+  for (const { mod } of hero.stats.explain(stat)) {
+    if (mod.kind === 'inc') inc += mod.value;
+    else if (mod.kind === 'more') more *= 1 + mod.value;
+    else if (mod.kind === 'override') over = mod.value;
+  }
+  return Math.max(0, over ?? Math.max(0, 1 + inc) * more);
+}
+export function heroFlat(hero: ActorLike | null, stat: string): number {
+  return hero ? hero.stats.get(stat) : 0;
+}
+export function heroHas(hero: ActorLike | null, stat: string): boolean {
+  return !!hero && hero.stats.has(stat);
+}
+/** Force multiplier from a `<x>.resist` stat (inc): +30% → 0.7× the push, −50% → 1.5×, never below 0 or above 2. */
+export function resistFactor(hero: ActorLike | null, stat: string): number {
+  return Math.max(0, Math.min(2, 2 - heroScale(hero, stat)));
+}
+
 const ZERO_RESULT: HitResult = { total: 0, byType: {}, crit: false, killed: false, ailments: [] };
 
 /**

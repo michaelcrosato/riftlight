@@ -90,6 +90,26 @@ function orb(ui: UiCanvas, cx: number, cy: number, frac: number, fill: PaletteCo
   ui.rect(cx - 10, cy - 13, 2, 1, 'mist');
 }
 
+/**
+ * Mana reserved by auras: the top of the mana orb is sealed off (a dark hatch with a bright rim
+ * at its edge), so the liquid can only fill what is left.
+ */
+function reservedCap(ui: UiCanvas, cx: number, cy: number, frac: number): void {
+  if (frac <= 0.001) return;
+  const r = ORB_R;
+  const edge = cy - r + Math.round(2 * r * Math.min(1, frac));
+  for (let dy = -r; cy + dy < edge; dy++) {
+    const w = Math.floor(Math.sqrt(Math.max(0, r * r - dy * dy)));
+    if (w <= 0) continue;
+    ui.rect(cx - w, cy + dy, w * 2 + 1, 1, 'ink');
+    // diagonal hatch
+    for (let x = -w; x <= w; x++) if ((x + dy) % 4 === 0) ui.rect(cx + x, cy + dy, 1, 1, 'navy');
+  }
+  const ey = edge - cy;
+  const ew = Math.floor(Math.sqrt(Math.max(0, r * r - ey * ey)));
+  if (ew > 0) ui.rect(cx - ew, edge, ew * 2 + 1, 1, 'sky');
+}
+
 /** Energy shield: a cyan ring segment around the life orb, clockwise from the top. */
 function shieldRing(ui: UiCanvas, cx: number, cy: number, frac: number): void {
   if (frac <= 0) return;
@@ -150,6 +170,7 @@ export function drawHud(ui: UiCanvas, m: HudModel): void {
   ui.mini(lx, ly + ORB_R + 3 - 33, `${Math.ceil(v.life)}`, 'white', 'center', 'ink');
   const mx = W - 30;
   orb(ui, mx, ly, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0);
+  reservedCap(ui, mx, ly, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0);
   ui.mini(mx, ly + ORB_R + 3 - 33, `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
 
   // skill bar: attack, dodge, then the four skills

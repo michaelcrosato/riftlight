@@ -5,9 +5,14 @@ import { Rng } from '../core/rng';
 import type { Effect, GameEventBus, HitResult } from '../core/types';
 import { Actor } from '../actors/Actor';
 import type { ActorManager } from '../actors/ActorManager';
+import { levelMods } from '../skills/build';
 import type { ResolvedSkill } from '../skills/types';
+import { CHARGE_TYPES, chargeChance } from './charges';
+import { curseDuration, curseLimit, scaleCurse, type CurseOutcome } from './curses';
 import { rollHit, type DamageSpec } from './damage';
 import { DELIVERIES } from './deliveries';
+import { skillTrap } from './deliveries/trap';
+import { placeTotem } from './totems';
 import type { CastContext, CastOptions, CombatEffect } from './deliveries/types';
 import { LightService } from './lights';
 import { placeholderMinion } from './minions';
@@ -156,6 +161,10 @@ export class Combat {
     this.stats.casts++;
     this.events.emit('skill', { actor: caster, skill: skill.id });
     this.play(skill.def.look.sound?.cast, { pitch: opts.combo ? opts.combo * 2 : 0 });
+    // a totem / trap support: plant or throw it; the totem or trap uses the skill itself later
+    if (skill.placement && skill.inner) return this.place(caster, skill, aim, opts);
+    // charges a skill gains or consumes on use (a consumed charge empowers this cast; repeats keep it)
+    if (!opts.repeat) skill = this.castCharges(caster, skill);
     this.applyCastBuffs(caster, skill);
     const effect = impl(this.context(caster, skill, aim, opts));
     if (effect) this.effects.push(effect);
@@ -172,6 +181,80 @@ export class Combat {
       }
     }
     return effect;
+  }
+
+  /** Plant a totem or throw a trap for a placement skill (see `ResolvedSkill.placement`). */
+  private place(caster: Actor, skill: ResolvedSkill, aim: Vector3, opts: CastOptions): CombatEffect {
+    const ctx = this.context(caster, skill, aim, opts);
+    const inner = skill.inner!;
+    const effect =
+      skill.placement === 'totem'
+        ? placeTotem(ctx)
+        : skillTrap(ctx, (at, target) => {
+            const proxy = proxyOf(caster, at);
+            proxy.facing = Math.atan2(target.position.x - at.x, target.position.z - at.z);
+            this.cast(proxy, inner, target.position.clone());
+          });
+    this.effects.push(effect);
+    return effect;
+  }
+
+  /** Who holds the charges a caster earns: a trap's stand-in and a totem earn them for their owner. */
+  chargeHolder(a: Actor): Actor {
+    return a.owner && (a.tags.includes('proxy') || a.tags.includes('totem')) ? a.owner : a;
+  }
+
+  /** `charges` effects that act on use: gains, and consumption whose `perCharge` mods empower the cast. */
+  private castCharges(caster: Actor, skill: ResolvedSkill): ResolvedSkill {
+    let extra: Mod[] | null = null;
+    const holder = this.chargeHolder(caster);
+    for (const e of skill.effects) {
+      if (e.kind !== 'charges' || (e.on ?? 'cast') !== 'cast') continue;
+      if (e.chance !== undefined && !caster.rng.chance(e.chance)) continue;
+      if (e.count > 0) for (const t of e.charge === 'all' ? CHARGE_TYPES : [e.charge]) holder.charges.gain(t, e.count);
+      else if (e.count < 0) {
+        const n = holder.charges.consume(e.charge, -e.count);
+        if (n > 0 && e.perCharge) (extra ??= []).push(...levelMods(e.perCharge, n));
+      }
+    }
+    return extra ? { ...skill, mods: [...skill.mods, ...extra] } : skill;
+  }
+
+  /** Charges from a landed hit: the skill's on-hit `charges` effects and `charge.onHit` / `onCrit` / `onStun`. */
+  private hitCharges(caster: Actor, skill: ResolvedSkill, q: StatQuery, result: HitResult): void {
+    const holder = this.chargeHolder(caster);
+    for (const e of skill.effects) {
+      if (e.kind !== 'charges' || e.on !== 'hit' || e.count <= 0) continue;
+      if (e.chance !== undefined && !caster.rng.chance(e.chance)) continue;
+      for (const t of e.charge === 'all' ? CHARGE_TYPES : [e.charge]) holder.charges.gain(t, e.count);
+    }
+    const stun = result.ailments.includes('stun');
+    for (const t of CHARGE_TYPES) {
+      let miss = 1 - chargeChance(q, t, 'onHit');
+      if (result.crit) miss *= 1 - chargeChance(q, t, 'onCrit');
+      if (stun) miss *= 1 - chargeChance(q, t, 'onStun');
+      if (miss < 1 && caster.rng.chance(1 - miss)) holder.charges.gain(t);
+    }
+  }
+
+  /**
+   * Curse `target` with `skill`'s `curse` effect: its mods scaled by the caster's
+   * `curse.effect`, for its duration × `curse.duration`, within the caster's `curseLimit`.
+   * Returns what happened ('immune' for `curse.immune` targets), or null when it can't apply.
+   */
+  curse(caster: Actor, target: Actor, skill: ResolvedSkill): CurseOutcome | null {
+    const e = skill.effects.find((x): x is Extract<Effect, { kind: 'curse' }> => x.kind === 'curse');
+    if (!e || !target.alive || !caster.hostileTo(target)) return null;
+    const q = new StatQuery(caster.stats, skill.mods);
+    const source = this.chargeHolder(caster);
+    const color = (e.color ?? skill.def.look.color) as PaletteColor;
+    const outcome = target.curses.apply(
+      { id: skill.def.id, name: skill.def.name, mods: scaleCurse(e.mods, q, skill.tags), duration: curseDuration(e.duration, skill.duration, q, skill.tags), source, color, limit: curseLimit(source.stats) },
+      target.time,
+    );
+    this.events.emit('curse', { target, source, curse: skill.def.id, outcome });
+    if (outcome === 'immune') this.burst('spark', chest(target.position, 1.4), { count: 6, colors: ['white', 'mist'] });
+    return outcome;
   }
 
   private context(caster: Actor, skill: ResolvedSkill, aim: Vector3, opts: CastOptions): CastContext {
@@ -226,6 +309,10 @@ export class Combat {
     if (o.knockback !== undefined && h.knockback) h = { ...h, knockback: h.knockback * o.knockback };
     const result = target.takeHit(h);
     this.applyEnemyBuffs(target, skill);
+    if (result.total > 0) {
+      this.hitCharges(caster, skill, q, result);
+      this.reflect(target, caster, result, spec);
+    }
     // keystone `elementalOverload`: a crit grants 40% more elemental damage for 8 s
     if (result.crit && result.total > 0 && caster.stats.has('elementalOverload')) caster.addBuff('elementalOverload', [more('elemental.damage', 0.4)], 8);
     if (result.total > 0) {
@@ -243,6 +330,17 @@ export class Combat {
       }
     }
     return result;
+  }
+
+  /**
+   * Thorns: a melee hit on an actor with `thorns.reflect` (gear, Thornmother's Embrace) hurts
+   * the attacker back with that share of the damage taken, as physical (not reflected again).
+   */
+  private reflect(target: Actor, attacker: Actor, result: HitResult, spec: DamageSpec): void {
+    if (!spec.tags.includes('melee') || !attacker.alive || attacker === target) return;
+    const amount = result.total * Math.max(0, target.stats.get('thorns.reflect'));
+    if (amount <= 0) return;
+    attacker.takeHit({ source: target, skill: 'thorns', tags: ['thorns', 'physical'], damage: { physical: amount }, crit: false });
   }
 
   /** Hit every enemy of `caster` within `radius` of `center` once (explosions, novas, slams). */
@@ -334,6 +432,17 @@ export class Combat {
     this.off.length = 0;
     this.root.removeFromParent();
   }
+}
+
+/**
+ * A stand-in caster at `at` that shares `owner`'s live stat sheet (a sprung trap fires the
+ * linked skill from where it lies). Not added to the world: it only casts. Its kills count for
+ * its owner and the charges it earns go to its owner (`Combat.chargeHolder`).
+ */
+export function proxyOf(owner: Actor, at: Vector3): Actor {
+  const p = new Actor({ faction: owner.faction, name: owner.name, sheet: owner.stats, at: [at.x, at.y, at.z], tags: ['proxy'], level: owner.level, radius: 0.2, seed: `proxy:${owner.id}:${at.x.toFixed(2)}:${at.z.toFixed(2)}` });
+  p.owner = owner;
+  return p;
 }
 
 /** A point at chest height above feet. */

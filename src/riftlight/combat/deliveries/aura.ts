@@ -50,6 +50,12 @@ class Aura extends EffectBase {
     return true;
   }
 
+  override dispose(): void {
+    super.dispose();
+    // toggled off, or its caster left the stage: the reservation comes back
+    this.c.caster.unreserve(this.c.skill.id);
+  }
+
   render(): void {
     const p = this.c.caster.body.position;
     this.ring.position.set(p.x, p.y + 0.035, p.z);
@@ -60,12 +66,15 @@ class Aura extends EffectBase {
 
 /**
  * A toggled aura around the caster: buffs allies (or debuffs enemies) in range while on.
- * Casting it again turns it off (and returns null).
+ * Casting it again turns it off (and returns null). While on it holds its reservation
+ * (`skill.reservation` of the caster's mana, or life with Blood Magic) instead of a cost;
+ * it won't turn on when that doesn't fit.
  */
 export const aura = (c: CastContext): CombatEffect | null => {
   if (c.combat.stop(c.caster, c.skill.id) > 0) {
     c.caster.removeBuff(`aura:${c.skill.id}`);
     return null;
   }
+  if (!c.caster.reserve(c.skill.id, c.skill.reservation)) return null;
   return new Aura(c);
 };

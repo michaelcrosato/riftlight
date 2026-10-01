@@ -455,7 +455,13 @@ export class HeroController {
     if ((this.cooldowns.get(skill.id) ?? 0) > 0) return this.fail('COOLDOWN');
     // weapon-class skills need that weapon (the equipped weapon sets the `weapon.<class>` flag)
     for (const cls of WEAPON_CLASSES) if (skill.tags.includes(cls) && !a.stats.has(`weapon.${cls}`)) return this.fail(`NEEDS A ${cls.toUpperCase()}`);
-    const upfront = skill.channel ? skill.cost * 0.25 : skill.cost;
+    // auras reserve instead of paying: turning one on needs room in the pool, turning it off is free
+    const aura = skill.delivery.kind === 'aura' && skill.reservation > 0;
+    if (aura && !this.auraOn(skill.id) && !a.canReserve(skill.id, skill.reservation)) {
+      this.stats.noMana++;
+      return this.fail(a.reservesLife ? 'NO LIFE' : 'NO MANA');
+    }
+    const upfront = aura ? 0 : skill.channel ? skill.cost * 0.25 : skill.cost;
     if (!payCost(a, upfront)) {
       this.stats.noMana++;
       return this.fail(a.stats.has('skills.costLife') ? 'NO LIFE' : 'NO MANA');
@@ -495,6 +501,11 @@ export class HeroController {
     this.animator.setTime(anim, 0);
     this.comboUntil = 0;
     return true;
+  }
+
+  /** Is this aura on (its effect running in the hero's combat)? */
+  auraOn(id: string): boolean {
+    return this.combat.effects.some((e) => e.kind === 'aura' && e.caster === this.actor && e.skill === id);
   }
 
   private startDodge(): void {
