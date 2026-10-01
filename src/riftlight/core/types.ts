@@ -153,7 +153,7 @@ export interface ItemBase extends Entry {
 
 export interface AffixTier {
   readonly level: number;
-  readonly mods: readonly { stat: string; kind: Mod['kind']; min: number; max: number; tags?: readonly string[] }[];
+  readonly mods: readonly { stat: string; kind: Mod['kind']; min: number; max: number; tags?: readonly string[]; when?: string }[];
 }
 
 export interface Affix extends Entry {
@@ -183,6 +183,10 @@ export interface Item {
   /** Skill/support gem items: which gem and its level. */
   readonly gem?: { id: string; level: number; support: boolean };
   readonly quantity?: number;
+  /** Corrupted (vaal-like orb): no further crafting. */
+  readonly corrupted?: boolean;
+  /** Extra implicit mods added after the roll (corruption), shown with the base implicit. */
+  readonly implicits?: readonly RolledAffix[];
 }
 
 export interface UniqueDef extends Entry {
@@ -352,6 +356,11 @@ export interface SaveData {
     skills: { slot: number; gem: Item | null; supports: (Item | null)[] }[];
   };
   stash: Item[];
+  /**
+   * Where each item sits, by uid: inventory cells, or a stash tab and cells. Optional;
+   * items without a position are packed into the first free cells on load.
+   */
+  positions?: Record<string, { tab?: number; x: number; y: number }>;
   /** Highest depth cleared; designed levels unlock in order, rifts after 12. */
   deepest: number;
   difficulty: DifficultyTuning;
