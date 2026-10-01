@@ -6,8 +6,8 @@ import { STAND_FEET, STAND_BODY } from './standing';
 
 export const Tiptoe = gaitClip(RIG, {
   name: 'Tiptoe',
-  frames: 24,
-  speed: 0.9,
+  frames: 18,
+  speed: 1.2,
   stance: 0.62,
   hip: -0.03,
   bob: 0.015,

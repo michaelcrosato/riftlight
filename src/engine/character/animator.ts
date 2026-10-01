@@ -41,11 +41,17 @@ export interface GaitRequest {
   tiptoe: number;
 }
 
-/** The clips of the locomotion blend space, by role. */
+/** The clips of the locomotion blend space, by role, and where walking turns into running. */
 export interface GaitClips {
   tiptoe: string;
   walk: string;
   run: string;
+  /**
+   * Ground speeds (m/s) between which Walk cross-fades into Run (default: their authored
+   * speeds). Gaits with different stance shares don't blend cleanly (one foot is still
+   * planted while the other gait already swings it), so keep the band short.
+   */
+  blend?: readonly [number, number];
 }
 
 export interface AnimatorOptions {
@@ -88,7 +94,7 @@ export class Animator {
   private readonly byName = new Map<string, AnimationAction>();
   private current: Layer | null = null;
   /** Gait: actions in role order (tiptoe, walk, run), stride per cycle (m), stance shares, phase 0..1. */
-  private readonly gait: { layer: Layer; stride: number[]; speed: number[]; stance: number[]; phase: number; tiptoe: number; request: GaitRequest } | null;
+  private readonly gait: { layer: Layer; stride: number[]; speed: number[]; stance: number[]; band: readonly [number, number]; phase: number; tiptoe: number; request: GaitRequest } | null;
   readonly feet: FootPlacement | null;
   readonly pose: PoseLayers | null;
   private readonly footNames: [string, string];
@@ -116,6 +122,7 @@ export class Animator {
         speed,
         stride: actions.map((a, i) => speed[i]! * a.getClip().duration),
         stance: actions.map((a) => (a.getClip().userData.stance as number | undefined) ?? 0.5),
+        band: g.blend ?? [speed[1]!, speed[2]!],
         phase: 0,
         tiptoe: 0,
         request: { speed: 0, tiptoe: 0 },
@@ -274,9 +281,9 @@ export class Animator {
 
   private gaitShares(req: GaitRequest, tiptoe: number): [number, number, number] {
     const g = this.gait!;
-    const [vt, vw, vr] = g.speed as [number, number, number];
+    const vt = g.speed[0]!;
     const v = Math.abs(req.speed);
-    const run = Math.min(1, Math.max(0, (v - vw) / (vr - vw)));
+    const run = smoothstep(v, g.band[0], g.band[1]);
     // tiptoeing fades out well above its own speed (momentum from a run, say)
     const t = tiptoe * (1 - smoothstep(v, vt * 1.4, vt * 2.2));
     return [t, (1 - t) * (1 - run), (1 - t) * run];

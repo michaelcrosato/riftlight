@@ -1,6 +1,6 @@
 import { MathUtils, Vector3 } from 'three/webgpu';
 import type { RAPIER } from '../physics/Physics';
-import { angleDiff, turnToward } from './motion';
+import { angleDiff, approach, turnToward } from './motion';
 import type { AnimRequest } from './animator';
 import type { JumpKind, Ledge, MoveInput, PlatformerCharacter, Stance } from './PlatformerCharacter';
 import { TUNING as T } from './tuning';
@@ -229,7 +229,7 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
   }
 
   const max = input.walk ? G.walkSpeed : c.runSpeed;
-  c.groundMove(dt, input, max, G.accel);
+  c.groundMove(dt, input, max);
 
   if (checkClimb(c, input)) return;
   if (checkPush(c, input)) return;
@@ -311,7 +311,7 @@ function stepSkidTurn(c: PlatformerCharacter, dt: number, input: MoveInput): voi
   if (spin < 1) {
     c.facing = c.turnFrom + angleDiff(c.turnTo, c.turnFrom) * spin;
     c.decel(dt, K.turnDecel);
-  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.runSpeed, G.accel);
+  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.runSpeed);
   c.move(dt);
   if (c.stateTime >= K.turnEnd) {
     if (c.speed > G.stopSpeed || input.move.lengthSq() > T.skid.stickMinSq) c.enter(c.speed > G.runAbove ? 'run' : 'walk');
@@ -495,13 +495,19 @@ function startFall(c: PlatformerCharacter): void {
 
 function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   const A = T.air;
-  // Air control: steer velocity toward input; facing follows slowly.
+  // Air control (Mario 64): momentum is kept. The stick bends the path a little, adds speed
+  // only up to a modest cap, and pulling back against the motion slows it gently; it can't
+  // turn a jump round. Facing follows slowly.
   const mag = Math.min(1, input.move.length());
   const noSteer = c.state === 'dive' || c.jumpKind === 'Backflip' || c.jumpKind === 'LongJump';
   if (mag > G.deadzone && !noSteer) {
-    const want = c.tmpVec.copy(input.move).setY(0).normalize().multiplyScalar(Math.max(c.speed, c.runSpeed * A.steerSpeed * mag));
-    c.hvel.lerp(want, 1 - Math.exp(-A.steerRate * dt));
-    if (!input.face) c.facing = turnToward(c.facing, Math.atan2(input.move.x, input.move.z), A.turnRate * dt);
+    const want = Math.atan2(input.move.x, input.move.z);
+    if (input.face) {
+      // first person: strafe in the air, but no faster than the same cap
+      const target = c.tmpVec.copy(input.move).setY(0).normalize().multiplyScalar(Math.max(c.speed, c.runSpeed * A.maxSteerSpeed * mag));
+      c.hvel.lerp(target, 1 - Math.exp(-A.strafeRate * dt));
+    } else airSteer(c, dt, want, mag);
+    if (!input.face) c.facing = turnToward(c.facing, want, A.turnRate * dt);
   }
 
   // Variable jump height: releasing jump while rising cuts the arc (not for flips).
@@ -539,6 +545,28 @@ function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
     const ledge = c.findLedge(c.feetInto(c.tmpFeet), c.fwd());
     if (ledge) grabLedge(c, ledge);
   }
+}
+
+/** Bend the air velocity toward `want` (yaw), speed up toward the cap, or brake against it. */
+function airSteer(c: PlatformerCharacter, dt: number, want: number, mag: number): void {
+  const A = T.air;
+  const speed = c.speed;
+  const cap = c.runSpeed * A.maxSteerSpeed * mag;
+  if (speed < 0.1) {
+    // from (nearly) standing still: drift the way the stick points
+    const s = Math.min(cap, speed + A.accel * mag * dt);
+    c.hvel.set(Math.sin(want) * s, 0, Math.cos(want) * s);
+    return;
+  }
+  const dir = Math.atan2(c.hvel.x, c.hvel.z);
+  const off = angleDiff(want, dir);
+  let s = speed;
+  let heading = dir;
+  if (Math.abs(off) < A.brakeAngle) {
+    heading = turnToward(dir, want, A.steerRate * mag * dt);
+    if (s < cap) s = Math.min(cap, s + A.accel * mag * dt);
+  } else s = approach(s, 0, A.brake * mag * dt);
+  c.hvel.set(Math.sin(heading) * s, 0, Math.cos(heading) * s);
 }
 
 function wallKick(c: PlatformerCharacter): void {

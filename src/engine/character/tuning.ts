@@ -31,6 +31,8 @@ export const TUNING = {
     /** Ground rays start this high above the feet and reach `groundDown` below that. */
     groundUp: 0.3,
     groundDown: 0.8,
+    /** Grounded with ground this close under the middle of the feet: supported (no gravity). */
+    supportDown: 0.12,
     /** "Ground ahead" rays (teeter, braking) reach this far down. */
     aheadDown: 0.9,
     /** A surface whose normal has |y| below this is a wall; above `floorY` it's a floor. */
@@ -75,7 +77,7 @@ export const TUNING = {
     impactMin: 0.35,
   },
   /** The locomotion blend space (animator.ts): its clips, by role. */
-  gait: { tiptoe: 'Tiptoe', walk: 'Walk', run: 'Run' },
+  gait: { tiptoe: 'Tiptoe', walk: 'Walk', run: 'Run', blend: [2.8, 4.2] },
   /** Runtime foot placement (src/engine/animation/footPlacement.ts); anything not set here uses its defaults. */
   feet: { maxDrift: 0.14, stepTime: 0.15, stepLift: 0.06 },
   /** Procedural layers (src/engine/animation/poseLayers.ts): landing squash at full impact. */
@@ -84,15 +86,34 @@ export const TUNING = {
   /** Terminal fall speed (m/s, downward). */
   maxFall: -30,
 
-  /** Walking and running (Mario-style: turn toward the stick, speed builds along facing). */
+  /**
+   * Walking and running (Mario-style: turn toward the stick, speed builds along facing).
+   *
+   * Weight, Mario 64 style: speed builds over ~0.65 s to the top (it was 0.14 s at a flat
+   * 45 m/s²), but the acceleration is highest from a standstill (`accel`, 16 m/s²) and falls
+   * to `accelTop` (6 m/s²) near full speed. A small stick input asks for a small speed and
+   * gets there in under 0.1 s, so it stays snappy; only the last metres per second take time.
+   * Turning is quick at walking pace (`turnRate`, 12 rad/s; ×`slowTurnBoost` from a near
+   * standstill) and slower at full speed (`turnRateTop`, 5 rad/s: a running turn is a ~1.3 m
+   * radius arc, not a pivot); turning the stick right round at speed still skids. The stick's
+   * tilt is squared (`stickCurve`, as Mario 64 does), so a gentle tilt tiptoes slowly.
+   */
   ground: {
     runSpeed: 6.5,
     /** Top speed with the walk modifier held. */
     walkSpeed: 2.2,
-    accel: 45,
-    /** Slowing down (stick let go) is this much quicker than speeding up. */
+    /** Acceleration (m/s²) from a standstill, falling linearly to `accelTop` at run speed. */
+    accel: 16,
+    accelTop: 6,
+    /** Slowing down: stick let go (m/s²), or eased back to a slower speed. */
+    brake: 20,
+    /** States that pass their own acceleration slow down this much quicker than they speed up. */
     brakeFactor: 1.3,
-    turnRate: 14,
+    /** Turn rate (rad/s) standing to walking, falling linearly to `turnRateTop` at run speed. */
+    turnRate: 12,
+    turnRateTop: 5,
+    /** Speed asked for = top speed × tilt^stickCurve. */
+    stickCurve: 2,
     /** First person (strafing): velocity follows the stick at this rate (1/s). */
     strafeResponse: 12,
     /** Side-scroller lane lock: close this share of the drift off the lane per step. */
@@ -187,16 +208,26 @@ export const TUNING = {
     forwardAbove: 0.5,
     /** A jump pressed this long before touchdown still jumps on landing. */
     buffer: 0.12,
-    /** The feet stay planted (foot locking) for this long after a jump starts: the launch frame. */
+    /** The feet stay planted (foot locking) for this long after a jump starts: the launch step. */
     launchFeet: 0.01,
   },
 
-  /** In the air. */
+  /**
+   * In the air. Mario 64 keeps a jump's momentum: the stick bends the path (`steerRate`,
+   * rad/s at full tilt), adds speed only up to `maxSteerSpeed` × run speed (`accel` m/s²),
+   * and pulling back against the motion (more than `brakeAngle` rad off it) slows it at
+   * `brake` m/s², so a full-speed jump can't be turned round before it lands (it could be
+   * reversed outright before). Facing follows the stick at `turnRate`.
+   */
   air: {
-    /** Air control: steer toward the stick at this rate (1/s), up to `steerSpeed` × run speed. */
-    steerRate: 3,
-    steerSpeed: 0.7,
-    turnRate: 4,
+    steerRate: 2.2,
+    maxSteerSpeed: 0.7,
+    accel: 7,
+    brake: 6,
+    brakeAngle: 2,
+    /** First person: strafing in the air follows the stick at this rate (1/s). */
+    strafeRate: 3,
+    turnRate: 3,
     /** Releasing jump while rising multiplies gravity by this (variable jump height). */
     shortHopGravity: 2.2,
     /** Falling faster than this (m/s down) turns a jump into a fall. */

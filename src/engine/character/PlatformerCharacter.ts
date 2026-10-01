@@ -357,6 +357,11 @@ export class PlatformerCharacter {
     return !!hit && Math.abs(hit.normal.y) < P.wallY;
   }
 
+  /** @internal Ground straight under the middle of the feet (not just under the capsule's rim). */
+  supported(): boolean {
+    return !!this.ray(this.probe(P.groundUp), DOWN, P.groundUp + P.supportDown);
+  }
+
   /** @internal Normal of the ground under the feet, if any. */
   groundNormal(): Vector3 | null {
     const hit = this.ray(this.probe(P.groundUp), DOWN, P.groundDown);
@@ -418,8 +423,12 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ movement
 
-  /** @internal Mario-style: turn facing toward the stick, speed builds along facing. */
-  groundMove(dt: number, input: MoveInput, maxSpeed: number, accel: number, turnRate: number = T.ground.turnRate): void {
+  /**
+   * @internal Mario-style: turn facing toward the stick, speed builds along facing. Without
+   * `accel` / `turnRate` (walking and running) both depend on the speed (tuning.ts `ground`):
+   * quick off the mark, building to full speed over ~0.65 s, turning wider the faster it goes.
+   */
+  groundMove(dt: number, input: MoveInput, maxSpeed: number, accel?: number, turnRate?: number): void {
     const G = T.ground;
     const mag = Math.min(1, input.move.length());
     if (input.face) {
@@ -428,14 +437,19 @@ export class PlatformerCharacter {
       return;
     }
     let speed = this.speed + this.wallSlip;
+    const u = Math.min(1, speed / this.runSpeed);
     if (mag > G.deadzone) {
       const want = Math.atan2(input.move.x, input.move.z);
       this.heading = want;
-      const rate = speed < G.slowTurnSpeed ? turnRate * G.slowTurnBoost : turnRate;
+      let rate = turnRate ?? G.turnRate + (G.turnRateTop - G.turnRate) * u;
+      if (speed < G.slowTurnSpeed) rate *= G.slowTurnBoost;
       this.facing = turnToward(this.facing, want, rate * dt);
-      speed = approach(speed, maxSpeed * mag, accel * dt);
+      // the stick's tilt is squared (Mario 64): a gentle tilt is a slow tiptoe
+      const target = maxSpeed * mag ** G.stickCurve;
+      const a = accel ?? G.accel + (G.accelTop - G.accel) * u;
+      speed = approach(speed, target, (speed > target ? (accel ?? G.brake) : a) * dt);
     } else {
-      speed = approach(speed, 0, accel * G.brakeFactor * dt);
+      speed = approach(speed, 0, (accel === undefined ? G.brake : accel * G.brakeFactor) * dt);
     }
     this.hvel.copy(this.fwd()).multiplyScalar(speed);
   }
@@ -457,8 +471,9 @@ export class PlatformerCharacter {
   move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
     const def = stateDef(this.state);
     // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
-    // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch).
-    if (gravity && !def.airborne) this.vy = this.grounded ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
+    // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch). Gravity still
+    // pulls when nothing is under the middle of the body (perched on an edge: slide off it).
+    if (gravity && !def.airborne) this.vy = this.grounded && this.supported() ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
     const desired = this.desired;
     desired.x = this.hvel.x * dt;
     desired.y = this.vy * dt;

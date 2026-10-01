@@ -227,7 +227,8 @@ describe('PlatformerCharacter', () => {
     box(p, [0, 1.5, -6], [3, 1.5, 0.5]); // wall face at z = -5.5
     const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
     h.facing = Math.PI;
-    const seen = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 60);
+    // 5.2 m to the wall: about a second at the speed building up over ~0.65 s
+    const seen = run(p, h, inp({ move: new Vector3(0, 0, -1) }), 90);
     expect(seen).toContain('run');
     expect(seen).toContain('bonk');
     expect(h.feet.z).toBeGreaterThan(-5.25);
@@ -254,12 +255,13 @@ describe('PlatformerCharacter', () => {
         const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(5, 0, 0).setRotation({ x: 0, y: 0, z: Math.sin(0.2), w: Math.cos(0.2) }));
         p.world.createCollider(RAPIER.ColliderDesc.cuboid(3, 0.3, 3), b);
       }
-      const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+      // a run-up to full speed (it builds over ~0.65 s), then up the stairs or the slope
+      const h = new PlatformerCharacter(p, { position: [-4, 0, 0] });
       h.facing = Math.PI / 2;
       let slowest = Infinity;
-      for (let k = 0; k < 70; k++) {
+      for (let k = 0; k < 120 && h.feet.x < 6.3; k++) {
         run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
-        if (k > 15) slowest = Math.min(slowest, h.speed);
+        if (h.feet.x > 1.5) slowest = Math.min(slowest, h.speed);
       }
       expect(h.feet.y).toBeGreaterThan(0.5);
       expect(slowest).toBeGreaterThan(6);
