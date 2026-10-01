@@ -445,7 +445,9 @@ export class PlatformerCharacter {
    */
   move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
     const def = stateDef(this.state);
-    if (gravity && !def.airborne) this.vy = Math.min(this.vy, 0) + T.gravity * dt;
+    // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
+    // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch).
+    if (gravity && !def.airborne) this.vy = this.grounded ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
     const desired = this.desired;
     desired.x = this.hvel.x * dt;
     desired.y = this.vy * dt;

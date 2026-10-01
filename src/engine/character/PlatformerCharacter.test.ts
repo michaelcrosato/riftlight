@@ -266,6 +266,23 @@ describe('PlatformerCharacter', () => {
     }
   });
 
+  it('runs smoothly on flat ground: no step where the controller stalls', async () => {
+    // Pushing a grounded capsule down into the floor every step made Rapier's KCC return
+    // almost no movement every ~20 steps (a hitch, and planted feet skating by a step).
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [-6, 0, 10] });
+    h.facing = Math.PI / 2;
+    run(p, h, inp({ move: new Vector3(1, 0, 0) }), 60);
+    let last = h.feet.x;
+    let slowest = Infinity;
+    for (let k = 0; k < 120; k++) {
+      run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
+      slowest = Math.min(slowest, (h.feet.x - last) / DT);
+      last = h.feet.x;
+    }
+    expect(slowest).toBeGreaterThan(h.runSpeed * 0.95);
+  });
+
   it('blend weights stay finite and complete through fast state changes, even with dt = 0', async () => {
     const p = await setup();
     const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
