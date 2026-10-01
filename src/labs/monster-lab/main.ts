@@ -32,6 +32,7 @@ import {
   PLANS,
   renderPortrait,
   sanitize,
+  designedBoss,
   THEME_COLOURS,
   validateGenome,
   type BuiltMonster,
@@ -58,6 +59,9 @@ interface Shown {
 
 const RANKS: Rank[] = ['normal', 'magic', 'rare', 'boss'];
 
+/** A lineup entry: a genome, generate options with a seed, or 'boss:<level>'. */
+type LineupEntry = Genome | ({ seed?: string | number } & GenomeOptions) | `boss:${number}`;
+
 class MonsterLab implements Game {
   readonly name = 'Monster Lab';
   ctx!: GameContext;
@@ -65,7 +69,8 @@ class MonsterLab implements Game {
   current!: Shown;
   children: Shown[] = [];
   parentB: Genome | null = null;
-  mode: 'single' | 'grid' = 'single';
+  mode: 'single' | 'grid' | 'lineup' = 'single';
+  private lineupCentre = new Vector3(0, 0.6, 0);
   /** Grid spacing of the evolve view (m). */
   spacing = 2;
   seed: string | number = 1;
@@ -187,6 +192,49 @@ class MonsterLab implements Game {
     return genomes;
   }
 
+  /**
+   * A lineup at the game's own camera (iso, the level zoom): how monsters read in play, at
+   * 480×270. Entries are genomes, generate options (`{ seed, plan, archetype, ... }`) or
+   * `'boss:<level>'` for a designed boss.
+   */
+  lineup(entries: readonly LineupEntry[], o: { cols?: number; zoom?: number; clip?: string; gap?: number } = {}): Genome[] {
+    this.clearGrid();
+    this.holder.remove(this.current.built.object);
+    const genomes = entries.map((e) => {
+      if (typeof e === 'string') return designedBoss(Number(e.split(':')[1])).genome;
+      if ('plan' in e && 'parts' in e) return e as Genome;
+      const { seed, ...rest } = e as { seed?: string | number } & GenomeOptions;
+      return generateGenome(new Rng(seed ?? 1), rest);
+    });
+    this.children = genomes.map((g) => this.make(g));
+    const cols = Math.max(1, o.cols ?? Math.min(6, genomes.length));
+    const gap = o.gap ?? 0.5;
+    const rows = Math.ceil(genomes.length / cols);
+    // column widths and row depths from the monsters' footprints
+    const span = this.children.map((c) => Math.max(0.8, (c.built.radius + gap) * 2));
+    const colW = Array.from({ length: cols }, (_, ci) => Math.max(0.8, ...span.filter((_, i) => i % cols === ci)));
+    const rowD = Array.from({ length: rows }, (_, ri) => Math.max(...span.slice(ri * cols, ri * cols + cols)));
+    const width = colW.reduce((a, b) => a + b, 0);
+    const depth = rowD.reduce((a, b) => a + b, 0);
+    this.children.forEach((c, i) => {
+      const ci = i % cols;
+      const ri = Math.floor(i / cols);
+      const x = colW.slice(0, ci).reduce((a, b) => a + b, 0) + colW[ci]! / 2 - width / 2;
+      const z = rowD.slice(0, ri).reduce((a, b) => a + b, 0) + rowD[ri]! / 2 - depth / 2;
+      // rows run along the screen (the iso camera looks from +X+Z, yaw 45°)
+      c.built.object.position.set((x + z) * Math.SQRT1_2, 0, (z - x) * Math.SQRT1_2);
+      const clip = o.clip ?? this.clip;
+      c.runtime.play(c.built.clipNames.includes(clip) ? clip : 'Idle', { fade: 0 });
+      this.holder.add(c.built.object);
+    });
+    this.lineupCentre.set(0, 0.6, 0);
+    this.mode = 'lineup';
+    this.skeleton.visible = false;
+    this.ctx.engine.setCamera({ preset: 'iso', zoom: o.zoom ?? 1.08 });
+    this.changed();
+    return genomes;
+  }
+
   /** Keep child i (grid mode) as the current monster. */
   select(i: number): Genome {
     const child = this.children[i];
@@ -244,7 +292,7 @@ class MonsterLab implements Game {
 
   update(_ctx: GameContext, dt: number): void {
     const step = this.playing ? dt : 0;
-    for (const s of this.mode === 'grid' ? this.children : [this.current]) {
+    for (const s of this.mode === 'single' ? [this.current] : this.children) {
       const events = s.runtime.update(step, {});
       // one-shot clips loop in the lab after a short beat
       if (events.some((e) => e.type === 'end') && s.built.clipInfo(this.clip)?.kind !== 'idle') setTimeout(() => s.runtime.play(this.clip, { fade: 0, restart: true }), 400);
@@ -254,7 +302,7 @@ class MonsterLab implements Game {
   }
 
   cameraTarget(): Vector3 {
-    return new Vector3(0, 0.6, 0);
+    return this.mode === 'lineup' ? this.lineupCentre : new Vector3(0, 0.6, 0);
   }
 
   status(): string {
@@ -466,7 +514,7 @@ function ui(engine: Engine, lab: MonsterLab): void {
     shownGenome = g;
     // genes
     const plan = PLANS.get(g.plan);
-    const names = [...new Set([...Object.keys(plan.genes), 'wingSpan'])];
+    const names = [...new Set([...Object.keys(plan.genes), 'wingSpan', 'pattern', 'patternScale', 'markHue'])];
     $('genes').innerHTML = names.map((n) => `<label class="gene">${n}<input type="range" min="0" max="1" step="0.01" value="${g.genes[n] ?? 0.5}" data-gene="${n}" /><span>${(g.genes[n] ?? 0.5).toFixed(2)}</span></label>`).join('');
     panel.querySelectorAll<HTMLInputElement>('[data-gene]').forEach((input) => input.addEventListener('change', () => lab.setGene(input.dataset.gene!, Number(input.value))));
     // parts
@@ -531,6 +579,8 @@ export interface MonsterLabApi {
   storeParent(): void;
   crossover(): Genome;
   evolve(amount?: number): Genome[];
+  /** Monsters in rows at the game's camera (iso, level zoom): how they read in play. */
+  lineup(entries: readonly LineupEntry[], o?: { cols?: number; zoom?: number; clip?: string; gap?: number }): Genome[];
   select(i: number): Genome;
   clips(): string[];
   play(name: string): void;
@@ -566,6 +616,7 @@ Engine.start(lab, { container, ...optionsFromUrl(), filters: [] })
       storeParent: () => lab.storeParent(),
       crossover: () => lab.crossover(),
       evolve: (a) => lab.evolve(a),
+      lineup: (e, o) => lab.lineup(e, o),
       select: (i) => lab.select(i),
       clips: () => [...lab.current.built.clipNames],
       play: (n) => lab.play(n),

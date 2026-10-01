@@ -28,6 +28,7 @@ export const quadruped: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.6, horns: 0.5, helm: 0.15, back: 0.5, shoulders: 0.3, wings: 0.1, tail: 0.45, feet: 0.45, core: 0.15 },
   mods: [inc('move.speed', 0.15)],
+  defaults: { feet: 'foot.paw', jaw: 'jaw.plain' },
   baseScale: 1,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);
@@ -40,24 +41,26 @@ export const quadruped: BodyPlanDef = {
     const ankle = 0.05;
     const hs = g('headSize', 0.28, 0.46);
 
+    // hips with haunches, a tucked waist, a deep chest with shoulder blades: a beast, not a sausage
     const root = b.joint('Body', null, [0, legH, -bodyLen / 2]);
-    b.shape(root, 'sphere', [0.36 * girth, 0.3 * girth, 0.4 * girth], [0, 0.04, 0.04], 'primary');
+    b.shape(root, 'sphere', [0.36 * girth, 0.3 * girth, 0.4 * girth], [0, 0.04, 0.02], 'primary');
+    both((_s, sx) => b.shape(root, 'sphere', [0.18 * girth, 0.3 * girth, 0.3 * girth], [sx * 0.11 * girth, -0.02, -0.02], 'primary'));
     const spine = b.joint('Spine', root, [0, 0.03 + slope / 2, bodyLen * 0.48]);
-    b.shape(spine, 'sphere', [0.38 * girth, 0.31 * girth, bodyLen * 0.8], [0, 0, 0], 'primary');
+    b.shape(spine, 'sphere', [0.34 * girth, 0.27 * girth, bodyLen * 0.86], [0, 0.02 * girth, 0], 'primary');
     const chest = b.joint('Chest', root, [0, slope, bodyLen]);
-    b.shape(chest, 'sphere', [0.42 * girth, 0.38 * girth, 0.38 * girth], [0, 0.03, 0], 'primary');
-    b.shape(chest, 'sphere', [0.3 * girth, 0.2 * girth, 0.3 * girth], [0, -0.1 * girth, 0.04], 'secondary');
+    b.shape(chest, 'sphere', [0.42 * girth, 0.42 * girth, 0.4 * girth], [0, 0.0, 0], 'primary');
+    both((_s, sx) => b.shape(chest, 'sphere', [0.14 * girth, 0.26 * girth, 0.24 * girth], [sx * 0.14 * girth, 0.06 * girth, -0.02], 'primary'));
 
     const seg = g('neck', 0.1, 0.26);
     const n1 = b.joint('Neck1', chest, [0, 0.1 * girth, 0.14 * girth]);
     const n2 = b.joint('Neck2', n1, [0, seg, 0]);
-    b.shape(n1, 'taper', [0.2 * girth, seg * 1.2, 0.2 * girth], [0, seg / 2, 0], 'primary', { taper: 0.8 });
-    b.shape(n2, 'taper', [0.16 * girth, seg * 1.1, 0.16 * girth], [0, seg / 2, 0], 'primary', { taper: 0.85 });
+    b.limb(n1, seg * 1.35, 0.24 * girth, 1.15, 0, 'primary', { at: [0, seg / 2, 0], depth: 1.1 });
+    b.limb(n2, seg * 1.25, 0.19 * girth, 1.15, 0, 'primary', { at: [0, seg / 2, 0] });
     const head = b.joint('Head', n2, [0, seg, 0]);
     const jaw = b.head(head, hs, ctx.head);
-    b.stance[n1] = [58, 0, 0];
-    b.stance[n2] = [-10, 0, 0];
-    b.stance[head] = [-48, 0, 0];
+    b.stance[n1] = [66, 0, 0];
+    b.stance[n2] = [-8, 0, 0];
+    b.stance[head] = [-58, 0, 0];
 
     const hip = (side: 'R' | 'L', sx: number, front: boolean) => {
       const parent = front ? chest : root;

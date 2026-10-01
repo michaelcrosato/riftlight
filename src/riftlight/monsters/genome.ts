@@ -3,6 +3,7 @@ import { SCALING, type Rank } from '../core/scaling';
 import type { Genome } from '../core/types';
 import { ARCHETYPES } from './brains/archetypes';
 import { ELITE_MODS } from './brains/elite';
+import { lookOf } from './looks';
 import { generatePalette, mixPalettes, shiftPalette, THEME_COLOURS } from './palette';
 import { PARTS } from './parts';
 import { DEFAULT_HEAD, PLANS } from './plans';
@@ -87,6 +88,12 @@ export function generateGenome(rng: Rng, o: GenomeOptions = {}): Genome {
   const genes: Record<string, number> = {};
   for (const [name, def] of Object.entries(plan.genes)) genes[name] = clamp01(r.genes.gaussian(def.mean, def.spread) + (rank === 'boss' && (name === 'girth' || name === 'headSize') ? 0.12 : 0));
   genes.wingSpan = clamp01(r.genes.gaussian(0.5, 0.2));
+  // skin genes (skin.ts), drawn after every older gene so older seeds keep their bodies
+  genes.pattern = r.genes.next();
+  genes.patternScale = r.genes.next();
+  genes.markHue = r.genes.next();
+  // silhouette by behaviour (looks.ts): the archetype nudges the body's proportions
+  for (const [name, d] of Object.entries(lookOf(archetype.id).genes ?? {})) if (name in genes) genes[name] = clamp01(genes[name]! + d);
   Object.assign(genes, o.genes ?? {});
 
   const budget = o.budget ?? genomeBudget(depth, rank);
@@ -307,7 +314,8 @@ export function shapeKey(g: Genome, anims: readonly string[]): string {
     .map((p) => `${p.socket}=${p.part}`)
     .sort()
     .join(',');
-  return `${g.plan}|${genes}|${parts}|${[...anims].sort().join(',')}`;
+  // the archetype too: its look (cosmetic marks) changes the body's bounds, so the floor clamp
+  return `${g.plan}|${g.archetype}|${genes}|${parts}|${[...anims].sort().join(',')}`;
 }
 
 function clamp01(v: number): number {

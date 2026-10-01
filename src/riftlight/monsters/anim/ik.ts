@@ -87,24 +87,64 @@ export class Kinematics implements LegSolverHost {
   }
 
   /**
-   * Lowest world y of the joint-space boxes in `bounds` under the current pose
-   * (corners transformed by each joint's world matrix).
+   * Lowest world y of joint-space shapes under the current pose: a Box3 (its 8 corners) or a
+   * hull (xyz points, see `hullPoints`), transformed by each joint's world matrix. Hulls
+   * follow rounded, tilted limbs closely, where a box's corners would dip far below them.
    */
-  lowest(bounds: ReadonlyMap<string, Box3>): number {
+  lowest(bounds: ReadonlyMap<string, Box3 | Float32Array>): number {
     let min = Infinity;
-    for (const [name, box] of bounds) {
-      const m = this.world(name);
-      const e = m.elements;
+    for (const [name, shape] of bounds) {
+      const e = this.world(name).elements;
+      if (shape instanceof Float32Array) {
+        for (let i = 0; i < shape.length; i += 3) {
+          const wy = e[1]! * shape[i]! + e[5]! * shape[i + 1]! + e[9]! * shape[i + 2]! + e[13]!;
+          if (wy < min) min = wy;
+        }
+        continue;
+      }
       for (let c = 0; c < 8; c++) {
-        const x = c & 1 ? box.max.x : box.min.x;
-        const y = c & 2 ? box.max.y : box.min.y;
-        const z = c & 4 ? box.max.z : box.min.z;
+        const x = c & 1 ? shape.max.x : shape.min.x;
+        const y = c & 2 ? shape.max.y : shape.min.y;
+        const z = c & 4 ? shape.max.z : shape.min.z;
         const wy = e[1]! * x + e[5]! * y + e[9]! * z + e[13]!;
         if (wy < min) min = wy;
       }
     }
     return min;
   }
+}
+
+/** Unit directions spread over the sphere (Fibonacci), for hulls. */
+const HULL_DIRS: readonly [number, number, number][] = Array.from({ length: 64 }, (_, i) => {
+  const y = 1 - ((i + 0.5) / 64) * 2;
+  const r = Math.sqrt(1 - y * y);
+  const a = i * Math.PI * (3 - Math.sqrt(5));
+  return [Math.cos(a) * r, y, Math.sin(a) * r];
+});
+
+/**
+ * The points of `xyz` (a flat position array) that are extreme along 64 directions: a small
+ * hull whose lowest point under any rotation is within a few percent of the shape's.
+ */
+export function hullPoints(xyz: ArrayLike<number>): Float32Array {
+  const pick = new Set<number>();
+  for (const [dx, dy, dz] of HULL_DIRS) {
+    let best = -Infinity;
+    let at = 0;
+    for (let i = 0; i < xyz.length; i += 3) {
+      const d = xyz[i]! * dx + xyz[i + 1]! * dy + xyz[i + 2]! * dz;
+      if (d > best) [best, at] = [d, i];
+    }
+    pick.add(at);
+  }
+  const out = new Float32Array(pick.size * 3);
+  let k = 0;
+  for (const i of pick) {
+    out[k++] = xyz[i]!;
+    out[k++] = xyz[i + 1]!;
+    out[k++] = xyz[i + 2]!;
+  }
+  return out;
 }
 
 const _e = new Euler();
@@ -163,7 +203,17 @@ export function solveLeg(kin: LegSolverHost, leg: LegDef, target: Vector3, pose:
   // Too close for the knee's fold limit: keep the target's height and slide it outwards in
   // the leg plane (extending along the line would push the foot through the floor).
   const minD = Math.sqrt(leg.upperLen ** 2 + leg.lowerLen ** 2 - 2 * leg.upperLen * leg.lowerLen * COS_FOLD) + 1e-4;
-  if (Math.hypot(ty, tz) < minD && Math.abs(ty) < minD) tz = (tz < 0 ? -1 : 1) * Math.sqrt(minD * minD - ty * ty);
+  // Planted feet keep their height and slide outwards; a lifted (tucked) target is pushed out
+  // radially instead, which is continuous (sliding by the sign of z flips the knee in a frame
+  // as a collapsing body's foot passes under the hip).
+  const d = Math.hypot(ty, tz);
+  if (d < minD && Math.abs(ty) < minD) {
+    if (target.y > 0.02) {
+      const k = minD / Math.max(d, 1e-6);
+      ty *= k;
+      tz *= k;
+    } else tz = (tz < 0 ? -1 : 1) * Math.sqrt(minD * minD - ty * ty);
+  }
   const [a, b] = twoBoneX(ty, tz, leg.upperLen, leg.lowerLen, leg.bend);
   // Level the foot: world up expressed in the leg plane's frame.
   _h.decompose(_pos, _q, _scl);

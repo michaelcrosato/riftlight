@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { type Mesh, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { analyzeClip, validateClip } from '../../engine/animation';
 import { StatSheet } from '../core/mods';
@@ -33,6 +33,7 @@ import {
   type MonsterBody,
   type MonsterEvent,
 } from '.';
+import { skinGlowMaterial, skinMaterial, skinOf, skinRegion } from './skin';
 
 describe('registries', () => {
   it('have the content the design asks for', () => {
@@ -150,6 +151,56 @@ describe('buildMonster', () => {
       expect(info.windup![1]).toBeLessThanOrEqual(info.hitFrame!);
       expect(m.clip(name)!.userData.hit).toBeCloseTo(info.hitFrame! / 30);
     }
+  });
+});
+
+describe('skin and merged meshes', () => {
+  const meshes = (m: ReturnType<typeof buildMonster>) => {
+    const out: Mesh[] = [];
+    m.object.traverse((o) => (o as Mesh).isMesh && o.name !== 'EliteAura' && out.push(o as Mesh));
+    return out;
+  };
+
+  it('draws every body with the two shared skin materials, a mesh or two per joint', () => {
+    for (const plan of PLANS.all()) {
+      const m = buildMonster(generateGenome(new Rng(`skin:${plan.id}`), { plan: plan.id }));
+      const list = meshes(m);
+      for (const mesh of list) expect([skinMaterial(), skinGlowMaterial()], `${plan.id} ${mesh.name}`).toContain(mesh.material);
+      expect(list.length, plan.id).toBeLessThanOrEqual(m.rig.joints.length * 2);
+      for (const sole of m.rig.soles) expect(m.object.getObjectByName(sole), `${plan.id} ${sole}`).toBeTruthy();
+      for (const mesh of list) expect((mesh.geometry.userData.triColors as Uint8Array).length, mesh.name).toBe(((mesh.geometry.index?.count ?? 0) / 3) * 4);
+    }
+  });
+
+  it('pack mates share their merged meshes', () => {
+    const pack = generatePack(new Rng('skin-pack'), { depth: 3, size: 3 });
+    const a = meshes(buildMonster(pack.genomes[1]!));
+    const b = meshes(buildMonster(pack.genomes[2]!));
+    expect(a.map((m) => m.geometry)).toEqual(b.map((m) => m.geometry));
+  });
+
+  it('picks a skin from the genes, with a default for genomes saved before them', () => {
+    const g = generateGenome(new Rng('skin-genes'), { plan: 'quadruped' });
+    expect(g.genes.pattern).toBeGreaterThanOrEqual(0);
+    const old = { ...g, genes: Object.fromEntries(Object.entries(g.genes).filter(([k]) => !['pattern', 'patternScale', 'markHue'].includes(k))) };
+    expect(skinOf(old)).toEqual(skinOf({ ...old, seed: old.seed + 1 }));
+    expect(skinRegion([0, 0, 0, 0], [0.8, 0, 0, 0])).toBe(1);
+    expect(skinRegion([0, 0, 0, 0.05], [0, 4, 0, 0])).toBe(2);
+    expect(skinRegion([0, 0, 0, 0.12], [0, 4, 0, 0])).toBe(0);
+  });
+
+  it('dresses bosses and marks archetypes without touching their stats', () => {
+    const boss = BOSSES.get('vorgath');
+    const m = buildMonster(boss.genome);
+    const plain = buildMonster({ ...boss.genome, rank: 'rare' });
+    const tris = (x: ReturnType<typeof buildMonster>) => meshes(x).reduce((s, mesh) => s + (mesh.geometry.index?.count ?? 0), 0);
+    expect(tris(m)).toBeGreaterThan(tris(plain));
+    const bomber = generateGenome(new Rng('mark'), { plan: 'blob', archetype: 'bomber', parts: { core: null } });
+    for (const p of PARTS.all().filter((x) => x.tags.includes('mark') || x.tags.includes('dress') || x.tags.includes('default'))) {
+      expect(p.mods, p.id).toEqual([]);
+      expect([p.cost, p.weight], p.id).toEqual([0, 0]);
+    }
+    expect(meshes(buildMonster(bomber)).some((x) => x.material === skinGlowMaterial())).toBe(true);
   });
 });
 

@@ -1,6 +1,6 @@
 import { Box3, Color, type Material, type Mesh, type Object3D, SRGBColorSpace, Vector3 } from 'three/webgpu';
 import { analyzeClip, validateClip, type ClipReport, type SheetImage } from '../../engine/animation';
-import { Canvas, type RGB } from '../../engine/animation/raster';
+import { Canvas, outlineId, presetTriangleColour, type RGB } from '../../engine/animation/raster';
 import { buildMonster } from './build';
 import type { BuiltMonster, Genome } from './types';
 
@@ -107,11 +107,13 @@ export function renderPortrait(object: Object3D, o: PortraitOptions = {}): Sheet
       if (n.dot(f) > 0) n.negate();
       // 3-band toon ramp, like TOON_BANDS
       const d = Math.max(0, n.dot(L));
-      const shade = unlit ? 1 : d > 0.55 ? 1 : d > 0.2 ? 0.72 : 0.42;
+      const preset = presetTriangleColour(geo.userData, t / 3);
+      const shade = (preset ? preset.unlit : unlit) ? 1 : d > 0.55 ? 1 : d > 0.2 ? 0.72 : 0.42;
+      const [r0, g0, b0] = preset ? preset.rgb : [cr, cg, cb];
       const pa = toScreen(a);
       const pb = toScreen(b);
       const pc = toScreen(c);
-      cv.tri(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], [cr * shade, cg * shade, cb * shade], mi + 1, rect);
+      cv.tri(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], [r0 * shade, g0 * shade, b0 * shade], outlineId(mi + 1, preset), rect);
     }
   });
   cv.outline(rect);

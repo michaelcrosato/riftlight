@@ -13,8 +13,12 @@ import type { ArchetypeDef, BodyPlanId, Genome, Palette, PartBuildContext, PartD
 
 export type { Genome, Palette } from '../core/types';
 
-/** Which palette colour a mesh takes. */
-export type PaletteSlot = keyof Palette;
+/**
+ * Which palette colour a mesh takes: the genome's five, plus `bone` (teeth, claws, horns:
+ * an ivory derived from the palette, see `paletteColour`), so keratin reads the same on
+ * every monster without widening the saved palette.
+ */
+export type PaletteSlot = keyof Palette | 'bone';
 
 /** Genome-level part slots. A slot holds one part; mirrored sockets share it. */
 export type Slot =
@@ -31,9 +35,11 @@ export type Slot =
   | 'weapon'
   | 'feet'
   | 'core'
-  | 'tentacles';
+  | 'tentacles'
+  /** Boss dressing (looks.ts `BOSS_DRESS`): on the back, layered over the back part. Never rolled. */
+  | 'mantle';
 
-export const SLOTS: readonly Slot[] = ['head', 'jaw', 'eyes', 'horns', 'helm', 'back', 'shoulders', 'wings', 'tail', 'hands', 'weapon', 'feet', 'core', 'tentacles'];
+export const SLOTS: readonly Slot[] = ['head', 'jaw', 'eyes', 'horns', 'helm', 'back', 'shoulders', 'wings', 'tail', 'hands', 'weapon', 'feet', 'core', 'tentacles', 'mantle'];
 
 // ------------------------------------------------------------------ skeleton grammar
 
@@ -51,7 +57,7 @@ export interface JointDef {
 export interface ShapeDef {
   readonly joint: string;
   readonly name: string;
-  readonly kind: 'box' | 'sphere' | 'cyl' | 'cone' | 'taper' | 'blob' | 'disc';
+  readonly kind: 'box' | 'sphere' | 'cyl' | 'cone' | 'taper' | 'blob' | 'disc' | 'limb';
   /** Size along x, y, z (m). */
   readonly size: Vec3;
   /** Centre in joint space. */
@@ -59,8 +65,12 @@ export interface ShapeDef {
   /** Rotation, degrees XYZ. */
   readonly rot?: Vec3;
   readonly color: PaletteSlot;
-  /** Top radius / bottom radius for 'taper'. */
+  /** Bottom radius / top radius for 'taper' and 'limb'. */
   readonly taper?: number;
+  /** 'limb': muscle bulge a third of the way down (fraction of the radius). */
+  readonly bulge?: number;
+  /** Keep the plain colour (no belly or markings) even on a primary-coloured shape. */
+  readonly plain?: boolean;
 }
 
 /** Where a part attaches. Sockets of the same `slot` share the genome's part for that slot. */
@@ -214,6 +224,11 @@ export interface BodyPlanDef extends Entry {
   readonly slots: Partial<Readonly<Record<Slot, number>>>;
   /** Stat mods for the body type (serpent: evasion, brute: life...). */
   readonly mods: readonly Mod[];
+  /**
+   * Cosmetic parts drawn on a slot the genome leaves empty (bare hands, toes, a plain lower
+   * jaw): looks only, no mods and no cost, so a body never shows an unfinished stump.
+   */
+  readonly defaults?: Partial<Readonly<Record<Slot, string>>>;
   /** Scale range at genome scale = 1 multiplier. */
   readonly baseScale: number;
   build(ctx: PlanContext): Skeleton;
@@ -242,6 +257,8 @@ export interface MeshOpts {
   scale?: number | Vec3;
   /** Emissive (unlit) material: crystals, cores, eyes. */
   glow?: boolean;
+  /** Wears the body's skin pattern (belly counter-shading, stripes/spots): skull masses, hoods, big plates. */
+  pattern?: boolean;
   /** Attach to this joint instead of the socket's. Coordinates are then in that joint's space. */
   joint?: string;
   name?: string;

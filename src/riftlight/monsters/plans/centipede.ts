@@ -25,6 +25,7 @@ export const centipede: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.9, horns: 0.5, back: 0.5, tail: 0.5, core: 0.15 },
   mods: [inc('move.speed', 0.1), flat('armour', 15)],
+  defaults: { feet: 'foot.tip', jaw: 'jaw.mandibles.small' },
   baseScale: 1,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);
@@ -44,8 +45,10 @@ export const centipede: BodyPlanDef = {
     const segs = b.chain('Seg', root, [0, 0, -segLen], [0, 0, -segLen], n);
     segs.forEach((s, i) => {
       const k = 1 - (i / n) * 0.35;
-      b.shape(s, 'sphere', [r * 2.4 * k, r * 1.6 * k, segLen * 1.12], [0, 0, 0], i % 2 ? 'primary' : 'secondary');
-      b.shape(s, 'box', [r * 2.6 * k, r * 0.35, segLen * 0.5], [0, r * 0.65 * k, 0], 'dark');
+      b.shape(s, 'sphere', [r * 2.4 * k, r * 1.6 * k, segLen * 1.18], [0, 0, 0], 'primary');
+      // an overlapping armour plate with side points over every segment
+      b.shape(s, 'sphere', [r * 2.7 * k, r * 0.7 * k, segLen * 0.9], [0, r * 0.55 * k, -segLen * 0.08], 'dark');
+      both((_side, sx) => b.shape(s, 'cone', [r * 0.4 * k, r * 0.8 * k, r * 0.4 * k], [sx * r * 1.35 * k, r * 0.5 * k, -segLen * 0.1], 'secondary', { rot: [0, 0, -sx * 70] }));
     });
 
     const reach = h * 1.3 + 0.06;

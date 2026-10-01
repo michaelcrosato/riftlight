@@ -11,8 +11,13 @@ export const DEFAULT_HEAD: HeadAnchors = {
   size: [1, 1, 1],
 };
 
-/** Folded wing stance: inner sweep back, outer sweep, inner raise, outer raise (deg). */
-export const WING_FOLD = [72, 100, 14, -6] as const;
+/**
+ * Folded wing stance (deg): inner sweep back, outer sweep, inner raise, outer raise, outer
+ * flip. The outer half folds right back onto the inner one (swept 175°, rolled over 180°),
+ * so a folded wing lies along the flank, membrane or feathers trailing the same way as the
+ * inner half, instead of crossing over the back.
+ */
+export const WING_FOLD = [78, 175, 14, -6, 180] as const;
 
 /**
  * Wings: two-joint chains (Wing1 root, Wing2 at half span) on each side, extending along
@@ -28,7 +33,7 @@ export function addWings(b: SkeletonBuilder, parent: string, at: Vec3, span: num
     b.socket(`wing2${side}`, 'wings', w2, [0, 0, 0], span, { mirror: side === 'R', data: { segment: 2 } });
     out[side].push(w1, w2);
     b.stance[w1] = [0, WING_FOLD[0] * sx, WING_FOLD[2] * sx];
-    b.stance[w2] = [0, WING_FOLD[1] * sx, WING_FOLD[3] * sx];
+    b.stance[w2] = [WING_FOLD[4], WING_FOLD[1] * sx, WING_FOLD[3] * sx];
   }
   return out;
 }
@@ -39,10 +44,15 @@ export function addWings(b: SkeletonBuilder, parent: string, at: Vec3, span: num
  */
 export function addTail(b: SkeletonBuilder, parent: string, at: Vec3, count: number, seg: number, radius: number, color: PaletteSlot = 'primary', droop = -12): string[] {
   const chain = b.chain('Tail', parent, at, [0, 0, -seg], count);
+  // a drooping tail never drags: the tip stays above a third of the base's height
+  const baseY = b.world(parent)[1] + at[1];
+  const total = droop * (1 + 0.4 * (count - 1));
+  const most = (Math.asin(Math.max(0, Math.min(1, ((baseY - radius * 1.3) * 0.65) / (seg * count * 1.1)))) * 180) / Math.PI;
+  if (total < -most) droop *= most / -total;
   chain.forEach((j, i) => {
     const r0 = radius * (1 - i / (count + 1));
     const r1 = radius * (1 - (i + 1) / (count + 1));
-    b.shape(j, 'taper', [r0 * 2, seg * 1.15, r0 * 2], [0, 0, -seg / 2], color, { rot: [-90, 0, 0], taper: Math.max(0.2, r1 / r0) });
+    b.limb(j, seg * 1.25, r0 * 2, Math.max(0.25, r1 / r0), 0, color, { at: [0, 0, -seg / 2], rot: [90, 0, 0] });
     b.stance[j] = [i === 0 ? droop : droop * 0.4, 0, 0];
   });
   b.socket('tail', 'tail', chain[chain.length - 1]!, [0, 0, -seg], radius * 2.2, { data: { chain } });
