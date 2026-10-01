@@ -160,6 +160,9 @@ export class PlatformerCharacter {
   private readonly tmpDir = new Vector3();
   private readonly groundHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
   private readonly rootHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
+  private readonly takeOffInput: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
+  /** Whether this step moved the body yet. */
+  private moved = false;
   /** After a lift onto a step: how much further (m) it holds its height without falling back. */
   private riseHold = 0;
   /** Drawn height of the body (groundRoot). */
@@ -269,7 +272,11 @@ export class PlatformerCharacter {
     this.vy = 0;
     this.prevFeet.set(x, y, z);
     this.peakY = y;
-    // nothing about where it was carries over: the ground, the animation
+    // nothing about where it was carries over: the ground, a jump chain, the animation
+    this.lastJump = null;
+    this.lastLandTime = -1;
+    this.jumpBuffer = 0;
+    this.coyote = 0;
     this.climb = 0;
     this.uphillShare = 1;
     this.riseHold = 0;
@@ -332,7 +339,17 @@ export class PlatformerCharacter {
       // First person: body always faces the view direction.
       this.facing = Math.atan2(input.face.x, input.face.z);
     }
+    const before = this.state;
+    this.moved = false;
     stateDef(this.state).step(this, dt, input);
+    // A jump that starts this step would stand still for it (a hitch at take-off): it takes off now.
+    // (the press that started it is used up: it isn't a second jump, or a wall kick)
+    if (!this.moved && this.state === 'jump' && before !== 'jump') {
+      const rest = Object.assign(this.takeOffInput, input);
+      rest.jump = false;
+      rest.attack = false;
+      stateDef(this.state).step(this, dt, rest);
+    }
     // Fall height is measured from the last place we stood (or the jump apex).
     if (this.grounded && !this.isAirborne()) this.peakY = this.feetY();
   }
@@ -557,6 +574,7 @@ export class PlatformerCharacter {
    * `gravity`: ground states pull the character down (airborne states own their vy).
    */
   move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
+    this.moved = true;
     const def = stateDef(this.state);
     // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
     // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch). Gravity still
