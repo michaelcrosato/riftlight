@@ -20,6 +20,7 @@ export const blob: BodyPlanDef = {
   },
   slots: { eyes: 1, jaw: 0.45, horns: 0.3, helm: 0.15, back: 0.45, core: 0.6 },
   mods: [inc('life', 0.2), flat('res.chaos', 0.2), inc('move.speed', -0.1)],
+  defaults: { jaw: 'jaw.gape' },
   baseScale: 0.9,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);
@@ -30,7 +31,14 @@ export const blob: BodyPlanDef = {
     b.shape(root, 'disc', [w * 0.84, 0.016, w * 0.8], [0, 0.008, 0], 'dark', { name: 'SoleBlob' });
     const mass = b.joint('Mass', root, [0, h * 0.5 + 0.014, 0]);
     b.shape(mass, 'blob', [w, h, w * 0.95], [0, 0, 0], 'primary');
-    b.shape(mass, 'blob', [w * 0.55, h * 0.45, w * 0.5], [w * 0.12, h * 0.18, -w * 0.1], 'secondary');
+    b.shape(mass, 'sphere', [w * 0.94, h * 0.5, w * 0.9], [0, -h * 0.22, 0], 'primary');
+    b.shape(mass, 'blob', [w * 0.5, h * 0.42, w * 0.46], [-w * 0.14, h * 0.2, -w * 0.14], 'secondary');
+    // a sheen on top and drips round the base
+    b.shape(mass, 'sphere', [w * 0.22, h * 0.1, w * 0.16], [w * 0.16, h * 0.4, w * 0.12], 'bone', { rot: [0, 0, -20] });
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2 + 0.4;
+      b.shape(mass, 'sphere', [w * 0.2, h * 0.24, w * 0.2], [Math.sin(a) * w * 0.44, -h * 0.36, Math.cos(a) * w * 0.42], 'primary');
+    }
     const es = h * g('headSize', 0.8, 1.2);
     b.socketPair('eye', 'eyes', () => mass, [w * 0.17, h * 0.16, w * 0.4], es * 0.9);
     b.socketPair('horn', 'horns', () => mass, [w * 0.2, h * 0.38, w * 0.08], es);

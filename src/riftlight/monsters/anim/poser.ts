@@ -102,7 +102,7 @@ export class Poser {
       const s = side === 'L' ? 1 : -1;
       const [w1, w2] = w[side];
       if (w1) out[w1] = [0, -WING_FOLD[0] * spread * s, (raise - WING_FOLD[2] * spread) * s];
-      if (w2) out[w2] = [0, -WING_FOLD[1] * spread * s, (fold - WING_FOLD[3] * spread) * s];
+      if (w2) out[w2] = [-WING_FOLD[4] * spread, -WING_FOLD[1] * spread * s, (fold - WING_FOLD[3] * spread) * s];
     }
     return out;
   }

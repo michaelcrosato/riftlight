@@ -23,7 +23,12 @@ export const vertexSnap = {
   resolution: uniform(new Vector2(480, 270)),
 };
 
-function snappedClipPosition() {
+/**
+ * The toon materials' vertex stage (clip position, snapped to the art grid while the `ps1`
+ * filter is on). Exported so procedural toon materials (`colorNode` from attributes) keep
+ * the same wobble as every other toon material.
+ */
+export function snappedClipPosition() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL swizzles aren't typed on Node
   const clip = modelViewProjection as any;
   const half = vertexSnap.resolution.mul(0.5) as typeof clip;

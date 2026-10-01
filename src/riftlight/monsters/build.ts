@@ -1,4 +1,4 @@
-import { type AnimationClip, Box3, Euler, Group, Mesh, Object3D, Quaternion, RingGeometry, Vector3 } from 'three/webgpu';
+import { type AnimationClip, type BufferGeometry, Euler, Group, Matrix4, Mesh, Object3D, Quaternion, RingGeometry, Vector3 } from 'three/webgpu';
 import { compileClip, sampleClip, type ClipDef, type JointLimit, type LegRig, type RigSpec, type Vec3 } from '../../engine/animation';
 import type { RestPose } from '../../engine/animation';
 import { more, type Mod } from '../core/mods';
@@ -7,12 +7,15 @@ import { RANK } from '../core/scaling';
 import type { Genome } from '../core/types';
 import { clipBuilders, plantedFeet } from './anim';
 import { poseAt, type BakeContext } from './anim/bake';
-import { Kinematics, type PoseMap } from './anim/ik';
+import { hullPoints, Kinematics, type PoseMap } from './anim/ik';
 import { ARCHETYPES } from './brains/archetypes';
 import { ELITE_MODS } from './brains/elite';
 import { boltFor, MONSTER_SKILLS } from './brains/skills';
 import { genomeCost, genomeTags, headAnchors, shapeKey } from './genome';
-import { auraMaterial, bodyMaterial, cachedGeometry, glowMaterial, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere } from './geometry';
+import { auraMaterial, cachedGeometry, limbGeometry, SMALL_SPHERE, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere, unitSphereLo } from './geometry';
+import { BOSS_DRESS, lookOf } from './looks';
+import { paletteColour } from './palette';
+import { mergePieces, skinGlowMaterial, skinMaterial, skinOf, type Merged, type Piece } from './skin';
 import { PARTS } from './parts';
 import { PLANS } from './plans';
 import type { BuiltMonster, ClipMeta, MeshOpts, MonsterClipDef, MonsterPartContext, MonsterPartDef, PaletteSlot, ShapeDef, Skeleton, Slot, SocketDef } from './types';
@@ -115,14 +118,65 @@ export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltM
     joints.set(j.name, o);
   }
 
-  // ---- body shapes and parts
-  const colour = (slot: PaletteSlot) => genome.palette[slot];
-  for (const s of sk.shapes) addShape(joints.get(s.joint)!, s, colour(s.color), genome.palette.glow);
-  const rng = new Rng(genome.seed);
-  for (const socket of sk.sockets) {
-    const part = bySlot.get(socket.slot);
-    if (!part) continue;
-    part.build(partContext(socket, part, joints, genome, rng.fork(socket.id)));
+  // ---- body shapes and parts → pieces per joint → one skin mesh (+ one glow mesh) per joint
+  const soleNames = new Set([...sk.legs.map((l) => l.sole), 'SoleBlob']);
+  const meshKey = `${shapeKey(genome, [])}|${JSON.stringify(genome.palette)}|${genome.rank}`;
+  const colour = (slot: PaletteSlot) => paletteColour(genome.palette, slot);
+  let merged = mergedCache.get(meshKey);
+  if (!merged) {
+    const pieces = new Map<string, Piece[]>();
+    const soleOf = new Map<string, string>();
+    const push = (joint: string, piece: Piece) => {
+      let list = pieces.get(joint);
+      if (!list) pieces.set(joint, (list = []));
+      list.push(piece);
+    };
+    for (const s of sk.shapes) {
+      push(s.joint, shapePiece(s, colour(s.color)));
+      if (soleNames.has(s.name)) soleOf.set(s.joint, s.name);
+    }
+    const rng = new Rng(genome.seed);
+    for (const socket of sk.sockets) {
+      // the genome's part, or the plan's cosmetic default for an empty slot (bare hands, toes)
+      const fallback = plan.defaults?.[socket.slot];
+      const part = bySlot.get(socket.slot) ?? (fallback && PARTS.has(fallback) ? PARTS.get(fallback) : undefined);
+      if (!part) continue;
+      part.build(partContext(socket, part, joints, genome, rng.fork(socket.id), push));
+    }
+    // a boss's mantle, by its leading theme (looks.ts BOSS_DRESS)
+    // (elements first: a crystal spider wears glass, not the insect trophies)
+    const tags = genomeTags(genome).sort((a, b) => Number(GENERIC_THEMES.has(a)) - Number(GENERIC_THEMES.has(b)));
+    const dress = genome.rank === 'boss' ? tags.map((t) => BOSS_DRESS[t]).find((id) => id && PARTS.has(id)) : undefined;
+    if (dress) for (const socket of sk.sockets) if (socket.slot === 'mantle') PARTS.get(dress).build(partContext(socket, PARTS.get(dress), joints, genome, rng.fork('mantle'), push));
+    // the archetype's marks (looks.ts) on slots the genome left empty
+    for (const mark of lookOf(genome.archetype).marks ?? []) {
+      if (bySlot.has(mark.slot) || !PARTS.has(mark.part)) continue;
+      const part = PARTS.get(mark.part);
+      for (const socket of sk.sockets) if (socket.slot === mark.slot) part.build(partContext(socket, part, joints, genome, rng.fork(`mark:${socket.id}`), push));
+    }
+    const skin = skinOf(genome, genomeTags(genome));
+    merged = new Map();
+    for (const [joint, list] of pieces) merged.set(joint, { ...mergePieces(list, skin), sole: soleOf.get(joint) ?? null });
+    if (mergedCache.size >= MESH_CACHE_MAX) mergedCache.delete(mergedCache.keys().next().value!);
+    mergedCache.set(meshKey, merged);
+    for (const m of merged.values())
+      for (const g of [m.skin, m.glow])
+        g?.addEventListener('dispose', () => {
+          if (mergedCache.get(meshKey) === merged) mergedCache.delete(meshKey);
+        });
+  }
+  for (const [joint, m] of merged) {
+    const o = joints.get(joint)!;
+    if (m.skin) {
+      const mesh = new Mesh(m.skin, skinMaterial());
+      mesh.name = m.sole ?? `${joint}:skin`;
+      o.add(mesh);
+    }
+    if (m.glow) {
+      const mesh = new Mesh(m.glow, skinGlowMaterial());
+      mesh.name = `${joint}:glow`;
+      o.add(mesh);
+    }
   }
 
   // ---- rig and clips (lazy, shared per shape)
@@ -190,7 +244,7 @@ const RAD = Math.PI / 180;
 const _e = new Euler();
 const _q = new Quaternion();
 
-const SHAPE_GEOMETRY: Record<ShapeDef['kind'], [string, () => import('three/webgpu').BufferGeometry]> = {
+const SHAPE_GEOMETRY: Record<ShapeDef['kind'], [string, () => BufferGeometry]> = {
   box: ['u:box', unitBox],
   sphere: ['u:sphere', unitSphere],
   cyl: ['u:cyl', unitCyl],
@@ -198,19 +252,35 @@ const SHAPE_GEOMETRY: Record<ShapeDef['kind'], [string, () => import('three/webg
   blob: ['u:blob', unitBlob],
   disc: ['u:disc', unitDisc],
   taper: ['u:taper', unitCyl],
+  limb: ['u:limb', unitCyl],
 };
 
-function addShape(joint: Object3D, s: ShapeDef, hex: number, rim: number): void {
-  const [key, make] = s.kind === 'taper' ? [`u:taper:${(s.taper ?? 1).toFixed(2)}`, taperCyl(Math.round((s.taper ?? 1) * 100) / 100)] : SHAPE_GEOMETRY[s.kind];
-  const mesh = new Mesh(cachedGeometry(key, make), bodyMaterial(hex, rim));
-  mesh.name = s.name;
-  mesh.position.set(...s.at);
-  if (s.rot) mesh.quaternion.setFromEuler(_e.set(s.rot[0] * RAD, s.rot[1] * RAD, s.rot[2] * RAD, 'XYZ'));
-  mesh.scale.set(...s.size);
-  joint.add(mesh);
+/** Merged meshes per body shape and palette: pack mates share them (disposed with their level). */
+type MergedJoint = Merged & { sole: string | null };
+const mergedCache = new Map<string, Map<string, MergedJoint>>();
+const MESH_CACHE_MAX = 64;
+
+/** Themes that say what a body is rather than its element (bosses dress by element first). */
+const GENERIC_THEMES: ReadonlySet<string> = new Set(['beast', 'insect', 'construct', 'undead']);
+
+/** Body shapes that take the body pattern (the main colours, not soles or dark trims). */
+const PATTERNED: ReadonlySet<PaletteSlot> = new Set<PaletteSlot>(['primary', 'secondary']);
+
+function limbKey(ratio: number, bulge: number): [string, () => BufferGeometry] {
+  const r = Math.round(ratio * 20) / 20;
+  const b = Math.round(bulge * 20) / 20;
+  return [`u:limb:${r}:${b}`, limbGeometry(r, b)];
 }
 
-function partContext(socket: SocketDef, part: MonsterPartDef, joints: Map<string, Object3D>, genome: Genome, rng: Rng): MonsterPartContext {
+function shapePiece(s: ShapeDef, hex: number): Piece {
+  const small = s.kind === 'sphere' && Math.max(...s.size) < SMALL_SPHERE;
+  const [key, make] = s.kind === 'taper' ? [`u:taper:${(s.taper ?? 1).toFixed(2)}`, taperCyl(Math.round((s.taper ?? 1) * 100) / 100)] : s.kind === 'limb' ? limbKey(s.taper ?? 1, s.bulge ?? 0) : small ? (['u:sphere.lo', unitSphereLo] as const) : SHAPE_GEOMETRY[s.kind];
+  const q = s.rot ? new Quaternion().setFromEuler(_e.set(s.rot[0] * RAD, s.rot[1] * RAD, s.rot[2] * RAD, 'XYZ')) : new Quaternion();
+  const matrix = new Matrix4().compose(new Vector3(...s.at), q, new Vector3(...s.size));
+  return { geometry: cachedGeometry(key, make), matrix, hex, slot: s.color, glow: false, patterned: PATTERNED.has(s.color) && s.color === 'primary' && !s.plain };
+}
+
+function partContext(socket: SocketDef, part: MonsterPartDef, joints: Map<string, Object3D>, genome: Genome, rng: Rng, push: (joint: string, piece: Piece) => void): MonsterPartContext {
   const mirror = !!socket.mirror;
   const sq = new Quaternion().setFromEuler(new Euler(...((socket.rot ?? [0, 0, 0]).map((v) => v * RAD) as Vec3), 'XYZ'));
   const chain = (socket.data?.chain as readonly string[] | undefined) ?? [];
@@ -227,8 +297,8 @@ function partContext(socket: SocketDef, part: MonsterPartDef, joints: Map<string
     joint: (name) => joints.get(name) ?? joints.get(socket.joint)!,
     add(key: string, make, color: PaletteSlot, o: MeshOpts = {}): Mesh {
       const geo = cachedGeometry(`${key}`, make, mirror);
-      const hex = genome.palette[color];
-      const mesh = new Mesh(geo, o.glow ? glowMaterial(hex) : bodyMaterial(hex, genome.palette.glow));
+      const hex = paletteColour(genome.palette, color);
+      const mesh = new Mesh(geo);
       mesh.name = o.name ?? `${part.id}:${socket.id}:${n++}`;
       const at = o.at ?? [0, 0, 0];
       const rot = o.rot ?? [0, 0, 0];
@@ -244,7 +314,9 @@ function partContext(socket: SocketDef, part: MonsterPartDef, joints: Map<string
       const s = o.scale ?? 1;
       if (typeof s === 'number') mesh.scale.setScalar(s);
       else mesh.scale.set(...s);
-      (o.joint ? (joints.get(o.joint) ?? joints.get(socket.joint)!) : joints.get(socket.joint)!).add(mesh);
+      mesh.updateMatrix();
+      const joint = o.joint && joints.has(o.joint) ? o.joint : socket.joint;
+      push(joint, { geometry: geo, matrix: mesh.matrix.clone(), hex, slot: color, glow: !!o.glow, patterned: !!o.pattern && !o.glow });
       return mesh;
     },
   };
@@ -309,20 +381,32 @@ function rigOf(sk: Skeleton): RigSpec {
   return rig;
 }
 
+/** Floor-clamp shapes: a hull of every joint's meshes (joint space), soles apart. */
 function bakeContext(sk: Skeleton, joints: Map<string, Object3D>): BakeContext {
-  const bounds = new Map<string, Box3>();
-  const soles = new Map<string, Box3>();
+  const bounds = new Map<string, Float32Array>();
+  const soles = new Map<string, Float32Array>();
   const soleNames = new Set([...sk.legs.map((l) => l.sole), 'SoleBlob']);
+  const v = new Vector3();
   for (const [name, joint] of joints) {
+    const body: number[] = [];
+    const sole: number[] = [];
     for (const child of joint.children) {
       const mesh = child as Mesh;
       if (!mesh.isMesh) continue;
       mesh.updateMatrix();
-      const box = mesh.geometry.boundingBox!.clone().applyMatrix4(mesh.matrix);
-      const target = soleNames.has(mesh.name) ? soles : bounds;
-      const cur = target.get(name);
-      target.set(name, cur ? cur.union(box) : box);
+      const hull = mesh.geometry.userData.hull as Float32Array | undefined;
+      const pos = hull ? null : mesh.geometry.getAttribute('position');
+      const out = soleNames.has(mesh.name) ? sole : body;
+      const n = hull ? hull.length / 3 : pos!.count;
+      for (let i = 0; i < n; i++) {
+        if (hull) v.set(hull[i * 3]!, hull[i * 3 + 1]!, hull[i * 3 + 2]!);
+        else v.fromBufferAttribute(pos!, i);
+        v.applyMatrix4(mesh.matrix);
+        out.push(v.x, v.y, v.z);
+      }
     }
+    if (body.length) bounds.set(name, body.length > 600 ? hullPoints(body) : new Float32Array(body));
+    if (sole.length) soles.set(name, sole.length > 600 ? hullPoints(sole) : new Float32Array(sole));
   }
   return { skeleton: sk, kin: new Kinematics(sk), bounds, soles };
 }

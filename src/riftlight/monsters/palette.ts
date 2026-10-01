@@ -79,6 +79,21 @@ export function generatePalette(rng: Rng, tags: readonly string[], options: Pale
   };
 }
 
+/**
+ * Bone / keratin (teeth, claws, horns, tusks): a warm ivory leaning a little toward the
+ * body hue, darker on pale bodies so it still separates from them.
+ */
+export function boneColour(p: Palette): number {
+  const [h, , l] = hexToHsl(p.primary);
+  const warm = 38 + (((((h - 38) % 360) + 540) % 360) - 180) * 0.15;
+  return hslHex(warm, 0.32, l > 0.62 ? 0.5 : 0.8);
+}
+
+/** A palette slot's colour, including the derived `bone`. */
+export function paletteColour(p: Palette, slot: keyof Palette | 'bone'): number {
+  return slot === 'bone' ? boneColour(p) : p[slot];
+}
+
 /** Shift every colour's hue (mutation) and re-quantise. */
 export function shiftPalette(p: Palette, degrees: number, lightness = 0): Palette {
   const shift = (hex: number) => {

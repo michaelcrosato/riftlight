@@ -68,8 +68,10 @@ export const BACKS = [
 
 export const SHOULDERS = [
   part('armour.pauldron', 'Pauldron', ['shoulders'], ['construct', 'earth', 'storm', 'undead'], 1, [flat('armour', 15)], (c) => {
-    ball(c, 'dark', [0.08, 0.1, 0], [1.3, 0.8, 1.3]);
-    box(c, 'accent', [0.08, 0.02, 0], [1.4, 0.15, 1.35]);
+    // a domed shell with a rolled rim and rivets, not a board
+    ball(c, 'dark', [0.08, 0.12, 0], [1.05, 0.7, 1.05]);
+    cyl(c, 'bone', [0.08, -0.02, 0], [1.08, 0.08, 1.08]);
+    for (const z of [-0.26, 0.26]) ball(c, 'bone', [0.3, 0.3, z], [0.1, 0.1, 0.1]);
   }),
   part('spikes.shoulder', 'Shoulder Spikes', ['shoulders'], ['any'], 1, [flat('thorns', 4)], (c) => {
     cone(c, 'accent', [0.1, 0.4, 0], [0.4, 1.0, 0.4], { rot: [0, 0, -25] });
@@ -85,34 +87,51 @@ export const SHOULDERS = [
   }),
 ];
 
+/** One feather (unit length along +X from the root), for layered wings and fans. */
+const FEATHER: readonly (readonly [number, number])[] = [[0, 0.02], [0.7, 0.05], [1, 0], [0.7, -0.05], [0, -0.02]];
+
+/**
+ * Wings are built per segment (1 = inner half on Wing1, 2 = outer half on Wing2) along +X,
+ * the membrane or feathers trailing back (−Z). They read as wings, not boards: bones and
+ * finger struts with a scalloped membrane, layered coverts over long flight feathers.
+ */
 export const WINGS = [
   part('wing.bat', 'Bat Wings', ['wings'], ['shadow', 'void', 'blood', 'fire', 'undead'], 2, [inc('move.speed', 0.12), inc('evasion', 0.05)], (c) => {
     if (seg(c) === 1) {
-      cyl(c, 'dark', [0.25, 0, 0], [0.04, 0.52, 0.04], { rot: [0, 0, 90] });
-      slab(c, 'bat1', [[0, 0.03], [0.5, 0.02], [0.5, -0.32], [0.28, -0.2], [0, -0.3]], 0.015, 'primary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
+      cyl(c, 'dark', [0.25, 0, 0], [0.05, 0.52, 0.05], { rot: [0, 0, 90] });
+      ball(c, 'dark', [0.5, 0, 0], [0.07, 0.07, 0.07]);
+      slab(c, 'bat1b', [[0, 0.03], [0.5, 0.02], [0.5, -0.34], [0.36, -0.24], [0.2, -0.3], [0, -0.26]], 0.015, 'secondary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
     } else {
-      cyl(c, 'dark', [0.27, 0, 0.0], [0.03, 0.56, 0.03], { rot: [0, 0, 90] });
-      cyl(c, 'dark', [0.2, 0, -0.14], [0.02, 0.44, 0.02], { rot: [0, -40, 90] });
-      slab(c, 'bat2', [[0, 0.02], [0.56, 0.0], [0.42, -0.14], [0.32, -0.1], [0.2, -0.3], [0, -0.32]], 0.015, 'primary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
+      // three finger struts fanning back, the membrane scalloped between them, a thumb claw
+      for (const [a, l] of [[0, 0.62], [32, 0.56], [62, 0.46]] as const) cyl(c, 'dark', [Math.cos((a * Math.PI) / 180) * l * 0.5, 0, -Math.sin((a * Math.PI) / 180) * l * 0.5], [0.03, l, 0.03], { rot: [0, a, 90] });
+      slab(c, 'bat2b', [[0, 0.02], [0.62, 0.0], [0.46, -0.12], [0.47, -0.3], [0.32, -0.22], [0.22, -0.42], [0.1, -0.3], [0, -0.34]], 0.015, 'secondary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
+      horn(c, 'bone', [0.02, 0.01, 0.02], 0.12, 0.3, 60, { rot: [0, 0, -60] });
     }
   }),
   part('wing.feather', 'Feathered Wings', ['wings'], ['nature', 'storm', 'beast', 'arcane', 'ice'], 2, [inc('move.speed', 0.1), flat('evasion', 20)], (c) => {
     if (seg(c) === 1) {
-      slab(c, 'feather1', [[0, 0.04], [0.5, 0.04], [0.5, -0.28], [0, -0.26]], 0.04, 'primary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
-      [0.08, 0.22, 0.36].forEach((x) => box(c, 'secondary', [x, -0.01, -0.3], [0.12, 0.025, 0.14]));
+      // coverts over secondaries
+      slab(c, 'cov1', [[0, 0.05], [0.52, 0.04], [0.52, -0.14], [0, -0.16]], 0.05, 'primary', [0, 0.01, 0], [1, 1, 1], { rot: FLAT, pattern: true });
+      for (let i = 0; i < 5; i++) slab(c, 'feather', FEATHER, 0.02, i % 2 ? 'secondary' : 'primary', [0.06 + i * 0.1, -0.01, -0.08], [0.36, 1, 1], { rot: [90, 0, -(84 - i * 6)] });
     } else {
-      slab(c, 'feather2', [[0, 0.04], [0.5, 0.0], [0.66, -0.1], [0.42, -0.24], [0.18, -0.32], [0, -0.28]], 0.035, 'primary', [0, 0, 0], [1, 1, 1], { rot: FLAT });
-      [0.12, 0.3, 0.48].forEach((x, i) => box(c, 'secondary', [x, -0.01, -0.26 + i * 0.06], [0.14, 0.022, 0.16], { rot: [0, -20, 0] }));
+      slab(c, 'cov2', [[0, 0.05], [0.42, 0.02], [0.3, -0.12], [0, -0.14]], 0.05, 'primary', [0, 0.01, 0], [1, 1, 1], { rot: FLAT, pattern: true });
+      // long primaries fanning out to the tip
+      for (let i = 0; i < 5; i++) slab(c, 'feather', FEATHER, 0.02, i === 4 ? 'accent' : 'secondary', [0.02 + i * 0.03, -0.01, -0.04], [0.32 + i * 0.045, 1, 1], { rot: [90, 0, -(46 - i * 9)] });
     }
   }),
   part('wing.insect', 'Insect Wings', ['wings'], ['insect', 'poison', 'arcane', 'nature'], 1, [inc('move.speed', 0.15), inc('attack.speed', 0.05)], (c) => {
-    if (seg(c) === 1) slab(c, 'insect1', [[0, 0], [0.25, 0.1], [0.5, 0.08], [0.56, 0], [0.3, -0.1], [0, -0.04]], 0.01, 'accent', [0, 0.01, 0], [1, 1, 1], { rot: FLAT });
-    else slab(c, 'insect2', [[0, 0.06], [0.3, 0.12], [0.6, 0.06], [0.62, -0.04], [0.3, -0.08], [0, -0.06]], 0.01, 'accent', [0, 0.01, -0.05], [1, 1, 1], { rot: FLAT });
+    const outline: [number, number][] = seg(c) === 1 ? [[0, 0], [0.25, 0.1], [0.5, 0.09], [0.58, 0], [0.32, -0.12], [0, -0.05]] : [[0, 0.06], [0.3, 0.13], [0.62, 0.07], [0.66, -0.04], [0.32, -0.1], [0, -0.06]];
+    slab(c, `insect${seg(c)}`, outline, 0.01, 'accent', [0, 0.01, seg(c) === 1 ? 0 : -0.05], [1, 1, 1], { rot: FLAT });
+    // dark veins
+    for (const z of [0.03, -0.03]) cyl(c, 'dark', [0.28, 0.015, z + (seg(c) === 1 ? 0 : -0.05)], [0.012, 0.54, 0.012], { rot: [0, -z * 120, 90] });
   }),
   part('wing.bone', 'Bone Wings', ['wings'], ['undead', 'shadow'], 1, [inc('move.speed', 0.06), flat('res.chaos', 0.1)], (c) => {
-    cyl(c, 'secondary', [0.25, 0, 0], [0.04, 0.52, 0.04], { rot: [0, 0, 90] });
-    if (seg(c) === 2) for (const a of [0, -25, -50]) cyl(c, 'secondary', [0.18, 0, -0.08], [0.025, 0.4, 0.025], { rot: [0, a, 90] });
-    else slab(c, 'tatter', [[0, 0], [0.5, 0], [0.42, -0.18], [0.3, -0.1], [0.15, -0.24], [0, -0.15]], 0.01, 'dark', [0, -0.01, 0], [1, 1, 1], { rot: FLAT });
+    cyl(c, 'bone', [0.25, 0, 0], [0.045, 0.52, 0.045], { rot: [0, 0, 90] });
+    ball(c, 'bone', [0.5, 0, 0], [0.07, 0.07, 0.07]);
+    if (seg(c) === 2) {
+      for (const a of [0, 25, 50]) cyl(c, 'bone', [Math.cos((a * Math.PI) / 180) * 0.21, 0, -Math.sin((a * Math.PI) / 180) * 0.21], [0.028, 0.42, 0.028], { rot: [0, a, 90] });
+      slab(c, 'tatter2', [[0, 0], [0.36, 0], [0.3, -0.1], [0.2, -0.06], [0.12, -0.2], [0, -0.12]], 0.01, 'dark', [0, -0.01, 0], [1, 1, 1], { rot: FLAT });
+    } else slab(c, 'tatter', [[0, 0], [0.5, 0], [0.42, -0.18], [0.3, -0.1], [0.15, -0.24], [0, -0.15]], 0.01, 'dark', [0, -0.01, 0], [1, 1, 1], { rot: FLAT });
   }),
 ];
 
@@ -135,6 +154,10 @@ export const TAILS = [
   part('tail.fan', 'Tail Fan', ['tail'], ['nature', 'storm', 'beast', 'arcane'], 0, [flat('evasion', 15)], (c) => {
     for (const a of [-40, -20, 0, 20, 40]) taper(c, 0.4, a === 0 ? 'accent' : 'secondary', [0, 0.1, -0.2], [0.35, 2.4, 0.12], { rot: [-70, a, 0] });
   }),
+  /** Birds' default tail (cosmetic): a short fan of feathers. */
+  part('tail.feathers', 'Tail Feathers', ['tail'], ['default'], 0, [], (c) => {
+    for (const a of [-30, -15, 0, 15, 30]) taper(c, 0.5, a === 0 ? 'secondary' : 'primary', [0, 0.1, -0.2], [0.42, 2.0, 0.1], { rot: [-74, a, 0] });
+  }, { weight: 0 }),
   part('tail.flame', 'Flame Tail', ['tail'], ['fire', 'arcane', 'void'], 1, [inc('fire.damage', 0.1), flat('res.fire', 0.15)], (c) => {
     cone(c, 'glow', [0, 0.1, -0.6], [0.8, 1.6, 0.8], { glow: true, rot: [-100, 0, 0] });
     cone(c, 'glow', [0, 0.3, -0.4], [0.5, 1.0, 0.5], { glow: true, rot: [-60, 0, 0] });

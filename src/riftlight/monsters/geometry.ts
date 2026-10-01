@@ -151,14 +151,39 @@ export function auraMaterial(hex: number): Material {
 export const unitBox = () => new BoxGeometry(1, 1, 1);
 /** Sphere of diameter 1 (scale per axis for ellipsoids). */
 export const unitSphere = () => new SphereGeometry(0.5, 8, 6);
+/** A low-poly sphere for small details (joints, knuckles, toes, eyes): a few pixels on screen. */
+export const unitSphereLo = () => new SphereGeometry(0.5, 6, 4);
+/** Detail spheres smaller than this (m, at genome scale 1) use `unitSphereLo`. */
+export const SMALL_SPHERE = 0.16;
 /** Cylinder of diameter 1, height 1, along Y. */
 export const unitCyl = () => new CylinderGeometry(0.5, 0.5, 1, 7);
+/** A small four-sided spike (teeth, toe claws): base diameter 1, height 1, tip at +Y, no base. */
+export const unitTooth = () => new ConeGeometry(0.5, 1, 4, 1, true);
 /** Cone of diameter 1, height 1, tip at +Y. */
 export const unitCone = () => new ConeGeometry(0.5, 1, 6);
 /** Rounded lump of diameter 1. */
 export const unitBlob = () => new IcosahedronGeometry(0.5, 1);
 /** Flat disc of diameter 1, height 1 (soles of blobs). */
 export const unitDisc = () => new CylinderGeometry(0.5, 0.5, 1, 10);
+/**
+ * A limb segment of height 1 along Y (−0.5..0.5) with rounded ends: top radius 0.5, bottom
+ * radius 0.5 × `ratio`, and a muscle `bulge` (fraction of the radius) a third of the way
+ * down. Thighs, upper arms, necks and tails read as flesh instead of pipes.
+ */
+export const limbGeometry = (ratio: number, bulge: number) => () => {
+  const rt = 0.5;
+  const rb = 0.5 * ratio;
+  const r = (t: number) => rb + (rt - rb) * t + bulge * 0.5 * Math.sin(Math.PI * Math.min(1, t * 1.25)) * (0.6 + 0.4 * t);
+  // the ends close on a pinhole, not a pole (a zero radius makes zero-area triangles)
+  const pts: [number, number][] = [
+    [rb * 0.06, -0.5],
+    [rb * 0.78, -0.46],
+  ];
+  for (const t of [0, 0.35, 0.7, 1]) pts.push([r(t), -0.38 + t * 0.76]);
+  pts.push([rt * 0.78, 0.46], [rt * 0.06, 0.5]);
+  return lathe(pts, 6);
+};
+
 /** Tapered cylinder: top radius = `ratio` × bottom radius. */
 export const taperCyl = (ratio: number) => () => new CylinderGeometry(0.5 * ratio, 0.5, 1, 6);
 
@@ -176,7 +201,8 @@ export function arcHorn(length: number, r0: number, r1: number, curl: number, se
   for (let i = 0; i < segments; i++) {
     const ra = r0 + ((r1 - r0) * i) / segments;
     const rb = r0 + ((r1 - r0) * (i + 1)) / segments;
-    const g = new CylinderGeometry(Math.max(rb, 0.001), ra, seg * 1.08, sides);
+    // open segments (only the base is capped): a horn is a tube, its inner caps never show
+    const g = new CylinderGeometry(Math.max(rb, 0.001), ra, seg * 1.08, sides, 1, i > 0);
     g.translate(0, seg / 2, 0);
     g.rotateX(angle + step / 2);
     g.translate(0, y, x);

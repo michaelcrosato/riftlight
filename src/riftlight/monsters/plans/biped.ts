@@ -27,6 +27,7 @@ export const biped: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.3, horns: 0.45, helm: 0.3, back: 0.35, shoulders: 0.4, wings: 0.12, tail: 0.25, hands: 0.5, weapon: 0.55, feet: 0.3, core: 0.2 },
   mods: [flat('life', 0), inc('attack.speed', 0.05)],
+  defaults: { hands: 'hand.bare', feet: 'foot.bare', jaw: 'jaw.plain' },
   baseScale: 1,
   build: (ctx) => humanoid(ctx, 'biped'),
 };
@@ -50,6 +51,7 @@ export const brute: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.5, horns: 0.5, helm: 0.25, back: 0.5, shoulders: 0.6, tail: 0.1, hands: 0.7, weapon: 0.3, feet: 0.3, core: 0.25 },
   mods: [inc('life', 0.35), inc('move.speed', -0.1), flat('knockback', 2)],
+  defaults: { hands: 'hand.knuckles', feet: 'foot.bare', jaw: 'jaw.plain' },
   baseScale: 1.25,
   build: (ctx) => humanoid(ctx, 'brute'),
 };
@@ -65,30 +67,39 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
   const torso = isBrute ? g('length', 0.42, 0.62) : g('length', 0.34, 0.58);
   const thick = (isBrute ? g('limbThickness', 0.13, 0.22) : g('limbThickness', 0.08, 0.15)) * Math.sqrt(girth);
   const neckLen = isBrute ? g('neck', 0.0, 0.06) : g('neck', 0.03, 0.18);
-  const hs = isBrute ? g('headSize', 0.22, 0.34) : g('headSize', 0.32, 0.5);
+  const hs = isBrute ? g('headSize', 0.34, 0.46) : g('headSize', 0.34, 0.52);
 
   const root = b.joint('Body', null, [0, hipH, 0]);
-  b.shape(root, 'box', [0.34 * girth, 0.16, 0.24 * girth], [0, 0.02, 0], 'secondary');
   const spine = b.joint('Spine', root, [0, 0.08, 0]);
-  b.shape(spine, 'taper', [0.36 * girth, torso * 0.6, 0.3 * girth], [0, torso * 0.25, 0], 'primary', { taper: 1.25 });
   const chest = b.joint('Chest', spine, [0, torso * 0.5, 0]);
-  const chestW = (isBrute ? 0.58 : 0.46) * girth;
-  b.shape(chest, isBrute ? 'sphere' : 'box', [chestW, torso * (isBrute ? 0.75 : 0.55), 0.32 * girth], [0, torso * 0.25, isBrute ? 0.02 : 0], 'primary');
-  const neck = b.joint('Neck', chest, isBrute ? [0, torso * 0.42, 0.1 * girth] : [0, torso * 0.5, 0.02]);
-  b.shape(neck, 'cyl', [0.13 * girth, neckLen + 0.08, 0.13 * girth], [0, neckLen / 2, 0], 'secondary');
+  const chestW = (isBrute ? 0.62 : 0.46) * girth;
+  if (isBrute) {
+    // gorilla/ogre: small hips, a gut, a barrel chest and a shoulder hump the head hangs in front of
+    b.shape(root, 'sphere', [0.36 * girth, 0.2, 0.28 * girth], [0, 0.02, 0], 'secondary');
+    b.shape(spine, 'sphere', [0.5 * girth, torso * 0.62, 0.42 * girth], [0, torso * 0.2, 0.05 * girth], 'primary');
+    b.shape(chest, 'sphere', [chestW, torso * 0.74, 0.46 * girth], [0, torso * 0.26, 0.02], 'primary');
+    b.shape(chest, 'sphere', [chestW * 0.7, torso * 0.42, 0.34 * girth], [0, torso * 0.48, -0.12 * girth], 'primary');
+  } else {
+    // hips, a waisted belly, a ribcage and traps up to the neck
+    b.shape(root, 'sphere', [0.34 * girth, 0.19, 0.25 * girth], [0, 0.01, 0], 'secondary');
+    b.limb(spine, torso * 0.62, 0.33 * girth, 0.82, 0.06, 'primary', { at: [0, torso * 0.24, 0.01], depth: 0.8 });
+    b.shape(chest, 'sphere', [chestW, torso * 0.6, 0.33 * girth], [0, torso * 0.24, 0], 'primary');
+    b.shape(chest, 'sphere', [chestW * 0.62, torso * 0.3, 0.24 * girth], [0, torso * 0.47, -0.02], 'primary');
+  }
+  const neck = b.joint('Neck', chest, isBrute ? [0, torso * 0.46, 0.2 * girth] : [0, torso * 0.5, 0.02]);
+  b.limb(neck, neckLen + 0.1, (isBrute ? 0.2 : 0.13) * girth, 1.2, 0, 'primary', { at: [0, neckLen / 2, 0] });
   const head = b.joint('Head', neck, [0, neckLen, 0.0]);
   const jaw = b.head(head, hs, ctx.head);
 
-  const armLen = Math.min(isBrute ? g('armLength', 0.75, 1.1) : g('armLength', 0.44, 0.68), hipH + torso - 0.06 - thick * (isBrute ? 4.6 : 2));
+  const armLen = Math.min(isBrute ? g('armLength', 0.75, 1.1) : g('armLength', 0.44, 0.68), hipH + torso - 0.06 - thick * (isBrute ? 5.4 : 2));
   both((side, sx) => {
-    const a = b.arm(side, chest, [sx * (chestW / 2 + thick * 0.5), torso * (isBrute ? 0.5 : 0.42), 0], armLen * 0.5, armLen * 0.45, isBrute ? thick * 1.35 : thick);
-    b.shape(a.hand, isBrute ? 'sphere' : 'box', isBrute ? [thick * 2.4, thick * 2.2, thick * 2.4] : [thick * 1.5, thick * 1.6, thick * 1.5], [0, -thick * 0.7, 0], isBrute ? 'secondary' : 'dark');
-    b.stance[a.arm] = isBrute ? [-26, 0, -14 * sx] : [-6, 0, -8 * sx];
-    b.stance[a.forearm] = isBrute ? [-42, 0, 0] : [-18, 0, 0];
+    const a = b.arm(side, chest, [sx * (chestW / 2 + thick * (isBrute ? 0.2 : 0.4)), torso * (isBrute ? 0.5 : 0.42), 0], armLen * 0.5, armLen * 0.45, isBrute ? thick * 1.35 : thick, ['primary', 'secondary'], isBrute ? { forearm: 1.3, deltoid: 0.95 } : {});
+    b.stance[a.arm] = isBrute ? [-14, 0, -12 * sx] : [-6, 0, -8 * sx];
+    b.stance[a.forearm] = isBrute ? [-30, 0, 0] : [-18, 0, 0];
   });
   b.socketPair('hand', 'hands', (s) => `Hand${s}`, [0, -thick * 0.9, 0.02], thick * (isBrute ? 2.4 : 1.6));
   b.socket('weapon', 'weapon', 'HandR', [0, -thick * 0.7, 0], hipH + torso);
-  b.socketPair('shoulder', 'shoulders', (s) => `Arm${s}`, [0, thick * 0.4, 0], thick * (isBrute ? 2.4 : 2));
+  b.socketPair('shoulder', 'shoulders', (s) => `Arm${s}`, [0, thick * 0.4, 0], thick * (isBrute ? 1.9 : 2));
   b.socket('back', 'back', chest, [0, torso * 0.3, -0.16 * girth], chestW, { rot: [-90, 0, 0] });
   b.socket('core', 'core', chest, [0, torso * 0.28, 0.16 * girth], 0.16 * girth);
 
@@ -109,7 +120,7 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
   });
 
   const tailLen = g('tailLength', 0.08, 0.2);
-  const tail = ctx.has('tail') || ctx.genes.tailLength! > 0.62 ? addTail(b, root, [0, 0.02, -0.12 * girth], 3, tailLen, thick * 0.9) : [];
+  const tail = ctx.has('tail') || ctx.genes.tailLength! > 0.62 ? addTail(b, root, [0, 0.02, -0.12 * girth], 3, tailLen, thick * (isBrute ? 0.6 : 0.9)) : [];
   const wings = ctx.has('wings') ? addWings(b, chest, [0.12 * girth, torso * 0.4, -0.12 * girth], g('wingSpan', 0.6, 1.1)) : null;
 
   const posture = g('posture', 0, isBrute ? 38 : 22);

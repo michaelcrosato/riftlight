@@ -29,9 +29,9 @@ export interface BakeOptions {
 export interface BakeContext {
   readonly skeleton: Skeleton;
   readonly kin: Kinematics;
-  /** Joint-space boxes of non-sole meshes and of soles (floor clamp). */
-  readonly bounds: ReadonlyMap<string, Box3>;
-  readonly soles: ReadonlyMap<string, Box3>;
+  /** Joint-space hulls (`hullPoints`) or boxes of non-sole meshes and of soles (floor clamp). */
+  readonly bounds: ReadonlyMap<string, Box3 | Float32Array>;
+  readonly soles: ReadonlyMap<string, Box3 | Float32Array>;
 }
 
 export function bake(ctx: BakeContext, template: ClipDef, options: BakeOptions): MonsterClipDef {

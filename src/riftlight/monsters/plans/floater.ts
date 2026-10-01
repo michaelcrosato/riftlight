@@ -23,6 +23,7 @@ export const floater: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 0.85, jaw: 0.3, horns: 0.35, helm: 0.15, back: 0.25, wings: 0.25, tail: 0.25, core: 0.55, tentacles: 0.6 },
   mods: [flat('evasion', 50), inc('life', -0.15), flag('flying')],
+  defaults: { jaw: 'jaw.gape' },
   baseScale: 0.9,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);

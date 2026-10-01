@@ -4,6 +4,8 @@ import { BACKS, CORES, MISC, SHOULDERS, TAILS, TENTACLES, WINGS } from './body';
 import { EYES, HELMS, HORNS, JAWS, SPECIAL } from './face';
 import { HEADS } from './heads';
 import { FEET, HANDS, ORBS, WEAPONS } from './limbs';
+import { DRESS } from './dress';
+import { MARKS } from './marks';
 
 /**
  * The parts library: hand-made, tagged, with mods and a budget cost. Add a part by
@@ -28,6 +30,8 @@ export const PARTS = new Registry<MonsterPartDef>('parts', [
   ...WEAPONS,
   ...ORBS,
   ...FEET,
+  ...MARKS,
+  ...DRESS,
 ]);
 
 export { part } from './kit';

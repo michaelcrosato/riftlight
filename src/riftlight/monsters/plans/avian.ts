@@ -26,6 +26,7 @@ export const avian: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, wings: 1, horns: 0.35, helm: 0.15, back: 0.25, tail: 0.6, feet: 0.6, core: 0.15 },
   mods: [inc('move.speed', 0.1), flat('evasion', 30)],
+  defaults: { feet: 'foot.bird', tail: 'tail.feathers' },
   baseScale: 0.9,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);

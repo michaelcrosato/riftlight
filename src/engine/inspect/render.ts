@@ -9,7 +9,7 @@
  */
 import type { BufferAttribute, Color, InstancedMesh, InterleavedBufferAttribute, Material, Mesh, Object3D, SkinnedMesh } from 'three/webgpu';
 import { Box3, Matrix4, SRGBColorSpace, Vector3 } from 'three/webgpu';
-import { Canvas, type Rect, type RGB, type SheetImage } from '../animation/raster';
+import { Canvas, outlineId, presetTriangleColour, type Rect, type RGB, type SheetImage } from '../animation/raster';
 import type { InspectReport, ReportDiff } from './report';
 
 export const INSPECT_BG: RGB = [28, 31, 44];
@@ -112,11 +112,16 @@ export function worldTriangles(object: Object3D): Tri[] {
             return p.applyMatrix4(world);
           });
           let color = base;
-          if (useVc) {
+          let flat = unlit;
+          const preset = presetTriangleColour(g.userData, t / 3);
+          if (preset) {
+            color = preset.rgb;
+            flat = preset.unlit;
+          } else if (useVc) {
             const cs = [ia, ib, ic].map((i) => [colors!.getX(i), colors!.getY(i), colors!.getZ(i)]);
             color = [0, 1, 2].map((ch) => (Math.pow((cs[0]![ch]! + cs[1]![ch]! + cs[2]![ch]!) / 3, 1 / 2.2) * 255 * base[ch]!) / 255) as RGB;
           }
-          tris.push({ a: v[0]!, b: v[1]!, c: v[2]!, color, unlit, id });
+          tris.push({ a: v[0]!, b: v[1]!, c: v[2]!, color, unlit: flat, id: outlineId(id, preset) });
         }
       }
     }

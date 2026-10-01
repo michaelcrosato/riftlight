@@ -25,6 +25,7 @@ export const hexapod: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.75, horns: 0.35, back: 0.45, wings: 0.25, tail: 0.3, core: 0.3 },
   mods: [inc('move.speed', 0.2), flat('evasion', 40)],
+  defaults: { feet: 'foot.tip', jaw: 'jaw.mandibles.small' },
   baseScale: 0.95,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);
@@ -37,13 +38,17 @@ export const hexapod: BodyPlanDef = {
     const hs = g('headSize', 0.22, 0.36);
     const ankle = 0.03;
 
+    // thorax under a carapace shield, a waist, a big abdomen with a darker back and a spinneret
     const root = b.joint('Body', null, [0, h, 0.05]);
     b.shape(root, 'sphere', [0.34 * girth, 0.2 * girth, len], [0, 0.02, 0], 'primary');
-    b.shape(root, 'box', [0.24 * girth, 0.06, len * 0.7], [0, -0.07 * girth, 0], 'dark');
+    b.shape(root, 'sphere', [0.3 * girth, 0.1 * girth, len * 0.86], [0, 0.08 * girth, 0], 'secondary');
+    b.shape(root, 'sphere', [0.2 * girth, 0.12, len * 0.6], [0, -0.06 * girth, 0], 'dark');
     const abLen = g('abdomen', 0.35, 0.7) * girth;
     const abdomen = b.joint('Abdomen', root, [0, 0.05, -len / 2]);
-    b.shape(abdomen, 'sphere', [abLen * 0.85, abLen * 0.7, abLen], [0, abLen * 0.12, -abLen * 0.42], 'primary');
-    b.shape(abdomen, 'sphere', [abLen * 0.55, abLen * 0.35, abLen * 0.7], [0, abLen * 0.42, -abLen * 0.42], 'secondary');
+    b.shape(abdomen, 'sphere', [0.12 * girth, 0.1 * girth, 0.12 * girth], [0, 0, 0], 'dark');
+    b.shape(abdomen, 'sphere', [abLen * 0.85, abLen * 0.72, abLen], [0, abLen * 0.14, -abLen * 0.46], 'primary');
+    b.shape(abdomen, 'sphere', [abLen * 0.6, abLen * 0.4, abLen * 0.76], [0, abLen * 0.42, -abLen * 0.44], 'secondary');
+    b.shape(abdomen, 'cone', [abLen * 0.18, abLen * 0.2, abLen * 0.18], [0, abLen * 0.02, -abLen * 0.95], 'dark', { rot: [-100, 0, 0] });
     const head = b.joint('Head', root, [0, 0.0, len / 2 - 0.02]);
     const jaw = b.head(head, hs, ctx.head);
 

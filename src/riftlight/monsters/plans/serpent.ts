@@ -25,6 +25,7 @@ export const serpent: BodyPlanDef = {
   },
   slots: { head: 1, eyes: 1, jaw: 0.8, horns: 0.45, helm: 0.1, back: 0.45, shoulders: 0.35, wings: 0.1, tail: 0.5, core: 0.2 },
   mods: [flat('evasion', 60), inc('attack.speed', 0.1)],
+  defaults: { jaw: 'jaw.plain' },
   baseScale: 1,
   build(ctx) {
     const g = (n: string, lo: number, hi: number) => gene(ctx.genes, n, lo, hi);
@@ -42,9 +43,10 @@ export const serpent: BodyPlanDef = {
     const segs = b.chain('Seg', root, [0, 0, -segLen], [0, 0, -segLen], n);
     segs.forEach((s, i) => {
       const k = 1 - (i + 1) / (n + 2);
-      b.shape(s, 'sphere', [r * 2.1 * k + 0.02, r * 2 * k + 0.02, segLen * 1.45], [0, (k - 1) * r, 0], 'primary');
-      b.shape(s, 'sphere', [r * 1.4 * k, r * 0.6 * k, segLen * 1.2], [0, (k - 1) * r - r * k * 0.55, 0], 'secondary');
-      if (i % 2 === 0) b.shape(s, 'box', [r * 1.2 * k, r * 0.3, segLen * 0.5], [0, (k - 1) * r + r * k * 0.95, 0], 'dark');
+      b.shape(s, 'sphere', [r * 2.1 * k + 0.02, r * 2 * k + 0.02, segLen * 1.5], [0, (k - 1) * r, 0], 'primary');
+      b.shape(s, 'sphere', [r * 1.5 * k, r * 0.62 * k, segLen * 1.3], [0, (k - 1) * r - r * k * 0.56, 0], 'secondary');
+      // a dark scale ridge down the back
+      b.shape(s, 'cone', [r * 0.5 * k, r * 0.55 * k, segLen * 0.5], [0, (k - 1) * r + r * k * 1.02, -segLen * 0.1], 'dark', { rot: [-28, 0, 0] });
     });
 
     const n1 = b.joint('Neck1', root, [0, r * 0.3, segLen * 0.55]);

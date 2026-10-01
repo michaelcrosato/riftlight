@@ -62,9 +62,26 @@ export class SkeletonBuilder {
     return w;
   }
 
-  shape(joint: string, kind: ShapeDef['kind'], size: Vec3, at: Vec3, color: PaletteSlot, opts: { rot?: Vec3; taper?: number; name?: string } = {}): void {
+  shape(joint: string, kind: ShapeDef['kind'], size: Vec3, at: Vec3, color: PaletteSlot, opts: { rot?: Vec3; taper?: number; bulge?: number; name?: string; plain?: boolean } = {}): void {
     const name = opts.name ?? `${joint}_${kind}${this.shapes.filter((s) => s.joint === joint).length}`;
-    this.shapes.push({ joint, name, kind, size, at, color, ...(opts.rot ? { rot: opts.rot } : {}), ...(opts.taper !== undefined ? { taper: opts.taper } : {}) });
+    this.shapes.push({
+      joint,
+      name,
+      kind,
+      size,
+      at,
+      color,
+      ...(opts.rot ? { rot: opts.rot } : {}),
+      ...(opts.taper !== undefined ? { taper: opts.taper } : {}),
+      ...(opts.bulge ? { bulge: opts.bulge } : {}),
+      ...(opts.plain ? { plain: true } : {}),
+    });
+  }
+
+  /** A rounded, muscled limb segment hanging from `joint` (down −Y by `len`): see `limbGeometry`. */
+  limb(joint: string, len: number, top: number, ratio: number, bulge: number, color: PaletteSlot, opts: { at?: Vec3; rot?: Vec3; depth?: number } = {}): void {
+    const at = opts.at ?? [0, -len / 2, 0];
+    this.shape(joint, 'limb', [top, len, top * (opts.depth ?? 1)], at, color, { taper: ratio, bulge, ...(opts.rot ? { rot: opts.rot } : {}) });
   }
 
   socket(id: string, slot: Slot, joint: string, at: Vec3, size: number, opts: { rot?: Vec3; mirror?: boolean; data?: SocketDef['data'] } = {}): void {
@@ -86,10 +103,16 @@ export class SkeletonBuilder {
     const upper = this.joint(`Thigh${id}`, hip, [0, 0, 0]);
     const lower = this.joint(`Shin${id}`, upper, [0, -o.upper, 0]);
     const foot = this.joint(`Foot${id}`, lower, [0, -o.lower, 0]);
-    const [cu, cl, cs] = o.colors ?? ['primary', 'secondary', 'dark'];
+    const [cu, cl, cs] = o.colors ?? ['primary', 'secondary', 'secondary'];
     const t = o.thick;
-    this.shape(upper, 'taper', [t * 1.15, o.upper + t * 0.4, t * 1.15], [0, -o.upper / 2, 0], cu, { taper: 1.3 });
-    this.shape(lower, 'taper', [t, o.lower + t * 0.3, t], [0, -o.lower / 2, 0], cl, { taper: 1.25 });
+    // thigh (muscled), knee, shin (tapering), ankle: joints read as joints
+    this.limb(upper, o.upper + t * 0.5, t * 1.35, 0.68, 0.16, cu);
+    this.shape(lower, 'sphere', [t * 1.08, t * 1.08, t * 1.08], [0, 0, 0], cl);
+    // the shin ends at the ankle (the ankle ball covers the joint): nothing below the sole
+    this.limb(lower, o.lower + t * 0.15, t * 1.02, 0.58, 0.08, cl, { at: [0, -o.lower / 2 + t * 0.075, 0] });
+    // the ankle ball stays above the sole's bottom (it is part of the foot's contact mesh)
+    const ak = Math.min(t * 0.78, o.ankle * 1.6);
+    this.shape(foot, 'sphere', [ak, ak, ak], [0, 0, 0], cl);
     const sole = `Sole${id}`;
     const [sw, sl] = o.sole;
     this.shape(foot, 'box', [sw, o.ankle, sl], [0, -o.ankle / 2, sl * 0.25], cs, { name: sole });
@@ -124,13 +147,22 @@ export class SkeletonBuilder {
     return leg;
   }
 
-  /** Shoulder → Forearm → Hand, hanging down. */
-  arm(side: Side, parent: string, at: Vec3, upper: number, lower: number, thick: number, colors: readonly [PaletteSlot, PaletteSlot] = ['primary', 'secondary']): ArmDef {
+  /**
+   * Shoulder → Forearm → Hand, hanging down: a deltoid, a muscled upper arm, an elbow and a
+   * forearm (`forearm` = wrist / elbow thickness: > 1 for a brute's club-like forearms).
+   */
+  arm(side: Side, parent: string, at: Vec3, upper: number, lower: number, thick: number, colors: readonly [PaletteSlot, PaletteSlot] = ['primary', 'secondary'], o: { forearm?: number; deltoid?: number } = {}): ArmDef {
     const a = this.joint(`Arm${side}`, parent, at);
     const f = this.joint(`Forearm${side}`, a, [0, -upper, 0]);
     const h = this.joint(`Hand${side}`, f, [0, -lower, 0]);
-    this.shape(a, 'taper', [thick * 1.2, upper + thick * 0.3, thick * 1.2], [0, -upper / 2, 0], colors[0], { taper: 1.3 });
-    this.shape(f, 'taper', [thick, lower + thick * 0.2, thick], [0, -lower / 2, 0], colors[1], { taper: 1.2 });
+    const d = o.deltoid ?? 1;
+    const fr = o.forearm ?? 0.72;
+    this.shape(a, 'sphere', [thick * 1.75 * d, thick * 1.55 * d, thick * 1.75 * d], [SX[side] * thick * 0.12, -thick * 0.1, 0], colors[0]);
+    this.limb(a, upper + thick * 0.35, thick * 1.32, 0.74, 0.18, colors[0]);
+    this.shape(f, 'sphere', [thick * 1.02, thick * 1.02, thick * 1.02], [0, 0, 0], colors[1]);
+    // the forearm's top is its elbow end: a club-like forearm is wider at the wrist
+    if (fr > 1) this.limb(f, lower + thick * 0.2, thick * 1.15 * fr, 1 / fr, 0.06, colors[1], { rot: [180, 0, 0] });
+    else this.limb(f, lower + thick * 0.2, thick * 1.18, fr, 0.1, colors[1]);
     const def: ArmDef = { side, arm: a, forearm: f, hand: h, length: upper + lower };
     this.arms.push(def);
     return def;
@@ -187,6 +219,9 @@ export class SkeletonBuilder {
       mass: null,
       ...o.roles,
     };
+    // the boss mantle rides on the back, layered over whatever back part the body has
+    const back = this.sockets.find((s) => s.slot === 'back');
+    if (back && !this.sockets.some((s) => s.slot === 'mantle')) this.sockets.push({ ...back, id: 'mantle', slot: 'mantle', data: undefined });
     return {
       plan: this.plan,
       joints: this.joints,

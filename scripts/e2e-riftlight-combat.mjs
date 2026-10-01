@@ -66,11 +66,14 @@ export async function runRiftlightCombat(h) {
       let hitFrame = -1;
       let stop = { hero: 0, dummy: 0 };
       let flash = false;
+      let dealt = 0;
       for (let i = 0; i < 40 && hitFrame < 0; i++) {
         e.step(1);
         const hit = log.find((l) => l.type === 'hit' && l.frame > press && l.target === 'training dummy' && l.total > 0);
         if (hit) {
           hitFrame = hit.frame;
+          // what the hit took off the dummy (the still dummy regenerates, so its life later says little)
+          dealt = life0 - dummy.life;
           stop = { hero: g.hero.actor.hitStop, dummy: dummy.hitStop };
           flash = dummy.fx.flashing;
         }
@@ -84,7 +87,7 @@ export async function runRiftlightCombat(h) {
       e.input.setKey('KeyJ', false);
       const steps = g.hero.stats.attacks;
       e.step(40);
-      return { hitAfter: hitFrame - press, stop, flash, numbers, clip, damage: life0 - dummy.life, pushed: +(dummy.position.z - z0).toFixed(2), attacks: steps };
+      return { hitAfter: hitFrame - press, stop, flash, numbers, clip, damage: dealt, pushed: +(dummy.position.z - z0).toFixed(2), attacks: steps };
     });
     // Slash1 hits at frame 5 of 12 (0.42 s at 100% speed) → ~10.5 game frames after the press
     check(combo.hitAfter >= 8 && combo.hitAfter <= 13, `first slash lands on its hit frame (${combo.hitAfter} frames after the press)`);
