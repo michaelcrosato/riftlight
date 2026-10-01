@@ -47,7 +47,7 @@ export const SCENARIOS: Record<string, string> = {
   idle: 'place 0 0 4 90; wait 120',
   walk: 'place -6 0 10 90; hold D+SHIFT 70; wait 30',
   'run-stop': 'place -6 0 10 90; hold D 75; wait 45',
-  bonk: 'place -3 0 13 90; hold S+D 70; wait 30',
+  bonk: 'place -3 0 13 90; hold D 70; wait 30',
   skid: 'place -6 0 10 90; down D; wait 45; up D; hold A 30; wait 30',
   jump: 'place 0 0 4 90; tap SPACE; until land 90; wait 30',
   // landing while moving runs on (no 'land' state): wait for the feet instead
@@ -57,16 +57,18 @@ export const SCENARIOS: Record<string, string> = {
   'long-jump': 'place -8 0 10 90; down D; wait 40; down C; wait 1; tap SPACE; up C+D; until grounded 120; wait 40',
   'side-flip': 'place -6 0 10 90; down D; wait 45; up D; down A; until skid 30; tap SPACE; up A; until land 120; wait 30',
   crouch: 'place 0 0 4 90; down C; wait 20; down D; wait 50; up D; wait 15; up C; wait 25',
-  crawl: 'place -5.5 0 7 -90; tap Z; until prone 60; hold A 90; tap Z; wait 50',
-  punches: 'place 0 0 4 90; tap J; wait 7; tap J; wait 7; tap J; wait 45',
+  // through the 0.75 m tunnel and up on the far side
+  crawl: 'place -5.8 0 7 -90; tap Z; until prone 60; hold A 250; tap Z; until idle 60; wait 20',
+  // each press lands in the next hit's queue window (> 0.1 s into the current one)
+  punches: 'place 0 0 4 90; tap J; wait 7; tap J; wait 17; tap J; until idle 60; wait 20',
   'ground-pound': 'place 0 0 4 90; tap SPACE; wait 20; tap C; until grounded 120; wait 45',
-  dive: 'place -6 0 10 90; down D; wait 40; tap SPACE; wait 8; tap J; up D; wait 100',
+  dive: 'place -6 0 10 90; down D; wait 40; tap SPACE; wait 8; tap J; up D; until getUpFront 150; until idle 60; wait 15',
   'lie-down': 'place 0 0 4 90; tap X; wait 100; tap X; wait 70',
   sit: 'place 0 0 4 90; tap B; wait 60; tap B; wait 30; tap V; wait 60',
   stairs: 'place -1.4 0 0 -90; hold A 110; wait 20',
   ledge: 'place 4.8 0 0 90; down D; tap SPACE; until hang 90; up D; wait 30; down D; until idle 120; up D; wait 20',
   climb: 'place 8 0 -6.9 180; down W; wait 150; up W; wait 20',
-  'hard-land': 'place -12 7 -9.2 180; down W; until hardLand 200; up W; wait 50',
+  'hard-land': 'place -12 7 -9.2 180; down W; until hardLand 200; up W; until idle 90; wait 20',
 };
 
 const KEYS: Record<string, string> = { W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', SPACE: 'Space', SHIFT: 'ShiftLeft', C: 'KeyC', J: 'KeyJ', F: 'KeyF', Z: 'KeyZ', X: 'KeyX', B: 'KeyB', V: 'KeyV' };
@@ -267,7 +269,9 @@ async function main(): Promise<void> {
     const page = await browser.newPage({ viewport: raw ? { width: 960, height: 540 } : { width: 480, height: 270 }, deviceScaleFactor: 1 });
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    const q = new URLSearchParams({ debug: '0', touch: '0' });
+    // The game's iso camera turned to yaw 0, so the keys move along the axes as scripts
+    // assume (W = -Z, D = +X); at its default 45° yaw they ran diagonally.
+    const q = new URLSearchParams({ debug: '0', touch: '0', cam: JSON.stringify({ preset: 'iso', yaw: 0 }) });
     if (flags.has('mode')) q.set('mode', opt('mode', 'pixel'));
     if (flags.has('look')) q.set('look', opt('look', ''));
     const t0 = Date.now();
