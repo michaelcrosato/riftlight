@@ -118,8 +118,16 @@ async function resolveExecutable() {
 }
 
 async function startServer() {
-  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
-  for (let i = 0; i < 100; i++) {
+  // Something already answering on the port would be tested instead of this build (e.g. a
+  // leftover preview server from another checkout): refuse rather than test the wrong code.
+  const taken = await fetch(BASE).then(() => true, () => false);
+  if (taken) throw new Error(`port ${PORT} is already serving something; stop it or set E2E_PORT`);
+  // detached: its own process group, so stopServer() ends npx *and* the vite it starts
+  // (killing npx alone left vite running, holding the port).
+  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', detached: true });
+  let exited = false;
+  proc.on('exit', () => (exited = true));
+  for (let i = 0; i < 100 && !exited; i++) {
     try {
       const res = await fetch(BASE);
       if (res.ok) return proc;
@@ -128,8 +136,16 @@ async function startServer() {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  proc.kill();
+  stopServer(proc);
   throw new Error('vite preview did not start');
+}
+
+function stopServer(proc) {
+  try {
+    process.kill(-proc.pid, 'SIGTERM');
+  } catch {
+    proc.kill();
+  }
 }
 
 const state = (page) => page.evaluate(() => window.__PIXEL_ENGINE__?.state());
@@ -1026,7 +1042,7 @@ try {
     console.log(`  ⏱ ${name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   }
 } finally {
-  server.kill();
+  stopServer(server);
 }
 console.log(`\n⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
 console.log(failures ? `✘ ${failures} check(s) failed` : '✔ all e2e checks passed');
