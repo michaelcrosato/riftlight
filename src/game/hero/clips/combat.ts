@@ -342,7 +342,8 @@ export const CastBigWeapon: ClipDef = {
  * it go at `hit`.
  */
 const BOW_FEET: FeetGoals = COMBAT_FEET;
-const SIDE_ON: Pose = { ...pelvis([0, -40, 0], [0, -0.08, 0]), Torso: [4, -15, 0], Head: [-4, 50, 0] };
+// (the turn shared hips 28 / chest 27: less hip twist over the planted feet)
+const SIDE_ON: Pose = { ...pelvis([0, -28, 0], [0, -0.08, 0]), Torso: [4, -27, 0], Head: [-4, 50, 0] };
 /** Bow arm raised and bent (nocking), then pushed out to the target. */
 const BOW_UP = arm('L', -72, 55, 50, 0);
 const BOW_OUT = arm('L', -87, 56, 5, 0);
@@ -361,14 +362,14 @@ export const BowDraw: ClipDef = {
   ...track([
     [0, COMBAT_BODY, COMBAT_FEET],
     // turn side-on, bow up and in, the right hand takes the string
-    [4, { ...SIDE_ON, ...pelvis([0, -34, 0], [0, -0.06, 0]), Torso: [6, -12, 0], Head: [-6, 42, 0], ...BOW_UP, ...NOCK }, BOW_FEET, 'out'],
+    [4, { ...SIDE_ON, ...pelvis([0, -24, 0], [0, -0.06, 0]), Torso: [6, -22, 0], Head: [-6, 42, 0], ...BOW_UP, ...NOCK }, BOW_FEET, 'out'],
     // push the bow out while pulling the string: the draw builds slowly ('in': the strain)
     [8, { ...SIDE_ON, ...arm('L', -82, 56, 24, 0), ...HALF }, BOW_FEET, 'in'],
     // full draw: chest open, a hair of lean back, hold
-    [11, { ...SIDE_ON, ...pelvis([-2, -41, 0], [0, -0.09, -0.01]), Torso: [0, -16, 0], ...BOW_OUT, ...ANCHOR }, BOW_FEET],
-    [12, { ...SIDE_ON, ...pelvis([-2, -41, 0], [0, -0.09, -0.01]), Torso: [0, -16, 0], ...arm('L', -86, 57, 4, -6), ...LOOSE }, BOW_FEET, 'out'],
+    [11, { ...SIDE_ON, ...pelvis([-2, -29, 0], [0, -0.09, -0.01]), Torso: [0, -28, 0], ...BOW_OUT, ...ANCHOR }, BOW_FEET],
+    [12, { ...SIDE_ON, ...pelvis([-2, -29, 0], [0, -0.09, -0.01]), Torso: [0, -28, 0], ...arm('L', -86, 57, 4, -6), ...LOOSE }, BOW_FEET, 'out'],
     // follow-through: the bow arm stays on the line, the string hand opens back past the ear
-    [14, { ...SIDE_ON, Torso: [0, -18, 0], ...arm('L', -84, 58, 6, -8), ...arm('R', -70, 10, 40, 10) }, BOW_FEET, 'inOut'],
+    [14, { ...SIDE_ON, Torso: [0, -30, 0], ...arm('L', -84, 58, 6, -8), ...arm('R', -70, 10, 40, 10) }, BOW_FEET, 'inOut'],
     [18, COMBAT_BODY, COMBAT_FEET],
   ]),
   notes: 'Turn side-on, nock at the chest, push-pull to the anchor under the chin, release at 12 (the hand flies back), bow arm holds the line.',
@@ -382,10 +383,10 @@ export const BowRelease: ClipDef = {
   grounded: true,
   ...track([
     [0, COMBAT_BODY, COMBAT_FEET],
-    [2, { ...SIDE_ON, ...pelvis([0, -34, 0], [0, -0.07, 0]), Torso: [6, -12, 0], Head: [-6, 42, 0], ...arm('L', -78, 56, 36, 0), ...NOCK }, BOW_FEET, 'out'],
-    [5, { ...SIDE_ON, ...pelvis([-2, -41, 0], [0, -0.09, -0.01]), Torso: [0, -16, 0], ...BOW_OUT, ...ANCHOR }, BOW_FEET, 'in'],
-    [6, { ...SIDE_ON, ...pelvis([-2, -41, 0], [0, -0.09, -0.01]), Torso: [0, -16, 0], ...arm('L', -86, 57, 4, -6), ...LOOSE }, BOW_FEET, 'out'],
-    [8, { ...SIDE_ON, Torso: [0, -18, 0], ...arm('L', -84, 58, 6, -8), ...arm('R', -70, 10, 40, 10) }, BOW_FEET, 'inOut'],
+    [2, { ...SIDE_ON, ...pelvis([0, -24, 0], [0, -0.07, 0]), Torso: [6, -22, 0], Head: [-6, 42, 0], ...arm('L', -78, 56, 36, 0), ...NOCK }, BOW_FEET, 'out'],
+    [5, { ...SIDE_ON, ...pelvis([-2, -29, 0], [0, -0.09, -0.01]), Torso: [0, -28, 0], ...BOW_OUT, ...ANCHOR }, BOW_FEET, 'in'],
+    [6, { ...SIDE_ON, ...pelvis([-2, -29, 0], [0, -0.09, -0.01]), Torso: [0, -28, 0], ...arm('L', -86, 57, 4, -6), ...LOOSE }, BOW_FEET, 'out'],
+    [8, { ...SIDE_ON, Torso: [0, -30, 0], ...arm('L', -84, 58, 6, -8), ...arm('R', -70, 10, 40, 10) }, BOW_FEET, 'inOut'],
     [12, COMBAT_BODY, COMBAT_FEET],
   ]),
   notes: 'Snap shot: nock on the way up, anchor at 5, release at 6.',
@@ -523,9 +524,9 @@ export const HitReact: ClipDef = {
   grounded: true,
   ...track([
     [0, COMBAT_BODY, COMBAT_FEET],
-    [1, stance({ ...pelvis([-12, 4, 0], [0, -0.09, -0.04]), Torso: [-20, -10, 4], Head: [-26, 8, 6], ...arm('R', -40, 46, 50, -10), ...arm('L', -80, 48, 30, 0) }), COMBAT_FEET, 'out'],
-    [3, stance({ ...pelvis([-8, 2, 0], [0, -0.13, -0.03], squash(0.04)), Torso: [-12, -6, 2], Head: [-14, 4, 2], ...arm('R', -30, 40, 55, -10), ...arm('L', -66, 44, 40, 0) }), COMBAT_FEET, 'inOut'],
-    [6, stance({ ...pelvis([6, 0, 0], [0, -0.12, 0.01]), Torso: [18, 0, 0], Head: [8, 0, 0] }), COMBAT_FEET, 'inOut'],
+    [2, stance({ ...pelvis([-12, 4, 0], [0, -0.09, -0.04]), Torso: [-20, -10, 4], Head: [-26, 8, 6], ...arm('R', -40, 46, 50, -10), ...arm('L', -70, 44, 55, 0) }), COMBAT_FEET, 'out'],
+    [4, stance({ ...pelvis([-8, 2, 0], [0, -0.13, -0.03], squash(0.04)), Torso: [-12, -6, 2], Head: [-14, 4, 2], ...arm('R', -30, 40, 55, -10), ...arm('L', -66, 44, 40, 0) }), COMBAT_FEET, 'inOut'],
+    [7, stance({ ...pelvis([6, 0, 0], [0, -0.12, 0.01]), Torso: [18, 0, 0], Head: [8, 0, 0] }), COMBAT_FEET, 'inOut'],
     [10, COMBAT_BODY, COMBAT_FEET],
   ]),
   notes: 'Snapped back at once (head whipped, arms flung), knees give, fold forward past guard, recover.',

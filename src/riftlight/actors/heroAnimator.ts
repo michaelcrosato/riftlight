@@ -72,6 +72,8 @@ export class HeroAnimator {
   private fade = 0.1;
   /** The animated joints after the last mixer pass: the layers' changes are undone from these. */
   private readonly snaps: Snap[] = [];
+  private readonly pelvis: Object3D | null;
+  private readonly torso: Object3D | null;
 
   constructor(readonly model: Object3D, clips: readonly AnimationClip[], options: HeroAnimatorOptions = {}) {
     this.mixer = new AnimationMixer(model);
@@ -82,6 +84,8 @@ export class HeroAnimator {
     const legJoints = legs ? [legs.R.upper, legs.R.lower, legs.R.foot, legs.L.upper, legs.L.lower, legs.L.foot] : [];
     this.feet = rig && options.probe && legs && legJoints.every(has) ? new FootPlacement(model, rig, options.probe, options.feet) : null;
     this.layers = rig && has(rig.root) ? new PoseLayers(model, rig) : null;
+    this.pelvis = rig ? (model.getObjectByName(rig.root) ?? null) : null;
+    this.torso = rig?.spine?.torso ? (model.getObjectByName(rig.spine.torso) ?? null) : null;
     // the mixer only writes what changed, so the layers' corrections would pile up on joints
     // a held pose leaves alone: every animated joint is put back as the mixer left it first
     for (const name of rig?.joints ?? []) {
@@ -193,9 +197,11 @@ export class HeroAnimator {
 
   /**
    * Blend weights by `dt`, then pose the model at every clock. `dt` = 0 re-poses only.
-   * `feet`: what foot placement should do this frame (omitted: off).
+   * `feet`: what foot placement should do this frame (omitted: off). `hips`: turn the hips
+   * this far (radians, about the vertical) and the chest back the other way, so legs can walk
+   * one way while the upper body faces another (casting on the move).
    */
-  update(dt: number, feet?: FootPlacementInput): void {
+  update(dt: number, feet?: FootPlacementInput, hips = 0): void {
     const t = this.target;
     if (t) {
       const step = this.fade > 0 ? dt / this.fade : 1;
@@ -230,6 +236,10 @@ export class HeroAnimator {
       j.q.copy(j.o.quaternion);
       j.s.copy(j.o.scale);
     }
+    if (hips !== 0 && this.pelvis && this.torso) {
+      this.pelvis.quaternion.premultiply(HQ.setFromAxisAngle(UP, hips));
+      this.torso.quaternion.premultiply(HQ.setFromAxisAngle(UP, -hips));
+    }
     if (this.feet) {
       this.feet.capture(); // where the clips put the feet
       this.layers?.apply(dt, NO_LAYERS);
@@ -255,6 +265,8 @@ export class HeroAnimator {
 }
 
 const OFF: FootPlacementInput = { ik: false, lock: false };
+const UP = new Vector3(0, 1, 0);
+const HQ = new Quaternion();
 
 /** Loop clips are marked when compiled from a `loop: true` ClipDef (see HeroController). */
 export function isLoop(clip: AnimationClip): boolean {

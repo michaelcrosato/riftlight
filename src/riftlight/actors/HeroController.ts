@@ -702,7 +702,12 @@ export class HeroController {
     const k = frozen ? 0 : dt * Math.max(0.05, 1 - a.chill);
     const v = this.speed;
     // locomotion clocks: stride matched to ground speed
-    const loco = v < HERO_TUNING.idleBelow ? 'Idle' : v < HERO_TUNING.walkBelow ? 'Walk' : 'Run';
+    // the legs walk or run when the hero means to move; a shove or a crowd pushing the body
+    // about is taken by the planted feet (they re-plant with steps), not by a moonwalk
+    const intends = this.moveWish.lengthSq() > 0.04;
+    const loco = v < HERO_TUNING.idleBelow || !intends ? 'Idle' : v < HERO_TUNING.walkBelow ? 'Walk' : 'Run';
+    // (the legs play a gait: the hips may turn to the way the body travels, see hipsFor)
+    this.gaitLegs = loco !== 'Idle' && (this.state === 'run' || (!!this.action && this.state !== 'channel') || this.hitReact > 0);
     if (loco !== 'Idle') this.gaitRun = loco === 'Run';
     an.advance('Idle', k);
     // Walk and Run share one phase (both strike the right heel at 0), so a cross-fade between
@@ -723,7 +728,9 @@ export class HeroController {
     if (v < HERO_TUNING.idleBelow) rate = this.gaitHold || grounded ? 0 : this.gaitRate * 2;
     else this.gaitRate = rate;
     const before = this.gaitPhase;
-    this.gaitPhase = (this.gaitPhase + k * rate) % 1;
+    // walking backwards (casting at something behind while moving away): the stride runs back
+    if (this.backpedal) rate = -rate;
+    this.gaitPhase = (((this.gaitPhase + k * rate) % 1) + 1) % 1;
     if (v < HERO_TUNING.idleBelow && !this.gaitHold && rate > 0 && (this.gaitPhase < before || (before < 0.5 && this.gaitPhase >= 0.5))) {
       this.gaitPhase = this.gaitPhase < before ? 0 : 0.5;
       this.gaitHold = true;
@@ -745,7 +752,7 @@ export class HeroController {
       const len = an.duration(roll);
       const total = this.dodgeSkill.castTime * 0.8;
       an.setTime(roll, Math.min(len, an.time(roll) + (frozen ? 0 : (dt * len) / Math.max(0.05, total))));
-      an.play({ full: roll }, 0.05);
+      an.play({ full: roll }, 0.08);
     } else if (this.action) {
       const act = this.action;
       const name = act.anim;
@@ -758,7 +765,7 @@ export class HeroController {
       // legs keep running under a cast when moving; attacks own the whole body (a melee
       // lunge bounds in on the attack's own legs: see `liftFor`)
       const melee = act.skill.tags.includes('melee');
-      const moving = v > HERO_TUNING.idleBelow && act.skill.moveDuringCast > 0 && !act.skill.def.leap && !melee;
+      const moving = v > HERO_TUNING.idleBelow && intends && act.skill.moveDuringCast > 0 && !act.skill.def.leap && !melee;
       const spin = act.clip === 'Spin';
       if (moving && !spin) an.play({ lower: loco === 'Idle' ? 'Walk' : loco, upper: name }, HERO_TUNING.fadeAction);
       else an.play({ full: name }, HERO_TUNING.fadeAction);
@@ -777,7 +784,8 @@ export class HeroController {
     else if (this.state === 'dodge') this.lastClip = 'Roll';
     const hop = this.turnModel(k, v);
     const lift = Math.max(hop, this.liftFor(k, v));
-    an.update(frozen ? 0 : dt, this.feetFor(v, lift));
+    const hips = this.hipsFor(k, v);
+    an.update(frozen ? 0 : dt, this.feetFor(v, lift), hips);
     // (after foot placement, which works from where the body really is)
     if (lift > 0) this.model.position.y += lift;
     // the bow string follows the drawing hand through a shot's draw frames
@@ -876,8 +884,32 @@ export class HeroController {
     if (this.lift < 1e-4) this.lift = 0;
     return this.lift;
   }
+  /**
+   * Legs walking under an upper body that faces elsewhere (a cast on the move, a hit while
+   * walking): the hips turn to the way the body travels (or away from it, walking backwards,
+   * when that is behind), the chest turns back to face the aim. Radians, smoothed.
+   */
+  private hipsFor(k: number, speed: number): number {
+    let want = 0;
+    let back = this.backpedal;
+    const vel = this.actor.velocity;
+    if (this.gaitLegs && this.state !== 'run' && speed > HERO_TUNING.idleBelow) {
+      const d = wrapAngle(Math.atan2(vel.x, vel.z) - this.viewYaw);
+      // (hysteresis, so the stride doesn't flip between forwards and backwards at the side)
+      back = Math.abs(d) > (back ? 1.5 : 1.85);
+      want = back ? wrapAngle(d - Math.PI) : d;
+      want = Math.max(-1.4, Math.min(1.4, want));
+    } else back = false;
+    if (back !== this.backpedal) this.backpedal = back;
+    if (k > 0) this.hips += (want - this.hips) * (1 - Math.exp(-14 * k));
+    return this.hips;
+  }
+  private hips = 0;
+  private backpedal = false;
   private lift = 0;
   private lastClip = '';
+  /** The legs play Walk / Run this frame (see `feetFor`). */
+  private gaitLegs = false;
   /** Shared Walk / Run phase (0..1) and which gait leads it. */
   private gaitPhase = 0;
   private gaitRun = true;
