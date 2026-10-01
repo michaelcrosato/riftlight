@@ -6,7 +6,7 @@
 //
 //   Hero
 //   └─ Pelvis (hip height; root of the pose: position, rotation, squash/stretch)
-//      ├─ Torso ─┬─ Head
+//      ├─ Torso ─┬─ Head ─ Cap                     (springy: not animated by clips)
 //      │         ├─ ArmR ─ ForearmR ─ HandR        (right = -X)
 //      │         └─ ArmL ─ ForearmL ─ HandL        (left  = +X)
 //      ├─ LegR ─ ShinR ─ FootR
@@ -62,8 +62,10 @@ function buildRig() {
   const l = side('L');
   const head = joint('Head', [0, 0.6, 0],
     box('Face', [0.46, 0.42, 0.42], C.sand, [0, 0.21, 0]),
-    box('Hat', [0.52, 0.15, 0.48], C.red, [0, 0.45, -0.01]),
-    box('Brim', [0.4, 0.05, 0.16], C.red, [0, 0.39, 0.27]),
+    // the cap sits on its band (where it would tip from), so it can lag and wobble
+    joint('Cap', [0, 0.375, 0],
+      box('Hat', [0.52, 0.15, 0.48], C.red, [0, 0.075, -0.01]),
+      box('Brim', [0.4, 0.05, 0.16], C.red, [0, 0.015, 0.27])),
     box('Eyes', [0.3, 0.08, 0.04], C.ink, [0, 0.27, 0.215]),
     box('Nose', [0.12, 0.1, 0.1], C.orange, [0, 0.18, 0.25]),
     box('Moustache', [0.28, 0.06, 0.05], C.ink, [0, 0.11, 0.225]));
