@@ -1,5 +1,5 @@
 // Builds dist-single/pixel-engine.html: the whole game in one self-contained file
-// (JS incl. inlined Rapier wasm, CSS, favicon and GLB assets as data URIs). Runs offline.
+// (JS, Rapier's .wasm, CSS, favicon and GLB assets as data URIs). Runs offline.
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { build } from 'vite';
 

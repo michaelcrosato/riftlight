@@ -7,7 +7,7 @@ Demo: *Coin Garden*.
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320)
+npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high)
 npm run build        # production build
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
@@ -37,6 +37,12 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
 - **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
+- **Performance:** the scene, edges and art-pixel filters render at 480×270 and are upscaled
+  once; the art width follows the screen (`aspect: 'adaptive'`, portrait phones fill the
+  screen); the loop is capped at `maxFps` 60; `quality` low/medium/high sets the shadow map
+  (auto: low on phones, lowered once on a slow start); a lost GPU device is recovered. Build
+  (gzip): three 270 kB, Rapier 28 kB JS + 774 kB `.wasm` (streamed), game 43 kB.
+  Details in [`docs/ENGINE.md`](docs/ENGINE.md).
 
 Architecture, the camera and filter lists, the moveset and the game API are in
 [`docs/ENGINE.md`](docs/ENGINE.md).

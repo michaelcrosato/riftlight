@@ -27,6 +27,20 @@ describe('camera presets', () => {
     expect(first.zoomable).toBe(false);
   });
 
+  it('follows the art aspect (adaptive framing) for ortho and perspective rigs', () => {
+    const iso = createCameraRig({ preset: 'iso' }) as OrthoRig;
+    const h = iso.camera.top;
+    expect(iso.camera.right / iso.camera.top).toBeCloseTo(16 / 9);
+    iso.update({ target: new Vector3(), eye: new Vector3(), dt: 1 / 60, resolution: { width: 124, height: 270 }, input: fakeInput(), world: {} });
+    expect(iso.camera.top).toBeCloseTo(h); // view height (and art-pixel size) unchanged
+    expect(iso.camera.right / iso.camera.top).toBeCloseTo(124 / 270);
+    iso.setZoom(2);
+    expect(iso.camera.right / iso.camera.top).toBeCloseTo(124 / 270);
+    const third = createCameraRig({ preset: 'third' }) as ThirdPersonRig;
+    third.setAspect(584 / 270);
+    expect(third.camera.aspect).toBeCloseTo(584 / 270);
+  });
+
   it('mouse wheel zooms', () => {
     const rig = createCameraRig({ preset: 'topdown' });
     update(rig, { wheel: -3 });

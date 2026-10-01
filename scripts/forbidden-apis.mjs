@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const ROOT = new URL('..', import.meta.url).pathname;
 
-const PINS = { three: '0.186.0', '@dimforge/rapier3d-compat': '0.20.0', '@types/three': '0.186.0' };
+const PINS = { three: '0.186.0', '@dimforge/rapier3d': '0.20.0', '@types/three': '0.186.0' };
 
 const RULES = [
   { re: /\bEffectComposer\b/, why: 'use RenderPipeline + TSL nodes' },

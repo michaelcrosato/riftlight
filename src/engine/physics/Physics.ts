@@ -1,5 +1,6 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d';
 import { Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { initRapier } from './rapierWasm';
 
 export { RAPIER };
 
@@ -38,14 +39,18 @@ export class Physics {
   /** Interpolation factor between the previous and current physics step, 0..1. */
   alpha = 0;
   steps = 0;
+  // Reused by every ray cast (no per-call Ray / closure allocations).
+  private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
+  private readonly predicates = new WeakMap<readonly string[], (c: RAPIER.Collider) => boolean>();
 
   private constructor(gravity: number) {
     this.world = new RAPIER.World({ x: 0, y: gravity, z: 0 });
     this.world.timestep = FIXED_DT;
   }
 
+  /** Loads Rapier's wasm on first use (a separate, streamed .wasm file), then builds a world. */
   static async create(gravity = -24): Promise<Physics> {
-    await RAPIER.init();
+    await initRapier();
     return new Physics(gravity);
   }
 
@@ -147,9 +152,29 @@ export class Physics {
   }
 
   /** Distance along `dir` (unit) from `from` to the first collider not carrying any of `ignoreTags`. */
-  raycast(from: Vector3, dir: Vector3, maxDistance: number, ignoreTags: string[] = []): number | null {
-    const hit = this.castRay(from, dir, maxDistance, ignoreTags);
-    return hit ? hit.distance : null;
+  raycast(from: Vector3, dir: Vector3, maxDistance: number, ignoreTags: readonly string[] = NO_TAGS): number | null {
+    const hit = this.cast(from, dir, maxDistance, ignoreTags);
+    return hit ? hit.timeOfImpact : null;
+  }
+
+  /** Shared ray + cached tag predicate (keyed by the `ignoreTags` array: pass a constant). */
+  private cast(from: Vector3, dir: Vector3, maxDistance: number, ignoreTags: readonly string[], exclude?: RAPIER.RigidBody) {
+    const ray = this.ray;
+    ray.origin.x = from.x;
+    ray.origin.y = from.y;
+    ray.origin.z = from.z;
+    ray.dir.x = dir.x;
+    ray.dir.y = dir.y;
+    ray.dir.z = dir.z;
+    let predicate: ((c: RAPIER.Collider) => boolean) | undefined;
+    if (ignoreTags.length) {
+      predicate = this.predicates.get(ignoreTags);
+      if (!predicate) {
+        predicate = (c: RAPIER.Collider) => !ignoreTags.some((t) => this.hasTag(c, t));
+        this.predicates.set(ignoreTags, predicate);
+      }
+    }
+    return this.world.castRayAndGetNormal(ray, maxDistance, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, exclude, predicate);
   }
 
   /** Ray cast returning distance, hit collider and surface normal. */
@@ -157,12 +182,10 @@ export class Physics {
     from: Vector3,
     dir: Vector3,
     maxDistance: number,
-    ignoreTags: string[] = [],
+    ignoreTags: readonly string[] = NO_TAGS,
     exclude?: RAPIER.RigidBody,
   ): { distance: number; collider: RAPIER.Collider; normal: Vector3; point: Vector3 } | null {
-    const ray = new RAPIER.Ray({ x: from.x, y: from.y, z: from.z }, { x: dir.x, y: dir.y, z: dir.z });
-    const predicate = ignoreTags.length ? (c: RAPIER.Collider) => !ignoreTags.some((t) => this.hasTag(c, t)) : undefined;
-    const hit = this.world.castRayAndGetNormal(ray, maxDistance, true, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, undefined, exclude, predicate);
+    const hit = this.cast(from, dir, maxDistance, ignoreTags, exclude);
     if (!hit) return null;
     const n = hit.normal;
     return {
@@ -175,7 +198,13 @@ export class Physics {
 
   /** Distance straight down from `origin` to the first collider (excluding `exclude`). */
   groundBelow(origin: Vector3, maxDistance = 20, exclude?: RAPIER.RigidBody): { y: number; distance: number } | null {
-    const ray = new RAPIER.Ray({ x: origin.x, y: origin.y, z: origin.z }, { x: 0, y: -1, z: 0 });
+    const ray = this.ray;
+    ray.origin.x = origin.x;
+    ray.origin.y = origin.y;
+    ray.origin.z = origin.z;
+    ray.dir.x = 0;
+    ray.dir.y = -1;
+    ray.dir.z = 0;
     const hit = this.world.castRay(ray, maxDistance, true, undefined, undefined, undefined, exclude);
     if (!hit) return null;
     return { y: origin.y - hit.timeOfImpact, distance: hit.timeOfImpact };
@@ -193,6 +222,8 @@ export class Physics {
     b.currRot.set(r.x, r.y, r.z, r.w);
   }
 }
+
+const NO_TAGS: readonly string[] = [];
 
 function yRotation(angle: number): RAPIER.Rotation {
   return { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };
