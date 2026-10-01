@@ -18,7 +18,12 @@
 //
 // Script language (commands separated by ';' or newlines; keys: W A S D SPACE SHIFT C J F Z X B V K Q E R LMB RMB,
 // combine with '+'; yaw in degrees, 0 = +Z, 90 = +X; W = -Z, D = +X):
-//   place x y z [yaw]    teleport and settle (not recorded)
+//   place x y z [yaw]    teleport and settle (not recorded); in the arena also: back on its
+//                        feet, full mana, no cooldowns, the default skill bar and the sword
+//   skills a,b+sup,...   (arena) the skill bar, RMB/K Q E R F (gem+support+...)
+//   weapon CLASS [2h]    (arena) equip a weapon class: sword axe mace sceptre dagger wand staff bow
+//   hurt SHARE [dx dz]   (arena) the hero loses SHARE of its life, knocked away from (dx, dz)
+//   kill                 (arena) the hero dies
 //   hold KEYS n          hold keys for n frames, then release
 //   down KEYS / up KEYS  press / release (stay held across commands)
 //   tap KEYS             press for 2 frames, release, 1 more frame
@@ -91,6 +96,34 @@ export const SCENARIOS: Record<string, string> = {
   'arcade-ledge': 'place 18 0 0 90; down D; wait 14; tap SPACE; until grounded 90; tap SPACE; until grounded 120; up D; wait 25',
   'arcade-chimney': 'place 36.8 0 0 90; down D; wait 6; tap SPACE; until wallSlide 60; up D; tap SPACE; until grounded 120; wait 20',
   'arcade-pound': 'place 45.5 5.4 0 90; wait 10; tap SPACE; wait 14; tap C; until grounded 150; wait 40',
+  // each step of the basic combo on its own (2 and 3 chain through the steps before them)
+  'arena-slash1': 'place 0 0 0.9 180; tap J; until idle 60; wait 15',
+  'arena-slash2': 'place 0 0 0.9 180; tap J; wait 7; tap J; until idle 60; wait 15',
+  'arena-slash3': 'place 0 0 0.9 180; tap J; wait 7; tap J; wait 7; tap J; until idle 80; wait 20',
+  // every skill delivery kind
+  'arena-strike': 'place 0 0 1.2 180; skills cleave; tap K; until idle 60; wait 15',
+  'arena-slam': 'place 0 0 1.4 180; skills ground-slam; tap K; until idle 80; wait 15',
+  'arena-projectile': 'place 0 0 3.5 180; skills fireball; tap K; until idle 60; wait 20',
+  'arena-nova': 'place 0 0 2 180; skills frost-nova; tap K; until idle 60; wait 20',
+  'arena-beam': 'place 0 0 3.5 180; skills searing-beam; down K; wait 50; up K; until idle 40; wait 15',
+  'arena-dash': 'place 0 0 5 180; skills shield-charge; tap K; until idle 60; wait 20',
+  'arena-summon': 'place 0 0 3.5 180; skills summon-skeletons; tap K; until idle 80; wait 20',
+  'arena-aura': 'place 0 0 3.5 180; skills haste-aura; tap K; until idle 60; wait 20',
+  'arena-trap': 'place 0 0 3.5 180; skills fire-trap; tap K; until idle 60; wait 20',
+  'arena-curse': 'place 0 0 3.5 180; skills vulnerability; tap K; until idle 60; wait 20',
+  'arena-totem': 'place 0 0 3.5 180; skills fireball+spell-totem; tap K; until idle 90; wait 20',
+  'arena-warcry': 'place 0 0 3 180; skills war-cry; tap K; until idle 60; wait 20',
+  'arena-leap': 'place 0 0 4.5 180; skills leap-slam; tap K; until idle 90; wait 20',
+  // weapons: the bow draws a real string, staves and wands point at the target
+  'arena-bow': 'place 0 0 4.5 180; weapon bow; skills split-arrow; tap K; until idle 60; tap K; until idle 60; wait 15',
+  'arena-staff': 'place 0 0 4 180; weapon staff 2h; skills fireball,frost-nova; tap K; until idle 60; tap Q; until idle 60; wait 15',
+  'arena-wand': 'place 0 0 4 180; weapon wand; skills fireball; tap K; until idle 60; wait 15',
+  'arena-axe': 'place 0 0 0.9 180; weapon axe; tap J; wait 7; tap J; wait 7; tap J; until idle 80; wait 15',
+  // the dodge roll in 8 directions from a standstill
+  'arena-roll8': 'place 0 0 3 180; ' + ['W', 'W+D', 'D', 'S+D', 'S', 'S+A', 'A', 'W+A'].map((k) => `down ${k}; tap SPACE; up ${k}; until idle 60; wait 8`).join('; '),
+  // taking a heavy hit, then going down
+  'arena-hurt': 'place 0 0 3 180; wait 10; hurt 0.2 0 -1; wait 40; hurt 0.25 1 0; wait 40',
+  'arena-death': 'place 0 0 3 180; wait 10; kill; wait 110',
 };
 /** Scenarios that run in another game than the playground (`?game=`). */
 const SCENARIO_GAME = (name: string): string | null => (name.startsWith('arena') ? 'arena' : name.startsWith('arcade') ? 'arcade' : null);
@@ -148,7 +181,8 @@ function parse(src: string): Cmd[] {
           });
         } else cmd.word = r;
       }
-      if (!['place', 'hold', 'down', 'up', 'tap', 'wait', 'until'].includes(cmd.op)) throw new Error(`unknown command "${line}"`);
+      if (!['place', 'hold', 'down', 'up', 'tap', 'wait', 'until', 'skills', 'weapon', 'hurt', 'kill'].includes(cmd.op)) throw new Error(`unknown command "${line}"`);
+      if (cmd.op === 'skills' || cmd.op === 'weapon') cmd.word = rest.join(' ');
       return cmd;
     });
 }
@@ -167,6 +201,8 @@ window.__FILM = (() => {
   const tmp = new V();
   const down = new V(0, -1, 0);
   const noTags = [];
+  // the arena's skill bar as it starts (place puts it back)
+  const defaults = (hero.slots ?? []).map((s) => (s ? { skill: s.id, supports: [...s.supports] } : null));
   return {
     joints: joints.map((j) => j.name),
     release() { for (const k of ${JSON.stringify(Object.values(KEYS))}) e.input.setKey(k, false); },
@@ -174,6 +210,15 @@ window.__FILM = (() => {
     place(x, y, z, yawDeg) {
       this.release();
       if (typeof g.skipIntro === 'function') g.skipIntro(); // games with a READY/GO intro (the arcade)
+      // (arena) a clean slate: alive, full mana, no cooldowns, the default bar and the sword
+      if (hero.actor && hero.setSlot) {
+        if (!hero.actor.alive || hero.actor.deadFor >= 0) hero.revive();
+        hero.actor.stats.remove('film:weapon');
+        defaults.forEach((s, i) => hero.setSlot(i, s));
+        hero.cooldowns.clear();
+        hero.actor.life = hero.actor.maxLife;
+        hero.actor.mana = hero.actor.maxMana;
+      }
       e.step(1);
       hero.teleport([x, y, z]);
       hero.facing = (yawDeg * Math.PI) / 180;
@@ -182,6 +227,23 @@ window.__FILM = (() => {
       e.step(20);
     },
     step(n) { e.step(n); },
+    skills(list) {
+      const specs = list.split(',').map((x) => { const [skill, ...supports] = x.split('+'); return { skill, supports }; });
+      for (let i = 0; i < 5; i++) hero.setSlot(i, specs[i] ?? null);
+      hero.actor.mana = hero.actor.maxMana;
+    },
+    weapon(kind, two) {
+      const mods = [{ stat: 'weapon.' + kind, kind: 'flag', value: 1 }];
+      if (two) mods.push({ stat: 'weapon.twohand', kind: 'flag', value: 1 });
+      hero.actor.stats.set('film:weapon', mods);
+    },
+    hurt(share, dx, dz) {
+      const a = hero.actor;
+      a.life = Math.max(1, a.life - a.maxLife * share);
+      const len = Math.hypot(dx, dz) || 1;
+      a.push(new V(-dx / len * 6, 0, -dz / len * 6));
+    },
+    kill() { hero.actor.life = 0; hero.actor.die(null); },
     /** One round trip per frame: advance, sample, and (optionally) film. */
     async frame(view, size) {
       e.step(1);
@@ -213,7 +275,7 @@ window.__FILM = (() => {
       return {
         frame: e.frame, state: hero.state, anim: hero.anim, grounded: hero.grounded,
         mix: hero.animationMix().map((m) => ({ ...m, weight: +m.weight.toFixed(3), time: +m.time.toFixed(3), rate: +m.rate.toFixed(3) })),
-        feet: hero.feet.toArray().map((v) => +v.toFixed(3)), vy: +hero.vy.toFixed(3), speed: +hero.speed.toFixed(3),
+        feet: hero.feet.toArray().map((v) => +v.toFixed(3)), vy: +hero.vy.toFixed(3), speed: +hero.speed.toFixed(3), yaw: +((model.rotation.y * 180) / Math.PI).toFixed(1), my: +model.position.y.toFixed(3),
         fp: hero.footPlacement ? hero.footPlacement() : null,
         q: joints.map((j) => j.quaternion.toArray().map((v) => +v.toFixed(5))),
         soles,
@@ -274,6 +336,9 @@ interface Sample {
   grounded: boolean;
   mix: { name: string; weight: number; time: number; rate: number }[];
   feet: [number, number, number];
+  /** The model's facing (degrees) and height (the drawn body: hops and lunges lift it). */
+  yaw: number;
+  my: number;
   vy: number;
   speed: number;
   q: number[][];
@@ -391,7 +456,13 @@ async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<
       const set = async (keys: string[], down: boolean) => {
         for (const k of keys) await page.evaluate(`__FILM.key(${JSON.stringify(k)}, ${down})`);
       };
-      if (c.op === 'down') await set(c.keys, true);
+      if (c.op === 'skills') await page.evaluate(`__FILM.skills(${JSON.stringify(c.word)})`);
+      else if (c.op === 'weapon') {
+        const [kind, two] = c.word.split(/\s+/);
+        await page.evaluate(`__FILM.weapon(${JSON.stringify(kind)}, ${two === '2h'})`);
+      } else if (c.op === 'hurt') await page.evaluate(`__FILM.hurt(${c.n[0] ?? 0.2}, ${c.n[1] ?? 0}, ${c.n[2] ?? 1})`);
+      else if (c.op === 'kill') await page.evaluate('__FILM.kill()');
+      else if (c.op === 'down') await set(c.keys, true);
       else if (c.op === 'up') await set(c.keys, false);
       else if (c.op === 'hold') {
         await set(c.keys, true);
@@ -460,6 +531,8 @@ function analyse(recs: Rec[], joints: string[]) {
   }
   // feet vs ground: slip while planted, sinking, floating in grounded states
   const slip: number[] = new Array<number>(n).fill(0);
+  /** Per sole (R, L): its planted slip this frame (m/s). */
+  const slipBy: [number, number][] = recs.map(() => [0, 0]);
   const gap: number[][] = recs.map((r) => r.s.soles.map((s) => (s.h === null ? NaN : Math.min(...s.h))));
   for (let i = 1; i < n; i++) {
     recs[i]!.s.soles.forEach((sole, k) => {
@@ -474,7 +547,10 @@ function analyse(recs: Rec[], joints: string[]) {
         dz += sole.verts[v + 2]! - prev.verts[v + 2]!;
         c++;
       }
-      if (c) slip[i] = Math.max(slip[i]!, (Math.hypot(dx, dz) / c) * 60);
+      if (c) {
+        slipBy[i]![k] = (Math.hypot(dx, dz) / c) * 60;
+        slip[i] = Math.max(slip[i]!, slipBy[i]![k]!);
+      }
     });
   }
   const runs = (pred: (i: number) => boolean, kind: Issue['kind'], text: (a: number, b: number) => string) => {
@@ -507,7 +583,7 @@ function analyse(recs: Rec[], joints: string[]) {
     (a, b) => `both feet >= 4 cm above the ground while ${recs[a]!.s.state}, f${a}-${b} (up to ${(Math.max(...gap.slice(a, b + 1).map((g) => Math.min(...g))) * 100).toFixed(0)} cm)`,
   );
   issues.sort((a, b) => a.t - b.t);
-  return { speed, maxSpeed, slip, gap, issues };
+  return { speed, maxSpeed, slip, slipBy, gap, issues };
 }
 
 /** Compact foot placement: weight, pelvis drop, then per foot: animated height, offset, pitch, L(ocked) S(tepping), correction. */
@@ -685,7 +761,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[], stu
       view,
       joints,
       issues: a.issues,
-      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)), footPlacement: footText(r.s.fp) })),
+      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, yaw: r.s.yaw, modelY: r.s.my, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), slipRL: a.slipBy[i]!.map((v) => +v.toFixed(2)), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)), footPlacement: footText(r.s.fp) })),
     }),
   );
   const written = [`${base}.png`, `${base}.json`];

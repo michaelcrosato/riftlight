@@ -164,4 +164,41 @@ describe('FootPlacement', () => {
     expect(worst).toBeLessThan(0.012); // ... within a centimetre
     expect(stepped).toBe(true); // then stepped to catch up
   });
+
+  it('settleSteps: a step under way finishes when locking stops, and the foot locks as it lands', () => {
+    const run = (settleSteps: boolean) => {
+      const { model, rest, pose } = hero();
+      const fp = new FootPlacement(model, HERO_RIG, ground(() => 0), { settleSteps });
+      fp.setRest(rest);
+      for (let i = 0; i < 10; i++) {
+        pose('Crouch', 0);
+        fp.apply(DT, { ik: true, lock: true });
+      }
+      // drift until a foot starts a re-planting step
+      let i = 0;
+      while (!fp.state().feet.some((f) => f.stepping) && i < 60) {
+        model.position.z = 0.01 * ++i;
+        pose('Crouch', 0);
+        fp.apply(DT, { ik: true, lock: true });
+      }
+      // locking stops mid-step (a hop, a lift): with settleSteps the step carries on
+      pose('Crouch', 0);
+      fp.apply(DT, { ik: true, lock: false });
+      const during = fp.state().feet.some((f) => f.stepping);
+      // locking again: the step ends and that frame the foot is already locked
+      let landedLocked = false;
+      for (let k = 0; k < 30; k++) {
+        pose('Crouch', 0);
+        const before = fp.state().feet.map((f) => f.stepping);
+        fp.apply(DT, { ik: true, lock: true });
+        fp.state().feet.forEach((f, n) => {
+          if (before[n] && !f.stepping && f.locked) landedLocked = true;
+        });
+      }
+      return { during, landedLocked };
+    };
+    expect(run(true)).toEqual({ during: true, landedLocked: true });
+    // off (the default, the platformer's tuning): the step is dropped when locking stops
+    expect(run(false).during).toBe(false);
+  });
 });

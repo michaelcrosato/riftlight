@@ -138,6 +138,39 @@ Q/E/R/F rather than Q/W/E/R. On a phone the touch buttons are the bar (*Game she
 and `HERO_DEBUG_KEYS` (R is a skill, so the resolution hotkey moves to F2) to the engine.
 Every timing is in `HERO_TUNING`.
 
+### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
+
+Gameplay is instant (the facing snaps to the aim, speed is full at once, an action starts on
+the press), so the presentation does the smoothing, with no say over gameplay:
+
+- **Feet.** `HeroAnimator` runs the engine's `FootPlacement` (docs/ANIMATION.md, "At runtime")
+  with a ground probe (the Rapier world, a stage's `groundY`, else flat): a planted foot stays
+  where it touched down through blends, wind-ups and twisting hips, and re-plants with a quick
+  step when the body moves on. `PoseLayers` springs the hat (`Cap`).
+- **Facing.** The drawn body follows the gameplay facing: small corrections smoothly, a
+  standing turn of more than `hopTurn` degrees as a quick hop round (`hopTime`), so the feet
+  never pivot on the floor. The whirlwind spins the whole model (`spinTurns`); its clip only
+  holds the pose.
+- **Lifts.** Where the clip has the feet down but the body must travel, it is lifted a few
+  centimetres instead of skating: a melee lunge bounds in (`lungeHop`), a roll springs off
+  (`rollPush`), a standing start at a run springs off (`startHop`), a hard shove staggers
+  (`staggerHop`).
+- **Root motion.** Dashes and the dodge roll move by a speed profile matched to their clips
+  (`combat/deliveries/dash.ts` `ROLL_PROFILE`, `DASH_PROFILE`; `Motion.profile`): the roll
+  brakes as its feet come down, then creeps on exactly as fast as the clip slides them back
+  under the rising body. Walk and Run share one phase; a stop finishes the stride in the air.
+- **Weapons** (`actors/weapons.ts`): one mesh per weapon class (sword, axe, mace, sceptre,
+  dagger, wand, staff in the right fist; a bow in the left, its string drawn to the right hand
+  between a bow clip's `draw` frames and let go at its hit frame). The equipped item's
+  `weapon.<class>` flag picks it (`weaponClassOf`; no flag is the starter sword; two-handers
+  are drawn a size up). With a staff or wand, `Cast` / `CastBig` become `CastWeapon` /
+  `CastBigWeapon` (same hit frames): the weapon points.
+
+Hit frames and cancel points are `COMBAT_TIMING` (`src/game/hero/clips/combat.ts`); move a hit
+in a clip and move it there too. Check the hero in the arena with
+`npm run film -- all --game arena` (the `arena-*` films: combo steps, every delivery kind,
+weapons, the roll in 8 directions, hurt, death).
+
 ### Stats the pipeline reads
 
 Base values come from the skill, the weapon and the actor's `base` source; everything else is
