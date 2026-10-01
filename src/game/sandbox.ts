@@ -87,7 +87,7 @@ export class Sandbox implements Game {
     scene.add(this.heroModel);
     this.hero = new PlatformerCharacter(physics, { position: [0, 0, 3], lockDepth: ctx.camera.lockDepth });
     const rest = restPoseOf(this.heroModel, HERO_RIG);
-    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
+    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     this.heroModel.visible = !ctx.camera.hidesTarget;
   }
 

@@ -21,8 +21,8 @@ export const Push = gaitClip(RIG, {
   arms: { swing: 6, elbow: 35, forward: 115, spread: 14, lag: 0.1 },
   notes: 'Shoulder into the crate, legs driving back.',
 });
-const PUSH_FEET: FeetGoals = { R: { z: -0.12 }, L: { z: -0.35, pitch: 30, pivot: 'ball' } };
-const PUSH_IDLE: Pose = { ...pelvis([10, 0, 0], [0, -0.12, 0]), Torso: [30, 0, 0], Head: [-35, 0, 0], ...arms(-115, 14, 35) };
+const PUSH_FEET: FeetGoals = { R: { z: -0.06 }, L: { z: -0.26, pitch: 25, pivot: 'ball' } };
+const PUSH_IDLE: Pose = { ...pelvis([8, 0, 0], [0, -0.1, 0.02]), Torso: [26, 0, 0], Head: [-32, 0, 0], ...arms(-110, 14, 40) };
 export const PushIdle: ClipDef = {
   name: 'PushIdle',
   frames: 40,
