@@ -21,6 +21,13 @@
 //   --top 5                  outliers to print
 //   --json                   machine-readable output (the same as balance.json)
 //   --out .scratch/balance
+//
+// npm run balance -- endless [--max 1000] [--every 50] [--seed 1] [--no-levels]
+//   "Scales infinitely", checked (src/riftlight/balance/endless.ts): the depth curves over every
+//   depth to --max (finite, never falling, bounded steps; also at 1e4, 1e6, 1e9), and at sampled
+//   depths the level (reachability / bypass validator, build time), monster genomes of every
+//   rank and the rift boss (valid, built in time, finite stats) and loot at the depth's item
+//   level (valid affixes, tiers, values). Writes endless.json; exit 1 on any problem.
 import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +54,7 @@ import {
   type Variant,
 } from '../../src/riftlight/balance';
 import { renderBalanceCharts } from '../../src/riftlight/balance/charts';
+import { endlessCheck, endlessDepths } from '../../src/riftlight/balance/endless';
 import { encodePng } from '../png';
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
@@ -56,7 +64,7 @@ process.stdout.on('error', (e: NodeJS.ErrnoException) => {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);
-const VALUED = ['depths', 'max', 'builds', 'variants', 'seed', 'samples', 'candidates', 'uptime', 'top', 'out'];
+const VALUED = ['depths', 'max', 'builds', 'variants', 'seed', 'samples', 'candidates', 'uptime', 'top', 'out', 'every'];
 const flags = new Map<string, string | true>();
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
@@ -71,6 +79,7 @@ for (let i = 0; i < argv.length; i++) {
 const opt = (k: string, d: string) => String(flags.get(k) ?? d);
 const json = flags.has('json');
 const OUT = resolve(ROOT, opt('out', '.scratch/balance'));
+if (argv[0] === 'endless') endless();
 const seed = Number(opt('seed', '1'));
 const max = Math.max(1, Number(opt('max', '60')));
 
@@ -261,4 +270,33 @@ if (json) {
   console.log(`\n  assumptions:`);
   for (const l of describeAssumptions(assumptions)) console.log(`  · ${l}`);
   console.log(`\n  wrote ${[join(OUT, 'balance.json'), join(OUT, 'balance.csv'), join(OUT, 'xp.csv'), ...files].map(rel).join(', ')}`);
+}
+
+// ---------------------------------------------------------------- endless
+
+function endless(): never {
+  const max = Math.max(1, Number(opt('max', '1000')));
+  const depths = flags.has('depths') ? opt('depths', '').split(',').map(Number).filter((d) => d >= 1) : endlessDepths(max, Math.max(1, Number(opt('every', '50'))));
+  const seed = Number(opt('seed', '1'));
+  process.stderr.write(`endless: ${depths.length} depths to ${Math.max(...depths)} (seed ${seed})${flags.has('no-levels') ? ', no level layouts' : ''}…\n`);
+  const r = endlessCheck(depths, { seed, levels: !flags.has('no-levels') });
+  mkdirSync(OUT, { recursive: true });
+  writeFileSync(join(OUT, 'endless.json'), JSON.stringify(r, null, 1));
+  if (json) console.log(JSON.stringify(r, null, 1));
+  else {
+    const e = (v: number) => (v >= 1e6 ? v.toExponential(2) : v >= 100 ? v.toFixed(0) : v.toFixed(2));
+    console.log(`  ${'depth'.padStart(6)} ${'ilvl'.padStart(6)} ${'life ×'.padStart(9)} ${'dmg ×'.padStart(9)} ${'gold'.padStart(9)} ${'rarity'.padStart(6)} ${'level'.padStart(11)} ${'mon ms'.padStart(6)} ${'boss ms'.padStart(7)} ${'affixes'.padStart(7)}  name`);
+    for (const d of r.depths) {
+      const lv = d.level ? `${d.level.ok ? 'ok' : 'FAIL'} ${d.level.ms}ms` : '-';
+      console.log(`  ${String(d.depth).padStart(6)} ${String(d.itemLevel).padStart(6)} ${e(d.curves.monsterLife!).padStart(9)} ${e(d.curves.monsterDamage!).padStart(9)} ${e(d.curves.gold!).padStart(9)} ${d.curves.rarityBoost!.toFixed(2).padStart(6)} ${lv.padStart(11)} ${String(d.monster.ms).padStart(6)} ${String(d.boss.ms).padStart(7)} ${String(d.items.affixes).padStart(7)}  ${d.name}${d.problems.length ? `  ! ${d.problems.length} problems` : ''}`);
+    }
+    console.log(
+      r.ok
+        ? `\n  OK: curves finite, never falling, bounded steps to depth ${Math.max(...depths)} (and 1e4, 1e6, 1e9); levels, monsters, bosses and loot valid and built in time at every sampled depth · ${(r.ms / 1000).toFixed(1)} s`
+        : `\n  ${r.problems.length} PROBLEMS · ${(r.ms / 1000).toFixed(1)} s`,
+    );
+    for (const p of r.problems.slice(0, 30)) console.log(`  ! ${p}`);
+    console.log(`  wrote ${join(OUT, 'endless.json').slice(ROOT.length + 1)}`);
+  }
+  process.exit(r.ok ? 0 : 1);
 }

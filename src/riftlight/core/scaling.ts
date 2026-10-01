@@ -12,14 +12,23 @@
  * depth, so difficulty overtakes the hero gradually, with no wall at one depth.
  */
 const DESIGNED = 12;
+/**
+ * Endless depth, softened: the depth itself up to `knee`, then logarithmic (`knee + scale ×
+ * ln(1 + over / scale)`): still rising every depth, never flat, but an exponential fed with it
+ * stays finite at any depth a run can reach (depth 1000 → 420, a million → 1112).
+ */
+export const soften = (depth: number, knee: number, scale: number): number => (depth <= knee ? depth : knee + scale * Math.log1p((depth - knee) / scale));
+/** Where the monster curves go logarithmic (far past any wall; `npm run balance -- endless`). */
+const KNEE = { depth: 200, scale: 100 } as const;
+const deep = (depth: number) => soften(depth, KNEE.depth, KNEE.scale);
 /** 1 at depth 1, rising linearly to 1 + k by depth 5. */
 const early = (depth: number, k: number) => 1 + k * Math.min(1, Math.max(0, depth - 1) / 4);
-/** g1 per depth up to depth 12, g2 per depth after. */
-const twoSlope = (depth: number, g1: number, g2: number) => Math.pow(g1, Math.min(depth, DESIGNED) - 1) * Math.pow(g2, Math.max(0, depth - DESIGNED));
+/** g1 per depth up to depth 12, g2 per (softened) depth after. */
+const twoSlope = (depth: number, g1: number, g2: number) => Math.pow(g1, Math.min(depth, DESIGNED) - 1) * Math.pow(g2, Math.max(0, deep(depth) - DESIGNED));
 
 export const SCALING = {
   /** Monster life multiplier vs depth 1. */
-  monsterLife: (depth: number) => early(depth, 0.4) * twoSlope(depth, 1.25, 1.18) * (1 + 0.04 * Math.max(0, depth - DESIGNED)),
+  monsterLife: (depth: number) => early(depth, 0.4) * twoSlope(depth, 1.25, 1.18) * (1 + 0.04 * Math.max(0, deep(depth) - DESIGNED)),
   /** Monster damage multiplier vs depth 1. */
   monsterDamage: (depth: number) => early(depth, 0.5) * twoSlope(depth, 1.2, 1.13),
   /**
@@ -61,8 +70,11 @@ export const SCALING = {
   riftMechanics: (depth: number) => Math.min(4, 2 + Math.floor((depth - 13) / 15)),
   /** Monster density multiplier. */
   density: (depth: number) => Math.min(2.5, 1 + depth * 0.04),
-  /** Rarity weights multiplier for item drops (more rares deeper: rares ~1 in 10 drops by depth 10). */
-  rarityBoost: (depth: number) => 1 + depth * 0.07,
+  /**
+   * Rarity weights multiplier for item drops (more rares deeper: rares ~1 in 10 drops by depth
+   * 10); past depth 60 it grows logarithmically, so endless rifts never drop only uniques.
+   */
+  rarityBoost: (depth: number) => 1 + soften(Math.max(0, depth), 60, 20) * 0.07,
 } as const;
 
 /** Elite and boss multipliers applied on top of depth scaling. */
