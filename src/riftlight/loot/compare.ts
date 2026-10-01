@@ -4,7 +4,7 @@
  * offhand the new item pushes out), and every stat either item touches is read before and
  * after. The hero's own sheet is never modified.
  */
-import { type Mod, StatSheet } from '../core/mods';
+import type { Mod, StatSheet } from '../core/mods';
 import type { Item } from '../core/types';
 import { defaultSlot, equipItem } from './inventory';
 import { applyEquipment, type EquipSlot, type Equipment, EQUIP_SLOTS, itemMods } from './itemMods';
@@ -27,20 +27,9 @@ export interface StatDelta {
 /** Stats where less is better. */
 export const LOWER_IS_BETTER: ReadonlySet<string> = new Set(['mana.cost', 'echo.delay']);
 
-type SheetInternals = { sources: Map<string, readonly Mod[]>; base: Map<string, number>; conditions: Set<string> };
-
-/**
- * An independent copy of a StatSheet (base values, sources, conditions). StatSheet has no
- * public clone; this reads its fields and is covered by a unit test so a refactor of
- * core/mods.ts fails loudly here.
- */
+/** An independent copy of a StatSheet (base values, sources, conditions): `sheet.clone()`. */
 export function cloneSheet(sheet: StatSheet): StatSheet {
-  const s = sheet as unknown as SheetInternals;
-  if (!(s.sources instanceof Map) || !(s.base instanceof Map) || !(s.conditions instanceof Set)) throw new Error('cloneSheet: StatSheet internals changed; update loot/compare.ts');
-  const out = new StatSheet(Object.fromEntries(s.base));
-  for (const [k, v] of s.sources) out.set(k, v);
-  for (const c of s.conditions) out.setCondition(c, true);
-  return out;
+  return sheet.clone();
 }
 
 const keyOf = (m: Mod) => `${m.stat}|${(m.tags ?? []).join(',')}|${m.when ?? ''}`;

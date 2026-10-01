@@ -93,6 +93,18 @@ export async function runRiftlight(h) {
     check(rs.cleared && rs.exitOpen, `the level is clear and the portal open (cleared ${rs.cleared}, exit ${rs.exitOpen})`);
     check(rs.hero.xp > 0 || rs.hero.level > 1, `XP gained (level ${rs.hero.level}, xp ${rs.hero.xp})`);
     const gold0 = rs.hero.gold;
+    // Real drops: gold falls from about half the kills and the fight walks over most of it.
+    // (The real loot, skills and tree flows are in e2e-riftlight-items.mjs.)
+    // Leave one pile on the floor (if none is left) so collecting is tested every time.
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const loot = rl.game.ports.loot;
+      if (loot.ground().some((l) => l.drop.kind === 'gold')) return;
+      const p = rl.game.hero.actor.position.clone();
+      p.x += 3;
+      loot.spawn([{ kind: 'gold', amount: 17 }], p, rl.game.level, rl.game.services.rng);
+      window.__PIXEL_ENGINE__.step(40);
+    });
     const collect = await R(() => window.__RIFTLIGHT__.collectGold());
     rs = collect.state;
     check(rs.loot.gold === 0 && rs.hero.gold > gold0, `collected the gold (${gold0} → ${rs.hero.gold})`);

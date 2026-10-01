@@ -2,6 +2,10 @@
  * The panel stack: every open view (pause menu, tuning, inventory, tree, vendor, recap...)
  * framed with a title bar and a close box, the top one receiving input. Modal panels pause
  * the world and dim it; others (vendor, stash) leave the town running behind them.
+ *
+ * Overlay panels (the item windows, the passive tree: `Panel.overlay`) paint their own
+ * canvas: the layer opens, routes input to and closes them like any panel, but draws no
+ * frame. Panels in one `group` share an overlay, so opening one closes the others.
  */
 import type { Panel } from '../game/ports';
 import { inside, type Rect, type UiCanvas, type UiEvent } from './kit';
@@ -41,7 +45,9 @@ export class UiLayer {
 
   open(panel: Panel, o: { modal?: boolean; onClose?: () => void; bare?: boolean; sticky?: boolean; silent?: boolean } = {}): Panel {
     this.close(panel.id, true);
-    this.stack.push({ panel, modal: o.modal ?? true, onClose: o.onClose, age: 0, rect: { x: 0, y: 0, w: panel.size.w, h: panel.size.h }, bare: o.bare, sticky: o.sticky });
+    if (panel.group) for (const other of this.stack.filter((x) => x.panel.group === panel.group)) this.close(other.panel.id, true);
+    this.stack.push({ panel, modal: o.modal ?? true, onClose: o.onClose, age: 0, rect: { x: 0, y: 0, w: panel.size.w, h: panel.size.h }, bare: o.bare || panel.overlay, sticky: o.sticky });
+    panel.open?.();
     if (!o.silent) this.onSound?.('open');
     return panel;
   }
@@ -83,7 +89,14 @@ export class UiLayer {
       return true;
     }
     // swallow pointer presses on modal panels so they don't attack the world behind
-    return top.modal || (e.kind === 'pointer' && inside(top.rect, e.x, e.y));
+    if (top.modal) return true;
+    if (e.kind !== 'pointer') return false;
+    return top.panel.overlay ? !!top.panel.covers?.(e.x, e.y) : inside(top.rect, e.x, e.y);
+  }
+
+  /** True when art pixel (x, y) is on an open panel (framed or overlay). */
+  covers(x: number, y: number): boolean {
+    return this.stack.some((o) => (o.panel.overlay ? !!o.panel.covers?.(x, y) : inside({ x: o.rect.x - 6, y: o.rect.y - 16, w: o.rect.w + 12, h: o.rect.h + 22 }, x, y)));
   }
 
   draw(ui: UiCanvas, time: number): void {
@@ -92,6 +105,12 @@ export class UiLayer {
       if (o.modal && (last || this.stack.slice(i + 1).every((x) => !x.modal))) {
         // dim the world with a checker of ink (pixel "transparency")
         for (let y = 0; y < ui.h; y += 2) ui.rect(0, y, ui.w, 1, 'ink');
+      }
+      if (o.panel.overlay) {
+        // its own canvas: the whole screen is its rect, the shell draws nothing around it
+        o.rect = { x: 0, y: 0, w: ui.w, h: ui.h };
+        o.panel.draw(ui, o.rect, time);
+        return;
       }
       const { w, h } = o.panel.size;
       const open = Math.min(1, o.age / 0.12);

@@ -123,6 +123,9 @@ describe('save', () => {
     save.codex = ['embers'];
     const text = exportSave(save, 0);
     expect(parseSave(text)).toEqual(save);
+    // grid positions (inventory / stash cells) survive the round trip
+    save.positions = { a: { x: 3, y: 1 }, b: { tab: 2, x: 5, y: 7 } };
+    expect(parseSave(exportSave(save, 0)).positions).toEqual(save.positions);
     const v0 = { hero: { level: 4, xp: 3 }, gold: 55, deepest: 2, seed: 9 };
     const up = migrate(v0);
     expect(up.version).toBe(SAVE_VERSION);

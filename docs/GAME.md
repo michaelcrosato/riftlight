@@ -708,7 +708,7 @@ U vendor, Alt filter).
 | `affixes.ts` | prefixes and suffixes, 5–8 tiers each, plus corruption implicits | 101 |
 | `uniques.ts` | build-defining uniques with flavour; many bend a level mechanic | 32 |
 | `currency.ts` | crafting orbs (below) | 10 |
-| `gems.ts` | gem ids that drop or are sold until the skills registry is integrated | 20 |
+| `gems.ts` | every gem that drops or is sold: R1's active skills (but the basic attack and the dodge) and supports | 73 |
 | `filter.ts` | the default loot filter | 10 rules |
 | `names.ts`, `sounds.ts` | rare name words, loot SFX | |
 
@@ -779,7 +779,10 @@ every frame and don't feed hero movement while `ui.isOpen`. Click or drag to mov
 right-click to equip or start applying an orb, Ctrl-click to stash, sell or buy, Alt shows
 affix tiers; touch long-press is right-click; the gamepad stick moves a cursor (A click,
 X right-click, Y Ctrl-click, B close). Tooltips compare against the equipped item on a
-clone of the hero's StatSheet.
+clone of the hero's StatSheet (`StatSheet.clone()`). In the game shell the windows are hosted
+(`new ItemsUi(ctx, store, { hosted: true })`): the shell routes keys and the pad through
+`handle(UiEvent)` and closes them (see "Wiring" under Game shell), and they add the crafting
+bench and the skill panel as left windows.
 
 **Inspector**: `npm run loot -- sim --depth 20 --kills 5000` (rarity, slot and tier charts,
 rarity by depth, gold/hour → `.scratch/loot/`), `roll --seed 3 --ilvl 60 --rarity rare`,
@@ -1009,18 +1012,72 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
 
 | port | real system | what the shell calls |
 | --- | --- | --- |
-| `HeroFactory` / `HeroPort` | combat/actors | `create(services, save.hero)`; `enter(stage, at, yaw)`, `fixedUpdate(dt, HeroIntent)`, `update`, `vitals()`, `skills()`, `buffs()`, `setLevel`, `setMods(source, mods)`, `restore`, `emote` |
+| `HeroFactory` / `HeroPort` | combat/actors | `create(services, save.hero)`; `enter(stage, at, yaw)`, `fixedUpdate(dt, HeroIntent)`, `update`, `vitals()`, `skills()`, `buffs()`, `setLevel`, `setMods(source, mods)`, `setSkills?(save.hero.skills)`, `restore`, `emote` |
 | `LevelPort` / `LevelHandle` | levels | `spec(depth, seed)`, `mechanics()`, `build(spec, deps)`; handle: `layout`, `origin`, `start`, `exit`, `exitOpen`, `progress()`, `boss()`, `explored()`, `telegraphs()`, `monsters()`, `spawn(seed, at, rank)` |
 | `MonsterPort` / `MonsterHandle` | monsters | `genome(seed, depth, rank)`, `build(genome, {stage, at, depth, mods})`; handle: `actor`, `telegraph()`, `fixedUpdate(dt, {hero, enabled})` |
-| `LootPort` | loot | `rollDrops(kill, rng)`, `spawn`, `ground()`, `pickup`, `gearMods()`, `load/write(save)`, `give`, views: inventory, stash, vendor, crafting |
-| `TreePort` | tree | `mods(allocated)` (the `tree` source), `points(level)`, `view(host, {respec})` |
+| `LootPort` | loot (`wire/loot.ts`, the default) | `rollDrops(kill, rng)`, `spawn`, `ground()`, `pickup`, `gearMods()`, `load/write(save)`, `give`, views: inventory, stash, vendor, crafting, skills |
+| `TreePort` | tree (`wire/tree.ts`, the default) | `mods(allocated)` (the `tree` source), `points(level, deepest)`, `view(host, {respec})` |
 
 Ports talk to each other through `GameEvents` (`hit`, `kill`, `death`, `gold`, `loot`,
 `levelClear`, `mechanic`): the shell turns `hit` into damage numbers, the recap and shake;
 `kill` into XP (`SCALING.monsterXp × RANK.xp`), streaks and stats; `mechanic` into codex
 unlocks. Views are `Panel`s drawn on the pixel HUD (`ui/kit.ts` `UiCanvas`) that receive
-`UiEvent`s (nav, confirm, back, pointer, wheel) built from keys, mouse, touch and pads alike;
-`PanelHost` gives them the save, gold, sounds and `changed('tree' | 'gear')`.
+`UiEvent`s (nav, confirm, back, tab, key, pointer, wheel) built from keys, mouse, touch and
+pads alike; `PanelHost` gives them the save, gold, sounds and
+`changed('tree' | 'gear' | 'gold' | 'stash' | 'skills')`. `ShellServices.hero()` is the hero's
+actor (loot and the skill panel read its StatSheet).
+
+### Wiring: loot, skills and the passive tree (`wire/`)
+
+`new Riftlight()` runs the real `LootPort` and `TreePort` (`{ ...stubPorts(), loot:
+realLootPort(), tree: realTreePort(), ...ports }`); the hero, levels and monsters plug in the
+same way.
+
+**Overlay panels.** The item windows (`ui/items`) and the passive tree (`ui/tree`) paint their
+own canvas, so they are `Panel`s with `overlay: true`: the shell opens them (`open()`), keeps
+them on the stack (modal or not), routes every `UiEvent` to `input()` first, calls `draw()` each
+frame (time to paint) and closes them (`close()`); it draws no frame, and a pointer press is
+the UI's when `covers(x, y)`. Panels in one `group` share an overlay (the item windows are
+group `items`): opening one closes the others, and I closes any of them. The passive tree owns
+the keyboard while open (Escape / P close it and never reach the pause menu), its pointer and
+the pad's sticks and A / X / Y; pad B and the agent API's `back` come through the shell.
+
+| view | from | keys |
+| --- | --- | --- |
+| inventory + paper doll | I, pad Back, pause → Inventory | click / drag, right-click (X) equips, Ctrl-click (V / pad Y) moves, Alt shows tiers |
+| skill panel (gems in 4 slots, 3 links each) | G, the inventory's GEMS tab, pause → Skills | right-click (X) a gem in the bag sockets it in the selected slot; on a socket it takes it out |
+| stash (4 tabs) | the chest | Ctrl-click stores / takes, Tab / pad LB RB switch tabs |
+| vendor (wares and gems tabs) | Ilsa | click buys, Ctrl-click sells, drop an item on her grid to sell it |
+| crafting bench | Brann | click an item, then an orb (the orb row greys orbs that can't apply) |
+| passive tree / respec | P, pause → Passive tree / Oru | click takes the path; only Oru refunds (`respecCost` gold a point) |
+
+Keys and pads step a cursor between cells, slots and sockets (arrows / d-pad / stick), confirm
+is a click, X a right-click, V / pad Y a Ctrl-click, back puts a held item back then closes.
+Touch: a tap shows the tooltip, a second tap acts, a long press is a right-click. A narrow
+screen (a phone in portrait, 124 art pixels) stacks the left window over a compact bag.
+
+**Skill sockets.** `save.hero.skills[slot] = { slot, gem, supports: [gem, gem, gem] }` with gem
+*items* (`loot/sockets.ts`); a new run starts with Cleave, Frost Nova, Dash and War Cry
+socketed. Gems are R1's `SKILLS` / `SUPPORTS` (`loot/data/gems.ts` lists every active but the
+basic attack and the dodge, and every support); they drop (~6% of items) and Ilsa's gems tab
+sells them. The panel shows each slot's `buildSkill` numbers on the hero's StatSheet (hit,
+DPS, cost, cooldown, cast time, area / projectiles, links that don't fit: a pocket
+`npm run combat -- dps`). When sockets change the panel writes the save and calls
+`changed('skills')`; the shell calls `hero.setSkills(save.hero.skills)`, and
+`socketsToSlots(skills, hero.stats)` turns them into `HeroController` slots (`{ skill, level,
+supports: [{ gem, level }] }`, null for an empty slot; the level adds gear's `skill.level` mods
+that fit the skill's tags, as the panel's numbers do).
+
+**Loot in the world.** Drops are R3's `rollDrops` with the hero's `item.rarity`,
+`item.quantity` and `gold.find`, shown by `WorldLoot` (arcs, landing sounds, beams; lights from
+the engine's `ctx.lights` pool) under the stage's root. The shell draws the labels (framed for
+loud drops, grey for dim ones, stacked so they never overlap) and picks up. `filtered` follows
+the loot filter setting (show all / hide normal gear / rares only; currency and gems always
+show) on top of R3's rules; Alt shows everything. Gold the vendor takes or pays goes through
+`addGold`: the save's gold is the one wallet.
+
+`npx tsx scripts/riftlight/stat-names.ts` lists every stat name loot and the tree put on a
+StatSheet, with where each comes from (`.scratch/stats/emitted.json`).
 
 ### Saves (`game/save.ts`)
 
@@ -1031,7 +1088,8 @@ in try/catch; blocked storage (or `?save=memory`) keeps saves in memory for the 
 a save from a newer build is refused, not mangled. Export / import is the same envelope as a
 JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on town entry and
 level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
-playtime, best time per depth). Device settings (look, quality, zoom, damage numbers, loot
+playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
+sockets survive a load. Device settings (look, quality, zoom, damage numbers, loot
 filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the engine's audio store.
 
 ### The difficulty sliders

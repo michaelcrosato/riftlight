@@ -6,7 +6,8 @@
  *   attack    LMB / J / pad A / touch A          dodge   Space / pad B / touch B
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB / touch 1 2
  *   interact  F / pad RT / touch F               pause   Esc / pad Start / touch ≡
- *   panels    I inventory · P passive tree · C character · K codex (pad Back = inventory)
+ *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Back = inventory)
+ *   items     click / Enter / pad A · X / pad X = right-click · V / pad Y = Ctrl-click
  *
  * Gamepad buttons are remapped to virtual `Pad*` codes (input.gamepadButtons) so menus can
  * tell "A = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat.
@@ -44,6 +45,7 @@ export const KEYS = {
   interact: ['KeyF', 'PadRT'],
   pause: ['Escape', 'PadStart'],
   inventory: ['KeyI', 'PadBack'],
+  skills: ['KeyG'],
   tree: ['KeyP'],
   character: ['KeyC'],
   codex: ['KeyK'],
@@ -55,6 +57,9 @@ export const KEYS = {
   right: ['ArrowRight', 'KeyD'],
   tabNext: ['PadRB', 'Tab'],
   tabPrev: ['PadLB'],
+  /** Item windows: X / pad X = right-click (equip, socket, use), V / pad Y = Ctrl-click (move, sell, buy). */
+  secondary: ['KeyX', 'PadX'],
+  quick: ['KeyV', 'PadY'],
 } as const;
 
 /** Labels for prompts: [key, pad button]. */
@@ -182,6 +187,7 @@ export class MenuInput {
     if (pressed(KEYS.back)) out.push({ kind: 'back' });
     if (pressed(KEYS.tabNext)) out.push({ kind: 'tab', dir: 1 });
     if (pressed(KEYS.tabPrev)) out.push({ kind: 'tab', dir: -1 });
+    for (const code of [...KEYS.secondary, ...KEYS.quick]) if (pressed([code])) out.push({ kind: 'key', code });
     if (input.wheel) out.push({ kind: 'wheel', dy: input.wheel });
     return out;
   }

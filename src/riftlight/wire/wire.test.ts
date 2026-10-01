@@ -14,7 +14,7 @@ import { canonicalMods, canonicalStat } from '../core/stats';
 import { PlaytestBot } from '../game/bot';
 import { BOSSES, buildMonster } from '../monsters';
 import { buildSkill } from '../skills/build';
-import { GEM_ALIASES, levelMods, slotsFromSave, starterWeapon } from './hero';
+import { GEM_ALIASES, levelMods, slotsFromSave, starterWeapon, usesDefaultGems } from './hero';
 import { bossBudget, monsterGem, monsterName, translateMods } from './monsters';
 import { themeSongs, transposeNote } from './music';
 import { StageMover } from './stage';
@@ -136,15 +136,19 @@ describe('keystones reach combat', () => {
 });
 
 describe('hero wiring', () => {
-  it('fills empty slots with the default gems and maps old gem ids', () => {
+  it('builds the bar from the sockets (old gem ids mapped, gear skill levels); defaults only for a bar with nothing socketed', () => {
     const save = { level: 1, xp: 0, gold: 0, allocated: [], equipment: {}, inventory: [], skills: [] };
     expect(slotsFromSave(save, 1).map((s) => s?.skill)).toEqual(WIRE_TUNING.defaultSkills);
+    expect(usesDefaultGems(save.skills)).toBe(true);
     const gem = (id: string) => ({ uid: id, base: 'skill-gem', rarity: 'normal' as const, level: 1, name: id, affixes: [], gem: { id, level: 4, support: false } });
     const custom = { ...save, skills: [{ slot: 1, gem: gem('ice-nova'), supports: [{ ...gem('multiple-projectiles'), gem: { id: 'multiple-projectiles', level: 2, support: true } }] }] };
     const slots = slotsFromSave(custom, 1);
     expect(slots[1]).toEqual({ skill: GEM_ALIASES['ice-nova'], supports: [{ gem: 'gmp', level: 2 }], level: 4 });
-    expect(slots.filter(Boolean)).toHaveLength(4);
-    expect(new Set(slots.map((s) => s!.skill)).size).toBe(4);
+    expect(slots.filter(Boolean)).toHaveLength(1); // an emptied slot stays empty
+    expect(usesDefaultGems(custom.skills)).toBe(false);
+    const gear = new StatSheet();
+    gear.set('item:amulet', [flat('skill.level', 2)]);
+    expect(slotsFromSave(custom, 1, gear)[1]!.level).toBe(6);
   });
 
   it('grows with its level and carries a starter sword', () => {

@@ -6,11 +6,12 @@ import { Actor } from '../actors/Actor';
 import { HERO_KEYS } from '../actors/controls';
 import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { AILMENTS } from '../combat/ailments';
-import type { Mod } from '../core/mods';
+import type { Mod, StatSheet } from '../core/mods';
 import type { SaveData } from '../core/types';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
+import { socketsToSlots } from '../loot/sockets';
 import { SKILLS, SUPPORTS } from '../skills';
-import type { ResolvedSkill, SupportLink } from '../skills/types';
+import type { ResolvedSkill } from '../skills/types';
 import { skillIcon } from './icons';
 import { StageMover } from './stage';
 import { levelMods, starterWeapon } from './progression';
@@ -30,30 +31,36 @@ export const GEM_ALIASES: Readonly<Record<string, string>> = {
   'multiple-projectiles': 'gmp',
 };
 
-const gemId = (id: string) => GEM_ALIASES[id] ?? id;
+/** A gem item with its id renamed through GEM_ALIASES (old saves). */
+function aliased<T>(g: T): T {
+  const item = g as { gem?: { id: string } } | null;
+  const id = item?.gem?.id;
+  return id && GEM_ALIASES[id] ? ({ ...item, gem: { ...item.gem, id: GEM_ALIASES[id] } } as T) : g;
+}
+
+function alias(skills: SaveData['hero']['skills'] | undefined): SaveData['hero']['skills'] {
+  return (skills ?? []).map((s) => (s && typeof s === 'object' ? { ...s, gem: aliased(s.gem), supports: (s.supports ?? []).map(aliased) } : s));
+}
+
+/** True when nothing is socketed (a save from before sockets): the bar uses the default gems. */
+export function usesDefaultGems(skills: SaveData['hero']['skills'] | undefined): boolean {
+  return !socketsToSlots(alias(skills)).some(Boolean);
+}
 
 /**
- * The skill bar from a save: each slot's gem and its linked supports (gem items from the
- * loot system), unknown gems skipped, empty slots filled with the default gems so a new run
- * plays well out of the box (`WIRE_TUNING.defaultSkills`). Default gems level with the hero.
+ * The skill bar from a save's sockets (`socketsToSlots`: each slot's gem, its linked supports
+ * and gear's `skill.level` from the hero's sheet), unknown gems skipped. A save with nothing
+ * socketed (from before sockets) gets the default gems (`WIRE_TUNING.defaultSkills`), which
+ * level with the hero; an empty slot in a socketed bar stays empty.
  */
-export function slotsFromSave(save: SaveData['hero'], level: number): (SlotSpec | null)[] {
-  const out: (SlotSpec | null)[] = [null, null, null, null];
-  for (const s of save.skills ?? []) {
-    if (s.slot < 0 || s.slot > 3 || !s.gem?.gem) continue;
-    const id = gemId(s.gem.gem.id);
-    if (!SKILLS.has(id)) continue;
-    const supports: SupportLink[] = [];
-    for (const g of s.supports ?? []) {
-      const sid = g?.gem ? gemId(g.gem.id) : null;
-      if (sid && SUPPORTS.has(sid)) supports.push({ gem: sid, level: g!.gem!.level });
-    }
-    out[s.slot] = { skill: id, supports, level: s.gem.gem.level };
-  }
-  const defaults = WIRE_TUNING.defaultSkills.filter((id) => !out.some((s) => s?.skill === id));
+export function slotsFromSave(save: SaveData['hero'], level: number, sheet: StatSheet | null = null): (SlotSpec | null)[] {
+  const out: (SlotSpec | null)[] = socketsToSlots(alias(save.skills), sheet)
+    .slice(0, 4)
+    .map((x) => (x && SKILLS.has(x.skill) ? { skill: x.skill, level: x.level, supports: x.supports.filter((g) => SUPPORTS.has(g.gem)) } : null));
+  while (out.length < 4) out.push(null);
+  if (out.some(Boolean)) return out;
   const gemLevel = Math.max(1, Math.min(20, 1 + Math.floor((level - 1) * T.gemLevelPerLevel)));
-  for (let i = 0; i < out.length; i++) if (!out[i] && defaults.length) out[i] = { skill: defaults.shift()!, level: gemLevel };
-  return out;
+  return WIRE_TUNING.defaultSkills.slice(0, 4).map((skill) => ({ skill, level: gemLevel }));
 }
 
 export { levelMods, starterWeapon } from './progression';
@@ -138,6 +145,9 @@ export class RealHero implements HeroPort {
   private light: LightHandle | null = null;
   private readonly sources = new Map<string, readonly Mod[]>();
   private level = 1;
+  /** The save's sockets the bar was built from. */
+  private sockets: SaveData['hero']['skills'] = [];
+  private skillLevels = 0;
   private readonly buffSeen = new Map<string, number>();
 
   constructor(
@@ -150,7 +160,7 @@ export class RealHero implements HeroPort {
     // A placeholder world until the first stage: the controller needs a combat runtime.
     const boot = new CombatWorld({ services, root: this.object, depth: 0 });
     this.mover = new StageMover(null, [0, 0, 0], 0.35, () => this.actor.impulse.lengthSq() > 16);
-    this.hc = new HeroController({ combat: boot.combat, mover: this.mover, model, clips: HERO_CLIPS, at: [0, 0, 0], base: T.base, slots: slotsFromSave(save, save.level) });
+    this.hc = new HeroController({ combat: boot.combat, mover: this.mover, model, clips: HERO_CLIPS, at: [0, 0, 0], base: T.base, slots: [null, null, null, null] });
     this.actor = this.hc.actor;
     this.owned = boot;
     this.world = boot;
@@ -159,6 +169,7 @@ export class RealHero implements HeroPort {
     this.object.add(model, this.shadow);
     this.ctrl = { input: this.input, camera: { camera: ctx.engine.camera.camera, groundBasis: () => ({ right: X, forward: Z }) } };
     this.stats(save);
+    this.setSkills(save.skills);
   }
 
   private stats(save: SaveData['hero']): void {
@@ -295,20 +306,18 @@ export class RealHero implements HeroPort {
     this.level = level;
     this.actor.level = level;
     this.rescaled(() => this.actor.stats.set('level', levelMods(level)));
-    // default gems grow with the hero
-    const defaults = new Set<string>(WIRE_TUNING.defaultSkills);
-    const gemLevel = Math.max(1, Math.min(20, 1 + Math.floor((level - 1) * T.gemLevelPerLevel)));
-    this.hc.slots.forEach((s, i) => {
-      if (s && defaults.has(s.id) && s.level !== gemLevel) this.hc.setSlot(i, { skill: s.id, supports: s.supports, level: gemLevel });
-    });
+    if (usesDefaultGems(this.sockets)) this.setSkills(this.sockets); // the default gems grow with the hero
   }
 
-  /** Replace the skill bar from a save (gems slotted in the inventory). */
   /** The skill bar from the save's sockets (the shell calls it after a load, a new run and `changed('skills')`). */
   setSkills(skills: SaveData['hero']['skills']): void {
-    slotsFromSave({ skills } as SaveData['hero'], this.level).forEach((spec, i) => this.hc.setSlot(i, spec));
+    this.sockets = skills;
+    slotsFromSave({ skills } as SaveData['hero'], this.level, this.actor.stats).forEach((spec, i) => {
+      const s = this.hc.slots[i];
+      const same = !!s && !!spec && s.id === spec.skill && s.level === (spec.level ?? 1) && JSON.stringify(s.supports) === JSON.stringify(spec.supports ?? []);
+      if (!same && (s || spec)) this.hc.setSlot(i, spec);
+    });
   }
-
 
   setMods(source: string, mods: readonly Mod[]): void {
     this.rescaled(() => {
@@ -318,6 +327,12 @@ export class RealHero implements HeroPort {
     if (mods.length) this.sources.set(source, mods);
     else this.sources.delete(source);
     if (source !== 'starter') this.refreshStarter();
+    // gear's "+1 to the level of fire skill gems" re-levels the bar
+    const levels = this.actor.stats.get('skill.level');
+    if (levels !== this.skillLevels || mods.some((m) => m.stat === 'skill.level')) {
+      this.skillLevels = levels;
+      this.setSkills(this.sockets);
+    }
   }
 
   /** The starter sword stays until some gear source brings weapon damage. */
