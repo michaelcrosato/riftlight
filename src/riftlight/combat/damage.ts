@@ -201,6 +201,13 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
     if (r) rolled[t] = r[0] + (r[1] - r[0]) * rng.next();
   }
   const scaled = scaleDamage(q, convert(q, rolled, spec.tags), spec.tags);
+  // `added.fire.ratio`: a share of the hit added again as fire (elite Fire Enchanted)
+  const ratio = q.flat('added.fire.ratio', spec.tags);
+  if (ratio > 0) {
+    let sum = 0;
+    for (const t of DAMAGE_TYPES) sum += scaled[t] ?? 0;
+    scaled.fire = (scaled.fire ?? 0) + sum * ratio;
+  }
   const crit = opts.crit ?? rng.chance(critChance(q, spec));
   const mult = (crit ? critMultiplier(q, spec) : 1) * (opts.scale ?? 1);
   const damage: Damage = {};
@@ -228,9 +235,20 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
     accuracy: isAttack(spec.tags) && !q.has('hits.cannotBeEvaded', spec.tags) ? q.value('accuracy', spec.tags, 0) || undefined : undefined,
     penetration,
     ailmentEffect: noAilments ? 0 : q.scale('ailment.effect', spec.tags) * critAilments,
+    ailmentEffects: noAilments ? undefined : ailmentScaling(q, spec.tags),
     ailmentDuration: q.scale('ailment.duration', spec.tags),
     cull: q.has('cull', spec.tags) ? 0.1 : undefined,
   };
+}
+
+/** `<ailment>.damage` (damage over time) and `<ailment>.effect` (slows, shock) per ailment, when any is set. */
+export function ailmentScaling(q: StatQuery, tags: readonly string[]): Partial<Record<AilmentType, number>> | undefined {
+  let out: Partial<Record<AilmentType, number>> | undefined;
+  for (const def of AILMENTS.all()) {
+    const k = q.scale([`${def.id}.damage`, `${def.id}.effect`], tags);
+    if (k !== 1) (out ??= {})[def.id] = k;
+  }
+  return out;
 }
 
 /** Juice: frames of hit-stop for a hit (melee crunches, big crits crunch more). */
@@ -273,7 +291,9 @@ export function resistance(stats: StatSheet, type: DamageType, pen = 0): number 
 }
 
 export function blockChance(stats: StatSheet, tags: readonly string[]): number {
-  const c = tags.includes('attack') ? stats.get('block.chance', tags) : tags.includes('spell') ? stats.get('spell.block', tags) : 0;
+  // `block.spells`: the block chance covers spells too
+  const spell = tags.includes('spell') ? Math.max(stats.get('spell.block', tags), stats.has('block.spells') ? stats.get('block.chance', tags) : 0) : 0;
+  const c = tags.includes('attack') ? stats.get('block.chance', tags) : spell;
   return Math.min(BLOCK_CAP, Math.max(0, c));
 }
 
@@ -378,7 +398,7 @@ export function rollAilments(hit: Hit, byType: Damage, d: Defender, rng: Rng): A
     const landed = def.always || (def.threshold?.(dmg, d.maxLife * thresholdScale(d, def)) ?? false) || (chance > 0 && rng.chance(chance));
     if (!landed) continue;
     if (avoid > 0 && rng.chance(avoid)) continue;
-    out.push(ailmentFrom(def, dmg, d.maxLife, hit.ailmentEffect ?? 1, hit.ailmentDuration ?? 1));
+    out.push(ailmentFrom(def, dmg, d.maxLife, (hit.ailmentEffect ?? 1) * (hit.ailmentEffects?.[def.id] ?? 1), hit.ailmentDuration ?? 1));
   }
   return out;
 }

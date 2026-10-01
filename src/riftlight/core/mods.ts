@@ -39,6 +39,8 @@ export const flag = (stat: string, tags?: readonly string[]): Mod => ({ stat, ki
  * Sources are replaced wholesale (`set`) or removed (`remove`), so gear swaps, respecs
  * and expiring buffs are cheap and can't leak stale mods.
  */
+import { canonicalMods, canonicalStat } from './stats';
+
 export class StatSheet {
   private readonly sources = new Map<string, readonly Mod[]>();
   private readonly base = new Map<string, number>();
@@ -48,16 +50,17 @@ export class StatSheet {
   version = 0;
 
   constructor(base: Readonly<Record<string, number>> = {}) {
-    for (const [k, v] of Object.entries(base)) this.base.set(k, v);
+    for (const [k, v] of Object.entries(base)) this.base.set(canonicalStat(k), v);
   }
 
   setBase(stat: string, value: number): void {
-    this.base.set(stat, value);
+    this.base.set(canonicalStat(stat), value);
     this.dirty();
   }
 
+  /** Replace a source's mods (stat names are made canonical: core/stats.ts). */
   set(source: string, mods: readonly Mod[]): void {
-    this.sources.set(source, mods);
+    this.sources.set(source, canonicalMods(mods));
     this.dirty();
   }
 
@@ -83,6 +86,7 @@ export class StatSheet {
 
   /** Final value of `stat` for a query with `tags`. */
   get(stat: string, tags: readonly string[] = []): number {
+    stat = canonicalStat(stat);
     const key = tags.length ? `${stat}|${[...tags].sort().join(',')}` : stat;
     const hit = this.cache.get(key);
     if (hit !== undefined) return hit;
@@ -111,8 +115,16 @@ export class StatSheet {
 
   /** Every mod currently contributing to `stat` (for tooltips and inspectors). */
   explain(stat: string, tags: readonly string[] = []): { source: string; mod: Mod }[] {
+    stat = canonicalStat(stat);
     const out: { source: string; mod: Mod }[] = [];
     for (const [source, mods] of this.sources) for (const m of mods) if (m.stat === stat && this.applies(m, tags)) out.push({ source, mod: m });
+    return out;
+  }
+
+  /** Every mod of every source (inspectors; owners forwarding `minion.*` stats to their minions). */
+  entries(): { source: string; mod: Mod }[] {
+    const out: { source: string; mod: Mod }[] = [];
+    for (const [source, mods] of this.sources) for (const m of mods) out.push({ source, mod: m });
     return out;
   }
 

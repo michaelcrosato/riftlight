@@ -1,5 +1,7 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
+import type { Mod } from '../../core/mods';
+import { StatQuery } from '../stats';
 import { ringDecal } from '../visuals';
 import { EffectBase, type CastContext, type CombatEffect } from './types';
 
@@ -23,6 +25,12 @@ class Aura extends EffectBase {
     c.combat.burst(c.skill.def.look.burst, new Vector3(c.caster.position.x, c.caster.position.y + 0.5, c.caster.position.z));
   }
 
+  /** Buff mods scaled by the caster's `aura.effect` (inc/more; 1 = as written). */
+  private scaled(mods: readonly Mod[]): readonly Mod[] {
+    const k = new StatQuery(this.c.caster.stats, this.c.skill.mods).scale('aura.effect', this.c.skill.tags);
+    return k === 1 ? mods : mods.map((m) => (m.kind === 'flag' || m.kind === 'override' ? m : { ...m, value: m.value * k }));
+  }
+
   step(dt: number): boolean {
     this.age += dt;
     const c = this.c;
@@ -35,7 +43,7 @@ class Aura extends EffectBase {
         // keystone `auras.selfOnly`: allied auras touch only the caster
         const selfOnly = !hostile && c.caster.stats.has('auras.selfOnly');
         for (const a of c.combat.actors.query(c.caster.position, this.radius, this.near, (x) => x.alive && (selfOnly ? x === c.caster : hostile ? c.caster.hostileTo(x) : !c.caster.hostileTo(x)))) {
-          a.addBuff(`aura:${c.skill.id}`, e.mods, AURA_LINGER);
+          a.addBuff(`aura:${c.skill.id}`, this.scaled(e.mods), AURA_LINGER);
         }
       }
     }

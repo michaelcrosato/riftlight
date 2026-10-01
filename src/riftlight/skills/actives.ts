@@ -212,7 +212,7 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
   // ------------------------------------------------------------------ minions
   g({
     id: 'summon-skeletons', name: 'Summon Skeletons', description: 'Raise skeleton warriors that fight for you.',
-    tags: ['spell', 'minion', 'duration', 'summon'],
+    tags: ['spell', 'minion', 'duration', 'summon', 'damage'],
     cost: 15, cooldown: 1, castTime: 0.8, anim: 'CastBig', moveDuringCast: 0.2, target: 'ahead',
     delivery: { kind: 'summon', genome: 'minion', count: 3, duration: 20 },
     effects: [{ kind: 'damage', base: { physical: [3, 6] }, effectiveness: 1 }],
@@ -220,7 +220,7 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
   }),
   g({
     id: 'raise-spectre', name: 'Raise Spectre', description: 'Raise a spectral caster that hurls bolts at your enemies.',
-    tags: ['spell', 'minion', 'summon'],
+    tags: ['spell', 'minion', 'summon', 'damage'],
     cost: 25, cooldown: 3, castTime: 1, anim: 'CastBig', moveDuringCast: 0.1, target: 'ahead',
     delivery: { kind: 'summon', genome: 'spectre', count: 1, duration: 0 },
     effects: [{ kind: 'damage', base: { chaos: [5, 9] }, effectiveness: 1 }],

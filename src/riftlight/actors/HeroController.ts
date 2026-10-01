@@ -104,6 +104,9 @@ export function compileHeroClips(model: Object3D, defs: readonly ClipDef[]): Ani
 
 const tmp = new Vector3();
 
+/** Skill tags that name a weapon class: such skills need `weapon.<class>` (KEYSTONE-style flag from the equipped weapon). */
+export const WEAPON_CLASSES = ['bow', 'wand'] as const;
+
 /**
  * The hero's ARPG controller: twin-stick / mouse movement and aim, a buffered 3-hit basic
  * combo, five skill slots, a dodge roll with i-frames, attack cancels, slowed movement while
@@ -444,6 +447,8 @@ export class HeroController {
   startSkill(skill: ResolvedSkill, slot: number, keys: readonly string[]): boolean {
     const a = this.actor;
     if ((this.cooldowns.get(skill.id) ?? 0) > 0) return this.fail('COOLDOWN');
+    // weapon-class skills need that weapon (the equipped weapon sets the `weapon.<class>` flag)
+    for (const cls of WEAPON_CLASSES) if (skill.tags.includes(cls) && !a.stats.has(`weapon.${cls}`)) return this.fail(`NEEDS A ${cls.toUpperCase()}`);
     const upfront = skill.channel ? skill.cost * 0.25 : skill.cost;
     if (!payCost(a, upfront)) {
       this.stats.noMana++;

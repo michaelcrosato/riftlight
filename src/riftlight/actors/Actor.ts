@@ -5,7 +5,8 @@ import type { Rank } from '../core/scaling';
 import type { ActorLike, AilmentType, DamageType, Faction, GameEventBus, Hit, HitResult } from '../core/types';
 import { AILMENTS } from '../combat/ailments';
 import { mitigate, mitigateDot, type AilmentApplication, type Defender } from '../combat/damage';
-import { ACTOR_BASE, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
+import { StatQuery } from '../combat/stats';
+import { ACTOR_BASE, BLOCK_STAGGER, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
 import { BodyFx } from './bodyFx';
 import { GridMover, openFloor, type Mover } from './movers';
 
@@ -324,6 +325,10 @@ export class Actor implements ActorLike {
       }
       this.hitStop = Math.max(this.hitStop, hit.hitStop ?? 0);
       if (result.total > 0) this.fx.flash(hit.crit ? 0.12 : 0.08);
+    } else if (result.blocked) {
+      // a block staggers for a moment; `block.recovery` shortens it
+      const recovery = Math.max(0.1, new StatQuery(this.stats).scale('block.recovery'));
+      this.hitStop = Math.max(this.hitStop, Math.round(BLOCK_STAGGER / recovery));
     }
     this.events?.emit('hit', { target: this, result, hit });
     if (result.killed) this.die(hit.source);
@@ -407,10 +412,11 @@ export class Actor implements ActorLike {
     // regeneration, leech, energy shield recharge
     const maxLife = this.maxLife;
     const maxMana = this.maxMana;
-    this.life = Math.min(maxLife, this.life + Math.max(0, this.stats.get('life.regen')) * dt);
+    this.life = Math.min(maxLife, this.life + Math.max(0, this.stats.get('life.regen') + this.stats.get('life.regen.pct') * maxLife) * dt);
     this.mana = Math.min(maxMana, this.mana + Math.max(0, this.stats.get('mana.regen')) * dt);
-    const lifeLeech = Math.min(this.leechPool.life, maxLife * LEECH_RATE * dt);
-    const manaLeech = Math.min(this.leechPool.mana, maxMana * LEECH_RATE * dt);
+    const rate = LEECH_RATE * Math.max(0, new StatQuery(this.stats).scale('leech.rate'));
+    const lifeLeech = Math.min(this.leechPool.life, maxLife * rate * dt);
+    const manaLeech = Math.min(this.leechPool.mana, maxMana * rate * dt);
     this.leechPool.life -= lifeLeech;
     this.leechPool.mana -= manaLeech;
     this.life = Math.min(maxLife, this.life + lifeLeech);

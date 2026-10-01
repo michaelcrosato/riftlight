@@ -2,7 +2,7 @@ import { type Object3D, Vector3 } from 'three/webgpu';
 import type { PaletteColor } from '../../engine/palette';
 import { Actor } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
-import { flat, more, type Mod } from '../core/mods';
+import { flat, more, type Mod, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
 import { type Rank, RANK, SCALING } from '../core/scaling';
 import type { ActorLike, Genome, HitResult } from '../core/types';
@@ -62,17 +62,16 @@ export interface MonsterHost {
 
 // ---------------------------------------------------------------- data
 
-/** R4 stat names → the combat pipeline's (combat/damage.ts COMBAT_STATS). */
+/**
+ * Monster flags as the combat mods they mean (stat names themselves are made canonical by
+ * every StatSheet: core/stats.ts).
+ */
 export function translateMods(mods: readonly Mod[]): Mod[] {
   const out: Mod[] = [];
   for (const m of mods) {
-    if (m.stat.startsWith('chance.')) out.push({ ...m, stat: `${m.stat.slice(7)}.chance` });
-    else if (m.stat === 'life.leech') out.push({ ...m, stat: 'leech.life' });
-    else if (m.stat === 'evasion.chance') out.push({ ...m, stat: 'dodge.chance' });
-    else if (m.stat === 'knockbackImmune') out.push(flat('mass', 50));
+    if (m.stat === 'knockbackImmune') out.push(flat('mass', 50));
     else if (m.stat === 'stunImmune') out.push(flat('avoid.stun', 1), flat('avoid.freeze', 0.5));
     else if (m.stat === 'frontalBlock') out.push({ ...flat('block.chance', 0.3), when: m.when });
-    else if (m.stat === 'fire.damage.added') out.push(flat('added.fire.min', 2 * m.value * 2), flat('added.fire.max', 4 * m.value * 2));
     else out.push(m);
   }
   return out;
@@ -120,6 +119,21 @@ export function monsterGem(def: MonsterSkillDef): SkillGem {
   } as SkillGem;
   gems.set(def.id, g);
   return g;
+}
+
+/**
+ * A boss's life and damage follow the depth curve, not its parts: whatever its genome's mods
+ * (rank, plan, parts, archetype) multiply life and damage by, the `boss` source brings it to
+ * RANK.boss × the boss budget (WIRE_TUNING), so each boss is a modest step up from the last
+ * (SCALING.monsterLife / monsterDamage per depth) instead of a jagged one.
+ */
+export function bossBudget(genomeMods: readonly Mod[]): Mod[] {
+  const sheet = new StatSheet();
+  sheet.set('genome', genomeMods);
+  const q = new StatQuery(sheet);
+  const life = Math.max(0.05, q.scale('life'));
+  const damage = Math.max(0.05, q.scale('damage'));
+  return [more('life', (RANK.boss.life * M.bossLife) / life - 1), more('damage', (RANK.boss.damage * M.bossDamage) / damage - 1)];
 }
 
 /** Bosses picked by the level (designed or generated), found again by genome at build time. */
@@ -255,7 +269,7 @@ export class MonsterUnit implements MonsterHandle {
       genome: translateMods(this.built.stats),
       depth: [more('life', SCALING.monsterLife(depth) - 1), more('damage', SCALING.monsterDamage(depth) * M.damage - 1)],
     };
-    if (this.rank === 'boss') mods.boss = [more('life', M.bossLife - 1), more('damage', M.bossDamage - 1)];
+    if (this.rank === 'boss') mods.boss = bossBudget(mods.genome ?? []);
     for (const [k, v] of Object.entries(o.mods)) if (v.length) mods[k] = v;
     this.actor = new Actor({
       faction: 'monster',
@@ -449,8 +463,6 @@ export class MonsterUnit implements MonsterHandle {
       if (left - dt <= 0) this.cds.delete(id);
       else this.cds.set(id, left - dt);
     }
-    const regen = a.stats.get('life.regen.percent');
-    if (regen > 0) a.heal(regen * a.maxLife * dt);
     if (this.dieAt >= 0) {
       a.velocity.set(0, 0, 0);
       if (this.time >= this.dieAt) a.die(null);
