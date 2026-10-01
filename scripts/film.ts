@@ -22,7 +22,8 @@
 //   down KEYS / up KEYS  press / release (stay held across commands)
 //   tap KEYS             press for 2 frames, release, 1 more frame
 //   wait n               n frames with no change
-//   until STATE [max]    step until hero.state === STATE (or `grounded`), max 180 frames
+//   until STATE [max]    step until hero.state === STATE (or `grounded`), max 180 frames;
+//                        giving up is an `until` issue and makes the film exit 1
 //
 // Output (.scratch/film/<name>.*): png filmstrip (+ timeline of speed, joint speed, foot
 // contact), json per-frame log, gif with --gif. The console summary lists the state/clip
@@ -39,6 +40,8 @@ import { encodePng } from './png';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.FILM_PORT) || 4200 + Math.floor(Math.random() * 600);
+/** Scenarios whose `until` gave up (exit code 1). */
+const failed: string[] = [];
 
 export const SCENARIOS: Record<string, string> = {
   idle: 'place 0 0 4 90; wait 120',
@@ -285,7 +288,11 @@ async function main(): Promise<void> {
     await page.evaluate(PAGE);
     const joints = (await page.evaluate('__FILM.joints')) as string[];
     log(`${joints.length} joints`);
-    for (const job of jobs) report(job.name, job.script, await film(page, parse(job.script), log), joints);
+    for (const job of jobs) {
+      const { recs, stuck } = await film(page, parse(job.script), log);
+      report(job.name, job.script, recs, joints, stuck);
+      if (stuck.length) failed.push(`${job.name}: ${stuck.map((i) => i.text).join('; ')}`);
+    }
   } finally {
     await browser.close();
     stop(server);
@@ -300,8 +307,10 @@ function stop(proc: ChildProcess): void {
   }
 }
 
-async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<Rec[]> {
+async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<{ recs: Rec[]; stuck: Issue[] }> {
   const recs: Rec[] = [];
+  // `until` commands that gave up: the scenario never reached the state it was written for
+  const stuck: Issue[] = [];
   const size = Number(opt('size', '2.8'));
   {
     let t = 0;
@@ -350,13 +359,13 @@ async function film(page: Page, cmds: Cmd[], log: (m: string) => void): Promise<
           await frame();
           const s = recs.at(-1)!.s;
           if (c.word === 'grounded' ? s.grounded : s.state === c.word) break;
-          if (i === max - 1) console.log(`  (until ${c.word}: gave up after ${max} frames, state ${s.state})`);
+          if (i === max - 1) stuck.push({ t: recs.length - 1, kind: 'until', text: `until ${c.word} gave up after ${max} frames (state ${s.state})` });
         }
       }
     }
     await page.evaluate('__FILM.release()');
   }
-  return recs;
+  return { recs, stuck };
 }
 
 async function capture(page: Page, v: string, size: number): Promise<Shot> {
@@ -367,11 +376,14 @@ async function capture(page: Page, v: string, size: number): Promise<Shot> {
 // ---- analysis ------------------------------------------------------------------------------
 interface Issue {
   t: number;
-  kind: 'pop' | 'slip' | 'sink' | 'float';
+  /** `until` = the script waited for a state that never came (the film exits 1). */
+  kind: 'pop' | 'slip' | 'sink' | 'float' | 'until';
   text: string;
 }
 
 const SOLE_NAMES = ['ShoeR', 'ShoeL'];
+/** Drawn red (the rest yellow). */
+const SEVERE = new Set<Issue['kind']>(['pop', 'sink', 'until']);
 const SLIDING_STATES = new Set(['skid', 'slide', 'bellySlide', 'crouchSlide', 'dive', 'push', 'pull', 'hang', 'climb']);
 
 function analyse(recs: Rec[], joints: string[]) {
@@ -462,9 +474,11 @@ function mixText(s: Sample): string {
 }
 
 // ---- output --------------------------------------------------------------------------------
-function report(name: string, script: string, recs: Rec[], joints: string[]): void {
+function report(name: string, script: string, recs: Rec[], joints: string[], stuck: Issue[]): void {
   mkdirSync(outDir, { recursive: true });
   const a = analyse(recs, joints);
+  a.issues.push(...stuck);
+  a.issues.sort((p, q) => p.t - q.t);
   const shots = recs.filter((r) => r.shot);
 
   // console summary: state / clip timeline
@@ -505,13 +519,13 @@ function report(name: string, script: string, recs: Rec[], joints: string[]): vo
   const height = M * 2 + headerH + rows * (cell + labelH + 4) + timelineH + (issueLines.length + 1) * (GLYPH_H + 3) + 8;
   const cv = new Canvas(width, height);
   cv.text(`FILM ${name}`, M, M, TEXT, 2);
-  cv.text(`VIEW ${view.toUpperCase()}  ${recs.length} FRAMES @60  ONE CELL EVERY ${Math.round((pick[1]?.t ?? every) - (pick[0]?.t ?? 0))} FRAMES  RED BORDER = POP/SINK  YELLOW = SLIP/FLOAT`, M, M + 2 * GLYPH_H + 4, DIM);
+  cv.text(`VIEW ${view.toUpperCase()}  ${recs.length} FRAMES @60  ONE CELL EVERY ${Math.round((pick[1]?.t ?? every) - (pick[0]?.t ?? 0))} FRAMES  RED BORDER = POP/SINK/UNTIL  YELLOW = SLIP/FLOAT`, M, M + 2 * GLYPH_H + 4, DIM);
   const flagged = new Map<number, Issue['kind']>();
   for (const i of a.issues) {
     const cellIdx = pick.findIndex((r, k) => i.t >= r.t && i.t < (pick[k + 1]?.t ?? Infinity));
     if (cellIdx < 0) continue;
     const prev = flagged.get(cellIdx);
-    if (!prev || i.kind === 'pop' || i.kind === 'sink') flagged.set(cellIdx, i.kind);
+    if (!prev || SEVERE.has(i.kind)) flagged.set(cellIdx, i.kind);
   }
   pick.forEach((r, k) => {
     const x = M + (k % cols) * (cell + 4);
@@ -525,7 +539,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[]): vo
       }
     const flag = flagged.get(k);
     if (flag) {
-      const c = flag === 'pop' || flag === 'sink' ? BAD : WARN;
+      const c = SEVERE.has(flag) ? BAD : WARN;
       cv.rect(x - 2, y - 2, cell + 4, 2, c);
       cv.rect(x - 2, y + cell, cell + 4, 2, c);
       cv.rect(x - 2, y, 2, cell, c);
@@ -603,7 +617,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[]): vo
   cv.text(a.issues.length ? `ISSUES (${a.issues.length}):` : 'NO ISSUES', x0, y, a.issues.length ? WARN : CONTACT);
   y += GLYPH_H + 3;
   for (const i of issueLines) {
-    cv.text(`F${i.t} ${i.kind.toUpperCase()} ${i.text}`.slice(0, Math.floor(tw / 6)), x0, y, i.kind === 'pop' || i.kind === 'sink' ? BAD : WARN);
+    cv.text(`F${i.t} ${i.kind.toUpperCase()} ${i.text}`.slice(0, Math.floor(tw / 6)), x0, y, SEVERE.has(i.kind) ? BAD : WARN);
     y += GLYPH_H + 3;
   }
 
@@ -665,7 +679,11 @@ function chromiumPath(): string | undefined {
 }
 
 main().then(
-  () => process.exit(0),
+  () => {
+    if (!failed.length) process.exit(0);
+    console.error(`\nFAILED: ${failed.length} scenario(s) never reached a state they wait for:\n  ${failed.join('\n  ')}`);
+    process.exit(1);
+  },
   (e: unknown) => {
     console.error(e instanceof Error ? e.message : e);
     process.exit(1);
