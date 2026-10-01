@@ -40,9 +40,13 @@ export function xpFraction(hero: SaveData['hero']): number {
   return Math.min(1, Math.max(0, hero.xp / SCALING.xpToNext(hero.level)));
 }
 
-/** XP for a kill of a monster of `level` and `rank` multiplier. */
-export function killXp(monsterLevel: number, rankXp: number): number {
-  return Math.round(SCALING.monsterXp(monsterLevel) * rankXp);
+/**
+ * XP for a kill of a monster of `level` and `rank` multiplier; with the killer's level, a
+ * hero who has outlevelled the area gets less (`SCALING.xpPenalty`).
+ */
+export function killXp(monsterLevel: number, rankXp: number, heroLevel?: number): number {
+  const penalty = heroLevel === undefined ? 1 : SCALING.xpPenalty(heroLevel, monsterLevel);
+  return Math.round(SCALING.monsterXp(monsterLevel) * rankXp * penalty);
 }
 
 export interface Penalty {

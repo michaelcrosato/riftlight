@@ -5,7 +5,7 @@
  */
 import { flat, inc, StatSheet, type Mod } from '../core/mods';
 import { STAT_ALIASES as CANONICAL, STAT_EXPANSIONS } from '../core/stats';
-import { ownerMinionMods } from '../combat/minions';
+import { minionLevelMods, ownerMinionMods } from '../combat/minions';
 import { equipmentMods, type Equipment } from '../loot/itemMods';
 import { bossBudget, monsterBase, monsterDepthMods } from '../wire/progression';
 import { WIRE_TUNING } from '../wire/tuning';
@@ -98,6 +98,8 @@ export function minionSheet(o: {
   base: Readonly<Record<string, number>>;
   skillMods: readonly Mod[];
   gemLevel: number;
+  /** The summoner's character level (minions grow with it: combat/minions.ts minionLevelMods). */
+  ownerLevel?: number;
   owner?: StatSheet;
   ownerMods?: readonly Mod[];
   assumptions: Assumptions;
@@ -107,7 +109,7 @@ export function minionSheet(o: {
   const sheet = new RecordingSheet({}, o.reads);
   sheet.set('base', Object.entries(o.base).map(([k, v]) => flat(k, v)));
   sheet.set('summoner', stripMinion(o.skillMods));
-  sheet.set('level', [flat('life', 8 * (o.gemLevel - 1))]);
+  sheet.set('level', minionLevelMods(o.gemLevel, o.ownerLevel ?? 1));
   if (o.ownerMods) {
     // what the game does: combat/minions.ts ownerMinionMods (`minion.<stat>` and 'minion'-scoped mods)
     const owner = new StatSheet();

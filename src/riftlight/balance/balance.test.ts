@@ -125,7 +125,7 @@ describe('balance: progression, choices, outliers', () => {
     const hero = { level: 1, xp: 0 };
     for (const d of [1, 2, 3]) {
       const ml = SCALING.monsterLevel(d);
-      addXp(hero as never, 3 * killXp(ml, RANK.normal.xp) + killXp(ml, RANK.magic.xp) + killXp(ml, RANK.rare.xp) + killXp(ml, RANK.boss.xp));
+      for (const r of ['normal', 'normal', 'normal', 'magic', 'rare', 'boss'] as const) addXp(hero as never, killXp(ml, RANK[r].xp, hero.level));
       expect(xp[d - 1]!.levelAfter).toBe(hero.level);
     }
     expect(xp[0]!.levelBefore).toBe(1);

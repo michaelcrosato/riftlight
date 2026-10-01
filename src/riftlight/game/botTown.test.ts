@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { flat, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
+import { SCALING } from '../core/scaling';
 import { ACTOR_BASE } from '../combat/tuning';
 import { rollItem } from '../loot/generate';
 import { requiredLevel } from '../loot/itemMods';
@@ -8,6 +9,7 @@ import { gemItem, starterSockets } from '../loot/sockets';
 import { defaultTree, pointBudget } from '../tree/tree';
 import { HERO_BASE_STATS, levelMods, starterWeapon } from '../wire/progression';
 import { evaluate, gearScore, rig, townVisit } from './botTown';
+import { killXp } from './progress';
 import { newSave } from './save';
 
 /** The real hero's sheet at a level (base, the level source, the starter sword). */
@@ -84,5 +86,22 @@ describe('the bot in town', () => {
     expect(save.hero.gold).toBe(400 - r.spent + r.soldGold);
     expect(save.hero.gold).toBeGreaterThanOrEqual(0);
     if (r.bought.length) expect(r.spent).toBeGreaterThan(0);
+  });
+});
+
+describe('XP', () => {
+  it('a hero who has outlevelled the area gets less, an under-levelled one the full amount', () => {
+    const ml = SCALING.monsterLevel(5);
+    expect(killXp(ml, 1, ml)).toBe(killXp(ml, 1));
+    expect(killXp(ml, 1, ml - 10)).toBe(killXp(ml, 1));
+    expect(killXp(ml, 1, ml + 12)).toBeLessThan(killXp(ml, 1) * 0.5);
+    expect(killXp(ml, 1, ml + 30)).toBeLessThan(killXp(ml, 1) * 0.05);
+  });
+
+  it('area levels track the hero: 2–3 levels per early depth, slower later', () => {
+    expect(SCALING.monsterLevel(1)).toBe(4);
+    expect(SCALING.monsterLevel(12)).toBe(25);
+    for (let d = 1; d < 80; d++) expect(SCALING.monsterLevel(d + 1)).toBeGreaterThanOrEqual(SCALING.monsterLevel(d));
+    expect(SCALING.monsterLevel(80)).toBeGreaterThan(100);
   });
 });

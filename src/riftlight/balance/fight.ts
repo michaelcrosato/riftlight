@@ -56,6 +56,7 @@ export function makeLoadout(build: BuildArchetype, setup: HeroSetup): HeroLoadou
       base: MINION_BASE[d.genome] ?? MINION_BASE.minion!,
       skillMods: skill.mods,
       gemLevel,
+      ownerLevel: setup.level,
       ownerMods,
       assumptions: setup.assumptions,
       reads: setup.reads,

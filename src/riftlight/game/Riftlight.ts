@@ -239,7 +239,7 @@ export class Riftlight implements Game, MenuHost {
       if (!this.hero || target === this.hero.actor) return;
       // `xp.gain` is a multiplier stat (base 1): shrines, mechanic rewards, gear
       const gain = this.hero.actor.stats.get('xp.gain');
-      const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp) * (gain > 0 ? gain : 1)));
+      const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp, this.save.hero.level) * (gain > 0 ? gain : 1)));
       this.gainXp(xp);
       this.session.kills++;
       const stats = (this.save.stats ??= emptyStats());
