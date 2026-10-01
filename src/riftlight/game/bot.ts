@@ -17,6 +17,7 @@
  */
 import { Vector3 } from 'three/webgpu';
 import type { LayoutLike } from '../core/types';
+import { roleOfTags, type SkillRole } from './botTown';
 import { bfs } from './nav';
 import type { HeroIntent, HeroPort, LevelHandle, MonsterHandle, SkillSlotView, Telegraph, WorldLoot } from './ports';
 
@@ -50,6 +51,8 @@ export interface BotReport {
   items: number;
   stuck: number;
   outcome: 'cleared' | 'died' | 'timeout';
+  /** Items picked up by rarity (`gem`, `currency` apart); the agent API fills it. */
+  found?: Record<string, number>;
 }
 
 export interface BotOptions {
@@ -64,17 +67,12 @@ export interface BotOptions {
 }
 
 /** How the bot reads a skill (from its tags; the stub skills by their ids). */
-type Role = 'area' | 'nova' | 'ranged' | 'gap' | 'buff' | 'none';
+type Role = SkillRole;
 
 function roleOf(s: SkillSlotView): Role {
   const t = s.tags;
   if (!t) return s.id === 'cleave' ? 'area' : s.id === 'nova' ? 'nova' : s.id === 'dash' ? 'gap' : s.id === 'warcry' ? 'buff' : 'none';
-  if (t.includes('movement')) return 'gap';
-  if (t.includes('nova')) return 'nova';
-  if (t.includes('projectile') || t.includes('chain')) return 'ranged';
-  if (t.includes('area') || t.includes('strike')) return 'area';
-  if (t.includes('buff') || t.includes('warcry') || t.includes('aura')) return 'buff';
-  return 'none';
+  return roleOfTags(t);
 }
 
 export class PlaytestBot {

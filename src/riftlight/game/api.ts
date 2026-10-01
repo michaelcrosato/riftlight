@@ -19,6 +19,7 @@ import type { DifficultyTuning } from '../core/types';
 import type { Menu } from '../ui/menu';
 import { gemProgress, normalizeSockets } from '../loot/sockets';
 import { type BotIntent, type BotReport, PlaytestBot } from './bot';
+import { gearScore, type TownReport, type TownVisitOptions, townVisit } from './botTown';
 import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
 import type { Riftlight } from './Riftlight';
@@ -165,7 +166,14 @@ export function createApi(game: Riftlight) {
    * died, or still going). `run()` does both in one call.
    */
   let session: { depth: number; frames: number; deaths: number; time: number; outcome: BotReport['outcome']; done: boolean } | null = null;
+  /** Items picked up since the bot started, by rarity (gems and currency apart). */
+  let found: Record<string, number> = {};
+  game.events.on('loot', ({ item }) => {
+    const k = item.gem ? 'gem' : item.quantity !== undefined || !item.affixes ? 'currency' : item.rarity;
+    found[k] = (found[k] ?? 0) + 1;
+  });
   const botStart = () => {
+    found = {};
     session = { depth: game.level?.spec.depth ?? 0, frames: 0, deaths: 0, time: 0, outcome: 'timeout', done: game.screen !== 'level' };
     bot = new PlaytestBot(); // a fresh mind per run (routes, stuck and reach memory)
     return session;
@@ -204,8 +212,31 @@ export function createApi(game: Riftlight) {
   const botReport = (): BotReport => {
     const ss = session ?? botStart();
     const s = game.session;
-    return { depth: ss.depth, cleared: ss.outcome === 'cleared', time: +ss.time.toFixed(2), frames: ss.frames, deaths: ss.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome: ss.outcome };
+    return { depth: ss.depth, cleared: ss.outcome === 'cleared', time: +ss.time.toFixed(2), frames: ss.frames, deaths: ss.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome: ss.outcome, found: { ...found } };
   };
+
+  /**
+   * The bot in town between levels (game/botTown.ts): gems and supports into the bar, gear
+   * upgrades on, junk sold, the vendors' upgrades bought, passive points spent. Works on the
+   * save the way the windows do, then every system reloads it.
+   */
+  const botTown = (o: Partial<Omit<TownVisitOptions, 'sheet'>> = {}): TownReport => {
+    const save = game.save;
+    game.ports.loot.write(save);
+    const r = townVisit(save, {
+      sheet: game.hero.actor.stats,
+      points: game.ports.tree.points(save.hero.level, save.deepest),
+      depth: o.depth ?? save.deepest + 1,
+      visit: save.stats?.runs ?? 0,
+      ...o,
+    });
+    game.ports.loot.load(save);
+    game.hero.setSkills?.(save.hero.skills);
+    game.applyMods();
+    game.hero.restore();
+    return r;
+  };
+
   /** Socketed gems: id, level, XP toward the next level (0..1) and whether it waits on the hero's level. */
   const gems = () =>
     normalizeSockets(game.save.hero.skills).flatMap((sock) =>
@@ -394,11 +425,17 @@ export function createApi(game: Riftlight) {
       return game.log.slice(-n);
     },
     gems,
+    /** Gear score of what the hero wears (item level × rarity power, game/botTown.ts). */
+    gearScore: () => {
+      game.ports.loot.write(game.save);
+      return gearScore(game.save.hero.equipment);
+    },
     bot: {
       run: runBot,
       start: botStart,
       advance: botAdvance,
       report: botReport,
+      town: botTown,
       /** One decision without stepping (inspect what the bot would do). */
       decide: () => (game.level ? bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: 0 }) : null),
     },
