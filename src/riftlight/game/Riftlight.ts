@@ -28,7 +28,7 @@ import { drawLogo } from '../ui/logo';
 import type { Menu } from '../ui/menu';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
-import { bubble, Floaters, hitbox, lootLabel, promptAt } from '../ui/world';
+import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
 import { cameraBasis, KEYS, MenuInput, PAD_BUTTONS, Pointer } from './controls';
@@ -333,7 +333,7 @@ export class Riftlight implements Game, MenuHost {
     this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(at.y + 0.9));
     this.zoomGoal = CAMERA.town;
     this.playMusic('town');
-    this.card = { title: 'EMBERFALL', subtitle: 'the town', age: 0 };
+    this.card = { title: 'EMBERFALL', subtitle: 'the town', age: 1.2 }; // a shorter card at home
     this.autosave('town');
     this.note('flow', `town (${reason})`);
   }
@@ -1032,11 +1032,8 @@ export class Riftlight implements Game, MenuHost {
     if (this.screen === 'town') {
       for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
-      if (it) {
-        // under their feet: the speech bubble owns the space above the head
-        const at = it.npc ? it.npc.position.clone().setY(-0.35) : it.position.clone().setY(1.2);
-        promptAt(ui, cam, at, 'F', 'RT', `${it.verb} ${it.name.toUpperCase()}`, it.npc?.def.title);
-      }
+      // interaction prompts sit above the skill bar (the world has bubbles and labels)
+      if (it) this.prompt(`${it.verb} ${it.name.toUpperCase()}`, it.npc?.def.title);
     }
     this.lootFocus = null;
     if (this.screen === 'level' && this.level) {
@@ -1049,8 +1046,8 @@ export class Riftlight implements Game, MenuHost {
         const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near);
         if (r && this.ui.hover(r)) this.lootFocus = l;
       }
-      if (near) promptAt(ui, cam, near.position.clone().setY(-0.2), 'F', 'RT', 'PICK UP');
-      if (this.level.exitOpen && p.distanceTo(this.level.exit) < 4) promptAt(ui, cam, this.level.exit.clone().setY(3.2), 'F', 'RT', 'RETURN TO TOWN');
+      if (near) this.prompt(`PICK UP ${near.label}`);
+      else if (this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt('RETURN TO TOWN', 'the portal is open');
       if (this.dev.hitboxes) {
         hitbox(ui, cam, p, this.hero.actor.radius, 'lime');
         for (const a of this.level.actors()) if (a.alive) hitbox(ui, cam, a.position, a.radius, 'red');
@@ -1066,6 +1063,17 @@ export class Riftlight implements Game, MenuHost {
       for (let y = 0; y < ui.h; y += 2) if ((y / 2) % 3 < k * 3) ui.rect(0, y, ui.w, 1, 'plum');
       ui.text(ui.w / 2, ui.h / 2 - 20, 'YOU DIED', { align: 'center', scale: 3, color: 'red', shadow: 'ink' });
     }
+  }
+
+  /** "[F] TALK BRANN" centred above the skill bar. */
+  private prompt(label: string, sub?: string): void {
+    const ui = this.ui;
+    const y = ui.h - 66;
+    const w = ui.prompt(-1000, -1000, 'F', 'RT', label);
+    ui.rect(ui.w / 2 - w / 2 - 4, y - 3, w + 8, sub ? 21 : 13, 'ink');
+    ui.outline(ui.w / 2 - w / 2 - 4, y - 3, w + 8, sub ? 21 : 13, 'slate');
+    ui.prompt(ui.w / 2, y, 'F', 'RT', label, 'white', 'center');
+    if (sub) ui.text(ui.w / 2, y + 9, sub.toUpperCase(), { align: 'center', color: 'mist' });
   }
 
   private hudModel(): HudModel {

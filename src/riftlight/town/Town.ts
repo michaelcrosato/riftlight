@@ -482,7 +482,8 @@ export class Town implements StageWorld {
     };
     const mk = TOWN_LAYOUT.market;
     const ilsa = place('ilsa', mk[0], mk[1], mk[2]);
-    ilsa.position.copy(isoV(mk[0], mk[1]).add(this.local(mk[2], 0, 0.05)));
+    // in front of her stall, beside the goods (behind the counter the awning would hide her)
+    ilsa.position.copy(isoV(mk[0], mk[1]).add(this.local(mk[2], -1.3, 1.75)));
     ilsa.onBeat = (kind) => kind === 'coin' && this.audio('rl.coin', ilsa.position, 0.6);
     const tn = TOWN_LAYOUT.tent;
     const oru = place('oru', tn[0], tn[1], tn[2]);
@@ -502,7 +503,7 @@ export class Town implements StageWorld {
     pell.path = [isoV(6.4, 4.6), isoV(10.8, 7.6), isoV(7.4, 8.6), isoV(3.4, 5.8), isoV(5.4, -1.2)];
     for (const n of this.npcs) {
       if (!n.def.action) continue;
-      const front = n.position.clone().add(new Vector3(Math.sin(n.yaw), 0, Math.cos(n.yaw)).multiplyScalar(n.def.id === 'brann' ? 1.5 : n.def.id === 'ilsa' ? 1.7 : 1.0));
+      const front = n.position.clone().add(new Vector3(Math.sin(n.yaw), 0, Math.cos(n.yaw)).multiplyScalar(n.def.id === 'brann' ? 1.5 : 1.0));
       this.interactables.push({ id: n.def.id, name: n.def.name, verb: 'TALK', position: front, radius: n.def.id === 'vex' ? 2.2 : 2.0, action: n.def.action, npc: n });
     }
     void ilsa;
@@ -538,7 +539,7 @@ export class Town implements StageWorld {
     this.obeliskLight = take(PALETTE.cyan, 30, 12, isoV(...TOWN_LAYOUT.obelisk, 4.5));
     this.forgeLight = take(PALETTE.orange, 16, 6, this.forgeAt);
     this.tentLight = take(PALETTE.sky, 8, 5, this.tentAt);
-    this.lanternLights = this.lanternAt.map((p) => take(PALETTE.sand, 0, 6, p)).filter((l): l is PooledLight => !!l);
+    this.lanternLights = this.lanternAt.map((p) => take(PALETTE.sand, 0, 7.5, p)).filter((l): l is PooledLight => !!l);
   }
 
   deactivate(): void {
@@ -558,6 +559,17 @@ export class Town implements StageWorld {
 
   collide(p: Vector3, radius: number): void {
     collideBlockers(p, radius, this.blockers);
+    // townsfolk are solid too (they move, so they're checked live)
+    for (const n of this.npcs) {
+      const dx = p.x - n.position.x;
+      const dz = p.z - n.position.z;
+      const d = Math.hypot(dx, dz);
+      const min = radius + 0.4 * n.def.scale;
+      if (d < min && d > 1e-6) {
+        p.x = n.position.x + (dx / d) * min;
+        p.z = n.position.z + (dz / d) * min;
+      }
+    }
     const d = Math.hypot(p.x, p.z);
     const R = TOWN_LAYOUT.radius;
     if (d > R) {
@@ -621,9 +633,9 @@ export class Town implements StageWorld {
     if (this.obeliskLight) this.obeliskLight.intensity = 26 + 8 * Math.sin(t * 2.1) + 18 * night;
     // forge: flicker + strike flashes
     this.flash = Math.max(0, this.flash - dt * 5);
-    if (this.forgeLight) this.forgeLight.intensity = 12 + 3 * Math.sin(t * 13) * Math.sin(t * 5.3) + 22 * this.flash + 6 * night;
+    if (this.forgeLight) this.forgeLight.intensity = 7 + 2 * Math.sin(t * 13) * Math.sin(t * 5.3) + 12 * this.flash + 5 * night;
     if (this.tentLight) this.tentLight.intensity = 6 + 2 * Math.sin(t * 1.7) + 6 * night;
-    for (const [i, l] of this.lanternLights.entries()) l.intensity = night * (11 + 1.5 * Math.sin(t * 9 + i * 1.7));
+    for (const [i, l] of this.lanternLights.entries()) l.intensity = night * (16 + 2 * Math.sin(t * 9 + i * 1.7));
     // Oru's orbs orbit him, leaving faint trails
     const oru = this.npcs.find((n) => n.def.id === 'oru');
     if (oru) {
@@ -664,10 +676,10 @@ export class Town implements StageWorld {
     const dusk = Math.max(0, 1 - Math.abs(t - 0.5) / 0.08) + Math.max(0, 1 - Math.abs(t - 0.97) / 0.05);
     mixHex(e.sun.color, PALETTE.white, PALETTE.orange, Math.min(1, dusk));
     if (night > 0) mixHex(e.sun.color, e.sun.color.getHex(), PALETTE.sky, night);
-    e.sun.intensity = 3.2 * (1 - night) + 0.7 * night - 0.6 * Math.min(1, dusk);
+    e.sun.intensity = 3.2 * (1 - night) + 1.2 * night - 0.6 * Math.min(1, dusk);
     mixHex(e.ambient.color, PALETTE.mist, PALETTE.plum, Math.min(1, dusk) * 0.6);
     if (night > 0) mixHex(e.ambient.color, e.ambient.color.getHex(), PALETTE.navy, night);
-    e.ambient.intensity = 1.1 * (1 - night) + 1.4 * night;
+    e.ambient.intensity = 1.1 * (1 - night) + 1.9 * night;
     mixHex(this.sky, PALETTE.sky, PALETTE.orange, Math.min(1, dusk));
     if (night > 0) mixHex(this.sky, this.sky.getHex(), PALETTE.ink, night);
     e.scene.background = this.sky;
