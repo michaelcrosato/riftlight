@@ -25,7 +25,7 @@ import {
   Vector3,
 } from 'three/webgpu';
 import type { GameContext, PaletteColor } from '../../engine';
-import { toonMaterial } from '../../engine';
+import { toonMaterial } from '../../engine/render/toon';
 import { PALETTE } from '../../engine/palette';
 import type { StatSheet } from '../core/mods';
 import type { Rng } from '../core/rng';
