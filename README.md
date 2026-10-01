@@ -7,11 +7,12 @@ Demo: *Coin Garden*.
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?debug=1, ?game=sandbox)
+npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1, ?game=sandbox)
 npm run build        # production build
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run; E2E_PORT=…)
+npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters
 npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
 npm run anim -- curves Run     # motion curves (graph editor) PNG
@@ -45,6 +46,12 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
 - **Gamepads:** left stick moves, right stick looks, A jump · B crouch · X attack · Y grab ·
   LB prone · RB lie down · LT walk · RT crouch · d-pad moves.
+- **Performance:** the scene, edges and art-pixel filters render at 480×270 and are upscaled
+  once; the art width follows the screen (`aspect: 'adaptive'`, portrait phones fill the
+  screen); the loop is capped at `maxFps` 60; `quality` low/medium/high sets the shadow map
+  (auto: low on phones, lowered once on a slow start); a lost GPU device is recovered. Build
+  (gzip): three 270 kB, Rapier 28 kB JS + 774 kB `.wasm` (streamed), game 43 kB.
+  Details in [`docs/ENGINE.md`](docs/ENGINE.md).
 
 Architecture, the camera and filter lists, the moveset and the game API are in
 [`docs/ENGINE.md`](docs/ENGINE.md).
@@ -61,51 +68,75 @@ issue labeled `claude` ─┐
 @claude in a comment ───┼─▶ Claude (GitHub Action or cloud session)
 cloud session / routine ┘        │ branch claude/*, scripts/check.sh until green, push
                                  ▼
-                        Autopilot: open PR + enable auto-merge
+                 Autopilot: open PR, squash-merge it at once, branch deleted
                                  │
-               ┌─────────────────┼──────────────────┐
-               ▼                 ▼                  ▼
-            CI `check`      Claude Review     CI red? Claude Autofix
-               │            (inline comments)  pushes a fix (max 3 tries)
-               ▼
-        squash-merge to main, branch deleted
+                 ┌───────────────┴──────────────────┐
+                 ▼                                  ▼
+          CI on main (check + e2e)           Claude Review of the merged PR
+                 │                           (blocking findings → issue `claude`)
+       red? ─────┤
+                 ▼
+   auto-revert: claude/revert-<sha> PR, merged, CI on main again
+                 │
+                 ▼
+   Claude Autofix: re-applies the change with a fix on claude/fix-ci-* (max 3 tries)
 ```
 
-The one brake: add the **`hold`** label to a PR (or mark it draft) to stop auto-merge.
+Merging doesn't wait for CI, and there are **no required status checks** on `main`, on
+purpose: rolling back is cheap.
+
+- **CI on `main` after every merge.** A merge made with the default `GITHUB_TOKEN` fires no
+  push event, so Autopilot dispatches `ci.yml` on `main` itself (with `AUTOMATION_TOKEN` the
+  merge's own push starts it). It also cancels the PR branch's run, which tests the same
+  change: CI runs once per PR. A PR held open with `hold` keeps its branch run.
+- **Auto-revert.** When CI fails on `main` and that commit turned it red (its parent passed,
+  or never ran), CI's last job (`revert-red-main`, `scripts/ci/revert-red-main.sh`) reverts
+  it on `claude/revert-<sha>`, merges that PR, comments on the original PR, opens an issue
+  labeled `claude` to re-land it with a fix, and runs CI on `main` again. No LLM or secret
+  needed. It never reverts a revert, or a commit that landed on an already red `main`. (It
+  lives in CI itself because GitHub doesn't fire `workflow_run` for runs dispatched with
+  `GITHUB_TOKEN`.)
+- **Fix forward.** The `claude` issue is the ticket. With `AUTOMATION_TOKEN` and a Claude
+  secret set, `claude-ci-autofix.yml` also fires and re-applies the reverted change with a
+  fix on `claude/fix-ci-*` (or fixes `main` forward when nothing was reverted), and
+  Autopilot merges that.
+
+The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the merge.
 
 | Piece | File |
 | --- | --- |
 | Agent contract (all tools) | `AGENTS.md` |
 | Claude Code entry point | `CLAUDE.md` |
 | Single quality gate (stack auto-detect) | `scripts/check.sh` |
-| Cloud-session dependency install | `scripts/session-start.sh` |
-| CI (`check` = required status) | `.github/workflows/ci.yml` |
+| CI: check + e2e groups in parallel (push, dispatch) | `.github/workflows/ci.yml` |
 | `@claude` / `claude` label → implementation | `.github/workflows/claude.yml` |
-| Automated PR review | `.github/workflows/claude-review.yml` |
-| CI failure → Claude fix | `.github/workflows/claude-ci-autofix.yml` |
-| Auto-open PR + auto-merge | `.github/workflows/autopilot.yml` |
+| Review (merged PR → issue; held PR → comments) | `.github/workflows/claude-review.yml` |
+| Red `main` → revert (`ci.yml` › `revert-red-main`), then Claude fix; red PR branch → Claude fix | `.github/workflows/ci.yml`, `.github/workflows/claude-ci-autofix.yml` |
+| Open PR + merge, then CI on `main` + review | `.github/workflows/autopilot.yml` |
 | Weekly unattended improvement | `.github/workflows/claude-maintenance.yml` |
 | Skills / subagents | `.claude/skills/{ship,fix-ci}`, `.claude/agents/verifier.md` |
-| Hook scripts (wire up in `.claude/settings.json`) | `.claude/hooks/` |
+| Hooks (`.claude/settings.json`) | SessionStart `scripts/session-start.sh` (cloud-session install, again when the lockfile changes), PostToolUse `.claude/hooks/format-file.sh` (`eslint --fix` on the edited file), Stop `.claude/hooks/verify-on-stop.sh` (`scripts/check.sh --fast` before ending a turn with unshipped work) |
 
 ## One-time setup
 
 1. **Install the Claude GitHub App** on this repo: <https://github.com/apps/claude>.
    Required for the Action, cloud-session auto-fix, and routine GitHub triggers.
-2. **Add a secret** (Settings → Secrets and variables → Actions):
+2. **Add a secret** (Settings → Secrets and variables → Actions). CI, Autopilot and
+   auto-revert work without any; Claude Review and Claude Autofix skip themselves, and
+   `@claude` needs one of the first two:
    - `CLAUDE_CODE_OAUTH_TOKEN` — bills your Claude subscription. Create with `claude setup-token`.
    - *or* `ANTHROPIC_API_KEY` — bills the Claude API.
-   - `AUTOMATION_TOKEN` *(recommended)* — fine-grained PAT (contents + pull requests: write).
-     PRs opened with the default `GITHUB_TOKEN` don't trigger other workflows, so without it
-     Claude Review won't run on Autopilot-opened PRs.
+   - `AUTOMATION_TOKEN` *(optional)* — fine-grained PAT (contents + pull requests + issues:
+     write). Events made with the default `GITHUB_TOKEN` trigger no workflows; with this
+     token the PRs, merges and review issues it creates do (e.g. a review issue starts
+     Claude right away instead of waiting for the weekly maintenance sweep).
    - Variable `CLAUDE_MODEL` *(optional)* — overrides the model (default `claude-opus-5-5`).
-3. **Configure the repo** (auto-merge, squash-only, required `check`, labels, `main` as default):
+3. **Configure the repo** (auto-merge, squash-only, PRs required on `main` but no required
+   status checks, labels, `main` as default):
    ```bash
    scripts/configure-github.sh michaelcrosatoDM/claude-code-cloud-usage-credits-test
    ```
-4. **Add `.claude/settings.json`** with the permission allowlist and hooks (SessionStart
-   dependency install, format-on-edit, verify-before-stop). See the setup PR/session for the
-   proposed file.
+4. **Hooks** are in `.claude/settings.json` (see the table above); nothing to do.
 5. **Cloud sessions** (claude.ai/code):
    - Pick **Auto** in the permission-mode dropdown. Repo settings can't set `auto` or
      `bypassPermissions`; cloud sessions don't offer bypass at all.

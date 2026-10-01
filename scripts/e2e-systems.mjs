@@ -23,10 +23,10 @@ import { PAGE_HELPERS } from './e2e-moves.mjs';
 
 /**
  * @param {object} h helpers from e2e.mjs:
- *   { exe, scenario, openPage, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT }
+ *   { exe, scenario, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT }
  */
 export async function runSystems(h) {
-  const { exe, scenario: s, openPage, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT } = h;
+  const { exe, scenario: s, openPage, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT } = h;
   const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
   console.log(`\n▶ systems (${s.backend})`);
   let ctx;
@@ -53,14 +53,15 @@ export async function runSystems(h) {
       const img = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
       let sand = 0;
       for (let i = 0; i < img.length; i += 4) if (img[i] === 0xff && img[i + 1] === 0xcd && img[i + 2] === 0x75 && img[i + 3] === 255) sand++;
-      return { w: c.width, h: c.height, css: [r.width, r.height, r.left, r.top], game: [g.width, g.height, g.left, g.top], scale: f.scale, sand, pe: getComputedStyle(c).pointerEvents };
+      const res = e.renderer.resolution;
+      return { w: c.width, h: c.height, art: [res.width, res.height], css: [r.width, r.height, r.left, r.top], game: [g.width, g.height, g.left, g.top], scale: f.scale, sand, pe: getComputedStyle(c).pointerEvents };
     });
-    check(hud.w === 480 && hud.h === 270, `HUD canvas is art resolution (${hud.w}×${hud.h})`);
+    check(hud.w === hud.art[0] && hud.h === hud.art[1] && hud.h === 270, `HUD canvas is the art resolution (${hud.w}×${hud.h})`);
     check(JSON.stringify(hud.css) === JSON.stringify(hud.game), `HUD overlays the game canvas exactly (${hud.css.join(',')} vs ${hud.game.join(',')})`);
     check(hud.sand > 20 && hud.pe === 'none', `HUD draws the coin counter in palette sand (${hud.sand} px), ignores pointer input`);
     await saveComposite(page, `systems-${tag}-hud.png`);
     await page.keyboard.press('KeyR');
-    await waitFrames(page, 3);
+    await until(page, (e) => document.querySelector('canvas[data-hud]').height === 180 && e.renderer.resolution.height === 180);
     const hud320 = await E(() => {
       const c = document.querySelector('canvas[data-hud]');
       const r = c.getBoundingClientRect();
@@ -69,16 +70,16 @@ export async function runSystems(h) {
     });
     check(hud320.w === 320 && hud320.h === 180 && hud320.same, `HUD follows R to 320×180 and the new framing`);
     await page.keyboard.press('KeyR');
-    await waitFrames(page, 3);
+    await until(page, () => document.querySelector('canvas[data-hud]').height === 270);
 
     // ---------------------------------------------------------------- audio unlock + mute
     // A real click is a user gesture (the R presses above were too): audio is unlocked.
     await page.mouse.click(700, 400);
-    await waitFrames(page, 3);
+    await until(page, (e) => e.audio.context !== null && e.audio.playing !== '');
     const unlocked = await E(() => ({ ctx: !!window.__PIXEL_ENGINE__.audio.context, playing: window.__PIXEL_ENGINE__.audio.playing }));
     check(unlocked.ctx && unlocked.playing === 'playground', `audio unlocks on the first click, music "${unlocked.playing}" is on`);
     await page.keyboard.press('KeyM');
-    await waitFrames(page, 3);
+    await until(page, (e) => e.audio.muted && document.querySelector('[data-a="mute"]').textContent === 'Sound: off');
     const muted = await E(() => ({
       muted: window.__PIXEL_ENGINE__.audio.muted,
       stored: localStorage.getItem('pixel-engine:audio'),
@@ -86,7 +87,7 @@ export async function runSystems(h) {
     }));
     check(muted.muted && JSON.parse(muted.stored).muted === true && muted.button === 'Sound: off', `M mutes, persisted (${muted.stored}), panel shows "${muted.button}"`);
     await page.click('[data-a="mute"]');
-    await waitFrames(page, 2);
+    await until(page, (e) => !e.audio.muted);
     check(await E(() => !window.__PIXEL_ENGINE__.audio.muted), 'the panel button unmutes');
 
     // ---------------------------------------------------------------- hero events → sound + particles

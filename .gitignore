@@ -9,7 +9,7 @@
 CLAUDE.local.md
 
 # Dependencies / build output
-node_modules/
+node_modules
 .venv/
 __pycache__/
 *.pyc
@@ -26,3 +26,4 @@ coverage/
 !.vscode/extensions.json
 .scratch/
 dist-single/
+.claude/worktrees/

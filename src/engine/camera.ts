@@ -74,6 +74,8 @@ export abstract class CameraRig {
   controlsCharacter = true;
   /** Pixel-snap the camera (ortho only). */
   snap = true;
+  /** Viewport aspect (width / height), following the art resolution (see `setAspect`). */
+  aspect = 16 / 9;
   protected readonly stiffness: number;
 
   constructor(config: CameraConfig) {
@@ -89,7 +91,21 @@ export abstract class CameraRig {
     this.applyZoom();
   }
 
-  /** Called once after construction and whenever zoom changes. */
+  /**
+   * Match the art resolution's aspect (adaptive framing changes it with the screen).
+   * `update()` calls this from `CameraUpdate.resolution`; the engine also calls it on swap.
+   */
+  setAspect(aspect: number): void {
+    if (!(aspect > 0) || aspect === this.aspect) return;
+    this.aspect = aspect;
+    const cam = this.camera;
+    if (cam instanceof PerspectiveCamera) {
+      cam.aspect = aspect;
+      cam.updateProjectionMatrix();
+    } else this.applyZoom();
+  }
+
+  /** Called once after construction and whenever zoom (or the aspect of an ortho camera) changes. */
   protected abstract applyZoom(): void;
 
   /** Place the camera without smoothing. */
@@ -107,6 +123,7 @@ export abstract class CameraRig {
   }
 
   update(u: CameraUpdate): void {
+    this.setAspect(u.resolution.width / u.resolution.height);
     if (this.zoomable && u.input.wheel !== 0) this.setZoom(this.zoom * Math.pow(1.12, -u.input.wheel));
     if (this.zoomable && u.input.isDown('Equal', 'NumpadAdd')) this.setZoom(this.zoom * (1 + u.dt));
     if (this.zoomable && u.input.isDown('Minus', 'NumpadSubtract')) this.setZoom(this.zoom / (1 + u.dt));
@@ -170,7 +187,7 @@ export class OrthoRig extends CameraRig {
 
   protected applyZoom(): void {
     const h = this.viewHeight / 2;
-    const aspect = 16 / 9;
+    const aspect = this.aspect;
     this.camera.left = -h * aspect;
     this.camera.right = h * aspect;
     this.camera.top = h;
@@ -204,7 +221,7 @@ export class ThirdPersonRig extends CameraRig {
   constructor(config: CameraConfig = {}) {
     super(config);
     this.snap = false;
-    this.camera = new PerspectiveCamera(config.fov ?? 50, 16 / 9, 0.3, 160);
+    this.camera = new PerspectiveCamera(config.fov ?? 50, this.aspect, 0.3, 160);
     this.baseDistance = config.distance ?? 7;
     this.currentDistance = this.baseDistance;
     this.yaw = MathUtils.degToRad(config.yaw ?? 0);
@@ -250,7 +267,7 @@ export class FirstPersonRig extends CameraRig {
   constructor(config: CameraConfig = {}) {
     super({ ...config, zoom: 1 });
     this.snap = false;
-    this.camera = new PerspectiveCamera(config.fov ?? 70, 16 / 9, 0.05, 160);
+    this.camera = new PerspectiveCamera(config.fov ?? 70, this.aspect, 0.05, 160);
     this.camera.rotation.order = 'YXZ';
     this.yaw = MathUtils.degToRad(config.yaw ?? 0);
   }
@@ -304,7 +321,7 @@ export class FreeRig extends CameraRig {
     this.camera =
       this.projection === 'ortho'
         ? new OrthographicCamera(-1, 1, 1, -1, 0.1, 200)
-        : new PerspectiveCamera(this.baseFov, 16 / 9, 0.2, 200);
+        : new PerspectiveCamera(this.baseFov, this.aspect, 0.2, 200);
     this.camera.rotation.order = 'YXZ';
     const position = new Vector3(...(config.position ?? [0, 9, 14]));
     const target = new Vector3(...(config.target ?? [0, 0, 0]));
@@ -323,7 +340,7 @@ export class FreeRig extends CameraRig {
       this.camera.fov = MathUtils.clamp(this.baseFov / this.zoom, 10, 110);
     } else {
       const h = this.baseViewHeight / this.zoom / 2;
-      Object.assign(this.camera, { left: (-h * 16) / 9, right: (h * 16) / 9, top: h, bottom: -h });
+      Object.assign(this.camera, { left: -h * this.aspect, right: h * this.aspect, top: h, bottom: -h });
     }
     this.camera.updateProjectionMatrix();
   }

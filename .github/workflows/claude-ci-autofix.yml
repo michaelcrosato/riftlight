@@ -1,9 +1,19 @@
 name: Claude CI Autofix
 
-# When CI fails on a PR branch, Claude diagnoses it and pushes a fix to that branch.
-# When CI fails on the default branch, Claude opens a fix PR.
-# Pushes go out as the Claude GitHub App, so CI re-runs on the fix.
-# Gives up after 3 consecutive autofix commits on a branch.
+# When CI fails:
+#   on the default branch
+#     CI's own last job (revert-red-main) reverts the commit that turned main red; that
+#     works even for the runs Autopilot dispatches with GITHUB_TOKEN, which never fire this
+#     workflow_run trigger. When this does fire (pushes made with AUTOMATION_TOKEN or a
+#     human), Claude re-applies a reverted change with a fix, or fixes main forward, on
+#     claude/fix-ci-*; Autopilot merges it. Without that, the issue labeled `claude` the
+#     revert opens is the fix-forward ticket.
+#   on any other branch (a held or draft PR: merged PR branches are deleted, and main's
+#   run decides for them)
+#     Claude pushes a fix to that branch.
+# The Claude job is skipped when neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is
+# set. Claude's pushes go out as the Claude GitHub App, so CI re-runs on the fix. It gives
+# up after 3 consecutive autofix commits.
 #
 # Security: runs branch code with write permissions. Fine for a repo where every
 # writer is trusted (this one); fork PRs are excluded below.
@@ -28,29 +38,47 @@ jobs:
   autofix:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.event == 'push' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Check branch is still at the failing commit, and attempt budget
+      - name: Decide whether there is something to fix, and check the attempt budget
         id: guard
         env:
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          BASE: ${{ github.event.repository.default_branch }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          if [ "$(git rev-parse HEAD)" != "$FAILED_SHA" ]; then
-            echo "Branch moved past the failing commit; a newer CI run will decide."
-            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          echo "go=false" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CLAUDE" != "true" ]; then
+            echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret; skipping Claude autofix."; exit 0
+          fi
+          if [ "$BRANCH" != "$BASE" ]; then
+            if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+              echo "$BRANCH is gone (its PR merged); CI on $BASE decides."; exit 0
+            fi
+            git switch "$BRANCH"
+          fi
+          # CI's revert-red-main job may already have reverted the failed commit on main.
+          git fetch -q origin "$BASE"
+          REVERTED=false
+          if git log --format=%B "$FAILED_SHA..origin/$BASE" | grep -q "This reverts commit $FAILED_SHA"; then REVERTED=true; fi
+          echo "reverted=$REVERTED" >> "$GITHUB_OUTPUT"
+          if [ "$REVERTED" = "true" ]; then
+            echo "$FAILED_SHA was reverted on $BASE; Claude re-applies it with a fix."
+          elif [ "$(git rev-parse HEAD)" != "$FAILED_SHA" ]; then
+            echo "$BRANCH moved past the failing commit; a newer CI run will decide."; exit 0
           fi
           attempts=$(git log -3 --format=%s | grep -c '\[ci-autofix\]' || true)
           if [ "$attempts" -ge 3 ]; then
-            echo "::warning::3 consecutive autofix attempts; stopping so a human can look."
-            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+            echo "::warning::3 consecutive autofix attempts; stopping so a human can look."; exit 0
           fi
           echo "go=true" >> "$GITHUB_OUTPUT"
 
@@ -68,7 +96,9 @@ jobs:
             Failed run: ${{ github.event.workflow_run.html_url }}
             Run ID: ${{ github.event.workflow_run.id }}
             Branch: ${{ github.event.workflow_run.head_branch }}
+            Failed commit: ${{ github.event.workflow_run.head_sha }}
             Default branch: ${{ github.event.repository.default_branch }}
+            Reverted on the default branch: ${{ steps.guard.outputs.reverted == 'true' && 'yes' || 'no' }}
             PR number: ${{ github.event.workflow_run.pull_requests[0].number || 'none' }}
           claude_args: |
             --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}

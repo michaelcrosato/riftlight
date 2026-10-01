@@ -1,4 +1,4 @@
-import { CAMERA_PRESETS, type CameraPreset, FreeRig } from './camera';
+import { CAMERA_PRESETS, type CameraPreset, type CameraRig, FreeRig } from './camera';
 import type { Engine } from './Engine';
 import { RESOLUTIONS } from './framing';
 import { FILTERS, FILTER_PRESETS } from './render/filters';
@@ -7,13 +7,22 @@ import { FILTERS, FILTER_PRESETS } from './render/filters';
  * DOM overlay (not rendered through the pixel pipeline, so it stays legible).
  * Shows backend, render mode, resolution/scale, camera preset + zoom, FPS, GPU errors,
  * game status; lets you pick filters and swap the camera preset (player stays put).
+ *
+ * Cheap per frame: the engine only calls `update` while the panel is visible, and it
+ * only touches the DOM for values that changed (text is compared against a JS-side
+ * cache, the filter checkboxes and selects re-sync only when the stack or preset changes).
  */
 export class DebugUI {
   readonly root: HTMLDivElement;
   private readonly fields: Record<string, HTMLElement> = {};
-  private frames = 0;
-  private lastFpsTime = performance.now();
-  private fps = 0;
+  private readonly text = new Map<string, string>();
+  private readonly camSelect: HTMLSelectElement;
+  private readonly lookSelect: HTMLSelectElement;
+  private readonly boxes: HTMLInputElement[];
+  private syncedFilters: readonly string[] | null = null;
+  private syncedRig: CameraRig | null = null;
+  private syncedFixed: boolean | null = null;
+  private syncedZoom = 0;
   visible = true;
 
   constructor(private readonly engine: Engine) {
@@ -49,17 +58,18 @@ export class DebugUI {
       engine.audio.toggleMute();
     });
 
-    const cam = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
+    const cam = (this.camSelect = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!);
     cam.value = engine.camera.preset;
     cam.addEventListener('change', () => {
       engine.setCamera({ preset: cam.value as CameraPreset });
     });
 
-    const look = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!;
+    const look = (this.lookSelect = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!);
     look.addEventListener('change', () => {
       if (look.value) engine.setFilters(FILTER_PRESETS[look.value] ?? []);
     });
-    for (const box of this.root.querySelectorAll<HTMLInputElement>('.filters input')) {
+    this.boxes = [...this.root.querySelectorAll<HTMLInputElement>('.filters input')];
+    for (const box of this.boxes) {
       box.addEventListener('change', () => {
         const current = engine.filters.filter((id) => id !== box.value);
         engine.setFilters(box.checked ? [...current, box.value] : current);
@@ -81,55 +91,61 @@ export class DebugUI {
   toggle(): void {
     this.visible = !this.visible;
     this.root.style.display = this.visible ? '' : 'none';
+    if (this.visible) this.update(this.engine.game.status?.(this.engine.context) ?? '');
   }
 
+  /** Refresh the panel. The engine calls this only while the panel is visible. */
   update(gameStatus: string): void {
-    this.frames++;
-    const now = performance.now();
-    if (now - this.lastFpsTime >= 500) {
-      this.fps = Math.round((this.frames * 1000) / (now - this.lastFpsTime));
-      this.frames = 0;
-      this.lastFpsTime = now;
-    }
     if (!this.visible) return;
     const e = this.engine;
     const r = e.renderer;
     const f = r.framing;
     this.set('backend', r.backend + (r.fallbackReason ? ` (${r.fallbackReason})` : ''));
-    this.fields.backend!.dataset.backend = r.backend === 'WebGPU' ? 'webgpu' : 'webgl2';
+    const backendAttr = r.backend === 'WebGPU' ? 'webgpu' : 'webgl2';
+    if (this.fields.backend!.dataset.backend !== backendAttr) this.fields.backend!.dataset.backend = backendAttr;
     this.set('mode', r.mode === 'pixel' ? `Pixel${r.filters.length ? ` + ${r.filters.join(', ')}` : ''}` : 'Raw 3D');
     const res = r.resolution;
-    this.set('res', `${res.width}×${res.height}${res === RESOLUTIONS.compare ? ' (compare)' : ''}`);
+    this.set('res', `${res.width}×${res.height}${r.baseResolution === RESOLUTIONS.compare ? ' (compare)' : ''}${r.aspect === 'adaptive' && res !== r.baseResolution ? ' (adaptive)' : ''}`);
     this.set('scale', f.integer ? `${f.scale}× integer` : 'downscaled (viewport too small)');
     const c = e.camera;
     this.set('camera', `${c.preset}${c.zoomable ? ` · zoom ${c.zoom.toFixed(2)}×` : ''}`);
-    this.set('fps', String(this.fps));
+    this.set('fps', `${e.fps}${e.maxFps > 0 ? ` (cap ${e.maxFps})` : ''} · ${e.quality}`);
     this.set('errors', String(r.gpuErrors.length));
     this.set('game', gameStatus);
     const mute = this.root.querySelector<HTMLButtonElement>('[data-a="mute"]')!;
     const sound = e.audio.muted ? 'Sound: off' : 'Sound: on';
     if (mute.textContent !== sound) mute.textContent = sound;
 
-    const camSelect = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
-    if (camSelect.value !== c.preset && document.activeElement !== camSelect) camSelect.value = c.preset;
-    const look = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!;
-    const match = Object.keys(FILTER_PRESETS).find((n) => FILTER_PRESETS[n]!.join() === r.filters.join()) ?? '';
-    if (look.value !== match && document.activeElement !== look) look.value = match;
-    for (const box of this.root.querySelectorAll<HTMLInputElement>('.filters input')) box.checked = r.filters.includes(box.value);
+    // Selects and checkboxes: only when the stack / camera changed (never mid-interaction).
+    if (this.camSelect.value !== c.preset && document.activeElement !== this.camSelect) this.camSelect.value = c.preset;
+    if (r.filters !== this.syncedFilters) {
+      const match = Object.keys(FILTER_PRESETS).find((n) => FILTER_PRESETS[n]!.join() === r.filters.join()) ?? '';
+      if (this.lookSelect.value !== match && document.activeElement !== this.lookSelect) this.lookSelect.value = match;
+      for (const box of this.boxes) box.checked = r.filters.includes(box.value);
+      this.syncedFilters = r.filters;
+    }
 
-    if (c instanceof FreeRig) {
-      this.set('fixed', c.fixed ? `Fixed ✓ config: ${JSON.stringify(c.fixedConfig())}` : 'Free camera: WASD fly · Q/E down/up · drag/click to look · Shift fast · wheel FOV · Enter = fix');
-    } else this.set('fixed', '');
-    const camKeys =
-      c.preset === 'first' ? 'click = mouse look · Q/E turn' : c.preset === 'third' ? 'drag or Q/E orbit · wheel/+/- zoom' : c.zoomable ? 'wheel/+/- zoom' : '';
-    this.set(
-      'keys',
-      `WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit · ${camKeys} · P mode · R res · [ ] looks · M mute · ~ hide`,
-    );
+    const fixed = c instanceof FreeRig ? c.fixed : null;
+    if (c !== this.syncedRig || fixed !== this.syncedFixed || c.zoom !== this.syncedZoom) {
+      this.syncedRig = c;
+      this.syncedFixed = fixed;
+      this.syncedZoom = c.zoom;
+      if (c instanceof FreeRig) {
+        this.set('fixed', c.fixed ? `Fixed ✓ config: ${JSON.stringify(c.fixedConfig())}` : 'Free camera: WASD fly · Q/E down/up · drag/click to look · Shift fast · wheel FOV · Enter = fix');
+      } else this.set('fixed', '');
+      const camKeys =
+        c.preset === 'first' ? 'click = mouse look · Q/E turn' : c.preset === 'third' ? 'drag or Q/E orbit · wheel/+/- zoom' : c.zoomable ? 'wheel/+/- zoom' : '';
+      this.set(
+        'keys',
+        `WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit · ${camKeys} · P mode · R res · [ ] looks · M mute · ~ hide`,
+      );
+    }
   }
 
   private set(field: string, text: string): void {
+    if (this.text.get(field) === text) return;
+    this.text.set(field, text);
     const el = this.fields[field];
-    if (el && el.textContent !== text) el.textContent = text;
+    if (el) el.textContent = text;
   }
 }

@@ -1,11 +1,31 @@
 # Animation system
 
 Animations are **plain data** that agents write, measure and look at, then adjust. There is no
-DCC tool and no baked clips in the GLB. `src/game/hero/animations.ts` holds every hero clip.
+DCC tool and no baked clips in the GLB. `src/game/hero/clips/` holds every hero clip, one file
+per family:
+
+| file | clips |
+| --- | --- |
+| `helpers.ts` | `arm`, `arms`, `leg`, `pelvis`, `squash`, `F`, `track`, `flat`, `spinRoot`, `somersault` |
+| `standing.ts` | Idle, IdleLook, Teeter (and `STAND_BODY` / `STAND_FEET`) |
+| `locomotion.ts` | Tiptoe, Walk, Run, Skid, StepUp, StepDown |
+| `crouch.ts` | Crouch, CrouchWalk, CrouchSlide, ProneDown, Prone, Crawl, GetUpFront, Sit, LieDown, LieIdle, Sleep, GetUp |
+| `air.ts` | jumps and flips, WallKick, WallSlide, Fall, Dive, BellySlide, ground pound, Land, HardLand, Slide |
+| `ledge.ts` | Hang, ShimmyRight/Left, PullUp, Climb, ClimbIdle |
+| `block.ts` | Push, PushIdle, Grab, Pull |
+| `attacks.ts` | Punch, Punch2, Kick, SweepKick, JumpKick |
+| `emotes.ts` | Wave, Victory, Hurt |
+
+`clips/index.ts` lists them in `HERO_CLIPS` (the order the tools and the Lab use); a new clip
+goes in its family's file and in that list. `src/game/hero/animations.ts` re-exports
+`HERO_CLIPS`, so hot reload and older imports keep working. Poses shared between families
+(`STAND_BODY`, `CROUCH_BODY`, `SKID_BODY`, `STRETCH`, `DESCEND`, …) are exported from their family.
+A unit test (`src/game/hero/clips.test.ts`) fails when a clip is never played by the character
+or the playground, unless it is listed there as pending (WallSlide, PushIdle for now).
 At runtime (and in the tools) the clips are compiled against the model's joints.
 
 ```
-animations.ts ──► ClipDef (keys, feet track, layers) ──► compileClip() ──► three.js AnimationClip
+clips/*.ts ──► ClipDef (keys, feet track, layers) ──► compileClip() ──► three.js AnimationClip
         ▲                                                   │
         │   npm run anim -- check / sheet / curves / diff   ├─► game (PlatformerCharacter) ─► npm run film
         └── agent edits numbers ◄── metrics, sheets, curves, films ◄┘   Animation Lab (/lab.html)
@@ -13,7 +33,7 @@ animations.ts ──► ClipDef (keys, feet track, layers) ──► compileClip
 
 ## The loop
 
-1. Edit a clip in `src/game/hero/animations.ts`.
+1. Edit a clip in `src/game/hero/clips/<family>.ts`.
 2. `npm run anim -- check Walk` prints the metrics table. The command exits 1 on problems.
 3. **Look at the poses:** `npm run anim -- sheet Walk --compare` writes `.scratch/anim/Walk.png`.
    Open the PNG. With `--compare`, the previous version is drawn in magenta.
@@ -96,8 +116,10 @@ longer version's frames.
 1/60 s frame at a time with `Engine.step()`, driven by a small input script:
 
 - `npm run film -- list` shows the named scenarios:
-  - idle, walk, run-stop, skid, jump, run-jump, triple-jump, backflip, long-jump, side-flip
+  - idle, walk, run-stop, bonk, skid, jump, run-jump, triple-jump, backflip, long-jump, side-flip
   - crouch, crawl, punches, ground-pound, dive, lie-down, sit, stairs, ledge, climb, hard-land
+- Films use the game's iso camera turned to yaw 0, so the keys move along the axes:
+  W = −Z, S = +Z, A = −X, D = +X (place yaw: 0 = facing +Z, 90 = facing +X).
 - Several names run in one browser session. `all` films every scenario.
 - A scenario is just a script. You can pass your own:
   `npm run film -- "place 0 0 4 90; down D; wait 30; tap SPACE; until land; up D; wait 20"`.
@@ -105,7 +127,8 @@ longer version's frames.
   - `place x y z [yaw°]`
   - `hold KEYS n`, `down` / `up KEYS`, `tap KEYS`
   - `wait n`
-  - `until STATE [max]`
+  - `until STATE [max]` (or `until grounded`). An `until` that gives up is listed as an
+    `until` issue and the film exits 1, so a scenario that never reaches its state fails.
 - Output in `.scratch/film/`:
   - A PNG filmstrip. Each cell shows state, dominant clip and blend partner, from a camera
     that follows the hero.
@@ -167,7 +190,7 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
   simply `Pelvis: { r: [360, 0, 0] }`.
 - **Root.** On `Pelvis`, `p` is an offset in metres from standing, and `s` is squash &
   stretch. Use the `squash(0.1)` helper for it.
-- **Friendly limb helpers** in `animations.ts`:
+- **Friendly limb helpers** in `clips/helpers.ts`:
   - `arm(side, swing, out, elbow, wrist)`: swing −90 = ahead, −180 = overhead; `out` is
     positive away from the body.
   - `leg(side, swing, out, knee, toes)`.
@@ -203,7 +226,7 @@ The format is described in `src/engine/animation/types.ts`. The rotation cheat-s
   `frames`.
 - `mirrorClip(clip, 'ShimmyLeft', RIG)` builds the other side's clip, including its feet
   track.
-- Somersaults (`somersault()` / `spinRoot()` in `animations.ts`) turn the body around its
+- Somersaults (`somersault()` / `spinRoot()` in `clips/helpers.ts`) turn the body around its
   middle, not the hips, so the head stays inside the character's capsule.
 - `blend(a, b, t)` and `offset(pose, deltas)` build pose variations.
 - `fast: true` marks snappy moves (flips, punches, launches), so the fast-rotation warning is

@@ -24,7 +24,7 @@ describe('hudPlace', () => {
   it('is headless-safe without a container', () => {
     const hud = new Hud(null);
     hud.text(1, 1, 'HI');
-    hud.sync(R480, { scale: 2, integer: true, canvasWidth: 960, canvasHeight: 540, cssWidth: 960, cssHeight: 540, offsetX: 0, offsetY: 0 });
+    hud.sync(R480, { scale: 2, integer: true, artWidth: 480, artHeight: 270, canvasWidth: 960, canvasHeight: 540, cssWidth: 960, cssHeight: 540, offsetX: 0, offsetY: 0 });
     expect(hud.canvas).toBeNull();
   });
 });

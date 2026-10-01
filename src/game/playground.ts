@@ -1,9 +1,11 @@
-import { AnimationMixer, BoxGeometry, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
+import { AnimationMixer, BoxGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
   compileClip,
   ContactShadow,
+  mergeStaticMeshes,
   type Game,
   type GameContext,
+  type MoveInput,
   type MoveState,
   type PaletteColor,
   PlatformerCharacter,
@@ -115,6 +117,8 @@ const STEPPING = new Set<MoveState>(['walk', 'run', 'crouchWalk', 'crawl', 'push
 
 export class Playground implements Game {
   readonly name = 'Move Playground';
+  /** Downloaded while the renderer and physics start up. */
+  readonly assets = ['assets/tree.glb', 'assets/coin.glb', HERO_MODEL];
   hero!: PlatformerCharacter;
   heroModel!: Object3D;
   heroShadow = new ContactShadow(0.42);
@@ -125,6 +129,9 @@ export class Playground implements Game {
   /** Last seen hero counters/state, to turn changes into sound + particle events. */
   private seen = { jumps: 0, landings: 0, state: 'idle' as MoveState, anim: 'Idle', step: 0, puff: 0 };
   private disposed = false;
+  private readonly target = new Vector3();
+  /** Reused every fixed step (readMoveInput fills it in place). */
+  private readonly input: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics, loadModel } = ctx;
@@ -134,8 +141,10 @@ export class Playground implements Game {
     sea.receiveShadow = true;
     scene.add(sea);
 
+    // Static blocks: one merged mesh per material (a handful of draw calls instead of
+    // 6 per block), one collider per block.
+    scene.add(...mergeStaticMeshes(LEVEL.blocks.map((b) => block(b, ctx))));
     for (const b of LEVEL.blocks) {
-      scene.add(block(b, ctx));
       const rot = b.tiltZ ? (b.tiltZ * Math.PI) / 180 : 0;
       const body = physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed()
@@ -146,13 +155,16 @@ export class Playground implements Game {
       if (b.tags) physics.tag(col, ...b.tags);
     }
 
+    // One crate shape, merged by material once (2 draws per crate instead of 6), shared.
+    const crateBox = new Mesh(new BoxGeometry(1, 1, 1), [
+      ...Array(2).fill(toonMaterial(ctx.palette.orange)),
+      toonMaterial(ctx.palette.sand),
+      ...Array(3).fill(toonMaterial(ctx.palette.orange)),
+    ]);
+    crateBox.castShadow = crateBox.receiveShadow = true;
+    const crateParts = mergeStaticMeshes([crateBox]);
     for (const c of LEVEL.crates) {
-      const mesh = new Mesh(new BoxGeometry(1, 1, 1), [
-        ...Array(2).fill(toonMaterial(ctx.palette.orange)),
-        toonMaterial(ctx.palette.sand),
-        ...Array(3).fill(toonMaterial(ctx.palette.orange)),
-      ]);
-      mesh.castShadow = mesh.receiveShadow = true;
+      const mesh = new Group().add(...crateParts.map((p) => p.clone()));
       scene.add(mesh);
       const body = physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic().setTranslation(...c.at).setLinearDamping(4).enabledRotations(false, false, false),
@@ -168,14 +180,15 @@ export class Playground implements Game {
       loadModel(HERO_MODEL, { castShadow: false }),
     ]);
 
-    LEVEL.trees.forEach(([x, y, z], i) => {
+    const trees = LEVEL.trees.map(([x, y, z], i) => {
       const t = tree.scene.clone(true);
       t.position.set(x, y, z);
       t.rotation.y = i * 1.3;
       t.scale.setScalar(1 + (i % 3) * 0.15);
-      scene.add(t);
       physics.addStaticCylinder([x, y + 1, z], 1, 0.3);
+      return t;
     });
+    scene.add(...mergeStaticMeshes(trees)); // static: one mesh per material
 
     for (const [x, y, z] of LEVEL.coins) {
       const root = coin.scene.clone(true);
@@ -200,12 +213,13 @@ export class Playground implements Game {
     this.heroModel = hero.scene;
     scene.add(this.heroModel, this.heroShadow);
     this.hero = new PlatformerCharacter(physics, { position: LEVEL.spawn, lockDepth: ctx.camera.lockDepth });
-    // Animations are data (src/game/hero/animations.ts), compiled against the model's rig.
+    // Animations are data (src/game/hero/clips/), compiled against the model's rig.
     // Capture the rest pose once, before anything plays: recompiling later must not read
     // whatever pose is on screen.
     const rest = restPoseOf(this.heroModel, HERO_RIG);
     this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
-    // Edit animations.ts while the game runs: clips recompile and swap in place.
+    // Edit a clip file (hero/clips/*.ts, re-exported by hero/animations.ts) while the game
+    // runs: clips recompile and swap in place.
     import.meta.hot?.accept('./hero/animations', (mod) => {
       const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
       if (clips && !this.disposed) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
@@ -290,7 +304,7 @@ export class Playground implements Game {
   }
 
   fixedUpdate(ctx: GameContext, dt: number): void {
-    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero));
+    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero, this.input));
     this.heroEvents(ctx, dt);
   }
 
@@ -328,8 +342,9 @@ export class Playground implements Game {
   }
 
   cameraTarget(): Vector3 {
-    const p = this.heroModel ? this.heroModel.position : new Vector3(...LEVEL.spawn);
-    return p.clone().setY(p.y + 0.9);
+    if (!this.heroModel) return this.target.set(...LEVEL.spawn).setY(LEVEL.spawn[1] + 0.9);
+    const p = this.heroModel.position;
+    return this.target.set(p.x, p.y + 0.9, p.z);
   }
 
   eyePosition(ctx: GameContext): Vector3 {
@@ -351,5 +366,5 @@ function block(def: BlockDef, ctx: GameContext): Object3D {
   mesh.position.set(...def.at);
   if (def.tiltZ) mesh.rotation.z = (def.tiltZ * Math.PI) / 180;
   mesh.castShadow = mesh.receiveShadow = true;
-  return mesh;
+  return mesh; // merged with the other static blocks in setup()
 }

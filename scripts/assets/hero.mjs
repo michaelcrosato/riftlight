@@ -1,5 +1,5 @@
 // Hero character rig (geometry + joint hierarchy only). Animations are authored as data
-// in src/game/hero/animations.ts and compiled at runtime (src/engine/animation/).
+// in src/game/hero/clips/ and compiled at runtime (src/engine/animation/).
 //
 // The character faces +Z; feet at y = 0. L/R are the CHARACTER'S OWN sides: its right
 // side is at -X, its left side at +X.

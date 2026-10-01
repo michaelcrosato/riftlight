@@ -1,5 +1,5 @@
 name: Task for Claude
-description: Describe an outcome; Claude implements it and ships a PR that auto-merges on green.
+description: Describe an outcome; Claude implements it and ships a PR that merges automatically.
 labels: [claude]
 body:
   - type: textarea

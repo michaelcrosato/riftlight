@@ -11,7 +11,7 @@ export {
   type CameraConfig,
   type CameraPreset,
 } from './camera';
-export { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, applyFilters, getFilter, type FilterDef } from './render/filters';
+export { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, applyFilters, getFilter, splitFilters, type FilterContext, type FilterDef, type FilterSpace } from './render/filters';
 export { loadModel, type Model } from './assets';
 export { GAMEPAD_BUTTONS, Input, PRESS_WINDOW, applyDeadzone, type GamepadLike } from './input';
 export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
@@ -36,7 +36,11 @@ export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePre
 export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
-export { RESOLUTIONS, computeFraming, type Framing, type Resolution } from './framing';
+export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, type AspectMode, type Framing, type Resolution } from './framing';
+export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityOption, type QualitySettings } from './quality';
+export { assetProgress, preloadModels } from './assets';
+export { LoadingScreen } from './LoadingScreen';
+export { mergeStaticMeshes, type MergeOptions } from './render/merge';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export {

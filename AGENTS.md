@@ -16,16 +16,21 @@ merge. Optimize for throughput with a green main branch.
    checks fail. For UI or runtime behavior, actually run it.
 5. **Ship**: commit (Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`,
    `refactor:`, `test:`, `ci:`), push, and open a PR. Pushing a `claude/*`
-   branch auto-opens a PR and enables auto-merge (`.github/workflows/autopilot.yml`).
-6. **Drive to green**: CI failures and review comments are your job. Fix and push
-   until the PR merges.
+   branch auto-opens a PR and merges it right away (`.github/workflows/autopilot.yml`).
+   Merges don't wait for CI: there are no required checks, by choice. That is why
+   step 4 matters.
+6. **Drive to green**: CI then runs on `main`. If it goes red, the merge is reverted
+   automatically (CI's `revert-red-main` job) and the change has to land again with a fix
+   (an issue labeled `claude` tracks it). CI failures, revert PRs and review
+   issues about your change are your job.
 
 ## Commands
 
 | Task | Command |
 | --- | --- |
-| All checks (lint, types, tests, build) | `scripts/check.sh` |
-| Fast checks only | `scripts/check.sh --fast` |
+| All checks (lint, types, tests, models, clip metrics, build) | `scripts/check.sh` |
+| Fast checks only (Stop hook) | `scripts/check.sh --fast` |
+| Browser e2e (CI runs the groups in parallel) | `npm run build && npm run test:e2e [-- <suite or @group>]` |
 | Install deps | `scripts/session-start.sh` (runs automatically in cloud sessions) |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs
@@ -35,12 +40,13 @@ script and CI pick them up with no extra config.
 
 ## Rules
 
-- **Green main is the only hard rule.** Everything merges through CI.
+- **Green main is the only hard rule.** Everything merges through a PR; CI runs on
+  `main` after each merge and a red `main` is reverted automatically.
 - Never skip, disable, or weaken a test to get green. Fix the cause.
 - Never commit secrets. Use environment variables; document them in `README.md`.
 - Never force-push the default branch or rewrite shared history.
 - Keep PRs focused: one concern per PR. Several small PRs beat one large one.
-- Label a PR `hold` to stop auto-merge on it.
+- Label a PR `hold` to stop Autopilot merging it.
 - If blocked on something only a human can do (credentials, billing, account
   settings), say exactly what is needed in the PR or issue and move on to
   the next task.
@@ -48,7 +54,7 @@ script and CI pick them up with no extra config.
 ## Stack
 
 WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
-(`three/webgpu` + `three/tsl`), `@dimforge/rapier3d-compat@0.20.0`, local GLBs.
+(`three/webgpu` + `three/tsl`), `@dimforge/rapier3d@0.20.0` (wasm loaded separately), local GLBs.
 **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
 the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
 animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
@@ -63,11 +69,11 @@ isolated clips can't.
 | `src/engine/render/PixelRenderer.ts` | The one `WebGPURenderer` + `RenderPipeline`, pixel/raw modes, filters, capture |
 | `src/engine/render/filters.ts` | TSL post filters (palettes, dither, CRT, LCD, VHS, …) |
 | `src/engine/camera.ts` | Camera presets: iso, topdown, side, third, first, free/fixed |
-| `src/engine/character/` | `PlatformerCharacter` moveset + default key map |
-| `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, metrics, contact sheets, motion curves |
-| `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`animations.ts`) |
+| `src/engine/character/` | `PlatformerCharacter` core, the state table (`states.ts`), every tuning number (`tuning.ts`), default key map |
+| `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, flip-free cross-fades (`RotationBlend`), metrics, contact sheets, motion curves |
+| `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`clips/`, one file per family; `animations.ts` re-exports `HERO_CLIPS`) |
 | `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
-| `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF) |
+| `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
 | `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Demo game: a station for every move, a complete example of the `Game` API |

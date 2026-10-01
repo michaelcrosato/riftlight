@@ -1,10 +1,17 @@
 /**
  * Pure layout math for pixel-perfect presentation. No DOM, no three.js: unit-tested.
  *
- * The canvas backing store is sized to `internal × scale` device pixels with an integer
- * `scale`, and the pixelation pass renders the scene at exactly `internal` resolution
- * (pixelSize = scale). Every art pixel therefore covers an integer block of device
- * pixels, and the canvas is centered (letterboxed) inside the viewport.
+ * The canvas backing store is sized to `art × scale` device pixels with an integer
+ * `scale`, and the scene renders at exactly the art resolution (pixelSize = scale). Every
+ * art pixel therefore covers an integer block of device pixels, and the canvas is centered
+ * (letterboxed) inside the viewport.
+ *
+ * Two aspect modes:
+ * - `fixed`: the art resolution is exactly `internal` (16:9); other screen shapes letterbox.
+ * - `adaptive`: the art *height* stays `internal.height` and the art width follows the
+ *   screen's aspect (clamped to ADAPTIVE_ASPECT), so phones in portrait or landscape and
+ *   odd window shapes fill the screen. Still integer-scaled. On a 16:9 screen it is
+ *   identical to `fixed`.
  */
 
 export interface Resolution {
@@ -19,7 +26,15 @@ export const RESOLUTIONS = {
   compare: { width: 320, height: 180 },
 } as const satisfies Record<string, Resolution>;
 
+export type AspectMode = 'fixed' | 'adaptive';
+
+/** Art aspect ratios (width / height) the adaptive mode allows; beyond them it letterboxes. */
+export const ADAPTIVE_ASPECT = { min: 0.4, max: 2.4 } as const;
+
 export interface Framing {
+  /** Art (internal) resolution actually rendered. Equals `internal` in fixed mode. */
+  readonly artWidth: number;
+  readonly artHeight: number;
   /** Device pixels per art pixel. Integer whenever `integer` is true. */
   readonly scale: number;
   /** True when every art pixel maps to an integer block of device pixels. */
@@ -34,30 +49,46 @@ export interface Framing {
   readonly offsetY: number;
 }
 
+const evenFloor = (v: number) => Math.max(2, 2 * Math.floor(v / 2));
+const clampWidth = (w: number, height: number) =>
+  Math.min(Math.max(w, 2 * Math.ceil((height * ADAPTIVE_ASPECT.min) / 2)), evenFloor(height * ADAPTIVE_ASPECT.max));
+
 /**
  * @param viewportWidth  viewport width in CSS pixels
  * @param viewportHeight viewport height in CSS pixels
  * @param devicePixelRatio window.devicePixelRatio
- * @param internal the art resolution
+ * @param internal the art resolution (in adaptive mode: its height, and the 16:9 fallback)
+ * @param aspect `fixed` (exactly `internal`) or `adaptive` (art width follows the screen)
  */
 export function computeFraming(
   viewportWidth: number,
   viewportHeight: number,
   devicePixelRatio: number,
   internal: Resolution,
+  aspect: AspectMode = 'fixed',
 ): Framing {
   const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
   const deviceWidth = Math.max(1, Math.floor(viewportWidth * dpr));
   const deviceHeight = Math.max(1, Math.floor(viewportHeight * dpr));
-  const fit = Math.min(deviceWidth / internal.width, deviceHeight / internal.height);
+  const artHeight = internal.height;
+  let artWidth = internal.width;
+  let fit = Math.min(deviceWidth / artWidth, deviceHeight / artHeight);
+  if (aspect === 'adaptive') {
+    // The art takes the screen's aspect (as many art columns as the screen shape allows at
+    // this art height), then the largest integer scale that fits.
+    artWidth = clampWidth(evenFloor((artHeight * deviceWidth) / deviceHeight), artHeight);
+    fit = Math.min(deviceWidth / artWidth, deviceHeight / artHeight);
+  }
 
   if (fit >= 1) {
     const scale = Math.floor(fit);
-    const canvasWidth = internal.width * scale;
-    const canvasHeight = internal.height * scale;
+    const canvasWidth = artWidth * scale;
+    const canvasHeight = artHeight * scale;
     const cssWidth = canvasWidth / dpr;
     const cssHeight = canvasHeight / dpr;
     return {
+      artWidth,
+      artHeight,
       scale,
       integer: true,
       canvasWidth,
@@ -72,14 +103,16 @@ export function computeFraming(
 
   // Viewport smaller than one art pixel per device pixel: render at the internal
   // resolution and let the browser shrink it (nearest-neighbor via CSS), still letterboxed.
-  const cssScale = Math.min(viewportWidth / internal.width, viewportHeight / internal.height);
-  const cssWidth = internal.width * cssScale;
-  const cssHeight = internal.height * cssScale;
+  const cssScale = Math.min(viewportWidth / artWidth, viewportHeight / artHeight);
+  const cssWidth = artWidth * cssScale;
+  const cssHeight = artHeight * cssScale;
   return {
+    artWidth,
+    artHeight,
     scale: 1,
     integer: false,
-    canvasWidth: internal.width,
-    canvasHeight: internal.height,
+    canvasWidth: artWidth,
+    canvasHeight: artHeight,
     cssWidth,
     cssHeight,
     offsetX: Math.floor((viewportWidth - cssWidth) / 2),

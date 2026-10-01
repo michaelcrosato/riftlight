@@ -215,7 +215,13 @@ export class Input {
   }
 
   isDown(...codes: string[]): boolean {
-    return codes.some((c) => this.held.has(c) || this.padHeld.has(c));
+    return this.anyDown(codes);
+  }
+
+  /** `isDown` for a list of codes, without building a rest-argument array (fixed-step code). */
+  anyDown(codes: readonly string[]): boolean {
+    for (const c of codes) if (this.held.has(c) || this.padHeld.has(c)) return true;
+    return false;
   }
 
   /** True once per physical key press (valid for the current render frame). */
@@ -230,6 +236,11 @@ export class Input {
    * pause, a loading screen or a long hitch) never fires late.
    */
   consumePress(...codes: string[]): boolean {
+    return this.consumeAny(codes);
+  }
+
+  /** `consumePress` for a list of codes, without building a rest-argument array. */
+  consumeAny(codes: readonly string[]): boolean {
     let hit = false;
     for (const c of codes) {
       const t = this.queued.get(c);

@@ -1,17 +1,30 @@
-import { AmbientLight, Color, DirectionalLight, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
-import { loadModel } from './assets';
+import { AmbientLight, Color, DirectionalLight, type Node, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
+import { abs, dot, max, min, normalWorld, sqrt, uniform } from 'three/tsl';
+import { assetProgress, loadModel, preloadModels } from './assets';
 import { AudioManager } from './audio/AudioManager';
-import { CAMERA_PRESETS, type CameraConfig, type CameraPreset, type CameraRig, FreeRig, OrthoRig, createCameraRig } from './camera';
+import {
+  CAMERA_PRESETS,
+  type CameraConfig,
+  type CameraPreset,
+  type CameraRig,
+  type CameraUpdate,
+  FreeRig,
+  OrthoRig,
+  createCameraRig,
+  isPerspective,
+} from './camera';
 import { DebugUI } from './DebugUI';
 import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys } from './debugKeys';
-import { RESOLUTIONS, type Resolution, snapToGrid } from './framing';
+import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
 import { Input } from './input';
 import { clearScene } from './lifecycle';
+import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
 import { type TouchButton, TouchControls } from './TouchControls';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
+import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
 import { FILTER_IDS, FILTER_PRESETS, getFilter } from './render/filters';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 
@@ -39,6 +52,11 @@ export interface GameContext {
  */
 export interface Game {
   readonly name: string;
+  /**
+   * Models `setup` will load (`ctx.loadModel` URLs). Optional: listing them lets the
+   * engine start downloading while the renderer and physics initialise.
+   */
+  readonly assets?: readonly string[];
   /** Build the level: load models, add colliders, spawn entities. */
   setup(ctx: GameContext): Promise<void> | void;
   /** Runs before every fixed 60 Hz physics step. Move characters/apply forces here. */
@@ -68,6 +86,21 @@ export interface Game {
 export interface EngineOptions {
   container?: HTMLElement;
   resolution?: Resolution;
+  /**
+   * `adaptive` (default): the art height stays `resolution.height` and the art width
+   * follows the screen's aspect (portrait phones fill the screen). `fixed`: always exactly
+   * `resolution`, letterboxed. Identical on 16:9 screens.
+   */
+  aspect?: AspectMode;
+  /**
+   * Cap the render loop (simulation keeps its fixed 60 Hz physics step). Default 60, so
+   * 120 Hz phones don't run the whole pipeline twice per game frame. 0 = display rate.
+   */
+  maxFps?: number;
+  /** Shadow map quality, or `auto` (default: low on touch devices, else medium; lowered once on a slow start). */
+  quality?: QualityOption;
+  /** Pixel-styled loading indicator while the renderer, physics and assets load. Default true. */
+  loadingScreen?: boolean;
   mode?: RenderMode;
   edges?: EdgeSettings;
   /** Camera preset + parameters. Pick one per game; not meant to change during play. */
@@ -93,6 +126,7 @@ export interface EngineOptions {
 /**
  * Read engine options from the URL:
  *   ?backend=webgl  ?mode=raw  ?res=320  ?debug=1|0
+ *   ?aspect=fixed|adaptive  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
  *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
  *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
  *   ?filters=crt,lcd  or  ?look=handheld (a FILTER_PRESETS name)
@@ -107,6 +141,12 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (p.get('debug') === '1') opts.debugUI = true;
   if (p.get('touch') === '1') opts.touch = true;
   if (p.get('touch') === '0') opts.touch = false;
+  const aspect = p.get('aspect');
+  if (aspect === 'fixed' || aspect === 'adaptive') opts.aspect = aspect;
+  const fps = p.get('fps');
+  if (fps !== null && Number(fps) >= 0) opts.maxFps = Number(fps);
+  const quality = p.get('quality');
+  if (quality === 'auto' || (QUALITY_LEVELS as readonly string[]).includes(quality ?? '')) opts.quality = quality as QualityOption;
   let camera: CameraConfig = {};
   const cam = p.get('cam');
   if (cam) {
@@ -148,7 +188,7 @@ export class Engine {
   debugKeys: DebugKeyMap = resolveDebugKeys();
   private _game: Game;
   private _paused = false;
-  /** False while a game's setup() is running (loadGame): nothing advances. */
+  /** False while a game's setup() is running (start, loadGame): nothing advances. */
   private ready = false;
   private disposed = false;
   /**
@@ -157,15 +197,35 @@ export class Engine {
    */
   manual = false;
   frame = 0;
+  /** Rendered frames per second (measured over ~0.5 s). */
+  fps = 0;
+  /** Requested quality (`auto` adapts); `quality` is the level in use. */
+  readonly qualityOption: QualityOption;
+  private _quality: QualityLevel;
   /** The game's own camera config; switching back to its preset restores zoom, yaw etc. */
   private startCamera: CameraConfig = {};
   time = 0;
   private lastTime = -1;
+  private readonly limiter: FrameLimiter;
+  private fpsFrames = 0;
+  private fpsSince = -1;
+  /** `auto` quality: one measurement window after start-up (ms timestamps), then done. */
+  private autoQuality: { start: number; frames: number } | null = null;
   private readonly sunDirection = new Vector3(-0.55, 1, 0.35).normalize();
   // Light-space axes perpendicular to the sun, for snapping the shadow frustum to texels.
   private readonly sunRight = new Vector3().crossVectors(new Vector3(0, 1, 0), this.sunDirection).normalize();
   private readonly sunUp = new Vector3().crossVectors(this.sunDirection, this.sunRight).normalize();
   private readonly sunFocus = new Vector3();
+  private shadowRadius = 0;
+  /** Shadow depth-bias unit: one shadow texel in normalized light depth. */
+  private readonly shadowTexelDepth = uniform(0);
+  private readonly tmp = new Vector3();
+  private readonly eye = new Vector3();
+  // Reused every frame (no per-frame allocations in advance()).
+  private readonly cameraWorld = {
+    raycast: (from: Vector3, dir: Vector3, max: number) => this.physics.raycast(from, dir, max, CAMERA_IGNORE),
+  };
+  private readonly cameraUpdate: CameraUpdate;
 
   private constructor(
     game: Game,
@@ -173,6 +233,7 @@ export class Engine {
     readonly physics: Physics,
     public camera: CameraRig,
     readonly scene: Scene,
+    options: EngineOptions,
   ) {
     this._game = game;
     const clock = () => this.time;
@@ -197,23 +258,39 @@ export class Engine {
       hud: this.hud,
     };
 
-    // One directional light (with hard shadow map) + modest ambient fill.
+    this.cameraUpdate = {
+      target: new Vector3(),
+      eye: this.eye,
+      dt: 0,
+      resolution: renderer.resolution,
+      input: this.input,
+      world: this.cameraWorld,
+    };
+    this.limiter = new FrameLimiter(options.maxFps ?? 60);
+    this.qualityOption = options.quality ?? 'auto';
+    const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
+    this._quality = this.qualityOption === 'auto' ? defaultQuality({ coarsePointer: coarse }) : this.qualityOption;
+    if (this.qualityOption === 'auto') this.autoQuality = { start: -1, frames: 0 };
+
+    // One directional light (with hard shadow map) + modest ambient fill. The shadow box
+    // follows the camera and scales with the view (see updateShadow).
     this.sun = new DirectionalLight(new Color(PALETTE.white), 3.2);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(1024, 1024);
-    this.sun.shadow.bias = -0.0015;
-    this.sun.shadow.normalBias = 0.02;
-    const s = this.sun.shadow.camera;
-    s.left = -14;
-    s.right = 14;
-    s.top = 14;
-    s.bottom = -14;
-    s.near = 1;
-    s.far = 60;
+    this.sun.shadow.mapSize.setScalar(QUALITY[this._quality].shadowMapSize);
+    this.sun.shadow.normalBias = 0;
+    // Slope-scaled depth bias, in shadow texels: three renders the *back* faces into the
+    // shadow map, so the surfaces that compare against themselves face away from the sun
+    // (still lit by the toon ramp's dark band). Biasing them toward the light by a texel or
+    // so, more at grazing angles, keeps them free of acne stipple at every map size while
+    // contact shadows on surfaces facing the sun stay tight.
+    const nl = max(abs(dot(normalWorld, uniform(this.sunDirection))), 0.05);
+    const slope = min(sqrt(nl.mul(nl).oneMinus()).div(nl), 4);
+    (this.sun.shadow as unknown as { biasNode: Node }).biasNode = this.shadowTexelDepth.mul(slope.add(0.75)).negate() as unknown as Node;
     this.ambient = new AmbientLight(new Color(PALETTE.mist), 1.1);
     this.scene.add(this.sun, this.sun.target, this.ambient, this.particles.group);
     // Engine-owned: survive level unloads (engine.loadGame).
     for (const o of [this.sun, this.sun.target, this.ambient]) o.userData.engineOwned = true;
+    renderer.onRecovered = (canvas) => this.input.attachPointer(canvas);
   }
 
   /** The running game. Replace it with `loadGame()`. */
@@ -234,37 +311,83 @@ export class Engine {
     this._paused = value;
   }
 
+  /** The quality level in use (see `EngineOptions.quality`). */
+  get quality(): QualityLevel {
+    return this._quality;
+  }
+
+  setQuality(level: QualityLevel): void {
+    this._quality = level;
+    this.sun.shadow.mapSize.setScalar(QUALITY[level].shadowMapSize); // the shadow map resizes itself
+    this.shadowRadius = 0; // re-fit (texel snapping depends on the map size)
+  }
+
+  /** Frame cap of the render loop (0 = display rate). */
+  get maxFps(): number {
+    return this.limiter.maxFps;
+  }
+
+  set maxFps(fps: number) {
+    this.limiter.maxFps = fps;
+  }
+
   static async start(game: Game, options: EngineOptions = {}): Promise<Engine> {
     const container = options.container ?? document.body;
-    const camera = createCameraRig(options.camera);
-    const scene = new Scene();
-    const [renderer, physics] = await Promise.all([
-      PixelRenderer.create({
-        container,
-        scene,
-        camera: camera.camera,
-        resolution: options.resolution,
-        mode: options.mode,
-        edges: options.edges,
-        filters: options.filters,
-        forceWebGL: options.forceWebGL,
-      }),
-      Physics.create(),
-    ]);
-    const engine = new Engine(game, renderer, physics, camera, scene);
-    engine.startCamera = { ...options.camera, preset: camera.preset };
-    scene.background = new Color(options.background ?? PALETTE.night);
+    // Downloads first: models, the renderer (GPU adapter/device) and Rapier's wasm all
+    // load in parallel, behind a loading indicator.
+    if (game.assets) preloadModels(game.assets);
+    const loading = options.loadingScreen === false ? null : new LoadingScreen(container);
+    const done = { renderer: false, physics: false, setup: false };
+    const progress = () =>
+      (done.renderer ? 0.2 : 0) + (done.physics ? 0.2 : 0) + assetProgress() * 0.45 + (done.setup ? 0.1 : 0);
+    const ticker = loading ? setInterval(() => loading.set(progress()), 100) : 0;
+    try {
+      const camera = createCameraRig(options.camera);
+      const scene = new Scene();
+      const [renderer, physics] = await Promise.all([
+        PixelRenderer.create({
+          container,
+          scene,
+          camera: camera.camera,
+          resolution: options.resolution,
+          aspect: options.aspect,
+          mode: options.mode,
+          edges: options.edges,
+          filters: options.filters,
+          forceWebGL: options.forceWebGL,
+        }).finally(() => (done.renderer = true)),
+        Physics.create().finally(() => (done.physics = true)),
+      ]);
+      const engine = new Engine(game, renderer, physics, camera, scene, options);
+      engine.startCamera = { ...options.camera, preset: camera.preset };
+      scene.background = new Color(options.background ?? PALETTE.night);
+      camera.setAspect(renderer.resolution.width / renderer.resolution.height);
 
-    engine.input.attachPointer(renderer.renderer.domElement);
-    engine.wireRig(camera);
-    engine.debugKeys = resolveDebugKeys(options.debugKeys);
+      engine.input.attachPointer(renderer.renderer.domElement);
+      engine.wireRig(camera);
+      engine.debugKeys = resolveDebugKeys(options.debugKeys);
 
-    await game.setup(engine.context);
-    camera.teleport(game.cameraTarget(engine.context));
-    engine.ready = true;
-    if (options.debugUI ?? defaultDebugUI()) engine.debug = new DebugUI(engine);
+      await game.setup(engine.context);
+      done.setup = true;
+      loading?.set(progress(), 'COMPILING');
+      camera.teleport(game.cameraTarget(engine.context));
+      engine.updateView(0); // place camera + shadow box before compiling and the first frame
+      await renderer.precompile();
+      engine.ready = true;
+      engine.finishStart(container, options);
+      loading?.set(1);
+      return engine;
+    } finally {
+      clearInterval(ticker);
+      loading?.done();
+    }
+  }
+
+  /** Debug panel, touch controls, then the render loop. */
+  private finishStart(container: HTMLElement, options: EngineOptions): void {
+    if (options.debugUI ?? defaultDebugUI()) this.debug = new DebugUI(this);
     if (options.touch ?? TouchControls.wanted()) {
-      const k = engine.debugKeys;
+      const k = this.debugKeys;
       const bar: TouchButton[] = [
         { label: '⚙', code: k.debug[0] ?? '' },
         { label: 'P', code: k.mode[0] ?? '' },
@@ -272,12 +395,10 @@ export class Engine {
         { label: '◐', code: k.nextLook[0] ?? '' },
         { label: '♪', code: k.mute[0] ?? '' },
       ];
-      engine.touch = new TouchControls(container, engine.input, options.touchButtons, bar.filter((b) => b.code));
-      if (engine.debug?.visible) engine.debug.toggle(); // small screens: panel behind the ⚙ button
+      this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
+      if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⚙ button
     }
-
-    renderer.setAnimationLoop((t) => engine.tick(t));
-    return engine;
+    this.renderer.setAnimationLoop((t) => this.tick(t));
   }
 
   /**
@@ -305,6 +426,7 @@ export class Engine {
       };
     }
     const rig = createCameraRig(cfg);
+    rig.setAspect(this.renderer.resolution.width / this.renderer.resolution.height);
     rig.teleport(this.game.cameraTarget(this.context));
     rig.focus.copy(old.focus);
     this.renderer.setCamera(rig.camera);
@@ -344,7 +466,7 @@ export class Engine {
   }
 
   toggleResolution(): Resolution {
-    const next = this.renderer.resolution === RESOLUTIONS.default ? RESOLUTIONS.compare : RESOLUTIONS.default;
+    const next = this.renderer.baseResolution === RESOLUTIONS.default ? RESOLUTIONS.compare : RESOLUTIONS.default;
     this.renderer.setResolution(next);
     return next;
   }
@@ -374,7 +496,7 @@ export class Engine {
   /** Snapshot for tests, tooling and agents. */
   state() {
     const r = this.renderer;
-    const target = this.ready ? this.game.cameraTarget(this.context) : this.camera.focus.clone();
+    const target = this.ready ? this.game.cameraTarget(this.context) : this.camera.focus;
     return {
       game: this.game.name,
       ready: this.ready,
@@ -384,8 +506,13 @@ export class Engine {
       fallbackReason: r.fallbackReason,
       mode: r.mode,
       resolution: { ...r.resolution },
+      aspect: r.aspect,
       framing: { ...r.framing },
       frame: this.frame,
+      fps: this.fps,
+      maxFps: this.maxFps,
+      quality: this.quality,
+      gpuRecoveries: r.recoveries,
       physicsSteps: this.physics.steps,
       gpuErrors: r.gpuErrors.map((e) => ({ ...e })),
       target: target.toArray(),
@@ -422,11 +549,12 @@ export class Engine {
    * camera rig, input, audio context and debug UI stay). The old game's `dispose(ctx)`
    * runs first; then every scene object that is not engine-owned is removed and its GPU
    * resources freed, and physics (bodies, colliders, controllers, triggers, tags),
-   * particles, HUD and music are cleared. Nothing advances until `setup()` resolves.
-   * Pass `camera` to switch the camera preset for the new game.
+   * particles, HUD and music are cleared. Nothing advances until the new `setup()` has
+   * resolved and its pipelines are compiled. Pass `camera` to switch the camera preset.
    */
   async loadGame(game: Game, options: { camera?: CameraConfig } = {}): Promise<void> {
     if (this.disposed) throw new Error('Engine.loadGame: engine was disposed');
+    if (game.assets) preloadModels(game.assets);
     this.ready = false;
     this.unloadGame();
     this._game = game;
@@ -436,6 +564,8 @@ export class Engine {
       this.setCamera(this.startCamera);
     }
     this.camera.teleport(game.cameraTarget(this.context));
+    this.updateView(0);
+    await this.renderer.precompile();
     this.ready = true;
   }
 
@@ -467,13 +597,16 @@ export class Engine {
   }
 
   private tick(timeMs: number): void {
+    // Frame cap: skip whole display frames (the next run sees the full elapsed dt, and the
+    // fixed-step physics accumulator catches up exactly).
+    if (!this.limiter.shouldRun(timeMs)) return;
     const t = timeMs / 1000;
     const dt = this.lastTime < 0 ? 1 / 60 : Math.min(t - this.lastTime, 0.1);
     this.lastTime = t;
     if (this.manual) return;
-    const ctx = this.context;
     const running = this.ready && !this.paused;
     if (running) this.time += dt; // game time stops while paused or loading
+    this.measure(timeMs);
     this.input.beginFrame(this.time, dt);
     if (!running) this.input.clearQueued(); // presses made during a pause never fire later
 
@@ -484,7 +617,8 @@ export class Engine {
     if (running) this.advance(dt);
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
-    if (running) this.debug?.update(this.game.status?.(ctx) ?? '');
+    // The status line is only built while the panel is on screen.
+    if (running && this.debug?.visible) this.debug.update(this.game.status?.(this.context) ?? '');
     this.input.endFrame();
     this.frame++;
   }
@@ -503,37 +637,102 @@ export class Engine {
     if (hit(k.mute)) this.audio.toggleMute();
   }
 
+  /** Rendered-fps counter, and the one-shot `auto` quality check a few seconds in. */
+  private measure(now: number): void {
+    if (this.fpsSince < 0) this.fpsSince = now;
+    this.fpsFrames++;
+    if (now - this.fpsSince >= 500) {
+      this.fps = Math.round((this.fpsFrames * 1000) / (now - this.fpsSince));
+      this.fpsFrames = 0;
+      this.fpsSince = now;
+    }
+    const a = this.autoQuality;
+    if (!a) return;
+    if (a.start < 0) a.start = now + 1500; // skip start-up hitches (first compiles, uploads)
+    if (now < a.start) return;
+    a.frames++;
+    if (now - a.start < 3000) return;
+    const fps = (a.frames * 1000) / (now - a.start);
+    const next = qualityForFps(this._quality, fps, this.maxFps > 0 ? this.maxFps : 60);
+    if (next !== this._quality) {
+      console.info(`[engine] ${fps.toFixed(1)} fps at start-up: quality ${this._quality} → ${next}`);
+      this.setQuality(next);
+    }
+    this.autoQuality = null;
+  }
+
   /** One frame of simulation, game logic, camera and light (no drawing). */
   private advance(dt: number): void {
     const ctx = this.context;
-    this.physics.update(dt, (fixedDt) => this.game.fixedUpdate?.(ctx, fixedDt));
+    this.physics.update(dt, this.fixedStep);
     this.game.update?.(ctx, dt);
     this.particles.update(dt);
+    this.updateView(dt);
+  }
 
-    const target = this.game.cameraTarget(ctx);
-    const eye = this.game.eyePosition?.(ctx) ?? target.clone().setY(target.y + 0.7);
-    this.camera.update({
-      target,
-      eye,
-      dt,
-      resolution: this.renderer.resolution,
-      input: this.input,
-      world: { raycast: (from, dir, max) => this.physics.raycast(from, dir, max, ['character', 'noCamera']) },
-    });
+  /** Camera follow + shadow box for the current game state. */
+  private updateView(dt: number): void {
+    const ctx = this.context;
+    const u = this.cameraUpdate;
+    u.target.copy(this.game.cameraTarget(ctx));
+    if (this.game.eyePosition) this.eye.copy(this.game.eyePosition(ctx));
+    else this.eye.copy(u.target).setY(u.target.y + 0.7);
+    u.dt = dt;
+    u.resolution = this.renderer.resolution;
+    this.camera.update(u);
+    this.updateShadow();
+  }
 
-    // Keep the shadow frustum centred on the action, moved in whole shadow texels so
-    // shadow edges don't crawl while the camera follows the player.
+  private readonly fixedStep = (fixedDt: number) => this.game.fixedUpdate?.(this.context, fixedDt);
+
+  /**
+   * Fit the sun's shadow box to what the camera sees: ortho presets cover the visible
+   * ground (so zooming out keeps shadows), perspective presets cover a box reaching ahead
+   * of the camera. The box moves in whole shadow texels so shadow edges don't crawl while
+   * the camera follows the player.
+   */
+  private updateShadow(): void {
+    const cam = this.camera.camera;
+    const center = this.tmp;
+    let radius: number;
+    if (isPerspective(cam)) {
+      radius = 18;
+      // Ahead of the camera on the ground plane, at the followed target's height.
+      cam.getWorldDirection(center).setY(0);
+      if (center.lengthSq() < 1e-6) center.set(0, 0, -1);
+      center.normalize().multiplyScalar(radius * 0.6).add(cam.position).setY(this.camera.focus.y);
+    } else {
+      const o = cam as OrthographicCamera;
+      const viewW = (o.right - o.left) / o.zoom;
+      const viewH = (o.top - o.bottom) / o.zoom;
+      // The view's ground footprint is stretched by 1/sin(pitch) in depth.
+      const sinPitch = Math.abs(cam.getWorldDirection(center).y);
+      radius = 0.5 * Math.max(viewW, viewH / Math.max(sinPitch, 0.35)) + 2;
+      center.copy(this.camera.focus);
+    }
+    radius = Math.ceil(radius); // only changes on zoom, not every frame
     const sc = this.sun.shadow.camera;
-    const texel = (sc.right - sc.left) / this.sun.shadow.mapSize.x;
-    const f = this.camera.focus;
-    const r = snapToGrid(f.dot(this.sunRight), texel);
-    const u = snapToGrid(f.dot(this.sunUp), texel);
-    const d = f.dot(this.sunDirection);
+    if (radius !== this.shadowRadius) {
+      this.shadowRadius = radius;
+      sc.left = sc.bottom = -radius;
+      sc.right = sc.top = radius;
+      sc.near = 1;
+      sc.far = 2 * (radius + 16);
+      sc.updateProjectionMatrix();
+    }
+    const texel = (2 * radius) / this.sun.shadow.mapSize.x;
+    this.shadowTexelDepth.value = texel / (sc.far - sc.near);
+    const r = snapToGrid(center.dot(this.sunRight), texel);
+    const u = snapToGrid(center.dot(this.sunUp), texel);
+    const d = center.dot(this.sunDirection);
     this.sunFocus.copy(this.sunRight).multiplyScalar(r).addScaledVector(this.sunUp, u).addScaledVector(this.sunDirection, d);
     this.sun.target.position.copy(this.sunFocus);
-    this.sun.position.copy(this.sunFocus).addScaledVector(this.sunDirection, 25);
+    this.sun.position.copy(this.sunFocus).addScaledVector(this.sunDirection, radius + 16);
   }
 }
+
+/** Camera rays pass through the player and anything tagged `noCamera`. */
+const CAMERA_IGNORE = ['character', 'noCamera'];
 
 /** Debug panel default: on in dev builds or with ?debug=1, off in production. */
 function defaultDebugUI(): boolean {

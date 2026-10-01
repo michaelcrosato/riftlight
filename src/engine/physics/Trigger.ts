@@ -1,4 +1,4 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d';
 import { Vector3 } from 'three/webgpu';
 
 /** Trigger volume shape (half extents / radius in world units). */

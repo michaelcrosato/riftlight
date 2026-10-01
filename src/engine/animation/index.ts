@@ -5,6 +5,7 @@ export { REST_JOINT, applyEase, blend, bracket, mirror, mirrorClip, offset, reso
 export { ankleFor, applyFeet, legIK, lerpGoal, placeFeet, twoBoneX, type FootGoal, type Side } from './ik';
 export { footAt, gaitClip, gaitPose, type GaitSpec } from './gait';
 export { compileClip, compileClips, restPoseOf, type RestPose } from './compile';
+export { RotationBlend } from './rotationBlend';
 export { analyzeClip, sampleFrames, type ClipReport, type SampledFrame } from './metrics';
 export { renderCurves, type CurveOptions } from './curves';
 export { defaultFrames, renderSheet, type SheetImage, type SheetOptions, type ViewName } from './sheet';
