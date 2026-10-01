@@ -2,9 +2,9 @@
 //
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
-//   npm run test:e2e -- <suite> [<suite>...]   run some suites (CI runs them in parallel groups):
+//   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | moves | lab | tools
+//     filters-webgl | touch | moves | lab | tools;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -912,10 +912,23 @@ const SUITES = {
   tools: (exe) => runTools(exe),
 };
 
-const wanted = process.argv.slice(2);
+// CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
+// Every suite must be in exactly one group, or CI would silently skip it.
+const GROUPS = {
+  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'moves'],
+  '@cameras': ['cameras', 'camera-swap', 'lab'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools'],
+};
+const grouped = Object.values(GROUPS).flat();
+const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
+if (misgrouped.length || grouped.length !== Object.keys(SUITES).length) {
+  console.error(`every e2e suite must be in exactly one group (GROUPS in scripts/e2e.mjs): ${misgrouped.join(', ') || grouped.join(', ')}`);
+  process.exit(2);
+}
+const wanted = process.argv.slice(2).flatMap((a) => GROUPS[a] ?? [a]);
 const unknown = wanted.filter((n) => !SUITES[n]);
 if (unknown.length) {
-  console.error(`unknown e2e suite(s): ${unknown.join(', ')}\navailable: ${Object.keys(SUITES).join(', ')}`);
+  console.error(`unknown e2e suite(s): ${unknown.join(', ')}\navailable: ${Object.keys(SUITES).join(', ')}, or a group: ${Object.keys(GROUPS).join(', ')}`);
   process.exit(2);
 }
 
