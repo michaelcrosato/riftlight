@@ -26,7 +26,7 @@ export const JAWS = [
   }),
   part('jaw.feelers', 'Face Feelers', ['jaw'], ['void', 'water', 'arcane'], 1, [inc('damage', 0.1, ['spell'])], (c) => {
     for (const x of [-0.15, -0.05, 0.05, 0.15]) taper(c, 0.3, 'secondary', [x, -0.2, 0.12], [0.08, 0.42, 0.08], { rot: [-20, 0, x * 60] });
-  }),
+  }, { plans: [...SKULLED, 'floater'] }),
 ];
 
 export const EYES = [

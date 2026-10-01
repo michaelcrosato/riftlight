@@ -75,7 +75,11 @@ function legged(ctx: BakeContext, gait0: GaitDef, o: MoveOptions): MonsterClipDe
     }
     const lean = (gait.lean ?? 0) + (o.charge ? 10 : 0);
     const armSwing = o.run ? 46 : 26;
-    const swing = (side: 'R' | 'L') => armSwing * Math.cos(TAU * (u - (gait.phase[`0${side}`] ?? 0)));
+    // arms swing forward fully but only a little back (long brute arms would scrape the floor)
+    const swing = (side: 'R' | 'L') => {
+      const v = armSwing * Math.cos(TAU * (u - (gait.phase[`0${side}`] ?? 0)));
+      return v > 0 ? v * 0.45 : v;
+    };
     const body: Pose = P(
       ps.root([0, y, 0], ps.has.spine ? [0, 0, 0] : [lean * 0.5, 0, 0]),
       ps.spine(lean, 0, 0),
@@ -91,7 +95,7 @@ function legged(ctx: BakeContext, gait0: GaitDef, o: MoveOptions): MonsterClipDe
     keys.push([f, body, 'linear']);
   }
   keys.push([F, keys[0]![1], 'linear']);
-  const template: ClipDef = { name: o.name, frames: F, loop: true, keys, speed: round(speed), grounded: beta >= 0.5 && !hop, fast: o.run };
+  const template: ClipDef = { name: o.name, frames: F, loop: true, keys, speed: round(speed), grounded: beta >= 0.5 && !hop, fast: o.run || sk.legs.length > 4 };
   const feet: FeetFn = (leg, f) => {
     const v = wrap(f / F - (gait.phase[leg.id] ?? 0));
     if (v < beta) return new Vector3(leg.rest[0], 0, leg.rest[2] + S / 2 - (S * v) / beta);

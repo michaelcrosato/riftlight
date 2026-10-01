@@ -79,12 +79,12 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
   const head = b.joint('Head', neck, [0, neckLen, 0.0]);
   const jaw = b.head(head, hs, ctx.head);
 
-  const armLen = Math.min(isBrute ? g('armLength', 0.75, 1.1) : g('armLength', 0.44, 0.68), hipH + torso - 0.06 - thick * (isBrute ? 3.4 : 2));
+  const armLen = Math.min(isBrute ? g('armLength', 0.75, 1.1) : g('armLength', 0.44, 0.68), hipH + torso - 0.06 - thick * (isBrute ? 4.6 : 2));
   both((side, sx) => {
     const a = b.arm(side, chest, [sx * (chestW / 2 + thick * 0.5), torso * (isBrute ? 0.5 : 0.42), 0], armLen * 0.5, armLen * 0.45, isBrute ? thick * 1.35 : thick);
     b.shape(a.hand, isBrute ? 'sphere' : 'box', isBrute ? [thick * 2.4, thick * 2.2, thick * 2.4] : [thick * 1.5, thick * 1.6, thick * 1.5], [0, -thick * 0.7, 0], isBrute ? 'secondary' : 'dark');
-    b.stance[a.arm] = isBrute ? [-18, 0, -12 * sx] : [-6, 0, -8 * sx];
-    b.stance[a.forearm] = isBrute ? [-28, 0, 0] : [-18, 0, 0];
+    b.stance[a.arm] = isBrute ? [-26, 0, -14 * sx] : [-6, 0, -8 * sx];
+    b.stance[a.forearm] = isBrute ? [-42, 0, 0] : [-18, 0, 0];
   });
   b.socketPair('hand', 'hands', (s) => `Hand${s}`, [0, -thick * 0.9, 0.02], thick * (isBrute ? 2.4 : 1.6));
   b.socket('weapon', 'weapon', 'HandR', [0, -thick * 0.7, 0], hipH + torso);

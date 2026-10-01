@@ -295,6 +295,7 @@ scene.add(m.object);
 const rt = new MonsterRuntime(m);              // rt.locomote(speed); rt.play('Bite'); rt.update(dt, { lookAt })
 for (const e of rt.update(dt)) if (e.type === 'hit') applyDamage();   // synced to the clip's hit frame
 const brain = new MonsterBrain({ body, archetype: genome.archetype, skills: m.skills, elite: genome.elite, home });
+const pack = generatePack(rng, { depth, tags: ['insect'] }); // one shared body shape: members share clips
 ```
 
 ### Genomes, budgets and evolution

@@ -23,6 +23,8 @@ export const quadruped: BodyPlanDef = {
     limbThickness: { mean: 0.5, spread: 0.2 },
     posture: { mean: 0.5, spread: 0.2 },
     tailLength: { mean: 0.5, spread: 0.25 },
+    /** Running gait: < 0.4 trot (diagonal pairs), < 0.7 pace (lateral pairs, camels), else bound (front pair, then hind). */
+    gaitStyle: { mean: 0.35, spread: 0.3 },
   },
   slots: { head: 1, eyes: 1, jaw: 0.6, horns: 0.5, helm: 0.15, back: 0.5, shoulders: 0.3, wings: 0.1, tail: 0.45, feet: 0.45, core: 0.15 },
   mods: [inc('move.speed', 0.15)],
@@ -92,7 +94,7 @@ export const quadruped: BodyPlanDef = {
       locomotion: 'legs',
       gaits: {
         walk: { frames: 32, stance: 0.66, phase, stride: 0.9, lift: 0.12, bob: 0.015, bobs: 2 },
-        run: { frames: 16, stance: 0.4, phase: { '0L': 0, '1R': 0.05, '0R': 0.5, '1L': 0.55 }, stride: 1.05, lift: 0.2, bob: 0.035, bobs: 2, lean: 3 },
+        run: { frames: 16, stance: 0.4, phase: runPhase(ctx.genes.gaitStyle ?? 0.35), stride: 1.05, lift: 0.2, bob: 0.035, bobs: 2, lean: 3 },
       },
       height: legH + 0.2 * girth + seg * 1.6 + hs,
       radius: 0.25 * girth + bodyLen * 0.3,
@@ -100,3 +102,10 @@ export const quadruped: BodyPlanDef = {
     });
   },
 };
+
+/** Leg phases for the run: trot, pace or bound (front pair then hind pair, slightly split). */
+function runPhase(style: number): Record<string, number> {
+  if (style < 0.4) return { '0L': 0, '1R': 0.05, '0R': 0.5, '1L': 0.55 };
+  if (style < 0.7) return { '0L': 0, '1L': 0.05, '0R': 0.5, '1R': 0.55 };
+  return { '0L': 0, '0R': 0.08, '1L': 0.5, '1R': 0.58 };
+}

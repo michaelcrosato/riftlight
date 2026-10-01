@@ -1,5 +1,5 @@
 import { type AnimationClip, Box3, Euler, Group, Mesh, Object3D, Quaternion, RingGeometry, Vector3 } from 'three/webgpu';
-import { compileClip, sampleClip, type ClipDef, type LegRig, type RigSpec, type Vec3 } from '../../engine/animation';
+import { compileClip, sampleClip, type ClipDef, type JointLimit, type LegRig, type RigSpec, type Vec3 } from '../../engine/animation';
 import type { RestPose } from '../../engine/animation';
 import { more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
@@ -278,7 +278,13 @@ function rigOf(sk: Skeleton): RigSpec {
   }
   const soles = [...sk.legs.map((l) => l.sole), ...sk.shapes.filter((s) => s.name === 'SoleBlob').map((s) => s.name)];
   const trace = [...soles.slice(0, 4), ...(sk.roles.head ? [sk.roles.head] : [sk.roles.root]), ...sk.arms.map((a) => a.hand), ...(sk.roles.tail.length ? [sk.roles.tail[sk.roles.tail.length - 1]!] : [])];
-  const rig: RigSpec = { fps: 30, root: sk.roles.root, joints: names, mirror, soles, trace, limits: {} };
+  // Plausible ranges (degrees) the metrics warn about: knees bend one way, jaws open, heads turn.
+  const limits: Record<string, JointLimit> = {};
+  for (const l of sk.legs) limits[l.lower] = { x: l.bend > 0 ? [-5, 165] : [-165, 5] };
+  for (const a of sk.arms) limits[a.forearm] = { x: [-165, 10] };
+  if (sk.roles.head) limits[sk.roles.head] = { x: [-80, 80], y: [-100, 100], z: [-50, 50] };
+  if (sk.roles.jaw) limits[sk.roles.jaw] = { x: [-5, 45] };
+  const rig: RigSpec = { fps: 30, root: sk.roles.root, joints: names, mirror, soles, trace, limits };
   // Two upright legs on the root: also describe them for the engine's own IK tools.
   const two = sk.legs.length === 2 && sk.legs.every((l) => l.parent === sk.roles.root && !l.splay);
   if (two) {

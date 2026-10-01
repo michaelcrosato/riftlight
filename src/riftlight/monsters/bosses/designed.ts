@@ -67,7 +67,7 @@ export const DESIGNED_BOSSES: readonly BossDef[] = [
     [['pylon-surge', 'arena-charge'], ['pylon-surge', 'arena-charge', 'storm-strikes'], ['storm-strikes', 'arena-charge', 'pylon-surge']],
     { signature: 'pylon-surge', hazards: ['pylons'], flavour: 'Every pylon it passes charges. Make it charge through its own arcs.', onEnter: [['pylon-surge'], ['storm-strikes']] }),
   boss('gulgoth', 7, 'Gulgoth, the Bog Sovereign', ['mire', 'gale'],
-    { plan: 'blob', archetype: 'summoner', tags: ['poison', 'nature'], genes: { girth: 0.95, length: 0.8 }, parts: { eyes: 'eye.stalk', jaw: 'jaw.feelers', back: 'back.mushrooms', helm: 'helm.crown', core: 'core.heart', horns: 'horn.spike' } },
+    { plan: 'blob', archetype: 'summoner', tags: ['poison', 'nature'], genes: { girth: 0.95, length: 0.8 }, parts: { eyes: 'eye.stalk', jaw: 'jaw.mandibles', back: 'back.mushrooms', helm: 'helm.crown', core: 'core.heart', horns: 'horn.spike' } },
     [['mud-wave', 'bog-spawn'], ['mud-wave', 'bog-spawn', 'gust'], ['mud-wave', 'gust', 'pounce']],
     { signature: 'mud-wave', hazards: ['mud', 'hastePads', 'windLanes'], flavour: 'It is the mire. Chain the haste pads; never fight it in the mud.', onEnter: [['bog-spawn'], ['bog-spawn']] }),
   boss('aurelion', 8, 'Aurelion, the Twice-Struck', ['echoes'],
