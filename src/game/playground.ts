@@ -1,4 +1,4 @@
-import { AnimationMixer, BoxGeometry, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
+import { AnimationMixer, BoxGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
   compileClip,
   ContactShadow,
@@ -134,13 +134,16 @@ export class Playground implements Game {
       if (b.tags) physics.tag(col, ...b.tags);
     }
 
+    // One crate shape, merged by material once (2 draws per crate instead of 6), shared.
+    const crateBox = new Mesh(new BoxGeometry(1, 1, 1), [
+      ...Array(2).fill(toonMaterial(ctx.palette.orange)),
+      toonMaterial(ctx.palette.sand),
+      ...Array(3).fill(toonMaterial(ctx.palette.orange)),
+    ]);
+    crateBox.castShadow = crateBox.receiveShadow = true;
+    const crateParts = mergeStaticMeshes([crateBox]);
     for (const c of LEVEL.crates) {
-      const mesh = new Mesh(new BoxGeometry(1, 1, 1), [
-        ...Array(2).fill(toonMaterial(ctx.palette.orange)),
-        toonMaterial(ctx.palette.sand),
-        ...Array(3).fill(toonMaterial(ctx.palette.orange)),
-      ]);
-      mesh.castShadow = mesh.receiveShadow = true;
+      const mesh = new Group().add(...crateParts.map((p) => p.clone()));
       scene.add(mesh);
       const body = physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic().setTranslation(...c.at).setLinearDamping(4).enabledRotations(false, false, false),
@@ -156,14 +159,15 @@ export class Playground implements Game {
       loadModel(HERO_MODEL, { castShadow: false }),
     ]);
 
-    LEVEL.trees.forEach(([x, y, z], i) => {
+    const trees = LEVEL.trees.map(([x, y, z], i) => {
       const t = tree.scene.clone(true);
       t.position.set(x, y, z);
       t.rotation.y = i * 1.3;
       t.scale.setScalar(1 + (i % 3) * 0.15);
-      scene.add(t);
       physics.addStaticCylinder([x, y + 1, z], 1, 0.3);
+      return t;
     });
+    scene.add(...mergeStaticMeshes(trees)); // static: one mesh per material
 
     for (const [x, y, z] of LEVEL.coins) {
       const root = coin.scene.clone(true);
