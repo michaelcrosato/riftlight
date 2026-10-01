@@ -239,6 +239,10 @@ export class Combat {
         const at = chest(target.position, 1);
         this.burst(look.burst ?? 'spark', at, { count: result.crit ? 14 : undefined });
         if ((result.byType.physical ?? 0) > 0 && spec.tags.includes('attack')) this.burst('blood', at);
+        // the element that dealt the most also shows, when the skill's own burst doesn't say it
+        // (a sword with added fire throws embers, a frost-converted cleave throws ice)
+        const el = elementOf(result);
+        if (el && TYPE_BURST[el] !== look.burst) this.burst(TYPE_BURST[el], at, { count: result.crit ? 8 : 4 });
         if (caster === this.heroOf() && look.shake) this.shake.add(look.shake * (result.crit ? 1.6 : 1) * 0.5);
       }
     }
@@ -334,6 +338,23 @@ export class Combat {
     this.off.length = 0;
     this.root.removeFromParent();
   }
+}
+
+/** The burst each element throws on a hit (`combat/sfx.ts` presets). */
+const TYPE_BURST: Readonly<Record<'fire' | 'cold' | 'lightning' | 'chaos', string>> = { fire: 'fire', cold: 'frost', lightning: 'zap', chaos: 'toxic' };
+
+/** The element that dealt most of a hit, if any dealt at least a quarter of it. */
+function elementOf(r: HitResult): 'fire' | 'cold' | 'lightning' | 'chaos' | null {
+  let best: 'fire' | 'cold' | 'lightning' | 'chaos' | null = null;
+  let v = r.total * 0.25;
+  for (const t of ['fire', 'cold', 'lightning', 'chaos'] as const) {
+    const d = r.byType[t] ?? 0;
+    if (d > v) {
+      v = d;
+      best = t;
+    }
+  }
+  return best;
 }
 
 /** A point at chest height above feet. */
