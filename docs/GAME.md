@@ -133,9 +133,43 @@ swinging), RMB / K, Q, E, R, F (or 1–4) are the skill bar, Space is the dodge 
 buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,
 casting slows movement instead of locking it (the legs keep running under the arms), and
 attack clips play at the rate attack / cast speed asks for. W is movement, so the bar is
-Q/E/R/F rather than Q/W/E/R. The shell passes `HERO_TOUCH_BUTTONS`, `HERO_GAMEPAD_BUTTONS`
+Q/E/R/F rather than Q/W/E/R. On a phone the touch buttons are the bar (*Game shell* below:
+`RIFTLIGHT_TOUCH_BUTTONS`). The shell passes `HERO_GAMEPAD_BUTTONS`
 and `HERO_DEBUG_KEYS` (R is a skill, so the resolution hotkey moves to F2) to the engine.
 Every timing is in `HERO_TUNING`.
+
+### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
+
+Gameplay is instant (the facing snaps to the aim, speed is full at once, an action starts on
+the press), so the presentation does the smoothing, with no say over gameplay:
+
+- **Feet.** `HeroAnimator` runs the engine's `FootPlacement` (docs/ANIMATION.md, "At runtime")
+  with a ground probe (the Rapier world, a stage's `groundY`, else flat): a planted foot stays
+  where it touched down through blends, wind-ups and twisting hips, and re-plants with a quick
+  step when the body moves on. `PoseLayers` springs the hat (`Cap`).
+- **Facing.** The drawn body follows the gameplay facing: small corrections smoothly, a
+  standing turn of more than `hopTurn` degrees as a quick hop round (`hopTime`), so the feet
+  never pivot on the floor. The whirlwind spins the whole model (`spinTurns`); its clip only
+  holds the pose.
+- **Lifts.** Where the clip has the feet down but the body must travel, it is lifted a few
+  centimetres instead of skating: a melee lunge bounds in (`lungeHop`), a roll springs off
+  (`rollPush`), a standing start at a run springs off (`startHop`), a hard shove staggers
+  (`staggerHop`).
+- **Root motion.** Dashes and the dodge roll move by a speed profile matched to their clips
+  (`combat/deliveries/dash.ts` `ROLL_PROFILE`, `DASH_PROFILE`; `Motion.profile`): the roll
+  brakes as its feet come down, then creeps on exactly as fast as the clip slides them back
+  under the rising body. Walk and Run share one phase; a stop finishes the stride in the air.
+- **Weapons** (`actors/weapons.ts`): one mesh per weapon class (sword, axe, mace, sceptre,
+  dagger, wand, staff in the right fist; a bow in the left, its string drawn to the right hand
+  between a bow clip's `draw` frames and let go at its hit frame). The equipped item's
+  `weapon.<class>` flag picks it (`weaponClassOf`; no flag is the starter sword; two-handers
+  are drawn a size up). With a staff or wand, `Cast` / `CastBig` become `CastWeapon` /
+  `CastBigWeapon` (same hit frames): the weapon points.
+
+Hit frames and cancel points are `COMBAT_TIMING` (`src/game/hero/clips/combat.ts`); move a hit
+in a clip and move it there too. Check the hero in the arena with
+`npm run film -- all --game arena` (the `arena-*` films: combo steps, every delivery kind,
+weapons, the roll in 8 directions, hurt, death).
 
 ### Stats the pipeline reads
 
@@ -1155,7 +1189,10 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   next; designed levels 1–12, rifts after.
 - **Camera**: the iso preset at 42° pitch (`RIFTLIGHT_OPTIONS`), zoom 1.08 in levels and 1.22
   in town (times the settings zoom; the wheel adjusts it), smooth follow with a lead of 22% of
-  the way to the aim point (max 1.6 m), screen shake from `services.shake`.
+  the way to the aim point (max 1.6 m), screen shake from `services.shake`. A screen taller
+  than wide zooms out (`CAMERA.portrait`, 0.8×) so the fight around the hero fits 124 art
+  pixels, and with touch controls on screen the target slides toward the camera so the hero
+  stands in the middle of the room left above them.
 - **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
   arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
   boss song near a boss. UI and game sounds are `rl.*` SFX data.
@@ -1181,7 +1218,11 @@ pads alike; `PanelHost` gives them the save, gold, sounds and
 actor (loot and the skill panel read its StatSheet). A panel may implement `fit(w, h)`: the
 layer tells it the room there is before reading `size` (a phone in portrait is 124 art pixels
 wide) and clamps every panel to the screen; menus then put labels above their controls and the
-character sheet moves its explain column under the list.
+character sheet moves its explain column under the list. On a phone the codex is a list of
+tall rows that opens one entry at a time (with a back row), the death recap stacks its columns
+over a full-width button, and the loot window breaks its summary between parts, with tall rows
+and stacked buttons: every tap target is at least 14 art pixels (42 CSS pixels at 3×). A panel's
+close box takes presses around it too; the passive tree has one in its top bar.
 
 **HUD layout** (`ui/layout.ts`). The fixed HUD (`hudZones`: orbs, bar, minimap, boss bar,
 banner) reserves its rects each frame; world overlays are placed around them by priority with
@@ -1191,6 +1232,22 @@ Whatever finds no room is skipped for that frame. The centre banner is a `Banner
 level card, LEVEL CLEAR and level-ups show one at a time, a second level-up merges into the
 one showing, a clear cuts a level-up short. Under 300 art pixels wide the HUD is compact
 (`hudGeometry`): small orbs over a tight bar, a small minimap.
+
+**On a touch screen** (`game/touch.ts`) the engine's touch buttons are the skill bar, laid out as
+an action cluster: the joystick bottom-left; a big attack button in the bottom-right corner,
+skills 1-4 on an arc around it, the dodge outside the arc and a contextual interact button
+next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
+inventory, skills, tree and settings are) top-left. `TouchPad` drives them each frame from
+`hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
+mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
+rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
+orb takes the lowest free spot in its corner third (beside the joystick and the cluster on a
+wide screen, above them in portrait), the XP bar runs between the orbs or sits over the life
+orb, the top-left text starts right of ≡, the prompt drops its key glyph. The controls hide on
+the title, under every panel and when the hero is dead, and their rects are world-overlay
+zones too. Riftlight ships without the engine's ⚙ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`
+brings it back. `__RIFTLIGHT__.ui.hud()` returns the HUD's rects and the controls (the phone
+e2e checks that none overlap).
 
 **Gem icons** (`skills/icons.ts`): every gem has an 8 × 6 pixel icon, generated from its data:
 actives draw their delivery's shape in their `look` colours, supports a glyph for what they
@@ -1343,7 +1400,7 @@ Typed as `RiftlightApi` (`game/api.ts`). Steps go through `Engine.step`, frame-e
 | `fight({skills})`, `collectGold()`, `pickupAll()`, `killAll()` | level helpers |
 | `spawn({seed, x, z, rank})`, `give({xp, gold, items, levels})`, `setDifficulty({...})`, `dev` (god, ai, hitboxes) | dev tools |
 | `hero(stat?, tags?)`, `actors()`, `loot()`, `log()` | inspect (`hero('damage')` returns `explain` sources) |
-| `ui.stack()`, `ui.open(id)`, `ui.close()`, `ui.widgets()`, `ui.click(id)` | menus as data |
+| `ui.stack()`, `ui.open(id)`, `ui.close()`, `ui.widgets()`, `ui.click(id)`, `ui.hud()` | menus as data; the fixed HUD's rects and the touch controls |
 | `save(slot)`, `load(slot)`, `exportSave(slot)`, `importSave(slot, json)`, `slots()` | saves |
 | `bot.run({maxFrames})`, `bot.start()`, `bot.advance(n)`, `bot.report()`, `bot.decide()`, `bot.town()` | the playtest bot (`town()`: its town visit) |
 | `gems()`, `gearScore()` | socketed gems with level and XP; item power of what the hero wears |

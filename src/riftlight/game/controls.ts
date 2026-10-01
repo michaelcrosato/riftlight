@@ -4,8 +4,8 @@
  *   move      WASD / arrows / left stick / touch joystick
  *   aim       mouse cursor on the ground; with a pad, the nearest enemy ahead
  *   attack    LMB / J / pad A / touch A          dodge   Space / pad B / touch B
- *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB / touch 1 2
- *   interact  F / pad RT / touch F               pause   Esc / pad Start / touch ≡
+ *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB / touch 1-4 (game/touch.ts)
+ *   interact  F / pad RT / touch TALK…            pause   Esc / pad Start / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Back = inventory)
  *   items     click / Enter / pad A · X / pad X = right-click · V / pad Y = Ctrl-click
  *

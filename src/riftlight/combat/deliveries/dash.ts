@@ -7,6 +7,29 @@ export const DODGE_IFRAMES = 0.85;
 /** A dash covers its distance in this share of the skill's cast time. */
 export const DASH_TIME = 0.8;
 
+/** A speed profile over u = 0..1 scaled so it averages exactly 1 (the distance is kept). */
+export function normalizedProfile(shape: (u: number) => number): (u: number) => number {
+  let sum = 0;
+  const n = 400;
+  for (let i = 0; i < n; i++) sum += shape((i + 0.5) / n);
+  const k = n / sum;
+  return (u) => shape(u) * k;
+}
+const smooth = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
+};
+/**
+ * Root motion of the dodge roll, matched to the Roll clip (played over the same time): it
+ * pushes off already moving (the feet leave the floor at once), rolls at full speed, brakes
+ * as the ball comes over and the feet come down (Roll frame 8.5 of 14), then creeps on at
+ * the speed the clip slides the planted feet back under the rising body (about 0.2 m), so
+ * they stay planted instead of skating.
+ */
+export const ROLL_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.45 + 0.55 * smooth(u / 0.1) : u < 0.36 ? 1 : u < 0.6 ? 1 - 0.945 * smooth((u - 0.36) / 0.24) : 0.055));
+/** Dashes and charges: off the mark fast, and brake to a stop into the last stride (the Charge clip's feet dig in as it ends). */
+export const DASH_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.5 + 0.5 * smooth(u / 0.1) : u < 0.65 ? 1 : 1 - smooth((u - 0.65) / 0.3)));
+
 class Dash extends EffectBase {
   readonly kind = 'dash';
   private done = false;
@@ -44,11 +67,15 @@ class Dash extends EffectBase {
     }
     const time = Math.max(0.1, c.skill.castTime * DASH_TIME);
     const speed = d.distance / time;
-    if (c.skill.tags.includes('dodge')) caster.iframes = Math.max(caster.iframes, time * DODGE_IFRAMES);
+    const dodge = c.skill.tags.includes('dodge');
+    if (dodge) caster.iframes = Math.max(caster.iframes, time * DODGE_IFRAMES);
     caster.startMotion({
       vx: c.dir.x * speed,
       vz: c.dir.z * speed,
       left: time,
+      total: time,
+      // (the hero's clips are matched to these; monsters animate their own dashes)
+      profile: caster.faction !== 'hero' ? undefined : dodge ? ROLL_PROFILE : DASH_PROFILE,
       onStep: (a) => this.along(a, d.hitWidth),
       onEnd: () => {
         this.done = true;

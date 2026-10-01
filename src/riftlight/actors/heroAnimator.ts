@@ -1,4 +1,5 @@
-import { type AnimationAction, AnimationClip, AnimationMixer, type Object3D } from 'three/webgpu';
+import { type AnimationAction, AnimationClip, AnimationMixer, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { FootPlacement, PoseLayers, type FootPlacementInput, type FootPlacementState, type FootPlacementTuning, type GroundProbe, type RigSpec } from '../../engine/animation';
 
 /** Joints of the lower body (legs and the root): the rest is the upper body. */
 const LOWER = new Set(['Pelvis', 'LegR', 'ShinR', 'FootR', 'LegL', 'ShinL', 'FootL']);
@@ -26,25 +27,82 @@ export function partClip(clip: AnimationClip, part: Exclude<BodyPart, 'full'>): 
   return c;
 }
 
+/** Runtime layers on top of the clips (engine `FootPlacement` and `PoseLayers`). */
+export interface HeroAnimatorOptions {
+  /** The rig: turns on the springy cap and, with a `probe`, foot placement. */
+  rig?: RigSpec;
+  /** Ray down onto the real ground (foot placement and locking need it). */
+  probe?: GroundProbe;
+  feet?: Partial<FootPlacementTuning>;
+}
+
+/** Joint state as the mixer left it (restored before the next mixer pass, see `update`). */
+interface Snap {
+  o: Object3D;
+  p: Vector3;
+  q: Quaternion;
+  s: Vector3;
+}
+
+const NO_LAYERS = { lean: { roll: 0, pitch: 0 }, look: 0, impact: 0 };
+
 /**
  * The hero's animation blending, driven entirely by the controller's clocks (no mixer time):
  * hit-stop freezes the pose exactly, attack clips play at the rate attack speed asks for, and
  * films are frame-exact. Pose sources fade as slots whose weights always sum to 1, so every
  * joint is fully posed during a blend. A source can split the body: legs keep running while
  * the arms cast (casting while moving is slowed, not locked).
+ *
+ * With the rig and a ground probe, the engine's foot placement runs after the mixer
+ * (docs/ANIMATION.md, "At runtime"): a foot the clips put on the floor stays where it landed
+ * in the world through blends, attack wind-ups, playback-rate mismatches and the body
+ * stepping in, and re-plants with a quick step when the body drifts away from it. The cap
+ * is a spring that lags behind the head (PoseLayers).
  */
 export class HeroAnimator {
   readonly mixer: AnimationMixer;
+  /** Foot placement and locking (null without a rig and probe). */
+  readonly feet: FootPlacement | null;
+  private readonly layers: PoseLayers | null;
   private readonly clips = new Map<string, AnimationClip>();
   private readonly actions = new Map<string, AnimationAction>();
   private readonly clocks = new Map<string, number>();
   private slots: Slot[] = [];
   private target: Slot | null = null;
   private fade = 0.1;
+  /** The animated joints after the last mixer pass: the layers' changes are undone from these. */
+  private readonly snaps: Snap[] = [];
+  private readonly pelvis: Object3D | null;
+  private readonly torso: Object3D | null;
 
-  constructor(readonly model: Object3D, clips: readonly AnimationClip[]) {
+  constructor(readonly model: Object3D, clips: readonly AnimationClip[], options: HeroAnimatorOptions = {}) {
     this.mixer = new AnimationMixer(model);
     for (const c of clips) this.clips.set(c.name, c);
+    const rig = options.rig;
+    const has = (n: string) => !!model.getObjectByName(n);
+    const legs = rig?.legs;
+    const legJoints = legs ? [legs.R.upper, legs.R.lower, legs.R.foot, legs.L.upper, legs.L.lower, legs.L.foot] : [];
+    this.feet = rig && options.probe && legs && legJoints.every(has) ? new FootPlacement(model, rig, options.probe, options.feet) : null;
+    this.layers = rig && has(rig.root) ? new PoseLayers(model, rig) : null;
+    this.pelvis = rig ? (model.getObjectByName(rig.root) ?? null) : null;
+    this.torso = rig?.spine?.torso ? (model.getObjectByName(rig.spine.torso) ?? null) : null;
+    // the mixer only writes what changed, so the layers' corrections would pile up on joints
+    // a held pose leaves alone: every animated joint is put back as the mixer left it first
+    for (const name of rig?.joints ?? []) {
+      const o = model.getObjectByName(name);
+      if (o) this.snaps.push({ o, p: o.position.clone(), q: o.quaternion.clone(), s: o.scale.clone() });
+    }
+  }
+
+  /** Forget foot locks and the cap's spring (teleports, respawns). */
+  resetLayers(): void {
+    this.feet?.reset();
+    this.layers?.reset();
+  }
+
+  /** What foot placement did this frame (film, tooling). */
+  footPlacement(): FootPlacementState | null {
+    return this.feet?.state() ?? null;
   }
 
   /**
@@ -137,8 +195,13 @@ export class HeroAnimator {
     for (const s of this.slots) s.weight = s === this.target ? 1 : 0;
   }
 
-  /** Blend weights by `dt`, then pose the model at every clock. `dt` = 0 re-poses only. */
-  update(dt: number): void {
+  /**
+   * Blend weights by `dt`, then pose the model at every clock. `dt` = 0 re-poses only.
+   * `feet`: what foot placement should do this frame (omitted: off). `hips`: turn the hips
+   * this far (radians, about the vertical) and the chest back the other way, so legs can walk
+   * one way while the upper body faces another (casting on the move).
+   */
+  update(dt: number, feet?: FootPlacementInput, hips = 0): void {
     const t = this.target;
     if (t) {
       const step = this.fade > 0 ? dt / this.fade : 1;
@@ -162,7 +225,26 @@ export class HeroAnimator {
       }
     }
     for (const a of this.actions.values()) if (!used.has(a)) a.setEffectiveWeight(0);
+    for (const j of this.snaps) {
+      j.o.position.copy(j.p);
+      j.o.quaternion.copy(j.q);
+      j.o.scale.copy(j.s);
+    }
     this.mixer.update(0);
+    for (const j of this.snaps) {
+      j.p.copy(j.o.position);
+      j.q.copy(j.o.quaternion);
+      j.s.copy(j.o.scale);
+    }
+    if (hips !== 0 && this.pelvis && this.torso) {
+      this.pelvis.quaternion.premultiply(HQ.setFromAxisAngle(UP, hips));
+      this.torso.quaternion.premultiply(HQ.setFromAxisAngle(UP, -hips));
+    }
+    if (this.feet) {
+      this.feet.capture(); // where the clips put the feet
+      this.layers?.apply(dt, NO_LAYERS);
+      this.feet.apply(dt, feet ?? OFF);
+    } else this.layers?.apply(dt, NO_LAYERS);
   }
 
   /** What contributes to the pose now (film / tooling, like PlatformerCharacter.animationMix). */
@@ -181,6 +263,10 @@ export class HeroAnimator {
     return ((parts.length > 1 ? parts[parts.length - 1] : parts[0])?.clip ?? 'Idle').split('~')[0]!;
   }
 }
+
+const OFF: FootPlacementInput = { ik: false, lock: false };
+const UP = new Vector3(0, 1, 0);
+const HQ = new Quaternion();
 
 /** Loop clips are marked when compiled from a `loop: true` ClipDef (see HeroController). */
 export function isLoop(clip: AnimationClip): boolean {

@@ -6,7 +6,8 @@
  *   Engine.start(new Riftlight(), RIFTLIGHT_OPTIONS);                    // all stubs
  *   Engine.start(new Riftlight({ hero: realHero, levels: realLevels }));  // real systems
  */
-import type { EngineOptions, TouchButton } from '../engine';
+import type { EngineOptions } from '../engine';
+import { RIFTLIGHT_TOUCH_BUTTONS } from './game/touch';
 
 export { Riftlight, CAMERA, type Screen } from './game/Riftlight';
 export * from './game/ports';
@@ -19,19 +20,15 @@ export { SONGS, SOUNDS } from './game/audio';
 export { Town, TOWN_LAYOUT } from './town/Town';
 export { NPCS } from './town/npcs';
 export { NPC_CLIPS } from './town/npcClips';
+export { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_LAYOUT, TOUCH_CODES } from './game/touch';
 
-/** Riftlight's on-screen buttons for phones (attack, dodge, two skills, talk, menu). */
-export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
-  { label: 'A', code: 'KeyJ', hint: 'attack' },
-  { label: 'B', code: 'Space', hint: 'dodge' },
-  { label: '1', code: 'Digit1', hint: 'skill' },
-  { label: '2', code: 'Digit2', hint: 'skill' },
-  { label: 'F', code: 'KeyF', hint: 'talk' },
-  { label: '≡', code: 'Escape', hint: 'menu' },
-];
-
-/** Engine options the game is designed for: the iso preset at an ARPG angle and zoom. */
+/**
+ * Engine options the game is designed for: the iso preset at an ARPG angle and zoom, the
+ * touch action cluster (`game/touch.ts`), and no engine tool bar on phones (it shows with
+ * `?debug=1`).
+ */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   camera: { preset: 'iso', pitch: 42, yaw: 45, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
+  touchBar: false,
 };

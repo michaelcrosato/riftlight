@@ -57,7 +57,7 @@ export function sampleFrames(model: Object3D, rig: RigSpec, clip: AnimationClip,
   const out: SampledFrame[] = [];
   const box = new Box3();
   const bodyMeshes: Mesh[] = [];
-  model.traverse((o) => {
+  model.traverseVisible((o) => {
     if ((o as Mesh).isMesh && !rig.soles.includes(o.name)) bodyMeshes.push(o as Mesh);
   });
   for (const f of frames) {
