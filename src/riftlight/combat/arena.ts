@@ -3,6 +3,7 @@ import { ContactShadow, mergeStaticMeshes, toonMaterial, type Game, type GameCon
 import { resolveDebugKeys, type DebugKeyMap } from '../../engine/debugKeys';
 import { PALETTE } from '../../engine/palette';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
+import { flat } from '../core/mods';
 import { Rng } from '../core/rng';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
@@ -165,6 +166,8 @@ export class Arena implements Game {
       clips: HERO_CLIPS,
       at: ARENA.spawn,
       slots: parseSlots(params.get('skills')),
+      // a starter sword: what the arena's attacks scale from (loot equips real weapons)
+      mods: { weapon: [flat('weapon.physical.min', 6), flat('weapon.physical.max', 11), flat('weapon.crit', 0.05)] },
       canvas: ctx.engine.renderer.renderer.domElement,
     });
     this.hero.bindInput(ctx.input, ctx.engine.renderer.renderer.domElement);

@@ -1,10 +1,10 @@
 import type { Mesh } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
+import { FINISHER } from '../tuning';
 import { arcDecal } from '../visuals';
 import { EffectBase, type CastContext, type CombatEffect } from './types';
 
-/** Damage, arc and knockback bonus of a combo's last hit. */
-export const FINISHER = { damage: 1.6, arc: 1.25, knockback: 2.2, shake: 0.25 } as const;
+export { FINISHER };
 
 /** Is this cast the last step of a multi-step combo? */
 export function isFinisher(c: CastContext): boolean {
