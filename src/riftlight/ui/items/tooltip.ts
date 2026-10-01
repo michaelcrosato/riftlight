@@ -11,6 +11,7 @@ import { type StatDelta } from '../../loot/compare';
 import { AFFIXES, CORRUPTIONS, CURRENCY, GEMS, UNIQUES } from '../../loot/content';
 import { itemClass, itemColour } from '../../loot/filter';
 import { baseOf, defenceStats, requiredLevel, weaponStats } from '../../loot/itemMods';
+import { gemProgress } from '../../loot/sockets';
 import { describeItemMods } from '../../loot/stats';
 import { LINE_H, type Painter, panel, textWidth, UI, wrap } from './paint';
 
@@ -43,6 +44,8 @@ export interface TooltipOptions {
 export const TIP_CHARS = 36;
 
 const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
+/** 950, 12.4k, 3.1m */
+const shortNum = (v: number) => (v >= 1e6 ? `${+(v / 1e6).toFixed(1)}m` : v >= 1e4 ? `${+(v / 1e3).toFixed(1)}k` : String(Math.round(v)));
 const range = (r: readonly [number, number]) => `${r[0]}-${r[1]}`;
 
 export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
@@ -81,6 +84,13 @@ export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
     add(item.gem.support ? 'Link it to a skill with matching tags' : 'Socket it in a skill slot to use it', UI.dim);
     const need = requiredLevel(item);
     add(`Requires level ${need}`, opts.heroLevel !== undefined && opts.heroLevel < need ? UI.bad : UI.dim);
+    // gem XP: socketed gems earn the hero's XP and level up (loot/sockets.ts addGemXp)
+    const prog = gemProgress(item, opts.heroLevel);
+    if (prog?.max) add('Maximum gem level', UI.dim);
+    else if (prog) {
+      add(`Experience ${shortNum(prog.xp)}/${shortNum(prog.next)} (${Math.floor(prog.fraction * 100)}%)`, UI.text);
+      if (prog.waiting) add(`Levels up at hero level ${prog.nextReq}`, UI.bad);
+    }
     return finish(lines, opts, sep, add);
   }
 

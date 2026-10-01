@@ -97,8 +97,11 @@ export class RealLoot implements LootPort {
 
   rollDrops(kill: KillInfo, rng: Rng): Drop[] {
     this.depth = kill.depth;
+    // find stats are multipliers on the hero (base 1): the kill carries them as fractions above
+    // 1 (0.3 = 30% increased); read the sheet the same way when it doesn't
     const sheet = this.heroStats();
-    const d = rollDrops(rng, { depth: kill.depth, rank: kill.rank, itemRarity: sheet ? sheet.get('item.rarity') : 0, itemQuantity: sheet ? sheet.get('item.quantity') : 0, goldFind: sheet ? sheet.get('gold.find') : 0 });
+    const frac = (given: number | undefined, stat: string) => given ?? (sheet ? Math.max(-0.9, sheet.get(stat) - 1) : 0);
+    const d = rollDrops(rng, { depth: kill.depth, rank: kill.rank, itemRarity: frac(kill.itemRarity, 'item.rarity'), itemQuantity: frac(kill.itemQuantity, 'item.quantity'), goldFind: frac(kill.goldFind, 'gold.find') });
     const out: Drop[] = d.items.map((item) => ({ kind: 'item', item }));
     if (d.gold > 0) out.push({ kind: 'gold', amount: d.gold });
     return out;
@@ -260,6 +263,15 @@ export class RealLoot implements LootPort {
     save.stash = l.stash;
     save.positions = l.positions;
     save.hero.skills = this.store.skills.map((x) => ({ ...x, supports: [...x.supports] }));
+  }
+
+  setSockets(skills: SaveData['hero']['skills']): void {
+    this.quiet++;
+    try {
+      this.store.setSkills(normalizeSockets(skills));
+    } finally {
+      this.quiet--;
+    }
   }
 
   give(rng: Rng, level: number, rarity: Rarity = 'rare'): Item | null {

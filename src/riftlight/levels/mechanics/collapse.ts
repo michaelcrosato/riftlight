@@ -1,7 +1,7 @@
 import { BoxGeometry, Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
-import { VOID } from '../layout/grid';
+import { FLOOR, VOID } from '../layout/grid';
 import { glowMaterial, tint } from '../themes/props';
 import { asMechanicLevel, box, cellIndexOf, centroid, growBlob, heroScale } from './common';
 import type { LevelMechanicDef } from './types';
@@ -9,8 +9,9 @@ import type { LevelMechanicDef } from './types';
 /**
  * Level 12 — Collapse. Cracked floors crumble behind you: a tile the hero steps on starts
  * to crack and drops into the void a moment later, and the crack spreads to its neighbours.
- * The main road is solid stone. Loot caches sit on crumbling islands (grab them before the
- * floor goes), and a fast clear (under par) pays bonus loot at the end.
+ * The main road is solid stone. Fallen tiles rise back after `REFORM` seconds, so nothing is
+ * cut off for good. Loot caches sit on crumbling islands (grab them before the floor goes),
+ * and a fast clear (under par) pays bonus loot at the end.
  *
  * Crumbling cells are `dynamicFloor`: the geometry builder leaves them to this mechanic
  * (instanced tiles), and `level.setCell(x, z, VOID)` updates nav, colliders and walkability.
@@ -19,6 +20,12 @@ const CRACK = 0.9;
 // `collapse.bonusLoot` (Collapse Runner, the Crumbling Halls suffix): more items from caches and
 // the under-par bonus. Falls are Level / wire's job: `collapse.fallImmune` makes them harmless.
 const SPREAD = 0.22;
+/**
+ * Seconds a fallen tile stays gone before it rises back. Without it a crumbled zone can cut
+ * a side room (and whoever is in it, monsters or the hero) off for good: the level could
+ * never be cleared.
+ */
+const REFORM = 9;
 const tileGeo = new BoxGeometry(0.98, 0.4, 0.98).translate(0, -0.2, 0);
 tileGeo.userData.shared = true;
 const crackGeo = new BoxGeometry(1, 0.02, 0.07).translate(0, 0.005, 0);
@@ -30,7 +37,7 @@ export const COLLAPSE: LevelMechanicDef = {
   tags: ['earth', 'surface', 'speed'],
   excludes: ['riftgates'],
   color: 0xd06a30,
-  description: 'Floors crumble behind you and drop into the void.',
+  description: 'Floors crumble behind you and drop into the void (they rise back a while later).',
   bypass: 'Keep moving on the solid main road.',
   exploit: 'Fastest clears earn collapse bonus loot; grab the caches on crumbling islands before they fall.',
   place(ctx) {
@@ -98,6 +105,7 @@ export const COLLAPSE: LevelMechanicDef = {
     // State per tile: crack timer (≥0 cracking), fall velocity/height once falling.
     const crackAt = new Float32Array(cells.length).fill(-1);
     const fallY = new Float32Array(cells.length).fill(0);
+    const goneFor = new Float32Array(cells.length).fill(0);
     const state = new Uint8Array(cells.length); // 0 intact, 1 cracking, 2 falling, 3 gone
     const startCrack = (k: number, delay: number) => {
       if (state[k] !== 0) return;
@@ -168,10 +176,24 @@ export const COLLAPSE: LevelMechanicDef = {
         let dirty = false;
         for (let k = 0; k < cells.length; k++) {
           const s = state[k]!;
-          if (s === 0 || s === 3) continue;
+          if (s === 0) continue;
           const c = cells[k]!;
           const x = c % W;
           const z = (c - x) / W;
+          if (s >= 2) {
+            goneFor[k]! += dt;
+            if (goneFor[k]! >= REFORM && s === 3) {
+              // the tile rises back: walkable again (a stranded room is reachable once more)
+              state[k] = 0;
+              goneFor[k] = 0;
+              fallY[k] = 0;
+              place(k, m.makeTranslation(x + 0.5, 0, z + 0.5));
+              level.setCell(x, z, FLOOR);
+              dirty = true;
+              continue;
+            }
+            if (s === 3) continue;
+          }
           if (s === 1) {
             crackAt[k]! -= dt;
             // Shake while cracking.

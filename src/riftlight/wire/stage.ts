@@ -47,6 +47,12 @@ export class StageMover implements Mover {
     return s.walkable(x, z, pushed) && s.walkable(x + r, z, pushed) && s.walkable(x - r, z, pushed) && s.walkable(x, z + r, pushed) && s.walkable(x, z - r, pushed);
   }
 
+  /** How many of the four edge probes stand on blocked cells. */
+  private blocked(s: GridStage, x: number, z: number, pushed: boolean): number {
+    const r = this.radius;
+    return +!s.walkable(x + r, z, pushed) + +!s.walkable(x - r, z, pushed) + +!s.walkable(x, z + r, pushed) + +!s.walkable(x, z - r, pushed);
+  }
+
   /**
    * Pressing (nearly) straight into a wall corner (a doorway or a one-cell corridor
    * a little off its centre line). Push the step's end out of the blocked cells it overlaps,
@@ -98,7 +104,15 @@ export class StageMover implements Mover {
       const pushed = this.pushed();
       const nx = p.x + vx * dt;
       const nz = p.z + vz * dt;
-      if (this.ok(s, nx, nz, pushed)) {
+      if (!this.ok(s, p.x, p.z, pushed) && s.walkable(p.x, p.z, pushed)) {
+        // the floor changed under it (a Collapse tile dropped next to it): every step from
+        // here would fail the edge probes, so any step that stays on floor and overlaps no
+        // more blocked cells is allowed (it walks off the edge instead of freezing there)
+        if (s.walkable(nx, nz, pushed) && this.blocked(s, nx, nz, pushed) <= this.blocked(s, p.x, p.z, pushed)) {
+          p.x = nx;
+          p.z = nz;
+        }
+      } else if (this.ok(s, nx, nz, pushed)) {
         p.x = nx;
         p.z = nz;
       } else {

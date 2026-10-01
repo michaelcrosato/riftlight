@@ -1,7 +1,7 @@
 import { BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE } from '../../engine/palette';
 import { toonMaterial } from '../../engine/render/toon';
-import { flat, type Mod, type StatSheet } from '../core/mods';
+import { flat, type Mod, more, type StatSheet } from '../core/mods';
 import { StatQuery } from './stats';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { buildSkill } from '../skills/build';
@@ -14,6 +14,18 @@ export const MINION_BASE: Readonly<Record<string, Readonly<Record<string, number
   minion: { life: 60, 'move.speed': 5.5, 'life.regen': 2, accuracy: 300 },
   spectre: { life: 90, 'move.speed': 4.5, 'life.regen': 3, accuracy: 300 },
 };
+
+/**
+ * Minions grow with their summoner: they wear no gear, so the summoner's level stands in for
+ * the weapons and armour a hero finds (`npm run balance` keeps minion builds near the
+ * others): `more` damage and life per level above 1, plus the summon gem's +8 life a level.
+ */
+export const MINION_GROWTH = { damage: 0.6, life: 0.5 } as const;
+
+export function minionLevelMods(gemLevel: number, ownerLevel: number): Mod[] {
+  const n = Math.max(0, ownerLevel - 1);
+  return [flat('life', 8 * Math.max(0, gemLevel - 1)), ...(n > 0 ? [more('damage', MINION_GROWTH.damage * n), more('life', MINION_GROWTH.life * n)] : [])];
+}
 
 /** The minion's own melee swing (its damage comes from the summon gem). */
 export const MINION_STRIKE: SkillGem = {
@@ -179,7 +191,7 @@ export function placeholderMinion(req: SummonRequest): Actor {
     faction: req.owner.faction,
     name: req.genome,
     base: MINION_BASE[req.genome] ?? MINION_BASE.minion,
-    mods: { summoner: mods, owner: ownerMinionMods(req.owner.stats), level: [flat('life', 8 * (req.skill.level - 1))] },
+    mods: { summoner: mods, owner: ownerMinionMods(req.owner.stats), level: minionLevelMods(req.skill.level, req.owner.level) },
     level: req.owner.level,
     body: root,
     at: req.at,

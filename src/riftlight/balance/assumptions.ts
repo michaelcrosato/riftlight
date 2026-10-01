@@ -70,7 +70,7 @@ export function describeAssumptions(a: Assumptions): string[] {
     `walk = critical path × ${a.walkDetour} / move speed`,
     `minions: ${a.minionBatches} batches alive, never die`,
     `geared: best of ${a.gearCandidates} rares per slot at the depth's item level; tree: greedy best value per point (notables + frontier), no masteries or keystones`,
-    `gem level = highest the hero can equip (1 + 3 per level); supports at the same level`,
+    `gem level = highest the hero can equip (SCALING.gemLevelReq: gems earn the hero's XP); supports at the same level`,
     `out of mana: ${a.fallbackSkill} until the pool refills`,
     `${a.samples} genomes per depth and rank; elite behaviours, conditional mods and boss hazards are not modelled`,
     a.aliases ? 'stat aliases ON: renamed stats (crit.multi → crit.multiplier, ...) are mapped to what combat reads; --raw turns this off' : 'stat aliases OFF (--raw): stats only count if combat reads them by that exact name',

@@ -20,7 +20,8 @@ export const BUY_MARKUP = 4;
 export function sellPrice(item: Item): number {
   const qty = item.quantity ?? 1;
   if (CURRENCY.has(item.base)) return CURRENCY.get(item.base).value * qty;
-  if (item.gem) return 4 + item.gem.level * 3;
+  // gems: by gem level, and dearer deeper (a gem's item level is where it dropped or was sold)
+  if (item.gem) return Math.round((4 + item.gem.level * 3) * (1 + Math.max(0, item.level - 1) * 0.1));
   return Math.max(1, Math.round((1 + item.level * 0.4) * SELL_RARITY[item.rarity]));
 }
 
@@ -32,14 +33,14 @@ export function buyPrice(item: Item): number {
 /**
  * A vendor's stock for one visit: same (seed, depth, visit, kind) → same goods.
  * Smiths sell normal and magic gear around the current item level (a rare now and then)
- * plus basic orbs; the gem vendor sells level 1 skill and support gems.
+ * plus basic orbs; the gem vendor sells level 1 skill and support gems (priced by the depth).
  */
 export function vendorStock(seed: number, depth: number, visit: number, kind: VendorKind): Item[] {
   const rng = new Rng(seed).fork(`vendor:${kind}:${depth}:${visit}`);
   const itemLevel = SCALING.monsterLevel(Math.max(1, depth));
   if (kind === 'gems') {
     const ids = rng.shuffle(GEMS.all().map((g) => g.id)).slice(0, 10);
-    return ids.map((id) => ({ ...rollGem(rng, 1, undefined, id), gem: { id, level: 1, support: GEMS.get(id).support } }));
+    return ids.map((id) => ({ ...rollGem(rng, itemLevel, undefined, id), gem: { id, level: 1, support: GEMS.get(id).support } }));
   }
   const out: Item[] = [];
   for (let i = 0; i < 14; i++) {

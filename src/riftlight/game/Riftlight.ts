@@ -37,6 +37,7 @@ import { changedSliders, DIFFICULTY_SHORT, difficultyMods, sanitizeTuning } from
 import { registerFx } from './fx';
 import { LightPool } from './lights';
 import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
+import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker } from './recap';
 import { newSave, SaveStore } from './save';
@@ -252,7 +253,7 @@ export class Riftlight implements Game, MenuHost {
       if (!this.hero || target === this.hero.actor || target.faction !== 'monster') return;
       // `xp.gain` is a multiplier stat (base 1): shrines, mechanic rewards, gear
       const gain = this.hero.actor.stats.get('xp.gain');
-      const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp) * (gain > 0 ? gain : 1)));
+      const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp, this.save.hero.level) * (gain > 0 ? gain : 1)));
       this.gainXp(xp);
       this.session.kills++;
       const stats = (this.save.stats ??= emptyStats());
@@ -510,6 +511,23 @@ export class Riftlight implements Game, MenuHost {
       this.events.emit('levelUp', { level: this.save.hero.level });
       this.note('level', `level ${this.save.hero.level}`);
     }
+    this.gainGemXp(amount);
+  }
+
+  /** Socketed gems earn the XP the hero earns (PoE): a level-up re-slots the bar and shows a toast. */
+  private gainGemXp(amount: number): void {
+    const skills = this.save.hero.skills;
+    if (!skills.length) return;
+    const r = addGemXp(skills, amount, this.save.hero.level);
+    this.save.hero.skills = r.sockets;
+    this.ports.loot.setSockets?.(r.sockets);
+    if (!r.levelled.length) return;
+    this.hero.setSkills?.(r.sockets);
+    for (const g of r.levelled) {
+      this.feedLine(`${g.name.toUpperCase()} REACHED LEVEL ${g.level}`, 'cyan');
+      this.note('gem', `${g.id} level ${g.level}`);
+    }
+    this.ctx.audio.play('rl.levelUp', { pitch: 5, volume: 0.6 });
   }
 
   addGold(amount: number): boolean {

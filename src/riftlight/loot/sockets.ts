@@ -21,6 +21,7 @@ import type { ResolvedSkill } from '../skills/types';
 import { GEMS } from './content';
 import { rollUid } from './generate';
 import type { Rng } from '../core/rng';
+import { gemXpToNext, SCALING } from '../core/scaling';
 
 export type SkillSocket = SaveData['hero']['skills'][number];
 export type Sockets = readonly SkillSocket[];
@@ -133,7 +134,6 @@ export function socketedGems(s: Sockets): Item[] {
   return s.flatMap((x) => [x.gem, ...x.supports].filter((g): g is Item => !!g));
 }
 
-/** HeroController slots (`{ skill, level, supports }`) for the hero side; null = an empty slot. */
 /**
  * HeroController slots (`{ skill, level, supports }`) for the hero side; null = an empty slot.
  * With the hero's sheet, levels include gear's `skill.level` (see `skillLevel`).
@@ -151,6 +151,78 @@ export function skillLevel(socket: SkillSocket, sheet: StatSheet | null): number
   if (!g) return 0;
   const tags = SKILLS.has(g.id) ? (SKILLS.get(g.id).tags ?? []) : [];
   return Math.max(1, Math.min(MAX_GEM_LEVEL, g.level + Math.round(sheet ? sheet.get('skill.level', tags) : 0)));
+}
+
+// ---------------------------------------------------------------- gem XP
+
+/** A gem that just levelled (the shell shows a toast). */
+export interface GemLevelUp {
+  readonly slot: number;
+  /** −1 for the skill gem, 0.. for a support link. */
+  readonly link: number;
+  readonly id: string;
+  readonly name: string;
+  readonly level: number;
+}
+
+/** Where a gem stands: XP into its level, XP for the next, and whether it waits on the hero's level. */
+export interface GemProgress {
+  readonly level: number;
+  readonly xp: number;
+  /** XP from this level to the next (0 at the cap). */
+  readonly next: number;
+  /** 0..1 toward the next level. */
+  readonly fraction: number;
+  /** Hero level the next gem level needs (null at the cap). */
+  readonly nextReq: number | null;
+  /** Full XP, held back until the hero reaches `nextReq`. */
+  readonly waiting: boolean;
+  readonly max: boolean;
+}
+
+export function gemProgress(item: Item, heroLevel = Infinity): GemProgress | null {
+  const g = item.gem;
+  if (!g) return null;
+  const max = g.level >= MAX_GEM_LEVEL;
+  const next = max ? 0 : gemXpToNext(g.level);
+  const xp = max ? 0 : Math.min(next, Math.max(0, g.xp ?? 0));
+  const nextReq = max ? null : SCALING.gemLevelReq(g.level + 1);
+  return { level: g.level, xp, next, fraction: next > 0 ? xp / next : 1, nextReq, waiting: !max && xp >= next && heroLevel < (nextReq ?? 0), max };
+}
+
+/**
+ * One gem earns `xp` (PoE-style: a socketed gem earns what the hero earns). It levels while
+ * it has the XP and the hero meets the next level's requirement; while the hero is too low
+ * it keeps a full bar (XP beyond one level is not banked). Returns the same object when
+ * nothing changed.
+ */
+export function gemWithXp(item: Item, xp: number, heroLevel: number): { item: Item; levels: number } {
+  const g = item.gem;
+  if (!g || !(xp > 0) || g.level >= MAX_GEM_LEVEL) return { item, levels: 0 };
+  let level = g.level;
+  let have = Math.max(0, g.xp ?? 0) + xp;
+  let levels = 0;
+  while (level < MAX_GEM_LEVEL && have >= gemXpToNext(level) && heroLevel >= SCALING.gemLevelReq(level + 1)) {
+    have -= gemXpToNext(level);
+    level++;
+    levels++;
+  }
+  have = level >= MAX_GEM_LEVEL ? 0 : Math.min(have, gemXpToNext(level));
+  const gem = { ...g, level, xp: Math.round(have) };
+  return { item: { ...item, gem }, levels };
+}
+
+/** Every socketed gem (skills and supports) earns `xp`; returns the new sockets and the level-ups. */
+export function addGemXp(s: Sockets, xp: number, heroLevel: number): { sockets: SkillSocket[]; levelled: GemLevelUp[] } {
+  const levelled: GemLevelUp[] = [];
+  const one = (item: Item | null, slot: number, link: number): Item | null => {
+    if (!item?.gem) return item;
+    const r = gemWithXp(item, xp, heroLevel);
+    if (r.levels > 0) levelled.push({ slot, link, id: item.gem.id, name: item.name, level: r.item.gem!.level });
+    return r.item;
+  };
+  const sockets = s.map((x) => ({ ...x, gem: one(x.gem, x.slot, -1), supports: (x.supports ?? []).map((g, k) => one(g, x.slot, k)) }));
+  return { sockets, levelled };
 }
 
 /** `buildSkill` for a socket on a character (null for an empty slot). */

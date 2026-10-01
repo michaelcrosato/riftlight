@@ -229,7 +229,14 @@ export async function runRiftlightBuilds(h) {
       const level = g.level.level;
       const b = level.plan.elements.find((x) => x.mechanic === 'embers' && x.kind === 'brazier');
       const events = [];
-      g.events.on('mechanic', (m) => events.push(m.event));
+      const relit = [];
+      g.events.on('mechanic', (m) => {
+        events.push(m.event);
+        if (m.id === 'embers' && m.event === 'relight' && m.at) relit.push(m.at.clone());
+      });
+      // Monsters hold still: Vorgath's brazier slam detonates braziers too, and one woken by the
+      // skip-ahead below can set off this brazier just after it relights (the blast then never comes).
+      rl.dev.ai = false;
       const blast = (mods) => {
         g.hero.setMods('e2e', mods);
         g.hero.hc.teleport([b.x, 0, b.z + 1.4]);
@@ -246,8 +253,10 @@ export async function runRiftlightBuilds(h) {
         return { heroLost: life - a.life, ignited: a.stats.hasCondition('ignited'), monsterLost: unit ? mLife - unit.actor.life : -1, spawned: !!m };
       };
       const plain = blast([]);
-      // braziers relight after 18 s; skip ahead
-      for (let i = 0; i < 20; i++) e.step(60);
+      // braziers relight after 18 s: skip ahead until this one has
+      const lit = () => relit.some((p) => Math.hypot(p.x - b.x, p.z - b.z) < 0.1);
+      for (let i = 0; i < 30 * 60 && !lit(); i++) e.step(1);
+      if (!lit()) return { plain, geared: { relit: false }, events };
       const geared = blast([
         { stat: 'brazier.selfIgnite', kind: 'flag', value: 1 },
         { stat: 'brazier.area', kind: 'inc', value: 1 },
