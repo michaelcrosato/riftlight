@@ -1,24 +1,32 @@
 name: CI
 
+# One run per change, never a required status check (merges don't wait for CI):
+#   push              every branch. Autopilot merges a PR within seconds and then cancels its
+#                     branch run, so the run that counts for a merged PR is the one on main.
+#                     A held or draft PR keeps its branch run.
+#   workflow_dispatch Autopilot dispatches CI on main after each merge: a merge made with the
+#                     default GITHUB_TOKEN fires no push event, so main would get no run.
+# No pull_request trigger: it would test the same commit a second time.
+# A red run on main is reverted automatically (claude-ci-autofix.yml).
+
 on:
   push:
-  pull_request:
   workflow_dispatch:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # Branches: a newer push supersedes the old run. main: every merge gets its own verdict,
+  # so auto-revert blames the right commit.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
 
 jobs:
   check:
-    # Runs on push too: PRs opened with the default GITHUB_TOKEN don't fire pull_request,
-    # and the required `check` status is satisfied by any run on the head commit.
     name: check
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
 
@@ -27,12 +35,13 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: lts/*
+          cache: ${{ hashFiles('package-lock.json') != '' && 'npm' || '' }}
       - name: Install Node deps
         if: hashFiles('package.json') != ''
         run: |
           if [ -f pnpm-lock.yaml ]; then corepack enable && pnpm install --frozen-lockfile
           elif [ -f yarn.lock ]; then corepack enable && yarn install --frozen-lockfile
-          elif [ -f package-lock.json ]; then npm ci
+          elif [ -f package-lock.json ]; then npm ci --no-audit --no-fund
           else npm install; fi
 
       - name: Set up uv
@@ -48,31 +57,57 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Install lint tools
+      - name: Install lint tools (shellcheck, pinned actionlint)
+        env:
+          ACTIONLINT_VERSION: 1.7.12
+          ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) latest /usr/local/bin
+          command -v shellcheck >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck; }
+          curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          echo "${ACTIONLINT_SHA256}  $RUNNER_TEMP/actionlint.tgz" | sha256sum -c --quiet -
+          sudo tar -xzf "$RUNNER_TEMP/actionlint.tgz" -C /usr/local/bin actionlint
 
       - run: scripts/check.sh
 
   e2e:
-    # Real-browser verification: native WebGPU (SwiftShader Vulkan) and WebGL 2 fallback.
-    name: e2e
-    needs: check
+    # Real-browser verification (scripts/e2e.mjs): native WebGPU (SwiftShader Vulkan), the
+    # WebGL 2 fallback and the agent tools. The suites run as parallel groups (GROUPS in
+    # scripts/e2e.mjs); the slowest one sets the wall time.
+    name: e2e (${{ matrix.group }})
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        group: ["@core", "@cameras", "@filters"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: lts/*
-      - run: npm ci
-      - run: npx playwright-core install --with-deps chromium
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('playwright-core/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Cache Chromium
+        id: pw-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
+      - name: Install Chromium
+        if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: npx playwright-core install --with-deps chromium
+      - name: Install Chromium system deps
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright-core install-deps chromium
       - run: npm run build
-      - run: npm run test:e2e
+      - run: npm run test:e2e -- "${{ matrix.group }}"
       - if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: e2e-frames
+          name: e2e-frames-${{ strategy.job-index }}
           path: .scratch/e2e/
           if-no-files-found: ignore

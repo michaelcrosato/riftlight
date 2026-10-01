@@ -41,6 +41,23 @@ if [[ -f package.json ]]; then
   for s in lint typecheck test; do
     has_script "$s" && step "$pm" run "$s"
   done
+  # Generated models must match their generator (not stale, not hand-edited). Compares
+  # against the working tree, so it also passes before a regenerated model is committed.
+  if has_script assets && [[ -d public/assets ]]; then
+    assets_unchanged() {
+      local before
+      before=$(cd public/assets && sha256sum -- * | sort)
+      "$pm" run --silent assets >/dev/null
+      [[ "$(cd public/assets && sha256sum -- * | sort)" == "$before" ]] || {
+        echo "public/assets did not match scripts/generate-assets.mjs; regenerated it. Review and commit:"
+        git status --short public/assets
+        return 1
+      }
+    }
+    step assets_unchanged
+  fi
+  # Animation metrics for every clip (exits 1 on problems; warnings are fine).
+  if has_script anim; then step "$pm" run --silent anim -- check; fi
   if [[ $FAST -eq 0 ]] && has_script build; then step "$pm" run build; fi
 fi
 

@@ -1,6 +1,6 @@
 ---
 name: ship
-description: Take finished work from the working tree to a merging PR - verify, commit, push, open PR, enable auto-merge. Use when a change is done and should go out.
+description: Take finished work from the working tree to a merged PR - verify, commit, push; Autopilot opens and merges the PR. Use when a change is done and should go out.
 ---
 
 # Ship
@@ -12,7 +12,10 @@ description: Take finished work from the working tree to a merging PR - verify, 
    subject (`feat:`, `fix:`, `chore:`, `docs:`, `refactor:`, `test:`, `ci:`),
    imperative, ≤72 chars; body explains *why* when it isn't obvious.
 4. **Push.** `git push -u origin HEAD`. Retry on network errors (2s, 4s, 8s, 16s).
-5. **PR.** Pushing a `claude/*` branch makes Autopilot open the PR and enable
-   auto-merge. If you have a GitHub tool and want a richer description, open or
-   edit the PR yourself using `.github/pull_request_template.md`.
-6. **Drive it.** Fix CI failures (`/fix-ci`) and address review comments until it merges.
+5. **PR.** Pushing a `claude/*` branch makes Autopilot open the PR and merge it
+   right away (no required checks: step 2 is the gate). If you have a GitHub tool
+   and want a richer description, edit the PR afterwards using
+   `.github/pull_request_template.md`. Label a PR `hold` to keep it open.
+6. **Drive it.** CI then runs on `main`. If it goes red, the merge is reverted
+   automatically: re-land the change with a fix (`/fix-ci`). Address review
+   issues filed against your PR.

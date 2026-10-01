@@ -2,7 +2,7 @@ name: Claude
 
 # @claude in any issue/PR comment or review, or an issue that is labeled `claude`
 # or mentions @claude. Claude implements on a claude/* branch;
-# autopilot.yml then opens the PR and turns on auto-merge.
+# autopilot.yml then opens the PR and merges it.
 
 on:
   issue_comment:
@@ -52,4 +52,4 @@ jobs:
             --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}
             --max-turns 150
             --allowedTools "Bash,Edit,Write,MultiEdit,Read,Glob,Grep,WebFetch,WebSearch"
-            --append-system-prompt "Follow AGENTS.md. Run scripts/check.sh until it passes before pushing. Push to a claude/* branch; a PR with auto-merge is opened automatically."
+            --append-system-prompt "Follow AGENTS.md. Run scripts/check.sh until it passes before pushing. Push to a claude/* branch; a PR is opened and merged automatically, and a red main is reverted."
