@@ -41,11 +41,19 @@ export interface Assumptions {
   readonly aliases: boolean;
   /** Times each depth is cleared on the way down (XP curve). */
   readonly clears: number;
+  /** Share of a fight a build's curse is on the target (recasts, packs spreading out of its area). */
+  readonly curseUptime: number;
+  /** Share of the fighting a build's totem stands and casts (replanted between packs, broken now and then). */
+  readonly placedUptime: number;
+  /** Kills per second while clearing packs (on-kill charges; a boss fight has none). */
+  readonly killRate: number;
+  /** Share of landed melee hits that stun (on-stun charges). */
+  readonly stunShare: number;
 }
 
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
   // the real hero port's growth (wire/progression.ts levelMods; its `damage` is an inc, see heroSheet)
-  heroGrowth: { life: GROWTH.life, mana: GROWTH.mana, accuracy: GROWTH.accuracy, 'life.regen': GROWTH['life.regen'] },
+  heroGrowth: { life: GROWTH.life, mana: GROWTH.mana, 'mana.regen': GROWTH['mana.regen'], accuracy: GROWTH.accuracy, 'life.regen': GROWTH['life.regen'] },
   // the real monster port's base at depth 1 (armour and accuracy grow with depth in monsterSheet)
   monsterBase: { ...ACTOR_BASE, ...monsterBase(1) },
   monsterUptime: 0.5,
@@ -58,6 +66,10 @@ export const DEFAULT_ASSUMPTIONS: Assumptions = {
   fallbackSkill: 'slash',
   aliases: true,
   clears: 1,
+  curseUptime: 0.8,
+  placedUptime: 0.75,
+  killRate: 0.6,
+  stunShare: 0.15,
 };
 
 /** One line per assumption for the console and the JSON. */
@@ -73,6 +85,7 @@ export function describeAssumptions(a: Assumptions): string[] {
     `gem level = highest the hero can equip (SCALING.gemLevelReq: gems earn the hero's XP); supports at the same level`,
     `out of mana: ${a.fallbackSkill} until the pool refills`,
     `${a.samples} genomes per depth and rank; elite behaviours, conditional mods and boss hazards are not modelled`,
+    `build systems as expected values: curses on ${Math.round(a.curseUptime * 100)}% of the fight (none on curse-immune targets); totems up ${Math.round(a.placedUptime * 100)}% of the fighting; charges from their gain rate (${a.killRate} kills/s in packs, none at the boss; ${Math.round(a.stunShare * 100)}% of melee hits stun) against their duration; auras always on, their reservation off the mana pool`,
     a.aliases ? 'stat aliases ON: renamed stats (crit.multi → crit.multiplier, ...) are mapped to what combat reads; --raw turns this off' : 'stat aliases OFF (--raw): stats only count if combat reads them by that exact name',
   ];
 }

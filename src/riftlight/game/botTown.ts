@@ -12,7 +12,8 @@
  *   2. gear: the best upgrade per slot from the bag (two-handers and offhands push each
  *      other out, level requirements respected) until nothing improves the score;
  *   3. sell every bag item left over (junk, spare gems, currency);
- *   4. buy: supports from the gem vendor and gear from the smith that beat what is worn;
+ *   4. buy: gems from the gem vendor (honed ones too) and gear from the smith that beat what
+ *      is worn, then gamble surplus gold on the weakest slots (`GAMBLING`), wearing what is better;
  *   5. passive points: the greedy tree planner (`tree/planner.ts`) toward the bot's score.
  *
  * The score is the bot's idea of a good character: log(DPS) of the bar (weighted by slot,
@@ -27,7 +28,7 @@ import { armourReduction, hitChance, resistance } from '../combat/damage';
 import { addItem, compatibleHands, equip, type LootState, lootFromSave, lootToSave, slotsFor } from '../loot/inventory';
 import { applyEquipment, baseOf, EQUIP_SLOTS, type EquipSlot, type Equipment, equipmentMods, requiredLevel } from '../loot/itemMods';
 import { gemItem, normalizeSockets, type SkillSocket, skillNumbers } from '../loot/sockets';
-import { buyPrice, sell, vendorStock } from '../loot/vendor';
+import { buy, buyPrice, sell, vendorStock } from '../loot/vendor';
 import { SKILLS } from '../skills/actives';
 import { MAX_GEM_LEVEL, supportFits } from '../skills/build';
 import { SUPPORTS } from '../skills/supports';
@@ -55,6 +56,11 @@ const MANA_WINDOW = 25;
 const DPS_WEIGHT = 0.6;
 /** A swap has to beat the current score by this much (no churn over rounding). */
 const MARGIN = 0.004;
+/**
+ * How the bot gambles: at most `perVisit` unrevealed items a visit, weakest slot first, never
+ * spending below `reserve` gambles' worth of gold (the smith and the gem vendor come first).
+ */
+export const GAMBLING = { perVisit: 6, reserve: 2 } as const;
 
 export interface BotScore {
   readonly dps: number;
@@ -77,6 +83,7 @@ export interface TownVisitOptions {
   readonly sell?: boolean;
   readonly buy?: boolean;
   readonly tree?: boolean;
+  readonly gamble?: boolean;
 }
 
 export interface TownReport {
@@ -86,6 +93,8 @@ export interface TownReport {
   readonly soldGold: number;
   readonly bought: string[];
   readonly spent: number;
+  /** Unrevealed items bought from the gamble tab (also in `bought` and `spent`). */
+  readonly gambled: number;
   readonly allocated: number;
   readonly before: BotScore;
   readonly after: BotScore;
@@ -286,6 +295,7 @@ export function townVisit(save: SaveData, o: TownVisitOptions): TownReport {
   let sold = 0;
   let soldGold = 0;
   let spent = 0;
+  let gambled = 0;
   const bag = () => state.inventory.items.map((p) => p.item);
 
   // 1. gems from the bag
@@ -329,7 +339,7 @@ export function townVisit(save: SaveData, o: TownVisitOptions): TownReport {
   if (o.buy !== false) {
     const stockDepth = Math.max(1, save.deepest);
     if (o.gems !== false) {
-      const wares = vendorStock(save.seed, stockDepth, o.visit, 'gems').filter((it) => isSupportGem(it) && buyPrice(it) <= state.gold);
+      const wares = vendorStock(save.seed, stockDepth, o.visit, 'gems').filter((it) => (isSupportGem(it) || isActiveGem(it)) && buyPrice(it) <= state.gold);
       const g = planGems(sockets, wares, rig(o.sheet, state.equipment, treeNow), state.equipment, level, depth);
       const price = g.used.reduce((n, it) => n + buyPrice(it), 0);
       if (g.used.length && price <= state.gold) {
@@ -361,6 +371,28 @@ export function townVisit(save: SaveData, o: TownVisitOptions): TownReport {
         }
       }
     }
+    if (o.gear !== false && o.gamble !== false) {
+      // gamble the surplus: weakest slot first (nothing worn, then the lowest item power)
+      const stock = vendorStock(save.seed, stockDepth, o.visit, 'gamble');
+      const main = sockets[0]?.gem?.gem;
+      const melee = !!main && SKILLS.has(main.id) && (SKILLS.get(main.id).tags ?? []).includes('melee');
+      const power = (it: Item | undefined) => (it ? it.level * RARITY_POWER[it.rarity] : 0);
+      const weakness = (it: Item) => Math.min(...slotsFor(it).map((slot) => power(state.equipment[slot])));
+      const order = stock.filter((it) => slotsFor(it).length && !(melee && ['bow', 'wand', 'quiver'].includes(baseOf(it).look ?? ''))).sort((a, b) => weakness(a) - weakness(b));
+      for (const it of order) {
+        if (gambled >= GAMBLING.perVisit) break;
+        const price = buyPrice(it);
+        if (state.gold - price < GAMBLING.reserve * price) break;
+        const r = buy(state, stock, it.uid);
+        if (!r.ok) continue;
+        state = r.value.state;
+        gambled++;
+        spent += price;
+        const revealed = state.inventory.items.find((p) => p.item.uid === it.uid)?.item;
+        bought.push(`${revealed?.name ?? it.name} (gamble, ${revealed?.rarity ?? '?'})`);
+        if (revealed) wear([revealed]);
+      }
+    }
     sellAll(); // what the purchases pushed out
   }
 
@@ -387,7 +419,7 @@ export function townVisit(save: SaveData, o: TownVisitOptions): TownReport {
   save.hero.skills = sockets.map((x) => ({ ...x, supports: [...x.supports] }));
   save.hero.allocated = allocated;
   const after = evaluate(rig(o.sheet, state.equipment, treeMods(allocated, tree)), sockets, depth);
-  return { equipped, socketed, sold, soldGold, bought, spent, allocated: added, before, after, gearScore: gearScore(state.equipment) };
+  return { equipped, socketed, sold, soldGold, bought, spent, gambled, allocated: added, before, after, gearScore: gearScore(state.equipment) };
 }
 
 /** Gem levels on the bar, e.g. `cleave 4 · frost-nova 3 · +melee-physical 2`. */

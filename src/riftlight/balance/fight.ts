@@ -17,6 +17,9 @@ import type { Assumptions } from './assumptions';
 import type { BuildArchetype } from './builds';
 import { skillDps } from './dps';
 import { heroSheet, minionSheet, monsterSheet, type HeroSetup, type MonsterInput, type RecordingSheet } from './sheets';
+import { CHARGE_TYPES, CHARGES, chargeChance, chargeDuration, chargeMax } from '../combat/charges';
+import { scaleCurse } from '../combat/curses';
+import type { ChargeType } from '../core/types';
 
 /**
  * Highest gem level a hero of `level` can equip (`SCALING.gemLevelReq`). Gems earn the hero's
@@ -36,18 +39,95 @@ export interface HeroLoadout {
   readonly skill: ResolvedSkill;
   readonly fallback: ResolvedSkill;
   readonly minion?: { readonly sheet: StatSheet; readonly attack: ResolvedSkill; readonly count: number };
+  /** The build's placed second skill (a totem: an extra caster; a trap), when it has one. */
+  readonly extra?: ResolvedSkill;
+  /** The build's curse, resolved (its mods go on targets: `curseMods`). */
+  readonly curse?: ResolvedSkill;
+  /** Expected charges held (by kind) in this loadout's context. */
+  readonly charges: Readonly<Record<ChargeType, number>>;
+  /** Share of the mana pool the auras reserve. */
+  readonly reserved: number;
   readonly maxLife: number;
+  /** Mana the hero can fill (max minus the auras' reservation). */
   readonly maxMana: number;
   readonly es: number;
   readonly assumptions: Assumptions;
 }
 
-export function makeLoadout(build: BuildArchetype, setup: HeroSetup): HeroLoadout {
+/** Where a loadout fights: packs (kills feed on-kill charges) or the boss (no kills). */
+export type FightContext = 'pack' | 'boss';
+
+/**
+ * Auras a build keeps on: each one's buff (scaled by `aura.effect`) as an `aura:<id>` source,
+ * and the share of the pool it reserves; an aura that no longer fits stays off (as in the game).
+ */
+export function auraSources(sheet: StatSheet, ids: readonly string[], gemLevel: number): { sources: Record<string, Mod[]>; reserved: number } {
+  const sources: Record<string, Mod[]> = {};
+  let reserved = 0;
+  for (const id of ids) {
+    const s = buildSkill(id, [], sheet, { level: gemLevel });
+    if (reserved + s.reservation > 1 + 1e-9) continue;
+    reserved += s.reservation;
+    const k = new StatQuery(sheet, s.mods).scale('aura.effect', s.tags);
+    sources[`aura:${id}`] = s.effects.flatMap((e) => (e.kind === 'buff' ? e.mods : [])).map((m) => (m.kind === 'flag' || m.kind === 'override' ? m : { ...m, value: m.value * k }));
+  }
+  return { sources, reserved };
+}
+
+/**
+ * Charges a build holds on average: each kind's gain rate (kills, hits, crits and stuns × the
+ * sheet's `charge.on*` chances, plus the main skill's own `charges` effects) against how many it
+ * holds and how long they last. EV: max × min(1, rate × duration / max): a steady trickle keeps
+ * them topped up, a slow one holds a share of them.
+ */
+export function expectedCharges(sheet: StatSheet, skill: ResolvedSkill, o: { killsPerSecond: number; stunShare: number }): Record<ChargeType, number> {
+  const q = new StatQuery(sheet, skill.mods);
+  const uses = 1 / Math.max(0.05, skill.castTime, skill.cooldown);
+  const hits = skill.damage && skill.delivery.kind !== 'summon' ? skill.repeats * uses : 0;
+  const crit = skill.damage ? Math.min(1, skill.damage.crit * Math.max(0, q.scale('crit.chance', skill.tags))) : 0;
+  const melee = skill.tags.includes('melee');
+  const duration = chargeDuration(sheet);
+  const out: Record<ChargeType, number> = { endurance: 0, frenzy: 0, power: 0 };
+  for (const type of CHARGE_TYPES) {
+    const max = chargeMax(sheet, type);
+    if (max <= 0) continue;
+    let rate =
+      o.killsPerSecond * chargeChance(q, type, 'onKill') +
+      hits * chargeChance(q, type, 'onHit') +
+      hits * crit * chargeChance(q, type, 'onCrit') +
+      (melee ? hits * o.stunShare * chargeChance(q, type, 'onStun') : 0);
+    for (const e of skill.effects) {
+      if (e.kind !== 'charges' || e.count <= 0 || (e.charge !== type && e.charge !== 'all')) continue;
+      rate += e.on === 'hit' ? hits * (e.chance ?? 1) * e.count : uses * e.count;
+    }
+    out[type] = rate > 0 ? max * Math.min(1, (rate * duration) / max) : 0;
+  }
+  return out;
+}
+
+/** The `charges` source for expected charge counts (a fractional count scales the per-charge mods). */
+export function chargeSource(charges: Readonly<Record<ChargeType, number>>): Mod[] {
+  return CHARGE_TYPES.flatMap((t) => (charges[t] > 0 ? CHARGES[t].perCharge.map((m) => ({ ...m, value: m.value * charges[t] })) : []));
+}
+
+export function makeLoadout(build: BuildArchetype, setup: HeroSetup & { readonly context?: FightContext }): HeroLoadout {
+  const a = setup.assumptions;
   const sheet = heroSheet(setup);
   const gemLevel = gemLevelFor(setup.level);
   const links: SupportLink[] = build.supports.map((gem) => ({ gem, level: gemLevel }));
-  const skill = buildSkill(build.skill, links, sheet, { level: gemLevel });
-  const fallback = buildSkill(setup.assumptions.fallbackSkill, [], sheet, { level: gemLevel });
+  // auras first (their buffs change everything after), then the charges the main skill keeps up
+  const auras = auraSources(sheet, build.auras ?? [], gemLevel);
+  for (const [k, mods] of Object.entries(auras.sources)) sheet.set(k, mods);
+  let skill = buildSkill(build.skill, links, sheet, { level: gemLevel });
+  const charges = expectedCharges(sheet, skill, { killsPerSecond: (setup.context ?? 'pack') === 'pack' ? a.killRate : 0, stunShare: a.stunShare });
+  const chargeMods = chargeSource(charges);
+  if (chargeMods.length) {
+    sheet.set('charges', chargeMods);
+    skill = buildSkill(build.skill, links, sheet, { level: gemLevel });
+  }
+  const fallback = buildSkill(a.fallbackSkill, [], sheet, { level: gemLevel });
+  const extra = build.extra ? buildSkill(build.extra.skill, build.extra.supports.map((gem) => ({ gem, level: gemLevel })), sheet, { level: gemLevel }) : undefined;
+  const curse = build.curse ? buildSkill(build.curse, [], sheet, { level: gemLevel }) : undefined;
   let minion: HeroLoadout['minion'];
   const d = skill.delivery;
   if (d.kind === 'summon') {
@@ -58,15 +138,17 @@ export function makeLoadout(build: BuildArchetype, setup: HeroSetup): HeroLoadou
       gemLevel,
       ownerLevel: setup.level,
       ownerMods,
-      assumptions: setup.assumptions,
+      assumptions: a,
       reads: setup.reads,
       aliasesUsed: setup.aliasesUsed,
     });
+    // the summoner's auras reach its minions (allies)
+    for (const [k, mods] of Object.entries(auras.sources)) ms.set(k, mods);
     // placeholderMinion: the minion strike with the summon gem's damage, swung at the minion's own attack speed
     const base = buildSkill(MINION_STRIKE, [], ms);
     const speed = Math.max(0.2, new StatQuery(ms).scale('attack.speed', MINION_STRIKE.tags));
     const attack: ResolvedSkill = { ...base, damage: skill.damage ? { ...skill.damage, tags: base.damage?.tags ?? skill.damage.tags } : base.damage, castTime: MINION_STRIKE.castTime / speed };
-    minion = { sheet: ms, attack, count: d.count * setup.assumptions.minionBatches };
+    minion = { sheet: ms, attack, count: d.count * a.minionBatches };
   }
   return {
     build,
@@ -76,11 +158,28 @@ export function makeLoadout(build: BuildArchetype, setup: HeroSetup): HeroLoadou
     skill,
     fallback,
     minion,
+    extra,
+    curse,
+    charges,
+    reserved: auras.reserved,
     maxLife: Math.max(1, sheet.get('life')),
-    maxMana: Math.max(0, sheet.get('mana')),
+    maxMana: Math.max(0, sheet.get('mana')) * (1 - auras.reserved),
     es: Math.max(0, sheet.get('es')),
-    assumptions: setup.assumptions,
+    assumptions: a,
   };
+}
+
+/**
+ * The curse a loadout keeps on `m`, as mods on its sheet: the curse's mods scaled by the
+ * caster's `curse.effect` and by `curseUptime` (an expected value); none on curse-immune targets.
+ */
+export function curseMods(h: HeroLoadout, m: MonsterInput, a: Assumptions): Mod[] {
+  if (!h.curse) return [];
+  if (monsterSheet(m, a).has('curse.immune')) return [];
+  const effect = h.curse.effects.find((e) => e.kind === 'curse');
+  if (!effect || effect.kind !== 'curse') return [];
+  const q = new StatQuery(h.sheet, h.curse.mods);
+  return scaleCurse(effect.mods, q, h.curse.tags).map((mod) => (mod.kind === 'flag' || mod.kind === 'override' ? mod : { ...mod, value: mod.value * a.curseUptime }));
 }
 
 /** A monster's sheet with its life and defences, as the hero's hits see it. */
@@ -140,18 +239,24 @@ export function heroOffense(h: HeroLoadout, t: MonsterTarget, fightTime = 10): O
   }
   const main = skillDps(h.sheet, h.skill, t.defender, 1);
   const fb = skillDps(h.sheet, h.fallback, t.defender, 1);
+  // a totem casts on its own (extra DPS while it stands); a placed trap takes the hero's time like any skill
+  const placed = h.extra?.placement === 'totem' ? h.extra : null;
+  const up = placed ? h.assumptions.placedUptime : 0;
+  const totem = placed ? skillDps(h.sheet, placed, t.defender, 1) : null;
   const regen = Math.max(0, h.sheet.get('mana.regen'));
   const leechMana = Math.min(h.maxMana * LEECH_RATE, main.dps.hit * Math.max(0, h.sheet.get('leech.mana')));
-  const mps = main.manaPerSecond;
+  const mps = main.manaPerSecond + (totem ? totem.manaPerSecond * up : 0);
   const supply = regen + leechMana + h.maxMana / Math.max(1, fightTime);
   const sustain = mps > 0 ? Math.min(1, supply / mps) : 1;
-  const single = sustain * main.dps.total + (1 - sustain) * fb.dps.total;
+  const extraSingle = totem ? totem.dps.total * up : 0;
+  const single = sustain * (main.dps.total + extraSingle) + (1 - sustain) * fb.dps.total;
   const reach = reachOf(h);
-  const skillPack = (n: number) => (n <= 1 ? main.dps.total : skillDps(h.sheet, h.skill, t.defender, Math.min(n, reach)).dps.pack);
+  const totemPack = (n: number) => (!placed ? 0 : n <= 1 ? extraSingle : skillDps(h.sheet, placed, t.defender, Math.min(n, reachOf(h, placed.inner ?? placed))).dps.pack * up);
+  const skillPack = (n: number) => (n <= 1 ? main.dps.total : skillDps(h.sheet, h.skill, t.defender, Math.min(n, reach)).dps.pack) + totemPack(n);
   const fbPack = (n: number) => (n <= 1 ? fb.dps.total : skillDps(h.sheet, h.fallback, t.defender, Math.min(n, reachOf(h, h.fallback))).dps.pack);
   const pack = (n: number) => sustain * skillPack(n) + (1 - sustain) * fbPack(n);
   const leech = Math.min(h.maxLife * LEECH_RATE, single * Math.max(0, h.sheet.get('leech.life')));
-  return { single, burst: main.dps.total, pack, sustain, manaPerSecond: mps, leech, skill: { single: main.dps.total, pack: skillPack }, fallback: { single: fb.dps.total, pack: fbPack }, manaIn: regen + leechMana };
+  return { single, burst: main.dps.total + extraSingle, pack, sustain, manaPerSecond: mps, leech, skill: { single: main.dps.total + extraSingle, pack: skillPack }, fallback: { single: fb.dps.total, pack: fbPack }, manaIn: regen + leechMana };
 }
 
 export interface MonsterAttack {
@@ -255,13 +360,15 @@ export interface BossFight extends Duel {
 
 /** The boss: phases averaged over equal thirds, enrage after its timer. */
 export function bossFight(h: HeroLoadout, boss: MonsterInput, a: Assumptions): BossFight {
-  const t = monsterTarget(boss, a);
+  // the hero's curse on the boss (none when it is curse-immune)
+  const curse = curseMods(h, boss, a);
+  const t = monsterTarget(boss, a, curse);
   const base = duel(h, t);
   const phases = boss.phases?.length ? boss.phases : [[]];
   let dtps = 0;
   let biggest = 0;
   for (const mods of phases) {
-    const pt = monsterTarget(boss, a, mods);
+    const pt = monsterTarget(boss, a, [...curse, ...mods]);
     const d = monsterOffense(pt, h);
     dtps += d.dtps / phases.length;
     biggest = Math.max(biggest, d.biggestHit);
@@ -269,7 +376,7 @@ export function bossFight(h: HeroLoadout, boss: MonsterInput, a: Assumptions): B
   let enraged = false;
   if (boss.enrage && base.ttk > boss.enrage.after) {
     enraged = true;
-    const e = monsterOffense(monsterTarget(boss, a, boss.enrage.mods), h).dtps;
+    const e = monsterOffense(monsterTarget(boss, a, [...curse, ...boss.enrage.mods]), h).dtps;
     const share = (base.ttk - boss.enrage.after) / base.ttk;
     dtps = dtps * (1 - share) + e * share;
   }

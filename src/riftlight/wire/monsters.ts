@@ -309,7 +309,7 @@ export class MonsterUnit implements MonsterHandle {
     // walls are checked with a slim footprint: every body fits through a 1-cell corridor
     this.mover = new StageMover(host.stage, o.at, Math.min(M.wallRadius, radius * 0.8), () => this.actor.impulse.lengthSq() > 25);
     const mods: Record<string, readonly Mod[]> = { genome: translateMods(this.built.stats), depth: monsterDepthMods(depth) };
-    if (this.rank === 'boss') mods.boss = bossBudget(mods.genome ?? []);
+    if (this.rank === 'boss') mods.boss = bossBudget(mods.genome ?? [], depth);
     for (const [k, v] of Object.entries(o.mods)) if (v.length) mods[k] = v;
     this.actor = new Actor({
       faction: 'monster',

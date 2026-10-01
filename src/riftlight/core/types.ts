@@ -218,6 +218,8 @@ export interface Item {
   readonly corrupted?: boolean;
   /** Extra implicit mods added after the roll (corruption), shown with the base implicit. */
   readonly implicits?: readonly RolledAffix[];
+  /** A gamble vendor's unrevealed item: its price; buying it rolls the real item (loot/vendor.ts). */
+  readonly gamble?: { readonly price: number };
 }
 
 export interface UniqueDef extends Entry {

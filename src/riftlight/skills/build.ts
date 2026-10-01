@@ -9,8 +9,23 @@ import type { ResolvedSkill, SkillGem, SupportGem, SupportLink } from './types';
 
 /** Growth of a damaging gem per level when it doesn't say otherwise. */
 export const DEFAULT_PER_LEVEL: readonly Mod[] = [more('damage', 0.06)];
+/**
+ * Spells have no weapon: their base damage grows with gem level instead, compounding the way a
+ * weapon's damage grows with item level (base, local and added tiers: ×15–20 from item level 1
+ * to 75). 15% a level is ×14 from gem level 1 to 20, on top of the per-level `more` above.
+ * Summon gems are spells: their minions hit with the gem's damage, so they grow the same way.
+ * Attacks keep their weapon (and only the per-level `more`).
+ */
+export const SPELL_BASE_GROWTH = 0.15;
+
+/** Multiplier on a skill's base damage at gem `level` (1 for attacks). */
+export function baseDamageScale(tags: readonly string[], level: number): number {
+  if (tags.includes('attack') || !tags.includes('spell')) return 1;
+  return Math.pow(1 + SPELL_BASE_GROWTH, Math.max(0, Math.min(MAX_GEM_LEVEL, level) - 1));
+}
+
 /** Mana cost grows with gem level. */
-export const COST_PER_LEVEL = 0.08;
+export const COST_PER_LEVEL = 0.05;
 export const MAX_GEM_LEVEL = 20;
 
 export interface BuildOptions {
@@ -112,7 +127,7 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
     duration,
     repeats: 1 + change.repeats + Math.round(q.flat('repeats', tags)),
     projectileSpeed: q.scale('projectile.speed', tags),
-    damage: damageSpec(def, tags),
+    damage: damageSpec(def, tags, level),
     effects: def.effects.map((e) => (e.kind === 'buff' && e.duration > 0 ? { ...e, duration: e.duration * duration } : e)),
     anims: def.combo?.length ? def.combo : [def.anim],
     channel: def.channel === true,
@@ -171,8 +186,8 @@ function applyChanges(d: Delivery, q: StatQuery, tags: readonly string[], c: { p
   }
 }
 
-/** The damage part of a skill (null when it deals none). */
-export function damageSpec(def: SkillGem, tags: readonly string[]): DamageSpec | null {
+/** The damage part of a skill (null when it deals none), its base grown to gem `level` (`baseDamageScale`). */
+export function damageSpec(def: SkillGem, tags: readonly string[], level = 1): DamageSpec | null {
   const dmg = def.effects.find((e): e is Extract<Effect, { kind: 'damage' }> => e.kind === 'damage');
   if (!dmg) return null; // summons: the damage their minions deal
   const ailments: Partial<Record<AilmentType, number>> = {};
@@ -181,9 +196,11 @@ export function damageSpec(def: SkillGem, tags: readonly string[]): DamageSpec |
     if (e.kind === 'ailment') ailments[e.ailment] = (ailments[e.ailment] ?? 0) + e.chance;
     if (e.kind === 'knockback') knockback += e.force;
   }
+  const k = baseDamageScale(def.tags ?? tags, level);
+  const base = k === 1 ? (dmg.base as Partial<Record<DamageType, Range>>) : (Object.fromEntries(Object.entries(dmg.base).map(([t, r]) => [t, [r![0] * k, r![1] * k]])) as Partial<Record<DamageType, Range>>);
   return {
     tags,
-    base: dmg.base as Partial<Record<DamageType, Range>>,
+    base,
     effectiveness: dmg.effectiveness ?? 1,
     crit: def.crit ?? 0.05,
     ailments,

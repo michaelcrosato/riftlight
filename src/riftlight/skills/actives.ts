@@ -219,9 +219,9 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
     tags: ['spell', 'minion', 'duration', 'summon', 'damage'],
     cost: 15, cooldown: 1, castTime: 0.8, anim: 'CastBig', moveDuringCast: 0.2, target: 'ahead',
     delivery: { kind: 'summon', genome: 'minion', count: 3, duration: 20 },
-    // minions hit often and small: their base and growth carry them through armour at depth
-    effects: [{ kind: 'damage', base: { physical: [4, 7] }, effectiveness: 1 }],
-    perLevel: [more('damage', 0.12), inc('life', 0.05, ['minion'])],
+    // minions hit often and small; a summon gem is a spell, so their base grows with its level (skills/build.ts SPELL_BASE_GROWTH)
+    effects: [{ kind: 'damage', base: { physical: [7, 11] }, effectiveness: 1 }],
+    perLevel: [more('damage', 0.06), inc('life', 0.05, ['minion'])],
     look: { color: 'white', glow: ['white', 'mist', 'slate'], burst: 'bones', sound: { cast: 'cast' } },
   }),
   g({
@@ -230,7 +230,7 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
     cost: 25, cooldown: 3, castTime: 1, anim: 'CastBig', moveDuringCast: 0.1, target: 'ahead',
     delivery: { kind: 'summon', genome: 'spectre', count: 1, duration: 0 },
     effects: [{ kind: 'damage', base: { chaos: [8, 14] }, effectiveness: 1 }],
-    perLevel: [more('damage', 0.12)],
+    perLevel: [more('damage', 0.06)],
     look: { color: 'plum', glow: ['lime', 'plum'], burst: 'toxic', sound: { cast: 'cast' } },
   }),
   // ------------------------------------------------------------------ auras, buffs, warcries

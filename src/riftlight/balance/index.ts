@@ -7,7 +7,7 @@ export { DEFAULT_ASSUMPTIONS, HERO_BASE, describeAssumptions, type Assumptions }
 export { BUILDS, VARIANTS, buildKey, type BuildArchetype, type Variant } from './builds';
 export { skillDps, type DpsReport } from './dps';
 export { RecordingSheet, STAT_ALIASES, MINION_STATS, aliasMods, depthMods, heroBase, heroSheet, minionSheet, monsterSheet, type HeroSetup, type MonsterInput } from './sheets';
-export { bossFight, duel, gemLevelFor, heroOffense, makeLoadout, monsterOffense, monsterTarget, packFight, reachOf, type Duel, type HeroLoadout, type MonsterTarget } from './fight';
+export { auraSources, bossFight, chargeSource, curseMods, duel, expectedCharges, gemLevelFor, heroOffense, makeLoadout, monsterOffense, monsterTarget, packFight, reachOf, type Duel, type FightContext, type HeroLoadout, type MonsterTarget } from './fight';
 export { TreePlanner, basesFor, chooseGear, scoreLoadout } from './choose';
 export { GRADES, runBalance, xpCurve, type BalanceOptions, type BalanceResult, type DepthInput, type Grade, type Row, type XpRow } from './sim';
 export { METRICS, findOutliers, type Outlier } from './outliers';

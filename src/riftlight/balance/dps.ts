@@ -13,6 +13,7 @@ import { AILMENTS } from '../combat/ailments';
 import { baseRanges, expectedHit, mitigateDot, sumDamage, type Damage, type Defender } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
 import { FINISHER } from '../combat/tuning';
+import { TOTEM_TUNING, totemLimit } from '../combat/totems';
 import type { ResolvedSkill } from '../skills/types';
 
 export interface DpsReport {
@@ -47,6 +48,26 @@ export interface DpsReport {
 
 /** Expected DPS of `s` used by an actor with `sheet` against `target` (and `targets` enemies in reach). */
 export function skillDps(sheet: StatSheet, s: ResolvedSkill, target: Defender, targets = 1): DpsReport {
+  // a totem is an extra caster: it casts the inner skill every castRate × its cast time, with
+  // the owner's stats (snapshot), up to `totemLimit` of them at once; planting is the cost
+  if (s.placement === 'totem' && s.inner) {
+    const inner = skillDps(sheet, s.inner, target, targets);
+    const n = totemLimit(sheet);
+    const k = n / TOTEM_TUNING.castRate;
+    const life = TOTEM_TUNING.duration * Math.max(0.1, s.inner.duration);
+    const scaled = (d: DpsReport['dps']) => ({ hit: round(d.hit * k), dot: round(d.dot * k), total: round(d.total * k), pack: round(d.pack * k) });
+    return {
+      ...inner,
+      skill: s.id,
+      castTime: round(s.castTime, 3),
+      cost: s.cost,
+      hitsPerSecond: round(inner.hitsPerSecond * k, 2),
+      dps: scaled(inner.dps),
+      // planting n totems once per totem lifetime
+      manaPerSecond: round((s.cost * n) / life, 2),
+      notes: [`totem: ${n} at once, each casting every ${(s.inner.castTime * TOTEM_TUNING.castRate).toFixed(2)} s for ${life.toFixed(0)} s`, ...inner.notes],
+    };
+  }
   const notes: string[] = [];
   const d = s.delivery;
   const q = new StatQuery(sheet, s.mods);

@@ -37,7 +37,7 @@ import {
 } from './inventory';
 import { applyEquipment, defenceStats, equipmentMods, itemMods, requiredLevel, weaponStats } from './itemMods';
 import { describeItemMods } from './stats';
-import { buy, buyPrice, sell, sellPrice, vendorStock } from './vendor';
+import { buy, BUY_MARKUP, buyPrice, gamblePrice, gemLevelCap, HONED_GEMS, revealGamble, sell, sellPrice, vendorStock } from './vendor';
 
 const rare = (seed: number, base?: string, itemLevel = 40): Item => rollItem(new Rng(seed), { itemLevel, rarity: 'rare', ...(base ? { base } : {}) });
 
@@ -397,7 +397,46 @@ describe('vendors', () => {
     expect(buyPrice(n)).toBeGreaterThan(sellPrice(n));
     expect(vendorStock(1, 5, 0, 'smith')).toEqual(vendorStock(1, 5, 0, 'smith'));
     expect(vendorStock(1, 5, 1, 'smith')).not.toEqual(vendorStock(1, 5, 0, 'smith'));
-    expect(vendorStock(1, 5, 0, 'gems').every((i) => i.gem?.level === 1)).toBe(true);
+    // ten level 1 gems, then the honed ones: levelled to what a hero of the area can socket
+    const gems = vendorStock(1, 5, 0, 'gems');
+    expect(gems.slice(0, 10).every((i) => i.gem?.level === 1)).toBe(true);
+    const honed = vendorStock(1, 20, 0, 'gems').slice(10);
+    expect(honed).toHaveLength(HONED_GEMS.count);
+    const cap = gemLevelCap(SCALING.monsterLevel(20));
+    for (const g of honed) {
+      expect(g.gem!.level).toBeGreaterThan(1);
+      expect(g.gem!.level).toBeLessThanOrEqual(cap);
+      // priced by level: a honed gem costs its level × a fresh one
+      expect(buyPrice(g)).toBe(sellPrice(g) * BUY_MARKUP * g.gem!.level);
+    }
+  });
+
+  it('gambles: an unrevealed base per slot at the area item level, priced in kills, revealed on purchase', () => {
+    const stock = vendorStock(3, 20, 0, 'gamble');
+    const itemLevel = SCALING.monsterLevel(20);
+    expect(stock.length).toBeGreaterThanOrEqual(9);
+    expect(stock.every((i) => i.gamble && i.level === itemLevel && i.affixes.length === 0)).toBe(true);
+    expect(vendorStock(3, 20, 0, 'gamble')).toEqual(stock);
+    const ring = stock.find((i) => i.base.includes('ring'))!;
+    expect(buyPrice(ring)).toBe(gamblePrice(20, 'ring'));
+    expect(gamblePrice(40, 'ring')).toBeGreaterThan(gamblePrice(20, 'ring'));
+    const b = buy({ ...emptyLoot(), gold: 1e6 }, stock, ring.uid);
+    expect(b.ok).toBe(true);
+    if (!b.ok) return;
+    const got = b.value.state.inventory.items.find((p) => p.item.uid === ring.uid)!.item;
+    expect(got.gamble).toBeUndefined();
+    expect(got.base).toBe(ring.base);
+    expect(got.level).toBe(itemLevel);
+    expect(got).toEqual(revealGamble(ring));
+    expect(b.value.state.gold).toBe(1e6 - gamblePrice(20, 'ring'));
+    // better odds than a drop: over many gambles, a rare or better about one in four
+    let good = 0;
+    for (let i = 0; i < 400; i++) {
+      const r = revealGamble({ ...ring, uid: `g${i}` });
+      if (r.rarity === 'rare' || r.rarity === 'unique') good++;
+    }
+    expect(good / 400).toBeGreaterThan(0.15);
+    expect(good / 400).toBeLessThan(0.45);
   });
 
   it('sells and buys through the wallet', () => {
