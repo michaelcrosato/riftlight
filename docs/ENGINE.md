@@ -176,13 +176,14 @@ automatically on both backends.
 `PlatformerCharacter` (`src/engine/character/`) is a Mario-64-style controller (and then
 some) on Rapier's kinematic character controller, driven by the hero rig's baked clips
 (`scripts/assets/hero.mjs`: jointed body with elbows/knees and a pelvis root, 57 clips).
-`readMoveInput(ctx, hero)` maps the default keys, camera-relative for every preset.
+`readMoveInput(ctx, hero, out?)` maps the default keys, camera-relative for every preset; pass
+a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 
 | Key | Action |
 | --- | --- |
 | WASD / arrows | walk → run (Mario-style turning; reverse at speed = **skid**) |
 | Shift | walk / tiptoe |
-| Space | jump · again on landing = **double**, then **triple** (front flip) · while skidding = **side flip** · **wall kick** off walls |
+| Space | jump · again on landing = **double**, then **triple** (front flip; a press up to 0.12 s before touchdown counts) · while skidding = **side flip** · **wall kick** off walls |
 | C / Ctrl (hold) | **crouch**, crouch-walk · while running = **crouch slide** · + Space = **backflip** · running + C + Space = **long jump** · in the air (press) = **ground pound** |
 | Z | **prone** / crawl (fits 0.75-high gaps); again to **get up** (only with headroom) |
 | X | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
@@ -201,7 +202,23 @@ Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **
 **shimmy** (A/D) → **pull up** (toward wall / Space) or **drop** (C / away), **climb**
 colliders tagged `climbable` in any direction and **climb over the top**, **push** colliders
 tagged `pushable` by walking into them, **slope slide** on steep or `slippery` ground,
-**dive → belly slide → get up**, **victory** via `hero.celebrate()`.
+**dive → belly slide → get up**, **victory** via `hero.celebrate()`. Walls take away the speed that
+runs into them (at a glancing angle the hero slides along at the real speed); running head-on
+into a wall at full speed **bonks** (stops dead and reels back), walking into one stands against it.
+
+How it's built (`src/engine/character/`):
+
+| file | what |
+| --- | --- |
+| `PlatformerCharacter.ts` | the core and the public API: body and KCC sweep (walls take speed away), probes, ledge detection, stance, animation playback |
+| `states.ts` | `STATES`: one entry per state, `{ step, anim, stance, airborne, snapToGround, attached, snapFacing, lock }`; `MoveState` is its keys |
+| `tuning.ts` | `TUNING`: every speed, acceleration, jump velocity, timing and threshold, documented |
+| `controls.ts` | default key map, `readMoveInput` |
+
+To add a state, add one entry to `STATES` (and its step function next to it) and any numbers to
+`TUNING`; then film it. Cross-fades between clips go through `RotationBlend`
+(`src/engine/animation/rotationBlend.ts`): a blend never flips a joint to the other side, however
+far apart the two poses hold it.
 
 Tag colliders with `physics.tag(collider, ...)`: `climbable`, `pushable`, `grabbable`,
 `slippery`, `noLedge`, `noCamera`. `hero.state`, `hero.anim` and `hero.stats` expose what
@@ -272,12 +289,14 @@ Rules of thumb for good-looking results:
   (≈ 5 art pixels at the default view height of 13.5).
 - Put movement and forces in `fixedUpdate`; animation, pickups and UI in `update`.
 - Use `input.consumePress` in `fixedUpdate` (never drops a press); use `wasPressed` in `update`.
+  `input.anyDown(codes)` / `input.consumeAny(codes)` take an array (no rest-argument garbage).
+- `hero.feet` / `hero.forward` allocate; per-step code can use `hero.feetInto(v)` / `hero.forwardInto(v)`.
 - New assets: extend `scripts/generate-assets.mjs` (deterministic) or drop GLBs into
   `public/assets/`. See `src/game/playground.ts` for a complete example.
 
 ## Animation
 
-Clips are data in `src/game/hero/animations.ts`, with foot IK and a procedural gait
+Clips are data in `src/game/hero/clips/` (one file per family), with foot IK and a procedural gait
 generator. They are checked by metrics (floor contact, foot slide, loop seams, joint limits)
 and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is in
 **[docs/ANIMATION.md](ANIMATION.md)**:
@@ -306,7 +325,8 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   `manual = false` to hand time back to the render loop. `step()` ignores `paused` and the
   engine hotkeys (P, R, `, [ ]); it only advances the game.
 - `hero.animationMix()`: the clips currently contributing to the pose, with their blend
-  weight, time and rate. Blends are driven by `PlatformerCharacter`, not three's
+  weight, time and rate. Blends are driven by `PlatformerCharacter` (rotations re-blended by
+  `RotationBlend` so they never flip), not three's
   `crossFadeFrom`: every outgoing clip fades from the weight it has *now*, and
   locomotion-to-locomotion switches start in step with the outgoing stride.
 - `engine.setFilters(ids)`, `engine.availableFilters`, `engine.camera.setZoom(z)`,
