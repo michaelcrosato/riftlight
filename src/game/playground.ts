@@ -192,12 +192,12 @@ export class Playground implements Game {
     // Capture the rest pose once, before anything plays: recompiling later must not read
     // whatever pose is on screen.
     const rest = restPoseOf(this.heroModel, HERO_RIG);
-    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
+    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     // Edit a clip file (hero/clips/*.ts, re-exported by hero/animations.ts) while the game
     // runs: clips recompile and swap in place.
     import.meta.hot?.accept('./hero/animations', (mod) => {
       const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
-      if (clips) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
+      if (clips) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     });
     this.heroModel.position.set(...LEVEL.spawn);
     this.heroModel.visible = !ctx.camera.hidesTarget;

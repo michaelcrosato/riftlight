@@ -52,7 +52,34 @@ export const TUNING = {
     ledgeOut: 0.05,
   },
   /** Presentation: the model turns toward the facing at this rate (1/s; snapFacing states turn at once), default fade-in (s). */
-  visual: { turnRate: 16, fade: 0.12 },
+  visual: {
+    turnRate: 16,
+    fade: 0.12,
+    /** Lean into turns: roll (deg) per (rad/s of turning × m/s), at most `maxRoll`. */
+    leanRoll: 0.55,
+    maxRoll: 14,
+    /** Lean into acceleration: pitch (deg) per m/s², at most `maxPitch` either way. */
+    leanAccel: 0.7,
+    maxPitch: 7,
+    /** How fast the lean follows (1/s), and how much the acceleration it reads is smoothed (1/s). */
+    leanRate: 8,
+    accelSmoothing: 10,
+    /** Head turns toward where it's going (or `lookAt`): at most this far (deg), at this rate (1/s). */
+    maxLook: 50,
+    lookRate: 9,
+    /** Landing on the move: squash rises over `impactRise` s and settles over `impactFall` s;
+     *  a landing at `impactFullVy` m/s (down) squashes fully, a soft one at least `impactMin`. */
+    impactRise: 0.05,
+    impactFall: 0.22,
+    impactFullVy: 16,
+    impactMin: 0.35,
+  },
+  /** The locomotion blend space (animator.ts): its clips, by role. */
+  gait: { tiptoe: 'Tiptoe', walk: 'Walk', run: 'Run' },
+  /** Runtime foot placement (src/engine/animation/footPlacement.ts); anything not set here uses its defaults. */
+  feet: { maxDrift: 0.14, stepTime: 0.15, stepLift: 0.06 },
+  /** Procedural layers (src/engine/animation/poseLayers.ts): landing squash at full impact. */
+  layers: { impactDrop: 0.12, impactSquash: 0.1, impactTorso: 14 },
   gravity: -32,
   /** Terminal fall speed (m/s, downward). */
   maxFall: -30,
@@ -155,6 +182,8 @@ export const TUNING = {
     forwardAbove: 0.5,
     /** A jump pressed this long before touchdown still jumps on landing. */
     buffer: 0.12,
+    /** The feet stay planted (foot locking) for this long after a jump starts: the launch frame. */
+    launchFeet: 0.01,
   },
 
   /** In the air. */

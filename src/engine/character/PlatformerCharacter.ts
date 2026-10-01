@@ -1,18 +1,10 @@
-import {
-  type AnimationAction,
-  type AnimationClip,
-  AnimationMixer,
-  LoopOnce,
-  LoopRepeat,
-  MathUtils,
-  type Object3D,
-  type Quaternion,
-  Vector3,
-} from 'three/webgpu';
-import { RotationBlend } from '../animation/rotationBlend';
+import { type AnimationClip, MathUtils, type Object3D, type Quaternion, Vector3 } from 'three/webgpu';
+import type { FootPlacementState, GroundHit, GroundProbe } from '../animation/footPlacement';
+import type { RigSpec } from '../animation/types';
 import { type Physics, RAPIER } from '../physics/Physics';
-import { approach, turnToward } from './motion';
-import { type AnimRequest, type MoveState, startEmote, startJump, stateDef } from './states';
+import { type AnimRequest, Animator, type ProceduralInput } from './animator';
+import { angleDiff, approach, turnToward } from './motion';
+import { feetMode, type MoveState, startEmote, startJump, stateDef } from './states';
 import { TUNING as T } from './tuning';
 
 /**
@@ -101,6 +93,12 @@ export class PlatformerCharacter {
   anim = 'Idle';
   /** Counters for tests/tooling. */
   readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0 };
+  /**
+   * Something worth looking at (world position), set by the game: a coin, an enemy, a sign.
+   * Standing and walking, the head turns toward it (within its limits); null = look where
+   * the character is going.
+   */
+  lookAt: Vector3 | null = null;
 
   // ---------------------------------------------------------------- state machine memory
   // Read and written by the state table (states.ts). Internal: games use the fields above.
@@ -116,6 +114,9 @@ export class PlatformerCharacter {
   /** @internal */ coyote = 0;
   /** @internal Seconds left on a jump pressed in the air, kept for the landing. */ jumpBuffer = 0;
   /** @internal Stick tilt (0..1) last ground step: a gentle tilt tiptoes. */ stick = 0;
+  /** @internal 1 while the stick is gently tilted (tiptoe), 0 when pushed further; kept when let go. */ tiptoe = 0;
+  /** @internal Where the stick points (yaw), or the facing when it's let go: the head looks there. */ heading = 0;
+  /** @internal How hard the last landing was (0..1, from the fall speed): the landing squash. */ landImpact = 0;
   /** @internal The current skid is a brake (stick let go at a run), not a turn-around. */ braking = false;
   /** @internal */ stepAnim: { name: string; t: number } | null = null;
   /** @internal */ ledge: Ledge | null = null;
@@ -157,17 +158,17 @@ export class PlatformerCharacter {
   private readonly desired = { x: 0, y: 0, z: 0 };
   private readonly nextPos = { x: 0, y: 0, z: 0 };
 
-  private mixer: AnimationMixer | null = null;
-  /** Re-blends joint rotations after the mixer, so cross-fades never flip (see RotationBlend). */
-  private rotationBlend: RotationBlend | null = null;
-  private readonly actions = new Map<string, AnimationAction>();
-  private current: AnimationAction | null = null;
-  /**
-   * Blend weights we drive ourselves. three's crossFadeFrom restarts the outgoing clip's
-   * fade from full weight, so a clip that was only partly faded in snaps to 100% (a pop)
-   * whenever states change faster than the fade.
-   */
-  private readonly fades = new Map<AnimationAction, { from: number; to: number; t: number; duration: number }>();
+  private animator: Animator | null = null;
+  /** Ground rays for foot placement (no garbage per frame). */
+  private readonly groundProbe: GroundProbe = (x, y, z, maxDown, out: GroundHit) => this.physics.castDown(x, y, z, maxDown, out, IGNORE, this.body);
+  /** Procedural layers' inputs, reused every frame, and what they remember between frames. */
+  private readonly procedural: ProceduralInput = { lean: { roll: 0, pitch: 0 }, look: 0, impact: 0, feet: { ik: false, lock: false, speed: 0 } };
+  private lastYaw: number | null = null;
+  private lastVisualSpeed = 0;
+  private accel = 0;
+  private impactTime = Infinity;
+  private impactStrength = 0;
+  private seenLandings = 0;
 
   constructor(physics: Physics, options: PlatformerOptions) {
     const B = T.body;
@@ -266,6 +267,7 @@ export class PlatformerCharacter {
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
     this.feetInto(this.prevFeet);
+    this.heading = this.facing;
     if (this.stepAnim) {
       this.stepAnim.t -= dt;
       if (this.stepAnim.t <= 0) this.stepAnim = null;
@@ -420,6 +422,7 @@ export class PlatformerCharacter {
     let speed = this.speed + this.wallSlip;
     if (mag > G.deadzone) {
       const want = Math.atan2(input.move.x, input.move.z);
+      this.heading = want;
       const rate = speed < G.slowTurnSpeed ? turnRate * G.slowTurnBoost : turnRate;
       this.facing = turnToward(this.facing, want, rate * dt);
       speed = approach(speed, maxSpeed * mag, accel * dt);
@@ -537,36 +540,41 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ animation
 
-  /** Drive `model` with `clips`. Call again (e.g. on hot reload) to swap the clip set. */
-  attachModel(model: Object3D, clips: readonly AnimationClip[]): void {
-    if (this.mixer) {
-      this.mixer.stopAllAction();
-      this.mixer.uncacheRoot(this.mixer.getRoot());
-    }
-    this.actions.clear();
-    this.fades.clear();
-    this.current = null;
-    this.mixer = new AnimationMixer(model);
-    for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
-    this.rotationBlend = new RotationBlend(model, this.actions.values(), restRotations(model));
-    this.play('Idle', 0);
+  /**
+   * Drive `model` with `clips`. Call again (e.g. on hot reload) to swap the clip set. With
+   * the model's `rig`, the procedural layers run too: foot placement on the real ground,
+   * leaning into turns, looking ahead, landing squash (docs/ANIMATION.md).
+   */
+  attachModel(model: Object3D, clips: readonly AnimationClip[], rig?: RigSpec): void {
+    this.animator?.dispose();
+    this.animator = new Animator(model, clips, restRotations(model), {
+      rig,
+      probe: this.groundProbe,
+      feet: T.feet,
+      layers: T.layers,
+      gait: T.gait,
+    });
+    this.lastYaw = null;
+    this.animator.play({ name: 'Idle' }, 0);
   }
 
   /** Tooling: every clip currently contributing to the pose, with its blend weight and time (s). */
   animationMix(): { name: string; weight: number; time: number; rate: number }[] {
-    const active = [...this.actions.values()].filter((a) => a.isScheduled() && a.getEffectiveWeight() > 0.001);
-    // three normalises weights that sum past 1, so report the shares it actually uses
-    const total = Math.max(1, active.reduce((sum, a) => sum + a.getEffectiveWeight(), 0));
-    return active.map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight() / total, time: a.time, rate: a.getEffectiveTimeScale() }));
+    return this.animator?.mix() ?? [];
+  }
+
+  /** Tooling: what foot placement did this frame (weight, pelvis drop, per-foot offsets and locks). */
+  footPlacement(): FootPlacementState | null {
+    return this.animator?.feet?.state() ?? null;
   }
 
   clipDuration(name: string, fallback: number): number {
-    return this.actions.get(name)?.getClip().duration ?? fallback;
+    return this.animator?.duration(name) ?? fallback;
   }
 
   /** @internal Playback rate that makes a locomotion clip's feet match ground speed `s`. */
   rate(name: string, s: number, authored: number, min = 0.3): number {
-    const speed = (this.actions.get(name)?.getClip().userData.speed as number | undefined) ?? authored;
+    const speed = this.animator?.authoredSpeed(name) ?? authored;
     return Math.max(min, s / Math.abs(speed));
   }
 
@@ -575,7 +583,7 @@ export class PlatformerCharacter {
     return stateDef(this.state).anim(this);
   }
 
-  /** Per render frame: orient the model, pick and advance animation. */
+  /** Per render frame: orient the model, pick and advance animation, then the procedural layers. */
   updateVisual(model: Object3D, dt: number, alpha: number): void {
     this.interpolatedFeet(alpha, model.position);
     let diff = this.facing - model.rotation.y;
@@ -583,60 +591,65 @@ export class PlatformerCharacter {
     const snap = stateDef(this.state).snapFacing === true;
     model.rotation.y += snap ? diff : diff * Math.min(1, dt * T.visual.turnRate);
     const a = this.animationFor();
-    this.play(a.name, a.fade ?? T.visual.fade, a.speed ?? 1, a.once ?? false);
-    for (const [action, f] of this.fades) {
-      f.t += dt;
-      const u = f.duration > 0 ? Math.min(1, f.t / f.duration) : 1;
-      action.setEffectiveWeight(f.from + (f.to - f.from) * u);
-      if (u < 1) continue;
-      this.fades.delete(action);
-      if (f.to === 0) action.stop();
+    const anim = this.animator;
+    if (!anim) {
+      this.anim = a.name;
+      return;
     }
-    this.mixer?.update(dt);
-    this.rotationBlend?.apply();
+    anim.play(a, a.fade ?? T.visual.fade);
+    this.anim = anim.dominant(a);
+    anim.update(dt, this.proceduralInput(model, dt));
   }
 
-  private play(name: string, fade: number, speed = 1, once = false): void {
-    const next = this.actions.get(name);
-    this.anim = name;
-    if (!next) return;
-    next.timeScale = speed;
-    if (next === this.current) return;
-    const prev = this.current;
-    // Everything else still contributing fades out from the weight it has now.
-    for (const a of this.actions.values()) {
-      if (a === next || !a.isScheduled()) continue;
-      const w = a.getEffectiveWeight();
-      if (fade > 0 && w > 0.001) this.fades.set(a, { from: w, to: 0, t: 0, duration: fade });
-      else {
-        this.fades.delete(a);
-        a.stop();
+  /** The procedural layers' inputs for this frame (numbers in tuning.ts `visual`). */
+  private proceduralInput(model: Object3D, dt: number): ProceduralInput {
+    const V = T.visual;
+    const def = stateDef(this.state);
+    const p = this.procedural;
+    const k = (rate: number) => (dt > 0 ? 1 - Math.exp(-rate * dt) : 0);
+    // turn rate of the model and acceleration of the body, render frame to render frame
+    const yaw = model.rotation.y;
+    const yawRate = this.lastYaw === null || dt <= 0 ? 0 : angleDiff(yaw, this.lastYaw) / dt;
+    this.lastYaw = yaw;
+    const speed = this.speed;
+    if (dt > 0) this.accel += ((speed - this.lastVisualSpeed) / dt - this.accel) * k(V.accelSmoothing);
+    this.lastVisualSpeed = speed;
+    // lean into turns (roll toward the inside) and into acceleration
+    const lean = def.lean === true && this.grounded;
+    const roll = lean ? MathUtils.clamp(-yawRate * speed * V.leanRoll, -V.maxRoll, V.maxRoll) : 0;
+    const pitch = lean ? MathUtils.clamp(this.accel * V.leanAccel, -V.maxPitch, V.maxPitch) : 0;
+    p.lean.roll += (roll - p.lean.roll) * k(V.leanRate);
+    p.lean.pitch += (pitch - p.lean.pitch) * k(V.leanRate);
+    // look where it's going (or at what the game points out)
+    let look = 0;
+    const feet = feetMode(this);
+    if (feet && this.stance === 'stand') {
+      let want = this.heading;
+      if (this.lookAt) want = Math.atan2(this.lookAt.x - model.position.x, this.lookAt.z - model.position.z);
+      look = MathUtils.clamp(angleDiff(want, yaw) * MathUtils.RAD2DEG, -V.maxLook, V.maxLook);
+    }
+    p.look += (look - p.look) * k(V.lookRate);
+    // landing on the move: a quick squash, no lock
+    if (this.stats.landings !== this.seenLandings) {
+      this.seenLandings = this.stats.landings;
+      if (this.state === 'walk' || this.state === 'run') {
+        this.impactTime = 0;
+        this.impactStrength = this.landImpact;
       }
     }
-    // A loop that is still fading out keeps its time (no restart); anything else starts over.
-    // (a one-shot re-entered mid fade-out restarts its time but keeps its weight: dropping
-    // the weight instead would leave the total under 1, which three fills with the bind pose)
-    const w0 = next.isScheduled() ? next.getEffectiveWeight() : 0;
-    if (once || w0 <= 0.001) {
-      next.reset();
-      // Locomotion → locomotion (Walk, Run, Tiptoe…): start in step with the outgoing
-      // stride, so the planted foot stays the planted foot.
-      const stride = (c: AnimationAction | null) => c?.getClip().userData.speed !== undefined;
-      if (!once && prev && stride(prev) && stride(next)) next.time = (prev.time / prev.getClip().duration) * next.getClip().duration;
-    }
-    next.setLoop(once ? LoopOnce : LoopRepeat, Infinity);
-    next.clampWhenFinished = once;
-    next.enabled = true;
-    next.play();
-    if (fade > 0 && w0 < 1) {
-      next.setEffectiveWeight(w0);
-      this.fades.set(next, { from: w0, to: 1, t: 0, duration: fade * (1 - w0) });
-    } else {
-      this.fades.delete(next);
-      next.setEffectiveWeight(1);
-    }
-    this.current = next;
+    this.impactTime += dt;
+    const t = this.impactTime;
+    p.impact = feet && this.grounded ? this.impactStrength * (t < V.impactRise ? smooth(t / V.impactRise) : 1 - smooth((t - V.impactRise) / V.impactFall)) : 0;
+    p.feet.ik = !!feet && (this.grounded || this.state === 'jump');
+    p.feet.lock = feet === 'lock';
+    p.feet.speed = speed;
+    return p;
   }
+}
+
+function smooth(x: number): number {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
 }
 
 /** Every named node's rotation the first time a model is attached: its rest pose. */

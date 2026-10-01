@@ -1,8 +1,11 @@
 import { MathUtils, Vector3 } from 'three/webgpu';
 import type { RAPIER } from '../physics/Physics';
 import { angleDiff, turnToward } from './motion';
+import type { AnimRequest } from './animator';
 import type { JumpKind, Ledge, MoveInput, PlatformerCharacter, Stance } from './PlatformerCharacter';
 import { TUNING as T } from './tuning';
+
+export type { AnimRequest } from './animator';
 
 /**
  * PlatformerCharacter's state machine as one table: everything a state is, in one entry.
@@ -16,6 +19,10 @@ import { TUNING as T } from './tuning';
  *   attached    facing comes from the wall / ledge / block, not from a first-person view
  *   snapFacing  the model turns to the facing at once (no smoothing)
  *   lock        locked for this long (s), decelerating, then idle (or crouch if held)
+ *   feet        runtime foot placement while grounded: 'ik' puts the soles on the real ground
+ *               (stairs, slopes); 'lock' also keeps planted feet planted through blends and
+ *               turns (not for states whose feet are meant to slide)
+ *   lean        the body leans into turns and into acceleration
  *
  * Shared physics and probes (move, setStance, rays, ledge detection) live in the core,
  * PlatformerCharacter.ts; numbers live in tuning.ts.
@@ -29,16 +36,11 @@ export interface StateDef {
   attached?: boolean;
   snapFacing?: boolean;
   lock?(c: PlatformerCharacter): number;
+  feet?: FeetMode | ((c: PlatformerCharacter) => FeetMode | undefined);
+  lean?: boolean;
 }
 
-export interface AnimRequest {
-  name: string;
-  once?: boolean;
-  /** Playback rate (negative plays backwards). */
-  speed?: number;
-  /** Fade-in seconds (default 0.12). */
-  fade?: number;
-}
+export type FeetMode = 'ik' | 'lock';
 
 const G = T.ground;
 const DOWN = new Vector3(0, -1, 0);
@@ -55,44 +57,40 @@ export const STATES = {
       return { name: c.idleTime > G.lookAfter && c.idleTime % G.lookEvery < G.lookFor ? 'IdleLook' : 'Idle' };
     },
     stance: 'stand',
+    feet: 'lock',
   },
-  teeter: { step: stepGround, anim: () => ({ name: 'Teeter' }) },
+  teeter: { step: stepGround, anim: () => ({ name: 'Teeter' }), feet: 'lock' },
   walk: {
     step: stepGround,
-    anim: (c) => {
-      if (c.stepAnim) return { name: c.stepAnim.name, once: true, fade: 0.05 };
-      // Tiptoe on a gentle tilt (not just while speeding up or slowing down, which would
-      // flash it for a frame at every start and stop); keep the current gait once let go.
-      const s = c.speed;
-      return (c.stick > G.deadzone ? c.stick < G.tiptoeBelow : c.anim === 'Tiptoe')
-        ? { name: 'Tiptoe', speed: c.rate('Tiptoe', s, 1.2, 0.5) }
-        : { name: 'Walk', speed: c.rate('Walk', s, 2) };
-    },
+    anim: (c) => (c.stepAnim ? { name: c.stepAnim.name, once: true, fade: 0.05 } : gait(c)),
     stance: 'stand',
+    feet: 'lock',
+    lean: true,
   },
-  run: { step: stepGround, anim: (c) => ({ name: 'Run', speed: c.rate('Run', c.speed, 6) }), stance: 'stand' },
-  skid: { step: stepSkid, anim: () => ({ name: 'Skid', once: true }), stance: 'stand' },
+  run: { step: stepGround, anim: gait, stance: 'stand', feet: 'lock', lean: true },
+  skid: { step: stepSkid, anim: () => ({ name: 'Skid', once: true }), stance: 'stand', feet: 'ik' },
   bonk: {
     step: stepLocked,
     anim: () => ({ name: 'Hurt', once: true, fade: 0.1 }),
     stance: 'stand',
     lock: (c) => c.clipDuration('Hurt', 0.67),
+    feet: 'lock',
   },
 
   // ---- crouch, prone
-  crouch: { step: stepCrouch, anim: () => ({ name: 'Crouch' }) },
-  crouchWalk: { step: stepCrouch, anim: (c) => ({ name: 'CrouchWalk', speed: c.rate('CrouchWalk', c.speed, 1.4, 0.4) }) },
-  crouchSlide: { step: stepCrouchSlide, anim: () => ({ name: 'CrouchSlide' }) },
-  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }) },
+  crouch: { step: stepCrouch, anim: () => ({ name: 'Crouch' }), feet: 'lock' },
+  crouchWalk: { step: stepCrouch, anim: (c) => ({ name: 'CrouchWalk', speed: c.rate('CrouchWalk', c.speed, 1.4, 0.4) }), feet: 'lock' },
+  crouchSlide: { step: stepCrouchSlide, anim: () => ({ name: 'CrouchSlide' }), feet: 'ik' },
+  proneDown: { step: stepProneDown, anim: () => ({ name: 'ProneDown', once: true }), feet: 'ik' },
   prone: { step: stepProne, anim: () => ({ name: 'Prone' }) },
   crawl: { step: stepProne, anim: (c) => ({ name: 'Crawl', speed: c.rate('Crawl', c.speed, 0.9, 0.5) }) },
-  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7) },
+  getUpFront: { step: stepLocked, anim: () => ({ name: 'GetUpFront', once: true }), lock: (c) => c.clipDuration('GetUpFront', 0.7), feet: 'ik' },
 
   // ---- lying, sitting
-  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }) },
+  lieDown: { step: stepLieDown, anim: () => ({ name: 'LieDown', once: true }), feet: 'ik' },
   lying: { step: stepLying, anim: (c) => ({ name: c.stateTime > T.rest.sleepAfter ? 'Sleep' : 'LieIdle', fade: 0.6 }) },
-  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8) },
-  sit: { step: stepSit, anim: () => ({ name: 'Sit', fade: 0.3 }) },
+  getUp: { step: stepLocked, anim: () => ({ name: 'GetUp', once: true }), lock: (c) => c.clipDuration('GetUp', 0.8), feet: 'ik' },
+  sit: { step: stepSit, anim: () => ({ name: 'Sit', fade: 0.3 }), feet: 'ik' },
 
   // ---- in the air
   jump: {
@@ -101,6 +99,8 @@ export const STATES = {
     stance: 'stand',
     airborne: true,
     snapToGround: false,
+    // the launch frame is still on the ground: the feet push off from where they stand
+    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 ? 'lock' : undefined),
   },
   fall: { step: stepAir, anim: () => ({ name: 'Fall', fade: 0.25 }), stance: 'stand', airborne: true },
   dive: { step: stepAir, anim: () => ({ name: 'Dive', once: true }), airborne: true },
@@ -114,17 +114,20 @@ export const STATES = {
     anim: () => ({ name: 'Land', once: true, fade: 0.05 }),
     stance: 'stand',
     lock: () => T.lock.land,
+    feet: 'lock',
   },
   hardLand: {
     step: stepLocked,
     anim: () => ({ name: 'HardLand', once: true, fade: 0.05 }),
     stance: 'stand',
     lock: (c) => c.clipDuration('HardLand', 1.3),
+    feet: 'lock',
   },
   groundPoundLand: {
     step: stepLocked,
     anim: () => ({ name: 'GroundPoundLand', once: true, fade: 0.03 }),
     lock: (c) => c.clipDuration('GroundPoundLand', 0.5),
+    feet: 'lock',
   },
   bellySlide: { step: stepBellySlide, anim: () => ({ name: 'BellySlide' }) },
 
@@ -147,9 +150,9 @@ export const STATES = {
   },
 
   // ---- blocks
-  push: { step: stepBlock, anim: () => ({ name: 'Push' }), stance: 'stand', attached: true, snapFacing: true },
-  grab: { step: stepBlock, anim: () => ({ name: 'Grab' }), stance: 'stand', attached: true, snapFacing: true },
-  pull: { step: stepBlock, anim: () => ({ name: 'Pull' }), stance: 'stand', attached: true, snapFacing: true },
+  push: { step: stepBlock, anim: () => ({ name: 'Push' }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
+  grab: { step: stepBlock, anim: () => ({ name: 'Grab' }), stance: 'stand', attached: true, snapFacing: true, feet: 'lock' },
+  pull: { step: stepBlock, anim: () => ({ name: 'Pull' }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
 
   // ---- slopes
   slide: { step: stepSlide, anim: () => ({ name: 'Slide' }), stance: 'stand' },
@@ -159,8 +162,9 @@ export const STATES = {
     step: stepAttack,
     anim: (c) => ({ name: attackClip(c), once: true, fade: 0.04 }),
     stance: (c) => (c.attackStep !== 3 ? 'stand' : undefined), // the sweep kick stays low
+    feet: (c) => (c.attackStep !== 3 ? 'lock' : 'ik'), // the sweep kick's foot sweeps the floor
   },
-  emote: { step: stepEmote, anim: (c) => ({ name: c.emoteClip, once: true }), stance: 'stand' },
+  emote: { step: stepEmote, anim: (c) => ({ name: c.emoteClip, once: true }), stance: 'stand', feet: 'lock' },
 } satisfies Record<string, StateDef>;
 
 export type MoveState = keyof typeof STATES;
@@ -170,11 +174,26 @@ export function stateDef(state: MoveState): StateDef {
   return STATES[state];
 }
 
+/** The state's foot placement mode right now (the table's `feet`). */
+export function feetMode(c: PlatformerCharacter): FeetMode | undefined {
+  const f = stateDef(c.state).feet;
+  return typeof f === 'function' ? f(c) : f;
+}
+
+/**
+ * Walking and running: the locomotion blend space (Tiptoe / Walk / Run by speed, phase
+ * synced). A gentle stick tilt tiptoes; once the stick is let go the share stays as it was.
+ */
+function gait(c: PlatformerCharacter): AnimRequest {
+  return { name: c.speed > G.runAbove ? 'Run' : 'Walk', gait: { speed: c.speed, tiptoe: c.tiptoe } };
+}
+
 // ------------------------------------------------------------------ ground
 
 function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   const mag = Math.min(1, input.move.length());
   c.stick = mag;
+  if (mag > G.deadzone) c.tiptoe = mag < G.tiptoeBelow ? 1 : 0;
   if (!c.grounded) {
     c.coyote += dt;
     if (c.coyote > G.coyote) return startFall(c);
@@ -524,6 +543,7 @@ function stepGroundPound(c: PlatformerCharacter, dt: number): void {
 
 function land(c: PlatformerCharacter, input: MoveInput): void {
   const drop = c.peakY - c.feetY();
+  c.landImpact = MathUtils.clamp(-c.vy / T.visual.impactFullVy, T.visual.impactMin, 1);
   c.stats.landings++;
   c.lastLandTime = c.clock;
   c.vy = 0;
