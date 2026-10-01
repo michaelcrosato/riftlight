@@ -330,6 +330,8 @@ export class ArcadeStage {
       this.ctx.particles.burst('arcade.debris', this.world((s.x[0] + s.x[1]) / 2, s.y[1], 0));
     }
     this.ctx.audio.play('punch', { pitch: -9 });
+    // the floor is gone: drop through it (not stand on air in the landing pose)
+    this.hero?.hero?.enter('fall');
   }
 
   // ------------------------------------------------------------------ per step / frame

@@ -83,7 +83,7 @@ export async function runRiftlightShowcase(h) {
     const seen = await R(() => ({ states: [...window.__ARCADE_SEEN__.seen], jumps: [...window.__ARCADE_SEEN__.kinds] }));
     check(moves && a.phase === 'done' && a.result, `the scripted run reaches the flag (${a.time}s, ${a.frames} frames, ${a.coins}/${a.total} coins)`);
     check(seen.jumps.includes('DoubleJump') && seen.jumps.includes('WallKick'), `with the platformer moveset: ${seen.jumps.join(', ')}`);
-    check(a.broken && seen.states.includes('groundPoundLand'), 'a ground pound broke the cracked floor');
+    check(a.broken && seen.states.includes('groundPound'), 'a ground pound broke the cracked floor');
     check(a.coins > 10, `coins collected by trigger volumes (${a.coins})`);
     const gold1 = await R(() => window.__RIFTLIGHT__.state().hero.gold);
     check(a.record.best > 0 && Math.abs(a.record.best - a.time) < 0.01 && a.result.newBest, `best time kept (${a.record.best}s)`);

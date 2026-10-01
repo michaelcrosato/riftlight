@@ -16,7 +16,7 @@
  * `engine.loadGame`: the town, the hero and the save stay where they are.
  */
 import { Vector3 } from 'three/webgpu';
-import type { CameraConfig, GameContext, RenderMode } from '../../engine';
+import type { CameraConfig, CameraPreset, GameContext, RenderMode } from '../../engine';
 import { OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
 import { CAMERA, type Riftlight } from '../game/Riftlight';
@@ -67,6 +67,7 @@ interface Iris {
 interface Saved {
   filters: readonly string[];
   mode: RenderMode;
+  preset: CameraPreset;
 }
 
 const SWOOP = 0.8;
@@ -139,7 +140,8 @@ export class Showcase {
     return new Promise((resolve) => {
       const swap = () => {
         this.loading = true;
-        this.saved = { filters: [...this.ctx.engine.filters], mode: this.ctx.engine.renderer.mode };
+        const was = this.ctx.engine.camera.preset;
+        this.saved = { filters: [...this.ctx.engine.filters], mode: this.ctx.engine.renderer.mode, preset: was === 'free' || was === 'fixed' ? 'iso' : was };
         void mode
           .enter()
           .then(() => {
@@ -185,13 +187,14 @@ export class Showcase {
       const e = this.ctx.engine;
       game.town.activate();
       game.hero.object.visible = true;
+      const preset = this.saved?.preset ?? 'iso';
       if (this.saved) {
         e.setFilters(this.saved.filters);
         e.renderer.setMode(this.saved.mode);
       }
       this.saved = null;
-      // the game's own iso preset (its pitch, yaw and view height come back with it)
-      const rig = e.setCamera({ preset: 'iso' }, { syncUrl: false });
+      // the camera from before (the game's own iso preset brings its pitch, yaw and view height back)
+      const rig = e.setCamera({ preset }, { syncUrl: false });
       const home = this.heroPoint(new Vector3());
       const anchor = mode.id === 'arcade' ? this.props?.arcadeScreen : this.props?.bestiaryDoor;
       const zoom = CAMERA.town * game.settings.zoom;

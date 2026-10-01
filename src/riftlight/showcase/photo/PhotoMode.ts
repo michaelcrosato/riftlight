@@ -91,7 +91,8 @@ export class PhotoMode {
     const e = this.engine;
     const rig = e.camera;
     this.saved = {
-      camera: this.host.mode?.camera() ?? { preset: 'iso' },
+      // the mode's camera, or the shell's own preset (iso, or whatever a reviewer picked)
+      camera: this.host.mode?.camera() ?? { preset: rig.preset === 'free' || rig.preset === 'fixed' ? 'iso' : rig.preset },
       zoom: rig.zoom,
       fp: rig instanceof FirstPersonRig ? { yaw: rig.yaw, pitch: rig.pitch } : null,
       filters: [...e.filters],
