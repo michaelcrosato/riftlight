@@ -54,6 +54,7 @@ export const STATES = {
     step: stepGround,
     anim: (c) => {
       if (c.stepAnim) return { name: c.stepAnim.name, once: true };
+      if (c.leaning) return { name: 'PushIdle', fade: 0.2 }; // pushing against a wall
       return { name: c.idleTime > G.lookAfter && c.idleTime % G.lookEvery < G.lookFor ? 'IdleLook' : 'Idle' };
     },
     stance: 'stand',
@@ -101,9 +102,19 @@ export const STATES = {
     airborne: true,
     snapToGround: false,
     // the launch frame is still on the ground: the feet push off from where they stand
-    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 ? 'lock' : undefined),
+    // (not a wall kick or any other jump that starts in the air)
+    feet: (c) => (c.stateTime < T.jump.launchFeet && c.vy > 0 && c.supported() ? 'lock' : undefined),
   },
   fall: { step: stepAir, anim: () => ({ name: 'Fall', fade: 0.25 }), stance: 'stand', airborne: true },
+  wallSlide: { step: stepWallSlide, anim: () => ({ name: 'WallSlide', fade: 0.1 }), stance: 'stand', airborne: true, attached: true },
+  hurt: {
+    step: stepHurt,
+    anim: () => ({ name: 'Hurt', once: true, fade: 0.05 }),
+    stance: 'stand',
+    airborne: true,
+    snapToGround: false,
+    feet: (c) => (c.grounded && c.vy <= 0 ? 'ik' : undefined),
+  },
   dive: { step: stepAir, anim: () => ({ name: 'Dive', once: true }), airborne: true },
   groundPound: {
     step: stepGroundPound,
@@ -151,7 +162,8 @@ export const STATES = {
   },
 
   // ---- blocks
-  push: { step: stepBlock, anim: () => ({ name: 'Push' }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
+  // a crate that won't move (against a wall, another crate): lean on it
+  push: { step: stepBlock, anim: (c) => ({ name: c.leaning ? 'PushIdle' : 'Push', fade: 0.2 }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
   grab: { step: stepBlock, anim: () => ({ name: 'Grab' }), stance: 'stand', attached: true, snapFacing: true, feet: 'lock' },
   pull: { step: stepBlock, anim: () => ({ name: 'Pull' }), stance: 'stand', attached: true, snapFacing: true, feet: 'ik' },
 
@@ -247,9 +259,11 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
   }
 
   const s = c.speed;
+  c.leaning = false;
   if (s < G.stopSpeed && mag >= G.deadzone && c.wallHit > 0) {
-    // Walking into a wall: stand against it instead of walking on the spot.
+    // Walking into a wall: lean on it (PushIdle) instead of walking on the spot.
     if (c.state !== 'idle') c.enter('idle');
+    c.leaning = true;
     c.idleTime = 0;
   } else if (s < G.stopSpeed && mag < G.deadzone) {
     if (c.state !== 'idle' && c.state !== 'teeter') c.enter('idle');
@@ -331,6 +345,49 @@ function stepLocked(c: PlatformerCharacter, dt: number, input: MoveInput): void 
 function bonk(c: PlatformerCharacter): void {
   c.hvel.set(0, 0, 0);
   c.enter('bonk');
+}
+
+/**
+ * Knocked back (PlatformerCharacter.hurt): an arc away from the hit, no control for
+ * `hurt.stun` seconds, sliding to a stop once down; then back to standing (or falling).
+ */
+function stepHurt(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const H = T.hurt;
+  if (c.grounded && c.vy <= 0) c.decel(dt, H.groundDecel);
+  else c.vy = Math.max(c.vy + T.gravity * dt, T.maxFall);
+  c.move(dt);
+  if (c.grounded && c.vy < 0) c.vy = 0;
+  if (c.stateTime < H.stun) return;
+  if (!c.grounded) return startFall(c);
+  c.peakY = c.feetY();
+  c.enter(input.move.lengthSq() > G.deadzone * G.deadzone ? 'walk' : 'idle');
+}
+
+/** @internal Start a knockback: see PlatformerCharacter.hurt. */
+export function startHurt(c: PlatformerCharacter, from: Vector3, strength: number): void {
+  const H = T.hurt;
+  // let go of whatever it holds or hangs on
+  if (c.block) {
+    const v = c.block.linvel();
+    c.block.setLinvel({ x: 0, y: v.y, z: 0 }, true);
+  }
+  c.block = null;
+  c.blockCollider = null;
+  c.grabbing = false;
+  c.ledge = null;
+  c.setStance('stand');
+  const away = c.tmpVec.set(-from.x, 0, -from.z);
+  if (away.lengthSq() < 1e-6) away.copy(c.fwd()).negate();
+  away.normalize();
+  c.facing = Math.atan2(-away.x, -away.z); // face the hit
+  c.hvel.copy(away).multiplyScalar(H.knockback * strength);
+  c.vy = H.lift * strength;
+  c.grounded = false;
+  c.jumpBuffer = 0;
+  c.ledgeCooldown = H.stun;
+  c.invulnerable = H.invulnerable;
+  c.stats.hurts++;
+  c.enter('hurt');
 }
 
 // ------------------------------------------------------------------ crouch, prone, lying
@@ -543,8 +600,56 @@ function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   if (c.vy < A.grabBelowVy && c.state !== 'dive' && c.ledgeCooldown === 0) {
     if (checkClimb(c, input, true)) return;
     const ledge = c.findLedge(c.feetInto(c.tmpFeet), c.fwd());
-    if (ledge) grabLedge(c, ledge);
+    if (ledge) return grabLedge(c, ledge);
   }
+  if (c.vy < 0 && c.state !== 'dive' && c.ledgeCooldown === 0) checkWallSlide(c, input);
+}
+
+// ------------------------------------------------------------------ walls (slide, kick)
+
+/** Falling while pushing into a wall: slide down it, facing it (a jump kicks off). */
+function checkWallSlide(c: PlatformerCharacter, input: MoveInput): boolean {
+  const W = T.wallSlide;
+  const mag = input.move.length();
+  if (input.face || mag < W.minStick) return false;
+  const dir = c.tmpVec.copy(input.move).setY(0).normalize();
+  const hit = c.ray(c.probe(T.probes.chest), dir, T.body.radius + W.reach);
+  if (!hit || Math.abs(hit.normal.y) > T.probes.wallY || c.physics.hasTag(hit.collider, 'climbable')) return false;
+  const n = hit.normal.setY(0).normalize();
+  if (-dir.dot(n) < W.pushIn) return false;
+  c.wallNormal.copy(n);
+  c.facing = Math.atan2(-n.x, -n.z);
+  c.hvel.set(0, 0, 0);
+  c.vy = Math.max(c.vy, -W.speed);
+  c.enter('wallSlide');
+  return true;
+}
+
+function stepWallSlide(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  const W = T.wallSlide;
+  if (input.jump) return wallKick(c);
+  const n = c.wallNormal;
+  const into = -(input.move.x * n.x + input.move.z * n.z);
+  const hit = c.ray(c.probe(T.probes.chest), c.tmpVec.copy(n).negate(), T.body.radius + W.holdReach);
+  if (input.crouchPressed || into < W.letGo || !hit || Math.abs(hit.normal.y) > T.probes.wallY) {
+    // let go (or ran out of wall): fall away from it
+    c.hvel.copy(n).multiplyScalar(W.pushOff);
+    c.ledgeCooldown = W.cooldown;
+    return startFall(c);
+  }
+  n.copy(hit.normal).setY(0).normalize();
+  c.facing = Math.atan2(-n.x, -n.z);
+  // a ledge within reach (the top of the wall) is grabbed
+  if (c.ledgeCooldown === 0) {
+    const ledge = c.findLedge(c.feetInto(c.tmpFeet), c.fwd());
+    if (ledge) return grabLedge(c, ledge);
+  }
+  // friction: a slow slide whatever the speed it started at
+  c.vy = c.vy > -W.speed ? Math.max(c.vy + T.gravity * dt, -W.speed) : approach(c.vy, -W.speed, W.friction * dt);
+  c.hvel.copy(n).multiplyScalar(-W.press); // stay against the wall
+  c.peakY = c.feetY(); // sliding down a wall is not a fall: no hard landing at the bottom
+  c.move(dt);
+  if (c.grounded && c.vy <= 0) land(c, input);
 }
 
 /** Bend the air velocity toward `want` (yaw), speed up toward the cap, or brake against it. */
@@ -818,6 +923,8 @@ function stepBlock(c: PlatformerCharacter, dt: number, input: MoveInput): void {
 
   const block: RAPIER.RigidBody = c.block!;
   const blockVel = block.linvel();
+  // pushing a crate that doesn't move (blocked): lean on it
+  c.leaning = v > 0 && c.stateTime > T.block.stuckAfter && Math.hypot(blockVel.x, blockVel.z) < T.block.stuckSpeed;
   const push = f.clone().multiplyScalar(v);
   block.setLinvel({ x: push.x, y: Math.min(blockVel.y, 0), z: push.z }, true);
   // Keep a steady gap to the block and move with it (the block is excluded from the sweep).

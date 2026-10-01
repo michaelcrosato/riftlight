@@ -4,7 +4,7 @@ import type { RigSpec } from '../animation/types';
 import { type Physics, RAPIER } from '../physics/Physics';
 import { type AnimRequest, Animator, type ProceduralInput } from './animator';
 import { angleDiff, approach, turnToward } from './motion';
-import { feetMode, type MoveState, startEmote, startJump, stateDef } from './states';
+import { feetMode, type MoveState, startEmote, startHurt, startJump, stateDef } from './states';
 import { TUNING as T } from './tuning';
 
 /**
@@ -92,7 +92,9 @@ export class PlatformerCharacter {
   /** Last animation clip requested (for tests / debug UI). */
   anim = 'Idle';
   /** Counters for tests/tooling. */
-  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0 };
+  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0, hurts: 0 };
+  /** Seconds left in which hits are ignored (after `hurt`). Games can blink the model meanwhile. */
+  invulnerable = 0;
   /**
    * Something worth looking at (world position), set by the game: a coin, an enemy, a sign.
    * Standing and walking, the head turns toward it (within its limits); null = look where
@@ -119,6 +121,8 @@ export class PlatformerCharacter {
   /** @internal How hard the last landing was (0..1, from the fall speed): the landing squash. */ landImpact = 0;
   /** @internal The current skid is a brake (stick let go at a run), not a turn-around. */ braking = false;
   /** @internal Turning round after a skid: from this facing to that one. */ turnFrom = 0;
+  /** @internal Leaning on a wall or a stuck crate (PushIdle). */ leaning = false;
+  /** @internal The wall being slid down (out of it, horizontal). */ readonly wallNormal = new Vector3();
   /** @internal */ turnTo = 0;
   /** @internal */ stepAnim: { name: string; t: number } | null = null;
   /** @internal */ ledge: Ledge | null = null;
@@ -258,6 +262,19 @@ export class PlatformerCharacter {
     startJump(this, kind, input);
   }
 
+  /**
+   * Get hit: knocked back away from `fromDirection` (where the hit came from, e.g. enemy
+   * position minus hero position; only its horizontal part counts) in an arc, playing Hurt,
+   * with no control for ~0.4 s, then invulnerable for a moment (`invulnerable`). `strength`
+   * scales the knockback. Lets go of ledges, walls and blocks. Returns false (and does
+   * nothing) while still invulnerable.
+   */
+  hurt(fromDirection: Vector3, strength = 1): boolean {
+    if (this.invulnerable > 0) return false;
+    startHurt(this, fromDirection, strength);
+    return true;
+  }
+
   /** Celebrate (games call this, e.g. on level complete). */
   celebrate(): void {
     if (this.grounded && !this.isAirborne()) startEmote(this, 'Victory');
@@ -273,6 +290,7 @@ export class PlatformerCharacter {
     this.clock += dt;
     this.stateTime += dt;
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
+    this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
     this.feetInto(this.prevFeet);
     this.heading = this.facing;

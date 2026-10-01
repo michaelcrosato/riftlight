@@ -6,10 +6,7 @@ import { HERO_CLIPS } from './animations';
  * Clips nothing plays yet, on purpose. Each entry says why; wire the clip and delete its
  * entry (the test fails while a listed clip is referenced, so this list can't go stale).
  */
-const PENDING: Record<string, string> = {
-  WallSlide: 'pending: sliding down a wall is not a state yet (next workstream)',
-  PushIdle: 'pending: leaning on a block or wall without moving it (next workstream)',
-};
+const PENDING: Record<string, string> = {};
 
 /** Source of everything that picks hero clips by name: the character and the playground. */
 function players(): string {

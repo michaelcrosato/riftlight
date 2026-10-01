@@ -285,6 +285,66 @@ describe('PlatformerCharacter', () => {
     expect(slowest).toBeGreaterThan(h.runSpeed * 0.95);
   });
 
+  it('falling while pushing into a wall slides down it; a jump kicks off it', async () => {
+    const p = await setup();
+    box(p, [0, 5, -2], [2, 5, 0.25]); // a tall wall (no ledge in reach), face at z = -1.75
+    const h = new PlatformerCharacter(p, { position: [0, 4, -1.2] });
+    h.facing = Math.PI;
+    const into = new Vector3(0, 0, -1);
+    const seen = run(p, h, inp({ move: into }), 30);
+    expect(seen).toContain('wallSlide');
+    expect(h.state).toBe('wallSlide');
+    expect(h.vy).toBeGreaterThanOrEqual(-3.01); // a slow slide, not a fall
+    expect(Math.cos(h.facing)).toBeLessThan(-0.9); // facing the wall
+    run(p, h, inp({ move: into, jump: true, jumpHeld: true }), 1);
+    expect(h.jumpKind).toBe('WallKick');
+    expect(h.hvel.z).toBeGreaterThan(3); // off the wall
+    // letting go of the stick drops off the wall instead
+    const g = new PlatformerCharacter(p, { position: [1, 4, -1.2] });
+    g.facing = Math.PI;
+    run(p, g, inp({ move: into }), 20);
+    expect(g.state).toBe('wallSlide');
+    run(p, g, inp(), 2);
+    expect(g.state).toBe('fall');
+  });
+
+  it('walking into a wall leans on it (PushIdle)', async () => {
+    const p = await setup();
+    box(p, [0, 1.5, -3], [3, 1.5, 0.5]); // wall face at z = -2.5
+    const h = new PlatformerCharacter(p, { position: [0, 0, -1.5] });
+    h.facing = Math.PI;
+    run(p, h, inp({ move: new Vector3(0, 0, -1), walk: true }), 90);
+    expect(h.state).toBe('idle');
+    expect(h.animationFor().name).toBe('PushIdle');
+    run(p, h, inp(), 2);
+    expect(h.animationFor().name).not.toBe('PushIdle');
+  });
+
+  it('hurt: knocked back away from the hit, no control for a moment, then invulnerable', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    run(p, h, inp(), 10);
+    // hit from +X: knocked toward -X, facing the hit, in the air
+    expect(h.hurt(new Vector3(1, 0, 0))).toBe(true);
+    expect(h.state).toBe('hurt');
+    expect(Math.sin(h.facing)).toBeGreaterThan(0.9);
+    // holding the stick toward the hit does nothing while stunned
+    const toward = inp({ move: new Vector3(1, 0, 0) });
+    run(p, h, toward, 20);
+    expect(h.state).toBe('hurt');
+    expect(h.feet.x).toBeLessThan(-0.8);
+    // a second hit while invulnerable is ignored
+    expect(h.invulnerable).toBeGreaterThan(0);
+    expect(h.hurt(new Vector3(-1, 0, 0))).toBe(false);
+    // after the stun, control is back
+    const seen = run(p, h, toward, 40);
+    expect(seen).toContain('walk');
+    expect(h.stats.hurts).toBe(1);
+    // and once the invulnerability is over it can be hurt again
+    run(p, h, inp(), 90);
+    expect(h.hurt(new Vector3(0, 0, 1), 0.5)).toBe(true);
+  });
+
   it('blend weights stay finite and complete through fast state changes, even with dt = 0', async () => {
     const p = await setup();
     const h = new PlatformerCharacter(p, { position: [0, 0, 0] });

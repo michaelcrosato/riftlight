@@ -72,6 +72,12 @@ export const SCENARIOS: Record<string, string> = {
   ledge: 'place 4.8 0 0 90; down D; tap SPACE; until hang 90; up D; wait 30; down D; until idle 120; up D; wait 20',
   climb: 'place 8 0 -6.9 180; down W; wait 150; up W; wait 20',
   'hard-land': 'place -12 7 -9.2 180; down W; until hardLand 200; up W; until idle 90; wait 20',
+  // in the wall-kick chimney: jump at a wall, slide down it, kick off to the other one
+  'wall-slide': 'place -5.6 0 -9 90; down D; tap SPACE; until wallSlide 90; wait 6; tap SPACE; up D; until grounded 120; wait 20',
+  // walk into the back wall and lean on it (PushIdle)
+  'push-wall': 'place 0 0 -6.6 180; down W+SHIFT; wait 80; up W+SHIFT; wait 20',
+  // walk onto the spike pad: knocked back, stunned, blinking
+  hurt: 'place 9 0 12.4 0; down S; until hurt 60; up S; until idle 90; wait 20',
 };
 
 const KEYS: Record<string, string> = { W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', SPACE: 'Space', SHIFT: 'ShiftLeft', C: 'KeyC', J: 'KeyJ', F: 'KeyF', Z: 'KeyZ', X: 'KeyX', B: 'KeyB', V: 'KeyV' };

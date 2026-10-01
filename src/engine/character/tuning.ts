@@ -273,6 +273,38 @@ export const TUNING = {
     headOnCos: 0.87,
   },
 
+  /** Sliding down a wall: falling while pushing into it. A jump kicks off (wall kick). */
+  wallSlide: {
+    /** Stick tilt, and how squarely into the wall it must point (cos), to start sliding. */
+    minStick: 0.5,
+    pushIn: 0.6,
+    /** A wall within this reach of the capsule at chest height (to start, and to stay on it). */
+    reach: 0.25,
+    holdReach: 0.35,
+    /** Slide speed (m/s, down) and how fast a quicker fall slows to it (m/s²). */
+    speed: 3,
+    friction: 40,
+    /** Pressing into the wall at this speed keeps it in contact. */
+    press: 0.5,
+    /** The stick under this (along the wall's inward direction) lets go; pushed off at `pushOff`. */
+    letGo: 0.2,
+    pushOff: 1.2,
+    cooldown: 0.3,
+  },
+
+  /** Getting hurt (PlatformerCharacter.hurt): knocked back in an arc, no control, then invulnerable. */
+  hurt: {
+    /** Knockback speed (m/s, away from the hit) and lift (m/s up) at strength 1. */
+    knockback: 4.5,
+    lift: 6,
+    /** No control for this long (s). */
+    stun: 0.4,
+    /** Hits are ignored for this long (s). */
+    invulnerable: 1.5,
+    /** Once down, sliding to a stop at this rate (m/s²). */
+    groundDecel: 18,
+  },
+
   /** Ledge grab, hang, shimmy, pull up. */
   ledge: {
     /** Feet this far below the ledge top while hanging. */
@@ -340,6 +372,9 @@ export const TUNING = {
     /** Keep this gap to the block, closing `gapGain` of the difference per step. */
     gap: 0.03,
     gapGain: 0.3,
+    /** Pushing for this long (s) with the block moving slower than `stuckSpeed`: it's stuck (lean on it). */
+    stuckAfter: 0.25,
+    stuckSpeed: 0.2,
   },
   /** Slope sliding on steep or 'slippery' ground. */
   slope: {

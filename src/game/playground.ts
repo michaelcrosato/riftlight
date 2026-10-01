@@ -1,4 +1,4 @@
-import { AnimationMixer, BoxGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
+import { AnimationMixer, BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
   compileClip,
   ContactShadow,
@@ -30,6 +30,8 @@ import { HERO_RIG } from './hero/rig';
  *   tower + ladder            climb, then jump off for a hard landing (or dive)
  *   crates (pushable)         push
  *   nook block (grabbable)    grab + pull it out (a coin hides behind it)
+ *   gentle ramp               walking and running on a slope (foot placement)
+ *   spike pad                 hero.hurt(): knockback, stun, a moment of invulnerability
  */
 
 type Vec3 = [number, number, number];
@@ -112,12 +114,17 @@ export const LEVEL = {
     { at: [12, 0.5, 6] as Vec3, tags: ['pushable', 'grabbable'] },
   ],
   trees: [[-14, 0, 13], [-11, 0, 14], [14, 0, 13], [-14, 0, -14], [3, 0, 13], [14, 0, -14]] as Vec3[],
+  /** Spike pads: touching one hurts (knocked back away from its middle). [x, z] centre, half size. */
+  hazards: [{ at: [9, 14] as [number, number], half: 0.6 }],
   coins: [
     [0, 0, 6], [-4, 0, 5], [4, 0, -4],
     [-8.2, 1.4, 0], [6.5, 2.8, 0], [0, 3, -9], [8, 4.5, -9], [-5.6, 4.2, -9],
     [-12, 7, -9], [14.5, 0, -9], [-8, 0.05, 7], [12.3, 0, 6],
   ] as Vec3[],
 };
+
+/** The hero looks at coins this close (m). */
+const LOOK_AT_COINS = 3.5;
 
 interface Coin {
   root: Object3D;
@@ -136,8 +143,12 @@ export class Playground implements Game {
   coins: Coin[] = [];
   collected = 0;
   respawns = 0;
+  /** Times the hero was hurt (by the spike pad). */
+  hurts = 0;
+  private clock = 0;
   private won = false;
   private readonly target = new Vector3();
+  private readonly tmp = new Vector3();
   /** Reused every fixed step (readMoveInput fills it in place). */
   private readonly input: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
 
@@ -181,6 +192,26 @@ export class Playground implements Game {
       physics.tag(col, ...c.tags);
       physics.bind(body, mesh);
     }
+
+    // spike pads: a low slab with cones, no collider (touching one is what hurts); static,
+    // so merged into one mesh per material
+    const spikeParts: Object3D[] = [];
+    const plum = toonMaterial(ctx.palette.plum);
+    const red = toonMaterial(ctx.palette.red);
+    const cone = new ConeGeometry(0.09, 0.22, 5);
+    for (const h of LEVEL.hazards) {
+      const pad = new Mesh(new BoxGeometry(h.half * 2, 0.06, h.half * 2), plum);
+      pad.position.set(h.at[0], 0.03, h.at[1]);
+      pad.receiveShadow = true;
+      spikeParts.push(pad);
+      for (let i = 0; i < 9; i++) {
+        const s = new Mesh(cone, red);
+        s.position.set(h.at[0] + ((i % 3) - 1) * h.half * 0.6, 0.15, h.at[1] + (Math.floor(i / 3) - 1) * h.half * 0.6);
+        s.castShadow = true;
+        spikeParts.push(s);
+      }
+    }
+    scene.add(...mergeStaticMeshes(spikeParts));
 
     const [tree, coin, hero] = await Promise.all([
       loadModel('assets/tree.glb'),
@@ -236,10 +267,32 @@ export class Playground implements Game {
 
   fixedUpdate(ctx: GameContext, dt: number): void {
     this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero, this.input));
+    // spike pads hurt: knocked back away from the pad's middle
+    const f = this.hero.feetInto(this.tmp);
+    for (const h of LEVEL.hazards) {
+      const dx = f.x - h.at[0];
+      const dz = f.z - h.at[1];
+      if (Math.abs(dx) < h.half + 0.25 && Math.abs(dz) < h.half + 0.25 && f.y < 0.4 && this.hero.hurt(this.tmp.set(-dx, 0, -dz))) this.hurts++;
+    }
   }
 
   update(ctx: GameContext, dt: number): void {
+    this.clock += dt;
+    // look at the nearest coin within a few metres
+    let near: Coin | null = null;
+    let best = LOOK_AT_COINS * LOOK_AT_COINS;
+    for (const c of this.coins) {
+      if (c.collected) continue;
+      const d = c.root.position.distanceToSquared(this.heroModel.position);
+      if (d < best) {
+        best = d;
+        near = c;
+      }
+    }
+    this.hero.lookAt = near ? near.root.position : null;
     this.hero.updateVisual(this.heroModel, dt, ctx.physics.alpha);
+    // blink while hits are ignored
+    this.heroModel.visible = !ctx.camera.hidesTarget && (this.hero.invulnerable <= 0 || Math.floor(this.clock * 15) % 2 === 0);
     const feet = this.heroModel.position;
 
     const ground = ctx.physics.groundBelow(feet.clone().setY(feet.y + 0.1), 20, this.hero.body);
