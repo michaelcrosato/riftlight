@@ -66,6 +66,9 @@ export const SCENARIOS: Record<string, string> = {
   'lie-down': 'place 0 0 4 90; tap X; wait 100; tap X; wait 70',
   sit: 'place 0 0 4 90; tap B; wait 60; tap B; wait 30; tap V; wait 60',
   stairs: 'place -1.4 0 0 -90; hold A 110; wait 20',
+  // the 15° ramp east of the start: walk up it, stop on the slope; run up, over and down
+  ramp: 'place 4 0 10 90; hold D+SHIFT 100; wait 30',
+  'ramp-run': 'place 2 0 10 90; hold D 110; wait 40',
   ledge: 'place 4.8 0 0 90; down D; tap SPACE; until hang 90; up D; wait 30; down D; until idle 120; up D; wait 20',
   climb: 'place 8 0 -6.9 180; down W; wait 150; up W; wait 20',
   'hard-land': 'place -12 7 -9.2 180; down W; until hardLand 200; up W; until idle 90; wait 20',
@@ -137,6 +140,8 @@ window.__FILM = (() => {
   model.traverse((o) => { if (o !== model && o.name && !o.isMesh) joints.push(o); });
   const shoes = ['ShoeR', 'ShoeL'].map((n) => model.getObjectByName(n));
   const tmp = new V();
+  const down = new V(0, -1, 0);
+  const noTags = [];
   return {
     joints: joints.map((j) => j.name),
     release() { for (const k of ${JSON.stringify(Object.values(KEYS))}) e.input.setKey(k, false); },
@@ -169,13 +174,20 @@ window.__FILM = (() => {
           verts.push(+tmp.x.toFixed(4), +tmp.y.toFixed(4), +tmp.z.toFixed(4));
           cx += tmp.x; cz += tmp.z; top = Math.max(top, tmp.y);
         }
-        const hit = e.physics.groundBelow(new V(cx / pos.count, top + 0.3, cz / pos.count), 3, hero.body);
-        return { verts, ground: hit ? +hit.y.toFixed(4) : null };
+        // the ground under the sole's centre, as a plane (its normal), so a foot flat on a slope
+        // reads as on the ground, not half in it
+        const hit = e.physics.castRay(new V(cx / pos.count, top + 0.3, cz / pos.count), down, 3, noTags, hero.body);
+        if (!hit || hit.normal.y < 0.3) return { verts, ground: null, h: null };
+        const n = hit.normal, p = hit.point;
+        const h = [];
+        for (let i = 0; i < verts.length; i += 3) h.push(+(verts[i + 1] - (p.y - (n.x * (verts[i] - p.x) + n.z * (verts[i + 2] - p.z)) / n.y)).toFixed(4));
+        return { verts, ground: +p.y.toFixed(4), h };
       });
       return {
         frame: e.frame, state: hero.state, anim: hero.anim, grounded: hero.grounded,
         mix: hero.animationMix().map((m) => ({ ...m, weight: +m.weight.toFixed(3), time: +m.time.toFixed(3), rate: +m.rate.toFixed(3) })),
         feet: hero.feet.toArray().map((v) => +v.toFixed(3)), vy: +hero.vy.toFixed(3), speed: +hero.speed.toFixed(3),
+        fp: hero.footPlacement ? hero.footPlacement() : null,
         q: joints.map((j) => j.quaternion.toArray().map((v) => +v.toFixed(5))),
         soles,
       };
@@ -238,7 +250,10 @@ interface Sample {
   vy: number;
   speed: number;
   q: number[][];
-  soles: { verts: number[]; ground: number | null }[];
+  /** Per sole: world vertices (x, y, z…), ground height under its centre, each vertex's height above that ground's plane. */
+  soles: { verts: number[]; ground: number | null; h: number[] | null }[];
+  /** Foot placement this frame (PlatformerCharacter.footPlacement()). */
+  fp: { weight: number; drop: number; feet: { side: string; offset: number; pitch: number; locked: boolean; stepping: boolean; correction: number; height: number }[] } | null;
 }
 interface Shot {
   size: number;
@@ -414,16 +429,16 @@ function analyse(recs: Rec[], joints: string[]) {
   }
   // feet vs ground: slip while planted, sinking, floating in grounded states
   const slip: number[] = new Array<number>(n).fill(0);
-  const gap: number[][] = recs.map((r) => r.s.soles.map((s) => (s.ground === null ? NaN : minY(s.verts) - s.ground)));
+  const gap: number[][] = recs.map((r) => r.s.soles.map((s) => (s.h === null ? NaN : Math.min(...s.h))));
   for (let i = 1; i < n; i++) {
     recs[i]!.s.soles.forEach((sole, k) => {
       const prev = recs[i - 1]!.s.soles[k]!;
-      if (sole.ground === null || prev.ground === null) return;
+      if (sole.h === null || prev.h === null) return;
       let dx = 0;
       let dz = 0;
       let c = 0;
       for (let v = 0; v < sole.verts.length; v += 3) {
-        if (sole.verts[v + 1]! - sole.ground > 0.015 || prev.verts[v + 1]! - prev.ground > 0.015) continue;
+        if (sole.h[v / 3]! > 0.015 || prev.h[v / 3]! > 0.015) continue;
         dx += sole.verts[v]! - prev.verts[v]!;
         dz += sole.verts[v + 2]! - prev.verts[v + 2]!;
         c++;
@@ -464,11 +479,13 @@ function analyse(recs: Rec[], joints: string[]) {
   return { speed, maxSpeed, slip, gap, issues };
 }
 
-function minY(verts: number[]): number {
-  let m = Infinity;
-  for (let i = 1; i < verts.length; i += 3) m = Math.min(m, verts[i]!);
-  return m;
+/** Compact foot placement: weight, pelvis drop, then per foot: animated height, offset, pitch, L(ocked) S(tepping), correction. */
+function footText(fp: Sample['fp']): string | null {
+  if (!fp || fp.weight <= 0) return null;
+  const foot = (f: NonNullable<Sample['fp']>['feet'][number]) => `${f.side} h${(f.height * 100).toFixed(1)} ${(f.offset * 100).toFixed(1)}cm ${f.pitch.toFixed(0)}° ${f.locked ? 'L' : ''}${f.stepping ? 'S' : ''} ${(f.correction * 100).toFixed(0)}cm`;
+  return `w${fp.weight.toFixed(2)} drop ${(fp.drop * 100).toFixed(0)}cm | ${fp.feet.map(foot).join(' | ')}`;
 }
+
 
 function mixText(s: Sample): string {
   if (s.mix.length <= 1) return s.mix[0] ? `${s.mix[0].name}${Math.abs(s.mix[0].rate - 1) > 0.02 ? ` x${s.mix[0].rate.toFixed(2)}` : ''}` : s.anim;
@@ -637,7 +654,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[], stu
       view,
       joints,
       issues: a.issues,
-      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)) })),
+      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)), footPlacement: footText(r.s.fp) })),
     }),
   );
   const written = [`${base}.png`, `${base}.json`];

@@ -51,6 +51,30 @@ const steps: BlockDef[] = [0, 1, 2, 3, 4].map((i) => ({
   side: 'slate',
 }));
 
+/**
+ * A ramp along +X starting at x = `x0` on the floor (centred on z): up at `deg` for `length`
+ * metres (along the slope), a flat top `top` metres long, and down again; `width` deep.
+ */
+function ramp(x0: number, z: number, deg: number, length: number, top: number, width: number): BlockDef[] {
+  const a = (deg * Math.PI) / 180;
+  const run = length * Math.cos(a);
+  const rise = length * Math.sin(a);
+  const t = 0.3; // slab thickness
+  const slab = (cx: number, tilt: number): BlockDef => ({
+    // the slab's top face passes through (cx, rise / 2): its centre sits half a thickness below it
+    at: [cx + (t / 2) * Math.sin((tilt * Math.PI) / 180), rise / 2 - (t / 2) * Math.cos(a), z],
+    size: [length, t, width],
+    color: 'lime',
+    side: 'green',
+    tiltZ: tilt,
+  });
+  return [
+    slab(x0 + run / 2, deg),
+    { at: [x0 + run + top / 2, rise / 2, z], size: [top, rise, width], color: 'lime', side: 'green' },
+    slab(x0 + run + top + run / 2, -deg),
+  ];
+}
+
 export const LEVEL = {
   spawn: [0, 0, 3] as Vec3,
   killY: -10,
@@ -75,6 +99,8 @@ export const LEVEL = {
     { at: [-8, 0.95, 7], size: [3, 0.4, 2.4], color: 'slate', side: 'night' },
     { at: [-8, 0.375, 5.95], size: [3, 0.75, 0.3], color: 'slate', side: 'night' },
     { at: [-8, 0.375, 8.05], size: [3, 0.75, 0.3], color: 'slate', side: 'night' },
+    // gentle ramp (15°) up to a platform and down again: walking and running on slopes
+    ...ramp(5, 10, 15, 4, 2, 3),
     // pull nook
     { at: [12.75, 1, 6], size: [0.5, 2, 3.6], color: 'mist', side: 'slate' },
     { at: [11.25, 1, 4.4], size: [2.5, 2, 0.4], color: 'mist', side: 'slate' },
