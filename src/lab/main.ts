@@ -38,7 +38,7 @@ import { HERO_RIG } from '../game/hero/rig';
 /**
  * Animation Lab (/lab.html): preview any clip in the real renderer, scrub it frame by
  * frame, see its skeleton and metrics, render its contact sheet. Edits to
- * src/game/hero/animations.ts hot-reload while you watch.
+ * src/game/hero/clips/ hot-reload while you watch.
  *
  * URL: ?clip=Run&view=side|front|three|top|orbit&frame=6&speed=0.25&paused=1
  * Agents: window.__ANIM_LAB__ (see `LabApi` below).
@@ -243,7 +243,7 @@ function ui(engine: Engine, lab: AnimationLab): void {
     <pre class="metrics" data-a="metrics"></pre>
     <button data-a="sheet">Contact sheet</button>
     <button data-a="curves">Motion curves</button>
-    <p class="hint">Edit src/game/hero/animations.ts — it hot-reloads. <code>npm run anim -- check</code></p>`;
+    <p class="hint">Edit src/game/hero/clips/*.ts — they hot-reload. <code>npm run anim -- check</code></p>`;
   document.body.appendChild(panel);
   const $ = <T extends HTMLElement>(sel: string) => panel.querySelector<T>(sel)!;
   const clipSel = $<HTMLSelectElement>('[data-a="clip"]');

@@ -26,32 +26,38 @@ export const KEYMAP = {
   sit: ['KeyB'],
 } as const;
 
-export function readMoveInput(ctx: GameContext, character: PlatformerCharacter): MoveInput {
+/**
+ * Read the default key map into a MoveInput. Pass `out` (kept by the game) to reuse it and
+ * its `move` vector every step instead of allocating a new one.
+ */
+export function readMoveInput(ctx: GameContext, character: PlatformerCharacter, out?: MoveInput): MoveInput {
   const { input, camera } = ctx;
+  const res = out ?? { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
   if (!camera.controlsCharacter) {
     // Free camera is flying: the player stands still and presses are swallowed.
     input.clearQueued();
-    return { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
+    res.move.set(0, 0, 0);
+    res.walk = res.jump = res.jumpHeld = res.crouch = res.crouchPressed = false;
+    res.prone = res.lie = res.grab = res.attack = res.wave = res.sit = false;
+    res.face = null;
+    return res;
   }
   const axis = input.moveAxis();
   const { right, forward } = camera.groundBasis();
   const lane = camera.lockDepth && character.state !== 'climb' && character.state !== 'hang';
-  const move = right.multiplyScalar(axis.x).addScaledVector(forward, lane ? 0 : axis.y);
+  const move = res.move.copy(right).multiplyScalar(axis.x).addScaledVector(forward, lane ? 0 : axis.y);
   if (move.lengthSq() > 1) move.normalize();
-  const first = camera instanceof FirstPersonRig;
-  return {
-    move,
-    walk: input.isDown(...KEYMAP.walk),
-    jump: input.consumePress(...KEYMAP.jump),
-    jumpHeld: input.isDown(...KEYMAP.jump),
-    crouch: input.isDown(...KEYMAP.crouch),
-    crouchPressed: input.consumePress(...KEYMAP.crouch),
-    prone: input.consumePress(...KEYMAP.prone),
-    lie: input.consumePress(...KEYMAP.lie),
-    grab: input.isDown(...KEYMAP.grab),
-    attack: input.consumePress(...KEYMAP.attack),
-    wave: input.consumePress(...KEYMAP.wave),
-    sit: input.consumePress(...KEYMAP.sit),
-    face: first ? camera.groundBasis().forward : null,
-  };
+  res.walk = input.anyDown(KEYMAP.walk);
+  res.jump = input.consumeAny(KEYMAP.jump);
+  res.jumpHeld = input.anyDown(KEYMAP.jump);
+  res.crouch = input.anyDown(KEYMAP.crouch);
+  res.crouchPressed = input.consumeAny(KEYMAP.crouch);
+  res.prone = input.consumeAny(KEYMAP.prone);
+  res.lie = input.consumeAny(KEYMAP.lie);
+  res.grab = input.anyDown(KEYMAP.grab);
+  res.attack = input.consumeAny(KEYMAP.attack);
+  res.wave = input.consumeAny(KEYMAP.wave);
+  res.sit = input.consumeAny(KEYMAP.sit);
+  res.face = camera instanceof FirstPersonRig ? forward : null;
+  return res;
 }
