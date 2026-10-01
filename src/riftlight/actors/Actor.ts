@@ -41,6 +41,18 @@ export interface AilmentInstance {
   readonly source: ActorLike | null;
 }
 
+/** Scripted movement that overrides the brain / controller (dashes, rolls, leaps, charges). */
+export interface Motion {
+  vx: number;
+  vz: number;
+  /** Seconds left. */
+  left: number;
+  /** Called every step while it runs (hits along a dash path). */
+  onStep?(actor: Actor, dt: number): void;
+  /** Called once when it ends (or is cut short by a stun / freeze / death). */
+  onEnd?(actor: Actor, interrupted: boolean): void;
+}
+
 /** What an actor's brain may look at (the manager implements it). */
 export interface ActorWorld {
   readonly time: number;
@@ -76,6 +88,10 @@ export interface ActorOptions {
   seed?: number | string;
   /** Update order: lower first (hero 0, minions 1, monsters 2). */
   order?: number;
+  /** Free-form tags ('minion', 'summon-skeletons', 'elite', 'boss', 'dummy'...). */
+  tags?: readonly string[];
+  /** Per-frame visual hook (procedural bob, look-at...); skipped while frozen. */
+  animate?: (actor: Actor, dt: number) => void;
 }
 
 let nextId = 1;
@@ -100,6 +116,8 @@ export class Actor implements ActorLike {
   level: number;
   rank: Rank;
   readonly order: number;
+  readonly tags: readonly string[];
+  animate: ((actor: Actor, dt: number) => void) | null;
   readonly death: 'ragdoll' | 'anim';
   readonly rng: Rng;
   readonly fx: BodyFx;
@@ -111,6 +129,8 @@ export class Actor implements ActorLike {
   readonly impulse = new Vector3();
   /** Vertical speed to apply on the next step (leaps), then cleared. */
   launch: number | undefined;
+  /** Scripted movement in progress (see Motion). */
+  motion: Motion | null = null;
   /** Facing yaw (0 = +Z). */
   facing = 0;
   life: number;
@@ -151,6 +171,8 @@ export class Actor implements ActorLike {
     this.rank = o.rank ?? 'normal';
     this.radius = o.radius ?? 0.45;
     this.order = o.order ?? (o.faction === 'hero' ? 0 : 2);
+    this.tags = o.tags ?? [];
+    this.animate = o.animate ?? null;
     this.death = o.death ?? (o.faction === 'hero' ? 'anim' : 'ragdoll');
     this.stats = new StatSheet();
     const base = { ...ACTOR_BASE, ...o.base };
@@ -315,6 +337,7 @@ export class Actor implements ActorLike {
     this.deadFor = 0;
     this.velocity.set(0, 0, 0);
     this.ailments.length = 0;
+    this.endMotion(true);
     if (killer instanceof Actor) killer.onKill();
     this.events?.emit('death', { actor: this });
     this.events?.emit('kill', { target: this, killer, rank: this.rank, depth: this.depth });
@@ -406,14 +429,34 @@ export class Actor implements ActorLike {
     for (const def of AILMENTS.all()) s.setCondition(def.id, this.ailments.some((a) => a.id === def.id));
   }
 
+  /** Start a scripted movement (replaces any running one). */
+  startMotion(m: Motion): void {
+    this.endMotion(true);
+    this.motion = m;
+  }
+
+  endMotion(interrupted: boolean): void {
+    const m = this.motion;
+    if (!m) return;
+    this.motion = null;
+    m.onEnd?.(this, interrupted);
+  }
+
   private moveStep(dt: number): void {
     const stop = this.stopped;
+    if (stop && this.motion) this.endMotion(true);
+    const m = this.motion;
     const k = stop ? 0 : 1;
-    const vx = this.velocity.x * k + this.impulse.x;
-    const vz = this.velocity.z * k + this.impulse.z;
+    const vx = m ? m.vx : this.velocity.x * k + this.impulse.x;
+    const vz = m ? m.vz : this.velocity.z * k + this.impulse.z;
     this.mover.move(vx, vz, dt, this.launch);
     this.launch = undefined;
     this.position.copy(this.mover.position);
+    if (m) {
+      m.onStep?.(this, dt);
+      m.left -= dt;
+      if (m.left <= 0 && this.motion === m) this.endMotion(false);
+    }
     // impulses fade fast (snappy knockback, no ice-skating)
     const decay = Math.exp(-9 * dt);
     this.impulse.multiplyScalar(decay);
@@ -430,6 +473,7 @@ export class Actor implements ActorLike {
     this.body.rotation.y = this.facing;
     const frozen = this.hitStop > 0 || this.stopped;
     if (this.mixer && !frozen) this.mixer.update(dt * Math.max(0, 1 - this.chill));
+    if (this.animate && !frozen) this.animate(this, dt * Math.max(0, 1 - this.chill));
     this.fx.update(dt);
   }
 
