@@ -34,6 +34,7 @@ export class DebugUI {
       <div class="buttons">
         <button data-a="mode" title="P">Pixel / Raw 3D</button>
         <button data-a="res" title="R">480 / 320</button>
+        <button data-a="mute" title="M">Sound</button>
       </div>
       <div class="row"><span>Camera preset</span><select data-a="camera" title="Swaps the camera; the player stays where they are">${presets}</select></div>
       <div class="row"><span>Look</span><select data-a="look" title="[ and ] cycle">${looks}<option value="">custom</option></select></div>
@@ -43,6 +44,10 @@ export class DebugUI {
     for (const el of this.root.querySelectorAll<HTMLElement>('[data-f]')) this.fields[el.dataset.f!] = el;
     this.root.querySelector('[data-a="mode"]')!.addEventListener('click', () => engine.toggleMode());
     this.root.querySelector('[data-a="res"]')!.addEventListener('click', () => engine.toggleResolution());
+    this.root.querySelector('[data-a="mute"]')!.addEventListener('click', () => {
+      engine.audio.unlock(); // the click is a user gesture
+      engine.audio.toggleMute();
+    });
 
     const cam = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
     cam.value = engine.camera.preset;
@@ -101,6 +106,9 @@ export class DebugUI {
     this.set('fps', String(this.fps));
     this.set('errors', String(r.gpuErrors.length));
     this.set('game', gameStatus);
+    const mute = this.root.querySelector<HTMLButtonElement>('[data-a="mute"]')!;
+    const sound = e.audio.muted ? 'Sound: off' : 'Sound: on';
+    if (mute.textContent !== sound) mute.textContent = sound;
 
     const camSelect = this.root.querySelector<HTMLSelectElement>('[data-a="camera"]')!;
     if (camSelect.value !== c.preset && document.activeElement !== camSelect) camSelect.value = c.preset;
@@ -116,7 +124,7 @@ export class DebugUI {
       c.preset === 'first' ? 'click = mouse look · Q/E turn' : c.preset === 'third' ? 'drag or Q/E orbit · wheel/+/- zoom' : c.zoomable ? 'wheel/+/- zoom' : '';
     this.set(
       'keys',
-      `WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit · ${camKeys} · P mode · R res · [ ] looks · ~ hide`,
+      `WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit · ${camKeys} · P mode · R res · [ ] looks · M mute · ~ hide`,
     );
   }
 

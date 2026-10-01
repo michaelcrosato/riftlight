@@ -13,11 +13,31 @@ export {
 } from './camera';
 export { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, applyFilters, getFilter, type FilterDef } from './render/filters';
 export { loadModel, type Model } from './assets';
-export { Input } from './input';
+export { GAMEPAD_BUTTONS, Input, PRESS_WINDOW, applyDeadzone, type GamepadLike } from './input';
+export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
+export { clearScene, countObjects, disposeObject } from './lifecycle';
+export {
+  AudioManager,
+  PLAYGROUND_SONG,
+  SFX,
+  noteFrequency,
+  parseSong,
+  renderSound,
+  type AudioSettings,
+  type Instrument,
+  type PlayOptions,
+  type SfxName,
+  type Song,
+  type SoundDef,
+  type VolumeChannel,
+  type Wave,
+} from './audio';
+export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePreset, type ParticlePresetName } from './particles';
+export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
 export { RESOLUTIONS, computeFraming, type Framing, type Resolution } from './framing';
-export { Physics, RAPIER, FIXED_DT, type BoxOptions } from './physics/Physics';
+export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export {
   PlatformerCharacter,
@@ -36,7 +56,7 @@ export {
   type RenderMode,
 } from './render/PixelRenderer';
 export { ContactShadow } from './render/ContactShadow';
-export { toonMaterial, toonify, toonGradient, TOON_BANDS } from './render/toon';
+export { pixelTexture, toonMaterial, toonify, toonGradient, TOON_BANDS, type ToonMaterialOptions } from './render/toon';
 export {
   analyzeClip,
   compileClip,

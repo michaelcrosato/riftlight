@@ -3,6 +3,7 @@ import { color, float, step, uniform, uv } from 'three/tsl';
 import { PALETTE } from '../palette';
 
 const geometry = new PlaneGeometry(1, 1).rotateX(-Math.PI / 2);
+geometry.userData.shared = true; // one geometry for every shadow: level unloads keep it
 
 /**
  * Classic hard-edged blob shadow that sits on the ground under a character.

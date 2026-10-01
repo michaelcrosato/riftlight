@@ -50,6 +50,7 @@ export function toonGradient(): DataTexture {
   tex.magFilter = NearestFilter;
   tex.generateMipmaps = false;
   tex.needsUpdate = true;
+  tex.userData.shared = true; // used by every toon material: never disposed by level unloads
   sharedGradient = tex;
   return tex;
 }
@@ -78,8 +79,10 @@ export function pixelTexture<T extends Texture>(texture: T): T {
 
 /**
  * Shared 3-band toon node material for a palette color, optionally textured and/or
- * vertex-colored (color × map × vertex color). Materials are cached per combination and
- * marked `userData.shared` so level unloads never dispose them.
+ * vertex-colored (color × map × vertex color), cached per combination. Untextured ones
+ * (and ones whose texture is itself shared, e.g. from a cached GLB) are marked
+ * `userData.shared`, so level unloads keep them; a material with a level's own texture is
+ * disposed with the level, and disposing it drops it from the cache.
  */
 export function toonMaterial(color: ColorRepresentation, options: ToonMaterialOptions = {}): MeshToonNodeMaterial {
   const hex = new Color(color).getHex();
@@ -91,8 +94,12 @@ export function toonMaterial(color: ColorRepresentation, options: ToonMaterialOp
     mat = new MeshToonNodeMaterial({ color: hex, gradientMap: toonGradient(), map: map ? pixelTexture(map) : null, vertexColors });
     mat.vertexNode = snappedClipPosition();
     mat.name = `toon-${hex.toString(16).padStart(6, '0')}${map ? '-tex' : ''}${vertexColors ? '-vc' : ''}`;
-    mat.userData.shared = true;
+    mat.userData.shared = !map || map.userData.shared === true;
     materialCache.set(key, mat);
+    const cached = mat;
+    mat.addEventListener('dispose', () => {
+      if (materialCache.get(key) === cached) materialCache.delete(key);
+    });
   }
   return mat;
 }

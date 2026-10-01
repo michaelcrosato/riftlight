@@ -33,7 +33,17 @@ describe('toonify', () => {
     expect(map.magFilter).toBe(NearestFilter);
     expect(map.minFilter).toBe(NearestFilter);
     expect(map.generateMipmaps).toBe(false);
-    expect(mat.userData.shared).toBe(true);
+    // The level's own texture: the material goes with the level (and leaves the cache).
+    expect(mat.userData.shared).toBe(false);
+    mat.dispose();
+    expect(toonMaterial(0xffffff, { map })).not.toBe(mat);
+  });
+
+  it('keeps materials of shared (cached GLB) textures and untextured ones across unloads', () => {
+    const map = checker();
+    map.userData.shared = true;
+    expect(toonMaterial(0x41a6f6, { map }).userData.shared).toBe(true);
+    expect(toonMaterial(0x41a6f6).userData.shared).toBe(true);
   });
 
   it('keeps vertex colors when the geometry has them', () => {
