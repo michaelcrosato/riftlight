@@ -147,7 +147,30 @@ the damage has been (converted physical → fire scales with both) and `elementa
 | attacker | `damage`, `<type>.damage`, `elemental.damage` (inc/more) · `added.<type>.min/max` (× effectiveness) · `weapon.<type>.min/max`, `weapon.crit` · `convert.<from>.<to>` · `crit.chance`, `crit.multiplier` (base 1.5) · `accuracy` · `pen.<type>` · `<ailment>.chance`, `ailment.effect`, `ailment.duration` · `knockback` · `leech.life`, `leech.mana` · `cull` |
 | skill shape | `attack.speed`, `cast.speed`, `area` (radius × √area), `duration`, `cost`, `cooldown.recovery`, `projectiles`, `chain`, `pierce`, `fork`, `projectile.speed`, `projectile.homing`, `repeats` |
 | defender | `life`, `mana`, `es`, `life.regen`, `mana.regen` · `armour` (vs physical: armour / (armour + 5 × hit), ≤ 90%) · `evasion` (vs attack accuracy) · `block.chance`, `spell.block` (≤ 75%) · `res.<type>` capped by `res.max.<type>` (75%) · `damage.taken` · `avoid.<ailment>` · `stun.threshold` · `mass` · `move.speed` |
-| conditions | `lowLife`, `fullLife`, `moving`, `recentlyHit`, `recentlyKilled`, and one per active ailment (`chill`, `shock`…), usable as `when` on any mod |
+| conditions | `lowLife`, `fullLife`, `moving`, `recentlyHit`, `recentlyKilled`, `hitRecently`, `notHitRecently`, `inLight`, and one per active ailment (`chill`, `shock`…), usable as `when` on any mod |
+| recovery | `life.recovery` (regen, leech, on kill) · `life.regen.pct` · `life.onKill`, `mana.onKill`, `es.onKill` · `es.recharge` · `leech.rate` · `block.recovery` |
+| hero | `dodge.recovery`, `dodge.distance` (the roll) · `skill.level` (socketed gem levels) · `xp.gain`, `light.radius`, `item.rarity`, `item.quantity`, `gold.find` (multipliers, base 1) · the keystone flags (`cannotCrit`, `immune.chaos`, `damage.toMana`, `rampage`, `leech.instant`, `skills.costLife`, `es.protectsMana`, `evasion.toArmour`, `convert.toFire`, `nonFireDamage.none`, `auras.selfOnly`, `pointBlank`, `elementalOverload`, `cannotDealDamage.self`, `damage.morePerMechanic`, …) |
+
+**One name per stat.** `src/riftlight/core/stats.ts` is the canonical table: `CANONICAL_STATS`
+says what each non-obvious stat does, `STAT_ALIASES` maps the names other systems wrote first
+(`crit.multi` → `crit.multiplier`, `energy.shield` → `es`, `life.leech` → `leech.life`,
+`mana.cost` → `cost`, `block` → `block.chance`, `evasion.chance` → `dodge.chance`,
+`life.regenPct` → `life.regen.pct`, `chance.<x>` → `<x>.chance`…) and `STAT_EXPANSIONS` splits
+`res.elemental` into the three elements. Every `StatSheet` renames on the way in and on the way
+out, so loot, the tree and the balance sim can keep their data. `npx tsx
+scripts/riftlight/stat-names.ts` lists every name loot and the tree emit.
+
+**Emitted but read by nothing yet** (deliberately: each needs a system that doesn't exist yet,
+so the mod shows on the item / node and does nothing): charges (`endurance.max`, `frenzy.max`,
+`power.max`, `charge.duration`, `charge.onKill`), curses (`curse.count`, `curse.duration`,
+`curse.effect`, `curse.immune`), totems and traps (`totem.count`, `totem.life`, `totem.speed`,
+`trap.count`, `trap.speed`), `mana.reservation`, `aura.radius`, `stun.duration`,
+`shatter.chance`, `explosion.damage`, `dodge.cooldown` (the roll has no cooldown), and the level
+mechanic affixes (`brazier.area`, `brazier.damage`, `brazier.selfIgnite`, `collapse.bonusLoot`,
+`collapse.fallImmune`, `echo.damage`, `echo.delay`, `echo.repeatsSkills`, `gate.damage`,
+`haste.duration`, `lantern.duration`, `mire.immune`, `pylon.chain`, `thorns.immune`,
+`thorns.reflect`, `well.immune`, `well.resist`, `wind.resist`): the mechanics in
+`levels/mechanics/` would read them off the hero's sheet.
 
 ### Add a skill
 
@@ -972,12 +995,14 @@ they aren't 1.0. Details (presets, steps, the mods each slider sets): Game shell
 
 `Riftlight` (`src/riftlight/game/Riftlight.ts`) is the one `Game` the page runs at `/`. It owns
 the flow, the town, the HUD and menus, saves, the difficulty sliders, the camera, music, the dev
-tools and the agent API, and it reaches gameplay only through **ports**. Every port has a stub
-in `game/stubs/`, so the whole loop plays today; integration swaps the real modules in:
+tools and the agent API, and it reaches gameplay only through **ports**. `new Riftlight()` runs
+the real systems; every port also has a stub in `game/stubs/` (fast, no assets) for tests and
+for building one system against the others:
 
 ```ts
-new Riftlight();                                             // all stubs
-new Riftlight({ hero: combatHero, levels: buildLevels, monsters, loot, tree });  // real systems
+new Riftlight();                       // the real hero, levels, monsters, loot and tree
+new Riftlight(stubPorts());            // all stubs
+new Riftlight({ monsters: myMonsters }); // the real game with one port replaced
 ```
 
 ### Flow
@@ -994,8 +1019,10 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   hidden while a level runs; the hero (model, clips, stats), HUD, music and the light pool
   survive; a level is a root object the shell adds and disposes. `loadGame` would rebuild and
   re-upload the town and the hero on every trip home.
-- **Lights** come from a fixed pool of 8 point lights (`game/lights.ts`): the count never
-  changes, so toon materials never recompile when stages swap.
+- **Lights** are requests to the engine's light pool (`ctx.lights`; `game/lights.ts` adapts
+  it for the shell): the hero's lantern, level props, projectiles, loot beams and hit flashes
+  all borrow from it by priority, and no system adds a runtime `PointLight`, so toon materials
+  never recompile when stages swap or a fight gets busy.
 - **Pause**: modal panels (pause, tuning, tree, codex, recap, loot window) freeze the world
   inside the game (`worldPaused`); the vendor, stash and inventory leave the town running.
 - **Death penalty** (`progress.ts` `DEATH_PENALTY`): 10% of the XP into the current level and
@@ -1027,11 +1054,49 @@ pads alike; `PanelHost` gives them the save, gold, sounds and
 `changed('tree' | 'gear' | 'gold' | 'stash' | 'skills')`. `ShellServices.hero()` is the hero's
 actor (loot and the skill panel read its StatSheet).
 
+### Wiring: hero, levels and monsters (`wire/`)
+
+`corePorts()` (`wire/index.ts`) gives the shell the real hero, levels and monsters; they share
+one `Worlds` map (stage → `CombatWorld`).
+
+- **One combat world per stage** (`wire/world.ts` `CombatWorld`): R1's `ActorManager` and
+  `Combat` on the shell's event bus, the stage's wall query, `light` events turned into
+  `ctx.lights` requests, and combat shake sent to `services.shake`. A level builds its own; the
+  town's is made by the hero when it walks in. `enter()` moves the hero actor from world to world
+  (its buffs, cooldowns and stats travel with it).
+- **The hero** (`wire/hero.ts` `RealHero`): R1's `HeroController` with a `StageMover`
+  (kinematic: slides along walls, rounds corners, falls into a pit only when shoved). One input
+  path: the shell's `HeroIntent` (keys, mouse, pads, touch, the bot) becomes its input. The bar
+  comes from the save's sockets (`socketsToSlots`, gear's `skill.level`); a save with nothing
+  socketed gets `WIRE_TUNING.defaultSkills`. Stats: `HERO_BASE_STATS` + the `level` source
+  (`progression.ts` `levelMods`) + the starter sword until gear brings a weapon + `setMods`
+  sources (gear, tree, difficulty). `skills()` / `buffs()` / `vitals()` feed the HUD.
+- **Levels** (`wire/levels.ts` `LevelStage`): R5's `buildLevel` with every hook wired
+  (`spawnMonster` for packs, designed and generated bosses; `applyHit` for hazards and props;
+  `replaySkill` for echoes; `teleport`; `dropLoot`; `onFall`). It owns the combat world, the
+  packs and hazards, the theme's filters and song, telegraph decals, the minimap and health
+  globes (`globes.ts`: 20% life, 15% mana). Loading builds every pack and preloads every clip
+  and material (adds and boss summons too), then renders two warm-up frames: no hitch when a
+  pack wakes up.
+- **Monsters** (`wire/monsters.ts` `MonsterUnit`): R4's genome → `buildMonster` → an R1 `Actor`
+  (`MonsterBody`) with a grid mover, driven by `MonsterBrain` / `BossBrain` with its pack. Life,
+  damage, armour and accuracy follow depth (`progression.ts`, `WIRE_TUNING.monster`); a boss's
+  life and damage land on a fixed budget whatever its parts (`bossBudget`). Wind-ups show a
+  telegraph that stays until the attack lands (projectiles and charges too), so every big hit
+  can be dodged; plain swings show a soft one. Boss patterns and level hazards are
+  `wire/hazards.ts`.
+- **Kills, XP and loot.** An actor dying emits `kill` `{ target, killer, rank, depth }` on the
+  bus. The shell gives XP (× `xp.gain`); the level rolls drops through
+  `LootPort.rollDrops(KillInfo)` (`KillInfo` carries the hero's `item.rarity`, `item.quantity`
+  and `gold.find` as fractions above 1) and `spawn`s them at the corpse, and may drop a health
+  globe. `levelClear` fires once when the last monster dies.
+- **Feel.** Hit-stop and screen shake from the hit size (`Combat`), damage numbers from `hit`
+  (the shell), flinch and hit clips, corpses that sink, a boss bar with phase ticks.
+
 ### Wiring: loot, skills and the passive tree (`wire/`)
 
-`new Riftlight()` runs the real `LootPort` and `TreePort` (`{ ...stubPorts(), loot:
-realLootPort(), tree: realTreePort(), ...ports }`); the hero, levels and monsters plug in the
-same way.
+`new Riftlight()` runs the real `LootPort` and `TreePort` next to the core ports (`{
+...stubPorts(), ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports }`).
 
 **Overlay panels.** The item windows (`ui/items`) and the passive tree (`ui/tree`) paint their
 own canvas, so they are `Panel`s with `overlay: true`: the shell opens them (`open()`), keeps
@@ -1124,11 +1189,15 @@ AI off, hitboxes, time of day).
 
 ### The playtest bot (`game/bot.ts`, `npm run playtest`)
 
-A scripted player that only uses the ports, so it plays the stubs now and the real systems
-later: it dodges telegraphs about to land on it (and rolls), fights the nearest monster with the
-basic attack and skills that pay off (cleave on 2+, nova on 3+, war cry for packs and bosses,
-dash to close gaps), walks to loot, follows the critical path with grid BFS on the level
-layout, and walks into the portal. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
+A scripted player that only uses the ports (it plays the stubs and the real game alike): it
+steps out of telegraphs about to land on it by their shape (circles, lines, cones; it trades
+blows with a plain swing while its life is good) and rolls, backs off and grabs health globes
+when low, fights the nearest monster (the boss first when close) with the basic attack and the
+skills that pay off, read from their tags (areas on 2+, novas on 3+, buffs for packs and bosses,
+gap closers, ranged skills from a distance), swings only with a clear line (no wall corner in
+between), gives up for a while on a monster it can't reach or can't hurt, walks to loot (not
+for ever: a full bag or a drop out of reach is left), follows grid BFS routes that go cell by
+cell after a corner stopped it, and walks into the portal once the level is clear. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
 five times and prints clear time, deaths, damage taken, kills, XP, gold, items and stuck events;
 JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`.
 

@@ -245,7 +245,8 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
 export function ailmentScaling(q: StatQuery, tags: readonly string[]): Partial<Record<AilmentType, number>> | undefined {
   let out: Partial<Record<AilmentType, number>> | undefined;
   for (const def of AILMENTS.all()) {
-    const k = q.scale([`${def.id}.damage`, `${def.id}.effect`], tags);
+    // ailment.damage: every damage-over-time ailment (ignite, poison, bleed)
+    const k = q.scale(def.dotType ? [`${def.id}.damage`, `${def.id}.effect`, 'ailment.damage'] : [`${def.id}.damage`, `${def.id}.effect`], tags);
     if (k !== 1) (out ??= {})[def.id] = k;
   }
   return out;

@@ -93,10 +93,14 @@ export class PlaytestBot {
   private recovering = false;
   /** Monsters it could not reach, until this frame. */
   private readonly blocked = new Map<number, number>();
-  private chase: { id: number; best: number; since: number } | null = null;
+  private chase: { id: number; best: number; since: number; life: number; hurt: number } | null = null;
   private frame = 0;
   /** Frames spent trying to pick each drop up. */
   private readonly tried = new Map<number, number>();
+  /** Frames spent pressing pickup on each drop. */
+  private readonly pressed = new Map<number, number>();
+  /** A pickup failed standing on the item: only gold from here on. */
+  private bagFull = false;
   stuckCount = 0;
 
   decide(v: BotView): BotIntent {
@@ -166,26 +170,38 @@ export class PlaytestBot {
         return i;
       }
     }
-    if (target && this.recovering && td < 7 && monsters.length) {
+    if (this.recovering && monsters.length) {
+      // get out of reach of everything close (ranged packs too), not just a step back
       const away = new Vector3();
       for (const m of monsters) {
         const d = m.actor.position.distanceTo(p);
-        if (d < 8) away.add(new Vector3(p.x - m.actor.position.x, 0, p.z - m.actor.position.z).divideScalar(Math.max(0.5, d * d)));
+        if (d < 13) away.add(new Vector3(p.x - m.actor.position.x, 0, p.z - m.actor.position.z).divideScalar(Math.max(0.5, d * d)));
       }
       if (away.lengthSq() > 1e-6) {
         away.normalize();
-        // don't back into walls: slide along them
-        const ahead = new Vector3(p.x + away.x * 1.2, 0, p.z + away.z * 1.2);
-        if (!this.open(v.level, ahead)) away.set(-away.z, 0, away.x);
-        i.move.x = away.x;
-        i.move.z = away.z;
-        i.aim.copy(target.actor.position);
-        const ranged = pick('ranged');
-        const nova = pick('nova');
-        if (ranged && td > 2.5) i.skill = ranged.slot as number;
-        else if (nova && td < 3.5) i.skill = nova.slot as number;
+        // straight away, else along the wall either way, else back toward the start
+        let dir: Vector3 | null = null;
+        for (const c of [away, new Vector3(-away.z, 0, away.x), new Vector3(away.z, 0, -away.x)]) {
+          if (this.open(v.level, new Vector3(p.x + c.x * 1.2, 0, p.z + c.z * 1.2))) {
+            dir = c;
+            break;
+          }
+        }
+        if (dir) {
+          i.move.x = dir.x;
+          i.move.z = dir.z;
+        } else this.goTo(v.level, p, v.level.start, i);
+        if (target) {
+          i.aim.copy(target.actor.position);
+          const ranged = pick('ranged');
+          const nova = pick('nova');
+          if (ranged && td > 2.5) i.skill = ranged.slot as number;
+          else if (nova && td < 3.5) i.skill = nova.slot as number;
+          else if (!dir && td < 1.7 + target.actor.radius) i.attack = true; // cornered: swing back
+        }
         return i;
       }
+      return i; // nothing close: catch our breath before going on
     }
 
     // 3. fight the nearest monster in reach
@@ -221,7 +237,8 @@ export class PlaytestBot {
     let best: WorldLoot | null = null;
     let bd = 8;
     for (const l of this.o.loot === false ? [] : v.loot) {
-      if (l.filtered || (this.tried.get(l.id) ?? 0) > 240) continue; // 4 s on one drop (bag full, out of reach): leave it
+      if (l.filtered || (this.tried.get(l.id) ?? 0) > 240) continue; // 4 s on one drop (out of reach): leave it
+      if (l.drop.kind === 'item' && this.bagFull) continue; // gold still fits
       const d = Math.hypot(l.position.x - p.x, l.position.z - p.z);
       if (d < bd) {
         bd = d;
@@ -232,6 +249,10 @@ export class PlaytestBot {
       this.tried.set(best.id, (this.tried.get(best.id) ?? 0) + 1);
       if (best.drop.kind === 'item' && bd < 1.5) {
         i.interact = true;
+        // standing on it pressing pickup and it's still there: the bag is full
+        const at = (this.pressed.get(best.id) ?? 0) + 1;
+        this.pressed.set(best.id, at);
+        if (at > 30) this.bagFull = true;
       }
       else this.goTo(v.level, p, best.position, i);
       i.aim.copy(best.position);
@@ -255,11 +276,18 @@ export class PlaytestBot {
   private watchProgress(target: MonsterHandle | null, d: number): void {
     if (!target) return void (this.chase = null);
     const c = this.chase;
-    if (!c || c.id !== target.actor.id) return void (this.chase = { id: target.actor.id, best: d, since: this.frame });
+    const life = target.actor.life;
+    if (!c || c.id !== target.actor.id) return void (this.chase = { id: target.actor.id, best: d, since: this.frame, life, hurt: this.frame });
+    if (life < c.life - 1e-3 || d > 3) {
+      // (the swing clock only runs while it is in reach)
+      c.life = life;
+      c.hurt = this.frame;
+    }
     if (d < c.best - 0.5) {
       c.best = d;
       c.since = this.frame;
-    } else if (d > 2.6 && this.frame - c.since > 240) {
+    } else if ((d > 2.6 && this.frame - c.since > 240) || this.frame - c.hurt > 420) {
+      // can't reach it, or 7 s of swings that never land (a wall corner between us): later
       this.blocked.set(c.id, this.frame + 600);
       this.chase = null;
     }
@@ -310,10 +338,13 @@ export class PlaytestBot {
     return level.layout.cell(Math.floor(at.x - level.origin.x), Math.floor(at.z - level.origin.z)) === 1;
   }
 
+  /** Frames spent within 0.2 m of one spot (jittering against a corner counts as standing still). */
   private track(p: Vector3): void {
-    if (p.distanceTo(this.lastPos) < 0.02) this.stillFrames++;
-    else this.stillFrames = 0;
-    this.lastPos.copy(p);
+    if (p.distanceTo(this.lastPos) < 0.2) this.stillFrames++;
+    else {
+      this.stillFrames = 0;
+      this.lastPos.copy(p);
+    }
   }
 
   /** One frame of walking toward `to` outside `decide` (the `moveTo` helper): watches for corners too. */
@@ -372,8 +403,9 @@ export class PlaytestBot {
     }
   }
 
+  /** No wall cell on the segment (sampled every 0.25 m: combat blocks a hit that cuts 0.25 m of wall). */
   private lineOfSight(level: LevelHandle, a: Vector3, b: Vector3): boolean {
-    const n = Math.ceil(a.distanceTo(b) * 2);
+    const n = Math.ceil(a.distanceTo(b) * 4);
     for (let k = 1; k < n; k++) {
       const x = Math.floor(a.x + ((b.x - a.x) * k) / n - level.origin.x);
       const z = Math.floor(a.z + ((b.z - a.z) * k) / n - level.origin.z);

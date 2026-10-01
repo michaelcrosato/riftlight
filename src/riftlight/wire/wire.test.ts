@@ -124,6 +124,19 @@ describe('keystones reach combat', () => {
     expect(payCost(a, 500)).toBe(false);
   });
 
+  it('gear and tree recovery: life / mana / shield on kill, life.recovery, regenPct', () => {
+    const a = new Actor({ faction: 'hero', base: { life: 100, mana: 50 } });
+    a.stats.set('gear', [flat('life.onKill', 10), flat('mana.onKill', 5), inc('life.recovery', 1), flat('life.regenPct', 0.01)]);
+    a.life = 50;
+    a.mana = 10;
+    a.onKill();
+    expect(a.life).toBeCloseTo(70); // 10 × (1 + 100%)
+    expect(a.mana).toBeCloseTo(15);
+    expect(a.stats.get('life.regen.pct')).toBeCloseTo(0.01);
+    a.fixedUpdate(1);
+    expect(a.life).toBeGreaterThan(70 + 1.9); // 1% of 100 per second, doubled
+  });
+
   it('tree conditions: hitRecently / notHitRecently', () => {
     const a = new Actor({ faction: 'hero' });
     a.fixedUpdate(1 / 60);

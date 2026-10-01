@@ -6,6 +6,7 @@ import { COMBAT_TIMING } from '../../game/hero/clips/combat';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Mod } from '../core/mods';
 import type { Combat } from '../combat/Combat';
+import { StatQuery } from '../combat/stats';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
 import { Actor } from './Actor';
@@ -214,7 +215,12 @@ export class HeroController {
     const r = (spec: SlotSpec) => buildSkill(spec.skill, spec.supports ?? [], s, { level: spec.level });
     this.basic = r(this.specs.basic);
     this.slots = this.specs.slots.map((spec) => (spec ? r(spec) : null));
-    this.dodgeSkill = buildSkill('dodge-roll', [], s);
+    // the roll: dodge.recovery makes it quicker, dodge.distance longer
+    const roll = buildSkill('dodge-roll', [], s);
+    const q = new StatQuery(s);
+    const quick = Math.max(0.25, q.scale('dodge.recovery'));
+    const far = Math.max(0.25, q.scale('dodge.distance'));
+    this.dodgeSkill = { ...roll, castTime: roll.castTime / quick, delivery: roll.delivery.kind === 'dash' ? { ...roll.delivery, distance: roll.delivery.distance * far } : roll.delivery };
     this.statsVersion = s.version;
   }
 
@@ -501,7 +507,8 @@ export class HeroController {
     this.stats.dodges++;
     this.rollAnim = this.fresh('Roll');
     this.animator.setTime(this.rollAnim, 0);
-    this.combat.cast(a, this.dodgeSkill, a.position.clone().addScaledVector(dir, 4));
+    const reach = this.dodgeSkill.delivery.kind === 'dash' ? this.dodgeSkill.delivery.distance : 4.2;
+    this.combat.cast(a, this.dodgeSkill, a.position.clone().addScaledVector(dir, reach * 0.95));
   }
 
   /**

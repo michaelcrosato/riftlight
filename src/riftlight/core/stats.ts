@@ -27,6 +27,7 @@ export const STAT_ALIASES: Readonly<Record<string, string>> = {
   'evasion.chance': 'dodge.chance',
   'fire.damage.added': 'added.fire.ratio',
   'life.regen.percent': 'life.regen.pct',
+  'life.regenPct': 'life.regen.pct',
 };
 
 /** One alias that stands for several canonical stats (each gets the mod). */
@@ -61,6 +62,14 @@ export const CANONICAL_STATS: Readonly<Record<string, string>> = {
   'dodge.chance': 'flat fraction: ignore a hit outright (max 75%)',
   'added.fire.ratio': 'flat: monsters add this share of their hit as fire (elite Fire Enchanted)',
   'life.regen.pct': 'flat fraction of maximum life regenerated per second',
+  'life.recovery': 'inc/more: life regeneration, leech and life gained on kill',
+  'life.onKill': 'flat: life gained on each kill (actors/Actor.ts onKill)',
+  'mana.onKill': 'flat: mana gained on each kill',
+  'es.onKill': 'flat: energy shield gained on each kill',
+  'es.recharge': 'inc/more: energy shield recharge rate (base 33% of max per second after 2 s unhit)',
+  'ailment.damage': 'inc/more: every damage-over-time ailment (with <ailment>.damage)',
+  'dodge.recovery': 'inc/more: a quicker dodge roll',
+  'dodge.distance': 'inc/more: a longer dodge roll',
 };
 
 /** Canonical name of one stat (aliases resolved; `chance.<x>` → `<x>.chance`). */
