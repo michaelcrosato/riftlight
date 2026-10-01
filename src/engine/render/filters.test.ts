@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, getFilter } from './filters';
+import { FILTERS, FILTER_IDS, FILTER_PRESETS, PALETTES, getFilter, splitFilters } from './filters';
 import { vertexSnap } from './toon';
 
 describe('filter registry', () => {
@@ -30,5 +30,19 @@ describe('filter registry', () => {
     expect(vertexSnap.enabled.value).toBe(1);
     ps1.setActive?.(false);
     expect(vertexSnap.enabled.value).toBe(0);
+  });
+
+  it('classifies every filter as art-resolution or display-resolution', () => {
+    for (const f of FILTERS) expect(['art', 'display'], f.id).toContain(f.space);
+    // Per-art-pixel looks run before the upscale; sub-pixel display effects after it.
+    for (const id of ['nes', '8bit', 'ps1', 'gameboy', 'dither', 'posterize', 'grayscale', 'grain']) expect(getFilter(id)!.space).toBe('art');
+    for (const id of ['scanlines', 'lcd', 'crt', 'vhs', 'chromatic', 'bloom']) expect(getFilter(id)!.space).toBe('display');
+  });
+
+  it('splits a stack at its first display filter, keeping order', () => {
+    expect(splitFilters(['gameboy', 'lcd', 'vignette'])).toEqual({ art: ['gameboy'], display: ['lcd', 'vignette'] });
+    expect(splitFilters(['moonlight', 'grain', 'vignette'])).toEqual({ art: ['moonlight', 'grain', 'vignette'], display: [] });
+    expect(splitFilters(['crt', 'nes'])).toEqual({ art: [], display: ['crt', 'nes'] });
+    expect(splitFilters(['nope', 'nes'])).toEqual({ art: ['nes'], display: [] });
   });
 });
