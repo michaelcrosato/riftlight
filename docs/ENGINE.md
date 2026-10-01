@@ -337,3 +337,5 @@ and game 43 kB, page 3 kB. With `@dimforge/rapier3d-compat` the wasm was base64 
 `vite.config.ts` has a tiny `rapier-wasm-stub` plugin: wasm-bindgen's bundler build
 imports the `.wasm` as an ES module, which the plugin stubs out so `initRapier()` can
 instantiate it explicitly (no top-level await blocking the app).
+Serve `.wasm` compressed (gzip/brotli; most static hosts and CDNs do, `vite preview` does
+not): uncompressed it is 2.0 MB on the wire instead of 774 kB.
