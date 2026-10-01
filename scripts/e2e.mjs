@@ -4,7 +4,7 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | tools;  groups: @core | @cameras | @filters
+//     filters-webgl | touch | phone | moves | lab | tools | systems;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -33,6 +33,13 @@
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON.
+// systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
+//                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
+//                 leaks, textured toon materials, engine.dispose().
+//
+// The debug panel is off by default in production builds: every page gets ?debug=1 unless
+// the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel
+// HUD is a 2D overlay canvas (data-hud) on top of it.
 //
 // Waiting: pages are ready once the engine has presented 2 frames. Software rendering in CI
 // runs at a few frames per second, so the suites wait for conditions (`until`), game time or
@@ -45,6 +52,7 @@ import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { runSystems } from './e2e-systems.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -308,8 +316,10 @@ async function launch(browserExe, s, pageOptions = {}) {
 }
 
 function urlFor(s, query = '') {
+  // The debug panel is dev-only by default; the suites read it, so ask for it.
+  if (!/(^|[?&])debug=/.test(`${s.url}&${query}`)) query = query ? `${query}&debug=1` : 'debug=1';
   const sep = s.url.includes('?') ? '&' : '?';
-  return query ? `${s.url}${sep}${query}` : s.url;
+  return `${s.url}${sep}${query}`;
 }
 
 async function openPage(browserExe, s, query = '', pageOptions = {}) {
@@ -326,7 +336,8 @@ function checkClean(st, logs, label = '') {
   check(logs.length === 0, `${label}zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
 }
 
-const canvasCount = (page) => page.evaluate(() => document.querySelectorAll('canvas').length);
+/** Rendering canvases: the pixel HUD's 2D overlay (data-hud) has no GPU context and isn't counted. */
+const canvasCount = (page) => page.evaluate(() => [...document.querySelectorAll('canvas')].filter((c) => !c.dataset.hud).length);
 
 async function runCore(browserExe, s) {
   console.log(`\n▶ ${s.name}`);
@@ -527,7 +538,7 @@ async function runCameras(browserExe) {
           check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
           check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
           // Reload with the printed config as a 'fixed' preset.
-          await page.goto(`${s.url}?cam=${encodeURIComponent(JSON.stringify(config))}`);
+          await page.goto(urlFor(s, `cam=${encodeURIComponent(JSON.stringify(config))}`));
           await ready(page);
           st = await state(page);
           check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
@@ -942,7 +953,7 @@ async function runPhone(browserExe) {
       const st = await state(page);
       const fresh = await page.evaluate(() => ({
         replaced: window.__PIXEL_ENGINE__.renderer.renderer !== window.__lostRenderer,
-        canvases: document.querySelectorAll('canvas').length,
+        canvases: [...document.querySelectorAll('canvas')].filter((c) => !c.dataset.hud).length,
       }));
       check(st.backend === s.backend && fresh.replaced && fresh.canvases === 1, `${s.backend}: lost device → new renderer on ${st.backend}, one canvas`);
       const shot = await capture(page, `device-loss-${s.name}.png`);
@@ -976,6 +987,11 @@ const SUITES = {
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
   tools: (exe) => runTools(exe),
+  systems: async (exe) => {
+    const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
+    await runSystems({ ...helpers, scenario: SCENARIOS[0] });
+    await runSystems({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -983,7 +999,7 @@ const SUITES = {
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
   '@cameras': ['cameras', 'camera-swap', 'lab'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);

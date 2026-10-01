@@ -127,6 +127,7 @@ export class PixelRenderer {
   private loop: ((time: number) => void) | null = null;
   private disposed = false;
   private recovering = false;
+  private warnedStaleCapture = false;
   private lossTimes: number[] = [];
 
   private constructor(options: PixelRendererOptions) {
@@ -346,17 +347,20 @@ export class PixelRenderer {
       this.resizeObserver = new ResizeObserver(this.onResize);
       this.resizeObserver.observe(this.container);
     }
-    const watchDpr = () => {
-      this.dprQuery?.removeEventListener('change', onDprChange);
-      this.dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
-      this.dprQuery.addEventListener('change', onDprChange);
-    };
-    const onDprChange = () => {
-      watchDpr();
-      this.layout();
-    };
-    watchDpr();
+    this.watchDpr();
   }
+
+  /** Re-arm the devicePixelRatio media query (it only matches the ratio it was made for). */
+  private watchDpr(): void {
+    this.dprQuery?.removeEventListener('change', this.onDprChange);
+    this.dprQuery = window.matchMedia(`(resolution: ${window.devicePixelRatio}dppx)`);
+    this.dprQuery.addEventListener('change', this.onDprChange);
+  }
+
+  private readonly onDprChange = () => {
+    this.watchDpr();
+    this.layout();
+  };
 
   render(): void {
     this._pipeline.render();
@@ -366,10 +370,26 @@ export class PixelRenderer {
    * Render the current frame through the full pipeline into an offscreen target and read
    * it back. Output is identical to what the canvas presents (same pipeline, same size),
    * so tests and agents can inspect frames even where canvas screenshots don't work.
+   *
+   * Always shows the scene as it is now: pass nodes (the scene / pixelation pass) render
+   * at most once per node frame, which normally advances once per animation frame, so a
+   * capture right after `engine.step()` in a frame that already rendered would get that
+   * earlier render back. Starting a fresh node frame forces the passes to re-render.
    */
   async capture(): Promise<CapturedFrame> {
     const { canvasWidth: width, canvasHeight: height } = this.framing;
     const r = this._renderer;
+    let nodeFrame: { frameId: number } | undefined;
+    try {
+      nodeFrame = r.inspector?.nodeFrame;
+    } catch {
+      nodeFrame = undefined;
+    }
+    if (nodeFrame) nodeFrame.frameId++;
+    else if (!this.warnedStaleCapture) {
+      this.warnedStaleCapture = true;
+      console.warn('[PixelRenderer] renderer.inspector.nodeFrame is unavailable: capture() may return the frame rendered earlier in this animation frame');
+    }
     const target = (this.captureTarget ??= new RenderTarget(width, height, { type: UnsignedByteType, depthBuffer: false }));
     target.setSize(width, height);
     const previous = r.getRenderTarget();
@@ -390,8 +410,14 @@ export class PixelRenderer {
     return { width, height, pixels };
   }
 
+  /**
+   * Set (or stop, with null) the render loop. While a lost device is being recovered the
+   * callback is only remembered; the new renderer starts the latest one, so there is
+   * never more than one loop.
+   */
   setAnimationLoop(callback: ((time: number) => void) | null): void {
     this.loop = callback;
+    if (this.recovering) return;
     void this._renderer.setAnimationLoop(callback);
   }
 
@@ -399,6 +425,7 @@ export class PixelRenderer {
     this.disposed = true;
     window.removeEventListener('resize', this.onResize);
     this.resizeObserver?.disconnect();
+    this.dprQuery?.removeEventListener('change', this.onDprChange);
     this.dprQuery = null;
     this._renderer.setAnimationLoop(null);
     for (const key of [...this.outputCache.keys()]) this.evict(key, true);
@@ -493,7 +520,11 @@ export class PixelRenderer {
     this.recovering = true;
     console.info(`[PixelRenderer] GPU device lost (${message}); recreating the renderer`);
     void renderer.setAnimationLoop(null);
-    void this.recover().finally(() => (this.recovering = false));
+    void this.recover().then((ok) => {
+      this.recovering = false;
+      // The engine may have changed the loop while we recovered: run the latest one.
+      if (ok && !this.disposed) void this._renderer.setAnimationLoop(this.loop);
+    });
   }
 
   /**
@@ -501,10 +532,13 @@ export class PixelRenderer {
    * scene/camera/filters/framing. Scene objects re-upload themselves to the new device.
    * If that fails (or keeps failing), show a "tap to reload" overlay.
    */
-  private async recover(): Promise<void> {
+  private async recover(): Promise<boolean> {
     const now = performance.now();
     this.lossTimes = [...this.lossTimes.filter((t) => now - t < 30000), now];
-    if (this.lossTimes.length > 3) return this.showReloadOverlay();
+    if (this.lossTimes.length > 3) {
+      this.showReloadOverlay();
+      return false;
+    }
     if (document.hidden) await new Promise<void>((resolve) => document.addEventListener('visibilitychange', () => resolve(), { once: true }));
     const old = this._renderer;
     const oldCanvas = old.domElement;
@@ -521,9 +555,11 @@ export class PixelRenderer {
       this.recoveries++;
       this.onRecovered?.(this._renderer.domElement);
       console.info(`[PixelRenderer] recovered on ${this.backend}`);
+      return true;
     } catch (e) {
       console.error('[PixelRenderer] could not recover from GPU device loss', e);
       this.showReloadOverlay();
+      return false;
     }
   }
 

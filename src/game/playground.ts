@@ -6,11 +6,14 @@ import {
   type Game,
   type GameContext,
   type MoveInput,
+  type MoveState,
   type PaletteColor,
   PlatformerCharacter,
+  PLAYGROUND_SONG,
   RAPIER,
   readMoveInput,
   toonMaterial,
+  type Trigger,
 } from '../engine';
 import { restPoseOf } from '../engine/animation';
 import { HERO_MODEL } from './hero';
@@ -32,6 +35,11 @@ import { HERO_RIG } from './hero/rig';
  *   nook block (grabbable)    grab + pull it out (a coin hides behind it)
  *   gentle ramp               walking and running on a slope (foot placement)
  *   spike pad                 hero.hurt(): knockback, stun, a moment of invulnerability
+ *
+ * Game systems on show: coins are trigger volumes (physics.trigger), hero moves play
+ * retro sound effects and kick up pixel particles (detected from hero.stats / state /
+ * anim in fixedUpdate, see heroEvents), a chiptune loops (M mutes), and the coin counter
+ * is pixel HUD text.
  */
 
 type Vec3 = [number, number, number];
@@ -130,8 +138,22 @@ interface Coin {
   root: Object3D;
   mixer: AnimationMixer;
   shadow: ContactShadow;
+  trigger: Trigger;
   collected: boolean;
 }
+
+/** HUD coin icon (pixel art as data: one character per pixel). */
+/** The live playground's clip hot-reload: one accept handler for the module, however many times levels load. */
+let reloadClips: ((clips: typeof HERO_CLIPS) => void) | null = null;
+import.meta.hot?.accept('./hero/animations', (mod) => {
+  const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
+  if (clips) reloadClips?.(clips);
+});
+
+const COIN_ICON = ['..ooo..', '.oyyyo.', 'oyywyyo', 'oyywyyo', 'oyywyyo', '.oyyyo.', '..ooo..'];
+const COIN_COLORS = { o: 'orange', y: 'sand', w: 'white' } as const;
+const PUNCHES = new Set(['Punch', 'Punch2', 'Kick', 'SweepKick', 'JumpKick']);
+const STEPPING = new Set<MoveState>(['walk', 'run', 'crouchWalk', 'crawl', 'push', 'pull']);
 
 export class Playground implements Game {
   readonly name = 'Move Playground';
@@ -147,6 +169,9 @@ export class Playground implements Game {
   hurts = 0;
   private clock = 0;
   private won = false;
+  /** Last seen hero counters/state, to turn changes into sound + particle events. */
+  private seen = { jumps: 0, landings: 0, state: 'idle' as MoveState, anim: 'Idle', step: 0, puff: 0 };
+  private disposed = false;
   private readonly target = new Vector3();
   private readonly tmp = new Vector3();
   /** Reused every fixed step (readMoveInput fills it in place). */
@@ -239,7 +264,14 @@ export class Playground implements Game {
       const shadow = new ContactShadow(0.25);
       shadow.place(x, y, z, 0.45);
       scene.add(root, shadow);
-      this.coins.push({ root, mixer, shadow, collected: false });
+      // Pickup volume around the coin; only the hero (tagged 'character') collects it.
+      const c: Coin = { root, mixer, shadow, collected: false, trigger: null! };
+      c.trigger = physics.trigger({ cylinder: { halfHeight: 0.6, radius: 0.45 } }, [x, y + 0.5, z], {
+        tag: 'character',
+        once: true,
+        onEnter: () => this.collect(ctx, c),
+      });
+      this.coins.push(c);
     }
 
     this.heroModel = hero.scene;
@@ -252,12 +284,79 @@ export class Playground implements Game {
     this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     // Edit a clip file (hero/clips/*.ts, re-exported by hero/animations.ts) while the game
     // runs: clips recompile and swap in place.
-    import.meta.hot?.accept('./hero/animations', (mod) => {
-      const clips = (mod as { HERO_CLIPS?: typeof HERO_CLIPS } | undefined)?.HERO_CLIPS;
-      if (clips) this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
-    });
+    reloadClips = (clips) => !this.disposed && this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     this.heroModel.position.set(...LEVEL.spawn);
     this.heroModel.visible = !ctx.camera.hidesTarget;
+    this.seen = { ...this.seen, jumps: this.hero.stats.jumps, landings: this.hero.stats.landings };
+
+    // Starts once the browser allows sound (first key / tap); M mutes.
+    ctx.audio.playMusic(PLAYGROUND_SONG, 'playground');
+  }
+
+  /** The engine removes scene objects, bodies, triggers, particles, HUD and music itself. */
+  dispose(): void {
+    this.disposed = true;
+    this.coins = [];
+  }
+
+  private collect(ctx: GameContext, c: Coin): void {
+    c.collected = true;
+    c.root.visible = c.shadow.visible = false;
+    this.collected++;
+    ctx.audio.play('coin');
+    ctx.particles.burst('sparkle', c.root.position.clone().setY(c.root.position.y + 0.6));
+  }
+
+  /**
+   * Turn what the hero just did into sounds and particles. Reads only the public
+   * hero.stats / state / anim, once per fixed step (so nothing is missed between frames).
+   */
+  private heroEvents(ctx: GameContext, dt: number): void {
+    const h = this.hero;
+    const s = this.seen;
+    const { audio, particles } = ctx;
+    const feet = h.feet;
+    if (h.stats.jumps > s.jumps && h.jumpKind !== 'JumpKick') {
+      const kind = h.jumpKind;
+      if (kind === 'Jump' || kind === 'JumpUp' || kind === 'LongJump') audio.play('jump');
+      else audio.play('doubleJump', { pitch: kind === 'TripleJump' || kind === 'Backflip' ? 3 : 0 });
+      if (kind === 'WallKick') particles.burst('dust', feet.clone().setY(feet.y + 0.6), { count: 5 });
+    }
+    if (h.stats.landings > s.landings) {
+      if (h.state === 'groundPoundLand') {
+        audio.play('groundPound');
+        particles.burst('impact', feet);
+        particles.burst('dust', feet, { scale: 1.5, speed: 1.6 });
+      } else if (h.state === 'hardLand') {
+        audio.play('land', { pitch: -4 });
+        particles.burst('dust', feet, { scale: 1.4, speed: 1.4 });
+      } else {
+        audio.play('land');
+        particles.burst('dust', feet);
+      }
+    }
+    if (h.state !== s.state) {
+      if (h.state === 'skid') audio.play('skid');
+      if (h.state === 'groundPound') audio.play('whoosh');
+    }
+    if (h.anim !== s.anim && PUNCHES.has(h.anim)) audio.play('punch', { pitch: h.anim === 'Kick' || h.anim === 'SweepKick' ? -3 : h.anim === 'Punch2' ? 2 : 0 });
+    // Skid dust: small puffs kicked back against the slide, a few per second.
+    s.puff -= dt;
+    if ((h.state === 'skid' || h.state === 'crouchSlide') && s.puff <= 0) {
+      const v = h.hvel;
+      particles.burst('skid', feet, { direction: [v.x, 0.6, v.z] });
+      s.puff = 0.07;
+    }
+    // Footsteps: a tick per stride while moving on the ground.
+    s.step -= dt;
+    if (STEPPING.has(h.state) && h.grounded && s.step <= 0) {
+      audio.play('step', { volume: h.state === 'run' ? 1 : 0.6 });
+      s.step = h.state === 'run' ? 0.27 : 0.4;
+    }
+    s.jumps = h.stats.jumps;
+    s.landings = h.stats.landings;
+    s.state = h.state;
+    s.anim = h.anim;
   }
 
   onCameraChange(ctx: GameContext): void {
@@ -267,12 +366,16 @@ export class Playground implements Game {
 
   fixedUpdate(ctx: GameContext, dt: number): void {
     this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero, this.input));
+    this.heroEvents(ctx, dt);
     // spike pads hurt: knocked back away from the pad's middle
     const f = this.hero.feetInto(this.tmp);
     for (const h of LEVEL.hazards) {
       const dx = f.x - h.at[0];
       const dz = f.z - h.at[1];
-      if (Math.abs(dx) < h.half + 0.25 && Math.abs(dz) < h.half + 0.25 && f.y < 0.4 && this.hero.hurt(this.tmp.set(-dx, 0, -dz))) this.hurts++;
+      if (Math.abs(dx) < h.half + 0.25 && Math.abs(dz) < h.half + 0.25 && f.y < 0.4 && this.hero.hurt(this.tmp.set(-dx, 0, -dz))) {
+        this.hurts++;
+        ctx.audio.play('hurt');
+      }
     }
   }
 
@@ -299,24 +402,29 @@ export class Playground implements Game {
     if (ground && !ctx.camera.hidesTarget) this.heroShadow.place(feet.x, ground.y, feet.z, feet.y - ground.y);
     else this.heroShadow.visible = false;
 
-    for (const c of this.coins) {
-      if (c.collected) continue;
-      c.mixer.update(dt);
-      const d = c.root.position;
-      if (Math.hypot(d.x - feet.x, d.z - feet.z) < 0.7 && feet.y > d.y - 0.9 && feet.y < d.y + 1.2) {
-        c.collected = true;
-        c.root.visible = c.shadow.visible = false;
-        this.collected++;
-      }
-    }
+    // Coins are collected by their trigger volumes (see setup); here they only spin.
+    for (const c of this.coins) if (!c.collected) c.mixer.update(dt);
     if (!this.won && this.collected === this.coins.length && this.coins.length > 0) {
       this.won = true;
       this.hero.celebrate();
+      ctx.audio.play('fanfare');
     }
     if (feet.y < LEVEL.killY) {
       this.hero.teleport(LEVEL.spawn);
       this.respawns++;
+      ctx.audio.play('hurt');
+      ctx.particles.burst('smoke', LEVEL.spawn);
     }
+    this.drawHud(ctx);
+  }
+
+  private drawHud(ctx: GameContext): void {
+    const { hud } = ctx;
+    hud.clear();
+    hud.sprite(6, 6, COIN_ICON, COIN_COLORS);
+    hud.text(16, 6, `${this.collected}/${this.coins.length}`, { color: 'sand' });
+    if (this.won) hud.text(0, 18, 'ALL COINS!', { anchor: 'top', color: 'sand', scale: 2 });
+    if (ctx.audio.muted) hud.text(6, 6, 'MUTE', { anchor: 'top-right', color: 'mist' });
   }
 
   cameraTarget(): Vector3 {
