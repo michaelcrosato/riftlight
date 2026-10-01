@@ -56,7 +56,7 @@ export const HEADS = [
     ball(c, 'primary', [0, 0.38, 0.12], [0.62, 0.52, 0.66]);
     box(c, 'secondary', [0, 0.62, 0.0], [0.42, 0.1, 0.52]);
     ball(c, 'dark', [0, 0.26, 0.42], [0.3, 0.2, 0.2]);
-  }, { anchors: A({ eyes: [[0.25, 0.46, 0.32]], jaw: [0, 0.22, 0.42], horns: [0.12, 0.6, 0.38], crest: [0, 0.66, 0] }) }),
+  }, { anchors: A({ eyes: [[0.25, 0.46, 0.32]], jaw: [0, 0.22, 0.42], horns: [0.12, 0.6, 0.38], crest: [0, 0.66, 0] }), plans: ['hexapod', 'centipede', 'biped', 'brute', 'quadruped', 'serpent', 'avian'] }),
 
   part('head.cyclops', 'Cyclops Head', ['head'], ['earth', 'beast', 'void', 'construct'], 1, [inc('aggro.radius', 0.2)], (c) => {
     box(c, 'primary', [0, 0.5, 0.04], [0.66, 0.78, 0.62]);

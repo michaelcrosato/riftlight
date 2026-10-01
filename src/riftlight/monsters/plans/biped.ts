@@ -123,8 +123,8 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
     locomotion: 'legs',
     gaits: isBrute
       ? {
-          walk: { frames: 30, stance: 0.62, phase: { '0R': 0, '0L': 0.5 }, stride: 0.9, lift: 0.1, bob: 0.04, lean: 5 },
-          run: { frames: 22, stance: 0.4, phase: { '0R': 0, '0L': 0.5 }, stride: 1.0, lift: 0.18, bob: 0.06, lean: 14 },
+          walk: { frames: 30, stance: 0.62, phase: { '0R': 0, '0L': 0.5 }, stride: 0.9, lift: 0.1, bob: 0.04, lean: 5, pace: 0.85 },
+          run: { frames: 22, stance: 0.4, phase: { '0R': 0, '0L': 0.5 }, stride: 1.0, lift: 0.18, bob: 0.06, lean: 14, pace: 0.85 },
         }
       : {
           walk: { frames: 26, stance: 0.6, phase: { '0R': 0, '0L': 0.5 }, stride: 0.8, lift: 0.12, bob: 0.025, lean: 4 },

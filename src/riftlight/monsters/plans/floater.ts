@@ -36,7 +36,7 @@ export const floater: BodyPlanDef = {
     if (ctx.has('tentacles')) {
       const count = 3 + Math.round(g('tentacles', 0, 4));
       const room = hover - hs * 0.45 - 0.18;
-      const seg = Math.max(0.06, Math.min(room / 3, g('length', 0.12, 0.24)));
+      const seg = Math.max(0.05, Math.min(room / 3, hs * g('length', 0.2, 0.34)));
       tentacles = addTentacles(b, root, [0, -hs * 0.38, 0], hs * 0.26, count, seg);
     }
     const wings = ctx.has('wings') ? addWings(b, root, [hs * 0.36, hs * 0.05, -hs * 0.08], g('wingSpan', 0.8, 1.4)) : null;

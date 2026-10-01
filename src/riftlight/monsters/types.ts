@@ -155,6 +155,8 @@ export interface GaitDef {
   readonly lean?: number;
   /** Hop height (m) for hopping gaits (both feet leave together). */
   readonly hop?: number;
+  /** Speed multiplier on the leg-length cadence (heavy bodies < 1, skittering ones > 1). */
+  readonly pace?: number;
 }
 
 /** What a body plan's grammar produces from genes and parts. */

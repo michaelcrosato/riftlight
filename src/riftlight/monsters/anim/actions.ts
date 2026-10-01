@@ -198,8 +198,8 @@ export const ACTIONS: Readonly<Record<string, Builder>> = {
         [0, {}],
         [12, P(ps.neck(-40), ps.head(-22), ps.root([0, 0.03, -0.05]), ps.jaw(0.7))],
         [15, P(ps.neck(-44), ps.head(-24), ps.root([0, 0.04, -0.06]), ps.jaw(0.9)), 'in'],
-        [19, P(ps.neck(42), ps.head(26), ps.root([0, 0, 0.12]), ps.jaw(1)), 'out'],
-        [26, P(ps.neck(36), ps.head(20), ps.root([0, 0, 0.1]))],
+        [19, P(ps.neck(30), ps.head(18), ps.root([0, 0, 0.12]), ps.jaw(1)), 'out'],
+        [26, P(ps.neck(26), ps.head(14), ps.root([0, 0, 0.1]))],
         [36, {}],
       ];
       feet = undefined;
@@ -366,6 +366,30 @@ export function deathClip(ctx: BakeContext): MonsterClipDef {
       [16, P(ps.root([0, 0, 0], [0, 0, 0], 0.04))],
     ];
     return bake(ctx, { name: 'Death', frames: 16, keys, notes: 'Swell and pop at f11.' }, { kind: 'death', hit: 11 });
+  }
+  if (sk.locomotion === 'slither') {
+    // Serpents writhe and go limp along the floor: lateral coils, head drops, no roll.
+    const keys: Key[] = [
+      [0, {}],
+      [6, P(ps.neck(-30, 20), ps.head(-20, 10), ps.jaw(1), ps.root([0, 0.02, 0], [0, 12, 0]), ps.segments((i) => 14 * Math.sin(i * 1.3))), 'out'],
+      [16, P(ps.neck(20, -25), ps.head(10, -15), ps.jaw(0.8), ps.root([0, 0, 0], [0, -8, 8]), ps.segments((i) => -18 * Math.sin(i * 1.1 + 0.5))), 'inOut'],
+      [28, P(ps.neck(22, 10), ps.head(14, 20), ps.jaw(0.5), ps.root([0, 0, 0], [0, 4, 14]), ps.segments((i) => 10 * Math.sin(i * 0.9 + 1))), 'out'],
+      [34, P(ps.neck(24, 10), ps.head(15, 20), ps.jaw(0.5), ps.root([0, 0, 0], [0, 4, 14]), ps.segments((i) => 10 * Math.sin(i * 0.9 + 1)))],
+    ];
+    return bake(ctx, { name: 'Death', frames: 34, keys, notes: 'Writhe, head drops, goes limp along the floor.' }, { kind: 'death', clearance: 0.02 });
+  }
+  const upright = sk.arms.length > 0 || sk.plan === 'avian';
+  if (upright) {
+    // Upright bodies buckle at the knees and pitch forward onto their face.
+    const keys: Key[] = [
+      [0, {}],
+      [5, P(ps.root([0, 0.02, -0.05], [-12, 0, 3]), ps.spine(-14), ps.neck(-16), ps.head(-20), ps.jaw(0.8), ps.arms(-70, 40, 30), ps.wings(30, 0.75)), 'out'],
+      [14, P(ps.root([0, -H * 0.25, 0.04], [18, 0, 6]), ps.spine(18), ps.neck(10), ps.head(10, 8), ps.jaw(0.6), ps.arms(-30, 30, 50), ps.tail(-10), ps.wings(10, 0.4)), 'in'],
+      [24, P(ps.root([0, -H, H * 0.3], [84, 0, 10]), ps.spine(10), ps.neck(-20), ps.head(-20, 30), ps.jaw(0.4), ps.arms(-160, 50, 30), ps.tail(-20), ps.wings(-10, 0.9, -10)), 'out'],
+      [34, P(ps.root([0, -H, H * 0.32], [86, 0, 10]), ps.spine(8), ps.neck(-22), ps.head(-22, 32), ps.jaw(0.4), ps.arms(-165, 55, 25), ps.tail(-22), ps.wings(-12, 0.9, -12))],
+    ];
+    const feet = sk.legs.length ? tuckFeet(ctx, (_leg, f) => smooth((f - 10) / 12)) : undefined;
+    return bake(ctx, { name: 'Death', frames: 34, keys, notes: 'Reel, knees buckle, pitch forward onto the floor.' }, { kind: 'death', feet, clearance: 0.02 });
   }
   const drop = sk.locomotion === 'float' ? -H : -H * 0.5;
   const keys: Key[] = [

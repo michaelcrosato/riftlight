@@ -91,7 +91,7 @@ export const quadruped: BodyPlanDef = {
       roles: { root, spine: [spine], chest, neck: [n1, n2], head, jaw, tail, wings },
       locomotion: 'legs',
       gaits: {
-        walk: { frames: 32, stance: 0.66, phase, stride: 0.75, lift: 0.12, bob: 0.015, bobs: 2 },
+        walk: { frames: 32, stance: 0.66, phase, stride: 0.9, lift: 0.12, bob: 0.015, bobs: 2 },
         run: { frames: 16, stance: 0.4, phase: { '0L': 0, '1R': 0.05, '0R': 0.5, '1L': 0.55 }, stride: 1.05, lift: 0.2, bob: 0.035, bobs: 2, lean: 3 },
       },
       height: legH + 0.2 * girth + seg * 1.6 + hs,

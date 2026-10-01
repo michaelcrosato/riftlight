@@ -79,7 +79,7 @@ export const centipede: BodyPlanDef = {
     b.socket('tail', 'tail', segs[segs.length - 1]!, [0, 0.02, -segLen * 0.5], r * 2, { data: { chain: segs.slice(-2) } });
     b.socket('core', 'core', root, [0, r * 0.7, 0], r);
 
-    const gait = (frames: number, stance: number, stride: number): GaitDef => ({ frames, stance, phase, stride, lift: 0.1, bob: 0.006, bobs: 2 });
+    const gait = (frames: number, stance: number, stride: number): GaitDef => ({ frames, stance, phase, stride, lift: 0.1, bob: 0.006, bobs: 2, pace: 1.1 });
     return b.done({
       roles: { root, spine: [], chest: null, neck: [], head, jaw, tail: [], wings: null, segments: segs },
       locomotion: 'legs',

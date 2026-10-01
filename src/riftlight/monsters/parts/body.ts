@@ -170,12 +170,12 @@ export const CORES = [
 
 export const TENTACLES = [
   part('tentacle.plain', 'Tentacles', ['tentacles'], ['water', 'void', 'arcane', 'poison'], 1, [flat('chance.chill', 0.05), inc('attack.speed', 0.05)], (c) => {
-    c.chain.forEach((j, i) => taper(c, 0.75, i % 2 ? 'secondary' : 'primary', [0, -0.5, 0], [0.5 - i * 0.1, 1.15, 0.5 - i * 0.1], { joint: j, rot: [180, 0, 0] }));
+    c.chain.forEach((j, i) => taper(c, 0.72, i % 2 ? 'secondary' : 'primary', [0, -0.5, 0], [0.62 - i * 0.12, 1.15, 0.62 - i * 0.12], { joint: j, rot: [180, 0, 0] }));
     cone(c, 'secondary', [0, -1.1, 0], [0.22, 0.4, 0.22], { joint: c.chain[c.chain.length - 1], rot: [180, 0, 0] });
   }),
   part('tentacle.spiked', 'Barbed Tentacles', ['tentacles'], ['void', 'blood', 'poison', 'shadow'], 2, [flat('thorns', 4), flat('chance.bleed', 0.1)], (c) => {
     c.chain.forEach((j, i) => {
-      taper(c, 0.75, 'primary', [0, -0.5, 0], [0.5 - i * 0.1, 1.15, 0.5 - i * 0.1], { joint: j, rot: [180, 0, 0] });
+      taper(c, 0.72, 'primary', [0, -0.5, 0], [0.62 - i * 0.12, 1.15, 0.62 - i * 0.12], { joint: j, rot: [180, 0, 0] });
       cone(c, 'accent', [0.25, -0.5, 0], [0.16, 0.36, 0.16], { joint: j, rot: [0, 0, -70] });
     });
   }),

@@ -46,12 +46,15 @@ export function locomotionClip(ctx: BakeContext, gait: GaitDef, o: MoveOptions):
 function legged(ctx: BakeContext, gait0: GaitDef, o: MoveOptions): MonsterClipDef {
   const sk = ctx.skeleton;
   const ps = new Poser(sk);
-  const gait = o.charge ? { ...gait0, frames: Math.max(10, Math.round(gait0.frames * 0.85)) } : gait0;
-  const F = gait.frames;
-  const T = F / 30;
+  const gait = gait0;
   const beta = gait.stance;
   const reach = Math.min(...sk.legs.map((l) => l.reach));
   const S = gait.stride * reach * (o.charge ? 1.1 : 1);
+  // Cadence from leg length (Froude-like: bigger legs, longer strides, same feel): the
+  // target ground speed sets the cycle length; the gait's `frames` is only a fallback.
+  const target = (o.run ? 4 : 1.3) * Math.sqrt(reach) * (gait.pace ?? 1) * (o.charge ? 1.25 : 1);
+  const F = Math.max(10, Math.min(44, Math.round((30 * S) / (beta * target)) || gait.frames));
+  const T = F / 30;
   const speed = S / (beta * T);
   const lift = gait.lift * reach;
   const hop = gait.hop ?? 0;

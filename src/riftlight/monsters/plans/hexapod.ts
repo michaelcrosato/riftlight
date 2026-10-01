@@ -81,7 +81,7 @@ export const hexapod: BodyPlanDef = {
     const wings = ctx.has('wings') ? addWings(b, root, [0.06 * girth, 0.1 * girth, -0.02], g('wingSpan', 0.7, 1.2)) : null;
     b.stance[abdomen] = [-6, 0, 0];
 
-    const gait = (frames: number, stance: number, stride: number, lift: number, bob: number): GaitDef => ({ frames, stance, phase: legs, stride, lift, bob, bobs: 2 });
+    const gait = (frames: number, stance: number, stride: number, lift: number, bob: number): GaitDef => ({ frames, stance, phase: legs, stride, lift, bob, bobs: 2, pace: 1.15 });
     return b.done({
       roles: { root, spine: [abdomen], chest: null, neck: [], head, jaw, tail: [], wings },
       locomotion: 'legs',
