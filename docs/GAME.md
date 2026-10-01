@@ -88,6 +88,146 @@ Five rules, applied to every system:
 
 The full TypeScript lives in `core/types.ts`, which is the contract between systems.
 
+## Combat & skills
+
+Combat is three layers, each usable on its own:
+
+| layer | where | what |
+| --- | --- | --- |
+| the hit pipeline | `combat/damage.ts`, `combat/ailments.ts`, `combat/stats.ts` | pure functions: `rollHit` (attacker) → `mitigate` (defender) → ailments; `expectedHit` for tools |
+| actors | `actors/Actor.ts`, `actors/ActorManager.ts`, `actors/movers.ts` | stats, life/mana/ES with regen, ailments, buffs, conditions, knockback, hit-stop, death; a spatial hash and update order |
+| the runtime | `combat/Combat.ts`, `combat/deliveries/` | casts skills through their delivery, resolves hits, plays the juice (numbers, shake, flashes, SFX, particles, lights) |
+
+`skills/` holds the gems as data and `buildSkill`; `actors/HeroController.ts` is the player.
+`/?game=arena` (`combat/arena.ts`) puts them together and is the reference for wiring:
+
+```ts
+const actors = new ActorManager(events, ctx.scene);              // events: the level's GameEventBus
+const combat = new Combat({ actors, scene: ctx.scene, audio: ctx.audio, particles: ctx.particles, wall, hero: () => hero.actor });
+const hero = new HeroController({ physics: ctx.physics, combat, model, clips: HERO_CLIPS, at: [0, 0, 0], slots: [{ skill: 'fireball', supports: ['gmp'] }] });
+actors.add(hero.actor);
+// fixedUpdate: hero.fixedUpdate(ctx, dt); actors.fixedUpdate(dt); combat.fixedUpdate(dt);
+// update:      actors.update(dt, ctx.physics.alpha); hero.update(dt); combat.update(dt);
+//              combat.shake.apply(ctx.camera, dt); hud.clear(); …; combat.drawNumbers(ctx.hud, ctx.camera.camera);
+```
+
+- **A monster** is an `Actor` with `faction: 'monster'`, a `body`, a `GridMover` over the level's
+  `WalkableQuery` (`layoutWalkable(layout)`), and a `Brain` whose `think()` sets `velocity` /
+  `facing` and calls `combat.cast(actor, skill, target)` at its attack's hit frame. Resolve its
+  skills with `buildSkill(id, [], actor.stats)`. `actor.animate` is a per-frame visual hook.
+- **Events.** `Actor.takeHit` emits `hit`, then `death` and `kill` (with the killer, `rank`
+  and `depth`). Minions die too: check `target.faction === 'monster'` before dropping loot.
+- **Lights.** Effects ask for dynamic lights with a `LightRequest` on the bus (`light` event).
+  A light pool sets `req.claimed = true` and drives its own light from `position()` until
+  `duration` ends or `alive()` is false; unclaimed requests use a small fallback pool.
+- **Juice.** Hit-stop is `actor.hitStop` frames (movement and animation freeze); knockback is
+  `actor.push(impulse)`; `actor.fx.flash()` is the hit flash; `combat.shake.add(trauma)` and
+  `combat.numbers.spawn(...)` are the screen shake and damage numbers.
+
+### The hero's controls
+
+WASD / left stick moves (camera-relative); the mouse aims at the ground under the cursor (else
+the right stick, else the nearest enemy ahead). LMB / J is the 3-hit combo (hold to keep
+swinging), RMB / K, Q, E, R, F (or 1–4) are the skill bar, Space is the dodge roll. Presses
+buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,
+casting slows movement instead of locking it (the legs keep running under the arms), and
+attack clips play at the rate attack / cast speed asks for. W is movement, so the bar is
+Q/E/R/F rather than Q/W/E/R. The shell passes `HERO_TOUCH_BUTTONS`, `HERO_GAMEPAD_BUTTONS`
+and `HERO_DEBUG_KEYS` (R is a skill, so the resolution hotkey moves to F2) to the engine.
+Every timing is in `HERO_TUNING`.
+
+### Stats the pipeline reads
+
+Base values come from the skill, the weapon and the actor's `base` source; everything else is
+`Mod`s, scoped by tags. A hit's tags are the skill's effective tags plus every damage type
+the damage has been (converted physical → fire scales with both) and `elemental`.
+
+| side | stats |
+| --- | --- |
+| attacker | `damage`, `<type>.damage`, `elemental.damage` (inc/more) · `added.<type>.min/max` (× effectiveness) · `weapon.<type>.min/max`, `weapon.crit` · `convert.<from>.<to>` · `crit.chance`, `crit.multiplier` (base 1.5) · `accuracy` · `pen.<type>` · `<ailment>.chance`, `ailment.effect`, `ailment.duration` · `knockback` · `leech.life`, `leech.mana` · `cull` |
+| skill shape | `attack.speed`, `cast.speed`, `area` (radius × √area), `duration`, `cost`, `cooldown.recovery`, `projectiles`, `chain`, `pierce`, `fork`, `projectile.speed`, `projectile.homing`, `repeats` |
+| defender | `life`, `mana`, `es`, `life.regen`, `mana.regen` · `armour` (vs physical: armour / (armour + 5 × hit), ≤ 90%) · `evasion` (vs attack accuracy) · `block.chance`, `spell.block` (≤ 75%) · `res.<type>` capped by `res.max.<type>` (75%) · `damage.taken` · `avoid.<ailment>` · `stun.threshold` · `mass` · `move.speed` |
+| conditions | `lowLife`, `fullLife`, `moving`, `recentlyHit`, `recentlyKilled`, and one per active ailment (`chill`, `shock`…), usable as `when` on any mod |
+
+### Add a skill
+
+Add an entry to `ACTIVE_SKILLS` (`skills/actives.ts`). Tags decide which supports fit and which
+mods scale it; the delivery picks the runtime; `anim` / `combo` name hero clips; `look` is its
+colour, mesh, sounds, light and shake.
+
+```ts
+g({
+  id: 'glacial-hammer', name: 'Glacial Hammer', description: 'A cold strike that freezes.',
+  tags: ['attack', 'melee', 'strike', 'cold', 'damage'],
+  cost: 6, cooldown: 0, castTime: 0.6, anim: 'Slash3',
+  delivery: { kind: 'strike', range: 2.4, arc: 80 },
+  effects: [
+    { kind: 'damage', base: { cold: [4, 8] }, effectiveness: 1.3 },
+    { kind: 'ailment', ailment: 'freeze', chance: 0.25 },
+  ],
+  perLevel: [more('damage', 0.07)],
+  look: { color: 'cyan', glow: ['white', 'cyan'], burst: 'frost', sound: { cast: 'swing', hit: 'ice' }, shake: 0.15 },
+}),
+```
+
+Then `npm run combat -- dps glacial-hammer melee-physical` to see what it does. A new kind of
+movement or area goes in the Delivery union (`core/types.ts`) with a runtime in
+`combat/deliveries/` registered in `DELIVERIES`; a new clip goes in
+`src/game/hero/clips/combat.ts` with its hit frame in `COMBAT_TIMING`.
+
+### Add a support
+
+Add an entry to `SUPPORT_GEMS` (`skills/supports.ts`). `requires` are tags the skill must all
+have, `excludes` tags it must not; `mods` apply to the linked skill only; `changes` reshape
+the delivery.
+
+```ts
+s({
+  id: 'volley', name: 'Volley', description: 'Two more projectiles and a little faster.',
+  requires: ['projectile'], excludes: ['channel'],
+  mods: [more('damage', -0.1), inc('projectile.speed', 0.2)],
+  changes: { projectiles: 2 }, costMultiplier: 1.3,
+}),
+```
+
+### Add a damage type
+
+1. Add it to `DamageType` and `DAMAGE_TYPES` in `core/types.ts` (e.g. `'holy'`).
+2. Place it in `CONVERSION_ORDER` (`combat/damage.ts`), add a colour to `DAMAGE_COLORS`
+   (`combat/numbers.ts`), and add it to `ELEMENTAL` if it should count as elemental.
+3. That's all the pipeline needs: `holy.damage`, `added.holy.min/max`, `res.holy`,
+   `res.max.holy`, `pen.holy` and `convert.physical.holy` work at once, because stats are strings.
+
+```ts
+export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos' | 'holy';
+export const CONVERSION_ORDER: readonly DamageType[] = ['physical', 'lightning', 'cold', 'fire', 'holy', 'chaos'];
+export const DAMAGE_COLORS = { ...colours, holy: 'sand' };
+```
+
+### Add an ailment
+
+Add it to `AilmentType` (`core/types.ts`) and an entry to `AILMENTS` (`combat/ailments.ts`). Its
+`kind` says what it does (`dot` deals damage per second, `slow` slows actions and movement,
+`stop` stops them, `amp` raises damage taken); `from` says which landed damage causes it and
+sets its strength. The actor status, the conditions (`when: 'sap'`), the DPS tool and the
+`<id>.chance` / `avoid.<id>` stats all follow from the entry.
+
+```ts
+{
+  id: 'sap', name: 'Sap', kind: 'amp', from: ['lightning'], duration: 3,
+  magnitude: (damage, maxLife) => Math.min(0.2, 0.4 * (damage / maxLife)), color: 'sand', tags: ['elemental'],
+},
+```
+
+### Inspect it
+
+- `npm run combat -- dps <skill> [support[@level] …] [--level n] [--stats build.json] [--vs armour=500,res=0.4] [--targets 3] [--json]`:
+  resolved skill, hit breakdown per type, crits, ailments and their DoT, hits/s, DPS on one and
+  on N targets, mana/s; written to `.scratch/combat/<skill>.json`.
+- `npm run combat -- list` / `supports <skill>`: every gem with its tags, and what fits.
+- `npm run film -- arena-combo arena-cancel arena-dodge arena-skills arena-run-cast arena-whirlwind`:
+  the hero in the real game; `/?game=arena&skills=meteor,arc+chain,blink` for a custom bar.
+
 ## The 12 designed levels
 
 Each level introduces one mechanic and is named after it. Levels 7–12 also bring back
@@ -127,21 +267,273 @@ cap. A rift's name comes from its mechanics, e.g. *Rift 37: Frostglass Gravewell
 
 ## Monsters ("Spore" generator)
 
-- **Body plans** are hand-made skeleton grammars: biped, quadruped, hexapod, serpent, floater,
-  blob and brute. Each defines spine segments, limb sockets and default proportions.
-- **Parts** are hand-made, with tags such as `head`, `horn`, `jaw`, `limb`, `claw`, `wing`,
-  `tail`, `plate` and `eye`. They attach to sockets, and each knows how to scale, mirror and
-  take a palette.
-- **Assembly** turns a genome (seed + plan + parts + proportions + palette) into an `Object3D`
-  of joints with toon meshes, plus a `RigSpec` (legs geometry for IK, soles, mirror pairs).
-- **Animation is procedural and data-driven.** Locomotion uses `gaitClip` generalised to N
-  legs. Attacks, hit reactions, death and spawn come from per-archetype templates compiled with
-  `compileClip`. Live layers add breathing, look-at, hit flinch and procedural foot placement.
-- **Archetypes** are brains: charger, skirmisher, caster, summoner, bomber, tank, swarm,
-  sniper and leaper. Each is a small utility-AI over shared actions.
-- **Elite mods** come from the same `Mod` language plus behaviours: hasted, vampiric,
-  fire-enchanted, teleporter, shielded, splitter, frenzied and more.
-- **Bosses** are genomes at a large scale with a phase script picked from boss modules.
+Code: `src/riftlight/monsters/` (public API in `index.ts`). A monster is a **genome** (plain
+data), turned into a body by a **plan's skeleton grammar** with **parts** on its sockets,
+animated by **procedural clips**, driven by an **archetype brain**, spiced with **elite
+mods**. Bosses add a phase script on top.
+
+```
+generateGenome(rng, {depth, tags, archetype, rank, budget})        mutate / crossover
+        │  plan + genes (0..1) + parts per slot + palette + scale + archetype + elite + rank
+        ▼
+buildMonster(genome) ── plan.build(genes) ─► Skeleton: joints, body shapes, sockets, legs, roles, gaits
+        │                parts on sockets ─► toon meshes (shared unit geometry, cached materials)
+        │                rig ─► RigSpec (soles, mirror pairs; 2-leg bodies also get `legs` for placeFeet)
+        ▼
+{ object, rig, clip(name), clipInfo(name), defs, clips, stats: Mod[], skills, radius, height }
+        │  clips are generated on first use (bake → compileClip) and cached per body shape
+        ▼
+MonsterRuntime (mixer + look-at, flinch, foot placement, wind-up glow, hit events)
+MonsterBrain / BossBrain over a MonsterBody (the integration wires it to combat's Actor)
+```
+
+```ts
+const rng = run.fork(`level:${depth}`).fork(`pack:${i}`);
+const genome = generateGenome(rng, { depth, tags: ['fire'], archetype: 'charger', rank: 'magic' });
+const m = buildMonster(genome);                 // ~1.5 ms; deterministic
+scene.add(m.object);
+const rt = new MonsterRuntime(m);              // rt.locomote(speed); rt.play('Bite'); rt.update(dt, { lookAt })
+for (const e of rt.update(dt)) if (e.type === 'hit') applyDamage();   // synced to the clip's hit frame
+const brain = new MonsterBrain({ body, archetype: genome.archetype, skills: m.skills, elite: genome.elite, home });
+const pack = generatePack(rng, { depth, tags: ['insect'] }); // one shared body shape: members share clips
+```
+
+### Genomes, budgets and evolution
+
+- **Genome** (`core/types.ts`): `{ seed, plan, parts: {socket: slot, part}[], genes, palette,
+  scale, archetype, elite[], rank }`. Genes are 0..1 proportions: `length`, `girth`,
+  `legLength`, `neck`, `headSize`, `limbThickness`, `posture`, `tailLength`, plus plan
+  genes (`armLength`, `segments`, `legPairs`, `hover`, `tentacles`, `hop`, `wingSpan`...).
+- **Budget** (rule 4): `genomeBudget(depth, rank)` = `SCALING.monsterBudget(depth)` × rank
+  (normal 1, magic 1.25, rare 1.5, boss 3). Every part has a `cost`; the generator fills
+  slots (each plan gives a chance per slot) with parts it can still afford, picked by
+  weight × theme match (×4 for a theme tag, ×1.6 for `any`) × archetype preference (×2.5).
+  `head` and `eyes` are always filled. Bosses roll more slots and bigger bodies.
+- **Palette** (`palette.ts`): the theme tag gives a base hue (`THEME_COLOURS`), a harmony
+  (analogous, complementary, triadic, split, mono; bosses analogous) gives the second colour,
+  the primary's lightness is pushed away from the floor's, and every colour is quantised
+  (24 hues × 5 saturations × 21 lightness steps) so toon materials stay a small shared set.
+- **Elites and bosses**: magic rolls 1 elite mod, rare 2–3, boss 1–2, within
+  `SCALING.eliteBudget(depth)`; anything above normal gets a glowing aura ring.
+- **Evolution**: `mutate(genome, rng, amount)` drifts genes (σ = 0.22 × amount), swaps,
+  adds or drops parts, shifts the palette's hue and, rarely, changes the plan (parts that no
+  longer fit are dropped, the head re-rolled). `crossover(a, b, rng)` takes one parent's plan,
+  each gene from either parent (or their mean), each slot's part from either parent when it
+  fits, and mixes the palettes. `sanitize` / `validateGenome` keep the result buildable.
+
+### Body plans (`plans/`)
+
+| plan | skeleton | locomotion |
+| --- | --- | --- |
+| `biped` | pelvis → spine → chest → neck → head; 2 arms, 2 legs, optional tail | 2-leg walk/run |
+| `brute` | biped grammar: hunched, short legs, huge arms, small low head | heavy 2-leg gait |
+| `quadruped` | hips (root) → spine, chest; neck chain, tail chain; front knees forward, hind hocks back | lateral walk, trot |
+| `hexapod` | thorax, abdomen, head; 3 or 4 pairs of splayed legs (`legPairs`) | tripod / tetrapod |
+| `serpent` | front segment (root) + 5–9 tapering segments; 2-joint neck (`posture` = cobra) | slither wave |
+| `floater` | the head part *is* the body, at hover height; tentacles, wings, wisp tail | bob, lean, trail |
+| `blob` | a squashy mass on a flat base (its sole) | squash-hop |
+| `avian` | egg body, long neck, folded wings, fan tail, backward knees | 2-foot hop (or stride) |
+| `centipede` | head segment + 4–8 segments, a splayed leg pair on each | wave gait |
+
+A plan is a `BodyPlanDef`: genes (mean, spread), slot chances, mods (serpents evade, brutes
+have life), a base scale and `build(ctx)`, which describes the body with `SkeletonBuilder`
+(`plans/builder.ts`):
+
+- `joint(name, parent, pos, yaw?)`, `shape(joint, kind, size, at, colour)`, `chain(...)`;
+- `leg({ pair, side, parent, hip, splay, upper, lower, ankle, bend, thick, sole })` adds
+  Hip (yaw/roll) → Thigh → Shin → Foot plus a `Sole<pair><side>` mesh; `splay` turns the
+  leg plane sideways (spiders), `bend` −1 gives a backward knee (birds, hocks);
+- `arm(side, parent, at, upper, lower, thick)`, `addWings`, `addTail`, `addTentacles`;
+- `head(joint, size, anchors)` places the head socket and the eye, horn, helm and jaw
+  sockets from the chosen head part's anchors (a Jaw joint when it has one);
+- `stance[joint] = [x, y, z]`: the base pose every clip starts from (lean, neck, folded wings);
+- `done({ roles, locomotion, gaits, height, radius, length })`. **Roles** name the joints
+  animation templates address: `root`, `spine`, `chest`, `neck`, `head`, `jaw`, `tail`,
+  `wings`, `tentacles`, `segments`, `mass`.
+
+Conventions: faces +Z, the monster's right is −X, feet at y = 0, metres at genome scale 1,
+joint names ending in R/L are mirror pairs (`Hip0R` ↔ `Hip0L`).
+
+### Parts (`parts/`)
+
+85 hand-made parts: heads (13: snout, lizard, skull, beak, maw, insect, cyclops, horned,
+iron visage, wisp orb, floating eye, jelly bell, hooded wraith), jaws, eyes (pair, big,
+cluster, stalk, slit), horns/antlers/antennae/spikes, helms and crests, back pieces
+(spikes, plates, shells, fins, crystals, armour, ribs, vents, mushrooms, sails), shoulders,
+wings (bat, feather, insect, bone), tails (club, stinger, whip, fan, flame, blade), cores
+(crystal, ember, void, rune, heart), tentacles, hands (claws, fists, pincers, scythes,
+paws), weapons (club, spear, staff, axe, cleaver, orb) and feet (hooves, talons, claws).
+
+Slots: `head`, `jaw`, `eyes`, `horns`, `helm`, `back`, `shoulders`, `wings`, `tail`, `hands`,
+`weapon`, `feet`, `core`, `tentacles`. Mirrored sockets share their slot's part.
+
+A part is `part(id, name, fits, tags, cost, mods, build, { anchors?, anims?, plans? })`.
+`build(c)` uses the kit (`parts/kit.ts`): `box`, `ball`, `lump`, `cone`, `cyl`, `taper`,
+`horn` (curved, tapered), `slab` (extruded outline), `turned` (lathe), each taking a palette
+slot (`primary`, `secondary`, `accent`, `dark`, `glow`) and positions/sizes **in socket
+units** (multiplied by the socket's size). Author for the character's **left** (+X); right
+sockets are mirrored automatically. `{ glow: true }` makes it unlit (eyes, cores, crystals).
+Unit geometry is shared by every part and cached; materials are the engine's cached toon
+materials. Socket spaces: heads span x ±0.5, y 0..1, z −0.45..0.55 from the neck joint;
+back pieces have +Y out of the body and Z along the spine; tails point −Z from the tip;
+hands hang down (−Y) with +Z forward; feet sit on the sole (y = 0 is the floor).
+Tags are themes (`fire`, `ice`, `undead`, `insect`, `beast`, `construct`, `void`, `storm`,
+`poison`, `nature`, `blood`, `earth`, `shadow`, `crystal`, `arcane`, `water`, or `any`)
+and part kinds; mods use the one modifier language (horns `knockback`, wings `move.speed`,
+shells `armour`, stingers `chance.poison`...). `anims: ['TailWhip']` lets a melee monster
+use its tail.
+
+### Animation (`anim/`)
+
+Every clip is a template over the **semantic poser** (`anim/poser.ts`: `root`, `spine`,
+`neck`, `head`, `jaw`, `arm(s)`, `tail`, `wings(raise, spread, fold)`, `tentacles`,
+`segments`, `mass(squash)`), so one template animates every body. `bake()` samples the
+template (`sampleClip`: keys, eases, layers) on top of the stance, solves every foot with
+the **N-leg IK** (`anim/ik.ts`, built on the engine's `twoBoneX`; legs may hang from any
+joint, the solver reads that joint's animated transform; splayed legs yaw their plane,
+upright legs roll it; feet are levelled to the floor; too-close targets slide outwards
+instead of through the floor), then a **floor clamp** lifts the root until no mesh is below
+the floor. The result is a plain `ClipDef` (one key per frame) → `compileClip`.
+
+| clips | how |
+| --- | --- |
+| `Idle` | breathing layers, look-around keys; slither sway, float bob, blob wobble |
+| `Walk`, `Run`, `Charge` | `gaitClip` generalised to N legs: a phase per leg (biped 0/½; quadruped lateral walk and trot; tripod, tetrapod, wave gaits are phase tables); stance feet slide back at exactly the clip speed, swing feet arc forward; cadence from leg length (`1.3·√reach` m/s walking, `4·√reach` running, × the gait's `pace`). Hoppers (avian, blob) move both feet together; serpents slither (a lateral wave travelling down the chain at the ground speed); floaters bob and lean. |
+| attacks | `Bite`, `Claw` (weapon: overhead chop), `Slam`, `ChargeWindup`, `Spit`, `Cast`, `Summon`, `Leap`, `TailWhip`, `Explode`: anticipation against the strike, a **hit frame**, follow-through |
+| `Hit`, `Death`, `Spawn` | flinch; collapse (upright bodies pitch forward, beasts fall on their side, serpents go limp, blobs pop); grow up out of the floor |
+
+`MonsterClipDef.hit` (frame) and `windup` ([start, end] frames) are on the def, in
+`clipInfo(name)` (`hitFrame`, `hitTime`) and on `clip.userData` (`hit`, `hitFrame`,
+`windup`, `kind`). Combat applies the skill at the hit frame; telegraphs and the wind-up
+glow cover the wind-up. Monster clips pass the hero's checks (`analyzeClip`: no floor
+penetration, no sliding, clean loop seams): `npm run monster -- check` and the unit tests run
+them on every plan and boss.
+
+**Runtime layers** (`runtime.ts`, `MonsterRuntime`): `play(name)` (cross-fades; one-shots hold
+their last frame), `locomote(speed)` (Idle/Walk/Run with playback matched to the ground
+speed), `update(dt, { lookAt, ground })` returns `hit` / `end` events and applies look-at
+(neck and head), hit flinch (`flinch(from)`), optional foot placement on uneven ground
+(`ground(x, z)`) and the wind-up glow (`setGlow(t)`). `createTelegraph(spec)` builds the
+ground decals (circle, cone, line) that fill up as the wind-up runs out.
+
+**Performance**: `buildMonster` builds meshes, rig and a one-frame standing pose (~1.5 ms,
+median). Clips are baked and compiled the first time they're played (a few ms each) and
+cached per body shape (plan + genes + parts + anims), so pack mates and respawns share them;
+`buildMonster(g, { eager: true })` compiles everything up front (loading screens).
+
+### Archetypes and brains (`brains/`)
+
+| archetype | does | skills |
+| --- | --- | --- |
+| `charger` | lowers its head, charges across the room, gores | charge, melee |
+| `skirmisher` | darts in, bites, darts out; circles between strikes | melee |
+| `caster` | keeps 5–8.5 m away, bolts by theme, novas when you close in | bolt, nova |
+| `summoner` | hangs back behind minions it keeps calling, flees when hurt | summon, bolt |
+| `bomber` | rushes you, swells, bursts (dies on its hit frame) | explode |
+| `tank` | slow, armoured, `frontalBlock`, ground slam | slam, melee |
+| `swarm` | weak alone, packs of 5–9 | melee |
+| `sniper` | long aimed shots, line telegraph | snipe, spit |
+| `leaper` | pounces onto a marked circle, then mauls | leap, melee |
+| `totem` | rooted turret; bolts and an empowering ward | bolt, ward |
+
+An archetype is data (`MonsterArchetypeDef`): plan weights, skill roles (`melee` resolves to
+bite / claw / weapon swing per body, `bolt` to fire / frost / spark / void per theme), mods,
+pack size, scale, preferred part tags and brain numbers (`aggro`, `leash`, `range`,
+`strafe`, `retreat`, `flee`, `speed`, `rooted`, `think`). Skills are core `SkillDef`s
+(`MONSTER_SKILLS`) plus `range`, `role` and a `telegraph`.
+
+`MonsterBrain` is a small utility AI: every `think` seconds it scores `approach`, `strafe`,
+`retreat`, `attack` (one per ready skill), `flee`, `leash`, `wander` and `idle` and runs the
+best. It only talks to a **`MonsterBody`** (`brains/types.ts`): `actor` (ActorLike),
+`moveTo`, `stop`, `face`, `useSkill(id, target)`, `busy`, `cooldown`, and optional
+`teleport`, `telegraph`, `setGlow`, `setCondition`, `emit(MonsterEvent)`. A
+**`BrainWorld`** answers `enemies(of, r)` and `allies(of, r)`. The integration implements
+both over combat's `Actor`; tests use fakes. **Packs** (`Pack`): a leader (the biggest) and
+followers; an alert spreads to every member within 14 m; followers get flanking slots fanned
+around the leader's line to the target; deaths re-elect the leader and notify the rest.
+
+**Elite mods** (`brains/elite.ts`, 24): `EliteModDef`s with `Mod`s and a `behaviour` hook
+(`ELITE_BEHAVIOURS`: `start`, `update`, `onHitTaken`, `onHitDealt`, `onDeath`,
+`onAllyDeath`) that act through the body: hasted, vampiric, fire-enchanted, frost-aura,
+teleporter, shielded, splitter, frenzied, berserker, juggernaut, vengeful, arcane-beams,
+molten-trail, storm-caller, venomous, thorned, regenerating, volatile, necromancer,
+mirror-image, ghostly, gravity-well, armoured, empowering. Conditional mods
+(`when: 'shielded' | 'lowLife' | 'frenzy' | 'phased' | 'enraged'`) switch on with
+`body.setCondition`.
+
+### Bosses (`bosses/`)
+
+A `BossDef` is a boss-rank genome plus three **phases** (life thresholds 100 / 66 / 33 %, each
+with an attack rotation, a cadence, `onEnter` attacks and mods), a **signature** attack, an
+**enrage** timer and an arena (radius, hazards the level places). Signature attacks are boss
+modules (`BOSS_ATTACKS`, 26): each plays a monster skill's clip and emits a
+`{ type: 'hazard', id: pattern, data: params }` event — `slamWave`, `spiral`, `charge`,
+`summon`, `hazard`, `gust`, `darkness`, `beam`, `nova`, `pull`, `echo`, `portal`, `quake`,
+`meteor`, `leap` — tagged with the mechanics they belong to. `BossBrain` runs the script on top
+of the archetype brain (phase roars, signature every `cadence` s, enrage). `bossName(rng,
+tags)` → "Vorgath, the Emberhide".
+
+| # | boss | body | signature (mechanic) |
+| --- | --- | --- | --- |
+| 1 | Vorgath, the Emberhide | brute charger | brazier slam (embers) |
+| 2 | Nyx-Hollow, the Lantern Eater | floating eye caster | snuff the lights (gloom) |
+| 3 | Skraal, the Gale Mother | avian leaper | gale gust (gale) |
+| 4 | Kryssa, the Glass Matriarch | spider caster | glaze the floor (frostglass) |
+| 5 | Bramblemaw, the Root Mother | serpent charger | vine eruption (thornweave) |
+| 6 | Volthorn, the Pylon King | quadruped charger | pylon surge (stormspire) |
+| 7 | Gulgoth, the Bog Sovereign | blob summoner | mud wave (mire + gale) |
+| 8 | Aurelion, the Twice-Struck | biped caster | echo slam (echoes) |
+| 9 | Xal'Vey, the Gate Warden | centipede charger | gate charge (riftgates + stormspire) |
+| 10 | Sanguar, the Bloodmoon Herald | quadruped leaper | blood nova (bloodmoon + embers) |
+| 11 | Vexithas, the Hollow Star | floating orb caster | singularity (gravewell + frostglass) |
+| 12 | Korrak, the Ruin Titan | brute tank | cave-in (collapse + gloom) |
+
+`designedBoss(level)`, `buildBoss(boss)` (builds every clip its script needs) and
+`generateBoss(rng, depth, mechanics)` for rifts: a themed boss genome, attacks drawn from
+the modules tagged with those mechanics plus generic ones, three escalating phases.
+
+### Adding content
+
+- **A plan**: write `plans/<name>.ts` (a `BodyPlanDef` whose `build` uses
+  `SkeletonBuilder`), add it to `PLANS` in `plans/index.ts`, add it to some archetypes'
+  `planWeights`. Check `npm run monster -- sheet 1 --plan <name>` and
+  `npm run monster -- check`.
+- **A part**: append `part(...)` to the family file in `parts/` (heads, face, body, limbs).
+  Give it slot(s), theme tags, a cost and mods; restrict `plans` if it only suits some
+  bodies. Look at it in `/monster-lab.html` (the slot dropdowns) or the zoo.
+- **An archetype**: add an entry to `ARCHETYPES` (`brains/archetypes.ts`) with plan
+  weights, skill roles and brain numbers; new skills go in `MONSTER_SKILLS` with an `anim`
+  from `ATTACK_ANIMS` (or a new template in `ACTIONS`, `anim/actions.ts`: keys over the
+  poser, a `hit` frame and a `windup`).
+- **An elite mod**: add an `EliteModDef` to `ELITE_MODS` (mods, glow, cost, `behaviour`);
+  if it acts, add the hook to `ELITE_BEHAVIOURS` (it gets the host brain, the world, a
+  scratch state and the behaviour's parameter after `:`).
+- **A boss module**: add a `BossAttackDef` to `BOSS_ATTACKS` (the skill whose clip it plays,
+  a pattern, params, a telegraph, mechanic tags); designed bosses list it in a phase, rift
+  bosses find it by tag. **A boss**: add a `boss(...)` entry to `bosses/designed.ts`.
+
+### Inspectors
+
+`npm run monster -- …` (`scripts/riftlight/monster.ts`), output in `.scratch/monsters/`:
+
+| command | gives |
+| --- | --- |
+| `gen <seed> [--plan p --archetype a --depth d --rank r --tags t]` | genome, parts, cost vs budget, skills, stats (mods as text), clips with hit frames, as JSON |
+| `sheet <seed> [same]` | `<seed>.png`: turntable (4 yaws) with the rig, then a contact-sheet strip per clip with its metrics |
+| `zoo <n> [--seed s --cols c]` | `zoo.png`: n monsters across every plan, a visual variety check |
+| `check [n]` | every plan × archetype, n random genomes and the 12 bosses: build time, all clips' metrics, NaNs, bounds; exits 1 on problems |
+| `boss <level> [--rift --depth d --tags m1,m2]`, `bosses` | a boss's phases + sheet; the 12 bosses side by side |
+
+**Monster Lab** (`/monster-lab.html`): plan / archetype / rank / theme / depth / seed pickers,
+gene sliders, a part dropdown per slot, mutate (amount slider), store parent B and
+crossover, **evolve** a 3×3 grid of children (click one, or its button, to keep it), clip
+player (play, pause, frame step), skeleton, turntable, Pixel / Raw, contact sheet, stats,
+mods, budget, genome JSON export / import / download. URL:
+`?seed=7&plan=quadruped&archetype=charger&rank=rare&depth=5&tags=fire&clip=Bite`. Agent handle
+`window.__MONSTER_LAB__`: `plans()`, `archetypes()`, `generate(opts)`, `genome()`, `show(g)`,
+`setGene`, `setPart`, `mutate`, `storeParent`, `crossover`, `evolve`, `select(i)`, `clips()`,
+`play`, `pause`, `seek`, `state()`, `stats()`, `exportGenome()`, `sheet(clip)`,
+`portrait()`, `capture()`. The `riftlight-monsters` e2e suite drives it on WebGPU and WebGL 2.
 
 ## Passive tree
 
@@ -253,12 +645,13 @@ band radii can change how many slots a band holds (and so which slots exist).
 
 | command | what it gives an agent |
 | --- | --- |
-| `npm run monster -- <seed\|plan>` | PNG turntable + rig overlay + animation strips + stats for a generated monster; `/monster-lab.html` has gene sliders |
+| `npm run monster -- gen\|sheet\|zoo\|check\|boss` | genome + stats JSON, PNG turntable + rig overlay + animation strips, a zoo grid, clip/build checks for many genomes (see Monsters); `/monster-lab.html` is the Spore editor |
 | `npm run loot -- sim` | drop/affix distributions by item level and rarity, as PNG charts + JSON; tooltip renders |
 | `npm run tree -- render\|validate\|stats\|path` | the passive tree as a PNG (regions, keystones, path lengths), connectivity and stat-budget checks, counts, shortest paths; `/tree.html` browses it |
 | `npm run level -- map <n\|seed>` · `validate 1..60` · `rift <seed> <depth>` · `themes` | top-down map PNG with spawns, mechanic elements and critical path, plus bypass validation (the exit is reachable without using the mechanic); theme swatches |
+| `npm run combat -- dps <skill> [supports]` | a skill with its supports resolved: hit breakdown, crits, ailments, DPS, mana per second (text or `--json`) |
 | `npm run balance` | headless combat sim, build × depth: time-to-kill and damage taken, plotted to PNG and CSV |
-| `npm run playtest -- <level>` | a bot plays the real game frame-exactly and reports clear time, deaths and loot, with a film |
+| `npm run playtest -- <depth> [--runs n] [--film]` | a bot plays the real game frame-exactly and reports clear time, deaths, damage taken and loot, with a film (see Game shell) |
 | `npm run inspect -- <glb\|genome\|item>` | any asset as a turntable PNG plus counts: triangles, joints, materials, bounds |
 
 ## Loot
@@ -531,3 +924,126 @@ placeholder, and names it after its mechanics: *Rift 37: Frostglass Embers Gloom
 emit `skill` for every hero skill use and `kill` for every death (Echoes, Bloodmoon,
 Frostglass, Thornweave, Gravewell listen); include `level.targets()` in hit queries; and
 implement `hooks.applyHit`, `replaySkill`, `teleport`, `dropLoot`, `onFall`.
+they aren't 1.0. Details (presets, steps, the mods each slider sets): Game shell below.
+
+## Game shell (`game/`, `town/`, `ui/`)
+
+`Riftlight` (`src/riftlight/game/Riftlight.ts`) is the one `Game` the page runs at `/`. It owns
+the flow, the town, the HUD and menus, saves, the difficulty sliders, the camera, music, the dev
+tools and the agent API, and it reaches gameplay only through **ports**. Every port has a stub
+in `game/stubs/`, so the whole loop plays today; integration swaps the real modules in:
+
+```ts
+new Riftlight();                                             // all stubs
+new Riftlight({ hero: combatHero, levels: buildLevels, monsters, loot, tree });  // real systems
+```
+
+### Flow
+
+```
+title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Import / Settings
+  └▶ town (Emberfall): talk to Vex at the obelisk ─▶ rift menu (every cleared depth + the next)
+       └▶ level: name card "III · GALE" ─▶ fight ─▶ all monsters dead = clear (time, autosave)
+            ├▶ portal ─▶ loot window (what's still on the floor: take all / leave) ─▶ town
+            └▶ death ─▶ recap (killer, damage by type, worst enemies, tip, penalty) ─▶ town
+```
+
+- **Stages swap inside the game**, not through `engine.loadGame`: the town is built once and
+  hidden while a level runs; the hero (model, clips, stats), HUD, music and the light pool
+  survive; a level is a root object the shell adds and disposes. `loadGame` would rebuild and
+  re-upload the town and the hero on every trip home.
+- **Lights** come from a fixed pool of 8 point lights (`game/lights.ts`): the count never
+  changes, so toon materials never recompile when stages swap.
+- **Pause**: modal panels (pause, tuning, tree, codex, recap, loot window) freeze the world
+  inside the game (`worldPaused`); the vendor, stash and inventory leave the town running.
+- **Death penalty** (`progress.ts` `DEATH_PENALTY`): 10% of the XP into the current level and
+  15% of carried gold; never a level. **Run progression**: `deepest` cleared depth unlocks the
+  next; designed levels 1–12, rifts after.
+- **Camera**: the iso preset at 42° pitch (`RIFTLIGHT_OPTIONS`), zoom 1.08 in levels and 1.22
+  in town (times the settings zoom; the wheel adjusts it), smooth follow with a lead of 22% of
+  the way to the aim point (max 1.6 m), screen shake from `services.shake`.
+- **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
+  arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
+  boss song near a boss. UI and game sounds are `rl.*` SFX data.
+
+### Ports (`game/ports.ts`)
+
+| port | real system | what the shell calls |
+| --- | --- | --- |
+| `HeroFactory` / `HeroPort` | combat/actors | `create(services, save.hero)`; `enter(stage, at, yaw)`, `fixedUpdate(dt, HeroIntent)`, `update`, `vitals()`, `skills()`, `buffs()`, `setLevel`, `setMods(source, mods)`, `restore`, `emote` |
+| `LevelPort` / `LevelHandle` | levels | `spec(depth, seed)`, `mechanics()`, `build(spec, deps)`; handle: `layout`, `origin`, `start`, `exit`, `exitOpen`, `progress()`, `boss()`, `explored()`, `telegraphs()`, `monsters()`, `spawn(seed, at, rank)` |
+| `MonsterPort` / `MonsterHandle` | monsters | `genome(seed, depth, rank)`, `build(genome, {stage, at, depth, mods})`; handle: `actor`, `telegraph()`, `fixedUpdate(dt, {hero, enabled})` |
+| `LootPort` | loot | `rollDrops(kill, rng)`, `spawn`, `ground()`, `pickup`, `gearMods()`, `load/write(save)`, `give`, views: inventory, stash, vendor, crafting |
+| `TreePort` | tree | `mods(allocated)` (the `tree` source), `points(level)`, `view(host, {respec})` |
+
+Ports talk to each other through `GameEvents` (`hit`, `kill`, `death`, `gold`, `loot`,
+`levelClear`, `mechanic`): the shell turns `hit` into damage numbers, the recap and shake;
+`kill` into XP (`SCALING.monsterXp × RANK.xp`), streaks and stats; `mechanic` into codex
+unlocks. Views are `Panel`s drawn on the pixel HUD (`ui/kit.ts` `UiCanvas`) that receive
+`UiEvent`s (nav, confirm, back, pointer, wheel) built from keys, mouse, touch and pads alike;
+`PanelHost` gives them the save, gold, sounds and `changed('tree' | 'gear')`.
+
+### Saves (`game/save.ts`)
+
+`localStorage` `riftlight:slot:<0..2>` holds `{ format: 'riftlight-save', version, slot,
+savedAt, data: SaveData }`; `riftlight:meta` remembers the last slot (Continue). Every access is
+in try/catch; blocked storage (or `?save=memory`) keeps saves in memory for the session.
+`migrate()` upgrades older shapes step by step (v0 = pre-release saves) and fills missing fields;
+a save from a newer build is refused, not mangled. Export / import is the same envelope as a
+JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on town entry and
+level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
+playtime, best time per depth). Device settings (look, quality, zoom, damage numbers, loot
+filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the engine's audio store.
+
+### The difficulty sliders
+
+Pause → **Tuning**: hero damage / life / speed and enemy damage / life / speed, each 0.25×–4× on
+a log scale (1.0 in the middle; ←/→ nudge 0.05 below 1×, 0.1 to 2×, 0.25 above), presets Story,
+Normal, Hard, Nightmare, and Reset. `difficultyMods(t, side)` turns them into `more` mods
+(`damage`; `life` + `es`; `move.speed` + `attack.speed` + `cast.speed`) applied as the
+`difficulty` source of the hero and of every monster at spawn; moving a slider re-applies it to
+live monsters and keeps their life fraction. Saved per slot and shown in the HUD corner
+("E.LIFE 1.50X") whenever a slider isn't 1.0.
+
+### Agent API: `window.__RIFTLIGHT__`
+
+Typed as `RiftlightApi` (`game/api.ts`). Steps go through `Engine.step`, frame-exact.
+
+| call | does |
+| --- | --- |
+| `state()` | screen, ui stack, depth, level time, cleared/exit/dead, hero (level, xp, gold, pools, position), monsters, loot, boss, difficulty, codex, session counters |
+| `newRun({slot, seed})`, `continueRun(slot?)`, `toTown()`, `toTitle()`, `await enterDepth(n)` | flow |
+| `step(n, intent?)`, `moveTo(x, z)`, `talkTo('vex')`, `interact()`, `press('Escape')` | drive the hero and the menus |
+| `fight({skills})`, `collectGold()`, `pickupAll()`, `killAll()` | level helpers |
+| `spawn({seed, x, z, rank})`, `give({xp, gold, items, levels})`, `setDifficulty({...})`, `dev` (god, ai, hitboxes) | dev tools |
+| `hero(stat?, tags?)`, `actors()`, `loot()`, `log()` | inspect (`hero('damage')` returns `explain` sources) |
+| `ui.stack()`, `ui.open(id)`, `ui.close()`, `ui.widgets()`, `ui.click(id)` | menus as data |
+| `save(slot)`, `load(slot)`, `exportSave(slot)`, `importSave(slot, json)`, `slots()` | saves |
+| `bot.run({maxFrames})`, `bot.start()`, `bot.advance(n)`, `bot.report()`, `bot.decide()` | the playtest bot |
+
+`?seed=123` makes new runs reproducible; `?save=memory` keeps tests out of localStorage. The
+pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
+AI off, hitboxes, time of day).
+
+### The playtest bot (`game/bot.ts`, `npm run playtest`)
+
+A scripted player that only uses the ports, so it plays the stubs now and the real systems
+later: it dodges telegraphs about to land on it (and rolls), fights the nearest monster with the
+basic attack and skills that pay off (cleave on 2+, nova on 3+, war cry for packs and bosses,
+dash to close gaps), walks to loot, follows the critical path with grid BFS on the level
+layout, and walks into the portal. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
+five times and prints clear time, deaths, damage taken, kills, XP, gold, items and stuck events;
+JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`.
+
+### Town (`town/`)
+
+Emberfall is data in `TOWN_LAYOUT` (screen-space metres, `iso()` maps them onto the 45° ground)
+built from primitives by `town/kit.ts` and merged to one mesh per material. Townsfolk wear the
+hero rig with their own meshes (`npcModel.ts`) and play clips written as data (`npcClips.ts`:
+Hammer, HammerRest, Nod, Shuffle, Greet, CountCoins, Meditate, Bless, StaffIdle, Gesture; the
+villagers use the hero's Idle and Walk). `npm run anim -- check` measures them with the hero;
+`--character brann` (ilsa, oru, vex, villager, villager2) selects one for `sheet` / `curves`.
+At runtime (`npcs.ts`) they turn their heads toward the hero, bark when you come near, react
+when talked to (Brann rests his hammer and nods, Oru blesses, Vex points at the obelisk;
+Ilsa waves as you come near) and open their view: Brann the crafting bench, Ilsa the vendor, Oru the tree respec,
+Vex the rift menu, the chest the stash.

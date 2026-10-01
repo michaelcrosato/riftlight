@@ -76,10 +76,14 @@ isolated clips can't.
 | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
 | `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
-| `src/game/playground.ts` | Demo game: a station for every move, a complete example of the `Game` API |
+| `src/game/playground.ts` | Movement demo (`?game=playground`): a station for every move, a complete example of the `Game` API |
+| `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`) and their stubs (`stubs/`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`). See docs/GAME.md, Game shell |
+| `src/riftlight/town/` | Emberfall, the town hub: layout as data, the primitive kit, townsfolk models on the hero rig and their clips as data (`npm run anim -- check` covers them) |
+| `src/riftlight/ui/` | Pixel HUD, menus, panels and the UI kit on the engine Hud (`ui/tree`, `ui/items` are the tree and loot views) |
+| `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game, reports clear time, deaths, loot |
 | `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
-| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs` |
+| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs`, the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
 `ShaderPass`, `RenderPixelatedPass`, `(Raw)ShaderMaterial`, `onBeforeCompile` or GLSL;

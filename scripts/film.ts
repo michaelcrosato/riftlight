@@ -14,8 +14,9 @@
 //   --gif                also write an animated GIF (for humans to watch)
 //   --webgpu             WebGPU backend (needs a display: run under xvfb-run); default WebGL 2
 //   --preview            serve the production build (npm run build) instead of the dev server
+//   --game arena         film another level (?game=); `arena-*` scenarios do this themselves
 //
-// Script language (commands separated by ';' or newlines; keys: W A S D SPACE SHIFT C J F Z X B V,
+// Script language (commands separated by ';' or newlines; keys: W A S D SPACE SHIFT C J F Z X B V K Q E R LMB RMB,
 // combine with '+'; yaw in degrees, 0 = +Z, 90 = +X; W = -Z, D = +X):
 //   place x y z [yaw]    teleport and settle (not recorded)
 //   hold KEYS n          hold keys for n frames, then release
@@ -69,9 +70,22 @@ export const SCENARIOS: Record<string, string> = {
   ledge: 'place 4.8 0 0 90; down D; tap SPACE; until hang 90; up D; wait 30; down D; until idle 120; up D; wait 20',
   climb: 'place 8 0 -6.9 180; down W; wait 150; up W; wait 20',
   'hard-land': 'place -12 7 -9.2 180; down W; until hardLand 200; up W; until idle 90; wait 20',
+  // Riftlight combat arena (?game=arena): the training dummy stands at (0, 0, -2)
+  'arena-combo': 'place 0 0 0.9 180; tap J; wait 7; tap J; wait 7; tap J; until idle 60; wait 15',
+  'arena-cancel': 'place 0 0 0.9 180; tap J; wait 9; down D; tap SPACE; up D; until idle 60; wait 10',
+  'arena-dodge': 'place 0 0 3 90; down D; wait 12; tap SPACE; wait 4; tap SPACE; until run 60; wait 8; up D; until idle 40; wait 10',
+  'arena-skills': 'place 0 0 3.5 180; tap Q; wait 34; tap E; wait 40; tap R; until idle 120; wait 20',
+  'arena-run-cast': 'place -8 0 2 90; down D; wait 20; tap Q; wait 26; up D; until idle 40; wait 10',
+  'arena-whirlwind': 'place 0 0 2.5 180; down F; wait 70; up F; until idle 40; wait 10',
 };
+/** Scenarios that run in another game than the playground (`?game=`). */
+const SCENARIO_GAME = (name: string): string | null => (name.startsWith('arena') ? 'arena' : null);
 
-const KEYS: Record<string, string> = { W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', SPACE: 'Space', SHIFT: 'ShiftLeft', C: 'KeyC', J: 'KeyJ', F: 'KeyF', Z: 'KeyZ', X: 'KeyX', B: 'KeyB', V: 'KeyV' };
+const KEYS: Record<string, string> = {
+  W: 'KeyW', A: 'KeyA', S: 'KeyS', D: 'KeyD', SPACE: 'Space', SHIFT: 'ShiftLeft', C: 'KeyC', J: 'KeyJ', F: 'KeyF', Z: 'KeyZ', X: 'KeyX', B: 'KeyB', V: 'KeyV',
+  // Riftlight: skill keys and the mouse buttons (virtual keys pressed by the hero's MouseAim)
+  K: 'KeyK', Q: 'KeyQ', E: 'KeyE', R: 'KeyR', LMB: 'MouseLeft', RMB: 'MouseRight',
+};
 
 // ---- args
 const argv = process.argv.slice(2);
@@ -80,7 +94,7 @@ const positional: string[] = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
   if (a.startsWith('--')) {
-    const valued = ['view', 'size', 'every', 'cols', 'mode', 'look', 'out', 'name'].includes(a.slice(2));
+    const valued = ['view', 'size', 'every', 'cols', 'mode', 'look', 'out', 'name', 'game'].includes(a.slice(2));
     flags.set(a.slice(2), valued ? (argv[++i] ?? '') : true);
   } else positional.push(a);
 }
@@ -93,7 +107,7 @@ if (!target || target === 'list') {
   process.exit(0);
 }
 // several scenario names (or `all`) run in one browser session; anything else is a script
-const names = positional.includes('all') ? Object.keys(SCENARIOS) : positional;
+const names = positional.includes('all') ? Object.keys(SCENARIOS).filter((n) => SCENARIO_GAME(n) === (flags.has('game') ? opt('game', '') : null)) : positional;
 const jobs: { name: string; script: string }[] = names.every((n) => SCENARIOS[n])
   ? names.map((n) => ({ name: n, script: SCENARIOS[n]! }))
   : [{ name: opt('name', 'custom'), script: target }];
@@ -272,6 +286,10 @@ async function main(): Promise<void> {
     // The game's iso camera turned to yaw 0, so the keys move along the axes as scripts
     // assume (W = -Z, D = +X); at its default 45° yaw they ran diagonally.
     const q = new URLSearchParams({ debug: '0', touch: '0', cam: JSON.stringify({ preset: 'iso', yaw: 0 }) });
+    // --game picks the level (?game=); arena-* scenarios pick the combat arena themselves; the
+    // rest film the playground (/ is Riftlight)
+    const game = flags.has('game') ? opt('game', '') : (jobs.map((j) => SCENARIO_GAME(j.name)).find((g) => g) ?? 'playground');
+    q.set('game', game);
     if (flags.has('mode')) q.set('mode', opt('mode', 'pixel'));
     if (flags.has('look')) q.set('look', opt('look', ''));
     const t0 = Date.now();

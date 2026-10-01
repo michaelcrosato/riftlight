@@ -2,7 +2,8 @@
 // without a browser. Run through tsx:  npm run anim -- <command> [...]
 //
 //   list                         clips with length, loop, speed, notes
-//   check [clip...]              validate + metrics table; exit 1 on problems
+//   check [clip...]              validate + metrics table; exit 1 on problems (no --character:
+//                                every character: the hero and Riftlight's townsfolk)
 //   sheet <clip...|all> [opts]   PNG contact sheet(s) → .scratch/anim/<clip>.png
 //        --frames 0,4,8  --views side,front,three,top  --scale 64  --no-trails  --no-skeleton
 //   curves <clip...> [opts]      PNG motion curves (graph editor) → .scratch/anim/<clip>.curves.png
@@ -12,7 +13,8 @@
 //   overview [clip...]           one PNG, a side-view strip per clip → .scratch/anim/overview.png
 //   pose <clip> <frame>          JSON: authored joint rotations + world positions at that frame
 //
-// Options for every command: --json (machine-readable output), --out <dir>.
+// Options for every command: --json (machine-readable output), --out <dir>,
+// --character <hero|brann|ilsa|oru|vex|villager|villager2> (default hero).
 // sheet and curves take --compare: draw the previous version of the clip (magenta skeleton
 // and paths on sheets, grey curves). Every
 // sheet/curves run records the clip in .scratch/anim/history/, so "previous" is the last
@@ -39,6 +41,8 @@ import {
   type ViewName,
 } from '../src/engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../src/game/hero';
+import { NPC_CLIPS } from '../src/riftlight/town/npcClips';
+import { TOWNSFOLK } from '../src/riftlight/town/npcModel';
 import { encodePng } from './png';
 
 // `npm run anim -- list | head` closes the pipe early; that's not an error.
@@ -50,13 +54,16 @@ process.stdout.on('error', (e: NodeJS.ErrnoException) => {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 interface Character {
-  model: string;
+  /** A GLB under public/, or a builder (Riftlight's townsfolk are built in code). */
+  model: string | (() => Object3D);
   rig: RigSpec;
   clips: readonly ClipDef[];
 }
 
 const CHARACTERS: Record<string, Character> = {
   hero: { model: HERO_MODEL, rig: HERO_RIG, clips: HERO_CLIPS },
+  // Riftlight townsfolk wear the hero rig (src/riftlight/town/npcModel.ts).
+  ...Object.fromEntries(Object.entries(TOWNSFOLK).map(([id, build]) => [id, { model: build, rig: HERO_RIG, clips: NPC_CLIPS[id] ?? [] }])),
 };
 
 const argv = process.argv.slice(2);
@@ -77,7 +84,8 @@ const outDir = resolve(ROOT, String(flags.get('out') ?? '.scratch/anim'));
 const character = CHARACTERS[String(flags.get('character') ?? 'hero')];
 if (!character) fail(`unknown character; have: ${Object.keys(CHARACTERS).join(', ')}`);
 
-async function loadModel(url: string): Promise<Object3D> {
+async function loadModel(url: string | (() => Object3D)): Promise<Object3D> {
+  if (typeof url === 'function') return url();
   const buf = readFileSync(join(ROOT, 'public', url));
   const gltf = await new GLTFLoader().parseAsync(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
   return gltf.scene;
@@ -92,6 +100,41 @@ function pick(names: string[]): ClipDef[] {
   });
 }
 
+async function checkCharacter(c: Character, names: string[]): Promise<(ClipReport & { errors: string[] })[]> {
+  const { rig } = c;
+  const model = await loadModel(c.model);
+  const rest = restPoseOf(model, rig);
+  const defs = !names.length || names.includes('all') ? [...c.clips] : names.map((n) => c.clips.find((d) => d.name.toLowerCase() === n.toLowerCase()) ?? fail(`no clip "${n}". Try: npm run anim -- list`));
+  const reports: (ClipReport & { errors: string[] })[] = [];
+  for (const def of defs) {
+    const errors = validateClip(def, rig);
+    const report = analyzeClip(model, rig, def, compileClip(def, rig, rest));
+    reports.push({ ...report, errors });
+  }
+  const bad = reports.filter((r) => r.errors.length || r.problems.length);
+  if (!json) {
+    table(
+      ['clip', 'soleMin', 'slide', 'seam°', 'pelvisY', 'fastest', 'status'],
+      reports.map((r) => [
+        r.name,
+        `${(r.minSoleY * 100).toFixed(0)}cm`,
+        r.footSlide.toFixed(2),
+        r.loop ? r.loopSeam.toFixed(1) : '',
+        `${r.pelvisY[0].toFixed(2)}..${r.pelvisY[1].toFixed(2)}`,
+        `${r.maxAngularSpeed.joint} ${r.maxAngularSpeed.degPerSec.toFixed(0)}°/s`,
+        r.errors.length || r.problems.length ? 'PROBLEM' : r.warnings.length ? 'warn' : 'ok',
+      ]),
+    );
+    for (const r of reports) {
+      for (const e of r.errors) console.log(`  ✗ ${e}`);
+      for (const p of r.problems) console.log(`  ✗ ${r.name}: ${p}`);
+      for (const w of r.warnings) console.log(`  · ${r.name}: ${w}`);
+    }
+    console.log(`\n${reports.length} clip(s), ${bad.length} with problems, ${reports.filter((r) => r.warnings.length).length} with warnings`);
+  }
+  return reports;
+}
+
 async function main(): Promise<void> {
   const { rig } = character!;
   switch (command) {
@@ -102,38 +145,19 @@ async function main(): Promise<void> {
       return;
     }
     case 'check': {
-      const model = await loadModel(character!.model);
-      const rest = restPoseOf(model, rig);
-      const defs = pick(args);
-      const reports: (ClipReport & { errors: string[] })[] = [];
-      for (const def of defs) {
-        const errors = validateClip(def, rig);
-        const report = analyzeClip(model, rig, def, compileClip(def, rig, rest));
-        reports.push({ ...report, errors });
+      // No --character: every character (the hero and the townsfolk) is checked.
+      const which = flags.has('character') ? [String(flags.get('character'))] : Object.keys(CHARACTERS);
+      let bad = 0;
+      const all: Record<string, unknown> = {};
+      for (const name of which) {
+        const c = CHARACTERS[name]!;
+        if (!json && which.length > 1) console.log(`\n${name}`);
+        const reports = await checkCharacter(c, flags.has('character') ? args : []);
+        all[name] = reports;
+        bad += reports.filter((r) => r.errors.length || r.problems.length).length;
       }
-      const bad = reports.filter((r) => r.errors.length || r.problems.length);
-      if (json) print(reports);
-      else {
-        table(
-          ['clip', 'soleMin', 'slide', 'seam°', 'pelvisY', 'fastest', 'status'],
-          reports.map((r) => [
-            r.name,
-            `${(r.minSoleY * 100).toFixed(0)}cm`,
-            r.footSlide.toFixed(2),
-            r.loop ? r.loopSeam.toFixed(1) : '',
-            `${r.pelvisY[0].toFixed(2)}..${r.pelvisY[1].toFixed(2)}`,
-            `${r.maxAngularSpeed.joint} ${r.maxAngularSpeed.degPerSec.toFixed(0)}°/s`,
-            r.errors.length || r.problems.length ? 'PROBLEM' : r.warnings.length ? 'warn' : 'ok',
-          ]),
-        );
-        for (const r of reports) {
-          for (const e of r.errors) console.log(`  ✗ ${e}`);
-          for (const p of r.problems) console.log(`  ✗ ${r.name}: ${p}`);
-          for (const w of r.warnings) console.log(`  · ${r.name}: ${w}`);
-        }
-        console.log(`\n${reports.length} clip(s), ${bad.length} with problems, ${reports.filter((r) => r.warnings.length).length} with warnings`);
-      }
-      if (bad.length) process.exitCode = 1;
+      if (json) print(flags.has('character') ? all[which[0]!] : all);
+      if (bad) process.exitCode = 1;
       return;
     }
     case 'sheet': {

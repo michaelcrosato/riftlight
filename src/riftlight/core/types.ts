@@ -34,6 +34,15 @@ export interface Hit {
   readonly from?: Vector3;
   /** Hit-stop frames to freeze attacker and target (juice). */
   readonly hitStop?: number;
+  /** Attacker's accuracy rating, checked against evasion (attacks only; absent = always hits). */
+  readonly accuracy?: number;
+  /** Resistance penetration per type (0..1), subtracted from the target's resistance. */
+  readonly penetration?: Partial<Record<DamageType, number>>;
+  /** Multipliers for the ailments this hit applies (1 = base). */
+  readonly ailmentEffect?: number;
+  readonly ailmentDuration?: number;
+  /** Culling strike: a target left below this fraction of its life dies. */
+  readonly cull?: number;
 }
 
 /** What a hit did after mitigation. */
@@ -54,6 +63,8 @@ export interface ActorLike {
   readonly stats: StatSheet;
   readonly position: Vector3;
   readonly radius: number;
+  /** Display name (death recap "slain by", boss bar, damage logs). Optional. */
+  readonly name?: string;
   life: number;
   mana: number;
   readonly alive: boolean;
@@ -69,7 +80,7 @@ export interface ActorLike {
 export type Delivery =
   | { kind: 'strike'; range: number; arc: number }
   | { kind: 'slam'; radius: number; delay: number }
-  | { kind: 'projectile'; speed: number; count: number; spread: number; pierce: number; chain: number; range: number }
+  | { kind: 'projectile'; speed: number; count: number; spread: number; pierce: number; chain: number; range: number; fork?: number; homing?: number }
   | { kind: 'nova'; radius: number }
   | { kind: 'beam'; length: number; width: number; tick: number }
   | { kind: 'dash'; distance: number; hitWidth: number }
@@ -112,7 +123,7 @@ export interface SupportDef extends Entry {
   readonly requires: readonly string[];
   readonly mods: readonly Mod[];
   /** Structural changes: extra projectiles, chain, area, multistrike... */
-  readonly changes?: Partial<{ projectiles: number; chain: number; pierce: number; area: number; repeats: number; addTags: readonly string[] }>;
+  readonly changes?: Partial<{ projectiles: number; chain: number; pierce: number; fork: number; area: number; repeats: number; addTags: readonly string[] }>;
   readonly costMultiplier?: number;
 }
 
@@ -340,6 +351,29 @@ export interface GameEvents extends Record<string, unknown> {
   mechanic: { id: string; event: string; at?: Vector3 };
   levelClear: { depth: number; time: number };
   death: { actor: ActorLike };
+  /** A skill or effect wants a dynamic light (see LightRequest). A light pool claims it. */
+  light: LightRequest;
+}
+
+/**
+ * A short-lived dynamic light asked for by a projectile, explosion or aura. Combat emits
+ * it on the bus as `light`; the level's light pool sets `claimed = true` and drives a pooled
+ * light from it until `duration` runs out or `alive()` returns false. When nobody claims it,
+ * combat falls back to a plain three.js PointLight of its own.
+ */
+export interface LightRequest {
+  readonly color: number;
+  readonly intensity: number;
+  /** Reach in metres (PointLight distance). */
+  readonly radius: number;
+  /** Where the light is now; read every frame. */
+  position(): Vector3;
+  /** Seconds; <= 0 means "until alive() returns false". Intensity fades over the last 30%. */
+  readonly duration: number;
+  /** Optional: keep the light while this is true (a projectile in flight). */
+  alive?(): boolean;
+  /** Set by whoever fulfils the request. */
+  claimed?: boolean;
 }
 
 export type GameEventBus = import('./events').EventBus<GameEvents>;
@@ -366,6 +400,23 @@ export interface SaveData {
   difficulty: DifficultyTuning;
   seed: number;
   settings: Record<string, unknown>;
+  /** Mechanic ids the codex has unlocked (first seen). Optional: older saves lack it. */
+  codex?: string[];
+  /** Lifetime counters for the save slot (game shell). Optional: older saves lack it. */
+  stats?: SaveStats;
+}
+
+/** Per-slot lifetime counters kept by the game shell (title screen, playtests, codex). */
+export interface SaveStats {
+  /** Levels entered. */
+  runs: number;
+  clears: number;
+  deaths: number;
+  kills: number;
+  /** Seconds of play in levels and town. */
+  playtime: number;
+  /** Fastest clear per depth, seconds. */
+  best: Record<string, number>;
 }
 
 export interface DifficultyTuning {
