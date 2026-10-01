@@ -324,6 +324,9 @@ export class Input {
     let connected = false;
     for (const pad of list) {
       if (!pad || pad.connected === false) continue;
+      // Only the W3C "standard" layout has known button/axis meanings; other pads ('' mapping)
+      // would press random actions. (Fakes without a mapping are treated as standard.)
+      if (pad.mapping !== undefined && pad.mapping !== 'standard') continue;
       connected = true;
       pad.buttons.forEach((b, i) => {
         const code = this.gamepadButtons[i];
