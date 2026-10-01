@@ -67,6 +67,13 @@ export class Menu implements Panel {
   }
 
   private readonly source: (() => Widget[]) | null;
+  /** Rows scrolled off the top (art pixels) when the menu is taller than its room. */
+  private scroll = 0;
+  /** The menu is taller than its room (last draw): touch drags scroll it, taps act on release. */
+  private scrolls = false;
+  /** Keep the focused row in view (keys, pad, wheel); a finger's drag turns it off. */
+  private follow = true;
+  private press: { x: number; y: number; scroll: number; moved: boolean } | null = null;
   /** Width the shell has room for (`fit`); below the menu's width it lays out narrow. */
   private room = Infinity;
 
@@ -116,10 +123,28 @@ export class Menu implements Panel {
     this.rects.clear();
     const narrow = this.narrow;
     const labelW = narrow ? 4 : (this.o.labelWidth ?? Math.floor(r.w * 0.45));
-    let y = r.y + 3;
+    // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
+    const heights = this.widgets.map((w) => rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0));
+    const total = heights.reduce((a, b) => a + b, 0);
+    const view = r.h - 14; // the footer line
+    this.scrolls = total > view;
+    if (this.scrolls) {
+      const fy = heights.slice(0, Math.max(0, this.focus)).reduce((a, b) => a + b, 0);
+      const fh = heights[this.focus] ?? 0;
+      if (this.follow && fy < this.scroll) this.scroll = fy;
+      if (this.follow && fy + fh > this.scroll + view) this.scroll = fy + fh - view;
+      this.scroll = Math.max(0, Math.min(total - view, this.scroll));
+    } else this.scroll = 0;
+    let y = r.y + 3 - this.scroll;
     this.widgets.forEach((w, i) => {
       const focus = i === this.focus;
-      const h = rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0);
+      const h = heights[i]!;
+      const y0 = y;
+      // rows cut by the edges of the view are skipped (no rect: they can't be tapped half-seen)
+      if (y0 < r.y || y0 + h - 2 > r.y + view + 3) {
+        y = y0 + h;
+        return;
+      }
       const row: Rect = { x: r.x, y, w: r.w, h: h - 2 };
       if (w.kind === 'button') {
         this.rects.set(w.id, ui.button(row, w.label, { focus, disabled: w.disabled, accent: w.accent }));
@@ -164,11 +189,19 @@ export class Menu implements Panel {
           ui.text(cx + cw - 5, y + 3, '>', { color: focus ? UI.focus : 'slate' });
         }
       }
-      y += narrow && isControl(w) ? h - NARROW_EXTRA : h;
+      y = y0 + h;
     });
+    // more above / below: a small arrow at the right edge
+    if (this.scroll > 0) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + k, 1 + 2 * k, 1, 'sand');
+    if (this.scroll < total - view) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + view + 4 - k, 1 + 2 * k, 1, 'sand');
     const hint = (this.widgets[this.focus] as { hint?: string } | undefined)?.hint;
     const foot = hint ?? this.o.footer?.();
-    if (foot) ui.text(r.x + r.w / 2, r.y + r.h - 10, foot.toUpperCase(), { align: 'center', color: 'slate' });
+    if (foot) {
+      // a narrow menu (a phone) falls back to the mini font, cut to the width
+      const text = foot.toUpperCase();
+      if (ui.measure(text) <= r.w - 2) ui.text(r.x + r.w / 2, r.y + r.h - 10, text, { align: 'center', color: 'slate' });
+      else ui.mini(r.x + r.w / 2, r.y + r.h - 9, text.slice(0, Math.floor((r.w + 1) / 4)), 'slate', 'center');
+    }
   }
 
   input(e: UiEvent): boolean {
@@ -199,6 +232,7 @@ export class Menu implements Panel {
   }
 
   private move(dir: number): void {
+    this.follow = true;
     const n = this.widgets.length;
     for (let k = 1; k <= n; k++) {
       const i = (this.focus + dir * k + n * k) % n;
@@ -246,7 +280,11 @@ export class Menu implements Panel {
     if (type === 'up') {
       const was = this.dragging;
       this.dragging = null;
-      return was !== null;
+      // a menu that scrolls acts on release, unless the finger dragged the list
+      const p = this.press;
+      this.press = null;
+      if (p && !p.moved) return this.hit('down', p.x, p.y) || true;
+      return was !== null || p !== null;
     }
     if (this.dragging) {
       const w = this.widgets.find((v) => v.id === this.dragging);
@@ -254,6 +292,31 @@ export class Menu implements Panel {
       if (w?.kind === 'slider' && t) w.set(Math.min(1, Math.max(0, (x - t.x - 2) / (t.w - 4))));
       return true;
     }
+    if (this.press && type === 'move') {
+      const dy = y - this.press.y;
+      if (Math.abs(dy) > 3) this.press.moved = true;
+      if (this.press.moved) {
+        this.scroll = this.press.scroll - dy;
+        this.follow = false;
+      }
+      return true;
+    }
+    if (type === 'down' && this.scrolls) {
+      // a slider's track still drags at once; anything else waits to see a tap or a drag
+      const onTrack = this.widgets.some((w) => {
+        const t = this.rects.get(`${w.id}:track`);
+        return w.kind === 'slider' && t && inside(t, x, y);
+      });
+      if (!onTrack) {
+        this.press = { x, y, scroll: this.scroll, moved: false };
+        return true;
+      }
+    }
+    return this.hit(type, x, y);
+  }
+
+  /** The widget under (x, y): hover focuses it, a press acts on it. */
+  private hit(type: 'move' | 'down', x: number, y: number): boolean {
     for (const [i, w] of this.widgets.entries()) {
       const r = this.rects.get(w.id);
       if (!r || !inside(r, x, y) || !focusable(w)) continue;

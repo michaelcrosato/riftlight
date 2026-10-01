@@ -25,9 +25,14 @@
 //                 character in its own basis; side locks the lane; free → fix → reload as fixed.
 // filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
 //                 with zero errors; Raw 3D mode bypasses filters.
-// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel.
+// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel, and the
+//                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
-//                 GPU device (WebGPU) / WebGL context is recovered with a working renderer.
+//                 GPU device (WebGPU) / WebGL context is recovered with a working renderer;
+//                 Riftlight as a player opens it on a phone, portrait (WebGPU) and landscape
+//                 (WebGL 2), no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
+//                 a touch button for every skill-bar slot that reaches the game, no HUD element
+//                 under a control, controls off the menus, panels that fit with big targets.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
@@ -88,6 +93,7 @@ import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
 import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
 import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
+import { runRiftlightPhone } from './e2e-riftlight-phone.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -799,6 +805,29 @@ async function runTouch(browserExe) {
     await until(page, () => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none', null, 3);
     check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none'), '⚙ opens the debug panel');
     await capture(page, 'touch-landscape.png');
+
+    // The runtime API a game drives its buttons with: state, rects, show/hide.
+    const api = await page.evaluate(() => {
+      const t = window.__PIXEL_ENGINE__.touch;
+      const input = window.__PIXEL_ENGINE__.input;
+      const b = document.querySelector('.touch-ui button[data-code="KeyJ"]');
+      t.set('KeyJ', { cooldown: 0.5, timer: '2', badge: '5', disabled: true, label: 'Q' });
+      const shown = { disabled: b.classList.contains('disabled'), shutter: b.querySelector('.shutter').style.height, timer: b.querySelector('.timer').textContent, badge: b.querySelector('.badge').textContent, label: b.querySelector('b').textContent };
+      t.set('KeyJ', { hidden: true });
+      const r = t.rects();
+      const hidden = { kept: r.buttons.length, flagged: r.buttons.find((x) => x.code === 'KeyJ').hidden, visibility: getComputedStyle(b).visibility, stick: !!r.stick };
+      t.set('KeyJ', { hidden: false, disabled: false, cooldown: 0, timer: '', badge: '', label: 'B' });
+      // hiding the controls releases a held button and the stick
+      b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, bubbles: true }));
+      const held = input.isDown('KeyJ');
+      t.show(false);
+      const released = !input.isDown('KeyJ') && !t.visible && getComputedStyle(document.querySelector('.touch-ui .stick')).display === 'none' && t.rects().buttons.length === 0;
+      t.show(true);
+      return { shown, hidden, held, released, back: t.visible && t.rects().buttons.length === 6 };
+    });
+    check(api.shown.disabled && api.shown.shutter === '50%' && api.shown.timer === '2' && api.shown.badge === '5' && api.shown.label === 'Q', `touch.set shows a cooldown shutter, timer, badge, label and the disabled state (${JSON.stringify(api.shown)})`);
+    check(api.hidden.kept === 6 && api.hidden.flagged && api.hidden.visibility === 'hidden' && api.hidden.stick, 'a hidden button keeps its place in touch.rects() (flagged hidden)');
+    check(api.held && api.released && api.back, 'touch.show(false) hides the controls and releases a held button; show(true) brings them back');
     checkClean(await state(page), logs);
   } catch (e) {
     check(false, `touch crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
@@ -1011,6 +1040,13 @@ async function runTools(browserExe) {
 }
 
 async function runPhone(browserExe) {
+  await runEnginePhone(browserExe);
+  const helpers = { exe: browserExe, launch, ready, check, checkClean, state, BASE, OUT };
+  await runRiftlightPhone({ ...helpers, scenario: SCENARIOS[0] }, 'portrait');
+  await runRiftlightPhone({ ...helpers, scenario: SCENARIOS[1] }, 'landscape');
+}
+
+async function runEnginePhone(browserExe) {
   console.log('\n▶ phone (portrait adaptive aspect, GPU device loss)');
   const headless = !process.env.DISPLAY;
   // Portrait phone: the art keeps 270 rows and narrows to the screen instead of a 16:9 strip.

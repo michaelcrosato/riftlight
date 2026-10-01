@@ -391,6 +391,11 @@ export function createApi(game: Riftlight) {
         if (!top || !('items' in top)) return [];
         return top.items().map((w, i) => ({ id: w.id, kind: w.kind, focus: i === top.focus, rect: top.rects.get(w.id) ?? null }));
       },
+      /**
+       * The fixed HUD's rects in art pixels (orbs, XP bar, level, top-left text, minimap, the
+       * skill bar when there are no touch controls) and the touch controls it lays out around.
+       */
+      hud: () => game.hudRects(),
       /** Activate a widget of the top panel by id (menus, the loot window, the recap). */
       click: (id: string) => {
         const top = game.layer.top?.panel as { activate?: (id: string) => boolean } | undefined;

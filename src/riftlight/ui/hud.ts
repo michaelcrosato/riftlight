@@ -8,7 +8,7 @@
 import type { HudColor, PaletteColor } from '../../engine';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
 import { UI, type UiCanvas } from './kit';
-import type { BannerKind, Box, HudLayout } from './layout';
+import { type BannerKind, type Box, type HudLayout, overlaps } from './layout';
 
 export interface FeedLine {
   text: string;
@@ -54,6 +54,8 @@ export interface HudModel {
   timer: string | null;
   pad: boolean;
   progress: { killed: number; total: number } | null;
+  /** Touch controls on screen, in art pixels: the HUD drops its skill bar and lays out around them. */
+  controls?: readonly Box[];
 }
 
 const ORB_R = 22;
@@ -62,9 +64,17 @@ const ORB_R = 22;
  * Where the fixed HUD goes on a screen of `W` × `H` art pixels. A narrow screen (a phone in
  * portrait is 124 wide) gets the compact set: small orbs above the corners of a tight bar, a
  * small minimap, a shorter boss bar.
+ *
+ * With touch controls on screen (`controls`: their rects in art pixels, `TouchPad.zones`) the
+ * buttons are the skill bar, so the HUD draws none: each orb takes the lowest free spot in its
+ * corner's third of the screen around the controls (beside the joystick and the button cluster
+ * on a wide screen, above them on a phone in portrait), the XP bar runs between the orbs when
+ * they share a row (else it sits over the life orb), and the top-left text starts right of
+ * any control there (the ≡ button).
  */
-export function hudGeometry(W: number, H: number) {
+export function hudGeometry(W: number, H: number, controls: readonly Box[] = []) {
   const compact = W < 300;
+  const touch = controls.length > 0;
   const slot = compact ? 16 : 20;
   const gap = compact ? 2 : 3;
   const split = compact ? 2 : 6;
@@ -76,21 +86,79 @@ export function hudGeometry(W: number, H: number) {
   const orbX = compact ? orbR + 4 : 30;
   const map = compact ? { w: 44, h: 34 } : { w: 84, h: 64 };
   const bossW = Math.min(200, W - 30);
-  return { compact, slot, gap, split, barW, bx, by, orbR, orbY, orbX, map, bossW };
+  let life = { x: orbX, y: orbY };
+  let mana = { x: W - orbX, y: orbY };
+  /** The XP bar, and where the level number goes. */
+  let xp = { x: bx - 4, y: by - 8, w: barW + 2 };
+  let levelAt: { x: number; y: number; mini: boolean; align: 'right' | 'center' } = compact
+    ? { x: xp.x + xp.w / 2, y: xp.y - 7, mini: true, align: 'center' }
+    : { x: xp.x - 3, y: xp.y - 2, mini: false, align: 'right' };
+  let textX = compact ? 4 : 6;
+  /** The top of the bottom HUD: prompts and the loot feed go above it. */
+  let top = compact ? orbY - orbR : H - 52;
+  /** The buff row (above the life orb). */
+  let buffs = { x: 6, y: compact ? orbY - orbR - 16 : H - 70 };
+  if (touch) {
+    const size = orbR * 2 + 5; // the orb and its frame
+    const l = lowestSpot(W, H, controls, 'left', size);
+    const m = lowestSpot(W, H, controls, 'right', size);
+    life = { x: l.x + orbR + 2, y: l.y + orbR + 2 };
+    mana = { x: m.x + orbR + 2, y: m.y + orbR + 2 };
+    const between = m.x - (l.x + size) - 8;
+    if (Math.abs(l.y - m.y) <= 4 && between >= 40) {
+      // one row (a wide screen): the XP bar between the orbs, near their bottom
+      xp = { x: l.x + size + 4, y: Math.max(l.y, m.y) + size - 6, w: between };
+      levelAt = { x: xp.x + xp.w / 2, y: xp.y - 7, mini: true, align: 'center' };
+    } else {
+      // a phone in portrait: a short bar with the level over the life orb
+      xp = { x: l.x, y: l.y - 5, w: size };
+      levelAt = { x: l.x + size / 2, y: l.y - 12, mini: true, align: 'center' };
+    }
+    top = Math.min(life.y - orbR, mana.y - orbR, levelAt.y);
+    buffs = { x: Math.max(2, l.x), y: Math.min(l.y, levelAt.y) - 14 };
+    // the top-left text starts right of a control in that corner (the ≡ button)
+    for (const c of controls) if (c.y < 24 && c.x < W / 3) textX = Math.max(textX, c.x + c.w + 3);
+  }
+  return { compact, touch, slot, gap, split, barW, bx, by, orbR, orbY, orbX, life, mana, xp, levelAt, textX, top, buffs, map, bossW };
+}
+
+/**
+ * The lowest spot for a `size`-square box in one corner third of the screen that touches no
+ * control, nearest the corner on ties (a spot has to be 6 px lower to beat one nearer the
+ * corner). Returns the box's top-left.
+ */
+function lowestSpot(W: number, H: number, controls: readonly Box[], side: 'left' | 'right', size: number): { x: number; y: number } {
+  const m = 3;
+  const span = Math.max(0, Math.floor(W / 3) - size - m);
+  let best: { x: number; y: number } | null = null;
+  for (let k = 0; k <= span; k += 2) {
+    const x = side === 'left' ? m + k : W - m - size - k;
+    let y = H - m - size;
+    for (let guard = 0; guard < 24 && y >= 0; guard++) {
+      const hit = controls.find((c) => overlaps({ x, y, w: size, h: size }, c, 2));
+      if (!hit) break;
+      y = hit.y - 3 - size;
+    }
+    if (y < 0) continue;
+    if (!best || y > best.y + 6) best = { x, y };
+  }
+  return best ?? { x: side === 'left' ? m : W - m - size, y: Math.floor(H / 2) };
 }
 
 /**
  * The zones the fixed HUD covers for this model: world overlays (loot labels, damage numbers)
- * are placed around them (`HudLayout`). Matches what `drawHud` draws.
+ * are placed around them (`HudLayout`). Matches what `drawHud` draws; touch controls count too.
  */
 export function hudZones(W: number, H: number, m: HudModel): Box[] {
-  const g = hudGeometry(W, H);
+  const g = hudGeometry(W, H, m.controls);
   const z: Box[] = [];
-  z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
-  z.push({ x: g.orbX - g.orbR - 3, y: g.orbY - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
-  z.push({ x: W - g.orbX - g.orbR - 3, y: g.orbY - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
+  if (g.touch) {
+    z.push(...(m.controls ?? []));
+    z.push({ x: g.xp.x - 2, y: g.levelAt.y - 1, w: g.xp.w + 4, h: g.xp.y + 4 - g.levelAt.y + 1 });
+  } else z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
+  for (const o of [g.life, g.mana]) z.push({ x: o.x - g.orbR - 3, y: o.y - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
   if (m.minimap) z.push({ x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 });
-  z.push({ x: 4, y: 4, w: Math.min(W / 2, 90), h: 12 + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
+  z.push({ x: g.textX - 2, y: 4, w: Math.min(W / 2, 90), h: 12 + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
   if (m.boss) z.push({ x: Math.floor((W - g.bossW) / 2) - 2, y: 5, w: g.bossW + 20, h: 20 });
   const b = bannerRect(W, m);
   if (b) z.push(b);
@@ -200,7 +268,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const H = ui.h;
   const t = m.time;
   ui.pad = m.pad;
-  const g = hudGeometry(W, H);
+  const g = hudGeometry(W, H, m.controls);
   const SLOT = g.slot;
 
   // hurt flash: red corners
@@ -219,47 +287,49 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const v = m.vitals;
   const lifeFrac = v.maxLife > 0 ? v.life / v.maxLife : 0;
   const low = lifeFrac < 0.3;
-  const lx = g.orbX;
-  const ly = g.orbY;
+  const lx = g.life.x;
+  const ly = g.life.y;
   const r = g.orbR;
   orb(ui, lx, ly, lifeFrac, low && t % 0.6 < 0.3 ? 'orange' : 'red', 'orange', 'plum', t, low ? 1 : 0, r);
   shieldRing(ui, lx, ly, v.maxEs > 0 ? v.es / v.maxEs : 0, r);
   ui.mini(lx, ly + r + 3 - (g.compact ? 18 : 33), `${Math.ceil(v.life)}`, 'white', 'center', 'ink');
-  const mx = W - g.orbX;
-  orb(ui, mx, ly, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0, r);
-  reservedCap(ui, mx, ly, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0, r);
-  ui.mini(mx, ly + r + 3 - (g.compact ? 18 : 33), `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
+  const mx = g.mana.x;
+  const my = g.mana.y;
+  orb(ui, mx, my, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0, r);
+  reservedCap(ui, mx, my, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0, r);
+  ui.mini(mx, my + r + 3 - (g.compact ? 18 : 33), `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
 
-  // skill bar: attack, dodge, then the four skills
-  const order: [string, string][] = [['LMB', 'A'], ['SPC', 'B'], ['1', 'X'], ['2', 'Y'], ['3', 'LB'], ['4', 'RB']];
-  const slots = [m.skills.find((s) => s.slot === 'attack'), m.skills.find((s) => s.slot === 'dodge'), ...[0, 1, 2, 3].map((i) => m.skills.find((s) => s.slot === i))];
-  const barW = g.barW;
-  const bx = g.bx;
-  const by = g.by;
-  ui.rect(bx - 5, by - 4, barW + 4, SLOT + 10, 'ink');
-  ui.rect(bx - 4, by - 3, barW + 2, SLOT + 8, 'night');
-  slots.forEach((s, i) => {
-    const x = bx + i * (SLOT + g.gap) + (i >= 2 ? g.split : 0);
-    if (s) skillSlot(ui, x, by, s, g.compact ? '' : order[i]![0], g.compact ? '' : order[i]![1], t, SLOT);
-    else {
-      ui.rect(x, by, SLOT, SLOT, 'ink');
-      ui.rect(x + 1, by + 1, SLOT - 2, SLOT - 2, 'night');
-    }
-  });
-  // XP bar above the skill bar, flashing on a level-up
-  const xw = barW + 2;
-  const xx = bx - 4;
-  const xy = by - 8;
+  // skill bar: attack, dodge, then the four skills (on a touch screen the buttons are the bar)
+  if (!g.touch) {
+    const order: [string, string][] = [['LMB', 'A'], ['SPC', 'B'], ['1', 'X'], ['2', 'Y'], ['3', 'LB'], ['4', 'RB']];
+    const slots = [m.skills.find((s) => s.slot === 'attack'), m.skills.find((s) => s.slot === 'dodge'), ...[0, 1, 2, 3].map((i) => m.skills.find((s) => s.slot === i))];
+    const barW = g.barW;
+    const bx = g.bx;
+    const by = g.by;
+    ui.rect(bx - 5, by - 4, barW + 4, SLOT + 10, 'ink');
+    ui.rect(bx - 4, by - 3, barW + 2, SLOT + 8, 'night');
+    slots.forEach((s, i) => {
+      const x = bx + i * (SLOT + g.gap) + (i >= 2 ? g.split : 0);
+      if (s) skillSlot(ui, x, by, s, g.compact ? '' : order[i]![0], g.compact ? '' : order[i]![1], t, SLOT);
+      else {
+        ui.rect(x, by, SLOT, SLOT, 'ink');
+        ui.rect(x + 1, by + 1, SLOT - 2, SLOT - 2, 'night');
+      }
+    });
+  }
+  // XP bar (above the skill bar; between or over the orbs on a touch screen), flashing on a level-up
+  const { x: xx, y: xy, w: xw } = g.xp;
   const flash = m.levelUpAge < 1.2 && Math.floor(m.levelUpAge * 10) % 2 === 0;
   ui.bar(xx, xy, xw, 3, m.xp, flash ? 'white' : UI.xp, 'night');
   for (let i = 1; i < 10; i++) ui.rect(xx + Math.round((xw * i) / 10), xy, 1, 3, 'ink');
-  if (g.compact) ui.mini(xx + xw / 2, xy - 7, `LV ${m.level}`, flash ? 'white' : 'sand', 'center', 'ink');
-  else ui.text(xx - 3, xy - 2, `${m.level}`, { align: 'right', color: flash ? 'white' : 'sand' });
+  const lv = g.levelAt;
+  if (lv.mini) ui.mini(lv.x, lv.y, `LV ${m.level}`, flash ? 'white' : 'sand', lv.align, 'ink');
+  else ui.text(lv.x, lv.y, `${m.level}`, { align: lv.align, color: flash ? 'white' : 'sand' });
 
   // buffs above the life orb
   m.buffs.forEach((b, i) => {
-    const x = 6 + i * 13;
-    const y = g.compact ? ly - r - 16 : H - 70;
+    const x = g.buffs.x + i * 13;
+    const y = g.buffs.y;
     ui.rect(x, y, 11, 11, 'ink');
     ui.rect(x + 1, y + 1, 9, 9, b.debuff ? 'plum' : 'night');
     ui.rect(x + 3, y + 3, 5, 5, b.color);
@@ -277,23 +347,29 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   ui.text(W - 6, gy - 1, gold, { color: m.goldShown < m.gold - 0.5 ? 'white' : 'sand', align: 'right' });
 
   // top-left: where you are, the clock, progress, difficulty
-  if (g.compact) ui.mini(4, 5, m.levelLabel, 'sand', 'left', 'ink');
-  else ui.text(6, 6, m.levelLabel, { color: 'sand' });
+  // (right of the touch menu button, and cut short of the minimap)
+  const tx = g.textX;
+  const room = W - tx - (m.minimap ? g.map.w + 10 : 6);
+  let label = m.levelLabel;
+  if (g.compact) {
+    while (label.length > 3 && label.length * 4 - 1 > room) label = label.slice(0, -1);
+    ui.mini(tx, 5, label, 'sand', 'left', 'ink');
+  } else ui.text(tx, 6, label, { color: 'sand' });
   let ty = g.compact ? 12 : 16;
   if (m.timer) {
-    ui.mini(g.compact ? 4 : 6, ty, m.timer, 'mist');
+    ui.mini(tx, ty, m.timer, 'mist');
     ty += 7;
   }
   if (m.progress && m.progress.total > 0) {
-    ui.mini(g.compact ? 4 : 6, ty, `${m.progress.killed}/${m.progress.total}${g.compact ? '' : ' SLAIN'}`, m.progress.killed >= m.progress.total ? 'lime' : 'mist');
+    ui.mini(tx, ty, `${m.progress.killed}/${m.progress.total}${g.compact ? '' : ' SLAIN'}`, m.progress.killed >= m.progress.total ? 'lime' : 'mist');
     ty += 7;
   }
   if (m.difficulty.length) {
     ty += 2;
-    ui.mini(6, ty, 'TUNED', 'orange');
+    ui.mini(tx, ty, 'TUNED', 'orange');
     ty += 7;
     for (const d of m.difficulty) {
-      ui.mini(6, ty, d, 'orange');
+      ui.mini(tx, ty, d, 'orange');
       ty += 6;
     }
   }
@@ -313,7 +389,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
 
   // loot feed (right, above the mana orb): newest first, at most 4 (2 on a phone), each line
   // placed around whatever else is there (the prompt, labels) and cut to fit
-  const feedBottom = g.compact ? ly - r - 10 : H - 66;
+  const feedBottom = g.touch ? my - r - 10 : g.compact ? ly - r - 10 : H - 66;
   let shown = 0;
   for (const f of m.feed) {
     if (f.t > 4 || shown >= (g.compact ? 2 : 4)) continue;

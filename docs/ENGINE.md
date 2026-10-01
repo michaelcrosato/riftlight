@@ -205,6 +205,21 @@ joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G*
 the buttons are `EngineOptions.touchButtons`).
 Landscape works best.
 
+A game lays out and drives its own buttons (Riftlight's action cluster, `src/riftlight/game/touch.ts`):
+
+- **Placement**: a `TouchButton` with `at: { x, y, size, corner }` is placed by its centre, in CSS
+  pixels from a screen corner (default bottom-right, inside the safe area), instead of in the
+  grid; tap targets keep their size whatever the art scale is. The first button is the accent one.
+- **State** each frame: `engine.touch.set(code, { icon, label, hint, cooldown, timer, badge,
+  disabled, hidden })`: an icon canvas (drawn pixelated) instead of the label, a cooldown shutter
+  (0..1) with its seconds, a corner badge (a cost), dimmed when it can't be used, hidden (its
+  place is kept). Only what changed touches the DOM.
+- `engine.touch.show(false)` hides the stick and the buttons while a menu owns the screen (held
+  keys and the stick are released); `engine.touch.rects()` gives their client rects (with
+  `hidden` flags) so a HUD can lay itself out around them.
+- The top bar is for development: `touchBar: false` keeps it off a shipped game, and it then
+  shows only with the debug UI (`?debug=1`, dev builds).
+
 Automatic moves: **step up / step down** (autostep 0.4; Rapier's autostep alone misses a
 riser met at speed, so `riseAhead` lifts the body onto a flat step found just ahead and holds
 it there while it crosses the edge, `TUNING.body.stepAssist`), **teeter** at edges, **fall**, soft
@@ -595,6 +610,7 @@ Engine.start(game, {
   debugUI: false,                              // default: on in dev (vite) or with ?debug=1
   debugKeys: { resolution: 'F2', mute: null }, // rebind / disable; `false` = no hotkeys at all
   touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
+  touchBar: false,                             // no ⚙ P R ◐ ♪ bar on phones unless ?debug=1
 });
 ```
 
@@ -656,7 +672,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   - camera hot-swap keeps the player in place
   - the Animation Lab (clips, views, sheets, curves, API)
   - `phone`: a portrait viewport fills the screen (adaptive aspect), and a destroyed WebGPU
-    device / lost WebGL context is recovered
+    device / lost WebGL context is recovered; Riftlight on a phone in portrait and landscape
+    with no `?debug` (`scripts/e2e-riftlight-phone.mjs`): no tool bar, every skill slot
+    reachable by touch, no HUD element under a control, panels that fit with 40 px targets
   - `Engine.step()` manual time
   - the tools: `build:single` runs from `file://` with no errors or requests, `film` writes
     its PNG + JSON, `balance` (a small matrix) writes its rows, CSV and charts, `inspect`

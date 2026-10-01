@@ -315,6 +315,11 @@ export class TreeView {
     e.preventDefault();
     this.root.setPointerCapture?.(e.pointerId);
     const [x, y] = this.art(e);
+    const close = this.closeBox();
+    if (close && x >= close.x && y < close.h && this.pointers.size === 0) {
+      this.close();
+      return;
+    }
     this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
     this.padCursor = false;
     this.cursor = { x, y };
@@ -592,6 +597,12 @@ export class TreeView {
   private inSearchBox(x: number, y: number): boolean {
     const b = this.searchBox();
     return x >= b.x && x < b.x + b.w && y >= 0 && y < TOP;
+  }
+
+  /** The top bar's close box (touch and mouse), when the view can be closed. */
+  private closeBox(): { x: number; w: number; h: number } | null {
+    if (!(this.options.closeKeys ?? ['Escape']).length) return null;
+    return { x: this.buf.width - 16, w: 16, h: TOP };
   }
 
   /** A phone in portrait: the top bar drops the title and shortens everything. */
@@ -891,7 +902,12 @@ export class TreeView {
     // a phone shows the gold only where it pays for something (the respec)
     const gold = this.options.gold && (!narrow || this.options.spendGold) ? (narrow ? ` ${this.options.gold()}G` : `  GOLD ${this.options.gold()}`) : '';
     const right = `${pts}${gold}`;
-    b.text(right, W - 4 - textWidth(right), 3, s.unspent > 0 ? C.lime : C.mist);
+    const close = this.closeBox();
+    b.text(right, (close ? close.x - 3 : W - 4) - textWidth(right), 3, s.unspent > 0 ? C.lime : C.mist);
+    if (close) {
+      b.rect(close.x, 0, close.w, TOP, C.plum);
+      b.text('X', close.x + 5, 3, C.white);
+    }
     const box = this.searchBox();
     const focused = document.activeElement === this.search;
     b.rect(box.x, box.y, box.w, box.h, C.ink);

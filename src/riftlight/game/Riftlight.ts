@@ -22,7 +22,7 @@ import { RANK, SCALING } from '../core/scaling';
 import type { DifficultyTuning, GameEvents, SaveData } from '../core/types';
 import { Town } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
-import { BannerQueue, HudLayout } from '../ui/layout';
+import { BannerQueue, type Box, HudLayout } from '../ui/layout';
 import { type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
@@ -47,11 +47,16 @@ import { corePorts } from '../wire';
 import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
+import { TouchPad } from './touch';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
-/** Camera framing per stage (zoom on the iso preset; the settings zoom multiplies it). */
-export const CAMERA = { title: 1.0, town: 1.22, level: 1.08, lead: 0.22, leadMax: 1.6 } as const;
+/**
+ * Camera framing per stage (zoom on the iso preset; the settings zoom multiplies it), the aim
+ * lead, and `portrait`: a screen taller than wide (a phone in portrait, 124 art pixels across)
+ * zooms out by this much so the fight around the hero fits.
+ */
+export const CAMERA = { title: 1.0, town: 1.22, level: 1.08, lead: 0.22, leadMax: 1.6, portrait: 0.8 } as const;
 
 interface MutableIntent {
   move: { x: number; z: number };
@@ -84,6 +89,10 @@ export class Riftlight implements Game, MenuHost {
   readonly layer = new UiLayer();
   ui!: UiCanvas;
   pointer!: Pointer;
+  /** The phone controls (the engine's touch buttons as an action cluster); inert without touch. */
+  touchPad!: TouchPad;
+  /** The touch controls' rects in art pixels this frame (the HUD lays out around them). */
+  private hudControls: Box[] = [];
   private readonly menuInput = new MenuInput();
   private rng = new Rng(1);
   private readonly recap = new RecapTracker();
@@ -119,6 +128,7 @@ export class Riftlight implements Game, MenuHost {
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly tmp = new Vector3();
+  private readonly liftDir = new Vector3();
   private readonly eyeAt = new Vector3();
   private time = 0;
   private music: SongName | null = null;
@@ -165,6 +175,7 @@ export class Riftlight implements Game, MenuHost {
     ctx.input.gamepadButtons = { ...PAD_BUTTONS };
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
+    this.touchPad = new TouchPad(engine);
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     const rng = () => this.rng;
@@ -909,6 +920,7 @@ export class Riftlight implements Game, MenuHost {
     ui.pointer.x = this.pointer.art.x;
     ui.pointer.y = this.pointer.art.y;
     ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
+    this.syncTouch();
     if (this.showcase.active) return this.showcase.update(dt, events);
     this.layer.update(dt);
     let consumed = false;
@@ -934,6 +946,28 @@ export class Riftlight implements Game, MenuHost {
       this.settings.zoom = Math.max(0.6, Math.min(1.6, this.settings.zoom * Math.pow(1.08, -ctx.input.wheel)));
     }
     ctx.input.wheel = 0;
+  }
+
+  /** The touch buttons follow the game: shown while you play, the bar's icons and cooldowns, what F does here. */
+  private syncTouch(): void {
+    if (!this.touchPad.active) return;
+    const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
+    this.touchPad.sync({ playing, showcase: this.showcase.active, skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
+  }
+
+  /** What F (the touch interact button) would do now: the verb and its target, or null. */
+  interactOffer(): { verb: string; name: string } | null {
+    const p = this.hero.actor.position;
+    if (this.screen === 'town') {
+      const it = this.town.nearest(p);
+      return it ? { verb: it.verb, name: it.name } : null;
+    }
+    if (this.screen === 'level' && this.level) {
+      const near = this.nearestLoot(1.8);
+      if (near) return { verb: 'TAKE', name: near.label };
+      if (this.level.exitOpen && p.distanceTo(this.level.exit) < 2.4) return { verb: 'GO', name: 'portal' };
+    }
+    return null;
   }
 
   private hotkeys(ctx: GameContext): void {
@@ -1098,6 +1132,7 @@ export class Riftlight implements Game, MenuHost {
       want.multiplyScalar(CAMERA.lead);
       if (want.length() > CAMERA.leadMax) want.setLength(CAMERA.leadMax);
       if (this.dead || this.layer.modal) want.set(0, 0, 0);
+      else this.touchLift(ctx, want);
       this.lead.lerp(want, 1 - Math.exp(-3 * dt));
       this.camTarget.set(p.x + this.lead.x, p.y + 0.9, p.z + this.lead.z);
     }
@@ -1110,8 +1145,25 @@ export class Riftlight implements Game, MenuHost {
       this.shakeStrength = 0;
       this.shakeOffset.set(0, 0, 0);
     }
-    const goal = this.zoomGoal * this.settings.zoom;
+    const goal = this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1);
     if ('zoom' in rig && Math.abs(rig.zoom - goal) > 1e-3) rig.setZoom(rig.zoom + (goal - rig.zoom) * (1 - Math.exp(-4 * dt)));
+  }
+
+  /**
+   * A phone in portrait: the touch controls and the orbs take the bottom of the screen, so the
+   * camera target slides toward the camera until the hero stands in the middle of the room left
+   * above them (adds to the aim lead `want`).
+   */
+  private touchLift(ctx: GameContext, want: Vector3): void {
+    const ui = this.ui;
+    if (!this.hudControls.length || ui.h <= ui.w) return;
+    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const rows = Math.max(0, ui.h - g.top - 40) / 2; // the top HUD takes ~40 rows of its own
+    const rig = ctx.camera as { viewHeight?: number };
+    const view = rig.viewHeight ?? 15;
+    const down = Math.max(0.3, Math.abs(ctx.engine.camera.camera.getWorldDirection(this.liftDir).y));
+    cameraBasis(ctx.engine, this.right, this.forward);
+    want.addScaledVector(this.forward, -((rows * view) / ui.h) / down);
   }
 
   // ================================================================ drawing
@@ -1146,6 +1198,7 @@ export class Riftlight implements Game, MenuHost {
     // the HUD's zones first: world overlays are placed around them, most important first
     // (the prompt, the focused loot label, other labels, damage numbers)
     const model = this.hudModel();
+    model.controls = this.hudControls = this.touchPad.zones((x, y) => this.pointer.toArt(x, y));
     const layout = this.hudLayout;
     layout.clear(ui.w, ui.h);
     for (const z of hudZones(ui.w, ui.h, model)) layout.reserve(z);
@@ -1179,8 +1232,12 @@ export class Riftlight implements Game, MenuHost {
       this.floaters.draw(ui, cam, layout);
     }
     drawHud(ui, model, layout);
-    if (this.dialogueLine && this.layer.top) dialogue(ui, this.dialogueLine, this.layer.top.rect);
+    // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
+    // and under an item window
+    const talk = this.dialogueLine && this.layer.top ? this.layer.top : null;
+    if (talk?.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
     this.layer.draw(ui, this.time);
+    if (talk && !talk.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
     if (this.dead && !this.layer.has('death')) {
       const k = Math.min(1, this.deathTimer / 1.2);
       for (let y = 0; y < ui.h; y += 2) if ((y / 2) % 3 < k * 3) ui.rect(0, y, ui.w, 1, 'plum');
@@ -1191,23 +1248,41 @@ export class Riftlight implements Game, MenuHost {
   /** "[F] TALK BRANN" centred above the skill bar. */
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h);
-    // above the bar; on a phone above the orbs, with the label cut to the screen
-    const y = g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
+    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    // above the bar; on a phone above the orbs (and the touch controls), with the label cut to the screen
+    const y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
+    // on a touch screen the interact button says what F does: the prompt has no key glyph
+    const put = (x: number, yy: number, t: string) => (g.touch ? (ui.text(x, yy, t, { align: 'center', color: 'white' }), ui.measure(t)) : ui.prompt(x, yy, 'F', 'RT', t, 'white', 'center'));
     let text = label;
-    while (text.length > 6 && ui.prompt(-1000, -1000, 'F', 'RT', text) + 10 > ui.w) text = text.slice(0, -2);
+    while (text.length > 6 && put(-1000, -1000, text) + 10 > ui.w) text = text.slice(0, -2);
     if (text !== label) text = `${text.slice(0, -1)}.`;
-    const w = ui.prompt(-1000, -1000, 'F', 'RT', text);
+    const w = put(-1000, -1000, text);
     const box = { x: Math.round(ui.w / 2 - w / 2 - 4), y: y - 3, w: w + 8, h: sub ? 21 : 13 };
     this.hudLayout.reserve(box);
     ui.rect(box.x, box.y, box.w, box.h, 'ink');
     ui.outline(box.x, box.y, box.w, box.h, 'slate');
-    ui.prompt(ui.w / 2, y, 'F', 'RT', text, 'white', 'center');
+    put(ui.w / 2, y, text);
     if (sub) {
       const s2 = sub.toUpperCase();
       if (ui.measure(s2) <= box.w) ui.text(ui.w / 2, y + 9, s2, { align: 'center', color: 'mist' });
       else ui.mini(ui.w / 2, y + 10, s2, 'mist', 'center');
     }
+  }
+
+  /** The fixed HUD's rects in art pixels and the touch controls (agent API `ui.hud()`, the phone e2e). */
+  hudRects(): { art: { w: number; h: number }; touch: boolean; controls: Box[]; zones: (Box & { id: string })[] } {
+    const ui = this.ui;
+    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const r = g.orbR;
+    const orb = (id: string, o: { x: number; y: number }) => ({ id, x: o.x - r - 2, y: o.y - r - 2, w: 2 * r + 5, h: 2 * r + 5 });
+    const zones: (Box & { id: string })[] = [orb('life', g.life), orb('mana', g.mana), { id: 'xp', x: g.xp.x, y: g.xp.y, w: g.xp.w, h: 3 }];
+    const lv = `LV ${this.save.hero.level}`;
+    const lw = g.levelAt.mini ? lv.length * 4 - 1 : ui.measure(lv);
+    zones.push({ id: 'level', x: Math.round(g.levelAt.align === 'center' ? g.levelAt.x - lw / 2 : g.levelAt.x - lw), y: g.levelAt.y, w: lw, h: g.levelAt.mini ? 5 : 7 });
+    if (!g.touch) zones.push({ id: 'skillbar', x: g.bx - 5, y: g.by - 4, w: g.barW + 4, h: g.slot + 10 });
+    zones.push({ id: 'where', x: g.textX, y: 5, w: Math.min(ui.w / 2, 60), h: 5 });
+    if (this.level) zones.push({ id: 'minimap', x: ui.w - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 });
+    return { art: { w: ui.w, h: ui.h }, touch: g.touch, controls: this.hudControls, zones };
   }
 
   private hudModel(): HudModel {

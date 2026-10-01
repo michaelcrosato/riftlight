@@ -77,7 +77,8 @@ export class UiLayer {
     if (!top) return false;
     if (e.kind === 'pointer' && e.type === 'down' && !top.bare) {
       const r = top.rect;
-      const closeBox = { x: r.x + r.w - 13, y: r.y - 13, w: 12, h: 11 };
+      // the close box is drawn 12 × 11; it takes presses around it too (a thumb on a phone)
+      const closeBox = { x: r.x + r.w - 17, y: r.y - 17, w: 24, h: 17 };
       if (inside(closeBox, e.x, e.y) && !top.sticky) {
         this.close();
         return true;
