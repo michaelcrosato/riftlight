@@ -77,7 +77,8 @@ describe('the bypass guarantee', () => {
       const { report } = validateSpec(spec, 5000);
       expect(report.problems, `${d} ${spec.name}`).toEqual([]);
     }
-  });
+    // Builds and validates 24 full levels (~2 s alone, several times that on a loaded CI box).
+  }, 60_000);
 });
 
 describe('designed levels and rifts', () => {
