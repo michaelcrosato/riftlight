@@ -232,7 +232,8 @@ export class Combat {
       const lifeLeech = q.flat('leech.life', spec.tags);
       const manaLeech = q.flat('leech.mana', spec.tags);
       if (lifeLeech > 0 || manaLeech > 0) caster.leech(result.total * lifeLeech, result.total * manaLeech);
-      if (h.hitStop && spec.tags.includes('melee')) caster.hitStop = Math.max(caster.hitStop, h.hitStop);
+      // melee crunch; a killing blow holds two frames longer (the kill reads)
+      if (h.hitStop && spec.tags.includes('melee')) caster.hitStop = Math.max(caster.hitStop, h.hitStop + (target.alive ? 0 : 2));
       if (!o.quiet) {
         const look = skill.def.look;
         this.play(result.crit ? 'crit' : (look.sound?.hit ?? 'hit'), { pitch: this.rng.range(-1.5, 1.5) });

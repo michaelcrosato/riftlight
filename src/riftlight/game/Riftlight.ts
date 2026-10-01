@@ -530,6 +530,8 @@ export class Riftlight implements Game, MenuHost {
       this.session.items++;
       this.events.emit('loot', { item: r.item, at: l.position });
       this.ctx.audio.play('rl.drop');
+      // a pop in the item's rarity colour where it was picked up
+      this.ctx.particles.burst('sparkle', l.position.clone().setY(0.5), { count: 10, colors: ['white', l.color] });
       this.feedLine(r.item.name.toUpperCase(), l.color);
     }
     return true;
