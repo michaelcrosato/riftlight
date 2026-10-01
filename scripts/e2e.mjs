@@ -5,7 +5,7 @@
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight-tree | riftlight-loot | tools |
-//     systems;  groups: @core | @cameras | @filters
+//     systems | riftlight-levels;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -40,6 +40,10 @@
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials, engine.dispose().
 //
+// riftlight-levels  Riftlight levels + the dynamic light pool (scripts/e2e-riftlight-levels.mjs),
+//                 WebGPU + WebGL 2: levels 1, 6, 12 and a rift build, render, keep 8 lights
+//                 without recompiles, walk start → exit with Engine.step, open the portal.
+//
 // The debug panel is off by default in production builds: every page gets ?debug=1 unless
 // the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel
 // HUD is a 2D overlay canvas (data-hud) on top of it.
@@ -58,6 +62,7 @@ import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
+import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1019,6 +1024,11 @@ const SUITES = {
     await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-levels': async (exe) => {
+    const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
+    await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -1026,7 +1036,7 @@ const SUITES = {
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-levels'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
