@@ -8,6 +8,7 @@ import {
   NearestFilter,
   type Object3D,
   RedFormat,
+  type Texture,
   Vector2,
 } from 'three/webgpu';
 import { abs, floor, max, mix, modelViewProjection, sign, uniform, vec4 } from 'three/tsl';
@@ -53,16 +54,44 @@ export function toonGradient(): DataTexture {
   return tex;
 }
 
-const materialCache = new Map<number, MeshToonNodeMaterial>();
+const materialCache = new Map<string, MeshToonNodeMaterial>();
 
-/** Shared 3-band toon node material for a palette color. */
-export function toonMaterial(color: ColorRepresentation): MeshToonNodeMaterial {
-  const key = new Color(color).getHex();
+export interface ToonMaterialOptions {
+  /** Base color texture. Switched to nearest filtering (crisp texels, no mip blur). */
+  map?: Texture | null;
+  /** Multiply by the geometry's `color` attribute (vertex colors). */
+  vertexColors?: boolean;
+}
+
+/**
+ * Make a texture pixel-art friendly: nearest-neighbor sampling, no mipmaps. Returns it.
+ */
+export function pixelTexture<T extends Texture>(texture: T): T {
+  if (texture.magFilter !== NearestFilter || texture.minFilter !== NearestFilter || texture.generateMipmaps) {
+    texture.magFilter = NearestFilter;
+    texture.minFilter = NearestFilter;
+    texture.generateMipmaps = false;
+    texture.needsUpdate = true;
+  }
+  return texture;
+}
+
+/**
+ * Shared 3-band toon node material for a palette color, optionally textured and/or
+ * vertex-colored (color × map × vertex color). Materials are cached per combination and
+ * marked `userData.shared` so level unloads never dispose them.
+ */
+export function toonMaterial(color: ColorRepresentation, options: ToonMaterialOptions = {}): MeshToonNodeMaterial {
+  const hex = new Color(color).getHex();
+  const map = options.map ?? null;
+  const vertexColors = options.vertexColors === true;
+  const key = `${hex}|${map?.uuid ?? ''}|${vertexColors ? 'vc' : ''}`;
   let mat = materialCache.get(key);
   if (!mat) {
-    mat = new MeshToonNodeMaterial({ color: key, gradientMap: toonGradient() });
+    mat = new MeshToonNodeMaterial({ color: hex, gradientMap: toonGradient(), map: map ? pixelTexture(map) : null, vertexColors });
     mat.vertexNode = snappedClipPosition();
-    mat.name = `toon-${key.toString(16).padStart(6, '0')}`;
+    mat.name = `toon-${hex.toString(16).padStart(6, '0')}${map ? '-tex' : ''}${vertexColors ? '-vc' : ''}`;
+    mat.userData.shared = true;
     materialCache.set(key, mat);
   }
   return mat;
@@ -73,18 +102,22 @@ export interface ToonifyOptions {
   receiveShadow?: boolean;
 }
 
+type SourceMaterial = Material & { color?: Color; map?: Texture | null; vertexColors?: boolean };
+
 /**
  * Replace every mesh material under `root` with the shared toon material of the same base
- * color. Makes any GLB (or hand-built mesh) match the engine's look without per-asset work.
+ * color, keeping its base color texture (`map`, nearest-filtered) and vertex colors. Makes
+ * any GLB (or hand-built mesh) match the engine's look without per-asset work.
  */
 export function toonify(root: Object3D, options: ToonifyOptions = {}): Object3D {
   const { castShadow = true, receiveShadow = true } = options;
   root.traverse((obj) => {
     const mesh = obj as Mesh;
     if (!mesh.isMesh) return;
+    const hasColors = !!mesh.geometry?.getAttribute?.('color');
     const swap = (m: Material) => {
-      const color = (m as Material & { color?: Color }).color ?? new Color(0xffffff);
-      return toonMaterial(color);
+      const src = m as SourceMaterial;
+      return toonMaterial(src.color ?? new Color(0xffffff), { map: src.map ?? null, vertexColors: src.vertexColors === true && hasColors });
     };
     mesh.material = Array.isArray(mesh.material) ? mesh.material.map(swap) : swap(mesh.material);
     mesh.castShadow = castShadow;
