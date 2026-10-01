@@ -4,7 +4,7 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | riftlight-tree | riftlight-loot | tools |
+//     filters-webgl | touch | phone | moves | lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
@@ -31,6 +31,10 @@
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
+// riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs), WebGPU + WebGL 2: title,
+//                 new run, town, rift keeper, level 1 with the basic attack, gold, clear, loot
+//                 window, portal, autosave, pause → Tuning (enemy life applies live), death
+//                 recap, save → reload → Continue.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
 // riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
@@ -60,6 +64,7 @@ import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { runRiftlight } from './e2e-riftlight.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
@@ -345,6 +350,9 @@ async function launch(browserExe, s, pageOptions = {}) {
 }
 
 function urlFor(s, query = '') {
+  // Riftlight is the page's default game; the engine suites test the movement playground,
+  // so they ask for it unless a suite picks a game itself.
+  if (!/(^|[?&])game=/.test(`${s.url}&${query}`)) query = query ? `${query}&game=playground` : 'game=playground';
   // The debug panel is dev-only by default; the suites read it, so ask for it.
   if (!/(^|[?&])debug=/.test(`${s.url}&${query}`)) query = query ? `${query}&debug=1` : 'debug=1';
   const sep = s.url.includes('?') ? '&' : '?';
@@ -948,7 +956,7 @@ async function runPhone(browserExe) {
       const logs = [];
       page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
       page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
-      await page.goto(`${BASE}?touch=1`);
+      await page.goto(urlFor({ url: BASE }, 'touch=1&debug=0'));
       await ready(page);
       const st = await state(page);
       const f = st.framing;
@@ -1016,6 +1024,11 @@ const SUITES = {
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
   'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
+  riftlight: async (exe) => {
+    const helpers = { exe, openPage, check, capture, state, checkClean, colorCount };
+    await runRiftlight({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlight({ ...helpers, scenario: SCENARIOS[1] });
+  },
   tools: (exe) => runTools(exe),
   systems: async (exe) => {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
@@ -1047,7 +1060,7 @@ const SUITES = {
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight-combat'],
+  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };

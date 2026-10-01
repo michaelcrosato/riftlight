@@ -286,9 +286,10 @@ async function main(): Promise<void> {
     // The game's iso camera turned to yaw 0, so the keys move along the axes as scripts
     // assume (W = -Z, D = +X); at its default 45° yaw they ran diagonally.
     const q = new URLSearchParams({ debug: '0', touch: '0', cam: JSON.stringify({ preset: 'iso', yaw: 0 }) });
-    // --game picks the level (?game=); arena-* scenarios pick the combat arena themselves
-    const game = flags.has('game') ? opt('game', '') : (jobs.map((j) => SCENARIO_GAME(j.name)).find((g) => g) ?? null);
-    if (game) q.set('game', game);
+    // --game picks the level (?game=); arena-* scenarios pick the combat arena themselves; the
+    // rest film the playground (/ is Riftlight)
+    const game = flags.has('game') ? opt('game', '') : (jobs.map((j) => SCENARIO_GAME(j.name)).find((g) => g) ?? 'playground');
+    q.set('game', game);
     if (flags.has('mode')) q.set('mode', opt('mode', 'pixel'));
     if (flags.has('look')) q.set('look', opt('look', ''));
     const t0 = Date.now();
