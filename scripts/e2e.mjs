@@ -5,7 +5,7 @@
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight-tree | riftlight-loot | tools |
-//     systems | riftlight-levels;  groups: @core | @cameras | @filters
+//     systems | riftlight-levels | riftlight-combat | riftlight-monsters;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -65,6 +65,7 @@ import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
 import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
+import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1036,6 +1037,11 @@ const SUITES = {
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-monsters': async (exe) => {
+    const helpers = { exe, openPage, until, check, capture, state, colorCount, checkClean, OUT };
+    await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -1043,7 +1049,7 @@ const SUITES = {
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
