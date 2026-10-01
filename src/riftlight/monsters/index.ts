@@ -9,7 +9,7 @@
  *   const brain = new MonsterBrain({ body, archetype: genome.archetype, skills: m.skills, elite: genome.elite, home });
  */
 export * from './types';
-export { generateGenome, mutate, crossover, sanitize, validateGenome, genomeBudget, genomeCost, genomeTags, headAnchors, partFits, RANK_SCALE, type GenomeOptions } from './genome';
+export { generateGenome, generatePack, mutate, crossover, sanitize, validateGenome, genomeBudget, genomeCost, genomeTags, headAnchors, partFits, RANK_SCALE, type GenomeOptions, type PackSpec } from './genome';
 export { buildMonster, clearMonsterCache, moveSpeeds, applyPose, resolveSkills, type BuildOptions } from './build';
 export { generatePalette, shiftPalette, mixPalettes, hslHex, hexToHsl, contrast, luminance, THEME_COLOURS, type Harmony } from './palette';
 export { PLANS } from './plans';

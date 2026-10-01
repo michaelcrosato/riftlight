@@ -34,7 +34,7 @@ export const hexapod: BodyPlanDef = {
     const h = g('legLength', 0.24, 0.42);
     const len = g('length', 0.26, 0.44);
     const thick = g('limbThickness', 0.035, 0.065);
-    const hs = g('headSize', 0.18, 0.32);
+    const hs = g('headSize', 0.22, 0.36);
     const ankle = 0.03;
 
     const root = b.joint('Body', null, [0, h, 0.05]);

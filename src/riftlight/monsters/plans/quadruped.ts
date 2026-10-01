@@ -36,7 +36,7 @@ export const quadruped: BodyPlanDef = {
     const bodyLen = g('length', 0.5, 0.95);
     const thick = g('limbThickness', 0.07, 0.13) * Math.sqrt(girth);
     const ankle = 0.05;
-    const hs = g('headSize', 0.24, 0.42);
+    const hs = g('headSize', 0.28, 0.46);
 
     const root = b.joint('Body', null, [0, legH, -bodyLen / 2]);
     b.shape(root, 'sphere', [0.36 * girth, 0.3 * girth, 0.4 * girth], [0, 0.04, 0.04], 'primary');

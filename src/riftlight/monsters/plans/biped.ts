@@ -65,12 +65,12 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
   const torso = isBrute ? g('length', 0.42, 0.62) : g('length', 0.34, 0.58);
   const thick = (isBrute ? g('limbThickness', 0.13, 0.22) : g('limbThickness', 0.08, 0.15)) * Math.sqrt(girth);
   const neckLen = isBrute ? g('neck', 0.0, 0.06) : g('neck', 0.03, 0.18);
-  const hs = isBrute ? g('headSize', 0.22, 0.34) : g('headSize', 0.26, 0.44);
+  const hs = isBrute ? g('headSize', 0.22, 0.34) : g('headSize', 0.32, 0.5);
 
   const root = b.joint('Body', null, [0, hipH, 0]);
   b.shape(root, 'box', [0.34 * girth, 0.16, 0.24 * girth], [0, 0.02, 0], 'secondary');
   const spine = b.joint('Spine', root, [0, 0.08, 0]);
-  b.shape(spine, 'box', [0.36 * girth, torso * 0.55, 0.26 * girth], [0, torso * 0.25, 0], 'primary');
+  b.shape(spine, 'taper', [0.36 * girth, torso * 0.6, 0.3 * girth], [0, torso * 0.25, 0], 'primary', { taper: 1.25 });
   const chest = b.joint('Chest', spine, [0, torso * 0.5, 0]);
   const chestW = (isBrute ? 0.58 : 0.46) * girth;
   b.shape(chest, isBrute ? 'sphere' : 'box', [chestW, torso * (isBrute ? 0.75 : 0.55), 0.32 * girth], [0, torso * 0.25, isBrute ? 0.02 : 0], 'primary');
@@ -110,7 +110,7 @@ function humanoid(ctx: PlanContext, plan: 'biped' | 'brute'): Skeleton {
 
   const tailLen = g('tailLength', 0.08, 0.2);
   const tail = ctx.has('tail') || ctx.genes.tailLength! > 0.62 ? addTail(b, root, [0, 0.02, -0.12 * girth], 3, tailLen, thick * 0.9) : [];
-  const wings = ctx.has('wings') ? addWings(b, chest, [0.12 * girth, torso * 0.4, -0.12 * girth], g('wingSpan', 0.9, 1.6)) : null;
+  const wings = ctx.has('wings') ? addWings(b, chest, [0.12 * girth, torso * 0.4, -0.12 * girth], g('wingSpan', 0.6, 1.1)) : null;
 
   const posture = g('posture', 0, isBrute ? 38 : 22);
   b.stance[spine] = [posture * 0.6, 0, 0];

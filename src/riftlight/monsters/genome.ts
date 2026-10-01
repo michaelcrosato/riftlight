@@ -153,6 +153,38 @@ function pickElites(rng: Rng, archetype: string, rank: Rank, depth: number): str
   return out;
 }
 
+export interface PackSpec {
+  /** One genome per member; member 0 is the leader. */
+  readonly genomes: readonly Genome[];
+  readonly archetype: string;
+}
+
+/**
+ * A pack: one body shape for every member (so they share clips), sized by the archetype's
+ * pack range; members vary in scale (±8 %) and seed, and at depth the leader may be magic
+ * or rare (aura, elite mods). Deterministic in `rng`.
+ */
+export function generatePack(rng: Rng, o: GenomeOptions & { size?: number } = {}): PackSpec {
+  const base = generateGenome(rng.fork('base'), o);
+  const arch = ARCHETYPES.get(base.archetype);
+  const r = rng.fork('pack');
+  const n = o.size ?? r.int(arch.pack[0], arch.pack[1]);
+  const depth = o.depth ?? 1;
+  const leaderRank = o.rank ?? (r.chance(Math.min(0.6, 0.08 * depth)) ? (r.chance(0.3) ? 'rare' : 'magic') : 'normal');
+  const genomes = Array.from({ length: n }, (_, i): Genome => {
+    const m = r.fork(i);
+    const rank = i === 0 ? leaderRank : (o.rank ?? 'normal');
+    return {
+      ...base,
+      seed: m.int(1, 0x7fffffff),
+      scale: round3(base.scale * m.range(0.92, 1.08) * (i === 0 && rank !== 'normal' ? RANK_SCALE[rank] / RANK_SCALE[base.rank] : 1)),
+      rank,
+      elite: rank === base.rank ? base.elite : pickElites(m.fork('elite'), base.archetype, rank, depth),
+    };
+  });
+  return { genomes, archetype: base.archetype };
+}
+
 /** Spore-style mutation: genes drift, parts swap/appear/vanish, colours shift, rarely the plan. */
 export function mutate(g: Genome, rng: Rng, amount = 0.3): Genome {
   const a = Math.min(1, Math.max(0, amount));

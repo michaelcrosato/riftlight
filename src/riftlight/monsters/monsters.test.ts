@@ -13,10 +13,12 @@ import {
   buildBoss,
   buildMonster,
   contrast,
+  createTelegraph,
   crossover,
   ELITE_MODS,
   generateBoss,
   generateGenome,
+  generatePack,
   genomeBudget,
   genomeCost,
   MONSTER_SKILLS,
@@ -91,6 +93,17 @@ describe('genomes', () => {
       expect(validateGenome(c)).toEqual([]);
       expect(['quadruped', 'hexapod']).toContain(c.plan);
     }
+  });
+
+  it('packs share one body shape (and so their clips)', () => {
+    const pack = generatePack(new Rng('pack'), { depth: 9, tags: ['insect'], archetype: 'swarm' });
+    expect(pack.genomes.length).toBeGreaterThanOrEqual(5);
+    const shapes = new Set(pack.genomes.map((g) => JSON.stringify([g.plan, g.genes, g.parts])));
+    expect(shapes.size).toBe(1);
+    for (const g of pack.genomes) expect(validateGenome(g)).toEqual([]);
+    const a = buildMonster(pack.genomes[0]!);
+    const b = buildMonster(pack.genomes[1]!);
+    expect(a.clip('Walk')).toBe(b.clip('Walk'));
   });
 
   it('palettes read against the floor', () => {
@@ -364,5 +377,31 @@ describe('runtime', () => {
     rt.locomote(2);
     expect(['Walk', 'Run']).toContain(rt.clip);
     rt.dispose();
+  });
+
+  it('plants feet on uneven ground (foot placement layer)', () => {
+    const m = buildMonster(generateGenome(new Rng(8), { plan: 'quadruped', archetype: 'tank' }));
+    const rt = new MonsterRuntime(m);
+    const ground = (_x: number, z: number) => 0.08 * z; // a slope rising forwards
+    rt.update(1 / 60, { ground });
+    m.object.updateMatrixWorld(true);
+    for (const leg of m.skeleton.legs) {
+      const sole = m.object.getObjectByName(leg.foot)!.localToWorld(new Vector3(0, -leg.ankle, 0));
+      expect(Math.abs(sole.y - ground(sole.x, sole.z)), leg.id).toBeLessThan(0.03);
+    }
+    rt.dispose();
+  });
+
+  it('builds telegraph decals that fill up to the hit', () => {
+    for (const shape of ['circle', 'cone', 'line'] as const) {
+      const t = createTelegraph({ shape, size: 3, width: 60, at: 'self' });
+      expect(t.object.children.length).toBe(2);
+      const fill = t.object.children[1]!;
+      t.update(0.5);
+      const half = fill.scale.clone();
+      t.update(1);
+      expect(fill.scale.lengthSq()).toBeGreaterThan(half.lengthSq());
+      t.dispose();
+    }
   });
 });
