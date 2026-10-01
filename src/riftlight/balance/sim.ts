@@ -15,7 +15,7 @@ import { defaultTree, pointBudget, type PassiveTree } from '../tree/tree';
 import { DEFAULT_ASSUMPTIONS, type Assumptions } from './assumptions';
 import { buildKey, BUILDS, type BuildArchetype, type Variant } from './builds';
 import { chooseGear, scoreLoadout, TreePlanner, type ScoreContext } from './choose';
-import { bossFight, duel, heroOffense, makeLoadout, monsterOffense, monsterTarget, reachOf, type HeroLoadout, type MonsterTarget, type Offense } from './fight';
+import { bossFight, curseMods, duel, heroOffense, makeLoadout, monsterOffense, monsterTarget, reachOf, type HeroLoadout, type MonsterTarget, type Offense } from './fight';
 import { MINION_STATS, STAT_ALIASES, type MonsterInput } from './sheets';
 
 export type Grade = 'normal' | 'magic' | 'rare';
@@ -56,6 +56,9 @@ export interface Row {
   packDps: number;
   /** Share of a level's fighting the main skill is affordable (the rest: the free fallback). */
   sustain: number;
+  /** Expected charges held while clearing packs (all kinds), and the share of mana the auras reserve. */
+  charges: number;
+  reserved: number;
   ttk: Record<Grade | 'boss', number>;
   dtps: Record<Grade | 'boss', number>;
   hitsToDie: Record<Grade | 'boss', number>;
@@ -163,10 +166,15 @@ export function runBalance(depths: readonly DepthInput[], o: BalanceOptions = {}
           equipment = chooseGear(new Rng(seed).fork(buildKey(build, variant)).fork(`depth:${d.depth}`), c, planner.mods(), itemLevel);
           lastGear = equipment;
         }
-        const h = makeLoadout(build, { level, tree: variant === 'geared' ? planner.mods() : [], equipment, assumptions: a, reads, aliasesUsed });
+        const setup = { level, tree: variant === 'geared' ? planner.mods() : [], equipment, assumptions: a, reads, aliasesUsed };
+        const h = makeLoadout(build, setup);
+        // at the boss there are no kills to keep on-kill charges up
+        const hb = makeLoadout(build, { ...setup, context: 'boss' });
         // count without recording a read (RecordingSheet overrides explain)
         for (const stat of h.sheet.stats()) seenStats.set(stat, (seenStats.get(stat) ?? 0) + StatSheet.prototype.explain.call(h.sheet, stat).length);
-        const row = simulate(h, d, targets, a, { variant, itemLevel, points, tree: variant === 'geared' ? planner.allocated.length : 0, equipment });
+        // the build's curse on what it fights
+        const cursed = h.curse ? (Object.fromEntries(GRADES.map((g) => [g, targets[g].map((t) => monsterTarget(t.input, a, curseMods(h, t.input, a)))])) as Record<Grade, MonsterTarget[]>) : targets;
+        const row = simulate(h, hb, d, cursed, a, { variant, itemLevel, points, tree: variant === 'geared' ? planner.allocated.length : 0, equipment });
         rows.push(row);
         o.onRow?.(row);
       }
@@ -177,7 +185,7 @@ export function runBalance(depths: readonly DepthInput[], o: BalanceOptions = {}
   return { seed, assumptions: a, rows, xp, deadStats, aliasesUsed: [...aliasesUsed].sort() };
 }
 
-function simulate(h: HeroLoadout, d: DepthInput, targets: Record<Grade, MonsterTarget[]>, a: Assumptions, x: { variant: Variant; itemLevel: number; points: number; tree: number; equipment: Equipment }): Row {
+function simulate(h: HeroLoadout, hb: HeroLoadout, d: DepthInput, targets: Record<Grade, MonsterTarget[]>, a: Assumptions, x: { variant: Variant; itemLevel: number; points: number; tree: number; equipment: Equipment }): Row {
   const ttk = {} as Row['ttk'];
   const dtps = {} as Row['dtps'];
   const htd = {} as Row['hitsToDie'];
@@ -189,7 +197,7 @@ function simulate(h: HeroLoadout, d: DepthInput, targets: Record<Grade, MonsterT
     htd[g] = mean(duels.map((u) => u.hitsToDie));
     ttd[g] = finiteMean(duels.map((u) => u.timeToDie));
   }
-  const boss = bossFight(h, d.boss!, a);
+  const boss = bossFight(hb, d.boss!, a);
   const bt = monsterTarget(d.boss!, a);
   const bossLife = bt.life + bt.es;
   ttk.boss = boss.ttk;
@@ -284,6 +292,8 @@ function simulate(h: HeroLoadout, d: DepthInput, targets: Record<Grade, MonsterT
     dps: off.single,
     packDps: off.pack(5),
     sustain,
+    charges: h.charges.endurance + h.charges.frenzy + h.charges.power,
+    reserved: h.reserved,
     ttk,
     dtps,
     hitsToDie: htd,

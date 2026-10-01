@@ -4,7 +4,7 @@ import { Rng } from '../core/rng';
 import { expectedHit, rollHit, sumDamage } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
 import { ACTIVE_SKILLS, SKILLS } from './actives';
-import { buildSkill, supportFits, supportsFor } from './build';
+import { baseDamageScale, buildSkill, COST_PER_LEVEL, SPELL_BASE_GROWTH, supportFits, supportsFor } from './build';
 import { SUPPORT_GEMS, SUPPORTS } from './supports';
 
 const hero = () => new StatSheet();
@@ -107,10 +107,21 @@ describe('buildSkill', () => {
   it('cost grows with gem level and support multipliers', () => {
     expect(buildSkill('fireball', [], hero()).cost).toBe(6);
     expect(buildSkill('fireball', ['gmp'], hero()).cost).toBe(9);
-    expect(buildSkill('fireball', [], hero(), { level: 11 }).cost).toBeCloseTo(6 * 1.8);
+    expect(buildSkill('fireball', [], hero(), { level: 11 }).cost).toBeCloseTo(6 * (1 + 10 * COST_PER_LEVEL));
     const sheet = new StatSheet();
     sheet.set('tree', [inc('cost', -0.5)]);
     expect(buildSkill('fireball', [], sheet).cost).toBe(3);
+  });
+  it('spell base damage grows with gem level (a weapon grows with item level); attacks keep the weapon', () => {
+    const at = (id: string, level: number) => buildSkill(id, [], hero(), { level }).damage!;
+    expect(at('fireball', 1).base.fire).toEqual([9, 15]);
+    const k = Math.pow(1 + SPELL_BASE_GROWTH, 19);
+    expect(at('fireball', 20).base.fire![0]).toBeCloseTo(9 * k, 6);
+    expect(baseDamageScale(['spell', 'minion', 'summon'], 11)).toBeCloseTo(Math.pow(1 + SPELL_BASE_GROWTH, 10), 9);
+    expect(at('heavy-strike', 20).base.physical).toEqual([6, 10]);
+    expect(baseDamageScale(['attack', 'spell'], 20)).toBe(1);
+    // gem level 20 is the cap
+    expect(baseDamageScale(['spell'], 40)).toBe(baseDamageScale(['spell'], 20));
   });
   it('gem levels add their perLevel mods, supports too', () => {
     const r = buildSkill('fireball', [{ gem: 'faster-casting', level: 11 }], hero(), { level: 6 });

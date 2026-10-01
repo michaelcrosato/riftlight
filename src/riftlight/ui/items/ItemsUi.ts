@@ -114,6 +114,7 @@ export interface ItemsUiOptions {
 const VENDOR_TABS: readonly { kind: VendorKind; label: string }[] = [
   { kind: 'smith', label: 'WARES' },
   { kind: 'gems', label: 'GEMS' },
+  { kind: 'gamble', label: 'GAMBLE' },
 ];
 
 export class ItemsUi {

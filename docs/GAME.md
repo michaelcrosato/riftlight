@@ -819,8 +819,20 @@ and every 4th to 60, ~25 s.
   (`rollItem`, equip level respected) and a tree grown greedily (`TreePlanner`: the path to a
   notable or frontier node with the best score gain per point; no respec). Gem level is the
   highest the hero can equip (`SCALING.gemLevelReq`; socketed gems earn the hero's XP, so a gem
-  socketed from the start is there). Minions grow with their summoner's level
-  (`combat/minions.ts` `minionLevelMods`: they wear no gear).
+  socketed from the start is there). Naked heroes carry the starter sword, as the real hero
+  does. Spells grow by gem level (`skills/build.ts` `SPELL_BASE_GROWTH`: their base damage
+  compounds 15% a level, ×14 by gem 20, the way a weapon grows by item level); summon gems
+  are spells, so minions grow with the gem, plus the hero's own 5% a level and the minion gear
+  (`minion-added-physical`, `minion-speed`, `minion-damage`; `combat/minions.ts`).
+- **Build systems** as expected values: each archetype keeps a curse on what it fights
+  (melee, bow and minion Vulnerability, caster Elemental Weakness; its mods × `curse.effect` ×
+  `curseUptime`, none on curse-immune targets), auras (melee Determination, bow and minion Haste:
+  the buff on the hero and its minions, the reservation off the mana pool), and a totem
+  (caster a Spell Totem fireball, bow a Ballista split arrow: an extra caster, `skillDps`
+  reports count × the inner skill every `castRate` × its cast time, up `placedUptime` of the
+  fight). Charges come from their gain rate (kills in packs, none at the boss; hits, crits,
+  stuns; the skill's own `charges` effects) against their duration: max × min(1, rate ×
+  duration / max). The CSV has `charges` and `reserved` columns.
 - **Real code**: `buildSkill`, `expectedHit` (through `balance/dps.ts`, which `npm run combat`
   uses too), `StatSheet` with `treeMods`-style node mods and `itemMods`, the monsters' genome
   stats and skills (`MONSTER_SKILLS`), boss phases and enrage, `SCALING`/`RANK`, `addXp` /
@@ -828,29 +840,47 @@ and every 4th to 60, ~25 s.
 - **Assumed** (`balance/assumptions.ts`, printed every run): hero growth per level, monster
   base record (the `Actor` default), monster attack uptime 50% and half a pack engaged, pack
   reach per delivery, walk detour, minions never die, mana as a level-wide budget (the free
-  `slash` when it runs out). Elite behaviours, conditional mods and boss hazards are not
-  modelled.
+  `slash` when it runs out), curse and totem uptimes, kills per second for on-kill charges.
+  Elite behaviours, conditional mods and boss hazards are not modelled.
 - **Contract gaps**: stats some systems write under another name than combat reads
   (`crit.multi`, `block`, `energy.shield`, `crit.chance.base`, `life.leech`, `res.elemental`,
   owner `minion.*` …) are aliased by default and listed; `--raw` turns the aliases off. Stats
   on the sheets the sim never read are listed as *read nowhere by that name* (they do nothing)
   or *read only outside the sim*.
 
-Example (seed 1, default depths): the summary prints
-`! naked minion: boss TTK 134× faster than the others` (minions grow with the summoner's level,
-not gear, so a naked summoner is the only build that works naked) and
-`! 4 geared builds die to the boss (no potions), all but one by depth 28`. Geared builds clear
-within 2.5× of each other through depth 20; past ~24 the caster falls behind (spells scale only
-6% a gem level, attacks with their weapons). Tune `core/scaling.ts`, rerun, compare the CSVs.
+The summary prints the geared spread through depth 40 (slowest over fastest build, boss TTK and
+clear time) and the worst outliers. Example (seed 1, default depths): `geared spread through
+depth 40: boss TTK median 2.1×, worst 6.4× at depth 1 · clear median 1.7×, worst 4.6× at depth
+40` (past depth 1 the boss worst is 3.4×; the clear outlier is the summoner, whose minions hit one
+enemy each). It was 4.7× / 30.9× and 2.0× / 8.6× before spells and minions grew by gem level:
+casters fell 9× behind past depth 24 and a naked summoner was 91× faster than the other naked
+builds (now 15× at worst, against attack builds holding only the starter sword). Tune
+`core/scaling.ts`, rerun, compare the CSVs.
 
-**The tuned curve** (`npm run playtest -- campaign`, seed 1, normal): hero level 4 after depth 1,
-15 after 6, 26 after 12, 44 after 20 (2–3 levels a depth early, `SCALING.xpPenalty` and the
-area levels slow it later); main gem level 3 → 10 → 14; an upgrade equipped almost every
-visit, rares from depth 1 and 2–10 a level by the rifts, a unique every three or four levels.
-The bot clears the twelve designed levels with one death, dies now and then from rift 13, and
-stops at rift 21 (three tries with farming in between). Monster life and damage
-(`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 25% / 20% a depth
-through the designed levels and 18% (+4%) / 13% in the rifts.
+**Endless** (`npm run balance -- endless [--max 1000] [--every 50] [--no-levels]`,
+`balance/endless.ts`, `endless.test.ts`): proves "scales infinitely" headlessly in ~3 s. Every
+depth curve (`SCALING`: life, damage, level, XP, gold, budgets, density, rarity) over every
+depth to `--max`: finite, never falling, at most 1.5× a depth in the rifts, and still finite at
+depth 1e4, 1e6 and 1e9 (the monster curves go logarithmic past depth 200, `soften`; rarity past
+60). At sampled depths: the level plans and passes the reachability / bypass validator in time,
+genomes of every rank and the rift boss validate and build in time with finite stats, a level 100
+hero's duel stays finite, and items at the area's item level (1000+ deep) roll valid affixes,
+tiers and values. Writes `.scratch/balance/endless.json`; exit 1 on any problem.
+
+**The tuned curve** (`npm run playtest -- campaign`, normal): the target is a challenge. Depths 1–4
+are onboarding (0–1 deaths), 5–12 cost a few deaths with farming in between, the boss is the
+hardest fight of each level, and the bot stops in the rifts around depth 18–25, where better gear
+or a better build would go on. Measured: seed 1 clears the twelve designed levels with 2 deaths
+(a Bloodmoon wisp, Korrak) and stops at rift 17 (bosses: the Gate Warden, the Unmaker); seed 2
+with 1 death (Gravewell) and stops at rift 20. Story clears all 24 with one death; hard stops at
+depth 11 (Vexithas, three times). Hero level 4 after depth 1, ~15 after 6, ~27 after 12, ~37
+after 19; gold carried stays around 5–17k (the gamble tab and honed gems spend it). Monster life
+and damage (`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 27% / 23% a
+depth through the designed levels and 18% (+3%) / 11.5% in the rifts; bosses are 0.37 × / 0.95 ×
+`RANK.boss` life / damage (`WIRE_TUNING.monster.bossLife` / `bossDamage`; boss life ramps in from
+70% at depth 1 to all of it by depth 5, `bossLifeEarly`); level mechanics hurt on
+the gentler `SCALING.hazardDamage` (20% / 11%). Seeds vary a lot (a rift's mechanic mix, the
+gems the bot finds): check at least two.
 
 ## Loot
 
@@ -864,7 +894,7 @@ U vendor, Alt filter).
 | file | what | count |
 | --- | --- | --- |
 | `bases.ts` | weapons (sword, axe, mace, dagger, bow, staff, wand, sceptre; one- and two-handed), offhands (shield, quiver, focus), armour (helm, body, gloves, boots × armour/evasion/energy shield), jewellery (amulet, ring, belt), in level tiers | 82 |
-| `affixes.ts` | prefixes and suffixes, 5–8 tiers each, plus corruption implicits | 101 |
+| `affixes.ts` | prefixes and suffixes, 5–8 tiers each, plus corruption implicits | 103 |
 | `uniques.ts` | build-defining uniques with flavour; many bend a level mechanic | 32 |
 | `currency.ts` | crafting orbs (below) | 10 |
 | `gems.ts` | every gem that drops or is sold: R1's active skills (but the basic attack and the dodge) and supports | 73 |
@@ -921,8 +951,17 @@ and a `weapon.<class>` flag; armour gives flat `armour`, `evasion`, `energy.shie
 **Inventory, stash, vendors** (`inventory.ts`, `vendor.ts`) are immutable and pure:
 `pickUp`, `equip` (level check; a two-hander and an offhand push each other out, except bow
 + quiver), `unequip`, `transfer` (stash tabs), `sell`/`buy` (sell price by rarity and level,
-×4 to buy), `vendorStock(seed, depth, visit, 'smith' | 'gems')`, and
+×4 to buy), `vendorStock(seed, depth, visit, 'smith' | 'gems' | 'gamble')`, and
 `lootToSave`/`lootFromSave`/`writeSave` (grid positions in `SaveData.positions`).
+
+**Gold sinks** (`vendor.ts`), so gold is worth having at any depth. Ilsa's **gems** tab adds
+`HONED_GEMS.count` honed gems to its ten level 1 ones: levelled to within 3 of what a hero of the
+area can socket (`gemLevelCap(itemLevel)`), priced × their level. Her **gamble** tab sells an
+unrevealed base per slot (two weapons) at the area's item level for `GAMBLE.price` normal kills'
+gold (`SCALING.gold(depth)`, ×1.5 for weapons and offhands), so the price follows income however
+deep the run goes; `buy` reveals it (`revealGamble`: seeded by its uid, rarity boost
+`GAMBLE.boost` = 6, about one in four rare or better). An unrevealed item is an `Item` with
+`gamble: { price }`; it never reaches a bag unrevealed.
 
 **In the world** (`world.ts`): `new WorldLoot(ctx, { events, rng, depth, hero, onPickup,
 onGold, ... })` turns `kill` events into `loot` and `gold` events and spawns whatever is
@@ -1431,9 +1470,11 @@ tree functions the windows use, judging every choice on a clone of the hero's St
 (`evaluate`: log DPS of the bar, weighted by slot, with pack reach and mana sustain, plus log
 effective life against the depth's hits). It sockets better skill gems of the same role and the
 best fitting supports, equips upgrades slot by slot (level requirements, two hands, a melee main
-skill keeps a melee weapon), sells everything left in the bag, buys supports and gear the vendors
-have that beat what it wears, and spends its passive points with the greedy `TreePlanner`
-(`tree/planner.ts`, shared with the balance sim).
+skill keeps a melee weapon), sells everything left in the bag, buys gems (honed ones too) and gear
+the vendors have that beat what it wears, gambles surplus gold on its weakest slots (`GAMBLING`:
+at most 6 a visit, never below two gambles' worth of gold; it wears what beats its gear and sells
+the rest), and spends its passive points with the greedy `TreePlanner` (`tree/planner.ts`,
+shared with the balance sim). The campaign line shows the gold it spent and how many gambles.
 
 **The campaign** (`npm run playtest -- campaign [--to 24] [--tries 3] [--difficulty hard]
 [--film] [--resume save.json]`): one bot plays a fresh run from depth 1 through the designed

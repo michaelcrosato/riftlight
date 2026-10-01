@@ -200,6 +200,21 @@ describe('monster wiring', () => {
     }
     for (const l of lifes) expect(l).toBeCloseTo(RANK.boss.life * WIRE_TUNING.monster.bossLife, 5);
   });
+
+  it('the first bosses ramp in: depth 1 has bossLifeEarly of the life budget, depth 5 and deeper all of it', () => {
+    const m = buildMonster(BOSSES.all()[0]!.genome);
+    const life = (depth: number) => {
+      const s = new StatSheet();
+      s.set('genome', translateMods(m.stats));
+      s.set('boss', bossBudget(translateMods(m.stats), depth));
+      return new StatQuery(s).scale('life');
+    };
+    const full = RANK.boss.life * WIRE_TUNING.monster.bossLife;
+    expect(life(1)).toBeCloseTo(full * WIRE_TUNING.monster.bossLifeEarly, 5);
+    expect(life(3)).toBeGreaterThan(life(1));
+    expect(life(5)).toBeCloseTo(full, 5);
+    expect(life(40)).toBeCloseTo(full, 5);
+  });
 });
 
 describe('theme music', () => {

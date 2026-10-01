@@ -128,8 +128,11 @@ const PREFIXES: readonly Affix[] = [
     tiers: one('damage', 'inc', pct([[1, 8, 14], [12, 15, 22], [25, 23, 31], [38, 32, 41], [52, 42, 52], [68, 53, 64]]), ['projectile']) }),
   prefix({ id: 'area-damage', name: 'Sweeping', on: ['twohand', 'amulet'], group: 'area-damage', tags: ['damage', 'area'],
     tiers: one('damage', 'inc', pct([[4, 8, 14], [16, 15, 22], [28, 23, 31], [42, 32, 41], [56, 42, 52], [72, 53, 64]]), ['area']) }),
-  prefix({ id: 'minion-damage', name: "Commander's", on: ['helm', 'caster', 'amulet'], group: 'minion-damage', weight: 60, tags: ['damage', 'minion'],
+  // minions wear no gear: these are their weapon (added damage grows by item level like a weapon's)
+  prefix({ id: 'minion-damage', name: "Commander's", on: ['helm', 'caster', 'amulet', 'shield'], group: 'minion-damage', weight: 80, tags: ['damage', 'minion'],
     tiers: one('damage', 'inc', pct([[4, 10, 19], [16, 20, 29], [28, 30, 39], [42, 40, 54], [56, 55, 69], [72, 70, 84]]), ['minion']) }),
+  prefix({ id: 'minion-added-physical', name: "Gravecaller's", on: ['caster', 'amulet', 'ring', 'gloves'], group: 'minion-added', weight: 60, tags: ['damage', 'minion', 'physical'],
+    tiers: adds('added.physical', [[2, 1, 2, 3, 5], [10, 3, 5, 6, 9], [19, 5, 7, 10, 14], [28, 7, 10, 15, 20], [38, 10, 14, 21, 27], [50, 13, 18, 28, 36], [64, 17, 23, 36, 46]], ['minion']) }),
   // --- skill gem levels
   prefix({ id: 'skill-fire', name: 'Pyromancer\'s', on: ['caster', 'amulet', 'helm'], group: 'skill-level-elemental', weight: 30, tags: ['fire', 'skill', 'gem'], tiers: skillLevels('fire', 'fire.damage') }),
   prefix({ id: 'skill-cold', name: 'Cryomancer\'s', on: ['caster', 'amulet', 'helm'], group: 'skill-level-elemental', weight: 30, tags: ['cold', 'skill', 'gem'], tiers: skillLevels('cold', 'cold.damage') }),
@@ -193,6 +196,9 @@ const PREFIXES: readonly Affix[] = [
 // ---------------------------------------------------------------- suffixes
 
 const SUFFIXES: readonly Affix[] = [
+  // --- minions
+  suffix({ id: 'minion-speed', name: 'of the Horde', on: ['caster', 'gloves', 'amulet', 'shield'], group: 'minion-speed', weight: 60, tags: ['speed', 'minion'],
+    tiers: one('minion.speed', 'inc', pct([[6, 5, 9], [18, 10, 14], [32, 15, 19], [48, 20, 24], [66, 25, 30]])) }),
   // --- speed and crit
   suffix({ id: 'local-attack-speed', name: 'of Skill', on: ATTACK_WEAPON, group: 'local-attack-speed', tags: ['speed', 'attack'],
     tiers: one('local.attack.speed', 'inc', pct([[1, 5, 7], [11, 8, 10], [22, 11, 13], [30, 14, 16], [37, 17, 19], [45, 20, 22], [60, 23, 25], [77, 26, 27]])) }),

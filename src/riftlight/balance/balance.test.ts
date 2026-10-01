@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { WIRE_TUNING } from '../wire/tuning';
 import { StatQuery } from '../combat/stats';
-import { flat, more, StatSheet } from '../core/mods';
+import { flat, inc, more, StatSheet } from '../core/mods';
 import { RANK, SCALING } from '../core/scaling';
 import { addXp, killXp } from '../game/progress';
 import { buildSkill } from '../skills/build';
@@ -17,6 +17,8 @@ import {
   HERO_BASE,
   heroOffense,
   makeLoadout,
+  curseMods,
+  expectedCharges,
   monsterTarget,
   packFight,
   runBalance,
@@ -30,6 +32,8 @@ import {
 
 const A = DEFAULT_ASSUMPTIONS;
 const build = (id: string) => BUILDS.find((b) => b.id === id)!;
+/** The archetype without its curse, auras and totem (one mechanism at a time). */
+const plain = (id: string) => ({ ...build(id), curse: undefined, auras: undefined, extra: undefined });
 const monster = (o: Partial<MonsterInput> = {}): MonsterInput => ({ id: 'm', rank: 'normal', depth: 1, mods: [], skills: ['bite'], ...o });
 
 describe('balance: sheets and scaling', () => {
@@ -69,7 +73,7 @@ describe('balance: sheets and scaling', () => {
 
 describe('balance: fights', () => {
   it('time to kill is life over the DPS the combat tool reports', () => {
-    const h = makeLoadout(build('caster'), { level: 1, assumptions: { ...A, monsterBase: { ...A.monsterBase, life: 60 } } });
+    const h = makeLoadout(plain('caster'), { level: 1, assumptions: { ...A, monsterBase: { ...A.monsterBase, life: 60 } } });
     const t = monsterTarget(monster(), { ...A, monsterBase: { ...A.monsterBase, life: 60 } });
     const d = duel(h, t);
     const r = skillDps(h.sheet, h.skill, t.defender);
@@ -78,7 +82,7 @@ describe('balance: fights', () => {
   });
 
   it('falls back to the free skill when mana runs out', () => {
-    const h = makeLoadout(build('caster'), { level: 1, tree: [more('cost', 20)], assumptions: A });
+    const h = makeLoadout(plain('caster'), { level: 1, tree: [more('cost', 20)], assumptions: A });
     const t = monsterTarget(monster({ mods: [more('life', 50)] }), A);
     const off = heroOffense(h, t, 120);
     expect(off.sustain).toBeLessThan(0.2);
@@ -87,8 +91,8 @@ describe('balance: fights', () => {
   });
 
   it('monster damage scales with depth and armour cuts it', () => {
-    const h = makeLoadout(build('melee'), { level: 1, assumptions: A });
-    const armoured = makeLoadout(build('melee'), { level: 1, tree: [flat('armour', 400)], assumptions: A });
+    const h = makeLoadout(plain('melee'), { level: 1, assumptions: A });
+    const armoured = makeLoadout(plain('melee'), { level: 1, tree: [flat('armour', 400)], assumptions: A });
     const d1 = duel(h, monsterTarget(monster({ depth: 1 }), A));
     const d10 = duel(h, monsterTarget(monster({ depth: 10 }), A));
     expect(d10.dtps / d1.dtps).toBeCloseTo(SCALING.monsterDamage(10), 1);
@@ -113,6 +117,58 @@ describe('balance: fights', () => {
     const t = monsterTarget(monster(), A);
     const per = skillDps(h.minion!.sheet, h.minion!.attack, t.defender).dps.total;
     expect(heroOffense(h, t).single).toBeCloseTo(per * 6, 6);
+  });
+});
+
+describe('balance: build systems (charges, curses, totems, auras)', () => {
+  it('auras reserve their share of the mana pool and buff the hero', () => {
+    const bare = makeLoadout(plain('melee'), { level: 10, assumptions: A });
+    const det = makeLoadout({ ...plain('melee'), auras: ['determination'] }, { level: 10, assumptions: A });
+    expect(det.reserved).toBeCloseTo(0.4, 6);
+    expect(det.maxMana).toBeCloseTo(bare.maxMana * 0.6, 6);
+    expect(det.sheet.get('armour')).toBeGreaterThan(bare.sheet.get('armour') + 100);
+    // more than the pool can hold: the last one stays off
+    const greedy = makeLoadout({ ...plain('melee'), auras: ['determination', 'wrath', 'haste-aura'] }, { level: 10, tree: [inc('mana.reservation', 0.1)], assumptions: A });
+    expect(greedy.reserved).toBeCloseTo((0.4 + 0.35) * 1.1, 6);
+    expect(greedy.sheet.has('aura:haste-aura') && greedy.sheet.explain('attack.speed').some((e) => e.source === 'aura:haste-aura')).toBe(false);
+  });
+
+  it("auras reach a summoner's minions", () => {
+    const m = makeLoadout({ ...plain('minion'), auras: ['haste-aura'] }, { level: 10, assumptions: A });
+    expect(m.minion!.sheet.explain('attack.speed').some((e) => e.source === 'aura:haste-aura')).toBe(true);
+  });
+
+  it('charges: their gain rate against their duration, none from kills at the boss', () => {
+    const tree = [flat('charge.onKill', 0.5, ['frenzy'])];
+    const pack = makeLoadout(plain('melee'), { level: 10, tree, assumptions: A });
+    const boss = makeLoadout(plain('melee'), { level: 10, tree, assumptions: A, context: 'boss' });
+    // 0.6 kills/s × 50% × 10 s ≫ 3: topped up
+    expect(pack.charges.frenzy).toBeCloseTo(3, 6);
+    expect(boss.charges.frenzy).toBe(0);
+    expect(pack.sheet.explain('damage').some((e) => e.source === 'charges')).toBe(true);
+    const t = monsterTarget(monster(), A);
+    expect(skillDps(pack.sheet, pack.skill, t.defender).dps.total).toBeGreaterThan(skillDps(boss.sheet, boss.skill, t.defender).dps.total);
+    const slow = expectedCharges(pack.sheet, pack.skill, { killsPerSecond: 0.01, stunShare: 0 });
+    expect(slow.frenzy).toBeCloseTo(0.01 * 0.5 * 10, 6);
+  });
+
+  it('curses go on targets (scaled by uptime), never on curse-immune ones', () => {
+    const h = makeLoadout({ ...plain('caster'), curse: 'elemental-weakness' }, { level: 1, assumptions: A });
+    const mods = curseMods(h, monster(), A);
+    expect(mods.find((m) => m.stat === 'res.fire')!.value).toBeCloseTo(-0.25 * A.curseUptime, 6);
+    expect(curseMods(h, monster({ mods: [{ stat: 'curse.immune', kind: 'flag', value: 1 }] }), A)).toEqual([]);
+    const cursed = monsterTarget(monster(), A, mods);
+    expect(skillDps(h.sheet, h.skill, cursed.defender).dps.total).toBeGreaterThan(skillDps(h.sheet, h.skill, monsterTarget(monster(), A).defender).dps.total);
+  });
+
+  it('a totem is an extra caster: its count × the inner skill, cast every castRate × cast time', () => {
+    const h = makeLoadout({ ...plain('caster'), extra: { skill: 'fireball', supports: ['spell-totem'] } }, { level: 5, assumptions: A });
+    expect(h.extra!.placement).toBe('totem');
+    const t = monsterTarget(monster({ mods: [more('life', 9)] }), A);
+    const inner = skillDps(h.sheet, h.extra!.inner!, t.defender);
+    expect(skillDps(h.sheet, h.extra!, t.defender).dps.total).toBeCloseTo(inner.dps.total / 1.1, 0);
+    const without = makeLoadout(plain('caster'), { level: 5, assumptions: A });
+    expect(heroOffense(h, t).burst).toBeCloseTo(heroOffense(without, t).burst + skillDps(h.sheet, h.extra!, t.defender).dps.total * A.placedUptime, 0);
   });
 });
 
@@ -174,7 +230,7 @@ describe('balance: progression, choices, outliers', () => {
   it('finds jumps and builds far from the others', () => {
     const row = (build: string, depth: number, boss: number): Row =>
       ({
-        build, variant: 'geared', depth, name: '', level: 1, gemLevel: 1, points: 0, tree: 0, itemLevel: 1, life: 100, es: 0, armour: 0, evasion: 0, res: 0, dps: 1, packDps: 1, sustain: 1,
+        build, variant: 'geared', depth, name: '', level: 1, gemLevel: 1, points: 0, tree: 0, itemLevel: 1, life: 100, es: 0, armour: 0, evasion: 0, res: 0, dps: 1, packDps: 1, sustain: 1, charges: 0, reserved: 0,
         ttk: { normal: 1, magic: 2, rare: 3, boss }, dtps: { normal: 1, magic: 1, rare: 1, boss: 1 }, hitsToDie: { normal: 9, magic: 9, rare: 9, boss: 9 }, timeToDie: { normal: Infinity, magic: Infinity, rare: Infinity, boss: Infinity },
         bossDies: false, bossEnraged: false, monsterLife: { normal: 1, magic: 1, rare: 1, boss: 1 }, clear: { walk: 1, packs: 1, boss, total: 2 + boss }, deadlyPacks: 0, gear: [],
       }) as Row;
