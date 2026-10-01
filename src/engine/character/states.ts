@@ -209,7 +209,7 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
   if (mag > G.deadzone) c.tiptoe = mag < G.tiptoeBelow ? 1 : 0;
   if (!c.grounded) {
     c.coyote += dt;
-    if (c.coyote > G.coyote) return startFall(c);
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
   } else c.coyote = 0;
 
   if (c.consumeJump(input)) return groundJump(c, input);
@@ -283,7 +283,7 @@ function stepSkid(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   // Skidding off an edge: fall, with the same grace period as walking off one.
   if (!c.grounded) {
     c.coyote += dt;
-    if (c.coyote > G.coyote) return startFall(c);
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
   } else c.coyote = 0;
   c.decel(dt, c.braking ? K.brakeDecel : K.turnDecel);
   if (c.braking && !c.groundAhead(K.edgeLookahead)) c.decel(dt, K.edgeDecel); // don't brake over an edge
@@ -315,7 +315,7 @@ function stepSkidTurn(c: PlatformerCharacter, dt: number, input: MoveInput): voi
   const K = T.skid;
   if (!c.grounded) {
     c.coyote += dt;
-    if (c.coyote > G.coyote) return startFall(c);
+    if (c.coyote > G.coyote) return fallNow(c, dt, input);
   } else c.coyote = 0;
   if (c.consumeJump(input)) {
     c.facing = c.turnTo;
@@ -548,6 +548,12 @@ function startFall(c: PlatformerCharacter): void {
   c.setStance('stand'); // keep a smaller stance if there's no headroom
   c.peakY = c.feetY();
   c.enter('fall');
+}
+
+/** Walked (or skidded) off an edge: fall, moving on this step (a step standing still is a hitch). */
+function fallNow(c: PlatformerCharacter, dt: number, input: MoveInput): void {
+  startFall(c);
+  stepAir(c, dt, input);
 }
 
 function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {

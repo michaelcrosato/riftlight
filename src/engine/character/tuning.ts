@@ -18,6 +18,12 @@ export const TUNING = {
     kccOffset: 0.02,
     autostepHeight: 0.4,
     autostepMinWidth: 0.15,
+    /**
+     * Stepping up (PlatformerCharacter.riseAhead): a riser found by a ray `low` m above the
+     * feet, within `ahead` m of where this step's move takes the capsule; its top probed
+     * `onto` m past the edge must be flat (normal y ≥ `flat`) and at least `min` m up.
+     */
+    stepAssist: { low: 0.04, ahead: 0.03, onto: 0.06, flat: 0.9, min: 0.03 },
     snapToGround: 0.35,
     maxSlopeClimbDeg: 46,
     minSlopeSlideDeg: 40,

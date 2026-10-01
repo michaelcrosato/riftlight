@@ -268,6 +268,28 @@ describe('PlatformerCharacter', () => {
     }
   });
 
+  it('runs up stairs and off their top without a hitch', async () => {
+    // Rapier's autostep doesn't catch a riser lower than the capsule's radius: the round
+    // bottom rode up the edge like a slope, at a quarter of the speed for two steps, on
+    // every stair. And walking off an edge used to stand still for the step it started falling.
+    const p = await setup();
+    for (let i = 0; i < 5; i++) box(p, [3 + 0.8 * i, 0.14 * (i + 1), 0], [0.4, 0.14 * (i + 1), 2]);
+    const h = new PlatformerCharacter(p, { position: [-4, 0, 0] });
+    h.facing = Math.PI / 2;
+    run(p, h, inp({ move: new Vector3(1, 0, 0) }), 66);
+    let last = h.feet.x;
+    let slowest = Infinity;
+    const seen = new Set<string>();
+    for (let k = 0; k < 70; k++) {
+      run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
+      slowest = Math.min(slowest, (h.feet.x - last) / DT);
+      last = h.feet.x;
+      seen.add(h.state);
+    }
+    expect(seen).toContain('fall'); // ran off the top step
+    expect(slowest).toBeGreaterThan(h.runSpeed * 0.9);
+  });
+
   it('runs smoothly on flat ground: no step where the controller stalls', async () => {
     // Pushing a grounded capsule down into the floor every step made Rapier's KCC return
     // almost no movement every ~20 steps (a hitch, and planted feet skating by a step).

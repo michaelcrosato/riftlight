@@ -157,6 +157,7 @@ export class PlatformerCharacter {
   // Scratch vectors for the per-step paths (see probe(), fwd()): no garbage per step.
   private readonly tmpOrigin = new Vector3();
   private readonly tmpDir = new Vector3();
+  private readonly groundHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
   private readonly tmpProbe = new Vector3();
   private readonly tmpFwd = new Vector3();
   private readonly tmpChest = new Vector3();
@@ -497,7 +498,12 @@ export class PlatformerCharacter {
     desired.y = this.vy * dt;
     desired.z = this.hvel.z * dt;
     if (this.laneZ !== null) desired.z = (this.laneZ - this.body.translation().z) * T.ground.laneGain;
-    if (def.snapToGround === false) this.kcc.disableSnapToGround();
+    // Up a step: lift onto it in this move. Rapier's autostep doesn't catch a riser lower than
+    // the capsule's radius: the round bottom rides up its edge like a slope instead, losing
+    // most of the speed for a couple of steps (a hitch on every stair).
+    const rise = gravity && !def.airborne && this.grounded ? this.riseAhead(desired) : 0;
+    if (rise > 0) desired.y = rise;
+    if (def.snapToGround === false || rise > 0) this.kcc.disableSnapToGround();
     else this.kcc.enableSnapToGround(T.body.snapToGround);
     const predicate = exclude ? (c: RAPIER.Collider) => c.handle !== exclude.handle : undefined;
     this.kcc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, predicate);
@@ -512,6 +518,28 @@ export class PlatformerCharacter {
     next.y = t.y + m.y;
     next.z = t.z + m.z;
     this.body.setNextKinematicTranslation(next);
+  }
+
+  /**
+   * How far up the step the capsule is about to run into this move (0: none). A riser just
+   * ahead at ankle height, with flat ground on top no higher than the autostep height.
+   */
+  private riseAhead(d: Vector3): number {
+    const len = Math.hypot(d.x, d.z);
+    if (len < 1e-4) return 0;
+    const S = T.body.stepAssist;
+    const feet = this.feetInto(this.tmpWallFeet);
+    const dir = this.tmpDir.set(d.x / len, 0, d.z / len);
+    const origin = this.tmpOrigin.set(feet.x, feet.y + S.low, feet.z);
+    const wall = this.ray(origin, dir, RADIUS + len + S.ahead);
+    if (!wall || Math.abs(wall.normal.y) > P.wallY) return 0;
+    // the top: straight down onto it, just past the edge
+    const reach = wall.distance + S.onto;
+    const top = T.body.autostepHeight + S.low;
+    if (!this.physics.castDown(feet.x + dir.x * reach, feet.y + top, feet.z + dir.z * reach, top, this.groundHit, IGNORE, this.body)) return 0;
+    const rise = this.groundHit.y - feet.y;
+    if (this.groundHit.ny < S.flat || rise < S.min || rise > T.body.autostepHeight) return 0;
+    return rise + T.body.kccOffset;
   }
 
   private loseSpeedToWalls(): void {
