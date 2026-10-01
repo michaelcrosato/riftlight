@@ -236,8 +236,8 @@ export const TUNING = {
     forwardAbove: 0.5,
     /** A jump pressed this long before touchdown still jumps on landing. */
     buffer: 0.12,
-    /** The feet stay planted (foot locking) for this long after a jump starts: the launch step. */
-    launchFeet: 0.01,
+    /** The feet stay planted (foot locking) for this long after a jump starts: the launch step (its clock reads one step). */
+    launchFeet: 0.02,
   },
 
   /**

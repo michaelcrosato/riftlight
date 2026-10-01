@@ -81,6 +81,23 @@ describe('PlatformerCharacter', () => {
     expect(off).not.toContain('hardLand');
   });
 
+  it('a jump takes off on the step it is pressed; a ground pound counts from there', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    run(p, h, inp(), 20);
+    run(p, h, inp({ jump: true, jumpHeld: true }), 1);
+    expect(h.state).toBe('jump');
+    expect(h.feet.y).toBeGreaterThan(0.1); // already off the ground
+    expect(h.stateTime).toBeCloseTo(DT, 6); // and its clock counts that step
+    // a short hop (released at once): crouch as it slows, on its 7th step (past poundAfter)
+    run(p, h, inp({ jumpHeld: true }), 1);
+    run(p, h, inp(), 4);
+    expect(h.stateTime).toBeCloseTo(6 * DT, 6);
+    expect(7 * DT).toBeGreaterThan(TUNING.air.poundAfter);
+    run(p, h, inp({ crouch: true, crouchPressed: true }), 1);
+    expect(h.state).toBe('groundPound');
+  });
+
   it('does not pull up into an overhang', async () => {
     const p = await setup();
     box(p, [0, 0.9, -2], [2, 0.9, 0.5]); // ledge top 1.8, face at z = -1.5

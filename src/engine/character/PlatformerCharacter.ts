@@ -349,6 +349,9 @@ export class PlatformerCharacter {
       rest.jump = false;
       rest.attack = false;
       stateDef(this.state).step(this, dt, rest);
+      // that was the jump's first step: its clock says so (timings like `poundAfter` count
+      // from the take-off, as they did when the first step came one step later)
+      if (this.state === 'jump' && this.stateTime === 0) this.stateTime = dt;
     }
     // Fall height is measured from the last place we stood (or the jump apex).
     if (this.grounded && !this.isAirborne()) this.peakY = this.feetY();
