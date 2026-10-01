@@ -11,6 +11,8 @@ import { restPoseOf } from '../../../engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../../../game/hero';
 import { flat as flatMod, inc, type Mod } from '../../core/mods';
 import type { SaveData } from '../../core/types';
+import { SKILLS as SKILL_GEMS } from '../../skills/actives';
+import { buildSkill } from '../../skills/build';
 import { ClipPlayer } from '../clipPlayer';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../ports';
 import { StubActor, strike } from './actor';
@@ -31,6 +33,17 @@ const SKILLS: readonly SkillDef[] = [
   { id: 'dash', name: 'Dash', cost: 8, cooldown: 3, icon: ['........', 'cc..ww..', '.cc..ww.', '..cc..ww', '.cc..ww.', 'cc..ww..'], colors: { c: 'cyan', w: 'white' } },
   { id: 'warcry', name: 'War Cry', cost: 10, cooldown: 14, icon: ['..rrrr..', '.r....r.', 'r.ssss.r', 'r.s..s.r', '.r.ss.r.', '..rrrr..'], colors: { r: 'red', s: 'sand' } },
 ];
+
+/** One skill bar slot: a stub behaviour, renamed and re-costed by the gem socketed there. */
+type BarSlot = SkillDef & { behaviour: string; gem?: string };
+
+/** The stub behaviour that stands in for a real skill gem (by its tags). */
+function behaviourFor(tags: readonly string[]): string {
+  if (tags.includes('movement')) return 'dash';
+  if (tags.includes('buff') || tags.includes('aura') || tags.includes('warcry')) return 'warcry';
+  if (tags.includes('spell') || tags.includes('nova')) return 'nova';
+  return 'cleave';
+}
 
 const ATTACK_ICON = ['......w.', '.....wm.', '....wm..', '.o.wm...', '..om....', '.o.o....'];
 const DODGE_ICON = ['..ss....', '.s..s...', 's....s..', '......s.', '.ss.ss.s', '...s....'];
@@ -53,6 +66,8 @@ export class StubHero implements HeroPort {
   private dodgeCd = 0;
   private dead = false;
   private readonly tmp = new Vector3();
+  /** Skill bar slots (setSkills): null = an empty socket. */
+  private bar: (BarSlot | null)[] = SKILLS.map((s) => ({ ...s, behaviour: s.id }));
 
   constructor(private readonly services: ShellServices) {
     this.actor = new StubActor('hero', 'Hero', 0.4, {
@@ -108,18 +123,48 @@ export class StubHero implements HeroPort {
     return { life: a.life, maxLife: a.maxLife, mana: a.mana, maxMana: a.maxMana, es: a.es, maxEs: a.maxEs };
   }
 
+  /**
+   * The skill sockets changed: each socketed gem names its slot (cost and cooldown from
+   * `buildSkill` with its supports) and plays the stub behaviour closest to it.
+   */
+  setSkills(sockets: SaveData['hero']['skills']): void {
+    this.bar = Array.from({ length: SKILLS.length }, (_, i) => {
+      const socket = sockets.find((s) => s.slot === i) ?? sockets[i];
+      const g = socket?.gem?.gem;
+      if (!g || g.support || !SKILL_GEMS.has(g.id)) return null;
+      const def = SKILL_GEMS.get(g.id);
+      const behaviour = behaviourFor(def.tags);
+      const base = SKILLS.find((s) => s.id === behaviour)!;
+      const supports = (socket?.supports ?? []).filter((x) => x?.gem).map((x) => ({ gem: x!.gem!.id, level: x!.gem!.level }));
+      let cost = def.cost;
+      let cooldown = def.cooldown;
+      try {
+        const r = buildSkill(def, supports, this.actor.stats, { level: g.level });
+        cost = r.cost;
+        cooldown = r.cooldown;
+      } catch {
+        /* an unknown support: keep the gem's own numbers */
+      }
+      return { ...base, behaviour, gem: def.id, id: def.id, name: def.name, cost: Math.round(cost), cooldown: cooldown > 0 ? cooldown : base.cooldown };
+    });
+  }
+
   skills(): readonly SkillSlotView[] {
-    const out: SkillSlotView[] = SKILLS.map((s, i) => ({
-      slot: i,
-      id: s.id,
-      name: s.name,
-      icon: s.icon,
-      colors: s.colors,
-      cost: s.cost,
-      cooldown: s.cooldown,
-      remaining: this.cooldowns.get(s.id) ?? 0,
-      usable: this.actor.mana >= s.cost,
-    }));
+    const out: SkillSlotView[] = this.bar.map((s, i) =>
+      s
+        ? {
+            slot: i,
+            id: s.id,
+            name: s.name,
+            icon: s.icon,
+            colors: s.colors,
+            cost: s.cost,
+            cooldown: s.cooldown,
+            remaining: this.cooldowns.get(`slot${i}`) ?? 0,
+            usable: this.actor.mana >= s.cost,
+          }
+        : { slot: i, id: null, name: '', cost: 0, cooldown: 0, remaining: 0, usable: false },
+    );
     out.push({ slot: 'attack', id: 'slash', name: 'Slash', icon: ATTACK_ICON, colors: { w: 'white', m: 'mist', o: 'orange' }, cost: 0, cooldown: 0, remaining: 0, usable: true });
     out.push({ slot: 'dodge', id: 'roll', name: 'Roll', icon: DODGE_ICON, colors: { s: 'sky' }, cost: 0, cooldown: 0.7, remaining: this.dodgeCd, usable: true });
     return out;
@@ -234,17 +279,19 @@ export class StubHero implements HeroPort {
         this.start({ kind: 'dodge', id: 'roll', t: 0, duration: 0.42, hitAt: 99, hit: true, dir }, 'Roll', 1);
         this.dodgeCd = 0.7;
         this.services.ctx.audio.play('rl.dodge');
-      } else if (intent.skill >= 0 && intent.skill < SKILLS.length) {
-        const s = SKILLS[intent.skill]!;
-        if ((this.cooldowns.get(s.id) ?? 0) <= 0 && a.mana >= s.cost) {
+      } else if (intent.skill >= 0 && intent.skill < this.bar.length && this.bar[intent.skill]) {
+        const s = this.bar[intent.skill]!;
+        const b = s.behaviour;
+        const key = `slot${intent.skill}`;
+        if ((this.cooldowns.get(key) ?? 0) <= 0 && a.mana >= s.cost) {
           a.mana -= s.cost;
-          this.cooldowns.set(s.id, s.cooldown);
-          const cast = 1 / Math.max(0.2, st.get(s.id === 'nova' || s.id === 'warcry' ? 'cast.speed' : 'attack.speed'));
-          if (s.id === 'cleave') this.start({ kind: 'skill', id: s.id, t: 0, duration: 0.45 * cast, hitAt: 0.22 * cast, hit: false, dir: aim }, 'Slash2', 0.4 / (0.45 * cast));
-          else if (s.id === 'nova') this.start({ kind: 'skill', id: s.id, t: 0, duration: 0.55 * cast, hitAt: 0.3 * cast, hit: false, dir: aim }, 'Cast', 0.53 / (0.55 * cast));
-          else if (s.id === 'dash') this.start({ kind: 'skill', id: s.id, t: 0, duration: 0.34, hitAt: 99, hit: true, dir: aim }, 'Run', 2.5);
-          else this.start({ kind: 'skill', id: s.id, t: 0, duration: 0.6 * cast, hitAt: 0.25 * cast, hit: false, dir: aim }, 'Cast', 0.53 / (0.6 * cast));
-          this.services.events.emit('skill', { actor: a, skill: s.id });
+          this.cooldowns.set(key, s.cooldown);
+          const cast = 1 / Math.max(0.2, st.get(b === 'nova' || b === 'warcry' ? 'cast.speed' : 'attack.speed'));
+          if (b === 'cleave') this.start({ kind: 'skill', id: b, t: 0, duration: 0.45 * cast, hitAt: 0.22 * cast, hit: false, dir: aim }, 'Slash2', 0.4 / (0.45 * cast));
+          else if (b === 'nova') this.start({ kind: 'skill', id: b, t: 0, duration: 0.55 * cast, hitAt: 0.3 * cast, hit: false, dir: aim }, 'Cast', 0.53 / (0.55 * cast));
+          else if (b === 'dash') this.start({ kind: 'skill', id: b, t: 0, duration: 0.34, hitAt: 99, hit: true, dir: aim }, 'Run', 2.5);
+          else this.start({ kind: 'skill', id: b, t: 0, duration: 0.6 * cast, hitAt: 0.25 * cast, hit: false, dir: aim }, 'Cast', 0.53 / (0.6 * cast));
+          this.services.events.emit('skill', { actor: a, skill: s.gem ?? b });
         } else if (a.mana < s.cost) this.services.ctx.audio.play('rl.error');
       } else if (intent.attack) {
         const dur = 0.42 / Math.max(0.2, st.get('attack.speed'));

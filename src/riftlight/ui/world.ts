@@ -97,16 +97,35 @@ export function promptAt(ui: UiCanvas, camera: Camera, at: Vector3, key: string,
   if (sub) ui.text(p.x, p.y + 9, sub.toUpperCase(), { align: 'center', color: 'mist' });
 }
 
-/** A loot label on the ground (rarity colour, bracketed). */
-export function lootLabel(ui: UiCanvas, camera: Camera, at: Vector3, text: string, color: PaletteColor, focus: boolean): { x: number; y: number; w: number; h: number } | null {
+/**
+ * A loot label on the ground (rarity colour). The loot filter's tier frames `loud` drops
+ * (uniques, valuable orbs) and greys `dim` ones; labels already drawn this frame (`placed`)
+ * push it up so labels never overlap.
+ */
+export function lootLabel(
+  ui: UiCanvas,
+  camera: Camera,
+  at: Vector3,
+  text: string,
+  color: PaletteColor,
+  focus: boolean,
+  tier: 'loud' | 'show' | 'dim' = 'show',
+  placed?: { x: number; y: number; w: number; h: number }[],
+): { x: number; y: number; w: number; h: number } | null {
   const p = project(at, camera, ui);
   if (!p) return null;
   const w = ui.measure(text) + 6;
-  const x = Math.round(p.x - w / 2);
-  const y = p.y - 14;
+  const x = Math.max(1, Math.min(ui.w - w - 1, Math.round(p.x - w / 2)));
+  let y = p.y - 14;
+  for (let tries = 0; placed && tries < 12; tries++) {
+    const hit = placed.find((o) => x < o.x + o.w + 1 && x + w + 1 > o.x && y < o.y + o.h + 1 && y + 11 > o.y);
+    if (!hit) break;
+    y = hit.y - 12;
+  }
+  placed?.push({ x, y, w, h: 10 });
   ui.rect(x, y, w, 10, focus ? 'night' : 'ink');
-  if (focus) ui.outline(x - 1, y - 1, w + 2, 12, color);
-  ui.text(x + 3, y + 2, text, { color, shadow: false });
+  if (focus || tier === 'loud') ui.outline(x - 1, y - 1, w + 2, 12, focus ? 'white' : color);
+  ui.text(x + 3, y + 2, text, { color: tier === 'dim' && !focus ? 'slate' : color, shadow: false });
   return { x, y, w, h: 10 };
 }
 

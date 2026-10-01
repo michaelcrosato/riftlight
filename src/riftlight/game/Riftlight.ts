@@ -35,12 +35,14 @@ import { cameraBasis, KEYS, MenuInput, PAD_BUTTONS, Pointer } from './controls';
 import { changedSliders, DIFFICULTY_SHORT, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
-import type { DevFlags, HeroIntent, HeroPort, LevelHandle, Panel, PanelHost, RiftlightPorts, ShellServices, WorldLoot } from './ports';
+import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker } from './recap';
 import { newSave, SaveStore } from './save';
 import { loadSettings, type Settings, storeSettings } from './settings';
 import { stubPorts } from './stubs';
+import { realLootPort } from '../wire/loot';
+import { realTreePort } from '../wire/tree';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -125,7 +127,7 @@ export class Riftlight implements Game, MenuHost {
   private gifts = 0;
 
   constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
-    this.ports = { ...stubPorts(), ...ports };
+    this.ports = { ...stubPorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
     this.store = options.store ?? new SaveStore();
   }
 
@@ -165,6 +167,7 @@ export class Riftlight implements Game, MenuHost {
         this.shakeStrength = Math.max(this.shakeStrength, s * this.settings.screenShake);
         this.shakeTime = Math.max(this.shakeTime, t);
       },
+      hero: () => this.hero?.actor ?? null,
     };
     for (const p of [this.ports.loot, this.ports.tree, this.ports.levels, this.ports.monsters]) p.init?.(this.services);
     this.listen();
@@ -296,6 +299,7 @@ export class Riftlight implements Game, MenuHost {
     this.save.difficulty = sanitizeTuning(this.save.difficulty);
     this.ports.loot.load(this.save);
     this.hero.setLevel(this.save.hero.level);
+    this.hero.setSkills?.(this.save.hero.skills);
     this.applyMods();
     this.hero.restore();
     this.goldShown = this.save.hero.gold;
@@ -652,7 +656,8 @@ export class Riftlight implements Game, MenuHost {
 
   // ================================================================ panels
 
-  private panelHost(): PanelHost {
+  /** What a panel may ask of the shell; `close` closes that panel (`self` is set once it exists). */
+  private panelHost(self: { panel?: Panel } = {}): PanelHost {
     return {
       services: this.services,
       save: () => this.save,
@@ -661,17 +666,19 @@ export class Riftlight implements Game, MenuHost {
       level: () => this.save.hero.level,
       changed: (what) => {
         if (what === 'tree' || what === 'gear') this.applyMods();
+        if (what === 'skills') this.hero.setSkills?.(this.save.hero.skills);
         this.goldShown = Math.min(this.goldShown, this.save.hero.gold);
       },
       sound: (s) => this.sound(s),
-      close: () => this.layer.close(),
+      close: () => (self.panel ? this.layer.close(self.panel.id) : this.layer.close()),
       glyphs: () => this.padGlyphs(),
     };
   }
 
-  openPanel(id: 'inventory' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots'): Panel | null {
+  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots'): Panel | null {
     if (this.screen === 'title' && !['settings', 'slots'].includes(id)) return null;
-    const host = this.panelHost();
+    const self: { panel?: Panel } = {};
+    const host = this.panelHost(self);
     const loot = this.ports.loot;
     let panel: Panel;
     let modal = true;
@@ -680,6 +687,13 @@ export class Riftlight implements Game, MenuHost {
         panel = loot.inventoryView(host);
         modal = false;
         break;
+      case 'skills': {
+        const skills = loot.skillsView?.(host);
+        if (!skills) return null;
+        panel = skills;
+        modal = false;
+        break;
+      }
       case 'tree':
       case 'respec':
         panel = this.ports.tree.view(host, { respec: id === 'respec' });
@@ -696,7 +710,7 @@ export class Riftlight implements Game, MenuHost {
         modal = false;
         break;
       case 'stash':
-        panel = loot.stashView(host);
+        panel = self.panel = loot.stashView(host);
         modal = false;
         this.town.openChest(true);
         this.layer.open(panel, { modal, onClose: () => this.town.openChest(false) });
@@ -724,6 +738,7 @@ export class Riftlight implements Game, MenuHost {
         panel = slotsMenu(this, 'load');
         break;
     }
+    self.panel = panel;
     this.layer.open(panel, { modal, onClose: () => this.endTalk() });
     return panel;
   }
@@ -858,7 +873,13 @@ export class Riftlight implements Game, MenuHost {
       if (this.layer.has(panelId)) this.layer.close(panelId);
       else this.openPanel(id);
     };
-    if (pressed(KEYS.inventory)) toggle('inventory');
+    // I closes whichever item window shows the inventory (stash, vendor, bench, skills too)
+    const items = this.layer.stack.find((o) => o.panel.group === ITEM_GROUP);
+    if (pressed(KEYS.inventory)) {
+      if (items) this.layer.close(items.panel.id);
+      else this.openPanel('inventory');
+    }
+    if (pressed(KEYS.skills)) toggle('skills');
     if (pressed(KEYS.tree)) toggle('tree');
     if (pressed(KEYS.character)) toggle('character');
     if (pressed(KEYS.codex)) toggle('codex');
@@ -1039,11 +1060,12 @@ export class Riftlight implements Game, MenuHost {
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
       const p = this.hero.actor.position;
+      const placed: { x: number; y: number; w: number; h: number }[] = [];
       for (const l of this.ports.loot.ground()) {
         if (l.filtered || l.drop.kind === 'gold') continue;
         const d = l.position.distanceTo(p);
         if (d > 9) continue;
-        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near);
+        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near, l.tier, placed);
         if (r && this.ui.hover(r)) this.lootFocus = l;
       }
       if (near) this.prompt(`PICK UP ${near.label}`);

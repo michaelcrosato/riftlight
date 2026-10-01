@@ -1,37 +1,46 @@
 /**
- * Gem ids that can drop or be sold, until the skills system (src/riftlight/skills) is
- * integrated: then the gem registry there replaces this list. A gem item stores
- * `{ gem: { id, level, support } }` on base 'skill-gem' or 'support-gem'.
+ * Gems that drop and are sold: every active skill and support gem of the skills system
+ * (`src/riftlight/skills`: `ACTIVE_SKILLS`, `SUPPORT_GEMS`), so a new skill or support is a
+ * new gem with nothing to add here. A gem item stores `{ gem: { id, level, support } }` on
+ * base 'skill-gem' or 'support-gem'; the skill panel sockets it (loot/sockets.ts).
  */
 import type { Entry } from '../../core/registry';
 import type { ItemBase } from '../../core/types';
+import { ACTIVE_SKILLS } from '../../skills/actives';
+import { SUPPORT_GEMS } from '../../skills/supports';
 
 export interface GemEntry extends Entry {
   readonly name: string;
   readonly support: boolean;
+  /** One line for the tooltip (the skill's own description). */
+  readonly description?: string;
 }
 
+/** Skills every hero has without a gem (the basic attack and the dodge roll): never dropped or sold. */
+export const INNATE_SKILLS: ReadonlySet<string> = new Set(['slash', 'dodge-roll']);
+
+/** Drop weight: actives a little more common than supports. */
+const ACTIVE_WEIGHT = 1.2;
+const SUPPORT_WEIGHT = 1;
+
 export const GEMS: readonly GemEntry[] = [
-  { id: 'fireball', name: 'Fireball', support: false, tags: ['spell', 'fire', 'projectile'] },
-  { id: 'spark', name: 'Spark', support: false, tags: ['spell', 'lightning', 'projectile'] },
-  { id: 'ice-nova', name: 'Ice Nova', support: false, tags: ['spell', 'cold', 'area'] },
-  { id: 'arc', name: 'Arc', support: false, tags: ['spell', 'lightning', 'chain'] },
-  { id: 'frost-blink', name: 'Frost Blink', support: false, tags: ['spell', 'cold', 'movement'] },
-  { id: 'cleave', name: 'Cleave', support: false, tags: ['attack', 'melee', 'area', 'physical'] },
-  { id: 'ground-slam', name: 'Ground Slam', support: false, tags: ['attack', 'melee', 'area', 'physical'] },
-  { id: 'whirling-blades', name: 'Whirling Blades', support: false, tags: ['attack', 'melee', 'movement'] },
-  { id: 'lightning-arrow', name: 'Lightning Arrow', support: false, tags: ['attack', 'projectile', 'lightning'] },
-  { id: 'poison-arrow', name: 'Poison Arrow', support: false, tags: ['attack', 'projectile', 'chaos'] },
-  { id: 'flame-dash', name: 'Flame Dash', support: false, tags: ['spell', 'fire', 'movement'] },
-  { id: 'summon-skeletons', name: 'Summon Skeletons', support: false, tags: ['spell', 'minion'] },
-  { id: 'added-fire', name: 'Added Fire Damage', support: true, tags: ['fire'] },
-  { id: 'multiple-projectiles', name: 'Multiple Projectiles', support: true, tags: ['projectile'] },
-  { id: 'melee-physical', name: 'Melee Physical Damage', support: true, tags: ['melee', 'physical'] },
-  { id: 'faster-casting', name: 'Faster Casting', support: true, tags: ['spell'] },
-  { id: 'faster-attacks', name: 'Faster Attacks', support: true, tags: ['attack'] },
-  { id: 'chain', name: 'Chain', support: true, tags: ['projectile', 'chain'] },
-  { id: 'increased-area', name: 'Increased Area', support: true, tags: ['area'] },
-  { id: 'elemental-focus', name: 'Elemental Focus', support: true, tags: ['fire', 'cold', 'lightning'] },
+  ...ACTIVE_SKILLS.filter((s) => !INNATE_SKILLS.has(s.id)).map((s) => ({
+    id: s.id,
+    name: s.name,
+    support: false,
+    tags: [...s.tags],
+    weight: ACTIVE_WEIGHT,
+    description: s.description,
+  })),
+  ...SUPPORT_GEMS.map((s) => ({
+    id: s.id,
+    name: s.name,
+    support: true,
+    // a support is found by what it links to
+    tags: [...s.requires, ...(s.tags ?? [])],
+    weight: SUPPORT_WEIGHT,
+    description: s.description,
+  })),
 ];
 
 export const GEM_BASES: readonly ItemBase[] = [

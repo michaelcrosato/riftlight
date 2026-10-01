@@ -53,6 +53,8 @@ export interface TreeViewOptions {
   spendGold?: (amount: number) => boolean;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
+  /** Why refunds are refused here (e.g. only the mystic refunds): a message, or null to allow them. */
+  refundBlocked?: () => string | null;
 }
 
 const SOUNDS: Record<string, SoundDef> = {
@@ -636,6 +638,8 @@ export class TreeView {
       if (this.tree.roots.has(id)) this.deny('THE GATES ARE FREE');
       return false;
     }
+    const blocked = this.options.refundBlocked?.() ?? null;
+    if (blocked) return this.deny(blocked), false;
     if (!s.canDeallocate(id)) return this.deny('OTHER NODES DEPEND ON IT'), false;
     const cost = this.options.refundCost?.(1) ?? 0;
     if (cost > 0 && this.options.spendGold && !this.options.spendGold(cost)) return this.deny(`REFUND COSTS ${cost} GOLD`), false;
@@ -895,7 +899,8 @@ export class TreeView {
     }
     // Bottom hints.
     b.rect(0, H - BOTTOM, W, BOTTOM, C.night);
-    const hint = this.padCursor ? 'STICK MOVE  A TAKE  X REFUND  Y STATS  LT/RT ZOOM  B CLOSE' : 'DRAG PAN  WHEEL ZOOM  CLICK TAKE  R-CLICK REFUND  TAB STATS  / FIND';
+    const refunds = !this.options.refundBlocked?.();
+    const hint = this.padCursor ? `STICK MOVE  A TAKE  ${refunds ? 'X REFUND  ' : ''}Y STATS  LT/RT ZOOM  B CLOSE` : `DRAG PAN  WHEEL ZOOM  CLICK TAKE  ${refunds ? 'R-CLICK REFUND  ' : ''}TAB STATS  / FIND`;
     b.text(hint, Math.max(2, Math.round((W - textWidth(hint)) / 2)), H - BOTTOM + 2, C.slate);
   }
 
@@ -938,7 +943,12 @@ export class TreeView {
     else if (s.allocated.has(n.id)) {
       const cost = this.options.refundCost?.(1) ?? 0;
       const mastery = n.options?.length ? 'CLICK: NEXT CHOICE. ' : '';
-      status = s.canDeallocate(n.id) ? { text: `${mastery}R-CLICK: REFUND${cost ? ` (${cost} GOLD)` : ''}`, color: C.orange } : { text: `${mastery}OTHERS DEPEND ON IT`, color: C.slate };
+      const blocked = this.options.refundBlocked?.() ?? null;
+      status = blocked
+        ? { text: `${mastery}${blocked}`, color: C.slate }
+        : s.canDeallocate(n.id)
+          ? { text: `${mastery}R-CLICK: REFUND${cost ? ` (${cost} GOLD)` : ''}`, color: C.orange }
+          : { text: `${mastery}OTHERS DEPEND ON IT`, color: C.slate };
     } else if (!this.preview?.path) status = { text: 'UNREACHABLE', color: C.red };
     else {
       const cost = path.size;
