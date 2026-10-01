@@ -4,6 +4,7 @@ import {
   ContactShadow,
   type Game,
   type GameContext,
+  type MoveInput,
   type PaletteColor,
   PlatformerCharacter,
   RAPIER,
@@ -107,6 +108,8 @@ export class Playground implements Game {
   collected = 0;
   respawns = 0;
   private won = false;
+  /** Reused every fixed step (readMoveInput fills it in place). */
+  private readonly input: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics, loadModel } = ctx;
@@ -195,7 +198,7 @@ export class Playground implements Game {
   }
 
   fixedUpdate(ctx: GameContext, dt: number): void {
-    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero));
+    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero, this.input));
   }
 
   update(ctx: GameContext, dt: number): void {

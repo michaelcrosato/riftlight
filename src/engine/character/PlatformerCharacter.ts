@@ -77,6 +77,7 @@ const HALF: Record<Stance, number> = { stand: 0.5, crouch: 0.2, prone: 0 };
 const HANG_DROP = 1.72; // feet below the ledge top while hanging
 const GRAVITY = -32;
 const UP = new Vector3(0, 1, 0);
+const DOWN = new Vector3(0, -1, 0);
 const IGNORE = ['character'];
 /** Spawn/teleport this far above the given feet height: starting in exact contact with the
  *  ground can leave Rapier's KCC with a degenerate contact (it stops moving). */
@@ -120,9 +121,16 @@ export class PlatformerCharacter {
   private laneZ: number | null;
   private readonly prevFeet = new Vector3();
   private readonly collision = new RAPIER.CharacterCollision();
+  // Scratch vectors for the per-step paths (see probe(), fwd()): no garbage per step.
   private readonly tmpFeet = new Vector3();
   private readonly tmpOrigin = new Vector3();
   private readonly tmpDir = new Vector3();
+  private readonly tmpProbe = new Vector3();
+  private readonly tmpFwd = new Vector3();
+  private readonly tmpVec = new Vector3();
+  private readonly tmpChest = new Vector3();
+  private readonly desired = { x: 0, y: 0, z: 0 };
+  private readonly nextPos = { x: 0, y: 0, z: 0 };
   private peakY = 0;
   private lastLandTime = -1;
   private lastJump: JumpKind | null = null;
@@ -182,6 +190,7 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ queries
 
+  /** Feet position (bottom of the capsule). Allocates: hot paths use `feetInto`. */
   get feet(): Vector3 {
     return this.feetInto(new Vector3());
   }
@@ -192,12 +201,19 @@ export class PlatformerCharacter {
     return target.set(t.x, t.y - HALF[this.stance] - RADIUS, t.z);
   }
 
-  interpolatedFeet(alpha: number): Vector3 {
-    return this.prevFeet.clone().lerp(this.feet, alpha);
+  /** Feet between the last two fixed steps (render interpolation), into `target`. */
+  interpolatedFeet(alpha: number, target = new Vector3()): Vector3 {
+    return this.feetInto(target).lerpVectors(this.prevFeet, target, alpha);
   }
 
+  /** Facing direction (horizontal, unit). Allocates: hot paths use `forwardInto`. */
   get forward(): Vector3 {
-    return new Vector3(Math.sin(this.facing), 0, Math.cos(this.facing));
+    return this.forwardInto(new Vector3());
+  }
+
+  /** `forward` without allocating. */
+  forwardInto(target: Vector3): Vector3 {
+    return target.set(Math.sin(this.facing), 0, Math.cos(this.facing));
   }
 
   get speed(): number {
@@ -234,7 +250,7 @@ export class PlatformerCharacter {
     this.stateTime += dt;
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
-    this.prevFeet.copy(this.feet);
+    this.feetInto(this.prevFeet);
     if (this.stepAnim) {
       this.stepAnim.t -= dt;
       if (this.stepAnim.t <= 0) this.stepAnim = null;
@@ -342,7 +358,24 @@ export class PlatformerCharacter {
         break;
     }
     // Fall height is measured from the last place we stood (or the jump apex).
-    if (this.grounded && !this.isAirborne()) this.peakY = this.feet.y;
+    if (this.grounded && !this.isAirborne()) this.peakY = this.feetY();
+  }
+
+  // ------------------------------------------------------------------ scratch helpers
+
+  private feetY(): number {
+    return this.body.translation().y - HALF[this.stance] - RADIUS;
+  }
+
+  /** Scratch: the feet raised by `dy` (a ray origin). Valid until the next probe() call. */
+  private probe(dy: number): Vector3 {
+    this.feetInto(this.tmpProbe).y += dy;
+    return this.tmpProbe;
+  }
+
+  /** Scratch: the facing direction. Read-only; valid until the next fwd() call. */
+  private fwd(): Vector3 {
+    return this.forwardInto(this.tmpFwd);
   }
 
   // ------------------------------------------------------------------ ground
@@ -395,7 +428,7 @@ export class PlatformerCharacter {
     this.move(dt);
     if (!this.grounded) return; // handled next step (coyote)
     if (this.wallHeadOn && this.wallHit > BONK_SPEED && !input.face && !this.wallIsInteractive()) return this.bonk();
-    const dy = this.feet.y - beforeY;
+    const dy = this.feetY() - beforeY;
     if (this.speed < 4.5 && this.speed > 0.3) {
       if (dy > 0.08) this.stepAnim = { name: 'StepUp', t: 0.25 };
       else if (dy < -0.08) this.stepAnim = { name: 'StepDown', t: 0.25 };
@@ -565,7 +598,7 @@ export class PlatformerCharacter {
 
   jump(kind: JumpKind, input?: MoveInput): void {
     if (!this.setStance('stand')) return; // no headroom: stay down
-    const f = this.forward;
+    const f = this.fwd();
     switch (kind) {
       case 'Jump': this.vy = 10.5; break;
       case 'JumpUp': this.vy = 11.5; break;
@@ -582,14 +615,14 @@ export class PlatformerCharacter {
     this.lastJump = kind;
     this.jumpBuffer = 0;
     this.grounded = false;
-    this.peakY = this.feet.y;
+    this.peakY = this.feetY();
     this.stats.jumps++;
     this.enter('jump');
   }
 
   private startFall(): void {
     this.setStance('stand'); // keep a smaller stance if there's no headroom
-    this.peakY = this.feet.y;
+    this.peakY = this.feetY();
     this.enter('fall');
   }
 
@@ -602,7 +635,7 @@ export class PlatformerCharacter {
     const mag = Math.min(1, input.move.length());
     const noSteer = this.state === 'dive' || this.jumpKind === 'Backflip' || this.jumpKind === 'LongJump';
     if (mag > 0.1 && !noSteer) {
-      const want = input.move.clone().setY(0).normalize().multiplyScalar(Math.max(this.speed, this.runSpeed * 0.7 * mag));
+      const want = this.tmpVec.copy(input.move).setY(0).normalize().multiplyScalar(Math.max(this.speed, this.runSpeed * 0.7 * mag));
       this.hvel.lerp(want, 1 - Math.exp(-3 * dt));
       if (!input.face) this.facing = turnToward(this.facing, Math.atan2(input.move.x, input.move.z), 4 * dt);
     }
@@ -619,7 +652,7 @@ export class PlatformerCharacter {
       if (input.attack) {
         if (this.speed > 3 || mag > 0.5) {
           this.enter('dive');
-          this.hvel.copy(this.forward).multiplyScalar(Math.min(Math.max(this.speed, 5) + 3, 10));
+          this.hvel.copy(this.fwd()).multiplyScalar(Math.min(Math.max(this.speed, 5) + 3, 10));
           this.vy = Math.max(this.vy, 3);
         } else {
           this.jumpKind = 'JumpKick';
@@ -629,7 +662,7 @@ export class PlatformerCharacter {
       if (input.jump && this.touchingWall()) return this.wallKick();
     }
 
-    this.peakY = Math.max(this.peakY, this.feet.y);
+    this.peakY = Math.max(this.peakY, this.feetY());
     const wasRising = this.vy > 0;
     this.move(dt);
     if (wasRising && this.lastBonk) this.vy = 0;
@@ -638,13 +671,13 @@ export class PlatformerCharacter {
     if (this.grounded && this.vy <= 0) return this.land(input);
     if (this.vy < 3 && this.state !== 'dive' && this.ledgeCooldown === 0) {
       if (this.checkClimb(input, true)) return;
-      const ledge = this.findLedge(this.feet, this.forward);
+      const ledge = this.findLedge(this.feetInto(this.tmpFeet), this.fwd());
       if (ledge) this.grabLedge(ledge);
     }
   }
 
   private wallKick(): void {
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 1.0, 0)), this.forward, RADIUS + 0.35, IGNORE, this.body);
+    const hit = this.physics.castRay(this.probe(1.0), this.fwd(), RADIUS + 0.35, IGNORE, this.body);
     if (!hit) return;
     const n = hit.normal.setY(0).normalize();
     this.facing = Math.atan2(n.x, n.z);
@@ -652,7 +685,7 @@ export class PlatformerCharacter {
   }
 
   private touchingWall(): boolean {
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 1.0, 0)), this.forward, RADIUS + 0.3, IGNORE, this.body);
+    const hit = this.physics.castRay(this.probe(1.0), this.fwd(), RADIUS + 0.3, IGNORE, this.body);
     return !!hit && Math.abs(hit.normal.y) < 0.3;
   }
 
@@ -674,17 +707,17 @@ export class PlatformerCharacter {
     if (this.grounded && this.poundDelay <= 0) {
       this.stats.landings++;
       this.lastLandTime = this.clock;
-      this.peakY = this.feet.y;
+      this.peakY = this.feetY();
       this.enter('groundPoundLand');
     }
   }
 
   private land(input: MoveInput): void {
-    const drop = this.peakY - this.feet.y;
+    const drop = this.peakY - this.feetY();
     this.stats.landings++;
     this.lastLandTime = this.clock;
     this.vy = 0;
-    this.peakY = this.feet.y;
+    this.peakY = this.feetY();
     if (this.state === 'dive') return this.enter('bellySlide');
     if (drop > 5.5) {
       this.hvel.set(0, 0, 0);
@@ -701,7 +734,8 @@ export class PlatformerCharacter {
 
   /** Find a grabbable ledge in front of `feet` (facing `dir`). */
   findLedge(feet: Vector3, dir: Vector3): Ledge | null {
-    const chest = feet.clone().add(new Vector3(0, 1.25, 0));
+    const chest = this.tmpChest.copy(feet);
+    chest.y += 1.25;
     const wall = this.physics.castRay(chest, dir, RADIUS + 0.4, IGNORE, this.body);
     if (!wall || Math.abs(wall.normal.y) > 0.3) return null;
     if (['noLedge', 'climbable', 'pushable', 'grabbable'].some((t) => this.physics.hasTag(wall.collider, t))) return null;
@@ -709,7 +743,7 @@ export class PlatformerCharacter {
     // Nothing may overhang the wall between chest height and the probe (slabs, ceilings).
     const outside = wall.point.clone().addScaledVector(dir, -0.05);
     if (this.physics.castRay(outside, UP, probe.y - outside.y, IGNORE, this.body)) return null;
-    const top = this.physics.castRay(probe, new Vector3(0, -1, 0), 1.3, IGNORE, this.body);
+    const top = this.physics.castRay(probe, DOWN, 1.3, IGNORE, this.body);
     if (!top || top.normal.y < 0.7) return null;
     const y = probe.y - top.distance;
     if (y < feet.y + 1.3 || y > feet.y + 2.25) return null;
@@ -789,7 +823,7 @@ export class PlatformerCharacter {
     this.setFeet(p);
     if (t >= 1) {
       this.grounded = true;
-      this.peakY = this.feet.y;
+      this.peakY = this.feetY();
       this.enter(this.setStance('stand') ? 'idle' : 'crouch');
     }
   }
@@ -797,8 +831,9 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ climbing
 
   private checkClimb(input: MoveInput, inAir = false): boolean {
-    if (!inAir && input.move.dot(this.forward) < 0.5) return false;
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 1.0, 0)), this.forward, RADIUS + 0.3, IGNORE, this.body);
+    const f = this.fwd();
+    if (!inAir && input.move.dot(f) < 0.5) return false;
+    const hit = this.physics.castRay(this.probe(1.0), f, RADIUS + 0.3, IGNORE, this.body);
     if (!hit || !this.physics.hasTag(hit.collider, 'climbable')) return false;
     const n = hit.normal.setY(0).normalize();
     this.facing = Math.atan2(-n.x, -n.z);
@@ -853,7 +888,7 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ push / pull
 
   private blockAhead(reach: number): { body: RAPIER.RigidBody; collider: RAPIER.Collider; normal: Vector3; distance: number } | null {
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 0.45, 0)), this.forward, RADIUS + reach, IGNORE, this.body);
+    const hit = this.physics.castRay(this.probe(0.45), this.fwd(), RADIUS + reach, IGNORE, this.body);
     if (!hit || Math.abs(hit.normal.y) > 0.3) return null;
     if (!this.physics.hasTag(hit.collider, 'pushable') && !this.physics.hasTag(hit.collider, 'grabbable')) return null;
     const body = hit.collider.parent();
@@ -861,7 +896,8 @@ export class PlatformerCharacter {
   }
 
   private checkPush(input: MoveInput): boolean {
-    if (input.move.length() < 0.3 || input.move.clone().normalize().dot(this.forward) < 0.75) return false;
+    const len = input.move.length();
+    if (len < 0.3 || input.move.dot(this.fwd()) / len < 0.75) return false;
     const b = this.blockAhead(0.12);
     if (!b || !this.physics.hasTag(b.collider, 'pushable')) return false;
     this.block = b.body;
@@ -932,12 +968,12 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ slopes
 
   private groundNormal(): Vector3 | null {
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 0.3, 0)), new Vector3(0, -1, 0), 0.8, IGNORE, this.body);
+    const hit = this.physics.castRay(this.probe(0.3), DOWN, 0.8, IGNORE, this.body);
     return hit ? hit.normal : null;
   }
 
   private slipperyBelow(): boolean {
-    const hit = this.physics.castRay(this.feet.add(new Vector3(0, 0.3, 0)), new Vector3(0, -1, 0), 0.8, IGNORE, this.body);
+    const hit = this.physics.castRay(this.probe(0.3), DOWN, 0.8, IGNORE, this.body);
     return !!hit && this.physics.hasTag(hit.collider, 'slippery');
   }
 
@@ -983,15 +1019,15 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ helpers
 
   private groundAhead(dist: number): boolean {
-    const origin = this.feet.addScaledVector(this.forward, dist).add(new Vector3(0, 0.3, 0));
-    return !!this.physics.castRay(origin, new Vector3(0, -1, 0), 0.9, IGNORE, this.body);
+    const origin = this.probe(0.3).addScaledVector(this.fwd(), dist);
+    return !!this.physics.castRay(origin, DOWN, 0.9, IGNORE, this.body);
   }
 
   /** Mario-style: turn facing toward the stick, speed builds along facing. */
   private groundMove(dt: number, input: MoveInput, maxSpeed: number, accel: number, turnRate = 14): void {
     const mag = Math.min(1, input.move.length());
     if (input.face) {
-      const target = input.move.clone().setY(0).multiplyScalar(maxSpeed);
+      const target = this.tmpVec.copy(input.move).setY(0).multiplyScalar(maxSpeed);
       this.hvel.lerp(target, 1 - Math.exp(-12 * dt));
       return;
     }
@@ -1004,7 +1040,7 @@ export class PlatformerCharacter {
     } else {
       speed = approach(speed, 0, accel * 1.3 * dt);
     }
-    this.hvel.copy(this.forward).multiplyScalar(speed);
+    this.hvel.copy(this.fwd()).multiplyScalar(speed);
   }
 
   private decel(dt: number, rate: number): void {
@@ -1033,7 +1069,10 @@ export class PlatformerCharacter {
    */
   private move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
     if (gravity && !this.isAirborne() && this.state !== 'climb') this.vy = Math.min(this.vy, 0) + GRAVITY * dt;
-    const desired = { x: this.hvel.x * dt, y: this.vy * dt, z: this.hvel.z * dt };
+    const desired = this.desired;
+    desired.x = this.hvel.x * dt;
+    desired.y = this.vy * dt;
+    desired.z = this.hvel.z * dt;
     if (this.laneZ !== null) desired.z = (this.laneZ - this.body.translation().z) * 0.5;
     if (this.state === 'jump' || this.state === 'climb') this.kcc.disableSnapToGround();
     else this.kcc.enableSnapToGround(0.35);
@@ -1045,7 +1084,11 @@ export class PlatformerCharacter {
     if (this.grounded && this.vy < 0 && !this.isAirborne()) this.vy = 0;
     this.loseSpeedToWalls();
     const t = this.body.translation();
-    this.body.setNextKinematicTranslation({ x: t.x + m.x, y: t.y + m.y, z: t.z + m.z });
+    const next = this.nextPos;
+    next.x = t.x + m.x;
+    next.y = t.y + m.y;
+    next.z = t.z + m.z;
+    this.body.setNextKinematicTranslation(next);
   }
 
   private loseSpeedToWalls(): void {
@@ -1080,7 +1123,10 @@ export class PlatformerCharacter {
   }
 
   private setFeet(feet: Vector3, immediate = false): void {
-    const c = { x: feet.x, y: feet.y + HALF[this.stance] + RADIUS, z: feet.z };
+    const c = this.nextPos;
+    c.x = feet.x;
+    c.y = feet.y + HALF[this.stance] + RADIUS;
+    c.z = feet.z;
     if (immediate) {
       this.body.setTranslation(c, true);
       this.physics.world.propagateModifiedBodyPositionsToColliders();
@@ -1216,7 +1262,7 @@ export class PlatformerCharacter {
 
   /** Per render frame: orient the model, pick and advance animation. */
   updateVisual(model: Object3D, dt: number, alpha: number): void {
-    model.position.copy(this.interpolatedFeet(alpha));
+    this.interpolatedFeet(alpha, model.position);
     let diff = this.facing - model.rotation.y;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     const snap = this.state === 'hang' || this.state === 'climb' || this.state === 'pullUp' || this.state === 'push' || this.state === 'pull' || this.state === 'grab';
