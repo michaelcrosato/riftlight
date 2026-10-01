@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { AnimationClip, Object3D, Vector3, VectorKeyframeTrack } from 'three/webgpu';
 import { Physics, RAPIER } from '../physics/Physics';
 import { type MoveInput, PlatformerCharacter } from './PlatformerCharacter';
+import { TUNING } from './tuning';
 
 // Deterministic fixed-step simulations of the real controller on Rapier (no renderer).
 
@@ -247,7 +248,12 @@ describe('PlatformerCharacter', () => {
     expect(g.speed).toBeGreaterThan(3);
   });
 
-  it('steps and slopes are not walls: running up them keeps its speed', async () => {
+  it('steps and slopes are not walls: running up them only slows to the uphill speed', async () => {
+    // This used to assert that running up keeps full speed (6+ m/s). Mario 64 slows down
+    // going uphill (TUNING.ground.uphill), so now: steps and slopes still never stop the run
+    // the way a wall does (the speed never drops below the uphill cap for that grade), the
+    // run gets to the top, and on the flat before them it is full speed.
+    const U = TUNING.ground.uphill;
     for (const stairs of [true, false]) {
       const p = await setup();
       if (stairs) for (let i = 0; i < 5; i++) box(p, [3 + 0.8 * i, 0.14 * (i + 1), 0], [0.4, 0.14 * (i + 1), 2]);
@@ -258,14 +264,43 @@ describe('PlatformerCharacter', () => {
       // a run-up to full speed (it builds over ~0.65 s), then up the stairs or the slope
       const h = new PlatformerCharacter(p, { position: [-4, 0, 0] });
       h.facing = Math.PI / 2;
+      let flat = 0;
       let slowest = Infinity;
-      for (let k = 0; k < 120 && h.feet.x < 6.3; k++) {
+      for (let k = 0; k < 240 && h.feet.x < 6.3; k++) {
         run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
-        if (h.feet.x > 1.5) slowest = Math.min(slowest, h.speed);
+        if (h.feet.x < 0.5) flat = Math.max(flat, h.speed);
+        if (h.feet.x > 2.5) slowest = Math.min(slowest, h.speed);
       }
+      expect(flat).toBeGreaterThan(h.runSpeed * 0.95);
       expect(h.feet.y).toBeGreaterThan(0.5);
-      expect(slowest).toBeGreaterThan(6);
+      expect(slowest).toBeGreaterThan(h.runSpeed * (1 - U.slow) * 0.95);
+      expect(slowest).toBeLessThan(h.runSpeed * 0.9); // and it did slow down
     }
+  });
+
+  it('uphill slows the run more the steeper it is; downhill keeps full speed', async () => {
+    const top = async (deg: number, uphill: boolean) => {
+      const p = await setup();
+      const a = (deg * Math.PI) / 180;
+      const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(8, 0, 0).setRotation({ x: 0, y: 0, z: Math.sin(a / 2), w: Math.cos(a / 2) }));
+      p.world.createCollider(RAPIER.ColliderDesc.cuboid(6, 0.3, 3), b);
+      // up: run into the slope from below; down: start on top and run off its high end the other way
+      const h = new PlatformerCharacter(p, uphill ? { position: [-2, 0, 0] } : { position: [11, 6 * Math.sin(a) + 1, 0] });
+      h.facing = uphill ? Math.PI / 2 : -Math.PI / 2;
+      let speed = 0;
+      for (let k = 0; k < 200; k++) {
+        run(p, h, inp({ move: new Vector3(uphill ? 1 : -1, 0, 0) }), 1);
+        if (h.feet.x > 4 && h.feet.x < 10) speed = h.speed;
+      }
+      return speed;
+    };
+    const gentle = await top(8, true);
+    const ramp = await top(15, true);
+    const steep = await top(25, true);
+    expect(gentle).toBeGreaterThan(6); // a gentle slope barely slows
+    expect(ramp).toBeLessThan(gentle);
+    expect(steep).toBeLessThan(ramp);
+    expect(await top(15, false)).toBeGreaterThan(6); // downhill: full speed
   });
 
   it('runs up stairs and off their top without a hitch', async () => {
@@ -278,16 +313,17 @@ describe('PlatformerCharacter', () => {
     h.facing = Math.PI / 2;
     run(p, h, inp({ move: new Vector3(1, 0, 0) }), 66);
     let last = h.feet.x;
-    let slowest = Infinity;
+    let worst = Infinity;
     const seen = new Set<string>();
-    for (let k = 0; k < 70; k++) {
+    for (let k = 0; k < 160 && !seen.has('fall'); k++) {
       run(p, h, inp({ move: new Vector3(1, 0, 0) }), 1);
-      slowest = Math.min(slowest, (h.feet.x - last) / DT);
+      // each step covers the ground its speed says (the speed itself eases down uphill)
+      if (h.state !== 'fall') worst = Math.min(worst, (h.feet.x - last) / DT / h.speed);
       last = h.feet.x;
       seen.add(h.state);
     }
     expect(seen).toContain('fall'); // ran off the top step
-    expect(slowest).toBeGreaterThan(h.runSpeed * 0.9);
+    expect(worst).toBeGreaterThan(0.9);
   });
 
   it('runs smoothly on flat ground: no step where the controller stalls', async () => {

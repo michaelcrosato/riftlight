@@ -23,7 +23,7 @@ export const TUNING = {
      * feet, within `ahead` m of where this step's move takes the capsule; its top probed
      * `onto` m past the edge must be flat (normal y ≥ `flat`) and at least `min` m up.
      */
-    stepAssist: { low: 0.04, ahead: 0.03, onto: 0.06, flat: 0.9, min: 0.03 },
+    stepAssist: { low: 0.04, ahead: 0.08, onto: 0.06, flat: 0.9, min: 0.03 },
     snapToGround: 0.35,
     maxSlopeClimbDeg: 46,
     minSlopeSlideDeg: 40,
@@ -63,6 +63,19 @@ export const TUNING = {
   visual: {
     turnRate: 16,
     fade: 0.12,
+    /**
+     * With foot placement, going down a step the drawn body sinks with the ground under it
+     * and up to `rootAhead` m ahead (averaged over `rootSamples` points), fully once the
+     * ground ahead is `rootDrop` m lower, instead of staying up with the capsule on the edge
+     * (the feet would float). On the flat and going up it is where the capsule is (up a step
+     * early, as the body is). It follows at up to `rootSpeed` m/s (a slope); faster (a step)
+     * eases over at `rootRate` (rad/s, critically damped).
+     */
+    rootAhead: 0.35,
+    rootSamples: 8,
+    rootDrop: 0.15,
+    rootRate: 18,
+    rootSpeed: 2,
     /** Lean into turns: roll (deg) per (rad/s of turning × m/s), at most `maxRoll`. */
     leanRoll: 0.55,
     maxRoll: 14,
@@ -137,6 +150,15 @@ export const TUNING = {
     tiptoeBelow: 0.5,
     /** Grace period for jumping after walking off an edge. */
     coyote: 0.1,
+    /**
+     * Uphill (Mario 64): running up a slope or stairs, the top speed drops by up to `slow`
+     * of run speed, easing in from a grade (rise per metre `ahead` m on, smoothed at `rate`
+     * 1/s) of `from` to `to`; the top speed follows at `ease` (share of run speed per
+     * second). The 15° ramp (grade 0.27) runs at ~4.8 m/s, the playground stairs (0.35) at
+     * ~3.3: one stair per stride instead of two or three. Downhill and gentle slopes keep full speed; ground too steep
+     * to stand on slides you back down (checkSlope).
+     */
+    uphill: { from: 0.2, to: 0.33, slow: 0.6, ahead: 0.9, rate: 6, ease: 3 },
     /** Look this far ahead for ground: none = teeter at the edge. */
     teeterLookahead: 0.45,
     /** Idle this long and the character lies down and dozes off. */

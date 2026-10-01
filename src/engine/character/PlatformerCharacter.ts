@@ -1,6 +1,7 @@
 import { type AnimationClip, MathUtils, type Object3D, type Quaternion, Vector3 } from 'three/webgpu';
 import type { FootPlacementState, GroundHit, GroundProbe } from '../animation/footPlacement';
 import type { RigSpec } from '../animation/types';
+import { PopGuard } from '../animation/popGuard';
 import { type Physics, RAPIER } from '../physics/Physics';
 import { type AnimRequest, Animator, type ProceduralInput } from './animator';
 import { angleDiff, approach, turnToward } from './motion';
@@ -158,6 +159,19 @@ export class PlatformerCharacter {
   private readonly tmpOrigin = new Vector3();
   private readonly tmpDir = new Vector3();
   private readonly groundHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
+  private readonly rootHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
+  /** After a lift onto a step: how much further (m) it holds its height without falling back. */
+  private riseHold = 0;
+  /** Drawn height of the body (groundRoot). */
+  private rootY = 0;
+  private rootStarted = false;
+  private readonly rootOne = [0];
+  private readonly rootGuard = new PopGuard(1, T.visual.rootRate, [T.visual.rootSpeed]);
+  private readonly tmpClimb = new Vector3();
+  /** Smoothed grade of the ground being covered (rise per metre; + = uphill). */
+  climb = 0;
+  /** Share of run speed the ground allows (uphillSpeed). */
+  private uphillShare = 1;
   private readonly tmpProbe = new Vector3();
   private readonly tmpFwd = new Vector3();
   private readonly tmpChest = new Vector3();
@@ -293,6 +307,7 @@ export class PlatformerCharacter {
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
     this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    this.measureClimb(dt);
     this.feetInto(this.prevFeet);
     this.heading = this.facing;
     if (this.stepAnim) {
@@ -473,6 +488,46 @@ export class PlatformerCharacter {
     this.hvel.copy(this.fwd()).multiplyScalar(speed);
   }
 
+  /**
+   * Top running speed on this ground: Mario 64 slows going uphill (the steeper, the slower;
+   * too steep to stand on slides back, see checkSlope). Stairs count by their average climb.
+   */
+  uphillSpeed(): number {
+    return this.runSpeed * this.uphillShare;
+  }
+
+  /**
+   * Smoothed grade (rise per metre) of the ground ahead, the way it's moving: the ground
+   * `ahead` m on, against the ground under the feet. Steps count (by their average); a wall
+   * or ledge higher than a step doesn't.
+   */
+  private measureClimb(dt: number): void {
+    const U = T.ground.uphill;
+    const k = 1 - Math.exp(-U.rate * dt);
+    let grade = 0;
+    const v = this.speed;
+    if (!this.isAirborne() && v > 0.3) {
+      // (against the ground under the middle, not the feet: the capsule's round bottom
+      // is up a step before its middle is)
+      const f = this.feetInto(this.tmpClimb);
+      const top = f.y + T.body.autostepHeight * 2;
+      const reach = T.body.autostepHeight * 2 + U.ahead + 0.5;
+      const h = this.groundHit;
+      if (this.physics.castDown(f.x, top, f.z, reach, h, IGNORE, this.body) && top - h.y > 0.01) {
+        const here = h.y;
+        const x = f.x + (this.hvel.x / v) * U.ahead;
+        const z = f.z + (this.hvel.z / v) * U.ahead;
+        if (this.physics.castDown(x, top, z, reach, h, IGNORE, this.body) && top - h.y > 0.01 && h.ny > 0.5) {
+          grade = MathUtils.clamp((h.y - here) / U.ahead, -1, 1);
+        }
+      }
+    }
+    this.climb += (grade - this.climb) * k;
+    // the top speed it allows changes gently (stairs climb in steps: no surging)
+    const t = MathUtils.clamp((this.climb - U.from) / (U.to - U.from), 0, 1);
+    this.uphillShare = approach(this.uphillShare, 1 - U.slow * t * t * (3 - 2 * t), U.ease * dt);
+  }
+
   /** @internal Slow the horizontal velocity by `rate` m/s². */
   decel(dt: number, rate: number): void {
     const s = approach(this.speed, 0, rate * dt);
@@ -492,7 +547,9 @@ export class PlatformerCharacter {
     // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
     // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch). Gravity still
     // pulls when nothing is under the middle of the body (perched on an edge: slide off it).
-    if (gravity && !def.airborne) this.vy = this.grounded && this.supported() ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
+    // (lifted onto a step a moment early: it holds its height until it is over the step)
+    const holding = this.riseHold > 0 && !def.airborne;
+    if (gravity && !def.airborne) this.vy = holding || (this.grounded && this.supported()) ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
     const desired = this.desired;
     desired.x = this.hvel.x * dt;
     desired.y = this.vy * dt;
@@ -501,9 +558,11 @@ export class PlatformerCharacter {
     // Up a step: lift onto it in this move. Rapier's autostep doesn't catch a riser lower than
     // the capsule's radius: the round bottom rides up its edge like a slope instead, losing
     // most of the speed for a couple of steps (a hitch on every stair).
-    const rise = gravity && !def.airborne && this.grounded ? this.riseAhead(desired) : 0;
+    const rise = gravity && !def.airborne && (this.grounded || holding) ? this.riseAhead(desired) : 0;
     if (rise > 0) desired.y = rise;
-    if (def.snapToGround === false || rise > 0) this.kcc.disableSnapToGround();
+    if (def.airborne) this.riseHold = 0;
+    else this.riseHold = Math.max(0, this.riseHold - Math.hypot(desired.x, desired.z));
+    if (def.snapToGround === false || rise > 0 || this.riseHold > 0) this.kcc.disableSnapToGround();
     else this.kcc.enableSnapToGround(T.body.snapToGround);
     const predicate = exclude ? (c: RAPIER.Collider) => c.handle !== exclude.handle : undefined;
     this.kcc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, predicate);
@@ -524,7 +583,7 @@ export class PlatformerCharacter {
    * How far up the step the capsule is about to run into this move (0: none). A riser just
    * ahead at ankle height, with flat ground on top no higher than the autostep height.
    */
-  private riseAhead(d: Vector3): number {
+  private riseAhead(d: { x: number; z: number }): number {
     const len = Math.hypot(d.x, d.z);
     if (len < 1e-4) return 0;
     const S = T.body.stepAssist;
@@ -539,6 +598,8 @@ export class PlatformerCharacter {
     if (!this.physics.castDown(feet.x + dir.x * reach, feet.y + top, feet.z + dir.z * reach, top, this.groundHit, IGNORE, this.body)) return 0;
     const rise = this.groundHit.y - feet.y;
     if (this.groundHit.ny < S.flat || rise < S.min || rise > T.body.autostepHeight) return 0;
+    // hold this height until the middle of the feet is over the step
+    this.riseHold = wall.distance + S.onto;
     return rise + T.body.kccOffset;
   }
 
@@ -655,6 +716,7 @@ export class PlatformerCharacter {
   /** Per render frame: orient the model, pick and advance animation, then the procedural layers. */
   updateVisual(model: Object3D, dt: number, alpha: number): void {
     this.interpolatedFeet(alpha, model.position);
+    this.groundRoot(model, dt);
     let diff = this.facing - model.rotation.y;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     const snap = stateDef(this.state).snapFacing === true;
@@ -668,6 +730,56 @@ export class PlatformerCharacter {
     anim.play(a, a.fade ?? T.visual.fade);
     this.anim = anim.dominant(a);
     anim.update(dt, this.proceduralInput(model, dt, alpha));
+  }
+
+  /**
+   * With foot placement, the drawn body stands on the ground under its middle, not on the
+   * capsule: the capsule's round bottom climbs a step before the body gets there and dips
+   * as it rolls off a step's edge. Slopes are followed exactly; a step (the middle crossing
+   * a riser) eases over (PopGuard), so stairs are a smooth climb and the feet still land on
+   * each tread (foot placement).
+   */
+  private groundRoot(model: Object3D, dt: number): void {
+    const physical = model.position.y;
+    const V = T.visual;
+    let target = physical;
+    // standing or moving on the ground (not leaving it: a jump's first frames keep foot placement)
+    const on = !!this.animator?.feet && !this.isAirborne() && !!feetMode(this);
+    const top = physical + T.body.autostepHeight;
+    const down = 2 * T.body.autostepHeight;
+    const v = this.speed;
+    if (on) {
+      // the ground from under its middle to a little way ahead (the way it is going),
+      // averaged: going down a step the body sinks with it (the capsule stays up on the edge
+      // until it drops off: the feet would float); up a step, the capsule is up it early, as
+      // the body is. Sampled finely, so it changes in small steps as the samples cross an edge.
+      let sum = 0;
+      let n = 0;
+      let first = Number.NaN;
+      let last = Number.NaN;
+      const dx = v > 0.3 ? this.hvel.x / v : 0;
+      const dz = v > 0.3 ? this.hvel.z / v : 0;
+      for (let i = 0; i < V.rootSamples; i++) {
+        const d = (V.rootAhead * i) / (V.rootSamples - 1);
+        if (this.physics.castDown(model.position.x + dx * d, top, model.position.z + dz * d, down, this.rootHit, IGNORE, this.body) && this.rootHit.ny > 0.5 && top - this.rootHit.y > 0.01) {
+          sum += this.rootHit.y;
+          n++;
+          if (i === 0) first = this.rootHit.y;
+          last = this.rootHit.y;
+        }
+      }
+      // (only as far as the ground ahead drops: on the flat and going up, the capsule)
+      const descent = Number.isNaN(first) || Number.isNaN(last) ? 0 : MathUtils.smoothstep(first - last, 0, V.rootDrop);
+      if (n > 0) target = physical + Math.min(0, Math.max(sum / n - physical, -T.body.autostepHeight)) * descent;
+    }
+    // (in the air the body is where the capsule is; the change eases over too) teleported: start over
+    // Only the lowering is eased: the capsule's own moves (jumps, landings, slopes, steps)
+    // come through as they are (foot placement keeps the hips steady through a step).
+    if (!this.rootStarted || Math.abs(model.position.y - this.rootY) > 1) this.rootGuard.reset();
+    this.rootStarted = true;
+    this.rootOne[0] = target - physical;
+    this.rootY = physical + this.rootGuard.apply(this.rootOne, dt)[0]!;
+    model.position.y = this.rootY;
   }
 
   /** Foot placement on: a state with feet, on the ground (through brief no-ground moments: autosteps, edges). */

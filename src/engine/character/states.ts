@@ -240,7 +240,7 @@ function stepGround(c: PlatformerCharacter, dt: number, input: MoveInput): void 
     return c.enter('skid');
   }
 
-  const max = input.walk ? G.walkSpeed : c.runSpeed;
+  const max = input.walk ? G.walkSpeed : c.uphillSpeed();
   c.groundMove(dt, input, max);
 
   if (checkClimb(c, input)) return;
@@ -325,7 +325,7 @@ function stepSkidTurn(c: PlatformerCharacter, dt: number, input: MoveInput): voi
   if (spin < 1) {
     c.facing = c.turnFrom + angleDiff(c.turnTo, c.turnFrom) * spin;
     c.decel(dt, K.turnDecel);
-  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.runSpeed);
+  } else c.groundMove(dt, input, input.walk ? G.walkSpeed : c.uphillSpeed());
   c.move(dt);
   if (c.stateTime >= K.turnEnd) {
     if (c.speed > G.stopSpeed || input.move.lengthSq() > T.skid.stickMinSq) c.enter(c.speed > G.runAbove ? 'run' : 'walk');
