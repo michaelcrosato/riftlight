@@ -1,7 +1,7 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
 import { buildProp } from '../themes/props';
-import { asMechanicLevel, mechanicDamage, monsterScaleDamage, perRoom, PropTarget, slotOrFree } from './common';
+import { asMechanicLevel, heroHas, heroScale, mechanicDamage, monsterScaleDamage, perRoom, PropTarget, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 import type { LightHandle } from '../../../engine/render/lights';
 
@@ -13,6 +13,17 @@ import type { LightHandle } from '../../../engine/render/lights';
 const BLAST_RADIUS = 3.2;
 const CHAIN_RADIUS = 4.6;
 const RELIGHT = 18;
+/** Seconds the hero burns harmlessly after a blast with `brazier.selfIgnite` (the `ignited` condition). */
+const SELF_IGNITE = 6;
+
+/**
+ * Loot that bends Embers (read off the hero when a brazier blows):
+ *   brazier.area       inc: blast and chain radius (× √)
+ *   brazier.damage     inc: blast damage to monsters
+ *   explosion.damage   inc: every explosion, braziers included
+ *   brazier.selfIgnite flag: blasts don't hurt you; they set you alight (`ignited` for 6 s:
+ *                      Emberheart's 10% more damage while ignited)
+ */
 
 export const EMBERS: LevelMechanicDef = {
   id: 'embers',
@@ -69,29 +80,39 @@ export const EMBERS: LevelMechanicDef = {
       braziers.push(b);
     }
 
+    let ignitedFor = 0;
     const explode = (b: Brazier) => {
       b.lit = false;
       b.relight = RELIGHT;
       for (const f of b.flames) f.visible = false;
       b.light?.update({ intensity: 0 });
-      const mult = 1 + 0.25 * b.chain;
+      const hero = level.hero();
+      const area = Math.sqrt(heroScale(hero, 'brazier.area'));
+      const mult = (1 + 0.25 * b.chain) * heroScale(hero, 'brazier.damage') * heroScale(hero, 'explosion.damage');
+      const selfIgnite = heroHas(hero, 'brazier.selfIgnite');
       for (const a of level.actors()) {
         if (!a.alive) continue;
         const d = Math.hypot(a.position.x - b.at.x, a.position.z - b.at.z);
-        if (d > BLAST_RADIUS + a.radius) continue;
+        if (d > BLAST_RADIUS * area + a.radius) continue;
+        if (a === hero && selfIgnite) {
+          ignitedFor = SELF_IGNITE;
+          a.stats.setCondition('ignited', true);
+          level.burst('ember-blast', [a.position.x, 1, a.position.z], { count: 8 });
+          level.emit('embers', 'selfIgnite', a.position);
+          continue;
+        }
         const amount = a.faction === 'hero' ? mechanicDamage(depth, 18) : monsterScaleDamage(depth, 34) * mult;
         level.damage(a, { fire: amount }, 'embers', { knockback: 9, from: b.at, ailments: { ignite: 0.5 } });
       }
-      level.light({ position: b.at, color: 0xffb060, intensity: 16, radius: 9, lifetime: 0.45, fadeIn: 0.02, fadeOut: 0.3, priority: 3, name: 'blast' });
-      level.burst('ember-blast', b.at);
+      level.light({ position: b.at, color: 0xffb060, intensity: 16, radius: 9 * area, lifetime: 0.45, fadeIn: 0.02, fadeOut: 0.3, priority: 3, name: 'blast' });
+      level.burst('ember-blast', b.at, { scale: area });
       level.sound('ember-boom', { pitch: -b.chain });
       level.emit('embers', b.chain ? 'chain' : 'explode', b.at);
-      const hero = level.hero();
       if (b.chain > 0 && hero) level.buff(hero, 'mechanic:embers:chain', [inc('xp.gain', 0.1 * b.chain), inc('damage', 0.05 * b.chain, ['fire'])], 8);
       // Light the fuse of every brazier in reach.
       for (const o of braziers) {
         if (o === b || !o.lit || o.fuse >= 0) continue;
-        if (o.at.distanceTo(b.at) <= CHAIN_RADIUS) {
+        if (o.at.distanceTo(b.at) <= CHAIN_RADIUS * area) {
           o.fuse = 0.28;
           o.chain = b.chain + 1;
         }
@@ -101,6 +122,11 @@ export const EMBERS: LevelMechanicDef = {
     return {
       update(dt) {
         const hero = level.hero();
+        if (ignitedFor > 0) {
+          ignitedFor -= dt;
+          if (ignitedFor <= 0) hero?.stats.setCondition('ignited', false);
+          else if (hero && Math.floor((ignitedFor + dt) * 6) !== Math.floor(ignitedFor * 6)) level.burst('ember', [hero.position.x, 1.2, hero.position.z]);
+        }
         for (const b of braziers) {
           if (b.fuse >= 0) {
             b.fuse -= dt;
@@ -123,6 +149,7 @@ export const EMBERS: LevelMechanicDef = {
         }
       },
       dispose() {
+        level.hero()?.stats.setCondition('ignited', false);
         for (const b of braziers) {
           level.removeTarget(b.target);
           b.light?.release();

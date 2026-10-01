@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, growBlob } from './common';
+import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroHas, heroScale } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -14,6 +14,8 @@ import type { LevelMechanicDef } from './types';
  */
 const RECHARGE = 6;
 const HASTE = 3;
+// Mirestride and the Quickmire suffix: `mire.immune` (mud never slows the hero) and
+// `haste.duration` (inc: haste pads last longer, so chains are easier to keep up).
 
 export const MIRE: LevelMechanicDef = {
   id: 'mire',
@@ -104,11 +106,12 @@ export const MIRE: LevelMechanicDef = {
           }
           if (!hero || Math.hypot(hero.position.x - p.at.x, hero.position.z - p.at.z) > 0.9) continue;
           chain = t < hasteUntil ? chain + 1 : 0;
-          hasteUntil = t + HASTE + chain;
+          const last = (HASTE + chain) * heroScale(hero, 'haste.duration');
+          hasteUntil = t + last;
           p.recharge = RECHARGE;
           p.rune.visible = false;
           p.light?.update({ intensity: 0 });
-          level.buff(hero, 'mechanic:mire:haste', [inc('move.speed', 0.5 + 0.1 * Math.min(chain, 5)), inc('attack.speed', 0.15)], HASTE + chain);
+          level.buff(hero, 'mechanic:mire:haste', [inc('move.speed', 0.5 + 0.1 * Math.min(chain, 5)), inc('attack.speed', 0.15)], last);
           level.burst('haste', [p.at.x, 0.3, p.at.z]);
           level.sound('haste', { pitch: Math.min(chain, 7) });
           level.emit('mire', chain ? 'hasteChain' : 'haste', p.at);
@@ -129,7 +132,7 @@ export const MIRE: LevelMechanicDef = {
           actor.stats.set('mechanic:mire', [inc('move.speed', -0.45, undefined, 'inMud')]);
         }
         const i = cellIndexOf(level.layout, actor.position);
-        actor.stats.setCondition('inMud', i >= 0 && mud.has(i));
+        actor.stats.setCondition('inMud', i >= 0 && mud.has(i) && !(actor.faction === 'hero' && heroHas(actor, 'mire.immune')));
       },
       dispose() {
         for (const p of pads) p.light?.release();

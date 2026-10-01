@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { tint } from '../themes/props';
-import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, mechanicDamage, mesh, monsterScaleDamage } from './common';
+import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, heroHas, mechanicDamage, mesh, monsterScaleDamage } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -86,7 +86,9 @@ export const THORNWEAVE: LevelMechanicDef = {
           actor.stats.set('mechanic:thornweave', [inc('move.speed', -0.35, undefined, 'inThorns')]);
         }
         const i = cellIndexOf(level.layout, actor.position);
-        const inside = i >= 0 && thorns.has(i);
+        // `thorns.immune` (Thornmother's Embrace): the vines part for the hero, no harm, no slow
+        const hero = actor.faction === 'hero';
+        const inside = i >= 0 && thorns.has(i) && !(hero && heroHas(actor, 'thorns.immune'));
         actor.stats.setCondition('inThorns', inside);
         if (!inside) {
           inThornsNow.delete(actor);
@@ -100,7 +102,8 @@ export const THORNWEAVE: LevelMechanicDef = {
           return;
         }
         timers.set(actor, TICK);
-        const amount = actor.faction === 'hero' ? mechanicDamage(depth, 5) : monsterScaleDamage(depth, 6);
+        // `thorns.reflect` (the Thornskin suffix): the vines turn on what you kite through them
+        const amount = hero ? mechanicDamage(depth, 5) : monsterScaleDamage(depth, 6) * (1 + 3 * Math.max(0, heroFlat(level.hero(), 'thorns.reflect')));
         level.damage(actor, { physical: amount }, 'thornweave', { ailments: { bleed: 0.3 } });
         level.burst('thorn', [actor.position.x, 0.5, actor.position.z]);
         if (actor.faction === 'hero') level.sound('thorn');

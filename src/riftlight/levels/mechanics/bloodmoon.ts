@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, mechanicDamage, mesh, monsterScaleDamage, perRoom, slotOrFree } from './common';
+import { asMechanicLevel, box, heroScale, mechanicDamage, mesh, monsterScaleDamage, perRoom, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -95,7 +95,8 @@ export const BLOODMOON: LevelMechanicDef = {
             continue;
           }
           level.damage(a, { physical: mechanicDamage(depth, 16) }, 'bloodmoon', { knockback: 6, from: b.at });
-        } else level.damage(a, { physical: monsterScaleDamage(depth, 30) * (1 + 0.2 * b.chain) }, 'bloodmoon', { knockback: 6, from: b.at, ailments: { bleed: 0.5 } });
+        // `explosion.damage` (Bloodmoon Chalice, the Volatile prefix) feeds the chain
+        } else level.damage(a, { physical: monsterScaleDamage(depth, 30) * (1 + 0.2 * b.chain) * heroScale(level.hero(), 'explosion.damage') }, 'bloodmoon', { knockback: 6, from: b.at, ailments: { bleed: 0.5 } });
       }
       level.burst('blood', [b.at.x, 0.6, b.at.z]);
       level.sound('blood-boom', { pitch: -b.chain });

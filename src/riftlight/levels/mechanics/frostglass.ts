@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, mesh, monsterScaleDamage, VelocityTracker } from './common';
+import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, mesh, monsterScaleDamage, VelocityTracker } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -12,6 +12,9 @@ import type { LevelMechanicDef } from './types';
  * speed) and monsters are brittle; a monster that dies on ice (or frozen) shatters into a
  * cold nova that can shatter its neighbours. The main road stays stone; slide-dashing and
  * shatter chains are the exploit.
+ *
+ * `shatter.chance` (Frostglass Edge: 100%) lets the hero's kills shatter anywhere in the level,
+ * off the ice too: every kill can start a chain.
  */
 const SHATTER_RADIUS = 3;
 const shardGeo = new OctahedronGeometry(0.5, 0);
@@ -95,11 +98,25 @@ export const FROSTGLASS: LevelMechanicDef = {
       const hero = level.hero();
       if (chain > 0 && hero) level.buff(hero, 'mechanic:frostglass:chain', [inc('xp.gain', 0.12 * chain), inc('damage', 0.06 * chain, ['cold'])], 8);
     };
-    const offKill = level.events.on('kill', ({ target }) => {
-      if (target.faction === 'monster' && onIce(target)) shatter(target.position.clone());
+    // each corpse shatters once (on ice, frozen, or by the hero's `shatter.chance`)
+    const shattered = new WeakSet<ActorLike>();
+    const shatterOnce = (target: ActorLike) => {
+      if (shattered.has(target)) return;
+      shattered.add(target);
+      shatter(target.position.clone());
+    };
+    const affixRng = level.rng.fork('shatter.chance');
+    const offKill = level.events.on('kill', ({ target, killer }) => {
+      if (target.faction !== 'monster') return;
+      if (onIce(target)) return shatterOnce(target);
+      const hero = level.hero();
+      // the killer may be the hero, or one of its minions / totems / traps
+      const mine = !!hero && !!killer && (killer === hero || (killer as { owner?: unknown }).owner === hero);
+      const chance = mine ? heroFlat(hero, 'shatter.chance') : 0;
+      if (chance > 0 && affixRng.chance(Math.min(1, chance))) shatterOnce(target);
     });
     const offHit = level.events.on('hit', ({ target, result }) => {
-      if (target.faction === 'monster' && result.killed && result.ailments.includes('freeze') && !onIce(target)) shatter(target.position.clone());
+      if (target.faction === 'monster' && result.killed && result.ailments.includes('freeze') && !onIce(target)) shatterOnce(target);
     });
 
     const slide = new Vector3();

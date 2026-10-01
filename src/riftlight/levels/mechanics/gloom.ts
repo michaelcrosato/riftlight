@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { toonMaterial } from '../../../engine/render/toon';
 import type { LightHandle } from '../../../engine/render/lights';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, perRoom, slotOrFree } from './common';
+import { asMechanicLevel, box, heroScale, perRoom, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -14,6 +14,8 @@ import type { LevelMechanicDef } from './types';
  * one. Will-o'-wisps light the main road. Lighting every lantern grants a big XP shrine buff.
  */
 const LANTERN_RADIUS = 7;
+/** Seconds the all-lit shrine buff lasts, before the hero's `lantern.duration` (inc). */
+const SHRINE = 90;
 const WISP_RADIUS = 3.6;
 const HERO_RADIUS = 4.5;
 
@@ -133,9 +135,11 @@ export const GLOOM: LevelMechanicDef = {
             level.burst('wisp', l.at, { count: 10 });
             level.sound('lantern');
             level.emit('gloom', 'lanternLit', l.at);
-            level.buff(hero, 'mechanic:gloom:lanterns', [inc('xp.gain', 0.05 * litCount)], 600);
+            // `lantern.duration` (Lantern of the Lost, the Lamplighter suffix) stretches what lanterns give
+            const last = heroScale(hero, 'lantern.duration');
+            level.buff(hero, 'mechanic:gloom:lanterns', [inc('xp.gain', 0.05 * litCount)], 600 * last);
             if (litCount === lanterns.length) {
-              level.buff(hero, 'mechanic:gloom:shrine', [inc('xp.gain', 0.5), more('damage', 0.15), inc('light.radius', 0.5)], 90);
+              level.buff(hero, 'mechanic:gloom:shrine', [inc('xp.gain', 0.5), more('damage', 0.15), inc('light.radius', 0.5)], SHRINE * last);
               level.emit('gloom', 'allLit', hero.position);
               level.sound('shrine');
             }

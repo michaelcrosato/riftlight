@@ -1,9 +1,10 @@
 import { Group, type Mesh, OctahedronGeometry, Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
+import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, mechanicDamage, mesh, monsterScaleDamage, PropTarget } from './common';
+import { asMechanicLevel, box, heroFlat, mechanicDamage, mesh, monsterScaleDamage, PropTarget } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -16,6 +17,11 @@ const PERIOD = 3.5;
 const CHARGE = 0.7;
 const ARC = 0.45;
 const OVERCHARGE = 8;
+/** `pylon.chain` (Stormspire Conductor, the Conductor suffix): each monster an arc hits jumps it to this many more within reach (m), at this share of the damage. */
+const CHAIN_REACH = 5;
+const CHAIN_SHARE = 0.7;
+/** The hero counts as `nearPylon` (the Pylonbound prefix) within this many metres of a pylon. */
+const NEAR_PYLON = 4;
 const tipGeo = new OctahedronGeometry(0.5, 0);
 tipGeo.userData.shared = true;
 
@@ -136,13 +142,46 @@ export const STORMSPIRE: LevelMechanicDef = {
       const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.z - a.z) * abz) / (abx * abx + abz * abz || 1)));
       return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
     };
+    /** Short-lived leap bolts (removed by game time, not wall time). */
+    const leaps: { g: Group; until: number }[] = [];
     let conducted = 0;
+    /** `pylon.chain`: from a struck monster, the arc leaps on to the nearest unstruck monsters. */
+    const chain = (from: ActorLike, struck: Set<ActorLike>, amount: number, monstersOnly: boolean) => {
+      let left = Math.round(heroFlat(level.hero(), 'pylon.chain'));
+      let at = from;
+      while (left-- > 0) {
+        let next: ActorLike | null = null;
+        let best = CHAIN_REACH;
+        for (const a of level.actors()) {
+          if (!a.alive || a.faction !== 'monster' || struck.has(a)) continue;
+          const d = a.position.distanceTo(at.position);
+          if (d < best) {
+            best = d;
+            next = a;
+          }
+        }
+        if (!next) return;
+        struck.add(next);
+        const g = new Group();
+        drawBolt(g, at.position.clone().setY(1), next.position.clone().setY(1));
+        g.name = 'stormspire:chain';
+        level.root.add(g);
+        leaps.push({ g, until: level.time() + 0.15 });
+        const r = level.damage(next, { lightning: amount * CHAIN_SHARE }, 'stormspire', { ailments: { shock: 0.5 } });
+        level.emit('stormspire', 'chain', next.position);
+        if (monstersOnly && r?.killed) conducted++;
+        at = next;
+      }
+    };
     const zap = (from: Vector3, to: Vector3, monstersOnly: boolean, mult: number) => {
+      const struck = new Set<ActorLike>();
       for (const actor of level.actors()) {
         if (!actor.alive || (monstersOnly && actor.faction !== 'monster')) continue;
         if (segDist(actor.position, from, to) > 0.7 + actor.radius) continue;
         const amount = actor.faction === 'hero' ? mechanicDamage(depth, 14) : monsterScaleDamage(depth, 18) * mult;
+        struck.add(actor);
         const r = level.damage(actor, { lightning: amount }, 'stormspire', { ailments: { shock: 0.5 } });
+        if (actor.faction === 'monster') chain(actor, struck, amount, monstersOnly);
         // Overcharged kills feed the conductor buff (the power-leveller's reward).
         const hero = level.hero();
         if (monstersOnly && r?.killed && hero) {
@@ -152,13 +191,16 @@ export const STORMSPIRE: LevelMechanicDef = {
         }
       }
     };
-    /** Short-lived leap bolts (removed by game time, not wall time). */
-    const leaps: { g: Group; until: number }[] = [];
 
     return {
       update(dt) {
         const t = level.time();
         const hero = level.hero();
+        if (hero) {
+          let near = false;
+          for (const p of pylons.values()) if (Math.hypot(hero.position.x - p.at.x, hero.position.z - p.at.z) < NEAR_PYLON) near = true;
+          hero.stats.setCondition('nearPylon', near);
+        }
         for (let i = leaps.length - 1; i >= 0; i--)
           if (leaps[i]!.until <= t) {
             leaps[i]!.g.removeFromParent();
@@ -208,6 +250,7 @@ export const STORMSPIRE: LevelMechanicDef = {
         }
       },
       dispose() {
+        level.hero()?.stats.setCondition('nearPylon', false);
         for (const p of pylons.values()) {
           level.removeTarget(p.target);
           p.light?.release();

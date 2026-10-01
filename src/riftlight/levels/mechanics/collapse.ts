@@ -3,7 +3,7 @@ import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { VOID } from '../layout/grid';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, centroid, growBlob } from './common';
+import { asMechanicLevel, box, cellIndexOf, centroid, growBlob, heroScale } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -16,6 +16,8 @@ import type { LevelMechanicDef } from './types';
  * (instanced tiles), and `level.setCell(x, z, VOID)` updates nav, colliders and walkability.
  */
 const CRACK = 0.9;
+// `collapse.bonusLoot` (Collapse Runner, the Crumbling Halls suffix): more items from caches and
+// the under-par bonus. Falls are Level / wire's job: `collapse.fallImmune` makes them harmless.
 const SPREAD = 0.22;
 const tileGeo = new BoxGeometry(0.98, 0.4, 0.98).translate(0, -0.2, 0);
 tileGeo.userData.shared = true;
@@ -124,7 +126,7 @@ export const COLLAPSE: LevelMechanicDef = {
       const par = 30 + level.layout.path.length * 0.75;
       const hero = level.hero();
       if (time > par || !hero) return;
-      level.hooks.dropLoot?.(hero.position.clone(), { rarity: 'rare', quantity: 3, itemLevel: level.depth, source: 'collapse:bonus' });
+      level.hooks.dropLoot?.(hero.position.clone(), { rarity: 'rare', quantity: Math.round(3 * heroScale(hero, 'collapse.bonusLoot')), itemLevel: level.depth, source: 'collapse:bonus' });
       level.emit('collapse', 'bonusLoot', hero.position);
       level.burst('loot', [hero.position.x, 1, hero.position.z]);
     });
@@ -156,7 +158,7 @@ export const COLLAPSE: LevelMechanicDef = {
             cache.taken = true;
             for (const p of cache.parts) p.visible = false;
             cache.light?.release();
-            level.hooks.dropLoot?.(cache.at.clone(), { rarity: 'magic', quantity: 2, itemLevel: level.depth, source: 'collapse:cache' });
+            level.hooks.dropLoot?.(cache.at.clone(), { rarity: 'magic', quantity: Math.round(2 * heroScale(hero, 'collapse.bonusLoot')), itemLevel: level.depth, source: 'collapse:cache' });
             level.burst('loot', [cache.at.x, 0.8, cache.at.z]);
             level.sound('chest');
             level.emit('collapse', 'cache', cache.at);

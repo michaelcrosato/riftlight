@@ -239,7 +239,7 @@ class LevelRuntime implements Level {
       else if (a.faction === 'hero') {
         // Default: lose some life and climb back where you last stood.
         const max = a.stats.get('life') || a.life;
-        this.damage(a, { physical: max * 0.15 }, 'fall');
+        if (!a.stats.has('collapse.fallImmune')) this.damage(a, { physical: max * 0.15 }, 'fall');
         a.position.copy(this.lastSafe);
       } else this.damage(a, { physical: 1e9 }, 'fall');
       this.emit('level', 'fall', a.position.clone());

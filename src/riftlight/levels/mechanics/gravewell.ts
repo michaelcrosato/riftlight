@@ -5,7 +5,7 @@ import type { LightHandle } from '../../../engine/render/lights';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, cellTiles, mesh, OctaGeo } from './common';
+import { asMechanicLevel, cellTiles, heroHas, mesh, OctaGeo, resistFactor } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -128,12 +128,16 @@ export const GRAVEWELL: LevelMechanicDef = {
       },
       affect(actor, dt) {
         const t = level.time();
+        // Gravewell Anchor (`well.immune`) and the Anchor suffix (`well.resist`) hold the hero down
+        const hero = actor.faction === 'hero';
+        if (hero && heroHas(actor, 'well.immune')) return;
+        const resist = hero ? resistFactor(actor, 'well.resist') : 1;
         for (const w of wells) {
           const dx = w.at.x - actor.position.x;
           const dz = w.at.z - actor.position.z;
           const d = Math.hypot(dx, dz);
           if (d > w.radius + 0.4 || d < 0.3) continue;
-          const strength = (pulse(w, t) ? 14 : 4) * (1 - d / (w.radius + 0.4)) * (actor.faction === 'hero' ? 0.45 : 1);
+          const strength = (pulse(w, t) ? 14 : 4) * (1 - d / (w.radius + 0.4)) * (hero ? 0.45 * resist : 1);
           actor.push(pull.set(dx / d, 0, dz / d).multiplyScalar(strength * dt));
         }
       },

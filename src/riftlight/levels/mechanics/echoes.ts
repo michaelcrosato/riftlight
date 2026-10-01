@@ -3,7 +3,7 @@ import { inc } from '../../core/mods';
 import { toonMaterial } from '../../../engine/render/toon';
 import type { LightHandle } from '../../../engine/render/lights';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, OctaGeo, mesh, perRoom, slotOrFree } from './common';
+import { asMechanicLevel, box, heroHas, heroScale, OctaGeo, mesh, perRoom, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -13,8 +13,15 @@ import type { LevelMechanicDef } from './types';
  *
  * Needs combat: `hooks.replaySkill(actor, skill, { at, damageScale, tags: ['echo'] })`.
  * Without it the echo still shows (ghost + sound) and emits its events.
+ *
+ * Loot that bends it (The Second Voice, Twinfang, the Resonant prefix):
+ *   echo.damage         inc/more: echoes hit harder
+ *   echo.delay          inc: the echo comes sooner (−25%) or later
+ *   echo.repeatsSkills  flag: every cast echoes twice (a second ghost one delay later)
  */
 const DELAY = 2;
+/** The shortest an echo's delay can get (s). */
+const MIN_DELAY = 0.5;
 const RESONANCE_RADIUS = 3.5;
 
 export const ECHOES: LevelMechanicDef = {
@@ -72,10 +79,13 @@ export const ECHOES: LevelMechanicDef = {
     const pending: Pending[] = [];
     const resonantAt = (p: Vector3) => resonators.some((r) => Math.hypot(r.at.x - p.x, r.at.z - p.z) < RESONANCE_RADIUS);
     const off = level.events.on('skill', ({ actor, skill }) => {
-      if (actor.faction !== 'hero' || skill.startsWith('echo:')) return;
+      // the hero's own casts (its totems and traps cast too, but they don't echo)
+      if (actor !== level.hero() || skill.startsWith('echo:')) return;
       const at = actor.position.clone();
       const resonant = resonantAt(at);
-      pending.push({ skill, at, due: level.time() + DELAY, ghost: makeGhost(at), resonant });
+      const delay = Math.max(MIN_DELAY, DELAY * heroScale(actor, 'echo.delay'));
+      pending.push({ skill, at, due: level.time() + delay, ghost: makeGhost(at), resonant });
+      if (heroHas(actor, 'echo.repeatsSkills')) pending.push({ skill, at, due: level.time() + delay * 2, ghost: makeGhost(at), resonant });
       level.emit('echoes', 'record', at);
       if (resonant) level.buff(actor, 'mechanic:echoes:resonance', [inc('damage', 0.15)], 4);
     });
@@ -94,7 +104,7 @@ export const ECHOES: LevelMechanicDef = {
           level.burst('echo', [p.at.x, 1, p.at.z]);
           level.sound('echo');
           level.emit('echoes', 'replay', p.at);
-          if (hero) level.hooks.replaySkill?.(hero, p.skill, { at: p.at, facing: null, damageScale: p.resonant ? 1 : 0.5, tags: ['echo'] });
+          if (hero) level.hooks.replaySkill?.(hero, p.skill, { at: p.at, facing: null, damageScale: (p.resonant ? 1 : 0.5) * heroScale(hero, 'echo.damage'), tags: ['echo'] });
         }
       },
       dispose() {
