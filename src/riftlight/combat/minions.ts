@@ -1,7 +1,7 @@
 import { BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE } from '../../engine/palette';
 import { toonMaterial } from '../../engine/render/toon';
-import { flat, type Mod, more, type StatSheet } from '../core/mods';
+import { flat, inc, type Mod, more, type StatSheet } from '../core/mods';
 import { StatQuery } from './stats';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { buildSkill } from '../skills/build';
@@ -16,15 +16,19 @@ export const MINION_BASE: Readonly<Record<string, Readonly<Record<string, number
 };
 
 /**
- * Minions grow with their summoner: they wear no gear, so the summoner's level stands in for
- * the weapons and armour a hero finds (`npm run balance` keeps minion builds near the
- * others): `more` damage and life per level above 1, plus the summon gem's +8 life a level.
+ * Minions wear no gear. Their damage grows like a spell's: the summon gem's base grows with its
+ * level (skills/build.ts SPELL_BASE_GROWTH), the summoner's gear and passives add `minion.*`
+ * and minion-scoped mods (`ownerMinionMods`), and each summoner level adds what a level gives
+ * the hero (WIRE_TUNING.hero.perLevel.damage, as `inc`). Their life grows faster with the
+ * summoner's level (`more`), standing in for the armour they can't wear, plus the summon gem's
+ * +8 life a level. `npm run balance` keeps minion builds within ~3× of the others, naked and
+ * geared.
  */
-export const MINION_GROWTH = { damage: 0.6, life: 0.5 } as const;
+export const MINION_GROWTH = { damage: 0.05, life: 0.5 } as const;
 
 export function minionLevelMods(gemLevel: number, ownerLevel: number): Mod[] {
   const n = Math.max(0, ownerLevel - 1);
-  return [flat('life', 8 * Math.max(0, gemLevel - 1)), ...(n > 0 ? [more('damage', MINION_GROWTH.damage * n), more('life', MINION_GROWTH.life * n)] : [])];
+  return [flat('life', 8 * Math.max(0, gemLevel - 1)), ...(n > 0 ? [inc('damage', MINION_GROWTH.damage * n), more('life', MINION_GROWTH.life * n)] : [])];
 }
 
 /** The minion's own melee swing (its damage comes from the summon gem). */

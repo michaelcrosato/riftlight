@@ -19,7 +19,7 @@ export function levelMods(level: number): Mod[] {
   const n = Math.max(0, level - 1);
   if (!n) return [];
   const p = T.perLevel;
-  return [flat('life', p.life * n), flat('mana', p.mana * n), flat('accuracy', p.accuracy * n), flat('life.regen', p['life.regen'] * n), inc('damage', p.damage * n)];
+  return [flat('life', p.life * n), flat('mana', p.mana * n), flat('mana.regen', p['mana.regen'] * n), flat('accuracy', p.accuracy * n), flat('life.regen', p['life.regen'] * n), inc('damage', p.damage * n)];
 }
 
 /** The starter sword (the `starter` source) until gear brings a weapon. */
@@ -39,6 +39,9 @@ export function monsterBase(depth: number, scale = 1, add = false): Record<strin
     'life.regen': 0,
     mana: 0,
     'mana.regen': 0,
+    'res.max.fire': M.resMax,
+    'res.max.cold': M.resMax,
+    'res.max.lightning': M.resMax,
   };
 }
 

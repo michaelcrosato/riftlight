@@ -9,7 +9,7 @@ export const WIRE_TUNING = {
     /** Stats every hero starts with (merged over HeroController's base). Multiplier stats are base 1 (docs/GAME.md, levels). */
     base: { life: 130, mana: 70, 'mana.regen': 5, 'life.regen': 2.5, 'move.speed': 5.6, accuracy: 600, mass: 3, 'xp.gain': 1, 'light.radius': 1, 'item.rarity': 1, 'item.quantity': 1, 'gold.find': 1 },
     /** Growth per character level above 1 (the `level` source). */
-    perLevel: { life: 11, mana: 4, accuracy: 25, 'life.regen': 0.25, damage: 0.05 },
+    perLevel: { life: 11, mana: 4, 'mana.regen': 0.3, accuracy: 25, 'life.regen': 0.25, damage: 0.05 },
     /** The sword the hero carries until loot equips a weapon (the `starter` source). */
     starterWeapon: { min: 6, max: 11, crit: 0.05 },
     /** Gem level of the default skills: 1 + floor(level × this). */
@@ -39,6 +39,8 @@ export const WIRE_TUNING = {
     accuracy: 320,
     accuracyPerLevel: 22,
     armourPerDepth: 3,
+    /** Elemental resistances a monster's parts and elite mods stack up are capped here (a fire-themed body with a Fire Enchanted elite stays killable by fire). */
+    resMax: 0.5,
     /** Turn rate (rad/s) while walking; attacks face their target at once. */
     turnRate: 9,
     /** Corpses: seconds after the Death clip ends before they sink away. */

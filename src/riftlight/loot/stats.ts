@@ -87,6 +87,7 @@ export const STAT_NAMES: Readonly<Record<string, string>> = {
   'block.spells': 'block applies to spells',
   'leech.instant': 'life leech is instant',
   'minion.life': 'minion life',
+  'minion.speed': 'minion attack, cast and movement speed',
   'curse.immune': 'unaffected by curses',
   'charge.onKill': 'chance to gain a charge on kill',
   'charge.onHit': 'chance to gain a charge on hit',
