@@ -1,20 +1,19 @@
 // Moveset verification helpers, shared by scripts/e2e.mjs. Each move runs in the live
 // game (third-person camera, yaw 0 → W = -Z, S = +Z, D = +X, A = -X) by injecting keys and
 // teleporting, then asserts on the character's state machine and position.
+//
+// Time is game time: the helpers advance the engine with Engine.step (exact 1/60 s frames),
+// so `wait(500)` is always 30 frames however slowly the machine renders (CI runners too).
 
 /** Installed into the page: small async DSL over window.__PIXEL_ENGINE__. */
 export const PAGE_HELPERS = () => {
   const e = window.__PIXEL_ENGINE__;
   const g = e.game;
-  const frames = (n) =>
-    new Promise((res) => {
-      const target = e.frame + n;
-      const tick = () => (e.frame >= target ? res() : requestAnimationFrame(tick));
-      tick();
-    });
+  const frames = async (n) => e.step(Math.max(0, Math.round(n)));
   const T = {
     frames,
-    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+    /** Game time in milliseconds. */
+    wait: (ms) => frames((ms * 60) / 1000),
     set: (keys, down) => keys.forEach((k) => e.input.setKey(k, down)),
     releaseAll: () => ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyF', 'KeyJ', 'ShiftLeft'].forEach((k) => e.input.setKey(k, false)),
     async hold(keys, ms) {
@@ -39,8 +38,7 @@ export const PAGE_HELPERS = () => {
     /** Poll until predicate(hero) or timeout; returns the set of states seen. */
     async until(pred, ms = 3000) {
       const seen = new Set();
-      const t0 = performance.now();
-      while (performance.now() - t0 < ms) {
+      for (let f = 0; f < (ms * 60) / 1000; f++) {
         seen.add(g.hero.state);
         if (pred(g.hero)) return { ok: true, seen: [...seen] };
         await frames(1);
@@ -68,9 +66,15 @@ export const MOVES = [
     return { ok: s.state === 'walk' && ['Tiptoe', 'Walk'].includes(s.anim), detail: s };`],
   ['skid turn', `
     await T.place([-4, 0, 6]);
-    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300); T.set(['KeyD'], false);
-    T.set(['KeyA'], true); const r = await T.until(h => h.state === 'skid', 800); T.set(['KeyA'], false);
-    return { ok: r.ok, detail: r.seen };`],
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300);
+    T.set(['KeyA'], true); T.set(['KeyD'], false); // straight into reverse (letting go alone would brake)
+    const r = await T.until(h => h.state === 'skid', 800); const turned = await T.until(h => Math.sin(h.facing) < -0.7, 1500); T.set(['KeyA'], false);
+    return { ok: r.ok && turned.ok, detail: { skid: r.seen, turned: turned.seen } };`],
+  ['brake to a stop from a run', `
+    await T.place([-6, 0, 10], Math.PI / 2);
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run' && h.speed > 5.5, 2500); T.set(['KeyD'], false);
+    const r = await T.until(h => h.state === 'skid', 300); const s = await T.until(h => h.state === 'idle', 2000);
+    return { ok: r.ok && s.ok, detail: { brake: r.seen, stop: s.seen } };`],
   ['step up stairs', `
     await T.place([-1.4, 0, 0], -Math.PI / 2);
     T.set(['KeyA'], true); const r = await T.until(h => h.feet.y > 1.3, 5000); T.set(['KeyA'], false);
@@ -108,8 +112,8 @@ export const MOVES = [
     return { ok: k === 'LongJump', detail: k };`],
   ['side flip (skid + jump)', `
     await T.place([-6, 0, 10], Math.PI / 2);
-    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300); T.set(['KeyD'], false);
-    T.set(['KeyA'], true); await T.until(h => h.state === 'skid', 800); await T.tap('Space'); const k = T.snap().jumpKind; T.set(['KeyA'], false);
+    T.set(['KeyD'], true); await T.until(h => h.state === 'run', 2500); await T.wait(300);
+    T.set(['KeyA'], true); T.set(['KeyD'], false); await T.until(h => h.state === 'skid', 800); await T.tap('Space'); const k = T.snap().jumpKind; T.set(['KeyA'], false);
     await T.until(h => h.grounded && h.state !== 'jump', 2500);
     return { ok: k === 'SideFlip', detail: k };`],
   ['crouch + crouch walk', `

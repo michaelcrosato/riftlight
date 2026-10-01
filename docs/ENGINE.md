@@ -222,8 +222,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
 **[docs/ANIMATION.md](ANIMATION.md)**:
 
 - `npm run anim -- check` prints metrics for every clip and exits 1 on problems.
-- `npm run anim -- sheet Run` writes `.scratch/anim/Run.png`. Read the PNG to see the
-  animation.
+- `npm run anim -- sheet Run` writes `.scratch/anim/Run.png` and `curves Run` writes
+  `.scratch/anim/Run.curves.png`. Read the PNGs to see the animation. `npm run film --
+  run-stop` films it in the game.
 - `/lab.html` previews a clip in the real renderer: scrub, views, skeleton, hot reload, and
   `window.__ANIM_LAB__`.
 
@@ -237,6 +238,16 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   input from scripts.
 - `window.__PIXEL_ENGINE__.paused = true`: freeze simulation and animation (rendering
   continues), e.g. to capture an exact pose.
+- `window.__PIXEL_ENGINE__.step(n)`: switch to manual time (`engine.manual = true`) and
+  advance exactly `n` frames of 1/60 s: simulation, animation and camera. Then
+  `renderer.capture()` shows the result. Recordings are frame-exact however slowly the
+  browser renders. `npm run film` is built on it (see docs/ANIMATION.md). Set
+  `manual = false` to hand time back to the render loop. `step()` ignores `paused` and the
+  engine hotkeys (P, R, `, [ ]); it only advances the game.
+- `hero.animationMix()`: the clips currently contributing to the pose, with their blend
+  weight, time and rate. Blends are driven by `PlatformerCharacter`, not three's
+  `crossFadeFrom`: every outgoing clip fades from the weight it has *now*, and
+  locomotion-to-locomotion switches start in step with the outgoing stride.
 - `engine.setFilters(ids)`, `engine.availableFilters`, `engine.camera.setZoom(z)`,
   `engine.camera.describe()`.
 - `npm run test:e2e` runs the production build in Chromium. Suites:
@@ -245,7 +256,8 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   - every filter on both backends
   - every move in `scripts/e2e-moves.mjs`
   - camera hot-swap keeps the player in place
-  - the Animation Lab (every clip, views, sheets, API)
+  - the Animation Lab (every clip, views, sheets, curves, API)
+  - `Engine.step()` manual time
 
   Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
   Chromium loses the WebGPU device when a canvas presents. Run one suite with

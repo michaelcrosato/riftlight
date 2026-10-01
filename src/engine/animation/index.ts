@@ -6,4 +6,5 @@ export { ankleFor, applyFeet, legIK, lerpGoal, placeFeet, twoBoneX, type FootGoa
 export { footAt, gaitClip, gaitPose, type GaitSpec } from './gait';
 export { compileClip, compileClips, restPoseOf, type RestPose } from './compile';
 export { analyzeClip, sampleFrames, type ClipReport, type SampledFrame } from './metrics';
+export { renderCurves, type CurveOptions } from './curves';
 export { defaultFrames, renderSheet, type SheetImage, type SheetOptions, type ViewName } from './sheet';

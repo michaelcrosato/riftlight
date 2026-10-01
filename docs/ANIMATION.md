@@ -7,19 +7,39 @@ At runtime (and in the tools) the clips are compiled against the model's joints.
 ```
 animations.ts ──► ClipDef (keys, feet track, layers) ──► compileClip() ──► three.js AnimationClip
         ▲                                                   │
-        │   npm run anim -- check / sheet                   ├─► game (PlatformerCharacter)
-        └── agent edits numbers ◄── metrics + contact sheets ◄┘   Animation Lab (/lab.html)
+        │   npm run anim -- check / sheet / curves / diff   ├─► game (PlatformerCharacter) ─► npm run film
+        └── agent edits numbers ◄── metrics, sheets, curves, films ◄┘   Animation Lab (/lab.html)
 ```
 
 ## The loop
 
 1. Edit a clip in `src/game/hero/animations.ts`.
 2. `npm run anim -- check Walk` prints the metrics table. The command exits 1 on problems.
-3. `npm run anim -- sheet Walk` writes `.scratch/anim/Walk.png`. Open the PNG to look at it.
-4. Optionally run `npm run dev` and open `/lab.html?clip=Walk`. The clip plays in the real
-   renderer and hot-reloads on save.
-5. Repeat until the sheet looks right and `check` is clean. Unit tests fail on any problem
-   (`src/engine/animation/animation.test.ts`).
+3. **Look at the poses:** `npm run anim -- sheet Walk --compare` writes `.scratch/anim/Walk.png`.
+   Open the PNG. With `--compare`, the previous version is drawn in magenta.
+4. **Look at the timing:** `npm run anim -- curves Walk --compare` writes
+   `.scratch/anim/Walk.curves.png`, the graph editor. `npm run anim -- diff Walk` says in words
+   what your edit changed.
+5. **Look at it in the game:** `npm run film -- run-stop` (about 5 s) plays the move in the real
+   renderer, through the real state machine and blends. It writes a filmstrip and prints every
+   pop, foot slip and sinking foot. A clip that looks right on its own can still pop, slide or
+   snap when it's entered, left or blended.
+6. Repeat until the sheet, curves and film all look right and `check` is clean. Unit tests fail
+   on any problem (`src/engine/animation/animation.test.ts`).
+
+Optionally, run `npm run dev` and open `/lab.html?clip=Walk`. The clip plays in the real renderer
+and hot-reloads on save.
+
+### What each view is for
+
+| question | look at |
+| --- | --- |
+| Is the pose right? Silhouette, balance, contacts? | contact **sheet** (4 views, key frames) |
+| Is the timing right? Easing, anticipation, overshoot, holds, snaps, the loop wrap? | motion **curves** |
+| Does it travel right? Arcs, spacing, planted feet? | the sheet's **TRAIL** row (a dot per frame) |
+| What did my edit change? | `--compare` (sheet / curves) and `anim -- diff` |
+| Does it work in the game? Transitions, blends, speed matching, terrain? | `npm run film` |
+| Does it read at game resolution? | `npm run film` (pixel mode, the real toon pipeline) |
 
 ### What the tools show you
 
@@ -47,6 +67,69 @@ animations.ts ──► ClipDef (keys, feet track, layers) ──► compileClip
   a single point and a sliding foot shows as a smear.
 - Problems and warnings are printed underneath.
 
+**Motion curves** (`renderCurves`) are the animator's graph editor, as a PNG:
+
+- **HEIGHTS**: world height of the feet, hands, head and pelvis. This is the bouncing-ball
+  view: arcs, contact timing, hang time. The floor is the grey line.
+- **ROOT**: pelvis offset (x, y, z) and squash, as authored.
+- **One panel per moving joint**: X red, Y green, Z blue, in degrees as authored. Red ticks
+  under a panel mark frames where that joint turns faster than 1200°/s.
+- **SPEED**: the fastest joint rotation per frame. Spikes are pops.
+- Dashed verticals are keys. Loops are drawn twice so the wrap is visible. `--joints ArmR,LegL`
+  zooms in on a few joints, `--cycles 1` and `--width 1200` spread them out.
+- Read them like an animator:
+  - A flat stretch is a hold. Is it meant to be?
+  - A curve that eases into a key and straight out again looks mechanical.
+  - A good hit overshoots and settles.
+  - A corner is a velocity snap.
+  - The first frames should move *against* the action (anticipation).
+
+**TRAIL spacing**: the white dots on the trail paths are one per frame. Bunched dots mean slow
+(easing in or out, hang time); spread dots mean fast. Even spacing everywhere is robotic.
+
+**Versions**: every `sheet` and `curves` run saves the clip to `.scratch/anim/history/`. So
+`--compare` and `diff` always refer to the last *different* version you rendered. If the
+length changed, `diff` compares the two on a scaled timeline: its frame numbers are on the
+longer version's frames.
+
+**Film** (`npm run film`, `scripts/film.ts`): the real game in Chromium, advanced one exact
+1/60 s frame at a time with `Engine.step()`, driven by a small input script:
+
+- `npm run film -- list` shows the named scenarios:
+  - idle, walk, run-stop, skid, jump, run-jump, triple-jump, backflip, long-jump, side-flip
+  - crouch, crawl, punches, ground-pound, dive, lie-down, sit, stairs, ledge, climb, hard-land
+- Several names run in one browser session. `all` films every scenario.
+- A scenario is just a script. You can pass your own:
+  `npm run film -- "place 0 0 4 90; down D; wait 30; tap SPACE; until land; up D; wait 20"`.
+  Commands:
+  - `place x y z [yaw°]`
+  - `hold KEYS n`, `down` / `up KEYS`, `tap KEYS`
+  - `wait n`
+  - `until STATE [max]`
+- Output in `.scratch/film/`:
+  - A PNG filmstrip. Each cell shows state, dominant clip and blend partner, from a camera
+    that follows the hero.
+  - Under the cells, a timeline: state and clip bands, ground speed, fastest joint, sole
+    height above the ground, planted-foot slip.
+  - A JSON log of every frame.
+  - `--gif` also writes an animated GIF, for a human to watch.
+- The console prints the state/clip timeline and flags:
+  - **pop**: a joint jumps in one frame, 3× faster than the frames around it.
+  - **slip**: a planted foot slides more than 0.5 m/s outside skid and slide states.
+  - **sink**: a foot goes more than 3 cm into the ground.
+  - **float**: both feet are more than 4 cm up while standing or walking.
+- Options:
+  - `--view side|front|three|back|game` (the default is side, relative to the hero's facing)
+  - `--size` (metres framed)
+  - `--every` (frames per image)
+  - `--mode raw`
+  - `--look snes`
+  - `--webgpu` (under xvfb)
+  - `--preview` (serve the production build)
+  - `--cols` (filmstrip columns)
+  - `--out` and `--name` (where the files go)
+  - `--verbose` (progress and page console)
+
 Other commands:
 
 - `npm run anim -- overview [clips]` shows every clip as a side-view strip in one PNG.
@@ -61,13 +144,13 @@ Other commands:
 - Views: side, front, 3/4, top and orbit.
 - Toggle Pixel / Raw 3D, the skeleton and the treadmill grid. The grid scrolls at the clip's
   speed, so planted feet stick to it.
-- The panel shows the clip's metrics and can open its contact sheet.
+- The panel shows the clip's metrics and can open its contact sheet or motion curves.
 - URL: `?clip=Run&view=side&frame=6&speed=0.25&paused=1`.
 - Agent handle, `window.__ANIM_LAB__`:
   - `clips()`, `select(name)`, `seek(frame)`, `play()`, `pause()`, `state()`
   - `pose()`: joint rotations and world positions
   - `metrics(name)`
-  - `sheet(name)`: PNG data URL
+  - `sheet(name)`, `curves(name)`: PNG data URLs
   - `capture()`: the rendered frame as a PNG data URL
 
 ## Writing clips

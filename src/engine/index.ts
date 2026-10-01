@@ -44,6 +44,7 @@ export {
   gaitClip,
   mirror,
   placeFeet,
+  renderCurves,
   renderSheet,
   sampleClip,
   validateClip,

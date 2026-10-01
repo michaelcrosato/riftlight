@@ -20,6 +20,7 @@ import {
   compileClip,
   Engine,
   optionsFromUrl,
+  renderCurves,
   renderSheet,
   toonMaterial,
   type CameraConfig,
@@ -163,6 +164,11 @@ class AnimationLab implements Game {
     return renderSheet(this.probe, this.rig, def, this.clips.get(name)!, { report: this.report(name), ...options });
   }
 
+  curves(name = this.clipName, options: Parameters<typeof renderCurves>[4] = {}): SheetImage {
+    const def = this.defs.find((d) => d.name === name)!;
+    return renderCurves(this.probe, this.rig, def, this.clips.get(name)!, options);
+  }
+
   update(_ctx: GameContext, dt: number): void {
     if (!this.action) return;
     if (this.playing) {
@@ -236,6 +242,7 @@ function ui(engine: Engine, lab: AnimationLab): void {
     <p class="notes" data-a="notes"></p>
     <pre class="metrics" data-a="metrics"></pre>
     <button data-a="sheet">Contact sheet</button>
+    <button data-a="curves">Motion curves</button>
     <p class="hint">Edit src/game/hero/animations.ts — it hot-reloads. <code>npm run anim -- check</code></p>`;
   document.body.appendChild(panel);
   const $ = <T extends HTMLElement>(sel: string) => panel.querySelector<T>(sel)!;
@@ -297,6 +304,7 @@ function ui(engine: Engine, lab: AnimationLab): void {
   const mode = $<HTMLButtonElement>('[data-a="mode"]');
   mode.addEventListener('click', () => (mode.textContent = engine.toggleMode() === 'pixel' ? 'Raw 3D' : 'Pixel'));
   $('[data-a="sheet"]').addEventListener('click', () => showSheet(lab.sheet()));
+  $('[data-a="curves"]').addEventListener('click', () => showSheet(lab.curves()));
   window.addEventListener('keydown', (e) => {
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLButtonElement) return;
     if (e.key === ',') step(-1);
@@ -357,6 +365,8 @@ export interface LabApi {
   metrics(name?: string): ClipReport;
   /** Contact sheet PNG as a data URL. */
   sheet(name?: string): string;
+  /** Motion curves (graph editor) PNG as a data URL. */
+  curves(name?: string): string;
   /** The rendered frame (current mode/filters) as a PNG data URL. */
   capture(): Promise<string>;
 }
@@ -389,6 +399,7 @@ Engine.start(lab, { container, ...optionsFromUrl(), filters: [] })
       },
       metrics: (n) => lab.report(n),
       sheet: (n) => toCanvas(lab.sheet(n)).toDataURL('image/png'),
+      curves: (n) => toCanvas(lab.curves(n)).toDataURL('image/png'),
       capture: async () => {
         const f = await engine.renderer.capture();
         return toCanvas({ width: f.width, height: f.height, data: new Uint8ClampedArray(f.pixels) }).toDataURL('image/png');

@@ -4,7 +4,7 @@ import { Euler, type Object3D, Vector3 } from 'three/webgpu';
 import { beforeAll, describe, expect, it } from 'vitest';
 import { HERO_CLIPS } from '../../game/hero/animations';
 import { HERO_RIG } from '../../game/hero/rig';
-import { analyzeClip, compileClip, gaitClip, legIK, mirror, mirrorClip, placeFeet, renderSheet, restPoseOf, sampleClip, twoBoneX, validateClip, type ClipDef } from '.';
+import { analyzeClip, compileClip, gaitClip, legIK, mirror, mirrorClip, placeFeet, renderCurves, renderSheet, restPoseOf, sampleClip, twoBoneX, validateClip, type ClipDef } from '.';
 
 const RAD = Math.PI / 180;
 const legs = HERO_RIG.legs!;
@@ -147,5 +147,15 @@ describe('hero clips (compiled against hero.glb)', () => {
     let blue = 0; // overalls
     for (let i = 0; i < img.data.length; i += 4) if (img.data[i + 2]! > 150 && img.data[i]! < 90) blue++;
     expect(blue).toBeGreaterThan(200);
+  });
+
+  it('renders motion curves: a panel per moving joint, the previous version on request', () => {
+    const rest = restPoseOf(model, HERO_RIG);
+    const def = HERO_CLIPS.find((c) => c.name === 'Jump')!;
+    const clip = compileClip(def, HERO_RIG, rest);
+    const one = renderCurves(model, HERO_RIG, def, clip, { joints: ['ArmR'] });
+    const all = renderCurves(model, HERO_RIG, def, clip, { compare: { def, clip } });
+    expect(one.data.length).toBe(one.width * one.height * 4);
+    expect(all.height).toBeGreaterThan(one.height + 5 * 64); // many joints move in a jump
   });
 });

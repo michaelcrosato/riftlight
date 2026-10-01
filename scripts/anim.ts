@@ -5,20 +5,28 @@
 //   check [clip...]              validate + metrics table; exit 1 on problems
 //   sheet <clip...|all> [opts]   PNG contact sheet(s) → .scratch/anim/<clip>.png
 //        --frames 0,4,8  --views side,front,three,top  --scale 64  --no-trails  --no-skeleton
+//   curves <clip...> [opts]      PNG motion curves (graph editor) → .scratch/anim/<clip>.curves.png
+//        --joints ArmR,LegL  --cycles 1  --width 900
+//   diff <clip...>               what changed since the previous version you rendered
+//                                (frames are on the longer version's timeline, scaled)
 //   overview [clip...]           one PNG, a side-view strip per clip → .scratch/anim/overview.png
 //   pose <clip> <frame>          JSON: authored joint rotations + world positions at that frame
 //
 // Options for every command: --json (machine-readable output), --out <dir>.
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// sheet and curves take --compare: draw the previous version of the clip (magenta skeleton
+// and paths on sheets, grey curves). Every
+// sheet/curves run records the clip in .scratch/anim/history/, so "previous" is the last
+// *different* version you rendered.
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { deflateSync } from 'node:zlib';
 import type { AnimationClip, Object3D } from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import {
   analyzeClip,
   compileClip,
   defaultFrames,
+  renderCurves,
   renderSheet,
   restPoseOf,
   sampleClip,
@@ -31,6 +39,13 @@ import {
   type ViewName,
 } from '../src/engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../src/game/hero';
+import { encodePng } from './png';
+
+// `npm run anim -- list | head` closes the pipe early; that's not an error.
+process.stdout.on('error', (e: NodeJS.ErrnoException) => {
+  if (e.code === 'EPIPE') process.exit(0);
+  throw e;
+});
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -51,7 +66,7 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
   if (a.startsWith('--')) {
     const next = argv[i + 1];
-    const valued = ['frames', 'views', 'scale', 'out', 'character'].includes(a.slice(2));
+    const valued = ['frames', 'views', 'scale', 'out', 'character', 'joints', 'cycles', 'width'].includes(a.slice(2));
     flags.set(a.slice(2), valued && next !== undefined ? next : true);
     if (valued) i++;
   } else args.push(a);
@@ -130,7 +145,9 @@ async function main(): Promise<void> {
       for (const def of pick(args)) {
         const clip = compileClip(def, rig, rest);
         const report = analyzeClip(model, rig, def, clip);
+        const prev = remember(def);
         const img = renderSheet(model, rig, def, clip, {
+          ghost: flags.has('compare') && prev ? compileClip(prev, rig, rest) : undefined,
           frames: flags.has('frames') ? String(flags.get('frames')).split(',').map(Number) : undefined,
           views: flags.has('views') ? (String(flags.get('views')).split(',') as ViewName[]) : undefined,
           scale: flags.has('scale') ? Number(flags.get('scale')) : undefined,
@@ -144,6 +161,46 @@ async function main(): Promise<void> {
       }
       if (json) print(written);
       else for (const f of written) console.log(f);
+      return;
+    }
+    case 'curves': {
+      if (!args.length) fail('usage: curves <clip...>');
+      const model = await loadModel(character!.model);
+      const rest = restPoseOf(model, rig);
+      mkdirSync(outDir, { recursive: true });
+      const written: string[] = [];
+      for (const def of pick(args)) {
+        const prev = remember(def);
+        const img = renderCurves(model, rig, def, compileClip(def, rig, rest), {
+          joints: flags.has('joints') ? String(flags.get('joints')).split(',') : undefined,
+          cycles: flags.has('cycles') ? Number(flags.get('cycles')) : undefined,
+          width: flags.has('width') ? Number(flags.get('width')) : undefined,
+          compare: flags.has('compare') && prev ? { def: prev, clip: compileClip(prev, rig, rest) } : undefined,
+        });
+        const file = join(outDir, `${def.name}.curves.png`);
+        writeFileSync(file, encodePng(img));
+        written.push(file);
+      }
+      if (json) print(written);
+      else for (const f of written) console.log(f);
+      return;
+    }
+    case 'diff': {
+      const out: Record<string, unknown> = {};
+      for (const def of pick(args)) {
+        const prev = previous(def);
+        if (!prev) {
+          out[def.name] = 'no previous version (render it with sheet or curves first)';
+          continue;
+        }
+        out[def.name] = diffClips(prev, def, rig);
+      }
+      if (json) return print(out);
+      for (const [name, d] of Object.entries(out)) {
+        console.log(`${name}:`);
+        if (typeof d === 'string') console.log(`  ${d}`);
+        else for (const line of d as string[]) console.log(`  ${line}`);
+      }
       return;
     }
     case 'overview': {
@@ -187,6 +244,64 @@ async function main(): Promise<void> {
   }
 }
 
+// ---- version history: .scratch/anim/history/<clip>.last.json / .prev.json -------------
+function historyFile(def: ClipDef, which: 'last' | 'prev'): string {
+  return join(outDir, 'history', `${def.name}.${which}.json`);
+}
+
+/** Record `def` as the latest rendered version; returns the previous different version. */
+function remember(def: ClipDef): ClipDef | null {
+  mkdirSync(join(outDir, 'history'), { recursive: true });
+  const last = historyFile(def, 'last');
+  const text = JSON.stringify(def);
+  if (existsSync(last) && readFileSync(last, 'utf8') !== text) renameSync(last, historyFile(def, 'prev'));
+  writeFileSync(last, text);
+  return previous(def);
+}
+
+function previous(def: ClipDef): ClipDef | null {
+  const prev = historyFile(def, 'prev');
+  const last = historyFile(def, 'last');
+  // `diff` without a render in between: the last render is the previous version
+  if (existsSync(last) && readFileSync(last, 'utf8') !== JSON.stringify(def)) return JSON.parse(readFileSync(last, 'utf8')) as ClipDef;
+  return existsSync(prev) ? (JSON.parse(readFileSync(prev, 'utf8')) as ClipDef) : null;
+}
+
+/** Human-readable summary of how a clip changed: length, flags, and per-joint deltas. */
+function diffClips(a: ClipDef, b: ClipDef, rig: RigSpec): string[] {
+  const lines: string[] = [];
+  for (const k of ['frames', 'loop', 'speed', 'grounded', 'fast'] as const) if (a[k] !== b[k]) lines.push(`${k}: ${String(a[k])} → ${String(b[k])}`);
+  const ka = a.keys.map((k) => k[0]).join(',');
+  const kb = b.keys.map((k) => k[0]).join(',');
+  if (ka !== kb) lines.push(`keys: [${ka}] → [${kb}]`);
+  const n = Math.round(Math.max(a.frames, b.frames) * 2);
+  const worst: Record<string, { d: number; f: number; axis: string; from: number; to: number }> = {};
+  for (let i = 0; i <= n; i++) {
+    const f = i / 2;
+    const pa = sampleClip(a, (f / Math.max(a.frames, b.frames)) * a.frames, rig);
+    const pb = sampleClip(b, (f / Math.max(a.frames, b.frames)) * b.frames, rig);
+    for (const j of rig.joints) {
+      const ch: [string, number, number][] = [
+        ['rx', pa[j]!.r[0], pb[j]!.r[0]],
+        ['ry', pa[j]!.r[1], pb[j]!.r[1]],
+        ['rz', pa[j]!.r[2], pb[j]!.r[2]],
+        ['px', pa[j]!.p[0] * 100, pb[j]!.p[0] * 100],
+        ['py', pa[j]!.p[1] * 100, pb[j]!.p[1] * 100],
+        ['pz', pa[j]!.p[2] * 100, pb[j]!.p[2] * 100],
+        ['sy', pa[j]!.s[1] * 100, pb[j]!.s[1] * 100],
+      ];
+      for (const [axis, from, to] of ch) {
+        const d = Math.abs(to - from);
+        if (d > 0.5 && d > (worst[j]?.d ?? 0)) worst[j] = { d, f, axis, from, to };
+      }
+    }
+  }
+  const joints = Object.entries(worst).sort((x, y) => y[1].d - x[1].d);
+  for (const [j, w] of joints) lines.push(`${j}.${w.axis}: up to ${w.d.toFixed(1)}${w.axis[0] === 'r' ? '°' : ' (cm or %)'} at f${w.f} (${w.from.toFixed(1)} → ${w.to.toFixed(1)})`);
+  if (!lines.length) lines.push('no visible change');
+  return lines;
+}
+
 function stack(images: SheetImage[]): SheetImage {
   const width = Math.max(...images.map((i) => i.width));
   const height = images.reduce((s, i) => s + i.height, 0);
@@ -198,39 +313,6 @@ function stack(images: SheetImage[]): SheetImage {
   }
   for (let i = 3; i < data.length; i += 4) if (!data[i]) data.set([36, 40, 56, 255], i - 3);
   return { width, height, data };
-}
-
-// ---- tiny PNG encoder (RGBA8, no filtering) --------------------------------------------
-const CRC = new Int32Array(256).map((_, n) => {
-  let c = n;
-  for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
-  return c;
-});
-function crc32(buf: Uint8Array): number {
-  let c = -1;
-  for (const b of buf) c = CRC[(c ^ b) & 0xff]! ^ (c >>> 8);
-  return (c ^ -1) >>> 0;
-}
-function chunk(type: string, data: Uint8Array): Buffer {
-  const out = Buffer.alloc(12 + data.length);
-  out.writeUInt32BE(data.length, 0);
-  out.write(type, 4, 'ascii');
-  Buffer.from(data).copy(out, 8);
-  out.writeUInt32BE(crc32(out.subarray(4, 8 + data.length)), 8 + data.length);
-  return out;
-}
-export function encodePng(img: SheetImage): Buffer {
-  const ihdr = Buffer.alloc(13);
-  ihdr.writeUInt32BE(img.width, 0);
-  ihdr.writeUInt32BE(img.height, 4);
-  ihdr[8] = 8; // bit depth
-  ihdr[9] = 6; // RGBA
-  const raw = Buffer.alloc((img.width * 4 + 1) * img.height);
-  for (let y = 0; y < img.height; y++) {
-    raw[y * (img.width * 4 + 1)] = 0;
-    Buffer.from(img.data.buffer, img.data.byteOffset + y * img.width * 4, img.width * 4).copy(raw, y * (img.width * 4 + 1) + 1);
-  }
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', new Uint8Array(0))]);
 }
 
 // ---- output helpers ---------------------------------------------------------------------
@@ -252,4 +334,8 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
-await main();
+try {
+  await main();
+} catch (e) {
+  fail(e instanceof Error ? e.message : String(e));
+}
