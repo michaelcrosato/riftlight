@@ -6,6 +6,7 @@ import { Riftlight, RIFTLIGHT_OPTIONS } from './riftlight';
 import { LootLab } from './riftlight/loot/lootlab';
 import { LevelLab } from './riftlight/levels/levelLab';
 import { Arena } from './riftlight/combat/arena';
+import { ARCADE_OPTIONS, ArcadeGame } from './riftlight/showcase/arcade/ArcadeGame';
 
 const container = document.getElementById('app')!;
 
@@ -20,10 +21,12 @@ const GAMES: Record<string, () => Game> = {
   lootlab: () => new LootLab(),
   levellab: () => new LevelLab(), // Riftlight levels: ?game=levellab&depth=N
   arena: () => new Arena(),
+  arcade: () => new ArcadeGame(), // Riftlight's arcade cabinet on its own: a side-scroller template
 };
 /** Engine options a game is designed for (URL options still win). */
 const OPTIONS: Record<string, Partial<EngineOptions>> = {
   riftlight: RIFTLIGHT_OPTIONS,
+  arcade: ARCADE_OPTIONS,
 };
 const DEFAULT_GAME = 'riftlight';
 

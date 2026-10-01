@@ -5,7 +5,8 @@
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight | riftlight-tree | riftlight-loot | tools |
-//     systems | riftlight-levels | riftlight-combat | riftlight-monsters;  groups: @core | @cameras | @filters
+//     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-showcase;
+//     groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -50,6 +51,12 @@
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials, engine.dispose().
 //
+// riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs), WebGPU + WebGL 2:
+//                 the arcade cabinet (swoop in, side camera + CRT, the scripted run to the flag,
+//                 best time + gold in the save, Esc out with nothing left behind), the Hall of
+//                 Beasts (first person, exhibits from killed genomes, inspect, a clip, breeding,
+//                 free camera) and photo mode (gameboy PNG, raw, time of day, restore).
+//
 // riftlight-levels  Riftlight levels + the dynamic light pool (scripts/e2e-riftlight-levels.mjs),
 //                 WebGPU + WebGL 2: levels 1, 6, 12 and a rift build, render, keep 8 lights
 //                 without recompiles, walk start → exit with Engine.step, open the portal.
@@ -77,6 +84,7 @@ import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
 import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
 import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
+import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1111,13 +1119,18 @@ const SUITES = {
     await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-showcase': async (exe) => {
+    const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
+    await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight', 'riftlight-combat'],
-  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };
 const grouped = Object.values(GROUPS).flat();

@@ -245,6 +245,8 @@ export class MonsterUnit implements MonsterHandle {
     const eager = host.loading;
     this.built = this.boss ? buildMonster(this.boss.genome, { eager, extraSkills: bossSkills(this.boss) }) : buildMonster(genome, { eager });
     this.object = this.built.object;
+    // what it was built from, for whoever only sees the actor's body (the bestiary records kills by it)
+    this.object.userData.genome = this.boss?.genome ?? genome;
     this.runtime = new MonsterRuntime(this.built);
     this.rank = genome.rank;
     this.name = this.boss?.name ?? monsterName(genome);

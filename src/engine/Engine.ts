@@ -442,9 +442,11 @@ export class Engine {
    * Swap the camera preset mid-game (review tool: presets are a per-game choice). The
    * player, physics and the rest of the world are left exactly as they are. `free` and
    * `fixed` without an explicit position start from the view currently on screen.
-   * Keeps `?camera=` in the URL in sync so a reload restores the preset.
+   * Keeps `?camera=` in the URL in sync so a reload restores the preset; a game that swaps
+   * presets as part of play (a side-scroller stage, a first-person hall, a photo mode) passes
+   * `{ syncUrl: false }` so a reload still starts with its own camera.
    */
-  setCamera(config: CameraConfig): CameraRig {
+  setCamera(config: CameraConfig, options: { syncUrl?: boolean } = {}): CameraRig {
     const preset = config.preset ?? 'iso';
     const old = this.camera;
     // Back to the game's own preset: restore its configured zoom, angles, view height...
@@ -471,6 +473,7 @@ export class Engine {
     this.wireRig(rig);
     if (preset !== 'first' && document.pointerLockElement) document.exitPointerLock?.();
     this.game.onCameraChange?.(this.context);
+    if (options.syncUrl === false) return rig;
     try {
       // free/fixed need their full config (position, target...) to come back on reload.
       const url = new URL(location.href);

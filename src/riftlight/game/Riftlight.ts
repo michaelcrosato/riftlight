@@ -44,6 +44,7 @@ import { stubPorts } from './stubs';
 import { corePorts } from '../wire';
 import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
+import { Showcase } from '../showcase/Showcase';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -76,6 +77,8 @@ export class Riftlight implements Game, MenuHost {
   town!: Town;
   hero!: HeroPort;
   level: LevelHandle | null = null;
+  /** The arcade, the Hall of Beasts and photo mode (showcase/): they own the frame while active. */
+  showcase!: Showcase;
   readonly layer = new UiLayer();
   ui!: UiCanvas;
   pointer!: Pointer;
@@ -111,6 +114,7 @@ export class Riftlight implements Game, MenuHost {
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly tmp = new Vector3();
+  private readonly eyeAt = new Vector3();
   private time = 0;
   private music: SongName | null = null;
   private combatHeat = 0;
@@ -184,6 +188,8 @@ export class Riftlight implements Game, MenuHost {
     ctx.scene.add(this.town.root);
     this.town.activate();
     this.town.dayTime = 0.56; // the title opens at nightfall
+    this.showcase = new Showcase(this);
+    this.showcase.buildTown();
     this.hero = await this.ports.hero.create(this.services, this.save.hero);
     this.hero.object.visible = false;
     this.applySettings();
@@ -192,6 +198,7 @@ export class Riftlight implements Game, MenuHost {
   }
 
   dispose(ctx: GameContext): void {
+    this.showcase?.dispose();
     for (const u of this.unsubs) u();
     this.disposeApi?.();
     this.pointer?.dispose();
@@ -776,6 +783,7 @@ export class Riftlight implements Game, MenuHost {
   // ================================================================ per frame
 
   fixedUpdate(ctx: GameContext, dt: number): void {
+    if (this.showcase?.active) return this.showcase.fixedUpdate(dt);
     if (this.screen !== 'town' && this.screen !== 'level') return;
     if (this.worldPaused) return;
     const intent = this.botIntent ?? this.readIntent(ctx);
@@ -862,6 +870,7 @@ export class Riftlight implements Game, MenuHost {
     ui.pointer.x = this.pointer.art.x;
     ui.pointer.y = this.pointer.art.y;
     ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
+    if (this.showcase.active) return this.showcase.update(dt, events);
     this.layer.update(dt);
     let consumed = false;
     for (const e of events) {
@@ -912,6 +921,7 @@ export class Riftlight implements Game, MenuHost {
     if (pressed(KEYS.tree)) toggle('tree');
     if (pressed(KEYS.character)) toggle('character');
     if (pressed(KEYS.codex)) toggle('codex');
+    if (pressed(KEYS.photo) && !this.layer.top) this.showcase.photo.open();
     if (pressed(KEYS.interact) || this.interactQueued) {
       this.interactQueued = false;
       if (!this.layer.top) this.interact();
@@ -928,6 +938,7 @@ export class Riftlight implements Game, MenuHost {
         this.openPanel('stash');
         return true;
       }
+      if (it.action === 'showcase') return this.showcase.interact(it.id);
       if (it.npc) {
         this.talkingTo = it.npc;
         this.dialogueLine = it.npc.talk();
@@ -1032,6 +1043,7 @@ export class Riftlight implements Game, MenuHost {
   // ================================================================ camera
 
   cameraTarget(): Vector3 {
+    if (this.showcase?.active) return this.showcase.cameraTarget();
     return this.shakeOffset.lengthSq() > 0 ? this.tmp.copy(this.camTarget).add(this.shakeOffset) : this.camTarget;
   }
 
@@ -1172,6 +1184,24 @@ export class Riftlight implements Game, MenuHost {
       pad: this.padGlyphs(),
       progress: level ? level.progress() : null,
     };
+  }
+
+  /** First-person eye (the showcase's hall); otherwise the engine default, 0.7 m over the target. */
+  eyePosition(): Vector3 {
+    const eye = this.showcase?.eyePosition();
+    if (eye) return eye;
+    const t = this.cameraTarget();
+    return this.eyeAt.set(t.x, t.y + 0.7, t.z);
+  }
+
+  onCameraChange(): void {
+    this.showcase?.onCameraChange();
+  }
+
+  /** Pause → Photo mode. */
+  photoMode(): void {
+    this.layer.closeAll();
+    this.showcase.photo.open();
   }
 
   status(): string {

@@ -17,6 +17,7 @@ import { describeMod } from '../core/mods';
 import type { Rank } from '../core/scaling';
 import type { DifficultyTuning } from '../core/types';
 import type { Menu } from '../ui/menu';
+import { showcaseApi } from '../showcase/api';
 import { type BotIntent, type BotReport, PlaytestBot } from './bot';
 import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
@@ -391,6 +392,8 @@ export function createApi(game: Riftlight) {
       /** One decision without stepping (inspect what the bot would do). */
       decide: () => (game.level ? bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: 0 }) : null),
     },
+    // the arcade, the Hall of Beasts and photo mode (showcase/api.ts)
+    ...showcaseApi(game),
   };
   return api;
 }
