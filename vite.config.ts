@@ -1,6 +1,10 @@
+/// <reference types="vitest/config" />
 import { defineConfig } from 'vite';
 
 export default defineConfig({
+  // Unit tests live next to the code. Without this, vitest also picks up throwaway
+  // *.test.ts files under .scratch/ and other untracked folders.
+  test: { include: ['src/**/*.test.ts'] },
   build: {
     target: 'es2022',
     rolldownOptions: {
