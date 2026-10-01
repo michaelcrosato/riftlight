@@ -1,7 +1,8 @@
 import { Vector3 } from 'three/webgpu';
-import type { Key, Layer, Pose } from '../../../engine/animation';
+import { sampleClip, type ClipDef, type Key, type Layer, type Pose } from '../../../engine/animation';
 import type { LegDef, MonsterClipDef, Skeleton } from '../types';
-import { bake, type BakeContext, type FeetFn } from './bake';
+import { bake, poseAt, type BakeContext, type FeetFn } from './bake';
+import type { PoseMap } from './ik';
 import { P, Poser } from './poser';
 
 /**
@@ -121,12 +122,15 @@ export const ACTIONS: Readonly<Record<string, Builder>> = {
     const fl = sk.locomotion === 'float';
     const rear = blob ? P(ps.mass(0.18, [0, -0.18 * massHalf(sk), 0]), ps.root([0, 0, -0.06], [-6, 0, 0])) : P(ps.root([0, -0.02, -0.25 * L], [fl ? -14 : -5, 0, 0]), ps.spine(-10), ps.neck(-20), ps.head(-12));
     const strike = blob ? P(ps.mass(-0.2, [0, 0.2 * massHalf(sk), 0]), ps.root([0, 0, 0.18], [10, 0, 0])) : P(ps.root([0, -0.03, 0.45 * L], [fl ? 18 : 7, 0, 0]), ps.spine(14), ps.neck(24), ps.head(10));
+    // the tail and wings counter the lunge (drag behind, then whip through); the recovery
+    // settles back past rest before it comes home
     const keys: Key[] = [
       [0, {}],
-      [8, P(rear, ps.jaw(0.4), ps.arms(-30, 20, 50))],
-      [12, P(strike, ps.jaw(1), ps.arms(-60, 25, 30)), 'out'],
-      [14, P(strike, ps.jaw(0), ps.arms(-60, 25, 30))],
-      [18, P(strike, ps.jaw(0.1), ps.arms(-50, 25, 30))],
+      [8, P(rear, ps.jaw(0.4), ps.arms(-30, 20, 50), ps.tail(16, 0, 4), ps.wings(18, 0.3)), 'in'],
+      [12, P(strike, ps.jaw(1), ps.arms(-60, 25, 30), ps.tail(-14, 0, -6), ps.wings(-8, 0.2)), 'out'],
+      [14, P(strike, ps.jaw(0), ps.arms(-60, 25, 30), ps.tail(-20, 0, -8))],
+      [18, P(strike, ps.jaw(0.1), ps.arms(-50, 25, 30), ps.tail(-8))],
+      [21, P(ps.root([0, 0, -0.06 * L], [-2, 0, 0]), ps.spine(-3), ps.neck(-6), ps.head(-4), ps.jaw(0.05), ps.tail(6)), 'inOut'],
       [26, {}],
     ];
     return bake(ctx, { name: 'Bite', frames: 26, keys, grounded: legged(sk), fast: true, notes: 'Rear back, lunge, snap at f14, hold, recover.' }, { kind: 'attack', hit: 14, windup: [0, 12], feet: plantedFeet(sk) });
@@ -165,11 +169,14 @@ export const ACTIONS: Readonly<Record<string, Builder>> = {
     const hit = 19;
     if (ps.has.arms) {
       keys = [
+        // a dip before the heave (anticipation of the anticipation), the hang, the smash, an
+        // impact squash, then the heavy push back up
         [0, {}],
-        [12, P(ps.root([0, 0.02, -0.03]), ps.spine(-16), ps.arms(-168, 16, 30), ps.head(-12), ps.jaw(0.5))],
-        [15, P(ps.root([0, 0.03, -0.03]), ps.spine(-18), ps.arms(-172, 18, 32), ps.head(-14), ps.jaw(0.7)), 'in'],
-        [19, P(ps.root([0, -0.1 * R, 0.05]), ps.spine(36), ps.arms(-38, 12, 6), ps.head(12), ps.jaw(0.9)), 'out'],
-        [26, P(ps.root([0, -0.09 * R, 0.05]), ps.spine(32), ps.arms(-34, 14, 10), ps.head(10), ps.jaw(0.4))],
+        [4, P(ps.root([0, -0.03 * R, 0.01]), ps.spine(8), ps.arms(-20, 14, 40), ps.head(4), ps.tail(-6))],
+        [12, P(ps.root([0, 0.02, -0.03]), ps.spine(-16), ps.arms(-168, 16, 30), ps.head(-12), ps.jaw(0.5), ps.tail(14))],
+        [15, P(ps.root([0, 0.03, -0.03]), ps.spine(-18), ps.arms(-172, 18, 32), ps.head(-14), ps.jaw(0.7), ps.tail(18)), 'in'],
+        [19, P(ps.root([0, -0.1 * R, 0.05], [0, 0, 0], 1.04), ps.spine(36), ps.arms(-38, 12, 6), ps.head(12), ps.jaw(0.9), ps.tail(-12)), 'out'],
+        [26, P(ps.root([0, -0.09 * R, 0.05]), ps.spine(32), ps.arms(-34, 14, 10), ps.head(10), ps.jaw(0.4), ps.tail(-4))],
         [36, {}],
       ];
     } else if (sk.locomotion === 'blob') {
@@ -270,7 +277,7 @@ export const ACTIONS: Readonly<Record<string, Builder>> = {
           [0, {}],
           [12, P(ps.root([0, 0.08, -0.05], [-14, 0, 0]), ps.neck(-20), ps.head(-14), ps.jaw(0.6), ps.tentacles(-16), ps.wings(36, 0.75), ps.mass(-0.15, [0, 0.15 * h, 0]))],
           [16, P(ps.root([0, 0.02, 0.06], [10, 0, 0]), ps.neck(12), ps.head(4), ps.jaw(1), ps.tentacles(14), ps.wings(-12, 0.75), ps.mass(0.15, [0, -0.15 * h, 0])), 'out'],
-          [22, P(ps.root([0, 0.02, 0.05], [8, 0, 0]), ps.neck(10), ps.head(4), ps.jaw(0.6), ps.tentacles(10))],
+          [22, P(ps.root([0, 0.02, 0.05], [8, 0, 0]), ps.neck(10), ps.head(4), ps.jaw(0.6), ps.tentacles(10), ps.wings(-4, 0.45))],
           [32, {}],
         ];
     return bake(ctx, { name: 'Cast', frames: 32, keys, grounded: legged(sk), notes: 'Gather (glow) then release at f16.' }, { kind: 'attack', hit: 16, windup: [0, 14], feet: plantedFeet(sk) });
@@ -286,7 +293,7 @@ export const ACTIONS: Readonly<Record<string, Builder>> = {
       [16, raise],
       [21, P(raise, ps.head(-26)), 'in'],
       [24, P(ps.root([0, -0.04, 0.02], [8, 0, 0]), ps.spine(16), ps.arms(-55, 65, 0), ps.neck(10), ps.head(10), ps.jaw(1), ps.wings(-5, 1), ps.tentacles(18), ps.mass(0.25, [0, -0.25 * h, 0])), 'out'],
-      [30, P(ps.spine(10), ps.arms(-50, 60, 5), ps.head(6), ps.jaw(0.4))],
+      [30, P(ps.spine(10), ps.arms(-50, 60, 5), ps.head(6), ps.jaw(0.4), ps.wings(0, 0.55))],
       [40, {}],
     ];
     return bake(ctx, { name: 'Summon', frames: 40, keys, grounded: legged(sk), notes: 'Arms up (the call), minions burst out at f24.' }, { kind: 'attack', hit: 24, windup: [0, 22], feet: plantedFeet(sk) });
@@ -378,29 +385,111 @@ export function deathClip(ctx: BakeContext): MonsterClipDef {
     ];
     return bake(ctx, { name: 'Death', frames: 34, keys, notes: 'Writhe, head drops, goes limp along the floor.' }, { kind: 'death', clearance: 0.02 });
   }
+  if (sk.legs.some((l) => l.splay)) return crawlerDeath(ctx);
   const upright = sk.arms.length > 0 || sk.plan === 'avian';
   if (upright) {
     // Upright bodies buckle at the knees and pitch forward onto their face.
     const keys: Key[] = [
       [0, {}],
-      [5, P(ps.root([0, 0.02, -0.05], [-12, 0, 3]), ps.spine(-14), ps.neck(-16), ps.head(-20), ps.jaw(0.8), ps.arms(-70, 40, 30), ps.wings(30, 0.75)), 'out'],
+      // the reel holds a beat, then the fall accelerates (ease in) and lands with a settle
+      [6, P(ps.root([0, 0.02, -0.05], [-12, 0, 3]), ps.spine(-14), ps.neck(-16), ps.head(-20), ps.jaw(0.8), ps.arms(-70, 40, 30), ps.wings(26, 0.6)), 'in'],
       [14, P(ps.root([0, -H * 0.25, 0.04], [18, 0, 6]), ps.spine(18), ps.neck(10), ps.head(10, 8), ps.jaw(0.6), ps.arms(-30, 30, 50), ps.tail(-10), ps.wings(10, 0.4)), 'in'],
       [24, P(ps.root([0, -H, H * 0.3], [84, 0, 10]), ps.spine(10), ps.neck(-20), ps.head(-20, 30), ps.jaw(0.4), ps.arms(-160, 50, 30), ps.tail(-20), ps.wings(-10, 0.9, -10)), 'out'],
       [34, P(ps.root([0, -H, H * 0.32], [86, 0, 10]), ps.spine(8), ps.neck(-22), ps.head(-22, 32), ps.jaw(0.4), ps.arms(-165, 55, 25), ps.tail(-22), ps.wings(-12, 0.9, -12))],
     ];
-    const feet = sk.legs.length ? tuckFeet(ctx, (_leg, f) => smooth((f - 10) / 12)) : undefined;
-    return bake(ctx, { name: 'Death', frames: 34, keys, notes: 'Reel, knees buckle, pitch forward onto the floor.' }, { kind: 'death', feet, clearance: 0.02 });
+    const t = releaseLegs(ctx, { name: 'Death', frames: 34, keys, notes: 'Reel, knees buckle, pitch forward onto the floor.' }, 9, [[18, 0.7], [26, 1]]);
+    return bake(ctx, t.template, { kind: 'death', feet: t.feet, clearance: 0.02 });
   }
   const drop = sk.locomotion === 'float' ? -H : -H * 0.5;
   const keys: Key[] = [
     [0, {}],
-    [5, P(ps.root([0, 0.02, -0.04], [-10, 0, 4]), ps.spine(-12), ps.neck(-16), ps.head(-18), ps.jaw(0.8), ps.arms(-60, 40, 30), ps.wings(30, 0.75), ps.tentacles(-16)), 'out'],
+    [6, P(ps.root([0, 0.02, -0.04], [-10, 0, 4]), ps.spine(-12), ps.neck(-16), ps.head(-18), ps.jaw(0.8), ps.arms(-60, 40, 30), ps.wings(26, 0.6), ps.tentacles(-16)), 'in'],
     [18, P(ps.root([0, drop * 0.7, 0.05], [14, 0, 32]), ps.spine(22), ps.neck(26), ps.head(22, 10), ps.jaw(0.6), ps.arms(-30, 50, 40), ps.tail(-14), ps.wings(-14, 0, -10), ps.tentacles(10), ps.segments((i) => 8 + i * 2)), 'in'],
     [26, P(ps.root([0, drop, 0.06], [16, 0, 74]), ps.spine(24), ps.neck(34), ps.head(24, 14), ps.jaw(0.5), ps.arms(-20, 70, 20), ps.tail(-20), ps.wings(-24, 0, -10), ps.tentacles(4), ps.segments((i) => 10 + i * 3)), 'out'],
     [34, P(ps.root([0, drop, 0.06], [16, 0, 76]), ps.spine(24), ps.neck(36), ps.head(26, 14), ps.jaw(0.5), ps.arms(-20, 70, 20), ps.tail(-22), ps.wings(-26, 0, -10), ps.tentacles(4), ps.segments((i) => 10 + i * 3))],
   ];
-  const feet = sk.legs.length ? tuckFeet(ctx, (_leg, f) => smooth((f - 6) / 14)) : undefined;
-  return bake(ctx, { name: 'Death', frames: 34, keys, notes: 'Reel, buckle, fall on its side.' }, { kind: 'death', feet, clearance: 0.02 });
+  const t = releaseLegs(ctx, { name: 'Death', frames: 34, keys, notes: 'Reel, buckle, fall on its side.' }, 7, [[18, 0.6], [26, 1]]);
+  return bake(ctx, t.template, { kind: 'death', feet: t.feet, clearance: 0.02 });
+}
+
+/**
+ * Collapsing bodies: the feet stay planted (IK) until frame `at`, then the legs go limp from
+ * exactly the angles the IK had there, folding (knees bent, `fold` 0..1 per key frame) as
+ * the body falls. Solving planted feet through a collapse folds the knees in a frame or two;
+ * keyed limbs fold over the whole fall instead.
+ */
+function releaseLegs(ctx: BakeContext, template: ClipDef, at: number, fold: readonly (readonly [number, number])[]): { template: ClipDef; feet: FeetFn | undefined } {
+  const sk = ctx.skeleton;
+  if (!sk.legs.length) return { template, feet: undefined };
+  const p = poseAt(ctx, template, at, plantedFeet(sk));
+  const legs = (k: number): Pose => {
+    const out: Record<string, [number, number, number]> = {};
+    for (const l of sk.legs) {
+      const h = p[l.hip]!.r;
+      const a = p[l.upper]!.r[0];
+      const b = p[l.lower]!.r[0];
+      const f = p[l.foot]!.r[0];
+      out[l.hip] = [h[0], h[1], h[2] * (1 - 0.5 * k)];
+      out[l.upper] = [a + (-62 * l.bend - a) * k, 0, 0];
+      out[l.lower] = [b + (105 * l.bend - b) * k, 0, 0];
+      out[l.foot] = [f + (-25 * l.bend - f) * k, 0, 0];
+    }
+    return out;
+  };
+  const frames = [at, ...fold.map(([f]) => f)];
+  const curve: [number, number][] = [[at, 0], ...fold.map(([f, k]) => [f, k] as [number, number])];
+  /** Fold amount at frame f (linear between the fold keys, held after the last). */
+  const amountAt = (f: number) => {
+    for (let i = 1; i < curve.length; i++) if (f <= curve[i]![0]) return curve[i - 1]![1] + ((curve[i]![1] - curve[i - 1]![1]) * (f - curve[i - 1]![0])) / (curve[i]![0] - curve[i - 1]![0]);
+    return curve[curve.length - 1]![1];
+  };
+  // every key from the hand-off on carries the legs (a key without them would snap them to rest)
+  const keys = template.keys.map((k): Key => (k[0] >= at ? [k[0], P(k[1], legs(amountAt(k[0]))), k[2]] : k));
+  // keys at the hand-off and fold frames, holding the body's own pose there
+  for (const [i, f] of frames.entries()) {
+    if (keys.some((k) => k[0] === f)) continue;
+    const body = sampleClip(template, f, ctx.kin.names) as PoseMap;
+    const pose: Pose = {};
+    for (const [j, v] of Object.entries(body)) if (template.keys.some((k) => j in k[1])) (pose as Record<string, unknown>)[j] = { r: v.r, p: v.p, s: v.s };
+    keys.push([f, P(pose, legs(i === 0 ? 0 : fold[i - 1]![1])), 'inOut']);
+  }
+  keys.sort((a, b) => a[0] - b[0]);
+  const feet: FeetFn = (leg, f, pose) => (f <= at ? plantedFeet(sk)(leg, f, pose) : null);
+  return { template: { ...template, keys }, feet };
+}
+
+/**
+ * Spiders, insects and centipedes die the way bugs do: rear up, roll over onto the back and
+ * curl the legs in, with a last twitch. The legs start from their planted (solved) angles
+ * and are keyed from there, so nothing pops when the feet let go of the floor.
+ */
+function crawlerDeath(ctx: BakeContext): MonsterClipDef {
+  const sk = ctx.skeleton;
+  const ps = new Poser(sk);
+  const p0 = poseAt(ctx, { name: 'Stand', frames: 1, keys: [[0, {}]] }, 0, plantedFeet(sk));
+  const legs = (curl: number, twitch = 0): Pose => {
+    const out: Record<string, [number, number, number]> = {};
+    for (const l of sk.legs) {
+      const h = p0[l.hip]!.r;
+      const a = p0[l.upper]!.r;
+      const b = p0[l.lower]!.r;
+      const k = curl * (1 + 0.15 * Math.sin(l.pair * 1.7 + (l.side === 'R' ? 1 : 0)));
+      out[l.hip] = [h[0], h[1] * (1 - 0.3 * curl), h[2] * (1 - curl)];
+      out[l.upper] = [a[0] + (-35 - a[0]) * k, 0, 0];
+      out[l.lower] = [b[0] + (125 - b[0]) * k + twitch * (l.pair % 2 ? 1 : -1), 0, 0];
+      out[l.foot] = [p0[l.foot]!.r[0] * (1 - curl), 0, 0];
+    }
+    return out;
+  };
+  const keys: Key[] = [
+    [0, legs(0)],
+    [6, P(ps.root([0, 0.04, -0.03], [-12, 0, 6]), ps.head(-16), ps.jaw(1), ps.tail(14), ps.wings(30, 0.75), ps.segments((i) => 6 * Math.sin(i)), legs(0.15)), 'out'],
+    [16, P(ps.root([0, 0.06, 0.02], [6, 0, 96]), ps.head(10, 12), ps.jaw(0.8), ps.tail(-10), ps.wings(-10, 0.4), ps.segments((i) => -10 * Math.sin(i + 1)), legs(0.6)), 'inOut'],
+    [24, P(ps.root([0, 0, 0.03], [0, 0, 178]), ps.head(18, 16), ps.jaw(0.6), ps.tail(-16), ps.wings(-20, 0.2), ps.segments((i) => 8 * Math.sin(i * 0.8)), legs(1)), 'out'],
+    [29, P(ps.root([0, 0, 0.03], [0, 0, 180]), ps.head(20, 16), ps.jaw(0.7), ps.tail(-16), ps.wings(-20, 0.2), ps.segments((i) => 8 * Math.sin(i * 0.8)), legs(1.05, 14))],
+    [36, P(ps.root([0, 0, 0.03], [0, 0, 180]), ps.head(20, 18), ps.jaw(0.5), ps.tail(-18), ps.wings(-22, 0.2), ps.segments((i) => 8 * Math.sin(i * 0.8)), legs(1))],
+  ];
+  return bake(ctx, { name: 'Death', frames: 36, keys, notes: 'Rear, roll onto the back, legs curl in, a last twitch.' }, { kind: 'death', clearance: 0.02 });
 }
 
 export function spawnClip(ctx: BakeContext): MonsterClipDef {
@@ -410,8 +499,8 @@ export function spawnClip(ctx: BakeContext): MonsterClipDef {
   const grown = (s: number, extra: Pose = {}): Pose => P(ps.root([(s - 1) * rootPos[0], (s - 1) * rootPos[1], (s - 1) * rootPos[2]], [0, 0, 0], s), extra);
   const keys: Key[] = [
     [0, grown(0.05, P(ps.neck(20), ps.head(20))), 'out'],
-    [12, grown(1.12, P(ps.neck(-18), ps.head(-20), ps.jaw(1), ps.arms(-150, 40, 20), ps.wings(40, 1), ps.tentacles(-20)))],
-    [18, grown(0.97, P(ps.neck(-10), ps.head(-12), ps.jaw(0.8), ps.arms(-120, 40, 30)))],
+    [12, grown(1.12, P(ps.neck(-18), ps.head(-20), ps.jaw(1), ps.arms(-150, 40, 20), ps.wings(36, 0.7), ps.tentacles(-20)))],
+    [18, grown(0.97, P(ps.neck(-10), ps.head(-12), ps.jaw(0.8), ps.arms(-120, 40, 30), ps.wings(14, 0.4)))],
     [26, grown(1)],
   ];
   return bake(ctx, { name: 'Spawn', frames: 26, keys, notes: 'Bursts up out of the ground, roars, settles.' }, { kind: 'spawn', feet: sk.legs.length ? plantedFeet(sk) : undefined });

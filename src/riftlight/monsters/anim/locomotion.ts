@@ -88,7 +88,8 @@ function legged(ctx: BakeContext, gait0: GaitDef, o: MoveOptions): MonsterClipDe
       ps.arm('R', swing('R'), 4, o.run ? 60 : 18),
       ps.arm('L', swing('L'), 4, o.run ? 60 : 18),
       ps.tail(o.run ? 8 : 0, 10 * Math.sin(TAU * u), 6 * Math.sin(TAU * u - 1)),
-      ps.wings(hop ? 34 * flight : 0, hop ? 0.9 * flight : 0, hop ? -20 * flight : 0),
+      // hoppers flick their wings on every hop (a flick, not a full unfold)
+      ps.wings(hop ? 30 * flight : 0, hop ? 0.38 * flight : 0, hop ? -16 * flight : 0),
       ps.segments((i) => 5 * Math.sin(TAU * (u - i * 0.13))),
       ps.jaw(o.charge ? 0.25 : 0),
     );
