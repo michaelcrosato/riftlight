@@ -1,5 +1,6 @@
-import RAPIER from '@dimforge/rapier3d-compat';
+import RAPIER from '@dimforge/rapier3d';
 import { Object3D, Quaternion, Vector3 } from 'three/webgpu';
+import { initRapier } from './rapierWasm';
 
 export { RAPIER };
 
@@ -47,8 +48,9 @@ export class Physics {
     this.world.timestep = FIXED_DT;
   }
 
+  /** Loads Rapier's wasm on first use (a separate, streamed .wasm file), then builds a world. */
   static async create(gravity = -24): Promise<Physics> {
-    await RAPIER.init();
+    await initRapier();
     return new Physics(gravity);
   }
 
