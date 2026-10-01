@@ -104,6 +104,7 @@ export function gaitClip(rig: RigSpec, g: GaitSpec): ClipDef {
     keys,
     speed: g.speed,
     stance: g.stance,
+    ...(g.reach ? { reach: g.reach } : {}),
     grounded: g.stance >= 0.5,
     notes: g.notes,
   };

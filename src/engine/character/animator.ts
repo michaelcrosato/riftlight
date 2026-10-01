@@ -1,5 +1,5 @@
 import { type AnimationAction, type AnimationClip, AnimationMixer, LoopOnce, LoopRepeat, type Object3D, type Quaternion, Vector3 } from 'three/webgpu';
-import { FootPlacement, type FootPlacementInput, type FootPlacementTuning, type GroundProbe } from '../animation/footPlacement';
+import { FootPlacement, type FootPlacementInput, type FootPlacementTuning, type GroundProbe, type SwingInfo } from '../animation/footPlacement';
 import { PoseLayers, type PoseLayerInput, type PoseLayerTuning } from '../animation/poseLayers';
 import { RotationBlend } from '../animation/rotationBlend';
 import type { RigSpec } from '../animation/types';
@@ -94,7 +94,7 @@ export class Animator {
   private readonly byName = new Map<string, AnimationAction>();
   private current: Layer | null = null;
   /** Gait: actions in role order (tiptoe, walk, run), stride per cycle (m), stance shares, phase 0..1. */
-  private readonly gait: { layer: Layer; stride: number[]; speed: number[]; stance: number[]; band: readonly [number, number]; phase: number; tiptoe: number; request: GaitRequest } | null;
+  private readonly gait: { layer: Layer; stride: number[]; speed: number[]; stance: number[]; reach: number[]; band: readonly [number, number]; phase: number; tiptoe: number; request: GaitRequest } | null;
   readonly feet: FootPlacement | null;
   readonly pose: PoseLayers | null;
   private readonly footNames: [string, string];
@@ -122,6 +122,7 @@ export class Animator {
         speed,
         stride: actions.map((a, i) => speed[i]! * a.getClip().duration),
         stance: actions.map((a) => (a.getClip().userData.stance as number | undefined) ?? 0.5),
+        reach: actions.map((a) => (a.getClip().userData.reach as number | undefined) ?? 0),
         band: g.blend ?? [speed[1]!, speed[2]!],
         phase: 0,
         tiptoe: 0,
@@ -253,6 +254,7 @@ export class Animator {
     if (procedural) {
       this.feet?.capture(); // where the clips put the feet, before the layers move the body
       this.pose?.apply(dt, procedural);
+      procedural.feet.swing = typeof process !== "undefined" && process.env.NOSWING ? null : this.swingOf();
       this.feet?.apply(dt, procedural.feet);
     }
   }
@@ -278,6 +280,46 @@ export class Animator {
     }
     g.phase = (g.phase + rate * dt) % 1;
   }
+
+  /**
+   * Which foot the gait swings and where it will land (foot placement blends a swinging
+   * foot from the ground it left to the ground it lands on); null when no gait leads.
+   */
+  private swingOf(): { R: SwingInfo | null; L: SwingInfo | null } | null {
+    const g = this.gait;
+    if (!g || !g.layer.active || g.layer.weight < 0.5 || g.layer.fade?.to === 0) return null;
+    const shares = g.layer.shares;
+    let stride = 0;
+    let stance = 0;
+    let reach = 0;
+    for (let i = 0; i < 3; i++) {
+      stride += shares[i]! * g.stride[i]!;
+      stance += shares[i]! * g.stance[i]!;
+      reach += shares[i]! * g.reach[i]!;
+    }
+    const speed = Math.abs(g.request.speed);
+    const rate = stride > 1e-6 ? speed / stride : 0;
+    if (rate <= 1e-3 || stance >= 0.999) return null;
+    const out = this.swing;
+    for (const side of ['R', 'L'] as const) {
+      // the right heel strikes at phase 0, the left at 0.5
+      const u = (g.phase + (side === 'L' ? 0.5 : 0)) % 1;
+      if (u < stance) {
+        out[side] = null;
+        continue;
+      }
+      const s = side === 'R' ? this.swingR : this.swingL;
+      s.progress = (u - stance) / (1 - stance);
+      // the body moves on until touchdown, where the foot lands half a stance ahead of it
+      s.land = (speed * (1 - u)) / rate + reach + (stride * stance) / 2;
+      out[side] = s;
+    }
+    return out;
+  }
+
+  private readonly swing: { R: SwingInfo | null; L: SwingInfo | null } = { R: null, L: null };
+  private readonly swingR: SwingInfo = { progress: 0, land: 0 };
+  private readonly swingL: SwingInfo = { progress: 0, land: 0 };
 
   private gaitShares(req: GaitRequest, tiptoe: number): [number, number, number] {
     const g = this.gait!;

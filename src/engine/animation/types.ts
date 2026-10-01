@@ -99,6 +99,8 @@ export interface ClipDef {
    * strikes at phase 0, the left at 0.5, so the right foot is mid-stance at `stance / 2`.
    */
   stance?: number;
+  /** Gaits: how far ahead of the hips (m) the middle of the stance is (feet touch down `reach` + half a stance's ground ahead). */
+  reach?: number;
   /** Grounded clip: soles should rest on y = 0 (metrics flag floating / penetration). */
   grounded?: boolean;
   /** Intentionally snappy (flips, punches, launches): skip the angular-speed warning. */

@@ -74,6 +74,7 @@ export function compileClip(def: ClipDef, rig: RigSpec, rest: RestPose): Animati
   // Authored ground speed, so controllers can scale playback to the real speed.
   if (def.speed) clip.userData.speed = def.speed;
   if (def.stance) clip.userData.stance = def.stance;
+  if (def.reach) clip.userData.reach = def.reach;
   return clip;
 }
 
