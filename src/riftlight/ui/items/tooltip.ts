@@ -33,6 +33,10 @@ export interface TooltipOptions {
   price?: { label: string; gold: number; affordable?: boolean };
   /** A hint line at the bottom (e.g. "right-click to equip"). */
   hint?: string;
+  /** Characters per line (default TIP_CHARS; narrow screens pass less). */
+  chars?: number;
+  /** Extra lines after the body (the skill panel adds a socketed gem's resolved numbers). */
+  extra?: readonly { text: string; color: number }[];
 }
 
 /** Characters per tooltip line (6 px each). */
@@ -46,7 +50,7 @@ export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
   const colour = itemColour(item);
   const lines: TipLine[] = [];
   const add = (text: string, color: number, center = false) => {
-    for (const t of wrap(text, TIP_CHARS)) lines.push({ text: t, color, center });
+    for (const t of wrap(text, opts.chars ?? TIP_CHARS)) lines.push({ text: t, color, center });
   };
   const sep = () => lines.push({ text: '', color: UI.panelEdge, sep: true });
 
@@ -73,7 +77,8 @@ export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
   if (cls === 'gem' && item.gem) {
     const g = GEMS.has(item.gem.id) ? GEMS.get(item.gem.id) : null;
     if (g?.tags?.length) add(g.tags.join(', '), UI.dim);
-    add(item.gem.support ? 'Supports linked skills with matching tags' : 'Place in a skill slot to use', UI.text);
+    if (g?.description) add(g.description, UI.text);
+    add(item.gem.support ? 'Link it to a skill with matching tags' : 'Socket it in a skill slot to use it', UI.dim);
     const need = requiredLevel(item);
     add(`Requires level ${need}`, opts.heroLevel !== undefined && opts.heroLevel < need ? UI.bad : UI.dim);
     return finish(lines, opts, sep, add);
@@ -129,6 +134,10 @@ export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
 }
 
 function finish(lines: TipLine[], opts: TooltipOptions, sep: () => void, add: (t: string, c: number, center?: boolean) => void): TipLine[] {
+  if (opts.extra?.length) {
+    sep();
+    for (const e of opts.extra) add(e.text, e.color);
+  }
   if (opts.price) {
     sep();
     add(`${opts.price.label}: ${opts.price.gold} gold`, opts.price.affordable === false ? UI.bad : UI.gold, true);

@@ -95,6 +95,10 @@ export interface WorldLootOptions {
   filter?: readonly FilterRule[];
   /** True while item windows are open (no pickups, no Alt toggle). */
   blocked?: () => boolean;
+  /** Draw name labels on ctx.hud (default true; the game shell draws its own from `drops`). */
+  labels?: boolean;
+  /** Adjust a landing spot in place (push it out of walls, onto the floor). */
+  place?: (to: Vector3) => void;
 }
 
 export interface GroundDrop {
@@ -156,7 +160,9 @@ export class WorldLoot {
       opts.events.on('loot', (e) => this.spawn(e.item, e.at)),
       opts.events.on('gold', (e) => this.spawnGold(e.amount, e.at)),
     );
-    ctx.engine.renderer.renderer.domElement.addEventListener('pointerdown', (e) => this.onPointer(e), { signal: this.abort.signal });
+    // Listen on the window, not the canvas: a recovered GPU device / WebGL context brings a
+    // new canvas, and a listener on the old one would never fire again.
+    window.addEventListener('pointerdown', (e) => this.onPointer(e), { signal: this.abort.signal });
   }
 
   get depth(): number {
@@ -193,6 +199,7 @@ export class WorldLoot {
     const angle = r.range(0, Math.PI * 2);
     const dist = r.range(0.5, 1.5);
     const to = new Vector3(at.x + Math.cos(angle) * dist, at.y, at.z + Math.sin(angle) * dist);
+    this.opts.place?.(to);
     const from = new Vector3(at.x, at.y + 0.6, at.z);
     const mesh = this.buildMesh(item, gold);
     mesh.position.copy(from);
@@ -304,7 +311,7 @@ export class WorldLoot {
       }
       if (ctx.input.wasPressed('KeyF')) this.pickupNearest();
     }
-    this.drawLabels();
+    if (this.opts.labels !== false) this.drawLabels();
   }
 
   private land(d: GroundDrop): void {
@@ -367,7 +374,9 @@ export class WorldLoot {
 
   private onPointer(e: PointerEvent): void {
     if (e.button !== 0 || this.opts.blocked?.()) return;
-    const canvas = e.currentTarget as HTMLCanvasElement;
+    // only presses on the game canvas as it is now (UI canvases on top take their own)
+    const canvas = this.ctx.engine.renderer.renderer.domElement;
+    if (e.target !== canvas) return;
     const r = canvas.getBoundingClientRect();
     const res = this.ctx.engine.renderer.resolution;
     const x = Math.floor(((e.clientX - r.left) / Math.max(1, r.width)) * res.width);

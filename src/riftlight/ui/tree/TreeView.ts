@@ -53,6 +53,8 @@ export interface TreeViewOptions {
   spendGold?: (amount: number) => boolean;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
+  /** Why refunds are refused here (e.g. only the mystic refunds): a message, or null to allow them. */
+  refundBlocked?: () => string | null;
 }
 
 const SOUNDS: Record<string, SoundDef> = {
@@ -592,7 +594,13 @@ export class TreeView {
     return x >= b.x && x < b.x + b.w && y >= 0 && y < TOP;
   }
 
+  /** A phone in portrait: the top bar drops the title and shortens everything. */
+  private get narrowBar(): boolean {
+    return this.buf.width < 300;
+  }
+
   private searchBox() {
+    if (this.narrowBar) return { x: 2, y: 1, w: 44, h: TOP - 2 };
     const w = Math.min(130, Math.max(70, this.buf.width - 260));
     return { x: Math.round((this.buf.width - w) / 2), y: 1, w, h: TOP - 2 };
   }
@@ -636,6 +644,8 @@ export class TreeView {
       if (this.tree.roots.has(id)) this.deny('THE GATES ARE FREE');
       return false;
     }
+    const blocked = this.options.refundBlocked?.() ?? null;
+    if (blocked) return this.deny(blocked), false;
     if (!s.canDeallocate(id)) return this.deny('OTHER NODES DEPEND ON IT'), false;
     const cost = this.options.refundCost?.(1) ?? 0;
     if (cost > 0 && this.options.spendGold && !this.options.spendGold(cost)) return this.deny(`REFUND COSTS ${cost} GOLD`), false;
@@ -874,10 +884,12 @@ export class TreeView {
     const H = b.height;
     b.rect(0, 0, W, TOP, C.night);
     b.rect(0, TOP, W, 1, C.ink);
-    b.text('PASSIVE TREE', 4, 3, C.sand);
+    const narrow = this.narrowBar;
+    if (!narrow) b.text('PASSIVE TREE', 4, 3, C.sand);
     const s = this.stateRef;
-    const pts = Number.isFinite(s.points) ? `POINTS ${s.unspent}/${s.points}` : `SPENT ${owned.size - this.tree.roots.size}`;
-    const gold = this.options.gold ? `  GOLD ${this.options.gold()}` : '';
+    const pts = Number.isFinite(s.points) ? `${narrow ? 'PTS' : 'POINTS'} ${s.unspent}/${s.points}` : `SPENT ${owned.size - this.tree.roots.size}`;
+    // a phone shows the gold only where it pays for something (the respec)
+    const gold = this.options.gold && (!narrow || this.options.spendGold) ? (narrow ? ` ${this.options.gold()}G` : `  GOLD ${this.options.gold()}`) : '';
     const right = `${pts}${gold}`;
     b.text(right, W - 4 - textWidth(right), 3, s.unspent > 0 ? C.lime : C.mist);
     const box = this.searchBox();
@@ -885,7 +897,7 @@ export class TreeView {
     b.rect(box.x, box.y, box.w, box.h, C.ink);
     b.frame(box.x, box.y, box.w, box.h, focused ? C.white : C.slate);
     const maxChars = Math.floor((box.w - 6) / 6);
-    let label = this.query ? this.query.toUpperCase() : focused ? '' : '/ SEARCH';
+    let label = this.query ? this.query.toUpperCase() : focused ? '' : narrow ? '/FIND' : '/ SEARCH';
     if (label.length > maxChars) label = label.slice(label.length - maxChars);
     b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
     if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + label.length * 6, box.y + 2, 1, 7, C.white);
@@ -895,7 +907,12 @@ export class TreeView {
     }
     // Bottom hints.
     b.rect(0, H - BOTTOM, W, BOTTOM, C.night);
-    const hint = this.padCursor ? 'STICK MOVE  A TAKE  X REFUND  Y STATS  LT/RT ZOOM  B CLOSE' : 'DRAG PAN  WHEEL ZOOM  CLICK TAKE  R-CLICK REFUND  TAB STATS  / FIND';
+    const refunds = !this.options.refundBlocked?.();
+    const hint = narrow
+      ? this.padCursor
+        ? 'A TAKE  B CLOSE'
+        : 'TAP TWICE: TAKE'
+      : this.padCursor ? `STICK MOVE  A TAKE  ${refunds ? 'X REFUND  ' : ''}Y STATS  LT/RT ZOOM  B CLOSE` : `DRAG PAN  WHEEL ZOOM  CLICK TAKE  ${refunds ? 'R-CLICK REFUND  ' : ''}TAB STATS  / FIND`;
     b.text(hint, Math.max(2, Math.round((W - textWidth(hint)) / 2)), H - BOTTOM + 2, C.slate);
   }
 
@@ -938,7 +955,12 @@ export class TreeView {
     else if (s.allocated.has(n.id)) {
       const cost = this.options.refundCost?.(1) ?? 0;
       const mastery = n.options?.length ? 'CLICK: NEXT CHOICE. ' : '';
-      status = s.canDeallocate(n.id) ? { text: `${mastery}R-CLICK: REFUND${cost ? ` (${cost} GOLD)` : ''}`, color: C.orange } : { text: `${mastery}OTHERS DEPEND ON IT`, color: C.slate };
+      const blocked = this.options.refundBlocked?.() ?? null;
+      status = blocked
+        ? { text: `${mastery}${blocked}`, color: C.slate }
+        : s.canDeallocate(n.id)
+          ? { text: `${mastery}R-CLICK: REFUND${cost ? ` (${cost} GOLD)` : ''}`, color: C.orange }
+          : { text: `${mastery}OTHERS DEPEND ON IT`, color: C.slate };
     } else if (!this.preview?.path) status = { text: 'UNREACHABLE', color: C.red };
     else {
       const cost = path.size;

@@ -50,6 +50,8 @@ export interface MenuHost {
   setTimeOfDay(t: number): void;
   timeOfDay(): number;
   sound(s: 'click' | 'move'): void;
+  /** Open a game view on top of the menu (pause → inventory, skills, tree: touch and pad players have no hotkeys). */
+  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character'): unknown;
 }
 
 const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
@@ -74,6 +76,10 @@ export function pauseMenu(h: MenuHost): Menu {
     [
       { kind: 'button', id: 'resume', label: 'Resume', onClick: () => h.resume() },
       { kind: 'button', id: 'tuning', label: 'Tuning', onClick: () => h.openMenu(tuningMenu(h)), hint: 'difficulty sliders' },
+      { kind: 'button', id: 'inventory', label: 'Inventory', onClick: () => h.openPanel('inventory'), hint: 'items and gear (I)' },
+      { kind: 'button', id: 'skills', label: 'Skills', onClick: () => h.openPanel('skills'), hint: 'gems in the skill slots (G)' },
+      { kind: 'button', id: 'tree', label: 'Passive tree', onClick: () => h.openPanel('tree'), hint: 'spend passive points (P)' },
+      { kind: 'button', id: 'character', label: 'Character', onClick: () => h.openPanel('character'), hint: 'stats and where they come from (C)' },
       { kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) },
       { kind: 'button', id: 'dev', label: 'Dev', onClick: () => h.openMenu(devMenu(h)), hint: 'debug and agent tools' },
       { kind: 'gap', id: 'g' },

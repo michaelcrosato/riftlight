@@ -49,6 +49,12 @@ export interface ShellServices {
   dev(): Readonly<DevFlags>;
   /** Camera shake request (honours the screen-shake setting). */
   shake(strength: number, seconds?: number): void;
+  /**
+   * The hero's actor once it exists (null before): loot reads `item.rarity` /
+   * `item.quantity` / `gold.find` from its StatSheet, the skill panel resolves skills on it.
+   * Optional so older hosts and tests still type-check.
+   */
+  hero?(): ActorLike | null;
 }
 
 export interface ShellSettings {
@@ -177,6 +183,12 @@ export interface HeroPort {
   restore(): void;
   /** Cosmetic: 'wave' | 'victory' | 'hurt' | 'death'. */
   emote(name: string): void;
+  /**
+   * The skill sockets changed (the skill panel, a load, a new run): rebuild the skill bar
+   * from `save.hero.skills` (slot i = keys 1/Q, 2/E, 3/R, 4/T; an empty socket is an empty
+   * slot). `loot/sockets.ts` `socketsToSlots` turns them into HeroController slots.
+   */
+  setSkills?(skills: SaveData['hero']['skills']): void;
   dispose(): void;
 }
 
@@ -302,6 +314,8 @@ export interface WorldLoot {
   readonly color: PaletteColor;
   /** Hidden by the loot filter (still picked up by "take all"). */
   readonly filtered: boolean;
+  /** Loot filter emphasis: loud (framed), show, or dim (greyed label). */
+  readonly tier?: 'loud' | 'show' | 'dim';
 }
 
 export interface LootPort {
@@ -333,6 +347,10 @@ export interface LootPort {
   stashView(host: PanelHost): Panel;
   vendorView(host: PanelHost): Panel;
   craftingView(host: PanelHost): Panel;
+  /** The skill panel: gems in the four skill slots and their supports (optional). */
+  skillsView?(host: PanelHost): Panel;
+  /** The game is unloaded: remove overlays and listeners (optional). */
+  dispose?(): void;
 }
 
 // ------------------------------------------------------------------ passive tree
@@ -341,15 +359,25 @@ export interface TreePort {
   init?(services: ShellServices): void;
   /** treeMods: the Mods granted by these allocated nodes. */
   mods(allocated: readonly string[]): readonly Mod[];
-  /** Total passive points at a character level. */
-  points(level: number): number;
+  /** Total passive points at a character level (and deepest depth cleared: bonus points). */
+  points(level: number, deepest?: number): number;
   /** The TreeView. `respec` lets the view refund nodes (the mystic's respec). */
   view(host: PanelHost, options: { respec: boolean }): Panel;
 }
 
 // ------------------------------------------------------------------ UI panels
 
-/** A full-screen or windowed UI view drawn on the pixel HUD (see ui/kit.ts). */
+/**
+ * A full-screen or windowed UI view drawn on the pixel HUD (see ui/kit.ts).
+ *
+ * **Overlay panels** (`overlay: true`) are views that paint their own canvas over the HUD:
+ * the item windows (ui/items) and the passive tree (ui/tree). The shell treats them like any
+ * panel: it opens them (`open`), keeps them on the stack (modal or not), routes every
+ * UiEvent to `input` first, calls `draw` each frame with the whole screen as `rect` (time to
+ * paint), and closes them (`close`) on back / the close key / a stage change. It draws no
+ * frame, title bar or close box for them, and a pointer press counts as the UI's when
+ * `covers(x, y)` says so (the view's own canvas handles the press itself).
+ */
 export interface Panel {
   readonly id: string;
   readonly title: string;
@@ -360,6 +388,14 @@ export interface Panel {
   input?(e: UiEvent): boolean;
   /** Called when the shell closes it. */
   close?(): void;
+  /** Called when the shell opens it (overlays show their canvas here). */
+  open?(): void;
+  /** Draws on its own canvas: no shell frame (see above). */
+  readonly overlay?: boolean;
+  /** Overlay: true when art pixel (x, y) is on the view (pointer presses there are the UI's). */
+  covers?(x: number, y: number): boolean;
+  /** Views sharing one overlay (the item windows): opening one closes the others in its group. */
+  readonly group?: string;
 }
 
 /** What a panel may ask of the shell (state it edits, money, sounds, closing itself). */
@@ -372,13 +408,19 @@ export interface PanelHost {
   addGold(amount: number): boolean;
   /** Character level (tree points). */
   level(): number;
-  /** Tell the shell the save changed (re-apply tree / gear mods to the hero, autosave later). */
-  changed(what: 'tree' | 'gear' | 'stash' | 'gold'): void;
+  /**
+   * Tell the shell the save changed: 'tree' / 'gear' re-apply the Mod sources, 'skills'
+   * tells the hero to rebuild its skill bar (`HeroPort.setSkills`).
+   */
+  changed(what: 'tree' | 'gear' | 'stash' | 'gold' | 'skills'): void;
   sound(name: 'click' | 'open' | 'close' | 'equip' | 'error' | 'buy' | 'sell'): void;
   close(): void;
   /** Controller glyphs instead of keys. */
   glyphs(): boolean;
 }
+
+/** `Panel.group` of the item windows (inventory, stash, vendor, crafting bench, skills): they share one overlay, and I closes any of them. */
+export const ITEM_GROUP = 'items';
 
 /** Everything the shell needs from the other workstreams. */
 export interface RiftlightPorts {

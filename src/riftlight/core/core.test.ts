@@ -61,6 +61,20 @@ describe('StatSheet', () => {
     expect(s.get('damage')).toBeCloseTo(15 * 1.5);
   });
 
+  it('clones base, sources and conditions independently', () => {
+    const s = new StatSheet({ life: 50 });
+    s.set('tree', [flat('life', 10), more('life', 0.5, undefined, 'lowLife')]);
+    s.setCondition('lowLife', true);
+    const c = s.clone();
+    expect(c.get('life')).toBeCloseTo(90);
+    expect(c.sourceKeys()).toEqual(['tree']);
+    c.set('tree', []);
+    c.setCondition('lowLife', false);
+    c.setBase('life', 1);
+    expect(s.get('life')).toBeCloseTo(90);
+    expect(c.get('life')).toBe(1);
+  });
+
   it('overrides win, flags read as booleans, explain lists sources', () => {
     const s = new StatSheet();
     s.set('keystone', [flag('cannotCrit'), override('crit.chance', 0)]);
