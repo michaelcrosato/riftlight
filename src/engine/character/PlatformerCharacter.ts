@@ -79,6 +79,8 @@ const IGNORE = ['character'];
 /** Spawn/teleport this far above the given feet height: starting in exact contact with the
  *  ground can leave Rapier's KCC with a degenerate contact (it stops moving). */
 const SPAWN_LIFT = 0.03;
+/** A jump pressed this long (s) before touchdown still jumps on landing (double/triple windows). */
+const JUMP_BUFFER = 0.12;
 /** Running into a wall faster than this (m/s, the part of the velocity into the wall) bonks. */
 const BONK_SPEED = 5;
 /** Obstacles that reach this high above the feet are walls; lower ones are steps (autostep 0.4). */
@@ -125,6 +127,8 @@ export class PlatformerCharacter {
   private clock = 0;
   private idleTime = 0;
   private coyote = 0;
+  /** Seconds left on a jump pressed in the air, kept for the landing. */
+  private jumpBuffer = 0;
   private ledge: Ledge | null = null;
   private ledgeCooldown = 0;
   private pullFrom = new Vector3();
@@ -225,6 +229,7 @@ export class PlatformerCharacter {
     this.clock += dt;
     this.stateTime += dt;
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
+    this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
     this.prevFeet.copy(this.feet);
     if (this.stepAnim) {
       this.stepAnim.t -= dt;
@@ -252,7 +257,7 @@ export class PlatformerCharacter {
       case 'crouchSlide':
         this.decel(dt, 7);
         this.move(dt);
-        if (input.jump) this.jump(this.speed > 3 ? 'LongJump' : 'Backflip', input);
+        if (this.consumeJump(input)) this.jump(this.speed > 3 ? 'LongJump' : 'Backflip', input);
         else if (this.speed < 0.6) this.enter(input.crouch ? 'crouch' : 'idle');
         break;
       case 'proneDown':
@@ -270,6 +275,7 @@ export class PlatformerCharacter {
       case 'groundPoundLand':
       case 'hardLand':
       case 'bonk':
+        if (this.state === 'land' && this.consumeJump(input)) return this.groundJump(input);
         this.decel(dt, 30);
         this.move(dt);
         if (this.stateTime > this.lockDuration()) this.enter(input.crouch && this.state !== 'hardLand' ? 'crouch' : 'idle');
@@ -345,7 +351,7 @@ export class PlatformerCharacter {
       if (this.coyote > 0.1) return this.startFall();
     } else this.coyote = 0;
 
-    if (input.jump) return this.groundJump(input);
+    if (this.consumeJump(input)) return this.groundJump(input);
     if (input.attack) return this.startAttack(input);
     if (input.prone) return this.goProne();
     if (input.lie) return this.enter('lieDown');
@@ -420,7 +426,7 @@ export class PlatformerCharacter {
     this.move(dt);
     const want = input.move.lengthSq() > 0.04 ? Math.atan2(input.move.x, input.move.z) : null;
     const reversing = want !== null && Math.abs(angleDiff(want, this.facing)) > 1.6;
-    if (input.jump) {
+    if (this.consumeJump(input)) {
       if (!reversing) return this.groundJump(input);
       this.facing = want;
       return this.jump('SideFlip', input);
@@ -438,7 +444,7 @@ export class PlatformerCharacter {
   private stepCrouch(dt: number, input: MoveInput): void {
     if (this.stance === 'stand') this.setStance('crouch');
     if (!this.grounded) return this.startFall();
-    if (input.jump) return this.jump('Backflip', input);
+    if (this.consumeJump(input)) return this.jump('Backflip', input);
     if (input.attack) return this.startAttack(input);
     if (input.prone) return this.goProne();
     if (!input.crouch && this.setStance('stand')) return this.enter('idle');
@@ -530,6 +536,17 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ jumping
 
+  /**
+   * A jump press this step, or one buffered from the last moments in the air. Used by the
+   * states that jump off the ground, so a press just before touchdown still chains a
+   * double or triple jump.
+   */
+  private consumeJump(input: MoveInput): boolean {
+    const pressed = input.jump || this.jumpBuffer > 0;
+    this.jumpBuffer = 0;
+    return pressed;
+  }
+
   private groundJump(input: MoveInput): void {
     const sinceLand = this.clock - this.lastLandTime;
     const moving = input.move.length() > 0.2;
@@ -559,6 +576,7 @@ export class PlatformerCharacter {
     if (input?.face && (kind === 'Jump' || kind === 'JumpUp')) this.hvel.copy(input.move).multiplyScalar(this.runSpeed * 0.8).setY(0);
     this.jumpKind = kind;
     this.lastJump = kind;
+    this.jumpBuffer = 0;
     this.grounded = false;
     this.peakY = this.feet.y;
     this.stats.jumps++;
@@ -589,6 +607,8 @@ export class PlatformerCharacter {
     const fixedArc = this.jumpKind === 'Backflip' || this.jumpKind === 'TripleJump' || this.jumpKind === 'SideFlip' || this.jumpKind === 'LongJump';
     const g = this.state === 'jump' && this.vy > 0 && !input.jumpHeld && !fixedArc ? GRAVITY * 2.2 : GRAVITY;
     this.vy = Math.max(this.vy + g * dt, -30);
+    // Remember a press for the landing (a wall kick below uses it up instead).
+    if (input.jump) this.jumpBuffer = JUMP_BUFFER;
 
     if (this.state !== 'dive') {
       if (input.crouchPressed && this.stateTime > 0.1) return this.startGroundPound();

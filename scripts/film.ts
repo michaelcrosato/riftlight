@@ -50,8 +50,9 @@ export const SCENARIOS: Record<string, string> = {
   bonk: 'place -3 0 13 90; hold S+D 70; wait 30',
   skid: 'place -6 0 10 90; down D; wait 45; up D; hold A 30; wait 30',
   jump: 'place 0 0 4 90; tap SPACE; until land 90; wait 30',
-  'run-jump': 'place -6 0 10 90; down D; wait 35; tap SPACE; until land 90; wait 20; up D; wait 30',
-  'triple-jump': 'place -8 0 10 90; down D; wait 35; tap SPACE; until land 90; tap SPACE; until land 90; tap SPACE; until land 120; up D; wait 40',
+  // landing while moving runs on (no 'land' state): wait for the feet instead
+  'run-jump': 'place -6 0 10 90; down D; wait 35; tap SPACE; until grounded 90; wait 20; up D; wait 30',
+  'triple-jump': 'place -8 0 10 90; down D; wait 35; tap SPACE; until grounded 90; tap SPACE; until grounded 90; tap SPACE; until grounded 120; up D; wait 40',
   backflip: 'place 0 0 4 90; down C; wait 8; tap SPACE; until land 120; up C; wait 30',
   'long-jump': 'place -8 0 10 90; down D; wait 40; down C; wait 1; tap SPACE; up C+D; until grounded 120; wait 40',
   'side-flip': 'place -6 0 10 90; down D; wait 45; up D; down A; until skid 30; tap SPACE; up A; until land 120; wait 30',

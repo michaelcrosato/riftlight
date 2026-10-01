@@ -189,6 +189,39 @@ describe('PlatformerCharacter', () => {
     expect(air).not.toContain('jump');
   });
 
+  it('a jump pressed just before touchdown is buffered: Jump → DoubleJump → TripleJump', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [-20, 0, 0] });
+    h.facing = Math.PI / 2;
+    const fwd = new Vector3(1, 0, 0);
+    run(p, h, inp({ move: fwd }), 60);
+    expect(h.state).toBe('run');
+    const kinds: string[] = [];
+    let press = true; // the first jump: straight off the run
+    for (let k = 0; k < 400 && kinds.length < 3; k++) {
+      const airborne = !h.grounded && (h.state === 'jump' || h.state === 'fall');
+      // In the air, a few frames (< 0.12 s) before the feet touch down: press now.
+      if (airborne && h.vy < 0 && h.feet.y / -h.vy < 0.07) press = true;
+      const jump = press;
+      if (jump) expect(kinds.length === 0 || airborne).toBe(true);
+      press = false;
+      const before = h.stats.jumps;
+      run(p, h, inp({ move: fwd, jump, jumpHeld: true }), 1);
+      if (h.stats.jumps > before) kinds.push(h.jumpKind);
+    }
+    expect(kinds).toEqual(['Jump', 'DoubleJump', 'TripleJump']);
+    // A press that early in the air is not kept for the landing.
+    const q = await setup();
+    const g = new PlatformerCharacter(q, { position: [0, 0, 0] });
+    run(q, g, inp({ jump: true, jumpHeld: true }), 1);
+    run(q, g, inp({ jumpHeld: true }), 20);
+    expect(g.grounded).toBe(false);
+    run(q, g, inp({ jump: true, jumpHeld: true }), 1);
+    const after = run(q, g, inp(), 120);
+    expect(g.stats.jumps).toBe(1);
+    expect(after).toContain('land');
+  });
+
   it('running into a wall loses the speed into it and bonks; walking into it stands', async () => {
     const p = await setup();
     box(p, [0, 1.5, -6], [3, 1.5, 0.5]); // wall face at z = -5.5
