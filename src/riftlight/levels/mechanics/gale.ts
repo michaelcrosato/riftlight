@@ -84,7 +84,7 @@ export const GALE: LevelMechanicDef = {
 
     // Visuals: a paler lane with chevrons pointing downwind.
     const laneMat = toonMaterial(tint(level.theme.palette.floor, 0.12));
-    const chevron = toonMaterial(tint(level.theme.palette.accent, 0.2));
+    const chevron = toonMaterial(tint(level.theme.palette.accent, 0.45));
     const sources = [];
     for (const e of lanes) {
       sources.push(...cellTiles(level.layout, e.cells, laneMat, 0.012));
@@ -97,8 +97,8 @@ export const GALE: LevelMechanicDef = {
         const px = e.x + dx * f;
         const pz = e.z + dz * f;
         // A '>' made of two slanted bars.
-        sources.push(box(chevron, px - 0.15 * dx + 0.18 * dz, 0.03, pz - 0.15 * dz + 0.18 * dx, 0.5, 0.04, 0.12, ry + 0.7));
-        sources.push(box(chevron, px - 0.15 * dx - 0.18 * dz, 0.03, pz - 0.15 * dz - 0.18 * dx, 0.5, 0.04, 0.12, ry - 0.7));
+        sources.push(box(chevron, px - 0.18 * dx + 0.22 * dz, 0.03, pz - 0.18 * dz + 0.22 * dx, 0.62, 0.05, 0.18, ry + 0.7));
+        sources.push(box(chevron, px - 0.18 * dx - 0.22 * dz, 0.03, pz - 0.18 * dz - 0.22 * dx, 0.62, 0.05, 0.18, ry - 0.7));
       }
     }
     for (const m of mergeStaticMeshes(sources, { castShadow: false, receiveShadow: true })) {

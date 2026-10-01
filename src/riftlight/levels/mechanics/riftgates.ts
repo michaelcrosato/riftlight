@@ -53,7 +53,7 @@ export const RIFTGATES: LevelMechanicDef = {
     const level = asMechanicLevel(raw);
     const accent = 0xff4fc8;
     const stone = toonMaterial(tint(level.theme.palette.wall, 0.2));
-    const rune = toonMaterial(level.theme.trim);
+    const rune = toonMaterial(tint(level.theme.trim, -0.45));
     const veil = glowMaterial(accent);
     const veil2 = glowMaterial(tint(accent, 0.5));
     interface Gate {
@@ -77,7 +77,7 @@ export const RIFTGATES: LevelMechanicDef = {
       const ry = Math.atan2(out.x, out.z);
       const side = new Vector3(Math.cos(ry), 0, -Math.sin(ry));
       const parts = [
-        box(rune, e.x, 0.04, e.z, 2.2, 0.08, 2.2, ry),
+        box(rune, e.x, 0.04, e.z, 1.9, 0.08, 1.9, ry),
         box(stone, e.x + side.x * 0.85, 1.1, e.z + side.z * 0.85, 0.32, 2.2, 0.32, ry),
         box(stone, e.x - side.x * 0.85, 1.1, e.z - side.z * 0.85, 0.32, 2.2, 0.32, ry),
         box(stone, e.x, 2.3, e.z, 2.1, 0.3, 0.36, ry),
