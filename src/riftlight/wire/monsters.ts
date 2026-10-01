@@ -399,8 +399,10 @@ export class MonsterUnit implements MonsterHandle {
     const act: Action = { def, gem, t: 0, windup, end, fired: false, aim, lockAim: false, target: targetActor, clip };
     // a telegraph made for this attack this step: the attack lands where it says
     if (this.pending) {
+      this.tele?.decal?.dispose();
       this.tele = this.pending;
       this.pending = null;
+      this.tele.t = 0;
       this.tele.total = windup + (def.role === 'leap' ? windup * 0.5 : 0);
       act.lockAim = true;
       if (this.tele.kind === 'circle') act.aim.copy(this.tele.at);
@@ -483,8 +485,17 @@ export class MonsterUnit implements MonsterHandle {
 
   private step(dt: number): void {
     const act = this.act;
-    if (!act) return;
     const a = this.actor;
+    // the telegraph stays until the attack has landed (projectiles and charges travel)
+    const tl = this.tele;
+    if (tl) {
+      tl.t += dt * Math.max(0.1, 1 - a.chill);
+      if (tl.t >= tl.total && (!act || act.fired)) {
+        tl.decal?.dispose();
+        this.tele = null;
+      }
+    }
+    if (!act) return;
     act.t += dt * Math.max(0.1, 1 - a.chill);
     if (!act.fired) {
       // melee follows its target until late in the swing; telegraphed attacks are locked
@@ -501,10 +512,15 @@ export class MonsterUnit implements MonsterHandle {
 
   private fire(act: Action): void {
     act.fired = true;
-    this.tele?.decal?.dispose();
-    this.tele = null;
     const a = this.actor;
     const def = act.def;
+    if (this.tele) {
+      // keep warning while it flies: a shot's travel time, a charge's run
+      const d = def.delivery;
+      const dist = Math.hypot(act.aim.x - a.position.x, act.aim.z - a.position.z);
+      const extra = d.kind === 'projectile' ? Math.min(d.range, dist) / Math.max(1, d.speed) : d.kind === 'dash' ? def.castTime * 0.8 : 0.05;
+      this.tele.total = Math.max(this.tele.total, this.tele.t + extra);
+    }
     if (def.role === 'summon') {
       const d = def.delivery;
       this.host.monsterEvent(this, { type: 'summon', at: a.position.clone(), count: d.kind === 'summon' ? d.count : 2 });
@@ -517,7 +533,9 @@ export class MonsterUnit implements MonsterHandle {
       this.host.services.ctx.particles.burst('swirl', a.position.clone().setY(0.8), { count: 18 });
       return;
     }
-    const skill = buildSkill(act.gem, [], a.stats);
+    let skill = buildSkill(act.gem, [], a.stats);
+    const role = M.roleDamage[def.role] ?? 1;
+    if (role !== 1) skill = { ...skill, mods: [...skill.mods, more('damage', role - 1)] };
     this.host.world.combat.cast(a, skill, act.aim.clone().setY(a.position.y));
     if (def.loopAnim && a.motion) this.runtime.play(def.loopAnim, { fade: 0.06 });
     if (def.selfDestruct) this.dieAt = this.time + 0.12;

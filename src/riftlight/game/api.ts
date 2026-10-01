@@ -55,7 +55,7 @@ export interface IntentInput {
 
 export function createApi(game: Riftlight) {
   const engine = () => game.ctx.engine;
-  const bot = new PlaytestBot();
+  let bot = new PlaytestBot();
 
   const state = (): RiftlightState => {
     const h = game.hero;
@@ -166,7 +166,7 @@ export function createApi(game: Riftlight) {
   let session: { depth: number; frames: number; deaths: number; time: number; outcome: BotReport['outcome']; done: boolean } | null = null;
   const botStart = () => {
     session = { depth: game.level?.spec.depth ?? 0, frames: 0, deaths: 0, time: 0, outcome: 'timeout', done: game.screen !== 'level' };
-    bot.stuckCount = 0;
+    bot = new PlaytestBot(); // a fresh mind per run (routes, stuck and reach memory)
     return session;
   };
   const botAdvance = (frames: number) => {

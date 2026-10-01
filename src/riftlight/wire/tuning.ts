@@ -23,12 +23,14 @@ export const WIRE_TUNING = {
     /** Base life at depth 1 before rank, archetype and part mods. */
     life: 34,
     /** Multipliers on the rank's life and damage (RANK.boss is 30× life, 2× damage: too long a fight for one hero). */
-    bossLife: 0.3,
+    bossLife: 0.26,
     bossDamage: 0.7,
     /** Footprint against walls (m): every body fits through a 1-cell corridor; bodies still push each other by their real radius. */
     wallRadius: 0.42,
     /** Multiplier on every monster hit (with SCALING.monsterDamage(depth) on top). */
     damage: 0.75,
+    /** Per skill role on top: ranged volleys from a pack add up, so each shot hurts less. */
+    roleDamage: { ranged: 0.7, charge: 0.9, leap: 0.9 } as Readonly<Record<string, number>>,
     /** Base move speed (m/s); archetype mods and the brain's `speed` shape it. */
     speed: 3.3,
     accuracy: 320,
@@ -42,6 +44,15 @@ export const WIRE_TUNING = {
     animateRange: 26,
     /** Adds called mid-fight (summons, splits): drop nothing, count toward the level total. */
     addScale: 0.8,
+  },
+  /** Health globes from kills (wire/globes.ts): the hero's healing between fights. */
+  globes: {
+    chance: { normal: 0.12, magic: 0.5, rare: 0.8, boss: 1 } as Readonly<Record<string, number>>,
+    boss: 4,
+    heal: 0.2,
+    mana: 0.15,
+    reach: 1.0,
+    life: 30,
   },
   hazard: {
     /** Average damage of a boss/elite hazard at depth 1 (× the source's damage scaling). */

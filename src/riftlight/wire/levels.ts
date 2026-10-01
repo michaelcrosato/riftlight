@@ -7,13 +7,14 @@ import type { Rank } from '../core/scaling';
 import type { ActorLike, Genome, Hit, LevelSpec, Rarity } from '../core/types';
 import type { BossView, KillInfo, LevelDeps, LevelHandle, LevelPort, MechanicInfo, MonsterHandle, ShellServices, Telegraph } from '../game/ports';
 import { buildLevel, type Level, type LevelHooks, type MonsterSpawn } from '../levels/Level';
-import { FLOOR, VOID } from '../levels/layout/grid';
+import { FLOOR, VOID, WALL } from '../levels/layout/grid';
 import { MECHANIC_ORDER, MECHANICS } from '../levels/mechanics';
 import { levelSpec } from '../levels/rift';
 import { ARCHETYPES, BOSS_ATTACKS, type BossDef, type BrainWorld, buildMonster, designedBoss, generateBoss, generateGenome, genomeBudget, Pack, PLANS, type MonsterEvent } from '../monsters';
 import type { Slot } from '../monsters/types';
 import type { ResolvedSkill } from '../skills/types';
 import { RealHero } from './hero';
+import { Globes } from './globes';
 import { Hazards, type HazardHost } from './hazards';
 import { MECHANIC_TAGS, type MonsterHost, MonsterUnit, registerBoss } from './monsters';
 import { themeSongs } from './music';
@@ -41,6 +42,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   readonly level: Level;
   readonly world: CombatWorld;
   readonly hazards: Hazards;
+  readonly globes: Globes;
   readonly services: ShellServices;
   readonly ctx: GameContext;
   readonly depth: number;
@@ -92,6 +94,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
       allies: (of, r) => this.list.filter((u) => u.actor !== of && u.actor.alive && u.actor.position.distanceTo(of.position) < r).map((u) => u.brain),
     };
     this.hazards = new Hazards(this);
+    this.globes = new Globes(this.root, this.ctx, this.rng.fork('globes'));
     const ctx = this.ctx;
     this.level = buildLevel(
       spec,
@@ -246,6 +249,11 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     return c === FLOOR || (pushed && c === VOID);
   }
 
+  /** Health globes on the floor (the bot heads for them when hurt). */
+  pickups(): readonly Vector3[] {
+    return this.globes.positions();
+  }
+
   /** Shrine and mechanic buffs on an actor (the hero's buff bar). */
   timedBuffs(actor: ActorLike): { source: string; remaining: number }[] {
     return this.level.timedBuffs(actor);
@@ -286,6 +294,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     this.syncProps();
     this.world.fixedUpdate(dt);
     this.hazards.fixedUpdate(dt);
+    this.globes.fixedUpdate(dt, this.heroActor());
     this.level.fixedUpdate(dt);
     const h = this.heroActor();
     if (h && h.alive && this.layout.cell(Math.floor(h.position.x), Math.floor(h.position.z)) === FLOOR) this.lastSafe.copy(h.position);
@@ -294,6 +303,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   update(dt: number): void {
     this.world.update(dt, this.ctx.physics.alpha);
     this.hazards.update(dt);
+    this.globes.update(this.level.time);
     this.level.update(dt);
     // corpses that finished sinking left the combat world
     for (let i = this.list.length - 1; i >= 0; i--) {
@@ -312,6 +322,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   dispose(): void {
     for (const off of this.offs) off();
     this.hazards.dispose();
+    this.globes.dispose();
     for (const u of this.list) u.dispose();
     this.list.length = 0;
     this.world.dispose(); // monsters' bodies leave the root before the level frees its own meshes
@@ -331,13 +342,26 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     return this.world.actors.actors.filter((a) => !isProp(a));
   }
 
+  /**
+   * Walls between two points, as the fraction of the way where the line goes into one. A line
+   * must run 0.25 m inside a wall to count, so grazing a corner between two diagonal floor
+   * cells doesn't stop a sword or a fireball (pits never block).
+   */
   private wall(from: Vector3, to: Vector3): number | null {
     const dx = to.x - from.x;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dz);
     if (len < 1e-4) return null;
-    const d = this.level.raycastWalls(from, { x: dx, z: dz }, len);
-    return d === null ? null : d / len;
+    const L = this.layout;
+    const n = Math.ceil(len / 0.08);
+    let inside = 0;
+    for (let k = 1; k < n; k++) {
+      const f = k / n;
+      if (L.cell(Math.floor(from.x + dx * f), Math.floor(from.z + dz * f)) === WALL) {
+        if (++inside * (len / n) >= 0.25) return Math.max(0, f - (inside * (len / n)) / len);
+      } else inside = 0;
+    }
+    return null;
   }
 
   /** Level props (braziers, pylons) join the combat world as `PropActor`s. */
@@ -415,6 +439,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
         if (!u) return;
         this.killed++;
         if (u.add) return;
+        this.globes.drop(rank, target.position);
         this.drop({ depth: this.depth, rank, level: target.level, at: target.position.clone() }, `kill:${target.id}`);
       }),
     );

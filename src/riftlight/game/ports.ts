@@ -257,6 +257,8 @@ export interface LevelHandle extends StageWorld {
   monsters(): readonly MonsterHandle[];
   /** Dev / agent API: spawn a monster from a genome seed. */
   spawn(seed: number, at: Vector3, rank?: Rank): MonsterHandle;
+  /** Optional: healing pickups lying in the level (health globes), world positions. */
+  pickups?(): readonly Vector3[];
   /** Optional: the level's music (its theme's arrangement of the shell's songs). */
   readonly songs?: Partial<Record<'level' | 'combat' | 'boss', import('../../engine').Song>>;
   fixedUpdate(dt: number, hero: HeroPort): void;

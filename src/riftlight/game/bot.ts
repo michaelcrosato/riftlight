@@ -89,6 +89,12 @@ export class PlaytestBot {
   private sidestep = 0;
   private sideDir = 1;
   private recovering = false;
+  /** Monsters it could not reach, until this frame. */
+  private readonly blocked = new Map<number, number>();
+  private chase: { id: number; best: number; since: number } | null = null;
+  private frame = 0;
+  /** Frames spent trying to pick each drop up. */
+  private readonly tried = new Map<number, number>();
   stuckCount = 0;
 
   decide(v: BotView): BotIntent {
@@ -101,6 +107,7 @@ export class PlaytestBot {
     i.interact = false;
     i.move.x = i.move.z = 0;
     this.track(p);
+    this.frame++;
     const vit = hero.vitals?.();
     const life = vit ? vit.life / Math.max(1, vit.maxLife) : 1;
     const skills = hero.skills();
@@ -123,6 +130,7 @@ export class PlaytestBot {
     let target: MonsterHandle | null = null;
     let td = Infinity;
     for (const m of monsters) {
+      if ((this.blocked.get(m.actor.id) ?? -1) > this.frame) continue; // can't get to it (across a pit): later
       const d = m.actor.position.distanceTo(p) - (m.rank === 'boss' ? 3 : 0); // bosses first when close
       if (d < td) {
         td = d;
@@ -130,12 +138,32 @@ export class PlaytestBot {
       }
     }
     if (target) td = target.actor.position.distanceTo(p);
+    this.watchProgress(target, td);
     const ready = (s: SkillSlotView | undefined) => this.o.skills !== false && !!s && s.id !== null && s.remaining <= 0 && s.usable;
     const bar = [0, 1, 2, 3].map((n) => slot(skills, n)).filter((s): s is SkillSlotView => !!s && !!s.id);
     const pick = (role: Role) => bar.find((s) => roleOf(s) === role && ready(s));
 
-    // 2. low on life: back off, keep shooting
+    // 2. low on life: back off, keep shooting; grab a health globe when one is close
     this.recovering = this.recovering ? life < 0.7 : life < 0.32;
+    if (life < 0.75) {
+      let globe: Vector3 | null = null;
+      let gd = this.recovering ? 14 : 6;
+      for (const g of v.level.pickups?.() ?? []) {
+        const d = Math.hypot(g.x - p.x, g.z - p.z);
+        if (d < gd) {
+          gd = d;
+          globe = g;
+        }
+      }
+      if (globe) {
+        this.goTo(v.level, p, globe, i);
+        if (target) {
+          i.aim.copy(target.actor.position);
+          i.attack = td < 2.2;
+        }
+        return i;
+      }
+    }
     if (target && this.recovering && td < 7 && monsters.length) {
       const away = new Vector3();
       for (const m of monsters) {
@@ -190,7 +218,7 @@ export class PlaytestBot {
     let best: WorldLoot | null = null;
     let bd = 8;
     for (const l of this.o.loot === false ? [] : v.loot) {
-      if (l.filtered) continue;
+      if (l.filtered || (this.tried.get(l.id) ?? 0) > 240) continue; // 4 s on one drop (bag full, out of reach): leave it
       const d = Math.hypot(l.position.x - p.x, l.position.z - p.z);
       if (d < bd) {
         bd = d;
@@ -198,21 +226,40 @@ export class PlaytestBot {
       }
     }
     if (best) {
-      if (best.drop.kind === 'item' && bd < 1.5) i.interact = true;
+      this.tried.set(best.id, (this.tried.get(best.id) ?? 0) + 1);
+      if (best.drop.kind === 'item' && bd < 1.5) {
+        i.interact = true;
+      }
       else this.goTo(v.level, p, best.position, i);
       i.aim.copy(best.position);
       return i;
     }
 
-    // 5./6. travel: the next monster anywhere, else the exit (once the portal is open, stragglers
-    // far away are left behind: a player walks out)
+    // 5./6. travel: toward the exit (the boss guards it), fighting what is on the way; a bot
+    // told not to leave (`fight`) hunts every monster instead. Once the portal is open,
+    // stragglers far away are left behind: a player walks out.
     if (!target && this.o.exit === false) return i;
+    const hunt = this.o.exit === false || td < 14;
     const leave = v.level.exitOpen && this.o.exit !== false && (!target || td > 8);
-    const goal = target && !leave ? target.actor.position : v.level.exit;
+    const goal = target && hunt && !leave ? target.actor.position : v.level.exit;
     this.goTo(v.level, p, goal, i);
     i.aim.copy(goal);
     if ((!target || leave) && v.level.exitOpen && p.distanceTo(v.level.exit) < 2) i.interact = true;
     return i;
+  }
+
+  /** A target we chase for 4 s without getting 0.5 m closer (out of reach, kiting us over a pit) is skipped for a while. */
+  private watchProgress(target: MonsterHandle | null, d: number): void {
+    if (!target) return void (this.chase = null);
+    const c = this.chase;
+    if (!c || c.id !== target.actor.id) return void (this.chase = { id: target.actor.id, best: d, since: this.frame });
+    if (d < c.best - 0.5) {
+      c.best = d;
+      c.since = this.frame;
+    } else if (d > 2.6 && this.frame - c.since > 240) {
+      this.blocked.set(c.id, this.frame + 600);
+      this.chase = null;
+    }
   }
 
   /** The way out of the telegraph that lands soonest on us, or null when we're safe. */
@@ -293,14 +340,16 @@ export class PlaytestBot {
       this.routeFor = key;
       this.routeAge = 0;
     }
-    // aim at a cell a few steps ahead (smooths corners)
+    // aim at a cell a few steps ahead (smooths corners); when that cuts a corner we can't
+    // pass (no progress), aim at the very next cell instead
     let next = { x: to.x, z: to.z };
     if (this.route.length > 1) {
       let k = this.route.findIndex((c) => c.x === from.x && c.z === from.z);
       if (k < 0) k = 0;
-      const c = this.route[Math.min(this.route.length - 1, k + 3)]!;
+      const ahead = this.stillFrames > 6 ? 1 : 3;
+      const c = this.route[Math.min(this.route.length - 1, k + ahead)]!;
       next = { x: c.x + 0.5 + o.x, z: c.z + 0.5 + o.z };
-      if (k + 3 >= this.route.length - 1) next = { x: to.x, z: to.z };
+      if (k + ahead >= this.route.length - 1 && ahead > 1) next = { x: to.x, z: to.z };
     }
     const dx = next.x - p.x;
     const dz = next.z - p.z;

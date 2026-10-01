@@ -96,6 +96,9 @@ async function main(): Promise<void> {
       await page.evaluate(
         async ([seed, depth, level]) => {
           const rl = (window as unknown as { __RIFTLIGHT__: Api }).__RIFTLIGHT__;
+          // manual time from here on: the render loop must not advance the level between calls,
+          // or the same seed plays differently depending on how fast the browser is
+          (window as unknown as { __PIXEL_ENGINE__: { manual: boolean } }).__PIXEL_ENGINE__.manual = true;
           rl.newRun({ seed });
           if (level > 1) rl.give({ levels: level - 1 });
           await rl.enterDepth(depth);
