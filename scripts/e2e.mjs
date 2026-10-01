@@ -4,7 +4,7 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | tools | systems;  groups: @core | @cameras | @filters
+//     filters-webgl | touch | phone | moves | lab | riftlight-tree | tools | systems;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -30,6 +30,7 @@
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
+// riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON.
@@ -52,6 +53,7 @@ import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 
@@ -1003,6 +1005,7 @@ const SUITES = {
   phone: (exe) => runPhone(exe),
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
+  'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
   tools: (exe) => runTools(exe),
   systems: async (exe) => {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
@@ -1020,7 +1023,7 @@ const SUITES = {
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
-  '@cameras': ['cameras', 'camera-swap', 'lab'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
 };
 const grouped = Object.values(GROUPS).flat();
