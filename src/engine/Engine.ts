@@ -126,6 +126,12 @@ export interface EngineOptions {
   touch?: boolean;
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
   touchButtons?: readonly TouchButton[];
+  /**
+   * The touch top bar of engine tools (⚙ debug panel, P, R, ◐ looks, ♪ mute). Default true; a
+   * game that ships to phones sets false, and the bar then shows only with the debug UI
+   * (`?debug=1`, dev builds).
+   */
+  touchBar?: boolean;
   background?: number;
 }
 
@@ -422,10 +428,11 @@ export class Engine {
 
   /** Debug panel, touch controls, then the render loop. */
   private finishStart(container: HTMLElement, options: EngineOptions): void {
-    if (options.debugUI ?? defaultDebugUI()) this.debug = new DebugUI(this);
+    const debug = options.debugUI ?? defaultDebugUI();
+    if (debug) this.debug = new DebugUI(this);
     if (options.touch ?? TouchControls.wanted()) {
       const k = this.debugKeys;
-      const bar: TouchButton[] = [
+      const bar: TouchButton[] = !(options.touchBar ?? true) && !debug ? [] : [
         { label: '⚙', code: k.debug[0] ?? '' },
         { label: 'P', code: k.mode[0] ?? '' },
         { label: 'R', code: k.resolution[0] ?? '' },

@@ -34,7 +34,7 @@ export {
 } from './audio';
 export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePreset, type ParticlePresetName } from './particles';
 export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
-export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton } from './TouchControls';
+export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton, type TouchButtonState, type TouchCorner } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
 export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, type AspectMode, type Framing, type Resolution } from './framing';
 export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityOption, type QualitySettings } from './quality';

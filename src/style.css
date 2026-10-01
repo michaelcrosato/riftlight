@@ -198,6 +198,8 @@ canvas[data-engine-canvas] {
 }
 
 .touch-ui .pad button {
+  position: relative;
+  overflow: hidden;
   width: 58px;
   height: 58px;
   border-radius: 50%;
@@ -218,13 +220,106 @@ canvas[data-engine-canvas] {
   color: #94b0c2;
 }
 
-.touch-ui .pad button:first-child {
+.touch-ui .pad button:first-child,
+.touch-ui > button.placed:first-of-type {
   background: rgb(177 62 83 / 0.6);
 }
 
-.touch-ui button.on {
+.touch-ui button.on,
+.touch-ui .pad button.on,
+.touch-ui > button.on {
   background: rgb(244 244 244 / 0.6);
   color: #1a1c2c;
+}
+
+/* placed buttons (TouchButton.at): an action cluster around a big main button */
+.touch-ui button.placed {
+  position: absolute;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  overflow: hidden;
+  line-height: 1;
+}
+
+.touch-ui button.placed b {
+  font-size: 1em;
+}
+
+.touch-ui button.placed small {
+  font-size: max(8px, 0.42em);
+  color: #94b0c2;
+  margin-top: 2px;
+}
+
+.touch-ui button .icon {
+  width: 64%;
+  height: auto;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+  pointer-events: none;
+}
+
+.touch-ui button.has-icon b,
+.touch-ui button.has-icon small {
+  display: none;
+}
+
+.touch-ui button .shutter {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 0;
+  background: rgb(26 28 44 / 0.72);
+  pointer-events: none;
+}
+
+.touch-ui button .timer {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-style: normal;
+  font-weight: bold;
+  font-size: 0.7em;
+  color: #f4f4f4;
+  text-shadow: 0 1px 0 #1a1c2c, 0 -1px 0 #1a1c2c, 1px 0 0 #1a1c2c, -1px 0 0 #1a1c2c;
+  pointer-events: none;
+}
+
+.touch-ui button .badge {
+  position: absolute;
+  top: 9%;
+  right: 16%;
+  text-decoration: none;
+  font-size: max(8px, 0.36em);
+  font-weight: bold;
+  color: #41a6f6;
+  text-shadow: 0 1px 0 #1a1c2c;
+  pointer-events: none;
+}
+
+.touch-ui button.disabled {
+  opacity: 0.5;
+}
+
+.touch-ui button.disabled .badge {
+  color: #b13e53;
+}
+
+.touch-ui button.hidden {
+  visibility: hidden; /* keeps its place: a HUD laid out around the controls doesn't jump */
+}
+
+.touch-ui.hidden .stick,
+.touch-ui.hidden .pad,
+.touch-ui.hidden > button {
+  display: none;
 }
 
 .touch-ui .bar {
