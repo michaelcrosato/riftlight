@@ -6,13 +6,14 @@ import { Actor } from '../actors/Actor';
 import { HERO_KEYS } from '../actors/controls';
 import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { AILMENTS } from '../combat/ailments';
-import { flat, inc, type Mod } from '../core/mods';
+import type { Mod } from '../core/mods';
 import type { SaveData } from '../core/types';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
 import { SKILLS, SUPPORTS } from '../skills';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
 import { skillIcon } from './icons';
 import { StageMover } from './stage';
+import { levelMods, starterWeapon } from './progression';
 import { WIRE_TUNING } from './tuning';
 import { CombatWorld, type Worlds } from './world';
 
@@ -55,19 +56,7 @@ export function slotsFromSave(save: SaveData['hero'], level: number): (SlotSpec 
   return out;
 }
 
-/** The `level` Mod source: what a character level adds. */
-export function levelMods(level: number): Mod[] {
-  const n = Math.max(0, level - 1);
-  if (!n) return [];
-  const p = T.perLevel;
-  return [flat('life', p.life * n), flat('mana', p.mana * n), flat('accuracy', p.accuracy * n), flat('life.regen', p['life.regen'] * n), inc('damage', p.damage * n)];
-}
-
-/** The starter sword (the `starter` source) until gear brings a weapon. */
-export function starterWeapon(): Mod[] {
-  const w = T.starterWeapon;
-  return [flat('weapon.physical.min', w.min), flat('weapon.physical.max', w.max), flat('weapon.crit', w.crit)];
-}
+export { levelMods, starterWeapon } from './progression';
 
 const X = new Vector3(1, 0, 0);
 const Z = new Vector3(0, 0, 1);
@@ -315,9 +304,11 @@ export class RealHero implements HeroPort {
   }
 
   /** Replace the skill bar from a save (gems slotted in the inventory). */
-  setSkills(save: SaveData['hero']): void {
-    slotsFromSave(save, this.level).forEach((spec, i) => this.hc.setSlot(i, spec));
+  /** The skill bar from the save's sockets (the shell calls it after a load, a new run and `changed('skills')`). */
+  setSkills(skills: SaveData['hero']['skills']): void {
+    slotsFromSave({ skills } as SaveData['hero'], this.level).forEach((spec, i) => this.hc.setSlot(i, spec));
   }
+
 
   setMods(source: string, mods: readonly Mod[]): void {
     this.rescaled(() => {

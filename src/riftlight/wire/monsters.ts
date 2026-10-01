@@ -2,7 +2,7 @@ import { type Object3D, Vector3 } from 'three/webgpu';
 import type { PaletteColor } from '../../engine/palette';
 import { Actor } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
-import { flat, more, type Mod, StatSheet } from '../core/mods';
+import { flat, more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import { type Rank, RANK, SCALING } from '../core/scaling';
 import type { ActorLike, Genome, HitResult } from '../core/types';
@@ -32,6 +32,7 @@ import type { Telegraph as Decal } from '../monsters/telegraph';
 import { buildSkill } from '../skills/build';
 import type { SkillGem, SkillLook } from '../skills/types';
 import { type GridStage, StageMover } from './stage';
+import { bossBudget, monsterBase, monsterDepthMods } from './progression';
 import { WIRE_TUNING } from './tuning';
 import { type CombatWorld, isProp, type Worlds } from './world';
 
@@ -121,20 +122,7 @@ export function monsterGem(def: MonsterSkillDef): SkillGem {
   return g;
 }
 
-/**
- * A boss's life and damage follow the depth curve, not its parts: whatever its genome's mods
- * (rank, plan, parts, archetype) multiply life and damage by, the `boss` source brings it to
- * RANK.boss × the boss budget (WIRE_TUNING), so each boss is a modest step up from the last
- * (SCALING.monsterLife / monsterDamage per depth) instead of a jagged one.
- */
-export function bossBudget(genomeMods: readonly Mod[]): Mod[] {
-  const sheet = new StatSheet();
-  sheet.set('genome', genomeMods);
-  const q = new StatQuery(sheet);
-  const life = Math.max(0.05, q.scale('life'));
-  const damage = Math.max(0.05, q.scale('damage'));
-  return [more('life', (RANK.boss.life * M.bossLife) / life - 1), more('damage', (RANK.boss.damage * M.bossDamage) / damage - 1)];
-}
+export { bossBudget } from './progression';
 
 /** Bosses picked by the level (designed or generated), found again by genome at build time. */
 const BOSS_DEFS = new WeakMap<Genome, BossDef>();
@@ -264,17 +252,13 @@ export class MonsterUnit implements MonsterHandle {
     const radius = Math.max(0.3, Math.min(1.6, this.built.radius));
     // walls are checked with a slim footprint: every body fits through a 1-cell corridor
     this.mover = new StageMover(host.stage, o.at, Math.min(M.wallRadius, radius * 0.8), () => this.actor.impulse.lengthSq() > 25);
-    const life = M.life * (this.add ? M.addScale : 1);
-    const mods: Record<string, readonly Mod[]> = {
-      genome: translateMods(this.built.stats),
-      depth: [more('life', SCALING.monsterLife(depth) - 1), more('damage', SCALING.monsterDamage(depth) * M.damage - 1)],
-    };
+    const mods: Record<string, readonly Mod[]> = { genome: translateMods(this.built.stats), depth: monsterDepthMods(depth) };
     if (this.rank === 'boss') mods.boss = bossBudget(mods.genome ?? []);
     for (const [k, v] of Object.entries(o.mods)) if (v.length) mods[k] = v;
     this.actor = new Actor({
       faction: 'monster',
       name: this.name,
-      base: { life, 'move.speed': M.speed, accuracy: M.accuracy + M.accuracyPerLevel * SCALING.monsterLevel(depth), armour: M.armourPerDepth * depth, mass: Math.max(0.6, genome.scale * genome.scale), 'life.regen': 0, mana: 0, 'mana.regen': 0 },
+      base: monsterBase(depth, genome.scale, this.add),
       mods,
       level: SCALING.monsterLevel(depth),
       rank: this.rank,

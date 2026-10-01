@@ -650,9 +650,48 @@ band radii can change how many slots a band holds (and so which slots exist).
 | `npm run tree -- render\|validate\|stats\|path` | the passive tree as a PNG (regions, keystones, path lengths), connectivity and stat-budget checks, counts, shortest paths; `/tree.html` browses it |
 | `npm run level -- map <n\|seed>` · `validate 1..60` · `rift <seed> <depth>` · `themes` | top-down map PNG with spawns, mechanic elements and critical path, plus bypass validation (the exit is reachable without using the mechanic); theme swatches |
 | `npm run combat -- dps <skill> [supports]` | a skill with its supports resolved: hit breakdown, crits, ailments, DPS, mana per second (text or `--json`) |
-| `npm run balance` | headless combat sim, build × depth: time-to-kill and damage taken, plotted to PNG and CSV |
+| `npm run balance [-- --depths 1-12,20 --builds melee,bow --raw --json]` | headless combat sim over the real code, build × depth: time to kill normal/magic/rare/boss, damage taken, hits and time to die, clear time, the XP curve; PNG charts, CSV, JSON and the worst outliers (see Balance below) |
 | `npm run playtest -- <depth> [--runs n] [--film]` | a bot plays the real game frame-exactly and reports clear time, deaths, damage taken and loot, with a film (see Game shell) |
-| `npm run inspect -- <glb\|genome\|item>` | any asset as a turntable PNG plus counts: triangles, joints, materials, bounds |
+| `npm run inspect -- <hero\|file.glb\|clip:Run\|monster:7\|boss:4\|npc:brann\|prop:brazier\|item:3>` · `diff <a> [b]` | any asset as an 8-angle turntable, a rig overlay with joint names and counts (triangles, draw calls, materials, bounds, joints, clips) with warnings; diffs two assets or two versions (docs/ENGINE.md, *Tooling for agents*) |
+
+### Balance (`npm run balance`)
+
+`src/riftlight/balance/` is a pure, seeded sim; `scripts/riftlight/balance.ts` feeds it level
+plans (`planLevel(levelSpec(d))`) and monster genomes (`generateGenome` + `buildMonster`,
+headless) and writes `.scratch/balance/`: `balance.png` (the dashboard: worst outliers,
+then `ttk.png`, `survival.png`, `clear.png`), `balance.csv` (one row per build × variant ×
+depth), `xp.csv` and `balance.json` (everything, plus the assumptions). Default: depths 1–12
+and every 4th to 60, ~25 s.
+
+- **Builds** (`balance/builds.ts`): melee (cleave + melee physical, multistrike, increased
+  area, two-handers), caster (fireball + fire penetration, faster casting, burning damage, wand
+  + focus), bow (split arrow + faster attacks, pierce, added cold, bow + quiver), minion
+  (summon skeletons + minion damage, speed, life, sceptre + shield). Each runs **naked** (no
+  gear, no tree) and **geared**: the best of 12 rares per slot rolled at the depth's item level
+  (`rollItem`, equip level respected) and a tree grown greedily (`TreePlanner`: the path to a
+  notable or frontier node with the best score gain per point; no respec). Gem level is the
+  highest the hero can equip.
+- **Real code**: `buildSkill`, `expectedHit` (through `balance/dps.ts`, which `npm run combat`
+  uses too), `StatSheet` with `treeMods`-style node mods and `itemMods`, the monsters' genome
+  stats and skills (`MONSTER_SKILLS`), boss phases and enrage, `SCALING`/`RANK`, `addXp` /
+  `killXp`, `pointBudget`.
+- **Assumed** (`balance/assumptions.ts`, printed every run): hero growth per level, monster
+  base record (the `Actor` default), monster attack uptime 50% and half a pack engaged, pack
+  reach per delivery, walk detour, minions never die, mana as a level-wide budget (the free
+  `slash` when it runs out). Elite behaviours, conditional mods and boss hazards are not
+  modelled.
+- **Contract gaps**: stats some systems write under another name than combat reads
+  (`crit.multi`, `block`, `energy.shield`, `crit.chance.base`, `life.leech`, `res.elemental`,
+  owner `minion.*` …) are aliased by default and listed; `--raw` turns the aliases off. Stats
+  on the sheets the sim never read are listed as *read nowhere by that name* (they do nothing)
+  or *read only outside the sim*.
+
+Example (seed 1, default depths): the summary prints
+`! geared minion: boss TTK 981× slower than the others (24/24 depths, worst at depth 28)`,
+`! depth 12 boss TTK 13× depth 11 (naked, every build)`,
+`! 4 geared builds die to the boss (no potions), all but one by depth 24`,
+`! 4 geared builds are one-shot by the boss's biggest hit, all but one by depth 36`. Tune
+`core/scaling.ts`, rerun, compare the CSVs.
 
 ## Loot
 

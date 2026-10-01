@@ -39,7 +39,9 @@
 // riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
-//                 `npm run film` films a short script and writes its PNG + JSON.
+//                 `npm run film` films a short script and writes its PNG + JSON; `npm run balance`
+//                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
+//                 their JSON, CSV and PNGs.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
@@ -942,6 +944,54 @@ async function runTools(browserExe) {
     check(log.frames.length === 11 && log.frames.every((f) => f.grounded), `logs every frame (${log.frames.length}: the settled pose + 10)`);
   } catch (e) {
     check(false, `film crashed: ${e.message}`);
+  }
+
+  const pngSize = async (url) => {
+    const png = await readFile(url);
+    return png.subarray(1, 4).toString() === 'PNG' ? { width: png.readUInt32BE(16), height: png.readUInt32BE(20), bytes: png.length } : { width: 0, height: 0, bytes: 0 };
+  };
+
+  console.log('\n▶ tools: npm run balance');
+  try {
+    const out = new URL('balance/', OUT);
+    await rm(out, { recursive: true, force: true });
+    const t0 = Date.now();
+    const ran = await run('npx', ['tsx', 'scripts/riftlight/balance.ts', '--depths', '1,13', '--max', '13', '--samples', '2', '--candidates', '2', '--out', '.scratch/e2e/balance', '--json']);
+    check(ran.code === 0, `balance exits 0 in ${((Date.now() - t0) / 1000).toFixed(1)} s${ran.code ? ':\n    ' + tail(ran.out) : ''}`);
+    const report = JSON.parse(await readFile(new URL('balance.json', out), 'utf8'));
+    const rows = report.rows;
+    check(rows.length === 16 && rows.every((r) => r.ttk.normal > 0 && r.ttk.boss > r.ttk.normal && r.clear.total > 0), `16 rows (4 builds × naked/geared × 2 depths) with TTK and clear times (${rows.length})`);
+    check(report.xp.length === 13 && report.xp[12].levelAfter > report.xp[0].levelAfter, `XP curve over every depth (level ${report.xp[0].levelAfter} → ${report.xp[12]?.levelAfter})`);
+    check(Array.isArray(report.outliers) && report.assumptions.lines.length > 5, `outliers (${report.outliers.length}) and the assumptions are in the JSON`);
+    const csv = (await readFile(new URL('balance.csv', out), 'utf8')).trim().split('\n');
+    check(csv.length === 17 && csv[0].startsWith('build,variant,depth'), `CSV has a header and 16 rows (${csv.length - 1})`);
+    for (const name of ['ttk', 'survival', 'clear', 'balance']) {
+      const p = await pngSize(new URL(`${name}.png`, out));
+      check(p.width >= 900 && p.height >= 400 && p.bytes > 5000, `${name}.png ${p.width}×${p.height}`);
+    }
+  } catch (e) {
+    check(false, `balance crashed: ${e.message}`);
+  }
+
+  console.log('\n▶ tools: npm run inspect');
+  try {
+    const out = new URL('inspect/', OUT);
+    await rm(out, { recursive: true, force: true });
+    const ran = await run('npx', ['tsx', 'scripts/inspect.ts', 'hero', 'monster:3', 'prop:brazier', '--out', '.scratch/e2e/inspect', '--json']);
+    check(ran.code === 0, `inspect exits 0${ran.code ? ':\n    ' + tail(ran.out) : ''}`);
+    const hero = JSON.parse(await readFile(new URL('hero.json', out), 'utf8'));
+    check(hero.triangles > 100 && hero.joints.length === 15 && hero.clips.length > 20 && hero.bounds.size[1] > 1.5, `hero: ${hero.triangles} tris, ${hero.joints.length} joints, ${hero.clips.length} clips, ${hero.bounds.size[1]} m tall`);
+    const monster = JSON.parse(await readFile(new URL('monster-3.json', out), 'utf8'));
+    check(monster.joints.length > 2 && monster.clips.some((c) => c.name === 'Idle'), `monster:3: ${monster.joints.length} joints, clips ${monster.clips.map((c) => c.name).join(' ')}`);
+    for (const name of ['hero', 'monster-3', 'prop-brazier-ember-forge']) {
+      const p = await pngSize(new URL(`${name}.png`, out));
+      check(p.width > 1000 && p.height > 400 && p.bytes > 10000, `${name}.png ${p.width}×${p.height}`);
+    }
+    const diff = await run('npx', ['tsx', 'scripts/inspect.ts', 'diff', 'coin', 'tree', '--out', '.scratch/e2e/inspect', '--json']);
+    const d = JSON.parse(await readFile(new URL('diff-coin-vs-tree.json', out), 'utf8'));
+    check(diff.code === 0 && !d.same && d.counts.meshes[2] === 1 && d.clips.removed.includes('Spin'), `diff coin tree: meshes +${d.counts.meshes[2]}, clips -${d.clips.removed.join(',')}`);
+  } catch (e) {
+    check(false, `inspect crashed: ${e.message}`);
   }
 }
 

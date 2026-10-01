@@ -1,4 +1,4 @@
-import { AnimationMixer, BoxGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
+import { AnimationMixer, BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import {
   compileClip,
   ContactShadow,
@@ -33,6 +33,8 @@ import { HERO_RIG } from './hero/rig';
  *   tower + ladder            climb, then jump off for a hard landing (or dive)
  *   crates (pushable)         push
  *   nook block (grabbable)    grab + pull it out (a coin hides behind it)
+ *   gentle ramp               walking and running on a slope (foot placement)
+ *   spike pad                 hero.hurt(): knockback, stun, a moment of invulnerability
  *
  * Game systems on show: coins are trigger volumes (physics.trigger), hero moves play
  * retro sound effects and kick up pixel particles (detected from hero.stats / state /
@@ -59,6 +61,30 @@ const steps: BlockDef[] = [0, 1, 2, 3, 4].map((i) => ({
   side: 'slate',
 }));
 
+/**
+ * A ramp along +X starting at x = `x0` on the floor (centred on z): up at `deg` for `length`
+ * metres (along the slope), a flat top `top` metres long, and down again; `width` deep.
+ */
+function ramp(x0: number, z: number, deg: number, length: number, top: number, width: number): BlockDef[] {
+  const a = (deg * Math.PI) / 180;
+  const run = length * Math.cos(a);
+  const rise = length * Math.sin(a);
+  const t = 0.3; // slab thickness
+  const slab = (cx: number, tilt: number): BlockDef => ({
+    // the slab's top face passes through (cx, rise / 2): its centre sits half a thickness below it
+    at: [cx + (t / 2) * Math.sin((tilt * Math.PI) / 180), rise / 2 - (t / 2) * Math.cos(a), z],
+    size: [length, t, width],
+    color: 'lime',
+    side: 'green',
+    tiltZ: tilt,
+  });
+  return [
+    slab(x0 + run / 2, deg),
+    { at: [x0 + run + top / 2, rise / 2, z], size: [top, rise, width], color: 'lime', side: 'green' },
+    slab(x0 + run + top + run / 2, -deg),
+  ];
+}
+
 export const LEVEL = {
   spawn: [0, 0, 3] as Vec3,
   killY: -10,
@@ -83,6 +109,8 @@ export const LEVEL = {
     { at: [-8, 0.95, 7], size: [3, 0.4, 2.4], color: 'slate', side: 'night' },
     { at: [-8, 0.375, 5.95], size: [3, 0.75, 0.3], color: 'slate', side: 'night' },
     { at: [-8, 0.375, 8.05], size: [3, 0.75, 0.3], color: 'slate', side: 'night' },
+    // gentle ramp (15°) up to a platform and down again: walking and running on slopes
+    ...ramp(5, 10, 15, 4, 2, 3),
     // pull nook
     { at: [12.75, 1, 6], size: [0.5, 2, 3.6], color: 'mist', side: 'slate' },
     { at: [11.25, 1, 4.4], size: [2.5, 2, 0.4], color: 'mist', side: 'slate' },
@@ -94,12 +122,17 @@ export const LEVEL = {
     { at: [12, 0.5, 6] as Vec3, tags: ['pushable', 'grabbable'] },
   ],
   trees: [[-14, 0, 13], [-11, 0, 14], [14, 0, 13], [-14, 0, -14], [3, 0, 13], [14, 0, -14]] as Vec3[],
+  /** Spike pads: touching one hurts (knocked back away from its middle). [x, z] centre, half size. */
+  hazards: [{ at: [9, 14] as [number, number], half: 0.6 }],
   coins: [
     [0, 0, 6], [-4, 0, 5], [4, 0, -4],
     [-8.2, 1.4, 0], [6.5, 2.8, 0], [0, 3, -9], [8, 4.5, -9], [-5.6, 4.2, -9],
     [-12, 7, -9], [14.5, 0, -9], [-8, 0.05, 7], [12.3, 0, 6],
   ] as Vec3[],
 };
+
+/** The hero looks at coins this close (m). */
+const LOOK_AT_COINS = 3.5;
 
 interface Coin {
   root: Object3D;
@@ -132,11 +165,15 @@ export class Playground implements Game {
   coins: Coin[] = [];
   collected = 0;
   respawns = 0;
+  /** Times the hero was hurt (by the spike pad). */
+  hurts = 0;
+  private clock = 0;
   private won = false;
   /** Last seen hero counters/state, to turn changes into sound + particle events. */
   private seen = { jumps: 0, landings: 0, state: 'idle' as MoveState, anim: 'Idle', step: 0, puff: 0 };
   private disposed = false;
   private readonly target = new Vector3();
+  private readonly tmp = new Vector3();
   /** Reused every fixed step (readMoveInput fills it in place). */
   private readonly input: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
 
@@ -181,6 +218,26 @@ export class Playground implements Game {
       physics.bind(body, mesh);
     }
 
+    // spike pads: a low slab with cones, no collider (touching one is what hurts); static,
+    // so merged into one mesh per material
+    const spikeParts: Object3D[] = [];
+    const plum = toonMaterial(ctx.palette.plum);
+    const red = toonMaterial(ctx.palette.red);
+    const cone = new ConeGeometry(0.09, 0.22, 5);
+    for (const h of LEVEL.hazards) {
+      const pad = new Mesh(new BoxGeometry(h.half * 2, 0.06, h.half * 2), plum);
+      pad.position.set(h.at[0], 0.03, h.at[1]);
+      pad.receiveShadow = true;
+      spikeParts.push(pad);
+      for (let i = 0; i < 9; i++) {
+        const s = new Mesh(cone, red);
+        s.position.set(h.at[0] + ((i % 3) - 1) * h.half * 0.6, 0.15, h.at[1] + (Math.floor(i / 3) - 1) * h.half * 0.6);
+        s.castShadow = true;
+        spikeParts.push(s);
+      }
+    }
+    scene.add(...mergeStaticMeshes(spikeParts));
+
     const [tree, coin, hero] = await Promise.all([
       loadModel('assets/tree.glb'),
       loadModel('assets/coin.glb', { castShadow: false }),
@@ -224,10 +281,10 @@ export class Playground implements Game {
     // Capture the rest pose once, before anything plays: recompiling later must not read
     // whatever pose is on screen.
     const rest = restPoseOf(this.heroModel, HERO_RIG);
-    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
+    this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     // Edit a clip file (hero/clips/*.ts, re-exported by hero/animations.ts) while the game
     // runs: clips recompile and swap in place.
-    reloadClips = (clips) => !this.disposed && this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)));
+    reloadClips = (clips) => !this.disposed && this.hero.attachModel(this.heroModel, clips.map((d) => compileClip(d, HERO_RIG, rest)), HERO_RIG);
     this.heroModel.position.set(...LEVEL.spawn);
     this.heroModel.visible = !ctx.camera.hidesTarget;
     this.seen = { ...this.seen, jumps: this.hero.stats.jumps, landings: this.hero.stats.landings };
@@ -310,10 +367,35 @@ export class Playground implements Game {
   fixedUpdate(ctx: GameContext, dt: number): void {
     this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero, this.input));
     this.heroEvents(ctx, dt);
+    // spike pads hurt: knocked back away from the pad's middle
+    const f = this.hero.feetInto(this.tmp);
+    for (const h of LEVEL.hazards) {
+      const dx = f.x - h.at[0];
+      const dz = f.z - h.at[1];
+      if (Math.abs(dx) < h.half + 0.25 && Math.abs(dz) < h.half + 0.25 && f.y < 0.4 && this.hero.hurt(this.tmp.set(-dx, 0, -dz))) {
+        this.hurts++;
+        ctx.audio.play('hurt');
+      }
+    }
   }
 
   update(ctx: GameContext, dt: number): void {
+    this.clock += dt;
+    // look at the nearest coin within a few metres
+    let near: Coin | null = null;
+    let best = LOOK_AT_COINS * LOOK_AT_COINS;
+    for (const c of this.coins) {
+      if (c.collected) continue;
+      const d = c.root.position.distanceToSquared(this.heroModel.position);
+      if (d < best) {
+        best = d;
+        near = c;
+      }
+    }
+    this.hero.lookAt = near ? near.root.position : null;
     this.hero.updateVisual(this.heroModel, dt, ctx.physics.alpha);
+    // blink while hits are ignored
+    this.heroModel.visible = !ctx.camera.hidesTarget && (this.hero.invulnerable <= 0 || Math.floor(this.clock * 15) % 2 === 0);
     const feet = this.heroModel.position;
 
     const ground = ctx.physics.groundBelow(feet.clone().setY(feet.y + 0.1), 20, this.hero.body);

@@ -1,18 +1,11 @@
-import {
-  type AnimationAction,
-  type AnimationClip,
-  AnimationMixer,
-  LoopOnce,
-  LoopRepeat,
-  MathUtils,
-  type Object3D,
-  type Quaternion,
-  Vector3,
-} from 'three/webgpu';
-import { RotationBlend } from '../animation/rotationBlend';
+import { type AnimationClip, MathUtils, type Object3D, type Quaternion, Vector3 } from 'three/webgpu';
+import type { FootPlacementState, GroundHit, GroundProbe } from '../animation/footPlacement';
+import type { RigSpec } from '../animation/types';
+import { PopGuard } from '../animation/popGuard';
 import { type Physics, RAPIER } from '../physics/Physics';
-import { approach, turnToward } from './motion';
-import { type AnimRequest, type MoveState, startEmote, startJump, stateDef } from './states';
+import { type AnimRequest, Animator, type ProceduralInput } from './animator';
+import { angleDiff, approach, turnToward } from './motion';
+import { feetMode, type MoveState, startEmote, startHurt, startJump, stateDef } from './states';
 import { TUNING as T } from './tuning';
 
 /**
@@ -100,7 +93,15 @@ export class PlatformerCharacter {
   /** Last animation clip requested (for tests / debug UI). */
   anim = 'Idle';
   /** Counters for tests/tooling. */
-  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0 };
+  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0, hurts: 0 };
+  /** Seconds left in which hits are ignored (after `hurt`). Games can blink the model meanwhile. */
+  invulnerable = 0;
+  /**
+   * Something worth looking at (world position), set by the game: a coin, an enemy, a sign.
+   * Standing and walking, the head turns toward it (within its limits); null = look where
+   * the character is going.
+   */
+  lookAt: Vector3 | null = null;
 
   // ---------------------------------------------------------------- state machine memory
   // Read and written by the state table (states.ts). Internal: games use the fields above.
@@ -116,7 +117,14 @@ export class PlatformerCharacter {
   /** @internal */ coyote = 0;
   /** @internal Seconds left on a jump pressed in the air, kept for the landing. */ jumpBuffer = 0;
   /** @internal Stick tilt (0..1) last ground step: a gentle tilt tiptoes. */ stick = 0;
+  /** @internal 1 while the stick is gently tilted (tiptoe), 0 when pushed further; kept when let go. */ tiptoe = 0;
+  /** @internal Where the stick points (yaw), or the facing when it's let go: the head looks there. */ heading = 0;
+  /** @internal How hard the last landing was (0..1, from the fall speed): the landing squash. */ landImpact = 0;
   /** @internal The current skid is a brake (stick let go at a run), not a turn-around. */ braking = false;
+  /** @internal Turning round after a skid: from this facing to that one. */ turnFrom = 0;
+  /** @internal Leaning on a wall or a stuck crate (PushIdle). */ leaning = false;
+  /** @internal The wall being slid down (out of it, horizontal). */ readonly wallNormal = new Vector3();
+  /** @internal */ turnTo = 0;
   /** @internal */ stepAnim: { name: string; t: number } | null = null;
   /** @internal */ ledge: Ledge | null = null;
   /** @internal */ ledgeCooldown = 0;
@@ -150,6 +158,23 @@ export class PlatformerCharacter {
   // Scratch vectors for the per-step paths (see probe(), fwd()): no garbage per step.
   private readonly tmpOrigin = new Vector3();
   private readonly tmpDir = new Vector3();
+  private readonly groundHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
+  private readonly rootHit = { y: 0, nx: 0, ny: 1, nz: 0, id: -1 };
+  private readonly takeOffInput: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false, crouch: false };
+  /** Whether this step moved the body yet. */
+  private moved = false;
+  /** After a lift onto a step: how much further (m) it holds its height without falling back. */
+  private riseHold = 0;
+  /** Drawn height of the body (groundRoot). */
+  private rootY = 0;
+  private rootStarted = false;
+  private readonly rootOne = [0];
+  private readonly rootGuard = new PopGuard(1, T.visual.rootRate, [T.visual.rootSpeed]);
+  private readonly tmpClimb = new Vector3();
+  /** Smoothed grade of the ground being covered (rise per metre; + = uphill). */
+  climb = 0;
+  /** Share of run speed the ground allows (uphillSpeed). */
+  private uphillShare = 1;
   private readonly tmpProbe = new Vector3();
   private readonly tmpFwd = new Vector3();
   private readonly tmpChest = new Vector3();
@@ -157,17 +182,19 @@ export class PlatformerCharacter {
   private readonly desired = { x: 0, y: 0, z: 0 };
   private readonly nextPos = { x: 0, y: 0, z: 0 };
 
-  private mixer: AnimationMixer | null = null;
-  /** Re-blends joint rotations after the mixer, so cross-fades never flip (see RotationBlend). */
-  private rotationBlend: RotationBlend | null = null;
-  private readonly actions = new Map<string, AnimationAction>();
-  private current: AnimationAction | null = null;
-  /**
-   * Blend weights we drive ourselves. three's crossFadeFrom restarts the outgoing clip's
-   * fade from full weight, so a clip that was only partly faded in snaps to 100% (a pop)
-   * whenever states change faster than the fade.
-   */
-  private readonly fades = new Map<AnimationAction, { from: number; to: number; t: number; duration: number }>();
+  private animator: Animator | null = null;
+  /** Ground rays for foot placement (no garbage per frame). */
+  private readonly groundProbe: GroundProbe = (x, y, z, maxDown, out: GroundHit) => this.physics.castDown(x, y, z, maxDown, out, IGNORE, this.body);
+  /** Procedural layers' inputs, reused every frame, and what they remember between frames. */
+  private readonly procedural: ProceduralInput = { lean: { roll: 0, pitch: 0 }, look: 0, impact: 0, feet: { ik: false, lock: false, speed: 0 } };
+  /** Foot placement as it was before the last fixed step (see fixedUpdate). */
+  private readonly feetBefore = { ik: false, lock: false };
+  private lastYaw: number | null = null;
+  private lastVisualSpeed = 0;
+  private accel = 0;
+  private impactTime = Infinity;
+  private impactStrength = 0;
+  private seenLandings = 0;
 
   constructor(physics: Physics, options: PlatformerOptions) {
     const B = T.body;
@@ -245,12 +272,43 @@ export class PlatformerCharacter {
     this.vy = 0;
     this.prevFeet.set(x, y, z);
     this.peakY = y;
+    // nothing about where it was carries over: the ground, a jump chain, the animation
+    this.lastJump = null;
+    this.lastLandTime = -1;
+    this.jumpBuffer = 0;
+    this.coyote = 0;
+    this.climb = 0;
+    this.uphillShare = 1;
+    this.riseHold = 0;
     this.enter('idle');
+    this.animator?.restart('Idle');
+    const p = this.procedural;
+    p.lean.roll = p.lean.pitch = p.look = p.impact = 0;
+    this.lastYaw = null;
+    this.accel = 0;
+    this.lastVisualSpeed = 0;
+    this.landImpact = 0;
+    this.impactTime = Infinity;
+    this.impactStrength = 0;
+    this.rootStarted = false;
   }
 
   /** Jump right now (no headroom: nothing happens). Normally the state machine decides. */
   jump(kind: JumpKind, input?: MoveInput): void {
     startJump(this, kind, input);
+  }
+
+  /**
+   * Get hit: knocked back away from `fromDirection` (where the hit came from, e.g. enemy
+   * position minus hero position; only its horizontal part counts) in an arc, playing Hurt,
+   * with no control for ~0.4 s, then invulnerable for a moment (`invulnerable`). `strength`
+   * scales the knockback. Lets go of ledges, walls and blocks. Returns false (and does
+   * nothing) while still invulnerable.
+   */
+  hurt(fromDirection: Vector3, strength = 1): boolean {
+    if (this.invulnerable > 0) return false;
+    startHurt(this, fromDirection, strength);
+    return true;
   }
 
   /** Celebrate (games call this, e.g. on level complete). */
@@ -261,11 +319,18 @@ export class PlatformerCharacter {
   // ------------------------------------------------------------------ main step
 
   fixedUpdate(dt: number, input: MoveInput): void {
+    // what the feet were doing where this step starts: the model is drawn between there and
+    // where it ends (render interpolation), so foot placement follows whichever is closer
+    this.feetBefore.ik = this.feetIK();
+    this.feetBefore.lock = feetMode(this) === 'lock';
     this.clock += dt;
     this.stateTime += dt;
     this.ledgeCooldown = Math.max(0, this.ledgeCooldown - dt);
+    this.invulnerable = Math.max(0, this.invulnerable - dt);
     this.jumpBuffer = Math.max(0, this.jumpBuffer - dt);
+    this.measureClimb(dt);
     this.feetInto(this.prevFeet);
+    this.heading = this.facing;
     if (this.stepAnim) {
       this.stepAnim.t -= dt;
       if (this.stepAnim.t <= 0) this.stepAnim = null;
@@ -274,7 +339,20 @@ export class PlatformerCharacter {
       // First person: body always faces the view direction.
       this.facing = Math.atan2(input.face.x, input.face.z);
     }
+    const before = this.state;
+    this.moved = false;
     stateDef(this.state).step(this, dt, input);
+    // A jump that starts this step would stand still for it (a hitch at take-off): it takes off now.
+    // (the press that started it is used up: it isn't a second jump, or a wall kick)
+    if (!this.moved && this.state === 'jump' && before !== 'jump') {
+      const rest = Object.assign(this.takeOffInput, input);
+      rest.jump = false;
+      rest.attack = false;
+      stateDef(this.state).step(this, dt, rest);
+      // that was the jump's first step: its clock says so (timings like `poundAfter` count
+      // from the take-off, as they did when the first step came one step later)
+      if (this.state === 'jump' && this.stateTime === 0) this.stateTime = dt;
+    }
     // Fall height is measured from the last place we stood (or the jump apex).
     if (this.grounded && !this.isAirborne()) this.peakY = this.feetY();
   }
@@ -347,6 +425,11 @@ export class PlatformerCharacter {
     return !!hit && Math.abs(hit.normal.y) < P.wallY;
   }
 
+  /** @internal Ground straight under the middle of the feet (not just under the capsule's rim). */
+  supported(): boolean {
+    return !!this.ray(this.probe(P.groundUp), DOWN, P.groundUp + P.supportDown);
+  }
+
   /** @internal Normal of the ground under the feet, if any. */
   groundNormal(): Vector3 | null {
     const hit = this.ray(this.probe(P.groundUp), DOWN, P.groundDown);
@@ -408,8 +491,12 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ movement
 
-  /** @internal Mario-style: turn facing toward the stick, speed builds along facing. */
-  groundMove(dt: number, input: MoveInput, maxSpeed: number, accel: number, turnRate: number = T.ground.turnRate): void {
+  /**
+   * @internal Mario-style: turn facing toward the stick, speed builds along facing. Without
+   * `accel` / `turnRate` (walking and running) both depend on the speed (tuning.ts `ground`):
+   * quick off the mark, building to full speed over ~0.65 s, turning wider the faster it goes.
+   */
+  groundMove(dt: number, input: MoveInput, maxSpeed: number, accel?: number, turnRate?: number): void {
     const G = T.ground;
     const mag = Math.min(1, input.move.length());
     if (input.face) {
@@ -418,15 +505,61 @@ export class PlatformerCharacter {
       return;
     }
     let speed = this.speed + this.wallSlip;
+    const u = Math.min(1, speed / this.runSpeed);
     if (mag > G.deadzone) {
       const want = Math.atan2(input.move.x, input.move.z);
-      const rate = speed < G.slowTurnSpeed ? turnRate * G.slowTurnBoost : turnRate;
+      this.heading = want;
+      let rate = turnRate ?? G.turnRate + (G.turnRateTop - G.turnRate) * u;
+      if (speed < G.slowTurnSpeed) rate *= G.slowTurnBoost;
       this.facing = turnToward(this.facing, want, rate * dt);
-      speed = approach(speed, maxSpeed * mag, accel * dt);
+      // the stick's tilt is squared (Mario 64): a gentle tilt is a slow tiptoe
+      const target = maxSpeed * mag ** G.stickCurve;
+      const a = accel ?? G.accel + (G.accelTop - G.accel) * u;
+      speed = approach(speed, target, (speed > target ? (accel ?? G.brake) : a) * dt);
     } else {
-      speed = approach(speed, 0, accel * G.brakeFactor * dt);
+      speed = approach(speed, 0, (accel === undefined ? G.brake : accel * G.brakeFactor) * dt);
     }
     this.hvel.copy(this.fwd()).multiplyScalar(speed);
+  }
+
+  /**
+   * Top running speed on this ground: Mario 64 slows going uphill (the steeper, the slower;
+   * too steep to stand on slides back, see checkSlope). Stairs count by their average climb.
+   */
+  uphillSpeed(): number {
+    return this.runSpeed * this.uphillShare;
+  }
+
+  /**
+   * Smoothed grade (rise per metre) of the ground ahead, the way it's moving: the ground
+   * `ahead` m on, against the ground under the feet. Steps count (by their average); a wall
+   * or ledge higher than a step doesn't.
+   */
+  private measureClimb(dt: number): void {
+    const U = T.ground.uphill;
+    const k = 1 - Math.exp(-U.rate * dt);
+    let grade = 0;
+    const v = this.speed;
+    if (!this.isAirborne() && v > 0.3) {
+      // (against the ground under the middle, not the feet: the capsule's round bottom
+      // is up a step before its middle is)
+      const f = this.feetInto(this.tmpClimb);
+      const top = f.y + T.body.autostepHeight * 2;
+      const reach = T.body.autostepHeight * 2 + U.ahead + 0.5;
+      const h = this.groundHit;
+      if (this.physics.castDown(f.x, top, f.z, reach, h, IGNORE, this.body) && top - h.y > 0.01) {
+        const here = h.y;
+        const x = f.x + (this.hvel.x / v) * U.ahead;
+        const z = f.z + (this.hvel.z / v) * U.ahead;
+        if (this.physics.castDown(x, top, z, reach, h, IGNORE, this.body) && top - h.y > 0.01 && h.ny > 0.5) {
+          grade = MathUtils.clamp((h.y - here) / U.ahead, -1, 1);
+        }
+      }
+    }
+    this.climb += (grade - this.climb) * k;
+    // the top speed it allows changes gently (stairs climb in steps: no surging)
+    const t = MathUtils.clamp((this.climb - U.from) / (U.to - U.from), 0, 1);
+    this.uphillShare = approach(this.uphillShare, 1 - U.slow * t * t * (3 - 2 * t), U.ease * dt);
   }
 
   /** @internal Slow the horizontal velocity by `rate` m/s². */
@@ -444,14 +577,27 @@ export class PlatformerCharacter {
    * `gravity`: ground states pull the character down (airborne states own their vy).
    */
   move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
+    this.moved = true;
     const def = stateDef(this.state);
-    if (gravity && !def.airborne) this.vy = Math.min(this.vy, 0) + T.gravity * dt;
+    // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
+    // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch). Gravity still
+    // pulls when nothing is under the middle of the body (perched on an edge: slide off it).
+    // (lifted onto a step a moment early: it holds its height until it is over the step)
+    const holding = this.riseHold > 0 && !def.airborne;
+    if (gravity && !def.airborne) this.vy = holding || (this.grounded && this.supported()) ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
     const desired = this.desired;
     desired.x = this.hvel.x * dt;
     desired.y = this.vy * dt;
     desired.z = this.hvel.z * dt;
     if (this.laneZ !== null) desired.z = (this.laneZ - this.body.translation().z) * T.ground.laneGain;
-    if (def.snapToGround === false) this.kcc.disableSnapToGround();
+    // Up a step: lift onto it in this move. Rapier's autostep doesn't catch a riser lower than
+    // the capsule's radius: the round bottom rides up its edge like a slope instead, losing
+    // most of the speed for a couple of steps (a hitch on every stair).
+    const rise = gravity && !def.airborne && (this.grounded || holding) ? this.riseAhead(desired) : 0;
+    if (rise > 0) desired.y = rise;
+    if (def.airborne) this.riseHold = 0;
+    else this.riseHold = Math.max(0, this.riseHold - Math.hypot(desired.x, desired.z));
+    if (def.snapToGround === false || rise > 0 || this.riseHold > 0) this.kcc.disableSnapToGround();
     else this.kcc.enableSnapToGround(T.body.snapToGround);
     const predicate = exclude ? (c: RAPIER.Collider) => c.handle !== exclude.handle : undefined;
     this.kcc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, predicate);
@@ -466,6 +612,30 @@ export class PlatformerCharacter {
     next.y = t.y + m.y;
     next.z = t.z + m.z;
     this.body.setNextKinematicTranslation(next);
+  }
+
+  /**
+   * How far up the step the capsule is about to run into this move (0: none). A riser just
+   * ahead at ankle height, with flat ground on top no higher than the autostep height.
+   */
+  private riseAhead(d: { x: number; z: number }): number {
+    const len = Math.hypot(d.x, d.z);
+    if (len < 1e-4) return 0;
+    const S = T.body.stepAssist;
+    const feet = this.feetInto(this.tmpWallFeet);
+    const dir = this.tmpDir.set(d.x / len, 0, d.z / len);
+    const origin = this.tmpOrigin.set(feet.x, feet.y + S.low, feet.z);
+    const wall = this.ray(origin, dir, RADIUS + len + S.ahead);
+    if (!wall || Math.abs(wall.normal.y) > P.wallY) return 0;
+    // the top: straight down onto it, just past the edge
+    const reach = wall.distance + S.onto;
+    const top = T.body.autostepHeight + S.low;
+    if (!this.physics.castDown(feet.x + dir.x * reach, feet.y + top, feet.z + dir.z * reach, top, this.groundHit, IGNORE, this.body)) return 0;
+    const rise = this.groundHit.y - feet.y;
+    if (this.groundHit.ny < S.flat || rise < S.min || rise > T.body.autostepHeight) return 0;
+    // hold this height until the middle of the feet is over the step
+    this.riseHold = wall.distance + S.onto;
+    return rise + T.body.kccOffset;
   }
 
   private loseSpeedToWalls(): void {
@@ -535,36 +705,41 @@ export class PlatformerCharacter {
 
   // ------------------------------------------------------------------ animation
 
-  /** Drive `model` with `clips`. Call again (e.g. on hot reload) to swap the clip set. */
-  attachModel(model: Object3D, clips: readonly AnimationClip[]): void {
-    if (this.mixer) {
-      this.mixer.stopAllAction();
-      this.mixer.uncacheRoot(this.mixer.getRoot());
-    }
-    this.actions.clear();
-    this.fades.clear();
-    this.current = null;
-    this.mixer = new AnimationMixer(model);
-    for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
-    this.rotationBlend = new RotationBlend(model, this.actions.values(), restRotations(model));
-    this.play('Idle', 0);
+  /**
+   * Drive `model` with `clips`. Call again (e.g. on hot reload) to swap the clip set. With
+   * the model's `rig`, the procedural layers run too: foot placement on the real ground,
+   * leaning into turns, looking ahead, landing squash (docs/ANIMATION.md).
+   */
+  attachModel(model: Object3D, clips: readonly AnimationClip[], rig?: RigSpec): void {
+    this.animator?.dispose();
+    this.animator = new Animator(model, clips, restRotations(model), {
+      rig,
+      probe: this.groundProbe,
+      feet: T.feet,
+      layers: T.layers,
+      gait: T.gait,
+    });
+    this.lastYaw = null;
+    this.animator.play({ name: 'Idle' }, 0);
   }
 
   /** Tooling: every clip currently contributing to the pose, with its blend weight and time (s). */
   animationMix(): { name: string; weight: number; time: number; rate: number }[] {
-    const active = [...this.actions.values()].filter((a) => a.isScheduled() && a.getEffectiveWeight() > 0.001);
-    // three normalises weights that sum past 1, so report the shares it actually uses
-    const total = Math.max(1, active.reduce((sum, a) => sum + a.getEffectiveWeight(), 0));
-    return active.map((a) => ({ name: a.getClip().name, weight: a.getEffectiveWeight() / total, time: a.time, rate: a.getEffectiveTimeScale() }));
+    return this.animator?.mix() ?? [];
+  }
+
+  /** Tooling: what foot placement did this frame (weight, pelvis drop, per-foot offsets and locks). */
+  footPlacement(): FootPlacementState | null {
+    return this.animator?.feet?.state() ?? null;
   }
 
   clipDuration(name: string, fallback: number): number {
-    return this.actions.get(name)?.getClip().duration ?? fallback;
+    return this.animator?.duration(name) ?? fallback;
   }
 
   /** @internal Playback rate that makes a locomotion clip's feet match ground speed `s`. */
   rate(name: string, s: number, authored: number, min = 0.3): number {
-    const speed = (this.actions.get(name)?.getClip().userData.speed as number | undefined) ?? authored;
+    const speed = this.animator?.authoredSpeed(name) ?? authored;
     return Math.max(min, s / Math.abs(speed));
   }
 
@@ -573,68 +748,132 @@ export class PlatformerCharacter {
     return stateDef(this.state).anim(this);
   }
 
-  /** Per render frame: orient the model, pick and advance animation. */
+  /** Per render frame: orient the model, pick and advance animation, then the procedural layers. */
   updateVisual(model: Object3D, dt: number, alpha: number): void {
     this.interpolatedFeet(alpha, model.position);
+    this.groundRoot(model, dt);
     let diff = this.facing - model.rotation.y;
     diff = Math.atan2(Math.sin(diff), Math.cos(diff));
     const snap = stateDef(this.state).snapFacing === true;
     model.rotation.y += snap ? diff : diff * Math.min(1, dt * T.visual.turnRate);
     const a = this.animationFor();
-    this.play(a.name, a.fade ?? T.visual.fade, a.speed ?? 1, a.once ?? false);
-    for (const [action, f] of this.fades) {
-      f.t += dt;
-      const u = f.duration > 0 ? Math.min(1, f.t / f.duration) : 1;
-      action.setEffectiveWeight(f.from + (f.to - f.from) * u);
-      if (u < 1) continue;
-      this.fades.delete(action);
-      if (f.to === 0) action.stop();
+    const anim = this.animator;
+    if (!anim) {
+      this.anim = a.name;
+      return;
     }
-    this.mixer?.update(dt);
-    this.rotationBlend?.apply();
+    anim.play(a, a.fade ?? T.visual.fade);
+    this.anim = anim.dominant(a);
+    anim.update(dt, this.proceduralInput(model, dt, alpha));
   }
 
-  private play(name: string, fade: number, speed = 1, once = false): void {
-    const next = this.actions.get(name);
-    this.anim = name;
-    if (!next) return;
-    next.timeScale = speed;
-    if (next === this.current) return;
-    const prev = this.current;
-    // Everything else still contributing fades out from the weight it has now.
-    for (const a of this.actions.values()) {
-      if (a === next || !a.isScheduled()) continue;
-      const w = a.getEffectiveWeight();
-      if (fade > 0 && w > 0.001) this.fades.set(a, { from: w, to: 0, t: 0, duration: fade });
-      else {
-        this.fades.delete(a);
-        a.stop();
+  /**
+   * With foot placement, the drawn body stands on the ground under its middle, not on the
+   * capsule: the capsule's round bottom climbs a step before the body gets there and dips
+   * as it rolls off a step's edge. Slopes are followed exactly; a step (the middle crossing
+   * a riser) eases over (PopGuard), so stairs are a smooth climb and the feet still land on
+   * each tread (foot placement).
+   */
+  private groundRoot(model: Object3D, dt: number): void {
+    const physical = model.position.y;
+    const V = T.visual;
+    let target = physical;
+    // standing or moving on the ground (not leaving it: a jump's first frames keep foot placement)
+    const on = !!this.animator?.feet && !this.isAirborne() && !!feetMode(this);
+    const top = physical + T.body.autostepHeight;
+    const down = 2 * T.body.autostepHeight;
+    const v = this.speed;
+    if (on) {
+      // the ground from under its middle to a little way ahead (the way it is going),
+      // averaged: going down a step the body sinks with it (the capsule stays up on the edge
+      // until it drops off: the feet would float); up a step, the capsule is up it early, as
+      // the body is. Sampled finely, so it changes in small steps as the samples cross an edge.
+      let sum = 0;
+      let n = 0;
+      let first = Number.NaN;
+      let last = Number.NaN;
+      const dx = v > 0.3 ? this.hvel.x / v : 0;
+      const dz = v > 0.3 ? this.hvel.z / v : 0;
+      for (let i = 0; i < V.rootSamples; i++) {
+        const d = (V.rootAhead * i) / (V.rootSamples - 1);
+        if (this.physics.castDown(model.position.x + dx * d, top, model.position.z + dz * d, down, this.rootHit, IGNORE, this.body) && this.rootHit.ny > 0.5 && top - this.rootHit.y > 0.01) {
+          sum += this.rootHit.y;
+          n++;
+          if (i === 0) first = this.rootHit.y;
+          last = this.rootHit.y;
+        }
+      }
+      // (only as far as the ground ahead drops: on the flat and going up, the capsule)
+      const descent = Number.isNaN(first) || Number.isNaN(last) ? 0 : MathUtils.smoothstep(first - last, 0, V.rootDrop);
+      if (n > 0) target = physical + Math.min(0, Math.max(sum / n - physical, -T.body.autostepHeight)) * descent;
+    }
+    // (in the air the body is where the capsule is; the change eases over too) teleported: start over
+    // Only the lowering is eased: the capsule's own moves (jumps, landings, slopes, steps)
+    // come through as they are (foot placement keeps the hips steady through a step).
+    if (!this.rootStarted || Math.abs(model.position.y - this.rootY) > 1) this.rootGuard.reset();
+    this.rootStarted = true;
+    this.rootOne[0] = target - physical;
+    this.rootY = physical + this.rootGuard.apply(this.rootOne, dt)[0]!;
+    model.position.y = this.rootY;
+  }
+
+  /** Foot placement on: a state with feet, on the ground (through brief no-ground moments: autosteps, edges). */
+  private feetIK(): boolean {
+    return !!feetMode(this) && (this.grounded || this.coyote < T.ground.coyote || this.state === 'jump');
+  }
+
+  /** The procedural layers' inputs for this frame (numbers in tuning.ts `visual`). */
+  private proceduralInput(model: Object3D, dt: number, alpha: number): ProceduralInput {
+    const V = T.visual;
+    const def = stateDef(this.state);
+    const p = this.procedural;
+    const k = (rate: number) => (dt > 0 ? 1 - Math.exp(-rate * dt) : 0);
+    // turn rate of the model and acceleration of the body, render frame to render frame
+    const yaw = model.rotation.y;
+    const yawRate = this.lastYaw === null || dt <= 0 ? 0 : angleDiff(yaw, this.lastYaw) / dt;
+    this.lastYaw = yaw;
+    const speed = this.speed;
+    if (dt > 0) this.accel += ((speed - this.lastVisualSpeed) / dt - this.accel) * k(V.accelSmoothing);
+    this.lastVisualSpeed = speed;
+    // lean into turns (roll toward the inside) and into acceleration
+    const lean = def.lean === true && this.grounded;
+    const roll = lean ? MathUtils.clamp(-yawRate * speed * V.leanRoll, -V.maxRoll, V.maxRoll) : 0;
+    const pitch = lean ? MathUtils.clamp(this.accel * V.leanAccel, -V.maxPitch, V.maxPitch) : 0;
+    p.lean.roll += (roll - p.lean.roll) * k(V.leanRate);
+    p.lean.pitch += (pitch - p.lean.pitch) * k(V.leanRate);
+    // look where it's going (or at what the game points out)
+    let look = 0;
+    const feet = feetMode(this);
+    if (feet && this.stance === 'stand') {
+      let want = this.heading;
+      if (this.lookAt) want = Math.atan2(this.lookAt.x - model.position.x, this.lookAt.z - model.position.z);
+      look = MathUtils.clamp(angleDiff(want, yaw) * MathUtils.RAD2DEG, -V.maxLook, V.maxLook);
+    }
+    p.look += (look - p.look) * k(V.lookRate);
+    // landing on the move: a quick squash, no lock
+    if (this.stats.landings !== this.seenLandings) {
+      this.seenLandings = this.stats.landings;
+      if (this.state === 'walk' || this.state === 'run') {
+        this.impactTime = 0;
+        this.impactStrength = this.landImpact;
       }
     }
-    // A loop that is still fading out keeps its time (no restart); anything else starts over.
-    // (a one-shot re-entered mid fade-out restarts its time but keeps its weight: dropping
-    // the weight instead would leave the total under 1, which three fills with the bind pose)
-    const w0 = next.isScheduled() ? next.getEffectiveWeight() : 0;
-    if (once || w0 <= 0.001) {
-      next.reset();
-      // Locomotion → locomotion (Walk, Run, Tiptoe…): start in step with the outgoing
-      // stride, so the planted foot stays the planted foot.
-      const stride = (c: AnimationAction | null) => c?.getClip().userData.speed !== undefined;
-      if (!once && prev && stride(prev) && stride(next)) next.time = (prev.time / prev.getClip().duration) * next.getClip().duration;
-    }
-    next.setLoop(once ? LoopOnce : LoopRepeat, Infinity);
-    next.clampWhenFinished = once;
-    next.enabled = true;
-    next.play();
-    if (fade > 0 && w0 < 1) {
-      next.setEffectiveWeight(w0);
-      this.fades.set(next, { from: w0, to: 1, t: 0, duration: fade * (1 - w0) });
-    } else {
-      this.fades.delete(next);
-      next.setEffectiveWeight(1);
-    }
-    this.current = next;
+    this.impactTime += dt;
+    const t = this.impactTime;
+    p.impact = feet && this.grounded ? this.impactStrength * (t < V.impactRise ? smooth(t / V.impactRise) : 1 - smooth((t - V.impactRise) / V.impactFall)) : 0;
+    // the model is drawn closer to where the last fixed step started, or where it ended: a
+    // landing (or a launch) shows on the frame the drawn feet reach (or leave) the ground
+    const before = alpha < 0.5;
+    p.feet.ik = before ? this.feetBefore.ik : this.feetIK();
+    p.feet.lock = before ? this.feetBefore.lock : feet === 'lock';
+    p.feet.speed = speed;
+    return p;
   }
+}
+
+function smooth(x: number): number {
+  const t = Math.min(1, Math.max(0, x));
+  return t * t * (3 - 2 * t);
 }
 
 /** Every named node's rotation the first time a model is attached: its rest pose. */

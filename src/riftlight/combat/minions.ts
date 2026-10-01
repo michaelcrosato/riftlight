@@ -30,7 +30,8 @@ export const MINION_STRIKE: SkillGem = {
 export function ownerMinionMods(owner: StatSheet): Mod[] {
   const out: Mod[] = [];
   for (const { mod } of owner.entries()) {
-    if (mod.stat.startsWith('minion.')) out.push({ ...mod, stat: mod.stat.slice(7) });
+    if (mod.stat === 'minion.speed') for (const stat of ['attack.speed', 'cast.speed', 'move.speed']) out.push({ ...mod, stat });
+    else if (mod.stat.startsWith('minion.')) out.push({ ...mod, stat: mod.stat.slice(7) });
     else if (mod.tags?.includes('minion')) {
       const tags = mod.tags.filter((t) => t !== 'minion');
       out.push({ ...mod, tags: tags.length ? tags : undefined });

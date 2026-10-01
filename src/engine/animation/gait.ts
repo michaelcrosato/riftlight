@@ -37,6 +37,13 @@ export interface GaitSpec {
   swingReach?: number;
   /** Swing timing: 0 = even, + = the foot hangs back then whips forward (running). */
   swingDelay?: number;
+  /**
+   * 0..1: how much the swinging foot sweeps back to meet the ground at touchdown. At 1 it
+   * arrives moving backwards at exactly the ground speed (still, in the world), so the
+   * foot plants without sliding; at 0 it eases to a stop relative to the hips and slides
+   * forward for the frames it is already on the floor.
+   */
+  plant?: number;
   /** Toes-up angle at heel strike (deg). */
   heelStrike?: number;
   /** Heel-raise angle at toe-off (deg). */
@@ -96,6 +103,8 @@ export function gaitClip(rig: RigSpec, g: GaitSpec): ClipDef {
     loop: true,
     keys,
     speed: g.speed,
+    stance: g.stance,
+    ...(g.reach ? { reach: g.reach } : {}),
     grounded: g.stance >= 0.5,
     notes: g.notes,
   };
@@ -226,9 +235,15 @@ export function footAt(g: GaitSpec, legs: LegRig, phase: number, S: number): Foo
   const d = g.swingDelay ?? 0;
   const e = smooth(d > 0 ? Math.max(0, (s - d) / (1 - d)) ** (1 - d * 0.5) : s);
   const throwFwd = (g.swingReach ?? 0) * Math.sin(Math.PI * Math.min(1, Math.max(0, (s - 0.35) / 0.65)));
+  // Touchdown: end the swing with the stance's speed (dz/ds = -S (1 - stance) / stance), a
+  // Hermite end tangent added to the eased path (h11 is 0 at both ends and 0-sloped at s = 0).
+  const plant = g.plant ?? 0;
+  const endSlope = (-S * (1 - g.stance)) / g.stance;
+  const baseSlope = (-(g.swingReach ?? 0) * Math.PI) / 0.65; // the throw's own slope at s = 1
+  const sweep = plant * (endSlope - baseSlope) * (s * s * s - s * s);
   const pitch = startPitch + (endPitch - startPitch) * smooth((s - 0.2) / 0.75) + (g.swingPitch ?? 0) * Math.sin(Math.PI * s);
   return {
-    z: a0.z + (a1.z - a0.z) * e + throwFwd,
+    z: a0.z + (a1.z - a0.z) * e + throwFwd + sweep,
     y: a0.y + (a1.y - a0.y) * s - legs.ankle, // lifted clear of the floor by clear()
     pitch,
     pivot: 'ankle',

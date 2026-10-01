@@ -61,4 +61,6 @@ export const HERO_RIG: RigSpec = {
     ball: 0.21,
     top: 0.02,
   },
+  // Cap: the hat, a springy joint under Head (poseLayers drives it; clips never do)
+  spine: { torso: 'Torso', head: 'Head', cap: 'Cap' },
 };

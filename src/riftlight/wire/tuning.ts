@@ -25,6 +25,9 @@ export const WIRE_TUNING = {
     /** Multipliers on the rank's life and damage (RANK.boss is 30× life, 2× damage: too long a fight for one hero). */
     bossLife: 0.26,
     bossDamage: 0.7,
+    /** A boss's armour and block from its parts are capped here (the depth's own armour comes on top). */
+    bossArmour: 40,
+    bossBlock: 0.15,
     /** Footprint against walls (m): every body fits through a 1-cell corridor; bodies still push each other by their real radius. */
     wallRadius: 0.42,
     /** Multiplier on every monster hit (with SCALING.monsterDamage(depth) on top). */
@@ -35,7 +38,7 @@ export const WIRE_TUNING = {
     speed: 3.3,
     accuracy: 320,
     accuracyPerLevel: 22,
-    armourPerDepth: 6,
+    armourPerDepth: 3,
     /** Turn rate (rad/s) while walking; attacks face their target at once. */
     turnRate: 9,
     /** Corpses: seconds after the Death clip ends before they sink away. */
