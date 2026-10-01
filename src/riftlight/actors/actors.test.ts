@@ -211,3 +211,15 @@ describe('GridMover', () => {
     expect(mover.position.y).toBe(0);
   });
 });
+
+describe('separation', () => {
+  it('overlapping actors push apart, the lighter one more', () => {
+    const m = new ActorManager();
+    const heavy = m.add(new Actor({ faction: 'hero', at: [0, 0, 0], base: { mass: 3 } }));
+    const light = m.add(new Actor({ faction: 'monster', at: [0.3, 0, 0] }));
+    for (let i = 0; i < 30; i++) m.fixedUpdate(1 / 60);
+    const gap = light.position.x - heavy.position.x;
+    expect(gap).toBeGreaterThan(heavy.radius + light.radius - 0.05);
+    expect(Math.abs(light.position.x - 0.3)).toBeGreaterThan(Math.abs(heavy.position.x));
+  });
+});

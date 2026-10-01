@@ -45,7 +45,10 @@ class Slam extends EffectBase {
     if (leap) {
       // jump to the aim point (clamped), slam where we land
       const p = c.caster.position;
-      const dist = Math.min(leap.range, Math.hypot(c.aim.x - p.x, c.aim.z - p.z));
+      // land in front of an enemy standing at the aim point, not on top of it
+      const foe = c.combat.actors.nearest(c.aim, 1.2, (x) => x.alive && c.caster.hostileTo(x));
+      const short = foe ? foe.radius + c.caster.radius + 0.15 : 0;
+      const dist = Math.max(0, Math.min(leap.range, Math.hypot(c.aim.x - p.x, c.aim.z - p.z) - short));
       const time = c.opts.airTime ?? c.skill.castTime * 0.5;
       this.center.set(p.x + c.dir.x * dist, p.y, p.z + c.dir.z * dist);
       this.phase = 'leap';

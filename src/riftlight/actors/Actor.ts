@@ -127,6 +127,8 @@ export class Actor implements ActorLike {
   readonly velocity = new Vector3();
   /** Knockback, wind, wells: decays on its own. */
   readonly impulse = new Vector3();
+  /** Push out of other actors this step (set by the ActorManager). */
+  readonly separation = new Vector3();
   /** Vertical speed to apply on the next step (leaps), then cleared. */
   launch: number | undefined;
   /** Scripted movement in progress (see Motion). */
@@ -447,8 +449,8 @@ export class Actor implements ActorLike {
     if (stop && this.motion) this.endMotion(true);
     const m = this.motion;
     const k = stop ? 0 : 1;
-    const vx = m ? m.vx : this.velocity.x * k + this.impulse.x;
-    const vz = m ? m.vz : this.velocity.z * k + this.impulse.z;
+    const vx = m ? m.vx : this.velocity.x * k + this.impulse.x + this.separation.x;
+    const vz = m ? m.vz : this.velocity.z * k + this.impulse.z + this.separation.z;
     this.mover.move(vx, vz, dt, this.launch);
     this.launch = undefined;
     this.position.copy(this.mover.position);

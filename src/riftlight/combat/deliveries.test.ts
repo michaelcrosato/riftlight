@@ -180,7 +180,9 @@ describe('slam', () => {
       top = Math.max(top, w.hero.position.y);
     }
     expect(top).toBeGreaterThan(0.5);
-    expect(w.hero.position.z).toBeCloseTo(5, 0);
+    // lands in front of the enemy at the aim point, not on it
+    expect(w.hero.position.z).toBeGreaterThan(4);
+    expect(w.hero.position.z).toBeLessThan(5.5 - a.radius - w.hero.radius + 0.2);
     expect(w.hero.position.y).toBe(0);
     expect(hurt(a)).toBeGreaterThan(0);
   });

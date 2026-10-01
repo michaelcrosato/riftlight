@@ -63,6 +63,7 @@ export class ActorManager implements ActorWorld {
       this.dirtyOrder = false;
     }
     this.rebuild();
+    this.separate();
     for (const a of [...this.actors]) a.fixedUpdate(dt, this);
     for (let i = this.actors.length - 1; i >= 0; i--) if (this.actors[i]!.gone) this.remove(this.actors[i]!);
   }
@@ -71,6 +72,43 @@ export class ActorManager implements ActorWorld {
   update(dt: number, alpha: number): void {
     for (const a of this.actors) a.update(dt, alpha);
   }
+
+  /**
+   * Bodies don't overlap: every overlapping pair gets a push apart (m/s per metre of overlap),
+   * shared by mass, applied with the next move. Soft, so crowds flow instead of jamming.
+   */
+  private separate(): void {
+    const near = this.near;
+    for (const a of this.actors) a.separation.set(0, 0, 0);
+    for (const a of this.actors) {
+      if (!a.alive) continue;
+      for (const b of this.query(a.position, a.radius + 1, near)) {
+        if (b.id <= a.id || !b.alive) continue;
+        let dx = b.position.x - a.position.x;
+        let dz = b.position.z - a.position.z;
+        let d = Math.hypot(dx, dz);
+        const overlap = a.radius + b.radius - d;
+        if (overlap <= 0) continue;
+        if (d < 1e-4) {
+          // exactly on top of each other: split along a fixed direction per pair
+          dx = Math.cos(a.id * 2.399);
+          dz = Math.sin(a.id * 2.399);
+          d = 1;
+        }
+        const ma = Math.max(0.1, a.stats.get('mass') || 1);
+        const mb = Math.max(0.1, b.stats.get('mass') || 1);
+        const k = (overlap * ActorManager.SEPARATION) / d;
+        a.separation.x -= dx * k * (mb / (ma + mb));
+        a.separation.z -= dz * k * (mb / (ma + mb));
+        b.separation.x += dx * k * (ma / (ma + mb));
+        b.separation.z += dz * k * (ma / (ma + mb));
+      }
+    }
+  }
+
+  /** Separation stiffness (m/s per metre of overlap). */
+  static SEPARATION = 14;
+  private readonly near: Actor[] = [];
 
   // ------------------------------------------------------------------ spatial hash
 

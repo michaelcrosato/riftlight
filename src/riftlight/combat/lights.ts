@@ -17,6 +17,8 @@ interface Active {
 export class LightService {
   /** Fallback pool size. */
   static readonly POOL = 4;
+  /** Fallback lights are plain PointLights on the toon ramp: keep them soft so they tint, not blow out. */
+  static readonly FALLBACK_SCALE = 0.45;
   readonly active: Active[] = [];
   private pool: PointLight[] = [];
   private readonly tmp = new Vector3();
@@ -73,9 +75,9 @@ export class LightService {
       if (!a.light) continue;
       const fade = r.duration > 0 ? Math.min(1, (r.duration - a.age) / (r.duration * 0.3)) : 1;
       a.light.color.copy(colorOf(r.color));
-      a.light.intensity = r.intensity * fade;
+      a.light.intensity = r.intensity * fade * LightService.FALLBACK_SCALE;
       a.light.distance = r.radius;
-      a.light.position.copy(r.position()).add(this.tmp.set(0, 0.8, 0));
+      a.light.position.copy(r.position()).add(this.tmp.set(0, 1.4, 0));
     }
   }
 
