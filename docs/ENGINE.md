@@ -175,7 +175,7 @@ automatically on both backends.
 
 `PlatformerCharacter` (`src/engine/character/`) is a Mario-64-style controller (and then
 some) on Rapier's kinematic character controller, driven by the hero rig's baked clips
-(`scripts/assets/hero.mjs`: jointed body with elbows/knees and a pelvis root, 58 clips).
+(`scripts/assets/hero.mjs`: jointed body with elbows/knees, a pelvis root and a springy cap, 60 clips).
 `readMoveInput(ctx, hero, out?)` maps the default keys, camera-relative for every preset; pass
 a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 
@@ -189,7 +189,7 @@ a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 | X | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
 | F (hold) | **grab** a block, then pull (move away) or push (move toward) |
 | J | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
-| V / B | **wave** / **sit** |
+| V / B | **wave** / **sit** (sits down; B, Space or the stick stands up again) |
 
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
 joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
@@ -198,7 +198,9 @@ joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G*
 the buttons are `EngineOptions.touchButtons`).
 Landscape works best.
 
-Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **fall**, soft
+Automatic moves: **step up / step down** (autostep 0.4; Rapier's autostep alone misses a
+riser met at speed, so `riseAhead` lifts the body onto a flat step found just ahead and holds
+it there while it crosses the edge, `TUNING.body.stepAssist`), **teeter** at edges, **fall**, soft
 **land** or **hard landing** (drops > 5.5, face-plant + get-up), **ledge grab** → hang →
 **shimmy** (A/D) → **pull up** (toward wall / Space) or **drop** (C / away), **climb**
 colliders tagged `climbable` in any direction and **climb over the top**, **push** colliders
@@ -212,8 +214,17 @@ into a wall at full speed **bonks** (stops dead and reels back), walking into on
 **Weight (Mario 64).** Speed builds over about 0.65 s to the top (fast from a standstill,
 slow for the last metres per second). Turns are tight at walking pace and wide at full speed
 (a ~1.3 m arc). The stick's tilt is squared, so a gentle tilt tiptoes. In the air the hero
-keeps their momentum and can only nudge it. Every number is in `TUNING.ground` and
+keeps their momentum and can only nudge it. **Uphill slows the run**: the grade 0.9 m
+ahead (stairs count by their average climb) lowers the top speed by up to 60% between
+grades 0.2 and 0.33 (the 15° ramp runs at ~4.8 m/s, the playground stairs at ~3.3);
+downhill and gentle slopes keep full speed, and ground too steep to stand on slides you
+back (`TUNING.ground.uphill`). A jump takes off on the physics step it is pressed (the
+jump's own step runs right away, not one step later). Every number is in `TUNING.ground` and
 `TUNING.air`, with the reasoning next to it.
+
+`hero.teleport(position)` starts over: idle, no momentum, no jump chain, and the animator
+restarts (no blends, no locked feet, no procedural memory), so what happens after a
+teleport doesn't depend on what came before it (films and e2e rely on that).
 
 **Getting hurt.** `hero.hurt(fromDirection, strength = 1)` knocks the hero back, away from
 `fromDirection` (e.g. enemy position − hero position; only the horizontal part counts), in
@@ -595,9 +606,13 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
 
 ## Bundle
 
-`npm run build` (gzipped): `three` 270 kB, Rapier JS 28 kB + `rapier_wasm3d_bg.wasm` 774 kB
+`npm run build` (gzipped): `three` 271 kB, Rapier JS 28 kB + `rapier_wasm3d_bg.wasm` 774 kB
 (fetched and compiled while it streams, in parallel with the renderer and models), engine
-and game 43 kB, page 3 kB. With `@dimforge/rapier3d-compat` the wasm was base64 inside a
+and game 111 kB, page 0.5 kB. The engine and game part is a `hero` chunk of 64 kB (the
+engine, the animation toolkit and every hero clip as data; the Animation Lab loads it too),
+`main` 40 kB (the playground and game systems), the pixel font 7 kB (JS + CSS) and the
+Riftlight stat registry 2 kB. The Lab page adds 8 kB, the skill-tree page (`tree.html`)
+31 kB. With `@dimforge/rapier3d-compat` the wasm was base64 inside a
 1,094 kB JS chunk, decoded and compiled only after the whole chunk had been parsed.
 `vite.config.ts` has a tiny `rapier-wasm-stub` plugin: wasm-bindgen's bundler build
 imports the `.wasm` as an ES module, which the plugin stubs out so `initRapier()` can

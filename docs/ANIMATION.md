@@ -267,19 +267,38 @@ Each frame it runs, in order:
      set. The playground points it at the nearest coin. The torso takes 30% of the turn.
    - **impact**: landing on the move adds a squash (pelvis drop, squash, torso bend),
      scaled by the landing speed, without locking input.
-   - **cap**: an optional springy hat, when the rig names `spine.cap`. The hero has no
-     separate cap joint, so it is off.
+   - **cap**: a springy hat, when the rig names `spine.cap` (a joint no clip animates). The
+     hero's `Cap` sits under `Head` with the Hat and Brim on it: it tips against the head's
+     acceleration (`capGain` deg per m/s², a spring of `capStiffness`/`capDamping`, at most
+     `capMax`) and settles. `poseLayers.test.ts` checks it lags and settles.
 4. **Foot placement** (`src/engine/animation/footPlacement.ts`, numbers in `TUNING.feet`
    and `FOOT_PLACEMENT_DEFAULTS`). The state table's `feet` field picks the mode:
    - `'ik'`: each foot keeps the clip's height above the *real* ground. A heel ray and a toe
      ray find the slope or the step edge under it. The pelvis drops for the lower foot, the
      foot pitches to the slope, and the legs are re-solved (two-bone IK plus hip abduction).
-     Swinging feet look ahead, so they clear a step up instead of clipping it.
+     Swinging feet look ahead, so they clear a step up instead of clipping it. A gait's
+     swinging foot knows where it will land instead (`SwingInfo` from the blend space's
+     phase, stance and stride): it travels from the ground it took off from to the ground at
+     the landing point over the swing (`swingUp`, `swingDown`), in world space, so the body
+     stepping up or down under it doesn't move it.
+   - The pelvis drops for the lower planted foot on a critically damped spring in world space
+     (`dropRate`); starting over (a landing) it starts from the drop that leaves the legs as
+     the clip has them, not from none or all of it.
+   - Every correction a foot gets (its terrain offset, the lock's, the slope pitch) goes
+     through a `PopGuard` (`src/engine/animation/popGuard.ts`): it follows its target's own
+     speed up to `guardMove` m/s / `guardPitch` deg/s, and a faster jump (a correction
+     switching on, a new target) eases over in a few frames instead of one. A locked foot's
+     hold and a re-planting step are never held back. The drawn body height (`groundRoot`)
+     is guarded the same way where it is lowered toward lower ground ahead.
    - `'lock'`: like `'ik'`, but a foot the clip puts on the ground **stays where it landed in
      the world**. When the body drifts more than `maxDrift` from it, or the foot is about to
      go out of reach, it takes a quick step (`stepTime`, `stepLift`). Starts, stops, idles,
      skid-turns and blends therefore don't skate. Feet in swing (moving faster than the
-     body) are never locked.
+     body) are never locked. A lock holds the point that touched first (heel or toe) and
+     lets go when the foot is clearly lifted (`release` × `contact`). A re-planting step
+     goes from where the foot stands in the world to where the clip has it (its duration
+     grows with the distance, `stepSpeed`), lifted. A foot planted across a step's edge stands
+     on the lower step unless its middle is over the higher one.
    - Leave it unset (airborne states) for clip feet only. Mode changes fade, and the mode
      follows the interpolated render position, not the physics step.
 
@@ -301,6 +320,15 @@ States that exist for the feel:
 | `wallSlide` | WallSlide | falling while pushing into a wall slides down it; jump = wall kick |
 | `push` (`leaning`) | PushIdle | pushing a wall or a crate that won't move: lean on it |
 | `hurt` | Hurt | `hero.hurt(fromDirection, strength)`: knocked back in an arc, then invulnerable |
+| `sit`, `standUp` | SitDown → Sit, StandUp | sitting down and getting up step the feet (one at a time) instead of sliding them, feet locked |
+
+**Known limit: stairs.** The playground stairs have 28 cm risers on 0.8 m treads (half a
+leg). The gait keeps its stride, so the trailing foot sometimes leaves the lower tread while
+the pelvis is still low for it, and its toe skims the next tread's top or nose on the way
+up: `npm run film -- stairs` reports that as a few one-frame "slips" of a swinging foot
+(sole within 1.5 cm of a surface, moving at swing speed) and a few-cm "sinks" at a riser,
+not a planted foot sliding. A real fix is a stair gait (lift first, then swing) rather
+than more foot-placement rules.
 
 ## Adding a character
 
