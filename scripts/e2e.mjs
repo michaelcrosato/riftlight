@@ -4,7 +4,8 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | riftlight-tree | tools | systems;  groups: @core | @cameras | @filters
+//     filters-webgl | touch | phone | moves | lab | riftlight-tree | riftlight-loot | tools |
+//     systems;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -31,6 +32,7 @@
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
+// riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON.
