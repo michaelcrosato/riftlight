@@ -47,6 +47,49 @@ export class StageMover implements Mover {
     return s.walkable(x, z, pushed) && s.walkable(x + r, z, pushed) && s.walkable(x - r, z, pushed) && s.walkable(x, z + r, pushed) && s.walkable(x, z - r, pushed);
   }
 
+  /**
+   * Pressing (nearly) straight into a wall corner (a doorway or a one-cell corridor
+   * a little off its centre line). Push the step's end out of the blocked cells it overlaps,
+   * as a circle would, so the actor rounds the corner instead of sticking to it.
+   */
+  private round(s: GridStage, nx: number, nz: number, step: number, pushed: boolean): boolean {
+    const r = this.radius + 0.01;
+    let x = nx;
+    let z = nz;
+    for (let pass = 0; pass < 2; pass++) {
+      const cx = Math.floor(x);
+      const cz = Math.floor(z);
+      if (!s.walkable(cx + 0.5, cz + 0.5, pushed)) return false; // the centre itself is in a wall
+      for (let dz = -1; dz <= 1; dz++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if ((!dx && !dz) || s.walkable(cx + dx + 0.5, cz + dz + 0.5, pushed)) continue;
+          const qx = Math.max(cx + dx, Math.min(cx + dx + 1, x));
+          const qz = Math.max(cz + dz, Math.min(cz + dz + 1, z));
+          const d = Math.hypot(x - qx, z - qz);
+          if (d >= r || d < 1e-6) continue;
+          x = qx + ((x - qx) / d) * r;
+          z = qz + ((z - qz) / d) * r;
+        }
+    }
+    // ease toward it at walking pace (no snap); line up first if the corner is still in the way
+    const p = this.position;
+    let dx = x - p.x;
+    let dz = z - p.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-4) return false;
+    if (d > step) {
+      dx *= step / d;
+      dz *= step / d;
+    }
+    for (const [ax, az] of [[dx, dz], [dx, 0], [0, dz]] as const) {
+      if (Math.hypot(ax, az) < step * 0.1 || !this.ok(s, p.x + ax, p.z + az, pushed)) continue;
+      p.x += ax;
+      p.z += az;
+      return true;
+    }
+    return false;
+  }
+
   move(vx: number, vz: number, dt: number, vy?: number): void {
     this.prev.copy(this.position);
     const p = this.position;
@@ -58,8 +101,19 @@ export class StageMover implements Mover {
       if (this.ok(s, nx, nz, pushed)) {
         p.x = nx;
         p.z = nz;
-      } else if (this.ok(s, nx, p.z, pushed)) p.x = nx;
-      else if (this.ok(s, p.x, nz, pushed)) p.z = nz;
+      } else {
+        // slide along the wall when that keeps a fair share of the step; pressing (nearly)
+        // straight into a corner rounds it instead
+        const step = Math.hypot(vx, vz) * dt;
+        const xs = Math.abs(vx * dt) >= step * 0.3 && this.ok(s, nx, p.z, pushed);
+        const zs = Math.abs(vz * dt) >= step * 0.3 && this.ok(s, p.x, nz, pushed);
+        if (xs) p.x = nx;
+        else if (zs) p.z = nz;
+        else if (!this.round(s, nx, nz, step, pushed)) {
+          if (this.ok(s, nx, p.z, pushed)) p.x = nx;
+          else if (this.ok(s, p.x, nz, pushed)) p.z = nz;
+        }
+      }
     } else {
       p.x += vx * dt;
       p.z += vz * dt;

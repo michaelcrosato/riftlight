@@ -2,11 +2,12 @@
 // WebGL 2 fallback, driven frame-exactly through window.__RIFTLIGHT__ (Engine.step) and the
 // real keyboard path for menus:
 //
-//   title → New Run (keys) → town → walk to Vex → rift menu → level 1 → kill the stub
-//   monsters with the basic attack → collect gold → clear → portal → loot window → town
-//   (autosaved) → pause → Tuning → enemy life slider (keys) → applies to live monsters
-//   (difficulty Mod source, life fraction kept) → death → recap → town with the penalty →
-//   save → reload → Continue → same run. Zero console errors and GPU errors.
+//   title → New Run (keys) → town → walk to Vex → rift menu → level 1 (real monsters and
+//   its boss) → kill every monster, the boss too, with the basic attack (kill events, XP
+//   rising) → collect gold → clear → portal → loot window → town (autosaved) → pause →
+//   Tuning → enemy life slider (keys) → applies to live monsters (difficulty Mod source,
+//   life fraction kept) → the boss kills the hero → recap names it → town with the penalty
+//   → save → reload → Continue → same run. Zero console errors and GPU errors.
 //
 // Frames land in .scratch/e2e/riftlight-*.png. Self-contained: e2e.mjs passes its helpers in.
 
@@ -61,11 +62,33 @@ export async function runRiftlight(h) {
     });
     check(rs.depth === 1 && rs.levelName === 'Embers' && rs.monsters.total > 0, `entered depth 1 "${rs.levelName}" with ${rs.monsters.total} monsters`);
     check(rs.codex.includes('embers'), 'the codex unlocked the level mechanic');
+    const roster = await R(() => {
+      const ms = window.__RIFTLIGHT__.game.level.monsters();
+      const boss = ms.find((m) => m.rank === 'boss');
+      return { real: ms.filter((m) => typeof m.runtime?.play === 'function' && m.genome).length, total: ms.length, boss: boss && { name: boss.name, life: boss.actor.life, maxLife: boss.actor.maxLife, alive: boss.actor.alive } };
+    });
+    check(roster.real === roster.total, `every monster is a real animated genome (${roster.real}/${roster.total})`);
+    check(!!roster.boss && roster.boss.alive && roster.boss.life === roster.boss.maxLife && roster.boss.maxLife > 0, `a boss spawned on level 1 (${roster.boss?.name}, ${roster.boss?.maxLife} life)`);
     await capture(page, `riftlight-${tag}-level.png`);
 
     // ---------------------------------------------------------------- fight with the basic attack
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      window.__KILLS__ = [];
+      rl.game.events.on('kill', (e) => {
+        const h = rl.state().hero;
+        window.__KILLS__.push({ rank: e.rank, name: e.target.name, byHero: e.killer === rl.game.hero.actor, xp: h.xp, level: h.level });
+      });
+    });
     const fight = await R(() => window.__RIFTLIGHT__.fight({ skills: false, maxFrames: 60 * 150 }));
     rs = fight.state;
+    const kills = await R(() => window.__KILLS__);
+    const first = kills[0];
+    check(!!first && first.byHero && (first.xp > 0 || first.level > 1), `a monster died to the hero and XP rose (${first?.name}: xp ${first?.xp}, level ${first?.level})`);
+    check(kills.length === rs.monsters.killed, `every death was a kill event (${kills.length} events, ${rs.monsters.killed} killed)`);
+    const bossKill = kills.find((k) => k.rank === 'boss');
+    check(!!bossKill && bossKill.name === roster.boss?.name, `the boss died too (${bossKill?.name ?? 'alive'})`);
+    check(kills.every((k, i) => i === 0 || k.level > kills[i - 1].level || k.xp >= kills[i - 1].xp), 'XP only rose kill by kill');
     check(rs.monsters.killed === rs.monsters.total && rs.monsters.total > 0, `killed every monster with the basic attack (${rs.monsters.killed}/${rs.monsters.total} in ${fight.frames} frames)`);
     check(rs.cleared && rs.exitOpen, `the level is clear and the portal open (cleared ${rs.cleared}, exit ${rs.exitOpen})`);
     check(rs.hero.xp > 0 || rs.hero.level > 1, `XP gained (level ${rs.hero.level}, xp ${rs.hero.xp})`);
@@ -140,20 +163,45 @@ export async function runRiftlight(h) {
     check(fresh && Math.abs(fresh.life - fresh.maxLife) < 1e-6, `a monster spawned now is born with the tuned life (${fresh?.life} / ${fresh?.maxLife})`);
 
     // ---------------------------------------------------------------- death → recap → town with a penalty
-    const goldBefore = (await st()).hero.gold;
-    await R(() => {
+    let goldBefore = (await st()).hero.gold;
+    // walk up to the level boss with 1 life; the rest of the level (and the adds it calls)
+    // are cleared away so the blow that lands is the boss's own
+    const duel = await R(() => {
       const rl = window.__RIFTLIGHT__;
+      const level = rl.game.level;
+      const boss = level.monsters().find((m) => m.rank === 'boss' && m.actor.alive);
+      if (!boss) return { boss: null };
+      const others = () => {
+        for (const m of level.monsters()) if (m !== boss && m.actor.alive) m.actor.die(null);
+      };
+      others();
+      let at = null;
+      for (let k = 0; k < 16 && !at; k++) {
+        const p = boss.actor.position.clone();
+        p.x += Math.cos((k / 16) * Math.PI * 2) * 2.2;
+        p.z += Math.sin((k / 16) * Math.PI * 2) * 2.2;
+        if (level.stage.walkable(p.x, p.z, false)) at = p;
+      }
+      if (!at) return { boss: boss.name, placed: false };
       rl.setDifficulty({ enemyDamage: 4 });
+      rl.game.hero.enter(level.stage, at, 0);
       rl.game.hero.actor.life = 1;
-      const p = rl.game.hero.actor.position;
-      rl.spawn({ seed: 11, x: p.x + 1.2, z: p.z });
-    });
-    await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      for (let i = 0; i < 900 && !rl.state().ui.includes('death'); i++) window.__PIXEL_ENGINE__.step(1);
+      let bar = null;
+      let gold = rl.state().hero.gold;
+      for (let i = 0; i < 900 && !rl.state().ui.includes('death'); i++) {
+        gold = rl.state().hero.gold; // the penalty is taken when the recap opens
+        others();
+        window.__PIXEL_ENGINE__.step(1);
+        bar ??= rl.state().boss?.name ?? null;
+      }
+      return { boss: boss.name, placed: true, bar, gold, killer: rl.game.layer.find('death')?.recap?.killer ?? null };
     });
     rs = await st();
+    goldBefore = duel.gold ?? goldBefore;
+    check(!!duel.boss && duel.placed, `stood next to the boss (${duel.boss})`);
+    check(duel.bar === duel.boss, `the boss bar shows it once it is close (${duel.bar})`);
     check(rs.dead && rs.ui.includes('death'), `dying opens the death recap (dead ${rs.dead}, ui ${rs.ui.join(',')})`);
+    check(!!duel.killer && duel.killer === duel.boss, `the recap names the boss as the killer (${duel.killer})`);
     await capture(page, `riftlight-${tag}-death.png`);
     await R(() => window.__RIFTLIGHT__.press('Enter'));
     rs = await st();

@@ -142,7 +142,7 @@ export function createApi(game: Riftlight) {
       if (d <= r) break;
       if (game.level) {
         const it = toIntent({});
-        nav.goTo(game.level, p, goal, it);
+        nav.walk(game.level, p, goal, it);
         game.botIntent = it;
       } else {
         stuck = p.distanceTo(last) < 0.01 ? stuck + 1 : 0;

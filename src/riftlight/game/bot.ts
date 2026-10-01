@@ -88,6 +88,8 @@ export class PlaytestBot {
   private stillFrames = 0;
   private sidestep = 0;
   private sideDir = 1;
+  /** Frames left of steering cell by cell after a corner stopped us. */
+  private careful = 0;
   private recovering = false;
   /** Monsters it could not reach, until this frame. */
   private readonly blocked = new Map<number, number>();
@@ -195,7 +197,9 @@ export class PlaytestBot {
       const use = (s: SkillSlotView | undefined) => {
         if (s) i.skill = s.slot as number;
       };
-      if (td <= reach + 0.6) {
+      // in reach and not around a wall corner (a swing there hits the wall: step round first)
+      const sight = this.lineOfSight(v.level, p, tp);
+      if (td <= reach + 0.6 && sight) {
         i.attack = true;
         const nova = pick('nova');
         const area = pick('area');
@@ -205,12 +209,11 @@ export class PlaytestBot {
         else if (area && (near(3) >= 2 || elite)) use(area);
         if (td <= reach) return i;
       }
-      const sight = this.lineOfSight(v.level, p, tp);
       const ranged = pick('ranged');
       const gap = pick('gap');
       if (gap && td > 3.5 && td < 7.5 && sight && life > 0.45) use(gap);
       else if (ranged && td > 2.5 && td < 11 && sight) use(ranged);
-      if (td > reach) this.goTo(v.level, p, tp, i);
+      if (td > reach || !sight) this.goTo(v.level, p, tp, i);
       return i;
     }
 
@@ -313,6 +316,12 @@ export class PlaytestBot {
     this.lastPos.copy(p);
   }
 
+  /** One frame of walking toward `to` outside `decide` (the `moveTo` helper): watches for corners too. */
+  walk(level: LevelHandle, p: Vector3, to: Vector3, i: BotIntent): void {
+    this.track(p);
+    this.goTo(level, p, to, i);
+  }
+
   /** Walk toward `to` along a grid route (rebuilt every 20 frames or when the goal moves). */
   goTo(level: LevelHandle, p: Vector3, to: Vector3, i: BotIntent): void {
     if (this.sidestep > 0) {
@@ -346,7 +355,10 @@ export class PlaytestBot {
     if (this.route.length > 1) {
       let k = this.route.findIndex((c) => c.x === from.x && c.z === from.z);
       if (k < 0) k = 0;
-      const ahead = this.stillFrames > 6 ? 1 : 3;
+      // (stays careful for a while: flipping back to the far cell walks into the same corner)
+      if (this.stillFrames > 6) this.careful = 40;
+      const ahead = this.careful > 0 ? 1 : 3;
+      if (this.careful > 0) this.careful--;
       const c = this.route[Math.min(this.route.length - 1, k + ahead)]!;
       next = { x: c.x + 0.5 + o.x, z: c.z + 0.5 + o.z };
       if (k + ahead >= this.route.length - 1 && ahead > 1) next = { x: to.x, z: to.z };

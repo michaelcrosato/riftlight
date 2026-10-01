@@ -17,6 +17,7 @@ import { buildSkill } from '../skills/build';
 import { GEM_ALIASES, levelMods, slotsFromSave, starterWeapon } from './hero';
 import { bossBudget, monsterGem, monsterName, translateMods } from './monsters';
 import { themeSongs, transposeNote } from './music';
+import { StageMover } from './stage';
 import { WIRE_TUNING } from './tuning';
 import { MONSTER_SKILLS } from '../monsters';
 import { SKILLS } from '../skills';
@@ -215,5 +216,33 @@ describe('the bot reads telegraph shapes', () => {
   it('trades blows with a plain swing at good life', () => {
     const swing = { at: new Vector3(0.5, 0, 0), radius: 1.5, remaining: 0.2, kind: 'circle', soft: true };
     expect(new PlaytestBot().decide(view([swing])).dodge).toBe(false);
+  });
+});
+
+describe('StageMover on a grid', () => {
+  // floor for z >= 10, and a one-cell corridor at x = 5 going -z from there
+  const stage = {
+    kind: 'level',
+    walkable: (x: number, z: number) => (z >= 10 && z < 20 && x >= 0 && x < 12) || (Math.floor(x) === 5 && z >= 0 && z < 10),
+    groundY: () => 0,
+    collide: () => {},
+  } as unknown as ConstructorParameters<typeof StageMover>[0];
+
+  it('rounds the corner into a corridor it is pressed against a little off-centre', () => {
+    const m = new StageMover(stage, [5.99, 0, 10.01], 0.35);
+    for (let i = 0; i < 60; i++) m.move(0, -5.6, 1 / 60);
+    expect(m.position.z).toBeLessThan(7);
+    expect(m.position.x).toBeGreaterThan(5.34);
+    expect(m.position.x).toBeLessThan(5.66);
+  });
+
+  it('still stops at a flat wall and slides along it', () => {
+    const m = new StageMover(stage, [2, 0, 12], 0.35);
+    for (let i = 0; i < 60; i++) m.move(0, -5.6, 1 / 60);
+    expect(m.position.z).toBeGreaterThanOrEqual(10.35);
+    expect(m.position.x).toBeCloseTo(2, 3);
+    for (let i = 0; i < 30; i++) m.move(4, -4, 1 / 60);
+    expect(m.position.x).toBeGreaterThan(3.5);
+    expect(m.position.z).toBeGreaterThanOrEqual(10.35);
   });
 });
