@@ -4,7 +4,7 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | moves | lab | tools;  groups: @core | @cameras | @filters
+//     filters-webgl | touch | phone | moves | lab | tools;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -24,6 +24,8 @@
 // filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
 //                 with zero errors; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel.
+// phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
+//                 GPU device (WebGPU) / WebGL context is recovered with a working renderer.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
@@ -895,6 +897,69 @@ async function runTools(browserExe) {
   }
 }
 
+async function runPhone(browserExe) {
+  console.log('\n▶ phone (portrait adaptive aspect, GPU device loss)');
+  const headless = !process.env.DISPLAY;
+  // Portrait phone: the art keeps 270 rows and narrows to the screen instead of a 16:9 strip.
+  {
+    const browser = await chromium.launch({ executablePath: browserExe, args: SCENARIOS[0].args, headless });
+    try {
+      const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
+      const logs = [];
+      page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
+      page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+      await page.goto(`${BASE}?touch=1`);
+      await ready(page);
+      const st = await state(page);
+      const f = st.framing;
+      const cover = (f.cssWidth * f.cssHeight) / (390 * 844);
+      check(st.aspect === 'adaptive' && f.integer && f.artHeight === 270 && f.artWidth < 200, `portrait art ${f.artWidth}×${f.artHeight} at ${f.scale}× (adaptive)`);
+      check(cover > 0.85, `canvas covers ${(cover * 100).toFixed(0)}% of a portrait screen`);
+      check(Math.abs((st.view.right - st.view.left) / (st.view.top - st.view.bottom) - f.artWidth / f.artHeight) < 1e-6, 'camera aspect follows the art');
+      const shot = await capture(page, 'phone-portrait.png');
+      check(colorCount(shot) > 8 && blockUniformity(shot, f.scale) > 0.995, `portrait frame renders with uniform ${f.scale}×${f.scale} blocks`);
+      checkClean(await state(page), logs);
+    } catch (e) {
+      check(false, `portrait crashed: ${e.message}`);
+    } finally {
+      await browser.close();
+    }
+  }
+  // Device loss: mobile browsers drop the GPU device after backgrounding / memory pressure.
+  for (const s of [SCENARIOS[0], SCENARIOS[1]]) {
+    let ctx;
+    try {
+      ctx = await openPage(browserExe, s, 'debug=0');
+      const { page, logs } = ctx;
+      await page.evaluate(() => {
+        const r = window.__PIXEL_ENGINE__.renderer.renderer;
+        window.__lostRenderer = r;
+        if (r.backend.isWebGPUBackend) r.backend.device.destroy();
+        else r.backend.gl.getExtension('WEBGL_lose_context').loseContext();
+      });
+      await page.waitForFunction(() => window.__PIXEL_ENGINE__.state().gpuRecoveries === 1, null, { timeout: 60000 });
+      await waitFrames(page, 10);
+      const st = await state(page);
+      const fresh = await page.evaluate(() => ({
+        replaced: window.__PIXEL_ENGINE__.renderer.renderer !== window.__lostRenderer,
+        canvases: document.querySelectorAll('canvas').length,
+      }));
+      check(st.backend === s.backend && fresh.replaced && fresh.canvases === 1, `${s.backend}: lost device → new renderer on ${st.backend}, one canvas`);
+      const shot = await capture(page, `device-loss-${s.name}.png`);
+      check(colorCount(shot) > 8 && blockUniformity(shot, 2) > 0.995, `${s.backend}: renders again after recovery (${colorCount(shot)} colors)`);
+      const p0 = st.target;
+      await hold(page, 'KeyA', 500);
+      await waitFrames(page, 5);
+      check(dist(p0, (await state(page)).target) > 0.5, `${s.backend}: game keeps running after recovery`);
+      checkClean(await state(page), logs, `${s.backend}: `);
+    } catch (e) {
+      check(false, `device loss (${s.name}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+    } finally {
+      await ctx?.browser.close();
+    }
+  }
+}
+
 const SUITES = {
   webgpu: (exe) => runCore(exe, SCENARIOS[0]),
   'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
@@ -907,6 +972,7 @@ const SUITES = {
   'filters-webgpu': (exe) => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
   'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
   touch: (exe) => runTouch(exe),
+  phone: (exe) => runPhone(exe),
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
   tools: (exe) => runTools(exe),
@@ -915,7 +981,7 @@ const SUITES = {
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'moves'],
+  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
   '@cameras': ['cameras', 'camera-swap', 'lab'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools'],
 };
