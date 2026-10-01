@@ -75,7 +75,7 @@ export const SCENARIOS: Record<string, string> = {
   'arena-cancel': 'place 0 0 0.9 180; tap J; wait 9; down D; tap SPACE; up D; until idle 60; wait 10',
   'arena-dodge': 'place 0 0 3 90; down D; wait 12; tap SPACE; wait 4; tap SPACE; until run 60; wait 8; up D; until idle 40; wait 10',
   'arena-skills': 'place 0 0 3.5 180; tap Q; wait 34; tap E; wait 40; tap R; until idle 120; wait 20',
-  'arena-run-cast': 'place -6 0 6 90; down D; wait 20; tap Q; wait 26; up D; until idle 40; wait 10',
+  'arena-run-cast': 'place -8 0 2 90; down D; wait 20; tap Q; wait 26; up D; until idle 40; wait 10',
   'arena-whirlwind': 'place 0 0 2.5 180; down F; wait 70; up F; until idle 40; wait 10',
 };
 /** Scenarios that run in another game than the playground (`?game=`). */

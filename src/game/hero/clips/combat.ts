@@ -6,7 +6,6 @@
 import { type ClipDef, type FeetGoals, type Pose } from '../../../engine/animation';
 import { arm, arms, leg, pelvis, squash, track, flat, F, spinRoot } from './helpers';
 import { STAND_FEET, STAND_BODY } from './standing';
-import { STRETCH } from './air';
 
 /**
  * Legs solved for `body` with its pelvis as given, then the pelvis turned further by `add`
@@ -42,7 +41,7 @@ export const COMBAT_TIMING: Readonly<Record<string, { hit: number; cancel: numbe
   Slash2: { hit: 5, cancel: 7 },
   Slash3: { hit: 8, cancel: 11 },
   Slam: { hit: 13, cancel: 16 },
-  LeapSlam: { hit: 7, cancel: 23, land: 19 },
+  LeapSlam: { hit: 7, cancel: 23, land: 19.6 },
   Spin: { hit: 3, cancel: 0 },
   Cast: { hit: 8, cancel: 10 },
   CastBig: { hit: 12, cancel: 14 },
@@ -124,7 +123,7 @@ export const Slam: ClipDef = {
     [0, COMBAT_BODY, COMBAT_FEET],
     [4, stance({ ...pelvis([0, 0, 0], [0, -0.14, 0], squash(0.04)), Torso: [20, 0, 0], ...arms(-30, 15, 80, 10) }), SMASH_FEET, 'out'],
     [10, { ...pelvis([-8, 0, 0], [0, -0.02, -0.02], squash(-0.05)), Torso: [-18, 0, 0], Head: [-16, 0, 0], ...arm('R', -175, 15, 30, -10), ...arm('L', -170, 15, 35, 0) }, SMASH_FEET, 'in'],
-    [13, SMASH_BODY, SMASH_FEET, 'out'],
+    [13, SMASH_BODY, SMASH_FEET],
     [16, { ...SMASH_BODY, ...pelvis([10, 0, 0], [0, -0.25, 0.02], squash(0.05)) }, SMASH_FEET],
     [24, COMBAT_BODY, COMBAT_FEET],
   ]),
@@ -148,10 +147,10 @@ export const LeapSlam: ClipDef = {
   ...track([
     [0, COMBAT_BODY, COMBAT_FEET],
     [5, { ...pelvis([10, 0, 0], [0, -0.26, -0.04], squash(0.08)), Torso: [34, 0, 0], Head: [-24, 0, 0], ...arms(30, 18, 40, 10) }, flat(-0.08, 0.1), 'out'],
-    [7, { ...STRETCH, ...arm('R', -170, 15, 30, -10), ...arm('L', -150, 20, 30, 0) }, null],
+    [7, F({ ...pelvis([0, 0, 0], [0, 0, 0.02], [0.95, 1.08, 0.95]), Torso: [-4, 0, 0], Head: [-12, 0, 0], ...arm('R', -170, 15, 30, -10), ...arm('L', -150, 20, 30, 0) }, { R: { z: -0.08, pitch: 50, pivot: 'ball' }, L: { z: 0.1, pitch: 50, pivot: 'ball' } }), null],
     [13, { ...pelvis([-10, 0, 0], [0, 0.05, 0]), ...TUCK_SWORD }, null],
     [17, { ...pelvis([4, 0, 0], [0, 0.06, 0]), Torso: [30, 0, 0], Head: [-24, 0, 0], ...arm('R', -95, 12, 10, -50), ...arm('L', -90, 14, 15, 0), ...leg('R', -45, 6, 95, 30), ...leg('L', -40, 6, 85, 30) }, null, 'in'],
-    [19, SMASH_BODY, SMASH_FEET, 'out'],
+    [19, SMASH_BODY, SMASH_FEET],
     [23, { ...SMASH_BODY, ...pelvis([10, 0, 0], [0, -0.25, 0.02], squash(0.05)) }, SMASH_FEET],
     [28, COMBAT_BODY, COMBAT_FEET],
   ]),
@@ -282,7 +281,7 @@ export const Roll: ClipDef = {
   fast: true,
   frames: 14,
   keys: [
-    [0, F({ ...pelvis([14, 0, 0], [0, -0.18, 0.02], squash(0.06)), Torso: [30, 0, 0], Head: [-14, 0, 0], ...arms(-60, 18, 60, 10) }, flat(-0.12, 0.08)), 'out'],
+    [0, F({ ...pelvis([10, 0, 0], [0, -0.1, 0.02], squash(0.04)), Torso: [24, 0, 0], Head: [-12, 0, 0], ...arms(-60, 18, 60, 10) }, flat(-0.06, 0.08)), 'out'],
     ...Object.keys(ROLL_LIFT).map(Number).map((a, i) => [2 + i * 0.8, rolling(a), 'linear'] as const),
     [11, turned({ ...ROLL_UP, ...pelvis([42, 0, 0], [0, -0.24, 0.02], squash(0.04)), Torso: [36, 0, 0], ...arms(-95, 20, 90, 10) }, { R: { z: 0.0, y: 0.05, pitch: 25, pivot: 'ball' }, L: { z: 0.18, y: 0.03 } }, [360, 0, 0]), 'out'],
     [12, turned(ROLL_UP, flat(-0.06, 0.16), [360, 0, 0]), 'out'],

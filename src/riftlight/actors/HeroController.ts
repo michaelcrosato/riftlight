@@ -315,7 +315,7 @@ export class HeroController {
     if (this.action) k = this.action.released || this.state === 'channel' ? this.action.skill.moveDuringCast : this.action.skill.moveDuringCast * 0.6;
     const v = this.moveWish.clone().multiplyScalar(a.moveSpeed * k);
     this.lunging = false;
-    if (this.action && !this.action.released && this.action.skill.tags.includes('melee') && v.lengthSq() < 0.01) this.lunging = this.lunge(v);
+    if (this.action && !this.action.released && this.action.skill.delivery.kind === 'strike' && v.lengthSq() < 0.01) this.lunging = this.lunge(v);
     a.velocity.copy(v);
     if (!this.action && this.state !== 'dodge') {
       this.state = v.lengthSq() > HERO_TUNING.idleBelow ** 2 ? 'run' : 'idle';
@@ -556,8 +556,10 @@ export class HeroController {
     // locomotion clocks: stride matched to ground speed
     const loco = v < HERO_TUNING.idleBelow ? 'Idle' : v < HERO_TUNING.walkBelow ? 'Walk' : 'Run';
     an.advance('Idle', k);
-    const walkRate = an.speedOf('Walk') ? v / an.speedOf('Walk') : 1;
-    const runRate = an.speedOf('Run') ? v / an.speedOf('Run') : 1;
+    // strides match the ground speed, within what each gait can stretch to (a walk fading out
+    // under a sudden run must not spin its feet)
+    const walkRate = an.speedOf('Walk') ? Math.min(1.6, v / an.speedOf('Walk')) : 1;
+    const runRate = an.speedOf('Run') ? Math.min(1.6, Math.max(0.5, v / an.speedOf('Run'))) : 1;
     an.advance('Walk', k, walkRate);
     an.advance('Run', k, runRate);
     if (this.state === 'dead') {
