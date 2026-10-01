@@ -23,8 +23,8 @@ export const WIRE_TUNING = {
     /** Base life at depth 1 before rank, archetype and part mods. */
     life: 34,
     /** Multipliers on the rank's life and damage (RANK.boss is 30× life, 2× damage: too long a fight for one hero). */
-    bossLife: 0.26,
-    bossDamage: 0.7,
+    bossLife: 0.37,
+    bossDamage: 0.95,
     /** A boss's armour and block from its parts are capped here (the depth's own armour comes on top). */
     bossArmour: 40,
     bossBlock: 0.15,

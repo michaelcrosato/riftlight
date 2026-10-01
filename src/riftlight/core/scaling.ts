@@ -28,9 +28,15 @@ const twoSlope = (depth: number, g1: number, g2: number) => Math.pow(g1, Math.mi
 
 export const SCALING = {
   /** Monster life multiplier vs depth 1. */
-  monsterLife: (depth: number) => early(depth, 0.4) * twoSlope(depth, 1.25, 1.18) * (1 + 0.04 * Math.max(0, deep(depth) - DESIGNED)),
+  monsterLife: (depth: number) => early(depth, 0.4) * twoSlope(depth, 1.27, 1.18) * (1 + 0.03 * Math.max(0, deep(depth) - DESIGNED)),
   /** Monster damage multiplier vs depth 1. */
-  monsterDamage: (depth: number) => early(depth, 0.5) * twoSlope(depth, 1.2, 1.13),
+  monsterDamage: (depth: number) => early(depth, 0.5) * twoSlope(depth, 1.23, 1.115),
+  /**
+   * Level mechanic damage (braziers, vines, pylons, Bloodmoon blasts…): the gentler curve the
+   * mechanics were tuned on, so a hazard stays something to step around (every level has its
+   * bypass) while monsters and bosses carry the challenge.
+   */
+  hazardDamage: (depth: number) => early(depth, 0.5) * twoSlope(depth, 1.2, 1.11),
   /**
    * Monster level (also its item level for drops): the "area level", about the hero level a
    * player reaches there (depth 1 = 4, 12 = 25, 20 = 39, 30 = 56), 100 by depth 57, then one

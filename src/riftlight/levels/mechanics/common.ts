@@ -169,9 +169,9 @@ export function cellSet(elements: readonly MechanicElement[]): Map<number, Mecha
   return m;
 }
 
-/** Damage a mechanic deals at `depth` (hazards hurt like monsters of that depth). */
+/** Damage a mechanic deals at `depth` (`SCALING.hazardDamage`: a step behind the monsters of that depth). */
 export function mechanicDamage(depth: number, base: number): number {
-  return Math.round(base * SCALING.monsterDamage(depth));
+  return Math.round(base * SCALING.hazardDamage(depth));
 }
 
 /** Damage that kills-or-nearly-kills a normal monster of that depth (explosions, shatters). */

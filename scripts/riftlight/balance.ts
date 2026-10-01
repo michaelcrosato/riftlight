@@ -258,6 +258,21 @@ if (json) {
   for (const r of result.rows.filter((x) => show.includes(x.depth))) {
     console.log(`  ${`${r.build}/${r.variant}`.padEnd(15)} ${String(r.depth).padStart(5)} ${String(r.level).padStart(4)} ${t(r.dps).padStart(7)} ${`${t(r.ttk.normal)}/${t(r.ttk.magic)}/${t(r.ttk.rare)}`.padStart(16)} ${t(r.ttk.boss).padStart(6)} ${t(r.hitsToDie.boss).padStart(5)} ${`${(r.clear.total / 60).toFixed(1)}m`.padStart(6)}${r.bossDies ? '  dies to boss' : ''}`);
   }
+  // how far apart the builds are: the slowest over the fastest, per depth (geared, through depth 40)
+  const spread = (metric: (r: Row) => number) => {
+    let worst = { k: 1, d: 0 };
+    const ks: number[] = [];
+    for (const d of depths.filter((x) => x <= 40)) {
+      const vs = result.rows.filter((r) => r.variant === 'geared' && r.depth === d).map(metric).filter((v) => Number.isFinite(v) && v > 0);
+      if (vs.length < 2) continue;
+      const k = Math.max(...vs) / Math.min(...vs);
+      ks.push(k);
+      if (k > worst.k) worst = { k, d };
+    }
+    const median = [...ks].sort((a, b) => a - b)[Math.floor(ks.length / 2)] ?? 1;
+    return `median ${median.toFixed(1)}×, worst ${worst.k.toFixed(1)}× at depth ${worst.d}`;
+  };
+  if (variants.includes('geared') && builds.length > 1) console.log(`\n  geared spread through depth 40 (slowest / fastest build): boss TTK ${spread((r) => r.ttk.boss)} · clear ${spread((r) => r.clear.total)}`);
   const lv = result.xp.filter((x) => [1, 6, 12, 20, 30, 40, 60].includes(x.depth)).map((x) => `d${x.depth}→L${x.levelAfter}`);
   console.log(`\n  XP curve (level after each depth): ${lv.join('  ')}`);
   console.log(`\n  worst ${Math.min(top, outliers.length)} of ${outliers.length} outliers:`);

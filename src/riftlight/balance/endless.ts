@@ -39,6 +39,7 @@ import { duel, makeLoadout, monsterTarget } from './fight';
 export const CURVES: Readonly<Record<string, (depth: number) => number>> = {
   monsterLife: SCALING.monsterLife,
   monsterDamage: SCALING.monsterDamage,
+  hazardDamage: SCALING.hazardDamage,
   monsterLevel: SCALING.monsterLevel,
   monsterXp: (d) => SCALING.monsterXp(SCALING.monsterLevel(d)),
   xpToNext: (d) => SCALING.xpToNext(SCALING.monsterLevel(d)),
