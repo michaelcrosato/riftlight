@@ -44,7 +44,7 @@ import {
   type ViewName,
 } from '../src/engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../src/game/hero';
-import { COMBAT_CLIPS } from '../src/game/hero/clips/combat';
+import { COMBAT_CLIPS, stringEngage } from '../src/game/hero/clips/combat';
 import { HeroWeapons, WEAPON_KINDS, type WeaponClass } from '../src/riftlight/actors/weapons';
 import { NPC_CLIPS } from '../src/riftlight/town/npcClips';
 import { TOWNSFOLK } from '../src/riftlight/town/npcModel';
@@ -207,6 +207,8 @@ async function main(): Promise<void> {
           trails: !flags.has('no-trails'),
           skeleton: !flags.has('no-skeleton'),
           report,
+          // the bow's string follows the drawing hand, as in the game
+          onPose: (m, frame) => (m as Object3D & { userData: { weapons?: HeroWeapons } }).userData.weapons?.update(m, stringEngage(def.name, frame)),
         });
         const file = join(outDir, `${def.name}.png`);
         writeFileSync(file, encodePng(img));

@@ -27,8 +27,8 @@ const smooth = (x: number) => {
  * they stay planted instead of skating.
  */
 export const ROLL_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.45 + 0.55 * smooth(u / 0.1) : u < 0.36 ? 1 : u < 0.6 ? 1 - 0.945 * smooth((u - 0.36) / 0.24) : 0.055));
-/** Dashes and charges: off the mark fast, and brake into the last stride. */
-export const DASH_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.5 + 0.5 * smooth(u / 0.1) : u < 0.7 ? 1 : 1 - 0.9 * smooth((u - 0.7) / 0.3)));
+/** Dashes and charges: off the mark fast, and brake to a stop into the last stride (the Charge clip's feet dig in as it ends). */
+export const DASH_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.5 + 0.5 * smooth(u / 0.1) : u < 0.65 ? 1 : 1 - smooth((u - 0.65) / 0.3)));
 
 class Dash extends EffectBase {
   readonly kind = 'dash';

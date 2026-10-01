@@ -2,7 +2,7 @@ import { type AnimationClip, type Camera, type Object3D, Vector3 } from 'three/w
 import { compileClip, restPoseOf, type ClipDef, type FootPlacementInput, type FootPlacementState, type GroundProbe } from '../../engine/animation';
 import { CharacterController } from '../../engine/physics/CharacterController';
 import type { Physics } from '../../engine/physics/Physics';
-import { COMBAT_TIMING } from '../../game/hero/clips/combat';
+import { COMBAT_TIMING, stringEngage } from '../../game/hero/clips/combat';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Mod } from '../core/mods';
 import type { Combat } from '../combat/Combat';
@@ -139,6 +139,9 @@ export function compileHeroClips(model: Object3D, defs: readonly ClipDef[]): Ani
 }
 
 const tmp = new Vector3();
+
+/** Casting clips with a staff or wand in hand: the weapon points instead of the bare hand (same timing). */
+const WEAPON_CASTS: Readonly<Record<string, string>> = { Cast: 'CastWeapon', CastBig: 'CastBigWeapon' };
 
 export { WEAPON_CLASSES } from '../combat/tuning';
 
@@ -529,7 +532,11 @@ export class HeroController {
     const chain = slot < 0 && skill.anims.length > 1;
     if (chain) this.combo = this.time <= this.comboUntil ? this.combo + 1 : 0;
     const step = chain ? this.combo % skill.anims.length : 0;
-    const clip = this.animator.has(skill.anims[step]!) ? skill.anims[step]! : 'Cast';
+    let clip = this.animator.has(skill.anims[step]!) ? skill.anims[step]! : 'Cast';
+    // a staff or a wand does the pointing in casts
+    const pointer = this.weapons.kind === 'staff' || this.weapons.kind === 'wand';
+    const withWeapon = WEAPON_CASTS[clip];
+    if (pointer && withWeapon && this.animator.has(withWeapon)) clip = withWeapon;
     const len = this.animator.duration(clip);
     const timing = COMBAT_TIMING[clip];
     const frames = Math.max(1, len * 30);
@@ -769,7 +776,10 @@ export class HeroController {
     an.update(frozen ? 0 : dt, this.feetFor(v, lift));
     // (after foot placement, which works from where the body really is)
     if (lift > 0) this.model.position.y += lift;
-    this.weapons.update(this.model);
+    // the bow string follows the drawing hand through a shot's draw frames
+    const act = this.action;
+    const frame = act ? (an.time(act.anim) / Math.max(1e-3, an.duration(act.anim))) * an.duration(act.clip) * 30 : 0;
+    this.weapons.update(this.model, act ? stringEngage(act.clip, frame) : 0);
   }
 
   /**

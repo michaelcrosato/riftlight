@@ -34,6 +34,11 @@ export interface SheetOptions {
   report?: ClipReport;
   /** A previous version of the clip: its skeleton and paths are drawn in magenta. */
   ghost?: AnimationClip;
+  /**
+   * Called after the model is posed at each frame, before it is drawn: for parts the game
+   * moves at runtime from the pose (a bow's string drawn to the hand).
+   */
+  onPose?: (model: Object3D, frame: number) => void;
 }
 
 
@@ -75,7 +80,7 @@ interface Snapshot {
 }
 
 /** Pose the model at each frame and capture its triangles, joints and contacts. */
-function snapshots(model: Object3D, rig: RigSpec, clip: AnimationClip, frames: readonly number[], loop = false): Snapshot[] {
+function snapshots(model: Object3D, rig: RigSpec, clip: AnimationClip, frames: readonly number[], loop = false, onPose?: (model: Object3D, frame: number) => void): Snapshot[] {
   const length = clip.duration * rig.fps;
   const mixer = new AnimationMixer(model);
   const action = mixer.clipAction(clip);
@@ -91,6 +96,10 @@ function snapshots(model: Object3D, rig: RigSpec, clip: AnimationClip, frames: r
     const f = loop ? frame % length : Math.min(frame, length - 1e-4);
     mixer.setTime(f / rig.fps);
     model.updateMatrixWorld(true);
+    if (onPose) {
+      onPose(model, f);
+      model.updateMatrixWorld(true);
+    }
     const tris: Tri[] = [];
     const soles: Snapshot['soles'] = [];
     meshes.forEach((mesh, mi) => {
@@ -219,7 +228,7 @@ export function renderSheet(model: Object3D, rig: RigSpec, def: ClipDef, clip: A
   const skeleton = options.skeleton ?? true;
   const trails = options.trails ?? true;
   const keyFrames = new Set(def.keys.map((k) => k[0]));
-  const snaps = snapshots(model, rig, clip, frames);
+  const snaps = snapshots(model, rig, clip, frames, false, options.onPose);
   const cycles = def.loop && def.speed ? 2 : 1;
   const allFrames = Array.from({ length: Math.round(def.frames * cycles * 2) + 1 }, (_, i) => i / 2).filter((f) => !def.loop || f < def.frames * cycles);
   const trailSnaps = trails ? snapshots(model, rig, clip, allFrames, !!def.loop) : [];

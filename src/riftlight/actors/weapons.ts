@@ -170,18 +170,19 @@ export class Bow {
   }
 
   /**
-   * Draw the string to `hand` (world position of the drawing hand), or let it rest (null, or
-   * a hand out of reach). Call after the model is posed and its matrices are current.
+   * Draw the string to `hand` (world position of the drawing hand) by `engage` (0 = at rest,
+   * 1 = in the hand: the hand taking the string eases it over), or let it rest (null, or a
+   * hand out of reach). Call after the model is posed and its matrices are current.
    */
-  setString(hand: Vector3 | null): void {
+  setString(hand: Vector3 | null, engage = 1): void {
     const rest = V0.set(0, BOW.brace, 0);
     let pull = rest;
-    if (hand) {
+    if (hand && engage > 0) {
       this.group.updateWorldMatrix(true, false);
       const local = V1.copy(hand);
       this.group.worldToLocal(local);
       // only behind the string (toward the archer) and roughly at its middle
-      if (local.y > BOW.brace - 0.02 && Math.abs(local.z) < 0.35 && local.distanceTo(rest) < BOW.reach) pull = local.setX(local.x * 0.3);
+      if (local.y > BOW.brace - 0.02 && Math.abs(local.z) < 0.35 && local.distanceTo(rest) < BOW.reach) pull = local.setX(local.x * 0.3).lerpVectors(rest, local, Math.min(1, engage));
     }
     this.nock.copy(pull);
     this.draw = pull.y - BOW.brace;
@@ -218,7 +219,7 @@ export function weaponClassOf(has: (flag: string) => boolean): WeaponClass {
  *
  *   const weapons = new HeroWeapons(model);   // the sword shows
  *   weapons.equip('bow', false);
- *   weapons.update(model);                    // per frame, after posing: the bow string follows the right hand
+ *   weapons.update(model, engage);            // per frame, after posing: the bow string follows the right hand
  */
 export class HeroWeapons {
   readonly meshes = new Map<WeaponClass, Object3D>();
@@ -264,12 +265,16 @@ export class HeroWeapons {
     return this.meshes.get(this.kind)!;
   }
 
-  /** Per frame, after the model is posed: the bow's string follows the drawing hand. */
-  update(model: Object3D): void {
+  /**
+   * Per frame, after the model is posed: the bow's string follows the drawing hand by
+   * `engage` (0..1; HeroController eases it in over a bow clip's `draw` frames and lets go at
+   * its hit frame).
+   */
+  update(model: Object3D, engage = 0): void {
     if (this.kind !== 'bow') return;
     model.updateMatrixWorld(true);
     this.handR.localToWorld(this.hand.set(0, -0.07, 0.01)); // the glove's middle
-    this.bow.setString(this.hand);
+    this.bow.setString(this.hand, engage);
   }
 }
 
