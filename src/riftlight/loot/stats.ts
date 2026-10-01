@@ -118,6 +118,7 @@ function scopeText(m: Mod): string {
   if (!tags.length) return '';
   if (tags.length === 1 && tags[0] === 'attack') return ' with attacks';
   if (tags.length === 1 && tags[0] === 'spell') return ' with spells';
+  if (tags.length === 1 && ['projectile', 'minion', 'melee', 'area'].includes(tags[0]!)) return ` with ${tags[0]} skills`;
   return ` with ${tags.join(' ')}`;
 }
 
@@ -140,6 +141,10 @@ export function describeItemMod(m: Mod): string {
     return `${sign}${pct(Math.abs(m.value))} ${name}${scopeText(m)}${whenText(m)}`;
   }
   if (m.kind === 'flag') return `${name}${scopeText(m)}${whenText(m)}`;
+  if (m.kind === 'inc' || m.kind === 'more') {
+    const word = m.kind === 'inc' ? (m.value >= 0 ? 'increased' : 'reduced') : m.value >= 0 ? 'more' : 'less';
+    return `${pct(Math.abs(m.value))} ${word} ${name}${scopeText(m)}${whenText(m)}`;
+  }
   return describeMod(m, STAT_NAMES);
 }
 
@@ -165,13 +170,17 @@ export function describeItemMods(mods: readonly Mod[]): string[] {
       }
     }
     if (m.stat.startsWith('local.')) {
-      out.push(describeItemMod({ ...m, stat: m.stat.slice(6) }));
+      const stat = m.stat.slice(6);
+      out.push(describeItemMod({ ...m, stat: LOCAL_AS[stat] ?? stat }));
       return;
     }
     out.push(describeItemMod(m));
   });
   return out;
 }
+
+/** Local stats that read as a different global stat name. */
+const LOCAL_AS: Readonly<Record<string, string>> = { physical: 'physical.damage', block: 'block.chance' };
 
 function sameTags(a: Mod, b: Mod): boolean {
   return (a.tags ?? []).join() === (b.tags ?? []).join() && a.when === b.when;
