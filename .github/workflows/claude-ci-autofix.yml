@@ -1,9 +1,18 @@
 name: Claude CI Autofix
 
-# When CI fails on a PR branch, Claude diagnoses it and pushes a fix to that branch.
-# When CI fails on the default branch, Claude opens a fix PR.
-# Pushes go out as the Claude GitHub App, so CI re-runs on the fix.
-# Gives up after 3 consecutive autofix commits on a branch.
+# When CI fails:
+#   on the default branch (a push, or the run Autopilot dispatches after each merge)
+#     1. revert (no LLM, no secrets): if this commit turned main red (the parent's CI run
+#        passed, or it has none) and it isn't itself a revert, `git revert` it on
+#        claude/revert-<sha>, open a PR, squash-merge it and run CI on main again.
+#     2. Claude, from the fresh main: re-applies the reverted change with a fix (or fixes
+#        main forward when nothing was reverted) on claude/fix-ci-*; Autopilot merges it.
+#   on any other branch (a held or draft PR: merged PR branches are deleted, and main's
+#   run decides for them)
+#     Claude pushes a fix to that branch.
+# The Claude job is skipped when neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is
+# set. Claude's pushes go out as the Claude GitHub App, so CI re-runs on the fix. It gives
+# up after 3 consecutive autofix commits.
 #
 # Security: runs branch code with write permissions. Fine for a repo where every
 # writer is trusted (this one); fork PRs are excluded below.
@@ -17,7 +26,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
-  actions: read
+  actions: write # dispatch CI on main after a revert
   id-token: write
 
 concurrency:
@@ -25,32 +34,121 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  autofix:
+  revert:
     if: |
       github.event.workflow_run.conclusion == 'failure' &&
-      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == github.event.repository.default_branch &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      reverted: ${{ steps.revert.outputs.reverted }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
+
+      - name: Revert the commit that turned main red
+        id: revert
+        env:
+          # GITHUB_TOKEN on purpose: its push doesn't start Autopilot, so this job alone
+          # opens and merges the revert PR (no race), then dispatches CI itself.
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          echo "reverted=false" >> "$GITHUB_OUTPUT"
+          short=${SHA:0:7}
+          branch="claude/revert-$short"
+          subject=$(git log -1 --format=%s "$SHA")
+          if [[ "$subject" == Revert* ]]; then
+            echo "::warning::$short is itself a revert; not reverting it (left to Claude or a human)."; exit 0
+          fi
+          if git log --format=%B "$SHA..HEAD" | grep -q "This reverts commit $SHA"; then
+            echo "$short is already reverted on $BASE."; exit 0
+          fi
+          if git ls-remote --exit-code --heads origin "$branch" >/dev/null; then
+            echo "$branch already exists."; exit 0
+          fi
+          # Only revert the commit that turned main red: if the parent's CI already failed,
+          # this commit didn't break it, and reverting it would be a guess.
+          parent=$(git rev-parse "$SHA^")
+          before=$(gh api "repos/$GH_REPO/actions/workflows/ci.yml/runs?head_sha=$parent&status=completed" \
+            --jq '[.workflow_runs[].conclusion] | if index("success") then "success" elif index("failure") then "failure" else "none" end' || echo none)
+          if [ "$before" = "failure" ]; then
+            echo "::warning::$BASE was already red before $short; not reverting."; exit 0
+          fi
+
+          pr=$(gh api "repos/$GH_REPO/commits/$SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          if ! git revert --no-edit "$SHA"; then
+            echo "::error::git revert $short conflicts with later commits; needs a fix forward."; exit 1
+          fi
+          git push origin "$branch"
+          {
+            echo "CI failed on \`$BASE\` at $SHA: $RUN_URL"
+            echo
+            echo "This reverts ${pr:+#$pr / }$short so \`$BASE\` is green again. Claude CI Autofix"
+            echo "re-applies the change with a fix on a \`claude/fix-ci-*\` branch when a Claude secret is set."
+            echo
+            echo "This reverts commit $SHA."
+          } > revert-body.md
+          url=$(gh pr create --base "$BASE" --head "$branch" --title "Revert \"$subject\"" --body-file revert-body.md)
+          gh pr merge "$url" --squash --delete-branch
+          echo "reverted=true" >> "$GITHUB_OUTPUT"
+          gh workflow run ci.yml --ref "$BASE"
+          if [ -n "$pr" ]; then
+            gh pr comment "$pr" --body "CI failed on \`$BASE\` after this merged ($RUN_URL), so it was reverted in $url." || true
+          fi
+
+  autofix:
+    needs: [revert]
+    if: |
+      always() &&
+      github.event.workflow_run.conclusion == 'failure' &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch') &&
       github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
         with:
-          ref: ${{ github.event.workflow_run.head_branch }}
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
 
-      - name: Check branch is still at the failing commit, and attempt budget
+      - name: Decide whether there is something to fix, and check the attempt budget
         id: guard
         env:
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+          BASE: ${{ github.event.repository.default_branch }}
           FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          REVERTED: ${{ needs.revert.outputs.reverted }}
         run: |
-          if [ "$(git rev-parse HEAD)" != "$FAILED_SHA" ]; then
-            echo "Branch moved past the failing commit; a newer CI run will decide."
-            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+          echo "go=false" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CLAUDE" != "true" ]; then
+            echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret; skipping Claude autofix."; exit 0
+          fi
+          if [ "$BRANCH" != "$BASE" ]; then
+            if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null; then
+              echo "$BRANCH is gone (its PR merged); CI on $BASE decides."; exit 0
+            fi
+            git switch "$BRANCH"
+          fi
+          if [ "$REVERTED" = "true" ]; then
+            echo "$FAILED_SHA was reverted on $BASE; Claude re-applies it with a fix."
+          elif [ "$(git rev-parse HEAD)" != "$FAILED_SHA" ]; then
+            echo "$BRANCH moved past the failing commit; a newer CI run will decide."; exit 0
           fi
           attempts=$(git log -3 --format=%s | grep -c '\[ci-autofix\]' || true)
           if [ "$attempts" -ge 3 ]; then
-            echo "::warning::3 consecutive autofix attempts; stopping so a human can look."
-            echo "go=false" >> "$GITHUB_OUTPUT"; exit 0
+            echo "::warning::3 consecutive autofix attempts; stopping so a human can look."; exit 0
           fi
           echo "go=true" >> "$GITHUB_OUTPUT"
 
@@ -68,7 +166,9 @@ jobs:
             Failed run: ${{ github.event.workflow_run.html_url }}
             Run ID: ${{ github.event.workflow_run.id }}
             Branch: ${{ github.event.workflow_run.head_branch }}
+            Failed commit: ${{ github.event.workflow_run.head_sha }}
             Default branch: ${{ github.event.repository.default_branch }}
+            Reverted on the default branch: ${{ needs.revert.outputs.reverted == 'true' && 'yes' || 'no' }}
             PR number: ${{ github.event.workflow_run.pull_requests[0].number || 'none' }}
           claude_args: |
             --model ${{ vars.CLAUDE_MODEL || 'claude-opus-5-5' }}

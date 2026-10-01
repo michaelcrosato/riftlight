@@ -1,12 +1,16 @@
 name: Autopilot
 
-# No-touch merge path:
+# No-touch merge path. Nothing waits for CI: there are no required status checks; a red
+# main is reverted automatically instead (claude-ci-autofix.yml).
 #   push to claude/*       -> open a PR if none exists
-#   any ready PR           -> enable auto-merge (squash); merges when required checks pass
+#   any ready PR           -> squash-merge it now (auto-merge if GitHub makes it wait)
 #   label `hold` on a PR   -> disable auto-merge (the one brake)
+#   after a merge          -> cancel the PR branch's CI run (main's run covers the same
+#                             change), run CI on main and Claude Review on the merged PR
 #
-# Uses AUTOMATION_TOKEN (fine-grained PAT or app token) when set, so PRs it opens
-# trigger pull_request workflows like Claude Review. Falls back to GITHUB_TOKEN.
+# Uses AUTOMATION_TOKEN (fine-grained PAT or app token) when set, so the PRs it opens and
+# the merges it makes trigger pull_request/push workflows. Falls back to GITHUB_TOKEN,
+# whose events trigger nothing: then it dispatches CI on main itself.
 
 on:
   push:
@@ -17,6 +21,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: write # cancel the merged branch's CI run, dispatch CI and Claude Review
 
 concurrency:
   group: autopilot-${{ github.event.pull_request.number || github.ref }}
@@ -60,16 +65,35 @@ jobs:
     steps:
       - env:
           GH_TOKEN: ${{ secrets.AUTOMATION_TOKEN || github.token }}
+          ACTIONS_TOKEN: ${{ github.token }}
+          HAS_AUTOMATION_TOKEN: ${{ secrets.AUTOMATION_TOKEN != '' }}
           GH_REPO: ${{ github.repository }}
+          BASE: ${{ github.event.repository.default_branch }}
           PR: ${{ github.event.pull_request.number || needs.open-pr.outputs.pr }}
         run: |
-          read -r draft hold < <(gh pr view "$PR" --json isDraft,labels \
-            --jq '[.isDraft, ([.labels[].name] | index("hold") != null)] | @tsv')
+          read -r draft hold head < <(gh pr view "$PR" --json isDraft,labels,headRefName \
+            --jq '[.isDraft, ([.labels[].name] | index("hold") != null), .headRefName] | @tsv')
           if [ "$draft" = "true" ] || [ "$hold" = "true" ]; then
             gh pr merge "$PR" --disable-auto 2>/dev/null || true
             echo "Draft or on hold; auto-merge off."
             exit 0
           fi
           if ! gh pr merge "$PR" --auto --squash --delete-branch; then
-            echo "::warning::Could not enable auto-merge. Run scripts/configure-github.sh once (enables auto-merge + required checks)."
+            echo "::warning::Could not merge or enable auto-merge. Run scripts/configure-github.sh once (enables auto-merge, squash merges)."
+            exit 0
           fi
+          if [ "$(gh pr view "$PR" --json state --jq .state)" != "MERGED" ]; then
+            echo "Auto-merge enabled; GitHub merges when the PR is mergeable."
+            exit 0
+          fi
+
+          # Merged. The branch's own CI run tests the same change as main's run: stop it.
+          GH_TOKEN=$ACTIONS_TOKEN gh run list --workflow ci.yml --branch "$head" --json databaseId,status \
+            --jq '.[] | select(.status != "completed") | .databaseId' |
+            while read -r run; do GH_TOKEN=$ACTIONS_TOKEN gh run cancel "$run" || true; done
+          # A merge made with GITHUB_TOKEN fires no push event on main: run CI there ourselves.
+          if [ "$HAS_AUTOMATION_TOKEN" != "true" ]; then
+            GH_TOKEN=$ACTIONS_TOKEN gh workflow run ci.yml --ref "$BASE"
+            echo "Dispatched CI on $BASE."
+          fi
+          GH_TOKEN=$ACTIONS_TOKEN gh workflow run claude-review.yml --ref "$BASE" -f pr="$PR"
