@@ -6,8 +6,10 @@ import {
   LoopRepeat,
   MathUtils,
   type Object3D,
+  type Quaternion,
   Vector3,
 } from 'three/webgpu';
+import { RotationBlend } from '../animation/rotationBlend';
 import { type Physics, RAPIER } from '../physics/Physics';
 
 /**
@@ -145,6 +147,8 @@ export class PlatformerCharacter {
   private braking = false;
   private poundDelay = 0;
   private mixer: AnimationMixer | null = null;
+  /** Re-blends joint rotations after the mixer, so cross-fades never flip (see RotationBlend). */
+  private rotationBlend: RotationBlend | null = null;
   private readonly actions = new Map<string, AnimationAction>();
   private current: AnimationAction | null = null;
   /**
@@ -1139,6 +1143,7 @@ export class PlatformerCharacter {
     this.current = null;
     this.mixer = new AnimationMixer(model);
     for (const clip of clips) this.actions.set(clip.name, this.mixer.clipAction(clip));
+    this.rotationBlend = new RotationBlend(model, this.actions.values(), restRotations(model));
     this.play('Idle', 0);
   }
 
@@ -1227,6 +1232,7 @@ export class PlatformerCharacter {
       if (f.to === 0) action.stop();
     }
     this.mixer?.update(dt);
+    this.rotationBlend?.apply();
   }
 
   private play(name: string, fade: number, speed = 1, once = false): void {
@@ -1271,6 +1277,21 @@ export class PlatformerCharacter {
     this.current = next;
   }
 
+}
+
+/** Every named node's rotation the first time a model is attached: its rest pose. */
+const REST_ROTATIONS = new WeakMap<Object3D, Map<string, Quaternion>>();
+function restRotations(model: Object3D): Map<string, Quaternion> {
+  let rest = REST_ROTATIONS.get(model);
+  if (!rest) {
+    rest = new Map();
+    const map = rest;
+    model.traverse((o) => {
+      if (o.name && !map.has(o.name)) map.set(o.name, o.quaternion.clone());
+    });
+    REST_ROTATIONS.set(model, rest);
+  }
+  return rest;
 }
 
 function angleDiff(a: number, b: number): number {
