@@ -16,7 +16,8 @@
     "build:single": "node scripts/build-single.mjs",
     "anim": "tsx scripts/anim.ts",
     "film": "tsx scripts/film.ts",
-    "loot": "tsx scripts/riftlight/loot.ts"
+    "loot": "tsx scripts/riftlight/loot.ts",
+    "tree": "tsx scripts/riftlight/tree.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",
