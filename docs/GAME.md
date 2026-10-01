@@ -816,9 +816,11 @@ and every 4th to 60, ~25 s.
 
 The summary prints the geared spread through depth 40 (slowest over fastest build, boss TTK and
 clear time) and the worst outliers. Example (seed 1, default depths): `geared spread through
-depth 40: boss TTK median 1.6×, worst 3.0× … · clear median 1.5×, worst 3.9×` (it was 4.7× /
-30.9× and 2.0× / 8.6× before spells and minions grew by gem level: casters fell 9× behind past
-depth 24 and a naked summoner was 91× faster than the other naked builds). Tune
+depth 40: boss TTK median 2.1×, worst 6.4× at depth 1 · clear median 1.7×, worst 4.6× at depth
+40` (past depth 1 the boss worst is 3.4×; the clear outlier is the summoner, whose minions hit one
+enemy each). It was 4.7× / 30.9× and 2.0× / 8.6× before spells and minions grew by gem level:
+casters fell 9× behind past depth 24 and a naked summoner was 91× faster than the other naked
+builds (now 15× at worst, against attack builds holding only the starter sword). Tune
 `core/scaling.ts`, rerun, compare the CSVs.
 
 **Endless** (`npm run balance -- endless [--max 1000] [--every 50] [--no-levels]`,
@@ -831,14 +833,19 @@ genomes of every rank and the rift boss validate and build in time with finite s
 hero's duel stays finite, and items at the area's item level (1000+ deep) roll valid affixes,
 tiers and values. Writes `.scratch/balance/endless.json`; exit 1 on any problem.
 
-**The tuned curve** (`npm run playtest -- campaign`, seed 1, normal): hero level 4 after depth 1,
-15 after 6, 26 after 12, 44 after 20 (2–3 levels a depth early, `SCALING.xpPenalty` and the
-area levels slow it later); main gem level 3 → 10 → 14; an upgrade equipped almost every
-visit, rares from depth 1 and 2–10 a level by the rifts, a unique every three or four levels.
-The bot clears the twelve designed levels with one death, dies now and then from rift 13, and
-stops at rift 21 (three tries with farming in between). Monster life and damage
-(`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 25% / 20% a depth
-through the designed levels and 18% (+4%) / 13% in the rifts.
+**The tuned curve** (`npm run playtest -- campaign`, normal): the target is a challenge. Depths 1–4
+are onboarding (0–1 deaths), 5–12 cost a few deaths with farming in between, the boss is the
+hardest fight of each level, and the bot stops in the rifts around depth 18–25, where better gear
+or a better build would go on. Measured: seed 1 clears the twelve designed levels with 3 deaths
+(Korrak twice, a Bloodmoon blast) and stops at rift 24; seed 2 with 3 (Vexithas, Korrak, a
+pack) and stops at rift 16 (Gale + Embers rifts are its wall). Story clears all 24 with one death;
+hard stops at depth 11 (Vexithas). Hero level 4 after depth 1, ~15 after 6, ~29 after 12, ~39
+after 20; gold carried stays around 5–17k (the gamble tab and honed gems spend it). Monster life
+and damage (`SCALING.monsterLife` / `monsterDamage`) ramp in over depths 1–5, grow 27% / 23% a
+depth through the designed levels and 18% (+3%) / 11.5% in the rifts; bosses are 0.37 × / 0.95 ×
+`RANK.boss` life / damage (`WIRE_TUNING.monster.bossLife` / `bossDamage`); level mechanics hurt on
+the gentler `SCALING.hazardDamage` (20% / 11%). Seeds vary a lot (a rift's mechanic mix, the
+gems the bot finds): check at least two.
 
 ## Loot
 
