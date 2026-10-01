@@ -347,7 +347,7 @@ class GridPanel implements Panel {
     private readonly loot: StubLoot,
     private readonly grids: Grid[],
   ) {
-    const w = grids.reduce((s, g) => s + g.cols * CELL + 10, 0) + 120;
+    const w = grids.reduce((s, g) => s + Math.max(g.cols * CELL, g.title.length * 6 + 4) + 10, 0) + 120;
     this.size = { w: Math.min(460, w), h: 180 };
     if (grids.length === 1) this.g = 0;
   }
@@ -366,14 +366,14 @@ class GridPanel implements Panel {
         this.rects.push({ g: gi, i, r: cell });
         const focus = gi === this.g && i === this.i;
         ui.rect(cell.x, cell.y, cell.w, cell.h, focus ? 'sand' : 'ink');
-        ui.rect(cell.x + 1, cell.y + 1, cell.w - 2, cell.h - 2, item ? 'night' : 'ink');
+        ui.rect(cell.x + 1, cell.y + 1, cell.w - 2, cell.h - 2, item ? 'navy' : 'night');
         if (item) {
           ui.sprite(cell.x + 1, cell.y + 2, baseOf(item).icon, { w: 'white', m: 'mist', o: RARITY_COLOR[item.rarity], r: 'red', s: 'sand', g: 'green' }, 2);
           if (item.rarity !== 'normal') ui.rect(cell.x + 1, cell.y + cell.h - 2, cell.w - 2, 1, RARITY_COLOR[item.rarity]);
           if (grid.price) ui.mini(cell.x + cell.w - 1, cell.y + 1, String(grid.price(item)), grid.price(item) > gold && gi === 0 && this.grids.length > 1 ? 'red' : 'sand', 'right', 'ink');
         } else if (grid.labels?.[i]) ui.mini(cell.x + cell.w / 2, cell.y + 7, grid.labels[i]!.slice(0, 4).toUpperCase(), 'slate', 'center');
       });
-      x += grid.cols * CELL + 10;
+      x += Math.max(grid.cols * CELL, ui.measure(grid.title.toUpperCase()) + 4) + 10;
     });
     // tooltip for the focused item
     const grid = this.grids[this.g];

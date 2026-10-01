@@ -122,6 +122,7 @@ export class Riftlight implements Game, MenuHost {
   private playtime = 0;
   private lootFocus: WorldLoot | null = null;
   private fileInput: HTMLInputElement | null = null;
+  private gifts = 0;
 
   constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
     this.ports = { ...stubPorts(), ...ports };
@@ -611,7 +612,7 @@ export class Riftlight implements Game, MenuHost {
       this.addGold(500);
       this.feedLine('+500 GOLD', 'sand');
     } else {
-      const item = this.ports.loot.give(this.rng.fork(`give:${this.time}`), this.save.hero.level);
+      const item = this.ports.loot.give(this.rng.fork(`give:${this.gifts++}`), this.save.hero.level);
       if (item) this.feedLine(item.name.toUpperCase(), 'sand');
     }
   }

@@ -158,38 +158,56 @@ export function createApi(game: Riftlight) {
     return { arrived: Math.hypot(x - p.x, z - p.z) <= r + 0.05, frames, state: state() };
   };
 
-  const runBot = (o: { maxFrames?: number } = {}): BotReport => {
-    const max = o.maxFrames ?? 60 * 60 * 3;
-    const level0 = game.level;
-    const depth = level0?.spec.depth ?? 0;
-    let frames = 0;
-    let deaths = 0;
-    let outcome: BotReport['outcome'] = 'timeout';
-    let time = 0;
-    while (frames < max) {
-      if (game.screen !== 'level' || !game.level) break;
-      time = game.levelTime;
+  /**
+   * A bot session: `start()` resets the counters for the level in progress, `advance(n)`
+   * plays up to n frames and reports whether the run ended (cleared through the portal,
+   * died, or still going). `run()` does both in one call.
+   */
+  let session: { depth: number; frames: number; deaths: number; time: number; outcome: BotReport['outcome']; done: boolean } | null = null;
+  const botStart = () => {
+    session = { depth: game.level?.spec.depth ?? 0, frames: 0, deaths: 0, time: 0, outcome: 'timeout', done: game.screen !== 'level' };
+    bot.stuckCount = 0;
+    return session;
+  };
+  const botAdvance = (frames: number) => {
+    const ss = session ?? botStart();
+    for (let n = 0; n < frames && !ss.done; n++) {
+      if (game.screen !== 'level' || !game.level) {
+        ss.done = true;
+        if (game.screen === 'town' && game.save.deepest >= ss.depth) ss.outcome = 'cleared';
+        break;
+      }
+      ss.time = game.levelTime;
       if (game.layer.has('death')) {
-        deaths++;
-        outcome = 'died';
+        ss.deaths++;
+        ss.outcome = 'died';
+        ss.done = true;
         game.goTown('death');
         break;
       }
       if (game.layer.has('loot')) {
         for (const l of [...game.ports.loot.ground()]) if (!l.filtered) game.pickup(l);
-        outcome = 'cleared';
+        ss.outcome = 'cleared';
+        ss.done = true;
         game.returnToTown();
         break;
       }
       if (game.layer.top) game.layer.close(); // the bot never browses menus
-      game.botIntent = bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: frames });
+      game.botIntent = bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: ss.frames });
       engine().step(1);
-      frames++;
+      ss.frames++;
     }
     game.botIntent = null;
-    if (outcome === 'timeout' && game.screen === 'town' && game.cleared) outcome = 'cleared';
+    return { done: ss.done, report: botReport() };
+  };
+  const botReport = (): BotReport => {
+    const ss = session ?? botStart();
     const s = game.session;
-    return { depth, cleared: game.save.deepest >= depth && outcome === 'cleared', time: +time.toFixed(2), frames, deaths: deaths || s.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome };
+    return { depth: ss.depth, cleared: ss.outcome === 'cleared', time: +ss.time.toFixed(2), frames: ss.frames, deaths: ss.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome: ss.outcome };
+  };
+  const runBot = (o: { maxFrames?: number } = {}): BotReport => {
+    botStart();
+    return botAdvance(o.maxFrames ?? 60 * 60 * 3).report;
   };
 
   /** Kill every monster with the given bot style (default: basic attacks only, no loot, no exit). */
@@ -367,6 +385,9 @@ export function createApi(game: Riftlight) {
     },
     bot: {
       run: runBot,
+      start: botStart,
+      advance: botAdvance,
+      report: botReport,
       /** One decision without stepping (inspect what the bot would do). */
       decide: () => (game.level ? bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: 0 }) : null),
     },

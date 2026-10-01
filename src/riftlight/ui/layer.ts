@@ -109,7 +109,7 @@ export class UiLayer {
           ui.text(cx + 3, y - 11, 'X', { color: 'white' });
         }
       }
-      if (open >= 1 || o.bare) o.panel.draw(ui, o.rect, time);
+      o.panel.draw(ui, o.rect, time);
     });
   }
 }

@@ -20,7 +20,8 @@
     "tree": "tsx scripts/riftlight/tree.ts",
     "level": "tsx scripts/riftlight/level.ts",
     "combat": "tsx scripts/riftlight/combat.ts",
-    "monster": "tsx scripts/riftlight/monster.ts"
+    "monster": "tsx scripts/riftlight/monster.ts",
+    "playtest": "tsx scripts/riftlight/playtest.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",

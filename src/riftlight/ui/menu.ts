@@ -69,7 +69,8 @@ export class Menu implements Panel {
   private readonly source: (() => Widget[]) | null;
 
   get size() {
-    const h = this.widgets.reduce((s, w) => s + rowHeight(w), 0) + (this.o.footer ? 12 : 0) + 6;
+    // room for the hint / footer line under the widgets
+    const h = this.widgets.reduce((s, w) => s + rowHeight(w), 0) + 14;
     return { w: this.o.width ?? 200, h };
   }
 
