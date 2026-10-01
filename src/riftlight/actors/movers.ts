@@ -14,6 +14,8 @@ export interface Mover {
   readonly position: Vector3;
   /** True when standing on something. */
   readonly grounded: boolean;
+  /** Horizontal ground speed (m/s) actually moved last step, when the mover measures it. */
+  readonly speed?: number;
   /** Move by a horizontal velocity (m/s) for one fixed step; `vy` overrides vertical speed when set (leaps). */
   move(vx: number, vz: number, dt: number, vy?: number): void;
   teleport(x: number, y: number, z: number): void;
@@ -46,6 +48,8 @@ export function layoutWalkable(layout: LayoutLike, origin: { x: number; z: numbe
 export class GridMover implements Mover {
   readonly position = new Vector3();
   readonly grounded = true;
+  /** Ground speed of the last step (m/s, after walls). */
+  speed = 0;
   private readonly prev = new Vector3();
   private vy = 0;
 
@@ -75,6 +79,7 @@ export class GridMover implements Mover {
       p.z = nz;
     } else if (this.ok(nx, p.z)) p.x = nx;
     else if (this.ok(p.x, nz)) p.z = nz;
+    this.speed = dt > 0 ? Math.hypot(p.x - this.prev.x, p.z - this.prev.z) / dt : 0;
     const ground = this.floor.height?.(p.x, p.z) ?? 0;
     if (vy !== undefined) this.vy = vy;
     if (this.vy !== 0 || p.y > ground) {

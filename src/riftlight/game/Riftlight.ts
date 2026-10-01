@@ -41,6 +41,7 @@ import { RecapTracker } from './recap';
 import { newSave, SaveStore } from './save';
 import { loadSettings, type Settings, storeSettings } from './settings';
 import { stubPorts } from './stubs';
+import { corePorts } from '../wire';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -53,6 +54,7 @@ interface MutableIntent {
   attack: boolean;
   skill: number;
   dodge: boolean;
+  held: number;
 }
 
 export class Riftlight implements Game, MenuHost {
@@ -100,7 +102,7 @@ export class Riftlight implements Game, MenuHost {
   private shakeStrength = 0;
   private zoomGoal: number = CAMERA.title;
   // input
-  private readonly intent: MutableIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false };
+  private readonly intent: MutableIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false, held: 0 };
   /** Agent / bot override: drives the hero instead of the player while set. */
   botIntent: (HeroIntent & { interact?: boolean }) | null = null;
   private interactQueued = false;
@@ -123,9 +125,14 @@ export class Riftlight implements Game, MenuHost {
   private lootFocus: WorldLoot | null = null;
   private fileInput: HTMLInputElement | null = null;
   private gifts = 0;
+  /** A level system already announced the clear (`levelClear`): the shell doesn't repeat it. */
+  private clearEmitted = false;
+  private musicKey = '';
 
   constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
-    this.ports = { ...stubPorts(), ...ports };
+    // The real hero, levels and monsters (src/riftlight/wire); loot and tree are stubs until
+    // they are wired. Pass ports to replace any of them (tests: `new Riftlight(stubPorts())`).
+    this.ports = { ...stubPorts(), ...corePorts(), ...ports };
     this.store = options.store ?? new SaveStore();
   }
 
@@ -147,7 +154,7 @@ export class Riftlight implements Game, MenuHost {
     ctx.input.gamepadButtons = { ...PAD_BUTTONS };
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
-    this.lights = new LightPool(ctx.scene);
+    this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     const rng = () => this.rng;
     this.services = {
@@ -210,10 +217,13 @@ export class Riftlight implements Game, MenuHost {
         return;
       }
       const at = target.position.clone().setY(1.2);
-      this.ctx.particles.burst('rl.hit', at);
       this.combatHeat = Math.min(1, this.combatHeat + 0.25);
       this.combatSince = 0;
-      this.ctx.audio.play(result.crit ? 'rl.crit' : 'rl.hit', { pitch: this.rng.range(-2, 2), volume: 0.7 });
+      // a hero whose combat plays its own juice (sounds, sparks by skill) only gets numbers here
+      if (!this.hero?.juice) {
+        this.ctx.particles.burst('rl.hit', at);
+        this.ctx.audio.play(result.crit ? 'rl.crit' : 'rl.hit', { pitch: this.rng.range(-2, 2), volume: 0.7 });
+      }
       if (this.settings.damageNumbers && result.total > 0) {
         const top = (Object.entries(result.byType) as [string, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
         const color: PaletteColor = result.crit ? 'sand' : top === 'fire' ? 'orange' : top === 'cold' ? 'sky' : top === 'lightning' ? 'cyan' : 'white';
@@ -222,7 +232,9 @@ export class Riftlight implements Game, MenuHost {
     });
     on('kill', ({ target, rank }) => {
       if (!this.hero || target === this.hero.actor) return;
-      const xp = killXp(target.level, RANK[rank].xp);
+      // `xp.gain` is a multiplier stat (base 1): shrines, mechanic rewards, gear
+      const gain = this.hero.actor.stats.get('xp.gain');
+      const xp = Math.max(1, Math.round(killXp(target.level, RANK[rank].xp) * (gain > 0 ? gain : 1)));
       this.gainXp(xp);
       this.session.kills++;
       const stats = (this.save.stats ??= emptyStats());
@@ -237,6 +249,7 @@ export class Riftlight implements Game, MenuHost {
       if (this.hero && actor === this.hero.actor && !this.dead) this.onHeroDeath();
     });
     on('mechanic', ({ id }) => this.unlockCodex(id));
+    on('levelClear', () => (this.clearEmitted = true));
   }
 
   private note(type: string, text: string): void {
@@ -362,6 +375,7 @@ export class Riftlight implements Game, MenuHost {
     this.zoomGoal = CAMERA.level;
     this.levelTime = 0;
     this.cleared = false;
+    this.clearEmitted = false;
     this.dead = false;
     this.recap.reset();
     this.streak = null;
@@ -398,6 +412,7 @@ export class Riftlight implements Game, MenuHost {
     this.hero.emote('death');
     this.ctx.audio.playMusic(null);
     this.music = null;
+    this.musicKey = '';
     this.ctx.audio.play('rl.death');
     this.note('death', `slain by ${this.recap.recap().killer ?? '?'}`);
   }
@@ -415,7 +430,7 @@ export class Riftlight implements Game, MenuHost {
     this.cleared = true;
     const depth = this.level.spec.depth;
     const deeper = recordClear(this.save, depth, this.levelTime);
-    this.events.emit('levelClear', { depth, time: this.levelTime });
+    if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
     this.ctx.audio.play('rl.clear');
     this.card = { title: 'LEVEL CLEAR', subtitle: `${formatTime(this.levelTime)}${deeper ? ' · new depth unlocked' : ''}`, age: 0 };
     this.hero.emote('victory');
@@ -742,7 +757,7 @@ export class Riftlight implements Game, MenuHost {
     const intent = this.botIntent ?? this.readIntent(ctx);
     if (this.dead) {
       this.intent.move.x = this.intent.move.z = 0;
-      this.hero.fixedUpdate(dt, { ...this.intent, attack: false, skill: -1, dodge: false });
+      this.hero.fixedUpdate(dt, { ...this.intent, attack: false, skill: -1, dodge: false, held: 0 });
     } else this.hero.fixedUpdate(dt, intent);
     this.level?.fixedUpdate(dt, this.hero);
     if (this.botIntent?.interact) this.interactQueued = true;
@@ -771,6 +786,11 @@ export class Riftlight implements Game, MenuHost {
     i.skill = -1;
     for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
     if ((this.pointer.buttons & 2) !== 0 && !overUi) i.skill = 0;
+    // held skill keys keep channels (whirlwind, beams) going
+    let held = 0;
+    for (let s = 0; s < 4; s++) if (input.anyDown(KEYS.skill[s]!)) held |= 1 << s;
+    if ((this.pointer.buttons & 2) !== 0 && !overUi) held |= 1;
+    i.held = panelOpen ? 0 : held;
     i.dodge = input.consumeAny(KEYS.dodge);
     if (panelOpen) {
       i.attack = false;
@@ -958,9 +978,13 @@ export class Riftlight implements Game, MenuHost {
   }
 
   private playMusic(name: SongName): void {
-    if (this.music === name) return;
+    // a level may bring its theme's arrangement of the level, combat and boss songs
+    const themed = this.screen === 'level' && this.level?.songs ? this.level.songs[name as 'level' | 'combat' | 'boss'] : undefined;
+    const key = `riftlight:${name}${themed ? `:${this.level!.spec.theme}` : ''}`;
+    if (this.music === name && this.musicKey === key) return;
     this.music = name;
-    this.ctx.audio.playMusic(SONGS[name], `riftlight:${name}`);
+    this.musicKey = key;
+    this.ctx.audio.playMusic(themed ?? SONGS[name], key);
   }
 
   /** Combat intensity: hits heat it up, calm cools it; the combat layer comes in and out with hysteresis. */
@@ -1019,7 +1043,7 @@ export class Riftlight implements Game, MenuHost {
     if (this.screen === 'title') {
       drawLogo(ui, ui.w / 2, 30, this.time);
       ui.text(ui.w / 2, 66, 'A HACK-AND-SLASH OF ENDLESS RIFTS', { align: 'center', color: 'mist' });
-      ui.mini(ui.w - 4, ui.h - 8, 'STUB SYSTEMS · R6 SHELL', 'slate', 'right');
+      ui.mini(ui.w - 4, ui.h - 8, this.hero?.juice ? 'RIFTLIGHT' : 'STUB SYSTEMS · R6 SHELL', 'slate', 'right');
       this.layer.draw(ui, this.time);
       return;
     }

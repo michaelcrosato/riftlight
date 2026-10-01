@@ -32,7 +32,9 @@ class Aura extends EffectBase {
       for (const e of c.skill.effects) {
         if (e.kind !== 'buff') continue;
         const hostile = e.target === 'enemies';
-        for (const a of c.combat.actors.query(c.caster.position, this.radius, this.near, (x) => x.alive && (hostile ? c.caster.hostileTo(x) : !c.caster.hostileTo(x)))) {
+        // keystone `auras.selfOnly`: allied auras touch only the caster
+        const selfOnly = !hostile && c.caster.stats.has('auras.selfOnly');
+        for (const a of c.combat.actors.query(c.caster.position, this.radius, this.near, (x) => x.alive && (selfOnly ? x === c.caster : hostile ? c.caster.hostileTo(x) : !c.caster.hostileTo(x)))) {
           a.addBuff(`aura:${c.skill.id}`, e.mods, AURA_LINGER);
         }
       }

@@ -103,6 +103,13 @@ export interface Telegraph {
   readonly remaining: number;
   readonly kind?: 'circle' | 'cone' | 'line';
   readonly source?: ActorLike;
+  /** Lines and cones: they start at `at` and run along `dir` (unit, x/z) for `length` m. */
+  readonly dir?: { readonly x: number; readonly z: number };
+  readonly length?: number;
+  /** Line width (m) or cone angle (degrees). */
+  readonly width?: number;
+  /** A plain swing with no decal (its reach around the attacker): tanking it is an option. */
+  readonly soft?: boolean;
 }
 
 // ------------------------------------------------------------------ hero (combat / actors)
@@ -119,6 +126,8 @@ export interface HeroIntent {
   readonly skill: number;
   /** Dodge pressed this step. */
   readonly dodge: boolean;
+  /** Skill keys held this step, a bit per slot (channelled skills keep going while held). Optional. */
+  readonly held?: number;
 }
 
 /** One slot of the skill bar. Slots 0..3 are skills, then `attack` and `dodge`. */
@@ -135,6 +144,8 @@ export interface SkillSlotView {
   readonly remaining: number;
   /** False when there is not enough mana (drawn dimmed). */
   readonly usable: boolean;
+  /** The gem's effective tags ('melee', 'area', 'projectile', 'movement'...): bots pick skills by them. Optional. */
+  readonly tags?: readonly string[];
 }
 
 export interface BuffView {
@@ -158,6 +169,8 @@ export interface Vitals {
 
 export interface HeroPort {
   readonly actor: ActorLike;
+  /** True when the hero's combat plays hit sounds and particles itself (the shell then only adds numbers, shake and the recap). */
+  readonly juice?: boolean;
   /** Visual root (the shell adds it to the active stage). */
   readonly object: Object3D;
   /** Seconds the current attack/dodge still locks movement (the bot waits on it). */
@@ -244,6 +257,8 @@ export interface LevelHandle extends StageWorld {
   monsters(): readonly MonsterHandle[];
   /** Dev / agent API: spawn a monster from a genome seed. */
   spawn(seed: number, at: Vector3, rank?: Rank): MonsterHandle;
+  /** Optional: the level's music (its theme's arrangement of the shell's songs). */
+  readonly songs?: Partial<Record<'level' | 'combat' | 'boss', import('../../engine').Song>>;
   fixedUpdate(dt: number, hero: HeroPort): void;
   update(dt: number, hero: HeroPort): void;
   dispose(): void;
@@ -290,6 +305,12 @@ export interface KillInfo {
   readonly rank: Rank;
   readonly level: number;
   readonly at: Vector3;
+  /** The killer's find stats as fractions (0.3 = 30% increased), when a hero made the kill. Optional. */
+  readonly itemRarity?: number;
+  readonly itemQuantity?: number;
+  readonly goldFind?: number;
+  /** What dropped it: 'monster' (default) or 'chest' (level chests, Collapse caches). */
+  readonly source?: string;
 }
 
 /** A drop lying in the world. */

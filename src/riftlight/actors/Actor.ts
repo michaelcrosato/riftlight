@@ -1,5 +1,5 @@
 import { type AnimationMixer, Group, type Object3D, Vector3 } from 'three/webgpu';
-import { flat, type Mod, StatSheet } from '../core/mods';
+import { flat, more, type Mod, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, AilmentType, DamageType, Faction, GameEventBus, Hit, HitResult } from '../core/types';
@@ -237,6 +237,7 @@ export class Actor implements ActorLike {
   /** Put an ailment on: stacking ones add an instance, others keep the strongest and refresh. */
   applyAilment(a: AilmentApplication, source: ActorLike | null): void {
     const def = AILMENTS.get(a.id);
+    if (a.id === 'stun' && this.stats.has('cannotBeStunned')) return; // keystone: Unwavering Stance
     if (!def.stacks) {
       const cur = this.ailments.find((x) => x.id === a.id);
       if (cur) {
@@ -261,6 +262,12 @@ export class Actor implements ActorLike {
   /** Life (or mana) returned over time, at most LEECH_RATE of the max per second. */
   leech(life: number, mana = 0): void {
     if (!this.alive) return;
+    if (this.stats.has('leech.instant')) {
+      // keystone: leech lands at once
+      this.life = Math.min(this.maxLife, this.life + life);
+      this.mana = Math.min(this.maxMana, this.mana + mana);
+      return;
+    }
     this.leechPool.life += life;
     this.leechPool.mana += mana;
   }
@@ -273,7 +280,15 @@ export class Actor implements ActorLike {
   onKill(): void {
     this.sinceKill = 0;
     this.counters.kills++;
+    if (this.stats.has('rampage')) {
+      // keystone: a stack per kill for 4 s (max 25): 2% more damage, 1% more movement speed each
+      this.rampage = this.hasBuff('rampage') ? Math.min(25, this.rampage + 1) : 1;
+      this.addBuff('rampage', [more('damage', 0.02 * this.rampage), more('move.speed', 0.01 * this.rampage)], 4);
+    }
   }
+
+  /** Rampage stacks (keystone), while the buff lasts. */
+  rampage = 0;
 
   // ------------------------------------------------------------------ hits
 
@@ -286,12 +301,17 @@ export class Actor implements ActorLike {
       return result;
     }
     const m = mitigate(hit, this, this.rng);
-    const { result } = m;
+    let { result } = m;
     if (result.evaded) this.counters.evaded++;
     if (result.blocked) this.counters.blocked++;
     if (!result.evaded && !result.blocked) {
       this.es -= m.toEs;
-      this.life -= m.toLife;
+      let toLife = m.toLife;
+      const toMana = Math.min(this.mana, toLife * Math.max(0, Math.min(1, this.stats.get('damage.toMana')))); // keystone: Mind over Matter
+      this.mana -= toMana;
+      toLife -= toMana;
+      this.life -= toLife;
+      if (toMana > 0 && this.life > 0) result = { ...result, killed: false };
       this.counters.hitsTaken++;
       this.counters.damageTaken += result.total;
       this.sinceHit = 0;
@@ -404,6 +424,9 @@ export class Actor implements ActorLike {
     s.setCondition('lowLife', this.life < maxLife * LOW_LIFE);
     s.setCondition('fullLife', this.life >= maxLife);
     s.setCondition('recentlyHit', this.sinceHit < RECENTLY);
+    // the passive tree's names for the same thing (tree/data/keystones.ts TREE_CONDITIONS)
+    s.setCondition('hitRecently', this.sinceHit < RECENTLY);
+    s.setCondition('notHitRecently', this.sinceHit >= RECENTLY);
     s.setCondition('recentlyKilled', this.sinceKill < RECENTLY);
     s.setCondition('moving', this.velocity.lengthSq() > 0.25);
     for (const def of AILMENTS.all()) s.setCondition(def.id, this.ailments.some((a) => a.id === def.id));

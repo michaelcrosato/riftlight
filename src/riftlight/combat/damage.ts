@@ -108,7 +108,9 @@ export function convert(q: StatQuery, amounts: Damage, tags: readonly string[]):
   for (const t of CONVERSION_ORDER) if ((amounts[t] ?? 0) > 0) portions.push({ type: t, amount: amounts[t]!, history: [t] });
   for (let i = 0; i < CONVERSION_ORDER.length; i++) {
     const from = CONVERSION_ORDER[i]!;
-    const targets = CONVERSION_ORDER.slice(i + 1).map((to) => ({ to, f: Math.max(0, q.flat(`convert.${from}.${to}`, tags)) }));
+    // keystone `convert.toFire`: that share of physical, cold and lightning becomes fire
+    const toFire = from !== 'fire' && from !== 'chaos' ? Math.max(0, q.flat('convert.toFire', tags)) : 0;
+    const targets = CONVERSION_ORDER.slice(i + 1).map((to) => ({ to, f: Math.max(0, q.flat(`convert.${from}.${to}`, tags)) + (to === 'fire' ? toFire : 0) }));
     const total = targets.reduce((s, x) => s + x.f, 0);
     if (total <= 0) continue;
     const k = total > 1 ? 1 / total : 1;
@@ -149,17 +151,20 @@ export function scaleDamage(q: StatQuery, portions: readonly Portion[], skillTag
   for (const p of portions) {
     const { tags, stats } = portionScaling(p, skillTags);
     if (q.has(`no.${p.type}`, skillTags)) continue; // brutality: "deals no fire damage"
+    if (p.type !== 'fire' && q.has('nonFireDamage.none', skillTags)) continue; // keystone: only fire is left
     out[p.type] = (out[p.type] ?? 0) + p.amount * q.scale(stats, tags);
   }
   return out;
 }
 
 export function critChance(q: StatQuery, spec: DamageSpec): number {
+  if (q.has('cannotCrit', spec.tags)) return 0; // keystone: Resolute Technique
   const base = isAttack(spec.tags) ? q.flat('weapon.crit') || DEFAULT_ATTACK_CRIT : spec.crit;
   return Math.min(1, Math.max(0, q.value('crit.chance', spec.tags, base)));
 }
 
 export function critMultiplier(q: StatQuery, spec: DamageSpec): number {
+  if (q.has('crit.noMultiplier', spec.tags)) return 1; // keystone
   return Math.max(1, q.value('crit.multiplier', spec.tags, BASE_CRIT_MULTIPLIER));
 }
 
@@ -207,6 +212,8 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
   }
   const total = Object.values(damage).reduce((s, v) => s + v, 0);
   const noAilments = q.has('noAilments', spec.tags);
+  // keystone `crit.affectsAilments`: a crit's multiplier also strengthens its ailments
+  const critAilments = crit && q.has('crit.affectsAilments', spec.tags) ? critMultiplier(q, spec) : 1;
   return {
     source: opts.source ?? null,
     skill: opts.skill,
@@ -217,9 +224,10 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
     knockback: q.value('knockback', spec.tags, spec.knockback),
     from: opts.from,
     hitStop: hitStopFor(total, crit, spec.tags),
-    accuracy: isAttack(spec.tags) ? q.value('accuracy', spec.tags, 0) || undefined : undefined,
+    // keystone `hits.cannotBeEvaded`: no accuracy roll at all
+    accuracy: isAttack(spec.tags) && !q.has('hits.cannotBeEvaded', spec.tags) ? q.value('accuracy', spec.tags, 0) || undefined : undefined,
     penetration,
-    ailmentEffect: noAilments ? 0 : q.scale('ailment.effect', spec.tags),
+    ailmentEffect: noAilments ? 0 : q.scale('ailment.effect', spec.tags) * critAilments,
     ailmentDuration: q.scale('ailment.duration', spec.tags),
     cull: q.has('cull', spec.tags) ? 0.1 : undefined,
   };
@@ -279,7 +287,8 @@ export function takenMultiplier(d: Defender, type: DamageType, tags: readonly st
 export function mitigateType(d: Defender, type: DamageType, amount: number, hit: Pick<Hit, 'tags' | 'penetration'>): number {
   if (amount <= 0) return 0;
   let a = amount;
-  if (type === 'physical') a *= 1 - Math.min(ARMOUR_CAP, armourReduction(d.stats.get('armour'), amount) + Math.max(0, d.stats.get('res.physical')));
+  if (type === 'chaos' && d.stats.has('immune.chaos')) return 0; // keystone: Chaos Inoculation
+  if (type === 'physical') a *= 1 - Math.min(ARMOUR_CAP, armourReduction(armourOf(d.stats), amount) + Math.max(0, d.stats.get('res.physical')));
   else a *= 1 - resistance(d.stats, type, hit.penetration?.[type] ?? 0);
   return a * takenMultiplier(d, type, hit.tags);
 }
@@ -306,13 +315,26 @@ const NOTHING: Mitigated = {
   apply: [],
 };
 
+/** Armour, plus evasion with the `evasion.toArmour` keystone. */
+export function armourOf(stats: StatSheet): number {
+  return stats.get('armour') + (stats.has('evasion.toArmour') ? stats.get('evasion') : 0);
+}
+
+/** Evasion rating (0 with the `evasion.toArmour` keystone: it became armour). */
+export function evasionOf(stats: StatSheet): number {
+  return stats.has('evasion.toArmour') ? 0 : stats.get('evasion');
+}
+
 /** Defender side of a hit. `rng` is the target's (evasion, block, ailment rolls). */
 export function mitigate(hit: Hit, d: Defender, rng: Rng): Mitigated {
   if (d.life <= 0) return NOTHING;
   const attack = isAttack(hit.tags);
-  if (attack && !rng.chance(hitChance(hit.accuracy, d.stats.get('evasion')))) {
+  if (attack && !rng.chance(hitChance(hit.accuracy, evasionOf(d.stats)))) {
     return { ...NOTHING, result: { ...NOTHING.result, crit: hit.crit, evaded: true } };
   }
+  // keystone `dodge.chance`: ignore the hit outright
+  const dodge = d.stats.get('dodge.chance');
+  if (dodge > 0 && rng.chance(Math.min(0.75, dodge))) return { ...NOTHING, result: { ...NOTHING.result, crit: hit.crit, evaded: true } };
   if (rng.chance(blockChance(d.stats, hit.tags))) {
     return { ...NOTHING, result: { ...NOTHING.result, crit: hit.crit, blocked: true } };
   }
@@ -325,7 +347,8 @@ export function mitigate(hit: Hit, d: Defender, rng: Rng): Mitigated {
       total += a;
     }
   }
-  const toEs = Math.min(d.es, total);
+  // keystone `es.protectsMana`: the shield pays skill costs instead of soaking damage
+  const toEs = d.stats.has('es.protectsMana') ? 0 : Math.min(d.es, total);
   let toLife = total - toEs;
   let lifeAfter = d.life - toLife;
   if (hit.cull && lifeAfter > 0 && lifeAfter < d.maxLife * hit.cull) {

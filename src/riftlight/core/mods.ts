@@ -76,6 +76,11 @@ export class StatSheet {
     this.dirty();
   }
 
+  /** Is a condition on (`lowLife`, `inDark`...)? */
+  hasCondition(name: string): boolean {
+    return this.conditions.has(name);
+  }
+
   /** Final value of `stat` for a query with `tags`. */
   get(stat: string, tags: readonly string[] = []): number {
     const key = tags.length ? `${stat}|${[...tags].sort().join(',')}` : stat;

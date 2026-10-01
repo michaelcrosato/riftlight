@@ -1,13 +1,16 @@
 /**
- * The playtest bot: a scripted player that only uses the ports, so it plays the stubs now
- * and the real systems later. Each frame it reads a `BotView` and returns an intent:
+ * The playtest bot: a scripted player that only uses the ports, so it plays the stubs and the
+ * real systems alike. Each frame it reads a `BotView` and returns an intent:
  *
- *   1. dodge: a telegraph about to land on it → step out (and roll if the roll is ready);
- *   2. fight: the nearest monster in reach → basic attack + skills when they pay off
- *      (cleave on 2+, nova on 3+, war cry for packs and bosses, dash to close a gap);
- *   3. loot: items and gold nearby → walk over (gold) or walk up and press interact;
- *   4. travel: follow the level's critical path (grid BFS) to the next monster or the exit;
- *   5. exit: when the portal is open, walk in.
+ *   1. dodge: a telegraph about to land on it → step out of it (sideways out of lines and
+ *      cones, away from circles) and roll when it is close; plain swings (`soft`) are traded
+ *      unless life is low;
+ *   2. recover: low on life → back away from the pack, firing ranged skills while it regens;
+ *   3. fight: the nearest monster (the boss when it is near) → skills by their tags (areas
+ *      on groups, ranged at range, gap closers, finishers on elites), the basic combo in reach;
+ *   4. loot: items and gold nearby → walk over (gold) or walk up and press interact;
+ *   5. travel: follow the level's critical path (grid BFS) to the next monster or the exit;
+ *   6. exit: when the portal is open, walk in.
  *
  * Deterministic: decisions depend only on the game state, which `Engine.step` advances
  * frame-exactly. `runBot()` drives the game frame by frame and returns a report.
@@ -15,7 +18,7 @@
 import { Vector3 } from 'three/webgpu';
 import type { LayoutLike } from '../core/types';
 import { bfs } from './nav';
-import type { HeroIntent, HeroPort, LevelHandle, SkillSlotView, WorldLoot } from './ports';
+import type { HeroIntent, HeroPort, LevelHandle, MonsterHandle, SkillSlotView, Telegraph, WorldLoot } from './ports';
 
 /** A mutable intent (the bot rewrites one object every frame). */
 export interface BotIntent extends HeroIntent {
@@ -60,6 +63,20 @@ export interface BotOptions {
   dodge?: boolean;
 }
 
+/** How the bot reads a skill (from its tags; the stub skills by their ids). */
+type Role = 'area' | 'nova' | 'ranged' | 'gap' | 'buff' | 'none';
+
+function roleOf(s: SkillSlotView): Role {
+  const t = s.tags;
+  if (!t) return s.id === 'cleave' ? 'area' : s.id === 'nova' ? 'nova' : s.id === 'dash' ? 'gap' : s.id === 'warcry' ? 'buff' : 'none';
+  if (t.includes('movement')) return 'gap';
+  if (t.includes('nova')) return 'nova';
+  if (t.includes('projectile') || t.includes('chain')) return 'ranged';
+  if (t.includes('area') || t.includes('strike')) return 'area';
+  if (t.includes('buff') || t.includes('warcry') || t.includes('aura')) return 'buff';
+  return 'none';
+}
+
 export class PlaytestBot {
   constructor(private readonly o: BotOptions = {}) {}
 
@@ -71,6 +88,7 @@ export class PlaytestBot {
   private stillFrames = 0;
   private sidestep = 0;
   private sideDir = 1;
+  private recovering = false;
   stuckCount = 0;
 
   decide(v: BotView): BotIntent {
@@ -83,59 +101,92 @@ export class PlaytestBot {
     i.interact = false;
     i.move.x = i.move.z = 0;
     this.track(p);
+    const vit = hero.vitals?.();
+    const life = vit ? vit.life / Math.max(1, vit.maxLife) : 1;
+    const skills = hero.skills();
 
     // 1. dodge telegraphs about to land on us
-    for (const t of this.o.dodge === false ? [] : v.level.telegraphs()) {
-      const d = Math.hypot(p.x - t.at.x, p.z - t.at.z);
-      if (d < t.radius + hero.actor.radius + 0.2 && t.remaining < 0.5) {
-        const away = new Vector3(p.x - t.at.x, 0, p.z - t.at.z);
-        if (away.lengthSq() < 1e-4) away.set(1, 0, 0);
-        away.normalize();
-        i.move.x = away.x;
-        i.move.z = away.z;
-        i.aim.copy(p).add(away);
-        const dodge = slot(hero.skills(), 'dodge');
-        i.dodge = !!dodge && dodge.remaining <= 0 && t.remaining < 0.3;
+    if (this.o.dodge !== false) {
+      const esc = this.escape(v.level.telegraphs(), p, hero.actor.radius, life);
+      if (esc) {
+        i.move.x = esc.dir.x;
+        i.move.z = esc.dir.z;
+        i.aim.copy(p).add(esc.dir);
+        const roll = slot(skills, 'dodge');
+        i.dodge = !!roll && roll.remaining <= 0 && roll.usable !== false && esc.remaining < 0.3;
         return i;
       }
     }
 
-    // 2. fight the nearest monster in reach
     const monsters = v.level.monsters().filter((m) => m.actor.alive);
-    let target = null as (typeof monsters)[number] | null;
+    const near = (r: number, from = p) => monsters.filter((m) => m.actor.position.distanceTo(from) < r + m.actor.radius).length;
+    let target: MonsterHandle | null = null;
     let td = Infinity;
     for (const m of monsters) {
-      const d = m.actor.position.distanceTo(p);
+      const d = m.actor.position.distanceTo(p) - (m.rank === 'boss' ? 3 : 0); // bosses first when close
       if (d < td) {
         td = d;
         target = m;
       }
     }
-    const skills = hero.skills();
-    const ready = (s: number) => {
-      if (this.o.skills === false) return false;
-      const k = slot(skills, s);
-      return !!k && k.id !== null && k.remaining <= 0 && k.usable;
-    };
-    if (target && td < 9) {
+    if (target) td = target.actor.position.distanceTo(p);
+    const ready = (s: SkillSlotView | undefined) => this.o.skills !== false && !!s && s.id !== null && s.remaining <= 0 && s.usable;
+    const bar = [0, 1, 2, 3].map((n) => slot(skills, n)).filter((s): s is SkillSlotView => !!s && !!s.id);
+    const pick = (role: Role) => bar.find((s) => roleOf(s) === role && ready(s));
+
+    // 2. low on life: back off, keep shooting
+    this.recovering = this.recovering ? life < 0.7 : life < 0.32;
+    if (target && this.recovering && td < 7 && monsters.length) {
+      const away = new Vector3();
+      for (const m of monsters) {
+        const d = m.actor.position.distanceTo(p);
+        if (d < 8) away.add(new Vector3(p.x - m.actor.position.x, 0, p.z - m.actor.position.z).divideScalar(Math.max(0.5, d * d)));
+      }
+      if (away.lengthSq() > 1e-6) {
+        away.normalize();
+        // don't back into walls: slide along them
+        const ahead = new Vector3(p.x + away.x * 1.2, 0, p.z + away.z * 1.2);
+        if (!this.open(v.level, ahead)) away.set(-away.z, 0, away.x);
+        i.move.x = away.x;
+        i.move.z = away.z;
+        i.aim.copy(target.actor.position);
+        const ranged = pick('ranged');
+        const nova = pick('nova');
+        if (ranged && td > 2.5) i.skill = ranged.slot as number;
+        else if (nova && td < 3.5) i.skill = nova.slot as number;
+        return i;
+      }
+    }
+
+    // 3. fight the nearest monster in reach
+    if (target && td < 10 && !(v.level.exitOpen && this.o.exit !== false && td > 6)) {
       const tp = target.actor.position;
       i.aim.copy(tp);
       const reach = 1.7 + target.actor.radius;
-      const near = (r: number) => monsters.filter((m) => m.actor.position.distanceTo(p) < r).length;
-      if (td <= reach) {
+      const elite = target.rank !== 'normal';
+      const use = (s: SkillSlotView | undefined) => {
+        if (s) i.skill = s.slot as number;
+      };
+      if (td <= reach + 0.6) {
         i.attack = true;
-        if (ready(3) && (near(5) >= 3 || target.rank === 'boss')) i.skill = 3;
-        else if (ready(1) && near(4) >= 3) i.skill = 1;
-        else if (ready(0) && near(2.6) >= 2) i.skill = 0;
-        else if (ready(0) && target.rank !== 'normal') i.skill = 0;
-        return i;
+        const nova = pick('nova');
+        const area = pick('area');
+        const buff = pick('buff');
+        if (buff && (near(6) >= 3 || target.rank === 'boss')) use(buff);
+        else if (nova && (near(3.6) >= 3 || (elite && near(3.6) >= 1 && life < 0.6))) use(nova);
+        else if (area && (near(3) >= 2 || elite)) use(area);
+        if (td <= reach) return i;
       }
-      if (ready(2) && td > 4 && td < 7 && this.lineOfSight(v.level, p, tp)) i.skill = 2;
-      this.goTo(v.level, p, tp, i);
+      const sight = this.lineOfSight(v.level, p, tp);
+      const ranged = pick('ranged');
+      const gap = pick('gap');
+      if (gap && td > 3.5 && td < 7.5 && sight && life > 0.45) use(gap);
+      else if (ranged && td > 2.5 && td < 11 && sight) use(ranged);
+      if (td > reach) this.goTo(v.level, p, tp, i);
       return i;
     }
 
-    // 3. loot
+    // 4. loot
     let best: WorldLoot | null = null;
     let bd = 8;
     for (const l of this.o.loot === false ? [] : v.loot) {
@@ -153,13 +204,60 @@ export class PlaytestBot {
       return i;
     }
 
-    // 4./5. travel: the next monster anywhere, else the exit
+    // 5./6. travel: the next monster anywhere, else the exit (once the portal is open, stragglers
+    // far away are left behind: a player walks out)
     if (!target && this.o.exit === false) return i;
-    const goal = target ? target.actor.position : v.level.exit;
+    const leave = v.level.exitOpen && this.o.exit !== false && (!target || td > 8);
+    const goal = target && !leave ? target.actor.position : v.level.exit;
     this.goTo(v.level, p, goal, i);
     i.aim.copy(goal);
-    if (!target && v.level.exitOpen && p.distanceTo(v.level.exit) < 2) i.interact = true;
+    if ((!target || leave) && v.level.exitOpen && p.distanceTo(v.level.exit) < 2) i.interact = true;
     return i;
+  }
+
+  /** The way out of the telegraph that lands soonest on us, or null when we're safe. */
+  private escape(tels: readonly Telegraph[], p: Vector3, r: number, life: number): { dir: Vector3; remaining: number } | null {
+    let best: { dir: Vector3; remaining: number } | null = null;
+    for (const t of tels) {
+      const soft = t.soft === true;
+      if (soft && life > 0.45) continue; // a plain swing: trade blows
+      if (t.remaining > (soft ? 0.45 : 0.7)) continue;
+      const dir = this.outOf(t, p, r);
+      if (!dir) continue;
+      if (!best || t.remaining < best.remaining) best = { dir, remaining: t.remaining };
+    }
+    return best;
+  }
+
+  /** Direction out of a telegraph if `p` is inside it (with a margin), else null. */
+  private outOf(t: Telegraph, p: Vector3, r: number): Vector3 | null {
+    const m = r + 0.3;
+    if ((t.kind === 'line' || t.kind === 'cone') && t.dir && t.length) {
+      const sx = t.kind === 'line' ? t.at.x - (t.dir.x * t.length) / 2 : t.at.x;
+      const sz = t.kind === 'line' ? t.at.z - (t.dir.z * t.length) / 2 : t.at.z;
+      const dx = p.x - sx;
+      const dz = p.z - sz;
+      const along = dx * t.dir.x + dz * t.dir.z;
+      const side = dx * -t.dir.z + dz * t.dir.x;
+      if (along < -m || along > t.length + m) return null;
+      if (t.kind === 'line') {
+        if (Math.abs(side) > (t.width ?? 1) / 2 + m) return null;
+      } else {
+        const half = (((t.width ?? 90) / 2) * Math.PI) / 180;
+        if (Math.abs(Math.atan2(side, Math.max(0.01, along))) > half + 0.15) return null;
+      }
+      const s = side >= 0 ? 1 : -1;
+      return new Vector3(-t.dir.z * s, 0, t.dir.x * s);
+    }
+    const d = Math.hypot(p.x - t.at.x, p.z - t.at.z);
+    if (d > t.radius + m) return null;
+    const away = new Vector3(p.x - t.at.x, 0, p.z - t.at.z);
+    if (away.lengthSq() < 1e-4) away.set(1, 0, 0);
+    return away.normalize();
+  }
+
+  private open(level: LevelHandle, at: Vector3): boolean {
+    return level.layout.cell(Math.floor(at.x - level.origin.x), Math.floor(at.z - level.origin.z)) === 1;
   }
 
   private track(p: Vector3): void {
