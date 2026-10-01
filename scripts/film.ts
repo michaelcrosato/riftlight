@@ -207,7 +207,7 @@ window.__FILM = (() => {
       return {
         frame: e.frame, state: hero.state, anim: hero.anim, grounded: hero.grounded,
         mix: hero.animationMix().map((m) => ({ ...m, weight: +m.weight.toFixed(3), time: +m.time.toFixed(3), rate: +m.rate.toFixed(3) })),
-        feet: hero.feet.toArray().map((v) => +v.toFixed(3)), vy: +hero.vy.toFixed(3), speed: +hero.speed.toFixed(3),
+        feet: hero.feet.toArray().map((v) => +v.toFixed(3)), vy: +hero.vy.toFixed(3), speed: +hero.speed.toFixed(3), yaw: +((model.rotation.y * 180) / Math.PI).toFixed(1), my: +model.position.y.toFixed(3),
         fp: hero.footPlacement ? hero.footPlacement() : null,
         q: joints.map((j) => j.quaternion.toArray().map((v) => +v.toFixed(5))),
         soles,
@@ -268,6 +268,9 @@ interface Sample {
   grounded: boolean;
   mix: { name: string; weight: number; time: number; rate: number }[];
   feet: [number, number, number];
+  /** The model's facing (degrees) and height (the drawn body: hops and lunges lift it). */
+  yaw: number;
+  my: number;
   vy: number;
   speed: number;
   q: number[][];
@@ -454,6 +457,8 @@ function analyse(recs: Rec[], joints: string[]) {
   }
   // feet vs ground: slip while planted, sinking, floating in grounded states
   const slip: number[] = new Array<number>(n).fill(0);
+  /** Per sole (R, L): its planted slip this frame (m/s). */
+  const slipBy: [number, number][] = recs.map(() => [0, 0]);
   const gap: number[][] = recs.map((r) => r.s.soles.map((s) => (s.h === null ? NaN : Math.min(...s.h))));
   for (let i = 1; i < n; i++) {
     recs[i]!.s.soles.forEach((sole, k) => {
@@ -468,7 +473,10 @@ function analyse(recs: Rec[], joints: string[]) {
         dz += sole.verts[v + 2]! - prev.verts[v + 2]!;
         c++;
       }
-      if (c) slip[i] = Math.max(slip[i]!, (Math.hypot(dx, dz) / c) * 60);
+      if (c) {
+        slipBy[i]![k] = (Math.hypot(dx, dz) / c) * 60;
+        slip[i] = Math.max(slip[i]!, slipBy[i]![k]!);
+      }
     });
   }
   const runs = (pred: (i: number) => boolean, kind: Issue['kind'], text: (a: number, b: number) => string) => {
@@ -501,7 +509,7 @@ function analyse(recs: Rec[], joints: string[]) {
     (a, b) => `both feet >= 4 cm above the ground while ${recs[a]!.s.state}, f${a}-${b} (up to ${(Math.max(...gap.slice(a, b + 1).map((g) => Math.min(...g))) * 100).toFixed(0)} cm)`,
   );
   issues.sort((a, b) => a.t - b.t);
-  return { speed, maxSpeed, slip, gap, issues };
+  return { speed, maxSpeed, slip, slipBy, gap, issues };
 }
 
 /** Compact foot placement: weight, pelvis drop, then per foot: animated height, offset, pitch, L(ocked) S(tepping), correction. */
@@ -679,7 +687,7 @@ function report(name: string, script: string, recs: Rec[], joints: string[], stu
       view,
       joints,
       issues: a.issues,
-      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)), footPlacement: footText(r.s.fp) })),
+      frames: recs.map((r, i) => ({ t: r.t, state: r.s.state, anim: r.s.anim, mix: r.s.mix, feet: r.s.feet, yaw: r.s.yaw, modelY: r.s.my, speed: r.s.speed, vy: r.s.vy, grounded: r.s.grounded, maxJointSpeed: Math.round(a.maxSpeed[i]!), slip: +a.slip[i]!.toFixed(3), slipRL: a.slipBy[i]!.map((v) => +v.toFixed(2)), soleGap: a.gap[i]!.map((g) => +g.toFixed(3)), footPlacement: footText(r.s.fp) })),
     }),
   );
   const written = [`${base}.png`, `${base}.json`];

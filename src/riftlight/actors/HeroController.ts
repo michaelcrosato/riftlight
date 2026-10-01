@@ -1,5 +1,5 @@
 import { type AnimationClip, type Camera, type Object3D, Vector3 } from 'three/webgpu';
-import { compileClip, restPoseOf, type ClipDef } from '../../engine/animation';
+import { compileClip, restPoseOf, type ClipDef, type FootPlacementInput, type FootPlacementState, type GroundProbe } from '../../engine/animation';
 import { CharacterController } from '../../engine/physics/CharacterController';
 import type { Physics } from '../../engine/physics/Physics';
 import { COMBAT_TIMING } from '../../game/hero/clips/combat';
@@ -15,7 +15,7 @@ import { HERO_KEYS } from './controls';
 import { HeroAnimator } from './heroAnimator';
 import { ControllerMover, type Mover } from './movers';
 import { MouseAim } from './mouseAim';
-import { attachSword } from './sword';
+import { HeroWeapons, weaponClassOf } from './weapons';
 
 /** Every timing and speed of the controller, documented and tunable in one place. */
 export const HERO_TUNING = {
@@ -40,7 +40,36 @@ export const HERO_TUNING = {
   /** Auto-aim (keys / pad / touch): nearest enemy within this range and cone (deg) ahead. */
   autoAimRange: 9,
   autoAimCone: 70,
+  /**
+   * Foot placement (engine FootPlacement, docs/ANIMATION.md): planted feet stay where they
+   * landed through blends and attacks; when the body moves on more than `maxDrift` m they
+   * re-plant with a quick step.
+   */
+  feet: { maxDrift: 0.16, stepTime: 0.12, stepLift: 0.07, fadeOut: 0 },
+  /**
+   * The drawn body turns toward the gameplay facing (which snaps to the aim at once): at
+   * `viewTurnRate` (1/s) for small corrections and while running; a standing turn of more
+   * than `hopTurn` degrees is a quick hop round instead (`hopTime` s, `hopHeight` m), so
+   * planted feet never pivot on the floor.
+   */
+  viewTurnRate: 30,
+  hopTurn: 24,
+  hopTime: 0.1,
+  hopHeight: 0.03,
+  /** Whirlwind: full turns per second at skill speed 1 (the model spins; the clip holds the pose), spin-up time (s). */
+  spinTurns: 2.5,
+  spinUp: 0.12,
+  /** Lifts (m) that keep the feet off the floor: a melee lunge's bound, a roll's push-off; how fast a lift settles (1/s). */
+  lungeHop: 0.07,
+  rollPush: 0.075,
+  liftFall: 30,
+  /** A standing start at a run springs off for `startTime` s, `startHop` m up. */
+  startHop: 0.04,
+  startTime: 0.08,
 } as const;
+
+/** Roll frame (of 14, 30 fps) where the feet are back on the floor (foot locking resumes; ROLL_PROFILE has stopped the body). */
+const ROLL_DOWN = 8.6;
 
 export type HeroState = 'idle' | 'run' | 'attack' | 'cast' | 'channel' | 'dodge' | 'hit' | 'dead' | 'victory';
 
@@ -74,6 +103,11 @@ export interface HeroOptions {
   base?: Readonly<Record<string, number>>;
   /** The canvas, for mouse aim (null: keys, pad and touch only). */
   canvas?: HTMLElement | null;
+  /**
+   * Ray down onto the ground under a foot (foot placement and locking). Default: the Rapier
+   * world when `physics` is given, else flat ground at the hero's feet.
+   */
+  probe?: GroundProbe;
 }
 
 interface ActionState {
@@ -111,7 +145,7 @@ export { WEAPON_CLASSES } from '../combat/tuning';
 /**
  * The hero's ARPG controller: twin-stick / mouse movement and aim, a buffered 3-hit basic
  * combo, five skill slots, a dodge roll with i-frames, attack cancels, slowed movement while
- * casting, hit-stop, attack-speed-scaled animation, and the hero's sword.
+ * casting, hit-stop, attack-speed-scaled animation, and the weapon of the equipped class in hand (HeroWeapons).
  *
  * Call `fixedUpdate` before `actors.fixedUpdate` (it sets the hero's intent) and `update`
  * after `actors.update` (it poses the model).
@@ -124,9 +158,12 @@ export class HeroController {
   /** The Rapier character controller (null when the hero was given its own `mover`). */
   readonly cc: CharacterController | null;
   readonly model: Object3D;
-  readonly sword: Object3D;
+  /** The weapons in the hero's hands (the equipped class shows). */
+  readonly weapons: HeroWeapons;
   readonly animator: HeroAnimator;
   readonly mouse: MouseAim;
+  /** Ray down onto the ground (foot placement; is the hero in the air?). */
+  private readonly probe: GroundProbe;
   /** The combat runtime the hero casts through (`attach` moves the hero to another one, e.g. per stage). */
   combat: Combat;
   /** The basic attack and the skill bar (resolved for the hero's current stats). */
@@ -191,8 +228,21 @@ export class HeroController {
       seed: 'hero',
     });
     this.lastLife = this.actor.life;
-    this.animator = new HeroAnimator(o.model, compileHeroClips(o.model, o.clips));
-    this.sword = attachSword(o.model);
+    const physics = o.physics;
+    const probe: GroundProbe =
+      o.probe ??
+      (physics && !o.mover
+        ? (x, y, z, down, out) => physics.castDown(x, y, z, down, out, ['character'])
+        : (_x, _y, _z, _down, out) => {
+            out.y = this.actor.position.y;
+            out.nx = out.nz = 0;
+            out.ny = 1;
+            out.id = 0;
+            return true;
+          });
+    this.probe = probe;
+    this.animator = new HeroAnimator(o.model, compileHeroClips(o.model, o.clips), { rig: HERO_RIG, probe, feet: HERO_TUNING.feet });
+    this.weapons = new HeroWeapons(o.model);
     this.mouse = new MouseAim(o.canvas ?? null, { setKey: () => {} });
     this.specs = { basic: o.basic ?? { skill: 'slash' }, slots: [...(o.slots ?? [])] };
     this.rebuild();
@@ -222,6 +272,8 @@ export class HeroController {
     const far = Math.max(0.25, q.scale('dodge.distance'));
     this.dodgeSkill = { ...roll, castTime: roll.castTime / quick, delivery: roll.delivery.kind === 'dash' ? { ...roll.delivery, distance: roll.delivery.distance * far } : roll.delivery };
     this.statsVersion = s.version;
+    // the equipped weapon's class shows in hand
+    this.weapons.equip(weaponClassOf((flag) => s.has(flag)), s.has('weapon.twohand'));
   }
 
   /** Put a gem in a slot (0..4 = RMB/K, Q, E, R, F). */
@@ -279,6 +331,10 @@ export class HeroController {
   animationMix() {
     return this.animator.mix();
   }
+  /** What foot placement did this frame (film, tooling). */
+  footPlacement(): FootPlacementState | null {
+    return this.animator.footPlacement();
+  }
   teleport(p: [number, number, number]): void {
     this.actor.endMotion(true);
     this.actor.mover.teleport(...p);
@@ -288,6 +344,8 @@ export class HeroController {
     this.action = null;
     this.state = 'idle';
     this.model.position.set(...p);
+    this.animator.resetLayers();
+    this.snapView = true;
   }
 
   // ------------------------------------------------------------------ input → intent (fixed step)
@@ -636,13 +694,34 @@ export class HeroController {
     const v = this.speed;
     // locomotion clocks: stride matched to ground speed
     const loco = v < HERO_TUNING.idleBelow ? 'Idle' : v < HERO_TUNING.walkBelow ? 'Walk' : 'Run';
+    if (loco !== 'Idle') this.gaitRun = loco === 'Run';
     an.advance('Idle', k);
-    // strides match the ground speed, within what each gait can stretch to (a walk fading out
-    // under a sudden run must not spin its feet)
-    const walkRate = an.speedOf('Walk') ? Math.min(1.6, v / an.speedOf('Walk')) : 1;
-    const runRate = an.speedOf('Run') ? Math.min(1.6, Math.max(0.5, v / an.speedOf('Run'))) : 1;
-    an.advance('Walk', k, walkRate);
-    an.advance('Run', k, runRate);
+    // Walk and Run share one phase (both strike the right heel at 0), so a cross-fade between
+    // them (a cast slowing the run to a walk, and back) keeps the feet in step. The phase
+    // advances so the leading gait's stride matches the ground speed, within what it can
+    // stretch to.
+    const walkSpeed = an.speedOf('Walk') || 2;
+    const runSpeed = an.speedOf('Run') || 6;
+    const walkLen = an.duration('Walk') || 0.4;
+    const runLen = an.duration('Run') || 0.4;
+    const running = this.gaitRun;
+    // stopped, the stride in the air finishes (to the next heel strike: the right at phase 0,
+    // the left at 0.5) and the legs hold while they blend back to the stance: no foot left
+    // hanging in the air, none dragged along the floor
+    let rate = running ? Math.min(1.6, Math.max(0.5, v / runSpeed)) / runLen : Math.min(1.6, v / walkSpeed) / walkLen;
+    // (only through the air: a foot on the floor would be dragged by its stance)
+    const grounded = (this.animator.footPlacement()?.feet ?? []).some((f) => f.height < 0.02);
+    if (v < HERO_TUNING.idleBelow) rate = this.gaitHold || grounded ? 0 : this.gaitRate * 2;
+    else this.gaitRate = rate;
+    const before = this.gaitPhase;
+    this.gaitPhase = (this.gaitPhase + k * rate) % 1;
+    if (v < HERO_TUNING.idleBelow && !this.gaitHold && rate > 0 && (this.gaitPhase < before || (before < 0.5 && this.gaitPhase >= 0.5))) {
+      this.gaitPhase = this.gaitPhase < before ? 0 : 0.5;
+      this.gaitHold = true;
+    }
+    if (v >= HERO_TUNING.idleBelow) this.gaitHold = false;
+    an.setTime('Walk', this.gaitPhase * walkLen);
+    an.setTime('Run', this.gaitPhase * runLen);
     if (this.state === 'dead') {
       if (this.deathT === 0) an.setTime('Death', 0);
       this.deathT += dt;
@@ -667,9 +746,10 @@ export class HeroController {
         if (an.isLoop(name)) an.advance(name, k, act.skill.speed);
         else an.setTime(name, (COMBAT_TIMING[act.clip]?.hit ?? len * 30 * 0.5) / 30);
       } else an.setTime(name, Math.min(len, (act.t / Math.max(0.01, act.duration)) * len));
-      // legs keep running under a cast when moving; attacks own the whole body
+      // legs keep running under a cast when moving; attacks own the whole body (a melee
+      // lunge bounds in on the attack's own legs: see `liftFor`)
       const melee = act.skill.tags.includes('melee');
-      const moving = v > HERO_TUNING.idleBelow && act.skill.moveDuringCast > 0 && !act.skill.def.leap && (!melee || this.lunging);
+      const moving = v > HERO_TUNING.idleBelow && act.skill.moveDuringCast > 0 && !act.skill.def.leap && !melee;
       const spin = act.clip === 'Spin';
       if (moving && !spin) an.play({ lower: loco === 'Idle' ? 'Walk' : loco, upper: name }, HERO_TUNING.fadeAction);
       else an.play({ full: name }, HERO_TUNING.fadeAction);
@@ -678,10 +758,159 @@ export class HeroController {
       an.advance(this.reactAnim, k);
       an.play(v > HERO_TUNING.idleBelow ? { lower: loco === 'Idle' ? 'Walk' : loco, upper: this.reactAnim } : { full: this.reactAnim }, 0.05);
     } else {
-      an.play({ full: loco }, this.state === 'idle' ? HERO_TUNING.fadeOut : HERO_TUNING.fadeMove);
+      // out of an airborne pose (the whirlwind's skimming feet) the feet come down quickly
+      const fade = this.state !== 'idle' ? HERO_TUNING.fadeMove : this.lastClip === 'Spin' ? HERO_TUNING.fadeMove : HERO_TUNING.fadeOut;
+      an.play({ full: loco }, fade);
     }
-    an.update(frozen ? 0 : dt);
+    if (this.action) this.lastClip = this.action.clip;
+    else if (this.state === 'dodge') this.lastClip = 'Roll';
+    const hop = this.turnModel(k, v);
+    const lift = Math.max(hop, this.liftFor(k, v));
+    an.update(frozen ? 0 : dt, this.feetFor(v, lift));
+    // (after foot placement, which works from where the body really is)
+    if (lift > 0) this.model.position.y += lift;
+    this.weapons.update(this.model);
   }
+
+  /**
+   * The drawn facing: follows the gameplay facing, hopping round for a big standing turn;
+   * spins the whole model during a whirlwind. Returns how high the hop lifts the body now.
+   */
+  private turnModel(k: number, speed: number): number {
+    const T = HERO_TUNING;
+    const a = this.actor;
+    const act = this.action;
+    const spinning = !!act && act.clip === 'Spin' && this.state === 'channel';
+    if (spinning) {
+      this.spinT += k;
+      const rate = T.spinTurns * Math.PI * 2 * act.skill.speed * smooth(this.spinT / T.spinUp);
+      this.spinAngle -= rate * k;
+      this.spinRate = rate;
+    } else if (this.spinAngle !== 0) {
+      // out of the spin: carry on the same way round to the facing (a spin-down hop)
+      const from = a.facing + this.spinAngle;
+      let left = wrapAngle(from - a.facing);
+      if (left < 0) left += Math.PI * 2; // turning rightwards (decreasing yaw)
+      this.viewYaw = from;
+      this.spinAngle = 0;
+      this.spinT = 0;
+      const rate = Math.max(this.spinRate * 0.8, Math.PI * 4);
+      this.hop = { t: 0, time: Math.max(T.hopTime, left / rate), from, to: from - left };
+    }
+    const target = a.facing + this.spinAngle;
+    if (this.snapView) {
+      this.snapView = false;
+      this.viewYaw = target;
+      this.hop = null;
+    }
+    let lift = 0;
+    const standing = speed < T.idleBelow && this.state !== 'dodge' && !spinning;
+    if (this.state === 'dodge' || spinning) {
+      // a roll turns at once (its feet are already off the floor); a spin is the spin
+      this.viewYaw = target;
+      this.hop = null;
+    } else if (this.hop) {
+      const h = this.hop;
+      h.t += k;
+      const u = Math.min(1, h.t / h.time);
+      // the target may move on during the hop (a new aim): keep heading for it
+      h.to += wrapAngle(target - h.to);
+      this.viewYaw = h.from + (h.to - h.from) * smooth(u);
+      lift = T.hopHeight * Math.min(1, 1.6 * Math.sin(Math.PI * u));
+      if (u >= 1) this.hop = null;
+    } else {
+      const d = wrapAngle(target - this.viewYaw);
+      if (standing && Math.abs(d) > (T.hopTurn * Math.PI) / 180) {
+        this.hop = { t: k, time: T.hopTime, from: this.viewYaw, to: this.viewYaw + d };
+        lift = T.hopHeight * Math.min(1, 1.6 * Math.sin((Math.PI * k) / T.hopTime));
+        this.viewYaw += d * smooth(k / T.hopTime);
+      } else this.viewYaw += d * (1 - Math.exp(-T.viewTurnRate * k));
+    }
+    this.model.rotation.y = this.viewYaw;
+    return lift;
+  }
+
+  /**
+   * Moments the feet must be off the floor although the clip has them on it: a melee lunge
+   * (the hero bounds in toward the target), the push-off of a roll, the first instants of a
+   * whirlwind, a standing start at a run. The body springs up at once and settles over a few frames.
+   */
+  private liftFor(k: number, speed: number): number {
+    const T = HERO_TUNING;
+    let want = 0;
+    // a standing start at a run (instant top speed): spring off the planted feet instead of
+    // leaving them behind
+    if (this.state === 'run' && this.lastSpeed < T.idleBelow && speed >= T.walkBelow) this.startT = T.startTime;
+    if (k > 0) this.lastSpeed = speed;
+    if (this.state !== 'run') this.startT = 0;
+    if (this.startT > 0) {
+      this.startT -= k;
+      want = T.startHop;
+    }
+    if (this.lunging) want = T.lungeHop;
+    else if (this.state === 'dodge') {
+      const frame = (this.animator.time(this.rollAnim) / Math.max(1e-3, this.animator.duration(this.rollAnim))) * 14;
+      if (frame < 2.5) want = T.rollPush;
+    } else if (this.action?.clip === 'Spin' && this.spinT < T.spinUp) want = T.rollPush;
+    if (k <= 0) return this.lift;
+    // (rising at once: the first frames blend from a pose with the feet down, which the body
+    // must already be clear of)
+    if (want > this.lift) this.lift = want;
+    else this.lift += (want - this.lift) * (1 - Math.exp(-T.liftFall * k));
+    if (this.lift < 1e-4) this.lift = 0;
+    return this.lift;
+  }
+  private lift = 0;
+  private lastClip = '';
+  /** Shared Walk / Run phase (0..1) and which gait leads it. */
+  private gaitPhase = 0;
+  private gaitRun = true;
+  /** Phase rate (cycles/s) while moving, and whether a stop has finished its stride. */
+  private gaitRate = 0;
+  private gaitHold = true;
+  /** Seconds of the standing-start spring left (see `liftFor`), and last frame's ground speed. */
+  private startT = 0;
+  private lastSpeed = 0;
+  private viewYaw = 0;
+  /** Snap the drawn facing next frame (spawn, teleport). */
+  private snapView = true;
+  private hop: { t: number; time: number; from: number; to: number } | null = null;
+  private spinAngle = 0;
+  private spinT = 0;
+  private spinRate = 0;
+
+  /**
+   * Foot placement this frame: planted feet stay where they are in the world wherever the
+   * hero stands (idle, running, attacking, casting, getting hit, dying); feet that the body
+   * lifts clear (a hop, a lunge, a spin) follow the clip; off while the clip itself flies the
+   * body (the roll's tuck, a leap in the air), back on as the roll's feet come down.
+   */
+  private feetFor(speed: number, lift: number): FootPlacementInput {
+    const f = this.feetInput;
+    f.speed = speed;
+    let ik = true;
+    // (a lift settling the last centimetre may lock: the feet are just above where they plant)
+    let lock = lift < 0.012 && !this.hop && this.spinAngle === 0;
+    if (this.state === 'dodge') {
+      const frame = (this.animator.time(this.rollAnim) / Math.max(1e-3, this.animator.duration(this.rollAnim))) * 14;
+      ik = frame >= ROLL_DOWN - 1;
+      lock = frame >= ROLL_DOWN;
+    }
+    // a dash or a leap flies the body: the clip has the feet (a leap's stay planted until the
+    // body actually leaves the ground)
+    if (this.actor.motion && this.state !== 'dodge' && (!this.action?.skill.def.leap || this.airborne())) ik = lock = false;
+    f.ik = ik;
+    f.lock = ik && lock;
+    return f;
+  }
+  private readonly feetInput: FootPlacementInput = { ik: true, lock: true, speed: 0 };
+
+  /** The drawn body clearly above the ground under it (a leap's arc; the physics may already be a step ahead). */
+  private airborne(): boolean {
+    const p = this.model.position;
+    return this.probe(p.x, p.y + 0.5, p.z, 3, this.groundHit) && p.y - this.groundHit.y > 0.02;
+  }
+  private readonly groundHit = { y: 0, nx: 0, ny: 1, nz: 0, id: 0 };
 
   /** Free listeners (the engine frees physics and the scene). */
   dispose(): void {
@@ -717,6 +946,17 @@ export function payCost(a: Actor, cost: number): boolean {
   a.es -= fromEs;
   a.mana -= cost - fromEs;
   return true;
+}
+
+/** An angle in (−π, π]. */
+function wrapAngle(a: number): number {
+  return Math.atan2(Math.sin(a), Math.cos(a));
+}
+
+/** Smoothstep on 0..1 (clamped). */
+function smooth(u: number): number {
+  const x = Math.min(1, Math.max(0, u));
+  return x * x * (3 - 2 * x);
 }
 
 function groundBasisOf(camera: Camera): { right: Vector3; forward: Vector3 } {

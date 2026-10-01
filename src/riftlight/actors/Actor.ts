@@ -29,10 +29,29 @@ export interface Motion {
   vz: number;
   /** Seconds left. */
   left: number;
+  /**
+   * Root motion: the velocity times `profile(u)`, u = 0..1 through the motion (`total` s
+   * long). A profile averaging 1 keeps the distance; a roll eases off as the feet come down.
+   */
+  profile?: (u: number) => number;
+  total?: number;
   /** Called every step while it runs (hits along a dash path). */
   onStep?(actor: Actor, dt: number): void;
   /** Called once when it ends (or is cut short by a stun / freeze / death). */
   onEnd?(actor: Actor, interrupted: boolean): void;
+}
+
+/**
+ * A profiled motion's speed factor for one step: the profile's mean over the part of the
+ * step inside the motion (Simpson), so the steps add up to exactly the profile's distance,
+ * the last one included.
+ */
+export function profileStep(profile: (u: number) => number, total: number, left: number, dt: number): number {
+  const u0 = Math.min(1, Math.max(0, 1 - left / total));
+  const u1 = Math.min(1, u0 + dt / total);
+  if (u1 <= u0) return 0;
+  const inside = (u1 - u0) / (dt / total);
+  return (inside * (profile(u0) + 4 * profile((u0 + u1) / 2) + profile(u1))) / 6;
 }
 
 /** What an actor's brain may look at (the manager implements it). */
@@ -554,8 +573,9 @@ export class Actor implements ActorLike {
     if (stop && this.motion) this.endMotion(true);
     const m = this.motion;
     const k = stop ? 0 : 1;
-    const vx = m ? m.vx : this.velocity.x * k + this.impulse.x + this.separation.x;
-    const vz = m ? m.vz : this.velocity.z * k + this.impulse.z + this.separation.z;
+    const shape = m?.profile && m.total ? profileStep(m.profile, m.total, m.left, dt) : 1;
+    const vx = m ? m.vx * shape : this.velocity.x * k + this.impulse.x + this.separation.x;
+    const vz = m ? m.vz * shape : this.velocity.z * k + this.impulse.z + this.separation.z;
     this.mover.move(vx, vz, dt, this.launch);
     this.launch = undefined;
     this.position.copy(this.mover.position);

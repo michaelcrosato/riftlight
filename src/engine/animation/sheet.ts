@@ -81,8 +81,9 @@ function snapshots(model: Object3D, rig: RigSpec, clip: AnimationClip, frames: r
   const action = mixer.clipAction(clip);
   action.play();
   const meshes: Mesh[] = [];
-  model.traverse((o) => {
-    if ((o as Mesh).isMesh && o.visible) meshes.push(o as Mesh);
+  // (hidden parts, e.g. weapons not in hand, are skipped with everything under them)
+  model.traverseVisible((o) => {
+    if ((o as Mesh).isMesh) meshes.push(o as Mesh);
   });
   const out: Snapshot[] = [];
   const p = new Vector3();

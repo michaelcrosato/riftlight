@@ -572,10 +572,12 @@ export class FootPlacement {
       const e1 = f.g[1] === null ? f.h[1] : f.h[1] + gr0 - f.g[1];
       const on0 = e0 < T.contact;
       const on1 = e1 < T.contact;
-      if (!locking) {
+      if (!locking && (f.step < 0 || !ik)) {
         f.ref = -1;
         f.step = -1;
       } else if (f.step >= 0) {
+        // (a step under way finishes even if locking stops: cut short, the lifted foot would
+        // drop and snap back to the clip in a frame)
         // the lift eases in and out; the foot moves once it is clear of the floor
         f.step = Math.min(1, f.step + dt / f.stepTime);
         const e = smoothstep(f.step, 0.2, 0.8); // (moving only while clear of the floor)
@@ -584,7 +586,17 @@ export class FootPlacement {
         f.cx = (f.sx - p.x) * (1 - e);
         f.cz = (f.sz - p.z) * (1 - e);
         f.lift = T.stepLift * Math.sin(Math.PI * f.step) ** 2;
-        if (f.step >= 1) f.step = -1;
+        if (f.step >= 1) {
+          f.step = -1;
+          // it comes down where the clip has it, and is planted from this frame on (a frame
+          // unlocked in between lets a blend or the clip drag it)
+          if (on0 || on1) {
+            f.ref = on0 && (!on1 || e0 <= e1) ? 0 : 1;
+            const p = f.pts[f.ref]!;
+            f.ax = p.x + f.cx;
+            f.az = p.z + f.cz;
+          }
+        }
       } else if (f.ref >= 0) {
         // lifted off: back to the animation, in the air. Clearly lifted, or on its way up (a
         // blend that lifts it a hair for a frame and puts it back doesn't count)

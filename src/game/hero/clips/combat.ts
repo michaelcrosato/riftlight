@@ -3,9 +3,28 @@
 // The sword is a mesh the game puts in the right hand (src/riftlight/actors/sword.ts); its
 // blade points along the hand's +Z, tipped 20° toward the fingers, so with the wrist curled
 // back (wrist −60) it extends the arm, and with a straight wrist it stands up off the fist.
-import { type ClipDef, type FeetGoals, type Pose } from '../../../engine/animation';
-import { arm, arms, leg, pelvis, squash, track, flat, F, spinRoot } from './helpers';
+import { blend, type ClipDef, type FeetGoals, type Pose } from '../../../engine/animation';
+import { arm, arms, leg, pelvis, squash, track as trackFree, flat, F, spinRoot, type TrackKey } from './helpers';
 import { STAND_FEET, STAND_BODY } from './standing';
+
+/**
+ * Planted feet keep pointing where they stand while the hips twist over them: each foot is
+ * turned back by the pelvis' yaw (about its own up axis, at the ankle), so a swing that
+ * winds the hips round doesn't screw the soles round on the floor.
+ */
+function planted(body: Pose): Pose {
+  const p = body.Pelvis as { r?: [number, number, number] } | undefined;
+  const yaw = p?.r?.[1] ?? 0;
+  if (!yaw) return body;
+  const twist = (name: 'FootR' | 'FootL'): [number, number, number] => {
+    const cur = body[name] as [number, number, number] | { r?: [number, number, number] } | undefined;
+    const r = Array.isArray(cur) ? cur : (cur?.r ?? [0, 0, 0]);
+    return [r[0], -yaw, r[2]];
+  };
+  return { ...body, FootR: twist('FootR'), FootL: twist('FootL') };
+}
+/** `track()` with the feet held square to the floor under a twisting body (see `planted`). */
+const track = (keys: readonly TrackKey[]) => trackFree(keys.map(([f, body, feet, ease]): TrackKey => [f, feet ? planted(body) : body, feet, ease]));
 
 /**
  * Legs solved for `body` with its pelvis as given, then the pelvis turned further by `add`
@@ -14,7 +33,7 @@ import { STAND_FEET, STAND_BODY } from './standing';
  * on the floor without the IK seeing the big angles.
  */
 function turned(body: Pose, feet: FeetGoals, add: [number, number, number]): Pose {
-  const solved = F(body, feet);
+  const solved = F(planted(body), feet);
   const p = solved.Pelvis as { r?: [number, number, number]; p?: [number, number, number]; s?: number | [number, number, number] };
   const r = p.r ?? [0, 0, 0];
   return { ...solved, Pelvis: { ...p, r: [r[0] + add[0], r[1] + add[1], r[2] + add[2]] } };
@@ -150,7 +169,7 @@ export const LeapSlam: ClipDef = {
     [7, F({ ...pelvis([0, 0, 0], [0, 0, 0.02], [0.95, 1.08, 0.95]), Torso: [-4, 0, 0], Head: [-12, 0, 0], ...arm('R', -170, 15, 30, -10), ...arm('L', -150, 20, 30, 0) }, { R: { z: -0.08, pitch: 50, pivot: 'ball' }, L: { z: 0.1, pitch: 50, pivot: 'ball' } }), null],
     [13, { ...pelvis([-10, 0, 0], [0, 0.05, 0]), ...TUCK_SWORD }, null],
     [17, { ...pelvis([4, 0, 0], [0, 0.06, 0]), Torso: [30, 0, 0], Head: [-24, 0, 0], ...arm('R', -95, 12, 10, -50), ...arm('L', -90, 14, 15, 0), ...leg('R', -45, 6, 95, 30), ...leg('L', -40, 6, 85, 30) }, null, 'in'],
-    [19, SMASH_BODY, SMASH_FEET],
+    [19.6, SMASH_BODY, SMASH_FEET],
     [23, { ...SMASH_BODY, ...pelvis([10, 0, 0], [0, -0.25, 0.02], squash(0.05)) }, SMASH_FEET],
     [28, COMBAT_BODY, COMBAT_FEET],
   ]),
@@ -159,24 +178,36 @@ export const LeapSlam: ClipDef = {
 
 // ------------------------------------------------------------------ whirlwind
 
+/** Whirlwind pose: low, arms flung out, blade level at arm's length, both feet off the floor. */
 const SPIN_BODY: Pose = {
-  ...pelvis([0, 0, 0], [0, -0.08, 0]),
-  Torso: [10, 0, 0],
-  Head: [-8, 0, 0],
-  ...arm('R', -78, 85, 5, -60),
-  ...arm('L', -60, 70, 30, 0),
+  ...pelvis([6, 0, -4], [0, -0.04, 0]),
+  Torso: [10, 0, 4],
+  Head: [-10, 0, -4],
+  ...arm('R', -82, 84, 4, -62),
+  ...arm('L', -70, 76, 22, 0),
 };
-const SPIN_FEET: FeetGoals = { R: { z: -0.08, x: -0.04, y: 0.02, pitch: 15, pivot: 'ball' }, L: { z: 0.1, x: 0.04, y: 0.02 } };
-const spin = (yaw: number): Pose => turned(SPIN_BODY, SPIN_FEET, [0, yaw, 0]);
+const SPIN_FEET = (lift: number): FeetGoals => ({
+  R: { z: -0.12, y: 0.035 + lift, pitch: 30, pivot: 'ball' },
+  L: { z: 0.12, y: 0.025 + lift, pitch: 12, pivot: 'ball' },
+});
+const spinKey = (bob: number, tilt: number): Pose => F({ ...SPIN_BODY, ...pelvis([6, 0, -4 + tilt], [0, -0.04 + bob, 0]), Torso: [10, 0, 4 - tilt] }, SPIN_FEET(bob));
 
-/** Whirlwind: a continuous spin with the sword held straight out (loops while channelled). */
+/**
+ * Whirlwind: the spinning pose, looped while channelled. The whole model turns (the hero
+ * controller spins it, `HERO_TUNING.spinTurns`, rightwards), so the clip holds the pose and
+ * only bobs: feet skim clear of the floor, the blade stays level at arm's length.
+ */
 export const Spin: ClipDef = {
   name: 'Spin',
   fast: true,
   loop: true,
   frames: 12,
-  keys: [0, 1, 2, 3, 4].map((i) => [i * 3, spin(-i * 90), 'linear'] as const),
-  notes: 'Arms out, blade extended, spinning a full turn every 0.4 s (rightwards), feet skimming the floor.',
+  keys: [
+    [0, spinKey(0, 0)],
+    [6, spinKey(0.02, 3)],
+    [12, spinKey(0, 0)],
+  ],
+  notes: 'Arms flung out, blade level, both feet skimming the floor with a small bob; the hero controller spins the model.',
 };
 
 // ------------------------------------------------------------------ casts
@@ -259,35 +290,71 @@ export const BowRelease: ClipDef = {
 
 // ------------------------------------------------------------------ movement
 
-const ROLL_TUCK: Pose = {
+export const ROLL_TUCK: Pose = {
   Torso: [55, 0, 0],
   Head: [40, 0, 0],
-  ...arms(-50, 20, 110, 10),
+  // hugging the shins; the sword hand turned so the blade lies across the body, along the
+  // axis the body rolls about (it never sweeps the floor)
+  ...arm('R', -50, 20, 110, 10),
+  HandR: [-10, -90, 0],
+  ...arm('L', -50, 20, 110, 10),
+  HandL: [-10, 90, 0],
   ...leg('R', -120, 8, 140, 30),
   ...leg('L', -120, 8, 140, 30),
 };
 /**
- * The tucked body turns about (0, 0.2, 0.25) from the hips. It isn't round (the hat!), so
- * each key lifts the root by what keeps its lowest point 1–3 cm off the floor, measured by
- * posing the model at that angle (`sampleFrames`): the ball rolls without sinking.
+ * The tucked body turns about (0, 0.2, 0.25) from the hips. It isn't round (the hat), so
+ * each key lifts the root by what keeps its lowest point 2 cm off the floor, measured by
+ * posing the model (hero.glb with the springy Cap) at that angle with the sword in hand
+ * (`sampleFrames`; the blade lies along the roll's axis, so it never sweeps the floor):
+ * keys every 15 degrees so the ball rolls without sinking between them.
  */
-const ROLL_LIFT: Readonly<Record<number, number>> = { 30: -0.28, 60: -0.09, 90: -0.01, 120: 0.06, 150: -0.1, 180: -0.43, 210: -0.61, 240: -0.52, 270: -0.44, 300: -0.44, 330: -0.36 };
-const rolling = (angle: number): Pose => ({ ...ROLL_TUCK, ...spinRoot('x', angle, [0, 0.2, 0.25], ROLL_LIFT[angle] ?? 0) });
+const ROLL_LIFT: Readonly<Record<number, number>> = {
+  15: -0.332, 30: -0.279, 45: -0.181, 60: -0.09, 75: -0.047, 90: -0.014, 105: 0.049, 120: 0.055, 135: 0.002, 150: -0.106, 165: -0.261, 180: -0.439,
+  195: -0.526, 210: -0.617, 225: -0.597, 240: -0.529, 255: -0.48, 270: -0.452, 285: -0.446, 300: -0.45, 315: -0.421, 330: -0.366, 345: -0.322,
+};
+/** The sword hand turns back square (blade along the arm again) over the last quarter turn. */
+const rolling = (angle: number): Pose => {
+  const unfold = Math.min(1, Math.max(0, (angle - 240) / 105));
+  return { ...ROLL_TUCK, HandR: [-10, -90 * (1 - unfold), 0], HandL: [-10, 90 * (1 - unfold), 0], ...spinRoot('x', angle, [0, 0.2, 0.25], ROLL_LIFT[angle] ?? 0) };
+};
 const ROLL_UP: Pose = { ...pelvis([20, 0, 0], [0, -0.22, 0.04], squash(0.05)), Torso: [34, 0, 0], Head: [-20, 0, 0], ...arms(-40, 18, 70, 10) };
+const ROLL_ANGLES = Object.keys(ROLL_LIFT).map(Number);
 
-/** Dodge roll: dive into a tight forward roll and come up running. */
+/**
+ * Dodge roll: dive off the back foot into a tight forward roll and come up on guard. The body
+ * travels by root motion (the dash's ROLL_PROFILE: full speed through the roll, braking to a
+ * stop as the feet come down, frame 8.5 of 14), so the planted feet never skate.
+ */
+function blendFeet(a: FeetGoals, b: FeetGoals, t: number): FeetGoals {
+  const m = (u = 0, v = 0) => u + (v - u) * t;
+  const one = (x: FeetGoals['R'], y: FeetGoals['R']) => (x && y ? { z: m(x.z, y.z), y: m(x.y, y.y), pitch: m(x.pitch, y.pitch), pivot: x.pivot ?? y.pivot } : (x ?? y));
+  return { R: one(a.R, b.R), L: one(a.L, b.L) };
+}
+
+// Over the top (330-345 deg) the feet come down in front of the hips, where the ball has
+// them; the body then rises up over them: they slide back under it in the clip exactly as
+// fast as the roll's root motion carries the body on (ROLL_PROFILE's tail), so in the world
+// they stay planted.
+const ROLL_LAND: FeetGoals = { R: { z: 0.19, y: 0.01 }, L: { z: 0.26, y: 0.01 } };
+const ROLL_RISE: FeetGoals = { R: { z: 0.08, y: 0 }, L: { z: 0.16 } };
 export const Roll: ClipDef = {
   name: 'Roll',
   fast: true,
   frames: 14,
   keys: [
-    [0, F({ ...pelvis([10, 0, 0], [0, -0.1, 0.02], squash(0.04)), Torso: [24, 0, 0], Head: [-12, 0, 0], ...arms(-60, 18, 60, 10) }, flat(-0.06, 0.08)), 'out'],
-    ...Object.keys(ROLL_LIFT).map(Number).map((a, i) => [2 + i * 0.8, rolling(a), 'linear'] as const),
-    [11, turned({ ...ROLL_UP, ...pelvis([42, 0, 0], [0, -0.24, 0.02], squash(0.04)), Torso: [36, 0, 0], ...arms(-95, 20, 90, 10) }, { R: { z: 0.0, y: 0.05, pitch: 25, pivot: 'ball' }, L: { z: 0.18, y: 0.03 } }, [360, 0, 0]), 'out'],
-    [12, turned(ROLL_UP, flat(-0.06, 0.16), [360, 0, 0]), 'out'],
+    [0, F({ ...pelvis([16, 0, 0], [0, -0.14, 0.04], squash(0.05)), Torso: [28, 0, 0], Head: [-14, 0, 0], ...arms(-70, 18, 50, 10) }, { R: { z: -0.12, pitch: 30, pivot: 'ball' }, L: { z: 0.08, pitch: 10, pivot: 'ball' } }), 'linear'],
+    ...ROLL_ANGLES.map((a, i) => [1.2 + i * (7.2 / (ROLL_ANGLES.length - 1)), rolling(a), 'linear'] as const),
+    // over the top the feet come down in front (the ball's lowest point at 330-345 deg) and
+    // plant; the body unrolls up over them
+    [9.6, turned({ ...ROLL_UP, ...pelvis([36, 0, 0], [0, -0.3, 0.02], squash(0.05)), Torso: [34, 0, 0], Head: [6, 0, 0], ...arms(-72, 19, 95, 10) }, ROLL_LAND, [360, 0, 0]), 'inOut'],
+    [11, turned({ ...ROLL_UP, ...pelvis([30, 0, 0], [0, -0.26, 0.02], squash(0.05)), Torso: [32, 0, 0], Head: [-6, 0, 0], ...arms(-58, 19, 80, 10) }, blendFeet(ROLL_LAND, ROLL_RISE, 0.55), [360, 0, 0]), 'inOut'],
+    [12, turned(ROLL_UP, ROLL_RISE, [360, 0, 0]), 'inOut'],
+    // (the rise keyed every frame: legs solved at each, so the planted feet stay put between)
+    [13, turned(blend(ROLL_UP, COMBAT_BODY, 0.5), blendFeet(ROLL_RISE, COMBAT_FEET, 0.5), [360, 0, 0]), 'inOut'],
     [14, turned(COMBAT_BODY, COMBAT_FEET, [360, 0, 0])],
   ],
-  notes: 'Low forward roll, tucked tight, back on the feet at frame 12 (the i-frames cover the roll).',
+  notes: 'Push off the back foot, tuck tight and roll (keys every 15 deg), feet plant at 8.5 as the ball comes over, up on guard by 14 (the i-frames cover the roll).',
 };
 
 const CHARGE_BODY: Pose = { ...pelvis([16, 18, 0], [0, -0.1, 0.04]), Torso: [24, 20, 0], Head: [-30, -14, 0], ...arm('L', -50, 30, 120, 10), ...arm('R', 10, 20, 60, -10) };

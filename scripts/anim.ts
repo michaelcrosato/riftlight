@@ -15,6 +15,9 @@
 //
 // Options for every command: --json (machine-readable output), --out <dir>,
 // --character <hero|brann|ilsa|oru|vex|villager|villager2> (default hero).
+// sheet and curves take --weapon <sword|axe|mace|sceptre|dagger|wand|staff|bow|none>: the
+// weapon in the hero's hands (src/riftlight/actors/weapons.ts). By default combat clips show
+// the sword and the Bow* clips the bow; metrics (check) never count the weapon.
 // sheet and curves take --compare: draw the previous version of the clip (magenta skeleton
 // and paths on sheets, grey curves). Every
 // sheet/curves run records the clip in .scratch/anim/history/, so "previous" is the last
@@ -41,6 +44,8 @@ import {
   type ViewName,
 } from '../src/engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../src/game/hero';
+import { COMBAT_CLIPS } from '../src/game/hero/clips/combat';
+import { HeroWeapons, WEAPON_KINDS, type WeaponClass } from '../src/riftlight/actors/weapons';
 import { NPC_CLIPS } from '../src/riftlight/town/npcClips';
 import { TOWNSFOLK } from '../src/riftlight/town/npcModel';
 import { encodePng } from './png';
@@ -73,7 +78,7 @@ for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
   if (a.startsWith('--')) {
     const next = argv[i + 1];
-    const valued = ['frames', 'views', 'scale', 'out', 'character', 'joints', 'cycles', 'width'].includes(a.slice(2));
+    const valued = ['frames', 'views', 'scale', 'out', 'character', 'joints', 'cycles', 'width', 'weapon'].includes(a.slice(2));
     flags.set(a.slice(2), valued && next !== undefined ? next : true);
     if (valued) i++;
   } else args.push(a);
@@ -89,6 +94,28 @@ async function loadModel(url: string | (() => Object3D)): Promise<Object3D> {
   const buf = readFileSync(join(ROOT, 'public', url));
   const gltf = await new GLTFLoader().parseAsync(buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength), '');
   return gltf.scene;
+}
+
+/** The weapon a sheet shows for `clip` (hero only): --weapon, else the sword for combat clips and the bow for Bow*. */
+function weaponFor(clip: ClipDef): WeaponClass | null {
+  if (character !== CHARACTERS.hero) return null;
+  const w = flags.get('weapon');
+  if (typeof w === 'string') {
+    if (w === 'none') return null;
+    if (!(WEAPON_KINDS as readonly string[]).includes(w)) fail(`unknown weapon "${w}"; have: ${WEAPON_KINDS.join(', ')}, none`);
+    return w as WeaponClass;
+  }
+  if (clip.name.startsWith('Bow')) return 'bow';
+  return COMBAT_CLIPS.some((c) => c.name === clip.name) ? 'sword' : null;
+}
+
+/** Show `kind` in the model's hands (built once per model), or nothing. */
+function arm(model: Object3D, kind: WeaponClass | null): void {
+  const m = model as Object3D & { userData: { weapons?: HeroWeapons } };
+  if (!kind && !m.userData.weapons) return;
+  m.userData.weapons ??= new HeroWeapons(model);
+  for (const w of m.userData.weapons.meshes.values()) w.visible = false;
+  if (kind) m.userData.weapons.equip(kind, false);
 }
 
 function pick(names: string[]): ClipDef[] {
@@ -168,7 +195,9 @@ async function main(): Promise<void> {
       const written: string[] = [];
       for (const def of pick(args)) {
         const clip = compileClip(def, rig, rest);
+        arm(model, null);
         const report = analyzeClip(model, rig, def, clip);
+        arm(model, weaponFor(def));
         const prev = remember(def);
         const img = renderSheet(model, rig, def, clip, {
           ghost: flags.has('compare') && prev ? compileClip(prev, rig, rest) : undefined,
@@ -195,6 +224,7 @@ async function main(): Promise<void> {
       const written: string[] = [];
       for (const def of pick(args)) {
         const prev = remember(def);
+        arm(model, weaponFor(def));
         const img = renderCurves(model, rig, def, compileClip(def, rig, rest), {
           joints: flags.has('joints') ? String(flags.get('joints')).split(',') : undefined,
           cycles: flags.has('cycles') ? Number(flags.get('cycles')) : undefined,
