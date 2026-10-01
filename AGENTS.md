@@ -48,7 +48,7 @@ script and CI pick them up with no extra config.
 ## Stack
 
 WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
-(`three/webgpu` + `three/tsl`), `@dimforge/rapier3d-compat@0.20.0`, local GLBs.
+(`three/webgpu` + `three/tsl`), `@dimforge/rapier3d@0.20.0` (wasm loaded separately), local GLBs.
 **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
 the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
 animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
