@@ -1,20 +1,19 @@
 // Moveset verification helpers, shared by scripts/e2e.mjs. Each move runs in the live
 // game (third-person camera, yaw 0 → W = -Z, S = +Z, D = +X, A = -X) by injecting keys and
 // teleporting, then asserts on the character's state machine and position.
+//
+// Time is game time: the helpers advance the engine with Engine.step (exact 1/60 s frames),
+// so `wait(500)` is always 30 frames however slowly the machine renders (CI runners too).
 
 /** Installed into the page: small async DSL over window.__PIXEL_ENGINE__. */
 export const PAGE_HELPERS = () => {
   const e = window.__PIXEL_ENGINE__;
   const g = e.game;
-  const frames = (n) =>
-    new Promise((res) => {
-      const target = e.frame + n;
-      const tick = () => (e.frame >= target ? res() : requestAnimationFrame(tick));
-      tick();
-    });
+  const frames = async (n) => e.step(Math.max(0, Math.round(n)));
   const T = {
     frames,
-    wait: (ms) => new Promise((r) => setTimeout(r, ms)),
+    /** Game time in milliseconds. */
+    wait: (ms) => frames((ms * 60) / 1000),
     set: (keys, down) => keys.forEach((k) => e.input.setKey(k, down)),
     releaseAll: () => ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyF', 'KeyJ', 'ShiftLeft'].forEach((k) => e.input.setKey(k, false)),
     async hold(keys, ms) {
@@ -39,8 +38,7 @@ export const PAGE_HELPERS = () => {
     /** Poll until predicate(hero) or timeout; returns the set of states seen. */
     async until(pred, ms = 3000) {
       const seen = new Set();
-      const t0 = performance.now();
-      while (performance.now() - t0 < ms) {
+      for (let f = 0; f < (ms * 60) / 1000; f++) {
         seen.add(g.hero.state);
         if (pred(g.hero)) return { ok: true, seen: [...seen] };
         await frames(1);
