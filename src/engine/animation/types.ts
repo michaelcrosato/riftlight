@@ -94,6 +94,11 @@ export interface ClipDef {
    * this; metrics then measure foot sliding against it and the runtime can scale playback.
    */
   speed?: number;
+  /**
+   * Gait cycles (gaitClip): the share of the cycle each foot is planted. The right heel
+   * strikes at phase 0, the left at 0.5, so the right foot is mid-stance at `stance / 2`.
+   */
+  stance?: number;
   /** Grounded clip: soles should rest on y = 0 (metrics flag floating / penetration). */
   grounded?: boolean;
   /** Intentionally snappy (flips, punches, launches): skip the angular-speed warning. */
