@@ -31,7 +31,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 
-const PORT = 4179;
+const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
 const OUT = new URL('../.scratch/e2e/', import.meta.url);
 const EXE = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium';
@@ -719,7 +719,12 @@ const suites = {
   lab: () => runLab(exe),
 };
 try {
-  for (const [name, run] of Object.entries(suites)) if (!only || name === only) await run();
+  for (const [name, run] of Object.entries(suites)) {
+    if (only && name !== only) continue;
+    const t0 = Date.now();
+    await run();
+    console.log(`  ⏱ ${name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+  }
 } finally {
   server.kill();
 }
