@@ -709,7 +709,10 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   It renders with the software rasterizer of the contact sheets, not Chromium: it runs in
   about a second with no GPU, is byte-for-byte deterministic (fingerprints and diffs stay
   stable), and draws rig overlays and labels the real renderer has no pass for. The cost is
-  fidelity: flat 3-band toon shading without the pixel pipeline, lights or filters. For the
+  fidelity: flat 3-band toon shading without the pixel pipeline, lights or filters (a mesh
+  whose shader colours it procedurally can carry per-triangle preview colours in
+  `geometry.userData.triColors`, see `presetTriangleColour` in `animation/raster.ts`; the
+  sheets and portraits use them too). For the
   real look, film it (`npm run film`) or open a lab page.
 - `npm run balance` (Riftlight, docs/GAME.md *Balance*): a headless combat sim over the game's
   real code, build × depth, as charts, CSV and JSON with its outliers.

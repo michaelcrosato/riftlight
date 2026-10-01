@@ -22,6 +22,26 @@ export const WARN: RGB = [255, 205, 117];
 
 export type RGB = [number, number, number];
 
+/**
+ * Per-triangle preview colours for the software rasterizers (contact sheets, inspect,
+ * portraits). A geometry whose shader colours it procedurally (vertex attributes, TSL
+ * patterns) can carry `userData.triColors`: 4 bytes per triangle in draw order, sRGB r, g,
+ * b and flags (bit 0 = unlit, bits 1..7 = which merged piece it came from, so outlines
+ * still separate parts merged into one mesh). Returns null when the geometry has none, so
+ * callers fall back to the material colour.
+ */
+export function presetTriangleColour(userData: { triColors?: Uint8Array } | undefined, triangle: number): { rgb: RGB; unlit: boolean; piece: number } | null {
+  const c = userData?.triColors;
+  if (!c || triangle * 4 + 3 >= c.length) return null;
+  const i = triangle * 4;
+  return { rgb: [c[i]!, c[i + 1]!, c[i + 2]!], unlit: (c[i + 3]! & 1) === 1, piece: c[i + 3]! >> 1 };
+}
+
+/** Outline id of a triangle: its mesh, and its merged piece when the mesh carries `triColors`. */
+export function outlineId(mesh: number, preset: { piece: number } | null): number {
+  return preset ? ((mesh * 128 + preset.piece) % 65535) + 1 : mesh;
+}
+
 export class Canvas {
   readonly data: Uint8ClampedArray;
   readonly depth: Float32Array;

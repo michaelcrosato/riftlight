@@ -1,6 +1,6 @@
 import { AnimationMixer, type AnimationClip, type BufferGeometry, Color, type Material, type Mesh, type Object3D, SRGBColorSpace, Vector3 } from 'three/webgpu';
 import { GLYPH_H, textWidth } from './font';
-import { BAD, Canvas, CELL_BG, CENTRE, CONTACT, DIM, GRID, GROUND, LEFT, RIGHT, TEXT, WARN, type Rect, type RGB, type SheetImage } from './raster';
+import { BAD, Canvas, CELL_BG, CENTRE, CONTACT, DIM, GRID, GROUND, LEFT, RIGHT, TEXT, WARN, outlineId, presetTriangleColour, type Rect, type RGB, type SheetImage } from './raster';
 
 export type { SheetImage } from './raster';
 import type { ClipReport } from './metrics';
@@ -113,7 +113,8 @@ function snapshots(model: Object3D, rig: RigSpec, clip: AnimationClip, frames: r
           const vi = idx ? idx.getX(t + k) : t + k;
           v.set(world.subarray(vi * 3, vi * 3 + 3), k * 3);
         }
-        tris.push({ v, color, id: mi + 1 });
+        const preset = presetTriangleColour(geo.userData, t / 3);
+        tris.push({ v, color: preset ? preset.rgb : color, id: outlineId(mi + 1, preset) });
       }
       if (rig.soles.includes(mesh.name)) soles.push({ name: mesh.name, minY: lo.y, min: lo, max: hi });
     });
