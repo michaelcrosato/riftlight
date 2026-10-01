@@ -297,7 +297,13 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     this.globes.fixedUpdate(dt, this.heroActor());
     this.level.fixedUpdate(dt);
     const h = this.heroActor();
-    if (h && h.alive && this.layout.cell(Math.floor(h.position.x), Math.floor(h.position.z)) === FLOOR) this.lastSafe.copy(h.position);
+    // a fall puts the hero back here: solid floor only (a crumbling Collapse tile under the
+    // hero would drop it again and again)
+    if (h && h.alive) {
+      const x = Math.floor(h.position.x);
+      const z = Math.floor(h.position.z);
+      if (this.layout.cell(x, z) === FLOOR && !this.level.plan.dynamicFloor[z * this.layout.width + x]) this.lastSafe.copy(h.position);
+    }
   }
 
   update(dt: number): void {

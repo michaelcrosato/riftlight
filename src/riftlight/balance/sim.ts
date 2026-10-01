@@ -109,10 +109,16 @@ export function xpCurve(depths: readonly DepthInput[], clears = 1): XpRow[] {
     for (const p of d.packs) for (const r of p) kills[r]++;
     const ml = SCALING.monsterLevel(d.depth);
     let xp = 0;
-    for (const r of Object.keys(kills) as Rank[]) xp += kills[r] * killXp(ml, RANK[r].xp);
     const before = hero.level;
-    for (let i = 0; i < clears; i++) addXp(hero as Parameters<typeof addXp>[0], xp);
-    out.push({ depth: d.depth, kills, xp: xp * clears, levelBefore: before, levelAfter: hero.level });
+    // kill by kill: the XP penalty for outlevelling the area depends on the level reached
+    for (let i = 0; i < clears; i++)
+      for (const r of Object.keys(kills) as Rank[])
+        for (let k = 0; k < kills[r]; k++) {
+          const got = killXp(ml, RANK[r].xp, hero.level);
+          xp += got;
+          addXp(hero as Parameters<typeof addXp>[0], got);
+        }
+    out.push({ depth: d.depth, kills, xp, levelBefore: before, levelAfter: hero.level });
   }
   return out;
 }

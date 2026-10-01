@@ -208,8 +208,11 @@ export interface Item {
   readonly name: string;
   readonly affixes: readonly RolledAffix[];
   readonly unique?: string;
-  /** Skill/support gem items: which gem and its level. */
-  readonly gem?: { id: string; level: number; support: boolean };
+  /**
+   * Skill/support gem items: which gem and its level; `xp` is the XP earned toward the next
+   * level while socketed (loot/sockets.ts `addGemXp`; absent = 0, so older saves load as is).
+   */
+  readonly gem?: { id: string; level: number; support: boolean; xp?: number };
   readonly quantity?: number;
   /** Corrupted (vaal-like orb): no further crafting. */
   readonly corrupted?: boolean;

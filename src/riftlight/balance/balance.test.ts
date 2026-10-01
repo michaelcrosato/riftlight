@@ -61,8 +61,9 @@ describe('balance: sheets and scaling', () => {
     expect(skillDps(off.sheet, off.skill, t.defender).hit!.critMultiplier).toBeCloseTo(2.5);
   });
 
-  it('gives the highest gem level the hero can equip', () => {
-    expect([1, 3, 4, 31, 60, 100].map(gemLevelFor)).toEqual([1, 1, 2, 11, 20, 20]);
+  it('gives the highest gem level the hero can equip (SCALING.gemLevelReq)', () => {
+    expect([1, 3, 4, 31, 60, 100].map(gemLevelFor)).toEqual([1, 2, 3, 11, 18, 20]);
+    for (const level of [1, 7, 25, 70]) expect(SCALING.gemLevelReq(gemLevelFor(level))).toBeLessThanOrEqual(level);
   });
 });
 
@@ -124,7 +125,7 @@ describe('balance: progression, choices, outliers', () => {
     const hero = { level: 1, xp: 0 };
     for (const d of [1, 2, 3]) {
       const ml = SCALING.monsterLevel(d);
-      addXp(hero as never, 3 * killXp(ml, RANK.normal.xp) + killXp(ml, RANK.magic.xp) + killXp(ml, RANK.rare.xp) + killXp(ml, RANK.boss.xp));
+      for (const r of ['normal', 'normal', 'normal', 'magic', 'rare', 'boss'] as const) addXp(hero as never, killXp(ml, RANK[r].xp, hero.level));
       expect(xp[d - 1]!.levelAfter).toBe(hero.level);
     }
     expect(xp[0]!.levelBefore).toBe(1);

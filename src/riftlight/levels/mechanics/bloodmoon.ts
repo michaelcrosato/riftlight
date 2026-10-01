@@ -18,6 +18,11 @@ import type { LevelMechanicDef } from './types';
 const RADIUS = 2.8;
 const FUSE = 0.55;
 const PACT = 20;
+/**
+ * Blasts landing on the hero together hurt less each: the k-th within this many seconds
+ * deals 1/k (a pack of ten dying at once is ~3 blasts' worth, not ten).
+ */
+const STACK_WINDOW = 0.5;
 const ringGeo = new RingGeometry(0.82, 1, 20).rotateX(-Math.PI / 2);
 ringGeo.userData.shared = true;
 
@@ -71,6 +76,7 @@ export const BLOODMOON: LevelMechanicDef = {
     const blasts: Blast[] = [];
     let lastBlast = { at: new Vector3(), time: -10, chain: 0 };
     let pactUntil = -1;
+    let heroBlasts: number[] = [];
     const off = level.events.on('kill', ({ target, rank }) => {
       if (target.faction !== 'monster' || rank === 'boss') return;
       const t = level.time();
@@ -94,7 +100,9 @@ export const BLOODMOON: LevelMechanicDef = {
             heal(a, 0.04);
             continue;
           }
-          level.damage(a, { physical: mechanicDamage(depth, 16) }, 'bloodmoon', { knockback: 6, from: b.at });
+          heroBlasts = heroBlasts.filter((at) => t - at < STACK_WINDOW);
+          heroBlasts.push(t);
+          level.damage(a, { physical: mechanicDamage(depth, 16) / heroBlasts.length }, 'bloodmoon', { knockback: 6, from: b.at });
         // `explosion.damage` (Bloodmoon Chalice, the Volatile prefix) feeds the chain
         } else level.damage(a, { physical: monsterScaleDamage(depth, 30) * (1 + 0.2 * b.chain) * heroScale(level.hero(), 'explosion.damage') }, 'bloodmoon', { knockback: 6, from: b.at, ailments: { bleed: 0.5 } });
       }

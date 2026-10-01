@@ -378,6 +378,9 @@ class LevelRuntime implements Level {
       this.ctx.physics.world.removeCollider(c, true);
       this.dynamicColliders.delete(i);
     }
+    // a crumbled tile that rose back (Collapse) gets its collider again
+    const box = v === FLOOR && !c && this.body && this.ctx.physics ? this.geometry.colliders.dynamic.find((b) => b.cell === i) : undefined;
+    if (box) this.dynamicColliders.set(i, this.ctx.physics!.world.createCollider(RAPIER.ColliderDesc.cuboid(...box.half).setTranslation(...box.center), this.body!));
   }
 
   // ------------------------------------------------------------------ building

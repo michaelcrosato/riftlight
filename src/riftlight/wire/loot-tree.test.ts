@@ -92,13 +92,17 @@ function services(stats: StatSheet, lootFilter = 0): ShellServices {
 describe('the real LootPort', () => {
   it('rolls drops from the kill and the hero’s item quantity / rarity', () => {
     const loot = realLootPort();
-    const plain = new StatSheet();
+    // the hero's find stats are multipliers with base 1 (WIRE_TUNING.hero.base): 1 = no bonus
+    const plain = new StatSheet({ 'item.quantity': 1, 'item.rarity': 1, 'gold.find': 1 });
     loot.init(services(plain));
     const kill = { depth: 8, rank: 'rare' as const, level: 10, at: null as never };
     const count = (n: number) => Array.from({ length: n }, (_, i) => loot.rollDrops(kill, new Rng(i)).filter((d) => d.kind === 'item').length).reduce((a, b) => a + b, 0);
     const base = count(400);
     plain.set('gear', [flat('item.quantity', 1)]);
     expect(count(400)).toBeGreaterThan(base * 1.5);
+    // a kill that carries the fractions (the level does) wins over the sheet
+    const given = Array.from({ length: 400 }, (_, i) => loot.rollDrops({ ...kill, itemQuantity: 0 }, new Rng(i)).filter((d) => d.kind === 'item').length).reduce((a, b) => a + b, 0);
+    expect(given).toBe(base);
     expect(loot.rollDrops({ ...kill, rank: 'boss' }, new Rng(9)).some((d) => d.kind === 'item' && (d.item.rarity === 'rare' || d.item.rarity === 'unique'))).toBe(true);
   });
 

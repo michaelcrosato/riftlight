@@ -36,7 +36,7 @@ export const ELITE_MODS = new Registry<MonsterEliteDef>('elite mods', [
   E({ id: 'molten-trail', name: 'Molten Trail', description: 'Leaves burning ground wherever it walks.', tags: ['offensive', 'fire'], mods: [flat('res.fire', 0.3)], behaviour: 'trail:fire', glow: 0xef7d57, cost: 2, excludes: ['totem'] }),
   E({ id: 'storm-caller', name: 'Storm Caller', description: 'Calls telegraphed lightning strikes on you.', tags: ['offensive', 'storm'], mods: [flat('res.lightning', 0.5)], behaviour: 'strikes:lightning', glow: 0x41a6f6, cost: 2 }),
   E({ id: 'venomous', name: 'Venomous', description: 'Every hit poisons.', tags: ['offensive', 'poison'], mods: [flat('chance.poison', 0.6), flat('res.chaos', 0.4)], glow: 0xa7f070, cost: 1 }),
-  E({ id: 'thorned', name: 'Thorned', description: 'Reflects melee damage.', tags: ['defensive'], mods: [flat('thorns', 12), more('thorns', 0.5)], glow: 0x38b764, cost: 1 }),
+  E({ id: 'thorned', name: 'Thorned', description: 'Reflects melee damage.', tags: ['defensive'], mods: [flat('thorns', 5), more('thorns', 0.5)], glow: 0x38b764, cost: 1 }),
   E({ id: 'regenerating', name: 'Regenerating', description: 'Rapidly regenerates life out of combat and in.', tags: ['defensive', 'nature'], mods: [flat('life.regen.percent', 0.03)], glow: 0x38b764, cost: 1 }),
   E({ id: 'deathbomb', name: 'Volatile', description: 'Explodes violently a moment after death.', tags: ['offensive', 'fire'], mods: [], behaviour: 'deathNova:physical', glow: 0xffcd75, cost: 1 }),
   E({ id: 'necromancer', name: 'Necromancer', description: 'Raises minions from the ground.', tags: ['summon', 'undead'], mods: [inc('cast.speed', 0.2)], behaviour: 'summon', glow: 0x5d275d, cost: 2 }),

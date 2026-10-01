@@ -12,8 +12,8 @@ import { FIRST, SECOND } from './data/names';
 
 export const RARITIES: readonly Rarity[] = ['normal', 'magic', 'rare', 'unique'];
 
-/** Base rarity weights at boost 1 (depth 0, no item rarity): 70% / 25% / 4.5% / 0.5%. */
-export const RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = { normal: 700, magic: 250, rare: 45, unique: 5 };
+/** Base rarity weights at boost 1 (depth 0, no item rarity): 70% / 25% / 5% / 0.3%. */
+export const RARITY_WEIGHTS: Readonly<Record<Rarity, number>> = { normal: 700, magic: 250, rare: 50, unique: 3 };
 
 /** How many prefixes / suffixes each rarity may hold, and how many affixes it rolls. */
 export const AFFIX_LIMITS: Readonly<Record<Rarity, { prefix: number; suffix: number; min: number; max: number }>> = {
@@ -31,7 +31,7 @@ export const DROPS = {
   /** Expected item drops per normal kill. */
   itemsPerKill: 0.22,
   /** Chance a normal kill drops a gold pile (magic+ ranks always drop gold). */
-  goldChance: 0.45,
+  goldChance: 0.25,
   /** Share of item drops that are currency / gems; the rest is equipment. */
   currencyShare: 0.22,
   gemShare: 0.06,

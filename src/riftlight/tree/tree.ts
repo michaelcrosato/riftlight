@@ -132,11 +132,15 @@ export function pointBudget(level: number, deepest = 0): { level: number; bonus:
   return { level: fromLevel, bonus, total: fromLevel + bonus };
 }
 
-/** Gold to refund `nodes` passive points at hero `level`: about five kills' gold per point at the hero's depth. */
+/**
+ * Gold to refund `nodes` passive points at hero `level`: about eight kills' gold per point at
+ * the depth whose area level is the hero's. A town visit's gold refunds ~5–10 points.
+ */
 export function respecCost(nodes: number, level: number): number {
   if (nodes <= 0) return 0;
-  const depth = Math.max(1, level / 3.2);
-  return Math.round(nodes * 5 * SCALING.gold(depth));
+  let depth = 1;
+  while (depth < 400 && SCALING.monsterLevel(depth + 1) <= level) depth++;
+  return Math.round(nodes * 8 * SCALING.gold(depth));
 }
 
 // ------------------------------------------------------------------ allocation state
