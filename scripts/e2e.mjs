@@ -117,9 +117,23 @@ async function waitFrames(page, n) {
   await page.waitForFunction((target) => window.__PIXEL_ENGINE__.frame >= target, start + n, { timeout: 60000 });
 }
 
+/** Wait until the game has advanced `ms` of game time (render loop running). */
+async function gameTime(page, ms) {
+  const t0 = await page.evaluate(() => window.__PIXEL_ENGINE__.time);
+  await page.waitForFunction((t) => window.__PIXEL_ENGINE__.time >= t, t0 + ms / 1000, { timeout: 60000, polling: 16 });
+}
+
+/**
+ * Hold a key for `ms` of *game* time. The real render loop keeps running, but on a slow
+ * machine (software WebGPU in CI, < 10 fps) the game advances less than wall-clock time,
+ * so waiting on the wall clock made movement checks flaky.
+ */
 async function hold(page, code, ms) {
-  await page.evaluate((c) => window.__PIXEL_ENGINE__.input.setKey(c, true), code);
-  await page.waitForTimeout(ms);
+  const t0 = await page.evaluate((c) => {
+    window.__PIXEL_ENGINE__.input.setKey(c, true);
+    return window.__PIXEL_ENGINE__.time;
+  }, code);
+  await page.waitForFunction((t) => window.__PIXEL_ENGINE__.time >= t, t0 + ms / 1000, { timeout: 60000, polling: 16 });
   await page.evaluate((c) => window.__PIXEL_ENGINE__.input.setKey(c, false), code);
 }
 
@@ -306,7 +320,7 @@ async function runCore(browserExe, s) {
     await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', true));
     let peak = yBefore;
     for (let i = 0; i < 15; i++) {
-      await page.waitForTimeout(40);
+      await gameTime(page, 40);
       peak = Math.max(peak, (await state(page)).target[1]);
     }
     await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', false));
@@ -555,7 +569,7 @@ async function runTouch(browserExe) {
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx, cy - 60, { steps: 4 });
-    await page.waitForTimeout(800);
+    await gameTime(page, 800);
     const mid = await page.evaluate(() => ({ ...window.__PIXEL_ENGINE__.input.analog }));
     await page.mouse.up();
     await waitFrames(page, 5);
