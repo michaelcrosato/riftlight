@@ -34,7 +34,10 @@
 // riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs), WebGPU + WebGL 2: title,
 //                 new run, town, rift keeper, level 1 with the basic attack, gold, clear, loot
 //                 window, portal, autosave, pause → Tuning (enemy life applies live), death
-//                 recap, save → reload → Continue.
+//                 recap, save → reload → Continue. Then the real loot, skills and tree
+//                 (scripts/e2e-riftlight-items.mjs): drops, pickup, equip, sockets, the tree and
+//                 its respec, vendor, crafting, the stash across a reload, a label click after a
+//                 lost device, and every item window on a portrait phone.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
 // riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
@@ -67,6 +70,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlight } from './e2e-riftlight.mjs';
+import { runRiftlightItems } from './e2e-riftlight-items.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
@@ -1075,9 +1079,11 @@ const SUITES = {
   lab: (exe) => runLab(exe),
   'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
   riftlight: async (exe) => {
-    const helpers = { exe, openPage, check, capture, state, checkClean, colorCount };
+    const helpers = { exe, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT };
     await runRiftlight({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlight({ ...helpers, scenario: SCENARIOS[1] });
+    await runRiftlightItems({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightItems({ ...helpers, scenario: SCENARIOS[1] });
   },
   tools: (exe) => runTools(exe),
   systems: async (exe) => {
