@@ -22,7 +22,8 @@
     "combat": "tsx scripts/riftlight/combat.ts",
     "monster": "tsx scripts/riftlight/monster.ts",
     "playtest": "tsx scripts/riftlight/playtest.ts",
-    "balance": "tsx scripts/riftlight/balance.ts"
+    "balance": "tsx scripts/riftlight/balance.ts",
+    "inspect": "tsx scripts/inspect.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",
