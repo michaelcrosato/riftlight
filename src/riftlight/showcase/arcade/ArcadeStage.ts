@@ -278,6 +278,13 @@ export class ArcadeStage {
     this.hero?.teleport(this.world(S.spawn[0], S.spawn[1], 0), Math.PI / 2);
   }
 
+  /** Straight to GO (the film tool, agents): the timer starts now. */
+  skipIntro(): void {
+    if (this.phase !== 'ready') return;
+    this.phase = 'play';
+    this.phaseTime = 0;
+  }
+
   private restoreSlabs(): void {
     for (const s of this.slabs) {
       s.mesh.visible = true;

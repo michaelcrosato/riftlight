@@ -1,3 +1,4 @@
+/* global window, document, Image, location */
 // e2e suite "riftlight-showcase": the showcase pieces inside Riftlight (src/riftlight/showcase),
 // on WebGPU and the WebGL 2 fallback, driven frame-exactly through window.__RIFTLIGHT__:
 //

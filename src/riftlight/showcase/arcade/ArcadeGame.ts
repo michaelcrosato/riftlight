@@ -76,7 +76,12 @@ export class ArcadeGame implements Game {
     return this.stage.cameraTarget();
   }
 
-  // the film tool (npm run film -- --game arcade) drives `hero` and poses `heroModel`
+  /** The film tool calls this before `place`: no READY/GO wait. */
+  skipIntro(): void {
+    this.stage.skipIntro();
+  }
+
+  // the film tool (npm run film -- arcade-*) drives `hero` and poses `heroModel`
   get hero() {
     return this.stage?.hero?.hero ?? null;
   }

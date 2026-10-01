@@ -8,6 +8,7 @@
  *          single filter (palettes, consoles, displays), pixel / raw, 480 / 320, time of day
  *          (town), sun and ambient strength, a fill light that rides with the camera.
  *   P      save a PNG of exactly what the pipeline presents (`renderer.capture()`).
+ *   (pad: Y switches fly / edit, X saves, Start goes back)
  *   H      hide the panel · Esc back to the game: camera, filters, mode, resolution and lights
  *          come back as they were.
  */
@@ -263,7 +264,7 @@ export class PhotoMode {
     this.toastAge += dt;
     // drag to look, never a pointer lock (the panel stays clickable)
     input.wantsPointerLock = false;
-    if (input.wasPressed('Tab')) {
+    if (input.wasPressed('Tab', 'PadY')) {
       this.sub = this.sub === 'fly' ? 'edit' : 'fly';
       this.host.game.sound('move');
     }
@@ -271,7 +272,7 @@ export class PhotoMode {
       rig.fixed = this.sub === 'edit';
       rig.controlsCharacter = false;
     }
-    if (input.wasPressed('KeyP')) void this.capture();
+    if (input.wasPressed('KeyP', 'PadX')) void this.capture();
     if (input.wasPressed('KeyH')) this.hidden = !this.hidden;
     if (input.wasPressed('Escape', 'PadStart')) return this.close();
     const rows = this.rows();

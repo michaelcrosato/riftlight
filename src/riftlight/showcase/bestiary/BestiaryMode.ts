@@ -389,7 +389,7 @@ export class BestiaryMode implements ShowcaseMode {
       this.cardInput(events);
       if (esc) this.setView('walk');
     } else {
-      if (input.wasPressed('Tab')) this.setView(this.view === 'walk' ? 'fly' : 'walk');
+      if (input.wasPressed('Tab', 'PadY')) this.setView(this.view === 'walk' ? 'fly' : 'walk');
       if (this.view === 'walk' && input.wasPressed('KeyF', 'PadRT')) {
         const near = this.nearest();
         if (near === 'altar') this.setView('breed');
