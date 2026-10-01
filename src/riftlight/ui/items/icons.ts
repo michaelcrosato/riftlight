@@ -4,6 +4,7 @@
  * trim) with the rarity colour; metal and leather come from the palette.
  */
 import { PALETTE } from '../../../engine/palette';
+import type { GemIcon } from '../../skills/icons';
 import type { Painter } from './paint';
 
 const METAL = PALETTE.mist;
@@ -130,4 +131,30 @@ export function drawIcon(p: Painter, look: string, x: number, y: number, w: numb
       if (short && w >= 18) p.text(x + 1, y + h - 8, short.slice(0, Math.floor(w / 6)), PALETTE.ink);
       break;
   }
+}
+
+/**
+ * A gem's own pixel icon (`skills/icons.ts`, the same one the skill bar shows) centred in the
+ * box at the biggest whole scale that fits, on a faint facet of its shadow colour.
+ */
+export function drawGemIcon(p: Painter, icon: GemIcon, x: number, y: number, w: number, h: number): void {
+  const iw = Math.max(...icon.rows.map((r) => r.length));
+  const ih = icon.rows.length;
+  const s = Math.max(1, Math.min(Math.floor(w / iw), Math.floor(h / ih)));
+  const ox = Math.round(x + (w - iw * s) / 2);
+  const oy = Math.round(y + (h - ih * s) / 2);
+  const hex = (k: string) => PALETTE[icon.colors[k as 'h' | 'c' | 'd']];
+  if (w >= 12 && h >= 12) {
+    // a facet behind the glyph: the gem itself
+    const d = PALETTE[icon.colors.d];
+    p.rect(x + 2, y + 1, w - 4, h - 2, d);
+    p.rect(x + 1, y + 2, w - 2, h - 4, d);
+  }
+  icon.rows.forEach((row, ry) => {
+    for (let rx = 0; rx < row.length; rx++) {
+      const k = row[rx]!;
+      if (k === '.') continue;
+      p.rect(ox + rx * s, oy + ry * s, s, s, hex(k));
+    }
+  });
 }
