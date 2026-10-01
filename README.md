@@ -81,11 +81,15 @@ purpose: rolling back is cheap.
   merge's own push starts it). It also cancels the PR branch's run, which tests the same
   change: CI runs once per PR. A PR held open with `hold` keeps its branch run.
 - **Auto-revert.** When CI fails on `main` and that commit turned it red (its parent passed,
-  or never ran), `claude-ci-autofix.yml` reverts it on `claude/revert-<sha>`, merges that
-  PR, comments on the original PR and runs CI on `main` again. No LLM or secret needed. It
-  never reverts a revert, or a commit that landed on an already red `main`.
-- **Fix forward.** With a Claude secret set, Claude then re-applies the reverted change with
-  a fix on `claude/fix-ci-*` (or fixes `main` forward when nothing was reverted), and
+  or never ran), CI's last job (`revert-red-main`, `scripts/ci/revert-red-main.sh`) reverts
+  it on `claude/revert-<sha>`, merges that PR, comments on the original PR, opens an issue
+  labeled `claude` to re-land it with a fix, and runs CI on `main` again. No LLM or secret
+  needed. It never reverts a revert, or a commit that landed on an already red `main`. (It
+  lives in CI itself because GitHub doesn't fire `workflow_run` for runs dispatched with
+  `GITHUB_TOKEN`.)
+- **Fix forward.** The `claude` issue is the ticket. With `AUTOMATION_TOKEN` and a Claude
+  secret set, `claude-ci-autofix.yml` also fires and re-applies the reverted change with a
+  fix on `claude/fix-ci-*` (or fixes `main` forward when nothing was reverted), and
   Autopilot merges that.
 
 The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the merge.
@@ -98,7 +102,7 @@ The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the m
 | CI: check + e2e groups in parallel (push, dispatch) | `.github/workflows/ci.yml` |
 | `@claude` / `claude` label → implementation | `.github/workflows/claude.yml` |
 | Review (merged PR → issue; held PR → comments) | `.github/workflows/claude-review.yml` |
-| Red `main` → revert, then Claude fix; red PR branch → Claude fix | `.github/workflows/claude-ci-autofix.yml` |
+| Red `main` → revert (`ci.yml` › `revert-red-main`), then Claude fix; red PR branch → Claude fix | `.github/workflows/ci.yml`, `.github/workflows/claude-ci-autofix.yml` |
 | Open PR + merge, then CI on `main` + review | `.github/workflows/autopilot.yml` |
 | Weekly unattended improvement | `.github/workflows/claude-maintenance.yml` |
 | Skills / subagents | `.claude/skills/{ship,fix-ci}`, `.claude/agents/verifier.md` |
