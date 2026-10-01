@@ -2,16 +2,20 @@
 //
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
-//   npm run test:e2e -- <suite>   run one suite: webgpu | webgl-fallback | webgl-forced |
-//                                 cameras | camera-swap | filters-webgpu | filters-webgl | touch | moves | lab
+//   npm run test:e2e -- <suite> [<suite>...]   run some suites (CI runs them in parallel groups):
+//     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
+//     filters-webgl | touch | moves | lab | tools
+//   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
 //   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
 //   webgl-fallback  navigator.gpu disabled -> WebGPURenderer's built-in WebGL 2 backend
-//   webgl-forced    ?backend=webgl debug override
-// Each asserts: expected backend in state + debug UI, zero GPU errors, zero console
-// errors/warnings, gameplay responds to input, Raw 3D toggle keeps the same renderer/
-// canvas/camera/character, pixel mode is blocky while raw mode is not, 320x180 keeps framing.
+//   Both assert: expected backend in state + debug UI, zero GPU errors, zero console
+//   errors/warnings, one canvas, gameplay responds to input, Raw 3D toggle keeps the same
+//   renderer/canvas/camera/character, pixel mode is blocky while raw mode is not, 320x180
+//   keeps framing.
+//   webgl-forced    ?backend=webgl debug override: the forced backend is picked and reported,
+//                   and it renders cleanly (the rest is the same backend as webgl-fallback).
 //
 // camera-swap     live preset swaps keep the player, coins and renderer (WebGPU + WebGL 2);
 //                 a swapped-to fixed view survives reload.
@@ -21,19 +25,29 @@
 //                 with zero errors; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
-// lab             Animation Lab (/lab.html): every clip plays with clean metrics, views,
-//                 scrubbing, contact sheets and the agent API; frames of a few clips saved.
+// lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
+//                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
+//                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
+// tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
+//                 HTML file that runs from file:// with zero errors and no network requests;
+//                 `npm run film` films a short script and writes its PNG + JSON.
+//
+// Waiting: pages are ready once the engine has presented 2 frames. Software rendering in CI
+// runs at a few frames per second, so the suites wait for conditions (`until`), game time or
+// manual frames (`Engine.step`) rather than fixed frame counts wherever they can.
 //
 // Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
-const OUT = new URL('../.scratch/e2e/', import.meta.url);
+const ROOT = new URL('../', import.meta.url);
+const OUT = new URL('.scratch/e2e/', ROOT);
 const EXE = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium';
 
 const SCENARIOS = [
@@ -70,7 +84,6 @@ const SCENARIOS = [
 // Software-rasterizer driver chatter (ANGLE/SwiftShader performance notes), not app output.
 const ENVIRONMENT_NOISE = [/GL Driver Message \(OpenGL, Performance/];
 
-const only = process.argv[2];
 let failures = 0;
 
 function check(cond, msg) {
@@ -83,7 +96,6 @@ function check(cond, msg) {
 }
 
 async function resolveExecutable() {
-  const { readdir } = await import('node:fs/promises');
   if (!EXE.endsWith('chromium')) return EXE;
   try {
     const dirs = (await readdir('/opt/pw-browsers')).filter((d) => /^chromium-\d+$/.test(d)).sort();
@@ -112,9 +124,43 @@ async function startServer() {
 
 const state = (page) => page.evaluate(() => window.__PIXEL_ENGINE__?.state());
 
+/** The engine is up (window.__PIXEL_ENGINE__ exists) and has presented at least 2 frames. */
+async function ready(page) {
+  await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame >= 2, null, { timeout: 90000 });
+}
+
 async function waitFrames(page, n) {
   const start = (await state(page)).frame;
   await page.waitForFunction((target) => window.__PIXEL_ENGINE__.frame >= target, start + n, { timeout: 60000 });
+}
+
+/**
+ * Wait, checking once per rendered frame, until `pred(engine, arg)` holds or `frames`
+ * frames have been rendered. Resolves to whether it held: the caller asserts on that, so a
+ * condition that is met early stops waiting early and one that is never met still fails.
+ * `pred` runs in the page and must not close over Node variables (pass them as `arg`).
+ */
+async function until(page, pred, arg = null, frames = 30) {
+  return page.evaluate(
+    ([src, arg, frames]) =>
+      new Promise((resolve) => {
+        const e = window.__PIXEL_ENGINE__;
+        const test = new Function(`return (${src})`)();
+        const end = e.frame + frames;
+        const timer = setTimeout(() => resolve(false), 60000);
+        const poll = () => {
+          if (test(e, arg)) {
+            clearTimeout(timer);
+            resolve(true);
+          } else if (e.frame >= end) {
+            clearTimeout(timer);
+            resolve(false);
+          } else requestAnimationFrame(poll);
+        };
+        poll();
+      }),
+    [pred.toString(), arg, frames],
+  );
 }
 
 /** Wait until the game has advanced `ms` of game time (render loop running). */
@@ -209,21 +255,45 @@ function colorCount({ pixels }) {
   return set.size;
 }
 
-async function stableCamera(page) {
-  let prev = null;
-  for (let i = 0; i < 100; i++) {
-    const cam = (await state(page)).camera.join(',');
-    if (cam === prev) return;
-    prev = cam;
-    await page.waitForTimeout(100);
-  }
+/**
+ * Wait until the camera holds still: its position moves less than 1e-6 between rendered
+ * frames for 3 frames in a row. A camera that never settles fails the run.
+ */
+async function stableCamera(page, label = '') {
+  const settled = await page.evaluate(
+    () =>
+      new Promise((resolve) => {
+        const e = window.__PIXEL_ENGINE__;
+        const prev = e.camera.camera.position.clone();
+        let frame = e.frame;
+        let still = 0;
+        const end = frame + 300;
+        const timer = setTimeout(() => resolve(-1), 60000);
+        const poll = () => {
+          if (e.frame !== frame) {
+            frame = e.frame;
+            const p = e.camera.camera.position;
+            still = p.distanceTo(prev) < 1e-6 ? still + 1 : 0;
+            prev.copy(p);
+            if (still >= 3 || frame >= end) {
+              clearTimeout(timer);
+              resolve(still >= 3 ? frame : -1);
+              return;
+            }
+          }
+          requestAnimationFrame(poll);
+        };
+        poll();
+      }),
+  );
+  check(settled >= 0, `${label}camera settles${settled >= 0 ? ` (frame ${settled})` : ' (still moving after 300 frames / 60 s)'}`);
 }
 
-
-async function openPage(browserExe, s, query = '') {
+/** Launch Chromium for a scenario; collect console errors/warnings and page errors in `logs`. */
+async function launch(browserExe, s, pageOptions = {}) {
   const headless = !process.env.DISPLAY; // headful under xvfb-run; headless only as a last resort
   const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless });
-  const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1, ...pageOptions });
   const logs = [];
   const allowed = [...ENVIRONMENT_NOISE, ...(s.expectedWarnings ?? [])];
   page.on('console', (m) => {
@@ -232,10 +302,19 @@ async function openPage(browserExe, s, query = '') {
     logs.push(`${m.type()}: ${m.text()}`);
   });
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
-  const sep = s.url.includes('?') ? '&' : '?';
-  await page.goto(query ? `${s.url}${sep}${query}` : s.url);
-  await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
   return { browser, page, logs };
+}
+
+function urlFor(s, query = '') {
+  const sep = s.url.includes('?') ? '&' : '?';
+  return query ? `${s.url}${sep}${query}` : s.url;
+}
+
+async function openPage(browserExe, s, query = '', pageOptions = {}) {
+  const ctx = await launch(browserExe, s, pageOptions);
+  await ctx.page.goto(urlFor(s, query));
+  await ready(ctx.page);
+  return ctx;
 }
 
 const dist = (a, b) => Math.hypot(...a.map((v, i) => v - b[i]));
@@ -244,6 +323,8 @@ function checkClean(st, logs, label = '') {
   check(st.gpuErrors.length === 0, `${label}zero GPU errors${st.gpuErrors.length ? ': ' + JSON.stringify(st.gpuErrors) : ''}`);
   check(logs.length === 0, `${label}zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
 }
+
+const canvasCount = (page) => page.evaluate(() => document.querySelectorAll('canvas').length);
 
 async function runCore(browserExe, s) {
   console.log(`\n▶ ${s.name}`);
@@ -260,13 +341,11 @@ async function runCore(browserExe, s) {
     check(st.resolution.width === 480 && st.resolution.height === 270, 'default internal resolution 480×270');
     check(st.framing.integer && st.framing.scale === 2 && st.framing.canvasWidth === 960, `integer scale ${st.framing.scale}× at 960×540`);
 
-    await waitFrames(page, 30);
-    const canvases = await page.evaluate(() => {
+    await page.evaluate(() => {
       window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer;
       window.__canvasRef = document.querySelector('canvas[data-engine-canvas]');
-      return document.querySelectorAll('canvas').length;
     });
-    check(canvases === 1, 'exactly one canvas');
+    check((await canvasCount(page)) === 1, 'exactly one canvas');
 
     await stableCamera(page);
     const pixelShot = await capture(page, `${s.name}-pixel-480.png`);
@@ -278,7 +357,8 @@ async function runCore(browserExe, s) {
     // Raw 3D mode: same renderer, same canvas, same camera + character.
     const before = await state(page);
     await page.keyboard.press('KeyP');
-    await waitFrames(page, 5);
+    await until(page, (e) => e.renderer.mode === 'raw');
+    await waitFrames(page, 2); // and nothing drifts in the frames after the switch
     const raw = await state(page);
     check(raw.mode === 'raw', 'P toggles to Raw 3D mode');
     const same = await page.evaluate(
@@ -294,12 +374,12 @@ async function runCore(browserExe, s) {
     const rawBlocks = blockUniformity(rawShot, 2);
     check(1 - rawBlocks > 10 * (1 - pixelBlocks) && 1 - rawBlocks > 0.01, `raw mode is full-res: ${((1 - rawBlocks) * 100).toFixed(1)}% mixed 2×2 blocks vs ${((1 - pixelBlocks) * 100).toFixed(2)}% in pixel mode`);
     await page.keyboard.press('KeyP');
-    await waitFrames(page, 3);
-    check((await state(page)).mode === 'pixel', 'P toggles back to Pixel mode');
+    check(await until(page, (e) => e.renderer.mode === 'pixel'), 'P toggles back to Pixel mode');
 
     // Comparison resolution keeps framing.
     await page.keyboard.press('KeyR');
-    await waitFrames(page, 5);
+    await until(page, (e) => e.renderer.resolution.width === 320);
+    await waitFrames(page, 2); // layout settles (resize observer) before measuring framing
     st = await state(page);
     check(st.resolution.width === 320 && st.framing.scale === 3, `R switches to 320×180 at ${st.framing.scale}×`);
     check(JSON.stringify(st.view) === JSON.stringify(before.view), 'framing stable across resolutions (same visible world extents)');
@@ -307,28 +387,43 @@ async function runCore(browserExe, s) {
     const blocks320 = blockUniformity(shot320, 3);
     check(blocks320 > 0.995, `320×180 is blocky at 3×: ${(blocks320 * 100).toFixed(1)}%`);
     await page.keyboard.press('KeyR');
-    await waitFrames(page, 3);
+    check(await until(page, (e) => e.renderer.resolution.width === 480), 'R switches back to 480×270');
 
     // Gameplay: move, jump, coin pickup.
     const p0 = (await state(page)).target;
     await hold(page, 'KeyA', 700);
-    await waitFrames(page, 10);
+    await until(page, (e, p0) => Math.hypot(...e.state().target.map((v, i) => v - p0[i])) > 1, p0, 10);
     const p1 = (await state(page)).target;
     check(dist(p0, p1) > 1, `character moves with input (${dist(p0, p1).toFixed(2)} units)`);
 
-    const yBefore = (await state(page)).target[1];
-    await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', true));
-    let peak = yBefore;
-    for (let i = 0; i < 15; i++) {
-      await gameTime(page, 40);
-      peak = Math.max(peak, (await state(page)).target[1]);
-    }
-    await page.evaluate(() => window.__PIXEL_ENGINE__.input.setKey('Space', false));
-    check(peak - yBefore > 0.8, `character jumps (peak +${(peak - yBefore).toFixed(2)})`);
+    // Jump: hold Space and sample the height on every frame for 1 s of game time (through the apex).
+    const { y0, peak } = await page.evaluate(
+      () =>
+        new Promise((resolve) => {
+          const e = window.__PIXEL_ENGINE__;
+          const y0 = e.state().target[1];
+          const t0 = e.time;
+          let peak = y0;
+          let frame = e.frame;
+          e.input.setKey('Space', true);
+          const poll = () => {
+            if (e.frame !== frame) {
+              frame = e.frame;
+              peak = Math.max(peak, e.state().target[1]);
+            }
+            if (e.time - t0 >= 1) {
+              e.input.setKey('Space', false);
+              resolve({ y0, peak });
+            } else requestAnimationFrame(poll);
+          };
+          poll();
+        }),
+    );
+    check(peak - y0 > 0.8, `character jumps (peak +${(peak - y0).toFixed(2)})`);
 
     const coinsBefore = await page.evaluate(() => window.__PIXEL_ENGINE__.game.collected);
     await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.teleport([0, 0, 6]));
-    await waitFrames(page, 10);
+    await until(page, (e, n) => e.game.collected > n, coinsBefore, 10);
     const coinsAfter = await page.evaluate(() => window.__PIXEL_ENGINE__.game.collected);
     check(coinsAfter === coinsBefore + 1, `coin pickup (${coinsBefore} → ${coinsAfter})`);
 
@@ -345,6 +440,7 @@ async function runCore(browserExe, s) {
     check(wallX > 7.9, `teleport next to a wall doesn't penetrate it (feet x = ${wallX.toFixed(3)})`);
 
     await capture(page, `${s.name}-after-play.png`);
+    check((await canvasCount(page)) === 1, 'still exactly one canvas after play');
     st = await state(page);
     checkClean(st, logs);
     await writeFile(new URL(`${s.name}-state.json`, OUT), JSON.stringify(st, null, 2));
@@ -355,88 +451,123 @@ async function runCore(browserExe, s) {
   }
 }
 
-async function runCameras(browserExe) {
-  const s = SCENARIOS[0];
-  for (const preset of ['iso', 'topdown', 'side', 'third', 'first', 'free']) {
-    console.log(`\n▶ cameras: ${preset}`);
-    let ctx;
-    try {
-      ctx = await openPage(browserExe, s, `camera=${preset}`);
-      const { page, logs } = ctx;
-      await waitFrames(page, 20);
-      let st = await state(page);
-      check(st.cameraRig.preset === preset, `rig preset is ${st.cameraRig.preset}`);
-      const ui = await page.locator('[data-f="camera"]').textContent();
-      check(ui.startsWith(preset), `debug UI shows camera "${ui}"`);
-      const frame = await capture(page, `camera-${preset}.png`);
-      check(colorCount(frame) > 8, `renders (${colorCount(frame)} colors)`);
-
-      // Zoom: wheel up = zoom in, for every preset except first person.
-      await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(0, 0, -4));
-      await waitFrames(page, 3);
-      const zoomed = (await state(page)).cameraRig;
-      if (preset === 'first') check(zoomed.zoom === 1 && zoomed.zoomable === false, 'first person does not zoom');
-      else check(zoomed.zoom > 1.4, `wheel zooms in (zoom ${zoomed.zoom})`);
-      if (preset !== 'first') {
-        await page.evaluate(() => window.__PIXEL_ENGINE__.camera.setZoom(1));
-      }
-
-      if (preset === 'free') {
-        const c0 = (await state(page)).camera;
-        const t0 = (await state(page)).target;
-        await hold(page, 'KeyW', 500);
-        await waitFrames(page, 5);
-        st = await state(page);
-        check(dist(c0, st.camera) > 0.5, 'free camera flies with WASD');
-        check(dist(t0, st.target) < 0.05, 'character stays put while the camera flies');
-        await page.keyboard.press('Enter');
-        await waitFrames(page, 3);
-        st = await state(page);
-        check(st.cameraRig.fixed === true, 'Enter fixes the camera');
-        const config = st.cameraRig.config;
-        const fixedCam = st.camera;
-        await hold(page, 'KeyD', 600);
-        await waitFrames(page, 5);
-        st = await state(page);
-        check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
-        check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
-        // Reload with the printed config as a 'fixed' preset.
-        await page.goto(`${s.url}?cam=${encodeURIComponent(JSON.stringify(config))}`);
-        await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
-        st = await state(page);
-        check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
-        await capture(page, 'camera-fixed.png');
-      } else {
-        const t0 = (await state(page)).target;
-        await hold(page, 'KeyD', 700);
-        await waitFrames(page, 10);
-        st = await state(page);
-        check(dist(t0, st.target) > 0.8, `D moves the character (${dist(t0, st.target).toFixed(2)})`);
-        if (preset === 'side') {
-          const z0 = st.target[2];
-          await hold(page, 'KeyW', 500);
-          await waitFrames(page, 10);
-          check(Math.abs((await state(page)).target[2] - z0) < 0.05, 'side-scroller keeps the depth lane');
-        }
-        if (preset === 'third' || preset === 'first') {
-          const yaw0 = st.cameraRig.yaw;
-          await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(160, 0));
-          await waitFrames(page, 3);
-          check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'mouse turns the camera');
-        }
-        if (preset === 'first') {
-          check(await page.evaluate(() => window.__PIXEL_ENGINE__.game.heroModel.visible === false), 'player model hidden in first person');
-        }
-      }
-      checkClean(await state(page), logs);
-    } catch (e) {
-      check(false, `camera ${preset} crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
-    } finally {
-      await ctx?.browser.close();
-    }
+/** ?backend=webgl: only what differs from the natural fallback (same backend, covered by runCore). */
+async function runForced(browserExe, s) {
+  console.log(`\n▶ ${s.name}`);
+  let ctx;
+  try {
+    ctx = await openPage(browserExe, s);
+    const { page, logs } = ctx;
+    const st = await state(page);
+    check(st.backend === s.backend && st.fallbackReason === 'forced by ?backend=webgl', `backend is "${st.backend}" because "${st.fallbackReason}"`);
+    const uiBackend = await page.locator('[data-f="backend"]').textContent();
+    check(uiBackend === `${s.backend} (forced by ?backend=webgl)`, `debug UI shows "${uiBackend}"`);
+    const shot = await capture(page, `${s.name}-pixel-480.png`);
+    check(colorCount(shot) > 8, `renders (${colorCount(shot)} distinct colors)`);
+    const blocks = blockUniformity(shot, 2);
+    check(blocks > 0.995, `pixel mode is blocky: ${(blocks * 100).toFixed(1)}% uniform 2×2 blocks`);
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `scenario crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
   }
 }
 
+/** Every preset, each from a fresh page load (?camera=), all in one browser. */
+async function runCameras(browserExe) {
+  const s = SCENARIOS[0];
+  let ctx;
+  try {
+    ctx = await launch(browserExe, s);
+    const { page } = ctx;
+    for (const preset of ['iso', 'topdown', 'side', 'third', 'first', 'free']) {
+      console.log(`\n▶ cameras: ${preset}`);
+      const firstLog = ctx.logs.length;
+      const logs = () => ctx.logs.slice(firstLog);
+      try {
+        await page.goto(urlFor(s, `camera=${preset}`));
+        await ready(page);
+        let st = await state(page);
+        check(st.cameraRig.preset === preset, `rig preset is ${st.cameraRig.preset}`);
+        const ui = await page.locator('[data-f="camera"]').textContent();
+        check(ui.startsWith(preset), `debug UI shows camera "${ui}"`);
+        const frame = await capture(page, `camera-${preset}.png`);
+        check(colorCount(frame) > 8, `renders (${colorCount(frame)} colors)`);
+
+        // Zoom: wheel up = zoom in, for every preset except first person.
+        await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(0, 0, -4));
+        await until(page, (e) => e.camera.describe().zoom > 1.4, null, 3);
+        const zoomed = (await state(page)).cameraRig;
+        if (preset === 'first') check(zoomed.zoom === 1 && zoomed.zoomable === false, 'first person does not zoom');
+        else check(zoomed.zoom > 1.4, `wheel zooms in (zoom ${zoomed.zoom})`);
+        if (preset !== 'first') {
+          await page.evaluate(() => window.__PIXEL_ENGINE__.camera.setZoom(1));
+        }
+
+        if (preset === 'free') {
+          const c0 = (await state(page)).camera;
+          const t0 = (await state(page)).target;
+          await hold(page, 'KeyW', 500);
+          await waitFrames(page, 5);
+          st = await state(page);
+          check(dist(c0, st.camera) > 0.5, 'free camera flies with WASD');
+          check(dist(t0, st.target) < 0.05, 'character stays put while the camera flies');
+          await page.keyboard.press('Enter');
+          await until(page, (e) => e.camera.describe().fixed === true, null, 3);
+          st = await state(page);
+          check(st.cameraRig.fixed === true, 'Enter fixes the camera');
+          const config = st.cameraRig.config;
+          const fixedCam = st.camera;
+          await hold(page, 'KeyD', 600);
+          await waitFrames(page, 5);
+          st = await state(page);
+          check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
+          check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
+          // Reload with the printed config as a 'fixed' preset.
+          await page.goto(`${s.url}?cam=${encodeURIComponent(JSON.stringify(config))}`);
+          await ready(page);
+          st = await state(page);
+          check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
+          await capture(page, 'camera-fixed.png');
+        } else {
+          const t0 = (await state(page)).target;
+          await hold(page, 'KeyD', 700);
+          await until(page, (e, t0) => Math.hypot(...e.state().target.map((v, i) => v - t0[i])) > 0.8, t0, 10);
+          st = await state(page);
+          check(dist(t0, st.target) > 0.8, `D moves the character (${dist(t0, st.target).toFixed(2)})`);
+          if (preset === 'side') {
+            const z0 = st.target[2];
+            await hold(page, 'KeyW', 500);
+            await waitFrames(page, 10);
+            check(Math.abs((await state(page)).target[2] - z0) < 0.05, 'side-scroller keeps the depth lane');
+          }
+          if (preset === 'third' || preset === 'first') {
+            const yaw0 = st.cameraRig.yaw;
+            await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(160, 0));
+            await until(page, (e, yaw0) => Math.abs(e.camera.describe().yaw - yaw0) > 0.3, yaw0, 3);
+            check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'mouse turns the camera');
+          }
+          if (preset === 'first') {
+            check(await page.evaluate(() => window.__PIXEL_ENGINE__.game.heroModel.visible === false), 'player model hidden in first person');
+          }
+        }
+        checkClean(await state(page), logs());
+      } catch (e) {
+        check(false, `camera ${preset} crashed: ${e.message}\n    ${logs().join('\n    ')}`);
+      }
+    }
+  } catch (e) {
+    check(false, `cameras crashed: ${e.message}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}
+
+/**
+ * Swaps run on manual time (Engine.step): every swap gets exactly the same 8 game frames
+ * however slowly the machine renders, and capture() draws what the player would see.
+ */
 async function runCameraSwap(browserExe, s) {
   console.log(`\n▶ camera hot-swap keeps the player (${s.backend})`);
   let ctx;
@@ -444,16 +575,21 @@ async function runCameraSwap(browserExe, s) {
     ctx = await openPage(browserExe, s);
     const { page, logs } = ctx;
     // Move somewhere and pick up a coin so there is state to lose.
-    await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.teleport([-4, 0, 5]));
-    await waitFrames(page, 10);
-    await hold(page, 'KeyD', 400);
-    await waitFrames(page, 20);
+    await page.evaluate(() => {
+      const e = window.__PIXEL_ENGINE__;
+      e.game.hero.teleport([-4, 0, 5]);
+      e.step(10);
+      e.input.setKey('KeyD', true);
+      e.step(24); // 400 ms
+      e.input.setKey('KeyD', false);
+      e.step(180); // stop and settle on the ground (the capsule eases up ~1 cm for ~2 s)
+    });
     const renderer0 = await page.evaluate(() => (window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer, true));
     const before = await page.evaluate(() => ({ feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(), coins: window.__PIXEL_ENGINE__.game.collected, url: location.href }));
     check(renderer0 && before.coins >= 1, `setup: player at ${before.feet.map((v) => v.toFixed(2))}, ${before.coins} coin(s)`);
     for (const preset of ['topdown', 'side', 'third', 'first', 'free', 'fixed', 'iso']) {
       await page.selectOption('[data-a="camera"]', preset);
-      await waitFrames(page, 8);
+      await page.evaluate(() => window.__PIXEL_ENGINE__.step(8));
       const now = await page.evaluate(() => ({
         feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(),
         coins: window.__PIXEL_ENGINE__.game.collected,
@@ -462,7 +598,7 @@ async function runCameraSwap(browserExe, s) {
         visible: window.__PIXEL_ENGINE__.game.heroModel.visible,
         url: location.search,
       }));
-      const frame = await capture(page, `swap-${preset}.png`);
+      const frame = await capture(page, `swap-${s.name}-${preset}.png`);
       const moved = dist(before.feet, now.feet);
       check(
         now.preset === preset &&
@@ -477,13 +613,13 @@ async function runCameraSwap(browserExe, s) {
     }
     // A swapped-to fixed view survives a reload (its full config is in ?cam=).
     await page.selectOption('[data-a="camera"]', 'third');
-    await waitFrames(page, 20);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.step(20));
     await page.selectOption('[data-a="camera"]', 'fixed');
-    await waitFrames(page, 4);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.step(4));
     const fixedAt = await page.evaluate(() => window.__PIXEL_ENGINE__.camera.camera.position.toArray());
     checkClean(await state(page), logs);
     await page.reload();
-    await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+    await ready(page);
     const reloaded = await page.evaluate(() => ({ preset: window.__PIXEL_ENGINE__.camera.preset, pos: window.__PIXEL_ENGINE__.camera.camera.position.toArray() }));
     check(reloaded.preset === 'fixed' && dist(fixedAt, reloaded.pos) < 0.01, `fixed view survives a reload (moved ${dist(fixedAt, reloaded.pos).toFixed(3)})`);
   } catch (e) {
@@ -501,14 +637,17 @@ function meanDiff(a, b) {
   return sum / (a.pixels.length / 4) / 3;
 }
 
+/**
+ * Manual time: one Engine.step stops the render loop from drawing or advancing the game,
+ * so every capture() renders the identical scene and differs only by the filter.
+ */
 async function runFilters(browserExe, s, label) {
   console.log(`\n▶ ${label}`);
   let ctx;
   try {
     ctx = await openPage(browserExe, s, 'debug=0');
     const { page, logs } = ctx;
-    await page.evaluate(() => (window.__PIXEL_ENGINE__.paused = true)); // identical frames apart from the filter
-    await waitFrames(page, 3);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.step(1));
     const base = await capture(page, `${label}-none.png`);
     check(colorCount(base) > 8, `unfiltered frame has real content (${colorCount(base)} colors)`);
     const ids = await page.evaluate(() => [...window.__PIXEL_ENGINE__.availableFilters]);
@@ -516,7 +655,6 @@ async function runFilters(browserExe, s, label) {
     for (const id of ids) {
       const before = logs.length;
       await page.evaluate((id) => window.__PIXEL_ENGINE__.setFilters([id]), id);
-      await waitFrames(page, 3);
       const f = await capture(page, `${label}-${id}.png`);
       const d = meanDiff(base, f);
       const errs = (await state(page)).gpuErrors.length;
@@ -526,15 +664,12 @@ async function runFilters(browserExe, s, label) {
     }
     check(ok === ids.length, `${ok}/${ids.length} filters compile, render and change the frame`);
 
-    // Stacks and raw-mode bypass.
+    // Stacks and raw-mode bypass (the P hotkey itself is covered by the core suites).
     await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters(['gameboy', 'lcd', 'vignette']));
-    await waitFrames(page, 3);
     check(meanDiff(base, await capture(page, `${label}-stack.png`)) > 0.5, 'a 3-filter stack renders');
-    await page.keyboard.press('KeyP');
-    await waitFrames(page, 3);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.toggleMode());
     const rawFiltered = await capture(page, `${label}-raw-filtered.png`);
     await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters([]));
-    await waitFrames(page, 3);
     const rawPlain = await capture(page, `${label}-raw-plain.png`);
     check(meanDiff(rawFiltered, rawPlain) < 0.01, 'Raw 3D mode bypasses filters');
     checkClean(await state(page), logs);
@@ -547,16 +682,10 @@ async function runFilters(browserExe, s, label) {
 
 async function runTouch(browserExe) {
   console.log('\n▶ touch (phone-sized landscape, on-screen controls)');
-  const s = SCENARIOS[0];
-  const headless = !process.env.DISPLAY;
-  const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless });
+  let ctx;
   try {
-    const page = await browser.newPage({ viewport: { width: 844, height: 390 }, deviceScaleFactor: 1, hasTouch: true });
-    const logs = [];
-    page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
-    page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
-    await page.goto(`${s.url}?touch=1&camera=third`);
-    await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+    ctx = await openPage(browserExe, SCENARIOS[0], 'touch=1&camera=third', { viewport: { width: 844, height: 390 }, hasTouch: true });
+    const { page, logs } = ctx;
     check(await page.locator('.touch-ui .stick').isVisible(), 'joystick visible');
     check((await page.locator('.touch-ui .pad button').count()) >= 6, 'action buttons visible');
     check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display === 'none'), 'debug panel starts hidden behind ⚙');
@@ -585,7 +714,7 @@ async function runTouch(browserExe) {
     await page.mouse.down();
     await waitFrames(page, 4);
     await page.mouse.up();
-    await waitFrames(page, 10);
+    await until(page, (e, n) => e.game.hero.stats.jumps > n, jumps0, 10);
     check((await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps)) > jumps0, 'A button jumps');
 
     // Drag on the game to orbit the camera.
@@ -594,20 +723,20 @@ async function runTouch(browserExe) {
     await page.mouse.down();
     await page.mouse.move(560, 120, { steps: 6 });
     await page.mouse.up();
-    await waitFrames(page, 3);
+    await until(page, (e, yaw0) => Math.abs(e.camera.describe().yaw - yaw0) > 0.3, yaw0, 3);
     check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'dragging the game orbits the camera');
 
     // ⚙ shows the debug panel.
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerdown');
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerup');
-    await waitFrames(page, 3);
+    await until(page, () => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none', null, 3);
     check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none'), '⚙ opens the debug panel');
     await capture(page, 'touch-landscape.png');
     checkClean(await state(page), logs);
   } catch (e) {
-    check(false, `touch crashed: ${e.message}`);
+    check(false, `touch crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {
-    await browser.close();
+    await ctx?.browser.close();
   }
 }
 
@@ -656,13 +785,9 @@ async function runLab(browserExe) {
     await page.waitForFunction(() => window.__ANIM_LAB__, null, { timeout: 30000 });
     const clips = await page.evaluate(() => window.__ANIM_LAB__.clips());
     check(clips.length >= 50, `lab lists ${clips.length} clips`);
-    const bad = await page.evaluate(() =>
-      window.__ANIM_LAB__
-        .clips()
-        .map((n) => [n, window.__ANIM_LAB__.metrics(n).problems])
-        .filter(([, p]) => p.length),
-    );
-    check(bad.length === 0, `every clip passes its metrics${bad.length ? ': ' + JSON.stringify(bad).slice(0, 400) : ''}`);
+    // The lab's metrics API (every clip's metrics: src/engine/animation/animation.test.ts).
+    const run = await page.evaluate(() => window.__ANIM_LAB__.metrics('Run'));
+    check(Array.isArray(run.problems) && run.problems.length === 0, `metrics('Run') reports no problems${run.problems?.length ? ': ' + JSON.stringify(run.problems).slice(0, 300) : ''}`);
     await page.evaluate(() => {
       window.__ANIM_LAB__.select('Run');
       window.__ANIM_LAB__.seek(3);
@@ -689,7 +814,7 @@ async function runLab(browserExe) {
     check(curves.startsWith('data:image/png') && curves.length > 10000, 'motion curves render in the browser');
     await page.click('[data-a="play"]');
     const f0 = (await page.evaluate(() => window.__ANIM_LAB__.state())).frame;
-    await waitFrames(page, 10);
+    await until(page, (e, f0) => window.__ANIM_LAB__.state().frame !== f0, f0, 10);
     const f1 = (await page.evaluate(() => window.__ANIM_LAB__.state())).frame;
     check(f1 !== f0, 'play button advances the clip');
     checkClean(await state(page), logs);
@@ -700,33 +825,114 @@ async function runLab(browserExe) {
   }
 }
 
-await mkdir(OUT, { recursive: true });
-const exe = await resolveExecutable();
-const server = await startServer();
-const suites = {
-  webgpu: () => runCore(exe, SCENARIOS[0]),
-  'webgl-fallback': () => runCore(exe, SCENARIOS[1]),
-  'webgl-forced': () => runCore(exe, SCENARIOS[2]),
-  cameras: () => runCameras(exe),
-  'camera-swap': async () => {
+/** Run a command from the repo root; resolves to { code, out } (stdout + stderr). */
+function run(cmd, args, { env = {}, timeout = 180000 } = {}) {
+  return new Promise((resolve) => {
+    const proc = spawn(cmd, args, { cwd: ROOT, env: { ...process.env, ...env }, stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    proc.stdout.on('data', (d) => (out += d));
+    proc.stderr.on('data', (d) => (out += d));
+    const timer = setTimeout(() => {
+      out += `\n(killed after ${timeout / 1000} s)`;
+      proc.kill('SIGKILL');
+    }, timeout);
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, out });
+    });
+  });
+}
+
+const tail = (out, n = 15) => out.trim().split('\n').slice(-n).join('\n    ');
+
+/** Smoke tests for the agent tooling that the game suites don't touch. */
+async function runTools(browserExe) {
+  console.log('\n▶ tools: npm run build:single');
+  let ctx;
+  try {
+    await rm(new URL('dist-single/', ROOT), { recursive: true, force: true });
+    const built = await run('node', ['scripts/build-single.mjs']);
+    check(built.code === 0, `build:single exits 0${built.code ? ':\n    ' + tail(built.out) : ''}`);
+    const files = await readdir(new URL('dist-single/', ROOT), { recursive: true });
+    check(files.length === 1 && files[0] === 'pixel-engine.html', `dist-single holds one HTML file (${files.join(', ')})`);
+    const file = new URL('dist-single/pixel-engine.html', ROOT);
+    // The natural WebGL 2 fallback: what most phones run.
+    const s = SCENARIOS[1];
+    ctx = await launch(browserExe, s);
+    const { page, logs } = ctx;
+    const external = [];
+    page.on('request', (r) => !/^(file|data|blob):/.test(r.url()) && external.push(r.url()));
+    await page.goto(pathToFileURL(file.pathname).href);
+    await ready(page);
+    const st = await state(page);
+    check(st.backend === s.backend, `runs from file:// (backend "${st.backend}")`);
+    const shot = await capture(page, 'single-file.png');
+    check(colorCount(shot) > 8, `renders (${colorCount(shot)} distinct colors)`);
+    check(external.length === 0, `self-contained: no network requests${external.length ? ': ' + external.slice(0, 5).join(', ') : ''}`);
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `build:single crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+
+  console.log('\n▶ tools: npm run film');
+  try {
+    const out = new URL('film/', OUT);
+    await rm(out, { recursive: true, force: true });
+    const filmed = await run('npx', ['tsx', 'scripts/film.ts', '--out', '.scratch/e2e/film', '--name', 'smoke', 'place 0 0 4 90; wait 10'], {
+      env: { FILM_PORT: String(PORT + 1) },
+    });
+    check(filmed.code === 0, `film exits 0${filmed.code ? ':\n    ' + tail(filmed.out) : ''}`);
+    const png = await readFile(new URL('smoke.png', out));
+    const width = png.readUInt32BE(16);
+    const height = png.readUInt32BE(20);
+    check(png.subarray(1, 4).toString() === 'PNG' && width > 100 && height > 100 && (await stat(new URL('smoke.png', out))).size > 2000, `writes a filmstrip PNG (${width}×${height})`);
+    const log = JSON.parse(await readFile(new URL('smoke.json', out), 'utf8'));
+    check(log.frames.length === 11 && log.frames.every((f) => f.grounded), `logs every frame (${log.frames.length}: the settled pose + 10)`);
+  } catch (e) {
+    check(false, `film crashed: ${e.message}`);
+  }
+}
+
+const SUITES = {
+  webgpu: (exe) => runCore(exe, SCENARIOS[0]),
+  'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
+  'webgl-forced': (exe) => runForced(exe, SCENARIOS[2]),
+  cameras: (exe) => runCameras(exe),
+  'camera-swap': async (exe) => {
     await runCameraSwap(exe, SCENARIOS[0]);
     await runCameraSwap(exe, SCENARIOS[1]);
   },
-  'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
-  'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
-  touch: () => runTouch(exe),
-  moves: () => runMoves(exe),
-  lab: () => runLab(exe),
+  'filters-webgpu': (exe) => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
+  'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
+  touch: (exe) => runTouch(exe),
+  moves: (exe) => runMoves(exe),
+  lab: (exe) => runLab(exe),
+  tools: (exe) => runTools(exe),
 };
+
+const wanted = process.argv.slice(2);
+const unknown = wanted.filter((n) => !SUITES[n]);
+if (unknown.length) {
+  console.error(`unknown e2e suite(s): ${unknown.join(', ')}\navailable: ${Object.keys(SUITES).join(', ')}`);
+  process.exit(2);
+}
+
+await mkdir(OUT, { recursive: true });
+const exe = await resolveExecutable();
+const server = await startServer();
+const started = Date.now();
 try {
-  for (const [name, run] of Object.entries(suites)) {
-    if (only && name !== only) continue;
+  for (const [name, runSuite] of Object.entries(SUITES)) {
+    if (wanted.length && !wanted.includes(name)) continue;
     const t0 = Date.now();
-    await run();
+    await runSuite(exe);
     console.log(`  ⏱ ${name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   }
 } finally {
   server.kill();
 }
-console.log(failures ? `\n✘ ${failures} check(s) failed` : '\n✔ all e2e checks passed');
+console.log(`\n⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
+console.log(failures ? `✘ ${failures} check(s) failed` : '✔ all e2e checks passed');
 process.exit(failures ? 1 : 0);
