@@ -3,9 +3,12 @@
  * (base + genome mods + depth scaling). A `RecordingSheet` remembers every stat the sim read,
  * so the report can list stats a build has that nothing reads ("dead stats").
  */
-import { flat, more, StatSheet, type Mod } from '../core/mods';
-import { SCALING } from '../core/scaling';
+import { flat, inc, StatSheet, type Mod } from '../core/mods';
+import { STAT_ALIASES as CANONICAL, STAT_EXPANSIONS } from '../core/stats';
+import { ownerMinionMods } from '../combat/minions';
 import { equipmentMods, type Equipment } from '../loot/itemMods';
+import { bossBudget, monsterBase, monsterDepthMods } from '../wire/progression';
+import { WIRE_TUNING } from '../wire/tuning';
 import { HERO_BASE, type Assumptions } from './assumptions';
 
 /** A StatSheet that records which stats were read. */
@@ -27,21 +30,13 @@ export class RecordingSheet extends StatSheet {
 }
 
 /**
- * Stat names other systems write → the names combat reads. Every entry is a contract gap
- * between systems: the sim applies it (unless --raw) and the report lists which ones a
- * build needed, so the integration can rename the stat at its source.
+ * Stat names other systems write → the names combat reads: the canonical table every
+ * StatSheet applies (core/stats.ts). Every entry is a contract gap between systems; the
+ * report lists which ones a build needed, so producers can switch to the canonical name.
  */
 export const STAT_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  'crit.multi': ['crit.multiplier'],
-  block: ['block.chance'],
-  'block.spells': ['spell.block'],
-  'energy.shield': ['es'],
-  'crit.chance.base': ['weapon.crit'],
-  'life.leech': ['leech.life'],
-  'mana.leech': ['leech.mana'],
-  'mana.cost': ['cost'],
-  'projectile.count': ['projectiles'],
-  'res.elemental': ['res.fire', 'res.cold', 'res.lightning'],
+  ...Object.fromEntries(Object.entries(CANONICAL).map(([from, to]) => [from, [to]])),
+  ...STAT_EXPANSIONS,
 };
 
 /** Owner stats that are meant for minions (applied to the minion's sheet as the stat after →). */
@@ -87,6 +82,8 @@ export function heroSheet(h: HeroSetup): RecordingSheet {
   const sheet = new RecordingSheet({}, h.reads);
   sheet.set('base', Object.entries(heroBase(h.level, h.assumptions)).map(([k, v]) => flat(k, v)));
   const fix = (mods: readonly Mod[]) => (h.assumptions.aliases ? aliasMods(mods, h.aliasesUsed) : [...mods]);
+  // the real hero's per-level damage (wire/progression.ts levelMods)
+  if (h.level > 1) sheet.set('level', [inc('damage', WIRE_TUNING.hero.perLevel.damage * (h.level - 1))]);
   if (h.tree?.length) sheet.set('tree', fix(h.tree));
   if (h.equipment) for (const [source, mods] of Object.entries(equipmentMods(h.equipment))) sheet.set(source, fix(mods));
   return sheet;
@@ -111,16 +108,15 @@ export function minionSheet(o: {
   sheet.set('base', Object.entries(o.base).map(([k, v]) => flat(k, v)));
   sheet.set('summoner', stripMinion(o.skillMods));
   sheet.set('level', [flat('life', 8 * (o.gemLevel - 1))]);
-  if (o.assumptions.aliases && o.ownerMods) {
-    const extra: Mod[] = [];
+  if (o.ownerMods) {
+    // what the game does: combat/minions.ts ownerMinionMods (`minion.<stat>` and 'minion'-scoped mods)
+    const owner = new StatSheet();
+    owner.set('owner', o.ownerMods);
     for (const m of o.ownerMods) {
       const to = MINION_STATS[m.stat];
-      if (to) {
-        o.aliasesUsed?.add(`${m.stat} (owner) → minion ${to.join(', ')}`);
-        for (const stat of to) extra.push({ ...m, stat });
-      } else if (m.tags?.includes('minion')) extra.push(...stripMinion([m]));
+      if (to) o.aliasesUsed?.add(`${m.stat} (owner) → minion ${to.join(', ')}`);
     }
-    sheet.set('owner', extra);
+    sheet.set('owner', ownerMinionMods(owner));
   }
   return sheet;
 }
@@ -152,16 +148,20 @@ export interface MonsterInput {
   readonly enrage?: { readonly after: number; readonly mods: readonly Mod[] };
 }
 
-/** Depth scaling as mods (the monster's `depth` source). */
+/** Depth scaling as mods (the monster's `depth` source, as the real monster port sets it). */
 export function depthMods(depth: number): Mod[] {
-  return [more('life', SCALING.monsterLife(depth) - 1), more('damage', SCALING.monsterDamage(depth) - 1)];
+  return monsterDepthMods(depth);
 }
 
 export function monsterSheet(m: MonsterInput, a: Assumptions, extra: readonly Mod[] = []): StatSheet {
   const sheet = new StatSheet();
-  sheet.set('base', Object.entries(a.monsterBase).map(([k, v]) => flat(k, v)));
+  // armour and accuracy grow with depth in the real monster port
+  const grown = monsterBase(m.depth);
+  sheet.set('base', Object.entries({ ...a.monsterBase, armour: grown.armour!, accuracy: grown.accuracy! }).map(([k, v]) => flat(k, v)));
   sheet.set('genome', m.mods);
   sheet.set('depth', depthMods(m.depth));
+  // bosses follow the depth curve, whatever their parts (wire/progression.ts bossBudget)
+  if (m.rank === 'boss') sheet.set('boss', bossBudget(m.mods));
   if (extra.length) sheet.set('phase', extra);
   return sheet;
 }

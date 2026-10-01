@@ -40,6 +40,8 @@ export interface Hit {
   readonly penetration?: Partial<Record<DamageType, number>>;
   /** Multipliers for the ailments this hit applies (1 = base). */
   readonly ailmentEffect?: number;
+  /** Per-ailment multipliers on top (`bleed.damage`, `chill.effect`...; 1 = base). */
+  readonly ailmentEffects?: Partial<Record<AilmentType, number>>;
   readonly ailmentDuration?: number;
   /** Culling strike: a target left below this fraction of its life dies. */
   readonly cull?: number;

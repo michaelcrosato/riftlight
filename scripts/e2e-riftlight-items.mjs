@@ -248,7 +248,10 @@ export async function runRiftlightItems(h) {
       const panel = window.__RIFTLIGHT__.game.layer.find('tree');
       const st = panel.state;
       const tree = panel.view.tree;
-      const id = [...tree.roots].flatMap((r) => tree.neighbours(r)).find((n) => st.canAllocate(n) && tree.node(n).mods.length);
+      const near = [...tree.roots].flatMap((r) => tree.neighbours(r)).filter((n) => st.canAllocate(n) && tree.node(n).mods.length);
+      // a flat mod moves the sheet value itself (an increase to a pure multiplier such as
+      // the real hero's damage, which has no base, only scales it)
+      const id = near.find((n) => tree.node(n).mods[0].kind === 'flat') ?? near[0];
       const mod = tree.node(id).mods[0];
       panel.view.focus(id, 0.6);
       return { id, stat: mod.stat, tags: mod.tags ?? [], points: st.points };

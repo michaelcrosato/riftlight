@@ -1,5 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { WIRE_TUNING } from '../wire/tuning';
+import { StatQuery } from '../combat/stats';
 import { flat, more, StatSheet } from '../core/mods';
 import { RANK, SCALING } from '../core/scaling';
 import { addXp, killXp } from '../game/progress';
@@ -31,12 +33,12 @@ const build = (id: string) => BUILDS.find((b) => b.id === id)!;
 const monster = (o: Partial<MonsterInput> = {}): MonsterInput => ({ id: 'm', rank: 'normal', depth: 1, mods: [], skills: ['bite'], ...o });
 
 describe('balance: sheets and scaling', () => {
-  it('uses the hero base HeroController gives the hero actor', () => {
+  it('uses the hero base the real hero port gives the hero actor (HeroController base + WIRE_TUNING)', () => {
     const src = readFileSync(new URL('../actors/HeroController.ts', import.meta.url), 'utf8');
     const m = /base: \{ (life: [^}]*?), \.\.\.o\.base \}/.exec(src);
     expect(m, 'HeroController base literal').toBeTruthy();
     const parsed = Object.fromEntries(m![1]!.split(',').map((kv) => kv.split(':').map((s) => s.trim().replace(/'/g, ''))).map(([k, v]) => [k, Number(v)]));
-    expect(parsed).toEqual(HERO_BASE);
+    expect({ ...parsed, ...WIRE_TUNING.hero.base }).toEqual(HERO_BASE);
   });
 
   it('scales monster life with depth and rank like the genome mods say', () => {
@@ -46,7 +48,7 @@ describe('balance: sheets and scaling', () => {
     expect(t9.life).toBeCloseTo(A.monsterBase.life! * SCALING.monsterLife(9) * RANK.rare.life, 6);
   });
 
-  it('maps renamed stats to what combat reads, and only with aliases on', () => {
+  it('maps renamed stats to what combat reads (every StatSheet does, core/stats.ts)', () => {
     const used = new Set<string>();
     const mods = aliasMods([flat('crit.multi', 0.5), flat('res.elemental', 0.1), flat('life', 5)], used);
     expect(mods.map((m) => m.stat)).toEqual(['crit.multiplier', 'res.fire', 'res.cold', 'res.lightning', 'life']);
@@ -55,7 +57,8 @@ describe('balance: sheets and scaling', () => {
     const off = makeLoadout(build('melee'), { level: 10, tree: [flat('crit.multi', 1)], assumptions: { ...A, aliases: false } });
     const t = monsterTarget(monster(), A);
     expect(skillDps(on.sheet, on.skill, t.defender).hit!.critMultiplier).toBeCloseTo(2.5);
-    expect(skillDps(off.sheet, off.skill, t.defender).hit!.critMultiplier).toBeCloseTo(1.5);
+    // the canonical names are built into every StatSheet now, so --raw no longer loses the stat
+    expect(skillDps(off.sheet, off.skill, t.defender).hit!.critMultiplier).toBeCloseTo(2.5);
   });
 
   it('gives the highest gem level the hero can equip', () => {
@@ -101,10 +104,11 @@ describe('balance: fights', () => {
     expect(p.damage).toBeGreaterThan(0);
   });
 
-  it('minions fight with the summon gem damage on a fixed 0.8 s swing, like placeholderMinion', () => {
+  it('minions fight with the summon gem damage at their own attack speed, like placeholderMinion', () => {
     const h = makeLoadout(build('minion'), { level: 10, assumptions: A });
     expect(h.minion!.count).toBe(6);
-    expect(h.minion!.attack.castTime).toBe(0.8);
+    expect(h.minion!.attack.castTime).toBeCloseTo(0.8 / new StatQuery(h.minion!.sheet).scale('attack.speed', ['attack', 'melee', 'strike', 'physical', 'damage', 'minion']), 6);
+    expect(h.minion!.attack.castTime).toBeLessThan(0.8); // the build links Minion Speed
     const t = monsterTarget(monster(), A);
     const per = skillDps(h.minion!.sheet, h.minion!.attack, t.defender).dps.total;
     expect(heroOffense(h, t).single).toBeCloseTo(per * 6, 6);

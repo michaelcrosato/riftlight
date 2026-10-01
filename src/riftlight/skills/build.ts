@@ -2,6 +2,7 @@ import { inc, more, type Mod, type StatSheet } from '../core/mods';
 import type { AilmentType, DamageType, Delivery, Effect } from '../core/types';
 import type { DamageSpec, Range } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
+import { REFERENCE_APS } from '../combat/tuning';
 import { SKILLS } from './actives';
 import { SUPPORTS } from './supports';
 import type { ResolvedSkill, SkillGem, SupportGem, SupportLink } from './types';
@@ -77,7 +78,10 @@ export function buildSkill(skill: SkillGem | string, supports: readonly SupportL
 
   const q = new StatQuery(actorStats, mods);
   const attack = tags.includes('attack');
-  const speed = Math.max(0.05, q.scale(attack ? 'attack.speed' : tags.includes('spell') ? 'cast.speed' : 'action.speed', tags));
+  // attacks are timed from the weapon: `attack.speed.base` (its attacks per second) against the reference
+  const aps = attack ? q.flat('attack.speed.base') : 0;
+  const weapon = aps > 0 ? aps / REFERENCE_APS : 1;
+  const speed = Math.max(0.05, q.scale(attack ? 'attack.speed' : tags.includes('spell') ? 'cast.speed' : 'action.speed', tags) * weapon);
   const area = Math.max(0.05, q.scale('area', tags));
   const radius = Math.sqrt(area);
   const duration = Math.max(0, q.scale('duration', tags));

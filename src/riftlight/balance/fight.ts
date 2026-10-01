@@ -5,6 +5,7 @@
  */
 import type { Mod, StatSheet } from '../core/mods';
 import type { Defender } from '../combat/damage';
+import { StatQuery } from '../combat/stats';
 import { MINION_BASE, MINION_STRIKE } from '../combat/minions';
 import { LEECH_RATE } from '../combat/tuning';
 import { MONSTER_SKILLS } from '../monsters/brains/skills';
@@ -52,9 +53,10 @@ export function makeLoadout(build: BuildArchetype, setup: HeroSetup): HeroLoadou
       reads: setup.reads,
       aliasesUsed: setup.aliasesUsed,
     });
-    // placeholderMinion: the minion strike, with the summon gem's damage and a fixed 0.8 s swing
+    // placeholderMinion: the minion strike with the summon gem's damage, swung at the minion's own attack speed
     const base = buildSkill(MINION_STRIKE, [], ms);
-    const attack: ResolvedSkill = { ...base, damage: skill.damage ? { ...skill.damage, tags: base.damage?.tags ?? skill.damage.tags } : base.damage, castTime: 0.8 };
+    const speed = Math.max(0.2, new StatQuery(ms).scale('attack.speed', MINION_STRIKE.tags));
+    const attack: ResolvedSkill = { ...base, damage: skill.damage ? { ...skill.damage, tags: base.damage?.tags ?? skill.damage.tags } : base.damage, castTime: MINION_STRIKE.castTime / speed };
     minion = { sheet: ms, attack, count: d.count * setup.assumptions.minionBatches };
   }
   return {

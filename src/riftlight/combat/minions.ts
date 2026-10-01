@@ -1,7 +1,8 @@
 import { BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE } from '../../engine/palette';
 import { toonMaterial } from '../../engine/render/toon';
-import { flat, type Mod } from '../core/mods';
+import { flat, type Mod, type StatSheet } from '../core/mods';
+import { StatQuery } from './stats';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SkillGem } from '../skills/types';
@@ -21,6 +22,23 @@ export const MINION_STRIKE: SkillGem = {
   effects: [{ kind: 'damage', base: {}, effectiveness: 1 }, { kind: 'knockback', force: 1.5 }],
   look: { color: 'white', burst: 'spark', sound: { hit: 'hit' } }, weight: 0,
 };
+
+/**
+ * What an owner's sheet gives its minions: every `minion.<stat>` mod as `<stat>`, and every mod
+ * scoped to the 'minion' tag without that scope (passives, gear, auras of the summoner).
+ */
+export function ownerMinionMods(owner: StatSheet): Mod[] {
+  const out: Mod[] = [];
+  for (const { mod } of owner.entries()) {
+    if (mod.stat === 'minion.speed') for (const stat of ['attack.speed', 'cast.speed', 'move.speed']) out.push({ ...mod, stat });
+    else if (mod.stat.startsWith('minion.')) out.push({ ...mod, stat: mod.stat.slice(7) });
+    else if (mod.tags?.includes('minion')) {
+      const tags = mod.tags.filter((t) => t !== 'minion');
+      out.push({ ...mod, tags: tags.length ? tags : undefined });
+    }
+  }
+  return out;
+}
 
 /** Strip the 'minion' scope from a summoner's mods so they apply on the minion's own sheet. */
 export function minionMods(mods: readonly Mod[]): Mod[] {
@@ -90,6 +108,7 @@ export function minionBody(genome: string): { root: Object3D; model: Object3D } 
  */
 export class MinionBrain implements Brain {
   private cooldown = 0;
+  private sync = 1;
   private swing = 0;
   constructor(
     private readonly combat: Combat,
@@ -98,6 +117,12 @@ export class MinionBrain implements Brain {
   ) {}
 
   think(a: Actor, dt: number, world: ActorWorld): void {
+    // the owner's `minion.*` stats follow it (gear swaps, buffs), checked once a second
+    this.sync -= dt;
+    if (this.sync <= 0 && a.owner) {
+      this.sync = 1;
+      a.stats.set('owner', ownerMinionMods(a.owner.stats));
+    }
     this.cooldown -= dt * a.actionSpeed;
     this.swing = Math.max(0, this.swing - dt);
     const owner = a.owner;
@@ -117,7 +142,7 @@ export class MinionBrain implements Brain {
       if (d > reach) {
         a.velocity.set((dx / d) * a.moveSpeed, 0, (dz / d) * a.moveSpeed);
       } else if (this.cooldown <= 0) {
-        this.cooldown = this.attack.castTime;
+        this.cooldown = this.attack.castTime / Math.max(0.2, new StatQuery(a.stats, this.attack.mods).scale(this.ranged ? 'cast.speed' : 'attack.speed', this.attack.tags));
         this.swing = 0.2;
         this.combat.cast(a, this.attack, target.position.clone());
       }
@@ -154,7 +179,7 @@ export function placeholderMinion(req: SummonRequest): Actor {
     faction: req.owner.faction,
     name: req.genome,
     base: MINION_BASE[req.genome] ?? MINION_BASE.minion,
-    mods: { summoner: mods, level: [flat('life', 8 * (req.skill.level - 1))] },
+    mods: { summoner: mods, owner: ownerMinionMods(req.owner.stats), level: [flat('life', 8 * (req.skill.level - 1))] },
     level: req.owner.level,
     body: root,
     at: req.at,
@@ -166,7 +191,8 @@ export function placeholderMinion(req: SummonRequest): Actor {
   });
   actor.owner = req.owner;
   const base = ranged ? buildSkill('chaos-bolt', [], actor.stats) : buildSkill(MINION_STRIKE, [], actor.stats);
-  const attack: ResolvedSkill = { ...base, damage: req.attack ? { ...req.attack, tags: base.damage?.tags ?? req.attack.tags } : base.damage, castTime: ranged ? 1.3 : 0.8 };
+  // the swing / bolt time follows the minion's own attack / cast speed (summoner and owner mods)
+  const attack: ResolvedSkill = { ...base, damage: req.attack ? { ...req.attack, tags: base.damage?.tags ?? req.attack.tags } : base.damage, castTime: ranged ? 1.3 : MINION_STRIKE.castTime };
   const brain = new MinionBrain(req.combat, attack, ranged);
   actor.brain = brain;
   let t = req.index * 0.7;

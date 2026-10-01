@@ -88,6 +88,8 @@ export interface Level {
   readonly minimap: MinimapData;
   /** Hittable world objects (braziers, pylons) for combat's hit queries. */
   targets(): readonly ActorLike[];
+  /** Timed stat sources (shrines, mechanic rewards) on an actor, with seconds left (buff bars). */
+  timedBuffs(actor: ActorLike): { source: string; remaining: number }[];
   /** Spawned monsters still alive. */
   monsters(): ActorLike[];
   isWalkable(x: number, z: number): boolean;
@@ -199,6 +201,12 @@ class LevelRuntime implements Level {
 
   targets(): readonly ActorLike[] {
     return [...this.propTargets];
+  }
+
+  timedBuffs(actor: ActorLike): { source: string; remaining: number }[] {
+    const out: { source: string; remaining: number }[] = [];
+    for (const b of this.buffs.values()) if (b.actor === actor) out.push({ source: b.source, remaining: Math.max(0, b.until - this.time) });
+    return out;
   }
 
   monsters(): ActorLike[] {

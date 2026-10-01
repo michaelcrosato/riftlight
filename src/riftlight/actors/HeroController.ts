@@ -6,12 +6,14 @@ import { COMBAT_TIMING } from '../../game/hero/clips/combat';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Mod } from '../core/mods';
 import type { Combat } from '../combat/Combat';
+import { StatQuery } from '../combat/stats';
+import { WEAPON_CLASSES } from '../combat/tuning';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
 import { Actor } from './Actor';
 import { HERO_KEYS } from './controls';
 import { HeroAnimator } from './heroAnimator';
-import { ControllerMover } from './movers';
+import { ControllerMover, type Mover } from './movers';
 import { MouseAim } from './mouseAim';
 import { attachSword } from './sword';
 
@@ -50,7 +52,13 @@ export interface SlotSpec {
 }
 
 export interface HeroOptions {
-  physics: Physics;
+  /** Rapier world for the default character-controller mover (required unless `mover` is given). */
+  physics?: Physics;
+  /**
+   * Floor movement instead of the Rapier character controller (a game whose stages are grids,
+   * like Riftlight's town and levels). Without it the hero gets a `ControllerMover`.
+   */
+  mover?: Mover;
   combat: Combat;
   /** The hero model (hero.glb), not yet animated. */
   model: Object3D;
@@ -98,6 +106,8 @@ export function compileHeroClips(model: Object3D, defs: readonly ClipDef[]): Ani
 
 const tmp = new Vector3();
 
+export { WEAPON_CLASSES } from '../combat/tuning';
+
 /**
  * The hero's ARPG controller: twin-stick / mouse movement and aim, a buffered 3-hit basic
  * combo, five skill slots, a dodge roll with i-frames, attack cancels, slowed movement while
@@ -111,12 +121,14 @@ const tmp = new Vector3();
  */
 export class HeroController {
   readonly actor: Actor;
-  readonly cc: CharacterController;
+  /** The Rapier character controller (null when the hero was given its own `mover`). */
+  readonly cc: CharacterController | null;
   readonly model: Object3D;
   readonly sword: Object3D;
   readonly animator: HeroAnimator;
   readonly mouse: MouseAim;
-  readonly combat: Combat;
+  /** The combat runtime the hero casts through (`attach` moves the hero to another one, e.g. per stage). */
+  combat: Combat;
   /** The basic attack and the skill bar (resolved for the hero's current stats). */
   basic!: ResolvedSkill;
   slots: (ResolvedSkill | null)[] = [];
@@ -141,6 +153,8 @@ export class HeroController {
   private hitReact = 0;
   private deathT = 0;
   private victoryT = 0;
+  /** Victory poses end by themselves after this long, or as soon as the player moves. */
+  static readonly VICTORY_HOLD = 1.6;
   private statsVersion = -1;
   private camera: Camera | null = null;
   /** Stepping in toward a melee target (the legs run under the swing). */
@@ -156,14 +170,20 @@ export class HeroController {
   constructor(o: HeroOptions) {
     this.combat = o.combat;
     this.model = o.model;
-    // speed 1: the controller's wish is the velocity (see ControllerMover)
-    this.cc = new CharacterController(o.physics, { position: o.at, radius: 0.32, halfHeight: 0.5, speed: 1, jumpSpeed: 0 });
-    o.physics.tag(this.cc.collider, 'character');
+    let mover = o.mover;
+    if (mover) this.cc = null;
+    else {
+      if (!o.physics) throw new Error('HeroController: needs `physics` (or a `mover`)');
+      // speed 1: the controller's wish is the velocity (see ControllerMover)
+      this.cc = new CharacterController(o.physics, { position: o.at, radius: 0.32, halfHeight: 0.5, speed: 1, jumpSpeed: 0 });
+      o.physics.tag(this.cc.collider, 'character');
+      mover = new ControllerMover(this.cc, o.physics);
+    }
     this.actor = new Actor({
       faction: 'hero',
       name: 'hero',
       body: o.model,
-      mover: new ControllerMover(this.cc, o.physics),
+      mover,
       base: { life: 120, mana: 60, 'mana.regen': 4, 'life.regen': 2, 'move.speed': 5.6, accuracy: 600, mass: 3, ...o.base },
       mods: o.mods,
       radius: 0.35,
@@ -195,7 +215,12 @@ export class HeroController {
     const r = (spec: SlotSpec) => buildSkill(spec.skill, spec.supports ?? [], s, { level: spec.level });
     this.basic = r(this.specs.basic);
     this.slots = this.specs.slots.map((spec) => (spec ? r(spec) : null));
-    this.dodgeSkill = buildSkill('dodge-roll', [], s);
+    // the roll: dodge.recovery makes it quicker, dodge.distance longer
+    const roll = buildSkill('dodge-roll', [], s);
+    const q = new StatQuery(s);
+    const quick = Math.max(0.25, q.scale('dodge.recovery'));
+    const far = Math.max(0.25, q.scale('dodge.distance'));
+    this.dodgeSkill = { ...roll, castTime: roll.castTime / quick, delivery: roll.delivery.kind === 'dash' ? { ...roll.delivery, distance: roll.delivery.distance * far } : roll.delivery };
     this.statsVersion = s.version;
   }
 
@@ -222,17 +247,28 @@ export class HeroController {
     return this.actor.position.clone();
   }
   get body() {
-    return this.cc.body;
+    return this.cc?.body;
   }
   /** Horizontal velocity (m/s); film's `place` zeroes it. */
   get hvel(): Vector3 {
     return this.actor.velocity;
   }
   get vy(): number {
-    return this.cc.velocity.y;
+    return this.cc ? this.cc.velocity.y : 0;
   }
+  /** Ground speed (m/s) the legs match: the controller's, or what the mover actually moved. */
   get speed(): number {
-    return Math.hypot(this.cc.velocity.x, this.cc.velocity.z);
+    if (this.cc) return Math.hypot(this.cc.velocity.x, this.cc.velocity.z);
+    return this.actor.mover.speed ?? Math.hypot(this.actor.velocity.x, this.actor.velocity.z);
+  }
+  /** Move the hero to another combat runtime (a new stage): drops the action in progress. */
+  attach(combat: Combat): void {
+    if (combat === this.combat) return;
+    this.combat = combat;
+    this.action = null;
+    this.buffered = null;
+    this.cooldowns.clear();
+    if (this.state !== 'dead') this.state = 'idle';
   }
   get facing(): number {
     return this.actor.facing;
@@ -277,11 +313,15 @@ export class HeroController {
       a.velocity.set(0, 0, 0);
       return;
     }
-    if (this.state === 'victory') {
-      a.velocity.set(0, 0, 0);
-      return;
-    }
     const input = ctx.input;
+    if (this.state === 'victory') {
+      const axis = input.moveAxis();
+      if (this.victoryT < HeroController.VICTORY_HOLD && Math.hypot(axis.x, axis.y) < 0.2) {
+        a.velocity.set(0, 0, 0);
+        return;
+      }
+      this.state = 'idle';
+    }
     // move intent, camera-relative
     const axis = input.moveAxis();
     const { right, forward } = ctx.camera.groundBasis();
@@ -413,12 +453,13 @@ export class HeroController {
   startSkill(skill: ResolvedSkill, slot: number, keys: readonly string[]): boolean {
     const a = this.actor;
     if ((this.cooldowns.get(skill.id) ?? 0) > 0) return this.fail('COOLDOWN');
+    // weapon-class skills need that weapon (the equipped weapon sets the `weapon.<class>` flag)
+    for (const cls of WEAPON_CLASSES) if (skill.tags.includes(cls) && !a.stats.has(`weapon.${cls}`)) return this.fail(`NEEDS A ${cls.toUpperCase()}`);
     const upfront = skill.channel ? skill.cost * 0.25 : skill.cost;
-    if (a.mana < upfront) {
+    if (!payCost(a, upfront)) {
       this.stats.noMana++;
-      return this.fail('NO MANA');
+      return this.fail(a.stats.has('skills.costLife') ? 'NO LIFE' : 'NO MANA');
     }
-    a.mana -= upfront;
     if (skill.cooldown > 0) this.cooldowns.set(skill.id, skill.cooldown);
     // combo step: continues if pressed within the window after the last step
     const chain = slot < 0 && skill.anims.length > 1;
@@ -458,6 +499,7 @@ export class HeroController {
 
   private startDodge(): void {
     const a = this.actor;
+    if (a.stats.has('cannotDodge')) return void this.fail('CANNOT DODGE'); // keystone: Unwavering Stance
     this.endAction();
     const dir = this.moveWish.lengthSq() > 0.04 ? this.moveWish.clone().normalize() : tmp.set(Math.sin(a.facing), 0, Math.cos(a.facing)).clone();
     a.facing = Math.atan2(dir.x, dir.z);
@@ -465,7 +507,8 @@ export class HeroController {
     this.stats.dodges++;
     this.rollAnim = this.fresh('Roll');
     this.animator.setTime(this.rollAnim, 0);
-    this.combat.cast(a, this.dodgeSkill, a.position.clone().addScaledVector(dir, 4));
+    const reach = this.dodgeSkill.delivery.kind === 'dash' ? this.dodgeSkill.delivery.distance : 4.2;
+    this.combat.cast(a, this.dodgeSkill, a.position.clone().addScaledVector(dir, reach * 0.95));
   }
 
   /**
@@ -511,6 +554,7 @@ export class HeroController {
   private updateAim(input: InputLike): void {
     const a = this.actor;
     const p = a.position;
+    if (input.aimAt?.(this.aim)) return; // the game decides the aim (one input path)
     if (this.camera && this.mouse.recent() && this.mouse.ground(this.camera, p.y, this.aim)) return;
     const look = input.gamepadConnected ? input.mouseDelta : null;
     if (look && Math.hypot(look.x, look.y) > 0.5 && this.camera) {
@@ -641,6 +685,27 @@ export interface InputLike {
   anyDown(codes: readonly string[]): boolean;
   readonly gamepadConnected: boolean;
   readonly mouseDelta: { x: number; y: number };
+  /** Optional: the game's own aim point (fills `out`, returns true); skips mouse / stick / auto-aim. */
+  aimAt?(out: Vector3): boolean;
+}
+
+/**
+ * Pay a skill cost, honouring the keystones (KEYSTONE_FLAGS): `skills.costLife` pays from life
+ * (never the last point), `es.protectsMana` takes it from energy shield first. False when the
+ * actor can't afford it (nothing is paid).
+ */
+export function payCost(a: Actor, cost: number): boolean {
+  if (cost <= 0) return true;
+  if (a.stats.has('skills.costLife')) {
+    if (a.life - cost < 1) return false;
+    a.life -= cost;
+    return true;
+  }
+  const fromEs = a.stats.has('es.protectsMana') ? Math.min(a.es, cost) : 0;
+  if (a.mana + fromEs < cost) return false;
+  a.es -= fromEs;
+  a.mana -= cost - fromEs;
+  return true;
 }
 
 function groundBasisOf(camera: Camera): { right: Vector3; forward: Vector3 } {

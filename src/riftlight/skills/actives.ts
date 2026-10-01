@@ -212,18 +212,21 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
   // ------------------------------------------------------------------ minions
   g({
     id: 'summon-skeletons', name: 'Summon Skeletons', description: 'Raise skeleton warriors that fight for you.',
-    tags: ['spell', 'minion', 'duration', 'summon'],
+    tags: ['spell', 'minion', 'duration', 'summon', 'damage'],
     cost: 15, cooldown: 1, castTime: 0.8, anim: 'CastBig', moveDuringCast: 0.2, target: 'ahead',
     delivery: { kind: 'summon', genome: 'minion', count: 3, duration: 20 },
-    effects: [{ kind: 'damage', base: { physical: [3, 6] }, effectiveness: 1 }],
+    // minions hit often and small: their base and growth carry them through armour at depth
+    effects: [{ kind: 'damage', base: { physical: [4, 7] }, effectiveness: 1 }],
+    perLevel: [more('damage', 0.12), inc('life', 0.05, ['minion'])],
     look: { color: 'white', glow: ['white', 'mist', 'slate'], burst: 'bones', sound: { cast: 'cast' } },
   }),
   g({
     id: 'raise-spectre', name: 'Raise Spectre', description: 'Raise a spectral caster that hurls bolts at your enemies.',
-    tags: ['spell', 'minion', 'summon'],
+    tags: ['spell', 'minion', 'summon', 'damage'],
     cost: 25, cooldown: 3, castTime: 1, anim: 'CastBig', moveDuringCast: 0.1, target: 'ahead',
     delivery: { kind: 'summon', genome: 'spectre', count: 1, duration: 0 },
-    effects: [{ kind: 'damage', base: { chaos: [5, 9] }, effectiveness: 1 }],
+    effects: [{ kind: 'damage', base: { chaos: [8, 14] }, effectiveness: 1 }],
+    perLevel: [more('damage', 0.12)],
     look: { color: 'plum', glow: ['lime', 'plum'], burst: 'toxic', sound: { cast: 'cast' } },
   }),
   // ------------------------------------------------------------------ auras, buffs, warcries

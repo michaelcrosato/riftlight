@@ -1,6 +1,6 @@
 import { type Camera, Group, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor } from '../../engine/palette';
-import type { Mod } from '../core/mods';
+import { more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import type { Effect, GameEventBus, HitResult } from '../core/types';
 import { Actor } from '../actors/Actor';
@@ -188,6 +188,10 @@ export class Combat {
       if (e.kind !== 'buff') continue;
       if (e.target === 'self') caster.addBuff(skill.id, e.mods, e.duration);
       else if (e.target === 'allies') {
+        if (caster.stats.has('auras.selfOnly')) {
+          caster.addBuff(skill.id, e.mods, e.duration); // keystone: only you
+          continue;
+        }
         for (const a of this.actors.query(caster.position, 8, [], (x) => x.alive && !caster.hostileTo(x))) a.addBuff(skill.id, e.mods, e.duration);
       }
     }
@@ -210,10 +214,20 @@ export class Combat {
     const spec = o.spec ?? skill.damage;
     if (!spec || !target.alive || !caster.hostileTo(target)) return null;
     const q = new StatQuery(caster.stats, skill.mods);
-    let h = rollHit(q, spec, caster.rng, { source: caster, skill: skill.id, from: o.from ?? caster.position, scale: o.scale });
+    // keystone `cannotDealDamage.self`: only minions, totems and traps deal the damage
+    if (!o.spec && !skill.tags.includes('trap') && !skill.tags.includes('totem') && q.has('cannotDealDamage.self', skill.tags)) return null;
+    let scale = o.scale ?? 1;
+    // keystone `pointBlank`: projectiles hit 30% harder up close, 30% softer at max range
+    if (skill.delivery.kind === 'projectile' && q.has('pointBlank', skill.tags)) {
+      const d = Math.hypot(target.position.x - caster.position.x, target.position.z - caster.position.z);
+      scale *= 1.3 - 0.6 * Math.min(1, d / Math.max(1, skill.delivery.range));
+    }
+    let h = rollHit(q, spec, caster.rng, { source: caster, skill: skill.id, from: o.from ?? caster.position, scale });
     if (o.knockback !== undefined && h.knockback) h = { ...h, knockback: h.knockback * o.knockback };
     const result = target.takeHit(h);
     this.applyEnemyBuffs(target, skill);
+    // keystone `elementalOverload`: a crit grants 40% more elemental damage for 8 s
+    if (result.crit && result.total > 0 && caster.stats.has('elementalOverload')) caster.addBuff('elementalOverload', [more('elemental.damage', 0.4)], 8);
     if (result.total > 0) {
       const lifeLeech = q.flat('leech.life', spec.tags);
       const manaLeech = q.flat('leech.mana', spec.tags);

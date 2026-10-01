@@ -5,14 +5,21 @@
  * tuning agent knows exactly what is modelled and what is assumed.
  */
 import { ACTOR_BASE } from '../combat/tuning';
+import { HERO_BASE_STATS, monsterBase } from '../wire/progression';
+import { WIRE_TUNING } from '../wire/tuning';
 
-/** The hero's base record (HeroController.ts `new Actor({ base })`; a unit test keeps them in sync). */
-export const HERO_BASE: Readonly<Record<string, number>> = { life: 120, mana: 60, 'mana.regen': 4, 'life.regen': 2, 'move.speed': 5.6, accuracy: 600, mass: 3 };
+/**
+ * The hero's base record: HeroController's base overridden by the real hero port's
+ * (src/riftlight/wire, WIRE_TUNING.hero.base); a unit test keeps them in sync.
+ */
+export const HERO_BASE: Readonly<Record<string, number>> = HERO_BASE_STATS;
+
+const GROWTH = WIRE_TUNING.hero.perLevel;
 
 export interface Assumptions {
-  /** Hero base gained per character level after the first (the shell's hero port uses +12 life, +4 mana). */
+  /** Hero base gained per character level after the first (the real hero port: WIRE_TUNING.hero.perLevel). */
   readonly heroGrowth: Readonly<Record<string, number>>;
-  /** A monster's base record before genome mods, depth scaling and rank (the Actor default). */
+  /** A monster's base record before genome mods, depth scaling and rank (the real monster port: wire/progression.ts monsterBase). */
   readonly monsterBase: Readonly<Record<string, number>>;
   /** Share of an engaged monster's time spent attacking (the rest: approach, strafe, wind-ups the hero dodges). */
   readonly monsterUptime: number;
@@ -37,8 +44,10 @@ export interface Assumptions {
 }
 
 export const DEFAULT_ASSUMPTIONS: Assumptions = {
-  heroGrowth: { life: 12, mana: 4 },
-  monsterBase: { ...ACTOR_BASE },
+  // the real hero port's growth (wire/progression.ts levelMods; its `damage` is an inc, see heroSheet)
+  heroGrowth: { life: GROWTH.life, mana: GROWTH.mana, accuracy: GROWTH.accuracy, 'life.regen': GROWTH['life.regen'] },
+  // the real monster port's base at depth 1 (armour and accuracy grow with depth in monsterSheet)
+  monsterBase: { ...ACTOR_BASE, ...monsterBase(1) },
   monsterUptime: 0.5,
   packEngaged: 0.5,
   reach: { strike: 1, 'strike+area': 3, nova: 4, slam: 4, beam: 2, trap: 3, dash: 2, projectile: 4, summon: 1, aura: 0 },

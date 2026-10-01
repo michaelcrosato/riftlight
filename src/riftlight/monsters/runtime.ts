@@ -251,8 +251,7 @@ export class MonsterRuntime {
     if (!this.glowMesh) {
       const sk = this.monster.skeleton;
       const at = this.joints.get(sk.arms.find((a) => a.side === 'R')?.hand ?? sk.roles.jaw ?? sk.roles.head ?? sk.roles.root)!;
-      const mat = new MeshBasicNodeMaterial({ color: this.monster.genome.palette.glow, transparent: true, opacity: 0.55, depthWrite: false });
-      this.glowMesh = new Mesh(cachedGeometry('u:sphere', unitSphere), mat);
+      this.glowMesh = new Mesh(cachedGeometry('u:sphere', unitSphere), windupMaterial(this.monster.genome.palette.glow));
       this.glowMesh.name = 'WindupGlow';
       this.glowMesh.renderOrder = 5;
       at.add(this.glowMesh);
@@ -265,10 +264,24 @@ export class MonsterRuntime {
   dispose(): void {
     this.mixer.stopAllAction();
     this.mixer.uncacheRoot(this.object);
-    if (this.glowMesh) {
-      (this.glowMesh.material as MeshBasicNodeMaterial).dispose();
-      this.glowMesh.removeFromParent();
-    }
+    this.glowMesh?.removeFromParent(); // its material is shared (windupMaterial)
   }
 }
 
+
+/**
+ * The wind-up glow's unlit material, one per colour and shared by every monster (palettes are
+ * quantised, so this stays a small set): a fresh material per monster would build a new
+ * shader mid-fight, the first time each one winds up.
+ */
+const windupMaterials = new Map<number, MeshBasicNodeMaterial>();
+export function windupMaterial(hex: number): MeshBasicNodeMaterial {
+  let m = windupMaterials.get(hex);
+  if (!m) {
+    m = new MeshBasicNodeMaterial({ color: hex, transparent: true, opacity: 0.55, depthWrite: false });
+    m.name = `windup-${hex.toString(16)}`;
+    m.userData.shared = true;
+    windupMaterials.set(hex, m);
+  }
+  return m;
+}

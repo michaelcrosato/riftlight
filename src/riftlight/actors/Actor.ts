@@ -1,11 +1,12 @@
 import { type AnimationMixer, Group, type Object3D, Vector3 } from 'three/webgpu';
-import { flat, type Mod, StatSheet } from '../core/mods';
+import { flat, more, type Mod, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, AilmentType, DamageType, Faction, GameEventBus, Hit, HitResult } from '../core/types';
 import { AILMENTS } from '../combat/ailments';
 import { mitigate, mitigateDot, type AilmentApplication, type Defender } from '../combat/damage';
-import { ACTOR_BASE, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
+import { StatQuery } from '../combat/stats';
+import { ACTOR_BASE, BLOCK_STAGGER, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
 import { BodyFx } from './bodyFx';
 import { GridMover, openFloor, type Mover } from './movers';
 
@@ -237,6 +238,7 @@ export class Actor implements ActorLike {
   /** Put an ailment on: stacking ones add an instance, others keep the strongest and refresh. */
   applyAilment(a: AilmentApplication, source: ActorLike | null): void {
     const def = AILMENTS.get(a.id);
+    if (a.id === 'stun' && this.stats.has('cannotBeStunned')) return; // keystone: Unwavering Stance
     if (!def.stacks) {
       const cur = this.ailments.find((x) => x.id === a.id);
       if (cur) {
@@ -261,6 +263,12 @@ export class Actor implements ActorLike {
   /** Life (or mana) returned over time, at most LEECH_RATE of the max per second. */
   leech(life: number, mana = 0): void {
     if (!this.alive) return;
+    if (this.stats.has('leech.instant')) {
+      // keystone: leech lands at once
+      this.life = Math.min(this.maxLife, this.life + life);
+      this.mana = Math.min(this.maxMana, this.mana + mana);
+      return;
+    }
     this.leechPool.life += life;
     this.leechPool.mana += mana;
   }
@@ -273,7 +281,22 @@ export class Actor implements ActorLike {
   onKill(): void {
     this.sinceKill = 0;
     this.counters.kills++;
+    // "+N life / mana / energy shield gained on kill" (gear, tree)
+    const life = this.stats.get('life.onKill');
+    if (life > 0) this.heal(life * Math.max(0, new StatQuery(this.stats).scale('life.recovery')));
+    const mana = this.stats.get('mana.onKill');
+    if (mana > 0) this.mana = Math.min(this.maxMana, this.mana + mana);
+    const es = this.stats.get('es.onKill');
+    if (es > 0) this.es = Math.min(this.maxEs, this.es + es);
+    if (this.stats.has('rampage')) {
+      // keystone: a stack per kill for 4 s (max 25): 2% more damage, 1% more movement speed each
+      this.rampage = this.hasBuff('rampage') ? Math.min(25, this.rampage + 1) : 1;
+      this.addBuff('rampage', [more('damage', 0.02 * this.rampage), more('move.speed', 0.01 * this.rampage)], 4);
+    }
   }
+
+  /** Rampage stacks (keystone), while the buff lasts. */
+  rampage = 0;
 
   // ------------------------------------------------------------------ hits
 
@@ -286,12 +309,17 @@ export class Actor implements ActorLike {
       return result;
     }
     const m = mitigate(hit, this, this.rng);
-    const { result } = m;
+    let { result } = m;
     if (result.evaded) this.counters.evaded++;
     if (result.blocked) this.counters.blocked++;
     if (!result.evaded && !result.blocked) {
       this.es -= m.toEs;
-      this.life -= m.toLife;
+      let toLife = m.toLife;
+      const toMana = Math.min(this.mana, toLife * Math.max(0, Math.min(1, this.stats.get('damage.toMana')))); // keystone: Mind over Matter
+      this.mana -= toMana;
+      toLife -= toMana;
+      this.life -= toLife;
+      if (toMana > 0 && this.life > 0) result = { ...result, killed: false };
       this.counters.hitsTaken++;
       this.counters.damageTaken += result.total;
       this.sinceHit = 0;
@@ -304,6 +332,10 @@ export class Actor implements ActorLike {
       }
       this.hitStop = Math.max(this.hitStop, hit.hitStop ?? 0);
       if (result.total > 0) this.fx.flash(hit.crit ? 0.12 : 0.08);
+    } else if (result.blocked) {
+      // a block staggers for a moment; `block.recovery` shortens it
+      const recovery = Math.max(0.1, new StatQuery(this.stats).scale('block.recovery'));
+      this.hitStop = Math.max(this.hitStop, Math.round(BLOCK_STAGGER / recovery));
     }
     this.events?.emit('hit', { target: this, result, hit });
     if (result.killed) this.die(hit.source);
@@ -387,23 +419,29 @@ export class Actor implements ActorLike {
     // regeneration, leech, energy shield recharge
     const maxLife = this.maxLife;
     const maxMana = this.maxMana;
-    this.life = Math.min(maxLife, this.life + Math.max(0, this.stats.get('life.regen')) * dt);
+    const q = new StatQuery(this.stats);
+    const recovery = Math.max(0, q.scale('life.recovery')); // life regen and leech
+    this.life = Math.min(maxLife, this.life + Math.max(0, this.stats.get('life.regen') + this.stats.get('life.regen.pct') * maxLife) * recovery * dt);
     this.mana = Math.min(maxMana, this.mana + Math.max(0, this.stats.get('mana.regen')) * dt);
-    const lifeLeech = Math.min(this.leechPool.life, maxLife * LEECH_RATE * dt);
-    const manaLeech = Math.min(this.leechPool.mana, maxMana * LEECH_RATE * dt);
+    const rate = LEECH_RATE * Math.max(0, q.scale('leech.rate'));
+    const lifeLeech = Math.min(this.leechPool.life, maxLife * rate * recovery * dt);
+    const manaLeech = Math.min(this.leechPool.mana, maxMana * rate * dt);
     this.leechPool.life -= lifeLeech;
     this.leechPool.mana -= manaLeech;
     this.life = Math.min(maxLife, this.life + lifeLeech);
     this.mana = Math.min(maxMana, this.mana + manaLeech);
     this.esTimer += dt;
     const maxEs = this.maxEs;
-    if (this.esTimer >= ES_DELAY && this.es < maxEs) this.es = Math.min(maxEs, this.es + maxEs * 0.33 * dt);
+    if (this.esTimer >= ES_DELAY && this.es < maxEs) this.es = Math.min(maxEs, this.es + maxEs * 0.33 * Math.max(0, q.scale('es.recharge')) * dt);
     if (this.es > maxEs) this.es = maxEs;
     // conditions mods can key on (`when: 'lowLife'` ...)
     const s = this.stats;
     s.setCondition('lowLife', this.life < maxLife * LOW_LIFE);
     s.setCondition('fullLife', this.life >= maxLife);
     s.setCondition('recentlyHit', this.sinceHit < RECENTLY);
+    // the passive tree's names for the same thing (tree/data/keystones.ts TREE_CONDITIONS)
+    s.setCondition('hitRecently', this.sinceHit < RECENTLY);
+    s.setCondition('notHitRecently', this.sinceHit >= RECENTLY);
     s.setCondition('recentlyKilled', this.sinceKill < RECENTLY);
     s.setCondition('moving', this.velocity.lengthSq() > 0.25);
     for (const def of AILMENTS.all()) s.setCondition(def.id, this.ailments.some((a) => a.id === def.id));
