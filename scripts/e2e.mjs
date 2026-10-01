@@ -3,7 +3,7 @@
 //   npm run build && npm run test:e2e      (wraps this in xvfb-run)
 //
 //   npm run test:e2e -- <suite>   run one suite: webgpu | webgl-fallback | webgl-forced |
-//                                 cameras | camera-swap | filters-webgpu | filters-webgl | touch | moves | lab
+//                                 cameras | camera-swap | filters-webgpu | filters-webgl | touch | moves | lab | systems
 //
 // Core suites (one per backend path):
 //   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
@@ -23,6 +23,8 @@
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
 // lab             Animation Lab (/lab.html): every clip plays with clean metrics, views,
 //                 scrubbing, contact sheets and the agent API; frames of a few clips saved.
+// systems         HUD, audio, particles, triggers, gamepad, pause, hotkeys, level lifecycle
+//                 (scripts/e2e-systems.mjs), on WebGPU and the WebGL 2 fallback.
 //
 // Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
@@ -30,8 +32,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { runSystems } from './e2e-systems.mjs';
 
-const PORT = 4179;
+const PORT = Number(process.env.E2E_PORT ?? 4179);
 const BASE = `http://localhost:${PORT}/`;
 const OUT = new URL('../.scratch/e2e/', import.meta.url);
 const EXE = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium';
@@ -232,8 +235,10 @@ async function openPage(browserExe, s, query = '') {
     logs.push(`${m.type()}: ${m.text()}`);
   });
   page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+  // The debug panel is dev-only by default; these suites read it, so ask for it.
+  if (!/(^|&)debug=/.test(query)) query = query ? `${query}&debug=1` : 'debug=1';
   const sep = s.url.includes('?') ? '&' : '?';
-  await page.goto(query ? `${s.url}${sep}${query}` : s.url);
+  await page.goto(`${s.url}${sep}${query}`);
   await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
   return { browser, page, logs };
 }
@@ -264,9 +269,10 @@ async function runCore(browserExe, s) {
     const canvases = await page.evaluate(() => {
       window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer;
       window.__canvasRef = document.querySelector('canvas[data-engine-canvas]');
-      return document.querySelectorAll('canvas').length;
+      // The pixel HUD is a 2D overlay canvas (no GPU context); every other canvas would be a second renderer.
+      return [...document.querySelectorAll('canvas')].filter((c) => !c.dataset.hud).length;
     });
-    check(canvases === 1, 'exactly one canvas');
+    check(canvases === 1, 'exactly one rendering canvas (plus the 2D HUD overlay)');
 
     await stableCamera(page);
     const pixelShot = await capture(page, `${s.name}-pixel-480.png`);
@@ -401,7 +407,7 @@ async function runCameras(browserExe) {
         check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
         check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
         // Reload with the printed config as a 'fixed' preset.
-        await page.goto(`${s.url}?cam=${encodeURIComponent(JSON.stringify(config))}`);
+        await page.goto(`${s.url}?debug=1&cam=${encodeURIComponent(JSON.stringify(config))}`);
         await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
         st = await state(page);
         check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
@@ -555,7 +561,7 @@ async function runTouch(browserExe) {
     const logs = [];
     page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
     page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
-    await page.goto(`${s.url}?touch=1&camera=third`);
+    await page.goto(`${s.url}?touch=1&camera=third&debug=1`);
     await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
     check(await page.locator('.touch-ui .stick').isVisible(), 'joystick visible');
     check((await page.locator('.touch-ui .pad button').count()) >= 6, 'action buttons visible');
@@ -717,6 +723,11 @@ const suites = {
   touch: () => runTouch(exe),
   moves: () => runMoves(exe),
   lab: () => runLab(exe),
+  systems: async () => {
+    const helpers = { exe, openPage, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
+    await runSystems({ ...helpers, scenario: SCENARIOS[0] });
+    await runSystems({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 try {
   for (const [name, run] of Object.entries(suites)) if (!only || name === only) await run();
