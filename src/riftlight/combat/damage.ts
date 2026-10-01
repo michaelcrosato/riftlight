@@ -148,6 +148,7 @@ export function scaleDamage(q: StatQuery, portions: readonly Portion[], skillTag
   const out: Damage = {};
   for (const p of portions) {
     const { tags, stats } = portionScaling(p, skillTags);
+    if (q.has(`no.${p.type}`, skillTags)) continue; // brutality: "deals no fire damage"
     out[p.type] = (out[p.type] ?? 0) + p.amount * q.scale(stats, tags);
   }
   return out;
@@ -166,7 +167,7 @@ export function critMultiplier(q: StatQuery, spec: DamageSpec): number {
 export function ailmentChances(q: StatQuery, spec: DamageSpec, present: Damage, crit: boolean): Partial<Record<AilmentType, number>> {
   const out: Partial<Record<AilmentType, number>> = {};
   for (const def of AILMENTS.all()) {
-    if (def.always || def.threshold) continue; // decided by the defender from the landed damage
+    if (def.always) continue; // decided by the defender from the landed damage
     if (!def.from.some((t) => (present[t] ?? 0) > 0)) continue;
     if (def.requires && !def.requires.every((t) => spec.tags.includes(t))) continue;
     let c = (spec.ailments[def.id] ?? 0) + q.flat(`${def.id}.chance`, spec.tags);
@@ -205,19 +206,20 @@ export function rollHit(q: StatQuery, spec: DamageSpec, rng: Rng, opts: RollOpti
     if (p) penetration[t] = p;
   }
   const total = Object.values(damage).reduce((s, v) => s + v, 0);
+  const noAilments = q.has('noAilments', spec.tags);
   return {
     source: opts.source ?? null,
     skill: opts.skill,
     tags: spec.tags,
     damage,
     crit,
-    ailments: ailmentChances(q, spec, damage, crit),
+    ailments: noAilments ? {} : ailmentChances(q, spec, damage, crit),
     knockback: q.value('knockback', spec.tags, spec.knockback),
     from: opts.from,
     hitStop: hitStopFor(total, crit, spec.tags),
     accuracy: isAttack(spec.tags) ? q.value('accuracy', spec.tags, 0) || undefined : undefined,
     penetration,
-    ailmentEffect: q.scale('ailment.effect', spec.tags),
+    ailmentEffect: noAilments ? 0 : q.scale('ailment.effect', spec.tags),
     ailmentDuration: q.scale('ailment.duration', spec.tags),
     cull: q.has('cull', spec.tags) ? 0.1 : undefined,
   };
@@ -343,12 +345,14 @@ export function mitigate(hit: Hit, d: Defender, rng: Rng): Mitigated {
 /** Which ailments a landed hit applies, with their strength and duration. */
 export function rollAilments(hit: Hit, byType: Damage, d: Defender, rng: Rng): AilmentApplication[] {
   const out: AilmentApplication[] = [];
+  if (hit.ailmentEffect === 0) return out; // elemental focus & co.: no ailments at all
   for (const def of AILMENTS.all()) {
     const dmg = ailmentDamage(def, byType);
     if (dmg <= 0) continue;
     const avoid = d.stats.get(`avoid.${def.id}`);
     if (avoid >= 1) continue;
-    const landed = def.threshold ? def.threshold(dmg, d.maxLife * thresholdScale(d, def)) : def.always ? true : rng.chance(hit.ailments?.[def.id] ?? 0);
+    const chance = hit.ailments?.[def.id] ?? 0;
+    const landed = def.always || (def.threshold?.(dmg, d.maxLife * thresholdScale(d, def)) ?? false) || (chance > 0 && rng.chance(chance));
     if (!landed) continue;
     if (avoid > 0 && rng.chance(avoid)) continue;
     out.push(ailmentFrom(def, dmg, d.maxLife, hit.ailmentEffect ?? 1, hit.ailmentDuration ?? 1));
