@@ -20,8 +20,8 @@ merge. Optimize for throughput with a green main branch.
    Merges don't wait for CI: there are no required checks, by choice. That is why
    step 4 matters.
 6. **Drive to green**: CI then runs on `main`. If it goes red, the merge is reverted
-   automatically and the change has to land again with a fix
-   (`.github/workflows/claude-ci-autofix.yml`). CI failures, revert PRs and review
+   automatically (CI's `revert-red-main` job) and the change has to land again with a fix
+   (an issue labeled `claude` tracks it). CI failures, revert PRs and review
    issues about your change are your job.
 
 ## Commands
