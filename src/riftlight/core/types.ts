@@ -63,6 +63,8 @@ export interface ActorLike {
   readonly stats: StatSheet;
   readonly position: Vector3;
   readonly radius: number;
+  /** Display name (death recap "slain by", boss bar, damage logs). Optional. */
+  readonly name?: string;
   life: number;
   mana: number;
   readonly alive: boolean;
@@ -398,6 +400,23 @@ export interface SaveData {
   difficulty: DifficultyTuning;
   seed: number;
   settings: Record<string, unknown>;
+  /** Mechanic ids the codex has unlocked (first seen). Optional: older saves lack it. */
+  codex?: string[];
+  /** Lifetime counters for the save slot (game shell). Optional: older saves lack it. */
+  stats?: SaveStats;
+}
+
+/** Per-slot lifetime counters kept by the game shell (title screen, playtests, codex). */
+export interface SaveStats {
+  /** Levels entered. */
+  runs: number;
+  clears: number;
+  deaths: number;
+  kills: number;
+  /** Seconds of play in levels and town. */
+  playtime: number;
+  /** Fastest clear per depth, seconds. */
+  best: Record<string, number>;
 }
 
 export interface DifficultyTuning {
