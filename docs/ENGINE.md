@@ -194,7 +194,8 @@ a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
 joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
 **X** lie down; drag on the game to orbit/look, pinch to zoom; top bar ⚙ debug panel,
-**P** Pixel/Raw, **R** resolution, **◐** cycle looks (`TouchControls`, `input.analog`).
+**P** Pixel/Raw, **R** resolution, **◐** cycle looks, **♪** mute (`TouchControls`, `input.analog`;
+the buttons are `EngineOptions.touchButtons`).
 Landscape works best.
 
 Automatic moves: **step up / step down** (autostep 0.4), **teeter** at edges, **fall**, soft
@@ -281,18 +282,198 @@ Engine.start(new MyGame(), {
 Rules of thumb for good-looking results:
 
 - Use `PALETTE` colors only, via `toonMaterial(color)`. Load GLBs with `ctx.loadModel`;
-  their materials are converted to toon automatically, so only base colors matter.
+  their materials are converted to toon automatically, keeping base colors, textures
+  (nearest-filtered) and vertex colors.
   Clones are skeleton-aware (`SkeletonUtils.clone`), so skinned GLBs work too.
 - Build static level geometry as plain meshes, then `scene.add(...mergeStaticMeshes(meshes))`
   (one draw per material); keep one collider per block, and keep movers separate.
 - Chunky, low-poly shapes read best at 480×270. Aim for features ≥ 0.25 world units
   (≈ 5 art pixels at the default view height of 13.5).
 - Put movement and forces in `fixedUpdate`; animation, pickups and UI in `update`.
-- Use `input.consumePress` in `fixedUpdate` (never drops a press); use `wasPressed` in `update`.
+- Use `input.consumePress` in `fixedUpdate` (keeps a press for 150 ms of game time); use
+  `wasPressed` in `update`.
   `input.anyDown(codes)` / `input.consumeAny(codes)` take an array (no rest-argument garbage).
 - `hero.feet` / `hero.forward` allocate; per-step code can use `hero.feetInto(v)` / `hero.forwardInto(v)`.
+- Sounds, particles and HUD text: `ctx.audio.play('jump')`, `ctx.particles.burst('dust', at)`,
+  `ctx.hud.text(4, 4, 'SCORE 10')` (see Game systems below). Pickups: `physics.trigger`.
 - New assets: extend `scripts/generate-assets.mjs` (deterministic) or drop GLBs into
   `public/assets/`. See `src/game/playground.ts` for a complete example.
+
+## Game systems
+
+Everything below hangs off the `GameContext` passed to every hook (`ctx.audio`,
+`ctx.particles`, `ctx.hud`, `ctx.physics`, `ctx.input`) or off the `Engine`. The playground
+(`src/game/playground.ts`) uses all of them; `src/game/sandbox.ts` is a second, smaller level.
+
+### Audio (`src/engine/audio/`)
+
+`ctx.audio` is an `AudioManager`. Sounds are **data**: a `SoundDef` is rendered once to a
+buffer by pure, seeded synthesis (`synth.ts`, unit-tested), so it sounds the same everywhere.
+
+```ts
+ctx.audio.play('jump');                          // built-in SFX (sfx.ts)
+ctx.audio.play('coin', { pitch: 2, volume: 0.5, pan: -0.3 }); // semitones, 0..1, -1..1
+ctx.audio.register('laser', {
+  wave: 'square', duty: 0.125,                   // square | triangle | saw | sine | noise
+  freq: 1400, freqEnd: 300,                      // exponential pitch sweep (Hz)
+  attack: 0.002, sustain: 0.04, decay: 0.12,     // envelope, seconds
+  volume: 0.3, arp: [0, 7], arpRate: 0.05,       // optional arpeggio (semitones)
+  layers: [{ wave: 'noise', freq: 4000, decay: 0.05, volume: 0.1 }],
+});
+ctx.audio.playMusic(MY_SONG, 'level1');          // loops; playMusic(null) stops
+await ctx.audio.load('door', 'assets/door.ogg'); // optional audio files, then play('door')
+ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted
+ctx.audio.toggleMute();                          // also the M key and the debug panel button
+```
+
+Built-in SFX: `jump`, `doubleJump`, `land`, `coin`, `step`, `skid`, `punch`, `groundPound`,
+`whoosh`, `hurt`, `fanfare`. A song is patterns of note strings per track:
+
+```ts
+const MY_SONG: Song = {
+  bpm: 140,                                      // stepsPerBeat defaults to 4 (16ths)
+  tracks: {
+    lead: { wave: 'square', duty: 0.25, decay: 0.08, volume: 0.13 },
+    bass: { wave: 'triangle', decay: 0.06, volume: 0.3 },
+    drums: { wave: 'noise', decay: 0.05, volume: 0.1 }, // noise: pitch = hiss (C6 snare, C8 hat)
+  },
+  patterns: {
+    a: { lead: 'C5 . E5 . G5 - - .', bass: 'C3 . . . G2 . . .', drums: 'C6 . C8 . C6 . C8 .' },
+  },
+  order: ['a', 'a'],                             // '.' rest, '-' hold the previous note
+};
+```
+
+`parseSong` throws on a typo (bad note, uneven pattern), so `npm test` catches it. Browsers
+allow sound only after a user gesture: the AudioContext is created on the first key /
+pointer / touch input. Before that, and without Web Audio (headless), every call is a
+silent no-op that still counts plays in `audio.counts` / `audio.log`, so tests can assert on
+sounds. Volumes and mute live in `localStorage` (`pixel-engine:audio`), with try/catch.
+
+Hero sounds without touching the character: compare `hero.stats`, `hero.state`,
+`hero.jumpKind` and `hero.anim` with last step's values in `fixedUpdate`, as
+`Playground.heroEvents` does.
+
+### Particles (`src/engine/particles/`)
+
+```ts
+ctx.particles.burst('dust', hero.feet);                          // landing puff
+ctx.particles.burst('skid', feet, { direction: [vx, 0.6, vz] }); // kicked back
+ctx.particles.burst('sparkle', coinPos, { count: 20, scale: 2, colors: ['white', 'cyan'] });
+ctx.particles.register('confetti', {
+  count: [20, 30], life: [0.6, 1.2], speed: [3, 5], direction: [0, 1, 0], spread: 30,
+  gravity: 6, drag: 1, size: [2, 2], colors: ['red', 'sand', 'lime', 'sky'],
+});
+```
+
+Presets are data (`presets.ts`: `dust`, `skid`, `sparkle`, `smoke`, `impact`). Sizes are
+whole **art pixels** (converted with the camera's world size of one art pixel at the focus),
+colors are `PALETTE` names stepped over each particle's life, never blended. Each preset is
+one pooled CPU simulation (`ParticlePool`, unit-tested) drawn as **one instanced
+`SpriteNodeMaterial` draw call** from a reused instance buffer. Particles freeze with
+`paused`, advance with `step()`, and are cleared when a level unloads.
+
+### Pixel HUD (`src/engine/hud/`)
+
+```ts
+update(ctx: GameContext) {
+  const { hud } = ctx;
+  hud.clear();                                                   // retained: clear + redraw
+  hud.sprite(6, 6, ['.oo.', 'oyyo', 'oyyo', '.oo.'], { o: 'orange', y: 'sand' });
+  hud.text(14, 6, `${coins}/12`, { color: 'sand' });           // 5×7 font, uppercase
+  hud.text(6, 6, 'LIVES 3', { anchor: 'top-right' });
+  hud.text(0, 0, 'PAUSED', { anchor: 'center', scale: 2, shadow: 'navy' });
+  hud.rect(0, 0, hud.width, 12, 'ink', 'bottom-left');           // a bar along the bottom
+}
+```
+
+The HUD is a 2D canvas at the internal resolution (480×270 or 320×180), placed exactly over
+the game canvas with the framing's integer scale and letterbox offset, so one HUD pixel is
+one art pixel at every size and after `R`. It is drawn after (outside) the post filters and
+the pixel pass: text stays crisp in Raw 3D mode and under CRT/VHS looks. x/y are art-pixel
+offsets from the `anchor` (`top-left` default, `top`, `top-right`, `left`, `center`, `right`,
+`bottom-left`, `bottom`, `bottom-right`); `hud.measure(text, scale)` gives the size. It only
+repaints when the content or layout changed, and `renderer.capture()` does not include it.
+
+### Triggers and collision events
+
+```ts
+const coin = physics.trigger({ cylinder: { halfHeight: 0.6, radius: 0.45 } }, [x, y + 0.5, z], {
+  tag: 'character',          // only the hero (PlatformerCharacter tags its collider)
+  once: true,                // removes itself after the first enter
+  onEnter: (other, trigger) => collect(),
+  onExit: (other) => {},
+});
+const zone = physics.trigger({ box: [2, 1, 2] }, [0, 1, 0], { onEnter: () => alarm() });
+zone.position.set(4, 1, 0);  // movable; zone.enabled = false; zone.remove()
+```
+
+Shapes: `{ box: [hx, hy, hz] }`, `{ sphere: r }`, `{ capsule: { halfHeight, radius } }`,
+`{ cylinder: { halfHeight, radius } }`. A trigger is not a collider: after every fixed step
+Physics runs a Rapier intersection query for it and diffs the result, so it never blocks the
+character, ray casts or the camera. It reports dynamic and kinematic bodies (set
+`includeStatic` for level geometry); `filter(collider)` narrows further.
+
+### Level lifecycle
+
+```ts
+await engine.loadGame(new Level2());                      // same renderer, camera, input, audio
+await engine.loadGame(new Level3(), { camera: { preset: 'side' } });
+engine.dispose();                                         // stop and free everything
+```
+
+`loadGame` calls the old game's optional `dispose(ctx)` hook, then removes every scene
+object that is not engine-owned (`userData.engineOwned`: the lights, the particle group) and
+disposes its geometry, materials and textures, except resources marked `userData.shared`
+(cached toon materials, the toon gradient, GLB geometry and textures that other clones
+share). It clears physics, particles, the HUD and music, resets input, and only resumes the
+loop once the new `setup()` resolved. Use `Game.dispose` for anything else the game owns
+(DOM, timers, listeners). Physics on its own:
+
+```ts
+physics.remove(body);       // or a collider; a static collider takes its empty fixed body along
+physics.clear();            // all bodies, colliders, joints, character controllers, triggers, tags, bindings
+physics.counts();           // { bodies, colliders, tags, bindings, triggers, controllers }: leak checks
+input.dispose();            // removes every window / canvas listener (engine.dispose does it)
+```
+
+The `systems` e2e suite switches playground ↔ sandbox six times and checks that bodies,
+colliders, controllers, triggers, tags, scene objects and GPU geometries/textures all return
+to the same numbers. `?game=sandbox` opens the sandbox; `window.__PIXEL_GAMES__` holds both.
+
+### Input: gamepads and press timing
+
+Standard-mapping gamepads need no setup: the left stick feeds `input.moveAxis()` (radial
+deadzone 0.2, `applyDeadzone`), the right stick turns into pointer movement (camera look,
+`input.gamepadLookSpeed`), and buttons press key codes through `input.gamepadButtons`
+(`GAMEPAD_BUTTONS`: A Space · B C · X J · Y F · LB Z · RB X · LT Shift · RT C · Back V ·
+Start B · d-pad arrows), so `KEYMAP` / `readMoveInput` work unchanged. Remap with
+`input.gamepadButtons[2] = 'KeyF'`.
+
+`consumePress` keeps a press for at most `input.pressWindow` = **150 ms of game time**, so a
+jump pressed during a hitch still lands, but presses never pile up. While `engine.paused` is
+true (or a level is loading) game time (`ctx.time`) stops and queued presses are dropped, so
+nothing fires on resume.
+
+### Textured and vertex-colored toon materials
+
+`toonify` (and so `ctx.loadModel`) keeps a material's base color **texture** (switched to
+nearest filtering, no mipmaps: crisp texels) and its **vertex colors**, on the same 3-band
+toon material: `color × map × vertex color`. By hand:
+`toonMaterial(palette.white, { map: pixelTexture(tex), vertexColors: true })`.
+
+### Engine options for shipping a game
+
+```ts
+Engine.start(game, {
+  debugUI: false,                              // default: on in dev (vite) or with ?debug=1
+  debugKeys: { resolution: 'F2', mute: null }, // rebind / disable; `false` = no hotkeys at all
+  touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
+});
+```
+
+Default hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the
+panel on demand) · `nextLook` ] · `prevLook` [ · `mute` M. The touch top bar follows them.
 
 ## Animation
 
@@ -323,7 +504,13 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   `renderer.capture()` shows the result. Recordings are frame-exact however slowly the
   browser renders. `npm run film` is built on it (see docs/ANIMATION.md). Set
   `manual = false` to hand time back to the render loop. `step()` ignores `paused` and the
-  engine hotkeys (P, R, `, [ ]); it only advances the game.
+  engine hotkeys (P, R, `, [ ], M); it only advances the game. `capture()` always shows the
+  current state: it starts a fresh node frame, so the scene pass re-renders even when the
+  loop already rendered in this animation frame (otherwise passes render once per frame).
+- `?debug=1` shows the debug panel in a production build (it is on by default only in dev);
+  `` ` `` creates it on demand. `?game=sandbox` opens the second demo level.
+- `engine.audio.counts` / `.log` (sounds played, even when silent), `engine.particles.alive`,
+  `engine.physics.counts()`, `engine.hud.canvas`, `engine.input.queuedPresses`.
 - `hero.animationMix()`: the clips currently contributing to the pose, with their blend
   weight, time and rate. Blends are driven by `PlatformerCharacter` (rotations re-blended by
   `RotationBlend` so they never flip), not three's
@@ -343,6 +530,9 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   - `Engine.step()` manual time
   - the tools: `build:single` runs from `file://` with no errors or requests, `film` writes
     its PNG + JSON
+  - `systems` (`scripts/e2e-systems.mjs`, in the `@filters` group): HUD framing, audio unlock and
+    hero sounds, particles, coin triggers, gamepad, pause, hotkeys, `loadGame` without leaks,
+    textured toon materials, `dispose()`, on WebGPU and the WebGL 2 fallback
 
   Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
   Chromium loses the WebGPU device when a canvas presents. Run one suite with

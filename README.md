@@ -7,11 +7,11 @@ Demo: *Coin Garden*.
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high)
+npm run dev          # http://localhost:5173  (?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1, ?game=sandbox)
 npm run build        # production build
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
-npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run)
+npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run; E2E_PORT=…)
 npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters
 npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
@@ -34,9 +34,18 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   measured and drawn as PNG contact sheets and motion curves by `npm run anim`, filmed in the
   real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See
   [`docs/ANIMATION.md`](docs/ANIMATION.md).
-- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI.
+- **Game systems:** procedural retro **sound effects** and a chiptune **music** sequencer
+  (both data; M mutes, volumes persist), pixel **particles** (dust, skid, sparkle, smoke,
+  impact), crisp **pixel HUD** text, **trigger volumes** with enter/exit callbacks (the
+  coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
+  **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
+  second demo level.
+- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 · ~ debug UI (on by default in dev, or
+  `?debug=1`) · M mute. Hotkeys are configurable (`EngineOptions.debugKeys`).
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
+- **Gamepads:** left stick moves, right stick looks, A jump · B crouch · X attack · Y grab ·
+  LB prone · RB lie down · LT walk · RT crouch · d-pad moves.
 - **Performance:** the scene, edges and art-pixel filters render at 480×270 and are upscaled
   once; the art width follows the screen (`aspect: 'adaptive'`, portrait phones fill the
   screen); the loop is capped at `maxFps` 60; `quality` low/medium/high sets the shadow map

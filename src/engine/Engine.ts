@@ -1,6 +1,7 @@
 import { AmbientLight, Color, DirectionalLight, type Node, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
 import { abs, dot, max, min, normalWorld, sqrt, uniform } from 'three/tsl';
 import { assetProgress, loadModel, preloadModels } from './assets';
+import { AudioManager } from './audio/AudioManager';
 import {
   CAMERA_PRESETS,
   type CameraConfig,
@@ -13,10 +14,14 @@ import {
   isPerspective,
 } from './camera';
 import { DebugUI } from './DebugUI';
+import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys } from './debugKeys';
 import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
+import { Hud } from './hud/Hud';
 import { Input } from './input';
+import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
-import { TouchControls } from './TouchControls';
+import { Particles } from './particles/Particles';
+import { type TouchButton, TouchControls } from './TouchControls';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
@@ -31,8 +36,14 @@ export interface GameContext {
   readonly camera: CameraRig;
   readonly loadModel: typeof loadModel;
   readonly palette: typeof PALETTE;
-  /** Seconds since start (render clock). */
+  /** Game time in seconds since start. Frozen while paused or loading. */
   readonly time: number;
+  /** Sound effects, music, volumes (src/engine/audio). */
+  readonly audio: AudioManager;
+  /** Pixel particles: `particles.burst('dust', at)` (src/engine/particles). */
+  readonly particles: Particles;
+  /** Pixel HUD text and icons in art pixels (src/engine/hud). */
+  readonly hud: Hud;
 }
 
 /**
@@ -64,6 +75,12 @@ export interface Game {
    * (e.g. side-scroller lane lock, hiding the player model in first person).
    */
   onCameraChange?(ctx: GameContext): void;
+  /**
+   * Called when the game is unloaded (`engine.loadGame(other)` or `engine.dispose()`),
+   * before the engine removes its scene objects, physics bodies, triggers, particles, HUD
+   * and music. Free anything else the game owns: DOM, timers, listeners, HMR hooks.
+   */
+  dispose?(ctx: GameContext): void;
 }
 
 export interface EngineOptions {
@@ -92,15 +109,23 @@ export interface EngineOptions {
   filters?: readonly string[];
   /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
   forceWebGL?: boolean;
+  /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
   debugUI?: boolean;
+  /**
+   * Engine hotkeys (P Pixel/Raw, R resolution, ` debug panel, [ ] looks, M mute).
+   * `false` disables them all; an object rebinds or disables (null) single actions.
+   */
+  debugKeys?: DebugKeysOption;
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
+  /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
+  touchButtons?: readonly TouchButton[];
   background?: number;
 }
 
 /**
  * Read engine options from the URL:
- *   ?backend=webgl  ?mode=raw  ?res=320  ?debug=0
+ *   ?backend=webgl  ?mode=raw  ?res=320  ?debug=1|0
  *   ?aspect=fixed|adaptive  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
  *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
  *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
@@ -113,6 +138,7 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (p.get('mode') === 'raw') opts.mode = 'raw';
   if (p.get('res') === '320') opts.resolution = RESOLUTIONS.compare;
   if (p.get('debug') === '0') opts.debugUI = false;
+  if (p.get('debug') === '1') opts.debugUI = true;
   if (p.get('touch') === '1') opts.touch = true;
   if (p.get('touch') === '0') opts.touch = false;
   const aspect = p.get('aspect');
@@ -153,10 +179,18 @@ export class Engine {
   readonly sun: DirectionalLight;
   readonly ambient: AmbientLight;
   readonly context: GameContext;
+  readonly audio = new AudioManager();
+  readonly particles: Particles;
+  readonly hud: Hud;
   debug: DebugUI | null = null;
   touch: TouchControls | null = null;
-  /** Freeze simulation, animation and camera (rendering continues). For tooling, capture and pause menus. */
-  paused = false;
+  /** Active engine hotkeys (from EngineOptions.debugKeys). */
+  debugKeys: DebugKeyMap = resolveDebugKeys();
+  private _game: Game;
+  private _paused = false;
+  /** False while a game's setup() is running (start, loadGame): nothing advances. */
+  private ready = false;
+  private disposed = false;
   /**
    * Tooling: the render loop stops driving the game; advance it yourself with `step()`.
    * Frame-exact and independent of how fast the browser renders (filmstrips, replays).
@@ -194,15 +228,18 @@ export class Engine {
   private readonly cameraUpdate: CameraUpdate;
 
   private constructor(
-    readonly game: Game,
+    game: Game,
     readonly renderer: PixelRenderer,
     readonly physics: Physics,
     public camera: CameraRig,
     readonly scene: Scene,
     options: EngineOptions,
   ) {
+    this._game = game;
     const clock = () => this.time;
     const rig = () => this.camera;
+    this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
+    this.hud = new Hud(renderer.container);
     this.context = {
       engine: this,
       scene,
@@ -216,6 +253,9 @@ export class Engine {
       get time() {
         return clock();
       },
+      audio: this.audio,
+      particles: this.particles,
+      hud: this.hud,
     };
 
     this.cameraUpdate = {
@@ -247,8 +287,28 @@ export class Engine {
     const slope = min(sqrt(nl.mul(nl).oneMinus()).div(nl), 4);
     (this.sun.shadow as unknown as { biasNode: Node }).biasNode = this.shadowTexelDepth.mul(slope.add(0.75)).negate() as unknown as Node;
     this.ambient = new AmbientLight(new Color(PALETTE.mist), 1.1);
-    this.scene.add(this.sun, this.sun.target, this.ambient);
+    this.scene.add(this.sun, this.sun.target, this.ambient, this.particles.group);
+    // Engine-owned: survive level unloads (engine.loadGame).
+    for (const o of [this.sun, this.sun.target, this.ambient]) o.userData.engineOwned = true;
     renderer.onRecovered = (canvas) => this.input.attachPointer(canvas);
+  }
+
+  /** The running game. Replace it with `loadGame()`. */
+  get game(): Game {
+    return this._game;
+  }
+
+  /**
+   * Freeze simulation, animation, particles and game time (rendering continues). For
+   * tooling, capture and pause menus. Queued key presses are dropped while paused.
+   */
+  get paused(): boolean {
+    return this._paused;
+  }
+
+  set paused(value: boolean) {
+    if (value) this.input.clearQueued();
+    this._paused = value;
   }
 
   /** The quality level in use (see `EngineOptions.quality`). */
@@ -305,6 +365,7 @@ export class Engine {
 
       engine.input.attachPointer(renderer.renderer.domElement);
       engine.wireRig(camera);
+      engine.debugKeys = resolveDebugKeys(options.debugKeys);
 
       await game.setup(engine.context);
       done.setup = true;
@@ -312,6 +373,7 @@ export class Engine {
       camera.teleport(game.cameraTarget(engine.context));
       engine.updateView(0); // place camera + shadow box before compiling and the first frame
       await renderer.precompile();
+      engine.ready = true;
       engine.finishStart(container, options);
       loading?.set(1);
       return engine;
@@ -323,14 +385,17 @@ export class Engine {
 
   /** Debug panel, touch controls, then the render loop. */
   private finishStart(container: HTMLElement, options: EngineOptions): void {
-    if (options.debugUI !== false) this.debug = new DebugUI(this);
+    if (options.debugUI ?? defaultDebugUI()) this.debug = new DebugUI(this);
     if (options.touch ?? TouchControls.wanted()) {
-      this.touch = new TouchControls(container, this.input, undefined, [
-        { label: '⚙', code: 'Backquote' },
-        { label: 'P', code: 'KeyP' },
-        { label: 'R', code: 'KeyR' },
-        { label: '◐', code: 'BracketRight' },
-      ]);
+      const k = this.debugKeys;
+      const bar: TouchButton[] = [
+        { label: '⚙', code: k.debug[0] ?? '' },
+        { label: 'P', code: k.mode[0] ?? '' },
+        { label: 'R', code: k.resolution[0] ?? '' },
+        { label: '◐', code: k.nextLook[0] ?? '' },
+        { label: '♪', code: k.mute[0] ?? '' },
+      ];
+      this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
       if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⚙ button
     }
     this.renderer.setAnimationLoop((t) => this.tick(t));
@@ -431,9 +496,12 @@ export class Engine {
   /** Snapshot for tests, tooling and agents. */
   state() {
     const r = this.renderer;
-    const target = this.game.cameraTarget(this.context);
+    const target = this.ready ? this.game.cameraTarget(this.context) : this.camera.focus;
     return {
       game: this.game.name,
+      ready: this.ready,
+      paused: this.paused,
+      time: this.time,
       backend: r.backend,
       fallbackReason: r.fallbackReason,
       mode: r.mode,
@@ -466,12 +534,74 @@ export class Engine {
    */
   step(n = 1, dt = 1 / 60): void {
     this.manual = true;
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < n && this.ready; i++) {
       this.time += dt;
+      this.input.beginFrame(this.time, dt);
       this.advance(dt);
       this.input.endFrame();
       this.frame++;
     }
+    this.hud.sync(this.renderer.resolution, this.renderer.framing);
+  }
+
+  /**
+   * Unload the running game and start `game` in the same engine (renderer, canvas,
+   * camera rig, input, audio context and debug UI stay). The old game's `dispose(ctx)`
+   * runs first; then every scene object that is not engine-owned is removed and its GPU
+   * resources freed, and physics (bodies, colliders, controllers, triggers, tags),
+   * particles, HUD and music are cleared. Nothing advances until the new `setup()` has
+   * resolved and its pipelines are compiled. Pass `camera` to switch the camera preset.
+   */
+  async loadGame(game: Game, options: { camera?: CameraConfig } = {}): Promise<void> {
+    if (this.disposed) throw new Error('Engine.loadGame: engine was disposed');
+    if (game.assets) preloadModels(game.assets);
+    this.ready = false;
+    this.unloadGame();
+    this._game = game;
+    await game.setup(this.context);
+    if (options.camera) {
+      this.startCamera = { ...options.camera, preset: options.camera.preset ?? 'iso' };
+      this.setCamera(this.startCamera);
+    }
+    this.camera.teleport(game.cameraTarget(this.context));
+    this.updateView(0);
+    // Compile the new level's pipelines with the loop stopped: precompile renders into the
+    // pixel pass's MRT target, and a frame drawn meanwhile would build the output pipeline
+    // against that target (invalid on WebGPU, GL errors on WebGL 2).
+    this.renderer.setAnimationLoop(null);
+    try {
+      await this.renderer.precompile();
+    } finally {
+      if (!this.disposed) this.renderer.setAnimationLoop((t) => this.tick(t));
+    }
+    this.ready = true;
+  }
+
+  /** Stop the loop and free everything: game, scene, physics, audio, input listeners, DOM, GPU. */
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.renderer.setAnimationLoop(null);
+    this.ready = false;
+    this.unloadGame();
+    this.particles.dispose();
+    this.hud.dispose();
+    this.audio.dispose();
+    this.debug?.root.remove();
+    this.touch?.root.remove();
+    this.input.dispose();
+    this.physics.dispose();
+    this.renderer.dispose();
+  }
+
+  private unloadGame(): void {
+    this.game.dispose?.(this.context);
+    this.audio.stopMusic();
+    this.particles.clear();
+    this.hud.clear();
+    clearScene(this.scene);
+    this.physics.clear();
+    this.input.reset();
   }
 
   private tick(timeMs: number): void {
@@ -482,28 +612,37 @@ export class Engine {
     const dt = this.lastTime < 0 ? 1 / 60 : Math.min(t - this.lastTime, 0.1);
     this.lastTime = t;
     if (this.manual) return;
-    this.time += dt;
+    const running = this.ready && !this.paused;
+    if (running) this.time += dt; // game time stops while paused or loading
     this.measure(timeMs);
+    this.input.beginFrame(this.time, dt);
+    if (!running) this.input.clearQueued(); // presses made during a pause never fire later
 
-    if (this.input.wasPressed('KeyP')) this.toggleMode();
-    if (this.input.wasPressed('KeyR')) this.toggleResolution();
-    if (this.input.wasPressed('Backquote')) this.debug?.toggle();
-    if (this.input.wasPressed('BracketRight')) this.cycleLook(1);
-    if (this.input.wasPressed('BracketLeft')) this.cycleLook(-1);
+    this.handleDebugKeys();
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
+    this.audio.update();
 
-    if (this.paused) {
-      this.renderer.render();
-      this.input.endFrame();
-      this.frame++;
-      return;
-    }
-    this.advance(dt);
+    if (running) this.advance(dt);
     this.renderer.render();
+    this.hud.sync(this.renderer.resolution, this.renderer.framing);
     // The status line is only built while the panel is on screen.
-    if (this.debug?.visible) this.debug.update(this.game.status?.(this.context) ?? '');
+    if (running && this.debug?.visible) this.debug.update(this.game.status?.(this.context) ?? '');
     this.input.endFrame();
     this.frame++;
+  }
+
+  private handleDebugKeys(): void {
+    const k = this.debugKeys;
+    const hit = (codes: readonly string[]) => codes.length > 0 && this.input.wasPressed(...codes);
+    if (hit(k.mode)) this.toggleMode();
+    if (hit(k.resolution)) this.toggleResolution();
+    if (hit(k.debug)) {
+      if (this.debug) this.debug.toggle();
+      else this.debug = new DebugUI(this); // created on demand (off by default in production)
+    }
+    if (hit(k.nextLook)) this.cycleLook(1);
+    if (hit(k.prevLook)) this.cycleLook(-1);
+    if (hit(k.mute)) this.audio.toggleMute();
   }
 
   /** Rendered-fps counter, and the one-shot `auto` quality check a few seconds in. */
@@ -535,6 +674,7 @@ export class Engine {
     const ctx = this.context;
     this.physics.update(dt, this.fixedStep);
     this.game.update?.(ctx, dt);
+    this.particles.update(dt);
     this.updateView(dt);
   }
 
@@ -601,3 +741,13 @@ export class Engine {
 
 /** Camera rays pass through the player and anything tagged `noCamera`. */
 const CAMERA_IGNORE = ['character', 'noCamera'];
+
+/** Debug panel default: on in dev builds or with ?debug=1, off in production. */
+function defaultDebugUI(): boolean {
+  if (import.meta.env.DEV) return true;
+  try {
+    return new URLSearchParams(location.search).get('debug') === '1';
+  } catch {
+    return false;
+  }
+}
