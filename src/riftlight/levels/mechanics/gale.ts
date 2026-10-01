@@ -20,7 +20,7 @@ export const GALE: LevelMechanicDef = {
   id: 'gale',
   name: 'Gale',
   tags: ['wind', 'force'],
-  color: 0xc8f0ff,
+  color: 0xf4f4f4,
   description: 'Wind lanes push every actor during gusts.',
   bypass: 'Walk across between gusts, or around the lanes.',
   exploit: 'Ride gusts for a tailwind speed boost; lanes beside pits blow packs into them.',

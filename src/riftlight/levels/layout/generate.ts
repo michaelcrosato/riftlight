@@ -588,9 +588,9 @@ function generateTown(rng: Rng, rooms: number, size: number, seed: number): Layo
         [0, 1],
         [1, 1],
       ] as const) {
-        if (!rng.chance(0.7)) continue;
-        const bw = rng.int(3, Math.max(3, (dw >> 1) - 3));
-        const bh = rng.int(3, Math.max(3, (dh >> 1) - 3));
+        if (!rng.chance(0.9)) continue;
+        const bw = rng.int(4, Math.max(4, (dw >> 1) - 2));
+        const bh = rng.int(4, Math.max(4, (dh >> 1) - 2));
         const bx = qx ? x + dw - 1 - bw : x + 1;
         const bz = qz ? z + dh - 1 - bh : z + 1;
         for (let zz = bz; zz < bz + bh; zz++) for (let xx = bx; xx < bx + bw; xx++) layout.cells[zz * W + xx] = WALL;

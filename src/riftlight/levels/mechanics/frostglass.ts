@@ -22,7 +22,7 @@ export const FROSTGLASS: LevelMechanicDef = {
   name: 'Frostglass',
   tags: ['ice', 'surface', 'cold'],
   excludes: ['mire'],
-  color: 0xa8e4ff,
+  color: 0x41a6f6,
   description: 'Ice floors: actors slide and keep momentum; monsters that die on ice shatter and chain.',
   bypass: 'Stay on the stone paths: the main road is never iced.',
   exploit: 'Slide-dash across sheets for speed; kill packs on ice for chained shatters.',

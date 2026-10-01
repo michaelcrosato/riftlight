@@ -117,7 +117,7 @@ export const GLOOM: LevelMechanicDef = {
         const t = level.time();
         if (hero && !heroLight) heroLight = level.light({ follow: null, position: hero.position, color: lightColor, intensity: 5, radius: HERO_RADIUS, priority: 8, flicker: 'candle', name: 'hero-light' });
         if (hero && heroLight) {
-          const r = HERO_RADIUS * (1 + hero.stats.get('light.radius'));
+          const r = HERO_RADIUS * (hero.stats.get('light.radius') || 1); // a multiplier stat (base 1)
           heroLight.update({ radius: r });
           heroLight.position.set(hero.position.x, hero.position.y + 1.6, hero.position.z);
         }

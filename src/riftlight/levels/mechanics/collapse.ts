@@ -27,7 +27,7 @@ export const COLLAPSE: LevelMechanicDef = {
   name: 'Collapse',
   tags: ['earth', 'surface', 'speed'],
   excludes: ['riftgates'],
-  color: 0xb8a080,
+  color: 0xd06a30,
   description: 'Floors crumble behind you and drop into the void.',
   bypass: 'Keep moving on the solid main road.',
   exploit: 'Fastest clears earn collapse bonus loot; grab the caches on crumbling islands before they fall.',

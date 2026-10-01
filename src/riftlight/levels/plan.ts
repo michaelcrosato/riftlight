@@ -39,8 +39,14 @@ export interface Pack {
   /** Strongest rank in the pack (map colour, loot expectations). */
   readonly rank: Rank;
   readonly members: readonly PackMember[];
-  /** Power budget spent (normal 1, magic 2.5, rare 5, boss 12). */
+  /**
+   * Power budget spent: ranks (normal 1, magic 2.5, rare 5, boss 12) plus `power` for every
+   * member (what's left of the pack's budget: the monsters system spends it on bigger
+   * bodies, parts and elite mods, so deep packs get stronger, not just bigger).
+   */
   readonly cost: number;
+  /** Extra power per member for the monster generator. */
+  readonly power: number;
 }
 
 /** Shrines: buffs as Mods (the one modifier language). */
@@ -150,6 +156,15 @@ function planPacks(spec: LevelSpec, layout: Layout, rng: Rng, taken: Uint8Array)
     const perArea = layout.style === 'town' ? 90 : 48;
     const base = role === 'combat' ? area / perArea : role === 'boss' ? 1 : role === 'hall' ? 0.5 : 0.6;
     const count = Math.min(5, Math.max(role === 'combat' ? 1 : 0, Math.round(base * SCALING.density(depth) * rng.range(0.8, 1.2))));
+    if (role === 'boss') {
+      const b = layout.spotsOf('boss', room.id)[0];
+      const at = b ?? layout.roomCells(room.id)[0]!;
+      taken[at.z * W + at.x] = 1;
+      const power = SCALING.monsterBudget(depth) * 2;
+      target += RANK_COST.boss + power;
+      spent += RANK_COST.boss + power;
+      packs.push({ id: packs.length, room: room.id, archetype: spec.boss?.archetype ?? rng.pick(archetypes), rank: 'boss', members: [{ x: at.x + 0.5, z: at.z + 0.5, rank: 'boss' }], cost: RANK_COST.boss + power, power });
+    }
     const anchors = rng.shuffle(layout.spotsOf('spawn', room.id).filter((s) => free(s.x, s.z)));
     for (let k = 0; k < count; k++) {
       const budget = SCALING.monsterBudget(depth) * rng.range(0.8, 1.2);
@@ -161,9 +176,8 @@ function planPacks(spec: LevelSpec, layout: Layout, rng: Rng, taken: Uint8Array)
         const c = rng.pick(cells);
         anchor = { x: c.x, z: c.z, tag: 'spawn', room: room.id };
       }
-      // Composition by rank within the budget: a leader (rare/magic) by chance, normals up
-      // to a pack size, then the rest of the budget upgrades members (deep packs get
-      // stronger, not bigger).
+      // Composition: a leader (rare/magic) by chance, then normals up to a pack size; the
+      // rest of the budget becomes per-member power (deep packs get stronger, not bigger).
       const ranks: Rank[] = [];
       let left = budget;
       const r = rng.next();
@@ -180,29 +194,15 @@ function planPacks(spec: LevelSpec, layout: Layout, rng: Rng, taken: Uint8Array)
         ranks.push('normal');
         left -= 1;
       }
-      for (let i = ranks.length - 1; i >= 0 && left > 0; i--) {
-        if (ranks[i] === 'normal' && left >= RANK_COST.magic - 1) {
-          ranks[i] = 'magic';
-          left -= RANK_COST.magic - 1;
-        } else if (ranks[i] === 'magic' && left >= RANK_COST.rare - RANK_COST.magic && !ranks.includes('rare')) {
-          ranks[i] = 'rare';
-          left -= RANK_COST.rare - RANK_COST.magic;
-        }
-      }
       if (ranks.length < 2) ranks.push('normal');
       const members = spread(layout, anchor.x, anchor.z, ranks, free, taken);
       if (!members.length) continue;
-      const cost = members.reduce((s, m) => s + RANK_COST[m.rank], 0);
+      const base = members.reduce((s, m) => s + RANK_COST[m.rank], 0);
+      // Whatever the ranks didn't use becomes per-member power (parts, size, elite mods).
+      const power = Math.max(0, (budget - base) / members.length);
+      const cost = base + power * members.length;
       spent += cost;
-      packs.push({ id: packs.length, room: room.id, archetype: rng.pick(archetypes), rank: ranks.includes('rare') ? 'rare' : ranks.includes('magic') ? 'magic' : 'normal', members, cost });
-    }
-    if (role === 'boss') {
-      const b = layout.spotsOf('boss', room.id)[0];
-      const at = b ?? layout.roomCells(room.id)[0]!;
-      taken[at.z * W + at.x] = 1;
-      target += RANK_COST.boss;
-      spent += RANK_COST.boss;
-      packs.push({ id: packs.length, room: room.id, archetype: spec.boss?.archetype ?? rng.pick(archetypes), rank: 'boss', members: [{ x: at.x + 0.5, z: at.z + 0.5, rank: 'boss' }], cost: RANK_COST.boss });
+      packs.push({ id: packs.length, room: room.id, archetype: rng.pick(archetypes), rank: ranks.includes('rare') ? 'rare' : ranks.includes('magic') ? 'magic' : 'normal', members, cost, power });
     }
   }
   return { packs, spent, target };

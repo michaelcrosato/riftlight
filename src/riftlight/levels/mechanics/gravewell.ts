@@ -29,13 +29,21 @@ export const GRAVEWELL: LevelMechanicDef = {
   bypass: 'Avoid the wells: they never reach the main road.',
   exploit: 'Let wells group packs for area skills; kills inside a well stack gravity shards (more area).',
   place(ctx) {
+    // As big as the room allows: radius 3, else 2.5, else 2 (the pull reaches no further).
     for (const room of ctx.rooms({ boss: true })) {
-      if (!ctx.rng.chance(0.65)) continue;
-      const free = ctx.rng.shuffle(ctx.free({ room: room.id, minClearance: 3 }));
-      for (const c of free.slice(0, 12)) {
-        const cells = ctx.disc(c.x + 0.5, c.z + 0.5, RADIUS);
-        if (!cells.every((i) => ctx.isFree(i % ctx.layout.width, Math.floor(i / ctx.layout.width)))) continue;
-        if (ctx.add({ kind: 'well', x: c.x + 0.5, z: c.z + 0.5, cells, block: 'hazard', data: { phase: ctx.rng.range(0, PERIOD) } })) break;
+      if (!ctx.rng.chance(0.7)) continue;
+      let placed = false;
+      for (const radius of [RADIUS, 2.5, 2]) {
+        const free = ctx.rng.shuffle(ctx.free({ room: room.id, minClearance: Math.ceil(radius) }));
+        for (const c of free.slice(0, 16)) {
+          const cells = ctx.disc(c.x + 0.5, c.z + 0.5, radius);
+          if (!cells.every((i) => ctx.isFree(i % ctx.layout.width, Math.floor(i / ctx.layout.width)))) continue;
+          if (ctx.add({ kind: 'well', x: c.x + 0.5, z: c.z + 0.5, cells, block: 'hazard', data: { phase: ctx.rng.range(0, PERIOD), radius } })) {
+            placed = true;
+            break;
+          }
+        }
+        if (placed) break;
       }
     }
   },
@@ -47,6 +55,7 @@ export const GRAVEWELL: LevelMechanicDef = {
     const coreMat = glowMaterial(tint(accent, 0.5));
     interface Well {
       at: Vector3;
+      radius: number;
       phase: number;
       rings: Group;
       core: Mesh;
@@ -74,6 +83,7 @@ export const GRAVEWELL: LevelMechanicDef = {
       level.root.add(rings, core);
       wells.push({
         at: new Vector3(e.x, 0, e.z),
+        radius: (e.data.radius as number) ?? RADIUS,
         phase: e.data.phase as number,
         rings,
         core,
@@ -84,7 +94,7 @@ export const GRAVEWELL: LevelMechanicDef = {
     const pulse = (w: Well, t: number) => (t + w.phase) % PERIOD < PULSE;
     // Kills inside a well: gravity shards.
     let shards = 0;
-    const inWell = (a: ActorLike) => wells.some((w) => Math.hypot(a.position.x - w.at.x, a.position.z - w.at.z) < RADIUS);
+    const inWell = (a: ActorLike) => wells.some((w) => Math.hypot(a.position.x - w.at.x, a.position.z - w.at.z) < w.radius);
     const off = level.events.on('kill', ({ target }) => {
       if (target.faction !== 'monster' || !inWell(target)) return;
       shards = Math.min(5, shards + 1);
@@ -102,7 +112,7 @@ export const GRAVEWELL: LevelMechanicDef = {
           // Rings contract toward the core while pulling.
           const local = ((t + w.phase) % PERIOD) / (on ? PULSE : PERIOD);
           w.rings.children.forEach((r, k) => {
-            const s = RADIUS * (1 - ((local + k / 3) % 1) * (on ? 0.85 : 0.2));
+            const s = w.radius * (1 - ((local + k / 3) % 1) * (on ? 0.85 : 0.2));
             r.scale.setScalar(Math.max(0.3, s));
           });
           w.core.position.y = 1.2 + Math.sin(t * 2) * 0.15;
@@ -122,8 +132,8 @@ export const GRAVEWELL: LevelMechanicDef = {
           const dx = w.at.x - actor.position.x;
           const dz = w.at.z - actor.position.z;
           const d = Math.hypot(dx, dz);
-          if (d > RADIUS + 0.4 || d < 0.3) continue;
-          const strength = (pulse(w, t) ? 14 : 4) * (1 - d / (RADIUS + 0.4)) * (actor.faction === 'hero' ? 0.45 : 1);
+          if (d > w.radius + 0.4 || d < 0.3) continue;
+          const strength = (pulse(w, t) ? 14 : 4) * (1 - d / (w.radius + 0.4)) * (actor.faction === 'hero' ? 0.45 : 1);
           actor.push(pull.set(dx / d, 0, dz / d).multiplyScalar(strength * dt));
         }
       },

@@ -1,4 +1,5 @@
-import { type AmbientLight, Color, type DirectionalLight, Fog, Group, type Mesh, type Object3D, type Scene, Vector3 } from 'three/webgpu';
+import { type AmbientLight, Color, type DirectionalLight, Group, type Mesh, type Node, type Object3D, type Scene, Vector3 } from 'three/webgpu';
+import { fog, max, positionWorld, rangeFogFactor, smoothstep, uniform } from 'three/tsl';
 import type { AudioManager } from '../../engine/audio/AudioManager';
 import type { Particles } from '../../engine/particles/Particles';
 import { type Physics, RAPIER } from '../../engine/physics/Physics';
@@ -139,6 +140,8 @@ class LevelRuntime implements Level {
   private lastSafe = new Vector3();
   private revealTimer = 0;
   private readonly mctx: MechanicLevel;
+  /** Fog colour (a uniform: tints change it without recompiling anything). */
+  private readonly fogColor = uniform(new Color());
 
   constructor(
     readonly plan: LevelPlan,
@@ -270,6 +273,8 @@ class LevelRuntime implements Level {
     this.buffs.clear();
     const physics = this.ctx.physics;
     if (physics && this.body) physics.world.removeRigidBody(this.body);
+    // The engine resets scene.fog on unload, not a fog node: ours goes with the level.
+    if (this.ctx.world) (this.ctx.world.scene as Scene & { fogNode: Node | null }).fogNode = null;
     this.root.removeFromParent();
   }
 
@@ -452,6 +457,7 @@ class LevelRuntime implements Level {
           room: e.pack.room,
           genome: m.rank === 'boss' ? this.spec.boss : null,
           eliteBudget: m.rank === 'normal' ? 0 : SCALING.eliteBudget(this.spec.depth) * (m.rank === 'boss' ? 2 : m.rank === 'rare' ? 1 : 0.5),
+          power: e.pack.power,
         };
         const actor = this.hooks.spawnMonster(spawn);
         if (!actor) continue;
@@ -541,9 +547,12 @@ class LevelRuntime implements Level {
     if (!w) return;
     const t = this.theme;
     w.scene.background = new Color(t.palette.sky);
-    // The ortho camera sits 40 m from its focus: fog starts a little past the focus, so
-    // pits, voids and the far edge of the screen sink into the theme's fog.
-    w.scene.fog = new Fog(t.palette.fog, 40 + t.fog.near, 40 + t.fog.far);
+    // Height fog: everything below the floor (cliffs, pits, the void under bridges) sinks
+    // into the theme's fog, plus a light haze far up the screen. The ortho camera sits 40 m
+    // from its focus, so the range part starts a little past the focus.
+    const below = smoothstep(-0.2, -6, positionWorld.y);
+    const haze = rangeFogFactor(40 + t.fog.near, 40 + t.fog.far).mul(0.55);
+    (w.scene as Scene & { fogNode: Node | null }).fogNode = fog(this.fogColor, max(below, haze)) as unknown as Node;
     this.applyEnv();
   }
 
@@ -554,12 +563,12 @@ class LevelRuntime implements Level {
     const e = this.env;
     w.sun.color.setHex(t.sun);
     w.ambient.color.setHex(t.ambient);
+    this.fogColor.value.setHex(t.palette.fog);
     if (e.tint !== null && e.tintAmount > 0) {
       tmpColor.setHex(e.tint);
       w.sun.color.lerp(tmpColor, e.tintAmount);
       w.ambient.color.lerp(tmpColor, e.tintAmount);
-      const fog = w.scene.fog as Fog | null;
-      fog?.color.setHex(t.palette.fog).lerp(tmpColor, e.tintAmount * 0.5);
+      this.fogColor.value.lerp(tmpColor, e.tintAmount * 0.5);
     }
     w.sun.intensity = t.sunIntensity * e.sun;
     w.ambient.intensity = t.ambientIntensity * e.ambient;

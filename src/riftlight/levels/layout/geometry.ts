@@ -24,6 +24,8 @@ import { FLOOR, type Layout, VOID, WALL } from './grid';
  */
 
 const CLIFF = 7;
+/** Walls facing the void outside the level stop a little below the floor (solid rock beyond). */
+const FOOTING = 1;
 const LIP = 0.35;
 const LOW_WALL = 0.55;
 const BAND = 0.16;
@@ -107,7 +109,8 @@ export function wallHeights(layout: Layout, plan: LevelPlan, skip: Uint8Array): 
       const i = z * W + x;
       if (layout.cells[i] !== WALL || skip[i]) continue;
       // A floor on the far side from the camera (−x, −z): this wall hides it → cut low.
-      const front = isFloor(x - 1, z) || isFloor(x, z - 1) || isFloor(x - 1, z - 1);
+      // Two cells deep, so a thin wall between two rooms doesn't hide the far one either.
+      const front = isFloor(x - 1, z) || isFloor(x, z - 1) || isFloor(x - 1, z - 1) || isFloor(x - 2, z) || isFloor(x, z - 2);
       let v = front ? LOW_WALL : tall;
       if (layout.style === 'ruins' && !front) v = Math.max(LOW_WALL + 0.2, tall * (0.45 + 0.55 * hash(x, z, 7)));
       if (layout.style === 'caves' && !front) v = tall * (0.8 + 0.35 * hash(x, z, 3));
@@ -196,7 +199,7 @@ export function buildGeometry(plan: LevelPlan): LevelGeometry {
           const hn = heights[nz * W + nx]!;
           if (hn >= h) continue;
           bottom = hn;
-        } else if (n === VOID && !(layout.inBounds(nx, nz) && dyn[nz * W + nx])) bottom = -CLIFF;
+        } else if (n === VOID && !(layout.inBounds(nx, nz) && dyn[nz * W + nx])) bottom = -FOOTING;
         else bottom = 0;
         const bandFrom = Math.max(bottom, h - BAND);
         if (bottom < 0) {

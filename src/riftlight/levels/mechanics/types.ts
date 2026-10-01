@@ -82,6 +82,8 @@ export interface MonsterSpawn {
   readonly genome: Genome | null;
   /** Elite-mod budget for magic/rare/boss monsters (SCALING.eliteBudget). */
   readonly eliteBudget: number;
+  /** Extra generator power for this monster (the pack's unspent budget, see plan.ts). */
+  readonly power: number;
 }
 
 /**
