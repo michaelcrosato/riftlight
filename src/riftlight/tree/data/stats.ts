@@ -123,12 +123,40 @@ export const PERCENT_FLAT = new Set([
   'dodge.chance',
 ]);
 
-/** Human text for a tree mod: describeMod, with percentage flats printed as percentages. */
-export function describeTreeMod(m: Mod): string {
+/** Readable names for scope tags in tooltips ("with two-handed weapons"). */
+export const TAG_NAMES: Readonly<Record<string, string>> = {
+  twohand: 'two-handed weapons',
+  dualwield: 'dual wielding',
+  bow: 'bows',
+  attack: 'attacks',
+  spell: 'spells',
+  projectile: 'projectiles',
+  trap: 'traps',
+  totem: 'totems',
+  slam: 'slams',
+  area: 'area skills',
+  minion: 'minions',
+  curse: 'curses',
+  hit: 'hits',
+  fire: 'fire skills',
+  cold: 'cold skills',
+  lightning: 'lightning skills',
+  physical: 'physical hits',
+  bleed: 'bleeding',
+  poison: 'poison',
+  ignite: 'ignite',
+  endurance: 'endurance charges',
+  frenzy: 'frenzy charges',
+  power: 'power charges',
+};
+
+/** Human text for a tree mod: describeMod, with percentage flats printed as percentages and readable tags. */
+export function describeTreeMod(mod: Mod): string {
+  const m: Mod = mod.tags?.length ? { ...mod, tags: mod.tags.map((t) => TAG_NAMES[t] ?? t) } : mod;
   if (m.kind === 'flat' && PERCENT_FLAT.has(m.stat)) {
     const name = STAT_NAMES[m.stat] ?? m.stat.replace(/\./g, ' ');
     const pct = Math.round(m.value * 1000) / 10;
-    const scope = m.tags?.length ? ` with ${m.tags.join(' ')}` : '';
+    const scope = m.tags?.length ? ` with ${m.tags.join(' and ')}` : '';
     const cond = m.when ? ` while ${m.when.replace(/([A-Z])/g, ' $1').toLowerCase()}` : '';
     return `${pct >= 0 ? '+' : ''}${pct}% ${name}${scope}${cond}`;
   }
@@ -378,7 +406,8 @@ const title = (s: string) => s.replace(/(^|\s)\w/g, (c) => c.toUpperCase());
 export function smallName(mods: readonly Mod[]): string {
   const one = (m: Mod) => {
     const base = SHORT_NAMES[m.stat] ?? title(m.stat.replace(/\./g, ' '));
-    const scope = m.tags?.length ? `${title(m.tags.join(' '))} ` : '';
+    const short: Record<string, string> = { twohand: 'Two-Handed', dualwield: 'Dual Wield' };
+    const scope = m.tags?.length ? `${m.tags.map((t) => short[t] ?? title(t)).join(' ')} ` : '';
     const cond = m.when ? ` ${WHEN_SHORT[m.when] ?? title(m.when)}` : '';
     return `${scope}${base}${cond}`;
   };
