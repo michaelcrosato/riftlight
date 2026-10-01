@@ -36,6 +36,7 @@
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON.
+// riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials, engine.dispose().
@@ -63,6 +64,7 @@ import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
+import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1029,14 +1031,19 @@ const SUITES = {
     await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-combat': async (exe) => {
+    const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
+    await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
-  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-levels'],
+  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight-combat'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
