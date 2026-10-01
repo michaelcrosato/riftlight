@@ -4,7 +4,8 @@
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | tools | systems;  groups: @core | @cameras | @filters
+//     filters-webgl | touch | phone | moves | lab | riftlight-tree | riftlight-loot | tools |
+//     systems;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -30,6 +31,8 @@
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
+// riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
+// riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
 // tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON.
@@ -52,7 +55,9 @@ import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSystems } from './e2e-systems.mjs';
+import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -118,8 +123,16 @@ async function resolveExecutable() {
 }
 
 async function startServer() {
-  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'pipe' });
-  for (let i = 0; i < 100; i++) {
+  // Something already answering on the port would be tested instead of this build (e.g. a
+  // leftover preview server from another checkout): refuse rather than test the wrong code.
+  const taken = await fetch(BASE).then(() => true, () => false);
+  if (taken) throw new Error(`port ${PORT} is already serving something; stop it or set E2E_PORT`);
+  // detached: its own process group, so stopServer() ends npx *and* the vite it starts
+  // (killing npx alone left vite running, holding the port).
+  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', detached: true });
+  let exited = false;
+  proc.on('exit', () => (exited = true));
+  for (let i = 0; i < 100 && !exited; i++) {
     try {
       const res = await fetch(BASE);
       if (res.ok) return proc;
@@ -128,8 +141,16 @@ async function startServer() {
     }
     await new Promise((r) => setTimeout(r, 100));
   }
-  proc.kill();
+  stopServer(proc);
   throw new Error('vite preview did not start');
+}
+
+function stopServer(proc) {
+  try {
+    process.kill(-proc.pid, 'SIGTERM');
+  } catch {
+    proc.kill();
+  }
 }
 
 const state = (page) => page.evaluate(() => window.__PIXEL_ENGINE__?.state());
@@ -986,11 +1007,17 @@ const SUITES = {
   phone: (exe) => runPhone(exe),
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
+  'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
   tools: (exe) => runTools(exe),
   systems: async (exe) => {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
     await runSystems({ ...helpers, scenario: SCENARIOS[0] });
     await runSystems({ ...helpers, scenario: SCENARIOS[1] });
+  },
+  'riftlight-loot': async (exe) => {
+    const helpers = { exe, openPage, check, capture, checkClean, encodePng, OUT };
+    await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[1] });
   },
 };
 
@@ -998,8 +1025,8 @@ const SUITES = {
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves'],
-  '@cameras': ['cameras', 'camera-swap', 'lab'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
@@ -1026,7 +1053,7 @@ try {
     console.log(`  ⏱ ${name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
   }
 } finally {
-  server.kill();
+  stopServer(server);
 }
 console.log(`\n⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
 console.log(failures ? `✘ ${failures} check(s) failed` : '✔ all e2e checks passed');
