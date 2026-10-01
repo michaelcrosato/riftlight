@@ -267,21 +267,272 @@ cap. A rift's name comes from its mechanics, e.g. *Rift 37: Frostglass Gravewell
 
 ## Monsters ("Spore" generator)
 
-- **Body plans** are hand-made skeleton grammars: biped, quadruped, hexapod, serpent, floater,
-  blob and brute. Each defines spine segments, limb sockets and default proportions.
-- **Parts** are hand-made, with tags such as `head`, `horn`, `jaw`, `limb`, `claw`, `wing`,
-  `tail`, `plate` and `eye`. They attach to sockets, and each knows how to scale, mirror and
-  take a palette.
-- **Assembly** turns a genome (seed + plan + parts + proportions + palette) into an `Object3D`
-  of joints with toon meshes, plus a `RigSpec` (legs geometry for IK, soles, mirror pairs).
-- **Animation is procedural and data-driven.** Locomotion uses `gaitClip` generalised to N
-  legs. Attacks, hit reactions, death and spawn come from per-archetype templates compiled with
-  `compileClip`. Live layers add breathing, look-at, hit flinch and procedural foot placement.
-- **Archetypes** are brains: charger, skirmisher, caster, summoner, bomber, tank, swarm,
-  sniper and leaper. Each is a small utility-AI over shared actions.
-- **Elite mods** come from the same `Mod` language plus behaviours: hasted, vampiric,
-  fire-enchanted, teleporter, shielded, splitter, frenzied and more.
-- **Bosses** are genomes at a large scale with a phase script picked from boss modules.
+Code: `src/riftlight/monsters/` (public API in `index.ts`). A monster is a **genome** (plain
+data), turned into a body by a **plan's skeleton grammar** with **parts** on its sockets,
+animated by **procedural clips**, driven by an **archetype brain**, spiced with **elite
+mods**. Bosses add a phase script on top.
+
+```
+generateGenome(rng, {depth, tags, archetype, rank, budget})        mutate / crossover
+        │  plan + genes (0..1) + parts per slot + palette + scale + archetype + elite + rank
+        ▼
+buildMonster(genome) ── plan.build(genes) ─► Skeleton: joints, body shapes, sockets, legs, roles, gaits
+        │                parts on sockets ─► toon meshes (shared unit geometry, cached materials)
+        │                rig ─► RigSpec (soles, mirror pairs; 2-leg bodies also get `legs` for placeFeet)
+        ▼
+{ object, rig, clip(name), clipInfo(name), defs, clips, stats: Mod[], skills, radius, height }
+        │  clips are generated on first use (bake → compileClip) and cached per body shape
+        ▼
+MonsterRuntime (mixer + look-at, flinch, foot placement, wind-up glow, hit events)
+MonsterBrain / BossBrain over a MonsterBody (the integration wires it to combat's Actor)
+```
+
+```ts
+const rng = run.fork(`level:${depth}`).fork(`pack:${i}`);
+const genome = generateGenome(rng, { depth, tags: ['fire'], archetype: 'charger', rank: 'magic' });
+const m = buildMonster(genome);                 // ~1.5 ms; deterministic
+scene.add(m.object);
+const rt = new MonsterRuntime(m);              // rt.locomote(speed); rt.play('Bite'); rt.update(dt, { lookAt })
+for (const e of rt.update(dt)) if (e.type === 'hit') applyDamage();   // synced to the clip's hit frame
+const brain = new MonsterBrain({ body, archetype: genome.archetype, skills: m.skills, elite: genome.elite, home });
+```
+
+### Genomes, budgets and evolution
+
+- **Genome** (`core/types.ts`): `{ seed, plan, parts: {socket: slot, part}[], genes, palette,
+  scale, archetype, elite[], rank }`. Genes are 0..1 proportions: `length`, `girth`,
+  `legLength`, `neck`, `headSize`, `limbThickness`, `posture`, `tailLength`, plus plan
+  genes (`armLength`, `segments`, `legPairs`, `hover`, `tentacles`, `hop`, `wingSpan`...).
+- **Budget** (rule 4): `genomeBudget(depth, rank)` = `SCALING.monsterBudget(depth)` × rank
+  (normal 1, magic 1.25, rare 1.5, boss 3). Every part has a `cost`; the generator fills
+  slots (each plan gives a chance per slot) with parts it can still afford, picked by
+  weight × theme match (×4 for a theme tag, ×1.6 for `any`) × archetype preference (×2.5).
+  `head` and `eyes` are always filled. Bosses roll more slots and bigger bodies.
+- **Palette** (`palette.ts`): the theme tag gives a base hue (`THEME_COLOURS`), a harmony
+  (analogous, complementary, triadic, split, mono; bosses analogous) gives the second colour,
+  the primary's lightness is pushed away from the floor's, and every colour is quantised
+  (24 hues × 5 saturations × 21 lightness steps) so toon materials stay a small shared set.
+- **Elites and bosses**: magic rolls 1 elite mod, rare 2–3, boss 1–2, within
+  `SCALING.eliteBudget(depth)`; anything above normal gets a glowing aura ring.
+- **Evolution**: `mutate(genome, rng, amount)` drifts genes (σ = 0.22 × amount), swaps,
+  adds or drops parts, shifts the palette's hue and, rarely, changes the plan (parts that no
+  longer fit are dropped, the head re-rolled). `crossover(a, b, rng)` takes one parent's plan,
+  each gene from either parent (or their mean), each slot's part from either parent when it
+  fits, and mixes the palettes. `sanitize` / `validateGenome` keep the result buildable.
+
+### Body plans (`plans/`)
+
+| plan | skeleton | locomotion |
+| --- | --- | --- |
+| `biped` | pelvis → spine → chest → neck → head; 2 arms, 2 legs, optional tail | 2-leg walk/run |
+| `brute` | biped grammar: hunched, short legs, huge arms, small low head | heavy 2-leg gait |
+| `quadruped` | hips (root) → spine, chest; neck chain, tail chain; front knees forward, hind hocks back | lateral walk, trot |
+| `hexapod` | thorax, abdomen, head; 3 or 4 pairs of splayed legs (`legPairs`) | tripod / tetrapod |
+| `serpent` | front segment (root) + 5–9 tapering segments; 2-joint neck (`posture` = cobra) | slither wave |
+| `floater` | the head part *is* the body, at hover height; tentacles, wings, wisp tail | bob, lean, trail |
+| `blob` | a squashy mass on a flat base (its sole) | squash-hop |
+| `avian` | egg body, long neck, folded wings, fan tail, backward knees | 2-foot hop (or stride) |
+| `centipede` | head segment + 4–8 segments, a splayed leg pair on each | wave gait |
+
+A plan is a `BodyPlanDef`: genes (mean, spread), slot chances, mods (serpents evade, brutes
+have life), a base scale and `build(ctx)`, which describes the body with `SkeletonBuilder`
+(`plans/builder.ts`):
+
+- `joint(name, parent, pos, yaw?)`, `shape(joint, kind, size, at, colour)`, `chain(...)`;
+- `leg({ pair, side, parent, hip, splay, upper, lower, ankle, bend, thick, sole })` adds
+  Hip (yaw/roll) → Thigh → Shin → Foot plus a `Sole<pair><side>` mesh; `splay` turns the
+  leg plane sideways (spiders), `bend` −1 gives a backward knee (birds, hocks);
+- `arm(side, parent, at, upper, lower, thick)`, `addWings`, `addTail`, `addTentacles`;
+- `head(joint, size, anchors)` places the head socket and the eye, horn, helm and jaw
+  sockets from the chosen head part's anchors (a Jaw joint when it has one);
+- `stance[joint] = [x, y, z]`: the base pose every clip starts from (lean, neck, folded wings);
+- `done({ roles, locomotion, gaits, height, radius, length })`. **Roles** name the joints
+  animation templates address: `root`, `spine`, `chest`, `neck`, `head`, `jaw`, `tail`,
+  `wings`, `tentacles`, `segments`, `mass`.
+
+Conventions: faces +Z, the monster's right is −X, feet at y = 0, metres at genome scale 1,
+joint names ending in R/L are mirror pairs (`Hip0R` ↔ `Hip0L`).
+
+### Parts (`parts/`)
+
+85 hand-made parts: heads (13: snout, lizard, skull, beak, maw, insect, cyclops, horned,
+iron visage, wisp orb, floating eye, jelly bell, hooded wraith), jaws, eyes (pair, big,
+cluster, stalk, slit), horns/antlers/antennae/spikes, helms and crests, back pieces
+(spikes, plates, shells, fins, crystals, armour, ribs, vents, mushrooms, sails), shoulders,
+wings (bat, feather, insect, bone), tails (club, stinger, whip, fan, flame, blade), cores
+(crystal, ember, void, rune, heart), tentacles, hands (claws, fists, pincers, scythes,
+paws), weapons (club, spear, staff, axe, cleaver, orb) and feet (hooves, talons, claws).
+
+Slots: `head`, `jaw`, `eyes`, `horns`, `helm`, `back`, `shoulders`, `wings`, `tail`, `hands`,
+`weapon`, `feet`, `core`, `tentacles`. Mirrored sockets share their slot's part.
+
+A part is `part(id, name, fits, tags, cost, mods, build, { anchors?, anims?, plans? })`.
+`build(c)` uses the kit (`parts/kit.ts`): `box`, `ball`, `lump`, `cone`, `cyl`, `taper`,
+`horn` (curved, tapered), `slab` (extruded outline), `turned` (lathe), each taking a palette
+slot (`primary`, `secondary`, `accent`, `dark`, `glow`) and positions/sizes **in socket
+units** (multiplied by the socket's size). Author for the character's **left** (+X); right
+sockets are mirrored automatically. `{ glow: true }` makes it unlit (eyes, cores, crystals).
+Unit geometry is shared by every part and cached; materials are the engine's cached toon
+materials. Socket spaces: heads span x ±0.5, y 0..1, z −0.45..0.55 from the neck joint;
+back pieces have +Y out of the body and Z along the spine; tails point −Z from the tip;
+hands hang down (−Y) with +Z forward; feet sit on the sole (y = 0 is the floor).
+Tags are themes (`fire`, `ice`, `undead`, `insect`, `beast`, `construct`, `void`, `storm`,
+`poison`, `nature`, `blood`, `earth`, `shadow`, `crystal`, `arcane`, `water`, or `any`)
+and part kinds; mods use the one modifier language (horns `knockback`, wings `move.speed`,
+shells `armour`, stingers `chance.poison`...). `anims: ['TailWhip']` lets a melee monster
+use its tail.
+
+### Animation (`anim/`)
+
+Every clip is a template over the **semantic poser** (`anim/poser.ts`: `root`, `spine`,
+`neck`, `head`, `jaw`, `arm(s)`, `tail`, `wings(raise, spread, fold)`, `tentacles`,
+`segments`, `mass(squash)`), so one template animates every body. `bake()` samples the
+template (`sampleClip`: keys, eases, layers) on top of the stance, solves every foot with
+the **N-leg IK** (`anim/ik.ts`, built on the engine's `twoBoneX`; legs may hang from any
+joint, the solver reads that joint's animated transform; splayed legs yaw their plane,
+upright legs roll it; feet are levelled to the floor; too-close targets slide outwards
+instead of through the floor), then a **floor clamp** lifts the root until no mesh is below
+the floor. The result is a plain `ClipDef` (one key per frame) → `compileClip`.
+
+| clips | how |
+| --- | --- |
+| `Idle` | breathing layers, look-around keys; slither sway, float bob, blob wobble |
+| `Walk`, `Run`, `Charge` | `gaitClip` generalised to N legs: a phase per leg (biped 0/½; quadruped lateral walk and trot; tripod, tetrapod, wave gaits are phase tables); stance feet slide back at exactly the clip speed, swing feet arc forward; cadence from leg length (`1.3·√reach` m/s walking, `4·√reach` running, × the gait's `pace`). Hoppers (avian, blob) move both feet together; serpents slither (a lateral wave travelling down the chain at the ground speed); floaters bob and lean. |
+| attacks | `Bite`, `Claw` (weapon: overhead chop), `Slam`, `ChargeWindup`, `Spit`, `Cast`, `Summon`, `Leap`, `TailWhip`, `Explode`: anticipation against the strike, a **hit frame**, follow-through |
+| `Hit`, `Death`, `Spawn` | flinch; collapse (upright bodies pitch forward, beasts fall on their side, serpents go limp, blobs pop); grow up out of the floor |
+
+`MonsterClipDef.hit` (frame) and `windup` ([start, end] frames) are on the def, in
+`clipInfo(name)` (`hitFrame`, `hitTime`) and on `clip.userData` (`hit`, `hitFrame`,
+`windup`, `kind`). Combat applies the skill at the hit frame; telegraphs and the wind-up
+glow cover the wind-up. Monster clips pass the hero's checks (`analyzeClip`: no floor
+penetration, no sliding, clean loop seams): `npm run monster -- check` and the unit tests run
+them on every plan and boss.
+
+**Runtime layers** (`runtime.ts`, `MonsterRuntime`): `play(name)` (cross-fades; one-shots hold
+their last frame), `locomote(speed)` (Idle/Walk/Run with playback matched to the ground
+speed), `update(dt, { lookAt, ground })` returns `hit` / `end` events and applies look-at
+(neck and head), hit flinch (`flinch(from)`), optional foot placement on uneven ground
+(`ground(x, z)`) and the wind-up glow (`setGlow(t)`). `createTelegraph(spec)` builds the
+ground decals (circle, cone, line) that fill up as the wind-up runs out.
+
+**Performance**: `buildMonster` builds meshes, rig and a one-frame standing pose (~1.5 ms,
+median). Clips are baked and compiled the first time they're played (a few ms each) and
+cached per body shape (plan + genes + parts + anims), so pack mates and respawns share them;
+`buildMonster(g, { eager: true })` compiles everything up front (loading screens).
+
+### Archetypes and brains (`brains/`)
+
+| archetype | does | skills |
+| --- | --- | --- |
+| `charger` | lowers its head, charges across the room, gores | charge, melee |
+| `skirmisher` | darts in, bites, darts out; circles between strikes | melee |
+| `caster` | keeps 5–8.5 m away, bolts by theme, novas when you close in | bolt, nova |
+| `summoner` | hangs back behind minions it keeps calling, flees when hurt | summon, bolt |
+| `bomber` | rushes you, swells, bursts (dies on its hit frame) | explode |
+| `tank` | slow, armoured, `frontalBlock`, ground slam | slam, melee |
+| `swarm` | weak alone, packs of 5–9 | melee |
+| `sniper` | long aimed shots, line telegraph | snipe, spit |
+| `leaper` | pounces onto a marked circle, then mauls | leap, melee |
+| `totem` | rooted turret; bolts and an empowering ward | bolt, ward |
+
+An archetype is data (`MonsterArchetypeDef`): plan weights, skill roles (`melee` resolves to
+bite / claw / weapon swing per body, `bolt` to fire / frost / spark / void per theme), mods,
+pack size, scale, preferred part tags and brain numbers (`aggro`, `leash`, `range`,
+`strafe`, `retreat`, `flee`, `speed`, `rooted`, `think`). Skills are core `SkillDef`s
+(`MONSTER_SKILLS`) plus `range`, `role` and a `telegraph`.
+
+`MonsterBrain` is a small utility AI: every `think` seconds it scores `approach`, `strafe`,
+`retreat`, `attack` (one per ready skill), `flee`, `leash`, `wander` and `idle` and runs the
+best. It only talks to a **`MonsterBody`** (`brains/types.ts`): `actor` (ActorLike),
+`moveTo`, `stop`, `face`, `useSkill(id, target)`, `busy`, `cooldown`, and optional
+`teleport`, `telegraph`, `setGlow`, `setCondition`, `emit(MonsterEvent)`. A
+**`BrainWorld`** answers `enemies(of, r)` and `allies(of, r)`. The integration implements
+both over combat's `Actor`; tests use fakes. **Packs** (`Pack`): a leader (the biggest) and
+followers; an alert spreads to every member within 14 m; followers get flanking slots fanned
+around the leader's line to the target; deaths re-elect the leader and notify the rest.
+
+**Elite mods** (`brains/elite.ts`, 24): `EliteModDef`s with `Mod`s and a `behaviour` hook
+(`ELITE_BEHAVIOURS`: `start`, `update`, `onHitTaken`, `onHitDealt`, `onDeath`,
+`onAllyDeath`) that act through the body: hasted, vampiric, fire-enchanted, frost-aura,
+teleporter, shielded, splitter, frenzied, berserker, juggernaut, vengeful, arcane-beams,
+molten-trail, storm-caller, venomous, thorned, regenerating, volatile, necromancer,
+mirror-image, ghostly, gravity-well, armoured, empowering. Conditional mods
+(`when: 'shielded' | 'lowLife' | 'frenzy' | 'phased' | 'enraged'`) switch on with
+`body.setCondition`.
+
+### Bosses (`bosses/`)
+
+A `BossDef` is a boss-rank genome plus three **phases** (life thresholds 100 / 66 / 33 %, each
+with an attack rotation, a cadence, `onEnter` attacks and mods), a **signature** attack, an
+**enrage** timer and an arena (radius, hazards the level places). Signature attacks are boss
+modules (`BOSS_ATTACKS`, 26): each plays a monster skill's clip and emits a
+`{ type: 'hazard', id: pattern, data: params }` event — `slamWave`, `spiral`, `charge`,
+`summon`, `hazard`, `gust`, `darkness`, `beam`, `nova`, `pull`, `echo`, `portal`, `quake`,
+`meteor`, `leap` — tagged with the mechanics they belong to. `BossBrain` runs the script on top
+of the archetype brain (phase roars, signature every `cadence` s, enrage). `bossName(rng,
+tags)` → "Vorgath, the Emberhide".
+
+| # | boss | body | signature (mechanic) |
+| --- | --- | --- | --- |
+| 1 | Vorgath, the Emberhide | brute charger | brazier slam (embers) |
+| 2 | Nyx-Hollow, the Lantern Eater | floating eye caster | snuff the lights (gloom) |
+| 3 | Skraal, the Gale Mother | avian leaper | gale gust (gale) |
+| 4 | Kryssa, the Glass Matriarch | spider caster | glaze the floor (frostglass) |
+| 5 | Bramblemaw, the Root Mother | serpent charger | vine eruption (thornweave) |
+| 6 | Volthorn, the Pylon King | quadruped charger | pylon surge (stormspire) |
+| 7 | Gulgoth, the Bog Sovereign | blob summoner | mud wave (mire + gale) |
+| 8 | Aurelion, the Twice-Struck | biped caster | echo slam (echoes) |
+| 9 | Xal'Vey, the Gate Warden | centipede charger | gate charge (riftgates + stormspire) |
+| 10 | Sanguar, the Bloodmoon Herald | quadruped leaper | blood nova (bloodmoon + embers) |
+| 11 | Vexithas, the Hollow Star | floating orb caster | singularity (gravewell + frostglass) |
+| 12 | Korrak, the Ruin Titan | brute tank | cave-in (collapse + gloom) |
+
+`designedBoss(level)`, `buildBoss(boss)` (builds every clip its script needs) and
+`generateBoss(rng, depth, mechanics)` for rifts: a themed boss genome, attacks drawn from
+the modules tagged with those mechanics plus generic ones, three escalating phases.
+
+### Adding content
+
+- **A plan**: write `plans/<name>.ts` (a `BodyPlanDef` whose `build` uses
+  `SkeletonBuilder`), add it to `PLANS` in `plans/index.ts`, add it to some archetypes'
+  `planWeights`. Check `npm run monster -- sheet 1 --plan <name>` and
+  `npm run monster -- check`.
+- **A part**: append `part(...)` to the family file in `parts/` (heads, face, body, limbs).
+  Give it slot(s), theme tags, a cost and mods; restrict `plans` if it only suits some
+  bodies. Look at it in `/monster-lab.html` (the slot dropdowns) or the zoo.
+- **An archetype**: add an entry to `ARCHETYPES` (`brains/archetypes.ts`) with plan
+  weights, skill roles and brain numbers; new skills go in `MONSTER_SKILLS` with an `anim`
+  from `ATTACK_ANIMS` (or a new template in `ACTIONS`, `anim/actions.ts`: keys over the
+  poser, a `hit` frame and a `windup`).
+- **An elite mod**: add an `EliteModDef` to `ELITE_MODS` (mods, glow, cost, `behaviour`);
+  if it acts, add the hook to `ELITE_BEHAVIOURS` (it gets the host brain, the world, a
+  scratch state and the behaviour's parameter after `:`).
+- **A boss module**: add a `BossAttackDef` to `BOSS_ATTACKS` (the skill whose clip it plays,
+  a pattern, params, a telegraph, mechanic tags); designed bosses list it in a phase, rift
+  bosses find it by tag. **A boss**: add a `boss(...)` entry to `bosses/designed.ts`.
+
+### Inspectors
+
+`npm run monster -- …` (`scripts/riftlight/monster.ts`), output in `.scratch/monsters/`:
+
+| command | gives |
+| --- | --- |
+| `gen <seed> [--plan p --archetype a --depth d --rank r --tags t]` | genome, parts, cost vs budget, skills, stats (mods as text), clips with hit frames, as JSON |
+| `sheet <seed> [same]` | `<seed>.png`: turntable (4 yaws) with the rig, then a contact-sheet strip per clip with its metrics |
+| `zoo <n> [--seed s --cols c]` | `zoo.png`: n monsters across every plan, a visual variety check |
+| `check [n]` | every plan × archetype, n random genomes and the 12 bosses: build time, all clips' metrics, NaNs, bounds; exits 1 on problems |
+| `boss <level> [--rift --depth d --tags m1,m2]`, `bosses` | a boss's phases + sheet; the 12 bosses side by side |
+
+**Monster Lab** (`/monster-lab.html`): plan / archetype / rank / theme / depth / seed pickers,
+gene sliders, a part dropdown per slot, mutate (amount slider), store parent B and
+crossover, **evolve** a 3×3 grid of children (click one, or its button, to keep it), clip
+player (play, pause, frame step), skeleton, turntable, Pixel / Raw, contact sheet, stats,
+mods, budget, genome JSON export / import / download. URL:
+`?seed=7&plan=quadruped&archetype=charger&rank=rare&depth=5&tags=fire&clip=Bite`. Agent handle
+`window.__MONSTER_LAB__`: `plans()`, `archetypes()`, `generate(opts)`, `genome()`, `show(g)`,
+`setGene`, `setPart`, `mutate`, `storeParent`, `crossover`, `evolve`, `select(i)`, `clips()`,
+`play`, `pause`, `seek`, `state()`, `stats()`, `exportGenome()`, `sheet(clip)`,
+`portrait()`, `capture()`. The `riftlight-monsters` e2e suite drives it on WebGPU and WebGL 2.
 
 ## Passive tree
 
@@ -393,7 +644,7 @@ band radii can change how many slots a band holds (and so which slots exist).
 
 | command | what it gives an agent |
 | --- | --- |
-| `npm run monster -- <seed\|plan>` | PNG turntable + rig overlay + animation strips + stats for a generated monster; `/monster-lab.html` has gene sliders |
+| `npm run monster -- gen\|sheet\|zoo\|check\|boss` | genome + stats JSON, PNG turntable + rig overlay + animation strips, a zoo grid, clip/build checks for many genomes (see Monsters); `/monster-lab.html` is the Spore editor |
 | `npm run loot -- sim` | drop/affix distributions by item level and rarity, as PNG charts + JSON; tooltip renders |
 | `npm run tree -- render\|validate\|stats\|path` | the passive tree as a PNG (regions, keystones, path lengths), connectivity and stat-budget checks, counts, shortest paths; `/tree.html` browses it |
 | `npm run level -- map <n\|seed>` · `validate 1..60` · `rift <seed> <depth>` · `themes` | top-down map PNG with spawns, mechanic elements and critical path, plus bypass validation (the exit is reachable without using the mechanic); theme swatches |

@@ -91,7 +91,7 @@ export function generateGenome(rng: Rng, o: GenomeOptions = {}): Genome {
 
   const budget = o.budget ?? genomeBudget(depth, rank);
   const parts = pickParts(r.parts, planId, tags, archetype.prefers, budget, rank, o.parts ?? {});
-  const palette = generatePalette(r.palette, tags, { vivid: rank !== 'normal', floor: o.floor });
+  const palette = generatePalette(r.palette, tags, { vivid: rank !== 'normal', floor: o.floor, harmony: rank === 'boss' ? 'analogous' : undefined });
   const scale = round3(plan.baseScale * archetype.scale * RANK_SCALE[rank] * r.scale.range(0.92, 1.08) * (o.scale ?? 1));
   const elite = o.elite ? [...o.elite] : pickElites(r.elite, archetype.id, rank, depth);
   return { seed: r.seed.int(1, 0x7fffffff), plan: planId, parts, genes: roundGenes(genes), palette, scale, archetype: archetype.id, elite, rank };

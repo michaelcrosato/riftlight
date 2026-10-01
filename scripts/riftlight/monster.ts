@@ -10,8 +10,10 @@
 //   check [n] [--seed s]  build n random genomes (default 60) plus every plan × archetype:
 //                         build time, clip metrics (floor, sliding, seams), NaNs, bounds;
 //                         exits 1 on problems
-//   boss <level|seed> [--rift --depth d]
-//                         a designed boss (1..12) or a generated rift boss: genome, phases, sheet
+//   boss <level|seed> [--rift --depth d --tags gale,embers]
+//                         a designed boss (1..12) or a generated rift boss (--rift; tags =
+//                         mechanics): genome, phases, signature, sheet → boss-<id>.png
+//   bosses                .scratch/monsters/bosses.png: the 12 designed bosses side by side
 //
 // Options: --json (machine-readable), --out <dir>.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -107,7 +109,7 @@ function write(name: string, img: SheetImage): string {
 function sheet(m: BuiltMonster, title: string): SheetImage {
   const object = m.object;
   object.scale.setScalar(1);
-  const views = [0, 50, 90, 180].map((yaw, i) => renderPortrait(object, { width: 220, height: 220, yaw, pitch: 18, label: i === 0 ? title : `yaw ${yaw}`, sublabel: i === 0 ? `${m.genome.plan} · ${m.genome.archetype} · ${m.genome.rank}` : undefined, skeleton: i === 3 ? undefined : m.rig.joints }));
+  const views = [0, 50, 90, 180].map((yaw, i) => renderPortrait(object, { width: 220, height: 220, yaw, pitch: 18, label: i === 0 ? title : `yaw ${yaw}`, sublabel: i === 0 ? `${m.genome.plan} - ${m.genome.archetype} - ${m.genome.rank}` : undefined, skeleton: i === 3 ? undefined : m.rig.joints }));
   const head = grid(views, 4, 4);
   const strips = m.defs.map((def, i) => {
     const frames = defaultFrames(def, 8);
@@ -198,6 +200,17 @@ function main(): void {
         console.log(`${bad} with problems, ${warned} with warnings`);
       }
       if (bad) process.exitCode = 1;
+      return;
+    }
+    case 'bosses': {
+      const imgs = BOSSES.all().map((b) => {
+        const m = buildMonster(b.genome);
+        m.object.scale.setScalar(1);
+        return renderPortrait(m.object, { width: 200, height: 200, label: `${b.level}. ${b.name.split(',')[0]}`, sublabel: `${b.genome.plan} - ${b.signature}` });
+      });
+      const file = write('bosses.png', grid(imgs, 6));
+      if (json) console.log(JSON.stringify({ file, bosses: BOSSES.all().map((b) => ({ id: b.id, level: b.level, name: b.name, plan: b.genome.plan, signature: b.signature })) }, null, 2));
+      else console.log(file);
       return;
     }
     case 'boss': {

@@ -6,18 +6,21 @@ import { ball, box, cone, cyl, horn, pair, part, slab, taper } from './kit';
  * (on eye sockets at the head's surface), horns (left/right sockets on the head) and
  * helms/crests (centre top). Units: the head size.
  */
+/** Bodies with a skull for a lower jaw to hang from (not blobs or floating orbs). */
+const SKULLED = ['biped', 'brute', 'quadruped', 'serpent', 'avian', 'hexapod', 'centipede'];
+
 export const JAWS = [
   part('jaw.fangs', 'Fanged Jaw', ['jaw'], ['beast', 'blood', 'undead', 'nature'], 1, [flat('chance.bleed', 0.15)], (c) => {
     box(c, 'secondary', [0, -0.06, 0.24], [0.5, 0.14, 0.56]);
     pair((sx) => cone(c, 'accent', [0.18 * sx, 0.06, 0.46], [0.08, 0.2, 0.08]));
-  }),
+  }, { plans: SKULLED }),
   part('jaw.mandibles', 'Mandibles', ['jaw'], ['insect', 'poison', 'void'], 1, [flat('chance.poison', 0.15), inc('damage', 0.05, ['melee'])], (c) => {
     pair((sx) => horn(c, 'accent', [0.16 * sx, 0, 0.02], 0.5, 0.14, 70, { rot: [70, 0, 25 * sx] }));
   }),
   part('jaw.tusks', 'Tusked Jaw', ['jaw'], ['beast', 'earth', 'ice'], 1, [flat('knockback', 1.5), flat('armour', 5)], (c) => {
     box(c, 'secondary', [0, -0.07, 0.2], [0.56, 0.16, 0.5]);
     pair((sx) => horn(c, 'accent', [0.22 * sx, 0.0, 0.38], 0.42, 0.18, -70, { rot: [-10, 0, -15 * sx] }));
-  }),
+  }, { plans: SKULLED }),
   part('jaw.beak', 'Lower Beak', ['jaw'], ['beast', 'storm', 'nature'], 0, [inc('crit.chance', 0.05)], (c) => {
     taper(c, 0.2, 'accent', [0, -0.04, 0.2], [0.24, 0.42, 0.14], { rot: [90, 0, 0] });
   }),
