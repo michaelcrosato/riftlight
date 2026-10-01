@@ -644,7 +644,8 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
     device / lost WebGL context is recovered
   - `Engine.step()` manual time
   - the tools: `build:single` runs from `file://` with no errors or requests, `film` writes
-    its PNG + JSON
+    its PNG + JSON, `balance` (a small matrix) writes its rows, CSV and charts, `inspect`
+    reports the hero, a monster and a prop and diffs two GLBs
   - `riftlight-levels` (`scripts/e2e-riftlight-levels.mjs`, `@filters`): Riftlight levels 1, 6,
     12 and a rift build and render, the light pool keeps 8 lights with no shader builds while
     lights move, the hero walks start → exit with `Engine.step`, the boss opens the portal
@@ -658,8 +659,70 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
   frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
   never for a fixed number of rendered frames when they can avoid it.
+- `npm run inspect -- <target>` (`src/engine/inspect/`, `scripts/inspect.ts`): any asset as
+  `.scratch/inspect/<name>.png` + `.json`: an 8-angle turntable at one scale, a rig front and
+  side (mesh dimmed, joints and names on top, right side orange, left cyan) and a panel with
+  triangles, vertices, meshes, draw calls, materials (and distinct colours), textures,
+  geometries, bounds, joints, clips with durations, and warnings: degenerate triangles, NaN
+  positions, missing normals, too many materials or draw calls, triangle budget, huge or tiny
+  bounds, below the floor, non-uniform scale on nodes with children, negative scale, joints
+  that drive nothing (no vertex weights / no mesh under them), clips with no length. Targets:
+  a GLB path or `hero`/`coin`/`tree` (the hero gets `HERO_RIG` and `HERO_CLIPS`),
+  `clip:<name>` (the hero posed mid-clip plus its contact strip), `monster:<seed>` (`--depth
+  --rank --plan --archetype --tags`), `boss:<level>`, `npc:<id>`, `prop:<id>` (`--theme`),
+  `item:<seed>`, `list`. `--json` prints the report; `--strict` exits 1 on warnings.
+  `npm run inspect -- diff <a> <b>` renders both at one scale with the B − A counts, joints,
+  clips and materials added/removed; `diff <a>` compares `<a>` with the last *different*
+  version inspected (every run records a fingerprint and a turntable in
+  `.scratch/inspect/history/`), so after changing a generator an agent sees what changed:
+
+  ```
+  $ npm run inspect -- boss:4
+  Kryssa, the Glass Matriarch  (hexapod caster, signature glaze-floor, scale 2.15)
+    triangles 2060  vertices 2920  meshes 52  draw calls 52  materials 6  textures 0
+    bounds 3.516 × 1.988 × 3.834 m  (min -1.758, 0, -2.076  max 1.758, 1.988, 1.758)
+    joints 36  clips 9: Idle 2s, Walk 0.433s, Run 0.333s, Hit 0.467s, Death 1.133s, …
+  $ npm run inspect -- diff coin tree
+    vertices         88 → 124      +36
+    meshes            2 → 3        +1
+    - clips: Spin
+  ```
+
+  It renders with the software rasterizer of the contact sheets, not Chromium: it runs in
+  about a second with no GPU, is byte-for-byte deterministic (fingerprints and diffs stay
+  stable), and draws rig overlays and labels the real renderer has no pass for. The cost is
+  fidelity: flat 3-band toon shading without the pixel pipeline, lights or filters. For the
+  real look, film it (`npm run film`) or open a lab page.
+- `npm run balance` (Riftlight, docs/GAME.md *Balance*): a headless combat sim over the game's
+  real code, build × depth, as charts, CSV and JSON with its outliers.
 - `npm run build:single` writes `dist-single/pixel-engine.html`, one self-contained offline
   file (Rapier's `.wasm` inlined as a data: URL).
+
+### Tools for agents: how to build your own
+
+Every tool here (`anim`, `film`, `monster`, `loot`, `tree`, `level`, `combat`, `balance`,
+`inspect`, `playtest`) has the same shape. Follow it and the next agent can use your tool
+without reading its code:
+
+1. **A pure core in `src/`**, importable by the game, the tests and the CLI: data in, data
+   out, seeded (`Rng`, never `Math.random`), no DOM and no GPU (`src/engine/inspect/`,
+   `src/riftlight/balance/`). It reuses the real code paths (the game's `buildSkill`, the
+   engine's raster), so what it measures is what ships. Assumptions live in one named object
+   and are printed with every result.
+2. **A CLI in `scripts/`** run through `tsx` (`npm run <tool> -- <command> [--flags]`), whose
+   header comment is its manual (`help` prints it). Text for people, `--json` for agents, the
+   same numbers in both; exit 1 when a check fails (`check`, `validate`, `--strict`).
+3. **Pictures**: a PNG in `.scratch/<tool>/` for anything spatial or over time (sheets,
+   turntables, charts), drawn on `src/engine/animation/raster.ts` (`Canvas`: rects, lines,
+   depth-tested triangles, outlines, the 5×7 font) and written with `scripts/png.ts`. Read your
+   PNGs: an agent sees what it can look at.
+4. **Machine output**: JSON (and CSV for tables) next to the PNG, with the inputs and the seed,
+   so a result can be reproduced and diffed.
+5. **A lab page** when a human or an agent needs to play with it live in the real renderer
+   (`/lab.html`, `/monster-lab.html`, `/tree.html`), with a `window.__<TOOL>__` handle.
+6. **Tests**: unit tests for the core next to it (`*.test.ts`), and a smoke run of the CLI in
+   the `tools` e2e suite (`scripts/e2e.mjs` `runTools`: it runs, writes its files, and the
+   numbers are sane), so the tool can't silently rot.
 
 ## Bundle
 

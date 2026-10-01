@@ -231,7 +231,11 @@ function simulate(h: HeroLoadout, d: DepthInput, targets: Record<Grade, MonsterT
   }
   // share f of the fighting on the main skill: f·tSkill·mps ≤ pool + manaIn·(walk + fighting)
   let sustain = 1;
-  if (mps > 0 && tSkill > 0) {
+  if (h.minion) {
+    // minions are recast as they expire, walking or fighting
+    const total = walk + tSkill;
+    if (mps > 0 && total > 0) sustain = Math.min(1, (h.maxMana + manaIn * total) / (mps * total));
+  } else if (mps > 0 && tSkill > 0) {
     for (let i = 0; i < 6; i++) {
       const fighting = sustain * tSkill + (1 - sustain) * tFallback;
       sustain = Math.min(1, (h.maxMana + manaIn * (walk + fighting)) / (mps * tSkill));

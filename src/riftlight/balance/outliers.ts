@@ -134,20 +134,27 @@ export function findOutliers(rows: readonly Row[], o: OutlierOptions = {}): Outl
   }
 
   // ---- red flags, first depth + how often
-  const flag = (id: string, test: (r: Row) => boolean, say: (r: Row, n: number) => string, weight: number) => {
+  // a flag most builds share is a content problem: one line for all of them
+  const flag = (id: string, test: (r: Row) => boolean, say: (r: Row, n: number) => string, weight: number, all?: (first: Row, builds: number) => string) => {
     for (const v of variants) {
-      for (const b of builds) {
-        const hits = depths.map((d) => row(b, v, d)).filter((r): r is Row => !!r && test(r));
-        if (hits.length) out.push({ severity: weight * (0.7 + (0.6 * hits.length) / depths.length), kind: 'flag', metric: id, depth: hits[0]!.depth, build: b, text: say(hits[0]!, hits.length) });
+      const hit = builds.map((b) => ({ b, rows: depths.map((d) => row(b, v, d)).filter((r): r is Row => !!r && test(r)) })).filter((x) => x.rows.length);
+      if (all && builds.length > 2 && hit.length >= builds.length - 1) {
+        const first = hit.map((x) => x.rows[0]!).sort((a, b) => a.depth - b.depth);
+        const n = Math.max(...hit.map((x) => x.rows.length));
+        // the depth by which all but one build are flagged
+        const by = first[Math.max(0, first.length - 2)]!;
+        out.push({ severity: 1.4 * weight * (0.7 + (0.6 * n) / depths.length), kind: 'flag', metric: id, depth: by.depth, text: all(by, hit.length) + ` (first: ${first.map((r) => `${r.build} d${r.depth}`).join(', ')})` });
+        continue;
       }
+      for (const { b, rows: hits } of hit) out.push({ severity: weight * (0.7 + (0.6 * hits.length) / depths.length), kind: 'flag', metric: id, depth: hits[0]!.depth, build: b, text: say(hits[0]!, hits.length) });
     }
   };
-  flag('boss.dies', (r) => r.bossDies && r.variant === 'geared', (r, n) => `geared ${r.build} dies to the boss at depth ${r.depth} (${n} depths; boss TTK ${secs(r.ttk.boss)}, hero lasts ${secs(r.timeToDie.boss)})`, 1.5);
-  flag('oneshot', (r) => r.hitsToDie.boss < 1 && r.variant === 'geared', (r, n) => `geared ${r.build} is one-shot by the depth ${r.depth} boss (${fmt(r.hitsToDie.boss)} hits to die; ${n} depths)`, 1.4);
-  flag('boss.long', (r) => r.ttk.boss > 180 && r.variant === 'geared', (r, n) => `geared ${r.build}: the depth ${r.depth} boss takes ${secs(r.ttk.boss)} (${n} depths over 3 min)`, 1.2);
+  flag('boss.dies', (r) => r.bossDies && r.variant === 'geared', (r, n) => `geared ${r.build} dies to the boss at depth ${r.depth} (${n} depths; boss TTK ${secs(r.ttk.boss)}, hero lasts ${secs(r.timeToDie.boss)})`, 1.5, (r, k) => `${k} geared builds die to the boss (no potions), all but one by depth ${r.depth}`);
+  flag('oneshot', (r) => r.hitsToDie.boss < 1 && r.variant === 'geared', (r, n) => `geared ${r.build} is one-shot by the depth ${r.depth} boss (${fmt(r.hitsToDie.boss)} hits to die; ${n} depths)`, 1.4, (r, k) => `${k} geared builds are one-shot by the boss's biggest hit, all but one by depth ${r.depth}`);
+  flag('boss.long', (r) => r.ttk.boss > 180 && r.variant === 'geared', (r, n) => `geared ${r.build}: the depth ${r.depth} boss takes ${secs(r.ttk.boss)} (${n} depths over 3 min)`, 1.2, (r, k) => `${k} geared builds need over 3 min for the boss, all but one by depth ${r.depth}`);
   flag('mana', (r) => r.sustain < 0.5, (r, n) => `${r.variant} ${r.build} can afford its skill only ${Math.round(r.sustain * 100)}% of the time at depth ${r.depth} (${n} depths)`, 1.1);
-  flag('clear.long', (r) => r.clear.total > 900 && r.variant === 'geared', (r, n) => `geared ${r.build}: depth ${r.depth} takes ${secs(r.clear.total)} to clear (${n} depths over 15 min)`, 1);
-  flag('packs', (r) => r.deadlyPacks > 0 && r.variant === 'geared', (r, n) => `geared ${r.build}: ${r.deadlyPacks} packs at depth ${r.depth} deal more than life + ES before they die (${n} depths)`, 1);
+  flag('clear.long', (r) => r.clear.total > 900 && r.variant === 'geared', (r, n) => `geared ${r.build}: depth ${r.depth} takes ${secs(r.clear.total)} to clear (${n} depths over 15 min)`, 1, (r, k) => `${k} geared builds need over 15 min per level, all but one by depth ${r.depth}`);
+  flag('packs', (r) => r.deadlyPacks > 0 && r.variant === 'geared', (r, n) => `geared ${r.build}: ${r.deadlyPacks} packs at depth ${r.depth} deal more than life + ES before they die (${n} depths)`, 1, (r, k) => `${k} geared builds meet packs that out-damage their life + ES, all but one by depth ${r.depth}`);
 
   // naked builds are the floor, not the game: their outliers matter less; one spread line per build
   const weighted = out.map((x) => (/\bnaked\b/.test(x.text) && x.kind !== 'gear' ? { ...x, severity: x.severity * 0.7 } : x));
