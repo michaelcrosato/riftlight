@@ -283,6 +283,31 @@ export async function runRiftlightBuilds(h) {
       return c.toDataURL('image/png');
     });
     await writeFile(new URL(`riftlight-builds-${tag}-globe.png`, OUT), Buffer.from(hud.split(',')[1], 'base64'));
+
+    // a real monster, cursed, and a totem in a real level (how they read among the props)
+    const real = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const g = rl.game;
+      const e = window.__PIXEL_ENGINE__;
+      g.hero.hc.setSlot(1, { skill: 'vulnerability' });
+      g.hero.hc.setSlot(2, { skill: 'arc', supports: ['spell-totem'] });
+      const a = g.hero.actor;
+      a.mana = a.unreservedMana;
+      const p = a.position.clone();
+      rl.spawn({ seed: 11, x: p.x + 3.5, z: p.z, rank: 'magic' });
+      const unit = g.level.monsters().filter((u) => u.actor.alive).sort((u, v) => u.actor.position.distanceTo(p) - v.actor.position.distanceTo(p))[0];
+      // hold the monsters still (dev AI off): they would walk out of the frame
+      rl.dev.ai = false;
+      const aim = { x: unit.actor.position.x, z: unit.actor.position.z };
+      rl.step(20, { skill: 1, aim });
+      rl.step(30, { skill: 2, aim });
+      e.step(60);
+      const totem = g.level.world.actors.actors.find((x) => x.tags.includes('totem') && x.alive);
+      return { cursed: unit.actor.curses.list.map((c) => c.id), rune: !!unit.actor.status?.cursed, tinted: unit.actor.fx.tinted, totem: !!totem, casts: totem?.brain?.casts ?? 0 };
+    });
+    check(real.cursed.includes('vulnerability') && real.rune && real.tinted, `a real monster cursed with Vulnerability shows its rune and tint (${JSON.stringify(real)})`);
+    check(real.totem && real.casts > 0, `an Arc totem stands in the level and casts (${real.casts} casts)`);
+    await capture(page, `riftlight-builds-${tag}-level-curse-totem.png`);
     checkClean(await state(page), logs, 'game: ');
   } catch (e) {
     check(false, `riftlight-builds (game) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
