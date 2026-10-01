@@ -897,22 +897,6 @@ async function runTools(browserExe) {
   }
 }
 
-const SUITES = {
-  webgpu: (exe) => runCore(exe, SCENARIOS[0]),
-  'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
-  'webgl-forced': (exe) => runForced(exe, SCENARIOS[2]),
-  cameras: (exe) => runCameras(exe),
-  'camera-swap': async (exe) => {
-    await runCameraSwap(exe, SCENARIOS[0]);
-    await runCameraSwap(exe, SCENARIOS[1]);
-  },
-  'filters-webgpu': (exe) => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
-  'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
-  touch: (exe) => runTouch(exe),
-  moves: (exe) => runMoves(exe),
-  lab: (exe) => runLab(exe),
-  tools: (exe) => runTools(exe),
-
 async function runPhone(browserExe) {
   console.log('\n▶ phone (portrait adaptive aspect, GPU device loss)');
   const headless = !process.env.DISPLAY;
@@ -925,7 +909,7 @@ async function runPhone(browserExe) {
       page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
       page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
       await page.goto(`${BASE}?touch=1`);
-      await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame > 30, null, { timeout: 90000 });
+      await ready(page);
       const st = await state(page);
       const f = st.framing;
       const cover = (f.cssWidth * f.cssHeight) / (390 * 844);
@@ -976,24 +960,22 @@ async function runPhone(browserExe) {
   }
 }
 
-await mkdir(OUT, { recursive: true });
-const exe = await resolveExecutable();
-const server = await startServer();
-const suites = {
-  webgpu: () => runCore(exe, SCENARIOS[0]),
-  'webgl-fallback': () => runCore(exe, SCENARIOS[1]),
-  'webgl-forced': () => runCore(exe, SCENARIOS[2]),
-  cameras: () => runCameras(exe),
-  'camera-swap': async () => {
+const SUITES = {
+  webgpu: (exe) => runCore(exe, SCENARIOS[0]),
+  'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
+  'webgl-forced': (exe) => runForced(exe, SCENARIOS[2]),
+  cameras: (exe) => runCameras(exe),
+  'camera-swap': async (exe) => {
     await runCameraSwap(exe, SCENARIOS[0]);
     await runCameraSwap(exe, SCENARIOS[1]);
   },
-  'filters-webgpu': () => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
-  'filters-webgl': () => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
-  touch: () => runTouch(exe),
-  phone: () => runPhone(exe),
-  moves: () => runMoves(exe),
-  lab: () => runLab(exe),
+  'filters-webgpu': (exe) => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
+  'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
+  touch: (exe) => runTouch(exe),
+  phone: (exe) => runPhone(exe),
+  moves: (exe) => runMoves(exe),
+  lab: (exe) => runLab(exe),
+  tools: (exe) => runTools(exe),
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
