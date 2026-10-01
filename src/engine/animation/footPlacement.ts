@@ -538,10 +538,16 @@ export class FootPlacement {
       const body = root.y + clamp(dropTarget, -T.maxDrop, 0);
       // in world space (the character's own steps up and down don't move it), critically
       // damped (no sudden change of speed either)
+      // starting over (a landing): from the drop that leaves the legs as the clip has them,
+      // the one the least lowered foot needs (a foot still in the air would otherwise have
+      // its leg straightened or folded at once), then on to the target
       if (this.fresh) {
-        this.bodyY = body;
+        let least = -Infinity;
+        for (const f of this.feet) least = Math.max(least, f.used);
+        this.bodyY = root.y + clamp(least, -T.maxDrop, 0);
         this.bodyV = 0;
-      } else {
+      }
+      {
         const e = Math.exp(-T.dropRate * dt);
         const x = this.bodyY - body;
         const j0 = this.bodyV + T.dropRate * x;
