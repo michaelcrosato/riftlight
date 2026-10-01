@@ -61,4 +61,5 @@ export const HERO_RIG: RigSpec = {
     ball: 0.21,
     top: 0.02,
   },
+  spine: { torso: 'Torso', head: 'Head' },
 };

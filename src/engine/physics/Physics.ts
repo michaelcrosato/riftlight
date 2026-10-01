@@ -42,6 +42,7 @@ export class Physics {
   // Reused by every ray cast (no per-call Ray / closure allocations).
   private readonly ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: -1, z: 0 });
   private readonly predicates = new WeakMap<readonly string[], (c: RAPIER.Collider) => boolean>();
+  private readonly from = new Vector3();
 
   private constructor(gravity: number) {
     this.world = new RAPIER.World({ x: 0, y: gravity, z: 0 });
@@ -196,6 +197,31 @@ export class Physics {
     };
   }
 
+  /**
+   * Straight down from (x, y, z), at most `maxDistance`, skipping colliders with any of
+   * `ignoreTags` (pass a constant array) and `exclude`. Fills `out` (hit height, normal,
+   * collider handle) without allocating; returns whether something was hit.
+   */
+  castDown(
+    x: number,
+    y: number,
+    z: number,
+    maxDistance: number,
+    out: { y: number; nx: number; ny: number; nz: number; id: number },
+    ignoreTags: readonly string[] = NO_TAGS,
+    exclude?: RAPIER.RigidBody,
+  ): boolean {
+    this.from.set(x, y, z);
+    const hit = this.cast(this.from, DOWN, maxDistance, ignoreTags, exclude);
+    if (!hit) return false;
+    out.y = y - hit.timeOfImpact;
+    out.nx = hit.normal.x;
+    out.ny = hit.normal.y;
+    out.nz = hit.normal.z;
+    out.id = hit.collider.handle;
+    return true;
+  }
+
   /** Distance straight down from `origin` to the first collider (excluding `exclude`). */
   groundBelow(origin: Vector3, maxDistance = 20, exclude?: RAPIER.RigidBody): { y: number; distance: number } | null {
     const ray = this.ray;
@@ -224,6 +250,7 @@ export class Physics {
 }
 
 const NO_TAGS: readonly string[] = [];
+const DOWN = new Vector3(0, -1, 0);
 
 function yRotation(angle: number): RAPIER.Rotation {
   return { x: 0, y: Math.sin(angle / 2), z: 0, w: Math.cos(angle / 2) };

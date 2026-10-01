@@ -158,4 +158,9 @@ export interface RigSpec {
   fps: number;
   /** Leg geometry, enabling foot IK and the gait generator. */
   legs?: LegRig;
+  /**
+   * Joints the runtime procedural layers turn (PoseLayers): the torso and head look where
+   * the character is going; `cap` is an optional springy joint (not animated by clips).
+   */
+  spine?: { torso?: string; head?: string; cap?: string };
 }

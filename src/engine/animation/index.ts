@@ -6,6 +6,8 @@ export { ankleFor, applyFeet, legIK, lerpGoal, placeFeet, twoBoneX, type FootGoa
 export { footAt, gaitClip, gaitPose, type GaitSpec } from './gait';
 export { compileClip, compileClips, restPoseOf, type RestPose } from './compile';
 export { RotationBlend } from './rotationBlend';
+export { FOOT_PLACEMENT_DEFAULTS, FootPlacement, type FootPlacementInput, type FootPlacementState, type FootPlacementTuning, type GroundHit, type GroundProbe } from './footPlacement';
+export { POSE_LAYER_DEFAULTS, PoseLayers, type PoseLayerInput, type PoseLayerTuning } from './poseLayers';
 export { analyzeClip, sampleFrames, type ClipReport, type SampledFrame } from './metrics';
 export { renderCurves, type CurveOptions } from './curves';
 export { defaultFrames, renderSheet, type SheetImage, type SheetOptions, type ViewName } from './sheet';
