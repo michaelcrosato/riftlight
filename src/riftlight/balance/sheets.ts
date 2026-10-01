@@ -7,7 +7,7 @@ import { flat, inc, StatSheet, type Mod } from '../core/mods';
 import { STAT_ALIASES as CANONICAL, STAT_EXPANSIONS } from '../core/stats';
 import { minionLevelMods, ownerMinionMods } from '../combat/minions';
 import { equipmentMods, type Equipment } from '../loot/itemMods';
-import { bossBudget, monsterBase, monsterDepthMods } from '../wire/progression';
+import { bossBudget, monsterBase, monsterDepthMods, starterWeapon } from '../wire/progression';
 import { WIRE_TUNING } from '../wire/tuning';
 import { HERO_BASE, type Assumptions } from './assumptions';
 
@@ -86,6 +86,8 @@ export function heroSheet(h: HeroSetup): RecordingSheet {
   if (h.level > 1) sheet.set('level', [inc('damage', WIRE_TUNING.hero.perLevel.damage * (h.level - 1))]);
   if (h.tree?.length) sheet.set('tree', fix(h.tree));
   if (h.equipment) for (const [source, mods] of Object.entries(equipmentMods(h.equipment))) sheet.set(source, fix(mods));
+  // the real hero carries its starter sword until gear brings a weapon (wire/hero.ts, botTown rig)
+  if (!h.equipment?.weapon) sheet.set('starter', starterWeapon());
   return sheet;
 }
 

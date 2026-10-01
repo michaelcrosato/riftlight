@@ -209,6 +209,8 @@ const COLS: [string, (r: Row) => string | number][] = [
   ['dps', (r) => r.dps.toFixed(1)],
   ['pack_dps', (r) => r.packDps.toFixed(1)],
   ['sustain', (r) => r.sustain.toFixed(2)],
+  ['charges', (r) => r.charges.toFixed(2)],
+  ['reserved', (r) => r.reserved.toFixed(2)],
   ...(['normal', 'magic', 'rare', 'boss'] as const).flatMap((g): [string, (r: Row) => string | number][] => [
     [`ttk_${g}`, (r) => r.ttk[g].toFixed(2)],
     [`dtps_${g}`, (r) => r.dtps[g].toFixed(1)],
