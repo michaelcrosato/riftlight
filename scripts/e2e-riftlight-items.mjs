@@ -553,6 +553,20 @@ export async function runRiftlightItems(h) {
         await composite(page, `riftlight-items-phone-${view}-tap.png`);
         await R(() => window.__RIFTLIGHT__.ui.close());
       }
+      // the passive tree fills the portrait screen at the engine's art size, and a tap shows a node
+      const tree = await R(() => {
+        const rl = window.__RIFTLIGHT__;
+        rl.ui.open('tree');
+        window.__PIXEL_ENGINE__.step(2);
+        const view = rl.game.layer.find('tree').view;
+        const res = window.__PIXEL_ENGINE__.renderer.resolution;
+        return { art: view.debug().art, res: { width: res.width, height: res.height } };
+      });
+      check(tree.art.width === tree.res.width && tree.art.height === tree.res.height, `phone: the passive tree fills the screen at ${tree.art.width}×${tree.art.height}`);
+      await new Promise((r) => setTimeout(r, 200));
+      await composite(page, 'riftlight-items-phone-tree.png');
+      await R(() => window.__RIFTLIGHT__.press('PadB'));
+      check((await R(() => window.__RIFTLIGHT__.state().ui)).length === 0, 'phone: back closes the tree');
       checkClean(await R(() => window.__PIXEL_ENGINE__.state()), logs, 'phone: ');
     } catch (e) {
       check(false, `riftlight items on a phone crashed: ${e.message}\n    ${phone?.logs.join('\n    ') ?? ''}`);

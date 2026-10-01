@@ -349,6 +349,8 @@ export interface LootPort {
   craftingView(host: PanelHost): Panel;
   /** The skill panel: gems in the four skill slots and their supports (optional). */
   skillsView?(host: PanelHost): Panel;
+  /** The game is unloaded: remove overlays and listeners (optional). */
+  dispose?(): void;
 }
 
 // ------------------------------------------------------------------ passive tree

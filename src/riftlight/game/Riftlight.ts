@@ -197,6 +197,7 @@ export class Riftlight implements Game, MenuHost {
     this.town?.dispose();
     this.events.clear();
     this.layer.closeAll();
+    this.ports.loot.dispose?.();
   }
 
   // ================================================================ events
@@ -699,10 +700,12 @@ export class Riftlight implements Game, MenuHost {
         panel = this.ports.tree.view(host, { respec: id === 'respec' });
         break;
       case 'character':
+        this.closeItems(); // the item windows' canvas would cover a HUD panel
         panel = new CharacterSheet(() => this.hero.actor.stats, () => `LEVEL ${this.save.hero.level} · DEEPEST ${this.save.deepest}`);
         modal = false;
         break;
       case 'codex':
+        this.closeItems();
         panel = new Codex(() => this.ports.levels.mechanics(), () => this.save.codex ?? []);
         break;
       case 'vendor':
@@ -741,6 +744,12 @@ export class Riftlight implements Game, MenuHost {
     self.panel = panel;
     this.layer.open(panel, { modal, onClose: () => this.endTalk() });
     return panel;
+  }
+
+  /** Close the item windows (inventory, stash, vendor, bench, skills), if one is open. */
+  private closeItems(): void {
+    const items = this.layer.stack.find((o) => o.panel.group === ITEM_GROUP);
+    if (items) this.layer.close(items.panel.id, true);
   }
 
   private endTalk(): void {

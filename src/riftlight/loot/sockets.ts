@@ -14,11 +14,10 @@ import { StatSheet } from '../core/mods';
 import type { Item, SaveData } from '../core/types';
 import { expectedHit, sumDamage } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
-import { buildSkill } from '../skills/build';
+import { buildSkill, MAX_GEM_LEVEL, supportFits } from '../skills/build';
 import { SKILLS } from '../skills/actives';
 import { SUPPORTS } from '../skills/supports';
 import type { ResolvedSkill } from '../skills/types';
-import { supportFits } from '../skills/build';
 import { GEMS } from './content';
 import { rollUid } from './generate';
 import type { Rng } from '../core/rng';
@@ -135,15 +134,30 @@ export function socketedGems(s: Sockets): Item[] {
 }
 
 /** HeroController slots (`{ skill, level, supports }`) for the hero side; null = an empty slot. */
-export function socketsToSlots(s: Sockets): ({ skill: string; level: number; supports: { gem: string; level: number }[] } | null)[] {
-  return normalizeSockets(s).map((x) => (x.gem ? { skill: x.gem.gem!.id, level: x.gem.gem!.level, supports: x.supports.filter((g): g is Item => !!g).map((g) => ({ gem: g.gem!.id, level: g.gem!.level })) } : null));
+/**
+ * HeroController slots (`{ skill, level, supports }`) for the hero side; null = an empty slot.
+ * With the hero's sheet, levels include gear's `skill.level` (see `skillLevel`).
+ */
+export function socketsToSlots(s: Sockets, sheet?: StatSheet | null): ({ skill: string; level: number; supports: { gem: string; level: number }[] } | null)[] {
+  return normalizeSockets(s).map((x) => (x.gem ? { skill: x.gem.gem!.id, level: skillLevel(x, sheet ?? null), supports: x.supports.filter((g): g is Item => !!g).map((g) => ({ gem: g.gem!.id, level: g.gem!.level })) } : null));
+}
+
+/**
+ * A socketed skill's level: its gem's level plus the character's `skill.level` mods that fit
+ * the skill's tags (gear: "+1 to the level of fire skill gems"), at most MAX_GEM_LEVEL.
+ */
+export function skillLevel(socket: SkillSocket, sheet: StatSheet | null): number {
+  const g = socket.gem?.gem;
+  if (!g) return 0;
+  const tags = SKILLS.has(g.id) ? (SKILLS.get(g.id).tags ?? []) : [];
+  return Math.max(1, Math.min(MAX_GEM_LEVEL, g.level + Math.round(sheet ? sheet.get('skill.level', tags) : 0)));
 }
 
 /** `buildSkill` for a socket on a character (null for an empty slot). */
 export function resolveSocket(socket: SkillSocket, sheet: StatSheet | null): ResolvedSkill | null {
   if (!socket.gem?.gem || !SKILLS.has(socket.gem.gem.id)) return null;
   const supports = socket.supports.filter((g): g is Item => !!g?.gem && SUPPORTS.has(g.gem.id)).map((g) => ({ gem: g.gem!.id, level: g.gem!.level }));
-  return buildSkill(socket.gem.gem.id, supports, sheet ?? new StatSheet(), { level: socket.gem.gem.level });
+  return buildSkill(socket.gem.gem.id, supports, sheet ?? new StatSheet(), { level: skillLevel(socket, sheet) });
 }
 
 /** The skill panel's numbers: a pocket `npm run combat -- dps` (one target, no defences). */

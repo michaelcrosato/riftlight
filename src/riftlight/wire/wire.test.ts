@@ -74,6 +74,12 @@ describe('skill sockets', () => {
     // the numbers read the character's sheet
     sheet.set('tree', [inc('damage', 1)]);
     expect(skillNumbers(s[0]!, sheet)!.hit).toBeCloseTo(n.hit * 2, 3);
+    // gear's "+1 to the level of fire skill gems" raises the skill's level (and only fitting skills')
+    sheet.set('item:helm', [flat('skill.level', 1, ['fire'])]);
+    expect(skillNumbers(s[0]!, sheet)!.level).toBe(5);
+    expect(socketsToSlots(s, sheet)[0]!.level).toBe(5);
+    sheet.set('item:helm', [flat('skill.level', 1, ['cold'])]);
+    expect(skillNumbers(s[0]!, sheet)!.level).toBe(4);
     expect(skillNumbers(emptySockets()[0]!, sheet)).toBeNull();
   });
 });

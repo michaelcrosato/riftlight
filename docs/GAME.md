@@ -1064,8 +1064,9 @@ sells them. The panel shows each slot's `buildSkill` numbers on the hero's StatS
 DPS, cost, cooldown, cast time, area / projectiles, links that don't fit: a pocket
 `npm run combat -- dps`). When sockets change the panel writes the save and calls
 `changed('skills')`; the shell calls `hero.setSkills(save.hero.skills)`, and
-`socketsToSlots(skills)` turns them into `HeroController` slots (`{ skill, level, supports:
-[{ gem, level }] }`, null for an empty slot).
+`socketsToSlots(skills, hero.stats)` turns them into `HeroController` slots (`{ skill, level,
+supports: [{ gem, level }] }`, null for an empty slot; the level adds gear's `skill.level` mods
+that fit the skill's tags, as the panel's numbers do).
 
 **Loot in the world.** Drops are R3's `rollDrops` with the hero's `item.rarity`,
 `item.quantity` and `gold.find`, shown by `WorldLoot` (arcs, landing sounds, beams; lights from

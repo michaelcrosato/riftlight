@@ -211,6 +211,16 @@ export class RealLoot implements LootPort {
     this.stage = null;
   }
 
+  /** The game unloads: the item windows' canvas and listeners, the world loot's meshes. */
+  dispose(): void {
+    this.clearGround();
+    this.ui?.dispose();
+    this.ui = null;
+    this.active = null;
+    this.world?.dispose();
+    this.world = null;
+  }
+
   // ---------------------------------------------------------------- gear, saves, gifts
 
   gearMods(): Readonly<Record<string, readonly Mod[]>> {
