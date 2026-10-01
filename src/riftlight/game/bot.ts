@@ -49,7 +49,20 @@ export interface BotReport {
   outcome: 'cleared' | 'died' | 'timeout';
 }
 
+export interface BotOptions {
+  /** Use skills (default true); false = basic attack only. */
+  skills?: boolean;
+  /** Walk to loot (default true). */
+  loot?: boolean;
+  /** Head for the exit when nothing is left (default true). */
+  exit?: boolean;
+  /** Dodge telegraphs (default true). */
+  dodge?: boolean;
+}
+
 export class PlaytestBot {
+  constructor(private readonly o: BotOptions = {}) {}
+
   private readonly intent: BotIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false, interact: false };
   private route: { x: number; z: number }[] = [];
   private routeFor = '';
@@ -72,7 +85,7 @@ export class PlaytestBot {
     this.track(p);
 
     // 1. dodge telegraphs about to land on us
-    for (const t of v.level.telegraphs()) {
+    for (const t of this.o.dodge === false ? [] : v.level.telegraphs()) {
       const d = Math.hypot(p.x - t.at.x, p.z - t.at.z);
       if (d < t.radius + hero.actor.radius + 0.2 && t.remaining < 0.5) {
         const away = new Vector3(p.x - t.at.x, 0, p.z - t.at.z);
@@ -100,6 +113,7 @@ export class PlaytestBot {
     }
     const skills = hero.skills();
     const ready = (s: number) => {
+      if (this.o.skills === false) return false;
       const k = slot(skills, s);
       return !!k && k.id !== null && k.remaining <= 0 && k.usable;
     };
@@ -124,7 +138,7 @@ export class PlaytestBot {
     // 3. loot
     let best: WorldLoot | null = null;
     let bd = 8;
-    for (const l of v.loot) {
+    for (const l of this.o.loot === false ? [] : v.loot) {
       if (l.filtered) continue;
       const d = Math.hypot(l.position.x - p.x, l.position.z - p.z);
       if (d < bd) {
@@ -140,6 +154,7 @@ export class PlaytestBot {
     }
 
     // 4./5. travel: the next monster anywhere, else the exit
+    if (!target && this.o.exit === false) return i;
     const goal = target ? target.actor.position : v.level.exit;
     this.goTo(v.level, p, goal, i);
     i.aim.copy(goal);
@@ -154,7 +169,7 @@ export class PlaytestBot {
   }
 
   /** Walk toward `to` along a grid route (rebuilt every 20 frames or when the goal moves). */
-  private goTo(level: LevelHandle, p: Vector3, to: Vector3, i: BotIntent): void {
+  goTo(level: LevelHandle, p: Vector3, to: Vector3, i: BotIntent): void {
     if (this.sidestep > 0) {
       this.sidestep--;
       const d = new Vector3(to.x - p.x, 0, to.z - p.z).normalize();

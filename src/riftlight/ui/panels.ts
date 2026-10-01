@@ -172,6 +172,13 @@ export class Codex implements Panel {
 // ------------------------------------------------------------------ death recap
 
 export class DeathRecap implements Panel {
+  /** Agent API: 'continue'. */
+  activate(id: string): boolean {
+    if (id !== 'continue') return false;
+    this.onContinue();
+    return true;
+  }
+
   readonly id = 'death';
   readonly title = 'You died';
   readonly size = { w: 300, h: 170 };
@@ -248,11 +255,18 @@ export class LootWindow implements Panel {
     private readonly leave: () => void,
   ) {}
 
-  private actions(): { label: string; run: () => void }[] {
+  private actions(): { id: string; label: string; run: () => void }[] {
     return [
-      { label: 'Take all', run: () => [...this.loot()].forEach((l) => this.take(l)) },
-      { label: 'Return to town', run: this.leave },
+      { id: 'takeAll', label: 'Take all', run: () => [...this.loot()].forEach((l) => this.take(l)) },
+      { id: 'leave', label: 'Return to town', run: this.leave },
     ];
+  }
+
+  /** Agent API: 'takeAll' or 'leave'. */
+  activate(id: string): boolean {
+    const a = this.actions().find((x) => x.id === id);
+    a?.run();
+    return !!a;
   }
 
   draw(ui: UiCanvas, r: Rect): void {

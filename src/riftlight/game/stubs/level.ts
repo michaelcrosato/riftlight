@@ -145,6 +145,12 @@ class StubLevel implements LevelHandle {
       if (r.w < 8) continue;
       for (const [px, pz] of [[r.x + 1.5, r.z + 1.5], [r.x + r.w - 1.5, r.z + r.h - 1.5]]) {
         if (rng.chance(0.5)) continue;
+        // keep doorways clear: every cell around the pillar must be floor or wall, none a corridor mouth
+        const cx = Math.floor(px!);
+        const cz = Math.floor(pz!);
+        let corridor = false;
+        for (const [dx, dz] of [[-2, 0], [2, 0], [0, -2], [0, 2]] as const) if (L.cell(cx + dx, cz + dz) === 1 && L.cell(cx + dx * 1.5, cz + dz * 1.5) === 1) corridor = true;
+        if (corridor) continue;
         const m = new Mesh(pillar, wallTop);
         m.position.set(px!, 1.1, pz!);
         m.castShadow = m.receiveShadow = true;
@@ -164,9 +170,14 @@ class StubLevel implements LevelHandle {
     const step = Math.max(8, Math.floor(L.path.length / 4));
     for (let i = step; i < L.path.length - 4; i += step) {
       const p = L.path[i]!;
-      // put it beside the path, on floor
-      const side = [[2, 0], [-2, 0], [0, 2], [0, -2]].find(([dx, dz]) => L.cell(p.x + dx!, p.z + dz!) === 1 && L.cell(p.x + dx! + Math.sign(dx!), p.z + dz! + Math.sign(dz!)) === 1);
-      const at = cellToWorld(p.x + (side?.[0] ?? 1), p.z + (side?.[1] ?? 0));
+      // beside the path, in open floor only (never narrowing a corridor)
+      const open = (x: number, z: number) => {
+        for (let dz = -2; dz <= 2; dz++) for (let dx = -2; dx <= 2; dx++) if (L.cell(x + dx, z + dz) !== 1) return false;
+        return true;
+      };
+      const side = [[2, 0], [-2, 0], [0, 2], [0, -2], [3, 0], [-3, 0], [0, 3], [0, -3]].find(([dx, dz]) => open(p.x + dx!, p.z + dz!));
+      if (!side) continue;
+      const at = cellToWorld(p.x + side[0]!, p.z + side[1]!);
       const bowl = new Mesh(faceted(new CylinderGeometry(0.34, 0.18, 0.4, 6)), brazierMat);
       bowl.position.copy(at).setY(0.75);
       const leg = new Mesh(faceted(new CylinderGeometry(0.06, 0.1, 0.6, 5)), brazierMat);
@@ -234,6 +245,26 @@ class StubLevel implements LevelHandle {
 
   collide(p: Vector3, radius: number): void {
     const L = this.layout;
+    // inside a wall (a drop that bounced, a knockback): out to the nearest floor cell first
+    if (L.cell(Math.floor(p.x), Math.floor(p.z)) !== 1) {
+      let best: [number, number] | null = null;
+      let bd = Infinity;
+      for (let dz = -2; dz <= 2; dz++)
+        for (let dx = -2; dx <= 2; dx++) {
+          const x = Math.floor(p.x) + dx;
+          const z = Math.floor(p.z) + dz;
+          if (L.cell(x, z) !== 1) continue;
+          const d = (x + 0.5 - p.x) ** 2 + (z + 0.5 - p.z) ** 2;
+          if (d < bd) {
+            bd = d;
+            best = [x, z];
+          }
+        }
+      if (best) {
+        p.x = Math.max(best[0] + radius, Math.min(best[0] + 1 - radius, p.x));
+        p.z = Math.max(best[1] + radius, Math.min(best[1] + 1 - radius, p.z));
+      }
+    }
     const cx = Math.floor(p.x);
     const cz = Math.floor(p.z);
     for (let dz = -1; dz <= 1; dz++)

@@ -118,18 +118,39 @@ export function createApi(game: Riftlight) {
     return state();
   };
 
-  /** Walk to a ground point (grid-free straight line with the stage's collision). */
+  /**
+   * Walk to a ground point: in a level along the grid route (the bot's navigation), in town
+   * in a straight line that sidesteps whatever it bumps into.
+   */
   const moveTo = (x: number, z: number, o: { maxFrames?: number; radius?: number } = {}) => {
     const max = o.maxFrames ?? 900;
     const r = o.radius ?? 0.6;
+    const nav = new PlaytestBot();
+    const goal = new Vector3(x, 0, z);
     let frames = 0;
+    let stuck = 0;
+    let side = 0;
+    const last = new Vector3().copy(game.hero.actor.position);
+    const screen = game.screen;
     for (; frames < max; frames++) {
+      // a panel that pauses the world (the loot window at the portal) or a stage change ends the walk
+      if (game.worldPaused || game.screen !== screen) break;
       const p = game.hero.actor.position;
       const dx = x - p.x;
       const dz = z - p.z;
       const d = Math.hypot(dx, dz);
       if (d <= r) break;
-      game.botIntent = toIntent({ move: { x: dx / d, z: dz / d } });
+      if (game.level) {
+        const it = toIntent({});
+        nav.goTo(game.level, p, goal, it);
+        game.botIntent = it;
+      } else {
+        stuck = p.distanceTo(last) < 0.01 ? stuck + 1 : 0;
+        if (stuck > 12) side = 30;
+        const k = side-- > 0 ? 1 : 0;
+        game.botIntent = toIntent({ move: { x: dx / d - (k * dz) / d, z: dz / d + (k * dx) / d } });
+      }
+      last.copy(p);
       engine().step(1);
     }
     game.botIntent = null;
@@ -171,6 +192,33 @@ export function createApi(game: Riftlight) {
     return { depth, cleared: game.save.deepest >= depth && outcome === 'cleared', time: +time.toFixed(2), frames, deaths: deaths || s.deaths, damageTaken: Math.round(s.damageTaken), kills: s.kills, xp: s.xp, gold: s.gold, items: s.items, stuck: bot.stuckCount, outcome };
   };
 
+  /** Kill every monster with the given bot style (default: basic attacks only, no loot, no exit). */
+  const fight = (o: { maxFrames?: number; skills?: boolean } = {}) => {
+    const killer = new PlaytestBot({ skills: o.skills ?? false, loot: false, exit: false });
+    const max = o.maxFrames ?? 60 * 60 * 3;
+    let frames = 0;
+    for (; frames < max && game.level && game.screen === 'level' && !game.dead; frames++) {
+      if (!game.level.monsters().some((m) => m.actor.alive)) break;
+      game.botIntent = killer.decide({ hero: game.hero, level: game.level, loot: [], frame: frames });
+      engine().step(1);
+    }
+    game.botIntent = null;
+    return { frames, state: state() };
+  };
+
+  /** Walk over every gold pile (gold is picked up by walking over it). */
+  const collectGold = (o: { maxFrames?: number } = {}) => {
+    let frames = 0;
+    for (let guard = 0; guard < 50; guard++) {
+      const p = game.hero.actor.position;
+      const gold = game.ports.loot.ground().filter((l) => l.drop.kind === 'gold').sort((a, b) => a.position.distanceTo(p) - b.position.distanceTo(p))[0];
+      if (!gold) break;
+      frames += moveTo(gold.position.x, gold.position.z, { radius: 0.5, maxFrames: o.maxFrames ?? 600 }).frames;
+      engine().step(2);
+    }
+    return { frames, state: state() };
+  };
+
   const api = {
     version: 1 as const,
     game,
@@ -200,6 +248,8 @@ export function createApi(game: Riftlight) {
     },
     step,
     moveTo,
+    fight,
+    collectGold,
     /** Walk to a townsperson (or the stash) and talk to them / open it. */
     talkTo(id: string) {
       const it = game.town.interactables.find((x) => x.id === id);
@@ -281,10 +331,10 @@ export function createApi(game: Riftlight) {
         if (!top || !('items' in top)) return [];
         return top.items().map((w, i) => ({ id: w.id, kind: w.kind, focus: i === top.focus, rect: top.rects.get(w.id) ?? null }));
       },
-      /** Activate a widget of the top menu by id. */
+      /** Activate a widget of the top panel by id (menus, the loot window, the recap). */
       click: (id: string) => {
-        const top = game.layer.top?.panel as Menu | undefined;
-        return !!top && 'activate' in top && top.activate(id);
+        const top = game.layer.top?.panel as { activate?: (id: string) => boolean } | undefined;
+        return !!top?.activate?.(id);
       },
     },
     save(slot = game.slot) {

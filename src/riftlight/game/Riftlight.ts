@@ -258,7 +258,7 @@ export class Riftlight implements Game, MenuHost {
   }
 
   /** Start a fresh run in a slot. */
-  newRun(slot: number, seed = (Date.now() ^ (slot * 7919)) >>> 0): void {
+  newRun(slot: number, seed = urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0): void {
     this.slot = slot;
     this.save = newSave(seed);
     this.store.save(slot, this.save);
@@ -818,14 +818,17 @@ export class Riftlight implements Game, MenuHost {
     ui.pointer.y = this.pointer.art.y;
     ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
     this.layer.update(dt);
+    let consumed = false;
     for (const e of events) {
-      if (this.layer.top) {
-        if (this.layer.input(e)) continue;
+      if (this.layer.top && this.layer.input(e)) {
+        consumed ||= e.kind !== 'pointer';
+        continue;
       }
       // the world: a pointer press on a loot label picks it up
       if (e.kind === 'pointer' && e.type === 'down' && this.lootFocus && this.screen === 'level') this.tryPickup(this.lootFocus);
     }
-    this.hotkeys(ctx);
+    // a key a menu used this frame (Esc closing a panel) must not also reopen one
+    if (!consumed) this.hotkeys(ctx);
 
     if (this.screen === 'town' || this.screen === 'level' || this.screen === 'title') {
       if (!this.worldPaused) this.advance(dt);
@@ -1110,5 +1113,15 @@ export class Riftlight implements Game, MenuHost {
   status(): string {
     const lvl = this.level ? `depth ${this.level.spec.depth} ${this.level.progress().killed}/${this.level.progress().total}` : this.screen;
     return `${lvl} · lv ${this.save.hero.level} · ${this.save.hero.gold}g`;
+  }
+}
+
+/** `?seed=123` makes new runs reproducible (tests, bug reports, playtests). */
+function urlSeed(): number | null {
+  try {
+    const v = Number(new URLSearchParams(location.search).get('seed'));
+    return Number.isFinite(v) && v > 0 ? v >>> 0 : null;
+  } catch {
+    return null;
   }
 }
