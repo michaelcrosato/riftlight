@@ -2,6 +2,7 @@ import { AnimationMixer, BoxGeometry, Mesh, type Object3D, PlaneGeometry, Vector
 import {
   compileClip,
   ContactShadow,
+  mergeStaticMeshes,
   type Game,
   type GameContext,
   type PaletteColor,
@@ -100,6 +101,8 @@ interface Coin {
 
 export class Playground implements Game {
   readonly name = 'Move Playground';
+  /** Downloaded while the renderer and physics start up. */
+  readonly assets = ['assets/tree.glb', 'assets/coin.glb', HERO_MODEL];
   hero!: PlatformerCharacter;
   heroModel!: Object3D;
   heroShadow = new ContactShadow(0.42);
@@ -107,6 +110,7 @@ export class Playground implements Game {
   collected = 0;
   respawns = 0;
   private won = false;
+  private readonly target = new Vector3();
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics, loadModel } = ctx;
@@ -116,8 +120,10 @@ export class Playground implements Game {
     sea.receiveShadow = true;
     scene.add(sea);
 
+    // Static blocks: one merged mesh per material (a handful of draw calls instead of
+    // 6 per block), one collider per block.
+    scene.add(...mergeStaticMeshes(LEVEL.blocks.map((b) => block(b, ctx))));
     for (const b of LEVEL.blocks) {
-      scene.add(block(b, ctx));
       const rot = b.tiltZ ? (b.tiltZ * Math.PI) / 180 : 0;
       const body = physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.fixed()
@@ -227,8 +233,9 @@ export class Playground implements Game {
   }
 
   cameraTarget(): Vector3 {
-    const p = this.heroModel ? this.heroModel.position : new Vector3(...LEVEL.spawn);
-    return p.clone().setY(p.y + 0.9);
+    if (!this.heroModel) return this.target.set(...LEVEL.spawn).setY(LEVEL.spawn[1] + 0.9);
+    const p = this.heroModel.position;
+    return this.target.set(p.x, p.y + 0.9, p.z);
   }
 
   eyePosition(ctx: GameContext): Vector3 {
@@ -250,5 +257,5 @@ function block(def: BlockDef, ctx: GameContext): Object3D {
   mesh.position.set(...def.at);
   if (def.tiltZ) mesh.rotation.z = (def.tiltZ * Math.PI) / 180;
   mesh.castShadow = mesh.receiveShadow = true;
-  return mesh;
+  return mesh; // merged with the other static blocks in setup()
 }
