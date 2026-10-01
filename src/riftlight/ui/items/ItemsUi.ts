@@ -35,7 +35,8 @@ import { autoSocket, gemAt, isGem, setSocket, SKILL_SLOTS, skillNumbers, socketB
 import { buy, buyPrice, sell, sellPrice, type VendorKind } from '../../loot/vendor';
 import { SKILLS } from '../../skills/actives';
 import { miniRows, type UiEvent } from '../kit';
-import { drawIcon } from './icons';
+import { gemIcon } from '../../skills/icons';
+import { drawGemIcon, drawIcon } from './icons';
 import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI } from './paint';
 import type { ItemsStore } from './store';
 import { drawTooltip, measureTooltip, TIP_CHARS, tooltipLines } from './tooltip';
@@ -1129,7 +1130,9 @@ export class ItemsUi {
   private drawItem(p: Painter, item: Item, x: number, y: number, w: number, h: number, highlight = false): void {
     const colour = item.gem ? this.gemColour(item) : itemColour(item);
     p.rect(x, y, w, h, highlight ? UI.panelEdge : 0x2a2f48);
-    drawIcon(p, baseOf(item).look ?? baseOf(item).slot, x + 1, y + 1, w - 2, h - 2, colour, CURRENCY.has(item.base) ? CURRENCY.get(item.base).short : undefined);
+    const gi = item.gem ? gemIcon(item.gem.id, item.gem.support) : null;
+    if (gi) drawGemIcon(p, gi, x + 1, y + 1, w - 2, h - 2);
+    else drawIcon(p, baseOf(item).look ?? baseOf(item).slot, x + 1, y + 1, w - 2, h - 2, colour, CURRENCY.has(item.base) ? CURRENCY.get(item.base).short : undefined);
     outline(p, x, y, w, h, item.rarity === 'normal' && itemClass(item) === item.rarity ? UI.cellEdge : colour);
     if ((item.quantity ?? 1) > 1) shadowText(p, x + 1, y + 1, String(item.quantity), PALETTE.white);
     if (item.gem && h >= 16) shadowText(p, x + 1, y + h - 8, String(item.gem.level), PALETTE.white);

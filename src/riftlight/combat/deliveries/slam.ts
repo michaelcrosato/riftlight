@@ -1,5 +1,6 @@
 import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
-import { boxMesh, discDecal, projectileMesh, ringDecal } from '../visuals';
+import { createTelegraph, type Telegraph, telegraphType } from '../telegraph';
+import { boxMesh, projectileMesh, ringDecal } from '../visuals';
 import { EffectBase, type CastContext, type CombatEffect } from './types';
 
 /** Gravity used for leap arcs (matches the movers). */
@@ -29,8 +30,7 @@ class Slam extends EffectBase {
   private readonly delay: number;
   private phase: 'leap' | 'telegraph' | 'impact' = 'telegraph';
   private t = 0;
-  private fill: Mesh | null = null;
-  private edge: Mesh | null = null;
+  private tele: Telegraph | null = null;
   private burstRing: Mesh | null = null;
   private faller: Object3D | null = null;
   private readonly look = this.c.skill.def.look;
@@ -66,10 +66,9 @@ class Slam extends EffectBase {
       });
     } else this.center = areaCenter(c, this.radius);
     if (this.delay > 0) {
-      // telegraph: a filling disc inside a ring, at the target, during the delay
-      this.edge = this.show(ringDecal(this.look.color, 0.9));
-      this.fill = this.show(discDecal(this.look.glow?.at(-1) ?? this.look.color));
-      this.edge.scale.setScalar(this.radius);
+      // telegraph: a pixel rim at the target and a sweep that fills it during the delay
+      this.tele = createTelegraph({ shape: 'circle', size: this.radius }, telegraphType(c.skill.tags));
+      this.show(this.tele.object);
       this.place();
       if (this.look.shape === 'rock' || this.look.shape === 'bolt') {
         this.faller = this.show(this.look.shape === 'rock' ? projectileMesh(this.look) : boxMesh(this.look.glow?.[0] ?? 'white'));
@@ -80,9 +79,7 @@ class Slam extends EffectBase {
   }
 
   private place(): void {
-    const y = this.center.y + 0.03;
-    this.edge?.position.set(this.center.x, y, this.center.z);
-    this.fill?.position.set(this.center.x, y - 0.005, this.center.z);
+    this.tele?.object.position.set(this.center.x, this.center.y + 0.01, this.center.z);
   }
 
   step(dt: number): boolean {
@@ -120,8 +117,7 @@ class Slam extends EffectBase {
       const p = this.center.clone();
       c.combat.light(this.look.light.color, this.look.light.intensity, this.look.light.radius, () => p, 0.35);
     }
-    if (this.fill) this.fill.visible = false;
-    if (this.edge) this.edge.visible = false;
+    if (this.tele) this.tele.object.visible = false;
     if (this.faller) this.faller.visible = false;
     this.burstRing = this.show(ringDecal(this.look.glow?.[0] ?? this.look.color, 0.7));
     this.burstRing.position.set(this.center.x, this.center.y + 0.05, this.center.z);
@@ -129,10 +125,9 @@ class Slam extends EffectBase {
   }
 
   render(): void {
-    if (this.phase === 'telegraph' && this.fill) {
+    if (this.phase === 'telegraph' && this.tele) {
       const k = Math.min(1, this.t / Math.max(0.01, this.delay));
-      this.fill.scale.setScalar(Math.max(0.01, this.radius * k));
-      if (this.edge) this.edge.visible = Math.floor(this.age * 12) % 2 === 0 || k > 0.7;
+      this.tele.update(k);
       if (this.faller) {
         // falls during the last 40% of the delay
         const f = Math.max(0, (k - 0.6) / 0.4);

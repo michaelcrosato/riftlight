@@ -459,8 +459,9 @@ them on every plan and boss.
 their last frame), `locomote(speed)` (Idle/Walk/Run with playback matched to the ground
 speed), `update(dt, { lookAt, ground })` returns `hit` / `end` events and applies look-at
 (neck and head), hit flinch (`flinch(from)`), optional foot placement on uneven ground
-(`ground(x, z)`) and the wind-up glow (`setGlow(t)`). `createTelegraph(spec)` builds the
-ground decals (circle, cone, line) that fill up as the wind-up runs out.
+(`ground(x, z)`) and the wind-up glow (`setGlow(t)`). `createTelegraph(spec, damageType)`
+builds the ground decals (circle, cone, line) that fill up as the wind-up runs out (combat's
+pixel telegraphs, see *Wiring*).
 
 **Performance**: `buildMonster` builds meshes, rig and a one-frame standing pose (~1.5 ms,
 median). Clips are baked and compiled the first time they're played (a few ms each) and
@@ -1095,7 +1096,24 @@ unlocks. Views are `Panel`s drawn on the pixel HUD (`ui/kit.ts` `UiCanvas`) that
 `UiEvent`s (nav, confirm, back, tab, key, pointer, wheel) built from keys, mouse, touch and
 pads alike; `PanelHost` gives them the save, gold, sounds and
 `changed('tree' | 'gear' | 'gold' | 'stash' | 'skills')`. `ShellServices.hero()` is the hero's
-actor (loot and the skill panel read its StatSheet).
+actor (loot and the skill panel read its StatSheet). A panel may implement `fit(w, h)`: the
+layer tells it the room there is before reading `size` (a phone in portrait is 124 art pixels
+wide) and clamps every panel to the screen; menus then put labels above their controls and the
+character sheet moves its explain column under the list.
+
+**HUD layout** (`ui/layout.ts`). The fixed HUD (`hudZones`: orbs, bar, minimap, boss bar,
+banner) reserves its rects each frame; world overlays are placed around them by priority with
+`HudLayout.place`: the prompt, the focused loot label, the other labels (loud first, then
+near), then damage numbers (which merge quick hits on one target and stack per target).
+Whatever finds no room is skipped for that frame. The centre banner is a `BannerQueue`: the
+level card, LEVEL CLEAR and level-ups show one at a time, a second level-up merges into the
+one showing, a clear cuts a level-up short. Under 300 art pixels wide the HUD is compact
+(`hudGeometry`): small orbs over a tight bar, a small minimap.
+
+**Gem icons** (`skills/icons.ts`): every gem has an 8 × 6 pixel icon, generated from its data:
+actives draw their delivery's shape in their `look` colours, supports a glyph for what they
+change (projectiles, chain, area, speed, crit, leech, minions...) in their element's colour.
+The skill bar, the bags, the sockets and the vendor draw the same icon.
 
 ### Wiring: hero, levels and monsters (`wire/`)
 
@@ -1133,8 +1151,19 @@ one `Worlds` map (stage → `CombatWorld`).
   `LootPort.rollDrops(KillInfo)` (`KillInfo` carries the hero's `item.rarity`, `item.quantity`
   and `gold.find` as fractions above 1) and `spawn`s them at the corpse, and may drop a health
   globe. `levelClear` fires once when the last monster dies.
-- **Feel.** Hit-stop and screen shake from the hit size (`Combat`), damage numbers from `hit`
-  (the shell), flinch and hit clips, corpses that sink, a boss bar with phase ticks.
+- **Feel.** Hit-stop and screen shake from the hit size (`Combat`; a killing blow holds two
+  frames longer), damage numbers from `hit` (the shell), flinch and hit clips, corpses that
+  pixel-dissolve (`BodyFx.dissolve`, the toon `dissolve` option), a boss bar with phase ticks.
+  Crits, kills and level-ups flash a pooled light; hits throw a burst of their element.
+- **Presence.** Monster bodies use the toon `rim` option (a hard rim light in their glow
+  colour), a shared contact shadow, elites and bosses a pooled glow light and a TSL aura on
+  the floor (`auraMaterial`: turning dashes, a crisp rim). Big circle telegraphs (bosses, ≥ 2 m)
+  light the floor they cover, brighter as the hit nears.
+- **Telegraphs** (`combat/telegraph.ts`, `createTelegraph(shape, colour)`): a 2 px rim and a
+  stippled sweep whose front meets the rim on the hit frame, blinking hot in the last 20%;
+  coloured by damage type (`TELEGRAPH_COLORS`: rim + sweep per element), pixel-crisp at any
+  size (`fwidth`), transparent and drawn under actors. `{ zone: true }` is the calm look for
+  lasting hazards; `tint(type)` recolours one once its attack is known.
 
 ### Wiring: loot, skills and the passive tree (`wire/`)
 

@@ -112,15 +112,23 @@ export class UiLayer {
         o.panel.draw(ui, o.rect, time);
         return;
       }
-      const { w, h } = o.panel.size;
+      // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can
+      // lay out narrower do (`fit`), and nothing is ever drawn wider than the screen
+      const roomW = ui.w - (o.bare ? 4 : 12);
+      const roomH = ui.h - (o.bare ? 4 : 26);
+      o.panel.fit?.(roomW, roomH);
+      const w = Math.min(o.panel.size.w, roomW);
+      const h = Math.min(o.panel.size.h, roomH);
       const open = Math.min(1, o.age / 0.12);
       const x = Math.floor((ui.w - w) / 2);
-      const y = Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6) + Math.round((1 - open) * 8);
+      const y = Math.max(o.bare ? 2 : 16, Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
       o.rect = { x, y, w, h };
       if (!o.bare) {
         ui.panel(x - 6, y - 16, w + 12, h + 22, 'ink', last ? 'slate' : 'night');
         ui.rect(x - 3, y - 13, w + 6, 11, last ? 'navy' : 'night');
-        ui.text(x, y - 11, o.panel.title.toUpperCase(), { color: last ? 'sand' : 'slate' });
+        const title = o.panel.title.toUpperCase();
+        if (ui.measure(title) <= w - 14) ui.text(x, y - 11, title, { color: last ? 'sand' : 'slate' });
+        else ui.mini(x, y - 10, title, last ? 'sand' : 'slate');
         if (!o.sticky) {
           const cx = x + w - 13;
           const hot = ui.hover({ x: cx, y: y - 13, w: 12, h: 11 });

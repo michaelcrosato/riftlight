@@ -67,11 +67,23 @@ export class Menu implements Panel {
   }
 
   private readonly source: (() => Widget[]) | null;
+  /** Width the shell has room for (`fit`); below the menu's width it lays out narrow. */
+  private room = Infinity;
+
+  /** Narrow: sliders, toggles and choices put their label above the control. */
+  get narrow(): boolean {
+    return this.room < (this.o.width ?? 200) && this.room < 180;
+  }
+
+  fit(w: number): void {
+    this.room = w;
+  }
 
   get size() {
     // room for the hint / footer line under the widgets
-    const h = this.widgets.reduce((s, w) => s + rowHeight(w), 0) + 14;
-    return { w: this.o.width ?? 200, h };
+    const narrow = this.narrow;
+    const h = this.widgets.reduce((s, w) => s + rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0), 0) + 14;
+    return { w: Math.min(this.o.width ?? 200, this.room), h };
   }
 
   /** The widget list (rebuilt from the factory, if any, on every draw). */
@@ -102,11 +114,12 @@ export class Menu implements Panel {
       this.focus = again >= 0 ? again : Math.min(this.focus, this.widgets.length - 1);
     }
     this.rects.clear();
-    const labelW = this.o.labelWidth ?? Math.floor(r.w * 0.45);
+    const narrow = this.narrow;
+    const labelW = narrow ? 4 : (this.o.labelWidth ?? Math.floor(r.w * 0.45));
     let y = r.y + 3;
     this.widgets.forEach((w, i) => {
       const focus = i === this.focus;
-      const h = rowHeight(w);
+      const h = rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0);
       const row: Rect = { x: r.x, y, w: r.w, h: h - 2 };
       if (w.kind === 'button') {
         this.rects.set(w.id, ui.button(row, w.label, { focus, disabled: w.disabled, accent: w.accent }));
@@ -122,6 +135,8 @@ export class Menu implements Panel {
         ui.text(r.x + 5, y + 3, w.label.toUpperCase(), { color });
         const cx = r.x + labelW;
         const cw = r.w - labelW - 4;
+        // narrow: the control sits on its own line under the label
+        if (narrow) y += NARROW_EXTRA;
         if (w.kind === 'slider') {
           const value = w.format();
           const vw = 34;
@@ -149,7 +164,7 @@ export class Menu implements Panel {
           ui.text(cx + cw - 5, y + 3, '>', { color: focus ? UI.focus : 'slate' });
         }
       }
-      y += h;
+      y += narrow && isControl(w) ? h - NARROW_EXTRA : h;
     });
     const hint = (this.widgets[this.focus] as { hint?: string } | undefined)?.hint;
     const foot = hint ?? this.o.footer?.();
@@ -260,5 +275,7 @@ export class Menu implements Panel {
   }
 }
 
+const NARROW_EXTRA = 10;
+const isControl = (w: Widget) => w.kind === 'slider' || w.kind === 'toggle' || w.kind === 'choice';
 const focusable = (w: Widget) => w.kind !== 'label' && w.kind !== 'gap' && !(w.kind === 'button' && w.disabled);
 const rowHeight = (w: Widget) => (w.kind === 'gap' ? (w.h ?? 6) : w.kind === 'button' ? BUTTON_H + 3 : w.kind === 'label' ? 12 : ROW);

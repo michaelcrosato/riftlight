@@ -6,6 +6,7 @@
 import { type Camera, Vector3 } from 'three/webgpu';
 import type { PaletteColor } from '../../engine';
 import { type UiCanvas, wrap } from './kit';
+import type { HudLayout } from './layout';
 
 const v = new Vector3();
 
@@ -25,30 +26,70 @@ export interface Floater {
   t: number;
   crit: boolean;
   dx: number;
+  /** Merges quick hits on the same target (its actor id), with the running total. */
+  key?: number;
+  value?: number;
+  /** Rows up from the anchor (numbers on one target stack instead of overlapping). */
+  row: number;
 }
 
-/** Damage numbers: pop, rise and step down through the palette. */
+/**
+ * Damage numbers: pop, rise and step down through the palette, then blink out. Hits on one
+ * target within a short window merge into one number that counts up (a whirlwind's ticks read
+ * as one climbing total, not a pile); newer numbers on the same target stack a row higher, and
+ * every number is placed around the HUD and the loot labels (`HudLayout`), so nothing is
+ * drawn over a banner or a label. Crits are double size and always win their spot.
+ */
 export class Floaters {
   readonly list: Floater[] = [];
+  /** Seconds a number keeps absorbing hits on the same target. */
+  static readonly MERGE = 0.16;
+  static readonly LIFE = 0.9;
+  private readonly box = { x: 0, y: 0, w: 0, h: 0 };
 
-  add(at: Vector3, text: string, color: PaletteColor, crit: boolean, dx: number): void {
+  add(at: Vector3, text: string, color: PaletteColor, crit: boolean, dx: number, o: { key?: number; value?: number } = {}): void {
+    if (o.key !== undefined && o.value !== undefined && !crit) {
+      const same = this.list.find((f) => f.key === o.key && !f.crit && f.t < Floaters.MERGE && f.color === color);
+      if (same) {
+        same.value = (same.value ?? 0) + o.value;
+        same.text = String(Math.round(same.value));
+        same.t = Math.min(same.t, 0.04); // pop again
+        return;
+      }
+    }
+    // stack above the live numbers on the same target
+    let row = 0;
+    if (o.key !== undefined) for (const f of this.list) if (f.key === o.key && f.t < 0.45) row = Math.max(row, f.row + 1);
     if (this.list.length > 40) this.list.shift();
-    this.list.push({ at: at.clone(), text, color, t: 0, crit, dx });
+    this.list.push({ at: at.clone(), text, color, t: 0, crit, dx, key: o.key, value: o.value, row: row % 4 });
   }
 
   update(dt: number): void {
     for (const f of this.list) f.t += dt;
-    while (this.list.length && this.list[0]!.t > 0.9) this.list.shift();
+    while (this.list.length && this.list[0]!.t > Floaters.LIFE) this.list.shift();
   }
 
-  draw(ui: UiCanvas, camera: Camera): void {
-    for (const f of this.list) {
+  draw(ui: UiCanvas, camera: Camera, layout?: HudLayout): void {
+    // crits first (they get their spot), then newest first
+    const order = [...this.list].sort((a, b) => Number(b.crit) - Number(a.crit) || a.t - b.t);
+    for (const f of order) {
       const p = project(f.at, camera, ui);
       if (!p) continue;
-      const rise = Math.round(f.t * 26);
-      const scale = f.crit && f.t < 0.5 ? 2 : 1;
-      const color: PaletteColor = f.t > 0.65 ? 'slate' : f.t < 0.08 ? 'white' : f.color;
-      ui.text(p.x + Math.round(f.dx * f.t * 20), p.y - 14 - rise, f.text, { align: 'center', scale, color });
+      if (f.t > 0.75 && Math.floor(f.t * 30) % 2 === 1) continue; // blink out
+      const pop = f.t < 0.06 ? 1 : 0;
+      const rise = Math.round(Math.min(1, f.t * 6) * 8 + f.t * 14);
+      const scale = (f.crit && f.t < 0.5) || pop ? 2 : 1;
+      const color: PaletteColor = f.t > 0.62 ? 'slate' : f.t < 0.06 ? 'white' : f.color;
+      const w = ui.measure(f.text, scale);
+      const h = 7 * scale;
+      const box = this.box;
+      box.x = Math.round(p.x + f.dx * f.t * 16 - w / 2);
+      box.y = p.y - 16 - rise - f.row * 9 - (scale - 1) * 4;
+      box.w = w;
+      box.h = h;
+      const at = layout ? layout.place(box, { tries: 2, step: 8 }) : box;
+      if (!at) continue;
+      ui.text(at.x, at.y, f.text, { scale, color, shadow: 'ink' });
     }
   }
 
@@ -99,8 +140,9 @@ export function promptAt(ui: UiCanvas, camera: Camera, at: Vector3, key: string,
 
 /**
  * A loot label on the ground (rarity colour). The loot filter's tier frames `loud` drops
- * (uniques, valuable orbs) and greys `dim` ones; labels already drawn this frame (`placed`)
- * push it up so labels never overlap.
+ * (uniques, valuable orbs) and greys `dim` ones. With a `HudLayout` it is placed around the
+ * HUD, the banner and the labels already placed this frame (stepping up a row at a time), and
+ * skipped when there is no room; the focused label should be placed first.
  */
 export function lootLabel(
   ui: UiCanvas,
@@ -110,22 +152,22 @@ export function lootLabel(
   color: PaletteColor,
   focus: boolean,
   tier: 'loud' | 'show' | 'dim' = 'show',
-  placed?: { x: number; y: number; w: number; h: number }[],
+  layout?: HudLayout,
 ): { x: number; y: number; w: number; h: number } | null {
   const p = project(at, camera, ui);
   if (!p) return null;
-  const w = ui.measure(text) + 6;
-  const x = Math.max(1, Math.min(ui.w - w - 1, Math.round(p.x - w / 2)));
-  let y = p.y - 14;
-  for (let tries = 0; placed && tries < 12; tries++) {
-    const hit = placed.find((o) => x < o.x + o.w + 1 && x + w + 1 > o.x && y < o.y + o.h + 1 && y + 11 > o.y);
-    if (!hit) break;
-    y = hit.y - 12;
-  }
-  placed?.push({ x, y, w, h: 10 });
+  // a narrow screen (a phone) cuts long names
+  let label = text;
+  while (label.length > 6 && ui.measure(label) + 6 > ui.w - 4) label = label.slice(0, -2);
+  if (label !== text) label = `${label.slice(0, -1)}.`;
+  const w = ui.measure(label) + 6;
+  const want = { x: Math.max(1, Math.min(ui.w - w - 1, Math.round(p.x - w / 2))), y: p.y - 14, w, h: 10 };
+  const r = layout ? layout.place(want, { tries: focus ? 10 : 6, step: 11 }) : want;
+  if (!r) return null;
+  const { x, y } = r;
   ui.rect(x, y, w, 10, focus ? 'night' : 'ink');
   if (focus || tier === 'loud') ui.outline(x - 1, y - 1, w + 2, 12, focus ? 'white' : color);
-  ui.text(x + 3, y + 2, text, { color: tier === 'dim' && !focus ? 'slate' : color, shadow: false });
+  ui.text(x + 3, y + 2, label, { color: tier === 'dim' && !focus ? 'slate' : color, shadow: false });
   return { x, y, w, h: 10 };
 }
 

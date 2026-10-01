@@ -5,6 +5,7 @@
  */
 import type { PaletteColor } from '../../engine';
 import { describeMod, type StatSheet } from '../core/mods';
+import { StatQuery } from '../combat/stats';
 import { DAMAGE_TYPES, type DamageType } from '../core/types';
 import type { MechanicInfo, Panel, WorldLoot } from '../game/ports';
 import type { Penalty } from '../game/progress';
@@ -15,29 +16,50 @@ const TYPE_COLOR: Record<DamageType, PaletteColor> = { physical: 'mist', fire: '
 
 // ------------------------------------------------------------------ character sheet
 
-const SHEET: { stat: string; label: string; fmt: (v: number) => string; tags?: string[] }[] = [
+/**
+ * The rows: `scale` stats are multipliers combat reads as (1 + Σinc) × Πmore (damage and
+ * speeds), the rest are values (flat fractions show as percentages).
+ */
+const SHEET: { stat: string; label: string; fmt: (v: number) => string; tags?: string[]; scale?: boolean }[] = [
   { stat: 'life', label: 'Life', fmt: (v) => v.toFixed(0) },
   { stat: 'mana', label: 'Mana', fmt: (v) => v.toFixed(0) },
   { stat: 'es', label: 'Energy shield', fmt: (v) => v.toFixed(0) },
-  { stat: 'damage', label: 'Attack damage', fmt: (v) => v.toFixed(1), tags: ['attack', 'melee'] },
-  { stat: 'attack.speed', label: 'Attack speed', fmt: (v) => `${v.toFixed(2)}x` },
-  { stat: 'cast.speed', label: 'Cast speed', fmt: (v) => `${v.toFixed(2)}x` },
+  { stat: 'damage', label: 'Attack damage', fmt: (v) => `${v.toFixed(2)}x`, tags: ['attack', 'melee'], scale: true },
+  { stat: 'attack.speed', label: 'Attack speed', fmt: (v) => `${v.toFixed(2)}x`, scale: true },
+  { stat: 'cast.speed', label: 'Cast speed', fmt: (v) => `${v.toFixed(2)}x`, scale: true },
   { stat: 'move.speed', label: 'Move speed', fmt: (v) => `${v.toFixed(1)} M/S` },
-  { stat: 'crit.chance', label: 'Crit chance', fmt: (v) => `${v.toFixed(0)}%` },
+  { stat: 'crit.chance', label: 'Crit chance', fmt: (v) => `${pct(v).toFixed(0)}%` },
   { stat: 'armour', label: 'Armour', fmt: (v) => v.toFixed(0) },
-  { stat: 'res.fire', label: 'Fire res', fmt: (v) => `${Math.min(75, v).toFixed(0)}%` },
-  { stat: 'res.cold', label: 'Cold res', fmt: (v) => `${Math.min(75, v).toFixed(0)}%` },
-  { stat: 'res.lightning', label: 'Lightning res', fmt: (v) => `${Math.min(75, v).toFixed(0)}%` },
+  { stat: 'res.fire', label: 'Fire res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
+  { stat: 'res.cold', label: 'Cold res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
+  { stat: 'res.lightning', label: 'Lightning res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
   { stat: 'life.regen', label: 'Life regen', fmt: (v) => `${v.toFixed(1)}/S` },
   { stat: 'mana.regen', label: 'Mana regen', fmt: (v) => `${v.toFixed(1)}/S` },
 ];
 
+/** Chances and resistances are flat fractions (0.12 = 12%); an old save may hold whole percents. */
+const pct = (v: number) => (Math.abs(v) <= 1.5 ? v * 100 : v);
+const valueOf = (sheet: StatSheet, row: (typeof SHEET)[number]) => (row.scale ? new StatQuery(sheet).scale(row.stat, row.tags) : sheet.get(row.stat, row.tags));
+
 export class CharacterSheet implements Panel {
   readonly id = 'character';
   readonly title = 'Character';
-  readonly size = { w: 330, h: 176 };
   private focus = 3;
   private rows: Rect[] = [];
+  /** Room the shell has (`fit`): under 300 the explain column moves under the list. */
+  private room = { w: 330, h: 244 };
+
+  fit(w: number, h: number): void {
+    this.room = { w, h };
+  }
+
+  get narrow(): boolean {
+    return this.room.w < 300;
+  }
+
+  get size(): { w: number; h: number } {
+    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 14 + SHEET.length * 11 + 64) } : { w: 330, h: 176 };
+  }
 
   constructor(
     private readonly sheet: () => StatSheet,
@@ -46,33 +68,44 @@ export class CharacterSheet implements Panel {
 
   draw(ui: UiCanvas, r: Rect): void {
     const sheet = this.sheet();
-    ui.text(r.x + 2, r.y + 2, this.header(), { color: 'sand' });
+    const narrow = this.narrow;
+    const header = this.header();
+    if (ui.measure(header) <= r.w - 4) ui.text(r.x + 2, r.y + 2, header, { color: 'sand' });
+    else ui.mini(r.x + 2, r.y + 3, header, 'sand');
     this.rows = [];
+    const listW = narrow ? r.w : 150;
     SHEET.forEach((row, i) => {
       const y = r.y + 14 + i * 11;
-      const rect = { x: r.x, y: y - 1, w: 150, h: 10 };
+      const rect = { x: r.x, y: y - 1, w: listW, h: 10 };
       this.rows.push(rect);
       if (i === this.focus) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
-      ui.text(r.x + 3, y, row.label.toUpperCase(), { color: i === this.focus ? 'white' : 'mist' });
-      ui.text(r.x + 147, y, row.fmt(sheet.get(row.stat, row.tags)), { align: 'right', color: 'white' });
+      const value = row.fmt(valueOf(sheet, row));
+      // a narrow sheet shortens labels that would run into their value
+      let label = row.label.toUpperCase();
+      while (label.length > 4 && ui.measure(label) + ui.measure(value) + 8 > listW) label = label.slice(0, -1);
+      ui.text(r.x + 3, y, label, { color: i === this.focus ? 'white' : 'mist' });
+      ui.text(r.x + listW - 3, y, value, { align: 'right', color: 'white' });
     });
-    // explain: where the focused stat comes from
+    // explain: where the focused stat comes from (a column on the right, or under the list)
     const row = SHEET[this.focus]!;
-    const x = r.x + 160;
-    ui.rect(x - 5, r.y, 1, r.h - 4, 'slate');
-    ui.text(x, r.y + 2, `${row.label.toUpperCase()} =`, { color: 'sand' });
-    let y = r.y + 14;
-    const base = sheet.get(row.stat, row.tags);
+    const x = narrow ? r.x + 2 : r.x + 160;
+    const top = narrow ? r.y + 16 + SHEET.length * 11 : r.y;
+    if (narrow) ui.rect(r.x, top - 3, r.w, 1, 'slate');
+    else ui.rect(x - 5, r.y, 1, r.h - 4, 'slate');
+    if (!narrow) ui.text(x, top + 2, `${row.label.toUpperCase()} =`, { color: 'sand' });
+    let y = narrow ? top : top + 14;
+    const base = valueOf(sheet, row);
     const parts = sheet.explain(row.stat, row.tags);
     if (!parts.length) ui.text(x, y, 'BASE ONLY', { color: 'slate' });
     for (const p of parts.slice(0, 12)) {
+      if (y > r.y + r.h - (narrow ? 22 : 20)) break;
       ui.mini(x, y, p.source.toUpperCase(), p.source === 'difficulty' ? 'orange' : 'slate');
       y += 6;
       for (const line of wrap(describeMod(p.mod).toUpperCase(), r.x + r.w - x)) {
+        if (y > r.y + r.h - 18) break;
         ui.text(x, y, line, { color: 'sky' });
         y += 9;
       }
-      if (y > r.y + r.h - 20) break;
     }
     ui.mini(x, r.y + r.h - 8, `FINAL ${row.fmt(base)}`, 'white');
   }

@@ -21,10 +21,11 @@ import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
 import type { DifficultyTuning, GameEvents, SaveData } from '../core/types';
 import { Town } from '../town/Town';
-import { type HudModel, drawHud, type FeedLine } from '../ui/hud';
+import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
+import { BannerQueue, HudLayout } from '../ui/layout';
 import { type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
-import { drawLogo } from '../ui/logo';
+import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
@@ -84,7 +85,10 @@ export class Riftlight implements Game, MenuHost {
   private readonly recap = new RecapTracker();
   private readonly floaters = new Floaters();
   private feed: FeedLine[] = [];
-  private card: HudModel['card'] = null;
+  /** The centre banners (level card, LEVEL CLEAR, level-ups): one at a time, queued. */
+  private readonly banners = new BannerQueue();
+  /** What the HUD reserved this frame: world labels and numbers are placed around it. */
+  private readonly hudLayout = new HudLayout();
   private streak: { count: number; age: number } | null = null;
   private levelUpAge = 99;
   private hurt = 0;
@@ -228,10 +232,12 @@ export class Riftlight implements Game, MenuHost {
         this.ctx.particles.burst('rl.hit', at);
         this.ctx.audio.play(result.crit ? 'rl.crit' : 'rl.hit', { pitch: this.rng.range(-2, 2), volume: 0.7 });
       }
+      // a crit flashes the spot it lands on (one pooled light, gone in a few frames)
+      if (result.crit && result.total > 0) this.flash(at, PALETTE.sand, 7, 4.5, 0.14);
       if (this.settings.damageNumbers && result.total > 0) {
         const top = (Object.entries(result.byType) as [string, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
         const color: PaletteColor = result.crit ? 'sand' : top === 'fire' ? 'orange' : top === 'cold' ? 'sky' : top === 'lightning' ? 'cyan' : 'white';
-        this.floaters.add(at.setY(1.6), String(Math.round(result.total)), color, result.crit, this.rng.range(-1, 1));
+        this.floaters.add(at.setY(1.6), String(Math.round(result.total)), color, result.crit, this.rng.range(-1, 1), { key: target.id, value: result.total });
       }
     });
     on('kill', ({ target, rank }) => {
@@ -247,6 +253,9 @@ export class Riftlight implements Game, MenuHost {
       this.streak = { count: (this.streak && this.streak.age < 3 ? this.streak.count : 0) + 1, age: 0 };
       this.ctx.audio.play('rl.die', { pitch: rank === 'boss' ? -8 : this.rng.range(-2, 3) });
       this.ctx.particles.burst('smoke', target.position.clone().setY(0.6), { count: rank === 'boss' ? 14 : 5 });
+      // the kill lights the room for a moment: bigger and whiter for elites and the boss
+      const big = rank === 'boss' ? 3 : rank === 'rare' ? 1.6 : rank === 'magic' ? 1.3 : 1;
+      this.flash(target.position.clone().setY(1), rank === 'boss' ? PALETTE.white : PALETTE.orange, 5 * big, 4 + 2 * big, 0.2 * big);
       if (rank === 'boss') this.services.shake(0.8, 0.5);
       this.note('kill', `${target.name ?? 'monster'} +${xp}xp`);
     });
@@ -255,6 +264,11 @@ export class Riftlight implements Game, MenuHost {
     });
     on('mechanic', ({ id }) => this.unlockCodex(id));
     on('levelClear', () => (this.clearEmitted = true));
+  }
+
+  /** A short light flash from the engine's pool (crits, kills, level-ups): never a new light. */
+  private flash(at: Vector3, color: number, intensity: number, radius: number, seconds: number): void {
+    this.ctx.lights.request({ position: [at.x, at.y + 0.4, at.z], color, intensity, radius, lifetime: seconds, fadeIn: 0.01, fadeOut: Math.min(0.15, seconds * 0.6), priority: 5, flicker: 'none', name: 'flash' });
   }
 
   private note(type: string, text: string): void {
@@ -352,7 +366,8 @@ export class Riftlight implements Game, MenuHost {
     this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(at.y + 0.9));
     this.zoomGoal = CAMERA.town;
     this.playMusic('town');
-    this.card = { title: 'EMBERFALL', subtitle: 'the town', age: 1.2 }; // a shorter card at home
+    this.banners.clear();
+    this.banners.push('card', 'EMBERFALL', 'the town', { duration: 2.2 }); // a shorter card at home
     this.autosave('town');
     this.note('flow', `town (${reason})`);
   }
@@ -389,7 +404,8 @@ export class Riftlight implements Game, MenuHost {
     const stats = (this.save.stats ??= emptyStats());
     stats.runs++;
     for (const m of spec.mechanics) this.unlockCodex(m);
-    this.card = { title: levelTitle(d, spec.name), subtitle: d > 12 ? 'a rift' : `depth ${d}`, age: 0 };
+    this.banners.clear();
+    this.banners.push('card', levelTitle(d, spec.name), d > 12 ? 'a rift' : `depth ${d}`);
     this.combatHeat = 0;
     this.playMusic('level');
     this.note('flow', `level ${d} ${spec.name}`);
@@ -438,7 +454,7 @@ export class Riftlight implements Game, MenuHost {
     const deeper = recordClear(this.save, depth, this.levelTime);
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
     this.ctx.audio.play('rl.clear');
-    this.card = { title: 'LEVEL CLEAR', subtitle: `${formatTime(this.levelTime)}${deeper ? ' · new depth unlocked' : ''}`, age: 0 };
+    this.banners.push('clear', 'LEVEL CLEAR', `${formatTime(this.levelTime)}${deeper ? ' · new depth unlocked' : ''}`);
     this.hero.emote('victory');
     this.playMusic('level');
     this.autosave('clear');
@@ -480,8 +496,10 @@ export class Riftlight implements Game, MenuHost {
       this.hero.setLevel(this.save.hero.level);
       this.hero.restore();
       this.levelUpAge = 0;
+      this.banners.push('levelup', `LEVEL ${this.save.hero.level}`, this.padGlyphs() ? '+1 passive point · start' : '+1 passive point · P');
       this.ctx.audio.play('rl.levelUp');
       this.ctx.particles.burst('rl.levelup', this.hero.actor.position.clone().setY(0.2));
+      this.flash(this.hero.actor.position, PALETTE.lime, 8, 6, 0.6);
       this.events.emit('levelUp', { level: this.save.hero.level });
       this.note('level', `level ${this.save.hero.level}`);
     }
@@ -513,6 +531,8 @@ export class Riftlight implements Game, MenuHost {
       this.session.items++;
       this.events.emit('loot', { item: r.item, at: l.position });
       this.ctx.audio.play('rl.drop');
+      // a pop in the item's rarity colour where it was picked up
+      this.ctx.particles.burst('sparkle', l.position.clone().setY(0.5), { count: 10, colors: ['white', l.color] });
       this.feedLine(r.item.name.toUpperCase(), l.color);
     }
     return true;
@@ -981,7 +1001,7 @@ export class Riftlight implements Game, MenuHost {
     this.floaters.update(dt);
     for (const f of this.feed) f.t += dt;
     this.feed = this.feed.filter((f) => f.t < 4.5);
-    if (this.card) this.card.age += dt;
+    this.banners.update(dt);
     if (this.streak) this.streak.age += dt;
     this.levelUpAge += dt;
     this.hurt = Math.max(0, this.hurt - dt * 2.5);
@@ -1072,8 +1092,18 @@ export class Riftlight implements Game, MenuHost {
     const cam = ctx.engine.camera.camera;
     hud.clear();
     if (this.screen === 'title') {
-      drawLogo(ui, ui.w / 2, 30, this.time);
-      ui.text(ui.w / 2, 66, 'A HACK-AND-SLASH OF ENDLESS RIFTS', { align: 'center', color: 'mist' });
+      // the logo over a breathing rift of light; on a phone a smaller logo, the line in two
+      const scale = logoScale(ui.w);
+      const ly = scale >= 4 ? 30 : 24;
+      const lh = 7 * scale + 5;
+      drawRift(ui, ui.w / 2, ly + Math.round(lh / 2), Math.min(ui.w - 8, 6 * 9 * scale + 60), this.time);
+      drawLogo(ui, ui.w / 2, ly, this.time, 'RIFTLIGHT', scale);
+      const tag = 'A HACK-AND-SLASH OF ENDLESS RIFTS';
+      if (ui.measure(tag) <= ui.w - 8) ui.text(ui.w / 2, ly + lh + 8, tag, { align: 'center', color: 'mist', shadow: 'ink' });
+      else {
+        ui.mini(ui.w / 2, ly + lh + 6, 'A HACK-AND-SLASH', 'mist', 'center', 'ink');
+        ui.mini(ui.w / 2, ly + lh + 13, 'OF ENDLESS RIFTS', 'mist', 'center', 'ink');
+      }
       ui.mini(ui.w - 4, ui.h - 8, this.hero?.juice ? 'RIFTLIGHT' : 'STUB SYSTEMS · R6 SHELL', 'slate', 'right');
       this.layer.draw(ui, this.time);
       return;
@@ -1083,6 +1113,12 @@ export class Riftlight implements Game, MenuHost {
       ui.text(ui.w / 2, ui.h / 2 - 4, 'OPENING THE RIFT' + '.'.repeat(1 + (Math.floor(this.time * 4) % 3)), { align: 'center', color: 'cyan' });
       return;
     }
+    // the HUD's zones first: world overlays are placed around them, most important first
+    // (the prompt, the focused loot label, other labels, damage numbers)
+    const model = this.hudModel();
+    const layout = this.hudLayout;
+    layout.clear(ui.w, ui.h);
+    for (const z of hudZones(ui.w, ui.h, model)) layout.reserve(z);
     // world overlays
     if (this.screen === 'town') {
       for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
@@ -1094,24 +1130,25 @@ export class Riftlight implements Game, MenuHost {
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
       const p = this.hero.actor.position;
-      const placed: { x: number; y: number; w: number; h: number }[] = [];
-      for (const l of this.ports.loot.ground()) {
-        if (l.filtered || l.drop.kind === 'gold') continue;
-        const d = l.position.distanceTo(p);
-        if (d > 9) continue;
-        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near, l.tier, placed);
-        if (r && this.ui.hover(r)) this.lootFocus = l;
-      }
       if (near) this.prompt(`PICK UP ${near.label}`);
       else if (this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt('RETURN TO TOWN', 'the portal is open');
+      // labels: the focused one first, then loud ones, then by distance (near labels win)
+      const labels = this.ports.loot
+        .ground()
+        .filter((l) => !l.filtered && l.drop.kind !== 'gold' && l.position.distanceTo(p) <= 9)
+        .sort((a, b) => Number(b === near) - Number(a === near) || Number(b.tier === 'loud') - Number(a.tier === 'loud') || a.position.distanceTo(p) - b.position.distanceTo(p));
+      for (const l of labels) {
+        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near, l.tier, layout);
+        if (r && this.ui.hover(r)) this.lootFocus = l;
+      }
       if (this.dev.hitboxes) {
         hitbox(ui, cam, p, this.hero.actor.radius, 'lime');
         for (const a of this.level.actors()) if (a.alive) hitbox(ui, cam, a.position, a.radius, 'red');
         for (const t of this.level.telegraphs()) hitbox(ui, cam, t.at, t.radius, 'orange');
       }
-      this.floaters.draw(ui, cam);
+      this.floaters.draw(ui, cam, layout);
     }
-    drawHud(ui, this.hudModel());
+    drawHud(ui, model, layout);
     if (this.dialogueLine && this.layer.top) dialogue(ui, this.dialogueLine, this.layer.top.rect);
     this.layer.draw(ui, this.time);
     if (this.dead && !this.layer.has('death')) {
@@ -1124,12 +1161,23 @@ export class Riftlight implements Game, MenuHost {
   /** "[F] TALK BRANN" centred above the skill bar. */
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
-    const y = ui.h - 66;
-    const w = ui.prompt(-1000, -1000, 'F', 'RT', label);
-    ui.rect(ui.w / 2 - w / 2 - 4, y - 3, w + 8, sub ? 21 : 13, 'ink');
-    ui.outline(ui.w / 2 - w / 2 - 4, y - 3, w + 8, sub ? 21 : 13, 'slate');
-    ui.prompt(ui.w / 2, y, 'F', 'RT', label, 'white', 'center');
-    if (sub) ui.text(ui.w / 2, y + 9, sub.toUpperCase(), { align: 'center', color: 'mist' });
+    const g = hudGeometry(ui.w, ui.h);
+    // above the bar; on a phone above the orbs, with the label cut to the screen
+    const y = g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
+    let text = label;
+    while (text.length > 6 && ui.prompt(-1000, -1000, 'F', 'RT', text) + 10 > ui.w) text = text.slice(0, -2);
+    if (text !== label) text = `${text.slice(0, -1)}.`;
+    const w = ui.prompt(-1000, -1000, 'F', 'RT', text);
+    const box = { x: Math.round(ui.w / 2 - w / 2 - 4), y: y - 3, w: w + 8, h: sub ? 21 : 13 };
+    this.hudLayout.reserve(box);
+    ui.rect(box.x, box.y, box.w, box.h, 'ink');
+    ui.outline(box.x, box.y, box.w, box.h, 'slate');
+    ui.prompt(ui.w / 2, y, 'F', 'RT', text, 'white', 'center');
+    if (sub) {
+      const s2 = sub.toUpperCase();
+      if (ui.measure(s2) <= box.w) ui.text(ui.w / 2, y + 9, s2, { align: 'center', color: 'mist' });
+      else ui.mini(ui.w / 2, y + 10, s2, 'mist', 'center');
+    }
   }
 
   private hudModel(): HudModel {
@@ -1164,7 +1212,7 @@ export class Riftlight implements Game, MenuHost {
       gold: this.save.hero.gold,
       goldShown: this.goldShown,
       feed: this.feed,
-      card: this.card,
+      card: this.banners.current,
       streak: this.streak,
       difficulty: changedSliders(t).map((k) => `${DIFFICULTY_SHORT[k]} ${t[k].toFixed(2)}X`),
       hurt: this.hurt,

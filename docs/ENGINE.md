@@ -573,6 +573,16 @@ nearest filtering, no mipmaps: crisp texels) and its **vertex colors**, on the s
 toon material: `color × map × vertex color`. By hand:
 `toonMaterial(palette.white, { map: pixelTexture(tex), vertexColors: true })`.
 
+Two more options make bodies read in dark scenes and leave with style (TSL, cached per option
+set like every toon material; the colour is a uniform, so every rim colour shares one shader):
+
+- `rim: 0xrrggbb`: a hard-banded rim light on grazing, upward-facing surfaces, added to the
+  emissive (so `material.emissive` hit flashes still work). Riftlight's monsters use their
+  glow colour.
+- `dissolve: true`: the material reads its own `dissolve` property (0 solid … 1 gone) through
+  a material reference and discards a per-art-pixel noise below it, with a 1-pixel glowing
+  front. Set it on per-body clones (`m.clone()` then `m.dissolve = 0`), never on the cached one.
+
 ### Engine options for shipping a game
 
 ```ts
