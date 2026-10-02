@@ -27,3 +27,4 @@ coverage/
 .scratch/
 dist-single/
 .claude/worktrees/
+.vercel/
