@@ -16,6 +16,8 @@ levels with monsters, loot and bosses, the death recap, save slots and the diffi
 - **For agents:** `window.__RIFTLIGHT__` drives and inspects the game frame-exactly
   (`newRun`, `enterDepth`, `step`, `state`, `bot.run`...); `npm run playtest -- 1 --film` lets
   the playtest bot play a level and reports clear time, deaths and loot.
+- **Desktop fullscreen:** Riftlight fills the viewport with crisp, square pixels at any
+  desktop resolution (`aspect: 'fill'`). `?aspect=fixed` keeps the optional 16:9 letterbox.
 
 ```bash
 npm ci

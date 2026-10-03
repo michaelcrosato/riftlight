@@ -1109,6 +1109,77 @@ async function runEnginePhone(browserExe) {
   }
 }
 
+/** Desktop fullscreen must fill the viewport, including HUDs and the passive tree. */
+async function runFullscreen(browserExe) {
+  console.log('\n▶ fullscreen (Riftlight, desktop and HiDPI)');
+  for (const s of [SCENARIOS[0], SCENARIOS[1]]) {
+    for (const dpr of [1, 2]) {
+      let ctx;
+      try {
+        ctx = await openPage(browserExe, s, 'game=riftlight&debug=0&save=memory', { deviceScaleFactor: dpr });
+        const { page, logs } = ctx;
+        await page.waitForFunction(() => window.__RIFTLIGHT__);
+        const layout = () => page.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          const rect = (selector) => {
+            const r = document.querySelector(selector).getBoundingClientRect();
+            return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
+          };
+          return {
+            viewport: [innerWidth, innerHeight], aspect: e.renderer.aspect, f: e.renderer.framing,
+            canvas: rect('canvas[data-engine-canvas]'), hud: rect('canvas[data-hud]'),
+          };
+        });
+        const covers = (r, [w, h]) => r.x <= 0 && r.y <= 0 && r.right >= w && r.bottom >= h;
+        const sizes = dpr === 1 ? [[1366, 768], [1920, 1080], [2560, 1440], [2560, 1600], [3440, 1440]] : [[1280, 720]];
+        for (const [width, height] of sizes) {
+          await page.setViewportSize({ width, height });
+          await waitFrames(page, 3);
+          const l = await layout();
+          check(l.aspect === 'fill' && covers(l.canvas, l.viewport), `${s.backend} ${width}×${height} DPR ${dpr}: game covers every edge`);
+          check(covers(l.hud, l.viewport) && JSON.stringify(l.hud) === JSON.stringify(l.canvas), 'HUD exactly follows the game canvas');
+          check(l.f.integer && Number.isInteger(l.f.scale) && l.f.canvasWidth === l.f.artWidth * l.f.scale && l.f.canvasHeight === l.f.artHeight * l.f.scale, 'square integer-scaled pixels');
+        }
+
+        await page.evaluate(() => document.documentElement.requestFullscreen());
+        await page.waitForFunction(() => document.fullscreenElement === document.documentElement);
+        await waitFrames(page, 3);
+        let l = await layout();
+        check(covers(l.canvas, l.viewport) && covers(l.hud, l.viewport), `${s.backend} DPR ${dpr}: entering fullscreen keeps every edge filled`);
+        await page.evaluate(() => window.__PIXEL_ENGINE__.renderer.setResolution({ width: 320, height: 180 }));
+        await waitFrames(page, 3);
+        l = await layout();
+        check(covers(l.canvas, l.viewport) && covers(l.hud, l.viewport), 'comparison resolution stays border-free');
+        const shot = await capture(page, `fullscreen-${s.name}-dpr${dpr}.png`);
+        check(colorCount(shot) > 16 && blockUniformity(shot, l.f.scale) > 0.995, 'fullscreen scene renders with crisp pixel blocks');
+
+        await page.evaluate(async () => {
+          await window.__RIFTLIGHT__.newRun({ slot: 0, seed: 42 });
+          window.__RIFTLIGHT__.ui.open('tree');
+        });
+        await page.waitForSelector('canvas[data-rift-tree="canvas"]');
+        const tree = await page.evaluate(() => {
+          const c = document.querySelector('canvas[data-rift-tree="canvas"]');
+          const r = c.getBoundingClientRect();
+          return { x: r.x, y: r.y, w: r.width, h: r.height, right: r.right, bottom: r.bottom };
+        });
+        l = await layout();
+        check(covers(tree, l.viewport) && JSON.stringify(tree) === JSON.stringify(l.canvas), 'passive tree shares the same border-free pixel grid');
+        await page.evaluate(() => document.exitFullscreen());
+        await page.waitForFunction(() => !document.fullscreenElement);
+        await waitFrames(page, 3);
+        l = await layout();
+        check(covers(l.canvas, l.viewport), 'exiting fullscreen relayouts without a border');
+        checkClean(await state(page), logs);
+      } catch (e) {
+        check(false, `fullscreen (${s.name}, DPR ${dpr}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+      } finally {
+        await ctx?.browser.close();
+      }
+    }
+  }
+}
+
 const SUITES = {
   webgpu: (exe) => runCore(exe, SCENARIOS[0]),
   'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
@@ -1122,6 +1193,7 @@ const SUITES = {
   'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
   touch: (exe) => runTouch(exe),
   phone: (exe) => runPhone(exe),
+  fullscreen: (exe) => runFullscreen(exe),
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
   'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
@@ -1173,7 +1245,7 @@ const SUITES = {
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'moves', 'riftlight', 'riftlight-combat'],
+  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };

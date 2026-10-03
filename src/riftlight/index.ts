@@ -28,6 +28,7 @@ export { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_LAYOUT, TOUCH_CODES } from './game/touch
  * `?debug=1`).
  */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
+  aspect: 'fill',
   camera: { preset: 'iso', pitch: 42, yaw: 45, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
   touchBar: false,

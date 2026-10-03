@@ -1,7 +1,7 @@
 /**
  * The passive tree view: a full-screen pixel-art overlay. A 2D canvas at art resolution
- * (480×270, adaptive width like the engine), integer-scaled and letterboxed with the
- * engine's framing math, so it is exactly as crisp as the HUD.
+ * (480×270 by default), using the engine's framing mode so it is exactly as crisp as
+ * the HUD. Embedded views share the game's fill mode; standalone views use adaptive.
  *
  *   const view = new TreeView({ container, state, audio: ctx.audio, onChange: (c, s) => save(s) });
  *   view.open();  view.close();  view.isOpen();
@@ -16,7 +16,7 @@
  * first standard gamepad itself; the shell should pause the game while it is open.
  */
 import type { SoundDef } from '../../../engine/audio/synth';
-import { computeFraming, RESOLUTIONS, type Framing, type Resolution } from '../../../engine/framing';
+import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
 import { REGIONS } from '../../tree/data/regions';
 import { defaultTree, nodeLines, PassiveTree, searchTree, summarizeMods, TreeState, type TreeChange } from '../../tree/tree';
@@ -40,6 +40,8 @@ export interface TreeViewOptions {
   audio?: TreeAudio | null;
   /** Art resolution height (and 16:9 fallback). Default 480×270. */
   resolution?: Resolution;
+  /** Match the containing game's presentation. Standalone views default to adaptive. */
+  aspect?: AspectMode;
   /** Key codes that close the view. Default ['Escape']; [] = can't be closed by key. */
   closeKeys?: readonly string[];
   /** Gamepad B closes the view (default true when closeKeys isn't empty). */
@@ -691,7 +693,7 @@ export class TreeView {
     const w = c.clientWidth || window.innerWidth;
     const h = c.clientHeight || window.innerHeight;
     const res = this.options.resolution ?? RESOLUTIONS.default;
-    const f = (this.framing = computeFraming(w, h, window.devicePixelRatio || 1, res, 'adaptive'));
+    const f = (this.framing = computeFraming(w, h, window.devicePixelRatio || 1, res, this.options.aspect ?? 'adaptive'));
     if (f.artWidth !== this.buf.width || f.artHeight !== this.buf.height) {
       const [tx, ty] = [this.cam.x, this.cam.y];
       this.buf = new PixelBuffer(f.artWidth, f.artHeight);

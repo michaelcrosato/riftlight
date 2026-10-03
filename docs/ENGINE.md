@@ -55,6 +55,13 @@ and 273 → 16 ms on the WebGL 2 fallback.
   is identical to `fixed` (exactly `resolution`, letterboxed). Camera rigs follow the art
   aspect (`rig.setAspect`); `renderer.resolution` is the art size actually rendered,
   `renderer.baseResolution` the configured preset.
+- **Fill** (`aspect: 'fill'`, Riftlight's default; `?aspect=fill`). Both art dimensions
+  follow the viewport at the nearest whole device-pixel scale to the configured art
+  height. At 2560×1440, 480×270 becomes 512×288 at 5× and covers the entire screen.
+  A final partial art pixel can extend past the viewport and is clipped at its edge;
+  art pixels remain square and integer-scaled. Resizing, browser fullscreen and HiDPI
+  screens use the same layout, and the HUD and in-game tree follow it. Fixed and adaptive
+  modes keep their existing letterboxing.
 - **Raw 3D mode** (`P`). Swaps the pipeline's `outputNode` from the pixelation pass to a
   plain full-res `pass()` (output transform only, no filters). Same renderer, pipeline,
   canvas, camera, physics, animation, lighting and framing.
