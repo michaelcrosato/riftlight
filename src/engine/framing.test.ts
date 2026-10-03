@@ -105,6 +105,42 @@ describe('computeFraming (adaptive aspect)', () => {
   });
 });
 
+describe('computeFraming (fill)', () => {
+  it('fills a 1440p desktop instead of leaving the 80px/45px border', () => {
+    expect(computeFraming(2560, 1440, 1, RESOLUTIONS.default, 'fill')).toMatchObject({
+      artWidth: 512, artHeight: 288, scale: 5, integer: true,
+      canvasWidth: 2560, canvasHeight: 1440, offsetX: 0, offsetY: 0,
+    });
+  });
+
+  it('preserves exact pixel blocks and covers every viewport edge for both presets', () => {
+    for (const [w, h, dpr] of [[1366, 768, 1], [1920, 1080, 1], [2560, 1440, 1], [2560, 1600, 1], [3440, 1440, 1], [3840, 1080, 1], [1280, 720, 2], [1536, 864, 1.25], [1365, 767, 1.25], [390, 844, 3], [844, 390, 3], [240, 200, 1]] as const) {
+      for (const res of Object.values(RESOLUTIONS)) {
+        const f = computeFraming(w, h, dpr, res, 'fill');
+        const dw = Math.ceil(w * dpr), dh = Math.ceil(h * dpr);
+        expect(f.integer && Number.isInteger(f.scale)).toBe(true);
+        expect(f.canvasWidth).toBe(f.artWidth * f.scale);
+        expect(f.canvasHeight).toBe(f.artHeight * f.scale);
+        expect(f.cssWidth / f.artWidth).toBeCloseTo(f.cssHeight / f.artHeight, 10);
+        expect(f.offsetX).toBeLessThanOrEqual(0);
+        expect(f.offsetY).toBeLessThanOrEqual(0);
+        expect(f.offsetX + f.cssWidth).toBeGreaterThanOrEqual(w);
+        expect(f.offsetY + f.cssHeight).toBeGreaterThanOrEqual(h);
+        expect(f.canvasWidth - dw).toBeLessThan(f.scale);
+        expect(f.canvasHeight - dh).toBeLessThan(f.scale);
+        expect(Number.isInteger(f.offsetX * dpr)).toBe(true);
+        expect(Number.isInteger(f.offsetY * dpr)).toBe(true);
+      }
+    }
+  });
+
+  it('keeps exact 1080p framing and resolution switching unchanged', () => {
+    for (const res of Object.values(RESOLUTIONS)) {
+      expect(computeFraming(1920, 1080, 1, res, 'fill')).toEqual(computeFraming(1920, 1080, 1, res));
+    }
+  });
+});
+
 describe('pixel grid helpers', () => {
   it('computes world units per art pixel', () => {
     expect(worldUnitsPerPixel(13.5, RESOLUTIONS.default)).toBeCloseTo(0.05);

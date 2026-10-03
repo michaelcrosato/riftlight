@@ -95,7 +95,8 @@ export interface EngineOptions {
   /**
    * `adaptive` (default): the art height stays `resolution.height` and the art width
    * follows the screen's aspect (portrait phones fill the screen). `fixed`: always exactly
-   * `resolution`, letterboxed. Identical on 16:9 screens.
+   * `resolution`, letterboxed. `fill`: adjusts both art dimensions to cover the viewport
+   * at an integer scale, without black borders or stretched pixels.
    */
   aspect?: AspectMode;
   /**
@@ -154,7 +155,7 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (p.get('touch') === '1') opts.touch = true;
   if (p.get('touch') === '0') opts.touch = false;
   const aspect = p.get('aspect');
-  if (aspect === 'fixed' || aspect === 'adaptive') opts.aspect = aspect;
+  if (aspect === 'fixed' || aspect === 'adaptive' || aspect === 'fill') opts.aspect = aspect;
   const fps = p.get('fps');
   if (fps !== null && Number(fps) >= 0) opts.maxFps = Number(fps);
   const quality = p.get('quality');

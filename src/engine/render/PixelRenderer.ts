@@ -274,7 +274,7 @@ export class PixelRenderer {
     return this._mode;
   }
 
-  /** The art resolution actually rendered (in adaptive mode its width follows the screen). */
+  /** The actual art resolution; adaptive varies its width, fill varies both dimensions. */
   get resolution(): Resolution {
     return this._resolution;
   }
@@ -317,7 +317,7 @@ export class PixelRenderer {
     if (edges.normal !== undefined) this.normalEdge.value = edges.normal;
   }
 
-  /** Recompute integer-scaled, letterboxed canvas layout for the current viewport. */
+  /** Recompute integer-scaled canvas layout for the current viewport and aspect mode. */
   layout(): void {
     const rect = this.container.getBoundingClientRect();
     const f = computeFraming(rect.width, rect.height, window.devicePixelRatio, this._baseResolution, this._aspect);

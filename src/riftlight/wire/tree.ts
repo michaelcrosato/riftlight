@@ -54,13 +54,13 @@ export class TreePanel implements Panel {
       save.hero.allocated = serial;
       host.changed('tree');
     }
-    const res = ctx.engine.renderer.resolution;
     this.view = new TreeView({
       container: ctx.engine.renderer.container,
       tree,
       state,
       audio: ctx.audio,
-      resolution: { width: Math.round((res.height * 16) / 9), height: res.height },
+      resolution: ctx.engine.renderer.baseResolution,
+      aspect: ctx.engine.renderer.aspect,
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
       refundCost: this.respec ? (n) => respecCost(n, host.level()) : undefined,

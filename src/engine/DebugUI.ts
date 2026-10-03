@@ -105,7 +105,7 @@ export class DebugUI {
     if (this.fields.backend!.dataset.backend !== backendAttr) this.fields.backend!.dataset.backend = backendAttr;
     this.set('mode', r.mode === 'pixel' ? `Pixel${r.filters.length ? ` + ${r.filters.join(', ')}` : ''}` : 'Raw 3D');
     const res = r.resolution;
-    this.set('res', `${res.width}×${res.height}${r.baseResolution === RESOLUTIONS.compare ? ' (compare)' : ''}${r.aspect === 'adaptive' && res !== r.baseResolution ? ' (adaptive)' : ''}`);
+    this.set('res', `${res.width}×${res.height}${r.baseResolution === RESOLUTIONS.compare ? ' (compare)' : ''}${r.aspect !== 'fixed' && res !== r.baseResolution ? ` (${r.aspect})` : ''}`);
     this.set('scale', f.integer ? `${f.scale}× integer` : 'downscaled (viewport too small)');
     const c = e.camera;
     this.set('camera', `${c.preset}${c.zoomable ? ` · zoom ${c.zoom.toFixed(2)}×` : ''}`);
