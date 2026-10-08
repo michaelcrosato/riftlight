@@ -6,6 +6,10 @@
  * Overlay panels (the item windows, the passive tree: `Panel.overlay`) paint their own
  * canvas: the layer opens, routes input to and closes them like any panel, but draws no
  * frame. Panels in one `group` share an overlay, so opening one closes the others.
+ *
+ * A `peek` panel (the look studio) can be hidden with `togglePeek`: it isn't drawn, a strip
+ * at the top names the focused control, and keys still drive it (tweak a slider with the
+ * whole picture in view); a press anywhere or back shows it again.
  */
 import type { Panel } from '../game/ports';
 import { inside, type Rect, type UiCanvas, type UiEvent } from './kit';
@@ -27,13 +31,30 @@ export interface Open {
   dim?: boolean;
   /** Hide the panels under this one (a studio page over the pause menu shows only itself). */
   solo?: boolean;
+  /**
+   * Can be hidden with `togglePeek` (the look studio: the whole picture shows while keys
+   * still tweak the focused control). The text is the hint shown while it is hidden.
+   */
+  peek?: string;
 }
 
-export type OpenOptions = { modal?: boolean; onClose?: () => void; bare?: boolean; sticky?: boolean; silent?: boolean; dock?: 'right'; dim?: boolean; solo?: boolean };
+export type OpenOptions = {
+  modal?: boolean;
+  onClose?: () => void;
+  bare?: boolean;
+  sticky?: boolean;
+  silent?: boolean;
+  dock?: 'right';
+  dim?: boolean;
+  solo?: boolean;
+  peek?: string;
+};
 
 export class UiLayer {
   readonly stack: Open[] = [];
   onSound?: (s: 'open' | 'close') => void;
+  /** The top panel (a `peek` one) is hidden: not drawn, but it still takes keys. */
+  peeking = false;
 
   get top(): Open | undefined {
     return this.stack[this.stack.length - 1];
@@ -52,6 +73,7 @@ export class UiLayer {
   }
 
   open(panel: Panel, o: OpenOptions = {}): Panel {
+    this.peeking = false;
     this.close(panel.id, true);
     if (panel.group) for (const other of this.stack.filter((x) => x.panel.group === panel.group)) this.close(other.panel.id, true);
     this.stack.push({
@@ -65,6 +87,7 @@ export class UiLayer {
       dock: o.dock,
       dim: o.dim,
       solo: o.solo,
+      peek: o.peek,
     });
     panel.open?.();
     if (!o.silent) this.onSound?.('open');
@@ -76,6 +99,7 @@ export class UiLayer {
     const i = id ? this.stack.findIndex((o) => o.panel.id === id) : this.stack.length - 1;
     if (i < 0) return false;
     const [o] = this.stack.splice(i, 1);
+    if (!this.top?.peek) this.peeking = false;
     o!.panel.close?.();
     o!.onClose?.();
     if (!silent) this.onSound?.('close');
@@ -90,10 +114,32 @@ export class UiLayer {
     for (const o of this.stack) o.age += dt;
   }
 
+  /** Hide or show the top panel, when it can be hidden (`peek`). Returns false when it can't. */
+  togglePeek(): boolean {
+    if (!this.top?.peek) return false;
+    this.peeking = !this.peeking;
+    this.onSound?.(this.peeking ? 'close' : 'open');
+    return true;
+  }
+
   /** Route one event to the top panel. Returns true when used. */
   input(e: UiEvent): boolean {
     const top = this.top;
     if (!top) return false;
+    if (this.peeking && top.peek) {
+      // hidden: keys still drive the focused control; a press anywhere or back shows it again
+      if (e.kind === 'pointer') {
+        if (e.type === 'down') this.peeking = false;
+        return true;
+      }
+      if (e.kind === 'back') {
+        this.peeking = false;
+        return true;
+      }
+      top.panel.refresh?.();
+      top.panel.input?.(e);
+      return true;
+    }
     if (e.kind === 'pointer' && e.type === 'down' && !top.bare) {
       const r = top.rect;
       // the close box is drawn 12 × 11; it takes presses around it too (a thumb on a phone)
@@ -116,7 +162,7 @@ export class UiLayer {
 
   /** True when art pixel (x, y) is on an open panel (framed or overlay). */
   covers(x: number, y: number): boolean {
-    return this.stack.some((o) => (o.panel.overlay ? !!o.panel.covers?.(x, y) : inside({ x: o.rect.x - 6, y: o.rect.y - 16, w: o.rect.w + 12, h: o.rect.h + 22 }, x, y)));
+    return this.stack.some((o) => !(this.peeking && o.peek) && (o.panel.overlay ? !!o.panel.covers?.(x, y) : inside({ x: o.rect.x - 6, y: o.rect.y - 16, w: o.rect.w + 12, h: o.rect.h + 22 }, x, y)));
   }
 
   draw(ui: UiCanvas, time: number): void {
@@ -126,7 +172,7 @@ export class UiLayer {
       if (o.solo) from = i;
     });
     this.stack.forEach((o, i) => {
-      if (i < from) return;
+      if (i < from || (this.peeking && o.peek)) return;
       const last = i === this.stack.length - 1;
       if (o.modal && o.dim !== false && (last || this.stack.slice(i + 1).every((x) => !x.modal))) {
         // dim the world with a checker of ink (pixel "transparency")
@@ -164,5 +210,16 @@ export class UiLayer {
       }
       o.panel.draw(ui, o.rect, time);
     });
+    const top = this.top;
+    if (this.peeking && top?.peek) {
+      // a short strip (clear of the HUD's corners) with what the keys tweak now, and how to get the panel back
+      const line = [top.panel.focusLine?.() || top.panel.title, top.peek].filter((t) => t).join(' · ').toUpperCase();
+      const fits = ui.measure(line) <= ui.w - 14;
+      const w = Math.min(ui.w - 4, (fits ? ui.measure(line) : line.length * 4) + 10);
+      const x = Math.floor((ui.w - w) / 2);
+      ui.panel(x, 2, w, 13, 'ink', 'slate');
+      if (fits) ui.text(ui.w / 2, 5, line, { align: 'center', color: 'sand' });
+      else ui.mini(ui.w / 2, 6, line.slice(0, Math.floor((w - 6) / 4)), 'sand', 'center');
+    }
   }
 }

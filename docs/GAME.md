@@ -1422,8 +1422,11 @@ engine's audio store.
 
 Pause → **Look studio**, Settings → Look studio, or **L**: the engine's looks (docs/ENGINE.md,
 *Looks: filters per layer*) as menus. The pages dock against the right edge without dimming
-the world (`UiLayer.open(…, { dock: 'right', dim: false, solo: true })`), so every change shows
-at once while the world is paused.
+the world (`UiLayer.open(…, { dock: 'right', dim: false, solo: true, peek })`), so every change
+shows at once while the world is paused. **H** (or *Hide panel* on every page) hides the panel
+altogether: the arrows still drive the focused control, a strip at the top names it and its
+value ("GAME BOY DITHER 0.85 · H SHOWS"), and H, Esc or a tap brings the panel
+back (`UiLayer.togglePeek`, `Panel.focusLine`).
 
 - **Look**: a named look to start from (retro stacks, `pixel heroes`, `cel cartoon`, …).
 - **Apply to**: whole scene · characters (the hero, monsters, townsfolk, the cat, loot on the

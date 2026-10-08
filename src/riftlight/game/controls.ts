@@ -7,6 +7,7 @@
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB / touch 1-4 (game/touch.ts)
  *   interact  F / pad RT / touch TALK…            pause   Esc / pad Start / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Back = inventory)
+ *   looks     L look studio · H hides its panel (the arrows still tweak) · O photo mode
  *   items     click / Enter / pad A · X / pad X = right-click · V / pad Y = Ctrl-click
  *
  * Gamepad buttons are remapped to virtual `Pad*` codes (input.gamepadButtons) so menus can
@@ -53,6 +54,8 @@ export const KEYS = {
   photo: ['KeyO'],
   /** The look studio: pixel art, cel shading, palettes... per layer, with presets and sliders. */
   look: ['KeyL'],
+  /** The look studio open: hide its panel (the arrows still tweak) or show it again. */
+  hide: ['KeyH'],
   confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ', 'PadA'],
   back: ['Escape', 'Backspace', 'PadB'],
   up: ['ArrowUp', 'KeyW'],
@@ -191,7 +194,7 @@ export class MenuInput {
     if (pressed(KEYS.back)) out.push({ kind: 'back' });
     if (pressed(KEYS.tabNext)) out.push({ kind: 'tab', dir: 1 });
     if (pressed(KEYS.tabPrev)) out.push({ kind: 'tab', dir: -1 });
-    for (const code of [...KEYS.secondary, ...KEYS.quick]) if (pressed([code])) out.push({ kind: 'key', code });
+    for (const code of new Set([...KEYS.secondary, ...KEYS.quick, ...KEYS.hide])) if (pressed([code])) out.push({ kind: 'key', code });
     if (input.wheel) out.push({ kind: 'wheel', dy: input.wheel });
     return out;
   }
