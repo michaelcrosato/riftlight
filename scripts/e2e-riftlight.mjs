@@ -7,7 +7,7 @@
 //   rising) → collect gold → clear → portal → loot window → town (autosaved) → pause →
 //   Tuning → enemy life slider (keys) → applies to live monsters (difficulty Mod source,
 //   life fraction kept) → look studio (L): Game Boy on the characters only, remembered,
-//   reset → the boss kills the hero → recap names it → town with the penalty
+//   H hides the panel while ← tweaks, reset → the boss kills the hero → recap names it → town with the penalty
 //   → save → reload → Continue → same run. Zero console errors and GPU errors.
 //
 // Frames land in .scratch/e2e/riftlight-*.png (`*-hud.png`: the frame with the pixel HUD on
@@ -241,6 +241,23 @@ export async function runRiftlight(h) {
     check(studio.widgets.includes('gameboy.preset') && studio.widgets.includes('gameboy.dither') && studio.widgets.includes('gameboy.amount'), `an active filter shows its preset and sliders (${studio.widgets.filter((w) => w.startsWith('gameboy')).join(',')})`);
     check(studio.saved === 'custom' && studio.savedActors.join() === 'gameboy', `the custom look is remembered in the settings (${studio.saved}, ${studio.savedActors.join(',')})`);
     await captureWithHud(page, `riftlight-${tag}-look-studio-hud.png`);
+    // H hides the panel; the arrows still tweak the focused slider (Game Boy dither), H shows it
+    await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
+    await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
+    await R(() => window.__RIFTLIGHT__.press('KeyH'));
+    await R(() => window.__RIFTLIGHT__.press('ArrowLeft'));
+    await R(() => window.__PIXEL_ENGINE__.step(2));
+    const peek = await R(() => {
+      const g = window.__RIFTLIGHT__.game;
+      return { peeking: g.layer.peeking, line: g.layer.top.panel.focusLine(), dither: window.__PIXEL_ENGINE__.look.actors.filters[0].params.dither, ui: window.__RIFTLIGHT__.state().ui };
+    });
+    await captureWithHud(page, `riftlight-${tag}-look-studio-hidden-hud.png`);
+    await R(() => window.__RIFTLIGHT__.press('KeyH'));
+    const shown = await R(() => window.__RIFTLIGHT__.game.layer.peeking);
+    check(
+      peek.peeking && peek.ui.at(-1) === 'look.palette' && Math.abs(peek.dither - 0.85) < 1e-6 && /dither 0\.85/i.test(peek.line) && !shown,
+      `H hides the studio, ← still tweaks the focused slider (${peek.line}), H shows it again`,
+    );
     await R(() => window.__RIFTLIGHT__.press('Escape'));
     await R(() => window.__RIFTLIGHT__.ui.click('reset'));
     await R(() => window.__RIFTLIGHT__.press('Escape'));

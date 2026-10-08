@@ -946,6 +946,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.layer.update(dt);
     let consumed = false;
     for (const e of events) {
+      // H on the look studio hides its panel (or shows it): the layer still routes keys to it
+      if (e.kind === 'key' && (KEYS.hide as readonly string[]).includes(e.code) && this.layer.togglePeek()) {
+        consumed = true;
+        continue;
+      }
       if (this.layer.top && this.layer.input(e)) {
         consumed ||= e.kind !== 'pointer';
         continue;
@@ -1379,9 +1384,14 @@ export class Riftlight implements Game, MenuHost, LookHost {
     storeSettings(this.settings);
   }
 
-  /** Studio pages dock to the right without dimming, so the picture stays in view. */
+  /** Studio pages dock to the right without dimming, so the picture stays in view; H hides them. */
   openStudioPage(menu: Menu): void {
-    this.layer.open(menu, { modal: true, dock: 'right', dim: false, solo: true });
+    this.layer.open(menu, { modal: true, dock: 'right', dim: false, solo: true, peek: this.pointer.touch ? 'tap to show' : 'H shows' });
+  }
+
+  /** Hide the look studio (the arrows still tweak) or show it again. */
+  peek(): void {
+    this.layer.togglePeek();
   }
 
   /** Pause / settings → Look studio. */

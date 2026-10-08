@@ -8,9 +8,11 @@
  *              a page per filter type: each filter on / off for the chosen part, its preset
  *              and a slider per parameter (strength included)
  *
- * Pages dock beside the picture without dimming it, so every change shows at once. Every
- * change goes through `LookHost.setLook` (the shell applies and remembers it). Pure widget
- * data over `Look` (engine/render/look.ts): the engine does the rendering.
+ * Pages dock beside the picture without dimming it, so every change shows at once; H (or
+ * "Hide panel") hides the panel altogether while the arrows still tweak the focused control,
+ * named in a strip at the top. Every change goes through `LookHost.setLook` (the shell
+ * applies and remembers it). Pure widget data over `Look` (engine/render/look.ts): the
+ * engine does the rendering.
  */
 import {
   DEFAULT_PIXEL,
@@ -45,6 +47,8 @@ export interface LookHost {
   setLook(look: Look): void;
   /** Open a studio page beside the picture (no dimming, the pages under it hidden). */
   openStudioPage(menu: Menu): void;
+  /** Hide the studio (or show it again): the whole picture, while keys still tweak the focused control. */
+  peek?(): void;
   sound(s: 'click' | 'move'): void;
 }
 
@@ -159,12 +163,13 @@ export function formatParam(p: FilterParam, v: number): string {
   return num(v);
 }
 
-function paramSlider(id: string, label: string, p: FilterParam, get: () => number, set: (v: number) => void, hint?: string): Widget {
+function paramSlider(id: string, label: string, p: FilterParam, get: () => number, set: (v: number) => void, hint?: string, name?: string): Widget {
   const span = p.max - p.min;
   return {
     kind: 'slider',
     id,
     label,
+    name,
     get: () => (get() - p.min) / span,
     set: (u) => set(clampParam(p, p.min + u * span)),
     step: (u, dir) => (clampParam(p, p.min + u * span + dir * p.step) - p.min) / span,
@@ -175,12 +180,13 @@ function paramSlider(id: string, label: string, p: FilterParam, get: () => numbe
 }
 
 /** A preset picker that lists `custom` only while the values match no preset (so cycling never sticks on it). */
-function presetChoice(id: string, label: string, names: readonly string[], current: string | null, apply: (name: string) => void, hint?: string): Widget {
+function presetChoice(id: string, label: string, names: readonly string[], current: string | null, apply: (name: string) => void, hint?: string, name?: string): Widget {
   const options = current ? names.map(nice) : [...names.map(nice), 'custom'];
   return {
     kind: 'choice',
     id,
     label,
+    name,
     options,
     get: () => (current ? names.indexOf(current) : names.length),
     set: (i) => {
@@ -315,6 +321,7 @@ export function lookStudio(h: LookHost): Menu {
         });
       }
       w.push(
+        ...peekButton(h),
         { kind: 'gap', id: 'g', h: 4 },
         {
           kind: 'button',
@@ -347,12 +354,18 @@ function pageHeader(t: LookTarget): Widget {
   };
 }
 
+/** "Hide panel (H)": the whole picture; arrows still tweak the focused control, H or a tap shows it again. */
+function peekButton(h: LookHost): Widget[] {
+  if (!h.peek) return [];
+  return [{ kind: 'button', id: 'peek', label: 'Hide panel (H)', onClick: () => h.peek!(), hint: 'arrows still tweak, H or a tap shows it' }];
+}
+
 function pixelPage(h: LookHost, st: StudioState): Menu {
   return new Menu(
     () => {
       const t = st.target;
       const look = h.look();
-      const w: Widget[] = [pageHeader(t)];
+      const w: Widget[] = [pageHeader(t), ...peekButton(h)];
       const mixed = t === 'scene' && pixelText(look, t) === 'mixed';
       w.push({
         kind: 'toggle',
@@ -384,6 +397,7 @@ function pixelPage(h: LookHost, st: StudioState): Menu {
             mixed ? null : (current ?? null),
             (n) => edit(h, (l) => setPixel(l, t, PIXEL_PRESETS[n]!)),
             'crisp, chunky, blocky, mosaic...',
+            'Pixel preset',
           ),
         );
         for (const q of PIXEL_PARAMS) {
@@ -422,7 +436,7 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
     () => {
       const t = st.target;
       const look = h.look();
-      const w: Widget[] = [pageHeader(t)];
+      const w: Widget[] = [pageHeader(t), ...peekButton(h)];
       for (const def of defs) {
         if (t !== 'scene' && def.sceneOnly) {
           // a warp on one layer would no longer line up with the other
@@ -444,16 +458,23 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
         const defaults = defaultParams(def);
         const current = filterPresetOf(presets, defaults, values);
         w.push(
-          presetChoice(`${def.id}.preset`, '  Preset', Object.keys(presets), current, (n) =>
-            edit(h, (l) => {
-              const f = lookFilters(l, t).find((x) => x.id === def.id);
-              if (f)
-                f.params = {
-                  ...defaults,
-                  amount: paramsOf(f).amount ?? 1,
-                  ...presets[n],
-                };
-            }),
+          presetChoice(
+            `${def.id}.preset`,
+            '  Preset',
+            Object.keys(presets),
+            current,
+            (n) =>
+              edit(h, (l) => {
+                const f = lookFilters(l, t).find((x) => x.id === def.id);
+                if (f)
+                  f.params = {
+                    ...defaults,
+                    amount: paramsOf(f).amount ?? 1,
+                    ...presets[n],
+                  };
+              }),
+            `${def.label} preset`,
+            `${filterName(def.id)} preset`,
           ),
         );
         for (const p of filterParams(def)) {
@@ -472,6 +493,7 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
                   if (f) f.params = { ...paramsOf(f), [p.key]: v };
                 }),
               `${def.label}: ${p.label.toLowerCase()}`,
+              `${filterName(def.id)} ${p.label.toLowerCase()}`,
             ),
           );
         }

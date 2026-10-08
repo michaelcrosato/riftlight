@@ -429,6 +429,10 @@ export interface Panel {
   covers?(x: number, y: number): boolean;
   /** Views sharing one overlay (the item windows): opening one closes the others in its group. */
   readonly group?: string;
+  /** Optional: rebuild from the state it shows (a hidden panel still takes keys: `UiLayer.togglePeek`). */
+  refresh?(): void;
+  /** Optional: the focused control and its value, in one line (shown while the panel is hidden). */
+  focusLine?(): string;
 }
 
 /** What a panel may ask of the shell (state it edits, money, sounds, closing itself). */

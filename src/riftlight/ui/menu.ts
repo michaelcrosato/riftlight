@@ -25,9 +25,11 @@ export type Widget =
       /** Highlight when not default. */
       changed?: () => boolean;
       hint?: string;
+      /** What the control is, on its own (the focus line while its menu is hidden); default: the label. */
+      name?: string;
     }
-  | { kind: 'toggle'; id: string; label: string; get: () => boolean; set: (v: boolean) => void; hint?: string }
-  | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string }
+  | { kind: 'toggle'; id: string; label: string; get: () => boolean; set: (v: boolean) => void; hint?: string; name?: string }
+  | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string; name?: string }
   | { kind: 'label'; id: string; label: string; color?: HudColor }
   | { kind: 'gap'; id: string; h?: number };
 
@@ -113,13 +115,28 @@ export class Menu implements Panel {
     return this.confirm();
   }
 
+  /** Rebuild the widgets from the factory (if any), keeping the focus on the same widget. */
+  refresh(): void {
+    if (!this.source) return;
+    const id = this.widgets[this.focus]?.id;
+    this.widgets = this.source();
+    const again = this.widgets.findIndex((w) => w.id === id);
+    this.focus = again >= 0 ? again : Math.min(this.focus, this.widgets.length - 1);
+  }
+
+  /** The focused control and its value ("Game Boy dither 0.9"), for when the menu is hidden. */
+  focusLine(): string {
+    const w = this.widgets[this.focus];
+    if (!w || w.kind === 'gap') return '';
+    const name = ('name' in w && w.name) || w.label.trim();
+    if (w.kind === 'slider') return `${name} ${w.format()}`;
+    if (w.kind === 'toggle') return `${name} ${w.get() ? 'on' : 'off'}`;
+    if (w.kind === 'choice') return `${name} ${w.options[w.get()] ?? ''}`;
+    return name;
+  }
+
   draw(ui: UiCanvas, r: Rect): void {
-    if (this.source) {
-      const id = this.widgets[this.focus]?.id;
-      this.widgets = this.source();
-      const again = this.widgets.findIndex((w) => w.id === id);
-      this.focus = again >= 0 ? again : Math.min(this.focus, this.widgets.length - 1);
-    }
+    this.refresh();
     this.rects.clear();
     const narrow = this.narrow;
     const labelW = narrow ? 4 : (this.o.labelWidth ?? Math.floor(r.w * 0.45));
