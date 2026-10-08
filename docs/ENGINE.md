@@ -176,7 +176,7 @@ debug UI has a checkbox for each, and `[` / `]` cycle the looks.
 | Shading | `cel` (flat light bands, a saturation lift and ink lines where the depth jumps; bands, ink, line width, saturation) |
 | Console eras | `8bit` (NES: half resolution, NES palette, light dither), `16bit` (Mega Drive/SNES: 9-bit colour, 512 colours, ordered dither), `ps1` (15-bit colour with the PlayStation's 4×4 dither table **and vertex wobble**: toon materials snap clip-space vertices to the art-pixel grid while it's on) |
 | Palette / hardware | `sweetie16`, `pico8`, `nes`, `c64`, `zx`, `ega`, `cga`, `gameboy`, `gbpocket`, `virtualboy`, `onebit`, `dither`, `posterize` |
-| Color | `grayscale`, `sepia`, `invert`, `bleach`, `sunset`, `moonlight`, `thermal`, `nightvision` |
+| Color | `adjust` (brightness, contrast, saturation, warmth), `grayscale`, `sepia`, `invert`, `bleach`, `sunset`, `moonlight`, `thermal`, `nightvision` |
 | Display | `scanlines`, `lcd`, `crt` (curved, masked, vignetted), `vignette` |
 | Signal | `chromatic`, `grain`, `vhs`, `ntsc` |
 | Stylize | `bloom`, `halftone`, `sketch` |
@@ -232,10 +232,16 @@ engine.setFilters(['crt']);                         // = the whole-scene stack; 
   (1 native, 2+ chunkier).
 - **What rebuilds.** `planLook(look).key` (pixel on/off per layer and the filter ids in order)
   picks the graph; parameter values and pixel sizes are uniforms. Graphs are cached (8).
-- **Presets.** `LOOK_PRESETS` holds every `FILTER_PRESETS` stack as a whole-scene look, plus
-  `hd_clean`, `pixel_heroes`, `pixel_world`, `chunky_world`, `cel_cartoon`, `cel_heroes`,
-  `retro_heroes`, `spotlight`, `sketchbook`, `dream_world` and `handheld_heroes`. `[` / `]` and
-  `?look=<name>` cycle and pick them; `lookPresetOf(look)` names a look (or null).
+- **Presets.** `LOOK_PRESETS` starts with the default (`none`: pixel art, no filters; menus call
+  it "default") and `no_filters` (nothing at all: full resolution, no pixel art, no outlines,
+  no filters), then every `FILTER_PRESETS` stack as a whole-scene look, then looks that mix
+  layers and stacks: `pixel_heroes`, `pixel_world`, `chunky_world`, `cel_cartoon`,
+  `cel_heroes`, `retro_heroes`, `spotlight`, `sketchbook`, `dream_world`, `handheld_heroes`,
+  `noir`, `sin_city` (a grey posterized world, comic-cel characters), `comic_book`, `pop_art`,
+  `storybook`, `neon_nights`, `heat_vision` (thermal characters on a grey world), `night_ops`,
+  `ps1_horror`, `found_footage`, `old_photo`, `virtual_boy` and `pico_world`. `[` / `]` and
+  `?look=<name>` cycle and pick them; `lookPresetOf(look)` names a look (or null),
+  `lookPresetName` resolves old names (`LOOK_ALIASES`: `hd_clean` is `no_filters`).
 - **Side effects per layer.** The PS1 vertex wobble is on while a pass whose stack has `ps1`
   draws.
 - `normalizeLook(anything)` makes a valid look (unknown filters and duplicates dropped, every

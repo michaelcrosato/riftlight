@@ -26,7 +26,7 @@ import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
 import { FILTER_IDS, getFilter } from './render/filters';
-import { type Look, LOOK_PRESETS, lookPresetOf } from './render/look';
+import { type Look, LOOK_PRESETS, lookPresetName, lookPresetOf } from './render/look';
 import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 
@@ -187,7 +187,8 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (zoom > 0) camera.zoom = zoom;
   if (Object.keys(camera).length) opts.camera = camera;
   const look = p.get('look');
-  if (look && Object.hasOwn(LOOK_PRESETS, look)) opts.look = LOOK_PRESETS[look];
+  const named = look ? lookPresetName(look) : null;
+  if (named) opts.look = LOOK_PRESETS[named];
   const filters = p.get('filters');
   if (filters) {
     opts.filters = filters.split(',').filter((id) => getFilter(id));

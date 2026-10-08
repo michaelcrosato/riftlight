@@ -10,6 +10,8 @@ import {
   filterPresetOf,
   lookFromFilters,
   lookLayerOf,
+  lookPresetLabel,
+  lookPresetName,
   lookPresetOf,
   looksEqual,
   normalizeLook,
@@ -111,8 +113,35 @@ describe('looks', () => {
     // a clean world with pixel-art characters, and the other way round
     expect(LOOK_PRESETS.pixel_heroes!.environment.pixel).toBeNull();
     expect(LOOK_PRESETS.pixel_world!.actors.pixel).toBeNull();
-    expect(scenePixel(LOOK_PRESETS.hd_clean!)).toBeNull();
+    expect(scenePixel(LOOK_PRESETS.no_filters!)).toBeNull();
     expect(scenePixel(LOOK_PRESETS.pixel_heroes!)).toBeUndefined();
+  });
+
+  it('the first two looks are the default and no filters at all', () => {
+    expect(Object.keys(LOOK_PRESETS).slice(0, 2)).toEqual(['none', 'no_filters']);
+    // nothing: no pixel art (so no outlines), no filters on either layer or the scene
+    expect(LOOK_PRESETS.no_filters).toEqual({ scene: [], actors: { pixel: null, filters: [] }, environment: { pixel: null, filters: [] } });
+    expect(planLook(LOOK_PRESETS.no_filters!)).toMatchObject({ split: false, key: 'one:clean|' });
+    expect(lookPresetLabel('none')).toBe('default');
+    expect(lookPresetLabel('no_filters')).toBe('no filters');
+    // the old name still works (stored settings, links)
+    expect(lookPresetName('hd_clean')).toBe('no_filters');
+    expect(lookPresetName('noir')).toBe('noir');
+    expect(lookPresetName('constructor')).toBeNull();
+  });
+
+  it('the mixed looks put their filters where they say', () => {
+    const ids = (l: { filters: { id: string }[] } | { id: string }[]) => (Array.isArray(l) ? l : l.filters).map((f) => f.id);
+    const p = LOOK_PRESETS;
+    expect(ids(p.sin_city!.environment)).toEqual(['grayscale', 'posterize']);
+    expect(ids(p.sin_city!.actors)).toEqual(['cel']);
+    expect(p.sin_city!.actors.pixel).toBeNull();
+    expect(ids(p.heat_vision!.actors)).toEqual(['adjust', 'thermal']); // brightened first, so bodies read hot
+    expect(ids(p.found_footage!.scene)).toEqual(['grain', 'vhs', 'chromatic', 'vignette']);
+    expect(p.pico_world!.environment.pixel!.size).toBeGreaterThan(p.pico_world!.actors.pixel!.size);
+    // presets by name carry that preset's values
+    expect(p.found_footage!.scene[1]!.params).toMatchObject({ wobble: 2.4, bleed: 2.2, noise: 0.14 }); // vhs "worn out"
+    expect(p.noir!.actors.pixel).toEqual(PIXEL_PRESETS.inked);
   });
 
   it('pixel presets and every filter parameter / preset are in range', () => {

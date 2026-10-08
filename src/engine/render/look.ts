@@ -20,7 +20,7 @@
  * Everything here is plain data (unit-tested in `look.test.ts`): the renderer turns a look
  * into a node graph (`PixelRenderer.setLook`).
  */
-import { FILTERS, type FilterParam, FILTER_PRESETS, clampParam, defaultParams, filterParams, getFilter } from './filters';
+import { FILTERS, type FilterParam, FILTER_PRESETS, clampParam, defaultParams, filterParams, filterPresets, getFilter } from './filters';
 import type { LookLayer } from './lookLayer';
 
 export { LOOK_LAYER_KEY, lookLayerOf, setLookLayer, type LookLayer } from './lookLayer';
@@ -273,15 +273,26 @@ const layer = (pixel: PixelLook | null, ...ids: string[]): LayerLook => ({
 const crisp = (): PixelLook => ({ ...DEFAULT_PIXEL });
 const clean = null;
 const withParams = (id: string, params: Record<string, number>): LookFilter => ({ id, params });
+/** A filter at one of its named parameter presets (`bloom` `neon`, `vignette` `tunnel`…). */
+const at = (id: string, preset: string): LookFilter => {
+  const def = getFilter(id);
+  const params = def && filterPresets(def)[preset];
+  if (!params) throw new Error(`look preset: no filter preset ${id} "${preset}"`);
+  return { id, params: { ...params } };
+};
+const pixelAt = (name: string): PixelLook => ({ ...PIXEL_PRESETS[name]! });
+const { none, ...stacks } = FILTER_PRESETS;
 
 /**
- * Named looks. Every plain filter stack (`FILTER_PRESETS`) is here as a whole-scene look,
- * followed by looks that mix layers.
+ * Named looks: the default (`none`: pixel art, no filters), `no_filters` (nothing at all:
+ * full resolution, no pixel art, no outlines, no filters), every plain filter stack
+ * (`FILTER_PRESETS`) as a whole-scene look, then looks that mix layers and stacks.
  */
 export const LOOK_PRESETS: Readonly<Record<string, Look>> = Object.fromEntries(
   Object.entries({
-    ...Object.fromEntries(Object.entries(FILTER_PRESETS).map(([name, ids]) => [name, lookFromFilters(ids)])),
-    hd_clean: { scene: [], actors: layer(clean), environment: layer(clean) },
+    none: lookFromFilters(none!),
+    no_filters: { scene: [], actors: layer(clean), environment: layer(clean) },
+    ...Object.fromEntries(Object.entries(stacks).map(([name, ids]) => [name, lookFromFilters(ids)])),
     pixel_heroes: {
       scene: [],
       actors: layer(crisp()),
@@ -335,8 +346,99 @@ export const LOOK_PRESETS: Readonly<Record<string, Look>> = Object.fromEntries(
       actors: layer(crisp(), 'gameboy'),
       environment: layer(crisp(), 'grayscale'),
     },
+    // black and white, inked, with film grain
+    noir: {
+      scene: [{ id: 'grayscale' }, at('grain', 'fine'), at('vignette', 'classic')],
+      actors: layer(pixelAt('inked')),
+      environment: layer(pixelAt('inked')),
+    },
+    // a stark posterized world, the characters in full comic colour
+    sin_city: {
+      scene: stack('vignette'),
+      actors: { pixel: clean, filters: [at('cel', 'comic')] },
+      environment: { pixel: crisp(), filters: [{ id: 'grayscale' }, at('posterize', 'bold')] },
+    },
+    // inked two-tone cel shading on a fine print screen
+    comic_book: {
+      scene: [at('cel', 'comic'), withParams('halftone', { size: 1, ink: 0.2 })],
+      actors: layer(clean),
+      environment: layer(clean),
+    },
+    // punchy colour, bold ink, big dots
+    pop_art: {
+      scene: [
+        withParams('adjust', { brightness: 0, contrast: 1.15, saturation: 1.3, warmth: 0 }),
+        withParams('cel', { bands: 3, ink: 1, width: 2, saturation: 1.4 }),
+        withParams('halftone', { size: 2.25, ink: 0.25, amount: 0.6 }),
+      ],
+      actors: layer(clean),
+      environment: layer(clean),
+    },
+    // a soft painted world, pixel-art characters
+    storybook: {
+      scene: [],
+      actors: layer(crisp()),
+      environment: { pixel: clean, filters: [at('cel', 'soft'), withParams('bloom', { strength: 0.25, radius: 0.6, threshold: 0.9 })] },
+    },
+    // a dark blue world, saturated cel-shaded characters, glow on what's bright
+    neon_nights: {
+      scene: [withParams('bloom', { strength: 0.9, radius: 0.3, threshold: 0.7 })],
+      actors: { pixel: clean, filters: [withParams('cel', { bands: 3, ink: 0.85, width: 1, saturation: 1.6 })] },
+      environment: { pixel: crisp(), filters: [withParams('adjust', { brightness: -0.3, contrast: 1.2, saturation: 0.8, warmth: -0.2 }), { id: 'moonlight' }] },
+    },
+    // the characters glow with body heat over a grey world
+    heat_vision: {
+      scene: [at('scanlines', 'soft'), at('vignette', 'classic')],
+      actors: { pixel: crisp(), filters: [withParams('adjust', { brightness: 0.35, contrast: 1.3, saturation: 1, warmth: 0 }), { id: 'thermal' }] },
+      environment: { pixel: crisp(), filters: [at('adjust', 'dark'), { id: 'grayscale' }] },
+    },
+    night_ops: {
+      scene: [at('nightvision', 'goggles'), at('grain', 'classic'), at('vignette', 'tunnel')],
+      actors: layer(crisp()),
+      environment: layer(crisp()),
+    },
+    ps1_horror: {
+      scene: [{ id: 'ps1' }, at('adjust', 'dark'), { id: 'moonlight' }, at('grain', 'fine'), at('vignette', 'tunnel')],
+      actors: layer(pixelAt('no lines')),
+      environment: layer(pixelAt('no lines')),
+    },
+    found_footage: {
+      scene: [at('grain', 'heavy'), at('vhs', 'worn out'), at('chromatic', 'subtle'), at('vignette', 'classic')],
+      actors: layer(pixelAt('no lines')),
+      environment: layer(pixelAt('no lines')),
+    },
+    old_photo: {
+      scene: [{ id: 'sepia' }, at('grain', 'heavy'), at('vignette', 'tunnel')],
+      actors: layer(clean),
+      environment: layer(clean),
+    },
+    virtual_boy: {
+      scene: [{ id: 'virtualboy' }, at('scanlines', 'classic')],
+      actors: layer(crisp()),
+      environment: layer(crisp()),
+    },
+    // PICO-8 colours, a chunkier world than its characters
+    pico_world: {
+      scene: [],
+      actors: layer(crisp(), 'pico8'),
+      environment: layer(pixelAt('chunky'), 'pico8'),
+    },
   }).map(([name, look]) => [name, normalizeLook(look)]),
 );
+
+/** Names looks used to have (stored settings, links): `hd_clean` is `no_filters` now. */
+export const LOOK_ALIASES: Readonly<Record<string, string>> = { hd_clean: 'no_filters' };
+
+/** The `LOOK_PRESETS` name a name means (aliases resolved), or null when there is none. */
+export function lookPresetName(name: string): string | null {
+  const n = Object.hasOwn(LOOK_ALIASES, name) ? LOOK_ALIASES[name]! : name;
+  return Object.hasOwn(LOOK_PRESETS, n) ? n : null;
+}
+
+/** How a menu shows a look's name: `none` is the default, underscores are spaces. */
+export function lookPresetLabel(name: string): string {
+  return name === 'none' ? 'default' : name.replace(/_/g, ' ');
+}
 
 /** The preset name a look matches, or null (custom). */
 export function lookPresetOf(look: Look): string | null {

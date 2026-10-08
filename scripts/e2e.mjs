@@ -759,7 +759,7 @@ async function runFilters(browserExe, s, label) {
       else check(false, `look ${name}: look ${st.look}, diff ${meanDiff(base, f).toFixed(2)}, gpuErrors ${st.gpuErrors.length}, ${logs.slice(before).join(' | ')}`);
     }
     check(lookOk === looks.length, `${lookOk}/${looks.length} looks render (${looks.length - 1} besides the default)`);
-    const hd = await shotLook('hd_clean', `${label}-look-hd.png`);
+    const hd = await shotLook('no_filters', `${label}-look-hd.png`);
     const heroes = await shotLook('pixel_heroes', `${label}-look-heroes.png`);
     const split = (await state(page)).split;
     const onActors = changed(hd, heroes);

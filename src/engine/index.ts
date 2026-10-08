@@ -33,6 +33,7 @@ export {
 } from './render/filters';
 export {
   DEFAULT_PIXEL,
+  LOOK_ALIASES,
   LOOK_PRESETS,
   LOOK_TARGETS,
   LOOK_TARGET_LABELS,
@@ -45,6 +46,8 @@ export {
   lookFilters,
   lookFromFilters,
   lookLayerOf,
+  lookPresetLabel,
+  lookPresetName,
   lookPresetOf,
   looksEqual,
   normalizeLook,

@@ -3,7 +3,7 @@
  * difficulty sliders), settings, save slots, dev tools and the rift keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { LOOK_PRESETS, type AudioManager, type QualityLevel } from '../../engine';
+import { LOOK_PRESETS, lookPresetLabel, type AudioManager, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -138,7 +138,7 @@ export function tuningMenu(h: MenuHost): Menu {
 
 /** The settings' looks: the default, every named look, and the studio's custom one once there is one. */
 const looks = (s: Settings) => ['', ...Object.keys(LOOK_PRESETS).filter((n) => n !== 'none'), ...(s.customLook ? ['custom'] : [])];
-const lookLabel = (l: string) => (l ? l.replace(/_/g, ' ') : 'default');
+const lookLabel = (l: string) => (l ? lookPresetLabel(l) : 'default');
 const QUALITIES: (QualityLevel | 'auto')[] = ['auto', 'low', 'medium', 'high'];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 

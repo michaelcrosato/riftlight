@@ -5,7 +5,7 @@
  * Stored in localStorage under `riftlight:settings`.
  */
 import type { QualityLevel } from '../../engine';
-import { type Look, LOOK_PRESETS, normalizeLook } from '../../engine/render/look';
+import { type Look, lookPresetName, normalizeLook } from '../../engine/render/look';
 import type { ShellSettings } from './ports';
 
 export interface Settings extends ShellSettings {
@@ -41,7 +41,11 @@ export function loadSettings(): Settings {
       if (typeof raw.screenShake === 'number') out.screenShake = Math.max(0, Math.min(1, raw.screenShake));
       if (raw.glyphs === 'auto' || raw.glyphs === 'keyboard' || raw.glyphs === 'controller') out.glyphs = raw.glyphs;
       if (raw.customLook && typeof raw.customLook === 'object') out.customLook = normalizeLook(raw.customLook);
-      if (typeof raw.look === 'string' && (raw.look === '' || Object.hasOwn(LOOK_PRESETS, raw.look) || (raw.look === 'custom' && out.customLook))) out.look = raw.look;
+      if (typeof raw.look === 'string') {
+        // a named look (an old name resolves to its new one), the custom look if stored, else the default
+        const named = raw.look === 'custom' ? (out.customLook ? 'custom' : '') : (lookPresetName(raw.look) ?? '');
+        out.look = named === 'none' ? '' : named;
+      }
       if (raw.quality === 'auto' || raw.quality === 'low' || raw.quality === 'medium' || raw.quality === 'high') out.quality = raw.quality;
       if (typeof raw.zoom === 'number') out.zoom = Math.max(0.6, Math.min(1.6, raw.zoom));
     }

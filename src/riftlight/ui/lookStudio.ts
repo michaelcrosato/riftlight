@@ -30,6 +30,7 @@ import {
   filterPresets,
   getFilter,
   lookFilters,
+  lookPresetLabel,
   lookPresetOf,
   paramsOf,
   type FilterGroup,
@@ -78,6 +79,7 @@ const SHORT: Readonly<Record<string, string>> = {
   onebit: '1-bit Mac',
   dither: 'Dither',
   posterize: 'Posterize',
+  adjust: 'Adjust',
   grayscale: 'Grayscale',
   sepia: 'Sepia',
   invert: 'Invert',
@@ -124,7 +126,7 @@ export const LOOK_SECTIONS: readonly {
     id: 'color',
     label: 'Colour grade',
     groups: ['color'],
-    hint: 'grayscale, sepia, moonlight...',
+    hint: 'adjust, grayscale, sepia, moonlight...',
   },
   {
     id: 'era',
@@ -180,8 +182,17 @@ function paramSlider(id: string, label: string, p: FilterParam, get: () => numbe
 }
 
 /** A preset picker that lists `custom` only while the values match no preset (so cycling never sticks on it). */
-function presetChoice(id: string, label: string, names: readonly string[], current: string | null, apply: (name: string) => void, hint?: string, name?: string): Widget {
-  const options = current ? names.map(nice) : [...names.map(nice), 'custom'];
+function presetChoice(
+  id: string,
+  label: string,
+  names: readonly string[],
+  current: string | null,
+  apply: (name: string) => void,
+  hint?: string,
+  name?: string,
+  labelOf: (name: string) => string = nice,
+): Widget {
+  const options = current ? names.map(labelOf) : [...names.map(labelOf), 'custom'];
   return {
     kind: 'choice',
     id,
@@ -287,7 +298,7 @@ export function lookStudio(h: LookHost): Menu {
       const look = h.look();
       const t = st.target;
       const w: Widget[] = [
-        presetChoice('preset', 'Look', names, lookPresetOf(look), (n) => h.setLook(LOOK_PRESETS[n]!), 'a whole look to start from, then tweak it'),
+        presetChoice('preset', 'Look', names, lookPresetOf(look), (n) => h.setLook(LOOK_PRESETS[n]!), 'a whole look to start from, then tweak it', 'Look', lookPresetLabel),
         {
           kind: 'choice',
           id: 'target',
