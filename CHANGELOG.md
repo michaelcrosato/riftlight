@@ -20,10 +20,12 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   `engine.errors` (and `state().errors`), shown in a box on screen, and the loop keeps running.
   A `setup()` that throws shows "Failed to start: ...".
 - `Engine.start` sets `window.__PIXEL_ENGINE__` itself, so every page has the tooling handle
-  (only this repo's `main.ts` used to set it).
+  (only this repo's `main.ts` used to set it); `dispose()` clears it.
+- `withUrlOptions(options)`: a game's options with the URL's review flags on top (`?zoom=`
+  keeps the game's camera preset, `?filters=` replaces its look).
 - `ENGINE_VERSION`, `Engine.version`, `state().version`.
 - Looks: filters per layer (characters & objects vs environment) with parameters and presets,
-  39 named looks (`LOOK_PRESETS`) including `no_filters`, the `cel` and `adjust` filters.
+  38 named looks (`LOOK_PRESETS`) including `no_filters`, the `cel` and `adjust` filters.
 
 ## 0.1.0
 

@@ -48,7 +48,7 @@ describe('docs/GUIDE.md', () => {
         for (const n of names) expect(code.split(n).length - 1, `${name}: THREE.${n} used`).toBeGreaterThan(1);
       }
       for (const n of imported) expect(code.split(n).length - 1, `${name}: ${n} used`).toBeGreaterThan(1);
-      expect(code, name).toMatch(/await Engine\.start\(new \w+\(\), \{ container: document\.getElementById\('app'\), .*\.\.\.optionsFromUrl\(\) \}\);\n$/);
+      expect(code, name).toMatch(/await Engine\.start\(new \w+\(\), withUrlOptions\(\{ container: document\.getElementById\('app'\), .*\}\)\);\n$/);
     }
   });
 
@@ -68,7 +68,7 @@ describe('docs/GUIDE.md', () => {
   });
 
   it('every URL flag it gives does something', () => {
-    const flags = listAfter('URL flags (with `...optionsFromUrl()` in `Engine.start`):').filter((f) => f.startsWith('?'));
+    const flags = listAfter('URL flags (with `withUrlOptions` in `Engine.start`):').filter((f) => f.startsWith('?'));
     expect(flags.length).toBeGreaterThanOrEqual(10);
     for (const flag of flags) expect(Object.keys(optionsFromUrl(flag)), flag).not.toEqual([]);
   });

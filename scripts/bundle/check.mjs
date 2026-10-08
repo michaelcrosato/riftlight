@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 // check.mjs: play a Pixel Engine game in a real browser and report what happened.
-// Ships in the engine bundle; run it before you hand a game back.
+// Ships in the engine kit; run it before you hand a game back.
 //
-//   node check.mjs                       index.html next to this file
-//   node check.mjs examples/side.html    any page (served from its own folder)
+//   node check.mjs                       index.html in the current folder
+//   node check.mjs examples/looks.html   any page (served from the folder that holds pixel-engine.js)
+//   node check.mjs "index.html?look=noir&camera=side"   with URL flags
 //   node check.mjs http://localhost:5173/
 //
 // Options:
@@ -13,58 +14,113 @@
 //   --looks pixel_heroes,noir        also shoot these looks (names from engine.lookPresets)
 //   --out check                      folder for the PNGs and report.json (default: ./check)
 //   --size 960x540                   viewport in CSS pixels
+//   --help                           this text
 //
-// It needs Playwright (`npm i -D playwright` then `npx playwright install chromium`), or set
-// CHROMIUM_PATH to a Chromium/Chrome binary with `playwright-core` installed. Exit code 0
-// means the game started, ran the frames with no errors (page, console, engine or GPU) and drew
-// a picture; 1 means it didn't; 2 means the tool couldn't run.
+// It needs Node 20.15+ (or 22.2+) and Playwright (`npm i -D playwright` then
+// `npx playwright install chromium`), or `playwright-core` with CHROMIUM_PATH set to a
+// Chromium/Chrome binary. Exit code 0 means the game started, ran the frames with no errors
+// (page, console, engine or GPU) and drew a picture; 1 means it didn't; 2 means the tool
+// couldn't run (bad arguments, no page, no browser).
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, join, relative, resolve, sep } from 'node:path';
-import { crc32, deflateSync } from 'node:zlib';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import * as zlib from 'node:zlib';
 
-// --name value flags, then one positional page
+const usage = () => readFileSync(new URL(import.meta.url), 'utf8').split('\nimport ')[0].replace(/^#!.*\n/, '').replace(/^\/\/ ?/gm, '');
+const fail = (message) => {
+  console.error(`check.mjs: ${message}\n\n${usage()}`);
+  process.exit(2);
+};
+if (typeof zlib.crc32 !== 'function') fail(`needs Node 20.15+ or 22.2+ (this is ${process.version})`);
+
+// --name value flags, --name flags, then one positional page
 const VALUE = new Set(['keys', 'backend', 'looks', 'out', 'size']);
+const FLAG = new Set(['cameras', 'help']);
 const opts = {};
 const positional = [];
 for (let i = 2; i < process.argv.length; i++) {
   const a = process.argv[i];
+  const name = a.slice(2);
   if (!a.startsWith('--')) positional.push(a);
-  else if (VALUE.has(a.slice(2))) opts[a.slice(2)] = process.argv[++i] ?? '';
-  else opts[a.slice(2)] = true;
+  else if (VALUE.has(name)) {
+    const v = process.argv[++i];
+    if (v === undefined || v.startsWith('--')) fail(`${a} needs a value`);
+    opts[name] = v;
+  } else if (FLAG.has(name)) opts[name] = true;
+  else fail(`unknown option ${a}`);
 }
+if (opts.help) {
+  console.log(usage());
+  process.exit(0);
+}
+if (positional.length > 1) fail(`one page at a time (got ${positional.join(' ')})`);
 const target = positional[0] ?? 'index.html';
 const backend = opts.backend ?? 'webgl';
+if (backend !== 'webgl' && backend !== 'webgpu') fail(`--backend is webgl or webgpu, not ${backend}`);
 const out = resolve(opts.out ?? 'check');
 const [vw, vh] = String(opts.size ?? '960x540').split('x').map(Number);
+if (!(vw > 0 && vh > 0)) fail('--size is WIDTHxHEIGHT, e.g. 960x540');
 const keys = String(opts.keys ?? '*90')
   .split(',')
   .filter(Boolean)
   .map((s) => {
     const [code, n] = s.split('*');
+    if (code && !/^[A-Za-z][A-Za-z0-9]*$/.test(code)) fail(`--keys: "${code}" is not a key code (KeyD, Space, ArrowUp, Digit1, ...)`);
     return { code: code || null, frames: Math.max(1, Number(n) || 1) };
   });
 const looks = opts.looks ? String(opts.looks).split(',').filter(Boolean) : [];
 const cameras = opts.cameras === true;
 
-const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.json': 'application/json', '.wasm': 'application/wasm', '.glb': 'model/gltf-binary', '.png': 'image/png', '.svg': 'image/svg+xml', '.css': 'text/css', '.md': 'text/plain', '.txt': 'text/plain' };
+const MIME = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.mjs': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.wasm': 'application/wasm',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.bin': 'application/octet-stream',
+  '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.gif': 'image/gif',
+  '.webp': 'image/webp',
+  '.svg': 'image/svg+xml',
+  '.ogg': 'audio/ogg',
+  '.mp3': 'audio/mpeg',
+  '.wav': 'audio/wav',
+  '.md': 'text/plain',
+  '.txt': 'text/plain',
+};
 
-/** Serve a folder over HTTP (ES modules don't load from file://). */
+/** Serve a folder over HTTP (ES modules don't load from file://), and nothing outside it. */
 function serve(dir) {
   return new Promise((ok) => {
     const server = createServer((req, res) => {
-      const path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      let path;
+      try {
+        path = decodeURIComponent(new URL(req.url, 'http://x').pathname);
+      } catch {
+        res.writeHead(400).end('bad path');
+        return;
+      }
       if (path === '/favicon.ico') {
         res.writeHead(204).end(); // browsers ask for one; not the game's problem
         return;
       }
       let file = join(dir, path);
-      if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
-      if (!file.startsWith(dir) || !existsSync(file)) {
+      const rel = relative(dir, file);
+      if (rel.startsWith('..') || isAbsolute(rel) || !existsSync(file)) {
         res.writeHead(404).end('not found');
         return;
       }
-      res.writeHead(200, { 'content-type': MIME[extname(file)] ?? 'application/octet-stream', 'cache-control': 'no-store' });
+      if (statSync(file).isDirectory()) file = join(file, 'index.html');
+      if (!existsSync(file)) {
+        res.writeHead(404).end('not found');
+        return;
+      }
+      res.writeHead(200, { 'content-type': MIME[extname(file).toLowerCase()] ?? 'application/octet-stream', 'cache-control': 'no-store' });
       res.end(readFileSync(file));
     });
     server.listen(0, '127.0.0.1', () => ok(server));
@@ -80,7 +136,7 @@ function png({ width, height, pixels }) {
     len.writeUInt32BE(data.length);
     const body = Buffer.concat([Buffer.from(type), data]);
     const crc = Buffer.alloc(4);
-    crc.writeUInt32BE(crc32(body) >>> 0);
+    crc.writeUInt32BE(zlib.crc32(body) >>> 0);
     return Buffer.concat([len, body, crc]);
   };
   const ihdr = Buffer.alloc(13);
@@ -88,7 +144,7 @@ function png({ width, height, pixels }) {
   ihdr.writeUInt32BE(height, 4);
   ihdr[8] = 8;
   ihdr[9] = 6;
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', zlib.deflateSync(raw)), chunk('IEND', Buffer.alloc(0))]);
 }
 
 async function loadPlaywright() {
@@ -114,11 +170,10 @@ const chromium = await loadPlaywright();
 let server = null;
 let url = target;
 if (!/^https?:/.test(target)) {
-  const file = resolve(target);
-  if (!existsSync(file)) {
-    console.error(`check.mjs: no such page: ${file}`);
-    process.exit(2);
-  }
+  // A local page, maybe with URL flags: "index.html?look=noir"
+  const [path, query = ''] = target.split(/\?(.*)/s);
+  const file = resolve(path);
+  if (!existsSync(file) || statSync(file).isDirectory()) fail(`no such page: ${file}`);
   // Serve from the folder that holds pixel-engine.js (so examples/x.html can import
   // '../pixel-engine.js'), else the page's own folder.
   let dir = dirname(file);
@@ -130,13 +185,21 @@ if (!/^https?:/.test(target)) {
     if (dirname(d) === d) break;
   }
   server = await serve(dir);
-  url = `http://127.0.0.1:${server.address().port}/${relative(dir, file).split(sep).join('/')}`;
+  url = `http://127.0.0.1:${server.address().port}/${relative(dir, file).split(sep).join('/')}${query ? `?${query}` : ''}`;
+}
+
+let browser;
+try {
+  browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ARGS[backend], headless: backend === 'webgpu' ? !process.env.DISPLAY : true });
+} catch (e) {
+  server?.close();
+  console.error(`check.mjs: could not start Chromium: ${e instanceof Error ? e.message.split('\n')[0] : e}`);
+  console.error('Install it (npx playwright install chromium) or set CHROMIUM_PATH.');
+  process.exit(2);
 }
 
 const report = { page: target, url, backend, ok: false, errors: [], warnings: [], shots: [], state: null };
-let browser;
 try {
-  browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ARGS[backend] ?? ARGS.webgl, headless: backend === 'webgpu' ? !process.env.DISPLAY : true });
   const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 });
   page.on('console', (m) => {
     const text = m.text();
@@ -204,17 +267,27 @@ try {
           if (f.over.data[i + 3]) pixels.set(f.over.data.slice(i, i + 3), (y * f.width + x) * 4);
         }
     }
-    const colors = new Set();
-    for (let i = 0; i < pixels.length; i += 16) colors.add((pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2]);
+    // colours over a sample of pixels, and how much of the frame the commonest one covers
+    const counts = new Map();
+    let sampled = 0;
+    for (let i = 0; i < pixels.length; i += 16, sampled++) {
+      const c = (pixels[i] << 16) | (pixels[i + 1] << 8) | pixels[i + 2];
+      counts.set(c, (counts.get(c) ?? 0) + 1);
+    }
+    let most = 0;
+    for (const n of counts.values()) most = Math.max(most, n);
+    const top = most / Math.max(1, sampled);
     mkdirSync(out, { recursive: true });
     const file = join(out, `${name}.png`);
     writeFileSync(file, png({ width: f.width, height: f.height, pixels }));
-    report.shots.push({ name, file, colors: colors.size });
-    return colors.size;
+    report.shots.push({ name, file, colors: counts.size, topColorShare: Number(top.toFixed(3)) });
+    return { colors: counts.size, top };
   };
 
-  const colors = await shoot(basename(target).replace(/\.html?$/, '') || 'page');
-  if (colors < 8) report.errors.push(`blank frame: only ${colors} colours on screen`);
+  const first = await shoot(basename(target.split('?')[0]).replace(/\.html?$/, '') || 'page');
+  // Blank: one colour (nearly) everywhere. Low-colour looks (gameboy, onebit) have few
+  // colours but are not blank.
+  if (first.colors <= 2 || first.top > 0.99) report.errors.push(`blank frame: ${first.colors} colours, the commonest covers ${(first.top * 100).toFixed(1)}%`);
   for (const preset of cameras ? ['iso', 'topdown', 'side', 'third'] : []) {
     await page.evaluate((p) => {
       window.__PIXEL_ENGINE__.setCamera({ preset: p }, { syncUrl: false });
@@ -240,7 +313,7 @@ try {
 } catch (e) {
   report.errors.push(`check: ${e instanceof Error ? e.message : String(e)}`);
 } finally {
-  await browser?.close();
+  await browser.close();
   server?.close();
 }
 

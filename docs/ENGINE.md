@@ -859,7 +859,7 @@ Games outside this repo use the engine through a kit (`scripts/bundle.mjs`; `npm
 also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at `/engine/`):
 
 - `pixel-engine.js`: a Vite library build of `src/bundle.ts`, one self-contained ES module
-  (about 4.7 MB, 1.6 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
+  (about 4.3 MB, 1.5 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
   three.js as `THREE` and `TSL` (a game must never load a second copy), `RAPIER`, the hero kit
   and `BUILTIN_MODELS`. Everything is inlined: Rapier's wasm as a data URL (`?url`), the
   engine CSS (injected on import, before the page's own), and `public/assets/*.glb` through
@@ -883,7 +883,10 @@ also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at
   `manifest.json` (version, build, every file with its bytes).
 
 Diagnostics that make the kit self-correcting live in the engine: `Engine.start` sets
-`window.__PIXEL_ENGINE__`; an exception in a game hook is caught per frame, kept once in
-`engine.errors` (and `state().errors`), logged and shown in a box (`[data-engine-error]`)
-while the loop keeps running; a failed start shows "Failed to start: ..." in `.fatal`.
+`window.__PIXEL_ENGINE__` (`dispose()` clears it); an exception in a game hook is caught per
+frame, kept once in `engine.errors` (at most 20; also `state().errors`), logged and shown in a
+box (`[data-engine-error]`) while the loop keeps running; `step()` throws it to its caller
+instead (tools); a failed start shows "Failed to start: ..." in `.fatal`. Games start with
+`withUrlOptions(options)`, so the URL's review flags (`?look=`, `?camera=`, `?zoom=`,
+`?debug=1`) work in any kit game without replacing its own camera.
 `ENGINE_VERSION` comes from `package.json` (`__ENGINE_VERSION__` in `vite.config.ts`).

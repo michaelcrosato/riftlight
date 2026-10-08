@@ -75,7 +75,7 @@ Architecture, the camera and filter lists, the moveset and the game API are in
 ### Handing the engine to another agent
 
 `npm run bundle` builds the **engine kit**, everything an agent needs to make a game outside
-this repo: `pixel-engine.js` (one self-contained ES module, about 4.7 MB: the engine,
+this repo: `pixel-engine.js` (one self-contained ES module, about 4.3 MB: the engine,
 three.js, Rapier, the hero and the built-in models), [`docs/GUIDE.md`](docs/GUIDE.md) (the
 manual: host it, the mental model, a complete game, recipes, rules, common mistakes, checks),
 a generated `API.md`, TypeScript types, a starter `game.js`, the guide's recipes as pages and

@@ -9,15 +9,16 @@
 // game.js, the guide's quick start), examples/ (the guide's other named code blocks), check.mjs
 // (plays a page in a browser and reports errors and screenshots) and manifest.json.
 import { execFileSync } from 'node:child_process';
-import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { crc32, deflateRawSync } from 'node:zlib';
 import ts from 'typescript';
 import { build } from 'vite';
 import { generateApi } from './bundle/api.mjs';
 import { guideBlocks } from './bundle/guide.mjs';
 
-const root = resolve(new URL('..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const args = process.argv.slice(2);
 const outArg = args[args.indexOf('--out') + 1];
 const out = resolve(root, args.includes('--out') && outArg ? outArg : 'bundle/pixel-engine');
@@ -34,6 +35,17 @@ const commit = (() => {
 })();
 const buildId = `${new Date().toISOString().slice(0, 10)} ${commit}`;
 
+// --out is emptied first, so it must be a kit (or nothing): never the repo, a folder above it,
+// or a game folder someone points it at by mistake.
+const isKit = (dir) => {
+  try {
+    return JSON.parse(readFileSync(join(dir, 'manifest.json'), 'utf8')).name === 'pixel-engine';
+  } catch {
+    return false;
+  }
+};
+if (root === out || !relative(out, root).startsWith('..')) throw new Error(`bundle: --out ${out} is the repo or a folder above it`);
+if (existsSync(out) && readdirSync(out).length && !isKit(out)) throw new Error(`bundle: --out ${out} is not empty and holds no kit (manifest.json); pick another folder`);
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
@@ -45,7 +57,7 @@ const builtins = Object.fromEntries(
     .sort()
     .map((f) => [`assets/${f}`, `data:model/gltf-binary;base64,${readFileSync(join(root, 'public/assets', f)).toString('base64')}`]),
 );
-const tmp = join(root, '.scratch/bundle-build');
+const tmp = join(root, `.scratch/bundle-build-${process.pid}`); // one per run: runs can overlap
 await build({
   root,
   configFile: join(root, 'vite.config.ts'),
@@ -61,7 +73,7 @@ await build({
     assetsInlineLimit: Number.MAX_SAFE_INTEGER,
     chunkSizeWarningLimit: 8000,
     lib: { entry: join(root, 'src/bundle.ts'), formats: ['es'], fileName: () => 'pixel-engine.js' },
-    rolldownOptions: { input: join(root, 'src/bundle.ts'), output: { codeSplitting: false } },
+    rolldownOptions: { input: join(root, 'src/bundle.ts'), output: { codeSplitting: false, minify: true } },
   },
 });
 const built = readdirSync(tmp);
@@ -89,7 +101,8 @@ const program = ts.createProgram([join(root, 'src/bundle.ts'), join(root, 'src/e
 });
 const diagnostics = ts.getPreEmitDiagnostics(program);
 if (diagnostics.length) throw new Error(ts.formatDiagnostics(diagnostics, { getCanonicalFileName: (f) => f, getCurrentDirectory: () => root, getNewLine: () => '\n' }));
-program.emit();
+const emitted = program.emit();
+if (emitted.emitSkipped) throw new Error(`bundle: the TypeScript declarations were not emitted\n${ts.formatDiagnostics(emitted.diagnostics, { getCanonicalFileName: (f) => f, getCurrentDirectory: () => root, getNewLine: () => '\n' })}`);
 writeFileSync(
   join(out, 'pixel-engine.d.ts'),
   `// Types for pixel-engine.js (TypeScript, or // @ts-check in an editor). THREE's types need\n// @types/three@0.186.0 and Rapier's @dimforge/rapier3d@0.20.0 (types only; the bundle has the code).\nexport * from './types/bundle';\n`,

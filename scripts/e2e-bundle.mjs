@@ -146,6 +146,14 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     check(res.code === 0 && r.shots.length === 7 && r.shots.every((s) => s.colors >= 4), `--keys --cameras --looks: 7 shots (${r.shots.map((s) => `${s.name} ${s.colors}`).join(', ')})${res.code ? ':\n    ' + tail(res.out) : ''}`);
     const bad = await checkTool(join(kitPath, 'index.html'), ['--looks', 'nope', '--out', fileURLToPath(new URL('flags-bad', out))]);
     check(bad.code === 1 && /unknown look "nope"/.test(bad.out), 'an unknown look fails the check');
+    // URL flags on a local page; withUrlOptions keeps the game's own camera preset under ?zoom=
+    const flagged = await checkTool(`${join(kitPath, 'examples/side-scroller.html')}?zoom=1.5&look=handheld`, ['--out', fileURLToPath(new URL('flags-url', out))]);
+    const fr = await report('flags-url');
+    const rig = fr.state?.cameraRig ?? {};
+    check(flagged.code === 0 && rig.preset === 'side' && rig.zoom === 1.5 && fr.state.look === 'handheld', `"page.html?zoom=1.5&look=handheld": side camera kept at zoom 1.5, a 4-shade look passes (${fr.shots[0]?.colors} colours)${flagged.code ? ':\n    ' + tail(flagged.out) : ''}`);
+    const typo = await checkTool(join(kitPath, 'index.html'), ['--key', 'KeyD*10']);
+    const noBrowser = await checkTool(join(kitPath, 'index.html'), ['--out', fileURLToPath(new URL('flags-nobrowser', out))], { CHROMIUM_PATH: '/nonexistent/chrome' });
+    check(typo.code === 2 && /unknown option --key/.test(typo.out) && noBrowser.code === 2 && /could not start Chromium/.test(noBrowser.out), `the tool says when it can't run: an unknown option, no browser (exit ${typo.code}, ${noBrowser.code})`);
   } catch (e) {
     check(false, `check.mjs flags: ${e.message}`);
   }

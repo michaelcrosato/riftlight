@@ -25,10 +25,13 @@ Split a bigger game into more modules (`import { Level } from './level.js'`) as 
 
 - **Serve it over HTTP.** ES modules don't load from `file://`. Any static server works:
   `npx serve .`, `python3 -m http.server`, GitHub Pages, Netlify, an S3 bucket.
-- **One import.** `pixel-engine.js` is one self-contained ES module (about 4.7 MB, 1.6 MB
+- **One import.** `pixel-engine.js` is one self-contained ES module (about 4.3 MB, 1.5 MB
   gzipped). It holds the engine, three.js r186 (as `THREE` and `TSL`), Rapier physics with its
-  wasm, the hero (model, rig, 60 animation clips), three built-in models (`assets/hero.glb`,
+  wasm, the hero (model, rig and every animation clip), three built-in models (`assets/hero.glb`,
   `assets/coin.glb`, `assets/tree.glb`) and the engine's CSS. Don't load anything else.
+- **The page is the game's.** Importing the engine adds its CSS, which makes the page a
+  full-screen game: `html, body` don't scroll and `#app` fills the window. To embed a game in a
+  bigger page, give the container your own size and position (your CSS comes later and wins).
 - **Browsers.** WebGPU where the browser has it, otherwise WebGL 2 (automatic, same picture).
   Phones and tablets get on-screen touch controls by themselves.
 - **Your own models.** Put GLBs in `assets/` and call `ctx.loadModel('assets/ship.glb')`
@@ -79,7 +82,7 @@ collect the four coins.
 
 ```js quickstart
 // Coin Garden: walk (WASD / arrows / stick), jump (Space), collect every coin.
-import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, optionsFromUrl, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial } from './pixel-engine.js';
+import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, Mesh, Vector3 } = THREE;
 
@@ -142,7 +145,8 @@ class CoinGarden {
   }
 
   fixedUpdate(ctx, dt) {
-    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero)); // movement and forces: fixed 60 Hz step
+    this.input = readMoveInput(ctx, this.hero, this.input); // filled in place after the first step
+    this.hero.fixedUpdate(dt, this.input); // movement and forces: fixed 60 Hz step
   }
 
   update(ctx, dt) {
@@ -176,12 +180,13 @@ class CoinGarden {
   }
 }
 
-await Engine.start(new CoinGarden(), { container: document.getElementById('app'), camera: { preset: 'iso' }, ...optionsFromUrl() });
+await Engine.start(new CoinGarden(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' } }));
 ```
 
 To make it yours: change the blocks (the level), the coin spots, the camera preset, the HUD,
-the win condition. `...optionsFromUrl()` lets you review with URL flags (`?camera=side`,
-`?look=noir`, `?debug=1`; section 8); keep it last so the flags win.
+the win condition. `withUrlOptions(options)` adds the review flags from the page URL on top of
+your options (`?camera=side`, `?zoom=1.5`, `?look=noir`, `?debug=1`; section 8): the camera is
+merged key by key, and with no flags your options are used as they are.
 
 ## 4. The API by system
 
@@ -190,13 +195,12 @@ Everything below comes from `./pixel-engine.js`. `API.md` has the full signature
 ### Starting
 
 ```js
-const engine = await Engine.start(new MyGame(), {
+const engine = await Engine.start(new MyGame(), withUrlOptions({  // + review flags from the URL
   container: document.getElementById('app'),
   camera: { preset: 'iso', zoom: 1.2 },  // one preset per game (see Camera)
   look: LOOK_PRESETS.pixel_heroes,       // optional: the art style (see Looks)
   background: PALETTE.sky,               // clear colour (default PALETTE.night)
-  ...optionsFromUrl(),                   // review flags from the URL, last
-});
+}));
 await engine.loadGame(new Level2());     // next level: same renderer, camera, input, audio
 ```
 
@@ -241,7 +245,7 @@ setLookLayer(model, 'actors');
 ctx.scene.add(model);
 const hero = new PlatformerCharacter(ctx.physics, { position: [0, 0, 0], lockDepth: ctx.camera.lockDepth });
 hero.attachModel(model, compileClips(HERO_CLIPS, HERO_RIG, model), HERO_RIG);
-// fixedUpdate: hero.fixedUpdate(dt, readMoveInput(ctx, hero));
+// fixedUpdate: input = readMoveInput(ctx, hero, input); hero.fixedUpdate(dt, input);  (input kept, filled in place)
 // update:      hero.updateVisual(model, dt, ctx.physics.alpha);
 ```
 
@@ -252,7 +256,8 @@ and pull, Z prone, X lie down, V wave, B sit. Ledges, climbing (`climbable`), pu
 (`pushable`), slopes and stairs just work. Gamepads and touch map onto the same keys.
 
 The game drives it with: `hero.teleport([x, y, z])` (feet position; resets momentum),
-`hero.hurt(fromDirection)` (knockback; false while `hero.invulnerable > 0`),
+`hero.hurt(from)` (knocked back away from `from`, the direction from the hero to what hit it:
+enemy position minus hero position; false while `hero.invulnerable > 0`),
 `hero.jump('Jump')` (bounce, e.g. off an enemy), `hero.celebrate()`, `hero.lookAt = vector`
 (turns the head), `hero.setLockDepth(on)`. It reports `hero.state` (`'idle'`, `'run'`,
 `'jump'`, ...), `hero.grounded`, `hero.vy`, `hero.speed`, `hero.facing`, `hero.stats`
@@ -380,7 +385,7 @@ Each recipe is a whole game, built into the kit as `examples/<name>.html`. Steal
 ```js side-scroller
 // Cliff Run: a side-scroller. Run (A/D or arrows), jump (Space; again on landing for a higher
 // one), stomp the slimes, reach the flag. Two levels, then it starts over.
-import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, optionsFromUrl, PALETTE, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial } from './pixel-engine.js';
+import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, PALETTE, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, CylinderGeometry, Group, Mesh, SphereGeometry, Vector3 } = THREE;
 
@@ -401,7 +406,7 @@ class CliffRun {
   leaving = false;
   startTime = null;
   feet = new Vector3();
-  away = new Vector3();
+  from = new Vector3();
   target = new Vector3();
 
   constructor(level = 0) {
@@ -481,9 +486,9 @@ class CliffRun {
   }
 
   fixedUpdate(ctx, dt) {
-    const input = readMoveInput(ctx, this.hero);
-    if (this.clearedAt !== null) input.move.set(0, 0, 0); // level clear: stand still and celebrate
-    this.hero.fixedUpdate(dt, input);
+    this.input = readMoveInput(ctx, this.hero, this.input);
+    if (this.clearedAt !== null) this.input.move.set(0, 0, 0); // level clear: stand still and celebrate
+    this.hero.fixedUpdate(dt, this.input);
     const f = this.hero.feetInto(this.feet);
     for (const s of this.slimes) {
       if (s.dead) continue;
@@ -499,7 +504,8 @@ class CliffRun {
         ctx.audio.play('punch');
         ctx.particles.burst('impact', s.mesh.position);
         this.hero.jump('Jump');
-      } else if (this.hero.hurt(this.away.set(-dx, 0, 0))) {
+      } else if (this.hero.hurt(this.from.set(-dx, 0, 0))) {
+        // `from` points from the hero to what hit it (slime - hero): knocked back the other way
         ctx.audio.play('hurt');
       }
     }
@@ -543,7 +549,7 @@ class CliffRun {
   }
 }
 
-await Engine.start(new CliffRun(), { container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2 }, background: PALETTE.sky, ...optionsFromUrl() });
+await Engine.start(new CliffRun(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2 }, background: PALETTE.sky }));
 ```
 
 ### Top-down at night: lights, pushable crates, music, custom particles
@@ -551,7 +557,7 @@ await Engine.start(new CliffRun(), { container: document.getElementById('app'), 
 ```js top-down
 // Lantern Night: walk (WASD / arrows), push both crates onto the glowing pads (walk into a
 // crate to push it), then leave through the gate in the north wall.
-import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, optionsFromUrl, PALETTE, PlatformerCharacter, RAPIER, readMoveInput, setLookLayer, THREE, toonMaterial } from './pixel-engine.js';
+import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, PALETTE, PlatformerCharacter, RAPIER, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, Color, CylinderGeometry, Mesh, Vector3 } = THREE;
 
@@ -664,9 +670,9 @@ class LanternNight {
   }
 
   fixedUpdate(ctx, dt) {
-    const input = readMoveInput(ctx, this.hero);
-    if (this.escaped) input.move.set(0, 0, 0); // the end: stand and celebrate
-    this.hero.fixedUpdate(dt, input);
+    this.input = readMoveInput(ctx, this.hero, this.input);
+    if (this.escaped) this.input.move.set(0, 0, 0); // the end: stand and celebrate
+    this.hero.fixedUpdate(dt, this.input);
   }
 
   update(ctx, dt) {
@@ -709,7 +715,7 @@ class LanternNight {
   }
 }
 
-await Engine.start(new LanternNight(), { container: document.getElementById('app'), camera: { preset: 'topdown', zoom: 1.1 }, look: LOOK_PRESETS.dream, ...optionsFromUrl() });
+await Engine.start(new LanternNight(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', zoom: 1.1 }, look: LOOK_PRESETS.dream }));
 ```
 
 ### Looks: mixing art styles per layer
@@ -718,7 +724,7 @@ await Engine.start(new LanternNight(), { container: document.getElementById('app
 // Look Lab: one scene, six looks. Keys 1-6 pick a look, T toggles chunky pixels on the custom
 // one. Walk around (WASD): characters & objects (the 'actors' layer) and the environment each
 // get their own look.
-import { compileClips, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, optionsFromUrl, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial } from './pixel-engine.js';
+import { compileClips, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, Mesh, Vector3 } = THREE;
 
@@ -785,7 +791,8 @@ class LookLab {
   }
 
   fixedUpdate(ctx, dt) {
-    this.hero.fixedUpdate(dt, readMoveInput(ctx, this.hero));
+    this.input = readMoveInput(ctx, this.hero, this.input);
+    this.hero.fixedUpdate(dt, this.input);
   }
 
   update(ctx, dt) {
@@ -817,7 +824,7 @@ class LookLab {
   }
 }
 
-await Engine.start(new LookLab(), { container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.3 }, look: STORYBOOK_HEROES, ...optionsFromUrl() });
+await Engine.start(new LookLab(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.3 }, look: STORYBOOK_HEROES }));
 ```
 
 ## 6. Rules
@@ -884,7 +891,7 @@ e.setLook(e.lookPresets.noir); e.setCamera({ preset: 'third' }, { syncUrl: false
 e.audio.counts; e.particles.alive; e.physics.counts(); e.hud.canvas;
 ```
 
-URL flags (with `...optionsFromUrl()` in `Engine.start`): `?debug=1` (debug panel),
+URL flags (with `withUrlOptions` in `Engine.start`): `?debug=1` (debug panel),
 `?backend=webgl` (force the fallback), `?look=noir`, `?filters=crt,scanlines`,
 `?camera=third`, `?zoom=1.5`, `?mode=raw` (no pixel pass), `?res=320`, `?touch=1`,
 `?quality=low`, `?fps=30`. Hotkeys: P pixel/raw, R resolution, \` debug panel,
@@ -896,13 +903,15 @@ URL flags (with `...optionsFromUrl()` in `Engine.start`): `?debug=1` (debug pane
 node check.mjs                                  # index.html: start, run 90 frames, screenshot
 node check.mjs --keys KeyD*60,Space*4,KeyD*40   # hold each key for that many frames, in order
 node check.mjs examples/side-scroller.html --cameras --looks noir,handheld
+node check.mjs "index.html?look=handheld&zoom=1.5"   # with URL flags
 node check.mjs --backend webgpu                 # WebGPU (needs a display, e.g. xvfb-run)
 ```
 
 It writes `check/<page>.png` (the frame with the HUD), the camera and look shots and
 `check/report.json` (errors, warnings, `state()`), and prints a summary: the backend, frames
 and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
-errors and drew a real picture; 1: it didn't; 2: the tool couldn't run. It needs Playwright
+errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (bad arguments, no
+page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
 (`npm i -D playwright && npx playwright install chromium`), or `playwright-core` plus a
 Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
 

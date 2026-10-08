@@ -198,6 +198,20 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   return opts;
 }
 
+/**
+ * A game's own options with the review flags from the page URL (optionsFromUrl) on top:
+ * `Engine.start(game, withUrlOptions({ container, camera: { preset: 'side', zoom: 1.2 } }))`.
+ * The camera is merged key by key (`?zoom=1.5` keeps the game's `side` preset), and
+ * `?filters=` replaces the game's look (a look would win over filters otherwise).
+ */
+export function withUrlOptions(options: EngineOptions, search = location.search): EngineOptions {
+  const url = optionsFromUrl(search);
+  const merged: EngineOptions = { ...options, ...url };
+  if (options.camera || url.camera) merged.camera = { ...options.camera, ...url.camera };
+  if (url.filters) delete merged.look;
+  return merged;
+}
+
 export class Engine {
   /** The engine's version (package.json). */
   static readonly version = ENGINE_VERSION;
@@ -712,6 +726,8 @@ export class Engine {
     if (this.disposed) return;
     this.disposed = true;
     this.loadToken++;
+    const g = globalThis as { __PIXEL_ENGINE__?: Engine };
+    if (g.__PIXEL_ENGINE__ === this) delete g.__PIXEL_ENGINE__; // don't keep a disposed engine alive
     this.renderer.setAnimationLoop(null);
     this.ready = false;
     this.audio.dispose();
