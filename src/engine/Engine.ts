@@ -29,6 +29,7 @@ import { FILTER_IDS, getFilter } from './render/filters';
 import { type Look, LOOK_PRESETS, lookPresetName, lookPresetOf } from './render/look';
 import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
+import { ENGINE_VERSION } from './version';
 
 export interface GameContext {
   readonly engine: Engine;
@@ -198,6 +199,15 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
 }
 
 export class Engine {
+  /** The engine's version (package.json). */
+  static readonly version = ENGINE_VERSION;
+  /**
+   * Errors thrown by the game's hooks while the render loop ran, each message once, oldest
+   * first (at most 20). They are logged to the console and shown in a box on screen; the
+   * frame keeps rendering so the picture stays up. Fix the first one first. (`step()` throws
+   * a hook's error to its caller instead: it is for tools.)
+   */
+  readonly errors: string[] = [];
   readonly input = new Input();
   readonly sun: DirectionalLight;
   readonly ambient: AmbientLight;
@@ -431,7 +441,18 @@ export class Engine {
       engine.becomeReady();
       engine.finishStart(container, options);
       loading?.set(1);
+      // The handle tests, tools and agents read: window.__PIXEL_ENGINE__.state()
+      (globalThis as { __PIXEL_ENGINE__?: Engine }).__PIXEL_ENGINE__ = engine;
       return engine;
+    } catch (e) {
+      // Starting failed (a game's setup threw, no GPU at all...): say so on screen too.
+      if (!container.querySelector('.fatal')) {
+        const el = document.createElement('div');
+        el.className = 'fatal';
+        el.textContent = `Failed to start: ${e instanceof Error ? e.message : String(e)}`;
+        container.appendChild(el);
+      }
+      throw e;
     } finally {
       clearInterval(ticker);
       loading?.done();
@@ -573,6 +594,7 @@ export class Engine {
     const r = this.renderer;
     const target = this.ready ? this.game.cameraTarget(this.context) : this.camera.focus;
     return {
+      version: ENGINE_VERSION,
       game: this.game.name,
       ready: this.ready,
       paused: this.paused,
@@ -590,6 +612,8 @@ export class Engine {
       gpuRecoveries: r.recoveries,
       physicsSteps: this.physics.steps,
       gpuErrors: r.gpuErrors.map((e) => ({ ...e })),
+      /** Errors the game's hooks threw in the render loop (each once; also on screen). */
+      errors: [...this.errors],
       target: target.toArray(),
       camera: this.camera.camera.position.toArray(),
       cameraRig: this.camera.describe(),
@@ -765,7 +789,13 @@ export class Engine {
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
     this.audio.update();
 
-    if (running) this.advance(dt);
+    if (running) {
+      try {
+        this.advance(dt);
+      } catch (e) {
+        this.reportError(e);
+      }
+    }
     if (this.disposed) return; // a game hook disposed the engine during this frame
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
@@ -773,6 +803,26 @@ export class Engine {
     if (running && this.debug?.visible) this.debug.update(this.game.status?.(this.context) ?? '');
     this.input.endFrame();
     this.frame++;
+  }
+
+  /** A game hook threw in the render loop: log it (once per message) and show it on screen. */
+  private reportError(e: unknown): void {
+    const message = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
+    if (this.errors.includes(message) || this.errors.length >= 20) return; // a new message every frame stays bounded
+    this.errors.push(message);
+    console.error('[engine] game error (the frame keeps rendering):', e);
+    const container = this.renderer.container;
+    let box = container.querySelector<HTMLElement>('[data-engine-error]');
+    if (!box) {
+      box = document.createElement('div');
+      box.dataset.engineError = 'true';
+      box.style.cssText =
+        'position:absolute;left:8px;top:8px;right:8px;z-index:50;padding:8px 10px;background:rgb(93 39 93 / 0.92);color:#fff;' +
+        'font:12px/1.4 ui-monospace,Menlo,Consolas,monospace;white-space:pre-wrap;pointer-events:none;border:2px solid #b13e53';
+      container.appendChild(box);
+    }
+    const more = this.errors.length > 1 ? `\n(+${this.errors.length - 1} more: engine.errors, the console)` : '';
+    box.textContent = `GAME ERROR: ${this.errors[0]}${more}\nFix the first one first; the console has the stack.`;
   }
 
   private handleDebugKeys(): void {

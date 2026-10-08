@@ -45,6 +45,7 @@ Engine.start(GAMES[pick]!(), options)
   })
   .catch((error: unknown) => {
     console.error(error);
+    if (container.querySelector('.fatal')) return; // Engine.start already says so on screen
     const el = document.createElement('div');
     el.className = 'fatal';
     el.textContent = `Failed to start: ${error instanceof Error ? error.message : String(error)}`;

@@ -1,12 +1,13 @@
 {
   "name": "pixel-engine",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "vite build && node scripts/bundle.mjs --out dist/engine",
+    "bundle": "node scripts/bundle.mjs",
     "preview": "vite preview",
     "lint": "eslint . && node scripts/forbidden-apis.mjs",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",

@@ -22,7 +22,8 @@ levels with monsters, loot and bosses, the death recap, save slots and the diffi
 ```bash
 npm ci
 npm run dev          # http://localhost:5173  (?game=playground|sandbox, ?seed=7, ?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1)
-npm run build        # production build
+npm run build        # production build (+ the engine kit in dist/engine/ and dist/engine.zip)
+npm run bundle       # the engine kit for other agents: bundle/pixel-engine/ + bundle/pixel-engine.zip
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run; E2E_PORT=…)
@@ -70,6 +71,19 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
 
 Architecture, the camera and filter lists, the moveset and the game API are in
 [`docs/ENGINE.md`](docs/ENGINE.md).
+
+### Handing the engine to another agent
+
+`npm run bundle` builds the **engine kit**, everything an agent needs to make a game outside
+this repo: `pixel-engine.js` (one self-contained ES module, about 4.7 MB: the engine,
+three.js, Rapier, the hero and the built-in models), [`docs/GUIDE.md`](docs/GUIDE.md) (the
+manual: host it, the mental model, a complete game, recipes, rules, common mistakes, checks),
+a generated `API.md`, TypeScript types, a starter `game.js`, the guide's recipes as pages and
+`check.mjs`, which plays a page in a browser and fails on any error. Hand over
+`bundle/pixel-engine.zip`, or link `/engine/` and `/engine.zip` wherever `dist/` is hosted
+(`npm run build` puts the kit there). The receiving agent reads `README.md` then `GUIDE.md`, edits
+`game.js` and runs `node check.mjs` before handing back. Engine changes that a game can see
+bump `package.json`'s version and get a `CHANGELOG.md` section.
 
 ---
 

@@ -837,7 +837,7 @@ without reading its code:
    the `tools` e2e suite (`scripts/e2e.mjs` `runTools`: it runs, writes its files, and the
    numbers are sane), so the tool can't silently rot.
 
-## Bundle
+## Build size
 
 `npm run build` (gzipped): `three` 271 kB, Rapier JS 28 kB + `rapier_wasm3d_bg.wasm` 774 kB
 (fetched and compiled while it streams, in parallel with the renderer and models), engine
@@ -852,3 +852,38 @@ imports the `.wasm` as an ES module, which the plugin stubs out so `initRapier()
 instantiate it explicitly (no top-level await blocking the app).
 Serve `.wasm` compressed (gzip/brotli; most static hosts and CDNs do, `vite preview` does
 not): uncompressed it is 2.0 MB on the wire instead of 774 kB.
+
+## The engine kit (`npm run bundle`)
+
+Games outside this repo use the engine through a kit (`scripts/bundle.mjs`; `npm run build`
+also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at `/engine/`):
+
+- `pixel-engine.js`: a Vite library build of `src/bundle.ts`, one self-contained ES module
+  (about 4.7 MB, 1.6 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
+  three.js as `THREE` and `TSL` (a game must never load a second copy), `RAPIER`, the hero kit
+  and `BUILTIN_MODELS`. Everything is inlined: Rapier's wasm as a data URL (`?url`), the
+  engine CSS (injected on import, before the page's own), and `public/assets/*.glb` through
+  `__PIXEL_BUILTINS__` → `window.__PIXEL_ASSETS__`, which `loadModel` reads first. Built with
+  `base: './'`, so a game's own `assets/x.glb` resolves next to its page.
+- `GUIDE.md` (docs/GUIDE.md, stamped with the version and build): the manual. Its fenced
+  blocks `js <name>` are whole games: `quickstart` becomes the kit's `game.js` (+ `index.html`),
+  the others `examples/<name>.html`. `src/guide.test.ts` checks that they import only real
+  exports and that its lists (palette, looks, filters, sounds, particles, cameras, URL flags,
+  built-in models) are the engine's; the `bundle` e2e suite plays every one of them.
+- `API.md`: every export with its signature and doc comment, grouped by subsystem, generated
+  from the TypeScript program (`scripts/bundle/api.mjs`). Mark a public member that games
+  shouldn't use `/** @internal */`: it leaves API.md and the `.d.ts`.
+- `pixel-engine.d.ts` + `types/`: declarations (`stripInternal`); a strict TypeScript game
+  typechecks against them (the `bundle` e2e suite does it).
+- `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool. It serves the kit
+  folder, plays a page in Chromium (`--keys KeyD*60,Space*4`, `--cameras`, `--looks`,
+  `--backend webgpu`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
+  console, game or GPU error or a blank frame.
+- `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates) and
+  `manifest.json` (version, build, every file with its bytes).
+
+Diagnostics that make the kit self-correcting live in the engine: `Engine.start` sets
+`window.__PIXEL_ENGINE__`; an exception in a game hook is caught per frame, kept once in
+`engine.errors` (and `state().errors`), logged and shown in a box (`[data-engine-error]`)
+while the loop keeps running; a failed start shows "Failed to start: ..." in `.fatal`.
+`ENGINE_VERSION` comes from `package.json` (`__ENGINE_VERSION__` in `vite.config.ts`).

@@ -84,6 +84,7 @@ isolated clips can't.
 | `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game, reports clear time, deaths, loot |
 | `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
+| `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md` | The engine kit for agents outside this repo (`npm run bundle`): one-module `pixel-engine.js`, the guide (its named code blocks become pages; `src/guide.test.ts` keeps its names true), a generated `API.md`, `check.mjs`. Engine changes a game can see bump the version and add a `CHANGELOG.md` section |
 | `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs`, the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
