@@ -26,5 +26,6 @@ coverage/
 !.vscode/extensions.json
 .scratch/
 dist-single/
+/bundle/
 .claude/worktrees/
 .vercel/

@@ -1,4 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { defineConfig, type Plugin } from 'vitest/config';
+
+const { version } = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { version: string };
 
 /**
  * Rapier (`@dimforge/rapier3d`, wasm-bindgen "bundler" build) imports its `.wasm` as an
@@ -24,6 +27,8 @@ function rapierWasm(): Plugin {
 
 export default defineConfig({
   plugins: [rapierWasm()],
+  // ENGINE_VERSION (src/engine/version.ts): one version, package.json's
+  define: { __ENGINE_VERSION__: JSON.stringify(version) },
   build: {
     target: 'es2022',
     rolldownOptions: {

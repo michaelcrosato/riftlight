@@ -6,7 +6,7 @@
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
-//     riftlight-showcase;  groups: @core | @cameras | @filters
+//     riftlight-showcase | bundle;  groups: @core | @cameras | @filters
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -70,6 +70,10 @@
 //                 WebGPU + WebGL 2: levels 1, 6, 12 and a rift build, render, keep 8 lights
 //                 without recompiles, walk start → exit with Engine.step, open the portal.
 //
+// bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
+//                 zip, its types, its check.mjs on every page (WebGPU + WebGL 2), every guide
+//                 recipe played as the guide describes, and errors reported (box, engine.errors).
+//
 // The debug panel is off by default in production builds: every page gets ?debug=1 unless
 // the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel
 // HUD is a 2D overlay canvas (data-hud) on top of it.
@@ -96,6 +100,7 @@ import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
 import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
 import { runRiftlightPhone } from './e2e-riftlight-phone.mjs';
+import { runBundle } from './e2e-bundle.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1251,6 +1256,7 @@ const SUITES = {
     await runRiftlightItems({ ...helpers, scenario: SCENARIOS[1] });
   },
   tools: (exe) => runTools(exe),
+  bundle: (exe) => runBundle({ exe, root: ROOT, out: OUT, base: BASE, scenarios: SCENARIOS, launch, ready, check, run, tail }),
   systems: async (exe) => {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
     await runSystems({ ...helpers, scenario: SCENARIOS[0] });
@@ -1293,7 +1299,7 @@ const SUITES = {
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);

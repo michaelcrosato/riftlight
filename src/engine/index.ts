@@ -1,5 +1,6 @@
 // Public engine API. Games import from here, not from internal modules.
-export { Engine, optionsFromUrl, type EngineOptions, type Game, type GameContext } from './Engine';
+export { Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext } from './Engine';
+export { ENGINE_VERSION } from './version';
 export {
   CAMERA_PRESETS,
   CameraRig,
