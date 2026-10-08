@@ -126,10 +126,12 @@ describe('look settings', () => {
       stored({ look: name });
       expect(loadSettings().look, name).toBe(name);
     }
-    for (const name of ['bogus', 'constructor', 'custom']) {
+    for (const name of ['bogus', 'constructor', 'custom', 'none']) {
       stored({ look: name });
       expect(loadSettings().look, name).toBe('');
     }
+    stored({ look: 'hd_clean' }); // renamed
+    expect(loadSettings().look).toBe('no_filters');
   });
 
   it('a custom look comes back normalized', () => {

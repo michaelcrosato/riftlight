@@ -343,6 +343,35 @@ export const FILTERS: readonly FilterDef[] = [
   },
 
   // ---- color grading ----
+  {
+    id: 'adjust',
+    label: 'Adjust (brightness, contrast, saturation)',
+    group: 'color',
+    space: 'art',
+    params: [
+      { key: 'brightness', label: 'Brightness', min: -0.5, max: 0.5, step: 0.05, default: 0 },
+      { key: 'contrast', label: 'Contrast', min: 0, max: 2, step: 0.05, default: 1.1, unit: 'x' },
+      { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.05, default: 1.2, unit: 'x' },
+      { key: 'warmth', label: 'Warmth', min: -0.5, max: 0.5, step: 0.05, default: 0 },
+    ],
+    presets: {
+      neutral: { brightness: 0, contrast: 1, saturation: 1, warmth: 0 },
+      vivid: { brightness: 0, contrast: 1.1, saturation: 1.2, warmth: 0 },
+      muted: { brightness: 0, contrast: 0.9, saturation: 0.55, warmth: 0 },
+      dark: { brightness: -0.25, contrast: 1.1, saturation: 0.9, warmth: 0 },
+      bright: { brightness: 0.15, contrast: 0.95, saturation: 1, warmth: 0 },
+      warm: { brightness: 0, contrast: 1, saturation: 1.05, warmth: 0.25 },
+      cool: { brightness: 0, contrast: 1, saturation: 1, warmth: -0.25 },
+    },
+    // Brightness, then contrast around mid grey, saturation around the luminance, and a
+    // warm (red up, blue down) or cool shift.
+    apply: (c, _fx, p) => {
+      const lit: N = c.rgb.add(p('brightness')).sub(0.5).mul(p('contrast')).add(0.5);
+      const sat: N = mix(vec3(luminance(lit)), lit, p('saturation'));
+      const warm: N = vec3(p('warmth').mul(0.3), p('warmth').mul(0.05), p('warmth').mul(-0.3));
+      return vec4(clamp(sat.add(warm), 0, 1), c.a);
+    },
+  },
   { id: 'grayscale', label: 'Grayscale', group: 'color', space: 'art', apply: (c) => vec4(vec3(luminance(c.rgb)), c.a) },
   { id: 'sepia', label: 'Sepia', group: 'color', space: 'art', apply: (c) => sepia(c) },
   { id: 'invert', label: 'Invert', group: 'color', space: 'art', apply: (c) => vec4(c.rgb.oneMinus(), c.a) },

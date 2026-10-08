@@ -1428,7 +1428,9 @@ altogether: the arrows still drive the focused control, a strip at the top names
 value ("GAME BOY DITHER 0.85 · H SHOWS"), and H, Esc or a tap brings the panel
 back (`UiLayer.togglePeek`, `Panel.focusLine`).
 
-- **Look**: a named look to start from (retro stacks, `pixel heroes`, `cel cartoon`, …).
+- **Look**: a named look to start from: `default` (pixel art), `no filters` (nothing at all:
+  full resolution, no pixel art, no outlines), the retro stacks, and mixes such as
+  `pixel heroes`, `sin city`, `comic book`, `pop art`, `heat vision`, `ps1 horror` or `old photo`.
 - **Apply to**: whole scene · characters (the hero, monsters, townsfolk, the cat, loot on the
   ground, chests and shrines: tagged with `setLookLayer`) · environment.
 - **Pixel art**: on (preset `crisp` / `no lines` / `inked` / `chunky` / `blocky` / `mosaic`;
