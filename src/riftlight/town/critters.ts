@@ -5,6 +5,7 @@
  */
 import { BoxGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor } from '../../engine/palette';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { toonMaterial } from '../../engine/render/toon';
 import type { Rng } from '../core/rng';
 import { type Blocker, collideBlockers } from './kit';
@@ -41,6 +42,7 @@ export class Cat {
     private readonly path: Vector3[],
   ) {
     this.position.copy(at);
+    setLookLayer(this.root, 'actors');
     const fur: PaletteColor = 'orange';
     this.body.add(part([0.26, 0.2, 0.5], fur, [0, 0, 0]));
     this.body.add(part([0.2, 0.06, 0.36], 'sand', [0, -0.09, 0.02]));

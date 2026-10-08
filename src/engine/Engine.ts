@@ -25,7 +25,8 @@ import { type TouchButton, TouchControls } from './TouchControls';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
-import { FILTER_IDS, FILTER_PRESETS, getFilter } from './render/filters';
+import { FILTER_IDS, getFilter } from './render/filters';
+import { type Look, LOOK_PRESETS, lookPresetOf } from './render/look';
 import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 
@@ -114,6 +115,11 @@ export interface EngineOptions {
   camera?: CameraConfig;
   /** Post filters (ids from FILTERS) applied in Pixel mode, in order. */
   filters?: readonly string[];
+  /**
+   * A full look: pixel art or clean rendering and filters per layer (characters & objects,
+   * environment) plus whole-scene filters (render/look.ts). Wins over `filters` and `edges`.
+   */
+  look?: Look;
   /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
   forceWebGL?: boolean;
   /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
@@ -142,7 +148,7 @@ export interface EngineOptions {
  *   ?aspect=fixed|adaptive  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
  *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
  *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
- *   ?filters=crt,lcd  or  ?look=handheld (a FILTER_PRESETS name)
+ *   ?filters=crt,lcd  or  ?look=handheld (a LOOK_PRESETS name, e.g. pixel_heroes)
  */
 export function optionsFromUrl(search = location.search): Partial<EngineOptions> {
   const p = new URLSearchParams(search);
@@ -181,7 +187,7 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (zoom > 0) camera.zoom = zoom;
   if (Object.keys(camera).length) opts.camera = camera;
   const look = p.get('look');
-  if (look && FILTER_PRESETS[look]) opts.filters = FILTER_PRESETS[look];
+  if (look && LOOK_PRESETS[look]) opts.look = LOOK_PRESETS[look];
   const filters = p.get('filters');
   if (filters) opts.filters = filters.split(',').filter((id) => getFilter(id));
   return opts;
@@ -393,6 +399,7 @@ export class Engine {
           mode: options.mode,
           edges: options.edges,
           filters: options.filters,
+          look: options.look,
           forceWebGL: options.forceWebGL,
         }).finally(() => (done.renderer = true)),
         Physics.create().finally(() => (done.physics = true)),
@@ -532,12 +539,28 @@ export class Engine {
     this.renderer.setFilters(ids);
   }
 
-  /** Cycle through FILTER_PRESETS ([ and ] keys). */
+  /** The current look (a copy): per-layer pixel art and filters, whole-scene filters. */
+  get look(): Look {
+    return this.renderer.look;
+  }
+
+  /** Every named look (LOOK_PRESETS): `engine.setLook(engine.lookPresets.pixel_heroes)`. */
+  get lookPresets(): Readonly<Record<string, Look>> {
+    return LOOK_PRESETS;
+  }
+
+  /** Apply a look (render/look.ts); `LOOK_PRESETS` has named ones. */
+  setLook(look: Look): void {
+    this.renderer.setLook(look);
+  }
+
+  /** Cycle through LOOK_PRESETS ([ and ] keys). */
   cycleLook(step: 1 | -1): string {
-    const names = Object.keys(FILTER_PRESETS);
-    const current = names.findIndex((n) => FILTER_PRESETS[n]!.join() === this.renderer.filters.join());
+    const names = Object.keys(LOOK_PRESETS);
+    const name = lookPresetOf(this.renderer.look);
+    const current = name ? names.indexOf(name) : -1;
     const next = names[(current + step + names.length) % names.length]!;
-    this.renderer.setFilters(FILTER_PRESETS[next]!);
+    this.renderer.setLook(LOOK_PRESETS[next]!);
     return next;
   }
 
@@ -572,6 +595,9 @@ export class Engine {
           ? (({ left, right, top, bottom }) => ({ left, right, top, bottom }))(this.camera.camera)
           : null,
       filters: [...r.filters],
+      /** The look preset in use, or `custom`; `split` when layers render as two passes. */
+      look: lookPresetOf(r.look) ?? 'custom',
+      split: r.split,
       status: this.game.status?.(this.context) ?? '',
     };
   }

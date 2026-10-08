@@ -25,6 +25,7 @@ import {
   Vector3,
 } from 'three/webgpu';
 import type { GameContext, PaletteColor } from '../../engine';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { toonMaterial } from '../../engine/render/toon';
 import { PALETTE } from '../../engine/palette';
 import type { StatSheet } from '../core/mods';
@@ -146,6 +147,7 @@ export class WorldLoot {
     private readonly opts: WorldLootOptions,
   ) {
     this.root.name = 'WorldLoot';
+    setLookLayer(this.root, 'actors'); // loot on the ground is an object
     ctx.scene.add(this.root);
     this.lights = opts.lights ?? new PointLightPool(this.root);
     for (const [id, def] of Object.entries(LOOT_SOUNDS)) ctx.audio.register(id, def);

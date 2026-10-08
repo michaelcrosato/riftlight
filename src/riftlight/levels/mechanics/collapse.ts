@@ -1,5 +1,6 @@
 import { BoxGeometry, Euler, InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three/webgpu';
 import type { LightHandle } from '../../../engine/render/lights';
+import { setLookLayer } from '../../../engine/render/lookLayer';
 import { toonMaterial } from '../../../engine/render/toon';
 import { FLOOR, VOID } from '../layout/grid';
 import { glowMaterial, tint } from '../themes/props';
@@ -124,6 +125,8 @@ export const COLLAPSE: LevelMechanicDef = {
         const chest = box(toonMaterial(0x8a5a3a), x, 0.3, zz, 0.7, 0.5, 0.5);
         const lid = box(cacheMat, x, 0.6, zz, 0.74, 0.12, 0.54);
         chest.name = lid.name = 'collapse:cache';
+        setLookLayer(chest, 'actors');
+        setLookLayer(lid, 'actors');
         level.root.add(chest, lid);
         return { cell: c, at: new Vector3(x, 0, zz), parts: [chest, lid], taken: false, light: level.light({ position: [x, 1, zz], color: 0xffcd75, intensity: 3, radius: 4, flicker: 'pulse', priority: 2, name: 'cache' }) as LightHandle | null };
       });

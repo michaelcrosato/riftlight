@@ -12,6 +12,7 @@ import {
   PLAYGROUND_SONG,
   RAPIER,
   readMoveInput,
+  setLookLayer,
   toonMaterial,
   type Trigger,
 } from '../engine';
@@ -209,6 +210,7 @@ export class Playground implements Game {
     const crateParts = mergeStaticMeshes([crateBox]);
     for (const c of LEVEL.crates) {
       const mesh = new Group().add(...crateParts.map((p) => p.clone()));
+      setLookLayer(mesh, 'actors'); // characters & objects get their own look (render/look.ts)
       scene.add(mesh);
       const body = physics.world.createRigidBody(
         RAPIER.RigidBodyDesc.dynamic().setTranslation(...c.at).setLinearDamping(4).enabledRotations(false, false, false),
@@ -257,6 +259,7 @@ export class Playground implements Game {
     for (const [x, y, z] of LEVEL.coins) {
       const root = coin.scene.clone(true);
       root.position.set(x, y, z);
+      setLookLayer(root, 'actors');
       const mixer = new AnimationMixer(root);
       const clip = coin.animations[0];
       if (clip) mixer.clipAction(clip).play();
@@ -275,6 +278,7 @@ export class Playground implements Game {
     }
 
     this.heroModel = hero.scene;
+    setLookLayer(this.heroModel, 'actors');
     scene.add(this.heroModel, this.heroShadow);
     this.hero = new PlatformerCharacter(physics, { position: LEVEL.spawn, lockDepth: ctx.camera.lockDepth });
     // Animations are data (src/game/hero/clips/), compiled against the model's rig.

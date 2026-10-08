@@ -16,8 +16,8 @@
  * `engine.loadGame`: the town, the hero and the save stay where they are.
  */
 import { Vector3 } from 'three/webgpu';
-import type { CameraConfig, CameraPreset, GameContext, RenderMode } from '../../engine';
-import { OrthoRig } from '../../engine';
+import type { CameraConfig, CameraPreset, GameContext, Look, RenderMode } from '../../engine';
+import { lookFromFilters, OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
 import { CAMERA, type Riftlight } from '../game/Riftlight';
 import type { UiCanvas, UiEvent } from '../ui/kit';
@@ -65,7 +65,8 @@ interface Iris {
 
 /** What a mode changes and leaving puts back. */
 interface Saved {
-  filters: readonly string[];
+  /** The player's look (per-layer pixel art and filters). */
+  look: Look;
   mode: RenderMode;
   preset: CameraPreset;
 }
@@ -141,7 +142,7 @@ export class Showcase {
       const swap = () => {
         this.loading = true;
         const was = this.ctx.engine.camera.preset;
-        this.saved = { filters: [...this.ctx.engine.filters], mode: this.ctx.engine.renderer.mode, preset: was === 'free' || was === 'fixed' ? 'iso' : was };
+        this.saved = { look: this.ctx.engine.look, mode: this.ctx.engine.renderer.mode, preset: was === 'free' || was === 'fixed' ? 'iso' : was };
         void mode
           .enter()
           .then(() => {
@@ -149,7 +150,8 @@ export class Showcase {
             game.hero.object.visible = false;
             this.mode = mode;
             this.ctx.engine.setCamera(mode.camera(), { syncUrl: false });
-            if (mode.filters) this.ctx.engine.setFilters(mode.filters);
+            // a mode with its own filters gets its own look (pixel art everywhere + its stack)
+            if (mode.filters) this.ctx.engine.setLook(lookFromFilters(mode.filters));
             this.ctx.engine.renderer.setMode('pixel');
             this.ctx.engine.camera.teleport(mode.cameraTarget());
             game.ctx.audio.play('rl.portal', { pitch: 5 });
@@ -189,7 +191,7 @@ export class Showcase {
       game.hero.object.visible = true;
       const preset = this.saved?.preset ?? 'iso';
       if (this.saved) {
-        e.setFilters(this.saved.filters);
+        e.setLook(this.saved.look);
         e.renderer.setMode(this.saved.mode);
       }
       this.saved = null;

@@ -13,7 +13,7 @@
  *          come back as they were.
  */
 import { Vector3 } from 'three/webgpu';
-import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
+import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
 import { inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
 import type { Showcase } from '../Showcase';
 
@@ -37,7 +37,8 @@ interface Saved {
   camera: CameraConfig;
   zoom: number;
   fp: { yaw: number; pitch: number } | null;
-  filters: readonly string[];
+  /** The whole look (photo looks only swap the whole-scene filters; layers stay as they were). */
+  look: Look;
   mode: RenderMode;
   resolution: Resolution;
   sun: number;
@@ -95,7 +96,7 @@ export class PhotoMode {
       camera: this.host.mode?.camera() ?? { preset: rig.preset === 'free' || rig.preset === 'fixed' ? 'iso' : rig.preset },
       zoom: rig.zoom,
       fp: rig instanceof FirstPersonRig ? { yaw: rig.yaw, pitch: rig.pitch } : null,
-      filters: [...e.filters],
+      look: e.look,
       mode: e.renderer.mode,
       resolution: e.renderer.baseResolution,
       sun: e.sun.intensity,
@@ -124,7 +125,7 @@ export class PhotoMode {
     this.active = false;
     this.light?.release();
     this.light = null;
-    e.setFilters(s.filters);
+    e.setLook(s.look);
     e.renderer.setMode(s.mode);
     if (e.renderer.baseResolution !== s.resolution) e.renderer.setResolution(s.resolution);
     e.sun.intensity = s.sun;

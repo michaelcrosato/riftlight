@@ -1,4 +1,5 @@
 import type { Object3D, Vector3 } from 'three/webgpu';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { EventBus } from '../core/events';
 import type { Faction, GameEventBus, GameEvents } from '../core/types';
 import { Actor, type ActorWorld } from './Actor';
@@ -34,6 +35,8 @@ export class ActorManager implements ActorWorld {
     actor.depth = this.depth;
     this.actors.push(actor);
     this.dirtyOrder = true;
+    // characters get the "characters & objects" look (render/look.ts)
+    setLookLayer(actor.body, 'actors');
     if (this.scene && !actor.body.parent) this.scene.add(actor.body);
     this.insert(actor);
     return actor;

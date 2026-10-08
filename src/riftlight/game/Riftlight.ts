@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { FILTER_PRESETS, type Game, type GameContext, PALETTE, type PaletteColor, resolveDebugKeys } from '../../engine';
+import { defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, type PaletteColor, resolveDebugKeys } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -27,6 +27,7 @@ import { type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
+import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
@@ -67,7 +68,7 @@ interface MutableIntent {
   held: number;
 }
 
-export class Riftlight implements Game, MenuHost {
+export class Riftlight implements Game, MenuHost, LookHost {
   readonly name = 'Riftlight';
   readonly assets = [HERO_MODEL, 'assets/tree.glb'];
   readonly ports: RiftlightPorts;
@@ -614,11 +615,28 @@ export class Riftlight implements Game, MenuHost {
     this.applyMods();
   }
 
+  /**
+   * The look the settings ask for: a named one, the look studio's custom one, or null for
+   * the default (which leaves a look from the URL, `?look=` / `?filters=`, alone).
+   */
+  private settingsLook(): Look | null {
+    const s = this.settings;
+    if (s.look === 'custom') return s.customLook;
+    return s.look ? (LOOK_PRESETS[s.look] ?? null) : null;
+  }
+
+  /** The settings last put a look on screen (so going back to "default" takes it off again). */
+  private lookFromSettings = false;
+
   applySettings(): void {
     const e = this.ctx.engine;
-    const look = this.settings.look && FILTER_PRESETS[this.settings.look] ? FILTER_PRESETS[this.settings.look]! : [];
-    if (this.settings.look || e.filters.length === 0) {
-      if (look.join() !== e.filters.join()) e.setFilters(look);
+    const look = this.settingsLook();
+    if (look) {
+      if (!looksEqual(look, e.look)) e.setLook(look);
+      this.lookFromSettings = true;
+    } else if (this.lookFromSettings) {
+      e.setLook(defaultLook());
+      this.lookFromSettings = false;
     }
     if (this.settings.quality !== 'auto' && e.quality !== this.settings.quality) e.setQuality(this.settings.quality);
     storeSettings(this.settings);
@@ -748,8 +766,8 @@ export class Riftlight implements Game, MenuHost {
     };
   }
 
-  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots'): Panel | null {
-    if (this.screen === 'title' && !['settings', 'slots'].includes(id)) return null;
+  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots' | 'look'): Panel | null {
+    if (this.screen === 'title' && !['settings', 'slots', 'look'].includes(id)) return null;
     const self: { panel?: Panel } = {};
     const host = this.panelHost(self);
     const loot = this.ports.loot;
@@ -812,6 +830,9 @@ export class Riftlight implements Game, MenuHost {
       case 'slots':
         panel = slotsMenu(this, 'load');
         break;
+      case 'look':
+        this.lookStudio();
+        return this.layer.top?.panel ?? null;
     }
     self.panel = panel;
     this.layer.open(panel, { modal, onClose: () => this.endTalk() });
@@ -995,6 +1016,7 @@ export class Riftlight implements Game, MenuHost {
     if (pressed(KEYS.character)) toggle('character');
     if (pressed(KEYS.codex)) toggle('codex');
     if (pressed(KEYS.photo) && !this.layer.top) this.showcase.photo.open();
+    if (pressed(KEYS.look) && !this.layer.top) this.openPanel('look');
     if (pressed(KEYS.interact) || this.interactQueued) {
       this.interactQueued = false;
       if (!this.layer.top) this.interact();
@@ -1338,6 +1360,32 @@ export class Riftlight implements Game, MenuHost {
 
   onCameraChange(): void {
     this.showcase?.onCameraChange();
+  }
+
+  // ================================================================ look studio (LookHost)
+
+  look(): Look {
+    return this.ctx.engine.look;
+  }
+
+  /** A look from the studio: on screen at once and remembered (a named look, or the custom one). */
+  setLook(look: Look): void {
+    const name = lookPresetOf(look);
+    this.settings.look = name === 'none' ? '' : (name ?? 'custom');
+    if (!name) this.settings.customLook = look;
+    this.ctx.engine.setLook(look);
+    this.lookFromSettings = true;
+    storeSettings(this.settings);
+  }
+
+  /** Studio pages dock to the right without dimming, so the picture stays in view. */
+  openStudioPage(menu: Menu): void {
+    this.layer.open(menu, { modal: true, dock: 'right', dim: false, solo: true });
+  }
+
+  /** Pause / settings → Look studio. */
+  lookStudio(): void {
+    this.openStudioPage(lookStudio(this));
   }
 
   /** Pause → Photo mode. */

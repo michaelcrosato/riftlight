@@ -6,7 +6,8 @@
 //   its boss) → kill every monster, the boss too, with the basic attack (kill events, XP
 //   rising) → collect gold → clear → portal → loot window → town (autosaved) → pause →
 //   Tuning → enemy life slider (keys) → applies to live monsters (difficulty Mod source,
-//   life fraction kept) → the boss kills the hero → recap names it → town with the penalty
+//   life fraction kept) → look studio (L): Game Boy on the characters only, remembered,
+//   reset → the boss kills the hero → recap names it → town with the penalty
 //   → save → reload → Continue → same run. Zero console errors and GPU errors.
 //
 // Frames land in .scratch/e2e/riftlight-*.png (`*-hud.png`: the frame with the pixel HUD on
@@ -212,6 +213,41 @@ export async function runRiftlight(h) {
     await R(() => window.__RIFTLIGHT__.press('Escape'));
     rs = await st();
     check(rs.ui.length === 0 && !rs.paused, `Esc backs out of the menus (ui ${rs.ui.join(',') || 'none'})`);
+
+    // ---------------------------------------------------------------- look studio: a filter on the characters only
+    await R(() => window.__RIFTLIGHT__.press('KeyL'));
+    rs = await st();
+    const dock = await R(() => {
+      const g = window.__RIFTLIGHT__.game;
+      const r = g.layer.top.rect;
+      return { right: g.ui.w - (r.x + r.w), ids: window.__RIFTLIGHT__.ui.widgets().map((w) => w.id) };
+    });
+    check(rs.ui.at(-1) === 'look' && rs.paused && dock.right <= 8, `L opens the look studio docked beside the picture (ui ${rs.ui.join(',')}, ${dock.right} px from the right)`);
+    check(['preset', 'target', 'pixel', 'shading', 'palette', 'color', 'era', 'display', 'signal', 'stylize', 'reset'].every((id) => dock.ids.includes(id)), `the studio has looks, a target, pixel art and every filter type (${dock.ids.join(',')})`);
+    await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
+    await R(() => window.__RIFTLIGHT__.press('ArrowRight')); // apply to: characters
+    await R(() => window.__RIFTLIGHT__.ui.click('palette'));
+    await R(() => window.__RIFTLIGHT__.ui.click('gameboy'));
+    await R(() => window.__PIXEL_ENGINE__.step(2));
+    const studio = await R(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const saved = JSON.parse(localStorage.getItem('riftlight:settings') ?? '{}');
+      return { ui: window.__RIFTLIGHT__.state().ui, actors: e.look.actors.filters.map((f) => f.id), world: e.look.environment.filters.map((f) => f.id), split: e.state().split, saved: saved.look, savedActors: (saved.customLook?.actors?.filters ?? []).map((f) => f.id), widgets: window.__RIFTLIGHT__.ui.widgets().map((w) => w.id) };
+    });
+    check(
+      studio.ui.at(-1) === 'look.palette' && studio.actors.join() === 'gameboy' && studio.world.length === 0 && studio.split,
+      `Palettes → Game Boy on the characters only: two passes (actors ${studio.actors.join(',')}, environment ${studio.world.join(',') || 'none'})`,
+    );
+    check(studio.widgets.includes('gameboy.preset') && studio.widgets.includes('gameboy.dither') && studio.widgets.includes('gameboy.amount'), `an active filter shows its preset and sliders (${studio.widgets.filter((w) => w.startsWith('gameboy')).join(',')})`);
+    check(studio.saved === 'custom' && studio.savedActors.join() === 'gameboy', `the custom look is remembered in the settings (${studio.saved}, ${studio.savedActors.join(',')})`);
+    await captureWithHud(page, `riftlight-${tag}-look-studio-hud.png`);
+    await R(() => window.__RIFTLIGHT__.press('Escape'));
+    await R(() => window.__RIFTLIGHT__.ui.click('reset'));
+    await R(() => window.__RIFTLIGHT__.press('Escape'));
+    rs = await st();
+    const reset = await R(() => window.__PIXEL_ENGINE__.state());
+    check(rs.ui.length === 0 && reset.look === 'none' && !reset.split, `Reset to default, Esc closes the studio (ui ${rs.ui.join(',') || 'none'}, look ${reset.look})`);
+
     const spawned = await R(() => window.__RIFTLIGHT__.spawn({ seed: 7 }));
     const fresh = await R((id) => window.__RIFTLIGHT__.actors().find((a) => a.id === id), spawned.id);
     check(fresh && Math.abs(fresh.life - fresh.maxLife) < 1e-6, `a monster spawned now is born with the tuned life (${fresh?.life} / ${fresh?.maxLife})`);

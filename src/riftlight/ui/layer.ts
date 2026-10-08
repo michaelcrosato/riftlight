@@ -21,7 +21,15 @@ export interface Open {
   bare?: boolean;
   /** Can't be closed with back (the death recap). */
   sticky?: boolean;
+  /** Dock against the right edge instead of centring (the look studio: the picture stays in view). */
+  dock?: 'right';
+  /** Dim the world behind a modal panel (default true). */
+  dim?: boolean;
+  /** Hide the panels under this one (a studio page over the pause menu shows only itself). */
+  solo?: boolean;
 }
+
+export type OpenOptions = { modal?: boolean; onClose?: () => void; bare?: boolean; sticky?: boolean; silent?: boolean; dock?: 'right'; dim?: boolean; solo?: boolean };
 
 export class UiLayer {
   readonly stack: Open[] = [];
@@ -43,10 +51,21 @@ export class UiLayer {
     return this.stack.find((o) => o.panel.id === id)?.panel;
   }
 
-  open(panel: Panel, o: { modal?: boolean; onClose?: () => void; bare?: boolean; sticky?: boolean; silent?: boolean } = {}): Panel {
+  open(panel: Panel, o: OpenOptions = {}): Panel {
     this.close(panel.id, true);
     if (panel.group) for (const other of this.stack.filter((x) => x.panel.group === panel.group)) this.close(other.panel.id, true);
-    this.stack.push({ panel, modal: o.modal ?? true, onClose: o.onClose, age: 0, rect: { x: 0, y: 0, w: panel.size.w, h: panel.size.h }, bare: o.bare || panel.overlay, sticky: o.sticky });
+    this.stack.push({
+      panel,
+      modal: o.modal ?? true,
+      onClose: o.onClose,
+      age: 0,
+      rect: { x: 0, y: 0, w: panel.size.w, h: panel.size.h },
+      bare: o.bare || panel.overlay,
+      sticky: o.sticky,
+      dock: o.dock,
+      dim: o.dim,
+      solo: o.solo,
+    });
     panel.open?.();
     if (!o.silent) this.onSound?.('open');
     return panel;
@@ -101,9 +120,15 @@ export class UiLayer {
   }
 
   draw(ui: UiCanvas, time: number): void {
+    // a solo panel hides everything under it
+    let from = 0;
     this.stack.forEach((o, i) => {
+      if (o.solo) from = i;
+    });
+    this.stack.forEach((o, i) => {
+      if (i < from) return;
       const last = i === this.stack.length - 1;
-      if (o.modal && (last || this.stack.slice(i + 1).every((x) => !x.modal))) {
+      if (o.modal && o.dim !== false && (last || this.stack.slice(i + 1).every((x) => !x.modal))) {
         // dim the world with a checker of ink (pixel "transparency")
         for (let y = 0; y < ui.h; y += 2) ui.rect(0, y, ui.w, 1, 'ink');
       }
@@ -121,7 +146,7 @@ export class UiLayer {
       const w = Math.min(o.panel.size.w, roomW);
       const h = Math.min(o.panel.size.h, roomH);
       const open = Math.min(1, o.age / 0.12);
-      const x = Math.floor((ui.w - w) / 2);
+      const x = o.dock === 'right' ? Math.max(6, ui.w - w - 6) : Math.floor((ui.w - w) / 2);
       const y = Math.max(o.bare ? 2 : 16, Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
       o.rect = { x, y, w, h };
       if (!o.bare) {

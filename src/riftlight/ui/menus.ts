@@ -3,7 +3,7 @@
  * difficulty sliders), settings, save slots, dev tools and the rift keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { FILTER_PRESETS, type AudioManager, type QualityLevel } from '../../engine';
+import { LOOK_PRESETS, type AudioManager, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -54,6 +54,8 @@ export interface MenuHost {
   openPanel(id: 'inventory' | 'skills' | 'tree' | 'character'): unknown;
   /** Photo mode (the showcase): optional, so other hosts can leave it out. */
   photoMode?(): void;
+  /** The look studio (filters per layer): optional, so other hosts can leave it out. */
+  lookStudio?(): void;
 }
 
 const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
@@ -83,6 +85,7 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'button', id: 'tree', label: 'Passive tree', onClick: () => h.openPanel('tree'), hint: 'spend passive points (P)' },
       { kind: 'button', id: 'character', label: 'Character', onClick: () => h.openPanel('character'), hint: 'stats and where they come from (C)' },
       { kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) },
+      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'look', label: 'Look studio', onClick: () => h.lookStudio!(), hint: 'pixel, cel, palettes... per layer (L)' }] : []),
       ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: 'Photo mode', onClick: () => h.photoMode!(), hint: 'free camera, filters, save a PNG (O)' }] : []),
       { kind: 'button', id: 'dev', label: 'Dev', onClick: () => h.openMenu(devMenu(h)), hint: 'debug and agent tools' },
       { kind: 'gap', id: 'g' },
@@ -133,7 +136,9 @@ export function tuningMenu(h: MenuHost): Menu {
   );
 }
 
-const LOOKS = ['', ...Object.keys(FILTER_PRESETS)];
+/** The settings' looks: the default, every named look, and the studio's custom one once there is one. */
+const looks = (s: Settings) => ['', ...Object.keys(LOOK_PRESETS).filter((n) => n !== 'none'), ...(s.customLook ? ['custom'] : [])];
+const lookLabel = (l: string) => (l ? l.replace(/_/g, ' ') : 'default');
 const QUALITIES: (QualityLevel | 'auto')[] = ['auto', 'low', 'medium', 'high'];
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 
@@ -158,7 +163,8 @@ export function settingsMenu(h: MenuHost): Menu {
       vol('music', 'Music'),
       vol('sfx', 'Sound effects'),
       { kind: 'choice', id: 'quality', label: 'Quality', options: QUALITIES, get: () => QUALITIES.indexOf(s.quality), set: (i) => change(() => (s.quality = QUALITIES[i]!))() },
-      { kind: 'choice', id: 'look', label: 'Look', options: LOOKS.map((l) => l || 'clean'), get: () => Math.max(0, LOOKS.indexOf(s.look)), set: (i) => change(() => (s.look = LOOKS[i]!))(), hint: 'post filters' },
+      { kind: 'choice', id: 'look', label: 'Look', options: looks(s).map(lookLabel), get: () => Math.max(0, looks(s).indexOf(s.look)), set: (i) => change(() => (s.look = looks(s)[i]!))(), hint: 'pixel art and filters' },
+      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'studio', label: 'Look studio', onClick: () => h.lookStudio!(), hint: 'filters per layer, presets and sliders' }] : []),
       {
         kind: 'slider',
         id: 'zoom',
