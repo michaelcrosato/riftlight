@@ -2,22 +2,45 @@ import {
   BasicShadowMap,
   type Camera,
   HalfFloatType,
+  type Material,
   NearestFilter,
   Node,
+  type NodeFrame,
   NoToneMapping,
+  type Object3D,
   type PassNode,
   RenderPipeline,
   RenderTarget,
   type RTTNode,
   type Scene,
   SRGBColorSpace,
+  type UniformNode,
   UnsignedByteType,
   WebGPURenderer,
 } from 'three/webgpu';
-import { convertToTexture, float, pass, renderOutput, rtt, uniform } from 'three/tsl';
+import { convertToTexture, float, min, pass, renderOutput, rtt, screenUV, select, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
 import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, computeFraming } from '../framing';
-import { FILTERS, type FilterContext, applyFilters, getFilter, splitFilters } from './filters';
+import { FILTERS, type FilterContext, applyFilter, filterParams, getFilter } from './filters';
+import {
+  DEFAULT_PIXEL,
+  type Look,
+  type LookFilter,
+  type LookLayer,
+  type LookPlan,
+  type LookSource,
+  type LookTarget,
+  activeIds,
+  cloneLook,
+  lookFilters,
+  lookFromFilters,
+  lookLayerOf,
+  LOOK_TARGETS,
+  normalizeLook,
+  normalizePixel,
+  paramsOf,
+  planLook,
+} from './look';
 import { vertexSnap } from './toon';
 import { installWebGPUCompat } from './webgpuCompat';
 
@@ -42,8 +65,10 @@ export interface PixelRendererOptions {
   aspect?: AspectMode;
   mode?: RenderMode;
   edges?: EdgeSettings;
-  /** Post filters (ids from FILTERS), applied in order in Pixel mode. */
+  /** Post filters (ids from FILTERS), applied in order in Pixel mode, on the whole scene. */
   filters?: readonly string[];
+  /** A full look (per-layer pixel art and filters); wins over `filters` and `edges`. */
+  look?: Look;
   /** Debug/test override: skip native WebGPU and use WebGPURenderer's WebGL 2 backend. */
   forceWebGL?: boolean;
 }
@@ -66,6 +91,35 @@ interface OutputEntry {
   node: Node;
   /** Art-resolution render targets of this graph (resized on layout). */
   artTargets: RTTNode[];
+}
+
+type NumberUniform = UniformNode<'float', number>;
+
+/**
+ * One scene render: the whole scene (`all`), or one look layer (the pass draws only that
+ * layer's objects). A pixelation pass either way: pixel art renders at the art resolution
+ * (× the look's pixel size) with outlines, clean renders at the device resolution.
+ */
+interface Source {
+  pass: PassNode;
+  /** Device pixels per rendered pixel: the pass renders at canvas / pixelSize. */
+  pixelSize: NumberUniform;
+  /** Art pixels per rendered pixel (the look's pixel size; 1 when clean). */
+  size: NumberUniform;
+  depthEdge: NumberUniform;
+  normalEdge: NumberUniform;
+}
+
+/** An image while a graph is built: a node, the resolution it is evaluated at and its depth. */
+interface Img {
+  node: Node;
+  /** Evaluated in the art-resolution stage (else per device pixel). */
+  art: boolean;
+  /** FilterContext.pixelSize at this stage. */
+  px: Node;
+  /** FilterContext.pixelSize once upscaled to device resolution. */
+  devicePx: Node;
+  depth: (uv: Node) => Node;
 }
 
 const OUTPUT_CACHE_SIZE = 8;
@@ -101,6 +155,8 @@ export class PixelRenderer {
   framing!: Framing;
   /** How many times a lost GPU device / WebGL context was recovered from. */
   recoveries = 0;
+  /** Counts look changes (UIs that mirror the look re-sync when it moves). */
+  lookVersion = 0;
   /** Called after a lost device was recovered with a new renderer and canvas. */
   onRecovered: ((canvas: HTMLCanvasElement) => void) | null = null;
 
@@ -115,10 +171,15 @@ export class PixelRenderer {
   private _baseResolution: Resolution;
   private _resolution: Resolution;
   private _aspect: AspectMode;
-  private readonly pixelSize = uniform(1);
-  private readonly depthEdge = uniform(DEFAULT_EDGES.depth);
-  private readonly normalEdge = uniform(DEFAULT_EDGES.normal);
-  private _filters: string[];
+  /** Device pixels per art pixel (the framing's integer scale). */
+  private readonly scale = uniform(1);
+  private _look: Look;
+  private plan: LookPlan;
+  /** The whole-scene filter ids (stable array until they change: the debug UI compares it). */
+  private _filters: readonly string[] = [];
+  private readonly sources = new Map<'all' | LookLayer, Source>();
+  /** One uniform per target, filter and parameter (`scene/crt/curve`), shared by every graph. */
+  private readonly params = new Map<string, NumberUniform>();
   private readonly outputCache = new Map<string, OutputEntry>();
   private readonly onResize = () => this.layout();
   private resizeObserver: ResizeObserver | null = null;
@@ -141,9 +202,11 @@ export class PixelRenderer {
     this._resolution = this._baseResolution;
     this._aspect = options.aspect ?? 'adaptive';
     const edges = options.edges ?? DEFAULT_EDGES;
-    this.depthEdge.value = edges.depth;
-    this.normalEdge.value = edges.normal;
-    this._filters = (options.filters ?? []).filter((id) => getFilter(id));
+    const pixel = normalizePixel({ ...DEFAULT_PIXEL, outline: edges.depth, crease: edges.normal });
+    const base = { scene: [], actors: { pixel, filters: [] }, environment: { pixel, filters: [] } };
+    this._look = options.look ? normalizeLook(options.look) : lookFromFilters(options.filters ?? [], base);
+    this.plan = planLook(this._look);
+    this.syncLookState();
     this.createRenderer();
   }
 
@@ -185,7 +248,9 @@ export class PixelRenderer {
     canvas.dataset.engineCanvas = 'true';
 
     this._renderer = renderer;
-    this.pixelNode = pixelationPass(this.scene, this.camera, this.pixelSize, this.normalEdge, this.depthEdge) as unknown as PassNode;
+    // Scene passes belong to a renderer's device: a recovered renderer gets new ones.
+    this.sources.clear();
+    this.pixelNode = this.source('all').pass;
     this.rawNode = pass(this.scene, this.camera);
     this._pipeline = new RenderPipeline(renderer);
     // The output color transform is applied explicitly (renderOutput) so filters can run
@@ -227,9 +292,12 @@ export class PixelRenderer {
     try {
       // The pixel pass renders to an MRT target (color + normal); register its attachments
       // before compiling so the compiled pipelines match the real ones.
-      this.pixelNode.getTextureNode('normal');
-      this.pixelNode.getTextureNode('depth');
-      await this.pixelNode.compileAsync(r);
+      const passes = new Set([this.pixelNode, ...this.plan.sources.map((s) => this.source(s.layer).pass)]);
+      for (const p of passes) {
+        p.getTextureNode('normal');
+        p.getTextureNode('depth');
+        await p.compileAsync(r);
+      }
       await this.rawNode.compileAsync(r);
     } catch (e) {
       console.info('[PixelRenderer] precompile skipped:', e);
@@ -246,16 +314,77 @@ export class PixelRenderer {
     this.rebuildOutput();
   }
 
+  /** The whole-scene filter ids, in order (see `look` for the per-layer ones). */
   get filters(): readonly string[] {
     return this._filters;
   }
 
-  /** Replace the filter stack (ids from FILTERS, applied in order; Pixel mode only). */
+  /** Replace the whole-scene filter stack (ids from FILTERS, applied in order; Pixel mode only). Layers keep their looks. */
   setFilters(ids: readonly string[]): void {
     const next = ids.filter((id) => getFilter(id));
     if (next.join() === this._filters.join()) return;
-    this._filters = next;
-    this.rebuildOutput();
+    this.setLook(lookFromFilters(next, this._look));
+  }
+
+  /** The current look (a copy: change it and pass it to `setLook`). */
+  get look(): Look {
+    return cloneLook(this._look);
+  }
+
+  /** True while the look renders characters/objects and the environment as two passes. */
+  get split(): boolean {
+    return this.plan.split;
+  }
+
+  /**
+   * Apply a look: pixel art or clean rendering and a filter stack per layer, plus filters
+   * on the whole frame (see render/look.ts). Parameters and pixel sizes only update
+   * uniforms; the graph is rebuilt (or taken from the cache) only when its shape changes.
+   */
+  setLook(look: Look): void {
+    this._look = normalizeLook(look);
+    this.lookVersion++;
+    const before = this.plan.key;
+    this.plan = planLook(this._look);
+    this.syncLookState();
+    if (this.plan.key !== before) this.rebuildOutput();
+    else this.syncFilterEffects();
+  }
+
+  /** Mirror the look into uniforms: parameter values, pixel sizes and edges, the scene filter ids. */
+  private syncLookState(): void {
+    for (const target of LOOK_TARGETS) {
+      for (const f of lookFilters(this._look, target)) {
+        for (const [key, value] of Object.entries(paramsOf(f))) this.paramNode(target, f.id, key).value = value;
+      }
+    }
+    const ids = this._look.scene.map((f) => f.id);
+    if (ids.join() !== this._filters.join()) this._filters = ids;
+    this.syncSources();
+  }
+
+  private syncSources(): void {
+    const scale = this.scale.value;
+    for (const src of this.plan.sources) {
+      const s = this.sources.get(src.layer);
+      if (!s) continue;
+      const p = src.pixel;
+      s.size.value = p ? p.size : 1;
+      s.pixelSize.value = p ? scale * p.size : 1;
+      s.depthEdge.value = p ? p.outline : 0;
+      s.normalEdge.value = p ? p.crease : 0;
+    }
+  }
+
+  private paramNode(target: LookTarget, id: string, key: string): NumberUniform {
+    const name = `${target}/${id}/${key}`;
+    let u = this.params.get(name);
+    if (!u) {
+      const def = getFilter(id);
+      u = uniform(def ? (filterParams(def).find((p) => p.key === key)?.default ?? 0) : 0);
+      this.params.set(name, u);
+    }
+    return u;
   }
 
   private rebuildOutput(): void {
@@ -264,9 +393,13 @@ export class PixelRenderer {
     this.syncFilterEffects();
   }
 
-  /** Filters with effects outside the post pass (PS1 vertex snap) follow the active stack. */
-  private syncFilterEffects(): void {
-    for (const f of FILTERS) f.setActive?.(this._mode === 'pixel' && this._filters.includes(f.id));
+  /**
+   * Filters with effects outside the post pass (PS1 vertex snap) follow the active stack:
+   * the whole-scene filters between passes, plus a layer's own filters while its pass draws.
+   */
+  private syncFilterEffects(layer?: LookLayer): void {
+    const on = this._mode === 'pixel' ? new Set([...activeIds(this._look, 'scene'), ...(layer ? activeIds(this._look, layer) : [])]) : new Set<string>();
+    for (const f of FILTERS) f.setActive?.(on.has(f.id));
   }
 
   toggleMode(): RenderMode {
@@ -304,17 +437,25 @@ export class PixelRenderer {
    */
   setCamera(camera: Camera): void {
     this.camera = camera;
-    (this.pixelNode as unknown as { camera: Camera }).camera = camera;
+    for (const s of this.sources.values()) (s.pass as unknown as { camera: Camera }).camera = camera;
     (this.rawNode as unknown as { camera: Camera }).camera = camera;
   }
 
+  /** Pixel-art outline strengths (of the environment layer; the look holds both layers'). */
   get edges(): EdgeSettings {
-    return { depth: this.depthEdge.value, normal: this.normalEdge.value };
+    const p = this._look.environment.pixel ?? this._look.actors.pixel;
+    return { depth: p?.outline ?? 0, normal: p?.crease ?? 0 };
   }
 
+  /** Set the pixel-art outline strengths of every pixel-art layer. */
   setEdges(edges: Partial<EdgeSettings>): void {
-    if (edges.depth !== undefined) this.depthEdge.value = edges.depth;
-    if (edges.normal !== undefined) this.normalEdge.value = edges.normal;
+    const look = this.look;
+    for (const l of [look.actors, look.environment]) {
+      if (!l.pixel) continue;
+      if (edges.depth !== undefined) l.pixel.outline = edges.depth;
+      if (edges.normal !== undefined) l.pixel.crease = edges.normal;
+    }
+    this.setLook(look);
   }
 
   /** Recompute integer-scaled canvas layout for the current viewport and aspect mode. */
@@ -329,7 +470,8 @@ export class PixelRenderer {
           ? this._baseResolution
           : { width: f.artWidth, height: f.artHeight };
     }
-    this.pixelSize.value = f.scale; // the scene pass renders at canvas / scale = art res
+    this.scale.value = f.scale; // a pixel-art pass renders at canvas / (scale × pixel size)
+    this.syncSources();
     vertexSnap.resolution.value.set(f.artWidth, f.artHeight);
     for (const entry of this.outputCache.values()) for (const t of entry.artTargets) this.sizeArtTarget(t);
     this._renderer.setSize(f.canvasWidth, f.canvasHeight, false);
@@ -438,7 +580,7 @@ export class PixelRenderer {
   // ---------------------------------------------------------------- output graphs
 
   private outputFor(mode: RenderMode): Node {
-    const key = mode === 'pixel' ? `pixel:${this._filters.join(',')}` : 'raw';
+    const key = mode === 'pixel' ? `pixel:${this.plan.key}` : 'raw';
     let entry = this.outputCache.get(key);
     if (entry) {
       // Most recently used goes last (eviction order).
@@ -446,7 +588,7 @@ export class PixelRenderer {
       this.outputCache.set(key, entry);
       return entry.node;
     }
-    entry = mode === 'pixel' ? this.buildPixelOutput() : { node: this.buildRawOutput(), artTargets: [] };
+    entry = mode === 'pixel' ? this.buildPixelOutput(this.plan) : { node: this.buildRawOutput(), artTargets: [] };
     this.outputCache.set(key, entry);
     // Bound the cache; evicted graphs free their render targets.
     for (const k of this.outputCache.keys()) {
@@ -460,7 +602,18 @@ export class PixelRenderer {
     return renderOutput(this.rawNode, this._renderer.toneMapping, this._renderer.outputColorSpace) as unknown as Node;
   }
 
-  private buildPixelOutput(): OutputEntry {
+  /**
+   * The pixel-mode graph for a look. Pixel-art sources start in the art-resolution stage
+   * (one fragment per art pixel) and run their leading `art` filters there; the first
+   * `display` filter, a clean source or the end of the graph renders the stage into an
+   * art-sized target, whose one nearest-neighbour upscale is sampled per device pixel.
+   *
+   * One source (both layers look the same): the scene, its filters, the screen. Two: each
+   * layer renders only its own objects through its own filters, the nearer of the two wins
+   * per pixel (their depth buffers), and the whole-scene filters run on the result. Both
+   * layers in the art stage compose there too; otherwise both are upscaled first.
+   */
+  private buildPixelOutput(plan: LookPlan): OutputEntry {
     const artTargets: RTTNode[] = [];
     const artTexture = (node: Node): RTTNode => {
       const t = rtt(node, this._resolution.width, this._resolution.height, {
@@ -473,15 +626,100 @@ export class PixelRenderer {
       artTargets.push(t);
       return t;
     };
-    const { art, display } = splitFilters(this._filters);
-    // Art stage: rendered into an art-resolution target, one fragment per art pixel.
-    const artFx: FilterContext = { pixelSize: float(1), texture: artTexture };
-    const scene = renderOutput(this.pixelNode, this._renderer.toneMapping, this._renderer.outputColorSpace);
-    const artImage = artTexture(applyFilters(scene, art, artFx));
-    // Display stage: the nearest-neighbour upscale (sampling the art target at the quad's
-    // uv) plus display-resolution filters, if any.
-    const displayFx: FilterContext = { pixelSize: this.pixelSize, texture: (node: Node) => convertToTexture(node) as unknown as RTTNode };
-    return { node: applyFilters(artImage, display, displayFx) as Node, artTargets };
+    const toDevice = (img: Img): Img => (img.art ? { ...img, node: artTexture(img.node) as unknown as Node, art: false, px: img.devicePx } : img);
+    const chain = (start: Img, filters: readonly LookFilter[], target: LookTarget): Img => {
+      let img = start;
+      for (const f of filters) {
+        const def = getFilter(f.id);
+        if (!def) continue;
+        if (img.art && def.space === 'display') img = toDevice(img);
+        const fx: FilterContext = {
+          pixelSize: img.px,
+          texture: img.art ? artTexture : (node: Node) => convertToTexture(node) as unknown as RTTNode,
+          param: (id, key) => this.paramNode(target, id, key),
+          depth: img.depth,
+        };
+        img = { ...img, node: applyFilter(img.node, f.id, fx) as Node };
+      }
+      return img;
+    };
+    const start = (src: LookSource): Img => {
+      const s = this.source(src.layer);
+      const depthTex = s.pass.getTextureNode('depth');
+      const depth = (uv: Node) => (depthTex.sample(uv as never) as unknown as { r: Node }).r;
+      const node = renderOutput(s.pass, this._renderer.toneMapping, this._renderer.outputColorSpace) as unknown as Node;
+      return src.pixel
+        ? { node, art: true, px: s.size as unknown as Node, devicePx: s.pixelSize as unknown as Node, depth }
+        : { node, art: false, px: this.scale as unknown as Node, devicePx: this.scale as unknown as Node, depth };
+    };
+
+    if (!plan.split) {
+      const img = chain(start(plan.sources[0]!), plan.scene, 'scene');
+      return { node: toDevice(img).node, artTargets };
+    }
+    const [a, e] = plan.sources as [LookSource, LookSource];
+    let actors = chain(start(a), a.filters, 'actors');
+    let world = chain(start(e), e.filters, 'environment');
+    const art = actors.art && world.art;
+    if (!art) {
+      actors = toDevice(actors);
+      world = toDevice(world);
+    }
+    const front = (actors.depth(screenUV as unknown as Node) as unknown as { lessThan(n: Node): Node }).lessThan(world.depth(screenUV as unknown as Node));
+    const composed: Img = {
+      node: select(front as never, actors.node as never, world.node as never) as unknown as Node,
+      art,
+      px: (art ? float(1) : this.scale) as unknown as Node,
+      devicePx: this.scale as unknown as Node,
+      depth: (uv) => min(actors.depth(uv) as never, world.depth(uv) as never) as unknown as Node,
+    };
+    return { node: toDevice(chain(composed, plan.scene, 'scene')).node, artTargets };
+  }
+
+  /** The scene pass of a source (created on first use, kept for the renderer's life). */
+  private source(layer: 'all' | LookLayer): Source {
+    let s = this.sources.get(layer);
+    if (s) return s;
+    const pixelSize = uniform(1);
+    const size = uniform(1);
+    const depthEdge = uniform(0);
+    const normalEdge = uniform(0);
+    const pass = pixelationPass(this.scene, this.camera, pixelSize, normalEdge, depthEdge) as unknown as PassNode;
+    if (layer !== 'all') this.drawOnly(pass, layer);
+    s = { pass, pixelSize, size, depthEdge, normalEdge };
+    this.sources.set(layer, s);
+    this.syncSources();
+    return s;
+  }
+
+  /**
+   * Make a scene pass draw only one layer's opaque objects (`lookLayerOf`). Transparent
+   * ones (glows, telegraphs, loot beams, contact shadows) draw in both passes: each blends
+   * them over its own layer, depth-tested against it, so whichever layer wins a pixel shows
+   * them correctly in front of or behind it. It filters draws, not the scene: lights, fog
+   * and shadow maps (cast by every object, rendered by three with their own draw function)
+   * are the same in both passes. While it draws, the layer's own filters' side effects (PS1
+   * wobble) are on.
+   */
+  private drawOnly(pass: PassNode, layer: LookLayer): void {
+    const base = pass.updateBefore.bind(pass);
+    const actors = layer === 'actors';
+    let r: WebGPURenderer;
+    const draw = (object: Object3D, scene: Scene, camera: Camera, geometry: never, material: Material, group: never, lightsNode: never, clipping: never, passId?: string | null) => {
+      if (material.transparent || (lookLayerOf(object) === 'actors') === actors) r.renderObject(object, scene, camera, geometry, material, group, lightsNode, clipping, passId);
+    };
+    pass.updateBefore = (frame: NodeFrame) => {
+      r = frame.renderer as unknown as WebGPURenderer;
+      const previous = r.getRenderObjectFunction();
+      r.setRenderObjectFunction(draw as never);
+      this.syncFilterEffects(layer);
+      try {
+        return base(frame);
+      } finally {
+        r.setRenderObjectFunction(previous);
+        this.syncFilterEffects();
+      }
+    };
   }
 
   private sizeArtTarget(t: RTTNode): void {
@@ -501,7 +739,7 @@ export class PixelRenderer {
     // RTTs (art targets, convertToTexture) and TSL display nodes with their own targets
     // (bloom, …) override Node.dispose; the shared scene passes must survive. Iterative
     // with a visited set: filter graphs share sub-nodes heavily (palette searches).
-    const shared = new Set<Node>([this.pixelNode, this.rawNode]);
+    const shared = new Set<Node>([this.rawNode, ...[...this.sources.values()].map((s) => s.pass as unknown as Node)]);
     const seen = new Set<Node>();
     const stack: Node[] = [entry.node];
     while (stack.length) {

@@ -6,6 +6,7 @@
 import { type AnimationClip, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
 import { compileClip } from '../../engine/animation/compile';
 import { restPoseOf } from '../../engine/animation';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Rng } from '../core/rng';
 import { ClipPlayer } from '../game/clipPlayer';
@@ -136,6 +137,7 @@ export class Npc {
     if (!build) throw new Error(`no townsfolk model "${def.id}"`);
     this.model = build();
     this.root = this.model;
+    setLookLayer(this.root, 'actors');
     const rest = restPoseOf(this.model, HERO_RIG);
     const clips: AnimationClip[] = (NPC_CLIPS[def.id] ?? []).map((c) => compileClip(c, HERO_RIG, rest));
     this.player = new ClipPlayer(this.model, clips);

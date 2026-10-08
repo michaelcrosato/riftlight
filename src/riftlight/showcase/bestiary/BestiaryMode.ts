@@ -15,6 +15,7 @@
  */
 import { Color, type Object3D, Vector3 } from 'three/webgpu';
 import { type CameraConfig, FirstPersonRig, FreeRig, type LightHandle, PALETTE, type PaletteColor, readMoveInput } from '../../../engine';
+import { setLookLayer } from '../../../engine/render/lookLayer';
 import { Rng } from '../../core/rng';
 import type { Genome } from '../../core/types';
 import { ARCHETYPES, buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, PARTS, PLANS, validateGenome } from '../../monsters';
@@ -171,6 +172,7 @@ export class BestiaryMode implements ShowcaseMode {
     built.object.scale.multiplyScalar(fit);
     built.object.position.copy(at);
     built.object.rotation.y = yaw;
+    setLookLayer(built.object, 'actors');
     this.hall!.root.add(built.object);
     runtime.play('Idle', { fade: 0 });
     return { entry, genome, built, runtime, at: at.clone(), yaw, fit, clip: 'Idle', back: 0, light: null };

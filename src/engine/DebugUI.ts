@@ -1,7 +1,8 @@
 import { CAMERA_PRESETS, type CameraPreset, type CameraRig, FreeRig } from './camera';
 import type { Engine } from './Engine';
 import { RESOLUTIONS } from './framing';
-import { FILTERS, FILTER_PRESETS } from './render/filters';
+import { FILTERS } from './render/filters';
+import { LOOK_PRESETS, lookPresetOf } from './render/look';
 
 /**
  * DOM overlay (not rendered through the pixel pipeline, so it stays legible).
@@ -19,7 +20,7 @@ export class DebugUI {
   private readonly camSelect: HTMLSelectElement;
   private readonly lookSelect: HTMLSelectElement;
   private readonly boxes: HTMLInputElement[];
-  private syncedFilters: readonly string[] | null = null;
+  private syncedLook = -1;
   private syncedRig: CameraRig | null = null;
   private syncedFixed: boolean | null = null;
   private syncedZoom = 0;
@@ -29,7 +30,7 @@ export class DebugUI {
     this.root = document.createElement('div');
     this.root.className = 'debug-ui';
     const presets = CAMERA_PRESETS.map((p) => `<option value="${p}">${p}</option>`).join('');
-    const looks = Object.keys(FILTER_PRESETS).map((n) => `<option value="${n}">${n}</option>`).join('');
+    const looks = Object.keys(LOOK_PRESETS).map((n) => `<option value="${n}">${n}</option>`).join('');
     const filters = FILTERS.map((f) => `<label title="${f.group}"><input type="checkbox" value="${f.id}">${f.label}</label>`).join('');
     this.root.innerHTML = `
       <div class="row"><span>Backend</span><b data-f="backend"></b></div>
@@ -66,7 +67,7 @@ export class DebugUI {
 
     const look = (this.lookSelect = this.root.querySelector<HTMLSelectElement>('[data-a="look"]')!);
     look.addEventListener('change', () => {
-      if (look.value) engine.setFilters(FILTER_PRESETS[look.value] ?? []);
+      if (look.value && LOOK_PRESETS[look.value]) engine.setLook(LOOK_PRESETS[look.value]!);
     });
     this.boxes = [...this.root.querySelectorAll<HTMLInputElement>('.filters input')];
     for (const box of this.boxes) {
@@ -118,11 +119,11 @@ export class DebugUI {
 
     // Selects and checkboxes: only when the stack / camera changed (never mid-interaction).
     if (this.camSelect.value !== c.preset && document.activeElement !== this.camSelect) this.camSelect.value = c.preset;
-    if (r.filters !== this.syncedFilters) {
-      const match = Object.keys(FILTER_PRESETS).find((n) => FILTER_PRESETS[n]!.join() === r.filters.join()) ?? '';
+    if (r.lookVersion !== this.syncedLook) {
+      const match = lookPresetOf(r.look) ?? '';
       if (this.lookSelect.value !== match && document.activeElement !== this.lookSelect) this.lookSelect.value = match;
       for (const box of this.boxes) box.checked = r.filters.includes(box.value);
-      this.syncedFilters = r.filters;
+      this.syncedLook = r.lookVersion;
     }
 
     const fixed = c instanceof FreeRig ? c.fixed : null;

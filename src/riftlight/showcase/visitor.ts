@@ -14,6 +14,7 @@ import type { AnimationClip, Object3D } from 'three/webgpu';
 import { Vector3 } from 'three/webgpu';
 import { compileClips, ContactShadow, type GameContext, type MoveInput, type MoveState, PlatformerCharacter } from '../../engine';
 import type { Physics } from '../../engine/physics/Physics';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../../game/hero';
 
 /** Compiled once per page: clips address joints by name, so every clone of the hero shares them. */
@@ -37,6 +38,7 @@ export class Visitor {
     readonly model: Object3D,
   ) {
     this.shadow.visible = false;
+    setLookLayer(model, 'actors');
   }
 
   /** A fresh hero clone, ready to spawn (the GLB is downloaded once and cached by the engine). */

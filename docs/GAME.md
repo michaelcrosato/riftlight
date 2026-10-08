@@ -1414,8 +1414,32 @@ a save from a newer build is refused, not mangled. Export / import is the same e
 JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on town entry and
 level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
-sockets survive a load. Device settings (look, quality, zoom, damage numbers, loot
-filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the engine's audio store.
+sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
+damage numbers, loot filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the
+engine's audio store.
+
+### The look studio (`ui/lookStudio.ts`)
+
+Pause → **Look studio**, Settings → Look studio, or **L**: the engine's looks (docs/ENGINE.md,
+*Looks: filters per layer*) as menus. The pages dock against the right edge without dimming
+the world (`UiLayer.open(…, { dock: 'right', dim: false, solo: true })`), so every change shows
+at once while the world is paused.
+
+- **Look**: a named look to start from (retro stacks, `pixel heroes`, `cel cartoon`, …).
+- **Apply to**: whole scene · characters (the hero, monsters, townsfolk, the cat, loot on the
+  ground, chests and shrines: tagged with `setLookLayer`) · environment.
+- **Pixel art**: on (preset `crisp` / `no lines` / `inked` / `chunky` / `blocky` / `mosaic`;
+  pixel size, outline, creases) or off (clean, full resolution). For the whole scene it sets
+  both layers.
+- **Cel shading, Palettes, Colour grade, Consoles, Screen, Signal, Stylize**: a page per filter
+  type, each filter on/off for the chosen part; an active one shows its preset and a slider per
+  parameter, strength included. Filters that move pixels (CRT, chromatic, VHS, NTSC) are
+  whole-scene only; a layer's page says so instead of offering them.
+- **Clear** the part's filters, **Reset to default**.
+
+Every change applies at once and is remembered: a named look as `settings.look`, anything else
+as `settings.look = 'custom'` + `settings.customLook` (the Settings menu's Look picker lists
+`custom` once there is one). Showcase modes and photo mode save the whole look and put it back.
 
 ### The difficulty sliders
 
@@ -1518,9 +1542,9 @@ active it owns the frame and the town stands still behind it. A mode (`ShowcaseM
 `enter()` (build the stage), `leave()` (remove it), `camera()`, `filters`, `fixedUpdate`,
 `update`, `draw` and `cameraTarget`. The host runs the transition: the camera swoops toward the
 thing you used and an iris closes (HUD rects), the mode builds behind it, then
-`engine.setCamera(mode.camera(), { syncUrl: false })` and `setFilters(mode.filters)` swap the
-look and the iris opens. Leaving puts back the filters, the render mode and the game's own iso
-preset. No `engine.loadGame`: the town, the hero, the save and the music player survive, and each
+`engine.setCamera(mode.camera(), { syncUrl: false })` and `setLook(lookFromFilters(mode.filters))`
+swap the look and the iris opens. Leaving puts back the player's look, the render mode and the
+game's own iso preset. No `engine.loadGame`: the town, the hero, the save and the music player survive, and each
 stage removes every collider, trigger and controller it added (the e2e suite checks
 `physics.counts()` comes back to where it was). The town gets the booth and the archway through
 `Town.extend({ root, blockers, interactables, activate, deactivate, update })`

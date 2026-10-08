@@ -6,7 +6,7 @@
  * mods already work.
  */
 import { BoxGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
-import { compileClip, ContactShadow, PALETTE, toonMaterial } from '../../../engine';
+import { compileClip, ContactShadow, PALETTE, setLookLayer, toonMaterial } from '../../../engine';
 import { restPoseOf } from '../../../engine/animation';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../../../game/hero';
 import { flat as flatMod, inc, type Mod } from '../../core/mods';
@@ -84,6 +84,7 @@ export class StubHero implements HeroPort {
       armour: 10,
     });
     this.object.name = 'StubHero';
+    setLookLayer(this.object, 'actors');
   }
 
   async init(): Promise<void> {

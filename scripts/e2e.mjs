@@ -24,7 +24,9 @@
 // cameras         every camera preset renders, zooms (except first person), moves the
 //                 character in its own basis; side locks the lane; free → fix → reload as fixed.
 // filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
-//                 with zero errors; Raw 3D mode bypasses filters.
+//                 with zero errors; every look renders; per-layer looks change only their
+//                 layer (pixel characters on a clean world, a grade on the environment only);
+//                 sliders don't rebuild the graph; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
@@ -736,6 +738,50 @@ async function runFilters(browserExe, s, label) {
       else check(false, `filter ${id}: diff ${d.toFixed(2)}, gpuErrors ${errs}, ${logs.slice(before).join(' | ')}`);
     }
     check(ok === ids.length, `${ok}/${ids.length} filters compile, render and change the frame`);
+
+    // Looks: characters & objects (the hero, crates, coins) and the environment render as
+    // two passes with their own pixel art and filters, composed by depth.
+    await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters([]));
+    const looks = await page.evaluate(() => Object.keys(window.__PIXEL_ENGINE__.lookPresets));
+    const shotLook = (look, file) => page.evaluate((l) => window.__PIXEL_ENGINE__.setLook(typeof l === 'string' ? window.__PIXEL_ENGINE__.lookPresets[l] : l), look).then(() => capture(page, file));
+    const changed = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.pixels.length; i += 4) if (Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]) > 6) n++;
+      return n / (a.pixels.length / 4);
+    };
+    let lookOk = 0;
+    for (const name of looks) {
+      const before = logs.length;
+      const f = await shotLook(name, `${label}-look-${name}.png`);
+      const st = await state(page);
+      const good = st.gpuErrors.length === 0 && logs.length === before && colorCount(f) >= 2 && st.look === name && (name === 'none' || meanDiff(base, f) > 0.05);
+      if (good) lookOk++;
+      else check(false, `look ${name}: look ${st.look}, diff ${meanDiff(base, f).toFixed(2)}, gpuErrors ${st.gpuErrors.length}, ${logs.slice(before).join(' | ')}`);
+    }
+    check(lookOk === looks.length, `${lookOk}/${looks.length} looks render (${looks.length - 1} besides the default)`);
+    const hd = await shotLook('hd_clean', `${label}-look-hd.png`);
+    const heroes = await shotLook('pixel_heroes', `${label}-look-heroes.png`);
+    const split = (await state(page)).split;
+    const onActors = changed(hd, heroes);
+    check(split && onActors > 0.0005 && onActors < 0.03, `pixel-art characters on a clean world: two passes, only the characters change (${(onActors * 100).toFixed(2)}% of pixels)`);
+    const grayAll = await shotLook({ scene: [{ id: 'grayscale' }] }, `${label}-look-gray.png`);
+    const grayWorld = await shotLook({ scene: [], environment: { filters: [{ id: 'grayscale' }] } }, `${label}-look-gray-world.png`);
+    const colour = changed(grayAll, grayWorld);
+    check(colour > 0.0005 && colour < 0.05, `a grade on the environment only leaves the characters in colour (${(colour * 100).toFixed(2)}% of pixels differ from grading everything)`);
+    const graph = await page.evaluate(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const node = e.renderer.pipeline.outputNode;
+      const look = e.look;
+      look.environment.filters[0].params.amount = 0.4;
+      look.environment.pixel.size = 3;
+      look.environment.pixel.outline = 0.9;
+      e.setLook(look);
+      return { same: e.renderer.pipeline.outputNode === node, amount: e.look.environment.filters[0].params.amount };
+    });
+    const tweaked = await capture(page, `${label}-look-tweaked.png`);
+    const moved = meanDiff(grayWorld, tweaked);
+    check(graph.same && graph.amount === 0.4 && moved > 0.5, `sliders (strength, pixel size, outline) change the frame (diff ${moved.toFixed(2)}) and only move uniforms: the graph is not rebuilt`);
+    await page.evaluate(() => window.__PIXEL_ENGINE__.setLook(window.__PIXEL_ENGINE__.lookPresets.none));
 
     // Stacks and raw-mode bypass (the P hotkey itself is covered by the core suites).
     await page.evaluate(() => window.__PIXEL_ENGINE__.setFilters(['gameboy', 'lcd', 'vignette']));

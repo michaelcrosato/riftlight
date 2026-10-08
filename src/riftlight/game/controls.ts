@@ -51,6 +51,8 @@ export const KEYS = {
   codex: ['KeyK'],
   /** Photo mode (the showcase): free camera, filters, PNG capture. */
   photo: ['KeyO'],
+  /** The look studio: pixel art, cel shading, palettes... per layer, with presets and sliders. */
+  look: ['KeyL'],
   confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ', 'PadA'],
   back: ['Escape', 'Backspace', 'PadB'],
   up: ['ArrowUp', 'KeyW'],

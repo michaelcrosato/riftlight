@@ -1,6 +1,7 @@
 import { Group, type Object3D, Vector3 } from 'three/webgpu';
 import { ContactShadow, type PaletteColor } from '../../engine';
 import type { LightHandle } from '../../engine/render/lights';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
 import { Actor } from '../actors/Actor';
 import { HERO_KEYS } from '../actors/controls';
@@ -167,6 +168,7 @@ export class RealHero implements HeroPort {
     this.world = boot;
     boot.addHero(this.actor);
     this.object.name = 'Hero';
+    setLookLayer(this.object, 'actors');
     this.object.add(model, this.shadow);
     this.ctrl = { input: this.input, camera: { camera: ctx.engine.camera.camera, groundBasis: () => ({ right: X, forward: Z }) } };
     this.stats(save);

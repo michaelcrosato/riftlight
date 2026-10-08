@@ -5,6 +5,7 @@ import { disposeObject } from '../../engine/lifecycle';
 import type { Particles } from '../../engine/particles/Particles';
 import { type Physics, RAPIER } from '../../engine/physics/Physics';
 import type { LightHandle, LightPool, LightRequestOptions } from '../../engine/render/lights';
+import { setLookLayer } from '../../engine/render/lookLayer';
 import { toonMaterial } from '../../engine/render/toon';
 import type { Mod } from '../core/mods';
 import { Rng } from '../core/rng';
@@ -419,6 +420,7 @@ class LevelRuntime implements Level {
       }
       for (const p of parts) {
         p.name = `feature:${f.kind}`;
+        setLookLayer(p, 'actors'); // chests and shrines are objects
         this.root.add(p);
       }
       this.featureMeshes.set(f, { parts, light });
