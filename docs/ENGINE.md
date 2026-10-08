@@ -220,9 +220,13 @@ engine.setFilters(['crt']);                         // = the whole-scene stack; 
   default look draws exactly the old graph. A look that differs per layer renders two scene
   passes; each draws only its layer's objects (a render-object filter on the pass, so lights,
   fog and shadow maps, cast by every object, are the same in both), and per pixel the nearer
-  of the two depth buffers wins. Transparent materials always count as environment (they blend
-  over the world behind them). When both layers are pixel art they compose in the art stage;
-  otherwise both are upscaled first.
+  of the two depth buffers wins. Transparent materials (glows, telegraphs, loot beams, contact
+  shadows) draw in both passes, each blending them over its own layer, so they show in front
+  of or behind whichever layer wins a pixel. When both layers are pixel art they compose in
+  the art stage; otherwise both are upscaled first.
+- **Whole scene only.** Filters that move pixels (`crt`, `chromatic`, `vhs`, `ntsc`:
+  `FilterDef.sceneOnly`) would no longer line up with the other layer once composed, so
+  `normalizeLook` drops them from layer stacks; they run on the whole scene.
 - **Pixel art per layer.** `pixel: { size, outline, crease }` or `null` (clean: the scene at the
   device resolution, like Raw mode but with filters). `size` is art pixels per rendered pixel
   (1 native, 2+ chunkier).
@@ -235,7 +239,8 @@ engine.setFilters(['crt']);                         // = the whole-scene stack; 
 - **Side effects per layer.** The PS1 vertex wobble is on while a pass whose stack has `ps1`
   draws.
 - `normalizeLook(anything)` makes a valid look (unknown filters and duplicates dropped, every
-  parameter present and clamped), so stored and URL looks are safe. `renderer.split` says
+  parameter present and clamped), so stored and URL looks are safe. `?filters=` wins over
+  `?look=`. `renderer.split` says
   whether two passes are running; `state().look` names the preset in use (or `custom`).
 
 Riftlight's **Look studio** (pause or settings → Look studio, or **L**; docs/GAME.md) is a UI

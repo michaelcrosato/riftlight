@@ -187,9 +187,12 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   if (zoom > 0) camera.zoom = zoom;
   if (Object.keys(camera).length) opts.camera = camera;
   const look = p.get('look');
-  if (look && LOOK_PRESETS[look]) opts.look = LOOK_PRESETS[look];
+  if (look && Object.hasOwn(LOOK_PRESETS, look)) opts.look = LOOK_PRESETS[look];
   const filters = p.get('filters');
-  if (filters) opts.filters = filters.split(',').filter((id) => getFilter(id));
+  if (filters) {
+    opts.filters = filters.split(',').filter((id) => getFilter(id));
+    delete opts.look; // ?filters= wins, as it always did
+  }
   return opts;
 }
 

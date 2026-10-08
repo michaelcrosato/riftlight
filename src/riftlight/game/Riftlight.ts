@@ -622,7 +622,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   private settingsLook(): Look | null {
     const s = this.settings;
     if (s.look === 'custom') return s.customLook;
-    return s.look ? (LOOK_PRESETS[s.look] ?? null) : null;
+    return s.look && Object.hasOwn(LOOK_PRESETS, s.look) ? LOOK_PRESETS[s.look]! : null;
   }
 
   /** The settings last put a look on screen (so going back to "default" takes it off again). */
@@ -1374,7 +1374,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.settings.look = name === 'none' ? '' : (name ?? 'custom');
     if (!name) this.settings.customLook = look;
     this.ctx.engine.setLook(look);
-    this.lookFromSettings = true;
+    // the default look (Reset) is not one the settings put on screen
+    this.lookFromSettings = name !== 'none';
     storeSettings(this.settings);
   }
 

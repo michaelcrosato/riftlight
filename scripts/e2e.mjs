@@ -778,7 +778,9 @@ async function runFilters(browserExe, s, label) {
       e.setLook(look);
       return { same: e.renderer.pipeline.outputNode === node, amount: e.look.environment.filters[0].params.amount };
     });
-    check(graph.same && graph.amount === 0.4, 'sliders (strength, pixel size, outline) only move uniforms: the graph is not rebuilt');
+    const tweaked = await capture(page, `${label}-look-tweaked.png`);
+    const moved = meanDiff(grayWorld, tweaked);
+    check(graph.same && graph.amount === 0.4 && moved > 0.5, `sliders (strength, pixel size, outline) change the frame (diff ${moved.toFixed(2)}) and only move uniforms: the graph is not rebuilt`);
     await page.evaluate(() => window.__PIXEL_ENGINE__.setLook(window.__PIXEL_ENGINE__.lookPresets.none));
 
     // Stacks and raw-mode bypass (the P hotkey itself is covered by the core suites).

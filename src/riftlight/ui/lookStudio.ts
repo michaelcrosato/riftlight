@@ -213,14 +213,16 @@ export function setPixel(look: Look, t: LookTarget, p: PixelLook | null): void {
   } else look[t].pixel = p && { ...p };
 }
 
-/** Turn a filter on (with its defaults, in the canonical order) or off for a target. */
+/** Turn a filter on (with its defaults, at its canonical place) or off for a target. */
 export function toggleFilter(look: Look, t: LookTarget, id: string, on: boolean): void {
   const list = lookFilters(look, t);
   const i = list.findIndex((f) => f.id === id);
   const def = getFilter(id);
   if (on && i < 0 && def) {
-    list.push({ id, params: defaultParams(def) });
-    list.sort((a, b) => filterOrder(a.id) - filterOrder(b.id));
+    if (t !== 'scene' && def.sceneOnly) return; // moves pixels: whole scene only
+    // at its canonical place, the rest of the stack untouched (a preset's order stays)
+    const at = list.findIndex((f) => filterOrder(f.id) > filterOrder(id));
+    list.splice(at < 0 ? list.length : at, 0, { id, params: defaultParams(def) });
   }
   if (!on && i >= 0) list.splice(i, 1);
 }
@@ -422,6 +424,11 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
       const look = h.look();
       const w: Widget[] = [pageHeader(t)];
       for (const def of defs) {
+        if (t !== 'scene' && def.sceneOnly) {
+          // a warp on one layer would no longer line up with the other
+          w.push({ kind: 'label', id: def.id, label: `${filterName(def.id)}: whole scene only`, color: 'slate' });
+          continue;
+        }
         const on = lookFilters(look, t).find((f) => f.id === def.id);
         w.push({
           kind: 'toggle',

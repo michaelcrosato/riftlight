@@ -693,18 +693,20 @@ export class PixelRenderer {
   }
 
   /**
-   * Make a scene pass draw only one layer's objects (`lookLayerOf`; transparent materials
-   * always count as environment, so they blend over the world behind them). It filters
-   * draws, not the scene: lights, fog and shadow maps (cast by every object, rendered by
-   * three with their own draw function) are the same in both passes. While it draws, the
-   * layer's own filters' side effects (PS1 wobble) are on.
+   * Make a scene pass draw only one layer's opaque objects (`lookLayerOf`). Transparent
+   * ones (glows, telegraphs, loot beams, contact shadows) draw in both passes: each blends
+   * them over its own layer, depth-tested against it, so whichever layer wins a pixel shows
+   * them correctly in front of or behind it. It filters draws, not the scene: lights, fog
+   * and shadow maps (cast by every object, rendered by three with their own draw function)
+   * are the same in both passes. While it draws, the layer's own filters' side effects (PS1
+   * wobble) are on.
    */
   private drawOnly(pass: PassNode, layer: LookLayer): void {
     const base = pass.updateBefore.bind(pass);
     const actors = layer === 'actors';
     let r: WebGPURenderer;
     const draw = (object: Object3D, scene: Scene, camera: Camera, geometry: never, material: Material, group: never, lightsNode: never, clipping: never, passId?: string | null) => {
-      if ((!material.transparent && lookLayerOf(object) === 'actors') === actors) r.renderObject(object, scene, camera, geometry, material, group, lightsNode, clipping, passId);
+      if (material.transparent || (lookLayerOf(object) === 'actors') === actors) r.renderObject(object, scene, camera, geometry, material, group, lightsNode, clipping, passId);
     };
     pass.updateBefore = (frame: NodeFrame) => {
       r = frame.renderer as unknown as WebGPURenderer;

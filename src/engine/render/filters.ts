@@ -100,6 +100,12 @@ export interface FilterDef {
   /** Named parameter sets ("subtle", "heavy", …). Missing keys keep their defaults. */
   readonly presets?: Readonly<Record<string, Readonly<Record<string, number>>>>;
   apply(color: N, fx: FilterContext, p: ParamReader): N;
+  /**
+   * Moves pixels (curves, splits, smears): runs on the whole scene only. A layer's filters
+   * run before the layers are composed by depth, so a warp there would no longer line up
+   * with the other layer (render/look.ts drops these from layer stacks).
+   */
+  readonly sceneOnly?: boolean;
   /** Side effects outside the post pass (e.g. PS1 vertex snapping), toggled with the filter. */
   setActive?(active: boolean): void;
 }
@@ -280,11 +286,12 @@ export const FILTERS: readonly FilterDef[] = [
     space: 'art',
     params: [
       { key: 'levels', label: 'Levels', min: 2, max: 16, step: 1, default: 7 },
-      { key: 'dither', label: 'Dither', min: 0, max: 0.4, step: 0.01, default: 0.14 },
+      // in steps between levels (1 = one level of spread)
+      { key: 'dither', label: 'Dither', min: 0, max: 2, step: 0.05, default: 1, unit: 'x' },
     ],
-    presets: { 'mega drive': { levels: 7, dither: 0.14 }, snes: { levels: 15, dither: 0.07 }, 'low colour': { levels: 3, dither: 0.3 } },
+    presets: { 'mega drive': { levels: 7, dither: 1 }, snes: { levels: 15, dither: 1 }, 'low colour': { levels: 3, dither: 1 }, smooth: { levels: 7, dither: 0 } },
     // 9-bit color (8 levels per channel, 512 colors) with ordered dither per art pixel.
-    apply: (c, fx, p) => vec4(floor(clamp(c.rgb.add(ditherOffset(fx, p('dither'))), 0, 1).mul(p('levels')).add(0.5)).div(p('levels')), c.a),
+    apply: (c, fx, p) => vec4(floor(clamp(c.rgb.add(ditherOffset(fx, p('dither').div(p('levels')))), 0, 1).mul(p('levels')).add(0.5)).div(p('levels')), c.a),
   },
   {
     id: 'ps1',
@@ -416,6 +423,7 @@ export const FILTERS: readonly FilterDef[] = [
     label: 'CRT (curved, masked)',
     group: 'display',
     space: 'display',
+    sceneOnly: true,
     params: [
       { key: 'curve', label: 'Curvature', min: 0, max: 0.2, step: 0.01, default: 0.06 },
       { key: 'scan', label: 'Scanlines', min: 0, max: 0.8, step: 0.01, default: 0.3, unit: '%' },
@@ -459,6 +467,7 @@ export const FILTERS: readonly FilterDef[] = [
     label: 'Chromatic aberration',
     group: 'signal',
     space: 'display',
+    sceneOnly: true,
     params: [{ key: 'spread', label: 'Spread', min: 0, max: 6, step: 0.25, default: 1.5, unit: 'px' }],
     presets: { subtle: { spread: 0.75 }, classic: { spread: 1.5 }, broken: { spread: 4 } },
     apply: (c, fx, p) => {
@@ -486,6 +495,7 @@ export const FILTERS: readonly FilterDef[] = [
     label: 'VHS tape',
     group: 'signal',
     space: 'display',
+    sceneOnly: true,
     params: [
       { key: 'wobble', label: 'Wobble', min: 0, max: 3, step: 0.1, default: 1, unit: 'x' },
       { key: 'bleed', label: 'Colour bleed', min: 0, max: 3, step: 0.1, default: 1, unit: 'x' },
@@ -511,6 +521,7 @@ export const FILTERS: readonly FilterDef[] = [
     label: 'NTSC color bleed',
     group: 'signal',
     space: 'display',
+    sceneOnly: true,
     // bleed in thousandths of the screen width
     params: [{ key: 'bleed', label: 'Bleed', min: 0, max: 10, step: 0.5, default: 2.5 }],
     presets: { light: { bleed: 1 }, classic: { bleed: 2.5 }, smeared: { bleed: 7 } },
@@ -631,7 +642,13 @@ export function applyFilter(color: N, id: string, fx: FilterContext): N {
   if (!f) return color;
   const params = filterParams(f);
   const p: ParamReader = (key) => fx.param?.(id, key) ?? float(params.find((q) => q.key === key)?.default ?? 0);
-  return mix(color, f.apply(color, fx, p), p('amount'));
+  // A filter that renders its input to a texture mixes over that texture, so the input chain
+  // is evaluated once, not again for the mix.
+  const toTex = fx.texture ?? ((n: N) => convertToTexture(n));
+  let input: N = null;
+  const own: FilterContext = { ...fx, texture: (n) => (n === color ? (input ??= toTex(n)) : toTex(n)) };
+  const out = f.apply(color, own, p);
+  return mix(input ?? color, out, p('amount'));
 }
 
 /** Apply filters in order. Unknown ids are skipped. */

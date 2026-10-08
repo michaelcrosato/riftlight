@@ -1433,7 +1433,8 @@ at once while the world is paused.
   both layers.
 - **Cel shading, Palettes, Colour grade, Consoles, Screen, Signal, Stylize**: a page per filter
   type, each filter on/off for the chosen part; an active one shows its preset and a slider per
-  parameter, strength included.
+  parameter, strength included. Filters that move pixels (CRT, chromatic, VHS, NTSC) are
+  whole-scene only; a layer's page says so instead of offering them.
 - **Clear** the part's filters, **Reset to default**.
 
 Every change applies at once and is remembered: a named look as `settings.look`, anything else

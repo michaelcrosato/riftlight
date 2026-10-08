@@ -144,13 +144,14 @@ export function lookFilters(look: Look, target: LookTarget): LookFilter[] {
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
 
-function normalizeFilters(raw: unknown): LookFilter[] {
+function normalizeFilters(raw: unknown, layer: boolean): LookFilter[] {
   if (!Array.isArray(raw)) return [];
   const out: LookFilter[] = [];
   for (const item of raw) {
     const id = typeof item === 'string' ? item : isRecord(item) && typeof item.id === 'string' ? item.id : null;
     const def = id ? getFilter(id) : undefined;
     if (!def || out.some((f) => f.id === def.id)) continue; // unknown or duplicate
+    if (layer && def.sceneOnly) continue; // moves pixels: would no longer line up with the other layer
     const given = isRecord(item) && isRecord(item.params) ? item.params : {};
     const params: Record<string, number> = {};
     for (const p of filterParams(def)) params[p.key] = clampParam(p, typeof given[p.key] === 'number' ? (given[p.key] as number) : p.default);
@@ -172,7 +173,8 @@ export function normalizePixel(raw: unknown): PixelLook | null {
 
 /**
  * A complete, valid look from anything (storage, the URL, an agent): unknown filters and
- * duplicates dropped, every parameter present and clamped to its range, layers defaulted.
+ * duplicates dropped (and `sceneOnly` filters from layer stacks), every parameter present
+ * and clamped to its range, layers defaulted.
  */
 export function normalizeLook(raw: unknown): Look {
   const r = isRecord(raw) ? raw : {};
@@ -180,11 +182,11 @@ export function normalizeLook(raw: unknown): Look {
     const l = isRecord(v) ? v : {};
     return {
       pixel: 'pixel' in l ? normalizePixel(l.pixel) : { ...DEFAULT_PIXEL },
-      filters: normalizeFilters(l.filters),
+      filters: normalizeFilters(l.filters, true),
     };
   };
   return {
-    scene: normalizeFilters(r.scene),
+    scene: normalizeFilters(r.scene, false),
     actors: layer(r.actors),
     environment: layer(r.environment),
   };
