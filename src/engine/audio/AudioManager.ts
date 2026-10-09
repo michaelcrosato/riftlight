@@ -84,6 +84,8 @@ export class AudioManager {
   private songName: string | null = null;
   private readonly musicSources = new Set<AudioBufferSourceNode>();
   private readonly voices = new Set<LoopVoice>();
+  /** Files being fetched or decoded (a loop waiting for one is not missing its sound). */
+  private readonly loading = new Set<string>();
   private disposed = false;
 
   constructor(target: EventTarget | null = typeof window !== 'undefined' ? window : null) {
@@ -239,7 +241,7 @@ export class AudioManager {
     if (voice.nodes || voice.stopped || !ctx || !bus || ctx.state !== 'running') return;
     const buffer = typeof voice.sound === 'string' ? (this.files.get(voice.sound) ?? (this.sounds.get(voice.sound) ? this.bufferFor(this.sounds.get(voice.sound)!) : undefined)) : this.bufferFor(voice.sound);
     if (!buffer) {
-      if (typeof voice.sound === 'string' && !this.pendingFiles.has(voice.sound) && !voice.warned) {
+      if (typeof voice.sound === 'string' && !this.loading.has(voice.sound) && !voice.warned) {
         voice.warned = true;
         console.warn(`[audio] loop: no sound named "${voice.sound}" (yet): it starts when one is registered or loaded`);
       }
@@ -276,11 +278,17 @@ export class AudioManager {
    * before the first user input too: the file is decoded once audio unlocks.
    */
   async load(name: string, url: string): Promise<void> {
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`audio: ${url} → HTTP ${res.status}`);
-    const data = await res.arrayBuffer();
-    if (this.context) await this.decode(name, data);
-    else this.pendingFiles.set(name, data);
+    this.loading.add(name);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`audio: ${url} → HTTP ${res.status}`);
+      const data = await res.arrayBuffer();
+      if (this.context) await this.decode(name, data);
+      else this.pendingFiles.set(name, data); // decoded at unlock (still loading till then)
+    } catch (e) {
+      this.loading.delete(name);
+      throw e;
+    }
   }
 
   /** Start a song (looping by default), replacing the current one. `null` stops music. */
@@ -416,7 +424,11 @@ export class AudioManager {
 
   private async decode(name: string, data: ArrayBuffer): Promise<void> {
     if (!this.context) return;
-    this.files.set(name, await this.context.decodeAudioData(data));
+    try {
+      this.files.set(name, await this.context.decodeAudioData(data));
+    } finally {
+      this.loading.delete(name);
+    }
   }
 
   private applyVolumes(): void {

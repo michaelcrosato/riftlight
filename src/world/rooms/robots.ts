@@ -101,7 +101,7 @@ this.switchTo(s === 'running' ? i : -1, b);`,
       {
         title: 'The robots\' tree, top to bottom in priority order',
         file: 'src/world/rooms/robots.ts',
-        src: `bt.sequence('flee', bt.condition('hero close?', (b) => (b.scared = b.heroDist < (b.scared ? scare + 1.5 : scare))), beep, bt.action('run away', runAway, stop)),
+        src: `bt.sequence('flee', bt.condition('hero close?', (b) => (b.scared = scare > 0 && b.heroDist < (b.scared ? scare + 1.5 : scare))), beep, bt.action('run away', runAway, stop)),
 bt.sequence('recharge', bt.condition('battery low?', (b) => (b.needsCharge ||= b.battery < 0.25)), bt.action('go to charger', goCharger, stop), bt.action('charge', charge)),`,
       },
     ],
@@ -303,7 +303,7 @@ bt.sequence('recharge', bt.condition('battery low?', (b) => (b.needsCharge ||= b
       return new BehaviorTree<Bot>(
         bt.selector(
           'robot',
-          bt.sequence('flee', bt.condition('hero close?', (b) => (b.scared = b.heroDist < (b.scared ? scare + 1.5 : scare))), beep, bt.action('run away', runAway, stop)),
+          bt.sequence('flee', bt.condition('hero close?', (b) => (b.scared = scare > 0 && b.heroDist < (b.scared ? scare + 1.5 : scare))), beep, bt.action('run away', runAway, stop)),
           bt.sequence('recharge', bt.condition('battery low?', (b) => (b.needsCharge ||= b.battery < 0.25)), bt.action('go to charger', goCharger, stop), bt.action('charge', charge)),
           bt.sequence('deliver', bt.condition('carrying?', (b) => b.carrying), bt.action('go to bin', (b, dt) => goTo(b, bin[0], bin[1] + 0.4, dt), stop), bt.action('drop it', drop)),
           bt.sequence('collect', bt.action('claim a crystal', claim), bt.action('go to it', (b, dt) => (b.target ? goTo(b, b.target.x, b.target.z, dt) : 'failure'), release), bt.action('pick it up', pickUp)),

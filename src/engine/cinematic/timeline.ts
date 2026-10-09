@@ -101,6 +101,8 @@ export class Timeline {
   private next = 0;
   /** Bumped by every seek and skip: a cue that moves the playhead stops the cues after it. */
   private jumps = 0;
+  /** Inside skip(): cues run to the end whatever they do to the playhead. */
+  private skipping = false;
 
   constructor(o: TimelineOptions) {
     let fov = 50;
@@ -135,9 +137,11 @@ export class Timeline {
 
   /**
    * Move the playhead to `t` without firing the cues in between (scrubbing). Cues before `t`
-   * count as done and cues after it will fire again (going back re-arms them).
+   * count as done and cues after it will fire again (going back re-arms them). Ignored while
+   * skipping (a cue that loops back cannot undo a skip).
    */
   seek(t: number): void {
+    if (this.skipping) return;
     this.jumps++;
     this.time = Math.max(0, Math.min(this.duration, t));
     this.ended = false;
@@ -150,10 +154,16 @@ export class Timeline {
    * after `duration` never fire, played or skipped.
    */
   skip(): void {
-    if (this.ended) return;
+    if (this.ended || this.skipping) return;
     this.jumps++;
     this.time = this.duration;
-    this.fireUpTo(this.duration, true);
+    this.skipping = true;
+    try {
+      this.fireUpTo(this.duration, true);
+    } finally {
+      this.skipping = false;
+    }
+    this.time = this.duration;
     this.finish();
   }
 
@@ -164,7 +174,8 @@ export class Timeline {
       if (skipping && c.cosmetic) continue;
       this.fired.push(c.name ?? `cue@${c.at}`);
       c.run();
-      if (this.jumps !== jumps) return; // the cue moved the playhead (a seek, a skip): it decides what fires next
+      // played: a cue that moved the playhead (seek, skip) or paused decides what fires next
+      if (!skipping && (this.jumps !== jumps || !this.playing)) return;
     }
   }
 

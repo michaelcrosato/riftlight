@@ -167,9 +167,13 @@ describe('BehaviorTree', () => {
     expect(tree.activePath()).toEqual(['recipe', 'cook', 'stir']); // taste is done: not run again this round
   });
 
-  it('refuses a node that is already in another tree', () => {
+  it('refuses a node that is already in another tree, or twice in one; a refused tree claims nothing', () => {
     const shared = job('dig', 3);
     new BehaviorTree(shared, { threat: 0, log: [] });
-    expect(() => new BehaviorTree(selector('other', shared), { threat: 0, log: [] })).toThrow(/another tree/);
+    const fresh = job('fresh', 1);
+    expect(() => new BehaviorTree(selector('other', fresh, shared), { threat: 0, log: [] })).toThrow(/another tree/);
+    expect(() => new BehaviorTree(fresh, { threat: 0, log: [] })).not.toThrow(); // still free after the refusal
+    const twice = job('twice', 1);
+    expect(() => new BehaviorTree(sequence('s', twice, twice), { threat: 0, log: [] })).toThrow(/twice/);
   });
 });

@@ -96,6 +96,11 @@ class FakeContext {
   createBuffer(_c: number, n: number) {
     return { length: n, copyToChannel() {} };
   }
+  /** Decoding finishes when the test says so. */
+  static finishDecode: (() => void) | null = null;
+  decodeAudioData() {
+    return new Promise((done) => (FakeContext.finishDecode = () => done({ length: 100 })));
+  }
   resume() {
     return Promise.resolve();
   }
@@ -173,6 +178,27 @@ describe('AudioManager.loop', () => {
     audio.register('not-yet', { wave: 'sine', freq: 440, sustain: 0.1 });
     audio.update();
     expect(v.sounding).toBe(true);
+    warn.mockRestore();
+    audio.dispose();
+  });
+
+  it('does not call a sound missing while its file is still loading', async () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    vi.stubGlobal('fetch', async () => ({ ok: true, arrayBuffer: async () => new ArrayBuffer(8) }));
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const audio = new AudioManager(new EventTarget());
+    const loaded = audio.load('rain', 'rain.ogg'); // before the first input: decoded at unlock
+    await new Promise((r) => setTimeout(r, 0));
+    const v = audio.loop('rain');
+    audio.unlock();
+    audio.update();
+    expect(warn).not.toHaveBeenCalled();
+    FakeContext.finishDecode!();
+    await loaded;
+    await new Promise((r) => setTimeout(r, 0));
+    audio.update();
+    expect(v.sounding).toBe(true);
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
     audio.dispose();
   });

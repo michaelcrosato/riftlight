@@ -94,8 +94,10 @@ export const CUTSCENE: RoomDef = {
     const smith = await mannequin(ctx, 'Idle', SMITH_AT, -Math.PI / 2);
     hat(guide, PALETTE.plum);
     hat(smith, PALETTE.orange);
-    const names = [kit.label([GUIDE_AT[0], 2.3, GUIDE_AT[2]], 'GUIDE', { color: 'plum', range: 6 }), kit.label([SMITH_AT[0], 2.3, SMITH_AT[2]], 'SMITH', { color: 'orange', range: 6 })];
-    const showNames = (on: boolean) => names.forEach((l, i) => (l.text = on ? ['GUIDE', 'SMITH'][i]! : '')); // not over the film
+    kit.label([GUIDE_AT[0], 2.3, GUIDE_AT[2]], 'GUIDE', { color: 'plum', range: 6 });
+    kit.label([SMITH_AT[0], 2.3, SMITH_AT[2]], 'SMITH', { color: 'orange', range: 6 });
+    // no labels over the film (the actors' names, the pad's)
+    const showNames = (on: boolean) => kit.labels.forEach((l) => (l.visible = on));
 
     let chestOpen = false;
     let gateOpen = false;

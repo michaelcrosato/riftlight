@@ -8,6 +8,16 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.14.0
+
+- `Timeline.skip()` runs every cue up to the end even when one of them seeks back (a seek is
+  ignored while skipping) and ends with the playhead at the end; a cue that pauses stops the
+  cues after it in that frame.
+- `BehaviorTree` refuses a node that appears twice in it or is already in another tree, and a
+  refused tree leaves its nodes free.
+- `AudioManager.loop()` no longer warns about a sound whose file is still loading or decoding;
+  `Voice.stop()` fades out before it lets go of the chain.
+
 ## 0.13.0
 
 - **Behaviour trees**: `BehaviorTree`, `BtNode` and the builders on `bt` (ai/behavior.ts): reactive

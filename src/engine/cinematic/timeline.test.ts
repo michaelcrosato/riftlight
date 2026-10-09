@@ -159,4 +159,33 @@ describe('Timeline', () => {
     skipped.skip();
     expect(log).toEqual([]);
   });
+
+  it('a skip runs every cue that matters even when one of them seeks back, and ends at the end', () => {
+    const log: string[] = [];
+    const tl: Timeline = new Timeline({
+      cues: [
+        { at: 2, name: 'loop', run: () => (log.push('loop'), tl.seek(1)) },
+        { at: 5, name: 'gate', run: () => log.push('gate') },
+      ],
+      duration: 6,
+      lines: [{ at: 1, until: 3, text: 'MID-SCENE' }],
+      onEnd: () => log.push('end'),
+    });
+    tl.play();
+    tl.update(0.5);
+    tl.skip();
+    expect(log).toEqual(['loop', 'gate', 'end']);
+    expect([tl.time, tl.ended, tl.line()]).toEqual([6, true, null]);
+  });
+
+  it('a cue that pauses stops the ones after it in the same frame', () => {
+    const log: string[] = [];
+    const tl: Timeline = new Timeline({ cues: [{ at: 1, run: () => (log.push('pause'), tl.pause()) }, { at: 1.5, run: () => log.push('after') }], duration: 4 });
+    tl.play();
+    tl.update(2);
+    expect(log).toEqual(['pause']);
+    tl.play();
+    tl.update(0.1);
+    expect(log).toEqual(['pause', 'after']);
+  });
 });

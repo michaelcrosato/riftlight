@@ -836,13 +836,15 @@ const scene = new Timeline({
 scene.play(); scene.update(dt);          // per frame: fires the cues it passes
 const shot = scene.camera();             // { position, target, fov }: put a camera there
 scene.line(); scene.bars();              // the subtitle now; letterbox 0..1 (in at the start, out at the end)
-scene.skip();                            // to the end: every cue not yet fired runs, except cosmetic ones
+scene.skip();                            // to the end: every cue up to the end not yet fired runs, except cosmetic ones
 ```
 
 Pure (no three.js), unit-tested. The camera passes through each key at its time on Hermite
 curves with Catmull-Rom tangents (finite differences in time), so its speed has no jolt at a
 key; the first and last keys of a shot ease in and out; a `cut` key starts a new shot. `seek(t)`
-scrubs without firing (going back re-arms the cues). The game owns the camera: swap a `fixed`
+scrubs without firing (going back re-arms the cues). While playing, a cue that seeks, skips or
+pauses decides what fires next (the rest of the frame's cues wait); while skipping, a cue's seek
+is ignored, so a looping scene still skips to its end. The game owns the camera: swap a `fixed`
 perspective rig in (`engine.setCamera({ preset: 'fixed', projection: 'perspective', ... })`),
 set its position, `lookAt` and `fov` from `camera()` each frame, and swap the game's preset back
 in `onEnd`. The Cutscene Stage room (`src/world/rooms/cutscene.ts`) is the whole pattern.
