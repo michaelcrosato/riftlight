@@ -28,4 +28,14 @@ describe('URL options', () => {
     expect(optionsFromUrl('?backend=webgl&debug=1&mode=raw')).toEqual({ forceWebGL: true, debugUI: true, mode: 'raw' });
     expect(optionsFromUrl('?look=hd_clean').look).toBe(LOOK_PRESETS.no_filters); // old names still work
   });
+
+  it('reads the seed (?seed=, a whole number from 0)', () => {
+    expect(optionsFromUrl('?seed=42').seed).toBe(42);
+    expect(optionsFromUrl('?seed=0').seed).toBe(0);
+    expect(optionsFromUrl('?seed=-3').seed).toBeUndefined();
+    expect(optionsFromUrl('?seed=abc').seed).toBeUndefined();
+    expect(optionsFromUrl('').seed).toBeUndefined();
+    expect(optionsFromUrl('?seed=').seed).toBeUndefined();
+    expect(optionsFromUrl('?seed=1.5').seed).toBeUndefined();
+  });
 });

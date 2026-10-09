@@ -94,7 +94,7 @@ export interface LevelPlan {
   readonly timings: Readonly<Record<string, number>>;
 }
 
-const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()); // real time: timing the planner
 
 export function planLevel(spec: LevelSpec): LevelPlan {
   const timings: Record<string, number> = {};

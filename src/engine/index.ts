@@ -168,6 +168,7 @@ export {
 } from './render/screenFx';
 export { CameraShake } from './shake';
 export { EASES, EASE_NAMES, Tweens, ease, type Ease, type EaseName, type Tween, type TweenOptions } from './tween';
+export { hashString, Rng } from './random';
 export {
   FLICKER_PRESETS,
   LIGHT_POOL_SIZES,

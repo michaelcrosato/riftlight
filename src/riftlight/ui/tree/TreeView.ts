@@ -201,7 +201,7 @@ export class TreeView {
     this.padHeld = [];
     this.resize();
     this.dirty = true;
-    this.last = performance.now();
+    this.last = performance.now(); // real time: UI animation
     const loop = (now: number) => {
       if (!this.opened) return;
       this.raf = requestAnimationFrame(loop);
@@ -331,7 +331,7 @@ export class TreeView {
     }
     if (document.activeElement === this.search) this.search.blur();
     if (this.pointers.size === 1) {
-      this.drag = { x, y, cam: { ...this.cam }, moved: false, button: e.button, type: e.pointerType, down: performance.now() };
+      this.drag = { x, y, cam: { ...this.cam }, moved: false, button: e.button, type: e.pointerType, down: performance.now() }; // real time: UI gesture timing
       this.updateHover();
       if (e.pointerType === 'touch') {
         clearTimeout(this.longPress);
@@ -391,10 +391,10 @@ export class TreeView {
       this.refundNode(id);
     } else if (d.type === 'touch') {
       // First tap shows the tooltip; a second tap on the same node allocates.
-      if (this.tapped?.id === id && performance.now() - this.tapped.at < 4000) {
+      if (this.tapped?.id === id && performance.now() - this.tapped.at < 4000) { // real time: UI gesture timing (a double tap)
         this.activate(id);
         this.tapped = null;
-      } else this.tapped = { id, at: performance.now() };
+      } else this.tapped = { id, at: performance.now() }; // real time: UI gesture timing (a double tap)
     } else if (d.button === 0) this.activate(id);
     this.dirty = true;
   }

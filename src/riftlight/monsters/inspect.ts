@@ -194,13 +194,13 @@ export interface MonsterCheck {
  */
 export function checkMonster(genome: Genome, built?: BuiltMonster): MonsterCheck {
   const m = built ?? buildMonster(genome);
-  const t0 = performance.now();
+  const t0 = performance.now(); // real time: timing
   const defs = m.defs;
   const compiled = m.clips;
-  const clipMs = performance.now() - t0;
-  const t = performance.now();
+  const clipMs = performance.now() - t0; // real time: timing
+  const t = performance.now(); // real time: timing
   const probe = buildMonster(genome).object;
-  const msCached = performance.now() - t;
+  const msCached = performance.now() - t; // real time: timing
   probe.scale.setScalar(1);
   probe.updateMatrixWorld(true);
   const problems: string[] = [];

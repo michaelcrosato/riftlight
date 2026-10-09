@@ -162,8 +162,7 @@ export const SOUNDS: RoomDef = {
       knobs,
       update(dt) {
         mix(dt);
-        const t = performance.now() / 1000;
-        water.scale.y = 1 + Math.sin(t * 7) * 0.05;
+        water.scale.y = 1 + Math.sin(ctx.time * 7) * 0.05;
       },
       draw() {
         const hud = ctx.hud;

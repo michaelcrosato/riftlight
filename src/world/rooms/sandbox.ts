@@ -73,7 +73,7 @@ export const SANDBOX: RoomDef = {
     kit.cylinder([0, 0.02, -2], 1.2, 0.04, 'white', { ghost: true });
     kit.label([0, 1.5, -2], 'DROP POINT', { color: 'plum', range: 10 });
     const props: Prop[] = [];
-    const spawn = (kind: Kind, at: V3 = [(Math.random() - 0.5) * 1.5, 4, -2 + (Math.random() - 0.5) * 1.5], rot?: [number, number, number, number]) => {
+    const spawn = (kind: Kind, at: V3 = [ctx.random.range(-0.75, 0.75), 4, -2 + ctx.random.range(-0.75, 0.75)], rot?: [number, number, number, number]) => {
       // no more than a layout can hold, so whatever is saved loads back
       if (props.length >= MAX_PROPS) {
         room.toast(`The yard is full (${MAX_PROPS} props): CLEAR some first.`, 2);

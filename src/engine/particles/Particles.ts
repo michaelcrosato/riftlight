@@ -15,6 +15,7 @@ import { instancedBufferAttribute, uniform } from 'three/tsl';
 import { PALETTE } from '../palette';
 import { type BurstOptions, ParticlePool, type ParticlePreset } from './pool';
 import { PARTICLES } from './presets';
+import { Rng } from '../random';
 
 /** What the particle system needs to size particles in art pixels. */
 export interface ParticleView {
@@ -63,6 +64,9 @@ export class Particles {
   private readonly inlineKeys = new WeakMap<ParticlePreset, string>();
   private readonly geometry = new PlaneGeometry(1, 1);
   private warnedMany = false;
+  /** Where bursts get their randomness: the level's stream (the engine reseeds it per level). */
+  private rng = new Rng('particles');
+  private readonly random = () => this.rng.next();
 
   constructor(private readonly view: () => ParticleView) {
     this.group.name = 'particles';
@@ -92,7 +96,7 @@ export class Particles {
     }
     const key = typeof preset === 'string' ? `@${preset}` : this.inlineKey(preset);
     const p: [number, number, number] = at instanceof Vector3 ? [at.x, at.y, at.z] : [at[0], at[1], at[2]];
-    return this.emitter(key, def).pool.spawn(p, options);
+    return this.emitter(key, def).pool.spawn(p, options, this.random);
   }
 
   /** Particles alive right now, over all emitters. */
@@ -133,6 +137,11 @@ export class Particles {
       e.sprite.count = Math.max(2, n);
       e.offset.needsUpdate = e.color.needsUpdate = e.size.needsUpdate = true;
     }
+  }
+
+  /** Take bursts' randomness from `rng` (the engine passes each level's `ctx.random` fork). */
+  reseed(rng: Rng): void {
+    this.rng = rng;
   }
 
   /** Kill every particle and free the emitters (GPU buffers, materials). */

@@ -1,4 +1,6 @@
 import type { PaletteColor } from '../palette';
+import { Rng } from '../random';
+
 
 type Vec3 = readonly [number, number, number];
 type Range = number | readonly [number, number];
@@ -80,8 +82,12 @@ export class ParticlePool {
     this.colorSets = [preset.colors];
   }
 
-  /** Spawn a burst at `at`. Returns how many particles were spawned (the pool may be full). */
-  spawn(at: Vec3, o: BurstOptions = {}, random: () => number = Math.random): number {
+  /** Bursts spawned without a random source draw from the pool's own seeded stream. */
+  private readonly own = new Rng('particles');
+  private readonly ownRandom = () => this.own.next();
+
+  /** Spawn a burst at `at`. Returns how many particles were spawned (the pool may be full). `random` in [0, 1): seeded, so bursts repeat. */
+  spawn(at: Vec3, o: BurstOptions = {}, random: () => number = this.ownRandom): number {
     const p = this.preset;
     const want = Math.round(o.count ?? pick(p.count, random));
     const n = Math.max(0, Math.min(want, this.max - this.alive));

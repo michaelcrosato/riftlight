@@ -87,7 +87,7 @@ export interface EndlessReport {
   readonly ms: number;
 }
 
-const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now()); // real time: timing the checks
 const finite = (v: number) => Number.isFinite(v) && !Number.isNaN(v);
 
 /** Monotonic, finite, bounded-step curves over every depth 1..max, plus far-off depths. */

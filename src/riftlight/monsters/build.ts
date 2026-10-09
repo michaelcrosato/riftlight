@@ -99,7 +99,7 @@ export function clearMonsterCache(): void {
 const STAND: ClipDef = { name: 'Stand', frames: 1, keys: [[0, {}]] };
 
 export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltMonster {
-  const t0 = performance.now();
+  const t0 = performance.now(); // real time: build timing
   const plan = PLANS.get(genome.plan);
   const bySlot = new Map<Slot, MonsterPartDef>();
   for (const p of genome.parts) if (PARTS.has(p.part) && !bySlot.has(p.socket as Slot)) bySlot.set(p.socket as Slot, PARTS.get(p.part));
@@ -203,7 +203,7 @@ export function buildMonster(genome: Genome, options: BuildOptions = {}): BuiltM
   object.scale.setScalar(genome.scale);
 
   const stats = statsOf(genome, bySlot);
-  const ms = performance.now() - t0;
+  const ms = performance.now() - t0; // real time: build timing
   return {
     genome,
     object,

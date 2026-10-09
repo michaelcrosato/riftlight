@@ -31,6 +31,7 @@ import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 import { ENGINE_VERSION } from './version';
 import { GameClock } from './clock';
+import { hashString, Rng } from './random';
 import { CameraShake } from './shake';
 import { Tweens } from './tween';
 import type { ScreenFx } from './render/screenFx';
@@ -45,6 +46,11 @@ export interface GameContext {
   readonly palette: typeof PALETTE;
   /** Game time in seconds since start. Frozen while paused or loading. */
   readonly time: number;
+  /**
+   * This level's seeded randomness (src/engine/random.ts): the same engine seed and game give
+   * the same numbers. Use it (or forks of it) for everything random; never Math.random.
+   */
+  readonly random: Rng;
   /** Sound effects, music, volumes (src/engine/audio). */
   readonly audio: AudioManager;
   /** Pixel particles: `particles.burst('dust', at)` (src/engine/particles). */
@@ -132,6 +138,11 @@ export interface EngineOptions {
   look?: Look;
   /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
   forceWebGL?: boolean;
+  /**
+   * Seed for `ctx.random`: each level gets its own stream from this and the game's name, so
+   * the same seed replays the same game. Default 1. `?seed=` in the URL.
+   */
+  seed?: number;
   /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
   debugUI?: boolean;
   /**
@@ -164,6 +175,8 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   const p = new URLSearchParams(search);
   const opts: Partial<EngineOptions> = {};
   if (p.get('backend') === 'webgl') opts.forceWebGL = true;
+  const seed = p.get('seed');
+  if (seed && /^\d+$/.test(seed)) opts.seed = Number(seed) >>> 0;
   if (p.get('mode') === 'raw') opts.mode = 'raw';
   if (p.get('res') === '320') opts.resolution = RESOLUTIONS.compare;
   if (p.get('debug') === '0') opts.debugUI = false;
@@ -310,6 +323,7 @@ export class Engine {
   ) {
     this._game = game;
     const clock = () => this.time;
+    const random = () => this._random;
     const rig = () => this.camera;
     const lights = () => this.lights;
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
@@ -327,6 +341,9 @@ export class Engine {
       palette: PALETTE,
       get time() {
         return clock();
+      },
+      get random() {
+        return random();
       },
       audio: this.audio,
       particles: this.particles,
@@ -346,6 +363,7 @@ export class Engine {
       world: this.cameraWorld,
     };
     this.limiter = new FrameLimiter(options.maxFps ?? 60);
+    this.seed = options.seed !== undefined && Number.isFinite(options.seed) ? options.seed >>> 0 : 1;
     this.qualityOption = options.quality ?? 'auto';
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
     this._quality = this.qualityOption === 'auto' ? defaultQuality({ coarsePointer: coarse }) : this.qualityOption;
@@ -518,6 +536,7 @@ export class Engine {
       engine.wireRig(camera);
       engine.debugKeys = resolveDebugKeys(options.debugKeys);
 
+      engine.reseed(game);
       await game.setup(engine.context);
       done.setup = true;
       loading?.set(progress(), 'COMPILING');
@@ -682,6 +701,7 @@ export class Engine {
     return {
       version: ENGINE_VERSION,
       game: this.game.name,
+      seed: this.seed,
       ready: this.ready,
       paused: this.paused,
       time: this.time,
@@ -771,6 +791,7 @@ export class Engine {
       this.unloadGame();
       this._game = game;
       if (options.camera) this.useCamera(options.camera);
+      this.reseed(game);
       await game.setup(this.context);
       if (!live()) return; // superseded: the newer load (or dispose) unloads what setup built
       this.camera.teleport(game.cameraTarget(this.context));
@@ -844,6 +865,21 @@ export class Engine {
   }
 
   private readonly loop = (t: number) => this.tick(t);
+
+  /** The seed every level's `ctx.random` comes from (`EngineOptions.seed`, `?seed=`). */
+  readonly seed: number;
+  private _random = new Rng(1);
+
+  /** This level's seeded randomness (`ctx.random`). */
+  get random(): Rng {
+    return this._random;
+  }
+
+  /** A fresh stream for `game`, before its setup: the same seed and game give the same numbers. */
+  private reseed(game: Game): void {
+    this._random = new Rng(hashString(`${this.seed}:${game.name}`));
+    this.particles.reseed(this._random.fork('particles'));
+  }
 
   private unloadGame(): void {
     this.game.dispose?.(this.context);

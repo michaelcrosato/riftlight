@@ -106,7 +106,7 @@ export function migrate(raw: unknown): SaveData {
 }
 
 /** Text for an export file. */
-export function exportSave(data: SaveData, slot: number, now = Date.now()): string {
+export function exportSave(data: SaveData, slot: number, now = Date.now()): string { // real time: the save's timestamp
   const env: SaveEnvelope = { format: SAVE_FORMAT, version: SAVE_VERSION, slot, savedAt: now, data };
   return JSON.stringify(env, null, 1);
 }
@@ -182,7 +182,7 @@ export class SaveStore {
     }
   }
 
-  save(slot: number, data: SaveData, now = Date.now()): boolean {
+  save(slot: number, data: SaveData, now = Date.now()): boolean { // real time: the save's timestamp
     const ok = this.write(KEY(slot), exportSave(data, slot, now));
     this.write(META, JSON.stringify({ last: slot }));
     return ok;
