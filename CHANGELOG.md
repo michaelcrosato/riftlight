@@ -8,6 +8,23 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.12.0
+
+- **GPU compute**: `GpuSwarm` (render/gpuSwarm.ts): particles in storage buffers moved by a TSL
+  compute shader (a spring pull, swirl, noise flow, drag, floor), drawn by one instanced sprite reading
+  the same buffer; `attractor`, `pull`, `swirl`, `turbulence`, `drag` uniforms, `reset`, `read`;
+  re-placed on a new renderer (a recovered GPU device). `dispose()` (or disposing its material)
+  frees the compute shaders; `seed` varies the layout and the flow; two swarms never share a
+  compiled program.
+- **Render to texture**: `RenderView` (render/renderView.ts) and `PixelRenderer.onBeforeRender`
+  (listeners cleared when a level unloads, `clearBeforeRender`; one that throws is reported once
+  through `onError`, on screen in the engine, and skipped); `SCREEN_LAYER` (the main camera always sees it, views never);
+  `PixelRenderer.activeCamera`. Half-float targets.
+- **Mirrors**: `Mirror` and `mirrorCamera` (render/mirror.ts): a reflected camera with an oblique
+  near plane, for orthographic and perspective cameras on both backends.
+- **TSL materials**: `hologramMaterial`, `forceFieldMaterial`, `lavaMaterial`, `marbleMaterial`,
+  `woodMaterial`, `crystalMaterial`, `bayer4` (render/shaders.ts).
+
 ## 0.11.0
 
 - **Procedural generation** (`src/engine/procgen/`):

@@ -368,6 +368,16 @@ const wfc = new Wfc(patternTiles([{ pattern: ['#.#', '#.#', '#.#'] }, { pattern:
 const plant = turtle(expand(PLANTS.fern.system, 5), PLANTS.fern.turtle); // plant.branches: { from, to, radius }, plant.leaves
 ```
 
+### GPU compute, monitors and mirrors
+
+```js
+const swarm = new GpuSwarm({ count: 32768 }); ctx.scene.add(swarm.mesh); // per frame: swarm.update(ctx.engine.renderer.renderer, dt)
+const cam = new RenderView({ size: [160, 90] }); const stopCam = cam.attach(ctx.engine.renderer, ctx.scene); // screen.material = cam.screenMaterial(); RenderView.screen(screen)
+const mirror = new Mirror({ size: [6, 3] }); ctx.scene.add(mirror.mesh); const stopMirror = mirror.attach(ctx.engine.renderer, ctx.scene);
+// in dispose(): stopCam(); stopMirror(); cam.dispose(); mirror.dispose(); swarm.dispose() (a level unload also drops the listeners)
+const holo = hologramMaterial({ color: PALETTE.cyan }); // forceFieldMaterial, lavaMaterial, marbleMaterial, woodMaterial, crystalMaterial
+```
+
 ### Camera
 
 | Preset | View | Notes |

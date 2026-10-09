@@ -314,6 +314,7 @@ export class Engine {
     const lights = () => this.lights;
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
     this.hud = new Hud(renderer.container);
+    renderer.onError = (e) => this.reportError(e); // a view or mirror that throws: on screen, in errors
     this.context = {
       engine: this,
       scene,
@@ -853,6 +854,7 @@ export class Engine {
     this.particles.clear();
     this.hud.clear();
     this._lights?.clear();
+    this.renderer.clearBeforeRender(); // views and mirrors the level attached
     clearScene(this.scene);
     this.physics.clear();
     this.input.reset();
