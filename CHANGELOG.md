@@ -8,6 +8,15 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.7.0
+
+- **Ragdolls**: `Ragdoll` (physics/ragdoll.ts) turns a jointed model into capsules on hinge
+  joints with limits or ball joints held in cones, parts that hit the world but not each other;
+  `enable({ velocity, spin })`, `push(at, velocity)`, `sync()` (interpolated between physics
+  steps), `rootPose()` (lying face up or down, the heading to get up with), `release()` (back to
+  animation with a blend), `disable()`. `HERO_RAGDOLL`: the hero's eleven parts (also in the
+  engine kit).
+
 ## 0.6.0
 
 - **Procedural motion** (animation/procedural.ts, exported from the engine): `SpringChain`

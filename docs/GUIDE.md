@@ -339,6 +339,9 @@ const sprites = new SpriteBatch(sheet, { capacity: 100 });     // ctx.scene.add(
 
 Sprites face the camera, keep square pixels and are one draw per sheet: `sprites.set(i, { at, frame, flip })`.
 
+A ragdoll from the hero model: `const doll = new Ragdoll(ctx.physics, model, HERO_RAGDOLL); doll.enable({ velocity })`,
+then `doll.sync()` every frame instead of the mixer; `doll.release({ ground: 0 })` hands it back (blend into `GetUp`).
+
 ### Camera
 
 | Preset | View | Notes |

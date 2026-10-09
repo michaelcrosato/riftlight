@@ -349,6 +349,11 @@ stretch, planted feet that step (`LegStepper`) and a 3D two-bone IK with a pole.
 a clip, so `npm run anim` doesn't measure it: its unit tests and the Engine World rooms
 `secondary` and `legs` (with their e2e checks: planted feet never slide) do.
 
+Ragdolls (`src/engine/physics/ragdoll.ts`, the hero's parts in `src/game/hero/ragdoll.ts`) hand
+the rig's joints to physics and back: `release()` blends from wherever the body came to rest
+into a clip, which is what `GetUp` (lying on the back, head behind) and `GetUpFront` (on the
+front, head ahead) are for. The `ragdolls` room plays them that way.
+
 ## Adding a character
 
 1. Build a jointed rig (see `scripts/assets/hero.mjs`). Joints are named `Object3D`s, meshes

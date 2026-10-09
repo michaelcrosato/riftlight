@@ -18,7 +18,7 @@ declare const __PIXEL_BUILTINS__: Record<string, string> | undefined;
 export * from './engine';
 export * as THREE from 'three/webgpu';
 export * as TSL from 'three/tsl';
-export { HERO_CLIPS, HERO_MODEL, HERO_RIG } from './game/hero';
+export { HERO_CLIPS, HERO_MODEL, HERO_RAGDOLL, HERO_RIG } from './game/hero';
 
 const builtins: Record<string, string> = typeof __PIXEL_BUILTINS__ === 'object' ? __PIXEL_BUILTINS__ : {};
 

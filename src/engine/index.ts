@@ -106,6 +106,7 @@ export { RopeMesh, SoftMesh } from './render/softMesh';
 export { beltMaterial, type BeltMaterial } from './render/belt';
 export { RippleField, WAVES_CALM, WAVES_CHOPPY, waterHeight, type RippleOptions, type Wave as WaterWave } from './physics/water';
 export { Floaters, type FloaterOptions } from './physics/buoyancy';
+export { Ragdoll, type RagdollOptions, type RagdollPart } from './physics/ragdoll';
 export { MAX_WAVES, WaterSurface, type WaterOptions } from './render/water';
 export { Precipitation, type PrecipitationKind, type PrecipitationOptions } from './render/precipitation';
 export { applySky, groundFog, skyAt, type SkyState } from './render/sky';

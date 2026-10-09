@@ -36,6 +36,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Animation Lab | `clips` Clip Gallery | the hero's clips as data, on mannequins, by family |
 | | `secondary` Secondary Motion | a scarf, a tail and an antenna on spring chains, slimes that squash and stretch |
 | | `legs` Procedural Legs | a six-legged walker that follows you up steps, a crab and a robot: planted feet, stepping gaits, two-bone IK |
+| | `ragdolls` Ragdolls | dummies that go limp when hit, tumble down stairs, get knocked over by a cannon, then blend into a get-up clip |
 | | `sprites` Pixel Sprites | pixel-art critters, trees and torches as camera-facing sprites drawn in code, a crowd of 300 in three draws |
 | Visual Effects | `lights` Lights & Shadows | the light pool, flicker presets, RGB mixing, a moving lantern, the sun dial, quality |
 | | `particles` Particle Garden | every particle effect, built in and registered as data |
