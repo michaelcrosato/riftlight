@@ -27,6 +27,12 @@ export const TUNING = {
     snapToGround: 0.35,
     maxSlopeClimbDeg: 46,
     minSlopeSlideDeg: 40,
+    /**
+     * Standing in a force field's sideways push (wind, a current: physics.fields), the feet drift
+     * at acceleration × this (m/s per m/s²): a 20 m/s² gale moves a standing hero at 1.6 m/s,
+     * a running one fights it. In the air the full acceleration applies (momentum).
+     */
+    windGrip: 0.08,
   },
   /** Ray probes around the capsule (heights above the feet, lengths). */
   probes: {

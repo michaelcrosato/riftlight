@@ -748,9 +748,10 @@ export class Engine {
    * whatever it built. The returned promise resolves when the level runs (or was superseded).
    *
    * Unloading calls the old game's `dispose(ctx)`, removes every scene object that is not
-   * engine-owned and frees its GPU resources, clears physics (bodies, colliders,
-   * controllers, triggers, tags), particles, HUD and music, and resets the scene
-   * background, fog and the sun / ambient light to the engine defaults. Filters, render
+   * engine-owned and frees its GPU resources, clears physics (bodies, colliders, joints,
+   * controllers, triggers, tags, movers, force fields, belts; gravity and the solver back to
+   * their defaults), particles, HUD and music, and resets the scene background, fog and the
+   * sun / ambient light to the engine defaults. Filters, render
    * mode, resolution, quality, volumes and the camera rig carry over; pass `camera` to
    * switch the preset (applied before `setup()`, so `ctx.camera` is already the new one).
    * Nothing advances while loading, and input made while loading is dropped.

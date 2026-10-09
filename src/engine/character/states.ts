@@ -528,6 +528,7 @@ function groundJump(c: PlatformerCharacter, input: MoveInput): void {
 export function startJump(c: PlatformerCharacter, kind: JumpKind, input?: MoveInput): void {
   const J = T.jump;
   if (!c.setStance('stand')) return; // no headroom: stay down
+  c.launched = false; // a real jump: releasing the button cuts it short again
   const f = c.fwd();
   switch (kind) {
     case 'Jump': c.vy = J.vy.Jump; break;
@@ -580,7 +581,8 @@ function stepAir(c: PlatformerCharacter, dt: number, input: MoveInput): void {
   }
 
   // Variable jump height: releasing jump while rising cuts the arc (not for flips).
-  const fixedArc = c.jumpKind === 'Backflip' || c.jumpKind === 'TripleJump' || c.jumpKind === 'SideFlip' || c.jumpKind === 'LongJump';
+  // (a launch, or an updraft carrying the hero up: releasing jump doesn't cut those short)
+  const fixedArc = c.launched || c.lifted || c.jumpKind === 'Backflip' || c.jumpKind === 'TripleJump' || c.jumpKind === 'SideFlip' || c.jumpKind === 'LongJump';
   const g = c.state === 'jump' && c.vy > 0 && !input.jumpHeld && !fixedArc ? T.gravity * A.shortHopGravity : T.gravity;
   c.vy = Math.max(c.vy + g * dt, T.maxFall);
   // Remember a press for the landing (a wall kick below uses it up instead).
@@ -747,6 +749,7 @@ function stepBellySlide(c: PlatformerCharacter, dt: number, input: MoveInput): v
 
 function grabLedge(c: PlatformerCharacter, ledge: Ledge): void {
   c.ledge = ledge;
+  c.launched = false;
   c.hvel.set(0, 0, 0);
   c.vy = 0;
   c.facing = Math.atan2(-ledge.normal.x, -ledge.normal.z);

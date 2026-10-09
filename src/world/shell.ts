@@ -420,6 +420,7 @@ export class RoomGame implements Game {
   private readonly idle: MoveInput = moveInput();
   private readonly target = new Vector3();
   private disposed = false;
+  private crushes = 0;
 
   constructor(
     readonly def: RoomDef,
@@ -465,7 +466,9 @@ export class RoomGame implements Game {
   private spawn(): void {
     const v = this.visitor;
     if (!v) return;
-    v.spawn(this.ctx.physics, this.spawnAt, { facing: this.spawnFacing, lockDepth: this.ctx.camera.lockDepth });
+    const hero = v.spawn(this.ctx.physics, this.spawnAt, { facing: this.spawnFacing, lockDepth: this.ctx.camera.lockDepth });
+    hero.shove = WORLD_SHOVE; // the hero brushes loose things aside: doors, bags, curtains, debris
+    hero.weight = WORLD_WEIGHT; // and presses down what it stands on: bridges sag, spring pads sink
     this.ctx.camera.teleport(this.cameraTarget());
   }
 
@@ -502,6 +505,15 @@ export class RoomGame implements Game {
         this.respawn();
         ctx.audio.play('hurt');
       }
+      // a platform came down on the hero: squashed, back to the start
+      const crushes = v.hero?.stats.crushes ?? 0;
+      if (crushes > this.crushes) {
+        this.respawn();
+        shell.toast('Squashed! Platforms that come down don\'t stop for anyone.', 4);
+        ctx.audio.play('hurt');
+        ctx.engine.shake.add(0.4);
+      }
+      this.crushes = crushes;
     }
     this.logic.update?.(dt);
     shell.draw(ctx, this);
@@ -566,6 +578,11 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     respawn: () => game.respawn(),
   };
 }
+
+/** The most mass the hero shoves by walking into it (PlatformerCharacter.shove). */
+export const WORLD_SHOVE = 1.5;
+/** How hard the hero presses dynamic floors (PlatformerCharacter.weight, world mass units). */
+export const WORLD_WEIGHT = 1;
 
 /** The world's camera unless a room picks its own. */
 export const WORLD_CAMERA = { preset: 'iso', pitch: 35, yaw: 45, viewHeight: 15, stiffness: 7, minZoom: 0.4, maxZoom: 3 } as const;

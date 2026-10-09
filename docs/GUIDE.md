@@ -289,6 +289,28 @@ Triggers see dynamic and kinematic bodies (the hero, crates), not level geometry
 bodies: `RAPIER.RigidBodyDesc.dynamic()` and `RAPIER.ColliderDesc.cuboid(...)` on
 `ctx.physics.world`, then `ctx.physics.bind(body, mesh)` so the mesh follows it.
 
+### Physics toys: platforms, fields, joints, destruction, cloth
+
+```js
+const lift = ctx.physics.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased());
+ctx.physics.world.createCollider(RAPIER.ColliderDesc.cuboid(1.2, 0.15, 1.2), lift);
+ctx.physics.addMover(lift, { path: [[0, 0.15, 0], [0, 4, 0]], speed: 1.5, hold: 1 }); // the hero rides it
+ctx.physics.addMover(disc, { spin: [0, 0.6, 0] });           // also: swing, curve: orbit(...) / pendulum(...)
+ctx.physics.conveyor(beltCollider, [2, 0, 0]);               // carries crates and the hero
+ctx.physics.fields.add({ box: [1, 4, 1], at: [4, 4, 0], force: [0, 90, 0], falloff: true, drag: 0.5 }); // an updraft
+ctx.physics.explode([0, 0.5, 0], { radius: 4, impulse: 12 });
+hero.launch(16);                                             // a trampoline
+hero.shove = 1.5; hero.weight = 1;                           // push loose bodies; press dynamic floors (both 0 by default)
+ropeBridge(ctx, [-3, 0, 0], [3, 0, 0], { planks: 10 });      // also chain, hingeDoor, springPad, seesaw
+const breaks = new Breakables(ctx);                          // breaks.add / break / crumble; update(dt, hero.groundCollider)
+const flag = clothGrid({ width: 2, height: 1.2, cols: 12, rows: 8, origin: [0, 3, 0], pin: 'left' });
+ctx.scene.add(new SoftMesh(flag, toonMaterial(PALETTE.red)));  // flag.step(dt) per fixed step, mesh.sync() per frame
+const balls = new InstancedBodies(ctx.physics, ctx.scene, { shape: 'ball', size: 0.2, capacity: 500 }); // one draw call
+```
+
+Movers are functions of their own clock (same at any frame rate). `hero.stats.crushes` counts a
+platform coming down on the hero: decide what it does. Ledges are fixed bodies only.
+
 ### Camera
 
 | Preset | View | Notes |

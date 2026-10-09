@@ -1,4 +1,4 @@
-import { type AnimationClip, MathUtils, type Object3D, type Quaternion, Vector3 } from 'three/webgpu';
+import { type AnimationClip, MathUtils, type Object3D, Quaternion, Vector3 } from 'three/webgpu';
 import type { FootPlacementState, GroundHit, GroundProbe } from '../animation/footPlacement';
 import type { RigSpec } from '../animation/types';
 import { PopGuard } from '../animation/popGuard';
@@ -74,6 +74,7 @@ const HALF: Record<Stance, number> = T.body.half;
 const P = T.probes;
 const UP = new Vector3(0, 1, 0);
 const DOWN = new Vector3(0, -1, 0);
+const UP_AXIS = new Vector3(0, 1, 0);
 const IGNORE = ['character'];
 
 export class PlatformerCharacter {
@@ -93,7 +94,38 @@ export class PlatformerCharacter {
   /** Last animation clip requested (for tests / debug UI). */
   anim = 'Idle';
   /** Counters for tests/tooling. */
-  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0, hurts: 0 };
+  readonly stats = { jumps: 0, landings: 0, ledgeGrabs: 0, pullUps: 0, pushes: 0, pulls: 0, hurts: 0, crushes: 0 };
+  /**
+   * The collider under the feet (its handle; -1 in the air). A moving platform's, a conveyor's
+   * or a dynamic plank's: the character rides it (`move`).
+   */
+  groundCollider = -1;
+  /**
+   * How hard the character presses the dynamic floor it stands on (a rope bridge sags where it
+   * stands, a spring pad sinks), in the physics world's mass units (density × m³: a 1 m crate
+   * of density 2 weighs 2), under the world's gravity. 0 (the default): it rides dynamic
+   * floors without pressing them.
+   */
+  weight = 0;
+  /**
+   * The most mass the character shoves at walking speed when it walks into a loose dynamic body
+   * (a swing door, a ball, a hanging bag, debris); heavier bodies move proportionally less.
+   * 0 (the default): dynamic bodies block like walls. Bodies tagged `pushable` are left to the
+   * push state either way.
+   */
+  shove = 0;
+  /** @internal A launch (trampoline) is in the air: its arc can't be cut short. */
+  launched = false;
+  /** @internal A field pushed up last step (an updraft): the rise is its, not the jump's. */
+  lifted = false;
+  /** @internal Where riding moved the feet this step (platforms, belts, wind), m. */
+  readonly carried = new Vector3();
+  /**
+   * A moving body is coming down on the head with the floor underneath: squeezed (a lift
+   * lowering onto the character, a crusher). `stats.crushes` counts each one; games decide
+   * what it does (hurt, respawn): the character itself just stays on the floor.
+   */
+  crushed = false;
   /** Seconds left in which hits are ignored (after `hurt`). Games can blink the model meanwhile. */
   invulnerable = 0;
   /**
@@ -311,6 +343,22 @@ export class PlatformerCharacter {
     return true;
   }
 
+  /**
+   * Thrown into the air at `vy` m/s (a trampoline, a spring, a geyser): a jump whose arc no
+   * button can cut short. `hvel` replaces the horizontal velocity (default: kept).
+   */
+  launch(vy: number, o: { hvel?: Vector3; kind?: JumpKind } = {}): void {
+    if (!this.setStance('stand')) return;
+    this.vy = vy;
+    if (o.hvel) this.hvel.copy(o.hvel).setY(0);
+    this.jumpKind = o.kind ?? 'Jump';
+    this.launched = true;
+    this.grounded = false;
+    this.peakY = this.feetY();
+    this.stats.jumps++;
+    this.enter('jump');
+  }
+
   /** Celebrate (games call this, e.g. on level complete). */
   celebrate(): void {
     if (this.grounded && !this.isAirborne()) startEmote(this, 'Victory');
@@ -339,6 +387,7 @@ export class PlatformerCharacter {
       // First person: body always faces the view direction.
       this.facing = Math.atan2(input.face.x, input.face.z);
     }
+    this.liftOff();
     const before = this.state;
     this.moved = false;
     stateDef(this.state).step(this, dt, input);
@@ -354,7 +403,10 @@ export class PlatformerCharacter {
       if (this.state === 'jump' && this.stateTime === 0) this.stateTime = dt;
     }
     // Fall height is measured from the last place we stood (or the jump apex).
-    if (this.grounded && !this.isAirborne()) this.peakY = this.feetY();
+    if (this.grounded && !this.isAirborne()) {
+      this.peakY = this.feetY();
+      this.launched = false;
+    }
   }
 
   /** @internal Switch state (stateTime restarts on a change), with the stance it needs. */
@@ -465,6 +517,9 @@ export class PlatformerCharacter {
     const wall = this.ray(chest, dir, RADIUS + L.reach);
     if (!wall || Math.abs(wall.normal.y) > P.wallY) return null;
     if (['noLedge', 'climbable', 'pushable', 'grabbable'].some((t) => this.physics.hasTag(wall.collider, t))) return null;
+    // only level geometry holds a hang: a loose body would fall, a moving platform would leave
+    // the hero hanging in the air (hanging doesn't ride)
+    if (!wall.collider.parent()?.isFixed()) return null;
     const probe = wall.point.clone().addScaledVector(dir, P.ledgeIn).setY(feet.y + L.probe);
     // Nothing may overhang the wall between chest height and the probe (slabs, ceilings).
     const outside = wall.point.clone().addScaledVector(dir, -P.ledgeOut);
@@ -579,6 +634,7 @@ export class PlatformerCharacter {
   move(dt: number, exclude?: RAPIER.Collider, gravity = true): void {
     this.moved = true;
     const def = stateDef(this.state);
+    this.ride(dt, def.airborne === true, def.attached === true);
     // On the ground, snapping keeps the feet down; pushing the capsule into the floor as well
     // made Rapier's KCC stall for a step every ~20 steps (no movement: a hitch). Gravity still
     // pulls when nothing is under the middle of the body (perched on an edge: slide off it).
@@ -586,9 +642,9 @@ export class PlatformerCharacter {
     const holding = this.riseHold > 0 && !def.airborne;
     if (gravity && !def.airborne) this.vy = holding || (this.grounded && this.supported()) ? 0 : Math.min(this.vy, 0) + T.gravity * dt;
     const desired = this.desired;
-    desired.x = this.hvel.x * dt;
-    desired.y = this.vy * dt;
-    desired.z = this.hvel.z * dt;
+    desired.x = this.hvel.x * dt + this.carried.x;
+    desired.y = this.vy * dt + this.carried.y;
+    desired.z = this.hvel.z * dt + this.carried.z;
     if (this.laneZ !== null) desired.z = (this.laneZ - this.body.translation().z) * T.ground.laneGain;
     // Up a step: lift onto it in this move. Rapier's autostep doesn't catch a riser lower than
     // the capsule's radius: the round bottom rides up its edge like a slope instead, losing
@@ -601,6 +657,7 @@ export class PlatformerCharacter {
     else this.kcc.enableSnapToGround(T.body.snapToGround);
     const predicate = exclude ? (c: RAPIER.Collider) => c.handle !== exclude.handle : undefined;
     this.kcc.computeColliderMovement(this.collider, desired, RAPIER.QueryFilterFlags.EXCLUDE_SENSORS, undefined, predicate);
+    if (this.shove > 0) this.shoveBodies();
     const m = this.kcc.computedMovement();
     this.grounded = this.kcc.computedGrounded();
     this.lastBonk = desired.y > 0 && m.y < desired.y * 0.5;
@@ -613,6 +670,148 @@ export class PlatformerCharacter {
     next.z = t.z + m.z;
     this.body.setNextKinematicTranslation(next);
   }
+
+  /**
+   * What carries the character this step, into `carried` (m): the platform under the feet (a
+   * kinematic mover's next pose, a dynamic body's velocity there), a conveyor belt, and wind
+   * from force fields. In the air, fields accelerate the velocity instead (a fan lifts, a gust
+   * pushes); on a dynamic floor the character presses down with its `weight`. A platform that
+   * turns turns the character with it.
+   */
+  private ride(dt: number, airborne: boolean, attached: boolean): void {
+    const c = this.carried.set(0, 0, 0);
+    const feet = this.feetInto(this.rideFeet);
+    this.checkCrush(feet);
+    // force fields (wind, fans, currents), at the chest
+    const a = this.physics.fields.accelerationAt(feet.x, feet.y + 0.9, feet.z, this.rideAcc);
+    this.lifted = a[1] > 0;
+    if (airborne) {
+      this.vy += a[1] * dt;
+      this.hvel.x += a[0] * dt;
+      this.hvel.z += a[2] * dt;
+      // a field with drag (thick air, water) damps the rise and fall: an updraft settles
+      const drag = this.physics.fields.dragAt(feet.x, feet.y + 0.9, feet.z, 'character');
+      if (drag) this.vy *= 1 - Math.min(1, drag.drag * dt * 4);
+    } else if (!attached) {
+      // standing: a sideways push drifts the feet (an updraft lifts off in fixedUpdate)
+      c.x += a[0] * dt * T.body.windGrip;
+      c.z += a[2] * dt * T.body.windGrip;
+    }
+    this.groundCollider = -1;
+    if (airborne || attached || !this.grounded) return;
+    const hit = this.groundHit;
+    if (!this.physics.castDown(feet.x, feet.y + P.groundUp, feet.z, P.groundUp + 0.25, hit, IGNORE, this.body)) return;
+    this.groundCollider = hit.id;
+    const belt = this.physics.beltVelocity(hit.id);
+    if (belt) {
+      c.x += belt[0] * dt;
+      c.z += belt[2] * dt;
+    }
+    const body = this.physics.world.getCollider(hit.id)?.parent();
+    if (!body || body.isFixed()) return;
+    // a floor dropping away (a crumbling tile, a cut bridge) is no floor: fall instead
+    if (body.isDynamic() && body.linvel().y < -2) {
+      this.groundCollider = -1;
+      return;
+    }
+    const p = this.rideP.set(feet.x, hit.y, feet.z);
+    if (body.isKinematic()) {
+      // where this point of the platform will be after the step: next pose × this pose⁻¹
+      const t = body.translation();
+      const r = body.rotation();
+      const nt = body.nextTranslation();
+      const nr = body.nextRotation();
+      const q = this.rideQ.set(nr.x, nr.y, nr.z, nr.w).multiply(this.rideQ2.set(r.x, r.y, r.z, r.w).invert());
+      const rel = this.rideRel.set(p.x - t.x, p.y - t.y, p.z - t.z).applyQuaternion(q);
+      c.x += nt.x + rel.x - p.x;
+      c.y += nt.y + rel.y - p.y;
+      c.z += nt.z + rel.z - p.z;
+      // its turn about Y turns the character too
+      const yaw = 2 * Math.atan2(q.y, q.w);
+      if (Math.abs(yaw) > 1e-7) {
+        this.facing += yaw;
+        this.hvel.applyAxisAngle(UP_AXIS, yaw);
+      }
+    } else if (body.isDynamic()) {
+      const v = body.velocityAtPoint(p);
+      c.x += v.x * dt;
+      c.y += Math.min(v.y, 6) * dt; // a sinking plank, a spring pad coming back up
+      c.z += v.z * dt;
+      // press it down with our weight (a rope bridge sags where you stand)
+      if (this.weight > 0) body.applyImpulseAtPoint({ x: 0, y: this.physics.world.gravity.y * this.weight * dt, z: 0 }, p, true);
+    }
+  }
+
+  /**
+   * An updraft stronger than gravity under a standing character lifts it off: it starts to fall
+   * upward this step (before the state step, so the ground states don't snap it back down).
+   */
+  private liftOff(): void {
+    const def = stateDef(this.state);
+    if (def.airborne || def.attached || !this.grounded || this.physics.fields.count === 0) return;
+    const feet = this.feetInto(this.rideFeet);
+    const a = this.physics.fields.accelerationAt(feet.x, feet.y + 0.9, feet.z, this.rideAcc);
+    if (a[1] <= -T.gravity * 1.05) return;
+    this.vy = Math.max(this.vy, 2);
+    this.grounded = false;
+    this.peakY = this.feetY();
+    this.enter('fall');
+  }
+
+  /**
+   * A kinematic body above the head that closes the gap this step, with the feet on the ground:
+   * crushed (counted once, until it moves away again).
+   */
+  private checkCrush(feet: Vector3): void {
+    const was = this.crushed;
+    this.crushed = false;
+    if (!this.grounded && !was) return;
+    const top = feet.y + 2 * (HALF[this.stance] + RADIUS);
+    const hit = this.groundHit;
+    // from the knees up (clear of the floor): a body already pressing into the capsule is found too
+    if (!this.physics.castUp(feet.x, feet.y + 0.4, feet.z, top - feet.y - 0.2, hit, IGNORE, this.body)) return;
+    const body = this.physics.world.getCollider(hit.id)?.parent();
+    if (!body || !body.isKinematic()) return;
+    const fall = body.translation().y - body.nextTranslation().y;
+    const gap = hit.y - fall - top; // between the head and it, after this step
+    this.crushed = was ? gap < 0.1 : fall > 0 && gap < 0.02;
+    if (this.crushed && !was) this.stats.crushes++;
+  }
+
+  /**
+   * Walking into loose dynamic bodies shoves them (the KCC alone treats every body as a wall):
+   * the point touched is pushed toward the character's horizontal speed, with at most `shove`
+   * worth of mass.
+   */
+  private shoveBodies(): void {
+    const n = this.kcc.numComputedCollisions();
+    for (let i = 0; i < n; i++) {
+      const hit = this.kcc.computedCollision(i, this.kccHit);
+      const col = hit?.collider;
+      const body = col?.parent();
+      if (!hit || !col || !body || !body.isDynamic() || this.physics.hasTag(col, 'pushable')) continue;
+      // into the body, horizontally (floors and ceilings: riding handles those)
+      const l = Math.hypot(hit.normal1.x, hit.normal1.z);
+      if (l < 0.3) continue;
+      const dx = -hit.normal1.x / l;
+      const dz = -hit.normal1.z / l;
+      const speed = this.hvel.x * dx + this.hvel.z * dz;
+      if (speed <= 0.1) continue;
+      const v = body.velocityAtPoint(hit.witness1);
+      const gap = speed * 1.15 - (v.x * dx + v.z * dz);
+      if (gap <= 0) continue;
+      const k = Math.min(body.mass(), this.shove) * gap;
+      body.applyImpulseAtPoint({ x: dx * k, y: 0, z: dz * k }, hit.witness1, true);
+    }
+  }
+
+  private readonly kccHit = new RAPIER.CharacterCollision();
+  private readonly rideFeet = new Vector3();
+  private readonly rideAcc: [number, number, number] = [0, 0, 0];
+  private readonly rideP = new Vector3();
+  private readonly rideRel = new Vector3();
+  private readonly rideQ = new Quaternion();
+  private readonly rideQ2 = new Quaternion();
 
   /**
    * How far up the step the capsule is about to run into this move (0: none). A riser just
