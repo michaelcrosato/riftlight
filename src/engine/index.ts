@@ -113,6 +113,7 @@ export { GrassField, MAX_PUSHERS, type GrassOptions } from './render/grass';
 export { WindUniforms, swayMaterial, swayObject, type SwayOptions } from './render/sway';
 export { Trail, type TrailOptions } from './render/trail';
 export { DECAL_SHAPES, Decals, type DecalOptions, type DecalShape } from './render/decals';
+export { drawSheet, SpriteBatch, type SpriteOptions, type SpriteSheet } from './render/sprites';
 export {
   PlatformerCharacter,
   type JumpKind,
@@ -162,18 +163,27 @@ export {
   compileClip,
   compileClips,
   gaitClip,
+  gaitPartners,
+  LegStepper,
   mirror,
   placeFeet,
   renderCurves,
   renderSheet,
   sampleClip,
+  SpringChain,
+  Squash,
+  twoBoneIK,
   validateClip,
   type ClipDef,
   type ClipReport,
+  type Foot,
   type FootGoal,
   type GaitSpec,
   type Key,
+  type LegDef,
+  type LegStepperOptions,
   type Pose,
   type RigSpec,
   type SheetImage,
+  type SpringChainOptions,
 } from './animation';

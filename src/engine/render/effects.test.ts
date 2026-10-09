@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { OrthographicCamera, Scene, Vector3 } from 'three/webgpu';
+import { DataTexture, OrthographicCamera, Scene, Vector3 } from 'three/webgpu';
 import { RippleField, WAVES_CALM, waterHeight } from '../physics/water';
 import { Decals } from './decals';
 import { GrassField } from './grass';
 import { Precipitation } from './precipitation';
+import { SpriteBatch } from './sprites';
 import { Trail } from './trail';
 import { WaterSurface } from './water';
 
@@ -77,5 +78,25 @@ describe('Decals', () => {
     expect(decals.count()).toBe(0);
     decals.dispose();
     expect(scene.children.length).toBe(0);
+  });
+});
+
+describe('SpriteBatch', () => {
+  it('places, changes and runs out of sprites; frames wrap round the sheet', () => {
+    const sheet = { texture: new DataTexture(new Uint8Array(4 * 4 * 2 * 4), 4 * 4, 2 * 4), frame: [4, 4] as const, cols: 4, rows: 2, frames: 6 };
+    const batch = new SpriteBatch(sheet, { capacity: 2 });
+    expect(batch.count).toBe(0);
+    const a = batch.spawn([1, 0, 2], { size: 2, frame: 3 });
+    const b = batch.spawn([0, 0, 0]);
+    expect([a, b, batch.spawn([5, 5, 5])]).toEqual([0, 1, -1]);
+    expect(batch.count).toBe(2);
+    batch.set(a, { at: [4, 1, -1], frame: 7, flip: true });
+    expect(batch.at(a)).toEqual([4, 1, -1]);
+    expect(batch.frameOf(a)).toBe(1); // 7 wraps to 1 on a 6-frame sheet
+    batch.put(b, 1, 2, 3, -1, false);
+    expect([batch.at(b), batch.frameOf(b)]).toEqual([[1, 2, 3], 5]); // -1 is the last frame
+    batch.put(b, 1, 2, 3, 2.7);
+    expect(batch.frameOf(b)).toBe(2); // whole frames only
+    batch.dispose();
   });
 });

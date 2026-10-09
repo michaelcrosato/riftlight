@@ -12,3 +12,4 @@ export { POSE_LAYER_DEFAULTS, PoseLayers, type PoseLayerInput, type PoseLayerTun
 export { analyzeClip, sampleFrames, type ClipReport, type SampledFrame } from './metrics';
 export { renderCurves, type CurveOptions } from './curves';
 export { defaultFrames, renderSheet, type SheetImage, type SheetOptions, type ViewName } from './sheet';
+export { gaitPartners, LegStepper, SpringChain, Squash, twoBoneIK, type Foot, type LegDef, type LegStepperOptions, type SpringChainOptions } from './procedural';

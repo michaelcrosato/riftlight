@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.6.0
+
+- **Procedural motion** (animation/procedural.ts, exported from the engine): `SpringChain`
+  (points hanging off a moving root with momentum, gravity, a pull toward their rest direction
+  and fixed lengths: scarves, tails, antennae), `Squash` (a damped spring drawn as a
+  volume-preserving `[xz, y]` scale), `LegStepper` (planted feet that step in arcs when they
+  fall behind, only while their partners are down; `reset`, `planted()`), `gaitPartners(n)`
+  (a tripod for six legs, a trot for four) and `twoBoneIK` (a 3D knee or elbow bent toward a
+  pole).
+- **Pixel sprites**: `SpriteBatch` (camera-facing quads, one instanced draw per sheet, each
+  with its own position, size, frame and mirror; alpha cut-out, nearest sampling) and
+  `drawSheet` (paint a sheet in code on a canvas).
+
 ## 0.5.0
 
 - **Water**: `WaterSurface` (render/water.ts): up to four travelling waves moved in the vertex
