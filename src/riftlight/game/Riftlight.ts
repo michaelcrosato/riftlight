@@ -1422,8 +1422,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
 /** `?seed=123` makes new runs reproducible (tests, bug reports, playtests). */
 function urlSeed(): number | null {
   try {
-    const v = Number(new URLSearchParams(location.search).get('seed'));
-    return Number.isFinite(v) && v > 0 ? v >>> 0 : null;
+    const v = new URLSearchParams(location.search).get('seed');
+    return v && /^\d+$/.test(v) ? Number(v) >>> 0 : null;
   } catch {
     return null;
   }

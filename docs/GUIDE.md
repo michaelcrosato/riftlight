@@ -699,6 +699,7 @@ class LanternNight {
 
   async setup(ctx) {
     const { scene, physics, palette, engine } = ctx;
+    this.sparkle = ctx.random.fork('fireflies'); // drawn per frame (cosmetic): its own stream, so gameplay's never depends on the frame rate
     // Night: dim the engine's sun and ambient light (reset for the next game on unload).
     engine.sun.color.setHex(PALETTE.sky);
     engine.sun.intensity = 1.2;
@@ -814,7 +815,7 @@ class LanternNight {
     }
     if (ctx.time > this.nextFirefly) {
       this.nextFirefly = ctx.time + 0.3;
-      ctx.particles.burst('firefly', this.at.set(ctx.random.range(-7, 7), ctx.random.range(0.5, 2), ctx.random.range(-7, 7)));
+      ctx.particles.burst('firefly', this.at.set(this.sparkle.range(-7, 7), this.sparkle.range(0.5, 2), this.sparkle.range(-7, 7)));
     }
     const lit = this.pads.filter((p) => p.lit).length;
     ctx.hud.clear();
@@ -956,7 +957,9 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
    the fixed 60 Hz step; animate, spin pickups and draw the HUD per frame. Use `ctx.time`
    (it stops while paused) and the `dt` you are given, never `performance.now()`. Anything
    random comes from `ctx.random` (`range`, `int`, `chance`, `pick`, `fork`), never
-   `Math.random`: the same seed (`?seed=`) then replays the same game.
+   `Math.random`: the same seed (`?seed=`) then replays the same game. Draw it in `setup`,
+   `fixedUpdate` and event handlers; randomness drawn per frame in `update` (cosmetic) comes
+   from a fork made in `setup`, so the frame rate never changes what gameplay draws.
 5. **Physics owns positions.** Don't set `mesh.position` on things with bodies: `physics.bind`
    them, or let the character controller pose its model. Static blocks: one collider each,
    the same size as the mesh.
@@ -1012,7 +1015,7 @@ e.audio.counts; e.particles.alive; e.physics.counts(); e.hud.canvas;
 URL flags (with `withUrlOptions` in `Engine.start`): `?debug=1` (debug panel),
 `?backend=webgl` (force the fallback), `?look=noir`, `?filters=crt,scanlines`,
 `?camera=third`, `?zoom=1.5`, `?mode=raw` (no pixel pass), `?res=320`, `?touch=1`,
-`?quality=low`, `?fps=30`. Hotkeys: P pixel/raw, R resolution, \` debug panel,
+`?quality=low`, `?fps=30`, `?seed=7` (`ctx.random`). Hotkeys: P pixel/raw, R resolution, \` debug panel,
 [ and ] cycle looks, M mute.
 
 **`check.mjs` plays a page in a real browser** and fails on anything wrong:

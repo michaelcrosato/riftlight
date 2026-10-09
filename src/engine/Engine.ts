@@ -175,8 +175,8 @@ export function optionsFromUrl(search = location.search): Partial<EngineOptions>
   const p = new URLSearchParams(search);
   const opts: Partial<EngineOptions> = {};
   if (p.get('backend') === 'webgl') opts.forceWebGL = true;
-  const seed = Number(p.get('seed'));
-  if (p.get('seed') !== null && Number.isFinite(seed) && seed >= 0) opts.seed = seed >>> 0;
+  const seed = p.get('seed');
+  if (seed && /^\d+$/.test(seed)) opts.seed = Number(seed) >>> 0;
   if (p.get('mode') === 'raw') opts.mode = 'raw';
   if (p.get('res') === '320') opts.resolution = RESOLUTIONS.compare;
   if (p.get('debug') === '0') opts.debugUI = false;

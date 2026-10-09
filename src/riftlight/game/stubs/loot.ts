@@ -51,14 +51,9 @@ function makeItem(rng: Rng, level: number, rarity: Rarity, base?: Base): Item {
   const n = rarity === 'magic' ? rng.int(1, 2) : rarity === 'rare' ? rng.int(3, 4) : 0;
   const picks = rng.shuffle([...AFFIXES]).slice(0, n);
   const name = rarity === 'rare' ? `${rng.pick(RARE_A)} ${rng.pick(RARE_B)}` : rarity === 'magic' ? `${b.name} of the ${picks[0]!.name}` : b.name;
-  return {
-    uid: `stub-${rng.int(0, 2 ** 32 - 1).toString(36)}`, // drawn last, so the same seed makes the same items
-    base: b.id,
-    rarity,
-    level,
-    name,
-    affixes: picks.map((a, i) => ({ id: `${a.name.toLowerCase()}`, tier: 1 + (i % 3), mods: [a.make(rng, level)] })),
-  };
+  const affixes = picks.map((a, i) => ({ id: `${a.name.toLowerCase()}`, tier: 1 + (i % 3), mods: [a.make(rng, level)] }));
+  // drawn last, so the uid never shifts the item's own rolls
+  return { uid: `stub-${rng.int(0, 2 ** 32 - 1).toString(36)}`, base: b.id, rarity, level, name, affixes };
 }
 
 const baseOf = (item: Item) => BASES.find((b) => b.id === item.base) ?? BASES[0]!;

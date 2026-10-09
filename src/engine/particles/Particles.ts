@@ -139,12 +139,12 @@ export class Particles {
     }
   }
 
-  /** Kill every particle and free the emitters (GPU buffers, materials). */
   /** Take bursts' randomness from `rng` (the engine passes each level's `ctx.random` fork). */
   reseed(rng: Rng): void {
     this.rng = rng;
   }
 
+  /** Kill every particle and free the emitters (GPU buffers, materials). */
   clear(): void {
     for (const [key, e] of [...this.emitters]) this.free(key, e);
   }

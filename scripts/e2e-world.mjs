@@ -565,7 +565,9 @@ export async function runWorld(h) {
       }
       return { spots, seed: window.__PIXEL_ENGINE__.state().seed };
     });
-    check(JSON.stringify(drops.spots[0]) === JSON.stringify(drops.spots[1]) && drops.spots[0][0] !== 0, `a random drop lands on the same spot each visit (seed ${drops.seed}: ${drops.spots[0]})`);
+    // a drop spot: 4 m up, within 0.75 m of the drop point (0, -2); not the tower the room starts with
+    const dropped = (at) => at[1] === 4 && Math.abs(at[0]) <= 0.75 && Math.abs(at[2] + 2) <= 0.75 && at[0] !== 0;
+    check(drops.spots.every(dropped) && JSON.stringify(drops.spots[0]) === JSON.stringify(drops.spots[1]), `a random drop lands on the same spot each visit (seed ${drops.seed}: ${drops.spots[0]})`);
     check(shop.sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${shop.sandbox.mapped.toExponential(1)})`);
     check(shop.sandbox.picked === 'crate' && shop.sandbox.held === 'crate' && shop.sandbox.moved > 1, `sandbox: the mouse picks a crate (${shop.sandbox.picked}) and drags it ${shop.sandbox.moved.toFixed(1)} m`);
     check(shop.sandbox.saved && shop.sandbox.cleared === 0 && shop.sandbox.loaded && shop.sandbox.same, `a layout saves, clears and loads back the same (${shop.sandbox.count} props)`);

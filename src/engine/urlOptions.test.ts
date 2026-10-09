@@ -35,5 +35,7 @@ describe('URL options', () => {
     expect(optionsFromUrl('?seed=-3').seed).toBeUndefined();
     expect(optionsFromUrl('?seed=abc').seed).toBeUndefined();
     expect(optionsFromUrl('').seed).toBeUndefined();
+    expect(optionsFromUrl('?seed=').seed).toBeUndefined();
+    expect(optionsFromUrl('?seed=1.5').seed).toBeUndefined();
   });
 });

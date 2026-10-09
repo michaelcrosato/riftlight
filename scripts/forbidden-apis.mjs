@@ -19,17 +19,40 @@ const RULES = [
   { re: /from\s+['"]three\/(examples\/jsm|addons)\/postprocessing\//, why: 'WebGL-only postprocessing; use three/addons/tsl/display/*' },
   { re: /from\s+['"](react|react-dom|@react-three\/[^'"]+|babylonjs|@babylonjs\/[^'"]+|phaser|pixi\.js|playcanvas)['"]/, why: 'no React or external engines' },
   // Determinism (docs/DOCTRINE.md, principle 1): randomness and time come from the game.
-  { re: /\bMath\.random\s*\(/, why: 'use ctx.random (a seeded Rng, src/engine/random.ts): the same seed must replay the same game', tools: true },
   {
-    re: /\b(Date\.now|performance\.now)\s*\(/,
+    re: /\bMath\s*(\.\s*random\b|\[\s*['"`]random['"`]\s*\])|\bcrypto\s*\.\s*(getRandomValues|randomUUID)\b/,
+    why: 'use ctx.random (a seeded Rng, src/engine/random.ts): the same seed must replay the same game',
+    tools: true,
+  },
+  {
+    re: /\b(Date|performance)\s*\.\s*now\b|\bnew\s+Date\s*\(\s*\)/,
     why: "game time is ctx.time; a measurement, UI clock or timestamp says so with a '// real time: <why>' comment on the line",
-    allow: /\/\/ real time/,
+    allow: /^\/\/ real time: \S/,
     tools: true,
   },
 ];
 
-/** Interactive tools (not games) may use real randomness and time. */
-const TOOLS = /\/src\/labs\//;
+/** Interactive tools (not games) may use real randomness and time (paths from the repo root). */
+const TOOLS = /^src\/labs\//;
+
+/**
+ * A line split into its code and its `//` comment (strings and escapes skipped, so `'http://x'`
+ * stays code). Lines inside a block comment (starting with `*` or `/*`) are all comment.
+ */
+function split(line) {
+  const t = line.trimStart();
+  if (t.startsWith('*') || t.startsWith('/*')) return { code: '', comment: '' };
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (c === '\\') i++;
+    else if (quote) {
+      if (c === quote) quote = null;
+    } else if (c === "'" || c === '"' || c === '`') quote = c;
+    else if (c === '/' && line[i + 1] === '/') return { code: line.slice(0, i), comment: line.slice(i) };
+  }
+  return { code: line, comment: '' };
+}
 
 async function* walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -43,12 +66,13 @@ const problems = [];
 
 for await (const file of walk(join(ROOT, 'src'))) {
   const lines = (await readFile(file, 'utf8')).split('\n');
+  const rel = file.slice(ROOT.length);
   lines.forEach((line, i) => {
-    const code = line.replace(/\/\/.*$/, '');
+    const { code, comment } = split(line);
     for (const { re, why, allow, tools } of RULES) {
-      if (tools && TOOLS.test(file)) continue;
-      if (allow?.test(line)) continue;
-      if (re.test(code)) problems.push(`${file.slice(ROOT.length)}:${i + 1}: ${line.trim()}\n    → ${why}`);
+      if (tools && TOOLS.test(rel)) continue;
+      if (allow?.test(comment)) continue;
+      if (re.test(code)) problems.push(`${rel}:${i + 1}: ${line.trim()}\n    → ${why}`);
     }
   });
 }

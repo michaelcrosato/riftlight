@@ -1022,6 +1022,9 @@ Everything random in a game comes from `ctx.random`, an `Rng` (`src/engine/rando
 mulberry32, `fork` by purpose) the engine reseeds before each level's `setup` from its seed and
 the game's name: the same seed (`EngineOptions.seed`, `?seed=`, default 1; `state().seed`) and
 inputs give the same game. Particle bursts draw from a fork of it too. Game time is `ctx.time`.
+Draw from `ctx.random` in `setup`, `fixedUpdate` and event handlers (triggers, input); randomness
+drawn per rendered frame in `update` (cosmetic) comes from a fork made in `setup`, so the frame
+rate never changes what gameplay draws.
 `npm run lint` refuses `Math.random` and refuses `Date.now()` / `performance.now()` unless the
 line says why it needs real time (`// real time: <why>`: measurements, UI clocks, timestamps);
 interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
