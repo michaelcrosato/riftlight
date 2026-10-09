@@ -48,6 +48,8 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `layers` Mix & Match | looks per layer: characters vs environment |
 | | `filters` Filter Bench | every filter on a pad; build a stack |
 | | `transitions` Screen Transitions | nine transitions, a flash, a shockwave |
+| Genre Wing | `stealth` Stealth | guards on patrol with vision cones that stop at walls; seen too long, they all chase you along A* paths |
+| | `flocks` Flocks & Herds | birds, a school of fish and a pen of sheep as boids; they scatter from the hero |
 
 ## How it is built (`src/world/`)
 

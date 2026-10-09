@@ -758,6 +758,31 @@ engine kit) is the hero's eleven parts. Part sizes and `offset` are in metres at
 scale 1 (scale them for a scaled model); a hinge part twisted off its X axis when enabled snaps
 onto it in the first step (the hero's clips bend elbows and knees about X only).
 
+### Navigation and flocking (`src/engine/ai/`)
+
+```ts
+const nav = NavGrid.fromRows(MAP, { blocked: '#c' });     // the same ASCII map that builds the level
+const path = nav.path([x, 0, z], [hx, 0, hz]);            // world points, corners only (null: no way)
+nav.lineOfSight(gx, gz, hx, hz);                          // a wall or a crate in between?
+nav.castWall(gx, gz, dirX, dirZ, 7);                      // distance to the first wall (vision cones)
+nav.flowTo(hx, hz); nav.flowDirection(x, z, out);         // one fill, then every agent reads its way
+const flock = new Boids(120, { bounds: { min: [-10, 1, -10], max: [10, 6, 10] } });
+flock.flee = { at: heroPos, radius: 4 }; flock.step(dt); // then flock.pos / flock.vel (xyz each)
+```
+
+`NavGrid` (pure, unit-tested) is the level as walkable cells (one per metre by default,
+centred on the origin like `kit.map`; `fromRows` closes '#' and ' ' unless told otherwise).
+`path` is A* with diagonal moves that never cut a corner (octile distance as the heuristic),
+smoothed so it turns only where a wall is in the way; a target inside a wall goes to the
+nearest open cell that can be reached. `lineOfSight` walks the cells under a segment (a DDA;
+`radius` tests a body that wide), and `castWall` is the same walk, so a vision cone drawn with
+it shows exactly what `lineOfSight` would see.
+`flowTo` fills the grid with walking distances to one target (Dijkstra, rebuilt only when the
+target changes cell or `setOpen` changes the grid), and `flowDirection` is then a lookup per
+agent. `Boids` is Reynolds' flocking on typed arrays: separation, alignment and cohesion from
+the neighbours in a spatial hash, plus `seek`, `flee`, `obstacles` (spheres) and `bounds` (pushed back in from `margin` inside them);
+`flat` keeps a herd or a school on its plane; seeded, so runs repeat.
+
 ### Water and buoyancy
 
 ```ts

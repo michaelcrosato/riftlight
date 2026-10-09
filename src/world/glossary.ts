@@ -130,6 +130,13 @@ export const GLOSSARY: readonly Term[] = [
   // games
   { term: 'pad', section: 'games', text: 'A plate on the floor in these rooms: step on it to change a setting.' },
   { term: 'game loop', section: 'games', text: 'Every frame: read input, step physics (fixed steps), update the game, update the camera, draw.' },
+  { term: 'navigation grid', section: 'games', text: 'The level as a grid of cells marked walkable or blocked: what paths, flow fields and line-of-sight checks run on.' },
+  { term: 'A*', section: 'games', text: 'The classic shortest-path search: grow outward from the start, always trying the cell that looks best (the cost so far plus a guess of the cost left, never an overestimate).' },
+  { term: 'line of sight', section: 'games', text: 'Whether one point can see another: walk the cells (or cast a ray) between them and look for a wall.' },
+  { term: 'vision cone', section: 'games', text: 'What a guard can see: within a distance, within an angle of where it faces, and not behind a wall.' },
+  { term: 'boids', section: 'games', text: 'Reynolds\' flocking (1986): each agent steers by its neighbours alone (keep apart, line up, stay close) and a flock emerges.' },
+  { term: 'steering', section: 'games', text: 'Moving an agent by forces toward a desired velocity (seek, flee, arrive, avoid) instead of setting its position: smooth, and they add up.' },
+  { term: 'spatial hash', section: 'games', text: 'Space cut into a grid of buckets, each listing what is inside: finding neighbours means looking in a few nearby buckets, not checking everyone.' },
   // tools
   { term: 'agent API', section: 'tools', text: 'window.__WORLD__ and window.__PIXEL_ENGINE__: what tests and AI agents drive the game through.' },
   { term: 'e2e test', section: 'tools', text: 'A test that opens the real game in a browser, plays it and checks the frames and numbers.' },

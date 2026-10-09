@@ -367,6 +367,70 @@ export async function runWorld(h) {
     check(anim.errors.length === 0, `the animation wing runs without errors${anim.errors.length ? ': ' + anim.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-crowd.png`);
 
+    // ------------------------------------------------------------- genre wing
+    const genres = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // stealth: unseen at the start; in front of the watch guard you are seen, chased and caught
+      await w.goto('stealth', { instant: true });
+      e.step(180);
+      const quiet = { states: w.room.states(), alarms: w.room.alarms() };
+      e.game.visitor.teleport([-0.5, 0, 0], 0);
+      let n = 0;
+      let onFloor = true;
+      while (w.room.caught() < 1 && n++ < 900) {
+        e.step(1);
+        onFloor &&= w.room.onFloor();
+      }
+      const caught = w.room.caught();
+      const alarms = w.room.alarms();
+      n = 0;
+      while (w.room.states().some((st) => st !== 'patrol') && n++ < 1800) {
+        e.step(1);
+        onFloor &&= w.room.onFloor();
+      }
+      const back = w.room.states();
+      const hero = w.state().hero.at;
+      // an alarm with the hero in the far corner: every guard comes along its path, round walls and crates
+      w.room.raise();
+      const before = w.room.distances();
+      for (let i = 0; i < 90; i++) {
+        e.step(1);
+        onFloor &&= w.room.onFloor();
+      }
+      const closed = w.room.distances().map((d, i) => before[i] - d);
+      out.stealth = { quiet, alarms, caught, onFloor, back, hero, before, closed };
+      // flocks: birds and fish line up; sheep scatter from the hero
+      await w.goto('flocks', { instant: true });
+      e.step(240);
+      // alignment swings as a flock wheels: average it over two seconds
+      const order = { birds: { alignment: 0 }, fish: { alignment: 0 } };
+      for (let i = 0; i < 12; i++) {
+        e.step(10);
+        const o = w.room.order();
+        order.birds.alignment += o.birds.alignment / 12;
+        order.fish.alignment += o.fish.alignment / 12;
+      }
+      // sheep within 2 m of the middle of the pen, before and after the hero stands there
+      const near = () => w.room.sheep().filter(([x, z]) => Math.hypot(x + 8, z + 2) < 2).length;
+      const calm = near();
+      e.game.visitor.teleport([-8, 0, -2], 0);
+      e.step(120);
+      out.flocks = { birds: order.birds.alignment, fish: order.fish.alignment, calm, scared: near() };
+      out.errors = e.state().errors;
+      return out;
+    });
+    check(genres.stealth.quiet.alarms === 0 && genres.stealth.quiet.states.every((st) => st === 'patrol'), `stealth: the guards patrol and nobody sees you at the start (${genres.stealth.quiet.states})`);
+    check(genres.stealth.alarms >= 1 && genres.stealth.caught === 1, `in front of a guard you are seen and caught (${genres.stealth.alarms} alarm)`);
+    check(genres.stealth.back.every((st) => st === 'patrol') && genres.stealth.hero[0] < -10, `then the hero is back at the start and the guards back on their rounds (${genres.stealth.back})`);
+    check(genres.stealth.closed.every((d) => d > 1.5), `an alarm brings every guard in along its path (from ${genres.stealth.before.map((d) => d.toFixed(1))} m, closer by ${genres.stealth.closed.map((d) => d.toFixed(1))} m in 1.5 s)`);
+    check(genres.stealth.onFloor, 'no guard ever stands in a wall or a crate');
+    check(genres.flocks.birds > 0.45 && genres.flocks.fish > 0.4, `flocks: birds (${genres.flocks.birds.toFixed(2)}) and fish (${genres.flocks.fish.toFixed(2)}) line up (two seconds' average)`);
+    check(genres.flocks.calm >= 3 && genres.flocks.scared <= 2, `sheep scatter from the hero (${genres.flocks.calm} → ${genres.flocks.scared} within 2 m of where the hero stands)`);
+    check(genres.errors.length === 0, `the genre wing runs without errors${genres.errors.length ? ': ' + genres.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-flocks-scared.png`);
+
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {
       const w = window.__WORLD__;
