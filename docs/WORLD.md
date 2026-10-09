@@ -52,6 +52,8 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `flocks` Flocks & Herds | birds, a school of fish and a pen of sheep as boids; they scatter from the hero |
 | | `drift` Drift Track | get in a car on a ray-cast vehicle: suspension, grip, a handbrake drift, skid marks |
 | | `bullets` Bullet Hell | a turret firing six seeded patterns (hundreds of bullets, one draw call); dodge, graze, punch back |
+| Workshop | `sandbox` Sandbox | spawn props, grab and throw them with the mouse, save and load the layout as JSON |
+| | `rewind` Time Lab | dominoes, a pyramid and a ball; hold R and everything plays backwards (the hero glides back the way it came) |
 
 ## How it is built (`src/world/`)
 

@@ -111,6 +111,7 @@ export { NavGrid, type NavGridOptions } from './ai/navgrid';
 export { Boids, type BoidOptions } from './ai/boids';
 export { BulletPool, emitter, type Emitter, type Pattern, type PatternDef, type Team } from './ai/bullets';
 export { Vehicle, type DriveInput, type VehicleOptions } from './physics/vehicle';
+export { Rewind, type RewindOptions } from './physics/rewind';
 export { MAX_WAVES, WaterSurface, type WaterOptions } from './render/water';
 export { Precipitation, type PrecipitationKind, type PrecipitationOptions } from './render/precipitation';
 export { applySky, groundFog, skyAt, type SkyState } from './render/sky';

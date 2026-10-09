@@ -82,7 +82,7 @@ export class Floaters {
     const angDrag = this.o.angularDrag ?? 1.6;
     for (const f of this.list) {
       const b = f.body;
-      if (!this.world.bodies.contains(b.handle)) continue;
+      if (!b.isValid()) continue; // removed (a handle alone can name a newer body in its slot)
       const t = b.translation();
       const q = b.rotation();
       let wet = 0;

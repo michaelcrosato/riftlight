@@ -122,6 +122,8 @@ export interface PauseActions {
   glossary(): void;
   atrium(): void;
   reset(): void;
+  /** Leave for Riftlight, the game this engine was built for. */
+  riftlight(): void;
 }
 
 export function pauseMenu(inAtrium: boolean, a: PauseActions): Menu {
@@ -133,6 +135,7 @@ export function pauseMenu(inAtrium: boolean, a: PauseActions): Menu {
     { kind: 'button', id: 'glossary', label: 'Field guide', onClick: a.glossary },
     ...(inAtrium ? [] : [{ kind: 'button' as const, id: 'atrium', label: 'Back to the Atrium', onClick: a.atrium }]),
     { kind: 'button', id: 'reset', label: 'Reset room', onClick: a.reset },
+    { kind: 'button', id: 'riftlight', label: 'Play Riftlight', onClick: a.riftlight, hint: 'the game built on this engine' },
   ];
   return new Menu(widgets, { id: 'pause', title: 'Engine World', width: 170, onBack: a.resume });
 }

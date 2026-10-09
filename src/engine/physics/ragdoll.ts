@@ -98,7 +98,7 @@ export class Ragdoll {
 
   /** Whether the bodies exist (a `physics.clear()`, a level unload, removes them: then it is off). */
   get active(): boolean {
-    if (this.built.length && !this.physics.world.bodies.contains(this.built[0]!.body.handle)) {
+    if (this.built.length && !this.built[0]!.body.isValid()) {
       this.unsubscribe?.();
       this.unsubscribe = null;
       this.built = [];
@@ -314,8 +314,7 @@ export class Ragdoll {
   disable(): void {
     this.unsubscribe?.();
     this.unsubscribe = null;
-    const world = this.physics.world;
-    for (const b of [...this.built].reverse()) if (world.bodies.contains(b.body.handle)) this.physics.remove(b.body);
+    for (const b of [...this.built].reverse()) this.physics.remove(b.body); // skips one already gone
     this.built = [];
   }
 

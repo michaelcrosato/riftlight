@@ -1043,6 +1043,41 @@ to the same numbers. The page at `/` runs Riftlight (docs/GAME.md); `?game=playg
 template for that genre), `?game=world` is **Engine World**, the engine's tech demo with a room
 per technique (docs/WORLD.md), and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
 
+### Picking with the mouse
+
+```ts
+const p = engine.input.pointer;                     // NDC (−1..1, y up) over the canvas, and p.over
+ctx.camera.rayAt(p.x, p.y, origin, dir);            // the ray through that pixel
+const hit = ctx.physics.castRay(origin, dir, 1000); // what the mouse is over (cast long: an ortho rig stands far back)
+engine.input.setPointer(x, y, true);                // tests: put the pointer there, pressed
+```
+
+`input.mouseButtons` says what is held; drag a body by giving it a velocity toward where the
+mouse ray meets a plane (the Sandbox room's grab: a spring, so it still collides and can be
+thrown; a level plane when the camera looks down, an upright one facing it when it looks
+across). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;
+with `third` a left drag also turns the camera.
+
+### Time rewind
+
+```ts
+const rewind = new Rewind(physics, { seconds: 6 });
+rewind.trackAll();                                   // or track(body, …)
+rewind.extra(() => [x, y, z], (v) => hero.teleport([v[0]!, v[1]!, v[2]!])); // anything else to rewind
+rewind.rewinding = input.isDown('KeyR');             // per step or frame; rewind.fill is the history left
+```
+
+`physics/rewind.ts` records every tracked body's position, rotation, velocities and sleep after
+each physics step in a ring buffer; while `rewinding`, each step shows the record one step
+older instead (holding at the oldest), and letting go carries on with that moment's velocities
+(a body that slept then sleeps again). R is the engine's resolution hotkey by default: move it
+(`engine.debugKeys = { ...engine.debugKeys, resolution: ['F7'] }`, as the Time Lab does).
+
+Step listeners (`physics.onStep(f)`) run after each step in the order they were added, and all
+of them before bound meshes (`bind`) read their bodies, so a body a listener moves is drawn
+where it put it. `onStep(f, { first: true })` runs ahead of the others: `Rewind` puts bodies
+back there, so instanced bodies and ragdolls (listeners themselves) see the rewound pose too.
+
 ### Input: gamepads and press timing
 
 Gamepads with the W3C **standard** mapping (`gamepad.mapping === 'standard'`, what Chrome,

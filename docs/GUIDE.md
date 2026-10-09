@@ -352,6 +352,13 @@ const car = new Vehicle(ctx.physics, { at: [0, 1, 0] });   // car.drive({ thrott
 const pool = new BulletPool(3000);                         // emitter({ pattern: 'spiral', every: 0.06 }).update(pool, dt, at, aim)
 ```
 
+### Mouse picking and rewind
+
+```js
+ctx.camera.rayAt(ctx.engine.input.pointer.x, ctx.engine.input.pointer.y, origin, dir); // then ctx.physics.castRay(origin, dir, 1000)
+const rewind = new Rewind(ctx.physics, { seconds: 5 }); // rewind.trackAll(); per step: rewind.rewinding = input.isDown('KeyR') (move the engine's R hotkey: debugKeys)
+```
+
 ### Camera
 
 | Preset | View | Notes |

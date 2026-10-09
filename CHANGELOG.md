@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.10.0
+
+- **Picking**: `input.pointer` (where the pointer is over the canvas, in normalised device
+  coordinates, and whether it is over it; the screen's centre under pointer lock),
+  `input.setPointer` for tests, and `camera.rayAt(x, y, origin, dir)`: the ray through a pixel.
+- **Rewind**: `Rewind` (physics/rewind.ts) records tracked bodies (pose, velocities, sleep)
+  and `extra` state every physics step in a ring buffer and plays it backwards while
+  `rewinding`.
+- `physics.onStep` listeners now run before bound meshes read their bodies, so a body a
+  listener moves after the step is drawn where it put it; `onStep(f, { first: true })` runs
+  ahead of the other listeners.
+- `physics.remove`, `Ragdoll` and `Floaters` check a body with `isValid()`, not by handle: a
+  removed body's slot can hold a newer body, which a handle lookup took for the old one.
+
 ## 0.9.0
 
 - **Vehicles**: `Vehicle` (physics/vehicle.ts) on Rapier's ray-cast vehicle controller:

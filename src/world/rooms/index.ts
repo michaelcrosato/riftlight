@@ -23,6 +23,8 @@ import { CONSOLES, FILTER_BENCH, LAYERS, TRANSITIONS_ROOM } from './looks';
 import { MOVES } from './moves';
 import { PLATFORMS } from './platforms';
 import { RAGDOLLS } from './ragdolls';
+import { REWIND } from './rewind';
+import { SANDBOX } from './sandbox';
 import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
 import { SPRITES } from './sprites';
@@ -67,6 +69,9 @@ export const ROOMS: readonly RoomDef[] = [
   FLOCKS,
   DRIFT,
   BULLETS,
+  // workshop
+  SANDBOX,
+  REWIND,
 ];
 
 registerRooms(ROOMS);

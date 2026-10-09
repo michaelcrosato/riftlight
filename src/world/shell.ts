@@ -182,6 +182,13 @@ export class WorldShell {
         glossary: () => (close(), this.openGlossary()),
         atrium: () => void this.leave(),
         reset: () => void this.reset(),
+        riftlight: () => {
+          // the same page without ?game (Riftlight is the default), other URL options kept
+          const u = new URL(location.href);
+          u.searchParams.delete('game');
+          u.searchParams.delete('room');
+          location.assign(u.toString());
+        },
       }),
       { modal: true, onClose: () => this.unfreeze() },
     );

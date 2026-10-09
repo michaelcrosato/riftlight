@@ -63,6 +63,12 @@ export class Input {
   private readonly listeners = new AbortController();
   /** Pointer movement this frame, in CSS pixels (drag or pointer lock). */
   readonly mouseDelta = { x: 0, y: 0 };
+  /**
+   * Where the pointer last was over the canvas, in normalised device coordinates (−1..1, y up:
+   * `camera.rayAt(pointer.x, pointer.y, …)` turns it into a ray), and whether it is over it now.
+   * Under pointer lock it is the screen's centre (the crosshair).
+   */
+  readonly pointer = { x: 0, y: 0, over: false };
   /** Wheel ticks this frame (+1 = scroll down / zoom out). */
   wheel = 0;
   mouseButtons = 0;
@@ -129,6 +135,18 @@ export class Input {
     };
     el.style.touchAction = 'none';
     el.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
+    const place = (e: PointerEvent) => {
+      const r = el.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) return;
+      // under pointer lock (first person) the cursor is hidden and frozen: point at the crosshair
+      const locked = document.pointerLockElement === el;
+      this.pointer.x = locked ? 0 : ((e.clientX - r.left) / r.width) * 2 - 1;
+      this.pointer.y = locked ? 0 : 1 - ((e.clientY - r.top) / r.height) * 2;
+      this.pointer.over = true;
+    };
+    el.addEventListener('pointermove', place, { signal });
+    el.addEventListener('pointerdown', place, { signal });
+    el.addEventListener('pointerleave', () => (this.pointer.over = false), { signal });
     el.addEventListener(
       'pointerdown',
       (e) => {
@@ -301,6 +319,14 @@ export class Input {
     } else {
       this.held.delete(code);
     }
+  }
+
+  /** Test hook: put the pointer at (x, y) in normalised device coordinates, pressed or not. */
+  setPointer(x: number, y: number, down?: boolean): void {
+    this.pointer.x = x;
+    this.pointer.y = y;
+    this.pointer.over = true;
+    if (down !== undefined) this.mouseButtons = down ? 1 : 0;
   }
 
   /** Test hook: inject pointer movement / wheel for the next frame. */

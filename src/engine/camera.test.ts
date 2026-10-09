@@ -128,4 +128,20 @@ describe('screen shake', () => {
     const steps = moved.dot(right) / px;
     expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-6);
   });
+
+  it('rayAt: the ray through a screen point passes through what is drawn there, for every preset', () => {
+    for (const preset of CAMERA_PRESETS) {
+      const rig = createCameraRig({ preset });
+      for (let i = 0; i < 30; i++) rig.update({ target: new Vector3(2, 0, -3), eye: new Vector3(2, 1.5, -3), dt: 1 / 60, resolution: RESOLUTIONS.default, input: fakeInput(), world: {} });
+      const p = new Vector3(2.5, 1.2, -3.4);
+      const ndc = p.clone().project(rig.camera);
+      const origin = new Vector3();
+      const dir = new Vector3();
+      rig.rayAt(ndc.x, ndc.y, origin, dir);
+      const t = p.clone().sub(origin).dot(dir);
+      expect(dir.length()).toBeCloseTo(1, 6);
+      expect(t).toBeGreaterThan(0); // ahead of where the ray starts
+      expect(origin.clone().addScaledVector(dir, t).distanceTo(p)).toBeLessThan(1e-4);
+    }
+  });
 });
