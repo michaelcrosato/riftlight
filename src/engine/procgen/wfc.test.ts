@@ -118,4 +118,16 @@ describe('Wfc', () => {
     expect(steps).toBeGreaterThan(3);
     expect(a.entropy(0)).toBe(0); // decided cells have none left
   });
+
+  it('takes options given as undefined as their defaults', () => {
+    const never: WfcTile[] = [{ name: 'n', edges: ['a', 'b', 'c', 'd'] }];
+    const wfc = new Wfc(never, 3, 3, { attempts: undefined, seed: undefined });
+    expect(wfc.run()).toBe(false); // gives up after the default 30, not a stack overflow
+    expect(wfc.attempt).toBe(30);
+    const ok = new Wfc(DUNGEON, 6, 5, { seed: undefined, border: '###' });
+    const one = new Wfc(DUNGEON, 6, 5, { seed: 1, border: '###' });
+    expect(ok.run()).toBe(true);
+    one.run();
+    expect(Array.from(ok.result)).toEqual(Array.from(one.result)); // the default seed is 1
+  });
 });

@@ -98,4 +98,60 @@ describe('Terrain', () => {
     t.dispose();
     expect(p.counts()).toMatchObject({ colliders: base, bodies: 0 });
   });
+
+  it('heavy rain never digs a runaway pit: ten drops per point stay within the land\'s own range', () => {
+    const n = createNoise(3);
+    for (const make of [
+      () => new Terrain({ size: [40, 30] }).generate((x, z) => 4 * n.fbm2(x * 0.05, z * 0.05)), // the guide's recipe
+      () => new Terrain({ size: [32, 32], cells: [48, 48] }).generate((x, z) => 6 * n.ridged2(x * 0.06, z * 0.06)),
+    ]) {
+      const t = make();
+      const min0 = Math.min(...t.heights);
+      const max0 = Math.max(...t.heights);
+      const range = max0 - min0;
+      t.erode({ droplets: t.heights.length * 10, seed: 4 });
+      expect(Math.min(...t.heights)).toBeGreaterThan(min0 - 0.1 * range);
+      expect(Math.max(...t.heights)).toBeLessThan(max0 + 0.1 * range);
+    }
+  });
+
+  it('erosion leaves a margin of edge points exactly as they were', () => {
+    const t = new Terrain({ size: [20, 20], cells: [30, 30] }).generate((x, z) => 3 * createNoise(8).ridged2(x * 0.1, z * 0.1));
+    const before = Float32Array.from(t.heights);
+    t.erode({ droplets: 3000, seed: 1, margin: 2 });
+    let edgeMoved = 0;
+    let innerMoved = 0;
+    for (let iz = 0; iz <= t.nz; iz++) {
+      for (let ix = 0; ix <= t.nx; ix++) {
+        const i = ix + iz * (t.nx + 1);
+        const d = Math.abs(t.heights[i]! - before[i]!);
+        if (ix < 2 || iz < 2 || ix > t.nx - 2 || iz > t.nz - 2) edgeMoved = Math.max(edgeMoved, d);
+        else innerMoved = Math.max(innerMoved, d);
+      }
+    }
+    expect(edgeMoved).toBe(0);
+    expect(innerMoved).toBeGreaterThan(0.01);
+  });
+
+  it('a drop\'s radius is whole cells: a fractional one makes no soil either', () => {
+    const n = createNoise(5);
+    const sum = (h: Float32Array) => h.reduce((s, v) => s + v, 0);
+    for (const radius of [1.5, 2.5]) {
+      const t = new Terrain({ size: [32, 32], cells: [48, 48] }).generate((x, z) => 0.02 * (x * x + z * z) + 1.5 * n.fbm2(x * 0.1, z * 0.1));
+      const before = sum(t.heights);
+      t.erode({ droplets: 4000, seed: 3, radius });
+      expect(Math.abs(sum(t.heights) - before) / before).toBeLessThan(0.002);
+    }
+  });
+
+  it('the mesh is the surface heightAt describes: every triangle\'s centre lies on it', () => {
+    const t = new Terrain({ size: [12, 9], cells: [8, 6], at: [1, 0.5, -2] }).generate(hills(4));
+    const P = t.mesh.geometry.getAttribute('position').array;
+    for (let k = 0; k < P.length; k += 9) {
+      const cx = (P[k]! + P[k + 3]! + P[k + 6]!) / 3;
+      const cy = (P[k + 1]! + P[k + 4]! + P[k + 7]!) / 3;
+      const cz = (P[k + 2]! + P[k + 5]! + P[k + 8]!) / 3;
+      expect(t.heightAt(cx + 1, cz - 2)).toBeCloseTo(cy + 0.5, 4);
+    }
+  });
 });

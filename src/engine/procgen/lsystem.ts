@@ -94,10 +94,11 @@ const Y_AXIS = new Vector3(0, 1, 0);
 const Z_AXIS = new Vector3(0, 0, 1);
 
 /**
- * Read an L-system string as a 3D turtle starting at the origin heading up (+y). Its own axes:
- * heading +y, left +x, up +z; + − turn about up, & ^ pitch about left, \ / roll about heading,
- * | turns round. `[` pushes position, orientation, length and radius (both shrink a level),
- * `]` pops. `!` thins the radius. `L` puts a leaf. Other symbols are ignored.
+ * Read an L-system string as a 3D turtle starting at the origin heading up (+y). Turns are about
+ * the turtle's own axes (its heading is its +y): + turns the heading toward its −x and − toward
+ * +x (about its z), & pitches it toward its +z and ^ toward −z (about its x), \ and / roll about
+ * the heading, | turns round. `[` pushes position, orientation, length and radius (both shrink a
+ * level), `]` pops. `!` thins the radius. `L` puts a leaf. Other symbols are ignored.
  */
 export function turtle(s: string, o: TurtleOptions = {}): { branches: Branch[]; leaves: Leaf[] } {
   const angle = ((o.angle ?? 25) * Math.PI) / 180;

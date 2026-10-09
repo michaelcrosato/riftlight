@@ -39,7 +39,7 @@ export const TERRAIN: RoomDef = {
       'Terrain tools (World Machine, Gaea, Unreal\'s landscapes) erode heightfields the same way; heightfields are the ground in most open-world games.',
     ],
     ask: ['procedural terrain from noise', 'a heightfield the player can walk on', 'erosion on a heightmap', 'scatter trees on terrain by rules', 'a world from a seed'],
-    cost: 'Making the land is one noise sum per grid point (about 3,700 here), a millisecond or two; erosion is about 40 steps per drop, a few milliseconds per thousand drops. Drawing is one mesh; the heightfield collides as cheaply as a box.',
+    cost: 'Making the land is one noise sum per grid point (about 3,700 here), a millisecond or two. Erosion is about 40 steps per drop, around 15 milliseconds per thousand drops, so here it is spread over 16 frames. Drawing is one mesh; the heightfield collides as cheaply as a box.',
     code: [
       {
         title: 'Fractal noise: octaves of finer, fainter noise added up',
@@ -134,7 +134,7 @@ const amount = Math.min((cap - sediment) * erodeRate, -dh);`,
       h.feetInto(feet);
       if (feet.x <= X0 || feet.x >= X1 || feet.z <= Z0 || feet.z >= Z1) return;
       const y = land.heightAt(feet.x, feet.z);
-      if (feet.y < y + 0.05) room.hero!.teleport([feet.x, y + 0.02, feet.z]);
+      if (feet.y < y - 0.01) room.hero!.teleport([feet.x, y + 0.02, feet.z]); // only someone it swallowed
     };
     const remake = () => {
       const noise = createNoise(seed);
@@ -146,8 +146,8 @@ const amount = Math.min((cap - sediment) * erodeRate, -dh);`,
       lift();
       dirty = false;
     };
-    const ERODE_CHUNKS = 8;
-    const PER_CHUNK = 460; // 8 x 460: about one drop per grid point
+    const ERODE_CHUNKS = 16;
+    const PER_CHUNK = 230; // 16 x 230: about one drop per grid point, a frame's worth at a time
     kit.pad([-6.75, 0, 13.5], { label: 'NEW LAND', color: 'green', note: 'A new seed: the same rules, another land (and this seed is always this land).', apply: () => ((seed = (seed % 97) + 1), (dirty = true)) });
     kit.pad([-2.25, 0, 13.5], {
       label: 'RIDGES',
@@ -173,7 +173,8 @@ const amount = Math.min((cap - sediment) * erodeRate, -dh);`,
       update() {
         if (dirty) remake();
         if (eroding > 0) {
-          land.erode({ droplets: PER_CHUNK, seed: seed * 1000 + drops });
+          // the outer ring stays put: it is where the land meets the plaza and the walls
+          land.erode({ droplets: PER_CHUNK, seed: seed * 1000 + drops, margin: 2 });
           drops += PER_CHUNK;
           if (--eroding === 0) scatter();
           land.attach(ctx.physics);

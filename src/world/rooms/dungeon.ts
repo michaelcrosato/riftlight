@@ -66,7 +66,7 @@ export const DUNGEON: RoomDef = {
       'Tile-based level generation in roguelikes, texture synthesis, and puzzle solvers (sudoku is the same propagation).',
     ],
     ask: ['wave function collapse level generation', 'a dungeon from tiles that must fit together', 'procedural dungeon with a seed', 'check every room is reachable (flood fill)'],
-    cost: 'Each step looks at every square for the least entropy and propagates through its neighbours: a few milliseconds for the whole 11 x 6 grid of 31 tiles. Drawing is one instanced mesh of 594 boxes; the walls become merged box colliders.',
+    cost: 'Each step looks at every square for the least entropy and propagates through its neighbours: a few milliseconds for the whole 11 x 6 grid of 29 tiles. Drawing is one instanced mesh of 594 boxes; the walls become merged box colliders.',
     code: [
       {
         title: 'Observe: the least entropy, a hair of noise to break ties',
@@ -199,13 +199,22 @@ this.ban(n, b);`,
         else sealed[i] = 1;
       }
       reach = { floor, reachable };
-      // anyone standing where a wall just rose goes back to the plaza
+      // anyone a wall just rose into (anywhere under their capsule) goes back to the plaza
       const h = room.hero?.hero;
       if (h) {
         const f = h.feetInto(p);
-        const sx = Math.floor((f.x - CX) / CELL + SW / 2);
-        const sy = Math.floor((f.z - CZ) / CELL + SH / 2);
-        if (sx >= 0 && sy >= 0 && sx < SW && sy < SH && rows[sy]![sx] === '#') room.respawn();
+        const inWall = [
+          [0, 0],
+          [0.3, 0.3],
+          [0.3, -0.3],
+          [-0.3, 0.3],
+          [-0.3, -0.3],
+        ].some(([dx, dz]) => {
+          const sx = Math.floor((f.x + dx! - CX) / CELL + SW / 2);
+          const sy = Math.floor((f.z + dz! - CZ) / CELL + SH / 2);
+          return sx >= 0 && sy >= 0 && sx < SW && sy < SH && rows[sy]![sx] === '#';
+        });
+        if (inWall) room.respawn();
       }
     };
     const solveNow = () => {

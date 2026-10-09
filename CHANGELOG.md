@@ -14,9 +14,9 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   - `createNoise(seed)`: seeded 2D/3D simplex noise, `fbm2` (octaves, lacunarity, gain) and
     `ridged2`.
   - `Terrain`: a heightfield from a height function, drawn flat-shaded and coloured by height
-    bands and slope (`TERRAIN_BANDS`), `heightAt` / `normalAt` matching Rapier's triangulation,
-    `attach(physics)` for a heightfield collider, and `erode` (droplet hydraulic erosion,
-    seeded, unit-independent).
+    bands and slope (`TERRAIN_BANDS`), `heightAt` on Rapier's triangulation, `normalAt`,
+    `attach(physics)` for a heightfield collider, and `erode` (droplet hydraulic erosion: seeded,
+    unit-independent, never digging below where a drop now is, a `margin` of edge points kept).
   - `Wfc` and `patternTiles`: tiled wave function collapse with weights, a border socket,
     fixed cells, restarts on contradiction, `step()` to watch it and `entropy(cell)`.
   - `expand`, `turtle` and `PLANTS`: L-systems with stochastic rules and a 3D turtle (branches

@@ -108,7 +108,8 @@ export class Wfc {
     if (tiles.length === 0 || tiles.length > 65535) throw new Error('Wfc: between 1 and 65535 tiles');
     this.tiles = tiles;
     this.T = tiles.length;
-    this.o = { seed: 1, attempts: 30, ...o };
+    // one by one, not by spreading: an option given as undefined still gets its default
+    this.o = { seed: o.seed ?? 1, attempts: Math.max(1, o.attempts ?? 30), border: o.border, fixed: o.fixed };
     const T = this.T;
     this.fits = [0, 1, 2, 3].map((d) => {
       const f = new Uint8Array(T * T);

@@ -11,10 +11,10 @@ import type { Knob, RoomDef } from '../types';
 type Name = keyof typeof PLANTS;
 
 const BEDS: readonly { name: Name; x: number; scale: number; bark: number; leaf: number; rule: string }[] = [
-  { name: 'bush', x: -9, scale: 1.4, bark: PALETTE.orange, leaf: PALETTE.lime, rule: 'A -> [&FL!A]/////[&FL!A]...' },
-  { name: 'fern', x: -3, scale: 0.95, bark: PALETTE.green, leaf: PALETTE.lime, rule: 'X -> F+[[X]-XL]-F[-FXL]+X' },
-  { name: 'weed', x: 3, scale: 1.9, bark: PALETTE.teal, leaf: PALETTE.sand, rule: 'F -> F[+FL]///F[-FL]F | ...' },
-  { name: 'tree', x: 9, scale: 1.5, bark: PALETTE.plum, leaf: PALETTE.green, rule: 'B -> F[+&BL]\\\\[-^BL]FL' },
+  { name: 'bush', x: -9, scale: 1.15, bark: PALETTE.orange, leaf: PALETTE.lime, rule: 'A -> [&FL!A]/////[&FL!A]...' },
+  { name: 'fern', x: -3, scale: 0.75, bark: PALETTE.green, leaf: PALETTE.lime, rule: 'X -> F+[[X]-XL]-F[-FXL]+X/' },
+  { name: 'weed', x: 3, scale: 1.6, bark: PALETTE.teal, leaf: PALETTE.sand, rule: 'F -> F[+FL]///F[-FL]F (OR 2 MORE)' },
+  { name: 'tree', x: 9, scale: 1.3, bark: PALETTE.plum, leaf: PALETTE.green, rule: 'B -> F[+&BL]\\\\[-^BL]FL' },
 ];
 const BED_Z = -2;
 const PLINTH = 0.5;
@@ -81,7 +81,8 @@ radius *= radiusScale;`,
     const Y = new Vector3(0, 1, 0);
     const plants = BEDS.map((bed, i) => {
       kit.box([bed.x, PLINTH / 2, BED_Z], [2.6, PLINTH, 2.6], 'sand', { side: 'orange' });
-      kit.label([bed.x, 4.6, BED_Z + 1.6], `${bed.name.toUpperCase()}: ${bed.rule}`, { color: 'white', range: 9 });
+      // the rule in front of the plinth, low, where the canopy can't cover it
+      kit.label([bed.x, 1.1, BED_Z + 1.9], `${bed.name.toUpperCase()}: ${bed.rule}`, { color: 'white', range: 9 });
       const group = new Group();
       group.position.set(bed.x, PLINTH, BED_Z);
       ctx.scene.add(group);

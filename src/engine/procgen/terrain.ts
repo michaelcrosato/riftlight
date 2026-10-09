@@ -6,7 +6,7 @@
  *
  *   const land = new Terrain({ size: [40, 30], cells: [80, 60] });
  *   land.generate((x, z) => 4 * noise.fbm2(x * 0.04, z * 0.04));
- *   land.erode({ droplets: 20000 });
+ *   land.erode();                         // about one raindrop per grid point
  *   land.attach(physics);                 // the heightfield collider (again after a change)
  *   scene.add(land.mesh);
  *   land.heightAt(x, z);                  // what the collider says, between the grid points too
@@ -40,7 +40,7 @@ export interface TerrainOptions {
 }
 
 export interface ErosionOptions {
-  /** Raindrops to roll (default 20000). */
+  /** Raindrops to roll (default one per grid point). */
   droplets?: number;
   seed?: number;
   /** Steps a drop lives (default 40). */
@@ -57,8 +57,10 @@ export interface ErosionOptions {
   evaporate?: number;
   /** How fast drops speed up downhill (default 4). */
   gravity?: number;
-  /** Radius (cells) a drop digs over, so it carves gullies rather than pits (default 2). */
+  /** Radius (whole cells) a drop digs over, so it carves gullies rather than pits (default 2). */
   radius?: number;
+  /** Grid points along each edge left exactly as they are (default 0): where the land meets a floor or a wall. */
+  margin?: number;
 }
 
 /** Sea, beach, grass, forest, rock, snow (the engine palette). */
@@ -88,7 +90,7 @@ export class Terrain {
 
   constructor(o: TerrainOptions = {}) {
     [this.sizeX, this.sizeZ] = o.size ?? [32, 32];
-    [this.nx, this.nz] = o.cells ?? [Math.round(this.sizeX), Math.round(this.sizeZ)];
+    [this.nx, this.nz] = o.cells ?? [Math.max(1, Math.round(this.sizeX)), Math.max(1, Math.round(this.sizeZ))];
     this.at = o.at ?? [0, 0, 0];
     this.bands = o.bands ?? TERRAIN_BANDS;
     this.steep = o.steep ?? 0.72;
@@ -264,7 +266,9 @@ export class Terrain {
     const evaporate = o.evaporate ?? 0.02;
     const gravity = o.gravity ?? 4;
     const lifetime = o.lifetime ?? 40;
-    const radius = o.radius ?? 2;
+    const radius = Math.max(1, Math.round(o.radius ?? 2));
+    const margin = Math.max(0, Math.round(o.margin ?? 0));
+    const kept = (gx: number, gz: number) => gx < margin || gz < margin || gx > nx - margin || gz > nz - margin;
     const minCapacity = 0.01;
     // the drop rules are tuned for gentle maps (the steepest step between grid points about
     // 0.05): work in that scale whatever the units, so a terrain in metres erodes the same way
@@ -278,6 +282,7 @@ export class Terrain {
     }
     if (steepest < 1e-9) return; // flat: nothing runs anywhere
     const k = 0.05 / steepest;
+    const original = margin > 0 ? Float32Array.from(H) : null; // the margin back bit for bit, not via the scale
     for (let i = 0; i < H.length; i++) H[i] = H[i]! * k;
     // height and gradient by bilinear interpolation, in grid units
     const sample = (x: number, z: number, out: [number, number, number]) => {
@@ -304,15 +309,15 @@ export class Terrain {
       const u = x - ix;
       const v = z - iz;
       const i = ix + iz * W;
-      H[i] = H[i]! + amount * (1 - u) * (1 - v);
-      H[i + 1] = H[i + 1]! + amount * u * (1 - v);
-      H[i + W] = H[i + W]! + amount * (1 - u) * v;
-      H[i + W + 1] = H[i + W + 1]! + amount * u * v;
+      if (!kept(ix, iz)) H[i] = H[i]! + amount * (1 - u) * (1 - v);
+      if (!kept(ix + 1, iz)) H[i + 1] = H[i + 1]! + amount * u * (1 - v);
+      if (!kept(ix, iz + 1)) H[i + W] = H[i + W]! + amount * (1 - u) * v;
+      if (!kept(ix + 1, iz + 1)) H[i + W + 1] = H[i + W + 1]! + amount * u * v;
     };
-    const drops = o.droplets ?? 20000;
+    const drops = o.droplets ?? (nx + 1) * (nz + 1);
     for (let d = 0; d < drops; d++) {
-      let x = rand() * (nx - 1);
-      let z = rand() * (nz - 1);
+      let x = rand() * nx;
+      let z = rand() * nz;
       let dx = 0;
       let dz = 0;
       let speed = 1;
@@ -348,22 +353,32 @@ export class Terrain {
           sediment -= amount;
           lay(ox, oz, amount);
         } else {
-          // dig, never deeper than the drop just fell, over the points within `radius`
+          // dig, never deeper than the drop just fell, over the points within `radius`, and
+          // never a point below where the drop now is (or the next drop there falls further,
+          // digs deeper, and the hole runs away)
           const amount = Math.min((cap - sediment) * erodeRate, -dh);
           const px = ix + u;
           const pz = iz + v;
+          const floor = s2[0];
           let total = 0;
+          let dug = 0;
           for (let pass = 0; pass < 2; pass++) {
             for (let gz = Math.max(0, iz - radius + 1); gz <= Math.min(nz, iz + radius); gz++) {
               for (let gx = Math.max(0, ix - radius + 1); gx <= Math.min(nx, ix + radius); gx++) {
+                if (kept(gx, gz)) continue;
                 const w = Math.max(0, radius - Math.hypot(gx - px, gz - pz));
                 if (pass === 0) total += w;
-                else if (w > 0) H[gx + gz * W] = H[gx + gz * W]! - (amount * w) / total;
+                else if (w > 0) {
+                  const i = gx + gz * W;
+                  const take = Math.min((amount * w) / total, Math.max(0, H[i]! - floor));
+                  H[i] = H[i]! - take;
+                  dug += take;
+                }
               }
             }
             if (total <= 0) break;
           }
-          if (total > 0) sediment += amount;
+          sediment += dug; // what it really took
         }
         speed = Math.sqrt(Math.max(0, speed * speed - dh * gravity));
         water *= 1 - evaporate;
@@ -372,6 +387,7 @@ export class Terrain {
       if (!gone && sediment > 0) lay(Math.min(x, nx - 1e-6), Math.min(z, nz - 1e-6), sediment);
     }
     for (let i = 0; i < H.length; i++) H[i] = H[i]! / k;
+    if (original) for (let iz = 0; iz <= nz; iz++) for (let ix = 0; ix <= nx; ix++) if (kept(ix, iz)) H[ix + iz * W] = original[ix + iz * W]!;
     this.update();
   }
 }

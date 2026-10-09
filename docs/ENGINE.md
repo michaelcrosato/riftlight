@@ -1102,9 +1102,10 @@ octaves (each twice the frequency, `gain` the strength), `ridged2` folds each la
 `procgen/terrain.ts` samples a height function on a grid and draws it as flat-shaded triangles
 coloured by `bands` (height) and `steep` (slope); its cells are split along the same diagonal as
 Rapier's heightfield, so `heightAt`, the mesh and `attach`'s collider agree. `erode` rolls
-droplets downhill (they dig while fast and falling, drop soil where they slow, lay down what is
-left where they dry up), in a height scale normalised to the steepest step, so the result does
-not depend on units. `procgen/wfc.ts` is the tiled wave function collapse: tiles with four edge
+droplets downhill (default one per grid point; they dig while fast and falling, never below
+where they now are, drop soil where they slow, lay down what is left where they dry up), in a
+height scale normalised to the steepest step, so the result does not depend on units; `margin`
+keeps that many edge points exactly as they are (where the land meets a floor). `procgen/wfc.ts` is the tiled wave function collapse: tiles with four edge
 sockets (or `patternTiles` from square patterns, turned four ways), least-entropy observation,
 propagation, restarts on contradiction, a `border` socket and `fixed` cells (which may break the
 border: a way in). `procgen/lsystem.ts` rewrites strings (stochastic rules by probability,

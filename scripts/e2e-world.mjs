@@ -588,7 +588,20 @@ export async function runWorld(h) {
       const again = w.room.heights();
       w.room.erode();
       for (let i = 0; i < 60 && w.room.eroding(); i++) e.step(1);
-      out.terrain = { off: Math.max(...probes.map((p) => (p.collider === null ? 99 : Math.abs(p.collider - p.mesh)))), first, second, again, drops: w.room.drops(), eroded: w.room.heights(), trees: w.room.trees() };
+      const eroded = w.room.heights();
+      const drops = w.room.drops();
+      // more rain on the same land: it wears down, it never digs a pit
+      for (let n = 0; n < 3; n++) {
+        w.room.erode();
+        for (let i = 0; i < 60 && w.room.eroding(); i++) e.step(1);
+      }
+      const after = [
+        [0.13, -5.27],
+        [-10.31, 2.17],
+        [12.41, -11.73],
+      ].map(([x, z]) => w.room.probe(x, z));
+      const gap = (ps) => Math.max(...ps.map((p) => (p.collider === null ? 99 : Math.abs(p.collider - p.mesh))));
+      out.terrain = { off: Math.max(gap(probes), gap(after)), first, second, again, drops, eroded, rained: w.room.heights(), trees: w.room.trees() };
       // dungeon: a valid solve, walls as colliders, most of the floor reachable; watched, it collapses step by step
       await w.goto('dungeon', { instant: true });
       e.step(5);
@@ -613,6 +626,7 @@ export async function runWorld(h) {
     check(proc.terrain.off < 0.01, `terrain: the heightfield collider is where the mesh is (off by at most ${proc.terrain.off.toFixed(4)} m)`);
     check(proc.terrain.first.max > 1.5 && proc.terrain.second.max !== proc.terrain.first.max && proc.terrain.again.max === proc.terrain.first.max, `a seed is a land: seed 7 peaks at ${proc.terrain.first.max.toFixed(2)} m, seed 8 at ${proc.terrain.second.max.toFixed(2)} m, seed 7 again at ${proc.terrain.again.max.toFixed(2)} m`);
     check(proc.terrain.drops >= 3000 && proc.terrain.eroded.max < proc.terrain.first.max && proc.terrain.trees > 5, `rain erodes it (${proc.terrain.drops} drops, peak ${proc.terrain.first.max.toFixed(2)} → ${proc.terrain.eroded.max.toFixed(2)} m) and trees grow by the rules (${proc.terrain.trees})`);
+    check(proc.terrain.rained.min > proc.terrain.first.min - 1 && proc.terrain.rained.max <= proc.terrain.eroded.max + 0.01, `four times the rain wears it down without digging pits (lowest ${proc.terrain.first.min.toFixed(2)} → ${proc.terrain.rained.min.toFixed(2)} m)`);
     check(proc.dungeon.solved.done && proc.dungeon.solved.valid && proc.dungeon.solved.walls > 5 && proc.dungeon.solved.reach.reachable > proc.dungeon.solved.reach.floor * 0.3, `dungeon: wave function collapse fits every tile (${proc.dungeon.solved.walls} wall colliders, ${proc.dungeon.solved.reach.reachable}/${proc.dungeon.solved.reach.floor} floor squares reachable)`);
     check(proc.dungeon.midway.undecided > 0 && proc.dungeon.midway.watching && proc.dungeon.watched.done && proc.dungeon.watched.valid, `watched, it collapses square by square (${proc.dungeon.midway.undecided} undecided midway) and ends valid`);
     check(proc.plants.counts.every((c) => c.branches > 20 && c.shown === c.branches && c.height > 1) && proc.plants.half > 0.1 && proc.plants.half < 0.9 && proc.plants.full === 1, `plants: four L-systems grown (${proc.plants.counts.map((c) => `${c.name} ${c.branches}`).join(', ')}), drawn again branch by branch (${(proc.plants.half * 100).toFixed(0)}% a second in)`);
