@@ -822,7 +822,7 @@ export class PixelRenderer {
    * If that fails (or keeps failing), show a "tap to reload" overlay.
    */
   private async recover(): Promise<boolean> {
-    const now = performance.now();
+    const now = performance.now(); // real time: how often the GPU device is lost
     this.lossTimes = [...this.lossTimes.filter((t) => now - t < 30000), now];
     if (this.lossTimes.length > 3) {
       this.showReloadOverlay();

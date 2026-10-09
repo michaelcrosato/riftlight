@@ -102,10 +102,11 @@ reviewed.
 
 The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is decided about each:
 
-- **Principle 1 (gameplay is data): not yet.** Gameplay state lives in many places: physics
-  bodies, three.js objects, behaviour-tree nodes, timelines, game and room code. Rewind
-  (`physics/rewind.ts`) covers physics bodies only. A staged migration is proposed and waits for
-  approval; until then new systems keep their state serializable where they reasonably can.
+- **Principle 1 (gameplay is data): in progress.** Done: randomness is seeded (`ctx.random`,
+  `?seed=`) and time is game time; the lint refuses `Math.random` and unmarked wall clocks.
+  Next: recording and replaying input, then saving and restoring state. Gameplay state still
+  lives in many places (physics bodies, three.js objects, behaviour-tree nodes, timelines, game
+  and room code); new systems keep theirs serializable where they reasonably can.
 - **Principle 6 (WebGPU only): not yet.** The WebGL 2 fallback stays, and every rendering change
   keeps both e2e scenarios green (AGENTS.md), until its removal is approved: it decides which
   players can run the published game.

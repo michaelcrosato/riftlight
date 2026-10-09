@@ -280,7 +280,7 @@ export class WorldShell {
   /** UI input and hotkeys (from the room's `update`). */
   frame(ctx: GameContext): void {
     const e = ctx.engine;
-    const now = performance.now() / 1000;
+    const now = performance.now() / 1000; // real time: UI timers run while the game is paused
     const real = e.manual ? 1 / 60 : this.lastNow < 0 ? 1 / 60 : Math.min(0.1, Math.max(0, now - this.lastNow));
     this.lastNow = now;
     this.cardTime = Math.max(0, this.cardTime - real);

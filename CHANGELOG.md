@@ -8,6 +8,15 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.15.0
+
+- **Seeded randomness**: `Rng` (src/engine/random.ts: `next`, `range`, `int`, `chance`, `pick`,
+  `weighted`, `shuffle`, `gaussian`, `fork`) and `hashString`; `ctx.random` / `engine.random`,
+  reseeded before each level from `EngineOptions.seed` (`?seed=`, default 1) and the game's
+  name; `state().seed`. Particle bursts draw from it, so they repeat run to run.
+- The lint refuses `Math.random`, and `Date.now()` / `performance.now()` without a
+  `// real time: <why>` comment.
+
 ## 0.14.0
 
 - `Timeline.skip()` runs every cue up to the end even when one of them seeks back (a seek is

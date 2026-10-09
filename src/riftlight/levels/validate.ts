@@ -115,9 +115,9 @@ export function validatePlan(plan: LevelPlan, buildMs: number, maxMs = 1500): Le
 
 /** Plan + build geometry + validate one spec. */
 export function validateSpec(spec: LevelSpec, maxMs?: number): { plan: LevelPlan; report: LevelReport } {
-  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now();
+  const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now(); // real time: timing the checks
   const plan = planLevel(spec);
   buildGeometry(plan);
-  const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0;
+  const ms = (typeof performance !== 'undefined' ? performance.now() : Date.now()) - t0; // real time: timing the checks
   return { plan, report: validatePlan(plan, ms, maxMs) };
 }

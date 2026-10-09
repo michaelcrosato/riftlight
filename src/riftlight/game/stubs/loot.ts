@@ -46,14 +46,13 @@ const RARE_B = ['Bite', 'Song', 'Ward', 'Fang', 'Veil', 'Mark', 'Coil', 'Spire']
 
 export const RARITY_COLOR: Record<Rarity, PaletteColor> = { normal: 'white', magic: 'sky', rare: 'sand', unique: 'orange' };
 
-let uid = 1;
 function makeItem(rng: Rng, level: number, rarity: Rarity, base?: Base): Item {
   const b = base ?? rng.pick(BASES);
   const n = rarity === 'magic' ? rng.int(1, 2) : rarity === 'rare' ? rng.int(3, 4) : 0;
   const picks = rng.shuffle([...AFFIXES]).slice(0, n);
   const name = rarity === 'rare' ? `${rng.pick(RARE_A)} ${rng.pick(RARE_B)}` : rarity === 'magic' ? `${b.name} of the ${picks[0]!.name}` : b.name;
   return {
-    uid: `stub-${Date.now().toString(36)}-${uid++}`,
+    uid: `stub-${rng.int(0, 2 ** 32 - 1).toString(36)}`, // drawn last, so the same seed makes the same items
     base: b.id,
     rarity,
     level,
@@ -306,7 +305,8 @@ class StubLoot implements LootPort {
           if (!item || item.rarity === 'normal') return host.sound('error');
           if (!host.addGold(-cost(item))) return host.sound('error');
           const i = this.inventory.indexOf(item);
-          const fresh = makeItem(host.services.rng.fork(`reforge:${item.uid}:${Date.now()}`), item.level, item.rarity, baseOf(item));
+          // seeded by the item: the result is new (the item's uid is) but the same in every replay
+          const fresh = makeItem(host.services.rng.fork(`reforge:${item.uid}`), item.level, item.rarity, baseOf(item));
           this.inventory[i] = fresh;
           host.sound('equip');
           host.changed('gold');

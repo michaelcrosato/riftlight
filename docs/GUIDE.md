@@ -64,7 +64,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 
 `ctx` (the `GameContext`) is the same object in every hook: `ctx.scene` (three.js scene),
 `ctx.physics`, `ctx.input`, `ctx.camera`, `ctx.audio`, `ctx.particles`, `ctx.hud`,
-`ctx.lights`, `ctx.palette`, `ctx.loadModel`, `ctx.time` and `ctx.engine`.
+`ctx.lights`, `ctx.palette`, `ctx.loadModel`, `ctx.time`, `ctx.random` and `ctx.engine`.
 
 **Physics owns positions; visuals follow.** Bodies move in fixed 60 Hz steps (Rapier).
 Meshes are interpolated between steps, so motion is smooth at any frame rate. A character
@@ -814,7 +814,7 @@ class LanternNight {
     }
     if (ctx.time > this.nextFirefly) {
       this.nextFirefly = ctx.time + 0.3;
-      ctx.particles.burst('firefly', this.at.set(Math.random() * 14 - 7, 0.5 + Math.random() * 1.5, Math.random() * 14 - 7));
+      ctx.particles.burst('firefly', this.at.set(ctx.random.range(-7, 7), ctx.random.range(0.5, 2), ctx.random.range(-7, 7)));
     }
     const lit = this.pads.filter((p) => p.lit).length;
     ctx.hud.clear();
@@ -954,7 +954,9 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
    TSL on node materials; post effects are looks.
 4. **Gameplay in `fixedUpdate`, presentation in `update`.** Move characters and apply forces at
    the fixed 60 Hz step; animate, spin pickups and draw the HUD per frame. Use `ctx.time`
-   (it stops while paused) and the `dt` you are given, never `performance.now()`.
+   (it stops while paused) and the `dt` you are given, never `performance.now()`. Anything
+   random comes from `ctx.random` (`range`, `int`, `chance`, `pick`, `fork`), never
+   `Math.random`: the same seed (`?seed=`) then replays the same game.
 5. **Physics owns positions.** Don't set `mesh.position` on things with bodies: `physics.bind`
    them, or let the character controller pose its model. Static blocks: one collider each,
    the same size as the mesh.

@@ -182,7 +182,7 @@ export const DRIFT: RoomDef = {
             decals.add('splat', pos.setY(0.01), UP, { size: 0.35, color: PALETTE.ink, life: 6, rotation: car.yaw });
             marks++;
           }
-          if (Math.random() < 0.3) ctx.particles.burst('smoke', pos, { count: 2 });
+          if (ctx.random.chance(0.3)) ctx.particles.burst('smoke', pos, { count: 2 });
         }
       },
       update(dt) {

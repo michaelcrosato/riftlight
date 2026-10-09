@@ -195,7 +195,7 @@ export class AudioManager {
   play(sound: string | SoundDef, options: PlayOptions = {}): boolean {
     const name = typeof sound === 'string' ? sound : 'custom';
     this.counts[name] = (this.counts[name] ?? 0) + 1;
-    this.log.push({ name, at: typeof performance !== 'undefined' ? performance.now() : 0 });
+    this.log.push({ name, at: typeof performance !== 'undefined' ? performance.now() : 0 }); // real time: when it was asked for (a tooling log)
     if (this.log.length > 64) this.log.shift();
     const ctx = this.context;
     const bus = this.buses.sfx;

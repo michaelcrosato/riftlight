@@ -18,7 +18,18 @@ const RULES = [
   { re: /from\s+['"]three['"]/, why: "import from 'three/webgpu' (and TSL from 'three/tsl')" },
   { re: /from\s+['"]three\/(examples\/jsm|addons)\/postprocessing\//, why: 'WebGL-only postprocessing; use three/addons/tsl/display/*' },
   { re: /from\s+['"](react|react-dom|@react-three\/[^'"]+|babylonjs|@babylonjs\/[^'"]+|phaser|pixi\.js|playcanvas)['"]/, why: 'no React or external engines' },
+  // Determinism (docs/DOCTRINE.md, principle 1): randomness and time come from the game.
+  { re: /\bMath\.random\s*\(/, why: 'use ctx.random (a seeded Rng, src/engine/random.ts): the same seed must replay the same game', tools: true },
+  {
+    re: /\b(Date\.now|performance\.now)\s*\(/,
+    why: "game time is ctx.time; a measurement, UI clock or timestamp says so with a '// real time: <why>' comment on the line",
+    allow: /\/\/ real time/,
+    tools: true,
+  },
 ];
+
+/** Interactive tools (not games) may use real randomness and time. */
+const TOOLS = /\/src\/labs\//;
 
 async function* walk(dir) {
   for (const entry of await readdir(dir, { withFileTypes: true })) {
@@ -34,7 +45,9 @@ for await (const file of walk(join(ROOT, 'src'))) {
   const lines = (await readFile(file, 'utf8')).split('\n');
   lines.forEach((line, i) => {
     const code = line.replace(/\/\/.*$/, '');
-    for (const { re, why } of RULES) {
+    for (const { re, why, allow, tools } of RULES) {
+      if (tools && TOOLS.test(file)) continue;
+      if (allow?.test(line)) continue;
       if (re.test(code)) problems.push(`${file.slice(ROOT.length)}:${i + 1}: ${line.trim()}\n    → ${why}`);
     }
   });

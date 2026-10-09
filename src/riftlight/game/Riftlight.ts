@@ -311,7 +311,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   /** Start a fresh run in a slot. */
-  newRun(slot: number, seed = urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0): void {
+  newRun(slot: number, seed = urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0): void { // real time: a new run's seed when none is given (the save keeps it)
     this.slot = slot;
     this.save = newSave(seed);
     this.store.save(slot, this.save);

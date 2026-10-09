@@ -114,9 +114,9 @@ export class Physics {
       if (generation !== this.generation) break; // clear() ran inside the step: stop
       this.fields.step(this.world, FIXED_DT);
       this.stepBelts();
-      const t0 = performance.now();
+      const t0 = performance.now(); // real time: step timing for the debug panel
       this.world.step();
-      this.stepMs += (performance.now() - t0 - this.stepMs) * 0.1;
+      this.stepMs += (performance.now() - t0 - this.stepMs) * 0.1; // real time: step timing for the debug panel
       this.steps++;
       // listeners before the bindings read their bodies: a body a listener moves after the step
       // (a rewind, a correction) is drawn where it put it

@@ -359,7 +359,7 @@ export class LightPool {
    * than `range` + their radius from it are not lit. Call once per rendered frame.
    */
   update(dt: number, focus: Vector3, range = 18): void {
-    const t0 = typeof performance !== 'undefined' ? performance.now() : 0;
+    const t0 = typeof performance !== 'undefined' ? performance.now() : 0; // real time: update timing for the debug panel
     this.time += dt;
     const reqs = this.requests;
     for (const r of reqs) {
@@ -402,7 +402,7 @@ export class LightPool {
       light.decay = r.decay;
       light.intensity = r.intensity * flicker(r.flicker, this.time, r.id) * smooth(r.level);
     }
-    this.updateMs = typeof performance !== 'undefined' ? performance.now() - t0 : 0;
+    this.updateMs = typeof performance !== 'undefined' ? performance.now() - t0 : 0; // real time: update timing for the debug panel
   }
 
   /** Release every request at once and darken the lights (level unload). */
