@@ -762,9 +762,10 @@ export async function runWorld(h) {
       // another camera picked mid-scene (as the T panel does): the scene ends and leaves it be
       w.room.play();
       e.step(30);
+      const again = { playing: w.room.playing(), preset: w.room.preset() };
       e.setCamera({ preset: 'topdown' }, { syncUrl: false });
       e.step(2);
-      out.cutscene.taken = { playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero };
+      out.cutscene.taken = { again, playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero };
       // sound garden: louder near, panned to its side, muffled behind the wall
       await w.goto('sounds', { instant: true });
       const hear = (x, z, frames = 40) => {
@@ -799,7 +800,7 @@ export async function runWorld(h) {
     check(loudest(so.byFountain) === 'FOUNTAIN' && so.byFountain[0].gain > 0.5 && so.byFountain[2].gain < so.byFountain[0].gain / 2, `sound garden: by the fountain it is the loudest (${so.byFountain.map((m) => `${m.name} ${m.gain.toFixed(2)}`).join(', ')})`);
     check(so.west[1].pan * so.east[1].pan < 0 && Math.abs(so.west[1].pan) > 0.3 && !so.west[1].occluded, `the generator pans to its side (${so.west[1].pan.toFixed(2)} from the west, ${so.east[1].pan.toFixed(2)} from the east)`);
     check(so.behind[1].occluded && so.behind[1].muffle > 0.5 && so.told[1].muffle > 0.5 && !so.through[1].occluded, `behind the wall it is muffled (${so.behind[1].muffle.toFixed(2)}, the voice told ${so.told[1].muffle.toFixed(2)}); with OCCLUSION off it is not`);
-    check(cs.taken.playing === false && cs.taken.preset === 'topdown' && cs.taken.hero, `a camera picked mid-scene ends it and stays (${cs.taken.preset}), the hero back`);
+    check(cs.taken.again.playing && cs.taken.again.preset === 'fixed' && cs.taken.playing === false && cs.taken.preset === 'topdown' && cs.taken.hero, `a camera picked mid-scene ends it and stays (${cs.taken.preset}), the hero back`);
     check(so.loopsAfter === 0, "leaving the garden stops its looping voices, and one the room never knew about (the level unload)");
     check(ai.errors.length === 0, `the AI & direction wing runs without errors${ai.errors.length ? ': ' + ai.errors.join('; ') : ''}`);
 

@@ -319,12 +319,16 @@ export class BehaviorTree<B> {
     readonly root: BtNode<B>,
     readonly blackboard: B,
   ) {
-    const own = (n: BtNode<B>) => {
-      if (n.tree && n.tree !== this) throw new Error(`BehaviorTree: node "${n.name}" is already in another tree (nodes keep state: build one tree per agent)`);
-      n.tree = this;
-      for (const c of n.children) own(c);
+    // every node checked first, then claimed: a refused tree leaves its nodes free
+    const nodes = new Set<BtNode<B>>();
+    const visit = (n: BtNode<B>) => {
+      if (nodes.has(n)) throw new Error(`BehaviorTree: node "${n.name}" appears twice (nodes keep state: make one per place)`);
+      if (n.tree) throw new Error(`BehaviorTree: node "${n.name}" is already in another tree (nodes keep state: build one tree per agent)`);
+      nodes.add(n);
+      for (const c of n.children) visit(c);
     };
-    own(root);
+    visit(root);
+    for (const n of nodes) n.tree = this;
   }
 
   tick(dt: number): Status {
