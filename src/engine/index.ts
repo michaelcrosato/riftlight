@@ -70,6 +70,8 @@ export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMa
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {
   AudioManager,
+  attenuation,
+  muffleCutoff,
   PLAYGROUND_SONG,
   SFX,
   noteFrequency,
@@ -81,6 +83,12 @@ export {
   type SfxName,
   type Song,
   type SoundDef,
+  spatialize,
+  type Listener,
+  type Spatial,
+  type SpatialOptions,
+  type Voice,
+  type VoiceSettings,
   type VolumeChannel,
   type Wave,
 } from './audio';
@@ -110,6 +118,8 @@ export { Ragdoll, type RagdollOptions, type RagdollPart } from './physics/ragdol
 export { NavGrid, type NavGridOptions } from './ai/navgrid';
 export { Boids, type BoidOptions } from './ai/boids';
 export { BulletPool, emitter, type Emitter, type Pattern, type PatternDef, type Team } from './ai/bullets';
+export { BehaviorTree, bt, BtNode, type Status as BtStatus, type TraceRow } from './ai/behavior';
+export { Timeline, type CameraKey, type CameraShot, type Cue, type Line as TimelineLine, type TimelineOptions } from './cinematic/timeline';
 export { Vehicle, type DriveInput, type VehicleOptions } from './physics/vehicle';
 export { Rewind, type RewindOptions } from './physics/rewind';
 export { GpuSwarm, type GpuSwarmOptions } from './render/gpuSwarm';

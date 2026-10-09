@@ -378,6 +378,14 @@ const mirror = new Mirror({ size: [6, 3] }); ctx.scene.add(mirror.mesh); const s
 const holo = hologramMaterial({ color: PALETTE.cyan }); // forceFieldMaterial, lavaMaterial, marbleMaterial, woodMaterial, crystalMaterial
 ```
 
+### Behaviour trees, cutscenes, sound in space
+
+```js
+const tree = new BehaviorTree(bt.selector('npc', bt.sequence('flee', bt.condition('near?', (b) => b.near), bt.action('run', run)), bt.action('wander', wander)), board); // tree.tick(dt) per step
+const scene = new Timeline({ shots: [{ at: 0, position: [0, 6, 10], target: [0, 1, 0] }, { at: 4, position: [-1, 2, 4], target: [0, 1, 0] }], cues: [{ at: 1, run: openDoor }], lines: [{ at: 0.5, until: 3, text: 'HELLO.' }] }); // scene.play(); scene.update(dt); scene.camera(); scene.skip()
+const hum = ctx.audio.loop('coin', { volume: 0 }); // per frame: const s = spatialize({ position: ears, right }, at, { max: 20 }); hum.set({ volume: s.gain, pan: s.pan, muffle: blocked ? 0.85 : 0 })
+```
+
 ### Camera
 
 | Preset | View | Notes |

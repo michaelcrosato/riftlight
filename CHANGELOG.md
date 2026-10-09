@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.13.0
+
+- **Behaviour trees**: `BehaviorTree`, `BtNode` and the builders on `bt` (ai/behavior.ts): reactive
+  `selector` and `sequence` that halt the branch they leave (an action's `onHalt`), `steps` (a
+  sequence with memory), `parallel`, `condition`, `action`, `wait`, `inverter`, `succeeder`,
+  `repeat`, `cooldown`; `trace()` and `activePath()` for drawing the tree.
+- **Cutscenes**: `Timeline` (cinematic/timeline.ts): camera keys on Catmull-Rom curves with cuts,
+  cues fired once (cosmetic ones left out by `skip()`), subtitles, letterbox amount, `seek`,
+  `speed`.
+- **Sound in space**: `spatialize` and `attenuation` (audio/spatial.ts) give gain and pan for a
+  listener; `AudioManager.loop()` returns a `Voice` (volume, pan, muffle through a low-pass,
+  pitch, gliding) that waits for audio to unlock; `stopLoops()`, and a level unload stops them.
+
 ## 0.12.0
 
 - **GPU compute**: `GpuSwarm` (render/gpuSwarm.ts): particles in storage buffers moved by a TSL

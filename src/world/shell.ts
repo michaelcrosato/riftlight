@@ -508,7 +508,7 @@ export class RoomGame implements Game {
     for (const p of this.kit.pads) if (p !== pad && (group ? p.def.group === group : p.def.label === pad.def.label)) this.kit.lightPad(p, false);
     if (group) this.kit.lightPad(pad, true);
     pad.def.apply(this.runtime, pad);
-    shell.toast(`${pad.def.label}: ${pad.def.note}`, 6);
+    if (!pad.def.quiet) shell.toast(`${pad.def.label}: ${pad.def.note}`, 6);
     this.ctx.audio.play('pad');
   }
 

@@ -60,6 +60,9 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Rendering Lab | `swarm` GPU Swarm | 32,768 particles (8,192 on WebGL 2) moved by a TSL compute shader, never touching the CPU; they follow you |
 | | `views` Mirrors & Monitors | two security cameras rendered to textures on monitors, and a mirror that reflects you, in the iso view |
 | | `shaders` Shader Gallery | hologram, force field, lava, marble, wood and crystal: TSL materials with no textures, see-through by dither |
+| AI & Direction | `robots` Robot Yard | four robots on behaviour trees: flee the hero, recharge, carry crystals, wander; one robot's tree drawn live |
+| | `cutscene` Cutscene Stage | a scene on a timeline: camera keys on a curve and cuts, actors on cues, subtitles, bars; skip it and the world still ends right |
+| | `sounds` Sound Garden | four looping sounds placed in the world: falloff with distance, stereo pan, muffled behind a wall (a ray cast) |
 
 ## How it is built (`src/world/`)
 

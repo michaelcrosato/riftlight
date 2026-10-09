@@ -10,6 +10,7 @@ import { BODIES } from './bodies';
 import { BULLETS } from './bullets';
 import { CAMERAS } from './cameras';
 import { CLIPS } from './clips';
+import { CUTSCENE } from './cutscene';
 import { DESTRUCTION } from './destruction';
 import { DRIFT } from './drift';
 import { DUNGEON } from './dungeon';
@@ -26,6 +27,7 @@ import { PLATFORMS } from './platforms';
 import { RAGDOLLS } from './ragdolls';
 import { PLANTS_ROOM } from './plants';
 import { REWIND } from './rewind';
+import { ROBOTS } from './robots';
 import { SANDBOX } from './sandbox';
 import { SHADERS } from './shaders';
 import { SWARM } from './swarm';
@@ -33,6 +35,7 @@ import { VIEWS } from './views';
 import { TERRAIN } from './terrain';
 import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
+import { SOUNDS } from './sounds';
 import { SPRITES } from './sprites';
 import { STEALTH } from './stealth';
 import { TRAILS } from './trails';
@@ -86,6 +89,10 @@ export const ROOMS: readonly RoomDef[] = [
   SWARM,
   VIEWS,
   SHADERS,
+  // ai & direction
+  ROBOTS,
+  CUTSCENE,
+  SOUNDS,
 ];
 
 registerRooms(ROOMS);
