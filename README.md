@@ -65,7 +65,7 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
   **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
   second demo level.
-- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7) · ~ debug UI (on by default in dev, or
+- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7, Engine World's Time Lab R to F7) · ~ debug UI (on by default in dev, or
   `?debug=1`) · M mute. Hotkeys are configurable (`EngineOptions.debugKeys`).
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.

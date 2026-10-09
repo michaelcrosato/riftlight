@@ -150,7 +150,9 @@ export async function runWorld(h) {
       w.room.blast();
       e.step(90);
       w.room.fill(100);
-      // settling is chaotic: give it up to 15 s to put 30 to sleep (it usually takes under 7)
+      // a pile sleeps as one island once every body in it has been still for 2 s, so the count
+      // jumps from a few to most at a moment the rooms visited before decide (step 140 to 330
+      // and beyond, measured): wait for it, up to 15 s
       for (let i = 0; i < 900 && (i < 400 || w.room.stress().asleep < 30); i++) e.step(1);
       out.bodies = { before, after: w.room.standing(), stress: w.room.stress() };
       // joints: the wrecking ball knocks crates over; a cut bridge hangs down
@@ -363,7 +365,7 @@ export async function runWorld(h) {
     check(anim.sprites.facing > 30 && anim.sprites.mirrored > anim.sprites.facing * 0.6, `mirrored sprites draw (${anim.sprites.mirrored} px against ${anim.sprites.facing} facing right)`);
     check(anim.ragdolls.lying.every((y) => y < 0.35) && anim.ragdolls.rested.every(Boolean) && anim.ragdolls.standing.every((y) => y > 0.5) && anim.ragdolls.ups.slice(0, 3).every((n) => n === 1), `ragdolls: limp dummies lie down (pelvis ${anim.ragdolls.lying.map((y) => y.toFixed(2))}), come to rest (${anim.ragdolls.rested}) and get back up (${anim.ragdolls.standing.map((y) => y.toFixed(2))})`);
     // where on the stairs it stops is chaos; that it left the landing (2.8 m up), came down them and lay still is not
-    check(anim.ragdolls.stairs.at[1] < 1.8 && anim.ragdolls.stairs.at[2] > -3.5, `a pushed dummy tumbles down the stairs (to ${anim.ragdolls.stairs.at.map((v) => v.toFixed(1))}, at rest: ${anim.ragdolls.stairs.rested})`);
+    check(anim.ragdolls.stairs.at[1] < 1.8 && anim.ragdolls.stairs.at[2] > -3.5 && anim.ragdolls.stairs.rested, `a pushed dummy tumbles down the stairs and lies still (at ${anim.ragdolls.stairs.at.map((v) => v.toFixed(1))})`);
     check(anim.ragdolls.knocked >= 1, `the cannon knocks a dummy over (${anim.ragdolls.knocked})`);
     check(anim.errors.length === 0, `the animation wing runs without errors${anim.errors.length ? ': ' + anim.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-crowd.png`);
@@ -542,11 +544,15 @@ export async function runWorld(h) {
       e.input.setKey('KeyR', false);
       e.step(60);
       const ball = { parked, rolled, after: w.room.ball() };
-      await w.goto('sandbox', { instant: true });
-      keys.after = [...e.debugKeys.resolution];
       out.rewind = { standing, fallen, back, rewound, still, ball, keys };
       out.errors = e.state().errors;
       return out;
+    });
+    await capture(page, `world-${tag}-rewind.png`);
+    // out of the lab, R is the resolution key again
+    shop.rewind.keys.after = await W(async () => {
+      await window.__WORLD__.goto('sandbox', { instant: true });
+      return [...window.__PIXEL_ENGINE__.debugKeys.resolution];
     });
     check(shop.sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${shop.sandbox.mapped.toExponential(1)})`);
     check(shop.sandbox.picked === 'crate' && shop.sandbox.held === 'crate' && shop.sandbox.moved > 1, `sandbox: the mouse picks a crate (${shop.sandbox.picked}) and drags it ${shop.sandbox.moved.toFixed(1)} m`);
@@ -558,7 +564,6 @@ export async function runWorld(h) {
     check(parked.asleep && off(rolled, parked) > 1 && after.asleep && off(after, parked) < 0.05, `the ball sleeps on its ramp, rolls ${off(rolled, parked).toFixed(1)} m, and rewound sleeps there again (${off(after, parked).toFixed(3)} m off)`);
     check(shop.rewind.keys.lab[0] === 'F7' && shop.rewind.keys.after[0] === 'KeyR', `R rewinds in the lab (resolution on ${shop.rewind.keys.lab}) and is the resolution key again outside it`);
     check(shop.errors.length === 0, `the workshop runs without errors${shop.errors.length ? ': ' + shop.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-rewind.png`);
 
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {

@@ -80,7 +80,8 @@ physics and scene counts after visiting every room), and any room opens on its o
 (`guide`: what you are seeing, how it works step by step, where games use it, what to ask
 for, what it costs, the engine's code, field-guide words) and a `build(room)` that uses the
 kit. Floors and walls can be an ASCII map (one character per metre, merged into boxes);
-pads are `{ label, note, group, apply(room, pad) }`.
+pads are `{ label, note, group, apply(room, pad), enabled? }` (`enabled()` false: stepping on
+it does nothing, no note, no sound).
 
 ## Add a room
 

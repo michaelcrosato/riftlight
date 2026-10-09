@@ -146,6 +146,16 @@ export class Input {
     };
     el.addEventListener('pointermove', place, { signal });
     el.addEventListener('pointerdown', place, { signal });
+    // locked by the click that asked for it: point at the crosshair from now, not where it clicked
+    document.addEventListener(
+      'pointerlockchange',
+      () => {
+        if (document.pointerLockElement !== el) return;
+        this.pointer.x = this.pointer.y = 0;
+        this.pointer.over = true;
+      },
+      { signal },
+    );
     el.addEventListener('pointerleave', () => (this.pointer.over = false), { signal });
     el.addEventListener(
       'pointerdown',

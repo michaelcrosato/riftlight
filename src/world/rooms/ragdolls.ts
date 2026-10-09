@@ -53,7 +53,7 @@ export const RAGDOLLS: RoomDef = {
     what: 'Three dummies in the yard, one at the top of a staircase, a cannon, and settings for how floppy they are and how soon they get up.',
     how: [
       'A ragdoll is the character\'s joints turned into physics bodies: a capsule for the pelvis, the torso, the head, each upper and lower arm and leg (eleven in all), made at the pose the animation had that frame and moving as it was.',
-      'Each part hangs from its parent by a joint at the real joint: knees and elbows are hinges with limits, bending only the way they bend; hips, shoulders, the spine and the neck are ball joints whose swing is held inside a cone (after every physics step a part that swung too far is turned back onto the cone\'s edge, with the limbs below it, so the joints stay together).',
+      'Each part hangs from its parent by a joint at the real joint: knees and elbows are hinges with limits, bending only the way they bend; hips, shoulders, the spine and the neck are ball joints whose swing is held inside a cone (after every physics step a part that swung too far is turned back onto the cone\'s edge, with the limbs below it, so the joints stay together; one lying against something may stay a little past it, or turning it back into what it lies on would fight the contact forever).',
       'Parts never collide with ragdoll parts (a collision group of their own), only with the world, so a limb can fold across the body without the solver fighting it.',
       'Every frame the bodies are written back into the joints (between the last two physics steps, so it is smooth at any frame rate): the same model, now driven by physics instead of a clip.',
       'Getting up: when it has been still for a moment the bodies are removed, the model is moved under the pelvis and turned the way it lies, and the pose blends over a third of a second into GetUp (on its back) or GetUpFront (on its front), following each joint as the clip moves it.',
@@ -74,7 +74,8 @@ export const RAGDOLLS: RoomDef = {
       {
         title: 'A swing past the cone is turned back onto its edge, limbs below and all',
         file: 'src/engine/physics/ragdoll.ts',
-        src: `const turn = this.q2.setFromAxisAngle(k, excess);
+        src: `const back = this.touching(b) ? excess - PRESSED : excess;
+const turn = this.q2.setFromAxisAngle(k, angle);
 for (const s of b.subtree) {
 t.set(p.x - px, p.y - py, p.z - pz).applyQuaternion(turn);
 this.q.set(r.x, r.y, r.z, r.w).premultiply(turn);`,

@@ -7,7 +7,7 @@
  *
  *   const rewind = new Rewind(physics, { seconds: 6 });
  *   rewind.track(body);                                   // or rewind.trackAll() for every dynamic body
- *   rewind.extra(() => [hero.x, hero.y, hero.z], (v) => hero.teleport([v[0]!, v[1]!, v[2]!]));
+ *   rewind.extra(() => hero.feetInto(feet).toArray(), (v) => hero.teleport([v[0]!, v[1]!, v[2]!]));
  *   rewind.rewinding = input.isDown('KeyR');              // per fixed step (or frame)
  *   // rewind.fill (0..1): how much history is left
  *
@@ -124,8 +124,15 @@ export class Rewind {
    * a few millimetres, from rest: on a slope, that is all it moves).
    */
   private settle(): void {
+    if (this.drowsy.length === 0) return;
+    // one step of falling from rest is gravity × the step; faster than half again that,
+    // something hit it, and it carries on
+    const g = this.physics.world.gravity;
+    const fall = Math.hypot(g.x, g.y, g.z) * this.physics.world.timestep * 1.5;
     for (const b of this.drowsy) {
       if (!b.isValid() || b.isSleeping()) continue;
+      const v = b.linvel();
+      if (Math.hypot(v.x, v.y, v.z) > fall) continue;
       b.setLinvel({ x: 0, y: 0, z: 0 }, false);
       b.setAngvel({ x: 0, y: 0, z: 0 }, false);
       b.sleep();

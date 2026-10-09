@@ -218,6 +218,38 @@ describe('Ragdoll', () => {
     }
   });
 
+  it('comes to rest after tumbling down stairs, even with its head pressed past its cone', async () => {
+    // the Ragdolls room's staircase and shove; these two starts used to end with the head held
+    // past its cone by a step or the floor, the cone and the contact fighting every step forever
+    const idle = compileClips(HERO_CLIPS, HERO_RIG, await heroModel()).find((c) => c.name === 'Idle')!;
+    for (const k of [14, 21]) {
+      const p = await floor();
+      for (let i = 0; i < 6; i++) p.addStaticBox({ position: [-6.5, 0.2 * (i + 1), -0.2 - i * 0.7], halfExtents: [1.5, 0.2 * (i + 1), 0.35] });
+      p.addStaticBox({ position: [-6.5, 1.4, -5.05], halfExtents: [1.5, 1.4, 1] });
+      const model = await heroModel();
+      const x = -6.5 + ((k % 6) - 2.5) * 0.15;
+      model.position.set(x, 2.8, -4.6 + Math.floor(k / 6) * 0.04);
+      model.rotation.y = ((k % 5) - 2) * 0.05;
+      const mixer = new AnimationMixer(model);
+      mixer.clipAction(idle).play();
+      mixer.update((k * 0.37) % 2);
+      model.updateMatrixWorld(true);
+      const doll = new Ragdoll(p, model, HERO_RAGDOLL);
+      doll.enable({ velocity: [0, 1.5, 3.5] });
+      doll.bodies.forEach((b) => b.setAngularDamping(1.5));
+      doll.push([x, 4.1, -4.6], [0, 0, 4]);
+      let still = 0;
+      let i = 0;
+      for (; i < 12 * 60 && still < 1.2; i++) {
+        p.update(DT + 1e-9);
+        doll.sync();
+        still = doll.speed() < 0.3 ? still + DT : 0;
+      }
+      expect(i / 60, `start ${k}: still for 1.2 s within 12 s`).toBeLessThan(12);
+      expect(doll.rootPose().at.y, `start ${k}: down the stairs`).toBeLessThan(1.8);
+    }
+  });
+
   it('is off once the world is cleared under it', async () => {
     const p = await floor();
     const doll = new Ragdoll(p, heroJoints([0, 1, 0]), HERO_RAGDOLL);

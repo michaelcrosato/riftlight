@@ -5,6 +5,7 @@
  */
 import { Mesh, SphereGeometry, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor, RAPIER, Rewind, setLookLayer, toonMaterial } from '../../engine';
+import { TUNING } from '../../engine/character/tuning';
 import type { Knob, RoomDef } from '../types';
 
 type V3 = [number, number, number];
@@ -91,7 +92,8 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
         h.feetInto(hero);
         return [hero.x, hero.y, hero.z, h.facing];
       },
-      (v) => room.hero?.teleport([v[0]!, v[1]!, v[2]!], v[3]),
+      // teleport lifts the feet a hair off the ground (a spawn's lift): take it back off
+      (v) => room.hero?.teleport([v[0]!, v[1]! - TUNING.body.spawnLift, v[2]!], v[3]),
     );
     let scripted = 0; // steps of rewind asked for by a pad or a test
     let rewound = 0;
@@ -99,14 +101,12 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
     const keys = e.debugKeys;
     e.debugKeys = { ...keys, resolution: ['F7'] };
     // pads do nothing while time runs backwards (the hero gliding back over one would set it off again)
-    const live = (f: () => void) => () => {
-      if (!rewind.rewinding) f();
-    };
+    const enabled = () => !rewind.rewinding;
     const nudge = () => dominoes[0]!.applyImpulse({ x: 0.15, y: 0, z: 0.05 }, true);
-    kit.pad([-4, 0, 3.5], { label: 'DOMINOES', color: 'orange', note: 'A nudge to the first domino.', apply: live(nudge) });
-    kit.pad([5, 0, 0.2], { label: 'BLAST', color: 'red', note: 'A blast at the pyramid\'s foot.', apply: live(() => ctx.physics.explode([5, 0.2, -2.2], { radius: 3, impulse: 6 })) });
-    kit.pad([9.5, 0, 6], { label: 'ROLL', color: 'sky', note: 'The ball rolls down the ramp.', apply: live(() => ball.wakeUp()) });
-    kit.pad([0, 0, 8.5], { label: 'REWIND 3 S', color: 'plum', note: 'Three seconds back, hands-free (or hold R as long as you like).', apply: live(() => (scripted = 180)) });
+    kit.pad([-4, 0, 3.5], { label: 'DOMINOES', color: 'orange', note: 'A nudge to the first domino.', apply: nudge, enabled });
+    kit.pad([5, 0, 0.2], { label: 'BLAST', color: 'red', note: 'A blast at the pyramid\'s foot.', apply: () => ctx.physics.explode([5, 0.2, -2.2], { radius: 3, impulse: 6 }), enabled });
+    kit.pad([9.5, 0, 6], { label: 'ROLL', color: 'sky', note: 'The ball rolls down the ramp.', apply: () => ball.wakeUp(), enabled });
+    kit.pad([0, 0, 8.5], { label: 'REWIND 3 S', color: 'plum', note: 'Three seconds back, hands-free (or hold R as long as you like).', apply: () => (scripted = 180), enabled });
     kit.light({ position: [0, 5, 0], color: PALETTE.white, intensity: 4, radius: 16, flicker: 'none' });
     const knobs: Knob[] = [];
     return {

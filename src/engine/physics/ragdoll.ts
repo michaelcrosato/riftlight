@@ -71,6 +71,13 @@ interface Built {
  */
 const GROUPS = ((0x0008 << 16) | (0xffff & ~0x0008)) >>> 0;
 
+/**
+ * How far past its cone a part lying against something may sit before it is turned back
+ * (radians, 12°): turning it back would push it into what it lies on, the contact would push
+ * it out again, and the two would fight every step, so the ragdoll would never come to rest.
+ */
+const PRESSED = (12 * Math.PI) / 180;
+
 export class Ragdoll {
   readonly parts: readonly RagdollPart[];
   readonly o: Required<RagdollOptions>;
@@ -336,7 +343,8 @@ export class Ragdoll {
    * swung more than `cone` from where its parent holds it at rest, turn it back onto the cone's
    * edge about its joint (a projection, as position-based physics does), carrying every part
    * below it along (their joints move with it, so they stay together), and take away the
-   * relative spin that would carry it further out.
+   * relative spin that would carry it further out. A part lying against something may sit up
+   * to `PRESSED` past the cone instead (a head pressed into a stair): only its spin out is taken.
    */
   private holdCone(b: Built): void {
     const parent = b.parent!;
@@ -351,7 +359,32 @@ export class Ragdoll {
     const l = k.length();
     if (l < 1e-6) return;
     k.divideScalar(l);
-    const turn = this.q2.setFromAxisAngle(k, excess);
+    // pressed against something: back to `PRESSED` past the cone at most, a little at a time
+    const back = this.touching(b) ? excess - PRESSED : excess;
+    if (back > 0) this.turnBack(b, k, back);
+    // no relative spin outward (a hair of it, a resting part's noise, is left: setting it would
+    // wake the body every step, and a ragdoll at rest could never sleep)
+    const cv = b.body.angvel();
+    const pv = parent.body.angvel();
+    const rel = (cv.x - pv.x) * k.x + (cv.y - pv.y) * k.y + (cv.z - pv.z) * k.z;
+    if (rel >= -1e-3) return;
+    b.body.setAngvel({ x: cv.x - k.x * rel, y: cv.y - k.y * rel, z: cv.z - k.z * rel }, true);
+  }
+
+  /** Whether part `b` touches anything (its own ragdoll's parts never touch it). */
+  private touching(b: Built): boolean {
+    const world = this.physics.world;
+    const c = b.body.collider(0);
+    let touching = false;
+    world.contactPairsWith(c, (other) => {
+      if (!touching) world.contactPair(c, other, (m) => (touching ||= m.numContacts() > 0));
+    });
+    return touching;
+  }
+
+  /** Turn part `b` and everything below it by `angle` about `k` through its joint. */
+  private turnBack(b: Built, k: Vector3, angle: number): void {
+    const turn = this.q2.setFromAxisAngle(k, angle);
     const pivot = b.body.translation(); // the joint: the part's own origin
     const px = pivot.x;
     const py = pivot.y;
@@ -372,11 +405,5 @@ export class Ragdoll {
       t.set(av.x, av.y, av.z).applyQuaternion(turn);
       body.setAngvel({ x: t.x, y: t.y, z: t.z }, true);
     }
-    // no relative spin outward
-    const cv = b.body.angvel();
-    const pv = parent.body.angvel();
-    const rel = (cv.x - pv.x) * k.x + (cv.y - pv.y) * k.y + (cv.z - pv.z) * k.z;
-    if (rel >= 0) return;
-    b.body.setAngvel({ x: cv.x - k.x * rel, y: cv.y - k.y * rel, z: cv.z - k.z * rel }, true);
   }
 }

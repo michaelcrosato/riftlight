@@ -19,8 +19,12 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
 - `physics.onStep` listeners now run before bound meshes read their bodies, so a body a
   listener moves after the step is drawn where it put it; `onStep(f, { first: true })` runs
   ahead of the other listeners.
-- `physics.remove`, `Ragdoll` and `Floaters` check a body with `isValid()`, not by handle: a
-  removed body's slot can hold a newer body, which a handle lookup took for the old one.
+- `physics.remove`, `Ragdoll`, `Floaters` and joint chains check a body, collider or joint with
+  `isValid()`, not by handle: a removed one's slot can hold a newer one, which a handle lookup
+  took for the old one. A removed collider is no longer a conveyor belt (a newer collider in its
+  slot was).
+- `Ragdoll`: a part touching something may sit up to 12° past its cone instead of being turned
+  back every step, so a ragdoll whose head is pressed into a stair or the floor comes to rest.
 
 ## 0.9.0
 

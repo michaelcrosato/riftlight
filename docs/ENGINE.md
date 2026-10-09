@@ -746,7 +746,8 @@ the joint toward `to`. A part hangs from its `parent` by a hinge about the joint
 limits in degrees (`hinge: [min, max]`: knees, elbows, Rapier's revolute joint) or a ball joint
 whose swing is held inside a `cone` (degrees: after every physics step a part past the cone is
 turned back onto its edge, carrying the parts below it along, and the spin carrying it further
-out is removed). Parts collide with the world but not with any ragdoll's parts (a collision
+out is removed; a part touching something may sit up to 12° past it, so a head pressed into a
+stair doesn't fight the contact every step and the ragdoll comes to rest). Parts collide with the world but not with any ragdoll's parts (a collision
 group of their own). `sync()` writes the bodies into the joints
 between the last two physics steps. `rootPose()` says where the pelvis lies, whether face up,
 and the heading to get up with; `release()` removes the bodies, moves the model root under the
@@ -1063,7 +1064,7 @@ with `third` a left drag also turns the camera.
 ```ts
 const rewind = new Rewind(physics, { seconds: 6 });
 rewind.trackAll();                                   // or track(body, …)
-rewind.extra(() => [x, y, z], (v) => hero.teleport([v[0]!, v[1]!, v[2]!])); // anything else to rewind
+rewind.extra(() => hero.feetInto(feet).toArray(), (v) => hero.teleport([v[0]!, v[1]!, v[2]!])); // anything else
 rewind.rewinding = input.isDown('KeyR');             // per step or frame; rewind.fill is the history left
 ```
 

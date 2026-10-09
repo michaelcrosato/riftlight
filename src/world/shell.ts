@@ -503,6 +503,7 @@ export class RoomGame implements Game {
   }
 
   private padStepped(pad: Pad): void {
+    if (pad.def.enabled?.() === false) return;
     const group = pad.def.group;
     for (const p of this.kit.pads) if (p !== pad && (group ? p.def.group === group : p.def.label === pad.def.label)) this.kit.lightPad(p, false);
     if (group) this.kit.lightPad(pad, true);

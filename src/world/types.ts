@@ -97,6 +97,8 @@ export interface PadDef {
   readonly initial?: boolean;
   /** Ungrouped pads that switch something on and off light themselves (`room.kit.lightPad`). */
   readonly apply: (room: RoomRuntime, pad: import('./kit/RoomKit').Pad) => void;
+  /** While this says false, stepping on the pad does nothing at all: no apply, no note, no sound. */
+  readonly enabled?: () => boolean;
 }
 
 /** What a room's code gets back from the shell while it runs. */

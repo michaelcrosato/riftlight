@@ -516,6 +516,7 @@ export class Physics {
 
   private forgetCollider(handle: number): void {
     this.tags.delete(handle);
+    this.belts.delete(handle); // or a newer collider in its slot would read as the belt
     for (const t of [...this.triggers]) t.forget(handle);
   }
 

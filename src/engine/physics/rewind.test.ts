@@ -123,11 +123,12 @@ describe('Rewind', () => {
 
   it('puts back sleep: a body that slept then sleeps again when you let go, even on a slope', async () => {
     const { p } = await drop();
-    // a ramp, 14° up toward +x, and a ball just above it
+    // a ramp, 14° up toward +x, and a ball 2 cm above it (as the Time Lab's: each time it is
+    // woken it falls a step before it is put back to sleep)
     const tilt = (14 * Math.PI) / 180;
     const ramp = p.world.createRigidBody(RAPIER.RigidBodyDesc.fixed().setTranslation(3, 0.5, 0).setRotation({ x: 0, y: 0, z: Math.sin(tilt / 2), w: Math.cos(tilt / 2) }));
     p.world.createCollider(RAPIER.ColliderDesc.cuboid(2.5, 0.15, 1), ramp);
-    const ball = p.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(4.5, 1.33, 0));
+    const ball = p.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(4.5, 1.36, 0));
     p.world.createCollider(RAPIER.ColliderDesc.ball(0.3), ball);
     step(p, 1); // a new body is woken by its first step: put it to sleep after that
     ball.sleep();
@@ -145,6 +146,44 @@ describe('Rewind', () => {
     step(p, 30);
     expect(ball.isSleeping()).toBe(true);
     expect(Math.hypot(ball.translation().x - at.x, ball.translation().y - at.y)).toBeLessThan(0.01);
+  });
+
+  it('a body put back asleep still takes a hit that comes right after letting go', async () => {
+    // box a slides into box b, asleep; let go just before they meet: b is knocked on as before
+    const setup = async () => {
+      const p = await Physics.create();
+      p.addStaticBox({ position: [0, -0.5, 0], halfExtents: [10, 0.5, 10] });
+      const box = (x: number) => {
+        const body = p.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0.3, 0));
+        p.world.createCollider(RAPIER.ColliderDesc.cuboid(0.3, 0.3, 0.3).setFriction(0.3), body);
+        return body;
+      };
+      const a = box(-1.1); // the floor's friction stops it in about 0.6 m: close enough to reach b
+      const b = box(0);
+      step(p, 1);
+      b.sleep();
+      a.setLinvel({ x: 4, y: 0, z: 0 }, true);
+      return { p, a, b };
+    };
+    const forward = await setup();
+    const xs: number[] = [];
+    for (let i = 0; i < 60; i++) {
+      step(forward.p, 1);
+      xs.push(forward.b.translation().x);
+    }
+    const hit = xs.findIndex((x) => x > 1e-3); // the step b starts moving
+    expect(hit).toBeGreaterThan(5);
+    const { p, b } = await setup();
+    const rewind = new Rewind(p, { seconds: 2 });
+    rewind.trackAll();
+    step(p, hit + 20);
+    rewind.rewinding = true;
+    step(p, 21); // back to the step before the hit (xs[hit - 1]: b not moving yet)
+    rewind.rewinding = false;
+    step(p, 30); // where the first run was after xs[hit + 29]
+    // most of the way it went the first time (the solver's warm start from contacts is not
+    // recorded, so not all of it); a hit swallowed by putting b back to sleep leaves it under a tenth
+    expect(b.translation().x).toBeGreaterThan(xs[hit + 29]! * 0.5);
   });
 
   it('goes back ahead of other step listeners, whenever they were added', async () => {

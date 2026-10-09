@@ -25,6 +25,8 @@ interface Prop {
 }
 
 const STORE = 'pixel-engine:sandbox';
+/** The most props a layout may hold (a bigger one is not loaded). */
+const MAX_PROPS = 400;
 
 export const SANDBOX: RoomDef = {
   id: 'sandbox',
@@ -107,14 +109,20 @@ export const SANDBOX: RoomDef = {
         return { kind: p.kind, at: [n(t.x), n(t.y), n(t.z)] as V3, rot: [n(r.x), n(r.y), n(r.z), n(r.w)] as [number, number, number, number] };
       });
     type Item = ReturnType<typeof layout>[number];
-    const finite = (v: unknown, n: number): boolean => Array.isArray(v) && v.length === n && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+    const finite = (v: unknown, n: number): v is number[] => Array.isArray(v) && v.length === n && v.every((x) => typeof x === 'number' && Number.isFinite(x));
+    // a rotation is a unit quaternion: one far from that (all zeros) is no rotation at all, and
+    // a body given it stops colliding
+    const turn = (q: number[]) => Math.hypot(...q);
     /** A layout back, or false (and the yard untouched) if it is not one: data from storage or an agent is checked first. */
     const load = (items: unknown): boolean => {
-      if (!Array.isArray(items)) return false;
-      const ok = items.every((it: Partial<Item> | null) => !!it && typeof it.kind === 'string' && Object.hasOwn(KINDS, it.kind) && finite(it.at, 3) && finite(it.rot, 4));
+      if (!Array.isArray(items) || items.length > MAX_PROPS) return false;
+      const ok = items.every((it: Partial<Item> | null) => !!it && typeof it.kind === 'string' && Object.hasOwn(KINDS, it.kind) && finite(it.at, 3) && finite(it.rot, 4) && Math.abs(turn(it.rot) - 1) < 0.5);
       if (!ok) return false;
       clear();
-      for (const it of items as Item[]) spawn(it.kind, it.at, it.rot);
+      for (const it of items as Item[]) {
+        const n = turn(it.rot);
+        spawn(it.kind, it.at, [it.rot[0] / n, it.rot[1] / n, it.rot[2] / n, it.rot[3] / n]);
+      }
       return true;
     };
     const save = () => {
