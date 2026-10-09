@@ -1,0 +1,99 @@
+/**
+ * The field guide: every word the station guides use, in plain language. Rooms list the
+ * words they use (`guide.words`); `glossary.test.ts` checks every one is defined here.
+ */
+export interface Term {
+  readonly term: string;
+  readonly section: 'pixels' | 'rendering' | 'motion' | 'physics' | 'animation' | 'effects' | 'games' | 'tools';
+  readonly text: string;
+}
+
+export const SECTIONS: Readonly<Record<Term['section'], string>> = {
+  pixels: 'Pixels and screens',
+  rendering: 'Rendering',
+  effects: 'Effects',
+  motion: 'Movement and feel',
+  physics: 'Physics',
+  animation: 'Animation',
+  games: 'Game systems',
+  tools: 'Tools',
+};
+
+export const GLOSSARY: readonly Term[] = [
+  // pixels
+  { term: 'art resolution', section: 'pixels', text: 'The size the picture is really drawn at (480 x 270 by default): one fragment per art pixel. The canvas is a whole multiple of it.' },
+  { term: 'art pixel', section: 'pixels', text: 'One pixel of the art resolution. On a 1920 x 1080 screen at 4x it is a 4 x 4 block of screen pixels.' },
+  { term: 'integer scaling', section: 'pixels', text: 'Upscaling by a whole number (2x, 3x, 4x) so every art pixel becomes the same square block: no blur, no uneven pixels.' },
+  { term: 'nearest-neighbour', section: 'pixels', text: 'Sampling that takes the closest texel instead of blending neighbours: crisp pixel edges.' },
+  { term: 'palette', section: 'pixels', text: 'A small fixed set of colours (this engine uses Sweetie 16). Filters can snap the picture to another one: NES, Game Boy, CGA...' },
+  { term: 'dither', section: 'pixels', text: 'A pattern of two colours that the eye mixes into an in-between shade. Ordered dither uses a fixed 4 x 4 Bayer matrix.' },
+  { term: 'Bayer matrix', section: 'pixels', text: 'A 4 x 4 table of thresholds 0..15/16 laid out so neighbouring pixels differ a lot: the classic ordered-dither pattern.' },
+  { term: 'letterbox', section: 'pixels', text: 'Bars around the picture when the screen is not a whole multiple of the art size.' },
+  // rendering
+  { term: 'TSL', section: 'rendering', text: 'Three Shading Language: shaders written as JavaScript node graphs, compiled to WGSL for WebGPU or GLSL for the WebGL 2 fallback.' },
+  { term: 'uniform', section: 'rendering', text: 'A value a shader reads that the CPU can change every frame without rebuilding the shader: slider moves, transitions, light colours.' },
+  { term: 'render pipeline', section: 'rendering', text: 'The chain of passes that makes a frame: the scene pass, outlines, filters, the upscale.' },
+  { term: 'toon shading', section: 'rendering', text: 'Lighting quantised into a few hard bands (3 here) instead of a smooth gradient: the hand-shaded sprite look.' },
+  { term: 'outline', section: 'rendering', text: 'Dark pixels where depth jumps (a silhouette edge), found by comparing each art pixel with its neighbours.' },
+  { term: 'crease', section: 'rendering', text: 'A light line where the surface normal turns sharply (inner edges of a box).' },
+  { term: 'filter', section: 'rendering', text: 'A post-process step on the finished picture: a palette, a colour grade, scanlines, a CRT.' },
+  { term: 'look', section: 'rendering', text: 'A whole recipe: pixel art or clean, and a filter stack, for the characters, the environment and the whole frame.' },
+  { term: 'look layer', section: 'rendering', text: 'Characters and objects are one layer, the environment the other; each can have its own pixel size and filters.' },
+  { term: 'draw call', section: 'rendering', text: 'One request to the GPU to draw a mesh with a material. Fewer is faster; merging static meshes cuts hundreds to dozens.' },
+  { term: 'shadow map', section: 'rendering', text: 'A depth picture taken from the sun: a pixel is in shadow when something is closer to the sun than it is.' },
+  { term: 'texel snapping', section: 'rendering', text: 'Moving the shadow camera only by whole shadow-map texels so shadow edges do not crawl while the view follows the player.' },
+  { term: 'point light', section: 'rendering', text: 'A light at a point that fades with distance: torches, lamps, spells.' },
+  { term: 'light pool', section: 'rendering', text: 'A fixed number of real lights handed each frame to the most important light requests, so adding torches never recompiles shaders.' },
+  { term: 'hysteresis', section: 'rendering', text: 'Favouring the current owner a little so two equal candidates do not swap back and forth every frame.' },
+  { term: 'orthographic', section: 'rendering', text: 'A projection with no perspective: far things are as big as near ones. Isometric, top-down and side views use it.' },
+  { term: 'perspective', section: 'rendering', text: 'A projection where far things look smaller: third and first person.' },
+  { term: 'WebGPU', section: 'rendering', text: 'The modern browser graphics API this engine targets first; WebGL 2 is the fallback with the same scene and shaders.' },
+  // effects
+  { term: 'particle', section: 'effects', text: 'A tiny sprite with a position, speed and life. Thousands of them draw as one instanced draw call.' },
+  { term: 'instancing', section: 'effects', text: 'Drawing many copies of one mesh in a single draw call, each with its own position (and colour).' },
+  { term: 'flicker', section: 'effects', text: 'A light whose brightness wobbles in a pattern: torch, candle, brazier, pulse, strobe.' },
+  { term: 'screen transition', section: 'effects', text: 'Covering and uncovering the picture between scenes: fades, an iris, diamonds, blinds, a mosaic.' },
+  { term: 'iris', section: 'effects', text: 'A circle that closes on a point (usually the player) to black, then opens again.' },
+  { term: 'shockwave', section: 'effects', text: 'A ring that pushes the picture outwards from a blast: the screen is resampled with offset coordinates near the ring.' },
+  { term: 'flash', section: 'effects', text: 'The whole screen washed with a colour for a moment: a hit, a lightning strike, a camera flash.' },
+  { term: 'mosaic', section: 'effects', text: 'Pixel blocks that grow until the picture is a few squares: the SNES-era scene change.' },
+  // motion
+  { term: 'fixed timestep', section: 'motion', text: 'Physics always advances 1/60 s at a time, however fast the screen draws, so movement is the same on every machine.' },
+  { term: 'interpolation', section: 'motion', text: 'Drawing objects between their last two physics positions so motion is smooth when frames and steps do not line up.' },
+  { term: 'time scale', section: 'motion', text: 'A multiplier on game time: 0.25 is slow motion, 2 is double speed. Physics, animation and particles all follow it.' },
+  { term: 'hitstop', section: 'motion', text: 'Freezing the game for a few frames when a hit lands so it feels heavy (also called hit pause or hit lag).' },
+  { term: 'screen shake', section: 'motion', text: 'Jolting the camera on impacts. Driven by trauma, which decays; the offset grows with trauma squared.' },
+  { term: 'trauma', section: 'motion', text: 'A 0..1 amount that hits add to and time drains; shake strength is trauma squared, so small hits barely shake.' },
+  { term: 'tween', section: 'motion', text: 'Moving a value from A to B over time with an easing curve: doors, lifts, menus, pickups.' },
+  { term: 'easing', section: 'motion', text: 'The shape of a tween: ease out starts fast and settles, back overshoots, bounce bounces, steps holds poses.' },
+  { term: 'camera preset', section: 'motion', text: 'A whole camera setup: isometric, top-down, side, third person, first person, free, fixed.' },
+  { term: 'pixel snapping', section: 'motion', text: 'Moving an orthographic camera only by whole art pixels so the picture never swims; physics is never snapped.' },
+  { term: 'coyote time', section: 'motion', text: 'A short moment after running off a ledge when a jump still works.' },
+  { term: 'jump buffer', section: 'motion', text: 'Remembering a jump pressed just before landing and doing it on touchdown.' },
+  // physics
+  { term: 'rigid body', section: 'physics', text: 'A solid object the physics engine moves: dynamic (forces move it), kinematic (code moves it) or fixed.' },
+  { term: 'collider', section: 'physics', text: 'The shape physics uses for a body: a box, sphere, capsule, cylinder.' },
+  { term: 'trigger', section: 'physics', text: 'A volume that reports what enters and leaves it but never blocks anything: pickups, doors, pads.' },
+  { term: 'raycast', section: 'physics', text: 'Shooting a line and asking what it hits first: ground checks, line of sight, camera walls.' },
+  { term: 'character controller', section: 'physics', text: 'Code that moves a capsule by sweeping it through the world and sliding along walls, with stairs and slopes.' },
+  { term: 'Rapier', section: 'physics', text: 'The physics engine underneath (Rust compiled to WebAssembly).' },
+  // animation
+  { term: 'clip', section: 'animation', text: 'One animation (Run, Jump, Wave): key poses over time, written here as data.' },
+  { term: 'cross-fade', section: 'animation', text: 'Blending from one clip to the next over a moment instead of snapping.' },
+  { term: 'blend space', section: 'animation', text: 'Several clips mixed by a parameter: tiptoe, walk and run blended by speed.' },
+  { term: 'foot IK', section: 'animation', text: 'Inverse kinematics that bends the legs so the feet land on the real ground: stairs, slopes, ledges.' },
+  { term: 'contact sheet', section: 'animation', text: 'A grid of frames of a clip in one picture, to check it by eye.' },
+  { term: 'rig', section: 'animation', text: 'The joints of a character and how they are named and limited.' },
+  // games
+  { term: 'pad', section: 'games', text: 'A plate on the floor in these rooms: step on it to change a setting.' },
+  { term: 'game loop', section: 'games', text: 'Every frame: read input, step physics (fixed steps), update the game, update the camera, draw.' },
+  // tools
+  { term: 'agent API', section: 'tools', text: 'window.__WORLD__ and window.__PIXEL_ENGINE__: what tests and AI agents drive the game through.' },
+  { term: 'e2e test', section: 'tools', text: 'A test that opens the real game in a browser, plays it and checks the frames and numbers.' },
+];
+
+const BY_TERM = new Map(GLOSSARY.map((t) => [t.term.toLowerCase(), t]));
+
+export function term(word: string): Term | undefined {
+  return BY_TERM.get(word.toLowerCase());
+}

@@ -18,7 +18,7 @@ import { LightService } from './lights';
 import { placeholderMinion } from './minions';
 import { DamageNumbers, type NumberHud } from './numbers';
 import { registerCombatFx } from './sfx';
-import { CameraShake } from './shake';
+import { CameraShake } from '../../engine/shake';
 import { StatQuery } from './stats';
 
 /** Sounds: the engine's AudioManager (or anything with `play`). */

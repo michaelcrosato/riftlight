@@ -75,6 +75,11 @@ export class Input {
   readonly padAxis = { x: 0, y: 0 };
   /** True while any gamepad is connected. */
   gamepadConnected = false;
+  /**
+   * Extra key codes whose browser default is blocked (arrows and Space always are): a game's
+   * own F1 / F2 / Tab panels, so the browser's help page or focus change doesn't fire.
+   */
+  readonly preventKeys = new Set<string>();
   /** Gamepad button index → key code (defaults: GAMEPAD_BUTTONS). */
   gamepadButtons: Record<number, string> = { ...GAMEPAD_BUTTONS };
   /** Stick deadzone (radial, 0..1). */
@@ -91,7 +96,7 @@ export class Input {
     target.addEventListener(
       'keydown',
       (e) => {
-        if (isGameKey(e.code)) e.preventDefault();
+        if (isGameKey(e.code) || this.preventKeys.has(e.code)) e.preventDefault();
         if (!e.repeat) this.press(e.code);
         this.held.add(e.code);
       },

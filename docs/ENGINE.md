@@ -76,6 +76,9 @@ and 273 → 16 ms on the WebGL 2 fallback.
   acne-free.
 - **Dynamic lights.** `ctx.lights` is a fixed pool of `PointLight`s shared by any number of
   light requests (see *Dynamic lights* under Game systems).
+- **Screen effects.** Every output graph (Pixel and Raw, every look) ends with the same small
+  stage: retro transitions, a flash and up to four shockwave rings, all uniforms
+  (`engine.screen`, see *Screen effects* under Game systems).
 - **Quality** (`EngineOptions.quality`, `?quality=`, `engine.setQuality()`): the shadow map
   size, `low` 256² · `medium` 512² · `high` 1024², and the dynamic light pool, `low` 4 ·
   `medium` 8 · `high` 16 point lights. At the iso art scale 512² is about one
@@ -598,6 +601,90 @@ Physics runs a Rapier intersection query for it and diffs the result, so it neve
 character, ray casts or the camera. It reports dynamic and kinematic bodies (set
 `includeStatic` for level geometry); `filter(collider)` narrows further.
 
+### Time: game speed and hitstop
+
+```ts
+engine.timeScale = 0.25;     // slow motion; 2 = double speed; 0 = frozen (a menu: presses are dropped)
+engine.hitstop(0.08);        // freeze the game for 0.08 s of real time: a hit lands
+```
+
+`timeScale` scales game time itself (`ctx.time`, the `dt` hooks get), so physics steps,
+animation, particles, tweens and the camera follow all slow down together. A hitstop freezes
+game time for real seconds (overlapping ones keep the longest); rendering, screen shake and
+transitions keep running. `Engine.step()` applies both, so tests see them frame-exactly.
+At speed 0 key presses are dropped, like a pause (a menu's Space must not jump the hero when
+it closes); presses made during a hitstop still count afterwards (a buffered jump). Values that
+aren't numbers are ignored (`GameClock`, `src/engine/clock.ts`, unit-tested).
+`loadGame` resets the speed to 1. `state()` reports `timeScale` and `hitstop`.
+
+### Screen shake
+
+```ts
+engine.shake.add(0.4);       // trauma 0..1: a ground pound, a blast
+engine.shake.strength = 0;   // a settings toggle
+```
+
+`engine.shake` is a `CameraShake` (`src/engine/shake.ts`): hits add trauma, which drains
+(`decay` per second); the offset is `maxOffset × trauma² × smooth noise` (sums of sines,
+deterministic). The engine adds it to the camera after the rig placed it, on real time, so it
+keeps shaking through a hitstop; ortho presets move by whole art pixels. A game can also keep
+its own and nudge a rig's focus with `shake.apply(ctx.camera, dt)` (Riftlight's combat does).
+
+### Screen effects: transitions, flashes, shockwaves
+
+```ts
+await engine.screen.cover('iris', { center: hero.position, duration: 0.4 }); // closes on the hero
+await engine.loadGame(new Level2());
+await engine.screen.reveal('iris');
+await engine.screen.transition('diamonds', () => teleport());   // cover, run, reveal
+engine.screen.flash('white', { duration: 0.12, strength: 0.8 });       // palette names or hex
+engine.screen.shockwave(blast, { radius: 0.45, duration: 0.6, strength: 1 });
+engine.screen.set('fade', 1);                                     // jump (no animation)
+```
+
+Transitions (`TRANSITIONS`): `fade` (five steps), `iris`, `diamonds` (16-pixel cells swept left
+to right), `dissolve` (random 3-pixel blocks), `dither` (the 4×4 Bayer pattern), `blinds`,
+`wipe`, `curtain`, `mosaic` (pixel blocks grow, then fade). `render/screenFx.ts` keeps their
+uniforms (kind, progress, centre, colour; flash colour and amount; four rings) and every output
+graph ends with the same TSL function: per **art pixel** it decides whether the pixel is
+covered, so a transition is a pixel pattern at any scale and starting one never compiles a
+shader. A world centre (a `Vector3`) is projected every frame, so an iris follows a moving hero.
+Transitions, flashes and rings run on real time (they keep moving while the game is paused
+and while a level builds; the loop stops only while new shaders precompile; the engine keeps
+them across `loadGame`). `cover` and `reveal` resolve `true` when they ran to the end and
+`false` when another transition took over; `transition` reveals even if its work throws.
+Colours are display colours (a palette name or hex, as on screen). Shockwaves and the
+mosaic's growing blocks resample the art-resolution picture where it is upscaled (pixel-art
+layers); a clean look and Raw mode get the transitions, the mosaic's fade and the flash, but no
+ripple. While nothing runs, the stage costs one uniform test per pixel.
+`coversPixel(kind, progress, x, y, w, h)` is the same rule on the CPU (unit tests).
+`state().screen` reports the transition, its progress, the flash and the rings.
+
+### Tweens
+
+```ts
+ctx.tweens.to(door.position, { y: 3 }, { duration: 0.8, ease: 'outBack' });
+const t = ctx.tweens.to(lamp, { intensity: 0 }, { duration: 0.3, yoyo: true, repeat: Infinity });
+t.cancel();                                                    // or t.cancel(true): jump to the end
+if (await ctx.tweens.to(door.position, { y: 0 }, { duration: 0.5 }).done) slam(); // false: cancelled
+ctx.tweens.value(0, 1, { duration: 2, ease: 'steps4' }, (v) => (fade = v));
+ctx.tweens.call(1.5, () => spawnWave());                       // a timer on game time
+```
+
+`ctx.tweens` (`src/engine/tween.ts`, pure, unit-tested) runs on game time: tweens pause, slow
+down and freeze with the game, and are cleared when the level unloads (their `done` promises
+resolve `false`: completed tweens resolve `true`, so code awaiting one knows whether to carry on). A new tween of the same property takes over from the old one. Eases (`EASES`):
+`linear`, quad / cubic / sine / expo in, out and in-out, `inBack` `outBack` `inOutBack`,
+`outElastic`, `outBounce`, `smooth`, and `steps2` / `steps4` / `steps8` (motion that holds
+poses, like sprite animation), or any `(u) => number`.
+
+### The sun
+
+`engine.setSunDirection([x, y, z])` points the sun (and its shadows) toward a direction (kept
+just above the horizon; dim `engine.sun.intensity` for night). `engine.sunDir` reads it. The
+shadow box re-fits and stays texel-snapped. Like the sun's colour and intensity, the direction
+goes back to the engine default when the level unloads.
+
 ### Level lifecycle
 
 ```ts
@@ -622,8 +709,10 @@ graphs, and skinned meshes' bone textures), except resources marked `userData.sh
 (cached toon materials, the toon gradient, GLB geometry and textures that other clones
 share). It clears physics, particles, the HUD and music, resets input, and resets the
 scene background, fog and the sun / ambient light colors and intensities to the engine
-defaults. **Carried over** between levels: filters, render mode, resolution, quality,
-volumes / mute, the debug panel and the camera rig (unless `camera` is passed; it is applied
+defaults (the sun's direction too, TSL `fogNode` fog, the game speed, tweens and screen shake).
+**Carried over** between levels: filters, render mode, resolution, quality,
+volumes / mute, screen transitions (a cover → load → reveal spans the load), the debug panel
+and the camera rig (unless `camera` is passed; it is applied
 before `setup()`, so `ctx.camera` is already the new preset there). While a level loads the
 render loop keeps drawing (paused while its pipelines precompile), but the game does not
 advance, engine hotkeys are ignored, and keys pressed meanwhile are dropped, so nothing
@@ -642,7 +731,8 @@ The `systems` e2e suite switches playground ↔ sandbox six times and checks tha
 colliders, controllers, triggers, tags, scene objects and GPU geometries/textures all return
 to the same numbers. The page at `/` runs Riftlight (docs/GAME.md); `?game=playground` and
 `?game=sandbox` open the engine demos (`?game=arcade` is Riftlight's side-scroller on its own, a
-template for that genre), and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
+template for that genre), `?game=world` is **Engine World**, the engine's tech demo with a room
+per technique (docs/WORLD.md), and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
 
 ### Input: gamepads and press timing
 
@@ -654,6 +744,9 @@ deadzone 0.2, `applyDeadzone`), the right stick turns into pointer movement (cam
 (`GAMEPAD_BUTTONS`: A Space · B C · X J · Y F · LB Z · RB X · LT Shift · RT C · Back V ·
 Start B · d-pad arrows), so `KEYMAP` / `readMoveInput` work unchanged. Remap with
 `input.gamepadButtons[2] = 'KeyF'`.
+
+Keys whose browser default should not fire (a game's own F1 / F2 / Tab panels) go in
+`input.preventKeys` (arrows and Space always are).
 
 `consumePress` keeps a press for at most `input.pressWindow` = **150 ms of game time**, so a
 jump pressed during a hitch still lands, but presses never pile up. While `engine.paused` is
@@ -708,7 +801,8 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
 ## Tooling for agents
 
 - `window.__PIXEL_ENGINE__.state()`: backend, mode, resolution, aspect, framing, frame
-  count, fps, maxFps, quality, GPU errors and recoveries, camera, player target and game status.
+  count, fps, maxFps, quality, GPU errors and recoveries, camera, player target, game speed,
+  hitstop, the screen effects (transition, progress, flash, rings) and game status.
 - `await window.__PIXEL_ENGINE__.renderer.capture()`: RGBA8 readback of the exact frame
   the pipeline presents, which lets you see what you built.
 - `window.__PIXEL_ENGINE__.input.setKey(code, down)` / `.addPointer(dx, dy, wheel)`: drive

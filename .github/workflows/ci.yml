@@ -80,7 +80,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        group: ["@core", "@cameras", "@filters"]
+        group: ["@core", "@cameras", "@filters", "@world"]
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7

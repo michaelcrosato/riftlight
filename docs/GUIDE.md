@@ -349,6 +349,25 @@ Particle sizes are whole art pixels and colours are palette names. Point lights 
 fixed pool (4 to 16 by quality), handed to the most important requests: never add your own
 `PointLight`s (each one recompiles every material).
 
+### Game feel and scene changes
+
+```js
+ctx.engine.hitstop(0.08);                    // freeze the game 0.08 s when a hit lands (rendering goes on)
+ctx.engine.shake.add(0.4);                   // screen shake: trauma 0..1 that drains; whole art pixels
+ctx.engine.timeScale = 0.25;                 // slow motion (1 normal, 0 a frozen menu); loadGame resets it
+ctx.engine.screen.flash('white', { duration: 0.1 });
+ctx.engine.screen.shockwave(blastAt, { radius: 0.4 });        // a ring that pushes the picture outward
+await ctx.engine.screen.cover('iris', { center: heroAt });    // fade iris diamonds dissolve dither blinds wipe curtain mosaic
+await ctx.engine.loadGame(new Level2());
+await ctx.engine.screen.reveal('iris');
+ctx.tweens.to(door.position, { y: 3 }, { duration: 0.8, ease: 'outBack' }); // game time, cleared on unload
+ctx.tweens.call(1.5, () => spawnWave());     // a timer
+ctx.engine.setSunDirection([1, 0.3, 0.2]);   // a low dawn sun; the next level resets it
+```
+
+Transitions, flashes and shockwaves are uniforms at the end of the pipeline: they never
+compile a shader, work with every look, and keep running while a level loads.
+
 ### Looks
 
 A `Look` sets the art style per layer: `{ scene, actors, environment }`. Each layer is

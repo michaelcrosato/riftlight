@@ -51,6 +51,11 @@ export interface CameraUpdate {
   resolution: Resolution;
   input: Input;
   world: CameraWorld;
+  /**
+   * Screen shake: added to the camera's position after the rig placed it (the engine's
+   * `CameraShake`). Ortho rigs move it by whole art pixels.
+   */
+  shake?: Vector3;
 }
 
 const UP = new Vector3(0, 1, 0);
@@ -127,11 +132,27 @@ export abstract class CameraRig {
     if (this.zoomable && u.input.wheel !== 0) this.setZoom(this.zoom * Math.pow(1.12, -u.input.wheel));
     if (this.zoomable && u.input.isDown('Equal', 'NumpadAdd')) this.setZoom(this.zoom * (1 + u.dt));
     if (this.zoomable && u.input.isDown('Minus', 'NumpadSubtract')) this.setZoom(this.zoom / (1 + u.dt));
+    // last frame's shake comes off first: rigs that keep their position between frames
+    // (free, fixed) would otherwise drift by every offset ever added
+    this.camera.position.sub(this.shaken);
+    this.shaken.set(0, 0, 0);
     this.step(u);
+    if (u.shake && u.shake.lengthSq() > 0) {
+      this.shakeOffset(u.shake, this.shaken);
+      this.camera.position.add(this.shaken);
+    }
     this.camera.updateMatrixWorld();
   }
 
   protected abstract step(u: CameraUpdate): void;
+
+  /** The shake offset actually applied this frame (zero when still). */
+  private readonly shaken = new Vector3();
+
+  /** The offset a shake moves the placed camera by (into `out`). */
+  protected shakeOffset(offset: Vector3, out: Vector3): void {
+    out.copy(offset);
+  }
 
   /** Serializable description (debug UI, `state()`). */
   describe(): Record<string, unknown> {
@@ -154,6 +175,8 @@ export class OrthoRig extends CameraRig {
   private readonly up = new Vector3();
   private readonly forward = new Vector3();
   private readonly tmp = new Vector3();
+  /** World units per art pixel at the last update. */
+  private pixel = 0.05;
 
   constructor(preset: 'iso' | 'topdown' | 'side', config: CameraConfig = {}) {
     super(config);
@@ -198,14 +221,23 @@ export class OrthoRig extends CameraRig {
   protected step(u: CameraUpdate): void {
     this.follow(u.target, u.dt);
     const pos = this.tmp.copy(this.focus);
+    this.pixel = worldUnitsPerPixel(this.viewHeight, u.resolution);
     if (this.snap) {
-      const px = worldUnitsPerPixel(this.viewHeight, u.resolution);
+      const px = this.pixel;
       const r = snapToGrid(pos.dot(this.right), px);
       const up = snapToGrid(pos.dot(this.up), px);
       const f = pos.dot(this.forward);
       pos.copy(this.right).multiplyScalar(r).addScaledVector(this.up, up).addScaledVector(this.forward, f);
     }
     this.camera.position.copy(pos).add(this.offset);
+  }
+
+  /** Shake by whole art pixels across the view (depth doesn't move an ortho picture). */
+  protected override shakeOffset(offset: Vector3, out: Vector3): void {
+    const px = this.pixel;
+    const r = Math.round(offset.dot(this.right) / px) * px;
+    const up = Math.round(offset.dot(this.up) / px) * px;
+    out.copy(this.right).multiplyScalar(r).addScaledVector(this.up, up);
   }
 }
 
