@@ -137,6 +137,10 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'boids', section: 'games', text: 'Reynolds\' flocking (1986): each agent steers by its neighbours alone (keep apart, line up, stay close) and a flock emerges.' },
   { term: 'steering', section: 'games', text: 'Moving an agent by forces toward a desired velocity (seek, flee, arrive, avoid) instead of setting its position: smooth, and they add up.' },
   { term: 'spatial hash', section: 'games', text: 'Space cut into a grid of buckets, each listing what is inside: finding neighbours means looking in a few nearby buckets, not checking everyone.' },
+  { term: 'bullet pool', section: 'games', text: 'Thousands of projectiles kept as numbers in fixed arrays, reused instead of created and thrown away: no allocations, no garbage-collection hitches.' },
+  { term: 'hitbox', section: 'games', text: 'The shape that counts for hits, often not the drawn one: shoot-\'em-ups make the hero\'s much smaller than its sprite, so near misses feel fair.' },
+  { term: 'vehicle', section: 'physics', text: 'A car in games is usually one body (the chassis) on wheels that are rays: each finds the ground, pushes up like a spring and grips along and across.' },
+  { term: 'suspension', section: 'physics', text: 'The springs and dampers between a car\'s body and its wheels: the body rolls in corners, pitches when braking and soaks up bumps.' },
   // tools
   { term: 'agent API', section: 'tools', text: 'window.__WORLD__ and window.__PIXEL_ENGINE__: what tests and AI agents drive the game through.' },
   { term: 'e2e test', section: 'tools', text: 'A test that opens the real game in a browser, plays it and checks the frames and numbers.' },
