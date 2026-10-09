@@ -3,7 +3,7 @@ import { Object3D, Vector3 } from 'three/webgpu';
 import { PlatformerCharacter } from '../character/PlatformerCharacter';
 import { FIXED_DT, Physics, RAPIER } from './Physics';
 
-const baseline = { bodies: 0, colliders: 0, joints: 0, tags: 0, bindings: 0, triggers: 0, controllers: 0, movers: 0, fields: 0, belts: 0 };
+const baseline = { bodies: 0, colliders: 0, joints: 0, tags: 0, bindings: 0, triggers: 0, controllers: 0, vehicles: 0, movers: 0, fields: 0, belts: 0 };
 
 describe('Physics lifecycle', () => {
   it('remove() drops a body with its colliders, tags and binding', async () => {

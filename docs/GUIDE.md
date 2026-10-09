@@ -342,12 +342,14 @@ Sprites face the camera, keep square pixels and are one draw per sheet: `sprites
 A ragdoll from the hero model: `const doll = new Ragdoll(ctx.physics, model, HERO_RAGDOLL); doll.enable({ velocity })`,
 then `doll.sync()` every frame instead of the mixer; `doll.release({ ground: 0 })` hands it back (blend into `GetUp`).
 
-### Guards, paths and flocks
+### Guards, paths, flocks, cars and bullets
 
 ```js
 const nav = NavGrid.fromRows(['#######', '#..c..#', '#.....#', '#######'], { blocked: '#c' });
 const path = nav.path([-2, 0, -0.5], [2, 0, 0.5]);         // A* (corners only); nav.lineOfSight(ax, az, bx, bz)
 const flock = new Boids(80, { bounds: { min: [-8, 2, -8], max: [8, 5, 8] } }); // flock.step(dt); flock.pos
+const car = new Vehicle(ctx.physics, { at: [0, 1, 0] });   // car.drive({ throttle, steer, handbrake }, dt) per fixed step
+const pool = new BulletPool(3000);                         // emitter({ pattern: 'spiral', every: 0.06 }).update(pool, dt, at, aim)
 ```
 
 ### Camera

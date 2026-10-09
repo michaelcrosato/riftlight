@@ -464,12 +464,26 @@ export class RoomGame implements Game {
   readonly runtime: RoomRuntime = roomRuntime(this);
 
   private spawn(): void {
+    this.placeHero(this.spawnAt, this.spawnFacing);
+    this.ctx.camera.teleport(this.cameraTarget());
+  }
+
+  /** A hero body at `at` with the World's settings (the first spawn, and getting out of a vehicle). */
+  placeHero(at: Vec3, facing: number): void {
     const v = this.visitor;
     if (!v) return;
-    const hero = v.spawn(this.ctx.physics, this.spawnAt, { facing: this.spawnFacing, lockDepth: this.ctx.camera.lockDepth });
+    const hero = v.spawn(this.ctx.physics, at, { facing, lockDepth: this.ctx.camera.lockDepth });
     hero.shove = WORLD_SHOVE; // the hero brushes loose things aside: doors, bags, curtains, debris
     hero.weight = WORLD_WEIGHT; // and presses down what it stands on: bridges sag, spring pads sink
-    this.ctx.camera.teleport(this.cameraTarget());
+    v.model.visible = true;
+  }
+
+  /** The hero out of the world (in a vehicle): no body, hidden. */
+  removeHero(): void {
+    const v = this.visitor;
+    if (!v) return;
+    v.despawn();
+    v.model.visible = false;
   }
 
   respawn(): void {
@@ -576,6 +590,11 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     goto: (id: string) => void shell.goto(id),
     setSpawn: (at: Vec3, facing?: number) => game.setSpawn(at, facing),
     respawn: () => game.respawn(),
+    leaveWorld: () => game.removeHero(),
+    enterWorld: (at: Vec3, facing?: number) => game.placeHero(at, facing ?? 0),
+    get inputFree() {
+      return !shell.capturing;
+    },
   };
 }
 

@@ -50,6 +50,8 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `transitions` Screen Transitions | nine transitions, a flash, a shockwave |
 | Genre Wing | `stealth` Stealth | guards on patrol with vision cones that stop at walls; seen too long, they all chase you along A* paths |
 | | `flocks` Flocks & Herds | birds, a school of fish and a pen of sheep as boids; they scatter from the hero |
+| | `drift` Drift Track | get in a car on a ray-cast vehicle: suspension, grip, a handbrake drift, skid marks |
+| | `bullets` Bullet Hell | a turret firing six seeded patterns (hundreds of bullets, one draw call); dodge, graze, punch back |
 
 ## How it is built (`src/world/`)
 

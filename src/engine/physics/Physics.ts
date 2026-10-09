@@ -438,7 +438,7 @@ export class Physics {
   }
 
   /**
-   * Empty the world: every body, collider, joint, character controller, trigger, tag, binding,
+   * Empty the world: every body, collider, joint, character and vehicle controller, trigger, tag, binding,
    * mover, field and belt goes; gravity and the solver's iterations go back to their defaults
    * and the step accumulator resets. The `world` object itself is kept.
    */
@@ -453,6 +453,7 @@ export class Physics {
     this.world.colliders.forEach((c) => loose.push(c));
     for (const c of loose) this.world.removeCollider(c, false);
     for (const c of [...this.controllers]) this.world.removeCharacterController(c);
+    for (const v of [...this.world.vehicleControllers]) this.world.removeVehicleController(v);
     this.bindings.length = 0;
     this.tags.clear();
     this.movers.clear();
@@ -476,6 +477,7 @@ export class Physics {
     bindings: number;
     triggers: number;
     controllers: number;
+    vehicles: number;
     movers: number;
     fields: number;
     belts: number;
@@ -488,6 +490,7 @@ export class Physics {
       bindings: this.bindings.length,
       triggers: this.triggers.length,
       controllers: this.controllers.size,
+      vehicles: this.world.vehicleControllers.size,
       movers: this.movers.count,
       fields: this.fields.count,
       belts: this.belts.size,

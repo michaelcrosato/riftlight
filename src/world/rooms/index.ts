@@ -7,9 +7,11 @@ import { registerRooms } from '../shell';
 import type { RoomDef } from '../types';
 import { ATRIUM } from './atrium';
 import { BODIES } from './bodies';
+import { BULLETS } from './bullets';
 import { CAMERAS } from './cameras';
 import { CLIPS } from './clips';
 import { DESTRUCTION } from './destruction';
+import { DRIFT } from './drift';
 import { LIGHTS, PARTICLE_GARDEN } from './effects';
 import { FEEL } from './feel';
 import { FIELDS } from './fields';
@@ -63,6 +65,8 @@ export const ROOMS: readonly RoomDef[] = [
   // genres
   STEALTH,
   FLOCKS,
+  DRIFT,
+  BULLETS,
 ];
 
 registerRooms(ROOMS);

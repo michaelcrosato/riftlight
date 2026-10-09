@@ -116,6 +116,12 @@ export interface RoomRuntime {
   setSpawn(at: Vec3, facing?: number): void;
   /** Put the hero back at the spawn (a pit, a reset). */
   respawn(): void;
+  /** Take the hero out of the world (into a vehicle): no body, not drawn, no input. */
+  leaveWorld(): void;
+  /** Put the hero back in the world at `at` (feet), with the room's settings (shove, weight, depth lock). */
+  enterWorld(at: Vec3, facing?: number): void;
+  /** False while a panel or a room change owns the keys: read input yourself only when true. */
+  readonly inputFree: boolean;
 }
 
 /** What a room's `build` returns: its own per-frame logic and live settings. */

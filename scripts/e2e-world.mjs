@@ -418,6 +418,49 @@ export async function runWorld(h) {
       e.game.visitor.teleport([-8, 0, -2], 0);
       e.step(120);
       out.flocks = { birds: order.birds.alignment, fish: order.fish.alignment, calm, scared: near() };
+      // drift: the car drives, steers, slides with the handbrake (skid marks), and lets the hero out
+      await w.goto('drift', { instant: true });
+      e.step(10);
+      // the keys: W drives forward (speed > 0 is along the car's heading)
+      w.room.keys();
+      e.input.setKey('KeyW', true);
+      e.step(60);
+      e.input.setKey('KeyW', false);
+      const keyed = w.room.speed();
+      w.pad('FLIP BACK'); // back to the start, then a run-up and a drift in the open
+      w.room.drive(1, 0);
+      e.step(100);
+      const speed = w.room.speed();
+      w.room.drive(0.6, 1, true);
+      let slip = 0;
+      for (let i = 0; i < 60; i++) {
+        e.step(1);
+        slip = Math.max(slip, w.room.slip());
+      }
+      w.room.drive(0, 0);
+      e.step(120);
+      const out1 = w.room.getOut();
+      e.step(30);
+      const car = w.room.car();
+      const at = w.state().hero?.at ?? [99, 99, 99];
+      out.drift = { keyed, speed: Math.abs(speed), slip, marks: w.room.marks(), driving: w.room.driving(), out: out1, beside: Math.hypot(at[0] - car[0], at[2] - car[2]), feet: at[1] };
+      // bullet hell: every pattern at once fills the arena; standing in it gets you hit; punches hurt the turret
+      await w.goto('bullets', { instant: true });
+      w.pad('ALL');
+      e.step(180);
+      const live = w.room.bullets();
+      const hits = w.room.hits();
+      w.room.patterns([]); // a ceasefire: shoot the turret in peace
+      e.step(240);
+      e.game.visitor.teleport([0, 0, 3], Math.PI); // facing the turret
+      for (let i = 0; i < 6; i++) {
+        e.input.setKey('KeyJ', true);
+        e.step(2);
+        e.input.setKey('KeyJ', false);
+        e.step(16);
+      }
+      e.step(30);
+      out.bullets = { live, hits, shots: w.room.shots(), hp: w.room.hp() };
       out.errors = e.state().errors;
       return out;
     });
@@ -428,8 +471,13 @@ export async function runWorld(h) {
     check(genres.stealth.onFloor, 'no guard ever stands in a wall or a crate');
     check(genres.flocks.birds > 0.45 && genres.flocks.fish > 0.4, `flocks: birds (${genres.flocks.birds.toFixed(2)}) and fish (${genres.flocks.fish.toFixed(2)}) line up (two seconds' average)`);
     check(genres.flocks.calm >= 3 && genres.flocks.scared <= 2, `sheep scatter from the hero (${genres.flocks.calm} → ${genres.flocks.scared} within 2 m of where the hero stands)`);
+    check(genres.drift.speed > 6 && genres.drift.slip > 0.4 && genres.drift.marks > 0, `drift: the car gets up to ${genres.drift.speed.toFixed(1)} m/s; the handbrake swings the tail out ${((genres.drift.slip * 180) / Math.PI).toFixed(0)}° and leaves ${genres.drift.marks} skid marks`);
+    check(genres.drift.keyed > 2, `W drives the car forward (${genres.drift.keyed.toFixed(1)} m/s along its heading)`);
+    check(genres.drift.out && !genres.drift.driving && genres.drift.beside < 3.5 && Math.abs(genres.drift.feet) < 0.2, `getting out puts the hero on the ground beside the car (${genres.drift.beside.toFixed(1)} m off, feet at ${genres.drift.feet.toFixed(2)})`);
+    check(genres.bullets.live > 300 && genres.bullets.hits >= 1, `bullet hell: ${genres.bullets.live} bullets at once, the hero hit ${genres.bullets.hits} times`);
+    check(genres.bullets.shots >= 6 && genres.bullets.hp < 100, `punches shoot back (${genres.bullets.shots} shots) and hurt the turret (${genres.bullets.hp}%)`);
     check(genres.errors.length === 0, `the genre wing runs without errors${genres.errors.length ? ': ' + genres.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-flocks-scared.png`);
+    await capture(page, `world-${tag}-bullets.png`);
 
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {

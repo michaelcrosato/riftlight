@@ -783,6 +783,32 @@ agent. `Boids` is Reynolds' flocking on typed arrays: separation, alignment and 
 the neighbours in a spatial hash, plus `seek`, `flee`, `obstacles` (spheres) and `bounds` (pushed back in from `margin` inside them);
 `flat` keeps a herd or a school on its plane; seeded, so runs repeat.
 
+### Vehicles and bullets
+
+```ts
+const car = new Vehicle(physics, { at: [0, 1, 0], yaw: 0 });  // a box chassis on four ray wheels
+// per fixed step: car.drive({ throttle, steer, brake, handbrake }, dt); car.speed, car.slipAngle
+car.wheelPose(i, mesh.position, mesh.quaternion);           // per frame, for each wheel mesh
+const pool = new BulletPool(4000);                          // bullets as numbers: no allocations
+const spiral = emitter({ pattern: 'spiral', every: 0.06, count: 3, speed: 4.5, turn: 11 });
+spiral.update(pool, dt, [0, 0], heroXZ); pool.step(dt, (x, z) => nav.walkable(x, z));
+pool.killAll(pool.hits(heroX, heroZ, 0.15, 'enemy'));       // circle tests; pool.graze(x, z, 0.7, 'enemy') counts near misses once
+```
+
+`Vehicle` (physics/vehicle.ts) is Rapier's ray-cast vehicle with game defaults: suspension on
+springs (`stiffness`, `setSuspension`), rear-wheel drive that gives out toward `topSpeed` (and
+pushes at full strength against the motion, so reverse throttle brakes), steering that narrows
+with speed, brakes (impulses per step, scaled by the car's mass) and a little rolling
+resistance when coasting, and a handbrake that locks the rear, cuts its sideways grip and (the
+arcade part, `driftYaw`, 0 for none) swings the car round toward the steering: a drift.
+`speed` is along the heading; `slip` and `slipAngle` say how much it slides (skid marks).
+`wheelPose(i, pos, rot, true)` gives a wheel in the chassis' space, for wheel meshes parented
+to a chassis mesh that `physics.bind` draws between steps. `reset` puts it back on its wheels,
+`dispose` removes it (`physics.clear()` frees vehicle controllers too). `BulletPool` (ai/bullets.ts) keeps position, velocity, life, radius,
+team and kind in typed arrays with the live bullets packed at the front (a dead one swaps with
+the last); `emitter` fires seeded patterns (`aimed`, `fan`, `ring`, `spiral`, `wave`, `burst`)
+on a timer. Draw them with one instanced mesh (the Bullet Hell room does).
+
 ### Water and buoyancy
 
 ```ts

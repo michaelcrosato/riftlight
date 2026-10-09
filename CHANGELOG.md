@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.9.0
+
+- **Vehicles**: `Vehicle` (physics/vehicle.ts) on Rapier's ray-cast vehicle controller:
+  suspension, rear-wheel drive with a `topSpeed` (full force against the motion: a brake),
+  speed-narrowed steering, mass-scaled brakes and rolling resistance, a handbrake drift (rear
+  grip cut, `driftYaw` assist), `speed` along the heading, `slip` / `slipAngle`, `yaw`,
+  `wheelPose` (world or chassis space), `reset`, `setSuspension`, `dispose`; the chassis never
+  sleeps. `physics.clear()` frees vehicle controllers and `counts()` reports them.
+- **Bullets**: `BulletPool` (ai/bullets.ts): thousands of projectiles in typed arrays (`fire`,
+  `step` with a wall test, `hits`, `near` by team, `graze` once per bullet, `kill`, `killAll`,
+  `clear`) and `emitter` for seeded patterns (`aimed`, `fan`, `ring`, `spiral`, `wave`,
+  `burst`), safe against a zero interval and long hitches.
+
 ## 0.8.0
 
 - **Navigation**: `NavGrid` (ai/navgrid.ts): walkable cells from an ASCII map (`fromRows`:
