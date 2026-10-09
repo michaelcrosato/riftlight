@@ -333,6 +333,24 @@ export async function runWorld(h) {
       w.pad('300 CRITTERS');
       e.step(5);
       out.sprites = { draws, frames: seen.size, crowd: w.room.critters(), facing, mirrored };
+      // ragdolls: limp dummies lie down and get back up; one tumbles down the stairs; the cannon knocks one over
+      await w.goto('ragdolls', { instant: true });
+      e.step(10);
+      w.pad('ALL LIMP');
+      let n = 0;
+      while (w.room.states().some((st) => st !== 'stand') && n++ < 1200) e.step(1);
+      const standing = w.room.pelvis().slice(0, 3).map((p) => p[1]);
+      const lay = w.room.lay().slice(0, 3);
+      const ups3 = w.room.ups()[3]; // the stairs dummy may have got up once already (ALL LIMP)
+      w.pad('PUSH');
+      n = 0;
+      while (w.room.ups()[3] === ups3 && n++ < 1200) e.step(1);
+      const stairs = w.room.lay()[3];
+      const before = w.room.falls().slice(0, 3).reduce((a, b) => a + b, 0);
+      w.room.fire();
+      e.step(90);
+      const after = w.room.falls().slice(0, 3).reduce((a, b) => a + b, 0);
+      out.ragdolls = { lying: lay.map((l) => l.at[1]), rested: lay.map((l) => l.rested), standing, ups: w.room.ups(), stairs, knocked: after - before };
       out.errors = e.state().errors;
       return out;
     });
@@ -342,6 +360,10 @@ export async function runWorld(h) {
     check(anim.legs.slide < 1e-6, `planted feet never slide (${anim.legs.slide})`);
     check(anim.sprites.draws === 3 && anim.sprites.frames === 4 && anim.sprites.crowd === 300, `sprites: three sheets, three batches, walk frames flip (${anim.sprites.frames} seen), a crowd of ${anim.sprites.crowd}`);
     check(anim.sprites.facing > 30 && anim.sprites.mirrored > anim.sprites.facing * 0.6, `mirrored sprites draw (${anim.sprites.mirrored} px against ${anim.sprites.facing} facing right)`);
+    check(anim.ragdolls.lying.every((y) => y < 0.35) && anim.ragdolls.rested.every(Boolean) && anim.ragdolls.standing.every((y) => y > 0.5) && anim.ragdolls.ups.slice(0, 3).every((n) => n === 1), `ragdolls: limp dummies lie down (pelvis ${anim.ragdolls.lying.map((y) => y.toFixed(2))}), come to rest (${anim.ragdolls.rested}) and get back up (${anim.ragdolls.standing.map((y) => y.toFixed(2))})`);
+    // where on the stairs it stops is chaos; that it left the landing (2.8 m up), came down them and lay still is not
+    check(anim.ragdolls.stairs.at[1] < 1.8 && anim.ragdolls.stairs.at[2] > -3.5 && anim.ragdolls.stairs.rested, `a pushed dummy tumbles down the stairs and lies still (at ${anim.ragdolls.stairs.at.map((v) => v.toFixed(1))})`);
+    check(anim.ragdolls.knocked >= 1, `the cannon knocks a dummy over (${anim.ragdolls.knocked})`);
     check(anim.errors.length === 0, `the animation wing runs without errors${anim.errors.length ? ': ' + anim.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-crowd.png`);
 

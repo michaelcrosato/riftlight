@@ -729,6 +729,35 @@ ones. `physics.stepMs` is what a step of Rapier costs (smoothed); `physics.count
 joints, movers, fields and belts. `physics.clear()` (every unload) also restores gravity and
 the solver's iterations, and drops movers, fields, belts and step listeners.
 
+### Ragdolls
+
+```ts
+const doll = new Ragdoll(physics, model, HERO_RAGDOLL);   // parts: a capsule per joint, how it hangs
+doll.enable({ velocity: [0, 1, 3] });                     // bodies from the model's pose this frame
+doll.push(hitPoint, [0, 1, 4]);                           // the nearest part gains this velocity
+// per frame, after the physics update (stop the model's mixer meanwhile): doll.sync()
+const blend = doll.release({ ground: (x, z) => groundY, offset: getUpStartPelvis });
+mixer.clipAction(getUp).reset().play();                  // then per frame: mixer.update(dt); blend.apply(t / 0.35)
+```
+
+`physics/ragdoll.ts` turns a jointed model (a hierarchy of named Object3D joints with rest
+rotations at identity, like the hero's) into one dynamic body per listed part, a capsule from
+the joint toward `to`. A part hangs from its `parent` by a hinge about the joint's local X with
+limits in degrees (`hinge: [min, max]`: knees, elbows, Rapier's revolute joint) or a ball joint
+whose swing is held inside a `cone` (degrees: after every physics step a part past the cone is
+turned back onto its edge, carrying the parts below it along, and the spin carrying it further
+out is removed). Parts collide with the world but not with any ragdoll's parts (a collision
+group of their own). `sync()` writes the bodies into the joints
+between the last two physics steps. `rootPose()` says where the pelvis lies, whether face up,
+and the heading to get up with; `release()` removes the bodies, moves the model root under the
+pelvis (`ground` a height or a function called once the bodies are gone; `offset` the next clip's
+first-frame pelvis position, so the blend doesn't slide), and returns a blend from the ragdoll
+pose to whatever animation writes next (it follows each joint the mixer writes, and holds the
+rest where the mixer last left them). `HERO_RAGDOLL` (src/game/hero/ragdoll.ts, exported by the
+engine kit) is the hero's eleven parts. Part sizes and `offset` are in metres at the model's
+scale 1 (scale them for a scaled model); a hinge part twisted off its X axis when enabled snaps
+onto it in the first step (the hero's clips bend elbows and knees about X only).
+
 ### Water and buoyancy
 
 ```ts

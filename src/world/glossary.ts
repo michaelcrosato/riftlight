@@ -87,6 +87,7 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'solver', section: 'physics', text: 'The part of the physics engine that pushes overlapping bodies apart and keeps joints together, a few passes per step. More passes: stiffer stacks.' },
   { term: 'CCD', section: 'physics', text: 'Continuous collision detection: fast, small bodies are swept along their path so they cannot skip through thin walls between two steps.' },
   { term: 'joint', section: 'physics', text: 'A rule that ties two bodies together: a ball joint (free turning about a point), a hinge (one axis), a slider (one direction), fixed, rope or spring.' },
+  { term: 'collision groups', section: 'physics', text: 'Bit masks saying which colliders can touch which: a ragdoll\'s limbs hit the world but not each other.' },
   { term: 'ball joint', section: 'physics', text: 'A joint that keeps two points together but lets the bodies turn any way: chains, punching bags, ragdoll shoulders.' },
   { term: 'hinge', section: 'physics', text: 'A revolute joint: two bodies turn about one shared axis, often with limits (a door opens 110 degrees) and a motor.' },
   { term: 'slider', section: 'physics', text: 'A prismatic joint: a body moves along one axis only, with limits, and a motor can act as a spring (pistons, spring pads).' },
@@ -113,6 +114,8 @@ export const GLOSSARY: readonly Term[] = [
   // animation
   { term: 'clip', section: 'animation', text: 'One animation (Run, Jump, Wave): key poses over time, written here as data.' },
   { term: 'cross-fade', section: 'animation', text: 'Blending from one clip to the next over a moment instead of snapping.' },
+  { term: 'ragdoll', section: 'animation', text: 'A character whose joints are handed to physics: each limb a body, held to the next by a joint with limits, so it falls and tumbles like a rag doll.' },
+  { term: 'animation blending', section: 'animation', text: 'Mixing two poses joint by joint (each rotation part of the way from one to the other): how a ragdoll eases back into a get-up clip.' },
   { term: 'blend space', section: 'animation', text: 'Several clips mixed by a parameter: tiptoe, walk and run blended by speed.' },
   { term: 'foot IK', section: 'animation', text: 'Inverse kinematics that bends the legs so the feet land on the real ground: stairs, slopes, ledges.' },
   { term: 'contact sheet', section: 'animation', text: 'A grid of frames of a clip in one picture, to check it by eye.' },
