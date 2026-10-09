@@ -8,6 +8,17 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.8.0
+
+- **Navigation**: `NavGrid` (ai/navgrid.ts): walkable cells from an ASCII map (`fromRows`:
+  '#' walls and ' ' pits closed by default) or set by hand; `path` (A*, 8 directions, no corner
+  cutting, smoothed; a target in a wall goes to the nearest reachable cell), `lineOfSight` (a
+  DDA, optional body width), `castWall` (the same cell walk), flow fields (`flowTo`,
+  `flowDirection`, `flowDistance`), `setOpen` (doors).
+- **Flocking**: `Boids` (ai/boids.ts): separation, alignment and cohesion over a spatial hash,
+  `seek`, `flee`, sphere `obstacles`, `bounds` (pushed back in from `margin` inside them), `flat`
+  herds and schools, seeded; `order()` and `spacing()` to measure it.
+
 ## 0.7.0
 
 - **Ragdolls**: `Ragdoll` (physics/ragdoll.ts) turns a jointed model into capsules on hinge

@@ -13,6 +13,7 @@ import { DESTRUCTION } from './destruction';
 import { LIGHTS, PARTICLE_GARDEN } from './effects';
 import { FEEL } from './feel';
 import { FIELDS } from './fields';
+import { FLOCKS } from './flocks';
 import { FOLIAGE } from './foliage';
 import { JOINTS } from './joints';
 import { LEGS } from './legs';
@@ -23,6 +24,7 @@ import { RAGDOLLS } from './ragdolls';
 import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
 import { SPRITES } from './sprites';
+import { STEALTH } from './stealth';
 import { TRAILS } from './trails';
 import { WATER } from './water';
 import { WEATHER } from './weather';
@@ -58,6 +60,9 @@ export const ROOMS: readonly RoomDef[] = [
   LAYERS,
   FILTER_BENCH,
   TRANSITIONS_ROOM,
+  // genres
+  STEALTH,
+  FLOCKS,
 ];
 
 registerRooms(ROOMS);
