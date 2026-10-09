@@ -18,7 +18,7 @@ const CORRIDORS: { dir: [number, number]; wings: WingId[] }[] = [
   { dir: [1, 0], wings: ['movement', 'looks'] },
   { dir: [0, -1], wings: ['physics', 'genres'] },
   { dir: [-1, 0], wings: ['animation', 'workshop'] },
-  { dir: [0, 1], wings: ['effects'] },
+  { dir: [0, 1], wings: ['effects', 'procedural'] },
 ];
 
 export interface DoorSpot {

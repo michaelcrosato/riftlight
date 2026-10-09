@@ -359,6 +359,15 @@ ctx.camera.rayAt(ctx.engine.input.pointer.x, ctx.engine.input.pointer.y, origin,
 const rewind = new Rewind(ctx.physics, { seconds: 5 }); // rewind.trackAll(); per step: rewind.rewinding = input.isDown('KeyR') (move the engine's R hotkey: debugKeys)
 ```
 
+### Procedural generation
+
+```js
+const noise = createNoise(7); // noise.fbm2(x * 0.05, z * 0.05) about -1..1; noise.ridged2 for crests
+const land = new Terrain({ size: [40, 30] }).generate((x, z) => 4 * noise.fbm2(x * 0.05, z * 0.05)); // land.erode(); land.attach(ctx.physics); ctx.scene.add(land.mesh)
+const wfc = new Wfc(patternTiles([{ pattern: ['#.#', '#.#', '#.#'] }, { pattern: ['###', '###', '###'] }]), 10, 8, { seed: 3 }); // wfc.run(); wfc.result
+const plant = turtle(expand(PLANTS.fern.system, 5), PLANTS.fern.turtle); // plant.branches: { from, to, radius }, plant.leaves
+```
+
 ### Camera
 
 | Preset | View | Notes |
