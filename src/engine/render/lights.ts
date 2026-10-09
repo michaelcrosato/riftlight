@@ -63,6 +63,9 @@ export function flicker(preset: FlickerPreset, t: number, seed = 0): number {
     }
     case 'spell':
       return 1 + 0.12 * Math.sin(t * 11 + seed) + 0.06 * noise1(t * 19, seed);
+    default:
+      // an unknown preset (untyped data) is a steady light: one NaN intensity would black out every lit pixel
+      return 1;
   }
 }
 

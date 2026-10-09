@@ -30,6 +30,10 @@ import { type Look, LOOK_PRESETS, lookPresetName, lookPresetOf } from './render/
 import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
 import { ENGINE_VERSION } from './version';
+import { GameClock } from './clock';
+import { CameraShake } from './shake';
+import { Tweens } from './tween';
+import type { ScreenFx } from './render/screenFx';
 
 export interface GameContext {
   readonly engine: Engine;
@@ -52,6 +56,11 @@ export interface GameContext {
    * (src/engine/render/lights.ts). A fixed pool sized by quality, created on first use.
    */
   readonly lights: LightPool;
+  /**
+   * Tweens on game time: `tweens.to(door.position, { y: 3 }, { duration: 0.8, ease: 'outBack' })`
+   * (src/engine/tween.ts). Cleared when the level unloads.
+   */
+  readonly tweens: Tweens;
 }
 
 /**
@@ -229,6 +238,15 @@ export class Engine {
   readonly audio = new AudioManager();
   readonly particles: Particles;
   readonly hud: Hud;
+  /** Tweens on game time (`ctx.tweens`). */
+  readonly tweens = new Tweens();
+  /**
+   * Screen shake (trauma 0..1): `engine.shake.add(0.4)`. Added to the camera after the rig
+   * placed it, on real time; ortho cameras move by whole art pixels. Reset on level unload.
+   */
+  readonly shake = new CameraShake();
+  /** Game time from real time: the speed and hitstops (`timeScale`, `hitstop()`). */
+  private readonly clock = new GameClock();
   debug: DebugUI | null = null;
   touch: TouchControls | null = null;
   /** The dynamic light pool, created on first use of `ctx.lights` / `engine.lights`. */
@@ -266,7 +284,7 @@ export class Engine {
   private fpsSince = -1;
   /** `auto` quality: one measurement window after start-up (ms timestamps), then done. */
   private autoQuality: { start: number; frames: number } | null = null;
-  private readonly sunDirection = new Vector3(-0.55, 1, 0.35).normalize();
+  private readonly sunDirection = new Vector3().copy(DEFAULT_SUN);
   // Light-space axes perpendicular to the sun, for snapping the shadow frustum to texels.
   private readonly sunRight = new Vector3().crossVectors(new Vector3(0, 1, 0), this.sunDirection).normalize();
   private readonly sunUp = new Vector3().crossVectors(this.sunDirection, this.sunRight).normalize();
@@ -315,6 +333,7 @@ export class Engine {
       get lights() {
         return lights();
       },
+      tweens: this.tweens,
     };
 
     this.cameraUpdate = {
@@ -381,6 +400,58 @@ export class Engine {
       this._lights.group.userData.engineOwned = true;
     }
     return this._lights;
+  }
+
+  /**
+   * Game speed: 1 normal, 0.25 slow motion, 2 double, 0 frozen (a menu: key presses made
+   * meanwhile are dropped, like a pause). Scales game time, physics, animation, particles,
+   * tweens and the camera follow; not transitions, shake or the render loop. Back to 1 when a
+   * level unloads. Values that aren't numbers are ignored.
+   */
+  get timeScale(): number {
+    return this.clock.scale;
+  }
+
+  set timeScale(v: number) {
+    this.clock.scale = v;
+  }
+
+  /**
+   * Freeze the game for `seconds` of real time: impact frames that sell a hit. Rendering,
+   * screen shake and transitions keep going; overlapping hitstops keep the longest. Key
+   * presses made during a hitstop still count afterwards (a buffered jump).
+   */
+  hitstop(seconds: number): void {
+    this.clock.freeze(seconds);
+  }
+
+  /** Transitions, flashes and shockwaves (render/screenFx.ts): `await engine.screen.cover('iris')`. */
+  get screen(): ScreenFx {
+    return this.renderer.screen;
+  }
+
+  /** The direction sunlight comes from (unit, pointing at the sun). */
+  get sunDir(): Vector3 {
+    return this.sunDirection.clone();
+  }
+
+  /**
+   * Point the sun (and its shadows): a direction toward the sun, normalised here. A level's
+   * time of day or a sun dial; reset to the engine default when the level unloads. Below the
+   * horizon the sun is kept just above it (lower `sun.intensity` for night instead).
+   */
+  setSunDirection(dir: Vector3 | readonly [number, number, number]): void {
+    const d = dir instanceof Vector3 ? this.tmp.copy(dir) : this.tmp.set(dir[0], dir[1], dir[2]);
+    if (d.lengthSq() < 1e-8) return;
+    d.normalize();
+    d.y = Math.max(d.y, 0.05);
+    this.sunDirection.copy(d.normalize());
+    // the light-space axes for texel snapping (degenerate straight up: any horizontal axis)
+    this.sunRight.crossVectors(UP, this.sunDirection);
+    if (this.sunRight.lengthSq() < 1e-8) this.sunRight.set(1, 0, 0);
+    this.sunRight.normalize();
+    this.sunUp.crossVectors(this.sunDirection, this.sunRight).normalize();
+    this.shadowRadius = 0;
   }
 
   /** The quality level in use (see `EngineOptions.quality`). */
@@ -613,6 +684,9 @@ export class Engine {
       ready: this.ready,
       paused: this.paused,
       time: this.time,
+      timeScale: this.timeScale,
+      hitstop: +this.clock.hitstop.toFixed(3),
+      screen: this.renderer.screen.state(),
       backend: r.backend,
       fallbackReason: r.fallbackReason,
       mode: r.mode,
@@ -651,9 +725,12 @@ export class Engine {
   step(n = 1, dt = 1 / 60): void {
     this.manual = true;
     for (let i = 0; i < n && this.ready; i++) {
-      this.time += dt;
-      this.input.beginFrame(this.time, dt);
-      this.advance(dt);
+      const gameDt = this.clock.delta(dt);
+      this.time += gameDt;
+      this.input.beginFrame(this.time, gameDt);
+      if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
+      this.advance(gameDt, dt);
+      this.renderer.screen.update(dt, this.camera.camera);
       this.input.endFrame();
       this.frame++;
     }
@@ -769,6 +846,9 @@ export class Engine {
   private unloadGame(): void {
     this.game.dispose?.(this.context);
     this.audio.stopMusic();
+    this.tweens.clear();
+    this.shake.reset();
+    this.clock.reset();
     this.particles.clear();
     this.hud.clear();
     this._lights?.clear();
@@ -780,6 +860,8 @@ export class Engine {
     if (d) {
       this.scene.background = d.background;
       this.scene.fog = null;
+      (this.scene as Scene & { fogNode: Node | null }).fogNode = null; // TSL fog (Riftlight's levels)
+      this.setSunDirection(DEFAULT_SUN);
       this.sun.color.setHex(d.sun[0]);
       this.sun.intensity = d.sun[1];
       this.ambient.color.setHex(d.ambient[0]);
@@ -796,10 +878,12 @@ export class Engine {
     this.lastTime = t;
     if (this.manual) return;
     const running = this.ready && !this.paused;
-    if (running) this.time += dt; // game time stops while paused or loading
+    const gameDt = running ? this.clock.delta(dt) : 0;
+    this.time += gameDt; // game time stops while paused or loading
     this.measure(timeMs);
-    this.input.beginFrame(this.time, dt);
-    if (!running) this.input.clearQueued(); // presses made during a pause never fire later
+    this.input.beginFrame(this.time, running ? gameDt : dt);
+    // presses made during a pause (or at speed 0, a menu) never fire later
+    if (!running || this.clock.frozen) this.input.clearQueued();
 
     if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
@@ -807,12 +891,13 @@ export class Engine {
 
     if (running) {
       try {
-        this.advance(dt);
+        this.advance(gameDt, dt);
       } catch (e) {
         this.reportError(e);
       }
     }
     if (this.disposed) return; // a game hook disposed the engine during this frame
+    this.renderer.screen.update(dt, this.camera.camera); // transitions run on real time, loads included
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
     // The status line is only built while the panel is on screen.
@@ -879,14 +964,19 @@ export class Engine {
     this.autoQuality = null;
   }
 
-  /** One frame of simulation, game logic, camera and light (no drawing). */
-  private advance(dt: number): void {
+  /**
+   * One frame of simulation, game logic, camera and light (no drawing). `dt` is game time
+   * (scaled, 0 in a hitstop); `realDt` drives the screen shake.
+   */
+  private advance(dt: number, realDt = dt): void {
     const ctx = this.context;
     this.physics.update(dt, this.fixedStep);
     if (!this.ready) return; // a hook disposed the engine mid-frame
+    this.tweens.update(dt);
     this.game.update?.(ctx, dt);
     if (!this.ready) return;
     this.particles.update(dt);
+    this.cameraUpdate.shake = this.shake.update(realDt);
     this.updateView(dt);
     this._lights?.update(dt, this.camera.focus, this.lightRange());
   }
@@ -963,6 +1053,9 @@ export class Engine {
 
 /** Camera rays pass through the player and anything tagged `noCamera`. */
 const CAMERA_IGNORE = ['character', 'noCamera'];
+const UP = new Vector3(0, 1, 0);
+/** Where sunlight comes from unless a level points it elsewhere (`setSunDirection`). */
+const DEFAULT_SUN = new Vector3(-0.55, 1, 0.35).normalize();
 
 /** Debug panel default: on in dev builds or with ?debug=1, off in production. */
 function defaultDebugUI(): boolean {

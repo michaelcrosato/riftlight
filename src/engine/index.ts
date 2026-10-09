@@ -113,6 +113,19 @@ export {
 } from './render/PixelRenderer';
 export { ContactShadow } from './render/ContactShadow';
 export {
+  ScreenFx,
+  TRANSITIONS,
+  TRANSITION_CELLS,
+  coversPixel,
+  type FlashOptions,
+  type ScreenFxState,
+  type ShockwaveOptions,
+  type TransitionKind,
+  type TransitionOptions,
+} from './render/screenFx';
+export { CameraShake } from './shake';
+export { EASES, EASE_NAMES, Tweens, ease, type Ease, type EaseName, type Tween, type TweenOptions } from './tween';
+export {
   FLICKER_PRESETS,
   LIGHT_POOL_SIZES,
   LightAssigner,

@@ -6,7 +6,7 @@
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
-//     riftlight-showcase | bundle;  groups: @core | @cameras | @filters
+//     riftlight-showcase | bundle | world;  groups: @core | @cameras | @filters | @world
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -70,6 +70,11 @@
 //                 WebGPU + WebGL 2: levels 1, 6, 12 and a rift build, render, keep 8 lights
 //                 without recompiles, walk start → exit with Engine.step, open the portal.
 //
+// world           Engine World, the engine's tech demo (scripts/e2e-world.mjs), WebGPU + WebGL 2:
+//                 a door per room, walking into one (an iris, the room as its own Game), every
+//                 room renders and its first pad works, hitstop / shake / flash / game speed,
+//                 the panels, a mosaic transition, and the Atrium the same after every room.
+//
 // bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
 //                 zip, its types, its check.mjs on every page (WebGPU + WebGL 2), every guide
 //                 recipe played as the guide describes, and errors reported (box, engine.errors).
@@ -101,6 +106,7 @@ import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
 import { runRiftlightPhone } from './e2e-riftlight-phone.mjs';
 import { runBundle } from './e2e-bundle.mjs';
+import { runWorld } from './e2e-world.mjs';
 
 const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
@@ -1292,6 +1298,11 @@ const SUITES = {
     await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[1] });
   },
+  world: async (exe) => {
+    const helpers = { exe, openPage, check, capture, checkClean, colorCount };
+    await runWorld({ ...helpers, scenario: SCENARIOS[0] });
+    await runWorld({ ...helpers, scenario: SCENARIOS[1] });
+  },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -1300,6 +1311,7 @@ const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+  '@world': ['world'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);

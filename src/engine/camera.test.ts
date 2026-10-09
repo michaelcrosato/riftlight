@@ -98,3 +98,34 @@ describe('camera presets', () => {
     expect(a.distanceTo(b)).toBeLessThan(1e-3);
   });
 });
+
+describe('screen shake', () => {
+  const at = (rig: ReturnType<typeof createCameraRig>, shake: Vector3 | undefined) => {
+    rig.update({ target: new Vector3(), eye: new Vector3(0, 1.5, 0), dt: 1 / 60, resolution: RESOLUTIONS.default, input: fakeInput(), world: {}, shake });
+    return rig.camera.position.clone();
+  };
+
+  it('every preset comes back to its unshaken pose when the shake stops', () => {
+    for (const preset of CAMERA_PRESETS) {
+      const rig = createCameraRig({ preset, position: [3, 4, 5], target: [0, 0, 0] });
+      for (let i = 0; i < 30; i++) at(rig, undefined);
+      const rest = at(rig, undefined);
+      let moved = 0;
+      for (let i = 0; i < 20; i++) moved = Math.max(moved, at(rig, new Vector3(0.3 * Math.sin(i), 0.2, -0.25)).distanceTo(rest));
+      const after = at(rig, new Vector3());
+      expect(moved, preset).toBeGreaterThan(0.01);
+      expect(after.distanceTo(rest), preset).toBeLessThan(1e-9);
+    }
+  });
+
+  it('ortho presets shake by whole art pixels', () => {
+    const rig = createCameraRig({ preset: 'iso' }) as OrthoRig;
+    for (let i = 0; i < 30; i++) at(rig, undefined);
+    const rest = at(rig, undefined);
+    const moved = at(rig, new Vector3(0.123, 0.051, 0.07)).sub(rest);
+    const px = rig.viewHeight / RESOLUTIONS.default.height;
+    const right = new Vector3().setFromMatrixColumn(rig.camera.matrixWorld, 0);
+    const steps = moved.dot(right) / px;
+    expect(Math.abs(steps - Math.round(steps))).toBeLessThan(1e-6);
+  });
+});

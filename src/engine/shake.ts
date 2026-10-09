@@ -2,12 +2,18 @@ import { Vector3 } from 'three/webgpu';
 
 /**
  * Screen shake as "trauma" (0..1): hits add trauma, it decays, and the camera offset is
- * maxOffset × trauma² × smooth noise. Deterministic (sums of sines of game time, no
+ * maxOffset × trauma² × smooth noise. Deterministic (sums of sines of its own clock, no
  * Math.random), so films and tests see the same shake.
  *
- * Wire it in the game's `update`, before the engine's camera update:
+ * The engine owns one (`engine.shake`) and adds its offset to the camera after the rig has
+ * placed it, every frame, on real time (it keeps shaking through a hitstop). Ortho cameras
+ * move by whole art pixels, so the picture jumps the way old games shook:
  *
- *   combat.shake.apply(ctx.camera, dt);   // nudges the rig's focus; ortho rigs snap it to art pixels
+ *   ctx.engine.shake.add(0.5);            // a ground pound
+ *
+ * A game can also keep its own and nudge a rig's focus with it (what Riftlight's combat does):
+ *
+ *   combat.shake.apply(ctx.camera, dt);   // in update, before the engine's camera update
  *
  * or read `shake.offset` and add it wherever the game builds its camera target.
  */

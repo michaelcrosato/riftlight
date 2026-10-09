@@ -141,4 +141,8 @@ describe('LightPool', () => {
       expect(flicker(p, 1.234, 3)).toBe(flicker(p, 1.234, 3));
     }
   });
+
+  it('an unknown flicker preset is a steady light, never NaN', () => {
+    expect(flicker('lava' as never, 2.5, 1)).toBe(1);
+  });
 });

@@ -9,6 +9,11 @@ a title screen, the town of Emberfall with its blacksmith, merchant, mystic and 
 levels with monsters, loot and bosses, the death recap, save slots and the difficulty sliders
 (Esc → Tuning). The movement demo is `/?game=playground` (and `?game=sandbox`).
 
+**Engine World** (`/?game=world`, [`docs/WORLD.md`](docs/WORLD.md)) is the engine's tech demo:
+a hub with a door for every room, each room one technique (the moveset, game feel, cameras,
+clips, lights, particles, retro consoles, per-layer looks, the filter bench, screen
+transitions...) with pads to change it live and a station guide (H) that explains how it works.
+
 - **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
   1–4 (or Q E R T, RMB = 1) skills · F talk / pick up / portal · I inventory · P passive tree ·
   C character · K codex · Esc pause. Pads: left stick, A attack, B dodge, X Y LB RB skills,

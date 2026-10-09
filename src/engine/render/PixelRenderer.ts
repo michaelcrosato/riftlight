@@ -41,6 +41,7 @@ import {
   paramsOf,
   planLook,
 } from './look';
+import { ScreenFx } from './screenFx';
 import { vertexSnap } from './toon';
 import { installWebGPUCompat } from './webgpuCompat';
 
@@ -159,6 +160,11 @@ export class PixelRenderer {
   lookVersion = 0;
   /** Called after a lost device was recovered with a new renderer and canvas. */
   onRecovered: ((canvas: HTMLCanvasElement) => void) | null = null;
+  /**
+   * Transitions, flashes and shockwaves at the end of every output graph (uniforms only:
+   * `engine.screen`, render/screenFx.ts).
+   */
+  readonly screen = new ScreenFx();
 
   private _renderer!: WebGPURenderer;
   private _pipeline!: RenderPipeline;
@@ -599,7 +605,8 @@ export class PixelRenderer {
   }
 
   private buildRawOutput(): Node {
-    return renderOutput(this.rawNode, this._renderer.toneMapping, this._renderer.outputColorSpace) as unknown as Node;
+    const out = renderOutput(this.rawNode, this._renderer.toneMapping, this._renderer.outputColorSpace);
+    return this.screen.colorNode(out, this.scale) as Node;
   }
 
   /**
@@ -626,7 +633,9 @@ export class PixelRenderer {
       artTargets.push(t);
       return t;
     };
-    const toDevice = (img: Img): Img => (img.art ? { ...img, node: artTexture(img.node) as unknown as Node, art: false, px: img.devicePx } : img);
+    // The one upscale: the art target sampled per device pixel (through the shockwaves).
+    const toDevice = (img: Img): Img => (img.art ? { ...img, node: this.screen.sampleNode(artTexture(img.node), this.scale) as Node, art: false, px: img.devicePx } : img);
+    const finish = (img: Img): OutputEntry => ({ node: this.screen.colorNode(toDevice(img).node, this.scale) as Node, artTargets });
     const chain = (start: Img, filters: readonly LookFilter[], target: LookTarget): Img => {
       let img = start;
       for (const f of filters) {
@@ -653,10 +662,7 @@ export class PixelRenderer {
         : { node, art: false, px: this.scale as unknown as Node, devicePx: this.scale as unknown as Node, depth };
     };
 
-    if (!plan.split) {
-      const img = chain(start(plan.sources[0]!), plan.scene, 'scene');
-      return { node: toDevice(img).node, artTargets };
-    }
+    if (!plan.split) return finish(chain(start(plan.sources[0]!), plan.scene, 'scene'));
     const [a, e] = plan.sources as [LookSource, LookSource];
     let actors = chain(start(a), a.filters, 'actors');
     let world = chain(start(e), e.filters, 'environment');
@@ -673,7 +679,7 @@ export class PixelRenderer {
       devicePx: this.scale as unknown as Node,
       depth: (uv) => min(actors.depth(uv) as never, world.depth(uv) as never) as unknown as Node,
     };
-    return { node: toDevice(chain(composed, plan.scene, 'scene')).node, artTargets };
+    return finish(chain(composed, plan.scene, 'scene'));
   }
 
   /** The scene pass of a source (created on first use, kept for the renderer's life). */
