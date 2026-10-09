@@ -13,7 +13,7 @@ import type { RoomKit } from './kit/RoomKit';
 
 export type Vec3 = [number, number, number];
 
-export type WingId = 'hub' | 'movement' | 'physics' | 'animation' | 'effects' | 'looks' | 'genres' | 'workshop';
+export type WingId = 'hub' | 'movement' | 'physics' | 'animation' | 'effects' | 'looks' | 'genres' | 'workshop' | 'procedural';
 
 export interface WingDef {
   readonly id: WingId;

@@ -54,6 +54,9 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `bullets` Bullet Hell | a turret firing six seeded patterns (hundreds of bullets, one draw call); dodge, graze, punch back |
 | Workshop | `sandbox` Sandbox | spawn props, grab and throw them with the mouse, save and load the layout as JSON |
 | | `rewind` Time Lab | dominoes, a pyramid and a ball; hold R and everything plays backwards (the hero glides back the way it came) |
+| Procedural | `terrain` Terrain Lab | a land from a seed: fractal or ridged noise, droplet erosion, trees placed by rules, a heightfield you walk on |
+| | `dungeon` Dungeon Forge | wave function collapse from ten 3 × 3 tiles: watch it collapse, walk the halls; a flood fill finds sealed rooms |
+| | `plants` Plant Lab | a bush, a fern, a weed and a tree grown from L-systems, their rules on the plinths, drawn branch by branch |
 
 ## How it is built (`src/world/`)
 

@@ -12,6 +12,7 @@ import { CAMERAS } from './cameras';
 import { CLIPS } from './clips';
 import { DESTRUCTION } from './destruction';
 import { DRIFT } from './drift';
+import { DUNGEON } from './dungeon';
 import { LIGHTS, PARTICLE_GARDEN } from './effects';
 import { FEEL } from './feel';
 import { FIELDS } from './fields';
@@ -23,8 +24,10 @@ import { CONSOLES, FILTER_BENCH, LAYERS, TRANSITIONS_ROOM } from './looks';
 import { MOVES } from './moves';
 import { PLATFORMS } from './platforms';
 import { RAGDOLLS } from './ragdolls';
+import { PLANTS_ROOM } from './plants';
 import { REWIND } from './rewind';
 import { SANDBOX } from './sandbox';
+import { TERRAIN } from './terrain';
 import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
 import { SPRITES } from './sprites';
@@ -72,6 +75,10 @@ export const ROOMS: readonly RoomDef[] = [
   // workshop
   SANDBOX,
   REWIND,
+  // procedural
+  TERRAIN,
+  DUNGEON,
+  PLANTS_ROOM,
 ];
 
 registerRooms(ROOMS);

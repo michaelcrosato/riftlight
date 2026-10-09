@@ -4,7 +4,7 @@
  */
 export interface Term {
   readonly term: string;
-  readonly section: 'pixels' | 'rendering' | 'motion' | 'physics' | 'animation' | 'effects' | 'games' | 'tools';
+  readonly section: 'pixels' | 'rendering' | 'motion' | 'physics' | 'animation' | 'effects' | 'games' | 'procedural' | 'tools';
   readonly text: string;
 }
 
@@ -16,6 +16,7 @@ export const SECTIONS: Readonly<Record<Term['section'], string>> = {
   physics: 'Physics',
   animation: 'Animation',
   games: 'Game systems',
+  procedural: 'Procedural generation',
   tools: 'Tools',
 };
 
@@ -137,6 +138,18 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'boids', section: 'games', text: 'Reynolds\' flocking (1986): each agent steers by its neighbours alone (keep apart, line up, stay close) and a flock emerges.' },
   { term: 'steering', section: 'games', text: 'Moving an agent by forces toward a desired velocity (seek, flee, arrive, avoid) instead of setting its position: smooth, and they add up.' },
   { term: 'spatial hash', section: 'games', text: 'Space cut into a grid of buckets, each listing what is inside: finding neighbours means looking in a few nearby buckets, not checking everyone.' },
+  { term: 'procedural generation', section: 'procedural', text: 'Content made by rules and a random seed instead of by hand: terrain, dungeons, plants, loot. Small to store, endless to explore.' },
+  { term: 'seed', section: 'procedural', text: 'The number a random generator starts from. The same seed gives the same world every time, so a world can be shared as one number.' },
+  { term: 'gradient noise', section: 'procedural', text: 'Smooth random values: a random slope at each grid point, blended between them (Perlin and simplex noise). Hills, clouds, wobble.' },
+  { term: 'fractal noise', section: 'procedural', text: 'Layers (octaves) of noise added up, each twice as fine and about half as strong (fBm): big shapes with small detail on top, like real landscapes.' },
+  { term: 'heightfield', section: 'procedural', text: 'Terrain as a grid of heights, one number per point: cheap to store, draw and collide with, but no caves or overhangs.' },
+  { term: 'hydraulic erosion', section: 'procedural', text: 'Simulated rain: drops run downhill, pick up soil where they speed up and drop it where they slow, carving gullies and filling valleys.' },
+  { term: 'wave function collapse', section: 'procedural', text: 'Filling a grid with tiles that must fit their neighbours: decide the most constrained cell, spread what that rules out, repeat.' },
+  { term: 'entropy', section: 'procedural', text: 'How undecided something is: a cell with many equally likely options has high entropy, one with a single option none.' },
+  { term: 'constraint propagation', section: 'procedural', text: 'When one choice rules options out next door, and those rule out more beyond, until nothing changes: the work in wave function collapse and sudoku solvers.' },
+  { term: 'flood fill', section: 'procedural', text: 'Spreading from a start cell to every connected cell of the same kind: what the paint bucket does, and how a generator checks every room can be reached.' },
+  { term: 'L-system', section: 'procedural', text: 'A string rewritten by rules every generation (F becomes F[+F]F...), then drawn by a turtle: plants and fractals from a line of text.' },
+  { term: 'turtle graphics', section: 'procedural', text: 'Drawing by steering a pen: forward, turn, remember this spot, come back to it. The way L-systems become branches.' },
   { term: 'ring buffer', section: 'tools', text: 'A fixed-size list that wraps round: the newest entry overwrites the oldest, so it always holds the last N things (six seconds of history, the last 60 frame times).' },
   { term: 'serialisation', section: 'tools', text: 'Turning live objects into plain data (JSON) to save, send or load back: a level layout, a save game.' },
   { term: 'bullet pool', section: 'games', text: 'Thousands of projectiles kept as numbers in fixed arrays, reused instead of created and thrown away: no allocations, no garbage-collection hitches.' },
