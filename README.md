@@ -12,7 +12,8 @@ levels with monsters, loot and bosses, the death recap, save slots and the diffi
 **Engine World** (`/?game=world`, [`docs/WORLD.md`](docs/WORLD.md)) is the engine's tech demo:
 a hub with a door for every room, each room one technique (the moveset, game feel, cameras,
 rigid bodies, joints and ropes, cloth, moving platforms, destruction, force fields, clips,
-lights, particles, retro consoles, per-layer looks, the filter bench, screen transitions...)
+lights, particles, water, weather and a day cycle, grass and wind, trails and decals, retro
+consoles, per-layer looks, the filter bench, screen transitions...)
 with pads to change it live and a station guide (H) that explains how it works.
 
 - **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·

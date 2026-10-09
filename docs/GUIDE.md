@@ -311,6 +311,21 @@ const balls = new InstancedBodies(ctx.physics, ctx.scene, { shape: 'ball', size:
 Movers are functions of their own clock (same at any frame rate). `hero.stats.crushes` counts a
 platform coming down on the hero: decide what it does. Ledges are fixed bodies only.
 
+### Water, weather, grass, trails and decals
+
+```js
+const water = new WaterSurface({ size: [14, 8], at: [0, -0.2, 0], waves: WAVES_CALM, ripples: new RippleField({ size: [14, 8], cells: [112, 64] }) });
+const floaters = new Floaters(ctx.physics.world, (x, z) => (water.covers(x, z) ? water.heightAt(x, z) : null));
+applySky(ctx.engine, skyAt(19));                              // time of day: sun, colours, background
+const rain = new Precipitation({ kind: 'rain', count: 3000 }); // also 'snow'; rain.intensity, rain.wind
+const grass = new GrassField({ area: [20, 14], at: [0, 0, 0], count: 6000 });  // grass.push(0, heroFeet, 0.8)
+const decals = new Decals(ctx.scene);                          // decals.add('scorch', at, normal, { size: 2 })
+ctx.scene.add(water, rain, grass, new Trail({ width: 0.3 }));  // trail.push(p, t); trail.update(t, camera)
+```
+
+Per frame: `water.update(t)`, `rain.update(dt, focus)`, `grass.update(t)`, `decals.update(dt)`;
+per fixed step: `floaters.step(dt)` and the ripple field's `step(dt)`.
+
 ### Camera
 
 | Preset | View | Notes |

@@ -8,6 +8,29 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.5.0
+
+- **Water**: `WaterSurface` (render/water.ts): up to four travelling waves moved in the vertex
+  shader, the same `waterHeight` the CPU sums, plus a `RippleField` (the 2D wave equation on a
+  grid, `splash(x, z, radius, strength)`) uploaded as a float texture; toon-lit from the waves'
+  slopes, foam on crests, hard sun glints, and see-through by an ordered dither (`opacity`).
+  `heightAt`, `covers`, `setWaves`.
+- **Buoyancy**: `Floaters` (physics/buoyancy.ts) float Rapier bodies on any height function:
+  eight octants each (any way up), the volume of the collider's shape, water density 1 in world
+  mass units, drag, `onSplash`.
+- **Weather and sky**: `Precipitation` (rain or snow: thousands of drops in one instanced draw,
+  placed by the vertex shader, `intensity`, `wind`, `splashes(dt)`); `skyAt(hour)` and
+  `applySky(engine, sky)` (a day of sun direction, colours, ambient and background, `night`);
+  `groundFog()` (a `scene.fogNode` with live uniforms).
+- **Grass and wind**: `GrassField` (instanced blades bent in the vertex shader: lean, flutter,
+  rolling gusts, up to four pushers that part them), `WindUniforms` and `swayObject` /
+  `swayMaterial` (trees and plants lean with the wind).
+- **Trails and decals**: `Trail` (a camera-facing ribbon through recent points) and `Decals`
+  (footprint, scorch, splat, crack and ring shapes cut out in the shader, one instanced draw per
+  shape, dithered fade-out, a fixed pool).
+- Exports: `WaterWave` (the water `Wave` type: `Wave` is the audio one), `MAX_WAVES`,
+  `MAX_PUSHERS`, `DECAL_SHAPES`.
+
 ## 0.4.0
 
 - **Moving platforms**: `physics.addMover(body, options)` drives a kinematic body along a path

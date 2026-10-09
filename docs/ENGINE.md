@@ -729,6 +729,84 @@ ones. `physics.stepMs` is what a step of Rapier costs (smoothed); `physics.count
 joints, movers, fields and belts. `physics.clear()` (every unload) also restores gravity and
 the solver's iterations, and drops movers, fields, belts and step listeners.
 
+### Water and buoyancy
+
+```ts
+const ripples = new RippleField({ size: [14, 8], cells: [112, 64], center: [0, -6] });
+const water = new WaterSurface({ size: [14, 8], at: [0, -0.2, -6], waves: WAVES_CALM, ripples, opacity: 0.6 });
+scene.add(water);
+const floaters = new Floaters(physics.world, (x, z) => (water.covers(x, z) ? water.heightAt(x, z, physics.time) : null), { onSplash });
+floaters.add(crate.body);
+ripples.splash(x, z, 0.4, 0.06);                 // a footstep, a raindrop, a splash
+// per fixed step: floaters.step(dt); ripples.step(dt)   per frame: water.update(physics.time, engine.sunDir)
+water.setWaves(WAVES_CHOPPY);
+```
+
+`physics/water.ts` (pure, unit-tested) sums travelling waves (`waterHeight`) and runs the 2D
+wave equation on a grid (`RippleField`: dents spread as rings, bounce off the edges, die
+away). `WaterSurface` moves a grid of vertices by the same waves in its vertex shader (up to
+four, as uniforms) plus the ripple heights (a small float texture), lights them from the
+waves' own slopes, lightens crests, puts foam on the highest and hard pixel sun glints, and
+can be see-through by an ordered dither (`opacity`, a uniform: no blending, no sorting).
+`Floaters` (`physics/buoyancy.ts`) splits each body into eight octants: each one under the
+surface pushes up, at its centre, by the weight of the water it displaces (how deep its own
+turned height is in; water density 1 in world mass units), so bodies tilt with the waves,
+right themselves and float whichever way up they land; water drag slows them; `onSplash`
+fires when one comes down into the water fast. The volume comes from the collider's shape (box,
+ball, capsule, cylinder or cone).
+
+### Weather, sky and fog
+
+```ts
+applySky(engine, skyAt(18.5));                   // sun direction, colour, strength, ambient, background
+const rain = new Precipitation({ kind: 'rain', count: 3500, area: [26, 14, 26] });
+scene.add(rain); rain.intensity = 1; rain.wind.set(3, 1);
+// per frame: rain.update(dt, camera.focus); splashes: rain.splashes(dt) drops landed this frame
+const mist = groundFog({ top: 1.4 });
+(scene as { fogNode: unknown }).fogNode = mist.node;       // loadGame clears it
+mist.amount.value = 0.8; mist.color.value.setHex(sky);
+```
+
+`skyAt(hour)` (pure, unit-tested) blends keyframes of the day: a sun that rises in the east,
+crosses and sets in the west, warm at dawn and dusk, a dim blue moon at night (`night` 0..1
+for lamps). `Precipitation` is one instanced draw: each drop's place comes from a hash of its
+index and its fall from time, in the vertex shader, in a box of air around a centre that
+wraps in world space; `intensity` hides the drops above a share (a uniform: no buffers, no
+recompiles). `groundFog` is a `scene.fogNode` with uniforms: mist below `top` plus distance
+haze, up to `amount`.
+
+### Grass, wind sway
+
+```ts
+const grass = new GrassField({ area: [22, 16], at: [0, 0, 0], count: 6000, mask: (x, z) => clear(x, z) });
+scene.add(grass);
+// per frame: grass.wind.set(2, 0.5); grass.update(t); grass.push(0, hero.feet, 0.85)
+const wind = new WindUniforms();
+swayObject(tree, wind, { height: 2.3, base: 0.7, amount: 0.12, phase: 1.3 });   // per frame: wind.update(t, [2, 0.5])
+```
+
+`GrassField` is one instanced draw of crossed-triangle blades; the vertex shader leans each
+by its height squared (a steady lean, a flutter, gusts that roll across the field along the
+wind) and parts and flattens blades near up to four pushers (`push(i, at, radius)`). Blades
+are lit as ground (up normal) in three colour steps. `swayObject` gives every mesh under a
+model a swaying copy of its material (everything above `base` leans along the wind).
+
+### Trails and decals
+
+```ts
+const trail = new Trail({ points: 24, width: 0.35, life: 0.35, color: PALETTE.sand, tail: PALETTE.orange });
+scene.add(trail);                                 // per frame: trail.push(tip, t); trail.update(t, camera)
+const decals = new Decals(scene, { capacity: 160 });
+decals.add('scorch', at, normal, { size: 2, color: PALETTE.night, life: 8 });   // footprint, splat, crack, ring
+// per frame: decals.update(dt)
+```
+
+A `Trail` is a ribbon through its last points facing the camera, thinning toward the tail and
+stepping from its colour to its tail colour as points age. `Decals` lays small quads along a
+surface's normal (nudged off it, with a depth offset), their shapes cut out in the shader
+(`DECAL_SHAPES`, no textures), one instanced draw per shape, a colour per mark, faded out by
+an ordered dither after `life` seconds; when a pool is full the oldest mark is reused.
+
 ### Time: game speed and hitstop
 
 ```ts

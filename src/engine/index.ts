@@ -104,6 +104,15 @@ export { InstancedBodies, type InstancedBodiesOptions, type InstancedShape } fro
 export { Breakables, type Breakable, type BreakableOptions, type Crumble, type CrumbleOptions } from './physics/breakable';
 export { RopeMesh, SoftMesh } from './render/softMesh';
 export { beltMaterial, type BeltMaterial } from './render/belt';
+export { RippleField, WAVES_CALM, WAVES_CHOPPY, waterHeight, type RippleOptions, type Wave as WaterWave } from './physics/water';
+export { Floaters, type FloaterOptions } from './physics/buoyancy';
+export { MAX_WAVES, WaterSurface, type WaterOptions } from './render/water';
+export { Precipitation, type PrecipitationKind, type PrecipitationOptions } from './render/precipitation';
+export { applySky, groundFog, skyAt, type SkyState } from './render/sky';
+export { GrassField, MAX_PUSHERS, type GrassOptions } from './render/grass';
+export { WindUniforms, swayMaterial, swayObject, type SwayOptions } from './render/sway';
+export { Trail, type TrailOptions } from './render/trail';
+export { DECAL_SHAPES, Decals, type DecalOptions, type DecalShape } from './render/decals';
 export {
   PlatformerCharacter,
   type JumpKind,

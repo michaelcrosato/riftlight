@@ -13,11 +13,15 @@ import { DESTRUCTION } from './destruction';
 import { LIGHTS, PARTICLE_GARDEN } from './effects';
 import { FEEL } from './feel';
 import { FIELDS } from './fields';
+import { FOLIAGE } from './foliage';
 import { JOINTS } from './joints';
 import { CONSOLES, FILTER_BENCH, LAYERS, TRANSITIONS_ROOM } from './looks';
 import { MOVES } from './moves';
 import { PLATFORMS } from './platforms';
 import { SOFT } from './soft';
+import { TRAILS } from './trails';
+import { WATER } from './water';
+import { WEATHER } from './weather';
 
 export const ROOMS: readonly RoomDef[] = [
   ATRIUM,
@@ -37,6 +41,10 @@ export const ROOMS: readonly RoomDef[] = [
   // effects
   LIGHTS,
   PARTICLE_GARDEN,
+  WATER,
+  WEATHER,
+  FOLIAGE,
+  TRAILS,
   // looks & filters
   CONSOLES,
   LAYERS,

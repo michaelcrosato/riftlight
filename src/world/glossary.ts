@@ -103,6 +103,13 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'fracture', section: 'physics', text: 'Cutting a block into pieces before it breaks (here: jittered planes, so the pieces tile the block exactly), then swapping the block for the pieces.' },
   { term: 'debris', section: 'physics', text: 'The pieces left after something breaks: real bodies for a few seconds, then they fade away so the world does not fill up.' },
   { term: 'dissolve', section: 'rendering', text: 'Fading a mesh out by discarding more and more of its pixels in a fixed pattern: no transparency sorting, still crisp pixel art.' },
+  { term: 'buoyancy', section: 'physics', text: 'Water pushing up on what is in it with the weight of the water it displaces: lighter than water floats, heavier sinks.' },
+  { term: 'ripples', section: 'effects', text: 'Rings that spread on water from a disturbance: here the 2D wave equation on a grid, each cell pulled toward the average of its neighbours.' },
+  { term: 'day cycle', section: 'effects', text: 'Time of day as keyframes: the sun\'s direction, colour and strength, the ambient light and the sky, blended hour by hour.' },
+  { term: 'fog', section: 'rendering', text: 'Blending distant or low parts of the picture toward a colour: depth, mood, and hiding where the world ends.' },
+  { term: 'decal', section: 'rendering', text: 'A mark laid on a surface (a footprint, a scorch mark, paint): a small flat shape along the surface, nudged off it so it never flickers into it.' },
+  { term: 'trail', section: 'effects', text: 'A ribbon through the last points something passed, facing the camera and thinning toward its tail: sword swings, dashes, comets.' },
+  { term: 'wind sway', section: 'effects', text: 'Leaning the vertices of plants and trees along the wind in the vertex shader, more the higher they are: the trunk stays, the crown moves.' },
   // animation
   { term: 'clip', section: 'animation', text: 'One animation (Run, Jump, Wave): key poses over time, written here as data.' },
   { term: 'cross-fade', section: 'animation', text: 'Blending from one clip to the next over a moment instead of snapping.' },

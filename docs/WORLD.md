@@ -36,6 +36,10 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Animation Lab | `clips` Clip Gallery | the hero's clips as data, on mannequins, by family |
 | Visual Effects | `lights` Lights & Shadows | the light pool, flicker presets, RGB mixing, a moving lantern, the sun dial, quality |
 | | `particles` Particle Garden | every particle effect, built in and registered as data |
+| | `water` Water & Buoyancy | waves and ripples drawn by the vertex shader, floating crates and a raft, rain rings, dithered see-through water |
+| | `weather` Weather & Sky | a day and night cycle, rain, a storm with lightning, snow that settles, ground fog |
+| | `foliage` Grass & Wind | thousands of instanced blades that lean, ripple with gusts and part round the hero; swaying trees |
+| | `trails` Trails & Decals | footprints, fist and kick ribbons, a comet, paint splats, cracks, scorch marks |
 | Looks & Filters | `consoles` Retro Consoles | whole-screen stacks copying old hardware |
 | | `layers` Mix & Match | looks per layer: characters vs environment |
 | | `filters` Filter Bench | every filter on a pad; build a stack |
