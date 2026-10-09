@@ -12,9 +12,11 @@ levels with monsters, loot and bosses, the death recap, save slots and the diffi
 **Engine World** (`/?game=world`, [`docs/WORLD.md`](docs/WORLD.md)) is the engine's tech demo:
 a hub with a door for every room, each room one technique (the moveset, game feel, cameras,
 rigid bodies, joints and ropes, cloth, moving platforms, destruction, force fields, clips,
-lights, particles, water, weather and a day cycle, grass and wind, trails and decals, retro
-consoles, per-layer looks, the filter bench, screen transitions...)
-with pads to change it live and a station guide (H) that explains how it works.
+secondary motion, procedural legs, ragdolls, pixel sprites, lights, particles, water, weather
+and a day cycle, grass and wind, trails and decals, retro consoles, per-layer looks, the filter
+bench, screen transitions, stealth and pathfinding, flocks, a drift car, a bullet hell, a
+sandbox and time rewind...) with pads to change it live and a station guide (H) that explains
+how it works. Riftlight's title menu has a door to it, and its pause menu one back.
 
 - **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
   1–4 (or Q E R T, RMB = 1) skills · F talk / pick up / portal · I inventory · P passive tree ·
@@ -63,7 +65,7 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
   **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
   second demo level.
-- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7) · ~ debug UI (on by default in dev, or
+- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7, Engine World's Time Lab R to F7) · ~ debug UI (on by default in dev, or
   `?debug=1`) · M mute. Hotkeys are configurable (`EngineOptions.debugKeys`).
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.

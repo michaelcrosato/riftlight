@@ -90,6 +90,20 @@ export abstract class CameraRig {
     this.stiffness = config.stiffness ?? 6;
   }
 
+  /**
+   * The ray through screen point (x, y) in normalised device coordinates (−1..1, y up, as
+   * `input.pointer` gives them): where it starts (on the near plane) and its unit direction.
+   * For picking things with the mouse, or aiming at it. An orthographic rig stands far back from
+   * what it frames (over a hundred metres for iso), so its rays start far from the scene: cast
+   * them long (hundreds of metres).
+   */
+  rayAt(x: number, y: number, origin: Vector3, dir: Vector3): void {
+    const cam = this.camera;
+    cam.updateMatrixWorld();
+    origin.set(x, y, -1).unproject(cam);
+    dir.set(x, y, 1).unproject(cam).sub(origin).normalize();
+  }
+
   setZoom(zoom: number): void {
     if (!this.zoomable) return;
     this.zoom = MathUtils.clamp(zoom, this.minZoom, this.maxZoom);

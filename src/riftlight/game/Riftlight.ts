@@ -1399,6 +1399,14 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.openStudioPage(lookStudio(this));
   }
 
+  /** Title → Engine World: the same page with ?game=world (other URL options kept). */
+  engineWorld(): void {
+    const u = new URL(location.href);
+    u.searchParams.set('game', 'world');
+    u.searchParams.delete('room');
+    location.assign(u.toString());
+  }
+
   /** Pause → Photo mode. */
   photoMode(): void {
     this.layer.closeAll();

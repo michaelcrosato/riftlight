@@ -27,6 +27,30 @@ describe('Physics lifecycle', () => {
     expect(p.hasTag(fresh, 'climbable')).toBe(false);
   });
 
+  it('a removed body, collider or belt never stands for the newer one that took its slot', async () => {
+    const p = await Physics.create();
+    const slot = (h: number) => new Uint32Array(new Float64Array([h]).buffer)[0];
+    const old = p.addDynamicBox({ position: [0, 2, 0], halfExtents: [0.5, 0.5, 0.5] });
+    p.conveyor(old.collider(0), [1, 0, 0]);
+    const oldCollider = old.collider(0);
+    p.remove(old);
+    // a platform (a collider on a fixed body) takes both slots, a newer generation of each
+    const fresh = p.addStaticBox({ position: [3, -0.5, 0], halfExtents: [2, 0.5, 2] });
+    expect(slot(fresh.handle)).toBe(slot(oldCollider.handle));
+    expect(slot(fresh.parent()!.handle)).toBe(slot(old.handle));
+    p.remove(old); // a stale body: nothing happens (a handle lookup took it for the new one and crashed)
+    p.remove(oldCollider);
+    expect(p.counts()).toMatchObject({ bodies: 1, colliders: 1, belts: 0 });
+    // and the platform is not a conveyor: a crate resting on it (frictionless, so a belt's pull
+    // would show at once) is not dragged along
+    fresh.setFriction(0);
+    const rider = p.addDynamicBox({ position: [3, 0.4, 0], halfExtents: [0.3, 0.3, 0.3] });
+    rider.collider(0).setFriction(0);
+    for (let i = 0; i < 60; i++) p.update(FIXED_DT + 1e-9);
+    expect(rider.translation().y).toBeGreaterThan(0.2); // on the platform
+    expect(Math.abs(rider.linvel().x)).toBeLessThan(0.05);
+  });
+
   it('clear() empties the world, including character controllers and triggers', async () => {
     const p = await Physics.create();
     for (let i = 0; i < 3; i++) {

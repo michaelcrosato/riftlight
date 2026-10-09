@@ -52,6 +52,8 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `flocks` Flocks & Herds | birds, a school of fish and a pen of sheep as boids; they scatter from the hero |
 | | `drift` Drift Track | get in a car on a ray-cast vehicle: suspension, grip, a handbrake drift, skid marks |
 | | `bullets` Bullet Hell | a turret firing six seeded patterns (hundreds of bullets, one draw call); dodge, graze, punch back |
+| Workshop | `sandbox` Sandbox | spawn props, grab and throw them with the mouse, save and load the layout as JSON |
+| | `rewind` Time Lab | dominoes, a pyramid and a ball; hold R and everything plays backwards (the hero glides back the way it came) |
 
 ## How it is built (`src/world/`)
 
@@ -78,7 +80,8 @@ physics and scene counts after visiting every room), and any room opens on its o
 (`guide`: what you are seeing, how it works step by step, where games use it, what to ask
 for, what it costs, the engine's code, field-guide words) and a `build(room)` that uses the
 kit. Floors and walls can be an ASCII map (one character per metre, merged into boxes);
-pads are `{ label, note, group, apply(room, pad) }`.
+pads are `{ label, note, group, apply(room, pad), enabled? }` (`enabled()` false: stepping on
+it does nothing, no note, no sound).
 
 ## Add a room
 

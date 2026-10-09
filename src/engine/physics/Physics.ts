@@ -59,6 +59,7 @@ export class Physics {
   /** Conveyor belts: collider handle → belt velocity (`conveyor`). */
   private readonly belts = new Map<number, [number, number, number]>();
   private readonly stepListeners = new Set<() => void>();
+  private readonly firstStepListeners = new Set<() => void>();
   /** Milliseconds Rapier took for one step (smoothed): what a pile of bodies costs. */
   stepMs = 0;
   private readonly gravityY: number;
@@ -117,8 +118,11 @@ export class Physics {
       this.world.step();
       this.stepMs += (performance.now() - t0 - this.stepMs) * 0.1;
       this.steps++;
-      for (const b of this.bindings) this.readBody(b);
+      // listeners before the bindings read their bodies: a body a listener moves after the step
+      // (a rewind, a correction) is drawn where it put it
+      for (const f of this.firstStepListeners) f();
       for (const f of this.stepListeners) f();
+      for (const b of this.bindings) this.readBody(b);
       this.updateTriggers();
       if (generation !== this.generation) break; // a trigger callback cleared the world
       this.accumulator -= FIXED_DT;
@@ -135,10 +139,17 @@ export class Physics {
     return this.steps * FIXED_DT;
   }
 
-  /** Run `f` after every fixed step (instanced bodies keep their last two poses). Returns an unsubscribe. */
-  onStep(f: () => void): () => void {
-    this.stepListeners.add(f);
-    return () => this.stepListeners.delete(f);
+  /**
+   * Run `f` after every fixed step, before bound meshes (`bind`) read their bodies. Listeners
+   * run in the order they were added (instanced bodies keep their last two poses, a ragdoll
+   * holds its joint limits); `{ first: true }` runs `f` ahead of all of those, for something
+   * that puts bodies somewhere else after the step (a rewind) and must be what they all see.
+   * Returns an unsubscribe.
+   */
+  onStep(f: () => void, o: { first?: boolean } = {}): () => void {
+    const set = o.first ? this.firstStepListeners : this.stepListeners;
+    set.add(f);
+    return () => set.delete(f);
   }
 
   /**
@@ -188,7 +199,8 @@ export class Physics {
     if (this.belts.size === 0) return;
     for (const [handle, v] of this.belts) {
       const belt = this.world.getCollider(handle);
-      if (!belt) {
+      // gone, or its slot holds a newer collider (a lookup by handle can't tell the two apart)
+      if (!belt || belt.handle !== handle || !belt.isValid()) {
         this.belts.delete(handle);
         continue;
       }
@@ -423,14 +435,14 @@ export class Physics {
    */
   remove(target: RAPIER.RigidBody | RAPIER.Collider): void {
     if (target instanceof RAPIER.Collider) {
-      if (!this.world.colliders.contains(target.handle)) return;
+      if (!target.isValid()) return; // already removed (a handle alone can name a newer collider)
       const body = target.parent();
       this.forgetCollider(target.handle);
       this.world.removeCollider(target, true);
       if (body && body.isFixed() && body.numColliders() === 0) this.remove(body);
       return;
     }
-    if (!this.world.bodies.contains(target.handle)) return;
+    if (!target.isValid()) return; // already removed (its slot may hold a newer body)
     this.movers.removeBody(target); // a mover stepping a removed body would crash Rapier
     for (let i = 0; i < target.numColliders(); i++) this.forgetCollider(target.collider(i).handle);
     for (let i = this.bindings.length - 1; i >= 0; i--) if (this.bindings[i]!.body === target) this.bindings.splice(i, 1);
@@ -460,6 +472,7 @@ export class Physics {
     this.fields.clear();
     this.belts.clear();
     this.stepListeners.clear();
+    this.firstStepListeners.clear();
     // a level that changed gravity or the solver leaves the next one the defaults
     this.world.gravity = { x: 0, y: this.gravityY, z: 0 };
     this.world.numSolverIterations = this.solverIterations;
@@ -504,6 +517,7 @@ export class Physics {
 
   private forgetCollider(handle: number): void {
     this.tags.delete(handle);
+    this.belts.delete(handle); // or a newer collider in its slot would read as the belt
     for (const t of [...this.triggers]) t.forget(handle);
   }
 
