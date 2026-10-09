@@ -11,6 +11,8 @@
 //   physics      a blast topples the tower, instanced bodies fall asleep, the bridge sags and
 //                hangs when cut, sheets drape, the lift carries the hero, a wall shatters into
 //                pieces that dissolve, the well gathers bodies, a launch pad throws the hero
+//   effects      floaters sit in the water and the anchor sinks, wading ripples, lamps at night,
+//                settling snow, a storm's lightning, a meadow of blades, footprints and decals
 //   transitions  a mosaic covers the frame (ink), reveals it again
 //   panels       the station guide, the tweak panel and the room list open and close
 //
@@ -216,6 +218,58 @@ export async function runWorld(h) {
     check(phys.fields.gathered >= 6 && phys.fields.launches >= 1 && phys.fields.peak > 1.9, `fields: the well gathers ${phys.fields.gathered} bodies, a launch pad throws the hero ${phys.fields.peak.toFixed(2)} m up`);
     check(phys.errors.length === 0, `the physics wing runs without errors${phys.errors.length ? ': ' + phys.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-fields.png`);
+
+    // ------------------------------------------------------------- effects wing
+    const fx = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // water: floaters sit in the water, the anchor sinks, wading makes ripples
+      await w.goto('water', { instant: true });
+      e.step(240);
+      const sub = w.room.submerged();
+      e.game.visitor.teleport([0, -0.9, -5], 0);
+      const { right, forward } = e.camera.groundBasis();
+      e.input.analog.x = right.x;
+      e.input.analog.y = forward.x;
+      e.step(60);
+      e.input.analog.x = e.input.analog.y = 0;
+      out.water = { crates: sub.crates, raft: sub.raft, anchor: sub.anchor, wades: w.room.wades(), ripples: w.room.ripples() };
+      // weather: night lights the lamps; snow settles; a storm flashes
+      await w.goto('weather', { instant: true });
+      w.room.time(22.5);
+      w.room.weather('snow');
+      e.step(240);
+      const night = w.room.state();
+      w.room.time(12);
+      w.room.weather('storm');
+      e.step(480);
+      out.weather = { lamps: night.lamps, snow: night.snow, noonSun: w.room.state().sun, bolts: w.room.state().bolts, wet: w.room.state().wet };
+      // foliage: blades placed; the ball rolls
+      await w.goto('foliage', { instant: true });
+      e.step(20);
+      out.foliage = { blades: w.room.blades(), flowers: w.room.flowers() };
+      // trails: a bomb leaves marks; walking leaves footprints; the comet has a tail
+      await w.goto('trails', { instant: true });
+      e.step(10);
+      w.room.bomb();
+      e.game.visitor.teleport([-3, 0, 6], 0);
+      const b2 = e.camera.groundBasis();
+      e.input.analog.x = b2.right.x;
+      e.input.analog.y = b2.forward.x;
+      e.step(90);
+      e.input.analog.x = e.input.analog.y = 0;
+      out.trails = { marks: w.room.marks(), prints: w.room.prints(), comet: w.room.comet() };
+      out.errors = e.state().errors;
+      return out;
+    });
+    check(fx.water.crates.every((d) => d > 0.2 && d < 0.8) && fx.water.raft > 0.1 && fx.water.raft < 0.7 && fx.water.anchor < -0.5, `water: crates float (${fx.water.crates.map((d) => d.toFixed(2))}), the raft too (${fx.water.raft.toFixed(2)}), the anchor sinks (${fx.water.anchor.toFixed(2)})`);
+    check(fx.water.wades > 3 && fx.water.ripples > 0.5, `wading makes ripples (${fx.water.wades} splashes, energy ${fx.water.ripples.toFixed(2)})`);
+    check(fx.weather.lamps.every((i) => i > 5) && fx.weather.snow > 0.15 && fx.weather.noonSun > 2.5 && fx.weather.bolts >= 1 && fx.weather.wet > 0.5, `weather: lamps lit at night, snow settles (${fx.weather.snow.toFixed(2)}), a storm flashes (${fx.weather.bolts} bolts) and wets the ground`);
+    check(fx.foliage.blades > 5000 && fx.foliage.flowers > 100, `grass: ${fx.foliage.blades} blades and ${fx.foliage.flowers} flowers`);
+    check(fx.trails.marks >= 2 && fx.trails.prints >= 2 && fx.trails.comet > 10, `trails: a bomb leaves marks, walking leaves ${fx.trails.prints} footprints, the comet has a ${fx.trails.comet}-point tail`);
+    check(fx.errors.length === 0, `the effects wing runs without errors${fx.errors.length ? ': ' + fx.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-trails.png`);
 
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {
