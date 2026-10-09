@@ -27,6 +27,12 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Movement & Feel | `moves` Moveset Playground | the platformer controller: a station for every move |
 | | `feel` Game Feel Lab | hitstop, screen shake, flash, particles, game speed, a shockwave slam |
 | | `cameras` Camera Bench | seven camera presets over one course, zoom, shake |
+| Physics Lab | `bodies` Rigid Body Yard | a crate tower to blast or shoot down, friction ramps, restitution balls, a stress pit of 1000 instanced bodies that fall asleep |
+| | `joints` Joints & Ropes | a rope bridge that sags (cut it), a wrecking ball on a chain, a seesaw, spring pads, saloon doors you shove open, bead curtains |
+| | `soft` Cloth & Soft Bodies | flags in the wind (let them go), a curtain to walk through, sheets that drape, ropes, jelly blobs |
+| | `platforms` Moving Platforms | a Ferris wheel, a pendulum, a lift and a shuttle around a pit, a turntable, conveyor belts |
+| | `destruction` Destruction | walls that shatter where you punch them, a crumbling bridge, explosive barrels |
+| | `fields` Forces & Fields | a wind tunnel, updrafts to float on, a gravity well, launch pads |
 | Animation Lab | `clips` Clip Gallery | the hero's clips as data, on mannequins, by family |
 | Visual Effects | `lights` Lights & Shadows | the light pool, flicker presets, RGB mixing, a moving lantern, the sun dial, quality |
 | | `particles` Particle Garden | every particle effect, built in and registered as data |
@@ -44,6 +50,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | `kit/RoomKit.ts` | the building kit: `box`, `cylinder`, `solid`, `crate`, `map` / `room` (ASCII maps), `pad` / `padGrid`, `label`, `door`, `light`, `glow` |
 | `kit/map.ts` | ASCII maps merged into as few boxes as possible (pure, unit-tested) |
 | `kit/mannequin.ts`, `kit/diorama.ts` | hero clones playing a clip; the village the look rooms show |
+| `kit/strike.ts` | `Strikes`: a punch or kick starting, where it lands and how hard (rooms decide what it hits) |
 | `rooms/*.ts`, `rooms/index.ts` | the rooms and their order |
 | `ui/reader.ts`, `ui/panels.ts` | the station guide, field guide, tweak panel, room list, menu (Riftlight's UI kit) |
 | `glossary.ts` | the field guide's words |

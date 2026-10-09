@@ -95,6 +95,15 @@ export { LoadingScreen } from './LoadingScreen';
 export { mergeStaticMeshes, type MergeOptions } from './render/merge';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
+export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';
+export { ForceFields, explode, fieldAcceleration, type ExplosionOptions, type Field, type FieldOptions } from './physics/forces';
+export { fractureBox, seeded, type Chunk, type FractureOptions } from './physics/fracture';
+export { VerletBody, clothGrid, ropeLine, softBlob, type ClothOptions, type VerletOptions } from './physics/verlet';
+export { chain, hingeDoor, ropeBridge, seesaw, springPad, type BridgeOptions, type Built, type ChainOptions, type DoorOptions, type SeesawOptions, type SpringPadOptions } from './physics/joints';
+export { InstancedBodies, type InstancedBodiesOptions, type InstancedShape } from './physics/InstancedBodies';
+export { Breakables, type Breakable, type BreakableOptions, type Crumble, type CrumbleOptions } from './physics/breakable';
+export { RopeMesh, SoftMesh } from './render/softMesh';
+export { beltMaterial, type BeltMaterial } from './render/belt';
 export {
   PlatformerCharacter,
   type JumpKind,

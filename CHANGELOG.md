@@ -8,6 +8,43 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.4.0
+
+- **Moving platforms**: `physics.addMover(body, options)` drives a kinematic body along a path
+  (eased legs, holds, pingpong or loop), spinning, swinging, or on any `curve(t)` (`orbit`,
+  `pendulum`: level seats on a circle or an arc), as a pure function of its own clock
+  (`mover.time`, from 0 when added; the body starts there). Removing the body stops it.
+  `PlatformerCharacter` rides whatever is under its feet (`groundCollider`): kinematic
+  platforms (turns included), dynamic ones (and presses them with its `weight`, 0 by default)
+  and conveyors.
+- **Conveyors**: `physics.conveyor(collider, velocity)` drags what touches it; `beltMaterial`
+  scrolls stripes on game time.
+- **Force fields**: `physics.fields.add({ box | sphere, at, force, radial, falloff, drag })`
+  push dynamic bodies and the character (momentum in the air, a drift standing; an updraft's
+  rise isn't cut short by letting go of jump); `character: false` / `bodies: false` hold for
+  their drag too. `physics.explode(at, { radius, impulse })`.
+  `character.launch(vy, { hvel })`: a jump no button can cut short.
+- **Joints** (`physics/joints.ts`): `chain` (a wrecking ball), `ropeBridge` (walkable, `cut`),
+  `hingeDoor`, `springPad`, `seesaw`, each with `remove()`. Spring motors are force-based and
+  scaled by mass or inertia (they give under weight).
+- **Destruction**: `Breakables` (`add`, `break`, `near`, `byCollider`, `restore`, `crumble`
+  tiles that drop and grow back; pieces dissolve after `linger` and leave the world) on
+  `fractureBox` (seeded, jittered cuts that tile the box).
+- **Soft bodies** (`physics/verlet.ts`): `clothGrid` (any plane: `down`), `ropeLine`,
+  `softBlob` with pins, wind, spheres, boxes and a floor; `SoftMesh` and `RopeMesh` draw them.
+  Cloth wind is a pressure along each triangle's normal (speed squared) plus skin drag, the
+  same however finely the cloth is cut (`drag` per (m/s)² for cloth, per m/s for ropes).
+- **Many bodies**: `InstancedBodies` (one draw call per shape, interpolated, `spawn` reuses the
+  oldest, `ccd`). `physics.onStep(f)`, `physics.time`, `physics.stepMs`, `physics.castUp`.
+- **Character**: `shove` and `weight` (both 0 by default: walking into loose dynamic bodies
+  pushes them up to that much mass; standing on one presses it), `crushed` / `stats.crushes`
+  (a kinematic body coming down on the head), an updraft stronger than gravity lifts it off
+  the ground, and it only grabs ledges of fixed bodies (never a loose body or a moving
+  platform: hanging doesn't ride).
+- `physics.clear()` (every `loadGame`) also restores gravity and the solver's iterations and
+  drops movers, fields, belts and step listeners; `counts()` reports joints, movers, fields
+  and belts.
+
 ## 0.3.0
 
 - **Game feel**: `engine.timeScale` (slow motion, fast forward, 0 to freeze) scales game time

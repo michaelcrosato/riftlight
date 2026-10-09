@@ -8,6 +8,9 @@
 //   leaks        back in the Atrium after every room: the same physics and scene counts
 //   feel         a hit: hitstop freezes game time while shake and the flash run on real time;
 //                the game speed knob slows game time to 0.25x
+//   physics      a blast topples the tower, instanced bodies fall asleep, the bridge sags and
+//                hangs when cut, sheets drape, the lift carries the hero, a wall shatters into
+//                pieces that dissolve, the well gathers bodies, a launch pad throws the hero
 //   transitions  a mosaic covers the frame (ink), reveals it again
 //   panels       the station guide, the tweak panel and the room list open and close
 //
@@ -132,6 +135,87 @@ export async function runWorld(h) {
       if (res.room !== r.id || !res.stepped || !res.knobsUnique || res.errors.length || colours < 12) bad.push(`${r.id}: room ${res.room}, pad ${res.stepped}, unique knobs ${res.knobsUnique}, ${colours} colours, ${res.errors.join('; ')}`);
     }
     check(bad.length === 0, `every room loads, renders and its first pad works${bad.length ? ':\n    ' + bad.join('\n    ') : ` (${rooms.length})`}`);
+
+    // ------------------------------------------------------------- physics wing
+    const phys = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // rigid bodies: a blast knocks the tower down; a stress fill settles and falls asleep
+      await w.goto('bodies', { instant: true });
+      e.step(30);
+      const before = w.room.standing();
+      w.room.blast();
+      e.step(90);
+      w.room.fill(100);
+      e.step(400);
+      out.bodies = { before, after: w.room.standing(), stress: w.room.stress() };
+      // joints: the wrecking ball knocks crates over; a cut bridge hangs down
+      await w.goto('joints', { instant: true });
+      e.step(30);
+      const sag = Math.min(...w.room.bridge());
+      w.room.swing();
+      e.step(90);
+      w.room.cut();
+      e.step(150);
+      out.joints = { sag, standing: w.room.standing(), hanging: Math.min(...w.room.bridge()) };
+      // soft bodies: sheets drape over the table and the ball; released flags fall
+      await w.goto('soft', { instant: true });
+      w.room.drop();
+      w.room.release();
+      e.step(200);
+      out.soft = { sheets: w.room.sheets().map((c) => c[1]), flags: w.room.flags().map((f) => f[1]), particles: w.room.particles() };
+      // platforms: the lift carries the hero up
+      await w.goto('platforms', { instant: true });
+      w.room.restartLift(); // at the bottom, waiting 1.5 s: the same ride whatever ran before
+      e.step(2);
+      const lift = w.room.lift();
+      e.game.visitor.teleport([10, lift + 0.3, -8.5], 0);
+      e.step(10);
+      const on = w.room.standingOn();
+      let top = 0;
+      for (let i = 0; i < 360; i++) {
+        e.step(1);
+        top = Math.max(top, w.state().hero.at[1]);
+      }
+      out.platforms = { on, top };
+      // destruction: a wall shatters into its pieces, which dissolve away
+      await w.goto('destruction', { instant: true });
+      e.step(10);
+      w.room.punch(1);
+      e.step(5);
+      const chunks = w.room.chunks();
+      e.step(330);
+      out.destruction = { chunks, later: w.room.chunks(), broken: w.room.broken() };
+      // fields: the well gathers the crates and balls; a launch pad throws the hero up
+      await w.goto('fields', { instant: true });
+      e.step(240);
+      const gathered = w.room.gathered();
+      e.game.visitor.teleport([4, 0, 2.2], 0);
+      const { right, forward } = e.camera.groundBasis();
+      e.input.analog.x = right.z;
+      e.input.analog.y = forward.z;
+      let peak = 0;
+      for (let i = 0; i < 90; i++) {
+        e.step(1);
+        if (i === 25) e.input.analog.x = e.input.analog.y = 0;
+        peak = Math.max(peak, w.state().hero.at[1]);
+      }
+      e.input.analog.x = e.input.analog.y = 0;
+      out.fields = { gathered, launches: w.room.launches(), peak };
+      out.errors = e.state().errors;
+      return out;
+    });
+    check(phys.bodies.after < phys.bodies.before - 4, `rigid bodies: a blast knocks the tower down (${phys.bodies.before} → ${phys.bodies.after} crates standing)`);
+    check(phys.bodies.stress.bodies === 100 && phys.bodies.stress.asleep >= 30, `100 instanced bodies rain in and fall asleep (${phys.bodies.stress.asleep} asleep, step ${phys.bodies.stress.stepMs.toFixed(2)} ms)`);
+    check(phys.joints.sag < -0.15 && phys.joints.standing < 9 && phys.joints.hanging < -3, `joints: the bridge sags (${phys.joints.sag.toFixed(2)}), the wrecking ball knocks crates over (${phys.joints.standing} of 9 left), a cut bridge hangs (${phys.joints.hanging.toFixed(2)})`);
+    check(phys.soft.sheets.every((y) => y > 0.3 && y < 1.6) && phys.soft.flags.every((y) => y < 0.5), `soft bodies: sheets drape (${phys.soft.sheets.map((y) => y.toFixed(2))}), released flags fall (${phys.soft.flags.map((y) => y.toFixed(2))}), ${phys.soft.particles} particles`);
+    check(phys.platforms.on === 'lift' && phys.platforms.top > 4.5, `platforms: the hero rides the lift up (${phys.platforms.on}, top ${phys.platforms.top.toFixed(2)} m)`);
+    check(phys.destruction.chunks === 12 && phys.destruction.later === 0 && phys.destruction.broken === 1, `destruction: a wall breaks into 12 pieces that dissolve away (${phys.destruction.chunks} → ${phys.destruction.later})`);
+    // HOP 12: 12² / (2 × 32) = 2.25 m
+    check(phys.fields.gathered >= 6 && phys.fields.launches >= 1 && phys.fields.peak > 1.9, `fields: the well gathers ${phys.fields.gathered} bodies, a launch pad throws the hero ${phys.fields.peak.toFixed(2)} m up`);
+    check(phys.errors.length === 0, `the physics wing runs without errors${phys.errors.length ? ': ' + phys.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-fields.png`);
 
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {

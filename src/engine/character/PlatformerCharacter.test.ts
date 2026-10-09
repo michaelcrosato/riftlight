@@ -442,3 +442,155 @@ describe('PlatformerCharacter', () => {
     }
   });
 });
+
+describe('PlatformerCharacter: riding and forces', () => {
+  /** Through Physics.update, so movers, fields and belts run like in a game. */
+  function play(p: Physics, h: PlatformerCharacter, i: MoveInput, n: number): void {
+    for (let k = 0; k < n; k++) p.update(DT + 1e-9, () => h.fixedUpdate(DT, i));
+  }
+  function platform(p: Physics, at: [number, number, number], half: [number, number, number]) {
+    const b = p.world.createRigidBody(RAPIER.RigidBodyDesc.kinematicPositionBased().setTranslation(...at));
+    p.world.createCollider(RAPIER.ColliderDesc.cuboid(...half), b);
+    return b;
+  }
+
+  it('rides a lift up and a shuttle sideways', async () => {
+    const p = await setup();
+    const lift = platform(p, [0, 0.2, 0], [1.5, 0.2, 1.5]);
+    p.addMover(lift, { path: [[0, 0.2, 0], [0, 3.2, 0]], speed: 1, ease: 'linear' });
+    const h = new PlatformerCharacter(p, { position: [0, 0.4, 0] });
+    play(p, h, inp(), 120); // 2 s: the lift climbed 2 m
+    expect(h.feet.y).toBeGreaterThan(2.2);
+    expect(Math.abs(h.feet.x)).toBeLessThan(0.2);
+    expect(h.groundCollider).toBe(lift.collider(0).handle);
+
+    const q = await setup();
+    const shuttle = platform(q, [0, 0.2, 0], [1.5, 0.2, 1.5]);
+    q.addMover(shuttle, { path: [[0, 0.2, 0], [6, 0.2, 0]], speed: 2, ease: 'linear' });
+    const g = new PlatformerCharacter(q, { position: [0, 0.4, 0] });
+    play(q, g, inp(), 90); // 1.5 s at 2 m/s
+    expect(g.feet.x).toBeGreaterThan(2.5);
+    expect(g.feet.y).toBeGreaterThan(0.3); // still on it
+  });
+
+  it('turns with a turntable', async () => {
+    const p = await setup();
+    const disc = platform(p, [0, 0.2, 0], [3, 0.2, 3]);
+    p.addMover(disc, { spin: [0, 1, 0] });
+    const h = new PlatformerCharacter(p, { position: [2, 0.4, 0] });
+    const f0 = h.facing;
+    play(p, h, inp(), 60); // 1 rad
+    expect(h.facing - f0).toBeGreaterThan(0.8);
+    expect(Math.hypot(h.feet.x, h.feet.z)).toBeCloseTo(2, 0);
+  });
+
+  it('a conveyor carries the hero', async () => {
+    const p = await setup();
+    const belt = box(p, [0, 0.1, 0], [6, 0.1, 1]);
+    p.conveyor(belt, [3, 0, 0]);
+    const h = new PlatformerCharacter(p, { position: [-4, 0.2, 0] });
+    play(p, h, inp(), 60);
+    expect(h.feet.x).toBeGreaterThan(-1.5);
+  });
+
+  it('an updraft lifts a jumping hero; wind pushes a standing one', async () => {
+    const p = await setup();
+    p.fields.add({ box: [1.5, 6, 1.5], at: [0, 6, 0], force: [0, 45, 0] });
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    play(p, h, inp(), 10);
+    play(p, h, inp({ jump: true, jumpHeld: true }), 1);
+    play(p, h, inp({ jumpHeld: true }), 90);
+    expect(h.feet.y).toBeGreaterThan(4);
+
+    const q = await setup();
+    q.fields.add({ box: [10, 3, 10], at: [0, 1, 0], force: [20, 0, 0] });
+    const g = new PlatformerCharacter(q, { position: [0, 0, 0] });
+    play(q, g, inp(), 60);
+    expect(g.feet.x).toBeGreaterThan(0.8);
+  });
+
+  it('a platform coming down on the head counts a crush (once), and the hero stays on the floor', async () => {
+    const p = await setup();
+    const lift = platform(p, [0, 4, 0], [1.5, 0.2, 1.5]);
+    p.addMover(lift, { path: [[0, 4, 0], [0, 0.2, 0]], speed: 2, ease: 'linear' });
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    play(p, h, inp(), 150);
+    expect(h.stats.crushes).toBe(1);
+    expect(h.feet.y).toBeGreaterThan(-0.1);
+    // nothing coming down: no crush
+    const q = await setup();
+    platform(q, [0, 2.3, 0], [1.5, 0.2, 1.5]);
+    const g = new PlatformerCharacter(q, { position: [0, 0, 0] });
+    play(q, g, inp(), 60);
+    expect(g.stats.crushes).toBe(0);
+  });
+
+  it('a strong updraft lifts a standing hero off; a jump in it rises even with jump let go', async () => {
+    const p = await setup();
+    p.fields.add({ box: [1.5, 4, 1.5], at: [0, 4, 0], force: [0, 90, 0], falloff: true, drag: 0.5 });
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    let top = 0;
+    for (let k = 0; k < 180; k++) {
+      play(p, h, inp(), 1);
+      top = Math.max(top, h.feet.y);
+    }
+    expect(top).toBeGreaterThan(2.5); // no jump at all
+    const q = await setup();
+    q.fields.add({ box: [1.5, 4, 1.5], at: [0, 4, 0], force: [0, 30, 0] }); // weaker than gravity: no lift-off
+    const g = new PlatformerCharacter(q, { position: [0, 0, 0] });
+    play(q, g, inp(), 10);
+    play(q, g, inp({ jump: true, jumpHeld: true }), 1);
+    let peak = 0;
+    for (let k = 0; k < 90; k++) {
+      play(q, g, inp(), 1); // jump let go at once: a short hop, unless the updraft carries it
+      peak = Math.max(peak, g.feet.y);
+    }
+    const r = await setup();
+    const plain = new PlatformerCharacter(r, { position: [0, 0, 0] });
+    play(r, plain, inp(), 10);
+    play(r, plain, inp({ jump: true, jumpHeld: true }), 1);
+    let hop = 0;
+    for (let k = 0; k < 90; k++) {
+      play(r, plain, inp(), 1);
+      hop = Math.max(hop, plain.feet.y);
+    }
+    expect(peak).toBeGreaterThan(hop * 1.5);
+  });
+
+  it('never hangs from a moving platform or a loose body (only from level geometry)', async () => {
+    const climb = async (kind: 'fixed' | 'kinematic' | 'dynamic') => {
+      const p = await setup();
+      // the same block as "grabs a clear ledge": top 2.4, face at z = -1.5
+      const desc = kind === 'fixed' ? RAPIER.RigidBodyDesc.fixed() : kind === 'kinematic' ? RAPIER.RigidBodyDesc.kinematicPositionBased() : RAPIER.RigidBodyDesc.dynamic().lockTranslations().lockRotations();
+      const b = p.world.createRigidBody(desc.setTranslation(0, 1.2, -2));
+      p.world.createCollider(RAPIER.ColliderDesc.cuboid(2, 1.2, 0.5), b);
+      const h = new PlatformerCharacter(p, { position: [0, 0, -1.1] });
+      h.facing = Math.PI;
+      let first = true;
+      const seen = run(p, h, () => {
+        const j = first;
+        first = false;
+        return inp({ move: new Vector3(0, 0, -1), jump: j, jumpHeld: true });
+      }, 90);
+      return seen.has('hang');
+    };
+    expect(await climb('fixed')).toBe(true);
+    expect(await climb('kinematic')).toBe(false);
+    expect(await climb('dynamic')).toBe(false);
+  });
+
+  it('a launch reaches about vy² / 2g, whatever the jump button does', async () => {
+    const p = await setup();
+    const h = new PlatformerCharacter(p, { position: [0, 0, 0] });
+    play(p, h, inp(), 10);
+    h.launch(16);
+    let top = 0;
+    for (let k = 0; k < 90; k++) {
+      play(p, h, inp(), 1); // jump not held: a normal jump would be cut short
+      top = Math.max(top, h.feet.y);
+    }
+    const expected = (16 * 16) / (2 * -TUNING.gravity);
+    expect(top).toBeGreaterThan(expected * 0.85);
+    expect(h.grounded).toBe(true);
+  });
+});
