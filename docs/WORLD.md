@@ -57,6 +57,9 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Procedural | `terrain` Terrain Lab | a land from a seed: fractal or ridged noise, droplet erosion, trees placed by rules, a heightfield you walk on |
 | | `dungeon` Dungeon Forge | wave function collapse from ten 3 × 3 tiles: watch it collapse, walk the halls; a flood fill finds sealed rooms |
 | | `plants` Plant Lab | a bush, a fern, a weed and a tree grown from L-systems, their rules on the plinths, drawn branch by branch |
+| Rendering Lab | `swarm` GPU Swarm | 32,768 particles (8,192 on WebGL 2) moved by a TSL compute shader, never touching the CPU; they follow you |
+| | `views` Mirrors & Monitors | two security cameras rendered to textures on monitors, and a mirror that reflects you, in the iso view |
+| | `shaders` Shader Gallery | hologram, force field, lava, marble, wood and crystal: TSL materials with no textures, see-through by dither |
 
 ## How it is built (`src/world/`)
 

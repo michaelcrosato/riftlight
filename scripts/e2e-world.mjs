@@ -1,4 +1,4 @@
-/* global window */
+/* global window, requestAnimationFrame */
 // e2e suite "world": Engine World (src/world, ?game=world), the engine's tech demo, on WebGPU
 // and the WebGL 2 fallback, driven frame-exactly through window.__WORLD__ and Engine.step():
 //
@@ -632,6 +632,76 @@ export async function runWorld(h) {
     check(proc.plants.counts.every((c) => c.branches > 20 && c.shown === c.branches && c.height > 1) && proc.plants.half > 0.1 && proc.plants.half < 0.9 && proc.plants.full === 1, `plants: four L-systems grown (${proc.plants.counts.map((c) => `${c.name} ${c.branches}`).join(', ')}), drawn again branch by branch (${(proc.plants.half * 100).toFixed(0)}% a second in)`);
     check(proc.errors.length === 0, `the procedural wing runs without errors${proc.errors.length ? ': ' + proc.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-plants.png`);
+
+    // ------------------------------------------------------------- rendering lab
+    const gfx = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // GPU swarm: a compute shader places and moves every particle; read back from the GPU
+      await w.goto('swarm', { instant: true }); // the second visit: the first swarm was freed on the way out
+      e.step(30);
+      const gpu = e.state().backend === 'WebGPU';
+      // SwiftShader runs WebGL 2 compute (transform feedback) slowly: frames stepped in one batch
+      // queue up on the GPU and a read-back waits for all of them (hundreds lose the context).
+      // There: short batches, and two animation frames for the GPU to catch up before reading.
+      const settle = async () => {
+        if (!gpu) for (let i = 0; i < 2; i++) await new Promise((r) => requestAnimationFrame(() => r()));
+      };
+      await settle();
+      const cover = await w.room.coverage();
+      const placed = gpu ? await w.room.sample() : null;
+      w.room.follow(true);
+      e.step(gpu ? 240 : 30); // FOLLOW is measured on WebGPU (a buffer read-back)
+      const followed = gpu ? await w.room.sample() : null;
+      const steps = w.room.steps();
+      // made again with the same options (the count knob back where it was): placed again, spread out
+      w.room.follow(false);
+      w.room.size(gpu ? 1 : 0);
+      e.step(30);
+      await settle();
+      const remade = await w.room.coverage();
+      out.swarm = { gpu, cover, placed, followed, steps, remade, spread: gpu ? (await w.room.sample()).spread : null };
+      // mirrors and monitors: two camera feeds and a mirror, rendered before the frame
+      await w.goto('views', { instant: true });
+      e.step(10);
+      await e.renderer.capture();
+      const feeds = [await w.room.feed(0), await w.room.feed(1)];
+      w.room.stand(-3.5, -5.6); // in front of the glass
+      e.step(20);
+      // the same moment drawn three times (a capture renders without advancing time): the
+      // reflection is stable, and hiding the hero changes it, so the hero is in the mirror
+      await e.renderer.capture();
+      const near = await w.room.reflection();
+      await e.renderer.capture();
+      const again = await w.room.reflection();
+      e.game.visitor.model.visible = false;
+      await e.renderer.capture();
+      const hidden = await w.room.reflection();
+      e.game.visitor.model.visible = true;
+      out.views = { feeds, near, again, hidden, renders: w.room.renders(), mirror: w.room.mirrorRenders() };
+      // shaders: one clock drives them; frozen, it holds
+      await w.goto('shaders', { instant: true });
+      e.step(30);
+      const ran = w.room.clock();
+      w.room.freeze(true);
+      e.step(30);
+      out.shaders = { ran, held: w.room.clock() === ran, pieces: w.room.pieces().length };
+      await e.renderer.capture();
+      out.errors = e.state().errors;
+      return out;
+    });
+    const sw = gfx.swarm;
+    check(sw.cover.pixels > 300 && sw.remade.pixels > 300, `GPU swarm: it covers ${sw.cover.pixels} pixels of the frame, and ${sw.remade.pixels} when made again with the same options (a swarm never placed is one spot)`);
+    if (sw.gpu) {
+      check(sw.placed.finite === sw.placed.n && sw.placed.placed === sw.placed.n && sw.placed.y > 0.3 && sw.placed.n >= 8192 && sw.placed.spread > 1 && sw.spread > 1, `GPU swarm: a compute shader placed all ${sw.placed.n} particles (read back from the GPU, ${sw.steps} dispatches, mean height ${sw.placed.y.toFixed(2)} m, spread ${sw.placed.spread.toFixed(2)} m, ${sw.spread.toFixed(2)} m remade)`);
+      check(sw.followed.finite === sw.followed.n && sw.followed.z > sw.placed.z + 1 && sw.followed.dist < 6, `FOLLOW: the swarm moves toward the hero (mean z ${sw.placed.z.toFixed(2)} → ${sw.followed.z.toFixed(2)}) and holds together (${sw.followed.dist.toFixed(2)} m from them on average)`);
+    } else check(sw.steps >= 60, `GPU swarm: ${sw.steps} compute dispatches on the WebGL 2 fallback (transform feedback)`);
+    check(gfx.views.feeds.every((f) => f.colours > 8) && gfx.views.renders.every((n) => n > 0), `monitors: two cameras render the room to textures (${gfx.views.feeds.map((f) => `${f.w}x${f.h}, ${f.colours} colours`).join('; ')})`);
+    check(gfx.views.near.colours > 8 && gfx.views.mirror > 0 && gfx.views.again.hash === gfx.views.near.hash && gfx.views.hidden.hash !== gfx.views.near.hash, `the mirror reflects the room (${gfx.views.near.colours} colours) and the hero standing at it (hiding the hero changes the reflection; the same frame again does not)`);
+    check(gfx.shaders.ran > 0.3 && gfx.shaders.held && gfx.shaders.pieces >= 6, `shader gallery: ${gfx.shaders.pieces} TSL materials on one clock (${gfx.shaders.ran.toFixed(2)} s), which freezes`);
+    check(gfx.errors.length === 0, `the rendering lab runs without errors${gfx.errors.length ? ': ' + gfx.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-shaders.png`);
 
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {

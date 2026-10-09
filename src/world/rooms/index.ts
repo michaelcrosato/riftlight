@@ -27,6 +27,9 @@ import { RAGDOLLS } from './ragdolls';
 import { PLANTS_ROOM } from './plants';
 import { REWIND } from './rewind';
 import { SANDBOX } from './sandbox';
+import { SHADERS } from './shaders';
+import { SWARM } from './swarm';
+import { VIEWS } from './views';
 import { TERRAIN } from './terrain';
 import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
@@ -79,6 +82,10 @@ export const ROOMS: readonly RoomDef[] = [
   TERRAIN,
   DUNGEON,
   PLANTS_ROOM,
+  // rendering lab
+  SWARM,
+  VIEWS,
+  SHADERS,
 ];
 
 registerRooms(ROOMS);

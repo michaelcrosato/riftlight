@@ -15,7 +15,7 @@ const DOOR_GAP = 5.5; // between doors along a wall
 
 /** Which corridor a wing's doors are on: direction (unit x, z). */
 const CORRIDORS: { dir: [number, number]; wings: WingId[] }[] = [
-  { dir: [1, 0], wings: ['movement', 'looks'] },
+  { dir: [1, 0], wings: ['movement', 'looks', 'rendering'] },
   { dir: [0, -1], wings: ['physics', 'genres'] },
   { dir: [-1, 0], wings: ['animation', 'workshop'] },
   { dir: [0, 1], wings: ['effects', 'procedural'] },

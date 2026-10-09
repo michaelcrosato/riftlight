@@ -37,6 +37,13 @@ everything but the final copy: in headless Chromium at 1920×1080 a frame went f
 25 ms (no filter) and from 457 ms to 27 ms (`nes`) on software WebGPU, and from 141 → 21 ms
 and 273 → 16 ms on the WebGL 2 fallback.
 
+- **Before the pipeline.** `PixelRenderer.onBeforeRender(f)` listeners run before each frame
+  (and each capture), outside the pipeline: render-to-texture views and mirrors draw their own
+  cameras there into half-float targets, so this frame's screens show this frame. They are
+  cleared when a level unloads; one that throws is reported once (on screen, `engine.errors`)
+  and skipped, the frame's render target put back. Screens
+  and mirrors sit on `SCREEN_LAYER` (2), which the main camera always sees and the views never
+  do. Each extra camera also renders the shadow map again.
 - **One renderer.** `PixelRenderer` owns a single `WebGPURenderer` and a single
   `RenderPipeline`. Native WebGPU is always attempted first; if it's unavailable,
   `WebGPURenderer` switches to its built-in WebGL 2 backend. Same scene, materials, TSL
@@ -1111,6 +1118,46 @@ propagation, restarts on contradiction, a `border` socket and `fixed` cells (whi
 border: a way in). `procgen/lsystem.ts` rewrites strings (stochastic rules by probability,
 seeded) and walks them with a 3D turtle (F f + − & ^ \ / | [ ] ! L) into branches and leaves,
 with tropism; `PLANTS` holds a bush, a fern, a weed and a tree.
+
+### GPU compute, render to texture, mirrors, TSL materials
+
+```ts
+const swarm = new GpuSwarm({ count: 32768, center: [0, 2, 0] }); // storage buffers + a TSL compute shader
+scene.add(swarm.mesh); swarm.update(engine.renderer.renderer, dt); // per frame; swarm.attractor.value.set(...)
+
+const cam = new RenderView({ size: [160, 90], every: 2 });     // a camera drawn into a texture
+const stop = cam.attach(engine.renderer, scene);                // before every frame; stop() (or a level unload) ends it
+screen.material = cam.screenMaterial(); RenderView.screen(screen); // its layer: views never see it
+
+const mirror = new Mirror({ size: [8, 3] }); scene.add(mirror.mesh); // faces its local +z
+const unmirror = mirror.attach(engine.renderer, scene);         // ortho or perspective camera
+// leaving: stop(); unmirror(); cam.dispose(); mirror.dispose(); swarm.dispose()
+
+mesh.material = hologramMaterial({ color: PALETTE.cyan });      // also forceField, lava, marble, wood, crystal
+```
+
+`render/gpuSwarm.ts` keeps positions and velocities in `instancedArray` storage buffers; an
+init compute places every particle from a hash of its index, a step compute adds a spring pull, a
+swirl and a noise flow, drag, a floor bounce; one instanced `Sprite` draw reads the same buffer
+(`positions.toAttribute()`), so nothing goes back to the CPU (`read()` does, for tests, on
+WebGPU only: reading compute buffers back on the WebGL 2 fallback has lost the context on
+software renderers). On the fallback three runs compute through transform feedback, which costs
+much more: keep counts lower there (the GPU Swarm room uses 8,192). `dispose()` (or disposing
+its material, as a level unload does) frees both compute shaders too. `seed` varies the layout
+and the flow; whatever it is, each swarm's shaders carry a literal of their own, so two swarms
+never share a compiled program (the WebGL 2 fallback caches one by its source,
+transform-feedback buffers included). `PixelRenderer.onBeforeRender(f)` runs
+before each frame (and capture), outside the pipeline: `render/renderView.ts` (`RenderView`)
+draws its own camera into a small nearest-filtered target there, every `every` frames.
+`render/mirror.ts` (`Mirror`) does the same from `mirrorCamera`: the active camera reflected in
+the glass with an oblique near plane on it (Lengyel, general for orthographic and perspective,
+WebGPU and WebGL depth ranges), at the art resolution, and the glass samples it at
+`screenUV.flipX()`. Screens and mirrors go on `SCREEN_LAYER` (2): the main camera always sees it,
+views never do, so a texture is never sampled while it is drawn. Targets are half-float like the
+pipeline's own (colour is linear there: 8 bits would band the darks). Each view costs a scene
+render at its size plus another shadow-map render; `capture()` runs the listeners too. `render/shaders.ts` holds TSL
+materials computed per pixel (noise, Worley cells, rim from the view normal), banded into
+palette steps; the see-through ones dither with `bayer4()` instead of blending.
 
 ### Input: gamepads and press timing
 

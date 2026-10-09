@@ -11,6 +11,7 @@ export const WINGS: readonly WingDef[] = [
   { id: 'genres', title: 'Genre Wing', about: 'Whole little games on the same engine.', color: 'blue' },
   { id: 'workshop', title: 'Workshop', about: 'Build, break and rewind.', color: 'plum' },
   { id: 'procedural', title: 'Procedural', about: 'Worlds made by rules and a seed: terrain, dungeons, plants.', color: 'green' },
+  { id: 'rendering', title: 'Rendering Lab', about: 'The GPU at work: compute shaders, render targets, mirrors, shaders written in TSL.', color: 'cyan' },
 ];
 
 export function wing(id: WingId): WingDef {

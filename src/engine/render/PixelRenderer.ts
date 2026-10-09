@@ -18,6 +18,7 @@ import {
   UnsignedByteType,
   WebGPURenderer,
 } from 'three/webgpu';
+import { SCREEN_LAYER } from './renderView';
 import { convertToTexture, float, min, pass, renderOutput, rtt, screenUV, select, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
 import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, computeFraming } from '../framing';
@@ -172,6 +173,10 @@ export class PixelRenderer {
   private rawNode!: PassNode;
   private readonly scene: Scene;
   private camera: Camera;
+  private readonly beforeRender = new Set<() => void>();
+  private readonly reported = new WeakSet<() => void>();
+  /** Where a throwing `onBeforeRender` listener is reported (the engine shows it on screen). */
+  onError: ((e: unknown) => void) | null = null;
   private readonly forceWebGL: boolean;
   private _mode: RenderMode;
   private _baseResolution: Resolution;
@@ -437,6 +442,11 @@ export class PixelRenderer {
     this.layout();
   }
 
+  /** The camera the frame is drawn from (mirrors reflect it). */
+  get activeCamera(): Camera {
+    return this.camera;
+  }
+
   /**
    * Point both passes at a different camera (camera preset hot-swap). The pipeline,
    * canvas and all nodes stay the same; only the camera the scene is rendered with changes.
@@ -510,8 +520,43 @@ export class PixelRenderer {
     this.layout();
   };
 
-  render(): void {
+  /**
+   * Run `f` before every frame's render (and capture), outside the pipeline: render-to-texture
+   * views draw their cameras here, so this frame's screens show this frame. Returns an unsubscribe.
+   */
+  onBeforeRender(f: () => void): () => void {
+    this.beforeRender.add(f);
+    return () => this.beforeRender.delete(f);
+  }
+
+  /** Drop every `onBeforeRender` listener (the engine does this when a level unloads). */
+  clearBeforeRender(): void {
+    this.beforeRender.clear();
+  }
+
+  /** The views first, then the frame; the main camera always sees the screens' layer. */
+  private renderFrame(): void {
+    const target = this._renderer.getRenderTarget();
+    for (const f of this.beforeRender) {
+      // a broken view must not stop the frame (and with it input and the HUD): the frame's
+      // target back (it may have thrown mid-render), reported once
+      try {
+        f();
+      } catch (err) {
+        this._renderer.setRenderTarget(target);
+        if (!this.reported.has(f)) {
+          this.reported.add(f);
+          if (this.onError) this.onError(err);
+          else console.error('[PixelRenderer] an onBeforeRender listener threw:', err);
+        }
+      }
+    }
+    this.camera.layers.enable(SCREEN_LAYER);
     this._pipeline.render();
+  }
+
+  render(): void {
+    this.renderFrame();
   }
 
   /**
@@ -542,7 +587,7 @@ export class PixelRenderer {
     target.setSize(width, height);
     const previous = r.getRenderTarget();
     r.setRenderTarget(target);
-    this._pipeline.render();
+    this.renderFrame();
     r.setRenderTarget(previous);
     const raw = (await r.readRenderTargetPixelsAsync(target, 0, 0, width, height)) as Uint8Array;
 

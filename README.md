@@ -16,7 +16,7 @@ secondary motion, procedural legs, ragdolls, pixel sprites, lights, particles, w
 and a day cycle, grass and wind, trails and decals, retro consoles, per-layer looks, the filter
 bench, screen transitions, stealth and pathfinding, flocks, a drift car, a bullet hell, a
 sandbox and time rewind, noise terrain with erosion, a wave-function-collapse dungeon,
-L-system plants...) with pads to change it live and a station guide (H) that explains
+L-system plants, a GPU compute swarm, security monitors and a mirror, TSL shaders...) with pads to change it live and a station guide (H) that explains
 how it works. Riftlight's title menu has a door to it, and its pause menu one back.
 
 - **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
