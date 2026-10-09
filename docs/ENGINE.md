@@ -792,6 +792,81 @@ agent. `Boids` is Reynolds' flocking on typed arrays: separation, alignment and 
 the neighbours in a spatial hash, plus `seek`, `flee`, `obstacles` (spheres) and `bounds` (pushed back in from `margin` inside them);
 `flat` keeps a herd or a school on its plane; seeded, so runs repeat.
 
+### Behaviour trees (`src/engine/ai/behavior.ts`)
+
+```ts
+const tree = new BehaviorTree<Bot>(
+  bt.selector('robot',                                                       // priorities, top first
+    bt.sequence('flee', bt.condition('hero close?', (b) => b.near), bt.action('run away', runAway, stop)),
+    bt.sequence('work', bt.action('go to crystal', goTo, letGo), bt.action('pick it up', pickUp)),
+    bt.steps('wander', bt.action('pick a spot', pick), bt.action('stroll', stroll), bt.wait('look about', 1.5))),
+  bot);                                                                      // the blackboard: any object
+tree.tick(dt);                                                               // per step: 'success' | 'failure' | 'running'
+tree.trace(); tree.activePath();                                             // every node with this tick's answer; the branch that decided
+```
+
+Each node answers success, failure or running. `selector` and `sequence` are reactive: every
+tick starts from the first child, so a higher priority takes over at once, and the child that
+was running is halted (`action`'s third argument runs then: let go of a claim, stop walking).
+`steps` is a sequence with memory (finished children are not run again until it ends);
+`parallel(name, 'all' | 'one', ...)` runs children together (each until it finishes);
+`inverter`, `succeeder`, `repeat(child, n)` and `cooldown(child, seconds)` (in tree time, kept
+across halts) change one child's answer; `wait(name, seconds)`. `tree.halt()` stops everything
+(a cutscene, a stun). A node keeps its own state, so it can be in one tree only (a second tree
+throws): build one per agent. Pure, unit-tested.
+
+Reactive means children before the running one are run again every tick, and the old branch
+is halted after the new one's first tick. That is what interrupts cleanly, but a child that is
+not a quick test (a `wait`, an action that does something each time) would restart and halt
+the one after it every tick: put such steps in `steps`, which runs each once. Conditions with
+an edge (scared within 3 m) want a margin to leave by (calm past 4.5 m), or an agent at the
+edge flips every tick.
+
+### Cutscenes: `Timeline` (`src/engine/cinematic/timeline.ts`)
+
+```ts
+const scene = new Timeline({
+  shots: [{ at: 0, position: [0, 6, 10], target: [0, 1, 0], fov: 50 },
+          { at: 4, position: [-1, 2.6, 4], target: [0, 1.2, 0] },                    // glides from the key before
+          { at: 4, position: [-3, 1.8, 0], target: [2, 1.3, 0], fov: 40, cut: true }], // a cut
+  cues: [{ at: 1, name: 'door', run: openDoor }, { at: 1.2, cosmetic: true, run: () => ctx.audio.play('coin') }],
+  lines: [{ at: 0.5, until: 3, who: 'GUIDE', text: 'WELCOME.' }],
+  onEnd: () => backToPlay(),
+});
+scene.play(); scene.update(dt);          // per frame: fires the cues it passes
+const shot = scene.camera();             // { position, target, fov }: put a camera there
+scene.line(); scene.bars();              // the subtitle now; letterbox 0..1 (in at the start, out at the end)
+scene.skip();                            // to the end: every cue not yet fired runs, except cosmetic ones
+```
+
+Pure (no three.js), unit-tested. The camera passes through each key at its time on Hermite
+curves with Catmull-Rom tangents (finite differences in time), so its speed has no jolt at a
+key; the first and last keys of a shot ease in and out; a `cut` key starts a new shot. `seek(t)`
+scrubs without firing (going back re-arms the cues). The game owns the camera: swap a `fixed`
+perspective rig in (`engine.setCamera({ preset: 'fixed', projection: 'perspective', ... })`),
+set its position, `lookAt` and `fov` from `camera()` each frame, and swap the game's preset back
+in `onEnd`. The Cutscene Stage room (`src/world/rooms/cutscene.ts`) is the whole pattern.
+
+### Sound in space: `spatialize`, looping voices
+
+```ts
+const hum = ctx.audio.loop('hum', { volume: 0 });            // a looping voice (a name or a SoundDef)
+const s = spatialize({ position: ears, right: cameraRight }, source, { ref: 1.5, max: 20, rolloff: 1 });
+const blocked = ctx.physics.raycast(ears, dirToSource, s.distance - 1, NOT_HERO) !== null; // const NOT_HERO = ['character']
+hum.set({ volume: s.gain * (blocked ? 0.5 : 1), pan: s.pan, muffle: blocked ? 0.85 : 0 });
+hum.stop();                                                  // when the level goes (unloading stops loops too)
+```
+
+`spatialize` (pure) gives the gain (full inside `ref`, then inverse distance with `rolloff`,
+faded to silence over the last fifth before `max`) and the pan (the sideways share of the
+direction, eased to the middle inside `ref` so a sound on top of you never flips ears).
+`AudioManager.loop` plays a buffer on repeat through a low-pass filter (`muffle` 0..1 closes it
+from 20 kHz to 400 Hz), a gain and a stereo panner; `set` glides (a 30 ms time constant, no
+clicks) and `stop` fades out before it lets go of the chain. Before the first input, or
+headless, a voice keeps its settings silently (`voice.settings`, `audio.loops`) and starts once
+audio unlocks (or its sound is registered: an unknown name is warned about once). A looped
+`SoundDef` wants `attack: 0, decay: 0` (a fade would dip at every repeat).
+
 ### Vehicles and bullets
 
 ```ts

@@ -848,6 +848,7 @@ export class Engine {
   private unloadGame(): void {
     this.game.dispose?.(this.context);
     this.audio.stopMusic();
+    this.audio.stopLoops();
     this.tweens.clear();
     this.shake.reset();
     this.clock.reset();

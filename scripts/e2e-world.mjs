@@ -703,6 +703,106 @@ export async function runWorld(h) {
     check(gfx.errors.length === 0, `the rendering lab runs without errors${gfx.errors.length ? ': ' + gfx.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-shaders.png`);
 
+    // ------------------------------------------------------------- ai & direction
+    const ai = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // robot yard: behaviour trees carry crystals to the bin; up close, a robot drops it all and runs
+      await w.goto('robots', { instant: true });
+      let n = 0;
+      let onFloor = true;
+      let claims = true;
+      while (w.room.delivered() < 2 && n++ < 1500) {
+        e.step(1);
+        onFloor &&= w.room.onFloor();
+        claims &&= w.room.claimsConsistent();
+      }
+      const delivered = w.room.delivered();
+      const at = w.room.positions()[0];
+      e.game.visitor.teleport([at[0] + 0.8, 0, at[1]], 0);
+      e.step(3);
+      const fleeing = w.room.paths()[0];
+      const traced = w.room.trace(0);
+      for (let i = 0; i < 60; i++) {
+        e.step(1);
+        claims &&= w.room.claimsConsistent();
+      }
+      const ran = Math.hypot(w.room.positions()[0][0] - at[0], w.room.positions()[0][1] - at[1]);
+      // drained batteries: recharge outranks delivering and collecting; they come back full
+      e.game.visitor.teleport([10, 0, 4.5], 0);
+      w.room.drain();
+      e.step(3);
+      const recharging = w.room.paths();
+      // each one fills up at the charger, then goes back to work (and drains again)
+      const charged = w.room.batteries().map(() => 0);
+      n = 0;
+      while (charged.some((c) => c < 0.95) && n++ < 3000) {
+        e.step(1);
+        w.room.batteries().forEach((b, i) => (charged[i] = Math.max(charged[i], b)));
+        onFloor &&= w.room.onFloor();
+      }
+      out.robots = { delivered, fleeing, traced, ran, recharging, charged, onFloor, claims };
+      // cutscene stage: the timeline takes the camera, cuts, speaks; skipping leaves the world as the scene would
+      await w.goto('cutscene', { instant: true });
+      e.step(5);
+      const started = w.pad('PLAY SCENE');
+      e.step(60);
+      const shot = w.room.shot();
+      const cam = w.room.cameraAt();
+      const early = { playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero, bars: w.room.bars(), line: w.room.line(), off: Math.hypot(cam[0] - shot.position[0], cam[1] - shot.position[1], cam[2] - shot.position[2]) };
+      n = 0;
+      while (w.room.playing() && w.room.time() < 7.5 && n++ < 200) e.step(10);
+      const cuts = w.room.cuts();
+      e.input.setKey('Space', true);
+      e.step(1);
+      e.input.setKey('Space', false);
+      e.step(2);
+      out.cutscene = { started, early, cuts, playing: w.room.playing(), fired: w.room.fired(), chest: w.room.chestOpen(), gate: w.room.gateOpen(), preset: w.room.preset(), hero: w.state().hero };
+      // another camera picked mid-scene (as the T panel does): the scene ends and leaves it be
+      w.room.play();
+      e.step(30);
+      e.setCamera({ preset: 'topdown' }, { syncUrl: false });
+      e.step(2);
+      out.cutscene.taken = { playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero };
+      // sound garden: louder near, panned to its side, muffled behind the wall
+      await w.goto('sounds', { instant: true });
+      const hear = (x, z, frames = 40) => {
+        e.game.visitor.teleport([x, 0, z], 0);
+        e.step(frames);
+        return w.room.mix();
+      };
+      const byFountain = hear(-4.5, -3);
+      const west = hear(5, -3.5); // between the wall and the generator: it is east of you
+      const east = hear(9.5, -3.5);
+      const behind = hear(1, -3.5); // the wall between you and the generator
+      const told = w.room.voices();
+      w.pad('OCCLUSION');
+      const through = hear(1, -3.5);
+      e.audio.loop('jump', { volume: 0 }); // a loop the room does not know about: the level unload stops it
+      await w.goto('atrium', { instant: true });
+      e.step(2);
+      out.sounds = { byFountain, west, east, behind, told, through, loopsAfter: e.audio.loops.length };
+      out.errors = e.state().errors;
+      return out;
+    });
+    const rb = ai.robots;
+    check(rb.delivered >= 2 && rb.onFloor && rb.claims, `robot yard: behaviour trees carry ${rb.delivered} crystals to the bin; no robot in a wall, no crystal claimed twice`);
+    check(rb.fleeing.includes('flee') && rb.ran > 1 && rb.traced.length >= 15 && rb.traced[0].status === 'running', `a hero up close: robot 1 switches to ${rb.fleeing.join(' > ')} and runs ${rb.ran.toFixed(1)} m (its trace: ${rb.traced.length} nodes)`);
+    check(rb.recharging.filter((p) => p.includes('recharge')).length >= 3 && rb.charged.every((b) => b >= 0.95), `drained, they go to the charger (${rb.recharging.map((p) => p.at(-1)).join(', ')}) and each fills up (${rb.charged.map((b) => Math.round(b * 100)).join('%, ')}%)`);
+    const cs = ai.cutscene;
+    check(cs.started && cs.early.playing && cs.early.preset === 'fixed' && cs.early.hero === null && cs.early.off < 0.01 && cs.early.bars > 0.99 && cs.early.line, `cutscene: the timeline drives a fixed camera (${cs.early.off.toFixed(4)} m off its curve), bars in, a line spoken: "${cs.early.line}"`);
+    check(cs.cuts >= 2, `the camera cuts between shots (${cs.cuts} cuts by 7.5 s)`);
+    check(!cs.playing && cs.chest && cs.gate && cs.fired.includes('gate opens') && !cs.fired.includes('fanfare') && cs.preset === 'iso' && cs.hero && cs.hero.at[1] < 0.1, `SPACE skips: chest and gate open anyway, the fanfare does not play (${cs.fired.join(', ')}), the iso camera and the hero are back (not jumping on the same press)`);
+    const so = ai.sounds;
+    const loudest = (m) => m.reduce((a, b) => (b.gain > a.gain ? b : a)).name;
+    check(loudest(so.byFountain) === 'FOUNTAIN' && so.byFountain[0].gain > 0.5 && so.byFountain[2].gain < so.byFountain[0].gain / 2, `sound garden: by the fountain it is the loudest (${so.byFountain.map((m) => `${m.name} ${m.gain.toFixed(2)}`).join(', ')})`);
+    check(so.west[1].pan * so.east[1].pan < 0 && Math.abs(so.west[1].pan) > 0.3 && !so.west[1].occluded, `the generator pans to its side (${so.west[1].pan.toFixed(2)} from the west, ${so.east[1].pan.toFixed(2)} from the east)`);
+    check(so.behind[1].occluded && so.behind[1].muffle > 0.5 && so.told[1].muffle > 0.5 && !so.through[1].occluded, `behind the wall it is muffled (${so.behind[1].muffle.toFixed(2)}, the voice told ${so.told[1].muffle.toFixed(2)}); with OCCLUSION off it is not`);
+    check(cs.taken.playing === false && cs.taken.preset === 'topdown' && cs.taken.hero, `a camera picked mid-scene ends it and stays (${cs.taken.preset}), the hero back`);
+    check(so.loopsAfter === 0, "leaving the garden stops its looping voices, and one the room never knew about (the level unload)");
+    check(ai.errors.length === 0, `the AI & direction wing runs without errors${ai.errors.length ? ': ' + ai.errors.join('; ') : ''}`);
+
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {
       const w = window.__WORLD__;

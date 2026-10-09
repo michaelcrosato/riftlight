@@ -1,7 +1,8 @@
 /**
  * The Atrium: the hub. A plaza with a fountain and four corridors; every room has a door
- * on a corridor wall, grouped by wing (east: movement and looks, north: physics and
- * genres, west: animation and the workshop, south: effects). Walk into a door, or press G.
+ * on a corridor wall, grouped by wing (east: movement, looks and rendering, north: physics and
+ * genres, west: animation, the workshop and AI & direction, south: effects and procedural).
+ * Walk into a door, or press G.
  */
 import { Mesh, SphereGeometry } from 'three/webgpu';
 import { PALETTE, type PaletteColor } from '../../engine';
@@ -17,7 +18,7 @@ const DOOR_GAP = 5.5; // between doors along a wall
 const CORRIDORS: { dir: [number, number]; wings: WingId[] }[] = [
   { dir: [1, 0], wings: ['movement', 'looks', 'rendering'] },
   { dir: [0, -1], wings: ['physics', 'genres'] },
-  { dir: [-1, 0], wings: ['animation', 'workshop'] },
+  { dir: [-1, 0], wings: ['animation', 'workshop', 'direction'] },
   { dir: [0, 1], wings: ['effects', 'procedural'] },
 ];
 

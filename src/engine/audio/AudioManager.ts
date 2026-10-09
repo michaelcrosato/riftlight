@@ -20,6 +20,33 @@ export interface PlayOptions {
   pan?: number;
 }
 
+export interface VoiceSettings {
+  /** 0..1 (default 1). */
+  volume?: number;
+  /** Stereo position -1 (left) .. 1 (right). */
+  pan?: number;
+  /** 0 (clear) .. 1 (behind a thick wall, under water): a low-pass filter closing down. */
+  muffle?: number;
+  /** Pitch shift in semitones. */
+  pitch?: number;
+}
+
+/** A looping sound steered while it plays (`AudioManager.loop`): a hum, a fire, a waterfall. */
+export interface Voice {
+  readonly name: string;
+  /** The values last set (kept headless too, so games and tests can read them). */
+  readonly settings: Readonly<Required<VoiceSettings>>;
+  /** Really sounding: Web Audio running and the loop started. */
+  readonly sounding: boolean;
+  readonly stopped: boolean;
+  /** Change any of its settings; they glide over a few hundredths of a second (no clicks). */
+  set(s: VoiceSettings): void;
+  stop(): void;
+}
+
+/** Low-pass cutoff (Hz) for a muffle of 0..1: wide open to a dull thud. */
+export const muffleCutoff = (muffle: number): number => 20000 * Math.pow(400 / 20000, Math.max(0, Math.min(1, muffle)));
+
 const STORAGE_KEY = 'pixel-engine:audio';
 const DEFAULTS: AudioSettings = { master: 0.8, sfx: 1, music: 0.6, muted: false };
 const LOOKAHEAD = 0.25; // seconds of music scheduled ahead of the audio clock
@@ -56,6 +83,7 @@ export class AudioManager {
   private song: { def: Song; parsed: ParsedSong; start: number; nextStep: number; cache: Map<string, AudioBuffer> } | null = null;
   private songName: string | null = null;
   private readonly musicSources = new Set<AudioBufferSourceNode>();
+  private readonly voices = new Set<LoopVoice>();
   private disposed = false;
 
   constructor(target: EventTarget | null = typeof window !== 'undefined' ? window : null) {
@@ -182,6 +210,68 @@ export class AudioManager {
   }
 
   /**
+   * Start a sound looping, as a voice you steer while it plays (volume, pan, muffle, pitch:
+   * with `spatialize` it sits at a place in the world). Before the first user input, or with
+   * no Web Audio, the voice keeps its settings silently and starts once audio unlocks.
+   * Stop it when you are done (a level's `dispose`).
+   */
+  loop(sound: string | SoundDef, settings: VoiceSettings = {}): Voice {
+    const voice = new LoopVoice(typeof sound === 'string' ? sound : 'custom', sound, this, settings);
+    this.voices.add(voice);
+    this.startVoice(voice);
+    return voice;
+  }
+
+  /** Voices playing or waiting to (tooling and tests). */
+  get loops(): readonly Voice[] {
+    return [...this.voices];
+  }
+
+  /** Stop every looping voice (the engine does this when a level unloads). */
+  stopLoops(): void {
+    for (const v of [...this.voices]) v.stop();
+  }
+
+  /** @internal Wire a voice to Web Audio if it can sound now. */
+  startVoice(voice: LoopVoice): void {
+    const ctx = this.context;
+    const bus = this.buses.sfx;
+    if (voice.nodes || voice.stopped || !ctx || !bus || ctx.state !== 'running') return;
+    const buffer = typeof voice.sound === 'string' ? (this.files.get(voice.sound) ?? (this.sounds.get(voice.sound) ? this.bufferFor(this.sounds.get(voice.sound)!) : undefined)) : this.bufferFor(voice.sound);
+    if (!buffer) {
+      if (typeof voice.sound === 'string' && !this.pendingFiles.has(voice.sound) && !voice.warned) {
+        voice.warned = true;
+        console.warn(`[audio] loop: no sound named "${voice.sound}" (yet): it starts when one is registered or loaded`);
+      }
+      return;
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = buffer;
+    src.loop = true;
+    const filter = ctx.createBiquadFilter();
+    filter.type = 'lowpass';
+    const gain = ctx.createGain();
+    src.connect(filter).connect(gain);
+    let out: AudioNode = gain;
+    const panner = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panner) out = out.connect(panner);
+    out.connect(bus);
+    voice.nodes = { src, filter, gain, panner };
+    voice.apply(ctx, true);
+    src.start();
+  }
+
+  /** @internal */
+  forgetVoice(voice: LoopVoice): void {
+    this.voices.delete(voice);
+  }
+
+  /** @internal */
+  get running(): boolean {
+    return this.context !== null && this.context.state === 'running';
+  }
+
+  /**
    * Load an audio file (wav/ogg/mp3…) under `name`; `play(name)` then plays it. Works
    * before the first user input too: the file is decoded once audio unlocks.
    */
@@ -233,6 +323,7 @@ export class AudioManager {
 
   /** Engine: once per rendered frame. Schedules the next notes of the song. */
   update(): void {
+    for (const v of this.voices) if (!v.nodes) this.startVoice(v);
     const ctx = this.context;
     const song = this.song;
     const bus = this.buses.music;
@@ -276,6 +367,7 @@ export class AudioManager {
     this.disarmUnlock();
     this.lifetime.abort();
     this.stopMusic();
+    this.stopLoops();
     void this.context?.close().catch(() => {});
     this.context = null;
     this.master = null;
@@ -332,6 +424,76 @@ export class AudioManager {
     if (this.master) this.master.gain.value = s.muted ? 0 : s.master;
     if (this.buses.sfx) this.buses.sfx.gain.value = s.sfx;
     if (this.buses.music) this.buses.music.gain.value = s.music;
+  }
+}
+
+class LoopVoice implements Voice {
+  readonly settings: Required<VoiceSettings> = { volume: 1, pan: 0, muffle: 0, pitch: 0 };
+  stopped = false;
+  /** Told once that its sound does not exist. */
+  warned = false;
+  nodes: { src: AudioBufferSourceNode; filter: BiquadFilterNode; gain: GainNode; panner: StereoPannerNode | null } | null = null;
+
+  constructor(
+    readonly name: string,
+    readonly sound: string | SoundDef,
+    private readonly manager: AudioManager,
+    settings: VoiceSettings,
+  ) {
+    this.assign(settings);
+  }
+
+  get sounding(): boolean {
+    return this.nodes !== null && !this.stopped && this.manager.running;
+  }
+
+  set(s: VoiceSettings): void {
+    if (this.stopped) return;
+    this.assign(s);
+    const ctx = this.manager.context;
+    if (this.nodes && ctx) this.apply(ctx, false);
+  }
+
+  stop(): void {
+    if (this.stopped) return;
+    this.stopped = true;
+    this.manager.forgetVoice(this);
+    const n = this.nodes;
+    const ctx = this.manager.context;
+    this.nodes = null;
+    if (!n) return;
+    // a quick fade (no click), then the whole chain off the bus
+    n.src.onended = () => {
+      for (const node of [n.src, n.filter, n.gain, n.panner]) node?.disconnect();
+    };
+    try {
+      const t = ctx?.currentTime ?? 0;
+      n.gain.gain.setTargetAtTime(0, t, 0.015);
+      n.src.stop(t + 0.08);
+    } catch {
+      n.src.onended(new Event('ended')); // already stopped, or the context is gone
+    }
+  }
+
+  private assign(s: VoiceSettings): void {
+    const c = (v: number | undefined, lo: number, hi: number, d: number) => (v === undefined || !Number.isFinite(v) ? d : Math.max(lo, Math.min(hi, v)));
+    const o = this.settings;
+    o.volume = c(s.volume, 0, 1, o.volume);
+    o.pan = c(s.pan, -1, 1, o.pan);
+    o.muffle = c(s.muffle, 0, 1, o.muffle);
+    o.pitch = c(s.pitch, -48, 48, o.pitch);
+  }
+
+  /** Push the settings to the nodes: at once when starting, gliding after. */
+  apply(ctx: AudioContext, now: boolean): void {
+    const n = this.nodes;
+    if (!n) return;
+    const t = ctx.currentTime;
+    const go = (p: AudioParam, v: number) => (now ? (p.value = v) : p.setTargetAtTime(v, t, 0.03));
+    go(n.gain.gain, this.settings.volume);
+    go(n.filter.frequency, muffleCutoff(this.settings.muffle));
+    go(n.src.playbackRate, Math.pow(2, this.settings.pitch / 12));
+    if (n.panner) go(n.panner.pan, this.settings.pan);
   }
 }
 

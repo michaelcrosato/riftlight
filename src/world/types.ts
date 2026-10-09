@@ -13,7 +13,7 @@ import type { RoomKit } from './kit/RoomKit';
 
 export type Vec3 = [number, number, number];
 
-export type WingId = 'hub' | 'movement' | 'physics' | 'animation' | 'effects' | 'looks' | 'genres' | 'workshop' | 'procedural' | 'rendering';
+export type WingId = 'hub' | 'movement' | 'physics' | 'animation' | 'effects' | 'looks' | 'genres' | 'workshop' | 'procedural' | 'rendering' | 'direction';
 
 export interface WingDef {
   readonly id: WingId;
@@ -99,6 +99,8 @@ export interface PadDef {
   readonly apply: (room: RoomRuntime, pad: import('./kit/RoomKit').Pad) => void;
   /** While this says false, stepping on the pad does nothing at all: no apply, no note, no sound. */
   readonly enabled?: () => boolean;
+  /** No toast when stepped on: the pad starts something that owns the screen (a cutscene). */
+  readonly quiet?: boolean;
 }
 
 /** What a room's code gets back from the shell while it runs. */
