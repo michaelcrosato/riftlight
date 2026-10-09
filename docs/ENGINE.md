@@ -747,7 +747,8 @@ limits in degrees (`hinge: [min, max]`: knees, elbows, Rapier's revolute joint) 
 whose swing is held inside a `cone` (degrees: after every physics step a part past the cone is
 turned back onto its edge, carrying the parts below it along, and the spin carrying it further
 out is removed; a part touching something may sit up to 12° past it, so a head pressed into a
-stair doesn't fight the contact every step and the ragdoll comes to rest). Parts collide with the world but not with any ragdoll's parts (a collision
+stair doesn't shake against it and the ragdoll comes to rest. Kept outside the solver, the
+limits can still nudge a resting part by hairs, enough to keep its bodies awake). Parts collide with the world but not with any ragdoll's parts (a collision
 group of their own). `sync()` writes the bodies into the joints
 between the last two physics steps. `rootPose()` says where the pelvis lies, whether face up,
 and the heading to get up with; `release()` removes the bodies, moves the model root under the
@@ -1065,6 +1066,7 @@ with `third` a left drag also turns the camera.
 const rewind = new Rewind(physics, { seconds: 6 });
 rewind.trackAll();                                   // or track(body, …)
 rewind.extra(() => hero.feetInto(feet).toArray(), (v) => hero.teleport([v[0]!, v[1]!, v[2]!])); // anything else
+// (teleport lifts the feet by TUNING.body.spawnLift, 3 cm, character/tuning.ts: the Time Lab takes it off)
 rewind.rewinding = input.isDown('KeyR');             // per step or frame; rewind.fill is the history left
 ```
 

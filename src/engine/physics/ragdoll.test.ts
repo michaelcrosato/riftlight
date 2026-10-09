@@ -238,15 +238,30 @@ describe('Ragdoll', () => {
       doll.enable({ velocity: [0, 1.5, 3.5] });
       doll.bodies.forEach((b) => b.setAngularDamping(1.5));
       doll.push([x, 4.1, -4.6], [0, 0, 4]);
+      // how far past its cone each ball joint swings, after every step: never more than the 12°
+      // a pressed part is allowed
+      const balls = HERO_RAGDOLL.map((part, j) => ({ part, j })).filter(({ part }) => part.parent && !part.hinge);
+      const axis = (part: (typeof HERO_RAGDOLL)[number]) => new Vector3(...part.to).sub(new Vector3(...(part.from ?? [0, 0, 0]))).normalize();
+      const turned = (j: number, v: Vector3) => {
+        const r = doll.bodies[j]!.rotation();
+        return v.applyQuaternion(new Quaternion(r.x, r.y, r.z, r.w));
+      };
+      let past = 0;
       let still = 0;
       let i = 0;
       for (; i < 12 * 60 && still < 1.2; i++) {
         p.update(DT + 1e-9);
         doll.sync();
         still = doll.speed() < 0.3 ? still + DT : 0;
+        for (const { part, j } of balls) {
+          const parent = HERO_RAGDOLL.findIndex((q) => q.bone === part.parent);
+          const angle = turned(j, axis(part)).angleTo(turned(parent, axis(part))) * (180 / Math.PI);
+          past = Math.max(past, angle - (part.cone ?? 60));
+        }
       }
       expect(i / 60, `start ${k}: still for 1.2 s within 12 s`).toBeLessThan(12);
       expect(doll.rootPose().at.y, `start ${k}: down the stairs`).toBeLessThan(1.8);
+      expect(past, `start ${k}: degrees past a cone`).toBeLessThan(12.5);
     }
   });
 

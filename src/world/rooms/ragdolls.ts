@@ -75,6 +75,8 @@ export const RAGDOLLS: RoomDef = {
         title: 'A swing past the cone is turned back onto its edge, limbs below and all',
         file: 'src/engine/physics/ragdoll.ts',
         src: `const back = this.touching(b) ? excess - PRESSED : excess;
+if (back > 0) this.turnBack(b, k, back);
+...
 const turn = this.q2.setFromAxisAngle(k, angle);
 for (const s of b.subtree) {
 t.set(p.x - px, p.y - py, p.z - pz).applyQuaternion(turn);

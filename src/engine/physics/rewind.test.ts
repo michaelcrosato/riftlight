@@ -178,12 +178,12 @@ describe('Rewind', () => {
     rewind.trackAll();
     step(p, hit + 20);
     rewind.rewinding = true;
-    step(p, 21); // back to the step before the hit (xs[hit - 1]: b not moving yet)
+    step(p, 21); // back to where the first run was at xs[hit - 2]: b still asleep, the hit one step off
     rewind.rewinding = false;
-    step(p, 30); // where the first run was after xs[hit + 29]
+    step(p, 30); // as far on as xs[hit + 28]
     // most of the way it went the first time (the solver's warm start from contacts is not
     // recorded, so not all of it); a hit swallowed by putting b back to sleep leaves it under a tenth
-    expect(b.translation().x).toBeGreaterThan(xs[hit + 29]! * 0.5);
+    expect(b.translation().x).toBeGreaterThan(xs[hit + 28]! * 0.5);
   });
 
   it('goes back ahead of other step listeners, whenever they were added', async () => {

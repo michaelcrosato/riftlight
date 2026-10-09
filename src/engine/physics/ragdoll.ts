@@ -74,7 +74,8 @@ const GROUPS = ((0x0008 << 16) | (0xffff & ~0x0008)) >>> 0;
 /**
  * How far past its cone a part lying against something may sit before it is turned back
  * (radians, 12°): turning it back would push it into what it lies on, the contact would push
- * it out again, and the two would fight every step, so the ragdoll would never come to rest.
+ * it out again, and the two would fight every step, a ragdoll shaking on the stairs for good.
+ * (Past it, the fight comes back, but by hairs: still enough to keep the bodies awake.)
  */
 const PRESSED = (12 * Math.PI) / 180;
 
@@ -359,7 +360,7 @@ export class Ragdoll {
     const l = k.length();
     if (l < 1e-6) return;
     k.divideScalar(l);
-    // pressed against something: back to `PRESSED` past the cone at most, a little at a time
+    // pressed against something: turned back only as far as `PRESSED` past the cone
     const back = this.touching(b) ? excess - PRESSED : excess;
     if (back > 0) this.turnBack(b, k, back);
     // no relative spin outward (a hair of it, a resting part's noise, is left: setting it would

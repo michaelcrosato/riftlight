@@ -199,7 +199,8 @@ export class Physics {
     if (this.belts.size === 0) return;
     for (const [handle, v] of this.belts) {
       const belt = this.world.getCollider(handle);
-      if (!belt) {
+      // gone, or its slot holds a newer collider (a lookup by handle can't tell the two apart)
+      if (!belt || belt.handle !== handle || !belt.isValid()) {
         this.belts.delete(handle);
         continue;
       }

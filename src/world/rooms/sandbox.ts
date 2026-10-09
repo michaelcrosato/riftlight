@@ -74,6 +74,11 @@ export const SANDBOX: RoomDef = {
     kit.label([0, 1.5, -2], 'DROP POINT', { color: 'plum', range: 10 });
     const props: Prop[] = [];
     const spawn = (kind: Kind, at: V3 = [(Math.random() - 0.5) * 1.5, 4, -2 + (Math.random() - 0.5) * 1.5], rot?: [number, number, number, number]) => {
+      // no more than a layout can hold, so whatever is saved loads back
+      if (props.length >= MAX_PROPS) {
+        room.toast(`The yard is full (${MAX_PROPS} props): CLEAR some first.`, 2);
+        return null;
+      }
       const k = KINDS[kind];
       const { desc, mesh } = k.build();
       const body = ctx.physics.world.createRigidBody(
@@ -222,7 +227,8 @@ export const SANDBOX: RoomDef = {
       },
       status: () => `props ${props.length} holding ${grab?.prop.kind ?? 'nothing'}`,
       api: {
-        spawn: (kind: Kind, at?: V3) => (spawn(kind, at), props.length),
+        /** Spawn a prop (at the drop point, or `at`): the props there are now, or -1 if `kind` is not one. */
+        spawn: (kind: Kind, at?: V3) => (Object.hasOwn(KINDS, kind) ? (spawn(kind, at), props.length) : -1),
         layout,
         /** Load a layout (what `layout` returns): the props it made, or -1 (nothing changed) if it is not one. */
         load: (items: unknown) => (load(items) ? props.length : -1),
