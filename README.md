@@ -99,7 +99,8 @@ bump `package.json`'s version and get a `CHANGELOG.md` section.
 ---
 
 The repository is set up for **100% AI-driven development**: agents write, verify, open
-PRs, fix CI, and merge. Humans set direction through issues.
+PRs, fix CI, and merge. Humans set direction through issues. The principles it is built by
+are in [`docs/DOCTRINE.md`](docs/DOCTRINE.md); the procedure in [`AGENTS.md`](AGENTS.md).
 
 ## How work flows
 

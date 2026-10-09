@@ -2,7 +2,9 @@
 
 This repository is written by AI agents, end to end. Humans set direction through
 issues and review outcomes; agents plan, implement, verify, open PRs, fix CI, and
-merge. Optimize for throughput with a green main branch.
+merge. Optimize for throughput with a green main branch. **[docs/DOCTRINE.md](docs/DOCTRINE.md)**
+is the direction (principles, escalation, and where the repo still falls short of them);
+this file is how the work is done.
 
 ## Loop
 
@@ -13,7 +15,11 @@ merge. Optimize for throughput with a green main branch.
 3. **Build**: make the smallest change that fully solves the task. Add or update
    tests alongside behavior changes.
 4. **Verify**: run `scripts/check.sh` until it passes. A task is not done while
-   checks fail. For UI or runtime behavior, actually run it.
+   checks fail. For UI or runtime behavior, actually run it, and look as well as
+   measure: capture frames and look at them, not only the numbers. Show every new
+   check fails when what it guards breaks (break it once, see red, put it back);
+   a test that cannot fail proves nothing. Before a non-trivial change ships, someone
+   other than its author checks it (a verifier agent counts).
 5. **Ship**: commit (Conventional Commits: `feat:`, `fix:`, `chore:`, `docs:`,
    `refactor:`, `test:`, `ci:`), push, and open a PR. Pushing a `claude/*`
    branch auto-opens a PR and merges it right away (`.github/workflows/autopilot.yml`).
@@ -47,6 +53,14 @@ script and CI pick them up with no extra config.
 - Never force-push the default branch or rewrite shared history.
 - Keep PRs focused: one concern per PR. Several small PRs beat one large one.
 - Label a PR `hold` to stop Autopilot merging it.
+- One obvious way to do each thing: extend what the engine already has before adding a
+  second way to do the same job.
+- New systems keep their state plain, serializable data where they reasonably can
+  (doctrine principle 1), so it can later be saved, restored and replayed.
+- Escalate as [docs/DOCTRINE.md](docs/DOCTRINE.md#escalation) says: a reversible call may be
+  made after 15 minutes without an answer; anything irreversible or outside the project
+  (money, credentials, licences, publishing, deleting data or shared history) waits. Record
+  each one in an issue labelled `escalation`, linked from the PR.
 - If blocked on something only a human can do (credentials, billing, account
   settings), say exactly what is needed in the PR or issue and move on to
   the next task.
