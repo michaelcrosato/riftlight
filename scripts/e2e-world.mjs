@@ -271,6 +271,80 @@ export async function runWorld(h) {
     check(fx.errors.length === 0, `the effects wing runs without errors${fx.errors.length ? ': ' + fx.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-trails.png`);
 
+    // ------------------------------------------------------------- animation wing
+    const anim = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const out = {};
+      // secondary motion: the scarf trails a running hero; slimes squash only while SQUASH is on
+      await w.goto('secondary', { instant: true });
+      e.step(60);
+      const idle = w.room.swing(); // gravity sags the scarf a little even standing still
+      const { right, forward } = e.camera.groundBasis();
+      e.input.analog.x = right.x;
+      e.input.analog.y = forward.x;
+      e.step(40);
+      const running = w.room.swing();
+      e.input.analog.x = e.input.analog.y = 0;
+      let squashOn = 0;
+      for (let i = 0; i < 120; i++) {
+        e.step(1);
+        squashOn = Math.max(squashOn, ...w.room.squash().map(Math.abs));
+      }
+      w.pad('SQUASH');
+      e.step(120);
+      let squashOff = 0;
+      for (let i = 0; i < 120; i++) {
+        e.step(1);
+        squashOff = Math.max(squashOff, ...w.room.squash().map(Math.abs));
+      }
+      out.secondary = { idle, running, still: w.room.swing(), squashOn, squashOff, landings: w.room.landings() };
+      // procedural legs: the walker follows the hero up the steps; planted feet never slide
+      await w.goto('legs', { instant: true });
+      e.step(10);
+      const steps0 = w.room.steps()[0];
+      e.game.visitor.teleport([-2.5, 1.4, -6.5], Math.PI);
+      e.step(300);
+      const [wx, wy, wz] = w.room.walker();
+      const hero = w.state().hero.at;
+      out.legs = { steps: w.room.steps()[0] - steps0, others: w.room.steps().slice(1), far: Math.hypot(wx - hero[0], wz - hero[2]), height: wy, slide: w.room.slide() };
+      // sprites: a crowd is one draw per sheet; walking flips their frames
+      await w.goto('sprites', { instant: true });
+      e.step(10);
+      const draws = w.room.draws();
+      const seen = new Set();
+      for (let i = 0; i < 60; i++) {
+        e.step(1);
+        for (const f of w.room.frames()) seen.add(f);
+      }
+      // mirrored sprites draw as many pixels as unmirrored ones (the sky-blue critters' bodies)
+      const blue = async () => {
+        e.step(2);
+        const f = await e.renderer.capture();
+        let n = 0;
+        for (let i = 0; i < f.pixels.length; i += 4) if (Math.abs(f.pixels[i] - 0x41) + Math.abs(f.pixels[i + 1] - 0xa6) + Math.abs(f.pixels[i + 2] - 0xf6) < 40) n++;
+        return n;
+      };
+      w.room.flip(false);
+      const facing = await blue();
+      w.room.flip(true);
+      const mirrored = await blue();
+      w.room.flip(undefined);
+      w.pad('300 CRITTERS');
+      e.step(5);
+      out.sprites = { draws, frames: seen.size, crowd: w.room.critters(), facing, mirrored };
+      out.errors = e.state().errors;
+      return out;
+    });
+    check(anim.secondary.running > anim.secondary.idle + 0.08 && anim.secondary.still < anim.secondary.running, `secondary motion: the scarf trails a running hero (${anim.secondary.running.toFixed(2)} m, ${anim.secondary.idle.toFixed(2)} standing) and settles (${anim.secondary.still.toFixed(2)})`);
+    check(anim.secondary.squashOn > 0.1 && anim.secondary.squashOff < 0.02 && anim.secondary.landings >= 3, `slimes squash and stretch (${anim.secondary.squashOn.toFixed(2)}), not when it is off (${anim.secondary.squashOff.toFixed(3)})`);
+    check(anim.legs.steps > 10 && anim.legs.others.every((n) => n > 3) && anim.legs.far < 4 && anim.legs.height > 1.4, `procedural legs: the walker follows the hero onto the deck (${anim.legs.steps} steps, ${anim.legs.far.toFixed(2)} m away, body at ${anim.legs.height.toFixed(2)} m), the crab and the robot walk (${anim.legs.others})`);
+    check(anim.legs.slide < 1e-6, `planted feet never slide (${anim.legs.slide})`);
+    check(anim.sprites.draws === 3 && anim.sprites.frames === 4 && anim.sprites.crowd === 300, `sprites: three sheets, three batches, walk frames flip (${anim.sprites.frames} seen), a crowd of ${anim.sprites.crowd}`);
+    check(anim.sprites.facing > 30 && anim.sprites.mirrored > anim.sprites.facing * 0.6, `mirrored sprites draw (${anim.sprites.mirrored} px against ${anim.sprites.facing} facing right)`);
+    check(anim.errors.length === 0, `the animation wing runs without errors${anim.errors.length ? ': ' + anim.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-crowd.png`);
+
     // ------------------------------------------------------------- lights: the sun dial moves the sun
     const sun = await W(async () => {
       const w = window.__WORLD__;

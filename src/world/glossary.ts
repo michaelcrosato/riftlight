@@ -117,6 +117,13 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'foot IK', section: 'animation', text: 'Inverse kinematics that bends the legs so the feet land on the real ground: stairs, slopes, ledges.' },
   { term: 'contact sheet', section: 'animation', text: 'A grid of frames of a clip in one picture, to check it by eye.' },
   { term: 'rig', section: 'animation', text: 'The joints of a character and how they are named and limited.' },
+  { term: 'secondary motion', section: 'animation', text: 'Motion that follows other motion (a scarf trailing, a tail swinging past when you stop): here springs on bones, worked out every frame.' },
+  { term: 'squash and stretch', section: 'animation', text: 'Squashing a shape on impact and stretching it in fast motion while keeping its volume: the oldest trick for weight and life.' },
+  { term: 'procedural animation', section: 'animation', text: 'Motion computed every frame from rules (where feet should be, how a spring swings) instead of played from keyframes.' },
+  { term: 'IK', section: 'animation', text: 'Inverse kinematics: working out the joints from where the end should be (the foot on the step, the hand on the ledge). Two bones solve exactly with the law of cosines.' },
+  { term: 'gait', section: 'animation', text: 'The pattern in which legs take turns: a trot, an insect\'s tripod. Here it emerges from "a leg waits while its neighbours step".' },
+  { term: 'sprite', section: 'pixels', text: 'A small 2D picture (often one frame of a sheet) drawn as it is: characters, items, effects. Frames flip to animate.' },
+  { term: 'billboard', section: 'rendering', text: 'A flat picture that always turns to face the camera: pixel sprites in a 3D world, like Doom\'s monsters or Paper Mario.' },
   // games
   { term: 'pad', section: 'games', text: 'A plate on the floor in these rooms: step on it to change a setting.' },
   { term: 'game loop', section: 'games', text: 'Every frame: read input, step physics (fixed steps), update the game, update the camera, draw.' },

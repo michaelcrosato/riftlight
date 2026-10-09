@@ -326,6 +326,19 @@ ctx.scene.add(water, rain, grass, new Trail({ width: 0.3 }));  // trail.push(p, 
 Per frame: `water.update(t)`, `rain.update(dt, focus)`, `grass.update(t)`, `decals.update(dt)`;
 per fixed step: `floaters.step(dt)` and the ripple field's `step(dt)`.
 
+### Procedural motion and sprites
+
+```js
+const tail = new SpringChain({ segments: 6, length: 0.12 });   // tail.update(dt, root, [right, up, forward]); tail.points
+const squash = new Squash();                                   // squash.kick(-5); squash.update(dt); squash.scale() → [xz, y]
+const legs = new LegStepper({ legs: [{ rest: [-0.6, 0.5], partners: [1] }, { rest: [0.6, 0.5], partners: [0] }] });
+legs.update(dt, body, yaw, velocity, (x, z) => 0);             // legs.feet[i].at; knee = twoBoneIK(hip, foot, a, b, pole)
+const sheet = drawSheet({ frame: [16, 16], frames: 4 }, (g, f) => { g.fillStyle = '#ffcd75'; g.fillRect(4, 4 + (f % 2), 8, 8); });
+const sprites = new SpriteBatch(sheet, { capacity: 100 });     // ctx.scene.add(sprites); sprites.spawn(at, { size: 1 })
+```
+
+Sprites face the camera, keep square pixels and are one draw per sheet: `sprites.set(i, { at, frame, flip })`.
+
 ### Camera
 
 | Preset | View | Notes |

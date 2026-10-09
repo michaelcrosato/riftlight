@@ -34,6 +34,9 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `destruction` Destruction | walls that shatter where you punch them, a crumbling bridge, explosive barrels |
 | | `fields` Forces & Fields | a wind tunnel, updrafts to float on, a gravity well, launch pads |
 | Animation Lab | `clips` Clip Gallery | the hero's clips as data, on mannequins, by family |
+| | `secondary` Secondary Motion | a scarf, a tail and an antenna on spring chains, slimes that squash and stretch |
+| | `legs` Procedural Legs | a six-legged walker that follows you up steps, a crab and a robot: planted feet, stepping gaits, two-bone IK |
+| | `sprites` Pixel Sprites | pixel-art critters, trees and torches as camera-facing sprites drawn in code, a crowd of 300 in three draws |
 | Visual Effects | `lights` Lights & Shadows | the light pool, flicker presets, RGB mixing, a moving lantern, the sun dial, quality |
 | | `particles` Particle Garden | every particle effect, built in and registered as data |
 | | `water` Water & Buoyancy | waves and ripples drawn by the vertex shader, floating crates and a raft, rain rings, dithered see-through water |

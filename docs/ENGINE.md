@@ -807,6 +807,28 @@ surface's normal (nudged off it, with a depth offset), their shapes cut out in t
 (`DECAL_SHAPES`, no textures), one instanced draw per shape, a colour per mark, faded out by
 an ordered dither after `life` seconds; when a pool is full the oldest mark is reused.
 
+### Pixel sprites
+
+```ts
+const sheet = drawSheet({ frame: [16, 16], frames: 4 }, (g, f) => { g.fillStyle = '#ef7d57'; g.fillRect(4, 4 + (f % 2), 8, 8); });
+const critters = new SpriteBatch(sheet, { capacity: 200 });   // one instanced draw for all of them
+scene.add(critters);
+const i = critters.spawn([0, 0, 0], { size: 0.8 });           // bottom middle at the point, 0.8 m tall
+critters.set(i, { at: [1, 0, 0], frame: 2, flip: true });     // move, animate, mirror
+```
+
+Flat pixel pictures that always face the camera (Doom's monsters, Paper Mario). The vertex
+shader puts each quad's corners along the camera's right and up around its point, then
+pushes them toward the camera as far as an upright figure's would be (so sprites sort like
+standing figures, and a top-down camera doesn't sink them into the floor). The fragment
+shader picks the frame's cell of the sheet (nearest sampling; a mirrored sprite reads it right
+to left) and drops transparent pixels (an alpha cut-out: no blending, so the depth buffer sorts
+sprites and models together). Position, size, frame and mirror are instance attributes;
+`put(i, x, y, z, frame, flip)` changes them without allocating. `drawSheet` paints a sheet in
+code with a 2D canvas (no image files); another texture works too (frames left to right, top
+to bottom; a `DataTexture` holds its rows top line first). Positions are in the batch's own
+space: leave the batch unrotated and unscaled.
+
 ### Time: game speed and hitstop
 
 ```ts
@@ -1004,6 +1026,33 @@ and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is i
   run-stop` films it in the game.
 - `/lab.html` previews a clip in the real renderer: scrub, views, skeleton, hot reload, and
   `window.__ANIM_LAB__`.
+
+### Procedural motion
+
+`src/engine/animation/procedural.ts` (pure, unit-tested) is motion worked out every frame
+from other motion, for things that are not hero clips:
+
+```ts
+const scarf = new SpringChain({ segments: 7, length: 0.13, rest: [0, -0.25, -1], stiffness: 6 });
+scarf.update(dt, rootWorldPosition, [right, up, forward]);   // then draw between scarf.points
+const squash = new Squash();                                   // squash.kick(-5) on landing
+squash.update(dt); const [h, v] = squash.scale(); mesh.scale.set(h, v, h); // keeps the volume
+const legs = new LegStepper({ legs: rests.map((rest, i) => ({ rest, partners: gaitPartners(6)[i] })) });
+legs.update(dt, body, yaw, velocity, groundHeightAt);          // legs.feet[i].at: planted or stepping
+const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
+```
+
+- `SpringChain`: points hanging off a moving root that keep their velocity, sag under
+  gravity, are pulled toward their rest direction in the root's axes, and keep their
+  lengths: scarves, tails, antennae (follow-through for free). It steps at a fixed 120 Hz
+  (the root moving evenly between frames), so it swings the same at any frame rate.
+- `Squash`: a damped spring on one number drawn as a volume-preserving scale.
+- `LegStepper`: a foot stays where it is in the world until it is `threshold` from its
+  target (its rest spot, ahead by `lead` × velocity, on the ground), then steps there in an
+  arc, but only while its `partners` are planted (partners are mutual); `gaitPartners(n)`
+  gives six legs a tripod and four a trot.
+- `twoBoneIK`: the middle joint of a two-bone limb in 3D, bent toward a pole (the law of
+  cosines; out of reach straightens toward the target, too close folds as far as it goes).
 
 ## Tooling for agents
 

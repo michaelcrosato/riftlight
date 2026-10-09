@@ -15,10 +15,13 @@ import { FEEL } from './feel';
 import { FIELDS } from './fields';
 import { FOLIAGE } from './foliage';
 import { JOINTS } from './joints';
+import { LEGS } from './legs';
 import { CONSOLES, FILTER_BENCH, LAYERS, TRANSITIONS_ROOM } from './looks';
 import { MOVES } from './moves';
 import { PLATFORMS } from './platforms';
+import { SECONDARY } from './secondary';
 import { SOFT } from './soft';
+import { SPRITES } from './sprites';
 import { TRAILS } from './trails';
 import { WATER } from './water';
 import { WEATHER } from './weather';
@@ -38,6 +41,9 @@ export const ROOMS: readonly RoomDef[] = [
   FIELDS,
   // animation
   CLIPS,
+  SECONDARY,
+  LEGS,
+  SPRITES,
   // effects
   LIGHTS,
   PARTICLE_GARDEN,
