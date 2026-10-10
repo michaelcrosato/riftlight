@@ -568,6 +568,38 @@ export async function runWorld(h) {
     // a drop spot: 4 m up, within 0.75 m of the drop point (0, -2); not the tower the room starts with
     const dropped = (at) => at[1] === 4 && Math.abs(at[0]) <= 0.75 && Math.abs(at[2] + 2) <= 0.75 && at[0] !== 0;
     check(drops.spots.every(dropped) && JSON.stringify(drops.spots[0]) === JSON.stringify(drops.spots[1]), `a random drop lands on the same spot each visit (seed ${drops.seed}: ${drops.spots[0]})`);
+    // recorded play replays exactly: the hero runs, jumps and turns among the rigid bodies; the
+    // level's recording, through JSON and played back from the room's start, ends in the same
+    // state, and the same recording with A held for a while does not
+    const replay = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      const start = () => w.goto('bodies', { instant: true }); // from the bodies room, as below
+      await start();
+      await start();
+      const from = [...w.state().hero.at];
+      const script = { 0: ['KeyW', true], 30: ['KeyD', true], 50: ['Space', true], 53: ['Space', false], 90: ['KeyD', false], 120: ['Space', true], 121: ['Space', false], 200: ['KeyW', false] };
+      for (let f = 0; f < 240; f++) {
+        if (script[f]) e.input.setKey(...script[f]);
+        e.step(1);
+      }
+      const live = { print: e.fingerprint(), hero: w.state().hero };
+      const rec = JSON.parse(JSON.stringify(e.recording()));
+      await e.replay(rec, start);
+      const again = { print: e.fingerprint(), hero: w.state().hero };
+      // frames hold only changes: A held from frame 150 stays held until W is let go at 200
+      const altered = { ...rec, frames: rec.frames.map((f, i) => (i === 150 ? { ...f, held: ['KeyA', 'KeyW'] } : f)) };
+      await e.replay(altered, start);
+      return { from, live, again, other: e.fingerprint(), frames: rec.frames.length, bytes: JSON.stringify(rec).length, errors: e.state().errors };
+    });
+    const ran = Math.hypot(replay.live.hero.at[0] - replay.from[0], replay.live.hero.at[2] - replay.from[2]);
+    check(replay.frames === 240 && ran > 3 && replay.errors.length === 0, `the room's recording holds the run (${replay.frames} frames, ${replay.bytes} bytes; the hero ran ${ran.toFixed(1)} m)`);
+    const hero = (h) => `${h.at} ${h.state} (${h.anim})`;
+    check(
+      replay.again.print === replay.live.print && hero(replay.again.hero) === hero(replay.live.hero),
+      `a replayed recording ends where the run did (${replay.live.print} vs ${replay.again.print}; hero ${hero(replay.live.hero)} vs ${hero(replay.again.hero)})`,
+    );
+    check(replay.other !== replay.live.print, `the recording with A held for 50 frames more ends somewhere else (${replay.other})`);
     check(shop.sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${shop.sandbox.mapped.toExponential(1)})`);
     check(shop.sandbox.picked === 'crate' && shop.sandbox.held === 'crate' && shop.sandbox.moved > 1, `sandbox: the mouse picks a crate (${shop.sandbox.picked}) and drags it ${shop.sandbox.moved.toFixed(1)} m`);
     check(shop.sandbox.saved && shop.sandbox.cleared === 0 && shop.sandbox.loaded && shop.sandbox.same, `a layout saves, clears and loads back the same (${shop.sandbox.count} props)`);

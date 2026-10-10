@@ -35,7 +35,8 @@ export interface BoxOptions {
  * presentation concern and never touches bodies here.
  */
 export class Physics {
-  readonly world: RAPIER.World;
+  /** The Rapier world. A new one per level (`clear()`): read it from here, don't keep it across levels. */
+  world: RAPIER.World;
   private readonly bindings: Binding[] = [];
   private readonly tags = new Map<number, Set<string>>();
   private readonly triggers: Trigger[] = [];
@@ -70,13 +71,17 @@ export class Physics {
   private readonly from = new Vector3();
 
   private constructor(gravity: number) {
-    this.world = new RAPIER.World({ x: 0, y: gravity, z: 0 });
-    this.world.timestep = FIXED_DT;
     this.gravityY = gravity;
+    this.world = this.makeWorld();
     this.solverIterations = this.world.numSolverIterations;
+  }
+
+  /** A fresh world (each level gets one, so a level runs the same whatever ran before it). */
+  private makeWorld(): RAPIER.World {
+    const world = new RAPIER.World({ x: 0, y: this.gravityY, z: 0 });
+    world.timestep = FIXED_DT;
     // Track character controllers (created by PlatformerCharacter & co. directly on the
     // world) so a level unload frees them too.
-    const world = this.world;
     const create = world.createCharacterController.bind(world);
     const remove = world.removeCharacterController.bind(world);
     world.createCharacterController = (offset: number) => {
@@ -88,6 +93,7 @@ export class Physics {
       this.controllers.delete(c);
       remove(c);
     };
+    return world;
   }
 
   /** Loads Rapier's wasm on first use (a separate, streamed .wasm file), then builds a world. */
@@ -433,16 +439,28 @@ export class Physics {
    * collider. Removing a collider whose fixed body has no other colliders removes that
    * body too (what `addStaticBox` & co. create). Tags and trigger overlaps are cleaned up.
    */
+  /**
+   * Whether `target` still exists in the current world: false once removed, and for anything
+   * from a level before (its world is gone; `isValid()` on it would throw).
+   */
+  isAlive(target: RAPIER.RigidBody | RAPIER.Collider): boolean {
+    try {
+      return target.isValid();
+    } catch {
+      return false; // its world was freed (a level unload)
+    }
+  }
+
   remove(target: RAPIER.RigidBody | RAPIER.Collider): void {
     if (target instanceof RAPIER.Collider) {
-      if (!target.isValid()) return; // already removed (a handle alone can name a newer collider)
+      if (!this.isAlive(target)) return; // already removed (a handle alone can name a newer collider)
       const body = target.parent();
       this.forgetCollider(target.handle);
       this.world.removeCollider(target, true);
       if (body && body.isFixed() && body.numColliders() === 0) this.remove(body);
       return;
     }
-    if (!target.isValid()) return; // already removed (its slot may hold a newer body)
+    if (!this.isAlive(target)) return; // already removed (its slot may hold a newer body)
     this.movers.removeBody(target); // a mover stepping a removed body would crash Rapier
     for (let i = 0; i < target.numColliders(); i++) this.forgetCollider(target.collider(i).handle);
     for (let i = this.bindings.length - 1; i >= 0; i--) if (this.bindings[i]!.body === target) this.bindings.splice(i, 1);
@@ -451,21 +469,20 @@ export class Physics {
 
   /**
    * Empty the world: every body, collider, joint, character and vehicle controller, trigger, tag, binding,
-   * mover, field and belt goes; gravity and the solver's iterations go back to their defaults
-   * and the step accumulator resets. The `world` object itself is kept.
+   * mover, field and belt goes; gravity and the solver's iterations go back to their defaults,
+   * the step accumulator and the step count reset. `world` is a new Rapier world afterwards.
    */
   clear(): void {
     this.generation++;
     for (const t of this.triggers) t.removed = true; // an in-flight updateTriggers skips them
     this.triggers.length = 0;
-    const bodies: RAPIER.RigidBody[] = [];
-    this.world.bodies.forEach((b) => bodies.push(b));
-    for (const b of bodies) this.world.removeRigidBody(b);
-    const loose: RAPIER.Collider[] = [];
-    this.world.colliders.forEach((c) => loose.push(c));
-    for (const c of loose) this.world.removeCollider(c, false);
     for (const c of [...this.controllers]) this.world.removeCharacterController(c);
     for (const v of [...this.world.vehicleControllers]) this.world.removeVehicleController(v);
+    // A fresh world, not an emptied one: Rapier's handles and contact order depend on what a
+    // world has held, and a level must run the same whatever ran before it (a replay starts
+    // from a fresh page). Bodies, colliders and joints go with the old one.
+    this.world.free();
+    this.world = this.makeWorld();
     this.bindings.length = 0;
     this.tags.clear();
     this.movers.clear();
@@ -474,11 +491,33 @@ export class Physics {
     this.stepListeners.clear();
     this.firstStepListeners.clear();
     // a level that changed gravity or the solver leaves the next one the defaults
-    this.world.gravity = { x: 0, y: this.gravityY, z: 0 };
     this.world.numSolverIterations = this.solverIterations;
     this.stepMs = 0;
     this.accumulator = 0;
     this.alpha = 0;
+    this.steps = 0; // movers run on this clock: each level's starts at 0
+  }
+
+  /**
+   * A hash of every body's state (position, rotation, velocities, exact to the bit) and the step
+   * count: two runs that should be the same compare equal only if they are (replays, tests).
+   */
+  fingerprint(): string {
+    let h = 0x811c9dc5;
+    const mix = (v: number) => {
+      const s = v.toString(); // shortest exact round-trip form: equal strings, equal numbers
+      for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
+      h = Math.imul(h ^ 44, 0x01000193);
+    };
+    mix(this.steps);
+    this.world.bodies.forEach((b) => {
+      const t = b.translation();
+      const r = b.rotation();
+      const v = b.linvel();
+      const w = b.angvel();
+      for (const x of [b.handle, t.x, t.y, t.z, r.x, r.y, r.z, r.w, v.x, v.y, v.z, w.x, w.y, w.z]) mix(x);
+    });
+    return (h >>> 0).toString(16).padStart(8, '0');
   }
 
   /** Sizes of everything Physics tracks (leak checks, debug UI). */

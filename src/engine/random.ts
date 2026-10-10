@@ -16,6 +16,15 @@ export class Rng {
     this.s = typeof seed === 'number' ? seed >>> 0 || 0x9e3779b9 : hashString(seed);
   }
 
+  /** The generator's whole state: save it, and set it back to draw the same numbers again. */
+  get state(): number {
+    return this.s;
+  }
+
+  set state(s: number) {
+    this.s = s >>> 0;
+  }
+
   /** Uniform in [0, 1). mulberry32. */
   next(): number {
     let t = (this.s = (this.s + 0x6d2b79f5) >>> 0);

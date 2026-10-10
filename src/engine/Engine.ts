@@ -17,7 +17,7 @@ import { DebugUI } from './DebugUI';
 import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys } from './debugKeys';
 import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
-import { Input } from './input';
+import { Input, type InputFrame } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
@@ -32,9 +32,13 @@ import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/Pixe
 import { ENGINE_VERSION } from './version';
 import { GameClock } from './clock';
 import { hashString, Rng } from './random';
+import { MAX_FRAMES, type Recording, recordingProblem } from './replay';
 import { CameraShake } from './shake';
 import { Tweens } from './tween';
 import type { ScreenFx } from './render/screenFx';
+
+/** A replayed frame polls no gamepads: their buttons and stick were recorded as keys and axes. */
+const NO_PADS: readonly null[] = [];
 
 export interface GameContext {
   readonly engine: Engine;
@@ -363,7 +367,7 @@ export class Engine {
       world: this.cameraWorld,
     };
     this.limiter = new FrameLimiter(options.maxFps ?? 60);
-    this.seed = options.seed !== undefined && Number.isFinite(options.seed) ? options.seed >>> 0 : 1;
+    this._seed = options.seed !== undefined && Number.isFinite(options.seed) ? options.seed >>> 0 : 1;
     this.qualityOption = options.quality ?? 'auto';
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
     this._quality = this.qualityOption === 'auto' ? defaultQuality({ coarsePointer: coarse }) : this.qualityOption;
@@ -745,17 +749,23 @@ export class Engine {
    */
   step(n = 1, dt = 1 / 60): void {
     this.manual = true;
-    for (let i = 0; i < n && this.ready; i++) {
-      const gameDt = this.clock.delta(dt);
-      this.time += gameDt;
-      this.input.beginFrame(this.time, gameDt);
-      if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
-      this.advance(gameDt, dt);
-      this.renderer.screen.update(dt, this.camera.camera);
-      this.input.endFrame();
-      this.frame++;
-    }
+    for (let i = 0; i < n && this.ready; i++) this.frameStep(dt);
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
+  }
+
+  /** One manual frame (`step()`), its input live or from a recorded frame (`replay()`). */
+  private frameStep(dt: number, play?: InputFrame): void {
+    const gameDt = this.clock.delta(dt);
+    this.time += gameDt;
+    if (play) this.input.playBefore(play);
+    this.input.beginFrame(this.time, gameDt, play ? NO_PADS : undefined);
+    if (play) this.input.playAfter(play);
+    if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
+    this.record(dt);
+    this.advance(gameDt, dt);
+    this.renderer.screen.update(dt, this.camera.camera);
+    this.input.endFrame();
+    this.frame++;
   }
 
   /**
@@ -866,9 +876,15 @@ export class Engine {
 
   private readonly loop = (t: number) => this.tick(t);
 
-  /** The seed every level's `ctx.random` comes from (`EngineOptions.seed`, `?seed=`). */
-  readonly seed: number;
+  /** The seed every level's `ctx.random` comes from (`EngineOptions.seed`, `?seed=`; a replay sets it). */
+  get seed(): number {
+    return this._seed;
+  }
+  private _seed: number;
   private _random = new Rng(1);
+  /** The running level's recording (from its start), and whether a replay is driving the frames. */
+  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: { held: string; pointer: string }; truncated: boolean } | null = null;
+  private replaying = false;
 
   /** This level's seeded randomness (`ctx.random`). */
   get random(): Rng {
@@ -877,8 +893,72 @@ export class Engine {
 
   /** A fresh stream for `game`, before its setup: the same seed and game give the same numbers. */
   private reseed(game: Game): void {
-    this._random = new Rng(hashString(`${this.seed}:${game.name}`));
+    this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
+    this.rec = { game: game.name, seed: this._seed, time: this.time, frames: [], last: { held: '', pointer: '' }, truncated: false };
+  }
+
+  /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
+  private record(dt: number): void {
+    const r = this.rec;
+    if (!r || this.replaying) return;
+    if (r.frames.length >= MAX_FRAMES) {
+      r.truncated = true;
+      return;
+    }
+    r.frames.push(this.input.snapshot(dt, r.last));
+  }
+
+  /**
+   * The running level's recording: its seed, when it began and every frame's input since
+   * (src/engine/replay.ts). Plain JSON: save it, attach it to a bug, replay it with `replay()`.
+   */
+  recording(): Recording | null {
+    const r = this.rec;
+    if (!r) return null;
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}) };
+  }
+
+  /**
+   * Play a recording back: its seed and start time are restored, `start` loads the level it was
+   * made in (e.g. `() => engine.loadGame(new MyGame())`), then every frame runs with the recorded
+   * input, in manual time (`step()`). `frames` stops early. Afterwards the level is where the
+   * recorded one was (`fingerprint()` matches if the game is deterministic) and stays in manual
+   * time: `step()` plays on from there, live, and the level's recording carries on from it.
+   */
+  async replay(rec: Recording, start: () => unknown, o: { frames?: number } = {}): Promise<void> {
+    const problem = recordingProblem(rec);
+    if (problem) throw new Error(`Engine.replay: ${problem}`);
+    this.manual = true; // nothing advances on its own while the level loads
+    this._seed = rec.seed;
+    this.time = rec.time;
+    await start();
+    if (this.game.name !== rec.game) console.warn(`[engine] replaying a recording of "${rec.game}" in "${this.game.name}"`);
+    const n = Math.min(o.frames ?? Infinity, rec.frames.length);
+    this.replaying = true;
+    try {
+      for (let i = 0; i < n && this.ready; i++) this.frameStep(rec.frames[i]!.dt, rec.frames[i]);
+    } finally {
+      this.replaying = false;
+    }
+    // from here on the level's recording is the replayed one, carried on by whatever comes next
+    if (this.rec) {
+      this.rec.frames = rec.frames.slice(0, n);
+      this.rec.truncated = !!rec.truncated && n === rec.frames.length;
+      this.rec.last = { held: '-', pointer: '-' }; // no frame matches: the next one records keys and pointer in full
+    }
+    this.input.reset(); // input is live again: nothing the recording held stays held
+    this.hud.sync(this.renderer.resolution, this.renderer.framing);
+  }
+
+  /**
+   * A hash of the simulation: game time, every physics body (exact) and `ctx.random`'s state.
+   * Two runs that should be the same (a replay) compare equal. Not the `status()` line: a
+   * debug line may carry measurements (a step's milliseconds) that differ run to run.
+   */
+  fingerprint(): string {
+    const parts = [this.time, this.physics.fingerprint(), this._random.state];
+    return hashString(parts.join('|')).toString(16).padStart(8, '0');
   }
 
   private unloadGame(): void {
@@ -924,6 +1004,7 @@ export class Engine {
     this.input.beginFrame(this.time, running ? gameDt : dt);
     // presses made during a pause (or at speed 0, a menu) never fire later
     if (!running || this.clock.frozen) this.input.clearQueued();
+    if (running) this.record(dt);
 
     if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);

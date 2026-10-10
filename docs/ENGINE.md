@@ -1029,6 +1029,28 @@ rate never changes what gameplay draws.
 line says why it needs real time (`// real time: <why>`: measurements, UI clocks, timestamps);
 interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 
+**Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
+its start: the seed, the game's name, the game time it began at and each frame's input (held keys
+and gamepad buttons as keys, presses, sticks, pointer, wheel, `dt`), only what changed.
+
+```ts
+const rec = engine.recording();                                   // plain JSON: save it, attach it to a bug
+await engine.replay(rec, () => engine.loadGame(new Level1()));    // seed and time restored, every frame replayed
+engine.fingerprint();                                             // hash of game time, every physics body, ctx.random
+```
+
+`replay(rec, start, { frames })` loads the level with `start`, plays the frames in manual time
+(`step()`) and leaves the level there, still manual, its recording carried on by whatever is
+stepped next. That is also how a moment is saved and restored: keep the recording, replay it to
+frame `n`, then play on differently from there (a replay runs without rendering, so it is as fast
+as the simulation). A replay that ends with the run's `fingerprint()` shows the level is deterministic;
+the World suite checks one (`scripts/e2e-world.mjs`), and an edited recording proves it can fail.
+Each level gets a fresh physics world (Rapier keeps internal state a cleared world would carry), so
+a level plays the same whatever ran before. What a replay can't reproduce: anything a game takes
+from outside its frames (a model that finishes loading mid-play, the wall clock, camera state left
+by the level before, and calls a test makes between frames). `recordingProblem(v)` says why a
+value is not a recording; `MAX_FRAMES` (an hour at 60 fps) bounds one.
+
 ### Screen shake
 
 ```ts

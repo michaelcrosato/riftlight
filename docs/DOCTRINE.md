@@ -103,8 +103,12 @@ reviewed.
 The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is decided about each:
 
 - **Principle 1 (gameplay is data): in progress.** Done: randomness is seeded (`ctx.random`,
-  `?seed=`) and time is game time; the lint refuses `Math.random` and unmarked wall clocks.
-  Next: recording and replaying input, then saving and restoring state. Gameplay state still
+  `?seed=`) and time is game time; the lint refuses `Math.random` and unmarked wall clocks;
+  every level's input is recorded and replays to the same state (`engine.recording()`,
+  `engine.replay()`, `engine.fingerprint()`), which is also how a moment is saved and restored
+  today (replay to frame `n`). Not yet: snapshots of the state itself, which make restoring a
+  long session instant. Rapier can snapshot its world exactly, but a restored world replaces the
+  body handles games hold, so they wait on gameplay state being data. Gameplay state still
   lives in many places (physics bodies, three.js objects, behaviour-tree nodes, timelines, game
   and room code); new systems keep theirs serializable where they reasonably can.
 - **Principle 6 (WebGPU only): not yet.** The WebGL 2 fallback stays, and every rendering change
