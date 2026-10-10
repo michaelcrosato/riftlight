@@ -106,7 +106,7 @@ export class Ragdoll {
 
   /** Whether the bodies exist (a `physics.clear()`, a level unload, removes them: then it is off). */
   get active(): boolean {
-    if (this.built.length && !this.built[0]!.body.isValid()) {
+    if (this.built.length && !this.physics.isAlive(this.built[0]!.body)) {
       this.unsubscribe?.();
       this.unsubscribe = null;
       this.built = [];

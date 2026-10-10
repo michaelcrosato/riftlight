@@ -957,9 +957,10 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
    the fixed 60 Hz step; animate, spin pickups and draw the HUD per frame. Use `ctx.time`
    (it stops while paused) and the `dt` you are given, never `performance.now()`. Anything
    random comes from `ctx.random` (`range`, `int`, `chance`, `pick`, `fork`), never
-   `Math.random`: the same seed (`?seed=`) then replays the same game. Draw it in `setup`,
-   `fixedUpdate` and event handlers; randomness drawn per frame in `update` (cosmetic) comes
-   from a fork made in `setup`, so the frame rate never changes what gameplay draws.
+   `Math.random`: the same seed (`?seed=`) and input then replay the same game
+   (`engine.recording()`, `engine.replay()`, section 8). Draw it in `setup`, `fixedUpdate` and
+   event handlers; randomness drawn per frame in `update` (cosmetic) comes from a fork made in
+   `setup`, so the frame rate never changes what gameplay draws.
 5. **Physics owns positions.** Don't set `mesh.position` on things with bodies: `physics.bind`
    them, or let the character controller pose its model. Static blocks: one collider each,
    the same size as the mesh.
@@ -1006,6 +1007,8 @@ e.state();                // version, backend, fps, camera, look, game status, e
 e.errors;                 // exceptions thrown by the game's hooks in the render loop (also on screen)
 e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exception thrown to you; e.manual = false resumes
 e.input.setKey('KeyD', true); e.step(30); e.input.setKey('KeyD', false);  // play by script
+const rec = e.recording(); const end = e.fingerprint();            // this level's input as JSON, a hash of its state
+await e.replay(rec, () => e.loadGame(new MyGame())); e.fingerprint() === end;  // replayed: the same game
 await e.renderer.capture();   // { width, height, pixels }: the exact frame (without the HUD canvas)
 e.game;                   // your game object: e.game.hero.teleport([x, y, z]) to test a spot
 e.setLook(e.lookPresets.noir); e.setCamera({ preset: 'third' }, { syncUrl: false });

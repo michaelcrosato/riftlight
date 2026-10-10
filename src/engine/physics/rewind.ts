@@ -16,6 +16,7 @@
  * recorded is skipped from then on, on the way back too.
  */
 import type RAPIER_TYPE from '@dimforge/rapier3d';
+import { isAlive } from './alive';
 import type { Physics } from './Physics';
 
 export interface RewindOptions {
@@ -106,7 +107,7 @@ export class Rewind {
     if (!f) return;
     this.bodies.forEach((b, i) => {
       // isValid, not a handle lookup: a removed body's slot can hold a newer body
-      if (!b.isValid()) return;
+      if (!isAlive(b)) return;
       const t = b.translation();
       const r = b.rotation();
       const v = b.linvel();
@@ -130,7 +131,7 @@ export class Rewind {
     const g = this.physics.world.gravity;
     const fall = Math.hypot(g.x, g.y, g.z) * this.physics.world.timestep * 1.5;
     for (const b of this.drowsy) {
-      if (!b.isValid() || b.isSleeping()) continue;
+      if (!isAlive(b) || b.isSleeping()) continue;
       const v = b.linvel();
       if (Math.hypot(v.x, v.y, v.z) > fall) continue;
       b.setLinvel({ x: 0, y: 0, z: 0 }, false);
@@ -151,7 +152,7 @@ export class Rewind {
     const at = (this.head - 1 + this.capacity) % this.capacity;
     const f = this.frames[at]!;
     this.bodies.forEach((b, i) => {
-      if (!b.isValid()) return;
+      if (!isAlive(b)) return;
       const k = i * STRIDE;
       b.setTranslation({ x: f[k]!, y: f[k + 1]!, z: f[k + 2]! }, true);
       b.setRotation({ x: f[k + 3]!, y: f[k + 4]!, z: f[k + 5]!, w: f[k + 6]! }, true);

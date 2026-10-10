@@ -169,6 +169,7 @@ export {
 export { CameraShake } from './shake';
 export { EASES, EASE_NAMES, Tweens, ease, type Ease, type EaseName, type Tween, type TweenOptions } from './tween';
 export { hashString, Rng } from './random';
+export { MAX_FRAMES, recordingProblem, type InputFrame, type Recording } from './replay';
 export {
   FLICKER_PRESETS,
   LIGHT_POOL_SIZES,

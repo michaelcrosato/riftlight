@@ -20,6 +20,7 @@ import type { GameContext } from '../Engine';
 import { PALETTE, type PaletteColor } from '../palette';
 import { setLookLayer } from '../render/lookLayer';
 import { toonMaterial } from '../render/toon';
+import { isAlive } from './alive';
 import { RAPIER } from './Physics';
 
 type Vec3 = readonly [number, number, number];
@@ -225,7 +226,7 @@ export function ropeBridge(ctx: Ctx, from: Vec3, to: Vec3, o: BridgeOptions = {}
     planks,
     /** Cut the ropes at one end: the bridge swings down and hangs from the other. */
     cut(end) {
-      for (const j of ends[end]) if (j.isValid()) world.removeImpulseJoint(j, true); // not by handle: a slot can be reused
+      for (const j of ends[end]) if (isAlive(j)) world.removeImpulseJoint(j, true); // not by handle: a slot can be reused
       ends[end] = [];
     },
     remove: () => parts.remove(),

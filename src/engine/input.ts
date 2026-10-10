@@ -43,6 +43,42 @@ export function applyDeadzone(x: number, y: number, deadzone = 0.2): { x: number
 export const PRESS_WINDOW = 0.15;
 
 /**
+ * What the game could read from input in one frame (a recorded frame, see src/engine/replay.ts).
+ * Optional fields are left out when empty or zero; `held` and `pointer` also when unchanged
+ * from the frame before.
+ */
+export interface InputFrame {
+  /** Real seconds this frame lasted (game time follows from it). */
+  dt: number;
+  /** Keys held, keyboard and gamepad buttons together, sorted. */
+  held?: string[];
+  /** Keys pressed since the frame before (a tap can be pressed and not held). */
+  pressed?: string[];
+  /** The touch joystick and the gamepad's left stick (after its deadzone). */
+  analog?: [number, number];
+  pad?: [number, number];
+  /** Pointer movement (CSS pixels) and wheel ticks this frame. */
+  delta?: [number, number];
+  wheel?: number;
+  /** Pointer position (normalised device coordinates), over the canvas (1/0), buttons. */
+  pointer?: [number, number, number, number];
+  /** Whether a gamepad is connected (`gamepadConnected`), when that changes. */
+  gamepad?: boolean;
+  /**
+   * Ran in the same task as the frame before (frames of one `step(n)` call): no promise
+   * callbacks ran between them. A replay waits for them before every other frame.
+   */
+  sync?: true;
+}
+
+/** What the frame before held, for `snapshot()` to leave out what did not change. */
+export interface SnapshotMemory {
+  held: string;
+  pointer: string;
+  gamepad?: boolean;
+}
+
+/**
  * Keyboard + pointer + gamepad input.
  * - Keys: held state, per-frame presses (`wasPressed`) and queued presses for fixed-step
  *   code (`consumePress`). Queued presses expire after `pressWindow` s of game time.
@@ -94,6 +130,20 @@ export class Input {
   gamepadLookSpeed = 500;
   /** Game time (s) of the current frame; set by the engine through `beginFrame`. */
   now = 0;
+  /**
+   * True while a replay drives input (`engine.replay()`): keyboard, pointer and wheel events
+   * and `setKey` / `setPointer` / `addPointer` (touch buttons, scripts) are ignored, and
+   * `playBefore` / `playAfter` set everything.
+   */
+  get playing(): boolean {
+    return this._playing;
+  }
+  set playing(on: boolean) {
+    this._playing = on;
+    this.playedPad = false;
+  }
+  private _playing = false;
+  private playedPad = false;
   /** Queued presses older than this many seconds of game time are dropped. */
   pressWindow = PRESS_WINDOW;
 
@@ -103,15 +153,17 @@ export class Input {
       'keydown',
       (e) => {
         if (isGameKey(e.code) || this.preventKeys.has(e.code)) e.preventDefault();
+        if (this._playing) return;
         if (!e.repeat) this.press(e.code);
         this.held.add(e.code);
       },
       { signal },
     );
-    target.addEventListener('keyup', (e) => this.held.delete(e.code), { signal });
+    target.addEventListener('keyup', (e) => !this._playing && this.held.delete(e.code), { signal });
     target.addEventListener(
       'blur',
       () => {
+        if (this._playing) return;
         this.held.clear();
         this.mouseButtons = 0;
       },
@@ -136,6 +188,7 @@ export class Input {
     el.style.touchAction = 'none';
     el.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
     const place = (e: PointerEvent) => {
+      if (this._playing) return;
       const r = el.getBoundingClientRect();
       if (r.width <= 0 || r.height <= 0) return;
       // under pointer lock (first person) the cursor is hidden and frozen: point at the crosshair
@@ -150,16 +203,17 @@ export class Input {
     document.addEventListener(
       'pointerlockchange',
       () => {
-        if (document.pointerLockElement !== el) return;
+        if (document.pointerLockElement !== el || this._playing) return;
         this.pointer.x = this.pointer.y = 0;
         this.pointer.over = true;
       },
       { signal },
     );
-    el.addEventListener('pointerleave', () => (this.pointer.over = false), { signal });
+    el.addEventListener('pointerleave', () => !this._playing && (this.pointer.over = false), { signal });
     el.addEventListener(
       'pointerdown',
       (e) => {
+        if (this._playing) return;
         active.set(e.pointerId, { x: e.clientX, y: e.clientY });
         capture(el, e.pointerId);
         this.mouseButtons = e.buttons || 1;
@@ -171,7 +225,7 @@ export class Input {
     const end = (e: PointerEvent) => {
       active.delete(e.pointerId);
       pinch = spread();
-      if (active.size === 0) this.mouseButtons = 0;
+      if (active.size === 0 && !this._playing) this.mouseButtons = 0;
     };
     el.addEventListener('pointerup', end, { signal });
     el.addEventListener('pointercancel', end, { signal });
@@ -181,23 +235,27 @@ export class Input {
         const locked = document.pointerLockElement === el;
         const p = active.get(e.pointerId);
         if (!p && !locked) return;
+        // during a replay a drag still tracks where its pointer is (no jump after), but moves nothing
+        const live = !this._playing;
         if (p && active.size >= 2) {
           p.x = e.clientX;
           p.y = e.clientY;
           const d = spread();
           if (pinch > 0 && Math.abs(d - pinch) > 24) {
-            this.wheel += d > pinch ? -1 : 1; // spread fingers = zoom in
+            if (live) this.wheel += d > pinch ? -1 : 1; // spread fingers = zoom in
             pinch = d;
           }
           return;
         }
         if (p) {
           // Positions, not movementX: movementX isn't reliable for touch on all mobile browsers.
-          this.mouseDelta.x += e.clientX - p.x;
-          this.mouseDelta.y += e.clientY - p.y;
+          if (live) {
+            this.mouseDelta.x += e.clientX - p.x;
+            this.mouseDelta.y += e.clientY - p.y;
+          }
           p.x = e.clientX;
           p.y = e.clientY;
-        } else {
+        } else if (live) {
           this.mouseDelta.x += e.movementX;
           this.mouseDelta.y += e.movementY;
         }
@@ -208,7 +266,7 @@ export class Input {
       'wheel',
       (e) => {
         e.preventDefault();
-        this.wheel += Math.sign(e.deltaY);
+        if (!this._playing) this.wheel += Math.sign(e.deltaY);
       },
       { passive: false, signal },
     );
@@ -220,6 +278,15 @@ export class Input {
     if (this.lockTarget && typeof document !== 'undefined' && document.pointerLockElement === this.lockTarget) document.exitPointerLock?.();
     this.lockTarget = null;
     this.reset();
+  }
+
+  /** Let go of everything held (keys, gamepad buttons, sticks, pointer buttons); queued presses stay. */
+  release(): void {
+    this.held.clear();
+    this.padHeld.clear();
+    this.analog.x = this.analog.y = 0;
+    this.padAxis.x = this.padAxis.y = 0;
+    this.mouseButtons = 0;
   }
 
   /** Forget held keys, presses, sticks and pointer movement (e.g. when a level loads). */
@@ -238,8 +305,18 @@ export class Input {
    * queued presses. `pads` defaults to `navigator.getGamepads()`; tests can pass fakes.
    */
   beginFrame(now: number, dt: number, pads?: readonly (GamepadLike | null)[]): void {
-    this.now = now;
+    // gamepad presses queue at the frame before's time, like keys pressed since then (so a
+    // recording, which replays every press that way, gives them the same expiry)
     this.pollGamepads(dt, pads);
+    this.now = now;
+    // no negative zeros (a stick at rest reads -0): JSON writes them as 0, so a recording would
+    // replay a different number, and atan2(-0, x) is not atan2(0, x)
+    this.analog.x += 0;
+    this.analog.y += 0;
+    this.padAxis.x += 0;
+    this.padAxis.y += 0;
+    this.mouseDelta.x += 0;
+    this.mouseDelta.y += 0;
     for (const [code, t] of this.queued) if (now - t > this.pressWindow) this.queued.delete(code);
   }
 
@@ -323,6 +400,7 @@ export class Input {
 
   /** Test hook: simulate a key being held (true) or released (false). */
   setKey(code: string, down: boolean): void {
+    if (this._playing) return; // a replay sets every key (touch buttons call this too)
     if (down) {
       if (!this.held.has(code)) this.press(code);
       this.held.add(code);
@@ -333,6 +411,7 @@ export class Input {
 
   /** Test hook: put the pointer at (x, y) in normalised device coordinates, pressed or not. */
   setPointer(x: number, y: number, down?: boolean): void {
+    if (this._playing) return;
     this.pointer.x = x;
     this.pointer.y = y;
     this.pointer.over = true;
@@ -341,9 +420,64 @@ export class Input {
 
   /** Test hook: inject pointer movement / wheel for the next frame. */
   addPointer(dx: number, dy: number, wheel = 0): void {
+    if (this._playing) return;
     this.mouseDelta.x += dx;
     this.mouseDelta.y += dy;
     this.wheel += wheel;
+  }
+
+  /**
+   * This frame's input as data (after `beginFrame`), for a recording. `last` is the frame
+   * before: unchanged held keys, pointer and gamepad connection are left out.
+   */
+  snapshot(dt: number, last?: SnapshotMemory): InputFrame {
+    const f: InputFrame = { dt };
+    const held = [...new Set([...this.held, ...this.padHeld])].sort();
+    const heldKey = held.join(',');
+    if (!last || heldKey !== last.held) f.held = held;
+    if (this.pressed.size) f.pressed = [...this.pressed].sort();
+    if (this.analog.x || this.analog.y) f.analog = [this.analog.x, this.analog.y];
+    if (this.padAxis.x || this.padAxis.y) f.pad = [this.padAxis.x, this.padAxis.y];
+    if (this.mouseDelta.x || this.mouseDelta.y) f.delta = [this.mouseDelta.x, this.mouseDelta.y];
+    if (this.wheel) f.wheel = this.wheel;
+    const pointer: [number, number, number, number] = [this.pointer.x, this.pointer.y, this.pointer.over ? 1 : 0, this.mouseButtons];
+    const pointerKey = pointer.join(',');
+    if (!last || pointerKey !== last.pointer) f.pointer = pointer;
+    if (!last || this.gamepadConnected !== last.gamepad) f.gamepad = this.gamepadConnected;
+    if (last) {
+      last.held = heldKey;
+      last.pointer = pointerKey;
+      last.gamepad = this.gamepadConnected;
+    }
+    return f;
+  }
+
+  /**
+   * Replay, before the engine's `beginFrame`: the frame's held keys and presses (presses queue
+   * at the time they would have arrived, the frame before's game time).
+   */
+  playBefore(f: InputFrame): void {
+    if (f.held) {
+      this.held.clear();
+      for (const c of f.held) this.held.add(c);
+    }
+    this.padHeld.clear(); // gamepad buttons were recorded as held keys
+    for (const c of f.pressed ?? []) this.press(c);
+  }
+
+  /** Replay, after `beginFrame` (which polled no gamepads): sticks, pointer, wheel, gamepad connection. */
+  playAfter(f: InputFrame): void {
+    if (f.gamepad !== undefined) this.playedPad = f.gamepad;
+    this.gamepadConnected = this.playedPad;
+    [this.analog.x, this.analog.y] = f.analog ?? [0, 0];
+    [this.padAxis.x, this.padAxis.y] = f.pad ?? [0, 0];
+    [this.mouseDelta.x, this.mouseDelta.y] = f.delta ?? [0, 0];
+    this.wheel = f.wheel ?? 0;
+    if (f.pointer) {
+      [this.pointer.x, this.pointer.y] = f.pointer;
+      this.pointer.over = f.pointer[2] === 1;
+      this.mouseButtons = f.pointer[3];
+    }
   }
 
   private press(code: string): void {

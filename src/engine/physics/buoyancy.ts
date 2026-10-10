@@ -13,6 +13,7 @@
  * Masses here are the physics world's (density × m³), so water has density 1 by default.
  */
 import type RAPIER_TYPE from '@dimforge/rapier3d';
+import { isAlive } from './alive';
 
 export interface FloaterOptions {
   /** Water density in the world's mass units (default 1: a body of density 0.5 floats half in). */
@@ -82,7 +83,7 @@ export class Floaters {
     const angDrag = this.o.angularDrag ?? 1.6;
     for (const f of this.list) {
       const b = f.body;
-      if (!b.isValid()) continue; // removed (a handle alone can name a newer body in its slot)
+      if (!isAlive(b)) continue; // removed (a handle alone can name a newer body in its slot)
       const t = b.translation();
       const q = b.rotation();
       let wet = 0;

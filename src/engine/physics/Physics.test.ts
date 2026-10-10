@@ -186,11 +186,10 @@ describe('Physics.clear() from inside a step (level unloads from game code)', ()
     p.world.createCollider(RAPIER.ColliderDesc.ball(0.3), body);
     const first = p.trigger({ sphere: 1 }, [0, 0, 0], { onEnter: () => (fired.push('door'), p.clear()) });
     const second = p.trigger({ sphere: 1 }, [0, 0, 0], { onEnter: () => fired.push('second') });
-    const steps0 = p.steps;
     p.update(FIXED_DT * 4); // 4 steps due, the first one clears the world
     expect(fired).toEqual(['door']);
     expect(first.removed && second.removed).toBe(true);
-    expect(p.steps - steps0).toBe(1);
+    expect(p.steps).toBe(0); // the clear restarted the count, and no step ran after it
     expect(p.counts()).toEqual(baseline);
   });
 
