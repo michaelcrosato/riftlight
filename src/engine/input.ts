@@ -132,7 +132,8 @@ export class Input {
   now = 0;
   /**
    * True while a replay drives input (`engine.replay()`): keyboard, pointer and wheel events
-   * are ignored, and `playBefore` / `playAfter` set everything.
+   * and `setKey` / `setPointer` / `addPointer` (touch buttons, scripts) are ignored, and
+   * `playBefore` / `playAfter` set everything.
    */
   get playing(): boolean {
     return this._playing;
@@ -231,27 +232,30 @@ export class Input {
     this.target.addEventListener(
       'pointermove',
       (e) => {
-        if (this._playing) return;
         const locked = document.pointerLockElement === el;
         const p = active.get(e.pointerId);
         if (!p && !locked) return;
+        // during a replay a drag still tracks where its pointer is (no jump after), but moves nothing
+        const live = !this._playing;
         if (p && active.size >= 2) {
           p.x = e.clientX;
           p.y = e.clientY;
           const d = spread();
           if (pinch > 0 && Math.abs(d - pinch) > 24) {
-            this.wheel += d > pinch ? -1 : 1; // spread fingers = zoom in
+            if (live) this.wheel += d > pinch ? -1 : 1; // spread fingers = zoom in
             pinch = d;
           }
           return;
         }
         if (p) {
           // Positions, not movementX: movementX isn't reliable for touch on all mobile browsers.
-          this.mouseDelta.x += e.clientX - p.x;
-          this.mouseDelta.y += e.clientY - p.y;
+          if (live) {
+            this.mouseDelta.x += e.clientX - p.x;
+            this.mouseDelta.y += e.clientY - p.y;
+          }
           p.x = e.clientX;
           p.y = e.clientY;
-        } else {
+        } else if (live) {
           this.mouseDelta.x += e.movementX;
           this.mouseDelta.y += e.movementY;
         }
@@ -396,6 +400,7 @@ export class Input {
 
   /** Test hook: simulate a key being held (true) or released (false). */
   setKey(code: string, down: boolean): void {
+    if (this._playing) return; // a replay sets every key (touch buttons call this too)
     if (down) {
       if (!this.held.has(code)) this.press(code);
       this.held.add(code);
@@ -406,6 +411,7 @@ export class Input {
 
   /** Test hook: put the pointer at (x, y) in normalised device coordinates, pressed or not. */
   setPointer(x: number, y: number, down?: boolean): void {
+    if (this._playing) return;
     this.pointer.x = x;
     this.pointer.y = y;
     this.pointer.over = true;
@@ -414,6 +420,7 @@ export class Input {
 
   /** Test hook: inject pointer movement / wheel for the next frame. */
   addPointer(dx: number, dy: number, wheel = 0): void {
+    if (this._playing) return;
     this.mouseDelta.x += dx;
     this.mouseDelta.y += dy;
     this.wheel += wheel;

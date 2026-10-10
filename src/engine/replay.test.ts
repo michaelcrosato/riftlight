@@ -146,6 +146,13 @@ describe('recording and replaying input', () => {
     again.playAfter({ dt: 1 / 60 });
     expect([again.isDown('KeyD'), again.isDown('KeyW'), again.wasPressed('KeyD')]).toEqual([false, true, false]);
     again.endFrame();
+    again.setKey('KeyF', true); // and so are touch buttons and scripts
+    again.setPointer(0.5, 0.5, true);
+    again.playBefore({ dt: 1 / 60 }); // nothing changed: W still held, the pointer where it was
+    again.beginFrame(3 / 60, 1 / 60, []);
+    again.playAfter({ dt: 1 / 60 });
+    expect([again.isDown('KeyF'), again.isDown('KeyW'), again.pointer.x, again.mouseButtons]).toEqual([false, true, 0, 0]);
+    again.endFrame();
     again.playing = false;
     again.release(); // what the engine does after a replay
     expect(again.isDown('KeyW')).toBe(false);

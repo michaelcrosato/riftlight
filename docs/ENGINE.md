@@ -1049,7 +1049,10 @@ plays and nothing it held stays held after; a game hook's exception is reported 
 goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
 replay it to frame `n`, then play on differently from there (a replay runs without rendering, so
 it is as fast as the simulation). A replay that ends with the run's `fingerprint()` shows the
-level is deterministic: the World suite checks a scripted run, a run replayed to a frame and
+level is deterministic. A script that steps a level and awaits between steps should yield a
+task (a separate `page.evaluate`, `setTimeout`), not just a promise: a replay waits a whole task
+wherever promise callbacks ran, so a game's longer promise chains would get further than they did.
+The World suite checks a scripted run, a run replayed to a frame and
 played on, and live play at the browser's own pace with a pause and a tween's promise
 (`scripts/e2e-world.mjs`); an edited recording shows the check can fail. Each level gets a fresh
 physics world (Rapier keeps internal state a cleared world would carry), so a level plays the

@@ -151,7 +151,7 @@ export interface EngineOptions {
   seed?: number;
   /**
    * Frames of input the engine keeps for each level (`recording()`). Default `MAX_FRAMES`, an
-   * hour at 60 fps (a few MB of plain data); 0 records nothing.
+   * hour at 60 fps (up to some 20 MB of JSON with the mouse moving all the time); 0 records nothing.
    */
   record?: number;
   /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
@@ -993,7 +993,8 @@ export class Engine {
       for (; played < n && this.ready; played++) {
         const f = rec.frames[played]!;
         if (!f.sync) await settle();
-        if (!this.ready || this.disposed) break; // a promise callback loaded another level
+        // a promise callback loaded another level (or is loading it): its frames are not these
+        if (!this.ready || this.disposed || this.rec !== level) break;
         this.frameStep(f.dt, f);
       }
     } finally {
