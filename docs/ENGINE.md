@@ -1031,25 +1031,38 @@ interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 
 **Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
 its start: the seed, the game's name, the game time it began at and each frame's input (held keys
-and gamepad buttons as keys, presses, sticks, pointer, wheel, `dt`), only what changed.
+and gamepad buttons as keys, presses, sticks, pointer, wheel, gamepad connected, `dt`), only what
+changed, and whether promise callbacks ran before the frame.
 
 ```ts
 const rec = engine.recording();                                   // plain JSON: save it, attach it to a bug
 await engine.replay(rec, () => engine.loadGame(new Level1()));    // seed and time restored, every frame replayed
-engine.fingerprint();                                             // hash of game time, every physics body, ctx.random
+engine.fingerprint();                                             // hash of game time, physics (bodies, colliders), ctx.random
 ```
 
-`replay(rec, start, { frames })` loads the level with `start`, plays the frames in manual time
-(`step()`) and leaves the level there, still manual, its recording carried on by whatever is
-stepped next. That is also how a moment is saved and restored: keep the recording, replay it to
-frame `n`, then play on differently from there (a replay runs without rendering, so it is as fast
-as the simulation). A replay that ends with the run's `fingerprint()` shows the level is deterministic;
-the World suite checks one (`scripts/e2e-world.mjs`), and an edited recording proves it can fail.
-Each level gets a fresh physics world (Rapier keeps internal state a cleared world would carry), so
-a level plays the same whatever ran before. What a replay can't reproduce: anything a game takes
-from outside its frames (a model that finishes loading mid-play, the wall clock, camera state left
-by the level before, and calls a test makes between frames). `recordingProblem(v)` says why a
-value is not a recording; `MAX_FRAMES` (an hour at 60 fps) bounds one.
+`replay(rec, start, { frames })` loads the level with `start` (without a transition: nothing
+advances during a replay, so a `start` that waits on frames never finishes, and a warning says
+so after 10 s), plays the frames in manual time (`step()`) and leaves the level there, still
+manual, its recording carried on by whatever is stepped next. Promise callbacks (`await
+tween.done`) run between the same frames as in the recorded run; live input is ignored while it
+plays and nothing it held stays held after; a game hook's exception is reported and the replay
+goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
+replay it to frame `n`, then play on differently from there (a replay runs without rendering, so
+it is as fast as the simulation). A replay that ends with the run's `fingerprint()` shows the
+level is deterministic: the World suite checks a scripted run, a run replayed to a frame and
+played on, and live play at the browser's own pace with a pause and a tween's promise
+(`scripts/e2e-world.mjs`); an edited recording shows the check can fail. Each level gets a fresh
+physics world (Rapier keeps internal state a cleared world would carry), so a level plays the
+same whatever ran before.
+
+What a replay can't reproduce: anything a game takes from outside `ctx.input` and its frames (DOM
+events it listens to itself, a model that finishes loading mid-play, the wall clock, camera state
+left by the level before, engine hotkeys pressed while recording, calls a test makes between
+frames). A game that swaps stages inside one `Game` has one recording for all of them, from its
+`setup`. `fingerprint()` leaves out the game's own state outside physics and forks of
+`ctx.random`; compare those (`status()`, your fields) yourself. `EngineOptions.record` sets how
+many frames a level keeps (default `MAX_FRAMES`, an hour at 60 fps; 0 records nothing);
+`recordingProblem(v)` says why a value is not a recording.
 
 ### Screen shake
 

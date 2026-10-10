@@ -9,8 +9,9 @@
  *   await engine.replay(rec, () => engine.loadGame(new MyGame()));
  *   engine.fingerprint() === fingerprintAtTheEnd;            // the same game, frame for frame
  *
- * What a replay can't reproduce: anything a game takes from outside its frames (a model that
- * finishes loading mid-play, the wall clock, a camera left turned by the level before).
+ * What a replay can't reproduce: anything a game takes from outside `ctx.input` and its frames
+ * (DOM events it listens to itself, a model that finishes loading mid-play, the wall clock, a
+ * camera left turned by the level before). docs/ENGINE.md, "Recording and replay".
  */
 import type { InputFrame } from './input';
 
@@ -57,6 +58,8 @@ export function recordingProblem(v: unknown): string | null {
     for (const k of ['analog', 'pad', 'delta'] as const) if (f[k] !== undefined && !pair(f[k])) return bad(`${k} must be two numbers`);
     if (f.wheel !== undefined && !(typeof f.wheel === 'number' && Number.isFinite(f.wheel))) return bad('wheel must be a number');
     if (f.pointer !== undefined && !(Array.isArray(f.pointer) && f.pointer.length === 4 && f.pointer.every((x) => typeof x === 'number' && Number.isFinite(x)))) return bad('pointer must be four numbers');
+    if (f.gamepad !== undefined && typeof f.gamepad !== 'boolean') return bad('gamepad must be true or false');
+    if (f.sync !== undefined && f.sync !== true) return bad('sync must be true when there');
   }
   return null;
 }

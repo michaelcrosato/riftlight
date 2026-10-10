@@ -19,6 +19,38 @@
 // Frames land in .scratch/e2e/world-*.png. Self-contained: e2e.mjs passes its helpers in.
 
 /**
+ * A small game for the replay checks, defined in the page as `window.__replayProbe()`: a box
+ * on a floor, pushed by keys, and hopping from a tween's promise a tenth of a second after Space.
+ */
+function defineProbe() {
+  window.__replayProbe = () => {
+    const Vec = window.__PIXEL_ENGINE__.scene.position.constructor;
+    return {
+      name: 'replay-probe',
+      target: new Vec(0, 0.5, 0),
+      kicks: 0,
+      setup(ctx) {
+        ctx.physics.addStaticBox({ position: [0, -0.5, 0], halfExtents: [8, 0.5, 8] });
+        this.box = ctx.physics.addDynamicBox({ position: [0, 0.5, 0], halfExtents: [0.3, 0.3, 0.3] });
+      },
+      fixedUpdate(ctx) {
+        const i = ctx.input;
+        if (i.consumePress('Space')) ctx.tweens.call(0.1, () => {}).done.then(() => (this.box.applyImpulse({ x: 0, y: 2, z: 0 }, true), this.kicks++));
+        if (i.consumePress('KeyJ')) this.box.applyImpulse({ x: ctx.random.range(-1, 1), y: 1, z: ctx.random.range(-1, 1) }, true);
+        if (i.isDown('KeyD')) this.box.applyImpulse({ x: 0.04, y: 0, z: 0 }, true);
+        if (i.isDown('KeyA')) this.box.applyImpulse({ x: -0.04, y: 0, z: 0 }, true);
+      },
+      cameraTarget() {
+        return this.target;
+      },
+      status() {
+        return `kicks ${this.kicks}`;
+      },
+    };
+  };
+}
+
+/**
  * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, check, capture, checkClean, colorCount }
  */
 export async function runWorld(h) {
@@ -590,7 +622,20 @@ export async function runWorld(h) {
       // frames hold only changes: A held from frame 150 stays held until W is let go at 200
       const altered = { ...rec, frames: rec.frames.map((f, i) => (i === 150 ? { ...f, held: ['KeyA', 'KeyW'] } : f)) };
       await e.replay(altered, start);
-      return { from, live, again, other: e.fingerprint(), frames: rec.frames.length, bytes: JSON.stringify(rec).length, errors: e.state().errors };
+      const other = e.fingerprint();
+      // a saved moment: replayed to frame 150 and played on differently, the level's recording is
+      // the cut one plus what came after, and it replays to the same end
+      await e.replay(rec, start, { frames: 150 });
+      const cut = e.recording().frames.length;
+      e.input.setKey('KeyA', true);
+      e.step(40);
+      e.input.setKey('KeyA', false);
+      e.step(20);
+      const branch = e.fingerprint();
+      const both = JSON.parse(JSON.stringify(e.recording()));
+      await e.replay(both, start);
+      const branched = { cut, frames: both.frames.length, print: branch, again: e.fingerprint() };
+      return { from, live, again, other, branched, frames: rec.frames.length, bytes: JSON.stringify(rec).length, errors: e.state().errors };
     });
     const ran = Math.hypot(replay.live.hero.at[0] - replay.from[0], replay.live.hero.at[2] - replay.from[2]);
     check(replay.frames === 240 && ran > 3 && replay.errors.length === 0, `the room's recording holds the run (${replay.frames} frames, ${replay.bytes} bytes; the hero ran ${ran.toFixed(1)} m)`);
@@ -600,6 +645,60 @@ export async function runWorld(h) {
       `a replayed recording ends where the run did (${replay.live.print} vs ${replay.again.print}; hero ${hero(replay.live.hero)} vs ${hero(replay.again.hero)})`,
     );
     check(replay.other !== replay.live.print, `the recording with A held for 50 frames more ends somewhere else (${replay.other})`);
+    const { branched } = replay;
+    check(
+      branched.cut === 150 && branched.frames === 210 && branched.again === branched.print && branched.print !== replay.live.print,
+      `replayed to frame ${branched.cut} and played on, the level replays from its own recording (${branched.frames} frames: ${branched.print} vs ${branched.again})`,
+    );
+    // the same from live play: frames at the browser's own pace, a pause, and a game acting in a
+    // promise callback (a tween's `done`), recorded in real time, then replayed
+    await page.evaluate(defineProbe);
+    await page.addInitScript(defineProbe); // the same game after a reload, below
+    const realtime = await W(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const probe = window.__replayProbe;
+      const frames = (n) =>
+        new Promise((done) => {
+          let k = 0;
+          const next = () => (++k >= n ? done() : requestAnimationFrame(next));
+          requestAnimationFrame(next);
+        });
+      const tap = (code) => (e.input.setKey(code, true), e.input.setKey(code, false));
+      await e.loadGame(probe());
+      tap('KeyJ'); // pressed before the first frame: it queues at the level's start
+      e.manual = false;
+      e.input.setKey('KeyD', true);
+      await frames(10);
+      tap('Space');
+      await frames(20);
+      e.input.setKey('KeyD', false);
+      tap('KeyJ');
+      await frames(10);
+      e.paused = true;
+      e.input.setKey('KeyA', true);
+      await frames(5);
+      e.paused = false;
+      await frames(15);
+      e.input.setKey('KeyA', false);
+      tap('Space');
+      await frames(30);
+      e.manual = true;
+      const rec = JSON.parse(JSON.stringify(e.recording()));
+      const run = { print: e.fingerprint(), status: e.game.status(e.context) };
+      await e.replay(rec, () => e.loadGame(probe()));
+      const again = { print: e.fingerprint(), status: e.game.status(e.context) };
+      const dts = rec.frames.map((f) => f.dt);
+      return { rec, run, again, frames: rec.frames.length, sync: rec.frames.filter((f) => f.sync).length, dt: [Math.min(...dts), Math.max(...dts)], errors: e.state().errors };
+    });
+    await W(() => window.__WORLD__.goto('sandbox', { instant: true }));
+    check(
+      realtime.run.status === 'kicks 2' && realtime.frames >= 80 && realtime.sync === 0 && realtime.errors.length === 0,
+      `live play records at the browser's pace (${realtime.frames} frames, dt ${realtime.dt.map((d) => d.toFixed(3)).join(' to ')} s, a pause; ${realtime.run.status})`,
+    );
+    check(
+      realtime.again.print === realtime.run.print && realtime.again.status === realtime.run.status,
+      `live play replays to the same state, its promise callbacks on the same frames (${realtime.run.print} vs ${realtime.again.print})`,
+    );
     check(shop.sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${shop.sandbox.mapped.toExponential(1)})`);
     check(shop.sandbox.picked === 'crate' && shop.sandbox.held === 'crate' && shop.sandbox.moved > 1, `sandbox: the mouse picks a crate (${shop.sandbox.picked}) and drags it ${shop.sandbox.moved.toFixed(1)} m`);
     check(shop.sandbox.saved && shop.sandbox.cleared === 0 && shop.sandbox.loaded && shop.sandbox.same, `a layout saves, clears and loads back the same (${shop.sandbox.count} props)`);
@@ -904,6 +1003,20 @@ export async function runWorld(h) {
     const st = await W(() => window.__PIXEL_ENGINE__.state());
     check(st.errors.length === 0, `no game errors${st.errors.length ? ': ' + st.errors.join('; ') : ''}`);
     checkClean(st, logs);
+
+    // ------------------------------------------------------------- a recording is a file
+    // the live play recorded above, replayed in a fresh page (another engine, its clocks at 0)
+    await page.reload();
+    await page.waitForFunction(() => window.__PIXEL_ENGINE__ && window.__WORLD__ && window.__WORLD__.state().room === 'atrium', null, { timeout: 60000 });
+    const fresh = await W(async (rec) => {
+      const e = window.__PIXEL_ENGINE__;
+      await e.replay(rec, () => e.loadGame(window.__replayProbe()));
+      return { print: e.fingerprint(), status: e.game.status(e.context), errors: e.state().errors };
+    }, realtime.rec);
+    check(
+      fresh.print === realtime.run.print && fresh.status === realtime.run.status && fresh.errors.length === 0,
+      `live play saved as JSON replays the same in a fresh page (${realtime.run.print} vs ${fresh.print}; ${fresh.status})`,
+    );
   } catch (e) {
     check(false, `world (${s.name}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {

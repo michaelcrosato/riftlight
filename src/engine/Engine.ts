@@ -17,7 +17,7 @@ import { DebugUI } from './DebugUI';
 import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys } from './debugKeys';
 import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
-import { Input, type InputFrame } from './input';
+import { Input, type InputFrame, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
@@ -39,6 +39,8 @@ import type { ScreenFx } from './render/screenFx';
 
 /** A replayed frame polls no gamepads: their buttons and stick were recorded as keys and axes. */
 const NO_PADS: readonly null[] = [];
+/** Matches no frame: the next frame records held keys, pointer and gamepad in full. */
+const FULL_FRAME: SnapshotMemory = { held: '-', pointer: '-' };
 
 export interface GameContext {
   readonly engine: Engine;
@@ -147,6 +149,11 @@ export interface EngineOptions {
    * the same seed replays the same game. Default 1. `?seed=` in the URL.
    */
   seed?: number;
+  /**
+   * Frames of input the engine keeps for each level (`recording()`). Default `MAX_FRAMES`, an
+   * hour at 60 fps (a few MB of plain data); 0 records nothing.
+   */
+  record?: number;
   /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
   debugUI?: boolean;
   /**
@@ -368,6 +375,7 @@ export class Engine {
     };
     this.limiter = new FrameLimiter(options.maxFps ?? 60);
     this._seed = options.seed !== undefined && Number.isFinite(options.seed) ? options.seed >>> 0 : 1;
+    this.recordLimit = Math.max(0, Math.min(MAX_FRAMES, Math.floor(options.record ?? MAX_FRAMES))) || 0;
     this.qualityOption = options.quality ?? 'auto';
     const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
     this._quality = this.qualityOption === 'auto' ? defaultQuality({ coarsePointer: coarse }) : this.qualityOption;
@@ -753,7 +761,11 @@ export class Engine {
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
   }
 
-  /** One manual frame (`step()`), its input live or from a recorded frame (`replay()`). */
+  /**
+   * One manual frame (`step()`), its input live or from a recorded frame (`replay()`). A game
+   * hook's exception finishes the frame first, then is thrown to the caller of `step()`; in a
+   * replay it is reported and the replay goes on, as in live play (`tick()`).
+   */
   private frameStep(dt: number, play?: InputFrame): void {
     const gameDt = this.clock.delta(dt);
     this.time += gameDt;
@@ -762,10 +774,24 @@ export class Engine {
     if (play) this.input.playAfter(play);
     if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
     this.record(dt);
-    this.advance(gameDt, dt);
+    let thrown: { error: unknown } | null = null;
+    try {
+      this.advance(gameDt, dt);
+    } catch (e) {
+      if (play) this.reportError(e);
+      else thrown = { error: e };
+    }
     this.renderer.screen.update(dt, this.camera.camera);
+    this.endFrame();
+    if (thrown) throw thrown.error;
+  }
+
+  /** The end of every frame: input's per-frame state goes, and a marker notes when promise callbacks run. */
+  private endFrame(): void {
     this.input.endFrame();
     this.frame++;
+    this.drained = false;
+    queueMicrotask(this.markDrained);
   }
 
   /**
@@ -870,6 +896,7 @@ export class Engine {
   private becomeReady(): void {
     this.input.clearQueued();
     this.input.endFrame();
+    this.input.now = this.time; // a press before the first frame queues at the level's start
     this.lastTime = -1; // the first frame is 1/60 s, not a 0.1 s catch-up
     this.ready = true;
   }
@@ -883,8 +910,14 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: { held: string; pointer: string }; truncated: boolean } | null = null;
+  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean } | null = null;
   private replaying = false;
+  private readonly recordLimit: number;
+  /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
+  private drained = true;
+  private readonly markDrained = () => {
+    this.drained = true;
+  };
 
   /** This level's seeded randomness (`ctx.random`). */
   get random(): Rng {
@@ -895,18 +928,20 @@ export class Engine {
   private reseed(game: Game): void {
     this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
-    this.rec = { game: game.name, seed: this._seed, time: this.time, frames: [], last: { held: '', pointer: '' }, truncated: false };
+    this.rec = { game: game.name, seed: this._seed, time: this.time, frames: [], last: { ...FULL_FRAME }, truncated: false };
   }
 
   /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
   private record(dt: number): void {
     const r = this.rec;
     if (!r || this.replaying) return;
-    if (r.frames.length >= MAX_FRAMES) {
+    if (r.frames.length >= this.recordLimit) {
       r.truncated = true;
       return;
     }
-    r.frames.push(this.input.snapshot(dt, r.last));
+    const f = this.input.snapshot(dt, r.last);
+    if (!this.drained) f.sync = true;
+    r.frames.push(f);
   }
 
   /**
@@ -921,10 +956,14 @@ export class Engine {
 
   /**
    * Play a recording back: its seed and start time are restored, `start` loads the level it was
-   * made in (e.g. `() => engine.loadGame(new MyGame())`), then every frame runs with the recorded
-   * input, in manual time (`step()`). `frames` stops early. Afterwards the level is where the
-   * recorded one was (`fingerprint()` matches if the game is deterministic) and stays in manual
-   * time: `step()` plays on from there, live, and the level's recording carries on from it.
+   * made in (e.g. `() => engine.loadGame(new MyGame())`; it must not wait on frames, so load
+   * without a transition), then every frame runs with the recorded input, in manual time
+   * (`step()`), waiting for promise callbacks wherever the recorded run did. `frames` stops
+   * early. Afterwards the level is where the recorded one was (`fingerprint()` matches if the
+   * game is deterministic) and stays in manual time: `step()` plays on from there, live, and
+   * the level's recording carries on from it. Live input is ignored during a replay; afterwards
+   * nothing the recording held stays held. A game hook's exception is reported and the replay
+   * goes on, as in live play.
    */
   async replay(rec: Recording, start: () => unknown, o: { frames?: number } = {}): Promise<void> {
     const problem = recordingProblem(rec);
@@ -932,22 +971,43 @@ export class Engine {
     this.manual = true; // nothing advances on its own while the level loads
     this._seed = rec.seed;
     this.time = rec.time;
-    await start();
-    if (this.game.name !== rec.game) console.warn(`[engine] replaying a recording of "${rec.game}" in "${this.game.name}"`);
-    const n = Math.min(o.frames ?? Infinity, rec.frames.length);
-    this.replaying = true;
+    const slow = setTimeout(() => console.warn('[engine] replay: start() has not finished after 10 s; nothing advances during a replay, so it must not wait on frames (load without a transition)'), 10_000);
     try {
-      for (let i = 0; i < n && this.ready; i++) this.frameStep(rec.frames[i]!.dt, rec.frames[i]);
+      await start();
     } finally {
+      clearTimeout(slow);
+    }
+    if (this.game.name !== rec.game) console.warn(`[engine] replaying a recording of "${rec.game}" in "${this.game.name}"`);
+    const n = Math.max(0, Math.min(Math.floor(o.frames ?? Infinity), rec.frames.length));
+    // promise callbacks run between frames where they did in the recorded run: a task boundary
+    // (not just a microtask) so chains of them finish, as they do between two animation frames
+    const channel = new MessageChannel();
+    let wake = () => {};
+    channel.port1.onmessage = () => wake();
+    const settle = () => new Promise<void>((resolve) => ((wake = resolve), channel.port2.postMessage(0)));
+    let played = 0;
+    const level = this.rec;
+    this.replaying = true;
+    this.input.playing = true;
+    try {
+      for (; played < n && this.ready; played++) {
+        const f = rec.frames[played]!;
+        if (!f.sync) await settle();
+        if (!this.ready || this.disposed) break; // a promise callback loaded another level
+        this.frameStep(f.dt, f);
+      }
+    } finally {
+      channel.port1.close();
       this.replaying = false;
+      this.input.playing = false;
+      this.input.release(); // input is live again: nothing the recording held stays held (queued presses do)
+      // from here on the level's recording is the replayed one, carried on by whatever comes next
+      if (level && level === this.rec) {
+        level.frames = rec.frames.slice(0, played);
+        level.truncated = !!rec.truncated && played === rec.frames.length;
+        level.last = { ...FULL_FRAME };
+      }
     }
-    // from here on the level's recording is the replayed one, carried on by whatever comes next
-    if (this.rec) {
-      this.rec.frames = rec.frames.slice(0, n);
-      this.rec.truncated = !!rec.truncated && n === rec.frames.length;
-      this.rec.last = { held: '-', pointer: '-' }; // no frame matches: the next one records keys and pointer in full
-    }
-    this.input.reset(); // input is live again: nothing the recording held stays held
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
   }
 
@@ -1023,8 +1083,7 @@ export class Engine {
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
     // The status line is only built while the panel is on screen.
     if (running && this.debug?.visible) this.debug.update(this.game.status?.(this.context) ?? '');
-    this.input.endFrame();
-    this.frame++;
+    this.endFrame();
   }
 
   /** A game hook threw in the render loop: log it (once per message) and show it on screen. */

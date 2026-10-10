@@ -15,6 +15,7 @@ const read = (input: Input) => ({
   wheel: input.wheel,
   pointer: { ...input.pointer },
   buttons: input.mouseButtons,
+  gamepad: input.gamepadConnected,
 });
 
 describe('recording and replaying input', () => {
@@ -121,6 +122,38 @@ describe('recording and replaying input', () => {
     expect(a).not.toEqual(b);
   });
 
+  it('a replay hears no live input, sets every key the recording holds, and lets go after', () => {
+    const win = new EventTarget();
+    const key = (type: string, code: string) => win.dispatchEvent(Object.assign(new Event(type), { code, repeat: false }));
+    const live = new Input(win as unknown as Window);
+    // the memory the engine starts each level with: the first frame records everything
+    const last = { held: '-', pointer: '-' };
+    live.beginFrame(1 / 60, 1 / 60, []);
+    const first = live.snapshot(1 / 60, last);
+    expect(first.held).toEqual([]); // nothing held is said, so nothing held before the replay stays held
+    expect(first.gamepad).toBe(false);
+
+    const again = new Input(win as unknown as Window);
+    key('keydown', 'KeyA'); // held before the replay starts
+    again.playing = true;
+    again.playBefore(first);
+    again.beginFrame(1 / 60, 1 / 60, []);
+    again.playAfter(first);
+    expect(again.isDown('KeyA')).toBe(false);
+    key('keydown', 'KeyD'); // live keys during a replay are ignored
+    again.playBefore({ dt: 1 / 60, held: ['KeyW'], pressed: ['Space'] });
+    again.beginFrame(2 / 60, 1 / 60, []);
+    again.playAfter({ dt: 1 / 60 });
+    expect([again.isDown('KeyD'), again.isDown('KeyW'), again.wasPressed('KeyD')]).toEqual([false, true, false]);
+    again.endFrame();
+    again.playing = false;
+    again.release(); // what the engine does after a replay
+    expect(again.isDown('KeyW')).toBe(false);
+    expect(again.consumePress('Space')).toBe(true); // a press still waiting stays queued
+    key('keydown', 'KeyD');
+    expect(again.isDown('KeyD')).toBe(true); // live again
+  });
+
   it('refuses what is not a recording, and says why', () => {
     const ok: Recording = { format: 1, engine: 'test', game: 'g', seed: 1, time: 0, frames: [{ dt: 1 / 60 }, { dt: 1 / 60, held: ['KeyW'], delta: [1, 2], pointer: [0, 0, 1, 0] }] };
     expect(recordingProblem(ok)).toBeNull();
@@ -131,5 +164,7 @@ describe('recording and replaying input', () => {
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, held: [3] }] })).toMatch(/frame 0: held/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01 }, { dt: 0.01, delta: [1] }] })).toMatch(/frame 1: delta/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, pointer: [0, 0, 1] }] })).toMatch(/pointer/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, gamepad: 1 }] })).toMatch(/gamepad/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, sync: false }] })).toMatch(/sync/);
   });
 });

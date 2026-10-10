@@ -12,13 +12,19 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
 
 - **Recording and replay** (src/engine/replay.ts): `engine.recording()` is the running level's
   input from its start as JSON (`Recording`: seed, game, start time, one `InputFrame` per frame);
-  `engine.replay(rec, start, { frames })` plays one back frame for frame in manual time;
-  `engine.fingerprint()` hashes game time, every physics body and `ctx.random`'s state;
-  `recordingProblem()`, `MAX_FRAMES`. `Input.snapshot()`, `playBefore()` and `playAfter()` are
-  what they use.
+  `engine.replay(rec, start, { frames })` plays one back frame for frame in manual time, with
+  promise callbacks between the same frames as when it was recorded, live input ignored
+  (`input.playing`) and game errors reported as in live play; `engine.fingerprint()` hashes game
+  time, physics and `ctx.random`'s state; `recordingProblem()`, `MAX_FRAMES`;
+  `EngineOptions.record` (frames kept per level, 0 for none). `Input.snapshot()`,
+  `playBefore()`, `playAfter()` and `release()` (let go of everything held, keep queued presses)
+  are what they use.
 - Each level gets a fresh physics world, so it plays the same whatever ran before;
-  `physics.steps` starts at 0 per level; `physics.fingerprint()`; `physics.isAlive(body)` (false
-  for a body of an unloaded level instead of an error).
+  `physics.steps` starts at 0 per level; `physics.fingerprint()` (every body and collider,
+  exact); `physics.isAlive(x)` for bodies, colliders and joints (false for one of an unloaded
+  level instead of an error).
+- `step()` finishes a frame whose game hook threw before throwing it to you.
+- A press made before a level's first frame queues at the level's start time.
 - `Rng.state` reads and sets a generator's state.
 - A gamepad button press is queued at the time of the frame before, as a key press is, so a
   buffered press expires on the same frame either way.

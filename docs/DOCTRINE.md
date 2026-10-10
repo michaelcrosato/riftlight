@@ -104,9 +104,10 @@ The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is deci
 
 - **Principle 1 (gameplay is data): in progress.** Done: randomness is seeded (`ctx.random`,
   `?seed=`) and time is game time; the lint refuses `Math.random` and unmarked wall clocks;
-  every level's input is recorded and replays to the same state (`engine.recording()`,
-  `engine.replay()`, `engine.fingerprint()`), which is also how a moment is saved and restored
-  today (replay to frame `n`). Not yet: snapshots of the state itself, which make restoring a
+  every level's input is recorded and, for a game that reads input through `ctx.input`,
+  replays to the same state (`engine.recording()`, `engine.replay()`, `engine.fingerprint()`),
+  which is also how a moment is saved and restored today (replay to frame `n`). Riftlight's
+  mouse aim still reads DOM events itself, so Riftlight does not replay yet. Not yet: snapshots of the state itself, which make restoring a
   long session instant. Rapier can snapshot its world exactly, but a restored world replaces the
   body handles games hold, so they wait on gameplay state being data. Gameplay state still
   lives in many places (physics bodies, three.js objects, behaviour-tree nodes, timelines, game

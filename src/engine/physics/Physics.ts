@@ -4,6 +4,7 @@ import { explode, type ExplosionOptions, ForceFields } from './forces';
 import { type KinematicBody, type Mover, type MoverOptions, Movers } from './movers';
 import { initRapier } from './rapierWasm';
 import { Trigger, type TriggerOptions, type TriggerShape } from './Trigger';
+import { isAlive } from './alive';
 
 export { RAPIER, Trigger, type TriggerOptions, type TriggerShape };
 
@@ -206,7 +207,7 @@ export class Physics {
     for (const [handle, v] of this.belts) {
       const belt = this.world.getCollider(handle);
       // gone, or its slot holds a newer collider (a lookup by handle can't tell the two apart)
-      if (!belt || belt.handle !== handle || !belt.isValid()) {
+      if (!belt || belt.handle !== handle || !isAlive(belt)) {
         this.belts.delete(handle);
         continue;
       }
@@ -435,22 +436,18 @@ export class Physics {
   }
 
   /**
+   * Whether `target` (a body, collider or joint) still exists in the current world: false once
+   * removed, and for anything from a level before (its world is gone; `isValid()` would throw).
+   */
+  isAlive(target: { isValid(): boolean }): boolean {
+    return isAlive(target);
+  }
+
+  /**
    * Remove a rigid body (with its colliders and any bound Object3D binding) or a single
    * collider. Removing a collider whose fixed body has no other colliders removes that
    * body too (what `addStaticBox` & co. create). Tags and trigger overlaps are cleaned up.
    */
-  /**
-   * Whether `target` still exists in the current world: false once removed, and for anything
-   * from a level before (its world is gone; `isValid()` on it would throw).
-   */
-  isAlive(target: RAPIER.RigidBody | RAPIER.Collider): boolean {
-    try {
-      return target.isValid();
-    } catch {
-      return false; // its world was freed (a level unload)
-    }
-  }
-
   remove(target: RAPIER.RigidBody | RAPIER.Collider): void {
     if (target instanceof RAPIER.Collider) {
       if (!this.isAlive(target)) return; // already removed (a handle alone can name a newer collider)
@@ -499,23 +496,32 @@ export class Physics {
   }
 
   /**
-   * A hash of every body's state (position, rotation, velocities, exact to the bit) and the step
-   * count: two runs that should be the same compare equal only if they are (replays, tests).
+   * A hash of the physics state: every body (position, rotation, velocities, asleep, enabled)
+   * and collider (pose, friction, restitution, sensor, enabled), exact, plus the step count and
+   * the time not yet stepped. Two runs that should be the same compare equal only if they are
+   * (replays, tests).
    */
   fingerprint(): string {
     let h = 0x811c9dc5;
     const mix = (v: number) => {
-      const s = v.toString(); // shortest exact round-trip form: equal strings, equal numbers
+      // the shortest exact round-trip form (equal strings, equal numbers), and -0 apart from 0
+      const s = Object.is(v, -0) ? '-0' : v.toString();
       for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 0x01000193);
       h = Math.imul(h ^ 44, 0x01000193);
     };
     mix(this.steps);
+    mix(this.accumulator);
     this.world.bodies.forEach((b) => {
       const t = b.translation();
       const r = b.rotation();
       const v = b.linvel();
       const w = b.angvel();
-      for (const x of [b.handle, t.x, t.y, t.z, r.x, r.y, r.z, r.w, v.x, v.y, v.z, w.x, w.y, w.z]) mix(x);
+      for (const x of [b.handle, t.x, t.y, t.z, r.x, r.y, r.z, r.w, v.x, v.y, v.z, w.x, w.y, w.z, b.isSleeping() ? 1 : 0, b.isEnabled() ? 1 : 0]) mix(x);
+    });
+    this.world.colliders.forEach((c) => {
+      const t = c.translation();
+      const r = c.rotation();
+      for (const x of [c.handle, t.x, t.y, t.z, r.x, r.y, r.z, r.w, c.friction(), c.restitution(), c.isSensor() ? 1 : 0, c.isEnabled() ? 1 : 0]) mix(x);
     });
     return (h >>> 0).toString(16).padStart(8, '0');
   }
