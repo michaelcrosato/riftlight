@@ -129,8 +129,8 @@ export function worldTriangles(object: Object3D): Tri[] {
   return tris;
 }
 
-/** A camera basis for a yaw/pitch view. */
-function basis(yawDeg: number, pitchDeg: number) {
+/** A camera basis for a yaw/pitch view: forward (into the screen), right and up. */
+export function viewBasis(yawDeg: number, pitchDeg: number): { f: Vector3; r: Vector3; u: Vector3 } {
   const yaw = (yawDeg * Math.PI) / 180;
   const pitch = (pitchDeg * Math.PI) / 180;
   const f = new Vector3(-Math.sin(yaw) * Math.cos(pitch), -Math.sin(pitch), -Math.cos(yaw) * Math.cos(pitch)).normalize();
@@ -153,7 +153,7 @@ export function renderView(object: Object3D, o: ViewOptions = {}, tris = worldTr
   const W = o.width ?? 160;
   const H = o.height ?? 160;
   const labelH = o.label ? 12 : 0;
-  const { f, r, u } = basis(o.yaw ?? 30, o.pitch ?? 20);
+  const { f, r, u } = viewBasis(o.yaw ?? 30, o.pitch ?? 20);
   const frame = o.frame ?? new Box3().setFromObject(object, true);
   if (frame.isEmpty()) frame.set(new Vector3(-0.5, 0, -0.5), new Vector3(0.5, 1, 0.5));
   const scale = o.scale ?? fitScale(frame, W, H - labelH, o.pitch ?? 20);

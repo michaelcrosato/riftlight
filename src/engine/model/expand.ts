@@ -204,11 +204,13 @@ export function expandDef(def: ModelDef, opts: ModelOptions, catalog: ModelCatal
   const nums = (...vs: (readonly number[] | undefined)[]) => vs.every((v) => !v || v.every(Number.isFinite));
   if (!nums(def.light?.at, [def.light?.intensity ?? 0, def.light?.radius ?? 0], def.size, ...Object.values(def.anchors ?? {}).flatMap((a) => (Array.isArray(a) ? [a as readonly number[]] : [(a as { at: Vec3 }).at, (a as { rot: Vec3 }).rot]))))
     problems.push(`its light, size or anchors hold a NaN or infinite number`);
+  if (typeof def.about !== 'string') problems.push(`it has no \`about\`: one line saying what it is (\`find\` searches it)`);
+  if (!Array.isArray(def.tags)) problems.push(`it has no \`tags\`: a list of words for \`find\` and \`zoo\` (may be empty)`);
 
   const model: ExpandedModel = {
     id: def.id,
-    about: def.about,
-    tags: def.tags,
+    about: typeof def.about === 'string' ? def.about : '',
+    tags: Array.isArray(def.tags) ? def.tags : [],
     palette,
     params,
     seed,

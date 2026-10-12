@@ -8,6 +8,26 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.19.0
+
+- `validateModel` / `checkModel` count the game's own pixels (Riftlight's camera, from the front
+  and the far side) for two more warnings: large parts of one colour that join into one block
+  (4 or more parts at least 0.2 m by their own extents, 40% of the model or more), and glow over
+  15% of the model once it is 30 art pixels or more (glow draws flat). Gate A's first run lost on
+  both (docs/plans/gate-a.md).
+- The material warning moves from over 6 to over 8: Gate A's ModelDef campfires had to drop
+  colours to stay at 6, while the Kit models the judges preferred used up to 8.
+- A def without `about` or `tags` is a problem, not a crash in `npm run model -- sheet`.
+- New built-in models: `flame` (fat lit tongues round a small glowing heart, with a flickering
+  light; param `h`), `rock` (param `size`), `stone-ring` (stones in two greys; params `r`, `n`,
+  `size`) and `arch` (voussoirs in two shades over dark mortar; params `span`, `ring`, `depth`,
+  `blocks`). The statue's sleeves take the darker stone.
+- `GAME_VIEW`, `gamePxPerMetre` and `rasterParts` (a part-id raster through the game's camera,
+  capped at 512 px a side) live in `src/engine/model/view.ts` (the sheet still exports the first
+  two); `viewBasis` is exported from `src/engine/inspect/render.ts`.
+- The format's header (src/engine/model/types.ts) says what reads at 480×270: colour separates
+  touching parts, glow stays small, rods vanish.
+
 ## 0.18.0
 
 - `validateModel` / `checkModel` warn about what won't read at 480×270: a part hidden inside

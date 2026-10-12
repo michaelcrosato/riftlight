@@ -10,7 +10,7 @@ import { boundsOf, compileParts, type Bounds, type CompiledPart } from './compil
 import { expandDef, partLabel, type ModelOptions } from './expand';
 import { layoutModel, modelDef } from './build';
 import { MODEL_LIBRARY } from './library';
-import { readabilityWarnings } from './readability';
+import { partExtents, readabilityWarnings } from './readability';
 import { BOX_KINDS, SEG_RANGE } from './prims';
 import type { ModelDef, Part, Vec3 } from './types';
 
@@ -24,7 +24,7 @@ export const ALLOWED_LICENCES: readonly string[] = ['CC0-1.0'];
 export function triangleBudget(largest: number): number {
   return largest < 0.5 ? 300 : largest < 2 ? 1000 : 3000;
 }
-export const MAX_MATERIALS = 6;
+export const MAX_MATERIALS = 8;
 /** Second-smallest extent below which a part is a rod that vanishes at 480×270 (m). */
 export const MIN_THICKNESS = 0.06;
 /** Gap (m) beyond which a part floats free of every other part (plus float slack). */
@@ -67,15 +67,6 @@ function gap(a: { min: Vector3; max: Vector3 }, b: { min: Vector3; max: Vector3 
   const dy = Math.max(0, a.min.y - b.max.y, b.min.y - a.max.y);
   const dz = Math.max(0, a.min.z - b.max.z, b.min.z - a.max.z);
   return Math.hypot(dx, dy, dz);
-}
-
-/** Effective extents of a part: its own box scaled by its matrix's axis lengths. */
-function extents(p: CompiledPart): number[] {
-  const e = p.matrix.elements;
-  const sx = Math.hypot(e[0]!, e[1]!, e[2]!);
-  const sy = Math.hypot(e[4]!, e[5]!, e[6]!);
-  const sz = Math.hypot(e[8]!, e[9]!, e[10]!);
-  return [p.extent[0] * sx, p.extent[1] * sy, p.extent[2] * sz].sort((a, b) => a - b);
 }
 
 /** Box sizes that aren't positive, and `seg` outside its range (the part would come out wrong). */
@@ -162,7 +153,7 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
   // rods: one line per size, naming the first and counting the rest (a box frame is 12 alike)
   const thin = new Map<string, string[]>();
   for (const p of parts) {
-    const ext = extents(p);
+    const ext = partExtents(p);
     if (ext[1]! >= MIN_THICKNESS) continue;
     const key = `${r2(ext[0]!)} × ${r2(ext[1]!)}`;
     const list = thin.get(key) ?? [];

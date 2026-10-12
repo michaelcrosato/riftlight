@@ -64,8 +64,44 @@ describe('readability warnings', () => {
     expect(w).toEqual([expect.stringMatching(/^2 parts are \(box at parts\[1\], box at parts\[2\]\) 0.03 × 0.03 m across/)]);
   });
 
+  it('large parts of one colour that merge into one block at game scale', () => {
+    // a cart's bed, two sides and its front board, all one colour
+    const cart: Part[] = [
+      { name: 'bed', box: [1, 0.08, 1.4], at: [0, 0.5, 0] },
+      { name: 'left', box: [0.08, 0.3, 1.4], at: [0.46, 0.69, 0] },
+      { name: 'right', box: [0.08, 0.3, 1.4], at: [-0.46, 0.69, 0] },
+      { name: 'front', box: [1, 0.3, 0.08], at: [0, 0.69, 0.66] },
+    ];
+    const block = warnings(def(cart)).filter((w) => /one block/.test(w));
+    expect(block).toEqual([expect.stringMatching(/^4 large orange parts \('(bed|left|right|front)', .*\) join into one block, \d+% of the model at game scale: .*a second colour or a darker shade/)]);
+    expect(warnings(def(cart.map((p, i) => ({ ...p, c: i % 2 ? 'b' : 'a' })))).join()).not.toMatch(/one block/); // alternated
+    expect(warnings(def(cart.map((p) => ({ ...p, name: 'plank' })))).join()).toMatch(/^4 large orange parts \('plank'\) join into one block/m); // parts, not names
+    expect(warnings(def(cart.slice(0, 3))).join()).not.toMatch(/one block/); // three large parts may share a colour
+    // the 40% line: a slate shed beside the cart takes a share of the pixels
+    const shed = (w: number): Part => ({ name: 'shed', box: [w, 1, 1.4], at: [-0.5 - w / 2, 0.5, 0], c: 'b' });
+    expect(warnings(def([...cart, shed(1)])).join()).toMatch(/join into one block, 45% of the model/);
+    expect(warnings(def([...cart, shed(1.6)])).join()).not.toMatch(/one block/);
+    // turned rods are rods, not large parts
+    const rods = [0, 45, 90, 135].map((a): Part => ({ cyl: [0.06, 1.2, 0.06], at: [0, 0.6, 0], rot: [0, a, 40], seg: 4 }));
+    expect(warnings(def(rods)).join()).not.toMatch(/one block/);
+  });
+
+  it('a block the far side shows is a block', () => {
+    // four slabs behind a slate wall that faces the game's camera: 27% from its yaw, 47% from 225°
+    const slabs = [0, 1, 2, 3].map((i): Part => ({ box: [0.5, 0.3, 1], at: [-0.75 + i * 0.5, 0.15, 0] }));
+    const wall: Part = { box: [2.6, 1, 0.12], at: [0.55, 0.5, 0.55], rot: [0, 45, 0], c: 'b' };
+    expect(warnings(def([...slabs, wall])).filter((w) => /one block/.test(w))).toEqual([expect.stringMatching(/^4 large orange parts .* join into one block, 47% of the model/)]);
+  });
+
+  it('glow covering too much of the model', () => {
+    const base: Part = { box: [0.8, 0.2, 0.8], at: [0, 0.1, 0], c: 'b' };
+    expect(warnings(def([base, { cone: [0.6, 1, 0.6], at: [0, 0.7, 0], c: 'a', glow: true }]))).toEqual([expect.stringMatching(/^glow parts \(cone at parts\[1\]\) cover \d+% of the model at game scale: glow draws as one flat colour/)]);
+    expect(warnings(def([base, { ball: [0.12, 0.1, 0.12], at: [0, 0.25, 0], c: 'a', glow: true }]))).toEqual([]); // an ember
+    expect(warnings(def([{ ball: [0.12, 0.1, 0.12], at: [0, 0.05, 0], c: 'a', glow: true }]))).toEqual([]); // an ember on its own: too small to read as a shape
+  });
+
   it('the library has no readability warnings it shouldn\'t', () => {
-    for (const d of MODEL_LIBRARY.all()) expect(checkModel(d).warnings.filter((w) => / is inside | are inside |z-fighting|lightness/.test(w)), d.id).toEqual([]);
+    for (const d of MODEL_LIBRARY.all()) expect(checkModel(d).warnings.filter((w) => / is inside | are inside |z-fighting|lightness|one block|glow parts/.test(w)), d.id).toEqual([]);
   });
 });
 

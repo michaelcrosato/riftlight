@@ -1,8 +1,11 @@
 /**
  * Readability checks (docs/plans/asset-system.md §4.3, the Phase 2a warnings): a part hidden
- * inside another, coplanar faces of different colours (z-fighting), and touching large masses
- * too close in lightness to read apart at 480×270. `validateModel` adds them to its warnings;
- * each kind is one line per container, colour pair or slot pair, so a big model stays readable.
+ * inside another, coplanar faces of different colours (z-fighting), touching large masses too
+ * close in lightness to read apart at 480×270, and, counted on the game's own pixels
+ * (`rasterParts`), large parts of one colour that merge into a single block and glow that covers
+ * too much of the model (Gate A's first run lost on both: docs/plans/gate-a.md). `validateModel`
+ * adds them to its warnings; each kind is one line per container, colour or colour pair, so a big
+ * model stays readable.
  */
 import { Vector3 } from 'three/webgpu';
 import { PALETTE } from '../palette';
@@ -10,6 +13,16 @@ import { bindingHex } from './build';
 import type { CompiledPart } from './compile';
 import type { ExpandedModel } from './expand';
 import { oklab } from './oklab';
+import { GAME_VIEW, gamePxPerMetre, rasterParts } from './view';
+
+/** A part's own extents, scaled by its matrix and sorted (so turning a rod doesn't make it thick). */
+export function partExtents(p: CompiledPart): number[] {
+  const e = p.matrix.elements;
+  const sx = Math.hypot(e[0]!, e[1]!, e[2]!);
+  const sy = Math.hypot(e[4]!, e[5]!, e[6]!);
+  const sz = Math.hypot(e[8]!, e[9]!, e[10]!);
+  return [p.extent[0] * sx, p.extent[1] * sy, p.extent[2] * sz].sort((a, b) => a - b);
+}
 
 /** Kinds whose solid is convex: a part entirely inside one never shows. */
 const CONVEX = new Set(['box', 'cyl', 'cone', 'ball', 'wedge']);
@@ -19,6 +32,16 @@ export const MIN_LIGHTNESS_STEP = 0.08;
 const LARGE = 0.25;
 /** Faces this close (m) and this parallel are one plane. */
 const PLANE = 0.001;
+/** One colour may cover at most this share of the model's pixels at game scale… */
+export const MAX_ONE_COLOUR_SHARE = 0.4;
+/** …when it joins at least this many large parts into one block. */
+export const BLOCK_PARTS = 4;
+/** A part counts toward a block when its second-biggest extent is at least this (m): ~4 art pixels. */
+const BLOCK_PART = 0.2;
+/** Glow draws flat (no shading): it may cover at most this share of the model's pixels… */
+export const MAX_GLOW_SHARE = 0.15;
+/** …once it is big enough to read as a shape (art pixels at the level zoom; an ember is less). */
+const MIN_GLOW_PX = 30;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const colourName = (hex: number) => Object.entries(PALETTE).find(([, v]) => v === hex)?.[0] ?? `#${hex.toString(16).padStart(6, '0')}`;
@@ -177,6 +200,65 @@ export function readabilityWarnings(parts: readonly CompiledPart[], palette: Exp
       out.push(`${a.part.label} (${colourName(a.hex)}) and ${b.part.label} (${colourName(b.hex)}) touch but differ by only ${r2(dl)} in lightness (under ${MIN_LIGHTNESS_STEP}): they won't read apart at 480×270; pick colours further apart in lightness`);
     });
   });
+  out.push(...gameScaleWarnings(w));
+  return out;
+}
+
+/**
+ * What the game's camera sees, from the front (yaw 45°) and the far side (225°): a connected
+ * region of one colour holding several large parts reads as one block, and big glow reads as a
+ * flat cut-out. Each is reported once, at its worst view.
+ */
+function gameScaleWarnings(w: readonly World[]): string[] {
+  const out: string[] = [];
+  const key = w.map((x) => `${x.hex}|${x.part.glow}`);
+  const large = w.map((x) => partExtents(x.part)[1]! >= BLOCK_PART);
+  const blocks = new Map<string, { share: number; parts: number; labels: string[] }>();
+  let glow = 0;
+  for (const yaw of [GAME_VIEW.yaw, GAME_VIEW.yaw + 180]) {
+    const { width, ids, scale } = rasterParts(w.map((x) => x.pts), yaw);
+    let total = 0;
+    let lit = 0;
+    for (const id of ids) {
+      if (!id) continue;
+      total++;
+      if (w[id - 1]!.part.glow) lit++;
+    }
+    if (!total) continue;
+    if (lit >= MIN_GLOW_PX * (scale / gamePxPerMetre(GAME_VIEW.zooms.level)) ** 2) glow = Math.max(glow, lit / total);
+    const seen = new Uint8Array(ids.length);
+    for (let k = 0; k < ids.length; k++) {
+      if (!ids[k] || seen[k]) continue;
+      const kk = key[ids[k]! - 1]!;
+      const parts = new Set<number>();
+      const stack = [k];
+      seen[k] = 1;
+      let n = 0;
+      while (stack.length) {
+        const q = stack.pop()!;
+        n++;
+        parts.add(ids[q]! - 1);
+        const x = q % width;
+        for (const j of [x > 0 ? q - 1 : -1, x < width - 1 ? q + 1 : -1, q - width, q + width]) {
+          if (j < 0 || j >= ids.length || seen[j] || !ids[j] || key[ids[j]! - 1] !== kk) continue;
+          seen[j] = 1;
+          stack.push(j);
+        }
+      }
+      const big = [...parts].filter((i) => large[i]);
+      const share = n / total;
+      if (big.length < BLOCK_PARTS || share < MAX_ONE_COLOUR_SHARE || (blocks.get(kk)?.share ?? 0) >= share) continue;
+      blocks.set(kk, { share, parts: big.length, labels: [...new Set(big.map((i) => w[i]!.part.label))].sort() });
+    }
+  }
+  for (const [kk, b] of blocks) {
+    const name = colourName(Number(kk.split('|')[0]));
+    out.push(`${b.parts} large ${name} parts (${list(b.labels)}) join into one block, ${Math.round(b.share * 100)}% of the model at game scale: at 480×270 they read as a single shape; give some of them a second colour or a darker shade (alternate the stones or planks, add a trim, or dark joints behind them)`);
+  }
+  if (glow > MAX_GLOW_SHARE) {
+    const labels = [...new Set(w.filter((x) => x.part.glow).map((x) => x.part.label))];
+    out.push(`glow parts (${list(labels)}) cover ${Math.round(glow * 100)}% of the model at game scale: glow draws as one flat colour, so a big glow part reads as a solid shape; keep glow for small hot spots (embers, a flame's core) and build the rest from lit parts (see the flame model)`);
+  }
   return out;
 }
 

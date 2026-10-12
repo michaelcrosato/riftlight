@@ -24,7 +24,7 @@ import {
   type Part,
   type Prim,
 } from '.';
-import { modelRng } from './expand';
+import { expandDef, modelRng } from './expand';
 import { addModelColliders } from './physics';
 
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
@@ -407,6 +407,11 @@ describe('checks', () => {
     expect(problems(def([{ mesh: { v: '0 0 0,1000 0 0,0 1000', f: { a: '0 1 2' } } }], { source: src }))[0]).toMatch(/vertex "0 1000"/);
     expect(problems(def([{ mesh: { v: '0 0 0,1000 0 0,0 1000 0', f: { a: '0 1 3' } } }], { source: src }))[0]).toMatch(/face "0 1 3"/);
   });
+  it('no about or tags', () => {
+    const bare = { id: 'bare', palette: { a: 'orange' }, parts: [ok] } as unknown as ModelDef;
+    expect(problems(bare)).toEqual([expect.stringMatching(/no `about`/), expect.stringMatching(/no `tags`/)]);
+    expect(expandDef(bare, {}, MODEL_LIBRARY).model).toMatchObject({ about: '', tags: [] }); // so a sheet still draws it
+  });
   it('NaN', () => expect(problems(def([{ box: [0.5, Number.NaN, 0.5], at: [0, 0.25, 0] }])).join()).toMatch(/NaN/));
   it('empty', () => expect(problems(def([]))[0]).toMatch(/empty/));
   it('below the floor (unless it floats)', () => {
@@ -461,9 +466,10 @@ describe('checks', () => {
     expect(warnings(def([ok, { box: [0.04, 0.5, 0.05], at: [0, 0.75, 0] }]))[0]).toMatch(/0.04 × 0.05 m across: rods under 0.06 m/);
     expect(warnings(def([ok, { box: [0.6, 0.02, 0.6], at: [0, 0.51, 0] }]))).toEqual([]); // a plate is fine
     expect(warnings(def([{ ball: [0.4, 0.4, 0.4], at: [0, 0.2, 0], seg: 24 }])).join()).toMatch(/triangles is over the budget of 300/);
-    const six = ['red', 'orange', 'sand', 'lime', 'green', 'teal', 'navy'] as const;
-    const palette = Object.fromEntries(six.map((c) => [c, c]));
-    expect(warnings(def(six.map((c, i) => ({ box: [0.2, 0.2, 0.2], at: [i * 0.2, 0.1, 0], c })), { palette })).join()).toMatch(/7 materials \(over 6\)/);
+    const nine = ['red', 'orange', 'sand', 'lime', 'green', 'teal', 'navy', 'blue', 'sky'] as const;
+    const palette = Object.fromEntries(nine.map((c) => [c, c]));
+    expect(warnings(def(nine.map((c, i) => ({ box: [0.2, 0.2, 0.2], at: [i * 0.2, 0.1, 0], c })), { palette })).join()).toMatch(/9 materials \(over 8\)/);
+    expect(warnings(def(nine.slice(0, 8).map((c, i) => ({ box: [0.2, 0.2, 0.2], at: [i * 0.2, 0.1, 0], c })), { palette })).join()).not.toMatch(/materials/);
   });
 
   it('checkModel builds each param at its min and max, at 3 seeds when the rng is read', () => {

@@ -8,6 +8,16 @@
  * that starts at +X, stretched per axis to the box (so `cyl` with `seg: n` is exactly a regular
  * n-gon prism, and an odd ring's axis shifts slightly to keep its bounds centred). Profile kinds
  * (`lathe`, `slab`, `tube`, `mesh`) use their own local coordinates, placed at `at`.
+ *
+ * Reading at 480×270 (Riftlight's camera, which `npm run model -- sheet` draws at game scale):
+ * - Colour separates parts. Touching components take different colours or shades: planks and
+ *   their frame, stones and the mortar behind them, a wheel and the bed it carries. Use as many
+ *   colours as the parts need to read apart (up to 8); one colour over several large parts reads
+ *   as a single block.
+ * - Glow draws as flat colour with no shading: keep it for small hot spots (embers, a flame's
+ *   heart). Build fire from lit parts (the `flame` model).
+ * - Parts thinner than 0.06 m vanish; big masses carry the silhouette.
+ * `npm run model -- check` warns when any of these slip.
  */
 import type { PaletteColor } from '../palette';
 import type { FlickerPreset } from '../render/lights';
