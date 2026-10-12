@@ -101,6 +101,33 @@ export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityO
 export { assetProgress, preloadModels } from './assets';
 export { LoadingScreen } from './LoadingScreen';
 export { mergeStaticMeshes, type MergeOptions } from './render/merge';
+export {
+  MODEL_LIBRARY,
+  ModelCatalog,
+  ModelError,
+  around,
+  boxFrame,
+  buildModel,
+  checkModel,
+  expandModel,
+  gridOf,
+  model,
+  rowOf,
+  scatterOf,
+  validateModel,
+  type Binding as ModelBinding,
+  type ColliderData as ModelCollider,
+  type ExpandedModel,
+  type ModelBuild,
+  type ModelCheck,
+  type ModelDef,
+  type ModelLight,
+  type ModelLightRequest,
+  type ModelOptions,
+  type Part as ModelPart,
+  type Provenance as ModelProvenance,
+} from './model';
+export { addModelColliders } from './model/physics';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';
@@ -183,7 +210,7 @@ export {
   type LightPoolStats,
   type LightRequestOptions,
 } from './render/lights';
-export { pixelTexture, toonMaterial, toonify, toonGradient, TOON_BANDS, type ToonMaterialOptions } from './render/toon';
+export { glowMaterial, pixelTexture, toonMaterial, toonify, toonGradient, TOON_BANDS, type ToonMaterialOptions } from './render/toon';
 export {
   analyzeClip,
   compileClip,

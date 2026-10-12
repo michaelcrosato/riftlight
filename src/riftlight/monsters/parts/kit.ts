@@ -1,7 +1,7 @@
 import type { Mesh } from 'three/webgpu';
 import type { Vec3 } from '../../../engine/animation';
 import type { Mod } from '../../core/mods';
-import { arcHorn, extrude, lathe, limbGeometry, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere, unitSphereLo, unitTooth, SMALL_SPHERE } from '../geometry';
+import { arcHorn, extrude, lathe, limbGeometry, taperCyl, unitBlob, unitBox, unitCone, unitCyl, unitDisc, unitSphere, unitSphereLo, unitTooth, SMALL_SPHERE } from '../../../engine/model/geometry';
 import type { HeadAnchors, MonsterPartContext, MonsterPartDef, PaletteSlot, Slot } from '../types';
 
 /**
