@@ -19,7 +19,8 @@
 // Script language (commands separated by ';' or newlines; keys: W A S D SPACE SHIFT C J F Z X B V K Q E R LMB RMB,
 // combine with '+'; yaw in degrees, 0 = +Z, 90 = +X; W = -Z, D = +X):
 //   place x y z [yaw]    teleport and settle (not recorded); in the arena also: back on its
-//                        feet, full mana, no cooldowns, the default skill bar and the sword
+//                        feet, full mana, no cooldowns, the default skill bar and the sword,
+//                        and fresh dummies where they first stood (scenarios don't share them)
 //   skills a,b+sup,...   (arena) the skill bar, RMB/K Q E R F (gem+support+...)
 //   weapon CLASS [2h]    (arena) equip a weapon class: sword axe mace sceptre dagger wand staff bow
 //   hurt SHARE [dx dz]   (arena) the hero loses SHARE of its life, knocked away from (dx, dz)
@@ -218,6 +219,13 @@ window.__FILM = (() => {
         hero.cooldowns.clear();
         hero.actor.life = hero.actor.maxLife;
         hero.actor.mana = hero.actor.maxMana;
+      }
+      if (typeof g.spawnDummies === 'function') {
+        // the dummies as the arena first spawned them (same places, same seeds), whatever ran before
+        for (const d of g.dummies) g.actors.remove(d);
+        g.dummies.length = 0;
+        g.respawns = 0;
+        g.spawnDummies();
       }
       e.step(1);
       hero.teleport([x, y, z]);
