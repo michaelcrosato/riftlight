@@ -1,5 +1,6 @@
 // Generates the demo's local GLB assets (public/assets/*.glb) with three's GLTFExporter.
-// Deterministic: re-running produces byte-identical files. Run with `npm run assets`.
+// Deterministic: re-running produces byte-identical files, on Node 22 (CI's) and 24 alike.
+// Run with `npm run assets`.
 //
 // Models are chunky low-poly primitives colored from the engine palette; the engine
 // re-shades every loaded material with its 3-band toon material, so only base colors matter.
@@ -76,10 +77,24 @@ function tree() {
   return { scene: root, animations: [] };
 }
 
+// The exporter writes colours in linear space, converted from sRGB with Math.pow, whose last
+// bit differs between V8 versions. Rounding the linear values keeps the bytes the same on
+// Node 22 and 24 (measured; vertex data already matched, being stored as float32).
+const round6 = (v) => Math.round(v * 1e6) / 1e6;
+function stableColors(scene) {
+  scene.traverse((o) => {
+    for (const m of [].concat(o.material ?? [])) {
+      const c = m.color;
+      if (c?.isColor) c.setRGB(round6(c.r), round6(c.g), round6(c.b), THREE.LinearSRGBColorSpace);
+    }
+  });
+}
+
 const exporter = new GLTFExporter();
 await mkdir(new URL('../public/assets/', import.meta.url), { recursive: true });
 for (const [name, build] of Object.entries({ hero, coin, tree })) {
   const { scene, animations } = build();
+  stableColors(scene);
   const glb = await exporter.parseAsync(scene, { binary: true, animations });
   await writeFile(new URL(`../public/assets/${name}.glb`, import.meta.url), Buffer.from(glb));
   console.log(`public/assets/${name}.glb  ${glb.byteLength} bytes  clips: ${animations.map((a) => a.name).join(', ') || '-'}`);
