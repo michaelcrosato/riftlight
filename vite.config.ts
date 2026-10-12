@@ -8,7 +8,8 @@ const { version } = JSON.parse(readFileSync(new URL('./package.json', import.met
  * ES module. Instead of a wasm-ESM plugin (top-level await that would block the whole
  * app until the wasm arrives), that import becomes an empty stub and
  * `src/engine/physics/rapierWasm.ts` instantiates the file itself (`?url`, streamed
- * compile) in parallel with the renderer and asset loading.
+ * compile) in parallel with the renderer and asset loading. Tools run through tsx get the
+ * same stub (and `?url`) from Node module hooks, scripts/trace/hooks.ts: change one, change both.
  */
 function rapierWasm(): Plugin {
   const STUB = '\0rapier-wasm-stub';
