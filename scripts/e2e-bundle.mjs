@@ -79,7 +79,7 @@ export async function runBundle(h) {
   try {
     manifest = JSON.parse(await readFile(new URL('manifest.json', kit), 'utf8'));
     check(manifest.version === version, `manifest version ${manifest.version} is package.json's (${version})`);
-    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
+    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
     check(manifest.examples.length >= 4 && manifest.examples.includes('examples/market.html'), `one page per guide recipe: ${manifest.examples.join(', ')}`);
