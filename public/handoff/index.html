@@ -1,0 +1,82 @@
+<!doctype html>
+<!--
+  The handoff page: the one link to give an agent that builds a game on the engine outside this
+  repo. Vite copies it from public/ to dist/handoff/, so the site serves it at /handoff/. The kit
+  it points to is rebuilt from main with the site (npm run build: dist/engine/ and dist/engine.zip).
+  Plain text on purpose: agents fetch it without running scripts. The e2e suite "bundle" checks
+  every /engine link names a file the kit ships.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pixel Engine handoff</title>
+    <meta name="description" content="Everything an agent needs to build a game on Pixel Engine: download engine.zip, read README.md, then GUIDE.md." />
+    <link rel="icon" href="/favicon.svg" />
+    <style>
+      :root { color-scheme: light dark; --ink: #1b1726; --paper: #f6f3ee; --line: #d8d2c8; --accent: #5b3fc4; }
+      @media (prefers-color-scheme: dark) { :root { --ink: #ece8f6; --paper: #0d0b14; --line: #3a3348; --accent: #a68cff; } }
+      body { margin: 0; background: var(--paper); color: var(--ink); font: 16px/1.55 system-ui, sans-serif; }
+      main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { font-size: 1.6rem; margin: 0 0 0.5rem; }
+      h2 { font-size: 1.15rem; margin: 2rem 0 0.5rem; }
+      a { color: var(--accent); }
+      code, pre { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 0.9em; }
+      pre { padding: 12px; border: 1px solid var(--line); border-radius: 6px; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+      ol { padding-left: 1.4rem; }
+      li { margin: 0.4rem 0; }
+      ul.files { list-style: none; padding: 0; border-top: 1px solid var(--line); }
+      ul.files li { margin: 0; padding: 0.5rem 0; border-bottom: 1px solid var(--line); }
+      ul.files span { display: block; font-size: 0.9rem; opacity: 0.8; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Pixel Engine handoff</h1>
+      <p>
+        Everything a coding agent needs to build a game on Pixel Engine outside its repository: the
+        engine as one ES module, its guides, a starter game and a checker. The kit is rebuilt from
+        <code>main</code> each time the site deploys, so this page always points at the current
+        engine. <a href="/engine/manifest.json">manifest.json</a> gives its version and build.
+      </p>
+
+      <h2>For an agent</h2>
+      <ol>
+        <li>
+          Download <a href="/engine.zip">engine.zip</a> and unzip it; everything lands in <code>engine/</code>:
+          <pre>curl -fLO https://riftlight.vercel.app/engine.zip &amp;&amp; unzip engine.zip &amp;&amp; cd engine</pre>
+        </li>
+        <li>Read <a href="/engine/README.md">README.md</a>, then <a href="/engine/GUIDE.md">GUIDE.md</a> whole. Search <a href="/engine/API.md">API.md</a>; don't read it whole.</li>
+        <li>Edit <code>game.js</code> into your game. Serve the folder over HTTP (<code>npx serve .</code>) and open <code>index.html</code>; ES modules don't load from <code>file://</code>.</li>
+        <li>
+          Run <code>node check.mjs</code> before you hand the game back: it plays the page in a browser and fails on any error.
+          It needs Playwright (<code>npm i -D playwright &amp;&amp; npx playwright install chromium</code>; GUIDE.md, section 8).
+        </li>
+      </ol>
+      <p>
+        Can't reach this site, for example from a sandbox that only allows GitHub and package
+        registries? Build the same kit from source:
+      </p>
+      <pre>git clone --depth 1 https://github.com/michaelcrosato/riftlight &amp;&amp; cd riftlight &amp;&amp; npm ci &amp;&amp; npm run bundle</pre>
+      <p>
+        Then copy <code>bundle/pixel-engine/</code> to where your game will live and start at its
+        <code>README.md</code>. Don't build the game inside <code>bundle/</code>: the next
+        <code>npm run bundle</code> empties it.
+      </p>
+
+      <h2>What the kit holds</h2>
+      <ul class="files">
+        <li><a href="/engine/README.md">README.md</a><span>Start here: what is where and the order to read it.</span></li>
+        <li><a href="/engine/GUIDE.md">GUIDE.md</a><span>The manual: hosting, the mental model, a complete game, recipes, rules, common mistakes. Read it whole.</span></li>
+        <li><a href="/engine/API.md">API.md</a><span>Every export with its signature and doc. Search it.</span></li>
+        <li><a href="/engine/ASSETS.md">ASSETS.md</a>, <a href="/engine/LIBRARY.md">LIBRARY.md</a><span>Models and textures as data; every built-in model and texture.</span></li>
+        <li><a href="/engine/game.js">game.js</a>, <a href="/engine/index.html">index.html</a><span>The starter game, a complete game to edit into yours. <a href="/engine/">Play it.</a></span></li>
+        <li><a href="/engine/check.mjs">check.mjs</a><span>Plays a page in a real browser, saves screenshots, fails on any error; <code>--sheets</code> draws your models.</span></li>
+        <li><a href="/engine/pixel-engine.js">pixel-engine.js</a>, <a href="/engine/pixel-engine.d.ts">pixel-engine.d.ts</a><span>The engine (three.js, Rapier and the built-in models inlined) and its types. Import it; never edit it or read it.</span></li>
+        <li><a href="/engine/CHANGELOG.md">CHANGELOG.md</a>, <a href="/engine/CREDITS.md">CREDITS.md</a>, <a href="/engine/LICENSE">LICENSE</a><span>What changed between versions, where everything came from, the MIT licence.</span></li>
+      </ul>
+
+      <p>See it running: <a href="/">Riftlight</a>, the game built on the engine, and <a href="/?game=world">Engine World</a>, a room per technique.</p>
+    </main>
+  </body>
+</html>

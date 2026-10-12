@@ -92,7 +92,8 @@
 //
 // bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
 //                 zip, its types, its check.mjs on every page (WebGPU + WebGL 2), every guide
-//                 recipe played as the guide describes, and errors reported (box, engine.errors).
+//                 recipe played as the guide describes, and errors reported (box, engine.errors);
+//                 the handoff page (/handoff/) links only files the kit ships.
 //
 // The debug panel is off by default in production builds: every page gets ?debug=1 unless
 // the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel
