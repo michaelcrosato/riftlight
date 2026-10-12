@@ -182,13 +182,13 @@ export function expandDef(def: ModelDef, opts: ModelOptions, catalog: ModelCatal
     // its slots → ours: mapped, else the same name, else its own colour under `<id>.<slot>`
     const map = new Map<Slot, Slot>();
     for (const [s, binding] of Object.entries(child.model.palette)) {
-      const to = p.palette?.[s];
+      const to = p.palette && Object.hasOwn(p.palette, s) ? p.palette[s] : undefined; // own keys: a slot may be called 'constructor'
       if (to !== undefined && !slots.includes(to)) problems.push(`${partLabel(p, at)} maps its slot '${s}' to '${to}', which this palette does not declare`);
       const target = to ?? (slots.includes(s) ? s : `${p.use}.${s}`);
       map.set(s, target);
-      if (!(target in palette)) palette[target] = binding;
+      if (!Object.hasOwn(palette, target)) palette[target] = binding;
     }
-    for (const s of Object.keys(p.palette ?? {})) if (!(s in child.model.palette)) problems.push(`${partLabel(p, at)} maps slot '${s}', which ${p.use} does not have (${Object.keys(child.model.palette).join(', ')})`);
+    for (const s of Object.keys(p.palette ?? {})) if (!Object.hasOwn(child.model.palette, s)) problems.push(`${partLabel(p, at)} maps slot '${s}', which ${p.use} does not have (${Object.keys(child.model.palette).join(', ')})`);
     const group = renameParts(child.model.parts, scope, (s) => map.get(s) ?? s);
     return clean({ group, at: p.at, rot: p.rot, scale: p.scale, name: p.name, on: p.on });
   };
@@ -197,12 +197,12 @@ export function expandDef(def: ModelDef, opts: ModelOptions, catalog: ModelCatal
 
   // the build's re-bindings: declared slots only
   for (const [slot, binding] of Object.entries(opts.palette ?? {})) {
-    if (!(slot in palette)) problems.push(`the build re-binds slot '${slot}', which the model does not have (${Object.keys(palette).join(', ')})`);
+    if (!Object.hasOwn(palette, slot)) problems.push(`the build re-binds slot '${slot}', which the model does not have (${Object.keys(palette).join(', ')})`);
     else if (typeof binding !== 'number' && !isPaletteName(binding)) problems.push(`the build binds slot '${slot}' to ${JSON.stringify(binding)}, not a PALETTE colour or a hex number`);
     else palette[slot] = binding;
   }
   if (def.light && !slots.includes(def.light.c)) problems.push(`the light's colour is slot '${def.light.c}', which the palette does not declare`);
-  if (opts.light?.c !== undefined && !(opts.light.c in palette)) problems.push(`the build's light names slot '${opts.light.c}', which the model does not have: pass \`color\` for a colour`);
+  if (opts.light?.c !== undefined && !Object.hasOwn(palette, opts.light.c)) problems.push(`the build's light names slot '${opts.light.c}', which the model does not have: pass \`color\` for a colour`);
   const nums = (...vs: (readonly number[] | undefined)[]) => vs.every((v) => !v || v.every(Number.isFinite));
   if (!nums(def.light?.at, [def.light?.intensity ?? 0, def.light?.radius ?? 0], def.size, ...Object.values(def.anchors ?? {}).flatMap((a) => (Array.isArray(a) ? [a as readonly number[]] : [(a as { at: Vec3 }).at, (a as { rot: Vec3 }).rot]))))
     problems.push(`its light, size or anchors hold a NaN or infinite number`);
@@ -239,10 +239,10 @@ function renameParts(parts: readonly Part[], scope: string, slot: (s: Slot) => S
     if ('group' in p) return { ...p, ...named(p), group: renameParts(p.group, scope, slot) };
     if ('use' in p) return p; // expanded already
     if ('mesh' in p) {
-      // two of its slots may land on one of ours: their faces join
-      const f: Record<Slot, string> = {};
-      for (const [s, faces] of Object.entries(p.mesh.f)) f[slot(s)] = f[slot(s)] ? `${f[slot(s)]},${faces}` : faces;
-      return { ...p, ...named(p), mesh: { v: p.mesh.v, f } };
+      // two of its slots may land on one of ours: their faces join (a Map: a slot may be called 'constructor')
+      const f = new Map<Slot, string>();
+      for (const [s, faces] of Object.entries(p.mesh.f)) f.set(slot(s), f.has(slot(s)) ? `${f.get(slot(s))},${faces}` : faces);
+      return { ...p, ...named(p), mesh: { v: p.mesh.v, f: Object.fromEntries(f) } };
     }
     return { ...p, ...named(p), ...(p.c !== undefined ? { c: slot(p.c) } : {}) };
   });

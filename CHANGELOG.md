@@ -8,6 +8,56 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.24.0
+
+What a game gets (exported from the engine and the kit):
+
+- `loadPack(url, { into? })`: a pack of imported models, one JSON file
+  (`public/packs/<pack>.json`), fetched at runtime the way `loadModel` fetches a GLB and never
+  bundled; it resolves to a `ModelCatalog` (`into` also adds the defs to one of yours).
+  `parsePack` and the `ModelPack` type check a pack file's shape.
+- `LICENCES`: the licences an imported model may carry, as data. Our own work
+  (`LicenseRef-own`, its url a path in this repository or its GitHub URL) is allowed anywhere.
+  Anyone else's work, CC0 included and a single file too, only from a pack (`source.pack`) whose
+  `PACK_SOURCES` entry links the repository owner's approving comment on the licence escalation
+  (#49), for that licence (CC0, or CC-BY pack by pack). `validateModel` reports a `source`
+  without a url or licence, or one these terms refuse, as a problem.
+- `decodePng(bytes, inflate)` and `PngError`: PNGs headless (grey, RGB, palette, grey + alpha,
+  RGBA; 1–16 bits; the five filters; tRNS); `inflate` is injected so browser code never pulls in
+  Node.
+- `buildModel` and the checks: slots named like an object's own keys (`constructor`,
+  `toString`) work in `mesh` parts, `use` and palette maps.
+
+For tools (src/engine/model/import/, src/engine/model/fidelity.ts; not in the kit):
+
+- **Mesh import** (`importGltf`, `importPack`; docs/ASSETS.md *Importing*): a glTF or GLB
+  file → a ModelDef of `mesh` parts, read headless with three's `GLTFLoader`. One part per
+  source node and material, named after the node, welded to the millimetre, normalized (metres,
+  +Y up, the front turned to +Z with `front`, `scale`, the base on y = 0, the footprint
+  centred). A piece that is exactly a box or an n-gon prism becomes `box` or `cyl` with
+  `seg: n` (re-emitted, it must give back the same vertices within 1.5 mm, triangle count, area
+  and volume). Faces take their colour from the material, vertex colours and a PNG atlas sampled
+  at the UV centroid, embedded or beside the file (never a URL or a path outside its folder). An
+  unlit material (KHR_materials_unlit) glows.
+- **Palette mapping** (`mapColours`): a model's face colours cluster in OKLab (hue weighted up,
+  lightness down) into 2–6 slots, assigned to PALETTE entries biggest first by
+  `ΔL² + (0.7·ΔC)² + (2.5·ΔH)²` with penalties for a grey–colour swap and a reused entry,
+  improved one move at a time, with lightness order kept within a hue family. A pack shares one
+  map of up to 16 slots (the palette's size), not 2–6, so a colour reads the same in every model.
+  Slots take meaningful material names (`wood`, `metalDark`), else `c1`, `c2`… (the plan's
+  per-pack slot table for atlas packs isn't built yet); `source.colours` keeps each slot's
+  source colour.
+- **Fidelity** (`scoreFidelity`, `modelTriangles`, `renderFidelity`): any coloured triangles
+  against a translation, drawn by the sheets' rasterizer at 4 yaws at game scale and close up:
+  silhouette IoU, mean OKLab distance where both cover a pixel, bounds delta. Imports record it in
+  `source.fidelity`. `flatTriangles` now winds mirrored parts' faces outward, as `layoutModel`
+  does.
+- `npm run model -- import <file> --as <id> --licence <spdx> --source <url>` (a draft `.ts` and a
+  fidelity sheet), `import-pack <pack>` (approved packs only: sha256-checked, cached in
+  `.scratch/import-cache/`, refused unless a licence file in the download names the licence),
+  `credits`. `check` also checks every pack file (its licence as a pack, and each model's), and
+  `check`, `sheet`, `diff` and `zoo` take a pack file as a target.
+
 ## 0.23.0
 
 - **The library grows to 61 models in ten families and 40 textures** (docs/ASSETS.md; `npm run

@@ -4,8 +4,9 @@ Objects in a game are **plain data** that agents write, check and look at, then 
 `ModelDef` of keyed primitives. There is no modelling tool, and a model is text, never a binary
 file. The engine compiles a def into toon meshes at runtime; `npm run model` measures and draws it
 without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. The plan behind
-it, with its measurements and what is still to come (imports, traces), is
-[docs/plans/asset-system.md](plans/asset-system.md).
+it, with its measurements and what is still to come (traces), is
+[docs/plans/asset-system.md](plans/asset-system.md). Meshes from kits come in through the importer
+([Importing](#importing)).
 
 How it measures so far ([Gate A](plans/gate-a.md), twice): an agent writing a ModelDef spends about
 what one writing code on the town `Kit` spends (R = 0.98, then 1.02), less when it composes library
@@ -33,6 +34,8 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
 | `src/engine/texture/` | Textures as data ([below](#textures)): `TextureDef`, the patterns, `bakeTexture`, `validateTexture`, `textureMap`, `spriteSheet`, `hudSprite`, `TEXTURE_LIBRARY` (`library/`) |
 | `scripts/tex.ts` | `npm run tex` (its header is the manual) |
+| `src/engine/model/import/`, `fidelity.ts`, `packs/` | Mesh import ([below](#importing)): glTF/GLB reading, palette mapping, primitives, packs; fidelity scores; `LICENCES` and `PACK_SOURCES` |
+| `src/engine/png.ts` | `decodePng`: PNGs headless (texture atlases) |
 
 ## The loop
 
@@ -139,8 +142,8 @@ can't build: slots, colours, params, `use`, `on`, malformed meshes or paths): no
 that isn't a PALETTE name; an unknown texture; a malformed mesh or path; NaN; a size that isn't
 positive; `seg` outside 3–64; an empty model; more than 1 cm below the floor unless `floats`; over
 the declared `size` by more than 10%; `on` naming no part (or one of its own); a `use` cycle or an
-unknown id; params outside their range; an import without `source` or with a licence that isn't
-allowed (CC0 until the licence escalation, #49, approves more); a `tex` that names no texture or
+unknown id; params outside their range; an import without `source`, or a `source` without a url
+or licence or with a licence that isn't allowed ([Importing](#importing)); a `tex` that names no texture or
 one with problems, or a part that both glows and takes a texture; a `texel` outside 2–64.
 
 **Warnings** (what won't read at 480×270):
@@ -354,3 +357,89 @@ So `DEFAULT_TEXEL` is **8**: floors, walls and props the camera zooms over. A mo
 which passed the crate test; it shimmers while the camera zooms like a 20-texel surface does, so
 keep such models small on screen. Draw textures for 8: a 16-texel tile covers 2 m, so a brick of
 8 × 4 texels is 1 × 0.5 m.
+
+## Importing
+
+Kits made in a modelling tool come in as data too: the importer turns a glTF or GLB file into a
+ModelDef whose parts are `mesh` (millimetre vertices as text, faces per slot), coloured from the
+palette. An import is faithful, not editable: trace what a game will vary (params, seeds, themes)
+in primitives instead (plan §7.4, still to come).
+
+**The loop:**
+
+1. **Import:** `npm run model -- import chair.glb --as chair --licence LicenseRef-own --source models/chair.glb`
+   for our own file; someone else's adds `--pack <id>`, an approved `PACK_SOURCES` entry, and its
+   own licence and url (`--author`, `--scale 0.01` for centimetres, `--front -z` when the front
+   faces away). It
+   writes a draft, `.scratch/model/import/chair.ts`, and a fidelity sheet,
+   `.scratch/model/fidelity/chair.png`.
+2. **Check:** `npm run model -- check .scratch/model/import/chair.ts`.
+3. **Look:** open the fidelity sheet, then `npm run model -- sheet .scratch/model/import/chair.ts`.
+4. **Fix a colour in one line:** the draft's `palette` binds each slot to a PALETTE entry, and
+   `source.colours` keeps the colour each slot came from. `palette: { wood: 'sand' }` is the fix.
+5. Move the def where it belongs: the library, a game's own catalog, or a pack.
+
+**What it does:**
+
+- **Reads** with three's `GLTFLoader`, headless. Faces take their colour from the material's base
+  colour, vertex colours and a PNG atlas sampled at the face's UV centroid, embedded or beside the
+  file (a `uri` that is a URL, an absolute path or outside the file's folder is refused).
+  Compressed meshes (Draco, meshopt) and other image formats are refused, saying so.
+- **Normalizes:** metres (`--scale`), +Y up, the front turned to +Z (`--front`), the base on
+  y = 0, the footprint centred.
+- **Parts:** one per source node and material, named after the node. Vertices are welded to the
+  millimetre. A piece that is exactly a box or an n-gon prism becomes `box` or `cyl` with
+  `seg: n`: re-emitted, it must give back the same vertices within 1.5 mm, triangle count, area
+  and volume. Everything else stays a mesh. An unlit material glows.
+- **Colours** (plan §7.3): the faces' colours cluster in OKLab into 2–6 slots, hue weighted up and
+  lightness down, so a baked gradient becomes one slot. Slots go to PALETTE entries, biggest first:
+  nearest by lightness, chroma and hue, a penalty when a grey and a colour swap or two slots share
+  an entry, lightness order kept within a hue family. Pale wood stays `sand`, pink stays `red` or
+  `orange`. Slots take the material's name when it means something (`wood`, `metalDark`), else
+  `c1`, `c2`… (an atlas pack's materials are all `colormap`: the plan's per-pack slot table,
+  names written once from the pack's swatch sheet, isn't built yet).
+- **Scores** (plan §7.6): the def and its source drawn by the sheets' rasterizer at 4 yaws, at game
+  scale and close up. `source.fidelity` keeps the worst game-scale and close silhouette IoU, the
+  mean OKLab distance where both cover a pixel, and the bounds delta. An import under 0.98 IoU is
+  an importer bug. The sheet shows source, def and their difference per view, and the source and
+  palette colours side by side.
+
+**Packs:** a kit becomes one JSON file, `public/packs/<pack>.json`, ids `<pack>/<file>`. Its models
+share one colour map (a colour reads the same in every one) of up to 16 slots, the palette's size,
+rather than a model's 2–6: a whole kit has more colours than one model. A game loads it at runtime
+and never bundles it:
+
+```ts
+import { buildModel, loadPack, MODEL_LIBRARY } from './engine';
+
+const kit = await loadPack('packs/furniture.json', { into: MODEL_LIBRARY }); // `into`: so `use` finds them
+const chair = buildModel('furniture/chair', { catalog: kit });
+```
+
+`npm run model -- import-pack <pack>` downloads a pack listed in
+`src/engine/model/packs/sources.ts`, checks its sha256 and its licence files (one must name the
+pack's licence; "public domain" alone isn't CC0; none may name share-alike, non-commercial or
+no-derivatives terms), caches the download in
+`.scratch/import-cache/` (never committed), imports every model and writes the pack file, a summary
+(`.scratch/model/packs/<pack>.json`) and a zoo. `import --pack <pack>` adds one model to a pack
+file: a pack of our own, or one approved in `PACK_SOURCES` (a single file from it).
+`npm run model -- check` checks every pack file with the library: the pack's own licence, and
+each model's.
+
+**Provenance and licences:** every import carries `source`: `url`, `licence`, `author`, `pack`,
+`file`, `sha256`, `tool`, `colours` and `fidelity`. `LICENCES` (src/engine/model/packs/licences.ts)
+is the list, as data. Our own work (`LicenseRef-own`) is allowed anywhere, its `url` a path in this
+repository or a `https://github.com/michaelcrosato/riftlight/` URL (anything else is "own work with
+an outside source"; a path must start in `src`, `scripts`, `public` or `docs`). Anyone else's work,
+CC0 included and a single file too, needs `source.pack` naming a `PACK_SOURCES` entry with an
+approval link for that licence. `check` reports a missing url or licence, or one these terms refuse,
+as a problem, and `import` refuses it up front. `npm run model -- credits` writes the attribution
+list (`.scratch/model/credits.md`) from every model's `source`.
+
+Third-party content waits on the licence escalation,
+[#49](https://github.com/michaelcrosato/riftlight/issues/49). Approval is the repository owner's own
+comment there, linked from the pack's entry (`approved`; a test checks the link's form, the
+sha256 and the licence of every entry). Agents here act through the owner's GitHub account, so the
+code can't prove a comment is human: an agent never writes or links an approval itself. Until the
+owner approves a pack, `PACK_SOURCES` stays empty, `import-pack` refuses, and the importer is
+tested on our own models exported to GLB at test time (no binaries are committed).
