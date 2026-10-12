@@ -8,6 +8,30 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.20.0
+
+- **Textures as data** (src/engine/texture/, docs/ASSETS.md *Textures*): a `TextureDef` (written
+  with `textureDef`) is a palette of slots and layers drawn in order on a grid of texels: `pixels`
+  rows with a legend (the `hud.sprite` format), seeded `pattern`s (`noise`, `bricks`, `tiles`,
+  `planks`, `cobbles`, `stripes`, `checker`, `scatter`, `cracks`, `gradient`) on a ramp of slots,
+  optionally dithered, periodic when the texture `tile`s, an SVG `path` (fill, stroke) and an
+  `outline`.
+  - `bakeTexture` → palette indices and RGBA, headless.
+  - Tiling patterns wrap without a seam by construction (layouts fit a whole number of cells).
+  - `validateTexture`: `bakeTexture`'s problems (a malformed def or layer, unknown slot or colour,
+    a pixel its legend doesn't name, ragged rows, bad pattern params, frames that don't divide the
+    width), which the converters refuse too, plus `about` and `tags`; warnings (a seam where a
+    tiling texture's pixels, path or gradient wrap, salt-and-pepper texels, not a power of two,
+    unused slots and legend keys).
+  - `textureMap` (a cached, shared, nearest-filtered `DataTexture` for `toonMaterial(0xffffff,
+    { map })`, repeat-wrapped when tiling), `spriteSheet` (for `SpriteBatch`, no DOM) and
+    `hudSprite` (rows and colours for `hud.sprite`).
+  - `TEXTURE_LIBRARY` / `TextureCatalog`: planks, bricks, cobbles, floor-tiles, dirt, grass,
+    gem-icon and coin-spin (4 frames).
+- `npm run tex` (scripts/tex.ts): `check` (in check.sh), `sheet`, `find`, `zoo`.
+- `Catalog` (src/engine/catalog.ts) is the one id catalog; `ModelCatalog` and `TextureCatalog`
+  extend it. `isPaletteName` is exported from the palette module.
+
 ## 0.19.0
 
 - `validateModel` / `checkModel` count the game's own pixels (Riftlight's camera, from the front

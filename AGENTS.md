@@ -69,8 +69,9 @@ script and CI pick them up with no extra config.
 
 WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
 (`three/webgpu` + `three/tsl`), `@dimforge/rapier3d@0.20.0` (wasm loaded separately), local GLBs.
-**Read `docs/ASSETS.md` before adding or changing a model** (props, furniture, weapons): look at
-its sheet (`npm run model -- sheet <id> --compare`) and keep `npm run model -- check` clean.
+**Read `docs/ASSETS.md` before adding or changing a model or a texture** (props, furniture,
+weapons, surfaces, sprites): look at its sheet (`npm run model -- sheet <id> --compare`,
+`npm run tex -- sheet <id>`) and keep `npm run model -- check` and `npm run tex -- check` clean.
 **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
 the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
 animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
@@ -90,6 +91,7 @@ isolated clips can't.
 | `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`clips/`, one file per family; `animations.ts` re-exports `HERO_CLIPS`) |
 | `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
 | `src/engine/model/` | Models as data (docs/ASSETS.md): the `ModelDef` format, `buildModel`, the checks, the built-in library (`library/`) |
+| `src/engine/texture/`, `scripts/tex.ts` | Textures as data (docs/ASSETS.md, *Textures*): `TextureDef` layers and patterns, `bakeTexture`, `textureMap` / `spriteSheet` / `hudSprite`; `npm run tex -- check / sheet / find / zoo` |
 | `scripts/model.ts`, `asset-lab.html` | `npm run model -- check / sheet / diff / find / zoo / tokens`: check and look at models; the Asset Lab shows them in the real renderer (`window.__ASSET_LAB__`) |
 | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
 | `src/lab/`, `lab.html`, `asset-lab.html` | Animation Lab (preview, scrub, metrics, sheets, `window.__ANIM_LAB__`) and Asset Lab (`assetLab.ts`: library models in the real renderer, `window.__ASSET_LAB__`) |
