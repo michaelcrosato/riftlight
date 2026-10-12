@@ -8,11 +8,14 @@ it, with its measurements and what is still to come, is
 [docs/plans/asset-system.md](plans/asset-system.md). Meshes from kits come in through the importer
 ([Importing](#importing)); what a game will vary is traced in primitives ([Tracing](#tracing)).
 
-How it measures so far ([Gate A](plans/gate-a.md), twice): an agent writing a ModelDef spends about
-what one writing code on the town `Kit` spends (R = 0.98, then 1.02), less when it composes library
-models (the campfire, 0.84), and the judges still preferred the Kit's models. They lost on colour
-(fixed by the checks below) and on a flame that read brown (rebuilt: see *Fire faces the camera*).
-The library is where ModelDefs pay: start from it (`npm run model -- find`, `zoo`).
+How it measures ([Gate A](plans/gate-a.md), three runs): with the seed library an agent writing a
+ModelDef spent about what one writing code on the town `Kit` spends (R = 0.98, then 1.02), less when
+it composed library models (the campfire, 0.84), and the judges preferred the Kit's models: they
+lost on colour (fixed by the checks below) and a flame that read brown (rebuilt: *Fire faces the
+camera*). With the full library the judges preferred the ModelDefs in 3 of 4 briefs (the
+campfire and the weapon rack composed `flame` and the library's weapons), but they cost 1.75 times
+as much: the gate's frozen prompt has the agent read the library's whole source (233 KB) rather
+than search it. The library is where ModelDefs pay: start from it (`npm run model -- find`, `zoo`).
 
 ```
 library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildModel() ──► merged toon meshes
