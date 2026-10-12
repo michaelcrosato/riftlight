@@ -7,6 +7,7 @@
  *     palette: { gap: 'ink', wood: 'orange', wood2: 'red' },
  *     layers: [{ pattern: 'planks', colors: ['gap', 'wood', 'wood2'], seed: 2 }] });
  */
+import type { Provenance } from '../model/types';
 import type { PaletteColor } from '../palette';
 
 /** A key of the def's palette. Layers never name PALETTE colours directly. */
@@ -70,4 +71,10 @@ export interface TextureDef {
   /** Sprite sheets: this many frames left to right; they must divide the width. */
   readonly frames?: number;
   readonly layers: readonly Layer[];
+  /**
+   * Where an imported texture came from (`npm run tex -- import`), as models record it: url,
+   * licence, file, author, sha256, tool, and each slot's source colour. The check refuses a
+   * missing url or licence, or one not allowed (`LICENCES`).
+   */
+  readonly source?: Provenance;
 }

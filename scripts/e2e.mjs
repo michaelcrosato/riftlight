@@ -61,8 +61,11 @@
 //                 tree.glb (a clean draft, IoU ≥ 0.98), refuses a disallowed licence, a
 //                 third-party file or pack nobody approved (import, import --pack, import-pack),
 //                 own work with an outside source and an unsafe id, and writes the credits;
-//                 `npm run tex` checks, draws a re-bound sheet and the zoo, finds, and refuses an
-//                 unknown id.
+//                 `npm run tex` checks, draws a re-bound sheet and the zoo, finds, refuses an
+//                 unknown id, imports the library's coin (baked to a PNG) back as 4 frames (no
+//                 merges, a clean draft that bakes to the same texels), and refuses a disallowed
+//                 licence, a third-party file or pack nobody approved, own work with an outside
+//                 source, an unsafe id and a grid that doesn't fit.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
@@ -1301,6 +1304,32 @@ async function runTools(browserExe) {
     check(found.code === 0 && /bricks/.test(found.out) && /cobbles/.test(found.out), 'tex find stone lists the bricks and the cobbles');
     const missing = await t('sheet', 'nope');
     check(missing.code === 2 && missing.out.trim().split('\n').length === 1 && /no texture "nope"/.test(missing.out), `tex sheet nope: one line, exit ${missing.code}`);
+    // import: our own coin (the library's, baked to a PNG here) back in as a strip of 4 frames
+    const tsx = (code) => run('npx', ['tsx', '-e', code]);
+    const png = '.scratch/e2e/tex/coin-spin-source.png';
+    const made = await tsx(`import { mkdirSync, writeFileSync } from 'node:fs'; import { encodePng } from './scripts/png.ts'; import { bakeTexture, TEXTURE_LIBRARY } from './src/engine/texture/index.ts'; const b = bakeTexture(TEXTURE_LIBRARY.get('coin-spin')); mkdirSync('.scratch/e2e/tex', { recursive: true }); writeFileSync('${png}', encodePng({ width: b.width, height: b.height, data: new Uint8ClampedArray(b.rgba) }));`);
+    check(made.code === 0, `the coin's source PNG is written${made.code ? `\n    ${tail(made.out)}` : ''}`);
+    const own = ['--licence', 'LicenseRef-own', '--source', 'src/engine/texture/library/sprites.ts'];
+    const imported = await t('import', png, '--grid', '8x8', '--frames', '--as', 'coin-import', ...own, '--json');
+    const ij = imported.code === 0 ? JSON.parse(imported.out) : { defs: [], merges: ['crashed'], problems: ['crashed'] };
+    const isz = await pngSize(new URL('import/coin-import.png', out));
+    check(imported.code === 0 && ij.defs.join() === 'coin-import' && ij.merges.length === 0 && ij.problems.length === 0 && isz.width > 300, `tex import coin-spin --frames: ${ij.defs.join()}, ${ij.merges.length} merges, sheet ${isz.width}×${isz.height}${imported.code ? `\n    ${tail(imported.out)}` : ''}`);
+    const draft = await t('check', '.scratch/e2e/tex/import/coin-import.ts');
+    check(draft.code === 0 && /\b0 with problems/.test(draft.out), 'the imported draft checks clean as a file');
+    const same = await tsx(`import { bakeTexture, TEXTURE_LIBRARY } from './src/engine/texture/index.ts'; import { coinImport } from './.scratch/e2e/tex/import/coin-import.ts'; const a = bakeTexture(TEXTURE_LIBRARY.get('coin-spin')).rgba; const b = bakeTexture(coinImport).rgba; console.log(coinImport.frames, a.length === b.length && a.every((v, i) => v === b[i]) ? 'same' : 'differs');`);
+    check(same.code === 0 && /^4 same/m.test(same.out), `the draft bakes to the library coin's texels, 4 frames: ${same.out.trim().split('\n').pop()}`);
+    const refused = await t('import', png, '--grid', '8x8', '--licence', 'CC-BY-SA-4.0', '--source', 'x');
+    check(refused.code === 2 && /refused: .*'CC-BY-SA-4.0' is not allowed/.test(refused.out), 'tex import refuses a licence the checks refuse');
+    const unapproved = await t('import', png, '--grid', '8x8', '--as', 'thirdparty/coin', '--licence', 'CC0-1.0', '--source', 'https://example.test/kit.zip', '--pack', 'thirdparty');
+    check(unapproved.code === 2 && /pack 'thirdparty', which is not approved/.test(unapproved.out), 'tex import --pack refuses a third-party pack nobody approved');
+    const lone = await t('import', png, '--grid', '8x8', '--as', 'coin-cc0', '--licence', 'CC0-1.0', '--source', 'https://example.test/coin.png');
+    check(lone.code === 2 && /'CC0-1.0' is not allowed without an approved pack \(it names no pack/.test(lone.out), 'tex import refuses a single third-party sheet, CC0 included, that names no approved pack');
+    const outside = await t('import', png, '--grid', '8x8', '--as', 'coin-own', '--licence', 'LicenseRef-own', '--source', 'https://example.test/coin.png');
+    check(outside.code === 2 && /own work with an outside source/.test(outside.out), 'tex import refuses own work whose source is outside this repository');
+    const unsafe = await t('import', png, '--grid', '8x8', '--as', '../coin', ...own);
+    check(unsafe.code === 2 && /--as takes an id like tiles/.test(unsafe.out), 'tex import refuses an id that would climb out of its folder');
+    const ragged = await t('import', png, '--grid', '7x8', ...own);
+    check(ragged.code === 2 && /not whole 7 x 8 cells/.test(ragged.out), `tex import refuses a grid the sheet is not whole cells of: ${ragged.out.trim().split('\n')[0]}`);
   } catch (e) {
     check(false, `tex crashed: ${e.message}`);
   }

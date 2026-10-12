@@ -1332,7 +1332,9 @@ rows, seeded patterns that tile, SVG paths, outlines) in palette slots, baked he
 with `tex`: `buildModel` gives it UVs at the model's `texel` density and a toon material with
 the map, and the sheets and `inspect` draw its texels. `TEXTURE_LIBRARY` holds
 the built-ins; `npm run tex -- check / sheet / find / zoo` checks and draws them
-([docs/ASSETS.md](ASSETS.md#textures)).
+([docs/ASSETS.md](ASSETS.md#textures)). A pixel-art PNG sheet comes in as defs of pixel rows,
+cell by cell or as frames, its colours mapped to PALETTE with every merge reported
+(`importSheet`, `npm run tex -- import`; docs/ASSETS.md, *Importing*).
 
 ### Textured and vertex-colored toon materials
 
@@ -1481,9 +1483,10 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   `capture`, `gateB`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both
   backends. `npm run build && npm run gate-b` (`scripts/gate-b.ts`) measures texel shimmer there
   (Gate B, docs/ASSETS.md *Texel density*): ~60 min a backend.
-- `npm run tex -- check / sheet / find / zoo` (`scripts/tex.ts`, docs/ASSETS.md *Textures*):
-  TextureDefs checked (problems exit 1; warnings for seams, salt-and-pepper texels and sizes) and
-  drawn as sheets (1×, enlarged, tiled 3×3, frames, palette).
+- `npm run tex -- check / sheet / find / zoo / import` (`scripts/tex.ts`, docs/ASSETS.md
+  *Textures*): TextureDefs checked (problems exit 1; warnings for seams, salt-and-pepper texels
+  and sizes) and drawn as sheets (1×, enlarged, tiled 3×3, frames, palette); pixel-art PNG sheets
+  imported as a draft of defs with an import sheet (source | mapped, the merges).
 - `npm run inspect -- <target>` (`src/engine/inspect/`, `scripts/inspect.ts`): any asset as
   `.scratch/inspect/<name>.png` + `.json`: an 8-angle turntable at one scale, a rig front and
   side (mesh dimmed, joints and names on top, right side orange, left cyan) and a panel with

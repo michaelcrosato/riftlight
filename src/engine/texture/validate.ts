@@ -1,12 +1,14 @@
 /**
  * Texture checks (`npm run tex -- check`), the textures' counterpart of `validateModel`.
  * Problems: `bakeTexture`'s (everything that stops it baking right, so the converters refuse it)
- * plus a missing `about` or `tags`. Warnings are what won't read at 480×270: a seam where a
+ * plus a missing `about` or `tags`, and an imported texture's `source` without a url or a licence,
+ * or with one `LICENCES` doesn't allow (the models' rule). Warnings are what won't read at 480×270: a seam where a
  * tiling texture's drawn layers (pixels, paths, a gradient) wrap, salt-and-pepper texels (too
  * many single texels to read at 1:1; they shimmer as the camera zooms), a size that isn't a power
  * of two on a tiling surface, legend keys and palette slots nobody uses. Patterns other than
  * `gradient` wrap by construction (patterns.ts), so their seams are tested, not measured.
  */
+import { licenceProblem } from '../model/packs/licences';
 import { bakeTexture, isPattern, isPixels, type BakedTexture } from './bake';
 import { PATTERNS } from './patterns';
 import type { TextureDef } from './types';
@@ -86,6 +88,8 @@ export function validateTexture(def: TextureDef): TextureCheck {
   const warnings: string[] = [];
   if (typeof def.about !== 'string') problems.push(`it has no \`about\`: one line saying what it is (\`find\` searches it)`);
   if (!Array.isArray(def.tags)) problems.push(`it has no \`tags\`: a list of words for \`find\` (may be empty)`);
+  const licence = def.source ? licenceProblem(def.source) : null;
+  if (licence) problems.push(licence);
   if (problems.length) return { id: def.id, problems, warnings, metrics: null };
   // drawn layers can break at the wrap; the other patterns are periodic by construction, so the
   // seam is measured on a bake of the drawn layers alone
