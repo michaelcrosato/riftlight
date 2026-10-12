@@ -226,7 +226,8 @@ function spread(layout: Layout, ax: number, az: number, ranks: readonly Rank[], 
 }
 
 /**
- * Scatter the theme's props: 'o' template spots first, then random open cells by density.
+ * Scatter the theme's props (picked by their `weight`): 'o' template spots first, then random
+ * open cells by density.
  * Blocking props only go where all 8 neighbours are open floor (a single blocked cell then
  * can't cut a path) and never near the critical path; their cells become walls.
  * Torches go on back walls (visible from the iso camera) and request lights.
@@ -236,8 +237,11 @@ function decorate(layout: Layout, theme: LevelTheme, rng: Rng, taken: Uint8Array
   const H = layout.height;
   const out: PropPlacement[] = [];
   const near = pathCorridor(layout, 1);
-  const kinds = theme.props.filter((k) => PROPS.has(k));
+  const unknown = theme.props.filter((k) => !PROPS.has(k));
+  if (unknown.length) throw new Error(`theme '${theme.id}' lists props with no PropDef: ${unknown.join(', ')}`);
+  const kinds = theme.props;
   if (!kinds.length) return out;
+  const pick = (list: readonly string[]) => rng.weighted(list, (k) => PROPS.get(k).weight ?? 1);
   const open = (x: number, z: number) => layout.inBounds(x, z) && layout.cells[z * W + x] === FLOOR && !taken[z * W + x] && !dynamicFloor[z * W + x];
   const ringOpen = (x: number, z: number) => {
     for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) if (!open(x + dx, z + dz) || near[(z + dz) * W + x + dx]) return false;
@@ -254,7 +258,7 @@ function decorate(layout: Layout, theme: LevelTheme, rng: Rng, taken: Uint8Array
   };
   const wallSide = kinds.filter((k) => PROPS.get(k).nearWall);
   const freeSide = kinds.filter((k) => !PROPS.get(k).nearWall);
-  for (const s of layout.spots) if (s.tag === 'prop') put(rng.pick(freeSide.length ? freeSide : kinds), s.x, s.z);
+  for (const s of layout.spots) if (s.tag === 'prop') put(pick(freeSide.length ? freeSide : kinds), s.x, s.z);
   // Density: per 100 floor cells.
   const floorCells: number[] = [];
   for (let i = 0; i < W * H; i++) if (layout.cells[i] === FLOOR) floorCells.push(i);
@@ -264,7 +268,7 @@ function decorate(layout: Layout, theme: LevelTheme, rng: Rng, taken: Uint8Array
     const x = i % W;
     const z = (i - x) / W;
     const againstWall = layout.cell(x - 1, z) === WALL || layout.cell(x, z - 1) === WALL;
-    const kind = againstWall && wallSide.length && rng.chance(0.6) ? rng.pick(wallSide) : rng.pick(freeSide.length ? freeSide : kinds);
+    const kind = againstWall && wallSide.length && rng.chance(0.6) ? pick(wallSide) : pick(freeSide.length ? freeSide : kinds);
     if (put(kind, x, z)) n++;
   }
   // Bridges have no walls: lantern posts at island edges light the way instead.

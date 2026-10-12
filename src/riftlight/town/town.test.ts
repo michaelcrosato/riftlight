@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { analyzeClip, compileClip, restPoseOf, validateClip } from '../../engine/animation';
 import { HERO_RIG } from '../../game/hero/rig';
@@ -6,7 +6,7 @@ import { Rng } from '../core/rng';
 import { bfs } from '../game/nav';
 import { PlaytestBot } from '../game/bot';
 import { generateLayout } from '../game/stubs/layout';
-import { collideBlockers } from './kit';
+import { collideBlockers, Kit } from './kit';
 import { NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
 import { NPCS } from './npcs';
@@ -54,6 +54,64 @@ describe('town layout', () => {
     // turned 90°: the box is 2 long along z and 1 deep along x, so the circle leaves along x
     expect(Math.abs(q.x)).toBeCloseTo(1.4);
     expect(q.z).toBeCloseTo(0.9);
+  });
+
+  it('a library model blocks its whole footprint, turned with it and its frame', () => {
+    const k = new Kit();
+    let len = 0;
+    let depth = 0;
+    // a 1.6 m log along its x, turned 90° in a frame turned 90° more: it lies along world x,
+    // its centre 1 m along the frame's +Z (world +x) from (5, 3)
+    k.frame(5, 3, 90, () => {
+      [len, , depth] = k.model('log', [0, 0, 1], { yaw: 90 }).bounds.size;
+    });
+    expect(k.blockers.length).toBe(1);
+    // near either end of the log, and beside it, a small circle is pushed off
+    for (const [x, z] of [
+      [6 + len / 2 - 0.1, 3],
+      [6 - len / 2 + 0.1, 3],
+      [6, 3 + depth / 2 - 0.05],
+    ]) {
+      const p = new Vector3(x, 0, z);
+      collideBlockers(p, 0.1, k.blockers);
+      expect(p.distanceTo(new Vector3(x, 0, z)), `${x}, ${z}`).toBeGreaterThan(0.05);
+    }
+    // and clear of it, nothing moves
+    const free = new Vector3(6, 0, 3 + depth / 2 + 0.2);
+    collideBlockers(free, 0.1, k.blockers);
+    expect(free.z).toBeCloseTo(3 + depth / 2 + 0.2);
+  });
+
+  it('the blocker holds every vertex of an off-centre model at uneven turns, and nothing to spare', () => {
+    // the cart's footprint is off its origin; a 30° frame and a 25° turn catch a wrong sign or an unturned centre
+    const k = new Kit();
+    let object!: Object3D;
+    k.frame(-2, 4, 30, () => {
+      object = k.model('cart', [0.4, 0, 1.3], { yaw: 25 }).object;
+    });
+    k.build();
+    object.updateWorldMatrix(true, true);
+    const b = k.blockers[0]!;
+    if (b.kind !== 'box') throw new Error('expected a box blocker');
+    // into the box's frame, as collideBlockers does
+    const local = (v: Vector3) => {
+      const [c, s, dx, dz] = [Math.cos(b.rot), Math.sin(b.rot), v.x - b.x, v.z - b.z];
+      return [dx * c - dz * s, dx * s + dz * c] as const;
+    };
+    let [ex, ez] = [0, 0];
+    object.traverse((o) => {
+      const pos = (o as Mesh).isMesh ? (o as Mesh).geometry.getAttribute('position') : null;
+      for (let i = 0; pos && i < pos.count; i++) {
+        const [lx, lz] = local(new Vector3().fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld));
+        expect(Math.abs(lx)).toBeLessThanOrEqual(b.hw + 1e-6);
+        expect(Math.abs(lz)).toBeLessThanOrEqual(b.hd + 1e-6);
+        ex = Math.max(ex, Math.abs(lx));
+        ez = Math.max(ez, Math.abs(lz));
+      }
+    });
+    // and it's tight: some vertex reaches each side
+    expect(ex).toBeCloseTo(b.hw, 5);
+    expect(ez).toBeCloseTo(b.hd, 5);
   });
 });
 

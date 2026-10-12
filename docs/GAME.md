@@ -161,10 +161,12 @@ the press), so the presentation does the smoothing, with no say over gameplay:
   under the rising body. Walk and Run share one phase; a stop finishes the stride in the air.
 - **Weapons** (`actors/weapons.ts`): one mesh per weapon class (sword, axe, mace, sceptre,
   dagger, wand, staff in the right fist; a bow in the left, its string drawn to the right hand
-  between a bow clip's `draw` frames and let go at its hit frame). The equipped item's
-  `weapon.<class>` flag picks it (`weaponClassOf`; no flag is the starter sword; two-handers
-  are drawn a size up). With a staff or wand, `Cast` / `CastBig` become `CastWeapon` /
-  `CastBigWeapon` (same hit frames): the weapon points.
+  between a bow clip's `draw` frames and let go at its hit frame). Each is the engine library's
+  model of its class (`src/engine/model/library/weapons.ts`), the same one a drop of that class
+  shows lying flat on the ground (`loot/world.ts`, its grip in the rarity colour). The equipped
+  item's `weapon.<class>` flag picks it (`weaponClassOf`; no flag is the starter sword;
+  two-handers are drawn a size up). With a staff or wand, `Cast` / `CastBig` become
+  `CastWeapon` / `CastBigWeapon` (same hit frames): the weapon points.
 
 Hit frames and cancel points are `COMBAT_TIMING` (`src/game/hero/clips/combat.ts`); move a hit
 in a clip and move it there too. Check the hero in the arena with
@@ -1068,22 +1070,32 @@ suits. **Add a layout style:** add it to `LayoutStyle` and `STYLE` (corridor len
 ### Themes and props
 
 A `LevelTheme` (`themes/themes.ts`) is data: palette (floor, wall, accent, fog, sky, light),
-`floorAlt`, `trim`, `cliff`, ambient and sun colours and intensities, height-fog distances,
-torch intensity/radius/flicker, prop ids and density, wall height, a `song` id and optional
-`filters`. Floors stay mid-dark and quiet, walls darker (silhouettes), trim and accent carry
-the identity, and in dark themes ambient + sun stay low so the dynamic lights carry the mood.
-**Add a theme:** add an entry to `THEMES`; `npm run level -- themes` shows it with three rift
-shifts and its floor/wall contrast. **Add a prop:** add a `PropDef` to `PROPS`
-(`themes/props.ts`) built from chunky primitives with `toonMaterial`/`glowMaterial`; return a
-`glow` to make it request a light. Blocking props only land where all 8 neighbours are open
-floor (a single blocked cell can't cut a path) and never on the critical path.
+`floorAlt`, `trim`, `cliff`, ambient and sun colours and intensities, height-fog distances, torch
+intensity/radius/flicker, prop ids and density, wall height, a `song` id and optional `filters`.
+Floors stay mid-dark and quiet, walls darker (silhouettes), trim and accent carry the identity, and
+in dark themes ambient + sun stay low so the dynamic lights carry the mood. **Add a theme:** add an
+entry to `THEMES`; `npm run level -- themes` shows it with three rift shifts and its floor/wall
+contrast. **Add a prop:** add a `PropDef` to `PROPS` (`themes/props.ts`) naming a library model
+(`model: 'barrel'`; docs/ASSETS.md, `npm run model -- find`) and, if the theme should dress it, a
+`bind(theme)` that gives its slots the theme's tints, its light the theme's torch and its params; a
+model with a `light` makes the prop request one. The binding can also place the model in its cell
+(`at`: the wall torch backs onto the cell's −z edge) and size it (`scale`, when its params can't). A
+prop with fire sets `flame`: its flame faces the camera (docs/ASSETS.md, *Fire faces the camera*),
+so `'fixed'` keeps a round prop unturned and a param name (the wall torch's `turn`) hands the prop's
+turn to a model that turns its flame back. A missing model is a new library entry first
+(`src/engine/model/library/`). Seeded models vary per prop (each gets its own seed from the level's
+rng). Props are picked by `weight` (lanterns and glowcaps weigh more and candles less, so a theme's
+lighting holds as it gains kinds); a theme naming a prop with no `PropDef` throws. Blocking props
+only land where all 8 neighbours are open floor (a single blocked cell can't cut a path) and never
+on the critical path; actors collide with that one cell, so nothing of a blocking prop below 1.8 m
+reaches more than 0.75 m from its centre (`themes/props.test.ts` checks every theme's).
 
 Rifts shift a theme's palette (`shiftTheme`: hue rotation, contrast, saturation) and clamp
 it back into readability bounds: floor lightness 0.16–0.5, walls ≥ 0.07 darker than floors,
 saturated accents. A shifted theme id (`ember-forge~h40c105s110`) resolves anywhere with
 `resolveTheme`, so specs stay plain data.
 
-Lighting: emissive props (torches on back walls, braziers, lanterns, crystals, mushrooms),
+Lighting: emissive props (torches on back walls, braziers, candles, lanterns, crystals, mushrooms),
 mechanic elements, chests, shrines, the portal and effects all request lights from the
 engine's `LightPool` (docs/ENGINE.md, *Dynamic lights*); the pool lights the 4/8/16 that
 matter most near the camera and fades the rest.
