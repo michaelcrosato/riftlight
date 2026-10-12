@@ -70,14 +70,24 @@ function boundsOf(t: ColouredTris): Box3 {
   return b;
 }
 
-interface Raster {
+export interface FidelityRaster {
   readonly side: number;
   readonly ids: Uint16Array;
   readonly data: Uint8ClampedArray;
 }
 
-/** Flat colours through one view (ids mark coverage). */
-function rasterize(t: ColouredTris, yaw: number, pitch: number, ppm: number, frame: Box3, side: number): Raster {
+/** One view of `fidelityViews`: square, `side` pixels, `ppm` pixels a metre, centred on `frame`. */
+export interface FidelityViewFrame {
+  readonly yaw: number;
+  readonly scale: 'game' | 'close';
+  readonly pitch: number;
+  readonly ppm: number;
+  readonly side: number;
+  readonly frame: Box3;
+}
+
+/** Flat colours through one view (ids mark coverage): what the scores count. */
+export function fidelityRaster(t: ColouredTris, yaw: number, pitch: number, ppm: number, frame: Box3, side: number): FidelityRaster {
   const { f, r, u } = viewBasis(yaw, pitch);
   const centre = frame.getCenter(new Vector3());
   const cv = new Canvas(side, side);
@@ -96,7 +106,8 @@ function rasterize(t: ColouredTris, yaw: number, pitch: number, ppm: number, fra
   return { side, ids: cv.ids, data: cv.data };
 }
 
-function viewsOf(source: ColouredTris, translation: ColouredTris): { yaw: number; scale: 'game' | 'close'; pitch: number; ppm: number; side: number; frame: Box3 }[] {
+/** The 8 views both are drawn in (4 yaws at game scale, then close), framed on both. */
+export function fidelityViews(source: ColouredTris, translation: ColouredTris): FidelityViewFrame[] {
   const frame = boundsOf(source).union(boundsOf(translation));
   if (frame.isEmpty()) frame.set(new Vector3(-0.5, 0, -0.5), new Vector3(0.5, 1, 0.5));
   const diag = Math.max(0.05, frame.getSize(new Vector3()).length());
@@ -121,9 +132,9 @@ export function scoreFidelity(source: ColouredTris, translation: ColouredTris): 
   };
   let colourSum = 0;
   let colourN = 0;
-  const views: FidelityView[] = viewsOf(source, translation).map((v) => {
-    const s = rasterize(source, v.yaw, v.pitch, v.ppm, v.frame, v.side);
-    const t = rasterize(translation, v.yaw, v.pitch, v.ppm, v.frame, v.side);
+  const views: FidelityView[] = fidelityViews(source, translation).map((v) => {
+    const s = fidelityRaster(source, v.yaw, v.pitch, v.ppm, v.frame, v.side);
+    const t = fidelityRaster(translation, v.yaw, v.pitch, v.ppm, v.frame, v.side);
     let ns = 0;
     let nt = 0;
     let both = 0;
@@ -183,7 +194,7 @@ const BAD: RGB = [255, 110, 120];
 const PANEL: RGB = [36, 40, 56];
 
 /** Shaded, the sheets' look: the inspect renderer over triangles of our own. */
-function shaded(t: ColouredTris, v: ReturnType<typeof viewsOf>[number]): SheetImage {
+export function fidelityShaded(t: ColouredTris, v: FidelityViewFrame): SheetImage {
   const tris: ReturnType<typeof worldTriangles> = [];
   const p = t.positions;
   for (let k = 0; k * 9 + 8 < p.length; k++) {
@@ -195,7 +206,7 @@ function shaded(t: ColouredTris, v: ReturnType<typeof viewsOf>[number]): SheetIm
 }
 
 /** Where they differ: the source alone magenta, the translation alone cyan, both grey to red by colour distance. */
-function difference(s: Raster, t: Raster): SheetImage {
+export function fidelityDifference(s: FidelityRaster, t: FidelityRaster): SheetImage {
   const cv = new Canvas(s.side, s.side);
   cv.rect(0, 0, s.side, s.side, PANEL);
   for (let k = 0; k < s.ids.length; k++) {
@@ -231,14 +242,14 @@ export interface FidelitySheetOptions {
  * and their difference; the scores; the colour swatches when given.
  */
 export function renderFidelity(source: ColouredTris, translation: ColouredTris, score: FidelityScore, o: FidelitySheetOptions): SheetImage {
-  const views = viewsOf(source, translation);
+  const views = fidelityViews(source, translation);
   const cells = views.map((v, i) => {
     const k = v.scale === 'game' ? 4 : 1;
-    const s = rasterize(source, v.yaw, v.pitch, v.ppm, v.frame, v.side);
-    const t = rasterize(translation, v.yaw, v.pitch, v.ppm, v.frame, v.side);
+    const s = fidelityRaster(source, v.yaw, v.pitch, v.ppm, v.frame, v.side);
+    const t = fidelityRaster(translation, v.yaw, v.pitch, v.ppm, v.frame, v.side);
     const f = score.views[i]!;
     const label = textBox([{ text: `${v.scale} yaw ${v.yaw}: iou ${f.iou}${f.colour !== null ? `, dE ${f.colour}` : ''}`, color: f.iou >= (o.threshold ?? 0) ? TEXT : BAD }], Math.max(120, v.side * k * 3 + 16));
-    return column([label, row([upscale(shaded(source, v), k), upscale(shaded(translation, v), k), upscale(difference(s, t), k)])]);
+    return column([label, row([upscale(fidelityShaded(source, v), k), upscale(fidelityShaded(translation, v), k), upscale(fidelityDifference(s, t), k)])]);
   });
   const body = column([row(cells.slice(0, 4)), row(cells.slice(4))]);
   const w = body.width;

@@ -37,6 +37,37 @@
 //   credits                    the attribution list from every model's and texture's `source`
 //                              (libraries and packs) → <out>/credits.md
 //
+// Traces (docs/ASSETS.md *Tracing*): redraw a source in primitives, so it comes out editable.
+//   trace <id> --against <source> --reference
+//                              what to author from: bounds; boxes per node, per material and per
+//                              connected piece (turned when tighter, how full, and the box,
+//                              cyl or cone it is when it is one: paste it); boxes fitted to a
+//                              convex decomposition (V-HACD, hints only); the colours clustered
+//                              onto PALETTE names; → .scratch/model/trace/<id>-reference.png: front
+//                              / side / top on a 0.1 m grid, pieces labelled p1…, the source at 4
+//                              yaws and at game scale (+ .json, every number); pieces alike print
+//                              under one line, the first 60 (--all: every one)
+//   trace <id|draft.ts> --against <source>
+//                              scores the def against the source: silhouette IoU per view at game
+//                              and close scale, mean OKLab distance where both cover a pixel,
+//                              bounds delta; → .scratch/model/trace/<id>-trace.png (the source's
+//                              outline over the trace, per view, and front / side / top), and the
+//                              `source` to record in the def. Exit 1 under TRACE_THRESHOLDS
+//                              (src/engine/model/trace.ts: game IoU >= 0.85, close >= 0.85,
+//                              colour <= the palette floor + 0.04) or on problems. Both print the
+//                              palette floor of a source off the palette: the colour score its
+//                              nearest PALETTE entries reach, the best a trace can do, which the
+//                              colour limit sits on
+//        sources: a .glb/.gltf file, pack:<pack>/<model>, gate-a:<file> (docs/plans/gate-a/),
+//        town:<building> (smithy, market, tent, stash, obelisk, plaza, house, lantern),
+//        monster:<seed|boss id>, asset:<name> (public/assets/: tree, coin, hero). The source is
+//        normalized as imports are: base on y = 0, footprint centred (--scale s, --front +z|-z|+x|-x).
+//        A file outside the repo says whose it is: --licence, --source, --author, --pack
+//   export-glb <source> [--out .scratch/trace-src/<name>.glb]
+//                              a source as a GLB (one mesh per node and colour; its provenance in
+//                              the scene's extras, trusted in .scratch/**/trace-src/ only), for
+//                              other tools; it writes there only
+//
 // An <id> can also be a draft file: `check my/stall.ts` (every def it exports), `sheet my/stall.ts`
 // (its default export, or the first) or `sheet my/stall.ts crate` (that one), `zoo my/stall.ts`.
 // Its models join the library for `use`; its PNGs and history go to .scratch/model/<file name>/.
@@ -47,7 +78,7 @@
 // .scratch/model). Every sheet records the model in <out>/history/<id>/, so --compare and diff
 // see the last *different* version you drew.
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateRawSync, inflateSync } from 'node:zlib';
@@ -55,14 +86,17 @@ import { Box3, Vector3 } from 'three/webgpu';
 import type { SheetImage } from '../src/engine/animation';
 import { column, renderView, row, titleBar, worldTriangles } from '../src/engine/inspect';
 import { PALETTE, type PaletteColor } from '../src/engine/palette';
-import { buildModel, checkModel, compileParts, expandModel, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
+import { buildModel, checkModel, compileParts, expandModel, scoreFidelity, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
-import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, unzip, type Front, type Imported } from '../src/engine/model/import';
+import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, normalizeSource, unzip, type Front, type Imported } from '../src/engine/model/import';
 import { flatTriangles, GAME_VIEW, gamePxPerMetre, renderGameScale, renderModelSheet, type FlatTri } from '../src/engine/model/sheet';
 import { creditEntries, creditLines } from '../src/engine/model/packs/credits';
 import { TEXTURE_LIBRARY } from '../src/engine/texture';
 import { encodePng } from './png';
 import { tsValue } from './ts-value';
+import { kindOf, paletteFloor, pieceColours, primBox, renderTraceReference, renderTraceSheet, traceOffset, traceReference, traceVerdict, TRACE_THRESHOLDS, TRACE_TOOL, verdictLines, type ConvexHull, type TraceBox, type TraceComponent, type TraceReference } from '../src/engine/model/trace';
+import { registerEngineHooks } from './trace/hooks';
+import type { SourceProvenance, TraceSource } from './trace/sources';
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
@@ -87,8 +121,8 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
-const VALUED = ['params', 'seed', 'palette', 'out', 'as', 'licence', 'source', 'author', 'scale', 'front', 'pack'];
-const SWITCHES = ['json', 'compare', 'labels', 'rig'];
+const VALUED = ['params', 'seed', 'palette', 'out', 'as', 'licence', 'source', 'author', 'scale', 'front', 'pack', 'against'];
+const SWITCHES = ['json', 'compare', 'labels', 'rig', 'reference', 'all'];
 const flags = new Map<string, string | true>();
 const args: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -108,6 +142,8 @@ for (let i = 0; i < argv.length; i++) {
 if (flags.has('seed') && !Number.isInteger(Number(flags.get('seed')))) fail(`--seed takes a whole number (got "${flags.get('seed')}")`);
 const json = flags.has('json');
 let OUT = resolve(ROOT, String(flags.get('out') ?? '.scratch/model'));
+/** Where traces write: <out>/trace/, whatever folder a draft file picks for its other outputs. */
+const TRACE_OUT = join(OUT, 'trace');
 
 function write(name: string, img: SheetImage): string {
   mkdirSync(OUT, { recursive: true });
@@ -547,6 +583,213 @@ function cmdCredits(): void {
   else console.log(`${lines.join('\n')}\n\nwrote ${rel(file)}`);
 }
 
+// ---------------------------------------------------------------- traces
+
+/** Provenance from the command line, for a file the GLB doesn't describe. */
+function provenanceFlags(): Partial<SourceProvenance> {
+  const o: Partial<Record<keyof SourceProvenance, string>> = {};
+  for (const [flag, key] of [['licence', 'licence'], ['source', 'url'], ['author', 'author'], ['pack', 'pack']] as const) if (flags.has(flag)) o[key] = String(flags.get(flag));
+  return o;
+}
+
+/** `--against` resolved (the town and Rapier need the engine hooks), and normalized as imports are. */
+async function traceSource(): Promise<{ src: TraceSource; mesh: TraceSource['mesh']; how: string; tool: string }> {
+  const spec = (flags.get('against') as string | undefined) ?? fail('trace needs --against <source>: a .glb/.gltf file, pack:<pack>/<model>, gate-a:<file>, town:<building>, monster:<seed|boss id> or asset:<name> (npm run model -- help)');
+  registerEngineHooks();
+  const { resolveSource } = await import('./trace/sources');
+  const src = await resolveSource(spec, { root: ROOT, provenance: provenanceFlags() }).catch((e: Error) => fail(e.message));
+  const scale = Number(flags.get('scale') ?? 1);
+  if (!(scale > 0)) fail(`--scale takes a number above 0 (got "${flags.get('scale')}")`);
+  const front = String(flags.get('front') ?? '+z') as Front;
+  if (!FRONTS.includes(front)) fail(`--front takes ${FRONTS.join(', ')} (got "${front}")`);
+  const how = `normalized as imports are: base on y = 0, footprint centred, front ${front}${scale !== 1 ? `, scale ${scale}` : ''}`;
+  // the source.tool a trace records: with the normalization it was scored in, so the score reproduces
+  const tool = [TRACE_TOOL, ...(front !== '+z' ? [`--front ${front}`] : []), ...(scale !== 1 ? [`--scale ${scale}`] : [])].join(' ');
+  return { src, mesh: normalizeSource(src.mesh, { scale, front }), how, tool };
+}
+
+/** The palette floor, said once: what the best PALETTE colours score, and whether a trace can pass. */
+function floorLine(floor: number): string | null {
+  if (floor < 0.005) return null;
+  return `the source is off the palette: its colours in the nearest PALETTE entries score dE ${floor} at best, so the colour limit is that floor + ${TRACE_THRESHOLDS.colour}: ${Math.round((floor + TRACE_THRESHOLDS.colour) * 1e4) / 1e4} (pick each slot's nearest entry by eye; the reference's \`palette:\` line keeps 8)`;
+}
+
+const vec = (v: readonly number[]) => `[${v.join(', ')}]`;
+const boxLine = (b: TraceBox) => `at ${vec(b.at)} size ${vec(b.size)}${b.rot ? ` rot ${vec(b.rot)}` : ''}`;
+
+/** One piece's shape: the part to paste when it is one, else its box. */
+function pieceShape(c: TraceComponent, place = true): string {
+  if (c.shape) {
+    const prim = { ...c.shape.prim, c: c.slot } as Record<string, unknown>;
+    if (!place) {
+      delete prim.at;
+      delete prim.rot;
+    }
+    return `${c.shape.match} ${kindOf(c.shape.prim)}: ${tsValue(prim, '', true)}`;
+  }
+  const b = c.turned ?? c.box;
+  return place ? `box ${boxLine(b)}${c.turned ? ` (axis-aligned: ${boxLine(c.box)})` : ''}` : `box size ${vec(b.size)}`;
+}
+
+const omitPlace = (p: object) => Object.fromEntries(Object.entries(p).filter(([k]) => k !== 'at' && k !== 'rot'));
+
+/** Pieces alike (colour, kind, size, triangles) under one line each, their places below it. */
+function pieceLines(pieces: readonly TraceComponent[], budget: number): string[] {
+  const groups = new Map<string, TraceComponent[]>();
+  for (const c of pieces) {
+    const box = c.shape ? primBox(c.shape.prim) : (c.turned ?? c.box);
+    const key = [pieceColours(c), c.shape ? `${kindOf(c.shape.prim)} ${c.shape.match} ${JSON.stringify(omitPlace(c.shape.prim))}` : 'box', [...box.size].sort().join(), c.tris].join('|');
+    groups.set(key, [...(groups.get(key) ?? []), c]);
+  }
+  const out: string[] = [];
+  let shown = 0;
+  for (const g of groups.values()) {
+    if (shown >= budget) break;
+    const c = g[0]!;
+    const head = `${pieceColours(c).padEnd(6)} ${String(c.tris).padStart(4)} tris  fill ${c.fill ?? '-'}`;
+    if (g.length === 1) {
+      out.push(`    ${c.name.padEnd(5)} ${head}  ${pieceShape(c)}${c.node ? `  [${c.node}]` : ''}`);
+      shown++;
+      continue;
+    }
+    out.push(`    ${`${g.length}x`.padEnd(5)} ${head}  ${pieceShape(c, false)}${c.node ? `  [${c.node}]` : ''}:`);
+    for (const m of g) {
+      const b = m.shape ? primBox(m.shape.prim) : (m.turned ?? m.box);
+      out.push(`      ${m.name.padEnd(5)} at ${vec(b.at)}${b.rot ? ` rot ${vec(b.rot)}` : ''}`);
+      shown++;
+    }
+  }
+  if (shown < pieces.length) out.push(`    … ${pieces.length - shown} more (--all, --json, or the .json beside the PNG)`);
+  return out;
+}
+
+function referenceLines(id: string, src: TraceSource, how: string, ref: TraceReference, hullNote: string): string[] {
+  const all = flags.has('all');
+  const cap = <T>(list: readonly T[], n: number) => (all ? list : list.slice(0, n));
+  const more = (list: readonly unknown[], n: number) => (!all && list.length > n ? [`    … ${list.length - n} more (--all, --json, or the .json beside the PNG)`] : []);
+  // merged meshes (a kit's, a build's) are one node per material: say so once
+  const same = ref.nodes.length === ref.materials.length && ref.nodes.every((n) => ref.materials.some((m) => m.tris === n.tris && boxLine(m) === boxLine(n)));
+  const lines = [
+    `${id}: reference from ${src.spec} (${src.provenance.url || 'no url'}, ${src.provenance.licence || 'licence unknown'})`,
+    `  ${how}`,
+    `  bounds ${ref.bounds.size.join(' x ')} m: min ${vec(ref.bounds.min)} max ${vec(ref.bounds.max)}; ${ref.triangles} tris`,
+    `  colours (clustered, slot -> PALETTE, share of the area): ${ref.colours.map((c) => `${c.slot} ${c.source} -> ${c.colour} ${Math.round(c.area * 100)}%`).join(', ')}`,
+    `    palette: ${tsValue(Object.fromEntries(ref.colours.map((c) => [c.slot, c.colour])), '', true)}`,
+    ...(same
+      ? ['  nodes: one per material (merged meshes)']
+      : [`  nodes (axis-aligned boxes, m; ${ref.nodes.length}):`, ...cap(ref.nodes, 20).map((g) => `    ${g.name.padEnd(18)} ${boxLine(g)}  ${g.tris} tris, ${Math.round(g.area * 100)}% of the area, ${g.colours.slice(0, 3).join(' ')}`), ...more(ref.nodes, 20)]),
+    `  materials (axis-aligned boxes, m; ${ref.materials.length}):`,
+    ...cap(ref.materials, 16).map((g) => `    ${g.name.padEnd(18)} ${boxLine(g)}  ${g.tris} tris, ${Math.round(g.area * 100)}% of the area`),
+    ...more(ref.materials, 16),
+    `  pieces (connected, welded to the mm; biggest first; ${ref.components.length}): a shape is a part to paste`,
+    ...pieceLines(ref.components, all ? Infinity : 60),
+    ref.hulls ? `  hull hints (V-HACD, ${ref.hulls.length} convex pieces; hints only, biggest first):` : `  hull hints: none (${hullNote})`,
+    ...(ref.hulls ?? []).map((h, i) => `    h${String(i + 1).padEnd(4)} ${boxLine(h.box)}  fill ${h.fill ?? '-'}`),
+    ...src.notes.map((n) => `  ! ${n}`),
+  ];
+  return lines;
+}
+
+async function cmdTraceReference(id: string): Promise<void> {
+  const { src, mesh, how } = await traceSource();
+  let hulls: ConvexHull[] | undefined;
+  let hullNote = '';
+  try {
+    const { convexHulls } = await import('./trace/hulls');
+    hulls = await convexHulls(mesh);
+  } catch (e) {
+    hullNote = `V-HACD failed: ${(e as Error).message}`;
+  }
+  const ref = traceReference(mesh, { hulls });
+  const floor = paletteFloor(mesh);
+  const img = renderTraceReference(mesh, ref, { title: `${id}: reference`, subtitle: `${src.spec}  (${src.provenance.url})  ${how}` });
+  mkdirSync(TRACE_OUT, { recursive: true });
+  const file = join(TRACE_OUT, `${id.replace(/[^\w.-]+/g, '_')}-reference.png`);
+  writeFileSync(file, encodePng(img));
+  const fl = floorLine(floor);
+  // what the reference couldn't say goes with it, in JSON too (a lost hull run is not silent)
+  const notes = [...src.notes, ...(hullNote ? [`no hull hints: ${hullNote}`] : []), ...(fl ? [fl] : [])];
+  const out = { id, against: src.spec, provenance: src.provenance, normalized: how, file: rel(file), ...ref, paletteFloor: floor, notes };
+  writeFileSync(file.replace(/\.png$/, '.json'), JSON.stringify(out, null, 2));
+  if (json) console.log(JSON.stringify(out, null, 2));
+  else {
+    for (const l of referenceLines(id, src, how, ref, hullNote)) console.log(l);
+    if (fl) console.log(`  ! ${fl}`);
+    console.log(`  wrote ${rel(file)} (+ .json)`);
+    console.log(`  next: write the def with the library (npm run model -- find), then npm run model -- trace <draft.ts> --against ${src.spec}`);
+  }
+}
+
+async function cmdTrace(id: string): Promise<void> {
+  if (!flags.has('against')) fail('trace needs --against <source>: a .glb/.gltf file, pack:<pack>/<model>, gate-a:<file>, town:<building>, monster:<seed|boss id> or asset:<name> (npm run model -- help)');
+  if (flags.has('reference')) return cmdTraceReference(id);
+  if (!CATALOG.has(id)) fail(`no model "${id}" to score: name a draft file (my/trace.ts) or a library id; for what to author from, add --reference`);
+  const { src, mesh, how, tool } = await traceSource();
+  const o = { ...parseOptions(), catalog: CATALOG };
+  const def = CATALOG.get(id);
+  const source = { positions: mesh.positions, colours: mesh.colours };
+  const translation = modelTriangles(def, o);
+  const score = scoreFidelity(source, translation);
+  const floor = paletteFloor(mesh);
+  const verdict = traceVerdict(score, TRACE_THRESHOLDS, floor);
+  const offset = traceOffset(source, translation);
+  const check = checkModel(def, o);
+  const fidelity = { iou: score.iou, iouClose: score.iouClose, colour: score.colour, bounds: score.bounds };
+  const recorded = { ...src.provenance, tool, fidelity };
+  // what the def records now, against what it should
+  const notes: string[] = [...src.notes, ...[floorLine(floor)].filter((l): l is string => !!l)];
+  const had = def.source;
+  if (!had) notes.push('the def records no `source`: paste the line above into it');
+  else {
+    if (had.url !== recorded.url || had.licence !== recorded.licence) notes.push(`its source says ${had.url} (${had.licence}); this source is ${recorded.url} (${recorded.licence})`);
+    if (had.tool !== tool) notes.push(`its source.tool is '${had.tool ?? ''}', not '${tool}' (the tool and the normalization these scores need)`);
+    if (JSON.stringify(had.fidelity) !== JSON.stringify(fidelity)) notes.push('its source.fidelity is not these scores: update it');
+  }
+  const img = renderTraceSheet(source, translation, score, verdict, { title: `${id}: trace of ${src.spec}`, subtitle: `${src.provenance.url}  ${how}  ${verdict.pass ? 'PASS' : 'FAIL'}` });
+  mkdirSync(TRACE_OUT, { recursive: true });
+  const file = join(TRACE_OUT, `${id.replace(/[^\w.-]+/g, '_')}-trace.png`);
+  writeFileSync(file, encodePng(img));
+  const out = { id, against: src.spec, file: rel(file), pass: verdict.pass, thresholds: TRACE_THRESHOLDS, colourLimit: verdict.checks.find((c) => c.name === 'colour')!.limit, checks: verdict.checks, score, offset, paletteFloor: floor, source: recorded, problems: check.problems, warnings: check.warnings, notes };
+  writeFileSync(file.replace(/\.png$/, '.json'), JSON.stringify(out, null, 2));
+  record(version(id, o));
+  if (json) console.log(JSON.stringify(out, null, 2));
+  else {
+    console.log(`${id}: trace of ${src.spec} (${how})`);
+    for (const l of verdictLines(score, verdict, offset)) console.log(`  ${l}`);
+    console.log(`  ${verdict.pass ? 'record in the def' : 'its source, once it passes'}: source: ${tsValue(recorded, '', true)},`);
+    for (const p of check.problems) console.log(`  x ${p}`);
+    for (const w of check.warnings) console.log(`  ! ${w}`);
+    for (const n of notes) console.log(`  ! ${n}`);
+    console.log(`  wrote ${rel(file)} (+ .json)`);
+  }
+  if (!verdict.pass || check.problems.length) process.exitCode = 1;
+}
+
+async function cmdExportGlb(spec: string): Promise<void> {
+  registerEngineHooks();
+  const { exportPath, realPath, resolveSource, rootRelative, sourceGlb } = await import('./trace/sources');
+  const src = await resolveSource(spec, { root: ROOT, provenance: provenanceFlags() }).catch((e: Error) => fail(e.message));
+  const file = realPath(resolve(ROOT, String(flags.get('out') ?? `.scratch/trace-src/${src.name}.glb`)));
+  if (!exportPath(rootRelative(ROOT, file)) || !file.endsWith('.glb')) fail(`export-glb writes a .glb under .scratch/ only, in a trace-src/ folder, the one place a trace takes a file's provenance at its word (exports are never committed: doctrine principle 5); got ${rel(file)}`);
+  // a dangling link resolves to nothing, so it would be written through to wherever it points
+  if (lstatSync(file, { throwIfNoEntry: false })?.isSymbolicLink()) fail(`export-glb won't write through a symlink: ${rel(file)}`);
+  const bytes = await sourceGlb(src);
+  mkdirSync(dirname(file), { recursive: true });
+  writeFileSync(file, bytes);
+  const b = new Box3();
+  const v = new Vector3();
+  for (let i = 0; i + 2 < src.mesh.positions.length; i += 3) b.expandByPoint(v.set(src.mesh.positions[i]!, src.mesh.positions[i + 1]!, src.mesh.positions[i + 2]!));
+  const size = b.getSize(new Vector3()).toArray().map(fmt);
+  const out = { spec, file: rel(file), bytes: bytes.length, triangles: src.mesh.group.length, groups: src.mesh.groups.length, size, provenance: src.provenance, notes: src.notes };
+  if (json) console.log(JSON.stringify(out, null, 2));
+  else {
+    console.log(`${spec}: ${out.triangles} tris in ${out.groups} group(s), ${size.join(' x ')} m as built`);
+    console.log(`  provenance: ${tsValue(src.provenance, '', true)}`);
+    for (const n of src.notes) console.log(`  ! ${n}`);
+    console.log(`  wrote ${out.file} (${bytes.length} bytes; never commit it)`);
+  }
+}
+
 async function main(): Promise<void> {
   const cmd = args[0] ?? 'help';
   let rest = args.slice(1);
@@ -557,6 +800,7 @@ async function main(): Promise<void> {
   if (cmd === 'import') return cmdImport(rest[0] ?? fail('import needs a file: npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>'));
   if (cmd === 'import-pack') return cmdImportPack(rest[0] ?? fail('import-pack needs a pack id from src/engine/model/packs/sources.ts'));
   if (cmd === 'credits') return cmdCredits();
+  if (cmd === 'export-glb') return cmdExportGlb(rest[0] ?? fail(`export-glb needs a source: npm run model -- export-glb gate-a:hand-cart-a`));
   if (cmd !== 'tokens' && cmd !== 'find' && rest[0]) {
     const ids = await loadFile(rest[0]);
     if (ids) {
@@ -571,6 +815,7 @@ async function main(): Promise<void> {
   }
   if (cmd === 'check') return cmdCheck(rest);
   if (cmd === 'find') return cmdFind(rest);
+  if (cmd === 'trace') return cmdTrace(rest[0] ?? fail('trace needs an id: npm run model -- trace <id> --against <source> --reference, then trace <draft.ts> --against <source>'));
   if (!['sheet', 'diff', 'zoo', 'tokens'].includes(cmd)) fail(`unknown command "${cmd}" (npm run model -- help)`);
   const id = rest[0] ?? fail(cmd === 'zoo' ? 'zoo needs a family, a tag, all or a file' : `${cmd} needs an id (npm run model -- find)`);
   if (cmd === 'sheet') return cmdSheet(id);

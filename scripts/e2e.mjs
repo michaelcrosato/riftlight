@@ -103,7 +103,7 @@
 //
 // Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
@@ -1282,6 +1282,32 @@ async function runTools(browserExe) {
     check(pack.code === 2 && /no approved pack "kenney-furniture"/.test(pack.out) && /#49/.test(pack.out), `import-pack refuses an unapproved pack, naming #49: ${pack.out.trim().split('\n')[0]}`);
     const credits = await m('credits');
     check(credits.code === 0 && /# Credits/.test(credits.out), 'credits writes the attribution list');
+    // traces: the reference (V-HACD through Rapier under tsx), a passing trace, a failing one
+    const ref = await m('trace', 'tree', '--against', 'asset:tree', '--reference', '--json');
+    const rj = ref.code === 0 ? JSON.parse(ref.out) : { components: [], hulls: null };
+    const rp = await pngSize(new URL('trace/tree-reference.png', out));
+    check(ref.code === 0 && rj.components.length === 3 && rj.components.some((c) => c.shape?.match === 'exact') && rj.hulls?.length > 0 && rp.width > 800, `trace --reference asset:tree: ${rj.components.length} pieces, ${rj.hulls?.length ?? 0} hull hints, ${rp.width}×${rp.height}${ref.code ? `\n    ${tail(ref.out)}` : ''}`);
+    const traced = await m('trace', 'docs/plans/trace/tree.ts', '--against', 'asset:tree', '--json');
+    const tj = traced.code === 0 ? JSON.parse(traced.out) : { pass: false, score: {} };
+    const tp = await pngSize(new URL('trace/tree-trace.png', out));
+    check(traced.code === 0 && tj.pass && tj.source.tool === 'trace' && tp.width > 1000, `trace docs/plans/trace/tree.ts passes: game IoU ${tj.score.iou}, close ${tj.score.iouClose}, dE ${tj.score.colour}${traced.code ? `\n    ${tail(traced.out)}` : ''}`);
+    const wrong = await m('trace', 'crate', '--against', 'asset:tree');
+    check(wrong.code === 1 && /FAIL: under the thresholds/.test(wrong.out), 'a crate traced for the tree fails the thresholds (exit 1)');
+    // export-glb: the town needs the engine index under tsx; nothing is written outside .scratch/
+    const glb = await run('npx', ['tsx', 'scripts/model.ts', 'export-glb', 'town:smithy', '--out', '.scratch/e2e/model/trace-src/smithy.glb', '--json']);
+    const gj = glb.code === 0 ? JSON.parse(glb.out) : { triangles: 0 };
+    check(glb.code === 0 && gj.triangles > 300 && gj.provenance.url === 'src/riftlight/town/Town.ts', `export-glb town:smithy: ${gj.triangles} tris${glb.code ? `\n    ${tail(glb.out)}` : ''}`);
+    const kept = await run('npx', ['tsx', 'scripts/model.ts', 'export-glb', 'asset:coin', '--out', 'public/assets/coin-copy.glb']);
+    const leaked = await stat(new URL('public/assets/coin-copy.glb', ROOT)).then(() => true, () => false);
+    check(kept.code === 2 && /under \.scratch\/ only/.test(kept.out) && !leaked, 'export-glb refuses to write outside .scratch/');
+    // nor through a link in trace-src/ that points out of it (dangling, so it resolves to nothing)
+    await mkdir(new URL('.scratch/e2e/model/trace-src/', ROOT), { recursive: true });
+    await rm(new URL('.scratch/e2e/model/trace-src/link.glb', ROOT), { force: true });
+    await symlink('../../../../public/assets/coin-link.glb', new URL('.scratch/e2e/model/trace-src/link.glb', ROOT));
+    const linked = await run('npx', ['tsx', 'scripts/model.ts', 'export-glb', 'asset:coin', '--out', '.scratch/e2e/model/trace-src/link.glb']);
+    const through = await stat(new URL('public/assets/coin-link.glb', ROOT)).then(() => true, () => false);
+    if (through) await rm(new URL('public/assets/coin-link.glb', ROOT));
+    check(linked.code === 2 && /through a symlink/.test(linked.out) && !through, 'export-glb refuses to write through a symlink out of trace-src/');
   } catch (e) {
     check(false, `model crashed: ${e.message}`);
   }
