@@ -258,7 +258,8 @@ judged from neutral file names by two fresh judges, one in each order.
 
 **Failed on tokens, won on quality: R = 1.754, and (b) won 3 of 4 briefs outright.** The pass rule
 needs R ≤ 1.0 for that, so the gate fails. The plan continues on the human's instruction (see the
-second run).
+second run). It ran to completion, and the owner kept the asset system as built
+([#54](https://github.com/michaelcrosato/riftlight/issues/54#issuecomment-6130940525), closed 2026-10-12).
 
 | Brief | Arm (a) runs | Median (a) | Arm (b) runs | Median (b) | b ÷ a |
 | --- | --- | --- | --- | --- | --- |

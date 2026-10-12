@@ -1,4 +1,4 @@
-# claude-code-cloud-usage-credits-test
+# Riftlight
 
 **Pixel Engine**: a WebGPU-first 3D engine that renders authentic 2D pixel art, designed
 for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
@@ -189,7 +189,7 @@ The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the m
 3. **Configure the repo** (auto-merge, squash-only, PRs required on `main` but no required
    status checks, labels, `main` as default):
    ```bash
-   scripts/configure-github.sh michaelcrosatoDM/claude-code-cloud-usage-credits-test
+   scripts/configure-github.sh michaelcrosato/riftlight
    ```
 4. **Hooks** are in `.claude/settings.json` (see the table above); nothing to do.
 5. **Cloud sessions** (claude.ai/code):
