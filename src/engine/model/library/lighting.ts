@@ -1,4 +1,5 @@
-import { model } from '../helpers';
+import { around, model } from '../helpers';
+import type { Part } from '../types';
 
 export const lampPost = model({
   id: 'lamp-post',
@@ -168,4 +169,141 @@ export const hangingLantern = model({
   ],
 });
 
-export const LIGHTING = [lampPost, flame, wallTorch, brazier, candles, hangingLantern];
+/** A log `len` long lying along X, its centre `y` up: bark, and sand end grain on both cut ends. */
+const campLog = (len: number, y: number): Part[] => [
+  { cyl: [0.13, len, 0.13], at: [0, y, 0], rot: [0, 0, 90], seg: 6, c: 'bark' },
+  { mirror: [{ cyl: [0.1, 0.03, 0.1], at: [len / 2 + 0.005, y, 0], rot: [0, 0, 90], seg: 6, c: 'cut' }] },
+];
+
+export const campfire = model({
+  id: 'campfire',
+  about: 'Campfire: two pairs of crossed logs on an ash bed in a ring of field stones, the library flame on top and its light',
+  tags: ['lighting', 'fire', 'camp', 'nature'],
+  palette: { stone: 'slate', stone2: 'mist', ash: 'night', bark: 'red', cut: 'sand', flame: 'orange', core: 'sand', heart: 'white' },
+  light: { at: [0, 0.6, 0], c: 'flame', intensity: 2.5, radius: 6, flicker: 'torch' },
+  collider: 'cyl',
+  parts: (_, rng): Part[] => [
+    // turned so two stones straddle the back diagonal, where the flame leans
+    { use: 'stone-ring', rot: [0, 22.5, 0], params: { r: 0.66, n: 8, size: 0.4 }, seed: rng.int(1, 999) },
+    { cyl: [1.04, 0.03, 1.04], at: [0, 0.015, 0], seg: 8, c: 'ash', name: 'ash' },
+    // a crib: two logs along X, two across them along Z
+    { mirror: [{ at: [0, 0, 0.14], group: campLog(0.7, 0.095) }], axis: 'z' },
+    { mirror: [{ at: [0.14, 0, 0], rot: [0, 90, 0], group: campLog(0.7, 0.205) }] },
+    // a little toward the camera: its tongues lean back and splay left, over the crib and clear of the stones
+    { use: 'flame', at: [0.08, 0.16, 0.04], params: { h: 0.75 }, scale: 0.85, palette: FIRE },
+  ],
+});
+
+export const standingTorch = model({
+  id: 'standing-torch',
+  about: 'Torch on a tall iron stand: three splayed legs, a pole, a cup holding the stick, its rag burning at about 1.8 m',
+  tags: ['lighting', 'fire', 'dungeon', 'town'],
+  palette: { iron: 'night', trim: 'slate', wood: 'red', rag: 'plum', flame: 'orange', core: 'sand', heart: 'white' },
+  light: { at: [0, 1.95, 0], c: 'flame', intensity: 2, radius: 5, flicker: 'torch' },
+  collider: 'cyl',
+  parts: [
+    // legs from the collar out to the floor, tipped 38 degrees; one points back, two to the camera
+    ...around(3, { box: [0.07, 0.52, 0.07], at: [0, 0.225, 0.16], rot: [-38, 0, 0], c: 'iron' }, { phase: 225 }),
+    { cyl: [0.14, 0.12, 0.14], at: [0, 0.42, 0], seg: 6, c: 'trim' },
+    { cyl: [0.08, 1.0, 0.08], at: [0, 0.92, 0], seg: 6, c: 'iron', name: 'pole' },
+    { cyl: [0.22, 0.16, 0.22], at: [0, 1.48, 0], top: 1.5, seg: 6, c: 'iron', name: 'cup' },
+    { torus: [0.24, 0.05, 0.24], at: [0, 1.56, 0], seg: 6, c: 'trim' },
+    { cyl: [0.09, 0.22, 0.09], at: [0, 1.62, 0], seg: 6, c: 'wood' },
+    { cyl: [0.15, 0.14, 0.15], at: [0, 1.76, 0], top: 1.2, seg: 6, c: 'rag' },
+    { use: 'flame', at: [0, 1.81, 0], scale: 0.7, palette: FIRE },
+  ],
+});
+
+export const chandelier = model({
+  id: 'chandelier',
+  about: 'Iron ring chandelier hung on a chain: spokes to a centre stem, `n` wax candles on the ring (seeded heights), its ring at 2.4 m',
+  tags: ['lighting', 'fire', 'ceiling'],
+  palette: { iron: 'night', trim: 'slate', wax: 'white', flame: 'sand' },
+  floats: true,
+  collider: 'none',
+  params: { n: [6, 4, 8] },
+  anchors: { hook: [0, 3.335, 0] },
+  light: { at: [0, 2.75, 0], c: 'flame', intensity: 2.5, radius: 6, flicker: 'candle' },
+  parts: (p, rng) => {
+    const y = 2.4; // the ring
+    const r = 0.46; // the ring's centre line
+    const n = Math.round(p.n!);
+    return [
+      { torus: [2 * r + 0.1, 0.1, 2 * r + 0.1], at: [0, y, 0], seg: 12, c: 'trim', name: 'ring' },
+      ...[45, 135].map((a): Part => ({ box: [2 * r, 0.06, 0.06], at: [0, y, 0], rot: [0, a, 0], c: 'iron' })),
+      { cyl: [0.16, 0.14, 0.16], at: [0, y, 0], seg: 6, c: 'trim' },
+      { cone: [0.12, 0.22, 0.12], at: [0, y - 0.18, 0], rot: [180, 0, 0], seg: 6, c: 'trim', name: 'finial' },
+      { cyl: [0.07, 0.56, 0.07], at: [0, y + 0.35, 0], seg: 6, c: 'iron', name: 'stem' },
+      // the chain: links 0.14 m tall at a 0.1 m pitch, from inside the stem's top to inside the ceiling plate
+      ...[0, 1, 2].map((i) => ({ torus: [0.1, 0.06, 0.14], at: [0, y + 0.655 + i * 0.1, 0], rot: [90, i % 2 ? 90 : 0, 0], seg: 6, c: 'trim' }) as const),
+      { box: [0.2, 0.05, 0.2], at: [0, y + 0.91, 0], c: 'iron' },
+      // the candles stand round the ring by position, not by turning (a flame never turns about Y)
+      ...Array.from({ length: n }, (_, i) => {
+        const a = ((i + 0.5) / n) * 2 * Math.PI;
+        const [x, z] = [r * Math.cos(a), r * Math.sin(a)];
+        const h = rng.range(0.14, 0.22);
+        return [
+          { cyl: [0.15, 0.05, 0.15], at: [x, y + 0.07, z], seg: 6, c: 'iron' },
+          { cyl: [0.1, h, 0.1], at: [x, y + 0.09 + h / 2, z], seg: 6, c: 'wax' },
+          { use: 'flame', at: [x, y + 0.07 + h, z], params: { tongues: 1 }, scale: 0.5, palette: CANDLE_FIRE },
+        ] as const;
+      }).flat(),
+    ];
+  },
+});
+
+export const wallLantern = model({
+  id: 'wall-lantern',
+  about: 'Street lantern on a wall bracket: a back plate on the wall at z = 0, a braced arm out 0.55 m, the lantern hung from it with glowing glass at 1.9 m',
+  tags: ['lighting', 'town', 'wall'],
+  palette: { iron: 'night', plate: 'slate', flame: 'sand' },
+  floats: true,
+  collider: 'none',
+  anchors: { mount: [0, 2.1, 0] },
+  light: { at: [0, 1.88, 0.48], c: 'flame', intensity: 1.8, radius: 5, flicker: 'candle' },
+  parts: [
+    { box: [0.2, 0.44, 0.05], at: [0, 2.1, 0.025], c: 'plate' },
+    { box: [0.07, 0.07, 0.56], at: [0, 2.28, 0.3], c: 'iron', name: 'arm' },
+    { box: [0.06, 0.06, 0.47], at: [0, 2.095, 0.225], rot: [-41.5, 0, 0], c: 'iron' },
+    { box: [0.06, 0.08, 0.06], at: [0, 2.205, 0.48], c: 'iron' },
+    {
+      name: 'lantern',
+      at: [0, 1.88, 0.48],
+      group: [
+        { cyl: [0.3, 0.12, 0.3], at: [0, 0.22, 0], top: 0.3, seg: 4, c: 'iron' },
+        { box: [0.26, 0.04, 0.26], at: [0, 0.14, 0], rot: [0, 45, 0], c: 'plate' },
+        { rot: [0, 45, 0], group: [{ mirror: [{ mirror: [{ box: [0.06, 0.26, 0.06], at: [0.095, 0, 0.095], c: 'iron' }], axis: 'z' }] }] },
+        { box: [0.16, 0.24, 0.16], rot: [0, 45, 0], c: 'flame', glow: true },
+        { box: [0.26, 0.04, 0.26], at: [0, -0.14, 0], rot: [0, 45, 0], c: 'plate' },
+        { cone: [0.1, 0.1, 0.1], at: [0, -0.21, 0], rot: [180, 0, 0], seg: 4, c: 'iron' },
+      ],
+    },
+  ],
+});
+
+export const pathLantern = model({
+  id: 'path-lantern',
+  about: 'Low path lantern, 1.1 m tall: glowing glass under a verdigris roof on a short wooden post and a stone footing',
+  tags: ['lighting', 'town', 'garden'],
+  palette: { stone: 'slate', wood: 'red', iron: 'night', roof: 'teal', flame: 'sand' },
+  light: { at: [0, 0.72, 0], c: 'flame', intensity: 1.2, radius: 3.5, flicker: 'candle' },
+  parts: [
+    { box: [0.28, 0.1, 0.28], at: [0, 0.05, 0], c: 'stone' },
+    { box: [0.12, 0.47, 0.12], at: [0, 0.335, 0], c: 'wood', name: 'post' },
+    {
+      name: 'lantern',
+      at: [0, 0.72, 0],
+      scale: 1.15,
+      group: [
+        { box: [0.24, 0.04, 0.24], at: [0, -0.12, 0], rot: [0, 45, 0], c: 'iron' },
+        { rot: [0, 45, 0], group: [{ mirror: [{ mirror: [{ box: [0.06, 0.22, 0.06], at: [0.09, 0, 0.09], c: 'iron' }], axis: 'z' }] }] },
+        { box: [0.14, 0.2, 0.14], rot: [0, 45, 0], c: 'flame', glow: true },
+        { box: [0.24, 0.04, 0.24], at: [0, 0.12, 0], rot: [0, 45, 0], c: 'iron' },
+        { cyl: [0.34, 0.12, 0.34], at: [0, 0.2, 0], top: 0.25, seg: 4, c: 'roof', name: 'roof' },
+        { ball: [0.08, 0.08, 0.08], at: [0, 0.29, 0], seg: 6, c: 'iron' },
+      ],
+    },
+  ],
+});
+
+export const LIGHTING = [lampPost, flame, wallTorch, brazier, candles, hangingLantern, campfire, standingTorch, chandelier, wallLantern, pathLantern];

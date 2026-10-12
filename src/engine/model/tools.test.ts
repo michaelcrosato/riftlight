@@ -116,7 +116,7 @@ describe('readability warnings', () => {
 
   it('the library has no readability warnings it shouldn\'t', () => {
     for (const d of MODEL_LIBRARY.all()) expect(checkModel(d).warnings.filter((w) => / is inside | are inside |z-fighting|lightness|one block|glow parts/.test(w)), d.id).toEqual([]);
-  });
+  }, 30_000); // checks every library model
 });
 
 describe('named parts', () => {
