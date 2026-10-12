@@ -34,7 +34,8 @@ const MAGENTA: RGB = [255, 60, 220];
 const ANCHOR: RGB = [115, 239, 247];
 const COLLIDER: RGB = [56, 183, 100];
 
-const rgbOf = (hex: number): RGB => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
+/** 0xrrggbb as [r, g, b]. */
+export const rgbOf = (hex: number): RGB => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
 const fmt = (v: number) => `${+v.toFixed(2)}`;
 
 /** Model-space triangles of compiled parts, with their slot colour (for the ortho views and compare). */

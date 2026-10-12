@@ -54,16 +54,16 @@ export interface SheetImportOptions {
   readonly tags?: readonly string[];
 }
 
-/** A distinct opaque colour of the sheet and where it went. */
+/** A distinct opaque source colour of the imported cells and where it went. */
 export interface SheetColour {
   /** Source sRGB, 0xrrggbb. */
   readonly hex: number;
-  /** Its legend character in every def. */
+  /** Its legend character in every def (the same in any import of the sheet). */
   readonly char: string;
   readonly slot: TexSlot;
   /** The PALETTE entry it bakes as (after any re-binding). */
   readonly colour: PaletteColor;
-  /** Opaque pixels of it in the whole sheet. */
+  /** Opaque pixels of it in the imported cells. */
   readonly pixels: number;
 }
 
@@ -81,15 +81,17 @@ export interface SheetCell {
   readonly row: number;
   /** Opaque pixels in it. */
   readonly opaque: number;
-  /** The def it went into, or null: not picked, or skipped as fully transparent. */
+  /** Picked (`cells`, default every cell). */
+  readonly picked: boolean;
+  /** The def it went into, or null: not picked, or picked and skipped as fully transparent. */
   readonly id: string | null;
 }
 
 export interface SheetImport {
   readonly defs: readonly TextureDef[];
-  /** Every distinct opaque source colour, biggest first. */
+  /** Every distinct opaque source colour of the imported cells, biggest first. */
   readonly colours: readonly SheetColour[];
-  /** Every PALETTE entry two or more source colours landed on, biggest first. */
+  /** Every PALETTE entry two or more of those colours bake as, biggest first. */
   readonly merges: readonly SheetMerge[];
   /** The mapper's result (slots and their entries, before `palette` re-binds them). */
   readonly map: ColourMap;
@@ -100,6 +102,17 @@ export interface SheetImport {
 }
 
 const whole = (v: unknown, lo: number, hi: number): v is number => typeof v === 'number' && Number.isInteger(v) && v >= lo && v <= hi;
+
+/** Cell indices as text, runs of three or more joined: `0, 2, 3` or `0 to 7, 9`. */
+function cellList(cells: readonly number[]): string {
+  const runs: number[][] = [];
+  for (const i of cells) {
+    const run = runs[runs.length - 1];
+    if (run && i === run[run.length - 1]! + 1) run.push(i);
+    else runs.push([i]);
+  }
+  return runs.map((r) => (r.length > 2 ? `${r[0]} to ${r[r.length - 1]}` : r.join(', '))).join(', ');
+}
 
 /** Legend characters for the colours, biggest first: a free letter of the entry's name, else the next free one. */
 function legendChars(colours: readonly { hex: number; entry: PaletteColor }[]): string[] {
@@ -153,23 +166,17 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
     return { hex, slot, entry: map.slots.find((s) => s.slot === slot)!.colour };
   });
   const chars = legendChars(mapped);
-  const colours: SheetColour[] = mapped.map((m, i) => ({ hex: m.hex, char: chars[i]!, slot: m.slot, colour: entryOf[m.slot]!, pixels: order[i]![1] }));
-  const byHex = new Map(colours.map((c) => [c.hex, c]));
+  /** Every colour of the sheet: its character, slot and entry (the same whichever cells are imported). */
+  const sheetColours = mapped.map((m, i) => ({ hex: m.hex, char: chars[i]!, slot: m.slot, colour: entryOf[m.slot]! }));
+  const byHex = new Map(sheetColours.map((c) => [c.hex, c]));
 
-  // merges: every entry two or more source colours bake as
-  const onEntry = new Map<PaletteColor, SheetColour[]>();
-  for (const c of colours) onEntry.set(c.colour, [...(onEntry.get(c.colour) ?? []), c]);
-  const merges: SheetMerge[] = [...onEntry]
-    .filter(([, cs]) => cs.length > 1)
-    .map(([colour, sources]) => ({ colour, sources }))
-    .sort((p, q) => q.sources.reduce((s, c) => s + c.pixels, 0) - p.sources.reduce((s, c) => s + c.pixels, 0) || (p.colour < q.colour ? -1 : 1));
-
-  /** A cell's rows of legend characters ('.' transparent) and how many pixels are opaque. */
+  /** A cell's rows of legend characters ('.' transparent), how many pixels are opaque, and of which colours. */
   const cellRows = (i: number) => {
     const x0 = (i % columns) * gw;
     const y0 = Math.floor(i / columns) * gh;
     let n = 0;
     const out: string[] = [];
+    const of = new Map<number, number>();
     for (let y = 0; y < gh; y++) {
       let r = '';
       for (let x = 0; x < gw; x++) {
@@ -177,19 +184,20 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
         if (!opaque(k)) r += '.';
         else {
           r += byHex.get(hexAt(k))!.char;
+          of.set(hexAt(k), (of.get(hexAt(k)) ?? 0) + 1);
           n++;
         }
       }
       out.push(r);
     }
-    return { rows: out, opaque: n };
+    return { rows: out, opaque: n, of };
   };
   const all = Array.from({ length: count }, (_, i) => cellRows(i));
 
   /** The def's palette, legend and source colours: only what its rows use, in slot and colour order. */
   const used = (rows: readonly string[]) => {
     const inRows = new Set(rows.join(''));
-    const cs = colours.filter((c) => inRows.has(c.char));
+    const cs = sheetColours.filter((c) => inRows.has(c.char));
     const usedSlots = slots.filter((s) => cs.some((c) => c.slot === s));
     return {
       palette: Object.fromEntries(usedSlots.map((s) => [s, entryOf[s]!])),
@@ -225,7 +233,7 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
     const strip = picked.slice(first, last + 1);
     if (strip.length * gw > MAX_SIDE) throw new ImportError(`${strip.length} frames of ${gw} are ${strip.length * gw} texels wide, over ${MAX_SIDE}: import fewer cells at a time (cells)`);
     const rowsOf = Array.from({ length: gh }, (_, y) => strip.map((i) => all[i]!.rows[y]).join(''));
-    const span = strip.length > 1 ? `cells ${strip[0]} to ${strip[strip.length - 1]}` : `cell ${strip[0]}`;
+    const span = strip.length > 1 ? `cells ${cellList(strip)}` : `cell ${strip[0]}`;
     defs.push(defOf(o.as, `${strip.length} frames of ${gw} x ${gh}: ${span} of ${file}`, strip.length * gw, rowsOf, strip.length));
     for (const i of strip) ids.set(i, o.as);
   } else {
@@ -242,6 +250,19 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
     if (taken.has(def.id)) throw new ImportError(`two cells would both be '${def.id}': a name is also another cell's index`);
     taken.add(def.id);
   }
-  const cells: SheetCell[] = all.map((c, index) => ({ index, column: index % columns, row: Math.floor(index / columns), opaque: c.opaque, id: ids.get(index) ?? null }));
+  const isPicked = new Set(picked);
+  const cells: SheetCell[] = all.map((c, index) => ({ index, column: index % columns, row: Math.floor(index / columns), opaque: c.opaque, picked: isPicked.has(index), id: ids.get(index) ?? null }));
+
+  // what was imported: its colours (pixels counted in the imported cells) and the entries two or more of them bake as
+  const pixels = new Map<number, number>();
+  for (const i of ids.keys()) for (const [hex, n] of all[i]!.of) pixels.set(hex, (pixels.get(hex) ?? 0) + n);
+  const colours: SheetColour[] = sheetColours.filter((c) => pixels.has(c.hex)).map((c) => ({ ...c, pixels: pixels.get(c.hex)! }));
+  colours.sort((p, q) => q.pixels - p.pixels || p.hex - q.hex);
+  const onEntry = new Map<PaletteColor, SheetColour[]>();
+  for (const c of colours) onEntry.set(c.colour, [...(onEntry.get(c.colour) ?? []), c]);
+  const merges: SheetMerge[] = [...onEntry]
+    .filter(([, cs]) => cs.length > 1)
+    .map(([colour, sources]) => ({ colour, sources }))
+    .sort((p, q) => q.sources.reduce((s, c) => s + c.pixels, 0) - p.sources.reduce((s, c) => s + c.pixels, 0) || (p.colour < q.colour ? -1 : 1));
   return { defs, colours, merges, map, cells, columns, rows };
 }

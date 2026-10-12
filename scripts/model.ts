@@ -55,10 +55,11 @@ import { Box3, Vector3 } from 'three/webgpu';
 import type { SheetImage } from '../src/engine/animation';
 import { column, renderView, row, titleBar, worldTriangles } from '../src/engine/inspect';
 import { PALETTE, type PaletteColor } from '../src/engine/palette';
-import { buildModel, checkModel, compileParts, expandModel, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, LICENCES, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
+import { buildModel, checkModel, compileParts, expandModel, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
 import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, unzip, type Front, type Imported } from '../src/engine/model/import';
 import { flatTriangles, GAME_VIEW, gamePxPerMetre, renderGameScale, renderModelSheet, type FlatTri } from '../src/engine/model/sheet';
+import { creditEntries, creditLines } from '../src/engine/model/packs/credits';
 import { TEXTURE_LIBRARY } from '../src/engine/texture';
 import { encodePng } from './png';
 import { tsValue } from './ts-value';
@@ -537,17 +538,8 @@ async function cmdImportPack(id: string): Promise<void> {
 /** The attribution list: every model with a `source`, grouped by pack (or url). */
 function cmdCredits(): void {
   // imported textures (`npm run tex -- import`) carry the same `source`
-  const defs = [...[...MODEL_LIBRARY.all(), ...packs().flatMap((p) => p.models)].map((d) => ({ kind: 'model', d })), ...TEXTURE_LIBRARY.all().map((d) => ({ kind: 'texture', d }))].filter((x) => x.d.source);
-  const groups = new Map<string, typeof defs>();
-  for (const x of defs) groups.set(x.d.source!.pack ?? x.d.source!.url, [...(groups.get(x.d.source!.pack ?? x.d.source!.url) ?? []), x]);
-  const entries = [...groups].map(([key, xs]) => {
-    const s = xs[0]!.d.source!;
-    const terms = LICENCES[s.licence];
-    return { what: key, author: s.author ?? 'unknown', licence: s.licence, name: terms?.name ?? s.licence, credit: terms?.credit ?? 'required', url: s.url, models: xs.filter((x) => x.kind === 'model').map((x) => x.d.id), textures: xs.filter((x) => x.kind === 'texture').map((x) => x.d.id) };
-  });
-  const lines = ['# Credits', '', 'Imported models and textures and where they came from, from each one\'s `source` (`npm run model -- credits`).', ''];
-  if (!entries.length) lines.push('Nothing imported yet: nothing to credit.');
-  for (const e of entries) lines.push(`- **${e.what}** by ${e.author}, ${e.name} (${e.licence}${e.credit === 'required' ? ', credit required' : e.credit === 'optional' ? ', credit optional' : ''}): ${e.url}.${e.models.length ? ` Models: ${e.models.join(', ')}.` : ''}${e.textures.length ? ` Textures: ${e.textures.join(', ')}.` : ''}`);
+  const entries = creditEntries([...MODEL_LIBRARY.all(), ...packs().flatMap((p) => p.models)], TEXTURE_LIBRARY.all());
+  const lines = creditLines(entries);
   const file = join(OUT, 'credits.md');
   mkdirSync(OUT, { recursive: true });
   writeFileSync(file, `${lines.join('\n')}\n`);

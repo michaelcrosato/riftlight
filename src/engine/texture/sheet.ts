@@ -5,10 +5,10 @@
  * checker. Software-drawn, like the model sheets; the Asset Lab is the truth. The import sheet
  * (`npm run tex -- import`) puts a source sheet and its imported defs side by side.
  */
-import { Canvas, type RGB, type SheetImage } from '../animation/raster';
+import { BG, Canvas, type RGB, type SheetImage } from '../animation/raster';
 import { column, row, textBox, titleBar, type Line } from '../inspect/render';
 import { buildModel } from '../model/build';
-import { GAME_VIEW, renderGameScale, swatches, upscale } from '../model/sheet';
+import { GAME_VIEW, renderGameScale, rgbOf, swatches, upscale } from '../model/sheet';
 import { hexString } from '../model/import/colours';
 import { DEFAULT_TEXEL } from '../model/uv';
 import { PALETTE, type PaletteColor } from '../palette';
@@ -25,18 +25,19 @@ const WARN: RGB = [255, 205, 117];
 const BAD: RGB = [255, 110, 120];
 const GOOD: RGB = [56, 183, 100];
 
-/** Texels as an image, transparent ones over a 2-texel dim checker; `x0`/`w` crop a frame. */
+/** The 2-texel dim checker transparent texels show over. */
+const checker = (x: number, y: number): RGB => {
+  const c = ((x >> 1) + (y >> 1)) % 2 ? 52 : 44;
+  return [c, c + 4, c + 16];
+};
+
+/** Texels as an image, transparent ones over the dim checker; `x0`/`w` crop a frame. */
 export function texelImage(b: BakedTexture, x0 = 0, w = b.width): SheetImage {
   const data = new Uint8ClampedArray(w * b.height * 4);
   for (let y = 0; y < b.height; y++) {
     for (let x = 0; x < w; x++) {
       const k = (y * b.width + x0 + x) * 4;
-      const o = (y * w + x) * 4;
-      if (b.rgba[k + 3]) data.set([b.rgba[k]!, b.rgba[k + 1]!, b.rgba[k + 2]!, 255], o);
-      else {
-        const c = ((x >> 1) + (y >> 1)) % 2 ? 52 : 44;
-        data.set([c, c + 4, c + 16, 255], o);
-      }
+      data.set(b.rgba[k + 3] ? [b.rgba[k]!, b.rgba[k + 1]!, b.rgba[k + 2]!, 255] : [...checker(x, y), 255], (y * w + x) * 4);
     }
   }
   return { width: w, height: b.height, data };
@@ -96,13 +97,6 @@ export function renderTextureSheet(def: TextureDef, b: BakedTexture, check: Text
   return column([titleBar(`${def.id}: ${def.about}`, body.width, sub), body]);
 }
 
-const PANEL: RGB = [36, 40, 56];
-const rgbOf = (hex: number): RGB => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];
-/** The dim checker transparent texels show over (as `texelImage` draws it). */
-const checker = (x: number, y: number): RGB => {
-  const c = ((x >> 1) + (y >> 1)) % 2 ? 52 : 44;
-  return [c, c + 4, c + 16];
-};
 
 /** Cells on their grid, ×`k`, 2 pixels apart; `cell(i)` draws cell `i` (gw × gh). */
 function cellGrid(columns: number, rows: number, gw: number, gh: number, k: number, cell: (i: number) => SheetImage): SheetImage {
@@ -110,7 +104,7 @@ function cellGrid(columns: number, rows: number, gw: number, gh: number, k: numb
   const W = columns * gw * k + (columns + 1) * gap;
   const H = rows * gh * k + (rows + 1) * gap;
   const data = new Uint8ClampedArray(W * H * 4);
-  for (let i = 0; i < W * H; i++) data.set([...PANEL, 255], i * 4);
+  for (let i = 0; i < W * H; i++) data.set([...BG, 255], i * 4);
   for (let i = 0; i < columns * rows; i++) {
     const img = upscale(cell(i), k);
     const x0 = gap + (i % columns) * (gw * k + gap);
@@ -182,7 +176,7 @@ export function renderImportSheet(img: RgbaImage, r: SheetImport, o: ImportSheet
   const nCols = Math.max(1, Math.min(Math.ceil(r.colours.length / 24), Math.floor((W - 8) / colW)));
   const perColumn = Math.ceil(r.colours.length / nCols);
   const table = new Canvas(W, 22 + perColumn * 14 + 6);
-  table.rect(0, 0, W, table.height, PANEL);
+  table.rect(0, 0, W, table.height, BG);
   table.text(`SOURCE -> SLOT -> PALETTE: ${r.colours.length} COLOURS, ${new Set(r.colours.map((c) => c.slot)).size} SLOTS. MERGED IN YELLOW; KEYS LOWER CASE UNLESS MARKED`, 8, 8, TEXT);
   r.colours.forEach((c, i) => {
     const x = 8 + Math.floor(i / perColumn) * colW;

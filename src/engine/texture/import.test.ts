@@ -1,6 +1,7 @@
 // 2D import (docs/plans/asset-system.md §7.5): pixel-art sheets sliced into TextureDefs. Every
 // fixture is drawn here, at test time, from known pixel grids and written with encodePng
 // (principle 5: no binaries, no third-party content), then read back with the engine's decoder.
+import { spawnSync } from 'node:child_process';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -9,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { encodePng } from '../../../scripts/png';
 import { textureDefsSource } from '../../../scripts/ts-value';
 import { ImportError } from '../model/import/common';
+import { creditEntries, creditLines } from '../model/packs/credits';
 import { OWN_LICENCE } from '../model/packs/licences';
 import { PALETTE, type PaletteColor } from '../palette';
 import { decodePng, type RgbaImage } from '../png';
@@ -32,17 +34,20 @@ function sheet(width: number, height: number, at: (x: number, y: number) => Px):
 }
 
 const opts = (o: Partial<SheetImportOptions> = {}): SheetImportOptions => ({ as: 'fx', grid: [16, 16], source: SOURCE, ...o });
+/** Two cells of two colours each, for the credits. */
+const MIXED_FOR_CREDITS = (x: number): Px => ({ hex: x < 16 ? (x < 8 ? PALETTE.sand : PALETTE.ink) : x < 24 ? PALETTE.teal : PALETTE.white });
 
 /**
  * The tileset: 4 × 4 cells of 16 × 16, each its own layout in PALETTE colours: a fill, a diagonal,
  * a 4 × 4 square that moves along the row, a transparent 3 × 3 corner and two pixels on the alpha
- * threshold (127 transparent, 128 opaque). Cells 5 and 10 are empty (10 only under the threshold).
+ * threshold (127 transparent, 128 opaque). Cells 5 and 6 are empty (6 only under the threshold):
+ * not mirror images across the diagonal, so reading the cells column by column can't pass.
  */
 const TILESET = (x: number, y: number): Px => {
   const i = Math.floor(y / 16) * 4 + Math.floor(x / 16);
   const [cx, cy] = [x % 16, y % 16];
   if (i === 5) return null;
-  if (i === 10) return { hex: PALETTE.red, a: 100 };
+  if (i === 6) return { hex: PALETTE.red, a: 100 };
   if (cx >= 13 && cy < 3) return null;
   if (cx === 12 && cy === 0) return { hex: PALETTE.white, a: 127 };
   if (cx === 11 && cy === 0) return { hex: PALETTE[NAMES[(i + 3) % 16]!], a: 128 };
@@ -71,13 +76,15 @@ function expectExact(img: RgbaImage, r: ReturnType<typeof importSheet>, colourOf
   for (const c of r.cells) if (c.id) strips.set(c.id, [...(strips.get(c.id) ?? []), c.index]);
   let checked = 0;
   for (const c of r.cells) {
+    // the cell's place from its index alone (reading order), never from what the importer says
+    expect([c.column, c.row], `cell ${c.index}`).toEqual([c.index % r.columns, Math.floor(c.index / r.columns)]);
     if (!c.id) continue;
     const b = bakes.get(c.id)!;
     expect(b.problems, c.id).toEqual([]);
     const f = strips.get(c.id)!.indexOf(c.index);
     for (let y = 0; y < gh; y++) {
       for (let x = 0; x < gw; x++) {
-        const s = ((c.row * gh + y) * img.width + c.column * gw + x) * 4;
+        const s = ((Math.floor(c.index / r.columns) * gh + y) * img.width + (c.index % r.columns) * gw + x) * 4;
         const t = (y * b.width + f * gw + x) * 4;
         const got = [...b.rgba.subarray(t, t + 4)];
         if (img.data[s + 3]! < alpha) expect(got, `${c.id} (${x}, ${y})`).toEqual([0, 0, 0, 0]);
@@ -101,24 +108,30 @@ describe('importSheet: slicing', () => {
     expect(expectExact(img, r, (hex) => NAMES.find((n) => PALETTE[n] === hex)!)).toBe(14 * 256);
     expect(r.merges).toEqual([]);
     expect(r.colours.length).toBe(16);
-    expect(r.defs.map((d) => d.id)).toEqual([0, 1, 2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14, 15].map((i) => `tiles-${i}`));
+    expect(r.defs.map((d) => d.id)).toEqual([0, 1, 2, 3, 4, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((i) => `tiles-${i}`));
     for (const d of r.defs) {
       expect(d.size).toEqual([16, 16]);
       expect(d.tile).toBe(true);
       expect(d.layers).toHaveLength(1);
       expect(validateTexture(d).problems, d.id).toEqual([]);
     }
+    // and a sheet that isn't square: its top two rows, 4 × 2 cells
+    const wide = sheet(64, 32, TILESET);
+    const w = importSheet(wide, opts({ as: 'tiles' }));
+    expect([w.columns, w.rows, w.defs.length]).toEqual([4, 2, 6]);
+    expect(expectExact(wide, w, (hex) => NAMES.find((n) => PALETTE[n] === hex)!)).toBe(6 * 256);
   });
 
   it('skips fully transparent cells (alpha under the threshold counts) and says which', () => {
     const r = importSheet(sheet(64, 64, TILESET), opts());
     expect(r.cells.filter((c) => !c.id).map((c) => [c.index, c.opaque])).toEqual([
       [5, 0],
-      [10, 0],
+      [6, 0],
     ]);
-    // a lower threshold keeps cell 10 (alpha 100) and the 127 pixel
+    expect(r.cells.filter((c) => c.picked && !c.id).map((c) => c.index)).toEqual([5, 6]);
+    // a lower threshold keeps cell 6 (alpha 100) and the 127 pixel
     const low = importSheet(sheet(64, 64, TILESET), opts({ alpha: 100 }));
-    expect(low.cells[10]!.id).toBe('fx-10');
+    expect(low.cells[6]!.id).toBe('fx-6');
     expect(texel(low.defs.find((d) => d.id === 'fx-0')!, 12, 0)).toEqual([0xf4, 0xf4, 0xf4, 255]);
   });
 
@@ -191,6 +204,37 @@ describe('importSheet: merges', () => {
     expect(expectExact(img, r, (hex) => to[hex]!)).toBe(2 * 256);
   });
 
+  it('reports two distinct colours the mapper itself puts on one entry, in slots of their own', () => {
+    // a pale sand and a duller one: too far apart to cluster, both nearest sand
+    const DULL = 0xe0c080;
+    const r = importSheet(sheet(16, 16, (x) => ({ hex: x < 10 ? PALETTE.sand : DULL })), opts());
+    const [sand, dull] = [PALETTE.sand, DULL].map((hex) => r.colours.find((c) => c.hex === hex)!);
+    expect([sand!.colour, dull!.colour, sand!.slot === dull!.slot]).toEqual(['sand', 'sand', false]);
+    expect(r.merges.map((m) => [m.colour, m.sources.map((c) => [c.hex, c.pixels])])).toEqual([
+      [
+        'sand',
+        [
+          [PALETTE.sand, 160],
+          [DULL, 96],
+        ],
+      ],
+    ]);
+  });
+
+  it('reports the imported cells only: their colours, pixels and merges', () => {
+    const img = sheet(32, 16, MIXED);
+    const one = importSheet(img, opts({ cells: [1] }));
+    expect(one.merges).toEqual([]); // the sands are in cell 0
+    expect(one.colours.map((c) => [c.hex, c.pixels])).toEqual([
+      [PALETTE.orange, 169],
+      [0x30a060, 48],
+      [0x4060d0, 39],
+    ]);
+    // characters and slots stay the sheet's
+    const all = importSheet(img, opts());
+    for (const c of one.colours) expect(c).toEqual(all.colours.find((a) => a.hex === c.hex));
+  });
+
   it('reports slots that share an entry once re-bound, and refuses a slot the sheet lacks', () => {
     const img = sheet(32, 16, MIXED);
     const teal = importSheet(img, opts()).colours.find((c) => c.hex === PALETTE.teal)!.slot;
@@ -235,23 +279,35 @@ describe('importSheet: frames', () => {
     // a leading blank is dropped too
     const late = importSheet(img, opts({ as: 'dot', grid: [8, 8], frames: true, cells: [3, 4, 5] }));
     expect([late.defs[0]!.frames, late.cells.filter((c) => c.id).map((c) => c.index)]).toEqual([2, [4, 5]]);
+    // `about` names the cells it took
+    expect(d.about).toBe('6 frames of 8 x 8: cells 0 to 5 of fixture.png');
+    expect(importSheet(img, opts({ as: 'dot', grid: [8, 8], frames: true, cells: [0, 2, 4, 5] })).defs[0]!.about).toBe('4 frames of 8 x 8: cells 0, 2, 4, 5 of fixture.png');
   });
 });
 
 describe('the draft (`npm run tex -- import` writes it)', () => {
   it('is the defs: written as source and imported back, every one equal, every legend character included', async () => {
-    const defs = [...importSheet(many(LEGEND_CHARS.length), opts({ as: 'many' })).defs, ...importSheet(sheet(64, 8, (x, y) => (x % 8 === y ? { hex: PALETTE.sand } : null)), opts({ as: 'new', grid: [8, 8], frames: true, tile: true })).defs];
+    const strip = sheet(64, 8, (x, y) => (x % 8 === y ? { hex: PALETTE.sand } : null));
+    const defs = [...importSheet(many(LEGEND_CHARS.length), opts({ as: 'many' })).defs, ...['new', 'eval'].flatMap((as) => importSheet(strip, opts({ as, grid: [8, 8], frames: true, tile: true })).defs)];
     const root = fileURLToPath(new URL('../../../', import.meta.url));
     const dir = join(root, '.scratch/test/tex-import');
     mkdirSync(dir, { recursive: true });
     const file = join(dir, `draft-${process.pid}.ts`);
-    writeFileSync(file, textureDefsSource(defs, relative(dir, join(root, 'src/engine/texture')).split(sep).join('/')));
+    const text = textureDefsSource(defs, relative(dir, join(root, 'src/engine/texture')).split(sep).join('/'));
+    writeFileSync(file, text);
+    // the draft has no types, so it is a module as it stands: Node parses it as strictly as the
+    // tools' loader does (vitest's transform lets `export const eval` through; Node and tsx don't)
+    const mjs = file.replace(/\.ts$/, '.mjs');
+    writeFileSync(mjs, text);
     try {
+      const parsed = spawnSync(process.execPath, ['--check', mjs], { encoding: 'utf8' });
+      expect(parsed.status, parsed.stderr).toBe(0);
       const mod = (await import(pathToFileURL(file).href)) as Record<string, TextureDef>;
-      expect(Object.keys(mod).sort()).toEqual(['many0', 'tnew']);
-      expect([mod.many0, mod.tnew]).toEqual(defs);
+      expect(Object.keys(mod).sort()).toEqual(['many0', 'teval', 'tnew']);
+      expect([mod.many0, mod.tnew, mod.teval]).toEqual(defs);
     } finally {
       rmSync(file, { force: true });
+      rmSync(mjs, { force: true });
     }
   });
 });
@@ -264,8 +320,8 @@ describe('importSheet: refusals say what to do', () => {
     expect(() => importSheet(img, opts({ cells: [3, 16] }))).toThrow(/cells 16 aren't on the sheet: it has 16/);
     expect(() => importSheet(img, opts({ names: ['a', 'a'] }))).toThrow(/'a' is given twice/);
     expect(() => importSheet(img, opts({ names: ['', '2'] }))).toThrow(/two cells would both be 'fx-2'/);
-    expect(() => importSheet(img, opts({ cells: [5, 10] }))).toThrow(/all transparent/);
-    expect(() => importSheet(img, opts({ cells: [5, 10], frames: true }))).toThrow(/all transparent/);
+    expect(() => importSheet(img, opts({ cells: [5, 6] }))).toThrow(/all transparent/);
+    expect(() => importSheet(img, opts({ cells: [5, 6], frames: true }))).toThrow(/all transparent/);
     expect(() => importSheet(img, opts({ as: 'Bad Name' }))).toThrow(/prefix/);
     expect(() => importSheet(img, opts({ as: '../tiles' }))).toThrow(/ids name files/);
     expect(importSheet(img, opts({ as: 'kit/tiles', cells: [0] })).defs.map((d) => d.id)).toEqual(['kit/tiles-0']);
@@ -293,5 +349,14 @@ describe('licences on textures (the models’ rule)', () => {
     expect(with_({ licence: 'CC-BY-4.0', pack: 'thirdparty' })).toEqual([expect.stringMatching(/which is not approved in PACK_SOURCES/)]);
     // a texture with no source (drawn here, not imported) owes nothing
     expect(validateTexture({ ...def, source: undefined }).problems).toEqual([]);
+  });
+
+  it('model -- credits lists imported textures, grouped with models from the same source', () => {
+    const textures = importSheet(sheet(32, 16, MIXED_FOR_CREDITS), opts({ as: 'mixed' })).defs;
+    const model = { id: 'own-chair', source: { url: SOURCE.url, licence: OWN_LICENCE, author: 'riftlight' } };
+    const entries = creditEntries([model, { id: 'drawn' }], [...textures, { id: 'drawn-tex' }]);
+    expect(entries).toEqual([{ what: SOURCE.url, author: 'riftlight', licence: OWN_LICENCE, name: 'our own work', credit: 'none', url: SOURCE.url, models: ['own-chair'], textures: ['mixed-0', 'mixed-1'] }]);
+    expect(creditLines(entries).at(-1)).toBe(`- **${SOURCE.url}** by riftlight, our own work (${OWN_LICENCE}): ${SOURCE.url}. Models: own-chair. Textures: mixed-0, mixed-1.`);
+    expect(creditLines(creditEntries([], [])).at(-1)).toBe('Nothing imported yet: nothing to credit.');
   });
 });

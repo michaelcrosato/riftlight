@@ -477,9 +477,9 @@ layers, one def per cell, or one def of frames for an animation strip. Every pix
 - **Colours** go through the mesh importer's mapper once for the whole sheet (up to 16 slots), so a
   colour reads the same in every cell, and in a cell picked alone. Over 90 distinct colours is
   refused: that isn't pixel art.
-- **Merges:** wherever two or more distinct source colours bake as one PALETTE entry (clustered
-  into one slot, or two slots on one entry), `import` prints them and the sheet lists them in
-  yellow. Every other source colour has an entry of its own.
+- **Merges:** wherever two or more distinct source colours of the imported cells bake as one
+  PALETTE entry (clustered into one slot, or two slots on one entry), `import` prints them and
+  the sheet lists them in yellow. Every other source colour has an entry of its own.
 - **Provenance:** each def's `source` is a model's (url, licence, pack, file, author, sha256, tool,
   each slot's source colour), under the models' rule: our own work with a source inside this
   repository is allowed; anyone else's, CC0 included and a single file too, only from a pack

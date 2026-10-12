@@ -19,9 +19,10 @@ What a game gets (exported from the engine and the kit):
   every pixel keeps its place, and alpha under `alpha` (default 128) is transparent. Colours map
   to PALETTE through `mapColours` once for the whole sheet (up to 16 slots), so a colour reads the
   same in every cell; each distinct source colour keeps a legend character of its own, and
-  `merges` lists every entry two or more source colours bake as. `cells` and `names` pick and
-  name cells by reading-order index; `tile` marks surfaces; `palette` re-binds slots in every
-  def. `as` takes an import id (`tiles`, `kit/tiles`). Over 90 distinct colours is refused.
+  `merges` lists every entry two or more of the imported cells' colours bake as. `cells` and
+  `names` pick and name cells by reading-order index; `tile` marks surfaces; `palette` re-binds
+  slots in every def. `as` takes an import id (`tiles`, `kit/tiles`). Over 90 distinct colours
+  is refused. What it refuses throws `ImportError`, now exported too.
 - `TextureDef.source`: provenance, as models record it. `validateTexture` reports a `source`
   without a url or licence, or one the models' licence rule refuses (anyone else's work only
   from an approved pack; our own work with a source inside the repository), as a problem.

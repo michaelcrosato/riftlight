@@ -216,15 +216,18 @@ function draftSource(r: SheetImport, file: string, sheetPng: string, grid: reado
   ].join('\n');
 }
 
-/** `0-3,8` → [0, 1, 2, 3, 8]. */
-function cellList(v: string): number[] {
+/**
+ * `0-3,8` → [0, 1, 2, 3, 8]. A range stops one past the sheet's `count` cells, so a huge one
+ * costs nothing and `importSheet` names the first index off the sheet.
+ */
+function cellList(v: string, count: number): number[] {
   const out: number[] = [];
   for (const part of v.split(',')) {
     const m = /^(\d+)(?:-(\d+))?$/.exec(part.trim());
     if (!m) fail(`--cells takes indices and ranges, e.g. 0-3,8 (got "${part}")`);
     const [a, b] = [Number(m[1]), Number(m[2] ?? m[1])];
     if (b < a) fail(`--cells range ${part} runs backwards`);
-    for (let i = a; i <= b; i++) out.push(i);
+    for (let i = a; i <= Math.min(b, Math.max(a, count)); i++) out.push(i);
   }
   return out;
 }
@@ -260,7 +263,7 @@ async function cmdImport(): Promise<void> {
       source,
       tile: flags.has('tile'),
       frames: flags.has('frames'),
-      ...(flags.has('cells') ? { cells: cellList(String(flags.get('cells'))) } : {}),
+      ...(flags.has('cells') ? { cells: cellList(String(flags.get('cells')), Math.floor(img.width / grid[0]) * Math.floor(img.height / grid[1])) } : {}),
       ...(flags.has('names') ? { names: String(flags.get('names')).split(',') } : {}),
       ...(alpha !== undefined ? { alpha } : {}),
       ...(rebind ? { palette: rebind as Record<string, PaletteColor> } : {}),
@@ -276,7 +279,7 @@ async function cmdImport(): Promise<void> {
   const draft = join(dir, `${name}.ts`);
   const png = join(dir, `${name}.png`);
   writeFileSync(draft, draftSource(r, draft, png, grid));
-  const skipped = r.cells.filter((c) => c.id === null && !c.opaque).map((c) => c.index);
+  const skipped = r.cells.filter((c) => c.picked && c.id === null).map((c) => c.index);
   const subtitle = `${source.file}  ${licence}  ${r.columns} x ${r.rows} cells of ${grid.join(' x ')}  ${r.defs.length} def(s)${flags.has('frames') ? ` (${r.defs[0]!.frames} frames)` : ''}  ${skipped.length} transparent  ${r.colours.length} colours -> ${new Set(r.colours.map((c) => c.slot)).size} slots  ${r.merges.length} merge(s)`;
   writeFileSync(png, encodePng(renderImportSheet(img, r, { title: `${as}: import`, subtitle, grid, checks })));
   const merges = r.merges.map((m) => ({ colour: m.colour, sources: m.sources.map((c) => ({ hex: hexString(c.hex), char: c.char, slot: c.slot, pixels: c.pixels })) }));
