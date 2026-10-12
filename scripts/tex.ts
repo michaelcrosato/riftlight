@@ -40,7 +40,7 @@ import { fileId, hexString, IMPORT_ID, ImportError } from '../src/engine/model/i
 import { isPaletteName, type PaletteColor } from '../src/engine/palette';
 import { decodePng, PngError } from '../src/engine/png';
 import { bakeTexture, importSheet, TEXTURE_LIBRARY, TextureCatalog, validateTexture, type SheetImport, type TextureDef } from '../src/engine/texture';
-import { renderImportSheet, renderTextureSheet, texelImage, tiled } from '../src/engine/texture/sheet';
+import { renderImportSheet, textureSheet, texelImage, tiled } from '../src/engine/texture/sheet';
 import { column, row, textBox, titleBar } from '../src/engine/inspect/render';
 import { upscale } from '../src/engine/model/sheet';
 import { encodePng } from './png';
@@ -151,11 +151,8 @@ async function sheet(): Promise<void> {
   const { defs, file } = await targets(target);
   const def = args[1] ? (defs.find((d) => d.id === args[1]) ?? fail(`${target} has no texture "${args[1]}" (it has ${defs.map((d) => d.id).join(', ')})`)) : defs[0]!;
   const p = palette();
-  const b = bakeTexture(def, p ? { palette: p } : {});
-  const checked = validateTexture(def);
-  // the re-bound bake's own problems too (a slot the palette lacks): the converters would refuse it
-  const r = { ...checked, problems: [...new Set([...checked.problems, ...b.problems])] };
-  const out = write(`${file ? `${basename(file).replace(/\.[cm]?ts$/, '')}-` : ''}${def.id}.png`, renderTextureSheet(def, b, r, p));
+  const r = textureSheet(def, p ? { palette: p } : {});
+  const out = write(`${file ? `${basename(file).replace(/\.[cm]?ts$/, '')}-` : ''}${def.id}.png`, r.image);
   if (json) console.log(JSON.stringify({ id: def.id, png: rel(out), problems: r.problems, warnings: r.warnings, metrics: r.metrics }));
   else {
     for (const x of r.problems) console.log(`  x ${x}`);

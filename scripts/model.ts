@@ -89,7 +89,7 @@ import { PALETTE, type PaletteColor } from '../src/engine/palette';
 import { buildModel, checkModel, compileParts, expandModel, scoreFidelity, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
 import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, normalizeSource, unzip, type Front, type Imported } from '../src/engine/model/import';
-import { flatTriangles, GAME_VIEW, gamePxPerMetre, renderGameScale, renderModelSheet, type FlatTri } from '../src/engine/model/sheet';
+import { flatTriangles, GAME_VIEW, gamePxPerMetre, modelSheet, renderGameScale, type FlatTri } from '../src/engine/model/sheet';
 import { creditEntries, creditLines } from '../src/engine/model/packs/credits';
 import { TEXTURE_LIBRARY } from '../src/engine/texture';
 import { encodePng } from './png';
@@ -323,24 +323,23 @@ function cmdCheck(ids: string[]): void {
 function cmdSheet(id: string): void {
   const o = { ...parseOptions(), catalog: CATALOG };
   const now = version(id, o);
-  const build = buildModel(id, o);
-  const check = checkModel(id, o);
   const before = flags.has('compare') ? baseline(now) : null;
   const previous: FlatTri[] | undefined = before ? flatTriangles(before.compiled, before.model.palette) : undefined;
-  const sub = [Object.keys(now.model.params).length ? `params ${Object.entries(now.model.params).map(([k, v]) => `${k}=${v}`).join(' ')}` : '', build.report.seeded ? `seed ${now.model.seed}` : '', flags.has('compare') ? (before ? 'magenta: the previous version' : 'no different earlier version recorded') : '', now.model.tags.length ? `tags ${now.model.tags.join(' ')}` : ''].filter(Boolean).join('   ');
-  const img = renderModelSheet({ model: now.model, compiled: now.compiled, build, check, previous, labels: flags.has('labels'), rig: flags.has('rig'), subtitle: sub });
-  const file = write(`${id}.png`, img);
-  const out = { file: rel(file), id, ...build.report, bounds: build.bounds, problems: check.problems, warnings: check.warnings, compared: !!before };
+  const note = flags.has('compare') ? (before ? 'magenta: the previous version' : 'no different earlier version recorded') : undefined;
+  const sheet = modelSheet(id, { ...o, previous, labels: flags.has('labels'), rig: flags.has('rig'), note });
+  const file = write(`${id}.png`, sheet.image);
+  const report = sheet.report!; // `version` threw already if it can't be built
+  const out = { file: rel(file), id, ...report, bounds: sheet.bounds, problems: sheet.problems, warnings: sheet.warnings, compared: !!before };
   writeFileSync(file.replace(/\.png$/, '.json'), JSON.stringify(out, null, 2));
   record(now);
   if (json) console.log(JSON.stringify(out, null, 2));
   else {
-    console.log(`${id}: ${build.report.tris} tris, ${build.report.draws} draws, ${build.report.materials} materials, ${build.bounds.size.map(fmt).join(' x ')} m`);
-    for (const p of check.problems) console.log(`  x ${p}`);
-    for (const w of check.warnings) console.log(`  ! ${w}`);
+    console.log(`${id}: ${report.tris} tris, ${report.draws} draws, ${report.materials} materials, ${sheet.bounds!.size.map(fmt).join(' x ')} m`);
+    for (const p of sheet.problems) console.log(`  x ${p}`);
+    for (const w of sheet.warnings) console.log(`  ! ${w}`);
     console.log(`  wrote ${rel(file)} (+ .json)`);
   }
-  if (check.problems.length) process.exitCode = 1;
+  if (sheet.problems.length) process.exitCode = 1;
 }
 
 function cmdDiff(id: string): void {

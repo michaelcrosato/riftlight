@@ -7,6 +7,9 @@ without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real render
 it, with its measurements and what is still to come, is
 [docs/plans/asset-system.md](plans/asset-system.md). Meshes from kits come in through the importer
 ([Importing](#importing)); what a game will vary is traced in primitives ([Tracing](#tracing)).
+Agents outside this repo get [docs/GUIDE-ASSETS.md](GUIDE-ASSETS.md) in the engine kit, as
+`ASSETS.md`: the same format and rules for someone with only the kit (`check.mjs --sheets` draws
+their sheets). A change to the format or the rules changes both.
 
 How it measures ([Gate A](plans/gate-a.md), three runs): with the seed library an agent writing a
 ModelDef spent about what one writing code on the town `Kit` spends (R = 0.98, then 1.02), less when
@@ -32,7 +35,7 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `src/engine/model/library/<family>.ts` | The built-in library (`MODEL_LIBRARY`): architecture, containers, dressing, dungeon, furniture, lighting, nature, props (tools, loot, signs), town, weapons |
 | `src/engine/model/build.ts` | `buildModel`, `expandModel`, collider data, the light request |
 | `src/engine/model/validate.ts`, `readability.ts` | `validateModel`, `checkModel`: problems and warnings |
-| `src/engine/model/sheet.ts`, `diff.ts`, `view.ts` | The sheets and the diff the CLI draws and prints; the game's camera and its part raster |
+| `src/engine/model/sheet.ts`, `diff.ts`, `view.ts` | The sheets (`modelSheet`, exported: the kit's `check.mjs --sheets` draws with it) and the diff the CLI draws and prints; the game's camera and its part raster |
 | `scripts/model.ts` | `npm run model` (its header is the manual) |
 | `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
 | `src/engine/texture/` | Textures as data ([below](#textures)): `TextureDef`, the patterns, `bakeTexture`, `validateTexture`, `textureMap`, `spriteSheet`, `hudSprite`, `TEXTURE_LIBRARY` (`library/`) |
@@ -172,7 +175,7 @@ never joins a one-colour block (its texels break it up).
 
 ## Style rules
 
-- **Scale:** the hero is 1.75 m with the cap; a door is 2.2 m, a table 0.75 m, a chair seat 0.45 m.
+- **Scale:** the hero is 1.6 m (1.75 m with the cap); a door is 2.2 m, a table 0.75 m, a chair seat 0.45 m.
 - **Silhouette first.** The iso camera sees the top and two sides: big masses must read; put detail
   on the top and the front.
 - **Thickness:** rods and posts at least 0.06 m; 0.12 m or more for parts that carry the silhouette.

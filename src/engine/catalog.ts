@@ -35,7 +35,7 @@ export class Catalog<T extends CatalogEntry> {
 
   get(id: string): T {
     const d = this.defs.get(id);
-    if (!d) throw new Error(`no ${this.kind} "${id}" (${this.defs.size} known${this.tool ? `; find them with \`${this.tool} -- find\`` : ''})`);
+    if (!d) throw new Error(`no ${this.kind} "${id}" (${this.defs.size} known${this.tool ? `; find them with \`${this.tool} -- find\`; with the kit, LIBRARY.md` : ''})`);
     return d;
   }
 

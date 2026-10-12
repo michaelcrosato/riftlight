@@ -8,6 +8,45 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.29.0
+
+What a game gets (exported from the engine and the kit):
+
+- `modelSheet(idOrDef, { catalog, textures, params, palette, seed, labels, rig })` and
+  `textureSheet(idOrDef, { catalog, palette })`: the sheets `npm run model -- sheet` and
+  `npm run tex -- sheet` draw (a model's turntable, front / side / top on a 0.1 m grid,
+  game-scale previews, palette and check; a texture's texels, tiling, frames and check) as RGBA
+  pixels, with the problems and warnings they show. Software-drawn (no GPU, no DOM), so they run
+  in a browser. A model that can't be built gets a sheet of its problems alone. Types
+  `ModelSheet`, `ModelSheetOptions`, `TextureSheet`, `TextureSheetOptions`.
+- An unknown id in a catalog, or a `use` of one, now also says where the kit lists them
+  (LIBRARY.md).
+
+The kit:
+
+- `ASSETS.md` (docs/GUIDE-ASSETS.md): models and textures for agents outside this repo. The loop
+  with only the kit (library → write → `check.mjs --sheets` → look → fix), the format, the checks,
+  the style rules, placing models in a game, and an example: Market Corner
+  (`examples/market.html`, and `examples/market-models.js`, the game's own models): library
+  models re-coloured and with params, a model's light, a cobbled floor from `textureMap`, and a
+  stall of the game's own that `use`s the library's, in a `ModelCatalog`. GUIDE.md points to it.
+- `LIBRARY.md`: every built-in model (id, size, params, palette slots, about) and texture,
+  generated from the libraries when the kit is built.
+- `CREDITS.md`: where everything the kit carries came from, generated when the kit is built from
+  each built-in model's and texture's `source` (all the engine's own work today; the data
+  `npm run model -- credits` reads), the palettes made by others (Sweetie 16 by GrafxKid, the
+  PICO-8 palette), and three.js's (MIT) and Rapier's (Apache-2.0) licence files, whose texts it
+  carries. Ship it with a game.
+- `check.mjs --sheets models.js,crate,cobbles`: draws a sheet of every ModelDef and TextureDef a
+  module exports (by name, in an array or object, in a catalog, or added to the library) and of
+  library ids, in Chromium, with no page played; a PNG each and `report.json` in `check/sheets/`;
+  exit 1 on any problem (warnings pass) or a module that doesn't finish loading in 30 s, 2 when it
+  can't run. Ids alone work from anywhere: it draws with the kit it lives in.
+- API.md groups the model and texture exports under *Models and textures*.
+
+For tools: `npm run model -- sheet` and `npm run tex -- sheet` draw through `modelSheet` and
+`textureSheet`.
+
 ## 0.28.0
 
 - **80 icons and sprites** in `TEXTURE_LIBRARY` (`npm run tex -- zoo sprite`), 60 more, for

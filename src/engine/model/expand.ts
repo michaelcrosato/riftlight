@@ -170,7 +170,7 @@ export function expandDef(def: ModelDef, opts: ModelOptions, catalog: ModelCatal
       return null;
     }
     if (!catalog.has(p.use)) {
-      problems.push(`${partLabel(p, at)} uses model '${p.use}', which the catalog does not have: check the id (\`npm run model -- find\`)`);
+      problems.push(`${partLabel(p, at)} uses model '${p.use}', which the catalog does not have: check the id (\`npm run model -- find\`; with the kit, LIBRARY.md)`);
       return null;
     }
     const n = (uses.get(p.use) ?? 0) + 1;

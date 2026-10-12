@@ -6,7 +6,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import * as THREE from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
-import { guideBlocks } from '../scripts/bundle/guide.mjs';
+import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
 import * as bundle from './bundle';
 import { CAMERA_PRESETS, FILTER_IDS, LOOK_PRESETS, PALETTE, PARTICLES, SFX, optionsFromUrl } from './engine';
 
@@ -49,6 +49,8 @@ describe('docs/GUIDE.md', () => {
       }
       for (const n of imported) expect(code.split(n).length - 1, `${name}: ${n} used`).toBeGreaterThan(1);
       expect(code, name).toMatch(/await Engine\.start\(new \w+\(\), withUrlOptions\(\{ container: document\.getElementById\('app'\), .*\}\)\);\n$/);
+      // scripts/bundle.mjs gives a block a page only when it starts the engine: every one here does
+      expect(startsEngine(code), `${name} is a game (a page in the kit)`).toBe(true);
     }
   });
 

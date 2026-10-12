@@ -234,6 +234,13 @@ lights are freed, so a level never leaks into the next.
 - **Shadow blob:** `new ContactShadow(radius)`, placed every frame with
   `shadow.place(x, groundY, z, heightAboveGround)` (see the quick start).
 
+**Models and textures as data.** Besides GLBs, the kit has a library of models (crates, stalls,
+lamps, trees, doors, weapons...) and pixel-art textures, and a format to write your own as plain
+data: `buildModel('market-stall', { palette: { cloth: 'blue' } })` gives merged toon meshes, their
+collider data and light, and `textureMap('cobbles')` a map for `toonMaterial`. `ASSETS.md` is their
+guide (the format, the loop, the style rules, an example scene), `LIBRARY.md` lists the library,
+and `node check.mjs --sheets models.js` draws what you write. Read `ASSETS.md` before you write one.
+
 ### The hero
 
 `PlatformerCharacter` is a Mario-64-style controller with the full moveset and animation;
@@ -1029,6 +1036,7 @@ node check.mjs --keys KeyD*60,Space*4,KeyD*40   # hold each key for that many fr
 node check.mjs examples/side-scroller.html --cameras --looks noir,handheld
 node check.mjs "index.html?look=handheld&zoom=1.5"   # with URL flags
 node check.mjs --backend webgpu                 # WebGPU (needs a display, e.g. xvfb-run)
+node check.mjs --sheets models.js               # sheets of your own models and textures (ASSETS.md)
 ```
 
 It writes `check/<page>.png` (the frame with the HUD), the camera and look shots and

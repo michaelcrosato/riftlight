@@ -9,14 +9,17 @@
 import { Box3, type Object3D, Vector3 } from 'three/webgpu';
 import { Canvas, texelSampler, texturedShader, type Rect, type RGB, type SheetImage, type TexelSampler } from '../animation/raster';
 import { INSPECT_BG, column, renderTurntable, renderView, row, textBox, titleBar, worldTriangles, type Line } from '../inspect/render';
-import { bindingHex, type ModelBuild } from './build';
-import { boundsOf, type Compiled } from './compile';
-import type { ExpandedModel } from './expand';
+import { bindingHex, buildModel, expandModel, ModelError, modelDef, type ModelBuild, type ModelReport } from './build';
+import { boundsOf, compileParts, type Bounds, type Compiled } from './compile';
+import type { ExpandedModel, ModelOptions } from './expand';
 import { bakeTexture } from '../texture/bake';
 import type { TextureCatalog } from '../texture/catalog';
+import { TextureError } from '../texture/convert';
 import { TEXTURE_LIBRARY } from '../texture/library';
+import { MODEL_LIBRARY } from './library';
+import type { ModelDef } from './types';
 import { DEFAULT_TEXEL, partUVs } from './uv';
-import type { ModelCheck } from './validate';
+import { checkModel, type ModelCheck } from './validate';
 import { GAME_VIEW, gamePxPerMetre } from './view';
 
 export { GAME_VIEW, gamePxPerMetre } from './view';
@@ -335,6 +338,66 @@ export function renderModelSheet(s: SheetInput): SheetImage {
   const w = Math.max(turn.width, lower.width, game.width);
   const head = titleBar(`${model.id}: ${model.about}`, w, s.subtitle ?? '');
   return column([head, turn, lower, game]);
+}
+
+/**
+ * `modelSheet`'s options: `buildModel`'s (`params`, `seed`, `palette`, `light`, `catalog` where
+ * ids and `use` resolve, `textures` where `tex` resolves), plus what the sheet draws.
+ */
+export interface ModelSheetOptions extends ModelOptions {
+  /** Named parts' and groups' names on the views. */
+  readonly labels?: boolean;
+  /** Anchors (cyan) and colliders (green) on the views. */
+  readonly rig?: boolean;
+  /** @internal The previous version's triangles (`flatTriangles`), drawn as a magenta outline (`npm run model -- sheet --compare`). */
+  readonly previous?: readonly FlatTri[];
+  /** One more line under the title. */
+  readonly note?: string;
+}
+
+/** A model's sheet (`image`: width, height and RGBA `data`) and the check it shows. */
+export interface ModelSheet {
+  readonly image: SheetImage;
+  readonly problems: readonly string[];
+  readonly warnings: readonly string[];
+  /** Tris, draws, materials, parts (null when it can't be built). */
+  readonly report: ModelReport | null;
+  /** Its bounds in metres: min, max and size (null when it can't be built). */
+  readonly bounds: Bounds | null;
+}
+
+/**
+ * The model sheet `npm run model -- sheet` draws, for a library id or any def (a game's own):
+ * the turntable, front / side / top on a 0.1 m grid with the size, the game-scale previews, the
+ * palette and `checkModel`'s problems and warnings over every param's range. Software-drawn: no
+ * GPU, no DOM, so it runs in Node and in a browser (the kit's `check.mjs --sheets`). A def that
+ * can't be built (an unknown slot, `use` or texture) gets a sheet of its problems alone.
+ *
+ *   const { image, problems } = modelSheet(myStall, { catalog: myModels }); // image: RGBA pixels
+ */
+export function modelSheet(idOrDef: string | ModelDef, opts: ModelSheetOptions = {}): ModelSheet {
+  const { labels, rig, previous, note, ...o } = opts;
+  const def = modelDef(idOrDef, o.catalog ?? MODEL_LIBRARY);
+  const check = checkModel(def, o);
+  let model: ExpandedModel;
+  let build: ModelBuild;
+  try {
+    model = expandModel(def, o);
+    build = buildModel(def, o);
+  } catch (e) {
+    if (!(e instanceof ModelError || e instanceof TextureError)) throw e;
+    const problems = check.problems.length ? check.problems : e.problems;
+    const box = textBox(problems.map((p) => ({ text: `x ${ascii(p)}`, color: BAD })), 640, 0, 'CHECK: IT CANNOT BE BUILT');
+    return { image: column([titleBar(`${def.id}: ${def.about ?? ''}`, box.width, note ?? ''), box]), problems, warnings: check.warnings, report: null, bounds: null };
+  }
+  const sub = [
+    Object.keys(model.params).length ? `params ${Object.entries(model.params).map(([k, v]) => `${k}=${v}`).join(' ')}` : '',
+    build.report.seeded ? `seed ${model.seed}` : '',
+    note ?? '',
+    model.tags.length ? `tags ${model.tags.join(' ')}` : '',
+  ].filter(Boolean).join('   ');
+  const image = renderModelSheet({ model, compiled: compileParts(model.parts), build, check, previous, labels, rig, subtitle: sub, textures: o.textures });
+  return { image, problems: check.problems, warnings: check.warnings, report: build.report, bounds: build.bounds };
 }
 
 function partLabels(compiled: Compiled): { text: string; at: Vector3 }[] {
