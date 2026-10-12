@@ -8,6 +8,22 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.27.0
+
+- **63 tiling surfaces** in `TEXTURE_LIBRARY` (docs/ASSETS.md *Textures*; `npm run tex -- zoo
+  surface`), 43 more, drawn for 8 texels a metre (Gate B). Wood: `parquet`, `rough-boards`,
+  `log-ends`, `wicker`, `deck`. Stone: `marble`, `sandstone`, `basalt`, `slate-tiles`, `ashlar`,
+  `dry-stone`, `pebbles`, `gravel`, `geode`. Floors: `ruined-mosaic`, `diagonal-tiles`,
+  `checker-marble`, `hex-tiles`, `mosaic`, `terracotta`, `grate`, `rune-floor`. Roofs:
+  `slate-roof`, `clay-tiles`, `wood-shakes`. Ground: `mud`, `cracked-earth`, `cinders`,
+  `lava-crust`, `swamp`, `shallow-water`, `wet-sand`, `leaf-litter`, `meadow`, `snow-drifts`,
+  `frozen-mud`. Materials: `leather`, `burlap`, `chainmail`, `fur`, `scales`. Magic: `starfield`,
+  `rift-energy`. Every one is seamless and checks clean; each was looked at tiled 3×3 and on an
+  8 m and a 16 m floor at game density, and redrawn where it banded or read as something else
+  (shakes that read as brick, a mosaic that printed a chevron) or re-seeded where its repeat showed
+  most (the noise grounds still show their 4 m tile on a wide floor, as `dirt` does). The 20 earlier
+  surfaces are unchanged.
+
 ## 0.26.0
 
 - **The library grows to 151 models** (docs/ASSETS.md; `npm run model -- zoo all`), 90 more in
