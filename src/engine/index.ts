@@ -102,6 +102,7 @@ export { assetProgress, preloadModels } from './assets';
 export { LoadingScreen } from './LoadingScreen';
 export { mergeStaticMeshes, type MergeOptions } from './render/merge';
 export {
+  DEFAULT_TEXEL,
   MODEL_LIBRARY,
   ModelCatalog,
   ModelError,
@@ -134,6 +135,7 @@ export {
   TextureError,
   bakeTexture,
   hudSprite,
+  meanColour,
   spriteSheet,
   textureDef,
   textureMap,

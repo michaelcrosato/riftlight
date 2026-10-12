@@ -5,6 +5,8 @@
  * `npm run model -- check` does.
  */
 import { Vector3 } from 'three/webgpu';
+import { bakeTexture, meanColour } from '../texture/bake';
+import { TEXTURE_LIBRARY } from '../texture/library';
 import type { ModelCatalog } from './catalog';
 import { boundsOf, compileParts, type Bounds, type CompiledPart } from './compile';
 import { expandDef, partLabel, type ModelOptions } from './expand';
@@ -47,10 +49,10 @@ export interface ModelCheck {
   readonly metrics: ModelMetrics | null;
 }
 
-export interface CheckOptions extends ModelOptions {
-  /** Texture ids that exist (TextureDefs). Without it, every `tex` is unknown. */
-  readonly textures?: (id: string) => boolean;
-}
+export type CheckOptions = ModelOptions;
+
+/** Texels per metre a model may set (`texel`). */
+export const TEXEL_RANGE = [2, 64] as const;
 
 const r2 = (v: number) => Math.round(v * 100) / 100;
 const fmt = (v: Vec3) => v.map(r2).join(' × ');
@@ -102,8 +104,23 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
 
   sizeProblems(model.parts, 'parts', problems);
   const parts = compiled.parts;
+  // textures: each named one baked once, for its problems and its mean colour
+  const textures = opts.textures ?? TEXTURE_LIBRARY;
+  const baked = new Map<string, ReturnType<typeof bakeTexture> | null>();
+  const bakeOf = (id: string) => {
+    if (!baked.has(id)) baked.set(id, textures.has(id) ? bakeTexture(textures.get(id)) : null);
+    return baked.get(id)!;
+  };
+  if (model.texel !== undefined && !(Number.isFinite(model.texel) && model.texel >= TEXEL_RANGE[0] && model.texel <= TEXEL_RANGE[1])) problems.push(`its texel ${model.texel} is outside ${TEXEL_RANGE[0]}–${TEXEL_RANGE[1]} texels per metre: use a number in that range (or leave it to the default)`);
+  const untiled = new Set<string>();
   for (const p of parts) {
-    if (p.tex && !opts.textures?.(p.tex)) problems.push(`${p.label} names texture '${p.tex}', which no TextureDef declares: add the texture or drop \`tex\``);
+    if (p.tex) {
+      const b = bakeOf(p.tex);
+      if (!b) problems.push(`${p.label} names texture '${p.tex}', which no TextureDef declares: add the texture or drop \`tex\``);
+      else if (b.problems.length) problems.push(`${p.label} names texture '${p.tex}', which has problems: fix it first (\`npm run tex -- check ${p.tex}\`)`);
+      else if (!textures.get(p.tex).tile) untiled.add(p.tex);
+      if (p.glow) problems.push(`${p.label} glows and names a texture: glow draws one flat colour, so drop \`tex\` or \`glow\``);
+    }
     if (!p.matrix.elements.every(Number.isFinite) || !p.tris.every(Number.isFinite)) problems.push(`${p.label} has a NaN or infinite number: check its at, rot, size and points`);
   }
   const layout = layoutModel(compiled, model.palette);
@@ -164,11 +181,15 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
     const who = labels.length > 1 ? `${labels.length} parts are (${labels.slice(0, 4).join(', ')}${labels.length > 4 ? ', …' : ''})` : `${labels[0]} is`;
     warnings.push(`${who} ${size} m across: rods under ${MIN_THICKNESS} m vanish at 480×270; thicken to ${MIN_THICKNESS} m or more`);
   }
-  warnings.push(...readabilityWarnings(parts, model.palette, model.floats));
+  for (const t of untiled) warnings.push(`texture '${t}' doesn't tile: on a model it shows once, at the model's origin, and its edge texels smear across the rest of the part (transparent texels draw black); use a tiling texture (\`tile: true\`)`);
+  warnings.push(...readabilityWarnings(parts, model.palette, model.floats, (id) => {
+    const b = bakeOf(id);
+    return b ? meanColour(b) : 0xff00ff;
+  }));
   const largest = Math.max(...b.size);
   const budget = triangleBudget(largest);
   if (layout.tris > budget) warnings.push(`${layout.tris} triangles is over the budget of ${budget} for a model ${r2(largest)} m across: fewer sides (seg) or fewer parts`);
-  const materials = new Set(layout.meshes.map((m) => `${m.glow}|${m.hex}`)).size;
+  const materials = new Set(layout.meshes.map((m) => `${m.glow}|${m.hex}|${m.tex ?? ''}`)).size;
   if (materials > MAX_MATERIALS) warnings.push(`${materials} materials (over ${MAX_MATERIALS}): merge slots that share a colour, or drop accents`);
 
   const metrics: ModelMetrics | null = problems.length ? null : { tris: layout.tris, draws: layout.meshes.length, materials, parts: parts.length, bounds: b, seeded: e.seeded };

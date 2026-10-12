@@ -3,6 +3,7 @@ import { PALETTE } from '../palette';
 import { buildModel, checkModel, compileParts, expandModel, MODEL_LIBRARY, validateModel, type ModelDef, type Part } from '.';
 import { diffLines, diffModels, modelFingerprint } from './diff';
 import { oklab } from './oklab';
+import { bakeTexture, meanColour, textureDef, TextureCatalog } from '../texture';
 import { flatTriangles, GAME_VIEW, gamePxPerMetre, renderJudge, renderModelSheet, upscale } from './sheet';
 
 const def = (parts: Part[], extra: Partial<ModelDef> = {}): ModelDef => ({ id: 'tool-test', about: 'a test model', tags: [], palette: { a: 'orange', b: 'slate', c: 'red' }, parts, ...extra });
@@ -84,6 +85,19 @@ describe('readability warnings', () => {
     // turned rods are rods, not large parts
     const rods = [0, 45, 90, 135].map((a): Part => ({ cyl: [0.06, 1.2, 0.06], at: [0, 0.6, 0], rot: [0, a, 40], seg: 4 }));
     expect(warnings(def(rods)).join()).not.toMatch(/one block/);
+    // textured parts show their texels: never a flat block
+    expect(warnings(def(cart.map((p) => ({ ...p, tex: 'planks' })))).join()).not.toMatch(/one block/);
+  });
+
+  it('a textured part counts as its mean colour for lightness, and its texture names it', () => {
+    const flat = (c: 'blue' | 'orange') => new TextureCatalog([textureDef({ id: 'flat', about: 'x', tags: [], size: [8, 8], tile: true, palette: { a: c }, layers: [{ pattern: 'checker', colors: 'a' }] })]);
+    const d = def([body, { box: [1, 1, 1], at: [1, 0.5, 0], tex: 'flat' }], { palette: { a: 'teal', b: 'slate', c: 'red' } });
+    expect(meanColour(bakeTexture(flat('blue').get('flat')))).toBe(PALETTE.blue);
+    expect(validateModel(d, { textures: flat('blue') }).warnings.join()).toMatch(/\(teal\) and .* \(texture 'flat'\) touch but differ by only 0.0\d in lightness/);
+    expect(validateModel(d, { textures: flat('orange') }).warnings.join()).not.toMatch(/lightness/);
+    // same texture on two touching parts: no lightness line, no z-fighting
+    const twin = def([{ box: [1, 1, 1], at: [0, 0.5, 0], tex: 'bricks' }, { box: [1, 1, 1], at: [1, 0.5, 0], tex: 'bricks' }]);
+    expect(validateModel(twin).warnings).toEqual([]);
   });
 
   it('a block the far side shows is a block', () => {

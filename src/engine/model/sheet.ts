@@ -7,11 +7,15 @@
  * and the software canvas (no GPU, no DOM), so it runs in Node and in the browser.
  */
 import { Box3, type Object3D, Vector3 } from 'three/webgpu';
-import { Canvas, type Rect, type RGB, type SheetImage } from '../animation/raster';
+import { Canvas, texelSampler, texturedShader, type Rect, type RGB, type SheetImage, type TexelSampler } from '../animation/raster';
 import { INSPECT_BG, column, renderTurntable, renderView, row, textBox, titleBar, worldTriangles, type Line } from '../inspect/render';
 import { bindingHex, type ModelBuild } from './build';
 import { boundsOf, type Compiled } from './compile';
 import type { ExpandedModel } from './expand';
+import { bakeTexture } from '../texture/bake';
+import type { TextureCatalog } from '../texture/catalog';
+import { TEXTURE_LIBRARY } from '../texture/library';
+import { DEFAULT_TEXEL, partUVs } from './uv';
 import type { ModelCheck } from './validate';
 import { GAME_VIEW, gamePxPerMetre } from './view';
 
@@ -39,15 +43,35 @@ export interface FlatTri {
   readonly color: RGB;
   readonly unlit: boolean;
   readonly part: number;
+  /** A textured part's triangle: its UVs (a, b, c) and its texture's sampler. */
+  readonly tex?: { readonly uv: ArrayLike<number>; readonly sample: TexelSampler };
 }
 
-export function flatTriangles(compiled: Compiled, palette: ExpandedModel['palette']): FlatTri[] {
+/** Where textured parts' textures come from, and at what density (the build's own). */
+export interface SheetTextures {
+  readonly texel: number;
+  readonly textures: TextureCatalog;
+}
+
+/** Textured parts get their texels when `tex` is given (the ortho views), else their slot colour (compare). */
+export function flatTriangles(compiled: Compiled, palette: ExpandedModel['palette'], tex?: SheetTextures): FlatTri[] {
   const out: FlatTri[] = [];
+  const samplers = new Map<string, TexelSampler | null>();
+  const samplerOf = (id: string): TexelSampler | null => {
+    if (!samplers.has(id)) {
+      const def = tex?.textures.has(id) ? tex.textures.get(id) : null;
+      const b = def ? bakeTexture(def) : null;
+      samplers.set(id, b && !b.problems.length ? texelSampler(b.rgba, b.width, b.height, { repeat: def!.tile === true, bottomFirst: false }) : null);
+    }
+    return samplers.get(id)!;
+  };
   compiled.parts.forEach((p, i) => {
-    const color = rgbOf(palette[p.slot] === undefined ? 0xff00ff : bindingHex(palette[p.slot]!));
+    const sample = p.tex && !p.glow && tex ? samplerOf(p.tex) : null;
+    const uvs = sample ? partUVs(p, tex!.texel, tex!.textures.get(p.tex!).size) : null;
+    const color: RGB = sample ? [255, 255, 255] : rgbOf(palette[p.slot] === undefined ? 0xff00ff : bindingHex(palette[p.slot]!));
     for (let k = 0; k < p.tris.length; k += 9) {
       const v = [0, 3, 6].map((o) => new Vector3(p.tris[k + o]!, p.tris[k + o + 1]!, p.tris[k + o + 2]!).applyMatrix4(p.matrix)) as [Vector3, Vector3, Vector3];
-      out.push({ p: v, color, unlit: p.glow, part: i + 1 });
+      out.push({ p: v, color, unlit: p.glow, part: i + 1, ...(uvs && sample ? { tex: { uv: uvs.subarray((k / 3) * 2, (k / 3) * 2 + 6), sample } } : {}) });
     }
   });
   return out;
@@ -169,7 +193,7 @@ function drawTris(cv: Canvas, tris: readonly FlatTri[], proj: (p: Vector3) => [n
     const shade = t.unlit ? 1 : d > 0.55 ? 1 : d > 0.2 ? 0.72 : 0.42;
     const col = t.color.map((c) => c * shade) as RGB;
     const [a, b2, c] = t.p.map(proj) as [[number, number, number], [number, number, number], [number, number, number]];
-    cv.tri(a[0], a[1], a[2], b2[0], b2[1], b2[2], c[0], c[1], c[2], col, t.part, rect);
+    cv.tri(a[0], a[1], a[2], b2[0], b2[1], b2[2], c[0], c[1], c[2], t.tex ? texturedShader(t.tex.uv, t.tex.sample, col) : col, t.part, rect);
   }
   cv.outline(rect);
 }
@@ -234,11 +258,11 @@ export function renderJudge(object: Object3D): SheetImage {
   return column([turn, game]);
 }
 
-/** Palette swatches: slot, colour name (or hex) and a chip. */
-export function swatches(palette: ExpandedModel['palette'], width: number, used?: ReadonlySet<string>): SheetImage {
+/** Palette swatches: slot, colour name (or hex) and a chip; then each texture's id and a corner of it at 1×. */
+export function swatches(palette: ExpandedModel['palette'], width: number, used?: ReadonlySet<string>, textures: readonly { id: string; rgba: Uint8Array; width: number; height: number }[] = []): SheetImage {
   const entries = Object.entries(palette);
   const rowH = 14;
-  const H = 22 + entries.length * rowH + 6;
+  const H = 22 + (entries.length + textures.length) * rowH + 6;
   const cv = new Canvas(width, H);
   cv.rect(0, 0, width, H, PANEL);
   cv.text('PALETTE', 8, 8, TEXT);
@@ -247,6 +271,16 @@ export function swatches(palette: ExpandedModel['palette'], width: number, used?
     cv.rect(8, y, 20, 10, rgbOf(bindingHex(b)));
     const name = typeof b === 'number' ? `#${b.toString(16).padStart(6, '0')}` : b;
     cv.text(`${slot} ${name}${used && !used.has(slot) ? ' (unused)' : ''}`, 34, y + 1, used && !used.has(slot) ? DIM : TEXT);
+  });
+  textures.forEach((t, i) => {
+    const y = 22 + (entries.length + i) * rowH;
+    for (let ty = 0; ty < 10; ty++) {
+      for (let tx = 0; tx < 20; tx++) {
+        const k = ((ty % t.height) * t.width + (tx % t.width)) * 4;
+        cv.set(8 + tx, y + ty, [t.rgba[k]!, t.rgba[k + 1]!, t.rgba[k + 2]!]);
+      }
+    }
+    cv.text(`tex ${t.id} ${t.width}x${t.height}`, 34, y + 1, TEXT);
   });
   return { width, height: H, data: cv.data };
 }
@@ -262,12 +296,17 @@ export interface SheetInput {
   readonly rig?: boolean;
   /** Extra lines under the title (params, seed, source). */
   readonly subtitle?: string;
+  /** Where the parts' `tex` ids resolve (default `TEXTURE_LIBRARY`, as `buildModel`). */
+  readonly textures?: TextureCatalog;
 }
 
 /** The model sheet (see the file comment). */
 export function renderModelSheet(s: SheetInput): SheetImage {
   const { model, compiled, build, check } = s;
-  const tris = flatTriangles(compiled, model.palette);
+  const textures = s.textures ?? TEXTURE_LIBRARY;
+  const tris = flatTriangles(compiled, model.palette, { texel: model.texel ?? DEFAULT_TEXEL, textures });
+  const texIds = [...new Set(compiled.parts.flatMap((p) => (p.tex && !p.glow && textures.has(p.tex) ? [p.tex] : [])))];
+  const baked = texIds.map((id) => bakeTexture(textures.get(id)));
   const object = build.object;
   // turntable (8 angles, one scale) and the game-scale previews
   const turn = row(renderTurntable(object, { angles: 8, size: 150 }));
@@ -286,9 +325,9 @@ export function renderModelSheet(s: SheetInput): SheetImage {
   const labels = s.labels ? partLabels(compiled) : undefined;
   const rig = s.rig ? { anchors: build.anchors, colliders: build.colliders } : {};
   const ortho = row((['front', 'side', 'top'] as const).map((axis) => renderOrtho(tris, axis, { size, scale, frame, previous: s.previous, labels, ...rig })));
-  const used = new Set(compiled.parts.map((p) => p.slot));
+  const used = new Set(compiled.parts.filter((p) => !p.tex || p.glow).map((p) => p.slot)); // a texture brings its own colours
   const right = Math.max(turn.width, ortho.width + 200) - ortho.width - 16;
-  const info = column([swatches(model.palette, right, used), textBox(checkLines(check, build), right, 0, 'CHECK')]);
+  const info = column([swatches(model.palette, right, used, baked), textBox(checkLines(check, build), right, 0, 'CHECK')]);
   const lower = row([ortho, info]);
   const w = Math.max(turn.width, lower.width, game.width);
   const head = titleBar(`${model.id}: ${model.about}`, w, s.subtitle ?? '');

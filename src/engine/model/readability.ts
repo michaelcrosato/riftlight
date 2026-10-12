@@ -52,7 +52,10 @@ interface World {
   readonly pts: Vector3[];
   readonly min: Vector3;
   readonly max: Vector3;
+  /** The slot's colour, or a textured part's mean texel colour. */
   readonly hex: number;
+  /** What it looks like: colour, glow and texture (equal looks don't fight or need contrast). */
+  readonly look: string;
   /** A mirrored part's triangles wind the other way. */
   readonly flip: boolean;
 }
@@ -68,7 +71,10 @@ interface Face {
   readonly max: Vector3;
 }
 
-function worldOf(parts: readonly CompiledPart[], palette: ExpandedModel['palette']): World[] {
+/** A part's colour for messages: its PALETTE name or hex, or its texture. */
+const nameOf = (x: World) => (x.part.tex && !x.part.glow ? `texture '${x.part.tex}'` : colourName(x.hex));
+
+function worldOf(parts: readonly CompiledPart[], palette: ExpandedModel['palette'], texColour?: (id: string) => number): World[] {
   return parts.map((part) => {
     const pts: Vector3[] = [];
     const min = new Vector3(Infinity, Infinity, Infinity);
@@ -80,7 +86,9 @@ function worldOf(parts: readonly CompiledPart[], palette: ExpandedModel['palette
       max.max(v);
     }
     const b = palette[part.slot];
-    return { part, pts, min, max, hex: b === undefined ? 0xff00ff : bindingHex(b), flip: part.matrix.determinant() < 0 };
+    const tex = part.tex && !part.glow ? part.tex : '';
+    const hex = tex && texColour ? texColour(tex) : b === undefined ? 0xff00ff : bindingHex(b);
+    return { part, pts, min, max, hex, look: `${hex}|${part.glow}|${tex}`, flip: part.matrix.determinant() < 0 };
   });
 }
 
@@ -99,10 +107,13 @@ function facesOf(w: readonly World[]): Face[] {
   return out;
 }
 
-/** Hidden parts, z-fighting faces and touching masses too close in lightness. */
-export function readabilityWarnings(parts: readonly CompiledPart[], palette: ExpandedModel['palette'], floats = false): string[] {
+/**
+ * Hidden parts, z-fighting faces and touching masses too close in lightness. `texColour` gives a
+ * textured part's mean colour (else it counts as its slot's).
+ */
+export function readabilityWarnings(parts: readonly CompiledPart[], palette: ExpandedModel['palette'], floats = false, texColour?: (id: string) => number): string[] {
   const out: string[] = [];
-  const w = worldOf(parts, palette);
+  const w = worldOf(parts, palette, texColour);
   const faces = facesOf(w);
   const eps = 1e-4;
 
@@ -158,19 +169,19 @@ export function readabilityWarnings(parts: readonly CompiledPart[], palette: Exp
         if (p.i === q.i) continue;
         const pa = w[p.i]!;
         const qa = w[q.i]!;
-        if ((pa.hex === qa.hex && pa.part.glow === qa.part.glow) || pa.part.matrix === qa.part.matrix) continue;
+        if (pa.look === qa.look || pa.part.matrix === qa.part.matrix) continue;
         if (p.n.dot(q.n) < 0.9999) continue;
         if (!floats && p.n.y < -0.999 && Math.abs(p.d) < PLANE) continue; // bottoms on the floor never show
         const t = PLANE; // the planes may be up to 1 mm apart
         if (p.max.x < q.min.x - t || q.max.x < p.min.x - t || p.max.y < q.min.y - t || q.max.y < p.min.y - t || p.max.z < q.min.z - t || q.max.z < p.min.z - t) continue;
         const [lo, hi] = p.i < q.i ? [p.i, q.i] : [q.i, p.i];
-        const colours = [w[lo]!.hex, w[hi]!.hex].sort().join('|');
+        const colours = [w[lo]!.look, w[hi]!.look].sort().join('/');
         const g = fights.get(colours) ?? { pairs: new Set<string>(), labels: [], planes: new Map<string, number>() };
         fights.set(colours, g);
         const pair = `${lo}|${hi}`;
         if (g.pairs.has(pair) || overlapArea(p, q) < 1e-6) continue;
         g.pairs.add(pair);
-        if (g.labels.length < 4) g.labels.push(`${w[lo]!.part.label} (${colourName(w[lo]!.hex)}) and ${w[hi]!.part.label} (${colourName(w[hi]!.hex)})`);
+        if (g.labels.length < 4) g.labels.push(`${w[lo]!.part.label} (${nameOf(w[lo]!)}) and ${w[hi]!.part.label} (${nameOf(w[hi]!)})`);
         const plane = planeName(p);
         g.planes.set(plane, (g.planes.get(plane) ?? 0) + 1);
       }
@@ -189,15 +200,15 @@ export function readabilityWarnings(parts: readonly CompiledPart[], palette: Exp
   const pairs = new Set<string>();
   w.forEach((a, i) => {
     w.forEach((b, j) => {
-      if (j <= i || a.hex === b.hex || a.part.glow || b.part.glow) return;
+      if (j <= i || a.look === b.look || a.part.glow || b.part.glow) return;
       if (ext(a)[1]! < LARGE || ext(b)[1]! < LARGE) return;
       const gap = Math.hypot(Math.max(0, a.min.x - b.max.x, b.min.x - a.max.x), Math.max(0, a.min.y - b.max.y, b.min.y - a.max.y), Math.max(0, a.min.z - b.max.z, b.min.z - a.max.z));
       if (gap > 0.01) return;
       const dl = Math.abs(oklab(a.hex).L - oklab(b.hex).L);
-      const key = [a.hex, b.hex].sort().join('|');
+      const key = [a.look, b.look].sort().join('/');
       if (dl >= MIN_LIGHTNESS_STEP || pairs.has(key)) return;
       pairs.add(key);
-      out.push(`${a.part.label} (${colourName(a.hex)}) and ${b.part.label} (${colourName(b.hex)}) touch but differ by only ${r2(dl)} in lightness (under ${MIN_LIGHTNESS_STEP}): they won't read apart at 480×270; pick colours further apart in lightness`);
+      out.push(`${a.part.label} (${nameOf(a)}) and ${b.part.label} (${nameOf(b)}) touch but differ by only ${r2(dl)} in lightness (under ${MIN_LIGHTNESS_STEP}): they won't read apart at 480×270; pick colours further apart in lightness`);
     });
   });
   out.push(...gameScaleWarnings(w));
@@ -211,7 +222,8 @@ export function readabilityWarnings(parts: readonly CompiledPart[], palette: Exp
  */
 function gameScaleWarnings(w: readonly World[]): string[] {
   const out: string[] = [];
-  const key = w.map((x) => `${x.hex}|${x.part.glow}`);
+  // a textured part shows its texels, never a flat block: it keys alone
+  const key = w.map((x, i) => (x.look.endsWith('|') ? x.look : `tex|${i}`));
   const large = w.map((x) => partExtents(x.part)[1]! >= BLOCK_PART);
   const blocks = new Map<string, { share: number; parts: number; labels: string[] }>();
   let glow = 0;

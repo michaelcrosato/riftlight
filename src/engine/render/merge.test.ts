@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Box3, BoxGeometry, Group, Mesh, MeshBasicNodeMaterial } from 'three/webgpu';
+import { Box3, BoxGeometry, BufferAttribute, DataTexture, Group, Mesh, MeshBasicNodeMaterial } from 'three/webgpu';
 import { mergeStaticMeshes } from './merge';
 
 const top = new MeshBasicNodeMaterial({ name: 'top' });
@@ -47,5 +47,32 @@ describe('mergeStaticMeshes', () => {
     b.castShadow = false;
     expect(mergeStaticMeshes([a, b])).toHaveLength(4);
     expect(mergeStaticMeshes([a, b], { castShadow: true })).toHaveLength(2);
+  });
+
+  it('keeps uv under a textured material and color under a vertex-coloured one', () => {
+    const map = new DataTexture(new Uint8Array(4), 1, 1);
+    const textured = new MeshBasicNodeMaterial({ map });
+    const painted = new MeshBasicNodeMaterial({ vertexColors: true });
+    const geo = () => {
+      const g = new BoxGeometry(1, 1, 1);
+      g.setAttribute('color', new BufferAttribute(new Float32Array(g.getAttribute('position').count * 3).fill(0.5), 3));
+      return g;
+    };
+    const a = new Mesh(geo(), textured);
+    const b = new Mesh(geo(), textured);
+    b.position.x = 3;
+    const c = new Mesh(geo(), painted);
+    const [t, p] = mergeStaticMeshes([a, b, c]) as [Mesh, Mesh];
+    expect(t.material).toBe(textured);
+    expect(Object.keys(t.geometry.attributes).sort()).toEqual(['normal', 'position', 'uv']);
+    const uv = t.geometry.getAttribute('uv');
+    expect(uv.count).toBe(t.geometry.getAttribute('position').count);
+    // the second box's UVs are the first's (UVs don't move with the transform)
+    expect(uv.getX(uv.count / 2)).toBe(uv.getX(0));
+    expect(Object.keys(p.geometry.attributes).sort()).toEqual(['color', 'normal', 'position']);
+    expect(p.geometry.getAttribute('color').getX(0)).toBe(0.5);
+    // a textured material on geometry without uv merges apart instead of failing
+    const bare = new Mesh(geo().deleteAttribute('uv'), textured);
+    expect(mergeStaticMeshes([a, bare])).toHaveLength(2);
   });
 });

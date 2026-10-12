@@ -8,6 +8,26 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.21.0
+
+- **Textured models:** a part's `tex` names a TextureDef. `buildModel` gives it UVs at the
+  model's `texel` density (`DEFAULT_TEXEL` = 16 texels per metre until Gate B; 2–64): flat
+  kinds box-projected on the part's own axes from the model's origin, so texels line up across
+  parts; round kinds wrapped round their axis in whole repeats, caps from above. The part draws
+  with `toonMaterial(0xffffff, { map: textureMap(tex) })`. `ModelOptions.textures` (a
+  `TextureCatalog`, default `TEXTURE_LIBRARY`) is where `tex` ids resolve, for builds and
+  checks (it replaces `CheckOptions.textures`, a callback).
+- Checks: an unknown or broken texture, `glow` with `tex`, and `texel` out of range are problems;
+  a texture that doesn't tile warns; a textured part counts as its mean colour (`meanColour`)
+  for lightness and never joins a one-colour block.
+- `mergeStaticMeshes` keeps `uv` under a textured material and `color` under a vertex-coloured
+  one (it kept only position and normal, so merged textured meshes lost their texels).
+- `inspect` and the model sheets draw texture maps whose pixels are in memory (baked
+  TextureDefs; nearest, per pixel): model sheets show texels in every view and list the
+  textures, and `tex -- sheet` adds a cube and a cylinder at game scale.
+- Library: `brick-wall` (bricks under a stone coping). The sandbox (`?game=sandbox`) shows it
+  built and merged.
+
 ## 0.20.0
 
 - **Textures as data** (src/engine/texture/, docs/ASSETS.md *Textures*): a `TextureDef` (written

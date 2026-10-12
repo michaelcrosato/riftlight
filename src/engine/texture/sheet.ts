@@ -1,13 +1,17 @@
 /**
  * Texture sheets (`npm run tex -- sheet`): the texture at 1× and ×4, a 3×3 tiling when it tiles,
- * its frames one by one, its palette and its check. Transparent texels show over a dim checker.
- * Software-drawn, like the model sheets; the Asset Lab is the truth.
+ * on a cube and a cylinder at game scale (the level and town zooms, at the default texel
+ * density), its frames one by one, its palette and its check. Transparent texels show over a dim
+ * checker. Software-drawn, like the model sheets; the Asset Lab is the truth.
  */
 import type { RGB, SheetImage } from '../animation/raster';
 import { column, row, textBox, titleBar, type Line } from '../inspect/render';
-import { swatches, upscale } from '../model/sheet';
+import { buildModel } from '../model/build';
+import { GAME_VIEW, renderGameScale, swatches, upscale } from '../model/sheet';
+import { DEFAULT_TEXEL } from '../model/uv';
 import type { PaletteColor } from '../palette';
 import type { BakedTexture } from './bake';
+import { TextureCatalog } from './catalog';
 import type { TextureDef } from './types';
 import type { TextureCheck } from './validate';
 
@@ -45,6 +49,26 @@ export function tiled(img: SheetImage, nx: number, ny: number): SheetImage {
 
 const labelled = (img: SheetImage, label: string) => column([img, textBox([{ text: label, color: DIM }], Math.max(img.width, 60))]);
 
+/** A 1 m cube and a cylinder wearing the texture, through Riftlight's camera at the level and town zooms. */
+export function onShapes(def: TextureDef, texel = DEFAULT_TEXEL): SheetImage {
+  const shapes = buildModel(
+    {
+      id: `tex:${def.id}`,
+      about: 'texture preview',
+      tags: [],
+      texel,
+      palette: { a: 'white' },
+      parts: [
+        { box: [1, 1, 1], at: [-0.75, 0.5, 0], tex: def.id },
+        { cyl: [0.8, 1.2, 0.8], seg: 10, at: [0.75, 0.6, 0], tex: def.id },
+      ],
+    },
+    { textures: new TextureCatalog([def]) },
+  );
+  const zooms = [GAME_VIEW.zooms.level, GAME_VIEW.zooms.town];
+  return row(zooms.map((z, i) => renderGameScale(shapes.object, z, { label: `${i ? 'TOWN' : 'LEVEL'} ZOOM ${z}, ${texel} TEXELS/M, X4` })));
+}
+
 /** The sheet; `palette` is the bake's re-binding, so the swatches show the colours drawn. */
 export function renderTextureSheet(def: TextureDef, b: BakedTexture, check: TextureCheck, palette?: Readonly<Record<string, PaletteColor | number>>): SheetImage {
   const base = texelImage(b);
@@ -62,7 +86,8 @@ export function renderTextureSheet(def: TextureDef, b: BakedTexture, check: Text
   for (const p of check.problems) lines.push({ text: `x ${p}`, color: BAD });
   for (const w of check.warnings) lines.push({ text: `! ${w}`, color: WARN });
   if (!check.problems.length && !check.warnings.length) lines.push({ text: 'NO PROBLEMS, NO WARNINGS', color: GOOD });
-  const body = column([row(views), ...(strip.length ? [row(strip)] : []), row([swatches({ ...def.palette, ...palette }, 220, used), textBox(lines.map((l) => ({ ...l, text: l.text.replace(/×/g, 'x').replace(/…/g, '...') })), 640, 0, 'CHECK')])]);
+  const shapes = def.tile && !b.problems.length ? [onShapes(def)] : [];
+  const body = column([row(views), ...shapes, ...(strip.length ? [row(strip)] : []), row([swatches({ ...def.palette, ...palette }, 220, used), textBox(lines.map((l) => ({ ...l, text: l.text.replace(/×/g, 'x').replace(/…/g, '...') })), 640, 0, 'CHECK')])]);
   const sub = `${def.tile ? 'tiles  ' : ''}${frames > 1 ? `${frames} frames  ` : ''}${def.tags.length ? `tags ${def.tags.join(' ')}` : ''}`;
   return column([titleBar(`${def.id}: ${def.about}`, body.width, sub), body]);
 }

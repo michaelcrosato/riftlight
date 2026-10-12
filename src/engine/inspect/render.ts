@@ -3,13 +3,13 @@
  * rig overlays (x-ray mesh + joints with names), and the inspection sheet that puts them
  * together with the counts and warnings. Built on the software canvas the animation contact
  * sheets use (animation/raster.ts): flat 3-band toon shading, cel outlines, vertex colours,
- * CPU skinning for SkinnedMesh, InstancedMesh instances. Runs in Node and in the browser.
+ * texture maps whose pixels are in memory (baked TextureDefs, nearest texel), CPU skinning for SkinnedMesh, InstancedMesh instances. Runs in Node and in the browser.
  *
  *   const sheet = renderInspection(object, inspectObject(object, { joints }), { joints });
  */
-import type { BufferAttribute, Color, InstancedMesh, InterleavedBufferAttribute, Material, Mesh, Object3D, SkinnedMesh } from 'three/webgpu';
-import { Box3, Matrix4, SRGBColorSpace, Vector3 } from 'three/webgpu';
-import { Canvas, outlineId, presetTriangleColour, type Rect, type RGB, type SheetImage } from '../animation/raster';
+import type { BufferAttribute, Color, InstancedMesh, InterleavedBufferAttribute, Material, Mesh, Object3D, SkinnedMesh, Texture } from 'three/webgpu';
+import { Box3, Matrix4, RepeatWrapping, SRGBColorSpace, Vector3 } from 'three/webgpu';
+import { Canvas, outlineId, presetTriangleColour, texelSampler, texturedShader, type Rect, type RGB, type SheetImage, type TexelSampler } from '../animation/raster';
 import type { InspectReport, ReportDiff } from './report';
 
 export const INSPECT_BG: RGB = [28, 31, 44];
@@ -52,6 +52,20 @@ interface Tri {
   color: RGB;
   unlit: boolean;
   id: number;
+  /** A textured triangle: its UVs (a, b, c) and its map's sampler; `color` tints it. */
+  tex?: { uv: readonly number[]; sample: TexelSampler };
+}
+
+/** A sampler for a material's map when its pixels are in memory (a DataTexture: baked textures). */
+function mapSampler(m: Material, cache: Map<Texture, TexelSampler | null>): TexelSampler | null {
+  const map = (m as Material & { map?: Texture | null }).map;
+  if (!map) return null;
+  if (!cache.has(map)) {
+    const img = map.image as { data?: ArrayLike<number>; width?: number; height?: number } | null;
+    const ok = img?.data && img.width && img.height && img.data.length >= img.width * img.height * 4;
+    cache.set(map, ok ? texelSampler(img.data!, img.width!, img.height!, { repeat: map.wrapS === RepeatWrapping, bottomFirst: !map.flipY }) : null);
+  }
+  return cache.get(map)!;
 }
 
 const vx = (attr: BufferAttribute | InterleavedBufferAttribute, i: number, out: Vector3) => out.fromBufferAttribute(attr, i);
@@ -68,6 +82,7 @@ export function worldTriangles(object: Object3D): Tri[] {
   object.updateMatrixWorld(true);
   const tris: Tri[] = [];
   const tmp = { r: 0, g: 0, b: 0 };
+  const samplers = new Map<Texture, TexelSampler | null>();
   let id = 0;
   object.traverse((x) => {
     const mesh = x as Mesh;
@@ -83,6 +98,7 @@ export function worldTriangles(object: Object3D): Tri[] {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const groups = g.groups.length ? g.groups : [{ start: 0, count, materialIndex: 0 }];
     const colors = g.getAttribute('color');
+    const uvs = g.getAttribute('uv');
     const skinned = (mesh as SkinnedMesh).isSkinnedMesh ? (mesh as SkinnedMesh) : null;
     if (skinned) skinned.skeleton.update();
     const inst = (mesh as InstancedMesh).isInstancedMesh ? (mesh as InstancedMesh) : null;
@@ -101,6 +117,7 @@ export function worldTriangles(object: Object3D): Tri[] {
         const base = colourOf(m, tmp);
         const unlit = m.type.includes('Basic');
         const useVc = !!colors && (m as Material & { vertexColors?: boolean }).vertexColors;
+        const sample = uvs ? mapSampler(m, samplers) : null;
         for (let t = grp.start; t + 2 < grp.start + grp.count && t + 2 < count; t += 3) {
           const ia = idx ? idx.getX(t) : t;
           const ib = idx ? idx.getX(t + 1) : t + 1;
@@ -121,7 +138,8 @@ export function worldTriangles(object: Object3D): Tri[] {
             const cs = [ia, ib, ic].map((i) => [colors!.getX(i), colors!.getY(i), colors!.getZ(i)]);
             color = [0, 1, 2].map((ch) => (Math.pow((cs[0]![ch]! + cs[1]![ch]! + cs[2]![ch]!) / 3, 1 / 2.2) * 255 * base[ch]!) / 255) as RGB;
           }
-          tris.push({ a: v[0]!, b: v[1]!, c: v[2]!, color, unlit: flat, id: outlineId(id, preset) });
+          const tex = sample && !preset ? { uv: [ia, ib, ic].flatMap((i) => [uvs!.getX(i), uvs!.getY(i)]), sample } : undefined;
+          tris.push({ a: v[0]!, b: v[1]!, c: v[2]!, color, unlit: flat, id: outlineId(id, preset), ...(tex ? { tex } : {}) });
         }
       }
     }
@@ -199,7 +217,9 @@ export function renderView(object: Object3D, o: ViewOptions = {}, tris = worldTr
     const pa = proj(t.a);
     const pb = proj(t.b);
     const pc = proj(t.c);
-    cv.tri(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], col, t.id, rect);
+    // a textured triangle: its texels, tinted by the material colour and the shade band
+    const paint = t.tex && !dim ? texturedShader(t.tex.uv, t.tex.sample, col) : col;
+    cv.tri(pa[0], pa[1], pa[2], pb[0], pb[1], pb[2], pc[0], pc[1], pc[2], paint, t.id, rect);
   }
   cv.outline(rect);
   if (o.joints?.length) drawJoints(cv, object, o.joints, proj, !!o.names, rect);

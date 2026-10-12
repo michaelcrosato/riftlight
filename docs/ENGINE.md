@@ -98,7 +98,8 @@ and 273 → 16 ms on the WebGL 2 fallback.
   elapsed time.
 - **Draw calls.** `mergeStaticMeshes(objects)` (`src/engine/render/merge.ts`) merges static
   meshes into one mesh per material (world transforms baked, multi-material geometry split
-  by group). Keep one collider per block and anything that moves separate. The playground
+  by group; `uv` stays under a textured material, `color` under a vertex-coloured one). Keep
+  one collider per block and anything that moves separate. The playground
   goes from 332 to 86 draw calls per frame (including the shadow pass).
 - **Lost GPU device.** Mobile browsers drop the WebGPU device (or WebGL context) after
   backgrounding or under memory pressure. `PixelRenderer` notices (`device.lost`,
@@ -1325,7 +1326,9 @@ rules and the loop (`npm run model -- check / sheet --compare`, the Asset Lab) a
 Pixel-art textures are data the same way (`src/engine/texture/`): a `TextureDef` of layers (pixel
 rows, seeded patterns that tile, SVG paths, outlines) in palette slots, baked headless by
 `bakeTexture` and handed on by `textureMap` (a nearest, repeat-wrapped `map` for `toonMaterial`),
-`spriteSheet` (for `SpriteBatch`) and `hudSprite` (rows for `hud.sprite`). `TEXTURE_LIBRARY` holds
+`spriteSheet` (for `SpriteBatch`) and `hudSprite` (rows for `hud.sprite`). A model part takes one
+with `tex`: `buildModel` gives it UVs at the model's `texel` density and a toon material with
+the map, and the sheets and `inspect` draw its texels. `TEXTURE_LIBRARY` holds
 the built-ins; `npm run tex -- check / sheet / find / zoo` checks and draws them
 ([docs/ASSETS.md](ASSETS.md#textures)).
 
