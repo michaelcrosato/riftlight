@@ -8,6 +8,16 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.22.0
+
+- `DEFAULT_TEXEL` is 8 texels per metre (was 16), what Gate B measured as the densest surface
+  that doesn't shimmer as the camera zooms; `MOVING_TEXEL` = 20 is the densest a moving model
+  passed at. The measurements are in docs/ASSETS.md, *Texel density*.
+- Asset Lab: `window.__ASSET_LAB__.gateB` builds the Gate B scene and steps camera sequences
+  over it, frame by frame (`npm run gate-b`); clearing it puts the lab's camera back.
+- Library `brick-wall`: at 8 texels per metre its bricks are 1 × 0.5 m, so its default height is
+  1.5 m (three whole courses; it was 1.2, which cut the top course).
+
 ## 0.21.0
 
 - **Textured models:** a part's `tex` names a TextureDef. `buildModel` gives it UVs at the

@@ -301,5 +301,50 @@ parts: (p) => [
 The texture brings its own colours (the part's slot isn't drawn); each texture is one material,
 on white. The model sheets draw texels in every view, the palette panel lists the textures,
 and `npm run tex -- sheet` shows a tiling texture on a cube and a cylinder at game scale.
-`mergeStaticMeshes` keeps the UVs. The default density, `DEFAULT_TEXEL` = 16 texels per metre
-(an art pixel or so per texel at the level zoom), stands until Gate B measures it.
+`mergeStaticMeshes` keeps the UVs.
+
+### Texel density (Gate B)
+
+How dense texels may be before they shimmer was measured in the real renderer (Gate B, the
+plan's §5; `npm run build && npm run gate-b`, `src/lab/gateB.ts`). A floor of `cobbles`, a wall
+of `bricks` and crates of `planks` were stepped frame by frame through:
+
+- Riftlight's settings-wheel zoom from fully out (0.6, then ×1.08 steps to 1.6: the stops a
+  player reaches scrolling in from the clamp), each step eased as the game eases it until it is
+  within 1e-3 of its goal, at the level and town zooms, on landscape and portrait screens;
+- a crate sliding at 2 m/s;
+- a pan.
+
+A frame's score is the share of pixels that changed since the frame before, with the camera's
+whole-pixel snap undone (so a snap counts as a shift, not as flicker). A run's *excess flicker*
+is that minus the same scene in the textures' mean colours, and a zoom step scores the mean of
+its frames. The floor fills most of the frame, so the sweep scores the floor's texture (cobbles)
+in effect; the wall and crates are judged in the filmstrips. The pass line sits a quarter of the
+way from a calm texture (two-colour blobs at 8 texels per metre) to a bad one (a 1-texel checker
+at 32), each scored by its mean step; a density passes when every one of its 52 steps is under
+the line.
+
+| texels per metre | worst zoom step (pass ≤ 5.97%) | mean step | sliding crate (pass ≤ 0.049%) |
+| --- | --- | --- | --- |
+| 8 | **5.42%** pass | 2.99% | 0.014% pass |
+| 12 | 7.95% | 4.45% | 0.025% pass |
+| 16 | 10.25% | 5.83% | 0.035% pass |
+| 20 | 12.36% | 7.13% | 0.042% pass |
+| calm (8), bad (32) | 1.67%, 30.01% | 0.97%, 20.96% | 0.008%, 0.173% |
+
+- **The worst step** is the landscape level zoom's most zoomed-out one (0.65 → 0.70, 11.7–12.6
+  art pixels per metre), where a texel at 8 is about 1.5 pixels and at 16 under one.
+- **The line is a choice.** The plan sets one line a quarter of the way from calm to bad without
+  saying how each becomes one number; their mean steps are used. Two other readings pass 12 as
+  well: a line per step (calm and bad at that step: 12's worst is 0.89 of the way to it, 16's
+  1.21) and a line from the worst steps (8.76%). 12's filmstrips go to fine noise at the most
+  zoomed-out steps, so the stricter reading is kept.
+- **The pan** scores 0 everywhere: the rig snaps to whole art pixels.
+- **Both backends** (WebGPU and the WebGL 2 fallback, both SwiftShader here) measured the same to
+  two decimals.
+
+So `DEFAULT_TEXEL` is **8**: floors, walls and props the camera zooms over. A model that moves
+(and is never a large surface) may set `texel` up to `MOVING_TEXEL` = 20, the densest measured,
+which passed the crate test; it shimmers while the camera zooms like a 20-texel surface does, so
+keep such models small on screen. Draw textures for 8: a 16-texel tile covers 2 m, so a brick of
+8 × 4 texels is 1 × 0.5 m.

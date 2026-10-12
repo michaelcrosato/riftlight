@@ -93,10 +93,10 @@ export const arch = model({
 
 export const brickWall = model({
   id: 'brick-wall',
-  about: 'A stretch of brick wall (the bricks texture) under a stone coping',
+  about: 'A stretch of brick wall (the bricks texture, 0.5 m courses at the default texel) under a stone coping',
   tags: ['town', 'wall', 'stone', 'textured'],
   palette: { cap: 'mist' },
-  params: { length: [2, 0.5, 6], height: [1.2, 0.4, 3] },
+  params: { length: [2, 0.5, 6], height: [1.5, 0.5, 3] },
   parts: (p) => [
     { box: [p.length!, p.height!, 0.3], at: [0, p.height! / 2, 0], tex: 'bricks', name: 'wall' },
     { box: [p.length! + 0.1, 0.12, 0.42], at: [0, p.height! + 0.06, 0], c: 'cap', name: 'coping' },

@@ -41,7 +41,8 @@
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
 // asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor,
 //                 the close zoom, a light requested and released, bad ids/zooms/looks throw, a
-//                 lineup, a look, capture, and the ?model=&zoom= and ?lineup= URL params.
+//                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
+//                 few frames of Gate B's scene (npm run gate-b) scored.
 // riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs), WebGPU + WebGL 2: title,
 //                 new run, town, rift keeper, level 1 with the basic attack, gold, clear, loot
 //                 window, portal, autosave, pause → Tuning (enemy life applies live), death
@@ -1046,6 +1047,35 @@ async function runAssetLab(browserExe) {
         return { out, shown: window.__ASSET_LAB__.state().shown, zoom: window.__ASSET_LAB__.state().zoom };
       });
       check(bad.out.every((o) => o === 'threw') && bad.shown.join() === 'crate' && bad.zoom > 0, `a bad id, zoom, look or an empty lineup throws and leaves the lab as it was (${bad.out.join(', ')}; ${bad.shown.join()})`);
+      // Gate B's scene (npm run gate-b): a few frames of a zoom step (textured, then flat: the texels
+      // must be what changes), a pan (the rig snaps to art pixels, so it shifts and barely changes)
+      // and the sliding crate score
+      const gate = await page.evaluate(async () => {
+        const g = window.__ASSET_LAB__.gateB;
+        const before = window.__ASSET_LAB__.state().zoom;
+        const steps = [1, 1.03, 1.06, 1.08].map((z) => ({ zoom: z }));
+        const settle = (f) => g.run(Array.from({ length: 20 }, () => f)); // the camera and the light settle
+        const zoomOf = async (set) => {
+          g.scene(set, 8);
+          await settle({ zoom: 1 });
+          return (await g.run(steps)).changed;
+        };
+        const flat = await zoomOf('flat');
+        const scene = g.scene('library', 8);
+        await settle({ zoom: 1 });
+        const zoom = await g.run(steps);
+        await settle({ zoom: 1.08, pan: 0 });
+        const pan = await g.run(Array.from({ length: 24 }, (_, i) => ({ zoom: 1.08, pan: i / 60 })));
+        await settle({ zoom: 1, crate: -1 });
+        const crate = await g.run([0, 1, 2].map((i) => ({ zoom: 1, crate: -1 + i / 30 })), [2]);
+        g.clear();
+        const st = window.__ASSET_LAB__.state();
+        return { scene, zoom: zoom.changed, flat, pan: pan.changed, snaps: pan.shift.filter(([dx, dy]) => dx || dy).length, crate: crate.changed, shot: crate.shots.length, size: [zoom.width, zoom.height], shown: st.shown, zoomBack: Math.abs(st.zoom - before) < 1e-6, live: !window.__PIXEL_ENGINE__.manual };
+      });
+      check(
+        gate.scene.tris > 50 && gate.zoom.length === 4 && gate.zoom.slice(1).every((c, i) => c > 4 * gate.flat[i + 1] && c > 0.1) && gate.snaps > 0 && gate.pan.every((c) => c < 0.01) && gate.crate.slice(1).every((c) => c > 0 && c < 0.05) && gate.shot === 1 && gate.zoomBack && gate.live,
+        `Gate B scene: zooming changes ${gate.zoom.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% textured, ${gate.flat.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% flat; a pan snaps ${gate.snaps} times and changes ≤ ${(Math.max(...gate.pan) * 100).toFixed(2)}%; the crate ${gate.crate.slice(1).map((c) => (c * 100).toFixed(2)).join('/')}% of ${gate.size.join('×')} pixels; the lab is back (${gate.shown.join()}, zoom ${gate.zoomBack ? 'restored' : 'NOT restored'})`,
+      );
       await page.evaluate(() => window.__ASSET_LAB__.lineup());
       await waitFrames(page, 3);
       const all = await page.evaluate(() => window.__ASSET_LAB__.state());
