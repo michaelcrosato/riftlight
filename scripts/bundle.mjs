@@ -132,6 +132,7 @@ const pkg = (name, title, url) => {
 const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs')];
 writeFileSync(join(out, 'CREDITS.md'), creditsMarkdown({ version, builtins: Object.keys(builtins), code }));
 cpSync(join(root, 'CHANGELOG.md'), join(out, 'CHANGELOG.md'));
+cpSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
 cpSync(join(root, 'scripts/bundle/check.mjs'), join(out, 'check.mjs'));
 
 const page = (title, script) =>
@@ -202,6 +203,7 @@ Read in this order:
 | \`ASSETS.md\`, \`LIBRARY.md\`, \`CREDITS.md\` | Models and textures as data; the built-in library; where everything the kit carries came from (ship it with your game) |
 | \`pixel-engine.d.ts\`, \`types/\` | TypeScript declarations (optional) |
 | \`CHANGELOG.md\` | What changed between engine versions |
+| \`LICENSE\` | The engine's licence (MIT) |
 | \`manifest.json\` | Version, build and every file with its size |
 
 Serve it: \`npx serve .\` or \`python3 -m http.server\` here, then open http://localhost:3000/ (or :8000).

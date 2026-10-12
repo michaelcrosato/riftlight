@@ -217,3 +217,8 @@ The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the m
 - Run **Claude Maintenance** from the Actions tab with an optional focus.
 
 Write outcomes and acceptance criteria, not steps.
+
+## Licence
+
+MIT ([LICENSE](LICENSE)). The engine kit (`npm run bundle`) ships the same `LICENSE`; its
+`CREDITS.md` lists the third-party code it carries (three.js, Rapier) with their licences.
