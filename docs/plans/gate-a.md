@@ -199,3 +199,46 @@ because its prompt says to read them.
 - An arm wins a brief only if it wins both judgements. A split, or any tie, is a tie.
 - The pass rule is unchanged: R ≤ 0.8 and (b) wins or ties at least 3 of 4, or R ≤ 1.0 and (b) wins
   outright at least 3 of 4.
+
+## Results: the second run (2026-10-12)
+
+**Failed again: R = 1.017 and no outright win for (b).** The plan's own rule, and option 2 of #54,
+said a second failure stops the plan. The human's instruction for this run was to "complete the
+plan to bring this feature to full completion, do what you need to", so the plan continues on
+that instruction, not on the gate. Phase 8 runs Gate A once more with the full library
+([#54](https://github.com/michaelcrosato/riftlight/issues/54) has the record).
+
+| Brief | Arm (a) runs | Median (a) | Arm (b) runs | Median (b) | b ÷ a |
+| --- | --- | --- | --- | --- | --- |
+| hand cart | 84,571 · 90,348 · 93,500 | 90,348 | 86,757 · 101,397 · 103,112 | 101,397 | 1.12 |
+| stone archway | 78,132 · 83,156 · 83,164 | 83,156 | 88,732 · 100,164 · 104,551 | 100,164 | 1.20 |
+| campfire ring | 94,127 · 130,242 · 153,350 | 130,242 | 106,887 · 109,524 · 137,623 | 109,524 | 0.84 |
+| weapon rack | 117,155 · 117,554 · 120,873 | 117,554 | 111,359 · 117,341 · 126,325 | 117,341 | 1.00 |
+| **Σ medians** | | **421,300** | | **428,426** | **R = 1.017** |
+
+The judged models are `gate-a/<brief>-a2.ts` and `-b2.ts`, and redraw byte for byte. The coin put
+(a) first in every brief again. Each pair went to two fresh judges from neutral file names, one in
+each order.
+
+| Brief | Coin's order ((a) first) | Reversed ((b) first) | Brief |
+| --- | --- | --- | --- |
+| hand cart | (a): big spoked wheels "read clearly as cart wheels"; (b)'s "small and blur", "long legs" | (a) | **(a)** |
+| stone archway | (b): "distinct alternating voussoirs"; (a)'s "lumpy, polygonal crown" | (a): "chunkier pillars on plinths… solid" | tie |
+| campfire ring | (a): "a bright yellow-orange flame"; (b)'s "turns into a muddy brown cone" | (a) | **(a)** |
+| weapon rack | (a): each weapon "with its own silhouette"; (b)'s "crowded weapons" | (a) | **(a)** |
+
+What the second run shows:
+- **Cost:** (b) is dearer on the boxy briefs (+11k and +17k tokens; it reads a bigger library and
+  a longer header), level on the weapon rack, and cheaper where it composed the library
+  (campfire, -21k: all three campfire-b runs used `stone-ring` and `flame`; no other (b) run
+  used the library).
+- **Quality:** the colour fixes worked as far as they reach. No judge called a (b) model one flat
+  colour, and the archway, built with alternating voussoirs, tied. The library flame lost: upright,
+  its faces turn from the preview's light, and it reads brown. The Kit arm's agents leaned their
+  flames back from the camera, and theirs read bright.
+- **Defects found:**
+  - `arch` set on piers warns about z-fighting (its mortar and end stones share a downward face at
+    the springing).
+  - The default `box` collider fills an archway's opening; two archway-b runs set
+    `collider: 'none'`.
+- Cost: 2.48M tokens for the runs, 0.52M for the judges.
