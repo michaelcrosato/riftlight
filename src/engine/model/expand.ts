@@ -41,7 +41,7 @@ export interface ExpandedModel {
   readonly size?: Vec3;
   readonly anchors?: Readonly<Record<string, Anchor>>;
   readonly light?: ModelLight;
-  readonly collider: 'box' | 'cyl' | 'hull' | 'none';
+  readonly collider: 'box' | 'cyl' | 'hull' | 'parts' | 'none';
   readonly texel?: number;
   readonly floats?: boolean;
   readonly source?: Provenance;

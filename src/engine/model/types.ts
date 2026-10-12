@@ -40,6 +40,8 @@ export interface PartBase {
   readonly on?: string;
   /** Unlit (flames, eyes, screens, crystals). */
   readonly glow?: boolean;
+  /** `false`: no box of its own under `collider: 'parts'` (a mortar ring whose box would fill the opening). */
+  readonly collide?: boolean;
   /**
    * A TextureDef id (`TEXTURE_LIBRARY`, or the build's `textures`): the part shows the texture in
    * its own colours instead of the slot's, at the model's `texel` density (docs/ASSETS.md).
@@ -142,8 +144,11 @@ export interface ModelDef {
   /** Oriented ones (`{ at, rot }`) for grips and mounts. */
   readonly anchors?: Readonly<Record<string, Anchor>>;
   readonly light?: ModelLight;
-  /** Default 'box'. */
-  readonly collider?: 'box' | 'cyl' | 'hull' | 'none';
+  /**
+   * Default 'box' (the bounds). 'parts': a box round each part that isn't glow or `collide:
+   * false`, for models with openings (an arch, a doorway, a gate) that one box would close.
+   */
+  readonly collider?: 'box' | 'cyl' | 'hull' | 'parts' | 'none';
   /** Texels per metre for `tex` parts, 2–64 (default `DEFAULT_TEXEL` = 8, Gate B's; up to `MOVING_TEXEL` = 20 for a model that moves). */
   readonly texel?: number;
   /** Hangs, mounts on walls or hovers: may sit below or above the floor. */

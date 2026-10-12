@@ -340,6 +340,23 @@ describe('buildModel', () => {
     expect(sword.colliders[0]).toMatchObject({ kind: 'hull' });
     expect((sword.colliders[0] as { points: readonly number[] }).points).toHaveLength(8 * 3);
     expect(buildModel(def([{ box: [1, 1, 1], at: [0, 0.5, 0] }], { id: 'none', collider: 'none' })).colliders).toEqual([]);
+    // 'parts': a box round each part, so the doorway between two posts stays open (glow aside)
+    const doorway = buildModel(def([{ box: [0.3, 2, 0.3], at: [-0.75, 1, 0] }, { box: [0.3, 2, 0.3], at: [0.75, 1, 0] }, { box: [1.8, 0.3, 0.3], at: [0, 2.15, 0] }, { ball: [0.1, 0.1, 0.1], at: [0, 1, 0], glow: true }], { id: 'doorway', collider: 'parts' }));
+    expect(doorway.colliders).toHaveLength(3);
+    const inOpening = (p: [number, number, number]) => doorway.colliders.some((c) => c.kind === 'box' && c.half.every((h, i) => Math.abs(p[i]! - c.center[i]!) <= h));
+    expect(inOpening([0, 1, 0])).toBe(false);
+    expect(inOpening([0.75, 1, 0])).toBe(true);
+    expect(buildModel(def([{ box: [0.3, 2, 0.3], at: [-0.75, 1, 0] }, { box: [0.3, 2, 0.3], at: [0.75, 1, 0] }], { id: 'posts' })).colliders).toHaveLength(1); // 'box' closes it
+    // the library arch: its opening stays open up into the ring (the mortar ring opts out with
+    // `collide: false`), on its feet or on piers, and the crown is solid
+    for (const piers of [0, 2]) {
+      const arch = buildModel('arch', { params: { piers } });
+      const solid = (p: number[]) => arch.colliders.some((c) => c.kind === 'box' && c.half.every((h, i) => Math.abs(p[i]! - c.center[i]!) <= h));
+      const probes = [0.1, 0.5, 0.9].map((y) => piers + y);
+      if (piers) probes.push(0.1, piers / 2);
+      expect(probes.filter((y) => solid([0, y, 0])), `arch on ${piers} m piers`).toEqual([]);
+      expect(solid([0, piers + 1.2, 0]), `arch on ${piers} m piers: the crown`).toBe(true);
+    }
   });
 
   it('addModelColliders: static colliders where the model stands', async () => {
@@ -510,7 +527,7 @@ describe('checks', () => {
 
   it('the catalog finds by tags and words', () => {
     expect(MODEL_LIBRARY.find({ tags: ['container'] }).map((d) => d.id).sort()).toEqual(['barrel', 'crate']);
-    expect(MODEL_LIBRARY.find({ text: 'lantern' }).map((d) => d.id)).toEqual(['lamp-post']);
+    expect(MODEL_LIBRARY.find({ text: 'lantern' }).map((d) => d.id).sort()).toEqual(['hanging-lantern', 'lamp-post']);
     expect(() => MODEL_LIBRARY.add({ ...MODEL_LIBRARY.get('crate') })).toThrow(/already/);
   });
 });

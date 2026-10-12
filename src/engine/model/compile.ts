@@ -16,6 +16,8 @@ export interface CompiledPart {
   readonly kind: PrimKind;
   readonly slot: Slot;
   readonly glow: boolean;
+  /** False when the part opts out of `collider: 'parts'`. */
+  readonly collide?: false;
   readonly tex?: string;
   /** Own-frame triangles (9 numbers each). */
   readonly tris: readonly number[];
@@ -151,7 +153,7 @@ export function compileParts(parts: readonly Part[]): Compiled {
         const label = partLabel(p, at) + (suffix ? ` (mirrored)` : '');
         const box = BOX_KINDS.has(kind) ? ((prim as unknown as Record<string, unknown>)[kind] as Vec3) : null;
         for (const [slot, t] of tris) {
-          out.push({ label, ...(named ? { name: named } : {}), kind, slot, glow: prim.glow === true, ...(prim.tex ? { tex: prim.tex } : {}), tris: t, matrix: m, pivot, extent: box ?? ownBounds(t) });
+          out.push({ label, ...(named ? { name: named } : {}), kind, slot, glow: prim.glow === true, ...(prim.collide === false ? { collide: false as const } : {}), ...(prim.tex ? { tex: prim.tex } : {}), tris: t, matrix: m, pivot, extent: box ?? ownBounds(t) });
         }
       }
       const range = { ...start, end: out.length, pivotEnd: pivots.length };
