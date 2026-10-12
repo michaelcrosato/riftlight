@@ -8,6 +8,26 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.17.0
+
+- **Models as data** (src/engine/model/, docs/plans/asset-system.md): a `ModelDef` is keyed
+  primitives (`box`, `cyl` with `top`, `cone`, `ball` with `half`, `lump`, `wedge`, `torus`,
+  `lathe`, `slab` from points or an SVG path, `tube`, imported `mesh`), each filling its box
+  `[w, h, d]` centred on `at` (degrees, +Y up, +Z front); `group` (with `scale`, `pivot` and a
+  default `c` for its parts),
+  `mirror`, `use` of another model by id (params, seed, slot mapping), `on` to sit on a named
+  part; palette slots bound to PALETTE names; params and a seeded `parts` function; anchors, a
+  light and a collider kind. `buildModel(idOrDef, { params, seed, palette, light })` merges it
+  into one faceted toon mesh per material (pivots stay movable Groups) and returns its bounds,
+  anchors, collider data, light request and counts; unseeded builds are cached and share their
+  geometry. `expandModel` gives the plain-JSON form; `validateModel` / `checkModel` list problems
+  and warnings (floating parts, thin rods, triangle budget, materials) that name the part and the
+  fix. Helpers `model`, `around`, `rowOf`, `gridOf`, `scatterOf`, `boxFrame`; `MODEL_LIBRARY`
+  (`ModelCatalog`: barrel, crate, lamp-post, statue, well, market-stall, greatsword);
+  `addModelColliders(physics, build, at, yaw)`.
+- `glowMaterial(color)`: the unlit counterpart of `toonMaterial`, shared and cached per colour,
+  snapping with the toon materials under the `ps1` filter.
+
 ## 0.16.0
 
 - **Recording and replay** (src/engine/replay.ts): `engine.recording()` is the running level's

@@ -4,6 +4,7 @@ import {
   DataTexture,
   type Material,
   type Mesh,
+  MeshBasicNodeMaterial,
   MeshToonNodeMaterial,
   NearestFilter,
   type Object3D,
@@ -149,6 +150,31 @@ export function toonMaterial(color: ColorRepresentation, options: ToonMaterialOp
     const cached = mat;
     mat.addEventListener('dispose', () => {
       if (materialCache.get(key) === cached) materialCache.delete(key);
+    });
+  }
+  return mat;
+}
+
+const glowCache = new Map<number, MeshBasicNodeMaterial>();
+
+/**
+ * Unlit, full-bright material for a colour (flames, eyes, screens, crystal cores), shared and
+ * cached per colour like `toonMaterial` (`userData.shared`; disposing it drops it from the
+ * cache). Its vertices snap with the toon materials' under the `ps1` filter, so a glowing part
+ * stays on its model.
+ */
+export function glowMaterial(color: ColorRepresentation): MeshBasicNodeMaterial {
+  const hex = new Color(color).getHex();
+  let mat = glowCache.get(hex);
+  if (!mat) {
+    mat = new MeshBasicNodeMaterial({ color: hex });
+    mat.vertexNode = snappedClipPosition();
+    mat.name = `glow-${hex.toString(16).padStart(6, '0')}`;
+    mat.userData.shared = true;
+    glowCache.set(hex, mat);
+    const cached = mat;
+    mat.addEventListener('dispose', () => {
+      if (glowCache.get(hex) === cached) glowCache.delete(hex);
     });
   }
   return mat;

@@ -12,7 +12,8 @@ import {
   Vector3,
 } from 'three/webgpu';
 import { solveLeg, type LegSolverHost, type PoseMap } from './anim/ik';
-import { cachedGeometry, unitSphere } from './geometry';
+import { unitSphere } from '../../engine/model/geometry';
+import { cachedGeometry } from './geometry';
 import type { BuiltMonster, LegDef } from './types';
 
 /**

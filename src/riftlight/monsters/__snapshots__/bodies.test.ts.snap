@@ -1,0 +1,38 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`monster bodies > match their recorded hashes (bosses 1-12, 20 seeded monsters) 1`] = `
+{
+  "boss 1": "a75f2c0d6ef71f95",
+  "boss 10": "a73af55178a60772",
+  "boss 11": "7ad777d76aedecfe",
+  "boss 12": "cba2c1f3c62adb56",
+  "boss 2": "867f8531f696c1b0",
+  "boss 3": "c94f4ea888e027c2",
+  "boss 4": "26de1cee9c2f0708",
+  "boss 5": "c33a1e00089a58b8",
+  "boss 6": "5417080c73fa1cbe",
+  "boss 7": "782cbb37d0b66b13",
+  "boss 8": "649e6b4812037a27",
+  "boss 9": "ceb99c207c78de95",
+  "monster 0": "a132adecbd1b2e7f",
+  "monster 1": "1a9d9c14ce16ccb0",
+  "monster 10": "f74cc0c9bf7a283f",
+  "monster 11": "629c5122cdb4ce6d",
+  "monster 12": "b2ffd13026e91bfb",
+  "monster 13": "ca6eef67181f0a45",
+  "monster 14": "a742fb9a501ef764",
+  "monster 15": "aea54a705039c7b0",
+  "monster 16": "62359fba5b4f1b21",
+  "monster 17": "80471462e7789a8c",
+  "monster 18": "2611cc31f477fc11",
+  "monster 19": "a4eb44e69969fc02",
+  "monster 2": "9e335bccc1d1a8ac",
+  "monster 3": "179147dc9e4d2de0",
+  "monster 4": "7b8aa5b73b44dbe5",
+  "monster 5": "980b73ca3c12eb9b",
+  "monster 6": "9cfb2d5a6c16ee09",
+  "monster 7": "2b80e6ba91b2c6e5",
+  "monster 8": "7430c893cd1810fc",
+  "monster 9": "b2c1c356ccfa5c3c",
+}
+`;
