@@ -8,6 +8,35 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.25.0
+
+What a game gets (exported from the engine and the kit):
+
+- `importSheet(img, { as, grid, source, ... })` (src/engine/texture/import.ts; docs/ASSETS.md
+  *Importing*): a decoded pixel-art sheet (`decodePng`) sliced on a grid into TextureDefs of
+  `pixels` layers, one per cell (fully transparent cells skipped), or one of frames for an
+  animation strip (`frames`; blank cells at its ends dropped, a blank frame inside kept). Exact:
+  every pixel keeps its place, and alpha under `alpha` (default 128) is transparent. Colours map
+  to PALETTE through `mapColours` once for the whole sheet (up to 16 slots), so a colour reads the
+  same in every cell; each distinct source colour keeps a legend character of its own, and
+  `merges` lists every entry two or more source colours bake as. `cells` and `names` pick and
+  name cells by reading-order index; `tile` marks surfaces; `palette` re-binds slots in every
+  def. `as` takes an import id (`tiles`, `kit/tiles`). Over 90 distinct colours is refused.
+- `TextureDef.source`: provenance, as models record it. `validateTexture` reports a `source`
+  without a url or licence, or one the models' licence rule refuses (anyone else's work only
+  from an approved pack; our own work with a source inside the repository), as a problem.
+
+For tools (scripts/tex.ts, src/engine/texture/sheet.ts; not in the kit):
+
+- `npm run tex -- import <sheet.png> --grid 16x16 --licence <spdx> --source <url>` (`--as`,
+  `--pack`, `--tile`, `--frames`, `--cells`, `--names`, `--alpha`, `--palette`): a draft `.ts`
+  and an import sheet (`renderImportSheet`: source and mapped side by side, every colour → slot
+  → entry, the merges), both in `<out>/import/`. It refuses what the check would, an unapproved
+  pack and an id that isn't an import id up front.
+- `tex -- sheet <file.ts> <id>` draws one def of a draft; `model -- credits` lists imported
+  textures too.
+- The photo/PBR and SVG importers (plan §7.5) are not built: no game needs them yet.
+
 ## 0.24.0
 
 What a game gets (exported from the engine and the kit):

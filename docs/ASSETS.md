@@ -363,7 +363,8 @@ keep such models small on screen. Draw textures for 8: a 16-texel tile covers 2 
 Kits made in a modelling tool come in as data too: the importer turns a glTF or GLB file into a
 ModelDef whose parts are `mesh` (millimetre vertices as text, faces per slot), coloured from the
 palette. An import is faithful, not editable: trace what a game will vary (params, seeds, themes)
-in primitives instead (plan §7.4, still to come).
+in primitives instead (plan §7.4, still to come). Pixel-art PNG sheets come in as TextureDefs
+([Pixel-art sheets](#pixel-art-sheets)).
 
 **The loop:**
 
@@ -443,3 +444,51 @@ sha256 and the licence of every entry). Agents here act through the owner's GitH
 code can't prove a comment is human: an agent never writes or links an approval itself. Until the
 owner approves a pack, `PACK_SOURCES` stays empty, `import-pack` refuses, and the importer is
 tested on our own models exported to GLB at test time (no binaries are committed).
+
+### Pixel-art sheets
+
+A PNG of pixel art comes in as TextureDefs: `tex -- import` slices it on a grid into `pixels`
+layers, one def per cell, or one def of frames for an animation strip. Every pixel keeps its place.
+
+**The loop:**
+
+1. **Import:** `npm run tex -- import art/dungeon.png --grid 16x16 --as dungeon --licence
+   LicenseRef-own --source art/dungeon.png` (someone else's sheet: its licence and
+   `--pack <approved pack>`; `--tile` for surfaces, `--frames` for a strip, `--cells 0-3,8` and
+   `--names floor,wall,,door` to pick and name cells by index, `--alpha 128`). It writes a draft,
+   `.scratch/tex/import/dungeon.ts` (ids `dungeon-<index>` or `dungeon-<name>`), and a sheet,
+   `.scratch/tex/import/dungeon.png`: source and mapped side by side on the grid, every source
+   colour with its character, slot and entry, and the merges.
+2. **Check and look:** `npm run tex -- check .scratch/tex/import/dungeon.ts`, then one def:
+   `npm run tex -- sheet .scratch/tex/import/dungeon.ts dungeon-3`.
+3. **Fix in one line:** each distinct source colour has a legend character (a free letter of its
+   entry's name: `i` for ink); `legend` maps it to a slot and `palette` binds the slot to a
+   PALETTE entry. A slot reads wrong: re-bind it, `palette: { c3: 'sand' }` (`--palette c3=sand`
+   re-imports every def with it; rows never change). Two colours merged that shouldn't be: point
+   one's character at a slot of its own, `legend: { ..., a: 'c9' }`, and bind it, `c9: 'orange'`.
+4. Move the defs where they belong: the library, or a game's own `TextureCatalog`.
+
+**What it does:**
+
+- **Cells** are read row by row from the top: index = row × columns + column. The sheet must be
+  whole cells (crop margins and spacing first). Alpha under `--alpha` (128) is transparent, the
+  rest opaque at its own colour. A cell with no opaque pixel is skipped; with `--frames`, blank
+  cells at either end of the strip are dropped and a blank frame inside it stays.
+- **Colours** go through the mesh importer's mapper once for the whole sheet (up to 16 slots), so a
+  colour reads the same in every cell, and in a cell picked alone. Over 90 distinct colours is
+  refused: that isn't pixel art.
+- **Merges:** wherever two or more distinct source colours bake as one PALETTE entry (clustered
+  into one slot, or two slots on one entry), `import` prints them and the sheet lists them in
+  yellow. Every other source colour has an entry of its own.
+- **Provenance:** each def's `source` is a model's (url, licence, pack, file, author, sha256, tool,
+  each slot's source colour), under the models' rule: our own work with a source inside this
+  repository is allowed; anyone else's, CC0 included and a single file too, only from a pack
+  (`--pack`) whose `PACK_SOURCES` entry is approved. `tex -- check` refuses a source the rule
+  refuses, `import` refuses it up front, and
+  `model -- credits` lists textures too. `--as` takes an import id (`tiles`, `kit/tiles`), and
+  every file goes in `.scratch/tex/import/`.
+- In code: `importSheet(decodePng(bytes, inflate), { as, grid, source })` returns the defs, every
+  colour, the merges and the cells.
+
+**Not built until a game needs them** (plan §7.5): photo and PBR materials downsampled to a slot
+ramp, and SVG icons as `path` layers.

@@ -46,6 +46,7 @@ npm run model -- check         # every model: problems (exit 1) and warnings
 npm run model -- sheet well    # model sheet PNG → .scratch/model/well.png (/asset-lab.html: the real renderer)
 npm run model -- import a.glb --as a --licence LicenseRef-own --source path/to/a.glb   # glTF/GLB → a draft def + fidelity sheet
 npm run tex -- sheet bricks    # texture sheet PNG → .scratch/tex/bricks.png (check, find, zoo too)
+npm run tex -- import a.png --grid 16x16 --licence LicenseRef-own --source path/to/a.png   # pixel-art sheet → draft defs + import sheet
 npm run film -- run-stop --gif # film a move in the real game → .scratch/film/
 npm run playtest -- 1 --runs 3 --film   # the Riftlight bot plays depth 1 → .scratch/playtest/
 ```
@@ -65,8 +66,9 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   compiled to toon meshes; `npm run model` checks and draws them, the **Asset Lab**
   (`/asset-lab.html`) shows them in the real renderer. Pixel-art textures are data too
   (`TextureDef`: pixel rows, tiling patterns, paths), checked and drawn by `npm run tex`. Kits in
-  glTF/GLB import as palette-mapped `mesh` parts with their provenance (`npm run model -- import`).
-  See [`docs/ASSETS.md`](docs/ASSETS.md).
+  glTF/GLB import as palette-mapped `mesh` parts with their provenance (`npm run model -- import`),
+  pixel-art PNG sheets as pixel rows, cell by cell or as frames (`npm run tex -- import`). See
+  [`docs/ASSETS.md`](docs/ASSETS.md).
 - **Animation:** 57 hero clips written as data, with foot IK and a gait generator. They are
   measured and drawn as PNG contact sheets and motion curves by `npm run anim`, filmed in the
   real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See

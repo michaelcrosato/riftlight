@@ -34,8 +34,8 @@
 //                              its sha256 (cached in .scratch/import-cache/), check its licence files,
 //                              import every model with one colour map → public/packs/<pack>.json,
 //                              a summary (<out>/packs/<pack>.json) and a zoo
-//   credits                    the attribution list from every model's `source` (library and
-//                              packs) → <out>/credits.md
+//   credits                    the attribution list from every model's and texture's `source`
+//                              (libraries and packs) → <out>/credits.md
 //
 // An <id> can also be a draft file: `check my/stall.ts` (every def it exports), `sheet my/stall.ts`
 // (its default export, or the first) or `sheet my/stall.ts crate` (that one), `zoo my/stall.ts`.
@@ -59,7 +59,9 @@ import { buildModel, checkModel, compileParts, expandModel, isLicenceFile, licen
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
 import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, unzip, type Front, type Imported } from '../src/engine/model/import';
 import { flatTriangles, GAME_VIEW, gamePxPerMetre, renderGameScale, renderModelSheet, type FlatTri } from '../src/engine/model/sheet';
+import { TEXTURE_LIBRARY } from '../src/engine/texture';
 import { encodePng } from './png';
+import { tsValue } from './ts-value';
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
@@ -377,28 +379,6 @@ function cmdTokens(target: string): void {
 
 // ---------------------------------------------------------------- imports
 
-const IDENT = /^[A-Za-z_$][\w$]*$/;
-
-/** A value as TypeScript source: bare keys where they can be, single quotes, short things on one line. */
-function tsValue(v: unknown, indent = '', inline = false): string {
-  if (typeof v === 'string') return `'${v.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
-  if (typeof v === 'number' || typeof v === 'boolean') return String(v);
-  const inner = `${indent}  `;
-  if (Array.isArray(v)) {
-    const flat = `[${v.map((x) => tsValue(x, indent, true)).join(', ')}]`;
-    if (inline || (flat.length + indent.length <= 100 && !v.some((x) => x && typeof x === 'object'))) return flat;
-    return `[\n${v.map((x) => `${inner}${tsValue(x, inner, true)},`).join('\n')}\n${indent}]`; // parts: one a line
-  }
-  if (v && typeof v === 'object') {
-    const entries = Object.entries(v).filter(([, x]) => x !== undefined);
-    const key = (k: string) => (IDENT.test(k) ? k : tsValue(k));
-    const flat = entries.length ? `{ ${entries.map(([k, x]) => `${key(k)}: ${tsValue(x, indent, true)}`).join(', ')} }` : '{}';
-    if (inline || flat.length + indent.length <= 100) return flat;
-    return `{\n${entries.map(([k, x]) => `${inner}${key(k)}: ${tsValue(x, inner)},`).join('\n')}\n${indent}}`;
-  }
-  return 'undefined';
-}
-
 /** The draft an import writes: the def as source, which check, sheet and diff take as a file. */
 function draftSource(def: ModelDef, file: string): string {
   let lib = relative(dirname(file), join(ROOT, 'src/engine/model')).split(sep).join('/');
@@ -556,17 +536,18 @@ async function cmdImportPack(id: string): Promise<void> {
 
 /** The attribution list: every model with a `source`, grouped by pack (or url). */
 function cmdCredits(): void {
-  const defs = [...MODEL_LIBRARY.all(), ...packs().flatMap((p) => p.models)].filter((d) => d.source);
-  const groups = new Map<string, ModelDef[]>();
-  for (const d of defs) groups.set(d.source!.pack ?? d.source!.url, [...(groups.get(d.source!.pack ?? d.source!.url) ?? []), d]);
-  const entries = [...groups].map(([key, ds]) => {
-    const s = ds[0]!.source!;
+  // imported textures (`npm run tex -- import`) carry the same `source`
+  const defs = [...[...MODEL_LIBRARY.all(), ...packs().flatMap((p) => p.models)].map((d) => ({ kind: 'model', d })), ...TEXTURE_LIBRARY.all().map((d) => ({ kind: 'texture', d }))].filter((x) => x.d.source);
+  const groups = new Map<string, typeof defs>();
+  for (const x of defs) groups.set(x.d.source!.pack ?? x.d.source!.url, [...(groups.get(x.d.source!.pack ?? x.d.source!.url) ?? []), x]);
+  const entries = [...groups].map(([key, xs]) => {
+    const s = xs[0]!.d.source!;
     const terms = LICENCES[s.licence];
-    return { what: key, author: s.author ?? 'unknown', licence: s.licence, name: terms?.name ?? s.licence, credit: terms?.credit ?? 'required', url: s.url, models: ds.map((d) => d.id) };
+    return { what: key, author: s.author ?? 'unknown', licence: s.licence, name: terms?.name ?? s.licence, credit: terms?.credit ?? 'required', url: s.url, models: xs.filter((x) => x.kind === 'model').map((x) => x.d.id), textures: xs.filter((x) => x.kind === 'texture').map((x) => x.d.id) };
   });
-  const lines = ['# Credits', '', 'Imported models and where they came from, from each model\'s `source` (`npm run model -- credits`).', ''];
-  if (!entries.length) lines.push('No imported models yet: nothing to credit.');
-  for (const e of entries) lines.push(`- **${e.what}** by ${e.author}, ${e.name} (${e.licence}${e.credit === 'required' ? ', credit required' : e.credit === 'optional' ? ', credit optional' : ''}): ${e.url}. Models: ${e.models.join(', ')}.`);
+  const lines = ['# Credits', '', 'Imported models and textures and where they came from, from each one\'s `source` (`npm run model -- credits`).', ''];
+  if (!entries.length) lines.push('Nothing imported yet: nothing to credit.');
+  for (const e of entries) lines.push(`- **${e.what}** by ${e.author}, ${e.name} (${e.licence}${e.credit === 'required' ? ', credit required' : e.credit === 'optional' ? ', credit optional' : ''}): ${e.url}.${e.models.length ? ` Models: ${e.models.join(', ')}.` : ''}${e.textures.length ? ` Textures: ${e.textures.join(', ')}.` : ''}`);
   const file = join(OUT, 'credits.md');
   mkdirSync(OUT, { recursive: true });
   writeFileSync(file, `${lines.join('\n')}\n`);

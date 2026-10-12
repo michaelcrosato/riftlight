@@ -25,12 +25,11 @@ export { mapColours, slotName, hexString, MERGE_DISTANCE, REUSE_PENALTY, SWAP_PE
 export { readGltf, ImportError, type ReadFile, type ReadOptions, type SourceGroup, type SourceMesh } from './gltf';
 export { groupParts, type GroupParts } from './mesh';
 export { unzip, type Inflate as InflateRaw } from './zip';
+export { IMPORT_ID } from './common';
 
 /** Which way the source's front faces; the import turns it to +Z. */
 export type Front = '+z' | '-z' | '+x' | '-x';
 export const FRONTS: readonly Front[] = ['+z', '-z', '+x', '-x'];
-/** Ids an import may take (`chair`, `kit/chair`): they name files, so nothing else. */
-export const IMPORT_ID = /^[a-z0-9][a-z0-9-]*(\/[a-z0-9][a-z0-9-]*)?$/;
 /** What `source.tool` records. */
 export const IMPORT_TOOL = 'npm run model -- import';
 

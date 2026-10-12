@@ -10,17 +10,12 @@
 import { Color, LinearSRGBColorSpace, Matrix4, SRGBColorSpace, Vector3, type BufferAttribute, type InstancedMesh, type InterleavedBufferAttribute, type Material, type Mesh, type Object3D, type SkinnedMesh } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { decodePng, type Inflate, type RgbaImage } from '../../png';
+import { ImportError } from './common';
+
+export { ImportError };
 
 /** A file a glTF names by `uri` (an external buffer or image), relative to the glTF itself. */
 export type ReadFile = (uri: string) => Uint8Array;
-
-/** A file the importer can't read, with what is wrong and what to do. */
-export class ImportError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ImportError';
-  }
-}
 
 export interface ReadOptions {
   /** Reads files beside the glTF (external buffers and images). */
