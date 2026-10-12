@@ -1,10 +1,10 @@
-# Models as data
+# Models and textures as data
 
 Objects in a game are **plain data** that agents write, check and look at, then adjust: a
 `ModelDef` of keyed primitives. There is no modelling tool, and a model is text, never a binary
 file. The engine compiles a def into toon meshes at runtime; `npm run model` measures and draws it
 without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. The plan behind
-it, with its measurements and what is still to come (textures, imports, traces), is
+it, with its measurements and what is still to come (textures on models, imports, traces), is
 [docs/plans/asset-system.md](plans/asset-system.md).
 
 How it measures so far ([Gate A](plans/gate-a.md), twice): an agent writing a ModelDef spends about
@@ -31,6 +31,8 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `src/engine/model/sheet.ts`, `diff.ts`, `view.ts` | The sheets and the diff the CLI draws and prints; the game's camera and its part raster |
 | `scripts/model.ts` | `npm run model` (its header is the manual) |
 | `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
+| `src/engine/texture/` | Textures as data ([below](#textures)): `TextureDef`, the patterns, `bakeTexture`, `validateTexture`, `textureMap`, `spriteSheet`, `hudSprite`, `TEXTURE_LIBRARY` (`library/`) |
+| `scripts/tex.ts` | `npm run tex` (its header is the manual) |
 
 ## The loop
 
@@ -183,3 +185,95 @@ material, pivots as named Groups), `bounds`, `anchors`, `colliders` (data), `lig
 theme's tint). Builds that don't read the rng are cached and share their geometry
 (`userData.shared`, kept by level unloads). `expandModel` gives the plain-JSON form. A game adds its
 own models with `MODEL_LIBRARY.add(def)` or a `ModelCatalog` of its own (`buildModel(id, { catalog })`).
+
+## Textures
+
+Pixel-art textures are data too: a `TextureDef` lists **layers** drawn in order onto a grid of
+texels, in its own palette slots. `bakeTexture` turns it into palette indices and RGBA, headless
+and pure; the converters hand it to the renderer, a `SpriteBatch` or the HUD.
+
+```ts
+import { textureDef } from '../helpers';
+
+export const bricks = textureDef({
+  id: 'bricks',
+  about: 'Stone bricks in courses over dark mortar, a lit top edge on each',
+  tags: ['stone', 'wall', 'surface'],
+  size: [16, 16], // texels; powers of two when it tiles
+  tile: true, // seamless: patterns wrap; the check measures drawn layers' seams
+  palette: { mortar: 'night', stone: 'slate', stone2: 'mist' },
+  layers: [{ pattern: 'bricks', colors: ['mortar', 'stone', 'stone2'], w: 8, h: 4, seed: 2 }],
+});
+```
+
+**Layers:**
+
+| layer | draws |
+| --- | --- |
+| `{ pixels: [...rows], legend: { k: 'slot' }, at?, mirror?: 'x' \| 'y' }` | rows of characters as `hud.sprite` takes them; `.` or a space is transparent; `mirror` adds the rows mirrored right (`x`) or below (`y`) |
+| `{ pattern, colors: slot \| [slots], seed?, dither?, ...params }` | a seeded generator over a ramp of slots, dark to light; periodic when the def tiles; `dither` blends between steps with a 4×4 ordered dither |
+| `{ path: 'M … Z', fill?, stroke? }` | an SVG path (M L H V C Q Z, the model `slab` subset) in texel units, even-odd fill, no anti-aliasing |
+| `{ outline: slot }` | a 1-texel outline round every opaque texel, on the transparent side |
+
+**Patterns** (`PATTERNS` in `patterns.ts` lists their parameters with default, min and max):
+
+| pattern | parameters | draws |
+| --- | --- | --- |
+| `noise` | `scale` 4, `octaves` 3 | value noise over the ramp: dirt, stone, foliage |
+| `bricks` | `w` 8, `h` 4, `mortar` 1, `offset` 0.5, `bevel` 1 | courses; joints in the first slot, bricks in the rest, a lit top edge |
+| `tiles` | `w` 8, `h` 8, `mortar` 1, `offset` 0, `bevel` 1 | square tiles, joints in the first slot |
+| `planks` | `w` 4, `gap` 1, `length` 16, `grain` 0.3 | boards along x, gaps and butt joints in the first slot, a darker grain |
+| `cobbles` | `cells` 4, `gap` 1 | Voronoi stones, joints in the first slot |
+| `stripes` | `width` 2, `dir` y / x / diag | bands cycling through the slots |
+| `checker` | `cell` 1 | the first and last slot |
+| `scatter` | `count` 12, `size` 1, `shape` dot / blade / star | an overlay of dots, blades or stars |
+| `cracks` | `count` 3, `length` 8 | an overlay of random-walk cracks in the first slot |
+| `gradient` | `dir` y / x / radial | light to dark: down, left to right, or from the centre out |
+
+When the texture tiles, every pattern but `gradient` wraps without a seam by construction: noise
+on a wrapping lattice, stones, shapes and cracks that wrap, and layouts that fit a whole number
+of cells (16 texels of 6-texel bricks are 3 bricks of 5 or 6, never a sliver on the edge; courses
+that shift come in pairs). Pixels and paths are yours to make meet. A pattern's `seed` is its own:
+adding or removing another layer changes nothing else.
+
+**The loop** is the models' one: `npm run tex -- find wood` (ids, sizes, files), edit the def in
+`src/engine/texture/library/<family>.ts` or a draft `.ts` file, `npm run tex -- check` (in
+`scripts/check.sh`), then look: `npm run tex -- sheet bricks` writes `.scratch/tex/bricks.png`
+(the texture at 1× and enlarged, a 3×3 tiling when it tiles, its frames, palette and check), and
+`npm run tex -- zoo all` draws every texture at one scale, tiled 3×3 where it tiles.
+`--palette slot=colour` bakes another palette.
+
+**Problems** (`check` exits 1 on all of them; the converters throw a `TextureError` on every one
+but a missing `about` or `tags`): a size that isn't two whole numbers from 1 to 1024; no palette,
+or over 255 slots; an unknown slot, or a colour that isn't a PALETTE name; no layers, or a layer
+that isn't exactly one of the four kinds, or sets a key its kind doesn't take; a pixels layer
+without a legend, with a character its legend doesn't name, ragged rows, a bad `at` or `mirror`;
+an unknown pattern, an empty `colors`, a parameter outside its range (or a fraction where it
+counts texels), a seed that isn't a whole number; a malformed path; frames that don't divide the
+width; a bake that re-binds a slot the palette lacks; no `about` or `tags`. **Warnings** are what
+won't read at 480×270:
+
+- a seam: a tiling texture with pixels, a path or a gradient whose colour jumps further across the
+  wrap than across any line inside it;
+- salt and pepper: over 15% of the opaque texels have no 4-neighbour of their colour (they read as
+  noise and shimmer as the camera zooms);
+- a tiling size that isn't a power of two;
+- palette slots and legend keys nobody uses.
+
+**In a game:**
+
+```ts
+import { hudSprite, SpriteBatch, spriteSheet, textureMap, toonMaterial } from './engine';
+
+const wall = toonMaterial(0xffffff, { map: textureMap('bricks') }); // nearest, repeat-wrapped, shared
+const coins = new SpriteBatch(spriteSheet('coin-spin'), { capacity: 64 }); // 4 frames, left to right
+const icon = hudSprite('gem-icon'); // rows and colours for hud.sprite
+hud.sprite(8, 8, icon.rows, icon.colors, { scale: 2 });
+```
+
+`textureMap` is cached per def and palette and marked `userData.shared`, so level unloads keep it.
+On a sprite sheet an outline stays inside each frame; patterns and paths don't know about frames,
+so draw frames with pixels.
+Every converter takes `{ palette, catalog }`; a game adds textures with `TEXTURE_LIBRARY.add(def)`
+or a `TextureCatalog` of its own. Models take textures through a part's `tex` once the plan's
+Phase 3 lands its UVs; until then a `tex` names nothing the model check accepts.

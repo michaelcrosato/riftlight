@@ -128,6 +128,22 @@ export {
   type Provenance as ModelProvenance,
 } from './model';
 export { addModelColliders } from './model/physics';
+export {
+  TEXTURE_LIBRARY,
+  TextureCatalog,
+  TextureError,
+  bakeTexture,
+  hudSprite,
+  spriteSheet,
+  textureDef,
+  textureMap,
+  validateTexture,
+  type BakedTexture,
+  type TextureCheck,
+  type TextureDef,
+  type Layer as TextureLayer,
+} from './texture';
+export { Catalog, type CatalogEntry } from './catalog';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';

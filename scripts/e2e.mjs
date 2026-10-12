@@ -56,7 +56,8 @@
 //                 `npm run film` films a short script and writes its PNG + JSON; `npm run balance`
 //                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
 //                 their JSON, CSV and PNGs; `npm run model` checks the library in under 10 s,
-//                 draws a sheet, a compare sheet and a zoo, and finds and diffs models.
+//                 draws a sheet, a compare sheet and a zoo, and finds and diffs models; `npm run
+//                 tex` checks, draws a re-bound sheet and the zoo, finds, and refuses an unknown id.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
@@ -1222,6 +1223,28 @@ async function runTools(browserExe) {
     check(found.code === 0 && /barrel/.test(found.out) && /crate/.test(found.out) && /tok/.test(found.out), 'find container lists the barrel and the crate with token estimates');
   } catch (e) {
     check(false, `model crashed: ${e.message}`);
+  }
+
+  console.log('\n▶ tools: npm run tex');
+  try {
+    const out = new URL('tex/', OUT);
+    await rm(out, { recursive: true, force: true });
+    const t = (...args) => run('npx', ['tsx', 'scripts/tex.ts', ...args, '--out', '.scratch/e2e/tex']);
+    const checked = await t('check');
+    check(checked.code === 0 && /\b0 with problems/.test(checked.out), `tex check exits 0: ${checked.out.trim().split('\n').pop()}`);
+    const sheet = await t('sheet', 'bricks', '--palette', 'stone=red', '--json');
+    const sj = sheet.code === 0 ? JSON.parse(sheet.out) : { problems: ['crashed'] };
+    const p = await pngSize(new URL('bricks.png', out));
+    check(sheet.code === 0 && sj.problems.length === 0 && p.width > 400 && p.height > 300, `tex sheet bricks (re-bound): ${p.width}×${p.height}`);
+    const zoo = await t('zoo', 'all');
+    const z = await pngSize(new URL('zoo-all.png', out));
+    check(zoo.code === 0 && z.width > 300 && z.bytes > 5000, `tex zoo all: ${z.width}×${z.height}`);
+    const found = await t('find', 'stone');
+    check(found.code === 0 && /bricks/.test(found.out) && /cobbles/.test(found.out), 'tex find stone lists the bricks and the cobbles');
+    const missing = await t('sheet', 'nope');
+    check(missing.code === 2 && missing.out.trim().split('\n').length === 1 && /no texture "nope"/.test(missing.out), `tex sheet nope: one line, exit ${missing.code}`);
+  } catch (e) {
+    check(false, `tex crashed: ${e.message}`);
   }
 }
 

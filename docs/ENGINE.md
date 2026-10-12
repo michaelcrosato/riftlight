@@ -1322,6 +1322,13 @@ unlit counterpart of `toonMaterial` for flames and screens. The format, the chec
 rules and the loop (`npm run model -- check / sheet --compare`, the Asset Lab) are in
 [docs/ASSETS.md](ASSETS.md).
 
+Pixel-art textures are data the same way (`src/engine/texture/`): a `TextureDef` of layers (pixel
+rows, seeded patterns that tile, SVG paths, outlines) in palette slots, baked headless by
+`bakeTexture` and handed on by `textureMap` (a nearest, repeat-wrapped `map` for `toonMaterial`),
+`spriteSheet` (for `SpriteBatch`) and `hudSprite` (rows for `hud.sprite`). `TEXTURE_LIBRARY` holds
+the built-ins; `npm run tex -- check / sheet / find / zoo` checks and draws them
+([docs/ASSETS.md](ASSETS.md#textures)).
+
 ### Textured and vertex-colored toon materials
 
 `toonify` (and so `ctx.loadModel`) keeps a material's base color **texture** (switched to
@@ -1465,6 +1472,9 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   Riftlight's camera, the previous version in magenta) and diffed in words. The Asset Lab
   (`/asset-lab.html`, `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `clear`,
   `setLook`, `state`, `capture`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
+- `npm run tex -- check / sheet / find / zoo` (`scripts/tex.ts`, docs/ASSETS.md *Textures*):
+  TextureDefs checked (problems exit 1; warnings for seams, salt-and-pepper texels and sizes) and
+  drawn as sheets (1×, enlarged, tiled 3×3, frames, palette).
 - `npm run inspect -- <target>` (`src/engine/inspect/`, `scripts/inspect.ts`): any asset as
   `.scratch/inspect/<name>.png` + `.json`: an 8-angle turntable at one scale, a rig front and
   side (mesh dimmed, joints and names on top, right side orange, left cyan) and a panel with

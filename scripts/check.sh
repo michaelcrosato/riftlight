@@ -60,6 +60,8 @@ if [[ -f package.json ]]; then
   if has_script anim; then step "$pm" run --silent anim -- check; fi
   # Model checks for every model (scripts/model.ts; exits 1 on problems; warnings are fine).
   if has_script model; then step "$pm" run --silent model -- check; fi
+  # Texture checks for every texture (scripts/tex.ts; exits 1 on problems).
+  if has_script tex; then step "$pm" run --silent tex -- check; fi
   if [[ $FAST -eq 0 ]] && has_script build; then step "$pm" run build; fi
 fi
 

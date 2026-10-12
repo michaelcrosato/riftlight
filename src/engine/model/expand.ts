@@ -4,7 +4,7 @@
  * explicit. `expandModel` returns it as JSON-safe data (diffs, saves, exports); the compiler
  * and the checks work from the same expansion.
  */
-import { PALETTE, type PaletteColor } from '../palette';
+import { isPaletteName, PALETTE, type PaletteColor } from '../palette';
 import { hashString, Rng } from '../random';
 import type { ModelCatalog } from './catalog';
 import { primKind } from './prims';
@@ -82,7 +82,6 @@ function tracked(rng: Rng, onUse: () => void): Rng {
   });
 }
 
-const isPaletteName = (v: unknown): v is PaletteColor => typeof v === 'string' && Object.hasOwn(PALETTE, v);
 
 export function expandDef(def: ModelDef, opts: ModelOptions, catalog: ModelCatalog, stack: readonly string[] = []): Expansion {
   const problems: string[] = [];

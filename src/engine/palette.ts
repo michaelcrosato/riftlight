@@ -23,3 +23,6 @@ export const PALETTE = {
 } as const;
 
 export type PaletteColor = keyof typeof PALETTE;
+
+/** Whether a value names a PALETTE colour. */
+export const isPaletteName = (v: unknown): v is PaletteColor => typeof v === 'string' && Object.hasOwn(PALETTE, v);
