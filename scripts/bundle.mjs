@@ -4,19 +4,22 @@
 //   node scripts/bundle.mjs --out dist/engine  (npm run build does this: the site serves /engine/)
 //
 // The kit: pixel-engine.js (one self-contained ES module: engine, three.js, Rapier + wasm,
-// hero kit, built-in models, CSS), GUIDE.md (docs/GUIDE.md), API.md (generated from the
-// TypeScript), pixel-engine.d.ts + types/, CHANGELOG.md, a starter game (index.html +
-// game.js, the guide's quick start), examples/ (the guide's other named code blocks), check.mjs
-// (plays a page in a browser and reports errors and screenshots) and manifest.json.
+// hero kit, built-in models, CSS), GUIDE.md (docs/GUIDE.md), ASSETS.md (docs/GUIDE-ASSETS.md:
+// models and textures), LIBRARY.md and CREDITS.md (generated from the model and texture
+// libraries, scripts/bundle/assets.ts), API.md (generated from the TypeScript),
+// pixel-engine.d.ts + types/, CHANGELOG.md, a starter game (index.html + game.js, the guide's
+// quick start), examples/ (both guides' other named code blocks), check.mjs (plays a page in a
+// browser and reports errors and screenshots; draws model and texture sheets) and manifest.json.
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { crc32, deflateRawSync } from 'node:zlib';
+import { tsImport } from 'tsx/esm/api';
 import ts from 'typescript';
 import { build } from 'vite';
 import { generateApi } from './bundle/api.mjs';
-import { guideBlocks } from './bundle/guide.mjs';
+import { guideBlocks, startsEngine } from './bundle/guide.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const args = process.argv.slice(2);
@@ -110,10 +113,24 @@ writeFileSync(
 const api = generateApi(program, join(root, 'src/bundle.ts'), join(root, 'src'), { version, build: buildId });
 writeFileSync(join(out, 'API.md'), api.markdown);
 
-// 3. The guide, its code blocks as runnable pages, the changelog and the check tool.
+// 3. The guides, their code blocks as runnable pages, the library and credits, the changelog and
+// the check tool.
 const guide = readFileSync(join(root, 'docs/GUIDE.md'), 'utf8');
 const stamp = `> Pixel Engine **${version}**, build ${buildId}. The kit: \`README.md\` (what is where), this guide, \`API.md\`, \`pixel-engine.js\`.\n`;
 writeFileSync(join(out, 'GUIDE.md'), guide.replace(/^(# .*\n)/, `$1\n${stamp}`));
+const assetsGuide = readFileSync(join(root, 'docs/GUIDE-ASSETS.md'), 'utf8');
+const assetsStamp = `> Pixel Engine **${version}**, build ${buildId}. Read \`GUIDE.md\` first. \`LIBRARY.md\` lists the built-in models and textures, \`CREDITS.md\` where they came from.\n`;
+writeFileSync(join(out, 'ASSETS.md'), assetsGuide.replace(/^(# .*\n)/, `$1\n${assetsStamp}`));
+// LIBRARY.md and CREDITS.md from the libraries themselves (TypeScript, loaded through tsx)
+const { creditsMarkdown, libraryMarkdown } = await tsImport('./bundle/assets.ts', import.meta.url);
+writeFileSync(join(out, 'LIBRARY.md'), libraryMarkdown(version));
+const pkg = (name, title, url) => {
+  const dir = join(root, 'node_modules', name);
+  const p = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
+  return { name: `${title} (${name})`, version: p.version, licence: p.license, url, text: readFileSync(join(dir, 'LICENSE'), 'utf8') };
+};
+const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs')];
+writeFileSync(join(out, 'CREDITS.md'), creditsMarkdown({ version, builtins: Object.keys(builtins), code }));
 cpSync(join(root, 'CHANGELOG.md'), join(out, 'CHANGELOG.md'));
 cpSync(join(root, 'scripts/bundle/check.mjs'), join(out, 'check.mjs'));
 
@@ -138,12 +155,15 @@ const quick = blocks.find((b) => b.name === 'quickstart');
 if (!quick) throw new Error('bundle: docs/GUIDE.md has no ```js quickstart block');
 writeFileSync(join(out, 'game.js'), quick.code);
 writeFileSync(join(out, 'index.html'), page('Pixel Engine game', 'game.js'));
-const examples = blocks.filter((b) => b.name !== 'quickstart');
-if (examples.length) mkdirSync(join(out, 'examples'));
-for (const b of examples) {
-  writeFileSync(join(out, 'examples', `${b.name}.js`), b.code.replaceAll(`from './pixel-engine.js'`, `from '../pixel-engine.js'`));
-  writeFileSync(join(out, 'examples', `${b.name}.html`), page(`Pixel Engine: ${b.name}`, `${b.name}.js`));
-}
+// examples/<name>.js for both guides' other blocks; a page for each that starts the engine (a
+// game), none for a module a game imports (ASSETS.md's models)
+const scripts = [...blocks.filter((b) => b.name !== 'quickstart'), ...guideBlocks(assetsGuide)];
+const names = scripts.map((b) => b.name);
+if (new Set(names).size !== names.length) throw new Error(`bundle: two guide blocks share a name (${names.join(', ')})`);
+const examples = scripts.filter((b) => startsEngine(b.code));
+if (scripts.length) mkdirSync(join(out, 'examples'));
+for (const b of scripts) writeFileSync(join(out, 'examples', `${b.name}.js`), b.code.replaceAll(`from './pixel-engine.js'`, `from '../pixel-engine.js'`));
+for (const b of examples) writeFileSync(join(out, 'examples', `${b.name}.html`), page(`Pixel Engine: ${b.name}`, `${b.name}.js`));
 
 // 4. README (the kit's front door) and manifest.json.
 const files = () => {
@@ -171,13 +191,15 @@ Read in this order:
 1. \`GUIDE.md\` (~${Math.round(tokens(join(out, 'GUIDE.md')) / 1000)}k tokens): how to host a game, the mental model, a complete game, recipes, the rules and common mistakes. Read it whole.
 2. \`API.md\` (~${Math.round(tokens(join(out, 'API.md')) / 1000)}k tokens): every export with its signature and doc. Search it; don't read it whole.
 3. \`game.js\`: the guide's quick start, a complete game. Edit it into yours.
+4. \`ASSETS.md\` (~${Math.round(tokens(join(out, 'ASSETS.md')) / 1000)}k tokens), when the game builds with models and textures: the library, the format, the loop and the style rules. Read it whole; \`LIBRARY.md\` (~${Math.round(tokens(join(out, 'LIBRARY.md')) / 1000)}k tokens) lists every built-in model and texture: search it.
 
 | File | What |
 | --- | --- |
 | \`pixel-engine.js\` | The engine, ${kb(join(out, 'pixel-engine.js'))}: one ES module with three.js (\`THREE\`, \`TSL\`), Rapier and its wasm, the hero kit, the built-in models (${Object.keys(builtins).map((k) => `\`${k}\``).join(', ')}) and the engine CSS. Never edit it. |
 | \`index.html\`, \`game.js\` | A game to start from: serve this folder over HTTP and open \`index.html\` |
-| \`examples/\` | The guide's other recipes as pages (${examples.map((b) => `\`${b.name}\``).join(', ')}) |
-| \`check.mjs\` | \`node check.mjs [page] [--keys KeyD*60,Space*4] [--cameras] [--looks a,b]\`: plays the page in a real browser, saves screenshots, fails on any error. Run it before you hand a game back |
+| \`examples/\` | The guides' other recipes as pages (${examples.map((b) => `\`${b.name}\``).join(', ')}) and the modules they import (${scripts.filter((b) => !examples.includes(b)).map((b) => `\`${b.name}.js\``).join(', ') || 'none'}) |
+| \`check.mjs\` | \`node check.mjs [page] [--keys KeyD*60,Space*4] [--cameras] [--looks a,b]\`: plays the page in a real browser, saves screenshots, fails on any error. Run it before you hand a game back. \`node check.mjs --sheets models.js\` draws your models and textures (ASSETS.md) |
+| \`ASSETS.md\`, \`LIBRARY.md\`, \`CREDITS.md\` | Models and textures as data; the built-in library; where everything the kit carries came from (ship it with your game) |
 | \`pixel-engine.d.ts\`, \`types/\` | TypeScript declarations (optional) |
 | \`CHANGELOG.md\` | What changed between engine versions |
 | \`manifest.json\` | Version, build and every file with its size |
@@ -194,6 +216,7 @@ const manifest = {
   readFirst: ['README.md', 'GUIDE.md'],
   starter: { page: 'index.html', script: 'game.js' },
   examples: examples.map((b) => `examples/${b.name}.html`),
+  assets: { guide: 'ASSETS.md', library: 'LIBRARY.md', credits: 'CREDITS.md' },
   builtinModels: Object.keys(builtins),
   exports: api.names.length,
   files: [

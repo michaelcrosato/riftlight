@@ -41,13 +41,16 @@ export function creditEntries(models: readonly Sourced[], textures: readonly Sou
   });
 }
 
+/** One entry as a Markdown list item: what, who, the licence and what it owes, the url, the ids. */
+export function creditLine(e: CreditEntry): string {
+  const owed = e.credit === 'required' ? ', credit required' : e.credit === 'optional' ? ', credit optional' : '';
+  return `- **${e.what}** by ${e.author}, ${e.name} (${e.licence}${owed}): ${e.url}.${e.models.length ? ` Models: ${e.models.join(', ')}.` : ''}${e.textures.length ? ` Textures: ${e.textures.join(', ')}.` : ''}`;
+}
+
 /** The list as Markdown lines (credits.md). */
 export function creditLines(entries: readonly CreditEntry[]): string[] {
   const lines = ['# Credits', '', "Imported models and textures and where they came from, from each one's `source` (`npm run model -- credits`).", ''];
   if (!entries.length) lines.push('Nothing imported yet: nothing to credit.');
-  for (const e of entries) {
-    const owed = e.credit === 'required' ? ', credit required' : e.credit === 'optional' ? ', credit optional' : '';
-    lines.push(`- **${e.what}** by ${e.author}, ${e.name} (${e.licence}${owed}): ${e.url}.${e.models.length ? ` Models: ${e.models.join(', ')}.` : ''}${e.textures.length ? ` Textures: ${e.textures.join(', ')}.` : ''}`);
-  }
+  lines.push(...entries.map(creditLine));
   return lines;
 }

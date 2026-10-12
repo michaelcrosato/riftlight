@@ -15,7 +15,7 @@ const SECTIONS = [
   ['Audio', /^engine\/audio\//],
   ['Particles', /^engine\/particles\//],
   ['HUD', /^engine\/hud\//],
-  ['Models', /^engine\/assets\.ts$/],
+  ['Models and textures (ASSETS.md)', /^engine\/(assets\.ts|png\.ts|catalog\.ts|model\/|texture\/)/],
   ['Animation toolkit', /^engine\/animation\//],
   ['Hero kit', /^game\/hero\//],
   ['Inspection tools', /^engine\/inspect\//],

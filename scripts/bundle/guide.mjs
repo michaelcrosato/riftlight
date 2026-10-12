@@ -1,7 +1,9 @@
-// The named code blocks of docs/GUIDE.md: a fence whose info string is `js <name>` is a whole
-// game (it imports from './pixel-engine.js' and starts the engine). `quickstart` becomes the
-// kit's game.js, every other one examples/<name>.js. The bundle e2e suite plays them all, so
-// the guide's code can't rot. Plain ```js fences are snippets and aren't run.
+// The named code blocks of docs/GUIDE.md and docs/GUIDE-ASSETS.md: a fence whose info string is
+// `js <name>` is a whole game (it imports from './pixel-engine.js' and starts the engine) or, in
+// GUIDE-ASSETS.md, a module a game imports ('./<name>.js', the game's own models). `quickstart`
+// becomes the kit's game.js, every other one examples/<name>.js, with a page when it starts the
+// engine. The bundle e2e suite plays every game, so the guides' code can't rot. Plain ```js
+// fences are snippets and aren't run.
 
 /** @returns {{ name: string, code: string, line: number }[]} */
 export function guideBlocks(markdown) {
@@ -11,4 +13,9 @@ export function guideBlocks(markdown) {
     blocks.push({ name: m[1], code: m[2], line: markdown.slice(0, m.index).split('\n').length });
   }
   return blocks;
+}
+
+/** Whether a block is a game (it ends by starting the engine) rather than a module a game imports. */
+export function startsEngine(code) {
+  return /^await Engine\.start\(/m.test(code);
 }

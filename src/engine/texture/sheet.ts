@@ -13,11 +13,12 @@ import { hexString } from '../model/import/colours';
 import { DEFAULT_TEXEL } from '../model/uv';
 import { PALETTE, type PaletteColor } from '../palette';
 import type { RgbaImage } from '../png';
-import { bakeTexture, type BakedTexture } from './bake';
+import { bakeTexture, type BakedTexture, type BakeOptions } from './bake';
 import { TextureCatalog } from './catalog';
 import type { SheetImport } from './import';
 import type { TextureDef } from './types';
-import type { TextureCheck } from './validate';
+import { validateTexture, type TextureCheck } from './validate';
+import { TEXTURE_LIBRARY } from './library';
 
 const DIM: RGB = [150, 156, 180];
 const TEXT: RGB = [230, 232, 240];
@@ -97,6 +98,38 @@ export function renderTextureSheet(def: TextureDef, b: BakedTexture, check: Text
   return column([titleBar(`${def.id}: ${def.about}`, body.width, sub), body]);
 }
 
+
+/**
+ * A texture's sheet (`image`: width, height and RGBA `data`) and the check it shows, as
+ * `validateTexture` gives it: `id`, `problems`, `warnings` and `metrics`.
+ */
+export interface TextureSheet extends TextureCheck {
+  readonly image: SheetImage;
+}
+
+/** `textureSheet`'s options. */
+export interface TextureSheetOptions {
+  /** Re-bind slots to other palette names or hex numbers, as a bake does. */
+  readonly palette?: BakeOptions['palette'];
+  /** Where a string id resolves (default `TEXTURE_LIBRARY`). */
+  readonly catalog?: TextureCatalog;
+}
+
+/**
+ * The texture sheet `npm run tex -- sheet` draws, for a library id or any def (a game's own): the
+ * texels at 1× and enlarged, a 3×3 tiling and a cube and cylinder at game scale when it tiles,
+ * its frames, palette and `validateTexture`'s problems and warnings. Software-drawn, so it runs in
+ * Node and in a browser (the kit's `check.mjs --sheets`). `palette` re-binds slots as a bake does.
+ */
+export function textureSheet(idOrDef: string | TextureDef, opts: TextureSheetOptions = {}): TextureSheet {
+  const def = typeof idOrDef === 'string' ? (opts.catalog ?? TEXTURE_LIBRARY).get(idOrDef) : idOrDef;
+  const b = bakeTexture(def, opts.palette ? { palette: opts.palette } : {});
+  const checked = validateTexture(def);
+  // the re-bound bake's own problems too (a slot the palette lacks): the converters would refuse it
+  const problems = [...new Set([...checked.problems, ...b.problems])];
+  const check = { ...checked, problems };
+  return { ...check, image: renderTextureSheet(def, b, check, opts.palette) };
+}
 
 /** Cells on their grid, ×`k`, 2 pixels apart; `cell(i)` draws cell `i` (gw × gh). */
 function cellGrid(columns: number, rows: number, gw: number, gh: number, k: number, cell: (i: number) => SheetImage): SheetImage {

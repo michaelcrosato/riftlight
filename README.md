@@ -101,8 +101,10 @@ Architecture, the camera and filter lists, the moveset and the game API are in
 this repo: `pixel-engine.js` (one self-contained ES module, about 4.3 MB: the engine,
 three.js, Rapier, the hero and the built-in models), [`docs/GUIDE.md`](docs/GUIDE.md) (the
 manual: host it, the mental model, a complete game, recipes, rules, common mistakes, checks),
-a generated `API.md`, TypeScript types, a starter `game.js`, the guide's recipes as pages and
-`check.mjs`, which plays a page in a browser and fails on any error. Hand over
+[`docs/GUIDE-ASSETS.md`](docs/GUIDE-ASSETS.md) as `ASSETS.md` (models and textures as data, with
+a generated `LIBRARY.md` and `CREDITS.md`), a generated `API.md`, TypeScript types, a starter
+`game.js`, the guides' recipes as pages and `check.mjs`, which plays a page in a browser and
+fails on any error (`--sheets` draws a game's own models). Hand over
 `bundle/pixel-engine.zip`, or link `/engine/` and `/engine.zip` wherever `dist/` is hosted
 (`npm run build` puts the kit there). The receiving agent reads `README.md` then `GUIDE.md`, edits
 `game.js` and runs `node check.mjs` before handing back. Engine changes that a game can see

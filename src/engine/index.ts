@@ -135,6 +135,7 @@ export {
   type Provenance as ModelProvenance,
 } from './model';
 export { addModelColliders } from './model/physics';
+export { modelSheet, type ModelSheet, type ModelSheetOptions } from './model/sheet';
 export {
   TEXTURE_LIBRARY,
   TextureCatalog,
@@ -154,6 +155,7 @@ export {
   type TextureDef,
   type Layer as TextureLayer,
 } from './texture';
+export { textureSheet, type TextureSheet, type TextureSheetOptions } from './texture/sheet';
 export { Catalog, type CatalogEntry } from './catalog';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';

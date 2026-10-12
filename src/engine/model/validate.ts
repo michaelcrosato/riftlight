@@ -113,7 +113,7 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
     if (p.tex) {
       const b = bakeOf(p.tex);
       if (!b) problems.push(`${p.label} names texture '${p.tex}', which no TextureDef declares: add the texture or drop \`tex\``);
-      else if (b.problems.length) problems.push(`${p.label} names texture '${p.tex}', which has problems: fix it first (\`npm run tex -- check ${p.tex}\`)`);
+      else if (b.problems.length) problems.push(`${p.label} names texture '${p.tex}', which has problems: fix it first (\`npm run tex -- check ${p.tex}\`; with the kit, \`node check.mjs --sheets ${p.tex}\`)`);
       else if (!textures.get(p.tex).tile) untiled.add(p.tex);
       if (p.glow) problems.push(`${p.label} glows and names a texture: glow draws one flat colour, so drop \`tex\` or \`glow\``);
     }

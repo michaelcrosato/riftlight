@@ -38,6 +38,10 @@ this file is how the work is done.
 | Fast checks only (Stop hook) | `scripts/check.sh --fast` |
 | Browser e2e (CI runs the groups in parallel) | `npm run build && npm run test:e2e [-- <suite or @group>]` |
 | Install deps | `scripts/session-start.sh` (runs automatically in cloud sessions) |
+| Models: check, look, compare (docs/ASSETS.md) | `npm run model -- check [id]`, `sheet <id> --compare`, `diff <id>`, `find <words>` |
+| Models: import a GLB, list credits | `npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>`, `credits` |
+| Models: trace a source in primitives (docs/ASSETS.md *Tracing*) | `npm run model -- trace <id> --against <source> --reference`, `trace <draft.ts> --against <source>`, `export-glb <source>` |
+| Textures: check, look, import a sheet | `npm run tex -- check [id]`, `sheet <id>`, `import <sheet.png> --grid 16x16 --licence <spdx> --source <url>` |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs
 whatever exists. When you add a stack, wire its lint/test/build into the
@@ -105,7 +109,7 @@ isolated clips can't.
 | `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game, reports clear time, deaths, loot |
 | `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
-| `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md` | The engine kit for agents outside this repo (`npm run bundle`): one-module `pixel-engine.js`, the guide (its named code blocks become pages; `src/guide.test.ts` keeps its names true), a generated `API.md`, `check.mjs`. Engine changes a game can see bump the version and add a `CHANGELOG.md` section |
+| `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md`, `docs/GUIDE-ASSETS.md` | The engine kit for agents outside this repo (`npm run bundle`): one-module `pixel-engine.js`, the guides (GUIDE.md; GUIDE-ASSETS.md ships as `ASSETS.md`; their named code blocks become pages; `src/guide.test.ts` and `src/guide-assets.test.ts` keep their names true), generated `API.md`, `LIBRARY.md` and `CREDITS.md`, `check.mjs` (`--sheets` draws a game's models). Engine changes a game can see bump the version and add a `CHANGELOG.md` section |
 | `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs`, the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,

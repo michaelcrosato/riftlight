@@ -2,15 +2,20 @@
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
-//   files     README, GUIDE, API, CHANGELOG, the engine with its types, the starter game, one
-//             page per named code block of docs/GUIDE.md, check.mjs; manifest.json lists every
-//             file with its size; the zip holds them all.
+//   files     README, GUIDE, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its types,
+//             the starter game, one page per named game block of docs/GUIDE.md and
+//             docs/GUIDE-ASSETS.md (its models module beside them, with no page), check.mjs;
+//             manifest.json lists every file with its size; the zip holds them all.
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page on WebGPU and the WebGL 2 fallback: exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
 //             every shot.
 //   play      every recipe does what the guide says (WebGL 2): Coin Garden's coins, Cliff Run's
-//             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys.
+//             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
+//             Market Corner's models, light and textured floor.
+//   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
+//             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
+//             on a broken def, a module with no defs or one that never loads, an unknown id.
 //   errors    a game that throws in update() keeps rendering, shows the error box and fills
 //             engine.errors; one whose setup() throws shows "Failed to start"; check.mjs exits 1
 //             for both, fast.
@@ -74,10 +79,11 @@ export async function runBundle(h) {
   try {
     manifest = JSON.parse(await readFile(new URL('manifest.json', kit), 'utf8'));
     check(manifest.version === version, `manifest version ${manifest.version} is package.json's (${version})`);
-    const need = ['README.md', 'GUIDE.md', 'API.md', 'CHANGELOG.md', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
+    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
-    check(manifest.examples.length >= 3, `one page per guide recipe: ${manifest.examples.join(', ')}`);
+    check(manifest.examples.length >= 4 && manifest.examples.includes('examples/market.html'), `one page per guide recipe: ${manifest.examples.join(', ')}`);
+    check(listed.has('examples/market-models.js') && !listed.has('examples/market-models.html'), "ASSETS.md's models module ships beside its game, with no page of its own");
     // every file but manifest.json itself carries its size
     const sizes = await Promise.all(manifest.files.map(async (f) => (f.path === 'manifest.json' ? undefined : (await stat(new URL(f.path, kit))).size)));
     check(manifest.files.every((f, i) => sizes[i] === f.bytes), `every listed file exists with its size (${manifest.files.length} files)`);
@@ -85,6 +91,28 @@ export async function runBundle(h) {
     check(engine.startsWith(`/*! Pixel Engine ${version} `) && engine.length > 3e6 && !/new URL\(["'`][^"'`]*\.wasm/.test(engine), `pixel-engine.js is one self-contained module (${(engine.length / 1e6).toFixed(1)} MB, version banner, wasm inlined)`);
     const guide = await readFile(new URL('GUIDE.md', kit), 'utf8');
     check(guide.includes(`Pixel Engine **${version}**`), 'GUIDE.md is stamped with the version');
+    const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
+    check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
+    // LIBRARY.md: a row per model and texture. CREDITS.md: every one of them either our own work
+    // (counted) or imported (listed by id under its source), the palettes, the code's licences.
+    const library = await readFile(new URL('LIBRARY.md', kit), 'utf8');
+    const ids = library.split(/^## Textures$/m).map((part) => [...part.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]));
+    const [models, textures] = ids.map((list) => list.length);
+    const credits = await readFile(new URL('CREDITS.md', kit), 'utf8');
+    const own = credits.match(/(\d+) of the (\d+) library models .*?, (\d+) of the (\d+) textures/s);
+    const assetCredits = credits.split(/^## /m).find((part) => part.startsWith('Models and textures')) ?? '';
+    const creditedIds = (kind) => [...assetCredits.matchAll(new RegExp(` ${kind}: ([^.]+)\\.`, 'g'))].flatMap((m) => m[1].split(', '));
+    const [importedModels, importedTextures] = [creditedIds('Models'), creditedIds('Textures')];
+    check(
+      models > 40 && textures > 20 && own && +own[2] === models && +own[4] === textures &&
+        +own[1] + importedModels.length === models && +own[3] + importedTextures.length === textures &&
+        importedModels.every((id) => ids[0].includes(id)) && importedTextures.every((id) => ids[1].includes(id)),
+      `LIBRARY.md lists ${models} models and ${textures} textures; CREDITS.md accounts for each: ${own?.[1]} models and ${own?.[3]} textures our own, ${importedModels.length} and ${importedTextures.length} imported and listed`,
+    );
+    check(
+      /\*\*Sweetie 16\*\* by GrafxKid/.test(credits) && /\*\*PICO-8\*\*/.test(credits) && /The MIT License/.test(credits) && /Apache License/.test(credits),
+      "CREDITS.md credits the Sweetie 16 and PICO-8 palettes and carries three.js's and Rapier's licences",
+    );
     const entries = unzip(await readFile(new URL('dist/engine.zip', root)));
     const zipped = new Map(entries.map((e) => [e.name.replace(/^engine\//, ''), e.bytes]));
     const same = manifest.files.every((f) => zipped.has(f.path) && (f.bytes === undefined || zipped.get(f.path).length === f.bytes));
@@ -121,8 +149,10 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     check(false, `types: ${e.message}`);
   }
 
-  const checkTool = (page, args, env = {}) => run('node', [join(kitPath, 'check.mjs'), page, ...args], { env: { CHROMIUM_PATH: exe ?? '', ...env } });
+  const checkTool = (page, args, env = {}) => run('node', [join(kitPath, 'check.mjs'), ...(page ? [page] : []), ...args], { env: { CHROMIUM_PATH: exe ?? '', ...env } });
   const report = async (dir) => JSON.parse(await readFile(new URL(`${dir}/report.json`, out), 'utf8'));
+  // --sheets runs: a run that wrote no report (it exited 2) reads as one that drew nothing
+  const sheetsReport = async (dir) => (existsSync(new URL(`${dir}/report.json`, out)) ? report(dir) : { sheets: [], errors: [], ok: false });
 
   console.log('\n▶ bundle: check.mjs on every page');
   const pages = ['index.html', ...manifest.examples];
@@ -311,6 +341,118 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     },
     'Look Lab',
   );
+
+  await play(
+    'examples/market.html',
+    async (page) => {
+      const r = await page.evaluate(async () => {
+        const e = window.__PIXEL_ENGINE__;
+        const g = e.game;
+        e.step(10);
+        const floor = e.scene.children.find((o) => o.isMesh && o.material?.map);
+        const frame = await e.renderer.capture();
+        const counts = new Map();
+        for (let i = 0; i < frame.pixels.length; i += 4) {
+          const c = (frame.pixels[i] << 16) | (frame.pixels[i + 1] << 8) | frame.pixels[i + 2];
+          counts.set(c, (counts.get(c) ?? 0) + 1);
+        }
+        return {
+          status: e.state().status,
+          models: g.placed.map((m) => m.id),
+          inScene: g.placed.every((m) => m.object.parent === e.scene && m.object.children.length > 0),
+          ownStall: !!e.scene.getObjectByName('fruit-stall'),
+          lights: e.lights.stats().requests,
+          lit: g.lights.every((l) => l.alive),
+          floor: floor?.material.map.name ?? null,
+          colliders: e.physics.counts().colliders,
+          colours: counts.size,
+          top: Math.max(...counts.values()) / (frame.pixels.length / 4),
+        };
+      });
+      check(
+        r.status === 'market: 9 models, 1 light' && r.models.length === 9 && r.inScene && r.ownStall && r.lights >= 1 && r.lit && r.floor === 'tex:cobbles' && r.colliders >= 10,
+        `Market Corner: 9 models built and placed (the game's own fruit-stall among them), the lamp's light requested, the floor's map is cobbles, ${r.colliders} colliders (${r.status})`,
+      );
+      check(r.colours >= 24 && r.top < 0.6, `Market Corner draws a picture: ${r.colours} colours, the commonest covers ${(r.top * 100).toFixed(0)}%`);
+    },
+    'Market Corner',
+  );
+
+  console.log('\n▶ bundle: check.mjs --sheets');
+  try {
+    const pngSize = async (file) => {
+      const b = await readFile(file);
+      return [b.readUInt32BE(16), b.readUInt32BE(20)];
+    };
+    const ok = await checkTool('', ['--sheets', `${join(kitPath, 'examples/market-models.js')},market-stall,cobbles`, '--out', fileURLToPath(new URL('sheets', out))]);
+    const r = await report('sheets');
+    const ids = r.sheets.map((x) => `${x.kind} ${x.id}`);
+    const sizes = await Promise.all(r.sheets.map((x) => (x.file ? pngSize(x.file) : [0, 0])));
+    check(
+      ok.code === 0 && r.ok && ids.join() === 'model fruit-stall,model market-stall,texture cobbles' && r.sheets.every((x) => !x.problems.length) && sizes.every(([w, h]) => w >= 600 && h >= 300),
+      `the market's own stall and two library ids, one sheet each (${ids.join(', ')}; ${sizes.map((x) => x.join('x')).join(', ')})${ok.code ? ':\n    ' + tail(ok.out) : ''}`,
+    );
+    // a broken def, a module with no defs, an unknown id: exit 1, saying what is wrong
+    const bad = new URL('sheets-bad/', out);
+    await mkdir(bad, { recursive: true });
+    await symlink(join(kitPath, 'pixel-engine.js'), fileURLToPath(new URL('pixel-engine.js', bad)));
+    await writeFile(
+      new URL('models.js', bad),
+      `import { model } from './pixel-engine.js';
+export const broken = model({ id: 'broken', about: 'A def with two mistakes', tags: ['test'], palette: { wood: 'orange' }, parts: [{ box: [1, 1, 1], at: [0, 0.5, 0], c: 'nope' }, { use: 'no-such-model' }] });
+export const pole = model({ id: 'pole', about: 'A pole too thin to read', tags: ['test'], palette: { wood: 'orange' }, parts: [{ box: [0.03, 1.5, 0.03], at: [0, 0.75, 0] }] });
+`,
+    );
+    await writeFile(new URL('empty.js', bad), 'export const answer = 42;\n');
+    // a def a module adds to the library, exporting nothing, is the game's own too
+    await writeFile(
+      new URL('added.js', bad),
+      `import { model, MODEL_LIBRARY } from './pixel-engine.js';
+MODEL_LIBRARY.add(model({ id: 'stool-pair', about: 'Two library stools side by side', tags: ['test'], palette: { wood: 'orange' }, parts: [{ use: 'stool', at: [-0.3, 0, 0] }, { use: 'stool', at: [0.3, 0, 0] }] }));
+`,
+    );
+    const added = await checkTool('', ['--sheets', fileURLToPath(new URL('added.js', bad)), '--out', fileURLToPath(new URL('sheets-added', out))]);
+    const ar = await report('sheets-added');
+    check(added.code === 0 && ar.sheets.map((x) => x.id).join() === 'stool-pair' && ar.sheets[0].file, `a def a module adds to MODEL_LIBRARY gets its sheet (${ar.sheets.map((x) => x.id).join()})${added.code ? ':\n    ' + tail(added.out) : ''}`);
+    const broken = await checkTool('', ['--sheets', fileURLToPath(new URL('models.js', bad)), '--out', fileURLToPath(new URL('sheets-broken', out))]);
+    const br = await report('sheets-broken');
+    const by = Object.fromEntries(br.sheets.map((x) => [x.id, x]));
+    check(
+      broken.code === 1 && /'nope'/.test(by.broken?.problems.join()) && /no-such-model/.test(by.broken?.problems.join()) && by.broken?.file && by.pole?.problems.length === 0 && /0\.06/.test(by.pole?.warnings.join()) && /x .*'nope'/.test(broken.out),
+      `a def with problems fails the check, naming them, and still gets a sheet; a warning alone passes (${broken.code}: broken ${by.broken?.problems.length} problems, pole ${by.pole?.warnings.length} warning)`,
+    );
+    // defs in an exported array or plain object count too; ids alone work from outside the kit
+    await writeFile(
+      new URL('grouped.js', bad),
+      `import { model } from './pixel-engine.js';
+const box = (id) => model({ id, about: 'A crate-sized box', tags: ['test'], palette: { wood: 'orange' }, parts: [{ box: [0.6, 0.6, 0.6], at: [0, 0.3, 0] }] });
+export default [box('in-array')];
+export const ALL = { inObject: box('in-object'), speed: 3 };
+`,
+    );
+    const grouped = await checkTool('', ['--sheets', fileURLToPath(new URL('grouped.js', bad)), '--out', fileURLToPath(new URL('sheets-grouped', out))]);
+    const gr = await sheetsReport('sheets-grouped');
+    check(grouped.code === 0 && gr.sheets.map((x) => x.id).sort().join() === 'in-array,in-object', `defs in an exported array and a plain object get sheets (${gr.sheets.map((x) => x.id).join() || 'none'}; exit ${grouped.code})${grouped.code ? ':\n    ' + tail(grouped.out) : ''}`);
+    const outside = await checkTool('', ['--sheets', 'crate', '--out', fileURLToPath(new URL('sheets-outside', out))]);
+    const or = await sheetsReport('sheets-outside');
+    check(outside.code === 0 && or.sheets.map((x) => x.id).join() === 'crate', `\`--sheets crate\` run from outside the kit draws with the kit check.mjs lives in (exit ${outside.code})${outside.code ? ':\n    ' + tail(outside.out) : ''}`);
+    // a module whose top level never settles: reported after 30 s, not a hang
+    await writeFile(new URL('hangs.js', bad), `import { model } from './pixel-engine.js';\nawait new Promise(() => {});\nexport const never = model({ id: 'never', about: 'x', tags: [], palette: { a: 'red' }, parts: [] });\n`);
+    const t0 = Date.now();
+    const hangs = await checkTool('', ['--sheets', fileURLToPath(new URL('hangs.js', bad)), '--out', fileURLToPath(new URL('sheets-hangs', out))]);
+    check(hangs.code === 1 && /did not finish loading in 30 s/.test(hangs.out), `a module that never finishes loading fails in ${((Date.now() - t0) / 1000).toFixed(0)} s, saying so (exit ${hangs.code})${hangs.code !== 1 ? ':\n    ' + tail(hangs.out) : ''}`);
+    const empty = await checkTool('', ['--sheets', fileURLToPath(new URL('empty.js', bad)), '--out', fileURLToPath(new URL('sheets-empty', out))]);
+    const unknown = await checkTool('', ['--sheets', `${join(kitPath, 'examples/market-models.js')},no-such-model`, '--out', fileURLToPath(new URL('sheets-unknown', out))]);
+    const missing = await checkTool('', ['--sheets', fileURLToPath(new URL('nothing-here.js', bad))]);
+    const both = await checkTool(join(kitPath, 'index.html'), ['--sheets', 'crate']);
+    const blank = await checkTool('', ['--sheets', '', '--out', fileURLToPath(new URL('sheets-blank', out))]);
+    check(
+      empty.code === 1 && /exports no ModelDef/.test(empty.out) && unknown.code === 1 && /no model or texture "no-such-model"/.test(unknown.out) && missing.code === 2 && /no such module/.test(missing.out) && both.code === 2 && blank.code === 2 && /--sheets needs modules/.test(blank.out),
+      `a module with no defs, an unknown id (exit 1), a missing module, a page with --sheets and an empty --sheets (exit 2) say so (${empty.code}, ${unknown.code}, ${missing.code}, ${both.code}, ${blank.code})`,
+    );
+  } catch (e) {
+    check(false, `check.mjs --sheets: ${e.message}`);
+  }
 
   console.log('\n▶ bundle: errors are reported');
   const errDir = new URL('errors/', out);
