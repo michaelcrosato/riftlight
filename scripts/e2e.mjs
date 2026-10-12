@@ -6,7 +6,7 @@
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | asset-lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
-//     riftlight-showcase | bundle | world;  groups: @core | @cameras | @filters | @world
+//     riftlight-showcase | bundle | world;  groups: @core | @cameras | @filters | @world | @assets
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -1575,9 +1575,11 @@ const SUITES = {
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
-  '@cameras': ['cameras', 'camera-swap', 'lab', 'asset-lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
   '@world': ['world'],
+  // every library model drawn on both backends: it grows with the library, so it runs alone
+  '@assets': ['asset-lab'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
