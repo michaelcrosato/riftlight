@@ -25,7 +25,7 @@ Split a bigger game into more modules (`import { Level } from './level.js'`) as 
 
 - **Serve it over HTTP.** ES modules don't load from `file://`. Any static server works:
   `npx serve .`, `python3 -m http.server`, GitHub Pages, Netlify, an S3 bucket.
-- **One import.** `pixel-engine.js` is one self-contained ES module (about 4.3 MB, 1.5 MB
+- **One import.** `pixel-engine.js` is one self-contained ES module (about 4.8 MB, 1.6 MB
   gzipped). It holds the engine, three.js r186 (as `THREE` and `TSL`), Rapier physics with its
   wasm, the hero (model, rig and every animation clip), three built-in models (`assets/hero.glb`,
   `assets/coin.glb`, `assets/tree.glb`) and the engine's CSS. Don't load anything else.

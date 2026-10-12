@@ -98,17 +98,22 @@ Architecture, the camera and filter lists, the moveset and the game API are in
 ### Handing the engine to another agent
 
 `npm run bundle` builds the **engine kit**, everything an agent needs to make a game outside
-this repo: `pixel-engine.js` (one self-contained ES module, about 4.3 MB: the engine,
+this repo: `pixel-engine.js` (one self-contained ES module, about 4.8 MB: the engine,
 three.js, Rapier, the hero and the built-in models), [`docs/GUIDE.md`](docs/GUIDE.md) (the
 manual: host it, the mental model, a complete game, recipes, rules, common mistakes, checks),
 [`docs/GUIDE-ASSETS.md`](docs/GUIDE-ASSETS.md) as `ASSETS.md` (models and textures as data, with
 a generated `LIBRARY.md` and `CREDITS.md`), a generated `API.md`, TypeScript types, a starter
 `game.js`, the guides' recipes as pages and `check.mjs`, which plays a page in a browser and
-fails on any error (`--sheets` draws a game's own models). Hand over
-`bundle/pixel-engine.zip`, or link `/engine/` and `/engine.zip` wherever `dist/` is hosted
-(`npm run build` puts the kit there). The receiving agent reads `README.md` then `GUIDE.md`, edits
-`game.js` and runs `node check.mjs` before handing back. Engine changes that a game can see
-bump `package.json`'s version and get a `CHANGELOG.md` section.
+fails on any error (`--sheets` draws a game's own models). The receiving agent reads `README.md`
+then `GUIDE.md`, edits `game.js` and runs `node check.mjs` before handing back. Engine changes
+that a game can see bump `package.json`'s version and get a `CHANGELOG.md` section.
+
+**The link to share: <https://riftlight.vercel.app/handoff/>.** The site deploys from `main`
+on every merge, and `npm run build` rebuilds the kit with it (`/engine/`, `/engine.zip`), so the
+link always holds the current engine with nothing to commit. The page
+([`public/handoff/index.html`](public/handoff/index.html)) tells an agent what to download, what
+to read and how to check its game, and how to build the same kit from a clone when its sandbox
+can't reach the site. For a chat, attach `bundle/pixel-engine.zip` (`npm run bundle`) instead.
 
 ---
 

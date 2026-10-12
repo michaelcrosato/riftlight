@@ -5,7 +5,8 @@
 //   files     README, GUIDE, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its types,
 //             the starter game, one page per named game block of docs/GUIDE.md and
 //             docs/GUIDE-ASSETS.md (its models module beside them, with no page), check.mjs;
-//             manifest.json lists every file with its size; the zip holds them all.
+//             manifest.json lists every file with its size; the zip holds them all; the handoff
+//             page (/handoff/) links only files the kit ships.
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page on WebGPU and the WebGL 2 fallback: exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
@@ -117,6 +118,18 @@ export async function runBundle(h) {
     const zipped = new Map(entries.map((e) => [e.name.replace(/^engine\//, ''), e.bytes]));
     const same = manifest.files.every((f) => zipped.has(f.path) && (f.bytes === undefined || zipped.get(f.path).length === f.bytes));
     check(entries.length === manifest.files.length && same, `engine.zip holds every file, intact (${entries.length} entries)`);
+    // The handoff page (public/handoff/index.html, served at /handoff/) is the link people give
+    // agents. Its links are root-absolute (the site serves /handoff without the slash too), and
+    // every way it points into the kit (an href, or the site's URL in its commands) names
+    // engine.zip, the kit's folder or a file the kit ships.
+    const handoff = await readFile(new URL('dist/handoff/index.html', root), 'utf8');
+    const relative = [...handoff.matchAll(/\bhref\s*=\s*["']?([^"'\s>]*)/gi)].map((m) => m[1]).filter((h) => !/^(\/|https?:\/\/)/.test(h));
+    const links = [...handoff.matchAll(/(?:\bhref\s*=\s*["']?|https:\/\/riftlight\.vercel\.app)\/(engine[^"'\s<>&]*)/gi)].map((m) => m[1]);
+    const missing = links.filter((l) => (l === 'engine.zip' || l === 'engine/' ? !existsSync(new URL(`dist/${l}`, root)) : !(l.startsWith('engine/') && listed.has(l.slice('engine/'.length)))));
+    check(
+      /curl [^<]*https:\/\/riftlight\.vercel\.app\/engine\.zip\b/.test(handoff) && links.includes('engine/README.md') && links.includes('engine/GUIDE.md') && !missing.length && !relative.length,
+      `handoff/index.html: its curl line fetches engine.zip, it links README.md and GUIDE.md, and its ${links.length} kit links are all kit files, root-absolute${missing.length ? `; missing: ${missing.join(', ')}` : ''}${relative.length ? `; relative: ${relative.join(', ')}` : ''}`,
+    );
   } catch (e) {
     check(false, `kit files: ${e.message}`);
   }

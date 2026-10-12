@@ -1575,10 +1575,11 @@ not): uncompressed it is 2.0 MB on the wire instead of 774 kB.
 ## The engine kit (`npm run bundle`)
 
 Games outside this repo use the engine through a kit (`scripts/bundle.mjs`; `npm run build`
-also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at `/engine/`):
+also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at `/engine/`; the
+page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
 
 - `pixel-engine.js`: a Vite library build of `src/bundle.ts`, one self-contained ES module
-  (about 4.3 MB, 1.5 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
+  (about 4.8 MB, 1.6 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
   three.js as `THREE` and `TSL` (a game must never load a second copy), `RAPIER`, the hero kit
   and `BUILTIN_MODELS`. Everything is inlined: Rapier's wasm as a data URL (`?url`), the
   engine CSS (injected on import, before the page's own), and `public/assets/*.glb` through
