@@ -11,8 +11,14 @@
 import { Matrix3, Vector3 } from 'three/webgpu';
 import type { CompiledPart } from './compile';
 
-/** Texels per metre for `tex` parts when the def doesn't set `texel` (Gate B measures it). */
-export const DEFAULT_TEXEL = 16;
+/**
+ * Texels per metre for `tex` parts when the def doesn't set `texel`: the densest Gate B passed for
+ * surfaces the camera zooms over (docs/ASSETS.md, *Texel density*). A model that moves may set
+ * up to `MOVING_TEXEL`.
+ */
+export const DEFAULT_TEXEL = 8;
+/** The densest a moving model passed Gate B at (its sliding crate); denser wasn't measured. */
+export const MOVING_TEXEL = 20;
 
 const ROUND = new Set(['cyl', 'cone', 'ball', 'torus', 'lathe']);
 /** A face whose own normal is this close to ±Y is a cap: projected from above. */

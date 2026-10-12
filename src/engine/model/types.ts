@@ -144,7 +144,7 @@ export interface ModelDef {
   readonly light?: ModelLight;
   /** Default 'box'. */
   readonly collider?: 'box' | 'cyl' | 'hull' | 'none';
-  /** Texels per metre for `tex` parts, 2–64 (default `DEFAULT_TEXEL`, set by Gate B). */
+  /** Texels per metre for `tex` parts, 2–64 (default `DEFAULT_TEXEL` = 8, Gate B's; up to `MOVING_TEXEL` = 20 for a model that moves). */
   readonly texel?: number;
   /** Hangs, mounts on walls or hovers: may sit below or above the floor. */
   readonly floats?: boolean;

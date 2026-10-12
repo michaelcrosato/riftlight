@@ -5,6 +5,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { Engine, lookPresetOf, toonMaterial, withUrlOptions, type Game, type GameContext, type LightHandle } from '../engine';
 import { buildModel, MODEL_LIBRARY, type ModelBuild, type ModelOptions } from '../engine/model';
 import { GAME_VIEW } from '../engine/model/view';
+import { GateB } from './gateB';
 
 /**
  * Asset Lab (/asset-lab.html): models from the library in the real renderer (toon shading,
@@ -22,7 +23,10 @@ class AssetLab implements Game {
   readonly root = new Group();
   shown: ModelBuild[] = [];
   private lights: LightHandle[] = [];
-  private readonly centre = new Vector3(0, 0.5, 0);
+  /** Where the camera looks. */
+  readonly centre = new Vector3(0, 0.5, 0);
+  /** The checker floor (Gate B hides it). */
+  readonly floor: Mesh[] = [];
   ctx!: GameContext;
 
   setup(ctx: GameContext): void {
@@ -35,12 +39,20 @@ class AssetLab implements Game {
       const floor = new Mesh(mergeGeometries(tiles, false), toonMaterial(color));
       floor.receiveShadow = true;
       ctx.scene.add(floor);
+      this.floor.push(floor);
     }
     ctx.scene.add(this.root);
     const p = new URLSearchParams(location.search);
     const lineup = p.get('lineup');
     if (lineup) this.lineup(lineup === 'all' ? MODEL_LIBRARY.all().map((d) => d.id) : lineup.split(','), { cols: Number(p.get('cols')) || undefined });
     else this.show(p.get('model') ?? MODEL_LIBRARY.all()[0]!.id);
+  }
+
+  /** Hide (release) or bring back the shown models' lights. */
+  lightsOn(on: boolean): void {
+    for (const l of this.lights) l.release();
+    this.lights = [];
+    if (on) for (const b of this.shown) if (b.light) this.lights.push(this.ctx.lights.request({ position: [b.object.position.x + b.light.at[0], b.light.at[1], b.object.position.z + b.light.at[2]], color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' }));
   }
 
   /** Empty the lab: release the lights, and dispose the geometry seeded builds made for us. */
@@ -115,6 +127,8 @@ export interface AssetLabApi {
   state(): { shown: string[]; zoom: number; look: string | null; tris: number; lights: number };
   /** The rendered frame as a PNG data URL. */
   capture(): Promise<string>;
+  /** Gate B's scene and measurements (src/lab/gateB.ts, `scripts/gate-b.ts`). */
+  readonly gateB: GateB;
 }
 
 function toDataUrl(width: number, height: number, pixels: Uint8Array | Uint8ClampedArray): string {
@@ -220,6 +234,11 @@ Engine.start(
         const f = await engine.renderer.capture();
         return toDataUrl(f.width, f.height, f.pixels);
       },
+      gateB: new GateB(engine, lab.ctx, lab.centre, (hidden) => {
+        for (const f of lab.floor) f.visible = !hidden;
+        lab.root.visible = !hidden;
+        lab.lightsOn(!hidden);
+      }),
     };
     if (query.get('lineup')) fit();
     ui(engine, lab, api);

@@ -12,5 +12,5 @@ export { buildModel, expandModel, ModelError, layoutModel, collidersOf, bindingH
 export { type Binding, type ExpandedModel, type ModelOptions } from './expand';
 export { compileParts, boundsOf, type Bounds, type Compiled, type CompiledPart, type CompiledPivot } from './compile';
 export { validateModel, checkModel, triangleBudget, ALLOWED_LICENCES, MAX_MATERIALS, MIN_THICKNESS, TEXEL_RANGE, type ModelCheck, type ModelMetrics, type CheckOptions } from './validate';
-export { DEFAULT_TEXEL, partUVs } from './uv';
+export { DEFAULT_TEXEL, MOVING_TEXEL, partUVs } from './uv';
 export { primTriangles, primKind, ring, svgOutlines, parseMesh, defaultSeg, PRIM_KINDS, type PrimKind } from './prims';

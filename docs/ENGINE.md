@@ -1474,7 +1474,9 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   drawn as sheets (turntable, front / side / top on a 0.1 m grid, game-scale previews through
   Riftlight's camera, the previous version in magenta) and diffed in words. The Asset Lab
   (`/asset-lab.html`, `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `clear`,
-  `setLook`, `state`, `capture`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
+  `setLook`, `state`, `capture`, `gateB`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
+  `npm run build && npm run gate-b` (`scripts/gate-b.ts`) measures texel shimmer there (Gate B,
+  docs/ASSETS.md *Texel density*): ~60 min a backend.
 - `npm run tex -- check / sheet / find / zoo` (`scripts/tex.ts`, docs/ASSETS.md *Textures*):
   TextureDefs checked (problems exit 1; warnings for seams, salt-and-pepper texels and sizes) and
   drawn as sheets (1×, enlarged, tiled 3×3, frames, palette).

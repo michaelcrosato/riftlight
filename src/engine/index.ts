@@ -103,6 +103,7 @@ export { LoadingScreen } from './LoadingScreen';
 export { mergeStaticMeshes, type MergeOptions } from './render/merge';
 export {
   DEFAULT_TEXEL,
+  MOVING_TEXEL,
   MODEL_LIBRARY,
   ModelCatalog,
   ModelError,
