@@ -1,21 +1,26 @@
 import { BufferAttribute, BufferGeometry, Group, type Material, Mesh, type Object3D, Vector3 } from 'three/webgpu';
+import { DEFAULT_TEXEL } from '../../../engine/model';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
+import { textureMap, TEXTURE_LIBRARY } from '../../../engine/texture';
 import { Rng } from '../../core/rng';
 import type { LevelPlan } from '../plan';
 import { buildProp, type PropGlow, tint } from '../themes/props';
+import type { LevelTheme, ThemeSurface, ThemeTone } from '../themes/themes';
 import { FLOOR, type Layout, VOID, WALL } from './grid';
 
 /**
  * Level geometry from a plan, built for the iso camera and pixel art:
  *
- *  - **Floors**: one quad per cell in a 2×2 flagstone pattern (two tones), with a darker
- *    trim along walls; cells at pits and voids get cliff sides (a lighter lip, then rock)
- *    that fall away into the fog.
+ *  - **Floors**: one quad per cell, textured with the theme's floor surface (else flat, in a
+ *    2×2 pattern of two tones), with a darker trim along walls; cells at pits and voids
+ *    get cliff sides (a lighter lip, then rock) that fall away into the fog.
  *  - **Walls**: only exposed faces are emitted (no hidden faces between wall cells). Back
  *    walls (floor on their camera side) are tall; front walls (between the camera and a
  *    floor) are cut low so the iso camera sees into rooms, Diablo-style. Every wall has a
  *    trim band and a cap. Ruins get broken, uneven heights. Lone wall cells become pillars.
+ *    Wall faces take the theme's wall surface. Textures sit in world space at the engine's
+ *    texel density (Gate B, docs/ASSETS.md), so they run on across cells and round corners.
  *  - **Props** are built by the theme's prop builders and merged with everything else by
  *    material (`mergeStaticMeshes`): a whole level is a handful of draw calls.
  *  - **Colliders**: wall and floor cells are merged into rectangles (greedy), so a level is
@@ -46,15 +51,31 @@ export interface LevelGeometry {
   readonly triangles: number;
 }
 
-/** Accumulates quads per material into one non-indexed BufferGeometry each. */
+/**
+ * Accumulates quads per material into one non-indexed BufferGeometry each. A textured
+ * material's quads get UVs in world space, in texture repeats (`textured` sets repeats per
+ * metre): tops take (x, −z); walls take y, and x − z along the faces toward +x and +z (z − x
+ * on the others). That reads left to right seen from outside, and two faces the camera sees
+ * (+x and +z) give the same u where they meet, so the texture runs on round the corner.
+ */
 class QuadBatch {
-  private readonly batches = new Map<Material, { pos: number[]; nor: number[] }>();
+  private readonly batches = new Map<Material, { pos: number[]; nor: number[]; uv: number[] }>();
+  private readonly repeats = new Map<Material, readonly [number, number]>();
+
+  /** UVs for `m`'s quads: `u`, `v` repeats per metre. */
+  textured(m: Material, u: number, v: number): void {
+    this.repeats.set(m, [u, v]);
+  }
 
   quad(m: Material, a: readonly number[], b: readonly number[], c: readonly number[], d: readonly number[], n: readonly number[]): void {
     let bt = this.batches.get(m);
-    if (!bt) this.batches.set(m, (bt = { pos: [], nor: [] }));
+    if (!bt) this.batches.set(m, (bt = { pos: [], nor: [], uv: [] }));
+    const r = this.repeats.get(m);
     // Two triangles a-b-c, a-c-d (counter-clockwise seen from the normal side).
-    for (const v of [a, b, c, a, c, d]) bt.pos.push(v[0]!, v[1]!, v[2]!);
+    for (const v of [a, b, c, a, c, d]) {
+      bt.pos.push(v[0]!, v[1]!, v[2]!);
+      if (r) bt.uv.push((n[1] !== 0 ? v[0]! : (v[0]! - v[2]!) * (n[0]! + n[2]!)) * r[0], (n[1] !== 0 ? -v[2]! : v[1]!) * r[1]);
+    }
     for (let k = 0; k < 6; k++) bt.nor.push(n[0]!, n[1]!, n[2]!);
   }
 
@@ -81,6 +102,7 @@ class QuadBatch {
       const g = new BufferGeometry();
       g.setAttribute('position', new BufferAttribute(new Float32Array(b.pos), 3));
       g.setAttribute('normal', new BufferAttribute(new Float32Array(b.nor), 3));
+      if (b.uv.length) g.setAttribute('uv', new BufferAttribute(new Float32Array(b.uv), 2));
       g.computeBoundingSphere();
       const mesh = new Mesh(g, m);
       mesh.castShadow = true;
@@ -119,6 +141,23 @@ export function wallHeights(layout: Layout, plan: LevelPlan, skip: Uint8Array): 
   return h;
 }
 
+/** A theme tone as a colour. */
+export function toneOf(theme: LevelTheme, t: ThemeTone): number {
+  const [name, k] = typeof t === 'string' ? [t, 0] : t;
+  const hex = name === 'floorAlt' ? theme.floorAlt : name === 'trim' ? theme.trim : name === 'cliff' ? theme.cliff : theme.palette[name];
+  return k ? tint(hex, k) : hex;
+}
+
+/** A surface's material in the theme's tones (darkened by `k` for floor edges), with its UVs' repeats. */
+function surfaceMaterial(q: QuadBatch, theme: LevelTheme, s: ThemeSurface, k = 0): Material {
+  const def = TEXTURE_LIBRARY.get(s.texture);
+  const palette: Record<string, number> = {};
+  for (const [slot, t] of Object.entries(s.slots)) palette[slot] = k ? tint(toneOf(theme, t), k) : toneOf(theme, t);
+  const m = toonMaterial(0xffffff, { map: textureMap(def, { palette }) });
+  q.textured(m, DEFAULT_TEXEL / def.size[0], DEFAULT_TEXEL / def.size[1]);
+  return m;
+}
+
 export function buildGeometry(plan: LevelPlan): LevelGeometry {
   const { layout, theme } = plan;
   const W = layout.width;
@@ -127,13 +166,15 @@ export function buildGeometry(plan: LevelPlan): LevelGeometry {
   const root = new Group();
   root.name = `level:${plan.spec.name}`;
 
+  const floor = theme.surfaces?.floor;
+  const wall = theme.surfaces?.wall;
   const mat = {
-    floor: toonMaterial(theme.palette.floor),
-    floorAlt: toonMaterial(theme.floorAlt),
-    edge: toonMaterial(tint(theme.palette.floor, -0.22)),
+    floor: floor ? surfaceMaterial(q, theme, floor) : toonMaterial(theme.palette.floor),
+    floorAlt: floor ? null : toonMaterial(theme.floorAlt),
+    edge: floor ? surfaceMaterial(q, theme, floor, -0.22) : toonMaterial(tint(theme.palette.floor, -0.22)),
     lip: toonMaterial(tint(theme.palette.floor, -0.12)),
     cliff: toonMaterial(theme.cliff),
-    wall: toonMaterial(theme.palette.wall),
+    wall: wall ? surfaceMaterial(q, theme, wall) : toonMaterial(theme.palette.wall),
     band: toonMaterial(tint(theme.trim, -0.15)),
     cap: toonMaterial(theme.trim),
   };
@@ -167,7 +208,7 @@ export function buildGeometry(plan: LevelPlan): LevelGeometry {
           const nearWall = DIRS.some(([dx, dz]) => isWall(x + dx, z + dz));
           const alt = (((x >> 1) + (z >> 1)) & 1) === 1;
           const flip = hash(x, z, 1) < 0.12;
-          q.top(nearWall ? mat.edge : alt !== flip ? mat.floorAlt : mat.floor, x, z, x + 1, z + 1, 0);
+          q.top(nearWall ? mat.edge : mat.floorAlt && alt !== flip ? mat.floorAlt : mat.floor, x, z, x + 1, z + 1, 0);
         }
         // ---- cliffs toward the void (below a crumbling neighbour too, under its tile)
         const top = dyn[i] ? -0.4 : 0;

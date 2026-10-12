@@ -23,15 +23,34 @@
 //   npm run build && npm run gate-b -- [--backend webgpu|webgl|both] [--densities 8,12,16,20] [--out .scratch/gate-b]
 //
 // Writes <out>/results.json and the filmstrips (<out>/strip.png); prints the table.
+//
+// Screening a surface (before a level lays it): `--floors id,…` lays each texture as the floor in
+// place of the pinned cobbles (the wall and crates stay) at `--densities` (default 8), against a
+// flat floor in that texture's own mean colour, and judges it on the zoom sweeps by the same three
+// readings (no crate or pan). An entry is a texture id (the library's, or a pinned one such as
+// `gate-b-cobbles`, the record's floor) or a draft file (`.ts`) whose exported TextureDefs are
+// each screened (under ids the catalog doesn't use). Calm and bad (and the flat scene that is
+// their baseline) run once, on every sweep, so the line is the plan's. A floor fills most of the
+// frame, so a wall texture screened as a floor is judged strictly.
+//
+//   npm run build && npm run gate-b -- --backend webgpu --floors cobbles,grass [--quick] [--densities 8] [--out .scratch/gate-b-screen]
+//
+//   --quick   the floors run only the landscape level sweep, where the worst step has always been
+//             (0.65→0.70); their mean step is then over its 13 steps. Calm and bad still run every
+//             sweep. A floor takes about 40% of its time (one sweep of four, but a landscape one).
+//
+// Writes <out>/screen.json and a filmstrip per floor (<out>/<id>.png: its flat and textured runs
+// on the level-zoom sweep); prints a table per floor. `--help` prints this.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { chromium, type Page } from 'playwright-core';
 import type { SheetImage } from '../src/engine/animation/raster';
 import { column, row, textBox, titleBar } from '../src/engine/inspect/render';
 import { upscale } from '../src/engine/model/sheet';
-import type { GateBFrame, GateBRun, GateBSet } from '../src/lab/gateB';
+import { bakeTexture, type TextureDef } from '../src/engine/texture';
+import { floorDef, gateBTextures, type GateBFrame, type GateBRun, type GateBSceneOptions, type GateBSet } from '../src/lab/gateB';
 import { encodePng } from './png';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,7 +60,14 @@ const opt = (k: string, d: string) => {
   const i = argv.indexOf(`--${k}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1]! : d;
 };
-const DENSITIES = opt('densities', '8,12,16,20').split(',').map(Number);
+if (argv.includes('--help')) {
+  const own = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
+  console.log(own.slice(0, own.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  process.exit(0);
+}
+const FLOORS = opt('floors', '').split(',').filter(Boolean);
+const QUICK = argv.includes('--quick');
+const DENSITIES = opt('densities', FLOORS.length ? '8' : '8,12,16,20').split(',').map(Number);
 const BACKEND = opt('backend', 'both');
 if (!['webgpu', 'webgl', 'both'].includes(BACKEND)) throw new Error(`--backend ${BACKEND}: webgpu, webgl or both`);
 const BACKENDS = BACKEND === 'both' ? ['webgpu', 'webgl'] : [BACKEND];
@@ -108,9 +134,58 @@ interface Config {
   readonly name: string;
   readonly set: GateBSet;
   readonly texel: number;
+  /** The floor, when screening one (an id, or a draft's def). */
+  readonly floor?: GateBSceneOptions['floor'];
+  /** The flat run its excess is measured against. */
+  readonly flat: string;
+  /** The filmstrip its level-sweep frames go in (none: not filmed). */
+  readonly strip?: string;
 }
 
-const CONFIGS: Config[] = [{ name: 'flat', set: 'flat', texel: 16 }, { name: 'bad@32', set: 'bad', texel: 32 }, { name: 'calm@8', set: 'calm', texel: 8 }, ...DENSITIES.map((t): Config => ({ name: `library@${t}`, set: 'library', texel: t }))];
+/** Calibration and its baseline (the record's flat scene): every run has them. */
+const LINE: Config[] = [
+  { name: 'flat', set: 'flat', texel: 16, flat: 'flat' },
+  { name: 'bad@32', set: 'bad', texel: 32, flat: 'flat' },
+  { name: 'calm@8', set: 'calm', texel: 8, flat: 'flat' },
+];
+
+/** The record's configs: calibration, then the pinned surfaces at each density, all filmed. */
+const CONFIGS: Config[] = [...LINE, ...DENSITIES.map((t): Config => ({ name: `library@${t}`, set: 'library', texel: t, flat: 'flat' }))].map((c) => ({ ...c, strip: 'strip' }));
+
+const isDef = (v: unknown): v is TextureDef => typeof v === 'object' && v !== null && 'layers' in v && 'size' in v && 'id' in v;
+
+/** `--floors`: per floor, its flat run and a textured run per density, filmed into `<id>.png`. Checked here, before an hour of running. */
+async function floorConfigs(): Promise<Config[]> {
+  const catalog = gateBTextures();
+  const out: Config[] = [];
+  for (const entry of FLOORS) {
+    let floors: { id: string; floor: string | TextureDef }[] = [{ id: entry, floor: entry }];
+    if (/\.[cm]?ts$/.test(entry)) {
+      const mod = (await import(pathToFileURL(resolve(entry)).href)) as Record<string, unknown>;
+      const defs = [...new Set([mod.default, ...Object.values(mod)].filter(isDef))];
+      if (!defs.length) throw new Error(`${entry} exports no TextureDef`);
+      floors = defs.map((d) => ({ id: d.id, floor: d }));
+    }
+    for (const { id, floor } of floors) {
+      const problems = bakeTexture(floorDef(floor, catalog)).problems;
+      if (problems.length) throw new Error(`floor "${id}": ${problems.join('; ')}`);
+      out.push({ name: `flat:${id}`, set: 'flat', texel: 16, floor, flat: `flat:${id}`, strip: id }, ...DENSITIES.map((t): Config => ({ name: `${id}@${t}`, set: 'library', texel: t, floor, flat: `flat:${id}`, strip: id })));
+    }
+  }
+  if (new Set(out.map((c) => c.name)).size !== out.length) throw new Error('--floors names a floor twice');
+  return out;
+}
+
+/** What runs on one screen: the record's sequences, or (screening) the sweeps, with the floors where they run. */
+function plan(screen: 'landscape' | 'portrait', floors: readonly Config[]): { base: string; seq: Sequence; configs: readonly Config[] }[] {
+  const sweeps = (Object.keys(BASES) as (keyof typeof BASES)[]).map((b) => ({ base: b, seq: sweep(BASES[b], screen === 'portrait' ? PORTRAIT : 1) }));
+  if (!floors.length) {
+    const seqs: { base: string; seq: Sequence }[] = [...sweeps];
+    if (screen === 'landscape') seqs.push({ base: 'zoom 1', seq: crateRun() }, { base: 'level', seq: panRun() });
+    return seqs.map((s) => ({ ...s, configs: CONFIGS }));
+  }
+  return sweeps.map((s) => ({ ...s, configs: [...LINE, ...(QUICK && !(screen === 'landscape' && s.base === 'level') ? [] : floors)] }));
+}
 
 const mean = (xs: readonly number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
@@ -122,12 +197,12 @@ async function openLab(page: Page, query: string): Promise<void> {
 
 async function runOn(page: Page, c: Config, seq: Sequence, shots: number[] = []): Promise<GateBRun> {
   return page.evaluate(
-    async ({ set, texel, frames, shots }) => {
-      const lab = (window as unknown as { __ASSET_LAB__: { gateB: { scene(s: string, t: number): unknown; run(f: unknown, s: number[]): Promise<GateBRun> } } }).__ASSET_LAB__;
-      lab.gateB.scene(set, texel);
+    async ({ set, texel, opts, frames, shots }) => {
+      const lab = (window as unknown as { __ASSET_LAB__: { gateB: { scene(s: string, t: number, o: GateBSceneOptions): unknown; run(f: unknown, s: number[]): Promise<GateBRun> } } }).__ASSET_LAB__;
+      lab.gateB.scene(set, texel, opts);
       return lab.gateB.run(frames, shots);
     },
-    { set: c.set, texel: c.texel, frames: seq.frames, shots },
+    { set: c.set, texel: c.texel, opts: c.floor === undefined ? {} : { floor: c.floor }, frames: seq.frames, shots },
   );
 }
 
@@ -142,12 +217,21 @@ interface Result {
 }
 
 async function main(): Promise<void> {
+  const floors = await floorConfigs();
   mkdirSync(OUT, { recursive: true });
   const server = await startServer();
   const results: Result[] = [];
-  const strips: SheetImage[] = [];
+  const strips = new Map<string, SheetImage[]>();
   const renderers = new Set<string>();
   const t0 = Date.now();
+  // a screen saves as it goes (it runs for an hour or more); `done` says it finished
+  const saveScreen = (done: boolean) => writeFileSync(join(OUT, 'screen.json'), JSON.stringify({ done, settle: SETTLE, densities: DENSITIES, quick: QUICK, floors: FLOORS, renderers: [...renderers], ...(done ? { screened: screenReport(results, floors) } : {}), results }, null, 1));
+  const writeStrip = (name: string): string => {
+    const body = column(strips.get(name)!);
+    const file = join(OUT, `${name}.png`);
+    writeFileSync(file, encodePng(column([titleBar(`gate b${floors.length ? `: ${name} as the floor` : ''}: the level-zoom sweep, steps 1, 5, 9, 13 (mid-step frames)`, body.width), body])));
+    return file;
+  };
   try {
     for (const backend of BACKENDS) {
       const browser = await chromium.launch({ executablePath: chromiumPath(), headless: !process.env.DISPLAY, args: ARGS[backend] });
@@ -160,23 +244,19 @@ async function main(): Promise<void> {
           await openLab(page, `${screen === 'portrait' ? '&aspect=adaptive' : ''}${backend === 'webgl' ? '&backend=webgl' : ''}`);
           const st = await page.evaluate(() => (window as unknown as { __PIXEL_ENGINE__: { state(): { backend: string; resolution: { width: number; height: number } } } }).__PIXEL_ENGINE__.state());
           renderers.add(`${backend} ${screen}: ${st.backend}, ${st.resolution.width}×${st.resolution.height}`);
-          const seqs: { base: string; seq: Sequence }[] = (Object.keys(BASES) as (keyof typeof BASES)[]).map((b) => ({ base: b, seq: sweep(BASES[b], screen === 'portrait' ? PORTRAIT : 1) }));
-          if (screen === 'landscape') seqs.push({ base: 'zoom 1', seq: crateRun() }, { base: 'level', seq: panRun() });
-          for (const { base, seq } of seqs) {
+          for (const { base, seq, configs } of plan(screen, floors)) {
             const runs = new Map<string, GateBRun>();
             const stripAt = screen === 'landscape' && base === 'level' && seq.name === 'sweep' ? seq.windows.filter((_, k) => k % 4 === 0).map((w) => Math.floor((w.from + w.to) / 2)) : [];
-            for (const c of CONFIGS) {
-              const r = await runOn(page, c, seq, stripAt);
+            // each config's flat run comes before it, so its excess is known as soon as it has run
+            for (const c of configs) {
+              const r = await runOn(page, c, seq, c.strip ? stripAt : []);
               runs.set(c.name, r);
-              if (stripAt.length) {
+              if (c.strip && r.shots.length) {
                 const shots = r.shots.map((s) => ({ width: r.width, height: r.height, data: new Uint8ClampedArray(Buffer.from(s.rgba, 'base64')) }));
-                strips.push(column([textBox([{ text: `${backend} ${c.name}` }], 200), row(shots.map((s) => upscale(s, 1)))]));
+                strips.set(c.strip, [...(strips.get(c.strip) ?? []), column([textBox([{ text: `${backend} ${c.name}` }], 200), row(shots.map((s) => upscale(s, 1)))])]);
               }
               process.stdout.write(`\r${backend} ${screen} ${base} ${seq.name} ${c.name}: ${r.changed.length} frames (${((Date.now() - t0) / 1000).toFixed(0)} s)        `);
-            }
-            const flat = runs.get('flat')!;
-            for (const c of CONFIGS) {
-              const r = runs.get(c.name)!;
+              const flat = runs.get(c.flat)!;
               results.push({
                 backend,
                 screen,
@@ -186,6 +266,10 @@ async function main(): Promise<void> {
                 windows: seq.windows.map((w) => ({ label: w.label, raw: mean(r.changed.slice(w.from, w.to)), excess: mean(r.changed.slice(w.from, w.to).map((v, i) => v - flat.changed[w.from + i]!)) })),
                 shift: r.shift.filter(([dx, dy]) => dx || dy).length,
               });
+              if (floors.length) {
+                saveScreen(false);
+                if (c.strip && r.shots.length) writeStrip(c.strip);
+              }
             }
           }
           if (errors.length) console.log(`\n  ${backend} ${screen}: page errors: ${errors.slice(0, 5).join(' | ')}`);
@@ -199,48 +283,82 @@ async function main(): Promise<void> {
     stop(server);
   }
   console.log('\n');
-  writeFileSync(join(OUT, 'results.json'), JSON.stringify({ settle: SETTLE, densities: DENSITIES, renderers: [...renderers], results }, null, 1));
   console.log(`renderers: ${[...renderers].join('; ')}`);
-  report(results);
-  if (strips.length) {
-    const body = column(strips);
-    writeFileSync(join(OUT, 'strip.png'), encodePng(column([titleBar('gate b: the level-zoom sweep, steps 1, 5, 9, 13 (mid-step frames)', body.width), body])));
+  const rel = (f: string) => f.replace(`${ROOT}/`, '');
+  const wrote: string[] = [];
+  if (floors.length) {
+    saveScreen(true);
+    wrote.push(rel(join(OUT, 'screen.json')));
+  } else {
+    writeFileSync(join(OUT, 'results.json'), JSON.stringify({ settle: SETTLE, densities: DENSITIES, renderers: [...renderers], results }, null, 1));
+    report(results);
+    wrote.push(rel(join(OUT, 'results.json')));
   }
-  console.log(`wrote ${join(OUT, 'results.json').replace(`${ROOT}/`, '')}, ${join(OUT, 'strip.png').replace(`${ROOT}/`, '')} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+  for (const name of strips.keys()) wrote.push(rel(writeStrip(name)));
+  console.log(`wrote ${wrote.join(', ')} in ${((Date.now() - t0) / 1000).toFixed(0)} s`);
+}
+
+const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
+const passFail = (ok: boolean) => (ok ? 'pass' : 'FAIL');
+
+/**
+ * The sweep's pass line on `backend`, the plan's (a quarter of the way from calm@8's mean step to
+ * bad@32's, over every step they ran), and the two other readings: a line per step (calm and bad at
+ * that step) and one from their worst steps. `judge` reads a config's sweep steps all three ways.
+ */
+function readings(results: readonly Result[], backend: string) {
+  const stepsOf = (config: string) => results.filter((r) => r.backend === backend && r.config === config && r.seq === 'sweep').flatMap((r) => r.windows.map((w) => ({ where: `${r.screen} ${r.base} ${w.label}`, excess: w.excess })));
+  const calmSteps = stepsOf('calm@8');
+  const badSteps = stepsOf('bad@32');
+  const calmAt = new Map(calmSteps.map((w) => [w.where, w.excess]));
+  const badAt = new Map(badSteps.map((w) => [w.where, w.excess]));
+  const calm = mean(calmSteps.map((w) => w.excess));
+  const bad = mean(badSteps.map((w) => w.excess));
+  const line = calm + (bad - calm) / 4;
+  const worstOf = (steps: readonly { excess: number }[]) => Math.max(...steps.map((w) => w.excess));
+  const worstLine = worstOf(calmSteps) + (worstOf(badSteps) - worstOf(calmSteps)) / 4;
+  const judge = (config: string) => {
+    const steps = stepsOf(config);
+    const worst = steps.reduce((a, b) => (b.excess > a.excess ? b : a), steps[0]!);
+    const ratio = Math.max(...steps.map((w) => (w.excess - calmAt.get(w.where)!) / (((badAt.get(w.where)! - calmAt.get(w.where)!) / 4) || 1e-9)));
+    return { worst: worst.excess, where: worst.where, mean: mean(steps.map((w) => w.excess)), steps: steps.length, ratio, pass: { line: worst.excess <= line, perStep: ratio <= 1, worstLine: worst.excess <= worstLine } };
+  };
+  return { calm, bad, line, worstLine, judge };
 }
 
 function report(results: Result[]): void {
-  const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
   for (const backend of BACKENDS) {
     const of = (config: string, seq: string) => results.filter((r) => r.backend === backend && r.config === config && r.seq === seq).flatMap((r) => r.windows.map((w) => w.excess));
-    const line = (seq: string) => {
-      const calm = mean(of('calm@8', seq));
-      const bad = mean(of('bad@32', seq));
-      return { calm, bad, line: calm + (bad - calm) / 4 };
-    };
-    const sweepLine = line('sweep');
-    const crateLine = line('crate');
-    // the other readings: a line per step (calm and bad at that step), and one from the worst steps
-    const stepsOf = (config: string) => results.filter((r) => r.backend === backend && r.config === config && r.seq === 'sweep').flatMap((r) => r.windows.map((w) => ({ key: `${r.screen} ${r.base} ${w.label}`, excess: w.excess })));
-    const calmAt = new Map(stepsOf('calm@8').map((w) => [w.key, w.excess]));
-    const badAt = new Map(stepsOf('bad@32').map((w) => [w.key, w.excess]));
-    const worstOf = (config: string) => Math.max(...stepsOf(config).map((w) => w.excess));
-    const worstLine = worstOf('calm@8') + (worstOf('bad@32') - worstOf('calm@8')) / 4;
-    console.log(`${backend}: sweep pass line ${pct(sweepLine.line)} (calm ${pct(sweepLine.calm)}, bad ${pct(sweepLine.bad)}; from the worst steps ${pct(worstLine)}); crate pass line ${pct(crateLine.line)} (calm ${pct(crateLine.calm)}, bad ${pct(crateLine.bad)})`);
+    const crateCalm = mean(of('calm@8', 'crate'));
+    const crateBad = mean(of('bad@32', 'crate'));
+    const crateLine = crateCalm + (crateBad - crateCalm) / 4;
+    const sweep = readings(results, backend);
+    console.log(`${backend}: sweep pass line ${pct(sweep.line)} (calm ${pct(sweep.calm)}, bad ${pct(sweep.bad)}; from the worst steps ${pct(sweep.worstLine)}); crate pass line ${pct(crateLine)} (calm ${pct(crateCalm)}, bad ${pct(crateBad)})`);
     console.log(`  ${'config'.padEnd(12)} ${'sweep worst step'.padEnd(34)} ${'sweep mean'.padEnd(11)} ${'per step'.padEnd(18)} ${'worst line'.padEnd(11)} ${'crate'.padEnd(9)} pan (raw)`);
     for (const c of CONFIGS.filter((x) => x.set !== 'flat')) {
-      const steps = results.filter((r) => r.backend === backend && r.config === c.name && r.seq === 'sweep').flatMap((r) => r.windows.map((w) => ({ ...w, where: `${r.screen} ${r.base} ${w.label}` })));
-      const worst = steps.reduce((a, b) => (b.excess > a.excess ? b : a), steps[0]!);
+      const j = sweep.judge(c.name);
       const crate = mean(of(c.name, 'crate'));
       const pan = results.find((r) => r.backend === backend && r.config === c.name && r.seq === 'pan');
-      const passS = steps.every((s) => s.excess <= sweepLine.line) ? 'pass' : 'FAIL';
-      const passC = crate <= crateLine.line ? 'pass' : 'FAIL';
-      const ratio = Math.max(...stepsOf(c.name).map((w) => (w.excess - calmAt.get(w.key)!) / (((badAt.get(w.key)! - calmAt.get(w.key)!) / 4) || 1e-9)));
-      const perStep = `${ratio <= 1 ? 'pass' : 'FAIL'} (×${ratio.toFixed(2)})`;
-      const byWorst = worst.excess <= worstLine ? 'pass' : 'FAIL';
-      console.log(`  ${c.name.padEnd(12)} ${`${pct(worst.excess)} ${passS} (${worst.where})`.padEnd(34)} ${pct(mean(steps.map((s) => s.excess))).padEnd(11)} ${perStep.padEnd(18)} ${byWorst.padEnd(11)} ${`${pct(crate)} ${passC}`.padEnd(9)} ${pct(pan?.windows[0]?.excess ?? 0)} (${pct(pan?.windows[0]?.raw ?? 0)})`);
+      const perStep = `${passFail(j.pass.perStep)} (×${j.ratio.toFixed(2)})`;
+      console.log(`  ${c.name.padEnd(12)} ${`${pct(j.worst)} ${passFail(j.pass.line)} (${j.where})`.padEnd(34)} ${pct(j.mean).padEnd(11)} ${perStep.padEnd(18)} ${passFail(j.pass.worstLine).padEnd(11)} ${`${pct(crate)} ${passFail(crate <= crateLine)}`.padEnd(9)} ${pct(pan?.windows[0]?.excess ?? 0)} (${pct(pan?.windows[0]?.raw ?? 0)})`);
     }
   }
+}
+
+/** The screen's table: each floor at each density, read three ways; returns the rows for screen.json. */
+function screenReport(results: readonly Result[], floors: readonly Config[]) {
+  const rows = [];
+  for (const backend of BACKENDS) {
+    const sweep = readings(results, backend);
+    console.log(`${backend}: pass line ${pct(sweep.line)} (calm ${pct(sweep.calm)}, bad ${pct(sweep.bad)}: their mean steps over every sweep); from the worst steps ${pct(sweep.worstLine)}${QUICK ? '; the floors ran the landscape level sweep only (--quick)' : ''}`);
+    console.log(`  ${'floor'.padEnd(20)} ${'worst step'.padEnd(36)} ${'mean step'.padEnd(10)} ${'line'.padEnd(5)} ${'per step'.padEnd(14)} worst line`);
+    for (const c of floors.filter((x) => x.set !== 'flat')) {
+      const j = sweep.judge(c.name);
+      console.log(`  ${c.name.padEnd(20)} ${`${pct(j.worst)} (${j.where})`.padEnd(36)} ${pct(j.mean).padEnd(10)} ${passFail(j.pass.line).padEnd(5)} ${`${passFail(j.pass.perStep)} (×${j.ratio.toFixed(2)})`.padEnd(14)} ${passFail(j.pass.worstLine)}`);
+      rows.push({ backend, config: c.name, texel: c.texel, line: sweep.line, worstLine: sweep.worstLine, ...j });
+    }
+  }
+  return rows;
 }
 
 // ---- infrastructure (as scripts/film.ts) -----------------------------------------------------

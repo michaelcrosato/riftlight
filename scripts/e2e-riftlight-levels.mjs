@@ -5,7 +5,8 @@
 //   npm run build && npm run test:e2e -- riftlight-levels
 //
 // For designed levels 1, 6 and 12 and a rift (/?game=levellab&depth=N):
-//   build      the level builds (layout, critical path, mechanics) and renders a lit frame
+//   build      the level builds (layout, critical path, mechanics) and renders a lit frame;
+//              the floor is the theme's floor surface (a floor mesh mapped with it, with UVs)
 //   lights     the light pool keeps a constant number of PointLights (quality medium: 8);
 //              moving and recolouring many light requests compiles no new shaders; the
 //              pool's CPU update (average of 200) stays under a millisecond
@@ -50,6 +51,18 @@ export async function runRiftlightLevels(h) {
       const frame = await capture(page, `riftlight-levels-${tag}-${lv.depth}-start.png`);
       const colors = colorCount(frame);
       check(colors > 24, `${label}renders a lit level (${colors} colours)`);
+      // A flat level renders as many colours: the floor must be the theme's floor surface.
+      const surface = await E(() => {
+        const l = window.__LEVEL_LAB__.level;
+        const want = l.theme.surfaces?.floor?.texture ?? null;
+        let floor = null;
+        l.root.traverse((o) => {
+          if (!floor && o.isMesh && want && o.material?.map?.name === `tex:${want}` && o.geometry.getAttribute('normal')?.getY(0) === 1) floor = o;
+        });
+        const uv = floor?.geometry.getAttribute('uv');
+        return { want, found: !!floor, uvs: uv?.count ?? 0, verts: floor?.geometry.getAttribute('position').count ?? 0 };
+      });
+      check(surface.found && surface.uvs > 0 && surface.uvs === surface.verts, `${label}the floor is textured with ${surface.want} (${surface.found ? `${surface.uvs} UVs over ${surface.verts} vertices` : 'no floor mesh maps it'})`);
 
       // ---------------------------------------------------------- the light pool
       const lights = await E(async () => {

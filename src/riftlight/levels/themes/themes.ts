@@ -39,7 +39,38 @@ export interface LevelTheme extends ThemeDef {
   readonly propDensity: number;
   /** Wall height (back walls; front walls are cut low so the iso camera sees in). */
   readonly wallHeight: number;
+  /** Floor and wall textures; without one, the floor is the flat two-tone pattern and walls are flat. */
+  readonly surfaces?: { readonly floor?: ThemeSurface; readonly wall?: ThemeSurface };
 }
+
+/** A theme colour by name, or tinted by `k` as `tint` does (lighter for k > 0). */
+export type ThemeTone = ToneName | readonly [ToneName, number];
+export type ToneName = 'floor' | 'floorAlt' | 'wall' | 'trim' | 'cliff' | 'accent';
+
+/**
+ * A library texture (`TEXTURE_LIBRARY`, docs/ASSETS.md) in the theme's colours: each of its
+ * slots takes a theme tone, so a rift's shifted palette shifts the texture too.
+ */
+export interface ThemeSurface {
+  readonly texture: string;
+  readonly slots: Readonly<Record<string, ThemeTone>>;
+}
+
+// The surfaces themes share. Fill slots stay close in lightness: floors are a backdrop actors
+// read on. A floor also keeps few texel edges, or it shimmers as the camera zooms (Gate B,
+// docs/ASSETS.md; levels.test.ts holds every floor under the line): slots bound to one tone bake
+// as one colour, so the cobbles' lit and shadow rims take the stone's tone (stones on joints in
+// two colours) and the plates' lit edge takes the plate's (a calm floor, rivets and bevel kept).
+const FLAGSTONES: ThemeSurface = { texture: 'flagstones', slots: { joint: ['floor', -0.35], slab: 'floor', slab2: 'floorAlt' } };
+const COBBLES: ThemeSurface = { texture: 'cobbles', slots: { joint: ['floor', -0.4], shadow: 'floor', stone: 'floor', light: 'floor' } };
+const TILES: ThemeSurface = { texture: 'floor-tiles', slots: { joint: ['floor', -0.3], tile: 'floor', tile2: 'floorAlt' } };
+const PLATES: ThemeSurface = { texture: 'metal-plates', slots: { seam: ['floor', -0.45], shadow: ['floor', -0.2], plate: 'floor', light: 'floor' } };
+const GRASS: ThemeSurface = { texture: 'grass', slots: { dark: ['floor', -0.2], mid: 'floor', light: ['floor', 0.1] } };
+const MOSS: ThemeSurface = { texture: 'moss', slots: { dark: ['floor', -0.2], moss: 'floor', light: ['floor', 0.1] } };
+const DIRT: ThemeSurface = { texture: 'dirt', slots: { dark: ['floor', -0.2], earth: 'floor', pebble: ['floor', 0.12] } };
+const ICE: ThemeSurface = { texture: 'ice', slots: { deep: 'floorAlt', ice: 'floor', crack: ['floor', 0.18] } };
+const BRICKS: ThemeSurface = { texture: 'bricks', slots: { mortar: ['wall', -0.35], stone: 'wall', stone2: ['wall', 0.08] } };
+const STONE: ThemeSurface = { texture: 'stone', slots: { joint: ['wall', -0.4], shadow: ['wall', -0.18], stone: 'wall', light: ['wall', 0.08] } };
 
 export const THEMES = new Registry<LevelTheme>('theme', [
   {
@@ -59,6 +90,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['brazier', 'pillar', 'crate', 'rubble', 'banner', 'anvil', 'barrel', 'chest'],
     propDensity: 2.2,
     wallHeight: 2.2,
+    surfaces: { floor: FLAGSTONES, wall: BRICKS },
     song: 'forge',
   },
   {
@@ -78,6 +110,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['bones', 'statue', 'pillar', 'lantern', 'rubble', 'cage', 'candles'],
     propDensity: 2.4,
     wallHeight: 2.4,
+    surfaces: { floor: FLAGSTONES, wall: STONE },
     song: 'crypt',
     filters: ['vignette'],
   },
@@ -98,6 +131,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['rock', 'tree', 'banner', 'rubble', 'pillar', 'stone-ring', 'bush', 'signpost'],
     propDensity: 2.0,
     wallHeight: 1.6,
+    surfaces: { floor: GRASS, wall: STONE },
     song: 'gale',
   },
   {
@@ -117,6 +151,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['crystal', 'rock', 'bones', 'gold-pile', 'rubble'],
     propDensity: 2.6,
     wallHeight: 2.4,
+    surfaces: { floor: ICE, wall: STONE },
     song: 'frost',
   },
   {
@@ -136,6 +171,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['tree', 'mushroom', 'rock', 'statue', 'rubble', 'bush', 'flowers', 'toadstools', 'log'],
     propDensity: 3.2,
     wallHeight: 2.0,
+    surfaces: { floor: MOSS, wall: STONE },
     song: 'jungle',
   },
   {
@@ -155,6 +191,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['pillar', 'rock', 'banner', 'rubble', 'stone-ring', 'stump'],
     propDensity: 2.0,
     wallHeight: 2.0,
+    surfaces: { floor: COBBLES, wall: STONE },
     song: 'storm',
   },
   {
@@ -174,6 +211,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['tree', 'mushroom', 'bones', 'rock', 'log', 'stump', 'toadstools', 'bush'],
     propDensity: 3.0,
     wallHeight: 1.8,
+    surfaces: { floor: DIRT, wall: STONE },
     song: 'mire',
   },
   {
@@ -193,6 +231,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['statue', 'pillar', 'banner', 'crystal', 'bookshelf', 'table', 'candles'],
     propDensity: 2.0,
     wallHeight: 2.4,
+    surfaces: { floor: TILES, wall: BRICKS },
     song: 'echo',
   },
   {
@@ -212,6 +251,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['crystal', 'pillar', 'rubble', 'cage'],
     propDensity: 2.2,
     wallHeight: 2.0,
+    surfaces: { floor: TILES, wall: STONE },
     song: 'nexus',
   },
   {
@@ -231,6 +271,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['pillar', 'statue', 'banner', 'bones', 'brazier', 'candles', 'bench'],
     propDensity: 2.2,
     wallHeight: 2.6,
+    surfaces: { floor: FLAGSTONES, wall: BRICKS },
     song: 'bloodmoon',
   },
   {
@@ -250,6 +291,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['pillar', 'crystal', 'statue', 'lantern', 'bookshelf', 'table', 'chest'],
     propDensity: 2.0,
     wallHeight: 2.4,
+    surfaces: { floor: PLATES, wall: BRICKS },
     song: 'gravewell',
   },
   {
@@ -269,6 +311,7 @@ export const THEMES = new Registry<LevelTheme>('theme', [
     props: ['rubble', 'pillar', 'statue', 'crate', 'bones', 'barrel', 'sack', 'log'],
     propDensity: 2.6,
     wallHeight: 2.0,
+    surfaces: { floor: COBBLES, wall: STONE },
     song: 'ruins',
   },
 ]);
