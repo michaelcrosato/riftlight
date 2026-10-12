@@ -8,6 +8,24 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.28.0
+
+- **80 icons and sprites** in `TEXTURE_LIBRARY` (`npm run tex -- zoo sprite`), 60 more, for
+  `spriteSheet`, `hudSprite` and `SpriteBatch`. Items (20): `axe-icon`, `mace-icon`,
+  `staff-icon`, `wand-icon`, `dagger-icon`, `spear-icon`, `round-shield-icon`, `gloves-icon`,
+  `belt-icon`, `cloak-icon`, `quiver-icon`, `arrows-icon`, `bomb-icon`, `torch-icon`, `map-icon`,
+  `book-icon`, `coin-pouch-icon`, `meat-icon`, `herb-icon`, `rune-stone-icon`. Skills (15):
+  `fireball-icon`, `frost-nova-icon`, `lightning-bolt-icon`, `poison-cloud-icon`, `heal-icon`,
+  `shield-bubble-icon`, `dash-icon`, `whirlwind-icon`, `leap-icon`, `arrow-volley-icon`,
+  `summon-icon`, `curse-icon`, `aura-icon`, `trap-icon`, `totem-icon`. UI glyphs (12):
+  `arrow-up`, `arrow-down`, `arrow-left`, `arrow-right`, `check`, `cross`, `plus`, `minus`,
+  `lock`, `gear`, `magnifier`, `quest-marker`. Critters (6, animated): `bat`, `rat`, `spider`,
+  `slime`, `butterfly`, `firefly`. Effects (7, animated): `fire-burst`, `ice-shards`,
+  `lightning-spark`, `poison-bubbles`, `heal-sparkles`, `blood-splat`, `dust-puff`. Each was
+  looked at at 1× and 2× on night, ink, green and slate panels and redrawn where it didn't read
+  (a rat whose frames barely moved, a leap that read as a "2", a quiver that read as a carrot).
+  The 20 earlier ones are unchanged.
+
 ## 0.27.0
 
 - **63 tiling surfaces** in `TEXTURE_LIBRARY` (docs/ASSETS.md *Textures*; `npm run tex -- zoo
