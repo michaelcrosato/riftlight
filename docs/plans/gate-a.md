@@ -67,7 +67,9 @@ The judge images come from `npx tsx scripts/gate-a.ts judge <DIR>/model.ts` for 
 
 The order of the two images is decided by a seeded coin per brief:
 `new Rng('gate-a:<brief>').next()` below 0.5 shows arm (a) as image 1, otherwise arm (b). The
-judge isn't told which arm is which.
+judge isn't told which arm is which. Its paths mustn't tell it either: copy the two images to
+`<brief>-1.png` and `<brief>-2.png` in a folder whose path names neither arm (the Phase 2a run first
+gave the judges paths ending `-a-3/` and `-b-2/`; see *Results*).
 
 ## Scoring (§12)
 
@@ -78,3 +80,72 @@ judge isn't told which arm is which.
 - Record with the numbers: the arms' "done" differs as §12 sets it. Arm (a) clears
   `inspectObject`'s warnings (asset hygiene); arm (b) clears every `model -- check` warning,
   including readability rules (floating parts, rods, lightness contrast) that arm (a) never sees.
+
+## Results: the Phase 2a run (2026-10-12)
+
+**Failed.** The plan stops. Escalation [#54](https://github.com/michaelcrosato/riftlight/issues/54)
+recommends keeping Phases 1–2a and asks a human to choose: stop there, fix what lost and run Gate A
+again, or revert.
+
+| Brief | Arm (a) runs | Median (a) | Arm (b) runs | Median (b) | b ÷ a |
+| --- | --- | --- | --- | --- | --- |
+| hand cart | 80,855 · 86,611 · 81,421 | 81,421 | 85,643 · 91,429 · 92,754 | 91,429 | 1.12 |
+| stone archway | 83,710 · 85,729 · 84,031 | 84,031 | 85,772 · 94,467 · 89,968 | 89,968 | 1.07 |
+| campfire ring | 151,330 · 156,088 · 150,373 | 151,330 | 113,683 · 95,442 · 113,186 | 113,186 | 0.75 |
+| weapon rack | 92,042 · 133,393 · 117,234 | 117,234 | 132,202 · 135,764 · 126,871 | 132,202 | 1.13 |
+| **Σ medians** | | **434,016** | | **426,785** | **R = 0.983** |
+
+Most of every run is fixed overhead. The judges, which only read their prompt and open two images,
+used 64.5–65.8k, an upper bound on it. Take 60–65.6k off each median and (b) ÷ (a) is 0.96.
+
+**Done differed, as §12 sets it.** Arm (a) cleared `inspectObject`'s hygiene warnings. Arm (b) also
+had to clear warnings arm (a) never sees, and did: lightness, the triangle budget and a hidden part
+(campfire), z-fighting, and moss too close in lightness to stone (archway). Every run ended at its
+arm's "done".
+
+**Judging.** The judge images are the median runs, `gate-a/<brief>-a.png` and `gate-a/<brief>-b.png`.
+- The coin put arm (a) first in all four briefs, a 1 in 16 chance.
+- The first two sets of judges were given the images by paths that named the arm (`…-a-3/`,
+  `…-b-2/`). They weren't told what a and b meant, but the label was visible.
+- So three sets of fresh judges ran. The protocol set decides the gate. The swapped set (the order
+  reversed) and the neutral set (the images copied to `<brief>-1.png` and `-2.png`, in the protocol
+  order) are outside the protocol and only test it.
+
+| Brief | Protocol: (a) first, labelled paths | Swapped: (b) first, labelled | Neutral names: (a) first |
+| --- | --- | --- | --- |
+| hand cart | (a): "slatted golden floor, brown plank sides, wheels … and bright red shafts each show up"; (b) "a flat salmon tray whose wheel is half hidden under the bed" | (a) | (a) |
+| stone archway | (a): "separate wedge stones in alternating light and dark tones"; (b) "looks like a bent pipe" | (a) | (a) |
+| campfire ring | (a): "jagged multi-tongued flames", "log seats and a firewood bundle"; (b) "a single solid yellow cone that reads more like a tent" | (a) | (a) |
+| weapon rack | (b): "bright terracotta rack stands out clearly", each weapon reads | (a): "the weapons crowd together and overlap" in (b) | (b) |
+
+(b) won 1 of 4 outright. With R above 0.8 a pass needs 3 wins, so **the gate fails**. All three sets
+give (a) the hand cart, archway and campfire. The weapon rack, (b)'s only win, went to (a) when the
+order was swapped.
+
+What lost it for (b) was mostly colour and light, plus some shape and scope:
+- **Archway.** Nine slab voussoirs, all one colour, with 2.4° gaps of 4–6 cm (about a pixel at game
+  scale), so the ring reads as a tube. The Kit archway set light stones on a dark backing ring that
+  reads as mortar.
+- **Hand cart.** The bed, sides and wheels are all one salmon; only the thin rails and shafts are
+  dark red. One judge also saw a wheel half hidden under the bed.
+- **Campfire.**
+  - (b)'s flame is a glow part. In the preview a glow part is a flat unlit fill, and this one
+    covers most of the logs.
+  - The Kit arm drew its flames as lit cones. It also added log seats and a woodpile beyond the
+    brief, which two judges credited. That added scope helps explain why the campfire was (a)'s
+    most expensive brief.
+- **Weapon rack.** The swapped judge found (b)'s weapons crowded and its sword slab-like.
+
+Nothing in `model -- check` flags a large single-colour mass, or a glow part that hides the model.
+Its lightness check skips glow parts. Where it did fire (moss on stone, ash and stones against
+logs), the agents fixed it.
+
+Cost:
+
+| Item | Tokens |
+| --- | --- |
+| 24 runs | 2.56M |
+| protocol judges | 0.26M |
+| swapped judges | 0.26M |
+| neutral judges | 0.26M |
+| **total** | **3.34M** |
