@@ -92,6 +92,15 @@ describe('inspect: report', () => {
     expect(d.clips.added).toEqual(['Run']);
     expect(d.clips.changed).toEqual(['Idle 2s → 2.5s']);
   });
+
+  it('a recoloured asset gets a new fingerprint', () => {
+    const red = new Group();
+    red.add(box(1, 1, 1, 0xff0000));
+    const blue = new Group();
+    blue.add(box(1, 1, 1, 0x0000ff));
+    expect(inspectObject(red).fingerprint).not.toBe(inspectObject(blue).fingerprint);
+    expect(diffReports(inspectObject(red), inspectObject(blue)).same).toBe(false);
+  });
 });
 
 describe('inspect: render', () => {

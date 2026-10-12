@@ -71,7 +71,7 @@ export interface InspectReport {
   /** The heaviest meshes. */
   readonly topMeshes: readonly MeshInfo[];
   readonly warnings: readonly string[];
-  /** Stable hash of geometry + structure: changes when the asset changes. */
+  /** Stable hash of geometry, colours and structure: changes when the asset changes. */
   readonly fingerprint: string;
 }
 
@@ -115,9 +115,10 @@ export function inspectObject(object: Object3D, o: InspectOptions = {}): Inspect
   const mirrored: string[] = [];
   let skinned = false;
   let hash = 2166136261;
-  const mix = (v: number) => {
-    hash = Math.imul(hash ^ (Math.round(v * 1e4) | 0), 16777619) >>> 0;
+  const mixInt = (v: number) => {
+    hash = Math.imul(hash ^ v, 16777619) >>> 0;
   };
+  const mix = (v: number) => mixInt(Math.round(v * 1e4) | 0);
   const a = new Vector3();
   const b = new Vector3();
   const c = new Vector3();
@@ -167,6 +168,10 @@ export function inspectObject(object: Object3D, o: InspectOptions = {}): Inspect
       if (area < 1e-9) degenerate++;
     }
     for (let i = 0; i < pos.count; i += Math.max(1, Math.floor(pos.count / 64))) mix(pos.getX(i) + 3 * pos.getY(i) + 7 * pos.getZ(i));
+    // colours too: a recoloured asset is a changed asset
+    for (const m of ms) mixInt((m as Material & { color?: { getHex(): number } }).color?.getHex() ?? -1);
+    const vc = g.getAttribute('color');
+    if (vc) for (let i = 0; i < vc.count; i += Math.max(1, Math.floor(vc.count / 64))) mix(vc.getX(i) + 3 * vc.getY(i) + 7 * vc.getZ(i));
     mix(t);
     mix(pos.count);
     const wp = mesh.getWorldPosition(new Vector3());

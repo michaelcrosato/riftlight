@@ -38,6 +38,8 @@ export interface Compiled {
   readonly parts: CompiledPart[];
   readonly pivots: CompiledPivot[];
   readonly problems: string[];
+  /** Every named part or group: the parts it covers, `parts.slice(start, end)`. */
+  readonly named: readonly { readonly name: string; readonly start: number; readonly end: number }[];
 }
 
 export interface Bounds {
@@ -219,5 +221,6 @@ export function compileParts(parts: readonly Part[]): Compiled {
     node.done = true;
   };
   for (const n of ons) resolve(n);
-  return { parts: out, pivots, problems };
+  const named = [...names].flatMap(([name, rs]) => rs.map((r) => ({ name, start: r.start, end: r.end })));
+  return { parts: out, pivots, problems, named };
 }
