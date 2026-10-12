@@ -1,4 +1,4 @@
-import { Group, Vector3 } from 'three/webgpu';
+import { Group, type Mesh, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { Actor } from '../actors/Actor';
 import { EventBus } from '../core/events';
@@ -112,6 +112,23 @@ describe('Embers: brazier affixes', () => {
   it('`brazier.area` reaches further', () => {
     expect(blast([], 4).monster).toBe(0);
     expect(blast([inc('brazier.area', 1)], 4).monster).toBeGreaterThan(0);
+  });
+  it('a blast puts the brazier out (its fire meshes hide) until it lights again', () => {
+    const r = rig(1);
+    const b = r.el('embers', 'brazier');
+    const brazier = r.level.root.children.find((o) => o.name === 'embers:brazier' && Math.hypot(o.position.x - b.x, o.position.z - b.z) < 0.1)!;
+    const fire: Mesh[] = [];
+    brazier.traverse((o) => {
+      if (['brazier:flame', 'brazier:core', 'brazier:heart:glow'].includes(o.name)) fire.push(o as Mesh);
+    });
+    expect(fire.length).toBe(3);
+    expect(fire.every((m) => m.visible)).toBe(true);
+    const target = r.level.targets().find((t) => Math.hypot(t.position.x - b.x, t.position.z - b.z) < 0.1)!;
+    target.takeHit({ source: r.hero, tags: ['attack'], damage: { physical: 1 }, crit: false });
+    r.step(0.3);
+    expect(fire.filter((m) => m.visible).map((m) => m.name)).toEqual([]);
+    r.step(18);
+    expect(fire.every((m) => m.visible)).toBe(true);
   });
   it('`brazier.selfIgnite`: blasts set the hero alight instead of hurting it', () => {
     expect(blast([]).hero).toBeGreaterThan(0);

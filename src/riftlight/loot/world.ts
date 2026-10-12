@@ -18,6 +18,7 @@ import {
   type BufferGeometry,
   CylinderGeometry,
   Group,
+  Matrix4,
   Mesh,
   MeshBasicNodeMaterial,
   type Object3D,
@@ -25,6 +26,7 @@ import {
   Vector3,
 } from 'three/webgpu';
 import type { GameContext, PaletteColor } from '../../engine';
+import { buildModel } from '../../engine/model';
 import { setLookLayer } from '../../engine/render/lookLayer';
 import { toonMaterial } from '../../engine/render/toon';
 import { PALETTE } from '../../engine/palette';
@@ -433,17 +435,9 @@ export class WorldLoot {
       case 'mace':
       case 'staff':
       case 'wand':
-      case 'sceptre': {
-        const len = look === 'dagger' ? 0.35 : look === 'staff' ? 0.9 : 0.6;
-        this.box(g, len, 0.05, 0.08, look === 'staff' || look === 'wand' ? PALETTE.orange : PALETTE.mist, 0.05);
-        this.box(g, 0.06, 0.06, 0.24, colour, -len / 2 + 0.12);
-        if (look === 'axe' || look === 'mace' || look === 'sceptre') this.box(g, 0.14, 0.08, 0.2, colour, len / 2 - 0.05);
-        break;
-      }
+      case 'sceptre':
       case 'bow':
-        this.box(g, 0.08, 0.05, 0.7, PALETTE.orange);
-        this.box(g, 0.2, 0.04, 0.04, colour, 0.1, 0, 0.33);
-        this.box(g, 0.2, 0.04, 0.04, colour, 0.1, 0, -0.33);
+        g.add(weaponOnGround(look, colour));
         break;
       case 'shield':
       case 'focus':
@@ -493,6 +487,25 @@ export class WorldLoot {
     this.geometries.clear();
     this.beamMaterials.clear();
   }
+}
+
+/**
+ * The weapon the hero holds (the library model of its class), laid flat on the ground along X,
+ * its grip in the item's rarity colour: the model's +Y (along the weapon) onto +X and the
+ * thinner of its width (X) and thickness (Z) up, so a blade lies on its flat and the bow on its
+ * side (not standing on its tips, arched by its curl).
+ */
+export function weaponOnGround(kind: string, colour: number): Group {
+  const b = buildModel(kind, { palette: { grip: colour } });
+  const c = b.bounds;
+  b.object.position.set(-(c.min[0] + c.max[0]) / 2, -(c.min[1] + c.max[1]) / 2, -(c.min[2] + c.max[2]) / 2);
+  const flat = new Group();
+  const widthUp = c.size[0] < c.size[2];
+  const basis = widthUp ? [new Vector3(0, 1, 0), new Vector3(1, 0, 0), new Vector3(0, 0, -1)] : [new Vector3(0, 0, 1), new Vector3(1, 0, 0), new Vector3(0, 1, 0)];
+  flat.quaternion.setFromRotationMatrix(new Matrix4().makeBasis(basis[0]!, basis[1]!, basis[2]!));
+  flat.position.y = (widthUp ? c.size[0] : c.size[2]) / 2;
+  flat.add(b.object);
+  return flat;
 }
 
 function flatDist(a: Vector3, b: Vector3): number {

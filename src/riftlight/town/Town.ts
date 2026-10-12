@@ -440,15 +440,15 @@ export class Town implements StageWorld {
       k.blockers.push({ kind: 'circle', x, z, r: 0.45 });
     }
     for (const t of trees) k.statics.push(t);
-    // barrels, crates, hay
-    const crate = (sx: number, sy: number, s = 0.7) => {
+    // crates, a barrel and a sack: library models (docs/ASSETS.md); the hay bale is a kit cylinder
+    const dress = (id: string, sx: number, sy: number, o: Parameters<Kit['model']>[2] = {}) => {
       const [x, z] = iso(sx, sy);
-      k.box([s, s, s], 'orange', [x, s / 2, z], { top: 'sand', rot: [0, rng.range(0, 40), 0] });
-      k.blockers.push({ kind: 'circle', x, z, r: s * 0.6 });
+      k.model(id, [x, 0, z], { yaw: rng.range(0, 40), ...o });
     };
-    crate(-6.8, 5.4);
-    crate(-6.1, 6.1, 0.55);
-    crate(7.4, 5.8);
+    dress('crate', -6.8, 5.4);
+    dress('barrel', -6.1, 6.2);
+    dress('crate', 7.4, 5.8);
+    dress('sack', 6.7, 6.4, { seed: 3 });
     const [hx, hz] = iso(-12.6, 3.6);
     k.cyl(0.6, 0.6, 0.8, 8, 'sand', [hx, 0.4, hz], { rot: [0, 0, 90] });
     k.blockers.push({ kind: 'circle', x: hx, z: hz, r: 0.6 });

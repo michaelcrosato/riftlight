@@ -1,6 +1,6 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
-import { buildProp } from '../themes/props';
+import { buildProp, fireMeshes } from '../themes/props';
 import { asMechanicLevel, heroHas, heroScale, mechanicDamage, monsterScaleDamage, perRoom, PropTarget, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 import type { LightHandle } from '../../../engine/render/lights';
@@ -53,6 +53,8 @@ export const EMBERS: LevelMechanicDef = {
       target: PropTarget;
       flames: Mesh[];
       light: LightHandle | null;
+      /** The light's intensity while it burns. */
+      intensity: number;
       lit: boolean;
       fuse: number;
       chain: number;
@@ -65,10 +67,10 @@ export const EMBERS: LevelMechanicDef = {
       p.root.name = 'embers:brazier';
       level.root.add(p.root);
       const at = new Vector3(e.x, 1.2, e.z);
-      const flames = p.root.children.filter((m) => (m as Mesh).material && ((m as Mesh).material as { name: string }).name.startsWith('glow')) as Mesh[];
+      const flames = fireMeshes(p.root);
       const g = p.glow!;
       const light = level.light({ position: [e.x + g.offset[0], g.offset[1], e.z + g.offset[2]], color: g.color, intensity: g.intensity, radius: g.radius, flicker: 'brazier', name: 'brazier' });
-      const b: Brazier = { at, target: null!, flames, light, lit: true, fuse: -1, chain: 0, relight: 0, puff: level.rng.range(0, 1) };
+      const b: Brazier = { at, target: null!, flames, light, intensity: g.intensity, lit: true, fuse: -1, chain: 0, relight: 0, puff: level.rng.range(0, 1) };
       b.target = new PropTarget('brazier', new Vector3(e.x, 0, e.z), 0.45, (hit) => {
         if (!b.lit || b.fuse >= 0) return false;
         b.fuse = 0.12;
@@ -136,7 +138,7 @@ export const EMBERS: LevelMechanicDef = {
             if (b.relight <= 0) {
               b.lit = true;
               for (const f of b.flames) f.visible = true;
-              b.light?.update({ intensity: level.theme.torch.intensity });
+              b.light?.update({ intensity: b.intensity });
               level.emit('embers', 'relight', b.at);
             }
           } else if (hero && hero.position.distanceToSquared(b.at) < 196) {

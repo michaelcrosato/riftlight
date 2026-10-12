@@ -1,8 +1,9 @@
 /**
  * A tiny construction kit for building places out of primitives: boxes, prisms, cones,
- * discs and roofs in palette colours, placed in a local frame (a building's own axes),
- * merged into one mesh per material at the end (`mergeStaticMeshes`), plus 2D blockers
- * (circles and rotated boxes) that the stage's `collide()` pushes actors out of.
+ * discs and roofs in palette colours, and library models (`model`: the engine's ModelDefs,
+ * docs/ASSETS.md), placed in a local frame (a building's own axes), merged into one mesh per
+ * material at the end (`mergeStaticMeshes`), plus 2D blockers (circles and rotated boxes) that
+ * the stage's `collide()` pushes actors out of. New dressing comes from the library.
  */
 import {
   BoxGeometry,
@@ -18,6 +19,9 @@ import {
   Vector3,
 } from 'three/webgpu';
 // Direct module imports (not the engine index) so node tools can load this file without Rapier.
+import { buildModel } from '../../engine/model/build';
+import type { ModelBuild } from '../../engine/model/build';
+import type { Binding } from '../../engine/model/expand';
 import { PALETTE, type PaletteColor } from '../../engine/palette';
 import { mergeStaticMeshes } from '../../engine/render/merge';
 import { toonMaterial } from '../../engine/render/toon';
@@ -40,6 +44,7 @@ export interface PrimOptions {
 }
 
 const DEG = Math.PI / 180;
+const UP = new Vector3(0, 1, 0);
 
 /** Flat-shaded copy (faceted low-poly look for round primitives). */
 export function faceted(geo: BufferGeometry): BufferGeometry {
@@ -162,6 +167,26 @@ export class Kit {
     const geo = new ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
     geo.translate(0, 0, -0.06);
     return this.place(new Mesh(faceted(geo), mat(color)), [x, y, 0], { rot: [0, 90, 0] });
+  }
+
+  /**
+   * A library model at `at` in the current frame, turned `yaw` degrees, merged with the rest;
+   * it blocks its footprint (a box turned with it) unless `block` is false. Returns the build
+   * (its `light`, anchors).
+   */
+  model(id: string, at: V3, o: { yaw?: number; params?: Readonly<Record<string, number>>; palette?: Readonly<Record<string, Binding>>; seed?: number; block?: boolean } = {}): ModelBuild {
+    const b = buildModel(id, { ...(o.params ? { params: o.params } : {}), ...(o.palette ? { palette: o.palette } : {}), ...(o.seed !== undefined ? { seed: o.seed } : {}) });
+    b.object.position.set(...at);
+    b.object.rotation.y = (o.yaw ?? 0) * DEG;
+    this.top.add(b.object);
+    this.statics.push(b.object); // a Group: build() merges its meshes and leaves their (shared) geometry alone
+    if (o.block !== false) {
+      const { min, max } = b.bounds;
+      const centre = new Vector3((min[0] + max[0]) / 2, 0, (min[2] + max[2]) / 2).applyAxisAngle(UP, b.object.rotation.y).add(new Vector3(...at));
+      const p = this.world([centre.x, 0, centre.z]);
+      this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: (max[0] - min[0]) / 2, hd: (max[2] - min[2]) / 2, rot: this.worldYaw() * DEG + b.object.rotation.y });
+    }
+    return b;
   }
 
   blockCircle(x: number, z: number, r: number): void {
