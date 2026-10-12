@@ -10,6 +10,7 @@ import { boundsOf, compileParts, type Bounds, type CompiledPart } from './compil
 import { expandDef, partLabel, type ModelOptions } from './expand';
 import { layoutModel, modelDef } from './build';
 import { MODEL_LIBRARY } from './library';
+import { readabilityWarnings } from './readability';
 import { BOX_KINDS, SEG_RANGE } from './prims';
 import type { ModelDef, Part, Vec3 } from './types';
 
@@ -172,6 +173,7 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
     const who = labels.length > 1 ? `${labels.length} parts are (${labels.slice(0, 4).join(', ')}${labels.length > 4 ? ', …' : ''})` : `${labels[0]} is`;
     warnings.push(`${who} ${size} m across: rods under ${MIN_THICKNESS} m vanish at 480×270; thicken to ${MIN_THICKNESS} m or more`);
   }
+  warnings.push(...readabilityWarnings(parts, model.palette, model.floats));
   const largest = Math.max(...b.size);
   const budget = triangleBudget(largest);
   if (layout.tris > budget) warnings.push(`${layout.tris} triangles is over the budget of ${budget} for a model ${r2(largest)} m across: fewer sides (seg) or fewer parts`);

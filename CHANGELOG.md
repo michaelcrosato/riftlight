@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.18.0
+
+- `validateModel` / `checkModel` warn about what won't read at 480×270: a part hidden inside
+  another (convex) part, coplanar faces of different colours (z-fighting; bottoms on the floor
+  excepted), and touching large masses whose colours differ by less than 0.08 in OKLab lightness;
+  many alike are one line.
+- `Compiled.named`: every named part or group and the parts it covers.
+- The built-in models were fixed where their sheets showed it: the barrel's hoops match its ten
+  sides, the lamp post's lantern is a glowing box under a hood (the lamp post drops from 248
+  triangles to 108), the statue's sword stands clear of the robe, the well's roof rests on its
+  posts, the market stall's crates clear its legs, and the greatsword's sub-pixel edge stripe is
+  gone.
+
 ## 0.17.0
 
 - **Models as data** (src/engine/model/, docs/plans/asset-system.md): a `ModelDef` is keyed

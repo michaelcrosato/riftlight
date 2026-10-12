@@ -326,7 +326,7 @@ describe('buildModel', () => {
 
   it('anchors, colliders and the light request', () => {
     const lamp = buildModel('lamp-post');
-    expect(lamp.light).toEqual({ at: [0.42, 1.78, 0], color: PALETTE.sand, intensity: 6, radius: 6, flicker: 'candle' });
+    expect(lamp.light).toEqual({ at: [0.42, 1.74, 0], color: PALETTE.sand, intensity: 6, radius: 6, flicker: 'candle' });
     expect(buildModel('lamp-post', { light: { color: 0xff8800, intensity: 3 } }).light).toMatchObject({ color: 0xff8800, intensity: 3, radius: 6 });
     expect(() => buildModel('lamp-post', { light: { c: 'nope' } })).toThrow(/slot 'nope'/); // after a cached build too
     const c = lamp.colliders[0]!;

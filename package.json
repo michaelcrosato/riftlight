@@ -1,7 +1,7 @@
 {
   "name": "pixel-engine",
   "private": true,
-  "version": "0.17.0",
+  "version": "0.18.0",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
   "scripts": {
@@ -24,7 +24,8 @@
     "monster": "tsx scripts/riftlight/monster.ts",
     "playtest": "tsx scripts/riftlight/playtest.ts",
     "balance": "tsx scripts/riftlight/balance.ts",
-    "inspect": "tsx scripts/inspect.ts"
+    "inspect": "tsx scripts/inspect.ts",
+    "model": "tsx scripts/model.ts"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",

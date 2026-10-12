@@ -52,7 +52,8 @@
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON; `npm run balance`
 //                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
-//                 their JSON, CSV and PNGs.
+//                 their JSON, CSV and PNGs; `npm run model` checks the library in under 10 s,
+//                 draws a sheet, a compare sheet and a zoo, and finds and diffs models.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
@@ -1093,6 +1094,35 @@ async function runTools(browserExe) {
     check(diff.code === 0 && !d.same && d.counts.meshes[2] === 1 && d.clips.removed.includes('Spin'), `diff coin tree: meshes +${d.counts.meshes[2]}, clips -${d.clips.removed.join(',')}`);
   } catch (e) {
     check(false, `inspect crashed: ${e.message}`);
+  }
+
+  console.log('\n▶ tools: npm run model');
+  try {
+    const out = new URL('model/', OUT);
+    await rm(out, { recursive: true, force: true });
+    const m = (...args) => run('npx', ['tsx', 'scripts/model.ts', ...args, '--out', '.scratch/e2e/model']);
+    const t0 = Date.now(); // real time: the check's own budget
+    const checked = await m('check');
+    const secs = (Date.now() - t0) / 1000; // real time: the check's own budget
+    check(checked.code === 0 && /\b0 with problems/.test(checked.out) && secs < 10, `check exits 0 in ${secs.toFixed(1)} s: ${checked.out.trim().split('\n').pop()}`);
+    const sheet = await m('sheet', 'market-stall', '--labels', '--rig');
+    const s = JSON.parse(await readFile(new URL('market-stall.json', out), 'utf8'));
+    check(sheet.code === 0 && s.tris > 500 && s.draws === s.materials && s.problems.length === 0, `sheet market-stall: ${s.tris} tris, ${s.draws} draws`);
+    const p = await pngSize(new URL('market-stall.png', out));
+    check(p.width > 1000 && p.height > 500 && p.bytes > 10000, `market-stall.png ${p.width}×${p.height}`);
+    // a re-bound slot is a new version: diff says what changed, --compare draws the old one
+    const diff = await m('diff', 'market-stall', '--palette', 'cloth=blue', '--json');
+    const dj = diff.code === 0 ? JSON.parse(diff.out) : { recoloured: [], moved: [] };
+    check(dj.recoloured.length === 3 && dj.recoloured.every((r) => r.endsWith('red → blue')) && dj.moved.length === 0, `diff after a palette change names the 3 recoloured stripes: ${dj.recoloured.join('; ')}${diff.code ? `\n    ${tail(diff.out)}` : ''}`);
+    const compared = await m('sheet', 'market-stall', '--palette', 'cloth=blue', '--compare', '--json');
+    check(compared.code === 0 && JSON.parse(await readFile(new URL('market-stall.json', out), 'utf8')).compared === true, 'sheet --compare finds the previous version');
+    const zoo = await m('zoo', 'containers');
+    const z = await pngSize(new URL('zoo-containers.png', out));
+    check(zoo.code === 0 && z.width > 300 && z.bytes > 5000, `zoo containers: ${z.width}×${z.height}`);
+    const found = await m('find', 'container');
+    check(found.code === 0 && /barrel/.test(found.out) && /crate/.test(found.out) && /tok/.test(found.out), 'find container lists the barrel and the crate with token estimates');
+  } catch (e) {
+    check(false, `model crashed: ${e.message}`);
   }
 }
 
