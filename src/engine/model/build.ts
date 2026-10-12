@@ -148,6 +148,16 @@ export function collidersOf(kind: ExpandedModel['collider'], compiled: Compiled,
   const [sx, sy, sz] = bounds.size;
   if (kind === 'none' || !(sx > 0 || sy > 0 || sz > 0)) return [];
   if (kind === 'box') return [{ kind: 'box', center, half: [sx / 2, sy / 2, sz / 2] }];
+  if (kind === 'parts') {
+    // a box round each solid part: openings between parts stay open
+    return compiled.parts
+      .filter((p) => !p.glow && p.collide !== false)
+      .map((p): ColliderData => {
+        const b = boundsOf([p]);
+        return { kind: 'box', center: [(b.min[0] + b.max[0]) / 2, (b.min[1] + b.max[1]) / 2, (b.min[2] + b.max[2]) / 2], half: [b.size[0] / 2, b.size[1] / 2, b.size[2] / 2] };
+      })
+      .filter((c) => c.kind === 'box' && c.half.every((h) => h > 0));
+  }
   if (kind === 'cyl') return [{ kind: 'cyl', center, radius: Math.max(sx, sz) / 2, halfHeight: sy / 2 }];
   const seen = new Set<string>();
   const points: number[] = [];

@@ -12,9 +12,16 @@ import type { Engine, Framing, GameContext, LightHandle } from '../engine';
 import { buildModel, type ModelBuild, type ModelDef, type Part } from '../engine/model';
 import { bakeTexture, meanColour, TEXTURE_LIBRARY, TextureCatalog, textureDef } from '../engine/texture';
 
-/** The scene's surfaces and their textures in the library set. */
-const SURFACES = { floor: 'cobbles', wall: 'bricks', crate: 'planks' } as const;
-type Surface = keyof typeof SURFACES;
+/**
+ * The scene's surfaces: the library's `cobbles`, `bricks` and `planks` as they were when Gate B
+ * was measured (engine 0.22), pinned here so the record reproduces when the library redraws them.
+ */
+const PINNED = {
+  floor: textureDef({ id: 'gate-b-cobbles', about: 'Rounded cobblestones with dark joints (cobbles, 0.22)', tags: [], size: [16, 16], tile: true, palette: { joint: 'night', stone: 'slate', stone2: 'mist' }, layers: [{ pattern: 'cobbles', colors: ['joint', 'stone', 'stone2'], cells: 3, gap: 1, seed: 4 }] }),
+  wall: textureDef({ id: 'gate-b-bricks', about: 'Stone bricks in courses over dark mortar (bricks, 0.22)', tags: [], size: [16, 16], tile: true, palette: { mortar: 'night', stone: 'slate', stone2: 'mist' }, layers: [{ pattern: 'bricks', colors: ['mortar', 'stone', 'stone2'], w: 8, h: 4, seed: 2 }] }),
+  crate: textureDef({ id: 'gate-b-planks', about: 'Floor boards with gaps and staggered butt joints (planks, 0.22)', tags: [], size: [16, 16], tile: true, palette: { gap: 'plum', wood: 'red', wood2: 'orange' }, layers: [{ pattern: 'planks', colors: ['gap', 'wood', 'wood2'], w: 4, length: 16, grain: 0.3, seed: 3 }] }),
+};
+type Surface = keyof typeof PINNED;
 
 /** Calibration: the deliberately bad texture (1-texel checker) and the calm one (two-colour blobs, one per tile). */
 export const BAD = textureDef({ id: 'gate-b-bad', about: '1-texel checker (Gate B calibration)', tags: [], size: [16, 16], tile: true, palette: { a: 'night', b: 'mist' }, layers: [{ pattern: 'checker', colors: ['a', 'b'], cell: 1 }] });
@@ -42,10 +49,10 @@ export interface GateBRun {
   readonly shots: { frame: number; rgba: string }[];
 }
 
-const textureOf = (set: GateBSet, s: Surface): string | null => (set === 'flat' ? null : set === 'bad' ? BAD.id : set === 'calm' ? CALM.id : SURFACES[s]);
+const textureOf = (set: GateBSet, s: Surface): string | null => (set === 'flat' ? null : set === 'bad' ? BAD.id : set === 'calm' ? CALM.id : PINNED[s].id);
 
-/** The flat baseline's colours: each library texture's mean colour. */
-const flatColour = (s: Surface) => meanColour(bakeTexture(TEXTURE_LIBRARY.get(SURFACES[s])));
+/** The flat baseline's colours: each surface texture's mean colour. */
+const flatColour = (s: Surface) => meanColour(bakeTexture(PINNED[s]));
 
 function surface(set: GateBSet, s: Surface, part: Omit<Part, 'c'> & Record<string, unknown>): Part {
   const tex = textureOf(set, s);
@@ -80,7 +87,7 @@ export class GateB {
   private light: LightHandle | null = null;
   /** The lab's camera before the first scene (`clear` puts it back). */
   private saved: { zoom: number; target: Vector3 } | null = null;
-  private readonly catalog = new TextureCatalog([...TEXTURE_LIBRARY.all(), BAD, CALM]);
+  private readonly catalog = new TextureCatalog([...TEXTURE_LIBRARY.all(), BAD, CALM, ...Object.values(PINNED)]);
 
   constructor(
     private readonly engine: Engine,

@@ -8,6 +8,32 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.23.0
+
+- **The library grows to 61 models in ten families and 40 textures** (docs/ASSETS.md; `npm run
+  model -- zoo all`, `npm run tex -- zoo surface`). Architecture: `door`, `window`, `column`,
+  `stairs`, `fence`, `roof`, `gate`. Furniture: `table`, `chair`, `bench`, `stool`, `bed`,
+  `bookshelf`, `cabinet`. Dungeon: `chest`, `bones`, `cage`, `coffin`, `banner`, `spikes`. Dressing:
+  `crystal`, `rubble`, `glowcaps`, `standard`. Nature adds `pine`, `oak`, `bush`, `stump`, `log`,
+  `mushrooms`, `flowers`; props (tools, loot, signs): `signpost`, `sack`, `anvil`, `pickaxe`,
+  `gold-pile`, `cart`; lighting adds `wall-torch`, `brazier`, `candles`, `hanging-lantern`. Weapons
+  for a fist (one-hand `sword`, `axe`, `mace`, `sceptre`, `dagger`, `wand`; two-hand `staff`, and
+  `bow` with `tip.*` anchors for a string a game draws) stand along +Y with a `grip` anchor; `grip`
+  is the slot to tint. Textures: 14 more tiling surfaces (20 in all) and 18 more icons and sprites.
+- **Redrawn:** `cobbles` (32×32, rounder stones; slots `joint`, `shadow`, `stone`, `light`: a palette
+  override on the old `stone2` no longer applies) and `grass` (32×32, so its repeat is less
+  visible; slots `dark` (now teal), `mid`, `light`).
+- `collider: 'parts'`: a box round each part (glow aside), so a model with an opening keeps it
+  walkable; a part with `collide: false` gets no box (an arch's mortar ring). `arch` uses it; `door`
+  and `gate` keep one box, since their leaves are closed pivots and static colliders don't follow a
+  pivot.
+- `flame` reads as fire: lit tongues that turn one face to the game camera and lean back into the
+  light, a small glowing heart, `tongues` 1–4 (1 is a candle's); its outer colour is `orange` (was
+  `red`), and leaning back puts its bounds a little behind its origin. Never turn it about Y: a model
+  a game turns takes a `turn` param and turns its flame back (`wall-torch`).
+- `arch` takes `piers` (m), standing on two coursed stone piers, and keeps its opening open (on
+  piers a hero walks through; on its feet at the default span the opening is under 1 m tall).
+
 ## 0.22.0
 
 - `DEFAULT_TEXEL` is 8 texels per metre (was 16), what Gate B measured as the densest surface

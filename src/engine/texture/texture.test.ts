@@ -103,7 +103,7 @@ describe('bakeTexture', () => {
         }
       }
     }
-  });
+  }, 30_000); // hundreds of layouts across sizes and parameters (~2 s alone, more on a loaded box)
 
   it('tiling stripes run whole cycles: every band follows the one before, across the wrap too', () => {
     for (const size of SIZES) {

@@ -45,7 +45,7 @@ class AssetLab implements Game {
     const p = new URLSearchParams(location.search);
     const lineup = p.get('lineup');
     if (lineup) this.lineup(lineup === 'all' ? MODEL_LIBRARY.all().map((d) => d.id) : lineup.split(','), { cols: Number(p.get('cols')) || undefined });
-    else this.show(p.get('model') ?? MODEL_LIBRARY.all()[0]!.id);
+    else this.show(p.get('model') ?? 'barrel'); // a model that reads at a glance
   }
 
   /** Hide (release) or bring back the shown models' lights. */

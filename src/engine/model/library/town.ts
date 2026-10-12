@@ -1,4 +1,6 @@
 import { around, model, rowOf } from '../helpers';
+import type { Part } from '../types';
+import { levels, masonry } from './architecture';
 
 export const statue = model({
   id: 'statue',
@@ -64,29 +66,47 @@ const ringBlock = (a: number, b: number, t0: number, t1: number, k = 1): [number
   return [...ts.map((t) => at(b, t)), ...ts.reverse().map((t) => at(a, t))];
 };
 
+/**
+ * A pier `h` tall under an arch's foot, `w` × `d`: courses about 0.45 m tall over a mortar core,
+ * the top one `stone2` (the arch's end voussoirs are `stone`).
+ */
+const pier = (h: number, w: number, d: number): Part[] => {
+  const n = Math.max(1, Math.round(h / 0.45));
+  return [
+    ...(n > 1 ? [{ box: [w - 0.04, h - 0.02, d - 0.04], at: [0, (h - 0.02) / 2, 0], c: 'mortar' } as const] : []),
+    ...masonry({ x: [-w / 2, w / 2], ys: levels(0, h, n), d, k: n % 2, len: w, open: { l: true, r: true, b: true, t: true } }),
+  ];
+};
+
 export const arch = model({
   id: 'arch',
-  about: 'Stone arch of voussoirs in two shades over dark mortar, its feet on y = 0: set it on two piers',
+  about: 'Stone arch of voussoirs in two shades over dark mortar; `piers` (m) stands it on two coursed stone piers that tall, 0 puts its feet on y = 0',
   tags: ['stone', 'building'],
   palette: { stone: 'mist', stone2: 'slate', mortar: 'night' },
-  params: { span: [2, 0.8, 5], ring: [0.42, 0.2, 0.8], depth: [0.6, 0.2, 1.5], blocks: [9, 5, 15] },
+  // a box round each stone, so the opening stays open to walk through
+  collider: 'parts',
+  params: { span: [2, 0.8, 5], ring: [0.42, 0.2, 0.8], depth: [0.6, 0.2, 1.5], blocks: [9, 5, 15], piers: [0, 0, 4] },
   parts: (p) => {
     const a = p.span! / 2;
     const b = a + p.ring!;
+    const h = p.piers!;
     const n = Math.round(p.blocks!) | 1; // odd, so a keystone sits at the crown
     const step = 180 / n;
     const gap = (0.06 / ((a + b) / 2)) * (180 / Math.PI); // a 6 cm joint: an art pixel at game scale
+    const lift = (Math.asin(0.02 / (a + 0.02)) * 180) / Math.PI; // the mortar's ends 2 cm up, inside the end voussoirs, off their bottoms
     return [
-      { slab: ringBlock(a + 0.02, b - 0.02, 0, 180, n * 2), depth: p.depth! - 0.08, c: 'mortar', name: 'mortar' },
-      ...Array.from({ length: n }, (_, i) => {
+      { slab: ringBlock(a + 0.02, b - 0.02, lift, 180 - lift, n * 2), depth: p.depth! - 0.08, at: [0, h, 0], c: 'mortar', name: 'mortar', collide: false },
+      ...Array.from({ length: n }, (_, i): Part => {
         const key = i === (n - 1) / 2;
         return {
           slab: ringBlock(key ? a - 0.06 : a, key ? b + 0.08 : b, i * step + (i ? gap / 2 : 0), (i + 1) * step - (i < n - 1 ? gap / 2 : 0)),
           depth: key ? p.depth! + 0.08 : p.depth!,
+          at: [0, h, 0],
           c: i % 2 ? 'stone2' : 'stone',
           ...(key ? { name: 'keystone' } : {}),
         };
       }),
+      ...(h > 0 ? [{ mirror: [{ name: 'pier', at: [(a + b) / 2, 0, 0], group: pier(h, p.ring! + 0.12, p.depth! + 0.12) }] } as const] : []),
     ];
   },
 });

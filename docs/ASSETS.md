@@ -10,8 +10,8 @@ it, with its measurements and what is still to come (imports, traces), is
 How it measures so far ([Gate A](plans/gate-a.md), twice): an agent writing a ModelDef spends about
 what one writing code on the town `Kit` spends (R = 0.98, then 1.02), less when it composes library
 models (the campfire, 0.84), and the judges still preferred the Kit's models. They lost on colour
-(fixed by the checks below) and on a flame that read brown. The library is where ModelDefs pay; the
-plan builds it next.
+(fixed by the checks below) and on a flame that read brown (rebuilt: see *Fire faces the camera*).
+The library is where ModelDefs pay: start from it (`npm run model -- find`, `zoo`).
 
 ```
 library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildModel() ──► merged toon meshes
@@ -25,7 +25,7 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `src/engine/model/types.ts` | The format: `ModelDef`, parts, palette slots, params, anchors, light, provenance |
 | `src/engine/model/helpers.ts` | `model`, `around`, `rowOf`, `gridOf`, `scatterOf`, `boxFrame` (helpers only return parts) |
 | `src/engine/model/physics.ts` | `addModelColliders`: a build's collider data as static colliders |
-| `src/engine/model/library/<family>.ts` | The built-in library (`MODEL_LIBRARY`): containers, lighting, nature, town, weapons |
+| `src/engine/model/library/<family>.ts` | The built-in library (`MODEL_LIBRARY`): architecture, containers, dressing, dungeon, furniture, lighting, nature, props (tools, loot, signs), town, weapons |
 | `src/engine/model/build.ts` | `buildModel`, `expandModel`, collider data, the light request |
 | `src/engine/model/validate.ts`, `readability.ts` | `validateModel`, `checkModel`: problems and warnings |
 | `src/engine/model/sheet.ts`, `diff.ts`, `view.ts` | The sheets and the diff the CLI draws and prints; the game's camera and its part raster |
@@ -128,7 +128,9 @@ either way), `slab` (an XY outline or SVG path M L H V C Q Z, extruded `depth` a
 - `params: { h: [default, min, max] }` with `parts: (p, rng) => [...]` make it parametric and seeded
   (`rng` is the engine's `Rng`, its own stream per model and seed).
 - `anchors` (`[x, y, z]` or `{ at, rot }`) for grips and mounts; `light: { at, c, intensity, radius,
-  flicker? }`; `collider: 'box' | 'cyl' | 'hull' | 'none'`; `floats: true` for things that hang.
+  flicker? }`; `collider: 'box' | 'cyl' | 'hull' | 'parts' | 'none'` (`parts`: a box round each
+  part, so an arch or a doorway stays open; a part with `collide: false` gets none, like an arch's
+  mortar ring); `floats: true` for things that hang.
 
 ## Checks
 
@@ -173,6 +175,10 @@ never joins a one-colour block (its texels break it up).
   Gate A's first run was lost on this (docs/plans/gate-a.md).
 - **Glow is flat:** keep it for small hot spots (embers, a flame's heart); build fire from lit
   parts (`use: 'flame'`).
+- **Fire faces the camera:** `flame`'s tongues turn one lit face to the game camera (+X +Z) and
+  lean back into the light, so never turn it about Y. A model a game turns takes a `turn` param
+  and turns its flame back (`wall-torch`). Below `h` 0.5 (or ~0.5 scale) a flame of 2–4 tongues
+  reads as a dark smudge at game scale: use `tongues: 1`, the candle's flame, for small fires.
 - **Low poly:** 6–10 sides on round kinds (4 for square ones), faceted normals, no bevels under
   ~2 cm.
 - **Grounding:** the base on y = 0, nothing floating unless `floats`; name anchors for anything
