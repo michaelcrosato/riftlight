@@ -524,11 +524,14 @@ describe('checks', () => {
 
   it('the built-in library has no problems', () => {
     for (const d of MODEL_LIBRARY.all()) expect(checkModel(d).problems, d.id).toEqual([]);
-  });
+  }, 30_000); // checks every library model (~1.5 s alone, several times that on a loaded box)
 
   it('the catalog finds by tags and words', () => {
-    expect(MODEL_LIBRARY.find({ tags: ['container'] }).map((d) => d.id).sort()).toEqual(['barrel', 'crate']);
-    expect(MODEL_LIBRARY.find({ text: 'lantern' }).map((d) => d.id).sort()).toEqual(['hanging-lantern', 'lamp-post']);
+    // a fixed set, so the library growing doesn't change the answers
+    const c = new ModelCatalog(['barrel', 'crate', 'lamp-post', 'hanging-lantern', 'well'].map((id) => MODEL_LIBRARY.get(id)));
+    expect(c.find({ tags: ['container'] }).map((d) => d.id).sort()).toEqual(['barrel', 'crate']);
+    expect(c.find({ text: 'lantern' }).map((d) => d.id).sort()).toEqual(['hanging-lantern', 'lamp-post']);
+    expect(MODEL_LIBRARY.find({ tags: ['container'] }).map((d) => d.id)).toEqual(expect.arrayContaining(['barrel', 'crate']));
     expect(() => MODEL_LIBRARY.add({ ...MODEL_LIBRARY.get('crate') })).toThrow(/already/);
   });
 });

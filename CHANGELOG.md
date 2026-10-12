@@ -8,6 +8,28 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.26.0
+
+- **The library grows to 151 models** (docs/ASSETS.md; `npm run model -- zoo all`), 90 more in
+  its ten families, each written by a subagent from one brief, reviewed in its sheets and zoo and
+  fixed. Architecture: `stone-wall`, `wall-corner`, `doorway`, `wide-window`, `ruined-wall`,
+  `balcony`, `bridge`, `chimney`, `battlement`, `trapdoor`, `stone-steps`, `timber-wall`.
+  Furniture: `wardrobe`, `desk`, `dresser`, `throne`, `armchair`, `rug`, `fireplace`,
+  `wall-shelf`, `round-table`, `washstand`, `cradle`, `folding-screen`. Dungeon: `altar`,
+  `sarcophagus`, `tombstone`, `skull-pile`, `wall-chains`, `portcullis`, `lever`,
+  `pressure-plate`, `obelisk`, `rune-stone`, `pillory`, `pit-grate`. Containers: `clay-pot`,
+  `amphora`, `urn`, `basket`, `bucket`, `keg`, `strongbox`, `crate-stack`. Props (tools, loot,
+  signs): `shovel`, `hammer`, `wheelbarrow`, `rope-coil`, `ladder`, `waymarker`, `notice-board`,
+  `loot-pouch`. Town: `fountain`, `haystack`, `hitching-post`, `produce-crate`, `park-bench`,
+  `clothesline`, `planter`, `water-trough`. Lighting: `campfire`, `standing-torch`, `chandelier`,
+  `wall-lantern`, `path-lantern`. Nature: `snowy-pine`, `birch`, `dead-tree`, `willow`, `cactus`,
+  `reeds`, `ferns`, `tall-grass`, `boulders`, `lily-pads`, `fallen-tree`. Dressing:
+  `stalagmites`, `cobweb`, `puddle`, `mine-rail`. Weapons: `spear`, `warhammer`, `greataxe`,
+  `halberd`, `flail`, `scythe`, `crossbow` (along +Y with a `grip` anchor, as before),
+  `round-shield`, `kite-shield` (a `grip` anchor on the back) and `quiver` (a `mount` anchor).
+- Every model checks clean at each param's min and max and 3 seeds. The 61 models already in the
+  library build as before.
+
 ## 0.25.0
 
 What a game gets (exported from the engine and the kit):
