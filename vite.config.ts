@@ -32,9 +32,9 @@ export default defineConfig({
   build: {
     target: 'es2022',
     rolldownOptions: {
-      // Pages: the game, the Animation Lab (/lab.html), the passive tree (/tree.html) and the
-      // Monster Lab (/monster-lab.html).
-      input: { main: 'index.html', lab: 'lab.html', tree: 'tree.html', 'monster-lab': 'monster-lab.html' },
+      // Pages: the game, the Animation Lab (/lab.html), the passive tree (/tree.html), the
+      // Monster Lab (/monster-lab.html) and the Asset Lab (/asset-lab.html).
+      input: { main: 'index.html', lab: 'lab.html', tree: 'tree.html', 'monster-lab': 'monster-lab.html', 'asset-lab': 'asset-lab.html' },
       output: {
         codeSplitting: {
           groups: [
@@ -54,7 +54,7 @@ export default defineConfig({
   // first page load, re-optimizes, and reloads the page mid-start (flaky agent tooling).
   // Rapier is excluded: its glue must stay one module instance shared with rapierWasm.ts.
   optimizeDeps: {
-    entries: ['index.html', 'lab.html', 'monster-lab.html'],
+    entries: ['index.html', 'lab.html', 'monster-lab.html', 'asset-lab.html'],
     exclude: ['@dimforge/rapier3d'],
     include: [
       'three/webgpu',

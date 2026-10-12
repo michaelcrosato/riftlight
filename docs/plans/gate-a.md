@@ -242,3 +242,9 @@ What the second run shows:
   - The default `box` collider fills an archway's opening; two archway-b runs set
     `collider: 'none'`.
 - Cost: 2.48M tokens for the runs, 0.52M for the judges.
+
+*Note, 2026-10-12 (Phase 2b):* the judge images, like the sheets, have no point lights, and
+neither arm's flames were judged with one. In the real renderer the library flame, lit by its own
+light, reads as bright fire (`npm run build && npm run test:e2e -- asset-lab` writes
+`.scratch/e2e/asset-lab-webgpu-lineup.png`). So a ModelDef fire with its `light` looks better in
+the game than its judge image showed.
