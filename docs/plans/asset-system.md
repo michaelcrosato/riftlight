@@ -40,15 +40,13 @@ executing session keeps the [Status](#14-status) table current.
 
 **Environment note (measured in this cloud environment).**
 - The default `node` is v24, but the repo pins 22 (`.nvmrc`, CI). `/opt/node22/bin` holds v22.
-- Under v24, `scripts/check.sh` fails at `assets_unchanged`: `GLTFExporter` writes different bytes
-  for `hero.glb` and `tree.glb`, and the check leaves the rewritten files in the tree. Under v22
-  they come out byte-identical.
-- An exported PATH does not last between tool calls, so prefix each run:
-  `PATH=/opt/node22/bin:$PATH scripts/check.sh`.
-- Until Phase 0 fixes this, the Stop hook (`.claude/hooks/verify-on-stop.sh`) runs the check with
-  the default Node. It fails and rewrites the GLBs at the end of every turn. Run
-  `git checkout -- public/assets` before every commit. Committed v24 GLBs turn CI (Node 22) red,
-  and the merge is reverted.
+- Fixed in Phase 0: under v24, `scripts/check.sh` used to fail at `assets_unchanged`, because the
+  GLB colour factors (sRGB to linear through `Math.pow`) differed in the last bit. The generator
+  now rounds them, so the GLBs are byte-identical on v22 and v24, and the Stop hook passes with
+  the default Node.
+- Anything else that hashes floats (Phase 1's monster hashes) rounds the same way. To match CI
+  exactly, prefix a run with `PATH=/opt/node22/bin:$PATH` (an exported PATH does not last between
+  tool calls).
 
 ## Verdict: go, with limits
 
@@ -750,7 +748,7 @@ and again in Phase 8.
 
 | # | Phase | State | PRs | Numbers and notes |
 | --- | --- | --- | --- | --- |
-| 0 | Escalation and environment | not started | | |
+| 0 | Escalation and environment | done | escalation [#49](https://github.com/michaelcrosato/riftlight/issues/49) (open: waiting on a human); this PR | Measured cause: only the GLB JSON differed between Node 22 and 24, in the material `baseColorFactor` values (three's sRGB to linear `Math.pow`, 1 ulp apart); the binary chunks (vertex data) were already identical. Fix: `generate-assets.mjs` rounds linear colours to 1e-6 before export (colours, not the vertex data the row suggested, because that is where the bytes differed). The GLBs are now byte-identical on v22 and v24; every palette hex survives the rounding; `check.sh --fast` passes on the default v24; `anim -- check` passes and the Run sheet was looked at. Gate C waits on #49 |
 | 1 | Model core | not started | | |
 | 2a | Model tools, Gate A | not started | | |
 | 2b | Docs and Asset Lab | not started | | |
