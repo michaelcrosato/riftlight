@@ -1311,6 +1311,17 @@ jump pressed during a hitch still lands, but presses never pile up. While `engin
 true (or a level is loading, including the start-up loading screen) game time (`ctx.time`)
 stops and queued presses are dropped, so nothing fires on resume.
 
+### Models as data (`src/engine/model/`)
+
+Props, furniture, weapons and dressing are `ModelDef`s: keyed primitives (`box`, `cyl`, `ball`,
+`lathe`, `slab`…) that fill their box, groups, mirrors, pivots and `use` of other models, coloured
+by palette slots. `buildModel(id | def, { params, seed, palette, light })` merges one into a toon
+mesh per material and returns its bounds, anchors, collider data (`addModelColliders`) and light
+request; `MODEL_LIBRARY` holds the built-ins (`npm run model -- find`). `glowMaterial(color)` is the
+unlit counterpart of `toonMaterial` for flames and screens. The format, the checks, the style
+rules and the loop (`npm run model -- check / sheet --compare`, the Asset Lab) are in
+[docs/ASSETS.md](ASSETS.md).
+
 ### Textured and vertex-colored toon materials
 
 `toonify` (and so `ctx.loadModel`) keeps a material's base color **texture** (switched to
@@ -1448,6 +1459,12 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
   frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
   never for a fixed number of rendered frames when they can avoid it.
+- `npm run model -- check / sheet / diff / find / zoo / tokens` (`scripts/model.ts`,
+  docs/ASSETS.md): ModelDefs checked (problems exit 1, warnings for what won't read at 480×270),
+  drawn as sheets (turntable, front / side / top on a 0.1 m grid, game-scale previews through
+  Riftlight's camera, the previous version in magenta) and diffed in words. The Asset Lab
+  (`/asset-lab.html`, `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `clear`,
+  `setLook`, `state`, `capture`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
 - `npm run inspect -- <target>` (`src/engine/inspect/`, `scripts/inspect.ts`): any asset as
   `.scratch/inspect/<name>.png` + `.json`: an 8-angle turntable at one scale, a rig front and
   side (mesh dimmed, joints and names on top, right side orange, left cyan) and a panel with
@@ -1511,7 +1528,7 @@ without reading its code:
 4. **Machine output**: JSON (and CSV for tables) next to the PNG, with the inputs and the seed,
    so a result can be reproduced and diffed.
 5. **A lab page** when a human or an agent needs to play with it live in the real renderer
-   (`/lab.html`, `/monster-lab.html`, `/tree.html`), with a `window.__<TOOL>__` handle.
+   (`/lab.html`, `/asset-lab.html`, `/monster-lab.html`, `/tree.html`), with a `window.__<TOOL>__` handle.
 6. **Tests**: unit tests for the core next to it (`*.test.ts`), and a smoke run of the CLI in
    the `tools` e2e suite (`scripts/e2e.mjs` `runTools`: it runs, writes its files, and the
    numbers are sane), so the tool can't silently rot.

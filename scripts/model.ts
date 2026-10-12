@@ -1,4 +1,4 @@
-// Model workbench: how agents check, look at and compare models (ModelDefs, src/engine/model/)
+// Model workbench: how agents check, look at and compare models (ModelDefs, docs/ASSETS.md)
 // without a browser. Run through tsx:  npm run model -- <command> [...]
 //
 //   check [id...]              problems (exit 1) and warnings for every model, at every param's

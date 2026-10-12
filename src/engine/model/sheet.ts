@@ -1,5 +1,5 @@
 /**
- * Model sheets for agents (`npm run model -- sheet`): a model drawn the ways
+ * Model sheets for agents (`npm run model -- sheet`, docs/ASSETS.md): a model drawn the ways
  * that answer "is it right?": an 8-angle turntable, front / side / top orthographic views on a
  * 0.1 m grid with its dimensions, game-scale previews (Riftlight's iso camera at the level and
  * town zooms, one art pixel per pixel, then ×4), its palette, part labels, anchors and
