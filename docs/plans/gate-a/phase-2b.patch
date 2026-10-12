@@ -1,0 +1,591 @@
+--- a/src/engine/model/sheet.ts
++++ b/src/engine/model/sheet.ts
+@@ -1,5 +1,5 @@
+ /**
+- * Model sheets for agents (`npm run model -- sheet`): a model drawn the ways
++ * Model sheets for agents (`npm run model -- sheet`, docs/ASSETS.md): a model drawn the ways
+  * that answer "is it right?": an 8-angle turntable, front / side / top orthographic views on a
+  * 0.1 m grid with its dimensions, game-scale previews (Riftlight's iso camera at the level and
+  * town zooms, one art pixel per pixel, then ×4), its palette, part labels, anchors and
+--- a/README.md
++++ b/README.md
+@@ -42,6 +42,8 @@
+ npm run anim -- check          # animation metrics for every clip
+ npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
+ npm run anim -- curves Run     # motion curves (graph editor) PNG
++npm run model -- check         # every model: problems (exit 1) and warnings
++npm run model -- sheet well    # model sheet PNG → .scratch/model/well.png (/asset-lab.html: the real renderer)
+ npm run film -- run-stop --gif # film a move in the real game → .scratch/film/
+ npm run playtest -- 1 --runs 3 --film   # the Riftlight bot plays depth 1 → .scratch/playtest/
+ ```
+@@ -57,6 +59,9 @@
+   The debug UI's picker switches presets live and leaves the player where they are.
+ - **Looks:** 35 TSL filters, including the console eras `8bit`, `16bit` and `ps1` (with
+   vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, and `[` `]` to cycle.
++- **Models:** props and dressing are data (`ModelDef`: keyed primitives, palette slots, params),
++  compiled to toon meshes; `npm run model` checks and draws them, the **Asset Lab**
++  (`/asset-lab.html`) shows them in the real renderer. See [`docs/ASSETS.md`](docs/ASSETS.md).
+ - **Animation:** 57 hero clips written as data, with foot IK and a gait generator. They are
+   measured and drawn as PNG contact sheets and motion curves by `npm run anim`, filmed in the
+   real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See
+--- a/vite.config.ts
++++ b/vite.config.ts
+@@ -32,9 +32,9 @@
+   build: {
+     target: 'es2022',
+     rolldownOptions: {
+-      // Pages: the game, the Animation Lab (/lab.html), the passive tree (/tree.html) and the
+-      // Monster Lab (/monster-lab.html).
+-      input: { main: 'index.html', lab: 'lab.html', tree: 'tree.html', 'monster-lab': 'monster-lab.html' },
++      // Pages: the game, the Animation Lab (/lab.html), the passive tree (/tree.html), the
++      // Monster Lab (/monster-lab.html) and the Asset Lab (/asset-lab.html).
++      input: { main: 'index.html', lab: 'lab.html', tree: 'tree.html', 'monster-lab': 'monster-lab.html', 'asset-lab': 'asset-lab.html' },
+       output: {
+         codeSplitting: {
+           groups: [
+@@ -54,7 +54,7 @@
+   // first page load, re-optimizes, and reloads the page mid-start (flaky agent tooling).
+   // Rapier is excluded: its glue must stay one module instance shared with rapierWasm.ts.
+   optimizeDeps: {
+-    entries: ['index.html', 'lab.html', 'monster-lab.html'],
++    entries: ['index.html', 'lab.html', 'monster-lab.html', 'asset-lab.html'],
+     exclude: ['@dimforge/rapier3d'],
+     include: [
+       'three/webgpu',
+--- a/scripts/e2e.mjs
++++ b/scripts/e2e.mjs
+@@ -979,6 +979,57 @@
+   }
+ }
+ 
++async function runAssetLab(browserExe) {
++  for (const s of SCENARIOS.slice(0, 2)) {
++    console.log(`\n▶ asset-lab (Asset Lab, ${s.name})`);
++    let ctx;
++    try {
++      ctx = await openPage(browserExe, { ...s, url: `${BASE}asset-lab.html` }, 'debug=0');
++      const { page, logs } = ctx;
++      await page.waitForFunction(() => window.__ASSET_LAB__, null, { timeout: 30000 });
++      const st0 = await state(page);
++      check(st0.backend === s.backend, `backend ${st0.backend}`);
++      const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
++      check(ids.length >= 7, `lists ${ids.length} models`);
++      // every model renders in the real pipeline: toon, outlines, its light
++      for (const id of ids) {
++        const r = await page.evaluate((m) => window.__ASSET_LAB__.show(m), id);
++        await waitFrames(page, 3);
++        const img = await capture(page, `asset-lab-${s.name}-${id}.png`);
++        check(r.tris > 50 && colorCount(img) > 6, `${id}: ${r.tris} tris, ${r.draws} draws, ${colorCount(img)} colours on screen`);
++      }
++      await page.evaluate(() => {
++        window.__ASSET_LAB__.show('market-stall');
++        window.__ASSET_LAB__.zoom('close');
++      });
++      await waitFrames(page, 3);
++      const close = await capture(page, `asset-lab-${s.name}-market-stall-close.png`);
++      check(colorCount(close) > 20 && (await page.evaluate(() => window.__ASSET_LAB__.state().zoom)) === 3, `zoom('close') shows the detail (${colorCount(close)} colours)`);
++      const lit = await page.evaluate(() => {
++        window.__ASSET_LAB__.show('lamp-post');
++        return window.__ASSET_LAB__.state().lights;
++      });
++      check(lit === 1, 'the lamp post requests its light');
++      await page.evaluate(() => window.__ASSET_LAB__.lineup());
++      await waitFrames(page, 3);
++      const all = await page.evaluate(() => window.__ASSET_LAB__.state());
++      const lineup = await capture(page, `asset-lab-${s.name}-lineup.png`);
++      check(all.shown.length === ids.length && all.zoom <= 1.08 + 1e-6 && colorCount(lineup) > 10, `lineup of ${all.shown.length} at zoom ${all.zoom.toFixed(2)}`);
++      await page.evaluate(() => window.__ASSET_LAB__.setLook('handheld'));
++      await waitFrames(page, 3);
++      const gb = await capture(page, `asset-lab-${s.name}-handheld.png`);
++      check(colorCount(gb) < colorCount(lineup), `setLook('handheld') re-renders the lineup (${colorCount(lineup)} → ${colorCount(gb)} colours)`);
++      const png = await page.evaluate(() => window.__ASSET_LAB__.capture());
++      check(png.startsWith('data:image/png') && png.length > 2000, 'capture() returns a PNG');
++      checkClean(await state(page), logs.filter((l) => !(s.expectedWarnings ?? []).some((re) => re.test(l))));
++    } catch (e) {
++      check(false, `asset-lab crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
++    } finally {
++      await ctx?.browser.close();
++    }
++  }
++}
++
+ /** Run a command from the repo root; resolves to { code, out } (stdout + stderr). */
+ function run(cmd, args, { env = {}, timeout = 180000 } = {}) {
+   return new Promise((resolve) => {
+@@ -1283,6 +1334,7 @@
+   fullscreen: (exe) => runFullscreen(exe),
+   moves: (exe) => runMoves(exe),
+   lab: (exe) => runLab(exe),
++  'asset-lab': (exe) => runAssetLab(exe),
+   'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
+   riftlight: async (exe) => {
+     const helpers = { exe, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT };
+@@ -1339,7 +1391,7 @@
+ // Every suite must be in exactly one group, or CI would silently skip it.
+ const GROUPS = {
+   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
+-  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
++  '@cameras': ['cameras', 'camera-swap', 'lab', 'asset-lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
+   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+   '@world': ['world'],
+ };
+--- a/scripts/model.ts
++++ b/scripts/model.ts
+@@ -1,4 +1,4 @@
+-// Model workbench: how agents check, look at and compare models (ModelDefs, src/engine/model/)
++// Model workbench: how agents check, look at and compare models (ModelDefs, docs/ASSETS.md)
+ // without a browser. Run through tsx:  npm run model -- <command> [...]
+ //
+ //   check [id...]              problems (exit 1) and warnings for every model, at every param's
+--- a/AGENTS.md
++++ b/AGENTS.md
+@@ -69,6 +69,8 @@
+ 
+ WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
+ (`three/webgpu` + `three/tsl`), `@dimforge/rapier3d@0.20.0` (wasm loaded separately), local GLBs.
++**Read `docs/ASSETS.md` before adding or changing a model** (props, furniture, weapons): look at
++its sheet (`npm run model -- sheet <id> --compare`) and keep `npm run model -- check` clean.
+ **Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
+ the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
+ animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
+@@ -87,6 +89,8 @@
+ | `src/engine/animation/` | Animation toolkit: clip format, foot IK, gait generator, compiler, flip-free cross-fades (`RotationBlend`), metrics, contact sheets, motion curves |
+ | `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`clips/`, one file per family; `animations.ts` re-exports `HERO_CLIPS`) |
+ | `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
++| `src/engine/model/` | Models as data (docs/ASSETS.md): the `ModelDef` format, `buildModel`, the checks, the built-in library (`library/`) |
++| `scripts/model.ts`, `asset-lab.html` | `npm run model -- check / sheet / diff / find / zoo / tokens`: check and look at models; the Asset Lab shows them in the real renderer (`window.__ASSET_LAB__`) |
+ | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
+ | `src/lab/`, `lab.html` | Animation Lab page: preview, scrub, metrics, sheets, `window.__ANIM_LAB__` |
+ | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
+--- a/docs/ENGINE.md
++++ b/docs/ENGINE.md
+@@ -1311,6 +1311,17 @@
+ true (or a level is loading, including the start-up loading screen) game time (`ctx.time`)
+ stops and queued presses are dropped, so nothing fires on resume.
+ 
++### Models as data (`src/engine/model/`)
++
++Props, furniture, weapons and dressing are `ModelDef`s: keyed primitives (`box`, `cyl`, `ball`,
++`lathe`, `slab`…) that fill their box, groups, mirrors, pivots and `use` of other models, coloured
++by palette slots. `buildModel(id | def, { params, seed, palette, light })` merges one into a toon
++mesh per material and returns its bounds, anchors, collider data (`addModelColliders`) and light
++request; `MODEL_LIBRARY` holds the built-ins (`npm run model -- find`). `glowMaterial(color)` is the
++unlit counterpart of `toonMaterial` for flames and screens. The format, the checks, the style
++rules and the loop (`npm run model -- check / sheet --compare`, the Asset Lab) are in
++[docs/ASSETS.md](ASSETS.md).
++
+ ### Textured and vertex-colored toon materials
+ 
+ `toonify` (and so `ctx.loadModel`) keeps a material's base color **texture** (switched to
+@@ -1448,6 +1459,12 @@
+   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
+   frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
+   never for a fixed number of rendered frames when they can avoid it.
++- `npm run model -- check / sheet / diff / find / zoo / tokens` (`scripts/model.ts`,
++  docs/ASSETS.md): ModelDefs checked (problems exit 1, warnings for what won't read at 480×270),
++  drawn as sheets (turntable, front / side / top on a 0.1 m grid, game-scale previews through
++  Riftlight's camera, the previous version in magenta) and diffed in words. The Asset Lab
++  (`/asset-lab.html`, `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `setLook`,
++  `capture`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
+ - `npm run inspect -- <target>` (`src/engine/inspect/`, `scripts/inspect.ts`): any asset as
+   `.scratch/inspect/<name>.png` + `.json`: an 8-angle turntable at one scale, a rig front and
+   side (mesh dimmed, joints and names on top, right side orange, left cyan) and a panel with
+--- /dev/null
++++ b/src/lab/assetLab.ts
+@@ -0,0 +1,210 @@
++import '../style.css';
++import './lab.css';
++import { Group, Mesh, PlaneGeometry, Vector3 } from 'three/webgpu';
++import { Engine, optionsFromUrl, toonMaterial, type Game, type GameContext, type LightHandle } from '../engine';
++import { buildModel, MODEL_LIBRARY, type ModelBuild, type ModelOptions } from '../engine/model';
++import { GAME_VIEW } from '../engine/model/sheet';
++
++/**
++ * Asset Lab (/asset-lab.html): models from the library in the real renderer (toon shading,
++ * outlines, looks, lights) through Riftlight's own camera, at the level and town zooms. The
++ * `npm run model` sheets are software-drawn; this is how a model really looks in the game.
++ *
++ * URL: ?model=well&zoom=town&look=gameboy, or ?lineup=all (or ?lineup=barrel,crate&cols=2).
++ * Agents: window.__ASSET_LAB__ (see `AssetLabApi` below).
++ */
++const ZOOMS = { level: GAME_VIEW.zooms.level, town: GAME_VIEW.zooms.town, close: 3 } as const;
++type ZoomName = keyof typeof ZOOMS;
++
++class AssetLab implements Game {
++  readonly name = 'Asset Lab';
++  readonly root = new Group();
++  shown: ModelBuild[] = [];
++  private lights: LightHandle[] = [];
++  private readonly centre = new Vector3(0, 0.5, 0);
++  ctx!: GameContext;
++
++  setup(ctx: GameContext): void {
++    this.ctx = ctx;
++    const floor = new Mesh(new PlaneGeometry(60, 60).rotateX(-Math.PI / 2), toonMaterial(ctx.palette.slate));
++    floor.receiveShadow = true;
++    ctx.scene.add(floor, this.root);
++    const p = new URLSearchParams(location.search);
++    const lineup = p.get('lineup');
++    if (lineup) this.lineup(lineup === 'all' ? MODEL_LIBRARY.all().map((d) => d.id) : lineup.split(','), { cols: Number(p.get('cols')) || undefined });
++    else this.show(p.get('model') ?? MODEL_LIBRARY.all()[0]!.id);
++  }
++
++  private clear(): void {
++    for (const l of this.lights) l.release();
++    this.lights = [];
++    this.root.clear();
++    this.shown = [];
++  }
++
++  /** Place a build at (x, z) on the floor, with its light. */
++  private place(b: ModelBuild, x: number, z: number): void {
++    b.object.position.set(x, 0, z);
++    this.root.add(b.object);
++    if (b.light) this.lights.push(this.ctx.lights.request({ position: [x + b.light.at[0], b.light.at[1], z + b.light.at[2]], color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' }));
++    this.shown.push(b);
++  }
++
++  show(id: string, o: ModelOptions = {}): ModelBuild {
++    this.clear();
++    const b = buildModel(id, o);
++    this.place(b, 0, 0);
++    this.centre.set((b.bounds.min[0] + b.bounds.max[0]) / 2, (b.bounds.min[1] + b.bounds.max[1]) / 2, (b.bounds.min[2] + b.bounds.max[2]) / 2);
++    return b;
++  }
++
++  /** Several models in rows at one scale, the camera zoomed out to hold them all. */
++  lineup(ids: readonly string[], o: { cols?: number } = {}): void {
++    this.clear();
++    const builds = ids.map((id) => buildModel(id));
++    const cell = Math.max(1, ...builds.map((b) => Math.max(b.bounds.size[0], b.bounds.size[2]))) + 0.6;
++    const cols = Math.max(1, o.cols ?? Math.ceil(Math.sqrt(builds.length)));
++    const rows = Math.ceil(builds.length / cols);
++    builds.forEach((b, i) => {
++      const x = ((i % cols) - (cols - 1) / 2) * cell;
++      const z = (Math.floor(i / cols) - (rows - 1) / 2) * cell;
++      this.place(b, x - (b.bounds.min[0] + b.bounds.max[0]) / 2, z - (b.bounds.min[2] + b.bounds.max[2]) / 2);
++    });
++    this.centre.set(0, 0.5, 0);
++  }
++
++  cameraTarget(): Vector3 {
++    return this.centre;
++  }
++
++  status(): string {
++    return this.shown.map((b) => b.id).join(' ');
++  }
++}
++
++/** Handle for agents and tests: window.__ASSET_LAB__. */
++export interface AssetLabApi {
++  /** Every model id in the library. */
++  list(): string[];
++  /** One model at the origin; its report (tris, draws, materials) and bounds. */
++  show(id: string, options?: { params?: Record<string, number>; seed?: number; palette?: ModelOptions['palette'] }): { tris: number; draws: number; materials: number; size: readonly number[] };
++  /** Several models in rows (all of them with no ids), the camera zoomed out to hold them. */
++  lineup(ids?: readonly string[], options?: { cols?: number }): void;
++  /** The game's zooms: 'level' (default), 'town', or 'close' for detail. */
++  zoom(name: ZoomName): void;
++  /** A LOOK_PRESETS name. */
++  setLook(name: string): void;
++  state(): { shown: string[]; zoom: number; look: string | null; tris: number; lights: number };
++  /** The rendered frame as a PNG data URL. */
++  capture(): Promise<string>;
++}
++
++function toDataUrl(width: number, height: number, pixels: Uint8Array | Uint8ClampedArray): string {
++  const c = document.createElement('canvas');
++  c.width = width;
++  c.height = height;
++  c.getContext('2d')!.putImageData(new ImageData(new Uint8ClampedArray(pixels), width, height), 0, 0);
++  return c.toDataURL('image/png');
++}
++
++function ui(engine: Engine, lab: AssetLab, api: AssetLabApi): void {
++  const panel = document.createElement('div');
++  panel.className = 'lab-panel';
++  panel.innerHTML = `
++    <h1>Asset Lab</h1>
++    <label>Model <select data-a="model"></select></label>
++    <div class="row"><button data-a="lineup">Lineup: all</button></div>
++    <div class="row views"><button data-z="level">Level</button><button data-z="town">Town</button><button data-z="close">Close</button></div>
++    <label>Look <select data-a="look"></select></label>
++    <pre class="metrics" data-a="info"></pre>
++    <p class="hint">Models: src/engine/model/library/*.ts. <code>npm run model -- sheet &lt;id&gt;</code></p>`;
++  document.body.appendChild(panel);
++  const $ = <T extends HTMLElement>(sel: string) => panel.querySelector<T>(sel)!;
++  const modelSel = $<HTMLSelectElement>('[data-a="model"]');
++  modelSel.innerHTML = api.list().map((id) => `<option>${id}</option>`).join('');
++  const lookSel = $<HTMLSelectElement>('[data-a="look"]');
++  lookSel.innerHTML = Object.keys(engine.lookPresets).map((n) => `<option>${n}</option>`).join('');
++  const info = () => {
++    const s = api.state();
++    $('[data-a="info"]').textContent = `${s.shown.join(', ')}\n${s.tris} tris  ${s.lights} lights  zoom ${s.zoom.toFixed(2)}`;
++  };
++  panel.addEventListener('click', (e) => (e.target instanceof HTMLButtonElement ? e.target.blur() : undefined));
++  modelSel.addEventListener('change', () => {
++    api.show(modelSel.value);
++    info();
++  });
++  $('[data-a="lineup"]').addEventListener('click', () => {
++    api.lineup();
++    info();
++  });
++  panel.querySelectorAll<HTMLButtonElement>('[data-z]').forEach((b) =>
++    b.addEventListener('click', () => {
++      api.zoom(b.dataset.z as ZoomName);
++      info();
++    }),
++  );
++  lookSel.addEventListener('change', () => api.setLook(lookSel.value));
++  modelSel.value = lab.shown[0]?.id ?? '';
++  info();
++}
++
++const container = document.getElementById('app')!;
++const lab = new AssetLab();
++const query = new URLSearchParams(location.search);
++const zoomName = (query.get('zoom') as ZoomName | null) ?? 'level';
++Engine.start(lab, {
++  container,
++  ...optionsFromUrl(),
++  camera: { preset: 'iso', pitch: GAME_VIEW.pitch, yaw: GAME_VIEW.yaw, viewHeight: GAME_VIEW.viewHeight, zoom: ZOOMS[zoomName] ?? ZOOMS.level, minZoom: 0.2, maxZoom: 4 },
++  filters: [],
++})
++  .then((engine) => {
++    let look: string | null = 'none';
++    const fit = () => {
++      // a lineup: zoom out until it fits (the view is viewHeight / zoom tall)
++      if (lab.shown.length < 2) return;
++      const span = Math.max(...lab.shown.map((b) => Math.hypot(b.object.position.x, b.object.position.z) * 2 + Math.max(...b.bounds.size)));
++      engine.camera.setZoom(Math.min(ZOOMS.level, GAME_VIEW.viewHeight / (span * 0.9)));
++    };
++    const api: AssetLabApi = {
++      list: () => MODEL_LIBRARY.all().map((d) => d.id),
++      show: (id, o = {}) => {
++        const b = lab.show(id, o);
++        engine.camera.setZoom(ZOOMS.level);
++        return { tris: b.report.tris, draws: b.report.draws, materials: b.report.materials, size: b.bounds.size };
++      },
++      lineup: (ids, o) => {
++        lab.lineup(ids ?? api.list(), o);
++        fit();
++      },
++      zoom: (name) => engine.camera.setZoom(ZOOMS[name]),
++      setLook: (name) => {
++        const preset = engine.lookPresets[name];
++        if (!preset) throw new Error(`no look "${name}" (${Object.keys(engine.lookPresets).join(', ')})`);
++        engine.setLook(preset);
++        look = name;
++      },
++      state: () => ({
++        shown: lab.shown.map((b) => b.id),
++        zoom: (engine.camera as unknown as { zoom: number }).zoom,
++        look,
++        tris: lab.shown.reduce((s, b) => s + b.report.tris, 0),
++        lights: lab.shown.filter((b) => b.light).length,
++      }),
++      capture: async () => {
++        const f = await engine.renderer.capture();
++        return toDataUrl(f.width, f.height, f.pixels);
++      },
++    };
++    fit();
++    const lookName = query.get('look');
++    if (lookName) api.setLook(lookName);
++    ui(engine, lab, api);
++    Object.assign(window, { __ASSET_LAB__: api, __PIXEL_ENGINE__: engine });
++  })
++  .catch((error: unknown) => {
++    console.error(error);
++    container.textContent = `Failed to start: ${error instanceof Error ? error.message : String(error)}`;
++  });
++
++
+--- /dev/null
++++ b/asset-lab.html
+@@ -0,0 +1,13 @@
++<!doctype html>
++<html lang="en">
++  <head>
++    <meta charset="UTF-8" />
++    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
++    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
++    <title>Pixel Engine · Asset Lab</title>
++  </head>
++  <body>
++    <div id="app"></div>
++    <script type="module" src="/src/lab/assetLab.ts"></script>
++  </body>
++</html>
+--- /dev/null
++++ b/docs/ASSETS.md
+@@ -0,0 +1,167 @@
++# Models as data
++
++Objects in a game are **plain data** that agents write, check and look at, then adjust: a
++`ModelDef` of keyed primitives. There is no modelling tool and no binary in the repository. The
++engine compiles a def into toon meshes at runtime; `npm run model` measures and draws it without a
++browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. The plan behind it, with
++its measurements and what is still to come (textures, imports, traces), is
++[docs/plans/asset-system.md](plans/asset-system.md).
++
++```
++library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildModel() ──► merged toon meshes
++     ▲                                                          │
++     │   npm run model -- check / sheet / diff / zoo           ├─► a game (scene, colliders, light)
++     └── agent edits numbers ◄── problems, warnings, sheets ◄───┘   Asset Lab (/asset-lab.html)
++```
++
++| Path | What |
++| --- | --- |
++| `src/engine/model/types.ts` | The format: `ModelDef`, parts, palette slots, params, anchors, light, provenance |
++| `src/engine/model/helpers.ts` | `model`, `around`, `rowOf`, `gridOf`, `scatterOf`, `boxFrame` (helpers only return parts) |
++| `src/engine/model/library/<family>.ts` | The built-in library (`MODEL_LIBRARY`): containers, lighting, town, weapons |
++| `src/engine/model/build.ts` | `buildModel`, `expandModel`, collider data, the light request |
++| `src/engine/model/validate.ts`, `readability.ts` | `validateModel`, `checkModel`: problems and warnings |
++| `src/engine/model/sheet.ts`, `diff.ts` | The sheets and the diff the CLI draws and prints |
++| `scripts/model.ts` | `npm run model` (its header is the manual) |
++| `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
++
++## The loop
++
++1. **Find the nearest example and copy it:** `npm run model -- find crate` lists ids, sizes,
++   params, token estimates and files; `npm run model -- zoo all` draws the whole library at one
++   scale.
++2. **Edit** the def in `src/engine/model/library/<family>.ts` (or a draft `.ts` file anywhere).
++3. **Check:** `npm run model -- check crate` exits 1 on problems and lists warnings. It builds the
++   model at its defaults, at each param's min and max, and at 3 seeds when the parts read the rng.
++4. **Look:** `npm run model -- sheet crate --compare` writes `.scratch/model/crate.png`. Open it.
++   With `--compare` the previous version is a magenta outline; `npm run model -- diff crate` says
++   in words what changed (parts added, removed, moved, resized, turned, recoloured).
++5. **Look in the game:** for anything that ships, open `/asset-lab.html?model=crate` (or
++   `?lineup=all`) in the real renderer: toon bands, outlines, looks, lights.
++6. Repeat until `check` is clean and the game-scale preview reads.
++
++`npm run model -- check` also runs in `scripts/check.sh`, for every model in the library.
++
++### What the sheet shows
++
++| row | answers |
++| --- | --- |
++| **turntable**, 8 angles at one scale | Is the silhouette right from every side? |
++| **front / side / top**, orthographic on a 0.1 m grid, with the size in metres | Are the parts where the numbers say? Do they touch? Is it the right size? |
++| **game scale**: Riftlight's camera (iso, yaw 45°, pitch 42°, 18 px/m × zoom) at the level (1.08) and town (1.22) zooms, one art pixel per pixel, ×4 | Does it read in the game? |
++| **palette** | Which slots, which colours, which are unused |
++| **check** | The problems and warnings, with the part and the fix |
++
++`--labels` writes named parts' and groups' names on the views; `--rig` draws anchors (cyan) and
++colliders (green). `--params k=v`, `--seed n` and `--palette slot=colour` draw another build.
++The sheets are software-drawn (no lights, filters or outline pass): the Asset Lab is the truth.
++
++## The format
++
++```ts
++import { boxFrame, model } from '../helpers';
++
++export const crate = model({
++  id: 'crate',
++  about: 'Wooden crate with a frame and diagonal braces', // one line: `find` searches it
++  tags: ['container', 'wood'],
++  palette: { wood: 'orange', band: 'red' }, // slots → PALETTE names
++  parts: [
++    { box: [0.68, 0.68, 0.68], at: [0, 0.36, 0], c: 'wood' },
++    boxFrame({ size: [0.72, 0.72, 0.72], beam: 0.09, at: [0, 0.36, 0], c: 'band' }),
++    { mirror: [{ box: [0.8, 0.08, 0.04], at: [0, 0.36, 0.35], rot: [0, 0, 45], c: 'band' }], axis: 'z' },
++  ],
++});
++```
++
++Metres and degrees; +Y is up, +Z is the front, the floor is y = 0. Parts are **keyed**, never
++positional, so a swapped vector can't be written unnoticed.
++
++**Every primitive fills its box `[w, h, d]`, centred on `at`**, turned by `rot` (XYZ, degrees,
++about `at`):
++
++| kind | shape |
++| --- | --- |
++| `box` | a box |
++| `cyl`, `top?` | an n-sided prism (`seg`; default 6 / 8 / 10 by size) starting at +X; `top` = top width ÷ bottom width, the wider end filling the box |
++| `cone` | a cone, point up |
++| `ball`, `half?` | a low-poly sphere; `half` is the upper dome, flat side down |
++| `lump`, `seed?` | a rock or blob (a jittered icosahedron) |
++| `wedge` | a ramp: full height at the back (−Z), down to the front edge |
++| `torus` | a ring in XZ whose outside fills the box; the tube is the box height thick |
++
++Round kinds are stretched per axis to the box: `[w, h, w]` with `seg: 6` comes out about 15%
++stretched in z, and a regular n-gon prism is exactly `cyl` with `seg: n`. **Profile kinds** use
++their own coordinates, placed at `at`: `lathe` ((radius, height) points turned about Y, written
++either way), `slab` (an XY outline or SVG path M L H V C Q Z, extruded `depth` along Z), `tube`
++(points and a radius, or a pair that tapers) and `mesh` (imports).
++
++**Composition:**
++
++- `{ group: [...], at, rot, scale?, c? }`: a frame; its `c` is its parts' default slot.
++  `pivot: true` (with a `name`) keeps it a movable Group at runtime, merged per material inside.
++- `{ mirror: [...], axis?: 'x' | 'z' }`: the parts plus their mirror image; mirrored names get
++  `.mirror`.
++- `{ use: 'barrel', at, rot, scale?, params?, seed?, palette? }`: another model by id. Its slots map
++  onto this model's (`palette: { theirs: 'ours' }`), else onto ours of the same name, else keep
++  their own colour as `<id>.<slot>`.
++- `on: 'name'` sits a part on the top of the named part; its `at` becomes an offset from there.
++- `params: { h: [default, min, max] }` with `parts: (p, rng) => [...]` make it parametric and seeded
++  (`rng` is the engine's `Rng`, its own stream per model and seed).
++- `anchors` (`[x, y, z]` or `{ at, rot }`) for grips and mounts; `light: { at, c, intensity, radius,
++  flicker? }`; `collider: 'box' | 'cyl' | 'hull' | 'none'`; `floats: true` for things that hang.
++
++## Checks
++
++**Problems** (`check` exits 1; `buildModel` throws a `ModelError`): an undeclared slot or a colour
++that isn't a PALETTE name; an unknown texture; a malformed mesh or path; NaN; a size that isn't
++positive; `seg` outside 3–64; an empty model; more than 1 cm below the floor unless `floats`; over
++the declared `size` by more than 10%; `on` naming no part (or one of its own); a `use` cycle or an
++unknown id; params outside their range; an import without `source` or with a licence that isn't
++allowed (CC0 until the licence escalation, #49, approves more).
++
++**Warnings** (what won't read at 480×270):
++
++- a part, or a cluster of touching parts, more than 1 cm from the rest (the floor counts as a
++  touch);
++- a rod: a part whose second-smallest extent is under 0.06 m (plates are fine);
++- over the triangle budget: under 0.5 m across 300, under 2 m 1,000, else 3,000;
++- more than 6 materials;
++- a part hidden inside another;
++- coplanar faces of different colours (z-fighting; bottoms on the floor excepted);
++- touching large masses whose colours differ by less than 0.08 in OKLab lightness.
++
++Every message names the part (its `name`, or its kind and path, e.g. `box at parts[3].group[1]`)
++and the fix.
++
++## Style rules
++
++- **Scale:** the hero is 1.75 m with the cap; a door is 2.2 m, a table 0.75 m, a chair seat 0.45 m.
++- **Silhouette first.** The iso camera sees the top and two sides: big masses must read; put detail
++  on the top and the front.
++- **Thickness:** rods and posts at least 0.06 m; 0.12 m or more for parts that carry the silhouette.
++- **Colour:** 2–4 slots, one of them an accent; touching big masses separate in lightness.
++- **Low poly:** 6–10 sides on round kinds (4 for square ones), faceted normals, no bevels under
++  ~2 cm.
++- **Grounding:** the base on y = 0, nothing floating unless `floats`; name anchors for anything
++  that attaches.
++- **Compose before you create:** `use` a library model before writing a new crate.
++
++## In a game
++
++```ts
++import { addModelColliders, buildModel } from './engine';
++
++const lamp = buildModel('lamp-post', { palette: { flame: 'cyan' } });
++lamp.object.position.set(4, 0, 2);
++ctx.scene.add(lamp.object);
++addModelColliders(ctx.physics, lamp, [4, 0, 2]);
++if (lamp.light) ctx.lights.request({ ...lamp.light, position: [4 + lamp.light.at[0], lamp.light.at[1], 2 + lamp.light.at[2]] });
++```
++
++`buildModel(idOrDef, { params, seed, palette, light })` returns `object` (one merged mesh per
++material, pivots as named Groups), `bounds`, `anchors`, `colliders` (data), `light` (a request) and
++`report` (tris, draws, materials). Palette slots bind to PALETTE names or computed colours (a
++theme's tint). Builds that don't read the rng are cached and share their geometry
++(`userData.shared`, kept by level unloads). `expandModel` gives the plain-JSON form. A game adds its
++own models with `MODEL_LIBRARY.add(def)` or a `ModelCatalog` of its own (`buildModel(id, { catalog })`).
