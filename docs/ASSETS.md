@@ -365,6 +365,42 @@ which passed the crate test; it shimmers while the camera zooms like a 20-texel 
 keep such models small on screen. Draw textures for 8: a 16-texel tile covers 2 m, so a brick of
 8 × 4 texels is 1 × 0.5 m.
 
+**Screen a surface before a level lays it.** `npm run build && npm run gate-b -- --backend webgpu
+--quick --floors <id>,<draft.ts>` lays each texture as the scene's floor (in place of the pinned
+cobbles, against a flat floor in its own mean colour) and reads it against the same line, all
+three ways; `--quick` runs only the landscape level sweep, where the worst step has always been
+(`<out>/screen.json` and a filmstrip per floor; `--help` has the rest). A floor fills most of the
+frame, so a wall texture screened as a floor is judged strictly. The score counts pixels that
+change, so what drives it is how many neighbouring texels differ in colour, not by how much:
+over 18 textures the worst step at 8 was 0.166 × that share (the share of texel pairs, across and
+down, of different colours) to within 0.2 points, which puts the line at a share of about 36%.
+Fewer edges is the fix: fewer colours or larger shapes. Lower contrast does nothing (cobbles with
+navy joints instead of ink scored the same 7.57%). The library's level surfaces at 8 (WebGPU;
+the line 5.97%; the pinned 0.22 cobbles, the control, 5.42% as recorded):
+
+| texture | edge share | worst step | mean step | |
+| --- | --- | --- | --- | --- |
+| dirt, ice, flagstones, grass | 16–20% | 2.60–3.37% | 1.67–2.11% | pass |
+| floor-tiles, moss, metal-plates, stone | 27–33% | 4.68–5.41% | 2.86–3.38% | pass |
+| bricks | 42% | 7.21% | 4.43% | **fail** as a floor (it passed as the record's wall) |
+| cobbles | 46% | 7.57% | 4.71% | **fail** |
+
+Both fail only the plan's reading (per step ×0.78 and ×0.83; under the worst-steps line). Bricks
+pass without the bevel (`bevel: 0`, two brick tones: 5.35%). Cobbles need both rims gone: without
+the lit rim 6.07%, without the shadow rim 6.26%; stone on joint in two colours 4.75%, or rimless
+stones in two tones as the 0.22 cobbles were 4.51%.
+
+Riftlight's levels take the passing surfaces as floors and bricks and stone as walls (docs/GAME.md,
+*Themes and props*). Their cobbles floors bind both rims to the stone's tone (a binding, so the
+library's cobbles keep their rims): stones on joints in two colours, 27% of texel pairs differing,
+screened at 4.50% worst step (mean 2.83%) as the fit predicts. Gravewell's metal plates, the
+busiest of the theme floors (30%), bind the lit edge to the plate's tone (20%). The share is cheap to
+check where a screening isn't: `src/riftlight/levels/levels.test.ts` bakes every theme's floor in
+its tones and in rift shifts of them and holds it under 33%, a margin under the line. Walls are
+held to a looser 45%: a wall is a small part of the frame, so the sweep's score is the floor's,
+and Gate B judged its wall by the filmstrips, where bricks (42%) read clean at 8. The bound keeps a
+busier wall from creeping in unscreened.
+
 ## Importing
 
 Kits made in a modelling tool come in as data too: the importer turns a glTF or GLB file into a

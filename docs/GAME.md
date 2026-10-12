@@ -1071,9 +1071,26 @@ suits. **Add a layout style:** add it to `LayoutStyle` and `STYLE` (corridor len
 
 A `LevelTheme` (`themes/themes.ts`) is data: palette (floor, wall, accent, fog, sky, light),
 `floorAlt`, `trim`, `cliff`, ambient and sun colours and intensities, height-fog distances, torch
-intensity/radius/flicker, prop ids and density, wall height, a `song` id and optional `filters`.
-Floors stay mid-dark and quiet, walls darker (silhouettes), trim and accent carry the identity, and
-in dark themes ambient + sun stay low so the dynamic lights carry the mood. **Add a theme:** add an
+intensity/radius/flicker, prop ids and density, wall height, `surfaces`, a `song` id and optional
+`filters`. Floors stay mid-dark and quiet, walls darker (silhouettes), trim and accent carry the
+identity, and in dark themes ambient + sun stay low so the dynamic lights carry the mood.
+`surfaces` textures the floor and the wall faces with library textures (docs/ASSETS.md,
+*Textures*; `npm run tex -- zoo surface`): each binds every slot of its texture to a theme tone,
+one of the theme's colours by name (`floor`, `floorAlt`, `wall`, `trim`, `cliff`, `accent`) or
+`[name, k]` tinted like `tint` (`{ texture: 'flagstones', slots: { joint: ['floor', -0.35], slab:
+'floor', slab2: 'floorAlt' } }`), so a rift's shift recolours it too. Keep the fill slots (slabs,
+stones, tiles, plates) close in lightness, since a floor is the backdrop actors read on; dark joints
+and seams are fine. What holds a floor quiet is its texel edges: how much a surface shimmers as the
+camera zooms tracks the share of neighbouring texels that differ in colour, not their contrast
+(docs/ASSETS.md, *Texel density*: Gate B's line is a share of about 36%), and a floor fills most of
+the frame, so `levels.test.ts` holds every theme's floor, in its tones and in rift shifts, under
+33% (walls, a small part of the frame, under 45%). Slots bound to one tone bake as one colour,
+which is the cheap fix: the cobbles' lit and shadow rims take the stone's tone (46% of texel pairs
+differ with the rims, 27% without), and Gravewell's plates' lit edge takes the plate's (30% to
+20%). Textures sit in world space at the engine's texel density (Gate B), so they run on across
+cells and round the corners the camera sees; floor cells along a wall take the floor surface
+darkened, and caps, trim bands and cliffs stay flat. Without a floor surface the floor is flat, in a
+2×2 pattern of `floor` and `floorAlt`; without a wall surface the walls are flat. **Add a theme:** add an
 entry to `THEMES`; `npm run level -- themes` shows it with three rift shifts and its floor/wall
 contrast. **Add a prop:** add a `PropDef` to `PROPS` (`themes/props.ts`) naming a library model
 (`model: 'barrel'`; docs/ASSETS.md, `npm run model -- find`) and, if the theme should dress it, a

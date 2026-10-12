@@ -5,18 +5,19 @@
  * sequence while each frame is captured and compared with the one before; `scripts/gate-b.ts`
  * drives it and does the sums. A frame's score is the share of its pixels whose colour changed,
  * after undoing the whole-pixel shift that best lines the two frames up (the iso rig snaps to
- * art pixels, so a pan is a shift, not a change).
+ * art pixels, so a pan is a shift, not a change). A scene can take another floor (`floor`), so a
+ * surface is screened as the floor against a flat floor in its own mean colour.
  */
 import type { Mesh, Vector3 } from 'three/webgpu';
 import type { Engine, Framing, GameContext, LightHandle } from '../engine';
 import { buildModel, type ModelBuild, type ModelDef, type Part } from '../engine/model';
-import { bakeTexture, meanColour, TEXTURE_LIBRARY, TextureCatalog, textureDef } from '../engine/texture';
+import { bakeTexture, meanColour, TEXTURE_LIBRARY, TextureCatalog, textureDef, type TextureDef } from '../engine/texture';
 
 /**
  * The scene's surfaces: the library's `cobbles`, `bricks` and `planks` as they were when Gate B
  * was measured (engine 0.22), pinned here so the record reproduces when the library redraws them.
  */
-const PINNED = {
+export const PINNED = {
   floor: textureDef({ id: 'gate-b-cobbles', about: 'Rounded cobblestones with dark joints (cobbles, 0.22)', tags: [], size: [16, 16], tile: true, palette: { joint: 'night', stone: 'slate', stone2: 'mist' }, layers: [{ pattern: 'cobbles', colors: ['joint', 'stone', 'stone2'], cells: 3, gap: 1, seed: 4 }] }),
   wall: textureDef({ id: 'gate-b-bricks', about: 'Stone bricks in courses over dark mortar (bricks, 0.22)', tags: [], size: [16, 16], tile: true, palette: { mortar: 'night', stone: 'slate', stone2: 'mist' }, layers: [{ pattern: 'bricks', colors: ['mortar', 'stone', 'stone2'], w: 8, h: 4, seed: 2 }] }),
   crate: textureDef({ id: 'gate-b-planks', about: 'Floor boards with gaps and staggered butt joints (planks, 0.22)', tags: [], size: [16, 16], tile: true, palette: { gap: 'plum', wood: 'red', wood2: 'orange' }, layers: [{ pattern: 'planks', colors: ['gap', 'wood', 'wood2'], w: 4, length: 16, grain: 0.3, seed: 3 }] }),
@@ -49,17 +50,38 @@ export interface GateBRun {
   readonly shots: { frame: number; rgba: string }[];
 }
 
-const textureOf = (set: GateBSet, s: Surface): string | null => (set === 'flat' ? null : set === 'bad' ? BAD.id : set === 'calm' ? CALM.id : PINNED[s].id);
+/** The textures a scene may use: the library, the calibration pair and the pinned surfaces. */
+export const gateBTextures = (): TextureCatalog => new TextureCatalog([...TEXTURE_LIBRARY.all(), BAD, CALM, ...Object.values(PINNED)]);
 
-/** The flat baseline's colours: each surface texture's mean colour. */
-const flatColour = (s: Surface) => meanColour(bakeTexture(PINNED[s]));
-
-function surface(set: GateBSet, s: Surface, part: Omit<Part, 'c'> & Record<string, unknown>): Part {
-  const tex = textureOf(set, s);
-  return (tex ? { ...part, tex } : { ...part, c: s }) as Part;
+/**
+ * The floor a scene screens: an id in `catalog` (the library's or a pinned one), a variant def under
+ * an id of its own, or (no floor) the pinned cobbles Gate B was measured with.
+ */
+export function floorDef(floor: string | TextureDef | undefined, catalog: TextureCatalog): TextureDef {
+  if (floor === undefined) return PINNED.floor;
+  if (typeof floor === 'string') return catalog.get(floor);
+  if (catalog.has(floor.id)) throw new Error(`floor "${floor.id}": that id is taken; give a variant an id of its own`);
+  return floor;
 }
 
-function sceneDef(set: GateBSet, texel: number): ModelDef {
+/**
+ * What each surface is drawn with: a texture id, or (`flat`) a colour, the mean colour of the texture
+ * the `library` set lays there. Only the floor changes with `floor`; calm and bad cover everything.
+ */
+export function sceneSurfaces(set: GateBSet, floor: TextureDef = PINNED.floor): Record<Surface, string | number> {
+  const defs: Record<Surface, TextureDef> = { ...PINNED, floor };
+  const of = (s: Surface) => (set === 'flat' ? meanColour(bakeTexture(defs[s])) : set === 'bad' ? BAD.id : set === 'calm' ? CALM.id : defs[s].id);
+  return { floor: of('floor'), wall: of('wall'), crate: of('crate') };
+}
+
+type Surfaces = ReturnType<typeof sceneSurfaces>;
+
+function surface(surfaces: Surfaces, s: Surface, part: Omit<Part, 'c'> & Record<string, unknown>): Part {
+  const d = surfaces[s];
+  return (typeof d === 'string' ? { ...part, tex: d } : { ...part, c: s }) as Part;
+}
+
+export function sceneDef(set: GateBSet, texel: number, surfaces: Surfaces = sceneSurfaces(set)): ModelDef {
   return {
     id: `gate-b-${set}`,
     about: 'Gate B scene',
@@ -68,16 +90,25 @@ function sceneDef(set: GateBSet, texel: number): ModelDef {
     floats: true,
     palette: { floor: 'slate', wall: 'slate', crate: 'orange' },
     parts: [
-      surface(set, 'floor', { box: [120, 0.2, 120], at: [0, -0.1, 0] }),
-      surface(set, 'wall', { box: [6, 2.5, 0.4], at: [0, 1.25, -2.6] }),
-      surface(set, 'crate', { box: [0.8, 0.8, 0.8], at: [-1.6, 0.4, -1.6] }),
-      surface(set, 'crate', { box: [0.8, 0.8, 0.8], at: [-0.6, 0.4, -1.8], rot: [0, 30, 0] }),
+      surface(surfaces, 'floor', { box: [120, 0.2, 120], at: [0, -0.1, 0] }),
+      surface(surfaces, 'wall', { box: [6, 2.5, 0.4], at: [0, 1.25, -2.6] }),
+      surface(surfaces, 'crate', { box: [0.8, 0.8, 0.8], at: [-1.6, 0.4, -1.6] }),
+      surface(surfaces, 'crate', { box: [0.8, 0.8, 0.8], at: [-0.6, 0.4, -1.8], rot: [0, 30, 0] }),
     ],
   };
 }
 
-function crateDef(set: GateBSet, texel: number): ModelDef {
-  return { id: `gate-b-crate-${set}`, about: 'Gate B sliding crate', tags: [], texel, palette: { crate: 'orange' }, parts: [surface(set, 'crate', { box: [0.8, 0.8, 0.8], at: [0, 0.4, 0] })] };
+function crateDef(set: GateBSet, texel: number, surfaces: Surfaces): ModelDef {
+  return { id: `gate-b-crate-${set}`, about: 'Gate B sliding crate', tags: [], texel, palette: { crate: 'orange' }, parts: [surface(surfaces, 'crate', { box: [0.8, 0.8, 0.8], at: [0, 0.4, 0] })] };
+}
+
+export interface GateBSceneOptions {
+  /**
+   * The floor: what the `library` set lays (a texture id, the library's or a pinned one, or a
+   * variant def under an id of its own) and whose mean colour the `flat` set lays. Default: the
+   * pinned cobbles, as Gate B was measured. Calm and bad ignore it.
+   */
+  readonly floor?: string | TextureDef;
 }
 
 /** The Gate B scene in a lab: build it, then `run` camera sequences over it. */
@@ -87,7 +118,7 @@ export class GateB {
   private light: LightHandle | null = null;
   /** The lab's camera before the first scene (`clear` puts it back). */
   private saved: { zoom: number; target: Vector3 } | null = null;
-  private readonly catalog = new TextureCatalog([...TEXTURE_LIBRARY.all(), BAD, CALM, ...Object.values(PINNED)]);
+  private readonly catalog = gateBTextures();
 
   constructor(
     private readonly engine: Engine,
@@ -99,14 +130,17 @@ export class GateB {
   ) {}
 
   /** Build the scene with a set of textures at `texel` texels per metre (`flat`: their mean colours). */
-  scene(set: GateBSet, texel: number): { tris: number; materials: number } {
+  scene(set: GateBSet, texel: number, o: GateBSceneOptions = {}): { tris: number; materials: number } {
+    const floor = floorDef(o.floor, this.catalog);
+    const textures = this.catalog.has(floor.id) ? this.catalog : new TextureCatalog([...this.catalog.all(), floor]);
     this.clear();
     this.saved = { zoom: this.engine.camera.zoom, target: this.target.clone() };
     this.hideLab(true);
-    const palette = set === 'flat' ? { floor: flatColour('floor'), wall: flatColour('wall'), crate: flatColour('crate') } : undefined;
-    const opts = { textures: this.catalog, ...(palette ? { palette } : {}) };
-    const scene = buildModel(sceneDef(set, texel), opts);
-    this.crate = buildModel(crateDef(set, texel), palette ? { textures: this.catalog, palette: { crate: palette.crate } } : { textures: this.catalog });
+    const surfaces = sceneSurfaces(set, floor);
+    const palette = set === 'flat' ? (surfaces as Record<Surface, number>) : undefined;
+    const opts = { textures, ...(palette ? { palette } : {}) };
+    const scene = buildModel(sceneDef(set, texel, surfaces), opts);
+    this.crate = buildModel(crateDef(set, texel, surfaces), palette ? { textures, palette: { crate: palette.crate } } : { textures });
     this.crate.object.position.set(-3, 0, 0.4);
     this.builds = [scene, this.crate];
     for (const b of this.builds) this.ctx.scene.add(b.object);
