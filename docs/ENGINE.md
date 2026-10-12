@@ -1321,7 +1321,9 @@ mesh per material and returns its bounds, anchors, collider data (`addModelColli
 request; `MODEL_LIBRARY` holds the built-ins (`npm run model -- find`). `glowMaterial(color)` is the
 unlit counterpart of `toonMaterial` for flames and screens. The format, the checks, the style
 rules and the loop (`npm run model -- check / sheet --compare`, the Asset Lab) are in
-[docs/ASSETS.md](ASSETS.md).
+[docs/ASSETS.md](ASSETS.md). Kits in glTF/GLB come in as palette-mapped `mesh` parts
+(`npm run model -- import`); a pack of them is a JSON file a game loads with `loadPack(url)`, the
+way `loadModel` loads a GLB (docs/ASSETS.md, *Importing*).
 
 Pixel-art textures are data the same way (`src/engine/texture/`): a `TextureDef` of layers (pixel
 rows, seeded patterns that tile, SVG paths, outlines) in palette slots, baked headless by
@@ -1469,14 +1471,16 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
   frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
   never for a fixed number of rendered frames when they can avoid it.
-- `npm run model -- check / sheet / diff / find / zoo / tokens` (`scripts/model.ts`,
-  docs/ASSETS.md): ModelDefs checked (problems exit 1, warnings for what won't read at 480×270),
-  drawn as sheets (turntable, front / side / top on a 0.1 m grid, game-scale previews through
-  Riftlight's camera, the previous version in magenta) and diffed in words. The Asset Lab
-  (`/asset-lab.html`, `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `clear`,
-  `setLook`, `state`, `capture`, `gateB`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both backends.
-  `npm run build && npm run gate-b` (`scripts/gate-b.ts`) measures texel shimmer there (Gate B,
-  docs/ASSETS.md *Texel density*): ~60 min a backend.
+- `npm run model -- check / sheet / diff / find / zoo / tokens / import / import-pack / credits`
+  (`scripts/model.ts`, docs/ASSETS.md): ModelDefs checked (problems exit 1, warnings for what
+  won't read at 480×270), drawn as sheets (turntable, front / side / top on a 0.1 m grid,
+  game-scale previews through Riftlight's camera, the previous version in magenta) and diffed in
+  words; glTF/GLB files imported as palette-mapped `mesh` parts with a fidelity sheet, packs
+  imported and the credits listed from provenance. The Asset Lab (`/asset-lab.html`,
+  `window.__ASSET_LAB__`: `list`, `show`, `lineup`, `zoom`, `clear`, `setLook`, `state`,
+  `capture`, `gateB`) shows them in the real renderer; the `asset-lab` e2e suite drives it on both
+  backends. `npm run build && npm run gate-b` (`scripts/gate-b.ts`) measures texel shimmer there
+  (Gate B, docs/ASSETS.md *Texel density*): ~60 min a backend.
 - `npm run tex -- check / sheet / find / zoo` (`scripts/tex.ts`, docs/ASSETS.md *Textures*):
   TextureDefs checked (problems exit 1; warnings for seams, salt-and-pepper texels and sizes) and
   drawn as sheets (1×, enlarged, tiled 3×3, frames, palette).

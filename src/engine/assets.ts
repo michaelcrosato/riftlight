@@ -1,6 +1,8 @@
 import type { AnimationClip, Material, Mesh, Object3D, Texture } from 'three/webgpu';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
+import type { ModelCatalog } from './model/catalog';
+import { packCatalog, parsePack } from './model/packs/pack';
 import { toonify, type ToonifyOptions } from './render/toon';
 
 export interface Model {
@@ -56,6 +58,36 @@ function markShared(root: Object3D): Object3D {
     }
   });
   return root;
+}
+
+const packs = new Map<string, Promise<ModelCatalog>>();
+
+/**
+ * Load a pack of imported models (`public/packs/<pack>.json`, docs/ASSETS.md *Importing*) once,
+ * the way `loadModel` loads a GLB: the URL resolved the same way (under the base URL; a page may
+ * put a data URL for it in `__PIXEL_ASSETS__`, though single-file builds embed only
+ * `public/assets/*.glb`), counted by `assetProgress`. Resolves to a catalog of the pack's
+ * ModelDefs, to build from with `buildModel(id, { catalog })`; `into` also adds them to a catalog
+ * of yours (e.g. `MODEL_LIBRARY`, so `use` finds them).
+ */
+export function loadPack(url: string, opts: { readonly into?: ModelCatalog } = {}): Promise<ModelCatalog> {
+  let pending = packs.get(url);
+  if (!pending) {
+    const p = { loaded: 0, total: 0, done: false };
+    progress.set(url, p);
+    pending = fetch(resolveAsset(url))
+      .then((r) => {
+        if (!r.ok) throw new Error(`pack ${url}: HTTP ${r.status}`);
+        return r.json() as Promise<unknown>;
+      })
+      .then((json) => packCatalog(parsePack(json, `pack ${url}`)))
+      .finally(() => (p.done = true));
+    packs.set(url, pending);
+  }
+  return pending.then((catalog) => {
+    opts.into?.add(...catalog.all());
+    return catalog;
+  });
 }
 
 /**

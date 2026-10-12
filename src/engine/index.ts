@@ -64,7 +64,8 @@ export {
   type LookTarget,
   type PixelLook,
 } from './render/look';
-export { loadModel, type Model } from './assets';
+export { loadModel, loadPack, type Model } from './assets';
+export { decodePng, PngError, type RgbaImage } from './png';
 export { GAMEPAD_BUTTONS, Input, PRESS_WINDOW, applyDeadzone, type GamepadLike } from './input';
 export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
@@ -104,6 +105,7 @@ export { mergeStaticMeshes, type MergeOptions } from './render/merge';
 export {
   DEFAULT_TEXEL,
   MOVING_TEXEL,
+  LICENCES,
   MODEL_LIBRARY,
   ModelCatalog,
   ModelError,
@@ -114,6 +116,7 @@ export {
   expandModel,
   gridOf,
   model,
+  parsePack,
   rowOf,
   scatterOf,
   validateModel,
@@ -126,6 +129,7 @@ export {
   type ModelLight,
   type ModelLightRequest,
   type ModelOptions,
+  type ModelPack,
   type Part as ModelPart,
   type Provenance as ModelProvenance,
 } from './model';

@@ -1,4 +1,5 @@
-// Tiny PNG encoder (RGBA8, no filtering) for the animation and film tools.
+// Tiny PNG encoder (RGBA8, no filtering) for the animation and film tools. The decoder is the
+// engine's (src/engine/png.ts); `pngChunk` lets tests build PNGs of other kinds for it.
 import { deflateSync } from 'node:zlib';
 import type { SheetImage } from '../src/engine/animation';
 
@@ -12,7 +13,8 @@ function crc32(buf: Uint8Array): number {
   for (const b of buf) c = CRC[(c ^ b) & 0xff]! ^ (c >>> 8);
   return (c ^ -1) >>> 0;
 }
-function chunk(type: string, data: Uint8Array): Buffer {
+/** One chunk: length, type, data and its CRC. */
+export function pngChunk(type: string, data: Uint8Array): Buffer {
   const out = Buffer.alloc(12 + data.length);
   out.writeUInt32BE(data.length, 0);
   out.write(type, 4, 'ascii');
@@ -31,5 +33,5 @@ export function encodePng(img: SheetImage): Buffer {
     raw[y * (img.width * 4 + 1)] = 0;
     Buffer.from(img.data.buffer, img.data.byteOffset + y * img.width * 4, img.width * 4).copy(raw, y * (img.width * 4 + 1) + 1);
   }
-  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), chunk('IHDR', ihdr), chunk('IDAT', deflateSync(raw)), chunk('IEND', new Uint8Array(0))]);
+  return Buffer.concat([Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]), pngChunk('IHDR', ihdr), pngChunk('IDAT', deflateSync(raw)), pngChunk('IEND', new Uint8Array(0))]);
 }

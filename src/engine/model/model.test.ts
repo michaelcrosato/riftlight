@@ -282,7 +282,7 @@ describe('buildModel', () => {
 
   it('use: two of its slots mapped onto one of ours keep all their faces', () => {
     const v = '0 0 0,1000 0 0,0 1000 0,0 0 1000';
-    const tet = model({ id: 'tet', about: '', tags: [], palette: { a: 'red', b: 'blue' }, source: { url: 'test', licence: 'CC0-1.0' }, parts: [{ mesh: { v, f: { a: '0 2 1,0 1 3', b: '0 3 2,1 2 3' } } }] });
+    const tet = model({ id: 'tet', about: '', tags: [], palette: { a: 'red', b: 'blue' }, source: { url: 'src/engine/model/model.test.ts', licence: 'LicenseRef-own' }, parts: [{ mesh: { v, f: { a: '0 2 1,0 1 3', b: '0 3 2,1 2 3' } } }] });
     const one = model({ id: 'one', about: '', tags: [], palette: { x: 'sand' }, parts: [{ use: 'tet', palette: { a: 'x', b: 'x' } }] });
     const catalog = new ModelCatalog([tet, one]);
     expect(buildModel('one', { catalog }).report.tris).toBe(4);
@@ -434,7 +434,7 @@ describe('checks', () => {
     expect(validateModel(def([{ ...ok, tex: 'gem-icon' }])).warnings.join()).toMatch(/texture 'gem-icon' doesn't tile/);
   });
   it('malformed mesh', () => {
-    const src = { url: 'test', licence: 'CC0-1.0' };
+    const src = { url: 'src/engine/model/model.test.ts', licence: 'LicenseRef-own' };
     expect(problems(def([{ mesh: { v: '0 0 0,1000 0 0,0 1000', f: { a: '0 1 2' } } }], { source: src }))[0]).toMatch(/vertex "0 1000"/);
     expect(problems(def([{ mesh: { v: '0 0 0,1000 0 0,0 1000 0', f: { a: '0 1 3' } } }], { source: src }))[0]).toMatch(/face "0 1 3"/);
   });
@@ -487,7 +487,8 @@ describe('checks', () => {
     expect(problems(def([mesh]))[0]).toMatch(/no `source`/);
     expect(problems(def([mesh], { source: { url: 'x', licence: 'CC-BY-SA-4.0' } }))[0]).toMatch(/licence 'CC-BY-SA-4.0' is not allowed/);
     expect(problems(def([mesh], { source: { url: 'x', licence: 'CC-BY-4.0', author: 'someone' } }))[0]).toMatch(/licence 'CC-BY-4.0' is not allowed/); // until #49 approves a pack
-    expect(problems(def([mesh], { source: { url: 'x', licence: 'CC0-1.0' } }))).toEqual([]);
+    expect(problems(def([mesh], { source: { url: 'x', licence: 'CC0-1.0' } }))[0]).toMatch(/licence 'CC0-1.0' is not allowed without an approved pack/); // third-party, even CC0: an approved pack (#49)
+    expect(problems(def([mesh], { source: { url: 'src/engine/model/model.test.ts', licence: 'LicenseRef-own' } }))).toEqual([]);
   });
 
   it('warns: floating parts, rods, triangle budget, too many materials', () => {

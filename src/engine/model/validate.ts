@@ -12,15 +12,10 @@ import { boundsOf, compileParts, type Bounds, type CompiledPart } from './compil
 import { expandDef, partLabel, type ModelOptions } from './expand';
 import { layoutModel, modelDef } from './build';
 import { MODEL_LIBRARY } from './library';
+import { licenceProblem } from './packs/licences';
 import { partExtents, readabilityWarnings } from './readability';
 import { BOX_KINDS, SEG_RANGE } from './prims';
 import type { ModelDef, Part, Vec3 } from './types';
-
-/**
- * Licences an import may carry (docs/plans/asset-system.md §7.1). CC-BY joins only pack by
- * pack, once a human approves it on the licence escalation (#49); until then, CC0 alone.
- */
-export const ALLOWED_LICENCES: readonly string[] = ['CC0-1.0'];
 
 /** Triangle budget by the model's largest dimension (style rules, §4.4). */
 export function triangleBudget(largest: number): number {
@@ -100,7 +95,8 @@ export function validateModel(idOrDef: string | ModelDef, opts: CheckOptions = {
   problems.push(...compiled.problems);
 
   if (e.imports && !def.source) problems.push(`it has imported \`mesh\` parts but no \`source\`: record url, licence, author and sha256 (provenance is data)`);
-  if (def.source && !ALLOWED_LICENCES.includes(def.source.licence)) problems.push(`its source licence '${def.source.licence}' is not allowed (${ALLOWED_LICENCES.join(', ')}): use another source`);
+  const licence = def.source ? licenceProblem(def.source) : null;
+  if (licence) problems.push(licence);
 
   sizeProblems(model.parts, 'parts', problems);
   const parts = compiled.parts;

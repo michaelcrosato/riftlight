@@ -57,8 +57,12 @@
 //                 `npm run film` films a short script and writes its PNG + JSON; `npm run balance`
 //                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
 //                 their JSON, CSV and PNGs; `npm run model` checks the library in under 10 s,
-//                 draws a sheet, a compare sheet and a zoo, and finds and diffs models; `npm run
-//                 tex` checks, draws a re-bound sheet and the zoo, finds, and refuses an unknown id.
+//                 draws a sheet, a compare sheet and a zoo, finds and diffs models, imports our own
+//                 tree.glb (a clean draft, IoU ≥ 0.98), refuses a disallowed licence, a
+//                 third-party file or pack nobody approved (import, import --pack, import-pack),
+//                 own work with an outside source and an unsafe id, and writes the credits;
+//                 `npm run tex` checks, draws a re-bound sheet and the zoo, finds, and refuses an
+//                 unknown id.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
@@ -1252,6 +1256,29 @@ async function runTools(browserExe) {
     check(zoo.code === 0 && z.width > 300 && z.bytes > 5000, `zoo containers: ${z.width}×${z.height}`);
     const found = await m('find', 'container');
     check(found.code === 0 && /barrel/.test(found.out) && /crate/.test(found.out) && /tok/.test(found.out), 'find container lists the barrel and the crate with token estimates');
+    // import: our own generated tree (named flat materials) → a draft def and a fidelity sheet
+    const own = ['--as', 'tree-import', '--licence', 'LicenseRef-own', '--source', 'scripts/generate-assets.mjs'];
+    const imported = await m('import', 'public/assets/tree.glb', ...own, '--json');
+    const ij = imported.code === 0 ? JSON.parse(imported.out) : { fidelity: { iou: 0 }, problems: ['crashed'] };
+    const fid = await pngSize(new URL('fidelity/tree-import.png', out));
+    check(imported.code === 0 && ij.fidelity.iou >= 0.98 && ij.problems.length === 0 && fid.width > 500 && Object.keys(ij.palette).join() === 'leavesLow,leavesHigh,trunk', `import tree.glb: game IoU ${ij.fidelity.iou}, slots ${Object.keys(ij.palette ?? {}).join(', ')}${imported.code ? `\n    ${tail(imported.out)}` : ''}`);
+    const draft = await m('check', '.scratch/e2e/model/import/tree-import.ts');
+    check(draft.code === 0 && /\b0 with problems/.test(draft.out), 'the imported draft checks clean as a file');
+    const refused = await m('import', 'public/assets/tree.glb', ...own.slice(0, 2), '--licence', 'CC-BY-SA-4.0', '--source', 'x');
+    check(refused.code === 2 && /refused: .*'CC-BY-SA-4.0' is not allowed/.test(refused.out), 'import refuses a licence the checks refuse');
+    const unapproved = await m('import', 'public/assets/tree.glb', '--as', 'thirdparty/tree', '--licence', 'CC0-1.0', '--source', 'https://example.test/kit.zip', '--pack', 'thirdparty');
+    const packWritten = await stat(new URL('public/packs/thirdparty.json', ROOT)).then(() => true, () => false);
+    check(unapproved.code === 2 && /pack 'thirdparty', which is not approved/.test(unapproved.out) && !packWritten, 'import --pack refuses a third-party pack nobody approved, and writes no pack file');
+    const lone = await m('import', 'public/assets/tree.glb', '--as', 'tree-cc0', '--licence', 'CC0-1.0', '--source', 'https://example.test/tree.glb');
+    check(lone.code === 2 && /'CC0-1.0' is not allowed without an approved pack \(it names no pack/.test(lone.out), 'import refuses a single third-party file, CC0 included, that names no approved pack');
+    const outside = await m('import', 'public/assets/tree.glb', '--as', 'tree-own', '--licence', 'LicenseRef-own', '--source', 'https://example.test/tree.glb');
+    check(outside.code === 2 && /own work with an outside source/.test(outside.out), 'import refuses own work whose source is outside this repository');
+    const unsafe = await m('import', 'public/assets/tree.glb', '--as', '../tree', ...own.slice(2));
+    check(unsafe.code === 2 && /--as takes an id like chair/.test(unsafe.out), 'import refuses an id that would climb out of its folder');
+    const pack = await m('import-pack', 'kenney-furniture');
+    check(pack.code === 2 && /no approved pack "kenney-furniture"/.test(pack.out) && /#49/.test(pack.out), `import-pack refuses an unapproved pack, naming #49: ${pack.out.trim().split('\n')[0]}`);
+    const credits = await m('credits');
+    check(credits.code === 0 && /# Credits/.test(credits.out), 'credits writes the attribution list');
   } catch (e) {
     check(false, `model crashed: ${e.message}`);
   }

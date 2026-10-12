@@ -69,9 +69,11 @@ export function flatTriangles(compiled: Compiled, palette: ExpandedModel['palett
     const sample = p.tex && !p.glow && tex ? samplerOf(p.tex) : null;
     const uvs = sample ? partUVs(p, tex!.texel, tex!.textures.get(p.tex!).size) : null;
     const color: RGB = sample ? [255, 255, 255] : rgbOf(palette[p.slot] === undefined ? 0xff00ff : bindingHex(palette[p.slot]!));
+    const order = p.matrix.determinant() < 0 ? [0, 2, 1] : [0, 1, 2]; // mirrored: keep faces outward, as layoutModel does
     for (let k = 0; k < p.tris.length; k += 9) {
-      const v = [0, 3, 6].map((o) => new Vector3(p.tris[k + o]!, p.tris[k + o + 1]!, p.tris[k + o + 2]!).applyMatrix4(p.matrix)) as [Vector3, Vector3, Vector3];
-      out.push({ p: v, color, unlit: p.glow, part: i + 1, ...(uvs && sample ? { tex: { uv: uvs.subarray((k / 3) * 2, (k / 3) * 2 + 6), sample } } : {}) });
+      const v = order.map((o) => new Vector3(p.tris[k + o * 3]!, p.tris[k + o * 3 + 1]!, p.tris[k + o * 3 + 2]!).applyMatrix4(p.matrix)) as [Vector3, Vector3, Vector3];
+      const uv = uvs ? order.flatMap((o) => [uvs[(k / 3 + o) * 2]!, uvs[(k / 3 + o) * 2 + 1]!]) : null;
+      out.push({ p: v, color, unlit: p.glow, part: i + 1, ...(uv && sample ? { tex: { uv, sample } } : {}) });
     }
   });
   return out;
