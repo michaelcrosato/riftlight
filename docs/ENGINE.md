@@ -1469,7 +1469,8 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
 
   Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
   Chromium loses the WebGPU device when a canvas presents. Run one suite with
-  `npm run test:e2e -- moves`, a CI group with `-- @core` (`@cameras`, `@filters`), and set
+  `npm run test:e2e -- moves`, a CI group with `-- @core` (`@cameras`, `@filters`, `@world`,
+  `@assets`: the asset-lab suite alone, since it grows with the library), and set
   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
   frames per second, so suites wait for conditions, game time or `Engine.step()` frames,
   never for a fixed number of rendered frames when they can avoid it.

@@ -38,7 +38,7 @@ npm run bundle       # the engine kit for other agents: bundle/pixel-engine/ + b
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run; E2E_PORT=…)
-npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters
+npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters, @world, @assets
 npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
 npm run anim -- curves Run     # motion curves (graph editor) PNG
