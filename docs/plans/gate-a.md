@@ -248,3 +248,47 @@ neither arm's flames were judged with one. In the real renderer the library flam
 light, reads as bright fire (`npm run build && npm run test:e2e -- asset-lab` writes
 `.scratch/e2e/asset-lab-webgpu-lineup.png`). So a ModelDef fire with its `light` looks better in
 the game than its judge image showed.
+
+## Results: the third run, with the full library (Phase 8, 2026-10-12)
+
+The plan's Phase 8 runs Gate A again "with the full library (same protocol)": the prompts above
+word for word (only the folder, `.scratch/gate-a3/`), arm (b) reading the library as it now is
+(151 models, engine 0.26.0), both arms run fresh, 3 runs per brief, and each brief's median pair
+judged from neutral file names by two fresh judges, one in each order.
+
+**Failed on tokens, won on quality: R = 1.754, and (b) won 3 of 4 briefs outright.** The pass rule
+needs R ≤ 1.0 for that, so the gate fails. The plan continues on the human's instruction (see the
+second run).
+
+| Brief | Arm (a) runs | Median (a) | Arm (b) runs | Median (b) | b ÷ a |
+| --- | --- | --- | --- | --- | --- |
+| hand cart | 83,294 · 85,736 · 90,005 | 85,736 | 104,751 · 122,170 · 147,389 | 122,170 | 1.42 |
+| stone archway | 78,115 · 80,382 · 90,467 | 80,382 | 140,072 · 154,823 · 212,686 | 154,823 | 1.93 |
+| campfire ring | 97,424 · 104,689 · 108,309 | 104,689 | 130,590 · 171,918 · 178,207 | 171,918 | 1.64 |
+| weapon rack | 98,863 · 99,455 · 105,414 | 99,455 | 176,611 · 200,710 · 210,230 | 200,710 | 2.02 |
+| **Σ medians** | | **370,262** | | **649,621** | **R = 1.754** |
+
+The judged models are `gate-a/<brief>-a3.ts` and `-b3.ts` and redraw their judge images byte for
+byte. The coin put (a) first in every brief again.
+
+| Brief | Coin's order ((a) first) | Reversed ((b) first) | Brief |
+| --- | --- | --- | --- |
+| hand cart | (b): "gold wheel rims… stand out"; (a)'s "dark wheels… blend into the shadow" | (b): "larger gold wheels stand out clearly" | **(b)** |
+| stone archway | (a): "curved silhouette reads instantly"; (b)'s "flat lintel block… an ornate gate" | (a): "curved voussoir ring… unmistakable archway" | **(a)** |
+| campfire ring | (b): "bright orange flame with a white-hot core"; (a)'s "muddy tan cone" | (b): "clearly a campfire… a bright orange flame" | **(b)** |
+| weapon rack | (b): weapons "evenly spaced… stand out"; (a)'s "busy dark purple rails" | (b): "three clearly separated weapons" | **(b)** |
+
+What the third run shows:
+- **Quality turned:** (b) won the hand cart, the campfire and the weapon rack in both orders; the
+  Kit kept the archway. Where (b) won it composed the library: all three campfire-b runs used
+  `flame` (the 4a rebuild now reads as fire; the second run's lost as "a muddy brown cone"), and
+  all three weapon-rack-b runs placed the library's `spear`, `greataxe` and `greatsword`.
+- **Cost went the other way, and the protocol says why:** arm (b)'s prompt reads "the seed library
+  in src/engine/model/library/", word for word, and that is now 233 KB of source (78 KB in the
+  second run), some 39k tokens more to read before writing a line. (b)'s medians rose by 21k–83k a
+  brief against the second run; (a)'s fell by 3k–26k. The cost is reading the whole library, not
+  using it: a full-library agent should search it (`npm run model -- find`, `zoo`; the kit's
+  LIBRARY.md), which is what the format's docs now say, but the gate's prompt was frozen at 2a.
+- Cost: 3.07M tokens for the runs, 0.53M for the judges.
+- Follow-up (not run): the same gate with arm (b) told to search the library instead of reading
+  it would measure the format rather than the size of its examples.
