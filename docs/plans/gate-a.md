@@ -157,9 +157,37 @@ Cost:
 A human chose option 2 of [#54](https://github.com/michaelcrosato/riftlight/issues/54): fix what lost
 the first run, then run Gate A once more. If it fails again, the plan stops for good.
 
-**What changes before it runs** (one PR, listed in the Status table): `model -- check` warnings for
-what lost the first run, and library components that show how to avoid it. The prompts above stay
-word for word; arm (b) reads the bigger library because its prompt says to read the library.
+**What changes before it runs** (engine 0.19.0, one PR, listed in the Status table). Each change
+answers something measured on the first run's 24 models:
+- **Two `model -- check` warnings, counted on the game's own pixels.** They are calibrated on the
+  first run's models and the seed library: each flags the judged losers and nothing the judges
+  preferred.
+  - *One block:* 4 or more large parts of one colour joined into a region covering 40% or more of
+    the model. It flags archway-b (45%, 9 parts) and hand-cart-b (47%, 4 parts), and no library
+    model or Kit run. It passes the crate's frame and the lamp post, whose parts are thin. A part
+    is large by its own extents (0.2 m or more), so a turned rod stays a rod.
+  - *Glow:* glow over 15% of the model, once it is 30 art pixels or more (an ember is less). All
+    three campfire-b runs had 20–28%; the lamp post has 9%.
+- **The material warning moves from over 6 to over 8.** All three campfire-b runs and one
+  weapon-rack-b run had to drop colours to clear it. The Kit arm's models used 3–9; the four
+  judged winners (three Kit, one ModelDef) used 3, 5, 6 and 8.
+- **The format's header** (types.ts, which arm (b) reads) says what reads at 480×270: colour
+  separates touching parts (as many colours as the parts need, up to 8), glow stays small, rods
+  vanish.
+- **Library components:**
+  - `flame`: fat, splayed, lit tongues and a small glowing heart. It is built the way the Kit
+    arm's flames were, the way that reads in the preview.
+  - `rock` and `stone-ring`.
+  - `arch`: voussoirs in two shades over dark mortar.
+
+  These are parts of three of the briefs (a campfire, an archway). That overlap is deliberate,
+  because composition is what the format is for, and the plan's Phase 8 re-run uses the whole
+  library. Both runs are recorded, so the gain from these components can be read off.
+- **Not done:** drawing glow with a lit rim in sheets, which #54 first proposed. In the game, glow
+  *is* flat, so a lit rim would make the preview lie (plan principle 6).
+
+The prompts above stay word for word. Arm (b) reads the bigger library and the longer header
+because its prompt says to read them.
 
 **How it runs:**
 - Both arms run again, 3 fresh runs per brief, so the two arms are measured at the same time. The

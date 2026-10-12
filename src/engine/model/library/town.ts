@@ -10,7 +10,7 @@ export const statue = model({
     { box: [0.98, 0.08, 0.98], at: [0, 0.32, 0], c: 'trim' },
     { lathe: [[0, 0], [0.3, 0], [0.27, 0.2], [0.19, 0.72], [0.2, 0.92], [0.28, 1.04], [0.11, 1.12], [0, 1.12]], at: [0, 0.36, 0], c: 'stone' },
     { ball: [0.24, 0.28, 0.25], at: [0, 1.6, 0.01], c: 'stone' },
-    { mirror: [{ box: [0.11, 0.4, 0.12], at: [0.2, 1.2, 0.12], rot: [-38, 0, 12], c: 'stone' }] },
+    { mirror: [{ box: [0.11, 0.4, 0.12], at: [0.2, 1.2, 0.12], rot: [-38, 0, 12], c: 'dark' }] },
     {
       name: 'sword',
       at: [0, 0.36, 0.34],
@@ -57,4 +57,38 @@ export const marketStall = model({
   ],
 });
 
-export const TOWN = [statue, well, marketStall];
+/** The ring between radii `a` and `b` (m) from angle `t0` to `t1` (degrees) as an XY outline, its arcs in `k` straight steps. */
+const ringBlock = (a: number, b: number, t0: number, t1: number, k = 1): [number, number][] => {
+  const at = (r: number, t: number): [number, number] => [r * Math.cos((t * Math.PI) / 180), r * Math.sin((t * Math.PI) / 180)];
+  const ts = Array.from({ length: k + 1 }, (_, i) => t0 + ((t1 - t0) * i) / k);
+  return [...ts.map((t) => at(b, t)), ...ts.reverse().map((t) => at(a, t))];
+};
+
+export const arch = model({
+  id: 'arch',
+  about: 'Stone arch of voussoirs in two shades over dark mortar, its feet on y = 0: set it on two piers',
+  tags: ['stone', 'building'],
+  palette: { stone: 'mist', stone2: 'slate', mortar: 'night' },
+  params: { span: [2, 0.8, 5], ring: [0.42, 0.2, 0.8], depth: [0.6, 0.2, 1.5], blocks: [9, 5, 15] },
+  parts: (p) => {
+    const a = p.span! / 2;
+    const b = a + p.ring!;
+    const n = Math.round(p.blocks!) | 1; // odd, so a keystone sits at the crown
+    const step = 180 / n;
+    const gap = (0.06 / ((a + b) / 2)) * (180 / Math.PI); // a 6 cm joint: an art pixel at game scale
+    return [
+      { slab: ringBlock(a + 0.02, b - 0.02, 0, 180, n * 2), depth: p.depth! - 0.08, c: 'mortar', name: 'mortar' },
+      ...Array.from({ length: n }, (_, i) => {
+        const key = i === (n - 1) / 2;
+        return {
+          slab: ringBlock(key ? a - 0.06 : a, key ? b + 0.08 : b, i * step + (i ? gap / 2 : 0), (i + 1) * step - (i < n - 1 ? gap / 2 : 0)),
+          depth: key ? p.depth! + 0.08 : p.depth!,
+          c: i % 2 ? 'stone2' : 'stone',
+          ...(key ? { name: 'keystone' } : {}),
+        };
+      }),
+    ];
+  },
+});
+
+export const TOWN = [statue, well, marketStall, arch];

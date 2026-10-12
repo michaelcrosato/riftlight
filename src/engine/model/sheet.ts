@@ -13,14 +13,9 @@ import { bindingHex, type ModelBuild } from './build';
 import { boundsOf, type Compiled } from './compile';
 import type { ExpandedModel } from './expand';
 import type { ModelCheck } from './validate';
+import { GAME_VIEW, gamePxPerMetre } from './view';
 
-/**
- * Riftlight's camera (src/riftlight/index.ts): iso, yaw 45°, pitch 42°, a 15 m tall view on 270
- * art pixels (18 px/m at zoom 1), at the level and town zooms (src/riftlight/game/Riftlight.ts).
- */
-export const GAME_VIEW = { yaw: 45, pitch: 42, viewHeight: 15, rows: 270, zooms: { level: 1.08, town: 1.22 } } as const;
-/** Art pixels per metre at a zoom. */
-export const gamePxPerMetre = (zoom: number) => (GAME_VIEW.rows / GAME_VIEW.viewHeight) * zoom;
+export { GAME_VIEW, gamePxPerMetre } from './view';
 
 const PANEL: RGB = [36, 40, 56];
 const GRID_FINE: RGB = [46, 52, 72];
@@ -310,7 +305,7 @@ function partLabels(compiled: Compiled): { text: string; at: Vector3 }[] {
 }
 
 /** The pixel font has no ×, → or ÷: spell them so messages read on the sheet. */
-const ascii = (s: string) => s.replace(/×/g, 'x').replace(/→/g, '->').replace(/÷/g, '/');
+const ascii = (s: string) => s.replace(/×/g, 'x').replace(/→/g, '->').replace(/÷/g, '/').replace(/…/g, '...');
 
 function checkLines(c: ModelCheck, build: ModelBuild): Line[] {
   const r = build.report;
