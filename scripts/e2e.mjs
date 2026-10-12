@@ -39,7 +39,8 @@
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
-// asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor,
+// asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor
+//                 (on WebGPU; every fourth on the WebGL 2 fallback),
 //                 the close zoom, a light requested and released, bad ids/zooms/looks throw, a
 //                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
 //                 few frames of Gate B's scene (npm run gate-b) scored.
@@ -993,7 +994,7 @@ async function runLab(browserExe) {
 }
 
 async function runAssetLab(browserExe) {
-  for (const s of SCENARIOS.slice(0, 2)) {
+  for (const [b, s] of SCENARIOS.slice(0, 2).entries()) {
     console.log(`\n▶ asset-lab (Asset Lab, ${s.name})`);
     let ctx;
     try {
@@ -1004,6 +1005,9 @@ async function runAssetLab(browserExe) {
       check(st0.backend === s.backend, `backend ${st0.backend}`);
       const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
       check(ids.length >= 7, `lists ${ids.length} models`);
+      // every model on WebGPU; on the WebGL 2 fallback every fourth and the last, since that path
+      // is the renderer's, not each model's (drawing all 151 twice outgrew CI's 15-minute job)
+      const drawn = b === 0 ? ids : ids.filter((_, i) => i % 4 === 0 || i === ids.length - 1);
       // every model renders in the real pipeline (close up, so a 0.3 m rock fills enough
       // pixels): against the empty floor at the same camera, with its light off so a lit floor
       // can't pass for it
@@ -1012,7 +1016,7 @@ async function runAssetLab(browserExe) {
         for (let i = 0; i < a.pixels.length; i += 4) if (Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]) > 24) n++;
         return n;
       };
-      for (const id of ids) {
+      for (const id of drawn) {
         const r = await page.evaluate((m) => {
           const info = window.__ASSET_LAB__.show(m, { light: { intensity: 0 } });
           window.__ASSET_LAB__.zoom('close');
