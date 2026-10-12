@@ -22,6 +22,35 @@ export const WARN: RGB = [255, 205, 117];
 
 export type RGB = [number, number, number];
 
+/** A colour per pixel from its barycentric weights on the triangle's corners a, b and c. */
+export type Shader = (wa: number, wb: number, wc: number) => RGB;
+
+/** Reads a texture's colour (sRGB 0..255) at (u, v), nearest texel, v = 0 at the bottom row. */
+export type TexelSampler = (u: number, v: number) => RGB;
+
+/**
+ * A nearest-texel sampler over RGBA bytes, as the GPU samples a pixel-art map: repeat-wrapped
+ * (else clamped), and `bottomFirst` when row 0 of the data is the texture's bottom (a
+ * `DataTexture` with `flipY` false), else its top (a baked texture, an image).
+ */
+export function texelSampler(data: ArrayLike<number>, width: number, height: number, o: { repeat: boolean; bottomFirst: boolean }): TexelSampler {
+  const wrap = (t: number) => (o.repeat ? t - Math.floor(t) : Math.min(1, Math.max(0, t)));
+  return (u, v) => {
+    const x = Math.min(width - 1, Math.floor(wrap(u) * width));
+    const y = Math.min(height - 1, Math.floor(wrap(v) * height));
+    const i = ((o.bottomFirst ? y : height - 1 - y) * width + x) * 4;
+    return [data[i]!, data[i + 1]!, data[i + 2]!];
+  };
+}
+
+/** A shader that samples `sample` at the triangle's UVs (6 numbers: a, b, c) and tints it. */
+export function texturedShader(uv: ArrayLike<number>, sample: TexelSampler, tint: RGB): Shader {
+  return (wa, wb, wc) => {
+    const t = sample(wa * uv[0]! + wb * uv[2]! + wc * uv[4]!, wa * uv[1]! + wb * uv[3]! + wc * uv[5]!);
+    return [(t[0] * tint[0]) / 255, (t[1] * tint[1]) / 255, (t[2] * tint[2]) / 255];
+  };
+}
+
 /**
  * Per-triangle preview colours for the software rasterizers (contact sheets, inspect,
  * portraits). A geometry whose shader colours it procedurally (vertex attributes, TSL
@@ -86,7 +115,8 @@ export class Canvas {
     drawText(s, x, y, (px, py) => this.set(px, py, c), scale);
   }
 
-  tri(ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, c: RGB, id: number, clip: Rect): void {
+  /** A depth-tested triangle in one colour, or a colour per pixel (`Shader`). */
+  tri(ax: number, ay: number, az: number, bx: number, by: number, bz: number, cx: number, cy: number, cz: number, c: RGB | Shader, id: number, clip: Rect): void {
     const area = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
     if (Math.abs(area) < 1e-9) return;
     const x0 = Math.max(clip.x, Math.floor(Math.min(ax, bx, cx)));
@@ -106,7 +136,7 @@ export class Canvas {
         if (z <= this.depth[k]!) continue;
         this.depth[k] = z;
         this.ids[k] = id;
-        this.set(x, y, c);
+        this.set(x, y, typeof c === 'function' ? c(w0, w1, w2) : c);
       }
     }
   }

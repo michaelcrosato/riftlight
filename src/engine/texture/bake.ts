@@ -253,3 +253,19 @@ export function bakeTexture(def: TextureDef, opts: BakeOptions = {}): BakedTextu
   }
   return { id: def.id, width, height, indices, slots, rgba, problems };
 }
+
+/** The mean colour of the opaque texels (0xrrggbb, sRGB): what a textured surface reads as from afar. */
+export function meanColour(b: BakedTexture): number {
+  let r = 0;
+  let g = 0;
+  let bl = 0;
+  let n = 0;
+  for (let i = 0; i < b.rgba.length; i += 4) {
+    if (!b.rgba[i + 3]) continue;
+    r += b.rgba[i]!;
+    g += b.rgba[i + 1]!;
+    bl += b.rgba[i + 2]!;
+    n++;
+  }
+  return n ? (Math.round(r / n) << 16) | (Math.round(g / n) << 8) | Math.round(bl / n) : 0;
+}

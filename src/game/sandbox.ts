@@ -13,11 +13,14 @@ import {
   Vector3,
 } from 'three/webgpu';
 import {
+  addModelColliders,
+  buildModel,
   compileClip,
   type Game,
   type GameContext,
   PALETTE,
   type PaletteColor,
+  mergeStaticMeshes,
   PlatformerCharacter,
   readMoveInput,
   toonMaterial,
@@ -31,8 +34,9 @@ import { HERO_RIG } from './hero/rig';
 /**
  * A second, tiny level: the engine's level-lifecycle demo (engine.loadGame switches
  * between it and the playground) and its textured-material showcase. A checkerboard
- * texture and a vertex-colored pillar go through `toonify` like any GLB would, crates are
- * dynamic bodies, and a trigger zone puffs smoke whenever something enters it.
+ * texture and a vertex-colored pillar go through `toonify` like any GLB would, a brick wall
+ * is a textured model (`buildModel`) and a second one is merged (`mergeStaticMeshes` keeps its
+ * UVs), crates are dynamic bodies, and a trigger zone puffs smoke whenever something enters it.
  * Open it with `?game=sandbox`.
  */
 export class Sandbox implements Game {
@@ -40,6 +44,9 @@ export class Sandbox implements Game {
   hero!: PlatformerCharacter;
   heroModel!: Object3D;
   floor!: Mesh;
+  /** The textured model, and the merged copy's meshes (tests). */
+  wall!: Object3D;
+  mergedWall!: Mesh[];
   /** Things that entered the smoke zone (tests). */
   zoneEntries = 0;
 
@@ -62,6 +69,18 @@ export class Sandbox implements Game {
     pillar.position.set(-3, 1.5, -3);
     scene.add(toonify(pillar));
     physics.addStaticBox({ position: [-3, 1.5, -3], halfExtents: [0.5, 1.5, 0.5] });
+
+    // Brick walls: a textured model as built, and one merged into static meshes.
+    const wall = buildModel('brick-wall', { params: { length: 2.4 } });
+    wall.object.position.set(-3, 0, 0.5);
+    scene.add(wall.object);
+    addModelColliders(physics, wall, [-3, 0, 0.5]);
+    this.wall = wall.object;
+    const low = buildModel('brick-wall', { params: { length: 1.6, height: 0.8 } });
+    low.object.position.set(-0.5, 0, -1);
+    this.mergedWall = mergeStaticMeshes([low.object]);
+    scene.add(...this.mergedWall);
+    addModelColliders(physics, low, [-0.5, 0, -1]);
 
     for (let i = 0; i < 4; i++) {
       const mesh = new Mesh(new BoxGeometry(0.8, 0.8, 0.8), toonMaterial(palette.orange));

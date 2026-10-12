@@ -9,6 +9,7 @@ import { hashString, Rng } from '../random';
 import type { ModelCatalog } from './catalog';
 import { primKind } from './prims';
 import type { Anchor, ModelDef, ModelLight, Part, Provenance, Slot, UsePart, Vec3 } from './types';
+import type { TextureCatalog } from '../texture/catalog';
 
 /** What a slot is bound to at build time: a PALETTE name, or a computed colour (hex). */
 export type Binding = PaletteColor | number;
@@ -24,6 +25,8 @@ export interface ModelOptions {
   readonly light?: Partial<ModelLight> & { readonly color?: number };
   /** Where `use` ids (and a string id passed to build) resolve; default `MODEL_LIBRARY`. */
   readonly catalog?: ModelCatalog;
+  /** Where parts' `tex` ids resolve; default `TEXTURE_LIBRARY`. */
+  readonly textures?: TextureCatalog;
 }
 
 /** A model as plain data: no functions, no `use`, every primitive with its slot. */

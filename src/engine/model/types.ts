@@ -40,7 +40,10 @@ export interface PartBase {
   readonly on?: string;
   /** Unlit (flames, eyes, screens, crystals). */
   readonly glow?: boolean;
-  /** TextureDef id; UVs generated at the def's texel density (Phase 3). */
+  /**
+   * A TextureDef id (`TEXTURE_LIBRARY`, or the build's `textures`): the part shows the texture in
+   * its own colours instead of the slot's, at the model's `texel` density (docs/ASSETS.md).
+   */
   readonly tex?: string;
   /** Sides of round kinds; default by size (6 / 8 / 10). */
   readonly seg?: number;
@@ -141,7 +144,7 @@ export interface ModelDef {
   readonly light?: ModelLight;
   /** Default 'box'. */
   readonly collider?: 'box' | 'cyl' | 'hull' | 'none';
-  /** Texels per metre for `tex` parts (Gate B decides the default). */
+  /** Texels per metre for `tex` parts, 2–64 (default `DEFAULT_TEXEL`, set by Gate B). */
   readonly texel?: number;
   /** Hangs, mounts on walls or hovers: may sit below or above the floor. */
   readonly floats?: boolean;

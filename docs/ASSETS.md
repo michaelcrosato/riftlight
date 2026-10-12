@@ -4,7 +4,7 @@ Objects in a game are **plain data** that agents write, check and look at, then 
 `ModelDef` of keyed primitives. There is no modelling tool, and a model is text, never a binary
 file. The engine compiles a def into toon meshes at runtime; `npm run model` measures and draws it
 without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. The plan behind
-it, with its measurements and what is still to come (textures on models, imports, traces), is
+it, with its measurements and what is still to come (imports, traces), is
 [docs/plans/asset-system.md](plans/asset-system.md).
 
 How it measures so far ([Gate A](plans/gate-a.md), twice): an agent writing a ModelDef spends about
@@ -117,6 +117,14 @@ either way), `slab` (an XY outline or SVG path M L H V C Q Z, extruded `depth` a
   onto this model's (`palette: { theirs: 'ours' }`), else onto ours of the same name, else keep
   their own colour as `<id>.<slot>`.
 - `on: 'name'` sits a part on the top of the named part; its `at` becomes an offset from there.
+- `tex: 'bricks'` dresses a part in a texture ([Textures](#textures)) in place of its slot's
+  colour, at the model's `texel` density (texels per metre, 2–64).
+  - Flat kinds are box-projected on the part's own axes from the model's origin, so texels line
+    up across parts that share a rotation and run along a turned part.
+  - Round kinds (`cyl`, `cone`, `ball`, `torus`, `lathe`) wrap round their axis in a whole number
+    of repeats; their caps are projected from above.
+  - The density is exact on faces square to the part's axes and at a round part's widest radius;
+    a sloped face stretches along its slope, and a round part's narrower rings squeeze.
 - `params: { h: [default, min, max] }` with `parts: (p, rng) => [...]` make it parametric and seeded
   (`rng` is the engine's `Rng`, its own stream per model and seed).
 - `anchors` (`[x, y, z]` or `{ at, rot }`) for grips and mounts; `light: { at, c, intensity, radius,
@@ -130,7 +138,8 @@ that isn't a PALETTE name; an unknown texture; a malformed mesh or path; NaN; a 
 positive; `seg` outside 3–64; an empty model; more than 1 cm below the floor unless `floats`; over
 the declared `size` by more than 10%; `on` naming no part (or one of its own); a `use` cycle or an
 unknown id; params outside their range; an import without `source` or with a licence that isn't
-allowed (CC0 until the licence escalation, #49, approves more).
+allowed (CC0 until the licence escalation, #49, approves more); a `tex` that names no texture or
+one with problems, or a part that both glows and takes a texture; a `texel` outside 2–64.
 
 **Warnings** (what won't read at 480×270):
 
@@ -138,7 +147,9 @@ allowed (CC0 until the licence escalation, #49, approves more).
   touch);
 - a rod: a part whose second-smallest extent is under 0.06 m (plates are fine);
 - over the triangle budget: under 0.5 m across 300, under 2 m 1,000, else 3,000;
-- more than 8 materials;
+- more than 8 materials (each texture is one);
+- a texture that doesn't tile on a model (it shows once, at the model's origin, its edge texels
+  smeared across the rest of the part);
 - a part hidden inside another;
 - coplanar faces of different colours (z-fighting; bottoms on the floor excepted);
 - touching large masses whose colours differ by less than 0.08 in OKLab lightness;
@@ -147,7 +158,8 @@ allowed (CC0 until the licence escalation, #49, approves more).
   the model once it is 30 art pixels or more (glow draws as flat colour).
 
 Every message names the part (its `name`, or its kind and path, e.g. `box at parts[3].group[1]`)
-and the fix.
+and the fix. A textured part counts as its texture's mean colour for the lightness check, and
+never joins a one-colour block (its texels break it up).
 
 ## Style rules
 
@@ -275,5 +287,19 @@ hud.sprite(8, 8, icon.rows, icon.colors, { scale: 2 });
 On a sprite sheet an outline stays inside each frame; patterns and paths don't know about frames,
 so draw frames with pixels.
 Every converter takes `{ palette, catalog }`; a game adds textures with `TEXTURE_LIBRARY.add(def)`
-or a `TextureCatalog` of its own. Models take textures through a part's `tex` once the plan's
-Phase 3 lands its UVs; until then a `tex` names nothing the model check accepts.
+or a `TextureCatalog` of its own (`buildModel(id, { textures })` for models).
+
+**On models:** a part's `tex` (see [The format](#the-format)), as `brick-wall` does:
+
+```ts
+parts: (p) => [
+  { box: [p.length!, p.height!, 0.3], at: [0, p.height! / 2, 0], tex: 'bricks', name: 'wall' },
+  { box: [p.length! + 0.1, 0.12, 0.42], at: [0, p.height! + 0.06, 0], c: 'cap', name: 'coping' },
+],
+```
+
+The texture brings its own colours (the part's slot isn't drawn); each texture is one material,
+on white. The model sheets draw texels in every view, the palette panel lists the textures,
+and `npm run tex -- sheet` shows a tiling texture on a cube and a cylinder at game scale.
+`mergeStaticMeshes` keeps the UVs. The default density, `DEFAULT_TEXEL` = 16 texels per metre
+(an art pixel or so per texel at the level zoom), stands until Gate B measures it.

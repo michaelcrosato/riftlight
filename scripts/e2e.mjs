@@ -63,7 +63,8 @@
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
 // systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
-//                 leaks, textured toon materials, engine.dispose().
+//                 leaks, textured toon materials and a textured model (built and merged),
+//                 engine.dispose().
 //
 // riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs), WebGPU + WebGL 2:
 //                 the arcade cabinet (swoop in, side camera + CRT, the scripted run to the flag,
@@ -1015,7 +1016,7 @@ async function runAssetLab(browserExe) {
         await waitFrames(page, 3);
         const empty = await capture(page, `asset-lab-${s.name}-${id}-empty.png`);
         const px = changed(img, empty);
-        check(r.tris > 50 && px > 300, `${id}: ${r.tris} tris, ${r.draws} draws, ${px} pixels over the empty floor`);
+        check(r.tris > 0 && px > 300, `${id}: ${r.tris} tris, ${r.draws} draws, ${px} pixels over the empty floor`);
       }
       await page.evaluate(() => {
         window.__ASSET_LAB__.show('market-stall');

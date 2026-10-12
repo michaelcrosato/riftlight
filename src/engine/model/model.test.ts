@@ -1,4 +1,4 @@
-import { type BufferGeometry, Group, type Mesh } from 'three/webgpu';
+import { type BufferGeometry, Group, type Mesh, type MeshToonNodeMaterial, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { PALETTE } from '../palette';
 import { Physics } from '../physics/Physics';
@@ -24,8 +24,11 @@ import {
   type Part,
   type Prim,
 } from '.';
+import { textureMap } from '../texture/convert';
+import { textureDef, TextureCatalog } from '../texture';
 import { expandDef, modelRng } from './expand';
 import { addModelColliders } from './physics';
+import { DEFAULT_TEXEL } from './uv';
 
 const near = (a: number, b: number, eps = 1e-9) => Math.abs(a - b) <= eps;
 
@@ -399,8 +402,19 @@ describe('checks', () => {
   it('undeclared slot', () => expect(problems(def([{ ...ok, c: 'gold' }]))[0]).toMatch(/slot 'gold'.*does not declare.*a, b/));
   it('unknown palette name', () => expect(problems(def([ok], { palette: { a: 'brown' as 'red' } }))[0]).toMatch(/'a' is "brown", not a PALETTE colour/));
   it('unknown tex', () => {
-    expect(problems(def([{ ...ok, tex: 'planks' }]))[0]).toMatch(/texture 'planks'/);
-    expect(problems(def([{ ...ok, tex: 'planks' }]), { textures: (id: string) => id === 'planks' })).toEqual([]);
+    expect(problems(def([{ ...ok, tex: 'nope' }]))[0]).toMatch(/texture 'nope', which no TextureDef declares/);
+    expect(problems(def([{ ...ok, tex: 'planks' }]))).toEqual([]);
+    const own = new TextureCatalog([textureDef({ id: 'mine', about: 'x', tags: [], size: [8, 8], tile: true, palette: { a: 'red' }, layers: [{ pattern: 'checker', colors: 'a' }] })]);
+    expect(problems(def([{ ...ok, tex: 'mine' }]), { textures: own })).toEqual([]);
+    expect(problems(def([{ ...ok, tex: 'planks' }]), { textures: own })[0]).toMatch(/texture 'planks'/);
+  });
+  it('tex with glow, a broken texture, texel out of range; a texture that does not tile warns', () => {
+    expect(problems(def([{ ...ok, tex: 'planks', glow: true }]))[0]).toMatch(/glows and names a texture/);
+    const broken = new TextureCatalog([textureDef({ id: 'broken', about: 'x', tags: [], size: [8, 8], palette: { a: 'red' }, layers: [{ pattern: 'checker', colors: 'zz' }] })]);
+    expect(problems(def([{ ...ok, tex: 'broken' }]), { textures: broken })[0]).toMatch(/texture 'broken', which has problems/);
+    expect(problems(def([{ ...ok, tex: 'planks' }], { texel: 200 }))[0]).toMatch(/texel 200 is outside 2–64/);
+    expect(problems(def([{ ...ok, tex: 'planks' }], { texel: 8 }))).toEqual([]);
+    expect(validateModel(def([{ ...ok, tex: 'gem-icon' }])).warnings.join()).toMatch(/texture 'gem-icon' doesn't tile/);
   });
   it('malformed mesh', () => {
     const src = { url: 'test', licence: 'CC0-1.0' };
@@ -498,5 +512,115 @@ describe('checks', () => {
     expect(MODEL_LIBRARY.find({ tags: ['container'] }).map((d) => d.id).sort()).toEqual(['barrel', 'crate']);
     expect(MODEL_LIBRARY.find({ text: 'lantern' }).map((d) => d.id)).toEqual(['lamp-post']);
     expect(() => MODEL_LIBRARY.add({ ...MODEL_LIBRARY.get('crate') })).toThrow(/already/);
+  });
+});
+
+describe('textures on models', () => {
+  const ok = (): Part => ({ box: [0.5, 0.5, 0.5], at: [0, 0.25, 0] });
+  const meshesOf = (b: ReturnType<typeof buildModel>) => {
+    const out: Mesh[] = [];
+    b.object.traverse((o) => {
+      if ((o as Mesh).isMesh) out.push(o as Mesh);
+    });
+    return out;
+  };
+  /** Per-face UV spans of a mesh: for each triangle, [min u, max u, min v, max v] and its normal. */
+  const faces = (m: Mesh) => {
+    const pos = m.geometry.getAttribute('position');
+    const uv = m.geometry.getAttribute('uv');
+    const out: { n: Vector3; u: [number, number]; v: [number, number]; x: [number, number] }[] = [];
+    for (let i = 0; i < pos.count; i += 3) {
+      const p = [0, 1, 2].map((k) => new Vector3().fromBufferAttribute(pos, i + k));
+      const n = new Vector3().subVectors(p[1]!, p[0]!).cross(new Vector3().subVectors(p[2]!, p[0]!)).normalize();
+      const us = [0, 1, 2].map((k) => uv.getX(i + k));
+      const vs = [0, 1, 2].map((k) => uv.getY(i + k));
+      out.push({ n, u: [Math.min(...us), Math.max(...us)], v: [Math.min(...vs), Math.max(...vs)], x: [Math.min(...p.map((q) => q.x)), Math.max(...p.map((q) => q.x))] });
+    }
+    return out;
+  };
+
+  it('a textured part gets UVs and a toon material with the map; untextured parts stay as they were', () => {
+    const b = buildModel(def([{ ...ok(), tex: 'planks' }, { box: [0.2, 0.2, 0.2], at: [0, 0.6, 0] }]));
+    const tex = meshesOf(b).find((m) => m.geometry.getAttribute('uv'));
+    const plain = meshesOf(b).find((m) => !m.geometry.getAttribute('uv'));
+    expect(tex!.geometry.getAttribute('uv').count).toBe(tex!.geometry.getAttribute('position').count);
+    expect((tex!.material as MeshToonNodeMaterial).map).toBe(textureMap('planks'));
+    expect((tex!.material as MeshToonNodeMaterial).color.getHex()).toBe(0xffffff);
+    expect(plain!.geometry.getAttribute('uv')).toBeUndefined();
+    expect(b.report.materials).toBe(2);
+    expect(() => buildModel(def([{ ...ok(), tex: 'nope' }]))).toThrow(ModelError);
+  });
+
+  it('texels per metre: a 1 m face spans texel ÷ size repeats, and texels line up across parts', () => {
+    const one = (texel?: number) => faces(meshesOf(buildModel(def([{ box: [1, 1, 1], at: [0, 0.5, 0], tex: 'planks' }], texel ? { texel } : {})))[0]!);
+    for (const texel of [DEFAULT_TEXEL, 8, 24]) {
+      for (const f of one(texel)) {
+        expect(f.u[1] - f.u[0]).toBeCloseTo(texel / 16, 9); // planks is 16 × 16
+        expect(f.v[1] - f.v[0]).toBeCloseTo(texel / 16, 9);
+      }
+    }
+    // two half-metre boxes side by side: their front faces continue each other
+    const pair = buildModel(def([0.25, -0.25].map((x) => ({ box: [0.5, 0.5, 0.5], at: [x, 0.25, 0], tex: 'planks' }) as Part)));
+    const front = faces(meshesOf(pair)[0]!).filter((f) => f.n.z > 0.99);
+    const byX = (x: number) => front.filter((f) => f.x[0] >= x - 1e-6 && f.x[1] <= x + 0.5 + 1e-6);
+    const left = Math.max(...byX(-0.5).map((f) => f.u[1]));
+    const right = Math.min(...byX(0).map((f) => f.u[0]));
+    expect(left).toBeCloseTo(right, 9);
+    expect(front.every((f) => f.v[0] >= -1e-9 && f.v[1] <= 0.5 + 1e-9)).toBe(true); // v from the floor
+  });
+
+  it('a turned part keeps its texels along its own axes', () => {
+    for (const rot of [0, 30, 90] as const) {
+      const fs = faces(meshesOf(buildModel(def([{ box: [2, 0.25, 0.25], at: [0, 0.2, 0], rot: [0, rot, 0], tex: 'planks' }])))[0]!);
+      const long = Math.max(...fs.map((f) => f.u[1] - f.u[0]));
+      expect(long).toBeCloseTo((2 * DEFAULT_TEXEL) / 16, 6);
+    }
+  });
+
+  it('round kinds wrap in a whole number of repeats, with no triangle across the seam', () => {
+    for (const p of [{ cyl: [1, 1, 1], seg: 10 }, { cone: [0.6, 1, 0.6], seg: 8 }, { ball: [0.8, 0.8, 0.8] }] as Prim[]) {
+      const m = meshesOf(buildModel(def([{ ...p, at: [0, 0.5, 0], tex: 'bricks' } as Part])))[0]!;
+      const sides = faces(m).filter((f) => Math.abs(f.n.y) < 0.7);
+      const span = Math.max(...sides.map((f) => f.u[1])) - Math.min(...sides.map((f) => f.u[0]));
+      expect(Math.abs(span - Math.round(span))).toBeLessThan(1e-6);
+      expect(Math.round(span)).toBeGreaterThanOrEqual(1);
+      expect(Math.max(...sides.map((f) => f.u[1] - f.u[0]))).toBeLessThan(span / 2);
+    }
+  });
+
+  it('texels read left to right as seen from outside: every face keeps its winding in UV space', () => {
+    // a UV triangle wound like its face (positive signed area seen from outside) is a texture the right way round
+    for (const p of [{ box: [0.8, 0.6, 0.5], rot: [0, 25, 0] }, { wedge: [0.8, 0.6, 0.5] }, { cyl: [0.8, 0.8, 0.8], seg: 10 }, { cone: [0.6, 1, 0.6], seg: 8 }, { ball: [0.8, 0.8, 0.8] }, { torus: [1, 0.3, 1], seg: 10 }, { lathe: [[0, 0], [0.3, 0], [0.4, 0.4], [0.2, 0.8], [0, 0.8]], seg: 10 }] as Prim[]) {
+      const m = meshesOf(buildModel(def([{ ...p, at: [0, 0.5, 0], tex: 'bricks' } as Part])))[0]!;
+      const uv = m.geometry.getAttribute('uv');
+      let flipped = 0;
+      for (let i = 0; i < uv.count; i += 3) {
+        const area = (uv.getX(i + 1) - uv.getX(i)) * (uv.getY(i + 2) - uv.getY(i)) - (uv.getX(i + 2) - uv.getX(i)) * (uv.getY(i + 1) - uv.getY(i));
+        if (area < -1e-9) flipped++;
+      }
+      expect(flipped, Object.keys(p)[0]).toBe(0);
+    }
+  });
+
+  it('mirrored and pivoted textured parts keep one UV per vertex', () => {
+    const b = buildModel(def([{ mirror: [{ box: [0.3, 0.3, 0.3], at: [0.4, 0.15, 0], tex: 'bricks' }] }, { group: [{ box: [0.2, 0.2, 0.2], at: [0, 0.1, 0], tex: 'bricks' }], name: 'lid', pivot: true, at: [0, 0.3, 0] }]));
+    expect(meshesOf(b)).toHaveLength(2);
+    for (const m of meshesOf(b)) {
+      const pos = m.geometry.getAttribute('position');
+      const uv = m.geometry.getAttribute('uv');
+      expect(uv.count).toBe(pos.count);
+      // a corner shared by triangles of one face has one UV (a vertex order the UVs don't follow breaks it)
+      const seen = new Map<string, string>();
+      for (let i = 0; i < pos.count; i += 3) {
+        const p = [0, 1, 2].map((k) => new Vector3().fromBufferAttribute(pos, i + k));
+        const n = new Vector3().subVectors(p[1]!, p[0]!).cross(new Vector3().subVectors(p[2]!, p[0]!)).normalize();
+        for (let k = 0; k < 3; k++) {
+          const key = [...p[k]!.toArray(), ...n.toArray()].map((x) => Math.round(x * 1e4)).join();
+          const val = [uv.getX(i + k), uv.getY(i + k)].map((x) => Math.round(x * 1e4)).join();
+          expect(seen.get(key) ?? val).toBe(val);
+          seen.set(key, val);
+        }
+      }
+    }
   });
 });

@@ -15,7 +15,8 @@
 //   keys       engine hotkeys are configurable (engine.debugKeys), ` creates the panel
 //   lifecycle  engine.loadGame between two games ×5: bodies, colliders, controllers,
 //              triggers, tags, scene objects, GPU geometries/textures back to baseline;
-//              the sandbox's textured + vertex-colored toon materials render; dispose()
+//              the sandbox's textured + vertex-colored toon materials render, and its textured
+//              model (brick-wall) shows its bricks as built and merged; dispose()
 //
 // Frames land in .scratch/e2e/systems-*.png. Self-contained: e2e.mjs passes its helpers in.
 import { writeFile } from 'node:fs/promises';
@@ -350,7 +351,36 @@ export async function runSystems(h) {
     await E(() => {
       const e = window.__PIXEL_ENGINE__;
       e.game.floor.material = e.game.floor.material.map((m, i) => (i === 2 ? window.__floorMat : m));
-      e.paused = false;
+    });
+    // A textured model (buildModel, the bricks texture) and a merged copy: map and UVs on both
+    const walls = await E(() => {
+      const g = window.__PIXEL_ENGINE__.game;
+      const built = [];
+      g.wall.traverse((o) => o.isMesh && o.material.map && built.push(o));
+      const merged = g.mergedWall.filter((m) => m.material.map);
+      window.__walls = [...built, ...merged].map((m) => [m, m.material]);
+      const all = [...built, ...merged];
+      return { built: built.length, merged: merged.length, uv: all.every((m) => m.geometry.getAttribute('uv')?.count === m.geometry.getAttribute('position').count), maps: [...new Set(all.map((m) => m.material.map.name))] };
+    });
+    check(walls.built === 1 && walls.merged === 1 && walls.uv && walls.maps.join() === 'tex:bricks', `a textured model and its merged copy carry the bricks map and UVs (${JSON.stringify(walls)})`);
+    await waitFrames(page, 3);
+    const bricks = await freshCapture(page, `systems-${tag}-sandbox-walls.png`);
+    await E(() => {
+      for (const [m, mat] of window.__walls) {
+        const plain = mat.clone();
+        plain.map = null;
+        m.material = plain;
+      }
+    });
+    await waitFrames(page, 3);
+    const flat = await freshCapture(page, `systems-${tag}-sandbox-walls-untextured.png`);
+    check(meanDiff(bricks, flat) > 0.5 && colorCount(bricks) > colorCount(flat), `the walls show their bricks, built and merged (diff ${meanDiff(bricks, flat).toFixed(2)}, ${colorCount(bricks)} vs ${colorCount(flat)} colors)`);
+    await E(() => {
+      for (const [m, mat] of window.__walls) {
+        m.material.dispose();
+        m.material = mat;
+      }
+      window.__PIXEL_ENGINE__.paused = false;
     });
     await waitFrames(page, 3);
     checkClean(await state(page), logs);

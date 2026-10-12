@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Bone, BoxGeometry, BufferGeometry, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, Skeleton, SkinnedMesh, Uint16BufferAttribute } from 'three/webgpu';
+import { Bone, BoxGeometry, BufferGeometry, DataTexture, Float32BufferAttribute, Group, Mesh, MeshBasicMaterial, MeshStandardMaterial, RepeatWrapping, Skeleton, SkinnedMesh, Uint16BufferAttribute } from 'three/webgpu';
 import { diffReports, inspectObject, renderInspection, renderTurntable, renderView } from './index';
 
 const box = (w: number, h: number, d: number, color = 0x3b5dc9) => {
@@ -127,5 +127,36 @@ describe('inspect: render', () => {
     const sheet = renderInspection(g, inspectObject(g, { joints: ['ArmR'] }), { angles: 4, size: 100 });
     expect(sheet.width).toBeGreaterThan(400);
     expect(sheet.height).toBeGreaterThan(300);
+  });
+
+  it('samples a texture map per pixel: nearest texels, wrapped, the bottom row at v = 0', () => {
+    // 2 × 2 texels, rows bottom first (a DataTexture): red, blue / blue, red; repeated twice
+    const red = [220, 40, 40, 255];
+    const blue = [40, 40, 220, 255];
+    const map = new DataTexture(new Uint8Array([...red, ...blue, ...blue, ...red]), 2, 2);
+    map.wrapS = map.wrapT = RepeatWrapping;
+    const geo = new BoxGeometry(1, 1, 1);
+    const uv = geo.getAttribute('uv');
+    for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 2, uv.getY(i) * 2);
+    const textured = new Mesh(geo, new MeshBasicMaterial({ map }));
+    const plain = new Mesh(geo, new MeshBasicMaterial());
+    const front = (m: Mesh) => renderView(m, { width: 80, height: 80, yaw: 0, pitch: 0 });
+    const t = front(textured);
+    expect(inked(t, [220, 40, 40])).toBeGreaterThan(200);
+    expect(inked(t, [40, 40, 220])).toBeGreaterThan(200);
+    expect(Math.abs(inked(t, [220, 40, 40]) - inked(t, [40, 40, 220]))).toBeLessThan(80); // a 4 × 4 checker: half each
+    // the face's bottom-left texel is the data's first (red): look just inside that corner
+    const img = t;
+    let found: number[] | null = null;
+    for (let y = img.height - 1; y >= 0 && !found; y--) {
+      for (let x = 0; x < img.width && !found; x++) {
+        const i = (y * img.width + x) * 4;
+        const c = [img.data[i]!, img.data[i + 1]!, img.data[i + 2]!];
+        if (c[0]! > 150 || c[2]! > 150) found = c;
+      }
+    }
+    expect(found![0]).toBeGreaterThan(150);
+    const p = front(plain);
+    expect(inked(p, [220, 40, 40]) + inked(p, [40, 40, 220])).toBe(0);
   });
 });

@@ -13,11 +13,15 @@ import { BufferAttribute, BufferGeometry, Group, Matrix4, Mesh, type Object3D, V
 import { PALETTE } from '../palette';
 import type { FlickerPreset } from '../render/lights';
 import { glowMaterial, toonMaterial } from '../render/toon';
+import type { TextureCatalog } from '../texture/catalog';
+import { textureMap } from '../texture/convert';
+import { TEXTURE_LIBRARY } from '../texture/library';
 import type { ModelCatalog } from './catalog';
 import { boundsOf, compileParts, type Bounds, type Compiled } from './compile';
 import { expandDef, type Binding, type ExpandedModel, type Expansion, type ModelOptions } from './expand';
 import { MODEL_LIBRARY } from './library';
 import type { Anchor, ModelDef, Slot, Vec3 } from './types';
+import { DEFAULT_TEXEL, partUVs } from './uv';
 
 export type ColliderData =
   | { readonly kind: 'box'; readonly center: Vec3; readonly half: Vec3 }
@@ -73,9 +77,21 @@ export interface MeshLayout {
   readonly pivot: number;
   readonly slot: Slot;
   readonly glow: boolean;
+  /** The slot's colour; white under a texture (the texture brings its own colours). */
   readonly hex: number;
+  /** The TextureDef id its parts name, if textured. */
+  readonly tex?: string;
   /** Positions in the pivot's frame, 9 per triangle, wound outward. */
   readonly positions: Float32Array;
+  /** Textured meshes, when laid out with `uv`: 6 per triangle, in texture repeats. */
+  readonly uvs?: Float32Array;
+}
+
+/** What `layoutModel` needs to give textured parts their UVs. */
+export interface UvLayout {
+  /** Texels per metre (the def's `texel`, else `DEFAULT_TEXEL`). */
+  readonly texel: number;
+  readonly textures: TextureCatalog;
 }
 
 export interface Layout {
@@ -90,33 +106,39 @@ const isVec3 = (a: Anchor): a is Vec3 => Array.isArray(a);
 
 export const bindingHex = (b: Binding): number => (typeof b === 'number' ? b : PALETTE[b]);
 
-/** Compiled parts → meshes: one per (pivot, material), triangles baked into the pivot's frame. */
-export function layoutModel(compiled: Compiled, palette: Readonly<Record<Slot, Binding>>): Layout {
+/**
+ * Compiled parts → meshes: one per (pivot, material), triangles baked into the pivot's frame. A
+ * textured part's material is its texture (on white), and with `uv` its mesh carries UVs.
+ */
+export function layoutModel(compiled: Compiled, palette: Readonly<Record<Slot, Binding>>, uv?: UvLayout): Layout {
   const inverse = compiled.pivots.map((p) => p.matrix.clone().invert());
-  const buckets = new Map<string, { pivot: number; slot: Slot; glow: boolean; hex: number; data: number[] }>();
+  const buckets = new Map<string, { pivot: number; slot: Slot; glow: boolean; hex: number; tex?: string; data: number[]; uvs: number[] }>();
   const m = new Matrix4();
   const v = new Vector3();
   let tris = 0;
   for (const p of compiled.parts) {
     const binding = palette[p.slot];
-    const hex = binding === undefined ? 0xff00ff : bindingHex(binding);
-    const key = `${p.pivot}|${p.glow ? 'g' : 't'}|${hex}`;
+    const tex = p.glow ? undefined : p.tex; // glow is flat colour (validate calls the pair a problem)
+    const hex = tex ? 0xffffff : binding === undefined ? 0xff00ff : bindingHex(binding);
+    const key = `${p.pivot}|${p.glow ? 'g' : 't'}|${hex}|${tex ?? ''}`;
     let b = buckets.get(key);
-    if (!b) buckets.set(key, (b = { pivot: p.pivot, slot: p.slot, glow: p.glow, hex, data: [] }));
+    if (!b) buckets.set(key, (b = { pivot: p.pivot, slot: p.slot, glow: p.glow, hex, ...(tex ? { tex } : {}), data: [], uvs: [] }));
     m.copy(p.matrix);
     if (p.pivot >= 0) m.premultiply(inverse[p.pivot]!);
     const flip = m.determinant() < 0; // mirrored: keep faces outward
+    const uvs = tex && uv ? partUVs(p, uv.texel, uv.textures.get(tex).size) : null;
     for (let i = 0; i < p.tris.length; i += 9) {
-      const order = flip ? [0, 6, 3] : [0, 3, 6];
+      const order = flip ? [0, 2, 1] : [0, 1, 2];
       for (const o of order) {
-        v.set(p.tris[i + o]!, p.tris[i + o + 1]!, p.tris[i + o + 2]!).applyMatrix4(m);
+        v.set(p.tris[i + o * 3]!, p.tris[i + o * 3 + 1]!, p.tris[i + o * 3 + 2]!).applyMatrix4(m);
         b.data.push(v.x, v.y, v.z);
+        if (uvs) b.uvs.push(uvs[(i / 3 + o) * 2]!, uvs[(i / 3 + o) * 2 + 1]!);
       }
       tris++;
     }
   }
   const pivots = compiled.pivots.map((p) => ({ name: p.name, parent: p.parent, local: p.parent >= 0 ? inverse[p.parent]!.clone().multiply(p.matrix) : p.matrix.clone() }));
-  const meshes = [...buckets.values()].map((b) => ({ pivot: b.pivot, slot: b.slot, glow: b.glow, hex: b.hex, positions: new Float32Array(b.data) }));
+  const meshes = [...buckets.values()].map((b) => ({ pivot: b.pivot, slot: b.slot, glow: b.glow, hex: b.hex, ...(b.tex ? { tex: b.tex } : {}), positions: new Float32Array(b.data), ...(b.uvs.length ? { uvs: new Float32Array(b.uvs) } : {}) }));
   return { meshes, pivots, bounds: boundsOf(compiled.parts), tris };
 }
 
@@ -153,10 +175,10 @@ interface Cached {
 
 /** Per def and (params, palette, catalog): a build to reuse, or a note that it is seeded. */
 const cache = new WeakMap<ModelDef, Map<string, Cached | { readonly seeded: true }>>();
-const catalogIds = new WeakMap<ModelCatalog, number>();
+const catalogIds = new WeakMap<ModelCatalog | TextureCatalog, number>();
 let catalogCount = 0;
 
-function catalogId(c: ModelCatalog): number {
+function catalogId(c: ModelCatalog | TextureCatalog): number {
   let id = catalogIds.get(c);
   if (id === undefined) catalogIds.set(c, (id = ++catalogCount));
   return id;
@@ -173,9 +195,10 @@ function prepare(def: ModelDef, opts: ModelOptions, catalog: ModelCatalog): { ex
   return { expansion, compiled };
 }
 
-function geometryOf(positions: Float32Array, shared: boolean): BufferGeometry {
+function geometryOf(m: MeshLayout, shared: boolean): BufferGeometry {
   const g = new BufferGeometry();
-  g.setAttribute('position', new BufferAttribute(positions, 3));
+  g.setAttribute('position', new BufferAttribute(m.positions, 3));
+  if (m.uvs) g.setAttribute('uv', new BufferAttribute(m.uvs, 2));
   g.computeVertexNormals(); // non-indexed: one normal per face (faceted)
   g.computeBoundingBox();
   g.computeBoundingSphere();
@@ -190,21 +213,24 @@ export function modelDef(idOrDef: string | ModelDef, catalog: ModelCatalog = MOD
 
 export function buildModel(idOrDef: string | ModelDef, opts: ModelOptions = {}): ModelBuild {
   const catalog = opts.catalog ?? MODEL_LIBRARY;
+  const textures = opts.textures ?? TEXTURE_LIBRARY;
   const def = modelDef(idOrDef, catalog);
-  const key = JSON.stringify([sorted(opts.params), sorted(opts.palette), catalogId(catalog)]);
+  const key = JSON.stringify([sorted(opts.params), sorted(opts.palette), catalogId(catalog), catalogId(textures)]);
   let perDef = cache.get(def);
   const known = perDef?.get(key);
   let entry = known && !known.seeded ? (known as Cached) : undefined;
   const hit = !!entry;
   if (!entry) {
     const { expansion, compiled } = prepare(def, opts, catalog);
-    const layout = layoutModel(compiled, expansion.model.palette);
+    const missing = [...new Set(compiled.parts.flatMap((p) => (p.tex && !textures.has(p.tex) ? [p.tex] : [])))];
+    if (missing.length) throw new ModelError(def.id, missing.map((t) => `a part names texture '${t}', which no TextureDef declares: add the texture or drop \`tex\``));
+    const layout = layoutModel(compiled, expansion.model.palette, { texel: expansion.model.texel ?? DEFAULT_TEXEL, textures });
     const shared = !expansion.seeded;
     entry = {
       seeded: expansion.seeded,
       expansion,
       layout,
-      geometries: layout.meshes.map((m) => geometryOf(m.positions, shared)),
+      geometries: layout.meshes.map((m) => geometryOf(m, shared)),
       colliders: collidersOf(expansion.model.collider, compiled, layout.bounds),
       parts: compiled.parts.length,
     };
@@ -225,8 +251,9 @@ export function buildModel(idOrDef: string | ModelDef, opts: ModelOptions = {}):
   });
   layout.pivots.forEach((p, i) => (p.parent >= 0 ? pivots[p.parent]! : object).add(pivots[i]!));
   layout.meshes.forEach((m, i) => {
-    const mesh = new Mesh(entry.geometries[i]!, m.glow ? glowMaterial(m.hex) : toonMaterial(m.hex));
-    mesh.name = `${model.id}:${m.slot}${m.glow ? ':glow' : ''}`;
+    const material = m.glow ? glowMaterial(m.hex) : m.tex ? toonMaterial(m.hex, { map: textureMap(m.tex, { catalog: textures }) }) : toonMaterial(m.hex);
+    const mesh = new Mesh(entry.geometries[i]!, material);
+    mesh.name = `${model.id}:${m.tex ? `tex:${m.tex}` : m.slot}${m.glow ? ':glow' : ''}`;
     mesh.castShadow = !m.glow;
     mesh.receiveShadow = true;
     (m.pivot >= 0 ? pivots[m.pivot]! : object).add(mesh);
@@ -251,7 +278,7 @@ export function buildModel(idOrDef: string | ModelDef, opts: ModelOptions = {}):
     };
   }
 
-  const materials = new Set(layout.meshes.map((m) => `${m.glow}|${m.hex}`)).size;
+  const materials = new Set(layout.meshes.map((m) => `${m.glow}|${m.hex}|${m.tex ?? ''}`)).size;
   return {
     id: model.id,
     object,

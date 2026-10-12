@@ -14,7 +14,8 @@ export interface MergeOptions {
  * groups is 6 draws, plus 6 more in the shadow pass).
  *
  * World transforms are baked into the vertices, multi-material geometry is split by its
- * groups, and only `position` + `normal` are kept (all the toon materials need). The
+ * groups, and `position` + `normal` are kept, plus `uv` under a material with a `map` and
+ * `color` under one with `vertexColors` (what toon materials read). The
  * sources are left untouched (don't add them to the scene). Physics is separate: keep
  * one collider per block. Merged meshes are culled as a whole, so merge things that are
  * on screen together (a level, a room), and keep anything that moves separate.
@@ -32,12 +33,15 @@ export function mergeStaticMeshes(sources: readonly Object3D[], options: MergeOp
     for (const g of groups) {
       const material = materials[g.materialIndex ?? 0];
       if (!material) continue;
-      const part = extract(geo, g.start, Math.min(g.count, count - g.start));
+      const reads = material as Material & { map?: unknown; vertexColors?: boolean };
+      const names = ['position', 'normal', ...(reads.map && geo.getAttribute('uv') ? ['uv'] : []), ...(reads.vertexColors && geo.getAttribute('color') ? ['color'] : [])];
+      const part = extract(geo, g.start, Math.min(g.count, count - g.start), names);
       part.applyMatrix4(mesh.matrixWorld);
       const cast = options.castShadow ?? mesh.castShadow;
       const receive = options.receiveShadow ?? mesh.receiveShadow;
       if (!materialIds.has(material)) materialIds.set(material, materialIds.size);
-      const key = `${materialIds.get(material)}|${cast}|${receive}`;
+      // a source without the attributes its material reads merges apart (mergeGeometries needs one set)
+      const key = `${materialIds.get(material)}|${cast}|${receive}|${names.join()}`;
       let bucket = buckets.get(key);
       if (!bucket) buckets.set(key, (bucket = { material, cast, receive, parts: [] }));
       bucket.parts.push(part);
@@ -65,12 +69,12 @@ export function mergeStaticMeshes(sources: readonly Object3D[], options: MergeOp
   return merged;
 }
 
-/** Vertices `[start, start + count)` (of the index, if any) as non-indexed position + normal. */
-function extract(geo: BufferGeometry, start: number, count: number): BufferGeometry {
+/** Vertices `[start, start + count)` (of the index, if any) as non-indexed attributes `names`. */
+function extract(geo: BufferGeometry, start: number, count: number, names: readonly string[]): BufferGeometry {
   if (!geo.getAttribute('normal')) geo.computeVertexNormals();
   const out = new BufferGeometry();
   const index = geo.index;
-  for (const name of ['position', 'normal'] as const) {
+  for (const name of names) {
     const a = geo.getAttribute(name);
     const n = a.itemSize;
     const arr = new Float32Array(count * n);
