@@ -68,7 +68,7 @@ The judge images come from `npx tsx scripts/gate-a.ts judge <DIR>/model.ts` for 
 The order of the two images is decided by a seeded coin per brief:
 `new Rng('gate-a:<brief>').next()` below 0.5 shows arm (a) as image 1, otherwise arm (b). The
 judge isn't told which arm is which. Its paths mustn't tell it either: copy the two images to
-`<brief>-1.png` and `<brief>-2.png` in a folder whose path names neither arm (the Phase 2a run first
+`<brief>-1.png` and `<brief>-2.png` in a folder whose path names neither arm (the first run
 gave the judges paths ending `-a-3/` and `-b-2/`; see *Results*).
 
 ## Scoring (§12)
@@ -103,7 +103,9 @@ had to clear warnings arm (a) never sees, and did: lightness, the triangle budge
 (campfire), z-fighting, and moss too close in lightness to stone (archway). Every run ended at its
 arm's "done".
 
-**Judging.** The judge images are the median runs, `gate-a/<brief>-a.png` and `gate-a/<brief>-b.png`.
+**Judging.** The judged models are the median runs, kept as source: `gate-a/<brief>-a.ts` and
+`gate-a/<brief>-b.ts`. `npx tsx scripts/gate-a.ts judge docs/plans/gate-a/<brief>-a.ts` redraws each
+judge image byte for byte (`*.judge.png` is build output, ignored by git).
 - The coin put arm (a) first in all four briefs, a 1 in 16 chance.
 - The first two sets of judges were given the images by paths that named the arm (`…-a-3/`,
   `…-b-2/`). They weren't told what a and b meant, but the label was visible.
@@ -149,3 +151,23 @@ Cost:
 | swapped judges | 0.26M |
 | neutral judges | 0.26M |
 | **total** | **3.34M** |
+
+## Second run: what changed, and its rules (fixed before it ran)
+
+A human chose option 2 of [#54](https://github.com/michaelcrosato/riftlight/issues/54): fix what lost
+the first run, then run Gate A once more. If it fails again, the plan stops for good.
+
+**What changes before it runs** (one PR, listed in the Status table): `model -- check` warnings for
+what lost the first run, and library components that show how to avoid it. The prompts above stay
+word for word; arm (b) reads the bigger library because its prompt says to read the library.
+
+**How it runs:**
+- Both arms run again, 3 fresh runs per brief, so the two arms are measured at the same time. The
+  first run's numbers are not reused.
+- Tokens, medians and R as in *Scoring*.
+- Each brief's median runs go to **two** fresh judges. The images are copied to `<brief>-1.png` and
+  `<brief>-2.png` in a folder whose path names neither arm. One judge sees them in the coin's order,
+  the other in the reverse order.
+- An arm wins a brief only if it wins both judgements. A split, or any tie, is a tie.
+- The pass rule is unchanged: R ≤ 0.8 and (b) wins or ties at least 3 of 4, or R ≤ 1.0 and (b) wins
+  outright at least 3 of 4.
