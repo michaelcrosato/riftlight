@@ -487,8 +487,8 @@ layers, one def per cell, or one def of frames for an animation strip. Every pix
   refuses, `import` refuses it up front, and
   `model -- credits` lists textures too. `--as` takes an import id (`tiles`, `kit/tiles`), and
   every file goes in `.scratch/tex/import/`.
-- In code: `importSheet(decodePng(bytes, inflate), { as, grid, source })` returns the defs, every
-  colour, the merges and the cells.
+- In code: `importSheet(decodePng(bytes, inflate), { as, grid, source })` returns the defs, the
+  imported cells' colours, the merges and every cell (`picked`, and the def it went into).
 
 **Not built until a game needs them** (plan §7.5): photo and PBR materials downsampled to a slot
 ramp, and SVG icons as `path` layers.

@@ -13,8 +13,11 @@
  *
  *   const sheet = importSheet(decodePng(bytes, inflateSync), {
  *     as: 'dungeon', grid: [16, 16], tile: true,
- *     source: { url, licence: 'CC0-1.0', file: 'dungeon.png' },
+ *     source: { url: 'src/game/art/dungeon.ts', licence: 'LicenseRef-own', file: 'dungeon.png' },
  *   });
+ *
+ * (Anyone else's sheet, CC0 included, comes in only through a pack whose `PACK_SOURCES` entry is
+ * approved: `source.pack` names it, and `validateTexture` refuses the def otherwise.)
  */
 import { IMPORT_ID, ImportError } from '../model/import/common';
 import { hexString, mapColours, type ColourMap } from '../model/import/colours';

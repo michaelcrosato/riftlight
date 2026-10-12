@@ -149,6 +149,11 @@ describe('importSheet: slicing', () => {
     const some = importSheet(img, opts({ cells: [1, 3, 5], names: ['', 'grass', '', 'water'] }));
     expect(some.defs.map((d) => d.id)).toEqual(['fx-grass', 'fx-water']); // 5 is empty
     expect(some.cells.map((c) => c.id).filter(Boolean)).toEqual(['fx-grass', 'fx-water']);
+    // every cell is reported, only the picked ones as picked (5 picked though it went into no def)
+    expect(some.cells).toHaveLength(all.cells.length);
+    expect(some.cells.filter((c) => c.picked).map((c) => c.index)).toEqual([1, 3, 5]);
+    expect(importSheet(img, opts({ cells: [5, 0, 5] })).cells.filter((c) => c.picked).map((c) => c.index)).toEqual([0, 5]);
+    expect(all.cells.every((c) => c.picked)).toBe(true);
     // the same cell imported alone or with the rest: same rows, legend and palette
     const strip = (d: TextureDef) => ({ ...d, id: '', about: '' });
     expect(strip(some.defs[0]!)).toEqual(strip(all.defs[1]!));
