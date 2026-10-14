@@ -575,6 +575,8 @@ describe('packs', () => {
     expect(packSourceProblems([{ ...good, title: 'Kit', tags: ['props'], palette: { wood: 'orange' }, sheets: [{ file: 'Sheet.png', grid: [16, 16], names: ['grass', '', 'knight'], tiles: ['grass'], tags: ['sprite'], palette: { c2: 'sand' } }] }])).toEqual([]);
     const wrong = packSourceProblems([{ ...good, tags: ['Props'], palette: { wood: 'brown' as never }, sheets: [{ file: '', grid: [16, 0] as [number, number], names: ['a', 'B', 'a'], tiles: ['grass'], tags: ['x y'], palette: { c1: 'beige' as never } }] }]).join('\n');
     for (const re of [/tag 'Props' isn't lower-case/, /binds slot 'wood' to 'brown', which isn't a PALETTE entry/, /a sheet needs the file/, /grid must be \[width, height\]/, /cell name 'B' isn't lower-case/, /cell name 'a' is given twice/, /tiles names 'grass', which no cell is called/, /tag 'x y' isn't lower-case/, /sheet '': palette binds slot 'c1' to 'beige'/]) expect(wrong).toMatch(re);
+    expect(packSourceProblems([{ ...good, scale: 2 }])).toEqual([]);
+    for (const scale of [0, -1, Number.NaN]) expect(packSourceProblems([{ ...good, scale }]).join(), String(scale)).toMatch(/scale .* isn't a number above 0/);
   });
 
   it('a download must name its licence in a licence file, and nothing more restrictive', () => {

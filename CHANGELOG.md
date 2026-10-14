@@ -8,6 +8,24 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.31.0
+
+The kit carries its first imported packs (`packs/`, listed in `packs/index.json`, LIBRARY.md and
+library.json; credited in CREDITS.md): six CC0 packs by Kenney, approved by the owner, imported
+into the engine's format and palette.
+
+- Models: `kenney-castle` (76: walls, towers, gates, bridges, siege engines, flags),
+  `kenney-furniture` (140: furniture, kitchen, bathroom, lamps, rugs, walls and doorways),
+  `kenney-nature` (329: trees, rocks, cliffs, paths, rivers, crops, flowers, fences, tents) and
+  `kenney-mini-dungeon` (30: walls, floors, props, characters), scaled to the engine's metres
+  (a doorway 2 m, an oak 3.7 m). Load one with
+  `const kit = await loadPack('packs/kenney-nature.json')`, then
+  `buildModel('kenney-nature/tree-oak', { catalog: kit })`.
+- Textures: `kenney-tiny-dungeon` and `kenney-tiny-town` (132 16 × 16 tiles each, every one
+  named: `knight`, `potion-red`, `wall-stone`, `grass`...; the floors, walls, grass and paths that
+  tile are marked). `await loadPack('packs/kenney-tiny-town.json', { textures: TEXTURE_LIBRARY })`,
+  then `hudSprite('kenney-tiny-town/well')` or `textureMap('kenney-tiny-town/grass')`.
+
 ## 0.30.0
 
 What a game gets (exported from the engine and the kit):

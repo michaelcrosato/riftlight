@@ -1283,8 +1283,9 @@ async function runTools(browserExe) {
     check(outside.code === 2 && /own work with an outside source/.test(outside.out), 'import refuses own work whose source is outside this repository');
     const unsafe = await m('import', 'public/assets/tree.glb', '--as', '../tree', ...own.slice(2));
     check(unsafe.code === 2 && /--as takes an id like chair/.test(unsafe.out), 'import refuses an id that would climb out of its folder');
-    const pack = await m('import-pack', 'kenney-furniture');
-    check(pack.code === 2 && /no approved pack "kenney-furniture"/.test(pack.out) && /#49/.test(pack.out), `import-pack refuses an unapproved pack, naming #49: ${pack.out.trim().split('\n')[0]}`);
+    // an id no pack has (importing an approved one would download it)
+    const pack = await m('import-pack', 'not-an-approved-pack');
+    check(pack.code === 2 && /no approved pack "not-an-approved-pack"/.test(pack.out) && /#49/.test(pack.out), `import-pack refuses an unapproved pack, naming #49: ${pack.out.trim().split('\n')[0]}`);
     const credits = await m('credits');
     check(credits.code === 0 && /# Credits/.test(credits.out), 'credits writes the attribution list');
     // traces: the reference (V-HACD through Rapier under tsx), a passing trace, a failing one

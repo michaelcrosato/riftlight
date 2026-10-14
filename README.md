@@ -22,7 +22,8 @@ how it works. Riftlight's title menu has a door to it, and its pause menu one ba
 
 The **Asset Gallery** (`/?game=world&room=gallery`, or *Asset Gallery* on Riftlight's title) shows
 every model and texture the engine carries, one at a time: the built-in library family by
-family and every imported pack. Q/E step through a shelf, comma/period change shelf, and the
+family and every imported pack (six CC0 Kenney packs: castle, furniture, nature, mini dungeon,
+and the Tiny Dungeon and Tiny Town tiles). Q/E step through a shelf, comma/period change shelf, and the
 panel says what each asset is, how big it is and where it came from. Agents search the same
 assets with `npm run model -- find <words>` and `npm run tex -- find <words>`
 ([docs/ASSETS.md](docs/ASSETS.md), *Finding assets*).

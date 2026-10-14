@@ -220,7 +220,8 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       if (zoom === 'close') return 3;
       const [w, h, d] = e.size;
       const span = Math.max(h, Math.hypot(w, d) * 0.8, 0.25);
-      return Math.min(24, Math.max(0.3, GAME_VIEW.viewHeight / (span * 3)));
+      // a sprite fills a fifth of the view (its exact pixels are in the panel), anything else a third
+      return Math.min(24, Math.max(0.3, GAME_VIEW.viewHeight / (span * (e.kind === 'sprite' ? 5 : 3))));
     };
 
     /** The camera holds the exhibit until the hero walks off; any step brings it back. */
