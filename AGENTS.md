@@ -39,9 +39,10 @@ this file is how the work is done.
 | Browser e2e (CI runs the groups in parallel) | `npm run build && npm run test:e2e [-- <suite or @group>]` |
 | Install deps | `scripts/session-start.sh` (runs automatically in cloud sessions) |
 | Models: check, look, compare (docs/ASSETS.md) | `npm run model -- check [id]`, `sheet <id> --compare`, `diff <id>`, `find <words>` |
-| Models: import a GLB, list credits | `npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>`, `credits` |
+| Find a model or texture (library and packs) | `npm run model -- find <words>`, `npm run tex -- find <words>`; in the game: `/?game=world&room=gallery` (docs/ASSETS.md *Finding assets*) |
+| Models: import a GLB or an approved pack, list credits | `npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>`, `import-pack <pack>`, `credits` |
 | Models: trace a source in primitives (docs/ASSETS.md *Tracing*) | `npm run model -- trace <id> --against <source> --reference`, `trace <draft.ts> --against <source>`, `export-glb <source>` |
-| Textures: check, look, import a sheet | `npm run tex -- check [id]`, `sheet <id>`, `import <sheet.png> --grid 16x16 --licence <spdx> --source <url>` |
+| Textures: check, look, import a sheet or an approved pack's sheets | `npm run tex -- check [id]`, `sheet <id>`, `import <sheet.png> --grid 16x16 --licence <spdx> --source <url>`, `import-pack <pack>` |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs
 whatever exists. When you add a stack, wire its lint/test/build into the

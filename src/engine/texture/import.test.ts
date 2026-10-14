@@ -14,7 +14,7 @@ import { creditEntries, creditLines } from '../model/packs/credits';
 import { OWN_LICENCE } from '../model/packs/licences';
 import { PALETTE, type PaletteColor } from '../palette';
 import { decodePng, type RgbaImage } from '../png';
-import { bakeTexture, importSheet, LEGEND_CHARS, SHEET_IMPORT_TOOL, validateTexture, type PixelsLayer, type SheetImportOptions, type TextureDef } from '.';
+import { bakeTexture, importPackSheet, importSheet, LEGEND_CHARS, SHEET_IMPORT_TOOL, validateTexture, type PixelsLayer, type SheetImportOptions, type TextureDef } from '.';
 
 const NAMES = Object.keys(PALETTE) as PaletteColor[];
 const SOURCE = { url: 'src/engine/texture/import.test.ts', licence: OWN_LICENCE, file: 'fixture.png' };
@@ -365,3 +365,31 @@ describe('licences on textures (the models’ rule)', () => {
     expect(creditLines(creditEntries([], [])).at(-1)).toBe('Nothing imported yet: nothing to credit.');
   });
 });
+
+describe("a pack's sheet (tex -- import-pack)", () => {
+  // four cells, 2 x 2: green, sky, red, blue
+  const four = () => sheet(32, 32, (x, y) => ({ hex: [PALETTE.green, PALETTE.sky, PALETTE.red, PALETTE.blue][(y >> 4) * 2 + (x >> 4)]! }));
+  const SRC = { ...SOURCE, pack: 'fx-pack' };
+
+  it('names, tags and tiles each cell, in reading order, unnamed cells kept in place', () => {
+    const { defs } = importPackSheet(four(), { pack: 'fx-pack', title: 'Fx Pack 1.0', tags: ['sprite'], source: SRC, sheet: { file: 'Tiles/sheet.png', grid: [16, 16], names: ['grass', '', 'knight', 'water'], tiles: ['grass', 'water'], tags: ['town'] } });
+    expect(defs.map((d) => d.id)).toEqual(['fx-pack/grass', 'fx-pack/1', 'fx-pack/knight', 'fx-pack/water']);
+    expect(defs.map((d) => d.tile === true)).toEqual([true, false, false, true]);
+    expect(defs[0]!.about).toBe('Grass (imported from Fx Pack 1.0: sheet.png)');
+    expect(defs[0]!.tags).toEqual(['imported', 'fx-pack', 'sprite', 'town', 'surface', 'nature', 'plant', 'grass']);
+    expect(defs[2]!.tags).toEqual(['imported', 'fx-pack', 'sprite', 'town', 'character']);
+    for (const d of defs) expect(validateTexture(d).problems, d.id).toEqual([]);
+  });
+
+  it('a sheet of nothing but tiles imports; ids that collide are refused; the sheet re-binds its own slots', () => {
+    const all = importPackSheet(four(), { pack: 'fx-pack', source: SRC, sheet: { file: 's.png', grid: [16, 16], names: ['a', 'b', 'c', 'd'], tiles: ['a', 'b', 'c', 'd'] } });
+    expect(all.defs.every((d) => d.tile)).toBe(true);
+    expect(() => importPackSheet(four(), { pack: 'fx-pack', source: SRC, sheet: { file: 's.png', grid: [16, 16], names: ['', '', '', '0'] } })).toThrow(ImportError);
+    const plain = importPackSheet(four(), { pack: 'fx-pack', source: SRC, sheet: { file: 's.png', grid: [16, 16] } });
+    const slot = Object.keys(plain.defs[2]!.palette)[0]!;
+    expect(plain.defs[2]!.palette[slot]).toBe('red');
+    const rebound = importPackSheet(four(), { pack: 'fx-pack', source: SRC, sheet: { file: 's.png', grid: [16, 16], palette: { [slot]: 'orange' } } });
+    expect(rebound.defs[2]!.palette[slot]).toBe('orange');
+  });
+});
+

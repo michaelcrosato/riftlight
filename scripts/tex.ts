@@ -6,7 +6,8 @@
 //   sheet <id>           PNG → .scratch/tex/<id>.png: the texture at 1× and enlarged, a 3×3
 //                        tiling when it tiles, its frames, palette and check
 //        --palette slot=colour,...   (a PALETTE name or 0xrrggbb)
-//   find [words|tags...] the catalog: id, size, tiles, frames, file (no words: all)
+//   find [words...] [--limit n]  the library and every pack, best match first (the engine's
+//                        `search`): id, size, tiles, frames, file or pack
 //   zoo [tag|all]        every texture (or those with the tag) at one scale, tiled 3×3 where it tiles
 //                        → .scratch/tex/zoo-<name>.png
 //
@@ -26,6 +27,13 @@
 //                        --source a path in this repo) is allowed; anyone else's, CC0 included,
 //                        only from a pack (--pack) whose PACK_SOURCES entry is approved
 //
+//   import-pack <pack>   an approved pack's pixel-art sheets (its PACK_SOURCES entry's `sheets`):
+//                        download, verify its sha256, check its licence files, slice each sheet on
+//                        its grid into one texture per cell named from `names` (`tiles` tile),
+//                        with one colour map per sheet and that sheet's `palette` re-bindings →
+//                        public/packs/<pack>.json (beside its models) and the index, an import
+//                        sheet per sheet (<out>/import/) and a zoo
+//
 // An <id> can also be a draft file: `check my/wall.ts` (every def it exports), `sheet my/wall.ts`
 // (its default export, or the first) or `sheet my/wall.ts wall-3` (that one). Options for every
 // command: --json, --out <dir> (default .scratch/tex).
@@ -36,14 +44,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { inflateSync } from 'node:zlib';
 import type { SheetImage } from '../src/engine/animation/raster';
 import { licenceProblem, PACK_ID } from '../src/engine/model/packs/licences';
+import { searchHits } from '../src/engine/catalog';
 import { fileId, hexString, IMPORT_ID, ImportError } from '../src/engine/model/import';
 import { isPaletteName, type PaletteColor } from '../src/engine/palette';
 import { decodePng, PngError } from '../src/engine/png';
-import { bakeTexture, importSheet, TEXTURE_LIBRARY, TextureCatalog, validateTexture, type SheetImport, type TextureDef } from '../src/engine/texture';
+import { bakeTexture, importPackSheet, importSheet, TEXTURE_LIBRARY, TextureCatalog, validateTexture, type SheetImport, type TextureDef } from '../src/engine/texture';
 import { renderImportSheet, textureSheet, texelImage, tiled } from '../src/engine/texture/sheet';
 import { column, row, textBox, titleBar } from '../src/engine/inspect/render';
 import { upscale } from '../src/engine/model/sheet';
 import { encodePng } from './png';
+import { approvedPack, PACK_INDEX, packDownload, packSource, packTextureDefs, writePack } from './packs';
 import { textureDefsSource } from './ts-value';
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
@@ -60,7 +70,7 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
-const VALUED = ['palette', 'out', 'grid', 'as', 'licence', 'source', 'author', 'pack', 'cells', 'names', 'alpha'];
+const VALUED = ['palette', 'out', 'grid', 'as', 'licence', 'source', 'author', 'pack', 'cells', 'names', 'alpha', 'limit'];
 const SWITCHES = ['json', 'tile', 'frames'];
 const flags = new Map<string, string | true>();
 const args: string[] = [];
@@ -113,13 +123,17 @@ function sourceFiles(): Map<string, string> {
   return out;
 }
 
+/** The library and every pack's textures (public/packs/). */
+let everything: TextureCatalog | null = null;
+const ALL = () => (everything ??= new TextureCatalog([...TEXTURE_LIBRARY.all(), ...packTextureDefs()]));
+
 const isDef = (v: unknown): v is TextureDef => typeof v === 'object' && v !== null && 'layers' in v && 'size' in v && 'id' in v;
 
 /** Defs named by an id or a draft file's exports (its default export first). */
 async function targets(target: string): Promise<{ defs: TextureDef[]; file: string | null }> {
   if (!/\.[cm]?ts$/.test(target)) {
-    if (!TEXTURE_LIBRARY.has(target)) fail(`no texture "${target}" (npm run tex -- find lists them)`);
-    return { defs: [TEXTURE_LIBRARY.get(target)], file: null };
+    if (!ALL().has(target)) fail(`no texture "${target}" (npm run tex -- find lists them)`);
+    return { defs: [ALL().get(target)], file: null };
   }
   const file = resolve(target);
   const mod = (await import(pathToFileURL(file).href)) as Record<string, unknown>;
@@ -129,12 +143,16 @@ async function targets(target: string): Promise<{ defs: TextureDef[]; file: stri
 }
 
 async function check(): Promise<void> {
-  const defs = args.length ? (await Promise.all(args.map(targets))).flatMap((t) => t.defs) : TEXTURE_LIBRARY.all();
+  const defs = args.length ? (await Promise.all(args.map(targets))).flatMap((t) => t.defs) : ALL().all();
   const results = defs.map((d) => validateTexture(d));
   if (json) console.log(JSON.stringify(results, null, 2));
   else {
     console.log(`${'texture'.padEnd(16)} ${'size'.padEnd(8)} cols  single  seam        status`);
-    for (const r of results) {
+    // pack textures (public/packs/) in one line per pack unless something is wrong with one
+    const packOf = new Map(defs.map((d) => [d.id, d.source?.pack]));
+    const quiet = new Set(results.filter((r) => !r.problems.length && !r.warnings.length && packOf.get(r.id)).map((r) => r.id));
+    for (const pack of new Set([...quiet].map((id) => packOf.get(id)!))) console.log(`pack ${pack}: ${[...quiet].filter((id) => packOf.get(id) === pack).length} texture(s) ok`);
+    for (const r of results.filter((x) => !quiet.has(x.id))) {
       const m = r.metrics;
       const status = r.problems.length ? `${r.problems.length} problem(s)` : r.warnings.length ? `${r.warnings.length} warning(s)` : 'ok';
       console.log(`${r.id.padEnd(16)} ${(m ? `${m.width}x${m.height}` : '-').padEnd(8)} ${String(m?.colours ?? '-').padStart(4)}  ${(m ? `${Math.round(m.isolated * 100)}%` : '-').padStart(6)}  ${(m?.seam ? `${Math.round(m.seam.wrap * 100)}/${Math.round(m.seam.inside * 100)}%` : '-').padEnd(10)}  ${status}`);
@@ -163,24 +181,25 @@ async function sheet(): Promise<void> {
 }
 
 function find(): void {
-  const catalog = new TextureCatalog(TEXTURE_LIBRARY.all());
-  const tags = args.filter((w) => catalog.all().some((d) => d.tags.includes(w)));
-  const text = args.filter((w) => !tags.includes(w)).join(' ');
+  const limit = flags.has('limit') ? Number(flags.get('limit')) : undefined;
+  if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) fail(`--limit takes a whole number above 0 (got "${flags.get('limit')}")`);
   const files = sourceFiles();
-  const rows = catalog.find({ tags, text }).map((d) => ({ id: d.id, about: d.about, tags: d.tags, size: d.size, tile: d.tile === true, frames: d.frames ?? 1, file: files.get(d.id) ?? null }));
+  const hits = searchHits(ALL().all(), args.join(' '), { ...(limit ? { limit } : {}) });
+  const rows = hits.map(({ def: d, full }) => ({ id: d.id, about: d.about, tags: d.tags, size: d.size, tile: d.tile === true, frames: d.frames ?? 1, file: files.get(d.id) ?? null, pack: d.source?.pack ?? null, full }));
   if (json) console.log(JSON.stringify(rows, null, 2));
   else {
+    if (rows.length && !rows[0]!.full) console.log(`no texture matches every word of "${args.join(' ')}"; the closest:`);
     for (const r of rows) {
-      console.log(`${r.id}  ${r.size.join('x')}${r.tile ? '  tiles' : ''}${r.frames > 1 ? `  ${r.frames} frames` : ''}  ${r.file ?? ''}`);
+      console.log(`${r.id}  ${r.size.join('x')}${r.tile ? '  tiles' : ''}${r.frames > 1 ? `  ${r.frames} frames` : ''}  ${r.file ?? (r.pack ? `pack ${r.pack} (public/packs/${r.pack}.json)` : '')}`);
       console.log(`  ${r.about}  [${r.tags.join(', ')}]`);
     }
-    console.log(`\n${rows.length} texture(s)`);
+    console.log(rows.length ? `\n${rows.length} texture(s)` : `nothing matches "${args.join(' ')}"`);
   }
 }
 
 function zoo(): void {
   const name = args[0] ?? 'all';
-  const defs = TEXTURE_LIBRARY.all().filter((d) => name === 'all' || d.tags.includes(name));
+  const defs = ALL().all().filter((d) => name === 'all' || d.tags.includes(name));
   if (!defs.length) fail(`no textures tagged "${name}"`);
   const cells = defs.map((d) => {
     const b = bakeTexture(d);
@@ -298,6 +317,57 @@ async function cmdImport(): Promise<void> {
   if (checks.some((c) => c.problems.length)) process.exitCode = 1;
 }
 
+/** An approved pack's sheets → textures in its pack file (see the header). */
+async function cmdImportPack(): Promise<void> {
+  const id = args[0] ?? fail('usage: npm run tex -- import-pack <pack> (an approved pack with sheets in src/engine/model/packs/sources.ts)');
+  const p = approvedPack(id);
+  if (!p.sheets?.length) fail(`pack '${id}' has no sheets to slice (its PACK_SOURCES entry's \`sheets\`): import its models with npm run model -- import-pack ${id}`);
+  const files = await packDownload(p);
+  const inflate = (b: Uint8Array) => new Uint8Array(inflateSync(b));
+  const defs: TextureDef[] = [];
+  const lines: string[] = [];
+  let problems = 0;
+  for (const sh of p.sheets) {
+    const bytes = files.get(sh.file) ?? fail(`pack '${id}' has no file '${sh.file}' (its PNGs: ${[...files.keys()].filter((f) => f.endsWith('.png')).slice(0, 6).join(', ')}, ...)`);
+    const img = decodePng(bytes, inflate);
+    const source = { url: p.url, licence: p.licence, pack: p.id, file: sh.file, author: p.author, sha256: p.sha256 };
+    const tiles = new Set(sh.tiles ?? []);
+    let r: SheetImport;
+    let sheetDefs: TextureDef[];
+    try {
+      ({ defs: sheetDefs, sheet: r } = importPackSheet(img, { pack: p.id, sheet: sh, source, title: p.title, tags: p.tags }));
+    } catch (e) {
+      if (e instanceof ImportError || e instanceof PngError) fail(`import-pack ${id}, ${sh.file}: ${e.message}`);
+      throw e;
+    }
+    defs.push(...sheetDefs);
+    const checks = sheetDefs.map((d) => validateTexture(d));
+    problems += checks.filter((c) => c.problems.length).length;
+    const png = join(OUT, 'import', `${p.id}-${basename(sh.file).replace(/\.[^.]+$/, '')}.png`);
+    mkdirSync(dirname(png), { recursive: true });
+    writeFileSync(png, encodePng(renderImportSheet(img, r, { title: `${p.id}: ${sh.file}`, subtitle: `${sheetDefs.length} texture(s), ${tiles.size} tiling; ${r.colours.length} colours -> ${new Set(r.colours.map((c) => c.slot)).size} slots, ${r.merges.length} merge(s)`, grid: [sh.grid[0], sh.grid[1]], checks })));
+    lines.push(`${sh.file}: ${r.columns} x ${r.rows} cells of ${sh.grid.join(' x ')} -> ${sheetDefs.length} texture(s) (${tiles.size} tile), ${r.colours.length} source colours`);
+    const slots = r.map.slots.map((s) => s.slot).filter((s) => r.colours.some((c) => c.slot === s));
+    lines.push(`  colour slots (re-bind one with \`palette: { slot: 'entry' }\` in the sheet's entry in PACK_SOURCES, then import again): ${slots.map((s) => `${s} ${r.colours.find((c) => c.slot === s)!.colour}`).join(', ')}`);
+    for (const m of r.merges) lines.push(`  merged: ${m.colour} <- ${m.sources.map((c) => hexString(c.hex)).join(', ')}`);
+    for (const c of checks) {
+      for (const x of c.problems) lines.push(`  x ${c.id}: ${x}`);
+      for (const x of c.warnings) lines.push(`  ! ${c.id}: ${x}`);
+    }
+    lines.push(`  wrote ${rel(png)}`);
+  }
+  const packFile = writePack(p.id, { textures: defs, replace: true }, { source: packSource(p), about: `${p.title ?? p.id} by ${p.author} (${p.homepage})`, title: p.title });
+  everything = null;
+  if (json) console.log(JSON.stringify({ pack: rel(packFile), textures: defs.map((d) => d.id), problems }, null, 2));
+  else {
+    for (const l of lines) console.log(l);
+    console.log(`${defs.length} texture(s), ${problems} with problems\n  wrote ${rel(packFile)} and ${rel(PACK_INDEX)}`);
+  }
+  args.splice(0, args.length, p.id);
+  zoo();
+  if (problems) process.exitCode = 1;
+}
+
 function help(): void {
   const text = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
   console.log(text.slice(0, text.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
@@ -309,5 +379,6 @@ else if (cmd === 'sheet') await sheet();
 else if (cmd === 'find') find();
 else if (cmd === 'zoo') zoo();
 else if (cmd === 'import') await cmdImport();
+else if (cmd === 'import-pack') await cmdImportPack();
 else if (!cmd || cmd === 'help') help();
-else fail(`unknown command "${cmd}" (check, sheet, find, zoo, import, help)`);
+else fail(`unknown command "${cmd}" (check, sheet, find, zoo, import, import-pack, help)`);

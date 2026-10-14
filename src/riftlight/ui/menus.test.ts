@@ -14,6 +14,15 @@ describe('links between Riftlight and Engine World', () => {
     expect(titleMenu(host()).items().map((w) => w.id)).not.toContain('world'); // a host without it
   });
 
+  it('the title opens the Asset Gallery room of Engine World', () => {
+    const rooms: (string | undefined)[] = [];
+    const menu = titleMenu(host({ engineWorld: (room?: string) => rooms.push(room) }));
+    menu.activate('gallery');
+    menu.activate('world');
+    expect(rooms).toEqual(['gallery', undefined]);
+    expect(titleMenu(host()).items().map((w) => w.id)).not.toContain('gallery');
+  });
+
   it('Engine World\'s pause menu leaves for Riftlight', () => {
     let left = 0;
     const none = () => {};

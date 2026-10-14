@@ -3,8 +3,8 @@
 For an agent building a game on the kit; read `GUIDE.md` first. Objects and pixel-art textures
 are **plain data** you write, check and look at, then fix: a `ModelDef` of keyed primitives that
 the engine turns into toon meshes, a `TextureDef` of layers it bakes into texels. No modelling
-tool and no image files. `LIBRARY.md` lists the built-in models and textures,
-`check.mjs --sheets` draws what you write, and `examples/market.html` is a scene built this way
+tool and no image files. `LIBRARY.md` lists the built-in models and textures and the imported
+packs (`library.json` holds the same as data), `check.mjs --sheets` draws what you write, and `examples/market.html` is a scene built this way
 (section 6). Every name here comes from `./pixel-engine.js`; `API.md` has the signatures.
 
 Contents: 1 The loop · 2 Models · 3 Textures · 4 Style rules · 5 In a game · 6 The example ·
@@ -12,10 +12,12 @@ Contents: 1 The loop · 2 Models · 3 Textures · 4 Style rules · 5 In a game �
 
 ## 1. The loop
 
-1. **Start from the library.** Search `LIBRARY.md` (id, size, params, palette slots, one line
-   each), or `MODEL_LIBRARY.find({ text: 'crate' })` and `MODEL_LIBRARY.get('fence')` in code.
-   Place library models as they are, re-coloured or with other params, and `use` them inside
-   your own: a stall with crates is a few lines.
+1. **Start from the library.** Search `LIBRARY.md` (by family, then each pack; id, size, params,
+   palette slots, tags, one line each), filter `library.json`, or search in code:
+   `MODEL_LIBRARY.search('wooden chair')` ranks id words over tags over `about`, plurals and
+   parts of words included; `MODEL_LIBRARY.get('fence')` takes an id. Place library models as
+   they are, re-coloured or with other params, and `use` them inside your own: a stall with
+   crates is a few lines.
 2. **Write** your defs in a module of their own (`models.js`) that exports them; the game
    imports it. Keep the engine start out of that module.
 3. **Check and look:** `node check.mjs --sheets models.js` draws a sheet of every def the module
@@ -157,6 +159,10 @@ of two, unused slots.
 - **Textures:** `toonMaterial(PALETTE.white, { map: textureMap('bricks') })` on any mesh (the
   map is cached and shared: scale UVs, never the map); `new SpriteBatch(spriteSheet('coin-spin'),
   { capacity: 64 })`; `hudSprite('gem-icon')` gives rows and colours for `ctx.hud.sprite`.
+- **Packs** (`packs/`, listed in `packs/index.json` and LIBRARY.md): kits by other artists,
+  imported into this format and palette. `const kit = await loadPack('packs/<id>.json',
+  { textures: TEXTURE_LIBRARY })`, then `buildModel('<id>/<name>', { catalog: kit })`; its
+  textures then work by id like the library's. `kit.search('tree')` searches the pack.
 
 ## 6. The example
 
@@ -267,5 +273,6 @@ await Engine.start(new MarketCorner(), withUrlOptions({ container: document.getE
 
 `CREDITS.md` says where everything the kit carries came from: the library and the built-in
 models are the engine's own work, three.js and Rapier ship under their licences (their texts are
-in it). Ship it with your game. A def you import or copy from someone else records it in `source:
-{ url, licence, author }`; credit it as its licence asks.
+in it), and each pack's author and licence with every id it holds. Ship it with your game. A def
+you import or copy from someone else records it in `source: { url, licence, author }`; credit it
+as its licence asks.

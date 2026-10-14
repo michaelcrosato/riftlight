@@ -8,6 +8,45 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.30.0
+
+What a game gets (exported from the engine and the kit):
+
+- **Search:** `catalog.search(text, { tags, limit })` on `MODEL_LIBRARY`, `TEXTURE_LIBRARY`, a
+  loaded pack's catalog or a game's own: every def ranked by how well it matches, best first (a
+  word naming part of the id counts most, then a tag, then `about`; plurals and parts of words
+  count; when nothing matches every word, the defs matching most of them come back).
+  `searchDefs(defs, text, o)` searches any list (several catalogs at once), `searchHits` adds
+  each one's score and whether it matched every word, `searchWords` splits names the same way.
+  `find` is unchanged.
+- **Families:** `MODEL_FAMILIES` and `TEXTURE_FAMILIES`, each library family's ids in order
+  (architecture, containers ... weapons; surfaces, sprites).
+- **Packs hold textures:** a pack file (`packs/<id>.json`) can carry `textures` beside its models
+  (`npm run tex -- import-pack` slices a pack's pixel-art sheets into it) and a `title`.
+  `loadPack(url, { into, textures })` adds them to a `TextureCatalog` of yours (`TEXTURE_LIBRARY`,
+  so `textureMap(id)`, `spriteSheet(id)` and `hudSprite(id)` find them); `packTextures(pack)`
+  makes a catalog of them.
+- **The pack index:** `loadPackIndex(url = 'packs/index.json')` lists the packs a site carries
+  (id, title, file, how many models and textures, licence, author; types `PackIndex`,
+  `PackIndexEntry`).
+- An imported model's `about` is now its file name in words with where it came from ("Tree pine
+  default a (imported from Kenney Nature Kit 2.1: tree_pineDefault_a.glb)"), and its tags add the
+  library's tags its name implies (nature, tree, plant).
+
+The kit:
+
+- `LIBRARY.md` lists the library by family (with each asset's tags), then every pack the kit
+  carries, with how to load it.
+- `library.json`: every model and texture as data (id, kind, family, pack, about, tags, size,
+  params, palette slots, licence, author), and the packs with their files: filter it to find what
+  a game needs.
+- `packs/`: the imported packs (`packs/index.json` lists them), and CREDITS.md credits each one's
+  author and licence with every id it holds.
+
+In the repository: the Asset Gallery room of Engine World (`/?game=world&room=gallery`, and
+*Asset Gallery* on Riftlight's title) shows every library model and texture and every pack, one at
+a time; `npm run model -- find` and `tex -- find` search the library and the packs, ranked.
+
 ## 0.29.0
 
 What a game gets (exported from the engine and the kit):

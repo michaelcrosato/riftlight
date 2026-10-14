@@ -9,7 +9,7 @@
 export * from './types';
 export { model, around, rowOf, gridOf, scatterOf, boxFrame } from './helpers';
 export { ModelCatalog } from './catalog';
-export { MODEL_LIBRARY } from './library';
+export { MODEL_FAMILIES, MODEL_LIBRARY } from './library';
 export { buildModel, expandModel, ModelError, layoutModel, collidersOf, bindingHex, modelDef, type ModelBuild, type ModelReport, type ModelLightRequest, type ColliderData, type Layout, type MeshLayout, type UvLayout } from './build';
 export { type Binding, type ExpandedModel, type ModelOptions } from './expand';
 export { compileParts, boundsOf, type Bounds, type Compiled, type CompiledPart, type CompiledPivot } from './compile';
@@ -19,4 +19,4 @@ export { primTriangles, primKind, ring, svgOutlines, parseMesh, defaultSeg, PRIM
 export { scoreFidelity, modelTriangles, renderFidelity, FIDELITY_YAWS, CLOSE_PX, type ColouredTris, type FidelityScore, type FidelityView, type FidelitySheetOptions } from './fidelity';
 export { ALLOWED_LICENCES, APPROVAL, LICENCES, OWN_LICENCE, PACK_ID, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, type LicenceTerms } from './packs/licences';
 export { PACK_SOURCES, type PackSource } from './packs/sources';
-export { parsePack, packCatalog, packProblems, type ModelPack } from './packs/pack';
+export { parsePack, parsePackIndex, packCatalog, packIndexEntry, packProblems, packTextures, type ModelPack, type PackIndex, type PackIndexEntry } from './packs/pack';

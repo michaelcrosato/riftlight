@@ -174,6 +174,8 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'occlusion', section: 'games', text: 'Something in the way: for sound, a wall between the source and the listener, found by casting a ray; it is played quieter and muffled (a low-pass filter).' },
   { term: 'low-pass filter', section: 'games', text: 'A filter that lets low frequencies through and cuts high ones: what makes a sound dull and far away, behind a door or under water.' },
   // tools
+  { term: 'catalog', section: 'tools', text: 'Defs by id (models or textures), searchable: the built-in library is one, a loaded pack is another. Ids are how parts, layers and saves refer to defs.' },
+  { term: 'asset pack', section: 'tools', text: 'Someone else\'s models or tiles, imported once into the engine\'s own format and palette and kept as one JSON file (public/packs/), with where each piece came from and its licence.' },
   { term: 'agent API', section: 'tools', text: 'window.__WORLD__ and window.__PIXEL_ENGINE__: what tests and AI agents drive the game through.' },
   { term: 'e2e test', section: 'tools', text: 'A test that opens the real game in a browser, plays it and checks the frames and numbers.' },
 ];

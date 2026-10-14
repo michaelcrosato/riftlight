@@ -40,6 +40,7 @@ import { SPRITES } from './sprites';
 import { STEALTH } from './stealth';
 import { TRAILS } from './trails';
 import { WATER } from './water';
+import { GALLERY } from './gallery';
 import { WEATHER } from './weather';
 
 export const ROOMS: readonly RoomDef[] = [
@@ -73,6 +74,7 @@ export const ROOMS: readonly RoomDef[] = [
   LAYERS,
   FILTER_BENCH,
   TRANSITIONS_ROOM,
+  GALLERY,
   // genres
   STEALTH,
   FLOCKS,

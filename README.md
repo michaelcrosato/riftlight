@@ -20,6 +20,13 @@ L-system plants, a GPU compute swarm, security monitors and a mirror, TSL shader
 behaviour trees, a cutscene on a timeline, sound in space...) with pads to change it live and a station guide (H) that explains
 how it works. Riftlight's title menu has a door to it, and its pause menu one back.
 
+The **Asset Gallery** (`/?game=world&room=gallery`, or *Asset Gallery* on Riftlight's title) shows
+every model and texture the engine carries, one at a time: the built-in library family by
+family and every imported pack. Q/E step through a shelf, comma/period change shelf, and the
+panel says what each asset is, how big it is and where it came from. Agents search the same
+assets with `npm run model -- find <words>` and `npm run tex -- find <words>`
+([docs/ASSETS.md](docs/ASSETS.md), *Finding assets*).
+
 - **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
   1–4 (or Q E R T, RMB = 1) skills · F talk / pick up / portal · I inventory · P passive tree ·
   C character · K codex · Esc pause. Pads: left stick, A attack, B dodge, X Y LB RB skills,

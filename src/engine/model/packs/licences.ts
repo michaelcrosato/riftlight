@@ -8,6 +8,7 @@
  * `validateModel` reports a model whose provenance this refuses as a problem, `model -- credits`
  * reads `credit`, and `model -- import-pack` reads `marks` in the download's licence files.
  */
+import { PALETTE } from '../../palette';
 import type { Provenance } from '../types';
 import { PACK_SOURCES, type PackSource } from './sources';
 
@@ -101,9 +102,26 @@ export function packSourceProblems(sources: readonly PackSource[] = PACK_SOURCES
     if (!Object.hasOwn(LICENCES, p.licence) || p.licence === OWN_LICENCE) out.push(`${who}: its licence '${p.licence}' is not one of ${Object.keys(LICENCES).filter((k) => k !== OWN_LICENCE).join(', ')}`);
     if (!isApproved(p)) out.push(`${who}: approved must link the owner's comment on #49 (${APPROVAL})`);
     if (!p.author || !p.homepage) out.push(`${who}: name its author and homepage`);
+    for (const t of p.tags ?? []) if (!TAG.test(t)) out.push(`${who}: tag '${t}' isn't lower-case letters, digits and dashes`);
+    for (const [slot, c] of Object.entries(p.palette ?? {})) if (!Object.hasOwn(PALETTE, c)) out.push(`${who}: palette binds slot '${slot}' to '${c}', which isn't a PALETTE entry`);
+    for (const sh of p.sheets ?? []) {
+      const where = `${who}, sheet '${sh.file}'`;
+      if (!sh.file) out.push(`${who}: a sheet needs the file to slice`);
+      if (!Array.isArray(sh.grid) || sh.grid.length !== 2 || !sh.grid.every((g) => Number.isInteger(g) && g > 0)) out.push(`${where}: grid must be [width, height] in whole pixels`);
+      const names = (sh.names ?? []).filter(Boolean);
+      for (const n of names) if (!TAG.test(n)) out.push(`${where}: cell name '${n}' isn't lower-case letters, digits and dashes`);
+      const dup = names.find((n, i) => names.indexOf(n) !== i);
+      if (dup) out.push(`${where}: cell name '${dup}' is given twice`);
+      for (const t of sh.tiles ?? []) if (!names.includes(t)) out.push(`${where}: tiles names '${t}', which no cell is called`);
+      for (const t of sh.tags ?? []) if (!TAG.test(t)) out.push(`${where}: tag '${t}' isn't lower-case letters, digits and dashes`);
+      for (const [slot, c] of Object.entries(sh.palette ?? {})) if (!Object.hasOwn(PALETTE, c)) out.push(`${where}: palette binds slot '${slot}' to '${c}', which isn't a PALETTE entry`);
+    }
   }
   return out;
 }
+
+/** Tags and cell names: lower-case words joined by dashes. */
+const TAG = /^[a-z0-9][a-z0-9-]*$/;
 
 /** Files in a download that may hold its licence: text named, or filed, as a licence. */
 export const isLicenceFile = (path: string) => /licen[cs]e|copying|copyright/i.test(path) && !/\.(glb|gltf|bin|png|jpe?g|webp|obj|mtl|fbx|vox|blend)$/i.test(path);

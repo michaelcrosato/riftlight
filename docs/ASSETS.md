@@ -38,6 +38,8 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `src/engine/model/sheet.ts`, `diff.ts`, `view.ts` | The sheets (`modelSheet`, exported: the kit's `check.mjs --sheets` draws with it) and the diff the CLI draws and prints; the game's camera and its part raster |
 | `scripts/model.ts` | `npm run model` (its header is the manual) |
 | `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
+| `src/world/rooms/gallery.ts` | The Asset Gallery (`/?game=world&room=gallery`): every library model and texture and every pack, one at a time ([Finding assets](#finding-assets)) |
+| `src/engine/catalog.ts` | `Catalog` (`MODEL_LIBRARY`, `TEXTURE_LIBRARY` and pack catalogs are ones): `get`, `find`, ranked `search`; `searchDefs` across catalogs |
 | `src/engine/texture/` | Textures as data ([below](#textures)): `TextureDef`, the patterns, `bakeTexture`, `validateTexture`, `textureMap`, `spriteSheet`, `hudSprite`, `TEXTURE_LIBRARY` (`library/`) |
 | `scripts/tex.ts` | `npm run tex` (its header is the manual) |
 | `src/engine/model/import/`, `fidelity.ts`, `packs/` | Mesh import ([below](#importing)): glTF/GLB reading, palette mapping, primitives, packs; fidelity scores; `LICENCES` and `PACK_SOURCES` |
@@ -60,6 +62,35 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 6. Repeat until `check` is clean and the game-scale preview reads.
 
 `npm run model -- check` also runs in `scripts/check.sh`, for every model in the library.
+
+## Finding assets
+
+Search before you write: the asset you need may already be in the library or a pack.
+
+- **Search:** `npm run model -- find wooden chair` and `npm run tex -- find stone floor` rank
+  every model (texture) in the library and in every pack (`public/packs/`) best first: a word that
+  names part of the id counts most, then a tag, then the `about` line; plurals and parts of words
+  count, and when nothing has every word the closest come back, said so. Each line gives the id,
+  size, tags and where it lives (a library file, or `pack <id>`). `--limit 5`, `--json`.
+- **In code** (the kit too): `MODEL_LIBRARY.search('wooden chair')`, `TEXTURE_LIBRARY.search(...)`,
+  a loaded pack's catalog the same way, or `searchDefs([...MODEL_LIBRARY.all(), ...kit.all()], text)`
+  across several. `MODEL_FAMILIES` and `TEXTURE_FAMILIES` list the library family by family.
+- **Browse:** `npm run model -- zoo <family|tag|pack>` draws a family, a tag or a whole pack at
+  one scale; `npm run tex -- zoo <tag|pack>` the same for textures.
+- **Look in the game:** the **Asset Gallery**, `/?game=world&room=gallery` (Riftlight's title menu
+  → Engine World → Looks & Filters, or G there): every library model and texture and every pack,
+  one at a time on a turntable. Q and E step through a shelf (Shift: ten at a time), comma and
+  period change shelf, the wheel zooms; T has the shelf, the item, the zoom (fit, or Riftlight's
+  own level and town zooms) and the turntable. `&asset=<id>` opens it on one asset. Agents:
+  `__WORLD__.room.find('chair')`, `show(id)`, `next()`, `shelf(id)`, `current()`.
+- **The kit** (agents outside this repo): `LIBRARY.md` lists every asset by family and pack,
+  `library.json` holds the same as data (id, kind, family, pack, tags, size, slots, licence), and
+  `packs/` carries the pack files with their index.
+
+Tags are a small vocabulary shared by the library and the imports: families (`furniture`,
+`nature`, `dungeon`, `architecture`, `weapon`, `lighting`, `container`...), materials (`wood`,
+`stone`, `iron`, `cloth`) and kinds (`tree`, `wall`, `seat`, `potion`, `character`). An import
+takes them from its file name (`NAME_TAGS`, src/engine/model/import/describe.ts) and its pack.
 
 ### What the sheet shows
 
@@ -440,35 +471,48 @@ in primitives instead ([Tracing](#tracing)). Pixel-art PNG sheets come in as Tex
   nearest by lightness, chroma and hue, a penalty when a grey and a colour swap or two slots share
   an entry, lightness order kept within a hue family. Pale wood stays `sand`, pink stays `red` or
   `orange`. Slots take the material's name when it means something (`wood`, `metalDark`), else
-  `c1`, `c2`… (an atlas pack's materials are all `colormap`: the plan's per-pack slot table,
-  names written once from the pack's swatch sheet, isn't built yet).
+  `c1`, `c2`… (an atlas pack's materials are all `colormap`). A pack's slots can be re-bound
+  once, by an agent looking at its swatches: `palette` in its `PACK_SOURCES` entry (below).
 - **Scores** (plan §7.6): the def and its source drawn by the sheets' rasterizer at 4 yaws, at game
   scale and close up. `source.fidelity` keeps the worst game-scale and close silhouette IoU, the
   mean OKLab distance where both cover a pixel, and the bounds delta. An import under 0.98 IoU is
   an importer bug. The sheet shows source, def and their difference per view, and the source and
   palette colours side by side.
 
-**Packs:** a kit becomes one JSON file, `public/packs/<pack>.json`, ids `<pack>/<file>`. Its models
+**Packs:** a kit becomes one JSON file, `public/packs/<pack>.json`, ids `<pack>/<file>`, holding
+its models and, from its pixel-art sheets, its textures. `public/packs/index.json` lists every
+pack (id, title, file, counts, licence, author): the Asset Gallery and `loadPackIndex()` find
+packs through it, and `model -- check` fails when it doesn't match the pack files (the importers
+write it; `npm run model -- pack-index` rewrites it after a pack file is changed by hand). A pack's models
 share one colour map (a colour reads the same in every one) of up to 16 slots, the palette's size,
 rather than a model's 2–6: a whole kit has more colours than one model. A game loads it at runtime
 and never bundles it:
 
 ```ts
-import { buildModel, loadPack, MODEL_LIBRARY } from './engine';
+import { buildModel, loadPack, MODEL_LIBRARY, TEXTURE_LIBRARY } from './engine';
 
-const kit = await loadPack('packs/furniture.json', { into: MODEL_LIBRARY }); // `into`: so `use` finds them
-const chair = buildModel('furniture/chair', { catalog: kit });
+const kit = await loadPack('packs/kenney-furniture.json', { into: MODEL_LIBRARY }); // `into`: so `use` finds them
+const chair = buildModel('kenney-furniture/chair', { catalog: kit });
+await loadPack('packs/kenney-tiny-dungeon.json', { textures: TEXTURE_LIBRARY }); // its tiles, for hudSprite and textureMap
 ```
 
-`npm run model -- import-pack <pack>` downloads a pack listed in
-`src/engine/model/packs/sources.ts`, checks its sha256 and its licence files (one must name the
-pack's licence; "public domain" alone isn't CC0; none may name share-alike, non-commercial or
-no-derivatives terms), caches the download in
-`.scratch/import-cache/` (never committed), imports every model and writes the pack file, a summary
-(`.scratch/model/packs/<pack>.json`) and a zoo. `import --pack <pack>` adds one model to a pack
-file: a pack of our own, or one approved in `PACK_SOURCES` (a single file from it).
-`npm run model -- check` checks every pack file with the library: the pack's own licence, and
-each model's.
+A pack's entry in `src/engine/model/packs/sources.ts` holds what the importer needs, as data:
+where to download it and its sha256, its licence, author and approval, its `title`, the `tags`
+every asset gets (beside those its file name adds), `palette`, the slots re-bound after looking
+at the swatches (`{ grass: 'green' }`: Kenney's mint leaves would otherwise come out `cyan`), and
+for a 2D pack its `sheets`: the PNG in the download, the grid, a name per cell, which cells
+tile and the sheet's own `palette` (a sheet has a colour map of its own). `npm run model -- import-pack <pack>` downloads it, checks its sha256 and its licence files
+(one must name the pack's licence; "public domain" alone isn't CC0; none may name share-alike,
+non-commercial or no-derivatives terms), caches the download in `.scratch/import-cache/` (never
+committed), imports every model with its name in words as `about` and its tags, and writes the
+pack file, the index, a summary (`.scratch/model/packs/<pack>.json`), a zoo and the colour slots
+(source colour, entry, how many colours each took) to re-bind from. `npm run tex -- import-pack
+<pack>` does the same for its sheets ([Pixel-art sheets](#pixel-art-sheets)), into the same pack
+file. Re-importing replaces the pack's models (or textures), so the entry is the whole recipe.
+`import --pack <pack>` adds one model to a pack file: a pack of our own, or one approved in
+`PACK_SOURCES` (a single file from it). `npm run model -- check` checks every pack file with the
+library (the pack's own licence, and each model's) and the index; `tex -- check` checks the packs'
+textures with the library's.
 
 **Provenance and licences:** every import carries `source`: `url`, `licence`, `author`, `pack`,
 `file`, `sha256`, `tool`, `colours` and `fidelity`. `LICENCES` (src/engine/model/packs/licences.ts)
@@ -510,6 +554,13 @@ layers, one def per cell, or one def of frames for an animation strip. Every pix
    re-imports every def with it; rows never change). Two colours merged that shouldn't be: point
    one's character at a slot of its own, `legend: { ..., a: 'c9' }`, and bind it, `c9: 'orange'`.
 4. Move the defs where they belong: the library, or a game's own `TextureCatalog`.
+
+**A pack's sheets:** `npm run tex -- import-pack <pack>` slices every sheet its `PACK_SOURCES` entry
+lists (`sheets`: the PNG's path in the download, the grid, a name per cell by reading-order index,
+the cells that tile) in one pass, with the sheet's `palette` re-bindings, names each texture `<pack>/<name>`
+with its name in words and tags, and writes them into the pack file beside its models, with an
+import sheet per sheet (`.scratch/tex/import/`) and a zoo. Name the cells: `knight`, `potion-red`
+and `wall-stone` are what an agent searches for; `tile-0042` is not.
 
 **What it does:**
 

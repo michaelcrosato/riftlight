@@ -2,7 +2,8 @@ import type { AnimationClip, Material, Mesh, Object3D, Texture } from 'three/web
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import type { ModelCatalog } from './model/catalog';
-import { packCatalog, parsePack } from './model/packs/pack';
+import { packCatalog, packTextures, parsePack, parsePackIndex, type ModelPack, type PackIndex } from './model/packs/pack';
+import type { TextureCatalog } from './texture/catalog';
 import { toonify, type ToonifyOptions } from './render/toon';
 
 export interface Model {
@@ -60,17 +61,18 @@ function markShared(root: Object3D): Object3D {
   return root;
 }
 
-const packs = new Map<string, Promise<ModelCatalog>>();
+const packs = new Map<string, Promise<{ pack: ModelPack; models: ModelCatalog; textures: TextureCatalog }>>();
 
 /**
- * Load a pack of imported models (`public/packs/<pack>.json`, docs/ASSETS.md *Importing*) once,
- * the way `loadModel` loads a GLB: the URL resolved the same way (under the base URL; a page may
- * put a data URL for it in `__PIXEL_ASSETS__`, though single-file builds embed only
- * `public/assets/*.glb`), counted by `assetProgress`. Resolves to a catalog of the pack's
- * ModelDefs, to build from with `buildModel(id, { catalog })`; `into` also adds them to a catalog
- * of yours (e.g. `MODEL_LIBRARY`, so `use` finds them).
+ * Load a pack of imported models and textures (`public/packs/<pack>.json`, docs/ASSETS.md
+ * *Importing*) once, the way `loadModel` loads a GLB: the URL resolved the same way (under the
+ * base URL; a page may put a data URL for it in `__PIXEL_ASSETS__`, though single-file builds
+ * embed only `public/assets/*.glb`), counted by `assetProgress`. Resolves to a catalog of the
+ * pack's ModelDefs, to build from with `buildModel(id, { catalog })`; `into` also adds them to a
+ * catalog of yours (e.g. `MODEL_LIBRARY`, so `use` finds them), and `textures` gets the pack's
+ * TextureDefs (e.g. `TEXTURE_LIBRARY`, so `textureMap(id)` and `hudSprite(id)` find them).
  */
-export function loadPack(url: string, opts: { readonly into?: ModelCatalog } = {}): Promise<ModelCatalog> {
+export function loadPack(url: string, opts: { readonly into?: ModelCatalog; readonly textures?: TextureCatalog } = {}): Promise<ModelCatalog> {
   let pending = packs.get(url);
   if (!pending) {
     const p = { loaded: 0, total: 0, done: false };
@@ -80,14 +82,29 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog } = {
         if (!r.ok) throw new Error(`pack ${url}: HTTP ${r.status}`);
         return r.json() as Promise<unknown>;
       })
-      .then((json) => packCatalog(parsePack(json, `pack ${url}`)))
+      .then((json) => {
+        const pack = parsePack(json, `pack ${url}`);
+        return { pack, models: packCatalog(pack), textures: packTextures(pack) };
+      })
       .finally(() => (p.done = true));
     packs.set(url, pending);
   }
-  return pending.then((catalog) => {
-    opts.into?.add(...catalog.all());
-    return catalog;
+  return pending.then(({ models, textures }) => {
+    opts.into?.add(...models.all());
+    opts.textures?.add(...textures.all());
+    return models;
   });
+}
+
+/**
+ * The packs a site carries (`public/packs/index.json`, written by the importers): each pack's
+ * id, title, file (relative to the index), how many models and textures it holds, its licence
+ * and author. Load one with `loadPack(new URL(entry.file, indexUrl))`, or `packs/<file>`.
+ */
+export async function loadPackIndex(url = 'packs/index.json'): Promise<PackIndex> {
+  const r = await fetch(resolveAsset(url));
+  if (!r.ok) throw new Error(`pack index ${url}: HTTP ${r.status}`);
+  return parsePackIndex((await r.json()) as unknown, `pack index ${url}`);
 }
 
 /**

@@ -80,7 +80,7 @@ export async function runBundle(h) {
   try {
     manifest = JSON.parse(await readFile(new URL('manifest.json', kit), 'utf8'));
     check(manifest.version === version, `manifest version ${manifest.version} is package.json's (${version})`);
-    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
+    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
     check(manifest.examples.length >= 4 && manifest.examples.includes('examples/market.html'), `one page per guide recipe: ${manifest.examples.join(', ')}`);
@@ -94,21 +94,36 @@ export async function runBundle(h) {
     check(guide.includes(`Pixel Engine **${version}**`), 'GUIDE.md is stamped with the version');
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
-    // LIBRARY.md: a row per model and texture. CREDITS.md: every one of them either our own work
-    // (counted) or imported (listed by id under its source), the palettes, the code's licences.
+    // LIBRARY.md: a row per model and texture, the library's by family, then each pack's.
+    // CREDITS.md: every one of them either our own work (counted) or imported (listed by id under
+    // its source), the palettes, the code's licences. library.json: the same assets as data.
     const library = await readFile(new URL('LIBRARY.md', kit), 'utf8');
-    const ids = library.split(/^## Textures$/m).map((part) => [...part.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]));
+    const [, modelPart = '', texturePart = '', packPart = ''] = library.split(/^## (?:Models|Textures|Packs)$/m);
+    const rowIds = (part) => [...part.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]);
+    const ids = [rowIds(modelPart), rowIds(texturePart)];
+    const packIds = rowIds(packPart);
     const [models, textures] = ids.map((list) => list.length);
     const credits = await readFile(new URL('CREDITS.md', kit), 'utf8');
     const own = credits.match(/(\d+) of the (\d+) library models .*?, (\d+) of the (\d+) textures/s);
     const assetCredits = credits.split(/^## /m).find((part) => part.startsWith('Models and textures')) ?? '';
     const creditedIds = (kind) => [...assetCredits.matchAll(new RegExp(` ${kind}: ([^.]+)\\.`, 'g'))].flatMap((m) => m[1].split(', '));
     const [importedModels, importedTextures] = [creditedIds('Models'), creditedIds('Textures')];
+    const inLibrary = (list, lib) => list.filter((id) => lib.includes(id)).length;
     check(
       models > 40 && textures > 20 && own && +own[2] === models && +own[4] === textures &&
-        +own[1] + importedModels.length === models && +own[3] + importedTextures.length === textures &&
-        importedModels.every((id) => ids[0].includes(id)) && importedTextures.every((id) => ids[1].includes(id)),
-      `LIBRARY.md lists ${models} models and ${textures} textures; CREDITS.md accounts for each: ${own?.[1]} models and ${own?.[3]} textures our own, ${importedModels.length} and ${importedTextures.length} imported and listed`,
+        +own[1] + inLibrary(importedModels, ids[0]) === models && +own[3] + inLibrary(importedTextures, ids[1]) === textures &&
+        [...importedModels, ...importedTextures].every((id) => ids[0].includes(id) || ids[1].includes(id) || packIds.includes(id)) &&
+        packIds.every((id) => importedModels.includes(id) || importedTextures.includes(id)),
+      `LIBRARY.md lists ${models} models and ${textures} textures by family and ${packIds.length} from packs; CREDITS.md accounts for each: ${own?.[1]} models and ${own?.[3]} textures our own, ${importedModels.length} and ${importedTextures.length} imported and listed`,
+    );
+    const index = JSON.parse(await readFile(new URL('library.json', kit), 'utf8'));
+    const packIndex = JSON.parse(await readFile(new URL('packs/index.json', kit), 'utf8'));
+    const assetIds = index.assets.map((a) => a.id);
+    check(
+      index.engine === version && assetIds.length === models + textures + packIds.length && [...ids[0], ...ids[1], ...packIds].every((id) => assetIds.includes(id)) &&
+        index.assets.every((a) => a.id && (a.kind === 'model' || a.kind === 'texture') && a.family && Array.isArray(a.tags) && a.about && a.licence && (a.pack === null || listed.has(a.pack))) &&
+        index.packs.length === packIndex.packs.length && index.packs.every((p) => listed.has(p.file)),
+      `library.json holds every asset in LIBRARY.md as data (${assetIds.length}), each pack's file in the kit (${index.packs.length} pack(s))`,
     );
     check(
       /\*\*Sweetie 16\*\* by GrafxKid/.test(credits) && /\*\*PICO-8\*\*/.test(credits) && /The MIT License/.test(credits) && /Apache License/.test(credits),

@@ -48,6 +48,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `layers` Mix & Match | looks per layer: characters vs environment |
 | | `filters` Filter Bench | every filter on a pad; build a stack |
 | | `transitions` Screen Transitions | nine transitions, a flash, a shockwave |
+| | `gallery` Asset Gallery | every library model and texture and every imported pack, one at a time on a turntable: Q/E step, comma/period change shelf, `&asset=<id>` opens one (docs/ASSETS.md, *Finding assets*) |
 | Genre Wing | `stealth` Stealth | guards on patrol with vision cones that stop at walls; seen too long, they all chase you along A* paths |
 | | `flocks` Flocks & Herds | birds, a school of fish and a pen of sheep as boids; they scatter from the hero |
 | | `drift` Drift Track | get in a car on a ray-cast vehicle: suspension, grip, a handbrake drift, skid marks |

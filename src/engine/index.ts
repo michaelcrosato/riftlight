@@ -64,7 +64,7 @@ export {
   type LookTarget,
   type PixelLook,
 } from './render/look';
-export { loadModel, loadPack, type Model } from './assets';
+export { loadModel, loadPack, loadPackIndex, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
 export { GAMEPAD_BUTTONS, Input, PRESS_WINDOW, applyDeadzone, type GamepadLike } from './input';
@@ -107,6 +107,7 @@ export {
   DEFAULT_TEXEL,
   MOVING_TEXEL,
   LICENCES,
+  MODEL_FAMILIES,
   MODEL_LIBRARY,
   ModelCatalog,
   ModelError,
@@ -117,6 +118,7 @@ export {
   expandModel,
   gridOf,
   model,
+  packTextures,
   parsePack,
   rowOf,
   scatterOf,
@@ -131,12 +133,15 @@ export {
   type ModelLightRequest,
   type ModelOptions,
   type ModelPack,
+  type PackIndex,
+  type PackIndexEntry,
   type Part as ModelPart,
   type Provenance as ModelProvenance,
 } from './model';
 export { addModelColliders } from './model/physics';
 export { modelSheet, type ModelSheet, type ModelSheetOptions } from './model/sheet';
 export {
+  TEXTURE_FAMILIES,
   TEXTURE_LIBRARY,
   TextureCatalog,
   TextureError,
@@ -156,7 +161,7 @@ export {
   type Layer as TextureLayer,
 } from './texture';
 export { textureSheet, type TextureSheet, type TextureSheetOptions } from './texture/sheet';
-export { Catalog, type CatalogEntry } from './catalog';
+export { Catalog, searchDefs, searchHits, searchWords, type CatalogEntry, type SearchHit, type SearchOptions } from './catalog';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';

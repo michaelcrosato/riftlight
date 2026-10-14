@@ -122,8 +122,14 @@ const assetsGuide = readFileSync(join(root, 'docs/GUIDE-ASSETS.md'), 'utf8');
 const assetsStamp = `> Pixel Engine **${version}**, build ${buildId}. Read \`GUIDE.md\` first. \`LIBRARY.md\` lists the built-in models and textures, \`CREDITS.md\` where they came from.\n`;
 writeFileSync(join(out, 'ASSETS.md'), assetsGuide.replace(/^(# .*\n)/, `$1\n${assetsStamp}`));
 // LIBRARY.md and CREDITS.md from the libraries themselves (TypeScript, loaded through tsx)
-const { creditsMarkdown, libraryMarkdown } = await tsImport('./bundle/assets.ts', import.meta.url);
-writeFileSync(join(out, 'LIBRARY.md'), libraryMarkdown(version));
+const { creditsMarkdown, libraryJson, libraryMarkdown, libraryRecords } = await tsImport('./bundle/assets.ts', import.meta.url);
+const records = libraryRecords();
+writeFileSync(join(out, 'LIBRARY.md'), libraryMarkdown(version, records));
+writeFileSync(join(out, 'library.json'), libraryJson(version, records));
+// the imported packs (public/packs/: one JSON file each and their index), loaded with loadPack;
+// only JSON, which `model -- check` reads, so nothing unchecked ships
+mkdirSync(join(out, 'packs'));
+for (const f of readdirSync(join(root, 'public/packs')).filter((n) => n.endsWith('.json'))) cpSync(join(root, 'public/packs', f), join(out, 'packs', f));
 const pkg = (name, title, url) => {
   const dir = join(root, 'node_modules', name);
   const p = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
@@ -192,7 +198,7 @@ Read in this order:
 1. \`GUIDE.md\` (~${Math.round(tokens(join(out, 'GUIDE.md')) / 1000)}k tokens): how to host a game, the mental model, a complete game, recipes, the rules and common mistakes. Read it whole.
 2. \`API.md\` (~${Math.round(tokens(join(out, 'API.md')) / 1000)}k tokens): every export with its signature and doc. Search it; don't read it whole.
 3. \`game.js\`: the guide's quick start, a complete game. Edit it into yours.
-4. \`ASSETS.md\` (~${Math.round(tokens(join(out, 'ASSETS.md')) / 1000)}k tokens), when the game builds with models and textures: the library, the format, the loop and the style rules. Read it whole; \`LIBRARY.md\` (~${Math.round(tokens(join(out, 'LIBRARY.md')) / 1000)}k tokens) lists every built-in model and texture: search it.
+4. \`ASSETS.md\` (~${Math.round(tokens(join(out, 'ASSETS.md')) / 1000)}k tokens), when the game builds with models and textures: the library, the format, the loop and the style rules. Read it whole; \`LIBRARY.md\` (~${Math.round(tokens(join(out, 'LIBRARY.md')) / 1000)}k tokens) lists every model and texture, built in or from a pack: search it (or filter \`library.json\`).
 
 | File | What |
 | --- | --- |
@@ -200,7 +206,9 @@ Read in this order:
 | \`index.html\`, \`game.js\` | A game to start from: serve this folder over HTTP and open \`index.html\` |
 | \`examples/\` | The guides' other recipes as pages (${examples.map((b) => `\`${b.name}\``).join(', ')}) and the modules they import (${scripts.filter((b) => !examples.includes(b)).map((b) => `\`${b.name}.js\``).join(', ') || 'none'}) |
 | \`check.mjs\` | \`node check.mjs [page] [--keys KeyD*60,Space*4] [--cameras] [--looks a,b]\`: plays the page in a real browser, saves screenshots, fails on any error. Run it before you hand a game back. \`node check.mjs --sheets models.js\` draws your models and textures (ASSETS.md) |
-| \`ASSETS.md\`, \`LIBRARY.md\`, \`CREDITS.md\` | Models and textures as data; the built-in library; where everything the kit carries came from (ship it with your game) |
+| \`ASSETS.md\`, \`LIBRARY.md\`, \`CREDITS.md\` | Models and textures as data; the built-in library and the imported packs, by family; where everything the kit carries came from (ship it with your game) |
+| \`library.json\` | Every model and texture as data (id, kind, family, pack, tags, size, licence): filter it to find what a game needs |
+| \`packs/\` | Imported packs (\`packs/index.json\` lists them): \`loadPack('packs/<id>.json')\` |
 | \`pixel-engine.d.ts\`, \`types/\` | TypeScript declarations (optional) |
 | \`CHANGELOG.md\` | What changed between engine versions |
 | \`LICENSE\` | The engine's licence (MIT) |
@@ -218,7 +226,7 @@ const manifest = {
   readFirst: ['README.md', 'GUIDE.md'],
   starter: { page: 'index.html', script: 'game.js' },
   examples: examples.map((b) => `examples/${b.name}.html`),
-  assets: { guide: 'ASSETS.md', library: 'LIBRARY.md', credits: 'CREDITS.md' },
+  assets: { guide: 'ASSETS.md', library: 'LIBRARY.md', index: 'library.json', packs: 'packs/index.json', credits: 'CREDITS.md' },
   builtinModels: Object.keys(builtins),
   exports: api.names.length,
   files: [

@@ -16,10 +16,11 @@ import { ModelCatalog } from '../catalog';
 import { modelTriangles, scoreFidelity, type ColouredTris } from '../fidelity';
 import { MODEL_LIBRARY } from '../library';
 import { isLicenceFile, licenceFileProblem, licenceProblem, OWN_LICENCE, packSourceProblems } from '../packs/licences';
-import { packProblems, parsePack } from '../packs/pack';
+import { TEXTURE_LIBRARY, TextureCatalog } from '../../texture';
+import { packIndexEntry, packProblems, packTextures, parsePack, parsePackIndex } from '../packs/pack';
 import type { ModelDef, Part, Prim } from '../types';
 import { validateModel } from '../validate';
-import { fileId, groupParts, IMPORT_ID, importGltf, importPack, ImportError, normalizeSource, readGltf, unzip, type Imported } from '.';
+import { describeImport, fileId, groupParts, IMPORT_ID, importGltf, importPack, ImportError, mapColours, nameTags, nameWords, normalizeSource, readGltf, rebindColours, unzip, type Imported } from '.';
 
 // GLTFExporter writes binary through FileReader, which Node lacks
 (globalThis as { FileReader?: unknown }).FileReader ??= class {
@@ -426,6 +427,73 @@ describe('packs', () => {
     expect(['../x', 'kit/../x', 'Kit', 'a/b/c', '/abs', '', 'kit/', 'a b'].filter((id) => IMPORT_ID.test(id))).toEqual([]);
   });
 
+  it('a pack names and tags its models from their files, and re-binds the slots the agent picked', async () => {
+    const files: Record<string, Uint8Array> = {};
+    for (const id of ['barrel', 'crate']) files[`Kit/${id === 'crate' ? 'woodCrate_large' : 'barrel'}.glb`] = (await exportModel(id, 'materials')).bytes;
+    const plain = await importPack(new Map(Object.entries(files)), { pack: 'test-kit', source: SOURCE, inflate: inflateSync });
+    const slot = Object.entries(plain.models[0]!.def.source!.colours!).find(([, hex]) => hex === '#ef7d57')![0];
+    expect(plain.models[0]!.def.palette[slot]).toBe('orange');
+    const pack = await importPack(new Map(Object.entries(files)), { pack: 'test-kit', source: SOURCE, inflate: inflateSync, title: 'Test Kit 1.0', tags: ['props'], palette: { [slot]: 'red' } });
+    const crate = pack.models.find((m) => m.def.id === 'test-kit/wood-crate-large')!.def;
+    expect(crate.about).toBe('Wood crate large (imported from Test Kit 1.0: woodCrate_large.glb)');
+    expect(crate.tags).toEqual(['imported', 'test-kit', 'props', 'container', 'wood']);
+    expect(pack.models.find((m) => m.def.id === 'test-kit/barrel')!.def.tags).toEqual(['imported', 'test-kit', 'props', 'container', 'wood']);
+    // the picked slot is red in every model that has it, and the source colour stays recorded
+    for (const m of pack.models) if (m.def.palette[slot]) expect([m.def.palette[slot], m.def.source!.colours![slot]]).toEqual(['red', '#ef7d57']);
+    for (const m of pack.models) expect(validateModel(m.def).problems).toEqual([]);
+    // a slot the map doesn't have, or a colour that isn't an entry, is an error, never a silent no-op
+    await expect(importPack(new Map(Object.entries(files)), { pack: 'test-kit', source: SOURCE, inflate: inflateSync, palette: { nope: 'red' } })).rejects.toThrow(/re-binds slot 'nope', which the colour map doesn't have/);
+    const map = mapColours([{ hex: 0xef7d57, area: 1, name: 'wood' }, { hex: 0x333c57, area: 1, name: 'iron' }]);
+    expect(() => rebindColours(map, { wood: 'mauve' as never })).toThrow(/'mauve', which isn't a PALETTE entry/);
+    expect(rebindColours(map, { wood: 'green' }).slots.find((s) => s.slot === 'wood')!.colour).toBe('green');
+    expect(map.slots.find((s) => s.slot === 'wood')!.colour).not.toBe('green'); // the map itself is left alone
+  });
+
+  it('names read as words and add the library\'s tags', () => {
+    expect(nameWords('tree-pine-default-a')).toBe('Tree pine default a');
+    expect(nameWords('bookcaseClosed_wide')).toBe('Bookcase closed wide');
+    expect(nameTags('tree-pine-default-a')).toEqual(['nature', 'tree', 'plant']);
+    expect(nameTags('chair-desk')).toEqual(['furniture', 'seat', 'table']);
+    expect(nameTags('rocks-tall')).toEqual(['nature', 'stone']); // plurals count
+    expect(nameTags('kitchen-stove-electric')).toEqual(['furniture', 'kitchen']);
+    expect(nameTags('wall-narrow-stairs')).toEqual(['architecture', 'wall', 'stairs']);
+    expect(nameTags('potion-red')).toEqual(['loot', 'potion', 'consumable']);
+    expect(nameTags('zzz-unknown')).toEqual([]);
+    expect(nameTags('tower-constructor-toString')).toEqual(['architecture', 'tower']); // words that name Object's own members add nothing
+    expect(nameTags('tree-leaves')).toEqual(['nature', 'tree', 'plant']);
+    expect(describeImport('knight', { pack: 'tiny', title: 'Tiny Dungeon', tags: ['sprite', 'character'] })).toEqual({ about: 'Knight (imported from Tiny Dungeon)', tags: ['imported', 'tiny', 'sprite', 'character'] });
+    expect(describeImport('x')).toEqual({ about: 'X (imported)', tags: ['imported'] });
+  });
+
+  it('a pack file can carry textures; the index lists every pack', async () => {
+    const r = await roundTrip('crate', 'materials');
+    const tex = { ...TEXTURE_LIBRARY.get('bricks'), id: 'test-pack/bricks', source: { ...SOURCE, pack: 'test-pack' } };
+    const file = { pack: 'test-pack', title: 'Test Pack', about: 'a test', source: SOURCE, models: [{ ...r.def, source: { ...r.def.source!, pack: 'test-pack' } }], textures: [tex] };
+    const pack = parsePack(file);
+    expect(packTextures(pack).get('test-pack/bricks')).toBe(tex);
+    expect(packProblems(pack)).toEqual([]);
+    expect(packProblems({ ...pack, textures: [{ ...tex, source: SOURCE }] }).join()).toMatch(/'test-pack\/bricks' says it comes from no pack/);
+    expect(() => parsePack({ ...file, textures: [{ id: 'x' }] })).toThrow(/textures\[0\] is not a TextureDef/);
+    expect(() => parsePack({ ...file, textures: 'x' })).toThrow(/`textures` is not a list/);
+    expect(parsePack({ ...file, textures: [] }).textures).toBeUndefined();
+    expect(packTextures(parsePack({ ...file, textures: undefined })).all()).toEqual([]);
+    // loadPack hands the textures to a texture catalog of yours
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(file))));
+    try {
+      const textures = new TextureCatalog();
+      const models = await loadPack('/packs/test-pack-textures.json', { textures });
+      expect(models.all().map((d) => d.id)).toEqual(['crate-import']);
+      expect(textures.all().map((d) => d.id)).toEqual(['test-pack/bricks']);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    const entry = packIndexEntry(pack);
+    expect(entry).toEqual({ id: 'test-pack', title: 'Test Pack', about: 'a test', file: 'test-pack.json', models: 1, textures: 1, licence: SOURCE.licence, author: SOURCE.author, url: SOURCE.url });
+    expect(parsePackIndex({ packs: [entry] }).packs).toEqual([entry]);
+    expect(() => parsePackIndex({})).toThrow(/not a pack index/);
+    expect(() => parsePackIndex({ packs: [{ title: 'x' }] })).toThrow(/packs\[0\] has no id and file/);
+  });
+
   it('loadPack fetches a pack file once and hands back its catalog', async () => {
     const r = await roundTrip('crate', 'materials');
     const file = { pack: 'test-pack', about: 'a test', source: SOURCE, models: [r.def] };
@@ -503,6 +571,10 @@ describe('packs', () => {
     expect(bad.join('\n')).toMatch(/licence 'CC-BY-SA-4.0' is not one of/);
     expect(bad.join('\n')).toMatch(/approved must link the owner's comment on #49/);
     expect(bad.join('\n')).toMatch(/pack 'kit' is listed twice/);
+    // the import settings an agent writes: tags, slot re-bindings and 2D sheets
+    expect(packSourceProblems([{ ...good, title: 'Kit', tags: ['props'], palette: { wood: 'orange' }, sheets: [{ file: 'Sheet.png', grid: [16, 16], names: ['grass', '', 'knight'], tiles: ['grass'], tags: ['sprite'], palette: { c2: 'sand' } }] }])).toEqual([]);
+    const wrong = packSourceProblems([{ ...good, tags: ['Props'], palette: { wood: 'brown' as never }, sheets: [{ file: '', grid: [16, 0] as [number, number], names: ['a', 'B', 'a'], tiles: ['grass'], tags: ['x y'], palette: { c1: 'beige' as never } }] }]).join('\n');
+    for (const re of [/tag 'Props' isn't lower-case/, /binds slot 'wood' to 'brown', which isn't a PALETTE entry/, /a sheet needs the file/, /grid must be \[width, height\]/, /cell name 'B' isn't lower-case/, /cell name 'a' is given twice/, /tiles names 'grass', which no cell is called/, /tag 'x y' isn't lower-case/, /sheet '': palette binds slot 'c1' to 'beige'/]) expect(wrong).toMatch(re);
   });
 
   it('a download must name its licence in a licence file, and nothing more restrictive', () => {

@@ -17,11 +17,14 @@
  */
 import { scoreFidelity, modelTriangles, type FidelityScore } from '../fidelity';
 import type { ModelDef, Part, Provenance, Slot } from '../types';
-import { hexString, mapColours, type ColourMap, type ColourSample } from './colours';
+import type { PaletteColor } from '../../palette';
+import { hexString, mapColours, rebindColours, type ColourMap, type ColourSample } from './colours';
+import { describeImport } from './describe';
 import { readGltf, ImportError, type ReadFile, type ReadOptions, type SourceMesh } from './gltf';
 import { groupParts } from './mesh';
 
-export { mapColours, slotName, hexString, MERGE_DISTANCE, REUSE_PENALTY, SWAP_PENALTY, type ColourMap, type ColourSample, type ColourSlot, type MapOptions } from './colours';
+export { mapColours, rebindColours, slotName, hexString, MERGE_DISTANCE, REUSE_PENALTY, SWAP_PENALTY, type ColourMap, type ColourSample, type ColourSlot, type MapOptions } from './colours';
+export { describeImport, nameTags, nameWords, NAME_TAGS, type Describe } from './describe';
 export { readGltf, ImportError, type ReadFile, type ReadOptions, type SourceGroup, type SourceMesh } from './gltf';
 export { groupParts, type GroupParts } from './mesh';
 export { unzip, type Inflate as InflateRaw } from './zip';
@@ -141,10 +144,11 @@ export function translateSource(src: SourceMesh, o: ImportOptions): Imported {
     }
   });
   const kept = colours.slots.filter((s) => used.has(s.slot));
+  const described = describeImport(o.id.split('/').pop()!, { pack: o.source.pack, file: o.source.file ?? o.source.url });
   const base: ModelDef = {
     id: o.id,
-    about: o.about ?? `Imported from ${o.source.file ?? o.source.url}${o.source.pack ? ` (${o.source.pack})` : ''}`,
-    tags: o.tags ?? ['imported', ...(o.source.pack ? [o.source.pack] : [])],
+    about: o.about ?? described.about,
+    tags: o.tags ?? described.tags,
     palette: Object.fromEntries(kept.map((s) => [s.slot, s.colour])),
     parts,
     source: { ...o.source, tool: IMPORT_TOOL, colours: Object.fromEntries(kept.map((s) => [s.slot, hexString(s.source)])) },
@@ -165,6 +169,12 @@ export interface PackOptions extends Normalize {
   readonly source: Omit<ImportSource, 'pack' | 'file'>;
   /** zlib inflate, for PNG textures. */
   readonly inflate?: ReadOptions['inflate'];
+  /** The pack's name, for each model's `about` ("Kenney Nature Kit 2.1"). */
+  readonly title?: string;
+  /** Tags every model gets, beside 'imported', the pack and the tags its name adds (`describeImport`). */
+  readonly tags?: readonly string[];
+  /** Slots of the pack's colour map bound to other PALETTE entries (`rebindColours`). */
+  readonly palette?: Readonly<Record<Slot, PaletteColor>>;
 }
 
 export interface PackImport {
@@ -221,13 +231,15 @@ export async function importPack(files: ReadonlyMap<string, Uint8Array>, o: Pack
       skipped.push({ file, reason: (e as Error).message });
     }
   }
-  const colours = mapColours(sources.flatMap((s) => colourSamples(s.src)), { max: 16 });
+  const mapped = mapColours(sources.flatMap((s) => colourSamples(s.src)), { max: 16 });
+  const colours = o.palette ? rebindColours(mapped, o.palette) : mapped;
   const ids = new Set<string>();
   const models = sources.map(({ file, src }) => {
     let id = `${o.pack}/${fileId(file)}`;
     for (let k = 2; ids.has(id); k++) id = `${o.pack}/${fileId(file)}-${k}`;
     ids.add(id);
-    return translateSource(src, { id, source: { ...o.source, pack: o.pack, file }, colours });
+    const { about, tags } = describeImport(id.slice(o.pack.length + 1), { pack: o.pack, title: o.title, file: file.split('/').pop(), tags: o.tags });
+    return translateSource(src, { id, about, tags, source: { ...o.source, pack: o.pack, file }, colours });
   });
   return { models, colours, skipped };
 }

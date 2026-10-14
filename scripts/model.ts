@@ -12,7 +12,9 @@
 //        --rig              anchors (cyan) and colliders (green)
 //   diff <id>                  in words, what changed since the previous version: parts added,
 //                              removed, moved, resized, recoloured; bounds, tris, draws
-//   find [words|tags...]       the catalog: id, size, params, ~tokens, file (no words: all)
+//   find [words...] [--limit n] the library and every pack, best match first (the engine's
+//                              `search`: id words, then tags, then about; plurals and parts of
+//                              words count): id, size, params, ~tokens or tris, file or pack
 //   zoo <family|tag|all>       every model of a library family (file) or tag at one scale
 //                              → .scratch/model/zoo-<name>.png
 //   tokens <id|file>           what writing it costs: characters ÷ 4 (the repo's estimate)
@@ -34,6 +36,8 @@
 //                              its sha256 (cached in .scratch/import-cache/), check its licence files,
 //                              import every model with one colour map → public/packs/<pack>.json,
 //                              a summary (<out>/packs/<pack>.json) and a zoo
+//   pack-index                 rewrite public/packs/index.json from the pack files there (the
+//                              importers do it; after a pack file is added, edited or removed by hand)
 //   credits                    the attribution list from every model's and texture's `source`
 //                              (libraries and packs) → <out>/credits.md
 //
@@ -77,24 +81,25 @@
 // Options for every command: --json (machine-readable output), --out <dir> (default
 // .scratch/model). Every sheet records the model in <out>/history/<id>/, so --compare and diff
 // see the last *different* version you drew.
-import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { inflateRawSync, inflateSync } from 'node:zlib';
+import { inflateSync } from 'node:zlib';
 import { Box3, Vector3 } from 'three/webgpu';
 import type { SheetImage } from '../src/engine/animation';
 import { column, renderView, row, titleBar, worldTriangles } from '../src/engine/inspect';
 import { PALETTE, type PaletteColor } from '../src/engine/palette';
-import { buildModel, checkModel, compileParts, expandModel, scoreFidelity, isLicenceFile, licenceFileProblem, licenceProblem, packSourceProblems, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, PACK_SOURCES, packCatalog, packProblems, parsePack, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack, type PackSource } from '../src/engine/model';
+import { searchHits } from '../src/engine/catalog';
+import { buildModel, checkModel, compileParts, expandModel, scoreFidelity, licenceProblem, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, packCatalog, packProblems, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack } from '../src/engine/model';
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
-import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, normalizeSource, unzip, type Front, type Imported } from '../src/engine/model/import';
+import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, normalizeSource, type Front, type Imported } from '../src/engine/model/import';
 import { flatTriangles, GAME_VIEW, gamePxPerMetre, modelSheet, renderGameScale, type FlatTri } from '../src/engine/model/sheet';
 import { creditEntries, creditLines } from '../src/engine/model/packs/credits';
 import { TEXTURE_LIBRARY } from '../src/engine/texture';
 import { encodePng } from './png';
 import { tsValue } from './ts-value';
 import { kindOf, paletteFloor, pieceColours, primBox, renderTraceReference, renderTraceSheet, traceOffset, traceReference, traceVerdict, TRACE_THRESHOLDS, TRACE_TOOL, verdictLines, type ConvexHull, type TraceBox, type TraceComponent, type TraceReference } from '../src/engine/model/trace';
+import { approvedPack, PACK_INDEX, packDownload, packIndexProblems, packModels, packs, packSource, packTextureDefs, readPack, sha256, writePack, writePackIndex } from './packs';
 import { registerEngineHooks } from './trace/hooks';
 import type { SourceProvenance, TraceSource } from './trace/sources';
 
@@ -106,10 +111,6 @@ process.stdout.on('error', (e: NodeJS.ErrnoException) => {
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 /** Where model sources live (for `find` paths, `tokens` and zoo families). */
 const SOURCES = ['src/engine/model/library'];
-/** Pack files (`loadPack` fetches them), and where downloads wait (never committed). */
-const PACKS = join(ROOT, 'public/packs');
-const CACHE = join(ROOT, '.scratch/import-cache');
-const ESCALATION = 'the licence escalation, #49 (https://github.com/michaelcrosato/riftlight/issues/49)';
 let CATALOG: ModelCatalog = MODEL_LIBRARY;
 /** A pack file named as the target (`check public/packs/<pack>.json`): its own problems are checked too. */
 let PACK_TARGET: ModelPack | null = null;
@@ -121,7 +122,7 @@ function fail(msg: string): never {
   process.exit(2);
 }
 
-const VALUED = ['params', 'seed', 'palette', 'out', 'as', 'licence', 'source', 'author', 'scale', 'front', 'pack', 'against'];
+const VALUED = ['params', 'seed', 'palette', 'out', 'as', 'licence', 'source', 'author', 'scale', 'front', 'pack', 'against', 'limit'];
 const SWITCHES = ['json', 'compare', 'labels', 'rig', 'reference', 'all'];
 const flags = new Map<string, string | true>();
 const args: string[] = [];
@@ -234,15 +235,6 @@ async function loadFile(target: string): Promise<string[] | null> {
   return defs.map((d) => d.id);
 }
 
-function readPack(file: string): ModelPack {
-  return parsePack(JSON.parse(readFileSync(file, 'utf8')) as unknown, rel(file));
-}
-
-/** Every pack file in public/packs/. */
-function packs(): ModelPack[] {
-  return existsSync(PACKS) ? readdirSync(PACKS).filter((f) => f.endsWith('.json')).sort().map((f) => readPack(join(PACKS, f))) : [];
-}
-
 function version(id: string, o: ModelOptions): ModelVersion {
   const model = expandModel(id, { ...o, catalog: CATALOG });
   return { model, compiled: compileParts(model.parts) };
@@ -296,6 +288,8 @@ function cmdCheck(ids: string[]): void {
   const o = parseOptions();
   const results = targets.map((t) => checkModel(t.def, { ...(ids.length ? o : {}), catalog: t.catalog }));
   const packChecks = packList.map((p) => ({ pack: p.pack, models: p.models.length, problems: packProblems(p) }));
+  // the index lists every pack file as it is (games and the Asset Gallery find packs through it)
+  if (!ids.length) packChecks.push({ pack: 'index', models: 0, problems: packIndexProblems() });
   const ms = performance.now() - t0; // real time: the check's own duration
   if (json) {
     console.log(JSON.stringify({ ms: Math.round(ms), models: results, packs: packChecks }, null, 2));
@@ -310,11 +304,12 @@ function cmdCheck(ids: string[]): void {
     }
     // pack files: their own problems (licence as a pack, models naming it), apart from the models'
     for (const p of packChecks) {
-      console.log(`pack ${p.pack} (${p.models} model(s)): ${p.problems.length ? `${p.problems.length} problem(s)` : 'ok'}`);
+      console.log(`${p.pack === 'index' ? 'public/packs/index.json' : `pack ${p.pack} (${p.models} model(s))`}: ${p.problems.length ? `${p.problems.length} problem(s)` : 'ok'}`);
       for (const x of p.problems) console.log(`  x ${x}`);
     }
     const bad = results.filter((r) => r.problems.length).length;
-    const packLine = packChecks.length ? `; ${packChecks.length} pack(s), ${packChecks.filter((p) => p.problems.length).length} with problems` : '';
+    const real = packChecks.filter((p) => p.pack !== 'index');
+    const packLine = packChecks.length ? `; ${real.length} pack(s), ${packChecks.filter((p) => p.problems.length).length} with problems` : '';
     console.log(`\n${results.length} model(s), ${bad} with problems, ${results.filter((r) => r.warnings.length).length} with warnings${packLine} (${Math.round(ms)} ms)`);
   }
   if (results.some((r) => r.problems.length) || packChecks.some((p) => p.problems.length)) process.exitCode = 1;
@@ -358,22 +353,26 @@ function cmdDiff(id: string): void {
 
 function cmdFind(words: string[]): void {
   const src = sources();
-  const tags = words.filter((w) => CATALOG.all().some((d) => d.tags.includes(w)));
-  const text = words.filter((w) => !tags.includes(w)).join(' ');
-  const defs = CATALOG.find({ tags, text });
-  const rows = defs.map((d) => {
+  const limit = flags.has('limit') ? Number(flags.get('limit')) : undefined;
+  if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) fail(`--limit takes a whole number above 0 (got "${flags.get('limit')}")`);
+  // ranked (the engine's own `search`: id words first, then tags, then about); the library and every pack
+  const hits = searchHits(CATALOG.all(), words.join(' '), { ...(limit ? { limit } : {}) });
+  const rows = hits.map(({ def: d, full }) => {
     const b = buildModel(d, { catalog: CATALOG });
     const s = src.get(d.id);
-    return { id: d.id, about: d.about, tags: d.tags, size: b.bounds.size.map(fmt), params: d.params ?? {}, tokens: s ? tokensOf(s.text) : null, file: s ? rel(s.file) : null };
+    return { id: d.id, about: d.about, tags: d.tags, size: b.bounds.size.map(fmt), tris: b.report.tris, params: d.params ?? {}, tokens: s ? tokensOf(s.text) : null, file: s ? rel(s.file) : null, pack: d.source?.pack ?? null, full };
   });
   if (json) console.log(JSON.stringify(rows, null, 2));
   else {
+    if (rows.length && !rows[0]!.full) console.log(`no model matches every word of "${words.join(' ')}"; the closest:`);
     for (const r of rows) {
       const params = Object.entries(r.params).map(([k, [v, lo, hi]]) => `${k}=${v} (${lo}..${hi})`).join(' ');
-      console.log(`${r.id.padEnd(16)} ${r.size.join(' x ').padEnd(16)} ~${String(r.tokens ?? '?').padStart(4)} tok  ${r.file ?? ''}`);
+      const where = r.file ?? (r.pack ? `pack ${r.pack} (public/packs/${r.pack}.json)` : '');
+      console.log(`${r.id.padEnd(16)} ${r.size.join(' x ').padEnd(16)} ${r.tokens !== null ? `~${String(r.tokens).padStart(4)} tok` : `${String(r.tris).padStart(5)} tris`}  ${where}`);
       console.log(`  ${r.about}  [${r.tags.join(', ')}]${params ? `  params: ${params}` : ''}`);
     }
     if (!rows.length) console.log(`nothing matches "${words.join(' ')}"`);
+    else console.log(`\n${rows.length} model(s)`);
   }
 }
 
@@ -449,17 +448,6 @@ function fidelitySheet(r: Imported): string {
 }
 
 /** Add (or replace by id) models in public/packs/<pack>.json. */
-function writePack(pack: string, models: readonly ModelDef[], source: ModelPack['source'], about: string): string {
-  const file = join(PACKS, `${pack}.json`);
-  const had = existsSync(file) ? readPack(file) : null;
-  const ids = new Set(models.map((m) => m.id));
-  const out: ModelPack = { pack, about: had?.about || about, source: had?.source ?? source, models: [...(had?.models ?? []).filter((m) => !ids.has(m.id)), ...models] };
-  mkdirSync(PACKS, { recursive: true });
-  writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`);
-  return file;
-}
-
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 function importLines(r: Imported): string[] {
   const f = r.fidelity;
@@ -500,7 +488,7 @@ async function cmdImport(target: string): Promise<void> {
   const draft = join(OUT, 'import', `${id.replace(/[^\w.-]+/g, '_')}.ts`);
   mkdirSync(dirname(draft), { recursive: true });
   writeFileSync(draft, draftSource(r.def, draft));
-  const packFile = pack ? writePack(pack, [r.def], { url, licence, ...(source.author ? { author: source.author } : {}) }, `Imported models (${pack})`) : null;
+  const packFile = pack ? writePack(pack, { models: [r.def] }, { source: { url, licence, ...(source.author ? { author: source.author } : {}) }, about: `Imported models (${pack})` }) : null;
   const sheet = fidelitySheet(r);
   const check = checkModel(r.def, { catalog: new ModelCatalog([...MODEL_LIBRARY.all().filter((d) => d.id !== id), r.def]) });
   const out = { id, draft: rel(draft), pack: packFile && rel(packFile), sheet: rel(sheet), report: r.report, palette: r.def.palette, colours: r.def.source!.colours, fidelity: r.fidelity, problems: check.problems, warnings: check.warnings };
@@ -514,43 +502,14 @@ async function cmdImport(target: string): Promise<void> {
   if (check.problems.length || r.fidelity.iou < 0.98) process.exitCode = 1;
 }
 
-/** A pack's download: from the cache when its hash matches, else fetched and checked. */
-async function download(p: PackSource): Promise<Uint8Array> {
-  const cached = join(CACHE, `${p.id}-${p.sha256.slice(0, 12)}${extname(new URL(p.url).pathname) || '.bin'}`);
-  if (existsSync(cached)) {
-    const bytes = new Uint8Array(readFileSync(cached));
-    if (sha256(bytes) === p.sha256) return bytes;
-  }
-  console.error(`downloading ${p.url}`);
-  const res = await fetch(p.url);
-  if (!res.ok) fail(`download of ${p.url} failed: HTTP ${res.status}`);
-  const bytes = new Uint8Array(await res.arrayBuffer());
-  const got = sha256(bytes);
-  if (got !== p.sha256) fail(`refused: ${p.url} has sha256 ${got}, not the approved ${p.sha256}. The download changed; check it and its licence again, then the owner approves the new hash on ${ESCALATION}`);
-  mkdirSync(CACHE, { recursive: true });
-  writeFileSync(cached, bytes);
-  return bytes;
-}
-
 async function cmdImportPack(id: string): Promise<void> {
-  const p = PACK_SOURCES.find((s) => s.id === id);
-  if (!p) fail(`no approved pack "${id}": src/engine/model/packs/sources.ts lists ${PACK_SOURCES.length ? PACK_SOURCES.map((s) => s.id).join(', ') : 'none'}. A pack joins it only once the repository owner approves its licence with a comment on ${ESCALATION}; an agent never writes or links an approval. Until then, import our own files with \`import\``);
-  const malformed = packSourceProblems([p]);
-  if (malformed.length) fail(`refused: ${malformed.join('; ')}`);
-  const refused = licenceProblem({ url: p.url, licence: p.licence, pack: p.id });
-  if (refused) fail(`refused: ${refused}`);
-  const bytes = await download(p);
-  const zipped = bytes[0] === 0x50 && bytes[1] === 0x4b;
-  const files = zipped ? unzip(bytes, (b) => new Uint8Array(inflateRawSync(b))) : new Map([[basename(new URL(p.url).pathname), bytes]]);
-  // the licence is checked pack by pack, from the licence files in the download (§7.1)
-  const licenceFiles = [...files].filter(([name]) => isLicenceFile(name)).map(([name, b]) => ({ name, text: new TextDecoder().decode(b) }));
-  const unlicensed = licenceFileProblem(p.licence, licenceFiles);
-  if (unlicensed) fail(`refused: ${unlicensed}: check the pack and ${ESCALATION}`);
+  const p = approvedPack(id);
+  const files = await packDownload(p);
   const scale = Number(flags.get('scale') ?? 1);
   const front = String(flags.get('front') ?? '+z') as Front;
-  const res = await importPack(files, { pack: p.id, source: { url: p.url, licence: p.licence, author: p.author, sha256: p.sha256 }, scale, front, inflate: (b) => new Uint8Array(inflateSync(b)) });
+  const res = await importPack(files, { pack: p.id, source: { url: p.url, licence: p.licence, author: p.author, sha256: p.sha256 }, scale, front, inflate: (b) => new Uint8Array(inflateSync(b)), title: p.title, tags: p.tags, ...(p.palette ? { palette: p.palette } : {}) }).catch((e: Error) => fail(`import-pack ${p.id}: ${e.message}`));
   const defs = res.models.map((m) => m.def);
-  const packFile = writePack(p.id, defs, { url: p.url, licence: p.licence, author: p.author, sha256: p.sha256, homepage: p.homepage }, `${p.author}: ${p.id}`);
+  const packFile = writePack(p.id, { models: defs, replace: true }, { source: packSource(p), about: `${p.title ?? p.id} by ${p.author} (${p.homepage})`, title: p.title });
   CATALOG = new ModelCatalog(defs);
   const rows = res.models.map((m) => {
     const c = checkModel(m.def, { catalog: CATALOG });
@@ -564,7 +523,10 @@ async function cmdImportPack(id: string): Promise<void> {
   else {
     for (const m of res.models) for (const l of importLines(m)) console.log(l);
     for (const s of res.skipped) console.log(`  skipped ${s.file}: ${s.reason}`);
-    console.log(`${rows.length} model(s), ${rows.filter((r) => r.problems.length).length} with problems, ${rows.filter((r) => r.fidelity.iou < 0.98).length} under 0.98 IoU\n  wrote ${rel(packFile)} and ${rel(summary)}`);
+    // the pack's colour slots: what an agent looks at to pick re-bindings (PackSource.palette)
+    console.log(`colour slots (re-bind one with \`palette: { slot: 'entry' }\` in its PACK_SOURCES entry, then import again):`);
+    for (const c of res.colours.slots) console.log(`  ${c.slot.padEnd(14)} ${hexString(c.source)} -> ${c.colour.padEnd(7)} ${c.members.length} source colour(s): ${c.members.map(hexString).join(' ')}${p.palette && Object.hasOwn(p.palette, c.slot) ? '  (re-bound)' : ''}`);
+    console.log(`${rows.length} model(s), ${rows.filter((r) => r.problems.length).length} with problems, ${rows.filter((r) => r.fidelity.iou < 0.98).length} under 0.98 IoU\n  wrote ${rel(packFile)}, ${rel(PACK_INDEX)} and ${rel(summary)}`);
   }
   if (defs.length) cmdZoo(p.id, defs.map((d) => d.id));
   if (rows.some((r) => r.problems.length || r.fidelity.iou < 0.98)) process.exitCode = 1;
@@ -573,7 +535,7 @@ async function cmdImportPack(id: string): Promise<void> {
 /** The attribution list: every model with a `source`, grouped by pack (or url). */
 function cmdCredits(): void {
   // imported textures (`npm run tex -- import`) carry the same `source`
-  const entries = creditEntries([...MODEL_LIBRARY.all(), ...packs().flatMap((p) => p.models)], TEXTURE_LIBRARY.all());
+  const entries = creditEntries([...MODEL_LIBRARY.all(), ...packModels()], [...TEXTURE_LIBRARY.all(), ...packTextureDefs()]);
   const lines = creditLines(entries);
   const file = join(OUT, 'credits.md');
   mkdirSync(OUT, { recursive: true });
@@ -799,6 +761,12 @@ async function main(): Promise<void> {
   if (cmd === 'import') return cmdImport(rest[0] ?? fail('import needs a file: npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>'));
   if (cmd === 'import-pack') return cmdImportPack(rest[0] ?? fail('import-pack needs a pack id from src/engine/model/packs/sources.ts'));
   if (cmd === 'credits') return cmdCredits();
+  if (cmd === 'pack-index') {
+    const file = writePackIndex();
+    const n = packs().length;
+    console.log(json ? JSON.stringify({ file: rel(file), packs: n }) : `${n} pack(s): wrote ${rel(file)}`);
+    return;
+  }
   if (cmd === 'export-glb') return cmdExportGlb(rest[0] ?? fail(`export-glb needs a source: npm run model -- export-glb gate-a:hand-cart-a`));
   if (cmd !== 'tokens' && cmd !== 'find' && rest[0]) {
     const ids = await loadFile(rest[0]);
@@ -812,6 +780,9 @@ async function main(): Promise<void> {
       }
     }
   }
+  // pack models (public/packs/) are found and drawn by id beside the library; a full check takes
+  // each pack in a catalog of its own, so only a check of named ids needs them here
+  if (!PACK_TARGET && CATALOG === MODEL_LIBRARY && (cmd !== 'check' || rest.length) && cmd !== 'tokens') CATALOG = new ModelCatalog([...MODEL_LIBRARY.all(), ...packModels()]);
   if (cmd === 'check') return cmdCheck(rest);
   if (cmd === 'find') return cmdFind(rest);
   if (cmd === 'trace') return cmdTrace(rest[0] ?? fail('trace needs an id: npm run model -- trace <id> --against <source> --reference, then trace <draft.ts> --against <source>'));
