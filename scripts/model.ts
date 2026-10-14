@@ -505,7 +505,8 @@ async function cmdImport(target: string): Promise<void> {
 async function cmdImportPack(id: string): Promise<void> {
   const p = approvedPack(id);
   const files = await packDownload(p);
-  const scale = Number(flags.get('scale') ?? 1);
+  // the entry is the recipe: its scale, unless --scale tries another (then record it there)
+  const scale = flags.has('scale') ? Number(flags.get('scale')) : (p.scale ?? 1);
   const front = String(flags.get('front') ?? '+z') as Front;
   const res = await importPack(files, { pack: p.id, source: { url: p.url, licence: p.licence, author: p.author, sha256: p.sha256 }, scale, front, inflate: (b) => new Uint8Array(inflateSync(b)), title: p.title, tags: p.tags, ...(p.palette ? { palette: p.palette } : {}) }).catch((e: Error) => fail(`import-pack ${p.id}: ${e.message}`));
   const defs = res.models.map((m) => m.def);

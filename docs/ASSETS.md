@@ -528,9 +528,22 @@ Third-party content waits on the licence escalation,
 [#49](https://github.com/michaelcrosato/riftlight/issues/49). Approval is the repository owner's own
 comment there, linked from the pack's entry (`approved`; a test checks the link's form, the
 sha256 and the licence of every entry). Agents here act through the owner's GitHub account, so the
-code can't prove a comment is human: an agent never writes or links an approval itself. Until the
-owner approves a pack, `PACK_SOURCES` stays empty, `import-pack` refuses, and the importer is
-tested on our own models exported to GLB at test time (no binaries are committed).
+code can't prove a comment is human: an agent never writes or links an approval itself. A pack
+the owner hasn't approved isn't in `PACK_SOURCES`, so `import-pack` refuses it; the importer's tests
+use our own models exported to GLB at test time (no binaries are committed).
+
+**Imported so far:** the six CC0 Kenney packs the owner approved on 2026-10-14
+([#49](https://github.com/michaelcrosato/riftlight/issues/49#issuecomment-6180012221)), in
+`public/packs/`: `kenney-castle` (76 models), `kenney-furniture` (140), `kenney-nature` (329) and
+`kenney-mini-dungeon` (30), and the tiles of `kenney-tiny-dungeon` and `kenney-tiny-town` (132
+each, every cell named). Each sits in the engine's palette through its entry's `palette`
+(Nature's mint leaves as `green` and `teal`, Tiny Town's tan paths as `sand`...) and at its
+scale through `scale`: Kenney's kits are in tile units of about half a metre, so Furniture and
+Mini Dungeon come in at 2 (a doorway 2 m, a character 1.5 m) and Castle and Nature at 3 (a gate
+2.7 m, an oak 3.7 m, as the library's). 10 thin pieces (studs, pillows, flowers, grass) score
+under 0.98 silhouette IoU at game scale, where they are a few pixels; all are 0.977 or more close
+up. See them in the Asset Gallery; credit them from `npm run model -- credits` (CC0: credit
+optional).
 
 ### Pixel-art sheets
 

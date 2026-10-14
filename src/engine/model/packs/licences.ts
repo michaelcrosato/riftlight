@@ -102,6 +102,7 @@ export function packSourceProblems(sources: readonly PackSource[] = PACK_SOURCES
     if (!Object.hasOwn(LICENCES, p.licence) || p.licence === OWN_LICENCE) out.push(`${who}: its licence '${p.licence}' is not one of ${Object.keys(LICENCES).filter((k) => k !== OWN_LICENCE).join(', ')}`);
     if (!isApproved(p)) out.push(`${who}: approved must link the owner's comment on #49 (${APPROVAL})`);
     if (!p.author || !p.homepage) out.push(`${who}: name its author and homepage`);
+    if (p.scale !== undefined && !(Number.isFinite(p.scale) && p.scale > 0)) out.push(`${who}: scale ${p.scale} isn't a number above 0 (source units to metres)`);
     for (const t of p.tags ?? []) if (!TAG.test(t)) out.push(`${who}: tag '${t}' isn't lower-case letters, digits and dashes`);
     for (const [slot, c] of Object.entries(p.palette ?? {})) if (!Object.hasOwn(PALETTE, c)) out.push(`${who}: palette binds slot '${slot}' to '${c}', which isn't a PALETTE entry`);
     for (const sh of p.sheets ?? []) {

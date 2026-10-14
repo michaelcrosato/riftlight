@@ -882,6 +882,17 @@ export async function runWorld(h) {
       e.step(2);
       out.well = changed(well, (await e.renderer.capture()).pixels);
       r.hide(false);
+      // an asset from each imported pack is drawn too (a model, then a tile), when there are packs
+      out.packDrawn = [];
+      for (const id of r.shelves().filter((x) => x.title.startsWith('PACK')).map((x) => x.id)) {
+        r.shelf(id);
+        e.step(30);
+        const a = (await e.renderer.capture()).pixels.slice();
+        r.hide(true);
+        e.step(2);
+        out.packDrawn.push({ id: r.current().id, pixels: changed(a, (await e.renderer.capture()).pixels) });
+        r.hide(false);
+      }
       r.spin(true);
       out.chair = r.show('chair') && r.current().id;
       out.missing = r.show('no-such-asset');
@@ -904,6 +915,7 @@ export async function runWorld(h) {
     check(gal.first.index === 0 && gal.next.index === 1 && gal.next.id !== gal.first.id && gal.back.id === gal.first.id, `asset gallery: next and prev step through a shelf (${gal.first.id} → ${gal.next.id} → ${gal.back.id})`);
     check(gal.barrel > 500 && gal.well > 500, `asset gallery: the exhibit is drawn (hiding it changes ${gal.barrel} pixels for the barrel, ${gal.well} for the well)`);
     check(gal.chair === 'chair' && gal.missing === false, 'asset gallery: any asset opens by id, an unknown id is refused');
+    check(gal.packDrawn.every((p) => p.pixels > 300), `asset gallery: every pack's first asset is drawn (${gal.packDrawn.map((p) => `${p.id} ${p.pixels} px`).join(', ') || 'no packs'})`);
     check(gal.find[0] === 'chair', `asset gallery: search finds the chair for "wooden chair" (${gal.find.join(', ')})`);
     check(gal.kinds['textures/surfaces'] === 'surface' && gal.kinds['textures/icons'] === 'sprite' && gal.kinds['textures/sprites'] === 'sprite', `asset gallery: surfaces lie as floors, icons and sprites stand up (${Object.values(gal.kinds).join(', ')})`);
     check(gal.shelves.filter((s) => s.title.startsWith('PACK')).length === gal.packShelves, `asset gallery: a shelf for every pack in packs/index.json (${gal.packs} pack(s), ${gal.packShelves} shelves)`);

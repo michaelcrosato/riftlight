@@ -1,3 +1,76 @@
 {
-  "packs": []
+  "packs": [
+    {
+      "id": "kenney-castle",
+      "title": "Kenney Castle Kit 2.0",
+      "about": "Kenney Castle Kit 2.0 by Kenney (https://kenney.nl/assets/castle-kit)",
+      "file": "kenney-castle.json",
+      "models": 76,
+      "textures": 0,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/castle-kit",
+      "url": "https://kenney.nl/media/pages/assets/castle-kit/a395102d20-1711543616/kenney_castle-kit.zip"
+    },
+    {
+      "id": "kenney-furniture",
+      "title": "Kenney Furniture Kit 2.0",
+      "about": "Kenney Furniture Kit 2.0 by Kenney (https://kenney.nl/assets/furniture-kit)",
+      "file": "kenney-furniture.json",
+      "models": 140,
+      "textures": 0,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/furniture-kit",
+      "url": "https://kenney.nl/media/pages/assets/furniture-kit/440e0608a4-1677580847/kenney_furniture-kit.zip"
+    },
+    {
+      "id": "kenney-mini-dungeon",
+      "title": "Kenney Mini Dungeon 2.0",
+      "about": "Kenney Mini Dungeon 2.0 by Kenney (https://kenney.nl/assets/mini-dungeon)",
+      "file": "kenney-mini-dungeon.json",
+      "models": 30,
+      "textures": 0,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/mini-dungeon",
+      "url": "https://kenney.nl/media/pages/assets/mini-dungeon/6cd72dc849-1785314274/kenney_mini-dungeon.zip"
+    },
+    {
+      "id": "kenney-nature",
+      "title": "Kenney Nature Kit 2.1",
+      "about": "Kenney Nature Kit 2.1 by Kenney (https://kenney.nl/assets/nature-kit)",
+      "file": "kenney-nature.json",
+      "models": 329,
+      "textures": 0,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/nature-kit",
+      "url": "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip"
+    },
+    {
+      "id": "kenney-tiny-dungeon",
+      "title": "Kenney Tiny Dungeon 1.0",
+      "about": "Kenney Tiny Dungeon 1.0 by Kenney (https://kenney.nl/assets/tiny-dungeon)",
+      "file": "kenney-tiny-dungeon.json",
+      "models": 0,
+      "textures": 132,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/tiny-dungeon",
+      "url": "https://kenney.nl/media/pages/assets/tiny-dungeon/f8422efb44-1674742415/kenney_tiny-dungeon.zip"
+    },
+    {
+      "id": "kenney-tiny-town",
+      "title": "Kenney Tiny Town 1.1",
+      "about": "Kenney Tiny Town 1.1 by Kenney (https://kenney.nl/assets/tiny-town)",
+      "file": "kenney-tiny-town.json",
+      "models": 0,
+      "textures": 132,
+      "licence": "CC0-1.0",
+      "author": "Kenney",
+      "homepage": "https://kenney.nl/assets/tiny-town",
+      "url": "https://kenney.nl/media/pages/assets/tiny-town/a415fbeb49-1735736916/kenney_tiny-town.zip"
+    }
+  ]
 }
