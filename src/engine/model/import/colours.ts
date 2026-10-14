@@ -288,3 +288,17 @@ export function mapColours(samples: readonly ColourSample[], o: MapOptions = {})
   for (const s of slots) for (const m of s.members) of[hexString(m)] = s.slot;
   return { slots, of };
 }
+
+/**
+ * The map with some slots bound to other PALETTE entries: an agent's per-pack choice after
+ * looking at the swatches (a pack's mint leaves read as `green` in a game, not `cyan`). A slot
+ * the map doesn't have, or a name that isn't a PALETTE entry, throws: a typo never passes quietly.
+ */
+export function rebindColours(map: ColourMap, palette: Readonly<Record<Slot, PaletteColor>>): ColourMap {
+  const have = new Set(map.slots.map((s) => s.slot));
+  for (const [slot, colour] of Object.entries(palette)) {
+    if (!have.has(slot)) throw new Error(`palette re-binds slot '${slot}', which the colour map doesn't have (slots: ${[...have].join(', ')})`);
+    if (!Object.hasOwn(PALETTE, colour)) throw new Error(`palette binds slot '${slot}' to '${colour}', which isn't a PALETTE entry`);
+  }
+  return { ...map, slots: map.slots.map((s) => (Object.hasOwn(palette, s.slot) ? { ...s, colour: palette[s.slot]! } : s)) };
+}

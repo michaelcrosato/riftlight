@@ -848,6 +848,68 @@ export async function runWorld(h) {
     check(gfx.errors.length === 0, `the rendering lab runs without errors${gfx.errors.length ? ': ' + gfx.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-shaders.png`);
 
+    // ------------------------------------------------------------- asset gallery
+    const gal = await W(async () => {
+      const w = window.__WORLD__;
+      const e = window.__PIXEL_ENGINE__;
+      // pixels that differ between two frames: what the exhibit covers
+      const changed = (a, b) => {
+        let n = 0;
+        for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) n++;
+        return n;
+      };
+      await w.goto('gallery', { instant: true });
+      e.step(20);
+      const r = w.room;
+      const out = { shelves: r.shelves(), first: r.current() };
+      r.next();
+      e.step(5);
+      out.next = r.current();
+      r.prev();
+      out.back = r.current();
+      r.spin(false);
+      r.show('barrel');
+      e.step(30);
+      const shown = (await e.renderer.capture()).pixels.slice();
+      r.hide(true);
+      e.step(2);
+      out.barrel = changed(shown, (await e.renderer.capture()).pixels);
+      r.hide(false);
+      r.show('well');
+      e.step(30);
+      const well = (await e.renderer.capture()).pixels.slice();
+      r.hide(true);
+      e.step(2);
+      out.well = changed(well, (await e.renderer.capture()).pixels);
+      r.hide(false);
+      r.spin(true);
+      out.chair = r.show('chair') && r.current().id;
+      out.missing = r.show('no-such-asset');
+      out.find = r.find('wooden chair', 3);
+      out.kinds = {};
+      for (const id of ['textures/surfaces', 'textures/icons', 'textures/sprites']) {
+        r.shelf(id);
+        e.step(5);
+        out.kinds[id] = r.current().kind;
+      }
+      // each pack in the index makes a shelf of its models and one of its textures, those it has
+      const index = (await (await fetch('packs/index.json')).json()).packs;
+      out.packs = index.length;
+      out.packShelves = index.reduce((n, p) => n + (p.models > 0 ? 1 : 0) + (p.textures > 0 ? 1 : 0), 0);
+      out.errors = e.state().errors;
+      return out;
+    });
+    const families = gal.shelves.filter((s) => s.id.startsWith('library/'));
+    check(families.length === 10 && families.every((s) => s.count > 0) && gal.shelves.some((s) => s.id === 'textures/surfaces'), `asset gallery: ${gal.shelves.length} shelves (${families.length} library families, the textures, ${gal.shelves.length - families.length - 3} from packs)`);
+    check(gal.first.index === 0 && gal.next.index === 1 && gal.next.id !== gal.first.id && gal.back.id === gal.first.id, `asset gallery: next and prev step through a shelf (${gal.first.id} → ${gal.next.id} → ${gal.back.id})`);
+    check(gal.barrel > 500 && gal.well > 500, `asset gallery: the exhibit is drawn (hiding it changes ${gal.barrel} pixels for the barrel, ${gal.well} for the well)`);
+    check(gal.chair === 'chair' && gal.missing === false, 'asset gallery: any asset opens by id, an unknown id is refused');
+    check(gal.find[0] === 'chair', `asset gallery: search finds the chair for "wooden chair" (${gal.find.join(', ')})`);
+    check(gal.kinds['textures/surfaces'] === 'surface' && gal.kinds['textures/icons'] === 'sprite' && gal.kinds['textures/sprites'] === 'sprite', `asset gallery: surfaces lie as floors, icons and sprites stand up (${Object.values(gal.kinds).join(', ')})`);
+    check(gal.shelves.filter((s) => s.title.startsWith('PACK')).length === gal.packShelves, `asset gallery: a shelf for every pack in packs/index.json (${gal.packs} pack(s), ${gal.packShelves} shelves)`);
+    check(gal.errors.length === 0, `the asset gallery runs without errors${gal.errors.length ? ': ' + gal.errors.join('; ') : ''}`);
+    await capture(page, `world-${tag}-gallery.png`);
+
     // ------------------------------------------------------------- ai & direction
     const ai = await W(async () => {
       const w = window.__WORLD__;

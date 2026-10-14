@@ -1399,11 +1399,12 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.openStudioPage(lookStudio(this));
   }
 
-  /** Title → Engine World: the same page with ?game=world (other URL options kept). */
-  engineWorld(): void {
+  /** Title → Engine World: the same page with ?game=world (other URL options kept), at `room` (the Asset Gallery) or the Atrium. */
+  engineWorld(room?: string): void {
     const u = new URL(location.href);
     u.searchParams.set('game', 'world');
-    u.searchParams.delete('room');
+    if (room) u.searchParams.set('room', room);
+    else u.searchParams.delete('room');
     location.assign(u.toString());
   }
 

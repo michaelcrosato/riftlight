@@ -21,6 +21,8 @@
  */
 import { IMPORT_ID, ImportError } from '../model/import/common';
 import { hexString, mapColours, type ColourMap } from '../model/import/colours';
+import { describeImport } from '../model/import/describe';
+import type { PackSheet } from '../model/packs/sources';
 import type { Provenance } from '../model/types';
 import { isPaletteName, type PaletteColor } from '../palette';
 import type { RgbaImage } from '../png';
@@ -269,3 +271,35 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
     .sort((p, q) => q.sources.reduce((s, c) => s + c.pixels, 0) - p.sources.reduce((s, c) => s + c.pixels, 0) || (p.colour < q.colour ? -1 : 1));
   return { defs, colours, merges, map, cells, columns, rows };
 }
+
+/** What `importPackSheet` needs beside the image: the pack, its sheet entry, the provenance. */
+export interface PackSheetOptions {
+  readonly pack: string;
+  readonly sheet: PackSheet;
+  readonly source: SheetImportOptions['source'];
+  /** The pack's name, for each texture's `about`. */
+  readonly title?: string;
+  /** Tags every texture of the pack gets. */
+  readonly tags?: readonly string[];
+}
+
+/**
+ * An approved pack's sheet (its `PACK_SOURCES` entry's `sheets`, `npm run tex -- import-pack`)
+ * as textures: every cell in one pass (one colour map, the sheet's `palette` re-bindings, ids
+ * checked once, reading order), each `<pack>/<name>` with its name in words as `about` and
+ * library tags (`describeImport`), and `tile: true` (tag `surface`) on the cells `tiles` names.
+ */
+export function importPackSheet(img: RgbaImage, o: PackSheetOptions): { defs: TextureDef[]; sheet: SheetImport } {
+  const names = o.sheet.names ?? [];
+  const tiles = new Set(o.sheet.tiles ?? []);
+  const sheet = importSheet(img, { as: o.pack, grid: [o.sheet.grid[0], o.sheet.grid[1]], source: o.source, names: [...names], ...(o.sheet.palette ? { palette: o.sheet.palette } : {}) });
+  const file = o.sheet.file.split('/').pop();
+  const defs = sheet.defs.map((d): TextureDef => {
+    const name = d.id.slice(o.pack.length + 1);
+    const tile = tiles.has(name);
+    const { about, tags } = describeImport(name, { pack: o.pack, title: o.title, file, tags: [...(o.tags ?? []), ...(o.sheet.tags ?? []), ...(tile ? ['surface'] : [])] });
+    return { ...d, id: `${o.pack}/${name}`, about, tags, ...(tile ? { tile: true } : {}) };
+  });
+  return { defs, sheet };
+}
+

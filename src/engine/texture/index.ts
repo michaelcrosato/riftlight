@@ -10,5 +10,5 @@ export { PATTERNS, type PatternSpec } from './patterns';
 export { validateTexture, textureMetrics, MAX_ISOLATED, MAX_SEAM_EXCESS, type TextureCheck, type TextureMetrics } from './validate';
 export { textureMap, spriteSheet, hudSprite, TextureError, type TextureOptions } from './convert';
 export { TextureCatalog } from './catalog';
-export { importSheet, ALPHA_THRESHOLD, LEGEND_CHARS, SHEET_IMPORT_TOOL, type SheetCell, type SheetColour, type SheetImport, type SheetImportOptions, type SheetMerge } from './import';
-export { TEXTURE_LIBRARY } from './library';
+export { importPackSheet, importSheet, ALPHA_THRESHOLD, LEGEND_CHARS, SHEET_IMPORT_TOOL, type PackSheetOptions, type SheetCell, type SheetColour, type SheetImport, type SheetImportOptions, type SheetMerge } from './import';
+export { TEXTURE_FAMILIES, TEXTURE_LIBRARY } from './library';

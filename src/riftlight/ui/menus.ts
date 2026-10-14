@@ -56,8 +56,8 @@ export interface MenuHost {
   photoMode?(): void;
   /** The look studio (filters per layer): optional, so other hosts can leave it out. */
   lookStudio?(): void;
-  /** Open Engine World (the engine's tech demo): optional, so other hosts can leave it out. */
-  engineWorld?(): void;
+  /** Open Engine World (the engine's tech demo), at one of its rooms: optional, so other hosts can leave it out. */
+  engineWorld?(room?: string): void;
 }
 
 const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
@@ -72,6 +72,7 @@ export function titleMenu(h: MenuHost): Menu {
       w.push({ kind: 'button', id: 'load', label: 'Load / Import', onClick: () => h.openMenu(slotsMenu(h, 'load')) });
       w.push({ kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) });
       if (h.engineWorld) w.push({ kind: 'button', id: 'world', label: 'Engine World', onClick: () => h.engineWorld!(), hint: 'the engine\'s tech demo: a room per technique' });
+      if (h.engineWorld) w.push({ kind: 'button', id: 'gallery', label: 'Asset Gallery', onClick: () => h.engineWorld!('gallery'), hint: 'every model and texture, one at a time' });
       return w;
     },
     { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h) },

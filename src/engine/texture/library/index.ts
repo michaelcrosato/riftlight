@@ -9,3 +9,6 @@ import { SURFACES } from './surfaces';
  */
 export const TEXTURE_LIBRARY = new TextureCatalog([...SURFACES, ...SPRITES]);
 setDefaultTextureCatalog(TEXTURE_LIBRARY);
+
+/** The texture library's families (src/engine/texture/library/<family>.ts): each one's texture ids. */
+export const TEXTURE_FAMILIES: Readonly<Record<string, readonly string[]>> = { surfaces: SURFACES.map((d) => d.id), sprites: SPRITES.map((d) => d.id) };
