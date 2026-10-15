@@ -14,7 +14,9 @@
 //                              removed, moved, resized, recoloured; bounds, tris, draws
 //   find [words...] [--limit n] the library and every pack, best match first (the engine's
 //                              `search`: id words, then tags, then about; plurals and parts of
-//                              words count): id, size, params, ~tokens or tris, file or pack
+//                              words count): id, size, params, ~tokens or tris, file or pack; a
+//                              model's variants (rock-a … -f) in one entry; 20 in full, up to 40
+//                              more by id, the rest counted (--limit n; --json: all)
 //   zoo <family|tag|all>       every model of a library family (file) or tag at one scale
 //                              → .scratch/model/zoo-<name>.png
 //   tokens <id|file>           what writing it costs: characters ÷ 4 (the repo's estimate)
@@ -74,7 +76,7 @@
 //
 // An <id> can also be a draft file: `check my/stall.ts` (every def it exports), `sheet my/stall.ts`
 // (its default export, or the first) or `sheet my/stall.ts crate` (that one), `zoo my/stall.ts`.
-// Its models join the library for `use`; its PNGs and history go to .scratch/model/<file name>/.
+// Its models join the library and the packs for `use`; its PNGs and history go to .scratch/model/<file name>/.
 // A pack file (public/packs/<pack>.json) works the same way, and `check` with no ids checks every
 // pack there as well as the library.
 //
@@ -89,7 +91,8 @@ import { Box3, Vector3 } from 'three/webgpu';
 import type { SheetImage } from '../src/engine/animation';
 import { column, renderView, row, titleBar, worldTriangles } from '../src/engine/inspect';
 import { PALETTE, type PaletteColor } from '../src/engine/palette';
-import { searchHits } from '../src/engine/catalog';
+import { groupVariants, searchHits, variantsInShort } from '../src/engine/catalog';
+import { FIND_LIMIT, findFooter } from './find';
 import { buildModel, checkModel, compileParts, expandModel, scoreFidelity, licenceProblem, ModelCatalog, MODEL_LIBRARY, modelTriangles, PACK_ID, packCatalog, packProblems, renderFidelity, type Binding, type ExpandedModel, type ModelDef, type ModelOptions, type ModelPack } from '../src/engine/model';
 import { diffLines, diffModels, modelFingerprint, type ModelVersion } from '../src/engine/model/diff';
 import { FRONTS, hexString, importGltf, importPack, IMPORT_ID, normalizeSource, type Front, type Imported } from '../src/engine/model/import';
@@ -230,7 +233,10 @@ async function loadFile(target: string): Promise<string[] | null> {
     defs = [...new Set([mod.default, ...Object.values(mod)].filter(isDef))];
   }
   if (!defs.length) fail(`${target} exports no ModelDef`);
-  CATALOG = new ModelCatalog([...MODEL_LIBRARY.all().filter((d) => !defs.some((x) => x.id === d.id)), ...defs]);
+  // a draft sees the library and every pack, so it can `use` any of them (a variant of an imported
+  // model); a pack file never another pack's models, which `loadPack` doesn't give it at runtime
+  const known = PACK_TARGET ? MODEL_LIBRARY.all() : [...MODEL_LIBRARY.all(), ...packModels()];
+  CATALOG = new ModelCatalog([...known.filter((d) => !defs.some((x) => x.id === d.id)), ...defs]);
   if (!flags.has('out')) OUT = join(ROOT, '.scratch/model', basename(file).replace(/\.[^.]+$/, ''));
   return defs.map((d) => d.id);
 }
@@ -355,12 +361,18 @@ function cmdFind(words: string[]): void {
   const src = sources();
   const limit = flags.has('limit') ? Number(flags.get('limit')) : undefined;
   if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) fail(`--limit takes a whole number above 0 (got "${flags.get('limit')}")`);
-  // ranked (the engine's own `search`: id words first, then tags, then about); the library and every pack
-  const hits = searchHits(CATALOG.all(), words.join(' '), { ...(limit ? { limit } : {}) });
-  const rows = hits.map(({ def: d, full }) => {
+  // ranked (the engine's own `search`: id words first, then tags, then about); the library and
+  // every pack; a model's variants (rock-large-a … -f) in one entry, under the best of them
+  const hits = searchHits(CATALOG.all(), words.join(' '));
+  const full = new Map(hits.map((h) => [h.def.id, h.full]));
+  const groups = groupVariants(hits.map((h) => h.def));
+  const shown = groups.slice(0, limit ?? (json ? groups.length : FIND_LIMIT));
+  const short = new Map(shown.map((g) => [g.def.id, variantsInShort(g)]));
+  const rows = shown.map((g) => {
+    const d = g.def;
     const b = buildModel(d, { catalog: CATALOG });
     const s = src.get(d.id);
-    return { id: d.id, about: d.about, tags: d.tags, size: b.bounds.size.map(fmt), tris: b.report.tris, params: d.params ?? {}, tokens: s ? tokensOf(s.text) : null, file: s ? rel(s.file) : null, pack: d.source?.pack ?? null, full };
+    return { id: d.id, about: d.about, tags: d.tags, size: b.bounds.size.map(fmt), tris: b.report.tris, params: d.params ?? {}, tokens: s ? tokensOf(s.text) : null, file: s ? rel(s.file) : null, pack: d.source?.pack ?? null, full: full.get(d.id)!, variants: g.variants.map((v) => v.id) };
   });
   if (json) console.log(JSON.stringify(rows, null, 2));
   else {
@@ -370,9 +382,10 @@ function cmdFind(words: string[]): void {
       const where = r.file ?? (r.pack ? `pack ${r.pack} (public/packs/${r.pack}.json)` : '');
       console.log(`${r.id.padEnd(16)} ${r.size.join(' x ').padEnd(16)} ${r.tokens !== null ? `~${String(r.tokens).padStart(4)} tok` : `${String(r.tris).padStart(5)} tris`}  ${where}`);
       console.log(`  ${r.about}  [${r.tags.join(', ')}]${params ? `  params: ${params}` : ''}`);
+      if (r.variants.length) console.log(`  + ${r.variants.length} variant${r.variants.length > 1 ? 's' : ''}: ${short.get(r.id)}`);
     }
     if (!rows.length) console.log(`nothing matches "${words.join(' ')}"`);
-    else console.log(`\n${rows.length} model(s)`);
+    else console.log(findFooter('model', hits.length, groups.map((g) => ({ id: g.def.id, variants: g.variants.length })), rows.length).join('\n'));
   }
 }
 

@@ -161,7 +161,7 @@ export {
   type Layer as TextureLayer,
 } from './texture';
 export { textureSheet, type TextureSheet, type TextureSheetOptions } from './texture/sheet';
-export { Catalog, searchDefs, searchHits, searchWords, type CatalogEntry, type SearchHit, type SearchOptions } from './catalog';
+export { Catalog, groupVariants, searchDefs, searchHits, searchWords, variantName, type CatalogEntry, type SearchHit, type SearchOptions, type VariantGroup } from './catalog';
 export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';

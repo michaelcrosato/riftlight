@@ -7,7 +7,8 @@
 //                        tiling when it tiles, its frames, palette and check
 //        --palette slot=colour,...   (a PALETTE name or 0xrrggbb)
 //   find [words...] [--limit n]  the library and every pack, best match first (the engine's
-//                        `search`): id, size, tiles, frames, file or pack
+//                        `search`): id, size, tiles, frames, file or pack; 20 in full, up to 40
+//                        more by id, the rest counted (--limit n; --json: all)
 //   zoo [tag|all]        every texture (or those with the tag) at one scale, tiled 3×3 where it tiles
 //                        → .scratch/tex/zoo-<name>.png
 //
@@ -45,6 +46,7 @@ import { inflateSync } from 'node:zlib';
 import type { SheetImage } from '../src/engine/animation/raster';
 import { licenceProblem, PACK_ID } from '../src/engine/model/packs/licences';
 import { searchHits } from '../src/engine/catalog';
+import { FIND_LIMIT, findFooter } from './find';
 import { fileId, hexString, IMPORT_ID, ImportError } from '../src/engine/model/import';
 import { isPaletteName, type PaletteColor } from '../src/engine/palette';
 import { decodePng, PngError } from '../src/engine/png';
@@ -184,8 +186,9 @@ function find(): void {
   const limit = flags.has('limit') ? Number(flags.get('limit')) : undefined;
   if (limit !== undefined && !(Number.isInteger(limit) && limit > 0)) fail(`--limit takes a whole number above 0 (got "${flags.get('limit')}")`);
   const files = sourceFiles();
-  const hits = searchHits(ALL().all(), args.join(' '), { ...(limit ? { limit } : {}) });
-  const rows = hits.map(({ def: d, full }) => ({ id: d.id, about: d.about, tags: d.tags, size: d.size, tile: d.tile === true, frames: d.frames ?? 1, file: files.get(d.id) ?? null, pack: d.source?.pack ?? null, full }));
+  // a sheet's lettered tiles (forest-a … -i, door-wood-b) are pieces of a set, not variants: each its own entry
+  const hits = searchHits(ALL().all(), args.join(' '));
+  const rows = hits.slice(0, limit ?? (json ? hits.length : FIND_LIMIT)).map(({ def: d, full }) => ({ id: d.id, about: d.about, tags: d.tags, size: d.size, tile: d.tile === true, frames: d.frames ?? 1, file: files.get(d.id) ?? null, pack: d.source?.pack ?? null, full }));
   if (json) console.log(JSON.stringify(rows, null, 2));
   else {
     if (rows.length && !rows[0]!.full) console.log(`no texture matches every word of "${args.join(' ')}"; the closest:`);
@@ -193,7 +196,7 @@ function find(): void {
       console.log(`${r.id}  ${r.size.join('x')}${r.tile ? '  tiles' : ''}${r.frames > 1 ? `  ${r.frames} frames` : ''}  ${r.file ?? (r.pack ? `pack ${r.pack} (public/packs/${r.pack}.json)` : '')}`);
       console.log(`  ${r.about}  [${r.tags.join(', ')}]`);
     }
-    console.log(rows.length ? `\n${rows.length} texture(s)` : `nothing matches "${args.join(' ')}"`);
+    console.log(rows.length ? findFooter('texture', hits.length, hits.map((h) => ({ id: h.def.id, variants: 0 })), rows.length).join('\n') : `nothing matches "${args.join(' ')}"`);
   }
 }
 
