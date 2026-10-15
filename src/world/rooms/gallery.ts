@@ -5,22 +5,11 @@
  * comma and period change shelf; the panel says what the asset is, how big, and where it came
  * from. `?asset=<id>` opens the gallery on one asset; agents drive it through `__WORLD__.room`.
  */
-import { Group, Mesh, Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
-import { buildModel, DEFAULT_TEXEL, hudSprite, loadPack, loadPackIndex, MODEL_FAMILIES, MODEL_LIBRARY, ModelCatalog, searchDefs, SpriteBatch, spriteSheet, TEXTURE_FAMILIES, TEXTURE_LIBRARY, TextureCatalog, textureMap, toonMaterial, type LightHandle, type ModelDef, type PaletteColor, type TextureDef } from '../../engine';
+import { Object3D, Vector3 } from 'three/webgpu';
+import { hudSprite, type LightHandle, type PaletteColor, searchDefs, SpriteBatch, spriteSheet, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import type { Knob, RoomDef } from '../types';
-
-/** A shelf: one library family or one pack's models (or textures). */
-interface Shelf {
-  readonly id: string;
-  readonly title: string;
-  /** Where its assets came from, for the panel. */
-  readonly source: string;
-  readonly models?: readonly ModelDef[];
-  readonly textures?: readonly TextureDef[];
-  /** What a model's `use` parts resolve against. */
-  readonly catalog?: ModelCatalog;
-}
+import { assetsOf, clean, count, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, textureLine, tilePatch, wrap } from './shelves';
 
 /** What is on the turntable. */
 interface Exhibit {
@@ -42,53 +31,6 @@ const PLINTH = 0.3;
 /** Exhibits stand this far above the plinth, so a flat one (a ground tile, a floor) never fights it for depth. */
 const LIFT = 0.002;
 const ZOOMS = ['fit', 'level', 'town', 'close'] as const;
-const count = (s: Shelf) => (s.models ?? s.textures ?? []).length;
-const fmt = (v: number) => `${+v.toFixed(2)}`;
-/** Text the 5×7 font can draw. */
-const clean = (s: string) => s.toUpperCase().replace(/×/g, 'X').replace(/[–—]/g, '-').replace(/'/g, '’').replace(/[^A-Z0-9 .,:\-+=/()[\]%_!?<>#"*@°·{};&|~^’]/g, '');
-
-/** Words to lines of at most `width` characters. */
-function wrap(text: string, width: number, max: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const w of text.split(/\s+/).filter(Boolean)) {
-    if (line && line.length + 1 + w.length > width) {
-      out.push(line);
-      line = '';
-    }
-    line = line ? `${line} ${w}` : w.slice(0, width);
-  }
-  if (line) out.push(line);
-  if (out.length > max) out.splice(max - 1, out.length, `${out[max - 1]!.slice(0, width - 3)}...`);
-  return out;
-}
-
-/** The library's shelves: models by family, then surfaces, icons and sprites. */
-function libraryShelves(): Shelf[] {
-  const source = 'ENGINE LIBRARY (OUR OWN WORK, MIT)';
-  const models = Object.entries(MODEL_FAMILIES).map(([family, ids]) => ({ id: `library/${family}`, title: `LIBRARY · ${family}`, source, models: ids.map((id) => MODEL_LIBRARY.get(id)), catalog: MODEL_LIBRARY }));
-  const sprites = TEXTURE_FAMILIES.sprites!.map((id) => TEXTURE_LIBRARY.get(id));
-  const textures = [
-    { id: 'textures/surfaces', title: 'TEXTURES · surfaces', source, textures: TEXTURE_FAMILIES.surfaces!.map((id) => TEXTURE_LIBRARY.get(id)) },
-    { id: 'textures/icons', title: 'TEXTURES · icons', source, textures: sprites.filter((d) => d.tags.includes('icon')) },
-    { id: 'textures/sprites', title: 'TEXTURES · sprites', source, textures: sprites.filter((d) => !d.tags.includes('icon')) },
-  ];
-  return [...models, ...textures].filter((s) => count(s) > 0);
-}
-
-/** Every pack the index lists: a shelf of its models and one of its textures. */
-async function packShelves(): Promise<Shelf[]> {
-  const index = await loadPackIndex().catch(() => ({ packs: [] }));
-  const shelves: Shelf[] = [];
-  for (const e of index.packs) {
-    const textures = new TextureCatalog();
-    const models = await loadPack(`packs/${e.file}`, { textures });
-    const source = `${e.title} · ${e.author ?? 'unknown'} · ${e.licence}`;
-    if (models.all().length) shelves.push({ id: e.id, title: `PACK · ${e.title}`, source, models: models.all(), catalog: models });
-    if (textures.all().length) shelves.push({ id: `${e.id}/textures`, title: `PACK · ${e.title} · textures`, source, textures: textures.all() });
-  }
-  return shelves;
-}
 
 export const GALLERY: RoomDef = {
   id: 'gallery',
@@ -148,63 +90,24 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       const top = new Vector3(0, PLINTH + LIFT, 0);
       if (s.models) {
         const def = s.models[i]!;
-        const b = buildModel(def, { catalog: s.catalog });
-        const pivot = new Group();
-        b.object.position.set(-(b.bounds.min[0] + b.bounds.max[0]) / 2, top.y - b.bounds.min[1], -(b.bounds.min[2] + b.bounds.max[2]) / 2);
-        pivot.add(b.object);
+        const m = standModel(def, s.catalog);
+        m.root.position.copy(top);
         // the light follows a point inside the model, so a torch's glow stays on its flame as it turns
-        const flame = new Object3D();
-        if (b.light) {
-          flame.position.set(...b.light.at);
-          b.object.add(flame);
-        }
-        lights = b.light ? [ctx.lights.request({ follow: flame, color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' })] : [];
-        const [w, h, d] = b.bounds.size;
-        return {
-          id: def.id,
-          kind: 'model',
-          root: pivot,
-          size: [w, h, d],
-          centre: top.clone().setY(top.y + h / 2),
-          line: `${fmt(w)} X ${fmt(h)} X ${fmt(d)} M · ${b.report.tris} TRIS · ${b.report.draws} DRAWS`,
-          dispose: () => {
-            b.object.traverse((o) => {
-              if (o instanceof Mesh && !o.geometry.userData.shared) o.geometry.dispose();
-            });
-          },
-        };
+        const light = requestLight(ctx, m);
+        lights = light ? [light] : [];
+        const [w, h, d] = m.build.bounds.size;
+        return { id: def.id, kind: 'model', root: m.root, size: [w, h, d], centre: top.clone().setY(top.y + h / 2), line: modelLine(m.build), dispose: m.dispose };
       }
       const def = s.textures![i]!;
-      const [tw, th] = def.size;
-      const frames = def.frames ?? 1;
-      const texels = `${tw / frames} X ${th} TEXELS${frames > 1 ? ` · ${frames} FRAMES` : ''}`;
-      const hud = Array.from({ length: frames }, (_, f) => hudSprite(def, { frame: f }));
+      const hud = Array.from({ length: def.frames ?? 1 }, (_, f) => hudSprite(def, { frame: f }));
       if (def.tile) {
         // a floor of it on the plinth (a square inside its circle), two tiles a side at least
         const side = 3.4;
-        const density = Math.max(DEFAULT_TEXEL, (2 * Math.max(tw, th)) / side);
-        const geo = new PlaneGeometry(side, side).rotateX(-Math.PI / 2);
-        const uv = geo.getAttribute('uv');
-        for (let k = 0; k < uv.count; k++) uv.setXY(k, (uv.getX(k) * side * density) / tw, (uv.getY(k) * side * density) / th);
-        const material = toonMaterial(0xffffff, { map: textureMap(def) });
-        const floor = new Mesh(geo, material);
-        floor.position.copy(top);
-        floor.receiveShadow = true;
-        return {
-          id: def.id,
-          kind: 'surface',
-          root: floor,
-          size: [side, 0.1, side],
-          centre: top.clone(),
-          line: `${texels} · ${fmt(tw / DEFAULT_TEXEL)} M A TILE IN THE GAME`,
-          hud,
-          dispose: () => {
-            geo.dispose();
-            if (!material.userData.shared) material.dispose(); // a cached material stays for its other users
-          },
-        };
+        const floor = tilePatch(def, side);
+        floor.mesh.position.copy(top);
+        return { id: def.id, kind: 'surface', root: floor.mesh, size: [side, 0.1, side], centre: top.clone(), line: textureLine(def), hud, dispose: floor.dispose };
       }
-      const size = Math.min(3, Math.max(1.2, th / DEFAULT_TEXEL));
+      const size = spriteHeight(def);
       const batch = new SpriteBatch(spriteSheet(def), { capacity: 1 });
       batch.spawn([0, top.y, 0], { size });
       return {
@@ -213,7 +116,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         root: batch,
         size: [size, size, 0.1],
         centre: top.clone().setY(top.y + size / 2),
-        line: texels,
+        line: textureLine(def),
         sprite: def,
         batch,
         hud,
@@ -264,7 +167,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
     /** Jump to an asset anywhere by id: false when there's no such asset. */
     const open = (id: string): boolean => {
       for (const [s, sh] of shelves.entries()) {
-        const i = (sh.models ?? sh.textures ?? []).findIndex((d) => d.id === id);
+        const i = assetsOf(sh).findIndex((d) => d.id === id);
         if (i >= 0) {
           go(s, i);
           return true;
@@ -272,7 +175,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       }
       return false;
     };
-    const everything = () => shelves.flatMap((s) => [...(s.models ?? []), ...(s.textures ?? [])]);
+    const everything = () => shelves.flatMap((s) => [...assetsOf(s)]);
 
     const wanted = new URLSearchParams(location.search).get('asset');
     if (!(wanted && open(wanted))) go(0, 0);
@@ -288,14 +191,6 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       { kind: 'choice', id: 'zoom', label: 'Zoom', options: ['fit the exhibit', 'level (the game’s)', 'town (the game’s)', 'close'], get: () => ZOOMS.indexOf(zoom), set: (i) => ((zoom = ZOOMS[i] ?? 'fit'), exhibit && ctx.camera.setZoom(fitZoom(exhibit))), hint: 'Level and town are Riftlight’s own zooms: how big the asset reads in the game.' },
       { kind: 'toggle', id: 'spin', label: 'Turntable', get: () => spin, set: (v) => (spin = v) },
     ];
-
-    /** Who made a pack's asset, its licence and how faithfully it imported (its pack is on the shelf line). */
-    const sourceOf = (def: ModelDef | TextureDef) => {
-      const src = def.source;
-      if (!src) return '';
-      const fid = src.fidelity?.iou !== undefined ? ` · FIDELITY ${src.fidelity.iou.toFixed(2)}` : '';
-      return `${src.author ?? 'unknown author'} · ${src.licence}${fid} · ${src.file?.split('/').pop() ?? ''}`;
-    };
 
     return {
       knobs,
@@ -320,7 +215,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         const hud = ctx.hud;
         const s = shelves[shelf];
         if (!s || !exhibit) return;
-        const def = [...(s.models ?? []), ...(s.textures ?? [])].find((d) => d.id === exhibit!.id)!;
+        const def = assetsOf(s).find((d) => d.id === exhibit!.id)!;
         const width = Math.min(52, Math.floor((hud.width - 16) / 6));
         const pack = !!def.source?.pack;
         const lines: { text: string; color: PaletteColor }[] = [
@@ -370,7 +265,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         },
         /** Show any asset by id (library or pack, model or texture). */
         show: open,
-        /** Asset ids that match words, best first (`searchDefs`, as `npm run model -- find`). */
+        /** Asset ids that match words, best first: `searchDefs` over models and textures together (`npm run model -- find` and `tex -- find` rank one kind each). */
         find: (text: string, limit = 10) => searchDefs(everything(), text, { limit }).map((d) => d.id),
         spin: (on: boolean) => (spin = on),
         /** The exhibit's light, where the light pool puts it, and how far the turntable has turned (radians); null without one. */

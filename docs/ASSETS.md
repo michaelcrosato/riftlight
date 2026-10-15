@@ -39,6 +39,7 @@ library/*.ts ──► ModelDef (parts, palette slots, params) ──► buildMo
 | `scripts/model.ts` | `npm run model` (its header is the manual) |
 | `src/lab/assetLab.ts`, `asset-lab.html` | The Asset Lab, `window.__ASSET_LAB__` |
 | `src/world/rooms/gallery.ts` | The Asset Gallery (`/?game=world&room=gallery`): every library model and texture and every pack, one at a time ([Finding assets](#finding-assets)) |
+| `src/world/rooms/workshop.ts`, `shelves.ts` | The Asset Workshop (`/?game=world&room=workshop`): the same shelves in a picker, placed on a floor as many times as you like; `shelves.ts` is what the two rooms share |
 | `src/engine/catalog.ts` | `Catalog` (`MODEL_LIBRARY`, `TEXTURE_LIBRARY` and pack catalogs are ones): `get`, `find`, ranked `search`; `searchDefs` across catalogs |
 | `src/engine/texture/` | Textures as data ([below](#textures)): `TextureDef`, the patterns, `bakeTexture`, `validateTexture`, `textureMap`, `spriteSheet`, `hudSprite`, `TEXTURE_LIBRARY` (`library/`) |
 | `scripts/tex.ts` | `npm run tex` (its header is the manual) |
@@ -91,6 +92,12 @@ Search before you write: the asset you need may already be in the library or a p
   period change shelf, the wheel zooms; T has the shelf, the item, the zoom (fit, or Riftlight's
   own level and town zooms) and the turntable. `&asset=<id>` opens it on one asset. Agents:
   `__WORLD__.room.find('chair')`, `show(id)`, `next()`, `shelf(id)`, `current()`.
+- **Place it:** the **Asset Workshop**, `/?game=world&room=workshop` (the Workshop wing): the same
+  shelves in a picker, and a floor to put as many as you like on at the game's camera and zoom.
+  The wheel over the list (or Q and E) scrolls, comma and period change shelf, a click picks a row;
+  Enter puts the pick where its preview hovers, a click on the floor puts it there, a right click
+  or Backspace takes one away, Tab shows what it is made of. Agents: `__WORLD__.room.spawn(id,
+  [x, z])`, `select(id)`, `def()`, `spawned()`, `undo()`, `clear()`, `find('chair')`.
 - **The kit** (agents outside this repo): `LIBRARY.md` lists every asset by family and pack (a
   model's variants share a row; a pack's rows leave out its name and tags), `library.json` holds
   the same as data (id, kind, family, pack, tags, size, slots, licence), and `packs/` carries the

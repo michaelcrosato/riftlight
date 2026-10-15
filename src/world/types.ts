@@ -99,7 +99,7 @@ export interface PadDef {
   readonly apply: (room: RoomRuntime, pad: import('./kit/RoomKit').Pad) => void;
   /** While this says false, stepping on the pad does nothing at all: no apply, no note, no sound. */
   readonly enabled?: () => boolean;
-  /** No toast when stepped on: the pad starts something that owns the screen (a cutscene). */
+  /** No toast of its note when stepped on: the pad starts something that owns the screen (a cutscene), or toasts what it did itself. */
   readonly quiet?: boolean;
 }
 
