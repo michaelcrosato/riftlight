@@ -213,8 +213,8 @@ describe('recording and replaying input', () => {
       expect(frame(() => el.dispatchEvent(ev('pointermove', { button: 2, buttons: 3 })))).toEqual({ held: ['MouseLeft', 'MouseRight'], pressed: ['MouseRight'], buttons: 3, touch: false });
       // left let go, right still held
       expect(frame(() => el.dispatchEvent(ev('pointermove', { button: 0, buttons: 2 })))).toEqual({ held: ['MouseRight'], pressed: [], buttons: 2, touch: false });
-      // the window loses focus with the button held: let go, and a plain move after is no new click
-      expect(frame(() => (win.dispatchEvent(new Event('blur')), el.dispatchEvent(ev('pointermove', { buttons: 2 }))))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
+      // the window loses focus with the button held: let go (an event a UI mid-drag hears), and a plain move after is no new click
+      expect(frame(() => (win.dispatchEvent(new Event('blur')), expect(input.buttonEvents.map((e) => [e.code, e.down])).toEqual([['MouseRight', false]]), el.dispatchEvent(ev('pointermove', { buttons: 2 }))))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
       expect(frame(() => el.dispatchEvent(ev('pointerup', { button: 2, buttons: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
       // a click shorter than a frame
       expect(frame(() => (el.dispatchEvent(ev('pointerdown', { button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerup', { button: 0 }))))).toEqual({ held: [], pressed: ['MouseLeft'], buttons: 0, touch: false });

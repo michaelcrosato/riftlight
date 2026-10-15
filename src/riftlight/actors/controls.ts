@@ -1,7 +1,7 @@
 import type { TouchButton } from '../../engine/TouchControls';
 import type { DebugKeysOption } from '../../engine/debugKeys';
 
-/** Virtual key codes the mouse buttons press (MouseAim feeds them into `ctx.input`). */
+/** The engine's keys for the mouse buttons on the canvas (`MOUSE_BUTTONS` in engine/input.ts). */
 export const MOUSE_LEFT = 'MouseLeft';
 export const MOUSE_RIGHT = 'MouseRight';
 

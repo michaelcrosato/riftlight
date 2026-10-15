@@ -147,11 +147,13 @@ through `ctx.input.send` and arrives a frame later, recorded: the settings play 
 setup (`playSettings`: zoom and shake move what the mouse points at), the save slots the menus
 show (`SavesView`), a save loaded or a new run's seed (`Riftlight.play`), an imported file, and
 what the passive tree does (allocate, refund, close: its view runs on the page, so it hands them
-over and the tree panel does them when they arrive). Actor and prop ids count from 1 at each
-game's setup, so a replay numbers them as the recorded run did. `Riftlight.fingerprint` (part of
+over and the tree panel does them when they arrive). Actor ids count from 1 and prop ids from
+1,000,000 again at each game's setup, so a replay numbers them as the recorded run did. `Riftlight.fingerprint` (part of
 `engine.fingerprint()`) is the hero and every monster (where, facing, life), the ground loot,
-the save and the bags, and the run's random stream. The e2e suite `riftlight-replay` plays a
-session by input alone (the title by keys, the walk to Vex on the stick, a fight aimed with the
+the save and the bags, and the run's random stream. A replay writes nothing to storage (the
+saves and settings are the player's), and the settings and slots sent at setup give way to
+anything the game changed before its first frame (an agent's `newRun`). The e2e suite
+`riftlight-replay` plays a session by input alone (the title by keys, the walk to Vex on the stick, a fight aimed with the
 mouse), replays it to the same fingerprint, and shows an edited recording does not. The agent
 API's calls (`newRun`, `moveTo`, `fight`...) are not input: a session they drive does not replay.
 

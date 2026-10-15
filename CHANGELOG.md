@@ -14,7 +14,8 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   releases in order, each with where the pointer was (`{ code, down, x, y }`, normalised device
   coordinates), recorded with the frame (`clicks`). A drag shorter than a frame (a script's, an
   agent's) still starts where it started and ends where it ended; UI that acts on clicks reads
-  these, play reads `isDown`. The pointer is also placed where a button is let go.
+  these, play reads `isDown`. The pointer is also placed where a button is let go, and a window
+  losing focus lets held pointer buttons go as events (a UI mid-drag hears the release).
 
 ## 0.34.0
 

@@ -13,9 +13,11 @@
  * next tab, back = put the held item back / close). Every change is a pure
  * `loot/inventory` or `loot/sockets` operation committed to the ItemsStore.
  *
- * The mouse and touch come from `ctx.input` (where the pointer is over the game canvas, its
- * buttons as `MouseLeft` / `MouseRight`, Ctrl / Shift / Alt held), read in `update(dt)`: the
- * canvas takes no pointer events itself, so a recording of the game replays what was done here.
+ * The mouse and touch come from `ctx.input`: the canvas takes no pointer events itself, so a
+ * recording of the game replays what was done here. Hosted, the shell's pointer events
+ * (`handle`, while the windows are the top panel: never the press that opened them); standalone,
+ * `update(dt)` reads the engine's (`buttonEvents`, where the pointer is). Ctrl / Shift / Alt are
+ * the keys held.
  *
  * Standalone (`/?game=lootlab`): call `update(dt)` every frame; the view polls the pad and
  * Escape itself. Hosted by the game shell (`{ hosted: true }`, wire/loot.ts): the shell
@@ -501,6 +503,7 @@ export class ItemsUi {
    * is now. In art pixels: the canvas is the art resolution.
    */
   private pollPointer(): void {
+    if (this.opts.hosted) return; // the shell hands this view its pointer events (`handle`)
     const input = this.ctx.input;
     const toArt = (x: number, y: number) => ({ x: Math.min(this.size.w - 1, Math.max(0, Math.floor(((x + 1) / 2) * this.size.w))), y: Math.min(this.size.h - 1, Math.max(0, Math.floor(((1 - y) / 2) * this.size.h))) });
     const moveTo = (x: number, y: number, touch: boolean) => {
@@ -509,10 +512,7 @@ export class ItemsUi {
       this.pointerAt = at;
       if (this.isOpen) this.onMove(at, touch);
     };
-    // held, or pressed since the last frame: a Ctrl-click shorter than a frame keeps its Ctrl
-    const mod = (...codes: string[]) => input.isDown(...codes) || input.wasPressed(...codes);
-    const ctrl = mod('ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight');
-    const shift = mod('ShiftLeft', 'ShiftRight');
+    const { ctrl, shift } = this.mods();
     for (const e of input.buttonEvents) {
       const button = e.code === 'MouseRight' ? 2 : e.code === 'MouseLeft' || e.code === 'Touch' ? 0 : -1;
       if (button < 0) continue;
@@ -522,6 +522,13 @@ export class ItemsUi {
       else if (this.isOpen) this.onDown(this.pointerAt, { button, touch, ctrl, shift });
     }
     if (input.pointer.over) moveTo(input.pointer.x, input.pointer.y, input.pointer.touch);
+  }
+
+  /** Ctrl and Shift held, or pressed since the last frame: a Ctrl-click shorter than a frame keeps its Ctrl. */
+  private mods(): { ctrl: boolean; shift: boolean } {
+    const input = this.ctx.input;
+    const mod = (...codes: string[]) => input.isDown(...codes) || input.wasPressed(...codes);
+    return { ctrl: mod('ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight'), shift: mod('ShiftLeft', 'ShiftRight') };
   }
 
   private onDown(p: { x: number; y: number }, e: { button: number; touch: boolean; ctrl: boolean; shift: boolean }): void {
@@ -606,9 +613,14 @@ export class ItemsUi {
         else if (e.code === 'KeyV' || e.code === 'PadY') this.primary(cx, cy, { ctrl: true, shift: false });
         return true;
       }
-      case 'pointer':
-        // the canvas got the press itself; this is the shell's copy
+      case 'pointer': {
+        const at = { x: e.x, y: e.y };
+        const touch = !!e.touch;
+        if (e.type === 'move') this.onMove(at, touch);
+        else if (e.type === 'down') this.onDown(at, { button: e.button ?? 0, touch, ...this.mods() });
+        else this.onUp(at, e.button ?? 0);
         return this.covers(e.x, e.y);
+      }
       case 'wheel':
         return this.covers(this.cursor.x, this.cursor.y);
     }

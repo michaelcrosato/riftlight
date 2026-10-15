@@ -78,6 +78,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
   readonly store: SaveStore;
   /** The slots as the game knows them (menus, Continue): read once and recorded, then kept by its own saves. */
   saves: SavesView;
+  /** The settings and slots sent at setup (`command` keeps them only if nothing changed them before the first frame). */
+  private sentAtSetup = { settings: '', saves: '' };
   readonly settings: Settings = loadSettings();
   readonly dev: DevFlags = { god: false, ai: true, hitboxes: false };
   slot = 0;
@@ -220,6 +222,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.applySettings();
     // the settings play depends on (zoom and shake move what the mouse points at) are the
     // device's: the recording keeps them, so a replay plays with the recorded ones
+    this.sentAtSetup = { settings: JSON.stringify(playSettings(this.settings)), saves: JSON.stringify(this.saves) };
     ctx.input.send({ rl: 'settings', settings: playSettings(this.settings) });
     ctx.input.send({ rl: 'saves', saves: this.saves }); // and so are the save slots the menus show
     this.toTitle();
@@ -319,6 +322,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.town.activate();
     this.zoomGoal = CAMERA.title;
     this.playMusic('title');
+    this.openTitleMenu();
+  }
+
+  private openTitleMenu(): void {
+    this.layer.closeAll();
     this.layer.open(titleMenu(this), { modal: false, bare: true, sticky: true, silent: true });
   }
 
@@ -326,7 +334,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   newRun(slot: number, seed = urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0): void { // real time: a new run's seed when none is given (the save keeps it)
     this.slot = slot;
     this.save = newSave(seed);
-    this.store.save(slot, this.save);
+    if (!this.replaying) this.store.save(slot, this.save);
     viewSaved(this.saves, slot, this.save);
     this.applySave();
     this.note('run', `new run in slot ${slot + 1} seed ${seed}`);
@@ -372,7 +380,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const slot = choice.kind === 'continue' ? this.saves.last : (choice.slot ?? null);
     if (slot === null) return this.play({ kind: 'new', slot: 0 });
     const data = this.store.load(slot);
-    if (!data) return this.sound('error');
+    if (!data) return this.ctx.input.send({ rl: 'storage', error: this.store.lastError || `slot ${slot + 1}: empty` });
     this.ctx.input.send({ rl: 'load', slot, data });
   }
 
@@ -381,15 +389,27 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const m = c as Partial<RiftCommand> | null;
     if (m?.rl === 'run' && typeof m.slot === 'number' && typeof m.seed === 'number') this.newRun(m.slot, m.seed);
     else if (m?.rl === 'load' && typeof m.slot === 'number' && m.data) this.loadData(m.slot, m.data);
-    else if (m?.rl === 'settings' && m.settings) Object.assign(this.settings, playSettings(m.settings));
-    else if (m?.rl === 'saves' && m.saves) {
+    // the setup's settings and slots apply unless the game changed them before its first frame
+    // (an agent's newRun): a replay changes nothing before it, so it always takes the recorded ones
+    else if (m?.rl === 'settings' && m.settings) {
+      if (JSON.stringify(playSettings(this.settings)) === this.sentAtSetup.settings) Object.assign(this.settings, playSettings(m.settings));
+    } else if (m?.rl === 'saves' && m.saves) {
+      if (JSON.stringify(this.saves) !== this.sentAtSetup.saves) return;
       this.saves = m.saves;
-      if (this.screen === 'title') this.toTitle(); // the title menu as these slots make it, its focus on the first
+      if (this.screen === 'title') this.openTitleMenu(); // as these slots make it, its focus on the first
     } else if (m?.rl === 'imported' && typeof m.slot === 'number') {
       if (m.data) viewSaved(this.saves, m.slot, m.data);
       this.saves.lastError = m.error ?? '';
       this.sound(m.data ? 'open' : 'error');
+    } else if (m?.rl === 'storage' && typeof m.error === 'string') {
+      this.saves.lastError = m.error; // a save that failed to load or to write
+      this.sound('error');
     }
+  }
+
+  /** Storage is the player's: a replay reads what it recorded and writes nothing. */
+  private get replaying(): boolean {
+    return this.ctx?.input.playing ?? false;
   }
 
   /** Push the save into every system: hero level, tree, gear, difficulty, loot. */
@@ -651,8 +671,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.ports.loot.write(this.save);
     const stats = (this.save.stats ??= emptyStats());
     stats.playtime = Math.round(this.playtime);
-    const ok = this.store.save(this.slot, this.save);
+    const ok = this.replaying || this.store.save(this.slot, this.save);
     viewSaved(this.saves, this.slot, this.save);
+    if (!ok) this.ctx.input.send({ rl: 'storage', error: this.store.lastError || 'the save could not be written' });
     this.note('save', `${why} → slot ${this.slot + 1}${ok ? '' : ' (memory only)'}`);
     return ok;
   }
@@ -692,7 +713,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
       this.lookFromSettings = false;
     }
     if (this.settings.quality !== 'auto' && e.quality !== this.settings.quality) e.setQuality(this.settings.quality);
-    storeSettings(this.settings);
+    if (!this.replaying) storeSettings(this.settings); // the player's, not a replay's
   }
 
   openMenu(menu: Menu, modal = true): void {
@@ -741,7 +762,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   deleteSlot(slot: number): void {
-    this.store.remove(slot);
+    if (!this.replaying) this.store.remove(slot);
     viewRemoved(this.saves, slot);
     this.sound('close');
   }
@@ -933,7 +954,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     cameraBasis(ctx.engine, this.right, this.forward);
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
-    const mouseAim = !this.padGlyphs() && this.pointer.known && this.pointer.idle < 6;
+    // a finger aims by itself (the nearest enemy ahead); the mouse aims where it points
+    const mouseAim = !this.padGlyphs() && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
     const hp = this.hero.actor.position;
     if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
     else i.aim.copy(this.autoAim());
@@ -1441,7 +1463,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.ctx.engine.setLook(look);
     // the default look (Reset) is not one the settings put on screen
     this.lookFromSettings = name !== 'none';
-    storeSettings(this.settings);
+    if (!this.replaying) storeSettings(this.settings); // the player's, not a replay's
   }
 
   /** Studio pages dock to the right without dimming, so the picture stays in view; H hides them. */
@@ -1509,7 +1531,8 @@ type RiftCommand =
   | { readonly rl: 'load'; readonly slot: number; readonly data: SaveData }
   | { readonly rl: 'settings'; readonly settings: Partial<Settings> }
   | { readonly rl: 'saves'; readonly saves: SavesView }
-  | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string };
+  | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string }
+  | { readonly rl: 'storage'; readonly error: string };
 
 /** `?seed=123` makes new runs reproducible (tests, bug reports, playtests). */
 function urlSeed(): number | null {

@@ -201,6 +201,9 @@ export class Input {
       'blur',
       () => {
         if (this._playing) return;
+        // pointer buttons let go as events too: a UI mid-drag hears the release it would have
+        for (const [code] of MOUSE_BUTTONS) this.button(code, false);
+        this.button(TOUCH_KEY, false);
         this.held.clear();
       },
       { signal },

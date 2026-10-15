@@ -140,14 +140,14 @@ export class Pointer {
       if (at.x === this.art.x && at.y === this.art.y) return;
       this.art.x = at.x;
       this.art.y = at.y;
-      out.push({ kind: 'pointer', type: 'move', x: at.x, y: at.y });
+      out.push({ kind: 'pointer', type: 'move', x: at.x, y: at.y, touch: input.pointer.touch });
       this.idle = 0;
     };
     for (const e of input.buttonEvents) {
       const b = BUTTONS[e.code];
       if (!b) continue;
       moveTo(e.x, e.y);
-      out.push({ kind: 'pointer', type: e.down ? 'down' : 'up', x: this.art.x, y: this.art.y, button: b[0] });
+      out.push({ kind: 'pointer', type: e.down ? 'down' : 'up', x: this.art.x, y: this.art.y, button: b[0], touch: e.code === 'Touch' });
       this.buttons = e.down ? this.buttons | b[1] : this.buttons & ~b[1];
       this.idle = 0;
     }
