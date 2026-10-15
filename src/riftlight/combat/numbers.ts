@@ -1,6 +1,7 @@
 import { type Camera, Vector3 } from 'three/webgpu';
 import type { HudColor } from '../../engine/hud/Hud';
 import type { PaletteColor } from '../../engine/palette';
+import type { Vec } from '../core/saved';
 import { DAMAGE_TYPES, type DamageType, type HitResult } from '../core/types';
 
 /** Colour of damage numbers by damage type. */
@@ -22,6 +23,12 @@ interface Floater {
   life: number;
   /** Sideways drift in art pixels per second (alternates so numbers don't stack). */
   drift: number;
+}
+
+/** The numbers on screen as data (save-states: kept, so a restored fight shows what it showed). */
+export interface DamageNumbersState {
+  readonly floaters: readonly (Omit<Floater, 'at'> & { at: Vec })[];
+  readonly flip: number;
 }
 
 /** The minimal HUD surface used (the engine's `ctx.hud`). */
@@ -99,6 +106,16 @@ export class DamageNumbers {
 
   clear(): void {
     this.floaters.length = 0;
+  }
+
+  save(): DamageNumbersState {
+    return { floaters: this.floaters.map((f) => ({ ...f, at: f.at.toArray() })), flip: this.flip };
+  }
+
+  load(s: DamageNumbersState): void {
+    this.floaters.length = 0;
+    for (const f of s.floaters) this.floaters.push({ ...f, at: new Vector3().fromArray(f.at) });
+    this.flip = s.flip;
   }
 }
 

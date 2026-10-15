@@ -2,10 +2,18 @@ import { type Mesh, Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
 import { discDecal, ringDecal } from '../visuals';
 import { areaCenter } from './slam';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import type { Vec } from '../../core/saved';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
 
 /** Seconds the hex circle stays on the ground after the curse lands. */
 export const CURSE_FLASH = 0.7;
+
+/** A hex as data: its circle's centre and clock, and whom it reached (by id, those still around). */
+interface HexState extends EffectState {
+  readonly age: number;
+  readonly center: Vec;
+  readonly outcomes: readonly { id: number; outcome: string }[];
+}
 
 class Hex extends EffectBase {
   readonly kind = 'curse';
@@ -18,18 +26,26 @@ class Hex extends EffectBase {
   private readonly shade: Mesh;
   private readonly near: Actor[] = [];
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: HexState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'curse') throw new Error('curse delivery on a non-curse skill');
     this.radius = d.radius;
-    this.center = areaCenter(c, d.radius);
+    this.center = from ? new Vector3().fromArray(from.center) : areaCenter(c, d.radius);
     const look = c.skill.def.look;
     this.shade = this.show(discDecal('ink', 24));
     this.ring = this.show(ringDecal(look.color, 0.9, 6));
     this.rune = this.show(ringDecal(look.glow?.[0] ?? look.color, 0.55, 3));
     for (const m of [this.shade, this.ring, this.rune]) m.position.set(this.center.x, this.center.y + 0.03, this.center.z);
     this.shade.position.y -= 0.01;
+    if (from) {
+      this.age = from.age;
+      for (const o of from.outcomes) {
+        const actor = c.combat.find(o.id);
+        if (actor) this.outcomes.push({ actor, outcome: o.outcome });
+      }
+      return;
+    }
     // every enemy in the circle (level props aren't cursed)
     for (const a of c.combat.actors.query(this.center, this.radius, this.near, (x) => x.alive && c.caster.hostileTo(x) && !x.tags.includes('prop'))) {
       if (c.combat.wall(this.center, a.position) !== null) continue;
@@ -37,15 +53,17 @@ class Hex extends EffectBase {
     }
     c.combat.burst(look.burst ?? 'sparkle', new Vector3(this.center.x, this.center.y + 0.4, this.center.z), { scale: this.radius / 2, colors: look.glow });
     c.combat.play(look.sound?.impact);
-    if (look.light) {
-      const p = this.center.clone();
-      c.combat.light(look.light.color, look.light.intensity, look.light.radius, () => p, CURSE_FLASH);
-    }
+    if (look.light) c.combat.flash(look.light.color, look.light.intensity, look.light.radius, this.center, CURSE_FLASH);
   }
 
   step(dt: number): boolean {
     this.age += dt;
     return this.age < CURSE_FLASH;
+  }
+
+  save(): HexState {
+    const kept = new Set(this.c.combat.known(this.outcomes.map((o) => o.actor)));
+    return { ...this.saved(), age: this.age, center: vec(this.center), outcomes: this.outcomes.filter((o) => kept.has(o.actor.id)).map((o) => ({ id: o.actor.id, outcome: o.outcome })) };
   }
 
   render(): void {
@@ -62,3 +80,4 @@ class Hex extends EffectBase {
 
 /** A hex on an area at the aim point: every enemy inside gets the skill's curse (`Combat.curse`). */
 export const curse = (c: CastContext): CombatEffect => new Hex(c);
+export const restoreCurse = (c: CastContext, s: EffectState): CombatEffect => new Hex(c, s as HexState);

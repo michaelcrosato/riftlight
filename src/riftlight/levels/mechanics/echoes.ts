@@ -77,6 +77,10 @@ export const ECHOES: LevelMechanicDef = {
       resonant: boolean;
     }
     const pending: Pending[] = [];
+    /** The ghost flickers faster as the replay approaches. */
+    const flicker = (p: Pending, t: number) => {
+      p.ghost.visible = Math.floor((p.due - t) * (p.due - t < 0.6 ? 20 : 6)) % 2 === 0;
+    };
     const resonantAt = (p: Vector3) => resonators.some((r) => Math.hypot(r.at.x - p.x, r.at.z - p.z) < RESONANCE_RADIUS);
     const off = level.events.on('skill', ({ actor, skill }) => {
       // the hero's own casts (its totems and traps cast too, but they don't echo)
@@ -96,8 +100,7 @@ export const ECHOES: LevelMechanicDef = {
         const hero = level.hero();
         for (let i = pending.length - 1; i >= 0; i--) {
           const p = pending[i]!;
-          // The ghost flickers faster as the replay approaches.
-          p.ghost.visible = Math.floor((p.due - t) * (p.due - t < 0.6 ? 20 : 6)) % 2 === 0;
+          flicker(p, t);
           if (t < p.due) continue;
           pending.splice(i, 1);
           p.ghost.removeFromParent();
@@ -105,6 +108,20 @@ export const ECHOES: LevelMechanicDef = {
           level.sound('echo');
           level.emit('echoes', 'replay', p.at);
           if (hero) level.hooks.replaySkill?.(hero, p.skill, { at: p.at, facing: null, damageScale: (p.resonant ? 1 : 0.5) * heroScale(hero, 'echo.damage'), tags: ['echo'] });
+        }
+      },
+      save() {
+        return { pending: pending.map((p) => ({ skill: p.skill, at: p.at.toArray(), due: p.due, resonant: p.resonant, shown: p.ghost.visible })) };
+      },
+      load(raw) {
+        const s = raw as { pending: { skill: string; at: [number, number, number]; due: number; resonant: boolean; shown: boolean }[] };
+        for (const p of pending) p.ghost.removeFromParent();
+        pending.length = 0;
+        for (const x of s.pending) {
+          const at = new Vector3().fromArray(x.at);
+          const ghost = makeGhost(at);
+          ghost.visible = x.shown;
+          pending.push({ skill: x.skill, at, due: x.due, ghost, resonant: x.resonant });
         }
       },
       dispose() {

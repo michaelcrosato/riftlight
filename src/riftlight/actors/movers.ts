@@ -101,6 +101,25 @@ export class GridMover implements Mover {
   visual(alpha: number, out: Vector3): Vector3 {
     return out.lerpVectors(this.prev, this.position, alpha);
   }
+
+  /** Where it stands, as data (save-states): the feet now and the step before, its fall, its speed. */
+  save(): GridMoverState {
+    return { position: this.position.toArray(), prev: this.prev.toArray(), vy: this.vy, speed: this.speed };
+  }
+
+  load(s: GridMoverState): void {
+    this.position.fromArray(s.position);
+    this.prev.fromArray(s.prev);
+    this.vy = s.vy;
+    this.speed = s.speed;
+  }
+}
+
+export interface GridMoverState {
+  readonly position: readonly [number, number, number];
+  readonly prev: readonly [number, number, number];
+  readonly vy: number;
+  readonly speed: number;
 }
 
 /** The engine's Rapier character controller (walls, steps, slopes) as a Mover. */

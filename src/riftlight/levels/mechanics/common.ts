@@ -1,7 +1,8 @@
 import { BoxGeometry, type BufferGeometry, type Material, Mesh, type Object3D, OctahedronGeometry, PlaneGeometry, Vector3 } from 'three/webgpu';
-import { StatSheet } from '../../core/mods';
+import { StatSheet, type StatSheetState } from '../../core/mods';
 import type { Rng } from '../../core/rng';
 import { SCALING } from '../../core/scaling';
+import type { Vec } from '../../core/saved';
 import type { ActorLike, Faction, Hit, HitResult, LevelRuntimeContext } from '../../core/types';
 import { type Cell, FLOOR, flood, type Layout, WALL } from '../layout/grid';
 import { pathCorridor } from '../layout/generate';
@@ -214,6 +215,13 @@ export function resistFactor(hero: ActorLike | null, stat: string): number {
   return Math.max(0, Math.min(2, 2 - heroScale(hero, stat)));
 }
 
+/** A `PropTarget` as data (`PropTarget.save`). */
+export interface PropTargetState {
+  readonly id: number;
+  readonly life: number;
+  readonly stats: StatSheetState;
+}
+
 const ZERO_RESULT: HitResult = { total: 0, byType: {}, crit: false, killed: false, ailments: [] };
 
 /**
@@ -250,6 +258,15 @@ export class PropTarget implements ActorLike {
   get alive(): boolean {
     return this.life > 0;
   }
+  /** What can change on a prop (save-states): its life and its sheet. Its kind, place and `onHit` are its mechanic's to make again. */
+  save(): PropTargetState {
+    return { id: this.id, life: this.life, stats: this.stats.save() };
+  }
+  load(s: PropTargetState): void {
+    if (s.id !== this.id) throw new Error(`PropTarget.load: state of prop ${s.id} into prop ${this.id} (the level was not built again with the same ids)`);
+    this.life = s.life;
+    this.stats.load(s.stats);
+  }
   takeHit(hit: Hit): HitResult {
     if (!this.alive) return ZERO_RESULT;
     const took = this.onHit(hit, this);
@@ -260,20 +277,48 @@ export class PropTarget implements ActorLike {
   }
 }
 
-/** Tracks per-actor velocity from position changes (momentum effects: ice, wind). */
+/**
+ * Tracks per-actor velocity from position changes (momentum effects: ice, wind). Keyed by
+ * actor id, so a save-state keeps it as data (`save` / `load`).
+ */
 export class VelocityTracker {
-  private readonly last = new WeakMap<ActorLike, { p: Vector3; v: Vector3 }>();
+  private readonly last = new Map<number, { p: Vector3; v: Vector3 }>();
   velocity(actor: ActorLike, dt: number): Vector3 {
-    let s = this.last.get(actor);
+    let s = this.last.get(actor.id);
     if (!s) {
       s = { p: actor.position.clone(), v: new Vector3() };
-      this.last.set(actor, s);
+      this.last.set(actor.id, s);
       return s.v;
     }
     if (dt > 0) s.v.subVectors(actor.position, s.p).divideScalar(dt).setY(0);
     s.p.copy(actor.position);
     return s.v;
   }
+  /** Every actor's last position and velocity, by id in the order they were first seen. */
+  save(): VelocityState {
+    return [...this.last].map(([id, s]) => [id, s.p.toArray(), s.v.toArray()]);
+  }
+  load(s: VelocityState): void {
+    this.last.clear();
+    for (const [id, p, v] of s) this.last.set(id, { p: new Vector3().fromArray(p), v: new Vector3().fromArray(v) });
+  }
+}
+export type VelocityState = readonly (readonly [number, Vec, Vec])[];
+
+/** Save-states: a Set or a Map back as saved (`[...set]`, `[...map]`), in the saved order. */
+export function refill<K>(set: Set<K>, saved: readonly K[]): void {
+  set.clear();
+  for (const k of saved) set.add(k);
+}
+export function refillMap<K, V>(map: Map<K, V>, saved: readonly (readonly [K, V])[]): void {
+  map.clear();
+  for (const [k, v] of saved) map.set(k, v);
+}
+
+/** Save-states: a saved list (braziers, lanterns, tiles) must match the one the level built again, or it is another level. */
+export function sameCount(what: string, saved: readonly unknown[], built: readonly unknown[] | number): void {
+  const n = typeof built === 'number' ? built : built.length;
+  if (saved.length !== n) throw new Error(`${what}: ${saved.length} saved, ${n} built (not the same level, or not built again the same way)`);
 }
 
 // ------------------------------------------------------------------ visuals

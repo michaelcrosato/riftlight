@@ -1,7 +1,8 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
+import type { Vec } from '../../core/saved';
 import { arcDecal, ringDecal } from '../visuals';
 import { areaCenter } from './slam';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
 
 /** A channel pays its cost per second and stops when the key is released or mana runs out. */
 export function payChannel(c: CastContext, dt: number): boolean {
@@ -11,6 +12,13 @@ export function payChannel(c: CastContext, dt: number): boolean {
   if (c.caster.mana < cost) return false;
   c.caster.mana -= cost;
   return true;
+}
+
+/** A nova as data: its centre, clock and pulses so far (a channel pulses on). */
+interface NovaState extends EffectState {
+  readonly age: number;
+  readonly tick: number;
+  readonly center: Vec;
 }
 
 class Nova extends EffectBase {
@@ -23,26 +31,30 @@ class Nova extends EffectBase {
   private tick = 0;
   private readonly look = this.c.skill.def.look;
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: NovaState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'nova') throw new Error('nova delivery on a non-nova skill');
     this.radius = d.radius;
     this.channel = c.skill.channel;
-    this.center = areaCenter(c, this.radius);
+    this.center = from ? new Vector3().fromArray(from.center) : areaCenter(c, this.radius);
     this.ring = this.show(ringDecal(this.look.glow?.[0] ?? this.look.color, this.channel ? 0.9 : 0.75));
-    if (this.channel) {
-      this.spin = this.show(arcDecal(this.look.glow?.[0] ?? 'white', 160, this.radius * 0.5, this.radius * 0.95));
-      this.pulse(); // first hit right away
-    } else {
-      this.pulse();
+    if (this.channel) this.spin = this.show(arcDecal(this.look.glow?.[0] ?? 'white', 160, this.radius * 0.5, this.radius * 0.95));
+    if (from) {
+      this.age = from.age;
+      this.tick = from.tick;
+      return;
+    }
+    this.pulse(); // the first hit right away
+    if (!this.channel) {
       c.combat.burst(this.look.burst, new Vector3(this.center.x, this.center.y + 0.3, this.center.z), { scale: Math.max(1, this.radius / 3) });
-      if (this.look.light) {
-        const p = this.center.clone();
-        c.combat.light(this.look.light.color, this.look.light.intensity, this.look.light.radius, () => p, 0.4);
-      }
+      if (this.look.light) c.combat.flash(this.look.light.color, this.look.light.intensity, this.look.light.radius, this.center, 0.4);
       if (this.look.shake) c.combat.shake.add(this.look.shake);
     }
+  }
+
+  save(): NovaState {
+    return { ...this.saved(), age: this.age, tick: this.tick, center: vec(this.center) };
   }
 
   /** One wave: hits everyone inside once (channels: a fraction of a hit per tick). */
@@ -92,3 +104,4 @@ class Nova extends EffectBase {
 
 /** Area burst around the caster (or a target); channelled novas (whirlwind) pulse while held. */
 export const nova = (c: CastContext): CombatEffect => new Nova(c);
+export const restoreNova = (c: CastContext, s: EffectState): CombatEffect => new Nova(c, s as NovaState);

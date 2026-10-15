@@ -1,11 +1,12 @@
 import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
 import type { StatSheet } from '../../core/mods';
+import type { Vec } from '../../core/saved';
 import { StatQuery } from '../stats';
 import { boxMesh, ringDecal, trapMesh } from '../visuals';
 import { segmentDistance } from './projectile';
 import { areaCenter } from './slam';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
 
 /** Seconds a thrown trap flies before it lands. */
 export const THROW_TIME = 0.25;
@@ -24,6 +25,20 @@ export function trapLimit(sheet: StatSheet): number {
   return Math.max(1, Math.round(TRAP_TUNING.baseCount + sheet.get('trap.count')));
 }
 
+/** A trap as data: where it flies from and lands, its sizes (as thrown), its stage and clock. */
+interface TrapState extends EffectState {
+  readonly age: number;
+  readonly t: number;
+  readonly state: 'flying' | 'arming' | 'armed' | 'boom';
+  readonly at: Vec;
+  readonly from: Vec;
+  readonly radius: number;
+  readonly arm: number;
+  readonly duration: number;
+  readonly sprung: boolean;
+  readonly expired: boolean;
+}
+
 export class Trap extends EffectBase {
   readonly kind = 'trap';
   readonly at: Vector3;
@@ -37,16 +52,25 @@ export class Trap extends EffectBase {
   private t = 0;
   private readonly near: Actor[] = [];
   private readonly look = this.c.skill.def.look;
-  /** Set when the trap was thrown by the Trap support: what it springs (null: its own blast). */
-  readonly release: ((at: Vector3, target: Actor) => void) | null;
+  /**
+   * Thrown by the Trap support: it springs the skill it carries (`skill.inner`) from where it
+   * lies at whoever set it off (`Combat.spring`); otherwise it is its own blast.
+   */
+  readonly release: boolean;
   /** True once it went off (tests). */
   sprung = false;
+  /** Thrown out early (too many traps). */
+  expired = false;
 
-  constructor(c: CastContext, release: ((at: Vector3, target: Actor) => void) | null = null) {
+  constructor(c: CastContext, release = false, saved?: TrapState) {
     super(c);
     this.release = release;
     const d = c.skill.delivery;
-    if (release) {
+    if (saved) {
+      this.radius = saved.radius;
+      this.arm = saved.arm;
+      this.duration = saved.duration;
+    } else if (release) {
       // the Trap support: any skill, thrown as a trap of the support's size
       const S = TRAP_TUNING.support;
       const q = new StatQuery(c.caster.stats, c.skill.mods);
@@ -59,21 +83,34 @@ export class Trap extends EffectBase {
       this.arm = d.arm;
       this.duration = d.duration;
     }
-    // the caster's oldest traps spring away when it has too many
-    const mine = c.combat.effects.filter((e): e is Trap => e instanceof Trap && e.caster === c.caster && !e.sprung && !e.expired);
-    for (let i = 0; i <= mine.length - trapLimit(c.caster.stats); i++) mine[i]!.expire();
-    // a supported skill's own target ('self' novas...) doesn't matter: traps are thrown at the aim
-    this.at = areaCenter(release ? { ...c, skill: { ...c.skill, def: { ...c.skill.def, target: 'aim' } } } : c, this.radius);
-    this.from = c.caster.position.clone().setY(c.caster.position.y + 1);
+    if (saved) {
+      this.at = new Vector3().fromArray(saved.at);
+      this.from = new Vector3().fromArray(saved.from);
+      this.age = saved.age;
+      this.t = saved.t;
+      this.state = saved.state;
+      this.sprung = saved.sprung;
+      this.expired = saved.expired;
+    } else {
+      // the caster's oldest traps spring away when it has too many
+      const mine = c.combat.effects.filter((e): e is Trap => e instanceof Trap && e.caster === c.caster && !e.sprung && !e.expired);
+      for (let i = 0; i <= mine.length - trapLimit(c.caster.stats); i++) mine[i]!.expire();
+      // a supported skill's own target ('self' novas...) doesn't matter: traps are thrown at the aim
+      this.at = areaCenter(release ? { ...c, skill: { ...c.skill, def: { ...c.skill.def, target: 'aim' } } } : c, this.radius);
+      this.from = c.caster.position.clone().setY(c.caster.position.y + 1);
+    }
     this.model = this.show(trapMesh(this.look, c.skill.tags.includes('mine')));
     this.model.position.copy(this.from);
+    if (this.state !== 'flying') this.lay();
+    if (this.state === 'boom') this.blown();
   }
-
-  /** Thrown out early (too many traps). */
-  expired = false;
 
   expire(): void {
     this.expired = true;
+  }
+
+  save(): TrapState {
+    return { ...this.saved(), age: this.age, t: this.t, state: this.state, at: vec(this.at), from: vec(this.from), radius: this.radius, arm: this.arm, duration: this.duration, sprung: this.sprung, expired: this.expired };
   }
 
   step(dt: number): boolean {
@@ -83,9 +120,7 @@ export class Trap extends EffectBase {
     if (this.state === 'flying' && this.t >= THROW_TIME) {
       this.state = 'arming';
       this.t = 0;
-      this.ring = this.show(ringDecal(this.look.color, 0.92));
-      this.ring.position.set(this.at.x, this.at.y + 0.03, this.at.z);
-      this.ring.scale.setScalar(this.radius * TRIGGER_SHARE);
+      this.lay();
     } else if (this.state === 'arming' && this.t >= this.arm) {
       this.state = 'armed';
       this.t = 0;
@@ -98,6 +133,19 @@ export class Trap extends EffectBase {
     return true;
   }
 
+  /** Landed: its trigger ring on the ground. */
+  private lay(): void {
+    this.ring = this.show(ringDecal(this.look.color, 0.92));
+    this.ring.position.set(this.at.x, this.at.y + 0.03, this.at.z);
+    this.ring.scale.setScalar(this.radius * TRIGGER_SHARE);
+  }
+
+  /** Gone off: the trap hides and its ring opens out. */
+  private blown(): void {
+    this.model.visible = false;
+    if (this.ring) this.ring.scale.setScalar(this.radius * 0.3);
+  }
+
   private boom(target: Actor): void {
     const c = this.c;
     this.state = 'boom';
@@ -105,23 +153,18 @@ export class Trap extends EffectBase {
     this.t = 0;
     if (this.release) {
       // a Trap-supported skill: it goes off from here, at whoever set it off
-      this.release(this.at, target);
+      c.combat.spring(c.caster, c.skill.inner!, this.at, target);
       c.combat.burst('spark', new Vector3(this.at.x, this.at.y + 0.3, this.at.z), { count: 8, colors: this.look.glow });
       c.combat.play('zap', { pitch: 4, volume: 0.6 });
-      this.model.visible = false;
-      if (this.ring) this.ring.scale.setScalar(this.radius * 0.3);
+      this.blown();
       return;
     }
     c.combat.area(c.caster, c.skill, this.at, this.radius, { from: this.at });
     c.combat.burst(this.look.burst ?? 'fire', new Vector3(this.at.x, this.at.y + 0.3, this.at.z), { scale: this.radius / 2 });
     c.combat.play(this.look.sound?.impact ?? 'explode');
     if (this.look.shake) c.combat.shake.add(this.look.shake);
-    if (this.look.light) {
-      const p = this.at.clone();
-      c.combat.light(this.look.light.color, this.look.light.intensity, this.look.light.radius, () => p, 0.35);
-    }
-    this.model.visible = false;
-    if (this.ring) this.ring.scale.setScalar(this.radius * 0.3);
+    if (this.look.light) c.combat.flash(this.look.light.color, this.look.light.intensity, this.look.light.radius, this.at, 0.35);
+    this.blown();
   }
 
   render(): void {
@@ -143,6 +186,15 @@ export class Trap extends EffectBase {
   }
 }
 
+/** A zone as data: where it burns (its ends and centre), its clock and ticks so far. */
+interface ZoneState extends EffectState {
+  readonly age: number;
+  readonly ticks: number;
+  readonly a: Vec;
+  readonly b: Vec;
+  readonly center: Vec;
+}
+
 /** A burning wall (or circle) on the ground that ticks damage on whoever stands in it. */
 class Zone extends EffectBase {
   readonly kind = 'zone';
@@ -157,18 +209,26 @@ class Zone extends EffectBase {
   private readonly near: Actor[] = [];
   private readonly look = this.c.skill.def.look;
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: ZoneState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'trap') throw new Error('zone delivery on a non-trap skill');
     this.duration = d.duration;
     this.period = Math.max(0.1, c.skill.def.zone!.tick);
-    this.center = areaCenter(c, d.radius);
     const wall = c.skill.def.zone!.shape === 'wall';
-    // a wall stands across the aim direction; a circle is a = b
-    const side = new Vector3(c.dir.z, 0, -c.dir.x).multiplyScalar(wall ? d.radius : 0);
-    this.a = this.center.clone().sub(side);
-    this.b = this.center.clone().add(side);
+    if (from) {
+      this.center = new Vector3().fromArray(from.center);
+      this.a = new Vector3().fromArray(from.a);
+      this.b = new Vector3().fromArray(from.b);
+      this.age = from.age;
+      this.ticks = from.ticks;
+    } else {
+      this.center = areaCenter(c, d.radius);
+      // a wall stands across the aim direction; a circle is a = b
+      const side = new Vector3(c.dir.z, 0, -c.dir.x).multiplyScalar(wall ? d.radius : 0);
+      this.a = this.center.clone().sub(side);
+      this.b = this.center.clone().add(side);
+    }
     const n = wall ? Math.max(3, Math.round(d.radius * 2.5)) : 6;
     for (let i = 0; i < n; i++) {
       const f = this.show(boxMesh(i % 2 ? this.look.color : (this.look.glow?.[0] ?? 'sand')));
@@ -178,10 +238,13 @@ class Zone extends EffectBase {
       f.userData.phase = i * 1.7;
       this.flames.push(f);
     }
-    if (this.look.light) {
-      const l = this.look.light;
-      c.combat.light(l.color, l.intensity, l.radius, () => this.center, this.duration);
-    }
+    // its light, for the time it has left (all of it, unless restored)
+    const l = this.look.light;
+    if (l && this.age < this.duration) c.combat.light(l.color, l.intensity, l.radius, () => this.center, this.duration - this.age);
+  }
+
+  save(): ZoneState {
+    return { ...this.saved(), age: this.age, ticks: this.ticks, a: vec(this.a), b: vec(this.b), center: vec(this.center) };
   }
 
   step(dt: number): boolean {
@@ -218,5 +281,8 @@ class Zone extends EffectBase {
 /** Traps and mines: thrown, armed, triggered by an enemy; `zone` skills leave a burning area instead. */
 export const trap = (c: CastContext): CombatEffect => (c.skill.def.zone ? new Zone(c) : new Trap(c));
 
-/** The Trap support: throw `c.skill` as a trap; `release` casts its inner skill when an enemy comes near. */
-export const skillTrap = (c: CastContext, release: (at: Vector3, target: Actor) => void): Trap => new Trap(c, release);
+/** The Trap support: throw `c.skill` as a trap that releases its inner skill when an enemy comes near (`Combat.spring`). */
+export const skillTrap = (c: CastContext): Trap => new Trap(c, true);
+
+export const restoreTrap = (c: CastContext, s: EffectState): CombatEffect => new Trap(c, c.skill.placement === 'trap', s as TrapState);
+export const restoreZone = (c: CastContext, s: EffectState): CombatEffect => new Zone(c, s as ZoneState);

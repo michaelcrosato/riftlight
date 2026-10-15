@@ -2,6 +2,7 @@ import type { Object3D, Vector3 } from 'three/webgpu';
 import type { LightHandle, LightRequestOptions } from '../../../engine/render/lights';
 import type { Mod } from '../../core/mods';
 import type { Rng } from '../../core/rng';
+import type { ActorIndex } from '../../core/saved';
 import type { Rank } from '../../core/scaling';
 import type { ActorLike, DamageType, Genome, HitResult, LevelRuntimeContext, MechanicDef, MechanicRuntime, Rarity } from '../../core/types';
 import type { Cell, Layout, Room, Spot } from '../layout/grid';
@@ -156,6 +157,25 @@ export interface MechanicLevel extends LevelRuntimeContext {
   buff(actor: ActorLike, source: string, mods: readonly Mod[], seconds: number): void;
 }
 
+/** A mechanic's state as plain data (save-states): numbers, strings, booleans, arrays and plain objects. */
+export type MechanicState = { readonly [key: string]: unknown };
+
+/**
+ * What a level mechanic's `install` returns: the core runtime plus its state as data
+ * (save-states, docs/GAME.md *Save-states*). Everything that changes after `install` lives
+ * where `save` reads it (never only in a closure), actors by id.
+ */
+export interface LevelMechanicRuntime extends MechanicRuntime {
+  /** Everything that changed since `install`, as plain data. */
+  save(): MechanicState;
+  /**
+   * Back to `save()`'s moment, on a runtime installed the same way (the same level built
+   * again from its spec with the same id counters). Its visuals follow: lights requested
+   * again, meshes shown, hidden or made again.
+   */
+  load(state: MechanicState, actors: ActorIndex): void;
+}
+
 /** A level mechanic: the core `MechanicDef` plus placement and how to draw it on maps. */
 export interface LevelMechanicDef extends MechanicDef {
   /** Map/legend colour (RGB hex). */
@@ -163,5 +183,5 @@ export interface LevelMechanicDef extends MechanicDef {
   /** Places elements into the layout (data only; runs headless in the CLI). */
   place(ctx: PlaceContext): void;
   /** `level` is a `MechanicLevel` when built by `buildLevel`. */
-  install(level: LevelRuntimeContext): MechanicRuntime;
+  install(level: LevelRuntimeContext): LevelMechanicRuntime;
 }

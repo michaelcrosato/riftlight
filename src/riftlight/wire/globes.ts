@@ -3,6 +3,7 @@ import type { GameContext } from '../../engine';
 import type { Actor } from '../actors/Actor';
 import type { Rank } from '../core/scaling';
 import type { Rng } from '../core/rng';
+import type { Vec } from '../core/saved';
 import { glowMaterial } from '../levels/themes/props';
 import { WIRE_TUNING } from './tuning';
 
@@ -21,6 +22,12 @@ interface Globe {
   readonly mesh: Mesh;
   readonly at: Vector3;
   age: number;
+}
+
+/** `Globes.save`: the drop stream and each globe (where, how old, its bob and blink as drawn). */
+export interface GlobesState {
+  readonly rng: number;
+  readonly globes: readonly { readonly at: Vec; readonly age: number; readonly y: number; readonly shown: boolean }[];
 }
 
 /**
@@ -54,14 +61,35 @@ export class Globes {
     for (let i = 0; i < n; i++) {
       const a = this.rng.range(0, Math.PI * 2);
       const r = n > 1 ? this.rng.range(0.6, 1.8) : 0;
-      const p = new Vector3(at.x + Math.sin(a) * r, 0.45, at.z + Math.cos(a) * r);
-      const mesh = new Mesh(sphere(), glowMaterial(0xb13e53));
-      mesh.name = 'globe';
-      mesh.castShadow = false;
-      mesh.position.copy(p);
-      this.root.add(mesh);
-      this.list.push({ mesh, at: p, age: 0 });
+      this.add(new Vector3(at.x + Math.sin(a) * r, 0.45, at.z + Math.cos(a) * r), 0);
     }
+  }
+
+  private add(at: Vector3, age: number): Globe {
+    const mesh = new Mesh(sphere(), glowMaterial(0xb13e53));
+    mesh.name = 'globe';
+    mesh.castShadow = false;
+    mesh.position.copy(at);
+    this.root.add(mesh);
+    const g = { mesh, at, age };
+    this.list.push(g);
+    return g;
+  }
+
+  /** The globes on the floor and the drop stream, as data (save-states). */
+  save(): GlobesState {
+    return { rng: this.rng.state, globes: this.list.map((g) => ({ at: g.at.toArray(), age: g.age, y: g.mesh.position.y, shown: g.mesh.visible })) };
+  }
+
+  /** Back to `save()`: the globes there now go, the saved ones lie where they were, bobbing as they were drawn. */
+  load(s: GlobesState): void {
+    this.dispose();
+    for (const x of s.globes) {
+      const g = this.add(new Vector3().fromArray(x.at), x.age);
+      g.mesh.position.y = x.y;
+      g.mesh.visible = x.shown;
+    }
+    this.rng.state = s.rng;
   }
 
   /** Fixed step: the hero picks up what it touches. */

@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { toonMaterial } from '../../../engine/render/toon';
 import type { LightHandle } from '../../../engine/render/lights';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, heroScale, perRoom, slotOrFree } from './common';
+import { asMechanicLevel, box, heroScale, perRoom, refill, sameCount, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -97,9 +97,9 @@ export const GLOOM: LevelMechanicDef = {
 
     // The hero's own light (high priority: it always gets one of the pool's lights).
     let heroLight: LightHandle | null = null;
-    let litCount = 0;
-    let check = 0;
-    const marked = new WeakSet<ActorLike>();
+    const st = { litCount: 0, check: 0 };
+    /** Actors (by id) that got the `mechanic:gloom` source. */
+    const marked = new Set<number>();
     const darkMods = {
       monster: [more('damage', 0.35, undefined, 'inDark')],
       hero: [inc('damage.taken', 0.2, undefined, 'inDark')],
@@ -112,49 +112,82 @@ export const GLOOM: LevelMechanicDef = {
       if (hero && a !== hero && (p.x - hero.position.x) ** 2 + (p.z - hero.position.z) ** 2 < (HERO_RADIUS * 0.7) ** 2) return true;
       return false;
     };
+    const lightUp = (l: Lantern) => {
+      l.lit = true;
+      l.lamp.material = lit;
+      l.light = level.light({ position: l.at, color: lightColor, intensity: theme.torch.intensity + 1, radius: LANTERN_RADIUS, flicker: 'candle', fadeIn: 0.6, name: 'lantern' });
+    };
+    const heroLightFor = (hero: ActorLike) => level.light({ follow: null, position: hero.position, color: lightColor, intensity: 5, radius: HERO_RADIUS, priority: 8, flicker: 'candle', name: 'hero-light' });
+    const bob = (t: number) => {
+      for (const w of wisps) w.orb.position.y = 1.1 + Math.sin(t * 2 + w.phase) * 0.12;
+    };
 
     return {
       update(dt) {
         const hero = level.hero();
         const t = level.time();
-        if (hero && !heroLight) heroLight = level.light({ follow: null, position: hero.position, color: lightColor, intensity: 5, radius: HERO_RADIUS, priority: 8, flicker: 'candle', name: 'hero-light' });
+        if (hero && !heroLight) heroLight = heroLightFor(hero);
         if (hero && heroLight) {
           const r = HERO_RADIUS * (hero.stats.get('light.radius') || 1); // a multiplier stat (base 1)
           heroLight.update({ radius: r });
           heroLight.position.set(hero.position.x, hero.position.y + 1.6, hero.position.z);
         }
-        for (const w of wisps) w.orb.position.y = 1.1 + Math.sin(t * 2 + w.phase) * 0.12;
+        bob(t);
         // Lanterns light up when the hero walks up to them.
         if (hero)
           for (const l of lanterns) {
             if (l.lit || (hero.position.x - l.at.x) ** 2 + (hero.position.z - l.at.z) ** 2 > 1.8 ** 2) continue;
-            l.lit = true;
-            l.lamp.material = lit;
-            l.light = level.light({ position: l.at, color: lightColor, intensity: theme.torch.intensity + 1, radius: LANTERN_RADIUS, flicker: 'candle', fadeIn: 0.6, name: 'lantern' });
-            litCount++;
+            lightUp(l);
+            st.litCount++;
             level.burst('wisp', l.at, { count: 10 });
             level.sound('lantern');
             level.emit('gloom', 'lanternLit', l.at);
             // `lantern.duration` (Lantern of the Lost, the Lamplighter suffix) stretches what lanterns give
             const last = heroScale(hero, 'lantern.duration');
-            level.buff(hero, 'mechanic:gloom:lanterns', [inc('xp.gain', 0.05 * litCount)], 600 * last);
-            if (litCount === lanterns.length) {
+            level.buff(hero, 'mechanic:gloom:lanterns', [inc('xp.gain', 0.05 * st.litCount)], 600 * last);
+            if (st.litCount === lanterns.length) {
               level.buff(hero, 'mechanic:gloom:shrine', [inc('xp.gain', 0.5), more('damage', 0.15), inc('light.radius', 0.5)], SHRINE * last);
               level.emit('gloom', 'allLit', hero.position);
               level.sound('shrine');
             }
           }
         // Dark checks are cheap but needn't run every frame.
-        check -= dt;
-        if (check > 0) return;
-        check = 0.2;
+        st.check -= dt;
+        if (st.check > 0) return;
+        st.check = 0.2;
         for (const a of level.actors()) {
-          if (!marked.has(a)) {
-            marked.add(a);
+          if (!marked.has(a.id)) {
+            marked.add(a.id);
             a.stats.set('mechanic:gloom', a.faction === 'hero' ? darkMods.hero : darkMods.monster);
           }
           a.stats.setCondition('inDark', !inLight(a));
         }
+      },
+      save() {
+        return { litCount: st.litCount, check: st.check, lit: lanterns.map((l) => l.lit), marked: [...marked], heroLight: heroLight !== null };
+      },
+      load(raw) {
+        const s = raw as { litCount: number; check: number; lit: boolean[]; marked: number[]; heroLight: boolean };
+        sameCount('gloom: lanterns', s.lit, lanterns);
+        st.litCount = s.litCount;
+        st.check = s.check;
+        lanterns.forEach((l, i) => {
+          if (s.lit[i] === l.lit) return;
+          if (s.lit[i]) return lightUp(l);
+          l.lit = false;
+          l.lamp.material = unlit;
+          l.light?.release();
+          l.light = null;
+        });
+        refill(marked, s.marked);
+        // the hero's light is asked for on the first update with a hero, then follows it
+        const hero = level.hero();
+        if (!s.heroLight && heroLight) {
+          heroLight.release();
+          heroLight = null;
+        } else if (s.heroLight && !heroLight && hero) heroLight = heroLightFor(hero);
+        if (hero && heroLight) heroLight.position.set(hero.position.x, hero.position.y + 1.6, hero.position.z);
+        bob(level.time());
       },
       dispose() {
         heroLight?.release();

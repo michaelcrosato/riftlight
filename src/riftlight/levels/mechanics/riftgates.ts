@@ -1,10 +1,9 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
-import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, heroScale, monsterScaleDamage } from './common';
+import { asMechanicLevel, box, heroScale, monsterScaleDamage, refillMap } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -105,21 +104,25 @@ export const RIFTGATES: LevelMechanicDef = {
         light: level.light({ position: [e.x, 1.3, e.z], color: accent, intensity: 4, radius: 6, flicker: 'spell', name: 'gate' }),
       });
     }
-    const cooldown = new WeakMap<ActorLike, number>();
-    let gatedUntil = -1;
+    /** Per actor (by id): when it may go through a gate again. */
+    const cooldown = new Map<number, number>();
+    const st = { gatedUntil: -1 };
     const to = new Vector3();
+    const shimmer = (t: number) => {
+      for (const g of gates.values()) g.core.scale.x = 1.35 * (0.9 + 0.1 * Math.sin(t * 5 + g.id));
+    };
     return {
       update() {
         const t = level.time();
-        for (const g of gates.values()) g.core.scale.x = 1.35 * (0.9 + 0.1 * Math.sin(t * 5 + g.id));
-        if (gatedUntil >= 0 && t >= gatedUntil) {
-          gatedUntil = -1;
+        shimmer(t);
+        if (st.gatedUntil >= 0 && t >= st.gatedUntil) {
+          st.gatedUntil = -1;
           level.hero()?.stats.setCondition('recentlyGated', false);
         }
       },
       affect(actor) {
         const t = level.time();
-        if ((cooldown.get(actor) ?? -1) > t) return;
+        if ((cooldown.get(actor.id) ?? -1) > t) return;
         for (const g of gates.values()) {
           if (Math.hypot(actor.position.x - g.at.x, actor.position.z - g.at.z) > 0.75) continue;
           const dest = gates.get(g.partner);
@@ -128,7 +131,7 @@ export const RIFTGATES: LevelMechanicDef = {
           level.burst('rift', [actor.position.x, 1, actor.position.z]);
           if (level.hooks.teleport) level.hooks.teleport(actor, to);
           else actor.position.copy(to);
-          cooldown.set(actor, t + COOLDOWN);
+          cooldown.set(actor.id, t + COOLDOWN);
           level.burst('rift', [to.x, 1, to.z]);
           level.sound('warp');
           level.emit('riftgates', 'teleport', to.clone());
@@ -137,13 +140,22 @@ export const RIFTGATES: LevelMechanicDef = {
             level.buff(actor, 'mechanic:riftgates:haste', [inc('move.speed', 0.3)], 3);
             if (bonus > 0) level.buff(actor, 'mechanic:riftgates:empower', [inc('damage', bonus)], GATED);
             actor.stats.setCondition('recentlyGated', true);
-            gatedUntil = t + GATED;
+            st.gatedUntil = t + GATED;
           } else if (actor.faction === 'monster' && bonus > 0) {
             level.damage(actor, { chaos: monsterScaleDamage(level.depth, TEAR) * bonus }, 'riftgates', { from: to });
             level.emit('riftgates', 'tear', to.clone());
           }
           return;
         }
+      },
+      save() {
+        return { gatedUntil: st.gatedUntil, cooldown: [...cooldown] };
+      },
+      load(raw) {
+        const s = raw as { gatedUntil: number; cooldown: [number, number][] };
+        st.gatedUntil = s.gatedUntil;
+        refillMap(cooldown, s.cooldown);
+        shimmer(level.time());
       },
       dispose() {
         level.hero()?.stats.setCondition('recentlyGated', false);

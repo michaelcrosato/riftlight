@@ -40,6 +40,21 @@ export interface UpdateContext {
   ground?: (x: number, z: number) => number;
 }
 
+/**
+ * What a monster's body is playing, as data (`MonsterRuntime.save`): the clip, its clock and
+ * rate, and the live layers (flinch spring, look-at, wind-up glow). A cross-fade in progress
+ * is not kept: the clip plays on alone (`ClipPlayer`'s rule).
+ */
+export interface MonsterRuntimeState {
+  readonly clip: string;
+  readonly time: number;
+  readonly rate: number;
+  readonly prevTime: number;
+  readonly flinch: readonly [x: number, v: number, dir: number];
+  readonly look: readonly [yaw: number, pitch: number];
+  readonly glow: number;
+}
+
 const _m = new Matrix4();
 const _v = new Vector3();
 const _q = new Quaternion();
@@ -142,6 +157,31 @@ export class MonsterRuntime {
   /** Wind-up glow 0..1 (shown on the head or weapon hand). */
   setGlow(t: number): void {
     this.glow = Math.min(1, Math.max(0, t));
+  }
+
+  /** The body's animation as data (save-states). */
+  save(): MonsterRuntimeState {
+    const a = this.current;
+    return { clip: this.currentName, time: a?.time ?? 0, rate: a?.timeScale ?? 1, prevTime: this.prevTime, flinch: [this.flinchX, this.flinchV, this.flinchDir], look: [this.lookYaw, this.lookPitch], glow: this.glow };
+  }
+
+  /** Back to `save()`'s clip at its clock (whatever played before stops), posed. */
+  load(s: MonsterRuntimeState): void {
+    this.mixer.stopAllAction();
+    // a body taken back from `dispose` makes its actions again (the mixer forgot them)
+    this.actions.clear();
+    if (this.glowMesh && !this.glowMesh.parent) this.glowMesh = null;
+    this.current = null;
+    this.currentName = '';
+    if (s.clip) {
+      const a = this.play(s.clip, { fade: 0, restart: true, rate: s.rate });
+      if (a) a.time = s.time;
+    }
+    this.prevTime = s.prevTime;
+    [this.flinchX, this.flinchV, this.flinchDir] = s.flinch;
+    [this.lookYaw, this.lookPitch] = s.look;
+    this.glow = s.glow;
+    this.mixer.update(0);
   }
 
   update(dt: number, ctx: UpdateContext = {}): RuntimeEvent[] {

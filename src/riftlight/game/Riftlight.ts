@@ -19,7 +19,7 @@ import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
-import type { DifficultyTuning, GameEvents, SaveData } from '../core/types';
+import type { ActorLike, DifficultyTuning, GameEvents, LevelSpec, SaveData } from '../core/types';
 import { Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
@@ -156,6 +156,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
   /** A level system already announced the clear (`levelClear`): the shell doesn't repeat it. */
   private clearEmitted = false;
   private musicKey = '';
+  /** What the level on now was built from (save-states rebuild it the same way, then load its state). */
+  private levelEntry: LevelEntry | null = null;
 
   constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
@@ -477,8 +479,10 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.ctx.scene.background = new Color(PALETTE.ink);
     const spec = this.ports.levels.spec(d, this.save.seed);
     this.rng = new Rng(this.save.seed).fork(`level:${d}:${this.save.stats?.runs ?? 0}`);
-    const level = await this.ports.levels.build(spec, { services: this.services, monsters: this.ports.monsters, loot: this.ports.loot, hero: this.hero });
+    const entry: LevelEntry = { spec, rng: this.rng.state, actors: actorIds(), props: PropTarget.nextId(), plan: this.ports.levels.signature?.(spec) ?? null };
+    const level = await this.ports.levels.build(spec, this.levelDeps());
     this.level = level;
+    this.levelEntry = entry;
     this.ctx.scene.add(level.root);
     this.hero.object.visible = true;
     this.hero.enter(level, level.start, Math.PI);
@@ -503,7 +507,12 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.note('flow', `level ${d} ${spec.name}`);
   }
 
+  private levelDeps() {
+    return { services: this.services, monsters: this.ports.monsters, loot: this.ports.loot, hero: this.hero };
+  }
+
   private leaveLevel(): void {
+    this.levelEntry = null;
     if (!this.level) return;
     this.ports.loot.clearGround();
     this.level.dispose();
@@ -1532,14 +1541,17 @@ export class Riftlight implements Game, MenuHost, LookHost {
    * The game as data between two frames (`engine.snapshot()`, docs/GAME.md *Save-states*): the
    * save and the slots it knows, the run's random stream, the id counters, the hero, the loot,
    * the town and everything the shell keeps (timers, the HUD's banners and numbers, the camera's
-   * lead, the pointer). In town, with no panel open and nobody talked to; a level says it is not
-   * kept yet. The settings kept are those play reads (`playSettings`); the rest are the player's.
+   * lead, the pointer) and, in a level, what the level was built from and its own state
+   * (`LevelHandle.saveState`). In town or a level, mid-fight included, with no panel open and
+   * nobody talked to. The settings kept are those play reads (`playSettings`); the rest are the player's.
    */
   snapshot(): RiftSnapshot {
     const refuse = (why: string): never => {
       throw new Error(`Riftlight.snapshot: ${why}`);
     };
-    if (this.screen !== 'town') refuse(this.screen === 'level' ? 'a level is not kept in a snapshot yet (take it in town)' : `the ${this.screen} screen is not a moment of play (take it in town)`);
+    if (this.screen !== 'town' && this.screen !== 'level') refuse(`the ${this.screen} screen is not a moment of play (take it in town or in a level)`);
+    const level = this.screen === 'level' ? this.level : null;
+    if (this.screen === 'level' && (!level?.saveState || !level.loadState || !this.levelEntry)) refuse('this level port keeps no state (saveState / loadState)');
     if (this.showcase.active) refuse('the showcase is open');
     if (this.layer.top) refuse(`a panel is open (${this.layer.top.panel.id}): close it first`);
     if (this.talkingTo) refuse('the hero is talking to someone');
@@ -1562,6 +1574,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
       hero: hero.saveState!(),
       loot: loot.saveState!(),
       town: this.town.saveState(),
+      level: level ? { entry: this.levelEntry, state: level.saveState!() } : null,
       shell: {
         time: this.time,
         playtime: this.playtime,
@@ -1577,6 +1590,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
         music: this.music,
         session: this.session,
         interactQueued: this.interactQueued,
+        lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
         hurt: this.hurt,
         goldShown: this.goldShown,
@@ -1603,20 +1617,24 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /**
    * Back to `snapshot()`'s moment, from wherever the game is (a level is left, panels close).
-   * Storage is not touched: the restored run is saved the next time the game saves.
+   * A level is built again from what it was built from (`LevelEntry`: the same layout, props
+   * and monsters with the same ids), then its state is loaded on top. Storage is not touched:
+   * the restored run is saved the next time the game saves.
    */
-  restore(_ctx: GameContext, state: unknown): void {
+  async restore(_ctx: GameContext, state: unknown): Promise<void> {
     const s = state as RiftSnapshot;
-    if (s?.format !== 1 || s.screen !== 'town') throw new Error('Riftlight.restore: not a Riftlight snapshot this game can restore');
+    if (s?.format !== 1 || (s.screen !== 'town' && s.screen !== 'level') || (s.screen === 'level' && !s.level)) throw new Error('Riftlight.restore: not a Riftlight snapshot this game can restore');
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
     // what can be checked before anything changes (a snapshot that doesn't fit leaves the game as it was)
     if (!s.town || !s.hero || !s.loot || !s.save?.hero) throw new Error('Riftlight.restore: the snapshot is missing the town, the hero, the loot or the save');
-    const misfit = this.town.fits(s.town) ?? hero.fits?.(s.hero) ?? null;
+    const plan = s.level?.entry.plan ?? null;
+    const now = s.level && plan !== null ? (this.ports.levels.signature?.(s.level.entry.spec) ?? plan) : plan;
+    const misfit = this.town.fits(s.town) ?? hero.fits?.(s.hero) ?? (now !== plan ? `the level would not be built the same (plan ${now}, saved ${plan})` : null);
     if (misfit) throw new Error(`Riftlight.restore: ${misfit}`);
     try {
-      this.restoreNow(s);
+      await this.restoreNow(s);
     } catch (e) {
       // never half a moment: a restore that still fails part way leaves the game at the title
       this.toTitle();
@@ -1624,31 +1642,52 @@ export class Riftlight implements Game, MenuHost, LookHost {
     }
   }
 
-  private restoreNow(s: RiftSnapshot): void {
+  private async restoreNow(s: RiftSnapshot): Promise<void> {
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
     // leave whatever is on now, quietly (no autosave, no banners, no sounds)
-    this.layer.closeAll();
-    this.endTalk();
-    if (this.showcase.active) this.showcase.close({ instant: true });
+    await this.beforeRestore(); // done already through engine.restore(); here for a direct call
     this.leaveLevel();
-    this.screen = 'town';
-    this.town.activate();
-    this.hero.object.visible = true;
     // the run as data
     this.slot = s.slot;
     this.save = s.save;
     this.saves = s.saves;
     Object.assign(this.settings, s.settings);
     Object.assign(this.dev, s.dev);
+    hero.object.visible = true;
+    // every actor by id, for what points at one (looked up once they all exist again)
+    const actors = (id: number | null): ActorLike | null => (id === null ? null : id === hero.actor.id ? hero.actor : (this.level?.actorById?.(id) ?? null));
+    if (s.level) {
+      const e = s.level.entry;
+      this.town.deactivate();
+      this.town.loadState(s.town);
+      this.screen = 'loading';
+      this.ctx.scene.background = new Color(PALETTE.ink);
+      this.rng.state = e.rng;
+      setActorIds(e.actors);
+      PropTarget.setIds(e.props);
+      const level = await this.ports.levels.build(e.spec, this.levelDeps());
+      if (!level.loadState) throw new Error('Riftlight.restore: this level port keeps no state');
+      this.level = level;
+      this.levelEntry = e;
+      this.ctx.scene.add(level.root);
+      hero.enter(level, level.start, Math.PI);
+      this.screen = 'level';
+      // the level's actors come back first (with their ids), the hero through them, the level's combat last
+      level.loadState(s.level.state, actors, (index) => hero.loadState!(s.hero, index));
+      loot.loadState(s.loot, level);
+    } else {
+      this.screen = 'town';
+      this.town.activate();
+      this.town.loadState(s.town); // active: its sky and lights as they were
+      loot.loadState(s.loot, this.town);
+      hero.enter(this.town, this.town.spawn, 0); // the town's stage (where and how it stands comes next)
+      hero.loadState(s.hero, actors);
+    }
     this.rng.state = s.rng;
     setActorIds(s.ids.actors);
     PropTarget.setIds(s.ids.props);
-    loot.loadState(s.loot);
-    hero.enter(this.town, this.town.spawn, 0); // the town's stage (where and how it stands comes next)
-    hero.loadState(s.hero, (id) => (id === hero.actor.id ? hero.actor : null));
-    this.town.loadState(s.town);
     // the shell
     const t = s.shell;
     this.time = t.time;
@@ -1682,7 +1721,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.recap.load(s.recap);
     this.pointer.load(s.pointer);
     this.menuInput.load(s.menuInput);
-    this.lootFocus = null;
+    this.lootFocus = t.lootFocus === null ? null : (this.ports.loot.ground().find((l) => l.id === t.lootFocus) ?? null);
     if (t.music) this.playMusic(t.music);
     else {
       this.ctx.audio.playMusic(null);
@@ -1692,10 +1731,20 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 }
 
+/** What a level was built from: the spec, the run's random stream and the id counters as `build` was called. */
+interface LevelEntry {
+  readonly spec: LevelSpec;
+  readonly rng: number;
+  readonly actors: number;
+  readonly props: number;
+  /** What its plan was (`LevelPort.signature`): a restore checks it before leaving the level on now. */
+  readonly plan: string | null;
+}
+
 /** `Riftlight.snapshot`: plain JSON. */
 interface RiftSnapshot {
   readonly format: 1;
-  readonly screen: 'town';
+  readonly screen: 'town' | 'level';
   readonly slot: number;
   readonly save: SaveData;
   readonly saves: SavesView;
@@ -1706,6 +1755,7 @@ interface RiftSnapshot {
   readonly hero: unknown;
   readonly loot: unknown;
   readonly town: TownState;
+  readonly level: { readonly entry: LevelEntry; readonly state: unknown } | null;
   readonly shell: {
     readonly time: number;
     readonly playtime: number;
@@ -1721,6 +1771,7 @@ interface RiftSnapshot {
     readonly music: SongName | null;
     readonly session: Riftlight['session'];
     readonly interactQueued: boolean;
+    readonly lootFocus: number | null;
     readonly levelUpAge: number;
     readonly hurt: number;
     readonly goldShown: number;

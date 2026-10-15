@@ -5,7 +5,7 @@ import type { LightHandle } from '../../../engine/render/lights';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, cellTiles, heroHas, mesh, OctaGeo, resistFactor } from './common';
+import { asMechanicLevel, cellTiles, heroHas, mesh, OctaGeo, resistFactor, sameCount } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -93,30 +93,33 @@ export const GRAVEWELL: LevelMechanicDef = {
     }
     const pulse = (w: Well, t: number) => (t + w.phase) % PERIOD < PULSE;
     // Kills inside a well: gravity shards.
-    let shards = 0;
+    const st = { shards: 0 };
     const inWell = (a: ActorLike) => wells.some((w) => Math.hypot(a.position.x - w.at.x, a.position.z - w.at.z) < w.radius);
     const off = level.events.on('kill', ({ target }) => {
       if (target.faction !== 'monster' || !inWell(target)) return;
-      shards = Math.min(5, shards + 1);
+      st.shards = Math.min(5, st.shards + 1);
       const hero = level.hero();
-      if (hero) level.buff(hero, 'mechanic:gravewell:shards', [inc('area', 0.08 * shards), inc('xp.gain', 0.05 * shards)], 15);
+      if (hero) level.buff(hero, 'mechanic:gravewell:shards', [inc('area', 0.08 * st.shards), inc('xp.gain', 0.05 * st.shards)], 15);
       level.emit('gravewell', 'shard', target.position);
     });
     const pull = new Vector3();
+    /** Rings contract toward the core while pulling; the core bobs and spins. */
+    const pose = (w: Well, t: number, on: boolean) => {
+      const local = ((t + w.phase) % PERIOD) / (on ? PULSE : PERIOD);
+      w.rings.children.forEach((r, k) => {
+        const s = w.radius * (1 - ((local + k / 3) % 1) * (on ? 0.85 : 0.2));
+        r.scale.setScalar(Math.max(0.3, s));
+      });
+      w.core.position.y = 1.2 + Math.sin(t * 2) * 0.15;
+      w.core.rotation.y = t * (on ? 4 : 1);
+    };
     return {
       update() {
         const t = level.time();
         const hero = level.hero();
         for (const w of wells) {
           const on = pulse(w, t);
-          // Rings contract toward the core while pulling.
-          const local = ((t + w.phase) % PERIOD) / (on ? PULSE : PERIOD);
-          w.rings.children.forEach((r, k) => {
-            const s = w.radius * (1 - ((local + k / 3) % 1) * (on ? 0.85 : 0.2));
-            r.scale.setScalar(Math.max(0.3, s));
-          });
-          w.core.position.y = 1.2 + Math.sin(t * 2) * 0.15;
-          w.core.rotation.y = t * (on ? 4 : 1);
+          pose(w, t, on);
           if (on && !w.pulsing) {
             w.light?.update({ intensity: 6 });
             if (hero && hero.position.distanceTo(w.at) < 14) level.sound('well-pulse');
@@ -140,6 +143,20 @@ export const GRAVEWELL: LevelMechanicDef = {
           const strength = (pulse(w, t) ? 14 : 4) * (1 - d / (w.radius + 0.4)) * (hero ? 0.45 * resist : 1);
           actor.push(pull.set(dx / d, 0, dz / d).multiplyScalar(strength * dt));
         }
+      },
+      save() {
+        return { shards: st.shards, pulsing: wells.map((w) => w.pulsing) };
+      },
+      load(raw) {
+        const s = raw as { shards: number; pulsing: boolean[] };
+        sameCount('gravewell: wells', s.pulsing, wells);
+        st.shards = s.shards;
+        const t = level.time();
+        wells.forEach((w, i) => {
+          w.pulsing = s.pulsing[i]!;
+          w.light?.update({ intensity: w.pulsing ? 6 : 3 });
+          pose(w, t, w.pulsing);
+        });
       },
       dispose() {
         off();

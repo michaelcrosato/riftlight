@@ -80,5 +80,5 @@ export function generateBoss(rng: Rng, depth: number, mechanics: readonly string
 
 export { BOSS_ATTACKS, MECHANIC_THEMES, attackSkill, type BossAttackDef, type BossPattern } from './attacks';
 export { bossName } from './names';
-export { BossBrain } from './brain';
+export { BossBrain, type BossBrainState } from './brain';
 export type { BossDef, BossPhase } from './types';

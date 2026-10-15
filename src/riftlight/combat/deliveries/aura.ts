@@ -3,11 +3,17 @@ import type { Actor } from '../../actors/Actor';
 import type { Mod } from '../../core/mods';
 import { StatQuery } from '../stats';
 import { ringDecal } from '../visuals';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState } from './types';
 
 /** How often an aura refreshes its buff on allies in range, and how long each refresh lasts. */
 export const AURA_PULSE = 0.25;
 export const AURA_LINGER = 0.6;
+
+/** An aura as data: its clock and the next refresh (its reservation is on the caster). */
+interface AuraState extends EffectState {
+  readonly age: number;
+  readonly next: number;
+}
 
 class Aura extends EffectBase {
   readonly kind = 'aura';
@@ -16,13 +22,20 @@ class Aura extends EffectBase {
   private next = 0;
   private readonly near: Actor[] = [];
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: AuraState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'aura') throw new Error('aura delivery on a non-aura skill');
     this.radius = d.radius;
     this.ring = this.show(ringDecal(c.skill.def.look.color, 0.95, 40));
-    c.combat.burst(c.skill.def.look.burst, new Vector3(c.caster.position.x, c.caster.position.y + 0.5, c.caster.position.z));
+    if (from) {
+      this.age = from.age;
+      this.next = from.next;
+    } else c.combat.burst(c.skill.def.look.burst, new Vector3(c.caster.position.x, c.caster.position.y + 0.5, c.caster.position.z));
+  }
+
+  save(): AuraState {
+    return { ...this.saved(), age: this.age, next: this.next };
   }
 
   /** Buff mods scaled by the caster's `aura.effect` (inc/more; 1 = as written). */
@@ -70,6 +83,8 @@ class Aura extends EffectBase {
  * (`skill.reservation` of the caster's mana, or life with Blood Magic) instead of a cost;
  * it won't turn on when that doesn't fit.
  */
+export const restoreAura = (c: CastContext, s: EffectState): CombatEffect => new Aura(c, s as AuraState);
+
 export const aura = (c: CastContext): CombatEffect | null => {
   if (c.combat.stop(c.caster, c.skill.id) > 0) {
     c.caster.removeBuff(`aura:${c.skill.id}`);

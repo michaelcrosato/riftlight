@@ -1,8 +1,21 @@
-import { MonsterBrain, type BrainOptions } from '../brains/brain';
+import type { ActorIndex } from '../../core/saved';
+import { MonsterBrain, type BrainOptions, type MonsterBrainState } from '../brains/brain';
 import { MONSTER_SKILLS } from '../brains/skills';
 import type { BrainWorld } from '../brains/types';
 import { attackSkill, BOSS_ATTACKS } from './attacks';
 import type { BossDef, BossPhase } from './types';
+
+/** A boss brain as data (`BossBrain.save`): the archetype brain plus where its script is. */
+export interface BossBrainState extends MonsterBrainState {
+  readonly boss: {
+    readonly phase: number;
+    readonly enraged: boolean;
+    readonly combatTime: number;
+    readonly nextSignature: number;
+    readonly last: string;
+    readonly log: readonly { readonly time: number; readonly attack: string; readonly phase: number }[];
+  };
+}
 
 /**
  * Runs a boss script on top of the normal brain: tracks the phase from life thresholds
@@ -25,6 +38,24 @@ export class BossBrain extends MonsterBrain {
     o: Omit<BrainOptions, 'archetype'> & { archetype?: string },
   ) {
     super({ ...o, archetype: o.archetype ?? boss.genome.archetype, elite: o.elite ?? boss.genome.elite });
+  }
+
+  /** The brain and its script as data (save-states). */
+  override save(): BossBrainState {
+    return { ...super.save(), boss: { phase: this.phase, enraged: this.enraged, combatTime: this.combatTime, nextSignature: this.nextSignature, last: this.last, log: this.log.map((l) => ({ ...l })) } };
+  }
+
+  override load(s: MonsterBrainState, actors: ActorIndex): void {
+    const b = (s as Partial<BossBrainState>).boss;
+    if (!b) throw new Error('BossBrain.load: the state of a brain without a boss script');
+    super.load(s, actors);
+    this.phase = b.phase;
+    this.enraged = b.enraged;
+    this.combatTime = b.combatTime;
+    this.nextSignature = b.nextSignature;
+    this.last = b.last;
+    this.log.length = 0;
+    for (const l of b.log) this.log.push({ ...l });
   }
 
   get currentPhase(): BossPhase {

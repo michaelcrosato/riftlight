@@ -2,23 +2,26 @@ import { type Camera, Group, type Object3D, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor } from '../../engine/palette';
 import { more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
-import type { Effect, GameEventBus, HitResult } from '../core/types';
-import { Actor } from '../actors/Actor';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
+import type { ActorLike, Effect, Faction, GameEventBus, HitResult } from '../core/types';
+import { Actor, type ActorState, actorIds, setActorIds } from '../actors/Actor';
 import type { ActorManager } from '../actors/ActorManager';
+import { GridMover, type GridMoverState } from '../actors/movers';
 import { levelMods } from '../skills/build';
+import { loadSkill, type SavedSkill, saveSkill } from '../skills/saved';
 import type { ResolvedSkill } from '../skills/types';
 import { CHARGE_TYPES, chargeChance } from './charges';
 import { curseDuration, curseLimit, scaleCurse, type CurseOutcome } from './curses';
 import { rollHit, type DamageSpec } from './damage';
-import { DELIVERIES } from './deliveries';
+import { DELIVERIES, RESTORE } from './deliveries';
 import { skillTrap } from './deliveries/trap';
-import { placeTotem } from './totems';
-import type { CastContext, CastOptions, CombatEffect } from './deliveries/types';
+import { placeTotem, totemActor } from './totems';
+import { type CastContext, type CastOptions, type CastWiring, type CombatEffect, type EffectState, type SavedCastOptions, saveCastOptions, v3 } from './deliveries/types';
 import { LightService } from './lights';
-import { placeholderMinion } from './minions';
-import { DamageNumbers, type NumberHud } from './numbers';
+import { minionMods, placeholderMinion } from './minions';
+import { DamageNumbers, type DamageNumbersState, type NumberHud } from './numbers';
 import { registerCombatFx } from './sfx';
-import { CameraShake } from '../../engine/shake';
+import { CameraShake, type ShakeState } from '../../engine/shake';
 import { StatQuery } from './stats';
 
 /** Sounds: the engine's AudioManager (or anything with `play`). */
@@ -46,8 +49,82 @@ export interface SummonRequest {
   readonly index: number;
   readonly combat: Combat;
 }
-/** Builds a minion actor (the monster system registers genomes; the default is a placeholder). */
+/**
+ * Builds a minion actor (the monster system registers genomes; the default is a placeholder).
+ * A restore calls it again with the request it got (`Combat.make`) and the actor id set, so it
+ * must build exactly one actor; its brain keeps its state with `save()` / `load(s)`.
+ */
 export type SummonFactory = (req: SummonRequest) => Actor | null;
+
+/** An actor combat made (a minion, a totem), as the arguments that make it again. */
+export type MadeArgs =
+  | { readonly kind: 'minion'; readonly genome: string; readonly owner: ActorRef; readonly at: Vec; readonly skill: SavedSkill; readonly index: number; readonly time: number }
+  | { readonly kind: 'totem'; readonly owner: ActorRef; readonly skill: SavedSkill; readonly at: Vec; readonly time: number };
+
+/** A brain whose state a save-state keeps (minions', totems'). */
+interface SavedBrain {
+  save(): unknown;
+  load(s: unknown): void;
+}
+
+/**
+ * Combat's own actors as data (save-states), in the order they were made (by id): the minions
+ * and totems in the world (how to make them again, then their state), the trap stand-ins a
+ * running effect or a lingering ailment still points at, and "ghosts": actors gone from the
+ * world that something combat keeps still points at (a projectile whose caster died and
+ * crumbled, a bleed from a minion that is gone), made again bare so those references hold.
+ */
+export type MadeActorState =
+  | (MadeArgs & { readonly id: number; readonly actor: ActorState; readonly mover: GridMoverState; readonly brain: unknown })
+  | { readonly kind: 'proxy'; readonly id: number; readonly owner: ActorRef; readonly at: Vec; readonly facing: number; readonly life: number; readonly hitStop: number; readonly deadFor: number; readonly rng: number; readonly counters: Actor['counters'] }
+  | {
+      readonly kind: 'ghost';
+      readonly id: number;
+      readonly faction: Faction;
+      readonly name: string;
+      readonly radius: number;
+      readonly order: number;
+      readonly tags: readonly string[];
+      readonly death: 'ragdoll' | 'anim';
+      readonly actor: ActorState;
+      readonly mover: GridMoverState | null;
+    };
+
+/** A repeat (multistrike, spell echo) waiting for its moment, as data. */
+interface QueuedState {
+  readonly at: number;
+  readonly op: 'repeat';
+  readonly caster: ActorRef;
+  readonly skill: SavedSkill;
+  readonly aim: Vec;
+  readonly opts: SavedCastOptions;
+}
+
+/** A short light at a fixed point (an explosion, a blink), kept so a restore lights it again. */
+interface Flash {
+  readonly color: PaletteColor | number;
+  readonly intensity: number;
+  readonly radius: number;
+  readonly at: Vector3;
+  readonly until: number;
+}
+
+/**
+ * Combat as data (`Combat.save`): the clock, counters and random stream, the shake and the
+ * numbers on screen, its own actors, every running effect in order, the queued repeats in
+ * order and the flashes still lit.
+ */
+export interface CombatState {
+  readonly time: number;
+  readonly stats: Combat['stats'];
+  readonly rng: number;
+  readonly shake: ShakeState;
+  readonly numbers: DamageNumbersState;
+  readonly actors: readonly MadeActorState[];
+  readonly effects: readonly EffectState[];
+  readonly queue: readonly QueuedState[];
+  readonly flashes: readonly (Omit<Flash, 'at'> & { at: Vec })[];
+}
 
 export interface CombatOptions {
   actors: ActorManager;
@@ -106,25 +183,20 @@ export class Combat {
   readonly stats = { casts: 0, hits: 0, kills: 0, damage: 0 };
   private readonly heroOf: () => Actor | null;
   private readonly off: (() => void)[] = [];
-  private readonly queue: { at: number; run: () => void }[] = [];
-
-  /** Its clock, counters and random stream as data (save-states). Effects in flight and queued casts are not yet: refused, saying so. */
-  save(): { time: number; stats: Combat['stats']; rng: number } {
-    if (this.effects.length || this.queue.length) throw new Error(`Combat.save: not yet with ${this.effects.length} effect(s) in flight and ${this.queue.length} cast(s) queued`);
-    return { time: this.time, stats: { ...this.stats }, rng: this.rng.state };
-  }
-
-  /** Back to `save()`: what is in flight now (effects, queued casts, their lights and numbers) goes. */
-  load(s: ReturnType<Combat['save']>): void {
-    for (const e of this.effects) e.dispose();
-    this.effects.length = 0;
-    this.queue.length = 0;
-    this.lights.clear();
-    this.numbers.clear();
-    this.time = s.time;
-    Object.assign(this.stats, s.stats);
-    this.rng.state = s.rng;
-  }
+  /** Repeats (multistrike, spell echo) waiting for their moment: data, run by `fixedUpdate`. */
+  private readonly queue: { at: number; op: 'repeat'; caster: Actor; skill: ResolvedSkill; aim: Vector3; opts: CastOptions }[] = [];
+  /** Minions and totems combat made, while they are in the world, with what makes them again. */
+  private readonly made = new Map<Actor, MadeArgs>();
+  /** Trap stand-ins (not in the world) with their owner and spot. */
+  private standIns: { actor: Actor; owner: Actor; at: Vector3 }[] = [];
+  /** Actors gone from the world that a restore made again bare, because combat still points at them. */
+  private readonly ghosts = new Map<number, Actor>();
+  /** Short lights at fixed points still lit. */
+  private flashes: Flash[] = [];
+  /** How each caster's cast closures are made again (`wire`). */
+  private readonly wirings = new Map<Actor, CastWiring>();
+  /** The state `make` made the actors of (`load` makes them first when it was not called). */
+  private madeFor: CombatState | null = null;
 
   constructor(o: CombatOptions) {
     this.actors = o.actors;
@@ -162,6 +234,7 @@ export class Combat {
     const previous = this.actors.onRemove;
     this.actors.onRemove = (a) => {
       previous?.(a);
+      this.made.delete(a);
       if (a.death === 'ragdoll' && a.deadFor >= 0) this.burst('smoke', a.body.position);
     };
   }
@@ -188,33 +261,42 @@ export class Combat {
     if (effect) this.effects.push(effect);
     if (skill.repeats > 1 && !skill.channel && !opts.repeat) {
       const gap = Math.max(0.08, Math.min(0.2, skill.castTime / skill.repeats));
-      for (let i = 1; i < skill.repeats; i++) {
-        this.later(gap * i, () => {
-          if (!caster.alive || caster.stopped) return;
-          // re-aim at whoever is closest in front (multistrike keeps hitting the pack)
-          const near = this.actors.nearest(caster.position, 6, (a) => a.alive && caster.hostileTo(a));
-          const again = near ? near.position.clone() : aim;
-          this.cast(caster, skill, again, { ...opts, repeat: i, held: undefined });
-        });
-      }
+      for (let i = 1; i < skill.repeats; i++) this.queue.push({ at: this.time + gap * i, op: 'repeat', caster, skill, aim: aim.clone(), opts: { ...opts, repeat: i, held: undefined } });
     }
     return effect;
+  }
+
+  /** A queued repeat comes due: cast again, re-aimed at whoever is closest in front (multistrike keeps hitting the pack). */
+  private run(q: Combat['queue'][number]): void {
+    const caster = q.caster;
+    if (!caster.alive || caster.stopped) return;
+    const near = this.actors.nearest(caster.position, 6, (a) => a.alive && caster.hostileTo(a));
+    this.cast(caster, q.skill, near ? near.position.clone() : q.aim, q.opts);
   }
 
   /** Plant a totem or throw a trap for a placement skill (see `ResolvedSkill.placement`). */
   private place(caster: Actor, skill: ResolvedSkill, aim: Vector3, opts: CastOptions): CombatEffect {
     const ctx = this.context(caster, skill, aim, opts);
-    const inner = skill.inner!;
-    const effect =
-      skill.placement === 'totem'
-        ? placeTotem(ctx)
-        : skillTrap(ctx, (at, target) => {
-            const proxy = proxyOf(caster, at);
-            proxy.facing = Math.atan2(target.position.x - at.x, target.position.z - at.z);
-            this.cast(proxy, inner, target.position.clone());
-          });
+    const effect = skill.placement === 'totem' ? placeTotem(ctx) : skillTrap(ctx);
     this.effects.push(effect);
     return effect;
+  }
+
+  /**
+   * A trap thrown by the Trap support goes off: a stand-in caster at `at` with its owner's live
+   * sheet (`proxyOf`) casts the skill it carries at whoever set it off.
+   */
+  spring(owner: Actor, skill: ResolvedSkill, at: Vector3, target: Actor): void {
+    const proxy = proxyOf(owner, at);
+    proxy.facing = Math.atan2(target.position.x - at.x, target.position.z - at.z);
+    this.prune();
+    this.standIns.push({ actor: proxy, owner, at: at.clone() });
+    this.cast(proxy, skill, target.position.clone());
+  }
+
+  /** A minion or totem combat made joins its list (with what makes it again on a restore). */
+  adopt(actor: Actor, args: MadeArgs): void {
+    this.made.set(actor, args);
   }
 
   /** Who holds the charges a caster earns: a trap's stand-in and a totem earn them for their owner. */
@@ -303,11 +385,6 @@ export class Combat {
     for (const e of skill.effects as readonly Effect[]) if (e.kind === 'buff' && e.target === 'enemies' && target.alive) target.addBuff(`${skill.id}:debuff`, e.mods, e.duration);
   }
 
-  /** Run `fn` after `seconds` of game time (fixed steps). */
-  later(seconds: number, fn: () => void): void {
-    this.queue.push({ at: this.time + seconds, run: fn });
-  }
-
   // ------------------------------------------------------------------ hits
 
   /** One hit from `caster` with `skill` on `target`: rolls, mitigates, emits, juices. */
@@ -387,10 +464,20 @@ export class Combat {
     if (preset) this.particles?.burst(preset, at, options);
   }
 
-  /** Ask for a dynamic light (the level's pool, or a fallback PointLight). */
+  /**
+   * Ask for a dynamic light (the level's pool, or a fallback PointLight). Its closures are not
+   * kept by a save-state: an effect that asks for one asks again when it is restored.
+   */
   light(color: PaletteColor | number, intensity: number, radius: number, position: () => Vector3, duration: number, alive?: () => boolean): void {
     const hex = typeof color === 'number' ? color : PALETTE[color];
     this.lights.request({ color: hex, intensity, radius, position, duration, alive });
+  }
+
+  /** A short light at a fixed point for `duration` seconds (explosions, blinks); a restore lights it again for what is left. */
+  flash(color: PaletteColor | number, intensity: number, radius: number, at: Vector3, duration: number): void {
+    const f: Flash = { color, intensity, radius, at: at.clone(), until: this.time + duration };
+    this.flashes.push(f);
+    this.light(color, intensity, radius, () => f.at, duration);
   }
 
   // ------------------------------------------------------------------ loop
@@ -402,9 +489,10 @@ export class Combat {
       const q = this.queue[i]!;
       if (this.time >= q.at) {
         this.queue.splice(i, 1);
-        q.run();
+        this.run(q);
       }
     }
+    if (this.flashes.length) this.flashes = this.flashes.filter((f) => f.until > this.time);
     for (let i = this.effects.length - 1; i >= 0; i--) {
       const e = this.effects[i]!;
       if (!e.step(dt)) {
@@ -451,9 +539,252 @@ export class Combat {
     this.queue.length = 0;
     this.lights.clear();
     this.numbers.clear();
+    this.made.clear();
+    this.standIns = [];
+    this.ghosts.clear();
+    this.flashes = [];
     for (const off of this.off) off();
     this.off.length = 0;
     this.root.removeFromParent();
+  }
+
+  // ------------------------------------------------------------------ save-states
+
+  /**
+   * Make `caster`'s cast closures again from data on a restore (`held`, `aimNow`: wiring, not
+   * state). The hero controller registers its own; a cast that had them and whose caster has
+   * none can't be restored (refused, saying so).
+   */
+  wire(caster: Actor, wiring: CastWiring): void {
+    this.wirings.set(caster, wiring);
+  }
+
+  /**
+   * An actor by id: in the world, or one of combat's own outside it (trap stand-ins, ghosts). A
+   * ghost comes first: a restore makes one for an actor that was gone at the saved moment, while
+   * the rebuilt stage may still hold its namesake until the world loads.
+   */
+  find(id: ActorRef): Actor | null {
+    if (id === null) return null;
+    return this.ghosts.get(id) ?? this.standIns.find((p) => p.actor.id === id)?.actor ?? this.actors.get(id) ?? null;
+  }
+
+  /** `find` as an `ActorIndex`: what a restore loads every actor's references through. */
+  index(): ActorIndex {
+    return (id) => this.find(id);
+  }
+
+  /** The ids of those in `list` that are in the world (what an effect's lists keep: the rest is dead and stays so). */
+  known(list: readonly Actor[]): number[] {
+    return list.filter((a) => this.actors.actors.includes(a)).map((a) => a.id);
+  }
+
+  /**
+   * Every actor what combat keeps points at, and what those point at in turn: casters of effects
+   * and queued repeats, owners, and the sources of ailments and curses on the actors in the world.
+   */
+  private refs(): Set<Actor> {
+    const out = new Set<Actor>();
+    const outside = this.outsideRefs.flatMap((f) => [...f()]);
+    const todo: Actor[] = [];
+    const add = (a: ActorLike | null | undefined) => {
+      if (a instanceof Actor && !out.has(a)) {
+        out.add(a);
+        todo.push(a);
+      }
+    };
+    const follow = (a: Actor) => {
+      add(a.owner);
+      for (const x of a.ailments) add(x.source);
+      for (const c of a.curses.list) add(c.source);
+    };
+    for (const e of this.effects) add(e.caster);
+    for (const q of this.queue) add(q.caster);
+    for (const a of outside) add(a);
+    for (const a of this.actors.actors) follow(a);
+    for (let a = todo.pop(); a; a = todo.pop()) follow(a);
+    return out;
+  }
+
+  /** Who else points at actors in this world (a monster at its target): `holdRefs`. */
+  private readonly outsideRefs: (() => Iterable<ActorLike | null | undefined>)[] = [];
+
+  /**
+   * Actors something outside combat points at (a monster's target, an attack's): kept like an
+   * effect's caster, so one that has left the world comes back as a ghost and the pointer holds.
+   */
+  holdRefs(refs: () => Iterable<ActorLike | null | undefined>): void {
+    this.outsideRefs.push(refs);
+  }
+
+  /** Will `save()` keep actor `id` (in the world, a stand-in, a ghost, or gone and pointed at: made a ghost)? */
+  keeps(id: ActorRef): boolean {
+    if (id === null) return true;
+    return this.find(id) !== null || [...this.refs()].some((a) => a.id === id);
+  }
+
+  /** Forget the stand-ins and ghosts nothing points at any more. */
+  private prune(): void {
+    const refs = this.refs();
+    this.standIns = this.standIns.filter((p) => refs.has(p.actor));
+    for (const [id, g] of this.ghosts) if (!refs.has(g)) this.ghosts.delete(id);
+  }
+
+  /**
+   * Combat as data (save-states, `CombatState`): plain values, numbers as they are
+   * (`engine.snapshot` encodes Infinity and -0). Refuses, saying why, what it can't make again:
+   * a cast held by a closure with no `hold`, a minion whose brain or mover keeps no state.
+   */
+  save(): CombatState {
+    this.prune();
+    const inWorld = new Set(this.actors.actors);
+    const actors: MadeActorState[] = [];
+    for (const a of this.actors.actors) {
+      const args = this.made.get(a);
+      if (!args) continue;
+      const brain = a.brain as Partial<SavedBrain> | null;
+      if (!brain?.save) throw new Error(`Combat.save: ${args.kind} ${a.id} (${a.name}) has a brain that keeps no state`);
+      if (!(a.mover instanceof GridMover)) throw new Error(`Combat.save: ${args.kind} ${a.id} (${a.name}) has a mover that keeps no state`);
+      actors.push({ ...args, id: a.id, actor: a.save(), mover: a.mover.save(), brain: brain.save() });
+    }
+    const standIns = new Set(this.standIns.map((p) => p.actor));
+    for (const p of this.standIns) {
+      const a = p.actor;
+      actors.push({ kind: 'proxy', id: a.id, owner: refOf(p.owner), at: p.at.toArray(), facing: a.facing, life: a.life, hitStop: a.hitStop, deadFor: a.deadFor, rng: a.rng.state, counters: { ...a.counters } });
+    }
+    for (const a of this.refs()) {
+      if (inWorld.has(a) || standIns.has(a)) continue;
+      actors.push({ kind: 'ghost', id: a.id, faction: a.faction, name: a.name, radius: a.radius, order: a.order, tags: [...a.tags], death: a.death, actor: a.save(), mover: a.mover instanceof GridMover ? a.mover.save() : null });
+    }
+    actors.sort((x, y) => x.id - y.id);
+    return {
+      time: this.time,
+      stats: { ...this.stats },
+      rng: this.rng.state,
+      shake: this.shake.state(),
+      numbers: this.numbers.save(),
+      actors,
+      effects: this.effects.map((e) => e.save()),
+      queue: this.queue.map((q) => ({ at: q.at, op: q.op, caster: refOf(q.caster), skill: saveSkill(q.skill), aim: q.aim.toArray(), opts: saveCastOptions(q.opts) })),
+      flashes: this.flashes.filter((f) => f.until > this.time).map((f) => ({ ...f, at: f.at.toArray() })),
+    };
+  }
+
+  /**
+   * First half of a restore: make combat's own actors of `s` again, each with its saved id
+   * (`setActorIds(id)` right before it is built; the counter is put back as it was after),
+   * minions and totems added to the world, once the stage has rebuilt its own (owners are found
+   * through `actors`, then among those made here). What combat made before goes quietly. Call
+   * it before building the `ActorIndex` the other actors load through (`index()` covers these);
+   * `load` calls it itself when it was not (again for the same state object: nothing).
+   */
+  make(s: CombatState, actors: ActorIndex = () => null): void {
+    if (this.madeFor === s) return;
+    for (const a of [...this.made.keys()]) {
+      const i = this.actors.actors.indexOf(a);
+      if (i >= 0) this.actors.actors.splice(i, 1);
+      a.dispose();
+    }
+    this.made.clear();
+    this.standIns = [];
+    this.ghosts.clear();
+    const owner = (id: ActorRef, what: string): Actor => {
+      const o = this.find(id) ?? actors(id);
+      if (!(o instanceof Actor)) throw new Error(`Combat.make: the owner (${id}) of ${what} is not here (the stage makes its own actors first)`);
+      return o;
+    };
+    const next = actorIds();
+    try {
+      for (const m of s.actors) this.remake(m, owner);
+    } finally {
+      setActorIds(next);
+    }
+    this.madeFor = s;
+  }
+
+  /** One of combat's own actors made again with its id. */
+  private remake(m: MadeActorState, owner: (id: ActorRef, what: string) => Actor): void {
+    setActorIds(m.id);
+    let a: Actor | null;
+    if (m.kind === 'minion') {
+      const skill = loadSkill(m.skill);
+      const attack: DamageSpec | null = skill.damage ? { ...skill.damage, tags: [...skill.damage.tags, 'minion'] } : null;
+      a = this.summonFactory({ genome: m.genome, owner: owner(m.owner, `minion ${m.id}`), at: v3(m.at), skill, mods: minionMods(skill.mods), attack, index: m.index, combat: this });
+    } else if (m.kind === 'totem') a = totemActor(this, owner(m.owner, `totem ${m.id}`), loadSkill(m.skill), v3(m.at), m.time);
+    else if (m.kind === 'proxy') a = proxyOf(owner(m.owner, `trap stand-in ${m.id}`), v3(m.at));
+    else a = new Actor({ faction: m.faction, name: m.name, radius: m.radius, order: m.order, tags: m.tags, death: m.death });
+    if (!a || a.id !== m.id) throw new Error(`Combat.make: ${m.kind} ${m.id} came back as ${a ? `actor ${a.id}` : 'nothing'} (a summon factory must build exactly one actor)`);
+    if (m.kind === 'minion' || m.kind === 'totem') {
+      this.made.set(a, m.kind === 'minion' ? { kind: m.kind, genome: m.genome, owner: m.owner, at: m.at, skill: m.skill, index: m.index, time: m.time } : { kind: m.kind, owner: m.owner, skill: m.skill, at: m.at, time: m.time });
+      this.actors.add(a);
+    } else if (m.kind === 'proxy') this.standIns.push({ actor: a, owner: a.owner!, at: v3(m.at) });
+    else this.ghosts.set(a.id, a);
+  }
+
+  /**
+   * Second half of a restore, after every other actor loaded (an actor's load drops its motion,
+   * which the effect that started it links again here). What runs now goes quietly (no hits, no
+   * sounds, nothing given back); then combat's own actors' states, every effect in order (made
+   * again by `RESTORE`: visuals, lights, motions; cast closures through `wire`), the queue, the
+   * flashes, the clock, counters, random stream, shake and numbers. The same state loaded into
+   * a fresh combat or into this one mid-fight comes out the same.
+   */
+  load(s: CombatState, actors: ActorIndex = () => null): void {
+    this.make(s, actors);
+    this.madeFor = null;
+    for (const e of this.effects) e.drop();
+    this.effects.length = 0;
+    this.queue.length = 0;
+    this.lights.clear();
+    this.flashes = [];
+    const index: ActorIndex = (id) => this.find(id) ?? actors(id);
+    const actor = (id: ActorRef, what: string): Actor => {
+      const a = index(id);
+      if (!(a instanceof Actor)) throw new Error(`Combat.load: ${what}: actor ${id} is not here`);
+      return a;
+    };
+    this.time = s.time;
+    Object.assign(this.stats, s.stats);
+    this.rng.state = s.rng;
+    this.shake.setState(s.shake);
+    this.numbers.load(s.numbers);
+    for (const m of s.actors) {
+      const a = actor(m.id, m.kind);
+      if (m.kind === 'proxy') {
+        a.facing = m.facing;
+        a.life = m.life;
+        a.hitStop = m.hitStop;
+        a.deadFor = m.deadFor;
+        a.rng.state = m.rng;
+        Object.assign(a.counters, m.counters);
+        continue;
+      }
+      a.load(m.actor, index);
+      if (m.mover) (a.mover as GridMover).load(m.mover);
+      if (m.kind !== 'ghost') (a.brain as unknown as SavedBrain).load(m.brain);
+    }
+    for (const e of s.effects) {
+      const restore = RESTORE[e.kind];
+      if (!restore) throw new Error(`Combat.load: no restore for a "${e.kind}" effect`);
+      const caster = actor(e.cast.caster, `the caster of a ${e.kind}`);
+      const c: CastContext = { combat: this, caster, skill: loadSkill(e.cast.skill), aim: v3(e.cast.aim), dir: v3(e.cast.dir), opts: this.castOptions(caster, e.cast.opts) };
+      this.effects.push(restore(c, e));
+    }
+    for (const q of s.queue) {
+      const caster = actor(q.caster, 'a queued repeat');
+      this.queue.push({ at: q.at, op: q.op, caster, skill: loadSkill(q.skill), aim: v3(q.aim), opts: this.castOptions(caster, q.opts) });
+    }
+    for (const f of s.flashes) this.flash(f.color, f.intensity, f.radius, v3(f.at), f.until - this.time);
+  }
+
+  /** Cast options from data: their closures made again by the caster's wiring. */
+  private castOptions(caster: Actor, o: SavedCastOptions): CastOptions {
+    const { hold, aimNow, ...rest } = o;
+    if (hold === undefined && !aimNow) return { ...rest };
+    const wiring = this.wirings.get(caster);
+    if (!wiring) throw new Error(`Combat.load: a cast of actor ${caster.id} (${caster.name}) had closures, and nothing wires them again (Combat.wire)`);
+    const w = wiring({ hold, aimNow: !!aimNow });
+    return { ...rest, ...(hold !== undefined ? { held: w.held, hold } : {}), ...(aimNow ? { aimNow: w.aimNow } : {}) };
   }
 }
 

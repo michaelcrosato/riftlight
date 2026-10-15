@@ -11,7 +11,7 @@ import { StatusFx } from '../combat/statusFx';
 import { mitigate, mitigateDot, type AilmentApplication, type Defender } from '../combat/damage';
 import { StatQuery } from '../combat/stats';
 import { ACTOR_BASE, BLOCK_STAGGER, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
-import { BodyFx } from './bodyFx';
+import { BodyFx, type BodyFxState } from './bodyFx';
 import { GridMover, openFloor, type Mover } from './movers';
 
 export { ACTOR_BASE, ES_DELAY, LEECH_RATE, LOW_LIFE, RECENTLY } from '../combat/tuning';
@@ -61,6 +61,8 @@ export interface ActorState {
   readonly owner: ActorRef;
   /** A motion in progress (its profile and callbacks are the effect's: it links them again). */
   readonly motion: { vx: number; vz: number; left: number; total: number | null } | null;
+  /** The body's hit flash and ragdoll (a ragdoll's end is when a corpse leaves the world). */
+  readonly fx: BodyFxState;
 }
 
 /** Scripted movement that overrides the brain / controller (dashes, rolls, leaps, charges). */
@@ -657,6 +659,7 @@ export class Actor implements ActorLike {
       rampage: this.rampage,
       owner: refOf(this.owner),
       motion: m ? { vx: m.vx, vz: m.vz, left: m.left, total: m.total ?? null } : null,
+      fx: this.fx.save(),
     };
   }
 
@@ -703,6 +706,7 @@ export class Actor implements ActorLike {
     this.rampage = s.rampage;
     this.owner = actors(s.owner) as Actor | null;
     this.motion = null;
+    this.fx.load(s.fx);
   }
 
   private moveStep(dt: number): void {

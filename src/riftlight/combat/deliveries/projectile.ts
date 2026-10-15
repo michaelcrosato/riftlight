@@ -1,7 +1,8 @@
 import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
+import type { Vec } from '../../core/saved';
 import { projectileMesh, ringDecal } from '../visuals';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, v3, vec } from './types';
 
 /** Height projectiles fly at. */
 export const FLY_HEIGHT = 1.05;
@@ -43,6 +44,14 @@ export function segmentDistance(p: Vector3, a: Vector3, b: Vector3): number {
   return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
 }
 
+/** A volley as data: every shot (spent ones too, in order) and the explosion rings still opening. */
+interface ProjectileState extends EffectState {
+  readonly age: number;
+  readonly shots: readonly { pos: Vec; prev: Vec; vel: Vec; left: number; pierce: number; chain: number; fork: number; hit: readonly number[]; alive: boolean }[];
+  readonly bursts: readonly { at: Vec; t: number; r: number }[];
+  readonly trailTick: number;
+}
+
 class Projectiles extends EffectBase {
   readonly kind = 'projectile';
   readonly shots: Shot[] = [];
@@ -54,24 +63,50 @@ class Projectiles extends EffectBase {
   private readonly tmp = new Vector3();
   private readonly near: Actor[] = [];
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: ProjectileState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'projectile') throw new Error('projectile delivery on a non-projectile skill');
     this.speed = d.speed;
     this.homing = d.homing ?? 0;
+    if (from) {
+      this.age = from.age;
+      this.trailTick = from.trailTick;
+      for (const s of from.shots) {
+        const shot = this.spawn(v3(s.pos), v3(s.vel).normalize(), s.left, s.pierce, s.chain, s.fork, new Set(s.hit));
+        shot.prev.fromArray(s.prev);
+        shot.vel.fromArray(s.vel);
+        if (!s.alive) this.kill(shot);
+      }
+      for (const b of from.bursts) this.burstRing(v3(b.at), b.r).t = b.t;
+      this.lightUp(this.shots[0]?.pos ?? c.caster.position.clone());
+      return;
+    }
     const p = c.caster.position;
     const origin = new Vector3(p.x + c.dir.x * 0.5, p.y + FLY_HEIGHT, p.z + c.dir.z * 0.5);
     for (const dir of fan(c.dir, d.count, d.count > 1 ? d.spread : 0)) {
       this.spawn(origin, dir, d.range / d.speed, d.pierce, d.chain, d.fork ?? 0, new Set());
     }
-    if (this.look.light) {
-      // one light for the volley, following its first live projectile
-      const l = this.look.light;
-      const first = () => this.shots.find((s) => s.alive)?.pos ?? origin;
-      c.combat.light(l.color, l.intensity, l.radius, first, 0, () => this.shots.some((s) => s.alive));
-    }
+    this.lightUp(origin);
     c.combat.play(this.look.sound?.travel ?? (c.skill.tags.includes('attack') ? undefined : 'projectile'));
+  }
+
+  /** One light for the volley, following its first live projectile. */
+  private lightUp(origin: Vector3): void {
+    const l = this.look.light;
+    if (!l || !this.shots.some((s) => s.alive)) return;
+    const first = () => this.shots.find((s) => s.alive)?.pos ?? origin;
+    this.c.combat.light(l.color, l.intensity, l.radius, first, 0, () => this.shots.some((s) => s.alive));
+  }
+
+  save(): ProjectileState {
+    return {
+      ...this.saved(),
+      age: this.age,
+      shots: this.shots.map((s) => ({ pos: vec(s.pos), prev: vec(s.prev), vel: vec(s.vel), left: s.left, pierce: s.pierce, chain: s.chain, fork: s.fork, hit: [...s.hit], alive: s.alive })),
+      bursts: this.bursts.map((b) => ({ at: vec(b.ring.position), t: b.t, r: b.r })),
+      trailTick: this.trailTick,
+    };
   }
 
   private spawn(at: Vector3, dir: Vector3, life: number, pierce: number, chain: number, fork: number, hit: Set<number>): Shot {
@@ -179,15 +214,19 @@ class Projectiles extends EffectBase {
     c.combat.burst(this.look.burst ?? 'fire', s.pos, { scale: Math.max(1, radius / 1.5) });
     c.combat.play(this.look.sound?.impact ?? 'explode', { pitch: c.combat.rng.range(-1, 1) });
     if (this.look.shake) c.combat.shake.add(this.look.shake);
-    if (this.look.light) {
-      const p = s.pos.clone();
-      c.combat.light(this.look.light.color, this.look.light.intensity * 1.4, this.look.light.radius * 1.3, () => p, 0.3);
-    }
+    if (this.look.light) c.combat.flash(this.look.light.color, this.look.light.intensity * 1.4, this.look.light.radius * 1.3, s.pos, 0.3);
+    this.burstRing(new Vector3(ground.x, ground.y + 0.05, ground.z), radius);
+  }
+
+  /** The explosion's ring decal, opening for a quarter second. */
+  private burstRing(at: Vector3, radius: number): { ring: Mesh; t: number; r: number } {
     const ring = ringDecal(this.look.glow?.[0] ?? this.look.color, 0.6);
-    ring.position.set(ground.x, ground.y + 0.05, ground.z);
+    ring.position.copy(at);
     ring.scale.setScalar(radius * 0.3);
-    c.combat.root.add(ring);
-    this.bursts.push({ ring, t: 0, r: radius });
+    this.c.combat.root.add(ring);
+    const b = { ring, t: 0, r: radius };
+    this.bursts.push(b);
+    return b;
   }
 
   private kill(s: Shot): void {
@@ -212,8 +251,8 @@ class Projectiles extends EffectBase {
     }
   }
 
-  override dispose(): void {
-    super.dispose();
+  override drop(): void {
+    super.drop();
     for (const b of this.bursts) b.ring.removeFromParent();
     this.bursts = [];
   }
@@ -221,3 +260,4 @@ class Projectiles extends EffectBase {
 
 /** Projectiles: count, spread, pierce, chain, fork and homing, stopped by walls (`combat.wall`). */
 export const projectile = (c: CastContext): CombatEffect => new Projectiles(c);
+export const restoreProjectile = (c: CastContext, s: EffectState): CombatEffect => new Projectiles(c, s as ProjectileState);

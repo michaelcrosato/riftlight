@@ -2,6 +2,12 @@ import type { ActorLike } from '../../core/types';
 import type { MonsterBrain } from './brain';
 import type { BrainWorld } from './types';
 
+/** A pack as data (`Pack.save`): its members and leader by their actors' ids. */
+export interface PackState {
+  readonly members: readonly number[];
+  readonly leader: number;
+}
+
 /**
  * A pack: a leader and followers that share aggro and spread around their target. When one
  * member notices the hero, everyone within `alertRadius` of it joins in; followers take
@@ -25,6 +31,23 @@ export class Pack {
     this.leader = this.pickLeader();
     for (const m of this.members) m.pack = this;
     this.assignSlots();
+  }
+
+  /** Who is in it and who leads, by actor id (save-states; flanking slots are each brain's). */
+  save(): PackState {
+    return { members: this.members.map((m) => m.body.actor.id), leader: this.leader.body.actor.id };
+  }
+
+  /** Back to `save()`: `brains` finds each brain by its actor's id. */
+  load(s: PackState, brains: (id: number) => MonsterBrain | null): void {
+    const find = (id: number): MonsterBrain => {
+      const b = brains(id);
+      if (!b) throw new Error(`Pack.load: no brain for actor ${id}`);
+      return b;
+    };
+    this.members.length = 0;
+    for (const id of s.members) this.members.push(find(id));
+    this.leader = find(s.leader);
   }
 
   /** Spread an alert from `from` to every member in range (chained: alerted members pass it on). */

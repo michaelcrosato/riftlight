@@ -112,10 +112,11 @@ The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is deci
   Save-states: `engine.snapshot()` / `restore()` keep a moment as JSON and put it back in
   milliseconds (the engine's part: time, clock, random, the Rapier world with its handles kept,
   camera, shake, input; the game's through `Game.snapshot` / `restore`), and a recording made
-  after one replays from it. Riftlight has them in town (e2e `riftlight-snapshot`). Not yet: a
-  Riftlight level (its monsters, combat effects, hazards and mechanics keep state in closures),
-  and physics with character controllers, vehicles, movers, triggers or step listeners (refused
-  with the reason). Particles and light flicker are pictures and are not kept. Gameplay state still lives in many places (three.js objects, behaviour-tree nodes,
+  after one replays from it. Riftlight has them in town and in its levels, mid-fight (a level is
+  built again from its entry, then its monsters, hazards, mechanics, combat and loot load on top:
+  e2e `riftlight-snapshot` on every designed depth). Not yet: physics with character controllers,
+  vehicles, movers, triggers or step listeners (refused with the reason). Particles and light
+  flicker are pictures and are not kept. Gameplay state still lives in many places (three.js objects, behaviour-tree nodes,
   timelines, game and room code); new systems keep theirs serializable where they reasonably
   can.
 - **Principle 6 (WebGPU only): not yet, on evidence.** Headless Chromium on the development

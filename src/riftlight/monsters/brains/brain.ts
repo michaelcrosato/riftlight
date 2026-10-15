@@ -1,4 +1,5 @@
 import { Vector3 } from 'three/webgpu';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../../core/saved';
 import type { ActorLike, HitResult } from '../../core/types';
 import type { BrainParams } from '../types';
 import { ARCHETYPES } from './archetypes';
@@ -33,6 +34,30 @@ export interface BrainOptions {
 
 export type BrainState = 'idle' | 'combat' | 'leash' | 'dead';
 
+/**
+ * A brain as data (`MonsterBrain.save`, save-states): its mood and target, the action it runs
+ * and its timers, its elite behaviours' scratch, where home is and the life it measures
+ * against. Its pack is the level's to put back (`Pack.save`); its body and world are wiring.
+ */
+export interface MonsterBrainState {
+  readonly state: BrainState;
+  readonly target: ActorRef;
+  readonly slot: number;
+  readonly action: ActionId;
+  readonly skill: string | null;
+  readonly moving: boolean;
+  readonly lastScores: readonly Decision[];
+  readonly thinkIn: number;
+  readonly retreatUntil: number;
+  readonly strafeDir: number;
+  readonly wanderTo: Vec | null;
+  readonly elites: readonly { readonly id: string; readonly state: Readonly<Record<string, number>> }[];
+  readonly started: boolean;
+  readonly time: number;
+  readonly home: Vec;
+  readonly maxLife: number;
+}
+
 interface EliteSlot {
   readonly id: string;
   readonly behaviour: EliteBehaviour;
@@ -49,7 +74,8 @@ export class MonsterBrain implements BrainLike, EliteHost {
   readonly skills: readonly MonsterSkillDef[];
   readonly home: Vector3;
   readonly scale: number;
-  readonly maxLife: number;
+  /** The life its life fraction is measured against (set at creation; a restore puts it back). */
+  maxLife: number;
   state: BrainState = 'idle';
   target: ActorLike | null = null;
   pack: Pack | null = null;
@@ -81,6 +107,58 @@ export class MonsterBrain implements BrainLike, EliteHost {
       const b = eliteBehaviour(ELITE_MODS.has(id) ? ELITE_MODS.get(id).behaviour : undefined);
       if (b) this.elites.push({ id, behaviour: b[0], param: b[1], state: {} });
     }
+  }
+
+  /** The brain as data (save-states). */
+  save(): MonsterBrainState {
+    return {
+      state: this.state,
+      target: refOf(this.target),
+      slot: this.slot,
+      action: this.action,
+      skill: this.skill,
+      moving: this.moving,
+      lastScores: this.lastScores.map((d) => ({ ...d })),
+      thinkIn: this.thinkIn,
+      retreatUntil: this.retreatUntil,
+      strafeDir: this.strafeDir,
+      wanderTo: this.wanderTo ? this.wanderTo.toArray() : null,
+      elites: this.elites.map((e) => ({ id: e.id, state: { ...e.state } })),
+      started: this.started,
+      time: this.time,
+      home: this.home.toArray(),
+      maxLife: this.maxLife,
+    };
+  }
+
+  /**
+   * Back to `save()`'s brain, on one made from the same genome (its elite behaviours in the same
+   * order). A target the index no longer finds is dropped. The pack is not touched.
+   */
+  load(s: MonsterBrainState, actors: ActorIndex): void {
+    if (s.elites.length !== this.elites.length || s.elites.some((e, i) => e.id !== this.elites[i]!.id)) {
+      throw new Error(`MonsterBrain.load: elites ${s.elites.map((e) => e.id).join(',')} into a brain with ${this.elites.map((e) => e.id).join(',')}`);
+    }
+    this.state = s.state;
+    this.target = actors(s.target);
+    this.slot = s.slot;
+    this.action = s.action;
+    this.skill = s.skill;
+    this.moving = s.moving;
+    this.lastScores = s.lastScores.map((d) => ({ ...d }));
+    this.thinkIn = s.thinkIn;
+    this.retreatUntil = s.retreatUntil;
+    this.strafeDir = s.strafeDir;
+    this.wanderTo = s.wanderTo ? new Vector3().fromArray(s.wanderTo) : null;
+    s.elites.forEach((e, i) => {
+      const own = this.elites[i]!.state;
+      for (const k of Object.keys(own)) delete own[k];
+      Object.assign(own, e.state);
+    });
+    this.started = s.started;
+    this.time = s.time;
+    this.home.fromArray(s.home);
+    this.maxLife = s.maxLife;
   }
 
   lifeFraction(): number {

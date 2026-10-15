@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, heroFlat, mechanicDamage, mesh, monsterScaleDamage, PropTarget } from './common';
+import { asMechanicLevel, box, heroFlat, mechanicDamage, mesh, monsterScaleDamage, PropTarget, sameCount } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -112,7 +112,7 @@ export const STORMSPIRE: LevelMechanicDef = {
     }
     const arcs = els
       .filter((e) => e.kind === 'arc')
-      .map((e) => ({ e, a: pylons.get(e.data.a as number)!, b: pylons.get(e.data.b as number)!, phase: e.data.phase as number, bolt: new Group(), firing: false, timer: 0 }))
+      .map((e) => ({ e, a: pylons.get(e.data.a as number)!, b: pylons.get(e.data.b as number)!, phase: e.data.phase as number, bolt: new Group(), firing: false, points: null as number[] | null }))
       .filter((x) => x.a && x.b);
     for (const arc of arcs) {
       arc.bolt.name = 'stormspire:bolt';
@@ -120,14 +120,23 @@ export const STORMSPIRE: LevelMechanicDef = {
       level.root.add(arc.bolt);
     }
 
-    /** Rebuild a jagged bolt of glowing boxes between two points. */
-    const drawBolt = (g: Group, from: Vector3, to: Vector3) => {
-      g.clear();
+    /** A jagged bolt between two points, as data: its corners (x, y, z each), the inner ones jittered. */
+    const boltPoints = (from: Vector3, to: Vector3): number[] => {
       const n = 6;
-      let prev = from.clone();
+      const out = [from.x, from.y, from.z];
       for (let k = 1; k <= n; k++) {
         const p = from.clone().lerp(to, k / n);
         if (k < n) p.add(new Vector3(level.rng.range(-0.35, 0.35), level.rng.range(-0.3, 0.3), level.rng.range(-0.35, 0.35)));
+        out.push(p.x, p.y, p.z);
+      }
+      return out;
+    };
+    /** (Re)build a bolt's glowing boxes from its corners. */
+    const drawBolt = (g: Group, points: readonly number[]) => {
+      g.clear();
+      let prev = new Vector3().fromArray(points, 0);
+      for (let k = 3; k < points.length; k += 3) {
+        const p = new Vector3().fromArray(points, k);
         const mid = prev.clone().add(p).multiplyScalar(0.5);
         const seg = box(boltMat, mid.x, mid.y, mid.z, 0.12, 0.12, prev.distanceTo(p) + 0.08);
         seg.castShadow = false;
@@ -136,6 +145,14 @@ export const STORMSPIRE: LevelMechanicDef = {
         prev = p;
       }
     };
+    /** A short-lived bolt (a chain link or an overcharged leap), drawn now. */
+    const addLeap = (name: string, points: number[], until: number) => {
+      const g = new Group();
+      drawBolt(g, points);
+      g.name = name;
+      level.root.add(g);
+      leaps.push({ g, name, points, until });
+    };
     const segDist = (p: Vector3, a: Vector3, b: Vector3) => {
       const abx = b.x - a.x;
       const abz = b.z - a.z;
@@ -143,8 +160,8 @@ export const STORMSPIRE: LevelMechanicDef = {
       return Math.hypot(p.x - (a.x + abx * t), p.z - (a.z + abz * t));
     };
     /** Short-lived leap bolts (removed by game time, not wall time). */
-    const leaps: { g: Group; until: number }[] = [];
-    let conducted = 0;
+    const leaps: { g: Group; name: string; points: number[]; until: number }[] = [];
+    const st = { conducted: 0 };
     /** `pylon.chain`: from a struck monster, the arc leaps on to the nearest unstruck monsters. */
     const chain = (from: ActorLike, struck: Set<ActorLike>, amount: number, monstersOnly: boolean) => {
       let left = Math.round(heroFlat(level.hero(), 'pylon.chain'));
@@ -162,14 +179,10 @@ export const STORMSPIRE: LevelMechanicDef = {
         }
         if (!next) return;
         struck.add(next);
-        const g = new Group();
-        drawBolt(g, at.position.clone().setY(1), next.position.clone().setY(1));
-        g.name = 'stormspire:chain';
-        level.root.add(g);
-        leaps.push({ g, until: level.time() + 0.15 });
+        addLeap('stormspire:chain', boltPoints(at.position.clone().setY(1), next.position.clone().setY(1)), level.time() + 0.15);
         const r = level.damage(next, { lightning: amount * CHAIN_SHARE }, 'stormspire', { ailments: { shock: 0.5 } });
         level.emit('stormspire', 'chain', next.position);
-        if (monstersOnly && r?.killed) conducted++;
+        if (monstersOnly && r?.killed) st.conducted++;
         at = next;
       }
     };
@@ -185,11 +198,22 @@ export const STORMSPIRE: LevelMechanicDef = {
         // Overcharged kills feed the conductor buff (the power-leveller's reward).
         const hero = level.hero();
         if (monstersOnly && r?.killed && hero) {
-          conducted++;
-          level.buff(hero, 'mechanic:stormspire:conductor', [inc('xp.gain', Math.min(0.6, 0.1 * conducted)), inc('damage', 0.1, ['lightning'])], 10);
+          st.conducted++;
+          level.buff(hero, 'mechanic:stormspire:conductor', [inc('xp.gain', Math.min(0.6, 0.1 * st.conducted)), inc('damage', 0.1, ['lightning'])], 10);
           level.emit('stormspire', 'conduct', actor.position);
         }
       }
+    };
+    /** Where an arc is in its cycle at `t`; its pylons' tips glow while it charges, fires or is overcharged. */
+    const cycle = (arc: (typeof arcs)[number], t: number) => {
+      const over = arc.a.over > 0 || arc.b.over > 0;
+      const period = over ? 0.6 : PERIOD;
+      const local = (t + arc.phase) % period;
+      const charging = !over && local > period - CHARGE;
+      const firing = local < ARC * (over ? 0.6 : 1);
+      arc.a.tip.material = charging || firing || over ? tipOn : tipOff;
+      arc.b.tip.material = arc.a.tip.material;
+      return { over, charging, firing };
     };
 
     return {
@@ -214,11 +238,7 @@ export const STORMSPIRE: LevelMechanicDef = {
               const near = level.actors().find((a) => a.alive && a.faction === 'monster' && a.position.distanceTo(p.at) < 6);
               if (near) {
                 const to = near.position.clone().setY(1);
-                const g = new Group();
-                drawBolt(g, p.at, to);
-                g.name = 'stormspire:leap';
-                level.root.add(g);
-                leaps.push({ g, until: t + 0.12 });
+                addLeap('stormspire:leap', boltPoints(p.at, to), t + 0.12);
                 zap(p.at, to, true, 1.5);
                 level.emit('stormspire', 'zap', to);
               }
@@ -226,19 +246,14 @@ export const STORMSPIRE: LevelMechanicDef = {
           }
         }
         for (const arc of arcs) {
-          const over = arc.a.over > 0 || arc.b.over > 0;
-          const period = over ? 0.6 : PERIOD;
-          const local = (t + arc.phase) % period;
-          const charging = !over && local > period - CHARGE;
-          const firing = local < ARC * (over ? 0.6 : 1);
-          arc.a.tip.material = charging || firing || over ? tipOn : tipOff;
-          arc.b.tip.material = arc.a.tip.material;
+          const { over, charging, firing } = cycle(arc, t);
           if (charging && level.rng.chance(0.25)) {
             level.burst('spark', arc.a.at, { count: 3 });
             level.burst('spark', arc.b.at, { count: 3 });
           }
           if (firing && !arc.firing) {
-            drawBolt(arc.bolt, arc.a.at, arc.b.at);
+            arc.points = boltPoints(arc.a.at, arc.b.at);
+            drawBolt(arc.bolt, arc.points);
             zap(arc.a.at, arc.b.at, over, over ? 1.5 : 1);
             const mid = arc.a.at.clone().lerp(arc.b.at, 0.5);
             level.light({ position: mid, color: 0xfff2b0, intensity: 9, radius: 7, lifetime: ARC, fadeIn: 0.02, fadeOut: 0.15, priority: 2, name: 'arc' });
@@ -248,6 +263,33 @@ export const STORMSPIRE: LevelMechanicDef = {
           arc.firing = firing;
           arc.bolt.visible = firing;
         }
+      },
+      save() {
+        return {
+          conducted: st.conducted,
+          over: [...pylons.values()].map((p) => p.over),
+          arcs: arcs.map((a) => ({ firing: a.firing, points: a.points })),
+          leaps: leaps.map((l) => ({ name: l.name, points: l.points, until: l.until })),
+        };
+      },
+      load(raw) {
+        const s = raw as { conducted: number; over: number[]; arcs: { firing: boolean; points: number[] | null }[]; leaps: { name: string; points: number[]; until: number }[] };
+        sameCount('stormspire: pylons', s.over, pylons.size);
+        sameCount('stormspire: arcs', s.arcs, arcs);
+        st.conducted = s.conducted;
+        [...pylons.values()].forEach((p, i) => (p.over = s.over[i]!));
+        const t = level.time();
+        arcs.forEach((arc, i) => {
+          const a = s.arcs[i]!;
+          arc.firing = a.firing;
+          arc.points = a.points ? [...a.points] : null;
+          if (arc.points) drawBolt(arc.bolt, arc.points);
+          else arc.bolt.clear();
+          arc.bolt.visible = a.firing;
+          cycle(arc, t); // the tips as the last update left them
+        });
+        for (const l of leaps.splice(0)) l.g.removeFromParent();
+        for (const l of s.leaps) addLeap(l.name, [...l.points], l.until);
       },
       dispose() {
         level.hero()?.stats.setCondition('nearPylon', false);
