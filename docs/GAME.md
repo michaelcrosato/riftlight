@@ -181,19 +181,26 @@ item windows' tabs), the town (`Town.saveState`: its clock and time of day, each
 walk, timers, random stream and clip, the cat, the extensions' own) and what the shell keeps
 (timers, banners, damage numbers, the camera's lead, the pointer, key repeat). Only the
 settings play reads are kept (`playSettings`); storage is not touched. Each part is plain
-data with a `save`/`load` (or `saveState`/`loadState`) beside the code that owns it; an actor
-another one points at is saved as its id (`core/saved.ts`). Restoring works from anywhere: a
-level is left and panels close, quietly (no autosave, banner or sound).
+data with a `save`/`load` (or `saveState`/`loadState`) beside the code that owns it, returned
+as it is (a buff that never ends expires at `Infinity`: never copy state through JSON), and a
+load replaces what is there (skills in flight, an actor made since: gone); an actor another
+one points at is saved as its id (`core/saved.ts`). Restoring works from anywhere: photo mode,
+the arcade and the Hall of Beasts are left first (`beforeRestore`), a level is left and panels
+close, quietly (no autosave, banner or sound).
 
-For now a snapshot is taken in town with no panel open and nobody talked to. A level is
-refused with the reason: its monsters, brains, combat effects, hazards and mechanics still keep
-state in closures (the next step). `Riftlight.fingerprint` includes the town (townsfolk, the
-cat, the time of day, its random stream), so a town that went on differently shows. The e2e
-suite `riftlight-snapshot` plays the town by input (walking, aiming, swings and casts while
-the townsfolk walk and bark), snapshots it, plays on, restores (also from inside a level with
-the inventory open) and plays on the same way to the same fingerprint; a snapshot just after a
-restore equals the one restored; a recording made after a restore replays in a fresh Riftlight
-(`Recording.from`); a different input differs.
+For now a snapshot is taken in town with no panel open, nobody talked to and no skill effect in
+flight (a cast still flying, a trap, a totem; an aura toggled on counts, so its snapshot waits
+for the aura to be off). A level is refused with the reason: its monsters, brains, combat
+effects, hazards and mechanics still keep state in closures (the next step). `Riftlight.fingerprint`
+includes the town (townsfolk, the cat, the time of day, its random stream), so a town that went
+on differently shows. The e2e suite `riftlight-snapshot` plays the town by input (walking,
+aiming, swings and casts while the townsfolk walk and bark), snapshots it with cooldowns running
+and a buff that never ends, plays on, restores and plays on the same way to the same
+fingerprint every 30 frames; also restored with skills in flight, from the arcade, from photo
+mode and from inside a level with the inventory open; a snapshot just after a restore equals the
+one restored; a recording made after a restore replays in a fresh Riftlight (`Recording.from`);
+a different input differs. Unit tests round-trip an actor (stat sources in order, ailments and
+their source, `Infinity`), a walking townsperson and the cat.
 
 ### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
 

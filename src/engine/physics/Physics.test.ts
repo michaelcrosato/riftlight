@@ -205,3 +205,57 @@ describe('Physics.clear() from inside a step (level unloads from game code)', ()
     expect(p.counts()).toEqual(baseline);
   });
 });
+
+describe('Physics state (save-states)', () => {
+  it('keeps tags, belts and force fields, and what came after the snapshot goes', async () => {
+    const p = await Physics.create();
+    const floor = p.tag(p.addStaticBox({ position: [0, -0.5, 0], halfExtents: [4, 0.5, 4] }), 'ground');
+    p.conveyor(floor, [1, 0, 0]);
+    const field = p.fields.add({ box: [2, 2, 2], at: [0, 1, 0], drag: 1 });
+    const s = p.state();
+    // after the snapshot: another tag and belt, the field off
+    p.tag(floor, 'climbable');
+    const late = p.tag(p.addStaticBox({ position: [5, 0, 0], halfExtents: [1, 1, 1] }), 'climbable');
+    p.conveyor(late, [2, 0, 0]);
+    field.enabled = false;
+    p.setState(s);
+    expect([p.hasTag(floor, 'ground'), p.hasTag(floor, 'climbable')]).toEqual([true, false]);
+    expect(p.beltVelocity(floor.handle)).toEqual([1, 0, 0]);
+    expect(field.enabled).toBe(true);
+    // a collider made now may take the late one's handle: it inherits nothing
+    const fresh = p.addStaticBox({ position: [5, 0, 0], halfExtents: [1, 1, 1] });
+    expect([p.hasTag(fresh, 'climbable'), p.beltVelocity(fresh.handle)]).toEqual([false, null]);
+  });
+
+  it('lets go of a mesh bound to a body the snapshot does not have, and steps on', async () => {
+    const p = await Physics.create();
+    const s = p.state();
+    const box = p.addDynamicBox({ position: [0, 2, 0], halfExtents: [0.5, 0.5, 0.5] });
+    p.bind(box, new Object3D());
+    p.setState(s);
+    expect(p.counts().bindings).toBe(0);
+    expect(() => p.update(FIXED_DT * 3)).not.toThrow();
+  });
+
+  it('undo puts back the world it replaced (a restore that fails half way)', async () => {
+    const p = await Physics.create();
+    const s = p.state();
+    const box = p.addDynamicBox({ position: [0, 2, 0], halfExtents: [0.5, 0.5, 0.5] });
+    const mesh = new Object3D();
+    p.bind(box, mesh);
+    p.tag(box.collider(0), 'pushable');
+    const before = p.counts();
+    const r = p.restoreState(s);
+    expect(p.counts().bodies).toBe(0);
+    r.undo();
+    expect(p.counts()).toEqual(before);
+    expect(p.hasTag(box.collider(0), 'pushable')).toBe(true);
+    p.update(FIXED_DT * 10);
+    expect(mesh.position.y).toBeLessThan(2); // still bound, still falling
+    // a snapshot of another level's fields changes nothing
+    p.fields.add({ box: [1, 1, 1], at: [0, 0, 0], drag: 1 });
+    expect(() => p.setState(s)).toThrow(/force field/);
+    expect(p.counts().bodies).toBe(1);
+  });
+});
+

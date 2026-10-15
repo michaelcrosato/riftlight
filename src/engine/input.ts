@@ -84,6 +84,8 @@ export interface InputState {
   readonly queued: readonly (readonly [string, number])[];
   readonly pointer: readonly [number, number, number, number];
   readonly gamepad: boolean;
+  /** Data sent (`send`) and not yet delivered: the next frame that runs delivers it. */
+  readonly outbox: readonly unknown[];
 }
 
 /** What the frame before held, for `snapshot()` to leave out what did not change. */
@@ -422,6 +424,7 @@ export class Input {
       queued: [...this.queued].map(([code, t]) => [code, this.now - t] as const),
       pointer: [this.pointer.x, this.pointer.y, this.pointer.over ? 1 : 0, this.pointer.touch ? 1 : 0],
       gamepad: this.gamepadConnected,
+      outbox: JSON.parse(JSON.stringify(this.outbox)) as unknown[],
     };
   }
 
@@ -438,6 +441,7 @@ export class Input {
     this.pointer.touch = s.pointer[3] === 1;
     this.gamepadConnected = s.gamepad;
     this.playedPad = s.gamepad;
+    this.outbox = JSON.parse(JSON.stringify(s.outbox)) as unknown[]; // what was sent since is not this moment's
     this.endFrame();
   }
 

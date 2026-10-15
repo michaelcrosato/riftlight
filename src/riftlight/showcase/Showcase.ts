@@ -177,6 +177,14 @@ export class Showcase {
     });
   }
 
+  /** Leave at once whatever it shows (a restore): photo mode, a mode, a transition; a mode still loading finishes first. */
+  async abandon(): Promise<void> {
+    for (let i = 0; i < 200 && this.loading; i++) await new Promise((r) => setTimeout(r, 0));
+    if (this.photo.active) this.photo.close();
+    this.iris = null;
+    if (this.mode) this.close({ instant: true });
+  }
+
   /** Leave the current mode back to town (iris, or `instant`). */
   close(o: { instant?: boolean } = {}): void {
     const mode = this.mode;

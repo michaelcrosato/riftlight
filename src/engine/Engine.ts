@@ -118,6 +118,12 @@ export interface Game {
    */
   restore?(ctx: GameContext, state: unknown): void | Promise<void>;
   /**
+   * Optional: leave whatever mode the game is in before a restore changes anything (a mode
+   * with a camera of its own, a dialog, a level): `engine.restore()` calls it first, then checks
+   * the snapshot fits (the camera preset) and puts the engine's part back, then `restore`.
+   */
+  beforeRestore?(ctx: GameContext): void | Promise<void>;
+  /**
    * Called after `engine.setCamera()` swapped the camera preset mid-game. The world,
    * physics and player are untouched; adjust anything that depends on the preset
    * (e.g. side-scroller lane lock, hiding the player model in first person).
@@ -1093,17 +1099,51 @@ export class Engine {
     const game = this.game;
     if (game.name !== snap.game) throw new Error(`Engine.restore: a snapshot of "${snap.game}" cannot restore "${game.name}" (load it first)`);
     if (!game.restore) throw new Error(`Engine.restore: "${game.name}" has no restore() (Game hook)`);
-    if (snap.camera.preset !== this.camera.preset) throw new Error(`Engine.restore: the snapshot's camera is ${snap.camera.preset}, this one ${this.camera.preset}`);
-    this._seed = snap.seed;
-    this.time = snap.time;
-    this.clock.setState(snap.clock);
-    this._random.state = snap.random;
-    this.tweens.clear();
-    this.physics.setState(snap.physics);
-    this.camera.setState(snap.camera);
-    this.shake.setState(snap.shake);
-    this.input.setState(snap.input, snap.time);
-    await game.restore(this.context, snap.state);
+    // nothing advances on its own while the game puts itself back (a level may rebuild, awaiting)
+    const manual = this.manual;
+    this.manual = true;
+    try {
+      await game.beforeRestore?.(this.context);
+      // the running timeline's tweens go with it: their continuations run out now, on the state
+      // about to be replaced (never after, on the restored one)
+      for (let i = 0; i < 8 && this.tweens.count; i++) {
+        this.tweens.clear();
+        await this.task();
+      }
+      if (this.tweens.count) throw new Error('Engine.restore: tweens keep starting tweens as they are cleared');
+      if (snap.camera.preset !== this.camera.preset) throw new Error(`Engine.restore: the snapshot's camera is ${snap.camera.preset}, this one ${this.camera.preset} (leave that mode in Game.beforeRestore)`);
+      // all or nothing: the saved physics world is built first, and if anything below throws the
+      // engine's own part goes back as it was (the game's is its restore's to keep whole)
+      const physics = this.physics.restoreState(snap.physics);
+      const before = { seed: this._seed, time: this.time, clock: this.clock.state(), random: this._random.state, camera: this.camera.state(), shake: this.shake.state(), input: this.input.state(), now: this.time };
+      const aspect = this.camera.aspect; // the screen is this one's, not the snapshot's
+      try {
+        this._seed = snap.seed;
+        this.time = snap.time;
+        this.clock.setState(snap.clock);
+        this._random.state = snap.random;
+        this.camera.setState(snap.camera);
+        this.camera.setAspect(aspect);
+        this.shake.setState(snap.shake);
+        this.input.setState(snap.input, snap.time);
+        await game.restore(this.context, snap.state);
+      } catch (e) {
+        physics.undo();
+        this._seed = before.seed;
+        this.time = before.time;
+        this.clock.setState(before.clock);
+        this._random.state = before.random;
+        this.camera.setState(before.camera);
+        this.shake.setState(before.shake);
+        this.input.setState(before.input, before.now);
+        throw e;
+      }
+      physics.commit();
+      // live play: the keys held now are the keyboard's (no keyup will come for the snapshot's)
+      if (!manual) this.input.release();
+    } finally {
+      this.manual = manual;
+    }
     this.rec = { game: game.name, seed: snap.seed, time: snap.time, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
   }
 

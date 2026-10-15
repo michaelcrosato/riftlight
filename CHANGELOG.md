@@ -20,8 +20,13 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   restores it first. Refused, with the reason, while a tween runs or with physics outside the
   Rapier world (controllers, movers, triggers, step listeners). `state()` / `setState()` on
   `GameClock`, `CameraRig`, `CameraShake`, `Input` and `Physics`.
+- A restore is all or nothing (the engine's part goes back if the game's throws), holds the
+  frame loop while an async `Game.restore` runs, and calls the optional `Game.beforeRestore`
+  first (leave a mode with its own camera). The running timeline's tweens finish before it.
+  Collider tags, conveyor belts, force fields' `enabled` and data sent but not delivered are
+  kept; a mesh bound to a body the snapshot lacks is let go.
 - `Physics.setState` swaps in the restored Rapier world: read `ctx.physics.world` afresh, as
-  after a level change.
+  after a level change; `Physics.restoreState` does it undoably.
 
 ## 0.35.0
 

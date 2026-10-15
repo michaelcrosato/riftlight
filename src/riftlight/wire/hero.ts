@@ -388,7 +388,7 @@ export class RealHero implements HeroPort {
       hc: this.hc.save(),
       mover: this.mover.save(),
       level: this.level,
-      sockets: JSON.parse(JSON.stringify(this.sockets)) as SaveData['hero']['skills'],
+      sockets: structuredClone(this.sockets),
       skillLevels: this.skillLevels,
       sources: [...this.sources],
       owned: this.owned && this.world === this.owned ? this.owned.save() : null,

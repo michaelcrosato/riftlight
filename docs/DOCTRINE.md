@@ -114,8 +114,8 @@ The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is deci
   camera, shake, input; the game's through `Game.snapshot` / `restore`), and a recording made
   after one replays from it. Riftlight has them in town (e2e `riftlight-snapshot`). Not yet: a
   Riftlight level (its monsters, combat effects, hazards and mechanics keep state in closures),
-  and physics with character controllers, vehicles, movers or triggers (refused with the
-  reason). Gameplay state still lives in many places (three.js objects, behaviour-tree nodes,
+  and physics with character controllers, vehicles, movers, triggers or step listeners (refused
+  with the reason). Particles and light flicker are pictures and are not kept. Gameplay state still lives in many places (three.js objects, behaviour-tree nodes,
   timelines, game and room code); new systems keep theirs serializable where they reasonably
   can.
 - **Principle 6 (WebGPU only): not yet, on evidence.** Headless Chromium on the development

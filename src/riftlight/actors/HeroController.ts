@@ -344,7 +344,7 @@ export class HeroController {
       rollAnim: this.rollAnim,
       reactAnim: this.reactAnim,
       lastAnim: [...this.lastAnim],
-      specs: JSON.parse(JSON.stringify(this.specs)) as HeroControllerState['specs'],
+      specs: structuredClone(this.specs),
       counters: { ...this.stats },
       feedback: this.feedback ? { ...this.feedback } : null,
       animator: this.animator.save(),
@@ -358,7 +358,7 @@ export class HeroController {
    */
   load(s: HeroControllerState, actors: ActorIndex): void {
     this.actor.load(s.actor, actors);
-    this.specs = JSON.parse(JSON.stringify(s.specs)) as HeroControllerState['specs'];
+    this.specs = structuredClone(s.specs) as HeroControllerState['specs'];
     this.rebuild();
     this.statsVersion = s.statsVersion;
     this.state = s.state;

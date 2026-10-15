@@ -57,6 +57,7 @@ export interface ActorState {
   readonly since: { hit: number; kill: number; es: number; dotShown: number; dotTimer: number };
   readonly stats: StatSheetState;
   readonly rng: number;
+  readonly rampage: number;
   readonly owner: ActorRef;
   /** A motion in progress (its profile and callbacks are the effect's: it links them again). */
   readonly motion: { vx: number; vz: number; left: number; total: number | null } | null;
@@ -653,6 +654,7 @@ export class Actor implements ActorLike {
       since: { hit: this.sinceHit, kill: this.sinceKill, es: this.esTimer, dotShown: this.dotShown, dotTimer: this.dotTimer },
       stats: this.stats.save(),
       rng: this.rng.state,
+      rampage: this.rampage,
       owner: refOf(this.owner),
       motion: m ? { vx: m.vx, vz: m.vz, left: m.left, total: m.total ?? null } : null,
     };
@@ -698,6 +700,7 @@ export class Actor implements ActorLike {
     this.dotShown = s.since.dotShown;
     this.dotTimer = s.since.dotTimer;
     this.rng.state = s.rng;
+    this.rampage = s.rampage;
     this.owner = actors(s.owner) as Actor | null;
     this.motion = null;
   }

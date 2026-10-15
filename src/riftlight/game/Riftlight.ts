@@ -1548,51 +1548,57 @@ export class Riftlight implements Game, MenuHost, LookHost {
     if (!hero.saveState || !hero.loadState) refuse('this hero port keeps no state (saveState / loadState)');
     if (!loot.saveState || !loot.loadState) refuse('this loot port keeps no state (saveState / loadState)');
     const v = (p: Vector3) => p.toArray();
-    return JSON.parse(
-      JSON.stringify({
-        format: 1,
-        screen: this.screen,
-        slot: this.slot,
-        save: this.save,
-        saves: this.saves,
-        settings: playSettings(this.settings),
-        dev: this.dev,
-        rng: this.rng.state,
-        ids: { actors: actorIds(), props: PropTarget.nextId() },
-        hero: hero.saveState!(),
-        loot: loot.saveState!(),
-        town: this.town.saveState(),
-        shell: {
-          time: this.time,
-          playtime: this.playtime,
-          levelTime: this.levelTime,
-          cleared: this.cleared,
-          dead: this.dead,
-          deathTimer: this.deathTimer,
-          dialogueLine: this.dialogueLine,
-          gifts: this.gifts,
-          clearEmitted: this.clearEmitted,
-          combatHeat: this.combatHeat,
-          combatSince: this.combatSince,
-          music: this.music,
-          session: this.session,
-          interactQueued: this.interactQueued,
-          levelUpAge: this.levelUpAge,
-          hurt: this.hurt,
-          goldShown: this.goldShown,
-          streak: this.streak,
-          feed: this.feed,
-          intent: { ...this.intent, aim: v(this.intent.aim) },
-          botIntent: this.botIntent ? { ...this.botIntent, aim: v(this.botIntent.aim) } : null,
-          camera: { target: v(this.camTarget), lead: v(this.lead), shake: v(this.shakeOffset), shakeTime: this.shakeTime, shakeStrength: this.shakeStrength, zoomGoal: this.zoomGoal },
-        },
-        banners: this.banners.save(),
-        floaters: this.floaters.save(),
-        recap: this.recap.save(),
-        pointer: this.pointer.save(),
-        menuInput: this.menuInput.save(),
-      }),
-    ) as RiftSnapshot;
+    // a copy as it is (Infinity, -0 kept): engine.snapshot() makes it JSON
+    return structuredClone({
+      format: 1,
+      screen: this.screen,
+      slot: this.slot,
+      save: this.save,
+      saves: this.saves,
+      settings: playSettings(this.settings),
+      dev: this.dev,
+      rng: this.rng.state,
+      ids: { actors: actorIds(), props: PropTarget.nextId() },
+      hero: hero.saveState!(),
+      loot: loot.saveState!(),
+      town: this.town.saveState(),
+      shell: {
+        time: this.time,
+        playtime: this.playtime,
+        levelTime: this.levelTime,
+        cleared: this.cleared,
+        dead: this.dead,
+        deathTimer: this.deathTimer,
+        dialogueLine: this.dialogueLine,
+        gifts: this.gifts,
+        clearEmitted: this.clearEmitted,
+        combatHeat: this.combatHeat,
+        combatSince: this.combatSince,
+        music: this.music,
+        session: this.session,
+        interactQueued: this.interactQueued,
+        levelUpAge: this.levelUpAge,
+        hurt: this.hurt,
+        goldShown: this.goldShown,
+        streak: this.streak,
+        feed: this.feed,
+        intent: { ...this.intent, aim: v(this.intent.aim) },
+        botIntent: this.botIntent ? { ...this.botIntent, aim: v(this.botIntent.aim) } : null,
+        camera: { target: v(this.camTarget), lead: v(this.lead), shake: v(this.shakeOffset), shakeTime: this.shakeTime, shakeStrength: this.shakeStrength, zoomGoal: this.zoomGoal },
+      },
+      banners: this.banners.save(),
+      floaters: this.floaters.save(),
+      recap: this.recap.save(),
+      pointer: this.pointer.save(),
+      menuInput: this.menuInput.save(),
+    }) as RiftSnapshot;
+  }
+
+  /** Before a restore: out of whatever mode is on (photo mode, the arcade, the Hall of Beasts keep cameras of their own), panels shut. */
+  async beforeRestore(): Promise<void> {
+    this.layer.closeAll();
+    this.endTalk();
+    await this.showcase.abandon();
   }
 
   /**
@@ -1605,6 +1611,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
+    // what can be checked before anything changes (a snapshot that doesn't fit leaves the game as it was)
+    if (!s.town || s.town.npcs.length !== this.town.npcs.length) throw new Error('Riftlight.restore: not this town (its townsfolk differ)');
+    if (!s.hero || !s.loot || !s.save?.hero) throw new Error('Riftlight.restore: the snapshot is missing the hero, the loot or the save');
     // leave whatever is on now, quietly (no autosave, no banners, no sounds)
     this.layer.closeAll();
     this.endTalk();

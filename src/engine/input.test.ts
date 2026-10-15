@@ -104,4 +104,20 @@ describe('Gamepad', () => {
     b.beginFrame(3.25, 0.2, []);
     expect(b.consumePress('KeyJ')).toBe(false); // 0.25 s old: gone, as in `a`
   });
+
+  it('data sent and not yet delivered is part of the moment: kept by a snapshot, dropped by a restore', () => {
+    const a = new Input(new EventTarget() as unknown as Window);
+    a.send({ lift: 1 });
+    const s = JSON.parse(JSON.stringify(a.state())) as ReturnType<Input['state']>;
+    a.deliver();
+    expect(a.commands).toEqual([{ lift: 1 }]);
+    // sent after the snapshot: not the restored moment's
+    a.send({ lift: 2 });
+    a.send({ lift: 3 });
+    a.setState(s, 0);
+    a.deliver();
+    expect(a.commands).toEqual([{ lift: 1 }]);
+    a.deliver();
+    expect(a.commands).toEqual([]);
+  });
 });

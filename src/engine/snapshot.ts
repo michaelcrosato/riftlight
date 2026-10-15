@@ -5,7 +5,7 @@
  * time, the clock, `ctx.random`, the physics world, the camera, the shake, input still waiting)
  * and the game its own (`Game.snapshot` / `Game.restore`).
  *
- *   const snap = engine.snapshot();               // JSON: keep it, attach it to a bug
+ *   const snap = await engine.snapshot();         // JSON: keep it, attach it to a bug
  *   engine.step(300);                             // ...play on
  *   await engine.restore(snap);                   // back to that moment (the same game, loaded)
  *
@@ -50,21 +50,29 @@ const MARKS: readonly (readonly [string, number])[] = [
 /**
  * A deep copy of `v` as plain JSON that `JSON.stringify` keeps exactly: `-0`, `Infinity`,
  * `-Infinity` and `NaN` become the strings `'@-0'`, `'@Infinity'`... (JSON would write 0 and null,
- * and `atan2(-0, x)` is not `atan2(0, x)`). `decodeState` turns them back. `engine.snapshot()`
- * and `restore()` do both; a game's `snapshot()` returns its numbers as they are.
+ * and `atan2(-0, x)` is not `atan2(0, x)`), and a string of the game's own that starts with `@`
+ * gets one more (`'@x'` → `'@@x'`). `decodeState` turns them back. `engine.snapshot()` and
+ * `restore()` do both; a game's `snapshot()` returns its values as they are (never through JSON).
  */
 export function encodeState(v: unknown): unknown {
   return JSON.parse(
     JSON.stringify(v ?? null, (_k, x: unknown) => {
+      if (typeof x === 'string') return x.startsWith('@') ? `@${x}` : x;
       if (typeof x !== 'number' || (Number.isFinite(x) && !Object.is(x, -0))) return x;
       return MARKS.find(([, n]) => Object.is(n, x))![0];
     }),
   ) as unknown;
 }
 
-/** `encodeState` undone: a deep copy with the marked numbers back. */
+/** `encodeState` undone: a deep copy with the marked numbers (and the game's own `@` strings) back. */
 export function decodeState(v: unknown): unknown {
-  return JSON.parse(JSON.stringify(v ?? null), (_k, x: unknown) => (typeof x === 'string' && x.startsWith('@') ? (MARKS.find(([m]) => m === x)?.[1] ?? x) : x)) as unknown;
+  return JSON.parse(JSON.stringify(v ?? null), (_k, x: unknown) => {
+    if (typeof x !== 'string' || !x.startsWith('@')) return x;
+    if (x.startsWith('@@')) return x.slice(1);
+    const mark = MARKS.find(([m]) => m === x);
+    if (!mark) throw new Error(`decodeState: unknown mark "${x}"`);
+    return mark[1];
+  }) as unknown;
 }
 
 /** Is `v` a snapshot this engine can restore? Returns the problem, or null. */

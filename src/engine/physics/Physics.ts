@@ -26,6 +26,16 @@ export interface PhysicsState {
   readonly alpha: number;
   readonly steps: number;
   readonly world: string;
+  /** Collider tags and conveyor belts by collider handle, and each force field's `enabled` (in order). */
+  readonly tags: readonly (readonly [number, readonly string[]])[];
+  readonly belts: readonly (readonly [number, readonly [number, number, number]])[];
+  readonly fields: readonly boolean[];
+}
+
+/** A physics restore applied but not yet kept (`Physics.restoreState`): `commit()` frees the old world, `undo()` puts it back. */
+export interface PhysicsRestore {
+  commit(): void;
+  undo(): void;
 }
 
 const toBase64 = (b: Uint8Array): string => {
@@ -176,23 +186,82 @@ export class Physics {
       this.stepListeners.size || this.firstStepListeners.size ? 'step listeners' : '',
     ].filter(Boolean);
     if (outside.length) throw new Error(`Physics.state: not yet with ${outside.join(', ')} (they live outside the Rapier world)`);
-    return { accumulator: this.accumulator, alpha: this.alpha, steps: this.steps, world: toBase64(this.world.takeSnapshot()) };
+    return {
+      accumulator: this.accumulator,
+      alpha: this.alpha,
+      steps: this.steps,
+      world: toBase64(this.world.takeSnapshot()),
+      tags: [...this.tags].map(([h, set]) => [h, [...set]] as const),
+      belts: [...this.belts].map(([h, v]) => [h, [...v]] as const),
+      fields: this.fields.all.map((f) => f.enabled),
+    };
   }
 
   /** Back to `state()`: the world it saved replaces this one, bound meshes re-found by handle. */
   setState(s: PhysicsState): void {
+    this.restoreState(s).commit();
+  }
+
+  /**
+   * `setState`, undoable: the saved world is built first (nothing changes if that fails), then
+   * replaces this one; `undo()` puts everything back as it was, `commit()` frees the old world.
+   * A mesh bound to a body the saved world doesn't have is let go (it stays where it is). The
+   * force fields must be the same ones (a game makes them at setup); their `enabled` comes back.
+   */
+  restoreState(s: PhysicsState): PhysicsRestore {
+    if (s.fields.length !== this.fields.count) throw new Error(`Physics.setState: ${s.fields.length} force field(s) saved, ${this.fields.count} here (not this level)`);
     const world = this.adopt(RAPIER.World.restoreSnapshot(fromBase64(s.world)));
-    this.world.free();
-    this.world = world;
-    for (const b of this.bindings) {
-      b.body = world.getRigidBody(b.body.handle);
+    const old = { world: this.world, bindings: this.bindings.map((b) => ({ b, body: b.body })), tags: new Map(this.tags), belts: new Map(this.belts), fields: this.fields.all.map((f) => f.enabled), accumulator: this.accumulator, alpha: this.alpha, steps: this.steps };
+    const settle = (b: Binding) => {
       this.readBody(b);
       b.prevPos.copy(b.currPos);
       b.prevRot.copy(b.currRot);
+    };
+    this.world = world;
+    for (let i = this.bindings.length - 1; i >= 0; i--) {
+      const b = this.bindings[i]!;
+      const body = world.getRigidBody(b.body.handle);
+      if (body) {
+        b.body = body;
+        settle(b);
+      } else this.bindings.splice(i, 1);
     }
+    this.tags.clear();
+    for (const [h, tags] of s.tags) this.tags.set(h, new Set(tags));
+    this.belts.clear();
+    for (const [h, v] of s.belts) this.belts.set(h, [v[0], v[1], v[2]]);
+    this.fields.all.forEach((f, i) => (f.enabled = s.fields[i]!));
     this.accumulator = s.accumulator;
     this.alpha = s.alpha;
     this.steps = s.steps;
+    let done = false;
+    return {
+      commit: () => {
+        if (done) return;
+        done = true;
+        old.world.free();
+      },
+      undo: () => {
+        if (done) return;
+        done = true;
+        world.free();
+        this.world = old.world;
+        this.bindings.length = 0;
+        for (const { b, body } of old.bindings) {
+          b.body = body;
+          this.bindings.push(b);
+          settle(b);
+        }
+        this.tags.clear();
+        for (const [h, t] of old.tags) this.tags.set(h, t);
+        this.belts.clear();
+        for (const [h, v] of old.belts) this.belts.set(h, v);
+        this.fields.all.forEach((f, i) => (f.enabled = old.fields[i]!));
+        this.accumulator = old.accumulator;
+        this.alpha = old.alpha;
+        this.steps = old.steps;
+      },
+    };
   }
 
   /** Seconds of physics simulated (fixed steps × 1/60): the clock movers run on. */

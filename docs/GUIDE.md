@@ -61,7 +61,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 | `cameraTarget(ctx)` | every frame | return the `Vector3` the camera follows |
 | `status(ctx)` | tooling | a one-line summary (`'coins 3/4'`), shown by the check tool |
 | `fingerprint(ctx)` | tooling | the game's own state as a string (positions, counters), part of `engine.fingerprint()` so a replay can be compared |
-| `snapshot(ctx)`, `restore(ctx, state)` | save-states | the game's own state as plain data, and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles |
+| `snapshot(ctx)`, `restore(ctx, state)`, `beforeRestore(ctx)` | save-states | the game's own state as plain data (as it is, not through JSON), and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles; `beforeRestore` leaves a mode with its own camera first |
 | `onCameraChange(ctx)`, `eyePosition(ctx)`, `dispose(ctx)` | optional | camera swaps, first-person eye, cleanup |
 
 `ctx` (the `GameContext`) is the same object in every hook: `ctx.scene` (three.js scene),

@@ -762,7 +762,29 @@ export async function runWorld(h) {
       await e.restore({ ...snap, physics: later.physics });
       play(112, 260);
       const mixed = e.fingerprint();
-      return { refused, tookMs, restoreMs, bytes: JSON.stringify(snap).length, live, again, replayed, mixed, from: !!rec.from, frames: rec.frames.length, errors: e.state().errors };
+      // a tween running when a restore comes: its promise's callback (a kick) never lands in the restored moment
+      await e.restore(snap);
+      e.input.setKey('Space', true);
+      e.step(1);
+      e.input.setKey('Space', false);
+      await e.restore(snap);
+      const kicksAfter = e.game.status(e.context);
+      play(112, 260);
+      const tweened = e.fingerprint();
+      // a body bound after the snapshot: let go by the restore, and the level steps on
+      await e.restore(snap);
+      e.physics.bind(e.physics.addDynamicBox({ position: [0, 3, 0], halfExtents: [0.2, 0.2, 0.2] }), new (Object.getPrototypeOf(e.scene.constructor))() /* an Object3D */);
+      await e.restore(snap);
+      play(112, 260);
+      const bound = e.fingerprint();
+      // a restore that fails (the game's state is broken) leaves the engine as it was
+      const before = { print: e.fingerprint(), time: e.time };
+      const failed = await e.restore({ ...snap, state: null }).then(
+        () => '',
+        (err) => err.message,
+      );
+      const after = { print: e.fingerprint(), time: e.time };
+      return { refused, tookMs, restoreMs, bytes: JSON.stringify(snap).length, live, again, replayed, mixed, from: !!rec.from, frames: rec.frames.length, kicksAfter, tweened, bound, failed, rolledBack: before.print === after.print && before.time === after.time, errors: e.state().errors };
     });
     check(saved.refused.includes('tween'), `a snapshot is refused while a tween runs (${saved.refused})`);
     check(
@@ -771,6 +793,9 @@ export async function runWorld(h) {
     );
     check(saved.from && saved.frames === 148 && saved.replayed === saved.live.print, `the recording made after a restore starts from it and replays to the same end (${saved.frames} frames, ${saved.replayed})`);
     check(saved.mixed !== saved.live.print && saved.errors.length === 0, `a snapshot with another moment's physics ends elsewhere (${saved.mixed})`);
+    check(saved.kicksAfter.startsWith('kicks 1') && saved.tweened === saved.live.print, `a tween running at a restore never lands in the restored moment (${saved.kicksAfter}; ${saved.tweened})`);
+    check(saved.bound === saved.live.print, `a body bound after the snapshot is let go by the restore and the level plays on the same (${saved.bound})`);
+    check(saved.failed !== '' && saved.rolledBack, `a restore that fails leaves the engine as it was ("${saved.failed}")`);
     await W(() => window.__WORLD__.goto('sandbox', { instant: true }));
     check(
       realtime.run.status === 'kicks 2 lifts 2' && realtime.frames >= 80 && realtime.rec.frames.filter((f) => f.commands).length === 2 && realtime.sync === 0 && realtime.errors.length === 0,

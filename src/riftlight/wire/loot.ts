@@ -303,7 +303,7 @@ export class RealLoot implements LootPort {
 
   /** Put the loot back as `saveState` found it. Windows and the world loot that didn't exist then are dropped (made again on demand). */
   loadState(s: RealLootState): void {
-    const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    const copy = <T>(v: T): T => structuredClone(v);
     this.quiet++;
     try {
       this.clearGround();

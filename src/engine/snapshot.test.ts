@@ -12,6 +12,13 @@ describe('save-state data', () => {
     expect([Object.is(plain.at[0], -0), plain.until]).toEqual([false, null]);
   });
 
+  it("a game's own strings come back as strings, even ones that look like marks", () => {
+    const state = { a: '@-0', b: '@NaN', c: '@@x', d: '@', e: 'mail@home', n: -0 };
+    const back = decodeState(JSON.parse(JSON.stringify(encodeState(state)))) as typeof state;
+    expect(back).toEqual({ a: '@-0', b: '@NaN', c: '@@x', d: '@', e: 'mail@home', n: -0 });
+    expect(Object.is(back.n, -0)).toBe(true);
+  });
+
   it('says why a value is not a snapshot', () => {
     expect(snapshotProblem(null)).toBe('not an object');
     expect(snapshotProblem({ format: 2 })).toMatch(/format 2/);

@@ -108,15 +108,22 @@ export class Combat {
   private readonly off: (() => void)[] = [];
   private readonly queue: { at: number; run: () => void }[] = [];
 
-  /** Its clock and counters as data (save-states). Effects in flight and queued casts are not yet: refused, saying so. */
-  save(): { time: number; stats: Combat['stats'] } {
+  /** Its clock, counters and random stream as data (save-states). Effects in flight and queued casts are not yet: refused, saying so. */
+  save(): { time: number; stats: Combat['stats']; rng: number } {
     if (this.effects.length || this.queue.length) throw new Error(`Combat.save: not yet with ${this.effects.length} effect(s) in flight and ${this.queue.length} cast(s) queued`);
-    return { time: this.time, stats: { ...this.stats } };
+    return { time: this.time, stats: { ...this.stats }, rng: this.rng.state };
   }
 
+  /** Back to `save()`: what is in flight now (effects, queued casts, their lights and numbers) goes. */
   load(s: ReturnType<Combat['save']>): void {
+    for (const e of this.effects) e.dispose();
+    this.effects.length = 0;
+    this.queue.length = 0;
+    this.lights.clear();
+    this.numbers.clear();
     this.time = s.time;
     Object.assign(this.stats, s.stats);
+    this.rng.state = s.rng;
   }
 
   constructor(o: CombatOptions) {

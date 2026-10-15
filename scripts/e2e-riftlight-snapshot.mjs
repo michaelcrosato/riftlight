@@ -40,8 +40,9 @@ export async function runRiftlightSnapshot(h) {
       await task();
       e.step(3);
       /** Play `frames` by input: the stick in a slow loop, the pointer circling ahead, a swing, a skill. */
-      const play = (frames, phase) => {
+      const play = (frames, phase, prints = null) => {
         for (let f = 0; f < frames; f++) {
+          if (prints && f % 30 === 0) prints.push(e.fingerprint());
           const a = (f + phase) * 0.021;
           I.analog.x = Math.cos(a);
           I.analog.y = Math.sin(a * 1.3);
@@ -77,11 +78,20 @@ export async function runRiftlightSnapshot(h) {
       const cat0 = game().town.saveState().cat.position.join();
       play(360, 0);
       res.lively = { attacks: counts().attacks - before.attacks, casts: counts().casts - before.casts, npcsMoved: npcAt().filter((p, i) => p !== npcs0[i]).length, catMoved: game().town.saveState().cat.position.join() !== cat0 };
+      // every skill and a dodge just before: cooldowns run at the snapshot; and a buff that never ends (Infinity)
+      for (const k of ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Space']) {
+        e.input.setKey(k, true);
+        e.step(1);
+        e.input.setKey(k, false);
+        e.step(2);
+      }
+      game().hero.actor.addBuff('e2e-forever', [], 0);
       const snap = await settle();
-      res.snapAt = { frame: e.state().frame, hero: at(), bytes: JSON.stringify(snap).length };
+      res.snapAt = { frame: e.state().frame, hero: at(), bytes: JSON.stringify(snap).length, cooldowns: snap.state.hero.hc.cooldowns.length };
 
-      // the run as it went on
-      play(300, 1000);
+      // the run as it went on (its fingerprint every 30 frames)
+      const wentPrints = [];
+      play(300, 1000, wentPrints);
       res.went = { print: e.fingerprint(), hero: at(), barks: game().town.npcs.map((n) => n.bubble?.text ?? '') };
 
       // restored and played on the same way
@@ -103,8 +113,10 @@ export async function runRiftlightSnapshot(h) {
         walk(snap, again, '');
         res.snapshotDiff = diff;
       }
-      play(300, 1000);
-      res.restored = { print: e.fingerprint(), hero: at() };
+      const restoredPrints = [];
+      play(300, 1000, restoredPrints);
+      res.restored = { print: e.fingerprint(), hero: at(), forever: game().hero.actor.hasBuff('e2e-forever') };
+      res.trajectory = restoredPrints.findIndex((p, i) => p !== wentPrints[i]);
       const rec = JSON.parse(JSON.stringify(e.recording()));
       res.recFrom = !!rec.from;
 
@@ -112,6 +124,37 @@ export async function runRiftlightSnapshot(h) {
       await e.restore(snap);
       play(300, 2000);
       res.other = e.fingerprint();
+
+      // skills in flight when a restore comes (a nova, a dash): gone, the moment as it was
+      await e.restore(snap);
+      play(240, 3000); // past the snapshot's cooldowns
+      const flying = () => game().hero.world?.combat?.effects.length ?? -1;
+      for (const k of ['Digit2', 'Digit3', 'Digit1']) {
+        e.input.setKey(k, true);
+        e.step(1);
+        e.input.setKey(k, false);
+        for (let f = 0; f < 40 && flying() <= 0; f++) e.step(1); // its wind-up, then it flies
+        if (flying() > 0) break;
+      }
+      res.inFlight = flying();
+      await e.restore(snap);
+      const afterFlight = JSON.parse(JSON.stringify(await e.snapshot()));
+      res.inFlightDiff = JSON.stringify(afterFlight.state.hero) === JSON.stringify(snap.state.hero) ? '' : 'the hero differs';
+      play(300, 1000);
+      res.inFlightPrint = e.fingerprint();
+      // from the arcade and from photo mode (modes with cameras of their own)
+      await game().showcase.open(game().showcase.arcade, { instant: true });
+      e.step(2);
+      res.arcade = e.camera.preset;
+      await e.restore(snap);
+      play(300, 1000);
+      res.fromArcade = e.fingerprint();
+      game().photoMode();
+      e.step(2);
+      res.photo = e.camera.preset;
+      await e.restore(snap);
+      play(300, 1000);
+      res.fromPhoto = e.fingerprint();
 
       // refused: an open panel, a level; restored from inside a level with the inventory open
       await e.restore(snap);
@@ -154,7 +197,11 @@ export async function runRiftlightSnapshot(h) {
     check(out.lively.attacks > 0 && out.lively.casts > 0 && out.lively.npcsMoved > 0, `the town lives while the hero plays: ${out.lively.attacks} swings, ${out.lively.casts} casts, ${out.lively.npcsMoved} townsfolk walked, the cat ${out.lively.catMoved ? 'moved' : 'sat'}`);
     check(out.snapAt.bytes > 1000, `a snapshot in town, after 360 frames of walking, aiming, swinging and a skill: ${(out.snapAt.bytes / 1024).toFixed(1)} KB of JSON, the hero at ${out.snapAt.hero.join(', ')}`);
     check(out.sameSnapshot, `a snapshot just after restoring is the one restored${out.snapshotDiff ? `: ${out.snapshotDiff.join('; ')}` : ''}`);
-    check(out.restored.print === out.went.print, `restored and played on the same way, the same game: ${out.went.print} vs ${out.restored.print} (hero at ${out.restored.hero.join(', ')} vs ${out.went.hero.join(', ')})`);
+    check(out.restored.print === out.went.print && out.trajectory === -1, `restored and played on the same way, the same game every 30 frames: ${out.went.print} vs ${out.restored.print}${out.trajectory >= 0 ? `, apart from frame ${out.trajectory * 30}` : ''} (hero at ${out.restored.hero.join(', ')} vs ${out.went.hero.join(', ')})`);
+    check(out.snapAt.cooldowns > 0 && out.restored.forever, `cooldowns running at the snapshot (${out.snapAt.cooldowns}) and a buff that never ends come back`);
+    check(out.inFlight > 0 && out.inFlightDiff === '' && out.inFlightPrint === out.went.print, `skills in flight at a restore (${out.inFlight} effects) are gone: the same moment, the same game (${out.inFlightPrint})${out.inFlightDiff ? `; ${out.inFlightDiff}` : ''}`);
+    check(out.arcade !== 'iso' && out.fromArcade === out.went.print, `restored from the arcade (camera ${out.arcade}): the same game (${out.fromArcade})`);
+    check(out.photo !== 'iso' && out.fromPhoto === out.went.print, `restored from photo mode (camera ${out.photo}): the same game (${out.fromPhoto})`);
     check(out.restoreMs < 500, `a restore takes ${out.restoreMs.toFixed(0)} ms`);
     check(out.other !== out.went.print, `a different input from the same moment plays differently (${out.other})`);
     check(/panel is open/.test(out.panelRefused), `a snapshot with a panel open is refused: "${out.panelRefused}"`);

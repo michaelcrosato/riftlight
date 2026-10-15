@@ -28,11 +28,15 @@ export class ActorManager implements ActorWorld {
     return { time: this.time, depth: this.depth, order: this.actors.map((a) => a.id) };
   }
 
-  /** Back to `save()`: the clock, and the actors (all here again) in the saved order. */
+  /** Back to `save()`: the clock, and the actors (all here again) in the saved order; any other is taken out, quietly. */
   load(s: ReturnType<ActorManager['save']>): void {
     this.time = s.time;
     this.depth = s.depth;
     const at = new Map(s.order.map((id, i) => [id, i]));
+    for (const a of this.actors.filter((x) => !at.has(x.id))) {
+      this.actors.splice(this.actors.indexOf(a), 1);
+      a.dispose();
+    }
     this.actors.sort((a, b) => (at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9));
     this.dirtyOrder = false;
   }
