@@ -5,8 +5,10 @@ for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
 post-processing (with its built-in WebGL 2 fallback), Rapier physics, local GLB assets.
 
 The page at `/` is **Riftlight**, the showcase hack-and-slash ARPG ([`docs/GAME.md`](docs/GAME.md)):
-a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper,
-levels with monsters, loot and bosses, the death recap, save slots and the difficulty sliders
+a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper and,
+around it, the ruins of the Old Watch, a tavern, a stream with a hunter's camp across it, a
+farmstead, a willow pond, the watchmen's graves and the road out (built from the imported Kenney
+packs), levels with monsters, loot and bosses, the death recap, save slots and the difficulty sliders
 (Esc → Tuning). The movement demo is `/?game=playground` (and `?game=sandbox`).
 
 **Engine World** (`/?game=world`, [`docs/WORLD.md`](docs/WORLD.md)) is the engine's tech demo:

@@ -28,6 +28,7 @@ import { compileClip, renderSheet, restPoseOf, type ClipDef, type SheetImage } f
 import { column, diffPanel, diffReports, inspectObject, renderDiff, renderInspection, renderTurntable, row, titleBar, type ClipInfo, type InspectReport } from '../src/engine/inspect';
 import { HERO_CLIPS, HERO_MODEL, HERO_RIG } from '../src/game/hero';
 import { Rng } from '../src/riftlight/core/rng';
+import { loadPacksSync } from '../src/riftlight/nodePacks';
 import type { Rank } from '../src/riftlight/core/scaling';
 import type { Rarity } from '../src/riftlight/core/types';
 import { THEMES, getTheme } from '../src/riftlight/levels/themes/themes';
@@ -149,6 +150,7 @@ async function load(target: string): Promise<Loaded> {
     case 'prop': {
       if (!PROPS.has(rest)) fail(`no prop "${rest}" (${PROPS.all().map((p) => p.id).join(', ')})`);
       const theme = flags.has('theme') ? getTheme(String(flags.get('theme'))) : (THEMES.all().find((t) => t.props.includes(rest)) ?? THEMES.all()[0]!);
+      loadPacksSync(); // its variants are pack models (src/riftlight/packs.ts)
       const p = buildProp(rest, { theme, rng: new Rng(`prop:${rest}`) }, 0, 0);
       return { object: p.root, key: `prop-${rest}-${theme.id}`, name: `prop ${rest}`, subtitle: `theme ${theme.id}${p.glow ? `, glow ${p.glow.radius} m` : ''}${PROPS.get(rest).blocks ? ', blocks its cell' : ''}` };
     }

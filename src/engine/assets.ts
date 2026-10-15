@@ -66,8 +66,9 @@ const packs = new Map<string, Promise<{ pack: ModelPack; models: ModelCatalog; t
 /**
  * Load a pack of imported models and textures (`public/packs/<pack>.json`, docs/ASSETS.md
  * *Importing*) once, the way `loadModel` loads a GLB: the URL resolved the same way (under the
- * base URL; a page may put a data URL for it in `__PIXEL_ASSETS__`, though single-file builds
- * embed only `public/assets/*.glb`), counted by `assetProgress`. Resolves to a catalog of the
+ * base URL; a page may put a data URL for it in `__PIXEL_ASSETS__`, as single-file builds do for
+ * every `packs/<id>.json` path the built code names, cut to the models it names), counted by
+ * `assetProgress`. Resolves to a catalog of the
  * pack's ModelDefs, to build from with `buildModel(id, { catalog })`; `into` also adds them to a
  * catalog of yours (e.g. `MODEL_LIBRARY`, so `use` finds them), and `textures` gets the pack's
  * TextureDefs (e.g. `TEXTURE_LIBRARY`, so `textureMap(id)` and `hudSprite(id)` find them).

@@ -20,6 +20,7 @@ import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
 import type { ActorLike, DifficultyTuning, GameEvents, LevelSpec, SaveData } from '../core/types';
+import { loadRiftlightPacks } from '../packs';
 import { Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
@@ -211,7 +212,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     };
     for (const p of [this.ports.loot, this.ports.tree, this.ports.levels, this.ports.monsters]) p.init?.(this.services);
     this.listen();
-    const tree = await ctx.loadModel('assets/tree.glb');
+    // the town's outskirts and the level props build from imported packs (riftlight/packs.ts)
+    const [tree] = await Promise.all([ctx.loadModel('assets/tree.glb'), loadRiftlightPacks()]);
     this.town = new Town(this.services);
     this.town.build(tree.scene);
     ctx.scene.add(this.town.root);

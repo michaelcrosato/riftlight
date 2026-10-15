@@ -568,7 +568,12 @@ Mini Dungeon come in at 2 (a doorway 2 m, a character 1.5 m) and Castle and Natu
 2.7 m, an oak 3.7 m, as the library's). 10 thin pieces (studs, pillows, flowers, grass) score
 under 0.98 silhouette IoU at game scale, where they are a few pixels; all are 0.977 or more close
 up. See them in the Asset Gallery; credit them from `npm run model -- credits` (CC0: credit
-optional).
+optional). **Where they're used:** Riftlight loads the four model packs at setup
+(`src/riftlight/packs.ts`): Emberfall's outskirts are built from them (docs/GAME.md, *Town*:
+castle walls and towers, river tiles and a bridge, trees, crops, fences, a tent, furniture,
+barrels), and the level themes' props wear them as variants (docs/GAME.md, *Themes and props*:
+barrels, chests, columns, stones, rocks, trees, a pennant). The single-file build
+embeds only the models the game's code names (`npm run build:single`).
 
 ### Pixel-art sheets
 

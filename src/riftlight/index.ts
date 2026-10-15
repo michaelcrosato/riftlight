@@ -8,6 +8,7 @@
  */
 import type { EngineOptions } from '../engine';
 import { RIFTLIGHT_TOUCH_BUTTONS } from './game/touch';
+import { TOWN_LAYOUT } from './town/layout';
 
 export { Riftlight, CAMERA, type Screen } from './game/Riftlight';
 export * from './game/ports';
@@ -29,7 +30,8 @@ export { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_LAYOUT, TOUCH_CODES } from './game/touch
  */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   aspect: 'fill',
-  camera: { preset: 'iso', pitch: 42, yaw: 45, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
+  // the angle the town is laid out for (it closes the ground this view can't see behind tall things)
+  camera: { preset: 'iso', pitch: TOWN_LAYOUT.view.pitch, yaw: TOWN_LAYOUT.view.yaw, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
   touchBar: false,
 };

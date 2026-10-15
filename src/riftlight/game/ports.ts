@@ -98,6 +98,12 @@ export interface StageWorld {
   collide(p: Vector3, radius: number): void;
   /** Floor height at (x, z). */
   groundY(x: number, z: number): number;
+  /**
+   * Walls between two points as the fraction of the way where the line goes into one, or null
+   * (`WallQuery`): a stage without its own combat world (the town) hands it to the one the hero
+   * brings, so a Blink stops short of them. Levels have their own.
+   */
+  wall?(from: Vector3, to: Vector3): number | null;
   /** Actors in the stage other than the hero (monsters; empty in town). */
   actors(): readonly ActorLike[];
 }

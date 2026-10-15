@@ -1591,7 +1591,8 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
 - `npm run balance` (Riftlight, docs/GAME.md *Balance*): a headless combat sim over the game's
   real code, build × depth, as charts, CSV and JSON with its outliers.
 - `npm run build:single` writes `dist-single/pixel-engine.html`, one self-contained offline
-  file (Rapier's `.wasm` inlined as a data: URL).
+  file (Rapier's `.wasm` inlined as a data: URL, the GLBs and every pack the code loads, cut to
+  the models it names, in `__PIXEL_ASSETS__`).
 
 ### Tools for agents: how to build your own
 

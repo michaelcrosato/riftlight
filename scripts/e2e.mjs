@@ -45,7 +45,7 @@
 //                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
 //                 few frames of Gate B's scene (npm run gate-b) scored.
 // riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs), WebGPU + WebGL 2: title,
-//                 new run, town, rift keeper, level 1 with the basic attack, gold, clear, loot
+//                 new run, town (a walk to every district and back), rift keeper, level 1 with the basic attack, gold, clear, loot
 //                 window, portal, autosave, pause → Tuning (enemy life applies live), death
 //                 recap, save → reload → Continue. Then the real loot, skills and tree
 //                 (scripts/e2e-riftlight-items.mjs): drops, pickup, equip, sockets, the tree and

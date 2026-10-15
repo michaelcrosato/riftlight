@@ -1,10 +1,12 @@
 /**
  * Emberfall, the town hub: a plaza with a fountain, Brann's smithy, Ilsa's market stall,
  * Oru's mystic tent, the stash chest and the rift obelisk where Vex keeps watch, cottages,
- * lanterns, trees and two villagers and a cat on the paths. Built once from primitives
- * (town/kit.ts → one merged mesh per material) and kept alive while levels come and go
- * (hidden, not rebuilt). Lights come from the shared pool; a day–night tint cycles the sun,
- * ambient and sky, lanterns and fireflies come out at night, the forge throws sparks.
+ * lanterns, two villagers and a cat on the paths; around it the outskirts (town/outskirts.ts:
+ * the Old Watch, the tavern, the stream and the hunter's camp, the farmstead, the pond, the
+ * graves, the road out) and the forest. Built once from primitives and pack models (town/kit.ts
+ * → one merged mesh per material and cell) and kept alive while levels come and go (hidden, not
+ * rebuilt). Lights come from the shared pool; a day–night tint cycles the sun, ambient and sky,
+ * lanterns and fireflies come out at night, the forge throws sparks, the campfire smokes.
  *
  * Layout coordinates are screen-space metres (`sx` right, `sy` up the screen) for the iso
  * camera at 45° yaw, converted with `iso()`, so the data reads like the picture.
@@ -15,12 +17,20 @@ import { Rng } from '../core/rng';
 import type { ActorLike } from '../core/types';
 import type { PooledLight, ShellServices, StageWorld } from '../game/ports';
 import { Cat, type CatState } from './critters';
-import { type Blocker, collideBlockers, faceted, Kit } from './kit';
+import { type Blocker, collideBlockers, faceted, Kit, overlapsBlocker } from './kit';
+import { iso, screenOf, TOWN_LAYOUT } from './layout';
+import { TownNav } from './nav';
+import { bridgeDeck, buildOutskirts, groundPieces, onWater } from './outskirts';
 import { type Bubble, Npc, type NpcAction, NPCS, type NpcState } from './npcs';
 
-const S2 = Math.SQRT1_2;
-/** Screen-space (sx right, sy up) → world (x, z) for the iso camera at yaw 45°. */
-export const iso = (sx: number, sy: number): [number, number] => [(sx - sy) * S2, (-sx - sy) * S2];
+export { iso, screenOf, TOWN_LAYOUT } from './layout';
+
+/**
+ * The town merges in cells (Kit.build), so only the cells in view draw: the hub (the plaza and
+ * its ring) as one, the outskirts in squares of 10 m.
+ */
+const townCell = (x: number, z: number): string => (Math.hypot(x, z) < 16.5 ? 'hub' : `${Math.floor(x / 10)},${Math.floor(z / 10)}`);
+
 const isoV = (sx: number, sy: number, y = 0) => {
   const [x, z] = iso(sx, sy);
   return new Vector3(x, y, z);
@@ -29,32 +39,6 @@ const isoV = (sx: number, sy: number, y = 0) => {
 const facePlaza = (sx: number, sy: number) => {
   const [x, z] = iso(sx, sy);
   return (Math.atan2(-x, -z) * 180) / Math.PI;
-};
-
-export const TOWN_LAYOUT = {
-  radius: 15.5,
-  plaza: 5.2,
-  fountain: [0, 0.4] as const,
-  obelisk: [0, 8.6] as const,
-  /** Buildings with a keeper face between the plaza and the camera, so nobody stands under a roof. */
-  smithy: [-9.4, 3.0, 88] as const,
-  market: [9.4, 3.0, 2] as const,
-  tent: [8.4, -4.4, 10] as const,
-  stash: [-4.9, -3.9, 80] as const,
-  vex: [2.8, 6.4] as const,
-  houses: [
-    [-11.5, 10, 'red'],
-    [11.5, 10.5, 'teal'],
-    [-14, -4, 'plum'],
-  ] as const,
-  lanterns: [
-    [-4.6, 3.2],
-    [4.6, 3.2],
-    [-3.6, -4.6],
-    [3.6, -4.6],
-  ] as const,
-  spawn: [0, -2.9] as const,
-  portalSpawn: [0, 5.1] as const,
 };
 
 /** Where the hero walks to talk to an NPC or use a prop. */
@@ -75,12 +59,21 @@ export class Town implements StageWorld {
   readonly npcs: Npc[] = [];
   readonly spawn = isoV(...TOWN_LAYOUT.spawn);
   readonly portalSpawn = isoV(...TOWN_LAYOUT.portalSpawn);
+  /** A spot in each district of the outskirts (TOWN_LAYOUT.districts), on the ground: tests and agents walk there. */
+  readonly districts: Readonly<Record<keyof typeof TOWN_LAYOUT.districts, Vector3>> = Object.fromEntries(
+    Object.entries(TOWN_LAYOUT.districts).map(([id, [sx, sy]]) => [id, isoV(sx, sy)]),
+  ) as Record<keyof typeof TOWN_LAYOUT.districts, Vector3>;
   private blockers: Blocker[] = [];
   private readonly lights: PooledLight[] = [];
   private lanternLights: PooledLight[] = [];
   private forgeLight: PooledLight | null = null;
   private obeliskLight: PooledLight | null = null;
   private tentLight: PooledLight | null = null;
+  private campLight: PooledLight | null = null;
+  private riftLight: PooledLight | null = null;
+  /** The hunter's fire and the rift's crack at the Old Watch (town/outskirts.ts). */
+  private readonly campfireAt = new Vector3();
+  private readonly riftAt = new Vector3();
   private crystal!: Object3D;
   private halo!: Object3D;
   private chestLid!: Object3D;
@@ -121,8 +114,12 @@ export class Town implements StageWorld {
     this.stash(kit);
     for (const [sx, sy, roof] of TOWN_LAYOUT.houses) this.house(kit, sx, sy, roof);
     for (const [sx, sy] of TOWN_LAYOUT.lanterns) this.lantern(kit, sx, sy);
-    this.props(kit, tree);
-    this.root.add(kit.build());
+    this.props(kit);
+    const out = buildOutskirts(kit, this.rng.fork('outskirts'), tree);
+    this.campfireAt.copy(out.campfire);
+    this.riftAt.copy(out.rift);
+    this.chimneys.push(...out.chimneys);
+    this.root.add(kit.build(townCell, 14));
     this.blockers = kit.blockers;
     this.townsfolk();
     this.cat = new Cat(this.rng.fork('cat'), isoV(-6.8, -1.6), [isoV(-7.2, -0.8), isoV(-5.2, -2.6), isoV(-7.6, -5.2), isoV(-9.6, -2.2)]);
@@ -132,13 +129,22 @@ export class Town implements StageWorld {
   // ---------------------------------------------------------------- building
 
   private ground(k: Kit): void {
-    k.disc(46, 24, 'green', [0, 0, 0], { receive: true });
-    // darker grass patches and a dirt ring road
+    // the ground: a disc cut along the stream and round the pond, whose tiles fill the cuts
+    for (const g of groundPieces()) k.slab(g.outline, 'green', 0, { receive: true, holes: g.holes });
+    // darker grass patches (never on the water)
     const rng = this.rng.fork('grass');
     for (let i = 0; i < 18; i++) {
       const a = rng.range(0, Math.PI * 2);
       const r = rng.range(7, 22);
       k.disc(rng.range(0.8, 1.8), 7, rng.chance(0.3) ? 'teal' : 'lime', [Math.cos(a) * r, 0.005, Math.sin(a) * r], { receive: true, rot: [0, rng.range(0, 90), 0] });
+    }
+    const far = this.rng.fork('grass-far');
+    for (let i = 0; i < 34; i++) {
+      const a = far.range(0, Math.PI * 2);
+      const r = far.range(22, 40);
+      const [sx, sy] = screenOf(Math.cos(a) * r, Math.sin(a) * r);
+      if (onWater(sx, sy, 1.8)) continue;
+      k.disc(far.range(0.8, 1.8), 7, far.chance(0.3) ? 'teal' : 'lime', [Math.cos(a) * r, 0.005, Math.sin(a) * r], { receive: true, rot: [0, far.range(0, 90), 0] });
     }
     // paths from the plaza to each place (dirt strips)
     const path = (sx: number, sy: number, len: number, width = 2.2) => {
@@ -161,6 +167,15 @@ export class Town implements StageWorld {
       const z = Math.sin(a) * r;
       if (rng.chance(0.7)) k.cone(0.12, rng.range(0.25, 0.4), 4, rng.chance(0.5) ? 'green' : 'lime', [x, 0.15, z], { cast: false, rot: [0, rng.range(0, 90), 0] });
       else k.box([0.12, 0.12, 0.12], rng.pick(['red', 'sand', 'white', 'sky'] as const), [x, 0.1, z], { cast: false });
+    }
+    for (let i = 0; i < 120; i++) {
+      const a = far.range(0, Math.PI * 2);
+      const r = far.range(18, 36);
+      const x = Math.cos(a) * r;
+      const z = Math.sin(a) * r;
+      if (onWater(...screenOf(x, z), 0.4)) continue;
+      if (far.chance(0.7)) k.cone(0.12, far.range(0.25, 0.4), 4, far.chance(0.5) ? 'green' : 'lime', [x, 0.15, z], { cast: false, rot: [0, far.range(0, 90), 0] });
+      else k.box([0.12, 0.12, 0.12], far.pick(['red', 'sand', 'white', 'sky'] as const), [x, 0.1, z], { cast: false });
     }
   }
 
@@ -292,6 +307,7 @@ export class Town implements StageWorld {
       k.cone(0.45, 0.35, 6, 'ink', [1.9, 0.18, -0.3], { cast: false });
       // blockers
       k.blockBox(0, -2.4, 6.2, 0.6);
+      k.closeBehind(0, -2.4, 6.2, 0.6, 3.4, TOWN_LAYOUT.view);
       k.blockBox(-3, -1.4, 0.5, 2.2);
       k.blockBox(3, -1.4, 0.5, 2.2);
       k.blockBox(-1.7, -1.55, 1.6, 1.3);
@@ -331,6 +347,8 @@ export class Town implements StageWorld {
       k.blockCircle(-2.7, 0.2, 0.5);
       k.blockBox(2.8, -0.4, 0.9, 0.9);
       k.blockBox(0, -1.6, 4.4, 0.4);
+      // behind the counter is Ilsa's: closed, so nothing slips in by the sacks
+      k.blockBox(0, -0.5, 4.4, 2.0);
     });
   }
 
@@ -403,6 +421,8 @@ export class Town implements StageWorld {
       k.box([0.6, 1.2, 0.6], 'slate', [1.3, 3.6, -0.6]);
       this.chimneys.push(k.world([1.3, 4.3, -0.6]));
       k.blockBox(0, 0, 4.4, 3.6);
+      // the walkable ground goes past the houses now: not behind them, where the roof would hide the hero
+      k.closeBehind(0, 0, 4.4, 3.6, { eaves: 2.4, ridge: 3.9 }, TOWN_LAYOUT.view);
     });
   }
 
@@ -420,27 +440,10 @@ export class Town implements StageWorld {
     });
   }
 
-  private props(k: Kit, tree: Object3D): void {
+  private props(k: Kit): void {
     const rng = this.rng.fork('props');
-    // a ring of trees around the town edge, leaving the paths open
-    const trees: Object3D[] = [];
-    for (let i = 0; i < 34; i++) {
-      const a = (i / 34) * Math.PI * 2 + rng.range(-0.06, 0.06);
-      const r = rng.range(15, 21);
-      const x = Math.cos(a) * r;
-      const z = Math.sin(a) * r;
-      // keep the south road (toward the camera) and the houses clear
-      const [px, pz] = iso(0, -12);
-      if (Math.hypot(x - px, z - pz) < 5) continue;
-      const t = tree.clone(true);
-      t.position.set(x, 0, z);
-      t.rotation.y = rng.range(0, Math.PI * 2);
-      t.scale.setScalar(rng.range(1.1, 1.7));
-      trees.push(t);
-      k.blockers.push({ kind: 'circle', x, z, r: 0.45 });
-    }
-    for (const t of trees) k.statics.push(t);
     // crates, a barrel and a sack: library models (docs/ASSETS.md); the hay bale is a kit cylinder
+    // (the forest that ringed the plaza moved out to the new edge: town/outskirts.ts)
     const dress = (id: string, sx: number, sy: number, o: Parameters<Kit['model']>[2] = {}) => {
       const [x, z] = iso(sx, sy);
       k.model(id, [x, 0, z], { yaw: rng.range(0, 40), ...o });
@@ -452,7 +455,7 @@ export class Town implements StageWorld {
     const [hx, hz] = iso(-12.6, 3.6);
     k.cyl(0.6, 0.6, 0.8, 8, 'sand', [hx, 0.4, hz], { rot: [0, 0, 90] });
     k.blockers.push({ kind: 'circle', x: hx, z: hz, r: 0.6 });
-    // low fence along the south edge
+    // low fence along the south edge of the hub (the road out passes its gap)
     for (let i = -6; i <= 6; i++) {
       if (Math.abs(i) <= 1) continue;
       const [x, z] = iso(i * 1.6, -11.5);
@@ -460,6 +463,7 @@ export class Town implements StageWorld {
         k.box([0.12, 0.8, 0.12], 'plum', [0, 0.4, 0]);
         k.box([1.6, 0.1, 0.06], 'orange', [0, 0.6, 0]);
         k.box([1.6, 0.1, 0.06], 'orange', [0, 0.3, 0]);
+        k.blockBox(0, 0, 1.6, 0.2);
       });
     }
   }
@@ -535,6 +539,8 @@ export class Town implements StageWorld {
   extend(ext: TownExtension): void {
     if (ext.root) this.root.add(ext.root);
     if (ext.blockers) this.blockers.push(...ext.blockers);
+    this.walkGrid = null;
+    this.solids = null;
     if (ext.interactables) this.interactables.push(...ext.interactables);
     this.extensions.push(ext);
     if (this.active) ext.activate?.();
@@ -557,6 +563,8 @@ export class Town implements StageWorld {
     this.obeliskLight = take(PALETTE.cyan, 30, 12, isoV(...TOWN_LAYOUT.obelisk, 4.5));
     this.forgeLight = take(PALETTE.orange, 16, 6, this.forgeAt);
     this.tentLight = take(PALETTE.sky, 8, 5, this.tentAt);
+    this.campLight = take(PALETTE.orange, 10, 7, this.campfireAt);
+    this.riftLight = take(PALETTE.cyan, 8, 6, this.riftAt);
     this.lanternLights = this.lanternAt.map((p) => take(PALETTE.sand, 0, 7.5, p)).filter((l): l is PooledLight => !!l);
   }
 
@@ -567,7 +575,7 @@ export class Town implements StageWorld {
     for (const l of this.lights) this.services.lights.release(l);
     this.lights.length = 0;
     this.lanternLights = [];
-    this.forgeLight = this.obeliskLight = this.tentLight = null;
+    this.forgeLight = this.obeliskLight = this.tentLight = this.campLight = this.riftLight = null;
     this.restoreSky();
   }
 
@@ -623,28 +631,106 @@ export class Town implements StageWorld {
   }
 
   collide(p: Vector3, radius: number): void {
-    collideBlockers(p, radius, this.blockers);
-    // townsfolk are solid too (they move, so they're checked live)
-    for (const n of this.npcs) {
-      const dx = p.x - n.position.x;
-      const dz = p.z - n.position.z;
-      const d = Math.hypot(dx, dz);
-      const min = radius + 0.4 * n.def.scale;
-      if (d < min && d > 1e-6) {
-        p.x = n.position.x + (dx / d) * min;
-        p.z = n.position.z + (dz / d) * min;
-      }
-    }
-    const d = Math.hypot(p.x, p.z);
     const R = TOWN_LAYOUT.radius;
-    if (d > R) {
-      p.x *= R / d;
-      p.z *= R / d;
+    // held to the walkable circle, out of the townsfolk (they move, so they're checked live), then
+    // out of each blocker in turn, last, so nothing leaves it in a wall: a few passes settle a push
+    // that moves it into the next blocker (a trunk at the edge may leave it a little past the circle)
+    for (let pass = 0; pass < 4; pass++) {
+      const d = Math.hypot(p.x, p.z);
+      if (d > R) {
+        p.x *= R / d;
+        p.z *= R / d;
+      }
+      for (const n of this.npcs) {
+        const dx = p.x - n.position.x;
+        const dz = p.z - n.position.z;
+        const dn = Math.hypot(dx, dz);
+        const min = radius + 0.4 * n.def.scale;
+        if (dn < min && dn > 1e-6) {
+          p.x = n.position.x + (dx / dn) * min;
+          p.z = n.position.z + (dz / dn) * min;
+        }
+      }
+      collideBlockers(p, radius, this.blockers);
+      if (!this.blockers.some((b) => overlapsBlocker(p.x, p.z, radius - 0.05, b))) return;
     }
+    // still deep in something: wedged in a gap narrower than it, or landed deep in a blocker (a
+    // Blink over the water) and pushed back and forth between two
+    this.rescue(p);
   }
 
-  groundY(): number {
-    return 0;
+  /** Onto the nearest ground that can be walked to from the plaza. */
+  private rescue(p: Vector3): void {
+    const out = this.nav().nearestReachable(this.spawn, p.x, p.z, 6);
+    if (out) p.set(out.x, p.y, out.z);
+  }
+
+  /**
+   * Walls between two points for combat (the town's `CombatWorld.wall`; a Blink stops short of
+   * them): the fraction of the way where the line first goes into anything boxed (a building, a
+   * wall, a fence, a crate, closed ground) or past the walkable circle, or null. Low boxes (the
+   * water, the bridge's rails) and round things (trunks, posts) don't stop it, as a level's pits
+   * and props don't: landing on one, the hero is pushed off it as he would be walking.
+   */
+  wall(from: Vector3, to: Vector3): number | null {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    if (Math.hypot(dx, dz) < 1e-4) return null;
+    let hit = Infinity;
+    // the edge: where the line leaves the circle
+    const R = TOWN_LAYOUT.radius;
+    if (Math.hypot(to.x, to.z) > R) {
+      const a = dx * dx + dz * dz;
+      const b = 2 * (from.x * dx + from.z * dz);
+      const c = from.x * from.x + from.z * from.z - R * R;
+      hit = Math.max(0, (-b + Math.sqrt(Math.max(0, b * b - 4 * a * c))) / (2 * a));
+    }
+    // the boxes: the line clipped to each in its own frame
+    for (const box of (this.solids ??= this.blockers.filter((b): b is Extract<Blocker, { kind: 'box' }> => b.kind === 'box' && !b.low))) {
+      const r = Math.hypot(box.hw, box.hd);
+      if (Math.min(from.x, to.x) > box.x + r || Math.max(from.x, to.x) < box.x - r || Math.min(from.z, to.z) > box.z + r || Math.max(from.z, to.z) < box.z - r) continue;
+      const c = Math.cos(box.rot);
+      const s = Math.sin(box.rot);
+      const ax = from.x - box.x;
+      const az = from.z - box.z;
+      let t0 = 0;
+      let t1 = 1;
+      for (const [p, d, h] of [
+        [ax * c - az * s, dx * c - dz * s, box.hw],
+        [ax * s + az * c, dx * s + dz * c, box.hd],
+      ] as const) {
+        if (Math.abs(d) < 1e-12) {
+          if (Math.abs(p) >= h) t0 = 2;
+          continue;
+        }
+        const u = (-h - p) / d;
+        const v = (h - p) / d;
+        t0 = Math.max(t0, Math.min(u, v));
+        t1 = Math.min(t1, Math.max(u, v));
+      }
+      if (t0 < t1 && t0 < hit) hit = t0;
+    }
+    return hit <= 1 ? hit : null;
+  }
+
+  /** The boxes a Blink can't cross (built on first use and again after `extend`). */
+  private solids: Extract<Blocker, { kind: 'box' }>[] | null = null;
+
+  /** Flat ground, but for the bridge's deck over the stream. */
+  groundY(x: number, z: number): number {
+    return bridgeDeck(x, z);
+  }
+
+  /** What actors collide with: the town's blockers and its extensions' (townsfolk aside, who move). */
+  get obstacles(): readonly Blocker[] {
+    return this.blockers;
+  }
+
+  private walkGrid: TownNav | null = null;
+
+  /** The walkable grid (town/nav.ts), built on first use and again after `extend`. */
+  nav(): TownNav {
+    return (this.walkGrid ??= new TownNav(this.blockers, { radius: TOWN_LAYOUT.radius }));
   }
 
   actors(): readonly ActorLike[] {
@@ -702,6 +788,9 @@ export class Town implements StageWorld {
     if (this.forgeLight) this.forgeLight.intensity = 7 + 2 * Math.sin(t * 13) * Math.sin(t * 5.3) + 12 * this.flash + 5 * night;
     if (this.tentLight) this.tentLight.intensity = 6 + 2 * Math.sin(t * 1.7) + 6 * night;
     for (const [i, l] of this.lanternLights.entries()) l.intensity = night * (16 + 2 * Math.sin(t * 9 + i * 1.7));
+    // the hunter's fire flickers (brighter at night), the rift's crack breathes
+    if (this.campLight) this.campLight.intensity = 6 + 2.5 * Math.sin(t * 11) * Math.sin(t * 4.3) + 10 * night;
+    if (this.riftLight) this.riftLight.intensity = 5 + 3 * Math.sin(t * 1.6) + 8 * night;
     // Oru's orbs orbit him, leaving faint trails
     const oru = this.npcs.find((n) => n.def.id === 'oru');
     if (oru) {
@@ -718,9 +807,12 @@ export class Town implements StageWorld {
     if (this.tick(dt, 1.2)) for (const c of this.chimneys) this.services.ctx.particles.burst('rl.chimney', c);
     if (this.tick(dt, 5)) this.services.ctx.particles.burst('rl.mote', isoV(...TOWN_LAYOUT.obelisk, 1));
     if (this.tick(dt, 10)) this.services.ctx.particles.burst('rl.spray', this.fountainAt.clone().setY(1.7));
+    if (this.tick(dt, 4, 1)) this.services.ctx.particles.burst('rl.ember', this.campfireAt);
+    if (this.tick(dt, 1.5, 2)) this.services.ctx.particles.burst('rl.chimney', this.campfireAt);
+    if (this.tick(dt, 3, 3)) this.services.ctx.particles.burst('rl.mote', this.riftAt);
     if (night > 0.3 && this.tick(dt, 4 * night)) {
       const a = this.rng.range(0, Math.PI * 2);
-      const r = this.rng.range(6, 16);
+      const r = this.rng.range(6, 28);
       this.services.ctx.particles.burst('rl.firefly', [Math.cos(a) * r, this.rng.range(0.5, 1.8), Math.sin(a) * r]);
     }
     // chest lid

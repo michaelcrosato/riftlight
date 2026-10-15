@@ -6,6 +6,7 @@
  * the stage's `collide()` pushes actors out of. New dressing comes from the library.
  */
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   ConeGeometry,
@@ -14,7 +15,9 @@ import {
   Group,
   Mesh,
   type Object3D,
+  Path,
   Shape,
+  ShapeGeometry,
   Vector2,
   Vector3,
 } from 'three/webgpu';
@@ -28,9 +31,28 @@ import { toonMaterial } from '../../engine/render/toon';
 
 export type V3 = readonly [number, number, number];
 
+/** How `Kit.model` places a model. */
+export interface ModelPlacement {
+  /** Degrees about Y, in the current frame. */
+  readonly yaw?: number;
+  /** Uniform size (its blocker scales with it). */
+  readonly scale?: number;
+  readonly params?: Readonly<Record<string, number>>;
+  readonly palette?: Readonly<Record<string, Binding>>;
+  readonly seed?: number;
+  /** False: no blocker from its footprint (add a circle at a trunk instead). */
+  readonly block?: boolean;
+  /** False: casts no shadow (ground tiles, flowers and such: the shadow pass skips them). */
+  readonly cast?: boolean;
+}
+
+/**
+ * What actors are pushed out of. A `low` box (water, a bridge's rails) stops walkers but not a
+ * Blink, which goes over it (`Town.wall`), as a level's pits don't stop one.
+ */
 export type Blocker =
   | { kind: 'circle'; x: number; z: number; r: number }
-  | { kind: 'box'; x: number; z: number; hw: number; hd: number; rot: number };
+  | { kind: 'box'; x: number; z: number; hw: number; hd: number; rot: number; low?: boolean };
 
 export interface PrimOptions {
   /** Euler rotation in degrees (XYZ). */
@@ -147,9 +169,9 @@ export class Kit {
 
   /**
    * A gabled roof over a w × d footprint (ridge along local X), eaves at `y`, ridge `h`
-   * higher, overhanging by `over`.
+   * higher, overhanging by `over`; its gable ends in `gable`.
    */
-  roof(w: number, d: number, y: number, h: number, color: PaletteColor, over = 0.3, trim?: PaletteColor): void {
+  roof(w: number, d: number, y: number, h: number, color: PaletteColor, over = 0.3, trim?: PaletteColor, gable: PaletteColor = 'mist'): void {
     const half = d / 2 + over;
     const slope = Math.hypot(half, h);
     const angle = Math.atan2(h, half) / DEG;
@@ -158,7 +180,7 @@ export class Kit {
     }
     this.box([w + over * 2 + 0.1, 0.16, 0.22], trim ?? color, [0, y + h + 0.04, 0]);
     // gable ends: triangular walls
-    for (const sx of [1, -1]) this.gable(sx * (w / 2 - 0.06), y, d, h, 'mist');
+    for (const sx of [1, -1]) this.gable(sx * (w / 2 - 0.06), y, d, h, gable);
   }
 
   /** A triangular wall in the local YZ plane at x, base at `y`, `d` wide, `h` high. */
@@ -170,23 +192,36 @@ export class Kit {
   }
 
   /**
-   * A library model at `at` in the current frame, turned `yaw` degrees, merged with the rest;
-   * it blocks its footprint (a box turned with it) unless `block` is false. Returns the build
-   * (its `light`, anchors).
+   * A library model (or a pack's, once loaded into the library) at `at` in the current frame,
+   * turned `yaw` degrees and drawn `scale` times its size, merged with the rest; it blocks its
+   * footprint (a box turned with it) unless `block` is false. Returns the build (its `light`,
+   * anchors, bounds at scale 1).
    */
-  model(id: string, at: V3, o: { yaw?: number; params?: Readonly<Record<string, number>>; palette?: Readonly<Record<string, Binding>>; seed?: number; block?: boolean } = {}): ModelBuild {
+  model(id: string, at: V3, o: ModelPlacement = {}): ModelBuild {
     const b = buildModel(id, { ...(o.params ? { params: o.params } : {}), ...(o.palette ? { palette: o.palette } : {}), ...(o.seed !== undefined ? { seed: o.seed } : {}) });
+    const k = o.scale ?? 1;
     b.object.position.set(...at);
     b.object.rotation.y = (o.yaw ?? 0) * DEG;
+    b.object.scale.setScalar(k);
+    if (o.cast === false) b.object.traverse((m) => (m.castShadow = false));
     this.top.add(b.object);
     this.statics.push(b.object); // a Group: build() merges its meshes and leaves their (shared) geometry alone
     if (o.block !== false) {
       const { min, max } = b.bounds;
-      const centre = new Vector3((min[0] + max[0]) / 2, 0, (min[2] + max[2]) / 2).applyAxisAngle(UP, b.object.rotation.y).add(new Vector3(...at));
+      const centre = new Vector3(((min[0] + max[0]) / 2) * k, 0, ((min[2] + max[2]) / 2) * k).applyAxisAngle(UP, b.object.rotation.y).add(new Vector3(...at));
       const p = this.world([centre.x, 0, centre.z]);
-      this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: (max[0] - min[0]) / 2, hd: (max[2] - min[2]) / 2, rot: this.worldYaw() * DEG + b.object.rotation.y });
+      this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: ((max[0] - min[0]) / 2) * k, hd: ((max[2] - min[2]) / 2) * k, rot: this.worldYaw() * DEG + b.object.rotation.y });
     }
     return b;
+  }
+
+  /** A flat polygon on the ground: `points` are (x, z) in the current frame, its top at `y`, `holes` cut out of it. */
+  slab(points: readonly (readonly [number, number])[], color: PaletteColor, y: number, o: PrimOptions & { holes?: readonly (readonly (readonly [number, number])[])[] } = {}): Mesh {
+    const shape = new Shape(points.map(([x, z]) => new Vector2(x, -z)));
+    for (const h of o.holes ?? []) shape.holes.push(new Path(h.map(([x, z]) => new Vector2(x, -z))));
+    const geo = new ShapeGeometry(shape);
+    geo.rotateX(-Math.PI / 2);
+    return this.place(new Mesh(geo, mat(color)), [0, y, 0], { cast: false, ...o });
   }
 
   blockCircle(x: number, z: number, r: number): void {
@@ -194,18 +229,104 @@ export class Kit {
     this.blockers.push({ kind: 'circle', x: p.x, z: p.z, r });
   }
 
-  /** A box blocker in the current frame's local coordinates. */
-  blockBox(x: number, z: number, w: number, d: number): void {
+  /** A box blocker in the current frame's local coordinates (`low`: see `Blocker`). */
+  blockBox(x: number, z: number, w: number, d: number, low = false): void {
     const p = this.world([x, 0, z]);
-    this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: w / 2, hd: d / 2, rot: this.worldYaw() * DEG });
+    this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: w / 2, hd: d / 2, rot: this.worldYaw() * DEG, ...(low ? { low } : {}) });
   }
 
-  /** Merge every static primitive (one mesh per material) and return the stage root. */
-  build(): Group {
+  /**
+   * Close the ground the camera can't see behind something standing on the local box (x, z, w,
+   * d): the hero would be lost there. `h` is how tall it is at its back edge (a wall's top, a
+   * roof's eaves) or `{ eaves, ridge }`, a roof rising to `ridge` along its middle. `view` is the
+   * camera's yaw (its screen axes, as `frame(..., yaw)` turns them: local X right, local Z toward
+   * the camera) and pitch, in degrees. He is hidden where a ray from his head (1.6 m) toward the
+   * camera runs into it, so the ground is closed, in screen-aligned slices half a metre wide, from
+   * the box's back edge (as the screen sees it) back by (eaves - 1.6) / tan(pitch), or from its
+   * middle by (ridge - 1.6) / tan(pitch), whichever reaches further.
+   */
+  closeBehind(x: number, z: number, w: number, d: number, h: number | { readonly eaves: number; readonly ridge: number }, view: { readonly yaw: number; readonly pitch: number }): void {
+    const t = Math.tan(view.pitch * DEG);
+    const eaves = Math.max(0, (typeof h === 'number' ? h : h.eaves) - 1.6) / t;
+    const ridge = typeof h === 'number' ? 0 : Math.max(0, h.ridge - 1.6) / t;
+    if (eaves <= 0 && ridge <= 0) return;
+    const yaw = view.yaw * DEG;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    // world (x, z) → screen (right, up the screen = away from the camera), and back
+    const toScreen = (p: Vector3): [number, number] => [p.x * c - p.z * s, -p.x * s - p.z * c];
+    const corners = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ].map(([a, b]) => toScreen(this.world([x + (a! * w) / 2, 0, z + (b! * d) / 2])));
+    /** The footprint's edges at screen x `sx`: its nearest (front) and furthest (back) screen y. */
+    const span = (sx: number): [number, number] => {
+      let lo = Infinity;
+      let hi = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const [ax, ay] = corners[i]!;
+        const [bx, by] = corners[(i + 1) % 4]!;
+        if (sx < Math.min(ax, bx) - 1e-9 || sx > Math.max(ax, bx) + 1e-9) continue;
+        const ys = Math.abs(bx - ax) < 1e-9 ? [ay, by] : [ay + ((by - ay) * (sx - ax)) / (bx - ax)];
+        for (const y of ys) {
+          lo = Math.min(lo, y);
+          hi = Math.max(hi, y);
+        }
+      }
+      return [lo, hi];
+    };
+    /** How far up the screen it hides at screen x `sx`. */
+    const reach = (sx: number): number => {
+      const [front, back] = span(sx);
+      return Math.max(back + eaves, (front + back) / 2 + ridge);
+    };
+    const sx0 = Math.min(...corners.map((p) => p[0]));
+    const sx1 = Math.max(...corners.map((p) => p[0]));
+    const n = Math.max(1, Math.ceil((sx1 - sx0) / 0.5));
+    for (let i = 0; i < n; i++) {
+      const a = sx0 + ((sx1 - sx0) * i) / n;
+      const b = sx0 + ((sx1 - sx0) * (i + 1)) / n;
+      const inside = corners.filter((p) => p[0] > a && p[0] < b).map((p) => p[0]);
+      const lo = Math.min(span(a)[1], span(b)[1]) - 0.3; // overlaps the footprint: no seam to squeeze through
+      const hi = Math.max(reach(a), reach(b), ...inside.map(reach));
+      if (hi <= lo + 0.3) continue;
+      const cx = (a + b) / 2;
+      const cy = (lo + hi) / 2;
+      this.blockers.push({ kind: 'box', x: cx * c - cy * s, z: -cx * s - cy * c, hw: (b - a) / 2, hd: (hi - lo) / 2, rot: yaw });
+    }
+  }
+
+  /**
+   * Merge every static primitive (one mesh per material) and return the stage root. With `cell`,
+   * statics merge per cell it names for the centre of their bounds on the ground (x, z), and
+   * anything wider than `wide` m goes in a set of its own: a place bigger than the screen then
+   * draws only the cells in view (frustum culling works per merged mesh).
+   */
+  build(cell?: (x: number, z: number) => string, wide = 12): Group {
     const root = new Group();
     root.name = 'kit';
     this.stack[0]!.updateWorldMatrix(true, true);
-    root.add(...mergeStaticMeshes(this.statics));
+    if (cell) {
+      const cells = new Map<string, Object3D[]>();
+      const box = new Box3();
+      const c = new Vector3();
+      for (const s of this.statics) {
+        box.setFromObject(s);
+        box.getCenter(c);
+        const key = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) > wide ? 'wide' : cell(c.x, c.z);
+        let list = cells.get(key);
+        if (!list) cells.set(key, (list = []));
+        list.push(s);
+      }
+      for (const [key, list] of cells) {
+        for (const m of mergeStaticMeshes(list)) {
+          m.name = `${m.name}@${key}`;
+          root.add(m);
+        }
+      }
+    } else root.add(...mergeStaticMeshes(this.statics));
     for (const s of this.statics) (s as Mesh).geometry?.dispose();
     root.add(this.dynamics);
     return root;
@@ -213,6 +334,19 @@ export class Kit {
 }
 
 /** Push a circle (p.x, p.z, radius) out of blockers, in place. */
+/** A circle of `radius` at (x, z) overlaps the blocker (by more than a millimetre). */
+export function overlapsBlocker(x: number, z: number, radius: number, b: Blocker): boolean {
+  const dx = x - b.x;
+  const dz = z - b.z;
+  const r = radius - 1e-3;
+  if (b.kind === 'circle') return dx * dx + dz * dz < (b.r + r) ** 2;
+  const c = Math.cos(b.rot);
+  const s = Math.sin(b.rot);
+  const ox = Math.max(0, Math.abs(dx * c - dz * s) - b.hw);
+  const oz = Math.max(0, Math.abs(dx * s + dz * c) - b.hd);
+  return ox * ox + oz * oz < r * r;
+}
+
 export function collideBlockers(p: Vector3, radius: number, blockers: readonly Blocker[]): void {
   for (const b of blockers) {
     if (b.kind === 'circle') {
