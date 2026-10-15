@@ -1,10 +1,12 @@
 <!doctype html>
 <!--
-  The handoff page: the one link to give an agent that builds a game on the engine outside this
-  repo. Vite copies it from public/ to dist/handoff/, so the site serves it at /handoff/. The kit
-  it points to is rebuilt from main with the site (npm run build: dist/engine/ and dist/engine.zip).
-  Plain text on purpose: agents fetch it without running scripts. The e2e suite "bundle" checks
-  every /engine link names a file the kit ships.
+  The handoff page: a link to give an agent that builds a game on the engine outside this repo
+  (README.md, "Handing the engine to another agent", lists the others). Vite copies it from
+  public/ to dist/handoff/, so the site serves it at /handoff/. The kit it points to is rebuilt
+  from main with the site (npm run build: dist/engine/ and dist/engine.zip). Plain text on
+  purpose: agents fetch it without running scripts. The e2e suite "bundle" checks every /engine
+  link names a file the kit ships, and its download and build lines name package.json's site
+  and repository.
 -->
 <html lang="en">
   <head>
@@ -37,7 +39,7 @@
         Everything a coding agent needs to build a game on Pixel Engine outside its repository: the
         engine as one ES module, its guides, a starter game and a checker. The kit is rebuilt from
         <code>main</code> each time the site deploys, so this page always points at the current
-        engine. <a href="/engine/manifest.json">manifest.json</a> gives its version and build.
+        engine. <a href="/engine/manifest.json">manifest.json</a> gives its version, its build and where newer versions are.
       </p>
 
       <h2>For an agent</h2>

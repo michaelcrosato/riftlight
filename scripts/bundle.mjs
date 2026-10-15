@@ -28,7 +28,22 @@ const out = resolve(root, args.includes('--out') && outArg ? outArg : 'bundle/pi
 const zipFile = `${out}.zip`;
 const t0 = performance.now();
 
-const { version } = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const meta = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
+const { version } = meta;
+// Where the kit comes from and where the newest one is, so a game built on it can find its
+// upgrades: the repository builds it, the site serves the newest (rebuilt from main).
+// npm's own spelling (git+https://….git) is accepted and written as the plain URL people clone.
+const repo = String(meta.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+const site = String(meta.homepage ?? '');
+if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo) || !/^https:\/\/[^/]+\/$/.test(site)) {
+  throw new Error(
+    'bundle: package.json needs repository.url (https://github.com/<owner>/<repo>) and homepage (the site, https://<host>/, ' +
+      `ending in /); got repository.url ${JSON.stringify(meta.repository?.url)}, homepage ${JSON.stringify(meta.homepage)}`,
+  );
+}
+const repoDir = repo.split('/').pop(); // the folder `git clone` makes
+const latestZip = `${site}engine.zip`;
+const handoffPage = `${site}handoff/`;
 const commit = (() => {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -212,16 +227,24 @@ Read in this order:
 | \`pixel-engine.d.ts\`, \`types/\` | TypeScript declarations (optional) |
 | \`CHANGELOG.md\` | What changed between engine versions |
 | \`LICENSE\` | The engine's licence (MIT) |
-| \`manifest.json\` | Version, build and every file with its size |
+| \`manifest.json\` | Version, build, where newer versions are (\`latest\`, \`source\`) and every file with its size |
 
 Serve it: \`npx serve .\` or \`python3 -m http.server\` here, then open http://localhost:3000/ (or :8000).
 ES modules don't load from \`file://\`.
+
+Newer versions: the newest kit is always ${latestZip} (the page for agents: ${handoffPage}).
+From a sandbox that reaches only GitHub and npm, build it from the engine's repository, ${repo}:
+\`git clone --depth 1 ${repo} && cd ${repoDir} && npm ci && npm run bundle\` makes
+\`bundle/pixel-engine/\`. To upgrade a game, see GUIDE.md, section 10.
 `;
 writeFileSync(join(out, 'README.md'), readme);
 const manifest = {
   name: 'pixel-engine',
   version,
   build: buildId,
+  source: repo,
+  latest: latestZip,
+  handoff: handoffPage,
   entry: 'pixel-engine.js',
   readFirst: ['README.md', 'GUIDE.md'],
   starter: { page: 'index.html', script: 'game.js' },

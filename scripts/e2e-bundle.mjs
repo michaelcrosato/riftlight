@@ -5,8 +5,11 @@
 //   files     README, GUIDE, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its types,
 //             the starter game, one page per named game block of docs/GUIDE.md and
 //             docs/GUIDE-ASSETS.md (its models module beside them, with no page), check.mjs;
-//             manifest.json lists every file with its size; the zip holds them all; the handoff
-//             page (/handoff/) links only files the kit ships.
+//             manifest.json lists every file with its size; the kit says where newer versions are
+//             (manifest.json's latest, handoff and source, README.md's build line, all from
+//             package.json's homepage and repository); the zip holds them all; the handoff page
+//             (/handoff/) links only files the kit ships, and its download and build lines, like
+//             the repository README's, are the site's and the repository's.
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
@@ -73,13 +76,26 @@ export async function runBundle(h) {
   await rm(out, { recursive: true, force: true });
   await mkdir(out, { recursive: true });
   const kitPath = fileURLToPath(kit);
-  const { version } = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+  const meta = JSON.parse(await readFile(new URL('package.json', root), 'utf8'));
+  const { version } = meta;
+  // where the kit comes from (scripts/bundle.mjs reads the same two fields, the same way)
+  const repo = String(meta.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
+  const site = String(meta.homepage ?? '');
+  const buildLine = `git clone --depth 1 ${repo} && cd ${repo.split('/').pop()} && npm ci && npm run bundle`;
 
   console.log('\n▶ bundle: kit files');
   let manifest = { files: [], examples: [] };
   try {
     manifest = JSON.parse(await readFile(new URL('manifest.json', kit), 'utf8'));
     check(manifest.version === version, `manifest version ${manifest.version} is package.json's (${version})`);
+    // a game built on the kit finds its upgrades: the newest kit's URL and the repository that builds it
+    const readme = await readFile(new URL('README.md', kit), 'utf8');
+    check(
+      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo) && /^https:\/\/[^/]+\/$/.test(site) &&
+        manifest.source === repo && manifest.latest === `${site}engine.zip` && manifest.handoff === `${site}handoff/` &&
+        readme.includes(manifest.latest) && readme.includes(`\`${buildLine}\``),
+      `the kit says where newer versions are: manifest.json's latest (${manifest.latest}), handoff and source, and README.md's build line`,
+    );
     const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
@@ -134,17 +150,27 @@ export async function runBundle(h) {
     const zipped = new Map(entries.map((e) => [e.name.replace(/^engine\//, ''), e.bytes]));
     const same = manifest.files.every((f) => zipped.has(f.path) && (f.bytes === undefined || zipped.get(f.path).length === f.bytes));
     check(entries.length === manifest.files.length && same, `engine.zip holds every file, intact (${entries.length} entries)`);
-    // The handoff page (public/handoff/index.html, served at /handoff/) is the link people give
-    // agents. Its links are root-absolute (the site serves /handoff without the slash too), and
-    // every way it points into the kit (an href, or the site's URL in its commands) names
-    // engine.zip, the kit's folder or a file the kit ships.
+    // The handoff page (public/handoff/index.html, served at /handoff/) is a link people give
+    // agents (README.md, *Handing the engine to another agent*, lists the others). Its links are
+    // root-absolute (the site serves /handoff without the slash too), and every way it points
+    // into the kit (an href, or the site's URL in its commands) names engine.zip, the kit's
+    // folder or a file the kit ships. Its curl line is the site's, its build line the repository's.
     const handoff = await readFile(new URL('dist/handoff/index.html', root), 'utf8');
+    const origin = site.replace(/\/$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const relative = [...handoff.matchAll(/\bhref\s*=\s*["']?([^"'\s>]*)/gi)].map((m) => m[1]).filter((h) => !/^(\/|https?:\/\/)/.test(h));
-    const links = [...handoff.matchAll(/(?:\bhref\s*=\s*["']?|https:\/\/riftlight\.vercel\.app)\/(engine[^"'\s<>&]*)/gi)].map((m) => m[1]);
+    const links = [...handoff.matchAll(new RegExp(`(?:\\bhref\\s*=\\s*["']?|${origin})\\/(engine[^"'\\s<>&]*)`, 'gi'))].map((m) => m[1]);
     const missing = links.filter((l) => (l === 'engine.zip' || l === 'engine/' ? !existsSync(new URL(`dist/${l}`, root)) : !(l.startsWith('engine/') && listed.has(l.slice('engine/'.length)))));
     check(
-      /curl [^<]*https:\/\/riftlight\.vercel\.app\/engine\.zip\b/.test(handoff) && links.includes('engine/README.md') && links.includes('engine/GUIDE.md') && !missing.length && !relative.length,
-      `handoff/index.html: its curl line fetches engine.zip, it links README.md and GUIDE.md, and its ${links.length} kit links are all kit files, root-absolute${missing.length ? `; missing: ${missing.join(', ')}` : ''}${relative.length ? `; relative: ${relative.join(', ')}` : ''}`,
+      new RegExp(`curl [^<]*${origin}\\/engine\\.zip\\b`).test(handoff) && handoff.includes(buildLine.replaceAll('&', '&amp;')) &&
+        links.includes('engine/README.md') && links.includes('engine/GUIDE.md') && !missing.length && !relative.length,
+      `handoff/index.html: its curl line fetches the site's engine.zip and its build line clones the repository, it links README.md and GUIDE.md, and its ${links.length} kit links are all kit files, root-absolute${missing.length ? `; missing: ${missing.join(', ')}` : ''}${relative.length ? `; relative: ${relative.join(', ')}` : ''}`,
+    );
+    // The repository's own README is where an agent given the repo URL lands: its kit download
+    // and build lines are the same site's and repository's.
+    const repoReadme = await readFile(new URL('README.md', root), 'utf8');
+    check(
+      repoReadme.includes(`curl -fLO ${site}engine.zip `) && repoReadme.includes(`\`${buildLine}\``) && repoReadme.includes(`<${site}handoff/>`),
+      "README.md sends game-making agents to the site's engine.zip, the repository's build line and the handoff page",
     );
   } catch (e) {
     check(false, `kit files: ${e.message}`);

@@ -1670,8 +1670,10 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   imports the module and the engine on an empty page and draws, with the engine's `modelSheet`
   and `textureSheet` (the software rasterizer the CLIs use), a sheet of every def the module
   exports and of library ids; exit 1 on any problem.
-- `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates) and
-  `manifest.json` (version, build, every file with its bytes).
+- `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates, where newer
+  versions are) and `manifest.json` (version, build, every file with its bytes, and `latest`,
+  `handoff` and `source`: the newest kit's URL, the handoff page and the repository, from
+  `package.json`'s `homepage` and `repository`, so a game finds its upgrades).
 
 Diagnostics that make the kit self-correcting live in the engine: `Engine.start` sets
 `window.__PIXEL_ENGINE__` (`dispose()` clears it); an exception in a game hook is caught per

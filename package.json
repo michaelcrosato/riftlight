@@ -5,6 +5,11 @@
   "license": "MIT",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
+  "homepage": "https://riftlight.vercel.app/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/michaelcrosato/riftlight"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build && node scripts/bundle.mjs --out dist/engine",
