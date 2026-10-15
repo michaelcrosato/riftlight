@@ -1,4 +1,5 @@
 import type { PaletteColor } from '../../engine/palette';
+import { type ActorIndex, type ActorRef, refOf } from '../core/saved';
 import type { Mod, StatSheet } from '../core/mods';
 import type { ActorLike } from '../core/types';
 import type { StatQuery } from './stats';
@@ -69,6 +70,19 @@ export class Curses {
   resisted = 0;
 
   constructor(private readonly sheet: StatSheet) {}
+
+  /** The curses as data (save-states): each one, its caster by id; their stat sources live on the sheet. */
+  save(): { list: (Omit<CurseInstance, 'source'> & { source: ActorRef })[]; version: number; applied: number; resisted: number } {
+    return { list: this.list.map((c) => ({ ...c, source: refOf(c.source) })), version: this.version, applied: this.applied, resisted: this.resisted };
+  }
+
+  load(s: ReturnType<Curses['save']>, actors: ActorIndex): void {
+    this.list.length = 0;
+    for (const c of s.list) this.list.push({ ...c, source: actors(c.source) });
+    this.version = s.version;
+    this.applied = s.applied;
+    this.resisted = s.resisted;
+  }
 
   get immune(): boolean {
     return this.sheet.has('curse.immune');

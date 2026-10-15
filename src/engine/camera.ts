@@ -214,7 +214,9 @@ export abstract class CameraRig {
     return {};
   }
 
-  protected setOwnState(_own: Readonly<Record<string, number>>): void {}
+  protected setOwnState(own: Readonly<Record<string, number>>): void {
+    void own; // the base keeps nothing of its own
+  }
 
   protected follow(target: Vector3, dt: number): void {
     this.focus.lerp(target, 1 - Math.exp(-this.stiffness * dt));

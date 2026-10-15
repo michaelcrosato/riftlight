@@ -155,7 +155,10 @@ describe('screen shake', () => {
       for (let f = 0; f < 30; f++) step(a, f / 10);
       b.setState(decodeState(JSON.parse(JSON.stringify(encodeState(a.state())))) as never); // through JSON, as a snapshot goes
       expect(b.camera.matrixWorld.elements, preset).toEqual(a.camera.matrixWorld.elements);
-      for (let f = 30; f < 40; f++) (step(a, f / 10), step(b, f / 10));
+      for (let f = 30; f < 40; f++) {
+        step(a, f / 10);
+        step(b, f / 10);
+      }
       expect(b.state(), preset).toEqual(a.state());
       expect(b.camera.matrixWorld.elements, preset).toEqual(a.camera.matrixWorld.elements);
     }

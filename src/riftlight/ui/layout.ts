@@ -130,4 +130,15 @@ export class BannerQueue {
     this.current = null;
     this.queue.length = 0;
   }
+
+  /** The banner showing and those waiting, as data (save-states). */
+  save(): { current: Banner | null; queue: Banner[] } {
+    return { current: this.current ? { ...this.current } : null, queue: this.queue.map((b) => ({ ...b })) };
+  }
+
+  load(s: { readonly current: Banner | null; readonly queue: readonly Banner[] }): void {
+    this.current = s.current ? { ...s.current } : null;
+    this.queue.length = 0;
+    this.queue.push(...s.queue.map((b) => ({ ...b })));
+  }
 }

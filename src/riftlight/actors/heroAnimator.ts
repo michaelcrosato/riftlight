@@ -15,8 +15,16 @@ export interface PoseSource {
 
 interface Slot {
   key: string;
-  parts: { action: AnimationAction; clip: string }[];
+  parts: { action: AnimationAction; clip: string; part: BodyPart }[];
   weight: number;
+}
+
+/** The blend as data (`HeroAnimator.save`): every clip's clock, the slots fading and their weights. */
+export interface HeroAnimatorState {
+  readonly clocks: readonly (readonly [string, number])[];
+  readonly slots: readonly { readonly key: string; readonly parts: readonly (readonly [string, BodyPart])[]; readonly weight: number }[];
+  readonly target: string | null;
+  readonly fade: number;
 }
 
 /** A clip with only the tracks of one body part. */
@@ -179,14 +187,35 @@ export class HeroAnimator {
     let slot = this.slots.find((s) => s.key === key);
     if (!slot) {
       const parts: Slot['parts'] = [];
-      if (source.full) parts.push({ action: this.action(source.full, 'full'), clip: source.full });
-      if (source.lower) parts.push({ action: this.action(source.lower, 'lower'), clip: source.lower });
-      if (source.upper) parts.push({ action: this.action(source.upper, 'upper'), clip: source.upper });
+      if (source.full) parts.push({ action: this.action(source.full, 'full'), clip: source.full, part: 'full' });
+      if (source.lower) parts.push({ action: this.action(source.lower, 'lower'), clip: source.lower, part: 'lower' });
+      if (source.upper) parts.push({ action: this.action(source.upper, 'upper'), clip: source.upper, part: 'upper' });
       slot = { key, parts, weight: this.slots.length ? 0 : 1 };
       this.slots.push(slot);
     }
     this.target = slot;
     this.fade = Math.max(0, fade);
+  }
+
+  /** The blend as data (save-states). Foot locks and the cap's spring are not kept: `load` resets them. */
+  save(): HeroAnimatorState {
+    return {
+      clocks: [...this.clocks],
+      slots: this.slots.map((s) => ({ key: s.key, parts: s.parts.map((p) => [p.clip, p.part] as const), weight: s.weight })),
+      target: this.target?.key ?? null,
+      fade: this.fade,
+    };
+  }
+
+  /** Back to `save()`'s blend, posed. */
+  load(s: HeroAnimatorState): void {
+    this.clocks.clear();
+    for (const [k, v] of s.clocks) this.clocks.set(k, v);
+    this.slots = s.slots.map((x) => ({ key: x.key, parts: x.parts.map(([clip, part]) => ({ action: this.action(clip, part), clip, part })), weight: x.weight }));
+    this.target = this.slots.find((x) => x.key === s.target) ?? null;
+    this.fade = s.fade;
+    this.resetLayers();
+    this.update(0);
   }
 
   /** Snap to the target with no blend (teleports, respawn). */

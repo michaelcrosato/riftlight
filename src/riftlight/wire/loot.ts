@@ -30,12 +30,12 @@ import { filterTier, itemClass } from '../loot/filter';
 import { rollDrops, rollItem } from '../loot/generate';
 import { allItems, findItem, INVENTORY_SIZE, type LootState, lootFromSave, lootToSave, pickUp, removeItem } from '../loot/inventory';
 import { EQUIP_SLOTS, itemMods, sourceKey } from '../loot/itemMods';
-import { normalizeSockets, socketedGems, starterSockets } from '../loot/sockets';
+import { normalizeSockets, type SkillSocket, socketedGems, starterSockets } from '../loot/sockets';
 import { vendorStock, type VendorKind } from '../loot/vendor';
-import { type GroundDrop, WorldLoot as WorldLootSystem } from '../loot/world';
+import { type GroundDrop, WorldLoot as WorldLootSystem, type WorldLootState } from '../loot/world';
 import { type Drop, ITEM_GROUP, type KillInfo, type LootPort, type Panel, type PanelHost, type ShellServices, type StageWorld, type WorldLoot } from '../game/ports';
 import { ItemsStore } from '../ui/items/store';
-import { ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
+import { type ItemsViewState, ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
 import type { UiCanvas, UiEvent } from '../ui/kit';
 
 /** Label colours by item class (the shell's labels use palette names). */
@@ -53,6 +53,20 @@ interface PortDrop extends WorldLoot {
 
 type View = 'inventory' | Exclude<LeftPanel, null>;
 
+/** The loot as data (`RealLoot.saveState`): the items, the sockets, this visit's vendor stock, the crafting stream, the counters. */
+export interface RealLootState {
+  readonly state: LootState;
+  readonly skills: readonly SkillSocket[];
+  readonly vendor: { readonly kind: VendorKind; readonly stock: readonly Item[] };
+  readonly stocks: Partial<Record<VendorKind, readonly Item[]>>;
+  readonly stockKey: string;
+  readonly depth: number;
+  /** The crafting stream, once the item windows forked it. */
+  readonly crafting: number | null;
+  readonly world: WorldLootState | null;
+  readonly view: ItemsViewState | null;
+}
+
 export class RealLoot implements LootPort {
   readonly store = new ItemsStore({ heroLevel: 1, sheet: null });
   services: ShellServices | null = null;
@@ -68,6 +82,8 @@ export class RealLoot implements LootPort {
   private quiet = 0;
   private lastEquipment = this.store.state.equipment;
   private stockKey = '';
+  /** Has the crafting stream been forked from the run's (the first time the windows open)? */
+  private crafting = false;
 
   constructor() {
     this.root.name = 'loot';
@@ -219,6 +235,7 @@ export class RealLoot implements LootPort {
     this.clearGround();
     this.ui?.dispose();
     this.ui = null;
+    this.crafting = false;
     this.active = null;
     this.world?.dispose();
     this.world = null;
@@ -263,6 +280,58 @@ export class RealLoot implements LootPort {
     save.stash = l.stash;
     save.positions = l.positions;
     save.hero.skills = this.store.skills.map((x) => ({ ...x, supports: [...x.supports] }));
+  }
+
+  /**
+   * The loot as data (save-states), taken with the item windows closed and nothing on the
+   * ground. The hero's sheet is the hero's own (its gear sources are restored with it).
+   */
+  saveState(): RealLootState {
+    const st = this.store;
+    return {
+      state: st.state,
+      skills: st.skills,
+      vendor: st.vendor,
+      stocks: st.stocks,
+      stockKey: this.stockKey,
+      depth: this.depth,
+      crafting: this.crafting ? st.rng.state : null,
+      world: this.world?.saveState() ?? null,
+      view: this.ui?.viewState() ?? null,
+    };
+  }
+
+  /** Put the loot back as `saveState` found it. Windows and the world loot that didn't exist then are dropped (made again on demand). */
+  loadState(s: RealLootState): void {
+    const copy = <T>(v: T): T => JSON.parse(JSON.stringify(v)) as T;
+    this.quiet++;
+    try {
+      this.clearGround();
+      const st = this.store;
+      st.state = copy(s.state);
+      st.skills = copy(s.skills) as SkillSocket[];
+      st.vendor = copy(s.vendor) as ItemsStore['vendor'];
+      st.stocks = copy(s.stocks) as ItemsStore['stocks'];
+      st.version++;
+      this.lastEquipment = st.state.equipment;
+      this.stockKey = s.stockKey;
+      this.depth = s.depth;
+      this.crafting = s.crafting !== null;
+      if (s.crafting !== null) st.rng.state = s.crafting;
+      if (s.world) this.worldLoot().loadState(s.world);
+      else if (this.world) {
+        this.world.dispose();
+        this.world = null;
+      }
+      if (s.view) this.itemsUi().setViewState(s.view);
+      else if (this.ui) {
+        this.ui.dispose();
+        this.ui = null;
+      }
+      this.active = null;
+    } finally {
+      this.quiet--;
+    }
   }
 
   peek(): unknown {
@@ -353,9 +422,12 @@ export class RealLoot implements LootPort {
 
   /** The item windows (created on first use: they need the page). */
   itemsUi(): ItemsUi {
+    if (!this.crafting) {
+      this.store.rng = (this.services?.rng ?? new Rng(1)).fork('craft');
+      this.crafting = true;
+    }
     if (!this.ui) {
       const ctx = this.ctx;
-      this.store.rng = (this.services?.rng ?? new Rng(1)).fork('craft');
       this.ui = new ItemsUi(ctx, this.store, { hosted: true, sheet: () => this.heroStats(), onClose: () => this.active?.host.close(), titles: TITLES });
     }
     return this.ui;

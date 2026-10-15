@@ -120,6 +120,13 @@ export interface GroundDrop {
   label: { x: number; y: number; w: number; h: number } | null;
 }
 
+/** What `WorldLoot` keeps besides the drops on the ground (save-states). */
+export interface WorldLootState {
+  readonly nextId: number;
+  readonly filterEnabled: boolean;
+  readonly stats: WorldLoot['stats'];
+}
+
 const ARC_TIME = 0.5;
 const ARC_HEIGHT = 1.1;
 const GOLD_RADIUS = 0.9;
@@ -164,6 +171,18 @@ export class WorldLoot {
       opts.events.on('loot', (e) => this.spawn(e.item, e.at)),
       opts.events.on('gold', (e) => this.spawnGold(e.amount, e.at)),
     );
+  }
+
+  /** Its counters and the filter toggle (save-states; the drops on the ground are the level's, and not kept yet). */
+  saveState(): WorldLootState {
+    if (this.drops.length) throw new Error('loot on the ground is not kept in a snapshot yet');
+    return { nextId: this.nextId, filterEnabled: this.filterEnabled, stats: { ...this.stats } };
+  }
+
+  loadState(s: WorldLootState): void {
+    this.nextId = s.nextId;
+    this.filterEnabled = s.filterEnabled;
+    Object.assign(this.stats, s.stats);
   }
 
   get depth(): number {

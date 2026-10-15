@@ -31,12 +31,35 @@ const TIPS: Record<DamageType, string> = {
   chaos: 'Chaos hurt most: it ignores energy shield. Kill casters first.',
 };
 
+/** `RecapTracker.save`. */
+export interface RecapState {
+  readonly byType: Record<DamageType, number>;
+  readonly total: number;
+  readonly hits: number;
+  readonly sources: readonly RecapSource[];
+  readonly last: { name: string; total: number; type: DamageType; crit: boolean } | null;
+}
+
 export class RecapTracker {
   private byType = zero();
   private total = 0;
   private hits = 0;
   private readonly sources = new Map<string, RecapSource>();
   private last: { name: string; total: number; type: DamageType; crit: boolean } | null = null;
+
+  /** What it has counted, as data (save-states). */
+  save(): RecapState {
+    return { byType: { ...this.byType }, total: this.total, hits: this.hits, sources: [...this.sources.values()].map((s) => ({ ...s })), last: this.last ? { ...this.last } : null };
+  }
+
+  load(s: RecapState): void {
+    this.byType = { ...s.byType };
+    this.total = s.total;
+    this.hits = s.hits;
+    this.sources.clear();
+    for (const x of s.sources) this.sources.set(x.name, { ...x });
+    this.last = s.last ? { ...s.last } : null;
+  }
 
   reset(): void {
     this.byType = zero();

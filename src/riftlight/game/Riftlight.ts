@@ -20,7 +20,7 @@ import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
 import type { DifficultyTuning, GameEvents, SaveData } from '../core/types';
-import { Town } from '../town/Town';
+import { Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
 import { type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
@@ -33,14 +33,14 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer } from './controls';
+import { cameraBasis, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer, type PointerState } from './controls';
 import { changedSliders, DIFFICULTY_SHORT, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
 import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
-import { RecapTracker } from './recap';
+import { RecapTracker, type RecapState } from './recap';
 import { newSave, SaveStore, type SavesView, viewRemoved, viewSaved } from './save';
 import { loadSettings, playSettings, type Settings, storeSettings } from './settings';
 import { stubPorts } from './stubs';
@@ -49,7 +49,7 @@ import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
-import { Actor, setActorIds } from '../actors/Actor';
+import { Actor, actorIds, setActorIds } from '../actors/Actor';
 import { PropTarget } from '../levels/mechanics/common';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
@@ -1505,7 +1505,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /**
    * The run as `engine.fingerprint()` sees it: where the hero and every monster are and how
-   * hurt, the run's random stream, the save (level, gold, tree, gear and bags), the ground loot.
+   * hurt, the run's random stream, the save (level, gold, tree, gear and bags), the ground loot,
+   * the town (its townsfolk and cat, time of day, random stream).
    * A replay of a recorded session ends with the same one.
    */
   fingerprint(): string {
@@ -1521,10 +1522,196 @@ export class Riftlight implements Game, MenuHost, LookHost {
       `${at(hero.position)} ${this.hero.actor instanceof Actor ? this.hero.actor.facing : ''} ${hero.life} ${hero.mana}`,
       ...(this.level?.monsters() ?? []).map((m) => `${m.actor.id} ${at(m.actor.position)} ${m.actor instanceof Actor ? m.actor.facing : ''} ${m.actor.life}`),
       ...this.ports.loot.ground().map((l) => `${l.id} ${at(l.position)}`),
+      this.town.fingerprint(),
       JSON.stringify(this.save),
       JSON.stringify(this.ports.loot.peek?.() ?? null),
     ].join('|');
   }
+
+  /**
+   * The game as data between two frames (`engine.snapshot()`, docs/GAME.md *Save-states*): the
+   * save and the slots it knows, the run's random stream, the id counters, the hero, the loot,
+   * the town and everything the shell keeps (timers, the HUD's banners and numbers, the camera's
+   * lead, the pointer). In town, with no panel open and nobody talked to; a level says it is not
+   * kept yet. The settings kept are those play reads (`playSettings`); the rest are the player's.
+   */
+  snapshot(): RiftSnapshot {
+    const refuse = (why: string): never => {
+      throw new Error(`Riftlight.snapshot: ${why}`);
+    };
+    if (this.screen !== 'town') refuse(this.screen === 'level' ? 'a level is not kept in a snapshot yet (take it in town)' : `the ${this.screen} screen is not a moment of play (take it in town)`);
+    if (this.showcase.active) refuse('the showcase is open');
+    if (this.layer.top) refuse(`a panel is open (${this.layer.top.panel.id}): close it first`);
+    if (this.talkingTo) refuse('the hero is talking to someone');
+    const hero = this.hero;
+    const loot = this.ports.loot;
+    if (!hero.saveState || !hero.loadState) refuse('this hero port keeps no state (saveState / loadState)');
+    if (!loot.saveState || !loot.loadState) refuse('this loot port keeps no state (saveState / loadState)');
+    const v = (p: Vector3) => p.toArray();
+    return JSON.parse(
+      JSON.stringify({
+        format: 1,
+        screen: this.screen,
+        slot: this.slot,
+        save: this.save,
+        saves: this.saves,
+        settings: playSettings(this.settings),
+        dev: this.dev,
+        rng: this.rng.state,
+        ids: { actors: actorIds(), props: PropTarget.nextId() },
+        hero: hero.saveState!(),
+        loot: loot.saveState!(),
+        town: this.town.saveState(),
+        shell: {
+          time: this.time,
+          playtime: this.playtime,
+          levelTime: this.levelTime,
+          cleared: this.cleared,
+          dead: this.dead,
+          deathTimer: this.deathTimer,
+          dialogueLine: this.dialogueLine,
+          gifts: this.gifts,
+          clearEmitted: this.clearEmitted,
+          combatHeat: this.combatHeat,
+          combatSince: this.combatSince,
+          music: this.music,
+          session: this.session,
+          interactQueued: this.interactQueued,
+          levelUpAge: this.levelUpAge,
+          hurt: this.hurt,
+          goldShown: this.goldShown,
+          streak: this.streak,
+          feed: this.feed,
+          intent: { ...this.intent, aim: v(this.intent.aim) },
+          botIntent: this.botIntent ? { ...this.botIntent, aim: v(this.botIntent.aim) } : null,
+          camera: { target: v(this.camTarget), lead: v(this.lead), shake: v(this.shakeOffset), shakeTime: this.shakeTime, shakeStrength: this.shakeStrength, zoomGoal: this.zoomGoal },
+        },
+        banners: this.banners.save(),
+        floaters: this.floaters.save(),
+        recap: this.recap.save(),
+        pointer: this.pointer.save(),
+        menuInput: this.menuInput.save(),
+      }),
+    ) as RiftSnapshot;
+  }
+
+  /**
+   * Back to `snapshot()`'s moment, from wherever the game is (a level is left, panels close).
+   * Storage is not touched: the restored run is saved the next time the game saves.
+   */
+  restore(_ctx: GameContext, state: unknown): void {
+    const s = state as RiftSnapshot;
+    if (s?.format !== 1 || s.screen !== 'town') throw new Error('Riftlight.restore: not a Riftlight snapshot this game can restore');
+    const hero = this.hero;
+    const loot = this.ports.loot;
+    if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
+    // leave whatever is on now, quietly (no autosave, no banners, no sounds)
+    this.layer.closeAll();
+    this.endTalk();
+    if (this.showcase.active) this.showcase.close({ instant: true });
+    this.leaveLevel();
+    this.screen = 'town';
+    this.town.activate();
+    this.hero.object.visible = true;
+    // the run as data
+    this.slot = s.slot;
+    this.save = s.save;
+    this.saves = s.saves;
+    Object.assign(this.settings, s.settings);
+    Object.assign(this.dev, s.dev);
+    this.rng.state = s.rng;
+    setActorIds(s.ids.actors);
+    PropTarget.setIds(s.ids.props);
+    loot.loadState(s.loot);
+    hero.enter(this.town, this.town.spawn, 0); // the town's stage (where and how it stands comes next)
+    hero.loadState(s.hero, (id) => (id === hero.actor.id ? hero.actor : null));
+    this.town.loadState(s.town);
+    // the shell
+    const t = s.shell;
+    this.time = t.time;
+    this.playtime = t.playtime;
+    this.levelTime = t.levelTime;
+    this.cleared = t.cleared;
+    this.dead = t.dead;
+    this.deathTimer = t.deathTimer;
+    this.dialogueLine = t.dialogueLine;
+    this.gifts = t.gifts;
+    this.clearEmitted = t.clearEmitted;
+    this.combatHeat = t.combatHeat;
+    this.combatSince = t.combatSince;
+    Object.assign(this.session, t.session);
+    this.interactQueued = t.interactQueued;
+    this.levelUpAge = t.levelUpAge;
+    this.hurt = t.hurt;
+    this.goldShown = t.goldShown;
+    this.streak = t.streak ? { ...t.streak } : null;
+    this.feed = t.feed.map((f) => ({ ...f }));
+    Object.assign(this.intent, { ...t.intent, move: { ...t.intent.move }, aim: this.intent.aim.fromArray(t.intent.aim) });
+    this.botIntent = t.botIntent ? { ...t.botIntent, aim: new Vector3().fromArray(t.botIntent.aim) } : null;
+    this.camTarget.fromArray(t.camera.target);
+    this.lead.fromArray(t.camera.lead);
+    this.shakeOffset.fromArray(t.camera.shake);
+    this.shakeTime = t.camera.shakeTime;
+    this.shakeStrength = t.camera.shakeStrength;
+    this.zoomGoal = t.camera.zoomGoal;
+    this.banners.load(s.banners);
+    this.floaters.load(s.floaters);
+    this.recap.load(s.recap);
+    this.pointer.load(s.pointer);
+    this.menuInput.load(s.menuInput);
+    this.lootFocus = null;
+    if (t.music) this.playMusic(t.music);
+    else {
+      this.ctx.audio.playMusic(null);
+      this.music = null;
+      this.musicKey = '';
+    }
+  }
+}
+
+/** `Riftlight.snapshot`: plain JSON. */
+interface RiftSnapshot {
+  readonly format: 1;
+  readonly screen: 'town';
+  readonly slot: number;
+  readonly save: SaveData;
+  readonly saves: SavesView;
+  readonly settings: Partial<Settings>;
+  readonly dev: DevFlags;
+  readonly rng: number;
+  readonly ids: { readonly actors: number; readonly props: number };
+  readonly hero: unknown;
+  readonly loot: unknown;
+  readonly town: TownState;
+  readonly shell: {
+    readonly time: number;
+    readonly playtime: number;
+    readonly levelTime: number;
+    readonly cleared: boolean;
+    readonly dead: boolean;
+    readonly deathTimer: number;
+    readonly dialogueLine: string | null;
+    readonly gifts: number;
+    readonly clearEmitted: boolean;
+    readonly combatHeat: number;
+    readonly combatSince: number;
+    readonly music: SongName | null;
+    readonly session: Riftlight['session'];
+    readonly interactQueued: boolean;
+    readonly levelUpAge: number;
+    readonly hurt: number;
+    readonly goldShown: number;
+    readonly streak: { count: number; age: number } | null;
+    readonly feed: readonly FeedLine[];
+    readonly intent: Omit<MutableIntent, 'aim'> & { readonly aim: readonly number[] };
+    readonly botIntent: (Omit<HeroIntent & { interact?: boolean }, 'aim'> & { readonly aim: readonly number[] }) | null;
+    readonly camera: { readonly target: readonly number[]; readonly lead: readonly number[]; readonly shake: readonly number[]; readonly shakeTime: number; readonly shakeStrength: number; readonly zoomGoal: number };
+  };
+  readonly banners: ReturnType<BannerQueue['save']>;
+  readonly floaters: ReturnType<Floaters['save']>;
+  readonly recap: RecapState;
+  readonly pointer: PointerState;
+  readonly menuInput: ReturnType<MenuInput['save']>;
 }
 
 /** Data the shell takes from the page, through `ctx.input.send` (recorded with the frame it arrives in). */

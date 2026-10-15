@@ -161,6 +161,40 @@ settings to the same fingerprint with storage untouched, and shows an edited rec
 not. The agent API's calls (`newRun`, `moveTo`, `fight`...) are not input: a session they drive
 does not replay.
 
+### Save-states (`Riftlight.snapshot` / `restore`)
+
+A moment of play kept as JSON and put back at once (docs/ENGINE.md, *Save-states*), instead of
+replaying everything before it:
+
+```ts
+const snap = await engine.snapshot();   // in town: ~15 KB of JSON
+engine.step(600);                       // play on (a level, a death, anything)
+await engine.restore(snap);             // back in town at that moment, in milliseconds
+```
+
+`Riftlight.snapshot()` keeps the save and the slots it knows, the run's random stream, the id
+counters (actors from 1, props from 1,000,000), the hero (`RealHero.saveState`: the controller
+and its actor with every stat source in order, the action in progress, cooldowns, charges,
+curses, the animation blend's clocks and weights, the town's combat world), the loot
+(`RealLoot.saveState`: bags, gear, sockets, this visit's vendor stock, the crafting stream, the
+item windows' tabs), the town (`Town.saveState`: its clock and time of day, each townsperson's
+walk, timers, random stream and clip, the cat, the extensions' own) and what the shell keeps
+(timers, banners, damage numbers, the camera's lead, the pointer, key repeat). Only the
+settings play reads are kept (`playSettings`); storage is not touched. Each part is plain
+data with a `save`/`load` (or `saveState`/`loadState`) beside the code that owns it; an actor
+another one points at is saved as its id (`core/saved.ts`). Restoring works from anywhere: a
+level is left and panels close, quietly (no autosave, banner or sound).
+
+For now a snapshot is taken in town with no panel open and nobody talked to. A level is
+refused with the reason: its monsters, brains, combat effects, hazards and mechanics still keep
+state in closures (the next step). `Riftlight.fingerprint` includes the town (townsfolk, the
+cat, the time of day, its random stream), so a town that went on differently shows. The e2e
+suite `riftlight-snapshot` plays the town by input (walking, aiming, swings and casts while
+the townsfolk walk and bark), snapshots it, plays on, restores (also from inside a level with
+the inventory open) and plays on the same way to the same fingerprint; a snapshot just after a
+restore equals the one restored; a recording made after a restore replays in a fresh Riftlight
+(`Recording.from`); a different input differs.
+
 ### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
 
 Gameplay is instant (the facing snaps to the aim, speed is full at once, an action starts on

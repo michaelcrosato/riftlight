@@ -23,6 +23,20 @@ export class ActorManager implements ActorWorld {
   private readonly pool: Actor[][] = [];
   private dirtyOrder = false;
 
+  /** Its clock and the order actors act in, by id (save-states: their states are their owners'). */
+  save(): { time: number; depth: number; order: number[] } {
+    return { time: this.time, depth: this.depth, order: this.actors.map((a) => a.id) };
+  }
+
+  /** Back to `save()`: the clock, and the actors (all here again) in the saved order. */
+  load(s: ReturnType<ActorManager['save']>): void {
+    this.time = s.time;
+    this.depth = s.depth;
+    const at = new Map(s.order.map((id, i) => [id, i]));
+    this.actors.sort((a, b) => (at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9));
+    this.dirtyOrder = false;
+  }
+
   constructor(
     readonly events: GameEventBus = new EventBus<GameEvents>(),
     /** Where actor bodies go (optional: headless sims leave it null). */

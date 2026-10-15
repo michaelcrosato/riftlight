@@ -5,11 +5,12 @@ import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
 import { Actor } from '../actors/Actor';
 import { HERO_KEYS } from '../actors/controls';
-import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
+import { HeroController, type HeroControllerState, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { AILMENTS } from '../combat/ailments';
 import { CHARGE_TYPES, CHARGES } from '../combat/charges';
 import type { Mod, StatSheet } from '../core/mods';
 import type { SaveData } from '../core/types';
+import type { ActorIndex } from '../core/saved';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
 import { socketsToSlots } from '../loot/sockets';
 import { SKILLS, SUPPORTS } from '../skills';
@@ -121,6 +122,17 @@ class IntentInput implements InputLike {
     out.copy(this.intent.aim);
     return true;
   }
+}
+
+/** What a save-state keeps of the hero (`RealHero.saveState`). */
+export interface RealHeroState {
+  readonly hc: HeroControllerState;
+  readonly mover: ReturnType<StageMover['save']>;
+  readonly level: number;
+  readonly sockets: SaveData['hero']['skills'];
+  readonly skillLevels: number;
+  readonly sources: readonly (readonly [string, readonly Mod[]])[];
+  readonly owned: ReturnType<CombatWorld['save']> | null;
 }
 
 const AILMENT_COLOR: Partial<Record<string, PaletteColor>> = { bleed: 'red', poison: 'lime', ignite: 'orange', chill: 'sky', freeze: 'cyan', shock: 'sand', stun: 'white' };
@@ -365,6 +377,35 @@ export class RealHero implements HeroPort {
     if (prev.mana > 0) a.mana = Math.min(a.maxMana, (a.mana / prev.mana) * a.maxMana);
     if (prev.es > 0) a.es = Math.min(a.maxEs, (a.es / prev.es) * a.maxEs);
     else a.es = Math.min(a.es, a.maxEs);
+  }
+
+  /**
+   * The hero as data (save-states): the controller and its actor, where the mover stands, the
+   * stat sources the shell set, the bar's sockets, and the clock of a world it owns (the town's).
+   */
+  saveState(): RealHeroState {
+    return {
+      hc: this.hc.save(),
+      mover: this.mover.save(),
+      level: this.level,
+      sockets: JSON.parse(JSON.stringify(this.sockets)) as SaveData['hero']['skills'],
+      skillLevels: this.skillLevels,
+      sources: [...this.sources],
+      owned: this.owned && this.world === this.owned ? this.owned.save() : null,
+    };
+  }
+
+  /** Back to `saveState()` in the stage it was in (`enter` it first). */
+  loadState(s: RealHeroState, actors: ActorIndex): void {
+    this.level = s.level;
+    this.sockets = s.sockets;
+    this.skillLevels = s.skillLevels;
+    this.sources.clear();
+    for (const [k, v] of s.sources) this.sources.set(k, v);
+    this.hc.load(s.hc, actors);
+    this.mover.load(s.mover);
+    if (s.owned && this.owned && this.world === this.owned) this.owned.load(s.owned);
+    this.hc.model.position.copy(this.mover.position);
   }
 
   restore(): void {

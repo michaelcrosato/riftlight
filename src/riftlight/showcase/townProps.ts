@@ -157,6 +157,10 @@ export function buildShowcaseProps(ctx: GameContext): ShowcaseProps {
       for (const l of lights.slice(1)) l.update({ intensity: 5 + 6 * night });
       if (Math.floor(t * 4) !== Math.floor((t - dt) * 4)) for (const b of braziers) ctx.particles.burst('rl.ember', b);
     },
+    save: () => t,
+    load(s) {
+      t = s as number;
+    },
   };
   return { extension, arcadeScreen, bestiaryDoor };
 }
