@@ -68,6 +68,7 @@ export function summaryOf(slot: number, data: SaveData, savedAt = 0): SlotSummar
 export function viewSaved(v: SavesView, slot: number, data: SaveData): void {
   v.slots[slot] = summaryOf(slot, data);
   v.last = slot;
+  v.lastError = ''; // a write that failed says so a frame later (the 'storage' command)
 }
 
 /** The game deleted `slot`: Continue falls back to the first slot left, as `SaveStore.lastSlot` does. */
@@ -205,6 +206,7 @@ export class SaveStore {
   }
 
   load(slot: number): SaveData | null {
+    this.lastError = '';
     const text = this.read(KEY(slot));
     if (!text) return null;
     try {
@@ -216,6 +218,7 @@ export class SaveStore {
   }
 
   save(slot: number, data: SaveData, now = Date.now()): boolean { // real time: the save's timestamp
+    this.lastError = '';
     const ok = this.write(KEY(slot), exportSave(data, slot, now));
     this.write(META, JSON.stringify({ last: slot }));
     return ok;

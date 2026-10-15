@@ -725,6 +725,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   exportSlot(slot: number): void {
+    if (this.replaying) return; // a replayed click downloads nothing
     const text = this.store.exportSlot(slot);
     if (!text) return this.sound('error');
     try {
@@ -742,6 +743,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   importSlot(slot: number): void {
+    if (this.replaying) return; // the recording carries what was imported (the 'imported' command)
     const input = (this.fileInput ??= Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' }));
     input.style.display = 'none';
     document.body.appendChild(input);

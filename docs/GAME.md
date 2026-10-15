@@ -148,14 +148,18 @@ setup (`playSettings`: zoom and shake move what the mouse points at), the save s
 show (`SavesView`), a save loaded or a new run's seed (`Riftlight.play`), an imported file, and
 what the passive tree does (allocate, refund, close: its view runs on the page, so it hands them
 over and the tree panel does them when they arrive). Actor ids count from 1 and prop ids from
-1,000,000 again at each game's setup, so a replay numbers them as the recorded run did. `Riftlight.fingerprint` (part of
-`engine.fingerprint()`) is the hero and every monster (where, facing, life), the ground loot,
-the save and the bags, and the run's random stream. A replay writes nothing to storage (the
-saves and settings are the player's), and the settings and slots sent at setup give way to
-anything the game changed before its first frame (an agent's `newRun`). The e2e suite
-`riftlight-replay` plays a session by input alone (the title by keys, the walk to Vex on the stick, a fight aimed with the
-mouse), replays it to the same fingerprint, and shows an edited recording does not. The agent
-API's calls (`newRun`, `moveTo`, `fight`...) are not input: a session they drive does not replay.
+1,000,000 again at each game's setup, so a replay numbers them as the recorded run did.
+`Riftlight.fingerprint` (part of `engine.fingerprint()`) is the hero and every monster (where,
+facing, life), the ground loot, the save and the bags, and the run's random stream. A replay
+writes nothing to storage (the saves, settings and volumes are the player's: the engine puts the
+volumes back when it ends, and a replayed Import or Export does nothing), and the settings and
+slots sent at setup give way to anything the game changed before its first frame (an agent's
+`newRun`). The e2e suite `riftlight-replay` plays a session by input alone (New Run and Resume
+clicked, the walk to Vex on the stick, a fight aimed with the mouse, a volume and the zoom
+changed in Settings, a tree node allocated in the tree's view), replays it over other saves and
+settings to the same fingerprint with storage untouched, and shows an edited recording does
+not. The agent API's calls (`newRun`, `moveTo`, `fight`...) are not input: a session they drive
+does not replay.
 
 ### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
 

@@ -4,9 +4,10 @@
 // Run clicked with the mouse (the run's seed arrives as a command), a slot picked by key, the
 // walk to Vex on the stick, F and Enter into depth 1, a fight aimed with the mouse (the pointer
 // over each monster in turn, the left button held, a right click for a skill), the pause menu's
-// Resume clicked, and a passive-tree node allocated in the tree's own view (the mouse over it,
-// Enter, Escape: its actions reach the game as commands). Then storage changes under it (another
-// save in slot 1, other settings) and the recording, through JSON, replays in a fresh Riftlight to
+// Resume clicked, the master volume and the camera zoom stepped in Settings by keys, and a
+// passive-tree node allocated in the tree's own view (the mouse over it, Enter, Escape: its
+// actions reach the game as commands). Then storage changes under it (another save in slot 1,
+// other settings and volumes) and the recording, through JSON, replays in a fresh Riftlight to
 // the same `engine.fingerprint()` (`Riftlight.fingerprint`: hero, monsters, ground loot, the save
 // and the bags, the run's random stream), writing nothing to storage; an edited recording (the
 // pointer in a corner for a second of the fight) does not.
@@ -158,6 +159,20 @@ export async function runRiftlightReplay(h) {
       tap('Escape');
       out.paused = api().state().ui.join(',');
       out.resumed = click('resume') && api().state().ui.length === 0;
+      // the settings by keys: the master volume down a step, the camera zoom up one (the replay
+      // sets both as recorded and writes neither)
+      tap('Escape');
+      const focus = () => api().ui.widgets().find((w) => w.focus)?.id;
+      const was = { zoom: game().settings.zoom, master: e.audio.volume.master };
+      click('settings');
+      for (let k = 0; k < 12 && focus() !== 'vol.master'; k++) tap('ArrowDown');
+      tap('ArrowLeft');
+      for (let k = 0; k < 12 && focus() !== 'zoom'; k++) tap('ArrowDown');
+      tap('ArrowRight');
+      out.settings = { before: was, after: { zoom: game().settings.zoom, master: e.audio.volume.master } };
+      tap('Escape');
+      tap('Escape');
+      out.settings.closed = api().state().ui.length === 0;
       // the passive tree: P opens its view (a page overlay with its own input)
       tap('KeyP');
       const panel = game().layer.top?.panel;
@@ -189,6 +204,8 @@ export async function runRiftlightReplay(h) {
     check(run.fight.after.killed > run.fight.before.killed && run.fight.aimed > 30, `a fight with the mouse: ${run.fight.after.killed - run.fight.before.killed} kills over ${run.fight.aimed} frames of pointing, ${run.fight.rightClicks} right clicks`);
     check(run.aim.off < 0.3, `the hero aims where the pointer is, on bare ground (${run.aim.off.toFixed(2)} m from it)`);
     check(run.paused === 'pause' && run.resumed, `Escape pauses, Resume clicked with the mouse plays on (${run.paused}, resumed ${run.resumed})`);
+    const st = run.settings;
+    check(st.after.zoom > st.before.zoom && st.after.master < st.before.master && st.closed, `the settings by keys: zoom ${st.before.zoom} → ${st.after.zoom}, master volume ${st.before.master} → ${st.after.master}, closed ${st.closed}`);
     check(
       run.tree.open === 'tree' && run.tree.pick !== null && end.tree.after.length === run.tree.before.length + 1 && end.tree.after.includes(run.tree.pick) && end.tree.ui === '',
       `the passive tree's own view allocates ${run.tree.pick} (the mouse over it, Enter) and closes (Escape): ${run.tree.before.length} → ${end.tree.after.length} nodes, ${run.tree.unspent} point(s) were free`,
@@ -198,7 +215,7 @@ export async function runRiftlightReplay(h) {
     check(['settings', 'saves', 'run', 'tree'].every((k) => commands.includes(k)), `the recording holds what came from the page: ${[...new Set(commands)].join(', ')} (commands)`);
     await capture(page, `riftlight-replay-${tag}-live.png`);
 
-    // storage changes under the replay: another save in slot 1, other settings
+    // storage changes under the replay: another save in slot 1, other settings and volumes
     const stored = await R(() => {
       const g = window.__PIXEL_ENGINE__.game;
       const other = JSON.parse(JSON.stringify(g.save));
@@ -206,16 +223,36 @@ export async function runRiftlightReplay(h) {
       other.hero.gold = 12345;
       g.store.save(0, other);
       localStorage.setItem('riftlight:settings', JSON.stringify({ screenShake: 0, zoom: 1.4, damageNumbers: false, glyphs: 'keyboard' }));
-      return { slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings') };
+      const e = window.__PIXEL_ENGINE__;
+      for (const [ch, v] of [['master', 0.2], ['sfx', 0.3], ['music', 0.4]]) e.audio.setVolume(ch, v);
+      return { slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio'), volume: { ...e.audio.volume } };
     });
     const again = await R(async (text) => {
       const e = window.__PIXEL_ENGINE__;
       const fresh = () => e.loadGame(window.__PIXEL_GAMES__.riftlight());
       const rec = JSON.parse(text);
+      // every write to storage while it plays (there must be none)
+      const writes = [];
+      const setItem = Storage.prototype.setItem;
+      const removeItem = Storage.prototype.removeItem;
+      Storage.prototype.setItem = function (k, v) {
+        if (k !== 'riftlight:probe') writes.push(k); // the save store's check that storage works (set, then removed)
+        return setItem.call(this, k, v);
+      };
+      Storage.prototype.removeItem = function (k) {
+        if (k !== 'riftlight:probe') writes.push(`-${k}`);
+        return removeItem.call(this, k);
+      };
       const t0 = performance.now(); // real time: how long the replay took
-      await e.replay(rec, fresh);
+      try {
+        await e.replay(rec, fresh);
+      } finally {
+        Storage.prototype.setItem = setItem;
+        Storage.prototype.removeItem = removeItem;
+      }
       const ms = performance.now() - t0; // real time: how long the replay took
-      const same = { print: e.fingerprint(), end: window.__RIFTLIGHT__.state(), slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings') };
+      const same = {
+        writes, print: e.fingerprint(), end: window.__RIFTLIGHT__.state(), slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio'), volume: { ...e.audio.volume } };
       // the pointer in a corner for a second of the fight: the same session must not match
       const edited = JSON.parse(text);
       const fight = edited.frames.findIndex((f, i) => i > edited.frames.length * 0.3 && f.held?.includes('MouseLeft'));
@@ -238,7 +275,11 @@ export async function runRiftlightReplay(h) {
     );
     // the slot as it was; the settings as they were (a game's setup writes them back whole, same values)
     const kept = (a, b) => ['screenShake', 'zoom', 'damageNumbers', 'glyphs'].every((k) => JSON.parse(a)[k] === JSON.parse(b)[k]);
-    check(again.slot === stored.slot && kept(again.settings, stored.settings), `the replay wrote nothing to storage: slot 1 ${again.slot === stored.slot ? 'kept' : 'overwritten'}, settings ${kept(again.settings, stored.settings) ? 'kept' : `changed (${again.settings})`}`);
+    check(
+      again.writes.length === 0 && again.slot === stored.slot && kept(again.settings, stored.settings) && again.audio === stored.audio,
+      `the replay wrote nothing to storage (${again.writes.length ? `wrote ${[...new Set(again.writes)].join(', ')}` : 'no writes'}): slot 1 ${again.slot === stored.slot ? 'kept' : 'overwritten'}, settings ${kept(again.settings, stored.settings) ? 'kept' : `changed (${again.settings})`}, volumes ${again.audio === stored.audio ? 'kept' : `changed (${again.audio})`}`,
+    );
+    check(JSON.stringify(again.volume) === JSON.stringify(stored.volume), `the player's volumes are back after the replay (${JSON.stringify(again.volume)})`);
     check(again.editedAt > 0 && again.editedPrint !== end.print, `a recording with the pointer in a corner for a second of the fight (from frame ${again.editedAt}) plays differently (${again.editedPrint})`);
     check(again.agent.slot && again.agent.shake === 0.25, `an agent's newRun before the first frame stands (slot 3 saved ${again.agent.slot}, shake ${again.agent.shake})`);
     check(end.errors.length === 0 && again.errors.length === 0, `no game errors${end.errors.concat(again.errors).length ? ': ' + end.errors.concat(again.errors).join('; ') : ''}`);

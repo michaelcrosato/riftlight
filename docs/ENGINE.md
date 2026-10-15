@@ -462,7 +462,7 @@ ctx.audio.register('laser', {
 });
 ctx.audio.playMusic(MY_SONG, 'level1');          // loops; playMusic(null) stops
 await ctx.audio.load('door', 'assets/door.ogg'); // optional audio files, then play('door')
-ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted
+ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted (not during a replay)
 ctx.audio.toggleMute();                          // also the M key and the debug panel button
 ```
 
@@ -1060,8 +1060,9 @@ advances during a replay, so a `start` that waits on frames never finishes, and 
 so after 10 s), plays the frames in manual time (`step()`) and leaves the level there, still
 manual, its recording carried on by whatever is stepped next. Promise callbacks (`await
 tween.done`) run between the same frames as in the recorded run; live input is ignored while it
-plays and nothing it held stays held after; a game hook's exception is reported and the replay
-goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
+plays and nothing it held stays held after; a recorded menu's volume changes play but are not
+written (`ctx.audio.persist` is off), and the player's volumes come back when it ends; a game
+hook's exception is reported and the replay goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
 replay it to frame `n`, then play on differently from there (a replay runs without rendering, so
 it is as fast as the simulation). A replay that ends with the run's `fingerprint()` shows the
 level is deterministic. A script that steps a level and awaits between steps should yield a

@@ -542,7 +542,6 @@ export class Town implements StageWorld {
 
   // ---------------------------------------------------------------- stage
 
-  /** Show the town and borrow its lights. */
   /** Show it and light it (again after `deactivate`; while active, nothing: its lights are taken once). */
   activate(): void {
     if (this.active) return;

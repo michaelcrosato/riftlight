@@ -90,4 +90,27 @@ describe('AudioManager without Web Audio (headless)', () => {
     expect(audio.unlocked).toBe(false);
     audio.dispose();
   });
+
+  it('stores volume changes, except while persist is off (a replay)', () => {
+    const stored = new Map<string, string>();
+    const was = Object.getOwnPropertyDescriptor(globalThis, 'localStorage');
+    Object.defineProperty(globalThis, 'localStorage', {
+      value: { getItem: (k: string) => stored.get(k) ?? null, setItem: (k: string, v: string) => stored.set(k, v), removeItem: (k: string) => stored.delete(k) },
+      configurable: true,
+    });
+    try {
+      const audio = new AudioManager(new EventTarget());
+      audio.setVolume('master', 0.5);
+      expect(JSON.parse(stored.get('pixel-engine:audio')!)).toMatchObject({ master: 0.5, muted: false });
+      audio.persist = false;
+      audio.setVolume('master', 0.2);
+      audio.setMuted(true);
+      expect(audio.volume).toMatchObject({ master: 0.2, muted: true }); // heard
+      expect(JSON.parse(stored.get('pixel-engine:audio')!)).toMatchObject({ master: 0.5, muted: false }); // not written
+      audio.dispose();
+    } finally {
+      if (was) Object.defineProperty(globalThis, 'localStorage', was);
+      else delete (globalThis as { localStorage?: unknown }).localStorage;
+    }
+  });
 });

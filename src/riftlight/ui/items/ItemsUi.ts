@@ -230,6 +230,8 @@ export class ItemsUi {
       this.applying = null;
       this.benchItem = null;
       this.touchPick = null;
+      this.downAt = null;
+      this.longPressed = false;
       this.paint(); // hide the canvas now: a hosted view gets no more updates once closed
     }
   }
@@ -583,7 +585,7 @@ export class ItemsUi {
   // ---------------------------------------------------------------- keys / pad (hosted)
 
   /**
-   * A UiEvent from the shell (keys, pad, the shell's own pointer echo). Returns true when
+   * A UiEvent from the shell (keys, pad, the pointer: hosted, these drive it). Returns true when
    * used. `back` with an item on the cursor puts it back; otherwise the shell closes.
    */
   handle(e: UiEvent): boolean {
@@ -727,6 +729,8 @@ export class ItemsUi {
         if (input.wasPressed('KeyC')) this.closeAll();
       }
     }
+    // a finger let go where these windows didn't hear it (another panel over them): no long-press
+    if (this.downAt?.touch && !input.isDown('Touch')) this.downAt = null;
     const d = this.downAt;
     if (d?.touch && !d.moved && !this.longPressed && this.time - d.t > 0.45) {
       this.longPressed = true;

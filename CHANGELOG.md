@@ -16,6 +16,9 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   agent's) still starts where it started and ends where it ended; UI that acts on clicks reads
   these, play reads `isDown`. The pointer is also placed where a button is let go, and a window
   losing focus lets held pointer buttons go as events (a UI mid-drag hears the release).
+- **A replay writes no volumes:** `ctx.audio.persist` (on by default) is off while a replay
+  plays, so a recorded menu's volume changes are heard but not stored, and the player's volumes
+  come back when it ends.
 
 ## 0.34.0
 

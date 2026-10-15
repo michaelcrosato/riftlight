@@ -152,7 +152,7 @@ export async function runRiftlightItems(h) {
     check(equipped.life.value > lifeBefore && equipped.life.sources.some((x) => x.source === 'item:belt'), `the hero's StatSheet changes: life ${lifeBefore} → ${equipped.life.value} from item:belt`);
     await shot('inventory');
     // the windows act only on the pointer events the shell hands them: with a panel over them, a
-    // click on a bag item is that panel's (and so is the press that opened them, from a menu)
+    // click on a bag item is that panel's
     const over = await R(() => {
       const rl = window.__RIFTLIGHT__;
       const loot = rl.game.ports.loot;

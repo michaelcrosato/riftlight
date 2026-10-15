@@ -312,16 +312,22 @@ export class AudioManager {
     this.songName = null;
   }
 
+  /**
+   * Volume changes are written to storage. The engine turns this off while a replay plays: the
+   * recording sets the volumes it set, nothing is written, and the player's come back after.
+   */
+  persist = true;
+
   setVolume(channel: VolumeChannel, value: number): void {
     this.settings[channel] = Math.min(1, Math.max(0, value));
     this.applyVolumes();
-    writeSettings(this.settings);
+    if (this.persist) writeSettings(this.settings);
   }
 
   setMuted(muted: boolean): void {
     this.settings.muted = muted;
     this.applyVolumes();
-    writeSettings(this.settings);
+    if (this.persist) writeSettings(this.settings);
   }
 
   toggleMute(): boolean {

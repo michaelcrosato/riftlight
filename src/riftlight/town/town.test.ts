@@ -1,4 +1,4 @@
-import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
+import { Color, type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { analyzeClip, compileClip, restPoseOf, validateClip } from '../../engine/animation';
 import { HERO_RIG } from '../../game/hero/rig';
@@ -10,7 +10,8 @@ import { collideBlockers, Kit } from './kit';
 import { NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
 import { NPCS } from './npcs';
-import { iso } from './Town';
+import type { ShellServices } from '../game/ports';
+import { iso, Town } from './Town';
 
 describe('townsfolk', () => {
   for (const [id, build] of Object.entries(TOWNSFOLK)) {
@@ -32,6 +33,25 @@ describe('townsfolk', () => {
       for (const clip of [def.idle, def.talk, def.greet].filter(Boolean)) expect(names, `${def.id}: ${clip}`).toContain(clip);
       expect(def.barks.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe('town lights', () => {
+  it('borrows its lights once while active, gives them back on deactivate', () => {
+    let taken = 0;
+    let given = 0;
+    const lights = { acquire: () => (taken++, { intensity: 0 }), release: () => given++ };
+    const engine = { sun: { color: new Color(), intensity: 0 }, ambient: { color: new Color(), intensity: 0 } };
+    const town = new Town({ rng: new Rng(1), lights, ctx: { engine } } as unknown as ShellServices);
+    town.activate();
+    const once = taken;
+    expect(once).toBeGreaterThan(0);
+    town.activate(); // the title, then the town: still the same lights
+    expect(taken).toBe(once);
+    town.deactivate();
+    expect(given).toBe(once);
+    town.activate();
+    expect(taken).toBe(once * 2);
   });
 });
 
