@@ -27,14 +27,14 @@ export const SWARM: RoomDef = {
       'A compute shader (written in TSL, the same node language as the materials) runs once per particle each frame, all of them in parallel: it reads the particle\'s position and velocity, adds forces (a spring toward the attractor, harder the further out, a swirl round its vertical axis, a flow of 3D noise that drifts with time), takes away some speed (drag), moves it, and bounces it off the floor. Spring and swirl balance into an orbit, so the swarm holds together.',
       'The first dispatch scatters them in a ball: a hash of each particle\'s index gives its random point, so no data is uploaded at all.',
       'Drawing is one instanced sprite draw whose vertex stage reads the same position buffer (and colours by speed from the velocity buffer): the data goes from compute to the screen without a round trip.',
-      'Only the uniforms change from the CPU each frame: the time, the step, the attractor and the sliders. On the WebGL 2 fallback, three runs the same compute shader through transform feedback.',
+      'Only the uniforms change from the CPU each frame: the time, the step, the attractor and the sliders.',
     ],
     uses: [
       'Sparks, embers, magic and swarms by the hundred thousand: Unreal\'s Niagara and Unity\'s VFX Graph run their particles on the GPU this way.',
       'Simulations that need numbers, not looks: fluids, crowds, cloth on the GPU; GPGPU work in general.',
     ],
     ask: ['GPU particles with a compute shader', 'a hundred thousand particles that follow the player', 'TSL compute shader for a simulation', 'particles that never touch the CPU'],
-    cost: 'One compute dispatch and one draw per frame whatever the count. 131,072 particles is a few milliseconds of GPU on a laptop and nothing on the CPU. The WebGL 2 fallback does compute through transform feedback, which costs more: there it starts at 8,192.',
+    cost: 'One compute dispatch and one draw per frame whatever the count. 131,072 particles is a few milliseconds of GPU on a laptop and nothing on the CPU.',
     code: [
       {
         title: 'Every particle, in parallel: forces, drag, move',
@@ -55,9 +55,7 @@ p.addAssign(v.mul(dt));`,
     const { kit, ctx } = room;
     kit.room(30, 24, { floor: ['night', 'ink'], wall: { color: 'navy', side: 'ink' } });
     kit.cylinder([CENTER[0], 0.05, CENTER[2]], 1, 0.1, 'navy', { ghost: true });
-    // the WebGL 2 fallback runs compute through transform feedback, much heavier: it starts smaller
-    const fallback = ctx.engine.renderer.backend !== 'WebGPU';
-    let size = fallback ? 0 : 1; // index into COUNTS
+    let size = 1; // index into COUNTS
     let swarm = new GpuSwarm({ count: COUNTS[size] ?? 32768, center: CENTER, colors: [PALETTE.sky, PALETTE.white] });
     ctx.scene.add(swarm.mesh);
     let follow = false;
@@ -146,8 +144,8 @@ p.addAssign(v.mul(dt));`,
         },
         /**
          * How many pixels of the frame the swarm covers: captured without it and with it,
-         * compared. Works on both backends (no buffer read-back), so a swarm that never got
-         * placed (all of it in one spot) shows up on the WebGL 2 fallback too.
+         * compared (no buffer read-back), so a swarm that never got placed (all of it in one
+         * spot) shows up.
          */
         coverage: async () => {
           const r = ctx.engine.renderer;

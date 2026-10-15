@@ -8,10 +8,10 @@
 //             manifest.json lists every file with its size; the zip holds them all; the handoff
 //             page (/handoff/) links only files the kit ships.
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
-//   check     the kit's own check.mjs plays every page on WebGPU and the WebGL 2 fallback: exit
+//   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
 //             every shot.
-//   play      every recipe does what the guide says (WebGL 2): Coin Garden's coins, Cliff Run's
+//   play      every recipe does what the guide says: Coin Garden's coins, Cliff Run's
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
 //             Market Corner's models, light and textured floor.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
@@ -185,17 +185,15 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
 
   console.log('\n▶ bundle: check.mjs on every page');
   const pages = ['index.html', ...manifest.examples];
-  for (const [backend, expected] of [['webgpu', 'WebGPU'], ['webgl', 'WebGL 2 fallback']]) {
-    for (const page of pages) {
-      const name = `${backend}-${page.replace(/^examples\//, '').replace(/\.html$/, '')}`;
-      try {
-        const res = await checkTool(join(kitPath, page), ['--backend', backend, '--out', fileURLToPath(new URL(name, out))]);
-        const r = await report(name);
-        const colours = r.shots[0]?.colors ?? 0;
-        check(res.code === 0 && r.ok && r.state?.backend === expected && colours >= 8, `${page} on ${expected}: ok, ${colours} colours, "${r.state?.status}"${res.code ? ':\n    ' + tail(res.out) : ''}`);
-      } catch (e) {
-        check(false, `${page} on ${backend}: ${e.message}`);
-      }
+  for (const page of pages) {
+    const name = `webgpu-${page.replace(/^examples\//, '').replace(/\.html$/, '')}`;
+    try {
+      const res = await checkTool(join(kitPath, page), ['--out', fileURLToPath(new URL(name, out))]);
+      const r = await report(name);
+      const colours = r.shots[0]?.colors ?? 0;
+      check(res.code === 0 && r.ok && r.state?.backend === 'WebGPU' && colours >= 8, `${page} on WebGPU: ok, ${colours} colours, "${r.state?.status}"${res.code ? ':\n    ' + tail(res.out) : ''}`);
+    } catch (e) {
+      check(false, `${page}: ${e.message}`);
     }
   }
   try {
@@ -213,12 +211,19 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     const typo = await checkTool(join(kitPath, 'index.html'), ['--key', 'KeyD*10']);
     const noBrowser = await checkTool(join(kitPath, 'index.html'), ['--out', fileURLToPath(new URL('flags-nobrowser', out))], { CHROMIUM_PATH: '/nonexistent/chrome' });
     check(typo.code === 2 && /unknown option --key/.test(typo.out) && noBrowser.code === 2 && /could not start Chromium/.test(noBrowser.out), `the tool says when it can't run: an unknown option, no browser (exit ${typo.code}, ${noBrowser.code})`);
+    // a Chromium without WebGPU (the same browser, its WebGPU flags dropped and WebGPU turned off
+    // by a wrapper): no game can start in it, which is the environment's fault, not the game's
+    const wrapper = fileURLToPath(new URL('no-webgpu-chromium.sh', out));
+    const drop = '--enable-unsafe-webgpu|--use-webgpu-adapter=*|--enable-features=Vulkan|--use-vulkan=*';
+    await writeFile(wrapper, `#!/bin/sh\nfor a; do shift; case "$a" in ${drop}) ;; *) set -- "$@" "$a" ;; esac; done\nexec "${exe}" "$@" --disable-features=WebGPU\n`, { mode: 0o755 });
+    const noGpu = await checkTool(join(kitPath, 'index.html'), ['--out', fileURLToPath(new URL('flags-nowebgpu', out))], { CHROMIUM_PATH: wrapper });
+    check(!!exe && noGpu.code === 2 && /WebGPU unavailable/.test(noGpu.out) && /has no WebGPU, so no game can start/.test(noGpu.out), `a browser without WebGPU: exit 2, saying so (exit ${noGpu.code})${noGpu.code !== 2 ? ':\n    ' + tail(noGpu.out) : ''}`);
   } catch (e) {
     check(false, `check.mjs flags: ${e.message}`);
   }
 
-  console.log('\n▶ bundle: the recipes play as the guide says (WebGL 2)');
-  const s = scenarios[1];
+  console.log('\n▶ bundle: the recipes play as the guide says');
+  const s = scenarios[0];
   const play = async (path, fn, label) => {
     let ctx;
     try {

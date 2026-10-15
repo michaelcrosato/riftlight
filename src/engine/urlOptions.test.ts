@@ -25,7 +25,7 @@ describe('URL options', () => {
   });
 
   it('reads the review flags', () => {
-    expect(optionsFromUrl('?backend=webgl&debug=1&mode=raw')).toEqual({ forceWebGL: true, debugUI: true, mode: 'raw' });
+    expect(optionsFromUrl('?backend=webgl&debug=1&mode=raw')).toEqual({ debugUI: true, mode: 'raw' }); // no WebGL 2 backend to ask for
     expect(optionsFromUrl('?look=hd_clean').look).toBe(LOOK_PRESETS.no_filters); // old names still work
   });
 

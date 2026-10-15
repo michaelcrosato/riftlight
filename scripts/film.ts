@@ -12,7 +12,6 @@
 //   --mode pixel|raw     render mode (default pixel = what the player sees)
 //   --look <preset>      post filters (e.g. snes, ps1)
 //   --gif                also write an animated GIF (for humans to watch)
-//   --webgpu             WebGPU backend (needs a display: run under xvfb-run); default WebGL 2
 //   --preview            serve the production build (npm run build) instead of the dev server
 //   --game arena         film another level (?game=); `arena-*` scenarios do this themselves
 //
@@ -36,10 +35,11 @@
 // contact), json per-frame log, gif with --gif. The console summary lists the state/clip
 // timeline and flags pops (one-frame joint jumps), foot slip, feet sinking or floating.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, readdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
+import { launchChromium } from './browser.mjs';
 import { GLYPH_H, textWidth } from '../src/engine/animation/font';
 import { BAD, Canvas, CELL_BG, CONTACT, DIM, GRID, GROUND, LEFT, RIGHT, TEXT, WARN, type RGB } from '../src/engine/animation/raster';
 import { encodeGif } from './gif';
@@ -368,15 +368,7 @@ interface Rec {
 async function main(): Promise<void> {
   for (const j of jobs) parse(j.script); // fail fast on typos
   const server = await startServer();
-  const exe = chromiumPath();
-  const webgpu = flags.has('webgpu');
-  const browser = await chromium.launch({
-    executablePath: exe,
-    headless: !process.env.DISPLAY,
-    args: webgpu
-      ? ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-fallback-to-gl-for-testing']
-      : ['--disable-features=WebGPU', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-  });
+  const browser = await launchChromium();
   try {
     // Pixel mode: a canvas of exactly the internal resolution (480×270, 1 device pixel per
     // art pixel) is the cheapest to render and read back, and loses nothing.
@@ -803,17 +795,6 @@ async function startServer(): Promise<ChildProcess> {
   }
   stop(proc);
   throw new Error('vite did not start');
-}
-
-function chromiumPath(): string | undefined {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  try {
-    const last = readdirSync('/opt/pw-browsers').filter((d) => /^chromium-\d+$/.test(d)).sort().at(-1);
-    if (last) return `/opt/pw-browsers/${last}/chrome-linux/chrome`;
-  } catch {
-    /* fall through */
-  }
-  return undefined;
 }
 
 main().then(

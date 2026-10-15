@@ -2,7 +2,7 @@
 //
 //   npm run build && npm run test:e2e -- riftlight-loot
 //
-// Opens the Loot Lab (`?game=lootlab`) on WebGPU and the WebGL 2 fallback and checks:
+// Opens the Loot Lab (`?game=lootlab`) and checks:
 //   drops      kills burst items and gold out in an arc; they land, show labels, rares a beam
 //   pickup     walking over gold collects it, F picks up the nearest item, clicking a label too
 //   filter     Alt toggles the loot filter (hidden normal items show)
@@ -20,7 +20,7 @@ import { writeFile } from 'node:fs/promises';
  */
 export async function runRiftlightLoot(h) {
   const { exe, scenario: s, openPage, check, capture, checkClean, encodePng, OUT } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-loot (${s.backend})`);
   let ctx;
   try {

@@ -412,8 +412,8 @@ the line.
   1.21) and a line from the worst steps (8.76%). 12's filmstrips go to fine noise at the most
   zoomed-out steps, so the stricter reading is kept.
 - **The pan** scores 0 everywhere: the rig snaps to whole art pixels.
-- **Both backends** (WebGPU and the WebGL 2 fallback, both SwiftShader here) measured the same to
-  two decimals.
+- **Both backends** (WebGPU and the WebGL 2 fallback the engine had then, both SwiftShader here)
+  measured the same to two decimals.
 
 So `DEFAULT_TEXEL` is **8**: floors, walls and props the camera zooms over. A model that moves
 (and is never a large surface) may set `texel` up to `MOVING_TEXEL` = 20, the densest measured,
@@ -421,8 +421,8 @@ which passed the crate test; it shimmers while the camera zooms like a 20-texel 
 keep such models small on screen. Draw textures for 8: a 16-texel tile covers 2 m, so a brick of
 8 × 4 texels is 1 × 0.5 m.
 
-**Screen a surface before a level lays it.** `npm run build && npm run gate-b -- --backend webgpu
---quick --floors <id>,<draft.ts>` lays each texture as the scene's floor (in place of the pinned
+**Screen a surface before a level lays it.** `npm run build && npm run gate-b -- --quick
+--floors <id>,<draft.ts>` lays each texture as the scene's floor (in place of the pinned
 cobbles, against a flat floor in its own mean colour) and reads it against the same line, all
 three ways; `--quick` runs only the landscape level sweep, where the worst step has always been
 (`<out>/screen.json` and a filmstrip per floor; `--help` has the rest). A floor fills most of the

@@ -2,7 +2,7 @@
 // game in Chromium, frame-exactly through Engine.step, and reports what happened.
 //
 //   npm run playtest -- <depth> [--runs 3] [--seed 1] [--level N] [--film] [--every 6] [--gif]
-//                               [--max 10800] [--difficulty hard] [--webgpu] [--preview] [--json] [--out dir]
+//                               [--max 10800] [--difficulty hard] [--preview] [--json] [--out dir]
 //   npm run playtest -- campaign [--to 24] [--tries 3] [--seed 1] [--difficulty hard] [--film] [--max 18000]
 //                                [--resume .scratch/playtest/campaign-save-11.json]
 //
@@ -15,7 +15,6 @@
 //                `enemyLife=1.5,playerDamage=0.8` (keys of DifficultyTuning), applied like the panel
 //   --film       write a filmstrip PNG (scene + HUD) per run: every --every frames (default 6)
 //   --gif        with --film, also an animated GIF to watch
-//   --webgpu     the WebGPU backend (needs a display: run under xvfb-run); default WebGL 2
 //   --preview    serve the production build (npm run build) instead of the dev server
 //
 // Output: a table (clear time, deaths, damage taken, kills, XP, gold, items, stuck) and
@@ -33,10 +32,11 @@
 // carries on from one (handy for looking at one wall). Exit 1 when it does not clear the 12
 // designed levels (or --to, if lower).
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, type Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
+import { launchChromium } from '../browser.mjs';
 import { lineChart, type Series, textPanel, tile } from '../../src/riftlight/balance/charts';
 import { DIFFICULTY_KEYS, DIFFICULTY_PRESETS, sanitizeTuning } from '../../src/riftlight/game/difficulty';
 import type { DifficultyTuning } from '../../src/riftlight/core/types';
@@ -58,7 +58,7 @@ const num = (k: string, d: number) => (flags.has(k) ? Number(flags.get(k)) : d);
 const campaignMode = args[0] === 'campaign';
 const depth = campaignMode ? 1 : Number(args[0] ?? 1);
 if (!(depth >= 1)) {
-  console.error('usage: npm run playtest -- <depth|campaign> [--runs n] [--seed s] [--to n] [--difficulty hard] [--film] [--gif] [--webgpu]');
+  console.error('usage: npm run playtest -- <depth|campaign> [--runs n] [--seed s] [--to n] [--difficulty hard] [--film] [--gif]');
   process.exit(2);
 }
 const difficulty = parseDifficulty(flags.get('difficulty'));
@@ -97,14 +97,7 @@ interface Frame {
 async function main(): Promise<void> {
   mkdirSync(out, { recursive: true });
   const server = await startServer();
-  const webgpu = flags.has('webgpu');
-  const browser = await chromium.launch({
-    executablePath: chromiumPath(),
-    headless: !process.env.DISPLAY,
-    args: webgpu
-      ? ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-fallback-to-gl-for-testing']
-      : ['--disable-features=WebGPU', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-  });
+  const browser = await launchChromium();
   const reports: (BotReport & { seed: number; level: number })[] = [];
   try {
     // 480×270: one device pixel per art pixel (cheapest to render and read back).
@@ -112,7 +105,8 @@ async function main(): Promise<void> {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(`http://localhost:${PORT}/?game=riftlight&debug=0&touch=0&save=memory`);
-    await page.waitForFunction(() => (window as unknown as { __RIFTLIGHT__?: unknown }).__RIFTLIGHT__, null, { timeout: 120000 });
+    // the game's API is up in its setup, the engine's handle only once its shaders are compiled
+    await page.waitForFunction(() => (window as unknown as { __RIFTLIGHT__?: unknown; __PIXEL_ENGINE__?: unknown }).__PIXEL_ENGINE__ && (window as unknown as { __RIFTLIGHT__?: unknown }).__RIFTLIGHT__, null, { timeout: 120000 });
     if (campaignMode) {
       await campaign(page);
       if (errors.length) console.error(`page errors:\n  ${errors.join('\n  ')}`);
@@ -559,17 +553,6 @@ function stop(proc: ChildProcess): void {
   } catch {
     proc.kill();
   }
-}
-
-function chromiumPath(): string | undefined {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  try {
-    const last = readdirSync('/opt/pw-browsers').filter((d) => /^chromium-\d+$/.test(d)).sort().at(-1);
-    if (last) return `/opt/pw-browsers/${last}/chrome-linux/chrome`;
-  } catch {
-    /* fall through */
-  }
-  return undefined;
 }
 
 main().catch((e: unknown) => {

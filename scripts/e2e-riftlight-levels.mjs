@@ -1,6 +1,6 @@
 /* global window */
 // e2e suite "riftlight-levels": Riftlight levels and the dynamic light pool in the real game
-// (production build), on WebGPU and on the WebGL 2 fallback.
+// (production build).
 //
 //   npm run build && npm run test:e2e -- riftlight-levels
 //
@@ -29,7 +29,7 @@ const LEVELS = [
  */
 export async function runRiftlightLevels(h) {
   const { exe, scenario: s, openPage, check, capture, state, colorCount, checkClean } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-levels (${s.backend})`);
   for (const lv of LEVELS) {
     let ctx;

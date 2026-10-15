@@ -835,7 +835,7 @@ mods, budget, genome JSON export / import / download. URL:
 `portrait()`, `capture()`, and `lineup(entries, { cols, zoom, clip })`: genomes, generate
 options or `'boss:<n>'` in rows at the game's own camera (iso, the level zoom), to judge how
 monsters read in play at 480×270 (then `capture()`). The `riftlight-monsters` e2e suite
-drives it on WebGPU and WebGL 2.
+drives it.
 
 ## Passive tree
 
@@ -1881,4 +1881,4 @@ Esc puts everything back.
 | `photo.open()`, `state()`, `setLook(name \| index)`, `next(dir)`, `setMode('pixel' \| 'raw')`, `setTime(t)`, `setLight(i)`, `await capture({ download })`, `close()` | photo mode (`capture` returns the PNG's data URL) |
 
 The `riftlight-showcase` e2e suite (`scripts/e2e-riftlight-showcase.mjs`, `@cameras`) plays all
-three on WebGPU and the WebGL 2 fallback; frames in `.scratch/e2e/showcase-*.png`.
+three; frames in `.scratch/e2e/showcase-*.png`.

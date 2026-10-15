@@ -161,7 +161,6 @@ longer version's frames.
   - `--every` (frames per image)
   - `--mode raw`
   - `--look snes`
-  - `--webgpu` (under xvfb)
   - `--preview` (serve the production build)
   - `--cols` (filmstrip columns)
   - `--out` and `--name` (where the files go)

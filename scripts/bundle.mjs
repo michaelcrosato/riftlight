@@ -189,7 +189,7 @@ const tokens = (file) => Math.round(readFileSync(file, 'utf8').length / 4);
 const kb = (file) => `${Math.round(statSync(file).size / 1024)} KB`;
 const readme = `# Pixel Engine ${version}
 
-A WebGPU-first engine that renders 3D scenes as authentic pixel art (WebGL 2 fallback), with
+A WebGPU engine that renders 3D scenes as authentic pixel art (WebGPU only), with
 Rapier physics, a platformer character with a full animation set, pixel HUD, audio, particles
 and a look system (filters per layer). This folder is everything a game needs.
 

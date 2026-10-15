@@ -1,5 +1,5 @@
-// e2e suite "riftlight": the game shell end to end (production build), on WebGPU and the
-// WebGL 2 fallback, driven frame-exactly through window.__RIFTLIGHT__ (Engine.step) and the
+// e2e suite "riftlight": the game shell end to end (production build), driven frame-exactly
+// through window.__RIFTLIGHT__ (Engine.step) and the
 // real keyboard path for menus:
 //
 //   title → New Run (keys) → town → a walk to every district of the outskirts and back
@@ -41,7 +41,7 @@ export async function runRiftlight(h) {
     }
     return frame;
   };
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight (${s.backend})`);
   let ctx;
   try {

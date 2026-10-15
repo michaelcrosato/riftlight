@@ -167,8 +167,6 @@ export interface EngineOptions {
    * environment) plus whole-scene filters (render/look.ts). Wins over `filters` and `edges`.
    */
   look?: Look;
-  /** Debug/test only: use WebGPURenderer's WebGL 2 backend without trying WebGPU. */
-  forceWebGL?: boolean;
   /**
    * Seed for `ctx.random`: each level gets its own stream from this and the game's name, so
    * the same seed replays the same game. Default 1. `?seed=` in the URL.
@@ -201,7 +199,7 @@ export interface EngineOptions {
 
 /**
  * Read engine options from the URL:
- *   ?backend=webgl  ?mode=raw  ?res=320  ?debug=1|0
+ *   ?mode=raw  ?res=320  ?debug=1|0
  *   ?aspect=fixed|adaptive  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
  *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
  *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
@@ -210,7 +208,6 @@ export interface EngineOptions {
 export function optionsFromUrl(search = location.search): Partial<EngineOptions> {
   const p = new URLSearchParams(search);
   const opts: Partial<EngineOptions> = {};
-  if (p.get('backend') === 'webgl') opts.forceWebGL = true;
   const seed = p.get('seed');
   if (seed && /^\d+$/.test(seed)) opts.seed = Number(seed) >>> 0;
   if (p.get('mode') === 'raw') opts.mode = 'raw';
@@ -555,7 +552,6 @@ export class Engine {
           edges: options.edges,
           filters: options.filters,
           look: options.look,
-          forceWebGL: options.forceWebGL,
         }).finally(() => (done.renderer = true)),
         Physics.create().finally(() => (done.physics = true)),
       ]);
@@ -746,7 +742,6 @@ export class Engine {
       hitstop: +this.clock.hitstop.toFixed(3),
       screen: this.renderer.screen.state(),
       backend: r.backend,
-      fallbackReason: r.fallbackReason,
       mode: r.mode,
       resolution: { ...r.resolution },
       aspect: r.aspect,
@@ -861,7 +856,7 @@ export class Engine {
       this.updateView(0);
       // Compile the new level's pipelines with the loop stopped: precompile renders into the
       // pixel pass's MRT target, and a frame drawn meanwhile would build the output pipeline
-      // against that target (invalid on WebGPU, GL errors on WebGL 2).
+      // against that target (invalid on WebGPU).
       this.renderer.setAnimationLoop(null);
       try {
         await this.renderer.precompile();

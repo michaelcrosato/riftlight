@@ -1,6 +1,6 @@
 /* global window, document -- page.evaluate callbacks run in the browser */
 // e2e suite "riftlight-builds": the build systems the passive tree and loot feed, in the
-// production build, on WebGPU and the WebGL 2 fallback. Everything runs on Engine.step.
+// production build. Everything runs on Engine.step.
 //
 //   npm run build && E2E_PORT=4602 npm run test:e2e -- riftlight-builds
 //
@@ -26,7 +26,7 @@ const BAR = 'vulnerability,fireball+spell-totem,fireball+trap-support,haste-aura
  */
 export async function runRiftlightBuilds(h) {
   const { exe, scenario: s, openPage, check, capture, state, checkClean, OUT } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-builds (${s.backend})`);
   let ctx;
   try {

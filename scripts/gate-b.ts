@@ -20,7 +20,7 @@
 // two other readings of the plan's line: per step (calm and bad at the same step) and from the
 // worst steps.
 //
-//   npm run build && npm run gate-b -- [--backend webgpu|webgl|both] [--densities 8,12,16,20] [--out .scratch/gate-b]
+//   npm run build && npm run gate-b -- [--densities 8,12,16,20] [--out .scratch/gate-b]
 //
 // Writes <out>/results.json and the filmstrips (<out>/strip.png); prints the table.
 //
@@ -33,7 +33,7 @@
 // their baseline) run once, on every sweep, so the line is the plan's. A floor fills most of the
 // frame, so a wall texture screened as a floor is judged strictly.
 //
-//   npm run build && npm run gate-b -- --backend webgpu --floors cobbles,grass [--quick] [--densities 8] [--out .scratch/gate-b-screen]
+//   npm run build && npm run gate-b -- --floors cobbles,grass [--quick] [--densities 8] [--out .scratch/gate-b-screen]
 //
 //   --quick   the floors run only the landscape level sweep, where the worst step has always been
 //             (0.65→0.70); their mean step is then over its 13 steps. Calm and bad still run every
@@ -42,10 +42,11 @@
 // Writes <out>/screen.json and a filmstrip per floor (<out>/<id>.png: its flat and textured runs
 // on the level-zoom sweep); prints a table per floor. `--help` prints this.
 import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { chromium, type Page } from 'playwright-core';
+import type { Page } from 'playwright-core';
+import { launchChromium } from './browser.mjs';
 import type { SheetImage } from '../src/engine/animation/raster';
 import { column, row, textBox, titleBar } from '../src/engine/inspect/render';
 import { upscale } from '../src/engine/model/sheet';
@@ -68,15 +69,10 @@ if (argv.includes('--help')) {
 const FLOORS = opt('floors', '').split(',').filter(Boolean);
 const QUICK = argv.includes('--quick');
 const DENSITIES = opt('densities', FLOORS.length ? '8' : '8,12,16,20').split(',').map(Number);
-const BACKEND = opt('backend', 'both');
-if (!['webgpu', 'webgl', 'both'].includes(BACKEND)) throw new Error(`--backend ${BACKEND}: webgpu, webgl or both`);
-const BACKENDS = BACKEND === 'both' ? ['webgpu', 'webgl'] : [BACKEND];
+/** The renderer it runs on (results keep the name, as runs on the old WebGL 2 fallback did). */
+const BACKENDS = ['webgpu'];
 const OUT = resolve(ROOT, opt('out', '.scratch/gate-b'));
 
-const ARGS: Record<string, string[]> = {
-  webgpu: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-fallback-to-gl-for-testing'],
-  webgl: ['--disable-features=WebGPU', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-};
 const BASES = { level: 1.08, town: 1.22 } as const;
 const PORTRAIT = 0.8;
 const EASE = 1 - Math.exp(-4 / 60); // Riftlight's zoom easing per 1/60 s frame (Riftlight.ts)
@@ -234,14 +230,14 @@ async function main(): Promise<void> {
   };
   try {
     for (const backend of BACKENDS) {
-      const browser = await chromium.launch({ executablePath: chromiumPath(), headless: !process.env.DISPLAY, args: ARGS[backend] });
+      const browser = await launchChromium();
       try {
         for (const screen of ['landscape', 'portrait'] as const) {
           const page = await browser.newPage({ viewport: screen === 'landscape' ? { width: 480, height: 270 } : { width: 124, height: 270 }, deviceScaleFactor: 1 });
           const errors: string[] = [];
           page.on('pageerror', (e) => errors.push(e.message));
           page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-          await openLab(page, `${screen === 'portrait' ? '&aspect=adaptive' : ''}${backend === 'webgl' ? '&backend=webgl' : ''}`);
+          await openLab(page, screen === 'portrait' ? '&aspect=adaptive' : '');
           const st = await page.evaluate(() => (window as unknown as { __PIXEL_ENGINE__: { state(): { backend: string; resolution: { width: number; height: number } } } }).__PIXEL_ENGINE__.state());
           renderers.add(`${backend} ${screen}: ${st.backend}, ${st.resolution.width}×${st.resolution.height}`);
           for (const { base, seq, configs } of plan(screen, floors)) {
@@ -384,17 +380,6 @@ function stop(proc: ChildProcess): void {
   } catch {
     /* already gone */
   }
-}
-
-function chromiumPath(): string | undefined {
-  if (process.env.CHROMIUM_PATH) return process.env.CHROMIUM_PATH;
-  try {
-    const last = readdirSync('/opt/pw-browsers').filter((d) => /^chromium-\d+$/.test(d)).sort().at(-1);
-    if (last) return `/opt/pw-browsers/${last}/chrome-linux/chrome`;
-  } catch {
-    /* fall through */
-  }
-  return undefined;
 }
 
 main().catch((e: unknown) => {

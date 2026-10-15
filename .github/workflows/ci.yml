@@ -71,9 +71,10 @@ jobs:
       - run: scripts/check.sh
 
   e2e:
-    # Real-browser verification (scripts/e2e.mjs): native WebGPU (SwiftShader Vulkan), the
-    # WebGL 2 fallback and the agent tools. The suites run as parallel groups (GROUPS in
-    # scripts/e2e.mjs); the slowest one sets the wall time.
+    # Real-browser verification (scripts/e2e.mjs): WebGPU (SwiftShader Vulkan) in Chromium's
+    # headless shell, no display (scripts/browser.mjs), a browser without WebGPU told so, and the
+    # agent tools. The suites run as parallel groups (GROUPS in scripts/e2e.mjs); the slowest
+    # one sets the wall time.
     name: e2e (${{ matrix.group }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -96,10 +97,10 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium
-      - name: Install Chromium
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}-chromium-headless-shell
+      - name: Install Chromium (its headless shell)
         if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: npx playwright-core install --with-deps chromium
+        run: npx playwright-core install --with-deps --only-shell chromium
       - name: Install Chromium system deps
         if: steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright-core install-deps chromium

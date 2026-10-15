@@ -10,7 +10,6 @@
 //
 // Options:
 //   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames)
-//   --backend webgl|webgpu           webgl (default, works headless) or webgpu (needs a display, e.g. xvfb-run)
 //   --cameras                        also shoot the iso, topdown, side and third camera presets
 //   --looks pixel_heroes,noir        also shoot these looks (names from engine.lookPresets)
 //   --out check                      folder for the PNGs and report.json (default: ./check)
@@ -23,11 +22,12 @@
 //   --help                           this text
 //
 // It needs Node 20.15+ (or 22.2+) and Playwright (`npm i -D playwright` then
-// `npx playwright install chromium`), or `playwright-core` with CHROMIUM_PATH set to a
-// Chromium/Chrome binary. Exit code 0 means the game started, ran the frames with no errors
+// `npx playwright install chromium`), or `playwright-core` with CHROMIUM_PATH set to a Chromium
+// (its headless shell, `chrome-linux/headless_shell`, is the lightest): it plays WebGPU on
+// SwiftShader with no display. Exit code 0 means the game started, ran the frames with no errors
 // (page, console, engine or GPU) and drew a picture (with --sheets: every sheet was drawn and no
 // def has a problem; warnings are fine); 1 means it didn't; 2 means the tool couldn't run (bad
-// arguments, no page, no browser).
+// arguments, no page, no browser, or a browser without WebGPU, which no game can start in).
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
@@ -42,7 +42,7 @@ const fail = (message) => {
 if (typeof zlib.crc32 !== 'function') fail(`needs Node 20.15+ or 22.2+ (this is ${process.version})`);
 
 // --name value flags, --name flags, then one positional page
-const VALUE = new Set(['keys', 'backend', 'looks', 'out', 'size', 'sheets']);
+const VALUE = new Set(['keys', 'looks', 'out', 'size', 'sheets']);
 const FLAG = new Set(['cameras', 'help']);
 const opts = {};
 const positional = [];
@@ -66,8 +66,6 @@ if (positional.length > 1) fail(`one page at a time (got ${positional.join(' ')}
 const sheets = opts.sheets !== undefined;
 if (sheets && positional.length) fail(`--sheets draws sheets instead of playing a page: play ${positional[0]} in a run of its own`);
 const target = positional[0] ?? 'index.html';
-const backend = opts.backend ?? 'webgl';
-if (backend !== 'webgl' && backend !== 'webgpu') fail(`--backend is webgl or webgpu, not ${backend}`);
 const out = resolve(opts.out ?? (sheets ? 'check/sheets' : 'check'));
 const [vw, vh] = String(opts.size ?? '960x540').split('x').map(Number);
 if (!(vw > 0 && vh > 0)) fail('--size is WIDTHxHEIGHT, e.g. 960x540');
@@ -177,12 +175,11 @@ async function loadPlaywright() {
   process.exit(2);
 }
 
-const ARGS = {
-  webgl: ['--disable-features=WebGPU', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-  webgpu: ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-webgpu-adapter=swiftshader', '--disable-vulkan-fallback-to-gl-for-testing'],
-};
-// Chromium's own notices about the fallback and software GL are not the game's problem.
-const NOISE = [/GL Driver Message/, /Failed to create WebGPU Context Provider/, /WebGPU is not available, running under WebGL2 backend/];
+// WebGPU (the engine renders with nothing else) on SwiftShader's Vulkan, and ANGLE on SwiftShader,
+// which the headless shell needs to present
+const ARGS = ['--enable-unsafe-webgpu', '--enable-features=Vulkan', '--use-vulkan=swiftshader', '--use-angle=swiftshader', '--use-webgpu-adapter=swiftshader'];
+// Chromium's own notices about software GL are not the game's problem.
+const NOISE = [/GL Driver Message/];
 
 /** The folder that holds pixel-engine.js: `from` or the nearest one above it (null: none). */
 function engineDir(from) {
@@ -196,7 +193,8 @@ const chromium = await loadPlaywright();
 
 async function launch(server) {
   try {
-    return await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ARGS[backend], headless: backend === 'webgpu' ? !process.env.DISPLAY : true });
+    // headless (Playwright's headless launch is Chromium's headless shell): no display needed
+    return await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ARGS, headless: true });
   } catch (e) {
     server?.close();
     console.error(`check.mjs: could not start Chromium: ${e instanceof Error ? e.message.split('\n')[0] : e}`);
@@ -347,7 +345,9 @@ if (!/^https?:/.test(target)) {
 
 const browser = await launch(server);
 
-const report = { page: target, url, backend, ok: false, errors: [], warnings: [], shots: [], state: null };
+const report = { page: target, url, ok: false, errors: [], warnings: [], shots: [], state: null };
+/** The browser had no WebGPU (the engine's "WebGPU unavailable"): the environment's fault, not the game's. */
+let noWebGPU = false;
 try {
   const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 });
   page.on('console', (m) => {
@@ -364,7 +364,10 @@ try {
   let firstError = 0;
   for (;;) {
     const s = await page.evaluate(() => ({ frame: window.__PIXEL_ENGINE__?.frame ?? -1, fatal: document.querySelector('.fatal')?.textContent ?? null }));
-    if (s.fatal) throw new Error(s.fatal);
+    if (s.fatal) {
+      noWebGPU = /WebGPU unavailable/.test(s.fatal);
+      throw new Error(s.fatal);
+    }
     if (s.frame >= 2) break;
     if (report.errors.length && !firstError) firstError = Date.now();
     if (firstError && Date.now() - firstError > 5000) throw new Error('the game never started (see the errors above)');
@@ -469,9 +472,13 @@ try {
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
 const s = report.state;
-console.log(`${report.ok ? 'OK' : 'FAILED'}  ${report.page}  (${backend}${s ? `, ${s.backend}, engine ${s.version}, ${s.frame} frames, "${s.status}"` : ''})`);
+console.log(`${report.ok ? 'OK' : 'FAILED'}  ${report.page}${s ? `  (${s.backend}, engine ${s.version}, ${s.frame} frames, "${s.status}")` : ''}`);
 for (const shot of report.shots) console.log(`  shot ${shot.file}  (${shot.colors} colours)`);
 for (const w of report.warnings.slice(0, 10)) console.log(`  warning: ${w}`);
 for (const e of report.errors) console.log(`  error: ${e}`);
 console.log(`  report ${join(out, 'report.json')}`);
+if (noWebGPU) {
+  console.error('check.mjs: this Chromium has no WebGPU, so no game can start in it. Use Playwright\'s (npx playwright install chromium), or set CHROMIUM_PATH to a Chromium that has it.');
+  process.exit(2);
+}
 process.exit(report.ok ? 0 : 1);

@@ -1,6 +1,6 @@
 /* global window, document */
 // Part of the e2e suite "riftlight": the real LootPort and TreePort in the game shell (production
-// build), on WebGPU and the WebGL 2 fallback, with the stub hero / level / monster ports:
+// build), with the stub hero / level / monster ports:
 //
 //   new run → starter gems socketed → kill a boss → real loot drops (beam light from ctx.lights) →
 //   pick up (F) → I opens the inventory → right-click equips → the hero's StatSheet changes →
@@ -22,7 +22,7 @@ import { writeFile } from 'node:fs/promises';
  */
 export async function runRiftlightItems(h) {
   const { exe, scenario: s, openPage, check, capture, checkClean, encodePng, OUT } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight items, skills and tree (${s.backend})`);
   let ctx;
   try {
@@ -42,8 +42,8 @@ export async function runRiftlightItems(h) {
           .filter((k) => typeof k.slot === 'number')
           .map((k) => ({ id: k.id, name: k.name, cost: k.cost })),
       );
-    // frames: every window on WebGPU, the inventory on WebGL 2 too (the UI is the same 2D overlay)
-    const shot = (name) => (tag === 'webgpu' || name === 'inventory' ? composite(page, `riftlight-items-${tag}-${name}.png`) : null);
+    // frames: every window
+    const shot = (name) => composite(page, `riftlight-items-${tag}-${name}.png`);
     /** Stand at a townsperson (or the chest) and press F: the same path as walking there (the core suite walks). */
     const talkTo = (id) =>
       R((who) => {
@@ -475,17 +475,13 @@ export async function runRiftlightItems(h) {
     check(restored.allocated === before.allocated && restored.life.includes('item:belt'), `the passive tree comes back (${restored.allocated} nodes)`);
 
     // ---------------------------------------------------------------- a label click after a lost GPU device
-    // (WebGPU only: the label click is the shell's window-level pointer, the same on both
-    // backends; the phone suite covers the WebGL 2 context loss itself)
-    if (tag === 'webgpu') {
+    {
       await R(async () => {
         await window.__RIFTLIGHT__.enterDepth(1);
         window.__PIXEL_ENGINE__.step(5);
       });
       await R(() => {
-        const r = window.__PIXEL_ENGINE__.renderer.renderer;
-        if (r.backend.isWebGPUBackend) r.backend.device.destroy();
-        else r.backend.gl.getExtension('WEBGL_lose_context').loseContext();
+        window.__PIXEL_ENGINE__.renderer.renderer.backend.device.destroy();
       });
       await page.waitForFunction(() => window.__PIXEL_ENGINE__.state().gpuRecoveries === 1, null, { timeout: 60000 });
       await R(() => window.__RIFTLIGHT__.realtime());
@@ -528,7 +524,7 @@ export async function runRiftlightItems(h) {
   }
 
   // ---------------------------------------------------------------- a phone in portrait
-  if (s.name === 'webgpu') await runPhone();
+  await runPhone();
 
   async function runPhone() {
     let phone;

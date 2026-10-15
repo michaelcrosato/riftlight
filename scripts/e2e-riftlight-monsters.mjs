@@ -3,7 +3,7 @@
 //
 //   npm run build && npm run test:e2e -- riftlight-monsters
 //
-// Runs on WebGPU and on the WebGL 2 fallback. Covers: the lab renders a generated monster
+// Covers: the lab renders a generated monster
 // (nonblank frame), plays clips (walk, an attack, death), switches plan/seed, evolves a grid of
 // 9 children and selects one, crossover and mutation, genome export, a contact sheet rendered
 // in the browser, and zero GPU / console errors. Frames land in .scratch/e2e/monsters-*.png.
@@ -16,7 +16,7 @@ import { writeFile } from 'node:fs/promises';
  */
 export async function runRiftlightMonsters(h) {
   const { exe, scenario: s, openPage, until, check, capture, state, colorCount, checkClean, OUT } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-monsters (${s.backend})`);
   let ctx;
   try {
@@ -26,7 +26,7 @@ export async function runRiftlightMonsters(h) {
     await page.waitForFunction(() => window.__MONSTER_LAB__, null, { timeout: 60000 });
     const L = (fn, arg) => page.evaluate(fn, arg);
     const st0 = await state(page);
-    check(st0.backend.startsWith(s.backend === 'WebGPU' ? 'WebGPU' : 'WebGL 2'), `backend is ${st0.backend}`);
+    check(st0.backend === 'WebGPU', `backend is ${st0.backend}`);
     const plans = await L(() => window.__MONSTER_LAB__.plans());
     const archetypes = await L(() => window.__MONSTER_LAB__.archetypes());
     check(plans.length >= 9 && archetypes.length >= 10, `lab lists ${plans.length} plans and ${archetypes.length} archetypes`);

@@ -211,6 +211,7 @@ export { KEYMAP, readMoveInput } from './character/controls';
 export {
   PixelRenderer,
   DEFAULT_EDGES,
+  NO_WEBGPU,
   type BackendName,
   type CapturedFrame,
   type EdgeSettings,

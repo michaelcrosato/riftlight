@@ -2,8 +2,7 @@
  * A swarm simulated on the GPU: every particle's position and velocity live in GPU storage
  * buffers, and a TSL compute shader moves them all each frame (pulled toward an attractor,
  * swirled round it, stirred by a noise flow, bounced off a floor). The CPU never touches a
- * particle; drawing is one instanced sprite draw reading the same buffer. On the WebGL 2
- * fallback three runs the same compute shader with transform feedback.
+ * particle; drawing is one instanced sprite draw reading the same buffer.
  *
  *   const swarm = new GpuSwarm({ count: 32768, center: [0, 2, 0] });
  *   scene.add(swarm.mesh);
@@ -68,8 +67,7 @@ export class GpuSwarm {
     const offset = (seed * 7919) % 1048576; // a different stretch of the hash per seed (small: a uint literal)
     const flow = (seed % 1000) * 0.731; // and of the noise (small: float precision)
     // A literal only this swarm's shaders carry (times zero: it changes nothing but the source),
-    // so two swarms never share a compiled program, whatever their seeds and options: the WebGL 2
-    // fallback caches a compute program by its source, transform-feedback buffers and all.
+    // so two swarms never share a compiled program, whatever their seeds and options.
     const own = float(id).mul(0);
     const [slow, fast] = o.colors ?? [0x41a6f6, 0xf4f4f4];
     this.positions = instancedArray(o.count, 'vec3');
@@ -149,12 +147,10 @@ export class GpuSwarm {
   }
 
   /**
-   * Positions read back from the GPU (x, y, z per particle, padded to 4 on WebGPU). For tests and
-   * tools: slow, async, and WebGPU only: on the WebGL 2 fallback, reading a transform-feedback
-   * buffer back while it is being written has lost the whole context on software renderers.
+   * Positions read back from the GPU (x, y, z per particle, padded to 4). For tests and tools:
+   * slow and async.
    */
   async read(renderer: WebGPURenderer): Promise<Float32Array> {
-    if (!(renderer.backend as { isWebGPUBackend?: boolean }).isWebGPUBackend) throw new Error('GpuSwarm.read: WebGPU only (the WebGL 2 fallback can lose its context reading compute buffers back)');
     return new Float32Array(await renderer.getArrayBufferAsync(this.positions.value));
   }
 

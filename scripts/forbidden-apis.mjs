@@ -13,7 +13,7 @@ const RULES = [
   { re: /\bShaderPass\b/, why: 'write the effect as a TSL node' },
   { re: /\b(Raw)?ShaderMaterial\b/, why: 'use node materials + TSL' },
   { re: /\bonBeforeCompile\b/, why: 'use node materials + TSL' },
-  { re: /\bWebGLRenderer\b/, why: 'WebGPURenderer only (its WebGL 2 backend is the fallback)' },
+  { re: /\bWebGLRenderer\b/, why: 'WebGPURenderer only (the engine renders with WebGPU only)' },
   { re: /\bgl_(FragColor|Position|FragCoord)\b|#version\s+\d+|precision\s+(high|medium|low)p/, why: 'no raw GLSL; write TSL' },
   { re: /from\s+['"]three['"]/, why: "import from 'three/webgpu' (and TSL from 'three/tsl')" },
   { re: /from\s+['"]three\/(examples\/jsm|addons)\/postprocessing\//, why: 'WebGL-only postprocessing; use three/addons/tsl/display/*' },

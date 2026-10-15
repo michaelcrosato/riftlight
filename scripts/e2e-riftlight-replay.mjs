@@ -21,7 +21,7 @@
  */
 export async function runRiftlightReplay(h) {
   const { exe, scenario: s, openPage, check, capture, checkClean } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-replay (${s.backend})`);
   let ctx;
   try {

@@ -1,6 +1,6 @@
 /* global window, document, Image, location */
 // e2e suite "riftlight-showcase": the showcase pieces inside Riftlight (src/riftlight/showcase),
-// on WebGPU and the WebGL 2 fallback, driven frame-exactly through window.__RIFTLIGHT__:
+// driven frame-exactly through window.__RIFTLIGHT__:
 //
 //   arcade    walk to the cabinet in Emberfall and use it (the swoop + iris, no loadGame), the
 //             `side` camera and the 16-bit + CRT look; the scripted run (jumps, a double jump, a
@@ -19,7 +19,7 @@
  */
 export async function runRiftlightShowcase(h) {
   const { exe, scenario: s, openPage, check, capture, state, checkClean, colorCount } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-showcase (${s.backend})`);
   let ctx;
   try {
