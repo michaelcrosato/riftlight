@@ -46,7 +46,11 @@ import { ScreenFx } from './screenFx';
 import { vertexSnap } from './toon';
 import { installWebGPUCompat } from './webgpuCompat';
 
-export type BackendName = 'WebGPU' | 'WebGL 2 fallback';
+/** The engine renders with WebGPU only (docs/DOCTRINE.md, principle 6). */
+export type BackendName = 'WebGPU';
+
+/** What a browser without WebGPU is told (the start fails with it: "Failed to start: …"). */
+export const NO_WEBGPU = 'WebGPU unavailable: this browser has no WebGPU, which Pixel Engine games need (a recent Chrome or Edge, Safari 26, or Firefox 141 on Windows, with hardware acceleration on)';
 export type RenderMode = 'pixel' | 'raw';
 
 export interface EdgeSettings {
@@ -71,8 +75,6 @@ export interface PixelRendererOptions {
   filters?: readonly string[];
   /** A full look (per-layer pixel art and filters); wins over `filters` and `edges`. */
   look?: Look;
-  /** Debug/test override: skip native WebGPU and use WebGPURenderer's WebGL 2 backend. */
-  forceWebGL?: boolean;
 }
 
 export interface CapturedFrame {
@@ -143,19 +145,18 @@ const OUTPUT_CACHE_SIZE = 8;
  * filter is active; the edge detection (~10 reads) and palette searches run 1/scale² as
  * often as they used to.
  *
- * Native WebGPU is always attempted first; WebGPURenderer falls back to its built-in
- * WebGL 2 backend when WebGPU is unavailable. There is no second renderer, except that a
- * lost GPU device (mobile browsers drop it after backgrounding or under memory pressure)
- * is replaced by a fresh renderer + pipeline on a fresh canvas (`recoveries` counts them).
+ * WebGPU only: without it (no `navigator.gpu`, no adapter, or three falling back to its WebGL 2
+ * backend) the renderer refuses to start, saying so (`NO_WEBGPU`). There is no second
+ * renderer, except that a lost GPU device (mobile browsers drop it after backgrounding or under
+ * memory pressure) is replaced by a fresh renderer + pipeline on a fresh canvas (`recoveries`
+ * counts them).
  */
 export class PixelRenderer {
   readonly container: HTMLElement;
   readonly gpuErrors: GpuErrorRecord[] = [];
-  backend: BackendName = 'WebGPU';
-  /** Why the WebGL 2 backend is active, when it is. */
-  fallbackReason: string | null = null;
+  readonly backend: BackendName = 'WebGPU';
   framing!: Framing;
-  /** How many times a lost GPU device / WebGL context was recovered from. */
+  /** How many times a lost GPU device was recovered from. */
   recoveries = 0;
   /** Counts look changes (UIs that mirror the look re-sync when it moves). */
   lookVersion = 0;
@@ -177,7 +178,6 @@ export class PixelRenderer {
   private readonly reported = new WeakSet<() => void>();
   /** Where a throwing `onBeforeRender` listener is reported (the engine shows it on screen). */
   onError: ((e: unknown) => void) | null = null;
-  private readonly forceWebGL: boolean;
   private _mode: RenderMode;
   private _baseResolution: Resolution;
   private _resolution: Resolution;
@@ -207,7 +207,6 @@ export class PixelRenderer {
     this.container = options.container;
     this.scene = options.scene;
     this.camera = options.camera;
-    this.forceWebGL = options.forceWebGL === true;
     this._mode = options.mode ?? 'pixel';
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
@@ -222,6 +221,10 @@ export class PixelRenderer {
   }
 
   static async create(options: PixelRendererOptions): Promise<PixelRenderer> {
+    const gpu = typeof navigator !== 'undefined' ? (navigator as Navigator & { gpu?: GPU }).gpu : undefined;
+    // at the feature level three asks for (it runs on compatibility-mode devices too)
+    const adapter = gpu ? await gpu.requestAdapter({ powerPreference: 'high-performance', featureLevel: 'compatibility' } as GPURequestAdapterOptions).catch(() => null) : null;
+    if (!adapter) throw new Error(NO_WEBGPU);
     const pr = new PixelRenderer(options);
     await pr.initRenderer();
     pr.observeLayout();
@@ -242,7 +245,6 @@ export class PixelRenderer {
   private createRenderer(): void {
     const renderer = new WebGPURenderer({
       antialias: false,
-      forceWebGL: this.forceWebGL,
       powerPreference: 'high-performance',
     });
     renderer.toneMapping = NoToneMapping; // flat palette colors, not photographic
@@ -272,18 +274,13 @@ export class PixelRenderer {
   /** Initialise the backend, attach the canvas, lay out and build the output graph. */
   private async initRenderer(): Promise<void> {
     const renderer = this._renderer;
-    const gpuAvailable = typeof navigator !== 'undefined' && 'gpu' in navigator;
     await renderer.init();
     const backend = renderer.backend as { isWebGPUBackend?: boolean; device?: GPUDevice };
-    this.backend = backend.isWebGPUBackend === true ? 'WebGPU' : 'WebGL 2 fallback';
-    this.fallbackReason =
-      this.backend === 'WebGPU'
-        ? null
-        : this.forceWebGL
-          ? 'forced by ?backend=webgl'
-          : gpuAvailable
-            ? 'WebGPU adapter/device request failed'
-            : 'navigator.gpu unavailable';
+    // three falls back to its WebGL 2 backend when it can't get a device: not here
+    if (backend.isWebGPUBackend !== true) {
+      renderer.dispose();
+      throw new Error(NO_WEBGPU);
+    }
     // three ignores a device lost with reason 'destroyed'; we want to know about every loss
     // that we didn't cause ourselves (dispose).
     void backend.device?.lost.then((info) => this.handleDeviceLoss(renderer, info.message));
@@ -591,13 +588,12 @@ export class PixelRenderer {
     r.setRenderTarget(previous);
     const raw = (await r.readRenderTargetPixelsAsync(target, 0, 0, width, height)) as Uint8Array;
 
-    // WebGPU pads rows to 256 bytes; WebGL returns rows bottom-up.
+    // WebGPU pads rows to 256 bytes
     const row = width * 4;
     const stride = raw.length >= (height - 1) * Math.ceil(row / 256) * 256 + row && row % 256 !== 0 ? Math.ceil(row / 256) * 256 : row;
-    const flip = this.backend !== 'WebGPU';
     const pixels = new Uint8Array(row * height);
     for (let y = 0; y < height; y++) {
-      const src = (flip ? height - 1 - y : y) * stride;
+      const src = y * stride;
       pixels.set(raw.subarray(src, src + row), y * row);
     }
     return { width, height, pixels };

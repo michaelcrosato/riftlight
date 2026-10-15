@@ -116,5 +116,6 @@ isolated clips can't.
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
 `ShaderPass`, `RenderPixelatedPass`, `(Raw)ShaderMaterial`, `onBeforeCompile` or GLSL;
 all shader logic in TSL; no React or external engines; version pins exact. Pixel
-snapping is camera/presentation only, never physics. Any rendering change must keep
-`npm run test:e2e` green on both the WebGPU and WebGL 2 fallback scenarios.
+snapping is camera/presentation only, never physics. The engine renders with WebGPU only (no
+WebGL 2 fallback); `npm run test:e2e` runs it headless in Chromium's headless shell, no display
+(`scripts/browser.mjs`).

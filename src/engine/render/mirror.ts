@@ -3,7 +3,7 @@
  * into a texture at the art resolution, and the glass shows it at each pixel's screen position
  * (mirrored left to right), so the reflection lines up from wherever the camera looks. An
  * oblique near plane (Lengyel) on that camera cuts away everything behind the glass; it works
- * for orthographic cameras (the iso view) as well as perspective ones, on WebGPU and WebGL 2.
+ * for orthographic cameras (the iso view) as well as perspective ones.
  *
  *   const mirror = new Mirror({ size: [8, 3] });
  *   mirror.mesh.position.set(0, 1.8, -6.9);              // the glass faces its local +z

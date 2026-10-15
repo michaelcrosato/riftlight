@@ -1,6 +1,6 @@
 /* global window -- page.evaluate callbacks run in the browser */
 // e2e suite "riftlight-combat": the Riftlight combat arena (/?game=arena) in the production
-// build, on WebGPU and the WebGL 2 fallback. Everything runs on Engine.step (exact 1/60 s
+// build. Everything runs on Engine.step (exact 1/60 s
 // frames), so it is deterministic however slowly the machine renders.
 //
 //   npm run build && E2E_PORT=4401 npm run test:e2e -- riftlight-combat
@@ -17,7 +17,7 @@
  */
 export async function runRiftlightCombat(h) {
   const { exe, scenario: s, openPage, check, capture, state, colorCount, checkClean } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ riftlight-combat (${s.backend})`);
   let ctx;
   try {

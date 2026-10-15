@@ -32,8 +32,9 @@ Split a bigger game into more modules (`import { Level } from './level.js'`) as 
 - **The page is the game's.** Importing the engine adds its CSS, which makes the page a
   full-screen game: `html, body` don't scroll and `#app` fills the window. To embed a game in a
   bigger page, give the container your own size and position (your CSS comes later and wins).
-- **Browsers.** WebGPU where the browser has it, otherwise WebGL 2 (automatic, same picture).
-  Phones and tablets get on-screen touch controls by themselves.
+- **Browsers.** WebGPU only: a recent Chrome or Edge, Safari 26, Firefox 141 on Windows. A
+  browser without it is told so ("Failed to start: WebGPU unavailable: …"). Phones and tablets
+  get on-screen touch controls by themselves.
 - **Your own models.** Put GLBs in `assets/` and call `ctx.loadModel('assets/ship.glb')`
   (paths are relative to the page). To ship one file with no `assets/` folder, set
   `window.__PIXEL_ASSETS__ = { 'assets/ship.glb': 'data:model/gltf-binary;base64,...' }`
@@ -1028,7 +1029,7 @@ e.audio.counts; e.particles.alive; e.physics.counts(); e.hud.canvas;
 ```
 
 URL flags (with `withUrlOptions` in `Engine.start`): `?debug=1` (debug panel),
-`?backend=webgl` (force the fallback), `?look=noir`, `?filters=crt,scanlines`,
+`?look=noir`, `?filters=crt,scanlines`,
 `?camera=third`, `?zoom=1.5`, `?mode=raw` (no pixel pass), `?res=320`, `?touch=1`,
 `?quality=low`, `?fps=30`, `?seed=7` (`ctx.random`). Hotkeys: P pixel/raw, R resolution, \` debug panel,
 [ and ] cycle looks, M mute.
@@ -1040,15 +1041,16 @@ node check.mjs                                  # index.html: start, run 90 fram
 node check.mjs --keys KeyD*60,Space*4,KeyD*40   # hold each key for that many frames, in order
 node check.mjs examples/side-scroller.html --cameras --looks noir,handheld
 node check.mjs "index.html?look=handheld&zoom=1.5"   # with URL flags
-node check.mjs --backend webgpu                 # WebGPU (needs a display, e.g. xvfb-run)
 node check.mjs --sheets models.js               # sheets of your own models and textures (ASSETS.md)
 ```
 
-It writes `check/<page>.png` (the frame with the HUD), the camera and look shots and
+It plays on WebGPU in Chromium's headless shell, so it needs no display (Playwright's
+`npx playwright install chromium` installs the shell with the browser). It writes
+`check/<page>.png` (the frame with the HUD), the camera and look shots and
 `check/report.json` (errors, warnings, `state()`), and prints a summary: the backend, frames
 and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
-errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (bad arguments, no
-page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
+errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (a browser without
+WebGPU, bad arguments, no page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
 (`npm i -D playwright && npx playwright install chromium`), or `playwright-core` plus a
 Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
 

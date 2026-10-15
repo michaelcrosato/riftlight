@@ -33,7 +33,7 @@ export class DebugUI {
     const looks = Object.keys(LOOK_PRESETS).map((n) => `<option value="${n}">${n}</option>`).join('');
     const filters = FILTERS.map((f) => `<label title="${f.group}"><input type="checkbox" value="${f.id}">${f.label}</label>`).join('');
     this.root.innerHTML = `
-      <div class="row"><span>Backend</span><b data-f="backend"></b></div>
+      <div class="row"><span>Backend</span><b data-f="backend" data-backend="webgpu"></b></div>
       <div class="row"><span>Mode</span><b data-f="mode"></b></div>
       <div class="row"><span>Internal</span><b data-f="res"></b></div>
       <div class="row"><span>Scale</span><b data-f="scale"></b></div>
@@ -101,9 +101,7 @@ export class DebugUI {
     const e = this.engine;
     const r = e.renderer;
     const f = r.framing;
-    this.set('backend', r.backend + (r.fallbackReason ? ` (${r.fallbackReason})` : ''));
-    const backendAttr = r.backend === 'WebGPU' ? 'webgpu' : 'webgl2';
-    if (this.fields.backend!.dataset.backend !== backendAttr) this.fields.backend!.dataset.backend = backendAttr;
+    this.set('backend', r.backend);
     this.set('mode', r.mode === 'pixel' ? `Pixel${r.filters.length ? ` + ${r.filters.join(', ')}` : ''}` : 'Raw 3D');
     const res = r.resolution;
     this.set('res', `${res.width}×${res.height}${r.baseResolution === RESOLUTIONS.compare ? ' (compare)' : ''}${r.aspect !== 'fixed' && res !== r.baseResolution ? ` (${r.aspect})` : ''}`);

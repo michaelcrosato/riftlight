@@ -1,8 +1,8 @@
 # Riftlight
 
-**Pixel Engine**: a WebGPU-first 3D engine that renders authentic 2D pixel art, designed
+**Pixel Engine**: a WebGPU 3D engine that renders authentic 2D pixel art, designed
 for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
-post-processing (with its built-in WebGL 2 fallback), Rapier physics, local GLB assets.
+post-processing, WebGPU only, Rapier physics, local GLB assets.
 
 The page at `/` is **Riftlight**, the showcase hack-and-slash ARPG ([`docs/GAME.md`](docs/GAME.md)):
 a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper and,
@@ -44,12 +44,12 @@ assets with `npm run model -- find <words>` and `npm run tex -- find <words>`
 
 ```bash
 npm ci
-npm run dev          # http://localhost:5173  (?game=playground|sandbox, ?seed=7, ?backend=webgl, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1)
+npm run dev          # http://localhost:5173  (?game=playground|sandbox, ?seed=7, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1)
 npm run build        # production build (+ the engine kit in dist/engine/ and dist/engine.zip)
 npm run bundle       # the engine kit for other agents: bundle/pixel-engine/ + bundle/pixel-engine.zip
 npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
 npm run lint && npm run typecheck && npm test
-npm run test:e2e     # after build: WebGPU + WebGL 2 fallback in Chromium (needs xvfb-run; E2E_PORT=…)
+npm run test:e2e     # after build: WebGPU in headless Chromium (no display; E2E_PORT=…)
 npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters, @world, @assets
 npm run anim -- check          # animation metrics for every clip
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png

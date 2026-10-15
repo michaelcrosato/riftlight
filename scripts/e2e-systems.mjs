@@ -2,7 +2,7 @@
 //
 //   npm run build && npm run test:e2e -- systems
 //
-// Runs on WebGPU and on the WebGL 2 fallback. Covers:
+// Covers:
 //   hud        pixel HUD overlay: art-resolution canvas, integer-scaled with the framing,
 //              follows R (320×180), draws the coin counter in palette colors
 //   audio      unlock on first input, hero events → sound effects, music, mute (key, panel,
@@ -28,7 +28,7 @@ import { PAGE_HELPERS } from './e2e-moves.mjs';
  */
 export async function runSystems(h) {
   const { exe, scenario: s, openPage, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT } = h;
-  const tag = s.name === 'webgpu' ? 'webgpu' : 'webgl';
+  const tag = s.name;
   console.log(`\n▶ systems (${s.backend})`);
   let ctx;
   try {

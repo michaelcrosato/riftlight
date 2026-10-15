@@ -22,7 +22,7 @@ export const SHADERS: RoomDef = {
   guide: {
     what: 'Six pedestals, each with an object wearing a shader: hologram, force field, lava, marble, wood, crystal.',
     how: [
-      'A TSL material is a graph of nodes (position, normal, time, noise, maths) built in JavaScript and compiled to WGSL for WebGPU or GLSL for the WebGL 2 fallback. The engine never writes shader text.',
+      'A TSL material is a graph of nodes (position, normal, time, noise, maths) built in JavaScript and compiled to WGSL for WebGPU. The engine never writes shader text.',
       'Procedural textures: marble is a sine wave bent by fractal noise (veins); wood is rings round the trunk\'s axis, wobbled by noise; crystal and the force field are Worley noise (the distance to the nearest of scattered points: cells); lava is fractal noise drifting with time.',
       'Each is cut into a few bands of palette colours (the way the toon light has three steps) so it looks drawn, not airbrushed. Marble, wood and crystal are still toon-lit.',
       'The rim is where the surface turns edge-on to the camera (1 minus the facing, from the view-space normal): holograms and force fields glow there.',

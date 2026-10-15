@@ -59,7 +59,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | Procedural | `terrain` Terrain Lab | a land from a seed: fractal or ridged noise, droplet erosion, trees placed by rules, a heightfield you walk on |
 | | `dungeon` Dungeon Forge | wave function collapse from ten 3 × 3 tiles: watch it collapse, walk the halls; a flood fill finds sealed rooms |
 | | `plants` Plant Lab | a bush, a fern, a weed and a tree grown from L-systems, their rules on the plinths, drawn branch by branch |
-| Rendering Lab | `swarm` GPU Swarm | 32,768 particles (8,192 on WebGL 2) moved by a TSL compute shader, never touching the CPU; they follow you |
+| Rendering Lab | `swarm` GPU Swarm | 32,768 particles moved by a TSL compute shader, never touching the CPU; they follow you |
 | | `views` Mirrors & Monitors | two security cameras rendered to textures on monitors, and a mirror that reflects you, in the iso view |
 | | `shaders` Shader Gallery | hologram, force field, lava, marble, wood and crystal: TSL materials with no textures, see-through by dither |
 | AI & Direction | `robots` Robot Yard | four robots on behaviour trees: flee the hero, recharge, carry crystals, wander; one robot's tree drawn live |
@@ -122,5 +122,5 @@ it does nothing, no note, no sound).
 | `guide(id?)` | a station guide as text lines (what an agent reads to learn a technique) |
 | `room` | the current room's own hooks (`RoomLogic.api`): e.g. the Feel Lab's `hit()`, the Atrium's `doors()` |
 
-The `world` e2e suite (`scripts/e2e-world.mjs`, group `@world`) plays it on WebGPU and the
-WebGL 2 fallback; its frames land in `.scratch/e2e/world-*.png`.
+The `world` e2e suite (`scripts/e2e-world.mjs`, group `@world`) plays it; its frames land in
+`.scratch/e2e/world-*.png`.

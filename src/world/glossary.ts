@@ -31,7 +31,7 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'Bayer matrix', section: 'pixels', text: 'A 4 x 4 table of thresholds 0..15/16 laid out so neighbouring pixels differ a lot: the classic ordered-dither pattern.' },
   { term: 'letterbox', section: 'pixels', text: 'Bars around the picture when the screen is not a whole multiple of the art size.' },
   // rendering
-  { term: 'TSL', section: 'rendering', text: 'Three Shading Language: shaders written as JavaScript node graphs, compiled to WGSL for WebGPU or GLSL for the WebGL 2 fallback.' },
+  { term: 'TSL', section: 'rendering', text: 'Three Shading Language: shaders written as JavaScript node graphs, compiled to WGSL for WebGPU.' },
   { term: 'uniform', section: 'rendering', text: 'A value a shader reads that the CPU can change every frame without rebuilding the shader: slider moves, transitions, light colours.' },
   { term: 'render pipeline', section: 'rendering', text: 'The chain of passes that makes a frame: the scene pass, outlines, filters, the upscale.' },
   { term: 'toon shading', section: 'rendering', text: 'Lighting quantised into a few hard bands (3 here) instead of a smooth gradient: the hand-shaded sprite look.' },
@@ -48,7 +48,7 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'hysteresis', section: 'rendering', text: 'Favouring the current owner a little so two equal candidates do not swap back and forth every frame.' },
   { term: 'orthographic', section: 'rendering', text: 'A projection with no perspective: far things are as big as near ones. Isometric, top-down and side views use it.' },
   { term: 'perspective', section: 'rendering', text: 'A projection where far things look smaller: third and first person.' },
-  { term: 'WebGPU', section: 'rendering', text: 'The modern browser graphics API this engine targets first; WebGL 2 is the fallback with the same scene and shaders.' },
+  { term: 'WebGPU', section: 'rendering', text: 'The modern browser graphics API this engine renders with, and only with: one renderer, its shaders compiled from TSL to WGSL. A browser without it is told so.' },
   // effects
   { term: 'particle', section: 'effects', text: 'A tiny sprite with a position, speed and life. Thousands of them draw as one instanced draw call.' },
   { term: 'instancing', section: 'effects', text: 'Drawing many copies of one mesh in a single draw call, each with its own position (and colour).' },

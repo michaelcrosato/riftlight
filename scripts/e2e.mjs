@@ -1,50 +1,47 @@
 // End-to-end verification in real Chromium, against the production build.
 //
-//   npm run build && npm run test:e2e      (wraps this in xvfb-run)
+//   npm run build && npm run test:e2e      (headless: no display needed, scripts/browser.mjs)
 //
 //   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
-//     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
-//     filters-webgl | touch | phone | moves | lab | asset-lab | riftlight | riftlight-tree | riftlight-loot | tools |
+//     webgpu | no-webgpu | cameras | camera-swap | filters-webgpu |
+//     touch | phone | moves | lab | asset-lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
 //     riftlight-showcase | riftlight-replay | riftlight-snapshot | bundle | world;  groups: @core | @cameras | @filters | @world | @assets
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
-// Core suites (one per backend path):
-//   webgpu          native WebGPU (SwiftShader adapter in headless; real GPU elsewhere)
-//   webgl-fallback  navigator.gpu disabled -> WebGPURenderer's built-in WebGL 2 backend
-//   Both assert: expected backend in state + debug UI, zero GPU errors, zero console
-//   errors/warnings, one canvas, gameplay responds to input, Raw 3D toggle keeps the same
-//   renderer/canvas/camera/character, pixel mode is blocky while raw mode is not, 320x180
-//   keeps framing.
-//   webgl-forced    ?backend=webgl debug override: the forced backend is picked and reported,
-//                   and it renders cleanly (the rest is the same backend as webgl-fallback).
+// The engine renders with WebGPU only (docs/DOCTRINE.md, principle 6); every suite runs on it.
+//   webgpu          native WebGPU (SwiftShader's Vulkan adapter in Chromium's headless shell):
+//                   the backend in state + debug UI, zero GPU errors, zero console
+//                   errors/warnings, one canvas, gameplay responds to input, Raw 3D toggle keeps
+//                   the same renderer/canvas/camera/character, pixel mode is blocky while raw
+//                   mode is not, 320x180 keeps framing.
+//   no-webgpu       a browser without WebGPU: the start fails and says why, no engine, no canvas.
 //
-// camera-swap     live preset swaps keep the player, coins and renderer (WebGPU + WebGL 2);
+// camera-swap     live preset swaps keep the player, coins and renderer;
 //                 a swapped-to fixed view survives reload.
 // cameras         every camera preset renders, zooms (except first person), moves the
 //                 character in its own basis; side locks the lane; free → fix → reload as fixed.
-// filters-*       every post filter compiles and changes the frame on WebGPU and WebGL 2,
+// filters-webgpu  every post filter compiles and changes the frame,
 //                 with zero errors; every look renders; per-layer looks change only their
 //                 layer (pixel characters on a clean world, a grade on the environment only);
 //                 sliders don't rebuild the graph; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
-//                 GPU device (WebGPU) / WebGL context is recovered with a working renderer;
-//                 Riftlight as a player opens it on a phone, portrait (WebGPU) and landscape
-//                 (WebGL 2), no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
+//                 GPU device is recovered with a working renderer;
+//                 Riftlight as a player opens it on a phone, portrait and landscape,
+//                 no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
 //                 a touch button for every skill-bar slot that reaches the game, no HUD element
 //                 under a control, controls off the menus, panels that fit with big targets.
 // moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
-// asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor
-//                 (on WebGPU; every fourth on the WebGL 2 fallback),
+// asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor,
 //                 the close zoom, a light requested and released, bad ids/zooms/looks throw, a
 //                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
 //                 few frames of Gate B's scene (npm run gate-b) scored.
-// riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs), WebGPU + WebGL 2: title,
+// riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs): title,
 //                 new run, town (a walk to every district and back), rift keeper, level 1 with the basic attack, gold, clear, loot
 //                 window, portal, autosave, pause → Tuning (enemy life applies live), death
 //                 recap, save → reload → Continue. Then the real loot, skills and tree
@@ -67,33 +64,33 @@
 //                 merges, a clean draft that bakes to the same texels), and refuses a disallowed
 //                 licence, a third-party file or pack nobody approved, own work with an outside
 //                 source, an unsafe id and a grid that doesn't fit.
-// riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
+// riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs).
 // riftlight-replay  a Riftlight session by input alone, recorded and replayed to the same state (scripts/e2e-riftlight-replay.mjs).
 // riftlight-snapshot  Riftlight save-states: a moment in town restored (also from a level) plays on the same (scripts/e2e-riftlight-snapshot.mjs).
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
-//                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
-// systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
+//                 in level 1 (scripts/e2e-riftlight-builds.mjs).
+// systems         game systems (scripts/e2e-systems.mjs): pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials and a textured model (built and merged),
 //                 engine.dispose().
 //
-// riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs), WebGPU + WebGL 2:
+// riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs):
 //                 the arcade cabinet (swoop in, side camera + CRT, the scripted run to the flag,
 //                 best time + gold in the save, Esc out with nothing left behind), the Hall of
 //                 Beasts (first person, exhibits from killed genomes, inspect, a clip, breeding,
 //                 free camera) and photo mode (gameboy PNG, raw, time of day, restore).
 //
 // riftlight-levels  Riftlight levels + the dynamic light pool (scripts/e2e-riftlight-levels.mjs),
-//                 WebGPU + WebGL 2: levels 1, 6, 12 and a rift build, render, keep 8 lights
+//                 levels 1, 6, 12 and a rift build, render, keep 8 lights
 //                 without recompiles, walk start → exit with Engine.step, open the portal.
 //
-// world           Engine World, the engine's tech demo (scripts/e2e-world.mjs), WebGPU + WebGL 2:
+// world           Engine World, the engine's tech demo (scripts/e2e-world.mjs):
 //                 a door per room, walking into one (an iris, the room as its own Game), every
 //                 room renders and its first pad works, hitstop / shake / flash / game speed,
 //                 the panels, a mosaic transition, and the Atrium the same after every room.
 //
 // bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
-//                 zip, its types, its check.mjs on every page (WebGPU + WebGL 2), every guide
+//                 zip, its types, its check.mjs on every page, every guide
 //                 recipe played as the guide describes, and errors reported (box, engine.errors);
 //                 the handoff page (/handoff/) links only files the kit ships.
 //
@@ -111,6 +108,7 @@ import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
 import { chromium } from 'playwright-core';
+import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlight } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
@@ -132,36 +130,23 @@ const PORT = Number(process.env.E2E_PORT) || 4179;
 const BASE = `http://localhost:${PORT}/`;
 const ROOT = new URL('../', import.meta.url);
 const OUT = new URL('.scratch/e2e/', ROOT);
-const EXE = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium';
 
 const SCENARIOS = [
   {
     name: 'webgpu',
     url: BASE,
-    // Vulkan SwiftShader adapter. In headless mode Chromium loses the WebGPU device as soon
-    // as a canvas context presents, so the suite runs headful under Xvfb (see test:e2e).
-    args: [
-      '--enable-unsafe-webgpu',
-      '--enable-features=Vulkan',
-      '--use-vulkan=swiftshader',
-      '--use-webgpu-adapter=swiftshader',
-      '--disable-vulkan-fallback-to-gl-for-testing',
-    ],
+    // SwiftShader's Vulkan adapter in Chromium's headless shell (scripts/browser.mjs)
+    args: WEBGPU_ARGS,
     backend: 'WebGPU',
   },
   {
-    name: 'webgl-fallback',
+    // a browser without WebGPU: the start fails, saying so (the engine renders with WebGPU only)
+    name: 'no-webgpu',
     url: BASE,
-    args: ['--disable-features=WebGPU', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-    backend: 'WebGL 2 fallback',
-    // Expected when WebGPU is unavailable: Chrome and three.js each announce the fallback.
-    expectedWarnings: [/Failed to create WebGPU Context Provider/, /WebGPU is not available, running under WebGL2 backend/],
-  },
-  {
-    name: 'webgl-forced',
-    url: `${BASE}?backend=webgl`,
-    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader'],
-    backend: 'WebGL 2 fallback',
+    args: WEBGL_ARGS,
+    backend: null,
+    // Chromium's own notice that it has no WebGPU to give
+    expectedWarnings: [/Failed to create WebGPU Context Provider/],
   },
 ];
 
@@ -177,18 +162,6 @@ function check(cond, msg) {
     console.log(`  ✘ ${msg}`);
     failures++;
   }
-}
-
-async function resolveExecutable() {
-  if (!EXE.endsWith('chromium')) return EXE;
-  try {
-    const dirs = (await readdir('/opt/pw-browsers')).filter((d) => /^chromium-\d+$/.test(d)).sort();
-    const last = dirs.at(-1);
-    if (last) return `/opt/pw-browsers/${last}/chrome-linux/chrome`;
-  } catch {
-    /* fall through */
-  }
-  return undefined; // let playwright find its own
 }
 
 async function startServer() {
@@ -391,8 +364,7 @@ async function stableCamera(page, label = '') {
 
 /** Launch Chromium for a scenario; collect console errors/warnings and page errors in `logs`. */
 async function launch(browserExe, s, pageOptions = {}) {
-  const headless = !process.env.DISPLAY; // headful under xvfb-run; headless only as a last resort
-  const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless });
+  const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless: true });
   const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1, ...pageOptions });
   const logs = [];
   const allowed = [...ENVIRONMENT_NOISE, ...(s.expectedWarnings ?? [])];
@@ -557,29 +529,6 @@ async function runCore(browserExe, s) {
   }
 }
 
-/** ?backend=webgl: only what differs from the natural fallback (same backend, covered by runCore). */
-async function runForced(browserExe, s) {
-  console.log(`\n▶ ${s.name}`);
-  let ctx;
-  try {
-    ctx = await openPage(browserExe, s);
-    const { page, logs } = ctx;
-    const st = await state(page);
-    check(st.backend === s.backend && st.fallbackReason === 'forced by ?backend=webgl', `backend is "${st.backend}" because "${st.fallbackReason}"`);
-    const uiBackend = await page.locator('[data-f="backend"]').textContent();
-    check(uiBackend === `${s.backend} (forced by ?backend=webgl)`, `debug UI shows "${uiBackend}"`);
-    const shot = await capture(page, `${s.name}-pixel-480.png`);
-    check(colorCount(shot) > 8, `renders (${colorCount(shot)} distinct colors)`);
-    const blocks = blockUniformity(shot, 2);
-    check(blocks > 0.995, `pixel mode is blocky: ${(blocks * 100).toFixed(1)}% uniform 2×2 blocks`);
-    checkClean(await state(page), logs);
-  } catch (e) {
-    check(false, `scenario crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
-  } finally {
-    await ctx?.browser.close();
-  }
-}
-
 /** Every preset, each from a fresh page load (?camera=), all in one browser. */
 async function runCameras(browserExe) {
   const s = SCENARIOS[0];
@@ -667,6 +616,42 @@ async function runCameras(browserExe) {
     check(false, `cameras crashed: ${e.message}`);
   } finally {
     await ctx?.browser.close();
+  }
+}
+
+/**
+ * A browser without WebGPU (scripts/browser.mjs WEBGL_ARGS), and one whose adapter gives no device
+ * (three would fall back to WebGL 2): the engine renders with WebGPU only, so the start fails and
+ * says why, on Riftlight and on the playground; no engine, no canvas, and no error but the one the
+ * page logs.
+ */
+async function runNoWebGPU(browserExe, s) {
+  console.log(`\n▶ ${s.name} (a browser without WebGPU is told so)`);
+  const cases = [
+    { label: 'no WebGPU', scenario: s, query: 'debug=0' },
+    { label: 'no WebGPU', scenario: s, query: 'game=playground&debug=0' },
+    // an adapter, but its device refuses: three falls back to WebGL 2, the engine refuses that
+    { label: 'no device', scenario: { ...SCENARIOS[0], expectedWarnings: [/WebGPU is not available, running under WebGL2 backend/] }, query: 'debug=0', noDevice: true },
+  ];
+  for (const c of cases) {
+    let ctx;
+    try {
+      ctx = await launch(browserExe, c.scenario);
+      const { page, logs } = ctx;
+      if (c.noDevice) await page.addInitScript(() => (GPUAdapter.prototype.requestDevice = () => Promise.reject(new Error('no device here'))));
+      await page.goto(`${s.url}?${c.query}`);
+      await page.waitForSelector('.fatal', { timeout: 30000 });
+      const text = (await page.locator('.fatal').textContent()) ?? '';
+      check(/^Failed to start: WebGPU unavailable: this browser has no WebGPU/.test(text), `${c.label}, ${c.query}: the page says "${text}"`);
+      const left = await page.evaluate(() => ({ engine: !!window.__PIXEL_ENGINE__, canvases: document.querySelectorAll('canvas[data-engine-canvas]').length }));
+      check(!left.engine && left.canvases === 0, 'no engine, no canvas');
+      const others = logs.filter((l) => !/^error: Error: WebGPU unavailable/.test(l));
+      check(others.length === 0 && logs.length === 1, `one error logged, the reason${others.length ? ':\n    ' + others.join('\n    ') : ''}`);
+    } catch (e) {
+      check(false, `no-webgpu (${c.label}, ${c.query}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+    } finally {
+      await ctx?.browser.close();
+    }
   }
 }
 
@@ -999,7 +984,7 @@ async function runLab(browserExe) {
 }
 
 async function runAssetLab(browserExe) {
-  for (const [b, s] of SCENARIOS.slice(0, 2).entries()) {
+  for (const s of [SCENARIOS[0]]) {
     console.log(`\n▶ asset-lab (Asset Lab, ${s.name})`);
     let ctx;
     try {
@@ -1010,9 +995,7 @@ async function runAssetLab(browserExe) {
       check(st0.backend === s.backend, `backend ${st0.backend}`);
       const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
       check(ids.length >= 7, `lists ${ids.length} models`);
-      // every model on WebGPU; on the WebGL 2 fallback every fourth and the last, since that path
-      // is the renderer's, not each model's (drawing all 151 twice outgrew CI's 15-minute job)
-      const drawn = b === 0 ? ids : ids.filter((_, i) => i % 4 === 0 || i === ids.length - 1);
+      const drawn = ids;
       // every model renders in the real pipeline (close up, so a 0.3 m rock fills enough
       // pixels): against the empty floor at the same camera, with its light off so a lit floor
       // can't pass for it
@@ -1157,8 +1140,7 @@ async function runTools(browserExe) {
     const files = await readdir(new URL('dist-single/', ROOT), { recursive: true });
     check(files.length === 1 && files[0] === 'pixel-engine.html', `dist-single holds one HTML file (${files.join(', ')})`);
     const file = new URL('dist-single/pixel-engine.html', ROOT);
-    // The natural WebGL 2 fallback: what most phones run.
-    const s = SCENARIOS[1];
+    const s = SCENARIOS[0];
     ctx = await launch(browserExe, s);
     const { page, logs } = ctx;
     const external = [];
@@ -1392,15 +1374,14 @@ async function runPhone(browserExe) {
   await runEnginePhone(browserExe);
   const helpers = { exe: browserExe, launch, ready, check, checkClean, state, BASE, OUT };
   await runRiftlightPhone({ ...helpers, scenario: SCENARIOS[0] }, 'portrait');
-  await runRiftlightPhone({ ...helpers, scenario: SCENARIOS[1] }, 'landscape');
+  await runRiftlightPhone({ ...helpers, scenario: SCENARIOS[0] }, 'landscape');
 }
 
 async function runEnginePhone(browserExe) {
   console.log('\n▶ phone (portrait adaptive aspect, GPU device loss)');
-  const headless = !process.env.DISPLAY;
   // Portrait phone: the art keeps 270 rows and narrows to the screen instead of a 16:9 strip.
   {
-    const browser = await chromium.launch({ executablePath: browserExe, args: SCENARIOS[0].args, headless });
+    const browser = await chromium.launch({ executablePath: browserExe, args: SCENARIOS[0].args, headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
       const logs = [];
@@ -1424,7 +1405,7 @@ async function runEnginePhone(browserExe) {
     }
   }
   // Device loss: mobile browsers drop the GPU device after backgrounding / memory pressure.
-  for (const s of [SCENARIOS[0], SCENARIOS[1]]) {
+  for (const s of [SCENARIOS[0]]) {
     let ctx;
     try {
       ctx = await openPage(browserExe, s, 'debug=0');
@@ -1432,8 +1413,7 @@ async function runEnginePhone(browserExe) {
       await page.evaluate(() => {
         const r = window.__PIXEL_ENGINE__.renderer.renderer;
         window.__lostRenderer = r;
-        if (r.backend.isWebGPUBackend) r.backend.device.destroy();
-        else r.backend.gl.getExtension('WEBGL_lose_context').loseContext();
+        r.backend.device.destroy();
       });
       await page.waitForFunction(() => window.__PIXEL_ENGINE__.state().gpuRecoveries === 1, null, { timeout: 60000 });
       await waitFrames(page, 10);
@@ -1461,7 +1441,7 @@ async function runEnginePhone(browserExe) {
 /** Desktop fullscreen must fill the viewport, including HUDs and the passive tree. */
 async function runFullscreen(browserExe) {
   console.log('\n▶ fullscreen (Riftlight, desktop and HiDPI)');
-  for (const s of [SCENARIOS[0], SCENARIOS[1]]) {
+  for (const s of [SCENARIOS[0]]) {
     for (const dpr of [1, 2]) {
       let ctx;
       try {
@@ -1531,15 +1511,10 @@ async function runFullscreen(browserExe) {
 
 const SUITES = {
   webgpu: (exe) => runCore(exe, SCENARIOS[0]),
-  'webgl-fallback': (exe) => runCore(exe, SCENARIOS[1]),
-  'webgl-forced': (exe) => runForced(exe, SCENARIOS[2]),
+  'no-webgpu': (exe) => runNoWebGPU(exe, SCENARIOS[1]),
   cameras: (exe) => runCameras(exe),
-  'camera-swap': async (exe) => {
-    await runCameraSwap(exe, SCENARIOS[0]);
-    await runCameraSwap(exe, SCENARIOS[1]);
-  },
+  'camera-swap': (exe) => runCameraSwap(exe, SCENARIOS[0]),
   'filters-webgpu': (exe) => runFilters(exe, SCENARIOS[0], 'filters-webgpu'),
-  'filters-webgl': (exe) => runFilters(exe, SCENARIOS[1], 'filters-webgl'),
   touch: (exe) => runTouch(exe),
   phone: (exe) => runPhone(exe),
   fullscreen: (exe) => runFullscreen(exe),
@@ -1550,70 +1525,58 @@ const SUITES = {
   riftlight: async (exe) => {
     const helpers = { exe, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT };
     await runRiftlight({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlight({ ...helpers, scenario: SCENARIOS[1] });
     await runRiftlightItems({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightItems({ ...helpers, scenario: SCENARIOS[1] });
   },
   tools: (exe) => runTools(exe),
   bundle: (exe) => runBundle({ exe, root: ROOT, out: OUT, base: BASE, scenarios: SCENARIOS, launch, ready, check, run, tail }),
   systems: async (exe) => {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
     await runSystems({ ...helpers, scenario: SCENARIOS[0] });
-    await runSystems({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-loot': async (exe) => {
     const helpers = { exe, openPage, check, capture, checkClean, encodePng, OUT };
     await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-levels': async (exe) => {
     const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
     await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightLevels({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-combat': async (exe) => {
     const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-replay': async (exe) => {
-    // gameplay is the CPU's: one backend shows it replays
-    await runRiftlightReplay({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[1] });
+    await runRiftlightReplay({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[0] });
   },
   'riftlight-snapshot': async (exe) => {
-    // gameplay is the CPU's: one backend shows a moment comes back
-    await runRiftlightSnapshot({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[1] });
+    await runRiftlightSnapshot({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[0] });
   },
   'riftlight-builds': async (exe) => {
     const helpers = { exe, openPage, check, capture, state, colorCount, checkClean, OUT };
     await runRiftlightBuilds({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightBuilds({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-monsters': async (exe) => {
     const helpers = { exe, openPage, until, check, capture, state, colorCount, checkClean, OUT };
     await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightMonsters({ ...helpers, scenario: SCENARIOS[1] });
   },
   'riftlight-showcase': async (exe) => {
     const helpers = { exe, openPage, check, capture, state, colorCount, checkClean };
     await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[0] });
-    await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[1] });
   },
   world: async (exe) => {
     const helpers = { exe, openPage, check, capture, checkClean, colorCount };
     await runWorld({ ...helpers, scenario: SCENARIOS[0] });
-    await runWorld({ ...helpers, scenario: SCENARIOS[1] });
   },
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
+  '@core': ['webgpu', 'no-webgpu', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
-  '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+  '@filters': ['filters-webgpu', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
   '@world': ['world', 'riftlight-replay', 'riftlight-snapshot'],
-  // every library model drawn on both backends: it grows with the library, so it runs alone
+  // every library model drawn: it grows with the library, so it runs alone
   '@assets': ['asset-lab'],
 };
 const grouped = Object.values(GROUPS).flat();
@@ -1630,7 +1593,7 @@ if (unknown.length) {
 }
 
 await mkdir(OUT, { recursive: true });
-const exe = await resolveExecutable();
+const exe = headlessShell();
 const server = await startServer();
 const started = Date.now();
 try {

@@ -45,10 +45,6 @@ canvas[data-engine-canvas] {
   color: #a7f070;
 }
 
-.debug-ui b[data-backend='webgl2'] {
-  color: #ffcd75;
-}
-
 .debug-ui .game {
   margin-top: 4px;
   color: #ffcd75;

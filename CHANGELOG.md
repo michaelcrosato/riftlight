@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.37.0
+
+- **WebGPU only.** The engine renders with WebGPU and nothing else: the WebGL 2 fallback is gone.
+  A browser without WebGPU (no `navigator.gpu`, no adapter, or three falling back to WebGL 2) is
+  told so: `Engine.start` rejects and the page shows "Failed to start: WebGPU unavailable: …"
+  (`NO_WEBGPU`). `renderer.backend` / `state().backend` is always `'WebGPU'`; `fallbackReason`,
+  the `forceWebGL` option and `?backend=webgl` are removed.
+- **Headless, no display.** WebGPU runs in headless Chromium: the kit's `check.mjs` plays every
+  page on WebGPU in Chromium's headless shell (SwiftShader's Vulkan, ANGLE on SwiftShader), with
+  no Xvfb; its `--backend` option is removed, and a browser without WebGPU exits 2 (the
+  environment, not the game). `npx playwright install chromium` installs the shell.
+- `GpuSwarm.read` no longer checks the backend.
+
 ## 0.36.0
 
 - **Save-states:** `await engine.snapshot()` takes the running level as plain data between frames

@@ -34,8 +34,7 @@ produce one value per art pixel. That stage renders into one art-sized, nearest-
 target, which is upscaled to the canvas exactly once. Only *display* filters, which need
 sub-art-pixel detail, run per device pixel. At 4× scale that is 1/16 of the fragments for
 everything but the final copy: in headless Chromium at 1920×1080 a frame went from 225 ms to
-25 ms (no filter) and from 457 ms to 27 ms (`nes`) on software WebGPU, and from 141 → 21 ms
-and 273 → 16 ms on the WebGL 2 fallback.
+25 ms (no filter) and from 457 ms to 27 ms (`nes`) on software WebGPU.
 
 - **Before the pipeline.** `PixelRenderer.onBeforeRender(f)` listeners run before each frame
   (and each capture), outside the pipeline: render-to-texture views and mirrors draw their own
@@ -44,12 +43,12 @@ and 273 → 16 ms on the WebGL 2 fallback.
   and skipped, the frame's render target put back. Screens
   and mirrors sit on `SCREEN_LAYER` (2), which the main camera always sees and the views never
   do. Each extra camera also renders the shadow map again.
-- **One renderer.** `PixelRenderer` owns a single `WebGPURenderer` and a single
-  `RenderPipeline`. Native WebGPU is always attempted first; if it's unavailable,
-  `WebGPURenderer` switches to its built-in WebGL 2 backend. Same scene, materials, TSL
-  pipeline, controls and gameplay. There is no `WebGLRenderer` code path.
-- **Backend label.** `renderer.backend` is `'WebGPU'` or `'WebGL 2 fallback'` (with a
-  reason), shown in the debug UI. `?backend=webgl` forces the fallback for testing.
+- **One renderer, WebGPU only.** `PixelRenderer` owns a single `WebGPURenderer` and a single
+  `RenderPipeline`, on WebGPU and nothing else (docs/DOCTRINE.md, principle 6). Without it (no
+  `navigator.gpu`, no adapter, or three falling back to its WebGL 2 backend) `PixelRenderer.create`
+  throws `NO_WEBGPU` and the page says so: "Failed to start: WebGPU unavailable: …".
+  `renderer.backend` is `'WebGPU'`, shown in the debug UI. Development runs it in Chromium's
+  headless shell on SwiftShader's Vulkan (`scripts/browser.mjs`), no display needed.
 - **Resolution.** 480×270 default, 320×180 comparison (`R`). The canvas backing store is
   `art × scale` device pixels with the largest integer `scale` that fits, and
   `pixelSize = scale`, so the pixelation pass renders at exactly the art resolution.
@@ -101,9 +100,8 @@ and 273 → 16 ms on the WebGL 2 fallback.
   by group; `uv` stays under a textured material, `color` under a vertex-coloured one). Keep
   one collider per block and anything that moves separate. The playground
   goes from 332 to 86 draw calls per frame (including the shadow pass).
-- **Lost GPU device.** Mobile browsers drop the WebGPU device (or WebGL context) after
-  backgrounding or under memory pressure. `PixelRenderer` notices (`device.lost`,
-  `webglcontextlost`), builds a new renderer, canvas, scene passes and pipeline for the same
+- **Lost GPU device.** Mobile browsers drop the WebGPU device after backgrounding or under
+  memory pressure. `PixelRenderer` notices (`device.lost`), builds a new renderer, canvas, scene passes and pipeline for the same
   scene, camera, filters and framing, re-attaches pointer input and keeps the loop going
   (`state().gpuRecoveries`). If that fails, or happens more than 3 times in 30 s, it shows a
   "tap to reload" overlay.
@@ -116,9 +114,7 @@ and 273 → 16 ms on the WebGL 2 fallback.
   position to whole art pixels in the view plane (both modes, so toggling never moves the
   view). Rapier bodies are never snapped; visuals are interpolated between fixed 60 Hz steps.
 - **GPU errors.** `renderer.onError` is captured into `renderer.gpuErrors` and shown in the
-  debug UI. It must stay at 0. In r186 only the WebGPU backend reports through `onError`
-  (uncaptured validation errors); on the WebGL 2 fallback the counter stays 0, so rely on
-  the console check in `npm run test:e2e` there.
+  debug UI (uncaptured validation errors). It must stay at 0.
 - **Compat shim.** `webgpuCompat.ts` drops three r186's identity `swizzle: 'rgba'` from
   texture views, which Chromium ≤ 141 rejects (black screen otherwise).
 
@@ -195,7 +191,7 @@ debug UI has a checkbox for each, and `[` / `]` cycle the looks.
 Stacks (`FILTER_PRESETS`): `eight_bit`, `sixteen_bit` (+ scanlines), `playstation`, `arcade`, `handheld`, `famicom`, `home_computer`, `vhs_rental`,
 `spectrum`, `mac_classic`, `pico`, `dream`, `spooky`. Add a filter by appending a
 `FilterDef` to `FILTERS` in `src/engine/render/filters.ts`; the e2e suite picks it up
-automatically on both backends.
+automatically.
 
 **Parameters.** A `FilterDef` lists its tunable numbers (`params`: key, label, range, step,
 default, unit) and named sets of them (`presets`: `classic`, `heavy`, `pop art`…); every filter
@@ -581,14 +577,13 @@ ctx.lights.describe();   // every request with its score, slot and fade level
 - **Logic is pure.** `LightAssigner` (the slot/fade/hysteresis logic) has no three.js in it
   and is unit-tested in `lights.test.ts`; the `riftlight-levels` e2e suite checks a constant
   8 lights in the scene and **zero new node builds** while 24 requests move and change
-  colour, on WebGPU and the WebGL 2 fallback.
+  colour.
 - **Cost.** CPU: one pass over the requests per frame, 0.02–0.07 ms for 60–67 requests
   (average of 200 updates, measured by the e2e suite). GPU: every lit fragment loops over all `size` lights, so cost grows linearly
   with the pool, which is why quality caps it; the scene renders at the art resolution
   (480×270 ≈ 130 k fragments), so even 16 lights are cheap on real GPUs. Measured on
-  SwiftShader (CPU rendering, shared machine, noisy), median ms per captured level frame on
-  the WebGL 2 fallback: 0 lights ~67–84, 8 lights ~101, 16 lights ~116–133; WebGPU on
-  SwiftShader varied more between runs than between pool sizes.
+  SwiftShader (CPU rendering, shared machine, noisy), WebGPU varied more between runs than
+  between pool sizes.
 
 ### Triggers and collision events
 
@@ -1336,14 +1331,11 @@ mesh.material = hologramMaterial({ color: PALETTE.cyan });      // also forceFie
 `render/gpuSwarm.ts` keeps positions and velocities in `instancedArray` storage buffers; an
 init compute places every particle from a hash of its index, a step compute adds a spring pull, a
 swirl and a noise flow, drag, a floor bounce; one instanced `Sprite` draw reads the same buffer
-(`positions.toAttribute()`), so nothing goes back to the CPU (`read()` does, for tests, on
-WebGPU only: reading compute buffers back on the WebGL 2 fallback has lost the context on
-software renderers). On the fallback three runs compute through transform feedback, which costs
-much more: keep counts lower there (the GPU Swarm room uses 8,192). `dispose()` (or disposing
+(`positions.toAttribute()`), so nothing goes back to the CPU (`read()` does, for tests).
+`dispose()` (or disposing
 its material, as a level unload does) frees both compute shaders too. `seed` varies the layout
 and the flow; whatever it is, each swarm's shaders carry a literal of their own, so two swarms
-never share a compiled program (the WebGL 2 fallback caches one by its source,
-transform-feedback buffers included). `PixelRenderer.onBeforeRender(f)` runs
+never share a compiled program. `PixelRenderer.onBeforeRender(f)` runs
 before each frame (and capture), outside the pipeline: `render/renderView.ts` (`RenderView`)
 draws its own camera into a small nearest-filtered target there, every `every` frames.
 `render/mirror.ts` (`Mirror`) does the same from `mirrorCamera`: the active camera reflected in
@@ -1506,14 +1498,14 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
 - `engine.setFilters(ids)`, `engine.availableFilters`, `engine.setLook(look)`, `engine.look`,
   `engine.lookPresets`, `engine.camera.setZoom(z)`, `engine.camera.describe()`.
 - `npm run test:e2e` runs the production build in Chromium. Suites:
-  - the backend paths (native WebGPU, natural WebGL 2 fallback, forced fallback)
+  - WebGPU, and a browser without it told so (`no-webgpu`)
   - every camera preset, including zoom, the side lane and free → fix → `?cam=`
-  - every filter and every look on both backends; per-layer looks change only their layer
+  - every filter and every look; per-layer looks change only their layer
   - every move in `scripts/e2e-moves.mjs`
   - camera hot-swap keeps the player in place
   - the Animation Lab (clips, views, sheets, curves, API)
   - `phone`: a portrait viewport fills the screen (adaptive aspect), and a destroyed WebGPU
-    device / lost WebGL context is recovered; Riftlight on a phone in portrait and landscape
+    device is recovered; Riftlight on a phone in portrait and landscape
     with no `?debug` (`scripts/e2e-riftlight-phone.mjs`): no tool bar, every skill slot
     reachable by touch, no HUD element under a control, panels that fit with 40 px targets
   - `Engine.step()` manual time
@@ -1525,13 +1517,15 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
     lights move, the hero walks start → exit with `Engine.step`, the boss opens the portal
   - `riftlight-showcase` (`scripts/e2e-riftlight-showcase.mjs`, `@cameras`): Riftlight's arcade
     side-scroller (scripted run to the flag), first-person Hall of Beasts and photo mode
-    (a gameboy PNG), on WebGPU and the WebGL 2 fallback
+    (a gameboy PNG)
   - `systems` (`scripts/e2e-systems.mjs`, in the `@filters` group): HUD framing, audio unlock and
     hero sounds, particles, coin triggers, gamepad, pause, hotkeys, `loadGame` without leaks,
-    textured toon materials, `dispose()`, on WebGPU and the WebGL 2 fallback
+    textured toon materials, `dispose()`
 
-  Frames are written to `.scratch/e2e/*.png`. It needs `xvfb-run`, because headless
-  Chromium loses the WebGPU device when a canvas presents. Run one suite with
+  Frames are written to `.scratch/e2e/*.png`. It runs headless, no display needed: with ANGLE
+  on SwiftShader too, Chromium keeps WebGPU on SwiftShader's Vulkan and presents
+  (`scripts/browser.mjs`, the one launcher every browser tool uses; Chromium's headless shell by
+  default, the lightest, or `CHROMIUM_PATH`). Run one suite with
   `npm run test:e2e -- moves`, a CI group with `-- @core` (`@cameras`, `@filters`, `@world`,
   `@assets`: the asset-lab suite alone, since it grows with the library), and set
   `E2E_PORT` when another run uses the default port. Software rendering in CI runs at a few
@@ -1670,8 +1664,8 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
 - `pixel-engine.d.ts` + `types/`: declarations (`stripInternal`); a strict TypeScript game
   typechecks against them (the `bundle` e2e suite does it).
 - `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool. It serves the kit
-  folder, plays a page in Chromium (`--keys KeyD*60,Space*4`, `--cameras`, `--looks`,
-  `--backend webgpu`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
+  folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, `--cameras`,
+  `--looks`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
   console, game or GPU error or a blank frame. `--sheets models.js,crate` plays no page: it
   imports the module and the engine on an empty page and draws, with the engine's `modelSheet`
   and `textureSheet` (the software rasterizer the CLIs use), a sheet of every def the module
