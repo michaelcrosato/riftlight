@@ -14,14 +14,16 @@ import {
   isPerspective,
 } from './camera';
 import { DebugUI } from './DebugUI';
-import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys } from './debugKeys';
+import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys, startingDebugKeys } from './debugKeys';
 import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
 import { Input, type InputFrame, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
-import { type TouchButton, TouchControls } from './TouchControls';
+import { type TouchButton, TouchControls, type TouchCorner } from './TouchControls';
+import { Settings, urlSettings } from './settings';
+import { SettingsPanel } from './SettingsPanel';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
 import { FrameLimiter, QUALITY, QUALITY_LEVELS, type QualityLevel, type QualityOption, defaultQuality, qualityForFps } from './quality';
@@ -180,18 +182,28 @@ export interface EngineOptions {
   /** Debug panel. Default: on in dev (`vite`) or with ?debug=1, off in production builds. */
   debugUI?: boolean;
   /**
-   * Engine hotkeys (P Pixel/Raw, R resolution, ` debug panel, [ ] looks, M mute).
-   * `false` disables them all; an object rebinds or disables (null) single actions.
+   * Engine hotkeys (P Pixel/Raw, R resolution, ` debug panel, [ ] looks, M mute): developer
+   * tools. Default: on with the debug panel (dev, ?debug=1), off in a shipped game, whose players
+   * have the same options in the settings. `true` / `false`: always on / off; an object rebinds
+   * or disables (null) single actions, and they still come with the debug panel.
    */
   debugKeys?: DebugKeysOption;
+  /**
+   * The player's settings (`engine.settings`): look, pixel art, pixel size, quality, frame rate,
+   * sound and debug info, in a panel the ⚙ button opens. `button`: its corner (default, or true:
+   * 'top-right'; on a mouse it shows while the pointer moves), or false for none: open the
+   * panel from your own menu (`engine.settings.open()`). `key`: where they are saved
+   * (localStorage `pixel-engine:settings:<key>`; default the first game's name), false: nowhere.
+   */
+  settings?: { button?: TouchCorner | boolean; key?: string | false };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
   touchButtons?: readonly TouchButton[];
   /**
-   * The touch top bar of engine tools (⚙ debug panel, P, R, ◐ looks, ♪ mute). Default true; a
-   * game that ships to phones sets false, and the bar then shows only with the debug UI
-   * (`?debug=1`, dev builds).
+   * The touch top bar of the engine hotkeys (ⓘ debug panel, P, R, ◐ looks, ♪ mute), on a touch
+   * screen while they are on (see `debugKeys`). Default true; false hides it even then, unless
+   * the debug panel is on (`?debug=1`, dev builds).
    */
   touchBar?: boolean;
   background?: number;
@@ -295,9 +307,18 @@ export class Engine {
   private readonly clock = new GameClock();
   debug: DebugUI | null = null;
   touch: TouchControls | null = null;
+  /**
+   * The player's settings: look, pixel art, pixel size, quality, frame rate and debug info (plain
+   * data, saved per game), applied over the game's own choices; `open()` shows them in the
+   * settings panel (the ⚙ button, `EngineOptions.settings`). Sound is `audio`'s.
+   */
+  readonly settings: Settings;
+  private settingsPanel: SettingsPanel | null = null;
+  /** Whether the game was paused when the settings opened (they pause it, and give it back). */
+  private pausedBeforeSettings = false;
   /** The dynamic light pool, created on first use of `ctx.lights` / `engine.lights`. */
   private _lights: LightPool | null = null;
-  /** Active engine hotkeys (from EngineOptions.debugKeys). */
+  /** Active engine hotkeys (from EngineOptions.debugKeys; none until the engine starts). */
   debugKeys: DebugKeyMap = resolveDebugKeys();
   private _game: Game;
   private _paused = false;
@@ -330,6 +351,9 @@ export class Engine {
   private fpsSince = -1;
   /** `auto` quality: one measurement window after start-up (ms timestamps), then done. */
   private autoQuality: { start: number; frames: number } | null = null;
+  /** The level `auto` gives: the device's, then what the measurement chose. */
+  private autoLevel: QualityLevel;
+  private autoMeasured = false;
   private readonly sunDirection = new Vector3().copy(DEFAULT_SUN);
   // Light-space axes perpendicular to the sun, for snapping the shadow frustum to texels.
   private readonly sunRight = new Vector3().crossVectors(new Vector3(0, 1, 0), this.sunDirection).normalize();
@@ -355,6 +379,8 @@ export class Engine {
     options: EngineOptions,
   ) {
     this._game = game;
+    const key = options.settings?.key;
+    this.settings = new Settings(this, key === false ? null : (key ?? game.name));
     const clock = () => this.time;
     const random = () => this._random;
     const rig = () => this.camera;
@@ -399,8 +425,8 @@ export class Engine {
     this._seed = options.seed !== undefined && Number.isFinite(options.seed) ? options.seed >>> 0 : 1;
     this.recordLimit = Math.max(0, Math.min(MAX_FRAMES, Math.floor(options.record ?? MAX_FRAMES))) || 0;
     this.qualityOption = options.quality ?? 'auto';
-    const coarse = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
-    this._quality = this.qualityOption === 'auto' ? defaultQuality({ coarsePointer: coarse }) : this.qualityOption;
+    this.autoLevel = defaultQuality({ coarsePointer: coarsePointer() });
+    this._quality = this.qualityOption === 'auto' ? this.autoLevel : this.qualityOption;
     if (this.qualityOption === 'auto') this.autoQuality = { start: -1, frames: 0 };
 
     // One directional light (with hard shadow map) + modest ambient fill. The shadow box
@@ -512,6 +538,33 @@ export class Engine {
     return this._quality;
   }
 
+  /**
+   * Quality by option: a level, or `auto`: the device's level (low on phones and tablets, else
+   * medium), lowered once if a few seconds of frames are slow (measured once, then remembered).
+   */
+  useQuality(option: QualityOption): void {
+    if (option !== 'auto') {
+      this.autoQuality = null; // a level asked for: a running measurement won't lower it
+      this.setQuality(option);
+      return;
+    }
+    this.setQuality(this.autoLevel);
+    if (!this.autoMeasured && !this.autoQuality) this.autoQuality = { start: -1, frames: 0 };
+  }
+
+  /** Whether the debug panel is showing. */
+  get debugShown(): boolean {
+    return !!this.debug?.visible;
+  }
+
+  /** Show or hide the debug panel (created the first time it shows, filled at once: the loop fills it only while the game runs). */
+  showDebug(on: boolean): void {
+    if (on && !this.debug) {
+      this.debug = new DebugUI(this);
+      this.debug.update(this.ready ? (this.game.status?.(this.context) ?? '') : '');
+    } else if (this.debug && this.debug.visible !== on) this.debug.toggle();
+  }
+
   setQuality(level: QualityLevel): void {
     this._quality = level;
     this.sun.shadow.mapSize.setScalar(QUALITY[level].shadowMapSize); // the shadow map resizes itself
@@ -567,7 +620,8 @@ export class Engine {
 
       engine.input.attachPointer(renderer.renderer.domElement);
       engine.wireRig(camera);
-      engine.debugKeys = resolveDebugKeys(options.debugKeys);
+      // the hotkeys come with the debug panel unless the game says always or never
+      engine.debugKeys = startingDebugKeys(options.debugKeys, options.debugUI ?? defaultDebugUI());
 
       engine.reseed(game);
       await game.setup(engine.context);
@@ -604,15 +658,31 @@ export class Engine {
     if (options.touch ?? TouchControls.wanted()) {
       const k = this.debugKeys;
       const bar: TouchButton[] = !(options.touchBar ?? true) && !debug ? [] : [
-        { label: '⚙', code: k.debug[0] ?? '' },
+        { label: 'ⓘ', code: k.debug[0] ?? '' },
         { label: 'P', code: k.mode[0] ?? '' },
         { label: 'R', code: k.resolution[0] ?? '' },
         { label: '◐', code: k.nextLook[0] ?? '' },
         { label: '♪', code: k.mute[0] ?? '' },
       ];
       this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
-      if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⚙ button
+      if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⓘ button
     }
+    const corner = options.settings?.button;
+    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner));
+    this.settings.onOpen = () => {
+      if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)
+      this.pausedBeforeSettings = this.paused;
+      this.paused = true;
+      this.input.release(); // no key stays held through the menu
+      panel.show();
+    };
+    this.settings.onClose = () => {
+      panel.hide();
+      this.input.release();
+      this.paused = this.pausedBeforeSettings;
+    };
+    // the saved settings, except what the URL's review flags set (and the game took)
+    this.settings.start(urlSettings(typeof location === 'undefined' ? {} : optionsFromUrl(location.search), options));
     this.renderer.setAnimationLoop(this.loop);
   }
 
@@ -852,6 +922,7 @@ export class Engine {
       this.reseed(game);
       await game.setup(this.context);
       if (!live()) return; // superseded: the newer load (or dispose) unloads what setup built
+      this.settings.levelStarted(); // a look the player chose wins over the level's
       this.camera.teleport(game.cameraTarget(this.context));
       this.updateView(0);
       // Compile the new level's pipelines with the loop stopped: precompile renders into the
@@ -891,6 +962,7 @@ export class Engine {
     this.audio.dispose();
     this.debug?.root.remove();
     this.touch?.root.remove();
+    this.settingsPanel?.dispose();
     this.input.dispose();
     const free = () => {
       this.unloadGame();
@@ -995,16 +1067,22 @@ export class Engine {
     this._seed = rec.seed;
     this.time = rec.time;
     // the level loading is part of the replay: live input and sends are ignored from here, and the
-    // volumes a recorded menu sets are the recording's (never written, the player's back after)
+    // volumes and settings a recorded menu sets are the recording's (never written, the player's
+    // back after)
+    this.settings.close(); // they pause the game and release its input: shut before the replay plays
     const volumes = { ...this.audio.volume };
+    const settings = this.settings.values;
     this.input.playing = true;
     this.audio.persist = false;
+    this.settings.persist = false;
     const live = () => {
       this.replaying = false;
       this.input.playing = false;
       for (const ch of ['master', 'sfx', 'music'] as const) this.audio.setVolume(ch, volumes[ch]);
       this.audio.setMuted(volumes.muted);
       this.audio.persist = true;
+      this.settings.replace(settings);
+      this.settings.persist = true;
     };
     const slow = setTimeout(() => console.warn('[engine] replay: start() has not finished after 10 s; nothing advances during a replay, so it must not wait on frames (load without a transition)'), 10_000);
     try {
@@ -1016,7 +1094,12 @@ export class Engine {
       clearTimeout(slow);
     }
     if (this.game.name !== rec.game) console.warn(`[engine] replaying a recording of "${rec.game}" in "${this.game.name}"`);
-    if (rec.from) await this.restore(rec.from); // a recording made after a save-state starts from it
+    try {
+      if (rec.from) await this.restore(rec.from); // a recording made after a save-state starts from it
+    } catch (e) {
+      live();
+      throw e;
+    }
     const n = Math.max(0, Math.min(Math.floor(o.frames ?? Infinity), rec.frames.length));
     // promise callbacks run between frames where they did in the recorded run: a task boundary
     // (not just a microtask) so chains of them finish, as they do between two animation frames
@@ -1284,6 +1367,8 @@ export class Engine {
       console.info(`[engine] ${fps.toFixed(1)} fps at start-up: quality ${this._quality} → ${next}`);
       this.setQuality(next);
     }
+    this.autoLevel = next;
+    this.autoMeasured = true;
     this.autoQuality = null;
   }
 
@@ -1379,6 +1464,11 @@ const CAMERA_IGNORE = ['character', 'noCamera'];
 const UP = new Vector3(0, 1, 0);
 /** Where sunlight comes from unless a level points it elsewhere (`setSunDirection`). */
 const DEFAULT_SUN = new Vector3(-0.55, 1, 0.35).normalize();
+
+/** A phone or tablet: a coarse pointer and no hover. */
+function coarsePointer(): boolean {
+  return typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches && !matchMedia('(hover: hover)').matches;
+}
 
 /** Debug panel default: on in dev builds or with ?debug=1, off in production. */
 function defaultDebugUI(): boolean {

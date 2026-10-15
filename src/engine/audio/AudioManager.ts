@@ -335,6 +335,13 @@ export class AudioManager {
     return this.settings.muted;
   }
 
+  /** The default volumes, sound on (the settings panel's Reset). */
+  resetVolumes(): void {
+    Object.assign(this.settings, DEFAULTS);
+    this.applyVolumes();
+    if (this.persist) writeSettings(this.settings);
+  }
+
   /** Engine: once per rendered frame. Schedules the next notes of the song. */
   update(): void {
     for (const v of this.voices) if (!v.nodes) this.startVoice(v);

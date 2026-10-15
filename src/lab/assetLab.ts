@@ -193,6 +193,7 @@ Engine.start(
     // a stiff follow: a lab frames each model at once instead of easing to it
     camera: { preset: 'iso', pitch: GAME_VIEW.pitch, yaw: GAME_VIEW.yaw, viewHeight: GAME_VIEW.viewHeight, zoom: startZoom, minZoom: 0.2, maxZoom: 4, stiffness: 40 },
     filters: [],
+    settings: { button: false, key: false }, // a tool with its own panel: no ⚙, nothing saved
   }),
 )
   .then((engine) => {

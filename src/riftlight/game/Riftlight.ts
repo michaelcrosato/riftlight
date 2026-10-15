@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, type PaletteColor, resolveDebugKeys } from '../../engine';
+import { defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, type PaletteColor, rebindDebugKeys } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -147,7 +147,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   /** Last events, for agents (`__RIFTLIGHT__.log()`). */
   readonly log: { t: number; type: string; text: string }[] = [];
   private savedGamepad: Record<number, string> | null = null;
-  private savedKeys: ReturnType<typeof resolveDebugKeys> | null = null;
+  private savedKeys: ReturnType<typeof rebindDebugKeys> | null = null;
   private disposeApi: (() => void) | null = null;
   private readonly unsubs: (() => void)[] = [];
   private playtime = 0;
@@ -172,6 +172,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     return this.ctx.audio;
   }
 
+  /** The engine (MenuHost: its player settings). */
+  get engine() {
+    return this.ctx.engine;
+  }
+
   // ================================================================ lifecycle
 
   async setup(ctx: GameContext): Promise<void> {
@@ -182,9 +187,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const { engine } = ctx;
     registerAudio(ctx.audio);
     registerFx(ctx.particles);
-    // Engine hotkeys move off the game's keys (P = passive tree, R = skill 3).
+    // Engine hotkeys (on with ?debug=1) move off the game's keys (P = passive tree, R = skill 3).
     this.savedKeys = engine.debugKeys;
-    engine.debugKeys = resolveDebugKeys({ mode: 'F8', resolution: 'F7' });
+    engine.debugKeys = rebindDebugKeys(engine.debugKeys, { mode: 'F8', resolution: 'F7' });
     this.savedGamepad = ctx.input.gamepadButtons;
     ctx.input.gamepadButtons = { ...PAD_BUTTONS };
     this.ui = new Canvas(ctx.hud);

@@ -1,9 +1,10 @@
 /**
  * Every menu in the shell, as widget data (ui/menu.ts): title, pause, tuning (the
- * difficulty sliders), settings, save slots, dev tools and the rift keeper's depth list.
+ * difficulty sliders), settings and their engine page, save slots, dev tools and the rift
+ * keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { LOOK_PRESETS, lookPresetLabel, type AudioManager, type QualityLevel } from '../../engine';
+import { FPS_OPTIONS, LOOK_PRESETS, lookPresetLabel, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -27,6 +28,8 @@ export interface MenuHost {
   readonly settings: Settings;
   readonly dev: DevFlags;
   readonly audio: AudioManager;
+  /** The engine's own player settings (pixel art, pixel size, frame rate, debug info: `engine.settings`, saved by the engine) and what they show. */
+  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown'>;
   slot: number;
   screen: string;
   difficulty(): DifficultyTuning;
@@ -183,8 +186,29 @@ export function settingsMenu(h: MenuHost): Menu {
       { kind: 'choice', id: 'filter', label: 'Loot filter', options: ['show all', 'hide normal', 'rares only'], get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
       { kind: 'slider', id: 'shake', label: 'Screen shake', get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
       { kind: 'choice', id: 'glyphs', label: 'Prompts', options: ['auto', 'keyboard', 'controller'], get: () => ['auto', 'keyboard', 'controller'].indexOf(s.glyphs), set: (i) => change(() => (s.glyphs = (['auto', 'keyboard', 'controller'] as const)[i]!))() },
+      { kind: 'button', id: 'engine', label: 'Engine', onClick: () => h.openMenu(engineMenu(h)), hint: 'pixel art, pixel size, frame rate, sound, debug info' },
     ],
     { id: 'settings', title: 'Settings', width: 240, labelWidth: 104, onSound: sound(h) },
+  );
+}
+
+/**
+ * The engine's standard options (`engine.settings`, which saves them; sound is the audio's): what
+ * the engine's hotkeys did, which a shipped game doesn't have. Riftlight keeps its own look and
+ * quality on the settings page.
+ */
+export function engineMenu(h: MenuHost): Menu {
+  const e = h.engine;
+  const size = () => e.settings.values.pixelSize ?? 'fine'; // the game's own art resolution is fine
+  return new Menu(
+    () => [
+      { kind: 'toggle', id: 'pixelArt', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }), hint: 'off: smooth 3D, without the look' },
+      { kind: 'choice', id: 'pixelSize', label: 'Pixel size', options: [...PIXEL_SIZES], get: () => PIXEL_SIZES.indexOf(size()), set: (i) => e.settings.set({ pixelSize: PIXEL_SIZES[i] }) },
+      { kind: 'choice', id: 'fps', label: 'Frame rate', options: FPS_OPTIONS.map((f) => (f ? `${f} fps` : 'screen')), get: () => Math.max(0, FPS_OPTIONS.indexOf(e.maxFps)), set: (i) => e.settings.set({ fps: FPS_OPTIONS[i] }) },
+      { kind: 'toggle', id: 'sound', label: 'Sound', get: () => !h.audio.muted, set: (v) => h.audio.setMuted(!v) },
+      { kind: 'toggle', id: 'debugInfo', label: 'Debug info', get: () => e.debugShown, set: (v) => e.settings.set({ debugInfo: v }), hint: 'frame rate, camera, GPU errors' },
+    ],
+    { id: 'engine', title: 'Engine', width: 240, labelWidth: 104, onSound: sound(h) },
   );
 }
 

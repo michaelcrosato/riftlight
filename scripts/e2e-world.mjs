@@ -576,10 +576,13 @@ export async function runWorld(h) {
       // a layout that is not one changes nothing
       const bad = [w.room.load({}), w.room.load([null]), w.room.load([{ kind: 'constructor', at: [0, 1, 0], rot: [0, 0, 0, 1] }]), w.room.load([{ kind: 'crate', at: [0, NaN, 0], rot: [0, 0, 0, 1] }])];
       out.sandbox = { mapped, picked, held, moved, saved, cleared, loaded, same, bad, count: w.room.count() };
-      // time lab: the dominoes fall, holding R stands them back up
+      // time lab: the dominoes fall, holding R stands them back up. This page has no engine
+      // hotkeys (?debug=0); turned on as ?debug=1 has them, the lab moves R's off its rewind key
+      const shipped = Object.values(e.debugKeys).flat().length;
+      e.debugKeys = { mode: ['KeyP'], resolution: ['KeyR'], debug: ['Backquote'], nextLook: ['BracketRight'], prevLook: ['BracketLeft'], mute: ['KeyM'] };
       await w.goto('rewind', { instant: true });
       e.step(10);
-      const keys = { lab: [...e.debugKeys.resolution] };
+      const keys = { shipped, lab: [...e.debugKeys.resolution] };
       const parked = w.room.ball();
       const standing = w.room.standing();
       w.pad('DOMINOES');
@@ -606,10 +609,13 @@ export async function runWorld(h) {
       return out;
     });
     await capture(page, `world-${tag}-rewind.png`);
-    // out of the lab, R is the resolution key again
+    // out of the lab, R is the resolution key again; then the hotkeys go back off, as this page had them
     shop.rewind.keys.after = await W(async () => {
       await window.__WORLD__.goto('sandbox', { instant: true });
-      return [...window.__PIXEL_ENGINE__.debugKeys.resolution];
+      const e = window.__PIXEL_ENGINE__;
+      const after = [...e.debugKeys.resolution];
+      e.debugKeys = { mode: [], resolution: [], debug: [], nextLook: [], prevLook: [], mute: [] };
+      return after;
     });
     // seeded randomness: a prop dropped at a random spot lands on the same spot every visit
     const drops = await W(async () => {
@@ -813,7 +819,10 @@ export async function runWorld(h) {
     const { parked, rolled, after } = shop.rewind.ball;
     const off = (a, b) => Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1], a.at[2] - b.at[2]);
     check(parked.asleep && off(rolled, parked) > 1 && after.asleep && off(after, parked) < 0.05, `the ball sleeps on its ramp, rolls ${off(rolled, parked).toFixed(1)} m, and rewound sleeps there again (${off(after, parked).toFixed(3)} m off)`);
-    check(shop.rewind.keys.lab[0] === 'F7' && shop.rewind.keys.after[0] === 'KeyR', `R rewinds in the lab (resolution on ${shop.rewind.keys.lab}) and is the resolution key again outside it`);
+    check(
+      shop.rewind.keys.shipped === 0 && shop.rewind.keys.lab[0] === 'F7' && shop.rewind.keys.after[0] === 'KeyR',
+      `no engine hotkeys without ?debug=1 (${shop.rewind.keys.shipped}); with them on, R rewinds in the lab (resolution on ${shop.rewind.keys.lab}) and is the resolution key again outside it`,
+    );
     check(shop.errors.length === 0, `the workshop runs without errors${shop.errors.length ? ': ' + shop.errors.join('; ') : ''}`);
 
     // ------------------------------------------------------------- procedural

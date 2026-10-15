@@ -134,6 +134,174 @@ canvas[data-engine-canvas] {
   display: none;
 }
 
+/* ---------- settings (engine.settings: the ⚙ button and the panel) ---------- */
+.settings-button {
+  position: absolute;
+  z-index: 12;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font: 18px/1 sans-serif;
+  color: #f4f4f4;
+  background: rgb(26 28 44 / 0.7);
+  border: 2px solid #566c86;
+  border-radius: 6px;
+  cursor: pointer;
+  opacity: 0.75;
+  transition: opacity 0.3s;
+}
+
+.settings-button:hover {
+  opacity: 1;
+}
+
+/* with a mouse it fades once the pointer stops; a move brings it back */
+.settings-button.idle {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.settings-button[data-corner='top-right'] {
+  top: max(8px, env(safe-area-inset-top));
+  right: max(8px, env(safe-area-inset-right));
+}
+
+.settings-button[data-corner='top-left'] {
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+}
+
+.settings-button[data-corner='bottom-right'] {
+  bottom: max(8px, env(safe-area-inset-bottom));
+  right: max(8px, env(safe-area-inset-right));
+}
+
+.settings-button[data-corner='bottom-left'] {
+  bottom: max(8px, env(safe-area-inset-bottom));
+  left: max(8px, env(safe-area-inset-left));
+}
+
+/* the touch bar of hotkeys (debug mode on a phone) sits top right: the ⚙ goes under it */
+.touch-ui:has(> .bar) ~ .settings-button[data-corner='top-right'] {
+  top: calc(max(8px, env(safe-area-inset-top)) + 44px);
+}
+
+.settings-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgb(13 14 22 / 0.55);
+}
+
+.settings-ui[hidden] {
+  display: none;
+}
+
+.settings-ui .panel {
+  width: min(320px, calc(100% - 24px));
+  max-height: calc(100% - 24px);
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 8px 14px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #f4f4f4;
+  background: rgb(26 28 44 / 0.96);
+  border: 2px solid #566c86;
+}
+
+.settings-ui .head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 15px;
+  color: #ffcd75;
+}
+
+.settings-ui .group {
+  margin: 10px 0 2px;
+  color: #94b0c2;
+  border-bottom: 1px solid #333c57;
+}
+
+.settings-ui .row {
+  display: grid;
+  grid-template-columns: 1fr 140px;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+}
+
+.settings-ui .row:has(i) {
+  grid-template-columns: 1fr 100px 36px;
+}
+
+.settings-ui .row i {
+  font-style: normal;
+  text-align: right;
+  color: #94b0c2;
+}
+
+.settings-ui select,
+.settings-ui button {
+  font: inherit;
+  color: #f4f4f4;
+  background: #333c57;
+  border: 1px solid #566c86;
+  padding: 3px 6px;
+}
+
+/* the Look with pixel art off: smooth 3D draws no look */
+.settings-ui select:disabled {
+  opacity: 0.5;
+}
+
+.settings-ui input[type='checkbox'] {
+  justify-self: start;
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: #38b764;
+}
+
+.settings-ui input[type='range'] {
+  width: 100%;
+  margin: 0;
+  accent-color: #38b764;
+}
+
+.settings-ui .head button {
+  padding: 0 7px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.settings-ui .foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.settings-ui .foot button {
+  min-width: 72px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.settings-ui .foot button[data-a='done'] {
+  color: #1a1c2c;
+  background: #94b0c2;
+}
+
+.settings-ui button:hover,
+.settings-ui button:focus-visible {
+  outline: 2px solid #ffcd75;
+  outline-offset: -2px;
+}
+
 /* ---------- touch controls ---------- */
 #app {
   touch-action: none;

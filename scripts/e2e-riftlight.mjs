@@ -241,6 +241,30 @@ export async function runRiftlight(h) {
     rs = await st();
     check(rs.ui.length === 0 && !rs.paused, `Esc backs out of the menus (ui ${rs.ui.join(',') || 'none'})`);
 
+    // ---------------------------------------------------------------- the engine's options: Settings → Engine
+    const eng = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const e = window.__PIXEL_ENGINE__;
+      rl.ui.open('settings');
+      const opened = rl.ui.click('engine');
+      const ids = rl.ui.widgets().map((w) => w.id);
+      const size = rl.game.layer.top.panel.items().find((w) => w.id === 'pixelSize');
+      size.set(1); // chunky
+      e.step(2);
+      const chunky = e.renderer.baseResolution.height;
+      const saved = localStorage.getItem('pixel-engine:settings:riftlight');
+      e.settings.reset();
+      e.step(2);
+      const back = e.renderer.baseResolution.height;
+      rl.ui.close();
+      rl.ui.close();
+      return { opened, ids, chunky, back, saved, gear: !!document.querySelector('.settings-button'), keys: e.debugKeys.mode.join(), ui: rl.state().ui };
+    });
+    check(
+      eng.opened && ['pixelArt', 'pixelSize', 'fps', 'sound', 'debugInfo'].every((id) => eng.ids.includes(id)) && eng.chunky === 180 && eng.back === 270 && eng.saved === '{"pixelSize":"chunky"}' && !eng.gear && eng.keys === '' && eng.ui.length === 0,
+      `Settings → Engine holds the engine's options and they apply and are saved (pixel size ${eng.chunky} rows, back to ${eng.back}; ${eng.saved}); no ⚙ over Riftlight's menus, and no engine hotkeys without ?debug=1 (${eng.keys || 'none'})`,
+    );
+
     // ---------------------------------------------------------------- look studio: a filter on the characters only
     await R(() => window.__RIFTLIGHT__.press('KeyL'));
     rs = await st();

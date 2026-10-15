@@ -1,5 +1,5 @@
 import type { TouchButton } from '../../engine/TouchControls';
-import type { DebugKeysOption } from '../../engine/debugKeys';
+import type { DebugKeyChanges } from '../../engine/debugKeys';
 
 /** The engine's keys for the mouse buttons on the canvas (`MOUSE_BUTTONS` in engine/input.ts). */
 export const MOUSE_LEFT = 'MouseLeft';
@@ -56,5 +56,5 @@ export const HERO_GAMEPAD_BUTTONS: Readonly<Record<number, string>> = {
   15: 'ArrowRight',
 };
 
-/** R is a skill key: the engine's resolution toggle moves to F2 (the shell passes this as `debugKeys`). */
-export const HERO_DEBUG_KEYS: DebugKeysOption = { resolution: 'F2' };
+/** R is a skill key: the engine's resolution hotkey (on with ?debug=1) moves to F2 (`rebindDebugKeys`). */
+export const HERO_DEBUG_KEYS: DebugKeyChanges = { resolution: 'F2' };

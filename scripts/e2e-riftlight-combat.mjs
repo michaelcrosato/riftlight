@@ -9,7 +9,8 @@
 // hit frame with hit-stop, knockback, a flash and a damage number; a dodge roll moves the
 // hero with i-frames and cancels an attack after its hit frame; a skill (fireball) pays mana,
 // flies and hits; killing a dummy emits kill/death and its corpse pops and is removed; mouse
-// buttons (virtual keys) attack; the frame renders with no GPU or console errors.
+// buttons (virtual keys) attack; the frame renders with no GPU or console errors; with
+// ?debug=1 the engine hotkeys are on and the resolution one is on F2 (R is a skill).
 // Frames land in .scratch/e2e/riftlight-combat-*.png.
 
 /**
@@ -45,7 +46,9 @@ export async function runRiftlightCombat(h) {
     check(boot.hero && boot.sword, `hero spawns with a sword in hand (${JSON.stringify({ hero: boot.hero, sword: boot.sword })})`);
     check(boot.dummies === 5, `five training dummies (${boot.dummies})`);
     check(boot.slots.join(',') === 'slash,cleave,fireball,frost-nova,leap-slam,whirlwind', `skill bar resolved (${boot.slots.join(', ')})`);
-    check(boot.resolutionKey === 'F2', `R is a skill key: resolution hotkey moved to F2 (${boot.resolutionKey})`);
+    // R is a skill key: the arena moves the engine's resolution hotkey to F2 when the hotkeys are
+    // on (?debug=1), and never turns them on (this page has ?debug=0: none at all)
+    check(boot.resolutionKey === '', `R is a skill key: no engine resolution hotkey without ?debug=1 (${boot.resolutionKey || 'none'})`);
 
     // ------------------------------------------------------------ basic combo
     const combo = await page.evaluate(() => {
@@ -217,6 +220,18 @@ export async function runRiftlightCombat(h) {
     check(colorCount(shot) > 12, `the arena renders (${colorCount(shot)} colours)`);
     await page.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
     checkClean(await state(page), logs);
+
+    // ------------------------------------------------------------ hotkeys on (?debug=1)
+    const dev = await openPage(exe, s, 'game=arena&debug=1&touch=0');
+    try {
+      const keys = await dev.page.evaluate(() => {
+        const k = window.__PIXEL_ENGINE__.debugKeys;
+        return { resolution: k.resolution.join(','), mode: k.mode.join(',') };
+      });
+      check(keys.resolution === 'F2' && keys.mode === 'KeyP', `with ?debug=1 the hotkeys are on and the arena moves resolution off R, a skill key (resolution ${keys.resolution || 'none'}, mode ${keys.mode || 'none'})`);
+    } finally {
+      await dev.browser.close();
+    }
   } catch (e) {
     check(false, `riftlight-combat crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {

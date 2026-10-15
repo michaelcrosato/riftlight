@@ -2,7 +2,7 @@
 // Riftlight on a phone (part of the `phone` suite): the page a player opens, with no ?debug.
 //
 //   portrait 390×844 and landscape 844×390, DPR 2, touch:
-//   - no engine tool bar (⚙ P R ◐ ♪) and no debug panel without ?debug; ?debug=1 brings the bar back
+//   - no engine tool bar (ⓘ P R ◐ ♪) and no debug panel without ?debug; ?debug=1 brings the bar back
 //   - the touch controls stay off the title menu and off every panel, and come back after it
 //   - every skill-bar slot has a touch button (attack, dodge, skills 1-4, ≡) at least 40 CSS px
 //     across, and tapping each one reaches the game (its key; the four skills fire)

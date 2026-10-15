@@ -134,8 +134,9 @@ buffer for 0.2 s, any action cancels into a dodge or the next action after its h
 casting slows movement instead of locking it (the legs keep running under the arms), and
 attack clips play at the rate attack / cast speed asks for. W is movement, so the bar is
 Q/E/R/F rather than Q/W/E/R. On a phone the touch buttons are the bar (*Game shell* below:
-`RIFTLIGHT_TOUCH_BUTTONS`). The shell passes `HERO_GAMEPAD_BUTTONS`
-and `HERO_DEBUG_KEYS` (R is a skill, so the resolution hotkey moves to F2) to the engine.
+`RIFTLIGHT_TOUCH_BUTTONS`). The arena (`?game=arena`) passes `HERO_GAMEPAD_BUTTONS`
+and `HERO_DEBUG_KEYS` (R is a skill, so with `?debug=1` the resolution hotkey moves to F2:
+`rebindDebugKeys`) to the engine; the Riftlight shell moves P and R to F8 and F7.
 Every timing is in `HERO_TUNING`.
 
 **All of it is `ctx.input`, so a session replays** (docs/ENGINE.md, *Recording and replay*):
@@ -1478,7 +1479,7 @@ orb takes the lowest free spot in its corner third (beside the joystick and the 
 wide screen, above them in portrait), the XP bar runs between the orbs or sits over the life
 orb, the top-left text starts right of ≡, the prompt drops its key glyph. The controls hide on
 the title, under every panel and when the hero is dead, and their rects are world-overlay
-zones too. Riftlight ships without the engine's ⚙ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`
+zones too. Riftlight ships without the engine's ⓘ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`
 brings it back. `__RIFTLIGHT__.ui.hud()` returns the HUD's rects and the controls (the phone
 e2e checks that none overlap).
 
@@ -1610,7 +1611,8 @@ level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, death
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the
-engine's audio store. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
+engine's audio store, and the engine's own settings (pixel art, pixel size, frame rate, debug info:
+Settings → Engine) in `pixel-engine:settings:riftlight`. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
 read from storage once at setup (and recorded, *The hero's controls*) and kept by the game's own
 saves, deletes and imports, so a replay shows the slots the recorded run saw.
 

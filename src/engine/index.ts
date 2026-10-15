@@ -69,7 +69,9 @@ export { loadModel, loadPack, loadPackIndex, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
 export { GAMEPAD_BUTTONS, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
-export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
+export { DEFAULT_DEBUG_KEYS, rebindDebugKeys, resolveDebugKeys, type DebugAction, type DebugKeyChanges, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
+export { FPS_OPTIONS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, loadSettings, normalizeSettings, storeSettings, urlSettings, type PlayerSettings, type SettingsHost } from './settings';
+export { SettingsPanel } from './SettingsPanel';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {
   AudioManager,

@@ -25,8 +25,8 @@ export { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_LAYOUT, TOUCH_CODES } from './game/touch
 
 /**
  * Engine options the game is designed for: the iso preset at an ARPG angle and zoom, the
- * touch action cluster (`game/touch.ts`), and no engine tool bar on phones (it shows with
- * `?debug=1`).
+ * touch action cluster (`game/touch.ts`), no engine tool bar on phones (it shows with
+ * `?debug=1`), and no ⚙ button: Riftlight's own Settings menu holds the engine's options.
  */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   aspect: 'fill',
@@ -34,4 +34,5 @@ export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   camera: { preset: 'iso', pitch: TOWN_LAYOUT.view.pitch, yaw: TOWN_LAYOUT.view.yaw, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
   touchBar: false,
+  settings: { button: false },
 };

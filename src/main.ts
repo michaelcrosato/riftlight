@@ -37,7 +37,8 @@ const asked = new URLSearchParams(location.search).get('game') ?? DEFAULT_GAME;
 const pick = GAMES[asked] ? asked : DEFAULT_GAME;
 const fromUrl = optionsFromUrl();
 const own = OPTIONS[pick] ?? {};
-const options: EngineOptions = { container, ...own, ...fromUrl, camera: { ...own.camera, ...fromUrl.camera } };
+// each game keeps its own player settings (Engine World's rooms share the world's)
+const options: EngineOptions = { container, ...own, ...fromUrl, camera: { ...own.camera, ...fromUrl.camera }, settings: { ...own.settings, key: pick } };
 
 Engine.start(GAMES[pick]!(), options)
   .then((engine) => {

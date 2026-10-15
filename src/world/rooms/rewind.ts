@@ -4,7 +4,7 @@
  * plays the record backwards (the hero too) and letting go carries on from there.
  */
 import { Mesh, SphereGeometry, Vector3 } from 'three/webgpu';
-import { PALETTE, type PaletteColor, RAPIER, Rewind, setLookLayer, toonMaterial } from '../../engine';
+import { PALETTE, type PaletteColor, RAPIER, Rewind, rebindDebugKeys, setLookLayer, toonMaterial } from '../../engine';
 import { TUNING } from '../../engine/character/tuning';
 import type { Knob, RoomDef } from '../types';
 
@@ -97,9 +97,9 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
     );
     let scripted = 0; // steps of rewind asked for by a pad or a test
     let rewound = 0;
-    // R is the rewind here: the engine's resolution hotkey moves to F7 while in the lab
+    // R is the rewind here: the engine's resolution hotkey (when on) moves to F7 while in the lab
     const keys = e.debugKeys;
-    e.debugKeys = { ...keys, resolution: ['F7'] };
+    e.debugKeys = rebindDebugKeys(keys, { resolution: 'F7' });
     // pads do nothing while time runs backwards (the hero gliding back over one would set it off again)
     const enabled = () => !rewind.rewinding;
     const nudge = () => dominoes[0]!.applyImpulse({ x: 0.15, y: 0, z: 0.05 }, true);

@@ -14,7 +14,6 @@ import {
   type GameContext,
   type Look,
   LOOK_PRESETS,
-  lookPresetOf,
   type MoveInput,
   PALETTE,
   readMoveInput,
@@ -203,7 +202,11 @@ export class WorldShell {
     this.cardTime = seconds;
   }
 
-  /** The engine's own settings, under the room's in the tweak panel. */
+  /**
+   * The engine's own settings, under the room's in the tweak panel. Look, pixel art and quality
+   * are the player's (`engine.settings`, the same as the ⚙ panel's): saved, and a chosen look
+   * wins over every room's own.
+   */
   engineKnobs(): Knob[] {
     const e = this.engine!;
     const looks = Object.keys(LOOK_PRESETS);
@@ -226,12 +229,9 @@ export class WorldShell {
         kind: 'choice',
         id: 'engine-look',
         label: 'Look',
-        options: looks.map((n) => n.replace(/_/g, ' ')),
-        get: () => Math.max(0, looks.indexOf(lookPresetOf(e.look) ?? 'none')),
-        set: (i) => {
-          e.setLook(LOOK_PRESETS[looks[i]!]!);
-          if (!this.room?.def.look) this.baseLook = e.look;
-        },
+        options: ["the room's", ...looks.map((n) => n.replace(/_/g, ' '))],
+        get: () => looks.indexOf(e.settings.values.look ?? '') + 1, // 0: none chosen, the room's own
+        set: (i) => e.settings.set({ look: i ? looks[i - 1]! : undefined }),
       },
       {
         kind: 'choice',
@@ -241,8 +241,8 @@ export class WorldShell {
         get: () => Math.max(0, cams.indexOf(e.camera.preset as (typeof cams)[number])),
         set: (i) => void e.setCamera({ preset: cams[i]! }, { syncUrl: false }),
       },
-      { kind: 'toggle', id: 'engine-pixel', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => void (v !== (e.renderer.mode === 'pixel') && e.toggleMode()) },
-      { kind: 'choice', id: 'engine-quality', label: 'Quality', options: qualities, get: () => qualities.indexOf(e.quality), set: (i) => e.setQuality(qualities[i]!) },
+      { kind: 'toggle', id: 'engine-pixel', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }) },
+      { kind: 'choice', id: 'engine-quality', label: 'Quality', options: qualities, get: () => qualities.indexOf(e.quality), set: (i) => e.settings.set({ quality: qualities[i]! }) },
       { kind: 'choice', id: 'engine-transition', label: 'Room change', options: TRANSITIONS, get: () => TRANSITIONS.indexOf(this.transition), set: (i) => (this.transition = TRANSITIONS[i]!) },
       { id: 'engine-shake', label: 'Screen shake', min: 0, max: 2, step: 0.1, initial: 1, get: () => e.shake.strength, set: (v) => (e.shake.strength = v) },
       { kind: 'toggle', id: 'engine-sound', label: 'Sound', get: () => !e.audio.muted, set: (v) => e.audio.setMuted(!v) },
