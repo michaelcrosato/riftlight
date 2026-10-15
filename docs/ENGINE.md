@@ -1112,7 +1112,7 @@ let go, the keyboard's own come back) and calls `Game.restore(ctx, state)`, whic
 All or nothing: if anything throws, the engine's own part goes back as it was (the game's
 restore keeps its own whole, e.g. by checking before it changes anything). Bodies keep their
 handles, so a game finds its own again with `ctx.physics.world.getRigidBody(h)`; a mesh bound
-to a body the snapshot doesn't have is let go. Playing on from a restored snapshot plays the
+to a body the snapshot doesn't have (a newer body in an old one's slot included) is let go. Playing on from a restored snapshot plays the
 same as playing on from the moment it was taken: every state a later frame reads (the World
 suite checks it, and that a snapshot with another moment's physics ends elsewhere, a tween at
 restore time, a body bound after the snapshot, a restore that fails). Particles and light

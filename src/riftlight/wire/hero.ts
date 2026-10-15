@@ -14,6 +14,7 @@ import type { ActorIndex } from '../core/saved';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
 import { socketsToSlots } from '../loot/sockets';
 import { SKILLS, SUPPORTS } from '../skills';
+import { loadSkill } from '../skills/saved';
 import type { ResolvedSkill } from '../skills/types';
 import { skillIcon } from './icons';
 import { StageMover } from './stage';
@@ -393,6 +394,26 @@ export class RealHero implements HeroPort {
       sources: [...this.sources],
       owned: this.owned && this.world === this.owned ? this.owned.save() : null,
     };
+  }
+
+  /** Why `s` can't be loaded (null: it fits): every skill and support it names is one this game knows. */
+  fits(s: RealHeroState): string | null {
+    const gem = (link: unknown) => (typeof link === 'string' ? link : typeof link === 'object' && link && 'gem' in link ? (link as { gem: unknown }).gem : link);
+    const name = (g: unknown) => (typeof g === 'string' ? g : (g as { id?: string } | null)?.id);
+    for (const spec of [s.hc.specs.basic, ...s.hc.specs.slots]) {
+      if (!spec) continue;
+      if (!SKILLS.has(spec.skill)) return `no skill gem "${spec.skill}" in this game`;
+      for (const link of spec.supports ?? []) {
+        const id = name(gem(link));
+        if (id && !SUPPORTS.has(id)) return `no support gem "${id}" in this game`;
+      }
+    }
+    try {
+      if (s.hc.action) loadSkill(s.hc.action.skill);
+    } catch (e) {
+      return (e as Error).message;
+    }
+    return null;
   }
 
   /** Back to `saveState()` in the stage it was in (`enter` it first). */

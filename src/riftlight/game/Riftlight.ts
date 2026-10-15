@@ -1612,8 +1612,22 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const loot = this.ports.loot;
     if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
     // what can be checked before anything changes (a snapshot that doesn't fit leaves the game as it was)
-    if (!s.town || s.town.npcs.length !== this.town.npcs.length) throw new Error('Riftlight.restore: not this town (its townsfolk differ)');
-    if (!s.hero || !s.loot || !s.save?.hero) throw new Error('Riftlight.restore: the snapshot is missing the hero, the loot or the save');
+    if (!s.town || !s.hero || !s.loot || !s.save?.hero) throw new Error('Riftlight.restore: the snapshot is missing the town, the hero, the loot or the save');
+    const misfit = this.town.fits(s.town) ?? hero.fits?.(s.hero) ?? null;
+    if (misfit) throw new Error(`Riftlight.restore: ${misfit}`);
+    try {
+      this.restoreNow(s);
+    } catch (e) {
+      // never half a moment: a restore that still fails part way leaves the game at the title
+      this.toTitle();
+      throw e;
+    }
+  }
+
+  private restoreNow(s: RiftSnapshot): void {
+    const hero = this.hero;
+    const loot = this.ports.loot;
+    if (!hero.loadState || !loot.loadState) throw new Error('Riftlight.restore: these ports keep no state');
     // leave whatever is on now, quietly (no autosave, no banners, no sounds)
     this.layer.closeAll();
     this.endTalk();

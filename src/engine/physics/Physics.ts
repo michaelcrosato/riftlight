@@ -220,8 +220,9 @@ export class Physics {
     this.world = world;
     for (let i = this.bindings.length - 1; i >= 0; i--) {
       const b = this.bindings[i]!;
+      // the very body, not another in its slot (a lookup by handle doesn't check the generation)
       const body = world.getRigidBody(b.body.handle);
-      if (body) {
+      if (body && body.handle === b.body.handle) {
         b.body = body;
         settle(b);
       } else this.bindings.splice(i, 1);

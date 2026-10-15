@@ -186,7 +186,9 @@ as it is (a buff that never ends expires at `Infinity`: never copy state through
 load replaces what is there (skills in flight, an actor made since: gone); an actor another
 one points at is saved as its id (`core/saved.ts`). Restoring works from anywhere: photo mode,
 the arcade and the Hall of Beasts are left first (`beforeRestore`), a level is left and panels
-close, quietly (no autosave, banner or sound).
+close, quietly (no autosave, banner or sound). A snapshot that doesn't fit (another town, a skill
+gem this game doesn't have) is refused before anything changes (`Town.fits`, `RealHero.fits`);
+one that still fails part way leaves the game at the title, never half a moment.
 
 For now a snapshot is taken in town with no panel open, nobody talked to and no skill effect in
 flight (a cast still flying, a trap, a totem; an aura toggled on counts, so its snapshot waits

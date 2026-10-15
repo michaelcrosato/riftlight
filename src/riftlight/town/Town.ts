@@ -593,9 +593,17 @@ export class Town implements StageWorld {
     return [this.time, this.dayTime, this.rng.state, ...this.npcs.map((n) => at(n.position)), at(this.cat.position)].join(' ');
   }
 
+  /** Why `s` can't be loaded into this town (null: it fits). Checked before a restore changes anything. */
+  fits(s: TownState): string | null {
+    if (s.npcs.length !== this.npcs.length) return `not this town (${s.npcs.length} townsfolk saved, ${this.npcs.length} here)`;
+    if (s.extensions.length !== this.extensions.length) return `not this town (${s.extensions.length} extensions saved, ${this.extensions.length} here)`;
+    return null;
+  }
+
   /** Put the town back as `saveState` found it (the same town, built from the same seed). */
   loadState(s: TownState): void {
-    if (s.npcs.length !== this.npcs.length || s.extensions.length !== this.extensions.length) throw new Error('not this town (its townsfolk or extensions differ)');
+    const misfit = this.fits(s);
+    if (misfit) throw new Error(misfit);
     this.time = s.time;
     this.dayTime = s.dayTime;
     this.dayLength = s.dayLength;

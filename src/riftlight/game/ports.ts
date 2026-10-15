@@ -208,6 +208,8 @@ export interface HeroPort {
   /** The hero as data and back (save-states, docs/GAME.md): a port without them can't be in a snapshot. */
   saveState?(): unknown;
   loadState?(state: unknown, actors: ActorIndex): void;
+  /** Why a saved state can't be loaded (null: it fits); a restore asks before it changes anything. */
+  fits?(state: unknown): string | null;
   dispose(): void;
 }
 

@@ -124,6 +124,13 @@ export async function runRiftlightSnapshot(h) {
       await e.restore(snap);
       play(300, 2000);
       res.other = e.fingerprint();
+      // a snapshot that doesn't fit this town: refused before anything changes, the game as it was
+      const beforeMisfit = { print: e.fingerprint(), time: e.time, hero: game().hero.actor.position.toArray().join() };
+      res.misfit = await e.restore({ ...snap, state: { ...snap.state, town: { ...snap.state.town, extensions: [] } } }).then(
+        () => '',
+        (err) => err.message,
+      );
+      res.misfitKept = JSON.stringify(beforeMisfit) === JSON.stringify({ print: e.fingerprint(), time: e.time, hero: game().hero.actor.position.toArray().join() });
 
       // skills in flight when a restore comes (a nova, a dash): gone, the moment as it was
       await e.restore(snap);
@@ -204,6 +211,7 @@ export async function runRiftlightSnapshot(h) {
     check(out.photo !== 'iso' && out.fromPhoto === out.went.print, `restored from photo mode (camera ${out.photo}): the same game (${out.fromPhoto})`);
     check(out.restoreMs < 500, `a restore takes ${out.restoreMs.toFixed(0)} ms`);
     check(out.other !== out.went.print, `a different input from the same moment plays differently (${out.other})`);
+    check(/extensions/.test(out.misfit) && out.misfitKept, `a snapshot that doesn't fit this town is refused, the game as it was ("${out.misfit}")`);
     check(/panel is open/.test(out.panelRefused), `a snapshot with a panel open is refused: "${out.panelRefused}"`);
     check(out.level === 'level' && /level is not kept/.test(out.levelRefused), `a snapshot in a level is refused (S3): "${out.levelRefused}"`);
     check(out.fromLevel.screen === 'town' && out.fromLevel.ui === '' && out.fromLevel.print === out.went.print, `restored from a level with the inventory open: back in town, panels closed, the same game (${out.fromLevel.print}, ${out.fromLevelMs.toFixed(0)} ms)`);

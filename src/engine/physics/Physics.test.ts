@@ -237,6 +237,22 @@ describe('Physics state (save-states)', () => {
     expect(() => p.update(FIXED_DT * 3)).not.toThrow();
   });
 
+  it("a mesh bound to a newer body in an old one's slot is let go, not drawn on the old one", async () => {
+    const p = await Physics.create();
+    const a = p.addDynamicBox({ position: [-3, 0.5, 0], halfExtents: [0.2, 0.2, 0.2] });
+    const s = p.state();
+    p.remove(a);
+    const b = p.addDynamicBox({ position: [3, 4, 0], halfExtents: [0.2, 0.2, 0.2] });
+    const slot = (h: number) => new Uint32Array(new Float64Array([h]).buffer)[0];
+    expect(slot(b.handle)).toBe(slot(a.handle)); // the same slot, a newer generation
+    const mesh = new Object3D();
+    p.bind(b, mesh);
+    p.setState(s);
+    expect(p.counts().bindings).toBe(0);
+    p.update(FIXED_DT * 2);
+    expect(mesh.position.x).not.toBeCloseTo(-3, 1);
+  });
+
   it('undo puts back the world it replaced (a restore that fails half way)', async () => {
     const p = await Physics.create();
     const s = p.state();
