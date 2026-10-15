@@ -1,5 +1,17 @@
 import { type Material, type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import type { Rng } from '../core/rng';
+import type { Vec } from '../core/saved';
+
+/**
+ * A body's juice as data (save-states): the hit flash, and a ragdoll in flight with the body
+ * where it tumbles (when it comes to rest and flickers out decides when the corpse leaves).
+ * The curse tint is not kept: the status visuals set it again from the curses every frame.
+ */
+export interface BodyFxState {
+  readonly flash: readonly [number, number];
+  readonly ragdoll: { v: Vec; spin: Vec; ground: number; t: number; bounces: number; position: Vec; rotation: Vec; visible: boolean } | null;
+  readonly done: boolean;
+}
 
 type Emissive = Material & { emissive?: { setRGB(r: number, g: number, b: number): void }; emissiveIntensity?: number; dissolve?: number };
 
@@ -70,6 +82,35 @@ export class BodyFx {
 
   get flashing(): boolean {
     return this.flashLeft > 0;
+  }
+
+  save(): BodyFxState {
+    const r = this.ragdoll;
+    const b = this.body;
+    return {
+      flash: [this.flashLeft, this.flashTime],
+      ragdoll: r ? { v: r.v.toArray(), spin: r.spin.toArray(), ground: r.ground, t: r.t, bounces: r.bounces, position: b.position.toArray(), rotation: [b.rotation.x, b.rotation.y, b.rotation.z], visible: b.visible } : null,
+      done: this.ragdollDone,
+    };
+  }
+
+  load(s: BodyFxState): void {
+    if (s.flash[0] > 0) this.ensureClones();
+    [this.flashLeft, this.flashTime] = s.flash;
+    const r = s.ragdoll;
+    const b = this.body;
+    if (r) {
+      this.ragdoll = { v: new Vector3().fromArray(r.v), spin: new Vector3().fromArray(r.spin), ground: r.ground, t: r.t, bounces: r.bounces };
+      b.position.fromArray(r.position);
+      b.rotation.set(r.rotation[0], r.rotation[1], r.rotation[2]);
+      b.visible = r.visible;
+    } else if (this.ragdoll) {
+      // back to before the death it went through: standing, seen
+      this.ragdoll = null;
+      b.rotation.x = b.rotation.z = 0;
+      b.visible = true;
+    }
+    this.ragdollDone = s.done;
   }
 
   /** Throw the body (death): `impulse` is the last knockback, so it flies the way it was hit. */

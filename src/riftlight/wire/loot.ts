@@ -51,6 +51,20 @@ interface PortDrop extends WorldLoot {
   tier: 'loud' | 'show' | 'dim';
 }
 
+/** The shell's view of a world drop: label and colour from what it is. */
+function portDrop(g: GroundDrop, drop: Drop, tier: PortDrop['tier'], filtered: boolean): PortDrop {
+  return {
+    id: g.id,
+    drop,
+    ground: g,
+    position: g.to,
+    label: drop.kind === 'gold' ? `${drop.amount} GOLD` : `${drop.item.quantity && drop.item.quantity > 1 ? `${drop.item.quantity}X ` : ''}${drop.item.name.toUpperCase()}`,
+    color: drop.kind === 'gold' ? 'sand' : (CLASS_COLOR[itemClass(drop.item)] ?? 'white'),
+    filtered,
+    tier,
+  };
+}
+
 type View = 'inventory' | Exclude<LeftPanel, null>;
 
 /** The loot as data (`RealLoot.saveState`): the items, the sockets, this visit's vendor stock, the crafting stream, the counters. */
@@ -63,7 +77,10 @@ export interface RealLootState {
   readonly depth: number;
   /** The crafting stream, once the item windows forked it. */
   readonly crafting: number | null;
+  /** The world loot: counters, filter toggle and the drops on the ground (their meshes, beams, lights). */
   readonly world: WorldLootState | null;
+  /** The shell's side of each drop on the ground, in order (by the world drop's id). */
+  readonly ground: readonly { readonly id: number; readonly tier: PortDrop['tier']; readonly filtered: boolean }[];
   readonly view: ItemsViewState | null;
 }
 
@@ -160,16 +177,7 @@ export class RealLoot implements LootPort {
     drops.forEach((drop) => {
       const g = drop.kind === 'gold' ? world.spawnGold(drop.amount, from) : world.spawn(drop.item, from);
       const tier = drop.kind === 'item' ? filterTier(drop.item, this.depth) : 'show';
-      const d: PortDrop = {
-        id: g.id,
-        drop,
-        ground: g,
-        position: g.to,
-        label: drop.kind === 'gold' ? `${drop.amount} GOLD` : `${drop.item.quantity && drop.item.quantity > 1 ? `${drop.item.quantity}X ` : ''}${drop.item.name.toUpperCase()}`,
-        color: drop.kind === 'gold' ? 'sand' : (CLASS_COLOR[itemClass(drop.item)] ?? 'white'),
-        filtered: false,
-        tier: tier === 'hide' ? 'dim' : tier,
-      };
+      const d = portDrop(g, drop, tier === 'hide' ? 'dim' : tier, false);
       this.drops.set(g.id, d);
       out.push(d);
     });
@@ -283,8 +291,8 @@ export class RealLoot implements LootPort {
   }
 
   /**
-   * The loot as data (save-states), taken with the item windows closed and nothing on the
-   * ground. The hero's sheet is the hero's own (its gear sources are restored with it).
+   * The loot as data (save-states): the bags and windows, and the drops on the ground. The
+   * hero's sheet is the hero's own (its gear sources are restored with it).
    */
   saveState(): RealLootState {
     const st = this.store;
@@ -297,13 +305,22 @@ export class RealLoot implements LootPort {
       depth: this.depth,
       crafting: this.crafting ? st.rng.state : null,
       world: this.world?.saveState() ?? null,
+      ground: [...this.drops.values()].map((d) => ({ id: d.id, tier: d.tier, filtered: d.filtered })),
       view: this.ui?.viewState() ?? null,
     };
   }
 
-  /** Put the loot back as `saveState` found it. Windows and the world loot that didn't exist then are dropped (made again on demand). */
-  loadState(s: RealLootState): void {
+  /**
+   * Put the loot back as `saveState` found it. Windows and the world loot that didn't exist then
+   * are dropped (made again on demand); the drops on the ground now go, and the saved ones lie on
+   * `stage` again (the stage they were on, built again: needed when there are any).
+   */
+  loadState(s: RealLootState, stage: StageWorld | null = null): void {
     const copy = <T>(v: T): T => structuredClone(v);
+    const ground = s.ground ?? [];
+    const worldDrops = s.world?.drops ?? [];
+    if (ground.length !== worldDrops.length || ground.some((g, i) => g.id !== worldDrops[i]!.id)) throw new Error('RealLoot.loadState: the shell\'s drops and the world\'s differ');
+    if (ground.length && !stage) throw new Error('RealLoot.loadState: loot lies on the ground: give the stage it lies on');
     this.quiet++;
     try {
       this.clearGround();
@@ -318,10 +335,20 @@ export class RealLoot implements LootPort {
       this.depth = s.depth;
       this.crafting = s.crafting !== null;
       if (s.crafting !== null) st.rng.state = s.crafting;
-      if (s.world) this.worldLoot().loadState(s.world);
+      if (s.world) this.worldLoot().loadState({ ...s.world, drops: worldDrops, pending: s.world.pending ?? null });
       else if (this.world) {
         this.world.dispose();
         this.world = null;
+      }
+      // the shell's side of each drop, on the world's (same ids, same order)
+      ground.forEach((x, i) => {
+        const g = this.world!.drops[i]!;
+        const drop: Drop = g.item ? { kind: 'item', item: g.item } : { kind: 'gold', amount: g.gold };
+        this.drops.set(g.id, portDrop(g, drop, x.tier, x.filtered));
+      });
+      if (stage) {
+        stage.root.add(this.root);
+        this.stage = stage;
       }
       if (s.view) this.itemsUi().setViewState(s.view);
       else if (this.ui) {

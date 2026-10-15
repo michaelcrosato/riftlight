@@ -1,11 +1,10 @@
 import { Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
-import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { VOID } from '../layout/grid';
 import { tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, resistFactor, VelocityTracker } from './common';
+import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, refill, refillMap, resistFactor, VelocityTracker, type VelocityState } from './common';
 import type { LevelMechanicDef, MechanicElement } from './types';
 
 /**
@@ -73,14 +72,15 @@ export const GALE: LevelMechanicDef = {
     const lanes = level.elementsOf('gale');
     const byCell = cellSet(lanes);
     const vel = new VelocityTracker();
-    const pushedAt = new WeakMap<ActorLike, number>();
-    const reported = new WeakSet<ActorLike>();
-    const tracked = new WeakSet<ActorLike>();
+    // per actor, by id: when a gust last pushed it, whether its fall was reported, whether it has the source
+    const pushedAt = new Map<number, number>();
+    const reported = new Set<number>();
+    const tracked = new Set<number>();
     const force = new Vector3();
     const dir = (e: MechanicElement) => force.set(e.data.dx as number, 0, e.data.dz as number);
     const gusting = (e: MechanicElement, t: number) => (t + (e.data.phase as number)) % PERIOD < GUST;
     const wasGusting = new Map<number, boolean>();
-    let streak = 0;
+    const st = { streak: 0 };
 
     // Visuals: a paler lane with chevrons pointing downwind.
     const laneMat = toonMaterial(tint(level.theme.palette.floor, 0.12));
@@ -110,7 +110,7 @@ export const GALE: LevelMechanicDef = {
       update(dt) {
         const t = level.time();
         const hero = level.hero();
-        streak -= dt;
+        st.streak -= dt;
         for (const e of lanes) {
           const on = gusting(e, t);
           if (on && !wasGusting.get(e.id)) {
@@ -118,7 +118,7 @@ export const GALE: LevelMechanicDef = {
             if (hero && Math.hypot(hero.position.x - e.x, hero.position.z - e.z) < 14) level.sound('gust');
           }
           wasGusting.set(e.id, on);
-          if (on && streak <= 0 && hero && Math.hypot(hero.position.x - e.x, hero.position.z - e.z) < 18) {
+          if (on && st.streak <= 0 && hero && Math.hypot(hero.position.x - e.x, hero.position.z - e.z) < 18) {
             const n = e.data.length as number;
             const dx = e.data.dx as number;
             const dz = e.data.dz as number;
@@ -126,11 +126,11 @@ export const GALE: LevelMechanicDef = {
             level.burst('wind', [e.x + dx * f, 0.6, e.z + dz * f], { direction: [dx, 0.05, dz] });
           }
         }
-        if (streak <= 0) streak = 0.12;
+        if (st.streak <= 0) st.streak = 0.12;
       },
       affect(actor, dt) {
-        if (!tracked.has(actor)) {
-          tracked.add(actor);
+        if (!tracked.has(actor.id)) {
+          tracked.add(actor.id);
           actor.stats.set('mechanic:gale', [inc('move.speed', 0.45, undefined, 'tailwind')]);
         }
         const v = vel.velocity(actor, dt);
@@ -138,9 +138,9 @@ export const GALE: LevelMechanicDef = {
         const lane = i >= 0 ? byCell.get(i) : undefined;
         const t = level.time();
         // Pushed into a pit by a gust: the speedrunner's favourite.
-        const last = pushedAt.get(actor);
-        if (last !== undefined && t - last < 0.8 && level.layout.cell(Math.floor(actor.position.x), Math.floor(actor.position.z)) === VOID && !reported.has(actor)) {
-          reported.add(actor);
+        const last = pushedAt.get(actor.id);
+        if (last !== undefined && t - last < 0.8 && level.layout.cell(Math.floor(actor.position.x), Math.floor(actor.position.z)) === VOID && !reported.has(actor.id)) {
+          reported.add(actor.id);
           level.emit('gale', 'blownIntoPit', actor.position);
         }
         if (!lane || !gusting(lane, t)) {
@@ -156,7 +156,19 @@ export const GALE: LevelMechanicDef = {
         // `wind.resist` (the Anchor suffix, Featherfall Sash; Galecaller lowers it to ride gusts harder)
         const accel = hero ? 10 * resistFactor(actor, 'wind.resist') : 18;
         actor.push(d.clone().multiplyScalar(accel * dt));
-        pushedAt.set(actor, t);
+        pushedAt.set(actor.id, t);
+      },
+      save() {
+        return { streak: st.streak, gusting: [...wasGusting], velocity: vel.save(), pushedAt: [...pushedAt], reported: [...reported], tracked: [...tracked] };
+      },
+      load(raw) {
+        const s = raw as { streak: number; gusting: [number, boolean][]; velocity: VelocityState; pushedAt: [number, number][]; reported: number[]; tracked: number[] };
+        st.streak = s.streak;
+        refillMap(wasGusting, s.gusting);
+        vel.load(s.velocity);
+        refillMap(pushedAt, s.pushedAt);
+        refill(reported, s.reported);
+        refill(tracked, s.tracked);
       },
       dispose() {
         for (const a of level.actors()) {

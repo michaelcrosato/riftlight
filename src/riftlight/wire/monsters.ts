@@ -4,10 +4,11 @@ import type { LightHandle } from '../../engine/render/lights';
 import { PALETTE } from '../../engine/palette';
 import { TELEGRAPH_COLORS } from '../combat/telegraph';
 import type { PaletteColor } from '../../engine/palette';
-import { Actor } from '../actors/Actor';
+import { Actor, type ActorState } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
 import { flat, more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
 import { type Rank, RANK, SCALING } from '../core/scaling';
 import type { ActorLike, DamageType, Genome, HitResult } from '../core/types';
 import type { MonsterBuildOptions, MonsterHandle, MonsterPort, ShellServices, Telegraph } from '../game/ports';
@@ -27,7 +28,9 @@ import {
   MONSTER_SKILLS,
   MonsterBrain,
   type MonsterBody,
+  type MonsterBrainState,
   type MonsterEvent,
+  type MonsterRuntimeState,
   type MonsterSkillDef,
   MonsterRuntime,
   type TelegraphSpec,
@@ -144,6 +147,56 @@ export function registerBoss(def: BossDef): Genome {
 
 // ---------------------------------------------------------------- the monster
 
+/** Every monster unit by its actor (save-states: a hazard or a boss bar may hold one whose unit left the level's list). */
+const UNITS = new WeakMap<ActorLike, MonsterUnit>();
+/** The units a host built while loading (its own monsters), in order. */
+const INITIAL = new WeakMap<MonsterHost, MonsterUnit[]>();
+
+/** The monster unit an actor is the body of (null for anything else). */
+export function unitOf(a: ActorLike | null | undefined): MonsterUnit | null {
+  return (a && UNITS.get(a)) ?? null;
+}
+
+/** The units `host` built while it loaded (`MonsterHost.loading`), in build order, removed ones included. */
+export function initialUnits(host: MonsterHost): readonly MonsterUnit[] {
+  return INITIAL.get(host) ?? [];
+}
+
+/**
+ * A monster unit as data (`MonsterUnit.save`, save-states): its actor and where its mover
+ * stands, the attack in progress, cooldowns, telegraphs, timers, its brain and its body's
+ * clip. Its genome, body and brain wiring are made again by building it the same way.
+ */
+export interface MonsterUnitState {
+  readonly actor: ActorState;
+  readonly mover: ReturnType<StageMover['save']>;
+  readonly phase: number;
+  readonly act: {
+    readonly skill: string;
+    readonly t: number;
+    readonly windup: number;
+    readonly end: number;
+    readonly fired: boolean;
+    readonly aim: Vec;
+    readonly lockAim: boolean;
+    readonly target: ActorRef;
+    readonly clip: string;
+  } | null;
+  readonly cds: readonly (readonly [string, number])[];
+  readonly pending: TelegraphData | null;
+  readonly tele: TelegraphData | null;
+  readonly glow: number;
+  readonly teleType: DamageType;
+  readonly wantFacing: number | null;
+  readonly deadT: number;
+  readonly hitAnimUntil: number;
+  readonly time: number;
+  readonly dieAt: number;
+  readonly removed: boolean;
+  readonly brain: MonsterBrainState;
+  readonly body: MonsterRuntimeState;
+}
+
 interface Action {
   readonly def: MonsterSkillDef;
   readonly gem: SkillGem;
@@ -164,12 +217,35 @@ export interface LiveTelegraph extends Telegraph {
   total: number;
   /** Seconds until it lands (Telegraph.remaining). */
   readonly remaining: number;
+  /** The decal's colour (a damage type once the attack is known). */
+  readonly color: TelegraphColor;
+  /** Recolour it (the decal and what a save keeps). */
+  tint(color: TelegraphColor): void;
+  /** As data (save-states): how it was made and how far it ran; `loadTelegraph` makes it again. */
+  save(): TelegraphData;
+}
+
+/**
+ * A telegraph as data: what `makeTelegraph` was given (the shape, the two ends, the colour,
+ * who made it) and its clock. The decal is visual: `loadTelegraph` makes it again from this
+ * and its owner sets its progress.
+ */
+export interface TelegraphData {
+  readonly spec: TelegraphSpec;
+  readonly from: Vec;
+  readonly to: Vec;
+  readonly color: TelegraphColor;
+  readonly total: number;
+  readonly t: number;
+  readonly source: ActorRef;
 }
 
 class TelegraphState implements LiveTelegraph {
   t = 0;
   constructor(
     readonly decal: Decal | null,
+    private readonly made: { readonly spec: TelegraphSpec; readonly from: Vec; readonly to: Vec },
+    public color: TelegraphColor,
     readonly at: Vector3,
     readonly radius: number,
     public total: number,
@@ -182,6 +258,22 @@ class TelegraphState implements LiveTelegraph {
   get remaining(): number {
     return Math.max(0, this.total - this.t);
   }
+
+  tint(color: TelegraphColor): void {
+    this.color = color;
+    this.decal?.tint?.(color);
+  }
+
+  save(): TelegraphData {
+    return { spec: { ...this.made.spec }, from: [...this.made.from], to: [...this.made.to], color: this.color, total: this.total, t: this.t, source: refOf(this.source) };
+  }
+}
+
+/** `LiveTelegraph.save` undone: the decal made again under `root` (at its first frame: the owner sets its progress). */
+export function loadTelegraph(root: Object3D, d: TelegraphData, actors: ActorIndex): LiveTelegraph {
+  const tl = makeTelegraph(root, d.spec, new Vector3().fromArray(d.from), new Vector3().fromArray(d.to), d.total, d.color, actors(d.source) ?? undefined);
+  tl.t = d.t;
+  return tl;
 }
 
 // ---------------------------------------------------------------- presence (shadow, light)
@@ -241,7 +333,7 @@ export function makeTelegraph(root: Object3D, spec: TelegraphSpec, from: Vector3
   }
   root.add(decal.object);
   const radius = spec.shape === 'circle' ? spec.size : spec.shape === 'line' ? spec.size / 2 : spec.size;
-  return new TelegraphState(decal, at, radius, seconds, spec.shape, source, dir, spec.size, spec.width);
+  return new TelegraphState(decal, { spec: { ...spec }, from: from.toArray(), to: to.toArray() }, color, at, radius, seconds, spec.shape, source, dir, spec.size, spec.width);
 }
 
 /**
@@ -268,6 +360,12 @@ export class MonsterUnit implements MonsterHandle {
   readonly boss: BossDef | null;
   /** Summoned mid-fight (adds, splits, clones): no loot. */
   readonly add: boolean;
+  /** Built while its host loaded (the level's own monsters); false for adds and spawns since. */
+  readonly initial: boolean;
+  /** Where it was built (save-states: a unit made after the level's build is made again here). */
+  readonly builtAt: Vec;
+  /** `dispose` ran (its corpse left the level). */
+  disposed = false;
   phase = 0;
   private act: Action | null = null;
   private readonly cds = new Map<string, number>();
@@ -296,6 +394,8 @@ export class MonsterUnit implements MonsterHandle {
   ) {
     this.boss = o.boss ?? null;
     this.add = o.add ?? false;
+    this.initial = host.loading;
+    this.builtAt = o.at.toArray();
     const eager = host.loading;
     this.built = this.boss ? buildMonster(this.boss.genome, { eager, extraSkills: bossSkills(this.boss) }) : buildMonster(genome, { eager });
     this.object = this.built.object;
@@ -351,11 +451,22 @@ export class MonsterUnit implements MonsterHandle {
     this.shadow = monsterShadow(radius);
     this.shadow.position.set(o.at.x, 0.015, o.at.z);
     host.root.add(this.shadow);
-    const glow = ELITE_LIGHT[this.rank];
-    if (glow && !this.add) {
-      const hex = this.object.getObjectByName('EliteAura') ? genome.palette.glow : PALETTE.white;
-      this.glowLight = host.services.ctx.lights.request({ follow: this.object, offset: [0, 0.9 * Math.max(1, genome.scale), 0], color: hex, intensity: glow.intensity, radius: glow.radius + radius, priority: glow.priority, flicker: 'pulse', name: `elite:${this.rank}` });
+    this.requestGlow();
+    UNITS.set(this.actor, this);
+    if (this.initial) {
+      let list = INITIAL.get(host);
+      if (!list) INITIAL.set(host, (list = []));
+      list.push(this);
     }
+  }
+
+  /** Elites and bosses glow (a light from the pool); adds don't. */
+  private requestGlow(): void {
+    const glow = ELITE_LIGHT[this.rank];
+    if (!glow || this.add) return;
+    const radius = this.actor.radius;
+    const hex = this.object.getObjectByName('EliteAura') ? this.genome.palette.glow : PALETTE.white;
+    this.glowLight = this.host.services.ctx.lights.request({ follow: this.object, offset: [0, 0.9 * Math.max(1, this.genome.scale), 0], color: hex, intensity: glow.intensity, radius: glow.radius + radius, priority: glow.priority, flicker: 'pulse', name: `elite:${this.rank}` });
   }
 
   // ------------------------------------------------------------- MonsterHandle
@@ -383,6 +494,11 @@ export class MonsterUnit implements MonsterHandle {
   }
 
   // ------------------------------------------------------------- MonsterBody
+
+  /** The actors it points at (its brain's target, its attack's): save-states keep them findable. */
+  refsHeld(): (ActorLike | null)[] {
+    return [this.brain.target ?? null, this.act?.target ?? null];
+  }
 
   moveTo(target: Vector3, speed = 1): void {
     const a = this.actor;
@@ -452,7 +568,7 @@ export class MonsterUnit implements MonsterHandle {
       this.pending = null;
       this.tele.t = 0;
       this.teleType = skillDamageType(def);
-      this.tele.decal?.tint?.(this.teleType);
+      this.tele.tint(this.teleType);
       this.tele.total = windup + (def.role === 'leap' ? windup * 0.5 : 0);
       act.lockAim = true;
       if (this.tele.kind === 'circle') act.aim.copy(this.tele.at);
@@ -683,10 +799,95 @@ export class MonsterUnit implements MonsterHandle {
     this.tele?.decal?.dispose();
     this.pending?.decal?.dispose();
     this.glowLight?.release();
+    this.glowLight = null;
     this.teleLight?.release();
+    this.teleLight = null;
     this.shadow.removeFromParent();
     this.runtime.dispose();
     this.object.removeFromParent();
+    this.disposed = true;
+  }
+
+  // ------------------------------------------------------------- save-states
+
+  /** The unit as data (save-states): `MonsterUnitState`. */
+  save(): MonsterUnitState {
+    const x = this.act;
+    return {
+      actor: this.actor.save(),
+      mover: this.mover.save(),
+      phase: this.phase,
+      act: x ? { skill: x.def.id, t: x.t, windup: x.windup, end: x.end, fired: x.fired, aim: x.aim.toArray(), lockAim: x.lockAim, target: refOf(x.target), clip: x.clip } : null,
+      cds: [...this.cds],
+      pending: this.pending?.save() ?? null,
+      tele: this.tele?.save() ?? null,
+      glow: this.glow,
+      teleType: this.teleType,
+      wantFacing: this.wantFacing,
+      deadT: this.deadT,
+      hitAnimUntil: this.hitAnimUntil,
+      time: this.time,
+      dieAt: this.dieAt,
+      removed: this.removed,
+      brain: this.brain.save(),
+      body: this.runtime.save(),
+    };
+  }
+
+  /**
+   * Back to `save()`'s unit, on one built the same way (genome, place, boss). Replaces what it
+   * had: telegraph decals are made again from their data, the lights it holds are released and
+   * requested again, the body stands where the mover is and plays the saved clip. A unit whose
+   * corpse had left (`dispose`) comes back into its host's root; its actor is the level's to put
+   * back in the combat world. The actor's motion is the effect's that moves it (combat).
+   */
+  load(s: MonsterUnitState, actors: ActorIndex): void {
+    if (this.disposed) {
+      this.disposed = false;
+      this.host.root.add(this.shadow);
+    }
+    this.actor.load(s.actor, actors);
+    this.mover.load(s.mover);
+    this.phase = s.phase;
+    const x = s.act;
+    if (x) {
+      const def = MONSTER_SKILLS.get(x.skill);
+      this.act = { def, gem: monsterGem(def), t: x.t, windup: x.windup, end: x.end, fired: x.fired, aim: new Vector3().fromArray(x.aim), lockAim: x.lockAim, target: actors(x.target), clip: x.clip };
+    } else this.act = null;
+    this.cds.clear();
+    for (const [k, v] of s.cds) this.cds.set(k, v);
+    this.pending?.decal?.dispose();
+    this.pending = s.pending ? loadTelegraph(this.host.root, s.pending, actors) : null;
+    this.tele?.decal?.dispose();
+    this.tele = s.tele ? loadTelegraph(this.host.root, s.tele, actors) : null;
+    if (this.tele) this.tele.decal?.update(this.tele.total > 0 ? this.tele.t / this.tele.total : 1);
+    this.glow = s.glow;
+    this.teleType = s.teleType;
+    this.wantFacing = s.wantFacing;
+    this.deadT = s.deadT;
+    this.hitAnimUntil = s.hitAnimUntil;
+    this.time = s.time;
+    this.dieAt = s.dieAt;
+    this.removed = s.removed;
+    this.brain.load(s.brain, actors);
+    this.runtime.load(s.body);
+    // presence: the body on its feet, its shadow, the corpse's dissolve, the lights it holds
+    this.object.position.copy(this.mover.position);
+    this.object.rotation.y = this.actor.facing;
+    this.shadow.position.set(this.object.position.x, 0.015, this.object.position.z);
+    this.shadow.visible = true;
+    if (this.deadT >= 0) {
+      const s0 = this.deadT - (this.built.clip('Death')?.duration ?? 0.8) - M.corpse;
+      if (s0 >= 0) {
+        this.shadow.visible = s0 / M.dissolve < 0.5;
+        this.actor.fx.dissolve(s0 / M.dissolve);
+      }
+    }
+    this.glowLight?.release();
+    this.glowLight = null;
+    if (this.deadT < 0) this.requestGlow();
+    this.teleLight?.release();
+    this.teleLight = null;
   }
 
   /**

@@ -5,6 +5,7 @@ import { flat, inc, type Mod, more, type StatSheet } from '../core/mods';
 import { StatQuery } from './stats';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { buildSkill } from '../skills/build';
+import { loadSkill, type SavedSkill, saveSkill } from '../skills/saved';
 import type { ResolvedSkill, SkillGem } from '../skills/types';
 import type { Combat, SummonRequest } from './Combat';
 import { glow } from './visuals';
@@ -126,11 +127,26 @@ export class MinionBrain implements Brain {
   private cooldown = 0;
   private sync = 1;
   private swing = 0;
+  /** The body's bob clock (its look). */
+  bob = 0;
   constructor(
     private readonly combat: Combat,
-    private readonly attack: ResolvedSkill,
+    private attack: ResolvedSkill,
     private readonly ranged: boolean,
   ) {}
+
+  /** Its timers and its attack as data (save-states: the attack keeps the numbers it was made with). */
+  save(): { cooldown: number; sync: number; swing: number; bob: number; attack: SavedSkill } {
+    return { cooldown: this.cooldown, sync: this.sync, swing: this.swing, bob: this.bob, attack: saveSkill(this.attack) };
+  }
+
+  load(s: ReturnType<MinionBrain['save']>): void {
+    this.cooldown = s.cooldown;
+    this.sync = s.sync;
+    this.swing = s.swing;
+    this.bob = s.bob;
+    this.attack = loadSkill(s.attack);
+  }
 
   think(a: Actor, dt: number, world: ActorWorld): void {
     // the owner's `minion.*` stats follow it (gear swaps, buffs), checked once a second
@@ -211,9 +227,9 @@ export function placeholderMinion(req: SummonRequest): Actor {
   const attack: ResolvedSkill = { ...base, damage: req.attack ? { ...req.attack, tags: base.damage?.tags ?? req.attack.tags } : base.damage, castTime: ranged ? 1.3 : MINION_STRIKE.castTime };
   const brain = new MinionBrain(req.combat, attack, ranged);
   actor.brain = brain;
-  let t = req.index * 0.7;
+  brain.bob = req.index * 0.7;
   actor.animate = (_a, dt) => {
-    t += dt;
+    const t = (brain.bob += dt);
     const moving = actor.velocity.lengthSq() > 0.5;
     model.position.y = ranged ? 0.25 + Math.sin(t * 3) * 0.08 : moving ? Math.abs(Math.sin(t * 12)) * 0.08 : 0;
     model.rotation.x = brain.swingAmount * 0.5 + (moving ? 0.12 : 0);

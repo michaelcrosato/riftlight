@@ -1,8 +1,9 @@
 import type { Mesh } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
+import type { Vec } from '../../core/saved';
 import { FINISHER } from '../tuning';
 import { arcDecal } from '../visuals';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, v3, vec } from './types';
 
 export { FINISHER };
 
@@ -30,6 +31,13 @@ export function inArc(c: CastContext, range: number, arcDeg: number): Actor[] {
   });
 }
 
+/** A swing as data: its age, where the swoosh stands, who it hit (by id, those still around). */
+interface StrikeState extends EffectState {
+  readonly age: number;
+  readonly at: Vec;
+  readonly hit: readonly number[];
+}
+
 class Strike extends EffectBase {
   readonly kind = 'strike';
   private readonly swoosh: Mesh;
@@ -37,23 +45,32 @@ class Strike extends EffectBase {
   /** Actors this strike hit (tests and inspectors). */
   readonly hit: Actor[];
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: StrikeState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'strike') throw new Error('strike delivery on a non-strike skill');
     const fin = isFinisher(c);
     const arc = d.arc * (fin ? FINISHER.arc : 1);
     this.hit = [];
-    for (const t of inArc(c, d.range, arc)) {
-      if (c.combat.wall(c.caster.position, t.position) !== null) continue;
-      const r = c.combat.hit(c.caster, t, c.skill, { scale: fin ? FINISHER.damage : 1, knockback: fin ? FINISHER.knockback : 1 });
-      if (r) this.hit.push(t);
+    if (from) {
+      this.age = from.age;
+      for (const id of from.hit) {
+        const a = c.combat.find(id);
+        if (a) this.hit.push(a);
+      }
+    } else {
+      for (const t of inArc(c, d.range, arc)) {
+        if (c.combat.wall(c.caster.position, t.position) !== null) continue;
+        const r = c.combat.hit(c.caster, t, c.skill, { scale: fin ? FINISHER.damage : 1, knockback: fin ? FINISHER.knockback : 1 });
+        if (r) this.hit.push(t);
+      }
+      if (fin && this.hit.length) c.combat.shake.add(FINISHER.shake);
     }
-    if (fin && this.hit.length) c.combat.shake.add(FINISHER.shake);
     // the swoosh: a flat arc at chest height, white for the finisher
     const look = c.skill.def.look;
     this.swoosh = this.show(arcDecal(fin ? 'white' : (look.glow?.[0] ?? look.color), arc, d.range * 0.45, d.range * 0.95));
-    this.swoosh.position.set(c.caster.position.x, c.caster.position.y + 0.95, c.caster.position.z);
+    if (from) this.swoosh.position.copy(v3(from.at));
+    else this.swoosh.position.set(c.caster.position.x, c.caster.position.y + 0.95, c.caster.position.z);
     this.swoosh.rotation.y = Math.atan2(c.dir.x, c.dir.z);
     // alternate the tilt per combo step so the swings read as left/right/overhead
     const step = (c.opts.combo ?? 0) % 3;
@@ -66,6 +83,10 @@ class Strike extends EffectBase {
     return this.age < this.life;
   }
 
+  save(): StrikeState {
+    return { ...this.saved(), age: this.age, at: vec(this.swoosh.position), hit: this.c.combat.known(this.hit) };
+  }
+
   render(): void {
     const t = Math.min(1, this.age / this.life);
     this.swoosh.scale.setScalar(0.85 + 0.25 * t);
@@ -75,3 +96,4 @@ class Strike extends EffectBase {
 
 /** Melee arc hit at the hit frame, with a combo chain (the last step is a stronger finisher). */
 export const strike = (c: CastContext): CombatEffect => new Strike(c);
+export const restoreStrike = (c: CastContext, s: EffectState): CombatEffect => new Strike(c, s as StrikeState);

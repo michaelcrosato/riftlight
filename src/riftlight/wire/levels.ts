@@ -1,29 +1,94 @@
 import { Group, type Mesh, Vector3 } from 'three/webgpu';
 import type { GameContext, Song } from '../../engine';
-import { Actor } from '../actors/Actor';
+import { Actor, type ActorState, setActorIds } from '../actors/Actor';
 import { more, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, Genome, Hit, LevelSpec, Rarity } from '../core/types';
 import type { BossView, KillInfo, LevelDeps, LevelHandle, LevelPort, MechanicInfo, MonsterHandle, ShellServices, Telegraph } from '../game/ports';
-import { buildLevel, type Level, type LevelHooks, type MonsterSpawn } from '../levels/Level';
+import { buildLevel, type Level, type LevelHooks, type LevelState, type MonsterSpawn } from '../levels/Level';
+import { planLevel } from '../levels/plan';
 import { FLOOR, VOID, WALL } from '../levels/layout/grid';
 import { MECHANIC_ORDER, MECHANICS } from '../levels/mechanics';
 import { levelSpec } from '../levels/rift';
-import { ARCHETYPES, BOSS_ATTACKS, type BossDef, type BrainWorld, buildMonster, designedBoss, generateBoss, generateGenome, genomeBudget, Pack, PLANS, type MonsterEvent } from '../monsters';
+import { ARCHETYPES, BOSS_ATTACKS, type BossDef, type BrainWorld, buildMonster, designedBoss, generateBoss, generateGenome, genomeBudget, Pack, type PackState, PLANS, type MonsterEvent } from '../monsters';
 import type { Slot } from '../monsters/types';
 import type { ResolvedSkill } from '../skills/types';
 import { RealHero } from './hero';
-import { Globes } from './globes';
-import { Hazards, type HazardHost } from './hazards';
-import { MECHANIC_TAGS, type MonsterHost, MonsterUnit, registerBoss } from './monsters';
+import { Globes, type GlobesState } from './globes';
+import { Hazards, type HazardHost, type HazardsState } from './hazards';
+import { initialUnits, MECHANIC_TAGS, type MonsterHost, MonsterUnit, type MonsterUnitState, registerBoss, unitOf } from './monsters';
 import { themeSongs } from './music';
 import type { GridStage } from './stage';
 import { WIRE_TUNING } from './tuning';
-import { CombatWorld, isProp, PropActor, type Worlds } from './world';
+import { CombatWorld, type CombatWorldState, isProp, PropActor, type Worlds } from './world';
 
 /** Adds alive at once per level (summoners, splitters and bosses can't flood it). */
 const MAX_ADDS = 30;
+
+/** What a `LevelStage` keeps besides its monsters (`saveRuntime`, save-states). */
+export interface RuntimeState {
+  readonly killed: number;
+  readonly total: number;
+  readonly lastSafe: Vec;
+  readonly warmFrames: number;
+  readonly addedFilters: readonly string[];
+  /** The stage's random stream (adds' places and seeds, genomes made on the way). */
+  readonly rng: number;
+  /** Add bodies made so far, by archetype (the next summon of one uses it). */
+  readonly addGenomes: readonly (readonly [string, Genome])[];
+  readonly level: LevelState;
+  readonly globes: GlobesState;
+  /** The level's props as combat actors: [the prop's id, its `PropActor`] in the order they joined. */
+  readonly props: readonly (readonly [number, ActorState])[];
+}
+
+/** A level as data (`LevelStage.saveState`). */
+export interface LevelStageState {
+  readonly units: UnitsState;
+  readonly runtime: RuntimeState;
+  readonly world: CombatWorldState;
+}
+
+// ---------------------------------------------------------------- save-states: monsters and hazards
+
+/** What a monster made after the level's own build was made from (adds, splits, clones, dev spawns). */
+export interface UnitRecipe {
+  readonly genome: Genome;
+  readonly at: Vec;
+  readonly add: boolean;
+}
+
+/** One monster unit in a save-state: its actor's id, how to make it again (null: the level's build makes it), its pack, its state. */
+export interface UnitEntry {
+  readonly id: number;
+  readonly made: UnitRecipe | null;
+  /** Index into `UnitsState.packs`. */
+  readonly pack: number | null;
+  readonly state: MonsterUnitState;
+}
+
+/** A level's monsters and hazards as data (`LevelStage.saveUnits`). */
+export interface UnitsState {
+  /** The units in the level's list, in order (alive, or a corpse still lying there). */
+  readonly units: readonly UnitEntry[];
+  /**
+   * Units out of the list something still points at: the boss (its bar), a hazard's source, a
+   * corpse leaving the combat world on the next step (`inWorld`).
+   */
+  readonly kept: readonly (UnitEntry & { readonly inWorld: boolean })[];
+  /** The level's own monsters gone since (their corpses left): id, life, seconds dead. */
+  readonly removed: readonly (readonly [id: number, life: number, deadFor: number])[];
+  readonly packs: readonly PackState[];
+  readonly boss: ActorRef;
+  /** The add genome cache (summons of an archetype share one body). */
+  readonly addGenomes: readonly (readonly [string, Genome])[];
+  /** The stage's random stream (adds, hazards) and the brains'. */
+  readonly rng: number;
+  readonly brains: number;
+  readonly hazards: HazardsState;
+}
 
 /**
  * One level, live: R5's `Level` (layout, geometry, mechanics, encounters, chests, shrines,
@@ -82,6 +147,8 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     this.tags = [...new Set(spec.mechanics.flatMap((m) => MECHANIC_TAGS[m] ?? []))].slice(0, 2);
     // the combat world first, so the level can hand it hits from the start
     this.world = new CombatWorld({ services: this.services, root: this.root, depth: spec.depth, wall: (from, to) => this.wall(from, to) });
+    // a monster's target, an attack's, a hazard's: one that leaves the world is kept as a ghost (save-states)
+    this.world.combat.holdRefs(() => [...this.list, ...(this.bossUnit ? [this.bossUnit] : [])].flatMap((u) => u.refsHeld()).concat(this.hazards?.held() ?? []));
     this.world.host = this;
     this.worlds.set(this, this.world);
     const actors = this.world.actors;
@@ -288,6 +355,160 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     return this.list;
   }
 
+  // ------------------------------------------------------------- save-states: monsters and hazards
+
+  /**
+   * The level's monsters and hazards as data (save-states, docs/GAME.md *Save-states*): each unit
+   * in the list with its actor's id, what it was made from when the level's own build did not
+   * make it, its pack and its state; the units out of the list something still points at; the
+   * level's own monsters gone since; the packs, the add genome cache, the stage's and brains'
+   * random streams and every staged hazard. Refuses, saying why, what a load could not find again.
+   */
+  saveUnits(): UnitsState {
+    const inList = new Set(this.list);
+    const world = this.world.actors.actors as readonly ActorLike[];
+    const kept = new Map<MonsterUnit, boolean>();
+    const keep = (u: MonsterUnit | null) => {
+      if (u && !inList.has(u) && !kept.has(u)) kept.set(u, world.includes(u.actor));
+    };
+    keep(this.bossUnit);
+    const combatKeeps = (id: ActorRef) => this.world.combat.keeps(id); // the world, and combat's own (a gone actor something points at: a ghost)
+    for (const a of this.hazards.held()) {
+      if (unitOf(a)) keep(unitOf(a));
+      else if (!world.includes(a) && !combatKeeps(a.id)) throw new Error(`LevelStage.saveUnits: a hazard holds actor ${a.id} (${a.faction}), which has left the level`);
+    }
+    for (const a of this.world.actors.actors) if (a.gone) keep(unitOf(a));
+    const packs: Pack[] = [];
+    const entry = (u: MonsterUnit): UnitEntry => {
+      const p = u.brain.pack;
+      if (p && !packs.includes(p)) packs.push(p);
+      return { id: u.actor.id, made: u.initial ? null : { genome: u.genome, at: u.builtAt, add: u.add }, pack: p ? packs.indexOf(p) : null, state: u.save() };
+    };
+    const units = this.list.map(entry);
+    // what a living monster aims at must come back with the level (the hero, a minion, a totem)
+    const findable = (ref: ActorRef) => ref === null || world.some((a) => a.id === ref) || combatKeeps(ref) || this.list.some((u) => u.actor.id === ref);
+    for (const e of units) {
+      for (const ref of [e.state.brain.target, e.state.act?.target ?? null]) {
+        if (!findable(ref)) throw new Error(`LevelStage.saveUnits: monster ${e.id} aims at actor ${ref}, which has left the level`);
+      }
+    }
+    return {
+      units,
+      kept: [...kept].map(([u, inWorld]) => ({ ...entry(u), inWorld })),
+      removed: initialUnits(this)
+        .filter((u) => !inList.has(u) && !kept.has(u))
+        .map((u) => [u.actor.id, u.actor.life, u.actor.deadFor] as const),
+      packs: packs.map((p) => p.save()),
+      boss: refOf(this.bossUnit?.actor),
+      addGenomes: [...this.addGenomes],
+      rng: this.rng.state,
+      brains: this.brainWorld.rng.state,
+      hazards: this.hazards.save(),
+    };
+  }
+
+  /**
+   * Back to `saveUnits()`'s monsters and hazards, replacing what is here now, on a stage built
+   * from the same level entry (same spec, random stream and id counters), fresh or played on.
+   * Units not in the state go (the level's own ones as dead as they were); units in it that are
+   * missing are made again with their own ids (`setActorIds` just before each one: adds, splits,
+   * clones, spawns; one of the level's own whose corpse had left comes back); then every unit's
+   * state in list order, the packs, the caches, the random streams and the hazards. `actors`
+   * finds what monsters point at besides each other (the hero, minions, totems, props: they must
+   * exist already). Returns the monsters by id (kept and removed ones too) for the loads after
+   * it (the hero, combat). The actor id counter is left where the last unit made put it: the
+   * caller sets it afterwards.
+   */
+  loadUnits(s: UnitsState, actors: ActorIndex): ActorIndex {
+    const world = this.world.actors;
+    const total = this.total;
+    const shell = this.services.rng.state;
+    const own = new Map<number, MonsterUnit>();
+    for (const u of initialUnits(this)) own.set(u.actor.id, u);
+    const have = new Map(own);
+    for (const u of this.list) have.set(u.actor.id, u);
+    // a corpse an earlier load left leaving the combat world
+    for (const a of world.actors) {
+      const u = unitOf(a);
+      if (u && !have.has(a.id)) have.set(a.id, u);
+    }
+    const want = [...s.units, ...s.kept];
+    const wanted = new Set(want.map((e) => e.id));
+    const leave = (u: MonsterUnit) => {
+      if (!u.disposed) u.dispose();
+      if (world.actors.includes(u.actor)) world.remove(u.actor);
+    };
+    // what is here and not in the state goes; the level's own monsters as dead as they were
+    const removed = new Map(s.removed.map(([id, life, deadFor]) => [id, { life, deadFor }]));
+    for (const id of removed.keys()) if (!own.has(id)) throw new Error(`LevelStage.loadUnits: no monster ${id} in this level's build (not built from the same entry?)`);
+    for (const [id, u] of have) {
+      if (wanted.has(id)) continue;
+      leave(u);
+      if (!u.initial) continue;
+      const r = removed.get(id);
+      if (!r) throw new Error(`LevelStage.loadUnits: monster ${id} of this level's build is not in the state (not built from the same entry?)`);
+      u.actor.life = r.life;
+      u.actor.deadFor = r.deadFor;
+      u.actor.gone = true;
+    }
+    // what is in the state and not here is made again, with its own id
+    const units = new Map<number, MonsterUnit>();
+    for (const e of want) {
+      let u = have.get(e.id) ?? null;
+      const m = e.made;
+      const other = u && (m ? u.initial || u.add !== m.add || JSON.stringify(u.genome) !== JSON.stringify(m.genome) || u.builtAt.some((v, i) => v !== m.at[i]) : !u.initial);
+      if (u && other) {
+        if (u.initial) throw new Error(`LevelStage.loadUnits: monster ${e.id} is not the one this level built (not built from the same entry?)`);
+        leave(u);
+        u = null;
+      }
+      if (!u) {
+        if (!m) throw new Error(`LevelStage.loadUnits: monster ${e.id} of this level's build is not here (not built from the same entry?)`);
+        const stale = world.get(e.id);
+        if (stale) world.remove(stale);
+        setActorIds(e.id);
+        u = this.build(m.genome, new Vector3().fromArray(m.at), { boss: null, add: m.add });
+        if (u.actor.id !== e.id) throw new Error(`LevelStage.loadUnits: monster ${e.id} made again as ${u.actor.id}`);
+      }
+      units.set(e.id, u);
+    }
+    if (s.boss !== refOf(this.bossUnit?.actor)) throw new Error(`LevelStage.loadUnits: the boss is ${s.boss} in the state, ${refOf(this.bossUnit?.actor)} here`);
+    // the list in the saved order, its units in the combat world
+    this.list.length = 0;
+    this.byActor.clear();
+    for (const e of s.units) {
+      const u = units.get(e.id)!;
+      this.list.push(u);
+      this.byActor.set(u.actor, u);
+      if (!world.actors.includes(u.actor)) world.add(u.actor);
+    }
+    const index: ActorIndex = (id) => (id === null ? null : (units.get(id)?.actor ?? own.get(id)?.actor ?? actors(id)));
+    const packs = s.packs.map((_, i) => {
+      const e = want.find((x) => x.pack === i);
+      const p = e ? units.get(e.id)!.brain.pack : null;
+      if (!p) throw new Error(`LevelStage.loadUnits: pack ${i} is not one of this level's packs`);
+      return p;
+    });
+    s.packs.forEach((p, i) => packs[i]!.load(p, (id) => (units.get(id) ?? own.get(id))?.brain ?? null));
+    for (const e of want) units.get(e.id)!.load(e.state, index);
+    // the kept ones are out of the list: their corpses had left (some still leaving the world)
+    for (const e of s.kept) {
+      const u = units.get(e.id)!;
+      u.dispose();
+      if (e.inWorld && !world.actors.includes(u.actor)) world.add(u.actor);
+      if (!e.inWorld && world.actors.includes(u.actor)) world.remove(u.actor);
+    }
+    this.addGenomes.clear();
+    for (const [k, g] of s.addGenomes) this.addGenomes.set(k, g);
+    this.rng.state = s.rng;
+    this.brainWorld.rng.state = s.brains;
+    this.hazards.load(s.hazards, index);
+    // the build's count and the shell's stream are not the units' (their owners set them)
+    this.total = total;
+    this.services.rng.state = shell;
+    return index;
+  }
+
   // ------------------------------------------------------------- per step / frame
 
   fixedUpdate(dt: number): void {
@@ -339,6 +560,108 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
       e.setFilters(e.filters.filter((f) => !this.addedFilters.includes(f)));
     }
     this.root.removeFromParent();
+  }
+
+  // ------------------------------------------------------------- save-states (the runtime)
+
+  /**
+   * What the stage keeps besides its monsters, as data (save-states): its counters and the
+   * hero's last safe spot, the warm-up, its random stream and add genomes, the level runtime
+   * (`Level.save`), the globes on the floor and the props in the combat world.
+   */
+  saveRuntime(): RuntimeState {
+    if (this.loading || this.preHero) throw new Error('LevelStage.saveRuntime: the level is still loading');
+    return {
+      killed: this.killed,
+      total: this.total,
+      lastSafe: this.lastSafe.toArray(),
+      warmFrames: this.warmFrames,
+      addedFilters: [...this.addedFilters],
+      rng: this.rng.state,
+      addGenomes: [...this.addGenomes],
+      level: this.level.save(),
+      globes: this.globes.save(),
+      props: [...this.props].map(([t, p]) => [t.id, p.save()] as const),
+    };
+  }
+
+  /**
+   * Back to `saveRuntime()` on a stage built again from the same spec with the same id counters
+   * and loaded (`RealLevels.build`): call it once every actor `actors` finds exists again (the
+   * adds made since entry included), and after anything that draws on the stage's stream. What
+   * the stage has now is replaced; a prop's combat actor it lacks is made again with its own id
+   * (`setActorIds`: the caller sets the counters back after). The theme filters stay the ones
+   * this build put on (the player's look decides them).
+   */
+  loadRuntime(s: RuntimeState, actors: ActorIndex): void {
+    if (this.loading) throw new Error('LevelStage.loadRuntime: load() the stage first');
+    const have = new Map([...this.props].map(([t, p]) => [t.id, p]));
+    for (const [id, state] of s.props) {
+      const p = have.get(id);
+      if (p && p.id !== state.id) throw new Error(`LevelStage.loadRuntime: prop ${id} is actor ${p.id} here, ${state.id} saved (not built again with the same ids)`);
+    }
+    this.level.load(s.level, actors);
+    // the props follow the level's targets: one taken away since goes, one added since comes back with its own id
+    for (const t of this.level.targets()) {
+      const state = s.props.find(([id]) => id === t.id)?.[1];
+      if (this.props.has(t) || !state) continue;
+      setActorIds(state.id);
+      const p = new PropActor(t);
+      this.props.set(t, p);
+      this.world.actors.add(p);
+    }
+    this.syncProps();
+    const props = new Map([...this.props].map(([t, p]) => [t.id, p]));
+    for (const [id, state] of s.props) props.get(id)!.load(state, actors);
+    this.globes.load(s.globes);
+    this.killed = s.killed;
+    this.total = s.total;
+    this.lastSafe.fromArray(s.lastSafe);
+    this.rng.state = s.rng;
+    this.addGenomes.clear();
+    for (const [k, g] of s.addGenomes) this.addGenomes.set(k, structuredClone(g));
+    if (s.warmFrames === 0 && this.warm.length) {
+      for (const m of this.warm) m.frustumCulled = true;
+      this.warm = [];
+    }
+    this.warmFrames = s.warmFrames;
+  }
+
+  // ------------------------------------------------------------- save-states: the whole level
+
+  /** The monsters' index from the last `loadState` (units out of the list something still holds). */
+  private unitIndex: ActorIndex = () => null;
+
+  /**
+   * The level as data between two frames (save-states, docs/GAME.md): its monsters and hazards
+   * (`saveUnits`), what the stage and the level runtime keep (`saveRuntime`) and its combat world
+   * (actors' order, effects in flight, queued casts, the minions, totems and stand-ins combat made).
+   */
+  saveState(): LevelStageState {
+    return { units: this.saveUnits(), runtime: this.saveRuntime(), world: this.world.save() };
+  }
+
+  /**
+   * Back to `saveState()` on a stage built again from the same entry (spec, random stream, id
+   * counters) and loaded, the hero entered. In order: the actors combat made, the monsters (made
+   * or taken away, then loaded), the level runtime and props, then `others` (the hero: whatever
+   * points into the level loads through the index once every actor exists), the combat world last
+   * (it re-links motions in progress). `outside` finds actors this stage doesn't own (the hero).
+   */
+  loadState(s: LevelStageState, outside: ActorIndex, others?: (actors: ActorIndex) => void): void {
+    const world = (id: ActorRef) => this.world.index()(id);
+    this.world.make(s.world, (id) => outside(id) ?? world(id));
+    this.unitIndex = this.loadUnits(s.units, (id) => outside(id) ?? world(id));
+    const index: ActorIndex = (id) => outside(id) ?? this.actorById(id);
+    this.loadRuntime(s.runtime, index);
+    others?.(index);
+    this.world.load(s.world, index);
+  }
+
+  /** An actor of this level by id: its combat world (monsters, props, minions, totems, stand-ins), units something still holds, the level's targets. */
+  actorById(id: ActorRef): ActorLike | null {
+    if (id === null) return null;
+    return this.world.index()(id) ?? this.unitIndex(id) ?? this.level.targets().find((t) => t.id === id) ?? null;
   }
 
   // ------------------------------------------------------------- internals
@@ -604,6 +927,12 @@ export class RealLevels implements LevelPort {
       const m = MECHANICS.get(id);
       return { id, name: m.name, description: m.description, bypass: m.bypass, exploit: m.exploit };
     });
+  }
+
+  /** The plan a spec makes, in a few numbers (layout, packs, elements, features, props): data only, no build. */
+  signature(spec: LevelSpec): string {
+    const p = planLevel(spec);
+    return [p.layout.width, p.layout.height, p.packs.length, p.packs.reduce((n, k) => n + k.members.length, 0), p.elements.length, p.features.length, p.props.length, spec.mechanics.join('+')].join(':');
   }
 
   async build(spec: LevelSpec, deps: LevelDeps): Promise<LevelHandle> {

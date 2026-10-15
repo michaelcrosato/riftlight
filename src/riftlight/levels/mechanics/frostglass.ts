@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, mesh, monsterScaleDamage, VelocityTracker } from './common';
+import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, mesh, monsterScaleDamage, refill, VelocityTracker, type VelocityState } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -49,7 +49,8 @@ export const FROSTGLASS: LevelMechanicDef = {
     const sheets = level.elementsOf('frostglass');
     const ice = cellSet(sheets);
     const vel = new VelocityTracker();
-    const tracked = new WeakSet<ActorLike>();
+    /** Actors (by id) that got the `mechanic:frostglass` source. */
+    const tracked = new Set<number>();
     const depth = level.depth;
     const iceMat = toonMaterial(tint(level.theme.palette.accent, 0.35));
     const rim = toonMaterial(tint(level.theme.palette.accent, -0.1));
@@ -76,33 +77,33 @@ export const FROSTGLASS: LevelMechanicDef = {
     const lights = sheets.map((e) => level.light({ position: [e.x, 0.8, e.z], color: level.theme.palette.accent, intensity: 1.6, radius: 4, flicker: 'pulse', name: 'ice' }));
 
     // Shatter: monsters that die on ice (or frozen) burst; the burst can shatter neighbours.
-    let chain = 0;
-    let chainUntil = 0;
+    const st = { chain: 0, chainUntil: 0 };
     const onIce = (a: ActorLike) => {
       const i = cellIndexOf(level.layout, a.position);
       return i >= 0 && ice.has(i);
     };
     const shatter = (at: Vector3) => {
       const t = level.time();
-      chain = t < chainUntil ? chain + 1 : 0;
-      chainUntil = t + 0.6;
+      st.chain = t < st.chainUntil ? st.chain + 1 : 0;
+      st.chainUntil = t + 0.6;
+      // (a kill below can shatter on and raise the chain for the rest of this one)
       for (const a of level.actors()) {
         if (!a.alive || a.faction !== 'monster') continue;
         if (Math.hypot(a.position.x - at.x, a.position.z - at.z) > SHATTER_RADIUS) continue;
-        level.damage(a, { cold: monsterScaleDamage(depth, 22) * (1 + 0.2 * chain) }, 'frostglass', { ailments: { chill: 1, freeze: onIce(a) ? 0.5 : 0.1 } });
+        level.damage(a, { cold: monsterScaleDamage(depth, 22) * (1 + 0.2 * st.chain) }, 'frostglass', { ailments: { chill: 1, freeze: onIce(a) ? 0.5 : 0.1 } });
       }
       level.burst('frost', [at.x, 0.6, at.z]);
-      level.sound('shatter', { pitch: chain });
+      level.sound('shatter', { pitch: st.chain });
       level.light({ position: [at.x, 1, at.z], color: 0xc8f8ff, intensity: 8, radius: 6, lifetime: 0.3, fadeIn: 0.02, fadeOut: 0.25, priority: 2, name: 'shatter' });
-      level.emit('frostglass', chain ? 'shatterChain' : 'shatter', at);
+      level.emit('frostglass', st.chain ? 'shatterChain' : 'shatter', at);
       const hero = level.hero();
-      if (chain > 0 && hero) level.buff(hero, 'mechanic:frostglass:chain', [inc('xp.gain', 0.12 * chain), inc('damage', 0.06 * chain, ['cold'])], 8);
+      if (st.chain > 0 && hero) level.buff(hero, 'mechanic:frostglass:chain', [inc('xp.gain', 0.12 * st.chain), inc('damage', 0.06 * st.chain, ['cold'])], 8);
     };
-    // each corpse shatters once (on ice, frozen, or by the hero's `shatter.chance`)
-    const shattered = new WeakSet<ActorLike>();
+    // each corpse (by id) shatters once (on ice, frozen, or by the hero's `shatter.chance`)
+    const shattered = new Set<number>();
     const shatterOnce = (target: ActorLike) => {
-      if (shattered.has(target)) return;
-      shattered.add(target);
+      if (shattered.has(target.id)) return;
+      shattered.add(target.id);
       shatter(target.position.clone());
     };
     const affixRng = level.rng.fork('shatter.chance');
@@ -122,8 +123,8 @@ export const FROSTGLASS: LevelMechanicDef = {
     const slide = new Vector3();
     return {
       affect(actor, dt) {
-        if (!tracked.has(actor)) {
-          tracked.add(actor);
+        if (!tracked.has(actor.id)) {
+          tracked.add(actor.id);
           actor.stats.set('mechanic:frostglass', [inc('move.speed', 0.25, undefined, 'onIce'), inc('damage.taken', 0.2, ['cold'], 'onIce')]);
         }
         const v = vel.velocity(actor, dt);
@@ -131,6 +132,18 @@ export const FROSTGLASS: LevelMechanicDef = {
         actor.stats.setCondition('onIce', on);
         // Momentum: keep pushing along the current velocity (hard to stop, easy to carry speed).
         if (on && v.lengthSq() > 0.25) actor.push(slide.copy(v).multiplyScalar(2.2 * dt));
+      },
+      save() {
+        return { chain: st.chain, chainUntil: st.chainUntil, shattered: [...shattered], tracked: [...tracked], velocity: vel.save(), affix: affixRng.state };
+      },
+      load(raw) {
+        const s = raw as { chain: number; chainUntil: number; shattered: number[]; tracked: number[]; velocity: VelocityState; affix: number };
+        st.chain = s.chain;
+        st.chainUntil = s.chainUntil;
+        refill(shattered, s.shattered);
+        refill(tracked, s.tracked);
+        vel.load(s.velocity);
+        affixRng.state = s.affix;
       },
       dispose() {
         offKill();

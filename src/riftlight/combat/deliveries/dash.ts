@@ -1,6 +1,8 @@
 import { Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import type { Vec } from '../../core/saved';
+import { resumeMotion, type SavedMotion, saveMotion } from './slam';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
 
 /** Share of a dodge roll that is invulnerable (from the start). */
 export const DODGE_IFRAMES = 0.85;
@@ -30,6 +32,15 @@ export const ROLL_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.45 + 0.55 * sm
 /** Dashes and charges: off the mark fast, and brake to a stop into the last stride (the Charge clip's feet dig in as it ends). */
 export const DASH_PROFILE = normalizedProfile((u) => (u < 0.1 ? 0.5 + 0.5 * smooth(u / 0.1) : u < 0.65 ? 1 : 1 - smooth((u - 0.65) / 0.3)));
 
+/** A dash as data: its clock, whether it ended, who it hit, and the motion still running. */
+interface DashState extends EffectState {
+  readonly age: number;
+  readonly done: boolean;
+  readonly hit: readonly number[];
+  readonly start: Vec;
+  readonly motion: SavedMotion | null;
+}
+
 class Dash extends EffectBase {
   readonly kind = 'dash';
   private done = false;
@@ -38,11 +49,19 @@ class Dash extends EffectBase {
   private readonly look = this.c.skill.def.look;
   readonly start: Vector3;
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: DashState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'dash') throw new Error('dash delivery on a non-dash skill');
     const caster = c.caster;
+    if (from) {
+      this.start = new Vector3().fromArray(from.start);
+      this.age = from.age;
+      this.done = from.done;
+      for (const id of from.hit) this.hitIds.add(id);
+      if (from.motion) resumeMotion(caster, from.motion, this.links(d.hitWidth));
+      return;
+    }
     this.start = caster.position.clone();
     const p = caster.position;
     caster.facing = Math.atan2(c.dir.x, c.dir.z);
@@ -58,29 +77,31 @@ class Dash extends EffectBase {
       caster.position.copy(caster.mover.position);
       caster.iframes = Math.max(caster.iframes, 0.15);
       c.combat.burst(this.look.burst ?? 'blink', new Vector3(caster.position.x, caster.position.y + 0.5, caster.position.z));
-      if (this.look.light) {
-        const at = caster.position.clone();
-        c.combat.light(this.look.light.color, this.look.light.intensity, this.look.light.radius, () => at, 0.3);
-      }
+      if (this.look.light) c.combat.flash(this.look.light.color, this.look.light.intensity, this.look.light.radius, caster.position, 0.3);
       this.done = true;
       return;
     }
     const time = Math.max(0.1, c.skill.castTime * DASH_TIME);
     const speed = d.distance / time;
-    const dodge = c.skill.tags.includes('dodge');
-    if (dodge) caster.iframes = Math.max(caster.iframes, time * DODGE_IFRAMES);
-    caster.startMotion({
-      vx: c.dir.x * speed,
-      vz: c.dir.z * speed,
-      left: time,
-      total: time,
+    if (c.skill.tags.includes('dodge')) caster.iframes = Math.max(caster.iframes, time * DODGE_IFRAMES);
+    caster.startMotion({ vx: c.dir.x * speed, vz: c.dir.z * speed, left: time, total: time, ...this.links(d.hitWidth) });
+  }
+
+  /** The motion's profile and callbacks: hits along the path, done at its end. */
+  private links(width: number): { profile?: (u: number) => number; onStep: (a: Actor) => void; onEnd: () => void } {
+    const c = this.c;
+    return {
       // (the hero's clips are matched to these; monsters animate their own dashes)
-      profile: caster.faction !== 'hero' ? undefined : dodge ? ROLL_PROFILE : DASH_PROFILE,
-      onStep: (a) => this.along(a, d.hitWidth),
+      profile: c.caster.faction !== 'hero' ? undefined : c.skill.tags.includes('dodge') ? ROLL_PROFILE : DASH_PROFILE,
+      onStep: (a) => this.along(a, width),
       onEnd: () => {
         this.done = true;
       },
-    });
+    };
+  }
+
+  save(): DashState {
+    return { ...this.saved(), age: this.age, done: this.done, hit: [...this.hitIds], start: vec(this.start), motion: saveMotion(this.caster, !this.done) };
   }
 
   /** Hit enemies the caster passes through (once each). */
@@ -105,3 +126,4 @@ class Dash extends EffectBase {
 
 /** Movement skill: dash (hits along the path), dodge roll (i-frames) or blink (teleport). */
 export const dash = (c: CastContext): CombatEffect => new Dash(c);
+export const restoreDash = (c: CastContext, s: EffectState): CombatEffect => new Dash(c, s as DashState);

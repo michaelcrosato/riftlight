@@ -1,10 +1,9 @@
 import { ConeGeometry } from 'three/webgpu';
 import { inc } from '../../core/mods';
-import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { tint } from '../themes/props';
-import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, heroHas, mechanicDamage, mesh, monsterScaleDamage } from './common';
+import { asMechanicLevel, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroFlat, heroHas, mechanicDamage, mesh, monsterScaleDamage, refill, refillMap } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -68,21 +67,22 @@ export const THORNWEAVE: LevelMechanicDef = {
       level.root.add(m);
     }
 
-    const tracked = new WeakSet<ActorLike>();
-    const timers = new WeakMap<ActorLike, number>();
-    const inThornsNow = new WeakSet<ActorLike>();
-    let harvest = 0;
+    // per actor, by id: has the source, seconds to its next thorn tick, inside the thorns now
+    const tracked = new Set<number>();
+    const timers = new Map<number, number>();
+    const inThornsNow = new Set<number>();
+    const st = { harvest: 0 };
     const offKill = level.events.on('kill', ({ target }) => {
-      if (target.faction !== 'monster' || !inThornsNow.has(target)) return;
-      harvest++;
+      if (target.faction !== 'monster' || !inThornsNow.has(target.id)) return;
+      st.harvest++;
       const hero = level.hero();
-      if (hero) level.buff(hero, 'mechanic:thornweave:harvest', [inc('xp.gain', Math.min(1, 0.08 * harvest))], 12);
+      if (hero) level.buff(hero, 'mechanic:thornweave:harvest', [inc('xp.gain', Math.min(1, 0.08 * st.harvest))], 12);
       level.emit('thornweave', 'harvest', target.position);
     });
     return {
       affect(actor, dt) {
-        if (!tracked.has(actor)) {
-          tracked.add(actor);
+        if (!tracked.has(actor.id)) {
+          tracked.add(actor.id);
           actor.stats.set('mechanic:thornweave', [inc('move.speed', -0.35, undefined, 'inThorns')]);
         }
         const i = cellIndexOf(level.layout, actor.position);
@@ -91,23 +91,33 @@ export const THORNWEAVE: LevelMechanicDef = {
         const inside = i >= 0 && thorns.has(i) && !(hero && heroHas(actor, 'thorns.immune'));
         actor.stats.setCondition('inThorns', inside);
         if (!inside) {
-          inThornsNow.delete(actor);
-          timers.delete(actor);
+          inThornsNow.delete(actor.id);
+          timers.delete(actor.id);
           return;
         }
-        inThornsNow.add(actor);
-        const t = (timers.get(actor) ?? 0) - dt;
+        inThornsNow.add(actor.id);
+        const t = (timers.get(actor.id) ?? 0) - dt;
         if (t > 0) {
-          timers.set(actor, t);
+          timers.set(actor.id, t);
           return;
         }
-        timers.set(actor, TICK);
+        timers.set(actor.id, TICK);
         // `thorns.reflect` (the Thornskin suffix): the vines turn on what you kite through them
         const amount = hero ? mechanicDamage(depth, 5) : monsterScaleDamage(depth, 6) * (1 + 3 * Math.max(0, heroFlat(level.hero(), 'thorns.reflect')));
         level.damage(actor, { physical: amount }, 'thornweave', { ailments: { bleed: 0.3 } });
         level.burst('thorn', [actor.position.x, 0.5, actor.position.z]);
         if (actor.faction === 'hero') level.sound('thorn');
         level.emit('thornweave', 'thornHit', actor.position);
+      },
+      save() {
+        return { harvest: st.harvest, tracked: [...tracked], timers: [...timers], inside: [...inThornsNow] };
+      },
+      load(raw) {
+        const s = raw as { harvest: number; tracked: number[]; timers: [number, number][]; inside: number[] };
+        st.harvest = s.harvest;
+        refill(tracked, s.tracked);
+        refillMap(timers, s.timers);
+        refill(inThornsNow, s.inside);
       },
       dispose() {
         offKill();

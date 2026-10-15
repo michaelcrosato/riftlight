@@ -6,6 +6,7 @@ import { COMBAT_TIMING, stringEngage } from '../../game/hero/clips/combat';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Mod } from '../core/mods';
 import type { Combat } from '../combat/Combat';
+import type { CastOptions } from '../combat/deliveries/types';
 import { StatQuery } from '../combat/stats';
 import { WEAPON_CLASSES } from '../combat/tuning';
 import { buildSkill } from '../skills/build';
@@ -167,6 +168,8 @@ export interface HeroControllerState {
   readonly counters: HeroController['stats'];
   readonly feedback: { text: string; until: number } | null;
   readonly animator: HeroAnimatorState;
+  /** How the body is drawn (gait clocks, hips, hop, spin): the picture, but later frames read it. */
+  readonly drawn: { hips: number; backpedal: boolean; lift: number; lastClip: string; gaitLegs: boolean; gaitPhase: number; gaitRun: boolean; gaitRate: number; gaitHold: boolean; startT: number; lastSpeed: number; viewYaw: number; snapView: boolean; hop: { t: number; time: number; from: number; to: number } | null; spinAngle: number; spinT: number; spinRate: number };
 }
 
 /** Compile clip definitions against the hero model (loops marked for the animator). */
@@ -247,6 +250,8 @@ export class HeroController {
   private reactAnim = 'HitReact';
   /** The animator name each one-shot clip used last. */
   private readonly lastAnim = new Map<string, string>();
+  /** The input of the last step (a restored channel's `held` reads it). */
+  private input: InputLike | null = null;
 
   constructor(o: HeroOptions) {
     this.combat = o.combat;
@@ -293,6 +298,16 @@ export class HeroController {
     this.animator.play({ full: 'Idle' }, 0);
     this.animator.update(0);
     o.model.position.set(...o.at);
+    this.combat.wire(this.actor, (w) => this.wiring(w));
+  }
+
+  /**
+   * The closures of the hero's casts, made again on a restore (`Combat.wire`): a channel is held
+   * by the keys it names, a beam follows the live aim.
+   */
+  private wiring(w: { readonly hold?: string | readonly string[]; readonly aimNow: boolean }): Pick<CastOptions, 'held' | 'aimNow'> {
+    const keys = w.hold === undefined ? null : keysOf(w.hold as KeysName | readonly string[]);
+    return { held: keys ? () => !!this.input?.anyDown(keys) : undefined, aimNow: w.aimNow ? () => this.aim : undefined };
   }
 
   /** Aim with the mouse over the game canvas (call once with ctx.input). */
@@ -348,6 +363,7 @@ export class HeroController {
       counters: { ...this.stats },
       feedback: this.feedback ? { ...this.feedback } : null,
       animator: this.animator.save(),
+      drawn: { hips: this.hips, backpedal: this.backpedal, lift: this.lift, lastClip: this.lastClip, gaitLegs: this.gaitLegs, gaitPhase: this.gaitPhase, gaitRun: this.gaitRun, gaitRate: this.gaitRate, gaitHold: this.gaitHold, startT: this.startT, lastSpeed: this.lastSpeed, viewYaw: this.viewYaw, snapView: this.snapView, hop: this.hop ? { ...this.hop } : null, spinAngle: this.spinAngle, spinT: this.spinT, spinRate: this.spinRate },
     };
   }
 
@@ -385,6 +401,8 @@ export class HeroController {
     Object.assign(this.stats, s.counters);
     this.feedback = s.feedback ? { ...s.feedback } : null;
     this.animator.load(s.animator);
+    const d = s.drawn;
+    Object.assign(this, { hips: d.hips, backpedal: d.backpedal, lift: d.lift, lastClip: d.lastClip, gaitLegs: d.gaitLegs, gaitPhase: d.gaitPhase, gaitRun: d.gaitRun, gaitRate: d.gaitRate, gaitHold: d.gaitHold, startT: d.startT, lastSpeed: d.lastSpeed, viewYaw: d.viewYaw, snapView: d.snapView, hop: d.hop ? { ...d.hop } : null, spinAngle: d.spinAngle, spinT: d.spinT, spinRate: d.spinRate });
   }
 
   /** Put a gem in a slot (0..4 = RMB/K, Q, E, R, F). */
@@ -428,6 +446,7 @@ export class HeroController {
   attach(combat: Combat): void {
     if (combat === this.combat) return;
     this.combat = combat;
+    combat.wire(this.actor, (w) => this.wiring(w));
     this.action = null;
     this.buffered = null;
     this.cooldowns.clear();
@@ -483,6 +502,7 @@ export class HeroController {
       return;
     }
     const input = ctx.input;
+    this.input = input;
     if (this.state === 'victory') {
       const axis = input.moveAxis();
       if (this.victoryT < HeroController.VICTORY_HOLD && Math.hypot(axis.x, axis.y) < 0.2) {
@@ -601,6 +621,7 @@ export class HeroController {
       combo: act.combo,
       airTime,
       held: act.skill.channel ? () => input.anyDown(keys) : undefined,
+      hold: keysName(keys),
       aimNow: () => this.aim,
     });
     if (act.skill.channel) this.state = 'channel';

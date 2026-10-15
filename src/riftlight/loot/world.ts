@@ -32,6 +32,7 @@ import { toonMaterial } from '../../engine/render/toon';
 import { PALETTE } from '../../engine/palette';
 import type { StatSheet } from '../core/mods';
 import type { Rng } from '../core/rng';
+import type { Vec } from '../core/saved';
 import type { GameEventBus, Item } from '../core/types';
 import { CURRENCY } from './content';
 import { LOOT_SOUNDS } from './data/sounds';
@@ -120,11 +121,34 @@ export interface GroundDrop {
   label: { x: number; y: number; w: number; h: number } | null;
 }
 
-/** What `WorldLoot` keeps besides the drops on the ground (save-states). */
+/** A drop on the ground as data (save-states): what it is, its arc, its filter tier, and how it is drawn now. */
+export interface GroundDropState {
+  readonly id: number;
+  readonly item: Item | null;
+  readonly gold: number;
+  readonly from: Vec;
+  readonly to: Vec;
+  readonly t: number;
+  readonly tier: FilterTier;
+  /** The mesh: where, its turn (x, y), shown. */
+  readonly at: Vec;
+  readonly turn: readonly [number, number];
+  readonly shown: boolean;
+  /** Its beam (a landed rare, unique or loud drop): shown, or null for none. */
+  readonly beam: boolean | null;
+  /** It holds a light from the pool. */
+  readonly light: boolean;
+  readonly label: GroundDrop['label'];
+}
+
+/** What `WorldLoot` keeps (save-states): its counters, the filter toggle and every drop on the ground in order. */
 export interface WorldLootState {
   readonly nextId: number;
   readonly filterEnabled: boolean;
   readonly stats: WorldLoot['stats'];
+  readonly drops: readonly GroundDropState[];
+  /** The drop a click is walking the hero to (by id). */
+  readonly pending: number | null;
 }
 
 const ARC_TIME = 0.5;
@@ -173,16 +197,55 @@ export class WorldLoot {
     );
   }
 
-  /** Its counters and the filter toggle (save-states; the drops on the ground are the level's, and not kept yet). */
+  /** Its counters, the filter toggle and the drops on the ground (save-states). */
   saveState(): WorldLootState {
-    if (this.drops.length) throw new Error('loot on the ground is not kept in a snapshot yet');
-    return { nextId: this.nextId, filterEnabled: this.filterEnabled, stats: { ...this.stats } };
+    const v = (p: Vector3) => p.toArray();
+    return {
+      nextId: this.nextId,
+      filterEnabled: this.filterEnabled,
+      stats: { ...this.stats },
+      drops: this.drops.map((d) => ({
+        id: d.id,
+        item: d.item,
+        gold: d.gold,
+        from: v(d.from),
+        to: v(d.to),
+        t: d.t,
+        tier: d.tier,
+        at: v(d.mesh.position),
+        turn: [d.mesh.rotation.x, d.mesh.rotation.y],
+        shown: d.mesh.visible,
+        beam: d.beam ? d.beam.visible : null,
+        light: d.light !== null,
+        label: d.label ? { ...d.label } : null,
+      })),
+      pending: this.pending?.id ?? null,
+    };
   }
 
+  /** Back to `saveState()`: the drops there now go (meshes, beams, lights), the saved ones lie where they were. */
   loadState(s: WorldLootState): void {
+    for (const d of [...this.drops]) this.remove(d);
     this.nextId = s.nextId;
     this.filterEnabled = s.filterEnabled;
     Object.assign(this.stats, s.stats);
+    for (const x of s.drops) {
+      const item = x.item ? structuredClone(x.item) : null;
+      const mesh = this.buildMesh(item, x.gold);
+      mesh.position.fromArray(x.at);
+      mesh.rotation.x = x.turn[0];
+      mesh.rotation.y = x.turn[1];
+      mesh.visible = x.shown;
+      this.root.add(mesh);
+      const d: GroundDrop = { id: x.id, item, gold: x.gold, mesh, from: new Vector3().fromArray(x.from), to: new Vector3().fromArray(x.to), t: x.t, tier: x.tier, beam: null, light: null, label: x.label ? { ...x.label } : null };
+      if (x.beam !== null && item) {
+        d.beam = this.beamFor(d, item);
+        d.beam.visible = x.beam;
+      }
+      if (x.light && item) d.light = this.lightFor(d, item);
+      this.drops.push(d);
+    }
+    this.pending = this.drops.find((d) => d.id === s.pending) ?? null;
   }
 
   get depth(): number {
@@ -342,13 +405,22 @@ export class WorldLoot {
     if (!this.isVisible(d)) return;
     this.ctx.audio.play(d.item ? `loot-${cls}` : 'loot-gold', d.tier === 'loud' ? { volume: 1 } : {});
     if (d.item && (d.item.rarity === 'rare' || d.item.rarity === 'unique' || d.tier === 'loud')) {
-      const colour = itemColour(d.item);
-      d.beam = new Mesh(this.geometry('beam'), this.beamMaterial(colour));
-      d.beam.position.set(0, 2.5, 0);
-      d.beam.renderOrder = 2;
-      d.mesh.add(d.beam);
-      d.light = this.lights.request(this.tmp.copy(d.to).setY(d.to.y + 0.8), colour, d.item.rarity === 'unique' ? 6 : 4, 4);
+      d.beam = this.beamFor(d, d.item);
+      d.light = this.lightFor(d, d.item);
     }
+  }
+
+  /** A landed rare's (unique's, loud drop's) light beam, on its mesh. */
+  private beamFor(d: GroundDrop, item: Item): Mesh {
+    const beam = new Mesh(this.geometry('beam'), this.beamMaterial(itemColour(item)));
+    beam.position.set(0, 2.5, 0);
+    beam.renderOrder = 2;
+    d.mesh.add(beam);
+    return beam;
+  }
+
+  private lightFor(d: GroundDrop, item: Item): LightHandle | null {
+    return this.lights.request(this.tmp.copy(d.to).setY(d.to.y + 0.8), itemColour(item), item.rarity === 'unique' ? 6 : 4, 4);
   }
 
   private drawLabels(): void {

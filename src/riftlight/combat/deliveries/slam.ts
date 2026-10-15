@@ -1,7 +1,28 @@
 import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
+import type { Actor, Motion } from '../../actors/Actor';
+import type { Vec } from '../../core/saved';
 import { createTelegraph, type Telegraph, telegraphType } from '../telegraph';
 import { boxMesh, projectileMesh, ringDecal } from '../visuals';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
+
+/** A caster's scripted motion as data (its profile and callbacks are the effect's, linked again on load). */
+export interface SavedMotion {
+  readonly vx: number;
+  readonly vz: number;
+  readonly left: number;
+  readonly total: number | null;
+}
+
+/** The caster's motion as data, when it is the one the saving effect started (`ours`), else null. */
+export function saveMotion(caster: Actor, ours: boolean): SavedMotion | null {
+  const m = caster.motion;
+  return ours && m ? { vx: m.vx, vz: m.vz, left: m.left, total: m.total ?? null } : null;
+}
+
+/** Start a saved motion again with its callbacks, without ending the one there (a loaded actor has none). */
+export function resumeMotion(caster: Actor, m: SavedMotion, links: Omit<Motion, 'vx' | 'vz' | 'left' | 'total'>): void {
+  caster.motion = { vx: m.vx, vz: m.vz, left: m.left, ...(m.total !== null ? { total: m.total } : {}), ...links };
+}
 
 /** Gravity used for leap arcs (matches the movers). */
 export const LEAP_GRAVITY = 30;
@@ -23,6 +44,16 @@ export function areaCenter(c: CastContext, radius: number): Vector3 {
   return p.clone();
 }
 
+/** A slam as data: where it lands, its phase and clock, whether it landed, the leap still in the air. */
+interface SlamState extends EffectState {
+  readonly age: number;
+  readonly center: Vec;
+  readonly phase: 'leap' | 'telegraph' | 'impact';
+  readonly t: number;
+  readonly landed: boolean;
+  readonly motion: SavedMotion | null;
+}
+
 class Slam extends EffectBase {
   readonly kind = 'slam';
   private center = new Vector3();
@@ -35,13 +66,23 @@ class Slam extends EffectBase {
   private faller: Object3D | null = null;
   private readonly look = this.c.skill.def.look;
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: SlamState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'slam') throw new Error('slam delivery on a non-slam skill');
     this.radius = d.radius;
     this.delay = d.delay;
     const leap = c.skill.def.leap;
+    if (from) {
+      this.age = from.age;
+      this.center.fromArray(from.center);
+      this.phase = from.phase;
+      this.t = from.t;
+      if (from.motion) resumeMotion(c.caster, from.motion, { onEnd: (a, interrupted) => this.landAt(a, interrupted) });
+      this.decals();
+      if (from.landed) this.ring();
+      return;
+    }
     if (leap) {
       // jump to the aim point (clamped), slam where we land
       const p = c.caster.position;
@@ -57,25 +98,35 @@ class Slam extends EffectBase {
         vx: (c.dir.x * dist) / time,
         vz: (c.dir.z * dist) / time,
         left: time,
-        onEnd: (a, interrupted) => {
-          if (this.phase !== 'leap') return;
-          this.center.copy(a.position);
-          this.phase = interrupted ? 'impact' : 'telegraph';
-          this.t = interrupted ? 99 : 0;
-        },
+        onEnd: (a, interrupted) => this.landAt(a, interrupted),
       });
     } else this.center = areaCenter(c, this.radius);
-    if (this.delay > 0) {
-      // telegraph: a pixel rim at the target and a sweep that fills it during the delay
-      this.tele = createTelegraph({ shape: 'circle', size: this.radius }, telegraphType(c.skill.tags));
-      this.show(this.tele.object);
-      this.place();
-      if (this.look.shape === 'rock' || this.look.shape === 'bolt') {
-        this.faller = this.show(this.look.shape === 'rock' ? projectileMesh(this.look) : boxMesh(this.look.glow?.[0] ?? 'white'));
-        if (this.look.shape === 'bolt') this.faller.scale.set(0.35, 12, 0.35);
-        this.faller.visible = false;
-      }
+    this.decals();
+  }
+
+  /** The leap ends: slam where the caster came down (at once when it was cut short). */
+  private landAt(a: Actor, interrupted: boolean): void {
+    if (this.phase !== 'leap') return;
+    this.center.copy(a.position);
+    this.phase = interrupted ? 'impact' : 'telegraph';
+    this.t = interrupted ? 99 : 0;
+  }
+
+  /** Telegraph: a pixel rim at the target and a sweep that fills it during the delay (and the meteor or bolt that falls in). */
+  private decals(): void {
+    if (this.delay <= 0) return;
+    this.tele = createTelegraph({ shape: 'circle', size: this.radius }, telegraphType(this.c.skill.tags));
+    this.show(this.tele.object);
+    this.place();
+    if (this.look.shape === 'rock' || this.look.shape === 'bolt') {
+      this.faller = this.show(this.look.shape === 'rock' ? projectileMesh(this.look) : boxMesh(this.look.glow?.[0] ?? 'white'));
+      if (this.look.shape === 'bolt') this.faller.scale.set(0.35, 12, 0.35);
+      this.faller.visible = false;
     }
+  }
+
+  save(): SlamState {
+    return { ...this.saved(), age: this.age, center: vec(this.center), phase: this.phase, t: this.t, landed: this.burstRing !== null, motion: saveMotion(this.caster, this.phase === 'leap') };
   }
 
   private place(): void {
@@ -113,10 +164,12 @@ class Slam extends EffectBase {
     c.combat.burst(this.look.burst ?? 'impact', at, { scale: Math.max(1, this.radius / 2.5) });
     c.combat.burst('dust', at, { scale: Math.max(1, this.radius / 2) });
     if (this.look.shake) c.combat.shake.add(this.look.shake);
-    if (this.look.light) {
-      const p = this.center.clone();
-      c.combat.light(this.look.light.color, this.look.light.intensity, this.look.light.radius, () => p, 0.35);
-    }
+    if (this.look.light) c.combat.flash(this.look.light.color, this.look.light.intensity, this.look.light.radius, this.center, 0.35);
+    this.ring();
+  }
+
+  /** Landed: the telegraph goes and a ring opens. */
+  private ring(): void {
     if (this.tele) this.tele.object.visible = false;
     if (this.faller) this.faller.visible = false;
     this.burstRing = this.show(ringDecal(this.look.glow?.[0] ?? this.look.color, 0.7));
@@ -148,3 +201,4 @@ class Slam extends EffectBase {
 
 /** Delayed area hit with a telegraph decal (meteor, storm call, rain of arrows); leaps first for leap slam. */
 export const slam = (c: CastContext): CombatEffect => new Slam(c);
+export const restoreSlam = (c: CastContext, s: EffectState): CombatEffect => new Slam(c, s as SlamState);

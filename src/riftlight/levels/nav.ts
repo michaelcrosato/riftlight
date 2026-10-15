@@ -13,6 +13,14 @@ import { type Cell, FLOOR, findPath, type Layout, MinHeap, N8, WALL } from './la
  *  - `path(from, to)`: A*-style shortest path (8-connected, no corner cutting) for anything
  *    the flow field doesn't cover.
  */
+/** `LevelNav.save`: the flow field's target and counters. */
+export interface NavState {
+  readonly target: number;
+  readonly built: boolean;
+  readonly rebuilds: number;
+  readonly radius: number;
+}
+
 export class LevelNav {
   readonly width: number;
   readonly height: number;
@@ -143,6 +151,24 @@ export class LevelNav {
     out.set(cx + bx + 0.5 - x, 0, cz + bz + 0.5 - z);
     const l = out.length();
     return l > 1e-6 ? out.divideScalar(l) : out;
+  }
+
+  /**
+   * The flow field as data (save-states): its target, whether the field is up to date with it and
+   * the grid (`built`), and the counters. The field itself is made again from them.
+   */
+  save(): NavState {
+    return { target: this.target, built: this.target >= 0 && this.target === this.builtFor && this.version === this.layout.version, rebuilds: this.rebuilds, radius: this.radius };
+  }
+
+  /** Back to `save()` on the same layout (its cells as they were then): a field that was up to date is built now, one that wasn't on the next read, as before. */
+  load(s: NavState): void {
+    this.radius = s.radius;
+    this.target = s.target;
+    this.builtFor = -1;
+    this.version = -1;
+    if (s.built) this.build();
+    this.rebuilds = s.rebuilds;
   }
 
   /** Shortest walkable path between two world positions (cells), [] if none. */

@@ -254,6 +254,8 @@ export interface LevelPort {
   mechanics(): readonly MechanicInfo[];
   /** Build the level under a fresh root (buildLevel). */
   build(spec: LevelSpec, deps: LevelDeps): Promise<LevelHandle>;
+  /** Optional: what a spec plans, in a few numbers (save-states check a level fits before leaving the one on). */
+  signature?(spec: LevelSpec): string;
 }
 
 export interface LevelHandle extends StageWorld {
@@ -283,6 +285,16 @@ export interface LevelHandle extends StageWorld {
   readonly songs?: Partial<Record<'level' | 'combat' | 'boss', import('../../engine').Song>>;
   fixedUpdate(dt: number, hero: HeroPort): void;
   update(dt: number, hero: HeroPort): void;
+  /**
+   * The level as data, and back on a level built again from the same spec, random stream and
+   * id counters (save-states, docs/GAME.md): monsters spawned since are made again first.
+   * Optional: without them a level can't be in a snapshot.
+   */
+  saveState?(): unknown;
+  /** `others` loads what points into the level (the hero) once every actor exists, before the level finishes. */
+  loadState?(state: unknown, actors: ActorIndex, others?: (actors: ActorIndex) => void): void;
+  /** Any actor in the level by id (monsters, minions, props): save-states find what a state points at. */
+  actorById?(id: number): ActorLike | null;
   dispose(): void;
 }
 
@@ -384,9 +396,9 @@ export interface LootPort {
   craftingView(host: PanelHost): Panel;
   /** The skill panel: gems in the four skill slots and their supports (optional). */
   skillsView?(host: PanelHost): Panel;
-  /** The loot as data and back (save-states): a port without them can't be in a snapshot. */
+  /** The loot as data and back (save-states; loot on the ground goes back into `stage`): a port without them can't be in a snapshot. */
   saveState?(): unknown;
-  loadState?(state: unknown): void;
+  loadState?(state: unknown, stage: StageWorld): void;
   /** The game is unloaded: remove overlays and listeners (optional). */
   dispose?(): void;
 }

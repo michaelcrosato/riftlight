@@ -23,22 +23,55 @@ export class ActorManager implements ActorWorld {
   private readonly pool: Actor[][] = [];
   private dirtyOrder = false;
 
-  /** Its clock and the order actors act in, by id (save-states: their states are their owners'). */
-  save(): { time: number; depth: number; order: number[] } {
-    return { time: this.time, depth: this.depth, order: this.actors.map((a) => a.id) };
+  /**
+   * Its clock, the order actors act in and the spatial hash as it stands, by id (save-states:
+   * the actors' states are their owners'). The hash is kept as it is between rebuilds: queries
+   * made before the next step see the cells of the last one.
+   */
+  save(): ActorManagerState {
+    return {
+      time: this.time,
+      depth: this.depth,
+      order: this.actors.map((a) => a.id),
+      dirty: this.dirtyOrder,
+      cells: [...this.cells].map(([k, list]) => [k, list.map((a) => a.id)] as const),
+    };
   }
 
-  /** Back to `save()`: the clock, and the actors (all here again) in the saved order; any other is taken out, quietly. */
-  load(s: ReturnType<ActorManager['save']>): void {
-    this.time = s.time;
-    this.depth = s.depth;
+  /**
+   * Back to `save()`. Every actor of the saved order must be here again (their owners make them
+   * first, with their ids); actors that are not in it leave quietly (no `onRemove`: nothing
+   * happened to them, the world is put back to a moment without them).
+   */
+  load(s: ActorManagerState): void {
     const at = new Map(s.order.map((id, i) => [id, i]));
-    for (const a of this.actors.filter((x) => !at.has(x.id))) {
-      this.actors.splice(this.actors.indexOf(a), 1);
+    const missing = s.order.filter((id) => !this.actors.some((a) => a.id === id));
+    if (missing.length) throw new Error(`ActorManager.load: actor(s) ${missing.join(', ')} are not here (their owners make them again before the world loads)`);
+    for (let i = this.actors.length - 1; i >= 0; i--) {
+      const a = this.actors[i]!;
+      if (at.has(a.id)) continue;
+      this.actors.splice(i, 1);
       a.dispose();
     }
-    this.actors.sort((a, b) => (at.get(a.id) ?? 1e9) - (at.get(b.id) ?? 1e9));
-    this.dirtyOrder = false;
+    this.time = s.time;
+    this.depth = s.depth;
+    this.actors.sort((a, b) => at.get(a.id)! - at.get(b.id)!);
+    this.dirtyOrder = s.dirty;
+    const byId = new Map(this.actors.map((a) => [a.id, a]));
+    for (const list of this.cells.values()) {
+      list.length = 0;
+      this.pool.push(list);
+    }
+    this.cells.clear();
+    for (const [k, ids] of s.cells) {
+      const list = this.pool.pop() ?? [];
+      // (an actor removed since the last rebuild is gone for good: it is dead, and stays out)
+      for (const id of ids) {
+        const a = byId.get(id);
+        if (a) list.push(a);
+      }
+      this.cells.set(k, list);
+    }
   }
 
   constructor(
@@ -193,6 +226,15 @@ export class ActorManager implements ActorWorld {
     for (const a of [...this.actors]) this.remove(a);
     this.cells.clear();
   }
+}
+
+/** What a save-state keeps of the manager (`ActorManager.save`). */
+export interface ActorManagerState {
+  readonly time: number;
+  readonly depth: number;
+  readonly order: readonly number[];
+  readonly dirty: boolean;
+  readonly cells: readonly (readonly [number, readonly number[]])[];
 }
 
 function dist2(a: Vector3, b: Vector3): number {

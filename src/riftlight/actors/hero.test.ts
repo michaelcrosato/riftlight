@@ -3,12 +3,14 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrthographicCamera, type Object3D, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { Physics } from '../../engine/physics/Physics';
+import { decodeState, encodeState } from '../../engine/snapshot';
 import { HERO_CLIPS } from '../../game/hero';
 import { inc } from '../core/mods';
 import { Combat } from '../combat/Combat';
-import { Actor } from './Actor';
+import { Actor, actorIds, setActorIds } from './Actor';
 import { ActorManager } from './ActorManager';
 import { HeroController, type InputLike } from './HeroController';
+import { GridMover, openFloor } from './movers';
 
 // The real controller on Rapier with the real hero model (no renderer): input in, state out.
 
@@ -215,4 +217,74 @@ describe('HeroController', () => {
     expect(lifted).toBeGreaterThan(0.02); // a hop, not a pivot on planted feet
     expect(Math.abs(Math.atan2(Math.sin(model.rotation.y - aim), Math.cos(model.rotation.y - aim)))).toBeLessThan(0.05);
   });
+});
+
+describe('HeroController save-states', () => {
+  /** Press and hold whirlwind (Q) for a second, then the beam (E) while the aim sweeps: input by step. */
+  const script = (input: FakeInput & { aim: Vector3 }, t: number) => {
+    input.held.clear();
+    if (t === 10) input.press('KeyQ');
+    if (t >= 10 && t < 70) input.held.add('KeyQ');
+    if (t === 90) input.press('KeyE');
+    if (t >= 90 && t < 160) input.held.add('KeyE');
+    input.aim.set(Math.sin(t * 0.06) * 5, 0, 5);
+  };
+  /** The hero on a plain mover (no physics to keep), dummies to hit, and a restore as the game's runs it. */
+  async function fight() {
+    setActorIds(1);
+    const actors = new ActorManager();
+    const combat = new Combat({ actors });
+    const mover = new GridMover(openFloor(), [0, 0, 0], 0.35);
+    const hero = new HeroController({ combat, mover, model: await heroModel(), clips: HERO_CLIPS, at: [0, 0, 0], base: { mana: 2000, life: 900 }, slots: [null, { skill: 'whirlwind' }, { skill: 'searing-beam' }] });
+    actors.add(hero.actor);
+    const dummies = [[1.5, 1], [-1.5, 1.5], [0, 4], [3, 5]].map(([x, z]) => actors.add(new Actor({ faction: 'monster', at: [x!, 0, z!], base: { life: 1e6, 'life.regen': 0, 'move.speed': 0 } })));
+    const input = Object.assign(new FakeInput(), { aim: new Vector3() });
+    (input as InputLike).aimAt = (out: Vector3) => (out.copy(input.aim), true);
+    const camera = { camera: new OrthographicCamera(), groundBasis: () => ({ right: new Vector3(1, 0, 0), forward: new Vector3(0, 0, -1) }) };
+    let t = 0;
+    const step = (n: number) => {
+      for (let i = 0; i < n; i++, t++) {
+        script(input, t);
+        hero.fixedUpdate({ input, camera }, DT);
+        actors.fixedUpdate(DT);
+        combat.fixedUpdate(DT);
+        actors.update(DT, 1);
+        hero.update(DT);
+        combat.update(DT);
+      }
+    };
+    const save = () => ({ t, ids: actorIds(), manager: actors.save(), hc: hero.save(), mover: mover.save(), dummies: dummies.map((d) => ({ actor: d.save(), mover: (d.mover as GridMover).save() })), combat: combat.save() });
+    const load = (s: ReturnType<typeof save>) => {
+      const index = combat.index();
+      combat.make(s.combat, index);
+      hero.load(s.hc, index);
+      mover.load(s.mover);
+      dummies.forEach((d, i) => {
+        d.load(s.dummies[i]!.actor, index);
+        (d.mover as GridMover).load(s.dummies[i]!.mover);
+      });
+      actors.load(s.manager);
+      combat.load(s.combat, index);
+      setActorIds(s.ids);
+      t = s.t;
+    };
+    const look = () => ({ hero: hero.actor.position.toArray(), facing: hero.actor.facing, mana: hero.actor.mana, life: dummies.map((d) => d.life), effects: combat.effects.map((e) => `${e.kind}:${e.skill}`) });
+    return { step, save, load, look, time: () => t };
+  }
+
+  it('a channel held and a beam aimed through a restore follow the keys and the aim after it', async () => {
+    const a = await fight();
+    for (const [at, kind] of [[40, 'nova:whirlwind'], [120, 'beam:searing-beam']] as const) {
+      a.step(at - a.time());
+      expect(a.look().effects).toContain(kind);
+      const s = decodeState(JSON.parse(JSON.stringify(encodeState(a.save())))) as ReturnType<typeof a.save>;
+      a.step(45);
+      const b = await fight();
+      b.step(7); // busy with its own moment first
+      b.load(s);
+      b.step(45);
+      expect(b.look(), `${kind}, 45 steps after a restore`).toEqual(a.look());
+      expect(encodeState(b.save().combat)).toEqual(encodeState(a.save().combat));
+    }
+  }, 60_000);
 });

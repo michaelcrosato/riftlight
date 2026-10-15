@@ -4,7 +4,7 @@ import type { ActorLike } from '../../core/types';
 import type { LightHandle } from '../../../engine/render/lights';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, heroScale, mechanicDamage, mesh, monsterScaleDamage, perRoom, slotOrFree } from './common';
+import { asMechanicLevel, box, heroScale, mechanicDamage, mesh, monsterScaleDamage, perRoom, sameCount, slotOrFree } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -74,24 +74,28 @@ export const BLOODMOON: LevelMechanicDef = {
       chain: number;
     }
     const blasts: Blast[] = [];
-    let lastBlast = { at: new Vector3(), time: -10, chain: 0 };
-    let pactUntil = -1;
-    let heroBlasts: number[] = [];
-    const off = level.events.on('kill', ({ target, rank }) => {
-      if (target.faction !== 'monster' || rank === 'boss') return;
-      const t = level.time();
-      const near = t - lastBlast.time < 0.35 && target.position.distanceTo(lastBlast.at) < RADIUS + 1.5;
-      const ring = mesh(ringGeo, ringMat, target.position.x, 0.04, target.position.z, RADIUS);
+    const st = { lastBlast: { at: new Vector3(), time: -10, chain: 0 }, pactUntil: -1, heroBlasts: [] as number[] };
+    /** The red ring that telegraphs a corpse's blast. */
+    const makeRing = (at: Vector3) => {
+      const ring = mesh(ringGeo, ringMat, at.x, 0.04, at.z, RADIUS);
       ring.castShadow = false;
       ring.name = 'bloodmoon:ring';
       level.root.add(ring);
-      blasts.push({ at: target.position.clone(), due: t + FUSE, ring, chain: near ? lastBlast.chain + 1 : 0 });
+      return ring;
+    };
+    const off = level.events.on('kill', ({ target, rank }) => {
+      if (target.faction !== 'monster' || rank === 'boss') return;
+      const t = level.time();
+      const last = st.lastBlast;
+      const near = t - last.time < 0.35 && target.position.distanceTo(last.at) < RADIUS + 1.5;
+      const ring = makeRing(target.position);
+      blasts.push({ at: target.position.clone(), due: t + FUSE, ring, chain: near ? last.chain + 1 : 0 });
     });
     const explode = (b: Blast) => {
       b.ring.removeFromParent();
       const t = level.time();
-      lastBlast = { at: b.at, time: t, chain: b.chain };
-      const pact = t < pactUntil;
+      st.lastBlast = { at: b.at, time: t, chain: b.chain };
+      const pact = t < st.pactUntil;
       for (const a of level.actors()) {
         if (!a.alive) continue;
         if (Math.hypot(a.position.x - b.at.x, a.position.z - b.at.z) > RADIUS + a.radius) continue;
@@ -100,9 +104,9 @@ export const BLOODMOON: LevelMechanicDef = {
             heal(a, 0.04);
             continue;
           }
-          heroBlasts = heroBlasts.filter((at) => t - at < STACK_WINDOW);
-          heroBlasts.push(t);
-          level.damage(a, { physical: mechanicDamage(depth, 16) / heroBlasts.length }, 'bloodmoon', { knockback: 6, from: b.at });
+          st.heroBlasts = st.heroBlasts.filter((at) => t - at < STACK_WINDOW);
+          st.heroBlasts.push(t);
+          level.damage(a, { physical: mechanicDamage(depth, 16) / st.heroBlasts.length }, 'bloodmoon', { knockback: 6, from: b.at });
         // `explosion.damage` (Bloodmoon Chalice, the Volatile prefix) feeds the chain
         } else level.damage(a, { physical: monsterScaleDamage(depth, 30) * (1 + 0.2 * b.chain) * heroScale(level.hero(), 'explosion.damage') }, 'bloodmoon', { knockback: 6, from: b.at, ailments: { bleed: 0.5 } });
       }
@@ -135,12 +139,43 @@ export const BLOODMOON: LevelMechanicDef = {
             al.used = true;
             al.pool.visible = false;
             al.light?.update({ intensity: 0.8 });
-            pactUntil = t + PACT;
+            st.pactUntil = t + PACT;
             level.buff(hero, 'mechanic:bloodmoon:pact', [inc('damage', 0.2), inc('life.onKill', 0.02)], PACT);
             level.burst('blood', al.at, { count: 16 });
             level.sound('shrine');
             level.emit('bloodmoon', 'pact', al.at);
           }
+      },
+      save() {
+        const l = st.lastBlast;
+        return {
+          blasts: blasts.map((b) => ({ at: b.at.toArray(), due: b.due, chain: b.chain, shown: b.ring.visible })),
+          lastBlast: { at: l.at.toArray(), time: l.time, chain: l.chain },
+          pactUntil: st.pactUntil,
+          heroBlasts: [...st.heroBlasts],
+          used: altars.map((a) => a.used),
+        };
+      },
+      load(raw) {
+        type V = [number, number, number];
+        const s = raw as { blasts: { at: V; due: number; chain: number; shown: boolean }[]; lastBlast: { at: V; time: number; chain: number }; pactUntil: number; heroBlasts: number[]; used: boolean[] };
+        sameCount('bloodmoon: altars', s.used, altars);
+        for (const b of blasts) b.ring.removeFromParent();
+        blasts.length = 0;
+        for (const x of s.blasts) {
+          const at = new Vector3().fromArray(x.at);
+          const ring = makeRing(at);
+          ring.visible = x.shown;
+          blasts.push({ at, due: x.due, ring, chain: x.chain });
+        }
+        st.lastBlast = { at: new Vector3().fromArray(s.lastBlast.at), time: s.lastBlast.time, chain: s.lastBlast.chain };
+        st.pactUntil = s.pactUntil;
+        st.heroBlasts = [...s.heroBlasts];
+        altars.forEach((al, i) => {
+          al.used = s.used[i]!;
+          al.pool.visible = !al.used;
+          al.light?.update({ intensity: al.used ? 0.8 : 3 });
+        });
       },
       dispose() {
         off();

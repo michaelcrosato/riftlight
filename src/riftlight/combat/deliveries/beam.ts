@@ -1,9 +1,19 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import type { Actor } from '../../actors/Actor';
+import type { Vec } from '../../core/saved';
 import { beamMesh } from '../visuals';
 import { payChannel } from './nova';
 import { FLY_HEIGHT, segmentDistance } from './projectile';
-import { EffectBase, type CastContext, type CombatEffect } from './types';
+import { EffectBase, type CastContext, type CombatEffect, type EffectState, vec } from './types';
+
+/** A beam as data: its clock, ticks so far and the segment it last aimed. */
+interface BeamState extends EffectState {
+  readonly age: number;
+  readonly ticks: number;
+  readonly dir: Vec;
+  readonly from: Vec;
+  readonly to: Vec;
+}
 
 class Beam extends EffectBase {
   readonly kind = 'beam';
@@ -19,7 +29,7 @@ class Beam extends EffectBase {
   private readonly look = this.c.skill.def.look;
   private readonly near: Actor[] = [];
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, saved?: BeamState) {
     super(c);
     const d = c.skill.delivery;
     if (d.kind !== 'beam') throw new Error('beam delivery on a non-beam skill');
@@ -29,12 +39,22 @@ class Beam extends EffectBase {
     this.dir.copy(c.dir);
     this.outer = this.show(beamMesh(this.look.color));
     this.inner = this.show(beamMesh(this.look.glow?.[0] ?? 'white'));
-    this.aim();
+    if (saved) {
+      this.age = saved.age;
+      this.ticks = saved.ticks;
+      this.dir.fromArray(saved.dir);
+      this.from.fromArray(saved.from);
+      this.to.fromArray(saved.to);
+    } else this.aim();
     if (this.look.light) {
       const l = this.look.light;
       c.combat.light(l.color, l.intensity, l.radius, () => this.to, 0, () => this.visuals.length > 0);
     }
-    this.pulse();
+    if (!saved) this.pulse();
+  }
+
+  save(): BeamState {
+    return { ...this.saved(), age: this.age, ticks: this.ticks, dir: vec(this.dir), from: vec(this.from), to: vec(this.to) };
   }
 
   /** Recompute the segment from the caster's hand toward the (live) aim, stopped by walls. */
@@ -94,3 +114,4 @@ class Beam extends EffectBase {
 
 /** A channelled line from the caster toward the cursor that hits everything along it every tick. */
 export const beam = (c: CastContext): CombatEffect => new Beam(c);
+export const restoreBeam = (c: CastContext, s: EffectState): CombatEffect => new Beam(c, s as BeamState);

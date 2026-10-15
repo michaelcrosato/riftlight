@@ -4,7 +4,7 @@ import { setLookLayer } from '../../../engine/render/lookLayer';
 import { toonMaterial } from '../../../engine/render/toon';
 import { FLOOR, VOID } from '../layout/grid';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, centroid, growBlob, heroScale } from './common';
+import { asMechanicLevel, box, cellIndexOf, centroid, growBlob, heroScale, sameCount } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -116,6 +116,7 @@ export const COLLAPSE: LevelMechanicDef = {
 
     // Loot caches on islands.
     const cacheMat = glowMaterial(0xffcd75);
+    const cacheLight = (x: number, z: number): LightHandle | null => level.light({ position: [x, 1, z], color: 0xffcd75, intensity: 3, radius: 4, flicker: 'pulse', priority: 2, name: 'cache' });
     const caches = zones
       .filter((z) => (z.data.cache as number) >= 0)
       .map((z) => {
@@ -128,11 +129,11 @@ export const COLLAPSE: LevelMechanicDef = {
         setLookLayer(chest, 'actors');
         setLookLayer(lid, 'actors');
         level.root.add(chest, lid);
-        return { cell: c, at: new Vector3(x, 0, zz), parts: [chest, lid], taken: false, light: level.light({ position: [x, 1, zz], color: 0xffcd75, intensity: 3, radius: 4, flicker: 'pulse', priority: 2, name: 'cache' }) as LightHandle | null };
+        return { cell: c, at: new Vector3(x, 0, zz), parts: [chest, lid], taken: false, light: cacheLight(x, zz) };
       });
 
-    let lastCell = -1;
-    let rumble = 0;
+    /** The cell the hero stood on at the last update; seconds until the next rumble may sound. */
+    const st = { lastCell: -1, rumble: 0 };
     const offClear = level.events.on('levelClear', ({ time }) => {
       const par = 30 + level.layout.path.length * 0.75;
       const hero = level.hero();
@@ -147,9 +148,9 @@ export const COLLAPSE: LevelMechanicDef = {
         const hero = level.hero();
         if (hero) {
           const c = cellIndexOf(level.layout, hero.position);
-          if (c !== lastCell) {
+          if (c !== st.lastCell) {
             // The tile the hero just left (and the one it stands on) start to go.
-            for (const cell of [lastCell, c]) {
+            for (const cell of [st.lastCell, c]) {
               const k = index.get(cell);
               if (k === undefined) continue;
               startCrack(k, 0);
@@ -162,7 +163,7 @@ export const COLLAPSE: LevelMechanicDef = {
                   if (n !== undefined) startCrack(n, SPREAD * (Math.abs(dx) + Math.abs(dz)));
                 }
             }
-            lastCell = c;
+            st.lastCell = c;
           }
           for (const cache of caches) {
             if (cache.taken || Math.hypot(hero.position.x - cache.at.x, hero.position.z - cache.at.z) > 0.9) continue;
@@ -175,7 +176,7 @@ export const COLLAPSE: LevelMechanicDef = {
             level.emit('collapse', 'cache', cache.at);
           }
         }
-        rumble -= dt;
+        st.rumble -= dt;
         let dirty = false;
         for (let k = 0; k < cells.length; k++) {
           const s = state[k]!;
@@ -207,8 +208,8 @@ export const COLLAPSE: LevelMechanicDef = {
               state[k] = 2;
               level.setCell(x, z, VOID);
               for (const cache of caches) if (cache.cell === c && !cache.taken) for (const p of cache.parts) p.visible = false;
-              if (rumble <= 0) {
-                rumble = 0.15;
+              if (st.rumble <= 0) {
+                st.rumble = 0.15;
                 level.burst('crumble', tmp.set(x + 0.5, 0, z + 0.5));
                 if (hero && hero.position.distanceTo(tmp) < 12) level.sound('crumble', { volume: 0.6 });
                 level.emit('collapse', 'crumble', tmp.clone());
@@ -223,6 +224,59 @@ export const COLLAPSE: LevelMechanicDef = {
           }
         }
         if (dirty) tiles.instanceMatrix.needsUpdate = cracks.instanceMatrix.needsUpdate = true;
+      },
+      save() {
+        // tiles that moved off where the level built them: [index, state, crack, fall, gone, x, y, z]
+        // (x, y, z: where a cracking or falling tile is drawn now, shake included)
+        const moved: number[][] = [];
+        for (let k = 0; k < cells.length; k++) {
+          if (state[k] === 0 && crackAt[k] === -1 && fallY[k] === 0 && goneFor[k] === 0) continue;
+          tiles.getMatrixAt(k, m);
+          const e = m.elements;
+          moved.push([k, state[k]!, crackAt[k]!, fallY[k]!, goneFor[k]!, e[12]!, e[13]!, e[14]!]);
+        }
+        return { lastCell: st.lastCell, rumble: st.rumble, tiles: moved, caches: caches.map((c) => ({ taken: c.taken, shown: c.parts[0]!.visible })) };
+      },
+      load(raw) {
+        const s = raw as { lastCell: number; rumble: number; tiles: number[][]; caches: { taken: boolean; shown: boolean }[] };
+        sameCount('collapse: caches', s.caches, caches);
+        st.lastCell = s.lastCell;
+        st.rumble = s.rumble;
+        state.fill(0);
+        crackAt.fill(-1);
+        fallY.fill(0);
+        goneFor.fill(0);
+        const at = new Map<number, readonly number[]>();
+        for (const t of s.tiles) {
+          const k = t[0]!;
+          if (k < 0 || k >= cells.length) throw new Error(`collapse: tile ${k} saved, ${cells.length} built (not the same level)`);
+          state[k] = t[1]!;
+          crackAt[k] = t[2]!;
+          fallY[k] = t[3]!;
+          goneFor[k] = t[4]!;
+          at.set(k, t);
+        }
+        for (let k = 0; k < cells.length; k++) {
+          const c = cells[k]!;
+          const x = c % W;
+          const z = (c - x) / W;
+          const t = at.get(k);
+          if (state[k] === 3) place(k, m.makeScale(0, 0, 0));
+          else if (t && state[k] !== 0) place(k, m.makeTranslation(t[5]!, t[6]!, t[7]!));
+          else place(k, m.makeTranslation(x + 0.5, 0, z + 0.5));
+          // falling or gone tiles are void, the rest floor (nav and walkability follow)
+          level.setCell(x, z, state[k]! >= 2 ? VOID : FLOOR);
+        }
+        tiles.instanceMatrix.needsUpdate = cracks.instanceMatrix.needsUpdate = true;
+        caches.forEach((cache, i) => {
+          const c = s.caches[i]!;
+          if (c.taken && !cache.taken) {
+            cache.light?.release();
+            cache.light = null;
+          } else if (!c.taken && cache.taken) cache.light = cacheLight(cache.at.x, cache.at.z);
+          cache.taken = c.taken;
+          for (const p of cache.parts) p.visible = c.shown;
+        });
       },
       dispose() {
         offClear();

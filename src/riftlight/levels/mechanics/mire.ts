@@ -1,10 +1,9 @@
 import { type Mesh, Vector3 } from 'three/webgpu';
 import { inc } from '../../core/mods';
-import type { ActorLike } from '../../core/types';
 import { mergeStaticMeshes } from '../../../engine/render/merge';
 import { toonMaterial } from '../../../engine/render/toon';
 import { glowMaterial, tint } from '../themes/props';
-import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroHas, heroScale } from './common';
+import { asMechanicLevel, box, cellIndexOf, cellSet, cellTiles, centroid, growBlob, heroHas, heroScale, refill, sameCount } from './common';
 import type { LevelMechanicDef } from './types';
 
 /**
@@ -87,10 +86,9 @@ export const MIRE: LevelMechanicDef = {
         return { at: new Vector3(e.x, 0, e.z), rune, light, recharge: 0 };
       });
 
-    const tracked = new WeakSet<ActorLike>();
-    let chain = 0;
-    let hasteUntil = 0;
-    let bubble = 0;
+    /** Actors (by id) that got the `mechanic:mire` source. */
+    const tracked = new Set<number>();
+    const st = { chain: 0, hasteUntil: 0, bubble: 0 };
     return {
       update(dt) {
         const t = level.time();
@@ -105,9 +103,10 @@ export const MIRE: LevelMechanicDef = {
             continue;
           }
           if (!hero || Math.hypot(hero.position.x - p.at.x, hero.position.z - p.at.z) > 0.9) continue;
-          chain = t < hasteUntil ? chain + 1 : 0;
+          st.chain = t < st.hasteUntil ? st.chain + 1 : 0;
+          const chain = st.chain;
           const last = (HASTE + chain) * heroScale(hero, 'haste.duration');
-          hasteUntil = t + last;
+          st.hasteUntil = t + last;
           p.recharge = RECHARGE;
           p.rune.visible = false;
           p.light?.update({ intensity: 0 });
@@ -116,9 +115,9 @@ export const MIRE: LevelMechanicDef = {
           level.sound('haste', { pitch: Math.min(chain, 7) });
           level.emit('mire', chain ? 'hasteChain' : 'haste', p.at);
         }
-        bubble -= dt;
-        if (bubble <= 0 && hero && mud.size) {
-          bubble = 0.3;
+        st.bubble -= dt;
+        if (st.bubble <= 0 && hero && mud.size) {
+          st.bubble = 0.3;
           const cells = [...mud.keys()];
           const i = cells[level.rng.int(0, cells.length - 1)]!;
           const x = (i % level.layout.width) + 0.5;
@@ -127,12 +126,28 @@ export const MIRE: LevelMechanicDef = {
         }
       },
       affect(actor) {
-        if (!tracked.has(actor)) {
-          tracked.add(actor);
+        if (!tracked.has(actor.id)) {
+          tracked.add(actor.id);
           actor.stats.set('mechanic:mire', [inc('move.speed', -0.45, undefined, 'inMud')]);
         }
         const i = cellIndexOf(level.layout, actor.position);
         actor.stats.setCondition('inMud', i >= 0 && mud.has(i) && !(actor.faction === 'hero' && heroHas(actor, 'mire.immune')));
+      },
+      save() {
+        return { ...st, recharge: pads.map((p) => p.recharge), tracked: [...tracked] };
+      },
+      load(raw) {
+        const s = raw as typeof st & { recharge: number[]; tracked: number[] };
+        sameCount('mire: haste pads', s.recharge, pads);
+        st.chain = s.chain;
+        st.hasteUntil = s.hasteUntil;
+        st.bubble = s.bubble;
+        pads.forEach((p, i) => {
+          p.recharge = s.recharge[i]!;
+          p.rune.visible = !(p.recharge > 0);
+          p.light?.update({ intensity: p.recharge > 0 ? 0 : 1.8 });
+        });
+        refill(tracked, s.tracked);
       },
       dispose() {
         for (const p of pads) p.light?.release();

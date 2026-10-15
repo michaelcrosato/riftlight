@@ -1,9 +1,10 @@
 import { type Object3D, Vector3 } from 'three/webgpu';
 import type { LightHandle, LightPool as EngineLightPool } from '../../engine/render/lights';
 import { Actor } from '../actors/Actor';
-import { ActorManager } from '../actors/ActorManager';
+import { ActorManager, type ActorManagerState } from '../actors/ActorManager';
 import { GridMover } from '../actors/movers';
-import { Combat, type WallQuery } from '../combat/Combat';
+import { Combat, type CombatState, type WallQuery } from '../combat/Combat';
+import type { ActorIndex } from '../core/saved';
 import type { ActorLike, Hit, HitResult, LightRequest } from '../core/types';
 import type { ShellServices, StageWorld } from '../game/ports';
 
@@ -34,6 +35,12 @@ export interface CombatWorldOptions {
   readonly wall?: WallQuery;
 }
 
+/** A stage's combat world as data (`CombatWorld.save`). */
+export interface CombatWorldState {
+  readonly actors: ActorManagerState;
+  readonly combat: CombatState;
+}
+
 export class CombatWorld {
   readonly actors: ActorManager;
   readonly combat: Combat;
@@ -46,14 +53,40 @@ export class CombatWorld {
   private readonly tmp = new Vector3();
   private disposed = false;
 
-  /** Its actors' clock and order and its combat (save-states); the actors' own states are their owners'. */
-  save(): { actors: ReturnType<ActorManager['save']>; combat: ReturnType<Combat['save']> } {
+  /**
+   * Its actors' clock, order and hash, and its combat (save-states: `CombatState`, with the
+   * minions, totems and trap stand-ins combat made). The other actors' states are their owners'.
+   */
+  save(): CombatWorldState {
     return { actors: this.actors.save(), combat: this.combat.save() };
   }
 
-  load(s: ReturnType<CombatWorld['save']>): void {
+  /**
+   * First half of a restore, once the stage rebuilt its own actors: combat's own come back with
+   * their ids (`Combat.make`). Then build the `ActorIndex` with `index()`, load every other
+   * actor's state through it, and `load` last.
+   */
+  make(s: CombatWorldState, actors?: ActorIndex): void {
+    this.combat.make(s.combat, actors ?? this.index());
+  }
+
+  /** Every actor of this world by id, and combat's own outside it (trap stand-ins, ghosts). */
+  index(): ActorIndex {
+    return this.combat.index();
+  }
+
+  /**
+   * Back to `save()`, after every other actor loaded: combat's own actors made first if `make`
+   * was not called, the actors that are not in the state leave, the order and hash, then combat
+   * (what ran goes quietly; its lights are let go and asked for again by what is restored).
+   */
+  load(s: CombatWorldState, actors?: ActorIndex): void {
+    const index = actors ?? this.index();
+    this.combat.make(s.combat, index);
     this.actors.load(s.actors);
-    this.combat.load(s.combat);
+    for (const c of this.claims) c.handle.release();
+    this.claims.length = 0;
+    this.combat.load(s.combat, index);
   }
 
   constructor(o: CombatWorldOptions) {

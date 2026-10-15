@@ -3,10 +3,11 @@ import { PALETTE } from '../../engine/palette';
 import { toonMaterial } from '../../engine/render/toon';
 import { type Mod, override, type StatSheet } from '../core/mods';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
+import { saveSkill } from '../skills/saved';
 import type { ResolvedSkill } from '../skills/types';
 import type { Combat } from './Combat';
 import { AIM_RANGE } from './deliveries/slam';
-import { EffectBase, type CastContext } from './deliveries/types';
+import { EffectBase, type CastContext, type EffectState, vec } from './deliveries/types';
 import { StatQuery } from './stats';
 import { glow, ringDecal } from './visuals';
 
@@ -137,6 +138,8 @@ export class TotemBrain implements Brain {
   /** Seconds since the last cast (the nod). */
   sinceCast = 9;
   casts = 0;
+  /** Seconds it has stood (it rises out of the ground; its ring turns). */
+  shown = 0;
   private readonly range: number;
 
   constructor(
@@ -159,6 +162,67 @@ export class TotemBrain implements Brain {
     this.casts++;
     this.combat.cast(a, this.skill, target.position.clone());
   }
+
+  /** Its timers as data (save-states); the skill is the totem's, made again with it. */
+  save(): { cooldown: number; sinceCast: number; casts: number; shown: number } {
+    return { cooldown: this.cooldown, sinceCast: this.sinceCast, casts: this.casts, shown: this.shown };
+  }
+
+  load(s: ReturnType<TotemBrain['save']>): void {
+    this.cooldown = s.cooldown;
+    this.sinceCast = s.sinceCast;
+    this.casts = s.casts;
+    this.shown = s.shown;
+  }
+}
+
+/**
+ * The totem's actor, planted at `at` for `owner` by the totem-supported `skill` (at game time
+ * `time`): a snapshot of the owner's sheet, its brain, its look. A restore makes it again the
+ * same way (`Combat.make`), then loads its state over it.
+ */
+export function totemActor(combat: Combat, owner: Actor, skill: ResolvedSkill, at: Vector3, time: number): Actor {
+  const inner = skill.inner!;
+  const body = totemBody(inner);
+  const actor = new Actor({
+    faction: owner.faction,
+    name: `${inner.def.name} totem`,
+    mods: {
+      ...snapshot(owner.stats),
+      totem: [override('life', totemLife(owner, skill)), override('es', 0), override('mana', 0), override('life.regen', 0), override('life.regen.pct', 0), override('move.speed', 0), override('mass', 1000)],
+    },
+    level: owner.level,
+    body: body.root,
+    at: [at.x, at.y, at.z],
+    order: 1,
+    radius: 0.42,
+    tags: ['totem', inner.id],
+    death: 'ragdoll',
+    seed: `totem:${owner.id}:${inner.id}:${time.toFixed(3)}`,
+  });
+  actor.owner = owner;
+  actor.facing = owner.facing;
+  const brain = new TotemBrain(combat, inner);
+  actor.brain = brain;
+  // rises out of the ground, nods and flashes its eyes on every cast
+  actor.animate = (_a, dt) => {
+    const t = (brain.shown += dt);
+    const rise = Math.min(1, t / 0.25);
+    body.root.scale.set(1, 0.3 + 0.7 * rise, 1);
+    const nod = Math.max(0, 1 - brain.sinceCast / 0.25);
+    body.face.rotation.x = nod * 0.35;
+    body.face.position.z = nod * 0.06;
+    for (const e of body.eyes) e.scale.setScalar(1 + nod * 0.8);
+    body.ring.rotation.y = t * 1.2;
+    body.ring.scale.setScalar(0.7 * (1 + 0.06 * Math.sin(t * 4)));
+  };
+  return actor;
+}
+
+/** A totem as data: its actor (made again by `Combat.make`) and when it crumbles. */
+interface TotemState extends EffectState {
+  readonly actor: number;
+  readonly expires: number;
 }
 
 /** A planted totem: lives while its actor stands (the CombatEffect side keeps the count and lifetime). */
@@ -168,10 +232,19 @@ export class TotemEffect extends EffectBase {
   readonly brain: TotemBrain;
   readonly expires: number;
 
-  constructor(c: CastContext) {
+  constructor(c: CastContext, from?: TotemState) {
     super(c);
     const inner = c.skill.inner!;
     const { combat, caster } = c;
+    if (from) {
+      const actor = combat.find(from.actor);
+      if (!actor || !(actor.brain instanceof TotemBrain)) throw new Error(`TotemEffect: totem ${from.actor} is not there to restore`);
+      this.actor = actor;
+      this.brain = actor.brain;
+      this.expires = from.expires;
+      this.lightUp();
+      return;
+    }
     // the oldest totems make way
     const mine = combat.effects.filter((e): e is TotemEffect => e instanceof TotemEffect && e.caster === caster && e.actor.alive);
     for (let i = 0; i <= mine.length - totemLimit(caster.stats); i++) mine[i]!.actor.die(null);
@@ -180,48 +253,26 @@ export class TotemEffect extends EffectBase {
     const at = new Vector3(p.x + c.dir.x * Math.max(1.2, d), p.y, p.z + c.dir.z * Math.max(1.2, d));
     const wall = combat.wall(new Vector3(p.x, p.y + 0.5, p.z), new Vector3(at.x, p.y + 0.5, at.z));
     if (wall !== null) at.set(p.x + (at.x - p.x) * wall * 0.8, p.y, p.z + (at.z - p.z) * wall * 0.8);
-    const body = totemBody(inner);
-    const life = totemLife(caster, c.skill);
-    const actor = new Actor({
-      faction: caster.faction,
-      name: `${inner.def.name} totem`,
-      mods: {
-        ...snapshot(caster.stats),
-        totem: [override('life', life), override('es', 0), override('mana', 0), override('life.regen', 0), override('life.regen.pct', 0), override('move.speed', 0), override('mass', 1000)],
-      },
-      level: caster.level,
-      body: body.root,
-      at: [at.x, at.y, at.z],
-      order: 1,
-      radius: 0.42,
-      tags: ['totem', inner.id],
-      death: 'ragdoll',
-      seed: `totem:${caster.id}:${inner.id}:${combat.time.toFixed(3)}`,
-    });
-    actor.owner = caster;
-    actor.facing = caster.facing;
-    this.brain = new TotemBrain(combat, inner);
-    actor.brain = this.brain;
-    // rises out of the ground, nods and flashes its eyes on every cast
-    let t = 0;
-    actor.animate = (_a, dt) => {
-      t += dt;
-      const rise = Math.min(1, t / 0.25);
-      body.root.scale.set(1, 0.3 + 0.7 * rise, 1);
-      const nod = Math.max(0, 1 - this.brain.sinceCast / 0.25);
-      body.face.rotation.x = nod * 0.35;
-      body.face.position.z = nod * 0.06;
-      for (const e of body.eyes) e.scale.setScalar(1 + nod * 0.8);
-      body.ring.rotation.y = t * 1.2;
-      body.ring.scale.setScalar(0.7 * (1 + 0.06 * Math.sin(t * 4)));
-    };
+    const actor = totemActor(combat, caster, c.skill, at, combat.time);
+    combat.adopt(actor, { kind: 'totem', owner: caster.id, skill: saveSkill(c.skill), at: vec(at), time: combat.time });
     combat.actors.add(actor);
     this.actor = actor;
+    this.brain = actor.brain as TotemBrain;
     this.expires = combat.time + TOTEM_TUNING.duration * Math.max(0.1, inner.duration);
     combat.burst('impact', new Vector3(at.x, at.y + 0.2, at.z), { count: 10 });
     combat.play('explode', { pitch: -6, volume: 0.5 });
-    const look = inner.def.look;
-    if (look.light) combat.light(look.light.color, Math.min(2.5, look.light.intensity * 0.4), 3, () => actor.position, 0, () => actor.alive);
+    this.lightUp();
+  }
+
+  /** Its glow while it stands. */
+  private lightUp(): void {
+    const look = this.c.skill.inner!.def.look;
+    const actor = this.actor;
+    if (look.light && actor.alive) this.c.combat.light(look.light.color, Math.min(2.5, look.light.intensity * 0.4), 3, () => actor.position, 0, () => actor.alive);
+  }
+
+  save(): TotemState {
+    return { ...this.saved(), actor: this.actor.id, expires: this.expires };
   }
 
   step(): boolean {
@@ -242,3 +293,4 @@ export class TotemEffect extends EffectBase {
 
 /** Plant a totem for a totem-supported skill (`skill.placement === 'totem'`). */
 export const placeTotem = (c: CastContext): TotemEffect => new TotemEffect(c);
+export const restoreTotem = (c: CastContext, s: EffectState): TotemEffect => new TotemEffect(c, s as TotemState);

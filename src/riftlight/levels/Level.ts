@@ -9,15 +9,16 @@ import { setLookLayer } from '../../engine/render/lookLayer';
 import { toonMaterial } from '../../engine/render/toon';
 import type { Mod } from '../core/mods';
 import { Rng } from '../core/rng';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
 import { type Rank, SCALING } from '../core/scaling';
-import type { ActorLike, DamageType, GameEventBus, Hit, HitResult, LevelSpec, MechanicRuntime } from '../core/types';
+import type { ActorLike, DamageType, GameEventBus, Hit, HitResult, LevelSpec } from '../core/types';
 import { LEVEL_PARTICLES, LEVEL_SOUNDS } from './fx';
 import { buildGeometry, type LevelGeometry } from './layout/geometry';
 import { FLOOR, type Layout, VOID } from './layout/grid';
 import { MECHANICS } from './mechanics';
-import { box, OctaGeo, mesh } from './mechanics/common';
-import type { LevelEnv, LevelHooks, LevelMechanicDef, MechanicElement, MechanicLevel, MonsterSpawn } from './mechanics/types';
-import { LevelNav } from './nav';
+import { box, OctaGeo, mesh, PropTarget, type PropTargetState } from './mechanics/common';
+import type { LevelEnv, LevelHooks, LevelMechanicDef, LevelMechanicRuntime, MechanicElement, MechanicLevel, MechanicState, MonsterSpawn } from './mechanics/types';
+import { LevelNav, type NavState } from './nav';
 import { type Feature, type Pack, type LevelPlan, planLevel, SHRINES } from './plan';
 import { glowMaterial, tint } from './themes/props';
 import type { LevelTheme } from './themes/themes';
@@ -65,6 +66,40 @@ export interface MinimapData {
   readonly explored: Uint8Array;
 }
 
+/**
+ * A level's runtime as data (`Level.save`, save-states): everything that changed since it was
+ * built. The rest (layout, geometry, props, the mechanics' elements) comes back by building the
+ * level again from its spec with the same id counters; `load` puts this on top.
+ */
+export interface LevelState {
+  readonly time: number;
+  readonly cleared: boolean;
+  readonly exited: boolean;
+  readonly portalOpen: boolean;
+  readonly boss: ActorRef;
+  /** Per pack (plan order): spawned yet, and its actors (dead ones too) by id. */
+  readonly encounters: readonly { readonly spawned: boolean; readonly actors: readonly ActorRef[] }[];
+  /** Rank of each spawned monster (`kill` events of mechanic deaths carry it). */
+  readonly ranks: readonly (readonly [number, Rank])[];
+  /** Timed stat sources: [actor, source, until] in the order they were set (the sources themselves are on the actor's sheet). */
+  readonly buffs: readonly (readonly [ActorRef, string, number])[];
+  /** Chests and shrines opened, by index in `features`, in the order they opened. */
+  readonly opened: readonly number[];
+  readonly lastSafe: Vec;
+  readonly revealTimer: number;
+  /** Explored minimap cells as runs: start, length, start, length… */
+  readonly explored: readonly number[];
+  readonly env: Readonly<LevelEnv>;
+  /** The runtime's and the mechanics' random streams. */
+  readonly rng: number;
+  readonly mechanicsRng: number;
+  readonly nav: NavState;
+  readonly layoutVersion: number;
+  /** Hittable props (braziers, pylons) in `targets()` order. */
+  readonly targets: readonly PropTargetState[];
+  readonly mechanics: readonly { readonly id: string; readonly state: MechanicState }[];
+}
+
 export interface Level {
   readonly spec: LevelSpec;
   readonly plan: LevelPlan;
@@ -73,7 +108,7 @@ export interface Level {
   readonly root: Group;
   readonly nav: LevelNav;
   readonly geometry: LevelGeometry;
-  readonly mechanics: readonly { readonly def: LevelMechanicDef; readonly runtime: MechanicRuntime }[];
+  readonly mechanics: readonly { readonly def: LevelMechanicDef; readonly runtime: LevelMechanicRuntime }[];
   readonly encounters: readonly Encounter[];
   readonly features: readonly Feature[];
   /** Hero start and the exit (world, on the floor). */
@@ -97,6 +132,14 @@ export interface Level {
   raycastWalls(from: { x: number; z: number }, dir: { x: number; z: number }, max: number): number | null;
   fixedUpdate(dt: number): void;
   update(dt: number): void;
+  /** Everything that changed since the build, as plain data (save-states). Refused, saying why, for a level it can't keep. */
+  save(): LevelState;
+  /**
+   * Back to `save()`'s moment, on this level built again the same way (the same spec, the same
+   * id counters at the build): whatever it is now (fresh, or played on) is replaced. Actors it
+   * points at are found through `actors` (or are its own encounters' by id). Visuals follow.
+   */
+  load(state: LevelState, actors: ActorIndex): void;
   dispose(): void;
 }
 
@@ -112,6 +155,23 @@ export function buildLevelFromPlan(plan: LevelPlan, ctx: LevelContext, hooks: Le
 
 const tmpColor = new Color();
 
+/** Set cells of a 0/1 grid as runs: start, length, start, length… (save-states: the explored map). */
+function runsOf(cells: Uint8Array): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < cells.length; i++) {
+    if (!cells[i]) continue;
+    const start = i;
+    while (i < cells.length && cells[i]) i++;
+    out.push(start, i - start);
+  }
+  return out;
+}
+
+function fillRuns(cells: Uint8Array, runs: readonly number[]): void {
+  cells.fill(0);
+  for (let k = 0; k + 1 < runs.length; k += 2) cells.fill(1, runs[k], runs[k]! + runs[k + 1]!);
+}
+
 class LevelRuntime implements Level {
   readonly spec: LevelSpec;
   readonly theme: LevelTheme;
@@ -119,7 +179,7 @@ class LevelRuntime implements Level {
   readonly root = new Group();
   readonly nav: LevelNav;
   readonly geometry: LevelGeometry;
-  readonly mechanics: { def: LevelMechanicDef; runtime: MechanicRuntime }[] = [];
+  readonly mechanics: { def: LevelMechanicDef; runtime: LevelMechanicRuntime }[] = [];
   readonly encounters: Encounter[];
   readonly features: Feature[];
   readonly start: Vector3;
@@ -132,7 +192,10 @@ class LevelRuntime implements Level {
   private readonly rng: Rng;
   private readonly lightHandles: LightHandle[] = [];
   private readonly propTargets = new Set<ActorLike>();
-  private readonly ranks = new Map<ActorLike, Rank>();
+  /** Every prop it ever had, by id (a load can bring back one taken away since). */
+  private readonly everTargets = new Map<number, ActorLike>();
+  /** Spawned monsters' ranks, by actor id. */
+  private readonly ranks = new Map<number, Rank>();
   private readonly buffs = new Map<string, { actor: ActorLike; source: string; until: number }>();
   private readonly offs: (() => void)[] = [];
   private readonly dynamicColliders = new Map<number, RAPIER.Collider>();
@@ -273,6 +336,106 @@ class LevelRuntime implements Level {
     this.applyEnv();
   }
 
+  save(): LevelState {
+    // the lab's colliders live in the Rapier world (the engine's snapshot), with handles this level keeps
+    if (this.body) throw new Error('Level.save: a level with physics colliders (the lab) is not kept in a save-state');
+    const targets = [...this.propTargets].map((t) => {
+      if (!(t instanceof PropTarget)) throw new Error(`Level.save: target ${t.id} is not a PropTarget, and only props are kept`);
+      return t.save();
+    });
+    return {
+      time: this.time,
+      cleared: this.cleared,
+      exited: this.exited,
+      portalOpen: this.exitPortal.open,
+      boss: refOf(this.boss),
+      encounters: this.encounters.map((e) => ({ spawned: e.spawned, actors: e.actors.map(refOf) })),
+      ranks: [...this.ranks],
+      buffs: [...this.buffs.values()].map((b) => [refOf(b.actor), b.source, b.until] as const),
+      opened: [...this.openedFeatures].map((f) => this.features.indexOf(f)),
+      lastSafe: this.lastSafe.toArray(),
+      revealTimer: this.revealTimer,
+      explored: runsOf(this.minimap.explored),
+      env: { ...this.env },
+      rng: this.rng.state,
+      mechanicsRng: this.mctx.rng.state,
+      nav: this.nav.save(),
+      layoutVersion: this.layout.version,
+      targets,
+      mechanics: this.mechanics.map((m) => ({ id: m.def.id, state: m.runtime.save() })),
+    };
+  }
+
+  load(s: LevelState, actors: ActorIndex): void {
+    if (this.body) throw new Error('Level.load: a level with physics colliders (the lab) is not kept in a save-state');
+    const notSame = (what: string) => new Error(`Level.load: ${what} (not this level, or not built again with the same ids)`);
+    if (s.encounters.length !== this.encounters.length) throw notSame(`${s.encounters.length} packs saved, ${this.encounters.length} built`);
+    if (s.mechanics.length !== this.mechanics.length || s.mechanics.some((m, i) => m.id !== this.mechanics[i]!.def.id)) throw notSame(`mechanics ${s.mechanics.map((m) => m.id).join(', ')} saved, ${this.mechanics.map((m) => m.def.id).join(', ')} built`);
+    // everything it points at first (nothing changes when something is missing):
+    // actors by id, the index first, then this level's own encounters (a corpse already gone from the index)
+    const own = new Map<number, ActorLike>();
+    for (const e of this.encounters) for (const a of e.actors) own.set(a.id, a);
+    const actor = (ref: ActorRef, what: string): ActorLike => {
+      const a = actors(ref) ?? (ref === null ? null : own.get(ref));
+      if (!a) throw new Error(`Level.load: ${what} ${ref} is not there`);
+      return a;
+    };
+    const packs = s.encounters.map((x) => x.actors.map((ref) => actor(ref, 'monster')));
+    const boss = s.boss === null ? null : actor(s.boss, 'boss');
+    const buffs = s.buffs.map(([ref, source, until]) => ({ actor: actor(ref, 'buffed actor'), source, until }));
+    const opened = s.opened.map((i) => this.features[i]!);
+    if (opened.some((f) => !f)) throw notSame(`features ${s.opened.join(', ')} opened, ${this.features.length} built`);
+    const targets = s.targets.map((t) => {
+      const p = this.everTargets.get(t.id);
+      if (!(p instanceof PropTarget)) throw notSame(`prop ${t.id} saved, not built`);
+      return p;
+    });
+
+    this.time = s.time;
+    this.cleared = s.cleared;
+    this.exited = s.exited;
+    s.encounters.forEach((x, i) => {
+      const e = this.encounters[i]!;
+      e.spawned = x.spawned;
+      e.actors.splice(0, e.actors.length, ...packs[i]!);
+    });
+    this.boss = boss;
+    this.ranks.clear();
+    for (const [id, rank] of s.ranks) this.ranks.set(id, rank);
+    this.buffs.clear();
+    for (const b of buffs) this.buffs.set(`${b.actor.id}:${b.source}`, b);
+    // chests and shrines: open what was open, close what wasn't
+    for (const f of this.features) this.showFeature(f, opened.includes(f));
+    this.openedFeatures.clear();
+    for (const f of opened) this.openedFeatures.add(f);
+    this.lastSafe.fromArray(s.lastSafe);
+    this.revealTimer = s.revealTimer;
+    fillRuns(this.minimap.explored, s.explored);
+    Object.assign(this.env, s.env);
+    this.rng.state = s.rng;
+    this.mctx.rng.state = s.mechanicsRng;
+    // props: the saved ones in their order (one taken away since stays away)
+    this.propTargets.clear();
+    s.targets.forEach((t, i) => {
+      targets[i]!.load(t);
+      this.propTargets.add(targets[i]!);
+    });
+    // the mechanics (Collapse puts its cells back), then the grid's version and the flow field on it
+    s.mechanics.forEach((m, i) => this.mechanics[i]!.runtime.load(m.state, actors));
+    this.layout.version = s.layoutVersion;
+    this.nav.load(s.nav);
+    // the portal
+    this.exitPortal.open = s.portalOpen;
+    for (const v of this.portal.veil) v.visible = s.portalOpen;
+    if (s.portalOpen && !this.portal.light) this.portal.light = this.portalLight(0);
+    else if (!s.portalOpen && this.portal.light) {
+      this.portal.light.release();
+      this.portal.light = null;
+    }
+    this.pulsePortal();
+    this.applyEnv();
+  }
+
   dispose(): void {
     for (const m of this.mechanics) m.runtime.dispose?.();
     for (const off of this.offs) off();
@@ -322,7 +485,7 @@ class LevelRuntime implements Level {
     if (this.hooks.applyHit) return this.hooks.applyHit(target, hit);
     const result = target.takeHit(hit);
     this.ctx.events.emit('hit', { target, result, hit });
-    if (result.killed) this.ctx.events.emit('kill', { target, killer: null, rank: this.ranks.get(target) ?? 'normal', depth: this.spec.depth });
+    if (result.killed) this.ctx.events.emit('kill', { target, killer: null, rank: this.ranks.get(target.id) ?? 'normal', depth: this.spec.depth });
     return result;
   }
 
@@ -356,7 +519,10 @@ class LevelRuntime implements Level {
         this.ctx.audio?.play(name, o);
       },
       emit: (m, e, at) => this.emit(m, e, at),
-      addTarget: (t) => this.propTargets.add(t),
+      addTarget: (t) => {
+        this.propTargets.add(t);
+        this.everTargets.set(t.id, t);
+      },
       removeTarget: (t) => this.propTargets.delete(t),
       setCell: (x, z, v) => this.setCell(x, z, v),
       isWalkable: (x, z) => this.isWalkable(x, z),
@@ -479,7 +645,7 @@ class LevelRuntime implements Level {
         const actor = this.hooks.spawnMonster(spawn);
         if (!actor) continue;
         e.actors.push(actor);
-        this.ranks.set(actor, m.rank);
+        this.ranks.set(actor.id, m.rank);
         if (m.rank === 'boss') this.boss = actor;
       }
       this.emit('level', e.pack.rank === 'boss' ? 'bossSpawn' : 'packSpawn', new Vector3(m0.x, 0, m0.z));
@@ -490,10 +656,9 @@ class LevelRuntime implements Level {
     for (const f of this.features) {
       if (this.openedFeatures.has(f) || Math.hypot(hero.position.x - f.x, hero.position.z - f.z) > 1.4) continue;
       this.openedFeatures.add(f);
-      const vis = this.featureMeshes.get(f);
       const at = new Vector3(f.x, 0.8, f.z);
       if (f.kind === 'chest') {
-        if (vis) vis.parts[2]!.rotation.x = -1.1; // lid pops open
+        this.showFeature(f, true);
         this.hooks.dropLoot?.(at, { rarity: f.rarity ?? 'magic', quantity: f.rarity === 'rare' ? 3 : 2, itemLevel: SCALING.monsterLevel(this.spec.depth), source: 'chest' });
         this.ctx.particles?.burst('loot', at);
         this.ctx.audio?.play('chest');
@@ -501,12 +666,22 @@ class LevelRuntime implements Level {
       } else {
         const def = SHRINES.get(f.shrine!);
         this.buff(hero, `shrine:${def.id}`, def.mods, def.duration);
-        if (vis) vis.parts[3]!.visible = false;
-        vis?.light?.update({ intensity: 1 });
+        this.showFeature(f, true);
         this.ctx.particles?.burst('haste', at, { count: 18 });
         this.ctx.audio?.play('shrine');
         this.emit('shrine', def.id, at);
       }
+    }
+  }
+
+  /** A chest's lid open or shut; a shrine's orb gone (its light dimmed) or there. */
+  private showFeature(f: Feature, open: boolean): void {
+    const vis = this.featureMeshes.get(f);
+    if (!vis) return;
+    if (f.kind === 'chest') vis.parts[2]!.rotation.x = open ? -1.1 : 0; // lid pops open
+    else {
+      vis.parts[3]!.visible = !open;
+      vis.light?.update({ intensity: open ? 1 : 4 });
     }
   }
 
@@ -524,17 +699,27 @@ class LevelRuntime implements Level {
     this.exitPortal.open = true;
     for (const v of this.portal.veil) v.visible = true;
     const p = this.exitPortal.position;
-    this.portal.light = this.light({ position: [p.x, 1.4, p.z], color: 0x73eff7, intensity: 8, radius: 8, flicker: 'spell', priority: 5, fadeIn: 0.8, name: 'portal' });
+    this.portal.light = this.portalLight(0.8);
     this.ctx.particles?.burst('portal', [p.x, 0.5, p.z], { count: 30 });
     this.ctx.audio?.play('portal-open');
     this.emit('level', 'portalOpen', p.clone());
     this.ctx.events.emit('levelClear', { depth: this.spec.depth, time: this.time });
   }
 
+  private portalLight(fadeIn: number): LightHandle | null {
+    const p = this.exitPortal.position;
+    return this.light({ position: [p.x, 1.4, p.z], color: 0x73eff7, intensity: 8, radius: 8, flicker: 'spell', priority: 5, fadeIn, name: 'portal' });
+  }
+
+  /** The open portal's inner veil breathes. */
+  private pulsePortal(): void {
+    const s = this.exitPortal.open ? 1 + 0.06 * Math.sin(this.time * 6) : 1;
+    this.portal.veil[1]!.scale.set(1.3 * s, 1.6 * s, 0.1);
+  }
+
   private animate(): void {
     if (this.exitPortal.open) {
-      const s = 1 + 0.06 * Math.sin(this.time * 6);
-      this.portal.veil[1]!.scale.set(1.3 * s, 1.6 * s, 0.1);
+      this.pulsePortal();
       if (this.rng.next() < 0.15) {
         const p = this.exitPortal.position;
         this.ctx.particles?.burst('portal', [p.x, 0.2, p.z], { count: 3 });

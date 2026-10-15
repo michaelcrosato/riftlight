@@ -423,9 +423,17 @@ export class RealHero implements HeroPort {
     this.skillLevels = s.skillLevels;
     this.sources.clear();
     for (const [k, v] of s.sources) this.sources.set(k, v);
-    this.hc.load(s.hc, actors);
+    // the town's world (the hero's own): combat's actors first, the hero through them, the world last
+    const own = s.owned && this.owned && this.world === this.owned ? this.owned : null;
+    let index = actors;
+    if (own) {
+      own.make(s.owned!);
+      const inWorld = own.index();
+      index = (id) => actors(id) ?? inWorld(id);
+    }
+    this.hc.load(s.hc, index);
     this.mover.load(s.mover);
-    if (s.owned && this.owned && this.world === this.owned) this.owned.load(s.owned);
+    own?.load(s.owned!, index);
     this.hc.model.position.copy(this.mover.position);
   }
 
