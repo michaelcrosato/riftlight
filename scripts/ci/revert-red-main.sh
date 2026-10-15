@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Revert the commit that turned the default branch red (no LLM, no secrets needed).
-# Called by the last job of .github/workflows/ci.yml when CI fails on main: GitHub doesn't
+# Called by the revert-red-main job of .github/workflows/ci.yml when CI fails on main: GitHub doesn't
 # fire workflow_run for runs Autopilot dispatches with GITHUB_TOKEN, so this can't live in a
 # separate workflow. Reverts only a commit whose parent was green or untested, never a
 # revert, never twice. Opens and squash-merges claude/revert-<sha>, re-runs CI on main and

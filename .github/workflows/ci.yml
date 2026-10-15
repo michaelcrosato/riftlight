@@ -7,7 +7,7 @@ name: CI
 #   workflow_dispatch Autopilot dispatches CI on main after each merge: a merge made with the
 #                     default GITHUB_TOKEN fires no push event, so main would get no run.
 # No pull_request trigger: it would test the same commit a second time.
-# A red run on main is reverted automatically by this workflow's last job (revert-red-main).
+# A red run on main is reverted automatically by this workflow's revert-red-main job.
 
 on:
   push:
@@ -138,3 +138,90 @@ jobs:
           BASE: ${{ github.event.repository.default_branch }}
           SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  release:
+    # The engine kit as a GitHub Release, one per engine version (README.md, "Handing the engine
+    # to another agent"): once main's check and e2e pass, the run for main's newest commit
+    # publishes package.json's version if it has no release yet: engine-v<version>, holding
+    # bundle/pixel-engine.zip (npm run bundle) with its CHANGELOG.md section as the notes
+    # (scripts/release/notes.mjs). Only the newest commit's run publishes, so a re-run of an older
+    # one (a version since reverted among them) never does; a version superseded on main before
+    # its CI passed is skipped, and a later run with the same version catches up one an earlier run
+    # left. It is a job here for the reason revert-red-main is. A failed release leaves the run's
+    # verdict alone (continue-on-error: revert-red-main judges a commit by its parent's run) and
+    # opens an issue; the next run on main tries again.
+    needs: [check, e2e]
+    if: success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: write
+      issues: write
+    concurrency:
+      group: release
+      cancel-in-progress: false
+    env:
+      GH_REPO: ${{ github.repository }}
+      BASE: ${{ github.event.repository.default_branch }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # npm's install scripts and the build never see the write token
+      - name: The version, and whether this run publishes it
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(jq -r .version package.json)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          tip=$(gh api "repos/$GH_REPO/commits/$BASE" --jq .sha)
+          draft=$(gh release view "engine-v$version" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          if [ "$tip" != "$GITHUB_SHA" ]; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "$BASE is at ${tip:0:7} now, not ${GITHUB_SHA:0:7}: the run for it publishes"
+          elif [ "$draft" = "false" ]; then
+            echo "new=false" >> "$GITHUB_OUTPUT"
+            echo "engine-v$version is already released"
+          else
+            # a draft is what a cancelled run left between creating and publishing: start again
+            if [ "$draft" = "true" ]; then gh release delete "engine-v$version" --yes; fi
+            echo "new=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.v.outputs.new == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.v.outputs.new == 'true'
+        run: npm ci --no-audit --no-fund
+      - if: steps.v.outputs.new == 'true'
+        run: npm run bundle
+      - name: Publish engine-v${{ steps.v.outputs.version }}
+        if: steps.v.outputs.new == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          # the zip unpacks to pixel-engine/, as README.md's download line says
+          entries=$(unzip -Z1 bundle/pixel-engine.zip)
+          outside=$(printf '%s\n' "$entries" | grep -cv '^pixel-engine/' || true)
+          if [ "$outside" != 0 ]; then echo "::error::bundle/pixel-engine.zip holds $outside entries outside pixel-engine/"; exit 1; fi
+          node scripts/release/notes.mjs > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then echo "::error::the release notes came out empty"; exit 1; fi
+          gh release create "engine-v$VERSION" bundle/pixel-engine.zip --target "$GITHUB_SHA" \
+            --title "Pixel Engine $VERSION" --notes-file "$RUNNER_TEMP/notes.md" --latest
+      - name: Open an issue when the release failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Release engine-v$VERSION failed"
+          if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            # the label may not exist yet (scripts/configure-github.sh makes it), as revert-red-main.sh knows
+            gh label create claude --color 5319e7 --description "Work for Claude" 2>/dev/null || true
+            gh issue create --title "$title" --label claude \
+              --body "CI's release job failed on $BASE at ${GITHUB_SHA:0:7}: $RUN_URL. The next run on $BASE tries again; close this once the release is out."
+          fi

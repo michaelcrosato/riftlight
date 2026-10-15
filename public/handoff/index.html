@@ -57,8 +57,12 @@
       </ol>
       <p>
         Can't reach this site, for example from a sandbox that only allows GitHub and package
-        registries? Build the same kit from source:
+        registries? From 0.39.0 on, the kit is also a
+        <a href="https://github.com/michaelcrosato/riftlight/releases">GitHub Release</a> per engine
+        version, published once it passes CI; the newest (it unzips to <code>pixel-engine/</code>):
       </p>
+      <pre>curl -fLO https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip &amp;&amp; unzip pixel-engine.zip &amp;&amp; cd pixel-engine</pre>
+      <p>Or build the kit from source:</p>
       <pre>git clone --depth 1 https://github.com/michaelcrosato/riftlight &amp;&amp; cd riftlight &amp;&amp; npm ci &amp;&amp; npm run bundle</pre>
       <p>
         Then copy <code>bundle/pixel-engine/</code> to where your game will live and start at its
