@@ -8,7 +8,7 @@ import type { Rank } from '../core/scaling';
 import type { ActorLike, Genome, Hit, LevelSpec, Rarity } from '../core/types';
 import type { BossView, KillInfo, LevelDeps, LevelHandle, LevelPort, MechanicInfo, MonsterHandle, ShellServices, Telegraph } from '../game/ports';
 import { buildLevel, type Level, type LevelHooks, type LevelState, type MonsterSpawn } from '../levels/Level';
-import { planLevel } from '../levels/plan';
+import { type LevelPlan, planLevel } from '../levels/plan';
 import { FLOOR, VOID, WALL } from '../levels/layout/grid';
 import { MECHANIC_ORDER, MECHANICS } from '../levels/mechanics';
 import { levelSpec } from '../levels/rift';
@@ -100,12 +100,21 @@ export interface UnitsState {
  * builds a monster, compiles a clip or a shader: the level is complete while the loading
  * screen shows. Kills drop loot through the LootPort; chests and Collapse caches too.
  */
+/** A level plan in a few numbers (`LevelPort.signature`, `LevelStage.signature`). */
+function planSignature(p: LevelPlan, spec: LevelSpec): string {
+  return [p.layout.width, p.layout.height, p.packs.length, p.packs.reduce((n, k) => n + k.members.length, 0), p.elements.length, p.features.length, p.props.length, spec.mechanics.join('+')].join(':');
+}
+
 export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHost {
   readonly kind = 'level' as const;
   readonly root = new Group();
   readonly origin = { x: 0, z: 0 };
   readonly level: Level;
   readonly world: CombatWorld;
+  /** Its plan in a few numbers (`LevelPort.signature` of its spec, without planning it again). */
+  get signature(): string {
+    return planSignature(this.level.plan, this.spec);
+  }
   readonly hazards: Hazards;
   readonly globes: Globes;
   readonly services: ShellServices;
@@ -931,8 +940,7 @@ export class RealLevels implements LevelPort {
 
   /** The plan a spec makes, in a few numbers (layout, packs, elements, features, props): data only, no build. */
   signature(spec: LevelSpec): string {
-    const p = planLevel(spec);
-    return [p.layout.width, p.layout.height, p.packs.length, p.packs.reduce((n, k) => n + k.members.length, 0), p.elements.length, p.features.length, p.props.length, spec.mechanics.join('+')].join(':');
+    return planSignature(planLevel(spec), spec);
   }
 
   async build(spec: LevelSpec, deps: LevelDeps): Promise<LevelHandle> {

@@ -269,8 +269,26 @@ describe('HeroController save-states', () => {
       t = s.t;
     };
     const look = () => ({ hero: hero.actor.position.toArray(), facing: hero.actor.facing, mana: hero.actor.mana, life: dummies.map((d) => d.life), effects: combat.effects.map((e) => `${e.kind}:${e.skill}`) });
-    return { step, save, load, look, time: () => t };
+    return { step, save, load, look, time: () => t, hero };
   }
+
+  it('the animator saved right after a load is the blend loaded, to the last bit (mid cross-fade)', async () => {
+    const a = await fight();
+    const anim = a.hero.animator;
+    const clips = ['Run', 'Walk', 'Idle', 'Cast'];
+    const off: string[] = [];
+    for (let k = 0; k < 40; k++) {
+      // three clips fading into each other, caught part way
+      anim.play({ full: clips[k % 4]! }, 0.3);
+      anim.update(0.017 * (1 + (k % 5)));
+      anim.play({ full: clips[(k + 1) % 4]! }, 0.25);
+      anim.update(0.011 * (1 + (k % 7)));
+      const s = JSON.stringify(anim.save());
+      anim.load(JSON.parse(s));
+      if (JSON.stringify(anim.save()) !== s) off.push(`${k}: ${s} → ${JSON.stringify(anim.save())}`);
+    }
+    expect(off).toEqual([]);
+  }, 60_000);
 
   it('a channel held and a beam aimed through a restore follow the keys and the aim after it', async () => {
     const a = await fight();

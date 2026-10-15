@@ -479,9 +479,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.ctx.scene.background = new Color(PALETTE.ink);
     const spec = this.ports.levels.spec(d, this.save.seed);
     this.rng = new Rng(this.save.seed).fork(`level:${d}:${this.save.stats?.runs ?? 0}`);
-    const entry: LevelEntry = { spec, rng: this.rng.state, actors: actorIds(), props: PropTarget.nextId(), plan: this.ports.levels.signature?.(spec) ?? null };
+    const at = { spec, rng: this.rng.state, actors: actorIds(), props: PropTarget.nextId() };
     const level = await this.ports.levels.build(spec, this.levelDeps());
     this.level = level;
+    // what it was planned as, from the plan it was built with (planning a level costs tens of ms)
+    const entry: LevelEntry = { ...at, plan: level.signature ?? this.ports.levels.signature?.(spec) ?? null };
     this.levelEntry = entry;
     this.ctx.scene.add(level.root);
     this.hero.object.visible = true;

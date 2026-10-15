@@ -331,6 +331,22 @@ describe('combat save-states', () => {
     expect(encodeState(w.save())).toEqual(o.after.get(step)!.state);
   });
 
+  it('an actor something outside combat points at (holdRefs: a monster at its target) is kept, as a ghost once it has left', () => {
+    const w = world();
+    const gone = w.units[1]!;
+    w.actors.remove(gone); // a minion that died this step: nothing in combat points at it
+    expect(w.combat.keeps(gone.id)).toBe(false);
+    let target: Actor | null = gone;
+    w.combat.holdRefs(() => [target]);
+    expect(w.combat.keeps(gone.id)).toBe(true);
+    const ghosts = (st: CombatState) => JSON.stringify(encodeState(st)).match(/"kind":"ghost","id":(\d+)/g) ?? [];
+    expect(ghosts(w.combat.save())).toEqual([`"kind":"ghost","id":${gone.id}`]);
+    // and let go once nothing points at it
+    target = null;
+    expect(ghosts(w.combat.save())).toEqual([]);
+    expect(w.combat.keeps(gone.id)).toBe(false);
+  });
+
   it('refuses what it cannot make again, saying why', () => {
     const w = world();
     w.combat.cast(w.hero, buildSkill('whirlwind', [], w.hero.stats), new Vector3(0, 0, 4), { held: () => true });

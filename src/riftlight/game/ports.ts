@@ -295,6 +295,8 @@ export interface LevelHandle extends StageWorld {
   loadState?(state: unknown, actors: ActorIndex, others?: (actors: ActorIndex) => void): void;
   /** Any actor in the level by id (monsters, minions, props): save-states find what a state points at. */
   actorById?(id: number): ActorLike | null;
+  /** Its plan's `LevelPort.signature`, from the plan it was built with. */
+  readonly signature?: string;
   dispose(): void;
 }
 
