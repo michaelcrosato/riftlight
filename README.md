@@ -24,7 +24,9 @@ The **Asset Gallery** (`/?game=world&room=gallery`, or *Asset Gallery* on Riftli
 every model and texture the engine carries, one at a time: the built-in library family by
 family and every imported pack (six CC0 Kenney packs: castle, furniture, nature, mini dungeon,
 and the Tiny Dungeon and Tiny Town tiles). Q/E step through a shelf, comma/period change shelf, and the
-panel says what each asset is, how big it is and where it came from. Agents search the same
+panel says what each asset is, how big it is and where it came from. The **Asset Workshop**
+(`/?game=world&room=workshop`) puts them on a floor: scroll a picker, click where each one goes,
+and Tab shows what it is made of. Agents search the same
 assets with `npm run model -- find <words>` and `npm run tex -- find <words>`
 ([docs/ASSETS.md](docs/ASSETS.md), *Finding assets*).
 

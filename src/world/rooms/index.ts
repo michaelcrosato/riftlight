@@ -42,6 +42,7 @@ import { TRAILS } from './trails';
 import { WATER } from './water';
 import { GALLERY } from './gallery';
 import { WEATHER } from './weather';
+import { WORKSHOP } from './workshop';
 
 export const ROOMS: readonly RoomDef[] = [
   ATRIUM,
@@ -82,6 +83,7 @@ export const ROOMS: readonly RoomDef[] = [
   BULLETS,
   // workshop
   SANDBOX,
+  WORKSHOP,
   REWIND,
   // procedural
   TERRAIN,

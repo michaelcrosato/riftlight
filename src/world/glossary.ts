@@ -175,6 +175,9 @@ export const GLOSSARY: readonly Term[] = [
   { term: 'low-pass filter', section: 'games', text: 'A filter that lets low frequencies through and cuts high ones: what makes a sound dull and far away, behind a door or under water.' },
   // tools
   { term: 'catalog', section: 'tools', text: 'Defs by id (models or textures), searchable: the built-in library is one, a loaded pack is another. Ids are how parts, layers and saves refer to defs.' },
+  { term: 'ModelDef', section: 'tools', text: 'A model as plain data: parts (boxes, cylinders, lathes, imported meshes) in palette slots, params with ranges, and `use` to place another model by id. buildModel turns it into merged toon meshes.' },
+  { term: 'TextureDef', section: 'tools', text: 'A pixel-art texture as plain data: layers of pixel rows, seeded patterns, paths and an outline in palette slots, baked into a floor, a sprite sheet or HUD pixels.' },
+  { term: 'variant', section: 'tools', text: 'The same asset a little different (rock-large-a to -f, a red barrel, a taller tree). A new variant is a few lines that place the original (`use`) with a scale or a palette, never a copy.' },
   { term: 'asset pack', section: 'tools', text: 'Someone else\'s models or tiles, imported once into the engine\'s own format and palette and kept as one JSON file (public/packs/), with where each piece came from and its licence.' },
   { term: 'agent API', section: 'tools', text: 'window.__WORLD__ and window.__PIXEL_ENGINE__: what tests and AI agents drive the game through.' },
   { term: 'e2e test', section: 'tools', text: 'A test that opens the real game in a browser, plays it and checks the frames and numbers.' },

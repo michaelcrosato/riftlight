@@ -54,6 +54,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | | `drift` Drift Track | get in a car on a ray-cast vehicle: suspension, grip, a handbrake drift, skid marks |
 | | `bullets` Bullet Hell | a turret firing six seeded patterns (hundreds of bullets, one draw call); dodge, graze, punch back |
 | Workshop | `sandbox` Sandbox | spawn props, grab and throw them with the mouse, save and load the layout as JSON |
+| | `workshop` Asset Workshop | every library model and texture and every pack in a picker on the HUD (the wheel over it or Q/E scroll, comma/period change shelf, a click picks); Enter, the SPAWN pad or a click on the floor places the pick, a right click or Backspace takes one away, Tab shows what it is made of; pads at the back explain models, textures, packs and search (docs/ASSETS.md, *Finding assets*) |
 | | `rewind` Time Lab | dominoes, a pyramid and a ball; hold R and everything plays backwards (the hero glides back the way it came) |
 | Procedural | `terrain` Terrain Lab | a land from a seed: fractal or ridged noise, droplet erosion, trees placed by rules, a heightfield you walk on |
 | | `dungeon` Dungeon Forge | wave function collapse from ten 3 × 3 tiles: watch it collapse, walk the halls; a flood fill finds sealed rooms |

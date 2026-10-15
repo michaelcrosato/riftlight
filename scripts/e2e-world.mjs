@@ -13,6 +13,10 @@
 //                pieces that dissolve, the well gathers bodies, a launch pad throws the hero
 //   effects      floaters sit in the water and the anchor sinks, wading ripples, lamps at night,
 //                settling snow, a storm's lightning, a meadow of blades, footprints and decals
+//   workshop     the Asset Workshop's picker scrolls (the wheel over it, E) and picks by click;
+//                a library model, a pack model, a tile and a sprite each go down and are drawn;
+//                a click on the floor places the pick under the pointer, a right click takes it
+//                away; undo and clear free what went down (scene objects and lights)
 //   transitions  a mosaic covers the frame (ink), reveals it again
 //   panels       the station guide, the tweak panel and the room list open and close
 //
@@ -971,6 +975,8 @@ export async function runWorld(h) {
     check(gal.errors.length === 0, `the asset gallery runs without errors${gal.errors.length ? ': ' + gal.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-gallery.png`);
 
+    await checkWorkshop({ W, check, capture, page, tag });
+
     // ------------------------------------------------------------- ai & direction
     const ai = await W(async () => {
       const w = window.__WORLD__;
@@ -1145,4 +1151,247 @@ export async function runWorld(h) {
   } finally {
     await ctx?.browser.close();
   }
+}
+
+/**
+ * The Asset Workshop (`workshop`): the picker scrolls and picks, each kind of asset goes down and
+ * is drawn, the pointer places and takes away, undo and clear free what went down. Exported so it
+ * can run on its own against a page already open on Engine World.
+ * @param {object} h { W: evaluate in the page, check, capture, page, tag }
+ */
+export async function checkWorkshop({ W, check, capture, page, tag }) {
+  const ws = await W(async () => {
+    const w = window.__WORLD__;
+    const e = window.__PIXEL_ENGINE__;
+    const changed = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) n++;
+      return n;
+    };
+    const click = (x, y, buttons = 1) => {
+      e.input.setPointer(x, y);
+      e.step(1);
+      e.input.setButtons(buttons);
+      e.step(1);
+      e.input.setButtons(0);
+      e.step(1);
+    };
+    await w.goto('workshop', { instant: true });
+    e.step(20);
+    const r = w.room;
+    r.preview(false); // frames then differ by what went down, not by the hovering preview
+    const out = { shelves: r.shelves(), first: r.selected() };
+    // what the shelves should hold: every library family (the engine's lists) and every pack the index lists, whole
+    const lib = r.library();
+    const index = (await (await fetch('packs/index.json')).json()).packs;
+    out.expect = {
+      models: Object.entries(lib.models).map(([f, ids]) => [f, ids.length]),
+      surfaces: lib.textures.surfaces.length,
+      sprites: lib.textures.sprites.length,
+      packs: index.map((x) => ({ id: x.id, models: x.models, textures: x.textures })),
+    };
+    // the wheel over the list moves the pick a row a tick, and the camera keeps its zoom
+    const zoom0 = e.camera.zoom;
+    e.input.setPointer(...r.ui().rows[0].at);
+    for (let i = 0; i < 2; i++) {
+      e.input.addPointer(0, 0, 1);
+      e.step(1);
+    }
+    out.wheel = { index: r.selected().index, zoom0, zoom: e.camera.zoom };
+    e.input.setKey('KeyE', true);
+    e.step(1);
+    e.input.setKey('KeyE', false);
+    e.step(1);
+    out.key = r.selected().index;
+    // a click on a row picks it
+    const rows = r.ui().rows;
+    click(...rows.at(-1).at);
+    out.row = { clicked: rows.at(-1).id, picked: r.selected().id };
+    // each kind goes down where it is asked to and is drawn: hiding it changes the frame
+    const drawn = async (spawn) => {
+      r.clear();
+      const placed = spawn();
+      e.step(10);
+      const a = (await e.renderer.capture()).pixels.slice();
+      r.hide(true);
+      e.step(2);
+      const px = changed(a, (await e.renderer.capture()).pixels);
+      r.hide(false);
+      return { ...placed, px };
+    };
+    const pack = r.shelves().find((s) => s.title.startsWith('PACK') && !s.id.endsWith('/textures'));
+    out.kinds = {
+      library: await drawn(() => r.spawn('barrel', [-2, 2])),
+      pack: pack ? await drawn(() => (r.shelf(pack.id), r.spawn(undefined, [-2, 2]))) : null,
+      tile: await drawn(() => r.spawn('floor-tiles', [-2, 2])),
+      sprite: await drawn(() => r.spawn('coin-spin', [-2, 2])),
+    };
+    // a model stands on the floor wherever its own bounds start (a wall torch from 1.13 m up, a
+    // hanging lantern from 1.7 m), its footprint's middle where it was asked to go
+    r.clear();
+    out.stand = ['wall-torch', 'hanging-lantern', 'campfire', 'oak'].map((id, i) => ({ asked: [-5 + i * 2.5, 0], ...r.spawn(id, [-5 + i * 2.5, 0]) }));
+    // patches: one over another lies on top, and a model on them stands above both
+    r.clear();
+    const under = r.spawn('floor-tiles', [-2, 1]);
+    const over = r.spawn('grass', [-1, 2]);
+    const onTop = r.spawn('barrel', [-1.5, 1.5]);
+    out.layers = { under: under.at[1], over: over.at[1], base: onTop.base };
+    // undo takes the last away, clear the rest: their scene objects and lights go with them
+    r.clear();
+    e.step(30);
+    const count = () => ({ n: r.spawned().length, children: e.scene.children.length, lights: e.lights.stats().requests });
+    const base = count();
+    r.spawn('barrel', [-2, 2]);
+    r.spawn('lamp-post', [-3, 1]);
+    r.spawn('coin-spin', [-1, 1]);
+    e.step(5);
+    const three = { ...count(), lit: r.spawned().map((p) => p.light) };
+    const undone = r.undo();
+    e.step(2);
+    const two = { ...count(), ids: r.spawned().map((p) => p.id) };
+    const cleared = r.clear();
+    e.step(30);
+    out.undo = { base, three, undone, two, cleared, after: count() };
+    // the floor holds 80 things: the 81st is refused
+    let refused;
+    for (let i = 0; i <= 80; i++) refused = r.spawn('barrel', [-6 + (i % 10), -5 + Math.floor(i / 10)]);
+    out.cap = { n: r.spawned().length, refused };
+    r.clear();
+    e.step(2);
+    // a click on the floor places the pick under the pointer; a right click there takes it away
+    const V = e.scene.position.constructor;
+    const spot = new V(-3, 0, 2);
+    const ndc = spot.clone().project(e.camera.camera);
+    r.select('crate');
+    click(ndc.x, ndc.y);
+    const last = r.spawned().at(-1) ?? null;
+    out.floor = { spot: spot.toArray(), placed: last && { id: last.id, at: last.at }, n: r.spawned().length };
+    click(ndc.x, ndc.y, 2);
+    out.floor.after = r.spawned().length;
+    // the mouse over the floor, then onto the list and its wheel: the preview and Enter stay where
+    // the floor was last under the mouse, never on the floor hidden under the panel
+    r.clear();
+    const spot2 = new V(-2, 0, 1);
+    const ndc2 = spot2.clone().project(e.camera.camera);
+    e.input.setPointer(ndc2.x, ndc2.y);
+    e.step(1);
+    e.input.setPointer(...r.ui().rows[0].at);
+    e.input.addPointer(0, 0, 1);
+    e.step(1);
+    const aimed = r.aim();
+    e.input.setKey('Enter', true);
+    e.step(1);
+    e.input.setKey('Enter', false);
+    e.step(1);
+    const entered = r.spawned().at(-1) ?? null;
+    out.panelAim = { spot: spot2.toArray(), aimed, placed: entered && entered.at };
+    // a right click takes away what it hits: a tree by its crown, a sprite by its picture (not only at their feet)
+    r.clear();
+    const tree = r.spawn('oak', [-4, 0]);
+    const coin = r.spawn('coin-spin', [0, 2.5]);
+    const at = (thing, up) => new V(thing.at[0], thing.at[1] + thing.size[1] * up, thing.at[2]).project(e.camera.camera);
+    const crown = at(tree, 0.75);
+    click(crown.x, crown.y, 2);
+    const afterCrown = r.spawned().map((x) => x.id);
+    const face = at(coin, 0.8);
+    click(face.x, face.y, 2);
+    out.rightHits = { afterCrown, afterFace: r.spawned().map((x) => x.id) };
+    // a turn back is a turn forward: -45 degrees is 315
+    r.turn(-45);
+    out.turnBack = w.knobs().find((x) => x.id === 'turn').value;
+    r.turn(0);
+    // a finger (the key Touch) dragged up the list scrolls it, a row for each row's height, and
+    // places nothing; a tap on the floor places the pick there
+    r.shelf('library/furniture');
+    const list = r.ui().rows;
+    const rowH = list[0].at[1] - list[1].at[1];
+    const before = { index: r.selected().index, n: r.spawned().length };
+    e.input.setPointer(...list[1].at);
+    e.input.setKey('Touch', true);
+    e.step(1);
+    for (let i = 1; i <= 3; i++) {
+      e.input.setPointer(list[1].at[0], list[1].at[1] + rowH * i);
+      e.step(1);
+    }
+    e.input.setKey('Touch', false);
+    e.step(1);
+    out.finger = { from: before.index, to: r.selected().index, placed: r.spawned().length - before.n, pick: r.selected().id };
+    e.input.setPointer(ndc.x, ndc.y);
+    e.step(1);
+    e.input.setKey('Touch', true);
+    e.step(1);
+    e.input.setKey('Touch', false);
+    e.step(1);
+    const tapped = r.spawned().at(-1) ?? null;
+    out.finger.tap = r.spawned().length === before.n + 1 && tapped ? { id: tapped.id, at: tapped.at } : null;
+    r.clear();
+    // FIND IT: one search across the library and every pack picks its best hit
+    w.pad('FIND IT');
+    out.found = { picked: r.selected().id, best: r.find('chair', 1)[0] };
+    r.select('campfire');
+    out.def = r.def();
+    // a floor to look at: a tile, models from the library and a pack, a sprite
+    r.spawn('floor-tiles', [-2, 2]);
+    r.spawn('campfire', [-2, 2]);
+    r.spawn('barrel', [-0.5, 1]);
+    r.spawn('kenney-nature/tree-oak', [-4.5, 0.5]);
+    r.spawn('kenney-furniture/chair', [-0.8, 3]);
+    r.spawn('coin-spin', [-3.5, 3]);
+    e.step(20);
+    return out;
+  });
+  const k = ws.kinds;
+  {
+    const has = new Map(ws.shelves.map((s) => [s.id, s.count]));
+    const x = ws.expect;
+    const short = [
+      ...x.models.filter(([f, n]) => has.get(`library/${f}`) !== n).map(([f, n]) => `library/${f} (${n})`),
+      ...(has.get('textures/surfaces') === x.surfaces ? [] : [`textures/surfaces (${x.surfaces})`]),
+      ...((has.get('textures/icons') ?? 0) + (has.get('textures/sprites') ?? 0) === x.sprites ? [] : [`textures/icons + sprites (${x.sprites})`]),
+      ...x.packs.flatMap((pk) => [...(pk.models && has.get(pk.id) !== pk.models ? [`${pk.id} (${pk.models})`] : []), ...(pk.textures && has.get(`${pk.id}/textures`) !== pk.textures ? [`${pk.id}/textures (${pk.textures})`] : [])]),
+    ];
+    check(short.length === 0 && x.packs.length > 0, `asset workshop: a whole shelf for each of the library's ${x.models.length} model families and its textures, and for every pack in packs/index.json (${x.packs.length})${short.length ? `; missing or short: ${short.join(', ')}` : ''}`);
+  }
+  check(ws.wheel.index === ws.first.index + 2 && ws.wheel.zoom === ws.wheel.zoom0, `asset workshop: the wheel over the list moves the pick (row ${ws.first.index} → ${ws.wheel.index}) and not the camera (zoom ${ws.wheel.zoom0} → ${ws.wheel.zoom})`);
+  check(ws.key === ws.wheel.index + 1, `asset workshop: E picks the next row (${ws.wheel.index} → ${ws.key})`);
+  check(ws.row.picked === ws.row.clicked, `asset workshop: a click on a row picks it (${ws.row.clicked} → ${ws.row.picked})`);
+  check(k.library.kind === 'model' && k.library.px > 300, `asset workshop: a library model goes down and is drawn (${k.library.id}, ${k.library.px} px)`);
+  check(k.pack?.kind === 'model' && k.pack.shelf.startsWith('kenney') && k.pack.px > 300, `asset workshop: a pack's model goes down and is drawn (${k.pack ? `${k.pack.id}, ${k.pack.px} px` : 'no pack shelf'})`);
+  check(k.tile.kind === 'surface' && k.tile.px > 300, `asset workshop: a tiling texture lies as a floor (${k.tile.id}, ${k.tile.px} px)`);
+  check(k.sprite.kind === 'sprite' && k.sprite.px > 100, `asset workshop: a sprite stands up (${k.sprite.id}, ${k.sprite.px} px)`);
+  check(Object.values(k).filter(Boolean).every((p) => Math.hypot(p.at[0] + 2, p.at[2] - 2) < 1e-6 && p.at[1] >= 0 && p.at[1] < 0.02), `asset workshop: each goes down where it is asked, on the floor (where each stands: ${Object.values(k).filter(Boolean).map((p) => p.at.join(', ')).join('; ')})`);
+  check(
+    ws.stand.every((p) => Math.abs(p.base - 0.01) < 1e-3 && Math.hypot(p.middle[0] - p.asked[0], p.middle[1] - p.asked[1]) < 0.02),
+    `asset workshop: a model's lowest point is on the floor and its footprint where asked, whatever its own bounds (${ws.stand.map((p) => `${p.id} base ${p.base}, ${Math.hypot(p.middle[0] - p.asked[0], p.middle[1] - p.asked[1]).toFixed(3)} m off`).join('; ')})`,
+  );
+  check(ws.layers.over > ws.layers.under && ws.layers.base >= ws.layers.over + 0.009, `asset workshop: a patch over another lies on top, a model on them stands above both (patches at ${ws.layers.under} and ${ws.layers.over} m, the barrel's base at ${ws.layers.base} m)`);
+  {
+    const u = ws.undo;
+    check(
+      u.three.n === 3 && u.three.children === u.base.children + 3 && u.three.lights === u.base.lights + 1 && u.undone === 'coin-spin' && u.two.n === 2 && u.two.children === u.base.children + 2,
+      `asset workshop: undo takes the last thing away (${u.undone}; ${u.three.n} → ${u.two.n} placed, scene ${u.three.children} → ${u.two.children})`,
+    );
+    check(u.cleared === 2 && u.after.n === 0 && u.after.children === u.base.children && u.after.lights === u.base.lights, `asset workshop: clear takes the rest, with the lamp's light (scene ${u.after.children} of ${u.base.children}, lights ${u.after.lights} of ${u.base.lights})`);
+    check(ws.cap.n === 80 && ws.cap.refused === null, `asset workshop: the floor holds 80 things and refuses the 81st (${ws.cap.n} placed, the 81st ${ws.cap.refused === null ? 'refused' : 'placed'})`);
+  }
+  {
+    const f = ws.floor;
+    const off = f.placed ? Math.hypot(f.placed.at[0] - f.spot[0], f.placed.at[2] - f.spot[2]) : Infinity;
+    check(f.placed?.id === 'crate' && off < 0.05, `asset workshop: a click on the floor places the pick under the pointer (${f.placed ? `${f.placed.id} ${off.toFixed(3)} m off` : 'nothing placed'})`);
+    check(f.after === f.n - 1, `asset workshop: a right click there takes it away (${f.n} → ${f.after})`);
+    const a = ws.panelAim;
+    const aimOff = Math.hypot(a.aimed.at[0] - a.spot[0], a.aimed.at[2] - a.spot[2]);
+    const enterOff = a.placed ? Math.hypot(a.placed[0] - a.spot[0], a.placed[2] - a.spot[2]) : Infinity;
+    check(a.aimed.by === 'pointer' && aimOff < 0.05 && enterOff < 0.05, `asset workshop: with the mouse moved onto the panel, the preview and Enter stay where it last was over the floor (preview ${aimOff.toFixed(3)} m off, Enter ${enterOff.toFixed(3)} m off)`);
+    const h = ws.rightHits;
+    check(!h.afterCrown.includes('oak') && h.afterCrown.includes('coin-spin') && h.afterFace.length === 0, `asset workshop: a right click takes away what it hits, a tree by its crown, a sprite by its picture (left after the crown: ${h.afterCrown.join(', ') || 'nothing'}; after the picture: ${h.afterFace.join(', ') || 'nothing'})`);
+    check(ws.turnBack === 7, `asset workshop: turning back 45 degrees is turning to 315 (the Turn knob reads option ${ws.turnBack})`);
+    const t = ws.finger;
+    check(t.to === t.from + 3 && t.placed === 0, `asset workshop: a finger dragged up the list scrolls it (row ${t.from} → ${t.to}) and places nothing (${t.placed})`);
+    const tapOff = t.tap ? Math.hypot(t.tap.at[0] - f.spot[0], t.tap.at[2] - f.spot[2]) : Infinity;
+    check(t.tap?.id === t.pick && tapOff < 0.05, `asset workshop: a tap on the floor places the pick there (${t.tap ? `${t.tap.id} ${tapOff.toFixed(3)} m off` : 'nothing placed'})`);
+  }
+  check(ws.found.picked === ws.found.best && ws.found.best === 'chair', `asset workshop: FIND IT picks the search's best hit (${ws.found.picked})`);
+  check(ws.def.includes('USES stone-ring, flame'), `asset workshop: DEF says what the pick is made of (${ws.def.join(' / ')})`);
+  await capture(page, `world-${tag}-workshop-floor.png`);
 }
