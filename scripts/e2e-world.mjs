@@ -25,7 +25,8 @@
 /**
  * A small game for the replay checks, defined in the page as `window.__replayProbe()`: a box
  * on a floor, pushed by keys, hopping from a tween's promise a tenth of a second after Space,
- * and lifted by data the page sends (`ctx.input.send({ lift })`).
+ * and lifted by data the page sends (`ctx.input.send({ lift })`). It has save-states: its
+ * counters and its box's handle (the engine keeps the box itself, in the physics world).
  */
 function defineProbe() {
   window.__replayProbe = () => {
@@ -58,6 +59,17 @@ function defineProbe() {
       },
       status() {
         return `kicks ${this.kicks} lifts ${this.lifts}`;
+      },
+      fingerprint() {
+        return `${this.kicks} ${this.lifts}`;
+      },
+      snapshot() {
+        return { kicks: this.kicks, lifts: this.lifts, box: this.box.handle };
+      },
+      restore(ctx, s) {
+        this.kicks = s.kicks;
+        this.lifts = s.lifts;
+        this.box = ctx.physics.world.getRigidBody(s.box);
       },
     };
   };
@@ -705,6 +717,60 @@ export async function runWorld(h) {
       const dts = rec.frames.map((f) => f.dt);
       return { rec, run, again, frames: rec.frames.length, sync: rec.frames.filter((f) => f.sync).length, dt: [Math.min(...dts), Math.max(...dts)], errors: e.state().errors };
     });
+    // save-states: a moment as data, put back at once; playing on from it matches playing on
+    // from the moment itself, and the recording made after it replays from it
+    const saved = await W(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const probe = window.__replayProbe;
+      const start = () => e.loadGame(probe());
+      await start();
+      e.manual = true;
+      const play = (from, to) => {
+        for (let f = from; f < to; f++) {
+          e.input.setKey('KeyD', f % 90 < 45);
+          e.input.setKey('KeyJ', f % 70 === 10);
+          if (f % 100 === 30) e.input.send({ lift: 2 });
+          e.step(1);
+        }
+      };
+      play(0, 100);
+      e.input.setKey('Space', true); // a tween now runs for 0.1 s
+      e.step(1);
+      e.input.setKey('Space', false);
+      let refused = '';
+      try {
+        await e.snapshot();
+      } catch (err) {
+        refused = err.message;
+      }
+      e.step(11); // the tween is over; its promise's callback (a kick) runs before the snapshot is taken
+      const t0 = performance.now(); // real time: how long a snapshot takes
+      const snap = JSON.parse(JSON.stringify(await e.snapshot()));
+      const tookMs = performance.now() - t0; // real time
+      play(112, 260);
+      const live = { print: e.fingerprint(), status: e.game.status(e.context) };
+      const later = JSON.parse(JSON.stringify(await e.snapshot()));
+      const t1 = performance.now(); // real time: how long a restore takes
+      await e.restore(snap);
+      const restoreMs = performance.now() - t1; // real time
+      play(112, 260);
+      const again = { print: e.fingerprint(), status: e.game.status(e.context) };
+      const rec = JSON.parse(JSON.stringify(e.recording()));
+      await e.replay(rec, start);
+      const replayed = e.fingerprint();
+      // the snapshot's own state with a later moment's physics: not the same moment, not the same end
+      await e.restore({ ...snap, physics: later.physics });
+      play(112, 260);
+      const mixed = e.fingerprint();
+      return { refused, tookMs, restoreMs, bytes: JSON.stringify(snap).length, live, again, replayed, mixed, from: !!rec.from, frames: rec.frames.length, errors: e.state().errors };
+    });
+    check(saved.refused.includes('tween'), `a snapshot is refused while a tween runs (${saved.refused})`);
+    check(
+      saved.again.print === saved.live.print && saved.again.status === saved.live.status && saved.live.status.startsWith('kicks 1'),
+      `a save-state played on from matches the run that went on (${saved.live.print} vs ${saved.again.print}, ${saved.live.status}; ${saved.bytes} bytes, taken in ${saved.tookMs.toFixed(1)} ms, restored in ${saved.restoreMs.toFixed(1)} ms)`,
+    );
+    check(saved.from && saved.frames === 148 && saved.replayed === saved.live.print, `the recording made after a restore starts from it and replays to the same end (${saved.frames} frames, ${saved.replayed})`);
+    check(saved.mixed !== saved.live.print && saved.errors.length === 0, `a snapshot with another moment's physics ends elsewhere (${saved.mixed})`);
     await W(() => window.__WORLD__.goto('sandbox', { instant: true }));
     check(
       realtime.run.status === 'kicks 2 lifts 2' && realtime.frames >= 80 && realtime.rec.frames.filter((f) => f.commands).length === 2 && realtime.sync === 0 && realtime.errors.length === 0,

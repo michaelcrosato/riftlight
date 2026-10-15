@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three/webgpu';
 import { CAMERA_PRESETS, FirstPersonRig, FreeRig, OrthoRig, ThirdPersonRig, createCameraRig } from './camera';
 import { RESOLUTIONS } from './framing';
+import { decodeState, encodeState } from './snapshot';
 
 const fakeInput = (over: Partial<Record<string, unknown>> = {}) =>
   ({ wheel: 0, mouseDelta: { x: 0, y: 0 }, isDown: () => false, wasPressed: () => false, moveAxis: () => ({ x: 0, y: 0 }), ...over }) as never;
@@ -142,6 +143,21 @@ describe('screen shake', () => {
       expect(dir.length()).toBeCloseTo(1, 6);
       expect(t).toBeGreaterThan(0); // ahead of where the ray starts
       expect(origin.clone().addScaledVector(dir, t).distanceTo(p)).toBeLessThan(1e-4);
+    }
+  });
+
+  it('a rig as data puts another where it was, exactly (save-states)', () => {
+    for (const preset of CAMERA_PRESETS) {
+      const a = createCameraRig({ preset });
+      const b = createCameraRig({ preset });
+      const step = (rig: typeof a, t: number) =>
+        rig.update({ target: new Vector3(Math.sin(t) * 4, 0, t), eye: new Vector3(0, 1.5, t), dt: 1 / 60, resolution: RESOLUTIONS.default, input: fakeInput({ mouseDelta: { x: 3, y: 1 } }), world: {}, shake: new Vector3(0.1, 0, 0.05) } as never);
+      for (let f = 0; f < 30; f++) step(a, f / 10);
+      b.setState(decodeState(JSON.parse(JSON.stringify(encodeState(a.state())))) as never); // through JSON, as a snapshot goes
+      expect(b.camera.matrixWorld.elements, preset).toEqual(a.camera.matrixWorld.elements);
+      for (let f = 30; f < 40; f++) (step(a, f / 10), step(b, f / 10));
+      expect(b.state(), preset).toEqual(a.state());
+      expect(b.camera.matrixWorld.elements, preset).toEqual(a.camera.matrixWorld.elements);
     }
   });
 });

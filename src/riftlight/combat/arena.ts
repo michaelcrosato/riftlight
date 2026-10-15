@@ -107,7 +107,7 @@ export class Arena implements Game {
   private readonly shadow = new ContactShadow(0.42);
   private readonly target = new Vector3();
   private readonly rng = new Rng('arena');
-  private restore: { keys: DebugKeyMap; pad: Record<number, string> } | null = null;
+  private savedInput: { keys: DebugKeyMap; pad: Record<number, string> } | null = null;
   private respawnAt = -1;
   /** Hero damage dealt in the last seconds (HUD meter). */
   private readonly dealt: { t: number; amount: number }[] = [];
@@ -116,7 +116,7 @@ export class Arena implements Game {
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics } = ctx;
     // R is a skill key here: move the resolution hotkey to F2; pad buttons to the ARPG layout
-    this.restore = { keys: ctx.engine.debugKeys, pad: { ...ctx.input.gamepadButtons } };
+    this.savedInput = { keys: ctx.engine.debugKeys, pad: { ...ctx.input.gamepadButtons } };
     ctx.engine.debugKeys = resolveDebugKeys(HERO_DEBUG_KEYS);
     ctx.input.gamepadButtons = { ...HERO_GAMEPAD_BUTTONS };
 
@@ -295,9 +295,9 @@ export class Arena implements Game {
   dispose(ctx: GameContext): void {
     this.hero?.dispose();
     this.combat?.dispose();
-    if (this.restore) {
-      ctx.engine.debugKeys = this.restore.keys;
-      ctx.input.gamepadButtons = this.restore.pad;
+    if (this.savedInput) {
+      ctx.engine.debugKeys = this.savedInput.keys;
+      ctx.input.gamepadButtons = this.savedInput.pad;
     }
   }
 }

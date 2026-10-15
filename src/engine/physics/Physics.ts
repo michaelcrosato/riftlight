@@ -20,6 +20,21 @@ interface Binding {
   currRot: Quaternion;
 }
 
+/** The physics as data (`engine.snapshot()`): the fixed step's clock and the Rapier world (Rapier's own snapshot, base64). */
+export interface PhysicsState {
+  readonly accumulator: number;
+  readonly alpha: number;
+  readonly steps: number;
+  readonly world: string;
+}
+
+const toBase64 = (b: Uint8Array): string => {
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+};
+const fromBase64 = (t: string): Uint8Array => Uint8Array.from(atob(t), (c) => c.charCodeAt(0));
+
 export interface BoxOptions {
   position: [number, number, number];
   halfExtents: [number, number, number];
@@ -79,7 +94,11 @@ export class Physics {
 
   /** A fresh world (each level gets one, so a level runs the same whatever ran before it). */
   private makeWorld(): RAPIER.World {
-    const world = new RAPIER.World({ x: 0, y: this.gravityY, z: 0 });
+    return this.adopt(new RAPIER.World({ x: 0, y: this.gravityY, z: 0 }));
+  }
+
+  /** Make `world` this engine's: the fixed step, and character controllers tracked so `clear()` frees them. */
+  private adopt(world: RAPIER.World): RAPIER.World {
     world.timestep = FIXED_DT;
     // Track character controllers (created by PlatformerCharacter & co. directly on the
     // world) so a level unload frees them too.
@@ -139,6 +158,41 @@ export class Physics {
       b.object.position.lerpVectors(b.prevPos, b.currPos, this.alpha);
       b.object.quaternion.slerpQuaternions(b.prevRot, b.currRot, this.alpha);
     }
+  }
+
+  /**
+   * The physics as data, between frames (`engine.snapshot()`): the fixed step's clock and the
+   * whole Rapier world, exact. Bodies and colliders keep their handles across `setState`: a game
+   * finds its own again with `world.getRigidBody(handle)` / `getCollider(handle)`; bound meshes
+   * follow on their own. Not yet with what lives outside the world (character or vehicle
+   * controllers, movers, triggers, step listeners): refused, saying which.
+   */
+  state(): PhysicsState {
+    const outside = [
+      this.controllers.size ? 'character controllers' : '',
+      [...this.world.vehicleControllers].length ? 'vehicles' : '',
+      this.movers.count ? 'movers' : '',
+      this.triggers.length ? 'triggers' : '',
+      this.stepListeners.size || this.firstStepListeners.size ? 'step listeners' : '',
+    ].filter(Boolean);
+    if (outside.length) throw new Error(`Physics.state: not yet with ${outside.join(', ')} (they live outside the Rapier world)`);
+    return { accumulator: this.accumulator, alpha: this.alpha, steps: this.steps, world: toBase64(this.world.takeSnapshot()) };
+  }
+
+  /** Back to `state()`: the world it saved replaces this one, bound meshes re-found by handle. */
+  setState(s: PhysicsState): void {
+    const world = this.adopt(RAPIER.World.restoreSnapshot(fromBase64(s.world)));
+    this.world.free();
+    this.world = world;
+    for (const b of this.bindings) {
+      b.body = world.getRigidBody(b.body.handle);
+      this.readBody(b);
+      b.prevPos.copy(b.currPos);
+      b.prevRot.copy(b.currRot);
+    }
+    this.accumulator = s.accumulator;
+    this.alpha = s.alpha;
+    this.steps = s.steps;
   }
 
   /** Seconds of physics simulated (fixed steps × 1/60): the clock movers run on. */

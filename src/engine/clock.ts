@@ -3,6 +3,12 @@
  * freeze) and hitstops (the game freezes for a few real seconds when a hit lands). Pure; the
  * engine runs every frame's real `dt` through `delta()`.
  */
+/** A clock as data. */
+export interface ClockState {
+  readonly scale: number;
+  readonly hitstop: number;
+}
+
 export class GameClock {
   private _scale = 1;
   private stop = 0;
@@ -44,5 +50,15 @@ export class GameClock {
   reset(): void {
     this._scale = 1;
     this.stop = 0;
+  }
+
+  /** Its speed and the hitstop left, as data (`engine.snapshot()`). */
+  state(): ClockState {
+    return { scale: this._scale, hitstop: this.stop };
+  }
+
+  setState(s: ClockState): void {
+    this._scale = s.scale;
+    this.stop = s.hitstop;
   }
 }

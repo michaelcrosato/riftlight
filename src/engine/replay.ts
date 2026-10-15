@@ -16,6 +16,7 @@
  * docs/ENGINE.md, "Recording and replay".
  */
 import type { InputFrame } from './input';
+import { type Snapshot, snapshotProblem } from './snapshot';
 
 export type { InputFrame } from './input';
 
@@ -33,6 +34,8 @@ export interface Recording {
   readonly frames: readonly InputFrame[];
   /** True when the level ran longer than a recording keeps (the frames are its start). */
   readonly truncated?: boolean;
+  /** The save-state the frames start from (`engine.restore()` began this recording), if any. */
+  readonly from?: Snapshot;
 }
 
 /** Frames a recording keeps: an hour at 60 fps. */
@@ -50,6 +53,10 @@ export function recordingProblem(v: unknown): string | null {
   if (typeof r.seed !== 'number' || !Number.isInteger(r.seed) || r.seed < 0) return 'seed must be a whole number from 0';
   if (typeof r.time !== 'number' || !Number.isFinite(r.time)) return 'time must be a number';
   if (!Array.isArray(r.frames)) return 'no frames';
+  if (r.from !== undefined) {
+    const p = snapshotProblem(r.from);
+    if (p) return `from: ${p}`;
+  }
   for (let i = 0; i < r.frames.length; i++) {
     const f = r.frames[i] as InputFrame;
     const bad = (why: string) => `frame ${i}: ${why}`;

@@ -11,6 +11,7 @@ export {
   createCameraRig,
   type CameraConfig,
   type CameraPreset,
+  type CameraRigState,
 } from './camera';
 export {
   AMOUNT,
@@ -67,7 +68,7 @@ export {
 export { loadModel, loadPack, loadPackIndex, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
-export { GAMEPAD_BUTTONS, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike } from './input';
+export { GAMEPAD_BUTTONS, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
 export { DEFAULT_DEBUG_KEYS, resolveDebugKeys, type DebugAction, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {
@@ -162,7 +163,7 @@ export {
 } from './texture';
 export { textureSheet, type TextureSheet, type TextureSheetOptions } from './texture/sheet';
 export { Catalog, groupVariants, searchDefs, searchHits, searchWords, variantName, type CatalogEntry, type SearchHit, type SearchOptions, type VariantGroup } from './catalog';
-export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type TriggerOptions, type TriggerShape } from './physics/Physics';
+export { Physics, RAPIER, FIXED_DT, Trigger, type BoxOptions, type PhysicsState, type TriggerOptions, type TriggerShape } from './physics/Physics';
 export { CharacterController, type CharacterOptions, type CharacterAnim } from './physics/CharacterController';
 export { Movers, moverRotation, orbit, pathPoint, pendulum, type KinematicBody, type Mover, type MoverOptions } from './physics/movers';
 export { ForceFields, explode, fieldAcceleration, type ExplosionOptions, type Field, type FieldOptions } from './physics/forces';
@@ -227,10 +228,12 @@ export {
   type TransitionKind,
   type TransitionOptions,
 } from './render/screenFx';
-export { CameraShake } from './shake';
+export { CameraShake, type ShakeState } from './shake';
 export { EASES, EASE_NAMES, Tweens, ease, type Ease, type EaseName, type Tween, type TweenOptions } from './tween';
 export { hashString, Rng } from './random';
 export { MAX_FRAMES, recordingProblem, type InputFrame, type Recording } from './replay';
+export { decodeState, encodeState, snapshotProblem, type Snapshot } from './snapshot';
+export type { ClockState } from './clock';
 export {
   FLICKER_PRESETS,
   LIGHT_POOL_SIZES,

@@ -1085,6 +1085,32 @@ state outside physics and forks of `ctx.random`. `EngineOptions.record` sets how
 many frames a level keeps (default `MAX_FRAMES`, an hour at 60 fps; 0 records nothing);
 `recordingProblem(v)` says why a value is not a recording.
 
+### Save-states
+
+```ts
+const snap = await engine.snapshot();    // the running level as JSON, between frames
+engine.step(600);                        // ...play on
+await engine.restore(snap);              // back to that moment at once, nothing replayed
+engine.recording().from === snap;        // the recording starts again from it: replay() restores it first
+```
+
+A snapshot (`src/engine/snapshot.ts`) is the engine's part of a running level (game time, the
+clock's speed and hitstop, `ctx.random`, the fixed step's accumulator, the whole Rapier world as
+Rapier's own snapshot, the camera rig, the shake, held keys and presses still queued with their
+age, the pointer) and the game's own, from `Game.snapshot(ctx)`: plain data, numbers JSON can't
+hold exactly (`-0`, `Infinity`, `NaN`) marked as strings so it survives `JSON.stringify` bit for
+bit (`encodeState` / `decodeState`). `restore(snap)` needs the same game already loaded (by
+name, with the same camera preset), puts all of it back and calls `Game.restore(ctx, state)`;
+bodies keep their handles, so a game finds its own again with `ctx.physics.world.getRigidBody(h)`.
+Playing on from a restored snapshot gives the same frames as playing on from the moment it was
+taken (the World suite checks it, and that a snapshot with another moment's physics ends
+elsewhere). `snapshot()` waits a task first, so the last frame's promise callbacks have run, and
+refuses with the reason while a tween runs (its callbacks are code), for a game without the
+hooks, or with physics that lives outside the Rapier world (character or vehicle controllers,
+movers, triggers, step listeners). A recording made after a restore carries it (`from`), so a
+bug caught after a save-state is a snapshot and its frames: `replay(rec, start)` loads the game,
+restores the snapshot, plays the frames.
+
 ### Screen shake
 
 ```ts
