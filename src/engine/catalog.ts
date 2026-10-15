@@ -113,13 +113,25 @@ export interface SearchHit<T> {
 }
 
 /**
- * The name a model's variants share: its id without a last part that is one letter or a number
- * (`kenney-nature/rock-large-a` … `-f`, `crate-1` … `-3` → `kenney-nature/rock-large`, `crate`).
- * An id without one is its own. For models: a sheet's lettered tiles (`forest-a` … `-i`) are
- * pieces of a set, not variants.
+ * The name a model's variants share: its id without its last part that is one letter or a
+ * number, at the end or before the rest of the name (`kenney-nature/rock-large-a` … `-f`,
+ * `crate-1` … `-3`, `tree-pine-tall-a-detailed` … `-d-detailed` → `kenney-nature/rock-large`,
+ * `crate`, `tree-pine-tall-detailed`). An id without one is its own. For models: a sheet's
+ * lettered tiles (`forest-a` … `-i`) are pieces of a set, not variants.
  */
 export function variantName(id: string): string {
-  return id.replace(/-(?:[a-z]|\d+)$/, '');
+  const at = variantAt(id);
+  return at < 0 ? id : id.slice(0, at) + id.slice(at).replace(VARIANT_PART, '');
+}
+
+/** A variant's own part: a dash and one letter or a number, then a dash or the end. */
+const VARIANT_PART = /^-(?:[a-z]|\d+)(?=-|$)/;
+
+/** Where an id's variant part starts (`variantName`), or -1. */
+function variantAt(id: string): number {
+  let at = -1;
+  for (const m of id.matchAll(/-(?:[a-z]|\d+)(?=-|$)/g)) at = m.index;
+  return at;
 }
 
 /** One def standing for its variants (the defs that share its `variantName`), and the others. */
@@ -144,10 +156,15 @@ export function groupVariants<T extends CatalogEntry>(defs: readonly T[]): Varia
   return [...groups.values()];
 }
 
-/** A group's variants in one line: the first by its id, the rest by what follows their shared name (`rock-large-b, -c, -d`). */
+/**
+ * A group's variants in one line: the first by its id, the rest from their variant part on when
+ * what comes before it is the first's (`rock-large-b, -c, -d`; `tree-pine-tall-b-detailed,
+ * -c-detailed`), else by id.
+ */
 export function variantsInShort(g: VariantGroup<CatalogEntry>): string {
-  const name = variantName(g.def.id);
-  return g.variants.map((v, i) => (i && v.id.length > name.length ? v.id.slice(name.length) : v.id)).join(', ');
+  const stem = (id: string) => (variantAt(id) < 0 ? null : id.slice(0, variantAt(id)));
+  const first = g.variants[0] ? stem(g.variants[0].id) : null;
+  return g.variants.map((v, i) => (i && first !== null && stem(v.id) === first ? v.id.slice(first.length) : v.id)).join(', ');
 }
 
 /** `searchDefs` with each def's score, and whether it matched every word (false: the fallback). */

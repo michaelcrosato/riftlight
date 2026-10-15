@@ -73,8 +73,9 @@ Search before you write: the asset you need may already be in the library or a p
   count, and when nothing has every word the closest come back, said so. Each line gives the id,
   size, tags and where it lives (a library file, or `pack <id>`). Inside a pack, a tie goes to the
   name that starts with the word, so `find rock` gives Kenney's rocks before its cliffs of rock.
-  A model's variants (ids that differ only in a last letter or number: `rock-large-a` … `-f`)
-  share one entry, under the best of them. 20 entries print in full, then up to 40 more by id on
+  A model's variants (ids that differ only in a part that is one letter or a number, last or
+  not: `rock-large-a` … `-f`, `tree-pine-tall-a-detailed` … `-d-detailed`) share one entry,
+  under the best of them. 20 entries print in full, then up to 40 more by id on
   one line and how many are left, so a search prints 5–7 KB (under 2,000 tokens) and says what
   it left out: `--limit 60` for more in full, `--json` for every entry (a model's with its
   `variants`). A sheet's lettered tiles (`forest-a` … `-i`, `door-wood-b`) are pieces of a set,
