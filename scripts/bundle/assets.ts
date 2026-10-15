@@ -4,6 +4,7 @@
 // `npm run model -- find` and `npm run model -- credits` read: the defs themselves and each one's
 // `source`.
 import { buildModel, MODEL_FAMILIES, MODEL_LIBRARY, ModelCatalog, OWN_LICENCE, type ModelDef } from '../../src/engine/model';
+import { groupVariants } from '../../src/engine/catalog';
 import { creditEntries, creditLine } from '../../src/engine/model/packs/credits';
 import { TEXTURE_FAMILIES, TEXTURE_LIBRARY, type TextureDef } from '../../src/engine/texture';
 import { packIndex, packs } from '../packs';
@@ -64,27 +65,46 @@ export function libraryJson(version: string, records = libraryRecords()): string
   return `{\n "engine": ${JSON.stringify(version)},\n "about": ${JSON.stringify(about)},\n "packs": ${list(packs)},\n "assets": ${list(records)}\n}\n`;
 }
 
-/** LIBRARY.md: every model and texture, one table row each, by family, then each pack. */
+/**
+ * LIBRARY.md: every model and texture by family, then each pack; one table row each, except that
+ * a model's variants (`rock-large-a` … `-f`, `groupVariants`) share one: every id, the range of
+ * their sizes, the slots and tags any of them use, the first's about. A sheet's lettered tiles
+ * are pieces of a set (`forest-a` … `-i`), not variants: they keep a row each.
+ */
 export function libraryMarkdown(version: string, records = libraryRecords()): string {
-  const slots = (r: LibraryRecord) => Object.entries(r.slots).map(([s, c]) => `${s} ${String(c)}`).join(', ');
-  const modelRow = (r: LibraryRecord) => {
-    const params = Object.entries(r.params ?? {}).map(([k, [v, lo, hi]]) => `${k} ${v} (${lo}–${hi})`).join(', ');
-    return `| \`${r.id}\` | ${r.size.map(fmt).join(' × ')} | ${params} | ${slots(r)} | ${r.tags.join(', ')} | ${cell(r.about)} |`;
+  const slots = (rs: readonly LibraryRecord[]) => {
+    const seen = new Map<string, string>();
+    for (const r of rs) for (const [s, c] of Object.entries(r.slots)) if (!seen.has(s)) seen.set(s, String(c));
+    return [...seen].map(([s, c]) => `${s} ${c}`).join(', ');
   };
-  const textureRow = (r: LibraryRecord) => {
-    const kind = [r.tile ? 'tiles' : '', r.frames ? `${r.frames} frames` : ''].filter(Boolean).join(', ');
-    return `| \`${r.id}\` | ${r.size[0]} × ${r.size[1]}${kind ? `, ${kind}` : ''} | ${slots(r)} | ${r.tags.join(', ')} | ${cell(r.about)} |`;
+  const tags = (rs: readonly LibraryRecord[]) => [...new Set(rs.flatMap((r) => r.tags))].join(', ');
+  const span = (rs: readonly LibraryRecord[], axis: number) => {
+    const vs = rs.map((r) => r.size[axis]!);
+    const [lo, hi] = [Math.min(...vs), Math.max(...vs)];
+    return lo === hi ? fmt(lo) : `${fmt(lo)}–${fmt(hi)}`;
   };
+  const modelRows = (records: readonly LibraryRecord[]) =>
+    groupVariants(records).map(({ def: r, variants }) => {
+      const rs = [r, ...variants];
+      const params = Object.entries(r.params ?? {}).map(([k, [v, lo, hi]]) => `${k} ${v} (${lo}–${hi})`).join(', ');
+      return `| ${rs.map((x) => `\`${x.id}\``).join(' ')} | ${[0, 1, 2].map((a) => span(rs, a)).join(' × ')} | ${params} | ${slots(rs)} | ${tags(rs)} | ${cell(r.about)}${variants.length ? ` (+${variants.length} variant${variants.length > 1 ? 's' : ''})` : ''} |`;
+    });
+  const textureRows = (records: readonly LibraryRecord[]) =>
+    records.map((r) => {
+      const kind = [r.tile ? 'tiles' : '', r.frames ? `${r.frames} frames` : ''].filter(Boolean).join(', ');
+      return `| \`${r.id}\` | ${r.size[0]} × ${r.size[1]}${kind ? `, ${kind}` : ''} | ${slots([r])} | ${r.tags.join(', ')} | ${cell(r.about)} |`;
+    });
   const MODEL_HEAD = ['| id | size (m, w × h × d) | params: default (min–max) | palette slots | tags | about |', '| --- | --- | --- | --- | --- | --- |'];
   const TEXTURE_HEAD = ['| id | texels | palette slots | tags | about |', '| --- | --- | --- | --- | --- |'];
   const lib = records.filter((r) => !r.pack);
-  const section = (kind: LibraryRecord['kind'], head: string[], row: (r: LibraryRecord) => string) =>
+  const section = (kind: LibraryRecord['kind'], head: string[], rows: (rs: readonly LibraryRecord[]) => string[]) =>
     [...new Set(lib.filter((r) => r.kind === kind).map((r) => r.family))].flatMap((family) => {
-      const rows = lib.filter((r) => r.kind === kind && r.family === family);
-      return [`### ${family} (${rows.length})`, '', ...head, ...rows.map(row), ''];
+      const of = lib.filter((r) => r.kind === kind && r.family === family);
+      return [`### ${family} (${of.length})`, '', ...head, ...rows(of), ''];
     });
   const packLines = packIndex().packs.flatMap((e) => {
-    const rows = records.filter((r) => r.pack === `packs/${e.file}`);
+    // the section names the pack: its rows leave out what says so again (library.json keeps it)
+    const rows = records.filter((r) => r.pack === `packs/${e.file}`).map((r) => ({ ...r, about: r.about.replace(/ \(imported from [^)]*\)$/, ''), tags: r.tags.filter((t) => t !== 'imported' && t !== e.id) }));
     const models = rows.filter((r) => r.kind === 'model');
     const textures = rows.filter((r) => r.kind === 'texture');
     return [
@@ -92,26 +112,26 @@ export function libraryMarkdown(version: string, records = libraryRecords()): st
       '',
       `${e.models} models, ${e.textures} textures, ${e.licence} by ${e.author ?? 'unknown'} (${e.homepage ?? e.url}). Load it: \`const kit = await loadPack('packs/${e.file}'${textures.length ? ', { textures: TEXTURE_LIBRARY }' : ''})\`, then \`buildModel(id, { catalog: kit })\`${textures.length ? ' and `hudSprite(id)` / `textureMap(id)`' : ''}.`,
       '',
-      ...(models.length ? [...MODEL_HEAD, ...models.map(modelRow), ''] : []),
-      ...(textures.length ? [...TEXTURE_HEAD, ...textures.map(textureRow), ''] : []),
+      ...(models.length ? [...MODEL_HEAD, ...modelRows(models), ''] : []),
+      ...(textures.length ? [...TEXTURE_HEAD, ...textureRows(textures), ''] : []),
     ];
   });
   const count = (kind: LibraryRecord['kind'], pack: boolean) => records.filter((r) => r.kind === kind && !!r.pack === pack).length;
   return `${[
     `# The library (Pixel Engine ${version})`,
     '',
-    `Every built-in model (\`MODEL_LIBRARY\`, ${count('model', false)}) and texture (\`TEXTURE_LIBRARY\`, ${count('texture', false)}) by family, then every imported pack (${count('model', true)} models, ${count('texture', true)} textures in \`packs/\`), generated from the defs. Search it; don't read it whole.`,
+    `Every built-in model (\`MODEL_LIBRARY\`, ${count('model', false)}) and texture (\`TEXTURE_LIBRARY\`, ${count('texture', false)}) by family, then every imported pack (${count('model', true)} models, ${count('texture', true)} textures in \`packs/\`), generated from the defs. A model's variants (\`rock-large-a\` … \`-f\`) share a row. Search it; don't read it whole.`,
     '',
     '- **Find:** grep this file, filter `library.json` (one record per asset: id, kind, family, pack, tags, size, licence), or search in code: `MODEL_LIBRARY.search(\'wooden chair\')`, `TEXTURE_LIBRARY.search(\'stone floor\')` (ranked: id words, then tags, then about; plurals and parts of words count).',
     '- **Place:** `buildModel(id, { params, palette })`, or `use` it inside your own models; textures with `textureMap(id)`, `spriteSheet(id)`, `hudSprite(id)`. Look at it first: `node check.mjs --sheets <id>` (ASSETS.md).',
-    "- **Packs** are someone else's work, imported into this format and palette: each section says how to load it, and CREDITS.md what its licence asks.",
+    "- **Packs** are someone else's work, imported into this format and palette: each section says how to load it, and CREDITS.md what its licence asks. Its rows leave out the pack's name and tags, which library.json keeps.",
     '',
     '## Models',
     '',
-    ...section('model', MODEL_HEAD, modelRow),
+    ...section('model', MODEL_HEAD, modelRows),
     '## Textures',
     '',
-    ...section('texture', TEXTURE_HEAD, textureRow),
+    ...section('texture', TEXTURE_HEAD, textureRows),
     '## Packs',
     '',
     ...(packLines.length ? packLines : ['No imported packs in this kit.']),

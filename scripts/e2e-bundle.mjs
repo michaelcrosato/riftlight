@@ -94,12 +94,13 @@ export async function runBundle(h) {
     check(guide.includes(`Pixel Engine **${version}**`), 'GUIDE.md is stamped with the version');
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
-    // LIBRARY.md: a row per model and texture, the library's by family, then each pack's.
+    // LIBRARY.md: a row per model and texture (variants share one), the library's by family, then each pack's.
     // CREDITS.md: every one of them either our own work (counted) or imported (listed by id under
     // its source), the palettes, the code's licences. library.json: the same assets as data.
     const library = await readFile(new URL('LIBRARY.md', kit), 'utf8');
     const [, modelPart = '', texturePart = '', packPart = ''] = library.split(/^## (?:Models|Textures|Packs)$/m);
-    const rowIds = (part) => [...part.matchAll(/^\| `([^`]+)` \|/gm)].map((m) => m[1]);
+    // a row's ids: one, or a model and its variants (`rock-large-a` `rock-large-b` …)
+    const rowIds = (part) => [...part.matchAll(/^\| ((?:`[^`]+` ?)+) \|/gm)].flatMap((m) => [...m[1].matchAll(/`([^`]+)`/g)].map((x) => x[1]));
     const ids = [rowIds(modelPart), rowIds(texturePart)];
     const packIds = rowIds(packPart);
     const [models, textures] = ids.map((list) => list.length);

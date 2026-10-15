@@ -71,7 +71,14 @@ Search before you write: the asset you need may already be in the library or a p
   every model (texture) in the library and in every pack (`public/packs/`) best first: a word that
   names part of the id counts most, then a tag, then the `about` line; plurals and parts of words
   count, and when nothing has every word the closest come back, said so. Each line gives the id,
-  size, tags and where it lives (a library file, or `pack <id>`). `--limit 5`, `--json`.
+  size, tags and where it lives (a library file, or `pack <id>`). Inside a pack, a tie goes to the
+  name that starts with the word, so `find rock` gives Kenney's rocks before its cliffs of rock.
+  A model's variants (ids that differ only in a last letter or number: `rock-large-a` … `-f`)
+  share one entry, under the best of them. 20 entries print in full, then up to 40 more by id on
+  one line and how many are left, so a search prints 5–7 KB (under 2,000 tokens) and says what
+  it left out: `--limit 60` for more in full, `--json` for every entry (a model's with its
+  `variants`). A sheet's lettered tiles (`forest-a` … `-i`, `door-wood-b`) are pieces of a set,
+  not variants: each is its own entry.
 - **In code** (the kit too): `MODEL_LIBRARY.search('wooden chair')`, `TEXTURE_LIBRARY.search(...)`,
   a loaded pack's catalog the same way, or `searchDefs([...MODEL_LIBRARY.all(), ...kit.all()], text)`
   across several. `MODEL_FAMILIES` and `TEXTURE_FAMILIES` list the library family by family.
@@ -83,9 +90,19 @@ Search before you write: the asset you need may already be in the library or a p
   period change shelf, the wheel zooms; T has the shelf, the item, the zoom (fit, or Riftlight's
   own level and town zooms) and the turntable. `&asset=<id>` opens it on one asset. Agents:
   `__WORLD__.room.find('chair')`, `show(id)`, `next()`, `shelf(id)`, `current()`.
-- **The kit** (agents outside this repo): `LIBRARY.md` lists every asset by family and pack,
-  `library.json` holds the same as data (id, kind, family, pack, tags, size, slots, licence), and
-  `packs/` carries the pack files with their index.
+- **The kit** (agents outside this repo): `LIBRARY.md` lists every asset by family and pack (a
+  model's variants share a row; a pack's rows leave out its name and tags), `library.json` holds
+  the same as data (id, kind, family, pack, tags, size, slots, licence), and `packs/` carries the
+  pack files with their index.
+
+**Variants.** Keep a pack's own (`rock-large-a` … `-f`): they cost bytes in its file, not tokens
+in a search, and a level maker flips through them faster than anyone rebuilds one. Don't copy a
+model to vary it: write a def that places it (`use`) and changes what placing can, its size
+(`scale`; a `group` with a `scale` per axis stretches it) and its colours (`palette`, its slots
+onto yours). That is a few lines per variant, nothing copied, and a draft file sees every pack
+(`npm run model -- sheet my/bridges.ts`); a game loads the pack `into` its catalog first (below).
+A change inside an imported mesh (taller rails on the same deck) needs the model traced into
+primitives first ([Tracing](#tracing)); the library's own models take `params`.
 
 Tags are a small vocabulary shared by the library and the imports: families (`furniture`,
 `nature`, `dungeon`, `architecture`, `weapon`, `lighting`, `container`...), materials (`wood`,

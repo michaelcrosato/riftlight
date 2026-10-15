@@ -13,7 +13,8 @@ Contents: 1 The loop · 2 Models · 3 Textures · 4 Style rules · 5 In a game �
 ## 1. The loop
 
 1. **Start from the library.** Search `LIBRARY.md` (by family, then each pack; id, size, params,
-   palette slots, tags, one line each), filter `library.json`, or search in code:
+   palette slots, tags, one row each, a model's variants like `rock-large-a` … `-f` sharing
+   one), filter `library.json`, or search in code:
    `MODEL_LIBRARY.search('wooden chair')` ranks id words over tags over `about`, plurals and
    parts of words included; `MODEL_LIBRARY.get('fence')` takes an id. Place library models as
    they are, re-coloured or with other params, and `use` them inside your own: a stall with
@@ -162,7 +163,9 @@ of two, unused slots.
 - **Packs** (`packs/`, listed in `packs/index.json` and LIBRARY.md): kits by other artists,
   imported into this format and palette. `const kit = await loadPack('packs/<id>.json',
   { textures: TEXTURE_LIBRARY })`, then `buildModel('<id>/<name>', { catalog: kit })`; its
-  textures then work by id like the library's. `kit.search('tree')` searches the pack.
+  textures then work by id like the library's. `kit.search('tree')` searches the pack. To vary
+  one of its models, load the pack into your catalog (`loadPack(url, { into: MODEL_LIBRARY })`)
+  and add a def there that `use`s it with a `scale` or a `palette`: nothing is copied.
 
 ## 6. The example
 

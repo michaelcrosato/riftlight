@@ -1264,6 +1264,20 @@ async function runTools(browserExe) {
     check(zoo.code === 0 && z.width > 300 && z.bytes > 5000, `zoo containers: ${z.width}×${z.height}`);
     const found = await m('find', 'container');
     check(found.code === 0 && /barrel/.test(found.out) && /crate/.test(found.out) && /tok/.test(found.out), 'find container lists the barrel and the crate with token estimates');
+    // a model's variants share one entry; the rocks come before the cliffs of rock; 20 entries in
+    // full and every other match by id after them, so a search is short and hides nothing
+    const rocks = await m('find', 'rock');
+    const rockEntries = [...rocks.out.matchAll(/^(\S+\/\S+|\S+) +\d/gm)].map((x) => x[1]);
+    const rockAlso = rocks.out.match(/^also: (.*)$/m)?.[1] ?? '';
+    check(
+      rocks.code === 0 && /^ {2}\+ 5 variants: kenney-nature\/rock-large-b, -c, -d, -e, -f$/m.test(rocks.out) && rockEntries.length === 20 && rockEntries.indexOf('kenney-nature/rock-large-a') >= 0 &&
+        rockEntries.findIndex((id) => /cliff/.test(id)) > rockEntries.indexOf('kenney-nature/rock-large-a') && !/rock-large-b/.test(rockEntries.join()) && rockAlso.includes('cliff') && /\(--limit \d+ for all\)$/m.test(rocks.out),
+      `find rock: 20 entries in full, rock-large-a's 5 variants on one line, the rocks before the cliffs, the rest named (${rockEntries.slice(0, 6).join(', ')}…; also ${rockAlso.split(', ').length})${rocks.code ? `\n    ${tail(rocks.out)}` : ''}`,
+    );
+    const rockJson = await m('find', 'rock', '--json');
+    const rockRows = rockJson.code === 0 ? JSON.parse(rockJson.out) : [];
+    const rockIds = new Set(rockRows.flatMap((r) => [r.id, ...(r.variants ?? [])]));
+    check(rockRows.find((r) => r.id === 'kenney-nature/rock-large-a')?.variants?.length === 5 && rockRows.length > 20 && rockIds.size === rockRows.reduce((n, r) => n + 1 + (r.variants?.length ?? 0), 0), `find rock --json: every entry (${rockRows.length}), each model once, its variants under it`);
     // import: our own generated tree (named flat materials) → a draft def and a fidelity sheet
     const own = ['--as', 'tree-import', '--licence', 'LicenseRef-own', '--source', 'scripts/generate-assets.mjs'];
     const imported = await m('import', 'public/assets/tree.glb', ...own, '--json');
@@ -1334,6 +1348,9 @@ async function runTools(browserExe) {
     check(zoo.code === 0 && z.width > 300 && z.bytes > 5000, `tex zoo all: ${z.width}×${z.height}`);
     const found = await t('find', 'stone');
     check(found.code === 0 && /bricks/.test(found.out) && /cobbles/.test(found.out), 'tex find stone lists the bricks and the cobbles');
+    // a sheet's lettered tiles are pieces of a set (a 3×3 forest), not variants: each its own entry
+    const forest = await t('find', 'forest', '--limit', '30');
+    check(forest.code === 0 && /^kenney-tiny-town\/forest-a /m.test(forest.out) && /^kenney-tiny-town\/forest-b /m.test(forest.out) && !/variant/.test(forest.out), 'tex find forest lists the forest tiles one by one');
     const missing = await t('sheet', 'nope');
     check(missing.code === 2 && missing.out.trim().split('\n').length === 1 && /no texture "nope"/.test(missing.out), `tex sheet nope: one line, exit ${missing.code}`);
     // import: our own coin (the library's, baked to a PNG here) back in as a strip of 4 frames

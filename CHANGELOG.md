@@ -8,6 +8,21 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.32.0
+
+- **Search** breaks a tie inside a pack for the def whose name (the id after the pack) starts
+  with a query word: `search('rock')` gives `kenney-nature/rock-large-a` before
+  `kenney-nature/cliff-block-rock`. Scores, the library's order and the packs' places among
+  each other are unchanged.
+- **Variants:** `variantName(id)` is the name a model's variants share (`rock-large-a` … `-f` →
+  `rock-large`: a last part that is one letter or a number), and `groupVariants(defs)` groups a
+  list by it, each group where its first (in a ranked list, its best) def was:
+  `groupVariants(kit.search('rock'))` gives a rock once, its five variants under it. A sheet's
+  lettered tiles (`forest-a` … `-i`) are pieces of a set, not variants: don't group textures.
+- **LIBRARY.md** gives a model's variants one row (every id, the range of their sizes) and leaves
+  out of a pack's rows the pack's name and tags, which its section header says and
+  `library.json` keeps, so a grep reads less.
+
 ## 0.31.0
 
 The kit carries its first imported packs (`packs/`, listed in `packs/index.json`, LIBRARY.md and

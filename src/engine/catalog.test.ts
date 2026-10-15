@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Catalog, searchDefs, searchWords, stemWord, wordForms, type CatalogEntry } from './catalog';
+import { Catalog, groupVariants, searchDefs, searchWords, stemWord, variantName, variantsInShort, wordForms, type CatalogEntry } from './catalog';
 import { MODEL_LIBRARY } from './model/library';
 import { TEXTURE_LIBRARY } from './texture/library';
 
@@ -29,6 +29,14 @@ describe('search', () => {
     expect(ids(cat.search('benches'))).toEqual(['bench']);
   });
 
+  it('breaks a tie inside a pack for the name that starts with the word: the rocks before a cliff of rock', () => {
+    const kit = new Catalog([def('stone-wall'), def('wall-shelf'), def('kit/cliff-block-rock', 'A cliff'), def('kit/bridge-stone', 'A bridge'), def('kit/rock-large-a', 'A rock'), def('kit/stones', 'Stones'), def('kit/rock-large-b', 'A rock'), def('kit/wall-low')]);
+    expect(ids(kit.search('rock'))).toEqual(['kit/rock-large-a', 'kit/rock-large-b', 'kit/cliff-block-rock']);
+    expect(ids(kit.search('stone'))).toEqual(['stone-wall', 'kit/stones', 'kit/bridge-stone']);
+    // the library's names end with what a thing is: it keeps its place before the packs
+    expect(ids(kit.search('wall'))).toEqual(['stone-wall', 'wall-shelf', 'kit/wall-low']);
+  });
+
   it('when no def has every word, those with the most come back', () => {
     expect(ids(cat.search('oak tree stump'))).toEqual(['oak-tree', 'stump']);
     expect(cat.search('zeppelin')).toEqual([]);
@@ -49,6 +57,16 @@ describe('search', () => {
     const shop = new Catalog([def('wall-shelf'), def('knife'), def('cookie-jar'), def('stove'), def('leaf-pile'), def('glove')]);
     for (const [q, id] of [['shelves', 'wall-shelf'], ['knives', 'knife'], ['cookies', 'cookie-jar'], ['stoves', 'stove'], ['leaves', 'leaf-pile'], ['gloves', 'glove']]) expect(ids(shop.search(q!))[0], q).toBe(id);
     expect(wordForms('shelves')).toContain('shelf');
+  });
+
+  it('groups variants: one def for each variant name, in ranked order, the rest under it', () => {
+    expect(['kenney-nature/rock-large-a', 'crate-12', 'tree-oak', 'kit/stool'].map(variantName)).toEqual(['kenney-nature/rock-large', 'crate', 'tree-oak', 'kit/stool']);
+    const rocks = new Catalog([def('rock-large-a', 'A rock'), def('rock-large-b', 'A rock'), def('rock-small-a', 'A pebble'), def('rocking-chair', 'A chair'), def('rock-large', 'The plain one'), def('rock-small-b', 'A pebble')]);
+    const groups = groupVariants(rocks.search('rock'));
+    expect(groups.map((g) => [g.def.id, ...g.variants.map((v) => v.id)])).toEqual([['rock-large-a', 'rock-large-b', 'rock-large'], ['rock-small-a', 'rock-small-b'], ['rocking-chair']]);
+    expect(groups.map(variantsInShort)).toEqual(['rock-large-b, rock-large', 'rock-small-b', '']);
+    expect(variantsInShort({ def: def('wall-top'), variants: [def('wall-top-b'), def('wall-top-c')] })).toBe('wall-top-b, -c');
+    expect(groupVariants([])).toEqual([]);
   });
 
   it('finds what an agent asks the real libraries for', () => {
