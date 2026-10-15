@@ -918,6 +918,14 @@ export async function runWorld(h) {
         out.flat = { through, n };
       }
       r.spin(true);
+      // an off-centre light (the lamp post's lantern hangs 0.23 m off the turntable's axis) turns with it:
+      // its glow stays on the lantern rather than on the spot the lantern started from
+      r.show('lamp-post');
+      e.step(10);
+      const l0 = r.light();
+      e.step(60);
+      const l1 = r.light();
+      out.lamp = l0 && l1 ? { r0: Math.hypot(l0.at[0], l0.at[2]), r1: Math.hypot(l1.at[0], l1.at[2]), moved: Math.atan2(l1.at[0], l1.at[2]) - Math.atan2(l0.at[0], l0.at[2]), turned: l1.turn - l0.turn } : null;
       out.chair = r.show('chair') && r.current().id;
       out.missing = r.show('no-such-asset');
       out.find = r.find('wooden chair', 3);
@@ -941,6 +949,11 @@ export async function runWorld(h) {
     check(gal.chair === 'chair' && gal.missing === false, 'asset gallery: any asset opens by id, an unknown id is refused');
     check(gal.packDrawn.every((p) => p.pixels > 300), `asset gallery: every pack's first asset is drawn (${gal.packDrawn.map((p) => `${p.id} ${p.pixels} px`).join(', ') || 'no packs'})`);
     check(gal.flat !== null && gal.flat.through === 0, `asset gallery: a flat ground tile hides the plinth under it (${gal.flat ? `${gal.flat.through} of ${gal.flat.n} pixels at its centre show the plinth through it` : 'kenney-nature/ground-grass is not in the gallery'})`);
+    {
+      const l = gal.lamp;
+      const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
+      check(l !== null && l.turned > 0.3 && Math.abs(wrap(l.moved - l.turned)) < 0.02 && Math.abs(l.r0 - l.r1) < 0.01 && l.r0 > 0.15, `asset gallery: the lamp post's light turns with it (${l ? `turntable ${l.turned.toFixed(2)} rad, light ${l.moved.toFixed(2)} rad, ${l.r0.toFixed(2)} m out` : 'no light'})`);
+    }
     check(gal.find[0] === 'chair', `asset gallery: search finds the chair for "wooden chair" (${gal.find.join(', ')})`);
     check(gal.kinds['textures/surfaces'] === 'surface' && gal.kinds['textures/icons'] === 'sprite' && gal.kinds['textures/sprites'] === 'sprite', `asset gallery: surfaces lie as floors, icons and sprites stand up (${Object.values(gal.kinds).join(', ')})`);
     check(gal.shelves.filter((s) => s.title.startsWith('PACK')).length === gal.packShelves, `asset gallery: a shelf for every pack in packs/index.json (${gal.packs} pack(s), ${gal.packShelves} shelves)`);

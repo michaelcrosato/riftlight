@@ -5,7 +5,7 @@
  * comma and period change shelf; the panel says what the asset is, how big, and where it came
  * from. `?asset=<id>` opens the gallery on one asset; agents drive it through `__WORLD__.room`.
  */
-import { Group, Mesh, PlaneGeometry, Vector3, type Object3D } from 'three/webgpu';
+import { Group, Mesh, Object3D, PlaneGeometry, Vector3 } from 'three/webgpu';
 import { buildModel, DEFAULT_TEXEL, hudSprite, loadPack, loadPackIndex, MODEL_FAMILIES, MODEL_LIBRARY, ModelCatalog, searchDefs, SpriteBatch, spriteSheet, TEXTURE_FAMILIES, TEXTURE_LIBRARY, TextureCatalog, textureMap, toonMaterial, type LightHandle, type ModelDef, type PaletteColor, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import type { Knob, RoomDef } from '../types';
@@ -152,8 +152,13 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         const pivot = new Group();
         b.object.position.set(-(b.bounds.min[0] + b.bounds.max[0]) / 2, top.y - b.bounds.min[1], -(b.bounds.min[2] + b.bounds.max[2]) / 2);
         pivot.add(b.object);
-        const own = b.light ? [ctx.lights.request({ position: [b.object.position.x + b.light.at[0], b.object.position.y + b.light.at[1], b.object.position.z + b.light.at[2]], color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' })] : [];
-        lights = own;
+        // the light follows a point inside the model, so a torch's glow stays on its flame as it turns
+        const flame = new Object3D();
+        if (b.light) {
+          flame.position.set(...b.light.at);
+          b.object.add(flame);
+        }
+        lights = b.light ? [ctx.lights.request({ follow: flame, color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' })] : [];
         const [w, h, d] = b.bounds.size;
         return {
           id: def.id,
@@ -368,6 +373,8 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         /** Asset ids that match words, best first (`searchDefs`, as `npm run model -- find`). */
         find: (text: string, limit = 10) => searchDefs(everything(), text, { limit }).map((d) => d.id),
         spin: (on: boolean) => (spin = on),
+        /** The exhibit's light, where the light pool puts it, and how far the turntable has turned (radians); null without one. */
+        light: () => (lights[0] && exhibit ? { at: lights[0].position.toArray().map((v) => +v.toFixed(4)), turn: +exhibit.root.rotation.y.toFixed(4) } : null),
         /** Hide (or show again) what is on the turntable, the camera left where it is: a baseline for captures. */
         hide: (on: boolean) => {
           if (exhibit) exhibit.root.visible = !on;
