@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
 import { titleMenu } from './menus';
 
-const host = (more: object = {}) => ({ store: { lastSlot: () => null }, sound: () => {}, ...more }) as never;
+const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
 
 describe('links between Riftlight and Engine World', () => {
   it('the title offers Engine World when the host can open it, and opens it', () => {

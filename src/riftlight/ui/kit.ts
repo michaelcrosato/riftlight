@@ -14,7 +14,7 @@ export type UiEvent =
   | { readonly kind: 'confirm' }
   | { readonly kind: 'back' }
   | { readonly kind: 'tab'; readonly dir: 1 | -1 }
-  | { readonly kind: 'pointer'; readonly type: 'move' | 'down' | 'up'; readonly x: number; readonly y: number }
+  | { readonly kind: 'pointer'; readonly type: 'move' | 'down' | 'up'; readonly x: number; readonly y: number; readonly button?: number; readonly touch?: boolean }
   | { readonly kind: 'wheel'; readonly dy: number }
   | { readonly kind: 'key'; readonly code: string };
 

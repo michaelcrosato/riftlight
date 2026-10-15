@@ -24,6 +24,7 @@ import { gearScore, type TownReport, type TownVisitOptions, townVisit } from './
 import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
 import type { Riftlight } from './Riftlight';
+import { viewSaved } from './save';
 
 export interface RiftlightState {
   screen: string;
@@ -413,7 +414,7 @@ export function createApi(game: Riftlight) {
       return game.store.exportSlot(slot);
     },
     importSave(slot: number, text: string) {
-      game.store.importSlot(slot, text);
+      viewSaved(game.saves, slot, game.store.importSlot(slot, text));
       return true;
     },
     slots() {

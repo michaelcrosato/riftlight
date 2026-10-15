@@ -69,6 +69,9 @@ export const KEYS = {
   quick: ['KeyV', 'PadY'],
 } as const;
 
+/** The pointer's buttons as the engine's keys (`MOUSE_BUTTONS`, `TOUCH_KEY`): left (or a finger on the world) attacks, right is skill 1. */
+export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as const;
+
 /** Labels for prompts: [key, pad button]. */
 export const GLYPHS = {
   attack: ['LMB', 'A'],
@@ -85,49 +88,34 @@ export const GLYPHS = {
   back: ['ESC', 'B'],
 } as const;
 
-/** The mouse / touch pointer in art pixels and on the ground. */
+/** A point in normalised device coordinates over the canvas → art pixels (`renderer.resolution`). */
+export function ndcToArt(engine: Engine, x: number, y: number): { x: number; y: number } {
+  const res = engine.renderer.resolution;
+  return { x: Math.min(res.width - 1, Math.max(0, Math.floor(((x + 1) / 2) * res.width))), y: Math.min(res.height - 1, Math.max(0, Math.floor(((1 - y) / 2) * res.height))) };
+}
+
+/** The pointer's buttons as `UiEvent` buttons: engine key → [`PointerEvent.button`, bit in `Pointer.buttons`]; a finger is a left button. */
+const BUTTONS: Readonly<Record<string, readonly [number, number]>> = { MouseLeft: [0, 1], MouseRight: [2, 2], Touch: [0, 4] };
+
+/**
+ * The mouse / touch pointer in art pixels and on the ground, read from `ctx.input` (where it
+ * is over the canvas, its buttons as `MouseLeft` / `MouseRight` keys), so a recording of the
+ * game replays it: aim, clicks and menus alike.
+ */
 export class Pointer {
-  /** Client position. */
-  private cx = -1;
-  private cy = -1;
-  /** Art-pixel position (updated each frame). */
+  /** Art-pixel position (updated each frame; -1 until the pointer was over the canvas). */
   readonly art = { x: -1, y: -1 };
-  /** Buttons held: 1 left, 2 right. */
+  /** Buttons held: 1 left, 2 right, 4 a finger. */
   buttons = 0;
-  /** Pointer events since the last frame, in client coordinates. */
-  private queue: { type: 'move' | 'down' | 'up'; x: number; y: number; button: number }[] = [];
   /** Seconds since the mouse last moved or clicked (big = keyboard / pad player). */
   idle = 1e9;
   touch = false;
-  private readonly abort = new AbortController();
   private readonly ray = new Raycaster();
   private readonly ndc = new Vector2();
 
-  constructor(private readonly engine: Engine) {
-    const signal = this.abort.signal;
-    const on = (type: 'pointermove' | 'pointerdown' | 'pointerup', kind: 'move' | 'down' | 'up') =>
-      window.addEventListener(
-        type,
-        (e) => {
-          this.cx = e.clientX;
-          this.cy = e.clientY;
-          this.touch = e.pointerType === 'touch';
-          // The touch joystick and buttons are DOM controls on top: they are not the pointer.
-          if (kind !== 'move' && (e.target as HTMLElement | null)?.closest?.('.touch-ui')) return;
-          if (kind === 'down') this.buttons |= e.button === 2 ? 2 : 1;
-          if (kind === 'up') this.buttons &= e.button === 2 ? ~2 : ~1;
-          this.queue.push({ type: kind, x: e.clientX, y: e.clientY, button: e.button });
-          this.idle = 0;
-        },
-        { signal },
-      );
-    on('pointermove', 'move');
-    on('pointerdown', 'down');
-    on('pointerup', 'up');
-    window.addEventListener('blur', () => (this.buttons = 0), { signal });
-  }
+  constructor(private readonly engine: Engine) {}
 
-  /** Client → art pixels. */
+  /** Client → art pixels (DOM layout: where a touch control sits on the HUD). */
   toArt(x: number, y: number): { x: number; y: number } {
     const canvas = this.engine.renderer.renderer.domElement;
     const r = canvas.getBoundingClientRect();
@@ -136,14 +124,34 @@ export class Pointer {
     return { x: Math.floor(((x - r.left) / r.width) * res.width), y: Math.floor(((y - r.top) / r.height) * res.height) };
   }
 
-  /** Start of a frame: art position and the queued events as UI pointer events. */
+  /**
+   * Start of a frame: what the pointer did since the last frame as UI events, in order (each
+   * button pressed or let go where it was: `input.buttonEvents`, so a drag shorter than a frame
+   * still runs from where it started), then where it is now (while it is over the canvas: a
+   * tap's finger has gone by the frame after, and the tap stays where it was).
+   */
   frame(dt: number): UiEvent[] {
     this.idle += dt;
-    const p = this.toArt(this.cx, this.cy);
-    this.art.x = p.x;
-    this.art.y = p.y;
-    const out: UiEvent[] = this.queue.map((e) => ({ kind: 'pointer' as const, type: e.type, ...this.toArt(e.x, e.y) }));
-    this.queue = [];
+    const input = this.engine.input;
+    this.touch = input.pointer.touch;
+    const out: UiEvent[] = [];
+    const moveTo = (x: number, y: number) => {
+      const at = ndcToArt(this.engine, x, y);
+      if (at.x === this.art.x && at.y === this.art.y) return;
+      this.art.x = at.x;
+      this.art.y = at.y;
+      out.push({ kind: 'pointer', type: 'move', x: at.x, y: at.y, touch: input.pointer.touch });
+      this.idle = 0;
+    };
+    for (const e of input.buttonEvents) {
+      const b = BUTTONS[e.code];
+      if (!b) continue;
+      moveTo(e.x, e.y);
+      out.push({ kind: 'pointer', type: e.down ? 'down' : 'up', x: this.art.x, y: this.art.y, button: b[0], touch: e.code === 'Touch' });
+      this.buttons = e.down ? this.buttons | b[1] : this.buttons & ~b[1];
+      this.idle = 0;
+    }
+    if (input.pointer.over) moveTo(input.pointer.x, input.pointer.y);
     return out;
   }
 
@@ -151,7 +159,7 @@ export class Pointer {
   ground(out: Vector3, groundY = 0): boolean {
     if (this.art.x < 0) return false;
     const res = this.engine.renderer.resolution;
-    this.ndc.set((this.art.x + 0.5) / res.width * 2 - 1, -((this.art.y + 0.5) / res.height * 2 - 1));
+    this.ndc.set(((this.art.x + 0.5) / res.width) * 2 - 1, -(((this.art.y + 0.5) / res.height) * 2 - 1));
     this.ray.setFromCamera(this.ndc, this.engine.camera.camera);
     const { origin, direction } = this.ray.ray;
     if (Math.abs(direction.y) < 1e-5) return false;
@@ -165,9 +173,8 @@ export class Pointer {
     return this.art.x >= 0;
   }
 
-  dispose(): void {
-    this.abort.abort();
-  }
+  /** Nothing to let go of: the pointer is the engine's. */
+  dispose(): void {}
 }
 
 /** Builds menu events from keys and the pad, with key repeat for held directions. */

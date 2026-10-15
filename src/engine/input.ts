@@ -66,6 +66,8 @@ export interface InputFrame {
   gamepad?: boolean;
   /** Whether the pointer is a touch (`pointer.touch`), when that changes. */
   touch?: boolean;
+  /** Pointer buttons pressed (1) and let go (0) this frame, in order, each where the pointer was (`buttonEvents`). */
+  clicks?: [string, 0 | 1, number, number][];
   /** Data from outside the canvas delivered this frame (`send()`): a DOM widget's value, a save read from storage. */
   commands?: unknown[];
   /**
@@ -94,6 +96,14 @@ export const MOUSE_BUTTONS: readonly (readonly [code: string, bit: number])[] = 
 ];
 /** A finger on the canvas, as a key: held while one is down (not a mouse button, so a tap is not a click). */
 export const TOUCH_KEY = 'Touch';
+
+/** A pointer button pressed or let go (`Input.buttonEvents`): its key, and where the pointer was (normalised device coordinates). */
+export interface ButtonEvent {
+  readonly code: string;
+  readonly down: boolean;
+  readonly x: number;
+  readonly y: number;
+}
 
 /**
  * Keyboard + pointer + gamepad input.
@@ -129,6 +139,8 @@ export class Input {
   readonly pointer = { x: 0, y: 0, over: false, touch: false };
   /** Wheel ticks this frame (+1 = scroll down / zoom out). */
   wheel = 0;
+  /** This frame's button presses and releases, in order (`buttonEvents`). */
+  private _buttonEvents: ButtonEvent[] = [];
   /** Commands sent since the last frame began, and this frame's (`send`, `commands`). */
   private outbox: unknown[] = [];
   private _commands: unknown[] = [];
@@ -189,6 +201,9 @@ export class Input {
       'blur',
       () => {
         if (this._playing) return;
+        // pointer buttons let go as events too: a UI mid-drag hears the release it would have
+        for (const [code] of MOUSE_BUTTONS) this.button(code, false);
+        this.button(TOUCH_KEY, false);
         this.held.clear();
       },
       { signal },
@@ -226,6 +241,7 @@ export class Input {
     };
     el.addEventListener('pointermove', place, { signal });
     el.addEventListener('pointerdown', place, { signal });
+    el.addEventListener('pointerup', place, { signal }); // where a button is let go
     // locked by the click that asked for it: point at the crosshair from now, not where it clicked
     document.addEventListener(
       'pointerlockchange',
@@ -423,6 +439,7 @@ export class Input {
   endFrame(): void {
     this.pressed.clear();
     this._commands = [];
+    this._buttonEvents = [];
     this.mouseDelta.x = 0;
     this.mouseDelta.y = 0;
     this.wheel = 0;
@@ -461,14 +478,24 @@ export class Input {
     return bits;
   }
 
-  /** A pointer button (a key code) goes down (pressed, unless held already) or up. */
+  /** A pointer button (a key code) goes down (pressed, unless held already) or up, where the pointer is. */
   private button(code: string | undefined, down: boolean): void {
-    if (!code || this._playing) return;
+    if (!code || this._playing || down === this.held.has(code)) return;
+    this._buttonEvents.push({ code, down, x: this.pointer.x, y: this.pointer.y });
     if (!down) this.held.delete(code);
-    else if (!this.held.has(code)) {
+    else {
       this.press(code);
       this.held.add(code);
     }
+  }
+
+  /**
+   * This frame's pointer button presses and releases, in order, each with where the pointer
+   * was: a drag shorter than a frame (a script's) still starts where it started and ends where
+   * it ended. Recorded with the frame. UI that acts on clicks reads these; play reads `isDown`.
+   */
+  get buttonEvents(): readonly ButtonEvent[] {
+    return this._buttonEvents;
   }
 
   /**
@@ -527,6 +554,7 @@ export class Input {
     if (!last || this.gamepadConnected !== last.gamepad) f.gamepad = this.gamepadConnected;
     if (!last || last.touch === undefined || this.pointer.touch !== last.touch) f.touch = this.pointer.touch;
     if (this._commands.length) f.commands = JSON.parse(JSON.stringify(this._commands)) as unknown[]; // the game may change what it got
+    if (this._buttonEvents.length) f.clicks = this._buttonEvents.map((e) => [e.code, e.down ? 1 : 0, e.x, e.y]);
     if (last) {
       last.held = heldKey;
       last.pointer = pointerKey;
@@ -562,6 +590,7 @@ export class Input {
       this.pointer.over = f.pointer[2] === 1;
     }
     if (f.touch !== undefined) this.pointer.touch = f.touch;
+    this._buttonEvents = (f.clicks ?? []).map(([code, down, x, y]) => ({ code, down: down === 1, x, y }));
     this._commands = f.commands ? (JSON.parse(JSON.stringify(f.commands)) as unknown[]) : []; // never the recording's own objects
   }
 

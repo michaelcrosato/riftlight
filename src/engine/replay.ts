@@ -63,6 +63,7 @@ export function recordingProblem(v: unknown): string | null {
     if (f.gamepad !== undefined && typeof f.gamepad !== 'boolean') return bad('gamepad must be true or false');
     if (f.touch !== undefined && typeof f.touch !== 'boolean') return bad('touch must be true or false');
     if (f.commands !== undefined && !Array.isArray(f.commands)) return bad('commands must be a list');
+    if (f.clicks !== undefined && !(Array.isArray(f.clicks) && f.clicks.every((c) => Array.isArray(c) && c.length === 4 && typeof c[0] === 'string' && (c[1] === 0 || c[1] === 1) && Number.isFinite(c[2]) && Number.isFinite(c[3])))) return bad('clicks must be [key, 0 or 1, x, y] lists');
     if (f.sync !== undefined && f.sync !== true) return bad('sync must be true when there');
   }
   return null;

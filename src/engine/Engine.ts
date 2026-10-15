@@ -970,8 +970,9 @@ export class Engine {
    * (`step()`), waiting for promise callbacks wherever the recorded run did. `frames` stops
    * early. Afterwards the level is where the recorded one was (`fingerprint()` matches if the
    * game is deterministic) and stays in manual time: `step()` plays on from there, live, and
-   * the level's recording carries on from it. Live input is ignored during a replay; afterwards
-   * nothing the recording held stays held. A game hook's exception is reported and the replay
+   * the level's recording carries on from it. Live input is ignored during a replay, from the
+   * moment `start` runs (`input.playing`: a game's setup can tell); afterwards nothing the
+   * recording held stays held. A game hook's exception is reported and the replay
    * goes on, as in live play.
    */
   async replay(rec: Recording, start: () => unknown, o: { frames?: number } = {}): Promise<void> {
@@ -980,9 +981,24 @@ export class Engine {
     this.manual = true; // nothing advances on its own while the level loads
     this._seed = rec.seed;
     this.time = rec.time;
+    // the level loading is part of the replay: live input and sends are ignored from here, and the
+    // volumes a recorded menu sets are the recording's (never written, the player's back after)
+    const volumes = { ...this.audio.volume };
+    this.input.playing = true;
+    this.audio.persist = false;
+    const live = () => {
+      this.replaying = false;
+      this.input.playing = false;
+      for (const ch of ['master', 'sfx', 'music'] as const) this.audio.setVolume(ch, volumes[ch]);
+      this.audio.setMuted(volumes.muted);
+      this.audio.persist = true;
+    };
     const slow = setTimeout(() => console.warn('[engine] replay: start() has not finished after 10 s; nothing advances during a replay, so it must not wait on frames (load without a transition)'), 10_000);
     try {
       await start();
+    } catch (e) {
+      live();
+      throw e;
     } finally {
       clearTimeout(slow);
     }
@@ -997,7 +1013,6 @@ export class Engine {
     let played = 0;
     const level = this.rec;
     this.replaying = true;
-    this.input.playing = true;
     try {
       for (; played < n && this.ready; played++) {
         const f = rec.frames[played]!;
@@ -1008,8 +1023,7 @@ export class Engine {
       }
     } finally {
       channel.port1.close();
-      this.replaying = false;
-      this.input.playing = false;
+      live();
       this.input.release(); // input is live again: nothing the recording held stays held (queued presses do)
       // from here on the level's recording is the replayed one, carried on by whatever comes next
       if (level && level === this.rec) {

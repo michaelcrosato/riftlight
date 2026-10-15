@@ -151,6 +151,26 @@ export async function runRiftlightItems(h) {
     check(equipped.belt === gear, `right-click equips the belt (${equipped.belt})`);
     check(equipped.life.value > lifeBefore && equipped.life.sources.some((x) => x.source === 'item:belt'), `the hero's StatSheet changes: life ${lifeBefore} → ${equipped.life.value} from item:belt`);
     await shot('inventory');
+    // the windows act only on the pointer events the shell hands them: with a panel over them, a
+    // click on a bag item is that panel's
+    const over = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const loot = rl.game.ports.loot;
+      loot.add({ uid: 'e2e-under', base: 'leather-belt', rarity: 'normal', level: 1, name: 'Under Belt', affixes: [] });
+      rl.step(1);
+      rl.game.layer.open({ id: 'e2e-cover', title: 'cover', size: { w: 40, h: 20 }, draw() {}, input: () => true }, { modal: false });
+      const c = loot.ui.itemCenter('e2e-under');
+      return loot.ui.toClient(c.x, c.y);
+    });
+    await page.mouse.click(over.x, over.y);
+    await step(2);
+    const covered = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const held = rl.game.ports.loot.ui.held?.item.uid ?? null;
+      rl.game.layer.close('e2e-cover');
+      return { held, ui: rl.state().ui };
+    });
+    check(covered.held === null && covered.ui.join() === 'inventory', `a click on a bag item under another panel is that panel's (on the cursor ${covered.held}, ui ${covered.ui.join(',')})`);
     await R(() => window.__RIFTLIGHT__.press('Escape'));
     rs = await st();
     check(rs.ui.length === 0, `Esc closes the inventory and doesn't open the pause menu (ui ${rs.ui.join(',') || 'none'})`);

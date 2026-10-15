@@ -222,6 +222,10 @@ const ZERO_RESULT: HitResult = { total: 0, byType: {}, crit: false, killed: fals
  */
 export class PropTarget implements ActorLike {
   private static next = 1_000_000;
+  /** Start prop ids again (a game's setup, as `setActorIds`): a replay numbers them as the recorded run did. */
+  static setIds(next = 1_000_000): void {
+    PropTarget.next = next;
+  }
   readonly id = PropTarget.next++;
   readonly faction: Faction = 'neutral';
   readonly stats = new StatSheet();

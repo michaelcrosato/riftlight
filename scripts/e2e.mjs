@@ -6,7 +6,7 @@
 //     webgpu | webgl-fallback | webgl-forced | cameras | camera-swap | filters-webgpu |
 //     filters-webgl | touch | phone | moves | lab | asset-lab | riftlight | riftlight-tree | riftlight-loot | tools |
 //     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
-//     riftlight-showcase | bundle | world;  groups: @core | @cameras | @filters | @world | @assets
+//     riftlight-showcase | riftlight-replay | bundle | world;  groups: @core | @cameras | @filters | @world | @assets
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
 //
 // Core suites (one per backend path):
@@ -68,6 +68,7 @@
 //                 licence, a third-party file or pack nobody approved, own work with an outside
 //                 source, an unsafe id and a grid that doesn't fit.
 // riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs), WebGPU + WebGL 2.
+// riftlight-replay  a Riftlight session by input alone, recorded and replayed to the same state (scripts/e2e-riftlight-replay.mjs).
 // riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
 //                 in level 1 (scripts/e2e-riftlight-builds.mjs), WebGPU + WebGL 2.
 // systems         game systems (scripts/e2e-systems.mjs), WebGPU + WebGL 2: pixel HUD, audio,
@@ -117,6 +118,7 @@ import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
 import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
+import { runRiftlightReplay } from './e2e-riftlight-replay.mjs';
 import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
 import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
@@ -1572,6 +1574,10 @@ const SUITES = {
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[1] });
   },
+  'riftlight-replay': async (exe) => {
+    // gameplay is the CPU's: one backend shows it replays
+    await runRiftlightReplay({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[1] });
+  },
   'riftlight-builds': async (exe) => {
     const helpers = { exe, openPage, check, capture, state, colorCount, checkClean, OUT };
     await runRiftlightBuilds({ ...helpers, scenario: SCENARIOS[0] });
@@ -1600,7 +1606,7 @@ const GROUPS = {
   '@core': ['webgpu', 'webgl-fallback', 'webgl-forced', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'filters-webgl', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
-  '@world': ['world'],
+  '@world': ['world', 'riftlight-replay'],
   // every library model drawn on both backends: it grows with the library, so it runs alone
   '@assets': ['asset-lab'],
 };

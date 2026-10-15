@@ -1,7 +1,7 @@
 {
   "name": "pixel-engine",
   "private": true,
-  "version": "0.34.0",
+  "version": "0.35.0",
   "license": "MIT",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",

@@ -138,6 +138,29 @@ Q/E/R/F rather than Q/W/E/R. On a phone the touch buttons are the bar (*Game she
 and `HERO_DEBUG_KEYS` (R is a skill, so the resolution hotkey moves to F2) to the engine.
 Every timing is in `HERO_TUNING`.
 
+**All of it is `ctx.input`, so a session replays** (docs/ENGINE.md, *Recording and replay*):
+the cursor is the engine's `pointer` over the canvas (`game/controls.ts` `Pointer`: art pixels,
+the ground under it, and the menus' pointer events), the mouse buttons are its `MouseLeft` /
+`MouseRight` keys (a click shorter than a frame still attacks; a finger on the world is `Touch`),
+and the item windows read the same (`ItemsUi.update`). What the game takes from the page goes
+through `ctx.input.send` and arrives a frame later, recorded: the settings play depends on at
+setup (`playSettings`: zoom and shake move what the mouse points at), the save slots the menus
+show (`SavesView`), a save loaded or a new run's seed (`Riftlight.play`), an imported file, and
+what the passive tree does (allocate, refund, close: its view runs on the page, so it hands them
+over and the tree panel does them when they arrive). Actor ids count from 1 and prop ids from
+1,000,000 again at each game's setup, so a replay numbers them as the recorded run did.
+`Riftlight.fingerprint` (part of `engine.fingerprint()`) is the hero and every monster (where,
+facing, life), the ground loot, the save and the bags, and the run's random stream. A replay
+writes nothing to storage (the saves, settings and volumes are the player's: the engine puts the
+volumes back when it ends, and a replayed Import or Export does nothing), and the settings and
+slots sent at setup give way to anything the game changed before its first frame (an agent's
+`newRun`). The e2e suite `riftlight-replay` plays a session by input alone (New Run and Resume
+clicked, the walk to Vex on the stick, a fight aimed with the mouse, a volume and the zoom
+changed in Settings, a tree node allocated in the tree's view), replays it over other saves and
+settings to the same fingerprint with storage untouched, and shows an edited recording does
+not. The agent API's calls (`newRun`, `moveTo`, `fight`...) are not input: a session they drive
+does not replay.
+
 ### How the hero moves on screen (`actors/HeroController.ts`, `heroAnimator.ts`)
 
 Gameplay is instant (the facing snaps to the aim, speed is full at once, an action starts on
@@ -1445,7 +1468,9 @@ level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, death
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the
-engine's audio store.
+engine's audio store. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
+read from storage once at setup (and recorded, *The hero's controls*) and kept by the game's own
+saves, deletes and imports, so a replay shows the slots the recorded run saw.
 
 ### The look studio (`ui/lookStudio.ts`)
 

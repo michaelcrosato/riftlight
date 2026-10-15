@@ -363,6 +363,8 @@ export interface LootPort {
   /** Restore from / write into a save. */
   load(save: SaveData): void;
   write(save: SaveData): void;
+  /** The bags, gear and sockets as data, changing nothing (a fingerprint; `write` also returns the item on the cursor). Optional. */
+  peek?(): unknown;
   /** The shell changed the skill sockets (gems earned XP or levelled): take them as they are (optional). */
   setSockets?(skills: SaveData['hero']['skills']): void;
   /** Dev / agent API: create an item. */

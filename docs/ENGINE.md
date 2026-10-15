@@ -462,7 +462,7 @@ ctx.audio.register('laser', {
 });
 ctx.audio.playMusic(MY_SONG, 'level1');          // loops; playMusic(null) stops
 await ctx.audio.load('door', 'assets/door.ogg'); // optional audio files, then play('door')
-ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted
+ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted (not during a replay)
 ctx.audio.toggleMute();                          // also the M key and the debug panel button
 ```
 
@@ -1033,7 +1033,8 @@ interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 **Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
 its start: the seed, the game's name, the game time it began at and each frame's input (held keys,
 with gamepad and mouse buttons as keys, presses, sticks, pointer, wheel, gamepad connected, touch,
-commands, `dt`), only what changed, and whether promise callbacks ran before the frame.
+button presses and releases with where the pointer was, commands, `dt`), only what changed, and
+whether promise callbacks ran before the frame.
 
 ```ts
 const rec = engine.recording();                                   // plain JSON: save it, attach it to a bug
@@ -1059,8 +1060,9 @@ advances during a replay, so a `start` that waits on frames never finishes, and 
 so after 10 s), plays the frames in manual time (`step()`) and leaves the level there, still
 manual, its recording carried on by whatever is stepped next. Promise callbacks (`await
 tween.done`) run between the same frames as in the recorded run; live input is ignored while it
-plays and nothing it held stays held after; a game hook's exception is reported and the replay
-goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
+plays and nothing it held stays held after; a recorded menu's volume changes play but are not
+written (`ctx.audio.persist` is off), and the player's volumes come back when it ends; a game
+hook's exception is reported and the replay goes on, as in live play. That is also how a moment is saved and restored: keep the recording,
 replay it to frame `n`, then play on differently from there (a replay runs without rendering, so
 it is as fast as the simulation). A replay that ends with the run's `fingerprint()` shows the
 level is deterministic. A script that steps a level and awaits between steps should yield a
@@ -1216,7 +1218,9 @@ Mouse buttons on the canvas are keys (`MOUSE_BUTTONS`: `MouseLeft`, `MouseRight`
 held and pressed like any key, so fixed-step code reads a click with `consumePress` (one shorter
 than a frame is not lost) and a chord (right while left is held) counts both. A finger is the key
 `Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one.
-`input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
+`input.buttonEvents` lists this frame's presses and releases in order, each where the pointer
+was, so a UI reading clicks sees a drag a script makes between two frames start and end where it
+did. `input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
 mouse ray meets a plane (the Sandbox room's grab: a spring, so it still collides and can be
 thrown; a level plane when the camera looks down, an upright one facing it when it looks
 across). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;
