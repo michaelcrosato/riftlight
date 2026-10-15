@@ -15,7 +15,7 @@ export const screenOf = (x: number, z: number): [number, number] => [(x - z) * S
 export const TOWN_LAYOUT = {
   /** The walkable circle around the plaza (m); the forest starts past it. */
   radius: 31,
-  /** The iso camera the town is seen with (degrees; `camera` in src/riftlight/index.ts): what stands taller than the hero hides the ground behind it. */
+  /** The iso camera the game is seen with (degrees; `RIFTLIGHT_OPTIONS.camera` takes it): what stands taller than the hero hides the ground behind it. */
   view: { yaw: 45, pitch: 42 },
   plaza: 5.2,
   fountain: [0, 0.4] as const,

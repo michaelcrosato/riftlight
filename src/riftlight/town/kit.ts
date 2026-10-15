@@ -237,16 +237,19 @@ export class Kit {
 
   /**
    * Close the ground the camera can't see behind something standing on the local box (x, z, w,
-   * d) that hides the hero up to `h` m tall at its back edge (a house's eaves, a tower's top): he
-   * would be lost there. `view` is the camera's yaw (its screen axes, as `frame(..., yaw)` turns
-   * them: local X right, local Z toward the camera) and pitch, in degrees. He is hidden where a ray
-   * from his head (1.6 m) toward the camera runs into it, so the ground is closed from the box's
-   * back edge (as the screen sees it) back by (h - 1.6) / tan(pitch), in screen-aligned slices
-   * half a metre wide that follow that edge.
+   * d): the hero would be lost there. `h` is how tall it is at its back edge (a wall's top, a
+   * roof's eaves) or `{ eaves, ridge }`, a roof rising to `ridge` along its middle. `view` is the
+   * camera's yaw (its screen axes, as `frame(..., yaw)` turns them: local X right, local Z toward
+   * the camera) and pitch, in degrees. He is hidden where a ray from his head (1.6 m) toward the
+   * camera runs into it, so the ground is closed, in screen-aligned slices half a metre wide, from
+   * the box's back edge (as the screen sees it) back by (eaves - 1.6) / tan(pitch), or from its
+   * middle by (ridge - 1.6) / tan(pitch), whichever reaches further.
    */
-  closeBehind(x: number, z: number, w: number, d: number, h: number, view: { readonly yaw: number; readonly pitch: number }): void {
-    const depth = Math.max(0, h - 1.6) / Math.tan(view.pitch * DEG);
-    if (depth <= 0) return;
+  closeBehind(x: number, z: number, w: number, d: number, h: number | { readonly eaves: number; readonly ridge: number }, view: { readonly yaw: number; readonly pitch: number }): void {
+    const t = Math.tan(view.pitch * DEG);
+    const eaves = Math.max(0, (typeof h === 'number' ? h : h.eaves) - 1.6) / t;
+    const ridge = typeof h === 'number' ? 0 : Math.max(0, h.ridge - 1.6) / t;
+    if (eaves <= 0 && ridge <= 0) return;
     const yaw = view.yaw * DEG;
     const c = Math.cos(yaw);
     const s = Math.sin(yaw);
@@ -258,16 +261,26 @@ export class Kit {
       [1, 1],
       [-1, 1],
     ].map(([a, b]) => toScreen(this.world([x + (a! * w) / 2, 0, z + (b! * d) / 2])));
-    /** The footprint's back edge (highest screen y) at screen x `sx`. */
-    const back = (sx: number): number => {
-      let top = -Infinity;
+    /** The footprint's edges at screen x `sx`: its nearest (front) and furthest (back) screen y. */
+    const span = (sx: number): [number, number] => {
+      let lo = Infinity;
+      let hi = -Infinity;
       for (let i = 0; i < 4; i++) {
         const [ax, ay] = corners[i]!;
         const [bx, by] = corners[(i + 1) % 4]!;
         if (sx < Math.min(ax, bx) - 1e-9 || sx > Math.max(ax, bx) + 1e-9) continue;
-        top = Math.max(top, Math.abs(bx - ax) < 1e-9 ? Math.max(ay, by) : ay + ((by - ay) * (sx - ax)) / (bx - ax));
+        const ys = Math.abs(bx - ax) < 1e-9 ? [ay, by] : [ay + ((by - ay) * (sx - ax)) / (bx - ax)];
+        for (const y of ys) {
+          lo = Math.min(lo, y);
+          hi = Math.max(hi, y);
+        }
       }
-      return top;
+      return [lo, hi];
+    };
+    /** How far up the screen it hides at screen x `sx`. */
+    const reach = (sx: number): number => {
+      const [front, back] = span(sx);
+      return Math.max(back + eaves, (front + back) / 2 + ridge);
     };
     const sx0 = Math.min(...corners.map((p) => p[0]));
     const sx1 = Math.max(...corners.map((p) => p[0]));
@@ -275,9 +288,10 @@ export class Kit {
     for (let i = 0; i < n; i++) {
       const a = sx0 + ((sx1 - sx0) * i) / n;
       const b = sx0 + ((sx1 - sx0) * (i + 1)) / n;
-      const inside = corners.filter((p) => p[0] > a && p[0] < b).map((p) => p[1]);
-      const lo = Math.min(back(a), back(b)) - 0.3; // overlaps the footprint: no seam to squeeze through
-      const hi = Math.max(back(a), back(b), ...inside) + depth;
+      const inside = corners.filter((p) => p[0] > a && p[0] < b).map((p) => p[0]);
+      const lo = Math.min(span(a)[1], span(b)[1]) - 0.3; // overlaps the footprint: no seam to squeeze through
+      const hi = Math.max(reach(a), reach(b), ...inside.map(reach));
+      if (hi <= lo + 0.3) continue;
       const cx = (a + b) / 2;
       const cy = (lo + hi) / 2;
       this.blockers.push({ kind: 'box', x: cx * c - cy * s, z: -cx * s - cy * c, hw: (b - a) / 2, hd: (hi - lo) / 2, rot: yaw });

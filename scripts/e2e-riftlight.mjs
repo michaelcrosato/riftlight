@@ -90,6 +90,16 @@ export async function runRiftlight(h) {
     });
     for (const d of tour.out) check(d.arrived, `walks on to the ${d.id} (${d.frames} frames, at ${d.at.join(', ')})`);
     check(tour.home, 'and back to the plaza');
+    // a Blink in town stops at walls: the hero's combat world asks the town (Town.wall), here
+    // from the Old Watch's courtyard north through its wall
+    const wall = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const town = rl.game.town;
+      const from = town.districts.watch.clone().setY(0.5);
+      const to = from.clone().add({ x: -7, y: 0, z: -7 }); // up the screen, 10 m, past the wall
+      return { combat: rl.game.hero.hc.combat.wall(from, to), town: town.wall(from, to) };
+    });
+    check(wall.combat !== null && wall.combat === wall.town && wall.combat < 1, `a Blink in town stops at walls: the hero's combat asks the town (${wall.combat} of the way through the Old Watch's wall)`);
     await capture(page, `riftlight-${tag}-town-back.png`);
 
     // ---------------------------------------------------------------- town → rift keeper → level 1

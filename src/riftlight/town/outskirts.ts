@@ -162,9 +162,10 @@ class Outskirts {
    */
   trunk(id: string, sx: number, sy: number, r = 0.4, o: ModelPlacement & { hides?: number } = {}): void {
     const size = this.m(id, at(sx, sy), { yaw: this.rng.range(0, 360), ...o, block: false })?.bounds.size;
+    if (!size) return; // its pack didn't load: nothing there, nothing to bump into
     const [x, z] = iso(sx, sy);
     this.k.blockers.push({ kind: 'circle', x, z, r: r * (o.scale ?? 1) });
-    if (o.hides && size) {
+    if (o.hides) {
       const crown = Math.min(size[0], size[2]) * (o.scale ?? 1) * 0.8;
       this.k.closeBehind(x, z, crown, crown, o.hides, L.view);
     }
@@ -368,7 +369,7 @@ class Outskirts {
       k.box([0.08, 0.7, 0.6], 'red', [-2.75, 2.65, 2.75]);
       k.box([0.1, 0.3, 0.2], 'sand', [-2.75, 2.65, 2.75]);
       k.blockBox(0, 0, 5.8, 4.4);
-      k.closeBehind(0, 0, 5.8, 4.4, 5, L.view);
+      k.closeBehind(0, 0, 5.8, 4.4, { eaves: 4.8, ridge: 6.9 }, L.view);
       // the patio: a deck before the door, two tables with chairs, barrels, potted plants
       k.box([6.6, 0.03, 3.6], 'plum', [0, 0.015, 4.2], { cast: false });
       for (let i = 0; i < 6; i++) k.box([0.06, 0.035, 3.6], 'night', [-2.75 + i * 1.1, 0.018, 4.2], { cast: false });
@@ -433,7 +434,8 @@ class Outskirts {
     this.taken.push({ sx: cx, sy: cy, r: 2.2 });
     this.put('kenney-nature/tent-detailed-open', cx + 1.3, cy + 3.4, { yaw: toward(cx + 1.3, cy + 3.4, cx, cy), r: 1.8 });
     // seats round the fire with room to walk between them and up to it
-    this.put('kenney-nature/log', cx - 2.5, cy - 0.6, { yaw: face(0), r: 1.2 });
+    // (the west one a metre off the water: no gap there narrower than a walker)
+    this.put('kenney-nature/log', cx - 2.2, cy - 0.6, { yaw: face(0), r: 1.2 });
     this.put('kenney-nature/log', cx + 0.6, cy - 2.6, { yaw: face(90), r: 1.2 });
     this.put('kenney-nature/stump-round', cx + 2.2, cy - 1.2, { r: 0.7 });
     this.put('kenney-nature/log-stack', cx + 3.1, cy + 0.6, { yaw: face(0), r: 1.2 });
@@ -500,8 +502,10 @@ class Outskirts {
       for (const pz of [-1.2, 1.2]) k.box([0.06, 0.9, 0.7], 'night', [-2.64, 1.7, pz * 1.35]);
       k.roof(5.2, 4.2, 3.0, 2.2, 'slate', 0.35, 'night', 'red');
       k.blockBox(0, 0, 5.6, 4.6);
-      k.closeBehind(0, 0, 5.6, 4.6, 3.4, L.view);
+      k.closeBehind(0, 0, 5.6, 4.6, { eaves: 3.6, ridge: 5.2 }, L.view);
     });
+    // between that and the edge, slivers too narrow to walk into: closed out past the edge
+    k.frame(...iso(-27.5, 16.25), 45, () => k.blockBox(0, 0, 7, 7.5));
     this.taken.push({ sx: bx, sy: by, r: 3.8 });
     this.put('well', ...L.well, { yaw: face(20), r: 1.3 });
     this.put('haystack', bx - 1.2, by - 4.2, { r: 1.2, seed: 3 });
@@ -545,7 +549,7 @@ class Outskirts {
     const bank = 1.15 * scale;
     this.taken.push({ sx: px, sy: py, r: bank });
     // the willow stands south-west of the water, clear of the view of it
-    this.trunk('willow', px - bank - 1.4, py - 1.2, 0.5, { seed: 2, hides: 3 });
+    this.trunk('willow', px - bank - 1.4, py - 1.2, 0.5, { seed: 2, hides: 2.4 });
     this.put('reeds', px + bank - 0.6, py + bank - 0.9, { block: false, r: 0.5, seed: 11 });
     this.put('reeds', px - bank + 0.5, py + 0.8, { block: false, r: 0.5, seed: 12 });
     this.put('reeds', px + 0.4, py - bank + 0.4, { block: false, r: 0.5, seed: 13 });
@@ -631,7 +635,7 @@ class Outskirts {
         k.blockBox(s * 3.6, 0, 3.1, 0.3);
         this.m('kenney-castle/tower-square-base', [s * 6.6, 0, 0.4], { palette: STONE });
         this.m('kenney-castle/tower-square-top-roof', [s * 6.6, 3.03, 0.4], { palette: STONE, block: false });
-        k.closeBehind(s * 6.6, 0.4, 3, 3, 5, L.view);
+        k.closeBehind(s * 6.6, 0.4, 3, 3, { eaves: 3.4, ridge: 6 }, L.view);
       }
       k.box([4.2, 0.26, 0.3], 'plum', [0, 3.3, 0]);
       k.box([4.5, 0.12, 0.42], 'night', [0, 3.48, 0]);

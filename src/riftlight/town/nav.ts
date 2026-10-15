@@ -2,8 +2,8 @@
  * Walking in Emberfall as data: a grid over the town (half-metre cells) of the points where an
  * actor of `agent` radius stands clear of every blocker and inside the walkable circle, the
  * same test `Town.collide` applies (minus the townsfolk, who move). Agents route on it
- * (`__RIFTLIGHT__.moveTo` in town), `Town.collide` sets an actor shut in where nobody can walk
- * from back on ground that can be walked to (`nearReachable`, `nearestReachable`), and the tests
+ * (`__RIFTLIGHT__.moveTo` in town), `Town.collide` sets an actor wedged deep in something back on
+ * ground that can be walked to (`nearestReachable`), and the tests
  * flood it from the spawn to prove every interactable, every NPC path point and every district is
  * reachable and the water is not. Built on demand from the town's blockers (static once the town
  * and its extensions are built).
@@ -175,23 +175,6 @@ export class TownNav {
     const start = this.nearestOpen(from.x, from.z, 1.5);
     if (this.reached?.from !== start) this.reached = { from: start, prev: this.flood(start) };
     return this.reached.prev;
-  }
-
-  /**
-   * (x, z) is on ground that can be walked to from `from`: its cell or one beside it is (the grid
-   * keeps half a cell or more off every blocker, so ground right by a wall counts too).
-   */
-  nearReachable(from: NavPoint, x: number, z: number): boolean {
-    const prev = this.floodFrom(from);
-    const ci = Math.floor((x - this.origin) / this.cell);
-    const cj = Math.floor((z - this.origin) / this.cell);
-    for (let dj = -1; dj <= 1; dj++)
-      for (let di = -1; di <= 1; di++) {
-        const i = ci + di;
-        const j = cj + dj;
-        if (i >= 0 && j >= 0 && i < this.size && j < this.size && prev[j * this.size + i] !== -1) return true;
-      }
-    return false;
   }
 
   /** The centre of the cell nearest (x, z), within `max` m, that can be walked to from `from`, or null. */

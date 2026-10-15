@@ -422,7 +422,7 @@ export class Town implements StageWorld {
       this.chimneys.push(k.world([1.3, 4.3, -0.6]));
       k.blockBox(0, 0, 4.4, 3.6);
       // the walkable ground goes past the houses now: not behind them, where the roof would hide the hero
-      k.closeBehind(0, 0, 4.4, 3.6, 2.6, TOWN_LAYOUT.view);
+      k.closeBehind(0, 0, 4.4, 3.6, { eaves: 2.4, ridge: 3.9 }, TOWN_LAYOUT.view);
     });
   }
 
@@ -632,17 +632,15 @@ export class Town implements StageWorld {
 
   collide(p: Vector3, radius: number): void {
     const R = TOWN_LAYOUT.radius;
-    // held to the walkable circle, then pushed out of each blocker in turn and the townsfolk: a
-    // few passes settle a push that moves it into the next blocker (a trunk at the edge may leave
-    // it a little past the circle)
+    // held to the walkable circle, out of the townsfolk (they move, so they're checked live), then
+    // out of each blocker in turn, last, so nothing leaves it in a wall: a few passes settle a push
+    // that moves it into the next blocker (a trunk at the edge may leave it a little past the circle)
     for (let pass = 0; pass < 4; pass++) {
       const d = Math.hypot(p.x, p.z);
       if (d > R) {
         p.x *= R / d;
         p.z *= R / d;
       }
-      collideBlockers(p, radius, this.blockers);
-      // townsfolk are solid too (they move, so they're checked live)
       for (const n of this.npcs) {
         const dx = p.x - n.position.x;
         const dz = p.z - n.position.z;
@@ -653,17 +651,12 @@ export class Town implements StageWorld {
           p.z = n.position.z + (dz / dn) * min;
         }
       }
-      if (!this.blockers.some((b) => overlapsBlocker(p.x, p.z, radius, b))) break;
-      if (pass === 3) {
-        // still in something: wedged in a gap narrower than it, or deep in a blocker (a Blink
-        // over the water) and pushed back and forth between two
-        this.rescue(p);
-        return;
-      }
+      collideBlockers(p, radius, this.blockers);
+      if (!this.blockers.some((b) => overlapsBlocker(p.x, p.z, radius - 0.05, b))) return;
     }
-    // clear of everything, but shut in where nobody can walk from (a Blink or a dash slipped
-    // through a gap narrower than the hero)
-    if (!this.nav().nearReachable(this.spawn, p.x, p.z)) this.rescue(p);
+    // still deep in something: wedged in a gap narrower than it, or landed deep in a blocker (a
+    // Blink over the water) and pushed back and forth between two
+    this.rescue(p);
   }
 
   /** Onto the nearest ground that can be walked to from the plaza. */
