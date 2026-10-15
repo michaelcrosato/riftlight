@@ -1031,15 +1031,28 @@ line says why it needs real time (`// real time: <why>`: measurements, UI clocks
 interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 
 **Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
-its start: the seed, the game's name, the game time it began at and each frame's input (held keys
-and gamepad buttons as keys, presses, sticks, pointer, wheel, gamepad connected, `dt`), only what
-changed, and whether promise callbacks ran before the frame.
+its start: the seed, the game's name, the game time it began at and each frame's input (held keys,
+with gamepad and mouse buttons as keys, presses, sticks, pointer, wheel, gamepad connected, touch,
+commands, `dt`), only what changed, and whether promise callbacks ran before the frame.
 
 ```ts
 const rec = engine.recording();                                   // plain JSON: save it, attach it to a bug
 await engine.replay(rec, () => engine.loadGame(new Level1()));    // seed and time restored, every frame replayed
-engine.fingerprint();                                             // hash of game time, physics (bodies, colliders), ctx.random
+engine.fingerprint();                                             // hash of game time, physics (bodies, colliders), ctx.random, Game.fingerprint
+ctx.input.send({ kind: 'load', data: store.load(slot) });         // data from the page: delivered (and recorded) next frame
+for (const c of ctx.input.commands) apply(c);                     // in update (they last one frame): live or replayed
 ```
+
+**Data from outside the canvas** (a save read from storage, a text field's value, a file the
+player picked, a setting from `localStorage`) enters through `ctx.input.send(data)`: it arrives
+in `ctx.input.commands` at the next frame the game runs, the recording keeps it with that frame,
+and a replay delivers the recorded data there (what is sent live during a replay is ignored).
+Commands last one rendered frame, so read them in `update` (`fixedUpdate` runs zero or more
+times a frame); a game may change what it got without changing the recording.
+It goes through JSON first, so live play reads exactly what a replay will. A game that takes
+such data straight from the page instead does not replay: the page may hold something else by
+then. **`Game.fingerprint(ctx)`** adds the game's own state (what lives outside physics and
+`ctx.random`: positions, life, counters, its own random streams) to `engine.fingerprint()`.
 
 `replay(rec, start, { frames })` loads the level with `start` (without a transition: nothing
 advances during a replay, so a `start` that waits on frames never finishes, and a warning says
@@ -1062,9 +1075,11 @@ same whatever ran before.
 What a replay can't reproduce: anything a game takes from outside `ctx.input` and its frames (DOM
 events it listens to itself, a model that finishes loading mid-play, the wall clock, camera state
 left by the level before, engine hotkeys pressed while recording, calls a test makes between
-frames). A game that swaps stages inside one `Game` has one recording for all of them, from its
-`setup`. `fingerprint()` leaves out the game's own state outside physics and forks of
-`ctx.random`; compare those (`status()`, your fields) yourself. `EngineOptions.record` sets how
+frames). The pointer is recorded where it was on the canvas, so what it pointed at in the world
+replays only with the same camera: the same view size (`renderer.resolution`) and the game's
+own camera settings. A game that swaps stages inside one `Game` has one recording for all of
+them, from its `setup`. Without `Game.fingerprint`, `fingerprint()` leaves out the game's own
+state outside physics and forks of `ctx.random`. `EngineOptions.record` sets how
 many frames a level keeps (default `MAX_FRAMES`, an hour at 60 fps; 0 records nothing);
 `recordingProblem(v)` says why a value is not a recording.
 
@@ -1193,9 +1208,15 @@ const p = engine.input.pointer;                     // NDC (−1..1, y up) over 
 ctx.camera.rayAt(p.x, p.y, origin, dir);            // the ray through that pixel
 const hit = ctx.physics.castRay(origin, dir, 1000); // what the mouse is over (cast long: an ortho rig stands far back)
 engine.input.setPointer(x, y, true);                // tests: put the pointer there, pressed
+input.isDown('MouseLeft'); input.consumePress('MouseRight'); // buttons are keys: held, and pressed once
+engine.input.setButtons(2);                         // tests: hold the right button (bits: 1 left, 2 right, 4 middle)
 ```
 
-`input.mouseButtons` says what is held; drag a body by giving it a velocity toward where the
+Mouse buttons on the canvas are keys (`MOUSE_BUTTONS`: `MouseLeft`, `MouseRight`, `MouseMiddle`),
+held and pressed like any key, so fixed-step code reads a click with `consumePress` (one shorter
+than a frame is not lost) and a chord (right while left is held) counts both. A finger is the key
+`Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one.
+`input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
 mouse ray meets a plane (the Sandbox room's grab: a spring, so it still collides and can be
 thrown; a level plane when the camera looks down, an upright one facing it when it looks
 across). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;

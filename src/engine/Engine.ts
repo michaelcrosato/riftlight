@@ -99,6 +99,13 @@ export interface Game {
   /** One-line status for the debug UI (score, lives...). */
   status?(ctx: GameContext): string;
   /**
+   * The game's own state as a short string or hash, for `engine.fingerprint()`: what lives
+   * outside physics and `ctx.random` (positions, life, counters, the game's own random
+   * streams), so two runs that should match (a replay) can be compared. Only what a replay must
+   * reproduce: no timings or measurements.
+   */
+  fingerprint?(ctx: GameContext): string;
+  /**
    * Called after `engine.setCamera()` swapped the camera preset mid-game. The world,
    * physics and player are untouched; adjust anything that depends on the preset
    * (e.g. side-scroller lane lock, hiding the player model in first person).
@@ -772,6 +779,7 @@ export class Engine {
     if (play) this.input.playBefore(play);
     this.input.beginFrame(this.time, gameDt, play ? NO_PADS : undefined);
     if (play) this.input.playAfter(play);
+    else this.input.deliver();
     if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
     this.record(dt);
     let thrown: { error: unknown } | null = null;
@@ -811,7 +819,8 @@ export class Engine {
    * sun / ambient light to the engine defaults. Filters, render
    * mode, resolution, quality, volumes and the camera rig carry over; pass `camera` to
    * switch the preset (applied before `setup()`, so `ctx.camera` is already the new one).
-   * Nothing advances while loading, and input made while loading is dropped.
+   * Nothing advances while loading, and input made while loading is dropped (data sent with
+   * `ctx.input.send` waits for the first frame that runs).
    */
   async loadGame(game: Game, options: { camera?: CameraConfig } = {}): Promise<void> {
     if (this.disposed) throw new Error('Engine.loadGame: engine was disposed');
@@ -1013,12 +1022,12 @@ export class Engine {
   }
 
   /**
-   * A hash of the simulation: game time, every physics body (exact) and `ctx.random`'s state.
-   * Two runs that should be the same (a replay) compare equal. Not the `status()` line: a
+   * A hash of the simulation: game time, every physics body (exact), `ctx.random`'s state and
+   * the game's own (`Game.fingerprint`). Two runs that should be the same (a replay) compare equal. Not the `status()` line: a
    * debug line may carry measurements (a step's milliseconds) that differ run to run.
    */
   fingerprint(): string {
-    const parts = [this.time, this.physics.fingerprint(), this._random.state];
+    const parts = [this.time, this.physics.fingerprint(), this._random.state, this.ready ? (this.game.fingerprint?.(this.context) ?? '') : ''];
     return hashString(parts.join('|')).toString(16).padStart(8, '0');
   }
 
@@ -1065,7 +1074,10 @@ export class Engine {
     this.input.beginFrame(this.time, running ? gameDt : dt);
     // presses made during a pause (or at speed 0, a menu) never fire later
     if (!running || this.clock.frozen) this.input.clearQueued();
-    if (running) this.record(dt);
+    if (running) {
+      this.input.deliver(); // commands sent while paused or loading wait for a frame that runs
+      this.record(dt);
+    }
 
     if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
