@@ -143,9 +143,10 @@ https://github.com/michaelcrosato/riftlight. Get its engine kit and test the gam
 `check.mjs`. The game: …* Name both steps: an agent that guards against running code from the
 internet, such as Claude Code in auto mode, may refuse to unpack the kit or run `check.mjs` unless
 the prompt asks for it. Once the kit is in the game's repository, later sessions run it as the
-game's own code. `check.mjs` also needs a Chromium with WebGPU: Claude Code cloud sessions come
-with one (`CHROMIUM_PATH`); elsewhere `npx playwright install chromium` downloads it from
-Playwright's servers, not from GitHub or npm.
+game's own code. `check.mjs` also needs Playwright and a Chromium with WebGPU: Claude Code cloud
+sessions come with both (a global Playwright, which `check.mjs` finds, and `CHROMIUM_PATH`);
+elsewhere `npx playwright install chromium` downloads the browser from Playwright's servers, not
+from GitHub or npm.
 
 The site deploys from `main` on every merge, and `npm run build` rebuilds the kit with it
 (`/engine/`, `/engine.zip`), so both links always hold the current engine with nothing to

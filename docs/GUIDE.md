@@ -1054,8 +1054,8 @@ It plays on WebGPU in Chromium's headless shell, so it needs no display (Playwri
 and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
 errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (a browser without
 WebGPU, bad arguments, no page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
-(`npm i -D playwright && npx playwright install chromium`), or `playwright-core` plus a
-Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
+(`npm i -D playwright && npx playwright install chromium`; a global install works too), or
+`playwright-core` plus a Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
 
 ## 9. Before you hand back
 

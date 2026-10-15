@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.38.0
+
+The kit, for an agent handed the engine (the engine repository's README.md, *Handing the engine to
+another agent*). No API change.
+
+- **Where newer versions are.** `manifest.json` has `latest` (the newest kit's URL), `handoff` (the
+  page for agents) and `source` (the repository that builds it), and the kit's `README.md` says
+  how to build the kit from a clone when that URL can't be reached (GUIDE.md, section 10).
+- **`check.mjs` finds a global Playwright** (`npm i -g playwright`; Claude Code cloud sessions come
+  with one) when none is installed beside the game.
+- GUIDE.md: the engine's hotkeys fire on R, P and M as well as the game's own action (move or turn
+  them off with `debugKeys`), and `step()` draws nothing, so a page screenshot still shows the old
+  frame.
+
 ## 0.37.0
 
 - **WebGPU only.** The engine renders with WebGPU and nothing else: the WebGL 2 fallback is gone.
