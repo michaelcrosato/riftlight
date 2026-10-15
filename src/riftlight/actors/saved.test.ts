@@ -58,6 +58,18 @@ describe('Actor save-state', () => {
     expect(look(b)).toEqual(went);
   });
 
+  it('the spatial hash keeps only actors still here: one that left this step is not saved, so a load gives the same save', () => {
+    const a = pair();
+    a.m.fixedUpdate(DT); // the cells are built with both in them
+    a.m.remove(a.mon);
+    const s = kept(a.m.save());
+    expect(s.cells.flatMap(([, ids]) => ids)).not.toContain(a.mon.id);
+    const b = pair();
+    b.m.remove(b.mon);
+    b.m.load(s);
+    expect(kept(b.m.save())).toEqual(s);
+  });
+
   it('a load replaces: a buff and an actor that came after the snapshot are gone', () => {
     const a = pair();
     const s = kept({ mon: a.mon.save(), m: a.m.save() });

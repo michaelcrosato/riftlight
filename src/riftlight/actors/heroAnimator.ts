@@ -232,8 +232,9 @@ export class HeroAnimator {
    */
   update(dt: number, feet?: FootPlacementInput, hips = 0): void {
     const t = this.target;
-    if (t) {
-      const step = this.fade > 0 ? dt / this.fade : 1;
+    const step = this.fade > 0 ? dt / this.fade : 1;
+    // no time, no blend (a re-pose leaves the weights exactly as they are)
+    if (t && step > 0) {
       const before = t.weight;
       t.weight = Math.min(1, t.weight + step);
       const othersBefore = 1 - before;

@@ -190,6 +190,12 @@ describe('LevelStage.saveRuntime / loadRuntime', () => {
     b.dispose();
   }, 30_000);
 
+  it('its signature is the one its spec plans (from the plan it was built with)', async () => {
+    const a = await stage(3);
+    expect(a.signature).toBe(new RealLevels(new Worlds()).signature(a.spec));
+    expect(a.signature).not.toBe(new RealLevels(new Worlds()).signature(levelSpec(4, 5)));
+  });
+
   it('refuses a stage built with other ids, and one still loading', async () => {
     const a = await stage(1);
     const snap = roundTrip(a.saveRuntime());

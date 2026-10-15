@@ -29,12 +29,14 @@ export class ActorManager implements ActorWorld {
    * made before the next step see the cells of the last one.
    */
   save(): ActorManagerState {
+    const here = new Set(this.actors);
     return {
       time: this.time,
       depth: this.depth,
       order: this.actors.map((a) => a.id),
       dirty: this.dirtyOrder,
-      cells: [...this.cells].map(([k, list]) => [k, list.map((a) => a.id)] as const),
+      // only actors still here: one that left this step is in its cell until the next rebuild
+      cells: [...this.cells].map(([k, list]) => [k, list.filter((a) => here.has(a)).map((a) => a.id)] as const),
     };
   }
 
