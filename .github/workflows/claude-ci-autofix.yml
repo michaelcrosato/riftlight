@@ -2,7 +2,7 @@ name: Claude CI Autofix
 
 # When CI fails:
 #   on the default branch
-#     CI's own last job (revert-red-main) reverts the commit that turned main red; that
+#     CI's own revert-red-main job reverts the commit that turned main red; that
 #     works even for the runs Autopilot dispatches with GITHUB_TOKEN, which never fire this
 #     workflow_run trigger. When this does fire (pushes made with AUTOMATION_TOKEN or a
 #     human), Claude re-applies a reverted change with a fix, or fixes main forward, on

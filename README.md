@@ -6,8 +6,9 @@ post-processing, WebGPU only, Rapier physics, local GLB assets.
 
 **Making a game with Pixel Engine?** You don't need this repository, only the engine kit: one
 zip with the engine as a single ES module, its guide, a starter game and a browser check.
-Download it (`curl -fLO https://riftlight.vercel.app/engine.zip && unzip engine.zip && cd engine`) or, from a
-sandbox that reaches only GitHub and npm, build it here in about a minute
+Download the newest release
+(`curl -fLO https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip && unzip pixel-engine.zip && cd pixel-engine`)
+or build it here in about a minute
 (`git clone --depth 1 https://github.com/michaelcrosato/riftlight && cd riftlight && npm ci && npm run bundle`)
 and copy `bundle/pixel-engine/` to where the game will live. Then read the kit's `README.md` and
 `GUIDE.md`. Work in this repository only to change the engine itself
@@ -134,8 +135,9 @@ What to give an agent:
 
 | Give it | When | What it does |
 | --- | --- | --- |
-| This repository's URL, `https://github.com/michaelcrosato/riftlight` | An agent with a shell. It needs only GitHub and npm, both on Claude Code cloud's default (*Trusted*) network allowlist | Reads the top of this README, then downloads the kit or builds it from a clone |
-| The handoff page, <https://riftlight.vercel.app/handoff/> | An agent whose sandbox reaches the open web | Downloads the kit: one file, no build. Claude Code cloud environments reach it at the *Full* network level or with its host allowed under *Custom*, not at the default *Trusted* one |
+| This repository's URL, `https://github.com/michaelcrosato/riftlight` | An agent with a shell. It needs only GitHub (and npm to build), both on Claude Code cloud's default (*Trusted*) network allowlist | Reads the top of this README, then downloads the newest release or builds the kit from a clone |
+| A release, `https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip` | An agent with a shell that reaches github.com and release-assets.githubusercontent.com (both on the *Trusted* allowlist) | Unzips one file, no build. A version's own link (`…/releases/download/engine-v0.39.0/pixel-engine.zip`) never changes |
+| The handoff page, <https://riftlight.vercel.app/handoff/> | An agent whose sandbox reaches the open web | Downloads the newest build from `main`. Claude Code cloud environments reach it at the *Full* network level or with its host allowed under *Custom*, not at the default *Trusted* one |
 | `bundle/pixel-engine.zip` (`npm run bundle`) | A chat that runs code but can't download | Unzips the attachment. A chat that can't run code gets `docs/GUIDE.md` alone |
 
 A prompt to start from: *Use this game engine to make our next game:
@@ -148,11 +150,18 @@ sessions come with both (a global Playwright, which `check.mjs` finds, and `CHRO
 elsewhere `npx playwright install chromium` downloads the browser from Playwright's servers, not
 from GitHub or npm.
 
-The site deploys from `main` on every merge, and `npm run build` rebuilds the kit with it
-(`/engine/`, `/engine.zip`), so both links always hold the current engine with nothing to
-commit. The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
+From 0.39.0 on, the engine kit is a
+[GitHub Release](https://github.com/michaelcrosato/riftlight/releases) per version
+(`engine-v<version>`): once check and e2e pass, CI's `release` job publishes the version of
+`main`'s newest commit if it has none yet (a version superseded on `main` before its CI passed is
+skipped), with `pixel-engine.zip` (`npm run bundle`) and the version's `CHANGELOG.md` section as
+notes (`scripts/release/notes.mjs`). The site deploys every merge to `main` as it lands, before CI,
+and `npm run build` rebuilds the kit with it (`/engine/`, `/engine.zip`): the handoff page holds
+the newest build, which can be ahead of the newest release (by fixes, or a version CI hasn't
+passed yet). The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
 agent what to download, what to read and how to check its game. The kit's `README.md` and
-`manifest.json` (`latest`, `source`) say where newer versions are, so a game finds its upgrades.
+`manifest.json` (`latest`, `releases`, `source`) say where newer versions are, so a game finds
+its upgrades.
 `src/engine/` alone doesn't stand on its own: it builds only inside this repository (Vite, the
 pinned three.js and Rapier, the hero in `src/game/hero/`, the models in `public/assets/`); the
 kit is that folder made standalone. A game started from a copy of this repository carries
@@ -193,7 +202,7 @@ purpose: rolling back is cheap.
   merge's own push starts it). It also cancels the PR branch's run, which tests the same
   change: CI runs once per PR. A PR held open with `hold` keeps its branch run.
 - **Auto-revert.** When CI fails on `main` and that commit turned it red (its parent passed,
-  or never ran), CI's last job (`revert-red-main`, `scripts/ci/revert-red-main.sh`) reverts
+  or never ran), CI's `revert-red-main` job (`scripts/ci/revert-red-main.sh`) reverts
   it on `claude/revert-<sha>`, merges that PR, comments on the original PR, opens an issue
   labeled `claude` to re-land it with a fix, and runs CI on `main` again. No LLM or secret
   needed. It never reverts a revert, or a commit that landed on an already red `main`. (It

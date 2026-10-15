@@ -1074,6 +1074,7 @@ WebGPU, bad arguments, no page, no browser; `--help` lists the options). It need
 `ENGINE_VERSION` (also `Engine.version` and `state().version`) is the engine's version, and
 the kit's `CHANGELOG.md` says what changed in each. To upgrade a game, replace
 `pixel-engine.js` (and `pixel-engine.d.ts`, `types/` if you use them), read the changelog
-entries since the old version, then run `node check.mjs` again. The newest kit is at the URL in
-`manifest.json`'s `latest`, and the kit's `README.md` says how to build it from the engine's
-repository (`source`) when that URL can't be reached.
+entries since the old version, then run `node check.mjs` again. The newest release of the kit is
+at the URL in `manifest.json`'s `latest`, and every release (from 0.39.0, its changelog as the
+notes) stays downloadable from `releases`. The kit's `README.md` says how to build
+it from the engine's repository (`source`) instead.

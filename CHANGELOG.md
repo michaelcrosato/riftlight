@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.39.0
+
+The kit as GitHub Releases. No API change.
+
+- **The kit as a GitHub Release, from this version on:** the version on main's newest commit is
+  published once its CI passes (a version superseded on main before then is skipped), as
+  `engine-v<version>` with `pixel-engine.zip` (it unzips to `pixel-engine/`) and that version's
+  section of this changelog as its notes. The newest is always
+  https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip; it
+  downloads from github.com and release-assets.githubusercontent.com, both on Claude Code cloud's
+  default network allowlist.
+- **`manifest.json`'s `latest` is now the newest release's zip**, and `releases` lists every
+  release (GUIDE.md, section 10). The site's kit (`/engine.zip`) is still rebuilt on every merge.
+
 ## 0.38.0
 
 The kit, for an agent handed the engine (the engine repository's README.md, *Handing the engine to

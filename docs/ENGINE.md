@@ -1673,8 +1673,12 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   exports and of library ids; exit 1 on any problem.
 - `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates, where newer
   versions are) and `manifest.json` (version, build, every file with its bytes, and `latest`,
-  `handoff` and `source`: the newest kit's URL, the handoff page and the repository, from
-  `package.json`'s `homepage` and `repository`, so a game finds its upgrades).
+  `releases`, `handoff` and `source`: the newest release's zip, every release, the handoff page
+  and the repository, from `package.json`'s `homepage` and `repository`, so a game finds its
+  upgrades). From 0.39.0, the kit is a GitHub Release per engine version, `engine-v<version>`,
+  holding its zip: CI's `release` job publishes the version of `main`'s newest commit once check
+  and e2e pass (a version superseded on `main` before then is skipped) (`scripts/release/notes.mjs` writes its notes from the version's `CHANGELOG.md`
+  section).
 
 Diagnostics that make the kit self-correcting live in the engine: `Engine.start` sets
 `window.__PIXEL_ENGINE__` (`dispose()` clears it); an exception in a game hook is caught per
