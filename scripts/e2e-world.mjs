@@ -893,6 +893,30 @@ export async function runWorld(h) {
         out.packDrawn.push({ id: r.current().id, pixels: changed(a, (await e.renderer.capture()).pixels) });
         r.hide(false);
       }
+      // a flat ground tile stands clear of the plinth: at its centre (a box well inside the tile, a
+      // diamond at this angle), hiding it changes every pixel; where it shares the plinth's depth,
+      // the plinth shows through in a pattern that flickers
+      out.flat = null;
+      if (r.show('kenney-nature/ground-grass')) {
+        e.step(30);
+        const shown = await e.renderer.capture();
+        const a = shown.pixels.slice();
+        r.hide(true);
+        e.step(2);
+        const b = (await e.renderer.capture()).pixels;
+        r.hide(false);
+        const half = Math.round(shown.height / 24);
+        let n = 0;
+        let through = 0;
+        for (let y = shown.height / 2 - half; y < shown.height / 2 + half; y++) {
+          for (let x = shown.width / 2 - half; x < shown.width / 2 + half; x++) {
+            const i = (Math.round(y) * shown.width + Math.round(x)) * 4;
+            n++;
+            if (a[i] === b[i] && a[i + 1] === b[i + 1] && a[i + 2] === b[i + 2]) through++;
+          }
+        }
+        out.flat = { through, n };
+      }
       r.spin(true);
       out.chair = r.show('chair') && r.current().id;
       out.missing = r.show('no-such-asset');
@@ -916,6 +940,7 @@ export async function runWorld(h) {
     check(gal.barrel > 500 && gal.well > 500, `asset gallery: the exhibit is drawn (hiding it changes ${gal.barrel} pixels for the barrel, ${gal.well} for the well)`);
     check(gal.chair === 'chair' && gal.missing === false, 'asset gallery: any asset opens by id, an unknown id is refused');
     check(gal.packDrawn.every((p) => p.pixels > 300), `asset gallery: every pack's first asset is drawn (${gal.packDrawn.map((p) => `${p.id} ${p.pixels} px`).join(', ') || 'no packs'})`);
+    check(gal.flat !== null && gal.flat.through === 0, `asset gallery: a flat ground tile hides the plinth under it (${gal.flat ? `${gal.flat.through} of ${gal.flat.n} pixels at its centre show the plinth through it` : 'kenney-nature/ground-grass is not in the gallery'})`);
     check(gal.find[0] === 'chair', `asset gallery: search finds the chair for "wooden chair" (${gal.find.join(', ')})`);
     check(gal.kinds['textures/surfaces'] === 'surface' && gal.kinds['textures/icons'] === 'sprite' && gal.kinds['textures/sprites'] === 'sprite', `asset gallery: surfaces lie as floors, icons and sprites stand up (${Object.values(gal.kinds).join(', ')})`);
     check(gal.shelves.filter((s) => s.title.startsWith('PACK')).length === gal.packShelves, `asset gallery: a shelf for every pack in packs/index.json (${gal.packs} pack(s), ${gal.packShelves} shelves)`);

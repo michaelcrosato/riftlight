@@ -39,6 +39,8 @@ interface Exhibit {
 }
 
 const PLINTH = 0.3;
+/** Exhibits stand this far above the plinth, so a flat one (a ground tile, a floor) never fights it for depth. */
+const LIFT = 0.002;
 const ZOOMS = ['fit', 'level', 'town', 'close'] as const;
 const count = (s: Shelf) => (s.models ?? s.textures ?? []).length;
 const fmt = (v: number) => `${+v.toFixed(2)}`;
@@ -143,14 +145,14 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
     let clock = 0;
 
     const exhibitOf = (s: Shelf, i: number): Exhibit => {
-      const top = new Vector3(0, PLINTH, 0);
+      const top = new Vector3(0, PLINTH + LIFT, 0);
       if (s.models) {
         const def = s.models[i]!;
         const b = buildModel(def, { catalog: s.catalog });
         const pivot = new Group();
-        b.object.position.set(-(b.bounds.min[0] + b.bounds.max[0]) / 2, PLINTH - b.bounds.min[1], -(b.bounds.min[2] + b.bounds.max[2]) / 2);
+        b.object.position.set(-(b.bounds.min[0] + b.bounds.max[0]) / 2, top.y - b.bounds.min[1], -(b.bounds.min[2] + b.bounds.max[2]) / 2);
         pivot.add(b.object);
-        const own = b.light ? [ctx.lights.request({ position: [b.object.position.x + b.light.at[0], PLINTH + b.light.at[1], b.object.position.z + b.light.at[2]], color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' })] : [];
+        const own = b.light ? [ctx.lights.request({ position: [b.object.position.x + b.light.at[0], b.object.position.y + b.light.at[1], b.object.position.z + b.light.at[2]], color: b.light.color, intensity: b.light.intensity, radius: b.light.radius, flicker: b.light.flicker ?? 'none' })] : [];
         lights = own;
         const [w, h, d] = b.bounds.size;
         return {
@@ -158,7 +160,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
           kind: 'model',
           root: pivot,
           size: [w, h, d],
-          centre: top.clone().setY(PLINTH + h / 2),
+          centre: top.clone().setY(top.y + h / 2),
           line: `${fmt(w)} X ${fmt(h)} X ${fmt(d)} M · ${b.report.tris} TRIS · ${b.report.draws} DRAWS`,
           dispose: () => {
             b.object.traverse((o) => {
@@ -181,7 +183,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         for (let k = 0; k < uv.count; k++) uv.setXY(k, (uv.getX(k) * side * density) / tw, (uv.getY(k) * side * density) / th);
         const material = toonMaterial(0xffffff, { map: textureMap(def) });
         const floor = new Mesh(geo, material);
-        floor.position.set(0, PLINTH + 0.02, 0);
+        floor.position.copy(top);
         floor.receiveShadow = true;
         return {
           id: def.id,
@@ -199,13 +201,13 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       }
       const size = Math.min(3, Math.max(1.2, th / DEFAULT_TEXEL));
       const batch = new SpriteBatch(spriteSheet(def), { capacity: 1 });
-      batch.spawn([0, PLINTH, 0], { size });
+      batch.spawn([0, top.y, 0], { size });
       return {
         id: def.id,
         kind: 'sprite',
         root: batch,
         size: [size, size, 0.1],
-        centre: top.clone().setY(PLINTH + size / 2),
+        centre: top.clone().setY(top.y + size / 2),
         line: texels,
         sprite: def,
         batch,
