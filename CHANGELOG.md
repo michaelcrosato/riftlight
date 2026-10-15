@@ -8,6 +8,14 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.33.0
+
+- **Variants:** `variantName` also finds a variant's letter or number before the rest of its
+  name: `tree-pine-tall-a-detailed` … `-d-detailed` share `tree-pine-tall-detailed`, so
+  `groupVariants`, `find` and LIBRARY.md give them one entry (apart from the plain
+  `tree-pine-tall-a` … `-d`). It drops an id's last such part; a pack's name (`kit-a/`) is never
+  one.
+
 ## 0.32.0
 
 - **Search** breaks a tie inside a pack for the def whose name (the id after the pack) starts

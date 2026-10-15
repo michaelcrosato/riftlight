@@ -67,6 +67,15 @@ describe('search', () => {
     expect(groups.map(variantsInShort)).toEqual(['rock-large-b, rock-large', 'rock-small-b', '']);
     expect(variantsInShort({ def: def('wall-top'), variants: [def('wall-top-b'), def('wall-top-c')] })).toBe('wall-top-b, -c');
     expect(groupVariants([])).toEqual([]);
+    // the letter need not be last: a detailed pine's four variants share one entry, apart from the plain pines'
+    const pines = ['tree-pine-tall-a', 'tree-pine-tall-a-detailed', 'tree-pine-tall-b', 'tree-pine-tall-b-detailed', 'tree-pine-tall-c-detailed', 'tree-pine-tall-d-detailed', 'kit-a/stool', 'crate-2-tall'];
+    expect(pines.map(variantName)).toEqual(['tree-pine-tall', 'tree-pine-tall-detailed', 'tree-pine-tall', 'tree-pine-tall-detailed', 'tree-pine-tall-detailed', 'tree-pine-tall-detailed', 'kit-a/stool', 'crate-tall']);
+    const pineGroups = groupVariants(pines.slice(0, 6).map((id) => def(id)));
+    expect(pineGroups.map((g) => [g.def.id, ...g.variants.map((v) => v.id)])).toEqual([
+      ['tree-pine-tall-a', 'tree-pine-tall-b'],
+      ['tree-pine-tall-a-detailed', 'tree-pine-tall-b-detailed', 'tree-pine-tall-c-detailed', 'tree-pine-tall-d-detailed'],
+    ]);
+    expect(pineGroups.map(variantsInShort)).toEqual(['tree-pine-tall-b', 'tree-pine-tall-b-detailed, -c-detailed, -d-detailed']);
   });
 
   it('finds what an agent asks the real libraries for', () => {
