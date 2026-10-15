@@ -276,7 +276,7 @@ export class RealHero implements HeroPort {
     }
     if (!world) {
       // a stage without its own world (the town): the hero brings one
-      world = new CombatWorld({ services: this.services, root: stage.root, depth: 0 });
+      world = new CombatWorld({ services: this.services, root: stage.root, depth: 0, ...(stage.wall ? { wall: (from: Vector3, to: Vector3) => stage.wall!(from, to) } : {}) });
       this.worlds.set(stage, world);
       this.owned = world;
     }

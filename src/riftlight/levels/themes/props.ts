@@ -304,7 +304,9 @@ export function buildProp(id: string, ctx: PropContext, x: number, z: number, ro
   const seed = ctx.rng.int(1, 1_000_000);
   // its model, then (from its own stream, after its seed: a prop that keeps its model looks as it did) a variant
   const models = propModels(def, ctx.theme);
-  const wear = ctx.variant !== undefined ? models[ctx.variant]! : models.length > 1 ? ctx.rng.weighted(models, (m) => m.weight) : models[0]!;
+  const pick = ctx.variant !== undefined ? models[ctx.variant]! : models.length > 1 ? ctx.rng.weighted(models, (m) => m.weight) : models[0]!;
+  // a pack that didn't load (`loadRiftlightPacks`): the prop wears its own
+  const wear = MODEL_LIBRARY.has(pick.model) ? pick : models[0]!;
   const asked = wear.bind?.(ctx.theme) ?? {};
   const bind = wear === models[0] ? asked : fitSlots(wear.model, asked);
   const turn = Math.round((((((rot * 180) / Math.PI) % 360) + 540) % 360) - 180); // degrees, −180..180

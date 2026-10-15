@@ -17,7 +17,7 @@ import { Rng } from '../core/rng';
 import type { ActorLike } from '../core/types';
 import type { PooledLight, ShellServices, StageWorld } from '../game/ports';
 import { Cat, type CatState } from './critters';
-import { type Blocker, collideBlockers, faceted, Kit } from './kit';
+import { type Blocker, collideBlockers, faceted, Kit, overlapsBlocker } from './kit';
 import { iso, screenOf, TOWN_LAYOUT } from './layout';
 import { TownNav } from './nav';
 import { bridgeDeck, buildOutskirts, groundPieces, onWater } from './outskirts';
@@ -307,6 +307,7 @@ export class Town implements StageWorld {
       k.cone(0.45, 0.35, 6, 'ink', [1.9, 0.18, -0.3], { cast: false });
       // blockers
       k.blockBox(0, -2.4, 6.2, 0.6);
+      k.closeBehind(0, -2.4, 6.2, 0.6, 3.4, TOWN_LAYOUT.view);
       k.blockBox(-3, -1.4, 0.5, 2.2);
       k.blockBox(3, -1.4, 0.5, 2.2);
       k.blockBox(-1.7, -1.55, 1.6, 1.3);
@@ -346,6 +347,8 @@ export class Town implements StageWorld {
       k.blockCircle(-2.7, 0.2, 0.5);
       k.blockBox(2.8, -0.4, 0.9, 0.9);
       k.blockBox(0, -1.6, 4.4, 0.4);
+      // behind the counter is Ilsa's: closed, so nothing slips in by the sacks
+      k.blockBox(0, -0.5, 4.4, 2.0);
     });
   }
 
@@ -418,6 +421,8 @@ export class Town implements StageWorld {
       k.box([0.6, 1.2, 0.6], 'slate', [1.3, 3.6, -0.6]);
       this.chimneys.push(k.world([1.3, 4.3, -0.6]));
       k.blockBox(0, 0, 4.4, 3.6);
+      // the walkable ground goes past the houses now: not behind them, where the roof would hide the hero
+      k.closeBehind(0, 0, 4.4, 3.6, 2.6, TOWN_LAYOUT.view);
     });
   }
 
@@ -535,6 +540,7 @@ export class Town implements StageWorld {
     if (ext.root) this.root.add(ext.root);
     if (ext.blockers) this.blockers.push(...ext.blockers);
     this.walkGrid = null;
+    this.solids = null;
     if (ext.interactables) this.interactables.push(...ext.interactables);
     this.extensions.push(ext);
     if (this.active) ext.activate?.();
@@ -625,25 +631,97 @@ export class Town implements StageWorld {
   }
 
   collide(p: Vector3, radius: number): void {
-    collideBlockers(p, radius, this.blockers);
-    // townsfolk are solid too (they move, so they're checked live)
-    for (const n of this.npcs) {
-      const dx = p.x - n.position.x;
-      const dz = p.z - n.position.z;
-      const d = Math.hypot(dx, dz);
-      const min = radius + 0.4 * n.def.scale;
-      if (d < min && d > 1e-6) {
-        p.x = n.position.x + (dx / d) * min;
-        p.z = n.position.z + (dz / d) * min;
+    const R = TOWN_LAYOUT.radius;
+    // held to the walkable circle, then pushed out of each blocker in turn and the townsfolk: a
+    // few passes settle a push that moves it into the next blocker (a trunk at the edge may leave
+    // it a little past the circle)
+    for (let pass = 0; pass < 4; pass++) {
+      const d = Math.hypot(p.x, p.z);
+      if (d > R) {
+        p.x *= R / d;
+        p.z *= R / d;
+      }
+      collideBlockers(p, radius, this.blockers);
+      // townsfolk are solid too (they move, so they're checked live)
+      for (const n of this.npcs) {
+        const dx = p.x - n.position.x;
+        const dz = p.z - n.position.z;
+        const dn = Math.hypot(dx, dz);
+        const min = radius + 0.4 * n.def.scale;
+        if (dn < min && dn > 1e-6) {
+          p.x = n.position.x + (dx / dn) * min;
+          p.z = n.position.z + (dz / dn) * min;
+        }
+      }
+      if (!this.blockers.some((b) => overlapsBlocker(p.x, p.z, radius, b))) break;
+      if (pass === 3) {
+        // still in something: wedged in a gap narrower than it, or deep in a blocker (a Blink
+        // over the water) and pushed back and forth between two
+        this.rescue(p);
+        return;
       }
     }
-    const d = Math.hypot(p.x, p.z);
-    const R = TOWN_LAYOUT.radius;
-    if (d > R) {
-      p.x *= R / d;
-      p.z *= R / d;
-    }
+    // clear of everything, but shut in where nobody can walk from (a Blink or a dash slipped
+    // through a gap narrower than the hero)
+    if (!this.nav().nearReachable(this.spawn, p.x, p.z)) this.rescue(p);
   }
+
+  /** Onto the nearest ground that can be walked to from the plaza. */
+  private rescue(p: Vector3): void {
+    const out = this.nav().nearestReachable(this.spawn, p.x, p.z, 6);
+    if (out) p.set(out.x, p.y, out.z);
+  }
+
+  /**
+   * Walls between two points for combat (the town's `CombatWorld.wall`; a Blink stops short of
+   * them): the fraction of the way where the line first goes into anything boxed (a building, a
+   * wall, a fence, a crate, closed ground) or past the walkable circle, or null. Low boxes (the
+   * water, the bridge's rails) and round things (trunks, posts) don't stop it, as a level's pits
+   * and props don't: landing on one, the hero is pushed off it as he would be walking.
+   */
+  wall(from: Vector3, to: Vector3): number | null {
+    const dx = to.x - from.x;
+    const dz = to.z - from.z;
+    if (Math.hypot(dx, dz) < 1e-4) return null;
+    let hit = Infinity;
+    // the edge: where the line leaves the circle
+    const R = TOWN_LAYOUT.radius;
+    if (Math.hypot(to.x, to.z) > R) {
+      const a = dx * dx + dz * dz;
+      const b = 2 * (from.x * dx + from.z * dz);
+      const c = from.x * from.x + from.z * from.z - R * R;
+      hit = Math.max(0, (-b + Math.sqrt(Math.max(0, b * b - 4 * a * c))) / (2 * a));
+    }
+    // the boxes: the line clipped to each in its own frame
+    for (const box of (this.solids ??= this.blockers.filter((b): b is Extract<Blocker, { kind: 'box' }> => b.kind === 'box' && !b.low))) {
+      const r = Math.hypot(box.hw, box.hd);
+      if (Math.min(from.x, to.x) > box.x + r || Math.max(from.x, to.x) < box.x - r || Math.min(from.z, to.z) > box.z + r || Math.max(from.z, to.z) < box.z - r) continue;
+      const c = Math.cos(box.rot);
+      const s = Math.sin(box.rot);
+      const ax = from.x - box.x;
+      const az = from.z - box.z;
+      let t0 = 0;
+      let t1 = 1;
+      for (const [p, d, h] of [
+        [ax * c - az * s, dx * c - dz * s, box.hw],
+        [ax * s + az * c, dx * s + dz * c, box.hd],
+      ] as const) {
+        if (Math.abs(d) < 1e-12) {
+          if (Math.abs(p) >= h) t0 = 2;
+          continue;
+        }
+        const u = (-h - p) / d;
+        const v = (h - p) / d;
+        t0 = Math.max(t0, Math.min(u, v));
+        t1 = Math.min(t1, Math.max(u, v));
+      }
+      if (t0 < t1 && t0 < hit) hit = t0;
+    }
+    return hit <= 1 ? hit : null;
+  }
+
+  /** The boxes a Blink can't cross (built on first use and again after `extend`). */
+  private solids: Extract<Blocker, { kind: 'box' }>[] | null = null;
 
   /** Flat ground, but for the bridge's deck over the stream. */
   groundY(x: number, z: number): number {

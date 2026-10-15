@@ -15,6 +15,8 @@ export const screenOf = (x: number, z: number): [number, number] => [(x - z) * S
 export const TOWN_LAYOUT = {
   /** The walkable circle around the plaza (m); the forest starts past it. */
   radius: 31,
+  /** The iso camera the town is seen with (degrees; `camera` in src/riftlight/index.ts): what stands taller than the hero hides the ground behind it. */
+  view: { yaw: 45, pitch: 42 },
   plaza: 5.2,
   fountain: [0, 0.4] as const,
   obelisk: [0, 8.6] as const,
@@ -49,16 +51,16 @@ export const TOWN_LAYOUT = {
    * The outskirts' districts, each by a spot a visitor walks to (the tests walk there from the
    * spawn): the Old Watch's courtyard behind the obelisk, the tavern's patio, the bridge's west end,
    * the hunter's camp across the stream, the watchmen's graves, the south gate on the road out, the
-   * willow pond and the farmyard. Each is a spot the camera shows the hero at: nothing tall stands
-   * between it and the camera (the south side of the town stays low for that reason).
+   * willow pond and the farmyard. Each is a spot the camera shows the hero at, feet to head: nothing
+   * stands between it and the camera.
    */
   districts: {
     watch: [-2.9, 19.5],
     tavern: [14.6, 15.2],
     bridge: [19.6, 1.5],
-    camp: [26.4, 1.6],
+    camp: [25.9, 1.6],
     graves: [9.8, -17.6],
-    gate: [0, -25.2],
+    gate: [0, -23.7],
     pond: [-8.2, -16.8],
     farm: [-17.8, 1.5],
   } as const,

@@ -124,7 +124,7 @@ export function createApi(game: Riftlight) {
 
   /**
    * Walk to a ground point: in a level along the grid route (the bot's navigation), in town
-   * along the town's walkable grid (`Town.nav`, rebuilt every 30 frames), steering at a point a
+   * along the town's walkable grid (`Town.nav`; the route is found again every 30 frames), steering at a point a
    * few cells ahead, sidestepping whatever it bumps into (a townsperson in the way).
    */
   const moveTo = (x: number, z: number, o: { maxFrames?: number; radius?: number } = {}) => {

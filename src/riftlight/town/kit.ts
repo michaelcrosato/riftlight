@@ -46,9 +46,13 @@ export interface ModelPlacement {
   readonly cast?: boolean;
 }
 
+/**
+ * What actors are pushed out of. A `low` box (water, a bridge's rails) stops walkers but not a
+ * Blink, which goes over it (`Town.wall`), as a level's pits don't stop one.
+ */
 export type Blocker =
   | { kind: 'circle'; x: number; z: number; r: number }
-  | { kind: 'box'; x: number; z: number; hw: number; hd: number; rot: number };
+  | { kind: 'box'; x: number; z: number; hw: number; hd: number; rot: number; low?: boolean };
 
 export interface PrimOptions {
   /** Euler rotation in degrees (XYZ). */
@@ -225,10 +229,59 @@ export class Kit {
     this.blockers.push({ kind: 'circle', x: p.x, z: p.z, r });
   }
 
-  /** A box blocker in the current frame's local coordinates. */
-  blockBox(x: number, z: number, w: number, d: number): void {
+  /** A box blocker in the current frame's local coordinates (`low`: see `Blocker`). */
+  blockBox(x: number, z: number, w: number, d: number, low = false): void {
     const p = this.world([x, 0, z]);
-    this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: w / 2, hd: d / 2, rot: this.worldYaw() * DEG });
+    this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: w / 2, hd: d / 2, rot: this.worldYaw() * DEG, ...(low ? { low } : {}) });
+  }
+
+  /**
+   * Close the ground the camera can't see behind something standing on the local box (x, z, w,
+   * d) that hides the hero up to `h` m tall at its back edge (a house's eaves, a tower's top): he
+   * would be lost there. `view` is the camera's yaw (its screen axes, as `frame(..., yaw)` turns
+   * them: local X right, local Z toward the camera) and pitch, in degrees. He is hidden where a ray
+   * from his head (1.6 m) toward the camera runs into it, so the ground is closed from the box's
+   * back edge (as the screen sees it) back by (h - 1.6) / tan(pitch), in screen-aligned slices
+   * half a metre wide that follow that edge.
+   */
+  closeBehind(x: number, z: number, w: number, d: number, h: number, view: { readonly yaw: number; readonly pitch: number }): void {
+    const depth = Math.max(0, h - 1.6) / Math.tan(view.pitch * DEG);
+    if (depth <= 0) return;
+    const yaw = view.yaw * DEG;
+    const c = Math.cos(yaw);
+    const s = Math.sin(yaw);
+    // world (x, z) → screen (right, up the screen = away from the camera), and back
+    const toScreen = (p: Vector3): [number, number] => [p.x * c - p.z * s, -p.x * s - p.z * c];
+    const corners = [
+      [-1, -1],
+      [1, -1],
+      [1, 1],
+      [-1, 1],
+    ].map(([a, b]) => toScreen(this.world([x + (a! * w) / 2, 0, z + (b! * d) / 2])));
+    /** The footprint's back edge (highest screen y) at screen x `sx`. */
+    const back = (sx: number): number => {
+      let top = -Infinity;
+      for (let i = 0; i < 4; i++) {
+        const [ax, ay] = corners[i]!;
+        const [bx, by] = corners[(i + 1) % 4]!;
+        if (sx < Math.min(ax, bx) - 1e-9 || sx > Math.max(ax, bx) + 1e-9) continue;
+        top = Math.max(top, Math.abs(bx - ax) < 1e-9 ? Math.max(ay, by) : ay + ((by - ay) * (sx - ax)) / (bx - ax));
+      }
+      return top;
+    };
+    const sx0 = Math.min(...corners.map((p) => p[0]));
+    const sx1 = Math.max(...corners.map((p) => p[0]));
+    const n = Math.max(1, Math.ceil((sx1 - sx0) / 0.5));
+    for (let i = 0; i < n; i++) {
+      const a = sx0 + ((sx1 - sx0) * i) / n;
+      const b = sx0 + ((sx1 - sx0) * (i + 1)) / n;
+      const inside = corners.filter((p) => p[0] > a && p[0] < b).map((p) => p[1]);
+      const lo = Math.min(back(a), back(b)) - 0.3; // overlaps the footprint: no seam to squeeze through
+      const hi = Math.max(back(a), back(b), ...inside) + depth;
+      const cx = (a + b) / 2;
+      const cy = (lo + hi) / 2;
+      this.blockers.push({ kind: 'box', x: cx * c - cy * s, z: -cx * s - cy * c, hw: (b - a) / 2, hd: (hi - lo) / 2, rot: yaw });
+    }
   }
 
   /**
@@ -267,6 +320,19 @@ export class Kit {
 }
 
 /** Push a circle (p.x, p.z, radius) out of blockers, in place. */
+/** A circle of `radius` at (x, z) overlaps the blocker (by more than a millimetre). */
+export function overlapsBlocker(x: number, z: number, radius: number, b: Blocker): boolean {
+  const dx = x - b.x;
+  const dz = z - b.z;
+  const r = radius - 1e-3;
+  if (b.kind === 'circle') return dx * dx + dz * dz < (b.r + r) ** 2;
+  const c = Math.cos(b.rot);
+  const s = Math.sin(b.rot);
+  const ox = Math.max(0, Math.abs(dx * c - dz * s) - b.hw);
+  const oz = Math.max(0, Math.abs(dx * s + dz * c) - b.hd);
+  return ox * ox + oz * oz < r * r;
+}
+
 export function collideBlockers(p: Vector3, radius: number, blockers: readonly Blocker[]): void {
   for (const b of blockers) {
     if (b.kind === 'circle') {

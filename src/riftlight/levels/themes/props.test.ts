@@ -26,6 +26,33 @@ function verts(meshes: readonly Mesh[], x: number, z: number): V3[] {
   return out;
 }
 
+/**
+ * How far from (0, 0) the meshes' surface reaches between heights `lo` and `hi`: each triangle cut
+ * to that band (its corners inside it and where its edges cross `lo` and `hi`), so a low-poly
+ * model whose corners all sit above and below the band still counts where its sides pass through.
+ */
+function bandReach(meshes: readonly Mesh[], lo: number, hi: number): number {
+  let reach = 0;
+  const tri = [new Vector3(), new Vector3(), new Vector3()];
+  const at = (v: Vector3) => (reach = Math.max(reach, Math.hypot(v.x, v.z)));
+  for (const m of meshes) {
+    m.updateWorldMatrix(true, false);
+    const p = m.geometry.getAttribute('position');
+    const index = m.geometry.index;
+    const n = index ? index.count : p.count;
+    for (let i = 0; i + 2 < n; i += 3) {
+      for (let k = 0; k < 3; k++) tri[k]!.fromBufferAttribute(p, index ? index.getX(i + k) : i + k).applyMatrix4(m.matrixWorld);
+      for (let k = 0; k < 3; k++) {
+        const a = tri[k]!;
+        const b = tri[(k + 1) % 3]!;
+        if (a.y >= lo && a.y <= hi) at(a);
+        for (const y of [lo, hi]) if ((a.y - y) * (b.y - y) < 0) at(a.clone().lerp(b, (y - a.y) / (b.y - a.y)));
+      }
+    }
+  }
+  return reach;
+}
+
 const meshesOf = (root: Object3D): Mesh[] => {
   const out: Mesh[] = [];
   root.traverse((o) => {
@@ -142,7 +169,7 @@ describe('props', () => {
           let reach = 0;
           for (let s = 0; s < 16; s++) {
             const p = buildProp(def.id, { theme: t, rng: new Rng(s).fork(def.id), variant }, 0, 0, s * 0.7);
-            for (const [x, y, z] of verts(meshesOf(p.root), 0, 0)) if (y > 0.05 && y < 1.8) reach = Math.max(reach, Math.hypot(x, z));
+            reach = Math.max(reach, bandReach(meshesOf(p.root), 0.05, 1.8));
           }
           expect(reach, `${def.id} (${m.model}) in ${t.id}`).toBeLessThanOrEqual(0.75);
         });

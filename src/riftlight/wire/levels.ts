@@ -685,7 +685,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
    * must run 0.25 m inside a wall to count, so grazing a corner between two diagonal floor
    * cells doesn't stop a sword or a fireball (pits never block).
    */
-  private wall(from: Vector3, to: Vector3): number | null {
+  wall(from: Vector3, to: Vector3): number | null {
     const dx = to.x - from.x;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dz);

@@ -22,6 +22,7 @@
  * pack models the game uses by them (scripts/build-single.mjs).
  */
 import { Vector3, type Object3D } from 'three/webgpu';
+import type { ModelBuild } from '../../engine/model/build';
 import type { Binding } from '../../engine/model/expand';
 import { MODEL_LIBRARY } from '../../engine/model/library';
 import type { Rng } from '../core/rng';
@@ -135,17 +136,18 @@ class Outskirts {
     readonly tree: Object3D,
   ) {}
 
-  /** `Kit.model`, with a shared palette (STONE, WATER) narrowed to the slots the model has. */
-  m(id: string, p: V3, o: ModelPlacement = {}): void {
+  /**
+   * `Kit.model`, with a shared palette (STONE, WATER) narrowed to the slots the model has; null,
+   * and nothing placed, for a pack model whose pack didn't load (`loadRiftlightPacks`).
+   */
+  m(id: string, p: V3, o: ModelPlacement = {}): ModelBuild | null {
+    if (!MODEL_LIBRARY.has(id)) return null;
     // ground tiles and small dressing cast no shadow worth its pass
     const cast = o.cast ?? !FLAT.test(id);
-    if (!o.palette) {
-      this.k.model(id, p, { ...o, cast });
-      return;
-    }
+    if (!o.palette) return this.k.model(id, p, { ...o, cast });
     const slots = MODEL_LIBRARY.get(id).palette;
     const palette = Object.fromEntries(Object.entries(o.palette).filter(([slot]) => slot in slots));
-    this.k.model(id, p, { ...o, palette, cast });
+    return this.k.model(id, p, { ...o, palette, cast });
   }
 
   /** A model at a screen spot (world yaw), remembered as taken. */
@@ -154,10 +156,18 @@ class Outskirts {
     this.taken.push({ sx, sy, r: o.r ?? 0.8 });
   }
 
-  /** A tree (or anything round) that blocks only at its trunk. */
-  trunk(id: string, sx: number, sy: number, r = 0.4, o: ModelPlacement = {}): void {
-    this.m(id, at(sx, sy), { yaw: this.rng.range(0, 360), ...o, block: false });
-    this.k.blockers.push({ kind: 'circle', x: iso(sx, sy)[0], z: iso(sx, sy)[1], r: r * (o.scale ?? 1) });
+  /**
+   * A tree (or anything round) that blocks only at its trunk; `hides` (m), a crown big enough to
+   * hide the hero, also closes the ground behind it (`Kit.closeBehind`).
+   */
+  trunk(id: string, sx: number, sy: number, r = 0.4, o: ModelPlacement & { hides?: number } = {}): void {
+    const size = this.m(id, at(sx, sy), { yaw: this.rng.range(0, 360), ...o, block: false })?.bounds.size;
+    const [x, z] = iso(sx, sy);
+    this.k.blockers.push({ kind: 'circle', x, z, r: r * (o.scale ?? 1) });
+    if (o.hides && size) {
+      const crown = Math.min(size[0], size[2]) * (o.scale ?? 1) * 0.8;
+      this.k.closeBehind(x, z, crown, crown, o.hides, L.view);
+    }
     this.taken.push({ sx, sy, r: 1.2 * (o.scale ?? 1) });
   }
 
@@ -229,8 +239,9 @@ class Outskirts {
       // local +X points out of town, local Z runs along the wall
       k.frame(x, z, Math.atan2(-nz, nx) / DEG, () => {
         build();
-        // nothing walks behind the wall (it would hide the hero): the strip out to the edge is closed
-        k.blockBox(1.9, 0, 2.4, 3.2);
+        // nothing walks behind the wall (it would hide the hero): the strip out past the edge is
+        // closed, deep enough that anything pushed out of it goes back toward the town
+        k.blockBox(3.85, 0, 6.3, 3.2);
       });
     };
     const piece = (id: string, o: ModelPlacement = {}) => () => this.m(id, [0, 0, 0], { palette: STONE, ...o });
@@ -357,6 +368,7 @@ class Outskirts {
       k.box([0.08, 0.7, 0.6], 'red', [-2.75, 2.65, 2.75]);
       k.box([0.1, 0.3, 0.2], 'sand', [-2.75, 2.65, 2.75]);
       k.blockBox(0, 0, 5.8, 4.4);
+      k.closeBehind(0, 0, 5.8, 4.4, 5, L.view);
       // the patio: a deck before the door, two tables with chairs, barrels, potted plants
       k.box([6.6, 0.03, 3.6], 'plum', [0, 0.015, 4.2], { cast: false });
       for (let i = 0; i < 6; i++) k.box([0.06, 0.035, 3.6], 'night', [-2.75 + i * 1.1, 0.018, 4.2], { cast: false });
@@ -396,8 +408,8 @@ class Outskirts {
         if (j === 0) {
           // the bridge: its deck crosses along local X; the rails keep walkers on it
           this.m('kenney-nature/bridge-wood', [0, -0.155, 0], { palette: { stone: 'sand', dirt: 'plum' }, block: false });
-          for (const s of [-1, 1]) k.blockBox(0, s * 1.36, 3.12, 0.3);
-        } else k.blockBox(-0.1, 0, 1.56, 3.02);
+          for (const s of [-1, 1]) k.blockBox(0, s * 1.36, 3.12, 0.3, true);
+        } else k.blockBox(-0.1, 0, 1.56, 3.02, true);
         if (j === -3 || j === 4) this.m('kenney-nature/lily-large', [0.2, -0.15, 0.6], { block: false });
         if (j === 2 || j === -5) this.m('kenney-nature/lily-small', [-0.3, -0.15, -0.5], { block: false, yaw: 70 });
       });
@@ -488,6 +500,7 @@ class Outskirts {
       for (const pz of [-1.2, 1.2]) k.box([0.06, 0.9, 0.7], 'night', [-2.64, 1.7, pz * 1.35]);
       k.roof(5.2, 4.2, 3.0, 2.2, 'slate', 0.35, 'night', 'red');
       k.blockBox(0, 0, 5.6, 4.6);
+      k.closeBehind(0, 0, 5.6, 4.6, 3.4, L.view);
     });
     this.taken.push({ sx: bx, sy: by, r: 3.8 });
     this.put('well', ...L.well, { yaw: face(20), r: 1.3 });
@@ -527,12 +540,12 @@ class Outskirts {
       this.m('kenney-nature/lily-large', [0.7, surface, -0.5], { block: false, yaw: 200 });
       this.m('kenney-nature/lily-small', [0.9, surface, 0.6], { block: false, yaw: 120 });
       this.m('kenney-nature/lily-small', [-0.4, surface, -0.9], { block: false, yaw: 40 });
-      k.blockBox(-0.05 * scale, 0.03 * scale, water * 2 + 0.2, water * 2 + 0.2);
+      k.blockBox(-0.05 * scale, 0.03 * scale, water * 2 + 0.2, water * 2 + 0.2, true);
     });
     const bank = 1.15 * scale;
     this.taken.push({ sx: px, sy: py, r: bank });
     // the willow stands south-west of the water, clear of the view of it
-    this.trunk('willow', px - bank - 1.4, py - 1.2, 0.5, { seed: 2 });
+    this.trunk('willow', px - bank - 1.4, py - 1.2, 0.5, { seed: 2, hides: 3 });
     this.put('reeds', px + bank - 0.6, py + bank - 0.9, { block: false, r: 0.5, seed: 11 });
     this.put('reeds', px - bank + 0.5, py + 0.8, { block: false, r: 0.5, seed: 12 });
     this.put('reeds', px + 0.4, py - bank + 0.4, { block: false, r: 0.5, seed: 13 });
@@ -583,6 +596,9 @@ class Outskirts {
       }
       k.box([8.4, 0.6, 0.4], 'slate', [0, 0.3, 4.3], { top: 'mist' });
       k.blockBox(0, 4.3, 8.4, 0.4);
+      // the ground between the back wall and the edge is shut in (the gate's tower on one side, the
+      // edge on the other): closed, out past the edge
+      k.blockBox(0, 7.4, 8.4, 6);
       for (const s of [-1, 1]) k.box([0.6, 0.9, 0.6], 'mist', [s * 4.0, 0.45, -2.3], { top: 'slate' });
       for (const [cx, cz] of [
         [-0.9, -1.3],
@@ -615,6 +631,7 @@ class Outskirts {
         k.blockBox(s * 3.6, 0, 3.1, 0.3);
         this.m('kenney-castle/tower-square-base', [s * 6.6, 0, 0.4], { palette: STONE });
         this.m('kenney-castle/tower-square-top-roof', [s * 6.6, 3.03, 0.4], { palette: STONE, block: false });
+        k.closeBehind(s * 6.6, 0.4, 3, 3, 5, L.view);
       }
       k.box([4.2, 0.26, 0.3], 'plum', [0, 3.3, 0]);
       k.box([4.5, 0.12, 0.42], 'night', [0, 3.48, 0]);
@@ -623,8 +640,10 @@ class Outskirts {
       k.box([1.9, 0.08, 0.1], 'plum', [0, 3.08, 0.12]);
       k.box([0.3, 0.3, 0.1], 'red', [0, 2.75, 0.18], { rot: [0, 0, 45] });
       k.box([0.14, 0.14, 0.11], 'sand', [0, 2.75, 0.2], { rot: [0, 0, 45] });
-      // past the gate the road leaves the town: nothing to walk to beyond it
-      k.blockBox(0, 1.2, 16, 1.2);
+      // past the gate the road leaves the town: nothing to walk to beyond it (closed from the gate's
+      // line, no gap to be wedged in behind the palisade, and well past the edge, so anything
+      // pushed out of it goes back into the town)
+      k.blockBox(0, 3.3, 16, 6.3);
     });
     this.taken.push({ sx: gx, sy: gy, r: 2.4 }, { sx: gx - 3.6, sy: gy, r: 1.8 }, { sx: gx + 3.6, sy: gy, r: 1.8 }, { sx: gx - 6.6, sy: gy, r: 2.4 }, { sx: gx + 6.6, sy: gy, r: 2.4 });
     this.put('signpost', 2.6, -15.4, { yaw: face(-40), r: 1 });
@@ -645,8 +664,8 @@ class Outskirts {
       const r = Math.hypot(sx, sy);
       return r < 15.5 || Math.abs(sx - L.stream.sx) < 2.6 || nearPath(sx, sy);
     };
-    const oaks = ['kenney-nature/tree-oak', 'kenney-nature/tree-default', 'kenney-nature/tree-fat', 'kenney-nature/tree-default-dark'];
-    const pines = ['kenney-nature/tree-pine-round-d', 'kenney-nature/tree-pine-small-b', 'kenney-nature/tree-pine-tall-a', 'kenney-nature/tree-pine-small-c'];
+    const oaks = ['kenney-nature/tree-oak', 'kenney-nature/tree-fat', 'kenney-nature/tree-oak', 'kenney-nature/tree-fat'];
+    const pines = ['kenney-nature/tree-pine-round-d', 'kenney-nature/tree-pine-small-b', 'kenney-nature/tree-pine-small-c', 'kenney-nature/tree-pine-small-c'];
     // the west bank between the market and the stream
     this.scatter(oaks, 6, [13, -9, 21, 10], { r: 1.6, keep, block: 0.35, scale: [0.85, 1.1] });
     // the north-west corner between the farm and the watch, the north-east behind the tavern

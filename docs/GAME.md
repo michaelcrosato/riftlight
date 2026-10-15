@@ -1256,9 +1256,10 @@ turn to a model that turns its flame back. A missing model is a new library entr
 rng). **Pack variants:** a prop may also wear an imported pack's model in the themes that read
 better with it (`variants`: the model, its odds against the prop's own, the designed theme ids, a
 `bind` with the theme's tints and a size; `propModels(def, theme)` lists them): Mini Dungeon barrels,
-chests, columns, pots and stones in the forge, the crypt, the cathedral and the ruins; Nature
-stones, rocks, pines, bushes, stumps, logs, mushrooms, flowers, a sign and statues in the cliffs,
-the jungle, the swamp, the peaks and the caverns; the Castle kit's war pennant for the banner. Each
+chests, columns, pots and stones in the forge, the crypt, the cathedral, the observatory and the
+ruins; Nature stones, rocks, pines, bushes, stumps, logs, mushrooms, flowers, a sign and statues in
+the cliffs, the jungle, the swamp, the peaks and the caverns (the log and the obelisk in the ruins
+too, the obelisk in the crypt); the Castle kit's war pennant for the banner. Each
 prop picks from its own stream after its seed (`buildProp`), so the plan is untouched: the same
 cells hold the same props, block the same cells and keep the bypass guarantee, and a level looks
 the same every time it's built from the same seed. A variant's palette binds the pack's shared
@@ -1735,20 +1736,37 @@ loads them before the town is built), with sand paths from the hub to each distr
 | the farmstead | west | a fenced field of crop rows (corn, wheat, leaves, pumpkins, carrots), a red barn (kit), the library `well`, haystack, bales, log stack, cart |
 
 Past the edge the forest stands in loose rings (pack trees mixed with `tree.glb`; low kinds to the
-south, so the edge toward the camera stays in view). **The camera looks from the south**, so
-anything tall hides what stands north of it: tall pieces stand on the north side of each district
-and the south half of the town stays low (the gate is posts and a beam, the graves are low). Each
-district has a spot in `TOWN_LAYOUT.districts` (`Town.districts`, world points) where the camera
-shows the hero; `outskirts.test.ts` casts a ray from it to the camera through the merged meshes.
+south, so the edge toward the camera stays in view). **The camera looks from the south**
+(`TOWN_LAYOUT.view`: yaw 45°, pitch 42°), so anything tall hides what stands north of it. Tall
+pieces stand on the north side of each district, and where the ground behind something tall can
+still be walked (the tavern, the barn, the gate's watch towers, the willow, the hub's houses and
+the smithy's back wall), it is closed: `Kit.closeBehind(x, z, w, d, h, view)` closes the ground
+from the thing's back edge (as the screen sees it) back by (h − 1.6) / tan(pitch), the hero's head
+under its top, in screen-aligned slices half a metre wide. Each district has a spot in
+`TOWN_LAYOUT.districts` (`Town.districts`, world points) where the camera shows the hero, feet to
+head (`outskirts.test.ts` casts rays from 0.1, 0.9 and 1.6 m to the camera through the merged
+meshes), and the test sweeps every cell the hero can walk to: no patch of ground where he is hidden
+is bigger than 5 m², and all of it is under 4% of the town (a tree's crown hides a few steps).
 
 **Walking.** Actors collide with the blockers (`Town.obstacles`: trees and posts as circles at
-the trunk, buildings, walls and furniture as boxes from `Kit.model`'s bounds, the water as boxes
-but for the bridge, a closed strip behind the Old Watch's wall) and the circle. `Town.nav()` is the
-walkable grid (`town/nav.ts`, half-metre cells, the hero's 0.35 m radius): `route(a, b)`,
-`reachable(from, points)`. `__RIFTLIGHT__.moveTo` walks it in town. The tests flood it from the
-spawn: every interactable, NPC path point, the portal spawn and district are reachable, the water
-is not, nothing walks behind the wall; the `riftlight` e2e suite walks the hero to every district
-and back.
+the trunk, buildings, walls and furniture as boxes from `Kit.model`'s bounds, the water and the
+bridge's rails as `low` boxes, closed ground behind the Old Watch's wall, past the gate and behind
+the tall pieces) and the circle. `Town.collide` holds an actor to the circle and pushes it out of
+each blocker in turn, a few passes over; the closed ground behind the wall and past the gate runs
+well past the edge, so the nearest way out of it is always toward the town. Should it still end in
+something (wedged in a gap narrower than it) or shut in where nobody can walk from (a pocket a fast
+dash slipped into), it is set on the nearest ground that can be walked to from the plaza
+(`TownNav.nearReachable`, `nearestReachable`). **A Blink in town** stops short of walls as it does in
+a level: the town hands its `wall` query (`Town.wall`, exact: where the line enters a box that isn't
+low, or leaves the circle) to the combat world the hero brings (`StageWorld.wall`); it goes over the
+water and past trunks, as a level's pits and props don't stop it. `Town.nav()` is the walkable
+grid (`town/nav.ts`, half-metre cells, the hero's 0.35 m radius, built in a few milliseconds):
+`route(a, b)`, `reachable(from, points)`. `__RIFTLIGHT__.moveTo` walks it in town. The tests flood
+it from the spawn: every interactable, NPC path point, the portal spawn and district are reachable;
+on a looser grid (a smaller actor, quarter-metre cells) the water is not, nor is anything behind the
+wall; on a finer one every spot the hero fits in is one he can walk to (no pockets); and a Blink
+or a dash from all over the town, in every direction, never ends where he can't walk back from or
+goes through a wall. The `riftlight` e2e suite walks the hero to every district and back.
 
 **Lights and motion.** The campfire and the rift's crack borrow lights from the pool with the
 lanterns (`activate`); their flicker, embers and smoke come from `this.time`, so the outskirts add

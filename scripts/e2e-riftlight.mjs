@@ -88,7 +88,7 @@ export async function runRiftlight(h) {
       const home = rl.moveTo(town.spawn.x, town.spawn.z, { radius: 0.6, maxFrames: 1500 });
       return { out, home: home.arrived };
     });
-    for (const d of tour.out) check(d.arrived, `walks from the plaza to the ${d.id} (${d.frames} frames, at ${d.at.join(', ')})`);
+    for (const d of tour.out) check(d.arrived, `walks on to the ${d.id} (${d.frames} frames, at ${d.at.join(', ')})`);
     check(tour.home, 'and back to the plaza');
     await capture(page, `riftlight-${tag}-town-back.png`);
 

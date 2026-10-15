@@ -12,7 +12,14 @@ import { MODEL_LIBRARY } from '../engine/model';
 
 export const RIFTLIGHT_PACKS = ['packs/kenney-castle.json', 'packs/kenney-nature.json', 'packs/kenney-furniture.json', 'packs/kenney-mini-dungeon.json'] as const;
 
-/** Every pack Riftlight uses, into `MODEL_LIBRARY` (each fetched once; again is free). */
-export async function loadRiftlightPacks(): Promise<void> {
-  await Promise.all(RIFTLIGHT_PACKS.map((url) => loadPack(url, { into: MODEL_LIBRARY })));
+/**
+ * Every pack Riftlight uses, into `MODEL_LIBRARY` (each fetched once; again is free). One that
+ * fails to load is left out with a warning, and the game goes on without its models (the town
+ * leaves them out, a level prop wears its own): the URLs of those that failed.
+ */
+export async function loadRiftlightPacks(): Promise<string[]> {
+  const loaded = await Promise.allSettled(RIFTLIGHT_PACKS.map((url) => loadPack(url, { into: MODEL_LIBRARY })));
+  const failed = RIFTLIGHT_PACKS.filter((_, i) => loaded[i]!.status === 'rejected');
+  for (const url of failed) console.warn(`[riftlight] pack ${url} did not load; going on without its models`, (loaded[RIFTLIGHT_PACKS.indexOf(url)] as PromiseRejectedResult).reason);
+  return failed;
 }
