@@ -8,6 +8,14 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.35.0
+
+- **Button events:** `ctx.input.buttonEvents` lists this frame's pointer button presses and
+  releases in order, each with where the pointer was (`{ code, down, x, y }`, normalised device
+  coordinates), recorded with the frame (`clicks`). A drag shorter than a frame (a script's, an
+  agent's) still starts where it started and ends where it ended; UI that acts on clicks reads
+  these, play reads `isDown`. The pointer is also placed where a button is let go.
+
 ## 0.34.0
 
 - **Mouse buttons are keys** (`MOUSE_BUTTONS`): `isDown('MouseLeft')`, `consumePress('MouseRight')`,

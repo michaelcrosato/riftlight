@@ -33,7 +33,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, KEYS, MenuInput, PAD_BUTTONS, Pointer } from './controls';
+import { cameraBasis, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer } from './controls';
 import { changedSliders, DIFFICULTY_SHORT, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -41,14 +41,16 @@ import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHa
 import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker } from './recap';
-import { newSave, SaveStore } from './save';
-import { loadSettings, type Settings, storeSettings } from './settings';
+import { newSave, SaveStore, type SavesView, viewRemoved, viewSaved } from './save';
+import { loadSettings, playSettings, type Settings, storeSettings } from './settings';
 import { stubPorts } from './stubs';
 import { corePorts } from '../wire';
 import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
+import { Actor, setActorIds } from '../actors/Actor';
+import { PropTarget } from '../levels/mechanics/common';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -74,6 +76,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
   readonly ports: RiftlightPorts;
   readonly events = new EventBus<GameEvents>();
   readonly store: SaveStore;
+  /** The slots as the game knows them (menus, Continue): read once and recorded, then kept by its own saves. */
+  saves: SavesView;
   readonly settings: Settings = loadSettings();
   readonly dev: DevFlags = { god: false, ai: true, hitboxes: false };
   slot = 0;
@@ -156,6 +160,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     // pass ports to replace any of them (tests: `new Riftlight(stubPorts())`).
     this.ports = { ...stubPorts(), ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
     this.store = options.store ?? new SaveStore();
+    this.saves = this.store.view();
   }
 
   get audio() {
@@ -166,6 +171,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   async setup(ctx: GameContext): Promise<void> {
     this.ctx = ctx;
+    // ids count from here, as they did in a run this replays (they key loot rolls and random streams)
+    setActorIds(1);
+    PropTarget.setIds();
     const { engine } = ctx;
     registerAudio(ctx.audio);
     registerFx(ctx.particles);
@@ -210,11 +218,16 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.hero = await this.ports.hero.create(this.services, this.save.hero);
     this.hero.object.visible = false;
     this.applySettings();
+    // the settings play depends on (zoom and shake move what the mouse points at) are the
+    // device's: the recording keeps them, so a replay plays with the recorded ones
+    ctx.input.send({ rl: 'settings', settings: playSettings(this.settings) });
+    ctx.input.send({ rl: 'saves', saves: this.saves }); // and so are the save slots the menus show
     this.toTitle();
     this.disposeApi = installApi(this);
   }
 
   dispose(ctx: GameContext): void {
+    this.layer.closeAll(); // first: closing a talk plays the townsperson's goodbye, before the town goes
     this.showcase?.dispose();
     for (const u of this.unsubs) u();
     this.disposeApi?.();
@@ -227,7 +240,6 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.hero?.dispose();
     this.town?.dispose();
     this.events.clear();
-    this.layer.closeAll();
     this.ports.loot.dispose?.();
   }
 
@@ -315,6 +327,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.slot = slot;
     this.save = newSave(seed);
     this.store.save(slot, this.save);
+    viewSaved(this.saves, slot, this.save);
     this.applySave();
     this.note('run', `new run in slot ${slot + 1} seed ${seed}`);
     this.goTown('new');
@@ -332,12 +345,51 @@ export class Riftlight implements Game, MenuHost, LookHost {
       this.sound('error');
       return false;
     }
+    this.loadData(slot, data);
+    return true;
+  }
+
+  /** Play on from a save's data, into town. */
+  private loadData(slot: number, data: SaveData): void {
     this.slot = slot;
     this.save = data;
     this.applySave();
     this.note('run', `loaded slot ${slot + 1}`);
     this.goTown('load');
-    return true;
+  }
+
+  /**
+   * The title menu starts or loads a run. What that takes from the page (the save in storage,
+   * a new run's seed from `?seed=` or the clock) goes through `ctx.input.send`, so the recording
+   * keeps it and a replay loads the same run; it starts at the next frame (`command`).
+   */
+  play(choice: { readonly kind: 'new' | 'load' | 'continue'; readonly slot?: number }): void {
+    if (choice.kind === 'new') {
+      const slot = choice.slot ?? 0;
+      this.ctx.input.send({ rl: 'run', slot, seed: urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0 }); // real time: a new run's seed when none is given (the save keeps it)
+      return;
+    }
+    const slot = choice.kind === 'continue' ? this.saves.last : (choice.slot ?? null);
+    if (slot === null) return this.play({ kind: 'new', slot: 0 });
+    const data = this.store.load(slot);
+    if (!data) return this.sound('error');
+    this.ctx.input.send({ rl: 'load', slot, data });
+  }
+
+  /** This frame's data from the page (`play`, the settings at setup), live or replayed. */
+  private command(c: unknown): void {
+    const m = c as Partial<RiftCommand> | null;
+    if (m?.rl === 'run' && typeof m.slot === 'number' && typeof m.seed === 'number') this.newRun(m.slot, m.seed);
+    else if (m?.rl === 'load' && typeof m.slot === 'number' && m.data) this.loadData(m.slot, m.data);
+    else if (m?.rl === 'settings' && m.settings) Object.assign(this.settings, playSettings(m.settings));
+    else if (m?.rl === 'saves' && m.saves) {
+      this.saves = m.saves;
+      if (this.screen === 'title') this.toTitle(); // the title menu as these slots make it, its focus on the first
+    } else if (m?.rl === 'imported' && typeof m.slot === 'number') {
+      if (m.data) viewSaved(this.saves, m.slot, m.data);
+      this.saves.lastError = m.error ?? '';
+      this.sound(m.data ? 'open' : 'error');
+    }
   }
 
   /** Push the save into every system: hero level, tree, gear, difficulty, loot. */
@@ -600,6 +652,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const stats = (this.save.stats ??= emptyStats());
     stats.playtime = Math.round(this.playtime);
     const ok = this.store.save(this.slot, this.save);
+    viewSaved(this.saves, this.slot, this.save);
     this.note('save', `${why} → slot ${this.slot + 1}${ok ? '' : ' (memory only)'}`);
     return ok;
   }
@@ -675,12 +728,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
       const f = input.files?.[0];
       if (!f) return;
       void f.text().then((text) => {
+        // the file is data from the page: what the slot holds now reaches the game as a command
         try {
-          this.store.importSlot(slot, text);
-          this.sound('open');
+          this.ctx.input.send({ rl: 'imported', slot, data: this.store.importSlot(slot, text) });
         } catch (e) {
-          this.store.lastError = e instanceof Error ? e.message : String(e);
-          this.sound('error');
+          this.ctx.input.send({ rl: 'imported', slot, error: e instanceof Error ? e.message : String(e) });
         }
         input.value = '';
       });
@@ -690,6 +742,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   deleteSlot(slot: number): void {
     this.store.remove(slot);
+    viewRemoved(this.saves, slot);
     this.sound('close');
   }
 
@@ -885,14 +938,18 @@ export class Riftlight implements Game, MenuHost, LookHost {
     if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
     else i.aim.copy(this.autoAim());
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
-    i.attack = !overUi && (input.anyDown(KEYS.attack) || ((this.pointer.buttons & 1) !== 0 && !this.pointerOnHud()));
+    // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
+    // frame); a press is used up here even when a panel takes it, so it never fires later
+    const left = input.consumeAny(MOUSE.left) || input.anyDown(MOUSE.left);
+    const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
+    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !this.pointerOnHud()));
     i.skill = -1;
     for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
-    if ((this.pointer.buttons & 2) !== 0 && !overUi) i.skill = 0;
+    if (right && !overUi) i.skill = 0;
     // held skill keys keep channels (whirlwind, beams) going
     let held = 0;
     for (let s = 0; s < 4; s++) if (input.anyDown(KEYS.skill[s]!)) held |= 1 << s;
-    if ((this.pointer.buttons & 2) !== 0 && !overUi) held |= 1;
+    if (input.anyDown(MOUSE.right) && !overUi) held |= 1;
     i.held = panelOpen ? 0 : held;
     i.dodge = input.consumeAny(KEYS.dodge);
     if (panelOpen) {
@@ -932,6 +989,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   update(ctx: GameContext, dt: number): void {
+    for (const c of ctx.input.commands) this.command(c);
     this.time += dt;
     const ui = this.ui;
     ui.time = this.time;
@@ -953,6 +1011,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
       }
       if (this.layer.top && this.layer.input(e)) {
         consumed ||= e.kind !== 'pointer';
+        // a click a panel took (Resume, a close box) is not an attack once the panel is gone
+        if (e.kind === 'pointer' && e.type === 'down') ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
         continue;
       }
       // the world: a pointer press on a loot label picks it up
@@ -1418,7 +1478,38 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const lvl = this.level ? `depth ${this.level.spec.depth} ${this.level.progress().killed}/${this.level.progress().total}` : this.screen;
     return `${lvl} · lv ${this.save.hero.level} · ${this.save.hero.gold}g`;
   }
+
+  /**
+   * The run as `engine.fingerprint()` sees it: where the hero and every monster are and how
+   * hurt, the run's random stream, the save (level, gold, tree, gear and bags), the ground loot.
+   * A replay of a recorded session ends with the same one.
+   */
+  fingerprint(): string {
+    const at = (p: Vector3) => `${p.x},${p.y},${p.z}`;
+    const hero = this.hero.actor;
+    return [
+      this.screen,
+      this.slot,
+      this.rng.state,
+      this.levelTime,
+      this.dead,
+      this.cleared,
+      `${at(hero.position)} ${this.hero.actor instanceof Actor ? this.hero.actor.facing : ''} ${hero.life} ${hero.mana}`,
+      ...(this.level?.monsters() ?? []).map((m) => `${m.actor.id} ${at(m.actor.position)} ${m.actor instanceof Actor ? m.actor.facing : ''} ${m.actor.life}`),
+      ...this.ports.loot.ground().map((l) => `${l.id} ${at(l.position)}`),
+      JSON.stringify(this.save),
+      JSON.stringify(this.ports.loot.peek?.() ?? null),
+    ].join('|');
+  }
 }
+
+/** Data the shell takes from the page, through `ctx.input.send` (recorded with the frame it arrives in). */
+type RiftCommand =
+  | { readonly rl: 'run'; readonly slot: number; readonly seed: number }
+  | { readonly rl: 'load'; readonly slot: number; readonly data: SaveData }
+  | { readonly rl: 'settings'; readonly settings: Partial<Settings> }
+  | { readonly rl: 'saves'; readonly saves: SavesView }
+  | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string };
 
 /** `?seed=123` makes new runs reproducible (tests, bug reports, playtests). */
 function urlSeed(): number | null {

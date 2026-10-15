@@ -265,6 +265,10 @@ export class RealLoot implements LootPort {
     save.hero.skills = this.store.skills.map((x) => ({ ...x, supports: [...x.supports] }));
   }
 
+  peek(): unknown {
+    return { state: lootToSave(this.store.state), skills: this.store.skills, held: this.ui?.held?.item.uid ?? null };
+  }
+
   setSockets(skills: SaveData['hero']['skills']): void {
     this.quiet++;
     try {

@@ -17,12 +17,13 @@ import {
   sliderToMultiplier,
 } from '../game/difficulty';
 import type { DevFlags } from '../game/ports';
-import type { SaveStore } from '../game/save';
+import type { SavesView } from '../game/save';
 import type { Settings } from '../game/settings';
 import { Menu, type Widget } from './menu';
 
 export interface MenuHost {
-  readonly store: SaveStore;
+  /** The save slots as the game knows them (`SavesView`): menus read these, never storage, so they replay. */
+  readonly saves: SavesView;
   readonly settings: Settings;
   readonly dev: DevFlags;
   readonly audio: AudioManager;
@@ -31,9 +32,8 @@ export interface MenuHost {
   difficulty(): DifficultyTuning;
   setDifficulty(t: DifficultyTuning): void;
   applySettings(): void;
-  continueRun(): void;
-  newRun(slot: number): void;
-  loadSlot(slot: number): void;
+  /** Start or load a run (the save it reads and a new run's seed are recorded: `Riftlight.play`). */
+  play(choice: { readonly kind: 'new' | 'load' | 'continue'; readonly slot?: number }): void;
   resume(): void;
   saveAndQuit(): void;
   openMenu(menu: Menu, modal?: boolean): void;
@@ -65,9 +65,9 @@ const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
 export function titleMenu(h: MenuHost): Menu {
   return new Menu(
     () => {
-      const last = h.store.lastSlot();
+      const last = h.saves.last;
       const w: Widget[] = [];
-      if (last !== null) w.push({ kind: 'button', id: 'continue', label: 'Continue', onClick: () => h.continueRun(), accent: 'teal' });
+      if (last !== null) w.push({ kind: 'button', id: 'continue', label: 'Continue', onClick: () => h.play({ kind: 'continue' }), accent: 'teal' });
       w.push({ kind: 'button', id: 'new', label: 'New Run', onClick: () => h.openMenu(slotsMenu(h, 'new')) });
       w.push({ kind: 'button', id: 'load', label: 'Load / Import', onClick: () => h.openMenu(slotsMenu(h, 'load')) });
       w.push({ kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) });
@@ -192,13 +192,13 @@ export function slotsMenu(h: MenuHost, mode: 'new' | 'load'): Menu {
   return new Menu(
     () => {
       const w: Widget[] = [];
-      for (const s of h.store.summaries()) {
+      for (const s of h.saves.slots) {
         const label = s.empty ? `Slot ${s.slot + 1}: empty` : s.error ? `Slot ${s.slot + 1}: unreadable` : `Slot ${s.slot + 1}: lv ${s.level} deepest ${s.deepest}`;
         w.push({
           kind: 'button',
           id: `slot${s.slot}`,
           label,
-          onClick: () => (mode === 'new' ? h.newRun(s.slot) : s.empty ? h.newRun(s.slot) : h.loadSlot(s.slot)),
+          onClick: () => h.play({ kind: mode === 'new' || s.empty ? 'new' : 'load', slot: s.slot }),
           accent: mode === 'new' && !s.empty ? 'plum' : 'teal',
           hint: mode === 'new' ? (s.empty ? 'start a new run here' : 'overwrites this save!') : s.empty ? 'start a new run here' : `load slot ${s.slot + 1}`,
         });
@@ -208,8 +208,8 @@ export function slotsMenu(h: MenuHost, mode: 'new' | 'load'): Menu {
       w.push({ kind: 'button', id: 'export', label: 'Export slot as JSON', onClick: () => h.exportSlot(h.slot) });
       w.push({ kind: 'button', id: 'import', label: 'Import JSON into slot', onClick: () => h.importSlot(h.slot) });
       w.push({ kind: 'button', id: 'delete', label: 'Delete slot', onClick: () => h.deleteSlot(h.slot), accent: 'plum' });
-      if (h.store.volatile) w.push({ kind: 'label', id: 'vol', label: 'storage blocked: saves last this session', color: 'orange' });
-      if (h.store.lastError) w.push({ kind: 'label', id: 'err', label: h.store.lastError.slice(0, 40), color: 'red' });
+      if (h.saves.volatile) w.push({ kind: 'label', id: 'vol', label: 'storage blocked: saves last this session', color: 'orange' });
+      if (h.saves.lastError) w.push({ kind: 'label', id: 'err', label: h.saves.lastError.slice(0, 40), color: 'red' });
       return w;
     },
     { id: 'slots', title: mode === 'new' ? 'New run: pick a slot' : 'Save slots', width: 220, onSound: sound(h) },

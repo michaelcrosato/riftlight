@@ -1216,7 +1216,9 @@ Mouse buttons on the canvas are keys (`MOUSE_BUTTONS`: `MouseLeft`, `MouseRight`
 held and pressed like any key, so fixed-step code reads a click with `consumePress` (one shorter
 than a frame is not lost) and a chord (right while left is held) counts both. A finger is the key
 `Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one.
-`input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
+`input.buttonEvents` lists this frame's presses and releases in order, each where the pointer
+was, so a UI reading clicks sees a drag a script makes between two frames start and end where it
+did. `input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
 mouse ray meets a plane (the Sandbox room's grab: a spring, so it still collides and can be
 thrown; a level plane when the camera looks down, an upright one facing it when it looks
 across). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;

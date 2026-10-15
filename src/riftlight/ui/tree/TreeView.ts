@@ -13,7 +13,10 @@
  * the nearest node; the d-pad steps from node to node.
  *
  * While open the view takes the keyboard (key events don't reach the game) and polls the
- * first standard gamepad itself; the shell should pause the game while it is open.
+ * first standard gamepad itself; the shell should pause the game while it is open. A view in
+ * a game passes `defer`: what the player does to the tree (allocate, refund, close) goes to it
+ * instead of happening, and the game hands it back to `perform` from its recorded input, so a
+ * replay of the game does the same to the tree.
  */
 import type { SoundDef } from '../../../engine/audio/synth';
 import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
@@ -57,7 +60,15 @@ export interface TreeViewOptions {
   gold?: () => number;
   /** Why refunds are refused here (e.g. only the mystic refunds): a message, or null to allow them. */
   refundBlocked?: () => string | null;
+  /**
+   * Take what the player does instead of doing it (a game: `ctx.input.send` it, then `perform`
+   * it when it arrives, so the recording keeps it). Absent: it happens at once.
+   */
+  defer?: (action: TreeAction) => void;
 }
+
+/** What the player does to the tree: allocate the path to a node (or cycle a mastery), refund one, close the view. */
+export type TreeAction = { readonly kind: 'activate' | 'refund'; readonly id: string } | { readonly kind: 'close' };
 
 const SOUNDS: Record<string, SoundDef> = {
   treeAllocate: { wave: 'square', duty: 0.25, freq: 523.25, arp: [0, 4, 7], arpRate: 0.045, attack: 0.002, sustain: 0.06, decay: 0.16, volume: 0.18 },
@@ -261,6 +272,20 @@ export class TreeView {
     return this.refundNode(id);
   }
 
+  /** Do what the player did (`defer` handed it over): allocate, refund or close. */
+  perform(action: TreeAction): void {
+    if (action.kind === 'activate') this.activate(action.id);
+    else if (action.kind === 'refund') this.refundNode(action.id);
+    else this.close();
+    this.dirty = true;
+  }
+
+  /** The player did something to the tree: hand it to `defer`, or do it now. */
+  private act(action: TreeAction): void {
+    if (this.options.defer) this.options.defer(action);
+    else this.perform(action);
+  }
+
   /** Tooling/tests: the view's state. */
   debug() {
     return {
@@ -319,7 +344,7 @@ export class TreeView {
     const [x, y] = this.art(e);
     const close = this.closeBox();
     if (close && x >= close.x && y < close.h && this.pointers.size === 0) {
-      this.close();
+      this.act({ kind: 'close' });
       return;
     }
     this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
@@ -338,7 +363,7 @@ export class TreeView {
         this.longPress = window.setTimeout(() => {
           if (this.drag && !this.drag.moved && this.hover) {
             this.drag.moved = true;
-            this.refundNode(this.hover);
+            this.act({ kind: 'refund', id: this.hover });
           }
         }, 550);
       }
@@ -388,14 +413,14 @@ export class TreeView {
     const id = this.hover;
     if (!id) return;
     if (d.button === 2) {
-      this.refundNode(id);
+      this.act({ kind: 'refund', id });
     } else if (d.type === 'touch') {
       // First tap shows the tooltip; a second tap on the same node allocates.
       if (this.tapped?.id === id && performance.now() - this.tapped.at < 4000) { // real time: UI gesture timing (a double tap)
-        this.activate(id);
+        this.act({ kind: 'activate', id });
         this.tapped = null;
       } else this.tapped = { id, at: performance.now() }; // real time: UI gesture timing (a double tap)
-    } else if (d.button === 0) this.activate(id);
+    } else if (d.button === 0) this.act({ kind: 'activate', id });
     this.dirty = true;
   }
 
@@ -430,7 +455,7 @@ export class TreeView {
     const closeKeys = this.options.closeKeys ?? ['Escape'];
     if (closeKeys.includes(code)) {
       e.preventDefault();
-      this.close();
+      this.act({ kind: 'close' });
       return;
     }
     if ((e.ctrlKey || e.metaKey) && code === 'KeyF') {
@@ -451,13 +476,13 @@ export class TreeView {
       case 'Enter':
       case 'Space':
         e.preventDefault();
-        if (this.hover) this.activate(this.hover);
+        if (this.hover) this.act({ kind: 'activate', id: this.hover });
         break;
       case 'Backspace':
       case 'Delete':
       case 'KeyX':
         e.preventDefault();
-        if (this.hover) this.refundNode(this.hover);
+        if (this.hover) this.act({ kind: 'refund', id: this.hover });
         break;
       case 'KeyH':
       case 'Home':
@@ -529,10 +554,10 @@ export class TreeView {
       this.updateHover();
       this.dirty = true;
     }
-    if (edge(0) && this.hover) this.activate(this.hover);
-    if (edge(2) && this.hover) this.refundNode(this.hover);
+    if (edge(0) && this.hover) this.act({ kind: 'activate', id: this.hover });
+    if (edge(2) && this.hover) this.act({ kind: 'refund', id: this.hover });
     if (edge(3)) this.showStats = !this.showStats;
-    if (edge(1) && (this.options.padCloses ?? (this.options.closeKeys ?? ['Escape']).length > 0)) this.close();
+    if (edge(1) && (this.options.padCloses ?? (this.options.closeKeys ?? ['Escape']).length > 0)) this.act({ kind: 'close' });
     const dirs: [number, number, number][] = [
       [12, 0, -1],
       [13, 0, 1],

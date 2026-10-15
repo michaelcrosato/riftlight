@@ -13,9 +13,13 @@
  * next tab, back = put the held item back / close). Every change is a pure
  * `loot/inventory` or `loot/sockets` operation committed to the ItemsStore.
  *
+ * The mouse and touch come from `ctx.input` (where the pointer is over the game canvas, its
+ * buttons as `MouseLeft` / `MouseRight`, Ctrl / Shift / Alt held), read in `update(dt)`: the
+ * canvas takes no pointer events itself, so a recording of the game replays what was done here.
+ *
  * Standalone (`/?game=lootlab`): call `update(dt)` every frame; the view polls the pad and
  * Escape itself. Hosted by the game shell (`{ hosted: true }`, wire/loot.ts): the shell
- * routes UiEvents to `handle(e)` and closes it; nothing listens to keys or polls the pad.
+ * routes UiEvents to `handle(e)` and closes it; the view neither polls the pad nor closes on Escape.
  *
  * Narrow screens (a phone in portrait: 124 art pixels wide) stack the left window above a
  * compact bag (no paper doll) and wrap tooltips to the screen.
@@ -142,7 +146,8 @@ export class ItemsUi {
   private lastTouch = false;
   private hoverOrb: string | null = null;
   private messageTime = 0;
-  private readonly abort = new AbortController();
+  /** Where the pointer was at the last `update`. */
+  private pointerAt = { x: -1, y: -1 };
   private downAt: { x: number; y: number; t: number; touch: boolean; moved: boolean; picked: boolean } | null = null;
   private longPressed = false;
   private time = 0;
@@ -162,30 +167,12 @@ export class ItemsUi {
     c.dataset.itemsUi = 'true';
     c.dataset.hud = 'true'; // a 2D overlay, not a rendering canvas (the e2e canvas count)
     c.className = 'riftlight-items';
-    Object.assign(c.style, { position: 'absolute', imageRendering: 'pixelated', zIndex: '6', display: 'none', touchAction: 'none', cursor: 'default' });
+    // the pointer goes through to the game canvas: the engine's input reads it (and records it)
+    Object.assign(c.style, { position: 'absolute', imageRendering: 'pixelated', zIndex: '6', display: 'none', pointerEvents: 'none' });
     container.appendChild(c);
     this.canvas = c;
     for (const [id, def] of Object.entries(LOOT_SOUNDS)) ctx.audio.register(id, def);
-    const signal = this.abort.signal;
-    c.addEventListener('pointerdown', (e) => this.onDown(e), { signal });
-    c.addEventListener('pointermove', (e) => this.onMove(e), { signal });
-    c.addEventListener('pointerup', (e) => this.onUp(e), { signal });
-    c.addEventListener('pointercancel', () => (this.downAt = null), { signal });
-    c.addEventListener('contextmenu', (e) => e.preventDefault(), { signal });
-    c.addEventListener('wheel', (e) => e.preventDefault(), { passive: false, signal });
-    window.addEventListener(
-      'keydown',
-      (e) => {
-        if (e.key === 'Alt') {
-          this.altHeld = true;
-          if (this.isOpen) e.preventDefault();
-        }
-        if (!this.opts.hosted && e.code === 'Escape' && this.isOpen) this.closeAll();
-      },
-      { signal },
-    );
-    window.addEventListener('keyup', (e) => e.key === 'Alt' && (this.altHeld = false), { signal });
-    window.addEventListener('blur', () => (this.altHeld = false), { signal });
+    ctx.input.preventKeys.add('AltLeft').add('AltRight'); // Alt shows affix tiers, not the browser's menu bar
   }
 
   get isOpen(): boolean {
@@ -250,7 +237,8 @@ export class ItemsUi {
   }
 
   dispose(): void {
-    this.abort.abort();
+    this.ctx.input.preventKeys.delete('AltLeft');
+    this.ctx.input.preventKeys.delete('AltRight');
     this.canvas.remove();
   }
 
@@ -507,22 +495,39 @@ export class ItemsUi {
 
   // ---------------------------------------------------------------- pointer input
 
-  private toArt(e: PointerEvent): { x: number; y: number } {
-    const r = this.canvas.getBoundingClientRect();
-    return { x: Math.floor(((e.clientX - r.left) / Math.max(1, r.width)) * this.canvas.width), y: Math.floor(((e.clientY - r.top) / Math.max(1, r.height)) * this.canvas.height) };
+  /**
+   * The pointer this frame from `ctx.input`: each button pressed or let go where it was
+   * (`buttonEvents`: a drag shorter than a frame still starts where it started), then where it
+   * is now. In art pixels: the canvas is the art resolution.
+   */
+  private pollPointer(): void {
+    const input = this.ctx.input;
+    const toArt = (x: number, y: number) => ({ x: Math.min(this.size.w - 1, Math.max(0, Math.floor(((x + 1) / 2) * this.size.w))), y: Math.min(this.size.h - 1, Math.max(0, Math.floor(((1 - y) / 2) * this.size.h))) });
+    const moveTo = (x: number, y: number, touch: boolean) => {
+      const at = toArt(x, y);
+      if (at.x === this.pointerAt.x && at.y === this.pointerAt.y) return;
+      this.pointerAt = at;
+      if (this.isOpen) this.onMove(at, touch);
+    };
+    // held, or pressed since the last frame: a Ctrl-click shorter than a frame keeps its Ctrl
+    const mod = (...codes: string[]) => input.isDown(...codes) || input.wasPressed(...codes);
+    const ctrl = mod('ControlLeft', 'ControlRight', 'MetaLeft', 'MetaRight');
+    const shift = mod('ShiftLeft', 'ShiftRight');
+    for (const e of input.buttonEvents) {
+      const button = e.code === 'MouseRight' ? 2 : e.code === 'MouseLeft' || e.code === 'Touch' ? 0 : -1;
+      if (button < 0) continue;
+      const touch = e.code === 'Touch';
+      moveTo(e.x, e.y, touch);
+      if (!e.down) this.onUp(this.pointerAt, button);
+      else if (this.isOpen) this.onDown(this.pointerAt, { button, touch, ctrl, shift });
+    }
+    if (input.pointer.over) moveTo(input.pointer.x, input.pointer.y, input.pointer.touch);
   }
 
-  private onDown(e: PointerEvent): void {
-    e.preventDefault();
-    const p = this.toArt(e);
-    this.cursor = p;
+  private onDown(p: { x: number; y: number }, e: { button: number; touch: boolean; ctrl: boolean; shift: boolean }): void {
+    this.cursor = { ...p };
     this.cursorMode = 'pointer';
-    try {
-      this.canvas.setPointerCapture(e.pointerId);
-    } catch {
-      /* synthetic events */
-    }
-    const touch = e.pointerType === 'touch';
+    const touch = e.touch;
     this.lastTouch = touch;
     this.downAt = { x: p.x, y: p.y, t: this.time, touch, moved: false, picked: false };
     this.longPressed = false;
@@ -530,31 +535,29 @@ export class ItemsUi {
     if (e.button === 2) this.secondary(p.x, p.y);
     else if (e.button === 0) {
       const had = !!this.held;
-      this.primary(p.x, p.y, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey });
+      this.primary(p.x, p.y, { ctrl: e.ctrl, shift: e.shift });
       this.downAt.picked = !had && !!this.held;
     }
   }
 
-  private onMove(e: PointerEvent): void {
-    const p = this.toArt(e);
-    this.cursor = p;
+  private onMove(p: { x: number; y: number }, touch: boolean): void {
+    this.cursor = { ...p };
     this.cursorMode = 'pointer';
-    this.lastTouch = e.pointerType === 'touch';
+    this.lastTouch = touch;
     if (this.downAt && Math.hypot(p.x - this.downAt.x, p.y - this.downAt.y) > 3) this.downAt.moved = true;
   }
 
-  private onUp(e: PointerEvent): void {
-    const p = this.toArt(e);
-    this.cursor = p;
+  private onUp(p: { x: number; y: number }, button: number): void {
     const d = this.downAt;
     this.downAt = null;
     if (!d) return;
+    this.cursor = { ...p };
     if (d.touch) {
       if (!this.longPressed) this.tap(p.x, p.y);
       return;
     }
     // Drag and drop: an item picked up on this press and released somewhere else lands there.
-    if (e.button === 0 && d.picked && d.moved && this.held) this.primary(p.x, p.y, { ctrl: false, shift: false });
+    if (button === 0 && d.picked && d.moved && this.held) this.primary(p.x, p.y, { ctrl: false, shift: false });
   }
 
   /** Touch tap: the first tap on an item shows its tooltip, a second tap acts (empty cells and buttons act at once). */
@@ -693,6 +696,9 @@ export class ItemsUi {
     this.time += dt;
     this.refreshSize();
     const input = this.ctx.input;
+    this.altHeld = input.isDown('AltLeft', 'AltRight');
+    this.pollPointer();
+    if (!this.opts.hosted && this.isOpen && input.wasPressed('Escape')) this.closeAll();
     if (!this.opts.hosted && this.isOpen && input.gamepadConnected) {
       const ax = input.padAxis;
       if (Math.abs(ax.x) > 0.01 || Math.abs(ax.y) > 0.01) {

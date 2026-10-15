@@ -13,6 +13,7 @@ const read = (input: Input) => ({
   consumed: input.consumePress('Space'),
   clicked: input.consumePress('MouseRight'),
   commands: [...input.commands],
+  buttonEvents: input.buttonEvents.map((e) => ({ ...e })),
   axis: input.moveAxis(),
   delta: { ...input.mouseDelta },
   wheel: input.wheel,
@@ -75,6 +76,7 @@ describe('recording and replaying input', () => {
     expect(frames[9]!.commands).toEqual([{ save: { gold: 3 } }]); // as JSON: what a replay will read
     expect(seen[10]!.commands).toEqual(['a', 'b']);
     expect([frames[11]!.pressed, frames[11]!.held, seen[11]!.clicked]).toEqual([['MouseRight'], undefined, true]);
+    expect(frames[11]!.clicks).toEqual([['MouseRight', 1, 0.25, -0.5], ['MouseRight', 0, 0.25, -0.5]]); // pressed and let go, where the pointer was
     expect(seen[12]!.commands).toEqual([]); // delivered once
     expect([frames[12]!.touch, seen[12]!.pointer.touch]).toEqual([true, true]);
     // what the game does to a command it got changes neither the recording nor a replay of it
@@ -216,6 +218,15 @@ describe('recording and replaying input', () => {
       expect(frame(() => el.dispatchEvent(ev('pointerup', { button: 2, buttons: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
       // a click shorter than a frame
       expect(frame(() => (el.dispatchEvent(ev('pointerdown', { button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerup', { button: 0 }))))).toEqual({ held: [], pressed: ['MouseLeft'], buttons: 0, touch: false });
+      // a drag shorter than a frame: pressed at x 50, let go at x 150 (ndc -0.5 and 0.5), in that order
+      el.dispatchEvent(ev('pointerdown', { button: 0, buttons: 1, x: 50 }));
+      el.dispatchEvent(ev('pointermove', { buttons: 1, x: 100 }));
+      el.dispatchEvent(ev('pointerup', { button: 0, x: 150 }));
+      expect(input.buttonEvents.map((e) => [e.code, e.down, e.x])).toEqual([
+        ['MouseLeft', true, -0.5],
+        ['MouseLeft', false, 0.5],
+      ]);
+      frame(() => {});
       // a finger is Touch, not a click; two fingers lift one by one
       expect(frame(() => (el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 5, button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 6, button: 0, buttons: 1 }))))).toEqual({ held: ['Touch'], pressed: ['Touch'], buttons: 1, touch: true });
       expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 5, button: 0 })))).toEqual({ held: ['Touch'], pressed: [], buttons: 1, touch: true });

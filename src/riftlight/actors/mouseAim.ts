@@ -1,16 +1,16 @@
 import { type Camera, Plane, Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import { MOUSE_LEFT, MOUSE_RIGHT } from './controls';
 
-/** The parts of the engine's Input this needs. */
-interface KeySink {
-  setKey(code: string, down: boolean): void;
+/** The parts of the engine's Input this reads. */
+export interface PointerSource {
+  readonly pointer: { readonly x: number; readonly y: number; readonly over: boolean; readonly touch: boolean };
+  isDown(...codes: string[]): boolean;
 }
 
 /**
- * Mouse aiming for the ARPG controller: tracks the cursor over the game canvas (the engine's
- * Input only tracks drags) and turns it into a point on the ground plane under the cursor.
- * Mouse buttons become the virtual keys MOUSE_LEFT / MOUSE_RIGHT on `ctx.input`, so they
- * buffer and combine exactly like keyboard keys (and scripts can press them with setKey).
+ * Mouse aiming for the ARPG controller: the cursor over the game canvas (`ctx.input.pointer`)
+ * as a point on the ground plane under it. The mouse buttons are the engine's keys
+ * (`MouseLeft` / `MouseRight`, HERO_KEYS), so they buffer and combine exactly like keyboard
+ * keys, and a recording replays the aim and the clicks alike.
  */
 export class MouseAim {
   /** Cursor in normalized device coordinates (−1..1), and whether it has been used. */
@@ -20,56 +20,21 @@ export class MouseAim {
   lastUsed = -Infinity;
   private readonly ray = new Raycaster();
   private readonly plane = new Plane(new Vector3(0, 1, 0), 0);
-  private readonly abort = new AbortController();
   private now = 0;
 
-  constructor(
-    canvas: HTMLElement | null,
-    private readonly input: KeySink,
-  ) {
-    if (!canvas || typeof window === 'undefined') return;
-    const signal = this.abort.signal;
-    const move = (e: PointerEvent | MouseEvent) => {
-      if ('pointerType' in e && e.pointerType !== 'mouse') return;
-      const r = canvas.getBoundingClientRect();
-      if (r.width === 0 || r.height === 0) return;
-      this.ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -(((e.clientY - r.top) / r.height) * 2 - 1));
-      this.active = true;
-      this.lastUsed = this.now;
-    };
-    window.addEventListener('pointermove', move, { signal });
-    canvas.addEventListener(
-      'pointerdown',
-      (e) => {
-        if (e.pointerType !== 'mouse') return;
-        move(e);
-        if (e.button === 0) this.input.setKey(MOUSE_LEFT, true);
-        if (e.button === 2) this.input.setKey(MOUSE_RIGHT, true);
-      },
-      { signal },
-    );
-    window.addEventListener(
-      'pointerup',
-      (e) => {
-        if (e.pointerType !== 'mouse') return;
-        if (e.button === 0) this.input.setKey(MOUSE_LEFT, false);
-        if (e.button === 2) this.input.setKey(MOUSE_RIGHT, false);
-      },
-      { signal },
-    );
-    window.addEventListener(
-      'blur',
-      () => {
-        this.input.setKey(MOUSE_LEFT, false);
-        this.input.setKey(MOUSE_RIGHT, false);
-      },
-      { signal },
-    );
-  }
+  constructor(private readonly input: PointerSource | null) {}
 
-  /** Tell it the game time (for `recent`). */
+  /** Tell it the game time (for `recent`) and read where the mouse is. */
   tick(now: number): void {
     this.now = now;
+    const p = this.input?.pointer;
+    if (!p?.over || p.touch) return;
+    const moved = !this.active || p.x !== this.ndc.x || p.y !== this.ndc.y;
+    if (moved || this.input!.isDown('MouseLeft', 'MouseRight')) {
+      this.ndc.set(p.x, p.y);
+      this.active = true;
+      this.lastUsed = now;
+    }
   }
 
   /** The mouse was used in the last `seconds`. */
@@ -86,7 +51,6 @@ export class MouseAim {
     return this.ray.ray.intersectPlane(this.plane, out);
   }
 
-  dispose(): void {
-    this.abort.abort();
-  }
+  /** Nothing to let go of: the pointer is the engine's. */
+  dispose(): void {}
 }

@@ -43,6 +43,39 @@ export interface SlotSummary {
   error?: string;
 }
 
+/**
+ * The slots as a game knows them: read from storage once (`SaveStore.view()`), then kept up to
+ * date by the game's own saves (`viewSaved`, `viewRemoved`), so what the menus show, and the
+ * slot Continue picks, follow only from what the game did. A game records that first read
+ * (`ctx.input.send`), so a replay sees the slots the recorded run saw, whatever storage holds now.
+ */
+export interface SavesView {
+  /** The slot played last (Continue), or null. */
+  last: number | null;
+  slots: SlotSummary[];
+  /** Storage is blocked: saves last this session. */
+  volatile: boolean;
+  /** The last storage error (a failed import), said for the menu; '' when none. */
+  lastError: string;
+}
+
+/** A slot's summary from its data (`SaveStore.summaries` reads the same from storage). */
+export function summaryOf(slot: number, data: SaveData, savedAt = 0): SlotSummary {
+  return { slot, empty: false, level: data.hero.level, deepest: data.deepest, gold: data.hero.gold, savedAt, playtime: data.stats?.playtime ?? 0 };
+}
+
+/** The game saved `data` in `slot` (it is now the last played). */
+export function viewSaved(v: SavesView, slot: number, data: SaveData): void {
+  v.slots[slot] = summaryOf(slot, data);
+  v.last = slot;
+}
+
+/** The game deleted `slot`: Continue falls back to the first slot left, as `SaveStore.lastSlot` does. */
+export function viewRemoved(v: SavesView, slot: number): void {
+  v.slots[slot] = { slot, empty: true, level: 0, deepest: 0, gold: 0, savedAt: 0, playtime: 0 };
+  if (v.last === slot) v.last = v.slots.find((x) => !x.empty)?.slot ?? null;
+}
+
 /** The storage this module needs (window.localStorage or a test double). */
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -218,6 +251,11 @@ export class SaveStore {
         return { ...empty, empty: false, error: e instanceof Error ? e.message : String(e) };
       }
     });
+  }
+
+  /** What a game knows of the slots, read now (`SavesView`). */
+  view(): SavesView {
+    return { last: this.lastSlot(), slots: this.summaries(), volatile: this.volatile, lastError: this.lastError };
   }
 
   /** The slot's envelope as JSON text (export). */

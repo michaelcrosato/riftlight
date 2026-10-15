@@ -14,7 +14,7 @@ import { Actor } from './Actor';
 import { HERO_KEYS } from './controls';
 import { HeroAnimator } from './heroAnimator';
 import { ControllerMover, type Mover } from './movers';
-import { MouseAim } from './mouseAim';
+import { MouseAim, type PointerSource } from './mouseAim';
 import { HeroWeapons, weaponClassOf } from './weapons';
 
 /** Every timing and speed of the controller, documented and tunable in one place. */
@@ -103,8 +103,6 @@ export interface HeroOptions {
   /** Extra stat sources at spawn (tree, items...). */
   mods?: Readonly<Record<string, readonly Mod[]>>;
   base?: Readonly<Record<string, number>>;
-  /** The canvas, for mouse aim (null: keys, pad and touch only). */
-  canvas?: HTMLElement | null;
   /**
    * Ray down onto the ground under a foot (foot placement and locking). Default: the Rapier
    * world when `physics` is given, else flat ground at the hero's feet.
@@ -248,7 +246,7 @@ export class HeroController {
     this.probe = probe;
     this.animator = new HeroAnimator(o.model, compileHeroClips(o.model, o.clips), { rig: HERO_RIG, probe, feet: HERO_TUNING.feet });
     this.weapons = new HeroWeapons(o.model);
-    this.mouse = new MouseAim(o.canvas ?? null, { setKey: () => {} });
+    this.mouse = new MouseAim(null);
     this.specs = { basic: o.basic ?? { skill: 'slash' }, slots: [...(o.slots ?? [])] };
     this.rebuild();
     this.animator.play({ full: 'Idle' }, 0);
@@ -256,10 +254,10 @@ export class HeroController {
     o.model.position.set(...o.at);
   }
 
-  /** Wire mouse buttons into the engine input (call once with ctx.input). */
-  bindInput(input: { setKey(code: string, down: boolean): void }, canvas: HTMLElement | null): void {
+  /** Aim with the mouse over the game canvas (call once with ctx.input). */
+  bindInput(input: PointerSource): void {
     this.mouse.dispose();
-    (this as { mouse: MouseAim }).mouse = new MouseAim(canvas, input);
+    (this as { mouse: MouseAim }).mouse = new MouseAim(input);
   }
 
   // ------------------------------------------------------------------ skills

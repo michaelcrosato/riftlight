@@ -164,9 +164,6 @@ export class WorldLoot {
       opts.events.on('loot', (e) => this.spawn(e.item, e.at)),
       opts.events.on('gold', (e) => this.spawnGold(e.amount, e.at)),
     );
-    // Listen on the window, not the canvas: a recovered GPU device / WebGL context brings a
-    // new canvas, and a listener on the old one would never fire again.
-    window.addEventListener('pointerdown', (e) => this.onPointer(e), { signal: this.abort.signal });
   }
 
   get depth(): number {
@@ -292,6 +289,7 @@ export class WorldLoot {
     const { ctx } = this;
     const blocked = this.opts.blocked?.() ?? false;
     if (!blocked && ctx.input.wasPressed('AltLeft', 'AltRight')) this.filterEnabled = !this.filterEnabled;
+    this.pointerPress();
     for (const d of [...this.drops]) {
       if (d.t < 1) {
         d.t = Math.min(1, d.t + dt / ARC_TIME);
@@ -376,15 +374,13 @@ export class WorldLoot {
     return `${q}${d.item.name}`;
   }
 
-  private onPointer(e: PointerEvent): void {
-    if (e.button !== 0 || this.opts.blocked?.()) return;
-    // only presses on the game canvas as it is now (UI canvases on top take their own)
-    const canvas = this.ctx.engine.renderer.renderer.domElement;
-    if (e.target !== canvas) return;
-    const r = canvas.getBoundingClientRect();
+  /** A left click (or a tap) on the game canvas this frame, from `ctx.input`, where it was pressed: on a label, take it. */
+  private pointerPress(): void {
+    const press = this.ctx.input.buttonEvents.find((e) => e.down && (e.code === 'MouseLeft' || e.code === 'Touch'));
+    if (!press || this.opts.blocked?.()) return;
     const res = this.ctx.engine.renderer.resolution;
-    const x = Math.floor(((e.clientX - r.left) / Math.max(1, r.width)) * res.width);
-    const y = Math.floor(((e.clientY - r.top) / Math.max(1, r.height)) * res.height);
+    const x = Math.min(res.width - 1, Math.floor(((press.x + 1) / 2) * res.width));
+    const y = Math.min(res.height - 1, Math.floor(((1 - press.y) / 2) * res.height));
     this.clickAt(x, y);
   }
 

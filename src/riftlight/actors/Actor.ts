@@ -103,6 +103,20 @@ export interface ActorOptions {
 let nextId = 1;
 
 /**
+ * Actor ids count up across the page. A game starts them again at its setup (`setActorIds(1)`)
+ * so a replay numbers its actors as the recorded run did: ids key loot rolls, random streams
+ * and the order actors update in.
+ */
+export function setActorIds(next: number): void {
+  nextId = next;
+}
+
+/** The id the next actor gets. */
+export function actorIds(): number {
+  return nextId;
+}
+
+/**
  * Anything that fights: the hero, monsters, minions. Owns a StatSheet, life / mana / energy
  * shield with regeneration, a faction, a body (Object3D + optional mixer), a velocity with
  * decaying impulses, a Mover, statuses (ailments with timers, buffs as sheet sources with

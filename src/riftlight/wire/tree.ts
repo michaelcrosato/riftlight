@@ -12,13 +12,15 @@
  *
  * Input: while open the TreeView owns the keyboard (it captures keys, so Escape / P close
  * it and never reach the pause menu), the mouse, touch and the pad's sticks and A / X / Y;
- * the shell's `back` (pad B, the agent API) closes it through the panel stack.
+ * the shell's `back` (pad B, the agent API) closes it through the panel stack. What the
+ * player does to the tree (allocate, refund, close) is sent through `ctx.input.send` and done
+ * when it arrives (`draw`), so a recording of the game keeps it and a replay does the same.
  */
 import type { Mod } from '../core/mods';
 import { defaultTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
 import type { UiEvent } from '../ui/kit';
-import { TreeView } from '../ui/tree/TreeView';
+import { type TreeAction, TreeView } from '../ui/tree/TreeView';
 
 /** The point budget of a save right now. */
 export function treePoints(host: PanelHost): number {
@@ -75,6 +77,7 @@ export class TreePanel implements Panel {
       onClose: () => {
         if (!this.closing) host.close();
       },
+      defer: (action) => ctx.input.send({ rl: 'tree', action }),
     });
     this.view.open();
   }
@@ -85,8 +88,12 @@ export class TreePanel implements Panel {
     this.view = null;
   }
 
-  /** Each frame: points follow the hero's level and deepest depth (level-ups while open). */
+  /** Each frame: what the player did to the tree (live or replayed), and points that follow the hero's level and deepest depth. */
   draw(): void {
+    for (const c of this.host.services.ctx.input.commands) {
+      const m = c as { rl?: string; action?: TreeAction } | null;
+      if (m?.rl === 'tree' && m.action) this.view?.perform(m.action);
+    }
     const state = this.state;
     if (!state) return;
     const points = treePoints(this.host);

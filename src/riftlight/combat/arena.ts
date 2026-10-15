@@ -169,9 +169,8 @@ export class Arena implements Game {
       slots: parseSlots(params.get('skills')),
       // a starter sword: what the arena's attacks scale from (loot equips real weapons)
       mods: { weapon: [flat('weapon.physical.min', 6), flat('weapon.physical.max', 11), flat('weapon.crit', 0.05)] },
-      canvas: ctx.engine.renderer.renderer.domElement,
     });
-    this.hero.bindInput(ctx.input, ctx.engine.renderer.renderer.domElement);
+    this.hero.bindInput(ctx.input);
     this.actors.add(this.hero.actor);
     this.hero.actor.events!.on('hit', ({ hit, result }) => {
       if (hit.source === this.hero.actor || (hit.source as Actor | null)?.owner === this.hero.actor) this.dealt.push({ t: this.time, amount: result.total });
