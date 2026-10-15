@@ -8,6 +8,21 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.34.0
+
+- **Mouse buttons are keys** (`MOUSE_BUTTONS`): `isDown('MouseLeft')`, `consumePress('MouseRight')`,
+  held and pressed like any key and recorded with them, so a click shorter than a frame is not
+  lost and a chord (right while left is held) counts both. A finger on the canvas is the key
+  `Touch` (`TOUCH_KEY`), not a click; `pointer.touch` says the pointer is one. `mouseButtons` is
+  now read-only, the same keys as bits. Tests: `input.setButtons(bits)`, and
+  `setPointer(x, y, down)` holds `MouseLeft` too.
+- **Commands:** `ctx.input.send(data)` hands the game data from outside the canvas (a save read
+  from storage, a text field, a file); it arrives in `ctx.input.commands` at the next frame the
+  game runs (for that frame: read it in `update`) and the recording keeps it, so a replay
+  delivers it at the same frame. It goes through JSON first, and what the game gets is its own
+  copy; what is sent live during a replay is ignored.
+- **`Game.fingerprint(ctx)`**: the game's own state, which `engine.fingerprint()` now includes.
+
 ## 0.33.0
 
 - **Variants:** `variantName` also finds a variant's letter or number before the rest of its

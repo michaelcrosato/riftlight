@@ -20,7 +20,8 @@
 
 /**
  * A small game for the replay checks, defined in the page as `window.__replayProbe()`: a box
- * on a floor, pushed by keys, and hopping from a tween's promise a tenth of a second after Space.
+ * on a floor, pushed by keys, hopping from a tween's promise a tenth of a second after Space,
+ * and lifted by data the page sends (`ctx.input.send({ lift })`).
  */
 function defineProbe() {
   window.__replayProbe = () => {
@@ -29,6 +30,7 @@ function defineProbe() {
       name: 'replay-probe',
       target: new Vec(0, 0.5, 0),
       kicks: 0,
+      lifts: 0,
       setup(ctx) {
         ctx.physics.addStaticBox({ position: [0, -0.5, 0], halfExtents: [8, 0.5, 8] });
         this.box = ctx.physics.addDynamicBox({ position: [0, 0.5, 0], halfExtents: [0.3, 0.3, 0.3] });
@@ -40,11 +42,18 @@ function defineProbe() {
         if (i.isDown('KeyD')) this.box.applyImpulse({ x: 0.04, y: 0, z: 0 }, true);
         if (i.isDown('KeyA')) this.box.applyImpulse({ x: -0.04, y: 0, z: 0 }, true);
       },
+      update(ctx) {
+        for (const c of ctx.input.commands) {
+          if (!c || typeof c.lift !== 'number') continue;
+          this.box.applyImpulse({ x: 0, y: c.lift, z: 0 }, true);
+          this.lifts++;
+        }
+      },
       cameraTarget() {
         return this.target;
       },
       status() {
-        return `kicks ${this.kicks}`;
+        return `kicks ${this.kicks} lifts ${this.lifts}`;
       },
     };
   };
@@ -668,6 +677,7 @@ export async function runWorld(h) {
       tap('KeyJ'); // pressed before the first frame: it queues at the level's start
       e.manual = false;
       e.input.setKey('KeyD', true);
+      e.input.send({ lift: 1 });
       await frames(10);
       tap('Space');
       await frames(20);
@@ -676,6 +686,7 @@ export async function runWorld(h) {
       await frames(10);
       e.paused = true;
       e.input.setKey('KeyA', true);
+      e.input.send({ lift: 1.5 }); // sent while paused: it arrives once, at the first frame that runs
       await frames(5);
       e.paused = false;
       await frames(15);
@@ -692,8 +703,8 @@ export async function runWorld(h) {
     });
     await W(() => window.__WORLD__.goto('sandbox', { instant: true }));
     check(
-      realtime.run.status === 'kicks 2' && realtime.frames >= 80 && realtime.sync === 0 && realtime.errors.length === 0,
-      `live play records at the browser's pace (${realtime.frames} frames, dt ${realtime.dt.map((d) => d.toFixed(3)).join(' to ')} s, a pause; ${realtime.run.status})`,
+      realtime.run.status === 'kicks 2 lifts 2' && realtime.frames >= 80 && realtime.rec.frames.filter((f) => f.commands).length === 2 && realtime.sync === 0 && realtime.errors.length === 0,
+      `live play records at the browser's pace (${realtime.frames} frames, dt ${realtime.dt.map((d) => d.toFixed(3)).join(' to ')} s, a pause, data from the page on ${realtime.rec.frames.filter((f) => f.commands).length} frames; ${realtime.run.status})`,
     );
     check(
       realtime.again.print === realtime.run.print && realtime.again.status === realtime.run.status,

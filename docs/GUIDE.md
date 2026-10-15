@@ -60,6 +60,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 | `update(ctx, dt)` | every rendered frame, after physics | animation, visuals, pickups, HUD |
 | `cameraTarget(ctx)` | every frame | return the `Vector3` the camera follows |
 | `status(ctx)` | tooling | a one-line summary (`'coins 3/4'`), shown by the check tool |
+| `fingerprint(ctx)` | tooling | the game's own state as a string (positions, counters), part of `engine.fingerprint()` so a replay can be compared |
 | `onCameraChange(ctx)`, `eyePosition(ctx)`, `dispose(ctx)` | optional | camera swaps, first-person eye, cleanup |
 
 `ctx` (the `GameContext`) is the same object in every hook: `ctx.scene` (three.js scene),
@@ -967,7 +968,9 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
    `Math.random`: the same seed (`?seed=`) and input then replay the same game
    (`engine.recording()`, `engine.replay()`, section 8). Draw it in `setup`, `fixedUpdate` and
    event handlers; randomness drawn per frame in `update` (cosmetic) comes from a fork made in
-   `setup`, so the frame rate never changes what gameplay draws.
+   `setup`, so the frame rate never changes what gameplay draws. Read buttons from `ctx.input`
+   (mouse buttons are keys: `isDown('MouseLeft')`; a finger is `Touch`), and data from the page (a save in storage, a
+   text field) through `ctx.input.send(data)` → `ctx.input.commands` next frame, so they replay too.
 5. **Physics owns positions.** Don't set `mesh.position` on things with bodies: `physics.bind`
    them, or let the character controller pose its model. Static blocks: one collider each,
    the same size as the mesh.

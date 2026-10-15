@@ -6,10 +6,13 @@ const target = () => new EventTarget() as unknown as Window;
 const pad = (axes: number[], pressed: number[] = []): GamepadLike => ({ connected: true, mapping: 'standard', axes, buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i) })) });
 
 /** What game code could read from an input this frame (and what it consumes). */
+const KEYS = ['KeyW', 'KeyD', 'Space', 'KeyJ', 'ShiftLeft', 'MouseLeft', 'MouseRight'];
 const read = (input: Input) => ({
-  down: ['KeyW', 'KeyD', 'Space', 'KeyJ', 'ShiftLeft'].filter((c) => input.isDown(c)),
-  pressed: ['KeyW', 'KeyD', 'Space', 'KeyJ', 'ShiftLeft'].filter((c) => input.wasPressed(c)),
+  down: KEYS.filter((c) => input.isDown(c)),
+  pressed: KEYS.filter((c) => input.wasPressed(c)),
   consumed: input.consumePress('Space'),
+  clicked: input.consumePress('MouseRight'),
+  commands: [...input.commands],
   axis: input.moveAxis(),
   delta: { ...input.mouseDelta },
   wheel: input.wheel,
@@ -32,6 +35,10 @@ describe('recording and replaying input', () => {
       () => {},
       (i) => (i.setKey('KeyD', false), (i.analog.x = 0.6)),
       (i) => (i.analog.x = 0),
+      (i) => (i.setButtons(3), i.send({ save: { gold: 3, at: undefined } })), // a chord (right while left is held), data from the page
+      (i) => (i.setButtons(0), i.send('a'), i.send('b')),
+      (i) => (i.setButtons(2), i.setButtons(0)), // a right click shorter than a frame: pressed, never held
+      (i) => (i.pointer.touch = true), // a finger now
     ];
     const pads: (GamepadLike | null)[][] = between.map((_, f) => (f === 6 ? [pad([0.9, 0, 0.5, 0], [0, 6])] : f === 7 ? [pad([0, -1, 0, 0], [6])] : []));
     const frames: InputFrame[] = [];
@@ -42,6 +49,7 @@ describe('recording and replaying input', () => {
       act(live);
       now += 1 / 60;
       live.beginFrame(now, 1 / 60, pads[f]);
+      live.deliver();
       frames.push(live.snapshot(1 / 60, last));
       seen.push(read(live));
       live.endFrame();
@@ -62,7 +70,19 @@ describe('recording and replaying input', () => {
     // what was recorded: changes only (held and the pointer when they change), nothing when idle
     expect(frames[1]).toEqual({ dt: 1 / 60 });
     expect(frames[2]!.pressed).toEqual(['Space']);
-    expect(frames[6]!.held).toEqual(['KeyD', 'ShiftLeft', 'Space']); // gamepad buttons as keys
+    expect(frames[6]!.held).toEqual(['KeyD', 'MouseLeft', 'ShiftLeft', 'Space']); // gamepad buttons as keys, the pointer held since frame 4
+    expect(frames[9]!.held).toEqual(['MouseLeft', 'MouseRight']);
+    expect(frames[9]!.commands).toEqual([{ save: { gold: 3 } }]); // as JSON: what a replay will read
+    expect(seen[10]!.commands).toEqual(['a', 'b']);
+    expect([frames[11]!.pressed, frames[11]!.held, seen[11]!.clicked]).toEqual([['MouseRight'], undefined, true]);
+    expect(seen[12]!.commands).toEqual([]); // delivered once
+    expect([frames[12]!.touch, seen[12]!.pointer.touch]).toEqual([true, true]);
+    // what the game does to a command it got changes neither the recording nor a replay of it
+    (seen[9]!.commands[0] as { save: { gold: number } }).save.gold = 13;
+    const twice = new Input(target());
+    twice.playAfter(frames[9]!);
+    (twice.commands[0] as { save: { gold: number } }).save.gold = 23;
+    expect(frames[9]!.commands).toEqual([{ save: { gold: 3 } }]);
     expect(JSON.parse(JSON.stringify(frames))).toEqual(frames); // plain data
   });
 
@@ -135,6 +155,7 @@ describe('recording and replaying input', () => {
 
     const again = new Input(win as unknown as Window);
     key('keydown', 'KeyA'); // held before the replay starts
+    again.send('before');
     again.playing = true;
     again.playBefore(first);
     again.beginFrame(1 / 60, 1 / 60, []);
@@ -148,17 +169,71 @@ describe('recording and replaying input', () => {
     again.endFrame();
     again.setKey('KeyF', true); // and so are touch buttons and scripts
     again.setPointer(0.5, 0.5, true);
+    again.setButtons(2);
+    again.send('live'); // and what the page sends: the recording's commands are the ones that count
     again.playBefore({ dt: 1 / 60 }); // nothing changed: W still held, the pointer where it was
     again.beginFrame(3 / 60, 1 / 60, []);
     again.playAfter({ dt: 1 / 60 });
-    expect([again.isDown('KeyF'), again.isDown('KeyW'), again.pointer.x, again.mouseButtons]).toEqual([false, true, 0, 0]);
+    expect([again.isDown('KeyF'), again.isDown('KeyW'), again.pointer.x, again.mouseButtons, again.isDown('MouseRight'), again.commands]).toEqual([false, true, 0, 0, false, []]);
     again.endFrame();
     again.playing = false;
+    again.deliver();
+    expect(again.commands).toEqual([]); // nothing sent before the replay (`before`, below) or during it is delivered after
     again.release(); // what the engine does after a replay
     expect(again.isDown('KeyW')).toBe(false);
     expect(again.consumePress('Space')).toBe(true); // a press still waiting stays queued
     key('keydown', 'KeyD');
     expect(again.isDown('KeyD')).toBe(true); // live again
+  });
+
+  it('the canvas mouse buttons and fingers are keys: a chord, a blur, a short click, a touch', () => {
+    // a canvas stand-in: an element with a rect, and a page with no pointer lock
+    const doc = globalThis as { document?: unknown };
+    const hadDocument = 'document' in doc;
+    if (!hadDocument) doc.document = Object.assign(new EventTarget(), { pointerLockElement: null });
+    try {
+      const win = new EventTarget();
+      const el = Object.assign(new EventTarget(), { style: {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 200, height: 100 }), setPointerCapture: () => {} });
+      const input = new Input(win as unknown as Window);
+      input.attachPointer(el as unknown as HTMLElement);
+      const ev = (type: string, o: { button?: number; buttons?: number; type?: string; id?: number; x?: number }) =>
+        Object.assign(new Event(type), { pointerId: o.id ?? 1, pointerType: o.type ?? 'mouse', button: o.button ?? -1, buttons: o.buttons ?? 0, clientX: o.x ?? 50, clientY: 50, movementX: 0, movementY: 0 });
+      let now = 0;
+      const frame = (act: () => void) => {
+        act();
+        input.beginFrame((now += 1 / 60), 1 / 60, []);
+        const r = { held: ['MouseLeft', 'MouseRight', 'Touch'].filter((c) => input.isDown(c)), pressed: ['MouseLeft', 'MouseRight', 'Touch'].filter((c) => input.wasPressed(c)), buttons: input.mouseButtons, touch: input.pointer.touch };
+        input.endFrame();
+        return r;
+      };
+      expect(frame(() => el.dispatchEvent(ev('pointerdown', { button: 0, buttons: 1 })))).toEqual({ held: ['MouseLeft'], pressed: ['MouseLeft'], buttons: 1, touch: false });
+      // right pressed while left is held: browsers send a move naming the button (a chord)
+      expect(frame(() => el.dispatchEvent(ev('pointermove', { button: 2, buttons: 3 })))).toEqual({ held: ['MouseLeft', 'MouseRight'], pressed: ['MouseRight'], buttons: 3, touch: false });
+      // left let go, right still held
+      expect(frame(() => el.dispatchEvent(ev('pointermove', { button: 0, buttons: 2 })))).toEqual({ held: ['MouseRight'], pressed: [], buttons: 2, touch: false });
+      // the window loses focus with the button held: let go, and a plain move after is no new click
+      expect(frame(() => (win.dispatchEvent(new Event('blur')), el.dispatchEvent(ev('pointermove', { buttons: 2 }))))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
+      expect(frame(() => el.dispatchEvent(ev('pointerup', { button: 2, buttons: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: false });
+      // a click shorter than a frame
+      expect(frame(() => (el.dispatchEvent(ev('pointerdown', { button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerup', { button: 0 }))))).toEqual({ held: [], pressed: ['MouseLeft'], buttons: 0, touch: false });
+      // a finger is Touch, not a click; two fingers lift one by one
+      expect(frame(() => (el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 5, button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 6, button: 0, buttons: 1 }))))).toEqual({ held: ['Touch'], pressed: ['Touch'], buttons: 1, touch: true });
+      expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 5, button: 0 })))).toEqual({ held: ['Touch'], pressed: [], buttons: 1, touch: true });
+      expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 6, button: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      input.dispose();
+    } finally {
+      if (!hadDocument) delete doc.document;
+    }
+  });
+
+  it('commands last one frame, and a send that is not JSON says so', () => {
+    const i = new Input(target());
+    i.send({ a: 1 });
+    i.deliver();
+    expect(i.commands).toEqual([{ a: 1 }]);
+    i.endFrame();
+    expect(i.commands).toEqual([]); // a frame that does not run (paused) sees none
+    expect(() => i.send(() => 1)).toThrow(/JSON/);
   });
 
   it('refuses what is not a recording, and says why', () => {
