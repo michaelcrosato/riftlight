@@ -4,6 +4,15 @@
 for AI agents to generate classic games. Three.js r186 `WebGPURenderer` + TSL
 post-processing, WebGPU only, Rapier physics, local GLB assets.
 
+**Making a game with Pixel Engine?** You don't need this repository, only the engine kit: one
+zip with the engine as a single ES module, its guide, a starter game and a browser check.
+Download it (`curl -fLO https://riftlight.vercel.app/engine.zip && unzip engine.zip && cd engine`) or, from a
+sandbox that reaches only GitHub and npm, build it here in about a minute
+(`git clone --depth 1 https://github.com/michaelcrosato/riftlight && cd riftlight && npm ci && npm run bundle`)
+and copy `bundle/pixel-engine/` to where the game will live. Then read the kit's `README.md` and
+`GUIDE.md`. Work in this repository only to change the engine itself
+([*Handing the engine to another agent*](#handing-the-engine-to-another-agent)).
+
 The page at `/` is **Riftlight**, the showcase hack-and-slash ARPG ([`docs/GAME.md`](docs/GAME.md)):
 a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper and,
 around it, the ruins of the Old Watch, a tavern, a stream with a hunter's camp across it, a
@@ -117,15 +126,36 @@ manual: host it, the mental model, a complete game, recipes, rules, common mista
 a generated `LIBRARY.md` and `CREDITS.md`), a generated `API.md`, TypeScript types, a starter
 `game.js`, the guides' recipes as pages and `check.mjs`, which plays a page in a browser and
 fails on any error (`--sheets` draws a game's own models). The receiving agent reads `README.md`
-then `GUIDE.md`, edits `game.js` and runs `node check.mjs` before handing back. Engine changes
-that a game can see bump `package.json`'s version and get a `CHANGELOG.md` section.
+then `GUIDE.md` (about 15k tokens together; `API.md` and `LIBRARY.md` are searched, not read),
+edits `game.js` and runs `node check.mjs` before handing back. Engine changes that a game can see
+bump `package.json`'s version and get a `CHANGELOG.md` section.
 
-**The link to share: <https://riftlight.vercel.app/handoff/>.** The site deploys from `main`
-on every merge, and `npm run build` rebuilds the kit with it (`/engine/`, `/engine.zip`), so the
-link always holds the current engine with nothing to commit. The page
-([`public/handoff/index.html`](public/handoff/index.html)) tells an agent what to download, what
-to read and how to check its game, and how to build the same kit from a clone when its sandbox
-can't reach the site. For a chat, attach `bundle/pixel-engine.zip` (`npm run bundle`) instead.
+What to give an agent:
+
+| Give it | When | What it does |
+| --- | --- | --- |
+| This repository's URL, `https://github.com/michaelcrosato/riftlight` | An agent with a shell. It needs only GitHub and npm, both on Claude Code cloud's default (*Trusted*) network allowlist | Reads the top of this README, then downloads the kit or builds it from a clone |
+| The handoff page, <https://riftlight.vercel.app/handoff/> | An agent whose sandbox reaches the open web | Downloads the kit: one file, no build. Claude Code cloud environments reach it at the *Full* network level or with its host allowed under *Custom*, not at the default *Trusted* one |
+| `bundle/pixel-engine.zip` (`npm run bundle`) | A chat that runs code but can't download | Unzips the attachment. A chat that can't run code gets `docs/GUIDE.md` alone |
+
+A prompt to start from: *Use this game engine to make our next game:
+https://github.com/michaelcrosato/riftlight. Get its engine kit and test the game with the kit's
+`check.mjs`. The game: …* Name both steps: an agent that guards against running code from the
+internet, such as Claude Code in auto mode, may refuse to unpack the kit or run `check.mjs` unless
+the prompt asks for it. Once the kit is in the game's repository, later sessions run it as the
+game's own code. `check.mjs` also needs a Chromium with WebGPU: Claude Code cloud sessions come
+with one (`CHROMIUM_PATH`); elsewhere `npx playwright install chromium` downloads it from
+Playwright's servers, not from GitHub or npm.
+
+The site deploys from `main` on every merge, and `npm run build` rebuilds the kit with it
+(`/engine/`, `/engine.zip`), so both links always hold the current engine with nothing to
+commit. The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
+agent what to download, what to read and how to check its game. The kit's `README.md` and
+`manifest.json` (`latest`, `source`) say where newer versions are, so a game finds its upgrades.
+`src/engine/` alone doesn't stand on its own: it builds only inside this repository (Vite, the
+pinned three.js and Rapier, the hero in `src/game/hero/`, the models in `public/assets/`); the
+kit is that folder made standalone. A game started from a copy of this repository carries
+Riftlight along, and its copy of the engine drifts from this one.
 
 ---
 

@@ -1003,6 +1003,7 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
 | A model 404s | path not relative to the page | `assets/x.glb` next to `index.html`; built-ins need no file |
 | HUD text shows gaps | characters the 5×7 font doesn't have | uppercase letters, digits, common punctuation |
 | A key does nothing in `fixedUpdate` | `wasPressed` there | `consumePress` in `fixedUpdate`, `wasPressed` in `update` |
+| R, P or M also changes the picture or mutes | the engine's hotkeys (P, R, \`, [, ], M) are on by default; scripted frames (`step()`, `check.mjs --keys`) never fire them | `debugKeys: false` in `Engine.start`, or move one: `debugKeys: { resolution: 'F2' }` |
 | Side-scroller hero drifts off the lane | `lockDepth` not passed | `lockDepth: ctx.camera.lockDepth` |
 | The camera doesn't follow | `cameraTarget` returns nothing before `setup` ends | return a fallback vector (see the quick start) |
 | Slow, low fps | hundreds of separate meshes | `mergeStaticMeshes` the static level; share materials (`toonMaterial` caches) |
@@ -1018,6 +1019,8 @@ const e = window.__PIXEL_ENGINE__;
 e.state();                // version, backend, fps, camera, look, game status, errors, gpuErrors, ...
 e.errors;                 // exceptions thrown by the game's hooks in the render loop (also on screen)
 e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exception thrown to you; e.manual = false resumes
+                          // step() draws nothing, so a page screenshot still shows the old frame: read the new one with
+                          // await e.renderer.capture() (pixels, no HUD), or set e.manual = false and let a frame draw
 e.input.setKey('KeyD', true); e.step(30); e.input.setKey('KeyD', false);  // play by script
 const rec = e.recording(); const end = e.fingerprint();            // this level's input as JSON, a hash of its state
 await e.replay(rec, () => e.loadGame(new MyGame())); e.fingerprint() === end;  // replayed: the same game
@@ -1071,5 +1074,6 @@ Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves n
 `ENGINE_VERSION` (also `Engine.version` and `state().version`) is the engine's version, and
 the kit's `CHANGELOG.md` says what changed in each. To upgrade a game, replace
 `pixel-engine.js` (and `pixel-engine.d.ts`, `types/` if you use them), read the changelog
-entries since the old version, then run `node check.mjs` again. The kit is built from the
-engine's repository with `npm run bundle`.
+entries since the old version, then run `node check.mjs` again. The newest kit is at the URL in
+`manifest.json`'s `latest`, and the kit's `README.md` says how to build it from the engine's
+repository (`source`) when that URL can't be reached.
