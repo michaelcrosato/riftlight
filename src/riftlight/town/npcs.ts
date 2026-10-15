@@ -9,7 +9,7 @@ import { restPoseOf } from '../../engine/animation';
 import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Rng } from '../core/rng';
-import { ClipPlayer } from '../game/clipPlayer';
+import { ClipPlayer, type ClipPlayerState } from '../game/clipPlayer';
 import { COIN_FRAMES, HAMMER_STRIKE_FRAME, NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
 
@@ -99,6 +99,23 @@ export interface Bubble {
   life: number;
 }
 
+/** A townsperson as data (`Npc.save`). */
+export interface NpcState {
+  readonly position: readonly number[];
+  readonly yaw: number;
+  readonly look: readonly [number, number];
+  readonly near: boolean;
+  readonly barkCd: number;
+  readonly bubble: (Omit<Bubble, 'at'> & { at: readonly number[] }) | null;
+  readonly talking: boolean;
+  readonly idleLoops: number;
+  readonly wp: number;
+  readonly wait: number;
+  readonly rng: number;
+  readonly clip: ClipPlayerState;
+  readonly lastTime: number;
+}
+
 const UP = new Vector3(0, 1, 0);
 
 export class Npc {
@@ -168,6 +185,29 @@ export class Npc {
   endTalk(): void {
     this.talking = false;
     this.player.play(this.def.idle, { fade: 0.3 });
+  }
+
+  /** A townsperson as data (save-states): where they stand and walk, their random stream, timers, the clip they play. */
+  save(): NpcState {
+    const b = this.bubble;
+    return { position: this.position.toArray(), yaw: this.yaw, look: [this.lookYaw, this.lookPitch], near: this.near, barkCd: this.barkCd, bubble: b ? { ...b, at: b.at.toArray() } : null, talking: this.talking, idleLoops: this.idleLoops, wp: this.wp, wait: this.wait, rng: this.rng.state, clip: this.player.save(), lastTime: this.lastTime };
+  }
+
+  load(s: NpcState): void {
+    this.position.fromArray(s.position);
+    this.yaw = s.yaw;
+    [this.lookYaw, this.lookPitch] = s.look;
+    this.near = s.near;
+    this.barkCd = s.barkCd;
+    this.bubble = s.bubble ? { ...s.bubble, at: new Vector3().fromArray(s.bubble.at) } : null;
+    this.talking = s.talking;
+    this.idleLoops = s.idleLoops;
+    this.wp = s.wp;
+    this.wait = s.wait;
+    this.rng.state = s.rng;
+    this.lastTime = s.lastTime;
+    this.player.load(s.clip);
+    this.sync();
   }
 
   update(dt: number, hero: Vector3 | null): void {

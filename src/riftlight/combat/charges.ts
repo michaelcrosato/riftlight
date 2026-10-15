@@ -107,6 +107,19 @@ export class Charges {
     return chargeMax(this.sheet, type);
   }
 
+  /** The charges as data (save-states); the stat source they set lives on the sheet. */
+  save(): { count: Record<ChargeType, number>; left: Record<ChargeType, number>; duration: Record<ChargeType, number>; gained: Record<ChargeType, number>; version: number } {
+    return { count: { ...this.count }, left: { ...this.left }, duration: { ...this.duration }, gained: { ...this.gained }, version: this.version };
+  }
+
+  load(s: ReturnType<Charges['save']>): void {
+    Object.assign(this.count, s.count);
+    Object.assign(this.left, s.left);
+    Object.assign(this.duration, s.duration);
+    Object.assign(this.gained, s.gained);
+    this.version = s.version;
+  }
+
   get total(): number {
     return this.count.endurance + this.count.frenzy + this.count.power;
   }

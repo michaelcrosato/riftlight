@@ -77,6 +77,17 @@ export interface InputFrame {
   sync?: true;
 }
 
+/** What input a later frame still reads, as data (`engine.snapshot()`): keys held, presses not yet used and how old they are, the pointer. */
+export interface InputState {
+  readonly held: readonly string[];
+  /** Queued presses: [key, seconds of game time since it was pressed]. */
+  readonly queued: readonly (readonly [string, number])[];
+  readonly pointer: readonly [number, number, number, number];
+  readonly gamepad: boolean;
+  /** Data sent (`send`) and not yet delivered: the next frame that runs delivers it. */
+  readonly outbox: readonly unknown[];
+}
+
 /** What the frame before held, for `snapshot()` to leave out what did not change. */
 export interface SnapshotMemory {
   held: string;
@@ -404,6 +415,34 @@ export class Input {
       if (this.now - t <= this.pressWindow) hit = true;
     }
     return hit;
+  }
+
+  /** Held keys, queued presses and the pointer as data (`engine.snapshot()`), between frames. */
+  state(): InputState {
+    return {
+      held: [...new Set([...this.held, ...this.padHeld])].sort(),
+      queued: [...this.queued].map(([code, t]) => [code, this.now - t] as const),
+      pointer: [this.pointer.x, this.pointer.y, this.pointer.over ? 1 : 0, this.pointer.touch ? 1 : 0],
+      gamepad: this.gamepadConnected,
+      outbox: JSON.parse(JSON.stringify(this.outbox)) as unknown[],
+    };
+  }
+
+  /** Back to `state()` at game time `now` (a restore): held keys are those the snapshot held, live ones let go. */
+  setState(s: InputState, now: number): void {
+    this.held.clear();
+    this.padHeld.clear();
+    for (const c of s.held) this.held.add(c);
+    this.queued.clear();
+    for (const [code, age] of s.queued) this.queued.set(code, now - age);
+    this.now = now;
+    [this.pointer.x, this.pointer.y] = s.pointer;
+    this.pointer.over = s.pointer[2] === 1;
+    this.pointer.touch = s.pointer[3] === 1;
+    this.gamepadConnected = s.gamepad;
+    this.playedPad = s.gamepad;
+    this.outbox = JSON.parse(JSON.stringify(s.outbox)) as unknown[]; // what was sent since is not this moment's
+    this.endFrame();
   }
 
   /** Presses waiting to be consumed (tooling / tests). */

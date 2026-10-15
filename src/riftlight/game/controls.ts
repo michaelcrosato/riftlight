@@ -102,6 +102,14 @@ const BUTTONS: Readonly<Record<string, readonly [number, number]>> = { MouseLeft
  * is over the canvas, its buttons as `MouseLeft` / `MouseRight` keys), so a recording of the
  * game replays it: aim, clicks and menus alike.
  */
+/** `Pointer.save`. */
+export interface PointerState {
+  readonly art: readonly [number, number];
+  readonly buttons: number;
+  readonly idle: number;
+  readonly touch: boolean;
+}
+
 export class Pointer {
   /** Art-pixel position (updated each frame; -1 until the pointer was over the canvas). */
   readonly art = { x: -1, y: -1 };
@@ -173,6 +181,18 @@ export class Pointer {
     return this.art.x >= 0;
   }
 
+  /** Where it was and what it held, as data (save-states). */
+  save(): PointerState {
+    return { art: [this.art.x, this.art.y], buttons: this.buttons, idle: this.idle, touch: this.touch };
+  }
+
+  load(s: PointerState): void {
+    [this.art.x, this.art.y] = s.art;
+    this.buttons = s.buttons;
+    this.idle = s.idle;
+    this.touch = s.touch;
+  }
+
   /** Nothing to let go of: the pointer is the engine's. */
   dispose(): void {}
 }
@@ -180,6 +200,15 @@ export class Pointer {
 /** Builds menu events from keys and the pad, with key repeat for held directions. */
 export class MenuInput {
   private held = new Map<string, number>();
+
+  /** Directions held and for how long (key repeat), as data (save-states). */
+  save(): (readonly [string, number])[] {
+    return [...this.held];
+  }
+
+  load(held: readonly (readonly [string, number])[]): void {
+    this.held = new Map(held);
+  }
 
   events(input: Input, dt: number): UiEvent[] {
     const out: UiEvent[] = [];

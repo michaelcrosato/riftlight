@@ -46,6 +46,16 @@ export class CombatWorld {
   private readonly tmp = new Vector3();
   private disposed = false;
 
+  /** Its actors' clock and order and its combat (save-states); the actors' own states are their owners'. */
+  save(): { actors: ReturnType<ActorManager['save']>; combat: ReturnType<Combat['save']> } {
+    return { actors: this.actors.save(), combat: this.combat.save() };
+  }
+
+  load(s: ReturnType<CombatWorld['save']>): void {
+    this.actors.load(s.actors);
+    this.combat.load(s.combat);
+  }
+
   constructor(o: CombatWorldOptions) {
     this.services = o.services;
     const ctx = o.services.ctx;

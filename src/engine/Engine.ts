@@ -34,6 +34,7 @@ import { GameClock } from './clock';
 import { hashString, Rng } from './random';
 import { MAX_FRAMES, type Recording, recordingProblem } from './replay';
 import { CameraShake } from './shake';
+import { decodeState, encodeState, type Snapshot, snapshotProblem } from './snapshot';
 import { Tweens } from './tween';
 import type { ScreenFx } from './render/screenFx';
 
@@ -105,6 +106,23 @@ export interface Game {
    * reproduce: no timings or measurements.
    */
   fingerprint?(ctx: GameContext): string;
+  /**
+   * The game's own state as plain data, between frames (`engine.snapshot()`): everything a
+   * later frame reads that the engine does not keep (its entities, timers, random streams; the
+   * handles of its physics bodies). With `restore`, the game has save-states.
+   */
+  snapshot?(ctx: GameContext): unknown;
+  /**
+   * Put the game back to what `snapshot` returned (`engine.restore()`): the same game, already
+   * set up. Find physics bodies again by handle (`ctx.physics.world.getRigidBody(h)`).
+   */
+  restore?(ctx: GameContext, state: unknown): void | Promise<void>;
+  /**
+   * Optional: leave whatever mode the game is in before a restore changes anything (a mode
+   * with a camera of its own, a dialog, a level): `engine.restore()` calls it first, then checks
+   * the snapshot fits (the camera preset) and puts the engine's part back, then `restore`.
+   */
+  beforeRestore?(ctx: GameContext): void | Promise<void>;
   /**
    * Called after `engine.setCamera()` swapped the camera preset mid-game. The world,
    * physics and player are untouched; adjust anything that depends on the preset
@@ -919,7 +937,7 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean } | null = null;
+  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
@@ -960,7 +978,7 @@ export class Engine {
   recording(): Recording | null {
     const r = this.rec;
     if (!r) return null;
-    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}) };
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
   }
 
   /**
@@ -1003,6 +1021,7 @@ export class Engine {
       clearTimeout(slow);
     }
     if (this.game.name !== rec.game) console.warn(`[engine] replaying a recording of "${rec.game}" in "${this.game.name}"`);
+    if (rec.from) await this.restore(rec.from); // a recording made after a save-state starts from it
     const n = Math.max(0, Math.min(Math.floor(o.frames ?? Infinity), rec.frames.length));
     // promise callbacks run between frames where they did in the recorded run: a task boundary
     // (not just a microtask) so chains of them finish, as they do between two animation frames
@@ -1033,6 +1052,108 @@ export class Engine {
       }
     }
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
+  }
+
+  /**
+   * The running level as data, between frames (docs/ENGINE.md, *Save-states*): game time, the
+   * clock, `ctx.random`, the physics world, the camera, the shake, input still waiting, and the
+   * game's own state (`Game.snapshot`). Plain JSON. Taken once the last frame's promise
+   * callbacks have run (it waits a task, as a replay does between frames). Throws when the game
+   * has no `snapshot` / `restore`, while a tween runs (its callbacks are code), or with physics
+   * that lives outside the Rapier world (`Physics.state`).
+   */
+  async snapshot(): Promise<Snapshot> {
+    await this.task();
+    if (!this.ready) throw new Error('Engine.snapshot: no level is running');
+    const game = this.game;
+    if (!game.snapshot || !game.restore) throw new Error(`Engine.snapshot: "${game.name}" has no snapshot() and restore() (Game hooks)`);
+    if (this.tweens.count) throw new Error(`Engine.snapshot: ${this.tweens.count} tween(s) running (their callbacks are code): take it when none is`);
+    // numbers JSON can't keep (-0, Infinity) are marked, so the snapshot survives JSON exactly
+    return encodeState({
+      format: 1,
+      engine: ENGINE_VERSION,
+      game: game.name,
+      seed: this._seed,
+      time: this.time,
+      clock: this.clock.state(),
+      random: this._random.state,
+      physics: this.physics.state(),
+      camera: this.camera.state(),
+      shake: this.shake.state(),
+      input: this.input.state(),
+      state: game.snapshot(this.context) ?? null,
+    }) as Snapshot;
+  }
+
+  /**
+   * Put the running level back to a snapshot of it: the same game (by name), already loaded;
+   * nothing in between is replayed. The level's recording starts again from it (`Recording.from`),
+   * so what is played next replays with `replay()`. Live input held now is let go.
+   */
+  async restore(saved: Snapshot): Promise<void> {
+    const problem = snapshotProblem(saved);
+    if (problem) throw new Error(`Engine.restore: ${problem}`);
+    const snap = decodeState(saved) as Snapshot;
+    await this.task(); // what the running level still had queued runs out first, not after
+    if (!this.ready) throw new Error('Engine.restore: no level is running (load the game first)');
+    const game = this.game;
+    if (game.name !== snap.game) throw new Error(`Engine.restore: a snapshot of "${snap.game}" cannot restore "${game.name}" (load it first)`);
+    if (!game.restore) throw new Error(`Engine.restore: "${game.name}" has no restore() (Game hook)`);
+    // nothing advances on its own while the game puts itself back (a level may rebuild, awaiting)
+    const manual = this.manual;
+    this.manual = true;
+    try {
+      await game.beforeRestore?.(this.context);
+      // the running timeline's tweens go with it: their continuations run out now, on the state
+      // about to be replaced (never after, on the restored one)
+      for (let i = 0; i < 8 && this.tweens.count; i++) {
+        this.tweens.clear();
+        await this.task();
+      }
+      if (this.tweens.count) throw new Error('Engine.restore: tweens keep starting tweens as they are cleared');
+      if (snap.camera.preset !== this.camera.preset) throw new Error(`Engine.restore: the snapshot's camera is ${snap.camera.preset}, this one ${this.camera.preset} (leave that mode in Game.beforeRestore)`);
+      // all or nothing: the saved physics world is built first, and if anything below throws the
+      // engine's own part goes back as it was (the game's is its restore's to keep whole)
+      const physics = this.physics.restoreState(snap.physics);
+      const before = { seed: this._seed, time: this.time, clock: this.clock.state(), random: this._random.state, camera: this.camera.state(), shake: this.shake.state(), input: this.input.state(), now: this.time };
+      const aspect = this.camera.aspect; // the screen is this one's, not the snapshot's
+      try {
+        this._seed = snap.seed;
+        this.time = snap.time;
+        this.clock.setState(snap.clock);
+        this._random.state = snap.random;
+        this.camera.setState(snap.camera);
+        this.camera.setAspect(aspect);
+        this.shake.setState(snap.shake);
+        this.input.setState(snap.input, snap.time);
+        await game.restore(this.context, snap.state);
+      } catch (e) {
+        physics.undo();
+        this._seed = before.seed;
+        this.time = before.time;
+        this.clock.setState(before.clock);
+        this._random.state = before.random;
+        this.camera.setState(before.camera);
+        this.shake.setState(before.shake);
+        this.input.setState(before.input, before.now);
+        throw e;
+      }
+      physics.commit();
+      // live play: the keys held now are the keyboard's (no keyup will come for the snapshot's)
+      if (!manual) this.input.release();
+    } finally {
+      this.manual = manual;
+    }
+    this.rec = { game: game.name, seed: snap.seed, time: snap.time, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
+  }
+
+  /** A task boundary: promise callbacks queued so far (and chains of them) have run when it resolves. */
+  private task(): Promise<void> {
+    return new Promise((resolve) => {
+      const channel = new MessageChannel();
+      channel.port1.onmessage = () => (channel.port1.close(), resolve());
+      channel.port2.postMessage(0);
+    });
   }
 
   /**

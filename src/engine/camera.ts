@@ -60,6 +60,19 @@ export interface CameraUpdate {
 
 const UP = new Vector3(0, 1, 0);
 
+/** Where a rig is and looks, as data (`engine.snapshot()`): the frame after a restore sees the camera the frame after the snapshot did. */
+export interface CameraRigState {
+  readonly preset: CameraPreset;
+  readonly focus: readonly number[];
+  readonly zoom: number;
+  readonly aspect: number;
+  readonly position: readonly number[];
+  readonly quaternion: readonly number[];
+  readonly shaken: readonly number[];
+  /** What a preset keeps of its own (an orbit's yaw, pitch and distance). */
+  readonly own: Readonly<Record<string, number>>;
+}
+
 /** Base rig: owns the three.js camera, zoom and the ground-plane movement basis. */
 export abstract class CameraRig {
   abstract readonly preset: CameraPreset;
@@ -173,6 +186,38 @@ export abstract class CameraRig {
     return { preset: this.preset, zoom: +this.zoom.toFixed(3), zoomable: this.zoomable };
   }
 
+  /** The rig as data, exact (`engine.snapshot()`). */
+  state(): CameraRigState {
+    return { preset: this.preset, focus: this.focus.toArray(), zoom: this.zoom, aspect: this.aspect, position: this.camera.position.toArray(), quaternion: this.camera.quaternion.toArray(), shaken: this.shaken.toArray(), own: this.ownState() };
+  }
+
+  /** Put the rig back where `state()` found it (the same preset). */
+  setState(s: CameraRigState): void {
+    this.focus.fromArray(s.focus);
+    this.zoom = s.zoom;
+    this.aspect = s.aspect;
+    this.setOwnState(s.own);
+    const cam = this.camera;
+    if (cam instanceof PerspectiveCamera) {
+      cam.aspect = s.aspect;
+      cam.updateProjectionMatrix();
+    }
+    this.applyZoom();
+    cam.position.fromArray(s.position);
+    cam.quaternion.fromArray(s.quaternion);
+    this.shaken.fromArray(s.shaken);
+    cam.updateMatrixWorld();
+  }
+
+  /** What a preset keeps beyond the base (`state()`). */
+  protected ownState(): Record<string, number> {
+    return {};
+  }
+
+  protected setOwnState(own: Readonly<Record<string, number>>): void {
+    void own; // the base keeps nothing of its own
+  }
+
   protected follow(target: Vector3, dt: number): void {
     this.focus.lerp(target, 1 - Math.exp(-this.stiffness * dt));
   }
@@ -191,6 +236,14 @@ export class OrthoRig extends CameraRig {
   private readonly tmp = new Vector3();
   /** World units per art pixel at the last update. */
   private pixel = 0.05;
+
+  protected override ownState(): Record<string, number> {
+    return { pixel: this.pixel };
+  }
+
+  protected override setOwnState(own: Readonly<Record<string, number>>): void {
+    this.pixel = own.pixel ?? this.pixel;
+  }
 
   constructor(preset: 'iso' | 'topdown' | 'side', config: CameraConfig = {}) {
     super(config);
@@ -264,6 +317,16 @@ export class ThirdPersonRig extends CameraRig {
   private readonly baseDistance: number;
   private currentDistance: number;
 
+  protected override ownState(): Record<string, number> {
+    return { yaw: this.yaw, pitch: this.pitch, distance: this.currentDistance };
+  }
+
+  protected override setOwnState(own: Readonly<Record<string, number>>): void {
+    this.yaw = own.yaw ?? this.yaw;
+    this.pitch = own.pitch ?? this.pitch;
+    this.currentDistance = own.distance ?? this.currentDistance;
+  }
+
   constructor(config: CameraConfig = {}) {
     super(config);
     this.snap = false;
@@ -310,6 +373,15 @@ export class FirstPersonRig extends CameraRig {
   yaw: number;
   pitch = 0;
 
+  protected override ownState(): Record<string, number> {
+    return { yaw: this.yaw, pitch: this.pitch };
+  }
+
+  protected override setOwnState(own: Readonly<Record<string, number>>): void {
+    this.yaw = own.yaw ?? this.yaw;
+    this.pitch = own.pitch ?? this.pitch;
+  }
+
   constructor(config: CameraConfig = {}) {
     super({ ...config, zoom: 1 });
     this.snap = false;
@@ -352,6 +424,15 @@ export class FreeRig extends CameraRig {
   fixed: boolean;
   yaw: number;
   pitch: number;
+
+  protected override ownState(): Record<string, number> {
+    return { yaw: this.yaw, pitch: this.pitch };
+  }
+
+  protected override setOwnState(own: Readonly<Record<string, number>>): void {
+    this.yaw = own.yaw ?? this.yaw;
+    this.pitch = own.pitch ?? this.pitch;
+  }
   private readonly baseFov: number;
   private readonly baseViewHeight: number;
   private readonly projection: 'perspective' | 'ortho';

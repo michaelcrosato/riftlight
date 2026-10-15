@@ -17,6 +17,16 @@ export interface PlayOptions {
   restart?: boolean;
 }
 
+/** What a `ClipPlayer` is playing, as data (save-states). A cross-fade in progress is not kept: the clip plays on alone. */
+export interface ClipPlayerState {
+  readonly name: string;
+  readonly time: number;
+  readonly rate: number;
+  readonly once: boolean;
+  readonly prevTime: number;
+  readonly wrapped: boolean;
+}
+
 export class ClipPlayer {
   readonly mixer: AnimationMixer;
   private readonly actions = new Map<string, AnimationAction>();
@@ -59,6 +69,22 @@ export class ClipPlayer {
     this.name = name;
     this.prevTime = 0;
     this.wrapped = false;
+  }
+
+  save(): ClipPlayerState {
+    const a = this.current;
+    return { name: this.name, time: a?.time ?? 0, rate: a?.timeScale ?? 1, once: a?.loop === LoopOnce, prevTime: this.prevTime, wrapped: this.wrapped };
+  }
+
+  load(s: ClipPlayerState): void {
+    this.mixer.stopAllAction();
+    if (s.name) {
+      this.play(s.name, { fade: 0, once: s.once, rate: s.rate, restart: true });
+      if (this.current) this.current.time = s.time;
+      this.mixer.update(0);
+    }
+    this.prevTime = s.prevTime;
+    this.wrapped = s.wrapped;
   }
 
   setRate(rate: number): void {

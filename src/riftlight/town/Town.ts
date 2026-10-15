@@ -14,9 +14,9 @@ import { PALETTE, type PaletteColor, toonMaterial } from '../../engine';
 import { Rng } from '../core/rng';
 import type { ActorLike } from '../core/types';
 import type { PooledLight, ShellServices, StageWorld } from '../game/ports';
-import { Cat } from './critters';
+import { Cat, type CatState } from './critters';
 import { type Blocker, collideBlockers, faceted, Kit } from './kit';
-import { type Bubble, Npc, type NpcAction, NPCS } from './npcs';
+import { type Bubble, Npc, type NpcAction, NPCS, type NpcState } from './npcs';
 
 const S2 = Math.SQRT1_2;
 /** Screen-space (sx right, sy up) → world (x, z) for the iso camera at yaw 45°. */
@@ -571,6 +571,52 @@ export class Town implements StageWorld {
     this.restoreSky();
   }
 
+  /** The town as data (save-states): its clock and time of day, the forge's flash, the chest, its random stream, the townsfolk, the cat, what its extensions keep. */
+  saveState(): TownState {
+    return {
+      time: this.time,
+      dayTime: this.dayTime,
+      dayLength: this.dayLength,
+      flash: this.flash,
+      chestOpen: this.chestOpen,
+      lid: this.chestLid.rotation.x,
+      rng: this.rng.state,
+      npcs: this.npcs.map((n) => n.save()),
+      cat: this.cat.save(),
+      extensions: this.extensions.map((e) => e.save?.() ?? null),
+    };
+  }
+
+  /** What play can meet in town, for `Riftlight.fingerprint`: where the townsfolk and the cat are, the time of day, its random stream. */
+  fingerprint(): string {
+    const at = (p: Vector3) => `${p.x},${p.z}`;
+    return [this.time, this.dayTime, this.rng.state, ...this.npcs.map((n) => at(n.position)), at(this.cat.position)].join(' ');
+  }
+
+  /** Why `s` can't be loaded into this town (null: it fits). Checked before a restore changes anything. */
+  fits(s: TownState): string | null {
+    if (s.npcs.length !== this.npcs.length) return `not this town (${s.npcs.length} townsfolk saved, ${this.npcs.length} here)`;
+    if (s.extensions.length !== this.extensions.length) return `not this town (${s.extensions.length} extensions saved, ${this.extensions.length} here)`;
+    return null;
+  }
+
+  /** Put the town back as `saveState` found it (the same town, built from the same seed). */
+  loadState(s: TownState): void {
+    const misfit = this.fits(s);
+    if (misfit) throw new Error(misfit);
+    this.time = s.time;
+    this.dayTime = s.dayTime;
+    this.dayLength = s.dayLength;
+    this.flash = s.flash;
+    this.chestOpen = s.chestOpen;
+    this.chestLid.rotation.x = s.lid;
+    this.rng.state = s.rng;
+    this.npcs.forEach((n, i) => n.load(s.npcs[i]!));
+    this.cat.load(s.cat);
+    this.extensions.forEach((e, i) => e.load?.(s.extensions[i]));
+    if (this.active) this.applySky();
+  }
+
   openChest(open: boolean): void {
     this.chestOpen = open ? 1 : 0;
     if (open) this.services.ctx.audio.play('rl.chest');
@@ -722,6 +768,20 @@ export class Town implements StageWorld {
   }
 }
 
+/** The town as data (`Town.saveState`). */
+export interface TownState {
+  readonly time: number;
+  readonly dayTime: number;
+  readonly dayLength: number;
+  readonly flash: number;
+  readonly chestOpen: number;
+  readonly lid: number;
+  readonly rng: number;
+  readonly npcs: readonly NpcState[];
+  readonly cat: CatState;
+  readonly extensions: readonly unknown[];
+}
+
 /** See `Town.extend`. */
 export interface TownExtension {
   readonly root?: Object3D;
@@ -731,6 +791,9 @@ export interface TownExtension {
   deactivate?(): void;
   /** Per frame while the town is active; `night` is 0..1. */
   update?(dt: number, night: number): void;
+  /** What it keeps between frames, as data (save-states), and putting it back. */
+  save?(): unknown;
+  load?(state: unknown): void;
 }
 
 function smooth(a: number, b: number, t: number): number {

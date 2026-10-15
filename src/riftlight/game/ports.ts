@@ -21,6 +21,7 @@
  *   `difficulty` source of every actor's StatSheet when it is created. The shell re-applies
  *   it to live actors when the sliders move.
  */
+import type { ActorIndex } from '../core/saved';
 import type { Object3D, Vector3 } from 'three/webgpu';
 import type { GameContext, PaletteColor } from '../../engine';
 import type { Mod } from '../core/mods';
@@ -204,6 +205,11 @@ export interface HeroPort {
    * slot). `loot/sockets.ts` `socketsToSlots` turns them into HeroController slots.
    */
   setSkills?(skills: SaveData['hero']['skills']): void;
+  /** The hero as data and back (save-states, docs/GAME.md): a port without them can't be in a snapshot. */
+  saveState?(): unknown;
+  loadState?(state: unknown, actors: ActorIndex): void;
+  /** Why a saved state can't be loaded (null: it fits); a restore asks before it changes anything. */
+  fits?(state: unknown): string | null;
   dispose(): void;
 }
 
@@ -378,6 +384,9 @@ export interface LootPort {
   craftingView(host: PanelHost): Panel;
   /** The skill panel: gems in the four skill slots and their supports (optional). */
   skillsView?(host: PanelHost): Panel;
+  /** The loot as data and back (save-states): a port without them can't be in a snapshot. */
+  saveState?(): unknown;
+  loadState?(state: unknown): void;
   /** The game is unloaded: remove overlays and listeners (optional). */
   dispose?(): void;
 }

@@ -17,6 +17,14 @@ import { Vector3 } from 'three/webgpu';
  *
  * or read `shake.offset` and add it wherever the game builds its camera target.
  */
+/** A shake as data. */
+export interface ShakeState {
+  readonly trauma: number;
+  readonly t: number;
+  readonly offset: readonly number[];
+  readonly applied: readonly number[];
+}
+
 export class CameraShake {
   trauma = 0;
   /** World units at full trauma. */
@@ -28,6 +36,18 @@ export class CameraShake {
   readonly offset = new Vector3();
   private t = 0;
   private readonly applied = new Vector3();
+
+  /** Trauma and the noise clock, as data (`engine.snapshot()`): what the next frames shake by follows from them. */
+  state(): ShakeState {
+    return { trauma: this.trauma, t: this.t, offset: this.offset.toArray(), applied: this.applied.toArray() };
+  }
+
+  setState(s: ShakeState): void {
+    this.trauma = s.trauma;
+    this.t = s.t;
+    this.offset.fromArray(s.offset);
+    this.applied.fromArray(s.applied);
+  }
 
   add(amount: number): void {
     this.trauma = Math.min(1, this.trauma + Math.max(0, amount));

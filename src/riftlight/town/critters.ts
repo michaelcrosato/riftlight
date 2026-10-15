@@ -11,6 +11,22 @@ import type { Rng } from '../core/rng';
 import { type Blocker, collideBlockers } from './kit';
 import type { Bubble } from './npcs';
 
+/** The cat as data (`Cat.save`). */
+export interface CatState {
+  readonly position: readonly number[];
+  readonly yaw: number;
+  readonly wp: number;
+  readonly state: 'walk' | 'sit' | 'flee';
+  readonly timer: number;
+  readonly phase: number;
+  readonly sit: number;
+  readonly speed: number;
+  readonly head: number;
+  readonly bubble: (Omit<Bubble, 'at'> & { at: readonly number[] }) | null;
+  readonly meowCd: number;
+  readonly rng: number;
+}
+
 function part(size: [number, number, number], c: PaletteColor, at: [number, number, number]): Mesh {
   const m = new Mesh(new BoxGeometry(...size), toonMaterial(PALETTE[c]));
   m.position.set(...at);
@@ -73,6 +89,29 @@ export class Cat {
     }
     this.root.add(this.body);
     this.root.name = 'cat';
+  }
+
+  /** Where it is and what it's doing, and its random stream (save-states). */
+  save(): CatState {
+    const b = this.bubble;
+    return { position: this.position.toArray(), yaw: this.yaw, wp: this.wp, state: this.state, timer: this.timer, phase: this.phase, sit: this.sit, speed: this.speed, head: this.head.rotation.y, bubble: b ? { ...b, at: b.at.toArray() } : null, meowCd: this.meowCd, rng: this.rng.state };
+  }
+
+  load(s: CatState): void {
+    this.position.fromArray(s.position);
+    this.yaw = s.yaw;
+    this.wp = s.wp;
+    this.state = s.state;
+    this.timer = s.timer;
+    this.phase = s.phase;
+    this.sit = s.sit;
+    this.speed = s.speed;
+    this.head.rotation.y = s.head;
+    this.bubble = s.bubble ? { ...s.bubble, at: new Vector3().fromArray(s.bubble.at) } : null;
+    this.meowCd = s.meowCd;
+    this.rng.state = s.rng;
+    this.root.position.copy(this.position);
+    this.root.rotation.y = this.yaw;
   }
 
   update(dt: number, hero: Vector3 | null, blockers: readonly Blocker[]): void {

@@ -109,11 +109,15 @@ The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is deci
   which is also how a moment is saved and restored today (replay to frame `n`). Riftlight
   replays: its mouse, menus and item windows read `ctx.input`, and what it takes from the page
   (saves, settings, a new run's seed) arrives as recorded commands (e2e `riftlight-replay`).
-  Not yet: snapshots of the state itself, which make restoring a
-  long session instant. Rapier can snapshot its world exactly, but a restored world replaces the
-  body handles games hold, so they wait on gameplay state being data. Gameplay state still
-  lives in many places (physics bodies, three.js objects, behaviour-tree nodes, timelines, game
-  and room code); new systems keep theirs serializable where they reasonably can.
+  Save-states: `engine.snapshot()` / `restore()` keep a moment as JSON and put it back in
+  milliseconds (the engine's part: time, clock, random, the Rapier world with its handles kept,
+  camera, shake, input; the game's through `Game.snapshot` / `restore`), and a recording made
+  after one replays from it. Riftlight has them in town (e2e `riftlight-snapshot`). Not yet: a
+  Riftlight level (its monsters, combat effects, hazards and mechanics keep state in closures),
+  and physics with character controllers, vehicles, movers, triggers or step listeners (refused
+  with the reason). Particles and light flicker are pictures and are not kept. Gameplay state still lives in many places (three.js objects, behaviour-tree nodes,
+  timelines, game and room code); new systems keep theirs serializable where they reasonably
+  can.
 - **Principle 6 (WebGPU only): not yet, on evidence.** Headless Chromium on the development
   platform loses the WebGPU device as soon as a canvas presents (measured; escalation
   [#46](https://github.com/michaelcrosato/riftlight/issues/46)), so the WebGL 2 fallback is the

@@ -42,6 +42,18 @@ export class StageMover implements Mover {
     this.prev.copy(this.position);
   }
 
+  /** Where it stands, as data (save-states): the feet now and the step before, its fall, its speed. */
+  save(): { position: readonly number[]; prev: readonly number[]; vy: number; speed: number } {
+    return { position: this.position.toArray(), prev: this.prev.toArray(), vy: this.vy, speed: this.speed };
+  }
+
+  load(s: ReturnType<StageMover['save']>): void {
+    this.position.fromArray(s.position);
+    this.prev.fromArray(s.prev);
+    this.vy = s.vy;
+    this.speed = s.speed;
+  }
+
   private ok(s: GridStage, x: number, z: number, pushed: boolean): boolean {
     const r = this.radius;
     return s.walkable(x, z, pushed) && s.walkable(x + r, z, pushed) && s.walkable(x - r, z, pushed) && s.walkable(x, z + r, pushed) && s.walkable(x, z - r, pushed);

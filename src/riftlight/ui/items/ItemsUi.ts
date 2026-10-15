@@ -123,6 +123,21 @@ const VENDOR_TABS: readonly { kind: VendorKind; label: string }[] = [
   { kind: 'gamble', label: 'GAMBLE' },
 ];
 
+/** What the item windows keep while closed (`ItemsUi.viewState`): tabs, the cursor, the last message. */
+export interface ItemsViewState {
+  readonly stashTab: number;
+  readonly skillSlot: number;
+  readonly cursor: { readonly x: number; readonly y: number };
+  readonly cursorMode: 'pointer' | 'pad';
+  readonly message: string;
+  readonly messageTime: number;
+  readonly time: number;
+  readonly pointerAt: { readonly x: number; readonly y: number };
+  readonly lastTouch: boolean;
+  readonly longPressed: boolean;
+  readonly hoverOrb: string | null;
+}
+
 export class ItemsUi {
   /** The overlay canvas (art resolution). */
   readonly canvas: HTMLCanvasElement;
@@ -175,6 +190,28 @@ export class ItemsUi {
     this.canvas = c;
     for (const [id, def] of Object.entries(LOOT_SOUNDS)) ctx.audio.register(id, def);
     ctx.input.preventKeys.add('AltLeft').add('AltRight'); // Alt shows affix tiers, not the browser's menu bar
+  }
+
+  /** What stays when the windows close, as data (save-states: a snapshot is taken with them closed). */
+  viewState(): ItemsViewState {
+    if (this.isOpen) throw new Error('the item windows are open');
+    return { stashTab: this.stashTab, skillSlot: this.skillSlot, cursor: { ...this.cursor }, cursorMode: this.cursorMode, message: this.message, messageTime: this.messageTime, time: this.time, pointerAt: { ...this.pointerAt }, lastTouch: this.lastTouch, longPressed: this.longPressed, hoverOrb: this.hoverOrb };
+  }
+
+  setViewState(s: ItemsViewState): void {
+    this.closeAll();
+    this.stashTab = s.stashTab;
+    this.skillSlot = s.skillSlot;
+    this.cursor = { ...s.cursor };
+    this.cursorMode = s.cursorMode;
+    this.message = s.message;
+    this.messageTime = s.messageTime;
+    this.time = s.time;
+    this.pointerAt = { ...s.pointerAt };
+    this.lastTouch = s.lastTouch;
+    this.longPressed = s.longPressed;
+    this.hoverOrb = s.hoverOrb;
+    this.downAt = null;
   }
 
   get isOpen(): boolean {

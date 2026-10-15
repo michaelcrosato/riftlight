@@ -1085,6 +1085,44 @@ state outside physics and forks of `ctx.random`. `EngineOptions.record` sets how
 many frames a level keeps (default `MAX_FRAMES`, an hour at 60 fps; 0 records nothing);
 `recordingProblem(v)` says why a value is not a recording.
 
+### Save-states
+
+```ts
+const snap = await engine.snapshot();    // the running level as JSON, between frames
+engine.step(600);                        // ...play on
+await engine.restore(snap);              // back to that moment at once, nothing replayed
+engine.recording().from === snap;        // the recording starts again from it: replay() restores it first
+```
+
+A snapshot (`src/engine/snapshot.ts`) is the engine's part of a running level (game time, the
+clock's speed and hitstop, `ctx.random`, the fixed step's accumulator, the whole Rapier world as
+Rapier's own snapshot with the collider tags, conveyor belts and force fields' `enabled` beside
+it, the camera rig, the shake, held keys, presses still queued with their age, the pointer, data
+sent and not yet delivered) and the game's own, from `Game.snapshot(ctx)`: plain data, which
+the game returns as it is (never through JSON). Numbers JSON can't hold exactly (`-0`,
+`Infinity`, `NaN`) are marked as strings (and a game's own string starting with `@` gets one
+more), so a snapshot survives `JSON.stringify` bit for bit (`encodeState` / `decodeState`).
+
+`restore(snap)` needs the same game already loaded (by name). It holds the frame loop, calls
+`Game.beforeRestore(ctx)` (leave a mode with a camera of its own, close dialogs), lets the
+running timeline's tweens finish there (their continuations run on the state about to be
+replaced, never on the restored one), checks the camera preset, builds the saved physics world,
+puts the engine's part back (the camera keeps this screen's aspect; in live play held keys are
+let go, the keyboard's own come back) and calls `Game.restore(ctx, state)`, which may be async.
+All or nothing: if anything throws, the engine's own part goes back as it was (the game's
+restore keeps its own whole, e.g. by checking before it changes anything). Bodies keep their
+handles, so a game finds its own again with `ctx.physics.world.getRigidBody(h)`; a mesh bound
+to a body the snapshot doesn't have (a newer body in an old one's slot included) is let go. Playing on from a restored snapshot plays the
+same as playing on from the moment it was taken: every state a later frame reads (the World
+suite checks it, and that a snapshot with another moment's physics ends elsewhere, a tween at
+restore time, a body bound after the snapshot, a restore that fails). Particles and light
+flicker are pictures, not state: they are not kept. `snapshot()` waits a task first, so the
+last frame's promise callbacks have run, and refuses with the reason while a tween runs (its
+callbacks are code), for a game without the hooks, or with physics that lives outside the
+Rapier world (character or vehicle controllers, movers, triggers, step listeners). A recording
+made after a restore carries it (`from`), so a bug caught after a save-state is a snapshot and
+its frames: `replay(rec, start)` loads the game, restores the snapshot, plays the frames.
+
 ### Screen shake
 
 ```ts

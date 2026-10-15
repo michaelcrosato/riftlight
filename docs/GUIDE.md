@@ -61,6 +61,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 | `cameraTarget(ctx)` | every frame | return the `Vector3` the camera follows |
 | `status(ctx)` | tooling | a one-line summary (`'coins 3/4'`), shown by the check tool |
 | `fingerprint(ctx)` | tooling | the game's own state as a string (positions, counters), part of `engine.fingerprint()` so a replay can be compared |
+| `snapshot(ctx)`, `restore(ctx, state)`, `beforeRestore(ctx)` | save-states | the game's own state as plain data (as it is, not through JSON), and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles; `beforeRestore` leaves a mode with its own camera first |
 | `onCameraChange(ctx)`, `eyePosition(ctx)`, `dispose(ctx)` | optional | camera swaps, first-person eye, cleanup |
 
 `ctx` (the `GameContext`) is the same object in every hook: `ctx.scene` (three.js scene),
@@ -1019,6 +1020,7 @@ e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exce
 e.input.setKey('KeyD', true); e.step(30); e.input.setKey('KeyD', false);  // play by script
 const rec = e.recording(); const end = e.fingerprint();            // this level's input as JSON, a hash of its state
 await e.replay(rec, () => e.loadGame(new MyGame())); e.fingerprint() === end;  // replayed: the same game
+const snap = await e.snapshot(); e.step(300); await e.restore(snap);   // a save-state (Game.snapshot / restore): back at once
 await e.renderer.capture();   // { width, height, pixels }: the exact frame (without the HUD canvas)
 e.game;                   // your game object: e.game.hero.teleport([x, y, z]) to test a spot
 e.setLook(e.lookPresets.noir); e.setCamera({ preset: 'third' }, { syncUrl: false });

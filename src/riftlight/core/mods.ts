@@ -41,6 +41,14 @@ export const flag = (stat: string, tags?: readonly string[]): Mod => ({ stat, ki
  */
 import { canonicalMods, canonicalStat } from './stats';
 
+/** A StatSheet as data (`StatSheet.save`). */
+export interface StatSheetState {
+  readonly base: readonly (readonly [string, number])[];
+  readonly sources: readonly (readonly [string, readonly Mod[]])[];
+  readonly conditions: readonly string[];
+  readonly version: number;
+}
+
 export class StatSheet {
   private readonly sources = new Map<string, readonly Mod[]>();
   private readonly base = new Map<string, number>();
@@ -126,6 +134,26 @@ export class StatSheet {
     const out: { source: string; mod: Mod }[] = [];
     for (const [source, mods] of this.sources) for (const m of mods) out.push({ source, mod: m });
     return out;
+  }
+
+  /**
+   * The sheet as data (save-states): base values, every source in its order (a stat's sum is
+   * added up in it, so a restore keeps every float) and the conditions.
+   */
+  save(): StatSheetState {
+    return { base: [...this.base], sources: [...this.sources], conditions: [...this.conditions], version: this.version };
+  }
+
+  /** Back to `save()`'s sheet. */
+  load(s: StatSheetState): void {
+    this.base.clear();
+    for (const [k, v] of s.base) this.base.set(k, v);
+    this.sources.clear();
+    for (const [k, mods] of s.sources) this.sources.set(k, mods);
+    this.conditions.clear();
+    for (const c of s.conditions) this.conditions.add(c);
+    this.cache.clear();
+    this.version = s.version;
   }
 
   /**

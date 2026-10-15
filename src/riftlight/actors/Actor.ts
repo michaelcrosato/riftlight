@@ -1,5 +1,6 @@
 import { type AnimationMixer, Group, type Object3D, Vector3 } from 'three/webgpu';
-import { flat, more, type Mod, StatSheet } from '../core/mods';
+import { flat, more, type Mod, StatSheet, type StatSheetState } from '../core/mods';
+import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
 import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, AilmentType, DamageType, Faction, GameEventBus, Hit, HitResult } from '../core/types';
@@ -21,6 +22,45 @@ export interface AilmentInstance {
   remaining: number;
   readonly duration: number;
   readonly source: ActorLike | null;
+}
+
+/**
+ * What a save-state keeps of an actor (`Actor.save`): where it is, how hurt, what is on it and
+ * every timer. Its body, brain, mover and motion's callbacks are its owner's to make again.
+ */
+export interface ActorState {
+  readonly id: number;
+  readonly level: number;
+  readonly rank: Rank;
+  readonly position: Vec;
+  readonly velocity: Vec;
+  readonly impulse: Vec;
+  readonly separation: Vec;
+  readonly launch: number | null;
+  readonly facing: number;
+  readonly life: number;
+  readonly mana: number;
+  readonly es: number;
+  readonly ailments: readonly { id: AilmentType; magnitude: number; remaining: number; duration: number; source: ActorRef }[];
+  readonly buffs: readonly (readonly [string, number])[];
+  readonly iframes: number;
+  readonly hitStop: number;
+  readonly time: number;
+  readonly depth: number;
+  readonly deadFor: number;
+  readonly gone: boolean;
+  readonly counters: Actor['counters'];
+  readonly charges: ReturnType<Charges['save']>;
+  readonly curses: ReturnType<Curses['save']>;
+  readonly reserved: readonly (readonly [string, number])[];
+  readonly leech: { life: number; mana: number };
+  readonly since: { hit: number; kill: number; es: number; dotShown: number; dotTimer: number };
+  readonly stats: StatSheetState;
+  readonly rng: number;
+  readonly rampage: number;
+  readonly owner: ActorRef;
+  /** A motion in progress (its profile and callbacks are the effect's: it links them again). */
+  readonly motion: { vx: number; vz: number; left: number; total: number | null } | null;
 }
 
 /** Scripted movement that overrides the brain / controller (dashes, rolls, leaps, charges). */
@@ -580,6 +620,89 @@ export class Actor implements ActorLike {
     if (!m) return;
     this.motion = null;
     m.onEnd?.(this, interrupted);
+  }
+
+  /** The actor as data (save-states): `ActorState`. */
+  save(): ActorState {
+    const m = this.motion;
+    return {
+      id: this.id,
+      level: this.level,
+      rank: this.rank,
+      position: this.position.toArray(),
+      velocity: this.velocity.toArray(),
+      impulse: this.impulse.toArray(),
+      separation: this.separation.toArray(),
+      launch: this.launch ?? null,
+      facing: this.facing,
+      life: this.life,
+      mana: this.mana,
+      es: this.es,
+      ailments: this.ailments.map((a) => ({ id: a.id, magnitude: a.magnitude, remaining: a.remaining, duration: a.duration, source: refOf(a.source) })),
+      buffs: [...this.buffs],
+      iframes: this.iframes,
+      hitStop: this.hitStop,
+      time: this.time,
+      depth: this.depth,
+      deadFor: this.deadFor,
+      gone: this.gone,
+      counters: { ...this.counters },
+      charges: this.charges.save(),
+      curses: this.curses.save(),
+      reserved: [...this.reserved],
+      leech: { ...this.leechPool },
+      since: { hit: this.sinceHit, kill: this.sinceKill, es: this.esTimer, dotShown: this.dotShown, dotTimer: this.dotTimer },
+      stats: this.stats.save(),
+      rng: this.rng.state,
+      rampage: this.rampage,
+      owner: refOf(this.owner),
+      motion: m ? { vx: m.vx, vz: m.vz, left: m.left, total: m.total ?? null } : null,
+    };
+  }
+
+  /**
+   * Back to `save()`'s actor: everything but the motion (its effect starts it again) and the
+   * mover (its owner places it: `position` is the feet it must stand on).
+   */
+  load(s: ActorState, actors: ActorIndex): void {
+    if (s.id !== this.id) throw new Error(`Actor.load: state of actor ${s.id} into actor ${this.id}`);
+    this.level = s.level;
+    this.rank = s.rank;
+    this.position.fromArray(s.position);
+    this.velocity.fromArray(s.velocity);
+    this.impulse.fromArray(s.impulse);
+    this.separation.fromArray(s.separation);
+    this.launch = s.launch ?? undefined;
+    this.facing = s.facing;
+    this.life = s.life;
+    this.mana = s.mana;
+    this.es = s.es;
+    this.ailments.length = 0;
+    for (const a of s.ailments) this.ailments.push({ ...a, source: actors(a.source) });
+    this.buffs.clear();
+    for (const [k, v] of s.buffs) this.buffs.set(k, v);
+    this.iframes = s.iframes;
+    this.hitStop = s.hitStop;
+    this.time = s.time;
+    this.depth = s.depth;
+    this.deadFor = s.deadFor;
+    this.gone = s.gone;
+    Object.assign(this.counters, s.counters);
+    this.stats.load(s.stats);
+    this.charges.load(s.charges);
+    this.curses.load(s.curses, actors);
+    this.reserved.clear();
+    for (const [k, v] of s.reserved) this.reserved.set(k, v);
+    Object.assign(this.leechPool, s.leech);
+    this.sinceHit = s.since.hit;
+    this.sinceKill = s.since.kill;
+    this.esTimer = s.since.es;
+    this.dotShown = s.since.dotShown;
+    this.dotTimer = s.since.dotTimer;
+    this.rng.state = s.rng;
+    this.rampage = s.rampage;
+    this.owner = actors(s.owner) as Actor | null;
+    this.motion = null;
   }
 
   private moveStep(dt: number): void {

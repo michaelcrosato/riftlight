@@ -9,10 +9,12 @@ import type { Combat } from '../combat/Combat';
 import { StatQuery } from '../combat/stats';
 import { WEAPON_CLASSES } from '../combat/tuning';
 import { buildSkill } from '../skills/build';
+import { loadSkill, type SavedSkill, saveSkill } from '../skills/saved';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
-import { Actor } from './Actor';
+import { Actor, type ActorState } from './Actor';
+import type { ActorIndex } from '../core/saved';
 import { HERO_KEYS } from './controls';
-import { HeroAnimator } from './heroAnimator';
+import { HeroAnimator, type HeroAnimatorState } from './heroAnimator';
 import { ControllerMover, type Mover } from './movers';
 import { MouseAim, type PointerSource } from './mouseAim';
 import { HeroWeapons, weaponClassOf } from './weapons';
@@ -126,6 +128,45 @@ interface ActionState {
   aim: Vector3;
   /** Key codes that keep a channel going. */
   keys: readonly string[];
+}
+
+/** Which keys keep an action going, by name (HERO_KEYS arrays are compared by identity). */
+type KeysName = 'attack' | 'dodge' | `slot:${number}`;
+const keysName = (keys: readonly string[]): KeysName | readonly string[] => {
+  if (keys === HERO_KEYS.attack) return 'attack';
+  if (keys === HERO_KEYS.dodge) return 'dodge';
+  const i = HERO_KEYS.slots.indexOf(keys as never);
+  return i >= 0 ? `slot:${i}` : keys;
+};
+const keysOf = (k: KeysName | readonly string[]): readonly string[] =>
+  typeof k !== 'string' ? k : k === 'attack' ? HERO_KEYS.attack : k === 'dodge' ? HERO_KEYS.dodge : (HERO_KEYS.slots[Number(k.slice(5))] ?? HERO_KEYS.attack);
+
+/** The hero controller as data (save-states): its actor, the action in progress, timers, the bar's gems. */
+export interface HeroControllerState {
+  readonly actor: ActorState;
+  readonly state: HeroState;
+  readonly cooldowns: readonly (readonly [string, number])[];
+  readonly aim: readonly [number, number, number];
+  readonly action: (Omit<ActionState, 'skill' | 'aim' | 'keys'> & { skill: SavedSkill; aim: readonly [number, number, number]; keys: KeysName | readonly string[] }) | null;
+  readonly buffered: { kind: 'attack' | 'dodge' | 'slot'; slot: number; at: number } | null;
+  readonly combo: number;
+  readonly comboUntil: number;
+  readonly time: number;
+  readonly moveWish: readonly [number, number, number];
+  readonly lastLife: number;
+  readonly hitReact: number;
+  readonly deathT: number;
+  readonly victoryT: number;
+  readonly statsVersion: number;
+  readonly lunging: boolean;
+  readonly busyUntil: number;
+  readonly rollAnim: string;
+  readonly reactAnim: string;
+  readonly lastAnim: readonly (readonly [string, string])[];
+  readonly specs: { basic: SlotSpec; slots: (SlotSpec | null)[] };
+  readonly counters: HeroController['stats'];
+  readonly feedback: { text: string; until: number } | null;
+  readonly animator: HeroAnimatorState;
 }
 
 /** Compile clip definitions against the hero model (loops marked for the animator). */
@@ -277,6 +318,73 @@ export class HeroController {
     this.statsVersion = s.version;
     // the equipped weapon's class shows in hand
     this.weapons.equip(weaponClassOf((flag) => s.has(flag)), s.has('weapon.twohand'));
+  }
+
+  /** The controller as data (save-states). */
+  save(): HeroControllerState {
+    const x = this.action;
+    return {
+      actor: this.actor.save(),
+      state: this.state,
+      cooldowns: [...this.cooldowns],
+      aim: this.aim.toArray(),
+      action: x ? { ...x, skill: saveSkill(x.skill), aim: x.aim.toArray(), keys: keysName(x.keys) } : null,
+      buffered: this.buffered ? { ...this.buffered } : null,
+      combo: this.combo,
+      comboUntil: this.comboUntil,
+      time: this.time,
+      moveWish: this.moveWish.toArray(),
+      lastLife: this.lastLife,
+      hitReact: this.hitReact,
+      deathT: this.deathT,
+      victoryT: this.victoryT,
+      statsVersion: this.statsVersion,
+      lunging: this.lunging,
+      busyUntil: this.busyUntil,
+      rollAnim: this.rollAnim,
+      reactAnim: this.reactAnim,
+      lastAnim: [...this.lastAnim],
+      specs: structuredClone(this.specs),
+      counters: { ...this.stats },
+      feedback: this.feedback ? { ...this.feedback } : null,
+      animator: this.animator.save(),
+    };
+  }
+
+  /**
+   * Back to `save()`'s controller. The bar is resolved again from the saved gems and sheet (the
+   * same numbers, or the next step resolves them anew as it would have); the action in progress
+   * keeps the skill it was cast with. The mover is its owner's to place.
+   */
+  load(s: HeroControllerState, actors: ActorIndex): void {
+    this.actor.load(s.actor, actors);
+    this.specs = structuredClone(s.specs) as HeroControllerState['specs'];
+    this.rebuild();
+    this.statsVersion = s.statsVersion;
+    this.state = s.state;
+    this.cooldowns.clear();
+    for (const [k, v] of s.cooldowns) this.cooldowns.set(k, v);
+    this.aim.fromArray(s.aim);
+    const x = s.action;
+    this.action = x ? { ...x, skill: loadSkill(x.skill), aim: new Vector3().fromArray(x.aim), keys: keysOf(x.keys) } : null;
+    this.buffered = s.buffered ? { ...s.buffered } : null;
+    this.combo = s.combo;
+    this.comboUntil = s.comboUntil;
+    this.time = s.time;
+    this.moveWish.fromArray(s.moveWish);
+    this.lastLife = s.lastLife;
+    this.hitReact = s.hitReact;
+    this.deathT = s.deathT;
+    this.victoryT = s.victoryT;
+    this.lunging = s.lunging;
+    this.busyUntil = s.busyUntil;
+    this.rollAnim = s.rollAnim;
+    this.reactAnim = s.reactAnim;
+    this.lastAnim.clear();
+    for (const [k, v] of s.lastAnim) this.lastAnim.set(k, v);
+    Object.assign(this.stats, s.counters);
+    this.feedback = s.feedback ? { ...s.feedback } : null;
+    this.animator.load(s.animator);
   }
 
   /** Put a gem in a slot (0..4 = RMB/K, Q, E, R, F). */

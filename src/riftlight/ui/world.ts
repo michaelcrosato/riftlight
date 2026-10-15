@@ -96,6 +96,16 @@ export class Floaters {
   clear(): void {
     this.list.length = 0;
   }
+
+  /** The numbers on screen as data (save-states). */
+  save(): (Omit<Floater, 'at'> & { at: readonly number[] })[] {
+    return this.list.map((f) => ({ ...f, at: f.at.toArray() }));
+  }
+
+  load(list: readonly (Omit<Floater, 'at'> & { at: readonly number[] })[]): void {
+    this.list.length = 0;
+    for (const f of list) this.list.push({ ...f, at: new Vector3().fromArray(f.at) });
+  }
 }
 
 /** A speech bubble with a tail, above a point. */

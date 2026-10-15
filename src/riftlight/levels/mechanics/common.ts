@@ -226,6 +226,10 @@ export class PropTarget implements ActorLike {
   static setIds(next = 1_000_000): void {
     PropTarget.next = next;
   }
+  /** The next prop id (save-states keep it). */
+  static nextId(): number {
+    return PropTarget.next;
+  }
   readonly id = PropTarget.next++;
   readonly faction: Faction = 'neutral';
   readonly stats = new StatSheet();

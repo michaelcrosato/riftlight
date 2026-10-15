@@ -41,4 +41,14 @@ describe('GameClock', () => {
     c.reset();
     expect(c.delta(0.1)).toBeCloseTo(0.1);
   });
+
+  it('its state as data puts another clock where it was (save-states)', () => {
+    const a = new GameClock();
+    a.scale = 0.5;
+    a.freeze(0.04);
+    a.delta(0.01);
+    const b = new GameClock();
+    b.setState(JSON.parse(JSON.stringify(a.state())));
+    expect([b.delta(0.02), b.delta(0.02), b.scale]).toEqual([a.delta(0.02), a.delta(0.02), a.scale]);
+  });
 });

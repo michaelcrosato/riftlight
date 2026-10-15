@@ -86,4 +86,38 @@ describe('Gamepad', () => {
     expect(input.mouseDelta.x).toBeCloseTo(input.gamepadLookSpeed * 0.5);
     expect(input.gamepadConnected).toBe(true);
   });
+
+  it('its state as data: keys held, presses still queued with their age, the pointer (save-states)', () => {
+    const a = new Input(new EventTarget() as unknown as Window);
+    a.beginFrame(1, 1 / 60, []);
+    a.setKey('KeyW', true);
+    a.setKey('KeyJ', true);
+    a.setKey('KeyJ', false); // a tap: queued, not held
+    a.setPointer(0.25, -0.5);
+    a.beginFrame(1.05, 0.05, []);
+    const b = new Input(new EventTarget() as unknown as Window);
+    b.setState(JSON.parse(JSON.stringify(a.state())), 3.05);
+    expect([b.isDown('KeyW'), b.isDown('KeyJ'), b.pointer.x, b.pointer.y, b.pointer.over]).toEqual([true, false, 0.25, -0.5, true]);
+    b.beginFrame(3.15, 0.1, []);
+    expect(b.consumePress('KeyJ')).toBe(true); // 0.15 s old: still in the window, as it would be in `a`
+    b.setState(JSON.parse(JSON.stringify(a.state())), 3.05);
+    b.beginFrame(3.25, 0.2, []);
+    expect(b.consumePress('KeyJ')).toBe(false); // 0.25 s old: gone, as in `a`
+  });
+
+  it('data sent and not yet delivered is part of the moment: kept by a snapshot, dropped by a restore', () => {
+    const a = new Input(new EventTarget() as unknown as Window);
+    a.send({ lift: 1 });
+    const s = JSON.parse(JSON.stringify(a.state())) as ReturnType<Input['state']>;
+    a.deliver();
+    expect(a.commands).toEqual([{ lift: 1 }]);
+    // sent after the snapshot: not the restored moment's
+    a.send({ lift: 2 });
+    a.send({ lift: 3 });
+    a.setState(s, 0);
+    a.deliver();
+    expect(a.commands).toEqual([{ lift: 1 }]);
+    a.deliver();
+    expect(a.commands).toEqual([]);
+  });
 });
