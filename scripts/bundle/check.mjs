@@ -22,14 +22,17 @@
 //   --help                           this text
 //
 // It needs Node 20.15+ (or 22.2+) and Playwright (`npm i -D playwright` then
-// `npx playwright install chromium`), or `playwright-core` with CHROMIUM_PATH set to a Chromium
-// (its headless shell, `chrome-linux/headless_shell`, is the lightest): it plays WebGPU on
-// SwiftShader with no display. Exit code 0 means the game started, ran the frames with no errors
-// (page, console, engine or GPU) and drew a picture (with --sheets: every sheet was drawn and no
+// `npx playwright install chromium`; a global install, `npm i -g playwright`, works too), or
+// `playwright-core` with CHROMIUM_PATH set to a Chromium (its headless shell,
+// `chrome-linux/headless_shell`, is the lightest): it plays WebGPU on SwiftShader with no
+// display. Exit code 0 means the game started, ran the frames with no errors (page, console,
+// engine or GPU) and drew a picture (with --sheets: every sheet was drawn and no
 // def has a problem; warnings are fine); 1 means it didn't; 2 means the tool couldn't run (bad
 // arguments, no page, no browser, or a browser without WebGPU, which no game can start in).
+import { execSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as zlib from 'node:zlib';
@@ -164,6 +167,8 @@ function png({ width, height, pixels }) {
 }
 
 async function loadPlaywright() {
+  // beside the game first (npm i -D), then a global install (npm i -g; Claude Code cloud sessions
+  // come with one), which an import from here never finds
   for (const name of ['playwright', 'playwright-core']) {
     try {
       return (await import(name)).chromium;
@@ -171,7 +176,21 @@ async function loadPlaywright() {
       /* try the next */
     }
   }
-  console.error('check.mjs needs Playwright: npm i -D playwright && npx playwright install chromium');
+  let globalRoot = '';
+  try {
+    globalRoot = execSync('npm root -g', { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 }).trim();
+  } catch {
+    /* no npm, or it failed or hung */
+  }
+  const require = createRequire(import.meta.url);
+  for (const name of globalRoot ? ['playwright', 'playwright-core'] : []) {
+    try {
+      return require(join(globalRoot, name)).chromium;
+    } catch {
+      /* try the next */
+    }
+  }
+  console.error('check.mjs needs Playwright: npm i -D playwright && npx playwright install chromium (or a global install, npm i -g playwright)');
   process.exit(2);
 }
 

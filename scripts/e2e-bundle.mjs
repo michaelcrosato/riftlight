@@ -13,7 +13,7 @@
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
-//             every shot.
+//             every shot; copied away from any node_modules, it plays with a global Playwright.
 //   play      every recipe does what the guide says: Coin Garden's coins, Cliff Run's
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
 //             Market Corner's models, light and textured floor.
@@ -27,8 +27,9 @@
 // Shots land in .scratch/e2e/bundle/. Self-contained: e2e.mjs passes its helpers in.
 import { createServer } from 'node:http';
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
-import { extname, join } from 'node:path';
+import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inflateRawSync } from 'node:zlib';
 
@@ -246,6 +247,34 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     check(!!exe && noGpu.code === 2 && /WebGPU unavailable/.test(noGpu.out) && /has no WebGPU, so no game can start/.test(noGpu.out), `a browser without WebGPU: exit 2, saying so (exit ${noGpu.code})${noGpu.code !== 2 ? ':\n    ' + tail(noGpu.out) : ''}`);
   } catch (e) {
     check(false, `check.mjs flags: ${e.message}`);
+  }
+
+  // Playwright installed globally (npm i -g; Claude Code cloud sessions come with one) and none
+  // beside the game: an import from check.mjs never finds it, so check.mjs asks `npm root -g`.
+  // The kit is copied away from this repo's node_modules, and npm's prefix points at a global
+  // folder holding this repo's playwright-core, or at an empty one.
+  console.log('\n▶ bundle: check.mjs with a global Playwright');
+  const away = await mkdtemp(join(tmpdir(), 'pixel-kit-'));
+  try {
+    await cp(kitPath, join(away, 'engine'), { recursive: true });
+    // both spellings of npm's prefix (an inherited uppercase one would win), and no update notice
+    // in `npm root -g`'s output
+    const env = (prefix) => ({ CHROMIUM_PATH: exe ?? '', npm_config_prefix: join(away, prefix), NPM_CONFIG_PREFIX: join(away, prefix), npm_config_update_notifier: 'false' });
+    const globalRoot = (await run('npm', ['root', '-g'], { env: env('global') })).out.trim().split('\n').pop();
+    if (!globalRoot.startsWith(away + sep)) throw new Error(`npm root -g gave ${globalRoot}, outside ${away}`);
+    await mkdir(globalRoot, { recursive: true });
+    await symlink(fileURLToPath(new URL('node_modules/playwright-core', root)), join(globalRoot, 'playwright-core'), 'dir');
+    const play = (prefix) => run('node', [join(away, 'engine/check.mjs'), join(away, 'engine/index.html'), '--out', fileURLToPath(new URL(`playwright-${prefix}`, out))], { env: env(prefix) });
+    const found = await play('global');
+    const none = await play('empty');
+    check(
+      found.code === 0 && none.code === 2 && /needs Playwright/.test(none.out),
+      `a kit away from any node_modules plays with a global Playwright (npm root -g; exit ${found.code}) and says when there is none (exit ${none.code})${found.code ? ':\n    ' + tail(found.out) : ''}`,
+    );
+  } catch (e) {
+    check(false, `check.mjs with a global Playwright: ${e.message}`);
+  } finally {
+    await rm(away, { recursive: true, force: true });
   }
 
   console.log('\n▶ bundle: the recipes play as the guide says');

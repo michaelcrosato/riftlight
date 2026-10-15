@@ -1663,7 +1663,8 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   shouldn't use `/** @internal */`: it leaves API.md and the `.d.ts`.
 - `pixel-engine.d.ts` + `types/`: declarations (`stripInternal`); a strict TypeScript game
   typechecks against them (the `bundle` e2e suite does it).
-- `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool. It serves the kit
+- `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool (Playwright beside
+  the game or installed globally, found through `npm root -g`). It serves the kit
   folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, `--cameras`,
   `--looks`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
   console, game or GPU error or a blank frame. `--sheets models.js,crate` plays no page: it
