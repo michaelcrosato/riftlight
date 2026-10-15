@@ -124,7 +124,8 @@ export function createApi(game: Riftlight) {
 
   /**
    * Walk to a ground point: in a level along the grid route (the bot's navigation), in town
-   * in a straight line that sidesteps whatever it bumps into.
+   * along the town's walkable grid (`Town.nav`, rebuilt every 30 frames), steering at a point a
+   * few cells ahead, sidestepping whatever it bumps into (a townsperson in the way).
    */
   const moveTo = (x: number, z: number, o: { maxFrames?: number; radius?: number } = {}) => {
     const max = o.maxFrames ?? 900;
@@ -134,6 +135,7 @@ export function createApi(game: Riftlight) {
     let frames = 0;
     let stuck = 0;
     let side = 0;
+    let route: { x: number; z: number }[] = [];
     const last = new Vector3().copy(game.hero.actor.position);
     const screen = game.screen;
     for (; frames < max; frames++) {
@@ -152,7 +154,18 @@ export function createApi(game: Riftlight) {
         stuck = p.distanceTo(last) < 0.01 ? stuck + 1 : 0;
         if (stuck > 12) side = 30;
         const k = side-- > 0 ? 1 : 0;
-        game.botIntent = toIntent({ move: { x: dx / d - (k * dz) / d, z: dz / d + (k * dx) / d } });
+        if (frames % 30 === 0) route = game.town.nav().route(p, goal);
+        // the cell nearest the hero on the route, then a few ahead (or the goal itself, close by)
+        let aim = { x, z };
+        if (route.length > 1 && d > 1.5) {
+          let near = 0;
+          for (let i = 1; i < route.length; i++) if (Math.hypot(route[i]!.x - p.x, route[i]!.z - p.z) < Math.hypot(route[near]!.x - p.x, route[near]!.z - p.z)) near = i;
+          aim = route[Math.min(route.length - 1, near + 4)]!;
+        }
+        const ax = aim.x - p.x;
+        const az = aim.z - p.z;
+        const ad = Math.hypot(ax, az) || 1;
+        game.botIntent = toIntent({ move: { x: ax / ad - (k * az) / ad, z: az / ad + (k * ax) / ad } });
       }
       last.copy(p);
       engine().step(1);

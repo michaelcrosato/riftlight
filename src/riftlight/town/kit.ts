@@ -6,6 +6,7 @@
  * the stage's `collide()` pushes actors out of. New dressing comes from the library.
  */
 import {
+  Box3,
   BoxGeometry,
   type BufferGeometry,
   ConeGeometry,
@@ -14,7 +15,9 @@ import {
   Group,
   Mesh,
   type Object3D,
+  Path,
   Shape,
+  ShapeGeometry,
   Vector2,
   Vector3,
 } from 'three/webgpu';
@@ -27,6 +30,21 @@ import { mergeStaticMeshes } from '../../engine/render/merge';
 import { toonMaterial } from '../../engine/render/toon';
 
 export type V3 = readonly [number, number, number];
+
+/** How `Kit.model` places a model. */
+export interface ModelPlacement {
+  /** Degrees about Y, in the current frame. */
+  readonly yaw?: number;
+  /** Uniform size (its blocker scales with it). */
+  readonly scale?: number;
+  readonly params?: Readonly<Record<string, number>>;
+  readonly palette?: Readonly<Record<string, Binding>>;
+  readonly seed?: number;
+  /** False: no blocker from its footprint (add a circle at a trunk instead). */
+  readonly block?: boolean;
+  /** False: casts no shadow (ground tiles, flowers and such: the shadow pass skips them). */
+  readonly cast?: boolean;
+}
 
 export type Blocker =
   | { kind: 'circle'; x: number; z: number; r: number }
@@ -147,9 +165,9 @@ export class Kit {
 
   /**
    * A gabled roof over a w × d footprint (ridge along local X), eaves at `y`, ridge `h`
-   * higher, overhanging by `over`.
+   * higher, overhanging by `over`; its gable ends in `gable`.
    */
-  roof(w: number, d: number, y: number, h: number, color: PaletteColor, over = 0.3, trim?: PaletteColor): void {
+  roof(w: number, d: number, y: number, h: number, color: PaletteColor, over = 0.3, trim?: PaletteColor, gable: PaletteColor = 'mist'): void {
     const half = d / 2 + over;
     const slope = Math.hypot(half, h);
     const angle = Math.atan2(h, half) / DEG;
@@ -158,7 +176,7 @@ export class Kit {
     }
     this.box([w + over * 2 + 0.1, 0.16, 0.22], trim ?? color, [0, y + h + 0.04, 0]);
     // gable ends: triangular walls
-    for (const sx of [1, -1]) this.gable(sx * (w / 2 - 0.06), y, d, h, 'mist');
+    for (const sx of [1, -1]) this.gable(sx * (w / 2 - 0.06), y, d, h, gable);
   }
 
   /** A triangular wall in the local YZ plane at x, base at `y`, `d` wide, `h` high. */
@@ -170,23 +188,36 @@ export class Kit {
   }
 
   /**
-   * A library model at `at` in the current frame, turned `yaw` degrees, merged with the rest;
-   * it blocks its footprint (a box turned with it) unless `block` is false. Returns the build
-   * (its `light`, anchors).
+   * A library model (or a pack's, once loaded into the library) at `at` in the current frame,
+   * turned `yaw` degrees and drawn `scale` times its size, merged with the rest; it blocks its
+   * footprint (a box turned with it) unless `block` is false. Returns the build (its `light`,
+   * anchors, bounds at scale 1).
    */
-  model(id: string, at: V3, o: { yaw?: number; params?: Readonly<Record<string, number>>; palette?: Readonly<Record<string, Binding>>; seed?: number; block?: boolean } = {}): ModelBuild {
+  model(id: string, at: V3, o: ModelPlacement = {}): ModelBuild {
     const b = buildModel(id, { ...(o.params ? { params: o.params } : {}), ...(o.palette ? { palette: o.palette } : {}), ...(o.seed !== undefined ? { seed: o.seed } : {}) });
+    const k = o.scale ?? 1;
     b.object.position.set(...at);
     b.object.rotation.y = (o.yaw ?? 0) * DEG;
+    b.object.scale.setScalar(k);
+    if (o.cast === false) b.object.traverse((m) => (m.castShadow = false));
     this.top.add(b.object);
     this.statics.push(b.object); // a Group: build() merges its meshes and leaves their (shared) geometry alone
     if (o.block !== false) {
       const { min, max } = b.bounds;
-      const centre = new Vector3((min[0] + max[0]) / 2, 0, (min[2] + max[2]) / 2).applyAxisAngle(UP, b.object.rotation.y).add(new Vector3(...at));
+      const centre = new Vector3(((min[0] + max[0]) / 2) * k, 0, ((min[2] + max[2]) / 2) * k).applyAxisAngle(UP, b.object.rotation.y).add(new Vector3(...at));
       const p = this.world([centre.x, 0, centre.z]);
-      this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: (max[0] - min[0]) / 2, hd: (max[2] - min[2]) / 2, rot: this.worldYaw() * DEG + b.object.rotation.y });
+      this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: ((max[0] - min[0]) / 2) * k, hd: ((max[2] - min[2]) / 2) * k, rot: this.worldYaw() * DEG + b.object.rotation.y });
     }
     return b;
+  }
+
+  /** A flat polygon on the ground: `points` are (x, z) in the current frame, its top at `y`, `holes` cut out of it. */
+  slab(points: readonly (readonly [number, number])[], color: PaletteColor, y: number, o: PrimOptions & { holes?: readonly (readonly (readonly [number, number])[])[] } = {}): Mesh {
+    const shape = new Shape(points.map(([x, z]) => new Vector2(x, -z)));
+    for (const h of o.holes ?? []) shape.holes.push(new Path(h.map(([x, z]) => new Vector2(x, -z))));
+    const geo = new ShapeGeometry(shape);
+    geo.rotateX(-Math.PI / 2);
+    return this.place(new Mesh(geo, mat(color)), [0, y, 0], { cast: false, ...o });
   }
 
   blockCircle(x: number, z: number, r: number): void {
@@ -200,12 +231,35 @@ export class Kit {
     this.blockers.push({ kind: 'box', x: p.x, z: p.z, hw: w / 2, hd: d / 2, rot: this.worldYaw() * DEG });
   }
 
-  /** Merge every static primitive (one mesh per material) and return the stage root. */
-  build(): Group {
+  /**
+   * Merge every static primitive (one mesh per material) and return the stage root. With `cell`,
+   * statics merge per cell it names for the centre of their bounds on the ground (x, z), and
+   * anything wider than `wide` m goes in a set of its own: a place bigger than the screen then
+   * draws only the cells in view (frustum culling works per merged mesh).
+   */
+  build(cell?: (x: number, z: number) => string, wide = 12): Group {
     const root = new Group();
     root.name = 'kit';
     this.stack[0]!.updateWorldMatrix(true, true);
-    root.add(...mergeStaticMeshes(this.statics));
+    if (cell) {
+      const cells = new Map<string, Object3D[]>();
+      const box = new Box3();
+      const c = new Vector3();
+      for (const s of this.statics) {
+        box.setFromObject(s);
+        box.getCenter(c);
+        const key = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) > wide ? 'wide' : cell(c.x, c.z);
+        let list = cells.get(key);
+        if (!list) cells.set(key, (list = []));
+        list.push(s);
+      }
+      for (const [key, list] of cells) {
+        for (const m of mergeStaticMeshes(list)) {
+          m.name = `${m.name}@${key}`;
+          root.add(m);
+        }
+      }
+    } else root.add(...mergeStaticMeshes(this.statics));
     for (const s of this.statics) (s as Mesh).geometry?.dispose();
     root.add(this.dynamics);
     return root;

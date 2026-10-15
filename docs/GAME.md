@@ -1702,8 +1702,51 @@ designed levels.
 
 ### Town (`town/`)
 
-Emberfall is data in `TOWN_LAYOUT` (screen-space metres, `iso()` maps them onto the 45° ground)
-built from primitives by `town/kit.ts` and merged to one mesh per material. Townsfolk wear the
+Emberfall is data in `TOWN_LAYOUT` (`town/layout.ts`: screen-space metres, `iso()` maps them onto
+the 45° ground, `screenOf()` back) built from primitives by `town/kit.ts` and merged to one mesh
+per material, in cells (the hub as one, the outskirts in 10 m squares: `Kit.build(cell)`), so only
+the cells in view draw. The hub is the plaza and its ring (smithy, market, tent, stash, obelisk,
+houses); around it the walkable circle (`radius`, 31 m: about 2,000 m² of open ground, four
+times the hub's) holds the **outskirts** (`town/outskirts.ts`), built mostly from the imported
+Kenney packs (docs/ASSETS.md, *Imported so far*; `loadRiftlightPacks`, `riftlight/packs.ts`,
+loads them before the town is built), with sand paths from the hub to each district:
+
+| district | where | what |
+| --- | --- | --- |
+| the Old Watch | north, behind the obelisk | a curtain wall of castle stone (`kenney-castle/wall-narrow`, the gate, stairs, two breaches of `rocks-large`) on an arc, the west tower standing with its banner, the east one broken where the rift came through: a glowing crack with crystals runs from the obelisk to it (a cyan light); a colonnade (`kenney-nature/statue-column`) up to the old gate, a wrecked catapult and ballista, the old warden's stone head, banners on the wall |
+| the tavern | north-east | a timber-framed inn (kit) with a patio: `kenney-furniture` tables and chairs, `kenney-mini-dungeon` barrels, potted plants, a lantern |
+| the stream | east | `kenney-nature` river tiles in a cut in the ground (`groundPieces`), lilies and reeds, crossed by `bridge-wood` (its deck is walkable, `Town.groundY` ramps over it; the water is not) |
+| the hunter's camp | across the stream | a tent, the library `campfire` (an orange light, embers and smoke), log seats, firewood, a canoe on the bank, the woods |
+| the watchmen's graves | south-east | low headstones in a low wall, candles, a memorial stone, a dead tree at the back |
+| the road out | south | the road through a timber gate between palisades and two watch towers, a signpost, a notice board, a cart |
+| the willow pond | south-west | a pond tile drawn 2.4 times its size in a hole in the ground, lilies, reeds, the library `willow`, a bench |
+| the farmstead | west | a fenced field of crop rows (corn, wheat, leaves, pumpkins, carrots), a red barn (kit), the library `well`, haystack, bales, log stack, cart |
+
+Past the edge the forest stands in loose rings (pack trees mixed with `tree.glb`; low kinds to the
+south, so the edge toward the camera stays in view). **The camera looks from the south**, so
+anything tall hides what stands north of it: tall pieces stand on the north side of each district
+and the south half of the town stays low (the gate is posts and a beam, the graves are low). Each
+district has a spot in `TOWN_LAYOUT.districts` (`Town.districts`, world points) where the camera
+shows the hero; `outskirts.test.ts` casts a ray from it to the camera through the merged meshes.
+
+**Walking.** Actors collide with the blockers (`Town.obstacles`: trees and posts as circles at
+the trunk, buildings, walls and furniture as boxes from `Kit.model`'s bounds, the water as boxes
+but for the bridge, a closed strip behind the Old Watch's wall) and the circle. `Town.nav()` is the
+walkable grid (`town/nav.ts`, half-metre cells, the hero's 0.35 m radius): `route(a, b)`,
+`reachable(from, points)`. `__RIFTLIGHT__.moveTo` walks it in town. The tests flood it from the
+spawn: every interactable, NPC path point, the portal spawn and district are reachable, the water
+is not, nothing walks behind the wall; the `riftlight` e2e suite walks the hero to every district
+and back.
+
+**Lights and motion.** The campfire and the rift's crack borrow lights from the pool with the
+lanterns (`activate`); their flicker, embers and smoke come from `this.time`, so the outskirts add
+no per-frame state of their own. **Add to it:** a place goes in `TOWN_LAYOUT` (its anchor and, if
+visitors walk there, a `districts` spot) and a method of `Outskirts` that places pack models with
+`m`/`put`/`trunk` (ids written in full, `kenney-nature/tree-oak`: the single-file build embeds the
+pack models the code names, and `outskirts.test.ts` checks every one exists); then capture it in
+the game, from its spot and at night (`__RIFTLIGHT__.setTimeOfDay(0.7)`), and run the town's tests.
+
+Townsfolk wear the
 hero rig with their own meshes (`npcModel.ts`) and play clips written as data (`npcClips.ts`:
 Hammer, HammerRest, Nod, Shuffle, Greet, CountCoins, Meditate, Bless, StaffIdle, Gesture; the
 villagers use the hero's Idle and Walk). `npm run anim -- check` measures them with the hero;

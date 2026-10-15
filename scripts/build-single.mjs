@@ -1,5 +1,5 @@
 // Builds dist-single/pixel-engine.html: the whole game in one self-contained file
-// (JS, Rapier's .wasm, CSS, favicon and GLB assets as data URIs). Runs offline.
+// (JS, Rapier's .wasm, CSS, favicon, GLB assets and the pack models it uses as data URIs). Runs offline.
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { build } from 'vite';
 
@@ -32,6 +32,28 @@ const assets = {};
 for (const f of await readdir(`${root}public/assets`)) {
   if (f.endsWith('.glb')) assets[`assets/${f}`] = `data:model/gltf-binary;base64,${await b64(`${root}public/assets/${f}`)}`;
 }
+
+// Imported packs the game loads (`loadPack('packs/<id>.json')`, src/riftlight/packs.ts): every pack
+// path the built code names, cut down to the models and textures it names (`<pack>/<id>`, and what
+// those `use` in turn), so a game that places forty of a pack's three hundred models embeds forty.
+const jsFile = (await readdir(`${tmp}/assets`)).find((f) => f.endsWith('.js'));
+const code = jsFile ? await readFile(`${tmp}/assets/${jsFile}`, 'utf8') : '';
+const packBytes = { full: 0, embedded: 0 };
+for (const url of new Set(code.match(/packs\/[a-z0-9-]+\.json/g) ?? [])) {
+  if (url === 'packs/index.json') continue;
+  const pack = JSON.parse(await readFile(`${root}public/${url}`, 'utf8'));
+  const named = (text) => new Set(text.match(new RegExp(`${pack.pack}/[a-z0-9-]+`, 'g')) ?? []);
+  const keep = named(code);
+  const defs = new Map([...(pack.models ?? []), ...(pack.textures ?? [])].map((d) => [d.id, d]));
+  for (const id of keep) for (const dep of named(JSON.stringify(defs.get(id) ?? {}))) keep.add(dep); // a Set iterates what it gains
+  const cut = { ...pack, models: (pack.models ?? []).filter((m) => keep.has(m.id)), ...(pack.textures ? { textures: pack.textures.filter((t) => keep.has(t.id)) } : {}) };
+  const json = JSON.stringify(cut);
+  packBytes.full += JSON.stringify(pack).length;
+  packBytes.embedded += json.length;
+  assets[url] = `data:application/json;base64,${Buffer.from(json).toString('base64')}`;
+  console.log(`  ${url}: ${cut.models.length} of ${pack.models.length} models, ${(json.length / 1024).toFixed(0)} KB`);
+}
+if (packBytes.full) console.log(`  packs: ${(packBytes.embedded / 1024).toFixed(0)} KB of ${(packBytes.full / 1024).toFixed(0)} KB embedded`);
 
 html = html.replace(/<link rel="icon" href="\/favicon.svg"[^>]*>/, () =>
   `<link rel="icon" href="data:image/svg+xml;base64,${''}__FAVICON__">`);

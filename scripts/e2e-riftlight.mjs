@@ -2,7 +2,8 @@
 // WebGL 2 fallback, driven frame-exactly through window.__RIFTLIGHT__ (Engine.step) and the
 // real keyboard path for menus:
 //
-//   title → New Run (keys) → town → walk to Vex → rift menu → level 1 (real monsters and
+//   title → New Run (keys) → town → a walk to every district of the outskirts and back
+//   (moveTo on the town's walkable grid) → walk to Vex → rift menu → level 1 (real monsters and
 //   its boss) → kill every monster, the boss too, with the basic attack (kill events, XP
 //   rising) → collect gold → clear → portal → loot window → town (autosaved) → pause →
 //   Tuning → enemy life slider (keys) → applies to live monsters (difficulty Mod source,
@@ -74,6 +75,22 @@ export async function runRiftlight(h) {
     check(rs.screen === 'town' && rs.hero.level === 1 && rs.deepest === 0, `a new run starts in town (${rs.screen}, level ${rs.hero.level})`);
     await R(() => window.__PIXEL_ENGINE__.step(30));
     await capture(page, `riftlight-${tag}-town.png`);
+
+    // ---------------------------------------------------------------- the outskirts: a walk to every district and back
+    const tour = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const town = rl.game.town;
+      const out = [];
+      for (const [id, p] of Object.entries(town.districts)) {
+        const r = rl.moveTo(p.x, p.z, { radius: 0.9, maxFrames: 1500 });
+        out.push({ id, arrived: r.arrived, frames: r.frames, at: r.state.hero.position.map((v) => +v.toFixed(1)) });
+      }
+      const home = rl.moveTo(town.spawn.x, town.spawn.z, { radius: 0.6, maxFrames: 1500 });
+      return { out, home: home.arrived };
+    });
+    for (const d of tour.out) check(d.arrived, `walks from the plaza to the ${d.id} (${d.frames} frames, at ${d.at.join(', ')})`);
+    check(tour.home, 'and back to the plaza');
+    await capture(page, `riftlight-${tag}-town-back.png`);
 
     // ---------------------------------------------------------------- town → rift keeper → level 1
     const talk = await R(() => window.__RIFTLIGHT__.talkTo('vex'));
