@@ -4,6 +4,7 @@ import { EventBus } from '../core/events';
 import type { ActorLike, GameEvents, Hit } from '../core/types';
 import { SCALING } from '../core/scaling';
 import { type Level, buildLevel } from './Level';
+import { loadRiftlightPacks } from '../packs';
 import { LabActor } from './labActors';
 import { OctaGeo } from './mechanics/common';
 import type { LevelHooks, MonsterSpawn } from './mechanics/types';
@@ -59,8 +60,9 @@ export class LevelLab implements Game {
     readonly runSeed = Number(new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('seed') ?? 1) || 1,
   ) {}
 
-  setup(ctx: GameContext): void {
+  async setup(ctx: GameContext): Promise<void> {
     this.ctx = ctx;
+    await loadRiftlightPacks(); // the props' pack models (riftlight/packs.ts)
     const spec = levelSpec(this.depth, this.runSeed);
     this.events.onAny((type, payload) => {
       if (type !== 'mechanic') return;

@@ -4,6 +4,7 @@ import { compatibleSet, MECHANICS } from './mechanics';
 import { bypassReachable } from './mechanics/common';
 import { type LevelPlan, planLevel } from './plan';
 import type { LevelSpec } from '../core/types';
+import { loadPacksSync } from '../nodePacks';
 
 /**
  * Level validation (used by `npm run level -- validate` and the unit tests). A plan passes
@@ -113,8 +114,9 @@ export function validatePlan(plan: LevelPlan, buildMs: number, maxMs = 1500): Le
   };
 }
 
-/** Plan + build geometry + validate one spec. */
+/** Plan + build geometry + validate one spec (node: the props' pack models come from `public/packs/` first). */
 export function validateSpec(spec: LevelSpec, maxMs?: number): { plan: LevelPlan; report: LevelReport } {
+  loadPacksSync();
   const t0 = typeof performance !== 'undefined' ? performance.now() : Date.now(); // real time: timing the checks
   const plan = planLevel(spec);
   buildGeometry(plan);

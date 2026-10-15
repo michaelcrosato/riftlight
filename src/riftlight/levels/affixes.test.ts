@@ -7,6 +7,9 @@ import type { GameEvents } from '../core/types';
 import { buildLevel, type Level } from './Level';
 import type { LevelHooks, MechanicElement } from './mechanics/types';
 import { levelSpec } from './rift';
+import { loadPacksSync } from '../nodePacks';
+
+loadPacksSync(); // the props' pack models (riftlight/packs.ts)
 
 /**
  * Loot that bends level mechanics: every mechanic affix and unique flag changes what its

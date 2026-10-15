@@ -1253,7 +1253,19 @@ prop with fire sets `flame`: its flame faces the camera (docs/ASSETS.md, *Fire f
 so `'fixed'` keeps a round prop unturned and a param name (the wall torch's `turn`) hands the prop's
 turn to a model that turns its flame back. A missing model is a new library entry first
 (`src/engine/model/library/`). Seeded models vary per prop (each gets its own seed from the level's
-rng). Props are picked by `weight` (lanterns and glowcaps weigh more and candles less, so a theme's
+rng). **Pack variants:** a prop may also wear an imported pack's model in the themes that read
+better with it (`variants`: the model, its odds against the prop's own, the designed theme ids, a
+`bind` with the theme's tints and a size; `propModels(def, theme)` lists them): Mini Dungeon barrels,
+chests, columns, pots and stones in the forge, the crypt, the cathedral and the ruins; Nature
+stones, rocks, pines, bushes, stumps, logs, mushrooms, flowers, a sign and statues in the cliffs,
+the jungle, the swamp, the peaks and the caverns; the Castle kit's war pennant for the banner. Each
+prop picks from its own stream after its seed (`buildProp`), so the plan is untouched: the same
+cells hold the same props, block the same cells and keep the bypass guarantee, and a level looks
+the same every time it's built from the same seed. A variant's palette binds the pack's shared
+slots (`dungeonStone`, `natureStone`, `natureLeaves`), cut to the slots the model has (`fitSlots`).
+The packs load before a level is built (`loadRiftlightPacks`; `validateSpec` loads them in node), and
+`props.test.ts` holds every variant of a blocking prop to its cell like the prop's own model.
+Props are picked by `weight` (lanterns and glowcaps weigh more and candles less, so a theme's
 lighting holds as it gains kinds); a theme naming a prop with no `PropDef` throws. Blocking props
 only land where all 8 neighbours are open floor (a single blocked cell can't cut a path) and never
 on the critical path; actors collide with that one cell, so nothing of a blocking prop below 1.8 m
