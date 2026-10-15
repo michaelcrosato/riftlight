@@ -25,7 +25,7 @@
 //                 with zero errors; every look renders; per-layer looks change only their
 //                 layer (pixel characters on a clean world, a grade on the environment only);
 //                 sliders don't rebuild the graph; Raw 3D mode bypasses filters.
-// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⚙ panel, and the
+// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⓘ debug panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
 //                 GPU device is recovered with a working renderer;
@@ -73,6 +73,9 @@
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials and a textured model (built and merged),
 //                 engine.dispose().
+// settings        the player's settings (scripts/e2e-settings.mjs): no engine hotkeys without
+//                 ?debug=1; the ⚙ panel pauses the game and every control changes the engine; the
+//                 choices are saved per game, a URL review flag wins at start, Reset undoes them.
 //
 // riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs):
 //                 the arcade cabinet (swoop in, side camera + CRT, the scripted run to the flag,
@@ -113,6 +116,7 @@ import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlight } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
+import { runSettings } from './e2e-settings.mjs';
 import { runSystems } from './e2e-systems.mjs';
 import { runRiftlightLoot } from './e2e-riftlight-loot.mjs';
 import { runRiftlightLevels } from './e2e-riftlight-levels.mjs';
@@ -823,7 +827,7 @@ async function runTouch(browserExe) {
     const { page, logs } = ctx;
     check(await page.locator('.touch-ui .stick').isVisible(), 'joystick visible');
     check((await page.locator('.touch-ui .pad button').count()) >= 6, 'action buttons visible');
-    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display === 'none'), 'debug panel starts hidden behind ⚙');
+    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display === 'none'), 'debug panel starts hidden behind ⓘ');
 
     // Joystick: drag up (forward) from its centre.
     const stick = await page.locator('.touch-ui .stick').boundingBox();
@@ -861,11 +865,11 @@ async function runTouch(browserExe) {
     await until(page, (e, yaw0) => Math.abs(e.camera.describe().yaw - yaw0) > 0.3, yaw0, 3);
     check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'dragging the game orbits the camera');
 
-    // ⚙ shows the debug panel.
+    // ⓘ shows the debug panel.
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerdown');
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerup');
     await until(page, () => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none', null, 3);
-    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none'), '⚙ opens the debug panel');
+    check(await page.evaluate(() => getComputedStyle(document.querySelector('.debug-ui')).display !== 'none'), 'ⓘ opens the debug panel');
     await capture(page, 'touch-landscape.png');
 
     // The runtime API a game drives its buttons with: state, rects, show/hide.
@@ -1533,6 +1537,7 @@ const SUITES = {
     const helpers = { exe, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT };
     await runSystems({ ...helpers, scenario: SCENARIOS[0] });
   },
+  settings: (exe) => runSettings({ exe, scenario: SCENARIOS[0], openPage, ready, until, check, state, waitFrames, checkClean, OUT }),
   'riftlight-loot': async (exe) => {
     const helpers = { exe, openPage, check, capture, checkClean, encodePng, OUT };
     await runRiftlightLoot({ ...helpers, scenario: SCENARIOS[0] });
@@ -1572,7 +1577,7 @@ const SUITES = {
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
 // Every suite must be in exactly one group, or CI would silently skip it.
 const GROUPS = {
-  '@core': ['webgpu', 'no-webgpu', 'touch', 'phone', 'fullscreen', 'moves', 'riftlight', 'riftlight-combat'],
+  '@core': ['webgpu', 'no-webgpu', 'touch', 'phone', 'fullscreen', 'moves', 'settings', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
   '@world': ['world', 'riftlight-replay', 'riftlight-snapshot'],

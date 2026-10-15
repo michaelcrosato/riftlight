@@ -601,7 +601,7 @@ export interface MonsterLabApi {
 
 const container = document.getElementById('app')!;
 const lab = new MonsterLab();
-Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined })
+Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined, settings: { button: false, key: false } })
   .then((engine) => {
     ui(engine, lab);
     const api: MonsterLabApi = {

@@ -83,7 +83,7 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   zoom (not in first person). In `free` mode press Enter to fix the view and get a config.
   The debug UI's picker switches presets live and leaves the player where they are.
 - **Looks:** 35 TSL filters, including the console eras `8bit`, `16bit` and `ps1` (with
-  vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, and `[` `]` to cycle.
+  vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, or the ⚙ settings' Look.
 - **Models:** props and dressing are data (`ModelDef`: keyed primitives, palette slots, params),
   compiled to toon meshes; `npm run model` checks and draws them, the **Asset Lab**
   (`/asset-lab.html`) shows them in the real renderer. Pixel-art textures are data too
@@ -96,13 +96,18 @@ ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull bl
   real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See
   [`docs/ANIMATION.md`](docs/ANIMATION.md).
 - **Game systems:** procedural retro **sound effects** and a chiptune **music** sequencer
-  (both data; M mutes, volumes persist), pixel **particles** (dust, skid, sparkle, smoke,
+  (both data; volumes persist), pixel **particles** (dust, skid, sparkle, smoke,
   impact), crisp **pixel HUD** text, **trigger volumes** with enter/exit callbacks (the
   coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
   **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
   second demo level.
-- **Also:** P Pixel ↔ Raw 3D · R 480×270 ↔ 320×180 (Riftlight moves these to F8 / F7, Engine World's Time Lab R to F7) · ~ debug UI (on by default in dev, or
-  `?debug=1`) · M mute. Hotkeys are configurable (`EngineOptions.debugKeys`).
+- **Settings:** the ⚙ button (top right; with a mouse it shows while the pointer moves) opens the
+  player's settings: look, pixel art or smooth 3D, pixel size, quality, frame rate, sound and debug
+  info, saved per game (`engine.settings`). Riftlight has them in its own menu (Esc → Settings →
+  Engine).
+- **Hotkeys**, developer tools, on only in dev or with `?debug=1`: P Pixel ↔ Raw 3D · R 480×270 ↔
+  320×180 (Riftlight moves these to F8 / F7, Engine World's Time Lab R to F7) · ~ debug UI · [ ]
+  looks · M mute (`EngineOptions.debugKeys`).
 - **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
   (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
 - **Gamepads:** left stick moves, right stick looks, A jump · B crouch · X attack · Y grab ·

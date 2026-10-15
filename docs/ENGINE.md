@@ -281,9 +281,9 @@ a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
 
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
 joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·
-**X** lie down; drag on the game to orbit/look, pinch to zoom; top bar ⚙ debug panel,
-**P** Pixel/Raw, **R** resolution, **◐** cycle looks, **♪** mute (`TouchControls`, `input.analog`;
-the buttons are `EngineOptions.touchButtons`).
+**X** lie down; drag on the game to orbit/look, pinch to zoom; ⚙ the settings; with the hotkeys
+on (`?debug=1`) a top bar: ⓘ debug panel, **P** Pixel/Raw, **R** resolution, **◐** cycle looks,
+**♪** mute (`TouchControls`, `input.analog`; the buttons are `EngineOptions.touchButtons`).
 Landscape works best.
 
 A game lays out and drives its own buttons (Riftlight's action cluster, `src/riftlight/game/touch.ts`):
@@ -459,7 +459,7 @@ ctx.audio.register('laser', {
 ctx.audio.playMusic(MY_SONG, 'level1');          // loops; playMusic(null) stops
 await ctx.audio.load('door', 'assets/door.ogg'); // optional audio files, then play('door')
 ctx.audio.setVolume('music', 0.4);               // 'master' | 'sfx' | 'music', persisted (not during a replay)
-ctx.audio.toggleMute();                          // also the M key and the debug panel button
+ctx.audio.toggleMute();                          // also the settings' Sound box (and, with ?debug=1, M)
 ```
 
 Built-in SFX: `jump`, `doubleJump`, `land`, `coin`, `step`, `skid`, `punch`, `groundPound`,
@@ -1272,8 +1272,9 @@ rewind.rewinding = input.isDown('KeyR');             // per step or frame; rewin
 `physics/rewind.ts` records every tracked body's position, rotation, velocities and sleep after
 each physics step in a ring buffer; while `rewinding`, each step shows the record one step
 older instead (holding at the oldest), and letting go carries on with that moment's velocities
-(a body that slept then sleeps again). R is the engine's resolution hotkey by default: move it
-(`engine.debugKeys = { ...engine.debugKeys, resolution: ['F7'] }`, as the Time Lab does).
+(a body that slept then sleeps again). With the hotkeys on (`?debug=1`) R is the engine's
+resolution key: move it (`engine.debugKeys = rebindDebugKeys(engine.debugKeys, { resolution: 'F7' })`,
+as the Time Lab does).
 
 Step listeners (`physics.onStep(f)`) run after each step in the order they were added, and all
 of them before bound meshes (`bind`) read their bodies, so a body a listener moves is drawn
@@ -1413,14 +1414,38 @@ set like every toon material; the colour is a uniform, so every rim colour share
 ```ts
 Engine.start(game, {
   debugUI: false,                              // default: on in dev (vite) or with ?debug=1
-  debugKeys: { resolution: 'F2', mute: null }, // rebind / disable; `false` = no hotkeys at all
+  debugKeys: { resolution: 'F2', mute: null }, // with the debug panel: R on F2, no mute key (true / false: always on / off)
+  settings: { button: 'top-left', key: 'my-game' }, // the ⚙'s corner (false: none) and where the settings are saved
   touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
-  touchBar: false,                             // no ⚙ P R ◐ ♪ bar on phones unless ?debug=1
+  touchBar: false,                             // no ⓘ P R ◐ ♪ hotkey bar on phones unless ?debug=1
 });
 ```
 
-Default hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the
-panel on demand) · `nextLook` ] · `prevLook` [ · `mute` M. The touch top bar follows them.
+The hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the panel on
+demand) · `nextLook` ] · `prevLook` [ · `mute` M. They are developer tools: on with the debug
+panel (dev, `?debug=1`), off in a shipped game; `debugKeys: true` / `false` turns them on / off
+always, and an object only moves or drops keys. A game with its own use for one of the keys
+moves it at runtime with `rebindDebugKeys(engine.debugKeys, { resolution: 'F7' })`, which leaves
+keys that are off off. The touch top bar follows them, and the debug panel lists the ones on.
+
+### Player settings
+
+`engine.settings` holds the player's picture and engine options as plain data (`PlayerSettings`:
+look, pixel art, pixel size, quality, frame rate, debug info; sound is `audio`'s), applies them
+over the game's own choices and saves them per game in localStorage
+(`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false` for none).
+A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all of them.
+A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
+`?debug=`) wins over a saved value at start (which stays saved), and a chosen look wins over each
+new level's own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none.
+The settings panel (`SettingsPanel`, DOM like the debug panel) shows them with the volumes; the
+⚙ button opens it (`settings.button`: a corner, default top-right, shown on a mouse only while
+the pointer moves; `false`: none, so a game opens it from its own menu with
+`engine.settings.open()`). Open, it pauses the game, and keys pressed in it never reach the game;
+Escape or Done closes it. It stays shut while a replay plays; a replay never saves settings
+(`persist`) and puts the player's back when it ends. Riftlight has them in its own Settings menu:
+look, quality and the volumes on its page, the rest on its Engine page. Engine World's tweak
+panel (T) sets the same look, pixel art and quality.
 
 ## Animation
 
@@ -1482,7 +1507,7 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   engine hotkeys (P, R, `, [ ], M); it only advances the game. `capture()` always shows the
   current state: it starts a fresh node frame, so the scene pass re-renders even when the
   loop already rendered in this animation frame (otherwise passes render once per frame).
-- `?debug=1` shows the debug panel in a production build (it is on by default only in dev);
+- `?debug=1` shows the debug panel and turns the engine hotkeys on in a production build (both are on by default only in dev);
   `` ` `` creates it on demand. `?game=playground` / `?game=sandbox` open the engine demos (`/` is Riftlight).
 - `engine.audio.counts` / `.log` (sounds played, even when silent), `engine.particles.alive`,
   `engine.physics.counts()`, `engine.hud.canvas`, `engine.input.queuedPresses`.
@@ -1521,6 +1546,9 @@ const knee = twoBoneIK(hip, legs.feet[0].at, thigh, shin, pole);
   - `systems` (`scripts/e2e-systems.mjs`, in the `@filters` group): HUD framing, audio unlock and
     hero sounds, particles, coin triggers, gamepad, pause, hotkeys, `loadGame` without leaks,
     textured toon materials, `dispose()`
+  - `settings` (`scripts/e2e-settings.mjs`, `@core`): no hotkeys without `?debug=1`, the ⚙ and
+    its panel (every control, keys kept from the game, Look off in smooth 3D), the choices saved
+    and applied at the next start, a review flag winning, Reset, shut while a replay plays
 
   Frames are written to `.scratch/e2e/*.png`. It runs headless, no display needed: with ANGLE
   on SwiftShader too, Chromium keeps WebGPU on SwiftShader's Vulkan and presents

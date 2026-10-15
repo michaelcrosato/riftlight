@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Bone, BoxGeometry, DataTexture, Group, Mesh, MeshBasicMaterial, MeshBasicNodeMaterial, Scene, Skeleton, SkinnedMesh } from 'three/webgpu';
 import { texture, uv } from 'three/tsl';
-import { DEFAULT_DEBUG_KEYS, resolveDebugKeys } from './debugKeys';
+import { DEFAULT_DEBUG_KEYS, hotkeyHelp, rebindDebugKeys, resolveDebugKeys, startingDebugKeys } from './debugKeys';
 import { clearScene, countObjects, disposeObject } from './lifecycle';
 import { toonMaterial } from './render/toon';
 
@@ -55,13 +55,45 @@ describe('level lifecycle helpers', () => {
 });
 
 describe('debug keys', () => {
-  it('defaults, overrides, disables one or all', () => {
-    expect(resolveDebugKeys()).toEqual(DEFAULT_DEBUG_KEYS);
+  const none = (k: Record<string, readonly string[]>) => Object.values(k).every((v) => v.length === 0);
+
+  it('none unless asked for; true is the defaults; an object turns them on with its changes', () => {
+    expect(none(resolveDebugKeys())).toBe(true); // a shipped game's: the engine passes true in debug mode
+    expect(none(resolveDebugKeys(false))).toBe(true);
+    expect(resolveDebugKeys(true)).toEqual(DEFAULT_DEBUG_KEYS);
     const k = resolveDebugKeys({ resolution: 'F2', mute: null, debug: ['Backquote', 'F1'] });
     expect(k.resolution).toEqual(['F2']);
     expect(k.mute).toEqual([]);
     expect(k.debug).toEqual(['Backquote', 'F1']);
     expect(k.mode).toEqual(['KeyP']);
-    expect(Object.values(resolveDebugKeys(false)).every((v) => v.length === 0)).toBe(true);
+  });
+
+  it('a game rebinds the keys that are on and never turns the off ones on', () => {
+    const on = rebindDebugKeys(resolveDebugKeys(true), { mode: 'F8', resolution: 'F7' });
+    expect(on.mode).toEqual(['F8']);
+    expect(on.resolution).toEqual(['F7']);
+    expect(on.mute).toEqual(['KeyM']);
+    expect(none(rebindDebugKeys(resolveDebugKeys(), { mode: 'F8', resolution: 'F7' }))).toBe(true);
+    // one action off stays off while the others move
+    const partly = rebindDebugKeys(resolveDebugKeys({ resolution: null }), { mode: 'F8', resolution: 'F7' });
+    expect(partly.resolution).toEqual([]);
+    expect(partly.mode).toEqual(['F8']);
+  });
+
+  it("a game's option: true / false decide; left out or an object, the keys come with the debug panel", () => {
+    expect(startingDebugKeys(undefined, true)).toEqual(DEFAULT_DEBUG_KEYS);
+    expect(none(startingDebugKeys(undefined, false))).toBe(true);
+    expect(startingDebugKeys(true, false)).toEqual(DEFAULT_DEBUG_KEYS);
+    expect(none(startingDebugKeys(false, true))).toBe(true);
+    // the old way to free R for a game: it moves the key, and a shipped game still has none
+    expect(startingDebugKeys({ resolution: 'F2' }, true).resolution).toEqual(['F2']);
+    expect(none(startingDebugKeys({ resolution: 'F2' }, false))).toBe(true);
+  });
+
+  it('the debug panel lists only the keys that are on, under their keys', () => {
+    expect(hotkeyHelp(resolveDebugKeys(true))).toBe('P mode · R res · [ ] looks · M mute · ~ hide');
+    expect(hotkeyHelp(rebindDebugKeys(resolveDebugKeys(true), { mode: 'F8', resolution: 'F7', nextLook: null }))).toBe('F8 mode · F7 res · [ looks · M mute · ~ hide');
+    expect(hotkeyHelp(resolveDebugKeys({ debug: ['Backquote', 'F1'], mute: 'Digit0' }))).toContain('0 mute · ~/F1 hide');
+    expect(hotkeyHelp(resolveDebugKeys())).toBe('');
   });
 });

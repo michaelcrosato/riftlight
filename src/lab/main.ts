@@ -373,7 +373,7 @@ export interface LabApi {
 
 const container = document.getElementById('app')!;
 const lab = new AnimationLab();
-Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined })
+Engine.start(lab, { container, ...optionsFromUrl(), filters: [], look: undefined, settings: { button: false, key: false } })
   .then((engine) => {
     ui(engine, lab);
     const api: LabApi = {

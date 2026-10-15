@@ -207,9 +207,13 @@ const engine = await Engine.start(new MyGame(), withUrlOptions({  // + review fl
 await engine.loadGame(new Level2());     // next level: same renderer, camera, input, audio
 ```
 
-Shipping options: `debugUI: false` is the default outside `?debug=1`; `debugKeys: false`
-turns off the engine hotkeys (P, R, \`, [, ], M); `touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }]`
-replaces the on-screen buttons, `touchBar: false` hides the touch tool bar.
+Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
+`?debug=1`. Players get those options in the settings panel instead (look, pixel art, pixel size,
+quality, frame rate, sound, debug info; saved per game): the ⚙ button opens it, top right
+(`settings: { button: 'top-left' }` moves it; `false` hides it, for a game that opens it from its
+own menu with `engine.settings.open()`). A game that uses R, P or M itself moves that hotkey for
+`?debug=1` with `debugKeys: { resolution: 'F2' }`. `touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }]`
+replaces the on-screen buttons.
 `loadGame` can be called from anywhere (a trigger, `update`); the swap happens after the
 frame. It unloads the old game: scene objects, physics, triggers, particles, HUD, music and
 lights are freed, so a level never leaks into the next.
@@ -366,7 +370,7 @@ const pool = new BulletPool(3000);                         // emitter({ pattern:
 
 ```js
 ctx.camera.rayAt(ctx.engine.input.pointer.x, ctx.engine.input.pointer.y, origin, dir); // then ctx.physics.castRay(origin, dir, 1000)
-const rewind = new Rewind(ctx.physics, { seconds: 5 }); // rewind.trackAll(); per step: rewind.rewinding = input.isDown('KeyR') (move the engine's R hotkey: debugKeys)
+const rewind = new Rewind(ctx.physics, { seconds: 5 }); // rewind.trackAll(); per step: rewind.rewinding = input.isDown('KeyR')
 ```
 
 ### Procedural generation
@@ -1003,7 +1007,7 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
 | A model 404s | path not relative to the page | `assets/x.glb` next to `index.html`; built-ins need no file |
 | HUD text shows gaps | characters the 5×7 font doesn't have | uppercase letters, digits, common punctuation |
 | A key does nothing in `fixedUpdate` | `wasPressed` there | `consumePress` in `fixedUpdate`, `wasPressed` in `update` |
-| R, P or M also changes the picture or mutes | the engine's hotkeys (P, R, \`, [, ], M) are on by default; scripted frames (`step()`, `check.mjs --keys`) never fire them | `debugKeys: false` in `Engine.start`, or move one: `debugKeys: { resolution: 'F2' }` |
+| The ⚙ sits over the HUD's top-right corner on a phone | the settings button (on a mouse it shows only while the pointer moves) | `settings: { button: 'top-left' }`, or `false` and `engine.settings.open()` from your own menu |
 | Side-scroller hero drifts off the lane | `lockDepth` not passed | `lockDepth: ctx.camera.lockDepth` |
 | The camera doesn't follow | `cameraTarget` returns nothing before `setup` ends | return a fallback vector (see the quick start) |
 | Slow, low fps | hundreds of separate meshes | `mergeStaticMeshes` the static level; share materials (`toonMaterial` caches) |
@@ -1034,8 +1038,9 @@ e.audio.counts; e.particles.alive; e.physics.counts(); e.hud.canvas;
 URL flags (with `withUrlOptions` in `Engine.start`): `?debug=1` (debug panel),
 `?look=noir`, `?filters=crt,scanlines`,
 `?camera=third`, `?zoom=1.5`, `?mode=raw` (no pixel pass), `?res=320`, `?touch=1`,
-`?quality=low`, `?fps=30`, `?seed=7` (`ctx.random`). Hotkeys: P pixel/raw, R resolution, \` debug panel,
-[ and ] cycle looks, M mute.
+`?quality=low`, `?fps=30`, `?seed=7` (`ctx.random`); they win over the player's saved settings
+(`e.settings.values`). Hotkeys, with `?debug=1`: P pixel/raw, R resolution, \` debug panel, [ and ]
+cycle looks, M mute.
 
 **`check.mjs` plays a page in a real browser** and fails on anything wrong:
 

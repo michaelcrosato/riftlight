@@ -1,4 +1,5 @@
 import { CAMERA_PRESETS, type CameraPreset, type CameraRig, FreeRig } from './camera';
+import { type DebugKeyMap, hotkeyHelp } from './debugKeys';
 import type { Engine } from './Engine';
 import { RESOLUTIONS } from './framing';
 import { FILTERS } from './render/filters';
@@ -24,6 +25,7 @@ export class DebugUI {
   private syncedRig: CameraRig | null = null;
   private syncedFixed: boolean | null = null;
   private syncedZoom = 0;
+  private syncedKeys: DebugKeyMap | null = null;
   visible = true;
 
   constructor(private readonly engine: Engine) {
@@ -42,12 +44,12 @@ export class DebugUI {
       <div class="row"><span>GPU errors</span><b data-f="errors"></b></div>
       <div class="row game" data-f="game"></div>
       <div class="buttons">
-        <button data-a="mode" title="P">Pixel / Raw 3D</button>
-        <button data-a="res" title="R">480 / 320</button>
-        <button data-a="mute" title="M">Sound</button>
+        <button data-a="mode" title="Pixel art or smooth 3D">Pixel / Raw 3D</button>
+        <button data-a="res" title="The art resolution">480 / 320</button>
+        <button data-a="mute" title="Sound on or off">Sound</button>
       </div>
       <div class="row"><span>Camera preset</span><select data-a="camera" title="Swaps the camera; the player stays where they are">${presets}</select></div>
-      <div class="row"><span>Look</span><select data-a="look" title="[ and ] cycle">${looks}<option value="">custom</option></select></div>
+      <div class="row"><span>Look</span><select data-a="look" title="A look preset">${looks}<option value="">custom</option></select></div>
       <details><summary>Filters</summary><div class="filters">${filters}</div></details>
       <div class="fixed" data-f="fixed"></div>
       <div class="keys" data-f="keys"></div>`;
@@ -125,19 +127,19 @@ export class DebugUI {
     }
 
     const fixed = c instanceof FreeRig ? c.fixed : null;
-    if (c !== this.syncedRig || fixed !== this.syncedFixed || c.zoom !== this.syncedZoom) {
+    if (c !== this.syncedRig || fixed !== this.syncedFixed || c.zoom !== this.syncedZoom || e.debugKeys !== this.syncedKeys) {
       this.syncedRig = c;
       this.syncedFixed = fixed;
       this.syncedZoom = c.zoom;
+      this.syncedKeys = e.debugKeys;
       if (c instanceof FreeRig) {
         this.set('fixed', c.fixed ? `Fixed ✓ config: ${JSON.stringify(c.fixedConfig())}` : 'Free camera: WASD fly · Q/E down/up · drag/click to look · Shift fast · wheel FOV · Enter = fix');
       } else this.set('fixed', '');
       const camKeys =
         c.preset === 'first' ? 'click = mouse look · Q/E turn' : c.preset === 'third' ? 'drag or Q/E orbit · wheel/+/- zoom' : c.zoomable ? 'wheel/+/- zoom' : '';
-      this.set(
-        'keys',
-        `WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit · ${camKeys} · P mode · R res · [ ] looks · M mute · ~ hide`,
-      );
+      // only the hotkeys that are on: none in a shipped game, moved ones under their new keys
+      const moves = 'WASD move · Shift walk · Space jump · C crouch · Z prone · X lie down · F grab/pull · J attack · V wave · B sit';
+      this.set('keys', [moves, camKeys, hotkeyHelp(e.debugKeys)].filter(Boolean).join(' · '));
     }
   }
 

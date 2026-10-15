@@ -5,7 +5,7 @@ import ts from 'typescript';
 
 /** Sections in reading order: [title, matcher on the declaring file (relative to src/)]. */
 const SECTIONS = [
-  ['Engine and games', /^(engine\/(Engine|version|lifecycle|LoadingScreen|quality|framing|debugKeys|DebugUI)\.ts|bundle\.ts)$/],
+  ['Engine and games', /^(engine\/(Engine|version|lifecycle|LoadingScreen|quality|framing|debugKeys|DebugUI|settings|SettingsPanel)\.ts|bundle\.ts)$/],
   ['Camera', /^engine\/camera\.ts$/],
   ['Rendering, looks and filters', /^engine\/render\/(PixelRenderer|look|lookLayer|filters|webgpuCompat)\.ts$/],
   ['Materials, meshes and lights', /^engine\/(render\/(toon|merge|ContactShadow|lights)|palette)\.ts$/],

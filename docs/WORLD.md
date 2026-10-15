@@ -11,7 +11,7 @@ complete, small example of an engine system, written to be copied.
 | --- | --- |
 | WASD, Space, C, J, F, Z... | the hero's whole moveset (docs/ENGINE.md, *Characters*) |
 | **H** (F1) | how it works: the room's station guide |
-| **T** | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound) |
+| **T** | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound; look, pixel art and quality are the player's settings, saved like the ⚙ panel's) |
 | **G** (F2) | go to any room |
 | **I** | the room's card again |
 | **Esc** | menu: field guide, back to the Atrium, reset the room |

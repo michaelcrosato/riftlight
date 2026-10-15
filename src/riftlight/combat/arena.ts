@@ -1,6 +1,6 @@
 import { BoxGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { ContactShadow, mergeStaticMeshes, toonMaterial, type Game, type GameContext } from '../../engine';
-import { resolveDebugKeys, type DebugKeyMap } from '../../engine/debugKeys';
+import { rebindDebugKeys, type DebugKeyMap } from '../../engine/debugKeys';
 import { PALETTE } from '../../engine/palette';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
 import { flat } from '../core/mods';
@@ -115,9 +115,9 @@ export class Arena implements Game {
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics } = ctx;
-    // R is a skill key here: move the resolution hotkey to F2; pad buttons to the ARPG layout
+    // R is a skill key here: move the resolution hotkey (when on) to F2; pad buttons to the ARPG layout
     this.savedInput = { keys: ctx.engine.debugKeys, pad: { ...ctx.input.gamepadButtons } };
-    ctx.engine.debugKeys = resolveDebugKeys(HERO_DEBUG_KEYS);
+    ctx.engine.debugKeys = rebindDebugKeys(ctx.engine.debugKeys, HERO_DEBUG_KEYS);
     ctx.input.gamepadButtons = { ...HERO_GAMEPAD_BUTTONS };
 
     const s = ARENA.size;

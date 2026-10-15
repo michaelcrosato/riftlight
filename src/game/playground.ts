@@ -39,7 +39,7 @@ import { HERO_RIG } from './hero/rig';
  *
  * Game systems on show: coins are trigger volumes (physics.trigger), hero moves play
  * retro sound effects and kick up pixel particles (detected from hero.stats / state /
- * anim in fixedUpdate, see heroEvents), a chiptune loops (M mutes), and the coin counter
+ * anim in fixedUpdate, see heroEvents), a chiptune loops (the ⚙ settings mute it), and the coin counter
  * is pixel HUD text.
  */
 
@@ -293,7 +293,7 @@ export class Playground implements Game {
     this.heroModel.visible = !ctx.camera.hidesTarget;
     this.seen = { ...this.seen, jumps: this.hero.stats.jumps, landings: this.hero.stats.landings };
 
-    // Starts once the browser allows sound (first key / tap); M mutes.
+    // Starts once the browser allows sound (first key / tap).
     ctx.audio.playMusic(PLAYGROUND_SONG, 'playground');
   }
 

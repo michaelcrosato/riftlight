@@ -8,6 +8,29 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.40.0
+
+- **No engine hotkeys in a shipped game.** P, R, \`, [ ], M are developer tools: on with the debug
+  panel (the dev server, `?debug=1`), off otherwise. `debugKeys: true` / `false` turns them on /
+  off always; an object (`DebugKeyChanges`: `{ resolution: 'F2' }`) still moves or drops single
+  keys, and no longer turns them on. `resolveDebugKeys()` with nothing now gives none (`true`: the
+  defaults), and `rebindDebugKeys(keys, changes)` moves only the keys that are on, so a game that
+  moves R off its own key at runtime never turns the hotkeys back on. The debug panel lists only
+  the hotkeys that are on, under their keys, and the touch bar's debug button is ⓘ (⚙ is the
+  settings).
+- **Player settings** (`engine.settings`, `PlayerSettings`): look, pixel art or smooth 3D, pixel
+  size, quality, frame rate and debug info, as plain data saved per game (`EngineOptions.settings.key`,
+  default the first game's name) and applied over the game's own choices. A field left out is the
+  game's; `set`, `reset`, `replace`, `values`, `onChange`. A review flag in the URL wins over a
+  saved value at start (which stays saved), and a chosen look wins over each new level's own. A
+  replay saves nothing and puts the player's settings back when it ends.
+- **The settings panel**, with the sound volumes, opens from the ⚙ button (`settings.button`: a
+  corner, default top-right; on a mouse it shows while the pointer moves; `false` for none) or
+  `engine.settings.open()`. It pauses the game while open, keys pressed in it never reach the
+  game, and it stays shut while a replay plays. Its Look is off while pixel art is: smooth 3D
+  draws no look. Also `engine.useQuality(option)` (`auto`: the device's level, lowered once by a
+  measurement), `engine.showDebug(on)`, `engine.debugShown` and `audio.resetVolumes()`.
+
 ## 0.39.0
 
 The kit as GitHub Releases. No API change.
