@@ -1,8 +1,10 @@
 // Model workbench: how agents check, look at and compare models (ModelDefs, docs/ASSETS.md)
 // without a browser. Run through tsx:  npm run model -- <command> [...]
 //
-//   check [id...]              problems (exit 1) and warnings for every model, at every param's
-//                              min and max and 3 seeds; a table of tris, draws, materials, size
+//   check [id...] [--all]      problems (exit 1) and warnings for every model, at every param's
+//                              min and max and 3 seeds; a table of tris, draws, materials, size:
+//                              of named models or --all, else only the library's not ok (packs: a
+//                              line each), then each problem again as `✘ <id>: <problem>`
 //   sheet <id> [opts]          PNG → .scratch/model/<id>.png: 8-angle turntable, front / side / top
 //                              on a 0.1 m grid with dimensions, the game-scale previews (Riftlight's
 //                              iso camera at the level and town zooms, x4), palette, warnings
@@ -287,12 +289,13 @@ function cmdCheck(ids: string[]): void {
   // no ids: the library and every pack (each pack's models in a catalog of their own); a pack
   // file's own problems (its licence as a pack, models that don't name it) come first
   const packList = ids.length ? (PACK_TARGET ? [PACK_TARGET] : []) : packs();
-  const targets = ids.length ? ids.map((id) => ({ def: CATALOG.get(id), catalog: CATALOG })) : [...CATALOG.all().map((def) => ({ def, catalog: CATALOG })), ...packList.flatMap((p) => {
+  const targets: { def: ModelDef; catalog: ModelCatalog; pack?: string }[] = ids.length ? ids.map((id) => ({ def: CATALOG.get(id), catalog: CATALOG, pack: PACK_TARGET?.pack })) : [...CATALOG.all().map((def) => ({ def, catalog: CATALOG })), ...packList.flatMap((p) => {
     const catalog = packCatalog(p);
-    return p.models.map((def) => ({ def, catalog }));
+    return p.models.map((def) => ({ def, catalog, pack: p.pack }));
   })];
   const o = parseOptions();
   const results = targets.map((t) => checkModel(t.def, { ...(ids.length ? o : {}), catalog: t.catalog }));
+  const packOf = new Map(results.map((r, i) => [r, targets[i]!.pack]));
   const packChecks = packList.map((p) => ({ pack: p.pack, models: p.models.length, problems: packProblems(p) }));
   // the index lists every pack file as it is (games and the Asset Gallery find packs through it)
   if (!ids.length) packChecks.push({ pack: 'index', models: 0, problems: packIndexProblems() });
@@ -300,23 +303,32 @@ function cmdCheck(ids: string[]): void {
   if (json) {
     console.log(JSON.stringify({ ms: Math.round(ms), models: results, packs: packChecks }, null, 2));
   } else {
-    console.log(`${'model'.padEnd(16)} ${'tris'.padStart(5)} ${'draws'.padStart(5)} ${'mats'.padStart(4)}  size (m)            status`);
-    for (const r of results) {
+    // The whole table for named models or --all; otherwise only what needs a look: library models
+    // with problems or warnings, pack models with problems (their warnings are the source's, not
+    // ours to fix), one line per pack, and the problems again at the end, where a tail finds them.
+    const full = ids.length > 0 || flags.has('all');
+    const rows = full ? results : results.filter((r) => r.problems.length || (r.warnings.length && !packOf.get(r)));
+    if (rows.length) console.log(`${'model'.padEnd(16)} ${'tris'.padStart(5)} ${'draws'.padStart(5)} ${'mats'.padStart(4)}  size (m)            status`);
+    for (const r of rows) {
       const m = r.metrics;
       const status = r.problems.length ? `${r.problems.length} problem(s)` : r.warnings.length ? `${r.warnings.length} warning(s)` : 'ok';
       console.log(`${r.id.padEnd(16)} ${String(m?.tris ?? '-').padStart(5)} ${String(m?.draws ?? '-').padStart(5)} ${String(m?.materials ?? '-').padStart(4)}  ${(m ? m.bounds.size.map(fmt).join(' x ') : '-').padEnd(19)} ${status}`);
       for (const p of r.problems) console.log(`  x ${p}`);
-      for (const w of r.warnings) console.log(`  ! ${w}`);
+      if (full || !packOf.get(r)) for (const w of r.warnings) console.log(`  ! ${w}`);
     }
     // pack files: their own problems (licence as a pack, models naming it), apart from the models'
     for (const p of packChecks) {
-      console.log(`${p.pack === 'index' ? 'public/packs/index.json' : `pack ${p.pack} (${p.models} model(s))`}: ${p.problems.length ? `${p.problems.length} problem(s)` : 'ok'}`);
+      const mine = results.filter((r) => packOf.get(r) === p.pack);
+      const models = p.pack === 'index' ? '' : ` (${p.models} model(s), ${mine.filter((r) => r.problems.length).length} with problems, ${mine.filter((r) => r.warnings.length).length} with warnings)`;
+      console.log(`${p.pack === 'index' ? 'public/packs/index.json' : `pack ${p.pack}`}${models}: ${p.problems.length ? `${p.problems.length} problem(s)` : 'ok'}`);
       for (const x of p.problems) console.log(`  x ${x}`);
     }
     const bad = results.filter((r) => r.problems.length).length;
     const real = packChecks.filter((p) => p.pack !== 'index');
     const packLine = packChecks.length ? `; ${real.length} pack(s), ${packChecks.filter((p) => p.problems.length).length} with problems` : '';
-    console.log(`\n${results.length} model(s), ${bad} with problems, ${results.filter((r) => r.warnings.length).length} with warnings${packLine} (${Math.round(ms)} ms)`);
+    console.log(`\n${results.length} model(s), ${bad} with problems, ${results.filter((r) => r.warnings.length).length} with warnings${packLine} (${Math.round(ms)} ms)${full ? '' : '; --all for every model'}`);
+    for (const r of results) for (const p of r.problems) console.log(`✘ ${r.id}: ${p}`);
+    for (const p of packChecks) for (const x of p.problems) console.log(`✘ ${p.pack === 'index' ? 'public/packs/index.json' : `pack ${p.pack}`}: ${x}`);
   }
   if (results.some((r) => r.problems.length) || packChecks.some((p) => p.problems.length)) process.exitCode = 1;
 }

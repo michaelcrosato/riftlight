@@ -3,7 +3,9 @@
 # Auto-detects the stack and runs whatever lint/typecheck/test/build steps exist.
 #
 #   scripts/check.sh          full run (CI)
-#   scripts/check.sh --fast   skip build and slow steps (Stop hook)
+#   scripts/check.sh --fast   everything but the build (Stop hook)
+#
+# Quiet on success: each step prints its summary, a failing step its problems last.
 set -euo pipefail
 
 FAST=0
@@ -38,8 +40,17 @@ if [[ -f package.json ]]; then
   elif [[ -f bun.lockb || -f bun.lock ]]; then pm=bun
   else pm=npm; fi
   has_script() { jq -e --arg s "$1" '.scripts[$s] // empty' package.json >/dev/null; }
+  # Data checks first (seconds): the unit tests assert the same libraries, and a failure here
+  # ends the output with its `✘ <id>: <problem>` recap instead of vitest's.
+  # Animation metrics for every clip (exits 1 on problems; warnings are fine).
+  if has_script anim; then step "$pm" run --silent anim -- check; fi
+  # Texture checks for every texture (scripts/tex.ts; exits 1 on problems). Before the models, which
+  # name textures: a broken texture shows its own problem, not a model's mention of it.
+  if has_script tex; then step "$pm" run --silent tex -- check; fi
+  # Model checks for every model (scripts/model.ts; exits 1 on problems; warnings are fine).
+  if has_script model; then step "$pm" run --silent model -- check; fi
   for s in lint typecheck test; do
-    has_script "$s" && step "$pm" run "$s"
+    has_script "$s" && step "$pm" run --silent "$s"
   done
   # Generated models must match their generator (not stale, not hand-edited). Compares
   # against the working tree, so it also passes before a regenerated model is committed.
@@ -56,13 +67,7 @@ if [[ -f package.json ]]; then
     }
     step assets_unchanged
   fi
-  # Animation metrics for every clip (exits 1 on problems; warnings are fine).
-  if has_script anim; then step "$pm" run --silent anim -- check; fi
-  # Model checks for every model (scripts/model.ts; exits 1 on problems; warnings are fine).
-  if has_script model; then step "$pm" run --silent model -- check; fi
-  # Texture checks for every texture (scripts/tex.ts; exits 1 on problems).
-  if has_script tex; then step "$pm" run --silent tex -- check; fi
-  if [[ $FAST -eq 0 ]] && has_script build; then step "$pm" run build; fi
+  if [[ $FAST -eq 0 ]] && has_script build; then step "$pm" run --silent build; fi
 fi
 
 # ---------- Python ----------

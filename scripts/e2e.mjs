@@ -2,12 +2,13 @@
 //
 //   npm run build && npm run test:e2e      (headless: no display needed, scripts/browser.mjs)
 //
-//   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel):
-//     webgpu | no-webgpu | cameras | camera-swap | filters-webgpu |
-//     touch | phone | moves | lab | asset-lab | riftlight | riftlight-tree | riftlight-loot | tools |
-//     systems | riftlight-levels | riftlight-combat | riftlight-monsters | riftlight-builds |
-//     riftlight-showcase | riftlight-replay | riftlight-snapshot | bundle | world;  groups: @core | @cameras | @filters | @world | @assets
+//   npm run test:e2e -- <suite|@group> ...   run some suites (CI runs the groups in parallel);
+//                                            `-- --help` lists them (SUITES and GROUPS below)
 //   E2E_PORT=4301 npm run test:e2e         serve on another port (several runs on one machine)
+//   E2E_VERBOSE=1 npm run test:e2e         print every check as it runs. By default a passing
+//                                          check prints nothing and a suite one line
+//                                          (`✔ <suite>: <n> checks, <t> s`); a failing suite
+//                                          prints all it logged, its `✘` lines among it, first.
 //
 // The engine renders with WebGPU only (docs/DOCTRINE.md, principle 6); every suite runs on it.
 //   webgpu          native WebGPU (SwiftShader's Vulkan adapter in Chromium's headless shell):
@@ -110,6 +111,7 @@ import { spawn } from 'node:child_process';
 import { mkdir, readFile, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 import { crc32, deflateSync } from 'node:zlib';
+import { format } from 'node:util';
 import { chromium } from 'playwright-core';
 import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
@@ -157,11 +159,14 @@ const SCENARIOS = [
 // Software-rasterizer driver chatter (ANGLE/SwiftShader performance notes), not app output.
 const ENVIRONMENT_NOISE = [/GL Driver Message \(OpenGL, Performance/];
 
+const VERBOSE = /^(1|true|yes)$/i.test(process.env.E2E_VERBOSE ?? '');
 let failures = 0;
+let checks = 0;
 
 function check(cond, msg) {
+  checks++;
   if (cond) {
-    console.log(`  ✔ ${msg}`);
+    if (VERBOSE) console.log(`  ✔ ${msg}`);
   } else {
     console.log(`  ✘ ${msg}`);
     failures++;
@@ -1590,6 +1595,11 @@ if (misgrouped.length || grouped.length !== Object.keys(SUITES).length) {
   console.error(`every e2e suite must be in exactly one group (GROUPS in scripts/e2e.mjs): ${misgrouped.join(', ') || grouped.join(', ')}`);
   process.exit(2);
 }
+if (process.argv.slice(2).some((a) => ['help', '--help', '-h'].includes(a))) {
+  console.log(`npm run build && npm run test:e2e [-- <suite|@group> ...]   (E2E_PORT, E2E_VERBOSE=1: see scripts/e2e.mjs)\nsuites: ${Object.keys(SUITES).join(', ')}`);
+  for (const [g, names] of Object.entries(GROUPS)) console.log(`${g}: ${names.join(', ')}`);
+  process.exit(0);
+}
 const wanted = process.argv.slice(2).flatMap((a) => GROUPS[a] ?? [a]);
 const unknown = wanted.filter((n) => !SUITES[n]);
 if (unknown.length) {
@@ -1605,12 +1615,38 @@ try {
   for (const [name, runSuite] of Object.entries(SUITES)) {
     if (wanted.length && !wanted.includes(name)) continue;
     const t0 = Date.now();
-    await runSuite(exe);
-    console.log(`  ⏱ ${name}: ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    const [failedBefore, checksBefore] = [failures, checks];
+    // quiet: hold what the suite logs; print it only if the suite fails (its ✘ lines in context)
+    const held = [];
+    const log = console.log;
+    if (!VERBOSE) console.log = (...a) => held.push(format(...a));
+    // killed mid-suite (a CI timeout sends SIGINT, Ctrl-C): print what it held and which suite it was
+    const killed = (sig) => {
+      console.log = log;
+      for (const line of held) console.log(line);
+      console.log(`✘ ${name}: killed (${sig}) after ${checks - checksBefore} checks`);
+      stopServer(server);
+      process.exit(130);
+    };
+    process.once('SIGINT', killed).once('SIGTERM', killed);
+    let threw = true;
+    try {
+      await runSuite(exe);
+      threw = false;
+    } finally {
+      process.off('SIGINT', killed).off('SIGTERM', killed);
+      console.log = log;
+      const failed = failures - failedBefore;
+      if (failed || threw) for (const line of held) console.log(line);
+      const t = ((Date.now() - t0) / 1000).toFixed(1);
+      const n = checks - checksBefore;
+      const what = [failed ? `${failed} of ${n} checks failed` : '', threw ? `threw after ${n} checks` : ''].filter(Boolean).join(', ');
+      console.log(what ? `✘ ${name}: ${what}, ${t} s` : `✔ ${name}: ${n} checks, ${t} s`);
+    }
   }
 } finally {
   stopServer(server);
 }
-console.log(`\n⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
+console.log(`⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
 console.log(failures ? `✘ ${failures} check(s) failed` : '✔ all e2e checks passed');
 process.exit(failures ? 1 : 0);

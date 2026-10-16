@@ -61,10 +61,10 @@ npm run build:single # dist-single/pixel-engine.html: one self-contained offline
 npm run lint && npm run typecheck && npm test
 npm run test:e2e     # after build: WebGPU in headless Chromium (no display; E2E_PORT=…)
 npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters, @world, @assets
-npm run anim -- check          # animation metrics for every clip
+npm run anim -- check          # every clip checked; prints those not ok (--all: every clip)
 npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
 npm run anim -- curves Run     # motion curves (graph editor) PNG
-npm run model -- check         # every model: problems (exit 1) and warnings
+npm run model -- check         # every model: problems (exit 1) and warnings; prints those not ok (--all)
 npm run model -- sheet well    # model sheet PNG → .scratch/model/well.png (/asset-lab.html: the real renderer)
 npm run model -- import a.glb --as a --licence LicenseRef-own --source path/to/a.glb   # glTF/GLB → a draft def + fidelity sheet
 npm run tex -- sheet bricks    # texture sheet PNG → .scratch/tex/bricks.png (check, find, zoo too)
