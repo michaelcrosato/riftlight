@@ -1,8 +1,9 @@
 // Texture workbench: how agents check, look at and find textures (TextureDefs, docs/ASSETS.md)
 // without a browser. Run through tsx:  npm run tex -- <command> [...]
 //
-//   check [id...]        problems (exit 1) and warnings for every texture; a table of size,
-//                        colours, single texels and the seam
+//   check [id...] [--all]  problems (exit 1) and warnings for every texture; a table of size,
+//                        colours, single texels and the seam: of named textures or --all, else
+//                        only those not ok (packs: a line each), then `✘ <id>: <problem>` each
 //   sheet <id>           PNG → .scratch/tex/<id>.png: the texture at 1× and enlarged, a 3×3
 //                        tiling when it tiles, its frames, palette and check
 //        --palette slot=colour,...   (a PALETTE name or 0xrrggbb)
@@ -73,7 +74,7 @@ function fail(msg: string): never {
 }
 
 const VALUED = ['palette', 'out', 'grid', 'as', 'licence', 'source', 'author', 'pack', 'cells', 'names', 'alpha', 'limit'];
-const SWITCHES = ['json', 'tile', 'frames'];
+const SWITCHES = ['json', 'tile', 'frames', 'all'];
 const flags = new Map<string, string | true>();
 const args: string[] = [];
 for (let i = 0; i < argv.length; i++) {
@@ -149,19 +150,23 @@ async function check(): Promise<void> {
   const results = defs.map((d) => validateTexture(d));
   if (json) console.log(JSON.stringify(results, null, 2));
   else {
-    console.log(`${'texture'.padEnd(16)} ${'size'.padEnd(8)} cols  single  seam        status`);
-    // pack textures (public/packs/) in one line per pack unless something is wrong with one
+    // The whole table for named textures or --all; otherwise only the textures that aren't ok, a
+    // line per pack for the rest of its textures, and each problem again at the end (a tail finds it).
+    const full = args.length > 0 || flags.has('all');
     const packOf = new Map(defs.map((d) => [d.id, d.source?.pack]));
-    const quiet = new Set(results.filter((r) => !r.problems.length && !r.warnings.length && packOf.get(r.id)).map((r) => r.id));
-    for (const pack of new Set([...quiet].map((id) => packOf.get(id)!))) console.log(`pack ${pack}: ${[...quiet].filter((id) => packOf.get(id) === pack).length} texture(s) ok`);
-    for (const r of results.filter((x) => !quiet.has(x.id))) {
+    const quiet = new Set(results.filter((r) => !r.problems.length && !r.warnings.length && (!full || packOf.get(r.id))).map((r) => r.id));
+    const rows = results.filter((x) => !quiet.has(x.id));
+    for (const pack of new Set([...quiet].filter((id) => packOf.get(id)).map((id) => packOf.get(id)!))) console.log(`pack ${pack}: ${[...quiet].filter((id) => packOf.get(id) === pack).length} texture(s) ok`);
+    if (rows.length) console.log(`${'texture'.padEnd(16)} ${'size'.padEnd(8)} cols  single  seam        status`);
+    for (const r of rows) {
       const m = r.metrics;
       const status = r.problems.length ? `${r.problems.length} problem(s)` : r.warnings.length ? `${r.warnings.length} warning(s)` : 'ok';
       console.log(`${r.id.padEnd(16)} ${(m ? `${m.width}x${m.height}` : '-').padEnd(8)} ${String(m?.colours ?? '-').padStart(4)}  ${(m ? `${Math.round(m.isolated * 100)}%` : '-').padStart(6)}  ${(m?.seam ? `${Math.round(m.seam.wrap * 100)}/${Math.round(m.seam.inside * 100)}%` : '-').padEnd(10)}  ${status}`);
       for (const p of r.problems) console.log(`  x ${p}`);
       for (const w of r.warnings) console.log(`  ! ${w}`);
     }
-    console.log(`\n${results.length} texture(s), ${results.filter((r) => r.problems.length).length} with problems, ${results.filter((r) => r.warnings.length).length} with warnings`);
+    console.log(`\n${results.length} texture(s), ${results.filter((r) => r.problems.length).length} with problems, ${results.filter((r) => r.warnings.length).length} with warnings${full ? '' : '; --all for every texture'}`);
+    for (const r of results) for (const p of r.problems) console.log(`✘ ${r.id}: ${p}`);
   }
   if (results.some((r) => r.problems.length)) process.exit(1);
 }

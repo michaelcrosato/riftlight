@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Stop hook (.claude/settings.json): before Claude ends a turn with unshipped work, run
-# the fast checks (scripts/check.sh --fast, ~15-20 s). Silent when they pass. On failure,
-# block the stop and hand the failure back so Claude keeps going.
+# the fast checks (scripts/check.sh --fast, ~90-110 s on 4 cores). Silent when they pass. On
+# failure, block the stop and hand back the failing step and the end of its output: every check
+# prints its problems last (`✘ <id>: <problem>`), so the tail holds them.
 # Caps itself at 3 blocks per session so it can never loop forever.
 set -uo pipefail
 
@@ -31,7 +32,9 @@ if output=$(scripts/check.sh --fast 2>&1); then
 fi
 
 echo $((count + 1)) >"$counter"
-jq -n --arg out "$(tail -n 60 <<<"$output")" '{
+failing=$(grep '^▶' <<<"$output" | tail -n 1)
+failing=${failing#▶ }
+jq -n --arg step "${failing:-its repo checks}" --arg out "$(awk '/^▶/ { step = "" } { step = step $0 "\n" } END { printf "%s", step }' <<<"$output" | tail -n 40)" '{
   decision: "block",
-  reason: ("scripts/check.sh --fast is failing on your changes. Fix it before finishing (or, if the failure is unrelated to this task, say so explicitly).\n\n" + $out)
+  reason: ("scripts/check.sh --fast is failing on your changes, at `" + $step + "`. Fix it before finishing (or, if the failure is unrelated to this task, say so explicitly).\n\n" + $out)
 }'

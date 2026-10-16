@@ -1,0 +1,5 @@
+# Search noise for agents (ripgrep and the Grep tool read this file; git, Glob and Read don't):
+# pack data from `npm run model -- import-pack`, ~2.9 MB of mesh JSON. Find a pack's assets with
+# `npm run model -- find <words>` / `npm run tex -- find <words>`; name a file to search it anyway.
+*.json
+!index.json

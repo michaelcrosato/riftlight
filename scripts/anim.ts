@@ -2,8 +2,10 @@
 // without a browser. Run through tsx:  npm run anim -- <command> [...]
 //
 //   list                         clips with length, loop, speed, notes
-//   check [clip...]              validate + metrics table; exit 1 on problems (no --character:
-//                                every character: the hero and Riftlight's townsfolk)
+//   check [clip...] [--all]      validate + metrics table; exit 1 on problems (no --character:
+//                                every character that has the clips: the hero and Riftlight's
+//                                townsfolk). The table: named clips or --all, else clips not ok;
+//                                then each problem again as `✘ <character>/<clip>: <problem>`
 //   sheet <clip...|all> [opts]   PNG contact sheet(s) → .scratch/anim/<clip>.png
 //        --frames 0,4,8  --views side,front,three,top  --scale 64  --no-trails  --no-skeleton
 //   curves <clip...> [opts]      PNG motion curves (graph editor) → .scratch/anim/<clip>.curves.png
@@ -127,22 +129,30 @@ function pick(names: string[]): ClipDef[] {
   });
 }
 
-async function checkCharacter(c: Character, names: string[]): Promise<(ClipReport & { errors: string[] })[]> {
+/** The named clips a character has (all of them for none or `all`); unknown names fail unless `some`. */
+function clipsNamed(c: Character, names: string[], some = false): ClipDef[] {
+  if (!names.length || names.includes('all')) return [...c.clips];
+  const find = (n: string) => c.clips.find((d) => d.name.toLowerCase() === n.toLowerCase());
+  return some ? names.flatMap((n) => find(n) ?? []) : names.map((n) => find(n) ?? fail(`no clip "${n}". Try: npm run anim -- list`));
+}
+
+type Checked = ClipReport & { errors: string[] };
+const notOk = (r: Checked) => r.errors.length > 0 || r.problems.length > 0 || r.warnings.length > 0;
+
+/** Check a character's clips (validation + metrics). */
+async function checkCharacter(c: Character, defs: ClipDef[]): Promise<Checked[]> {
   const { rig } = c;
   const model = await loadModel(c.model);
   const rest = restPoseOf(model, rig);
-  const defs = !names.length || names.includes('all') ? [...c.clips] : names.map((n) => c.clips.find((d) => d.name.toLowerCase() === n.toLowerCase()) ?? fail(`no clip "${n}". Try: npm run anim -- list`));
-  const reports: (ClipReport & { errors: string[] })[] = [];
-  for (const def of defs) {
-    const errors = validateClip(def, rig);
-    const report = analyzeClip(model, rig, def, compileClip(def, rig, rest));
-    reports.push({ ...report, errors });
-  }
-  const bad = reports.filter((r) => r.errors.length || r.problems.length);
-  if (!json) {
+  return defs.map((def) => ({ ...analyzeClip(model, rig, def, compileClip(def, rig, rest)), errors: validateClip(def, rig) }));
+}
+
+/** The metrics table of `rows`, their problems and warnings, and a summary of all `reports`. */
+function printChecked(reports: Checked[], rows: Checked[]): void {
+  if (rows.length) {
     table(
       ['clip', 'soleMin', 'slide', 'seam°', 'pelvisY', 'fastest', 'status'],
-      reports.map((r) => [
+      rows.map((r) => [
         r.name,
         `${(r.minSoleY * 100).toFixed(0)}cm`,
         r.footSlide.toFixed(2),
@@ -152,14 +162,14 @@ async function checkCharacter(c: Character, names: string[]): Promise<(ClipRepor
         r.errors.length || r.problems.length ? 'PROBLEM' : r.warnings.length ? 'warn' : 'ok',
       ]),
     );
-    for (const r of reports) {
+    for (const r of rows) {
       for (const e of r.errors) console.log(`  ✗ ${e}`);
       for (const p of r.problems) console.log(`  ✗ ${r.name}: ${p}`);
       for (const w of r.warnings) console.log(`  · ${r.name}: ${w}`);
     }
-    console.log(`\n${reports.length} clip(s), ${bad.length} with problems, ${reports.filter((r) => r.warnings.length).length} with warnings`);
   }
-  return reports;
+  const bad = reports.filter((r) => r.errors.length || r.problems.length).length;
+  console.log(`${rows.length ? '\n' : ''}${reports.length} clip(s), ${bad} with problems, ${reports.filter((r) => r.warnings.length).length} with warnings`);
 }
 
 async function main(): Promise<void> {
@@ -172,19 +182,41 @@ async function main(): Promise<void> {
       return;
     }
     case 'check': {
-      // No --character: every character (the hero and the townsfolk) is checked.
-      const which = flags.has('character') ? [String(flags.get('character'))] : Object.keys(CHARACTERS);
-      let bad = 0;
+      // No --character: every character (the hero and the townsfolk) that has a named clip, or all
+      // of them. The table: every clip of named clips or --all, else only clips not ok; then each
+      // problem again at the end, where a tail finds it.
+      const one = flags.has('character');
+      const full = args.length > 0 || flags.has('all');
+      const picked = (one ? [String(flags.get('character'))] : Object.keys(CHARACTERS)).map((name) => ({ name, defs: clipsNamed(CHARACTERS[name]!, args, !one) }));
+      const missing = one ? [] : args.filter((n) => n !== 'all' && !picked.some((p) => p.defs.some((d) => d.name.toLowerCase() === n.toLowerCase())));
+      if (missing.length) fail(`no clip "${missing.join('", "')}". Try: npm run anim -- list`);
+      // townsfolk share some of the hero's clips (the same objects): each is checked once, first where it's found
+      const seen = new Set<ClipDef>();
+      for (const p of picked) p.defs = p.defs.filter((d) => !seen.has(d) && !!seen.add(d));
+      const which = picked.filter((p) => p.defs.length);
+      const recap: string[] = [];
+      const clean: string[] = [];
       const all: Record<string, unknown> = {};
-      for (const name of which) {
-        const c = CHARACTERS[name]!;
-        if (!json && which.length > 1) console.log(`\n${name}`);
-        const reports = await checkCharacter(c, flags.has('character') ? args : []);
+      for (const { name, defs } of which) {
+        const reports = await checkCharacter(CHARACTERS[name]!, defs);
         all[name] = reports;
-        bad += reports.filter((r) => r.errors.length || r.problems.length).length;
+        for (const r of reports) for (const p of [...r.errors, ...r.problems]) recap.push(`✘ ${name}/${r.name}: ${p.startsWith(`${r.name}: `) ? p.slice(r.name.length + 2) : p}`);
+        if (json) continue;
+        const rows = full ? reports : reports.filter(notOk);
+        // a character with nothing to show shares one line with the others
+        if (!rows.length && which.length > 1) clean.push(`${name} (${reports.length})`);
+        else {
+          if (which.length > 1) console.log(`\n${name}`);
+          printChecked(reports, rows);
+        }
       }
-      if (json) print(flags.has('character') ? all[which[0]!] : all);
-      if (bad) process.exitCode = 1;
+      if (json) print(one ? all[which[0]!.name] : all);
+      else {
+        if (clean.length) console.log(`\nok, every clip: ${clean.join(', ')}`);
+        if (!full) console.log('--all for every clip');
+        for (const l of recap) console.log(l);
+      }
+      if (recap.length) process.exitCode = 1;
       return;
     }
     case 'sheet': {

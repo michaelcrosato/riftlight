@@ -1454,7 +1454,7 @@ generator. They are checked by metrics (floor contact, foot slide, loop seams, j
 and viewed as contact-sheet PNGs or in the Animation Lab. The full workflow is in
 **[docs/ANIMATION.md](ANIMATION.md)**:
 
-- `npm run anim -- check` prints metrics for every clip and exits 1 on problems.
+- `npm run anim -- check` checks every clip, prints those not ok (`--all`: every clip) and exits 1 on problems.
 - `npm run anim -- sheet Run` writes `.scratch/anim/Run.png` and `curves Run` writes
   `.scratch/anim/Run.curves.png`. Read the PNGs to see the animation. `npm run film --
   run-stop` films it in the game.

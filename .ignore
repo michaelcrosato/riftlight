@@ -1,0 +1,3 @@
+# Search noise for agents (ripgrep and the Grep tool read this file; git, Glob and Read don't).
+# Pack data has its own: public/packs/.ignore. Dependencies: `npm ls <package>`.
+/package-lock.json

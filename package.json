@@ -12,7 +12,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && node scripts/bundle.mjs --out dist/engine",
+    "build": "vite build --logLevel warn && node scripts/bundle.mjs --out dist/engine",
     "bundle": "node scripts/bundle.mjs",
     "preview": "vite preview",
     "lint": "eslint . && node scripts/forbidden-apis.mjs",
