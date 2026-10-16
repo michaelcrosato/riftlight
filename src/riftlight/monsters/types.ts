@@ -2,7 +2,7 @@
  * Monster-side types: the skeleton grammar a body plan produces, the richer part and
  * archetype entries, and what `buildMonster` returns. The cross-system contracts (Genome,
  * PartDef, Palette, ArchetypeDef, EliteModDef) live in core/types.ts; everything here
- * extends them. See docs/GAME.md "Monsters".
+ * extends them. See docs/game/monsters.md.
  */
 import type { AnimationClip, BufferGeometry, Mesh, Object3D } from 'three/webgpu';
 import type { ClipDef, RigSpec, Vec3 } from '../../engine/animation';

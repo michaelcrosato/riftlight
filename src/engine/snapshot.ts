@@ -11,7 +11,7 @@
  *
  * A restore starts the level's recording again from the snapshot (`Recording.from`), so a
  * recording made after one replays with `replay(rec, start)`: it loads the game, restores the
- * snapshot, then plays the frames. docs/ENGINE.md, "Save-states".
+ * snapshot, then plays the frames. docs/engine/determinism.md *Save-states*.
  */
 import type { CameraRigState } from './camera';
 import type { ClockState } from './clock';

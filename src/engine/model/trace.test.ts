@@ -221,7 +221,7 @@ describe('scoring a trace', () => {
     expect(traceVerdict(score(1, iouClose - 0.001, 0)).checks.map((c) => c.pass)).toEqual([true, false, true]);
     expect(traceVerdict(score(1, 1, colour + 0.001)).checks.map((c) => c.pass)).toEqual([true, true, false]);
     expect(traceVerdict(score(0.9, 0.9, 0), { iou: 0.95, iouClose: 0.5, colour: 0.1 }).pass).toBe(false); // other thresholds apply
-    expect(TRACE_THRESHOLDS).toEqual({ iou: 0.85, iouClose: 0.85, colour: 0.04 }); // tuned on Phase 6's ten traces (docs/ASSETS.md *Tracing*)
+    expect(TRACE_THRESHOLDS).toEqual({ iou: 0.85, iouClose: 0.85, colour: 0.04 }); // tuned on Phase 6's ten traces (docs/assets/tracing.md)
     // off the palette the colour limit sits on the source's floor
     const off = traceVerdict(score(1, 1, 0.12), TRACE_THRESHOLDS, 0.1);
     expect(off.pass).toBe(true);

@@ -6,7 +6,7 @@ import type { Hit } from '../core/types';
 import { Actor, setActorIds } from './Actor';
 import { ActorManager } from './ActorManager';
 
-// Save-states (docs/GAME.md): an actor saved mid-fight and loaded into one made the same way
+// Save-states (docs/game/save-states.md): an actor saved mid-fight and loaded into one made the same way
 // plays on exactly as the original did.
 
 const DT = 1 / 60;

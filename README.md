@@ -14,115 +14,14 @@ and copy `bundle/pixel-engine/` to where the game will live. Then read the kit's
 `GUIDE.md`. Work in this repository only to change the engine itself
 ([*Handing the engine to another agent*](#handing-the-engine-to-another-agent)).
 
-The page at `/` is **Riftlight**, the showcase hack-and-slash ARPG ([`docs/GAME.md`](docs/GAME.md)):
-a title screen, the town of Emberfall with its blacksmith, merchant, mystic and rift keeper and,
-around it, the ruins of the Old Watch, a tavern, a stream with a hunter's camp across it, a
-farmstead, a willow pond, the watchmen's graves and the road out (built from the imported Kenney
-packs), levels with monsters, loot and bosses, the death recap, save slots and the difficulty sliders
-(Esc → Tuning). The movement demo is `/?game=playground` (and `?game=sandbox`).
+What runs here: **Riftlight**, the showcase ARPG, at `/` (docs/GAME.md); **Engine World**, the
+engine's tech demo, a room per technique, at `/?game=world` (docs/WORLD.md); the **Asset Gallery**
+and **Asset Workshop** at `/?game=world&room=gallery` and `room=workshop` (docs/ASSETS.md); the
+engine demos at `/?game=playground` and `?game=sandbox`. The engine's docs are indexed in
+docs/ENGINE.md. How agents work in this repository (commands, checks, the merge flow) is
+[`AGENTS.md`](AGENTS.md); the principles, [`docs/DOCTRINE.md`](docs/DOCTRINE.md).
 
-**Engine World** (`/?game=world`, [`docs/WORLD.md`](docs/WORLD.md)) is the engine's tech demo:
-a hub with a door for every room, each room one technique (the moveset, game feel, cameras,
-rigid bodies, joints and ropes, cloth, moving platforms, destruction, force fields, clips,
-secondary motion, procedural legs, ragdolls, pixel sprites, lights, particles, water, weather
-and a day cycle, grass and wind, trails and decals, retro consoles, per-layer looks, the filter
-bench, screen transitions, stealth and pathfinding, flocks, a drift car, a bullet hell, a
-sandbox and time rewind, noise terrain with erosion, a wave-function-collapse dungeon,
-L-system plants, a GPU compute swarm, security monitors and a mirror, TSL shaders, robots on
-behaviour trees, a cutscene on a timeline, sound in space...) with pads to change it live and a station guide (H) that explains
-how it works. Riftlight's title menu has a door to it, and its pause menu one back.
-
-The **Asset Gallery** (`/?game=world&room=gallery`, or *Asset Gallery* on Riftlight's title) shows
-every model and texture the engine carries, one at a time: the built-in library family by
-family and every imported pack (six CC0 Kenney packs: castle, furniture, nature, mini dungeon,
-and the Tiny Dungeon and Tiny Town tiles). Q/E step through a shelf, comma/period change shelf, and the
-panel says what each asset is, how big it is and where it came from. The **Asset Workshop**
-(`/?game=world&room=workshop`) puts them on a floor: scroll a picker, click where each one goes,
-and Tab shows what it is made of. Agents search the same
-assets with `npm run model -- find <words>` and `npm run tex -- find <words>`
-([docs/ASSETS.md](docs/ASSETS.md), *Finding assets*).
-
-- **Riftlight controls:** WASD move · mouse aims · LMB or J attack · Space dodge roll ·
-  1–4 (or Q E R T, RMB = 1) skills · F talk / pick up / portal · I inventory · P passive tree ·
-  C character · K codex · Esc pause. Pads: left stick, A attack, B dodge, X Y LB RB skills,
-  RT interact, Back inventory, Start pause; prompts switch to pad glyphs. Phones get A/B/1/2/F/≡.
-- **For agents:** `window.__RIFTLIGHT__` drives and inspects the game frame-exactly
-  (`newRun`, `enterDepth`, `step`, `state`, `bot.run`...); `npm run playtest -- 1 --film` lets
-  the playtest bot play a level and reports clear time, deaths and loot.
-- **Desktop fullscreen:** Riftlight fills the viewport with crisp, square pixels at any
-  desktop resolution (`aspect: 'fill'`). `?aspect=fixed` keeps the optional 16:9 letterbox.
-
-```bash
-npm ci
-npm run dev          # http://localhost:5173  (?game=playground|sandbox, ?seed=7, ?mode=raw, ?res=320, ?aspect=fixed, ?fps=30, ?quality=high, ?debug=1)
-npm run build        # production build (+ the engine kit in dist/engine/ and dist/engine.zip)
-npm run bundle       # the engine kit for other agents: bundle/pixel-engine/ + bundle/pixel-engine.zip
-npm run build:single # dist-single/pixel-engine.html: one self-contained offline file
-npm run lint && npm run typecheck && npm test
-npm run test:e2e     # after build: WebGPU in headless Chromium (no display; E2E_PORT=…)
-npm run test:e2e -- moves      # one suite, or a CI group: @core, @cameras, @filters, @world, @assets
-npm run anim -- check          # every clip checked; prints those not ok (--all: every clip)
-npm run anim -- sheet Run      # contact sheet PNG → .scratch/anim/Run.png
-npm run anim -- curves Run     # motion curves (graph editor) PNG
-npm run model -- check         # every model: problems (exit 1) and warnings; prints those not ok (--all)
-npm run model -- sheet well    # model sheet PNG → .scratch/model/well.png (/asset-lab.html: the real renderer)
-npm run model -- import a.glb --as a --licence LicenseRef-own --source path/to/a.glb   # glTF/GLB → a draft def + fidelity sheet
-npm run tex -- sheet bricks    # texture sheet PNG → .scratch/tex/bricks.png (check, find, zoo too)
-npm run tex -- import a.png --grid 16x16 --licence LicenseRef-own --source path/to/a.png   # pixel-art sheet → draft defs + import sheet
-npm run film -- run-stop --gif # film a move in the real game → .scratch/film/
-npm run playtest -- 1 --runs 3 --film   # the Riftlight bot plays depth 1 → .scratch/playtest/
-```
-
-Engine demo (`?game=playground`): *Move Playground*, an island with a station for every move (stairs, crawl tunnel,
-ledges, vine wall, ladder tower, slippery slope, wall-kick chimney, push/pull blocks).
-
-- **Moves:** WASD move · Shift walk · Space jump (double/triple, side flip, wall kick) ·
-  C crouch (backflip, long jump, ground pound) · Z prone/crawl · X lie down · F grab/pull ·
-  J punch-punch-kick / dive · V wave · B sit.
-- **Cameras** (one per game): `?camera=iso|topdown|side|third|first|free`. Wheel or `+`/`-`
-  zoom (not in first person). In `free` mode press Enter to fix the view and get a config.
-  The debug UI's picker switches presets live and leaves the player where they are.
-- **Looks:** 35 TSL filters, including the console eras `8bit`, `16bit` and `ps1` (with
-  vertex wobble). Use `?filters=crt,lcd` or `?look=playstation`, or the ⚙ settings' Look.
-- **Models:** props and dressing are data (`ModelDef`: keyed primitives, palette slots, params),
-  compiled to toon meshes; `npm run model` checks and draws them, the **Asset Lab**
-  (`/asset-lab.html`) shows them in the real renderer. Pixel-art textures are data too
-  (`TextureDef`: pixel rows, tiling patterns, paths), checked and drawn by `npm run tex`. Kits in
-  glTF/GLB import as palette-mapped `mesh` parts with their provenance (`npm run model -- import`),
-  pixel-art PNG sheets as pixel rows, cell by cell or as frames (`npm run tex -- import`). See
-  [`docs/ASSETS.md`](docs/ASSETS.md).
-- **Animation:** 57 hero clips written as data, with foot IK and a gait generator. They are
-  measured and drawn as PNG contact sheets and motion curves by `npm run anim`, filmed in the
-  real game by `npm run film`, and previewed in the **Animation Lab** (`/lab.html`). See
-  [`docs/ANIMATION.md`](docs/ANIMATION.md).
-- **Game systems:** procedural retro **sound effects** and a chiptune **music** sequencer
-  (both data; volumes persist), pixel **particles** (dust, skid, sparkle, smoke,
-  impact), crisp **pixel HUD** text, **trigger volumes** with enter/exit callbacks (the
-  coins), **gamepads** (standard mapping), textured + vertex-colored toon materials, and
-  **level switching** (`engine.loadGame`, `engine.dispose`). `?game=sandbox` opens the
-  second demo level.
-- **Settings:** the ⚙ button (top right; with a mouse it shows while the pointer moves) opens the
-  player's settings: look, pixel art or smooth 3D, pixel size, quality, frame rate, sound and debug
-  info, saved per game (`engine.settings`). Riftlight has them in its own menu (Esc → Settings →
-  Engine).
-- **Hotkeys**, developer tools, on only in dev or with `?debug=1`: P Pixel ↔ Raw 3D · R 480×270 ↔
-  320×180 (Riftlight moves these to F8 / F7, Engine World's Time Lab R to F7) · ~ debug UI · [ ]
-  looks · M mute (`EngineOptions.debugKeys`).
-- **Phones:** on-screen joystick + A/B/C/G/Z/X buttons, drag to orbit, pinch to zoom
-  (automatic on touch screens). `npm run build:single` gives one HTML file to open on a phone.
-- **Gamepads:** left stick moves, right stick looks, A jump · B crouch · X attack · Y grab ·
-  LB prone · RB lie down · LT walk · RT crouch · d-pad moves.
-- **Performance:** the scene, edges and art-pixel filters render at 480×270 and are upscaled
-  once; the art width follows the screen (`aspect: 'adaptive'`, portrait phones fill the
-  screen); the loop is capped at `maxFps` 60; `quality` low/medium/high sets the shadow map
-  (auto: low on phones, lowered once on a slow start); a lost GPU device is recovered. Build
-  (gzip): three 271 kB, Rapier 28 kB JS + 774 kB `.wasm` (streamed), engine and game 111 kB.
-  Details in [`docs/ENGINE.md`](docs/ENGINE.md).
-
-Architecture, the camera and filter lists, the moveset and the game API are in
-[`docs/ENGINE.md`](docs/ENGINE.md).
-
-### Handing the engine to another agent
+## Handing the engine to another agent
 
 `npm run bundle` builds the **engine kit**, everything an agent needs to make a game outside
 this repo: `pixel-engine.js` (one self-contained ES module, about 4.8 MB: the engine,
@@ -172,67 +71,27 @@ pinned three.js and Rapier, the hero in `src/game/hero/`, the models in `public/
 kit is that folder made standalone. A game started from a copy of this repository carries
 Riftlight along, and its copy of the engine drifts from this one.
 
----
+## Automation
 
-The repository is set up for **100% AI-driven development**: agents write, verify, open
-PRs, fix CI, and merge. Humans set direction through issues. The principles it is built by
-are in [`docs/DOCTRINE.md`](docs/DOCTRINE.md); the procedure in [`AGENTS.md`](AGENTS.md).
-
-## How work flows
-
-```
-issue labeled `claude` ─┐
-@claude in a comment ───┼─▶ Claude (GitHub Action or cloud session)
-cloud session / routine ┘        │ branch claude/*, scripts/check.sh until green, push
-                                 ▼
-                 Autopilot: open PR, squash-merge it at once, branch deleted
-                                 │
-                 ┌───────────────┴──────────────────┐
-                 ▼                                  ▼
-          CI on main (check + e2e)           Claude Review of the merged PR
-                 │                           (blocking findings → issue `claude`)
-       red? ─────┤
-                 ▼
-   auto-revert: claude/revert-<sha> PR, merged, CI on main again
-                 │
-                 ▼
-   Claude Autofix: re-applies the change with a fix on claude/fix-ci-* (max 3 tries)
-```
-
-Merging doesn't wait for CI, and there are **no required status checks** on `main`, on
-purpose: rolling back is cheap.
-
-- **CI on `main` after every merge.** A merge made with the default `GITHUB_TOKEN` fires no
-  push event, so Autopilot dispatches `ci.yml` on `main` itself (with `AUTOMATION_TOKEN` the
-  merge's own push starts it). It also cancels the PR branch's run, which tests the same
-  change: CI runs once per PR. A PR held open with `hold` keeps its branch run.
-- **Auto-revert.** When CI fails on `main` and that commit turned it red (its parent passed,
-  or never ran), CI's `revert-red-main` job (`scripts/ci/revert-red-main.sh`) reverts
-  it on `claude/revert-<sha>`, merges that PR, comments on the original PR, opens an issue
-  labeled `claude` to re-land it with a fix, and runs CI on `main` again. No LLM or secret
-  needed. It never reverts a revert, or a commit that landed on an already red `main`. (It
-  lives in CI itself because GitHub doesn't fire `workflow_run` for runs dispatched with
-  `GITHUB_TOKEN`.)
-- **Fix forward.** The `claude` issue is the ticket. With `AUTOMATION_TOKEN` and a Claude
-  secret set, `claude-ci-autofix.yml` also fires and re-applies the reverted change with a
-  fix on `claude/fix-ci-*` (or fixes `main` forward when nothing was reverted), and
-  Autopilot merges that.
-
-The one brake: add the **`hold`** label to a PR (or mark it draft) to stop the merge.
+Agents write, verify, merge and fix CI here (the loop is in `AGENTS.md`). The pieces:
 
 | Piece | File |
 | --- | --- |
 | Agent contract (all tools) | `AGENTS.md` |
-| Claude Code entry point | `CLAUDE.md` |
+| Claude Code entry point | `CLAUDE.md`; area rules in `.claude/rules/` |
 | Single quality gate (stack auto-detect) | `scripts/check.sh` |
-| CI: check + e2e groups in parallel (push, dispatch) | `.github/workflows/ci.yml` |
+| CI: check + e2e groups in parallel; a red `main` reverted (`revert-red-main`), then re-landed with a fix | `.github/workflows/ci.yml`, `scripts/ci/revert-red-main.sh` |
 | `@claude` / `claude` label → implementation | `.github/workflows/claude.yml` |
 | Review (merged PR → issue; held PR → comments) | `.github/workflows/claude-review.yml` |
-| Red `main` → revert (`ci.yml` › `revert-red-main`), then Claude fix; red PR branch → Claude fix | `.github/workflows/ci.yml`, `.github/workflows/claude-ci-autofix.yml` |
+| Red `main` or PR branch → Claude fix (needs `AUTOMATION_TOKEN` and a Claude secret) | `.github/workflows/claude-ci-autofix.yml` |
 | Open PR + merge, then CI on `main` + review | `.github/workflows/autopilot.yml` |
 | Weekly unattended improvement | `.github/workflows/claude-maintenance.yml` |
 | Skills / subagents | `.claude/skills/{ship,fix-ci}`, `.claude/agents/verifier.md` |
 | Hooks (`.claude/settings.json`) | SessionStart `scripts/session-start.sh` (cloud-session install, again when the lockfile changes), PostToolUse `.claude/hooks/format-file.sh` (`eslint --fix` on the edited file), Stop `.claude/hooks/verify-on-stop.sh` (`scripts/check.sh --fast` before ending a turn with unshipped work) |
+
+A merge made with the default `GITHUB_TOKEN` fires no push event, so Autopilot dispatches `ci.yml`
+on `main` itself (with `AUTOMATION_TOKEN` the merge's own push starts it) and cancels the PR
+branch's run. The one brake: the **`hold`** label on a PR (or draft) stops the merge.
 
 ## One-time setup
 

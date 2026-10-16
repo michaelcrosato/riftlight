@@ -367,7 +367,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   // ------------------------------------------------------------- save-states: monsters and hazards
 
   /**
-   * The level's monsters and hazards as data (save-states, docs/GAME.md *Save-states*): each unit
+   * The level's monsters and hazards as data (save-states, docs/game/save-states.md): each unit
    * in the list with its actor's id, what it was made from when the level's own build did not
    * make it, its pack and its state; the units out of the list something still points at; the
    * level's own monsters gone since; the packs, the add genome cache, the stage's and brains'
@@ -642,7 +642,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   private unitIndex: ActorIndex = () => null;
 
   /**
-   * The level as data between two frames (save-states, docs/GAME.md): its monsters and hazards
+   * The level as data between two frames (save-states, docs/game/save-states.md): its monsters and hazards
    * (`saveUnits`), what the stage and the level runtime keep (`saveRuntime`) and its combat world
    * (actors' order, effects in flight, queued casts, the minions, totems and stand-ins combat made).
    */

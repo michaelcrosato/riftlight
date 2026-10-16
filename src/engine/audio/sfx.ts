@@ -3,7 +3,7 @@ import type { SoundDef } from './synth';
 /**
  * Built-in retro sound effects, as data. Tweak numbers here (or register your own with
  * `ctx.audio.register(name, def)`) and every `ctx.audio.play(name)` picks them up.
- * See docs/ENGINE.md (Audio) for the SoundDef fields.
+ * See docs/engine/audio.md for the SoundDef fields.
  */
 export const SFX = {
   /** Short rising square chirp. */

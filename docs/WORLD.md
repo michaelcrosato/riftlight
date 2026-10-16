@@ -9,7 +9,7 @@ complete, small example of an engine system, written to be copied.
 
 | Key | Does |
 | --- | --- |
-| WASD, Space, C, J, F, Z... | the hero's whole moveset (docs/ENGINE.md, *Characters*) |
+| WASD, Space, C, J, F, Z... | the hero's whole moveset (docs/engine/character.md) |
 | **H** (F1) | how it works: the room's station guide |
 | **T** | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound; look, pixel art and quality are the player's settings, saved like the ⚙ panel's) |
 | **G** (F2) | go to any room |

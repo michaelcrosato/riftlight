@@ -1,5 +1,5 @@
 /**
- * The imported packs (docs/ASSETS.md, *Importing*) Riftlight builds with: Emberfall's outskirts
+ * The imported packs (docs/assets/importing.md) Riftlight builds with: Emberfall's outskirts
  * (town/outskirts.ts) and the level props' variants (levels/themes/props.ts) name their models
  * (`kenney-nature/tree-oak`), so the packs join `MODEL_LIBRARY` before the town or a level is built
  * (`Riftlight.setup`, the level lab). They load at runtime, never

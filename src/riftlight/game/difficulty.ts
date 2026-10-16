@@ -1,7 +1,7 @@
 /**
  * The difficulty sliders (pause → Tuning). Each slider is a multiplier in [0.25, 4] on one
  * side, applied as the `difficulty` Mod source of every actor on that side, so it goes
- * through the same StatSheet path as every other bonus (docs/GAME.md, Difficulty).
+ * through the same StatSheet path as every other bonus (docs/game/core.md *Difficulty*).
  *
  *   playerDamage  → `damage` more          enemyDamage → `damage` more
  *   playerLife    → `life` + `es` more     enemyLife   → `life` + `es` more

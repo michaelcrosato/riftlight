@@ -1,5 +1,5 @@
 /**
- * Balance: a headless combat sim over the game's real code (docs/GAME.md, "Agent tools").
+ * Balance: a headless combat sim over the game's real code (docs/game/balance.md).
  * Pure: the CLI (`npm run balance`, scripts/riftlight/balance.ts) generates the level plans
  * and monster genomes and hands them in as plain data.
  */

@@ -14,7 +14,7 @@ import { Combat, type CombatState } from './Combat';
 import type { CastOptions } from './deliveries/types';
 
 /**
- * Save-states of a fight (docs/GAME.md, *Save-states*): a scripted fight casts every delivery,
+ * Save-states of a fight (docs/game/save-states.md): a scripted fight casts every delivery,
  * the supports that queue repeats, traps (and the Trap support's stand-ins), totems and
  * minions while dummies fight back; at moments through it the whole world is saved, the fight
  * goes on, and the saved moment is loaded (through JSON, as `engine.snapshot` keeps it) into a

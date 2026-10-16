@@ -48,7 +48,7 @@ export type ThemeTone = ToneName | readonly [ToneName, number];
 export type ToneName = 'floor' | 'floorAlt' | 'wall' | 'trim' | 'cliff' | 'accent';
 
 /**
- * A library texture (`TEXTURE_LIBRARY`, docs/ASSETS.md) in the theme's colours: each of its
+ * A library texture (`TEXTURE_LIBRARY`, docs/assets/textures.md) in the theme's colours: each of its
  * slots takes a theme tone, so a rift's shifted palette shifts the texture too.
  */
 export interface ThemeSurface {
@@ -58,7 +58,7 @@ export interface ThemeSurface {
 
 // The surfaces themes share. Fill slots stay close in lightness: floors are a backdrop actors
 // read on. A floor also keeps few texel edges, or it shimmers as the camera zooms (Gate B,
-// docs/ASSETS.md; levels.test.ts holds every floor under the line): slots bound to one tone bake
+// docs/assets/textures.md; levels.test.ts holds every floor under the line): slots bound to one tone bake
 // as one colour, so the cobbles' lit and shadow rims take the stone's tone (stones on joints in
 // two colours) and the plates' lit edge takes the plate's (a calm floor, rivets and bevel kept).
 const FLAGSTONES: ThemeSurface = { texture: 'flagstones', slots: { joint: ['floor', -0.35], slab: 'floor', slab2: 'floorAlt' } };

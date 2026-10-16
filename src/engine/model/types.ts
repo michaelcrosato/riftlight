@@ -44,7 +44,7 @@ export interface PartBase {
   readonly collide?: boolean;
   /**
    * A TextureDef id (`TEXTURE_LIBRARY`, or the build's `textures`): the part shows the texture in
-   * its own colours instead of the slot's, at the model's `texel` density (docs/ASSETS.md).
+   * its own colours instead of the slot's, at the model's `texel` density (docs/assets/textures.md).
    */
   readonly tex?: string;
   /** Sides of round kinds; default by size (6 / 8 / 10). */

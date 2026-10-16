@@ -23,7 +23,7 @@
 //                              → .scratch/model/zoo-<name>.png
 //   tokens <id|file>           what writing it costs: characters ÷ 4 (the repo's estimate)
 //
-// Imports (docs/ASSETS.md *Importing*; licences wait on the escalation, #49):
+// Imports (docs/assets/importing.md; licences wait on the escalation, #49):
 //   import <file.glb|.gltf> --as <id> --licence <spdx> --source <url> [--author a] [--scale s]
 //        [--front +z|-z|+x|-x] [--pack p]
 //                              a glTF or GLB → a draft def, .scratch/model/import/<id>.ts (check,
@@ -45,7 +45,7 @@
 //   credits                    the attribution list from every model's and texture's `source`
 //                              (libraries and packs) → <out>/credits.md
 //
-// Traces (docs/ASSETS.md *Tracing*): redraw a source in primitives, so it comes out editable.
+// Traces (docs/assets/tracing.md): redraw a source in primitives, so it comes out editable.
 //   trace <id> --against <source> --reference
 //                              what to author from: bounds; boxes per node, per material and per
 //                              connected piece (turned when tighter, how full, and the box,

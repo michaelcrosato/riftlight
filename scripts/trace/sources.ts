@@ -1,4 +1,4 @@
-// Trace sources (docs/ASSETS.md *Tracing*): what `npm run model -- trace --against <source>` and
+// Trace sources (docs/assets/tracing.md): what `npm run model -- trace --against <source>` and
 // `npm run model -- export-glb <source>` take, resolved to a source mesh (the importer's
 // `SourceMesh`: coloured triangles grouped by node and material) with its provenance:
 //
@@ -249,7 +249,7 @@ async function fromFile(file: string, o: ResolveOptions): Promise<TraceSource> {
   } else if (inRepo && !scratch && tracked(o.root, rel)) provenance = { ...own(rel), file: basename(path), sha256: sha256(bytes) };
   else {
     provenance = { url: '', licence: '', file: basename(path), sha256: sha256(bytes) };
-    notes.push(`whose is ${file}? it is outside the repository, in .scratch/ or not tracked by git: pass --licence <spdx> --source <url> (and --pack <id> for someone else's, docs/ASSETS.md *Importing*)`);
+    notes.push(`whose is ${file}? it is outside the repository, in .scratch/ or not tracked by git: pass --licence <spdx> --source <url> (and --pack <id> for someone else's, docs/assets/importing.md)`);
   }
   return { spec: file, name: basename(path).replace(/\.[^.]+$/, '').replace(/[^\w-]+/g, '-'), mesh, provenance: { ...provenance, ...o.provenance }, notes };
 }

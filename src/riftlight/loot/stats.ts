@@ -1,8 +1,8 @@
 /**
  * The stat vocabulary loot speaks, and how item mods read in a tooltip. Stats are plain
- * strings (docs/GAME.md, "One modifier language"); this file only names them for humans.
+ * strings (docs/GAME.md *One modifier language*); this file only names them for humans.
  *
- * Conventions (see the "Loot" section of docs/GAME.md):
+ * Conventions (see docs/game/loot.md):
  * - `local.*` stats exist only on an item: `itemMods` folds them into the item's own base
  *   (weapon damage, armour) and never hands them to a StatSheet.
  * - Weapon base stats reach the sheet as `weapon.<type>.min/max`, `attack.speed.base`,
@@ -63,7 +63,7 @@ export const STAT_NAMES: Readonly<Record<string, string>> = {
   'weapon.range': 'weapon range',
   'attack.speed.base': 'base attacks per second',
   'crit.chance.base': 'base critical strike chance',
-  // Riftlight mechanics (docs/GAME.md, "The 12 designed levels")
+  // Riftlight mechanics (docs/game/levels.md *The 12 designed levels*)
   'brazier.damage': 'brazier explosion damage',
   'brazier.area': 'brazier explosion area',
   'brazier.selfIgnite': 'brazier explosions set you alight instead of hurting you',

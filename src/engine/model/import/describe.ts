@@ -2,7 +2,7 @@
  * Words and tags for an imported model or texture, from its name, so imports search and read
  * like the library (`search`, `npm run model -- find`, the kit's LIBRARY.md): Kenney's
  * `tree_pineDefault_a.glb` becomes "Tree pine default a" with the tags nature, tree and plant.
- * `NAME_TAGS` maps a word of a name to library tags (docs/ASSETS.md *Importing*); a word it
+ * `NAME_TAGS` maps a word of a name to library tags (docs/assets/importing.md); a word it
  * doesn't know adds nothing, and the name's words stay searchable through the id and `about`.
  */
 import { searchWords, wordForms } from '../../catalog';

@@ -16,8 +16,8 @@ import type { LevelMechanicDef } from './types';
 
 /**
  * The 12 level mechanics, in designed-level order (level N introduces MECHANIC_ORDER[N-1]).
- * Add a mechanic by writing a `LevelMechanicDef` (see docs/GAME.md, "Levels, mechanics &
- * lighting") and adding it here; rifts pick it up automatically.
+ * Add a mechanic by writing a `LevelMechanicDef` (see
+ * docs/game/mechanics.md *Mechanics*) and adding it here; rifts pick it up automatically.
  */
 export const MECHANIC_ORDER = ['embers', 'gloom', 'gale', 'frostglass', 'thornweave', 'stormspire', 'mire', 'echoes', 'riftgates', 'bloodmoon', 'gravewell', 'collapse'] as const;
 

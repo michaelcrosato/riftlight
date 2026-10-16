@@ -101,7 +101,7 @@ describe('the bypass guarantee', () => {
 });
 
 describe('designed levels and rifts', () => {
-  it('level N is named after mechanic N; 7-12 bring back the GAME.md combinations', () => {
+  it('level N is named after mechanic N; 7-12 bring back the docs/game/levels.md combinations', () => {
     expect(MECHANIC_ORDER).toHaveLength(12);
     DESIGNED_LEVELS.forEach((s, i) => {
       expect(s.depth).toBe(i + 1);
@@ -143,7 +143,7 @@ describe('theme surfaces', () => {
     }
   });
 
-  // Gate B (docs/ASSETS.md, *Texel density*): how much a surface shimmers as the camera zooms
+  // Gate B (docs/assets/textures.md *Texel density*): how much a surface shimmers as the camera zooms
   // tracks the share of neighbouring texels that differ in colour (the worst step ≈ 0.166 × it,
   // so the line is a share of about 36%), not their contrast. A floor fills most of the frame, so
   // every theme's floor stays under 33%, in its own tones and in a rift's shifts of them. Walls

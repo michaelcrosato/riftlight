@@ -49,7 +49,7 @@ export interface PropBinding {
 }
 
 /**
- * Another model a prop may wear in some themes: an imported pack's (docs/ASSETS.md, *Importing*;
+ * Another model a prop may wear in some themes: an imported pack's (docs/assets/importing.md;
  * `loadRiftlightPacks` puts them in the library), picked per prop from the prop's own seed. Only
  * the look changes: the plan (which cells hold which prop, what blocks) is the prop's, so a level's
  * cells, collisions, routes and the bypass guarantee stay the same with or without it.

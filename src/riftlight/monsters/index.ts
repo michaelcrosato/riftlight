@@ -1,7 +1,7 @@
 /**
  * Riftlight monsters: the "Spore" generator. Genome → body (parts on sockets of a plan's
  * skeleton) → rig → procedural animation → archetype brain → elite mods; bosses on top.
- * See docs/GAME.md "Monsters". The integration step uses:
+ * See docs/game/monsters.md. The integration step uses:
  *
  *   const genome = generateGenome(rng.fork('monster:3'), { depth, tags: ['fire'], archetype: 'charger', rank: 'magic' });
  *   const m = buildMonster(genome);            // object, rig, clips (+ hit frames), stats, skills, radius, height

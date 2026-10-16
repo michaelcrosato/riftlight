@@ -211,7 +211,7 @@ export interface HeroPort {
    * slot). `loot/sockets.ts` `socketsToSlots` turns them into HeroController slots.
    */
   setSkills?(skills: SaveData['hero']['skills']): void;
-  /** The hero as data and back (save-states, docs/GAME.md): a port without them can't be in a snapshot. */
+  /** The hero as data and back (save-states, docs/game/save-states.md): a port without them can't be in a snapshot. */
   saveState?(): unknown;
   loadState?(state: unknown, actors: ActorIndex): void;
   /** Why a saved state can't be loaded (null: it fits); a restore asks before it changes anything. */
@@ -293,7 +293,7 @@ export interface LevelHandle extends StageWorld {
   update(dt: number, hero: HeroPort): void;
   /**
    * The level as data, and back on a level built again from the same spec, random stream and
-   * id counters (save-states, docs/GAME.md): monsters spawned since are made again first.
+   * id counters (save-states, docs/game/save-states.md): monsters spawned since are made again first.
    * Optional: without them a level can't be in a snapshot.
    */
   saveState?(): unknown;

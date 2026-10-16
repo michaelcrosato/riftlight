@@ -343,7 +343,7 @@ than more foot-placement rules.
 ## Procedural motion outside clips
 
 Creatures and props that aren't on the hero rig move with `src/engine/animation/procedural.ts`
-(see docs/ENGINE.md, *Procedural motion*): spring chains for scarves and tails, squash and
+(see docs/engine/procedural-motion.md): spring chains for scarves and tails, squash and
 stretch, planted feet that step (`LegStepper`) and a 3D two-bone IK with a pole. None of it is
 a clip, so `npm run anim` doesn't measure it: its unit tests and the Engine World rooms
 `secondary` and `legs` (with their e2e checks: planted feet never slide) do.

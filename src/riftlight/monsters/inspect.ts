@@ -5,7 +5,7 @@ import { buildMonster } from './build';
 import type { BuiltMonster, Genome } from './types';
 
 /**
- * Inspectors (GAME.md rule 5): a GPU-free portrait renderer (the same software rasterizer
+ * Inspectors (docs/GAME.md rule 5): a GPU-free portrait renderer (the same software rasterizer
  * as the contact sheets, so it runs in Node and in the lab), image grids, and the clip
  * checks every monster must pass (the hero's metrics: no floor penetration, no sliding,
  * clean loops) plus build sanity (time, NaNs, bounds).

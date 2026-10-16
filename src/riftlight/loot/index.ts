@@ -1,6 +1,6 @@
 // Loot: item bases, affixes, uniques, currency, generation, crafting, inventory, vendors and
-// loot in the world. The public API other systems (shell, combat, town) use. See the "Loot"
-// section of docs/GAME.md.
+// loot in the world. The public API other systems (shell, combat, town) use. See
+// docs/game/loot.md.
 export { AFFIXES, BASES, CORRUPTIONS, CURRENCY, GEMS, UNIQUES, affixFits, equipmentBases, uniquesFor } from './content';
 export type { CraftAction, CurrencyDef } from './data/currency';
 export type { GemEntry } from './data/gems';

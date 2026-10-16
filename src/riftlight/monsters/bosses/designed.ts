@@ -5,7 +5,7 @@ import type { BossDef, BossPhase } from './types';
 
 /**
  * The twelve designed bosses, one per level, each built around its level's mechanic
- * (docs/GAME.md): hand-picked plan, parts and genes, a three-phase script, a signature
+ * (docs/game/monsters.md *Bosses*): hand-picked plan, parts and genes, a three-phase script, a signature
  * attack and an enrage. Later levels mix in earlier mechanics, like the levels do.
  */
 const ENRAGE = { after: 150, mods: [more('damage', 0.5), inc('attack.speed', 0.3), inc('move.speed', 0.2)] };

@@ -13,7 +13,7 @@ import type { CompiledPart } from './compile';
 
 /**
  * Texels per metre for `tex` parts when the def doesn't set `texel`: the densest Gate B passed for
- * surfaces the camera zooms over (docs/ASSETS.md, *Texel density*). A model that moves may set
+ * surfaces the camera zooms over (docs/assets/textures.md *Texel density*). A model that moves may set
  * up to `MOVING_TEXEL`.
  */
 export const DEFAULT_TEXEL = 8;

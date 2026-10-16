@@ -1,5 +1,5 @@
 /**
- * Loot sounds as data (procedural SFX, see docs/ENGINE.md "Audio"). WorldLoot registers
+ * Loot sounds as data (procedural SFX, see docs/engine/audio.md). WorldLoot registers
  * them once with `ctx.audio.register(id, def)`. Rarer drops ring longer and higher.
  */
 import type { SoundDef } from '../../../engine';

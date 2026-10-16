@@ -5,7 +5,7 @@ import { shiftTheme } from './themes/palette';
 import { getTheme, type LevelTheme } from './themes/themes';
 
 /**
- * The 12 designed levels (docs/GAME.md). Each introduces one mechanic and is named after
+ * The 12 designed levels (docs/game/levels.md). Each introduces one mechanic and is named after
  * it; levels 7–12 bring back an earlier mechanic. Seeds, styles, sizes, themes, archetypes
  * and bosses are hand-tuned here. Archetype ids are the monsters system's (strings).
  */

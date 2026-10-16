@@ -1,7 +1,7 @@
 /**
  * Item generation: pure functions of an `Rng`. The same seed always rolls the same item
  * (docs/GAME.md rule 3). Rarity, affix count, tiers and drops follow the numbers below and
- * `core/scaling.ts`; the "Loot" section of docs/GAME.md explains the math.
+ * `core/scaling.ts`; docs/game/loot.md *Rarity math* explains it.
  */
 import type { Mod } from '../core/mods';
 import type { Rng } from '../core/rng';

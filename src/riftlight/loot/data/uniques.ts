@@ -1,6 +1,6 @@
 /**
  * Uniques: fixed, build-defining mods on a known base, with flavour text. Many of them
- * bend a level mechanic (docs/GAME.md, "The 12 designed levels"): the level systems read
+ * bend a level mechanic (docs/game/levels.md *The 12 designed levels*): the level systems read
  * the same stats (`brazier.selfIgnite`, `well.immune`, ...) from the hero's StatSheet.
  *
  * `level` is the minimum item level to drop and the level requirement. `weight` is
