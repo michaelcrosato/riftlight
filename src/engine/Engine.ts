@@ -1133,7 +1133,7 @@ export class Engine {
   }
 
   /**
-   * The running level as data, between frames (docs/ENGINE.md, *Save-states*): game time, the
+   * The running level as data, between frames (docs/engine/determinism.md *Save-states*): game time, the
    * clock, `ctx.random`, the physics world, the camera, the shake, input still waiting, and the
    * game's own state (`Game.snapshot`). Plain JSON. Taken once the last frame's promise
    * callbacks have run (it waits a task, as a replay does between frames). Throws when the game

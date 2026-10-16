@@ -114,7 +114,7 @@ export const ARCADE_COLORS: Record<ArcadeBlock['kind'], readonly [PaletteColor, 
   gate: ['slate', 'night'],
 };
 
-/** A bouncy chiptune for the cabinet (the engine's song format: docs/ENGINE.md, Audio). */
+/** A bouncy chiptune for the cabinet (the engine's song format: docs/engine/audio.md). */
 export const ARCADE_SONG: Song = {
   bpm: 150,
   tracks: {

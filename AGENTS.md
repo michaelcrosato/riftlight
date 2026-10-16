@@ -41,7 +41,7 @@ this file is how the work is done.
 | Models: check, look, compare (docs/ASSETS.md) | `npm run model -- check [id]`, `sheet <id> --compare`, `diff <id>`, `find <words>` |
 | Find a model or texture (library and packs) | `npm run model -- find <words>`, `npm run tex -- find <words>`; in the game: `/?game=world&room=gallery` (docs/ASSETS.md *Finding assets*) |
 | Models: import a GLB or an approved pack, list credits | `npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>`, `import-pack <pack>`, `credits` |
-| Models: trace a source in primitives (docs/ASSETS.md *Tracing*) | `npm run model -- trace <id> --against <source> --reference`, `trace <draft.ts> --against <source>`, `export-glb <source>` |
+| Models: trace a source in primitives (docs/assets/tracing.md) | `npm run model -- trace <id> --against <source> --reference`, `trace <draft.ts> --against <source>`, `export-glb <source>` |
 | Textures: check, look, import a sheet or an approved pack's sheets | `npm run tex -- check [id]`, `sheet <id>`, `import <sheet.png> --grid 16x16 --licence <spdx> --source <url>`, `import-pack <pack>` |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs
@@ -74,16 +74,13 @@ script and CI pick them up with no extra config.
 
 WebGPU-first pixel-art game engine: Vite + TypeScript, `three@0.186.0`
 (`three/webgpu` + `three/tsl`), `@dimforge/rapier3d@0.20.0` (wasm loaded separately), local GLBs.
-**Read `docs/ASSETS.md` before adding or changing a model or a texture** (props, furniture,
-weapons, surfaces, sprites): look at its sheet (`npm run model -- sheet <id> --compare`,
-`npm run tex -- sheet <id>`) and keep `npm run model -- check` and `npm run tex -- check` clean.
-**Read `docs/ENGINE.md` before touching rendering.** It holds the pipeline contract,
-the game API and the agent tooling. **Read `docs/ANIMATION.md` before touching
-animations**: never guess a pose. After every change, run `npm run anim -- check` and look at
-the contact sheet and motion curves (`npm run anim -- sheet <clip> --compare`, `curves <clip>
---compare`). For anything that plays in the game, also look at a film
-(`npm run film -- <scenario>`): it shows transitions, blends and speed matching, which
-isolated clips can't.
+**Docs by topic.** Opening a file in an area loads its rule (`.claude/rules/<area>.md`): the
+must-not-break rules and which topic file (`docs/engine/`, `docs/game/`, `docs/assets/`,
+docs/ANIMATION.md) covers which folder. Read that topic file, never a whole index
+(docs/ENGINE.md, docs/GAME.md, docs/ASSETS.md list the topics) and never all of `CHANGELOG.md`
+(its top section only). Models, textures: look at the sheet, keep `model -- check` and
+`tex -- check` clean. Animations: never guess a pose; `anim -- check`, sheet, curves, and a
+film for anything that plays in the game.
 
 | Path | What |
 | --- | --- |
@@ -96,15 +93,15 @@ isolated clips can't.
 | `src/game/hero/` | Hero rig spec (`rig.ts`) and every hero clip as data (`clips/`, one file per family; `animations.ts` re-exports `HERO_CLIPS`) |
 | `scripts/anim.ts` | `npm run anim -- check / sheet / curves / diff / overview / pose`: measure and look at animations |
 | `src/engine/model/` | Models as data (docs/ASSETS.md): the `ModelDef` format, `buildModel`, the checks, the built-in library (`library/`) |
-| `src/engine/texture/`, `scripts/tex.ts` | Textures as data (docs/ASSETS.md, *Textures*): `TextureDef` layers and patterns, `bakeTexture`, `textureMap` / `spriteSheet` / `hudSprite`; `npm run tex -- check / sheet / find / zoo` |
+| `src/engine/texture/`, `scripts/tex.ts` | Textures as data (docs/assets/textures.md): `TextureDef` layers and patterns, `bakeTexture`, `textureMap` / `spriteSheet` / `hudSprite`; `npm run tex -- check / sheet / find / zoo` |
 | `scripts/model.ts`, `asset-lab.html` | `npm run model -- check / sheet / diff / find / zoo / tokens`: check and look at models; the Asset Lab shows them in the real renderer (`window.__ASSET_LAB__`) |
 | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
 | `src/lab/`, `lab.html`, `asset-lab.html` | Animation Lab (preview, scrub, metrics, sheets, `window.__ANIM_LAB__`) and Asset Lab (`assetLab.ts`: library models in the real renderer, `window.__ASSET_LAB__`) |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Movement demo (`?game=playground`): a station for every move, a complete example of the `Game` API |
-| `src/riftlight/showcase/` | Other genres inside Riftlight, as templates: a side-scroller (`?game=arcade`), a first-person gallery, photo mode (docs/GAME.md, *Showcase*) |
+| `src/riftlight/showcase/` | Other genres inside Riftlight, as templates: a side-scroller (`?game=arcade`), a first-person gallery, photo mode (docs/game/showcase.md) |
 | `src/world/` | Engine World (`?game=world`, docs/WORLD.md): the engine's tech demo, a room per technique (each room its own `Game`, data + a building kit), station guides, `window.__WORLD__`; e2e in `scripts/e2e-world.mjs` |
-| `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`) and their stubs (`stubs/`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`). See docs/GAME.md, Game shell |
+| `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`) and their stubs (`stubs/`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`): docs/game/shell.md |
 | `src/riftlight/town/` | Emberfall, the town hub: layout as data, the primitive kit, townsfolk models on the hero rig and their clips as data (`npm run anim -- check` covers them) |
 | `src/riftlight/ui/` | Pixel HUD, menus, panels and the UI kit on the engine Hud (`ui/tree`, `ui/items` are the tree and loot views) |
 | `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game, reports clear time, deaths, loot |

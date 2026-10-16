@@ -1,5 +1,5 @@
 /**
- * 2D import (docs/plans/asset-system.md §7.5, docs/ASSETS.md *Importing*): a pixel-art sheet (a
+ * 2D import (docs/plans/asset-system.md §7.5, docs/assets/importing.md *Pixel-art sheets*): a pixel-art sheet (a
  * decoded PNG) sliced on a grid into TextureDefs of `pixels` layers: one def per cell, or one def
  * of frames for an animation strip. Slicing is exact: every pixel keeps its place, alpha under
  * the threshold is transparent, and a cell with no opaque pixel is skipped.
@@ -155,7 +155,7 @@ export function importSheet(img: RgbaImage, o: SheetImportOptions): SheetImport 
   const counts = new Map<number, number>();
   for (let k = 0; k < img.width * img.height; k++) if (opaque(k)) counts.set(hexAt(k), (counts.get(hexAt(k)) ?? 0) + 1);
   if (!counts.size) throw new ImportError(`the sheet has no opaque pixel (alpha ${alpha} or more)`);
-  if (counts.size > LEGEND_CHARS.length) throw new ImportError(`the sheet has ${counts.size} distinct colours, over ${LEGEND_CHARS.length}: pixel art has a few dozen. Is it smoothed, scaled or a photo? (the photo importer isn't built: docs/ASSETS.md *Importing*)`);
+  if (counts.size > LEGEND_CHARS.length) throw new ImportError(`the sheet has ${counts.size} distinct colours, over ${LEGEND_CHARS.length}: pixel art has a few dozen. Is it smoothed, scaled or a photo? (the photo importer isn't built: docs/assets/importing.md *Pixel-art sheets*)`);
   const map = mapColours([...counts].map(([hex, area]) => ({ hex, area })), { min: 1, max: 16 });
 
   // re-bindings, then each colour's slot, entry and character

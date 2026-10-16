@@ -1,4 +1,4 @@
-// Pack files on disk (public/packs/, docs/ASSETS.md *Importing*), shared by `npm run model` and
+// Pack files on disk (public/packs/, docs/assets/importing.md *Packs*), shared by `npm run model` and
 // `npm run tex`: reading them, writing one file per pack (its models and its textures), the index
 // every pack is listed in (public/packs/index.json), and the approved downloads they come from
 // (fetched once, checked against the sha256 the owner approved on #49, cached in

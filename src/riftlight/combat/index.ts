@@ -1,5 +1,5 @@
-// Combat: the hit pipeline (pure), the delivery runtime and the juice. See docs/GAME.md
-// "Combat & skills".
+// Combat: the hit pipeline (pure), the delivery runtime and the juice. See
+// docs/game/combat.md.
 export { Combat, chest, type AudioLike, type CombatOptions, type HitOptions, type ParticlesLike, type SummonFactory, type SummonRequest, type WallQuery } from './Combat';
 export {
   ailmentChances,

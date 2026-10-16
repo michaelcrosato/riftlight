@@ -16,7 +16,7 @@ import { PropTarget } from './mechanics/common';
 import { levelSpec } from './rift';
 
 /**
- * Save-states inside a level (docs/GAME.md *Save-states*): a level played by a little bot
+ * Save-states inside a level (docs/game/save-states.md): a level played by a little bot
  * (it walks a tour of every mechanic element, swings at what is near, monsters spawn as in
  * the game), saved mid-action, played on; the same level built again from its spec with the
  * same id counters, the save loaded, played on the same way: the same moments step for step

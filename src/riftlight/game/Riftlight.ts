@@ -1547,7 +1547,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   /**
-   * The game as data between two frames (`engine.snapshot()`, docs/GAME.md *Save-states*): the
+   * The game as data between two frames (`engine.snapshot()`, docs/game/save-states.md): the
    * save and the slots it knows, the run's random stream, the id counters, the hero, the loot,
    * the town and everything the shell keeps (timers, the HUD's banners and numbers, the camera's
    * lead, the pointer) and, in a level, what the level was built from and its own state

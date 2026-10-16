@@ -4,7 +4,7 @@
  * validator measures every node with the same table, so a region can't quietly end up
  * stronger than its neighbours.
  *
- * Conventions every system shares (see docs/GAME.md, "Passive tree"):
+ * Conventions every system shares (see docs/game/tree.md):
  * - `inc` / `more` are fractions (0.1 = 10%).
  * - Chances, resistances, block and leech are flat *fractions* too: `flat('res.fire', 0.12)`
  *   is +12% fire resistance, `flat('crit.chance', 0.02)` is +2% base critical strike chance.

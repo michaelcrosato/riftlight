@@ -64,8 +64,8 @@ function markShared(root: Object3D): Object3D {
 const packs = new Map<string, Promise<{ pack: ModelPack; models: ModelCatalog; textures: TextureCatalog }>>();
 
 /**
- * Load a pack of imported models and textures (`public/packs/<pack>.json`, docs/ASSETS.md
- * *Importing*) once, the way `loadModel` loads a GLB: the URL resolved the same way (under the
+ * Load a pack of imported models and textures (`public/packs/<pack>.json`, docs/assets/importing.md
+ * *Packs*) once, the way `loadModel` loads a GLB: the URL resolved the same way (under the
  * base URL; a page may put a data URL for it in `__PIXEL_ASSETS__`, as single-file builds do for
  * every `packs/<id>.json` path the built code names, cut to the models it names), counted by
  * `assetProgress`. Resolves to a catalog of the

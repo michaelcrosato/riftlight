@@ -13,7 +13,7 @@
 //   zoo [tag|all]        every texture (or those with the tag) at one scale, tiled 3×3 where it tiles
 //                        → .scratch/tex/zoo-<name>.png
 //
-// Import (docs/ASSETS.md *Importing*; third-party content waits on the licence escalation, #49):
+// Import (docs/assets/importing.md *Pixel-art sheets*; third-party content waits on the licence escalation, #49):
 //   import <sheet.png> --grid 16x16 --licence <spdx> --source <url> [--as <prefix>] [--author a]
 //        [--pack p] [--tile] [--frames] [--cells 0-3,8] [--names grass,,water] [--alpha 128]
 //        [--palette slot=colour,...]

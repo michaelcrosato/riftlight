@@ -1,5 +1,5 @@
 /* global window -- page.evaluate callbacks run in the browser */
-// e2e suite "riftlight-snapshot": Riftlight save-states (docs/GAME.md, *Save-states*). A run in
+// e2e suite "riftlight-snapshot": Riftlight save-states (docs/game/save-states.md). A run in
 // town is played by input (the stick, the mouse aiming and swinging, a skill now and then: the
 // townsfolk bark, the cat runs, cooldowns tick), then `engine.snapshot()` keeps the moment as
 // JSON. Played on from there, then restored and played on the same way, the game reaches the

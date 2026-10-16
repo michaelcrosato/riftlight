@@ -1,6 +1,6 @@
 /**
  * Emberfall's outskirts: the ring of districts between the plaza's buildings and the forest, built
- * mostly from the imported Kenney packs (docs/ASSETS.md, *Imported so far*; `loadRiftlightPacks`
+ * mostly from the imported Kenney packs (docs/assets/importing.md *Imported so far*; `loadRiftlightPacks`
  * puts them in the library before the town is built) with the town's kit, so they merge with the
  * rest of the town into one mesh per material:
  *

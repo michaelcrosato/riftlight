@@ -16,7 +16,7 @@ import type { BossView, HeroPort, LevelDeps, LevelHandle, LevelPort, MechanicInf
 import { generateLayout, type GridLayout } from './layout';
 import { StubMonster } from './monsters';
 
-/** The 12 designed levels (docs/GAME.md): name = mechanic. */
+/** The 12 designed levels (docs/game/levels.md): name = mechanic. */
 export const MECHANICS: readonly MechanicInfo[] = [
   { id: 'embers', name: 'Embers', description: 'Explosive braziers: hit one to blast everything near it.', bypass: 'Fight normally.', exploit: 'Pull packs onto braziers and chain the blasts.' },
   { id: 'gloom', name: 'Gloom', description: 'Darkness: the light radius matters, lanterns relight areas, monsters hit harder in the dark.', bypass: 'Stay near lit paths.', exploit: 'Light lanterns for big XP shrine buffs.' },

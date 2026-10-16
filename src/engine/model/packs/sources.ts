@@ -30,7 +30,7 @@ export interface PackSource {
    * Pick it so a door or a character matches the hero (1.6 m) and the library.
    */
   readonly scale?: number;
-  /** Library tags every asset of the pack gets (docs/ASSETS.md *Importing*), beside those its name adds. */
+  /** Library tags every asset of the pack gets (docs/assets/importing.md *Packs*), beside those its name adds. */
   readonly tags?: readonly string[];
   /**
    * Slots of the pack's models' colour map bound to other PALETTE entries: an agent's choice,

@@ -1,6 +1,6 @@
 /**
- * Riftlight's particle presets (data, registered as `rl.<name>`; see docs/ENGINE.md,
- * Particles). Sizes are art pixels, colours step through the palette over a life.
+ * Riftlight's particle presets (data, registered as `rl.<name>`; see
+ * docs/engine/effects.md *Particles*). Sizes are art pixels, colours step through the palette over a life.
  */
 import type { ParticlePreset, Particles } from '../../engine';
 

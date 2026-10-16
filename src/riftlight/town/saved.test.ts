@@ -5,7 +5,7 @@ import { Rng } from '../core/rng';
 import { Cat } from './critters';
 import { Npc, NPCS } from './npcs';
 
-// Save-states (docs/GAME.md): a townsperson and the cat saved while they walk, bark and flee,
+// Save-states (docs/game/save-states.md): a townsperson and the cat saved while they walk, bark and flee,
 // loaded into ones made the same way, go on exactly as the originals did.
 
 const DT = 1 / 60;

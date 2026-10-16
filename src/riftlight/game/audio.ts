@@ -1,5 +1,5 @@
 /**
- * Riftlight's music and sounds, as data in the engine's formats (docs/ENGINE.md, Audio):
+ * Riftlight's music and sounds, as data in the engine's formats (docs/engine/audio.md):
  * songs are patterns of note strings per track, sounds are SoundDefs. `registerAudio`
  * registers every SFX under an `rl.` name; music plays with `ctx.audio.playMusic(SONGS.x)`.
  *

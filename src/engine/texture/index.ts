@@ -1,7 +1,7 @@
 /**
- * Textures as data (docs/ASSETS.md *Textures*): `TextureDef` layers baked headless to palette
+ * Textures as data (docs/assets/textures.md): `TextureDef` layers baked headless to palette
  * texels, then a toon `textureMap`, a `spriteSheet` or `hudSprite` rows. `importSheet` slices a
- * pixel-art PNG sheet into defs (docs/ASSETS.md *Importing*).
+ * pixel-art PNG sheet into defs (docs/assets/importing.md *Pixel-art sheets*).
  */
 export type { Layer, OutlineLayer, PathLayer, PatternId, PatternLayer, PixelsLayer, TexSlot, TextureDef } from './types';
 export { textureDef } from './helpers';

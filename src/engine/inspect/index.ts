@@ -1,5 +1,5 @@
 /**
- * Asset inspection for agents (`npm run inspect`, docs/ENGINE.md "Tooling for agents"):
+ * Asset inspection for agents (`npm run inspect`, docs/engine/tooling.md):
  * counts, bounds, joints, clips and warnings for any Object3D, a GPU-free turntable with
  * rig overlays, and diffs between two assets or two versions of one.
  */

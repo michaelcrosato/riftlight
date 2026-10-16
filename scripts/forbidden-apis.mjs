@@ -1,5 +1,5 @@
 // Architecture guardrail, run as part of `npm run lint`. Fails on anything that would
-// break the WebGPU-first / TSL-only pixel pipeline contract (see docs/ENGINE.md).
+// break the WebGPU-first / TSL-only pixel pipeline contract (see docs/engine/render.md).
 import { readFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 

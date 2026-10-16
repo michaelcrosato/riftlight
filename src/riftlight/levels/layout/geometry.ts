@@ -20,7 +20,7 @@ import { FLOOR, type Layout, VOID, WALL } from './grid';
  *    floor) are cut low so the iso camera sees into rooms, Diablo-style. Every wall has a
  *    trim band and a cap. Ruins get broken, uneven heights. Lone wall cells become pillars.
  *    Wall faces take the theme's wall surface. Textures sit in world space at the engine's
- *    texel density (Gate B, docs/ASSETS.md), so they run on across cells and round corners.
+ *    texel density (Gate B, docs/assets/textures.md), so they run on across cells and round corners.
  *  - **Props** are built by the theme's prop builders and merged with everything else by
  *    material (`mergeStaticMeshes`): a whole level is a handful of draw calls.
  *  - **Colliders**: wall and floor cells are merged into rectangles (greedy), so a level is

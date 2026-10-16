@@ -9,8 +9,8 @@
  *   flat('res.elemental', 0.1)  → res.fire, res.cold and res.lightning, 0.1 each
  *   sheet.get('crit.multi')     → sheet.get('crit.multiplier')
  *
- * What each canonical stat does is in `CANONICAL_STATS` (docs/GAME.md, "Stats the pipeline
- * reads" has the full list); the integration layer reads all of them.
+ * What each canonical stat does is in `CANONICAL_STATS` (docs/game/combat.md
+ * *Stats the pipeline reads* has the full list); the integration layer reads all of them.
  */
 import type { Mod } from './mods';
 

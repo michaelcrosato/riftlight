@@ -6,7 +6,7 @@
  */
 export const WIRE_TUNING = {
   hero: {
-    /** Stats every hero starts with (merged over HeroController's base). Multiplier stats are base 1 (docs/GAME.md, levels). */
+    /** Stats every hero starts with (merged over HeroController's base). Multiplier stats are base 1 (docs/game/levels.md *What levels need from actors and combat*). */
     base: { life: 130, mana: 70, 'mana.regen': 5, 'life.regen': 2.5, 'move.speed': 5.6, accuracy: 600, mass: 3, 'xp.gain': 1, 'light.radius': 1, 'item.rarity': 1, 'item.quantity': 1, 'gold.find': 1 },
     /** Growth per character level above 1 (the `level` source). */
     perLevel: { life: 11, mana: 4, 'mana.regen': 0.3, accuracy: 25, 'life.regen': 0.25, damage: 0.05 },

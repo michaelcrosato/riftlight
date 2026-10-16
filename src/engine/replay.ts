@@ -13,7 +13,7 @@
  * (DOM events it listens to itself, a model that finishes loading mid-play, the wall clock, a
  * camera left turned by the level before). Data a game must take from the page (a save in
  * storage, a text field) goes through `ctx.input.send()`, which the recording keeps.
- * docs/ENGINE.md, "Recording and replay".
+ * docs/engine/determinism.md *Recording and replay*.
  */
 import type { InputFrame } from './input';
 import { type Snapshot, snapshotProblem } from './snapshot';

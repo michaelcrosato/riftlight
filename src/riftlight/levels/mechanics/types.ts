@@ -162,7 +162,7 @@ export type MechanicState = { readonly [key: string]: unknown };
 
 /**
  * What a level mechanic's `install` returns: the core runtime plus its state as data
- * (save-states, docs/GAME.md *Save-states*). Everything that changes after `install` lives
+ * (save-states, docs/game/save-states.md). Everything that changes after `install` lives
  * where `save` reads it (never only in a closure), actors by id.
  */
 export interface LevelMechanicRuntime extends MechanicRuntime {

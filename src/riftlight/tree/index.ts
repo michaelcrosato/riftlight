@@ -1,5 +1,5 @@
 /**
- * The passive tree's public API (docs/GAME.md, "Passive tree"). Other systems import from
+ * The passive tree's public API (docs/game/tree.md). Other systems import from
  * here, not from the files inside.
  */
 export { DEFAULT_TREE_SEED, TREE_LAYOUT, generateTree, type TreeGenOptions, type TreeLayout } from './generate';

@@ -42,7 +42,7 @@ import { GAME_VIEW, gamePxPerMetre } from './view';
  * When a trace passes (§7.6): its worst game-scale view's silhouette IoU, its worst close view's,
  * and the mean OKLab distance where both cover a pixel, over the source's palette floor
  * (`paletteFloor`: 0 for a source in palette colours, so there the colour limit is `colour`).
- * Tuned on Phase 6's ten traces (docs/ASSETS.md *Tracing*): the plan started at 0.85 / 0.75 / 0.08
+ * Tuned on Phase 6's ten traces (docs/assets/tracing.md): the plan started at 0.85 / 0.75 / 0.08
  * absolute, which every trace of a primitive source cleared at the first scoring while a monster in
  * its own colours was out of reach in practice (floors 0.074 and 0.082).
  */
