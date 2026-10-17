@@ -5,8 +5,10 @@ import { readFileSync } from 'node:fs';
 import { Mesh } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { Playground } from '../game/playground';
+import { setAssetReader } from './assets';
 import { Engine, type Game, type GameContext } from './Engine';
 import { nodeAssets } from './node';
+import { GpuSwarm } from './render/gpuSwarm';
 import { drawSheet } from './render/sprites';
 import type { Recording } from './replay';
 
@@ -116,18 +118,19 @@ describe('Engine.headless', () => {
     engine.step(10);
     const rec = engine.recording()!;
     expect(rec.view).toEqual({ width: 1280, height: 720, dpr: 1 });
+    const end = engine.fingerprint();
+    engine.dispose(); // one engine at a time
     const other = await Engine.headless(new Dice(), { aspect: 'fill' });
     expect(other.renderer.resolution).toEqual({ width: 480, height: 270 });
     await other.replay(rec, () => other.loadGame(new Dice()));
     expect(other.renderer.resolution).toEqual({ width: 427, height: 240 });
-    expect(other.fingerprint()).toBe(engine.fingerprint());
-    engine.dispose();
+    expect(other.fingerprint()).toBe(end);
     other.dispose();
   });
 
   it('an asset load without a reader names the one to pass', async () => {
-    const game = new Dice();
-    const engine = await Engine.headless(game);
+    setAssetReader(null); // the process has none yet (a reader set earlier stays: the Playground's)
+    const engine = await Engine.headless(new Dice());
     await expect(engine.context.loadModel('assets/not-loaded-yet.glb')).rejects.toThrow(/nodeAssets\(\)/);
     engine.dispose();
   });
@@ -155,6 +158,29 @@ describe('Engine.headless', () => {
     });
     const image = sheet.texture.image as { width: number; height: number };
     expect([sheet.cols, sheet.rows, sheet.frames, image.width, image.height]).toEqual([4, 2, 5, 64, 16]);
+    new GpuSwarm({ count: 8 }).update(engine.renderer, 1 / 60); // no GPU: nothing to dispatch
+    engine.dispose();
+  });
+
+  it('player settings apply but are not stored, the debug panel never opens, transitions run on steps', async () => {
+    const engine = await Engine.headless(new Dice(), { aspect: 'fixed' });
+    expect(engine.settings.key, 'no key given: nothing stored').toBeNull();
+    expect(engine.audio.persist).toBe(false);
+    engine.settings.set({ pixelSize: 'chunky', debugInfo: true });
+    expect(engine.renderer.resolution).toEqual({ width: 320, height: 180 });
+    expect(engine.debugShown).toBe(false);
+    engine.showDebug(true);
+    expect(engine.debugShown).toBe(false);
+    let covered: boolean | null = null;
+    void engine.screen.cover('fade', { duration: 0.25 }).then((done) => (covered = done));
+    engine.step(10);
+    await Promise.resolve();
+    expect(covered).toBeNull();
+    engine.step(10);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(covered).toBe(true);
+    await engine.replay(engine.recording()!, () => engine.loadGame(new Dice()));
+    expect(engine.audio.persist, 'a replay gives back what was there').toBe(false);
     engine.dispose();
   });
 

@@ -259,5 +259,9 @@ describe('recording and replaying input', () => {
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, pointer: [0, 0, 1] }] })).toMatch(/pointer/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, gamepad: 1 }] })).toMatch(/gamepad/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, sync: false }] })).toMatch(/sync/);
+    expect(recordingProblem({ ...ok, view: { width: 960, height: 540, dpr: 1 } })).toBeNull();
+    expect(recordingProblem({ ...ok, view: { width: 0, height: 0, dpr: 2 } }), 'a hidden page records 0×0').toBeNull();
+    expect(recordingProblem({ ...ok, view: { width: 960, height: 540, dpr: 0 } })).toMatch(/view/);
+    expect(recordingProblem({ ...ok, view: { width: 960 } as never })).toMatch(/view/);
   });
 });

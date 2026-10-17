@@ -44,6 +44,7 @@ export class HeadlessView implements View {
   private _aspect: AspectMode;
   private _mode: RenderMode;
   private _look: Look;
+  private _filters: readonly string[] = [];
   private camera: Camera;
   private readonly beforeRender = new Set<() => void>();
 
@@ -55,6 +56,7 @@ export class HeadlessView implements View {
     this._aspect = options.aspect ?? 'adaptive';
     this._mode = options.mode ?? 'pixel';
     this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
+    this.syncFilters();
     this.layout();
   }
 
@@ -116,10 +118,17 @@ export class HeadlessView implements View {
   setLook(look: Look): void {
     this._look = normalizeLook(look);
     this.lookVersion++;
+    this.syncFilters();
   }
 
+  private syncFilters(): void {
+    const ids = this._look.scene.map((f) => f.id);
+    if (ids.join() !== this._filters.join()) this._filters = ids;
+  }
+
+  /** The whole-scene filter ids (the same array until they change, as PixelRenderer's). */
   get filters(): readonly string[] {
-    return this._look.scene.map((f) => f.id);
+    return this._filters;
   }
 
   setFilters(ids: readonly string[]): void {

@@ -1,6 +1,6 @@
 import { AmbientLight, Color, DirectionalLight, type Node, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
 import { abs, dot, max, min, normalWorld, sqrt, uniform } from 'three/tsl';
-import { type AssetReader, assetProgress, loadModel, preloadModels, setAssetReader } from './assets';
+import { type AssetReader, assetProgress, assetReader, loadModel, preloadModels, setAssetReader } from './assets';
 import { AudioManager } from './audio/AudioManager';
 import {
   CAMERA_PRESETS,
@@ -723,7 +723,8 @@ export class Engine {
    * by `assets` (`nodeAssets()` from src/engine/node.ts, which the page never imports).
    */
   static async headless(game: Game, options: HeadlessOptions = {}): Promise<Engine> {
-    setAssetReader(options.assets ?? NO_READER);
+    if (options.assets) setAssetReader(options.assets);
+    else if (!assetReader()) setAssetReader(NO_READER); // a reader the process set already stays
     return Engine.boot(game, options, {
       view: async (_scene, camera) =>
         new HeadlessView({
@@ -1227,6 +1228,7 @@ export class Engine {
     this.settings.close(); // they pause the game and release its input: shut before the replay plays
     const volumes = { ...this.audio.volume };
     const settings = this.settings.values;
+    const persist = { audio: this.audio.persist, settings: this.settings.persist }; // headless never stores them
     this.input.playing = true;
     this.audio.persist = false;
     this.settings.persist = false;
@@ -1235,9 +1237,9 @@ export class Engine {
       this.input.playing = false;
       for (const ch of ['master', 'sfx', 'music'] as const) this.audio.setVolume(ch, volumes[ch]);
       this.audio.setMuted(volumes.muted);
-      this.audio.persist = true;
+      this.audio.persist = persist.audio;
       this.settings.replace(settings);
-      this.settings.persist = true;
+      this.settings.persist = persist.settings;
     };
     const slow = setTimeout(() => console.warn('[engine] replay: start() has not finished after 10 s; nothing advances during a replay, so it must not wait on frames (load without a transition)'), 10_000);
     try {

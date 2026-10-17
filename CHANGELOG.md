@@ -22,9 +22,12 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
 - **The GPU helpers take the view**: `swarm.update(engine.renderer, dt)` (was
   `engine.renderer.renderer`), `mirror.attach(engine.renderer, scene)` and
   `view.attach(engine.renderer, scene)` as before; headless they do nothing.
+- New exports: `HeadlessOptions`, `View`, `HeadlessView` (`setViewport`), `HeadlessViewOptions`,
+  `HEADLESS_VIEWPORT`, `frameView`, `Viewport`, `setAssetReader`, `AssetReader`.
 - **Assets without `fetch`**: `setAssetReader(read)` reads models and packs through
   `(path) => Promise<ArrayBuffer>` for the whole process (`AssetReader`); `nodeAssets()` in
-  `src/engine/node.ts` reads `public/` in Node.
+  `src/engine/node.ts` reads `public/` in Node. A model load that fails is tried again on the
+  next call instead of failing from the cache.
 - **`Recording.view`**: the viewport a recording was made on. A headless replay frames for it; a
   page warns when its own differs (pointer aim and the HUD follow it). `frameView` and `Viewport`
   are the framing both views share.

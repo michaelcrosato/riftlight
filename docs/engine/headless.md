@@ -51,7 +51,8 @@ only the drawing skipped, so whatever presentation feeds into gameplay stays the
 ## Assets in Node
 
 Models and packs are read through one process-wide reader (`setAssetReader`), because `loadModel`
-and `loadPack` are free functions over one cache. `Engine.headless` installs `options.assets`:
+and `loadPack` are free functions over one cache. `Engine.headless` installs `options.assets` (a
+reader set earlier stays when none is given; a failed load is tried again next time):
 `nodeAssets(root = 'public')` from `src/engine/node.ts` reads `public/<path>`. GLBs are parsed from
 the bytes (`GLTFLoader.parseAsync`), packs with `JSON.parse`. Without a reader a load rejects,
 naming `nodeAssets`. `node.ts` is Node-only and never imported by the engine or the page (a static
@@ -69,7 +70,9 @@ either.
   5 s) and keep a file at or under 15 s.
 - `src/engine/headless.test.ts` is the model: Playground boots, input moves and jumps the hero,
   the recording replays to the same fingerprint (and an edited one doesn't), a save-state survives
-  JSON, a recording replays on its own viewport, every page-only path is guarded.
+  JSON, a recording replays on its own viewport; each page-only guard (camera swaps, hook errors,
+  the HUD's size, drawn sheets, GPU compute, settings, the debug panel) has a check that goes red
+  without it.
 
 The kit's `pixel-engine.js` doesn't run in Node yet (its Rapier wasm and CSS load the page's
 way): `Engine.headless` is for this repository's tests and tools.

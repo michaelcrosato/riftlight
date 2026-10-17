@@ -28,6 +28,11 @@ export function setAssetReader(read: AssetReader | null): void {
   reader = read;
 }
 
+/** The reader set with `setAssetReader`, or null (the page's fetch). */
+export function assetReader(): AssetReader | null {
+  return reader;
+}
+
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<Model>>();
 /** Bytes loaded / expected per URL, for the loading indicator. */
@@ -47,6 +52,10 @@ function fetchModel(url: string): Promise<Model> {
         });
     pending = gltf
       .then((gltf) => ({ scene: markShared(gltf.scene), animations: gltf.animations }))
+      .catch((e: unknown) => {
+        cache.delete(url); // a failed load is tried again next time (another reader, the file back)
+        throw e;
+      })
       .finally(() => (p.done = true));
     cache.set(url, pending);
   }

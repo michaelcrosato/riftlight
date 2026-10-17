@@ -38,8 +38,9 @@ export interface Recording {
   /** The save-state the frames start from (`engine.restore()` began this recording), if any. */
   readonly from?: Snapshot;
   /**
-   * The viewport it was recorded on (CSS pixels and DPR): the art resolution, pointer aim and the
-   * HUD's layout follow it. A headless replay frames for it; a page warns when its own differs.
+   * The viewport it was recorded on, as it was when the level began (CSS pixels and DPR): the art
+   * resolution, pointer aim and the HUD's layout follow it. A headless replay frames for it; a page
+   * warns when its own differs. A page resized during the level is not followed.
    */
   readonly view?: Viewport;
 }
@@ -61,7 +62,8 @@ export function recordingProblem(v: unknown): string | null {
   if (!Array.isArray(r.frames)) return 'no frames';
   if (r.view !== undefined) {
     const v = r.view as Partial<Viewport> | null;
-    if (!v || typeof v !== 'object' || ![v.width, v.height, v.dpr].every((x) => typeof x === 'number' && Number.isFinite(x) && x > 0)) return 'view must be { width, height, dpr }, positive numbers';
+    const size = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+    if (!v || typeof v !== 'object' || !size(v.width) || !size(v.height) || !(size(v.dpr) && v.dpr! > 0)) return 'view must be { width, height, dpr } (sizes from 0, dpr above 0)';
   }
   if (r.from !== undefined) {
     const p = snapshotProblem(r.from);
