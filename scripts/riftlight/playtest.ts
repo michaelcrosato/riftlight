@@ -31,17 +31,20 @@
 // After every depth the save is written to campaign-save-<depth>.json; --resume <file>
 // carries on from one (handy for looking at one wall). Exit 1 when it does not clear the 12
 // designed levels (or --to, if lower).
-import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright-core';
 import { launchChromium } from '../browser.mjs';
+import { openPage, startServer } from '../page.mjs';
 import { lineChart, type Series, textPanel, tile } from '../../src/riftlight/balance/charts';
 import { DIFFICULTY_KEYS, DIFFICULTY_PRESETS, sanitizeTuning } from '../../src/riftlight/game/difficulty';
 import type { DifficultyTuning } from '../../src/riftlight/core/types';
 import { encodeGif } from '../gif';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);
@@ -96,20 +99,18 @@ interface Frame {
 
 async function main(): Promise<void> {
   mkdirSync(out, { recursive: true });
-  const server = await startServer();
+  // the dev server shows the source as it is now (--preview: the build); FILM=1: no file watching
+  const server = await startServer({ port: PORT, mode: flags.has('preview') ? 'preview' : 'dev', env: { FILM: '1' }, timeout: 30000, portEnv: 'PLAYTEST_PORT' });
   const browser = await launchChromium();
   const reports: (BotReport & { seed: number; level: number })[] = [];
   try {
-    // 480×270: one device pixel per art pixel (cheapest to render and read back).
-    const page = await browser.newPage({ viewport: { width: 480, height: 270 }, deviceScaleFactor: 1 });
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(`http://localhost:${PORT}/?game=riftlight&debug=0&touch=0&save=memory`);
-    // the game's API is up in its setup, the engine's handle only once its shaders are compiled
-    await page.waitForFunction(() => (window as unknown as { __RIFTLIGHT__?: unknown; __PIXEL_ENGINE__?: unknown }).__PIXEL_ENGINE__ && (window as unknown as { __RIFTLIGHT__?: unknown }).__RIFTLIGHT__, null, { timeout: 120000 });
+    // 480×270: one device pixel per art pixel (cheapest to render and read back). openPage
+    // returns once window.__PIXEL_READY__ has resolved, and __RIFTLIGHT__ is set by then.
+    const { page, logs } = await openPage(browser, `${server.url}?game=riftlight&debug=0&touch=0&save=memory`, { viewport: { width: 480, height: 270 }, timeout: 120000 });
+    const pageErrors = () => logs.filter((l) => l.startsWith('pageerror'));
     if (campaignMode) {
       await campaign(page);
-      if (errors.length) console.error(`page errors:\n  ${errors.join('\n  ')}`);
+      if (pageErrors().length) console.error(`page errors:\n  ${pageErrors().join('\n  ')}`);
       return;
     }
     for (let r = 0; r < runs; r++) {
@@ -146,10 +147,10 @@ async function main(): Promise<void> {
       }
       if (!flags.has('json')) console.log(`run ${r + 1}/${runs} seed ${seed}: ${rep.outcome} in ${rep.time}s${film ? `  → ${base}.png` : ''}`);
     }
-    if (errors.length) console.error(`page errors:\n  ${errors.join('\n  ')}`);
+    if (pageErrors().length) console.error(`page errors:\n  ${pageErrors().join('\n  ')}`);
   } finally {
     await browser.close();
-    stop(server);
+    server.stop();
   }
   if (campaignMode) return;
   if (flags.has('json')) console.log(JSON.stringify(reports, null, 1));
@@ -529,30 +530,6 @@ function campaignChart(rows: DepthRow[], summary: { seed: number; cleared: numbe
   for (let y = 0; y < grid.height; y++) data.set(grid.data.subarray(y * grid.width * 4, (y + 1) * grid.width * 4), y * width * 4);
   for (let y = 0; y < table.height; y++) data.set(table.data.subarray(y * table.width * 4, (y + 1) * table.width * 4), ((grid.height + y) * width + 6) * 4);
   return { width, height, data };
-}
-
-async function startServer(): Promise<ChildProcess> {
-  const args = flags.has('preview') ? ['vite', 'preview', '--port', String(PORT), '--strictPort'] : ['vite', '--port', String(PORT), '--strictPort'];
-  // detached: its own process group, so stop() takes down npx *and* vite
-  const proc = spawn('npx', args, { cwd: ROOT, stdio: 'ignore', detached: true, env: { ...process.env, FILM: '1' } });
-  for (let i = 0; i < 300; i++) {
-    try {
-      if ((await fetch(`http://localhost:${PORT}/`)).ok) return proc;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  stop(proc);
-  throw new Error('vite did not start');
-}
-
-function stop(proc: ChildProcess): void {
-  try {
-    process.kill(-proc.pid!, 'SIGTERM');
-  } catch {
-    proc.kill();
-  }
 }
 
 main().catch((e: unknown) => {

@@ -28,6 +28,9 @@ import { describeItemMods } from '../../src/riftlight/loot/stats';
 import type { Painter } from '../../src/riftlight/ui/items/paint';
 import { drawTooltip, measureTooltip, tooltipLines } from '../../src/riftlight/ui/items/tooltip';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

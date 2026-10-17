@@ -41,6 +41,9 @@ import { BOSSES, buildBoss, buildMonster, generateBoss, generateGenome, type Bui
 import { NPC_CLIPS } from '../src/riftlight/town/npcClips';
 import { TOWNSFOLK } from '../src/riftlight/town/npcModel';
 import { encodePng } from './png';
+import { helpExit, manual } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
@@ -230,7 +233,7 @@ function baseline(key: string, now: InspectReport): { snap: Snapshot; img: Sheet
 async function main(): Promise<void> {
   const cmd = args[0] ?? 'help';
   if (cmd === 'help') {
-    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
+    console.log(manual(import.meta.url));
     return;
   }
   if (cmd === 'list') {

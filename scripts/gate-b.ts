@@ -40,19 +40,22 @@
 //             sweep. A floor takes about 40% of its time (one sweep of four, but a landscape one).
 //
 // Writes <out>/screen.json and a filmstrip per floor (<out>/<id>.png: its flat and textured runs
-// on the level-zoom sweep); prints a table per floor. `--help` prints this.
-import { spawn, type ChildProcess } from 'node:child_process';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+// on the level-zoom sweep); prints a table per floor. `help`, `--help` or `-h` prints this.
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import type { Page } from 'playwright-core';
+import type { Browser, Page } from 'playwright-core';
 import { launchChromium } from './browser.mjs';
+import { openPage, startServer } from './page.mjs';
 import type { SheetImage } from '../src/engine/animation/raster';
 import { column, row, textBox, titleBar } from '../src/engine/inspect/render';
 import { upscale } from '../src/engine/model/sheet';
 import { bakeTexture, type TextureDef } from '../src/engine/texture';
 import { floorDef, gateBTextures, type GateBFrame, type GateBRun, type GateBSceneOptions, type GateBSet } from '../src/lab/gateB';
 import { encodePng } from './png';
+import { helpExit } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.GATE_B_PORT) || 4188;
@@ -61,11 +64,6 @@ const opt = (k: string, d: string) => {
   const i = argv.indexOf(`--${k}`);
   return i >= 0 && argv[i + 1] ? argv[i + 1]! : d;
 };
-if (argv.includes('--help')) {
-  const own = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
-  console.log(own.slice(0, own.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
-  process.exit(0);
-}
 const FLOORS = opt('floors', '').split(',').filter(Boolean);
 const QUICK = argv.includes('--quick');
 const DENSITIES = opt('densities', FLOORS.length ? '8' : '8,12,16,20').split(',').map(Number);
@@ -185,10 +183,13 @@ function plan(screen: 'landscape' | 'portrait', floors: readonly Config[]): { ba
 
 const mean = (xs: readonly number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0);
 
-async function openLab(page: Page, query: string): Promise<void> {
+/** The Asset Lab (the engine ready, scripts/page.mjs), with its __ASSET_LAB__ handle. */
+async function openLab(browser: Browser, url: string, viewport: { width: number; height: number }, query: string): Promise<{ page: Page; logs: string[] }> {
   // a fixed quality, so the engine's start-up auto quality can't change it mid-run
-  await page.goto(`http://localhost:${PORT}/asset-lab.html?model=crate&quality=medium${query}`);
-  await page.waitForFunction(() => !!(window as unknown as { __ASSET_LAB__?: unknown }).__ASSET_LAB__, null, { timeout: 120000 });
+  const lab = await openPage(browser, `${url}asset-lab.html?model=crate&quality=medium${query}`, { viewport, timeout: 120000 });
+  // the lab sets its handle as Engine.start's promise settles, just after __PIXEL_READY__
+  await lab.page.waitForFunction(() => !!(window as unknown as { __ASSET_LAB__?: unknown }).__ASSET_LAB__, null, { timeout: 10000 });
+  return lab;
 }
 
 async function runOn(page: Page, c: Config, seq: Sequence, shots: number[] = []): Promise<GateBRun> {
@@ -215,7 +216,8 @@ interface Result {
 async function main(): Promise<void> {
   const floors = await floorConfigs();
   mkdirSync(OUT, { recursive: true });
-  const server = await startServer();
+  // the production build: run `npm run build` first
+  const server = await startServer({ port: PORT, mode: 'preview', probe: 'asset-lab.html', timeout: 120000, portEnv: 'GATE_B_PORT' });
   const results: Result[] = [];
   const strips = new Map<string, SheetImage[]>();
   const renderers = new Set<string>();
@@ -233,11 +235,8 @@ async function main(): Promise<void> {
       const browser = await launchChromium();
       try {
         for (const screen of ['landscape', 'portrait'] as const) {
-          const page = await browser.newPage({ viewport: screen === 'landscape' ? { width: 480, height: 270 } : { width: 124, height: 270 }, deviceScaleFactor: 1 });
-          const errors: string[] = [];
-          page.on('pageerror', (e) => errors.push(e.message));
-          page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
-          await openLab(page, screen === 'portrait' ? '&aspect=adaptive' : '');
+          const viewport = screen === 'landscape' ? { width: 480, height: 270 } : { width: 124, height: 270 };
+          const { page, logs: errors } = await openLab(browser, server.url, viewport, screen === 'portrait' ? '&aspect=adaptive' : '');
           const st = await page.evaluate(() => (window as unknown as { __PIXEL_ENGINE__: { state(): { backend: string; resolution: { width: number; height: number } } } }).__PIXEL_ENGINE__.state());
           renderers.add(`${backend} ${screen}: ${st.backend}, ${st.resolution.width}×${st.resolution.height}`);
           for (const { base, seq, configs } of plan(screen, floors)) {
@@ -276,7 +275,7 @@ async function main(): Promise<void> {
       }
     }
   } finally {
-    stop(server);
+    server.stop();
   }
   console.log('\n');
   console.log(`renderers: ${[...renderers].join('; ')}`);
@@ -355,31 +354,6 @@ function screenReport(results: readonly Result[], floors: readonly Config[]) {
     }
   }
   return rows;
-}
-
-// ---- infrastructure (as scripts/film.ts) -----------------------------------------------------
-async function startServer(): Promise<ChildProcess> {
-  // the production build: run `npm run build` first
-  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { cwd: ROOT, stdio: 'ignore', detached: true });
-  // up to 2 minutes: on a loaded machine the preview server can take a while
-  for (let i = 0; i < 1200; i++) {
-    try {
-      if ((await fetch(`http://localhost:${PORT}/asset-lab.html`)).ok) return proc;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  stop(proc);
-  throw new Error('vite preview did not start (run npm run build first)');
-}
-
-function stop(proc: ChildProcess): void {
-  try {
-    if (proc.pid) process.kill(-proc.pid);
-  } catch {
-    /* already gone */
-  }
 }
 
 main().catch((e: unknown) => {

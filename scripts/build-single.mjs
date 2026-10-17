@@ -1,7 +1,11 @@
-// Builds dist-single/pixel-engine.html: the whole game in one self-contained file
-// (JS, Rapier's .wasm, CSS, favicon, GLB assets and the pack models it uses as data URIs). Runs offline.
+// npm run build:single: builds dist-single/pixel-engine.html, the whole game in one self-contained
+// file (JS, Rapier's .wasm, CSS, favicon, GLB assets and the pack models it uses as data URIs).
+// Runs offline, from file://. No options.
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { build } from 'vite';
+import { helpExit } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 const root = new URL('..', import.meta.url).pathname;
 const tmp = `${root}.scratch/single-build`;

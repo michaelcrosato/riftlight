@@ -21,6 +21,9 @@ import { Canvas, type RGB } from '../../src/engine/animation/raster';
 import { PALETTE, type PaletteColor } from '../../src/engine/palette';
 import { DEFAULT_TREE_SEED, generateTree, nodeLines, PassiveTree, REGIONS, searchTree, validateTree, type TreeNode } from '../../src/riftlight/tree';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

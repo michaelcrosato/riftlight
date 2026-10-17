@@ -64,6 +64,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 | `fingerprint(ctx)` | tooling | the game's own state as a string (positions, counters), part of `engine.fingerprint()` so a replay can be compared |
 | `snapshot(ctx)`, `restore(ctx, state)`, `beforeRestore(ctx)` | save-states | the game's own state as plain data (as it is, not through JSON), and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles; `beforeRestore` leaves a mode with its own camera first |
 | `onCameraChange(ctx)`, `eyePosition(ctx)`, `dispose(ctx)` | optional | camera swaps, first-person eye, cleanup |
+| `ready(ctx)` | optional: when the engine starts running the game, and after each `loadGame` | page handles for tools (`window.__MYGAME__`) |
 
 `ctx` (the `GameContext`) is the same object in every hook: `ctx.scene` (three.js scene),
 `ctx.physics`, `ctx.input`, `ctx.camera`, `ctx.audio`, `ctx.particles`, `ctx.hud`,
@@ -1016,10 +1017,12 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
 
 ## 8. Debugging and checking
 
-The engine is on `window.__PIXEL_ENGINE__` once it runs (also the value `Engine.start` returns):
+The engine is on `window.__PIXEL_ENGINE__` once it runs (also the value `Engine.start` returns).
+A tool waits on `window.__PIXEL_READY__` (it resolves with the engine, or rejects with why the start
+failed); a game puts its own page handles in `ready(ctx)`, which runs then and after each `loadGame`.
 
 ```js
-const e = window.__PIXEL_ENGINE__;
+const e = await window.__PIXEL_READY__;   // step() before this throws
 e.state();                // version, backend, fps, camera, look, game status, errors, gpuErrors, ...
 e.errors;                 // exceptions thrown by the game's hooks in the render loop (also on screen)
 e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exception thrown to you; e.manual = false resumes

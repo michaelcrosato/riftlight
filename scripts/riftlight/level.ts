@@ -20,6 +20,9 @@ import { luminance, riftShift, shiftTheme } from '../../src/riftlight/levels/the
 import { THEMES, type LevelTheme } from '../../src/riftlight/levels/themes/themes';
 import { validateSpec } from '../../src/riftlight/levels/validate';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 const OUT = '.scratch/levels';
 const rgb = (hex: number): RGB => [(hex >> 16) & 255, (hex >> 8) & 255, hex & 255];

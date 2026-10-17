@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.41.0
+
+- **One readiness signal: `window.__PIXEL_READY__`.** A promise that exists as soon as the engine
+  loads, resolves with the engine when `Engine.start` has finished and rejects with the reason a
+  start failed. Tools await it instead of polling for `__PIXEL_ENGINE__`.
+- **`Game.ready(ctx)`.** An optional hook the engine calls when it starts running a game (just
+  before `__PIXEL_READY__` resolves) and after each `loadGame`: put a game's page handles for tools
+  there, so they never exist before the engine can step. An exception in it is reported like any
+  hook's (`engine.errors`, on screen) and the game runs on. A game whose class already had a
+  `ready` member that isn't this hook must rename it.
+- **`engine.step()` before the first start throws** (`engine not ready: await
+  window.__PIXEL_READY__`) instead of running 0 frames and leaving the game frozen in manual time.
+  During a later `loadGame` it still runs 0 frames.
+
 ## 0.40.0
 
 - **No engine hotkeys in a shipped game.** P, R, \`, [ ], M are developer tools: on with the debug

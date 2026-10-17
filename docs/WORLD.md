@@ -110,6 +110,8 @@ it does nothing, no note, no sound).
 
 ## Agent API: `window.__WORLD__`
 
+Set once the first room runs (it exists when `window.__PIXEL_READY__` resolves) and kept room to room.
+
 | Call | Does |
 | --- | --- |
 | `rooms()` | every room: id, title, wing, about |

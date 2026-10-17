@@ -20,6 +20,9 @@ import ts from 'typescript';
 import { build } from 'vite';
 import { generateApi } from './bundle/api.mjs';
 import { guideBlocks, startsEngine } from './bundle/guide.mjs';
+import { helpExit } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 const root = fileURLToPath(new URL('..', import.meta.url)).replace(/[\\/]$/, '');
 const args = process.argv.slice(2);

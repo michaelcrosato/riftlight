@@ -58,6 +58,9 @@ import { upscale } from '../src/engine/model/sheet';
 import { encodePng } from './png';
 import { approvedPack, PACK_INDEX, packDownload, packSource, packTextureDefs, writePack } from './packs';
 import { textureDefsSource } from './ts-value';
+import { helpExit, manual } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
@@ -377,8 +380,7 @@ async function cmdImportPack(): Promise<void> {
 }
 
 function help(): void {
-  const text = readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
-  console.log(text.slice(0, text.findIndex((l) => !l.startsWith('//'))).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  console.log(manual(import.meta.url));
 }
 
 const cmd = args.shift();

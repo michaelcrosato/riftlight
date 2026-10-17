@@ -90,7 +90,10 @@ export class LootLab implements Game {
     this.hero = new PlatformerCharacter(physics, { position: [0, 0, 0], lockDepth: ctx.camera.lockDepth });
     const rest = restPoseOf(this.heroModel, HERO_RIG);
     this.hero.attachModel(this.heroModel, HERO_CLIPS.map((d) => compileClip(d, HERO_RIG, rest)));
+  }
 
+  /** The engine runs the lab: `window.__LOOTLAB__` for tools and the `riftlight-loot` suite. */
+  ready(): void {
     (window as unknown as { __LOOTLAB__: LootLab }).__LOOTLAB__ = this;
   }
 
