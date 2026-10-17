@@ -1228,6 +1228,22 @@ async function runTools(browserExe) {
     return png.subarray(1, 4).toString() === 'PNG' ? { width: png.readUInt32BE(16), height: png.readUInt32BE(20), bytes: png.length } : { width: 0, height: 0, bytes: 0 };
   };
 
+  console.log('\n▶ tools: npm run playtest (headless and in Chromium)');
+  try {
+    // the bot plays depth 1 (seed 1) in Node and in the browser: the same game, the same report
+    const report = (out) => JSON.parse(out.slice(out.indexOf('['), out.lastIndexOf(']') + 1));
+    const headless = await run('npx', ['tsx', 'scripts/riftlight/playtest.ts', '1', '--json', '--out', '.scratch/e2e/playtest']);
+    const inBrowser = await run('npx', ['tsx', 'scripts/riftlight/playtest.ts', '1', '--json', '--browser', '--out', '.scratch/e2e/playtest'], { env: { PLAYTEST_PORT: String(PORT + 2) } });
+    check(headless.code === 0 && inBrowser.code === 0, `playtest -- 1 exits 0 headless and with --browser${headless.code || inBrowser.code ? ':\n    ' + tail(headless.out + inBrowser.out) : ''}`);
+    const [a] = report(headless.out);
+    const [b] = report(inBrowser.out);
+    // Node's Math.sin / cos / pow differ from Chromium's in the last bit (docs/engine/headless.md
+    // *Node and the browser*): a long or different run may part ways; this one is checked to match
+    check(JSON.stringify(a) === JSON.stringify(b), `the same report headless and in Chromium (${a?.outcome} in ${a?.time} s, ${a?.kills} kills, ${a?.xp} XP; browser: ${b?.outcome} in ${b?.time} s, ${b?.kills} kills, ${b?.xp} XP)`);
+  } catch (e) {
+    check(false, `playtest crashed: ${e.message}`);
+  }
+
   console.log('\n▶ tools: npm run balance');
   try {
     const out = new URL('balance/', OUT);

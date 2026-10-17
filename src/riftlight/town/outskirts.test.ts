@@ -1,12 +1,9 @@
 import { readFileSync } from 'node:fs';
-import { Color, ConeGeometry, CylinderGeometry, Group, Mesh, type Object3D, Raycaster, Vector3 } from 'three/webgpu';
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { Mesh, type Object3D, Raycaster, Vector3 } from 'three/webgpu';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { MODEL_LIBRARY } from '../../engine/model';
-import { toonMaterial } from '../../engine/render/toon';
-import { Rng } from '../core/rng';
-import type { ShellServices } from '../game/ports';
+import { headlessRiftlight } from '../headless';
 import { loadPacksSync } from '../nodePacks';
-import { buildShowcaseProps } from '../showcase/townProps';
 import { SKILLS } from '../skills/actives';
 import { iso, screenOf, TOWN_LAYOUT } from './layout';
 import { type Blocker, overlapsBlocker } from './kit';
@@ -14,26 +11,16 @@ import { TownNav } from './nav';
 import { bridgeDeck } from './outskirts';
 import { Town } from './Town';
 
-/** The town as the game builds it (packs loaded, the showcase's cabinet and hall added), with a stand-in for tree.glb. */
-function buildTown(): Town {
-  loadPacksSync();
-  const tree = new Group();
-  tree.add(new Mesh(new CylinderGeometry(0.15, 0.2, 1.2, 6), toonMaterial(0x5d275d)));
-  const crown = new Mesh(new ConeGeometry(1.1, 2.4, 6), toonMaterial(0x257179));
-  crown.position.y = 2.2;
-  tree.add(crown);
-  const lights = { acquire: () => ({ intensity: 0, position: new Vector3() }), release: () => {} };
-  const engine = { sun: { color: new Color(), intensity: 0 }, ambient: { color: new Color(), intensity: 0 }, scene: {} };
-  const town = new Town({ rng: new Rng(1), lights, ctx: { engine, particles: { burst() {} }, audio: { play() {} } } } as unknown as ShellServices);
-  town.build(tree);
-  town.extend(buildShowcaseProps({ lights: { request: () => ({ release() {}, update() {} }) }, particles: { burst() {} } } as never).extension);
-  return town;
-}
-
-let built: Town | null = null;
-const town = () => (built ??= buildTown());
-// building the town (packs, merging, the walkable grid) takes a second or two, more on a busy machine
-beforeAll(() => void town().nav(), 120_000);
+/** The town as the game builds it: the real game, headless (packs loaded, the showcase's cabinet and hall added, tree.glb). */
+let built: { town: Town; dispose(): void } | null = null;
+const town = (): Town => built!.town;
+// booting the game and building the walkable grid takes a second or two, more on a busy machine
+beforeAll(async () => {
+  const { engine, game } = await headlessRiftlight();
+  built = { town: game.town, dispose: () => engine.dispose() };
+  town().nav();
+}, 120_000);
+afterAll(() => built?.dispose());
 const at = (sx: number, sy: number) => {
   const [x, z] = iso(sx, sy);
   return { x, z };

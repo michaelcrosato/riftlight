@@ -1,27 +1,32 @@
 // Riftlight playtest bot CLI: the scripted player (src/riftlight/game/bot.ts) plays the real
-// game in Chromium, frame-exactly through Engine.step, and reports what happened.
+// game frame-exactly through Engine.step, and reports what happened. It runs headless, in Node
+// (headlessRiftlight: no server, no browser), unless --film, --gif or --browser asks for Chromium;
+// the two give the same report for the same run.
 //
-//   npm run playtest -- <depth> [--runs 3] [--seed 1] [--level N] [--film] [--every 6] [--gif]
-//                               [--max 10800] [--difficulty hard] [--preview] [--json] [--out dir]
+//   npm run playtest -- <depth> [--runs 3] [--jobs 4] [--seed 1] [--level N] [--film] [--every 6] [--gif]
+//                               [--max 10800] [--difficulty hard] [--browser] [--preview] [--json] [--out dir]
 //   npm run playtest -- campaign [--to 24] [--tries 3] [--seed 1] [--difficulty hard] [--film] [--max 18000]
 //                                [--resume .scratch/playtest/campaign-save-11.json]
 //
 //   <depth>      the level to play (1..12 designed, 13+ rifts)
-//   --runs n     independent runs (seeds seed, seed+1, ...); default 1
+//   --runs n     independent runs (seeds seed, seed+1, ...); default 1. Headless they spread over
+//                forked processes, one per core
+//   --jobs n     how many runs at once (default: the cores, os.availableParallelism())
 //   --seed s     first run seed (the same seed plays the same level); default 1
 //   --level N    hero level at the start (default 2 × depth − 1, so deep runs are fair)
 //   --max n      frame budget per run (default 3 minutes of game time; campaign: 5 minutes)
 //   --difficulty the Tuning sliders: a preset (story, normal, hard, nightmare) or
 //                `enemyLife=1.5,playerDamage=0.8` (keys of DifficultyTuning), applied like the panel
-//   --film       write a filmstrip PNG (scene + HUD) per run: every --every frames (default 6)
+//   --film       write a filmstrip PNG (scene + HUD) per run: every --every frames (default 6); in Chromium
 //   --gif        with --film, also an animated GIF to watch
-//   --preview    serve the production build (npm run build) instead of the dev server
+//   --browser    play in Chromium (the dev server) instead of headless
+//   --preview    with Chromium: serve the production build (npm run build) instead of the dev server
 //
 // Output: a table (clear time, deaths, damage taken, kills, XP, gold, items, stuck) and
 // .scratch/playtest/<depth>-<seed>.json (+ .png / .gif). Exit 1 when no run cleared.
 //
 // campaign: one bot plays a fresh run from depth 1 through the designed levels into the
-// rifts, carrying its save like a player: before every level a town visit (the bot's
+// rifts (one process: each try carries the save of the last), carrying its save like a player: before every level a town visit (the bot's
 // `bot.town()`: gems, gear upgrades, selling, the vendors, passive points), then the level.
 // A death sends it home (the game's penalty); like a player it farms the depth before once
 // (unless --no-farm) and tries again, up to --tries times; the campaign ends at --to or
@@ -31,7 +36,9 @@
 // After every depth the save is written to campaign-save-<depth>.json; --resume <file>
 // carries on from one (handy for looking at one wall). Exit 1 when it does not clear the 12
 // designed levels (or --to, if lower).
+import { fork } from 'node:child_process';
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { availableParallelism } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright-core';
@@ -43,8 +50,10 @@ import type { DifficultyTuning } from '../../src/riftlight/core/types';
 import { encodeGif } from '../gif';
 import { encodePng } from '../png';
 import { helpExit } from '../manual.mjs';
+import { registerEngineHooks } from '../trace/hooks';
 
 helpExit(import.meta.url);
+registerEngineHooks(); // headless runs import the game: Rapier and `?url` load as Vite loads them
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);
@@ -71,6 +80,11 @@ const heroLevel = num('level', Math.max(1, depth * 2 - 1));
 const maxFrames = num('max', 60 * 60 * (campaignMode ? 5 : 3));
 const every = Math.max(1, num('every', 6));
 const film = flags.has('film');
+/** Chromium: pictures need it (principle 6), or --browser asks. */
+const inBrowser = film || flags.has('gif') || flags.has('browser');
+const jobs = Math.max(1, num('jobs', availableParallelism()));
+/** A forked run (--runs headless): one seed, its report sent to the parent. */
+const child = !!process.env.PLAYTEST_CHILD && typeof process.send === 'function';
 const out = resolve(ROOT, String(flags.get('out') ?? '.scratch/playtest'));
 const PORT = Number(process.env.PLAYTEST_PORT) || 4800 + Math.floor(Math.random() * 400);
 
@@ -97,62 +111,151 @@ interface Frame {
   data: Uint8Array;
 }
 
-async function main(): Promise<void> {
-  mkdirSync(out, { recursive: true });
+/**
+ * Where the game runs: a Chromium page, or the game headless in this process. `run` calls `fn`
+ * with the page's `window` (or Node's `globalThis`, where headless sets the same handles:
+ * `__RIFTLIGHT__`, `__PIXEL_ENGINE__`), so every step below is written once for both. `fn` is
+ * sent to the page as source: it must use nothing but its arguments.
+ */
+interface Driver {
+  run<A, R>(fn: (w: unknown, arg: A) => R | Promise<R>, arg?: A): Promise<R>;
+  /** A frame with the HUD (Chromium only: --film). */
+  shot(): Promise<Frame>;
+  /** Errors the page or the game's hooks reported. */
+  errors(): string[];
+  close(): Promise<void>;
+}
+
+async function browserDriver(): Promise<Driver> {
   // the dev server shows the source as it is now (--preview: the build); FILM=1: no file watching
   const server = await startServer({ port: PORT, mode: flags.has('preview') ? 'preview' : 'dev', env: { FILM: '1' }, timeout: 30000, portEnv: 'PLAYTEST_PORT' });
   const browser = await launchChromium();
-  const reports: (BotReport & { seed: number; level: number })[] = [];
   try {
     // 480×270: one device pixel per art pixel (cheapest to render and read back). openPage
     // returns once window.__PIXEL_READY__ has resolved, and __RIFTLIGHT__ is set by then.
     const { page, logs } = await openPage(browser, `${server.url}?game=riftlight&debug=0&touch=0&save=memory`, { viewport: { width: 480, height: 270 }, timeout: 120000 });
-    const pageErrors = () => logs.filter((l) => l.startsWith('pageerror'));
-    if (campaignMode) {
-      await campaign(page);
-      if (pageErrors().length) console.error(`page errors:\n  ${pageErrors().join('\n  ')}`);
-      return;
-    }
-    for (let r = 0; r < runs; r++) {
-      const seed = seed0 + r;
-      await page.evaluate(
-        async ([seed, depth, level, difficulty]) => {
-          const rl = (window as unknown as { __RIFTLIGHT__: Api }).__RIFTLIGHT__;
-          // manual time from here on: the render loop must not advance the level between calls,
-          // or the same seed plays differently depending on how fast the browser is
-          (window as unknown as { __PIXEL_ENGINE__: { manual: boolean } }).__PIXEL_ENGINE__.manual = true;
-          rl.newRun({ seed });
-          rl.setDifficulty(difficulty);
-          if (level > 1) rl.give({ levels: level - 1 });
-          await rl.enterDepth(depth);
-          rl.bot.start();
-        },
-        [seed, depth, heroLevel, difficulty] as const,
-      );
-      const frames: Frame[] = [];
-      let report: BotReport | null = null;
-      for (let f = 0; f < maxFrames; f += every) {
-        const res = (await page.evaluate((n) => (window as unknown as { __RIFTLIGHT__: Api }).__RIFTLIGHT__.bot.advance(n), film ? every : maxFrames)) as { done: boolean; report: BotReport };
-        report = res.report;
-        if (film) frames.push(await shot(page));
-        if (res.done || !film) break;
-      }
-      const rep = { ...report!, seed, level: heroLevel };
-      reports.push(rep);
-      const base = join(out, `${depth}-${seed}`);
-      writeFileSync(`${base}.json`, JSON.stringify(rep, null, 1));
-      if (film && frames.length) {
-        writeFileSync(`${base}.png`, encodePng(strip(frames, 8, 2) as never));
-        if (flags.has('gif')) writeFileSync(`${base}.gif`, encodeGif(frames, (every / 60) * 100));
-      }
-      if (!flags.has('json')) console.log(`run ${r + 1}/${runs} seed ${seed}: ${rep.outcome} in ${rep.time}s${film ? `  → ${base}.png` : ''}`);
-    }
-    if (pageErrors().length) console.error(`page errors:\n  ${pageErrors().join('\n  ')}`);
-  } finally {
+    return {
+      run: async (fn, arg) => (await page.evaluate(`(${fn.toString()})(window, ${JSON.stringify(arg ?? null)})`)) as never,
+      shot: () => shot(page),
+      errors: () => logs.filter((l) => l.startsWith('pageerror')),
+      close: async () => {
+        await browser.close();
+        server.stop();
+      },
+    };
+  } catch (e) {
     await browser.close();
     server.stop();
+    throw e;
   }
-  if (campaignMode) return;
+}
+
+async function headlessDriver(): Promise<Driver> {
+  const { headlessRiftlight } = await import('../../src/riftlight/headless');
+  // the page's 480×270 viewport: the same art size, so the same frames
+  const { engine } = await headlessRiftlight({ viewport: { width: 480, height: 270, dpr: 1 } });
+  return {
+    run: async (fn, arg) => fn(globalThis, arg as never),
+    shot: () => Promise.reject(new Error('headless: no pictures (--film plays in Chromium)')),
+    errors: () => [...engine.errors],
+    close: async () => engine.dispose(),
+  };
+}
+
+async function withDriver<T>(play: (drv: Driver) => Promise<T>): Promise<T> {
+  const drv = await (inBrowser ? browserDriver() : headlessDriver());
+  try {
+    const result = await play(drv);
+    if (drv.errors().length) console.error(`${inBrowser ? 'page' : 'game'} errors:\n  ${drv.errors().join('\n  ')}`);
+    return result;
+  } finally {
+    await drv.close();
+  }
+}
+
+type Report = BotReport & { seed: number; level: number };
+
+/** One run: a new game on `seed`, the bot through the level; its report (and film) written. */
+async function playRun(drv: Driver, seed: number, r: number): Promise<Report> {
+  await drv.run(
+    async (w, [seed, depth, level, difficulty]) => {
+      const g = w as { __RIFTLIGHT__: Api; __PIXEL_ENGINE__: { manual: boolean } };
+      const rl = g.__RIFTLIGHT__;
+      // manual time from here on: the render loop must not advance the level between calls,
+      // or the same seed plays differently depending on how fast the browser is
+      g.__PIXEL_ENGINE__.manual = true;
+      rl.newRun({ seed });
+      rl.setDifficulty(difficulty);
+      if (level > 1) rl.give({ levels: level - 1 });
+      await rl.enterDepth(depth);
+      rl.bot.start();
+    },
+    [seed, depth, heroLevel, difficulty] as const,
+  );
+  const frames: Frame[] = [];
+  let report: BotReport | null = null;
+  for (let f = 0; f < maxFrames; f += every) {
+    const res = (await drv.run((w, n) => (w as { __RIFTLIGHT__: Api }).__RIFTLIGHT__.bot.advance(n), film ? every : maxFrames)) as { done: boolean; report: BotReport };
+    report = res.report;
+    if (film) frames.push(await drv.shot());
+    if (res.done || !film) break;
+  }
+  const rep = { ...report!, seed, level: heroLevel };
+  const base = join(out, `${depth}-${seed}`);
+  writeFileSync(`${base}.json`, JSON.stringify(rep, null, 1));
+  if (film && frames.length) {
+    writeFileSync(`${base}.png`, encodePng(strip(frames, 8, 2) as never));
+    if (flags.has('gif')) writeFileSync(`${base}.gif`, encodeGif(frames, (every / 60) * 100));
+  }
+  if (!flags.has('json') && !child) console.log(`run ${r + 1}/${runs} seed ${seed}: ${rep.outcome} in ${rep.time}s${film ? `  → ${base}.png` : ''}`);
+  return rep;
+}
+
+/**
+ * --runs headless: each run in its own forked process (the same tsx, ~1 s to import the game),
+ * `jobs` at a time. Worker threads won't do: tsx can't load the engine's extensionless imports
+ * there, and the module hooks are per thread. Reports come back in seed order.
+ */
+async function forkRuns(): Promise<Report[]> {
+  const file = fileURLToPath(import.meta.url);
+  const seeds = Array.from({ length: runs }, (_, r) => seed0 + r);
+  const reports: Report[] = new Array(runs);
+  let next = 0;
+  const worker = async (): Promise<void> => {
+    while (next < seeds.length) {
+      const r = next++;
+      const words = [String(depth), '--seed', String(seeds[r]), '--runs', '1', '--level', String(heroLevel), '--max', String(maxFrames), '--out', out];
+      if (typeof flags.get('difficulty') === 'string') words.push('--difficulty', String(flags.get('difficulty')));
+      reports[r] = await new Promise<Report>((done, fail) => {
+        const proc = fork(file, words, { execArgv: process.execArgv, env: { ...process.env, PLAYTEST_CHILD: '1' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+        let got: Report | null = null;
+        proc.on('message', (m) => (got = m as Report));
+        proc.on('error', fail);
+        proc.on('exit', (code) => (got ? done(got) : fail(new Error(`run seed ${seeds[r]} exited ${code} without a report`))));
+      });
+      if (!flags.has('json')) console.log(`run ${r + 1}/${runs} seed ${seeds[r]}: ${reports[r]!.outcome} in ${reports[r]!.time}s`);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(jobs, runs) }, worker));
+  return reports;
+}
+
+async function main(): Promise<void> {
+  mkdirSync(out, { recursive: true });
+  if (child) {
+    const rep = await withDriver((drv) => playRun(drv, seed0, 0));
+    process.send!(rep);
+    return;
+  }
+  if (campaignMode) return withDriver(campaign);
+  const reports =
+    inBrowser || runs === 1 || jobs === 1
+      ? await withDriver(async (drv) => {
+          const all: Report[] = [];
+          for (let r = 0; r < runs; r++) all.push(await playRun(drv, seed0 + r, r));
+          return all;
+        })
+      : await forkRuns();
   if (flags.has('json')) console.log(JSON.stringify(reports, null, 1));
   else table(reports);
   if (!reports.some((r) => r.cleared)) process.exitCode = 1;
@@ -321,7 +424,7 @@ type CampaignApi = Api & {
   game: { save: { hero: { allocated: string[] } } };
 };
 
-async function campaign(page: Page): Promise<void> {
+async function campaign(drv: Driver): Promise<void> {
   const to = num('to', 24);
   const tries = Math.max(1, num('tries', 3));
   const seed = seed0;
@@ -329,10 +432,10 @@ async function campaign(page: Page): Promise<void> {
   const t0 = Date.now();
   // --resume <save.json>: carry on from a campaign save (written after every depth)
   const resume = typeof flags.get('resume') === 'string' ? readFileSync(resolve(String(flags.get('resume'))), 'utf8') : '';
-  const first = (await page.evaluate(
-    ([seed, difficulty, resume]) => {
-      const rl = (window as unknown as { __RIFTLIGHT__: CampaignApi & { importSave(s: number, t: string): unknown; load(s: number): unknown } }).__RIFTLIGHT__;
-      (window as unknown as { __PIXEL_ENGINE__: { manual: boolean } }).__PIXEL_ENGINE__.manual = true;
+  const first = (await drv.run(
+    (w, [seed, difficulty, resume]) => {
+      const rl = (w as { __RIFTLIGHT__: CampaignApi & { importSave(s: number, t: string): unknown; load(s: number): unknown } }).__RIFTLIGHT__;
+      (w as { __PIXEL_ENGINE__: { manual: boolean } }).__PIXEL_ENGINE__.manual = true;
       rl.newRun({ seed });
       if (resume) {
         rl.importSave(0, resume);
@@ -348,7 +451,7 @@ async function campaign(page: Page): Promise<void> {
   let wall = false;
   for (let d = first; d <= to && !wall; d++) {
     const start = Date.now();
-    const before = (await page.evaluate(() => (window as unknown as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__.state().hero)) as { level: number; gold: number };
+    const before = (await drv.run((w) => (w as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__.state().hero)) as { level: number; gold: number };
     const row: DepthRow = {
       depth: d, name: '', cleared: false, attempts: 0, deaths: 0, timeouts: 0, time: 0, totalTime: 0, levelBefore: before.level, levelAfter: before.level, xp: 0,
       goldBefore: before.gold, goldAfter: before.gold, goldEarned: 0, kills: 0, damageTaken: 0, gems: [], gearScore: 0, dps: 0, ehp: 0, found: {},
@@ -358,9 +461,9 @@ async function campaign(page: Page): Promise<void> {
     for (let attempt = 0; attempt < tries && !row.cleared; attempt++) {
       row.attempts++;
       // the town visit, then into the level
-      const town = (await page.evaluate(
-        async (depth) => {
-          const rl = (window as unknown as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__;
+      const town = (await drv.run(
+        async (w, depth) => {
+          const rl = (w as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__;
           const t = rl.bot.town({ depth });
           await rl.enterDepth(depth);
           rl.bot.start();
@@ -384,9 +487,9 @@ async function campaign(page: Page): Promise<void> {
       let report: BotReport | null = null;
       const chunk = film ? every : 1800;
       for (let f = 0; f < maxFrames; f += chunk) {
-        const res = (await page.evaluate((n) => (window as unknown as { __RIFTLIGHT__: Api }).__RIFTLIGHT__.bot.advance(n), Math.min(chunk, maxFrames - f))) as { done: boolean; report: BotReport };
+        const res = (await drv.run((w, n) => (w as { __RIFTLIGHT__: Api }).__RIFTLIGHT__.bot.advance(n), Math.min(chunk, maxFrames - f))) as { done: boolean; report: BotReport };
         report = res.report;
-        if (film && attempt === 0) frames.push(await shot(page));
+        if (film && attempt === 0) frames.push(await drv.shot());
         if (res.done) break;
       }
       // a level the bot ran out of time on: back to town like a player using the portal home
@@ -394,19 +497,19 @@ async function campaign(page: Page): Promise<void> {
       if (!r.cleared && r.outcome === 'timeout') {
         row.timeouts++;
         // what was left (a wall made of unreachable monsters, not of difficulty)
-        const left = (await page.evaluate(() => {
-          const rl = (window as unknown as { __RIFTLIGHT__: { state(): { hero: { position: number[] }; monsters: { alive: number; killed: number; total: number } }; actors(): { name: string; rank: string; alive: boolean; position: number[] }[] } }).__RIFTLIGHT__;
+        const left = (await drv.run((w) => {
+          const rl = (w as { __RIFTLIGHT__: { state(): { hero: { position: number[] }; monsters: { alive: number; killed: number; total: number } }; actors(): { name: string; rank: string; alive: boolean; position: number[] }[] } }).__RIFTLIGHT__;
           const st = rl.state();
           const p = st.hero.position;
           const alive = rl.actors().filter((a) => a.alive);
           return { progress: st.monsters, near: alive.slice(0, 6).map((a) => `${a.name} (${a.rank}) ${Math.hypot(a.position[0]! - p[0]!, a.position[2]! - p[2]!).toFixed(0)}m`) };
         })) as { progress: { killed: number; total: number }; near: string[] };
         row.left = `${left.progress.killed}/${left.progress.total} killed; alive: ${left.near.join(', ')}`;
-        await page.evaluate(() => (window as unknown as { __RIFTLIGHT__: { toTown(): unknown } }).__RIFTLIGHT__.toTown());
+        await drv.run((w) => (w as { __RIFTLIGHT__: { toTown(): unknown } }).__RIFTLIGHT__.toTown());
       }
       if (r.outcome === 'died') {
         row.deaths++;
-        const killer = (await page.evaluate(() => (window as unknown as { __RIFTLIGHT__: { log(n: number): { type: string; text: string }[] } }).__RIFTLIGHT__.log(200).filter((l) => l.type === 'death').at(-1)?.text ?? '')) as string;
+        const killer = (await drv.run((w) => (w as { __RIFTLIGHT__: { log(n: number): { type: string; text: string }[] } }).__RIFTLIGHT__.log(200).filter((l) => l.type === 'death').at(-1)?.text ?? '')) as string;
         row.killers.push(`${killer.replace('slain by ', '')} @${r.time.toFixed(0)}s`);
       }
       row.cleared = r.cleared;
@@ -419,9 +522,9 @@ async function campaign(page: Page): Promise<void> {
       for (const [k, v] of Object.entries(r.found ?? {})) row.found[k] = (row.found[k] ?? 0) + v;
       // beaten: like a player, farm the depth before once for XP and gear, then try again
       if (!row.cleared && attempt + 1 < tries && d > 1 && !flags.has('no-farm')) {
-        const farm = (await page.evaluate(
-          async ([depth, max]) => {
-            const rl = (window as unknown as { __RIFTLIGHT__: CampaignApi & { toTown(): unknown } }).__RIFTLIGHT__;
+        const farm = (await drv.run(
+          async (w, [depth, max]) => {
+            const rl = (w as { __RIFTLIGHT__: CampaignApi & { toTown(): unknown } }).__RIFTLIGHT__;
             rl.bot.town({ depth });
             await rl.enterDepth(depth);
             rl.bot.start();
@@ -437,8 +540,8 @@ async function campaign(page: Page): Promise<void> {
         for (const [k, v] of Object.entries(farm.found ?? {})) row.found[k] = (row.found[k] ?? 0) + v;
       }
     }
-    const after = (await page.evaluate(() => {
-      const rl = (window as unknown as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__;
+    const after = (await drv.run((w) => {
+      const rl = (w as { __RIFTLIGHT__: CampaignApi }).__RIFTLIGHT__;
       return { hero: rl.state().hero, gems: rl.gems(), gear: rl.gearScore() };
     })) as { hero: { level: number; gold: number }; gems: GemRow[]; gear: number };
     row.levelAfter = after.hero.level;
@@ -448,7 +551,7 @@ async function campaign(page: Page): Promise<void> {
     row.wallSeconds = Math.round((Date.now() - start) / 1000);
     rows.push(row);
     if (film && frames.length) writeFileSync(join(out, `campaign-${String(d).padStart(2, '0')}.png`), encodePng(strip(frames, 8, 2) as never));
-    const saved = (await page.evaluate(() => (window as unknown as { __RIFTLIGHT__: { save(): unknown; exportSave(): string } }).__RIFTLIGHT__.exportSave())) as string;
+    const saved = (await drv.run((w) => (w as { __RIFTLIGHT__: { save(): unknown; exportSave(): string } }).__RIFTLIGHT__.exportSave())) as string;
     writeFileSync(join(out, `campaign-save-${String(d).padStart(2, '0')}.json`), saved);
     console.log(campaignLine(row));
     if (!row.cleared) wall = true;

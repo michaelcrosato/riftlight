@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { flat, inc, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
 import type { ActorLike, Item } from '../core/types';
@@ -10,6 +10,7 @@ import { autoSocket, emptySockets, gemItem, normalizeSockets, setSocket, skillNu
 import { ACTIVE_SKILLS, SKILLS } from '../skills/actives';
 import { SUPPORT_GEMS, SUPPORTS } from '../skills/supports';
 import { pointBudget, treeMods } from '../tree/tree';
+import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
 import { realLootPort } from './loot';
 import { realTreePort } from './tree';
 
@@ -84,9 +85,15 @@ describe('skill sockets', () => {
   });
 });
 
-/** Just enough of the shell for the port's pure parts. */
+/** The real game's services (headless), with the hero's stats and the loot filter the test sets. */
+let shell: HeadlessRiftlight | null = null;
+beforeAll(async () => {
+  shell = await headlessRiftlight();
+}, 30_000);
+afterAll(() => shell?.engine.dispose());
 function services(stats: StatSheet, lootFilter = 0): ShellServices {
-  return { hero: () => ({ stats }) as unknown as ActorLike, settings: () => ({ lootFilter, damageNumbers: true, screenShake: 1, glyphs: 'auto' }), rng: new Rng(3) } as unknown as ShellServices;
+  const real = shell!.game.services;
+  return { ...real, hero: () => ({ stats }) as unknown as ActorLike, settings: () => ({ ...real.settings(), lootFilter }), rng: new Rng(3) };
 }
 
 describe('the real LootPort', () => {

@@ -1,4 +1,4 @@
-import { Color, type Mesh, type Object3D, Vector3 } from 'three/webgpu';
+import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { analyzeClip, compileClip, restPoseOf, validateClip } from '../../engine/animation';
 import { HERO_RIG } from '../../game/hero/rig';
@@ -10,7 +10,8 @@ import { collideBlockers, Kit } from './kit';
 import { NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
 import { NPCS } from './npcs';
-import type { ShellServices } from '../game/ports';
+import type { LightPoolLike } from '../game/ports';
+import { headlessRiftlight } from '../headless';
 import { iso, Town } from './Town';
 
 describe('townsfolk', () => {
@@ -37,12 +38,14 @@ describe('townsfolk', () => {
 });
 
 describe('town lights', () => {
-  it('borrows its lights once while active, gives them back on deactivate', () => {
+  it('borrows its lights once while active, gives them back on deactivate', async () => {
     let taken = 0;
     let given = 0;
-    const lights = { acquire: () => (taken++, { intensity: 0 }), release: () => given++ };
-    const engine = { sun: { color: new Color(), intensity: 0 }, ambient: { color: new Color(), intensity: 0 } };
-    const town = new Town({ rng: new Rng(1), lights, ctx: { engine } } as unknown as ShellServices);
+    // the real game's services (headless), with a light pool that counts what is borrowed
+    const { engine, game } = await headlessRiftlight();
+    const pool = game.services.lights;
+    const lights: LightPoolLike = { ...pool, acquire: (...a: Parameters<LightPoolLike['acquire']>) => (taken++, pool.acquire(...a)), release: (...a: Parameters<LightPoolLike['release']>) => (given++, pool.release(...a)) };
+    const town = new Town({ ...game.services, lights });
     town.activate();
     const once = taken;
     expect(once).toBeGreaterThan(0);
@@ -52,7 +55,8 @@ describe('town lights', () => {
     expect(given).toBe(once);
     town.activate();
     expect(taken).toBe(once * 2);
-  });
+    engine.dispose();
+  }, 30_000);
 });
 
 describe('town layout', () => {
