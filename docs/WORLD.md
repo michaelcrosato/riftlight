@@ -84,8 +84,9 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 **Every room is its own `Game`.** A door calls `shell.goto(id)`: `engine.screen.cover('iris')`
 closes on the hero, `engine.loadGame(new RoomGame(def))` unloads the old room (its meshes,
 physics, triggers, lights, particles, tweens) and builds the new one, `engine.screen.reveal()`
-opens on it. A room can never leak into the next (the `world` e2e suite checks the Atrium's
-physics and scene counts after visiting every room), and any room opens on its own from the URL.
+opens on it. A room can never leak into the next (`src/world/rooms.headless.test.ts` checks the
+Atrium's physics and scene counts after visiting every room, headless), and any room opens on its
+own from the URL.
 
 **Rooms are mostly data.** A `RoomDef` holds the card (`about`, `try`), the station guide
 (`guide`: what you are seeing, how it works step by step, where games use it, what to ask
@@ -103,8 +104,9 @@ it does nothing, no note, no sound).
 3. Write the guide for a reader who has never seen the technique: what is on screen, how the
    engine does it in 4-6 steps, real games that use it, phrases to ask for it, the cost. Quote
    the engine's real code. Add any new word to `glossary.ts`.
-4. List it in `rooms/index.ts` (wing order). The Atrium gives it a door, G a button, the
-   `world` e2e suite a visit (it loads, renders, its first pad works, nothing leaks).
+4. List it in `rooms/index.ts` (wing order). The Atrium gives it a door, G a button,
+   `rooms.headless.test.ts` a visit (it loads, its first pad works, nothing leaks) and the `world`
+   e2e suite a frame of it.
 5. `npm test` checks the guide is whole and its words are defined; run
    `npm run build && npm run test:e2e -- world`.
 
@@ -124,5 +126,7 @@ Set once the first room runs (it exists when `window.__PIXEL_READY__` resolves) 
 | `guide(id?)` | a station guide as text lines (what an agent reads to learn a technique) |
 | `room` | the current room's own hooks (`RoomLogic.api`): e.g. the Feel Lab's `hit()`, the Atrium's `doors()` |
 
-The `world` e2e suite (`scripts/e2e-world.mjs`, group `@world`) plays it; its frames land in
-`.scratch/e2e/world-*.png`.
+Headless, `src/world/*.headless.test.ts` and `src/world/rooms/*.headless.test.ts` play the shell and
+every wing's rooms (`src/world/testWorld.ts`: `headlessWorld`, `roomApi`). The `world` e2e suite
+(`scripts/e2e-world.mjs`, group `@world`) draws them, with the GPU rooms and live play; its frames
+land in `.scratch/e2e/world-*.png`.

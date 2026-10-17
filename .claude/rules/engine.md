@@ -9,6 +9,8 @@ paths:
 
 Must not break:
 - WebGPU only, TSL only (docs/engine/render.md); version pins exact; no React or external engines.
+- Games run headless too (`Engine.headless(game, { assets: nodeAssets() })`, docs/engine/headless.md):
+  page-only code guards on `engine.renderer.container` or uses `engine.gpu`; tests stub no globals.
 - Gameplay state is plain, serializable data (docs/DOCTRINE.md principle 1): randomness from
   `ctx.random` / `Rng`, never `Math.random`; `Date.now()` / `performance.now()` only with a
   `// real time: <why>` comment (lint enforces both).
