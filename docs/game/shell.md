@@ -146,9 +146,9 @@ for ever: a full bag or a drop out of reach is left), follows grid BFS routes th
 cell after a corner stopped it, and walks into the portal once the level is clear. `npm run playtest -- 3 --runs 5 --film --gif` plays depth 3
 five times and prints clear time, deaths, damage taken, kills, XP, gold, items and stuck events;
 JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`. It plays headless
-(`headlessRiftlight`: no server, no browser; `--runs` in forked processes, `--jobs` at once, one
-per core by default) unless `--film`, `--gif` or `--browser` asks for Chromium; the campaign stays
-one process. The e2e `tools` suite checks that depth 1 gives the same report both ways. Summoners (and
+(`headlessRiftlight`: no server, no browser; with `--runs` each seed is a fresh game in its own
+forked process, `--jobs` at once, one per core by default) unless `--film`, `--gif` or `--browser`
+asks for Chromium, where the runs share one page; the campaign is one game, as a player's is. The e2e `tools` suite checks that depth 1 gives the same report both ways. Summoners (and
 Necromancer elites) are fought before the adds they keep calling.
 
 **In town** (`game/botTown.ts`, `bot.town()` in the agent API) the bot plays like a player:

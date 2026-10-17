@@ -44,7 +44,11 @@ describe('town lights', () => {
     // the real game's services (headless), with a light pool that counts what is borrowed
     const { engine, game } = await headlessRiftlight();
     const pool = game.services.lights;
-    const lights: LightPoolLike = { ...pool, acquire: (...a: Parameters<LightPoolLike['acquire']>) => (taken++, pool.acquire(...a)), release: (...a: Parameters<LightPoolLike['release']>) => (given++, pool.release(...a)) };
+    const lights: LightPoolLike = {
+      acquire: (...a: Parameters<LightPoolLike['acquire']>) => (taken++, pool.acquire(...a)),
+      release: (...a: Parameters<LightPoolLike['release']>) => (given++, pool.release(...a)),
+      releaseAll: () => pool.releaseAll(),
+    };
     const town = new Town({ ...game.services, lights });
     town.activate();
     const once = taken;

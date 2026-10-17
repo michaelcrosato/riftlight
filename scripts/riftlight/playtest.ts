@@ -1,7 +1,8 @@
 // Riftlight playtest bot CLI: the scripted player (src/riftlight/game/bot.ts) plays the real
 // game frame-exactly through Engine.step, and reports what happened. It runs headless, in Node
-// (headlessRiftlight: no server, no browser), unless --film, --gif or --browser asks for Chromium;
-// the two give the same report for the same run.
+// (headlessRiftlight: no server, no browser), unless --film, --gif or --browser asks for Chromium.
+// The e2e tools suite checks that depth 1 gives the same report both ways (other runs may part
+// ways in the last bit of Math.sin / cos / pow: docs/engine/headless.md *Node and the browser*).
 //
 //   npm run playtest -- <depth> [--runs 3] [--jobs 4] [--seed 1] [--level N] [--film] [--every 6] [--gif]
 //                               [--max 10800] [--difficulty hard] [--browser] [--preview] [--json] [--out dir]
@@ -9,8 +10,9 @@
 //                                [--resume .scratch/playtest/campaign-save-11.json]
 //
 //   <depth>      the level to play (1..12 designed, 13+ rifts)
-//   --runs n     independent runs (seeds seed, seed+1, ...); default 1. Headless they spread over
-//                forked processes, one per core
+//   --runs n     independent runs (seeds seed, seed+1, ...); default 1. Headless each is a fresh
+//                game in its own forked process (a seed plays the same whatever ran before it);
+//                in Chromium they share one page, one after another
 //   --jobs n     how many runs at once (default: the cores, os.availableParallelism())
 //   --seed s     first run seed (the same seed plays the same level); default 1
 //   --level N    hero level at the start (default 2 × depth − 1, so deep runs are fair)
@@ -26,7 +28,7 @@
 // .scratch/playtest/<depth>-<seed>.json (+ .png / .gif). Exit 1 when no run cleared.
 //
 // campaign: one bot plays a fresh run from depth 1 through the designed levels into the
-// rifts (one process: each try carries the save of the last), carrying its save like a player: before every level a town visit (the bot's
+// rifts in one game, carrying its save like a player: before every level a town visit (the bot's
 // `bot.town()`: gems, gear upgrades, selling, the vendors, passive points), then the level.
 // A death sends it home (the game's penalty); like a player it farms the depth before once
 // (unless --no-farm) and tries again, up to --tries times; the campaign ends at --to or
@@ -62,7 +64,7 @@ const args: string[] = [];
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]!;
   if (a.startsWith('--')) {
-    const valued = ['runs', 'seed', 'level', 'max', 'every', 'out', 'to', 'tries', 'difficulty', 'resume'].includes(a.slice(2));
+    const valued = ['runs', 'jobs', 'seed', 'level', 'max', 'every', 'out', 'to', 'tries', 'difficulty', 'resume'].includes(a.slice(2));
     flags.set(a.slice(2), valued ? (argv[++i] ?? '') : true);
   } else args.push(a);
 }
@@ -88,7 +90,7 @@ const child = !!process.env.PLAYTEST_CHILD && typeof process.send === 'function'
 const out = resolve(ROOT, String(flags.get('out') ?? '.scratch/playtest'));
 const PORT = Number(process.env.PLAYTEST_PORT) || 4800 + Math.floor(Math.random() * 400);
 
-/** Mirrors BotReport in src/riftlight/game/bot.ts (not imported: that pulls the engine into the node typecheck). */
+/** Mirrors BotReport in src/riftlight/game/bot.ts (the headless driver loads the game only when it runs). */
 interface BotReport {
   depth: number;
   cleared: boolean;
@@ -155,7 +157,8 @@ async function headlessDriver(): Promise<Driver> {
   // the page's 480×270 viewport: the same art size, so the same frames
   const { engine } = await headlessRiftlight({ viewport: { width: 480, height: 270, dpr: 1 } });
   return {
-    run: async (fn, arg) => fn(globalThis, arg as never),
+    // copies, as a page hands them over (what can't be cloned fails here too)
+    run: async (fn, arg) => structuredClone(await fn(globalThis, arg as never)),
     shot: () => Promise.reject(new Error('headless: no pictures (--film plays in Chromium)')),
     errors: () => [...engine.errors],
     close: async () => engine.dispose(),
@@ -212,31 +215,47 @@ async function playRun(drv: Driver, seed: number, r: number): Promise<Report> {
 }
 
 /**
- * --runs headless: each run in its own forked process (the same tsx, ~1 s to import the game),
- * `jobs` at a time. Worker threads won't do: tsx can't load the engine's extensionless imports
- * there, and the module hooks are per thread. Reports come back in seed order.
+ * --runs headless: each run a fresh game in its own forked process (the same tsx; importing and
+ * booting the game takes 1-5 s, more on a busy machine), `jobs` at a time. Worker threads won't do:
+ * tsx can't load the engine's extensionless imports there, and the module hooks are per thread.
+ * Reports come back in seed order; the first run that fails stops the others.
  */
 async function forkRuns(): Promise<Report[]> {
   const file = fileURLToPath(import.meta.url);
   const seeds = Array.from({ length: runs }, (_, r) => seed0 + r);
   const reports: Report[] = new Array(runs);
+  const live = new Set<ReturnType<typeof fork>>();
   let next = 0;
+  let failed: Error | null = null;
   const worker = async (): Promise<void> => {
-    while (next < seeds.length) {
+    while (next < seeds.length && !failed) {
       const r = next++;
       const words = [String(depth), '--seed', String(seeds[r]), '--runs', '1', '--level', String(heroLevel), '--max', String(maxFrames), '--out', out];
       if (typeof flags.get('difficulty') === 'string') words.push('--difficulty', String(flags.get('difficulty')));
-      reports[r] = await new Promise<Report>((done, fail) => {
-        const proc = fork(file, words, { execArgv: process.execArgv, env: { ...process.env, PLAYTEST_CHILD: '1' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
-        let got: Report | null = null;
-        proc.on('message', (m) => (got = m as Report));
-        proc.on('error', fail);
-        proc.on('exit', (code) => (got ? done(got) : fail(new Error(`run seed ${seeds[r]} exited ${code} without a report`))));
-      });
+      try {
+        reports[r] = await new Promise<Report>((done, fail) => {
+          const proc = fork(file, words, { execArgv: process.execArgv, env: { ...process.env, PLAYTEST_CHILD: '1' }, stdio: ['ignore', 'inherit', 'inherit', 'ipc'] });
+          live.add(proc);
+          let got: Report | null = null;
+          proc.on('message', (m) => (got = m as Report));
+          proc.on('error', fail);
+          // 'close': the IPC channel is drained too (its last message may come after 'exit')
+          proc.on('close', (code) => {
+            live.delete(proc);
+            if (got) done(got);
+            else fail(new Error(`run seed ${seeds[r]} exited ${code} without a report`));
+          });
+        });
+      } catch (e) {
+        failed ??= e as Error;
+        for (const p of live) p.kill();
+        return;
+      }
       if (!flags.has('json')) console.log(`run ${r + 1}/${runs} seed ${seeds[r]}: ${reports[r]!.outcome} in ${reports[r]!.time}s`);
     }
   };
   await Promise.all(Array.from({ length: Math.min(jobs, runs) }, worker));
+  if (failed) throw failed;
   return reports;
 }
 
@@ -249,7 +268,7 @@ async function main(): Promise<void> {
   }
   if (campaignMode) return withDriver(campaign);
   const reports =
-    inBrowser || runs === 1 || jobs === 1
+    inBrowser || runs === 1
       ? await withDriver(async (drv) => {
           const all: Report[] = [];
           for (let r = 0; r < runs; r++) all.push(await playRun(drv, seed0 + r, r));
