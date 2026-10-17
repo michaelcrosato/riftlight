@@ -9,23 +9,13 @@ import { Playground } from '../game/playground';
 import { Sandbox } from '../game/sandbox';
 import { Engine, type Game } from './Engine';
 import { countObjects } from './lifecycle';
-import { nodeAssets } from './node';
+import { nodeAssets, stepUntil } from './node';
 
 const T = 30_000;
 
 /** The world a level leaves behind: what the e2e probe read, minus the GPU's counts. */
 function probe(engine: Engine) {
   return { game: engine.game.name, ...engine.physics.counts(), children: engine.scene.children.length, objects: countObjects(engine.scene) };
-}
-
-/** Step until `done()`, letting promise callbacks run between frames, as a page's frames do. */
-async function stepUntil(engine: Engine, done: () => boolean, what: string, max = 120): Promise<void> {
-  for (let f = 0; f < max; f++) {
-    if (done()) return;
-    engine.step(1);
-    await new Promise((r) => setTimeout(r, 0));
-  }
-  throw new Error(`${what} did not happen within ${max} frames`);
 }
 
 describe('engine.loadGame (headless)', () => {
@@ -37,16 +27,16 @@ describe('engine.loadGame (headless)', () => {
   };
 
   it(
-    'sandbox ⇄ playground ×3: bodies, colliders, controllers, triggers, tags and scene objects return to baseline',
+    'sandbox ⇄ playground ×5: bodies, colliders, controllers, triggers, tags and scene objects return to baseline',
     async () => {
       engine = await Engine.headless(new Playground(), { seed: 1, assets: nodeAssets() });
       const seen: Record<string, ReturnType<typeof probe>[]> = { 'Move Playground': [], Sandbox: [] };
-      for (const make of [Sandbox, Playground, Sandbox, Playground, Sandbox, Playground]) {
+      for (const make of Array.from({ length: 5 }, () => [Sandbox, Playground]).flat()) {
         const p = await load(new make());
         seen[p.game]!.push(p);
       }
       for (const [name, [first, ...rest]] of Object.entries(seen)) {
-        expect(rest.length, name).toBe(2);
+        expect(rest.length, name).toBe(4);
         for (const p of rest) expect(p, `${name}: counts return to baseline`).toEqual(first);
       }
       const base = seen['Move Playground']![0]!;
@@ -92,14 +82,14 @@ describe('engine.loadGame (headless)', () => {
         update(ctx, dt);
         if (!pending) pending = engine.loadGame(new Playground());
       };
-      await stepUntil(engine, () => pending !== null, 'update() calling loadGame');
+      await stepUntil(engine, () => pending !== null, { max: 120, what: 'update() calling loadGame' });
       await pending;
       expect(engine.game.name, 'loadGame from update()').toBe('Move Playground');
 
       pending = null;
       const f = (engine.game as Playground).hero.feet;
       engine.physics.trigger({ sphere: 1.5 }, [f.x, f.y + 0.8, f.z], { tag: 'character', once: true, onEnter: () => (pending = engine.loadGame(new Sandbox())) });
-      await stepUntil(engine, () => pending !== null, 'the trigger’s onEnter');
+      await stepUntil(engine, () => pending !== null, { max: 120, what: 'the trigger’s onEnter' });
       await pending;
       expect(engine.game.name, 'loadGame from a trigger’s onEnter').toBe('Sandbox');
       engine.step(5);

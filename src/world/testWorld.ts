@@ -1,5 +1,6 @@
 // Engine World headless, for tests: one engine per test file (the World shell is one per process),
 // rooms loaded one after another with `__WORLD__.goto`, as a page does. Node only: imports node.ts.
+import { expect } from 'vitest';
 import type { Engine } from '../engine';
 import { headlessGame } from '../riftlight/headless';
 import { worldApi, WORLD_OPTIONS, worldGame } from './index';
@@ -41,4 +42,23 @@ export function stick(engine: Engine, dx: number, dz: number): void {
 /** Let go of the stick. */
 export function release(engine: Engine): void {
   engine.input.analog.x = engine.input.analog.y = 0;
+}
+
+/** What the Atrium holds (physics counts, scene objects): taken at boot, compared after a wing's rooms. */
+export interface AtriumBase {
+  physics: unknown;
+  children: number;
+}
+
+export function atriumBase(engine: Engine): AtriumBase {
+  return { physics: engine.physics.counts(), children: engine.scene.children.length };
+}
+
+/** Back to the Atrium after a wing's rooms (and what was done in them): nothing they built is left. */
+export async function expectNoLeak(engine: Engine, w: typeof worldApi, base: AtriumBase): Promise<void> {
+  await w.goto('atrium', { instant: true });
+  engine.step(5);
+  expect(engine.physics.counts(), 'the Atrium\'s physics as at the start').toEqual(base.physics);
+  expect(engine.scene.children.length, 'the Atrium\'s scene objects as at the start').toBe(base.children);
+  expect(engine.state().errors).toEqual([]);
 }

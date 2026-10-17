@@ -5,14 +5,16 @@
 import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
 import type { worldApi } from '../index';
-import { headlessWorld, release, roomApi, stick, teleport, WORLD_T } from '../testWorld';
+import { type AtriumBase, atriumBase, expectNoLeak, headlessWorld, release, roomApi, stick, teleport, WORLD_T } from '../testWorld';
 
 let engine: Engine;
 let w: typeof worldApi;
+let base: AtriumBase;
 const room = () => roomApi(w);
 
 beforeAll(async () => {
   ({ engine, w } = await headlessWorld('atrium'));
+  base = atriumBase(engine);
 }, WORLD_T);
 afterAll(() => engine?.dispose());
 
@@ -125,3 +127,5 @@ it(
   },
   WORLD_T,
 );
+
+it('leaves the Atrium as it was: no body, collider or scene object of these rooms is left', () => expectNoLeak(engine, w, base), WORLD_T);

@@ -132,8 +132,8 @@ The doctrine was adopted mid-project (engine 0.14). Known gaps, and what is deci
 - **Principle 2 (headless and verified): met.** `Engine.headless` runs every game in Node with
   the same engine, game code and frames as a page and no GPU, DOM or browser
   (docs/engine/headless.md): three.js's scene graph and Rapier still run, as libraries; the GPU, the
-  DOM and audio output are presentation. Riftlight, its labs and all of Engine World's rooms run
-  headless; `npm run replay` replays a page's recording in Node and `npm run playtest` plays
+  DOM and audio output are presentation. Riftlight, its labs (all but the Monster Lab, a page
+  entry) and all of Engine World's rooms run headless; `npm run replay` replays a page's recording in Node and `npm run playtest` plays
   without a browser. Gameplay is checked headless first, in `npm test`; the e2e suites hold the
   pictures, the DOM and the GPU. Parity checks in CI hold a browser session and a playtest to the
   same result in both. Node's `Math.sin`, `cos` and `pow` differ from Chromium's in the last bit,

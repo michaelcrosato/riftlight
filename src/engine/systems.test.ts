@@ -3,57 +3,20 @@
 // one emitter per preset, coins are trigger volumes. Moved from e2e `systems`; what needs a page
 // stays there: the HUD's pixels, audio unlock and mute, particles in the frame, the gamepad,
 // pause and the hotkeys (the live loop), GPU memory and the textured materials' pictures.
-import { describe, expect, it } from 'vitest';
-import { Playground } from '../game/playground';
-import { Engine } from './Engine';
-import { nodeAssets } from './node';
+import { afterAll, describe, expect, it } from 'vitest';
+import { bootPlayground } from '../game/testPlayground';
+import type { Engine } from './Engine';
 
 const T = 30_000;
-
-/** What the e2e suites' page helpers (`window.__T`) do, frame for frame. */
-function heroDriver(engine: Engine, game: Playground) {
-  const frames = (n: number) => engine.step(Math.max(0, Math.round(n)));
-  const d = {
-    frames,
-    /** Game time in milliseconds. */
-    wait: (ms: number) => frames((ms * 60) / 1000),
-    set: (keys: string[], down: boolean) => keys.forEach((k) => engine.input.setKey(k, down)),
-    releaseAll: () => d.set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'KeyC', 'KeyF', 'KeyJ', 'ShiftLeft'], false),
-    tap(key: string) {
-      engine.input.setKey(key, true);
-      frames(2);
-      engine.input.setKey(key, false);
-      frames(1);
-    },
-    /** Teleport the feet to [x, y, z] facing yaw (0 = +Z, π/2 = +X). */
-    place(pos: [number, number, number], yaw = 0) {
-      d.releaseAll();
-      game.hero.teleport(pos);
-      game.hero.facing = yaw;
-      game.hero.hvel.set(0, 0, 0);
-      frames(8);
-    },
-    /** Step until `pred` holds, at most `ms` of game time; the states seen. */
-    until(pred: (hero: Playground['hero']) => boolean, ms = 3000) {
-      const seen = new Set<string>();
-      for (let f = 0; f < (ms * 60) / 1000; f++) {
-        seen.add(game.hero.state);
-        if (pred(game.hero)) return { ok: true, seen: [...seen] };
-        frames(1);
-      }
-      return { ok: false, seen: [...seen] };
-    },
-  };
-  return d;
-}
+let booted: Engine | null = null;
+afterAll(() => booted?.dispose());
 
 describe('engine systems in the Playground (headless)', () => {
   it(
     'hero events play their sounds, burst their particles, and coins are trigger volumes',
     async () => {
-      const game = new Playground();
-      const engine = await Engine.headless(game, { seed: 1, assets: nodeAssets() });
-      const d = heroDriver(engine, game);
+      const { engine, game, T: d } = await bootPlayground({ camera: null }); // the Playground's own camera, as the page's
+      booted = engine;
       const a = engine.audio.counts;
       const delta = (before: Record<string, number>, name: string) => (a[name] ?? 0) - (before[name] ?? 0);
       expect(engine.audio.context, 'no AudioContext headless, sounds are still counted').toBeNull();
@@ -142,7 +105,6 @@ describe('engine systems in the Playground (headless)', () => {
       expect(game.respawns, 'the hero respawned').toBeGreaterThan(0);
       expect(delta(before, 'hurt'), 'falling off the island plays hurt').toBe(1);
       expect(engine.errors).toEqual([]);
-      engine.dispose();
     },
     T,
   );

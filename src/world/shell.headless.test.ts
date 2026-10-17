@@ -6,6 +6,7 @@ import { afterAll, beforeAll, expect, it } from 'vitest';
 import type { Engine } from '../engine';
 import { stepUntil } from '../riftlight/headless';
 import type { worldApi } from './index';
+import { shell } from './shell';
 import { headlessWorld, release, roomApi, stick, teleport, WORLD_T } from './testWorld';
 
 let engine: Engine;
@@ -118,3 +119,11 @@ it(
   },
   WORLD_T,
 );
+
+it('the menu\'s way to Riftlight does nothing headless (no page to leave); the room plays on', () => {
+  const room = engine.game.name;
+  shell.toRiftlight();
+  engine.step(5);
+  expect(engine.game.name).toBe(room);
+  expect(engine.state().errors).toEqual([]);
+});

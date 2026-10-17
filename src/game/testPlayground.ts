@@ -5,7 +5,8 @@
  */
 import type { Engine } from '../engine';
 import type { PlatformerCharacter } from '../engine/character/PlatformerCharacter';
-import { headlessGame } from '../riftlight/headless';
+import { Engine as EngineClass, type CameraConfig } from '../engine';
+import { nodeAssets } from '../engine/node';
 import { Playground } from './playground';
 
 /** The keys a script may hold; `place` lets go of them all. */
@@ -16,10 +17,11 @@ export interface Seen {
   seen: string[];
 }
 
-/** The Playground on the third-person camera (yaw 0: W = -Z, S = +Z, D = +X, A = -X). */
-export async function bootPlayground(): Promise<{ engine: Engine; game: Playground; T: MoveScript }> {
+/** The Playground, by default on the third-person camera (yaw 0: W = -Z, S = +Z, D = +X, A = -X); `camera: null` for its own. */
+export async function bootPlayground(o: { camera?: CameraConfig | null } = {}): Promise<{ engine: Engine; game: Playground; T: MoveScript }> {
   const game = new Playground();
-  const engine = await headlessGame(game, { seed: 1, camera: { preset: 'third' } });
+  const camera = o.camera === undefined ? { preset: 'third' as const } : (o.camera ?? undefined);
+  const engine = await EngineClass.headless(game, { seed: 1, camera, assets: nodeAssets() });
   return { engine, game, T: new MoveScript(engine, game) };
 }
 
@@ -44,6 +46,10 @@ export class MoveScript {
 
   set(keys: string[], down: boolean): void {
     for (const k of keys) this.engine.input.setKey(k, down);
+  }
+
+  releaseAll(): void {
+    this.set(KEYS, false);
   }
 
   tap(key: string): void {
