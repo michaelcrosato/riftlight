@@ -56,7 +56,7 @@ on a looser grid (a smaller actor, quarter-metre cells) the water is not, nor is
 wall; on a finer one every spot the hero fits in is one he can walk to (no pockets) and none of
 them moves him when he stands there; and a Blink or a dash from all over the town, in every
 direction, never ends where he can't walk back from (he walks back, collide and all) or goes
-through a wall. The `riftlight` e2e suite walks the hero to every district and back.
+through a wall. `src/riftlight/game/flow.test.ts` walks the hero to every district and back (headless).
 
 **Lights and motion.** The campfire and the rift's crack borrow lights from the pool with the
 lanterns (`activate`); their flicker, embers and smoke come from `this.time`, so the outskirts add

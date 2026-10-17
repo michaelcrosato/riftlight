@@ -89,8 +89,9 @@ that ailment's duration; attacks carry the equipped weapon's class as a tag (`we
 (base 1) slows everything an actor does (Temporal Chains).
 
 `npm run test:e2e -- riftlight-builds` shows each of them in the arena and a mechanic affix in
-level 1, with frames in `.scratch/e2e/riftlight-builds-*.png`; `combat/builds.test.ts` and
-`levels/affixes.test.ts` pin the numbers.
+level 1, with frames in `.scratch/e2e/riftlight-builds-*.png`; `combat/builds.arena.test.ts` and
+`builds.level.test.ts` play them headless, and `combat/builds.test.ts` and `levels/affixes.test.ts`
+pin the numbers.
 
 ## Add a skill
 

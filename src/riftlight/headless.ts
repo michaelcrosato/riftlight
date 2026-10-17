@@ -9,7 +9,7 @@
  * Node only: it reads the models and packs from `public/` (`nodeAssets`).
  */
 import { fileURLToPath } from 'node:url';
-import { Engine, type Viewport } from '../engine';
+import { Engine, type EngineOptions, type Game, type HeadlessOptions, type Viewport } from '../engine';
 import { nodeAssets } from '../engine/node';
 import { Riftlight, RIFTLIGHT_OPTIONS } from './index';
 import { type RiftlightApi } from './game/api';
@@ -24,9 +24,9 @@ export interface HeadlessRiftlight {
   rl: RiftlightApi;
 }
 
-/** A Riftlight that keeps its saves in memory (what headless tools load, a replay's too). */
-export function makeRiftlight(): Riftlight {
-  return new Riftlight({}, { store: new SaveStore(null) });
+/** A Riftlight that keeps its saves in memory (what headless tools load, a replay's too); pass a store to share one (a page reload: the same saves, a new game). */
+export function makeRiftlight(store: SaveStore = new SaveStore(null), seed?: number): Riftlight {
+  return new Riftlight({}, { store, seed });
 }
 
 /** The agent API of the Riftlight that runs now (`rl` goes stale when another one is loaded: a replay's). */
@@ -34,11 +34,51 @@ export function currentRiftlightApi(): RiftlightApi | null {
   return (globalThis as { __RIFTLIGHT__?: RiftlightApi }).__RIFTLIGHT__ ?? null;
 }
 
-/** Boot Riftlight headless: `seed` is the engine's (`?seed=`), `viewport` the page's it stands for (default 960×540). */
-export async function headlessRiftlight(o: { seed?: number; viewport?: Viewport; game?: Riftlight } = {}): Promise<HeadlessRiftlight> {
-  const game = o.game ?? makeRiftlight();
-  const engine = await Engine.headless(game, { ...RIFTLIGHT_OPTIONS, seed: o.seed, viewport: o.viewport, assets: nodeAssets(PUBLIC_DIR) });
+/**
+ * Boot Riftlight headless: `seed` is what `?seed=` is in a page (the engine's, and new runs' when
+ * none is given), `viewport` the page's it stands for
+ * (default 960×540), `store` the saves (a reload: dispose the engine, boot again on the same store),
+ * `options` any other engine option a page's URL would set (`quality`, `debugKeys`, `touch`...).
+ */
+export async function headlessRiftlight(o: { seed?: number; viewport?: Viewport; game?: Riftlight; store?: SaveStore; options?: Partial<EngineOptions> } = {}): Promise<HeadlessRiftlight> {
+  const game = o.game ?? makeRiftlight(o.store, o.seed);
+  const engine = await Engine.headless(game, { ...RIFTLIGHT_OPTIONS, ...o.options, seed: o.seed, viewport: o.viewport, assets: nodeAssets(PUBLIC_DIR) });
   const rl = currentRiftlightApi();
   if (!rl) throw new Error('headlessRiftlight: the game did not install its API (Riftlight.ready)');
   return { engine, game, rl };
+}
+
+/** Any game of this repository headless (a lab, the arena, a room), with the site's assets. */
+export function headlessGame(game: Game, options: HeadlessOptions = {}): Promise<Engine> {
+  return Engine.headless(game, { assets: nodeAssets(PUBLIC_DIR), ...options });
+}
+
+/**
+ * Step until `done()` holds, at most `max` frames, `every` frames at a time, letting promise
+ * callbacks run between (a level or a stage builds async, as a page's frames would let it): what a
+ * page's `waitForFunction` waits for. The frames it took; throws when it never holds, naming `what`.
+ */
+export async function stepUntil(engine: Engine, done: () => boolean, o: { max?: number; every?: number; what?: string } = {}): Promise<number> {
+  const { max = 600, every = 1, what = 'the condition' } = o;
+  for (let f = 0; f <= max; f += every) {
+    if (done()) return f;
+    engine.step(every);
+    await settle();
+  }
+  throw new Error(`stepUntil: ${what} did not hold within ${max} frames`);
+}
+
+/** Let promise callbacks run out (a task boundary), as a page does between two animation frames. */
+export function settle(): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
+/**
+ * The pointer over an art pixel (x, y), as the mouse over that pixel of the canvas would put it
+ * (`engine.input.setPointer` takes device coordinates, -1..1). `down` presses or lets go of the
+ * left button there.
+ */
+export function pointAtArt(engine: Engine, x: number, y: number, down?: boolean): void {
+  const { width, height } = engine.renderer.resolution;
+  engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2, down);
 }

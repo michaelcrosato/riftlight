@@ -37,8 +37,8 @@ ctx.lights.describe();   // every request with its score, slot and fade level
   light count. `engine.setQuality()` resizes it: one recompile of lit materials, on purpose.
   `new LightPool({ size, parent })` + `pool.update(dt, focus, range)` makes a private one.
 - **Logic is pure.** `LightAssigner` (the slot/fade/hysteresis logic) has no three.js in it
-  and is unit-tested in `lights.test.ts`; the `riftlight-levels` e2e suite checks a constant
-  8 lights in the scene and **zero new node builds** while 24 requests move and change
-  colour.
+  and is unit-tested in `lights.test.ts`; `riftlight/levels/levelLab.headless.test.ts` checks a
+  constant 8 lights in the scene while 24 requests share them, and the `riftlight-levels` e2e
+  suite **zero new node builds** while they move and change colour.
 - **Cost.** CPU: one pass over the requests per frame. GPU: every lit fragment loops over all
   `size` lights, so cost grows linearly with the pool, which is why quality caps it.

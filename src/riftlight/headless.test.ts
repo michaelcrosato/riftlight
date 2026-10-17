@@ -8,11 +8,16 @@ const T = 30_000;
 let h: HeadlessRiftlight;
 
 beforeAll(async () => {
-  h = await headlessRiftlight();
+  h = await headlessRiftlight({ seed: 4242 });
 }, T);
 afterAll(() => h?.engine.dispose());
 
 describe('Riftlight headless', () => {
+  it('a new run with no seed takes the boot seed, as a page takes ?seed=', () => {
+    h.rl.newRun();
+    expect(h.game.save.seed).toBe(4242);
+  });
+
   it(
     'a mid-level snapshot, restored and played on, keeps the fingerprint',
     async () => {
