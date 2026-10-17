@@ -1,15 +1,18 @@
-// e2e suite "riftlight": the game shell end to end (production build), driven frame-exactly
-// through window.__RIFTLIGHT__ (Engine.step) and the
-// real keyboard path for menus:
+// e2e suite "riftlight": one browser run of the game shell (production build), driven
+// frame-exactly through window.__RIFTLIGHT__ (Engine.step) and the real keyboard path for menus,
+// for what only a page shows: the pictures, the pixel HUD, what is stored in localStorage, the
+// page's own parts and a real reload.
 //
-//   title → New Run (keys) → town → a walk to every district of the outskirts and back
-//   (moveTo on the town's walkable grid) → walk to Vex → rift menu → level 1 (real monsters and
-//   its boss) → kill every monster, the boss too, with the basic attack (kill events, XP
-//   rising) → collect gold → clear → portal → loot window → town (autosaved) → pause →
-//   Tuning → enemy life slider (keys) → applies to live monsters (difficulty Mod source,
-//   life fraction kept) → look studio (L): Game Boy on the characters only, remembered,
-//   H hides the panel while ← tweaks, reset → the boss kills the hero → recap names it → town with the penalty
-//   → save → reload → Continue → same run. Zero console errors and GPU errors.
+//   title (the town behind the logo, the HUD drawn) → New Run (keys) → town → Vex → rift menu →
+//   level 1 → cleared → pause → Tuning → Settings → Engine (saved in localStorage, no ⚙, no
+//   engine hotkeys without ?debug=1) → look studio (L): Game Boy on the characters, remembered in
+//   localStorage, H hides the panel → death recap → town → save → reload → Continue (the town
+//   renders). Zero console errors and GPU errors.
+//
+// The gameplay of the same flow (the outskirts tour, the fight, gems, gold, the portal and the loot
+// window, the tuning on live monsters, the look studio's state, the death and its penalty, Continue
+// restoring the run) is checked headless: src/riftlight/game/flow.test.ts, flowFight.test.ts and
+// flowLevel.test.ts.
 //
 // Frames land in .scratch/e2e/riftlight-*.png (`*-hud.png`: the frame with the pixel HUD on
 // top, which `renderer.capture()` leaves out: the logo, menus, bars). Self-contained: e2e.mjs
@@ -51,9 +54,14 @@ export async function runRiftlight(h) {
     const R = (fn, arg) => page.evaluate(fn, arg);
     const st = () => R(() => window.__RIFTLIGHT__.state());
 
+    /** A step the flow needs to go on (its checks are headless): a crash names it when it fails. */
+    const need = (ok, what) => {
+      if (!ok) throw new Error(`the flow stopped: ${what}`);
+    };
+
     // ---------------------------------------------------------------- title
     let rs = await st();
-    check(rs.screen === 'title' && rs.ui.includes('title'), `opens on the title screen (${rs.screen}, ui ${rs.ui.join(',')})`);
+    need(rs.screen === 'title', `opens on the title screen (${rs.screen})`);
     await R(() => window.__PIXEL_ENGINE__.step(20));
     const title = await captureWithHud(page, `riftlight-${tag}-title-hud.png`);
     check(colorCount(title) > 16, `title renders the town behind the logo (${colorCount(title)} colours)`);
@@ -68,229 +76,68 @@ export async function runRiftlight(h) {
 
     // New Run with the keyboard: Enter on "New Run", Enter on slot 1
     await R(() => window.__RIFTLIGHT__.press('Enter'));
-    rs = await st();
-    check(rs.ui.includes('slots'), `Enter on New Run opens the slot picker (ui ${rs.ui.join(',')})`);
-    await R(() => window.__RIFTLIGHT__.press('Enter'));
-    rs = await st();
-    check(rs.screen === 'town' && rs.hero.level === 1 && rs.deepest === 0, `a new run starts in town (${rs.screen}, level ${rs.hero.level})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('Enter'));
+    need(rs.screen === 'town', `a new run starts in town (${rs.screen})`);
     await R(() => window.__PIXEL_ENGINE__.step(30));
     await capture(page, `riftlight-${tag}-town.png`);
 
-    // ---------------------------------------------------------------- the outskirts: a walk to every district and back
-    const tour = await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      const town = rl.game.town;
-      const out = [];
-      for (const [id, p] of Object.entries(town.districts)) {
-        const r = rl.moveTo(p.x, p.z, { radius: 0.9, maxFrames: 1500 });
-        out.push({ id, arrived: r.arrived, frames: r.frames, at: r.state.hero.position.map((v) => +v.toFixed(1)) });
-      }
-      const home = rl.moveTo(town.spawn.x, town.spawn.z, { radius: 0.6, maxFrames: 1500 });
-      return { out, home: home.arrived };
-    });
-    for (const d of tour.out) check(d.arrived, `walks on to the ${d.id} (${d.frames} frames, at ${d.at.join(', ')})`);
-    check(tour.home, 'and back to the plaza');
-    // a Blink in town stops at walls: the hero's combat world asks the town (Town.wall), here
-    // from the Old Watch's courtyard north through its wall
-    const wall = await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      const town = rl.game.town;
-      const from = town.districts.watch.clone().setY(0.5);
-      const to = from.clone().add({ x: -7, y: 0, z: -7 }); // up the screen, 10 m, past the wall
-      return { combat: rl.game.hero.hc.combat.wall(from, to), town: town.wall(from, to) };
-    });
-    check(wall.combat !== null && wall.combat === wall.town && wall.combat < 1, `a Blink in town stops at walls: the hero's combat asks the town (${wall.combat} of the way through the Old Watch's wall)`);
-    await capture(page, `riftlight-${tag}-town-back.png`);
-
     // ---------------------------------------------------------------- town → rift keeper → level 1
     const talk = await R(() => window.__RIFTLIGHT__.talkTo('vex'));
-    check(talk.ok && talk.state.ui.includes('rift'), `walk to Vex, talk: the rift menu opens (ui ${talk.state.ui.join(',')})`);
+    need(talk.ok && talk.state.ui.includes('rift'), `walk to Vex, talk: the rift menu opens (ui ${talk.state.ui.join(',')})`);
     await R(() => window.__RIFTLIGHT__.press('Enter')); // the first entry is the next depth: I · EMBERS
     await page.waitForFunction(() => window.__RIFTLIGHT__.state().screen === 'level', null, { timeout: 30000 });
-    rs = await R(() => {
-      window.__PIXEL_ENGINE__.step(5);
-      return window.__RIFTLIGHT__.state();
-    });
-    check(rs.depth === 1 && rs.levelName === 'Embers' && rs.monsters.total > 0, `entered depth 1 "${rs.levelName}" with ${rs.monsters.total} monsters`);
-    check(rs.codex.includes('embers'), 'the codex unlocked the level mechanic');
-    const roster = await R(() => {
-      const ms = window.__RIFTLIGHT__.game.level.monsters();
-      const boss = ms.find((m) => m.rank === 'boss');
-      return { real: ms.filter((m) => typeof m.runtime?.play === 'function' && m.genome).length, total: ms.length, boss: boss && { name: boss.name, life: boss.actor.life, maxLife: boss.actor.maxLife, alive: boss.actor.alive } };
-    });
-    check(roster.real === roster.total, `every monster is a real animated genome (${roster.real}/${roster.total})`);
-    check(!!roster.boss && roster.boss.alive && roster.boss.life === roster.boss.maxLife && roster.boss.maxLife > 0, `a boss spawned on level 1 (${roster.boss?.name}, ${roster.boss?.maxLife} life)`);
+    await R(() => window.__PIXEL_ENGINE__.step(5));
     await captureWithHud(page, `riftlight-${tag}-level-hud.png`);
-
-    // ---------------------------------------------------------------- fight with the basic attack
     await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      window.__KILLS__ = [];
-      rl.game.events.on('kill', (e) => {
-        const h = rl.state().hero;
-        window.__KILLS__.push({ rank: e.rank, name: e.target.name, byHero: e.killer === rl.game.hero.actor, xp: h.xp, level: h.level });
-      });
-    });
-    const fight = await R(() => window.__RIFTLIGHT__.fight({ skills: false, maxFrames: 60 * 150 }));
-    rs = fight.state;
-    const kills = await R(() => window.__KILLS__);
-    const first = kills[0];
-    check(!!first && first.byHero && (first.xp > 0 || first.level > 1), `a monster died to the hero and XP rose (${first?.name}: xp ${first?.xp}, level ${first?.level})`);
-    check(kills.length === rs.monsters.killed, `every death was a kill event (${kills.length} events, ${rs.monsters.killed} killed)`);
-    const bossKill = kills.find((k) => k.rank === 'boss');
-    check(!!bossKill && bossKill.name === roster.boss?.name, `the boss died too (${bossKill?.name ?? 'alive'})`);
-    check(kills.every((k, i) => i === 0 || k.level > kills[i - 1].level || k.xp >= kills[i - 1].xp), 'XP only rose kill by kill');
-    check(rs.monsters.killed === rs.monsters.total && rs.monsters.total > 0, `killed every monster with the basic attack (${rs.monsters.killed}/${rs.monsters.total} in ${fight.frames} frames)`);
-    check(rs.cleared && rs.exitOpen, `the level is clear and the portal open (cleared ${rs.cleared}, exit ${rs.exitOpen})`);
-    check(rs.hero.xp > 0 || rs.hero.level > 1, `XP gained (level ${rs.hero.level}, xp ${rs.hero.xp})`);
-
-    // ---------------------------------------------------------------- gem XP: socketed gems earn the hero's XP and level up
-    const gemsAfterFight = await R(() => window.__RIFTLIGHT__.gems());
-    const cleave0 = gemsAfterFight.find((g) => g.id === 'cleave');
-    check(!!cleave0 && (cleave0.xp > 0 || cleave0.level > 1) && gemsAfterFight.every((g) => g.xp > 0 || g.level > 1), `every socketed gem earned XP from the kills (${gemsAfterFight.map((g) => `${g.id} L${g.level} ${g.xp}/${g.next}`).join(', ')})`);
-    const gemUp = await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      const before = rl.gems().find((g) => g.id === 'cleave');
-      const heroBefore = rl.state().hero.level;
-      rl.give({ levels: 3 }); // three hero levels' XP: the gem earns it too and meets its next requirement
-      const after = rl.gems().find((g) => g.id === 'cleave');
-      const saved = rl.game.save.hero.skills[0].gem.gem;
-      const slot = rl.game.hero.hc?.slots?.[0];
-      return { before, after, heroBefore, hero: rl.state().hero.level, saved, slot: slot ? { id: slot.id, level: slot.level } : null, notes: rl.log(40).filter((l) => l.type === 'gem').map((l) => l.text), bag: rl.game.ports.loot.store.skills[0].gem.gem.level };
-    });
-    check(gemUp.after.level > gemUp.before.level, `a gem levelled up with the hero (cleave ${gemUp.before.level} → ${gemUp.after.level}, hero ${gemUp.heroBefore} → ${gemUp.hero})`);
-    check(gemUp.notes.some((t) => t.startsWith(`cleave level ${gemUp.after.level}`)), `the level-up was announced (${gemUp.notes.join('; ')})`);
-    check(gemUp.saved.level === gemUp.after.level && gemUp.bag === gemUp.after.level && gemUp.saved.xp === gemUp.after.xp, `the save and the skill panel carry the gem's level and XP (save L${gemUp.saved.level} ${gemUp.saved.xp} xp, panel L${gemUp.bag})`);
-    check(!gemUp.slot || (gemUp.slot.id === 'cleave' && gemUp.slot.level >= gemUp.after.level), `the skill bar re-slotted at the new level (${JSON.stringify(gemUp.slot)})`);
-    const gold0 = rs.hero.gold;
-    // Real drops: gold falls from about half the kills and the fight walks over most of it.
-    // (The real loot, skills and tree flows are in e2e-riftlight-items.mjs.)
-    // Leave one pile on the floor (if none is left) so collecting is tested every time.
-    await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      const loot = rl.game.ports.loot;
-      if (loot.ground().some((l) => l.drop.kind === 'gold')) return;
-      const p = rl.game.hero.actor.position.clone();
-      p.x += 3;
-      loot.spawn([{ kind: 'gold', amount: 17 }], p, rl.game.level, rl.game.services.rng);
+      window.__RIFTLIGHT__.killAll();
       window.__PIXEL_ENGINE__.step(40);
     });
-    const collect = await R(() => window.__RIFTLIGHT__.collectGold());
-    rs = collect.state;
-    check(rs.loot.gold === 0 && rs.hero.gold > gold0, `collected the gold (${gold0} → ${rs.hero.gold})`);
     await capture(page, `riftlight-${tag}-cleared.png`);
 
-    // ---------------------------------------------------------------- portal → loot window → town
-    const exit = await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      const ex = rl.game.level.exit;
-      // leave one item on the floor so the loot window has something to offer
-      if (!rl.game.ports.loot.ground().length) rl.game.ports.loot.spawn([{ kind: 'item', item: rl.game.ports.loot.give(rl.game.services.rng, 1) }], rl.game.hero.actor.position, rl.game.level, rl.game.services.rng);
-      rl.game.ports.loot.counts();
-      return rl.moveTo(ex.x, ex.z, { radius: 1.2, maxFrames: 2400 });
-    });
-    rs = await st();
-    const sawWindow = rs.ui.includes('loot');
-    if (sawWindow) {
-      await R(() => window.__RIFTLIGHT__.ui.click('takeAll'));
-      await R(() => window.__RIFTLIGHT__.ui.click('leave'));
-    }
-    await R(() => window.__PIXEL_ENGINE__.step(5));
-    rs = await st();
-    check(exit.arrived || sawWindow, `walked into the portal (arrived ${exit.arrived})`);
-    check(sawWindow, 'the level-clear loot window offered what was left on the floor');
-    check(rs.screen === 'town' && rs.deepest === 1, `back in town with depth 1 cleared (screen ${rs.screen}, deepest ${rs.deepest})`);
-    const saved = await R(() => window.__RIFTLIGHT__.slots()[0]);
-    check(!saved.empty && saved.deepest === 1, `autosaved on clear and town entry (slot 1: deepest ${saved.deepest})`);
-
-    // ---------------------------------------------------------------- pause → Tuning → enemy life
-    await R(async () => {
-      await window.__RIFTLIGHT__.enterDepth(1);
-      window.__PIXEL_ENGINE__.step(5);
-    });
-    const before = await R(() => window.__RIFTLIGHT__.actors().map((a) => ({ id: a.id, life: a.life, max: a.maxLife })));
-    // hurt the first monster so we can see the life fraction survive the change
-    await R(() => {
-      const m = window.__RIFTLIGHT__.game.level.monsters()[0].actor;
-      m.life = m.stats.get('life') / 2;
-    });
+    // ---------------------------------------------------------------- pause → Tuning
     await R(() => window.__RIFTLIGHT__.press('Escape'));
-    rs = await st();
-    check(rs.ui.includes('pause') && rs.paused, `Esc opens the pause menu and freezes the world (ui ${rs.ui.join(',')})`);
     await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
-    await R(() => window.__RIFTLIGHT__.press('Enter'));
-    rs = await st();
-    check(rs.ui.at(-1) === 'tuning', `Resume ↓ Tuning ⏎ opens the tuning panel (ui ${rs.ui.join(',')})`);
-    const widgets = await R(() => window.__RIFTLIGHT__.ui.widgets().map((w) => w.id));
-    check(['preset', 'playerDamage', 'playerLife', 'playerSpeed', 'enemyDamage', 'enemyLife', 'enemySpeed', 'reset'].every((id) => widgets.includes(id)), `tuning has the presets, six sliders and reset (${widgets.join(',')})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('Enter'));
+    need(rs.ui.at(-1) === 'tuning', `Resume ↓ Tuning ⏎ opens the tuning panel (ui ${rs.ui.join(',')})`);
     for (let i = 0; i < 5; i++) await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
-    const focused = await R(() => window.__RIFTLIGHT__.ui.widgets().find((w) => w.focus)?.id);
-    check(focused === 'enemyLife', `↓×5 focuses the enemy life slider (${focused})`);
     for (let i = 0; i < 5; i++) await R(() => window.__RIFTLIGHT__.press('ArrowRight'));
     await capture(page, `riftlight-${tag}-tuning.png`);
-    rs = await st();
-    check(Math.abs(rs.difficulty.enemyLife - 1.5) < 1e-6, `→×5 sets enemy life to 1.5× (${rs.difficulty.enemyLife})`);
-    const after = await R(() => window.__RIFTLIGHT__.actors().map((a) => ({ id: a.id, life: a.life, max: a.maxLife })));
-    const ratio = after[0].max / before[0].max;
-    check(Math.abs(ratio - 1.5) < 0.01, `live monsters' max life follows the slider (×${ratio.toFixed(3)})`);
-    check(Math.abs(after[0].life / after[0].max - 0.5) < 0.01, `a hurt monster keeps its life fraction (${(after[0].life / after[0].max).toFixed(3)})`);
-    const source = await R(() => window.__RIFTLIGHT__.game.level.monsters()[0].actor.stats.explain('life').map((e) => e.source));
-    check(source.includes('difficulty'), `applied as the "difficulty" Mod source (${source.join(',')})`);
     await R(() => window.__RIFTLIGHT__.press('Escape'));
     await R(() => window.__RIFTLIGHT__.press('Escape'));
-    rs = await st();
-    check(rs.ui.length === 0 && !rs.paused, `Esc backs out of the menus (ui ${rs.ui.join(',') || 'none'})`);
 
-    // ---------------------------------------------------------------- the engine's options: Settings → Engine
+    // ---------------------------------------------------------------- the engine's options: Settings → Engine, in the page
     const eng = await R(() => {
       const rl = window.__RIFTLIGHT__;
       const e = window.__PIXEL_ENGINE__;
       rl.ui.open('settings');
       const opened = rl.ui.click('engine');
-      const ids = rl.ui.widgets().map((w) => w.id);
-      const size = rl.game.layer.top.panel.items().find((w) => w.id === 'pixelSize');
-      size.set(1); // chunky
+      rl.game.layer.top.panel.items().find((w) => w.id === 'pixelSize').set(1); // chunky
       e.step(2);
-      const chunky = e.renderer.baseResolution.height;
       const saved = localStorage.getItem('pixel-engine:settings:riftlight');
       e.settings.reset();
       e.step(2);
-      const back = e.renderer.baseResolution.height;
       rl.ui.close();
       rl.ui.close();
-      return { opened, ids, chunky, back, saved, gear: !!document.querySelector('.settings-button'), keys: e.debugKeys.mode.join(), ui: rl.state().ui };
+      return { opened, saved, gear: !!document.querySelector('.settings-button'), keys: e.debugKeys.mode.join() };
     });
     check(
-      eng.opened && ['pixelArt', 'pixelSize', 'fps', 'sound', 'debugInfo'].every((id) => eng.ids.includes(id)) && eng.chunky === 180 && eng.back === 270 && eng.saved === '{"pixelSize":"chunky"}' && !eng.gear && eng.keys === '' && eng.ui.length === 0,
-      `Settings → Engine holds the engine's options and they apply and are saved (pixel size ${eng.chunky} rows, back to ${eng.back}; ${eng.saved}); no ⚙ over Riftlight's menus, and no engine hotkeys without ?debug=1 (${eng.keys || 'none'})`,
+      eng.opened && eng.saved === '{"pixelSize":"chunky"}' && !eng.gear && eng.keys === '',
+      `Settings → Engine saves the engine's options in localStorage (${eng.saved}); no ⚙ over Riftlight's menus, and no engine hotkeys without ?debug=1 (${eng.keys || 'none'})`,
     );
 
     // ---------------------------------------------------------------- look studio: a filter on the characters only
-    await R(() => window.__RIFTLIGHT__.press('KeyL'));
-    rs = await st();
-    const dock = await R(() => {
-      const g = window.__RIFTLIGHT__.game;
-      const r = g.layer.top.rect;
-      return { right: g.ui.w - (r.x + r.w), ids: window.__RIFTLIGHT__.ui.widgets().map((w) => w.id) };
-    });
-    check(rs.ui.at(-1) === 'look' && rs.paused && dock.right <= 8, `L opens the look studio docked beside the picture (ui ${rs.ui.join(',')}, ${dock.right} px from the right)`);
-    check(['preset', 'target', 'pixel', 'shading', 'palette', 'color', 'era', 'display', 'signal', 'stylize', 'reset'].every((id) => dock.ids.includes(id)), `the studio has looks, a target, pixel art and every filter type (${dock.ids.join(',')})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('KeyL'));
+    need(rs.ui.at(-1) === 'look', `L opens the look studio (ui ${rs.ui.join(',')})`);
     await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
     await R(() => window.__RIFTLIGHT__.press('ArrowRight')); // apply to: characters
     await R(() => window.__RIFTLIGHT__.ui.click('palette'));
     await R(() => window.__RIFTLIGHT__.ui.click('gameboy'));
     await R(() => window.__PIXEL_ENGINE__.step(2));
-    const studio = await R(() => {
-      const e = window.__PIXEL_ENGINE__;
+    const stored = await R(() => {
       const saved = JSON.parse(localStorage.getItem('riftlight:settings') ?? '{}');
-      return { ui: window.__RIFTLIGHT__.state().ui, actors: e.look.actors.filters.map((f) => f.id), world: e.look.environment.filters.map((f) => f.id), split: e.state().split, saved: saved.look, savedActors: (saved.customLook?.actors?.filters ?? []).map((f) => f.id), widgets: window.__RIFTLIGHT__.ui.widgets().map((w) => w.id) };
+      return { look: saved.look, actors: (saved.customLook?.actors?.filters ?? []).map((f) => f.id) };
     });
-    check(
-      studio.ui.at(-1) === 'look.palette' && studio.actors.join() === 'gameboy' && studio.world.length === 0 && studio.split,
-      `Palettes → Game Boy on the characters only: two passes (actors ${studio.actors.join(',')}, environment ${studio.world.join(',') || 'none'})`,
-    );
-    check(studio.widgets.includes('gameboy.preset') && studio.widgets.includes('gameboy.dither') && studio.widgets.includes('gameboy.amount'), `an active filter shows its preset and sliders (${studio.widgets.filter((w) => w.startsWith('gameboy')).join(',')})`);
-    check(studio.saved === 'custom' && studio.savedActors.join() === 'gameboy', `the custom look is remembered in the settings (${studio.saved}, ${studio.savedActors.join(',')})`);
+    check(stored.look === 'custom' && stored.actors.join() === 'gameboy', `the custom look is remembered in localStorage (${stored.look}, ${stored.actors.join(',')})`);
     await captureWithHud(page, `riftlight-${tag}-look-studio-hud.png`);
     // H hides the panel; the arrows still tweak the focused slider (Game Boy dither), H shows it
     await R(() => window.__RIFTLIGHT__.press('ArrowDown'));
@@ -298,96 +145,36 @@ export async function runRiftlight(h) {
     await R(() => window.__RIFTLIGHT__.press('KeyH'));
     await R(() => window.__RIFTLIGHT__.press('ArrowLeft'));
     await R(() => window.__PIXEL_ENGINE__.step(2));
-    const peek = await R(() => {
-      const g = window.__RIFTLIGHT__.game;
-      return { peeking: g.layer.peeking, line: g.layer.top.panel.focusLine(), dither: window.__PIXEL_ENGINE__.look.actors.filters[0].params.dither, ui: window.__RIFTLIGHT__.state().ui };
-    });
     await captureWithHud(page, `riftlight-${tag}-look-studio-hidden-hud.png`);
     await R(() => window.__RIFTLIGHT__.press('KeyH'));
-    const shown = await R(() => window.__RIFTLIGHT__.game.layer.peeking);
-    check(
-      peek.peeking && peek.ui.at(-1) === 'look.palette' && Math.abs(peek.dither - 0.85) < 1e-6 && /dither 0\.85/i.test(peek.line) && !shown,
-      `H hides the studio, ← still tweaks the focused slider (${peek.line}), H shows it again`,
-    );
     await R(() => window.__RIFTLIGHT__.press('Escape'));
     await R(() => window.__RIFTLIGHT__.ui.click('reset'));
-    await R(() => window.__RIFTLIGHT__.press('Escape'));
-    rs = await st();
-    const reset = await R(() => window.__PIXEL_ENGINE__.state());
-    check(rs.ui.length === 0 && reset.look === 'none' && !reset.split, `Reset to default, Esc closes the studio (ui ${rs.ui.join(',') || 'none'}, look ${reset.look})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('Escape'));
+    need(rs.ui.length === 0, `Esc closes the studio (ui ${rs.ui.join(',')})`);
 
-    const spawned = await R(() => window.__RIFTLIGHT__.spawn({ seed: 7 }));
-    const fresh = await R((id) => window.__RIFTLIGHT__.actors().find((a) => a.id === id), spawned.id);
-    check(fresh && Math.abs(fresh.life - fresh.maxLife) < 1e-6, `a monster spawned now is born with the tuned life (${fresh?.life} / ${fresh?.maxLife})`);
-
-    // ---------------------------------------------------------------- death → recap → town with a penalty
-    let goldBefore = (await st()).hero.gold;
-    // walk up to the level boss with 1 life; the rest of the level (and the adds it calls)
-    // are cleared away so the blow that lands is the boss's own
-    const duel = await R(() => {
+    // ---------------------------------------------------------------- death → recap → town
+    rs = await R(() => {
       const rl = window.__RIFTLIGHT__;
-      const level = rl.game.level;
-      const boss = level.monsters().find((m) => m.rank === 'boss' && m.actor.alive);
-      if (!boss) return { boss: null };
-      const others = () => {
-        for (const m of level.monsters()) if (m !== boss && m.actor.alive) m.actor.die(null);
-      };
-      others();
-      let at = null;
-      for (let k = 0; k < 16 && !at; k++) {
-        const p = boss.actor.position.clone();
-        p.x += Math.cos((k / 16) * Math.PI * 2) * 2.2;
-        p.z += Math.sin((k / 16) * Math.PI * 2) * 2.2;
-        if (level.stage.walkable(p.x, p.z, false)) at = p;
-      }
-      if (!at) return { boss: boss.name, placed: false };
-      rl.setDifficulty({ enemyDamage: 4 });
-      rl.game.hero.enter(level.stage, at, 0);
-      rl.game.hero.actor.life = 1;
-      let bar = null;
-      let gold = rl.state().hero.gold;
-      for (let i = 0; i < 900 && !rl.state().ui.includes('death'); i++) {
-        gold = rl.state().hero.gold; // the penalty is taken when the recap opens
-        others();
-        window.__PIXEL_ENGINE__.step(1);
-        bar ??= rl.state().boss?.name ?? null;
-      }
-      return { boss: boss.name, placed: true, bar, gold, killer: rl.game.layer.find('death')?.recap?.killer ?? null };
+      rl.game.hero.actor.die(null);
+      for (let i = 0; i < 300 && !rl.state().ui.includes('death'); i++) window.__PIXEL_ENGINE__.step(1);
+      return rl.state();
     });
-    rs = await st();
-    goldBefore = duel.gold ?? goldBefore;
-    check(!!duel.boss && duel.placed, `stood next to the boss (${duel.boss})`);
-    check(duel.bar === duel.boss, `the boss bar shows it once it is close (${duel.bar})`);
-    check(rs.dead && rs.ui.includes('death'), `dying opens the death recap (dead ${rs.dead}, ui ${rs.ui.join(',')})`);
-    check(!!duel.killer && duel.killer === duel.boss, `the recap names the boss as the killer (${duel.killer})`);
+    need(rs.ui.includes('death'), `dying opens the death recap (ui ${rs.ui.join(',')})`);
     await capture(page, `riftlight-${tag}-death.png`);
-    await R(() => window.__RIFTLIGHT__.press('Enter'));
-    rs = await st();
-    check(rs.screen === 'town' && !rs.dead && rs.hero.life === rs.hero.maxLife, `Enter on the recap respawns in town at full life (${rs.screen})`);
-    check(rs.hero.gold < goldBefore || goldBefore === 0, `the death penalty took gold (${goldBefore} → ${rs.hero.gold})`);
-    await R(() => window.__RIFTLIGHT__.setDifficulty({ enemyDamage: 1 }));
+    rs = await R(() => window.__RIFTLIGHT__.press('Enter'));
+    need(rs.screen === 'town', `Enter on the recap respawns in town (${rs.screen})`);
 
     // ---------------------------------------------------------------- save → reload → continue
-    const snapshot = await R(() => {
-      const rl = window.__RIFTLIGHT__;
-      rl.save(0);
-      const s = rl.state();
-      return { level: s.hero.level, xp: s.hero.xp, gold: s.hero.gold, deepest: s.deepest, enemyLife: s.difficulty.enemyLife, exported: rl.exportSave(0)?.length ?? 0 };
-    });
-    check(snapshot.exported > 200, `the slot exports as JSON (${snapshot.exported} chars)`);
+    await R(() => window.__RIFTLIGHT__.save(0));
     await page.reload();
     await page.waitForFunction(() => window.__RIFTLIGHT__ && window.__PIXEL_ENGINE__?.frame >= 2, null, { timeout: 90000 });
     const continueFirst = await R(() => {
       window.__PIXEL_ENGINE__.step(2);
       return window.__RIFTLIGHT__.ui.widgets()[0]?.id;
     });
-    check(continueFirst === 'continue', `after a reload the title offers Continue (${continueFirst})`);
-    await R(() => window.__RIFTLIGHT__.press('Enter'));
-    rs = await st();
-    check(
-      rs.screen === 'town' && rs.hero.level === snapshot.level && rs.hero.xp === snapshot.xp && rs.hero.gold === snapshot.gold && rs.deepest === snapshot.deepest && rs.difficulty.enemyLife === snapshot.enemyLife,
-      `Continue restores the run: level ${rs.hero.level}, xp ${rs.hero.xp}, gold ${rs.hero.gold}, deepest ${rs.deepest}, enemy life ${rs.difficulty.enemyLife}`,
-    );
+    need(continueFirst === 'continue', `after a reload the title offers Continue (${continueFirst})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('Enter'));
+    need(rs.screen === 'town', `Continue goes to town (${rs.screen})`);
     await R(() => window.__PIXEL_ENGINE__.step(10));
     const town = await capture(page, `riftlight-${tag}-continued.png`);
     check(colorCount(town) > 16, 'the continued town renders');

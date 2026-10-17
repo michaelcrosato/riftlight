@@ -18,7 +18,7 @@ thing you used and an iris closes (HUD rects), the mode builds behind it, then
 `engine.setCamera(mode.camera(), { syncUrl: false })` and `setLook(lookFromFilters(mode.filters))`
 swap the look and the iris opens. Leaving puts back the player's look, the render mode and the
 game's own iso preset. No `engine.loadGame`: the town, the hero, the save and the music player survive, and each
-stage removes every collider, trigger and controller it added (the e2e suite checks
+stage removes every collider, trigger and controller it added (`showcase/headless.test.ts` checks
 `physics.counts()` comes back to where it was). The town gets the booth and the archway through
 `Town.extend({ root, blockers, interactables, activate, deactivate, update })`
 (`showcase/townProps.ts`), lights from the engine's pool only while the town shows.
@@ -45,7 +45,7 @@ Both stages walk with it.
 - **The template** is `ArcadeGame.ts` (`?game=arcade`): about 60 lines around the stage.
 - **Scripted run** (`autoplay.ts`): a reactive pilot in beats (run, jump the pit, double jump
   from the step's edge, wall-kick the chimney, ground-pound the slabs, hop to the flag) that
-  reads the hero's state, so the e2e suite proves the course can be finished with the real
+  reads the hero's state, so `showcase/headless.test.ts` proves the course can be finished with the real
   moveset. After changing the course: `npm run film -- arcade-pit arcade-ledge arcade-chimney
   arcade-pound` and `__RIFTLIGHT__.arcade.autoplay()`.
 - In Riftlight a finished run pays `ARCADE_REWARD` gold (finish + a coin per coin + a new best)
@@ -87,5 +87,6 @@ Esc puts everything back.
 | `await bestiary.open()`, `bestiary.entries()`, `state()`, `inspect(i)`, `play(clip, i?)`, `view('walk' \| 'fly' \| 'inspect' \| 'breed')`, `turntable(on)`, `wing(dir)`, `breed(a, b)`, `mutate()`, `close()` | the Hall of Beasts |
 | `photo.open()`, `state()`, `setLook(name \| index)`, `next(dir)`, `setMode('pixel' \| 'raw')`, `setTime(t)`, `setLight(i)`, `await capture({ download })`, `close()` | photo mode (`capture` returns the PNG's data URL) |
 
-The `riftlight-showcase` e2e suite (`scripts/e2e-riftlight-showcase.mjs`, `@cameras`) plays all
-three; frames in `.scratch/e2e/showcase-*.png`.
+`src/riftlight/showcase/headless.test.ts` plays the arcade and the Hall of Beasts headless; the
+`riftlight-showcase` e2e suite (`scripts/e2e-riftlight-showcase.mjs`, `@cameras`) draws their frames
+and plays photo mode; frames in `.scratch/e2e/showcase-*.png`.

@@ -56,8 +56,9 @@ kept, because they are pictures that play never reads: particles, light flicker,
 progress and the feet foot placement has planted (a restore lets them go, so a stride may settle
 a few frames differently).
 
-Tests: the `riftlight-snapshot` e2e suite (`scripts/e2e-riftlight-snapshot.mjs`: town and every
-designed depth, mid-fight, restored and played on to the same fingerprint) and the unit tests that
+Tests: headless, `src/riftlight/game/snapshot.*.test.ts` (town and every designed depth,
+mid-fight, restored and played on to the same fingerprint; the `riftlight-snapshot` e2e suite
+restores one of each in the browser for its frames) and the unit tests that
 round-trip each part (`actors/saved.test.ts`, `town/saved.test.ts`, `combat/saved.test.ts`,
 `wire/monsters-saved.test.ts`, `levels/saveState.test.ts`, `wire/levelSave.test.ts`).
 

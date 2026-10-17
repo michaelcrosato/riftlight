@@ -42,15 +42,16 @@
 //                 the close zoom, a light requested and released, bad ids/zooms/looks throw, a
 //                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
 //                 few frames of Gate B's scene (npm run gate-b) scored.
-// riftlight       the Riftlight game shell (scripts/e2e-riftlight.mjs): title,
-//                 new run, town (a walk to every district and back), rift keeper, level 1 with the basic attack, gold, clear, loot
-//                 window, portal, autosave, pause → Tuning (enemy life applies live), death
-//                 recap, save → reload → Continue. Then the real loot, skills and tree
-//                 (scripts/e2e-riftlight-items.mjs): drops, pickup, equip, sockets, the tree and
-//                 its respec, vendor, crafting, the stash across a reload, a label click after a
-//                 lost device, and every item window on a portrait phone.
+// riftlight       the Riftlight game shell in the browser (scripts/e2e-riftlight.mjs): one run of the
+//                 flow for its pictures and the page (title, town, level, Tuning, the look studio,
+//                 death, a real reload → Continue; the HUD canvas, localStorage, no ⚙ button). Then
+//                 the item windows' frames (scripts/e2e-riftlight-items.mjs), a click on the tree's
+//                 canvas, its own Escape, a label click after a lost device, a phone. The gameplay
+//                 checks are headless: src/riftlight/game/flow*.test.ts, ui/items/*.headless.test.ts,
+//                 ui/tree/tree.headless.test.ts.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
-// riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
+// riftlight-loot  the Loot Lab's pictures, its tooltip pixels and canvas (scripts/e2e-riftlight-loot.mjs;
+//                 the gameplay: src/riftlight/loot/lootlab.test.ts).
 // tools           agent tooling smoke tests: every CLI (CLIS) answers `help`, `--help` and `-h`
 //                 with its manual, exit 0, `--help` within 5 s; `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
@@ -66,11 +67,12 @@
 //                 merges, a clean draft that bakes to the same texels), and refuses a disallowed
 //                 licence, a third-party file or pack nobody approved, own work with an outside
 //                 source, an unsafe id and a grid that doesn't fit.
-// riftlight-combat  the Riftlight combat arena (scripts/e2e-riftlight-combat.mjs).
+// riftlight-combat  the arena's frame (scripts/e2e-riftlight-combat.mjs; the gameplay: src/riftlight/combat/arena.test.ts).
 // riftlight-replay  a Riftlight session by input alone, recorded and replayed to the same state (scripts/e2e-riftlight-replay.mjs).
-// riftlight-snapshot  Riftlight save-states: a moment in town restored (also from a level) plays on the same (scripts/e2e-riftlight-snapshot.mjs).
-// riftlight-builds  charges, curses, totems, traps, aura reservation (arena) and a mechanic affix
-//                 in level 1 (scripts/e2e-riftlight-builds.mjs).
+// riftlight-snapshot  a save-state in town and in a level, restored in the browser, and their frames
+//                 (scripts/e2e-riftlight-snapshot.mjs; the gameplay: src/riftlight/game/snapshot.*.test.ts).
+// riftlight-builds  the frames of charges, curses, totems, traps and a mechanic affix, the mana globe's
+//                 HUD (scripts/e2e-riftlight-builds.mjs; the gameplay: src/riftlight/combat/builds.*.test.ts).
 // systems         game systems (scripts/e2e-systems.mjs): pixel HUD, audio,
 //                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
 //                 leaks, textured toon materials and a textured model (built and merged),
@@ -79,15 +81,14 @@
 //                 ?debug=1; the ⚙ panel pauses the game and every control changes the engine; the
 //                 choices are saved per game, a URL review flag wins at start, Reset undoes them.
 //
-// riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs):
-//                 the arcade cabinet (swoop in, side camera + CRT, the scripted run to the flag,
-//                 best time + gold in the save, Esc out with nothing left behind), the Hall of
-//                 Beasts (first person, exhibits from killed genomes, inspect, a clip, breeding,
-//                 free camera) and photo mode (gameboy PNG, raw, time of day, restore).
+// riftlight-showcase  the showcase in Riftlight (scripts/e2e-riftlight-showcase.mjs): the arcade's and
+//                 the Hall of Beasts' frames, the URL left alone, and photo mode (gameboy PNG, raw,
+//                 time of day, restore). The gameplay: src/riftlight/showcase/headless.test.ts.
 //
-// riftlight-levels  Riftlight levels + the dynamic light pool (scripts/e2e-riftlight-levels.mjs),
-//                 levels 1, 6, 12 and a rift build, render, keep 8 lights
-//                 without recompiles, walk start → exit with Engine.step, open the portal.
+// riftlight-levels  Riftlight levels in the browser (scripts/e2e-riftlight-levels.mjs): levels 1, 6, 12
+//                 and a rift render, the light pool keeps 8 lights without recompiles and updates
+//                 in under 1 ms, a walk to the portal's frame. The gameplay:
+//                 src/riftlight/levels/levelLab.headless.test.ts.
 //
 // world           Engine World, the engine's tech demo (scripts/e2e-world.mjs):
 //                 a door per room, walking into one (an iris, the room as its own Game), every

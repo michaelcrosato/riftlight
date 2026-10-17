@@ -25,8 +25,8 @@ export interface HeadlessRiftlight {
 }
 
 /** A Riftlight that keeps its saves in memory (what headless tools load, a replay's too); pass a store to share one (a page reload: the same saves, a new game). */
-export function makeRiftlight(store: SaveStore = new SaveStore(null)): Riftlight {
-  return new Riftlight({}, { store });
+export function makeRiftlight(store: SaveStore = new SaveStore(null), seed?: number): Riftlight {
+  return new Riftlight({}, { store, seed });
 }
 
 /** The agent API of the Riftlight that runs now (`rl` goes stale when another one is loaded: a replay's). */
@@ -35,12 +35,13 @@ export function currentRiftlightApi(): RiftlightApi | null {
 }
 
 /**
- * Boot Riftlight headless: `seed` is the engine's (`?seed=`), `viewport` the page's it stands for
+ * Boot Riftlight headless: `seed` is what `?seed=` is in a page (the engine's, and new runs' when
+ * none is given), `viewport` the page's it stands for
  * (default 960×540), `store` the saves (a reload: dispose the engine, boot again on the same store),
  * `options` any other engine option a page's URL would set (`quality`, `debugKeys`, `touch`...).
  */
 export async function headlessRiftlight(o: { seed?: number; viewport?: Viewport; game?: Riftlight; store?: SaveStore; options?: Partial<EngineOptions> } = {}): Promise<HeadlessRiftlight> {
-  const game = o.game ?? makeRiftlight(o.store);
+  const game = o.game ?? makeRiftlight(o.store, o.seed);
   const engine = await Engine.headless(game, { ...RIFTLIGHT_OPTIONS, ...o.options, seed: o.seed, viewport: o.viewport, assets: nodeAssets(PUBLIC_DIR) });
   const rl = currentRiftlightApi();
   if (!rl) throw new Error('headlessRiftlight: the game did not install its API (Riftlight.ready)');

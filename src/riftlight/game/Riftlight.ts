@@ -159,7 +159,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
   /** What the level on now was built from (save-states rebuild it the same way, then load its state). */
   private levelEntry: LevelEntry | null = null;
 
-  constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
+  /** New runs' seed when none is given: the `seed` option, else the page's `?seed=` (else the clock: a new run each time). */
+  private readonly seed: number | null;
+
+  constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore; seed?: number } = {}) {
+    this.seed = options.seed !== undefined ? options.seed >>> 0 : urlSeed();
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
     // pass ports to replace any of them.
     this.ports = { ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
@@ -344,7 +348,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   /** Start a fresh run in a slot. */
-  newRun(slot: number, seed = urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0): void { // real time: a new run's seed when none is given (the save keeps it)
+  newRun(slot: number, seed = this.seed ?? (Date.now() ^ (slot * 7919)) >>> 0): void { // real time: a new run's seed when none is given (the save keeps it)
     this.slot = slot;
     this.save = newSave(seed);
     if (!this.replaying) this.store.save(slot, this.save);
@@ -387,7 +391,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   play(choice: { readonly kind: 'new' | 'load' | 'continue'; readonly slot?: number }): void {
     if (choice.kind === 'new') {
       const slot = choice.slot ?? 0;
-      this.ctx.input.send({ rl: 'run', slot, seed: urlSeed() ?? (Date.now() ^ (slot * 7919)) >>> 0 }); // real time: a new run's seed when none is given (the save keeps it)
+      this.ctx.input.send({ rl: 'run', slot, seed: this.seed ?? (Date.now() ^ (slot * 7919)) >>> 0 }); // real time: a new run's seed when none is given (the save keeps it)
       return;
     }
     const slot = choice.kind === 'continue' ? this.saves.last : (choice.slot ?? null);
