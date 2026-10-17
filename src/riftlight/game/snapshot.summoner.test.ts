@@ -8,7 +8,7 @@ import type { Item } from '../core/types';
 import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
 import { PICTURE, SnapDriver, snapDiff } from './testSnapshot';
 
-const T = 30_000;
+const T = 60_000; // 1200 frames of waves with a snapshot every 10: ~15 s alone, more under load
 let h: HeadlessRiftlight;
 let d: SnapDriver;
 let held: Snapshot | null = null;

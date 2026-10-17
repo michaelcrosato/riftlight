@@ -25,7 +25,7 @@ export async function runRiftlightItems(h) {
   console.log(`\n▶ riftlight items, skills and tree (${s.backend})`);
   let ctx;
   try {
-    // real localStorage (a fresh browser profile): the stash has to survive a reload
+    // a fresh browser profile: the item windows' frames, as a player first sees them
     ctx = await openPage(exe, s, 'game=riftlight&debug=0&seed=777');
     const { page, logs } = ctx;
     await page.waitForFunction(() => window.__RIFTLIGHT__, null, { timeout: 60000 });

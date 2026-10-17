@@ -16,7 +16,7 @@ const kills: { rank: string; name: string | undefined; byHero: boolean; xp: numb
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 4242 });
   const { engine, rl } = h;
-  rl.newRun({ seed: 4242 }); // the page's ?seed=4242 is the run's seed too (headless has no URL)
+  rl.newRun(); // on the boot seed, as ?seed=4242 in a page
   await rl.enterDepth(1);
   engine.step(5);
   const b = (rl.game.level!.monsters() as readonly MonsterUnit[]).find((m) => m.rank === 'boss');

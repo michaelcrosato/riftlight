@@ -3,7 +3,7 @@
 // and back → a Blink stops at the town's walls → Vex → the rift menu → depth 1. One engine for
 // the file (module state outlives an engine), tests in order: each starts where the last ended.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type HeadlessRiftlight, headlessRiftlight, settle } from '../headless';
+import { type HeadlessRiftlight, headlessRiftlight, stepUntil } from '../headless';
 import type { RealHero } from '../wire/hero';
 import type { MonsterUnit } from '../wire/monsters';
 
@@ -14,16 +14,6 @@ beforeAll(async () => {
   h = await headlessRiftlight({ seed: 4242 });
 }, T);
 afterAll(() => h?.engine.dispose());
-
-/** Step until `done()`, letting promises run between frames (enterDepth loads the level asynchronously), as a page's waitForFunction would. */
-async function settleUntil(done: () => boolean, what: string, max = 600): Promise<void> {
-  for (let f = 0; f <= max; f++) {
-    if (done()) return;
-    await settle();
-    h.engine.step(1);
-  }
-  throw new Error(`${what} did not come within ${max} frames`);
-}
 
 describe('Riftlight flow: title to depth 1', () => {
   it(
@@ -39,10 +29,7 @@ describe('Riftlight flow: title to depth 1', () => {
       rs = rl.press('Enter');
       expect(rs).toMatchObject({ screen: 'town', deepest: 0 });
       expect(rs.hero.level).toBe(1);
-      // A page's ?seed=4242 is also the run's seed (Riftlight reads the URL); headless there is
-      // no URL, so the run New Run started has a clock seed: start it again on the page's seed so
-      // what follows is the same every time.
-      rl.newRun({ seed: 4242 });
+      expect(rl.game.save.seed, "the boot seed is the run's, as ?seed= is in a page").toBe(4242);
       engine.step(30);
       expect(engine.errors).toEqual([]);
     },
@@ -88,7 +75,7 @@ describe('Riftlight flow: title to depth 1', () => {
       expect(talk.ok).toBe(true);
       expect(talk.state.ui).toContain('rift');
       rl.press('Enter'); // the first entry is the next depth: I · EMBERS
-      await settleUntil(() => rl.state().screen === 'level', 'the level screen');
+      await stepUntil(engine, () => rl.state().screen === 'level', { what: 'the level screen' });
       engine.step(5);
       const rs = rl.state();
       expect(rs).toMatchObject({ depth: 1, levelName: 'Embers' });

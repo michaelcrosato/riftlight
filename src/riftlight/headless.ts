@@ -54,13 +54,16 @@ export function headlessGame(game: Game, options: HeadlessOptions = {}): Promise
 }
 
 /**
- * Step until `done()` holds (checked after each frame), at most `max` frames, as a page's
- * `waitForFunction` would wait: the frames it took. Throws when it never holds, naming `what`.
+ * Step until `done()` holds, at most `max` frames, `every` frames at a time, letting promise
+ * callbacks run between (a level or a stage builds async, as a page's frames would let it): what a
+ * page's `waitForFunction` waits for. The frames it took; throws when it never holds, naming `what`.
  */
-export function stepUntil(engine: Engine, done: () => boolean, max = 600, what = 'the condition'): number {
-  for (let f = 0; f <= max; f++) {
+export async function stepUntil(engine: Engine, done: () => boolean, o: { max?: number; every?: number; what?: string } = {}): Promise<number> {
+  const { max = 600, every = 1, what = 'the condition' } = o;
+  for (let f = 0; f <= max; f += every) {
     if (done()) return f;
-    engine.step(1);
+    engine.step(every);
+    await settle();
   }
   throw new Error(`stepUntil: ${what} did not hold within ${max} frames`);
 }

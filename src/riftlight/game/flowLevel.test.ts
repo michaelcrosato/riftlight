@@ -17,7 +17,7 @@ const store = new SaveStore(null);
 
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 4242, store });
-  h.rl.newRun({ seed: 4242 }); // the page's ?seed=4242 is the run's seed too (headless has no URL)
+  h.rl.newRun(); // on the boot seed, as ?seed=4242 in a page
   await h.rl.enterDepth(1);
   h.engine.step(5);
 }, T);

@@ -3,7 +3,7 @@
 // check stay in the browser); then what needs a page (pointer lock, a picture, a file download or
 // picker) does nothing, and the game plays on. One engine for the file, tests in order.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type HeadlessRiftlight, headlessRiftlight, settle } from '../headless';
+import { type HeadlessRiftlight, headlessRiftlight, stepUntil } from '../headless';
 
 const T = 30_000;
 let h: HeadlessRiftlight;
@@ -12,16 +12,6 @@ beforeAll(async () => {
   h = await headlessRiftlight({ seed: 777 });
 }, T);
 afterAll(() => h?.engine.dispose());
-
-/** Step `n` frames at a time until `done()`, letting promises run between (the stage builds async, as a page's frames would let it). */
-async function stepUntilSettled(done: () => boolean, max: number, what: string): Promise<void> {
-  for (let f = 0; f <= max; f += 5) {
-    if (done()) return;
-    h.engine.step(5);
-    await settle();
-  }
-  throw new Error(`${what} did not hold within ${max} frames`);
-}
 
 describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
   let physics0 = '';
@@ -50,7 +40,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       engine.step(20);
       expect(game.showcase.iris, 'an iris').not.toBeNull();
       expect(engine.camera.zoom, 'the camera swoops into the screen').toBeGreaterThan(1.6);
-      await stepUntilSettled(() => rl.arcade.state().active && !game.showcase.iris && !!rl.arcade.state().phase, 3600, 'inside the cabinet');
+      await stepUntil(h.engine, () => rl.arcade.state().active && !game.showcase.iris && !!rl.arcade.state().phase, { max: 3600, every: 5, what: 'inside the cabinet' });
       const a = rl.arcade.state();
       expect(a.camera).toBe('side');
       expect(a.filters.join()).toBe('16bit,crt');
@@ -102,7 +92,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
     async () => {
       const { rl, game, engine } = h;
       rl.press('Escape');
-      await stepUntilSettled(() => !game.showcase.active, 120, 'back in town');
+      await stepUntil(h.engine, () => !game.showcase.active, { max: 120, every: 5, what: 'back in town' });
       expect(engine.camera.preset).toBe('iso');
       expect([...engine.filters]).toEqual([]);
       expect(game.hero.object.visible).toBe(true);

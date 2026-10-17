@@ -86,8 +86,8 @@
 //                 time of day, restore). The gameplay: src/riftlight/showcase/headless.test.ts.
 //
 // riftlight-levels  Riftlight levels in the browser (scripts/e2e-riftlight-levels.mjs): levels 1, 6, 12
-//                 and a rift render, the light pool keeps 8 lights without recompiles and updates
-//                 in under 1 ms, a walk to the portal's frame. The gameplay:
+//                 and a rift render, the light pool compiles no shaders while its lights move and
+//                 updates in under 1 ms, a walk to the portal's frame. The gameplay:
 //                 src/riftlight/levels/levelLab.headless.test.ts.
 //
 // world           Engine World, the engine's tech demo (scripts/e2e-world.mjs):
