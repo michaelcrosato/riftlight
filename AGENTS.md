@@ -35,7 +35,7 @@ this file is how the work is done.
 | Task | Command |
 | --- | --- |
 | All checks (lint, types, tests, models, clip metrics, build) | `scripts/check.sh` |
-| Fast checks only (Stop hook) | `scripts/check.sh --fast` |
+| Fast checks (Stop hook: no build; tests related to what changed) | `scripts/check.sh --fast` |
 | Browser e2e (CI runs the groups in parallel; `-- --help` lists them; failures only, `E2E_VERBOSE=1` for all) | `npm run build && npm run test:e2e [-- <suite or @group>]` |
 | Install deps | `scripts/session-start.sh` (runs automatically in cloud sessions) |
 | Models: check, look, compare (docs/ASSETS.md) | `npm run model -- check [id]`, `sheet <id> --compare`, `diff <id>`, `find <words>` |

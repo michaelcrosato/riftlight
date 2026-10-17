@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Stop hook (.claude/settings.json): before Claude ends a turn with unshipped work, run
-# the fast checks (scripts/check.sh --fast, ~90-110 s on 4 cores). Silent when they pass. On
-# failure, block the stop and hand back the failing step and the end of its output: every check
-# prints its problems last (`✘ <id>: <problem>`), so the tail holds them.
+# the fast checks (scripts/check.sh --fast: ~20-30 s for a one-file change once the lint and
+# typecheck caches are warm, ~100 s cold). Silent when they pass. On failure, block the stop and
+# hand back the failing step and the end of its output: every check prints its problems last
+# (`✘ <id>: <problem>`), so the tail holds them.
 # Caps itself at 3 blocks per session so it can never loop forever.
 set -uo pipefail
 
