@@ -235,7 +235,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     ctx.input.send({ rl: 'settings', settings: playSettings(this.settings) });
     ctx.input.send({ rl: 'saves', saves: this.saves }); // and so are the save slots the menus show
     this.toTitle();
-    this.disposeApi = installApi(this);
+  }
+
+  /** The engine runs this game now: `window.__RIFTLIGHT__` for tools and agents. */
+  ready(): void {
+    this.disposeApi ??= installApi(this);
   }
 
   dispose(ctx: GameContext): void {
@@ -243,6 +247,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.showcase?.dispose();
     for (const u of this.unsubs) u();
     this.disposeApi?.();
+    this.disposeApi = null;
     this.pointer?.dispose();
     this.fileInput?.remove();
     if (this.savedKeys) ctx.engine.debugKeys = this.savedKeys;

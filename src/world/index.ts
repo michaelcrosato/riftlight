@@ -19,7 +19,14 @@ export const WORLD_OPTIONS: Partial<EngineOptions> = {
   touchButtons: [...DEFAULT_TOUCH_BUTTONS, { label: '?', code: 'KeyH', hint: 'how it works' }, { label: 'GO', code: 'KeyG', hint: 'rooms' }],
 };
 
-/** The first room: `?room=<id>`, else the Atrium. Also sets `window.__WORLD__`. */
+/** The first room: once the engine runs it, `window.__WORLD__` exists (and stays, room to room). */
+class FirstRoom extends RoomGame {
+  ready(): void {
+    (globalThis as { __WORLD__?: typeof worldApi }).__WORLD__ = worldApi;
+  }
+}
+
+/** The first room: `?room=<id>`, else the Atrium. Sets `window.__WORLD__` once it runs. */
 export function worldGame(): Game {
   let id = 'atrium';
   try {
@@ -27,7 +34,6 @@ export function worldGame(): Game {
   } catch {
     /* no location (tools) */
   }
-  (globalThis as { __WORLD__?: typeof worldApi }).__WORLD__ = worldApi;
   const def = roomById(id) ?? ROOMS[0]!;
-  return new RoomGame(def, null);
+  return new FirstRoom(def, null);
 }

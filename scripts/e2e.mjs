@@ -51,7 +51,8 @@
 //                 lost device, and every item window on a portrait phone.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
 // riftlight-loot  the Loot Lab (?game=lootlab): drops, pickup, filter, inventory, equip (scripts/e2e-riftlight-loot.mjs).
-// tools           agent tooling smoke tests: `npm run build:single` gives one self-contained
+// tools           agent tooling smoke tests: every CLI (CLIS) answers `help`, `--help` and `-h`
+//                 with its manual, exit 0, `--help` within 5 s; `npm run build:single` gives one self-contained
 //                 HTML file that runs from file:// with zero errors and no network requests;
 //                 `npm run film` films a short script and writes its PNG + JSON; `npm run balance`
 //                 (a small matrix) and `npm run inspect` (hero, a monster, a prop, a diff) write
@@ -102,9 +103,10 @@
 // the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel
 // HUD is a 2D overlay canvas (data-hud) on top of it.
 //
-// Waiting: pages are ready once the engine has presented 2 frames. Software rendering in CI
-// runs at a few frames per second, so the suites wait for conditions (`until`), game time or
-// manual frames (`Engine.step`) rather than fixed frame counts wherever they can.
+// Waiting: pages are ready once window.__PIXEL_READY__ has resolved (scripts/page.mjs) and the
+// engine has presented 2 frames. Software rendering in CI runs at a few frames per second, so
+// the suites wait for conditions (`until`), game time or manual frames (`Engine.step`) rather
+// than fixed frame counts wherever they can.
 //
 // Frames land in .scratch/e2e/.
 import { spawn } from 'node:child_process';
@@ -114,6 +116,7 @@ import { crc32, deflateSync } from 'node:zlib';
 import { format } from 'node:util';
 import { chromium } from 'playwright-core';
 import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
+import { engineReady, startServer, watchConsole } from './page.mjs';
 import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlight } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
@@ -156,9 +159,6 @@ const SCENARIOS = [
   },
 ];
 
-// Software-rasterizer driver chatter (ANGLE/SwiftShader performance notes), not app output.
-const ENVIRONMENT_NOISE = [/GL Driver Message \(OpenGL, Performance/];
-
 const VERBOSE = /^(1|true|yes)$/i.test(process.env.E2E_VERBOSE ?? '');
 let failures = 0;
 let checks = 0;
@@ -173,42 +173,12 @@ function check(cond, msg) {
   }
 }
 
-async function startServer() {
-  // Something already answering on the port would be tested instead of this build (e.g. a
-  // leftover preview server from another checkout): refuse rather than test the wrong code.
-  const taken = await fetch(BASE).then(() => true, () => false);
-  if (taken) throw new Error(`port ${PORT} is already serving something; stop it or set E2E_PORT`);
-  // detached: its own process group, so stopServer() ends npx *and* the vite it starts
-  // (killing npx alone left vite running, holding the port).
-  const proc = spawn('npx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], { stdio: 'ignore', detached: true });
-  let exited = false;
-  proc.on('exit', () => (exited = true));
-  for (let i = 0; i < 100 && !exited; i++) {
-    try {
-      const res = await fetch(BASE);
-      if (res.ok) return proc;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  stopServer(proc);
-  throw new Error('vite preview did not start');
-}
-
-function stopServer(proc) {
-  try {
-    process.kill(-proc.pid, 'SIGTERM');
-  } catch {
-    proc.kill();
-  }
-}
-
 const state = (page) => page.evaluate(() => window.__PIXEL_ENGINE__?.state());
 
-/** The engine is up (window.__PIXEL_ENGINE__ exists) and has presented at least 2 frames. */
+/** The engine is ready (window.__PIXEL_READY__, scripts/page.mjs) and has presented at least 2 frames. */
 async function ready(page) {
-  await page.waitForFunction(() => window.__PIXEL_ENGINE__?.frame >= 2, null, { timeout: 90000 });
+  await engineReady(page, { timeout: 90000 });
+  await page.waitForFunction(() => window.__PIXEL_ENGINE__.frame >= 2, null, { timeout: 90000 });
 }
 
 async function waitFrames(page, n) {
@@ -375,14 +345,7 @@ async function stableCamera(page, label = '') {
 async function launch(browserExe, s, pageOptions = {}) {
   const browser = await chromium.launch({ executablePath: browserExe, args: s.args, headless: true });
   const page = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1, ...pageOptions });
-  const logs = [];
-  const allowed = [...ENVIRONMENT_NOISE, ...(s.expectedWarnings ?? [])];
-  page.on('console', (m) => {
-    if (m.type() !== 'error' && m.type() !== 'warning') return;
-    if (m.type() === 'warning' && allowed.some((re) => re.test(m.text()))) return;
-    logs.push(`${m.type()}: ${m.text()}`);
-  });
-  page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+  const logs = watchConsole(page, { warnings: true, allow: s.expectedWarnings ?? [] });
   return { browser, page, logs };
 }
 
@@ -531,6 +494,23 @@ async function runCore(browserExe, s) {
     st = await state(page);
     checkClean(st, logs);
     await writeFile(new URL(`${s.name}-state.json`, OUT), JSON.stringify(st, null, 2));
+
+    // one readiness signal: it resolves with the running engine; step() on an engine that hasn't
+    // finished starting throws (it used to run 0 frames and leave the game frozen in manual time)
+    const readiness = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const same = (await window.__PIXEL_READY__) === e;
+      let early = '';
+      const unstarted = { started: false, manual: false };
+      try {
+        e.constructor.prototype.step.call(unstarted);
+      } catch (err) {
+        early = err.message;
+      }
+      return { same, early, manual: unstarted.manual };
+    });
+    check(readiness.same, '__PIXEL_READY__ resolves with the running engine');
+    check(readiness.early.includes('await window.__PIXEL_READY__') && !readiness.manual, `step() before the engine has started throws and leaves manual time off: ${readiness.early || 'nothing thrown'}`);
   } catch (e) {
     check(false, `scenario crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {
@@ -1138,8 +1118,65 @@ function run(cmd, args, { env = {}, timeout = 180000 } = {}) {
 
 const tail = (out, n = 15) => out.trim().split('\n').slice(-n).join('\n    ');
 
+/** The npm scripts that are CLIs: each answers `help`, `--help` and `-h` with its manual (scripts/manual.mjs). */
+const CLIS = ['anim', 'film', 'gate-b', 'loot', 'tree', 'level', 'combat', 'monster', 'playtest', 'balance', 'inspect', 'model', 'tex', 'bundle', 'build:single', 'look', 'test:e2e'];
+
+/**
+ * `npm run <name> -- <words>` in its own process group: on a timeout the whole group gets SIGTERM
+ * (a tool that started a server stops it), then SIGKILL.
+ */
+function runNpm(name, words, timeout) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const proc = spawn('npm', ['run', '--silent', name, '--', ...words], { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+    let out = '';
+    let timedOut = false;
+    proc.stdout.on('data', (d) => (out += d));
+    proc.stderr.on('data', (d) => (out += d));
+    const kill = (sig) => {
+      try {
+        process.kill(-proc.pid, sig);
+      } catch {
+        /* gone */
+      }
+    };
+    const timer = setTimeout(() => {
+      timedOut = true;
+      kill('SIGTERM');
+      setTimeout(() => kill('SIGKILL'), 1000).unref();
+    }, timeout);
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      resolve({ code, out, ms: Date.now() - t0, timedOut });
+    });
+  });
+}
+
+/** Every CLI prints its manual for `--help` (exit 0, within 5 s), and the same for `help` and `-h`. */
+async function runHelp() {
+  console.log('\n▶ tools: every CLI answers help, --help and -h');
+  const manuals = new Map();
+  for (const name of CLIS) {
+    const r = await runNpm(name, ['--help'], 5000);
+    const named = r.out.includes(`npm run ${name}`);
+    manuals.set(name, r.out);
+    check(r.code === 0 && !r.timedOut && named, `npm run ${name} -- --help: exit ${r.timedOut ? 'none (killed after 5 s)' : r.code} in ${(r.ms / 1000).toFixed(1)} s, ${named ? 'its manual' : `no "npm run ${name}" in what it printed:\n    ${tail(r.out, 5)}`}`);
+  }
+  // the other two words, four at a time
+  const queue = CLIS.flatMap((name) => ['help', '-h'].map((word) => ({ name, word })));
+  const others = [];
+  await Promise.all(
+    [0, 1, 2, 3].map(async () => {
+      for (let job; (job = queue.shift()); ) others.push({ ...job, ...(await runNpm(job.name, [job.word], 30000)) });
+    }),
+  );
+  for (const r of others) check(r.code === 0 && r.out === manuals.get(r.name), `npm run ${r.name} -- ${r.word}: exit ${r.timedOut ? 'none (killed)' : r.code}, ${r.out === manuals.get(r.name) ? 'the same manual' : `not the --help manual:\n    ${tail(r.out, 5)}`}`);
+}
+
 /** Smoke tests for the agent tooling that the game suites don't touch. */
 async function runTools(browserExe) {
+  await runHelp();
+
   console.log('\n▶ tools: npm run build:single');
   let ctx;
   try {
@@ -1393,9 +1430,7 @@ async function runEnginePhone(browserExe) {
     const browser = await chromium.launch({ executablePath: browserExe, args: SCENARIOS[0].args, headless: true });
     try {
       const page = await browser.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 1, hasTouch: true });
-      const logs = [];
-      page.on('console', (m) => (m.type() === 'error' || (m.type() === 'warning' && !ENVIRONMENT_NOISE.some((re) => re.test(m.text())))) && logs.push(`${m.type()}: ${m.text()}`));
-      page.on('pageerror', (e) => logs.push(`pageerror: ${e.message}`));
+      const logs = watchConsole(page, { warnings: true });
       await page.goto(urlFor({ url: BASE }, 'touch=1&debug=0'));
       await ready(page);
       const st = await state(page);
@@ -1574,7 +1609,7 @@ const SUITES = {
     await runRiftlightShowcase({ ...helpers, scenario: SCENARIOS[0] });
   },
   world: async (exe) => {
-    const helpers = { exe, openPage, check, capture, checkClean, colorCount };
+    const helpers = { exe, openPage, ready, check, capture, checkClean, colorCount };
     await runWorld({ ...helpers, scenario: SCENARIOS[0] });
   },
 };
@@ -1609,7 +1644,7 @@ if (unknown.length) {
 
 await mkdir(OUT, { recursive: true });
 const exe = headlessShell();
-const server = await startServer();
+const server = await startServer({ port: PORT, mode: 'preview', portEnv: 'E2E_PORT', timeout: 10000 });
 const started = Date.now();
 try {
   for (const [name, runSuite] of Object.entries(SUITES)) {
@@ -1625,7 +1660,7 @@ try {
       console.log = log;
       for (const line of held) console.log(line);
       console.log(`✘ ${name}: killed (${sig}) after ${checks - checksBefore} checks`);
-      stopServer(server);
+      server.stop();
       process.exit(130);
     };
     process.once('SIGINT', killed).once('SIGTERM', killed);
@@ -1645,7 +1680,7 @@ try {
     }
   }
 } finally {
-  stopServer(server);
+  server.stop();
 }
 console.log(`⏱ total ${((Date.now() - started) / 1000).toFixed(1)} s`);
 console.log(failures ? `✘ ${failures} check(s) failed` : '✔ all e2e checks passed');

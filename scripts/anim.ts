@@ -51,6 +51,9 @@ import { HeroWeapons, WEAPON_KINDS, type WeaponClass } from '../src/riftlight/ac
 import { NPC_CLIPS } from '../src/riftlight/town/npcClips';
 import { TOWNSFOLK } from '../src/riftlight/town/npcModel';
 import { encodePng } from './png';
+import { helpExit, manual } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 // `npm run anim -- list | head` closes the pipe early; that's not an error.
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
@@ -328,7 +331,7 @@ async function main(): Promise<void> {
       return;
     }
     default:
-      console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
+      console.log(manual(import.meta.url));
   }
 }
 

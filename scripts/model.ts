@@ -107,6 +107,9 @@ import { kindOf, paletteFloor, pieceColours, primBox, renderTraceReference, rend
 import { approvedPack, PACK_INDEX, packDownload, packIndexProblems, packModels, packs, packSource, packTextureDefs, readPack, sha256, writePack, writePackIndex } from './packs';
 import { registerEngineHooks } from './trace/hooks';
 import type { SourceProvenance, TraceSource } from './trace/sources';
+import { helpExit, manual } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);
@@ -781,7 +784,7 @@ async function main(): Promise<void> {
   const cmd = args[0] ?? 'help';
   let rest = args.slice(1);
   if (cmd === 'help') {
-    console.log(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').filter((l) => l.startsWith('//')).map((l) => l.slice(3)).join('\n'));
+    console.log(manual(import.meta.url));
     return;
   }
   if (cmd === 'import') return cmdImport(rest[0] ?? fail('import needs a file: npm run model -- import <file.glb> --as <id> --licence <spdx> --source <url>'));

@@ -76,17 +76,19 @@ function defineProbe() {
 }
 
 /**
- * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, check, capture, checkClean, colorCount }
+ * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, ready, check, capture, checkClean, colorCount }
  */
 export async function runWorld(h) {
-  const { exe, scenario: s, openPage, check, capture, checkClean, colorCount } = h;
+  const { exe, scenario: s, openPage, ready, check, capture, checkClean, colorCount } = h;
   const tag = s.name;
   console.log(`\n▶ world (${s.backend})`);
   let ctx;
   try {
     ctx = await openPage(exe, s, 'game=world&debug=0');
     const { page, logs } = ctx;
-    await page.waitForFunction(() => window.__WORLD__ && window.__WORLD__.state().room === 'atrium', null, { timeout: 60000 });
+    // openPage waited for window.__PIXEL_READY__: __WORLD__ is set by then
+    const first = await page.evaluate(() => window.__WORLD__?.state().room);
+    check(first === 'atrium', `window.__WORLD__ is up once the engine is ready, in the Atrium (${first})`);
     const W = (fn, arg) => page.evaluate(fn, arg);
     const rooms = await W(() => window.__WORLD__.rooms());
     const doors = await W(() => window.__WORLD__.room.doors());
@@ -1225,7 +1227,7 @@ export async function runWorld(h) {
     // ------------------------------------------------------------- a recording is a file
     // the live play recorded above, replayed in a fresh page (another engine, its clocks at 0)
     await page.reload();
-    await page.waitForFunction(() => window.__PIXEL_ENGINE__ && window.__WORLD__ && window.__WORLD__.state().room === 'atrium', null, { timeout: 60000 });
+    await ready(page);
     const fresh = await W(async (rec) => {
       const e = window.__PIXEL_ENGINE__;
       await e.replay(rec, () => e.loadGame(window.__replayProbe()));

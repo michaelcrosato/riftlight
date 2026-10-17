@@ -45,6 +45,29 @@ const NO_PADS: readonly null[] = [];
 /** Matches no frame: the next frame records held keys, pointer and gamepad in full. */
 const FULL_FRAME: SnapshotMemory = { held: '-', pointer: '-' };
 
+/**
+ * `window.__PIXEL_READY__`: the one readiness signal for tools and agents. A promise that exists
+ * as soon as the engine module loads, resolves with the engine when `Engine.start` has finished
+ * (`__PIXEL_ENGINE__` and the game's own handles are set by then) and rejects with the reason a
+ * start failed. A start after one settled sets a new one.
+ */
+interface Readiness {
+  settled: boolean;
+  resolve(engine: Engine): void;
+  reject(reason: unknown): void;
+}
+function nextReadiness(): Readiness {
+  const r: Readiness = { settled: false, resolve: () => {}, reject: () => {} };
+  const promise = new Promise<Engine>((resolve, reject) => {
+    r.resolve = (e) => ((r.settled = true), resolve(e));
+    r.reject = (e) => ((r.settled = true), reject(e));
+  });
+  promise.catch(() => {}); // a failed start is reported on the page, not as an unhandled rejection
+  (globalThis as { __PIXEL_READY__?: Promise<Engine> }).__PIXEL_READY__ = promise;
+  return r;
+}
+let readiness = nextReadiness();
+
 export interface GameContext {
   readonly engine: Engine;
   readonly scene: Scene;
@@ -93,6 +116,13 @@ export interface Game {
   setup(ctx: GameContext): Promise<void> | void;
   /** Runs before every fixed 60 Hz physics step. Move characters/apply forces here. */
   fixedUpdate?(ctx: GameContext, dt: number): void;
+  /**
+   * Runs when the engine starts running this game: after `Engine.start` (just before
+   * `__PIXEL_READY__` resolves) and after each `loadGame`. Install page handles for tools here
+   * (`window.__MYGAME__`), so they never exist before the engine can step. An exception is
+   * reported like any hook's (`engine.errors`, on screen); the game runs on.
+   */
+  ready?(ctx: GameContext): void;
   /** Runs once per rendered frame after physics (animation, pickups, UI state). */
   update?(ctx: GameContext, dt: number): void;
   /** World position the camera follows. */
@@ -324,6 +354,8 @@ export class Engine {
   private _paused = false;
   /** False while a game's setup() is running (start, loadGame): nothing advances. */
   private ready = false;
+  /** True once the first start has finished: `step()` before it is a tool's race, and throws. */
+  private started = false;
   private disposed = false;
   /** Incremented by every loadGame() and by dispose(): a load that is no longer the latest stops. */
   private loadToken = 0;
@@ -591,6 +623,8 @@ export class Engine {
     const progress = () =>
       (done.renderer ? 0.2 : 0) + (done.physics ? 0.2 : 0) + assetProgress() * 0.45 + (done.setup ? 0.1 : 0);
     const ticker = loading ? setInterval(() => loading.set(progress()), 100) : 0;
+    if (readiness.settled) readiness = nextReadiness();
+    const signal = readiness;
     try {
       const camera = createCameraRig(options.camera);
       const scene = new Scene();
@@ -635,8 +669,12 @@ export class Engine {
       loading?.set(1);
       // The handle tests, tools and agents read: window.__PIXEL_ENGINE__.state()
       (globalThis as { __PIXEL_ENGINE__?: Engine }).__PIXEL_ENGINE__ = engine;
+      engine.started = true;
+      engine.callReady(game);
+      signal.resolve(engine);
       return engine;
     } catch (e) {
+      signal.reject(e);
       // Starting failed (a game's setup threw, no GPU at all...): say so on screen too.
       if (!container.querySelector('.fatal')) {
         const el = document.createElement('div');
@@ -846,6 +884,9 @@ export class Engine {
    * animation, camera). Nothing is drawn; call `renderer.capture()` to see the result.
    */
   step(n = 1, dt = 1 / 60): void {
+    // Before the first start finishes nothing can advance, and manual time would freeze the
+    // game once it starts. During a later loadGame() it runs 0 frames, as a tool polling expects.
+    if (!this.started) throw new Error('engine not ready: await window.__PIXEL_READY__');
     this.manual = true;
     for (let i = 0; i < n && this.ready; i++) this.frameStep(dt);
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
@@ -937,6 +978,7 @@ export class Engine {
       }
       if (!live()) return;
       this.becomeReady();
+      this.callReady(game);
     })();
     this.loading = run;
     try {
@@ -984,6 +1026,15 @@ export class Engine {
     this.renderer.setCamera(rig.camera);
     this.camera = rig;
     this.wireRig(rig);
+  }
+
+  /** `Game.ready`: like any hook, an exception goes to `errors` and the screen; the game runs on. */
+  private callReady(game: Game): void {
+    try {
+      game.ready?.(this.context);
+    } catch (e) {
+      this.reportError(e);
+    }
   }
 
   /** Start running the game: nothing pressed or timed while loading carries over. */

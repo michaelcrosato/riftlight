@@ -34,16 +34,19 @@
 // Output (.scratch/film/<name>.*): png filmstrip (+ timeline of speed, joint speed, foot
 // contact), json per-frame log, gif with --gif. The console summary lists the state/clip
 // timeline and flags pops (one-frame joint jumps), foot slip, feet sinking or floating.
-import { spawn, type ChildProcess } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Page } from 'playwright-core';
 import { launchChromium } from './browser.mjs';
+import { openPage, startServer } from './page.mjs';
 import { GLYPH_H, textWidth } from '../src/engine/animation/font';
 import { BAD, Canvas, CELL_BG, CONTACT, DIM, GRID, GROUND, LEFT, RIGHT, TEXT, WARN, type RGB } from '../src/engine/animation/raster';
 import { encodeGif } from './gif';
 import { encodePng } from './png';
+import { helpExit } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = Number(process.env.FILM_PORT) || 4200 + Math.floor(Math.random() * 600);
@@ -367,15 +370,13 @@ interface Rec {
 
 async function main(): Promise<void> {
   for (const j of jobs) parse(j.script); // fail fast on typos
-  const server = await startServer();
+  // the dev server shows the source as it is now (--preview: the build); FILM=1: no file watching
+  const server = await startServer({ port: PORT, mode: flags.has('preview') ? 'preview' : 'dev', env: { FILM: '1' }, timeout: 30000, portEnv: 'FILM_PORT' });
   const browser = await launchChromium();
   try {
     // Pixel mode: a canvas of exactly the internal resolution (480×270, 1 device pixel per
     // art pixel) is the cheapest to render and read back, and loses nothing.
     const raw = opt('mode', 'pixel') === 'raw';
-    const page = await browser.newPage({ viewport: raw ? { width: 960, height: 540 } : { width: 480, height: 270 }, deviceScaleFactor: 1 });
-    const errors: string[] = [];
-    page.on('pageerror', (e) => errors.push(e.message));
     // The game's iso camera turned to yaw 0, so the keys move along the axes as scripts
     // assume (W = -Z, D = +X); at its default 45° yaw they ran diagonally.
     const q = new URLSearchParams({ debug: '0', touch: '0', cam: JSON.stringify({ preset: 'iso', yaw: 0 }) });
@@ -387,20 +388,13 @@ async function main(): Promise<void> {
     if (flags.has('look')) q.set('look', opt('look', ''));
     const t0 = Date.now();
     const log = (m: string) => flags.has('verbose') && console.log(`  [${((Date.now() - t0) / 1000).toFixed(1)}s] ${m}`);
+    // the engine is ready (window.__PIXEL_READY__, scripts/page.mjs) when openPage returns; errors
+    // count from the last load (the dev server may reload the page while it bundles)
+    const { page, logs } = await openPage(browser, `${server.url}?${q}`, { viewport: raw ? { width: 960, height: 540 } : { width: 480, height: 270 }, timeout: 90000, fresh: true });
     page.on('console', (m) => flags.has('verbose') && console.log(`  [page] ${m.text()}`));
-    // The dev server may still be bundling dependencies on the first load; retry once.
-    for (let attempt = 0; ; attempt++) {
-      errors.length = 0;
-      await page.goto(`http://localhost:${PORT}/?${q}`);
-      log('page loaded');
-      const ok = await page
-        .waitForFunction(() => (window as unknown as { __PIXEL_ENGINE__?: { game: { hero?: unknown } } }).__PIXEL_ENGINE__?.game.hero, null, { timeout: 60000 })
-        .then(() => true)
-        .catch(() => false);
-      if (ok && !errors.length) break;
-      if (attempt === 1) throw new Error(`game did not start:\n${errors.join('\n')}`);
-      log('game did not start, reloading');
-    }
+    const errors = logs.filter((l) => l.startsWith('pageerror'));
+    const hero = await page.evaluate(() => !!(window as unknown as { __PIXEL_ENGINE__: { game: { hero?: unknown } } }).__PIXEL_ENGINE__.game.hero);
+    if (errors.length || !hero) throw new Error(`game did not start${hero ? '' : ` (game "${game}" has no hero to film)`}:\n${errors.join('\n')}`);
     log('game ready');
     await page.evaluate(PAGE);
     const joints = (await page.evaluate('__FILM.joints')) as string[];
@@ -412,15 +406,7 @@ async function main(): Promise<void> {
     }
   } finally {
     await browser.close();
-    stop(server);
-  }
-}
-
-function stop(proc: ChildProcess): void {
-  try {
-    process.kill(-proc.pid!, 'SIGTERM');
-  } catch {
-    proc.kill();
+    server.stop();
   }
 }
 
@@ -778,23 +764,6 @@ function report(name: string, script: string, recs: Rec[], joints: string[], stu
     written.push(`${base}.gif`);
   }
   console.log(`wrote ${written.map((f) => f.replace(`${ROOT}/`, '')).join(', ')}`);
-}
-
-// ---- infrastructure -------------------------------------------------------------------------
-async function startServer(): Promise<ChildProcess> {
-  const args = flags.has('preview') ? ['vite', 'preview', '--port', String(PORT), '--strictPort'] : ['vite', '--port', String(PORT), '--strictPort'];
-  // detached: its own process group, so stop() takes down npx *and* vite
-  const proc = spawn('npx', args, { cwd: ROOT, stdio: 'ignore', detached: true, env: { ...process.env, FILM: '1' } });
-  for (let i = 0; i < 300; i++) {
-    try {
-      if ((await fetch(`http://localhost:${PORT}/`)).ok) return proc;
-    } catch {
-      /* not up yet */
-    }
-    await new Promise((r) => setTimeout(r, 100));
-  }
-  stop(proc);
-  throw new Error('vite did not start');
 }
 
 main().then(

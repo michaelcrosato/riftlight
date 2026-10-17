@@ -42,6 +42,9 @@ import {
   type GenomeOptions,
 } from '../../src/riftlight/monsters';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

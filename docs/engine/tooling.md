@@ -2,6 +2,11 @@
 
 ## Runtime handles
 
+- `await window.__PIXEL_READY__`: the one readiness signal. It exists before the engine starts,
+  resolves with the engine once `Engine.start` has finished (`__PIXEL_ENGINE__` and the handles a
+  game sets in `Game.ready` exist by then: `__RIFTLIGHT__`, `__WORLD__`, `__ARCADE__`,
+  `__LOOTLAB__`; the labs set theirs just after) and rejects with the reason a start failed.
+  `step()` before it throws; during a later `loadGame` it runs 0 frames.
 - `window.__PIXEL_ENGINE__.state()`: backend, mode, resolution, aspect, framing, frame
   count, fps, maxFps, quality, GPU errors and recoveries, camera, player target, game speed,
   hitstop, the screen effects (transition, progress, flash, rings) and game status.
@@ -38,8 +43,12 @@
 
 ## Command-line tools
 
-Each CLI's header comment is its manual (read the script's first lines; most also print it for
-`help`). Text for people, `--json` for agents, exit 1 when a check fails.
+Each CLI's header comment is its manual: `help`, `--help` or `-h` prints it and does nothing else
+(`scripts/manual.mjs`; the e2e `tools` suite checks every CLI). `--json` for machine output, exit 1
+when a check fails. A script that opens the game uses `scripts/page.mjs`: `startServer` (the dev
+server, or `vite preview` of the build; `--strictPort`, refuses a port someone else serves) and
+`openPage` (collects console errors, awaits `__PIXEL_READY__`). One look at a page of the build:
+`npm run look -- "?game=…" [--keys …]` (PNG + `report.json` in `.scratch/look/`).
 
 | Command | Script | Docs |
 | --- | --- | --- |

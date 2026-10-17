@@ -26,6 +26,9 @@ import type { Defender } from '../../src/riftlight/combat/damage';
 import { ACTOR_BASE } from '../../src/riftlight/combat/tuning';
 import { round, skillDps, type DpsReport as Report } from '../../src/riftlight/balance/dps';
 import { SKILLS, SUPPORTS, buildSkill, supportsFor, type SupportLink } from '../../src/riftlight/skills';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
 const argv = process.argv.slice(2);

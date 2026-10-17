@@ -94,7 +94,8 @@ saves, deletes and imports, so a replay shows the slots the recorded run saw.
 
 ## Agent API: `window.__RIFTLIGHT__`
 
-Typed as `RiftlightApi` (`game/api.ts`). Steps go through `Engine.step`, frame-exact.
+Typed as `RiftlightApi` (`game/api.ts`), installed in `Riftlight.ready` (it exists once
+`window.__PIXEL_READY__` resolves). Steps go through `Engine.step`, frame-exact.
 
 | call | does |
 | --- | --- |

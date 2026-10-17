@@ -56,6 +56,9 @@ import {
 import { renderBalanceCharts } from '../../src/riftlight/balance/charts';
 import { endlessCheck, endlessDepths } from '../../src/riftlight/balance/endless';
 import { encodePng } from '../png';
+import { helpExit } from '../manual.mjs';
+
+helpExit(import.meta.url);
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

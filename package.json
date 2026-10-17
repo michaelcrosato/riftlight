@@ -1,7 +1,7 @@
 {
   "name": "pixel-engine",
   "private": true,
-  "version": "0.40.0",
+  "version": "0.41.0",
   "license": "MIT",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
@@ -33,7 +33,8 @@
     "balance": "tsx scripts/riftlight/balance.ts",
     "inspect": "tsx scripts/inspect.ts",
     "model": "tsx scripts/model.ts",
-    "tex": "tsx scripts/tex.ts"
+    "tex": "tsx scripts/tex.ts",
+    "look": "node scripts/look.mjs"
   },
   "dependencies": {
     "@dimforge/rapier3d": "0.20.0",
