@@ -471,7 +471,7 @@ export type RiftlightApi = ReturnType<typeof createApi>;
 /** Install `window.__RIFTLIGHT__`; returns the uninstaller (Game.dispose calls it). */
 export function installApi(game: Riftlight): () => void {
   const api = createApi(game);
-  const w = window as unknown as { __RIFTLIGHT__?: RiftlightApi };
+  const w = globalThis as unknown as { __RIFTLIGHT__?: RiftlightApi }; // the page's window, or Node's globalThis headless
   w.__RIFTLIGHT__ = api;
   return () => {
     if (w.__RIFTLIGHT__ === api) delete w.__RIFTLIGHT__;

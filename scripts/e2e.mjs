@@ -1119,7 +1119,7 @@ function run(cmd, args, { env = {}, timeout = 180000 } = {}) {
 const tail = (out, n = 15) => out.trim().split('\n').slice(-n).join('\n    ');
 
 /** The npm scripts that are CLIs: each answers `help`, `--help` and `-h` with its manual (scripts/manual.mjs). */
-const CLIS = ['anim', 'film', 'gate-b', 'loot', 'tree', 'level', 'combat', 'monster', 'playtest', 'balance', 'inspect', 'model', 'tex', 'bundle', 'build:single', 'look', 'test:e2e'];
+const CLIS = ['anim', 'film', 'gate-b', 'loot', 'tree', 'level', 'combat', 'monster', 'playtest', 'replay', 'balance', 'inspect', 'model', 'tex', 'bundle', 'build:single', 'look', 'test:e2e'];
 
 /**
  * `npm run <name> -- <words>` in its own process group: on a timeout the whole group gets SIGTERM
@@ -1591,7 +1591,7 @@ const SUITES = {
     await runRiftlightCombat({ ...helpers, scenario: SCENARIOS[0] });
   },
   'riftlight-replay': async (exe) => {
-    await runRiftlightReplay({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[0] });
+    await runRiftlightReplay({ exe, openPage, check, capture, checkClean, runNpm, OUT, scenario: SCENARIOS[0] });
   },
   'riftlight-snapshot': async (exe) => {
     await runRiftlightSnapshot({ exe, openPage, check, capture, checkClean, scenario: SCENARIOS[0] });

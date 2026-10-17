@@ -215,7 +215,7 @@ export class PhotoMode {
         this.setFill(this.fill + dir);
         break;
       case 'capture':
-        void this.capture();
+        this.shoot();
         break;
       case 'exit':
         this.close();
@@ -224,14 +224,24 @@ export class PhotoMode {
     game.sound(id === 'capture' || id === 'exit' ? 'click' : 'move');
   }
 
+  /** The shutter (P, pad X, the menu): a photo where there is a picture; headless there is none. */
+  private shoot(): void {
+    if (!this.engine.gpu) return;
+    this.capture().catch((e: unknown) => console.warn('[photo] capture failed:', e));
+  }
+
   /**
    * Save what is on screen as a PNG (the pipeline's presented frame, filters and all; the HUD
    * is not in it). Downloads `riftlight-photo-N.png` and returns its size and data URL.
    */
   async capture(o: { download?: boolean } = {}): Promise<{ width: number; height: number; dataUrl: string; name: string }> {
     this.capturing = true;
-    const frame = await this.engine.renderer.capture();
-    this.capturing = false;
+    let frame;
+    try {
+      frame = await this.engine.renderer.capture();
+    } finally {
+      this.capturing = false;
+    }
     const canvas = document.createElement('canvas');
     canvas.width = frame.width;
     canvas.height = frame.height;
@@ -274,7 +284,7 @@ export class PhotoMode {
       rig.fixed = this.sub === 'edit';
       rig.controlsCharacter = false;
     }
-    if (input.wasPressed('KeyP', 'PadX')) void this.capture();
+    if (input.wasPressed('KeyP', 'PadX')) this.shoot();
     if (input.wasPressed('KeyH')) this.hidden = !this.hidden;
     if (input.wasPressed('Escape', 'PadStart')) return this.close();
     const rows = this.rows();

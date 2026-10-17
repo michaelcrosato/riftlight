@@ -95,9 +95,28 @@ export function parseSlots(param: string | null): SlotSpec[] {
   });
 }
 
+/** What the Arena runs: the hero's skill bar as `?skills=` writes it (`parseSlots`). */
+export interface ArenaOptions {
+  readonly skills?: string;
+  /** How many training dummies (default: every spot, `ARENA.dummies`). */
+  readonly dummies?: number;
+}
+
 export class Arena implements Game {
   readonly name = 'Riftlight Arena';
   readonly assets = [HERO_MODEL];
+
+  /** `args`: plain JSON (`Game.args`), so a recording of the arena replays with the same bar. */
+  constructor(readonly args: ArenaOptions = {}) {}
+
+  /** The page's choices: `?skills=cleave+fury,dash&dummies=2`. */
+  static optionsFromUrl(search: string): ArenaOptions {
+    const url = new URLSearchParams(search);
+    const skills = url.get('skills');
+    const dummies = Number(url.get('dummies'));
+    return { ...(skills === null ? {} : { skills }), ...(dummies > 0 ? { dummies } : {}) };
+  }
+
   actors!: ActorManager;
   combat!: Combat;
   hero!: HeroController;
@@ -159,14 +178,13 @@ export class Arena implements Game {
     const model = await ctx.loadModel(HERO_MODEL, { castShadow: false });
     this.heroModel = model.scene;
     scene.add(this.heroModel, this.shadow);
-    const params = new URLSearchParams(typeof location === 'undefined' ? '' : location.search);
     this.hero = new HeroController({
       physics,
       combat: this.combat,
       model: this.heroModel,
       clips: HERO_CLIPS,
       at: ARENA.spawn,
-      slots: parseSlots(params.get('skills')),
+      slots: parseSlots(this.args.skills ?? null),
       // a starter sword: what the arena's attacks scale from (loot equips real weapons)
       mods: { weapon: [flat('weapon.physical.min', 6), flat('weapon.physical.max', 11), flat('weapon.crit', 0.05)] },
     });
@@ -175,8 +193,7 @@ export class Arena implements Game {
     this.hero.actor.events!.on('hit', ({ hit, result }) => {
       if (hit.source === this.hero.actor || (hit.source as Actor | null)?.owner === this.hero.actor) this.dealt.push({ t: this.time, amount: result.total });
     });
-    const n = Number(params.get('dummies'));
-    this.spawnDummies(n > 0 ? n : ARENA.dummies.length);
+    this.spawnDummies(this.args.dummies ?? ARENA.dummies.length);
   }
 
   /** Put the dummies back (all of them, fresh). */

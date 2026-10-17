@@ -27,6 +27,8 @@ export interface Recording {
   readonly engine: string;
   /** The game's name when it was recorded. */
   readonly game: string;
+  /** What the game was made with (`Game.args`), when its name alone can't rebuild it. */
+  readonly args?: unknown;
   /** The engine seed (`ctx.random` comes from it and the game's name). */
   readonly seed: number;
   /** Game time when the level began (`ctx.time` carries on across levels). */

@@ -61,7 +61,9 @@ input.dispose();            // removes every window / canvas listener (engine.di
 The page at `/` runs Riftlight (docs/GAME.md); `?game=playground` and
 `?game=sandbox` open the engine demos (`?game=arcade` is Riftlight's side-scroller on its own, a
 template for that genre), `?game=world` is **Engine World**, the engine's tech demo with a room
-per technique (docs/WORLD.md), and `window.__PIXEL_GAMES__` holds every game (`src/main.ts`).
+per technique (docs/WORLD.md), and `window.__PIXEL_GAMES__` holds every game. The games and their options are one table,
+`src/games.ts`: the page starts one from it, and `npm run replay` rebuilds a recording's game from
+it (by `Game.name`, with `Game.args`: what a lab or a room was made with).
 
 ## Engine options for shipping a game
 

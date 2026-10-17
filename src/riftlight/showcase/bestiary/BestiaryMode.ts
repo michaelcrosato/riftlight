@@ -145,7 +145,7 @@ export class BestiaryMode implements ShowcaseMode {
     this.hall = null;
     this.focus = null;
     this.wantsLeave = false;
-    if (document.pointerLockElement) document.exitPointerLock?.();
+    if (typeof document !== 'undefined' && document.pointerLockElement) document.exitPointerLock?.(); // headless: no page
   }
 
   // ------------------------------------------------------------------ exhibits
@@ -371,7 +371,7 @@ export class BestiaryMode implements ShowcaseMode {
       if (this.turntable && ex === this.focus) ex.built.object.rotation.y += dt * 0.7;
     }
     if (this.altar.child) this.altar.child.built.object.rotation.y += dt * 0.5;
-    const locked = !!document.pointerLockElement;
+    const locked = typeof document !== 'undefined' && !!document.pointerLockElement;
     const esc = input.wasPressed('Escape', 'PadStart') && !this.wasLocked;
     this.wasLocked = locked;
 

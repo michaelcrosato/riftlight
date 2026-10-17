@@ -26,14 +26,17 @@ class FirstRoom extends RoomGame {
   }
 }
 
-/** The first room: `?room=<id>`, else the Atrium. Sets `window.__WORLD__` once it runs. */
-export function worldGame(): Game {
-  let id = 'atrium';
-  try {
-    id = new URLSearchParams(location.search).get('room') ?? id;
-  } catch {
-    /* no location (tools) */
-  }
-  const def = roomById(id) ?? ROOMS[0]!;
-  return new FirstRoom(def, null);
+/**
+ * The first room: `args.room` (the page's `?room=<id>`), else the Atrium, entered by the door
+ * `args.from` (a recording's `RoomGame.args`). Sets `window.__WORLD__` once it runs.
+ */
+export function worldGame(args: { room?: string; from?: string | null } = worldArgsFromUrl()): Game {
+  const def = roomById(args.room ?? 'atrium') ?? ROOMS[0]!;
+  return new FirstRoom(def, args.from ?? null);
+}
+
+/** `?room=<id>` from the page (nothing in Node). */
+export function worldArgsFromUrl(search = typeof location === 'undefined' ? '' : location.search): { room?: string } {
+  const room = new URLSearchParams(search).get('room');
+  return room ? { room } : {};
 }
