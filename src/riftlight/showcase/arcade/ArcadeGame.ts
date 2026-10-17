@@ -49,7 +49,7 @@ export class ArcadeGame implements Game {
 
   /** The engine runs the course: `window.__ARCADE__` for tools and agents. */
   ready(): void {
-    (window as unknown as { __ARCADE__?: unknown }).__ARCADE__ = {
+    (globalThis as unknown as { __ARCADE__?: unknown }).__ARCADE__ = {
       game: this,
       state: () => ({ phase: this.stage.phase, time: this.stage.time, coins: this.stage.coins, total: this.stage.total, at: this.stage.heroLocal().toArray(), state: this.stage.hero?.hero?.state ?? null }),
       /** Let the scripted run play (Enter restarts first if the course is done). */
@@ -62,7 +62,7 @@ export class ArcadeGame implements Game {
 
   dispose(): void {
     this.stage?.dispose();
-    delete (window as unknown as { __ARCADE__?: unknown }).__ARCADE__;
+    delete (globalThis as unknown as { __ARCADE__?: unknown }).__ARCADE__;
   }
 
   fixedUpdate(ctx: GameContext, dt: number): void {

@@ -11,6 +11,20 @@ import type { LevelHooks, MonsterSpawn } from './mechanics/types';
 import { levelSpec } from './rift';
 import { glowMaterial } from './themes/props';
 
+/** What the Level Lab runs: the depth and run seed, the hero's god mode, the camera. */
+export interface LevelLabOptions {
+  /** Default 1. */
+  readonly depth?: number;
+  /** The run seed (default 1). */
+  readonly seed?: number;
+  /** The hero takes no damage. */
+  readonly god?: boolean;
+  /** The lab camera's zoom (default 1). */
+  readonly zoom?: number;
+  /** false: keep the camera the engine started with (a URL's `?camera=`) instead of the lab's iso. */
+  readonly ownCamera?: boolean;
+}
+
 /**
  * Level Lab: `/?game=levellab&depth=N` (optionally `&seed=S` for rifts, `&god=1`).
  * Builds level N with placeholder capsule actors so levels, mechanics, encounters and the
@@ -55,10 +69,27 @@ export class LevelLab implements Game {
   private swing = 0;
   private time = 0;
 
-  constructor(
-    readonly depth = Number(new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('depth') ?? 1) || 1,
-    readonly runSeed = Number(new URLSearchParams(typeof location !== 'undefined' ? location.search : '').get('seed') ?? 1) || 1,
-  ) {}
+  readonly depth: number;
+  readonly runSeed: number;
+
+  /** What the lab runs (plain JSON, `Game.args`: a recording of it replays the same level). */
+  constructor(readonly args: LevelLabOptions = {}) {
+    this.depth = args.depth ?? 1;
+    this.runSeed = args.seed ?? 1;
+  }
+
+  /** The page's choices: `?depth=3&seed=7&god=1&zoom=1.5`; `?camera=` / `?cam=` keep the URL's camera. */
+  static optionsFromUrl(search: string): LevelLabOptions {
+    const url = new URLSearchParams(search);
+    const num = (k: string) => Number(url.get(k) ?? NaN);
+    const o: { -readonly [K in keyof LevelLabOptions]: LevelLabOptions[K] } = {};
+    if (num('depth') > 0) o.depth = num('depth');
+    if (num('seed') > 0) o.seed = num('seed');
+    if (url.get('god') === '1') o.god = true;
+    if (num('zoom') > 0) o.zoom = num('zoom');
+    if (url.has('camera') || url.has('cam')) o.ownCamera = false;
+    return o;
+  }
 
   async setup(ctx: GameContext): Promise<void> {
     this.ctx = ctx;
@@ -80,7 +111,7 @@ export class LevelLab implements Game {
       },
     };
     this.hero = new LabActor('hero', 'normal', new Vector3(), 0.4, 600);
-    this.hero.god = new URLSearchParams(location.search).get('god') === '1';
+    this.hero.god = this.args.god === true;
     this.level = buildLevel(
       spec,
       {
@@ -99,9 +130,8 @@ export class LevelLab implements Game {
     this.hero.mesh.position.copy(this.level.start);
     ctx.scene.add(this.hero.mesh);
     // The ARPG camera: iso, a little steeper than the platformer's (unless the URL picks one).
-    const url = new URLSearchParams(location.search);
-    if (!url.has('camera') && !url.has('cam')) ctx.engine.setCamera({ preset: 'iso', pitch: 42, yaw: 45, viewHeight: 15, zoom: Number(url.get('zoom')) || 1 });
-    (window as unknown as { __LEVEL_LAB__: LevelLab }).__LEVEL_LAB__ = this;
+    if (this.args.ownCamera !== false) ctx.engine.setCamera({ preset: 'iso', pitch: 42, yaw: 45, viewHeight: 15, zoom: this.args.zoom ?? 1 });
+    (globalThis as unknown as { __LEVEL_LAB__: LevelLab }).__LEVEL_LAB__ = this;
   }
 
   // ------------------------------------------------------------------ hooks
@@ -213,7 +243,7 @@ export class LevelLab implements Game {
       l.mesh.removeFromParent();
       this.loot.splice(i, 1);
     }
-    if (this.exited && ctx.input.wasPressed('KeyN')) void ctx.engine.loadGame(new LevelLab(this.depth + 1, this.runSeed));
+    if (this.exited && ctx.input.wasPressed('KeyN')) void ctx.engine.loadGame(new LevelLab({ ...this.args, depth: this.depth + 1 }));
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.25;
@@ -234,7 +264,7 @@ export class LevelLab implements Game {
     this.level?.dispose();
     for (const b of this.bolts) b.light?.release();
     for (const l of this.loot) l.light?.release();
-    const w = window as unknown as { __LEVEL_LAB__?: LevelLab };
+    const w = globalThis as unknown as { __LEVEL_LAB__?: LevelLab };
     if (w.__LEVEL_LAB__ === this) delete w.__LEVEL_LAB__;
   }
 

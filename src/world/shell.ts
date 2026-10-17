@@ -439,6 +439,11 @@ export class RoomGame implements Game {
     this.spawnFacing = def.facing ?? 0;
   }
 
+  /** The room and the door it was entered by (`Game.args`): a recording of it rebuilds the same room. */
+  get args(): { room: string; from: string | null } {
+    return { room: this.def.id, from: this.arrivedFrom };
+  }
+
   async setup(ctx: GameContext): Promise<void> {
     this.ctx = ctx;
     const e = ctx.engine;

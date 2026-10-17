@@ -62,6 +62,20 @@ Packs parse once per URL (`settlePack`): `loadPack` and Node's `loadPacksSync`
 (`src/riftlight/nodePacks.ts`) hand out the same defs, so `MODEL_LIBRARY` can take a pack from
 either.
 
+## Replaying a recording
+
+`npm run replay -- <recording.json> [--frames n] [--expect <fingerprint>] [--json]` replays a
+recording in Node: the game it was made in comes from `src/games.ts` (by `rec.game`, the
+`Game.name`; Engine World's rooms by title; with `rec.args`, the game's `Game.args`), boots headless
+on the recording's viewport with its options (Riftlight through `headlessRiftlight`), plays every
+frame and prints the fingerprint, `engine.state()`, the game's own state (`rl.state()`) and the
+hook errors. It exits 1 on a hook error or when `--expect` doesn't match. A recording from a page
+(`JSON.stringify(__PIXEL_ENGINE__.recording())`) thus becomes a vitest test or a bug report.
+
+Parity: e2e `riftlight-replay` records a browser session (New Run by mouse, a fight aimed with
+the mouse, menus, the tree's own view), writes it to `.scratch/e2e/riftlight-replay.json` and
+replays it with `npm run replay -- … --expect <the browser's fingerprint>`.
+
 ## Writing headless tests
 
 - Stub nothing: no `window`, `document`, `location`, `ProgressEvent`, no `vi.stubGlobal`. Code that

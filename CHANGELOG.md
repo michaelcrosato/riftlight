@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.43.0
+
+- **`Game.args`**: the plain JSON a game was made with, when its name alone can't rebuild it (a
+  lab's depth and seed, the door a room was entered by). Recordings keep it (**`Recording.args`**),
+  so a tool can make the same game again and replay one (`npm run replay` in this repository).
+
 ## 0.42.0
 
 - **`Engine.headless(game, options)`: games without a page** (docs/engine/headless.md). The same

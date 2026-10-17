@@ -110,6 +110,12 @@ export interface GameContext {
 export interface Game {
   readonly name: string;
   /**
+   * The plain JSON the game was made with, when its name alone can't rebuild it (a lab's depth
+   * and seed, the door a room was entered by): kept in its recordings (`Recording.args`), so a
+   * tool can make the same game again to replay one (`npm run replay`, src/games.ts).
+   */
+  readonly args?: unknown;
+  /**
    * Models `setup` will load (`ctx.loadModel` URLs). Optional: listing them lets the
    * engine start downloading while the renderer and physics initialise.
    */
@@ -1153,7 +1159,7 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; seed: number; time: number; view: Viewport; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
+  private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
@@ -1171,7 +1177,7 @@ export class Engine {
   private reseed(game: Game): void {
     this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
-    this.rec = { game: game.name, seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false };
+    this.rec = { game: game.name, ...gameArgs(game), seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false };
   }
 
   /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
@@ -1194,7 +1200,7 @@ export class Engine {
   recording(): Recording | null {
     const r = this.rec;
     if (!r) return null;
-    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, view: { ...r.view }, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, ...(r.args !== undefined ? { args: r.args } : {}), seed: r.seed, time: r.time, view: { ...r.view }, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
   }
 
   /**
@@ -1379,7 +1385,7 @@ export class Engine {
     } finally {
       this.manual = manual;
     }
-    this.rec = { game: game.name, seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
+    this.rec = { game: game.name, ...gameArgs(game), seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
   }
 
   /** A task boundary: promise callbacks queued so far (and chains of them) have run when it resolves. */
@@ -1619,6 +1625,11 @@ const CAMERA_IGNORE = ['character', 'noCamera'];
 const UP = new Vector3(0, 1, 0);
 /** Where sunlight comes from unless a level points it elsewhere (`setSunDirection`). */
 const DEFAULT_SUN = new Vector3(-0.55, 1, 0.35).normalize();
+
+/** `Game.args` as plain JSON (a copy, taken when the level starts), for its recording. */
+function gameArgs(game: Game): { args?: unknown } {
+  return game.args === undefined ? {} : { args: JSON.parse(JSON.stringify(game.args)) as unknown };
+}
 
 /** A phone or tablet: a coarse pointer and no hover. */
 function coarsePointer(): boolean {

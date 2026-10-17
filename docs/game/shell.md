@@ -114,6 +114,25 @@ Typed as `RiftlightApi` (`game/api.ts`), installed in `Riftlight.ready` (it exis
 pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
 AI off, hitboxes, time of day).
 
+## Headless (`riftlight/headless.ts`)
+
+`headlessRiftlight({ seed?, viewport? })` boots the real game in Node with `Engine.headless`
+(docs/engine/headless.md): the same options, the same `rl` as `window.__RIFTLIGHT__`, saves in
+memory (`new SaveStore(null)`), models and packs from `public/`. It is the one way tests and
+tools boot Riftlight in Node (`npm run replay` uses it for Riftlight's recordings).
+
+```ts
+const { engine, game, rl } = await headlessRiftlight({ seed: 4242 });
+rl.newRun({ seed: 1 }); await rl.enterDepth(1); rl.bot.start(); rl.bot.advance(10800);
+engine.input.send({ rl: 'tree', action: { kind: 'activate', id } }); engine.step(2); // as the tree's view sends it
+```
+
+Without a page the passive tree opens with no view and applies the actions it is sent
+(`ui/tree/actions.ts`, shared with `TreeView`); the item windows keep their state and layout and
+paint nothing; save export / import, photo captures and pointer lock do nothing. The labs take
+their URL choices as options (`new LevelLab({ depth: 3 })`, `new Arena({ skills })`), kept in
+`Game.args` so their recordings replay.
+
 ## The playtest bot (`game/bot.ts`, `npm run playtest`)
 
 A scripted player that only uses the ports (it plays whatever implements them): it

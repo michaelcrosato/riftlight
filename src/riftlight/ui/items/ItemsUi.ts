@@ -139,8 +139,8 @@ export interface ItemsViewState {
 }
 
 export class ItemsUi {
-  /** The overlay canvas (art resolution). */
-  readonly canvas: HTMLCanvasElement;
+  /** The overlay canvas (art resolution); null without a page (headless: the windows keep their state and layout, nothing is painted). */
+  readonly canvas: HTMLCanvasElement | null;
   inventoryOpen = false;
   left: LeftPanel = null;
   stashTab = 0;
@@ -180,14 +180,17 @@ export class ItemsUi {
     private readonly opts: ItemsUiOptions = {},
   ) {
     const container = ctx.engine.renderer.container;
-    const c = document.createElement('canvas');
-    c.dataset.itemsUi = 'true';
-    c.dataset.hud = 'true'; // a 2D overlay, not a rendering canvas (the e2e canvas count)
-    c.className = 'riftlight-items';
-    // the pointer goes through to the game canvas: the engine's input reads it (and records it)
-    Object.assign(c.style, { position: 'absolute', imageRendering: 'pixelated', zIndex: '6', display: 'none', pointerEvents: 'none' });
-    container?.appendChild(c);
-    this.canvas = c;
+    this.canvas = null;
+    if (container) {
+      const c = document.createElement('canvas');
+      c.dataset.itemsUi = 'true';
+      c.dataset.hud = 'true'; // a 2D overlay, not a rendering canvas (the e2e canvas count)
+      c.className = 'riftlight-items';
+      // the pointer goes through to the game canvas: the engine's input reads it (and records it)
+      Object.assign(c.style, { position: 'absolute', imageRendering: 'pixelated', zIndex: '6', display: 'none', pointerEvents: 'none' });
+      container.appendChild(c);
+      this.canvas = c;
+    }
     for (const [id, def] of Object.entries(LOOT_SOUNDS)) ctx.audio.register(id, def);
     ctx.input.preventKeys.add('AltLeft').add('AltRight'); // Alt shows affix tiers, not the browser's menu bar
   }
@@ -280,7 +283,7 @@ export class ItemsUi {
   dispose(): void {
     this.ctx.input.preventKeys.delete('AltLeft');
     this.ctx.input.preventKeys.delete('AltRight');
-    this.canvas.remove();
+    this.canvas?.remove();
   }
 
   private refreshSize(): void {
@@ -487,8 +490,10 @@ export class ItemsUi {
 
   /** Art point → client (CSS) point on the page. */
   toClient(x: number, y: number): { x: number; y: number } {
-    const r = this.canvas.getBoundingClientRect();
-    return { x: r.left + ((x + 0.5) / this.canvas.width) * r.width, y: r.top + ((y + 0.5) / this.canvas.height) * r.height };
+    const c = this.canvas;
+    if (!c) return { x: -1, y: -1 }; // headless: no page
+    const r = c.getBoundingClientRect();
+    return { x: r.left + ((x + 0.5) / c.width) * r.width, y: r.top + ((y + 0.5) / c.height) * r.height };
   }
 
   private centre(r: Rect): { x: number; y: number } {
@@ -1133,11 +1138,12 @@ export class ItemsUi {
     const res = renderer.resolution;
     const f = renderer.framing;
     if (!this.isOpen) {
-      if (c.style.display !== 'none') c.style.display = 'none';
+      if (c && c.style.display !== 'none') c.style.display = 'none';
       this.drawnKey = '';
       return;
     }
     this.size = { w: res.width, h: res.height };
+    if (!c) return; // headless: the layout follows the view; nothing to paint
     if (c.width !== res.width || c.height !== res.height) {
       c.width = res.width;
       c.height = res.height;

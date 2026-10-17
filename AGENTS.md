@@ -44,6 +44,7 @@ this file is how the work is done.
 | Models: trace a source in primitives (docs/assets/tracing.md) | `npm run model -- trace <id> --against <source> --reference`, `trace <draft.ts> --against <source>`, `export-glb <source>` |
 | Textures: check, look, import a sheet or an approved pack's sheets | `npm run tex -- check [id]`, `sheet <id>`, `import <sheet.png> --grid 16x16 --licence <spdx> --source <url>`, `import-pack <pack>` |
 | Look at a page of the build: PNG + `report.json` (`engine.state()`, errors) | `npm run build && npm run look -- "?game=riftlight" [--keys KeyD*60]` |
+| Replay a recording in Node, no browser | `npm run replay -- <recording.json> [--expect <fingerprint>]` |
 | Other CLIs; `-- help` prints each one's manual | `npm run inspect`, `balance`, `loot`, `tree`, `level`, `combat`, `monster`, `gate-b`, `build:single` |
 
 `scripts/check.sh` auto-detects the stack (Node, Python, Go, Rust) and runs

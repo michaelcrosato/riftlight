@@ -10,17 +10,22 @@
 // other settings and volumes) and the recording, through JSON, replays in a fresh Riftlight to
 // the same `engine.fingerprint()` (`Riftlight.fingerprint`: hero, monsters, ground loot, the save
 // and the bags, the run's random stream), writing nothing to storage; an edited recording (the
-// pointer in a corner for a second of the fight) does not.
+// pointer in a corner for a second of the fight) does not. The same recording, written to
+// .scratch/e2e/riftlight-replay.json, replays in Node (`npm run replay -- … --expect`, no browser)
+// to the browser's fingerprint: headless and the page play the game bit for bit alike.
 //
 //   npm run build && npm run test:e2e -- riftlight-replay
 //
 // Frames land in .scratch/e2e/riftlight-replay-*.png.
 
+import { writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
 /**
- * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, check, capture, checkClean }
+ * @param {object} h helpers from e2e.mjs: { exe, scenario, openPage, check, capture, checkClean, runNpm, OUT }
  */
 export async function runRiftlightReplay(h) {
-  const { exe, scenario: s, openPage, check, capture, checkClean } = h;
+  const { exe, scenario: s, openPage, check, capture, checkClean, runNpm, OUT } = h;
   const tag = s.name;
   console.log(`\n▶ riftlight-replay (${s.backend})`);
   let ctx;
@@ -213,6 +218,20 @@ export async function runRiftlightReplay(h) {
     const rec = JSON.parse(end.rec);
     const commands = rec.frames.flatMap((f) => f.commands ?? []).map((c) => c.rl);
     check(['settings', 'saves', 'run', 'tree'].every((k) => commands.includes(k)), `the recording holds what came from the page: ${[...new Set(commands)].join(', ')} (commands)`);
+    // parity: the browser's session, replayed in Node with no browser, ends on the browser's fingerprint
+    const file = fileURLToPath(new URL('riftlight-replay.json', OUT));
+    writeFileSync(file, end.rec);
+    const inNode = await runNpm('replay', [file, '--expect', end.print, '--json'], 180000);
+    let headless = null;
+    try {
+      headless = JSON.parse(inNode.out.trim().split('\n').pop());
+    } catch {
+      /* not JSON: the output is in the check's message */
+    }
+    check(
+      inNode.code === 0 && headless?.fingerprint === end.print && headless.errors.length === 0,
+      `the session replays in Node (npm run replay, ${rec.frames.length} frames, ${(inNode.ms / 1000).toFixed(1)} s) to the browser's fingerprint ${end.print}: ${headless ? `${headless.fingerprint}, ${headless.errors.length} error(s)` : inNode.out.trim().split('\n').slice(-6).join(' | ')}`,
+    );
     await capture(page, `riftlight-replay-${tag}-live.png`);
 
     // storage changes under the replay: another save in slot 1, other settings and volumes

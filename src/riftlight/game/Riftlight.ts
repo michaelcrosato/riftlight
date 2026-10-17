@@ -750,7 +750,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     if (this.replaying) return; // a replayed click downloads nothing
     const text = this.store.exportSlot(slot);
     if (!text) return this.sound('error');
-    try {
+    // the download is the page's (headless: none); the sound plays either way, as frames must match
+    if (this.ctx.engine.renderer.container) try {
       const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
       const a = document.createElement('a');
       a.href = url;
@@ -766,6 +767,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   importSlot(slot: number): void {
     if (this.replaying) return; // the recording carries what was imported (the 'imported' command)
+    if (!this.ctx.engine.renderer.container) return; // headless: no file to pick (send the 'imported' command instead)
     const input = (this.fileInput ??= Object.assign(document.createElement('input'), { type: 'file', accept: '.json,application/json' }));
     input.style.display = 'none';
     document.body.appendChild(input);
@@ -1507,6 +1509,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /** Title → Engine World: the same page with ?game=world (other URL options kept), at `room` (the Asset Gallery) or the Atrium. */
   engineWorld(room?: string): void {
+    if (!this.ctx.engine.renderer.container) return; // headless: there is no page to leave
     const u = new URL(location.href);
     u.searchParams.set('game', 'world');
     if (room) u.searchParams.set('room', room);

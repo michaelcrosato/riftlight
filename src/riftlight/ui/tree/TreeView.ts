@@ -18,29 +18,24 @@
  * instead of happening, and the game hands it back to `perform` from its recorded input, so a
  * replay of the game does the same to the tree.
  */
-import type { SoundDef } from '../../../engine/audio/synth';
 import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
 import { REGIONS } from '../../tree/data/regions';
-import { defaultTree, nodeLines, PassiveTree, searchTree, summarizeMods, TreeState, type TreeChange } from '../../tree/tree';
+import { defaultTree, nodeLines, PassiveTree, searchTree, summarizeMods, TreeState } from '../../tree/tree';
 import type { TreeNode } from '../../tree/types';
 import { clampCam, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS, type TreeCam } from './camera';
 import { pack, PixelBuffer, textWidth, wrap } from './pixels';
+import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeOutcome, type TreeRules } from './actions';
 
-/** What the view needs from an AudioManager (ctx.audio). */
-export interface TreeAudio {
-  play(sound: string, options?: { pitch?: number; volume?: number }): unknown;
-  register?(name: string, def: SoundDef): void;
-}
+export type { TreeAction, TreeAudio } from './actions';
 
-export interface TreeViewOptions {
+export interface TreeViewOptions extends TreeRules {
   /** Element the overlay fills (the engine's container, or a page's #app). */
   container: HTMLElement;
   /** Default: the game's tree. */
   tree?: PassiveTree;
   /** Default: an empty allocation with unlimited points. */
   state?: TreeState;
-  audio?: TreeAudio | null;
   /** Art resolution height (and 16:9 fallback). Default 480×270. */
   resolution?: Resolution;
   /** Match the containing game's presentation. Standalone views default to adaptive. */
@@ -49,17 +44,9 @@ export interface TreeViewOptions {
   closeKeys?: readonly string[];
   /** Gamepad B closes the view (default true when closeKeys isn't empty). */
   padCloses?: boolean;
-  /** Called after every allocation, refund or mastery choice. */
-  onChange?: (change: TreeChange, state: TreeState) => void;
   onClose?: () => void;
-  /** Gold to refund `points` points (respecCost); 0 or absent = free. */
-  refundCost?: (points: number) => number;
-  /** Take gold for a refund; return false to refuse it (not enough gold). */
-  spendGold?: (amount: number) => boolean;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
-  /** Why refunds are refused here (e.g. only the mystic refunds): a message, or null to allow them. */
-  refundBlocked?: () => string | null;
   /**
    * Take what the player does instead of doing it (a game: `ctx.input.send` it, then `perform`
    * it when it arrives, so the recording keeps it). Absent: it happens at once.
@@ -67,28 +54,7 @@ export interface TreeViewOptions {
   defer?: (action: TreeAction) => void;
 }
 
-/** What the player does to the tree: allocate the path to a node (or cycle a mastery), refund one, close the view. */
-export type TreeAction = { readonly kind: 'activate' | 'refund'; readonly id: string } | { readonly kind: 'close' };
 
-const SOUNDS: Record<string, SoundDef> = {
-  treeAllocate: { wave: 'square', duty: 0.25, freq: 523.25, arp: [0, 4, 7], arpRate: 0.045, attack: 0.002, sustain: 0.06, decay: 0.16, volume: 0.18 },
-  treeNotable: { wave: 'square', duty: 0.25, freq: 523.25, arp: [0, 4, 7, 12], arpRate: 0.05, attack: 0.002, sustain: 0.12, decay: 0.25, volume: 0.2 },
-  treeKeystone: {
-    wave: 'square',
-    duty: 0.5,
-    freq: 261.63,
-    arp: [0, 7, 12, 19, 24],
-    arpRate: 0.06,
-    attack: 0.002,
-    sustain: 0.25,
-    decay: 0.4,
-    volume: 0.2,
-    layers: [{ wave: 'triangle', freq: 130.81, attack: 0.002, sustain: 0.2, decay: 0.4, volume: 0.35 }],
-  },
-  treeRefund: { wave: 'triangle', freq: 660, freqEnd: 220, attack: 0.002, decay: 0.18, volume: 0.3 },
-  treeDeny: { wave: 'square', duty: 0.5, freq: 110, attack: 0.002, sustain: 0.05, decay: 0.08, volume: 0.14 },
-  treeTick: { wave: 'square', duty: 0.125, freq: 1760, attack: 0.001, decay: 0.02, volume: 0.05 },
-};
 
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
 const TOP = 12;
@@ -150,7 +116,7 @@ export class TreeView {
     for (const n of this.tree.nodes) for (const l of n.links) if (l > n.id) this.links.push([n, this.tree.node(l)]);
     const res = options.resolution ?? RESOLUTIONS.default;
     this.buf = new PixelBuffer(res.width, res.height);
-    for (const [name, def] of Object.entries(SOUNDS)) options.audio?.register?.(name, def);
+    registerTreeSounds(options.audio);
 
     const root = (this.root = document.createElement('div'));
     root.className = 'rift-tree';
@@ -646,59 +612,30 @@ export class TreeView {
   // ---------------------------------------------------------------- actions
 
   private activate(id: string): string[] {
-    const s = this.stateRef;
-    const node = this.tree.get(id);
-    if (!node) return [];
-    if (s.isAllocated(id)) {
-      // An allocated mastery: cycle its option.
-      const opts = node.options;
-      if (opts?.length && s.allocated.has(id)) {
-        const cur = opts.findIndex((o) => o.id === s.masteries.get(id));
-        const next = opts[(cur + 1) % opts.length]!;
-        s.choose(id, next.id);
-        this.pulse([id], C.cyan);
-        this.options.audio?.play('treeAllocate', { pitch: 5 });
-        this.options.onChange?.({ kind: 'mastery', ids: [id] }, s);
-      }
-      return [];
-    }
-    const path = s.pathTo(id);
-    if (!path) return this.deny('UNREACHABLE'), [];
-    if (path.length > s.unspent) return this.deny(s.unspent <= 0 ? 'NO PASSIVE POINTS LEFT' : `NEED ${path.length} POINTS, HAVE ${s.unspent}`), [];
-    const got = s.allocatePath(id);
-    if (!got.length) return this.deny('CAN NOT ALLOCATE'), [];
-    this.pulse(got, C.sand);
-    const kind = node.kind;
-    this.options.audio?.play(kind === 'keystone' ? 'treeKeystone' : kind === 'notable' ? 'treeNotable' : 'treeAllocate');
-    this.say(`+${got.length} ${node.name.toUpperCase()}`, C.sand);
-    this.preview = null;
-    this.options.onChange?.({ kind: 'allocate', ids: got }, s);
-    return got;
+    const o = activateNode(this.tree, this.stateRef, id, this.options);
+    this.show(o);
+    return o.kind === 'allocate' ? [...o.ids] : [];
   }
 
   private refundNode(id: string): boolean {
-    const s = this.stateRef;
-    if (!s.allocated.has(id)) {
-      if (this.tree.roots.has(id)) this.deny('THE GATES ARE FREE');
-      return false;
-    }
-    const blocked = this.options.refundBlocked?.() ?? null;
-    if (blocked) return this.deny(blocked), false;
-    if (!s.canDeallocate(id)) return this.deny('OTHER NODES DEPEND ON IT'), false;
-    const cost = this.options.refundCost?.(1) ?? 0;
-    if (cost > 0 && this.options.spendGold && !this.options.spendGold(cost)) return this.deny(`REFUND COSTS ${cost} GOLD`), false;
-    s.deallocate(id);
-    this.pulse([id], C.red);
-    this.options.audio?.play('treeRefund');
-    this.say(cost > 0 ? `REFUNDED FOR ${cost} GOLD` : 'REFUNDED', C.orange);
-    this.preview = null;
-    this.options.onChange?.({ kind: 'deallocate', ids: [id] }, s);
-    return true;
+    const o = refundNode(this.tree, this.stateRef, id, this.options);
+    this.show(o);
+    return o.kind === 'refund';
   }
 
-  private deny(text: string): void {
-    this.options.audio?.play('treeDeny');
-    this.say(text, C.red);
+  /** What an action did, on screen: a pulse along the nodes and a line of text. */
+  private show(o: TreeOutcome): void {
+    if (o.kind === 'deny') this.say(o.text, C.red);
+    else if (o.kind === 'mastery') this.pulse(o.ids, C.cyan);
+    else if (o.kind === 'allocate') {
+      this.pulse(o.ids, C.sand);
+      this.say(`+${o.ids.length} ${o.node.name.toUpperCase()}`, C.sand);
+      this.preview = null;
+    } else if (o.kind === 'refund') {
+      this.pulse([o.id], C.red);
+      this.say(o.cost > 0 ? `REFUNDED FOR ${o.cost} GOLD` : 'REFUNDED', C.orange);
+      this.preview = null;
+    }
   }
 
   private say(text: string, color: number): void {

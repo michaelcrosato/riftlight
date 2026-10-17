@@ -94,7 +94,7 @@ export class LootLab implements Game {
 
   /** The engine runs the lab: `window.__LOOTLAB__` for tools and the `riftlight-loot` suite. */
   ready(): void {
-    (window as unknown as { __LOOTLAB__: LootLab }).__LOOTLAB__ = this;
+    (globalThis as unknown as { __LOOTLAB__: LootLab }).__LOOTLAB__ = this;
   }
 
   /** Kill dummy `i` (default: the nearest live one) with `rank`, `count` times. */
@@ -169,7 +169,8 @@ export class LootLab implements Game {
     this.world?.dispose();
     this.ui?.dispose();
     this.events.clear();
-    delete (window as unknown as { __LOOTLAB__?: LootLab }).__LOOTLAB__;
+    const g = globalThis as unknown as { __LOOTLAB__?: LootLab };
+    if (g.__LOOTLAB__ === this) delete g.__LOOTLAB__;
   }
 }
 

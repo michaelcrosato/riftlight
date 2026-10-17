@@ -15,12 +15,15 @@
  * the shell's `back` (pad B, the agent API) closes it through the panel stack. What the
  * player does to the tree (allocate, refund, close) is sent through `ctx.input.send` and done
  * when it arrives (`draw`), so a recording of the game keeps it and a replay does the same.
+ * Without a page (`Engine.headless`) the panel opens with no view and applies the same actions
+ * (`ui/tree/actions.ts`) to its state, so a replay in Node does the same to the tree too.
  */
 import type { Mod } from '../core/mods';
-import { defaultTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
+import { defaultTree, type PassiveTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
 import type { UiEvent } from '../ui/kit';
-import { type TreeAction, TreeView } from '../ui/tree/TreeView';
+import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeRules } from '../ui/tree/actions';
+import { TreeView } from '../ui/tree/TreeView';
 
 /** The point budget of a save right now. */
 export function treePoints(host: PanelHost): number {
@@ -35,6 +38,8 @@ export class TreePanel implements Panel {
   readonly size = { w: 480, h: 270 };
   view: TreeView | null = null;
   state: TreeState | null = null;
+  private tree: PassiveTree | null = null;
+  private rules: TreeRules | null = null;
   private closing = false;
 
   constructor(
@@ -56,26 +61,33 @@ export class TreePanel implements Panel {
       save.hero.allocated = serial;
       host.changed('tree');
     }
-    const container = ctx.engine.renderer.container;
-    if (!container) throw new Error('the passive tree panel needs a page (engine.renderer.container)');
-    this.view = new TreeView({
-      container,
-      tree,
-      state,
+    const rules: TreeRules = {
       audio: ctx.audio,
-      resolution: ctx.engine.renderer.baseResolution,
-      aspect: ctx.engine.renderer.aspect,
-      closeKeys: ['Escape', 'KeyP'],
-      padCloses: false, // pad B arrives as the shell's `back`
       refundCost: this.respec ? (n) => respecCost(n, host.level()) : undefined,
       spendGold: this.respec ? (g) => host.addGold(-g) : undefined,
       refundBlocked: this.respec ? undefined : () => 'ONLY ORU THE MYSTIC CAN REFUND',
-      gold: () => host.gold(),
       onChange: (_change, s) => {
         host.save().hero.allocated = s.serialize();
         host.changed('tree');
         host.changed('gold');
       },
+    };
+    this.rules = rules;
+    this.tree = tree;
+    registerTreeSounds(ctx.audio);
+    // the view is the page's (a canvas over the game); headless the actions apply without one
+    const container = ctx.engine.renderer.container;
+    if (!container) return;
+    this.view = new TreeView({
+      ...rules,
+      container,
+      tree,
+      state,
+      resolution: ctx.engine.renderer.baseResolution,
+      aspect: ctx.engine.renderer.aspect,
+      closeKeys: ['Escape', 'KeyP'],
+      padCloses: false, // pad B arrives as the shell's `back`
+      gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();
       },
@@ -90,11 +102,21 @@ export class TreePanel implements Panel {
     this.view = null;
   }
 
+  /** Do what the player did to the tree: through the view (its pulses and messages), or straight on the state. */
+  perform(action: TreeAction): void {
+    if (this.view) return this.view.perform(action);
+    const state = this.state;
+    if (!state || !this.tree || !this.rules) return;
+    if (action.kind === 'activate') activateNode(this.tree, state, action.id, this.rules);
+    else if (action.kind === 'refund') refundNode(this.tree, state, action.id, this.rules);
+    else if (!this.closing) this.host.close();
+  }
+
   /** Each frame: what the player did to the tree (live or replayed), and points that follow the hero's level and deepest depth. */
   draw(): void {
     for (const c of this.host.services.ctx.input.commands) {
       const m = c as { rl?: string; action?: TreeAction } | null;
-      if (m?.rl === 'tree' && m.action) this.view?.perform(m.action);
+      if (m?.rl === 'tree' && m.action) this.perform(m.action);
     }
     const state = this.state;
     if (!state) return;
