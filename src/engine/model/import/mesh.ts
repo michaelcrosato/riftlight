@@ -1,5 +1,5 @@
 /**
- * Imported triangles → parts (docs/plans/asset-system.md §7.2). Vertices are welded on a
+ * Imported triangles → parts (docs/assets/importing.md). Vertices are welded on a
  * millimetre grid and degenerate triangles dropped. A connected piece becomes a primitive only
  * where the test is exact: re-emitted as a `box` or a `cyl` (an n-gon prism, regular or
  * stretched per axis exactly as the compiler stretches one), it must give back the same

@@ -1,4 +1,4 @@
-// Gate B (docs/plans/asset-system.md §5): how many texels per metre a surface may carry before
+// Gate B (docs/assets/textures.md *Texel density*): how many texels per metre a surface may carry before
 // it shimmers, measured in the real renderer. The Asset Lab's Gate B scene (src/lab/gateB.ts)
 // is stepped frame by frame through Riftlight's camera moves, once per texture set:
 //
@@ -17,7 +17,7 @@
 // effect; the strips show the wall and crates too. The pass line sits a quarter of the way from a
 // calm texture (two-colour blobs at 8 texels/m) to a bad one (a 1-texel checker at 32), each
 // scored by its mean step; a density passes when every step is under it. The table also prints
-// two other readings of the plan's line: per step (calm and bad at the same step) and from the
+// two other readings of the line: per step (calm and bad at the same step) and from the
 // worst steps.
 //
 //   npm run build && npm run gate-b -- [--densities 8,12,16,20] [--out .scratch/gate-b]
@@ -297,7 +297,7 @@ const pct = (v: number) => `${(v * 100).toFixed(2)}%`;
 const passFail = (ok: boolean) => (ok ? 'pass' : 'FAIL');
 
 /**
- * The sweep's pass line on `backend`, the plan's (a quarter of the way from calm@8's mean step to
+ * The sweep's pass line on `backend`, the mean-step one (a quarter of the way from calm@8's mean step to
  * bad@32's, over every step they ran), and the two other readings: a line per step (calm and bad at
  * that step) and one from their worst steps. `judge` reads a config's sweep steps all three ways.
  */

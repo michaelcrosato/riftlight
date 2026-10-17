@@ -1,5 +1,5 @@
 /**
- * Models as data (docs/plans/asset-system.md): `ModelDef` (keyed primitives, groups, mirrors,
+ * Models as data (docs/ASSETS.md): `ModelDef` (keyed primitives, groups, mirrors,
  * pivots, `use` of other models, params and seeds), `buildModel` (merged toon meshes per
  * material), `expandModel` (the plain-JSON form), checks, helpers and the built-in library.
  * Imports (glTF/GLB → `mesh` parts, palette mapping, fidelity) are in ./import, for tools; packs

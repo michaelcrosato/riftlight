@@ -1,6 +1,6 @@
 /**
  * A small AnimationMixer wrapper for characters that play compiled ClipDefs without the
- * platformer state machine (townsfolk, the stub hero): `play(name)` cross-fades from
+ * platformer state machine (the townsfolk): `play(name)` cross-fades from
  * whatever is playing, one-shots clamp on their last frame, and `crossed(frame)` tells
  * when the clip passed an authored frame this update (hammer impacts, coin clinks).
  */

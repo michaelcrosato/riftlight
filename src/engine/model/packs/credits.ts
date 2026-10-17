@@ -1,5 +1,5 @@
 /**
- * The attribution list (`npm run model -- credits`, docs/plans/asset-system.md §7.7): every
+ * The attribution list (`npm run model -- credits`, docs/assets/importing.md *Provenance and licences*): every
  * imported model and texture with a `source`, grouped by pack (or url), with what its licence
  * owes the author (`LICENCES`).
  */

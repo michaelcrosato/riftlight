@@ -1,5 +1,5 @@
 /**
- * The model format: a 3D object as plain data (docs/plans/asset-system.md §4). Parts are keyed,
+ * The model format: a 3D object as plain data (docs/ASSETS.md *The format*). Parts are keyed,
  * never positional (`{ box: [w, h, d], at: [x, y, z], c: 'wood' }`), so a swapped vector can't
  * be written unnoticed. Units are metres and degrees; +Y is up, +Z is the front, the floor is
  * y = 0.

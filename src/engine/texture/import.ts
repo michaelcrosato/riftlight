@@ -1,10 +1,10 @@
 /**
- * 2D import (docs/plans/asset-system.md §7.5, docs/assets/importing.md *Pixel-art sheets*): a pixel-art sheet (a
+ * 2D import (docs/assets/importing.md *Pixel-art sheets*): a pixel-art sheet (a
  * decoded PNG) sliced on a grid into TextureDefs of `pixels` layers: one def per cell, or one def
  * of frames for an animation strip. Slicing is exact: every pixel keeps its place, alpha under
  * the threshold is transparent, and a cell with no opaque pixel is skipped.
  *
- * Colours go through the mesh importer's mapper (`mapColours`, §7.3) once for the whole sheet,
+ * Colours go through the mesh importer's mapper (`mapColours`, docs/assets/importing.md *Colours*) once for the whole sheet,
  * so a colour reads the same in every cell. Each distinct source colour keeps a legend character
  * of its own (a hint at its PALETTE entry where one is free: `i` for ink); the legend maps it to
  * its slot and the palette binds the slot to an entry. Two source colours on one slot show as two

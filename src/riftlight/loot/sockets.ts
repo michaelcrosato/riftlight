@@ -37,7 +37,7 @@ export interface SocketRef {
   readonly link: number;
 }
 
-/** What a new run starts with: the stub hero's bar (and the bot's habits) as real gems. */
+/** What a new run starts with: the bot's habits (cleave, nova, dash, war cry) as real gems. */
 export const STARTER_GEMS: readonly string[] = ['cleave', 'frost-nova', 'dash', 'war-cry'];
 
 export const isGem = (item: Item | null | undefined): item is Item & { gem: NonNullable<Item['gem']> } => !!item?.gem && GEMS.has(item.gem.id);

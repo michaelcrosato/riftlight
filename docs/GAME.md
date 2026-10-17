@@ -51,7 +51,7 @@ Folders are under `src/riftlight/`. Read only the topic file you need.
 | `tree/`, `ui/tree/` | the passive tree: generator, allocation, respec, view | docs/game/tree.md |
 | `loot/`, `ui/items/` | item bases, affixes, uniques, currency, drops, inventory, stash, vendors, filter | docs/game/loot.md |
 | `balance/` | the headless combat sim; the agent CLIs (`scripts/riftlight/`) | docs/game/balance.md |
-| `game/` | the `Riftlight` shell: flow, ports and stubs, saves, difficulty, camera, music, `window.__RIFTLIGHT__`, the playtest bot | docs/game/shell.md |
+| `game/` | the `Riftlight` shell: flow, ports, saves, difficulty, camera, music, `window.__RIFTLIGHT__`, the playtest bot | docs/game/shell.md |
 | `game/` (snapshot) | save-states: `Riftlight.snapshot` / `restore` and every part's saved state | docs/game/save-states.md |
 | `ui/` | pixel HUD layout, touch controls, gem icons, menus and panels, the look studio | docs/game/ui.md |
 | `wire/` | the real ports: combat worlds, hero, levels, monsters, loot, sockets, tree | docs/game/wire.md |

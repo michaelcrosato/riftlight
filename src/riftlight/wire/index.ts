@@ -7,10 +7,8 @@
  *
  * They share one service, `Worlds`: the combat world (ActorManager + Combat) of each stage,
  * found by stage. A level builds its own world on load and disposes it on leave; the hero
- * brings one into the town. See docs/game/wire.md.
- *
- *   new Riftlight();                                   // corePorts() + stub loot and tree
- *   new Riftlight({ ...corePorts(), loot, tree });      // everything real
+ * brings one into the town. See docs/game/wire.md. `new Riftlight()` uses `corePorts()` with
+ * the real loot (wire/loot.ts) and tree (wire/tree.ts).
  */
 import type { RiftlightPorts } from '../game/ports';
 import { realHeroFactory } from './hero';

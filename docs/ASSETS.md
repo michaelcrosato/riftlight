@@ -3,15 +3,14 @@
 Objects in a game are **plain data** that agents write, check and look at, then adjust: a
 `ModelDef` of keyed primitives. There is no modelling tool, and a model is text, never a binary
 file. The engine compiles a def into toon meshes at runtime; `npm run model` measures and draws it
-without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. The plan behind
-it, with its measurements and what is still to come, is
-[docs/plans/asset-system.md](plans/asset-system.md). Meshes from kits come in through the importer
-(docs/assets/importing.md); what a game will vary is traced in primitives (docs/assets/tracing.md).
+without a browser; the Asset Lab (`/asset-lab.html`) shows it in the real renderer. Meshes from
+kits come in through the importer (docs/assets/importing.md); what a game will vary is traced in
+primitives (docs/assets/tracing.md).
 Agents outside this repo get [docs/GUIDE-ASSETS.md](GUIDE-ASSETS.md) in the engine kit, as
 `ASSETS.md`: the same format and rules for someone with only the kit (`check.mjs --sheets` draws
 their sheets). A change to the format or the rules changes both.
 
-The library is where ModelDefs pay (measured: [Gate A](plans/gate-a.md)): start from it
+The library is where ModelDefs pay (measured: [Gate A](#gate-a)): start from it
 (`npm run model -- find`, `zoo`), and search it rather than read its source.
 
 ```
@@ -232,7 +231,7 @@ never joins a one-colour block (its texels break it up).
 - **Colour separates parts:** touching components take different colours or shades (planks and
   their frame, stones and their mortar, a wheel and the bed it carries): as many colours as the
   parts need to read apart, up to 8, one an accent; touching big masses separate in lightness.
-  Gate A's first run was lost on this (docs/plans/gate-a.md).
+  Gate A's first run was lost on this ([Gate A](#gate-a)).
 - **Glow is flat:** keep it for small hot spots (embers, a flame's heart); build fire from lit
   parts (`use: 'flame'`).
 - **Fire faces the camera:** `flame`'s tongues turn one lit face to the game camera (+X +Z) and
@@ -244,6 +243,18 @@ never joins a one-colour block (its texels break it up).
 - **Grounding:** the base on y = 0, nothing floating unless `floats`; name anchors for anything
   that attaches.
 - **Compose before you create:** `use` a library model before writing a new crate.
+
+## The library
+
+- **Where content lives:** engine built-ins in `src/engine/model/library/<family>.ts` and
+  `src/engine/texture/library/<family>.ts`; what one game owns stays in that game (Riftlight's
+  props: `src/riftlight/levels/themes/`); kits from outside are pack files (docs/assets/importing.md).
+- **Every entry:** `check` clean; its family's zoo opened and looked at; the game-scale preview
+  reads (a silhouette, colours that separate its parts); `about` and `tags` filled in; params
+  where variation is cheap (sizes, counts, seeds).
+- **One way to place a model:** the town `Kit` places one (`kit.model(id, at)`), a level prop names
+  one (`PropDef.model`); kits gain placement, never primitives of their own. Helpers only return
+  parts, and `boxFrame` is the bar for the very few domain helpers allowed.
 
 ## In a game
 
@@ -263,6 +274,25 @@ material, pivots as named Groups), `bounds`, `anchors`, `colliders` (data), `lig
 theme's tint). Builds that don't read the rng are cached and share their geometry
 (`userData.shared`, kept by level unloads). `expandModel` gives the plain-JSON form. A game adds its
 own models with `MODEL_LIBRARY.add(def)` or a `ModelCatalog` of its own (`buildModel(id, { catalog })`).
+
+## Gate A
+
+The token benchmark (2026-10-12, [#54](https://github.com/michaelcrosato/riftlight/issues/54)):
+fresh agents built four briefs (a hand cart, a stone archway, a campfire ring, a weapon rack) three
+times each as code on the town `Kit` (arm a) and as a ModelDef (arm b), and fresh judges compared
+the median runs blind, from the same judge image (`npx tsx scripts/gate-a.ts judge <file.ts>`).
+It failed all three runs (R, b's tokens ÷ a's, had to be ≤ 0.8 with 3 of 4 briefs won or tied, or
+≤ 1.0 with 3 won). The first (R = 0.98) lost on colour and light: one-colour masses and glow over
+the model, which gave *Checks* its one-block and glow warnings and *Style rules* its colour rule.
+The second (R = 1.02) lost on an upright flame that read brown: the fire rule. The third, with the full library, lost
+on tokens alone: ModelDefs won 3 of 4 briefs outright but cost 1.75×, because the frozen prompt
+had the agent read the whole library's source. Hence: search the library, don't read it. The
+owner kept the system ([#54](https://github.com/michaelcrosato/riftlight/issues/54#issuecomment-6130940525)).
+The prompts and every run's numbers are in PRs #55, #56, #58 and #74.
+
+The judged models are test inputs in `src/engine/model/fixtures/gate-a/` (`<brief>-<arm>.ts`,
+`-<arm>2.ts`, `-<arm>3.ts` for runs 1–3), outside the typecheck: never change their parts. Each
+redraws its judge image byte for byte, and `trace --against gate-a:<file>` traces it.
 
 ## Topics
 

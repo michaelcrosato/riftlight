@@ -1,6 +1,5 @@
 /**
- * The texture format: a pixel-art texture as plain data (docs/plans/asset-system.md §5,
- * docs/assets/textures.md). A def lists layers drawn in order onto a `size` grid of texels in
+ * The texture format: a pixel-art texture as plain data (docs/assets/textures.md). A def lists layers drawn in order onto a `size` grid of texels in
  * its palette's slots; `bakeTexture` turns it into palette indices and RGBA, headless and pure.
  *
  *   textureDef({ id: 'planks', about: 'Floor boards', tags: ['wood'], size: [16, 16], tile: true,

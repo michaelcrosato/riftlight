@@ -1,8 +1,7 @@
 /**
  * The game shell's ports: the only surface the shell (flow, town, HUD, menus, save, bot)
- * uses to reach the systems other workstreams build. Each port has a stub in `./stubs/`
- * so the whole game is playable now; integration swaps the real modules in by passing
- * them to `new Riftlight({ ...stubPorts(), hero: realHero })`.
+ * uses to reach the gameplay systems. `src/riftlight/wire` implements them on the real
+ * systems; `new Riftlight({ hero: myHero })` replaces one (docs/game/wire.md).
  *
  *   HeroPort     combat/actors: the player Actor + HeroController (move, attack, dodge, skills)
  *   LevelPort    levels: specs per depth, buildLevel, explored cells, exit, boss

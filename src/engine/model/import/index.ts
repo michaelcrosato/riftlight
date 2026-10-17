@@ -1,5 +1,5 @@
 /**
- * Mesh import (docs/plans/asset-system.md §7.2): a glTF or GLB file → a ModelDef of `mesh` parts
+ * Mesh import (docs/assets/importing.md): a glTF or GLB file → a ModelDef of `mesh` parts
  * (and the `box` and `cyl` parts its pieces exactly are), palette-mapped, with its provenance and
  * fidelity in `source`. Faithful, not editable: an agent traces what a game will vary.
  *

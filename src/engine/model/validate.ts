@@ -17,7 +17,7 @@ import { partExtents, readabilityWarnings } from './readability';
 import { BOX_KINDS, SEG_RANGE } from './prims';
 import type { ModelDef, Part, Vec3 } from './types';
 
-/** Triangle budget by the model's largest dimension (style rules, §4.4). */
+/** Triangle budget by the model's largest dimension (docs/ASSETS.md *Checks*). */
 export function triangleBudget(largest: number): number {
   return largest < 0.5 ? 300 : largest < 2 ? 1000 : 3000;
 }

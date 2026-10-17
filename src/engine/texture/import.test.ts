@@ -1,4 +1,4 @@
-// 2D import (docs/plans/asset-system.md §7.5): pixel-art sheets sliced into TextureDefs. Every
+// 2D import (docs/assets/importing.md *Pixel-art sheets*): pixel-art sheets sliced into TextureDefs. Every
 // fixture is drawn here, at test time, from known pixel grids and written with encodePng
 // (principle 5: no binaries, no third-party content), then read back with the engine's decoder.
 import { spawnSync } from 'node:child_process';

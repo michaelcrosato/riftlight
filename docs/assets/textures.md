@@ -90,6 +90,8 @@ On a sprite sheet an outline stays inside each frame; patterns and paths don't k
 so draw frames with pixels.
 Every converter takes `{ palette, catalog }`; a game adds textures with `TEXTURE_LIBRARY.add(def)`
 or a `TextureCatalog` of its own (`buildModel(id, { textures })` for models).
+Only where they help, later: decals and particle sprites from TextureDefs (today shader-cut
+shapes and squares); Riftlight's item and gem icon recipes stay unless a TextureDef reads better.
 
 **On models:** a part's `tex` (docs/ASSETS.md *The format*), as `brick-wall` does:
 
@@ -107,9 +109,9 @@ and `npm run tex -- sheet` shows a tiling texture on a cube and a cylinder at ga
 
 ## Texel density (Gate B)
 
-How dense texels may be before they shimmer was measured in the real renderer (Gate B, the
-plan's §5; `npm run build && npm run gate-b`, `src/lab/gateB.ts`). A floor of `cobbles`, a wall
-of `bricks` and crates of `planks` were stepped frame by frame through:
+How dense texels may be before they shimmer was measured in the real renderer (Gate B;
+`npm run build && npm run gate-b`, `src/lab/gateB.ts`). A floor of `cobbles`, a wall of `bricks`
+and crates of `planks` were stepped frame by frame through:
 
 - Riftlight's settings-wheel zoom from fully out (0.6, then ×1.08 steps to 1.6: the stops a
   player reaches scrolling in from the clamp), each step eased as the game eases it until it is
@@ -136,8 +138,8 @@ the line.
 
 - **The worst step** is the landscape level zoom's most zoomed-out one (0.65 → 0.70, 11.7–12.6
   art pixels per metre), where a texel at 8 is about 1.5 pixels and at 16 under one.
-- **The line is a choice.** The plan sets one line a quarter of the way from calm to bad without
-  saying how each becomes one number; their mean steps are used. Two other readings pass 12 as
+- **The line is a choice.** Gate B was set to put one line a quarter of the way from calm to bad
+  without saying how each becomes one number; their mean steps are used. Two other readings pass 12 as
   well: a line per step (calm and bad at that step: 12's worst is 0.89 of the way to it, 16's
   1.21) and a line from the worst steps (8.76%). 12's filmstrips go to fine noise at the most
   zoomed-out steps, so the stricter reading is kept.
@@ -171,7 +173,7 @@ the line 5.97%; the pinned 0.22 cobbles, the control, 5.42% as recorded):
 | bricks | 42% | 7.21% | 4.43% | **fail** as a floor (it passed as the record's wall) |
 | cobbles | 46% | 7.57% | 4.71% | **fail** |
 
-Both fail only the plan's reading (per step ×0.78 and ×0.83; under the worst-steps line). Bricks
+Both fail only the mean-step reading (per step ×0.78 and ×0.83; under the worst-steps line). Bricks
 pass without the bevel (`bevel: 0`, two brick tones: 5.35%). Cobbles need both rims gone: without
 the lit rim 6.07%, without the shadow rim 6.26%; stone on joint in two colours 4.75%, or rimless
 stones in two tones as the 0.22 cobbles were 4.51%.

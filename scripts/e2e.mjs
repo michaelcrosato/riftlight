@@ -1339,10 +1339,10 @@ async function runTools(browserExe) {
     const rj = ref.code === 0 ? JSON.parse(ref.out) : { components: [], hulls: null };
     const rp = await pngSize(new URL('trace/tree-reference.png', out));
     check(ref.code === 0 && rj.components.length === 3 && rj.components.some((c) => c.shape?.match === 'exact') && rj.hulls?.length > 0 && rp.width > 800, `trace --reference asset:tree: ${rj.components.length} pieces, ${rj.hulls?.length ?? 0} hull hints, ${rp.width}×${rp.height}${ref.code ? `\n    ${tail(ref.out)}` : ''}`);
-    const traced = await m('trace', 'docs/plans/trace/tree.ts', '--against', 'asset:tree', '--json');
+    const traced = await m('trace', 'src/engine/model/fixtures/trace/tree.ts', '--against', 'asset:tree', '--json');
     const tj = traced.code === 0 ? JSON.parse(traced.out) : { pass: false, score: {} };
     const tp = await pngSize(new URL('trace/tree-trace.png', out));
-    check(traced.code === 0 && tj.pass && tj.source.tool === 'trace' && tp.width > 1000, `trace docs/plans/trace/tree.ts passes: game IoU ${tj.score.iou}, close ${tj.score.iouClose}, dE ${tj.score.colour}${traced.code ? `\n    ${tail(traced.out)}` : ''}`);
+    check(traced.code === 0 && tj.pass && tj.source.tool === 'trace' && tp.width > 1000, `trace src/engine/model/fixtures/trace/tree.ts passes: game IoU ${tj.score.iou}, close ${tj.score.iouClose}, dE ${tj.score.colour}${traced.code ? `\n    ${tail(traced.out)}` : ''}`);
     const wrong = await m('trace', 'crate', '--against', 'asset:tree');
     check(wrong.code === 1 && /FAIL: under the thresholds/.test(wrong.out), 'a crate traced for the tree fails the thresholds (exit 1)');
     // export-glb: the town needs the engine index under tsx; nothing is written outside .scratch/

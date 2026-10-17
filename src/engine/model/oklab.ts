@@ -1,7 +1,7 @@
 /**
  * OKLab (Björn Ottosson's perceptual colour space) for comparing palette colours: lightness
  * L in 0..1, a and b around 0. Model checks use L (do two touching masses read apart?); the
- * importer's palette mapper (docs/plans/asset-system.md §7.3) uses all three.
+ * importer's palette mapper (docs/assets/importing.md *Colours*) uses all three.
  */
 export interface OkLab {
   readonly L: number;

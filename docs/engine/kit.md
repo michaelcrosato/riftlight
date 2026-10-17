@@ -11,6 +11,8 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   engine CSS (injected on import, before the page's own), and `public/assets/*.glb` through
   `__PIXEL_BUILTINS__` → `window.__PIXEL_ASSETS__`, which `loadModel` reads first. Built with
   `base: './'`, so a game's own `assets/x.glb` resolves next to its page.
+  Imported packs are never inlined: they ship as `packs/<id>.json` (`scripts/bundle.mjs`), and
+  a game loads only the ones it uses (`loadPack`).
 - `GUIDE.md` (docs/GUIDE.md, stamped with the version and build): the manual. Its fenced
   blocks `js <name>` are whole games: `quickstart` becomes the kit's `game.js` (+ `index.html`),
   the others `examples/<name>.html`. `src/guide.test.ts` checks that they import only real

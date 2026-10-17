@@ -11,7 +11,7 @@ Must not break (docs/GAME.md *The design language*):
 - Every bonus is a `Mod` through a `StatSheet`; stat names are canonical (`core/stats.ts`).
 - Seeds all the way down: `Rng` forked by purpose, never `Math.random`.
 - Depth scaling lives in `core/scaling.ts` only.
-- The shell reaches gameplay only through ports (`game/ports.ts`); every port has a stub in `game/stubs/`.
+- The shell reaches gameplay only through ports (`game/ports.ts`), implemented on the real systems in `wire/`.
 - Lights are requests to the engine's pool; no runtime `PointLight`.
 - Every system keeps a saved state (`save`/`load` beside its code); `Riftlight.snapshot` / `restore`
   carry it (docs/game/save-states.md); `Riftlight.fingerprint` holds what a replay must match.

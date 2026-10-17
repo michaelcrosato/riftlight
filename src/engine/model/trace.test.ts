@@ -1,4 +1,4 @@
-// Trace (docs/plans/asset-system.md §7.4): the reference an agent authors from, the verdict on
+// Trace (docs/assets/tracing.md): the reference an agent authors from, the verdict on
 // what it wrote, and the exporter that turns code-built content into a source. Every source here
 // is built at test time from our own code (no binaries, no network).
 import { createHash } from 'node:crypto';
@@ -9,18 +9,18 @@ import { join, resolve } from 'node:path';
 import { inflateSync } from 'node:zlib';
 import { BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial } from 'three/webgpu';
 import { afterAll, describe, expect, it } from 'vitest';
-import archwayTrace from '../../../docs/plans/trace/archway';
-import campfireTrace from '../../../docs/plans/trace/campfire-ring';
-import coinTrace from '../../../docs/plans/trace/coin';
-import cartTrace from '../../../docs/plans/trace/hand-cart';
-import marketTrace from '../../../docs/plans/trace/market';
-import monsterTrace from '../../../docs/plans/trace/monster-7';
-import obeliskTrace from '../../../docs/plans/trace/obelisk';
-import smithyTrace from '../../../docs/plans/trace/smithy';
-import tentTrace from '../../../docs/plans/trace/tent';
-import treeTrace from '../../../docs/plans/trace/tree';
-import vorgathTrace from '../../../docs/plans/trace/vorgath';
-import rackTrace from '../../../docs/plans/trace/weapon-rack';
+import archwayTrace from './fixtures/trace/archway';
+import campfireTrace from './fixtures/trace/campfire-ring';
+import coinTrace from './fixtures/trace/coin';
+import cartTrace from './fixtures/trace/hand-cart';
+import marketTrace from './fixtures/trace/market';
+import monsterTrace from './fixtures/trace/monster-7';
+import obeliskTrace from './fixtures/trace/obelisk';
+import smithyTrace from './fixtures/trace/smithy';
+import tentTrace from './fixtures/trace/tent';
+import treeTrace from './fixtures/trace/tree';
+import vorgathTrace from './fixtures/trace/vorgath';
+import rackTrace from './fixtures/trace/weapon-rack';
 import { exportPath, glbProvenance, resolveSource, sourceGlb, TOWN_BUILDINGS } from '../../../scripts/trace/sources';
 import { PALETTE } from '../palette';
 import { ModelCatalog } from './catalog';
@@ -241,7 +241,7 @@ function summary(m: SourceMesh): { tris: number; colours: string[]; min: Vec3; m
   return { tris: m.group.length, colours: Array.from(m.colours, (c) => c.toString(16)).sort(), min: lo as unknown as Vec3, max: hi as unknown as Vec3 };
 }
 
-/** Every trace in docs/plans/trace/ and the source it was traced from (Phase 6's ten and the two proofs). */
+/** Every trace in fixtures/trace/ and the source it was traced from (Phase 6's ten and the two proofs). */
 const TRACES = [
   [treeTrace, 'asset:tree'],
   [cartTrace, 'gate-a:hand-cart-a'],
@@ -257,11 +257,11 @@ const TRACES = [
   [monsterTrace, 'monster:7'],
 ] as const;
 
-describe('the traces (docs/plans/trace/)', () => {
+describe('the traces (fixtures/trace/)', () => {
   // a drift guard: each still scores what its `source.fidelity` records, passes, and checks clean
   // (importing them here also type-checks them)
   it('lists every trace in the folder', () => {
-    const files = readdirSync(join(ROOT, 'docs/plans/trace')).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3));
+    const files = readdirSync(join(ROOT, 'src/engine/model/fixtures/trace')).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3));
     expect(TRACES.map(([d]) => d.id).sort()).toEqual(files.sort());
   });
   for (const [draft, spec] of TRACES) {
@@ -293,7 +293,7 @@ describe('trace sources and export-glb', () => {
 
   it('exports a Kit build (gate-a:) and reads it back: same triangles, colours and bounds, its provenance carried', async () => {
     const src = await resolveSource('gate-a:hand-cart-a', { root: ROOT });
-    expect(src.provenance).toEqual({ url: 'docs/plans/gate-a/hand-cart-a.ts', licence: OWN_LICENCE, author: 'riftlight' });
+    expect(src.provenance).toEqual({ url: 'src/engine/model/fixtures/gate-a/hand-cart-a.ts', licence: OWN_LICENCE, author: 'riftlight' });
     const bytes = await sourceGlb(src);
     const back = await read(bytes);
     const [a, b] = [summary(src.mesh), summary(back)];
@@ -302,7 +302,7 @@ describe('trace sources and export-glb', () => {
     close(b.min, a.min, 1e-5);
     close(b.max, a.max, 1e-5);
     expect(new Set(back.groups.map((g) => g.material))).toEqual(new Set(['orange', 'red', 'slate', 'sand', 'night'])); // named after the PALETTE colours
-    expect(glbProvenance(bytes)).toMatchObject({ spec: 'gate-a:hand-cart-a', url: 'docs/plans/gate-a/hand-cart-a.ts', licence: OWN_LICENCE });
+    expect(glbProvenance(bytes)).toMatchObject({ spec: 'gate-a:hand-cart-a', url: 'src/engine/model/fixtures/gate-a/hand-cart-a.ts', licence: OWN_LICENCE });
     // where export-glb writes (a trace-src/ folder in a root's .scratch/), the file traces as its code, pinned by its hash
     mkdirSync(join(dir, '.scratch', 'trace-src'), { recursive: true });
     const file = join(dir, '.scratch', 'trace-src', 'cart.glb');
@@ -403,6 +403,6 @@ describe('trace sources and export-glb', () => {
     const packed = await resolveSource('pack:kit/crate', { root: ROOT, packs: dir });
     expect(packed.provenance).toEqual({ ...own, pack: 'kit' });
     expect(summary(packed.mesh).tris).toBe(modelTriangles('crate').colours.length);
-    await expect(resolveSource('gate-a:../../etc', { root: ROOT })).rejects.toThrow(/name a file in docs\/plans\/gate-a/);
+    await expect(resolveSource('gate-a:../../etc', { root: ROOT })).rejects.toThrow(/name a file in src\/engine\/model\/fixtures\/gate-a/);
   });
 });
