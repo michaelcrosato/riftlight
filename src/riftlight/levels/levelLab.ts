@@ -81,10 +81,9 @@ export class LevelLab implements Game {
   /** The page's choices: `?depth=3&seed=7&god=1&zoom=1.5`; `?camera=` / `?cam=` keep the URL's camera. */
   static optionsFromUrl(search: string): LevelLabOptions {
     const url = new URLSearchParams(search);
+    // as the lab always read them: a missing, empty or 0 value is 1
+    const o: { -readonly [K in keyof LevelLabOptions]: LevelLabOptions[K] } = { depth: Number(url.get('depth') ?? 1) || 1, seed: Number(url.get('seed') ?? 1) || 1 };
     const num = (k: string) => Number(url.get(k) ?? NaN);
-    const o: { -readonly [K in keyof LevelLabOptions]: LevelLabOptions[K] } = {};
-    if (num('depth') > 0) o.depth = num('depth');
-    if (num('seed') > 0) o.seed = num('seed');
     if (url.get('god') === '1') o.god = true;
     if (num('zoom') > 0) o.zoom = num('zoom');
     if (url.has('camera') || url.has('cam')) o.ownCamera = false;

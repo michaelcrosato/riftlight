@@ -12,7 +12,7 @@ beforeAll(async () => {
 afterAll(() => h?.engine.dispose());
 
 it(
-  'the Hall of Beasts, photo mode and save export / import run without a page',
+  'the Hall of Beasts, photo mode, save export / import and the way to Engine World run without a page',
   async () => {
     const { engine, game, rl } = h;
     rl.newRun({ seed: 5 });
@@ -30,6 +30,7 @@ it(
     game.exportSlot(0);
     game.importSlot(0);
     engine.step(2);
+    game.engineWorld(); // leaving for Engine World: no page to leave headless
     expect(engine.errors).toEqual([]);
   },
   T,

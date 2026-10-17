@@ -9,7 +9,7 @@
 //                     .scratch/e2e/riftlight-replay.json)
 //   --frames n        stop after n frames
 //   --expect f        the fingerprint the run must end on (`engine.fingerprint()` where it was recorded)
-//   --json            one JSON object: { game, frames, fingerprint, state, game state, errors }
+//   --json            one JSON object: { game, frames, fingerprint, expected, state, gameState, errors }
 //
 // Prints the fingerprint, `engine.state()`, the game's own state (Riftlight: `rl.state()`) and the
 // errors the game's hooks threw. Exit 1 on a hook error, when --expect doesn't match, or when the
@@ -31,14 +31,22 @@ if (!file) {
   console.error('npm run replay -- <recording.json> [--frames n] [--expect <fingerprint>] [--json]  (--help: the manual)');
   process.exit(2);
 }
-const frames = flag('--frames') === undefined ? undefined : Number(flag('--frames'));
+const frames = args.includes('--frames') ? Number(flag('--frames')) : undefined;
 const expect = flag('--expect');
+if (frames !== undefined && !(Number.isInteger(frames) && frames >= 0)) {
+  console.error('replay: --frames takes a whole number from 0');
+  process.exit(2);
+}
+if (args.includes('--expect') && !expect) {
+  console.error('replay: --expect takes the fingerprint to end on');
+  process.exit(2);
+}
 const json = args.includes('--json');
 
 const { recordingProblem, Engine } = await import('../src/engine');
 const { nodeAssets } = await import('../src/engine/node');
 const { gameForRecording } = await import('../src/games');
-const { headlessRiftlight, PUBLIC_DIR } = await import('../src/riftlight/headless');
+const { currentRiftlightApi, headlessRiftlight, makeRiftlight, PUBLIC_DIR } = await import('../src/riftlight/headless');
 
 const rec = JSON.parse(readFileSync(file, 'utf8')) as import('../src/engine').Recording;
 const problem = recordingProblem(rec);
@@ -55,11 +63,13 @@ if (!found) {
 // Riftlight boots the one way tests and tools boot it; any other game from its table entry
 const riftlight = found.entry.id === 'riftlight' ? await headlessRiftlight({ seed: rec.seed, viewport: rec.view }) : null;
 const engine = riftlight?.engine ?? (await Engine.headless(found.make(), { ...found.entry.options, seed: rec.seed, viewport: rec.view, assets: nodeAssets(PUBLIC_DIR) }));
-await engine.replay(rec, () => engine.loadGame(found.make()), { frames });
+// a replay loads the game afresh (Riftlight: saves in memory, as headlessRiftlight's)
+const make = riftlight ? makeRiftlight : found.make;
+await engine.replay(rec, () => engine.loadGame(make()), { frames });
 
 const fingerprint = engine.fingerprint();
 const state = engine.state();
-const gameState = riftlight ? riftlight.rl.state() : null;
+const gameState = riftlight ? (currentRiftlightApi()?.state() ?? null) : null; // the replayed game's API, not the booted one's
 const out = { game: rec.game, frames: Math.min(frames ?? Infinity, rec.frames.length), fingerprint, expected: expect ?? null, state, gameState, errors: [...engine.errors] };
 if (json) console.log(JSON.stringify(out));
 else {

@@ -24,11 +24,21 @@ export interface HeadlessRiftlight {
   rl: RiftlightApi;
 }
 
+/** A Riftlight that keeps its saves in memory (what headless tools load, a replay's too). */
+export function makeRiftlight(): Riftlight {
+  return new Riftlight({}, { store: new SaveStore(null) });
+}
+
+/** The agent API of the Riftlight that runs now (`rl` goes stale when another one is loaded: a replay's). */
+export function currentRiftlightApi(): RiftlightApi | null {
+  return (globalThis as { __RIFTLIGHT__?: RiftlightApi }).__RIFTLIGHT__ ?? null;
+}
+
 /** Boot Riftlight headless: `seed` is the engine's (`?seed=`), `viewport` the page's it stands for (default 960×540). */
 export async function headlessRiftlight(o: { seed?: number; viewport?: Viewport; game?: Riftlight } = {}): Promise<HeadlessRiftlight> {
-  const game = o.game ?? new Riftlight({}, { store: new SaveStore(null) });
+  const game = o.game ?? makeRiftlight();
   const engine = await Engine.headless(game, { ...RIFTLIGHT_OPTIONS, seed: o.seed, viewport: o.viewport, assets: nodeAssets(PUBLIC_DIR) });
-  const rl = (globalThis as { __RIFTLIGHT__?: RiftlightApi }).__RIFTLIGHT__;
+  const rl = currentRiftlightApi();
   if (!rl) throw new Error('headlessRiftlight: the game did not install its API (Riftlight.ready)');
   return { engine, game, rl };
 }

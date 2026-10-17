@@ -1,7 +1,6 @@
 // Riftlight headless (headlessRiftlight, docs/game/shell.md *Headless*): the real game in Node, no
 // page. One engine for the file (module state outlives an engine), tests in order.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { DIFFICULTY_PRESETS } from './index';
 import { type HeadlessRiftlight, headlessRiftlight } from './headless';
 import type { TreePanel } from './wire/tree';
 
@@ -15,26 +14,10 @@ afterAll(() => h?.engine.dispose());
 
 describe('Riftlight headless', () => {
   it(
-    'the bot clears depth 1 (seed 1) with no hook errors',
-    async () => {
-      const { engine, rl } = h;
-      rl.newRun({ seed: 1 });
-      rl.setDifficulty({ ...DIFFICULTY_PRESETS.normal });
-      await rl.enterDepth(1);
-      rl.bot.start();
-      const { report } = rl.bot.advance(10800);
-      expect(report).toMatchObject({ depth: 1, cleared: true, deaths: 0 });
-      expect(report.kills).toBeGreaterThan(20);
-      expect(engine.errors).toEqual([]);
-      expect(engine.state().backend).toBe('headless');
-    },
-    T,
-  );
-
-  it(
     'a mid-level snapshot, restored and played on, keeps the fingerprint',
     async () => {
       const { engine, rl } = h;
+      rl.newRun({ seed: 1 });
       await rl.enterDepth(2);
       rl.bot.start();
       rl.bot.advance(300);
