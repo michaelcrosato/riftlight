@@ -3,7 +3,9 @@
 # Auto-detects the stack and runs whatever lint/typecheck/test/build steps exist.
 #
 #   scripts/check.sh          full run (CI)
-#   scripts/check.sh --fast   everything but the build (Stop hook)
+#   scripts/check.sh --fast   the Stop hook: no build, and unit tests only for what changed since
+#                             the branch left the default branch (`vitest related`); lint and
+#                             typecheck are fast anyway once their caches (node_modules/.cache) are warm
 #
 # Quiet on success: each step prints its summary, a failing step its problems last.
 set -euo pipefail
@@ -49,8 +51,28 @@ if [[ -f package.json ]]; then
   if has_script tex; then step "$pm" run --silent tex -- check; fi
   # Model checks for every model (scripts/model.ts; exits 1 on problems; warnings are fine).
   if has_script model; then step "$pm" run --silent model -- check; fi
+  # --fast: only the tests that what changed since the branch left the default branch (and what
+  # isn't committed yet) can break: the tests that import a changed file (`vitest related`) and
+  # the tests that name it (they read it as text). A changed file that isn't code (docs, data,
+  # models, config: tests read those from disk) runs every test; nothing changed, no tests.
+  changed=() related=() named=() all_tests=0
+  if [[ $FAST -eq 1 && -x node_modules/.bin/vitest ]] && base=$(git merge-base HEAD origin/HEAD 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null); then
+    mapfile -d '' -t changed < <({ git diff -z --name-only --diff-filter=d "$base"; git ls-files -z --others --exclude-standard; } | sort -zu)
+    for f in "${changed[@]}"; do
+      if [[ $f =~ \.(ts|mts|mjs|js)$ ]]; then related+=("$f"); else all_tests=1; fi
+    done
+    for f in "${related[@]}"; do
+      mapfile -t -O "${#named[@]}" named < <(git grep -l -F "$(basename "$f")" -- 'src/*.test.ts' 2>/dev/null)
+    done
+  fi
   for s in lint typecheck test; do
-    has_script "$s" && step "$pm" run --silent "$s"
+    has_script "$s" || continue
+    if [[ $s == test && $FAST -eq 1 && -n "${base:-}" && $all_tests -eq 0 ]]; then
+      if [[ ${#related[@]} -gt 0 ]]; then step node_modules/.bin/vitest related --run --passWithNoTests "${related[@]}" "${named[@]}"
+      else echo "▶ test: nothing changed since $(git rev-parse --short "$base"), skipped"; fi
+    else
+      step "$pm" run --silent "$s"
+    fi
   done
   # Generated models must match their generator (not stale, not hand-edited). Compares
   # against the working tree, so it also passes before a regenerated model is committed.
