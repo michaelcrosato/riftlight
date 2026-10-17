@@ -15,6 +15,7 @@
  * storage, a text field) goes through `ctx.input.send()`, which the recording keeps.
  * docs/engine/determinism.md *Recording and replay*.
  */
+import type { Viewport } from './framing';
 import type { InputFrame } from './input';
 import { type Snapshot, snapshotProblem } from './snapshot';
 
@@ -36,6 +37,12 @@ export interface Recording {
   readonly truncated?: boolean;
   /** The save-state the frames start from (`engine.restore()` began this recording), if any. */
   readonly from?: Snapshot;
+  /**
+   * The viewport it was recorded on, as it was when the level began (CSS pixels and DPR): the art
+   * resolution, pointer aim and the HUD's layout follow it. A headless replay frames for it; a page
+   * warns when its own differs. A page resized during the level is not followed.
+   */
+  readonly view?: Viewport;
 }
 
 /** Frames a recording keeps: an hour at 60 fps. */
@@ -53,6 +60,11 @@ export function recordingProblem(v: unknown): string | null {
   if (typeof r.seed !== 'number' || !Number.isInteger(r.seed) || r.seed < 0) return 'seed must be a whole number from 0';
   if (typeof r.time !== 'number' || !Number.isFinite(r.time)) return 'time must be a number';
   if (!Array.isArray(r.frames)) return 'no frames';
+  if (r.view !== undefined) {
+    const v = r.view as Partial<Viewport> | null;
+    const size = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
+    if (!v || typeof v !== 'object' || !size(v.width) || !size(v.height) || !(size(v.dpr) && v.dpr! > 0)) return 'view must be { width, height, dpr } (sizes from 0, dpr above 0)';
+  }
   if (r.from !== undefined) {
     const p = snapshotProblem(r.from);
     if (p) return `from: ${p}`;

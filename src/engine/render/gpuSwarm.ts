@@ -6,11 +6,13 @@
  *
  *   const swarm = new GpuSwarm({ count: 32768, center: [0, 2, 0] });
  *   scene.add(swarm.mesh);
- *   swarm.update(engine.renderer.renderer, dt);   // per frame
+ *   swarm.update(engine.renderer, dt);            // per frame (nothing headless)
  *   swarm.attractor.value.set(x, y, z);           // uniforms: change them live
  */
 /* eslint-disable @typescript-eslint/no-explicit-any -- TSL node graphs are dynamically typed */
 import { Sprite, SpriteNodeMaterial, Vector3, type WebGPURenderer } from 'three/webgpu';
+import type { PixelRenderer } from './PixelRenderer';
+import type { View } from './view';
 import { color, cos, float, Fn, hash, If, instancedArray, instanceIndex, mix, mx_noise_vec3, sin, sqrt, uniform, vec3 } from 'three/tsl';
 
 export interface GpuSwarmOptions {
@@ -124,8 +126,10 @@ export class GpuSwarm {
     material.addEventListener('dispose', () => this.freeCompute());
   }
 
-  /** One frame: (the first time, place them all), then one compute dispatch moving every particle. */
-  update(renderer: WebGPURenderer, dt: number): void {
+  /** One frame: (the first time, place them all), then one compute dispatch moving every particle. Headless: nothing (no GPU). */
+  update(view: View, dt: number): void {
+    if (view.backend === 'headless') return;
+    const renderer = (view as PixelRenderer).renderer;
     // a new renderer (a lost GPU device recovered) starts with empty buffers: place them again
     if (renderer !== this.renderer) {
       this.renderer = renderer;

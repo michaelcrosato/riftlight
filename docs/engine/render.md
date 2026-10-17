@@ -121,10 +121,10 @@ set like every toon material; the colour is a uniform, so every rim colour share
 
 ```ts
 const swarm = new GpuSwarm({ count: 32768, center: [0, 2, 0] }); // storage buffers + a TSL compute shader
-scene.add(swarm.mesh); swarm.update(engine.renderer.renderer, dt); // per frame; swarm.attractor.value.set(...)
+scene.add(swarm.mesh); swarm.update(engine.renderer, dt);      // per frame (nothing headless); swarm.attractor.value.set(...)
 
 const cam = new RenderView({ size: [160, 90], every: 2 });     // a camera drawn into a texture
-const stop = cam.attach(engine.renderer, scene);                // before every frame; stop() (or a level unload) ends it
+const stop = cam.attach(engine.renderer, scene);                // before every frame; stop() (or a level unload) ends it; headless never runs it
 screen.material = cam.screenMaterial(); RenderView.screen(screen); // its layer: views never see it
 
 const mirror = new Mirror({ size: [8, 3] }); scene.add(mirror.mesh); // faces its local +z

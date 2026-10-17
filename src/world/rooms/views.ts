@@ -79,6 +79,12 @@ _clip.multiplyScalar(2 / _clip.dot(_q));`,
   },
   build(room) {
     const { kit, ctx } = room;
+    /** The page's renderer, for readbacks (the GPU rooms need one: none headless). */
+    const gpu = () => {
+      const r = ctx.engine.gpu;
+      if (!r) throw new Error('views: reading a texture back needs the GPU (engine.gpu); headless has none');
+      return r.renderer;
+    };
     kit.room(22, 16, { floor: ['slate', 'night'], wall: { color: 'blue', side: 'navy', height: 4 } });
     // things to watch: two pillars and a turning sculpture
     for (const [x, z, c] of [
@@ -214,7 +220,7 @@ _clip.multiplyScalar(2 / _clip.dot(_q));`,
         /** Read the mirror's texture back: how many distinct colours (an empty one has one or two). */
         reflection: async () => {
           const { width: w, height: h } = mirror.target;
-          return { w, h, ...colours(await ctx.engine.renderer.renderer.readRenderTargetPixelsAsync(mirror.target, 0, 0, w, h)) };
+          return { w, h, ...colours(await gpu().readRenderTargetPixelsAsync(mirror.target, 0, 0, w, h)) };
         },
         night: (on: boolean) => ((night = on), (nightMix.value = on ? 1 : 0)),
         size: (i: number) => ((size = i), remake()),
@@ -223,7 +229,7 @@ _clip.multiplyScalar(2 / _clip.dot(_q));`,
         feed: async (i: number) => {
           const v = cams[i]!.view;
           const { width: w, height: h } = v.target;
-          return { w, h, ...colours(await ctx.engine.renderer.renderer.readRenderTargetPixelsAsync(v.target, 0, 0, w, h)) };
+          return { w, h, ...colours(await gpu().readRenderTargetPixelsAsync(v.target, 0, 0, w, h)) };
         },
       },
     };

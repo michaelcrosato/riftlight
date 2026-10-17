@@ -56,8 +56,10 @@ export class TreePanel implements Panel {
       save.hero.allocated = serial;
       host.changed('tree');
     }
+    const container = ctx.engine.renderer.container;
+    if (!container) throw new Error('the passive tree panel needs a page (engine.renderer.container)');
     this.view = new TreeView({
-      container: ctx.engine.renderer.container,
+      container,
       tree,
       state,
       audio: ctx.audio,

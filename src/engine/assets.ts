@@ -11,6 +11,28 @@ export interface Model {
   animations: AnimationClip[];
 }
 
+/**
+ * Reads an asset's bytes by its path (`assets/hero.glb`, `packs/kenney-nature.json`). Set one with
+ * `setAssetReader` where there is no page to fetch from: `nodeAssets()` (src/engine/node.ts) reads
+ * `public/` in Node, and `Engine.headless` installs the one it is given.
+ */
+export type AssetReader = (path: string) => Promise<ArrayBuffer>;
+
+let reader: AssetReader | null = null;
+
+/**
+ * Where models and packs come from, for the whole process (`loadModel` and `loadPack` share one
+ * cache): a reader, or null for the page's way (fetch under the base URL). Loads already made stay cached.
+ */
+export function setAssetReader(read: AssetReader | null): void {
+  reader = read;
+}
+
+/** The reader set with `setAssetReader`, or null (the page's fetch). */
+export function assetReader(): AssetReader | null {
+  return reader;
+}
+
 const loader = new GLTFLoader();
 const cache = new Map<string, Promise<Model>>();
 /** Bytes loaded / expected per URL, for the loading indicator. */
@@ -21,12 +43,19 @@ function fetchModel(url: string): Promise<Model> {
   if (!pending) {
     const p = { loaded: 0, total: 0, done: false };
     progress.set(url, p);
-    pending = loader
-      .loadAsync(resolveAsset(url), (e) => {
-        p.loaded = e.loaded;
-        if (e.lengthComputable) p.total = e.total;
-      })
+    // with a reader the bytes are parsed here (three's FileLoader needs the page's ProgressEvent)
+    const gltf = reader
+      ? reader(url).then((bytes) => loader.parseAsync(bytes, ''))
+      : loader.loadAsync(resolveAsset(url), (e) => {
+          p.loaded = e.loaded;
+          if (e.lengthComputable) p.total = e.total;
+        });
+    pending = gltf
       .then((gltf) => ({ scene: markShared(gltf.scene), animations: gltf.animations }))
+      .catch((e: unknown) => {
+        cache.delete(url); // a failed load is tried again next time (another reader, the file back)
+        throw e;
+      })
       .finally(() => (p.done = true));
     cache.set(url, pending);
   }
@@ -61,7 +90,42 @@ function markShared(root: Object3D): Object3D {
   return root;
 }
 
-const packs = new Map<string, Promise<{ pack: ModelPack; models: ModelCatalog; textures: TextureCatalog }>>();
+interface LoadedPack {
+  pack: ModelPack;
+  models: ModelCatalog;
+  textures: TextureCatalog;
+}
+const packs = new Map<string, Promise<LoadedPack>>();
+/** The packs parsed so far: `loadPack` and Node's `loadPacksSync` hand out the same defs. */
+const parsedPacks = new Map<string, LoadedPack>();
+
+/**
+ * A pack's parsed defs, once per URL: the first parse is kept and every later one (another load,
+ * Node's `loadPacksSync`) gets it, so a catalog given the same pack twice holds the same defs.
+ */
+export function settlePack(url: string, json: unknown): LoadedPack {
+  let entry = parsedPacks.get(url);
+  if (!entry) {
+    const pack = parsePack(json, `pack ${url}`);
+    entry = { pack, models: packCatalog(pack), textures: packTextures(pack) };
+    parsedPacks.set(url, entry);
+    packs.set(url, Promise.resolve(entry));
+  }
+  return entry;
+}
+
+/** A pack parsed already (by `loadPack` or `settlePack`), if any. */
+export function parsedPack(url: string): LoadedPack | undefined {
+  return parsedPacks.get(url);
+}
+
+/** JSON by path: through the reader, or fetched from the page's base URL. */
+async function readJson(url: string, what: string): Promise<unknown> {
+  if (reader) return JSON.parse(new TextDecoder().decode(await reader(url))) as unknown;
+  const r = await fetch(resolveAsset(url));
+  if (!r.ok) throw new Error(`${what} ${url}: HTTP ${r.status}`);
+  return r.json() as Promise<unknown>;
+}
 
 /**
  * Load a pack of imported models and textures (`public/packs/<pack>.json`, docs/assets/importing.md
@@ -78,15 +142,8 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
   if (!pending) {
     const p = { loaded: 0, total: 0, done: false };
     progress.set(url, p);
-    pending = fetch(resolveAsset(url))
-      .then((r) => {
-        if (!r.ok) throw new Error(`pack ${url}: HTTP ${r.status}`);
-        return r.json() as Promise<unknown>;
-      })
-      .then((json) => {
-        const pack = parsePack(json, `pack ${url}`);
-        return { pack, models: packCatalog(pack), textures: packTextures(pack) };
-      })
+    pending = readJson(url, 'pack')
+      .then((json) => settlePack(url, json))
       .finally(() => (p.done = true));
     packs.set(url, pending);
   }
@@ -103,9 +160,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
  * and author. Load one with `loadPack(new URL(entry.file, indexUrl))`, or `packs/<file>`.
  */
 export async function loadPackIndex(url = 'packs/index.json'): Promise<PackIndex> {
-  const r = await fetch(resolveAsset(url));
-  if (!r.ok) throw new Error(`pack index ${url}: HTTP ${r.status}`);
-  return parsePackIndex((await r.json()) as unknown, `pack index ${url}`);
+  return parsePackIndex(await readJson(url, 'pack index'), `pack index ${url}`);
 }
 
 /**

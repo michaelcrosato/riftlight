@@ -88,7 +88,7 @@ export class DebugUI {
         el.blur();
       });
     }
-    engine.renderer.container.appendChild(this.root);
+    engine.gpu?.container.appendChild(this.root); // page only: headless never builds the panel
   }
 
   toggle(): void {

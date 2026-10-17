@@ -124,6 +124,16 @@ export function lookFromFilters(ids: readonly string[], base: Look = defaultLook
   return normalizeLook(look);
 }
 
+/**
+ * The look a view starts with (PixelRenderer and HeadlessView alike): `look` when given, else
+ * `filters` on the whole scene over pixel art with these outline strengths (`EngineOptions.edges`).
+ */
+export function startingLook(o: { look?: Look; filters?: readonly string[]; edges: { depth: number; normal: number } }): Look {
+  if (o.look) return normalizeLook(o.look);
+  const pixel = normalizePixel({ ...DEFAULT_PIXEL, outline: o.edges.depth, crease: o.edges.normal });
+  return lookFromFilters(o.filters ?? [], { scene: [], actors: { pixel, filters: [] }, environment: { pixel, filters: [] } });
+}
+
 export function cloneLook(look: Look): Look {
   const filters = (fs: readonly LookFilter[]) => fs.map((f) => ({ id: f.id, params: { ...(f.params ?? {}) } }));
   const layer = (l: LayerLook): LayerLook => ({

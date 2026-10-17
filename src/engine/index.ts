@@ -1,5 +1,5 @@
 // Public engine API. Games import from here, not from internal modules.
-export { Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext } from './Engine';
+export { Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext, type HeadlessOptions } from './Engine';
 export { ENGINE_VERSION } from './version';
 export {
   CAMERA_PRESETS,
@@ -65,7 +65,7 @@ export {
   type LookTarget,
   type PixelLook,
 } from './render/look';
-export { loadModel, loadPack, loadPackIndex, type Model } from './assets';
+export { loadModel, loadPack, loadPackIndex, setAssetReader, type AssetReader, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
 export { GAMEPAD_BUTTONS, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
@@ -101,7 +101,7 @@ export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePre
 export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton, type TouchButtonState, type TouchCorner } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
-export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, type AspectMode, type Framing, type Resolution } from './framing';
+export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, frameView, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
 export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityOption, type QualitySettings } from './quality';
 export { assetProgress, preloadModels } from './assets';
 export { LoadingScreen } from './LoadingScreen';
@@ -189,6 +189,8 @@ export { Rewind, type RewindOptions } from './physics/rewind';
 export { GpuSwarm, type GpuSwarmOptions } from './render/gpuSwarm';
 export { RenderView, SCREEN_LAYER, type RenderViewOptions } from './render/renderView';
 export { Mirror, type MirrorOptions } from './render/mirror';
+export type { View } from './render/view';
+export { HEADLESS_VIEWPORT, HeadlessView, type HeadlessViewOptions } from './render/headlessView';
 export { bayer4, crystalMaterial, forceFieldMaterial, hologramMaterial, lavaMaterial, marbleMaterial, woodMaterial, type ShaderOptions } from './render/shaders';
 export { createNoise, type FbmOptions, type Noise } from './procgen/noise';
 export { Terrain, TERRAIN_BANDS, type ErosionOptions, type TerrainBand, type TerrainOptions } from './procgen/terrain';

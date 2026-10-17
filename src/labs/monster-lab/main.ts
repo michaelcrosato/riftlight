@@ -363,7 +363,8 @@ class MonsterLab implements Game {
 
   /** Grid mode: the child under a canvas point (client coordinates), or -1. */
   pick(clientX: number, clientY: number): number {
-    const canvas = this.ctx.engine.renderer.renderer.domElement;
+    const canvas = this.ctx.engine.gpu?.renderer.domElement;
+    if (!canvas) return -1;
     const rect = canvas.getBoundingClientRect();
     const ndc = new Vector2(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new Raycaster();

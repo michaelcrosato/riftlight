@@ -386,7 +386,7 @@ const plant = turtle(expand(PLANTS.fern.system, 5), PLANTS.fern.turtle); // plan
 ### GPU compute, monitors and mirrors
 
 ```js
-const swarm = new GpuSwarm({ count: 32768 }); ctx.scene.add(swarm.mesh); // per frame: swarm.update(ctx.engine.renderer.renderer, dt)
+const swarm = new GpuSwarm({ count: 32768 }); ctx.scene.add(swarm.mesh); // per frame: swarm.update(ctx.engine.renderer, dt)
 const cam = new RenderView({ size: [160, 90] }); const stopCam = cam.attach(ctx.engine.renderer, ctx.scene); // screen.material = cam.screenMaterial(); RenderView.screen(screen)
 const mirror = new Mirror({ size: [6, 3] }); ctx.scene.add(mirror.mesh); const stopMirror = mirror.attach(ctx.engine.renderer, ctx.scene);
 // in dispose(): stopCam(); stopMirror(); cam.dispose(); mirror.dispose(); swarm.dispose() (a level unload also drops the listeners)
@@ -1031,6 +1031,7 @@ e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exce
 e.input.setKey('KeyD', true); e.step(30); e.input.setKey('KeyD', false);  // play by script
 const rec = e.recording(); const end = e.fingerprint();            // this level's input as JSON, a hash of its state
 await e.replay(rec, () => e.loadGame(new MyGame())); e.fingerprint() === end;  // replayed: the same game
+// Engine.headless(game) runs a game in Node with no page; it runs in this engine's own repository, not yet from the kit
 const snap = await e.snapshot(); e.step(300); await e.restore(snap);   // a save-state (Game.snapshot / restore): back at once
 await e.renderer.capture();   // { width, height, pixels }: the exact frame (without the HUD canvas)
 e.game;                   // your game object: e.game.hero.teleport([x, y, z]) to test a spot

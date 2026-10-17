@@ -125,7 +125,8 @@ export class Pointer {
 
   /** Client → art pixels (DOM layout: where a touch control sits on the HUD). */
   toArt(x: number, y: number): { x: number; y: number } {
-    const canvas = this.engine.renderer.renderer.domElement;
+    const canvas = this.engine.gpu?.renderer.domElement;
+    if (!canvas) return { x: -1, y: -1 }; // headless: no page layout
     const r = canvas.getBoundingClientRect();
     const res = this.engine.renderer.resolution;
     if (r.width <= 0 || r.height <= 0) return { x: -1, y: -1 };

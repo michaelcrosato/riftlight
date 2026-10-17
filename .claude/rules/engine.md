@@ -27,4 +27,5 @@ Docs for a folder (read the one you need; docs/ENGINE.md is the index):
   `snapshot.ts`, `physics/rewind.ts` → determinism.md
 - `Engine.ts`, `input.ts`, `lifecycle.ts`, `settings.ts`, `clock.ts` → game-api.md
 - `animation/procedural.ts` → procedural-motion.md; the rest of `animation/` → docs/ANIMATION.md
+- `render/headlessView.ts`, `render/view.ts`, `node.ts`, `Engine.headless` → headless.md
 - `inspect/` → tooling.md · `model/`, `texture/` → docs/ASSETS.md · `src/bundle.ts` → kit.md
