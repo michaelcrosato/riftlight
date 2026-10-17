@@ -182,6 +182,7 @@ export class WorldShell {
         atrium: () => void this.leave(),
         reset: () => void this.reset(),
         riftlight: () => {
+          if (typeof location === 'undefined') return; // headless: no page to leave
           // the same page without ?game (Riftlight is the default), other URL options kept
           const u = new URL(location.href);
           u.searchParams.delete('game');

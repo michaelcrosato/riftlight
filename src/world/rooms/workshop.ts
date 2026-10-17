@@ -11,6 +11,7 @@ import { Box3, Mesh, type Object3D, OrthographicCamera, Raycaster, RingGeometry,
 import { hudSprite, type LightHandle, type ModelBuild, type ModelDef, type ModelPart, MODEL_FAMILIES, type PaletteColor, Rng, searchDefs, SpriteBatch, spriteSheet, TEXTURE_FAMILIES, type TextureDef, type TextureLayer } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import { inside, type Rect, UiCanvas } from '../../riftlight/ui/kit';
+import { pageParam } from '../page';
 import type { Knob, RoomDef, Vec3 } from '../types';
 import { type Asset, assetsOf, clean, count, LIBRARY_SOURCE, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, type StoodModel, textureLine, tilePatch, wrap } from './shelves';
 
@@ -588,7 +589,7 @@ const t = -origin.y / dir.y;`,
     const ring = new Mesh(new RingGeometry(0.92, 1, 40).rotateX(-Math.PI / 2), kit.glow('sand', 0.6));
     ctx.scene.add(ring);
 
-    const wanted = new URLSearchParams(location.search).get('asset');
+    const wanted = pageParam('asset');
     if (!(wanted && select(wanted))) choose(0, 0);
 
     const knobs: Knob[] = [

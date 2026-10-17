@@ -8,6 +8,7 @@
 import { Object3D, Vector3 } from 'three/webgpu';
 import { hudSprite, type LightHandle, type PaletteColor, searchDefs, SpriteBatch, spriteSheet, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
+import { pageParam } from '../page';
 import type { Knob, RoomDef } from '../types';
 import { assetsOf, clean, count, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, textureLine, tilePatch, wrap } from './shelves';
 
@@ -177,7 +178,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
     };
     const everything = () => shelves.flatMap((s) => [...assetsOf(s)]);
 
-    const wanted = new URLSearchParams(location.search).get('asset');
+    const wanted = pageParam('asset');
     if (!(wanted && open(wanted))) go(0, 0);
 
     kit.pad([-4.5, 0, 4], { label: '< PREV', color: 'sky', note: 'The previous asset on this shelf (Q; Shift+Q: ten back).', apply: () => step(-1) });
