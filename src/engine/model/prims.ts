@@ -1,5 +1,5 @@
 /**
- * Triangles for each primitive kind, in the part's own frame (docs/plans/asset-system.md §4).
+ * Triangles for each primitive kind, in the part's own frame (docs/ASSETS.md *The format*).
  * Box-filled kinds come out filling `[w, h, d]` exactly, centred on the origin; profile kinds
  * (`lathe`, `slab`, `tube`, `mesh`) in their own coordinates. Faces point outward (each
  * triangle is oriented against the direction its shape says is out), zero-area triangles

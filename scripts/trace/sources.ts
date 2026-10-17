@@ -4,7 +4,8 @@
 //
 //   <file.glb|.gltf>          a file, read by the importer's reader (files beside a .gltf only)
 //   pack:<pack>/<model>       a model in public/packs/<pack>.json (an import)
-//   gate-a:<file>             a Gate A model in docs/plans/gate-a/: a Kit `build(kit)` or a ModelDef
+//   gate-a:<file>             a Gate A model in src/engine/model/fixtures/gate-a/: a Kit
+//                             `build(kit)` or a ModelDef
 //   town:<building>           a Riftlight town building (src/riftlight/town/Town.ts), in its own
 //                             frame: smithy, market, tent, stash, obelisk, plaza, house (house-red,
 //                             house-teal, house-plum), lantern
@@ -139,10 +140,10 @@ async function townBuilding(name: string): Promise<Object3D> {
 
 async function gateA(file: string, root: string): Promise<{ mesh: SourceMesh; url: string }> {
   const name = file.replace(/\.ts$/, '');
-  if (!NAME.test(name)) fail(`gate-a:${file}: name a file in docs/plans/gate-a/ (like hand-cart-a)`);
-  const url = `docs/plans/gate-a/${name}.ts`;
+  if (!NAME.test(name)) fail(`gate-a:${file}: name a file in src/engine/model/fixtures/gate-a/ (like hand-cart-a)`);
+  const url = `src/engine/model/fixtures/gate-a/${name}.ts`;
   const path = join(root, url);
-  if (!existsSync(path)) fail(`no ${url} (${readdirSync(join(root, 'docs/plans/gate-a')).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)).join(', ')})`);
+  if (!existsSync(path)) fail(`no ${url} (${readdirSync(join(root, 'src/engine/model/fixtures/gate-a')).filter((f) => f.endsWith('.ts')).map((f) => f.slice(0, -3)).join(', ')})`);
   const mod = (await import(pathToFileURL(path).href)) as { build?: (kit: unknown) => void; default?: unknown } & Record<string, unknown>;
   if (typeof mod.build === 'function') {
     const { Kit } = await import('../../src/riftlight/town/kit');

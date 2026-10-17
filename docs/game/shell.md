@@ -5,13 +5,12 @@ docs/game/wire.md. The town: docs/game/town.md.
 
 `Riftlight` (`src/riftlight/game/Riftlight.ts`) is the one `Game` the page runs at `/`. It owns
 the flow, the town, the HUD and menus, saves, the difficulty sliders, the camera, music, the dev
-tools and the agent API, and it reaches gameplay only through **ports**. `new Riftlight()` runs
-the real systems; every port also has a stub in `game/stubs/` (fast, no assets) for tests and
-for building one system against the others:
+tools and the agent API, and it reaches gameplay only through **ports** (`game/ports.ts`).
+`new Riftlight()` runs the real systems (`src/riftlight/wire`, docs/game/wire.md); pass a port to
+replace one:
 
 ```ts
-new Riftlight();                       // the real hero, levels, monsters, loot and tree
-new Riftlight(stubPorts());            // all stubs
+new Riftlight();                         // the real hero, levels, monsters, loot and tree
 new Riftlight({ monsters: myMonsters }); // the real game with one port replaced
 ```
 
@@ -117,7 +116,7 @@ AI off, hitboxes, time of day).
 
 ## The playtest bot (`game/bot.ts`, `npm run playtest`)
 
-A scripted player that only uses the ports (it plays the stubs and the real game alike): it
+A scripted player that only uses the ports (it plays whatever implements them): it
 steps out of telegraphs about to land on it by their shape (circles, lines, cones; it trades
 blows with a plain swing while its life is good) and rolls, backs off and grabs health globes
 when low, fights the nearest monster (the boss first when close) with the basic attack and the

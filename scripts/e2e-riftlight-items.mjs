@@ -1,6 +1,6 @@
 /* global window, document */
 // Part of the e2e suite "riftlight": the real LootPort and TreePort in the game shell (production
-// build), with the stub hero / level / monster ports:
+// build), beside the real hero / level / monster ports:
 //
 //   new run → starter gems socketed → kill a boss → real loot drops (beam light from ctx.lights) →
 //   pick up (F) → I opens the inventory → right-click equips → the hero's StatSheet changes →

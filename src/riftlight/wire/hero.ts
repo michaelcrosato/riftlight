@@ -147,7 +147,7 @@ export class RealHero implements HeroPort {
   readonly hc: HeroController;
   readonly actor: Actor;
   readonly object = new Group();
-  /** Combat plays hit sounds and particles itself (the shell skips its stub juice). */
+  /** Combat plays hit sounds and particles itself (the shell doesn't add its own). */
   readonly juice = true;
   private readonly mover: StageMover;
   private readonly input = new IntentInput();

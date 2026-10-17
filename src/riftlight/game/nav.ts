@@ -1,6 +1,6 @@
 /**
- * Grid navigation over any `LayoutLike` (the stub levels and the real ones): shortest
- * 4-connected floor paths. Used by the stub layout (critical path) and the playtest bot.
+ * Grid navigation over any `LayoutLike`: shortest 4-connected floor paths. Used by the
+ * playtest bot (and the test layout in town/testLayout.ts for its critical path).
  */
 import type { LayoutLike } from '../core/types';
 

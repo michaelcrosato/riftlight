@@ -1,4 +1,4 @@
-// Gate A harness (docs/plans/asset-system.md §12): the token benchmark's tooling.
+// Gate A harness (docs/ASSETS.md *Gate A*): the token benchmark's tooling.
 // Run through tsx:  npx tsx scripts/gate-a.ts <command> <file.ts>
 //
 //   kit <file.ts>      arm (a): the file exports `build(kit: Kit): void`, which builds one object
@@ -11,8 +11,8 @@
 //
 // Arm (b) uses `npm run model -- check <file.ts>` and `sheet <file.ts> --out <its folder>` on its
 // exported ModelDef.
-// The briefs, the prompts both arms and the judge get, and how runs are scored:
-// docs/plans/gate-a.md.
+// The briefs, the prompts both arms and the judge got, and how runs were scored: PRs #55 and #56,
+// and the retired plan `git show 2e4c599:./docs/plans/gate-a.md` (the record: docs/ASSETS.md *Gate A*).
 import { existsSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';

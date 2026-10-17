@@ -1,5 +1,5 @@
 /**
- * Fidelity scoring (docs/plans/asset-system.md §7.6): how faithfully one set of coloured
+ * Fidelity scoring (docs/assets/importing.md *Scores*): how faithfully one set of coloured
  * triangles (a translation: an import's ModelDef, later an agent's trace) draws another (its
  * source). Both are drawn by the software rasterizer the model sheets use, at 4 yaws, at game
  * scale (Riftlight's camera at the level zoom) and close up. Per view: the silhouette IoU

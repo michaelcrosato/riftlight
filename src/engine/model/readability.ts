@@ -1,9 +1,9 @@
 /**
- * Readability checks (docs/plans/asset-system.md §4.3, the Phase 2a warnings): a part hidden
+ * Readability checks (docs/ASSETS.md *Checks*): a part hidden
  * inside another, coplanar faces of different colours (z-fighting), touching large masses too
  * close in lightness to read apart at 480×270, and, counted on the game's own pixels
  * (`rasterParts`), large parts of one colour that merge into a single block and glow that covers
- * too much of the model (Gate A's first run lost on both: docs/plans/gate-a.md). `validateModel`
+ * too much of the model (Gate A's first run lost on both: docs/ASSETS.md *Gate A*). `validateModel`
  * adds them to its warnings; each kind is one line per container, colour or colour pair, so a big
  * model stays readable.
  */

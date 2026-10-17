@@ -1,6 +1,6 @@
 /**
  * A PNG decoder in plain TypeScript (no DOM, no Node), for tools that read images headless: the
- * model importer's texture atlases (docs/plans/asset-system.md §7.2) and, later, `tex -- import`.
+ * model importer's texture atlases (docs/assets/importing.md) and, later, `tex -- import`.
  * It reads greyscale, RGB, palette, grey + alpha and RGBA images at 8 bits a channel (and the
  * 1, 2, 4 and 16-bit depths those types allow), the five scanline filters, and `tRNS`
  * transparency. Adam7-interlaced images are refused. Decompression is injected (`inflate`), so

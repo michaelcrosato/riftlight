@@ -103,7 +103,7 @@ film for anything that plays in the game.
 | `src/game/playground.ts` | Movement demo (`?game=playground`): a station for every move, a complete example of the `Game` API |
 | `src/riftlight/showcase/` | Other genres inside Riftlight, as templates: a side-scroller (`?game=arcade`), a first-person gallery, photo mode (docs/game/showcase.md) |
 | `src/world/` | Engine World (`?game=world`, docs/WORLD.md): the engine's tech demo, a room per technique (each room its own `Game`, data + a building kit), station guides, `window.__WORLD__`; e2e in `scripts/e2e-world.mjs` |
-| `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`) and their stubs (`stubs/`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`): docs/game/shell.md |
+| `src/riftlight/game/` | Riftlight, the default game at `/`: the `Riftlight` shell (flow, saves, difficulty, camera, music), the ports to gameplay systems (`ports.ts`), `window.__RIFTLIGHT__` (`api.ts`), the playtest bot (`bot.ts`): docs/game/shell.md |
 | `src/riftlight/town/` | Emberfall, the town hub: layout as data, the primitive kit, townsfolk models on the hero rig and their clips as data (`npm run anim -- check` covers them) |
 | `src/riftlight/ui/` | Pixel HUD, menus, panels and the UI kit on the engine Hud (`ui/tree`, `ui/items` are the tree and loot views) |
 | `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game, reports clear time, deaths, loot |

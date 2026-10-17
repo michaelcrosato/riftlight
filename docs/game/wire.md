@@ -53,7 +53,7 @@ one `Worlds` map (stage → `CombatWorld`).
 ## Wiring: loot, skills and the passive tree
 
 `new Riftlight()` runs the real `LootPort` and `TreePort` next to the core ports (`{
-...stubPorts(), ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports }`).
+...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports }`).
 
 **Overlay panels.** The item windows (`ui/items`) and the passive tree (`ui/tree`) paint their
 own canvas, so they are `Panel`s with `overlay: true`: the shell opens them (`open()`), keeps

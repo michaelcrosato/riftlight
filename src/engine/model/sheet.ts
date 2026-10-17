@@ -254,7 +254,7 @@ export function renderGameScale(object: Object3D, zoom: number, o: { k?: number;
 }
 
 /**
- * What Gate A's judge sees (docs/plans/asset-system.md §12): the turntable and the game-scale
+ * What Gate A's judge sees (docs/ASSETS.md *Gate A*): the turntable and the game-scale
  * previews, with no swatches, labels or check results, so models made either way look alike.
  */
 export function renderJudge(object: Object3D): SheetImage {

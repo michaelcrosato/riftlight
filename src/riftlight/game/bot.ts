@@ -1,6 +1,6 @@
 /**
- * The playtest bot: a scripted player that only uses the ports, so it plays the stubs and the
- * real systems alike. Each frame it reads a `BotView` and returns an intent:
+ * The playtest bot: a scripted player that only uses the ports, so it plays whatever
+ * implements them. Each frame it reads a `BotView` and returns an intent:
  *
  *   1. dodge: a telegraph about to land on it → step out of it (sideways out of lines and
  *      cones, away from circles) and roll when it is close; plain swings (`soft`) are traded
@@ -66,13 +66,11 @@ export interface BotOptions {
   dodge?: boolean;
 }
 
-/** How the bot reads a skill (from its tags; the stub skills by their ids). */
+/** How the bot reads a skill: from its tags (a skill without tags has no role). */
 type Role = SkillRole;
 
 function roleOf(s: SkillSlotView): Role {
-  const t = s.tags;
-  if (!t) return s.id === 'cleave' ? 'area' : s.id === 'nova' ? 'nova' : s.id === 'dash' ? 'gap' : s.id === 'warcry' ? 'buff' : 'none';
-  return roleOfTags(t);
+  return s.tags ? roleOfTags(s.tags) : 'none';
 }
 
 export class PlaytestBot {

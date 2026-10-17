@@ -6,7 +6,7 @@
  *
  * and everything around it: save slots, the difficulty sliders, settings, the HUD and
  * menus, the camera, music, the dev tools and the agent API. Gameplay systems plug in
- * through ports (game/ports.ts); stubs (game/stubs) make it playable on its own.
+ * through ports (game/ports.ts), implemented on the real systems in src/riftlight/wire.
  *
  * Stages swap inside this one Game instead of through `engine.loadGame`: the town is built
  * once and hidden while a level runs, the hero, its model and clips, the HUD, the light
@@ -44,7 +44,6 @@ import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordCl
 import { RecapTracker, type RecapState } from './recap';
 import { newSave, SaveStore, type SavesView, viewRemoved, viewSaved } from './save';
 import { loadSettings, playSettings, type Settings, storeSettings } from './settings';
-import { stubPorts } from './stubs';
 import { corePorts } from '../wire';
 import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
@@ -162,8 +161,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore } = {}) {
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
-    // pass ports to replace any of them (tests: `new Riftlight(stubPorts())`).
-    this.ports = { ...stubPorts(), ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
+    // pass ports to replace any of them.
+    this.ports = { ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
     this.store = options.store ?? new SaveStore();
     this.saves = this.store.view();
   }
@@ -1320,7 +1319,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
         ui.mini(ui.w / 2, ly + lh + 6, 'A HACK-AND-SLASH', 'mist', 'center', 'ink');
         ui.mini(ui.w / 2, ly + lh + 13, 'OF ENDLESS RIFTS', 'mist', 'center', 'ink');
       }
-      ui.mini(ui.w - 4, ui.h - 8, this.hero?.juice ? 'RIFTLIGHT' : 'STUB SYSTEMS · R6 SHELL', 'slate', 'right');
+      ui.mini(ui.w - 4, ui.h - 8, 'RIFTLIGHT', 'slate', 'right');
       this.layer.draw(ui, this.time);
       return;
     }

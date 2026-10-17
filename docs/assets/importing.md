@@ -32,14 +32,14 @@ in primitives instead (docs/assets/tracing.md). Pixel-art PNG sheets come in as 
   millimetre. A piece that is exactly a box or an n-gon prism becomes `box` or `cyl` with
   `seg: n`: re-emitted, it must give back the same vertices within 1.5 mm, triangle count, area
   and volume. Everything else stays a mesh. An unlit material glows.
-- **Colours** (plan §7.3): the faces' colours cluster in OKLab into 2–6 slots, hue weighted up and
+- **Colours**: the faces' colours cluster in OKLab into 2–6 slots, hue weighted up and
   lightness down, so a baked gradient becomes one slot. Slots go to PALETTE entries, biggest first:
   nearest by lightness, chroma and hue, a penalty when a grey and a colour swap or two slots share
   an entry, lightness order kept within a hue family. Pale wood stays `sand`, pink stays `red` or
   `orange`. Slots take the material's name when it means something (`wood`, `metalDark`), else
   `c1`, `c2`… (an atlas pack's materials are all `colormap`). A pack's slots can be re-bound
   once, by an agent looking at its swatches: `palette` in its `PACK_SOURCES` entry (below).
-- **Scores** (plan §7.6): the def and its source drawn by the sheets' rasterizer at 4 yaws, at game
+- **Scores**: the def and its source drawn by the sheets' rasterizer at 4 yaws, at game
   scale and close up. `source.fidelity` keeps the worst game-scale and close silhouette IoU, the
   mean OKLab distance where both cover a pixel, and the bounds delta. An import under 0.98 IoU is
   an importer bug. The sheet shows source, def and their difference per view, and the source and
@@ -89,6 +89,14 @@ CC0 included and a single file too, needs `source.pack` naming a `PACK_SOURCES` 
 approval link for that licence. `check` reports a missing url or licence, or one these terms refuse,
 as a problem, and `import` refuses it up front. `npm run model -- credits` writes the attribution
 list (`.scratch/model/credits.md`) from every model's `source`.
+
+**Which sources:** CC0 and attribution-only licences (CC-BY, each pack approved and credited).
+Never share-alike, no-derivatives, non-commercial or "no redistribution" terms (Quaternius's QAL
+among them); never a source that needs an account, an API key or OAuth (Sketchfab, Poly Pizza,
+Smithsonian); never fetching a site's terms forbid (Poly Haven and Lospec ban scraping: use their
+APIs). An import runs only when an agent asks; CI never touches the network. Committing someone
+else's content is a licence decision: irreversible and outside the project, so it waits for a
+human (docs/DOCTRINE.md *Escalation*).
 
 Third-party content waits on the licence escalation,
 [#49](https://github.com/michaelcrosato/riftlight/issues/49). Approval is the repository owner's own
@@ -168,5 +176,14 @@ and `wall-stone` are what an agent searches for; `tile-0042` is not.
 - In code: `importSheet(decodePng(bytes, inflate), { as, grid, source })` returns the defs, the
   imported cells' colours, the merges and every cell (`picked`, and the def it went into).
 
-**Not built until a game needs them** (plan §7.5): photo and PBR materials downsampled to a slot
-ramp, and SVG icons as `path` layers.
+**Not built until a game needs them:** photo and PBR materials downsampled to a slot ramp (area
+averaging in linear light, optional ordered dither, a seam check), SVG icons as `path` layers
+(24 texels or more: detail collapses below), and OBJ or VOX meshes (three ships both loaders).
+
+**Rejected, with evidence** (don't build them again):
+- *Voxel-to-box decomposition:* on 16 Kenney Furniture models it took a median of 109 boxes (up
+  to 609), turned to voxel mush close up, and was more text than the mesh. Trace instead.
+- *General primitive fitting:* research-grade, and no permissively licensed JS library exists.
+- *Base64 meshes:* no smaller than millimetre text, and unreadable.
+- *Committing source binaries:* binary only with human approval (docs/DOCTRINE.md); downloads stay
+  in `.scratch/import-cache/`.

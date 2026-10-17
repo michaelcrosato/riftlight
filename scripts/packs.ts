@@ -136,7 +136,7 @@ export async function download(p: PackSource): Promise<Uint8Array> {
   return bytes;
 }
 
-/** An approved pack's files (unzipped), once its licence files show its licence (§7.1). */
+/** An approved pack's files (unzipped), once its licence files show its licence (docs/assets/importing.md *Packs*). */
 export async function packDownload(p: PackSource): Promise<Map<string, Uint8Array>> {
   const bytes = await download(p);
   const zipped = bytes[0] === 0x50 && bytes[1] === 0x4b;

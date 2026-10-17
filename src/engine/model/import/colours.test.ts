@@ -6,7 +6,7 @@ import { hexString, mapColours, slotName, type ColourSample } from './colours';
 
 type Family = 'warm' | 'grey' | 'green' | 'blue' | 'purple';
 /**
- * The labelled fixture (docs/plans/asset-system.md §7.3): source colours a kit might use, each
+ * The labelled fixture (docs/assets/importing.md *Colours*): source colours a kit might use, each
  * with the palette entries a person would accept for it. Woods include the pale ones a nearest
  * match turned white; pinks must never go white.
  */

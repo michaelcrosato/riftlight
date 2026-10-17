@@ -1,4 +1,4 @@
-// Mesh import (docs/plans/asset-system.md §7.2): round trips of our own models through GLB.
+// Mesh import (docs/assets/importing.md): round trips of our own models through GLB.
 // Every fixture is made here, at test time, from the library (principle 5: no binaries, no
 // third-party content, no network): GLBs from GLTFExporter, atlases from encodePng.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';

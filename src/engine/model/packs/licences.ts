@@ -1,5 +1,5 @@
 /**
- * Licences an imported model may carry, as data (docs/plans/asset-system.md §7.1, §7.7). Our own
+ * Licences an imported model may carry, as data (docs/assets/importing.md *Provenance and licences*). Our own
  * work (`LicenseRef-own`, its `source.url` a path in this repository or its GitHub URL) is allowed
  * anywhere. Anyone else's work, CC0 included and a single file too, comes only from a pack whose
  * `PACK_SOURCES` entry links the repository owner's approving comment on the licence escalation

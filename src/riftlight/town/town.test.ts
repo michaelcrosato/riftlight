@@ -5,7 +5,7 @@ import { HERO_RIG } from '../../game/hero/rig';
 import { Rng } from '../core/rng';
 import { bfs } from '../game/nav';
 import { PlaytestBot } from '../game/bot';
-import { generateLayout } from '../game/stubs/layout';
+import { testChainLayout } from './testLayout';
 import { collideBlockers, Kit } from './kit';
 import { NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
@@ -135,10 +135,10 @@ describe('town layout', () => {
   });
 });
 
-describe('stub level + bot navigation', () => {
+describe('test layout + bot navigation', () => {
   it('generates a connected chain of rooms from start to exit', () => {
     for (const seed of [1, 2, 3, 42]) {
-      const L = generateLayout(new Rng(seed), 5);
+      const L = testChainLayout(new Rng(seed), 5);
       expect(L.rooms.length).toBe(5);
       expect(L.cell(L.start.x, L.start.z)).toBe(1);
       expect(L.cell(L.exit.x, L.exit.z)).toBe(1);
@@ -150,7 +150,7 @@ describe('stub level + bot navigation', () => {
   });
 
   it('the bot walks the critical path toward the exit and dodges telegraphs', () => {
-    const L = generateLayout(new Rng(7), 4);
+    const L = testChainLayout(new Rng(7), 4);
     const hero = { actor: { position: new Vector3(L.start.x + 0.5, 0, L.start.z + 0.5), radius: 0.4 }, skills: () => [{ slot: 'dodge', id: 'roll', remaining: 0, usable: true }] };
     const exit = new Vector3(L.exit.x + 0.5, 0, L.exit.z + 0.5);
     const level = { layout: L, origin: { x: 0, z: 0 }, exit, exitOpen: false, telegraphs: () => [] as unknown[], monsters: () => [] };

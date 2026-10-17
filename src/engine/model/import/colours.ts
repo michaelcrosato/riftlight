@@ -1,5 +1,5 @@
 /**
- * Palette mapping for imports (docs/plans/asset-system.md §7.3): source colours → a few palette
+ * Palette mapping for imports (docs/assets/importing.md *Colours*): source colours → a few palette
  * slots, each bound to a PALETTE entry. It works on a whole model (or a whole pack), never one
  * colour at a time, because a nearest match per colour turns pale wood into `white`:
  *

@@ -1,10 +1,10 @@
 /**
  * Riftlight, the showcase ARPG (docs/GAME.md). The game shell is `Riftlight` (a `Game`);
- * gameplay systems plug in through the ports in `game/ports.ts`, with stubs in
- * `game/stubs/` so the whole flow runs before they exist:
+ * gameplay systems plug in through the ports in `game/ports.ts`, implemented on the real
+ * systems in `wire/`. Pass a port to replace one:
  *
- *   Engine.start(new Riftlight(), RIFTLIGHT_OPTIONS);                    // all stubs
- *   Engine.start(new Riftlight({ hero: realHero, levels: realLevels }));  // real systems
+ *   Engine.start(new Riftlight(), RIFTLIGHT_OPTIONS);           // every port real
+ *   Engine.start(new Riftlight({ hero: myHero }), RIFTLIGHT_OPTIONS); // one port replaced
  */
 import type { EngineOptions } from '../engine';
 import { RIFTLIGHT_TOUCH_BUTTONS } from './game/touch';
@@ -12,7 +12,6 @@ import { TOWN_LAYOUT } from './town/layout';
 
 export { Riftlight, CAMERA, type Screen } from './game/Riftlight';
 export * from './game/ports';
-export { stubPorts } from './game/stubs';
 export { PlaytestBot, type BotReport, type BotView, type BotIntent } from './game/bot';
 export { type RiftlightApi, type RiftlightState } from './game/api';
 export { SaveStore, SAVE_VERSION, migrate, parseSave, exportSave, newSave } from './game/save';

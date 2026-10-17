@@ -32,3 +32,5 @@ dist-single/
 
 # Gate A judge images (npx tsx scripts/gate-a.ts judge <file.ts>): build output
 *.judge.png
+# `gate-a.ts kit <file>` draws <file>.png next to a Gate A fixture
+src/engine/model/fixtures/gate-a/*.png

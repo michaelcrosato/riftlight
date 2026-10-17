@@ -1,5 +1,5 @@
 /**
- * Gate B (docs/plans/asset-system.md §5): how dense texels may be before they shimmer, measured
+ * Gate B (docs/assets/textures.md *Texel density*): how dense texels may be before they shimmer, measured
  * in the real renderer. A scene in the Asset Lab (a floor, a wall, two crates and a crate that
  * slides, in three textures) is stepped one frame at a time (`Engine.step`) through a camera
  * sequence while each frame is captured and compared with the one before; `scripts/gate-b.ts`

@@ -1,6 +1,6 @@
 /**
  * Third-party packs the importer may fetch (`npm run model -- import-pack <id>`,
- * docs/plans/asset-system.md §7.1). Committing someone else's content is a licence decision, so a
+ * docs/assets/importing.md *Which sources*). Committing someone else's content is a licence decision, so a
  * pack joins this list only once the repository owner approves it on the licence escalation (#49,
  * https://github.com/michaelcrosato/riftlight/issues/49), and `approved` links that comment
  * (`APPROVAL` checks the link's form). Agents here act through the owner's GitHub account, so no

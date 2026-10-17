@@ -1,13 +1,13 @@
 # Tracing (`src/engine/model/trace.ts`, `scripts/trace/`; `npm run model -- trace`)
 
 An import is faithful and frozen; a trace is the same object redrawn in primitives with the
-library, so it takes params, seeds and themes like any def (plan §7.4). The agent decompiles;
+library, so it takes params, seeds and themes like any def. The agent decompiles;
 `npm run model -- trace` measures the source for it and judges what it wrote.
 
 **The loop:**
 
 1. **Pick a source** (`--against`): a `.glb`/`.gltf` file, `pack:<pack>/<model>` (an import), or
-   our own code-built content: `gate-a:<file>` (docs/plans/gate-a/), `town:<building>` (smithy,
+   our own code-built content: `gate-a:<file>` (Gate A's judged models, docs/ASSETS.md *Gate A*), `town:<building>` (smithy,
    market, tent, stash, obelisk, plaza, house, lantern, each in its own frame),
    `monster:<seed|boss id>` (the body at its game scale), `asset:<name>` (public/assets/).
    Code-built sources become meshes when they are traced. `npm run model -- export-glb <source>`
@@ -39,7 +39,7 @@ library, so it takes params, seeds and themes like any def (plan §7.4). The age
 | pieces | every connected piece (triangles sharing a vertex, welded to the mm), biggest first, `p1`, `p2`… as the sheet labels them: its colours (all of them: a top or a tip in another colour), its box, turned (`rot`) when that is clearly tighter (half the volume, or 5% less on a piece that fills 60% of it: a round or pointed piece keeps its axis-aligned box), its `fill` (its volume ÷ that box: 1 a box, ~0.8 a cylinder, ~0.5 a ball, ~0.3 a cone), and, when it is one, the primitive to paste. `exact`: a box, prism, frustum (`cyl` with `top`) or cone that re-emits its vertices within 1.5 mm; `close`: within 3% of its size (an odd ring keeps its bounds centred, so its axis sits a little off a modelling tool's). Pieces alike print under one line |
 | hull hints | boxes fitted to a convex decomposition (Rapier's V-HACD): where the masses are when the pieces aren't primitives. Hints only |
 
-**What the score says** (the importer's `scoreFidelity`, plan §7.6): the source and the def drawn
+**What the score says** (the importer's `scoreFidelity`, docs/assets/importing.md *Scores*): the source and the def drawn
 by one rasterizer at 4 yaws, at game scale (Riftlight's camera at the level zoom) and close up.
 
 | number | means | passes |
@@ -104,7 +104,7 @@ scores. A trace of someone else's model keeps their licence, author and pack: tr
 it ours, and it waits on #49 as the import does. `trace` prints the line and says when the def's
 own is missing or stale.
 
-Worked traces are in `docs/plans/trace/`: the ten above and the two that proved the tool (the
+Worked traces are in `src/engine/model/fixtures/trace/`: the ten above and the two that proved the tool (the
 generated tree, parametric in `tiers`, and Gate A's Kit hand cart). A unit test scores every one
 again against what it records and checks it clean (src/engine/model/trace.test.ts), so a change to
 the library, the scorer or a source that moves one shows.

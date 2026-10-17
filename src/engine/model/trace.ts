@@ -1,5 +1,5 @@
 /**
- * Trace (docs/plans/asset-system.md §7.4): an agent redraws a source mesh in primitives with the
+ * Trace (docs/assets/tracing.md): an agent redraws a source mesh in primitives with the
  * library, so it comes out editable (params, seeds, themes), and this module measures the source
  * for it and judges the result. The LLM decompiles; the tool judges. Pure (no Node, no GPU), so
  * the CLI (`npm run model -- trace`) and the tests share it.
@@ -9,8 +9,8 @@
  *   box is clearly tighter, how much of that box it fills, and the primitive it is, exactly or
  *   closely (a `box`, a `cyl` with `top`, a `cone`), ready to paste; boxes fitted to convex hulls
  *   (a decomposition the caller computes, e.g. Rapier's V-HACD) as hints only; the source colours
- *   clustered onto PALETTE names by the importer's mapper (§7.3).
- * - `traceVerdict(score)`: a fidelity score (`scoreFidelity`, §7.6) against `TRACE_THRESHOLDS`;
+ *   clustered onto PALETTE names by the importer's mapper (docs/assets/importing.md *Colours*).
+ * - `traceVerdict(score)`: a fidelity score (`scoreFidelity`) against `TRACE_THRESHOLDS`;
  *   `paletteFloor(source)`: the best colour score a trace in PALETTE colours can reach.
  * - `renderTraceReference`, `renderTraceSheet`: the PNGs (front / side / top on a 0.1 m grid; the
  *   source's outline drawn over the trace per view, with the numbers).
@@ -39,10 +39,10 @@ import { MAX_MATERIALS } from './validate';
 import { GAME_VIEW, gamePxPerMetre } from './view';
 
 /**
- * When a trace passes (§7.6): its worst game-scale view's silhouette IoU, its worst close view's,
+ * When a trace passes (docs/assets/tracing.md *What the score says*): its worst game-scale view's silhouette IoU, its worst close view's,
  * and the mean OKLab distance where both cover a pixel, over the source's palette floor
  * (`paletteFloor`: 0 for a source in palette colours, so there the colour limit is `colour`).
- * Tuned on Phase 6's ten traces (docs/assets/tracing.md): the plan started at 0.85 / 0.75 / 0.08
+ * Tuned on Phase 6's ten traces (docs/assets/tracing.md): they started at 0.85 / 0.75 / 0.08
  * absolute, which every trace of a primitive source cleared at the first scoring while a monster in
  * its own colours was out of reach in practice (floors 0.074 and 0.082).
  */

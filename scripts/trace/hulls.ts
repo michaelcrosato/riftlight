@@ -1,4 +1,4 @@
-// Convex decomposition for `npm run model -- trace --reference` (docs/plans/asset-system.md §7.4):
+// Convex decomposition for `npm run model -- trace --reference` (docs/assets/tracing.md):
 // Rapier 0.20's V-HACD (`ColliderDesc.convexDecomposition`), headless. Hints only: the pieces
 // V-HACD cuts follow volume, not how a model is built, so the reference prints their fitted
 // boxes after the exact per-component ones. Needs the engine hooks (./hooks.ts) under tsx.

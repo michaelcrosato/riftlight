@@ -1,5 +1,5 @@
 /**
- * glTF and GLB → coloured source triangles, headless (docs/plans/asset-system.md §7.2). three's
+ * glTF and GLB → coloured source triangles, headless (docs/assets/importing.md). three's
  * `GLTFLoader` reads the geometry. It can't make images without a DOM, so this reads the file's
  * container itself first: its buffers (the GLB's own, data URIs, or files beside a `.gltf`) and
  * its texture images (embedded in a `bufferView` or beside the file), decoded by the engine's

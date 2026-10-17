@@ -66,10 +66,11 @@
 //                              palette floor of a source off the palette: the colour score its
 //                              nearest PALETTE entries reach, the best a trace can do, which the
 //                              colour limit sits on
-//        sources: a .glb/.gltf file, pack:<pack>/<model>, gate-a:<file> (docs/plans/gate-a/),
-//        town:<building> (smithy, market, tent, stash, obelisk, plaza, house, lantern),
-//        monster:<seed|boss id>, asset:<name> (public/assets/: tree, coin, hero). The source is
-//        normalized as imports are: base on y = 0, footprint centred (--scale s, --front +z|-z|+x|-x).
+//        sources: a .glb/.gltf file, pack:<pack>/<model>, gate-a:<file> (Gate A's judged models,
+//        src/engine/model/fixtures/gate-a/), town:<building> (smithy, market, tent, stash,
+//        obelisk, plaza, house, lantern), monster:<seed|boss id>, asset:<name> (public/assets/:
+//        tree, coin, hero). The source is normalized as imports are: base on y = 0, footprint
+//        centred (--scale s, --front +z|-z|+x|-x).
 //        A file outside the repo says whose it is: --licence, --source, --author, --pack
 //   export-glb <source> [--out .scratch/trace-src/<name>.glb]
 //                              a source as a GLB (one mesh per node and colour; its provenance in
