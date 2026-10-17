@@ -160,6 +160,15 @@ export class WorldShell {
     );
   }
 
+  /** The menu's way to Riftlight: the same page without ?game (Riftlight is the default), other URL options kept. Headless: nothing (no page to leave). */
+  toRiftlight(): void {
+    if (typeof location === 'undefined') return;
+    const u = new URL(location.href);
+    u.searchParams.delete('game');
+    u.searchParams.delete('room');
+    location.assign(u.toString());
+  }
+
   openRooms(): void {
     const current = this.room?.def.id ?? '';
     this.layer.open(
@@ -181,13 +190,7 @@ export class WorldShell {
         glossary: () => (close(), this.openGlossary()),
         atrium: () => void this.leave(),
         reset: () => void this.reset(),
-        riftlight: () => {
-          // the same page without ?game (Riftlight is the default), other URL options kept
-          const u = new URL(location.href);
-          u.searchParams.delete('game');
-          u.searchParams.delete('room');
-          location.assign(u.toString());
-        },
+        riftlight: () => this.toRiftlight(),
       }),
       { modal: true, onClose: () => this.unfreeze() },
     );

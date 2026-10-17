@@ -15,7 +15,8 @@ this file is how the work is done.
 3. **Build**: make the smallest change that fully solves the task. Add or update
    tests alongside behavior changes.
 4. **Verify**: run `scripts/check.sh` until it passes. A task is not done while
-   checks fail. For UI or runtime behavior, actually run it, and look as well as
+   checks fail. Check gameplay headless, in vitest (docs/engine/headless.md); e2e
+   suites hold pixels and the DOM. For UI or runtime behavior, actually run it, and look as well as
    measure: capture frames and look at them, not only the numbers. Show every new
    check fails when what it guards breaks (break it once, see red, put it back);
    a test that cannot fail proves nothing. Before a non-trivial change ships, someone
@@ -111,7 +112,7 @@ film for anything that plays in the game.
 | `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
 | `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md`, `docs/GUIDE-ASSETS.md`, `public/handoff/` | The engine kit for agents outside this repo (`npm run bundle`; the site serves it at `/engine/`, `/engine.zip`, and the page to share at `/handoff/`): one-module `pixel-engine.js`, the guides (GUIDE.md; GUIDE-ASSETS.md ships as `ASSETS.md`; their named code blocks become pages; `src/guide.test.ts` and `src/guide-assets.test.ts` keep their names true), generated `API.md`, `LIBRARY.md` and `CREDITS.md`, `check.mjs` (`--sheets` draws a game's models). Engine changes a game can see bump the version and add a `CHANGELOG.md` section; once CI passes on `main`, its `release` job publishes that version's kit as a GitHub Release (`engine-v<version>`) |
-| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`); moves in `scripts/e2e-moves.mjs`, the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
+| `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`): pictures, the DOM, the GPU; the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
 `ShaderPass`, `RenderPixelatedPass`, `(Raw)ShaderMaterial`, `onBeforeCompile` or GLSL;

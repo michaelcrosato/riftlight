@@ -5,18 +5,19 @@
 // Covers:
 //   hud        pixel HUD overlay: art-resolution canvas, integer-scaled with the framing,
 //              follows R (320×180), draws the coin counter in palette colors
-//   audio      unlock on first input, hero events → sound effects, music, mute (key, panel,
-//              persisted), headless-safe (counted even when silent)
-//   particles  landing dust, skid dust, coin sparkle, ground-pound impact; one emitter
-//              (draw) per preset; visible in the frame
-//   triggers   coins are trigger volumes (collected once, the trigger is removed)
+//   audio      unlock on first input, music, mute (key, panel, persisted)
+//   particles  visible in the frame
 //   gamepad    standard gamepad: left stick moves, A jumps
-//   pause      game time and presses freeze while paused; nothing fires on resume
-//   keys       engine hotkeys are configurable (engine.debugKeys), ` creates the panel
-//   lifecycle  engine.loadGame between two games ×5: bodies, colliders, controllers,
-//              triggers, tags, scene objects, GPU geometries/textures back to baseline;
-//              the sandbox's textured + vertex-colored toon materials render, and its textured
-//              model (brick-wall) shows its bricks as built and merged; dispose()
+//   pause      game time and presses freeze while paused (the live loop); nothing fires on resume
+//   keys       engine hotkeys are configurable (engine.debugKeys)
+//   lifecycle  engine.loadGame between two games ×5: GPU geometries/textures back to baseline;
+//              the sandbox's textured toon floor and its textured model (brick-wall), built and
+//              merged, show their textures; the first frame after a slow load; dispose() frees
+//              the canvases and UI
+//
+// Gameplay checks run headless in vitest: hero events → sounds, particles and coin triggers in
+// src/engine/systems.test.ts; loadGame (world counts, level doors, concurrent loads, input while
+// loading, dispose during a load, the sandbox's materials) in src/engine/loadGame.test.ts.
 //
 // Frames land in .scratch/e2e/systems-*.png. Self-contained: e2e.mjs passes its helpers in.
 import { writeFile } from 'node:fs/promises';
@@ -91,57 +92,8 @@ export async function runSystems(h) {
     await until(page, (e) => !e.audio.muted);
     check(await E(() => !window.__PIXEL_ENGINE__.audio.muted), 'the panel button unmutes');
 
-    // ---------------------------------------------------------------- hero events → sound + particles
-    const events = await E(async () => {
-      const e = window.__PIXEL_ENGINE__;
-      const T = window.__T;
-      const a = e.audio.counts;
-      const before = { ...a };
-      const out = {};
-      await T.place([0, 0, 4]);
-      // jump → land: jump sound, land sound, dust
-      await T.tap('Space');
-      const peakDust = { n: 0 };
-      await T.until((hero) => hero.state === 'jump', 500);
-      const land = await T.until((hero) => hero.stats.landings > 0 && hero.state !== 'jump' && hero.state !== 'fall', 2500);
-      peakDust.n = e.particles.alive;
-      out.jump = (a.jump ?? 0) - (before.jump ?? 0);
-      out.land = (a.land ?? 0) - (before.land ?? 0);
-      out.dust = peakDust.n;
-      out.landed = land.ok;
-      // double jump: jump again right on landing, while running
-      await T.place([-6, 0, 10], Math.PI / 2);
-      T.set(['KeyD'], true);
-      await T.until((hero) => hero.state === 'run', 2500);
-      const kinds = [];
-      for (let i = 0; i < 2; i++) {
-        await T.tap('Space');
-        kinds.push(e.game.hero.jumpKind);
-        await T.until((hero) => hero.grounded && hero.state !== 'jump' && hero.state !== 'fall', 2500);
-      }
-      T.set(['KeyD'], false);
-      out.doubleJump = (a.doubleJump ?? 0) - (before.doubleJump ?? 0);
-      out.kind = kinds.join(',');
-      await T.wait(1500);
-      // ground pound: impact particles + boom
-      await T.place([0, 0, 4]);
-      await T.tap('Space');
-      await T.until((hero) => hero.state === 'jump' && hero.vy < 6, 1500);
-      await T.tap('KeyC');
-      await T.until((hero) => hero.state === 'groundPoundLand', 3000);
-      out.groundPound = (a.groundPound ?? 0) - (before.groundPound ?? 0);
-      out.whoosh = (a.whoosh ?? 0) - (before.whoosh ?? 0);
-      out.impact = e.particles.alive;
-      // freeze right after the impact and look at it
-      out.emitters = e.particles.emitterCount;
-      out.sprites = e.scene.getObjectByName('particles').children.length;
-      return out;
-    });
-    check(events.jump >= 1 && events.land >= 1 && events.landed, `jump + land sounds (${events.jump}, ${events.land})`);
-    check(events.dust >= 3, `landing dust (${events.dust} particles)`);
-    check(events.doubleJump >= 1 && events.kind.includes('DoubleJump'), `double jump sound (${events.doubleJump}, ${events.kind})`);
-    check(events.groundPound === 1 && events.whoosh >= 1 && events.impact >= 15, `ground pound: whoosh + boom + ${events.impact} impact particles`);
-    check(events.sprites === events.emitters && events.emitters <= 5, `one emitter (draw call) per preset: ${events.emitters}`);
+    // ---------------------------------------------------------------- particles in the frame
+    await E(() => window.__T.place([0, 0, 4]));
     // Particles are visible: the same frame with and without them (a sparkle burst in
     // front of the hero, a few frames old so it has spread out).
     await E(() => {
@@ -158,60 +110,6 @@ export async function runSystems(h) {
     await E(() => (window.__PIXEL_ENGINE__.particles.group.visible = true));
     const pd = meanDiff(withParticles, without);
     check(pd > 0.05 && pd < 5, `particles show up in the frame, and nothing else changes (mean diff ${pd.toFixed(3)})`);
-
-    const more = await E(async () => {
-      const e = window.__PIXEL_ENGINE__;
-      const T = window.__T;
-      const a = e.audio.counts;
-      const before = { ...a };
-      await T.wait(1000);
-      // skid: run, reverse
-      await T.place([-4, 0, 6]);
-      T.set(['KeyD'], true);
-      await T.until((hero) => hero.state === 'run', 2500);
-      await T.wait(300);
-      T.set(['KeyA'], true);
-      T.set(['KeyD'], false);
-      const sk = await T.until((hero) => hero.state === 'skid', 800);
-      await T.wait(60);
-      const skidDust = e.particles.alive;
-      T.set(['KeyA'], false);
-      await T.wait(800);
-      // steps + punch
-      T.set(['KeyD'], true);
-      await T.wait(600);
-      T.set(['KeyD'], false);
-      await T.wait(300);
-      await T.tap('KeyJ');
-      await T.wait(300);
-      // coin via trigger: sparkle + coin sound, trigger removed
-      const triggers0 = e.physics.counts().triggers;
-      const coins0 = e.game.collected;
-      const coinSounds0 = a.coin ?? 0;
-      await T.wait(1000); // let earlier particles die out
-      await T.place([4, 0, -4]);
-      const sparkle = e.particles.alive;
-      const coinSounds = (a.coin ?? 0) - coinSounds0;
-      // fall off the world: hurt
-      await T.place([0, 0, 18]);
-      await T.until(() => e.game.respawns > 0, 4000);
-      return {
-        skid: sk.ok,
-        skidSound: (a.skid ?? 0) - (before.skid ?? 0),
-        skidDust,
-        step: (a.step ?? 0) - (before.step ?? 0),
-        punch: (a.punch ?? 0) - (before.punch ?? 0),
-        coin: coinSounds,
-        collected: e.game.collected - coins0,
-        triggers: triggers0 - e.physics.counts().triggers,
-        sparkle,
-        hurt: (a.hurt ?? 0) - (before.hurt ?? 0),
-      };
-    });
-    check(more.skid && more.skidSound >= 1 && more.skidDust >= 1, `skid sound + skid dust (${more.skidSound}, ${more.skidDust})`);
-    check(more.step >= 2 && more.punch >= 1, `footsteps (${more.step}) and punch (${more.punch}) sounds`);
-    check(more.collected === 1 && more.coin === 1 && more.triggers === 1 && more.sparkle >= 5, `coin trigger: collected once, coin sound, sparkle (${more.sparkle}), trigger removed`);
-    check(more.hurt === 1, 'falling off the island plays hurt');
 
     // ---------------------------------------------------------------- gamepad
     const pad = await E(async () => {
@@ -301,10 +199,8 @@ export async function runSystems(h) {
     // ---------------------------------------------------------------- level lifecycle
     const probe = () => {
       const e = window.__PIXEL_ENGINE__;
-      let objects = 0;
-      e.scene.traverse(() => objects++);
       const mem = e.renderer.renderer.info.memory;
-      return { game: e.game.name, ...e.physics.counts(), children: e.scene.children.length, objects, geometries: mem.geometries, textures: mem.textures };
+      return { game: e.game.name, geometries: mem.geometries, textures: mem.textures };
     };
     const load = async (name) => {
       await E(async (n) => {
@@ -320,9 +216,8 @@ export async function runSystems(h) {
     for (const name of ['playground', 'sandbox']) {
       const [first, ...rest] = seen[name];
       const same = rest.every((p) => JSON.stringify(p) === JSON.stringify(first));
-      check(same && first.game.length > 0, `${name} ×${seen[name].length}: counts return to baseline ${JSON.stringify(first)}${same ? '' : ' → ' + JSON.stringify(rest)}`);
+      check(same && first.game.length > 0, `${name} ×${seen[name].length}: GPU geometries and textures return to baseline ${JSON.stringify(first)}${same ? '' : ' → ' + JSON.stringify(rest)}`);
     }
-    check(seen.playground[0].controllers === 1 && seen.playground[0].triggers > 0, 'baseline holds exactly one character controller and the coin triggers');
 
     // Sandbox: textured floor + vertex-colored pillar through toonify.
     await load('sandbox');
@@ -332,13 +227,7 @@ export async function runSystems(h) {
     });
     await waitFrames(page, 5);
     const textured = await freshCapture(page, `systems-${tag}-sandbox.png`);
-    const tex = await E(() => {
-      const f = window.__PIXEL_ENGINE__.game.floor;
-      const m = f.material[2]; // the top face
-      window.__floorMat = m;
-      return { map: !!m.map, nearest: m.map?.magFilter === 1003 && m.map?.minFilter === 1003, toon: m.isMeshToonNodeMaterial === true };
-    });
-    check(tex.map && tex.nearest && tex.toon, 'toonify kept the floor texture, nearest-filtered, on a toon material');
+    await E(() => (window.__floorMat = window.__PIXEL_ENGINE__.game.floor.material[2])); // the top face
     await E(() => {
       const f = window.__PIXEL_ENGINE__.game.floor;
       const plain = f.material[2].clone();
@@ -352,17 +241,13 @@ export async function runSystems(h) {
       const e = window.__PIXEL_ENGINE__;
       e.game.floor.material = e.game.floor.material.map((m, i) => (i === 2 ? window.__floorMat : m));
     });
-    // A textured model (buildModel, the bricks texture) and a merged copy: map and UVs on both
-    const walls = await E(() => {
+    // A textured model (buildModel, the bricks texture) and a merged copy
+    await E(() => {
       const g = window.__PIXEL_ENGINE__.game;
       const built = [];
       g.wall.traverse((o) => o.isMesh && o.material.map && built.push(o));
-      const merged = g.mergedWall.filter((m) => m.material.map);
-      window.__walls = [...built, ...merged].map((m) => [m, m.material]);
-      const all = [...built, ...merged];
-      return { built: built.length, merged: merged.length, uv: all.every((m) => m.geometry.getAttribute('uv')?.count === m.geometry.getAttribute('position').count), maps: [...new Set(all.map((m) => m.material.map.name))] };
+      window.__walls = [...built, ...g.mergedWall.filter((m) => m.material.map)].map((m) => [m, m.material]);
     });
-    check(walls.built === 1 && walls.merged === 1 && walls.uv && walls.maps.join() === 'tex:bricks', `a textured model and its merged copy carry the bricks map and UVs (${JSON.stringify(walls)})`);
     await waitFrames(page, 3);
     const bricks = await freshCapture(page, `systems-${tag}-sandbox-walls.png`);
     await E(() => {
@@ -386,41 +271,6 @@ export async function runSystems(h) {
     checkClean(await state(page), logs);
 
     // ---------------------------------------------------------------- loadGame edge cases
-    // A level door: loadGame from the running game's own update() and from a trigger's
-    // onEnter (inside the fixed step). The swap waits for the frame to end.
-    const doors = await E(async () => {
-      const e = window.__PIXEL_ENGINE__;
-      const G = window.__PIXEL_GAMES__;
-      e.manual = false;
-      const out = {};
-      let pending = null;
-      const g = e.game; // the sandbox
-      const update = g.update.bind(g);
-      g.update = (ctx, dt) => {
-        update(ctx, dt);
-        if (!pending) pending = e.loadGame(G.playground());
-      };
-      await new Promise((r) => {
-        const poll = () => (pending ? r() : requestAnimationFrame(poll));
-        poll();
-      });
-      await pending;
-      out.fromUpdate = e.game.name;
-      pending = null;
-      const f = e.game.hero.feet;
-      e.physics.trigger({ sphere: 1.5 }, [f.x, f.y + 0.8, f.z], { tag: 'character', once: true, onEnter: () => (pending = e.loadGame(G.sandbox())) });
-      await new Promise((r) => {
-        const poll = () => (pending ? r() : requestAnimationFrame(poll));
-        poll();
-      });
-      await pending;
-      out.fromTrigger = e.game.name;
-      return out;
-    });
-    check(doors.fromUpdate === 'Move Playground' && doors.fromTrigger === 'Sandbox', `loadGame from update() and from a trigger's onEnter (${JSON.stringify(doors)})`);
-    await waitFrames(page, 5);
-    checkClean(await state(page), logs, 'level doors: ');
-
     // Two loads at once: the latest wins and nothing of the other level is left over.
     await E(async () => {
       const e = window.__PIXEL_ENGINE__;
@@ -430,20 +280,19 @@ export async function runSystems(h) {
     await waitFrames(page, 10);
     const both = await E(probe);
     const base = seen.playground[0];
-    const sameWorld = ['game', 'bodies', 'colliders', 'tags', 'bindings', 'triggers', 'controllers', 'children', 'objects'].every((k) => both[k] === base[k]);
     // GPU counts can only be lower (the sandbox never rendered), never higher.
-    check(sameWorld && both.geometries <= base.geometries && both.textures <= base.textures, `concurrent loadGame(sandbox) + loadGame(playground): only the playground is left (${JSON.stringify(both)})`);
+    check(both.game === base.game && both.geometries <= base.geometries && both.textures <= base.textures, `concurrent loadGame(sandbox) + loadGame(playground): no GPU resources of the sandbox left (${JSON.stringify(both)})`);
     checkClean(await state(page), logs, 'concurrent loads: ');
 
-    // Input made while a level loads does not fire once it runs.
+    // A hotkey pressed while a level loads does not fire once it runs (hotkeys are the live loop's),
+    // and a slow load does not make the first frame catch up on the clock.
     const loadInput = await E(async () => {
       const e = window.__PIXEL_ENGINE__;
       const mode = e.renderer.mode;
       const game = window.__PIXEL_GAMES__.playground();
       const setup = game.setup.bind(game);
       game.setup = async (ctx) => {
-        e.input.setKey('Space', true); // pressed while the level loads
-        e.input.setKey('KeyP', true);
+        e.input.setKey('KeyP', true); // pressed while the level loads
         await setup(ctx);
         await new Promise((r) => setTimeout(r, 250)); // a slow load: the clock moves on
       };
@@ -452,14 +301,13 @@ export async function runSystems(h) {
       await new Promise((r) => requestAnimationFrame(r)); // the engine ticks first in this frame
       const firstSteps = e.physics.steps - steps0;
       await new Promise((r) => setTimeout(r, 300));
-      e.input.setKey('Space', false);
       e.input.setKey('KeyP', false);
-      return { jumps: e.game.hero.stats.jumps, mode: e.renderer.mode === mode, firstSteps };
+      return { mode: e.renderer.mode === mode, firstSteps };
     });
-    check(loadInput.jumps === 0 && loadInput.mode, `presses made while loading are dropped (jumps ${loadInput.jumps}, P ignored ${loadInput.mode})`);
+    check(loadInput.mode, 'a hotkey (P) pressed while loading does nothing once the level runs');
     check(loadInput.firstSteps <= 1, `the first frame after loading is one 1/60 s step, not a stale-clock catch-up (${loadInput.firstSteps} physics steps)`);
 
-    // dispose() while a load is in flight: setup finishes on a live world, then all is freed.
+    // dispose() while a load is in flight: the canvases and the UI go.
     const disposed = await E(async () => {
       const e = window.__PIXEL_ENGINE__;
       const p = e.loadGame(window.__PIXEL_GAMES__.sandbox());
@@ -471,16 +319,9 @@ export async function runSystems(h) {
         settled,
         canvases: document.querySelectorAll('canvas').length,
         debug: !!document.querySelector('.debug-ui'),
-        counts: (() => {
-          try {
-            return e.physics.counts();
-          } catch {
-            return 'freed';
-          }
-        })(),
       };
     });
-    check(disposed.settled === 'resolved' && disposed.canvases === 0 && !disposed.debug, `engine.dispose() during a loadGame: the load settles, canvases and UI go (${JSON.stringify(disposed)})`);
+    check(disposed.canvases === 0 && !disposed.debug, `engine.dispose() during a loadGame: canvases and UI go (${JSON.stringify(disposed)})`);
     await page.waitForTimeout(300);
     check(logs.length === 0, `no errors after dispose${logs.length ? ': ' + logs.join(' | ') : ''}`);
   } catch (e) {

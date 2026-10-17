@@ -11,6 +11,8 @@
 import { fileURLToPath } from 'node:url';
 import { Engine, type EngineOptions, type Game, type HeadlessOptions, type Viewport } from '../engine';
 import { nodeAssets } from '../engine/node';
+
+export { settle, stepUntil } from '../engine/node';
 import { Riftlight, RIFTLIGHT_OPTIONS } from './index';
 import { type RiftlightApi } from './game/api';
 import { SaveStore } from './game/save';
@@ -51,26 +53,6 @@ export async function headlessRiftlight(o: { seed?: number; viewport?: Viewport;
 /** Any game of this repository headless (a lab, the arena, a room), with the site's assets. */
 export function headlessGame(game: Game, options: HeadlessOptions = {}): Promise<Engine> {
   return Engine.headless(game, { assets: nodeAssets(PUBLIC_DIR), ...options });
-}
-
-/**
- * Step until `done()` holds, at most `max` frames, `every` frames at a time, letting promise
- * callbacks run between (a level or a stage builds async, as a page's frames would let it): what a
- * page's `waitForFunction` waits for. The frames it took; throws when it never holds, naming `what`.
- */
-export async function stepUntil(engine: Engine, done: () => boolean, o: { max?: number; every?: number; what?: string } = {}): Promise<number> {
-  const { max = 600, every = 1, what = 'the condition' } = o;
-  for (let f = 0; f <= max; f += every) {
-    if (done()) return f;
-    engine.step(every);
-    await settle();
-  }
-  throw new Error(`stepUntil: ${what} did not hold within ${max} frames`);
-}
-
-/** Let promise callbacks run out (a task boundary), as a page does between two animation frames. */
-export function settle(): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
 /**

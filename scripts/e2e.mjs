@@ -18,10 +18,11 @@
 //                   mode is not, 320x180 keeps framing.
 //   no-webgpu       a browser without WebGPU: the start fails and says why, no engine, no canvas.
 //
-// camera-swap     live preset swaps keep the player, coins and renderer;
-//                 a swapped-to fixed view survives reload.
-// cameras         every camera preset renders, zooms (except first person), moves the
-//                 character in its own basis; side locks the lane; free → fix → reload as fixed.
+// camera-swap     the debug panel swaps presets live on the same renderer, frames render, the URL
+//                 follows; a swapped-to fixed view survives reload.
+// cameras         every camera preset from ?camera= renders, in the debug panel; free → Enter →
+//                 reload with ?cam= as fixed. The rigs' state (zoom, basis, lane, free → fixed,
+//                 hot swaps) is headless: src/engine/camera.playground.test.ts.
 // filters-webgpu  every post filter compiles and changes the frame,
 //                 with zero errors; every look renders; per-layer looks change only their
 //                 layer (pixel characters on a clean world, a grade on the environment only);
@@ -34,7 +35,8 @@
 //                 no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
 //                 a touch button for every skill-bar slot that reaches the game, no HUD element
 //                 under a control, controls off the menus, panels that fit with big targets.
-// moves           the whole PlatformerCharacter moveset (scripts/e2e-moves.mjs).
+// moves           Engine.step's exact frames and a capture in the live page. The moveset is
+//                 headless: src/game/playground.moves.test.ts.
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
@@ -73,10 +75,10 @@
 //                 (scripts/e2e-riftlight-snapshot.mjs; the gameplay: src/riftlight/game/snapshot.*.test.ts).
 // riftlight-builds  the frames of charges, curses, totems, traps and a mechanic affix, the mana globe's
 //                 HUD (scripts/e2e-riftlight-builds.mjs; the gameplay: src/riftlight/combat/builds.*.test.ts).
-// systems         game systems (scripts/e2e-systems.mjs): pixel HUD, audio,
-//                 particles, coin triggers, gamepad, pause, hotkeys, engine.loadGame without
-//                 leaks, textured toon materials and a textured model (built and merged),
-//                 engine.dispose().
+// systems         game systems in the page (scripts/e2e-systems.mjs): the pixel HUD, audio unlock
+//                 and mute, particles drawn, gamepads, pause and hotkeys in the live loop, GPU memory
+//                 across loads, textures drawn, engine.dispose()'s DOM. Sounds, particles, triggers
+//                 and loadGame without leaks are headless: src/engine/systems.test.ts, loadGame.test.ts.
 // settings        the player's settings (scripts/e2e-settings.mjs): no engine hotkeys without
 //                 ?debug=1; the ⚙ panel pauses the game and every control changes the engine; the
 //                 choices are saved per game, a URL review flag wins at start, Reset undoes them.
@@ -90,10 +92,11 @@
 //                 updates in under 1 ms, a walk to the portal's frame. The gameplay:
 //                 src/riftlight/levels/levelLab.headless.test.ts.
 //
-// world           Engine World, the engine's tech demo (scripts/e2e-world.mjs):
-//                 a door per room, walking into one (an iris, the room as its own Game), every
-//                 room renders and its first pad works, hitstop / shake / flash / game speed,
-//                 the panels, a mosaic transition, and the Atrium the same after every room.
+// world           Engine World in the page (scripts/e2e-world.mjs): every room renders, the GPU rooms'
+//                 readbacks, the gallery's and workshop's pictures, a pointer on the canvas, the
+//                 sandbox's localStorage, live play recorded and replayed. The rooms' gameplay, the
+//                 doors, panels and the Atrium the same after every room are headless:
+//                 src/world/*.headless.test.ts, src/world/rooms/*.headless.test.ts.
 //
 // bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
 //                 zip, its types, its check.mjs on every page, every guide
@@ -118,7 +121,7 @@ import { format } from 'node:util';
 import { chromium } from 'playwright-core';
 import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
 import { engineReady, startServer, watchConsole } from './page.mjs';
-import { MOVES, PAGE_HELPERS } from './e2e-moves.mjs';
+import { PAGE_HELPERS } from './e2e-moves.mjs';
 import { runRiftlight } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
@@ -519,7 +522,12 @@ async function runCore(browserExe, s) {
   }
 }
 
-/** Every preset, each from a fresh page load (?camera=), all in one browser. */
+/**
+ * Every preset, each from a fresh page load (?camera=), all in one browser: the URL reaches the rig,
+ * the debug panel names it, it renders; a free view fixed with Enter comes back from ?cam=. What the
+ * rigs do in play (zoom, moving in the camera's basis, the side lane, mouse look, free → fixed) is
+ * checked headless: src/engine/camera.playground.test.ts.
+ */
 async function runCameras(browserExe) {
   const s = SCENARIOS[0];
   let ctx;
@@ -540,62 +548,16 @@ async function runCameras(browserExe) {
         const frame = await capture(page, `camera-${preset}.png`);
         check(colorCount(frame) > 8, `renders (${colorCount(frame)} colors)`);
 
-        // Zoom: wheel up = zoom in, for every preset except first person.
-        await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(0, 0, -4));
-        await until(page, (e) => e.camera.describe().zoom > 1.4, null, 3);
-        const zoomed = (await state(page)).cameraRig;
-        if (preset === 'first') check(zoomed.zoom === 1 && zoomed.zoomable === false, 'first person does not zoom');
-        else check(zoomed.zoom > 1.4, `wheel zooms in (zoom ${zoomed.zoom})`);
-        if (preset !== 'first') {
-          await page.evaluate(() => window.__PIXEL_ENGINE__.camera.setZoom(1));
-        }
-
         if (preset === 'free') {
-          const c0 = (await state(page)).camera;
-          const t0 = (await state(page)).target;
-          await hold(page, 'KeyW', 500);
-          await waitFrames(page, 5);
-          st = await state(page);
-          check(dist(c0, st.camera) > 0.5, 'free camera flies with WASD');
-          check(dist(t0, st.target) < 0.05, 'character stays put while the camera flies');
+          // Enter on the page's keyboard fixes the view; reload with the printed config as a 'fixed' preset.
           await page.keyboard.press('Enter');
           await until(page, (e) => e.camera.describe().fixed === true, null, 3);
-          st = await state(page);
-          check(st.cameraRig.fixed === true, 'Enter fixes the camera');
-          const config = st.cameraRig.config;
-          const fixedCam = st.camera;
-          await hold(page, 'KeyD', 600);
-          await waitFrames(page, 5);
-          st = await state(page);
-          check(dist(fixedCam, st.camera) < 1e-6, 'fixed camera no longer moves');
-          check(dist(t0, st.target) > 0.8, 'character moves once the camera is fixed');
-          // Reload with the printed config as a 'fixed' preset.
+          const config = (await state(page)).cameraRig.config;
           await page.goto(urlFor(s, `cam=${encodeURIComponent(JSON.stringify(config))}`));
           await ready(page);
           st = await state(page);
           check(st.cameraRig.preset === 'fixed' && dist(st.camera, config.position) < 0.02, `?cam= config restores the fixed view (${st.camera.map((v) => v.toFixed(2))})`);
           await capture(page, 'camera-fixed.png');
-        } else {
-          const t0 = (await state(page)).target;
-          await hold(page, 'KeyD', 700);
-          await until(page, (e, t0) => Math.hypot(...e.state().target.map((v, i) => v - t0[i])) > 0.8, t0, 10);
-          st = await state(page);
-          check(dist(t0, st.target) > 0.8, `D moves the character (${dist(t0, st.target).toFixed(2)})`);
-          if (preset === 'side') {
-            const z0 = st.target[2];
-            await hold(page, 'KeyW', 500);
-            await waitFrames(page, 10);
-            check(Math.abs((await state(page)).target[2] - z0) < 0.05, 'side-scroller keeps the depth lane');
-          }
-          if (preset === 'third' || preset === 'first') {
-            const yaw0 = st.cameraRig.yaw;
-            await page.evaluate(() => window.__PIXEL_ENGINE__.input.addPointer(160, 0));
-            await until(page, (e, yaw0) => Math.abs(e.camera.describe().yaw - yaw0) > 0.3, yaw0, 3);
-            check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'mouse turns the camera');
-          }
-          if (preset === 'first') {
-            check(await page.evaluate(() => window.__PIXEL_ENGINE__.game.heroModel.visible === false), 'player model hidden in first person');
-          }
         }
         checkClean(await state(page), logs());
       } catch (e) {
@@ -647,50 +609,34 @@ async function runNoWebGPU(browserExe, s) {
 
 /**
  * Swaps run on manual time (Engine.step): every swap gets exactly the same 8 game frames
- * however slowly the machine renders, and capture() draws what the player would see.
+ * however slowly the machine renders, and capture() draws what the player would see. The page's
+ * half of a swap: the debug panel's select swaps it, the one renderer draws it, the URL keeps it
+ * (and a reload restores a fixed view). That the player, coins and model stay as they were is
+ * checked headless: src/engine/camera.playground.test.ts.
  */
 async function runCameraSwap(browserExe, s) {
-  console.log(`\n▶ camera hot-swap keeps the player (${s.backend})`);
+  console.log(`\n▶ camera hot-swap in the page (${s.backend})`);
   let ctx;
   try {
     ctx = await openPage(browserExe, s);
     const { page, logs } = ctx;
-    // Move somewhere and pick up a coin so there is state to lose.
-    await page.evaluate(() => {
-      const e = window.__PIXEL_ENGINE__;
-      e.game.hero.teleport([-4, 0, 5]);
-      e.step(10);
-      e.input.setKey('KeyD', true);
-      e.step(24); // 400 ms
-      e.input.setKey('KeyD', false);
-      e.step(180); // stop and settle on the ground (the capsule eases up ~1 cm for ~2 s)
-    });
-    const renderer0 = await page.evaluate(() => (window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer, true));
-    const before = await page.evaluate(() => ({ feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(), coins: window.__PIXEL_ENGINE__.game.collected, url: location.href }));
-    check(renderer0 && before.coins >= 1, `setup: player at ${before.feet.map((v) => v.toFixed(2))}, ${before.coins} coin(s)`);
+    await page.evaluate(() => (window.__rendererRef = window.__PIXEL_ENGINE__.renderer.renderer, true));
     for (const preset of ['topdown', 'side', 'third', 'first', 'free', 'fixed', 'iso']) {
       await page.selectOption('[data-a="camera"]', preset);
       await page.evaluate(() => window.__PIXEL_ENGINE__.step(8));
       const now = await page.evaluate(() => ({
-        feet: window.__PIXEL_ENGINE__.game.hero.feet.toArray(),
-        coins: window.__PIXEL_ENGINE__.game.collected,
         preset: window.__PIXEL_ENGINE__.camera.preset,
         sameRenderer: window.__PIXEL_ENGINE__.renderer.renderer === window.__rendererRef,
-        visible: window.__PIXEL_ENGINE__.game.heroModel.visible,
         url: location.search,
       }));
       const frame = await capture(page, `swap-${s.name}-${preset}.png`);
-      const moved = dist(before.feet, now.feet);
       check(
         now.preset === preset &&
-          moved < 0.05 &&
-          now.coins === before.coins &&
           now.sameRenderer &&
           colorCount(frame) > 8 &&
           (preset === 'free' || preset === 'fixed' ? decodeURIComponent(now.url).includes(`"preset":"${preset}"`) : now.url.includes(`camera=${preset}`)),
-        `→ ${preset}: player stayed (moved ${moved.toFixed(3)}), coins ${now.coins}, same renderer, renders, URL synced`,
+        `→ ${preset}: the select swaps it, same renderer, renders, URL synced`,
       );
-      check(now.visible === (preset !== 'first'), `→ ${preset}: player model ${now.visible ? 'shown' : 'hidden'}`);
     }
     // A swapped-to fixed view survives a reload (its full config is in ?cam=).
     await page.selectOption('[data-a="camera"]', 'third');
@@ -895,12 +841,6 @@ async function runMoves(browserExe) {
     ctx = await openPage(browserExe, SCENARIOS[0], 'camera=third&debug=0');
     const { page, logs } = ctx;
     await page.evaluate(PAGE_HELPERS);
-    for (const [name, body] of MOVES) {
-      const r = await page
-        .evaluate(`(async () => { const T = window.__T; ${body} })()`)
-        .catch((e) => ({ ok: false, detail: e.message }));
-      check(r.ok, `${name}${r.ok ? '' : ': ' + JSON.stringify(r.detail).slice(0, 300)}`);
-    }
     // Engine.step (npm run film): frame-exact manual time, and capture still works in it
     const stepped = await page.evaluate(async () => {
       const e = window.__PIXEL_ENGINE__;

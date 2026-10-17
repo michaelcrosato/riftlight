@@ -1,24 +1,17 @@
 /* global window, requestAnimationFrame */
-// e2e suite "world": Engine World (src/world, ?game=world), the engine's tech demo, driven
-// frame-exactly through window.__WORLD__ and Engine.step():
+// e2e suite "world": Engine World (src/world, ?game=world), the engine's tech demo, in the browser:
+// what only a page can show, driven frame-exactly through window.__WORLD__ and Engine.step():
 //
-//   atrium       a door for every room; the hero walks into one: an iris closes on them (no
-//                frame-rate dependent waits), the room loads as its own Game, the iris opens
-//   every room   loads, renders (frame has content), its first pad works, no errors
-//   leaks        back in the Atrium after every room: the same physics and scene counts
-//   feel         a hit: hitstop freezes game time while shake and the flash run on real time;
-//                the game speed knob slows game time to 0.25x
-//   physics      a blast topples the tower, instanced bodies fall asleep, the bridge sags and
-//                hangs when cut, sheets drape, the lift carries the hero, a wall shatters into
-//                pieces that dissolve, the well gathers bodies, a launch pad throws the hero
-//   effects      floaters sit in the water and the anchor sinks, wading ripples, lamps at night,
-//                settling snow, a storm's lightning, a meadow of blades, footprints and decals
-//   workshop     the Asset Workshop's picker scrolls (the wheel over it, E) and picks by click;
-//                a library model, a pack model, a tile and a sprite each go down and are drawn;
-//                a click on the floor places the pick under the pointer, a right click takes it
-//                away; undo and clear free what went down (scene objects and lights)
-//   transitions  a mosaic covers the frame (ink), reveals it again
-//   panels       the station guide, the tweak panel and the room list open and close
+//   pictures     the Atrium and every room render (a frame with content), mirrored sprites draw,
+//                the gallery's and the workshop's exhibits are drawn (hiding them changes the
+//                frame), a flat tile hides the plinth, a mosaic covers the frame and reveals it
+//   GPU          the swarm's compute shader and the views' render targets, read back
+//   page         a pointer event on the canvas lands where aimed, the sandbox saves to the
+//                browser's storage, no engine hotkeys without ?debug=1, live play at the
+//                browser's pace (requestAnimationFrame) records and replays, also in a fresh page
+//
+// The gameplay (doors, feel, panels, every wing's rooms, replays, save-states, leaks) is checked
+// headless: src/world/*.headless.test.ts and src/world/rooms/*.headless.test.ts.
 //
 // Frames land in .scratch/e2e/world-*.png. Self-contained: e2e.mjs passes its helpers in.
 
@@ -87,298 +80,39 @@ export async function runWorld(h) {
     ctx = await openPage(exe, s, 'game=world&debug=0');
     const { page, logs } = ctx;
     // openPage waited for window.__PIXEL_READY__: __WORLD__ is set by then
-    const first = await page.evaluate(() => window.__WORLD__?.state().room);
-    check(first === 'atrium', `window.__WORLD__ is up once the engine is ready, in the Atrium (${first})`);
+    const first = await page.evaluate(() => ({ room: window.__WORLD__?.state().room, hotkeys: Object.values(window.__PIXEL_ENGINE__.debugKeys).flat().length }));
+    check(first.room === 'atrium', `window.__WORLD__ is up once the engine is ready, in the Atrium (${first.room})`);
+    check(first.hotkeys === 0, `no engine hotkeys without ?debug=1 (${first.hotkeys})`);
     const W = (fn, arg) => page.evaluate(fn, arg);
     const rooms = await W(() => window.__WORLD__.rooms());
-    const doors = await W(() => window.__WORLD__.room.doors());
-    check(rooms[0].id === 'atrium' && rooms.length >= 10, `${rooms.length} rooms, the Atrium first`);
-    check(doors.length === rooms.length - 1 && rooms.slice(1).every((r) => doors.some((d) => d.id === r.id)), `the Atrium has a door for every room (${doors.length})`);
     await W(() => window.__PIXEL_ENGINE__.step(30));
     const atriumShot = await capture(page, `world-${tag}-atrium.png`);
     check(colorCount(atriumShot) > 30, `the Atrium renders (${colorCount(atriumShot)} colours)`);
-    const base = await W(() => ({ physics: window.__PIXEL_ENGINE__.physics.counts(), children: window.__PIXEL_ENGINE__.scene.children.length }));
 
-    // ------------------------------------------------------------- walk through a door
-    const walk = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const d = w.room.doors().find((x) => x.id === 'feel');
-      e.game.visitor.teleport([d.at[0] - Math.sin(d.facing) * 1.5, 0, d.at[2] - Math.cos(d.facing) * 1.5], d.facing);
-      e.step(5);
-      // movement is camera-relative: push the stick toward the door in the camera's ground basis
-      const { right, forward } = e.camera.groundBasis();
-      const dx = Math.sin(d.facing);
-      const dz = Math.cos(d.facing);
-      e.input.analog.x = dx * right.x + dz * right.z;
-      e.input.analog.y = dx * forward.x + dz * forward.z;
-      let covered = 0;
-      for (let i = 0; i < 240 && !w.state().busy; i++) e.step(1);
-      const busy = w.state().busy;
-      for (let i = 0; i < 30; i++) {
-        e.step(1);
-        covered = Math.max(covered, e.screen.state().progress);
-      }
-      e.input.analog.x = e.input.analog.y = 0;
-      return { busy, covered, kind: e.screen.state().transition };
-    });
-    check(walk.busy && walk.covered > 0.3 && walk.kind === 'iris', `walking into the Game Feel Lab door starts an iris (progress ${walk.covered})`);
-    const arrived = await page
-      .waitForFunction(
-        () => {
-          const w = window.__WORLD__;
-          window.__PIXEL_ENGINE__.step(2);
-          return w.state().room === 'feel' && !w.state().busy;
-        },
-        null,
-        { timeout: 90000, polling: 30 },
-      )
-      .then(() => true, () => false);
-    const inFeel = await W(() => ({ game: window.__PIXEL_ENGINE__.game.name, screen: window.__PIXEL_ENGINE__.screen.state() }));
-    check(arrived && inFeel.game === 'Engine World: Game Feel Lab' && inFeel.screen.progress === 0, `the room loads as its own Game and the iris opens (${inFeel.game})`);
-
-    // ------------------------------------------------------------- feel: hitstop, shake, flash, speed
-    const feel = await W(() => {
-      const e = window.__PIXEL_ENGINE__;
-      e.step(10);
-      const t0 = e.time;
-      window.__WORLD__.room.hit();
-      const after = { hitstop: e.state().hitstop, trauma: e.shake.trauma, flash: e.screen.state().flash };
-      e.step(3); // 0.05 s: inside the 0.09 s hitstop
-      const frozen = e.time - t0;
-      e.step(30);
-      const resumed = e.time - t0;
-      window.__WORLD__.knob('engine-speed', 0.25);
-      const t1 = e.time;
-      e.step(60);
-      const slow = e.time - t1;
-      window.__WORLD__.knob('engine-speed', 1);
-      return { ...after, frozen, resumed, slow, hits: window.__WORLD__.room.hits() };
-    });
-    check(feel.hitstop > 0.05 && feel.trauma > 0.3 && feel.flash > 0, `a hit: hitstop ${feel.hitstop}s, trauma ${feel.trauma.toFixed(2)}, flash ${feel.flash}`);
-    check(feel.frozen === 0 && feel.resumed > 0.3, `game time stops during the hitstop and resumes (${feel.frozen.toFixed(3)} → ${feel.resumed.toFixed(3)} s)`);
-    check(Math.abs(feel.slow - 0.25) < 0.01, `game speed 0.25x: 60 frames are ${feel.slow.toFixed(3)} s of game time`);
-    await capture(page, `world-${tag}-feel.png`);
-
-    // ------------------------------------------------------------- panels
-    const panels = await W(() => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const got = [];
-      for (const p of ['guide', 'tweak', 'rooms', 'pause', 'glossary']) {
-        got.push(w.open(p));
-        e.step(4);
-        w.close();
-      }
-      const guide = w.guide('feel');
-      return { got, guideLines: guide.length, headings: guide.filter((l) => l.startsWith('## ')).length, speed: e.timeScale };
-    });
-    check(panels.got.join() === 'guide,tweak,rooms,pause,glossary', `panels open: ${panels.got.join(', ')}`);
-    check(panels.headings >= 8 && panels.guideLines > 30, `the station guide has ${panels.headings} sections, ${panels.guideLines} lines`);
-    check(panels.speed === 1, 'closing the room list and the menu thaws the game');
-
-    // ------------------------------------------------------------- every room
+    // ------------------------------------------------------------- every room renders
     const bad = [];
     for (const r of rooms) {
-      const res = await W(async (id) => {
+      const room = await W(async (id) => {
         const w = window.__WORLD__;
         const e = window.__PIXEL_ENGINE__;
         await w.goto(id, { instant: true });
         e.step(20);
         const pads = w.state().pads;
-        const stepped = pads.length ? w.pad(pads[0].label) : true;
+        if (pads.length) w.pad(pads[0].label);
         e.step(10);
-        const ids = w.knobs().map((k) => k.id);
-        return { room: w.state().room, pads: pads.length, stepped, errors: e.state().errors, labels: w.state().labels, knobsUnique: new Set(ids).size === ids.length };
+        return w.state().room;
       }, r.id);
-      const shot = await capture(page, `world-${tag}-${r.id}.png`);
-      const colours = colorCount(shot);
-      if (res.room !== r.id || !res.stepped || !res.knobsUnique || res.errors.length || colours < 12) bad.push(`${r.id}: room ${res.room}, pad ${res.stepped}, unique knobs ${res.knobsUnique}, ${colours} colours, ${res.errors.join('; ')}`);
+      const colours = colorCount(await capture(page, `world-${tag}-${r.id}.png`));
+      if (room !== r.id || colours < 12) bad.push(`${r.id}: room ${room}, ${colours} colours`);
     }
-    check(bad.length === 0, `every room loads, renders and its first pad works${bad.length ? ':\n    ' + bad.join('\n    ') : ` (${rooms.length})`}`);
+    check(bad.length === 0, `every room renders${bad.length ? ':\n    ' + bad.join('\n    ') : ` (${rooms.length})`}`);
 
-    // ------------------------------------------------------------- physics wing
-    const phys = await W(async () => {
+    // ------------------------------------------------------------- sprites: mirrored ones draw
+    const sprites = await W(async () => {
       const w = window.__WORLD__;
       const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // rigid bodies: a blast knocks the tower down; a stress fill settles and falls asleep
-      await w.goto('bodies', { instant: true });
-      e.step(30);
-      const before = w.room.standing();
-      w.room.blast();
-      e.step(90);
-      w.room.fill(100);
-      // a pile sleeps as one island once every body in it has been still for 2 s, so the count
-      // jumps from a few to most at a moment the rooms visited before decide (step 140 to 330
-      // and beyond, measured): wait for it, up to 15 s
-      for (let i = 0; i < 900 && (i < 400 || w.room.stress().asleep < 30); i++) e.step(1);
-      out.bodies = { before, after: w.room.standing(), stress: w.room.stress() };
-      // joints: the wrecking ball knocks crates over; a cut bridge hangs down
-      await w.goto('joints', { instant: true });
-      e.step(30);
-      const sag = Math.min(...w.room.bridge());
-      w.room.swing();
-      e.step(90);
-      w.room.cut();
-      e.step(150);
-      out.joints = { sag, standing: w.room.standing(), hanging: Math.min(...w.room.bridge()) };
-      // soft bodies: sheets drape over the table and the ball; released flags fall
-      await w.goto('soft', { instant: true });
-      w.room.drop();
-      w.room.release();
-      e.step(200);
-      out.soft = { sheets: w.room.sheets().map((c) => c[1]), flags: w.room.flags().map((f) => f[1]), particles: w.room.particles() };
-      // platforms: the lift carries the hero up
-      await w.goto('platforms', { instant: true });
-      w.room.restartLift(); // at the bottom, waiting 1.5 s: the same ride whatever ran before
-      e.step(2);
-      const lift = w.room.lift();
-      e.game.visitor.teleport([10, lift + 0.3, -8.5], 0);
-      e.step(10);
-      const on = w.room.standingOn();
-      let top = 0;
-      for (let i = 0; i < 360; i++) {
-        e.step(1);
-        top = Math.max(top, w.state().hero.at[1]);
-      }
-      out.platforms = { on, top };
-      // destruction: a wall shatters into its pieces, which dissolve away
-      await w.goto('destruction', { instant: true });
-      e.step(10);
-      w.room.punch(1);
-      e.step(5);
-      const chunks = w.room.chunks();
-      e.step(330);
-      out.destruction = { chunks, later: w.room.chunks(), broken: w.room.broken() };
-      // fields: the well gathers the crates and balls; a launch pad throws the hero up
-      await w.goto('fields', { instant: true });
-      e.step(240);
-      const gathered = w.room.gathered();
-      e.game.visitor.teleport([4, 0, 2.2], 0);
-      const { right, forward } = e.camera.groundBasis();
-      e.input.analog.x = right.z;
-      e.input.analog.y = forward.z;
-      let peak = 0;
-      for (let i = 0; i < 90; i++) {
-        e.step(1);
-        if (i === 25) e.input.analog.x = e.input.analog.y = 0;
-        peak = Math.max(peak, w.state().hero.at[1]);
-      }
-      e.input.analog.x = e.input.analog.y = 0;
-      out.fields = { gathered, launches: w.room.launches(), peak };
-      out.errors = e.state().errors;
-      return out;
-    });
-    check(phys.bodies.after < phys.bodies.before - 4, `rigid bodies: a blast knocks the tower down (${phys.bodies.before} → ${phys.bodies.after} crates standing)`);
-    check(phys.bodies.stress.bodies === 100 && phys.bodies.stress.asleep >= 30, `100 instanced bodies rain in and fall asleep (${phys.bodies.stress.asleep} asleep, step ${phys.bodies.stress.stepMs.toFixed(2)} ms)`);
-    check(phys.joints.sag < -0.15 && phys.joints.standing < 9 && phys.joints.hanging < -3, `joints: the bridge sags (${phys.joints.sag.toFixed(2)}), the wrecking ball knocks crates over (${phys.joints.standing} of 9 left), a cut bridge hangs (${phys.joints.hanging.toFixed(2)})`);
-    check(phys.soft.sheets.every((y) => y > 0.3 && y < 1.6) && phys.soft.flags.every((y) => y < 0.5), `soft bodies: sheets drape (${phys.soft.sheets.map((y) => y.toFixed(2))}), released flags fall (${phys.soft.flags.map((y) => y.toFixed(2))}), ${phys.soft.particles} particles`);
-    check(phys.platforms.on === 'lift' && phys.platforms.top > 4.5, `platforms: the hero rides the lift up (${phys.platforms.on}, top ${phys.platforms.top.toFixed(2)} m)`);
-    check(phys.destruction.chunks === 12 && phys.destruction.later === 0 && phys.destruction.broken === 1, `destruction: a wall breaks into 12 pieces that dissolve away (${phys.destruction.chunks} → ${phys.destruction.later})`);
-    // HOP 12: 12² / (2 × 32) = 2.25 m
-    check(phys.fields.gathered >= 6 && phys.fields.launches >= 1 && phys.fields.peak > 1.9, `fields: the well gathers ${phys.fields.gathered} bodies, a launch pad throws the hero ${phys.fields.peak.toFixed(2)} m up`);
-    check(phys.errors.length === 0, `the physics wing runs without errors${phys.errors.length ? ': ' + phys.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-fields.png`);
-
-    // ------------------------------------------------------------- effects wing
-    const fx = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // water: floaters sit in the water, the anchor sinks, wading makes ripples
-      await w.goto('water', { instant: true });
-      e.step(240);
-      const sub = w.room.submerged();
-      e.game.visitor.teleport([0, -0.9, -5], 0);
-      const { right, forward } = e.camera.groundBasis();
-      e.input.analog.x = right.x;
-      e.input.analog.y = forward.x;
-      e.step(60);
-      e.input.analog.x = e.input.analog.y = 0;
-      out.water = { crates: sub.crates, raft: sub.raft, anchor: sub.anchor, wades: w.room.wades(), ripples: w.room.ripples() };
-      // weather: night lights the lamps; snow settles; a storm flashes
-      await w.goto('weather', { instant: true });
-      w.room.time(22.5);
-      w.room.weather('snow');
-      e.step(240);
-      const night = w.room.state();
-      w.room.time(12);
-      w.room.weather('storm');
-      e.step(480);
-      out.weather = { lamps: night.lamps, snow: night.snow, noonSun: w.room.state().sun, bolts: w.room.state().bolts, wet: w.room.state().wet };
-      // foliage: blades placed; the ball rolls
-      await w.goto('foliage', { instant: true });
-      e.step(20);
-      out.foliage = { blades: w.room.blades(), flowers: w.room.flowers() };
-      // trails: a bomb leaves marks; walking leaves footprints; the comet has a tail
-      await w.goto('trails', { instant: true });
-      e.step(10);
-      w.room.bomb();
-      e.game.visitor.teleport([-3, 0, 6], 0);
-      const b2 = e.camera.groundBasis();
-      e.input.analog.x = b2.right.x;
-      e.input.analog.y = b2.forward.x;
-      e.step(90);
-      e.input.analog.x = e.input.analog.y = 0;
-      out.trails = { marks: w.room.marks(), prints: w.room.prints(), comet: w.room.comet() };
-      out.errors = e.state().errors;
-      return out;
-    });
-    check(fx.water.crates.every((d) => d > 0.2 && d < 0.8) && fx.water.raft > 0.1 && fx.water.raft < 0.7 && fx.water.anchor < -0.5, `water: crates float (${fx.water.crates.map((d) => d.toFixed(2))}), the raft too (${fx.water.raft.toFixed(2)}), the anchor sinks (${fx.water.anchor.toFixed(2)})`);
-    check(fx.water.wades > 3 && fx.water.ripples > 0.5, `wading makes ripples (${fx.water.wades} splashes, energy ${fx.water.ripples.toFixed(2)})`);
-    check(fx.weather.lamps.every((i) => i > 5) && fx.weather.snow > 0.15 && fx.weather.noonSun > 2.5 && fx.weather.bolts >= 1 && fx.weather.wet > 0.5, `weather: lamps lit at night, snow settles (${fx.weather.snow.toFixed(2)}), a storm flashes (${fx.weather.bolts} bolts) and wets the ground`);
-    check(fx.foliage.blades > 5000 && fx.foliage.flowers > 100, `grass: ${fx.foliage.blades} blades and ${fx.foliage.flowers} flowers`);
-    check(fx.trails.marks >= 2 && fx.trails.prints >= 2 && fx.trails.comet > 10, `trails: a bomb leaves marks, walking leaves ${fx.trails.prints} footprints, the comet has a ${fx.trails.comet}-point tail`);
-    check(fx.errors.length === 0, `the effects wing runs without errors${fx.errors.length ? ': ' + fx.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-trails.png`);
-
-    // ------------------------------------------------------------- animation wing
-    const anim = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // secondary motion: the scarf trails a running hero; slimes squash only while SQUASH is on
-      await w.goto('secondary', { instant: true });
-      e.step(60);
-      const idle = w.room.swing(); // gravity sags the scarf a little even standing still
-      const { right, forward } = e.camera.groundBasis();
-      e.input.analog.x = right.x;
-      e.input.analog.y = forward.x;
-      e.step(40);
-      const running = w.room.swing();
-      e.input.analog.x = e.input.analog.y = 0;
-      let squashOn = 0;
-      for (let i = 0; i < 120; i++) {
-        e.step(1);
-        squashOn = Math.max(squashOn, ...w.room.squash().map(Math.abs));
-      }
-      w.pad('SQUASH');
-      e.step(120);
-      let squashOff = 0;
-      for (let i = 0; i < 120; i++) {
-        e.step(1);
-        squashOff = Math.max(squashOff, ...w.room.squash().map(Math.abs));
-      }
-      out.secondary = { idle, running, still: w.room.swing(), squashOn, squashOff, landings: w.room.landings() };
-      // procedural legs: the walker follows the hero up the steps; planted feet never slide
-      await w.goto('legs', { instant: true });
-      e.step(10);
-      const steps0 = w.room.steps()[0];
-      e.game.visitor.teleport([-2.5, 1.4, -6.5], Math.PI);
-      e.step(300);
-      const [wx, wy, wz] = w.room.walker();
-      const hero = w.state().hero.at;
-      out.legs = { steps: w.room.steps()[0] - steps0, others: w.room.steps().slice(1), far: Math.hypot(wx - hero[0], wz - hero[2]), height: wy, slide: w.room.slide() };
-      // sprites: a crowd is one draw per sheet; walking flips their frames
       await w.goto('sprites', { instant: true });
       e.step(10);
-      const draws = w.room.draws();
-      const seen = new Set();
-      for (let i = 0; i < 60; i++) {
-        e.step(1);
-        for (const f of w.room.frames()) seen.add(f);
-      }
       // mirrored sprites draw as many pixels as unmirrored ones (the sky-blue critters' bodies)
       const blue = async () => {
         e.step(2);
@@ -394,159 +128,15 @@ export async function runWorld(h) {
       w.room.flip(undefined);
       w.pad('300 CRITTERS');
       e.step(5);
-      out.sprites = { draws, frames: seen.size, crowd: w.room.critters(), facing, mirrored };
-      // ragdolls: limp dummies lie down and get back up; one tumbles down the stairs; the cannon knocks one over
-      await w.goto('ragdolls', { instant: true });
-      e.step(10);
-      w.pad('ALL LIMP');
-      let n = 0;
-      while (w.room.states().some((st) => st !== 'stand') && n++ < 1200) e.step(1);
-      const standing = w.room.pelvis().slice(0, 3).map((p) => p[1]);
-      const lay = w.room.lay().slice(0, 3);
-      const ups3 = w.room.ups()[3]; // the stairs dummy may have got up once already (ALL LIMP)
-      w.pad('PUSH');
-      n = 0;
-      while (w.room.ups()[3] === ups3 && n++ < 1200) e.step(1);
-      const stairs = w.room.lay()[3];
-      const before = w.room.falls().slice(0, 3).reduce((a, b) => a + b, 0);
-      w.room.fire();
-      e.step(90);
-      const after = w.room.falls().slice(0, 3).reduce((a, b) => a + b, 0);
-      out.ragdolls = { lying: lay.map((l) => l.at[1]), rested: lay.map((l) => l.rested), standing, ups: w.room.ups(), stairs, knocked: after - before };
-      out.errors = e.state().errors;
-      return out;
+      return { facing, mirrored };
     });
-    check(anim.secondary.running > anim.secondary.idle + 0.08 && anim.secondary.still < anim.secondary.running, `secondary motion: the scarf trails a running hero (${anim.secondary.running.toFixed(2)} m, ${anim.secondary.idle.toFixed(2)} standing) and settles (${anim.secondary.still.toFixed(2)})`);
-    check(anim.secondary.squashOn > 0.1 && anim.secondary.squashOff < 0.02 && anim.secondary.landings >= 3, `slimes squash and stretch (${anim.secondary.squashOn.toFixed(2)}), not when it is off (${anim.secondary.squashOff.toFixed(3)})`);
-    check(anim.legs.steps > 10 && anim.legs.others.every((n) => n > 3) && anim.legs.far < 4 && anim.legs.height > 1.4, `procedural legs: the walker follows the hero onto the deck (${anim.legs.steps} steps, ${anim.legs.far.toFixed(2)} m away, body at ${anim.legs.height.toFixed(2)} m), the crab and the robot walk (${anim.legs.others})`);
-    check(anim.legs.slide < 1e-6, `planted feet never slide (${anim.legs.slide})`);
-    check(anim.sprites.draws === 3 && anim.sprites.frames === 4 && anim.sprites.crowd === 300, `sprites: three sheets, three batches, walk frames flip (${anim.sprites.frames} seen), a crowd of ${anim.sprites.crowd}`);
-    check(anim.sprites.facing > 30 && anim.sprites.mirrored > anim.sprites.facing * 0.6, `mirrored sprites draw (${anim.sprites.mirrored} px against ${anim.sprites.facing} facing right)`);
-    check(anim.ragdolls.lying.every((y) => y < 0.35) && anim.ragdolls.rested.every(Boolean) && anim.ragdolls.standing.every((y) => y > 0.5) && anim.ragdolls.ups.slice(0, 3).every((n) => n === 1), `ragdolls: limp dummies lie down (pelvis ${anim.ragdolls.lying.map((y) => y.toFixed(2))}), come to rest (${anim.ragdolls.rested}) and get back up (${anim.ragdolls.standing.map((y) => y.toFixed(2))})`);
-    // where on the stairs it stops is chaos; that it left the landing (2.8 m up), came down them and lay still is not
-    check(anim.ragdolls.stairs.at[1] < 1.8 && anim.ragdolls.stairs.at[2] > -3.5 && anim.ragdolls.stairs.rested, `a pushed dummy tumbles down the stairs and lies still (at ${anim.ragdolls.stairs.at.map((v) => v.toFixed(1))})`);
-    check(anim.ragdolls.knocked >= 1, `the cannon knocks a dummy over (${anim.ragdolls.knocked})`);
-    check(anim.errors.length === 0, `the animation wing runs without errors${anim.errors.length ? ': ' + anim.errors.join('; ') : ''}`);
+    check(sprites.facing > 30 && sprites.mirrored > sprites.facing * 0.6, `mirrored sprites draw (${sprites.mirrored} px against ${sprites.facing} facing right)`);
     await capture(page, `world-${tag}-crowd.png`);
 
-    // ------------------------------------------------------------- genre wing
-    const genres = await W(async () => {
+    // ------------------------------------------------------------- sandbox: the canvas's pointer, the browser's storage
+    const sandbox = await W(async () => {
       const w = window.__WORLD__;
       const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // stealth: unseen at the start; in front of the watch guard you are seen, chased and caught
-      await w.goto('stealth', { instant: true });
-      e.step(180);
-      const quiet = { states: w.room.states(), alarms: w.room.alarms() };
-      e.game.visitor.teleport([-0.5, 0, 0], 0);
-      let n = 0;
-      let onFloor = true;
-      while (w.room.caught() < 1 && n++ < 900) {
-        e.step(1);
-        onFloor &&= w.room.onFloor();
-      }
-      const caught = w.room.caught();
-      const alarms = w.room.alarms();
-      n = 0;
-      while (w.room.states().some((st) => st !== 'patrol') && n++ < 1800) {
-        e.step(1);
-        onFloor &&= w.room.onFloor();
-      }
-      const back = w.room.states();
-      const hero = w.state().hero.at;
-      // an alarm with the hero in the far corner: every guard comes along its path, round walls and crates
-      w.room.raise();
-      const before = w.room.distances();
-      for (let i = 0; i < 90; i++) {
-        e.step(1);
-        onFloor &&= w.room.onFloor();
-      }
-      const closed = w.room.distances().map((d, i) => before[i] - d);
-      out.stealth = { quiet, alarms, caught, onFloor, back, hero, before, closed };
-      // flocks: birds and fish line up; sheep scatter from the hero
-      await w.goto('flocks', { instant: true });
-      e.step(240);
-      // alignment swings as a flock wheels: average it over two seconds
-      const order = { birds: { alignment: 0 }, fish: { alignment: 0 } };
-      for (let i = 0; i < 12; i++) {
-        e.step(10);
-        const o = w.room.order();
-        order.birds.alignment += o.birds.alignment / 12;
-        order.fish.alignment += o.fish.alignment / 12;
-      }
-      // sheep within 2 m of the middle of the pen, before and after the hero stands there
-      const near = () => w.room.sheep().filter(([x, z]) => Math.hypot(x + 8, z + 2) < 2).length;
-      const calm = near();
-      e.game.visitor.teleport([-8, 0, -2], 0);
-      e.step(120);
-      out.flocks = { birds: order.birds.alignment, fish: order.fish.alignment, calm, scared: near() };
-      // drift: the car drives, steers, slides with the handbrake (skid marks), and lets the hero out
-      await w.goto('drift', { instant: true });
-      e.step(10);
-      // the keys: W drives forward (speed > 0 is along the car's heading)
-      w.room.keys();
-      e.input.setKey('KeyW', true);
-      e.step(60);
-      e.input.setKey('KeyW', false);
-      const keyed = w.room.speed();
-      w.pad('FLIP BACK'); // back to the start, then a run-up and a drift in the open
-      w.room.drive(1, 0);
-      e.step(100);
-      const speed = w.room.speed();
-      w.room.drive(0.6, 1, true);
-      let slip = 0;
-      for (let i = 0; i < 60; i++) {
-        e.step(1);
-        slip = Math.max(slip, w.room.slip());
-      }
-      w.room.drive(0, 0);
-      e.step(120);
-      const out1 = w.room.getOut();
-      e.step(30);
-      const car = w.room.car();
-      const at = w.state().hero?.at ?? [99, 99, 99];
-      out.drift = { keyed, speed: Math.abs(speed), slip, marks: w.room.marks(), driving: w.room.driving(), out: out1, beside: Math.hypot(at[0] - car[0], at[2] - car[2]), feet: at[1] };
-      // bullet hell: every pattern at once fills the arena; standing in it gets you hit; punches hurt the turret
-      await w.goto('bullets', { instant: true });
-      w.pad('ALL');
-      e.step(180);
-      const live = w.room.bullets();
-      const hits = w.room.hits();
-      w.room.patterns([]); // a ceasefire: shoot the turret in peace
-      e.step(240);
-      e.game.visitor.teleport([0, 0, 3], Math.PI); // facing the turret
-      for (let i = 0; i < 6; i++) {
-        e.input.setKey('KeyJ', true);
-        e.step(2);
-        e.input.setKey('KeyJ', false);
-        e.step(16);
-      }
-      e.step(30);
-      out.bullets = { live, hits, shots: w.room.shots(), hp: w.room.hp() };
-      out.errors = e.state().errors;
-      return out;
-    });
-    check(genres.stealth.quiet.alarms === 0 && genres.stealth.quiet.states.every((st) => st === 'patrol'), `stealth: the guards patrol and nobody sees you at the start (${genres.stealth.quiet.states})`);
-    check(genres.stealth.alarms >= 1 && genres.stealth.caught === 1, `in front of a guard you are seen and caught (${genres.stealth.alarms} alarm)`);
-    check(genres.stealth.back.every((st) => st === 'patrol') && genres.stealth.hero[0] < -10, `then the hero is back at the start and the guards back on their rounds (${genres.stealth.back})`);
-    check(genres.stealth.closed.every((d) => d > 1.5), `an alarm brings every guard in along its path (from ${genres.stealth.before.map((d) => d.toFixed(1))} m, closer by ${genres.stealth.closed.map((d) => d.toFixed(1))} m in 1.5 s)`);
-    check(genres.stealth.onFloor, 'no guard ever stands in a wall or a crate');
-    check(genres.flocks.birds > 0.45 && genres.flocks.fish > 0.4, `flocks: birds (${genres.flocks.birds.toFixed(2)}) and fish (${genres.flocks.fish.toFixed(2)}) line up (two seconds' average)`);
-    check(genres.flocks.calm >= 3 && genres.flocks.scared <= 2, `sheep scatter from the hero (${genres.flocks.calm} → ${genres.flocks.scared} within 2 m of where the hero stands)`);
-    check(genres.drift.speed > 6 && genres.drift.slip > 0.4 && genres.drift.marks > 0, `drift: the car gets up to ${genres.drift.speed.toFixed(1)} m/s; the handbrake swings the tail out ${((genres.drift.slip * 180) / Math.PI).toFixed(0)}° and leaves ${genres.drift.marks} skid marks`);
-    check(genres.drift.keyed > 2, `W drives the car forward (${genres.drift.keyed.toFixed(1)} m/s along its heading)`);
-    check(genres.drift.out && !genres.drift.driving && genres.drift.beside < 3.5 && Math.abs(genres.drift.feet) < 0.2, `getting out puts the hero on the ground beside the car (${genres.drift.beside.toFixed(1)} m off, feet at ${genres.drift.feet.toFixed(2)})`);
-    check(genres.bullets.live > 300 && genres.bullets.hits >= 1, `bullet hell: ${genres.bullets.live} bullets at once, the hero hit ${genres.bullets.hits} times`);
-    check(genres.bullets.shots >= 6 && genres.bullets.hp < 100, `punches shoot back (${genres.bullets.shots} shots) and hurt the turret (${genres.bullets.hp}%)`);
-    check(genres.errors.length === 0, `the genre wing runs without errors${genres.errors.length ? ': ' + genres.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-bullets.png`);
-
-    // ------------------------------------------------------------- workshop
-    const shop = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // sandbox: the mouse picks the tower's top crate and drags it away; a layout saves and loads back
       await w.goto('sandbox', { instant: true });
       e.step(60);
       const V = e.camera.camera.position.constructor;
@@ -554,137 +144,20 @@ export async function runWorld(h) {
       // the pointer's device coordinates come from a real event on the canvas
       const canvas = e.renderer.renderer.domElement;
       const rect = canvas.getBoundingClientRect();
-      const px = { clientX: rect.left + ((top.x + 1) / 2) * rect.width, clientY: rect.top + ((1 - top.y) / 2) * rect.height, bubbles: true };
-      canvas.dispatchEvent(new window.PointerEvent('pointermove', px));
+      canvas.dispatchEvent(new window.PointerEvent('pointermove', { clientX: rect.left + ((top.x + 1) / 2) * rect.width, clientY: rect.top + ((1 - top.y) / 2) * rect.height, bubbles: true }));
       const mapped = Math.hypot(e.input.pointer.x - top.x, e.input.pointer.y - top.y);
-      const picked = w.room.pick(top.x, top.y);
-      e.input.setPointer(top.x, top.y, true);
-      e.step(2);
-      const held = w.room.holding();
-      for (let i = 0; i < 40; i++) {
-        e.input.setPointer(top.x - i * 0.02, top.y, true);
-        e.step(1);
-      }
-      e.input.setPointer(top.x - 0.8, top.y, false);
-      e.step(60);
-      const crates = w.room.layout().filter((p) => p.kind === 'crate');
-      const moved = Math.max(...crates.map((c) => Math.hypot(c.at[0] - 4, c.at[2] + 4)));
       const saved = w.room.save();
       const before = JSON.stringify(w.room.layout());
       w.room.clear();
-      const cleared = w.room.count();
       const loaded = w.room.restore();
-      const same = JSON.stringify(w.room.layout()) === before;
-      // a layout that is not one changes nothing
-      const bad = [w.room.load({}), w.room.load([null]), w.room.load([{ kind: 'constructor', at: [0, 1, 0], rot: [0, 0, 0, 1] }]), w.room.load([{ kind: 'crate', at: [0, NaN, 0], rot: [0, 0, 0, 1] }])];
-      out.sandbox = { mapped, picked, held, moved, saved, cleared, loaded, same, bad, count: w.room.count() };
-      // time lab: the dominoes fall, holding R stands them back up. This page has no engine
-      // hotkeys (?debug=0); turned on as ?debug=1 has them, the lab moves R's off its rewind key
-      const shipped = Object.values(e.debugKeys).flat().length;
-      e.debugKeys = { mode: ['KeyP'], resolution: ['KeyR'], debug: ['Backquote'], nextLook: ['BracketRight'], prevLook: ['BracketLeft'], mute: ['KeyM'] };
-      await w.goto('rewind', { instant: true });
-      e.step(10);
-      const keys = { shipped, lab: [...e.debugKeys.resolution] };
-      const parked = w.room.ball();
-      const standing = w.room.standing();
-      w.pad('DOMINOES');
-      e.step(240);
-      const fallen = w.room.standing();
-      e.input.setKey('KeyR', true);
-      e.step(300);
-      e.input.setKey('KeyR', false);
-      const back = w.room.standing();
-      const rewound = w.room.rewound();
-      e.step(30);
-      const still = w.room.standing();
-      // the ball rolls off its ramp; rewound to before that, it sleeps there again
-      w.room.roll();
-      e.step(90);
-      const rolled = w.room.ball();
-      e.input.setKey('KeyR', true);
-      e.step(150);
-      e.input.setKey('KeyR', false);
-      e.step(60);
-      const ball = { parked, rolled, after: w.room.ball() };
-      out.rewind = { standing, fallen, back, rewound, still, ball, keys };
-      out.errors = e.state().errors;
-      return out;
+      return { mapped, saved, loaded, same: JSON.stringify(w.room.layout()) === before, count: w.room.count() };
     });
-    await capture(page, `world-${tag}-rewind.png`);
-    // out of the lab, R is the resolution key again; then the hotkeys go back off, as this page had them
-    shop.rewind.keys.after = await W(async () => {
-      await window.__WORLD__.goto('sandbox', { instant: true });
-      const e = window.__PIXEL_ENGINE__;
-      const after = [...e.debugKeys.resolution];
-      e.debugKeys = { mode: [], resolution: [], debug: [], nextLook: [], prevLook: [], mute: [] };
-      return after;
-    });
-    // seeded randomness: a prop dropped at a random spot lands on the same spot every visit
-    const drops = await W(async () => {
-      const w = window.__WORLD__;
-      const spots = [];
-      for (let k = 0; k < 2; k++) {
-        await w.goto('sandbox', { instant: true });
-        w.room.spawn('crate');
-        spots.push(w.room.layout().at(-1).at);
-      }
-      return { spots, seed: window.__PIXEL_ENGINE__.state().seed };
-    });
-    // a drop spot: 4 m up, within 0.75 m of the drop point (0, -2); not the tower the room starts with
-    const dropped = (at) => at[1] === 4 && Math.abs(at[0]) <= 0.75 && Math.abs(at[2] + 2) <= 0.75 && at[0] !== 0;
-    check(drops.spots.every(dropped) && JSON.stringify(drops.spots[0]) === JSON.stringify(drops.spots[1]), `a random drop lands on the same spot each visit (seed ${drops.seed}: ${drops.spots[0]})`);
-    // recorded play replays exactly: the hero runs, jumps and turns among the rigid bodies; the
-    // level's recording, through JSON and played back from the room's start, ends in the same
-    // state, and the same recording with A held for a while does not
-    const replay = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const start = () => w.goto('bodies', { instant: true }); // from the bodies room, as below
-      await start();
-      await start();
-      const from = [...w.state().hero.at];
-      const script = { 0: ['KeyW', true], 30: ['KeyD', true], 50: ['Space', true], 53: ['Space', false], 90: ['KeyD', false], 120: ['Space', true], 121: ['Space', false], 200: ['KeyW', false] };
-      for (let f = 0; f < 240; f++) {
-        if (script[f]) e.input.setKey(...script[f]);
-        e.step(1);
-      }
-      const live = { print: e.fingerprint(), hero: w.state().hero };
-      const rec = JSON.parse(JSON.stringify(e.recording()));
-      await e.replay(rec, start);
-      const again = { print: e.fingerprint(), hero: w.state().hero };
-      // frames hold only changes: A held from frame 150 stays held until W is let go at 200
-      const altered = { ...rec, frames: rec.frames.map((f, i) => (i === 150 ? { ...f, held: ['KeyA', 'KeyW'] } : f)) };
-      await e.replay(altered, start);
-      const other = e.fingerprint();
-      // a saved moment: replayed to frame 150 and played on differently, the level's recording is
-      // the cut one plus what came after, and it replays to the same end
-      await e.replay(rec, start, { frames: 150 });
-      const cut = e.recording().frames.length;
-      e.input.setKey('KeyA', true);
-      e.step(40);
-      e.input.setKey('KeyA', false);
-      e.step(20);
-      const branch = e.fingerprint();
-      const both = JSON.parse(JSON.stringify(e.recording()));
-      await e.replay(both, start);
-      const branched = { cut, frames: both.frames.length, print: branch, again: e.fingerprint() };
-      return { from, live, again, other, branched, frames: rec.frames.length, bytes: JSON.stringify(rec).length, errors: e.state().errors };
-    });
-    const ran = Math.hypot(replay.live.hero.at[0] - replay.from[0], replay.live.hero.at[2] - replay.from[2]);
-    check(replay.frames === 240 && ran > 3 && replay.errors.length === 0, `the room's recording holds the run (${replay.frames} frames, ${replay.bytes} bytes; the hero ran ${ran.toFixed(1)} m)`);
-    const hero = (h) => `${h.at} ${h.state} (${h.anim})`;
-    check(
-      replay.again.print === replay.live.print && hero(replay.again.hero) === hero(replay.live.hero),
-      `a replayed recording ends where the run did (${replay.live.print} vs ${replay.again.print}; hero ${hero(replay.live.hero)} vs ${hero(replay.again.hero)})`,
-    );
-    check(replay.other !== replay.live.print, `the recording with A held for 50 frames more ends somewhere else (${replay.other})`);
-    const { branched } = replay;
-    check(
-      branched.cut === 150 && branched.frames === 210 && branched.again === branched.print && branched.print !== replay.live.print,
-      `replayed to frame ${branched.cut} and played on, the level replays from its own recording (${branched.frames} frames: ${branched.print} vs ${branched.again})`,
-    );
-    // the same from live play: frames at the browser's own pace, a pause, and a game acting in a
-    // promise callback (a tween's `done`), recorded in real time, then replayed
+    check(sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${sandbox.mapped.toExponential(1)})`);
+    check(sandbox.saved && sandbox.loaded && sandbox.same, `a sandbox layout saves to the browser's storage and loads back the same (${sandbox.count} props)`);
+
+    // ------------------------------------------------------------- live play at the browser's pace
+    // frames at the browser's own pace, a pause, and a game acting in a promise callback (a
+    // tween's `done`), recorded in real time, then replayed
     await page.evaluate(defineProbe);
     await page.addInitScript(defineProbe); // the same game after a reload, below
     const realtime = await W(async () => {
@@ -725,85 +198,6 @@ export async function runWorld(h) {
       const dts = rec.frames.map((f) => f.dt);
       return { rec, run, again, frames: rec.frames.length, sync: rec.frames.filter((f) => f.sync).length, dt: [Math.min(...dts), Math.max(...dts)], errors: e.state().errors };
     });
-    // save-states: a moment as data, put back at once; playing on from it matches playing on
-    // from the moment itself, and the recording made after it replays from it
-    const saved = await W(async () => {
-      const e = window.__PIXEL_ENGINE__;
-      const probe = window.__replayProbe;
-      const start = () => e.loadGame(probe());
-      await start();
-      e.manual = true;
-      const play = (from, to) => {
-        for (let f = from; f < to; f++) {
-          e.input.setKey('KeyD', f % 90 < 45);
-          e.input.setKey('KeyJ', f % 70 === 10);
-          if (f % 100 === 30) e.input.send({ lift: 2 });
-          e.step(1);
-        }
-      };
-      play(0, 100);
-      e.input.setKey('Space', true); // a tween now runs for 0.1 s
-      e.step(1);
-      e.input.setKey('Space', false);
-      let refused = '';
-      try {
-        await e.snapshot();
-      } catch (err) {
-        refused = err.message;
-      }
-      e.step(11); // the tween is over; its promise's callback (a kick) runs before the snapshot is taken
-      const t0 = performance.now(); // real time: how long a snapshot takes
-      const snap = JSON.parse(JSON.stringify(await e.snapshot()));
-      const tookMs = performance.now() - t0; // real time
-      play(112, 260);
-      const live = { print: e.fingerprint(), status: e.game.status(e.context) };
-      const later = JSON.parse(JSON.stringify(await e.snapshot()));
-      const t1 = performance.now(); // real time: how long a restore takes
-      await e.restore(snap);
-      const restoreMs = performance.now() - t1; // real time
-      play(112, 260);
-      const again = { print: e.fingerprint(), status: e.game.status(e.context) };
-      const rec = JSON.parse(JSON.stringify(e.recording()));
-      await e.replay(rec, start);
-      const replayed = e.fingerprint();
-      // the snapshot's own state with a later moment's physics: not the same moment, not the same end
-      await e.restore({ ...snap, physics: later.physics });
-      play(112, 260);
-      const mixed = e.fingerprint();
-      // a tween running when a restore comes: its promise's callback (a kick) never lands in the restored moment
-      await e.restore(snap);
-      e.input.setKey('Space', true);
-      e.step(1);
-      e.input.setKey('Space', false);
-      await e.restore(snap);
-      const kicksAfter = e.game.status(e.context);
-      play(112, 260);
-      const tweened = e.fingerprint();
-      // a body bound after the snapshot: let go by the restore, and the level steps on
-      await e.restore(snap);
-      e.physics.bind(e.physics.addDynamicBox({ position: [0, 3, 0], halfExtents: [0.2, 0.2, 0.2] }), new (Object.getPrototypeOf(e.scene.constructor))() /* an Object3D */);
-      await e.restore(snap);
-      play(112, 260);
-      const bound = e.fingerprint();
-      // a restore that fails (the game's state is broken) leaves the engine as it was
-      const before = { print: e.fingerprint(), time: e.time };
-      const failed = await e.restore({ ...snap, state: null }).then(
-        () => '',
-        (err) => err.message,
-      );
-      const after = { print: e.fingerprint(), time: e.time };
-      return { refused, tookMs, restoreMs, bytes: JSON.stringify(snap).length, live, again, replayed, mixed, from: !!rec.from, frames: rec.frames.length, kicksAfter, tweened, bound, failed, rolledBack: before.print === after.print && before.time === after.time, errors: e.state().errors };
-    });
-    check(saved.refused.includes('tween'), `a snapshot is refused while a tween runs (${saved.refused})`);
-    check(
-      saved.again.print === saved.live.print && saved.again.status === saved.live.status && saved.live.status.startsWith('kicks 1'),
-      `a save-state played on from matches the run that went on (${saved.live.print} vs ${saved.again.print}, ${saved.live.status}; ${saved.bytes} bytes, taken in ${saved.tookMs.toFixed(1)} ms, restored in ${saved.restoreMs.toFixed(1)} ms)`,
-    );
-    check(saved.from && saved.frames === 148 && saved.replayed === saved.live.print, `the recording made after a restore starts from it and replays to the same end (${saved.frames} frames, ${saved.replayed})`);
-    check(saved.mixed !== saved.live.print && saved.errors.length === 0, `a snapshot with another moment's physics ends elsewhere (${saved.mixed})`);
-    check(saved.kicksAfter.startsWith('kicks 1') && saved.tweened === saved.live.print, `a tween running at a restore never lands in the restored moment (${saved.kicksAfter}; ${saved.tweened})`);
-    check(saved.bound === saved.live.print, `a body bound after the snapshot is let go by the restore and the level plays on the same (${saved.bound})`);
-    check(saved.failed !== '' && saved.rolledBack, `a restore that fails leaves the engine as it was ("${saved.failed}")`);
     await W(() => window.__WORLD__.goto('sandbox', { instant: true }));
     check(
       realtime.run.status === 'kicks 2 lifts 2' && realtime.frames >= 80 && realtime.rec.frames.filter((f) => f.commands).length === 2 && realtime.sync === 0 && realtime.errors.length === 0,
@@ -813,89 +207,8 @@ export async function runWorld(h) {
       realtime.again.print === realtime.run.print && realtime.again.status === realtime.run.status,
       `live play replays to the same state, its promise callbacks on the same frames (${realtime.run.print} vs ${realtime.again.print})`,
     );
-    check(shop.sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${shop.sandbox.mapped.toExponential(1)})`);
-    check(shop.sandbox.picked === 'crate' && shop.sandbox.held === 'crate' && shop.sandbox.moved > 1, `sandbox: the mouse picks a crate (${shop.sandbox.picked}) and drags it ${shop.sandbox.moved.toFixed(1)} m`);
-    check(shop.sandbox.saved && shop.sandbox.cleared === 0 && shop.sandbox.loaded && shop.sandbox.same, `a layout saves, clears and loads back the same (${shop.sandbox.count} props)`);
-    check(shop.sandbox.bad.every((n) => n === -1) && shop.sandbox.count > 0, `a broken layout is refused and the yard kept (${shop.sandbox.bad}, ${shop.sandbox.count} props)`);
-    check(shop.rewind.standing === 22 && shop.rewind.fallen < 4 && shop.rewind.back === 22 && shop.rewind.still === 22 && shop.rewind.rewound > 200, `time lab: ${shop.rewind.standing} dominoes stand, ${shop.rewind.fallen} after a nudge, ${shop.rewind.back} again after holding R, ${shop.rewind.still} still after letting go`);
-    const { parked, rolled, after } = shop.rewind.ball;
-    const off = (a, b) => Math.hypot(a.at[0] - b.at[0], a.at[1] - b.at[1], a.at[2] - b.at[2]);
-    check(parked.asleep && off(rolled, parked) > 1 && after.asleep && off(after, parked) < 0.05, `the ball sleeps on its ramp, rolls ${off(rolled, parked).toFixed(1)} m, and rewound sleeps there again (${off(after, parked).toFixed(3)} m off)`);
-    check(
-      shop.rewind.keys.shipped === 0 && shop.rewind.keys.lab[0] === 'F7' && shop.rewind.keys.after[0] === 'KeyR',
-      `no engine hotkeys without ?debug=1 (${shop.rewind.keys.shipped}); with them on, R rewinds in the lab (resolution on ${shop.rewind.keys.lab}) and is the resolution key again outside it`,
-    );
-    check(shop.errors.length === 0, `the workshop runs without errors${shop.errors.length ? ': ' + shop.errors.join('; ') : ''}`);
 
-    // ------------------------------------------------------------- procedural
-    const proc = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // terrain: the collider is where the mesh is (off the grid points), a seed is a land, rain erodes it
-      await w.goto('terrain', { instant: true });
-      e.step(10);
-      const probes = [
-        [0.13, -5.27],
-        [-10.31, 2.17],
-        [12.41, -11.73],
-        [-15.6, -9.9],
-      ].map(([x, z]) => w.room.probe(x, z));
-      const first = w.room.heights();
-      w.room.seed(8);
-      e.step(2);
-      const second = w.room.heights();
-      w.room.seed(7);
-      e.step(2);
-      const again = w.room.heights();
-      w.room.erode();
-      for (let i = 0; i < 60 && w.room.eroding(); i++) e.step(1);
-      const eroded = w.room.heights();
-      const drops = w.room.drops();
-      // more rain on the same land: it wears down, it never digs a pit
-      for (let n = 0; n < 3; n++) {
-        w.room.erode();
-        for (let i = 0; i < 60 && w.room.eroding(); i++) e.step(1);
-      }
-      const after = [
-        [0.13, -5.27],
-        [-10.31, 2.17],
-        [12.41, -11.73],
-      ].map(([x, z]) => w.room.probe(x, z));
-      const gap = (ps) => Math.max(...ps.map((p) => (p.collider === null ? 99 : Math.abs(p.collider - p.mesh))));
-      out.terrain = { off: Math.max(gap(probes), gap(after)), first, second, again, drops, eroded, rained: w.room.heights(), trees: w.room.trees() };
-      // dungeon: a valid solve, walls as colliders, most of the floor reachable; watched, it collapses step by step
-      await w.goto('dungeon', { instant: true });
-      e.step(5);
-      const solved = { done: w.room.done(), valid: w.room.valid(), reach: w.room.reach(), walls: w.room.walls() };
-      w.room.watch();
-      e.step(20);
-      const midway = { undecided: w.room.undecided(), watching: w.room.watching() };
-      for (let i = 0; i < 600 && w.room.watching(); i++) e.step(1);
-      out.dungeon = { solved, midway, watched: { done: w.room.done(), valid: w.room.valid(), walls: w.room.walls() } };
-      // plants: four L-systems grown; GROW draws them again over three seconds
-      await w.goto('plants', { instant: true });
-      e.step(5);
-      const grownAt = w.room.counts();
-      w.room.grow();
-      e.step(60);
-      const half = w.room.grown();
-      e.step(150);
-      out.plants = { counts: grownAt, half, full: w.room.grown() };
-      out.errors = e.state().errors;
-      return out;
-    });
-    check(proc.terrain.off < 0.01, `terrain: the heightfield collider is where the mesh is (off by at most ${proc.terrain.off.toFixed(4)} m)`);
-    check(proc.terrain.first.max > 1.5 && proc.terrain.second.max !== proc.terrain.first.max && proc.terrain.again.max === proc.terrain.first.max, `a seed is a land: seed 7 peaks at ${proc.terrain.first.max.toFixed(2)} m, seed 8 at ${proc.terrain.second.max.toFixed(2)} m, seed 7 again at ${proc.terrain.again.max.toFixed(2)} m`);
-    check(proc.terrain.drops >= 3000 && proc.terrain.eroded.max < proc.terrain.first.max && proc.terrain.trees > 5, `rain erodes it (${proc.terrain.drops} drops, peak ${proc.terrain.first.max.toFixed(2)} → ${proc.terrain.eroded.max.toFixed(2)} m) and trees grow by the rules (${proc.terrain.trees})`);
-    check(proc.terrain.rained.min > proc.terrain.first.min - 1 && proc.terrain.rained.max <= proc.terrain.eroded.max + 0.01, `four times the rain wears it down without digging pits (lowest ${proc.terrain.first.min.toFixed(2)} → ${proc.terrain.rained.min.toFixed(2)} m)`);
-    check(proc.dungeon.solved.done && proc.dungeon.solved.valid && proc.dungeon.solved.walls > 5 && proc.dungeon.solved.reach.reachable > proc.dungeon.solved.reach.floor * 0.3, `dungeon: wave function collapse fits every tile (${proc.dungeon.solved.walls} wall colliders, ${proc.dungeon.solved.reach.reachable}/${proc.dungeon.solved.reach.floor} floor squares reachable)`);
-    check(proc.dungeon.midway.undecided > 0 && proc.dungeon.midway.watching && proc.dungeon.watched.done && proc.dungeon.watched.valid, `watched, it collapses square by square (${proc.dungeon.midway.undecided} undecided midway) and ends valid`);
-    check(proc.plants.counts.every((c) => c.branches > 20 && c.shown === c.branches && c.height > 1) && proc.plants.half > 0.1 && proc.plants.half < 0.9 && proc.plants.full === 1, `plants: four L-systems grown (${proc.plants.counts.map((c) => `${c.name} ${c.branches}`).join(', ')}), drawn again branch by branch (${(proc.plants.half * 100).toFixed(0)}% a second in)`);
-    check(proc.errors.length === 0, `the procedural wing runs without errors${proc.errors.length ? ': ' + proc.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-plants.png`);
-
-    // ------------------------------------------------------------- rendering lab
+    // ------------------------------------------------------------- rendering lab: the GPU, read back
     const gfx = await W(async () => {
       const w = window.__WORLD__;
       const e = window.__PIXEL_ENGINE__;
@@ -933,14 +246,6 @@ export async function runWorld(h) {
       const hidden = await w.room.reflection();
       e.game.visitor.model.visible = true;
       out.views = { feeds, near, again, hidden, renders: w.room.renders(), mirror: w.room.mirrorRenders() };
-      // shaders: one clock drives them; frozen, it holds
-      await w.goto('shaders', { instant: true });
-      e.step(30);
-      const ran = w.room.clock();
-      w.room.freeze(true);
-      e.step(30);
-      out.shaders = { ran, held: w.room.clock() === ran, pieces: w.room.pieces().length };
-      await e.renderer.capture();
       out.errors = e.state().errors;
       return out;
     });
@@ -950,11 +255,9 @@ export async function runWorld(h) {
     check(sw.followed.finite === sw.followed.n && sw.followed.z > sw.placed.z + 1 && sw.followed.dist < 6, `FOLLOW: the swarm moves toward the hero (mean z ${sw.placed.z.toFixed(2)} → ${sw.followed.z.toFixed(2)}) and holds together (${sw.followed.dist.toFixed(2)} m from them on average)`);
     check(gfx.views.feeds.every((f) => f.colours > 8) && gfx.views.renders.every((n) => n > 0), `monitors: two cameras render the room to textures (${gfx.views.feeds.map((f) => `${f.w}x${f.h}, ${f.colours} colours`).join('; ')})`);
     check(gfx.views.near.colours > 8 && gfx.views.mirror > 0 && gfx.views.again.hash === gfx.views.near.hash && gfx.views.hidden.hash !== gfx.views.near.hash, `the mirror reflects the room (${gfx.views.near.colours} colours) and the hero standing at it (hiding the hero changes the reflection; the same frame again does not)`);
-    check(gfx.shaders.ran > 0.3 && gfx.shaders.held && gfx.shaders.pieces >= 6, `shader gallery: ${gfx.shaders.pieces} TSL materials on one clock (${gfx.shaders.ran.toFixed(2)} s), which freezes`);
     check(gfx.errors.length === 0, `the rendering lab runs without errors${gfx.errors.length ? ': ' + gfx.errors.join('; ') : ''}`);
-    await capture(page, `world-${tag}-shaders.png`);
 
-    // ------------------------------------------------------------- asset gallery
+    // ------------------------------------------------------------- asset gallery: the exhibit is drawn
     const gal = await W(async () => {
       const w = window.__WORLD__;
       const e = window.__PIXEL_ENGINE__;
@@ -967,12 +270,7 @@ export async function runWorld(h) {
       await w.goto('gallery', { instant: true });
       e.step(20);
       const r = w.room;
-      const out = { shelves: r.shelves(), first: r.current() };
-      r.next();
-      e.step(5);
-      out.next = r.current();
-      r.prev();
-      out.back = r.current();
+      const out = {};
       r.spin(false);
       r.show('barrel');
       e.step(30);
@@ -1023,180 +321,28 @@ export async function runWorld(h) {
         }
         out.flat = { through, n };
       }
-      r.spin(true);
-      // an off-centre light (the lamp post's lantern hangs 0.23 m off the turntable's axis) turns with it:
-      // its glow stays on the lantern rather than on the spot the lantern started from
-      r.show('lamp-post');
-      e.step(10);
-      const l0 = r.light();
-      e.step(60);
-      const l1 = r.light();
-      out.lamp = l0 && l1 ? { r0: Math.hypot(l0.at[0], l0.at[2]), r1: Math.hypot(l1.at[0], l1.at[2]), moved: Math.atan2(l1.at[0], l1.at[2]) - Math.atan2(l0.at[0], l0.at[2]), turned: l1.turn - l0.turn } : null;
-      out.chair = r.show('chair') && r.current().id;
-      out.missing = r.show('no-such-asset');
-      out.find = r.find('wooden chair', 3);
-      out.kinds = {};
-      for (const id of ['textures/surfaces', 'textures/icons', 'textures/sprites']) {
-        r.shelf(id);
-        e.step(5);
-        out.kinds[id] = r.current().kind;
-      }
-      // each pack in the index makes a shelf of its models and one of its textures, those it has
-      const index = (await (await fetch('packs/index.json')).json()).packs;
-      out.packs = index.length;
-      out.packShelves = index.reduce((n, p) => n + (p.models > 0 ? 1 : 0) + (p.textures > 0 ? 1 : 0), 0);
       out.errors = e.state().errors;
       return out;
     });
-    const families = gal.shelves.filter((s) => s.id.startsWith('library/'));
-    check(families.length === 10 && families.every((s) => s.count > 0) && gal.shelves.some((s) => s.id === 'textures/surfaces'), `asset gallery: ${gal.shelves.length} shelves (${families.length} library families, the textures, ${gal.shelves.length - families.length - 3} from packs)`);
-    check(gal.first.index === 0 && gal.next.index === 1 && gal.next.id !== gal.first.id && gal.back.id === gal.first.id, `asset gallery: next and prev step through a shelf (${gal.first.id} → ${gal.next.id} → ${gal.back.id})`);
     check(gal.barrel > 500 && gal.well > 500, `asset gallery: the exhibit is drawn (hiding it changes ${gal.barrel} pixels for the barrel, ${gal.well} for the well)`);
-    check(gal.chair === 'chair' && gal.missing === false, 'asset gallery: any asset opens by id, an unknown id is refused');
     check(gal.packDrawn.every((p) => p.pixels > 300), `asset gallery: every pack's first asset is drawn (${gal.packDrawn.map((p) => `${p.id} ${p.pixels} px`).join(', ') || 'no packs'})`);
     check(gal.flat !== null && gal.flat.through === 0, `asset gallery: a flat ground tile hides the plinth under it (${gal.flat ? `${gal.flat.through} of ${gal.flat.n} pixels at its centre show the plinth through it` : 'kenney-nature/ground-grass is not in the gallery'})`);
-    {
-      const l = gal.lamp;
-      const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a));
-      check(l !== null && l.turned > 0.3 && Math.abs(wrap(l.moved - l.turned)) < 0.02 && Math.abs(l.r0 - l.r1) < 0.01 && l.r0 > 0.15, `asset gallery: the lamp post's light turns with it (${l ? `turntable ${l.turned.toFixed(2)} rad, light ${l.moved.toFixed(2)} rad, ${l.r0.toFixed(2)} m out` : 'no light'})`);
-    }
-    check(gal.find[0] === 'chair', `asset gallery: search finds the chair for "wooden chair" (${gal.find.join(', ')})`);
-    check(gal.kinds['textures/surfaces'] === 'surface' && gal.kinds['textures/icons'] === 'sprite' && gal.kinds['textures/sprites'] === 'sprite', `asset gallery: surfaces lie as floors, icons and sprites stand up (${Object.values(gal.kinds).join(', ')})`);
-    check(gal.shelves.filter((s) => s.title.startsWith('PACK')).length === gal.packShelves, `asset gallery: a shelf for every pack in packs/index.json (${gal.packs} pack(s), ${gal.packShelves} shelves)`);
     check(gal.errors.length === 0, `the asset gallery runs without errors${gal.errors.length ? ': ' + gal.errors.join('; ') : ''}`);
     await capture(page, `world-${tag}-gallery.png`);
 
     await checkWorkshop({ W, check, capture, page, tag });
 
-    // ------------------------------------------------------------- ai & direction
-    const ai = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      const out = {};
-      // robot yard: behaviour trees carry crystals to the bin; up close, a robot drops it all and runs
-      await w.goto('robots', { instant: true });
-      let n = 0;
-      let onFloor = true;
-      let claims = true;
-      while (w.room.delivered() < 2 && n++ < 1500) {
-        e.step(1);
-        onFloor &&= w.room.onFloor();
-        claims &&= w.room.claimsConsistent();
-      }
-      const delivered = w.room.delivered();
-      const at = w.room.positions()[0];
-      e.game.visitor.teleport([at[0] + 0.8, 0, at[1]], 0);
-      e.step(3);
-      const fleeing = w.room.paths()[0];
-      const traced = w.room.trace(0);
-      for (let i = 0; i < 60; i++) {
-        e.step(1);
-        claims &&= w.room.claimsConsistent();
-      }
-      const ran = Math.hypot(w.room.positions()[0][0] - at[0], w.room.positions()[0][1] - at[1]);
-      // drained batteries: recharge outranks delivering and collecting; they come back full
-      e.game.visitor.teleport([10, 0, 4.5], 0);
-      w.room.drain();
-      e.step(3);
-      const recharging = w.room.paths();
-      // each one fills up at the charger, then goes back to work (and drains again)
-      const charged = w.room.batteries().map(() => 0);
-      n = 0;
-      while (charged.some((c) => c < 0.95) && n++ < 3000) {
-        e.step(1);
-        w.room.batteries().forEach((b, i) => (charged[i] = Math.max(charged[i], b)));
-        onFloor &&= w.room.onFloor();
-      }
-      out.robots = { delivered, fleeing, traced, ran, recharging, charged, onFloor, claims };
-      // cutscene stage: the timeline takes the camera, cuts, speaks; skipping leaves the world as the scene would
-      await w.goto('cutscene', { instant: true });
-      e.step(5);
-      const started = w.pad('PLAY SCENE');
-      e.step(60);
-      const shot = w.room.shot();
-      const cam = w.room.cameraAt();
-      const early = { playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero, bars: w.room.bars(), line: w.room.line(), off: Math.hypot(cam[0] - shot.position[0], cam[1] - shot.position[1], cam[2] - shot.position[2]) };
-      n = 0;
-      while (w.room.playing() && w.room.time() < 7.5 && n++ < 200) e.step(10);
-      const cuts = w.room.cuts();
-      e.input.setKey('Space', true);
-      e.step(1);
-      e.input.setKey('Space', false);
-      e.step(2);
-      out.cutscene = { started, early, cuts, playing: w.room.playing(), fired: w.room.fired(), chest: w.room.chestOpen(), gate: w.room.gateOpen(), preset: w.room.preset(), hero: w.state().hero };
-      // another camera picked mid-scene (as the T panel does): the scene ends and leaves it be
-      w.room.play();
-      e.step(30);
-      const again = { playing: w.room.playing(), preset: w.room.preset() };
-      e.setCamera({ preset: 'topdown' }, { syncUrl: false });
-      e.step(2);
-      out.cutscene.taken = { again, playing: w.room.playing(), preset: w.room.preset(), hero: w.state().hero };
-      // sound garden: louder near, panned to its side, muffled behind the wall
-      await w.goto('sounds', { instant: true });
-      const hear = (x, z, frames = 40) => {
-        e.game.visitor.teleport([x, 0, z], 0);
-        e.step(frames);
-        return w.room.mix();
-      };
-      const byFountain = hear(-4.5, -3);
-      const west = hear(5, -3.5); // between the wall and the generator: it is east of you
-      const east = hear(9.5, -3.5);
-      const behind = hear(1, -3.5); // the wall between you and the generator
-      const told = w.room.voices();
-      w.pad('OCCLUSION');
-      const through = hear(1, -3.5);
-      e.audio.loop('jump', { volume: 0 }); // a loop the room does not know about: the level unload stops it
-      await w.goto('atrium', { instant: true });
-      e.step(2);
-      out.sounds = { byFountain, west, east, behind, told, through, loopsAfter: e.audio.loops.length };
-      out.errors = e.state().errors;
-      return out;
-    });
-    const rb = ai.robots;
-    check(rb.delivered >= 2 && rb.onFloor && rb.claims, `robot yard: behaviour trees carry ${rb.delivered} crystals to the bin; no robot in a wall, no crystal claimed twice`);
-    check(rb.fleeing.includes('flee') && rb.ran > 1 && rb.traced.length >= 15 && rb.traced[0].status === 'running', `a hero up close: robot 1 switches to ${rb.fleeing.join(' > ')} and runs ${rb.ran.toFixed(1)} m (its trace: ${rb.traced.length} nodes)`);
-    check(rb.recharging.filter((p) => p.includes('recharge')).length >= 3 && rb.charged.every((b) => b >= 0.95), `drained, they go to the charger (${rb.recharging.map((p) => p.at(-1)).join(', ')}) and each fills up (${rb.charged.map((b) => Math.round(b * 100)).join('%, ')}%)`);
-    const cs = ai.cutscene;
-    check(cs.started && cs.early.playing && cs.early.preset === 'fixed' && cs.early.hero === null && cs.early.off < 0.01 && cs.early.bars > 0.99 && cs.early.line, `cutscene: the timeline drives a fixed camera (${cs.early.off.toFixed(4)} m off its curve), bars in, a line spoken: "${cs.early.line}"`);
-    check(cs.cuts >= 2, `the camera cuts between shots (${cs.cuts} cuts by 7.5 s)`);
-    check(!cs.playing && cs.chest && cs.gate && cs.fired.includes('gate opens') && !cs.fired.includes('fanfare') && cs.preset === 'iso' && cs.hero && cs.hero.at[1] < 0.1, `SPACE skips: chest and gate open anyway, the fanfare does not play (${cs.fired.join(', ')}), the iso camera and the hero are back (not jumping on the same press)`);
-    const so = ai.sounds;
-    const loudest = (m) => m.reduce((a, b) => (b.gain > a.gain ? b : a)).name;
-    check(loudest(so.byFountain) === 'FOUNTAIN' && so.byFountain[0].gain > 0.5 && so.byFountain[2].gain < so.byFountain[0].gain / 2, `sound garden: by the fountain it is the loudest (${so.byFountain.map((m) => `${m.name} ${m.gain.toFixed(2)}`).join(', ')})`);
-    check(so.west[1].pan * so.east[1].pan < 0 && Math.abs(so.west[1].pan) > 0.3 && !so.west[1].occluded, `the generator pans to its side (${so.west[1].pan.toFixed(2)} from the west, ${so.east[1].pan.toFixed(2)} from the east)`);
-    check(so.behind[1].occluded && so.behind[1].muffle > 0.5 && so.told[1].muffle > 0.5 && !so.through[1].occluded, `behind the wall it is muffled (${so.behind[1].muffle.toFixed(2)}, the voice told ${so.told[1].muffle.toFixed(2)}); with OCCLUSION off it is not`);
-    check(cs.taken.again.playing && cs.taken.again.preset === 'fixed' && cs.taken.playing === false && cs.taken.preset === 'topdown' && cs.taken.hero, `a camera picked mid-scene ends it and stays (${cs.taken.preset}), the hero back`);
-    check(so.loopsAfter === 0, "leaving the garden stops its looping voices, and one the room never knew about (the level unload)");
-    check(ai.errors.length === 0, `the AI & direction wing runs without errors${ai.errors.length ? ': ' + ai.errors.join('; ') : ''}`);
-
-    // ------------------------------------------------------------- lights: the sun dial moves the sun
-    const sun = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      await w.goto('lights', { instant: true });
-      w.pad('DAWN');
-      e.step(5);
-      const dawn = e.sunDir.toArray();
-      w.pad('NOON');
-      e.step(5);
-      return { dawn, noon: e.sunDir.toArray(), stats: e.lights.stats() };
-    });
-    check(sun.dawn[0] > 0.8 && sun.noon[1] > 0.8, `the sun dial points the sun (dawn x ${sun.dawn[0].toFixed(2)}, noon y ${sun.noon[1].toFixed(2)})`);
-    check(sun.stats.lit === sun.stats.size, `the light pool lends all ${sun.stats.size} lights (${sun.stats.requests} requests)`);
-    await capture(page, `world-${tag}-noon.png`);
-
     // ------------------------------------------------------------- transitions room: a mosaic
-    const mosaic = await W(async () => {
+    await W(async () => {
       const w = window.__WORLD__;
       const e = window.__PIXEL_ENGINE__;
       await w.goto('transitions', { instant: true });
       e.step(10);
       void e.screen.cover('mosaic', { duration: 0.2 });
       e.step(20);
-      return e.screen.state();
     });
     const covered = await capture(page, `world-${tag}-mosaic.png`);
-    check(mosaic.progress === 1 && colorCount(covered) <= 3, `a mosaic covers the frame (${colorCount(covered)} colours)`);
+    check(colorCount(covered) <= 3, `a mosaic covers the frame (${colorCount(covered)} colours)`);
     await W(async () => {
       const e = window.__PIXEL_ENGINE__;
       void e.screen.reveal('mosaic', { duration: 0.2 });
@@ -1205,21 +351,6 @@ export async function runWorld(h) {
     const revealed = await capture(page, `world-${tag}-revealed.png`);
     check(colorCount(revealed) > 20, `and reveals it again (${colorCount(revealed)} colours)`);
 
-    // ------------------------------------------------------------- leaks: back to the Atrium
-    const back = await W(async () => {
-      const w = window.__WORLD__;
-      const e = window.__PIXEL_ENGINE__;
-      await w.goto('lights', { instant: true });
-      e.step(5);
-      await w.goto('atrium', { instant: true });
-      e.step(5);
-      const hero = w.state().hero.at;
-      const door = w.room.doors().find((d) => d.id === 'lights').at;
-      return { physics: e.physics.counts(), children: e.scene.children.length, near: Math.hypot(hero[0] - door[0], hero[2] - door[2]) };
-    });
-    check(JSON.stringify(back.physics) === JSON.stringify(base.physics), `after every room the Atrium has the same physics (${JSON.stringify(back.physics)})`);
-    check(back.children === base.children, `and the same scene objects (${back.children})`);
-    check(back.near < 3, `arriving from a room puts the hero in front of its door (${back.near.toFixed(2)} m)`);
     const st = await W(() => window.__PIXEL_ENGINE__.state());
     check(st.errors.length === 0, `no game errors${st.errors.length ? ': ' + st.errors.join('; ') : ''}`);
     checkClean(st, logs);
@@ -1245,13 +376,14 @@ export async function runWorld(h) {
 }
 
 /**
- * The Asset Workshop (`workshop`): the picker scrolls and picks, each kind of asset goes down and
- * is drawn, the pointer places and takes away, undo and clear free what went down. Exported so it
- * can run on its own against a page already open on Engine World.
+ * The Asset Workshop (`workshop`) in pictures: each kind of asset goes down and is drawn (hiding it
+ * changes the frame); then a floor to look at. Where each goes down, the picker, the pointer, undo
+ * and clear are checked headless (src/world/rooms/assets.headless.test.ts). Exported so it can run
+ * on its own against a page already open on Engine World.
  * @param {object} h { W: evaluate in the page, check, capture, page, tag }
  */
 export async function checkWorkshop({ W, check, capture, page, tag }) {
-  const ws = await W(async () => {
+  const k = await W(async () => {
     const w = window.__WORLD__;
     const e = window.__PIXEL_ENGINE__;
     const changed = (a, b) => {
@@ -1259,46 +391,11 @@ export async function checkWorkshop({ W, check, capture, page, tag }) {
       for (let i = 0; i < a.length; i += 4) if (a[i] !== b[i] || a[i + 1] !== b[i + 1] || a[i + 2] !== b[i + 2]) n++;
       return n;
     };
-    const click = (x, y, buttons = 1) => {
-      e.input.setPointer(x, y);
-      e.step(1);
-      e.input.setButtons(buttons);
-      e.step(1);
-      e.input.setButtons(0);
-      e.step(1);
-    };
     await w.goto('workshop', { instant: true });
     e.step(20);
     const r = w.room;
     r.preview(false); // frames then differ by what went down, not by the hovering preview
-    const out = { shelves: r.shelves(), first: r.selected() };
-    // what the shelves should hold: every library family (the engine's lists) and every pack the index lists, whole
-    const lib = r.library();
-    const index = (await (await fetch('packs/index.json')).json()).packs;
-    out.expect = {
-      models: Object.entries(lib.models).map(([f, ids]) => [f, ids.length]),
-      surfaces: lib.textures.surfaces.length,
-      sprites: lib.textures.sprites.length,
-      packs: index.map((x) => ({ id: x.id, models: x.models, textures: x.textures })),
-    };
-    // the wheel over the list moves the pick a row a tick, and the camera keeps its zoom
-    const zoom0 = e.camera.zoom;
-    e.input.setPointer(...r.ui().rows[0].at);
-    for (let i = 0; i < 2; i++) {
-      e.input.addPointer(0, 0, 1);
-      e.step(1);
-    }
-    out.wheel = { index: r.selected().index, zoom0, zoom: e.camera.zoom };
-    e.input.setKey('KeyE', true);
-    e.step(1);
-    e.input.setKey('KeyE', false);
-    e.step(1);
-    out.key = r.selected().index;
-    // a click on a row picks it
-    const rows = r.ui().rows;
-    click(...rows.at(-1).at);
-    out.row = { clicked: rows.at(-1).id, picked: r.selected().id };
-    // each kind goes down where it is asked to and is drawn: hiding it changes the frame
+    // each kind is drawn: hiding it changes the frame
     const drawn = async (spawn) => {
       r.clear();
       const placed = spawn();
@@ -1308,120 +405,17 @@ export async function checkWorkshop({ W, check, capture, page, tag }) {
       e.step(2);
       const px = changed(a, (await e.renderer.capture()).pixels);
       r.hide(false);
-      return { ...placed, px };
+      return { id: placed?.id, px };
     };
     const pack = r.shelves().find((s) => s.title.startsWith('PACK') && !s.id.endsWith('/textures'));
-    out.kinds = {
+    const kinds = {
       library: await drawn(() => r.spawn('barrel', [-2, 2])),
       pack: pack ? await drawn(() => (r.shelf(pack.id), r.spawn(undefined, [-2, 2]))) : null,
       tile: await drawn(() => r.spawn('floor-tiles', [-2, 2])),
       sprite: await drawn(() => r.spawn('coin-spin', [-2, 2])),
     };
-    // a model stands on the floor wherever its own bounds start (a wall torch from 1.13 m up, a
-    // hanging lantern from 1.7 m), its footprint's middle where it was asked to go
-    r.clear();
-    out.stand = ['wall-torch', 'hanging-lantern', 'campfire', 'oak'].map((id, i) => ({ asked: [-5 + i * 2.5, 0], ...r.spawn(id, [-5 + i * 2.5, 0]) }));
-    // patches: one over another lies on top, and a model on them stands above both
-    r.clear();
-    const under = r.spawn('floor-tiles', [-2, 1]);
-    const over = r.spawn('grass', [-1, 2]);
-    const onTop = r.spawn('barrel', [-1.5, 1.5]);
-    out.layers = { under: under.at[1], over: over.at[1], base: onTop.base };
-    // undo takes the last away, clear the rest: their scene objects and lights go with them
-    r.clear();
-    e.step(30);
-    const count = () => ({ n: r.spawned().length, children: e.scene.children.length, lights: e.lights.stats().requests });
-    const base = count();
-    r.spawn('barrel', [-2, 2]);
-    r.spawn('lamp-post', [-3, 1]);
-    r.spawn('coin-spin', [-1, 1]);
-    e.step(5);
-    const three = { ...count(), lit: r.spawned().map((p) => p.light) };
-    const undone = r.undo();
-    e.step(2);
-    const two = { ...count(), ids: r.spawned().map((p) => p.id) };
-    const cleared = r.clear();
-    e.step(30);
-    out.undo = { base, three, undone, two, cleared, after: count() };
-    // the floor holds 80 things: the 81st is refused
-    let refused;
-    for (let i = 0; i <= 80; i++) refused = r.spawn('barrel', [-6 + (i % 10), -5 + Math.floor(i / 10)]);
-    out.cap = { n: r.spawned().length, refused };
-    r.clear();
-    e.step(2);
-    // a click on the floor places the pick under the pointer; a right click there takes it away
-    const V = e.scene.position.constructor;
-    const spot = new V(-3, 0, 2);
-    const ndc = spot.clone().project(e.camera.camera);
-    r.select('crate');
-    click(ndc.x, ndc.y);
-    const last = r.spawned().at(-1) ?? null;
-    out.floor = { spot: spot.toArray(), placed: last && { id: last.id, at: last.at }, n: r.spawned().length };
-    click(ndc.x, ndc.y, 2);
-    out.floor.after = r.spawned().length;
-    // the mouse over the floor, then onto the list and its wheel: the preview and Enter stay where
-    // the floor was last under the mouse, never on the floor hidden under the panel
-    r.clear();
-    const spot2 = new V(-2, 0, 1);
-    const ndc2 = spot2.clone().project(e.camera.camera);
-    e.input.setPointer(ndc2.x, ndc2.y);
-    e.step(1);
-    e.input.setPointer(...r.ui().rows[0].at);
-    e.input.addPointer(0, 0, 1);
-    e.step(1);
-    const aimed = r.aim();
-    e.input.setKey('Enter', true);
-    e.step(1);
-    e.input.setKey('Enter', false);
-    e.step(1);
-    const entered = r.spawned().at(-1) ?? null;
-    out.panelAim = { spot: spot2.toArray(), aimed, placed: entered && entered.at };
-    // a right click takes away what it hits: a tree by its crown, a sprite by its picture (not only at their feet)
-    r.clear();
-    const tree = r.spawn('oak', [-4, 0]);
-    const coin = r.spawn('coin-spin', [0, 2.5]);
-    const at = (thing, up) => new V(thing.at[0], thing.at[1] + thing.size[1] * up, thing.at[2]).project(e.camera.camera);
-    const crown = at(tree, 0.75);
-    click(crown.x, crown.y, 2);
-    const afterCrown = r.spawned().map((x) => x.id);
-    const face = at(coin, 0.8);
-    click(face.x, face.y, 2);
-    out.rightHits = { afterCrown, afterFace: r.spawned().map((x) => x.id) };
-    // a turn back is a turn forward: -45 degrees is 315
-    r.turn(-45);
-    out.turnBack = w.knobs().find((x) => x.id === 'turn').value;
-    r.turn(0);
-    // a finger (the key Touch) dragged up the list scrolls it, a row for each row's height, and
-    // places nothing; a tap on the floor places the pick there
-    r.shelf('library/furniture');
-    const list = r.ui().rows;
-    const rowH = list[0].at[1] - list[1].at[1];
-    const before = { index: r.selected().index, n: r.spawned().length };
-    e.input.setPointer(...list[1].at);
-    e.input.setKey('Touch', true);
-    e.step(1);
-    for (let i = 1; i <= 3; i++) {
-      e.input.setPointer(list[1].at[0], list[1].at[1] + rowH * i);
-      e.step(1);
-    }
-    e.input.setKey('Touch', false);
-    e.step(1);
-    out.finger = { from: before.index, to: r.selected().index, placed: r.spawned().length - before.n, pick: r.selected().id };
-    e.input.setPointer(ndc.x, ndc.y);
-    e.step(1);
-    e.input.setKey('Touch', true);
-    e.step(1);
-    e.input.setKey('Touch', false);
-    e.step(1);
-    const tapped = r.spawned().at(-1) ?? null;
-    out.finger.tap = r.spawned().length === before.n + 1 && tapped ? { id: tapped.id, at: tapped.at } : null;
-    r.clear();
-    // FIND IT: one search across the library and every pack picks its best hit
-    w.pad('FIND IT');
-    out.found = { picked: r.selected().id, best: r.find('chair', 1)[0] };
-    r.select('campfire');
-    out.def = r.def();
     // a floor to look at: a tile, models from the library and a pack, a sprite
+    r.clear();
     r.spawn('floor-tiles', [-2, 2]);
     r.spawn('campfire', [-2, 2]);
     r.spawn('barrel', [-0.5, 1]);
@@ -1429,60 +423,11 @@ export async function checkWorkshop({ W, check, capture, page, tag }) {
     r.spawn('kenney-furniture/chair', [-0.8, 3]);
     r.spawn('coin-spin', [-3.5, 3]);
     e.step(20);
-    return out;
+    return kinds;
   });
-  const k = ws.kinds;
-  {
-    const has = new Map(ws.shelves.map((s) => [s.id, s.count]));
-    const x = ws.expect;
-    const short = [
-      ...x.models.filter(([f, n]) => has.get(`library/${f}`) !== n).map(([f, n]) => `library/${f} (${n})`),
-      ...(has.get('textures/surfaces') === x.surfaces ? [] : [`textures/surfaces (${x.surfaces})`]),
-      ...((has.get('textures/icons') ?? 0) + (has.get('textures/sprites') ?? 0) === x.sprites ? [] : [`textures/icons + sprites (${x.sprites})`]),
-      ...x.packs.flatMap((pk) => [...(pk.models && has.get(pk.id) !== pk.models ? [`${pk.id} (${pk.models})`] : []), ...(pk.textures && has.get(`${pk.id}/textures`) !== pk.textures ? [`${pk.id}/textures (${pk.textures})`] : [])]),
-    ];
-    check(short.length === 0 && x.packs.length > 0, `asset workshop: a whole shelf for each of the library's ${x.models.length} model families and its textures, and for every pack in packs/index.json (${x.packs.length})${short.length ? `; missing or short: ${short.join(', ')}` : ''}`);
-  }
-  check(ws.wheel.index === ws.first.index + 2 && ws.wheel.zoom === ws.wheel.zoom0, `asset workshop: the wheel over the list moves the pick (row ${ws.first.index} → ${ws.wheel.index}) and not the camera (zoom ${ws.wheel.zoom0} → ${ws.wheel.zoom})`);
-  check(ws.key === ws.wheel.index + 1, `asset workshop: E picks the next row (${ws.wheel.index} → ${ws.key})`);
-  check(ws.row.picked === ws.row.clicked, `asset workshop: a click on a row picks it (${ws.row.clicked} → ${ws.row.picked})`);
-  check(k.library.kind === 'model' && k.library.px > 300, `asset workshop: a library model goes down and is drawn (${k.library.id}, ${k.library.px} px)`);
-  check(k.pack?.kind === 'model' && k.pack.shelf.startsWith('kenney') && k.pack.px > 300, `asset workshop: a pack's model goes down and is drawn (${k.pack ? `${k.pack.id}, ${k.pack.px} px` : 'no pack shelf'})`);
-  check(k.tile.kind === 'surface' && k.tile.px > 300, `asset workshop: a tiling texture lies as a floor (${k.tile.id}, ${k.tile.px} px)`);
-  check(k.sprite.kind === 'sprite' && k.sprite.px > 100, `asset workshop: a sprite stands up (${k.sprite.id}, ${k.sprite.px} px)`);
-  check(Object.values(k).filter(Boolean).every((p) => Math.hypot(p.at[0] + 2, p.at[2] - 2) < 1e-6 && p.at[1] >= 0 && p.at[1] < 0.02), `asset workshop: each goes down where it is asked, on the floor (where each stands: ${Object.values(k).filter(Boolean).map((p) => p.at.join(', ')).join('; ')})`);
-  check(
-    ws.stand.every((p) => Math.abs(p.base - 0.01) < 1e-3 && Math.hypot(p.middle[0] - p.asked[0], p.middle[1] - p.asked[1]) < 0.02),
-    `asset workshop: a model's lowest point is on the floor and its footprint where asked, whatever its own bounds (${ws.stand.map((p) => `${p.id} base ${p.base}, ${Math.hypot(p.middle[0] - p.asked[0], p.middle[1] - p.asked[1]).toFixed(3)} m off`).join('; ')})`,
-  );
-  check(ws.layers.over > ws.layers.under && ws.layers.base >= ws.layers.over + 0.009, `asset workshop: a patch over another lies on top, a model on them stands above both (patches at ${ws.layers.under} and ${ws.layers.over} m, the barrel's base at ${ws.layers.base} m)`);
-  {
-    const u = ws.undo;
-    check(
-      u.three.n === 3 && u.three.children === u.base.children + 3 && u.three.lights === u.base.lights + 1 && u.undone === 'coin-spin' && u.two.n === 2 && u.two.children === u.base.children + 2,
-      `asset workshop: undo takes the last thing away (${u.undone}; ${u.three.n} → ${u.two.n} placed, scene ${u.three.children} → ${u.two.children})`,
-    );
-    check(u.cleared === 2 && u.after.n === 0 && u.after.children === u.base.children && u.after.lights === u.base.lights, `asset workshop: clear takes the rest, with the lamp's light (scene ${u.after.children} of ${u.base.children}, lights ${u.after.lights} of ${u.base.lights})`);
-    check(ws.cap.n === 80 && ws.cap.refused === null, `asset workshop: the floor holds 80 things and refuses the 81st (${ws.cap.n} placed, the 81st ${ws.cap.refused === null ? 'refused' : 'placed'})`);
-  }
-  {
-    const f = ws.floor;
-    const off = f.placed ? Math.hypot(f.placed.at[0] - f.spot[0], f.placed.at[2] - f.spot[2]) : Infinity;
-    check(f.placed?.id === 'crate' && off < 0.05, `asset workshop: a click on the floor places the pick under the pointer (${f.placed ? `${f.placed.id} ${off.toFixed(3)} m off` : 'nothing placed'})`);
-    check(f.after === f.n - 1, `asset workshop: a right click there takes it away (${f.n} → ${f.after})`);
-    const a = ws.panelAim;
-    const aimOff = Math.hypot(a.aimed.at[0] - a.spot[0], a.aimed.at[2] - a.spot[2]);
-    const enterOff = a.placed ? Math.hypot(a.placed[0] - a.spot[0], a.placed[2] - a.spot[2]) : Infinity;
-    check(a.aimed.by === 'pointer' && aimOff < 0.05 && enterOff < 0.05, `asset workshop: with the mouse moved onto the panel, the preview and Enter stay where it last was over the floor (preview ${aimOff.toFixed(3)} m off, Enter ${enterOff.toFixed(3)} m off)`);
-    const h = ws.rightHits;
-    check(!h.afterCrown.includes('oak') && h.afterCrown.includes('coin-spin') && h.afterFace.length === 0, `asset workshop: a right click takes away what it hits, a tree by its crown, a sprite by its picture (left after the crown: ${h.afterCrown.join(', ') || 'nothing'}; after the picture: ${h.afterFace.join(', ') || 'nothing'})`);
-    check(ws.turnBack === 7, `asset workshop: turning back 45 degrees is turning to 315 (the Turn knob reads option ${ws.turnBack})`);
-    const t = ws.finger;
-    check(t.to === t.from + 3 && t.placed === 0, `asset workshop: a finger dragged up the list scrolls it (row ${t.from} → ${t.to}) and places nothing (${t.placed})`);
-    const tapOff = t.tap ? Math.hypot(t.tap.at[0] - f.spot[0], t.tap.at[2] - f.spot[2]) : Infinity;
-    check(t.tap?.id === t.pick && tapOff < 0.05, `asset workshop: a tap on the floor places the pick there (${t.tap ? `${t.tap.id} ${tapOff.toFixed(3)} m off` : 'nothing placed'})`);
-  }
-  check(ws.found.picked === ws.found.best && ws.found.best === 'chair', `asset workshop: FIND IT picks the search's best hit (${ws.found.picked})`);
-  check(ws.def.includes('USES stone-ring, flame'), `asset workshop: DEF says what the pick is made of (${ws.def.join(' / ')})`);
+  check(k.library.px > 300, `asset workshop: a library model is drawn (${k.library.id}, ${k.library.px} px)`);
+  check(k.pack !== null && k.pack.px > 300, `asset workshop: a pack's model is drawn (${k.pack ? `${k.pack.id}, ${k.pack.px} px` : 'no pack shelf'})`);
+  check(k.tile.px > 300, `asset workshop: a tiling texture is drawn as a floor (${k.tile.id}, ${k.tile.px} px)`);
+  check(k.sprite.px > 100, `asset workshop: a sprite is drawn (${k.sprite.id}, ${k.sprite.px} px)`);
   await capture(page, `world-${tag}-workshop-floor.png`);
 }

@@ -57,9 +57,9 @@ it is as fast as the simulation). A replay that ends with the run's `fingerprint
 level is deterministic. A script that steps a level and awaits between steps should yield a
 task (a separate `page.evaluate`, `setTimeout`), not just a promise: a replay waits a whole task
 wherever promise callbacks ran, so a game's longer promise chains would get further than they did.
-The World suite checks a scripted run, a run replayed to a frame and
-played on, and live play at the browser's own pace with a pause and a tween's promise
-(`scripts/e2e-world.mjs`); an edited recording shows the check can fail. Each level gets a fresh
+A scripted run and a run replayed to a frame and played on are checked headless
+(`src/world/replay.headless.test.ts`); live play at the browser's own pace with a pause and a
+tween's promise in the page (`scripts/e2e-world.mjs`); an edited recording shows the check can fail. Each level gets a fresh
 physics world (Rapier keeps internal state a cleared world would carry), so a level plays the
 same whatever ran before.
 

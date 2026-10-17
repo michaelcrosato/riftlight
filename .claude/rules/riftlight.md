@@ -16,6 +16,8 @@ Must not break (docs/GAME.md *The design language*):
 - Every system keeps a saved state (`save`/`load` beside its code); `Riftlight.snapshot` / `restore`
   carry it (docs/game/save-states.md); `Riftlight.fingerprint` holds what a replay must match.
 - Input goes through `ctx.input` (data from the page through `ctx.input.send`) so sessions replay.
+- Check gameplay headless in vitest: `headlessRiftlight({ seed, store })`, `headlessGame(lab)`,
+  `stepUntil`, `pointAtArt` (`src/riftlight/headless.ts`); e2e suites keep the pictures and the DOM.
 - Check with the system's CLI (`npm run monster|loot|tree|level|combat|balance|playtest`), and a
   playtest or film for anything that plays.
 

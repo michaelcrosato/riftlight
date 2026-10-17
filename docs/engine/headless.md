@@ -92,7 +92,13 @@ in Node. Deterministic math across runtimes is an open decision (michaelcrosato/
 ## Writing headless tests
 
 - Stub nothing: no `window`, `document`, `location`, `ProgressEvent`, no `vi.stubGlobal`. Code that
-  needs the page guards on `engine.renderer.container` (null headless) or uses `engine.gpu`.
+  needs the page guards on `engine.renderer.container` (null headless) or uses `engine.gpu`; code
+  that reads the page's URL outside the engine (a room's `?asset=`) guards on `typeof location`.
+- `stepUntil(engine, done, { max, every, what })` and `settle()` (`src/engine/node.ts`) step and let
+  promise callbacks run between frames, as a page's `waitForFunction` waits. Riftlight's tests add
+  `headlessRiftlight`, `headlessGame`, `pointAtArt` (`src/riftlight/headless.ts`); Engine World's
+  `headlessWorld`, `expectNoLeak` (`src/world/testWorld.ts`); the Playground's `bootPlayground`
+  (`src/game/testPlayground.ts`).
 - One engine at a time per test file; give headless tests their own timeout (vitest's default is
   5 s) and keep a file at or under 15 s.
 - `src/engine/headless.test.ts` is the model: Playground boots, input moves and jumps the hero,
