@@ -14,6 +14,8 @@
  */
 import { HalfFloatType, MeshBasicNodeMaterial, NearestFilter, type Object3D, PerspectiveCamera, RenderTarget, type Scene, type Texture, type WebGPURenderer } from 'three/webgpu';
 import { texture } from 'three/tsl';
+import type { PixelRenderer } from './PixelRenderer';
+import type { View } from './view';
 
 /** The layer for screens and mirrors: drawn by the main camera, never by a RenderView. */
 export const SCREEN_LAYER = 2;
@@ -74,9 +76,10 @@ export class RenderView {
     return true;
   }
 
-  /** Render before every frame of `pixel` (the engine's PixelRenderer). Returns a stop. */
-  attach(pixel: { onBeforeRender(f: () => void): () => void; renderer: WebGPURenderer }, scene: Scene): () => void {
-    return pixel.onBeforeRender(() => this.render(pixel.renderer, scene));
+  /** Render before every frame of `view` (`engine.renderer`). Returns a stop. Headless the hook is kept and never runs. */
+  attach(view: View, scene: Scene): () => void {
+    // only a PixelRenderer runs these hooks (a type-only import: PixelRenderer imports this file)
+    return view.onBeforeRender(() => this.render((view as PixelRenderer).renderer, scene));
   }
 
   /** An unlit material showing the view (a new one each call: tint it as you like). */

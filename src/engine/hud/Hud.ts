@@ -89,10 +89,10 @@ export class Hud {
 
   /** Engine: follow the renderer's resolution and framing, and repaint if needed. */
   sync(resolution: Resolution, framing: Framing): void {
+    this.size = resolution; // the layout follows the view with or without a page (headless lays out the same)
     if (!this.container) return;
     if (!this.canvas && this.items.length === 0) return;
     const canvas = (this.canvas ??= this.createCanvas(this.container));
-    this.size = resolution;
     const layout = `${resolution.width}x${resolution.height}|${framing.cssWidth},${framing.cssHeight},${framing.offsetX},${framing.offsetY}|${this.visible}`;
     if (layout !== this.layoutKey) {
       this.layoutKey = layout;

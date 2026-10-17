@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, snapToGrid, worldUnitsPerPixel } from './framing';
+import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, frameView, snapToGrid, worldUnitsPerPixel } from './framing';
 
 describe('computeFraming', () => {
   it('uses the largest integer scale that fits (1080p, dpr 1)', () => {
@@ -138,6 +138,42 @@ describe('computeFraming (fill)', () => {
     for (const res of Object.values(RESOLUTIONS)) {
       expect(computeFraming(1920, 1080, 1, res, 'fill')).toEqual(computeFraming(1920, 1080, 1, res));
     }
+  });
+});
+
+describe('frameView (both views: PixelRenderer and HeadlessView)', () => {
+  const D = RESOLUTIONS.default;
+  const C = RESOLUTIONS.compare;
+  const art = (v: { width: number; height: number; dpr: number }, base: Resolution, aspect: 'fill' | 'adaptive' | 'fixed', current: Resolution = base) => frameView(v, base, aspect, current);
+
+  it('fill: the art follows the viewport at the integer scale nearest the preset height', () => {
+    expect(art({ width: 960, height: 540, dpr: 1 }, D, 'fill').framing).toMatchObject({ artWidth: 480, artHeight: 270, scale: 2 });
+    expect(art({ width: 1000, height: 540, dpr: 1 }, D, 'fill').resolution).toEqual({ width: 500, height: 270 });
+    expect(art({ width: 960, height: 540, dpr: 2 }, D, 'fill').framing).toMatchObject({ artWidth: 480, artHeight: 270, scale: 4, canvasWidth: 1920 });
+    // the chunkier pixel size: 180 art rows at 3 device pixels each
+    expect(art({ width: 960, height: 540, dpr: 1 }, C, 'fill').framing).toMatchObject({ artWidth: 320, artHeight: 180, scale: 3 });
+    expect(art({ width: 1000, height: 540, dpr: 1 }, C, 'fill').resolution).toEqual({ width: 334, height: 180 });
+  });
+
+  it('adaptive: the art height stays, its width follows the screen', () => {
+    expect(art({ width: 1280, height: 540, dpr: 1 }, D, 'adaptive').framing).toMatchObject({ artWidth: 640, artHeight: 270, scale: 2 });
+    expect(art({ width: 640, height: 270, dpr: 2 }, C, 'adaptive').framing).toMatchObject({ artWidth: 426, artHeight: 180, scale: 3 });
+  });
+
+  it('fixed: exactly the preset, letterboxed in whole device pixels', () => {
+    expect(art({ width: 1000, height: 600, dpr: 1 }, D, 'fixed').framing).toMatchObject({ artWidth: 480, artHeight: 270, scale: 2, canvasWidth: 960, offsetX: 20, offsetY: 30 });
+    expect(art({ width: 1000, height: 600, dpr: 2 }, D, 'fixed').framing).toMatchObject({ scale: 4, canvasWidth: 1920, canvasHeight: 1080, offsetX: 20, offsetY: 30 });
+  });
+
+  it("keeps identity: the preset itself when the art equals it, the current size while it stays", () => {
+    const own = { width: 480, height: 270 };
+    expect(art({ width: 960, height: 540, dpr: 1 }, own, 'fill').resolution).toBe(own); // the base, not a copy
+    const current = { width: 500, height: 270 };
+    expect(art({ width: 1000, height: 540, dpr: 1 }, D, 'fill', current).resolution).toBe(current);
+    const changed = art({ width: 1000, height: 540, dpr: 1 }, D, 'fill', { width: 480, height: 270 }).resolution;
+    expect(changed).not.toBe(D);
+    expect(changed).toEqual({ width: 500, height: 270 });
+    expect(art({ width: 960, height: 540, dpr: 1 }, D, 'fill', current).resolution).toBe(D); // back to the preset: the preset object
   });
 });
 

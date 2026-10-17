@@ -17,6 +17,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/effects.md | particles, the pixel HUD, weather and fog, grass, trails and decals, pixel sprites, screen transitions, tweens |
 | docs/engine/ai.md | `NavGrid`, flow fields, boids, behaviour trees |
 | docs/engine/cinematic.md | `Timeline` cutscenes |
+| docs/engine/headless.md | `Engine.headless`: games in Node without a page or GPU, `View` and `engine.gpu`, assets in Node (`nodeAssets`), writing headless tests |
 | docs/engine/determinism.md | `ctx.random`, recording and replay, `ctx.input.send`, fingerprints, save-states, time rewind |
 | docs/engine/procgen.md | noise, terrain and erosion, wave function collapse, L-systems |
 | docs/engine/procedural-motion.md | spring chains, squash, leg steppers, two-bone IK |

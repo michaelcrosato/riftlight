@@ -52,6 +52,26 @@ export interface Framing {
   readonly offsetY: number;
 }
 
+/** A page's viewport: its size in CSS pixels and the device pixel ratio (a recording keeps it: `Recording.view`). */
+export interface Viewport {
+  readonly width: number;
+  readonly height: number;
+  readonly dpr: number;
+}
+
+/**
+ * The framing and art resolution of a view (PixelRenderer's canvas, or a HeadlessView's viewport):
+ * `computeFraming`, and the art size as a resolution. Identity is kept where nothing changed: the
+ * `current` object while the art size stays, else `base` itself when the art size equals it (a
+ * fixed or 16:9 view reports the preset it was given), else a new one.
+ */
+export function frameView(viewport: Viewport, base: Resolution, aspect: AspectMode, current: Resolution): { framing: Framing; resolution: Resolution } {
+  const framing = computeFraming(viewport.width, viewport.height, viewport.dpr, base, aspect);
+  const { artWidth: width, artHeight: height } = framing;
+  const resolution = current.width === width && current.height === height ? current : base.width === width && base.height === height ? base : { width, height };
+  return { framing, resolution };
+}
+
 const evenFloor = (v: number) => Math.max(2, 2 * Math.floor(v / 2));
 const clampWidth = (w: number, height: number) =>
   Math.min(Math.max(w, 2 * Math.ceil((height * ADAPTIVE_ASPECT.min) / 2)), evenFloor(height * ADAPTIVE_ASPECT.max));

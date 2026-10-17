@@ -12,7 +12,7 @@
  *
  * Sprite positions are in the batch's own space: leave the batch itself unrotated and unscaled.
  */
-import { CanvasTexture, InstancedBufferAttribute, InstancedMesh, MeshBasicNodeMaterial, NearestFilter, PlaneGeometry, SRGBColorSpace, type Texture } from 'three/webgpu';
+import { CanvasTexture, DataTexture, InstancedBufferAttribute, InstancedMesh, MeshBasicNodeMaterial, NearestFilter, PlaneGeometry, SRGBColorSpace, type Texture } from 'three/webgpu';
 import { attribute, cameraWorldMatrix, float, positionGeometry, texture, uv, vec2, vec3, vec4 } from 'three/tsl';
 
 export interface SpriteSheet {
@@ -36,6 +36,12 @@ export interface SpriteSheet {
 export function drawSheet(o: { frame: readonly [number, number]; frames: number; cols?: number }, draw: (g: CanvasRenderingContext2D, frame: number) => void): SpriteSheet {
   const cols = o.cols ?? Math.min(o.frames, 8);
   const rows = Math.ceil(o.frames / cols);
+  if (typeof document === 'undefined') {
+    // headless (Engine.headless): the same frames on a blank sheet; nothing is drawn there
+    const blank = new DataTexture(new Uint8Array(o.frame[0] * cols * o.frame[1] * rows * 4), o.frame[0] * cols, o.frame[1] * rows);
+    blank.magFilter = blank.minFilter = NearestFilter;
+    return { texture: blank, frame: o.frame, cols, rows, frames: o.frames };
+  }
   const canvas = document.createElement('canvas');
   canvas.width = o.frame[0] * cols;
   canvas.height = o.frame[1] * rows;

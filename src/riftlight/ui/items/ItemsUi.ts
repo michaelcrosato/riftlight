@@ -186,7 +186,7 @@ export class ItemsUi {
     c.className = 'riftlight-items';
     // the pointer goes through to the game canvas: the engine's input reads it (and records it)
     Object.assign(c.style, { position: 'absolute', imageRendering: 'pixelated', zIndex: '6', display: 'none', pointerEvents: 'none' });
-    container.appendChild(c);
+    container?.appendChild(c);
     this.canvas = c;
     for (const [id, def] of Object.entries(LOOT_SOUNDS)) ctx.audio.register(id, def);
     ctx.input.preventKeys.add('AltLeft').add('AltRight'); // Alt shows affix tiers, not the browser's menu bar

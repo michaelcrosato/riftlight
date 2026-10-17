@@ -32,6 +32,8 @@ import {
 } from 'three/webgpu';
 import { color, mix, screenUV, texture, uniform } from 'three/tsl';
 import { SCREEN_LAYER } from './renderView';
+import type { PixelRenderer } from './PixelRenderer';
+import type { View } from './view';
 
 export interface MirrorOptions {
   /** Width and height of the glass (m). Default [4, 2]. */
@@ -159,9 +161,13 @@ export class Mirror {
     return true;
   }
 
-  /** Render before every frame of `pixel` (the engine's PixelRenderer), from its camera, at its art size. Returns a stop. */
-  attach(pixel: { onBeforeRender(f: () => void): () => void; renderer: WebGPURenderer; activeCamera: Camera; resolution: { width: number; height: number } }, scene: Scene): () => void {
-    return pixel.onBeforeRender(() => this.render(pixel.renderer, scene, pixel.activeCamera, pixel.resolution.width, pixel.resolution.height));
+  /**
+   * Render before every frame of `view` (`engine.renderer`), from its camera, at its art size.
+   * Returns a stop. Headless the hook is kept and never runs (nothing is drawn).
+   */
+  attach(view: View, scene: Scene): () => void {
+    // only a PixelRenderer runs these hooks (the type-only import: PixelRenderer imports renderView.ts)
+    return view.onBeforeRender(() => this.render((view as PixelRenderer).renderer, scene, view.activeCamera, view.resolution.width, view.resolution.height));
   }
 
   dispose(): void {

@@ -1,6 +1,6 @@
 import { AmbientLight, Color, DirectionalLight, type Node, OrthographicCamera, type PerspectiveCamera, Scene, Vector3 } from 'three/webgpu';
 import { abs, dot, max, min, normalWorld, sqrt, uniform } from 'three/tsl';
-import { assetProgress, loadModel, preloadModels } from './assets';
+import { type AssetReader, assetProgress, loadModel, preloadModels, setAssetReader } from './assets';
 import { AudioManager } from './audio/AudioManager';
 import {
   CAMERA_PRESETS,
@@ -15,7 +15,7 @@ import {
 } from './camera';
 import { DebugUI } from './DebugUI';
 import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys, startingDebugKeys } from './debugKeys';
-import { type AspectMode, RESOLUTIONS, type Resolution, snapToGrid } from './framing';
+import { type AspectMode, RESOLUTIONS, type Resolution, type Viewport, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
 import { Input, type InputFrame, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
@@ -31,6 +31,8 @@ import { FILTER_IDS, getFilter } from './render/filters';
 import { type Look, LOOK_PRESETS, lookPresetName, lookPresetOf } from './render/look';
 import { LightPool } from './render/lights';
 import { type EdgeSettings, PixelRenderer, type RenderMode } from './render/PixelRenderer';
+import { HeadlessView } from './render/headlessView';
+import type { View } from './render/view';
 import { ENGINE_VERSION } from './version';
 import { GameClock } from './clock';
 import { hashString, Rng } from './random';
@@ -239,6 +241,34 @@ export interface EngineOptions {
   background?: number;
 }
 
+/** `Engine.headless`: the page's options (those about the page do nothing), and where it runs. */
+export interface HeadlessOptions extends EngineOptions {
+  /**
+   * The viewport the art resolution and framing come from, as a page's would (default 960×540 at
+   * DPR 1). Pointer aim and HUD layout depend on it: a replay uses its recording's (`Recording.view`).
+   */
+  viewport?: Viewport;
+  /** How models and packs are read: `nodeAssets()` (src/engine/node.ts) reads `public/`. */
+  assets?: AssetReader;
+}
+
+/** What `Engine.start` and `Engine.headless` do differently around the one boot sequence. */
+interface BootSteps {
+  /** The view the engine draws through (made while physics loads). */
+  view(scene: Scene, camera: CameraRig): Promise<View>;
+  /** For the loading bar. */
+  physicsReady?(): void;
+  /** The engine exists: input on the canvas, the hotkeys. */
+  made(engine: Engine): void;
+  /** For the loading bar. */
+  setupDone?(): void;
+  /** Ready to run, before `__PIXEL_ENGINE__` is set: the page's panels and the loop, or manual time. */
+  finish(engine: Engine): void;
+}
+
+/** Headless without `assets`: a load says what to pass. */
+const NO_READER: AssetReader = (path) => Promise.reject(new Error(`Engine.headless: no asset reader for ${path}; pass \`assets: nodeAssets()\` (src/engine/node.ts)`));
+
 /**
  * Read engine options from the URL:
  *   ?mode=raw  ?res=320  ?debug=1|0
@@ -319,11 +349,11 @@ export class Engine {
    * a hook's error to its caller instead: it is for tools.)
    */
   readonly errors: string[] = [];
-  readonly input = new Input();
+  readonly input: Input;
   readonly sun: DirectionalLight;
   readonly ambient: AmbientLight;
   readonly context: GameContext;
-  readonly audio = new AudioManager();
+  readonly audio: AudioManager;
   readonly particles: Particles;
   readonly hud: Hud;
   /** Tweens on game time (`ctx.tweens`). */
@@ -404,15 +434,21 @@ export class Engine {
 
   private constructor(
     game: Game,
-    readonly renderer: PixelRenderer,
+    readonly renderer: View,
     readonly physics: Physics,
     public camera: CameraRig,
     readonly scene: Scene,
     options: EngineOptions,
   ) {
     this._game = game;
+    // a page listens to the window and saves the player's settings; headless nothing does, and
+    // the settings are kept only under a key asked for
+    const page = renderer.container !== null;
+    this.input = new Input(page ? window : null);
+    this.audio = page ? new AudioManager() : new AudioManager(null);
+    if (!page) this.audio.persist = false;
     const key = options.settings?.key;
-    this.settings = new Settings(this, key === false ? null : (key ?? game.name));
+    this.settings = new Settings(this, key === false ? null : (key ?? (page ? game.name : null)));
     const clock = () => this.time;
     const random = () => this._random;
     const rig = () => this.camera;
@@ -480,6 +516,14 @@ export class Engine {
     // Engine-owned: survive level unloads (engine.loadGame).
     for (const o of [this.sun, this.sun.target, this.ambient]) o.userData.engineOwned = true;
     renderer.onRecovered = (canvas) => this.input.attachPointer(canvas);
+  }
+
+  /**
+   * The page's renderer, for direct GPU work (readbacks, the canvas, compute): null headless
+   * (`Engine.headless`), where nothing is drawn. Gameplay reads `renderer`, which both have.
+   */
+  get gpu(): PixelRenderer | null {
+    return this.renderer instanceof PixelRenderer ? this.renderer : null;
   }
 
   /** The running game. Replace it with `loadGame()`. */
@@ -591,6 +635,7 @@ export class Engine {
 
   /** Show or hide the debug panel (created the first time it shows, filled at once: the loop fills it only while the game runs). */
   showDebug(on: boolean): void {
+    if (!this.renderer.container) return; // headless: no panel
     if (on && !this.debug) {
       this.debug = new DebugUI(this);
       this.debug.update(this.ready ? (this.game.status?.(this.context) ?? '') : '');
@@ -617,64 +662,44 @@ export class Engine {
     const container = options.container ?? document.body;
     // Downloads first: models, the renderer (GPU adapter/device) and Rapier's wasm all
     // load in parallel, behind a loading indicator.
-    if (game.assets) preloadModels(game.assets);
     const loading = options.loadingScreen === false ? null : new LoadingScreen(container);
     const done = { renderer: false, physics: false, setup: false };
     const progress = () =>
       (done.renderer ? 0.2 : 0) + (done.physics ? 0.2 : 0) + assetProgress() * 0.45 + (done.setup ? 0.1 : 0);
     const ticker = loading ? setInterval(() => loading.set(progress()), 100) : 0;
-    if (readiness.settled) readiness = nextReadiness();
-    const signal = readiness;
+    let gpu: PixelRenderer | null = null;
     try {
-      const camera = createCameraRig(options.camera);
-      const scene = new Scene();
-      const [renderer, physics] = await Promise.all([
-        PixelRenderer.create({
-          container,
-          scene,
-          camera: camera.camera,
-          resolution: options.resolution,
-          aspect: options.aspect,
-          mode: options.mode,
-          edges: options.edges,
-          filters: options.filters,
-          look: options.look,
-        }).finally(() => (done.renderer = true)),
-        Physics.create().finally(() => (done.physics = true)),
-      ]);
-      const engine = new Engine(game, renderer, physics, camera, scene, options);
-      engine.startCamera = { ...options.camera, preset: camera.preset };
-      scene.background = new Color(options.background ?? PALETTE.night);
-      engine.defaults = {
-        background: scene.background,
-        sun: [engine.sun.color.getHex(), engine.sun.intensity],
-        ambient: [engine.ambient.color.getHex(), engine.ambient.intensity],
-      };
-      camera.setAspect(renderer.resolution.width / renderer.resolution.height);
-
-      engine.input.attachPointer(renderer.renderer.domElement);
-      engine.wireRig(camera);
-      // the hotkeys come with the debug panel unless the game says always or never
-      engine.debugKeys = startingDebugKeys(options.debugKeys, options.debugUI ?? defaultDebugUI());
-
-      engine.reseed(game);
-      await game.setup(engine.context);
-      done.setup = true;
-      loading?.set(progress(), 'COMPILING');
-      camera.teleport(game.cameraTarget(engine.context));
-      engine.updateView(0); // place camera + shadow box before compiling and the first frame
-      await renderer.precompile();
-      engine.becomeReady();
-      engine.finishStart(container, options);
-      loading?.set(1);
-      // The handle tests, tools and agents read: window.__PIXEL_ENGINE__.state()
-      (globalThis as { __PIXEL_ENGINE__?: Engine }).__PIXEL_ENGINE__ = engine;
-      engine.started = true;
-      engine.callReady(game);
-      signal.resolve(engine);
-      return engine;
+      return await Engine.boot(game, options, {
+        view: (scene, camera) =>
+          PixelRenderer.create({
+            container,
+            scene,
+            camera: camera.camera,
+            resolution: options.resolution,
+            aspect: options.aspect,
+            mode: options.mode,
+            edges: options.edges,
+            filters: options.filters,
+            look: options.look,
+          })
+            .then((r) => (gpu = r))
+            .finally(() => (done.renderer = true)),
+        physicsReady: () => (done.physics = true),
+        made: (engine) => {
+          engine.input.attachPointer(gpu!.renderer.domElement);
+          // the hotkeys come with the debug panel unless the game says always or never
+          engine.debugKeys = startingDebugKeys(options.debugKeys, options.debugUI ?? defaultDebugUI());
+        },
+        setupDone: () => {
+          done.setup = true;
+          loading?.set(progress(), 'COMPILING');
+        },
+        finish: (engine) => {
+          engine.finishStart(container, options);
+          loading?.set(1);
+        },
+      });
     } catch (e) {
-      signal.reject(e);
       // Starting failed (a game's setup threw, no GPU at all...): say so on screen too.
       if (!container.querySelector('.fatal')) {
         const el = document.createElement('div');
@@ -686,6 +711,77 @@ export class Engine {
     } finally {
       clearInterval(ticker);
       loading?.done();
+    }
+  }
+
+  /**
+   * The engine without a page (docs/engine/headless.md): the same boot, game code and frames as
+   * `start`, with a `HeadlessView` that draws nothing, in Node. No DOM, no GPU, no listeners, no
+   * AudioContext (`audio.counts` still counts), no panels; errors go to `engine.errors` and the
+   * console. It runs in manual time from the start: advance it with `step()`, give it input with
+   * `input.setKey` / `setPointer` / `send`, or `replay()` a recording. Models and packs are read
+   * by `assets` (`nodeAssets()` from src/engine/node.ts, which the page never imports).
+   */
+  static async headless(game: Game, options: HeadlessOptions = {}): Promise<Engine> {
+    setAssetReader(options.assets ?? NO_READER);
+    return Engine.boot(game, options, {
+      view: async (_scene, camera) =>
+        new HeadlessView({
+          camera: camera.camera,
+          viewport: options.viewport,
+          resolution: options.resolution,
+          aspect: options.aspect,
+          mode: options.mode,
+          edges: options.edges,
+          filters: options.filters,
+          look: options.look,
+        }),
+      made: (engine) => (engine.debugKeys = startingDebugKeys(options.debugKeys, false)),
+      finish: (engine) => {
+        engine.manual = true;
+        engine.settings.start();
+      },
+    });
+  }
+
+  /** The one boot sequence of `start` and `headless`: only the view and the page's parts differ. */
+  private static async boot(game: Game, options: EngineOptions, steps: BootSteps): Promise<Engine> {
+    if (game.assets) preloadModels(game.assets);
+    if (readiness.settled) readiness = nextReadiness();
+    const signal = readiness;
+    try {
+      const camera = createCameraRig(options.camera);
+      const scene = new Scene();
+      const [renderer, physics] = await Promise.all([steps.view(scene, camera), Physics.create().finally(() => steps.physicsReady?.())]);
+      const engine = new Engine(game, renderer, physics, camera, scene, options);
+      engine.startCamera = { ...options.camera, preset: camera.preset };
+      scene.background = new Color(options.background ?? PALETTE.night);
+      engine.defaults = {
+        background: scene.background,
+        sun: [engine.sun.color.getHex(), engine.sun.intensity],
+        ambient: [engine.ambient.color.getHex(), engine.ambient.intensity],
+      };
+      camera.setAspect(renderer.resolution.width / renderer.resolution.height);
+      steps.made(engine);
+      engine.wireRig(camera);
+
+      engine.reseed(game);
+      await game.setup(engine.context);
+      steps.setupDone?.();
+      camera.teleport(game.cameraTarget(engine.context));
+      engine.updateView(0); // place camera + shadow box before compiling and the first frame
+      await renderer.precompile();
+      engine.becomeReady();
+      steps.finish(engine);
+      // The handle tests, tools and agents read: window.__PIXEL_ENGINE__.state()
+      (globalThis as { __PIXEL_ENGINE__?: Engine }).__PIXEL_ENGINE__ = engine;
+      engine.started = true;
+      engine.callReady(game);
+      signal.resolve(engine);
+      return engine;
+    } catch (e) {
+      signal.reject(e);
+      throw e;
     }
   }
 
@@ -757,9 +853,10 @@ export class Engine {
     this.renderer.setCamera(rig.camera);
     this.camera = rig;
     this.wireRig(rig);
-    if (preset !== 'first' && document.pointerLockElement) document.exitPointerLock?.();
+    const page = this.renderer.container !== null;
+    if (page && preset !== 'first' && document.pointerLockElement) document.exitPointerLock?.();
     this.game.onCameraChange?.(this.context);
-    if (options.syncUrl === false) return rig;
+    if (options.syncUrl === false || !page) return rig;
     try {
       // free/fixed need their full config (position, target...) to come back on reload.
       const url = new URL(location.href);
@@ -1055,7 +1152,7 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; seed: number; time: number; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
+  private rec: { game: string; seed: number; time: number; view: Viewport; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
@@ -1073,7 +1170,7 @@ export class Engine {
   private reseed(game: Game): void {
     this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
-    this.rec = { game: game.name, seed: this._seed, time: this.time, frames: [], last: { ...FULL_FRAME }, truncated: false };
+    this.rec = { game: game.name, seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false };
   }
 
   /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
@@ -1096,7 +1193,7 @@ export class Engine {
   recording(): Recording | null {
     const r = this.rec;
     if (!r) return null;
-    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, seed: r.seed, time: r.time, view: { ...r.view }, frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
   }
 
   /**
@@ -1114,6 +1211,13 @@ export class Engine {
   async replay(rec: Recording, start: () => unknown, o: { frames?: number } = {}): Promise<void> {
     const problem = recordingProblem(rec);
     if (problem) throw new Error(`Engine.replay: ${problem}`);
+    // pointer aim and the art size follow the viewport: headless takes the recording's, a page says when its own differs
+    const v = rec.view;
+    if (v && this.renderer instanceof HeadlessView) this.renderer.setViewport(v);
+    else if (v && (['width', 'height', 'dpr'] as const).some((k) => v[k] !== this.renderer.viewport[k])) {
+      const at = ({ width, height, dpr }: Viewport) => `${width}×${height} at DPR ${dpr}`;
+      console.warn(`[engine] replay: recorded on a ${at(v)} viewport, playing on ${at(this.renderer.viewport)}; pointer aim and the HUD may not match`);
+    }
     this.manual = true; // nothing advances on its own while the level loads
     this._seed = rec.seed;
     this.time = rec.time;
@@ -1273,7 +1377,7 @@ export class Engine {
     } finally {
       this.manual = manual;
     }
-    this.rec = { game: game.name, seed: snap.seed, time: snap.time, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
+    this.rec = { game: game.name, seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
   }
 
   /** A task boundary: promise callbacks queued so far (and chains of them) have run when it resolves. */
@@ -1370,6 +1474,7 @@ export class Engine {
     this.errors.push(message);
     console.error('[engine] game error (the frame keeps rendering):', e);
     const container = this.renderer.container;
+    if (!container) return; // headless: engine.errors and the console
     let box = container.querySelector<HTMLElement>('[data-engine-error]');
     if (!box) {
       box = document.createElement('div');
@@ -1388,10 +1493,7 @@ export class Engine {
     const hit = (codes: readonly string[]) => codes.length > 0 && this.input.wasPressed(...codes);
     if (hit(k.mode)) this.toggleMode();
     if (hit(k.resolution)) this.toggleResolution();
-    if (hit(k.debug)) {
-      if (this.debug) this.debug.toggle();
-      else this.debug = new DebugUI(this); // created on demand (off by default in production)
-    }
+    if (hit(k.debug)) this.showDebug(!this.debugShown); // created on demand (off by default in production)
     if (hit(k.nextLook)) this.cycleLook(1);
     if (hit(k.prevLook)) this.cycleLook(-1);
     if (hit(k.mute)) this.audio.toggleMute();

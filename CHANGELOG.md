@@ -8,6 +8,28 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.42.0
+
+- **`Engine.headless(game, options)`: games without a page** (docs/engine/headless.md). The same
+  boot, game code and frames as `Engine.start`, in Node: no GPU, DOM or listeners, manual time from
+  the start (`step()`, `input.setKey` / `send`, `replay()`), errors in `engine.errors`. Options add
+  `viewport` (default 960×540 at DPR 1) and `assets`.
+- **`engine.renderer` is a `View`**: what gameplay reads from a view (art resolution, framing,
+  `viewport`, look, mode, filters, `screen`, `capture()`), the page's `PixelRenderer` or a
+  `HeadlessView`. Direct GPU work goes through **`engine.gpu`** (the `PixelRenderer`, null
+  headless): `engine.renderer.renderer` becomes `engine.gpu.renderer`. `BackendName` gains
+  `'headless'`.
+- **The GPU helpers take the view**: `swarm.update(engine.renderer, dt)` (was
+  `engine.renderer.renderer`), `mirror.attach(engine.renderer, scene)` and
+  `view.attach(engine.renderer, scene)` as before; headless they do nothing.
+- **Assets without `fetch`**: `setAssetReader(read)` reads models and packs through
+  `(path) => Promise<ArrayBuffer>` for the whole process (`AssetReader`); `nodeAssets()` in
+  `src/engine/node.ts` reads `public/` in Node.
+- **`Recording.view`**: the viewport a recording was made on. A headless replay frames for it; a
+  page warns when its own differs (pointer aim and the HUD follow it). `frameView` and `Viewport`
+  are the framing both views share.
+- The HUD's `width` / `height` follow the view from the first frame, before anything is drawn.
+
 ## 0.41.0
 
 - **One readiness signal: `window.__PIXEL_READY__`.** A promise that exists as soon as the engine

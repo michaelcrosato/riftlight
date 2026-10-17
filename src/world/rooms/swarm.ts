@@ -97,7 +97,7 @@ p.addAssign(v.mul(dt));`,
           h.feetInto(feet);
           swarm.attractor.value.set(feet.x, feet.y + 1.6, feet.z);
         } else swarm.attractor.value.set(...CENTER);
-        swarm.update(ctx.engine.renderer.renderer, dt);
+        swarm.update(ctx.engine.renderer, dt);
       },
       draw() {
         ctx.hud.text(4, 18, `${swarm.count.toLocaleString('en')} PARTICLES · 1 COMPUTE DISPATCH + 1 DRAW PER FRAME`, { anchor: 'bottom-left', color: 'sky' });
@@ -114,7 +114,9 @@ p.addAssign(v.mul(dt));`,
         size: (i: number) => ((size = i), remake()),
         /** Read the positions back from the GPU (WebGPU only): how many moved off the origin, their mean distance to the attractor and height. */
         sample: async () => {
-          const p = await swarm.read(ctx.engine.renderer.renderer);
+          const gpu = ctx.engine.gpu;
+          if (!gpu) throw new Error('swarm: sample() reads the GPU (engine.gpu); headless has none');
+          const p = await swarm.read(gpu.renderer);
           const a = swarm.attractor.value as Vector3;
           let placed = 0;
           let finite = 0;

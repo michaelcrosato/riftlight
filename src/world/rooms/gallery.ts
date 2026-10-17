@@ -59,7 +59,7 @@ export const GALLERY: RoomDef = {
         title: 'Packs are data, found through their index',
         file: 'src/engine/assets.ts',
         src: `export async function loadPackIndex(url = 'packs/index.json'): Promise<PackIndex> {
-  const r = await fetch(resolveAsset(url));
+  return parsePackIndex(await readJson(url, 'pack index'), \`pack index \${url}\`);
 ...
 export function loadPack(url: string, opts: { readonly into?: ModelCatalog; readonly textures?: TextureCatalog } = {}): Promise<ModelCatalog> {`,
       },

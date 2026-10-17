@@ -21,10 +21,9 @@ import {
 import { SCREEN_LAYER } from './renderView';
 import { convertToTexture, float, min, pass, renderOutput, rtt, screenUV, select, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
-import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, computeFraming } from '../framing';
+import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, type Viewport, frameView } from '../framing';
 import { FILTERS, type FilterContext, applyFilter, filterParams, getFilter } from './filters';
 import {
-  DEFAULT_PIXEL,
   type Look,
   type LookFilter,
   type LookLayer,
@@ -38,16 +37,17 @@ import {
   lookLayerOf,
   LOOK_TARGETS,
   normalizeLook,
-  normalizePixel,
+  startingLook,
   paramsOf,
   planLook,
 } from './look';
 import { ScreenFx } from './screenFx';
 import { vertexSnap } from './toon';
 import { installWebGPUCompat } from './webgpuCompat';
+import type { View } from './view';
 
-/** The engine renders with WebGPU only (docs/DOCTRINE.md, principle 6). */
-export type BackendName = 'WebGPU';
+/** The engine renders with WebGPU only (docs/DOCTRINE.md, principle 6); `headless` draws nothing (`Engine.headless`). */
+export type BackendName = 'WebGPU' | 'headless';
 
 /** What a browser without WebGPU is told (the start fails with it: "Failed to start: …"). */
 export const NO_WEBGPU = 'WebGPU unavailable: this browser has no WebGPU, which Pixel Engine games need (a recent Chrome or Edge, Safari 26, or Firefox 141 on Windows, with hardware acceleration on)';
@@ -151,11 +151,13 @@ const OUTPUT_CACHE_SIZE = 8;
  * memory pressure) is replaced by a fresh renderer + pipeline on a fresh canvas (`recoveries`
  * counts them).
  */
-export class PixelRenderer {
+export class PixelRenderer implements View {
   readonly container: HTMLElement;
   readonly gpuErrors: GpuErrorRecord[] = [];
   readonly backend: BackendName = 'WebGPU';
   framing!: Framing;
+  /** The container's size and the device pixel ratio at the last layout. */
+  viewport: Viewport = { width: 0, height: 0, dpr: 1 };
   /** How many times a lost GPU device was recovered from. */
   recoveries = 0;
   /** Counts look changes (UIs that mirror the look re-sync when it moves). */
@@ -211,10 +213,7 @@ export class PixelRenderer {
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
     this._aspect = options.aspect ?? 'adaptive';
-    const edges = options.edges ?? DEFAULT_EDGES;
-    const pixel = normalizePixel({ ...DEFAULT_PIXEL, outline: edges.depth, crease: edges.normal });
-    const base = { scene: [], actors: { pixel, filters: [] }, environment: { pixel, filters: [] } };
-    this._look = options.look ? normalizeLook(options.look) : lookFromFilters(options.filters ?? [], base);
+    this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
     this.plan = planLook(this._look);
     this.syncLookState();
     this.createRenderer();
@@ -474,15 +473,10 @@ export class PixelRenderer {
   /** Recompute integer-scaled canvas layout for the current viewport and aspect mode. */
   layout(): void {
     const rect = this.container.getBoundingClientRect();
-    const f = computeFraming(rect.width, rect.height, window.devicePixelRatio, this._baseResolution, this._aspect);
+    this.viewport = { width: rect.width, height: rect.height, dpr: window.devicePixelRatio };
+    const { framing: f, resolution } = frameView(this.viewport, this._baseResolution, this._aspect, this._resolution);
     this.framing = f;
-    const res = this._resolution;
-    if (res.width !== f.artWidth || res.height !== f.artHeight) {
-      this._resolution =
-        f.artWidth === this._baseResolution.width && f.artHeight === this._baseResolution.height
-          ? this._baseResolution
-          : { width: f.artWidth, height: f.artHeight };
-    }
+    this._resolution = resolution;
     this.scale.value = f.scale; // a pixel-art pass renders at canvas / (scale × pixel size)
     this.syncSources();
     vertexSnap.resolution.value.set(f.artWidth, f.artHeight);

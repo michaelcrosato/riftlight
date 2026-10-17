@@ -195,8 +195,10 @@ export class Input {
   /** Queued presses older than this many seconds of game time are dropped. */
   pressWindow = PRESS_WINDOW;
 
-  constructor(private readonly target: Window = window) {
+  /** `target`: where keys are heard (the page's window); null listens to nothing (`Engine.headless`: input comes from `setKey`, `send`, a replay). */
+  constructor(private readonly target: Window | null = window) {
     const signal = this.listeners.signal;
+    if (!target) return;
     target.addEventListener(
       'keydown',
       (e) => {
@@ -287,7 +289,7 @@ export class Input {
     };
     el.addEventListener('pointerup', end, { signal });
     el.addEventListener('pointercancel', end, { signal });
-    this.target.addEventListener(
+    (this.target ?? window).addEventListener(
       'pointermove',
       (e) => {
         const locked = document.pointerLockElement === el;
