@@ -1228,6 +1228,23 @@ async function runTools(browserExe) {
     return png.subarray(1, 4).toString() === 'PNG' ? { width: png.readUInt32BE(16), height: png.readUInt32BE(20), bytes: png.length } : { width: 0, height: 0, bytes: 0 };
   };
 
+  console.log('\n▶ tools: npm run playtest (headless and in Chromium)');
+  try {
+    // the bot plays depth 1 (seed 1) in Node and in the browser: the same game, the same report
+    const headless = await run('npx', ['tsx', 'scripts/riftlight/playtest.ts', '1', '--json', '--out', '.scratch/e2e/playtest/headless']);
+    const inBrowser = await run('npx', ['tsx', 'scripts/riftlight/playtest.ts', '1', '--json', '--browser', '--out', '.scratch/e2e/playtest/browser'], { env: { PLAYTEST_PORT: String(PORT + 2) } });
+    const quiet = (out) => !/(game|page) errors:/.test(out);
+    check(headless.code === 0 && inBrowser.code === 0 && quiet(headless.out) && quiet(inBrowser.out), `playtest -- 1 exits 0 with no errors, headless and with --browser${headless.code || inBrowser.code || !quiet(headless.out + inBrowser.out) ? ':\n    ' + tail(headless.out + inBrowser.out) : ''}`);
+    const report = async (dir) => JSON.parse(await readFile(new URL(`playtest/${dir}/1-1.json`, OUT), 'utf8'));
+    const a = await report('headless');
+    const b = await report('browser');
+    // Node's Math.sin / cos / pow differ from Chromium's in the last bit (docs/engine/headless.md
+    // *Node and the browser*): a long or different run may part ways; this one is checked to match
+    check(JSON.stringify(a) === JSON.stringify(b), `the same report headless and in Chromium (${a?.outcome} in ${a?.time} s, ${a?.kills} kills, ${a?.xp} XP; browser: ${b?.outcome} in ${b?.time} s, ${b?.kills} kills, ${b?.xp} XP)`);
+  } catch (e) {
+    check(false, `playtest crashed: ${e.message}`);
+  }
+
   console.log('\n▶ tools: npm run balance');
   try {
     const out = new URL('balance/', OUT);

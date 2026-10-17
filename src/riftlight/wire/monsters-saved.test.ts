@@ -43,6 +43,8 @@ function fakeContext(): GameContext {
     audio: { register: () => {}, play: () => {} },
     engine: { sun: new DirectionalLight(), ambient: new AmbientLight(), camera: { focus: new Vector3() }, filters: [], availableFilters: [], setFilters: () => {} },
     physics: { alpha: 1 },
+    // faked on purpose: a run and its replays live side by side, each with its own scene and pool;
+    // one engine has one of each
   } as unknown as GameContext;
 }
 
@@ -83,6 +85,7 @@ async function build(depth: number, script: Rig['script'], o: { ai?: boolean } =
     settings: () => ({ damageNumbers: false, lootFilter: 0, screenShake: 0 }),
     dev: () => ({ god: false, ai: o.ai ?? true, hitboxes: false }),
     shake: () => {},
+    // as above: one per rig, next to the others
   } as unknown as ShellServices;
   const worlds = new Worlds();
   const deps = { services, monsters: new RealMonsters(worlds), loot: { rollDrops: () => [], spawn: () => [] }, hero: {} } as unknown as LevelDeps;

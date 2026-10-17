@@ -76,6 +76,19 @@ Parity: e2e `riftlight-replay` records a browser session (New Run by mouse, a fi
 the mouse, menus, the tree's own view), writes it to `.scratch/e2e/riftlight-replay.json` and
 replays it with `npm run replay -- … --expect <the browser's fingerprint>`.
 
+## Node and the browser
+
+The same game code, input and seed give the same frames in Node and in Chromium, with one
+exception: `Math.sin`, `Math.cos` and `Math.pow` are approximations that the language lets each
+runtime implement, and Node 22's V8 differs from Chromium's in the last bit (Chrome builds V8
+with glibc's trigonometry, Node with fdlibm's; `pow` changed in V8 13). A gameplay path that feeds
+such a result into a decision (a facing angle into a hit test, say) can part ways after enough
+frames: the bot's depth 3 run, seed 1, does after ~160 frames. The parity checks (e2e
+`riftlight-replay`'s session and the depth-1 playtest) match bit for bit; a change that makes one of
+them differ has made gameplay depend on one of these last bits, so look there first. Each runtime
+on its own is deterministic: a recording replays exactly where it was made, and a Node run replays
+in Node. Deterministic math across runtimes is an open decision (michaelcrosato/riftlight#111).
+
 ## Writing headless tests
 
 - Stub nothing: no `window`, `document`, `location`, `ProgressEvent`, no `vi.stubGlobal`. Code that

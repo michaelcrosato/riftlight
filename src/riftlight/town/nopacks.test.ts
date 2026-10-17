@@ -18,6 +18,8 @@ describe('without the packs', () => {
     tree.add(new Mesh(new CylinderGeometry(0.15, 0.2, 1.2, 6), toonMaterial(0x5d275d)));
     const lights = { acquire: () => ({ intensity: 0, position: new Vector3() }), release: () => {} };
     const engine = { sun: { color: new Color(), intensity: 0 }, ambient: { color: new Color(), intensity: 0 }, scene: {} };
+    // faked on purpose: the game (headless too) loads the packs into the process's library, and
+    // this test is the town built without them
     const town = new Town({ rng: new Rng(1), lights, ctx: { engine, particles: { burst() {} }, audio: { play() {} } } } as unknown as ShellServices);
     town.build(tree);
     const reach = town.nav().reachable(town.spawn, town.interactables.map((i) => i.position));

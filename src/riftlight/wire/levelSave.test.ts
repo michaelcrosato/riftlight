@@ -76,6 +76,8 @@ function context() {
     hud: { measure: (t: string) => ({ width: t.length * 4, height: 7 }), rect() {}, text() {} },
     input: { wasPressed: (...codes: string[]) => codes.some((c) => pressed.has(c)), buttonEvents: [] as { down: boolean; code: string; x: number; y: number }[] },
   };
+  // faked on purpose: the tests run a level and its twin side by side, each with its own scene and
+  // a light pool that lists what it holds; one engine has one of each
   return { ctx: ctx as unknown as GameContext, lights, pressed, raw: ctx };
 }
 
