@@ -63,7 +63,8 @@ server, or `vite preview` of the build; `--strictPort`, refuses a port someone e
 Chromium (`scripts/browser.mjs`, the one launcher every browser tool uses: Chromium's headless
 shell by default, or `CHROMIUM_PATH`; with ANGLE on SwiftShader too, Chromium keeps WebGPU on
 SwiftShader's Vulkan and presents). Frames are written to `.scratch/e2e/*.png`. Run one suite with
-`-- <suite>`, a CI group with `-- @core` (`@cameras`, `@filters`, `@world`, `@assets`), and set
+`-- <suite>`, a CI group with `-- @core` (`@cameras`, `@filters`, `@world`; `@assets`, `@assets-2`,
+`@assets-3`: the Asset Lab, and the library's models drawn in three slices), and set
 `E2E_PORT` when another run uses the default port. Software rendering runs at a few frames per
 second, so suites wait for conditions, game time or `Engine.step()` frames, never for a fixed number
 of rendered frames.

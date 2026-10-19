@@ -40,10 +40,11 @@
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact
 //                 sheets, curves and the agent API; frames of a few clips saved. (Every clip's
 //                 metrics are checked by the unit tests: src/engine/animation/animation.test.ts.)
-// asset-lab       Asset Lab (/asset-lab.html): every library model renders over the empty floor,
-//                 the close zoom, a light requested and released, bad ids/zooms/looks throw, a
-//                 lineup, a look, capture, the ?model=&zoom= and ?lineup= URL params, and a
-//                 few frames of Gate B's scene (npm run gate-b) scored.
+// asset-lab       Asset Lab (/asset-lab.html): the close zoom, a light requested and released, bad
+//                 ids/zooms/looks throw, a lineup, a look, capture, the ?model=&zoom= and ?lineup=
+//                 URL params, and a few frames of Gate B's scene (npm run gate-b) scored.
+// asset-lab-models-<k>  every library model renders over the empty floor, a slice of the list
+//                 each (MODEL_SHARDS), so the drawing runs in parallel CI groups.
 // riftlight       the Riftlight game shell in the browser (scripts/e2e-riftlight.mjs): one run of the
 //                 flow for its pictures and the page (title, town, level, Tuning, the look studio,
 //                 death, a real reload → Continue; the HUD canvas, localStorage, no ⚙ button). Then
@@ -913,128 +914,155 @@ async function runLab(browserExe) {
   }
 }
 
-async function runAssetLab(browserExe) {
-  for (const s of [SCENARIOS[0]]) {
-    console.log(`\n▶ asset-lab (Asset Lab, ${s.name})`);
-    let ctx;
-    try {
-      ctx = await openPage(browserExe, { ...s, url: `${BASE}asset-lab.html` }, 'debug=0');
-      const { page, logs } = ctx;
-      await page.waitForFunction(() => window.__ASSET_LAB__, null, { timeout: 30000 });
-      const st0 = await state(page);
-      check(st0.backend === s.backend, `backend ${st0.backend}`);
-      const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
-      check(ids.length >= 7, `lists ${ids.length} models`);
-      const drawn = ids;
-      // every model renders in the real pipeline (close up, so a 0.3 m rock fills enough
-      // pixels): against the empty floor at the same camera, with its light off so a lit floor
-      // can't pass for it
-      const changed = (a, b) => {
-        let n = 0;
-        for (let i = 0; i < a.pixels.length; i += 4) if (Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]) > 24) n++;
-        return n;
-      };
-      for (const id of drawn) {
-        const r = await page.evaluate((m) => {
-          const info = window.__ASSET_LAB__.show(m, { light: { intensity: 0 } });
-          window.__ASSET_LAB__.zoom('close');
-          return info;
-        }, id);
-        await stableCamera(page, `${id}: `);
-        const img = await capture(page, `asset-lab-${s.name}-${id}.png`);
-        await page.evaluate(() => window.__ASSET_LAB__.clear());
-        await waitFrames(page, 3);
-        const empty = await capture(page, `asset-lab-${s.name}-${id}-empty.png`);
-        const px = changed(img, empty);
-        check(r.tris > 0 && px > 300, `${id}: ${r.tris} tris, ${r.draws} draws, ${px} pixels over the empty floor`);
-      }
-      await page.evaluate(() => {
-        window.__ASSET_LAB__.show('market-stall');
+// The library grows, so its models are drawn in MODEL_SHARDS suites (asset-lab-models-<k>), in
+// separate CI groups (@assets, @assets-2, …); `asset-lab` checks the lab itself.
+const MODEL_SHARDS = 3;
+
+async function openAssetLab(browserExe, s, query = 'debug=0') {
+  const ctx = await openPage(browserExe, { ...s, url: `${BASE}asset-lab.html` }, query);
+  await ctx.page.waitForFunction(() => window.__ASSET_LAB__, null, { timeout: 30000 });
+  return ctx;
+}
+
+const labLogs = (s, logs) => logs.filter((l) => !(s.expectedWarnings ?? []).some((re) => re.test(l)));
+
+/** Every library model in slice `k` of MODEL_SHARDS renders in the real pipeline. */
+async function runAssetLabModels(browserExe, k) {
+  const s = SCENARIOS[0];
+  console.log(`\n▶ asset-lab-models-${k} (Asset Lab, ${s.name}: models, slice ${k} of ${MODEL_SHARDS})`);
+  let ctx;
+  try {
+    ctx = await openAssetLab(browserExe, s);
+    const { page, logs } = ctx;
+    const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
+    const drawn = ids.slice(Math.floor(((k - 1) * ids.length) / MODEL_SHARDS), Math.floor((k * ids.length) / MODEL_SHARDS));
+    check(drawn.length > 0, `slice ${k}: ${drawn.length} of ${ids.length} models`);
+    // close up, so a 0.3 m rock fills enough pixels: against the empty floor at the same camera,
+    // with its light off so a lit floor can't pass for it
+    const changed = (a, b) => {
+      let n = 0;
+      for (let i = 0; i < a.pixels.length; i += 4) if (Math.abs(a.pixels[i] - b.pixels[i]) + Math.abs(a.pixels[i + 1] - b.pixels[i + 1]) + Math.abs(a.pixels[i + 2] - b.pixels[i + 2]) > 24) n++;
+      return n;
+    };
+    for (const id of drawn) {
+      const r = await page.evaluate((m) => {
+        const info = window.__ASSET_LAB__.show(m, { light: { intensity: 0 } });
         window.__ASSET_LAB__.zoom('close');
-      });
+        return info;
+      }, id);
+      await stableCamera(page, `${id}: `);
+      const img = await capture(page, `asset-lab-${s.name}-${id}.png`);
+      await page.evaluate(() => window.__ASSET_LAB__.clear());
       await waitFrames(page, 3);
-      const close = await capture(page, `asset-lab-${s.name}-market-stall-close.png`);
-      check(colorCount(close) > 20 && (await page.evaluate(() => window.__ASSET_LAB__.state().zoom)) === 3, `zoom('close') shows the detail (${colorCount(close)} colours)`);
-      // state().lights counts live requests: a released one fades out but is no longer live
-      const lightsAfter = (id) =>
-        page.evaluate((m) => {
-          window.__ASSET_LAB__.show(m);
-          return window.__ASSET_LAB__.state().lights;
-        }, id);
-      const lights = [await lightsAfter('lamp-post'), await lightsAfter('crate')];
-      check(lights[0] === 1 && lights[1] === 0, `the lamp post requests its light, and showing the crate releases it (${lights.join(' → ')} requests)`);
-      const bad = await page.evaluate(() => {
-        const out = [];
-        for (const f of [() => window.__ASSET_LAB__.show('nope'), () => window.__ASSET_LAB__.zoom('bogus'), () => window.__ASSET_LAB__.setLook('nope'), () => window.__ASSET_LAB__.lineup([])]) {
-          try {
-            f();
-            out.push('no error');
-          } catch {
-            out.push('threw');
-          }
-        }
-        return { out, shown: window.__ASSET_LAB__.state().shown, zoom: window.__ASSET_LAB__.state().zoom };
-      });
-      check(bad.out.every((o) => o === 'threw') && bad.shown.join() === 'crate' && bad.zoom > 0, `a bad id, zoom, look or an empty lineup throws and leaves the lab as it was (${bad.out.join(', ')}; ${bad.shown.join()})`);
-      // Gate B's scene (npm run gate-b): a few frames of a zoom step (textured, then flat: the texels
-      // must be what changes), a pan (the rig snaps to art pixels, so it shifts and barely changes)
-      // and the sliding crate score
-      const gate = await page.evaluate(async () => {
-        const g = window.__ASSET_LAB__.gateB;
-        const before = window.__ASSET_LAB__.state().zoom;
-        const steps = [1, 1.03, 1.06, 1.08].map((z) => ({ zoom: z }));
-        const settle = (f) => g.run(Array.from({ length: 20 }, () => f)); // the camera and the light settle
-        const zoomOf = async (set) => {
-          g.scene(set, 8);
-          await settle({ zoom: 1 });
-          return (await g.run(steps)).changed;
-        };
-        const flat = await zoomOf('flat');
-        const scene = g.scene('library', 8);
-        await settle({ zoom: 1 });
-        const zoom = await g.run(steps);
-        await settle({ zoom: 1.08, pan: 0 });
-        const pan = await g.run(Array.from({ length: 24 }, (_, i) => ({ zoom: 1.08, pan: i / 60 })));
-        await settle({ zoom: 1, crate: -1 });
-        const crate = await g.run([0, 1, 2].map((i) => ({ zoom: 1, crate: -1 + i / 30 })), [2]);
-        g.clear();
-        const st = window.__ASSET_LAB__.state();
-        return { scene, zoom: zoom.changed, flat, pan: pan.changed, snaps: pan.shift.filter(([dx, dy]) => dx || dy).length, crate: crate.changed, shot: crate.shots.length, size: [zoom.width, zoom.height], shown: st.shown, zoomBack: Math.abs(st.zoom - before) < 1e-6, live: !window.__PIXEL_ENGINE__.manual };
-      });
-      check(
-        gate.scene.tris > 50 && gate.zoom.length === 4 && gate.zoom.slice(1).every((c, i) => c > 4 * gate.flat[i + 1] && c > 0.1) && gate.snaps > 0 && gate.pan.every((c) => c < 0.01) && gate.crate.slice(1).every((c) => c > 0 && c < 0.05) && gate.shot === 1 && gate.zoomBack && gate.live,
-        `Gate B scene: zooming changes ${gate.zoom.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% textured, ${gate.flat.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% flat; a pan snaps ${gate.snaps} times and changes ≤ ${(Math.max(...gate.pan) * 100).toFixed(2)}%; the crate ${gate.crate.slice(1).map((c) => (c * 100).toFixed(2)).join('/')}% of ${gate.size.join('×')} pixels; the lab is back (${gate.shown.join()}, zoom ${gate.zoomBack ? 'restored' : 'NOT restored'})`,
-      );
-      await page.evaluate(() => window.__ASSET_LAB__.lineup());
-      await waitFrames(page, 3);
-      const all = await page.evaluate(() => window.__ASSET_LAB__.state());
-      const lineup = await capture(page, `asset-lab-${s.name}-lineup.png`);
-      check(all.shown.length === ids.length && all.zoom <= 1.08 + 1e-6 && colorCount(lineup) > 10, `lineup of ${all.shown.length} at zoom ${all.zoom.toFixed(2)}`);
-      await page.evaluate(() => window.__ASSET_LAB__.setLook('handheld'));
-      await waitFrames(page, 3);
-      const gb = await capture(page, `asset-lab-${s.name}-handheld.png`);
-      check(colorCount(gb) < colorCount(lineup), `setLook('handheld') re-renders the lineup (${colorCount(lineup)} → ${colorCount(gb)} colours)`);
-      const png = await page.evaluate(() => window.__ASSET_LAB__.capture());
-      check(png.startsWith('data:image/png') && png.length > 2000, 'capture() returns a PNG');
-      checkClean(await state(page), logs.filter((l) => !(s.expectedWarnings ?? []).some((re) => re.test(l))));
-    } catch (e) {
-      check(false, `asset-lab crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
-    } finally {
-      await ctx?.browser.close();
+      const empty = await capture(page, `asset-lab-${s.name}-${id}-empty.png`);
+      const px = changed(img, empty);
+      check(r.tris > 0 && px > 300, `${id}: ${r.tris} tris, ${r.draws} draws, ${px} pixels over the empty floor`);
     }
-    // the URL: a model at a named zoom, then a lineup of two
-    for (const [q, want] of [['model=well&zoom=town', (st) => st.shown.join() === 'well' && Math.abs(st.zoom - 1.22) < 1e-6], ['lineup=barrel,crate&cols=2', (st) => st.shown.join() === 'barrel,crate' && st.zoom <= 1.08 + 1e-6]]) {
-      let c;
-      try {
-        c = await openPage(browserExe, { ...s, url: `${BASE}asset-lab.html` }, `debug=0&${q}`);
-        await c.page.waitForFunction(() => window.__ASSET_LAB__, null, { timeout: 30000 });
-        const st = await c.page.evaluate(() => window.__ASSET_LAB__.state());
-        check(want(st), `?${q}: ${st.shown.join(', ')} at zoom ${st.zoom.toFixed(2)}`);
-      } catch (e) {
-        check(false, `asset-lab ?${q} crashed: ${e.message}`);
-      } finally {
-        await c?.browser.close();
+    checkClean(await state(page), labLogs(s, logs));
+  } catch (e) {
+    check(false, `asset-lab-models-${k} crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}
+
+/** The Asset Lab itself: zoom, lights, bad input, Gate B's scene, a lineup, a look, capture, the URL. */
+async function runAssetLab(browserExe) {
+  const s = SCENARIOS[0];
+  console.log(`\n▶ asset-lab (Asset Lab, ${s.name})`);
+  let ctx;
+  try {
+    ctx = await openAssetLab(browserExe, s);
+    const { page, logs } = ctx;
+    const st0 = await state(page);
+    check(st0.backend === s.backend, `backend ${st0.backend}`);
+    const ids = await page.evaluate(() => window.__ASSET_LAB__.list());
+    check(ids.length >= 7, `lists ${ids.length} models`);
+    await page.evaluate(() => {
+      window.__ASSET_LAB__.show('market-stall');
+      window.__ASSET_LAB__.zoom('close');
+    });
+    await waitFrames(page, 3);
+    const close = await capture(page, `asset-lab-${s.name}-market-stall-close.png`);
+    check(colorCount(close) > 20 && (await page.evaluate(() => window.__ASSET_LAB__.state().zoom)) === 3, `zoom('close') shows the detail (${colorCount(close)} colours)`);
+    // state().lights counts live requests: a released one fades out but is no longer live
+    const lightsAfter = (id) =>
+      page.evaluate((m) => {
+        window.__ASSET_LAB__.show(m);
+        return window.__ASSET_LAB__.state().lights;
+      }, id);
+    const lights = [await lightsAfter('lamp-post'), await lightsAfter('crate')];
+    check(lights[0] === 1 && lights[1] === 0, `the lamp post requests its light, and showing the crate releases it (${lights.join(' → ')} requests)`);
+    const bad = await page.evaluate(() => {
+      const out = [];
+      for (const f of [() => window.__ASSET_LAB__.show('nope'), () => window.__ASSET_LAB__.zoom('bogus'), () => window.__ASSET_LAB__.setLook('nope'), () => window.__ASSET_LAB__.lineup([])]) {
+        try {
+          f();
+          out.push('no error');
+        } catch {
+          out.push('threw');
+        }
       }
+      return { out, shown: window.__ASSET_LAB__.state().shown, zoom: window.__ASSET_LAB__.state().zoom };
+    });
+    check(bad.out.every((o) => o === 'threw') && bad.shown.join() === 'crate' && bad.zoom > 0, `a bad id, zoom, look or an empty lineup throws and leaves the lab as it was (${bad.out.join(', ')}; ${bad.shown.join()})`);
+    // Gate B's scene (npm run gate-b): a few frames of a zoom step (textured, then flat: the texels
+    // must be what changes), a pan (the rig snaps to art pixels, so it shifts and barely changes)
+    // and the sliding crate score
+    const gate = await page.evaluate(async () => {
+      const g = window.__ASSET_LAB__.gateB;
+      const before = window.__ASSET_LAB__.state().zoom;
+      const steps = [1, 1.03, 1.06, 1.08].map((z) => ({ zoom: z }));
+      const settle = (f) => g.run(Array.from({ length: 20 }, () => f)); // the camera and the light settle
+      const zoomOf = async (set) => {
+        g.scene(set, 8);
+        await settle({ zoom: 1 });
+        return (await g.run(steps)).changed;
+      };
+      const flat = await zoomOf('flat');
+      const scene = g.scene('library', 8);
+      await settle({ zoom: 1 });
+      const zoom = await g.run(steps);
+      await settle({ zoom: 1.08, pan: 0 });
+      const pan = await g.run(Array.from({ length: 24 }, (_, i) => ({ zoom: 1.08, pan: i / 60 })));
+      await settle({ zoom: 1, crate: -1 });
+      const crate = await g.run([0, 1, 2].map((i) => ({ zoom: 1, crate: -1 + i / 30 })), [2]);
+      g.clear();
+      const st = window.__ASSET_LAB__.state();
+      return { scene, zoom: zoom.changed, flat, pan: pan.changed, snaps: pan.shift.filter(([dx, dy]) => dx || dy).length, crate: crate.changed, shot: crate.shots.length, size: [zoom.width, zoom.height], shown: st.shown, zoomBack: Math.abs(st.zoom - before) < 1e-6, live: !window.__PIXEL_ENGINE__.manual };
+    });
+    check(
+      gate.scene.tris > 50 && gate.zoom.length === 4 && gate.zoom.slice(1).every((c, i) => c > 4 * gate.flat[i + 1] && c > 0.1) && gate.snaps > 0 && gate.pan.every((c) => c < 0.01) && gate.crate.slice(1).every((c) => c > 0 && c < 0.05) && gate.shot === 1 && gate.zoomBack && gate.live,
+      `Gate B scene: zooming changes ${gate.zoom.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% textured, ${gate.flat.slice(1).map((c) => (c * 100).toFixed(1)).join('/')}% flat; a pan snaps ${gate.snaps} times and changes ≤ ${(Math.max(...gate.pan) * 100).toFixed(2)}%; the crate ${gate.crate.slice(1).map((c) => (c * 100).toFixed(2)).join('/')}% of ${gate.size.join('×')} pixels; the lab is back (${gate.shown.join()}, zoom ${gate.zoomBack ? 'restored' : 'NOT restored'})`,
+    );
+    await page.evaluate(() => window.__ASSET_LAB__.lineup());
+    await waitFrames(page, 3);
+    const all = await page.evaluate(() => window.__ASSET_LAB__.state());
+    const lineup = await capture(page, `asset-lab-${s.name}-lineup.png`);
+    check(all.shown.length === ids.length && all.zoom <= 1.08 + 1e-6 && colorCount(lineup) > 10, `lineup of ${all.shown.length} at zoom ${all.zoom.toFixed(2)}`);
+    await page.evaluate(() => window.__ASSET_LAB__.setLook('handheld'));
+    await waitFrames(page, 3);
+    const gb = await capture(page, `asset-lab-${s.name}-handheld.png`);
+    check(colorCount(gb) < colorCount(lineup), `setLook('handheld') re-renders the lineup (${colorCount(lineup)} → ${colorCount(gb)} colours)`);
+    const png = await page.evaluate(() => window.__ASSET_LAB__.capture());
+    check(png.startsWith('data:image/png') && png.length > 2000, 'capture() returns a PNG');
+    checkClean(await state(page), labLogs(s, logs));
+  } catch (e) {
+    check(false, `asset-lab crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+  // the URL: a model at a named zoom, then a lineup of two
+  for (const [q, want] of [['model=well&zoom=town', (st) => st.shown.join() === 'well' && Math.abs(st.zoom - 1.22) < 1e-6], ['lineup=barrel,crate&cols=2', (st) => st.shown.join() === 'barrel,crate' && st.zoom <= 1.08 + 1e-6]]) {
+    let c;
+    try {
+      c = await openAssetLab(browserExe, s, `debug=0&${q}`);
+      const st = await c.page.evaluate(() => window.__ASSET_LAB__.state());
+      check(want(st), `?${q}: ${st.shown.join(', ')} at zoom ${st.zoom.toFixed(2)}`);
+    } catch (e) {
+      check(false, `asset-lab ?${q} crashed: ${e.message}`);
+    } finally {
+      await c?.browser.close();
     }
   }
 }
@@ -1523,6 +1551,7 @@ const SUITES = {
   moves: (exe) => runMoves(exe),
   lab: (exe) => runLab(exe),
   'asset-lab': (exe) => runAssetLab(exe),
+  ...Object.fromEntries(Array.from({ length: MODEL_SHARDS }, (_, i) => [`asset-lab-models-${i + 1}`, (exe) => runAssetLabModels(exe, i + 1)])),
   'riftlight-tree': (exe) => runRiftlightTree({ exe, launch, check, BASE, OUT }),
   riftlight: async (exe) => {
     const helpers = { exe, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT };
@@ -1579,8 +1608,10 @@ const GROUPS = {
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
   '@world': ['world', 'riftlight-replay', 'riftlight-snapshot'],
-  // every library model drawn: it grows with the library, so it runs alone
-  '@assets': ['asset-lab'],
+  // every library model drawn, in slices: the library grows (MODEL_SHARDS)
+  '@assets': ['asset-lab', 'asset-lab-models-1'],
+  '@assets-2': ['asset-lab-models-2'],
+  '@assets-3': ['asset-lab-models-3'],
 };
 const grouped = Object.values(GROUPS).flat();
 const misgrouped = Object.keys(SUITES).filter((n) => grouped.filter((g) => g === n).length !== 1);
