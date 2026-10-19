@@ -8,6 +8,19 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.45.0
+
+- **The kit runs in Node**: `Engine.headless(game, { assets })` from `pixel-engine.js` alone, with
+  no `node_modules`. In Node, Rapier's wasm comes from the data URL the kit inlines, and a reader
+  (`assets`, `setAssetReader`) no longer sees the files the kit embeds (`__PIXEL_ASSETS__`: the
+  built-in models load as they do in a page).
+- **`node check.mjs --headless game.js`**: plays a game module in Node, no browser. It makes the game
+  with the module's `createGame()` export, plays the `--keys` frames, replays the recording in a
+  fresh game and writes `report.json` (`state()`, errors, the fingerprint). Exit 1 on an error or a
+  replay that ends elsewhere, 2 for a page or a module without `createGame()`.
+- **The starter `game.js` exports `createGame()`** and starts the engine only where there is a
+  `document`, so it imports in Node. GUIDE.md section 8, *Play it in Node*, shows a test of your own.
+
 ## 0.44.0
 
 - **Removed from the texture library: its equipment icons**: `sword-icon`, `axe-icon`,

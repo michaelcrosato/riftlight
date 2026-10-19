@@ -7,6 +7,7 @@
 //   node check.mjs "index.html?look=noir&camera=side"   with URL flags
 //   node check.mjs http://localhost:5173/
 //   node check.mjs --sheets models.js    sheets of your own models and textures (no page played)
+//   node check.mjs --headless game.js    play the game in Node, no browser: steps, errors, a replay
 //
 // Options:
 //   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames)
@@ -19,9 +20,15 @@
 //                                    array or object, in a ModelCatalog / TextureCatalog, or added
 //                                    to the library), and library ids. A PNG each and report.json
 //                                    in --out (default ./check/sheets); exit 1 on any problem
+//   --headless [game.js]             play a game module in Node with Engine.headless instead of a
+//                                    page (no browser, no pictures): it imports the module, makes
+//                                    the game its `createGame()` export returns, plays the --keys
+//                                    frames, then replays that run's recording in a fresh game. It
+//                                    writes report.json (state, errors, fingerprint) to --out; exit
+//                                    1 on an error or a replay that ends somewhere else
 //   --help                           this text
 //
-// It needs Node 20.15+ (or 22.2+) and Playwright (`npm i -D playwright` then
+// It needs Node 20.15+ (or 22.2+) and, except for --headless, Playwright (`npm i -D playwright` then
 // `npx playwright install chromium`; a global install, `npm i -g playwright`, works too), or
 // `playwright-core` with CHROMIUM_PATH set to a Chromium (its headless shell,
 // `chrome-linux/headless_shell`, is the lightest): it plays WebGPU on SwiftShader with no
@@ -34,7 +41,7 @@ import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as zlib from 'node:zlib';
 
 const usage = () => readFileSync(new URL(import.meta.url), 'utf8').split('\nimport ')[0].replace(/^#!.*\n/, '').replace(/^\/\/ ?/gm, '');
@@ -46,7 +53,7 @@ if (typeof zlib.crc32 !== 'function') fail(`needs Node 20.15+ or 22.2+ (this is 
 
 // --name value flags, --name flags, then one positional page
 const VALUE = new Set(['keys', 'looks', 'out', 'size', 'sheets']);
-const FLAG = new Set(['cameras', 'help']);
+const FLAG = new Set(['cameras', 'help', 'headless']);
 const opts = {};
 const positional = [];
 for (let i = 2; i < process.argv.length; i++) {
@@ -68,7 +75,9 @@ if (positional.length > 1) fail(`one page at a time (got ${positional.join(' ')}
 // --sheets "" is still --sheets (drawSheets says it needs something to draw), never a page run
 const sheets = opts.sheets !== undefined;
 if (sheets && positional.length) fail(`--sheets draws sheets instead of playing a page: play ${positional[0]} in a run of its own`);
-const target = positional[0] ?? 'index.html';
+const headless = opts.headless === true;
+if (headless && (sheets || opts.cameras || opts.looks)) fail('--headless plays the game in Node, with no pictures: --sheets, --cameras and --looks need the browser');
+const target = positional[0] ?? (headless ? 'game.js' : 'index.html');
 const out = resolve(opts.out ?? (sheets ? 'check/sheets' : 'check'));
 const [vw, vh] = String(opts.size ?? '960x540').split('x').map(Number);
 if (!(vw > 0 && vh > 0)) fail('--size is WIDTHxHEIGHT, e.g. 960x540');
@@ -207,6 +216,80 @@ function engineDir(from) {
     if (dirname(d) === d) return null;
   }
 }
+
+/**
+ * --headless: the game in Node (Engine.headless), no browser. The engine is the pixel-engine.js the
+ * module imports (the nearest one above it), so the game and the check share one engine; files the
+ * game loads are read from the module's folder.
+ */
+async function runHeadless(file) {
+  const path = resolve(file);
+  if (!/\.m?js$/.test(path)) fail(`--headless plays a game module (game.js), not ${file}: pages need the browser (no --headless)`);
+  if (!existsSync(path)) fail(`no module ${file}`);
+  const dir = engineDir(dirname(path));
+  if (!dir) fail(`no pixel-engine.js in ${dirname(path)} or a folder above it`);
+  const report = { ok: false, mode: 'headless', module: relative(process.cwd(), path) || file, keys: opts.keys ?? '*90', frames: 0, fingerprint: null, replayed: null, status: null, state: null, errors: [] };
+  const finish = () => {
+    report.ok = report.errors.length === 0 && report.fingerprint !== null && report.replayed === report.fingerprint;
+    mkdirSync(out, { recursive: true });
+    writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
+    console.log(`check.mjs --headless ${report.module}: ${report.frames} frames in Node${report.status ? `, ${report.status}` : ''}`);
+    if (report.fingerprint === null) console.log('  not replayed: the run did not finish');
+    else console.log(`  fingerprint ${report.fingerprint}; replayed ${report.replayed === report.fingerprint ? 'to the same' : `to ${report.replayed ?? '-'} (not the same)`}`);
+    for (const e of report.errors) console.log(`  error: ${e.split('\n')[0]}`);
+    console.log(`${report.ok ? 'ok' : 'FAILED'}: ${join(out, 'report.json')}`);
+    process.exit(report.ok ? 0 : 1);
+  };
+  // a load, a setup or a replay that never settles fails, as a page that never starts does
+  const within = (promise, what, ms = 120000) => {
+    let timer;
+    return Promise.race([promise, new Promise((_, no) => (timer = setTimeout(() => no(new Error(`${what} did not finish within ${ms / 1000} s`)), ms)))]).finally(() => clearTimeout(timer));
+  };
+  const { Engine } = await import(pathToFileURL(join(dir, 'pixel-engine.js')).href);
+  let mod;
+  try {
+    mod = await within(import(pathToFileURL(path).href), `loading ${file}`);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    const page = /\b(document|window|location|localStorage|navigator)\b is not defined/.test(msg) ? ' (code that touches the page runs only where there is one: guard it, export createGame(), GUIDE.md section 8)' : '';
+    report.errors.push(`${file} failed to load: ${msg}${page}`);
+    finish();
+  }
+  const make = typeof mod.createGame === 'function' ? mod.createGame : null;
+  if (!make) fail(`${file} exports no createGame(): --headless makes the game with it, a fresh one for the replay (GUIDE.md section 8)`);
+  const read = async (p) => {
+    const bytes = readFileSync(resolve(dirname(path), p));
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  };
+  let engine = null;
+  try {
+    engine = await within(Engine.headless(make(), { assets: read, viewport: { width: vw, height: vh, dpr: 1 } }), 'the game\'s start');
+    for (const k of keys) {
+      if (k.code) engine.input.setKey(k.code, true);
+      engine.step(k.frames);
+      if (k.code) engine.input.setKey(k.code, false);
+    }
+    report.fingerprint = engine.fingerprint();
+    report.frames = engine.state().frame;
+    report.state = engine.state();
+    report.status = report.state.status || null;
+    const rec = JSON.parse(JSON.stringify(engine.recording()));
+    await within(engine.replay(rec, () => engine.loadGame(make())), 'the replay');
+    report.replayed = engine.fingerprint();
+  } catch (e) {
+    report.errors.push(e instanceof Error ? (e.stack ?? e.message) : String(e));
+    if (engine && !report.state) {
+      report.state = engine.state();
+      report.frames = report.state.frame;
+      report.status = report.state.status || null;
+    }
+  }
+  if (engine) report.errors.push(...engine.errors.map(String).filter((e) => !report.errors.some((r) => r.includes(e))));
+  engine?.dispose();
+  finish();
+}
+
+if (headless) await runHeadless(target);
 
 const chromium = await loadPlaywright();
 

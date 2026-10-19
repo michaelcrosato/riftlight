@@ -107,5 +107,9 @@ in Node. Deterministic math across runtimes is an open decision (michaelcrosato/
   the HUD's size, drawn sheets, GPU compute, settings, the debug panel) has a check that goes red
   without it.
 
-The kit's `pixel-engine.js` doesn't run in Node yet (its Rapier wasm and CSS load the page's
-way): `Engine.headless` is for this repository's tests and tools.
+The kit's `pixel-engine.js` runs in Node too, from its folder alone: in Node, Rapier's wasm comes
+from the data URL the kit inlines (`physics/rapierWasm.ts`), a reader still finds the built-in
+models the kit embeds (`__PIXEL_ASSETS__` first, `assets.ts`), and the CSS goes in only where there
+is a `document` (`src/bundle.ts`). `check.mjs --headless game.js` plays a game module's
+`createGame()` there and replays it (docs/GUIDE.md section 8; the `bundle` e2e suite checks it
+from a copy of `dist/engine/`).

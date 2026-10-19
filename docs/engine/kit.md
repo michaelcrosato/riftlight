@@ -40,7 +40,10 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   console, game or GPU error or a blank frame. `--sheets models.js,crate` plays no page: it
   imports the module and the engine on an empty page and draws, with the engine's `modelSheet`
   and `textureSheet` (the software rasterizer the CLIs use), a sheet of every def the module
-  exports and of library ids; exit 1 on any problem.
+  exports and of library ids; exit 1 on any problem. `--headless game.js` plays no browser: it
+  boots the module's `createGame()` with `Engine.headless` in Node, plays the `--keys` frames,
+  replays the recording in a fresh game and writes `report.json`; exit 1 on an error or a replay
+  that ends elsewhere (no pictures: those need the browser).
 - `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates, where newer
   versions are) and `manifest.json` (version, build, every file with its bytes, and `latest`,
   `releases`, `handoff` and `source`: the newest release's zip, every release, the handoff page
