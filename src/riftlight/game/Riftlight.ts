@@ -102,6 +102,12 @@ export class Riftlight implements Game, MenuHost, LookHost {
   private hudControls: Box[] = [];
   private readonly menuInput = new MenuInput();
   private rng = new Rng(1);
+  /**
+   * Presentation's own random stream (screen shake, damage-number drift, sound pitch): forked
+   * from the run's wherever that one starts, never drawn by play, so a display setting can't
+   * change what a seeded run does or drops.
+   */
+  private fx = new Rng(1).fork('presentation');
   private readonly recap = new RecapTracker();
   private readonly floaters = new Floaters();
   private feed: FeedLine[] = [];
@@ -282,13 +288,13 @@ export class Riftlight implements Game, MenuHost, LookHost {
       // a hero whose combat plays its own juice (sounds, sparks by skill) only gets numbers here
       if (!this.hero?.juice) {
         this.ctx.particles.burst('rl.hit', at);
-        this.ctx.audio.play(result.crit ? 'rl.crit' : 'rl.hit', { pitch: this.rng.range(-2, 2), volume: 0.7 });
+        this.ctx.audio.play(result.crit ? 'rl.crit' : 'rl.hit', { pitch: this.fx.range(-2, 2), volume: 0.7 });
       }
       // a crit flashes the spot it lands on (one pooled light, gone in a few frames)
       if (result.crit && result.total > 0) this.flash(at, PALETTE.sand, 7, 4.5, 0.14);
       if (this.settings.damageNumbers && result.total > 0) {
         const color: PaletteColor = result.crit ? 'sand' : DAMAGE_COLORS[dominantType(result)];
-        this.floaters.add(at.setY(1.6), `${Math.round(result.total)}${result.crit ? '!' : ''}`, color, result.crit, this.rng.range(-1, 1), { key: target.id, value: result.total });
+        this.floaters.add(at.setY(1.6), `${Math.round(result.total)}${result.crit ? '!' : ''}`, color, result.crit, this.fx.range(-1, 1), { key: target.id, value: result.total });
       }
     });
     on('kill', ({ target, rank }) => {
@@ -302,7 +308,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
       const stats = (this.save.stats ??= emptyStats());
       stats.kills++;
       this.streak = { count: (this.streak && this.streak.age < 3 ? this.streak.count : 0) + 1, age: 0 };
-      this.ctx.audio.play('rl.die', { pitch: rank === 'boss' ? -8 : this.rng.range(-2, 3) });
+      this.ctx.audio.play('rl.die', { pitch: rank === 'boss' ? -8 : this.fx.range(-2, 3) });
       this.ctx.particles.burst('smoke', target.position.clone().setY(0.6), { count: rank === 'boss' ? 14 : 5 });
       // the kill lights the room for a moment: bigger and whiter for elites and the boss
       const big = rank === 'boss' ? 3 : rank === 'rare' ? 1.6 : rank === 'magic' ? 1.3 : 1;
@@ -431,6 +437,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   /** Push the save into every system: hero level, tree, gear, difficulty, loot. */
   private applySave(): void {
     this.rng = new Rng(this.save.seed).fork('run');
+    this.fx = this.rng.fork('presentation');
     this.save.stats ??= emptyStats();
     this.save.codex ??= [];
     this.save.difficulty = sanitizeTuning(this.save.difficulty);
@@ -493,6 +500,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.ctx.scene.background = new Color(PALETTE.ink);
     const spec = this.ports.levels.spec(d, this.save.seed);
     this.rng = new Rng(this.save.seed).fork(`level:${d}:${this.save.stats?.runs ?? 0}`);
+    this.fx = this.rng.fork('presentation');
     const at = { spec, rng: this.rng.state, actors: actorIds(), props: PropTarget.nextId() };
     const level = await this.ports.levels.build(spec, this.levelDeps());
     this.level = level;
@@ -657,7 +665,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     if (r.gold) {
       this.addGold(r.gold);
       this.events.emit('gold', { amount: r.gold, at: l.position });
-      this.ctx.audio.play('rl.gold', { pitch: this.rng.range(-1, 2) });
+      this.ctx.audio.play('rl.gold', { pitch: this.fx.range(-1, 2) });
       this.ctx.particles.burst('rl.coins', l.position.clone().setY(0.3));
       this.feedLine(`+${r.gold} GOLD`, 'sand');
     }
@@ -819,8 +827,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     for (const m of this.level?.monsters() ?? []) {
       const a = m.actor;
       if (!a.alive) continue;
-      const result = a.takeHit({ source: this.hero.actor, tags: ['dev'], damage: { chaos: a.life * 10 + 1e6 }, crit: false });
-      this.events.emit('hit', { target: a, result, hit: { source: this.hero.actor, tags: ['dev'], damage: {}, crit: false } });
+      const hit = { source: this.hero.actor, tags: ['dev'], damage: { chaos: a.life * 10 + 1e6 }, crit: false };
+      const result = a.takeHit(hit);
+      // an Actor emits its own hit and (through die) its kill: drops, XP, the bot's count, once each
+      if (a instanceof Actor) continue;
+      this.events.emit('hit', { target: a, result, hit });
       if (result.killed) this.events.emit('kill', { target: a, killer: this.hero.actor, rank: m.rank, depth: this.level!.spec.depth });
     }
   }
@@ -1278,7 +1289,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.shakeTime = Math.max(0, this.shakeTime - dt);
     if (this.shakeTime > 0 && this.shakeStrength > 0) {
       const s = this.shakeStrength * Math.min(1, this.shakeTime * 5);
-      this.shakeOffset.set(this.rng.range(-s, s), this.rng.range(-s, s) * 0.5, this.rng.range(-s, s));
+      this.shakeOffset.set(this.fx.range(-s, s), this.fx.range(-s, s) * 0.5, this.fx.range(-s, s));
     } else {
       this.shakeStrength = 0;
       this.shakeOffset.set(0, 0, 0);
@@ -1589,6 +1600,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
       settings: playSettings(this.settings),
       dev: this.dev,
       rng: this.rng.state,
+      fx: this.fx.state,
       ids: { actors: actorIds(), props: PropTarget.nextId() },
       hero: hero.saveState!(),
       loot: loot.saveState!(),
@@ -1705,6 +1717,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
       hero.loadState(s.hero, actors);
     }
     this.rng.state = s.rng;
+    this.fx.state = s.fx;
     setActorIds(s.ids.actors);
     PropTarget.setIds(s.ids.props);
     // the shell
@@ -1770,6 +1783,8 @@ interface RiftSnapshot {
   readonly settings: Partial<Settings>;
   readonly dev: DevFlags;
   readonly rng: number;
+  /** Presentation's stream (shake, damage numbers, sound pitch): a restored moment shakes as the original did. */
+  readonly fx: number;
   readonly ids: { readonly actors: number; readonly props: number };
   readonly hero: unknown;
   readonly loot: unknown;

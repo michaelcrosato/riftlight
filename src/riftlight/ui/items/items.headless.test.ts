@@ -90,6 +90,8 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
         .ground()
         .filter((l) => l.drop.kind === 'item');
       expect(items.length).toBeGreaterThan(0);
+      const uids = items.map((l) => uidOf(l.drop));
+      expect(new Set(uids).size, 'each kill drops once (no twin items)').toBe(uids.length);
       expect(items.some((l) => l.drop.kind === 'item' && (l.drop.item.rarity === 'rare' || l.drop.item.rarity === 'unique')), 'a rare or better').toBe(true);
       expect(items.some((l) => !!(l as unknown as { ground: GroundDrop }).ground.beam), 'a beam').toBe(true);
       expect(engine.lights.describe().filter((r) => r.name === 'loot beam' && r.alive).length, 'loot lights from the pool').toBeGreaterThan(0);

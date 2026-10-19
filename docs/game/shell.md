@@ -110,7 +110,12 @@ Typed as `RiftlightApi` (`game/api.ts`), installed in `Riftlight.ready` (it exis
 | `gems()`, `gearScore()` | socketed gems with level and XP; item power of what the hero wears |
 | `arcade.*`, `bestiary.*`, `photo.*` | the showcase: the arcade cabinet, the Hall of Beasts, photo mode (docs/game/showcase.md *Agent API*) |
 
-`?seed=123` makes new runs reproducible; `?save=memory` keeps tests out of localStorage. The
+`?seed=123` makes new runs reproducible; `?save=memory` keeps tests out of localStorage. A run's
+random stream (`services.rng`, forked again per level) is play's alone: screen shake,
+damage-number drift and sound pitch draw from the shell's presentation stream (`fx`, forked from
+the run's wherever that one starts, kept in a snapshot), so turning shake or damage numbers off
+no longer moves play's stream: the same inputs roll the same drops (`game/presentation.test.ts`).
+Shake and zoom still move the camera, and so what the mouse points at (`playSettings`). The
 pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
 AI off, hitboxes, time of day).
 

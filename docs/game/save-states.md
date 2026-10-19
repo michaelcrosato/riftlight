@@ -9,7 +9,8 @@ engine.step(600);                       // play on (another level, a death, anyt
 await engine.restore(snap);             // back at that moment: town in milliseconds, a level in under a second
 ```
 
-`Riftlight.snapshot()` keeps the save and the slots it knows, the run's random stream, the id
+`Riftlight.snapshot()` keeps the save and the slots it knows, the run's random stream and the
+presentation's (shake, damage numbers, sound pitch: a restored moment shakes as it did), the id
 counters (actors from 1, props from 1,000,000), the hero (`RealHero.saveState`: the controller
 and its actor with every stat source in order, the action in progress, cooldowns, charges,
 curses, the animation blend's clocks and weights and how the body is drawn (gait clocks, hips,
