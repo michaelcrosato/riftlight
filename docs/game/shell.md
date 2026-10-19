@@ -94,7 +94,18 @@ saves, deletes and imports, so a replay shows the slots the recorded run saw.
 ## Agent API: `window.__RIFTLIGHT__`
 
 Typed as `RiftlightApi` (`game/api.ts`), installed in `Riftlight.ready` (it exists once
-`window.__PIXEL_READY__` resolves). Steps go through `Engine.step`, frame-exact.
+`window.__PIXEL_READY__` resolves). Steps go through `Engine.step`, frame-exact. What `step(n,
+intent)`, `moveTo`, `fight` and the bot hold reaches the game as recorded input, never a write to
+it: the intent as `{ rl: 'intent' }`, for the frame it arrives in only, and what the bot does
+besides (a panel closed, home after a death or through the portal) as `{ rl: 'bot' }`
+(`Riftlight.agentInput`, taken once a frame before its first fixed step). So a bot run is in the
+recording: restore a snapshot to start one (`engine.restore(await engine.snapshot())`) and it
+replays, `npm run replay` included, to the same fingerprint, then plays on as the live game would
+(`game/botReplay.test.ts`). Calls that change the game between frames are not input, so a replay
+can't redo them, such as `newRun`, `continueRun`, `enterDepth`, `toTown`, `toTitle`, `talkTo`,
+`interact`, `pickupAll`, `ui.open` / `close` / `click`, `bot.town` (it works on the save), the
+saves, `give`, `spawn`, `killAll`, `setDifficulty`, `dev.*` and the showcase's. Record from after them, or use `step(1, { interact: true })` and `press(key)`,
+which are input.
 
 | call | does |
 | --- | --- |

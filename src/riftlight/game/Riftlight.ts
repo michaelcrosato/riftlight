@@ -137,8 +137,10 @@ export class Riftlight implements Game, MenuHost, LookHost {
   private zoomGoal: number = CAMERA.title;
   // input
   private readonly intent: MutableIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false, held: 0 };
-  /** Agent / bot override: drives the hero instead of the player while set. */
+  /** An agent's intent this frame (`agentInput`: it arrives as recorded input), else null (the player's). */
   botIntent: (HeroIntent & { interact?: boolean }) | null = null;
+  /** The frame's commands `agentInput` took last (it runs once a frame). */
+  private agentTaken: readonly unknown[] | null = null;
   private interactQueued = false;
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
@@ -1004,7 +1006,35 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   // ================================================================ per frame
 
+  /**
+   * An agent's input this frame (`rl.step`, `rl.moveTo`, `rl.fight`, the bot: the intent it holds
+   * and what the bot does besides), recorded like the keys, so an agent's run replays. Taken once
+   * a frame, as early as it can be: before the first fixed step, or in `update` on a frame
+   * without one.
+   */
+  private agentInput(ctx: GameContext): void {
+    const commands = ctx.input.commands;
+    if (commands === this.agentTaken) return;
+    this.agentTaken = commands;
+    this.botIntent = null; // an intent lasts the frame it arrives in: the player's input again after
+    for (const c of commands) {
+      const m = c as Partial<RiftCommand> | null;
+      if (m?.rl === 'intent' && typeof m.intent?.move?.x === 'number' && Array.isArray(m.intent.aim)) this.botIntent = fromSaved(m.intent);
+      else if (m?.rl === 'bot') this.botAct(m.act);
+    }
+  }
+
+  private botAct(act: BotAct | undefined): void {
+    if (act === 'close') this.layer.close();
+    else if (act === 'death' && this.layer.has('death')) this.goTown('death');
+    else if (act === 'portal' && this.layer.has('loot')) {
+      for (const l of [...this.ports.loot.ground()]) if (!l.filtered) this.pickup(l);
+      this.returnToTown();
+    }
+  }
+
   fixedUpdate(ctx: GameContext, dt: number): void {
+    this.agentInput(ctx);
     if (this.showcase?.active) return this.showcase.fixedUpdate(dt);
     if (this.screen !== 'town' && this.screen !== 'level') return;
     if (this.worldPaused) return;
@@ -1088,6 +1118,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   }
 
   update(ctx: GameContext, dt: number): void {
+    this.agentInput(ctx);
     for (const c of ctx.input.commands) this.command(c);
     this.time += dt;
     const ui = this.ui;
@@ -1778,7 +1809,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.streak = t.streak ? { ...t.streak } : null;
     this.feed = t.feed.map((f) => ({ ...f }));
     Object.assign(this.intent, { ...t.intent, move: { ...t.intent.move }, aim: this.intent.aim.fromArray(t.intent.aim) });
-    this.botIntent = t.botIntent ? { ...t.botIntent, aim: new Vector3().fromArray(t.botIntent.aim) } : null;
+    this.botIntent = t.botIntent ? fromSaved(t.botIntent) : null;
     this.camTarget.fromArray(t.camera.target);
     this.lead.fromArray(t.camera.lead);
     this.shakeOffset.fromArray(t.camera.shake);
@@ -1849,7 +1880,7 @@ interface RiftSnapshot {
     readonly streak: { count: number; age: number } | null;
     readonly feed: readonly FeedLine[];
     readonly intent: Omit<MutableIntent, 'aim'> & { readonly aim: readonly number[] };
-    readonly botIntent: (Omit<HeroIntent & { interact?: boolean }, 'aim'> & { readonly aim: readonly number[] }) | null;
+    readonly botIntent: SavedIntent | null;
     readonly camera: { readonly target: readonly number[]; readonly lead: readonly number[]; readonly shake: readonly number[]; readonly shakeTime: number; readonly shakeStrength: number; readonly zoomGoal: number };
   };
   readonly banners: ReturnType<BannerQueue['save']>;
@@ -1866,7 +1897,27 @@ type RiftCommand =
   | { readonly rl: 'settings'; readonly settings: Partial<Settings> }
   | { readonly rl: 'saves'; readonly saves: SavesView }
   | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string }
-  | { readonly rl: 'storage'; readonly error: string };
+  | { readonly rl: 'storage'; readonly error: string }
+  | { readonly rl: 'intent'; readonly intent: SavedIntent }
+  | { readonly rl: 'bot'; readonly act: BotAct };
+
+/**
+ * An agent's intent as data (`rl.step`, `rl.moveTo`, the bot): a recording keeps it, so the run
+ * replays. In a command, what is off is left out (no attack, no skill, no dodge...).
+ */
+export type SavedIntent = { readonly move: { readonly x: number; readonly z: number }; readonly aim: readonly number[]; attack?: boolean; skill?: number; dodge?: boolean; held?: number; interact?: boolean };
+
+/**
+ * What the playtest bot does to the shell outside the hero's intent, as recorded input:
+ * `close` the top panel (it never browses menus), leave after a `death`, or at the `portal`
+ * take the loot window's loot and go home.
+ */
+export type BotAct = 'close' | 'death' | 'portal';
+
+/** A saved intent back as the hero reads it (what is left out is off). */
+function fromSaved(i: SavedIntent): HeroIntent & { interact?: boolean } {
+  return { move: { x: i.move.x, z: i.move.z }, aim: new Vector3().fromArray(i.aim), attack: !!i.attack, skill: i.skill ?? -1, dodge: !!i.dodge, held: i.held ?? 0, interact: !!i.interact };
+}
 
 /** `?seed=123` makes new runs reproducible (tests, bug reports, playtests). */
 function urlSeed(): number | null {
