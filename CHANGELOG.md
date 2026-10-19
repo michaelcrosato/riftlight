@@ -8,6 +8,17 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.44.0
+
+- **Removed from the texture library: its equipment icons**: `sword-icon`, `axe-icon`,
+  `mace-icon`, `dagger-icon`, `bow-icon`, `staff-icon`, `wand-icon`, `shield-icon`,
+  `round-shield-icon`, `quiver-icon`, `helmet-icon`, `armor-icon`, `gloves-icon`, `boots-icon`,
+  `belt-icon`, `ring` and `amulet`. They were a second way to draw an item next to Riftlight's own
+  icons, which fill any item footprint (a one-cell item's box is 7 px wide), and nothing used them. A game that wants one makes its own
+  `TextureDef` (docs/GUIDE-ASSETS.md) and adds it with `TEXTURE_LIBRARY.add(def)`. The library
+  keeps the items Riftlight has no class for (potions, key, scroll, map, book, bomb, torch...),
+  `gem-icon`, `gold-icon`, the skill and UI icons and the creatures.
+
 ## 0.43.0
 
 - **`Game.args`**: the plain JSON a game was made with, when its name alone can't rebuild it (a

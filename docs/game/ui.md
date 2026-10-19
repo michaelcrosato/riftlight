@@ -38,6 +38,16 @@ actives draw their delivery's shape in their `look` colours, supports a glyph fo
 change (projectiles, chain, area, speed, crit, leech, minions...) in their element's colour.
 The skill bar, the bags, the sockets and the vendor draw the same icon.
 
+## Item icons (`ui/items/icons.ts`)
+
+Every item but a gem (which draws its skill's icon, above) draws its class's icon (`drawIcon(look)`:
+sword, axe, bow, staff, shield, helm, body, gloves, boots, ring, amulet, belt, orb...) from a few
+rects that fill whatever box it gets: its cells in the bag (a 1 × 3 sword, a 2 × 4 bow, 10 px a
+cell), a paper-doll slot, the vendor's shelf, the cursor. The magic part (edge, gem, trim) takes the
+item's rarity colour. This is the one way an item is drawn: the engine's texture library has no
+icons for Riftlight's item classes (a sprite at least 9 px wide can't fill the 7 px box of a
+one-cell-wide item, and the bag, 12 cells in a 128 px window, has no room for bigger cells).
+
 ## The look studio (`ui/lookStudio.ts`)
 
 Pause → **Look studio**, Settings → Look studio, or **L**: the engine's looks (docs/engine/looks.md

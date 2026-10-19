@@ -91,7 +91,7 @@ fallback is a fixed pool of three PointLights, so materials never recompile mid-
 depth 6 and dims magic ones from depth 16; uniques and valuable orbs are loud. Alt toggles the
 filter off and on.
 
-**UI** (`ui/items/`): `new ItemsUi(ctx, new ItemsStore({ sheet, heroLevel, rng }))`, then
+**UI** (`ui/items/`; item icons: docs/game/ui.md *Item icons*): `new ItemsUi(ctx, new ItemsStore({ sheet, heroLevel, rng }))`, then
 `InventoryView`, `StashView` and `VendorView` (`open`/`close`/`isOpen`); call `ui.update(dt)`
 every frame and don't feed hero movement while `ui.isOpen`. Click or drag to move items,
 right-click to equip or start applying an orb, Ctrl-click to stash, sell or buy, Alt shows
