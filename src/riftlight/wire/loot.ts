@@ -98,6 +98,8 @@ export class RealLoot implements LootPort {
   private depth = 1;
   private quiet = 0;
   private lastEquipment = this.store.state.equipment;
+  /** The gold the store had from the shell (`sync`, a load): a store change hands back only its own difference. */
+  private lastGold = this.store.state.gold;
   private stockKey = '';
   /** Has the crafting stream been forked from the run's (the first time the windows open)? */
   private crafting = false;
@@ -273,6 +275,7 @@ export class RealLoot implements LootPort {
       this.store.skills = sockets;
       this.store.set({ ...state, gold: save.hero.gold });
       this.lastEquipment = this.store.state.equipment;
+      this.lastGold = save.hero.gold;
       this.store.stocks = {};
       this.stockKey = '';
       this.clearGround();
@@ -332,6 +335,7 @@ export class RealLoot implements LootPort {
       st.stocks = copy(s.stocks) as ItemsStore['stocks'];
       st.version++;
       this.lastEquipment = st.state.equipment;
+      this.lastGold = st.state.gold;
       this.stockKey = s.stockKey;
       this.depth = s.depth;
       this.crafting = s.crafting !== null;
@@ -406,6 +410,7 @@ export class RealLoot implements LootPort {
     this.host = host;
     this.store.heroLevel = host.level();
     const gold = host.gold();
+    this.lastGold = gold;
     if (this.store.state.gold !== gold) {
       this.quiet++;
       try {
@@ -419,13 +424,17 @@ export class RealLoot implements LootPort {
   private onStore(state: LootState): void {
     if (this.quiet || !this.host) return;
     const host = this.host;
-    const gold = host.gold();
-    if (state.gold !== gold) {
-      if (!host.addGold(state.gold - gold)) {
+    // what the store changed itself (a buy, a sale): a pickup between windows keeps the gold it
+    // had, which the shell's wallet may have outgrown since (gold picked up)
+    const spent = state.gold - this.lastGold;
+    this.lastGold = state.gold;
+    if (spent !== 0) {
+      if (!host.addGold(spent)) {
         // the shell refused (not enough gold): the shell's wallet wins
         this.quiet++;
         this.store.set({ ...state, gold: host.gold() });
         this.quiet--;
+        this.lastGold = host.gold();
       }
       host.changed('gold');
     }
