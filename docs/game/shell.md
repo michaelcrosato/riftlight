@@ -153,7 +153,7 @@ five times and prints clear time, deaths, damage taken, kills, XP, gold, items a
 JSON, filmstrip PNG (scene + HUD) and GIF land in `.scratch/playtest/`. It plays headless
 (`headlessRiftlight`: no server, no browser; with `--runs` each seed is a fresh game in its own
 forked process, `--jobs` at once, one per core by default) unless `--film`, `--gif` or `--browser`
-asks for Chromium, where the runs share one page; the campaign is one game, as a player's is. The e2e `tools` suite checks that depth 1 gives the same report both ways. Summoners (and
+asks for Chromium, where the runs share one page (a new run starts from what setup left: the hero, the loot, the town, the id counters and the shell's run fields, so a seed plays there as it does alone; `Riftlight.startRun`, `game/runs.test.ts`); the campaign is one game, as a player's is. The e2e `tools` suite checks that depth 1 gives the same report both ways. Summoners (and
 Necromancer elites) are fought before the adds they keep calling.
 
 **In town** (`game/botTown.ts`, `bot.town()` in the agent API) the bot plays like a player:

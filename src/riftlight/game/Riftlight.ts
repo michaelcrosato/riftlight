@@ -108,6 +108,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
    * change what a seeded run does or drops.
    */
   private fx = new Rng(1).fork('presentation');
+  /** What a run starts from, as setup left it: the hero, the loot, the town and the id counters (`startRun`). */
+  private fresh: { readonly hero: unknown; readonly loot: unknown; readonly town: TownState; readonly actors: number; readonly props: number } | null = null;
   private readonly recap = new RecapTracker();
   private readonly floaters = new Floaters();
   private feed: FeedLine[] = [];
@@ -237,6 +239,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.showcase.buildTown();
     this.hero = await this.ports.hero.create(this.services, this.save.hero);
     this.hero.object.visible = false;
+    // a copy, as snapshot() takes, and copied again per run: no run may change what the next starts from
+    this.fresh = structuredClone({ hero: this.hero.saveState?.() ?? null, loot: this.ports.loot.saveState?.() ?? null, town: this.town.saveState(), actors: actorIds(), props: PropTarget.nextId() });
     this.applySettings();
     // the settings play depends on (zoom and shake move what the mouse points at) are the
     // device's: the recording keeps them, so a replay plays with the recorded ones
@@ -354,6 +358,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /** Start a fresh run in a slot. */
   newRun(slot: number, seed = this.seed ?? (Date.now() ^ (slot * 7919)) >>> 0): void { // real time: a new run's seed when none is given (the save keeps it)
+    this.startRun();
     this.slot = slot;
     this.save = newSave(seed);
     if (!this.replaying) this.store.save(slot, this.save);
@@ -381,6 +386,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /** Play on from a save's data, into town. */
   private loadData(slot: number, data: SaveData): void {
+    this.startRun();
     this.slot = slot;
     this.save = data;
     this.applySave();
@@ -432,6 +438,37 @@ export class Riftlight implements Game, MenuHost, LookHost {
   /** Storage is the player's: a replay reads what it recorded and writes nothing. */
   private get replaying(): boolean {
     return this.ctx?.input.playing ?? false;
+  }
+
+  /**
+   * A run starts as it would in a fresh game, whatever ran before it in this one: the last run's
+   * level left, then the id counters, the hero (its action, combo, aim, random stream,
+   * counters), the loot (the world loot's ids and counters) and the town as setup left them, and
+   * the shell's own run fields (the level's clock and clear, the session, streaks, the recap,
+   * gifts) as they start, so a seed plays the same after other runs as alone. The save that
+   * follows (`applySave`) fills them in.
+   */
+  private startRun(): void {
+    this.leaveLevel();
+    const f = this.fresh;
+    if (!f) return;
+    setActorIds(f.actors);
+    PropTarget.setIds(f.props);
+    this.town.loadState(structuredClone(f.town));
+    if (f.loot !== null) this.ports.loot.loadState?.(structuredClone(f.loot), this.town);
+    if (f.hero !== null) this.hero.loadState?.(structuredClone(f.hero), (id) => (id === this.hero.actor.id ? this.hero.actor : null));
+    this.levelTime = 0;
+    this.cleared = false;
+    this.clearEmitted = false;
+    this.dead = false;
+    this.recap.reset();
+    this.streak = null;
+    Object.assign(this.session, { kills: 0, xp: 0, gold: 0, items: 0, deaths: 0, damageTaken: 0 });
+    this.combatHeat = 0;
+    this.combatSince = 0;
+    this.hurt = 0;
+    this.levelUpAge = 99;
+    this.gifts = 0;
   }
 
   /** Push the save into every system: hero level, tree, gear, difficulty, loot. */
