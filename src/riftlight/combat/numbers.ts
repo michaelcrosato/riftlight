@@ -1,17 +1,7 @@
 import { type Camera, Vector3 } from 'three/webgpu';
 import type { HudColor } from '../../engine/hud/Hud';
-import type { PaletteColor } from '../../engine/palette';
 import type { Vec } from '../core/saved';
-import { DAMAGE_TYPES, type DamageType, type HitResult } from '../core/types';
-
-/** Colour of damage numbers by damage type. */
-export const DAMAGE_COLORS: Readonly<Record<DamageType, PaletteColor>> = {
-  physical: 'white',
-  fire: 'orange',
-  cold: 'cyan',
-  lightning: 'sand',
-  chaos: 'lime',
-};
+import { DAMAGE_COLORS, dominantType, type HitResult } from '../core/types';
 
 interface Floater {
   text: string;
@@ -67,7 +57,7 @@ export class DamageNumbers {
     } else {
       if (result.total < 0.5) return;
       text = String(Math.round(result.total));
-      color = o.hero ? 'red' : o.dot ? 'mist' : DAMAGE_COLORS[dominant(result)];
+      color = o.hero ? 'red' : o.dot ? 'mist' : DAMAGE_COLORS[dominantType(result)];
       if (result.crit) text += '!';
     }
     this.flip = -this.flip;
@@ -117,17 +107,4 @@ export class DamageNumbers {
     for (const f of s.floaters) this.floaters.push({ ...f, at: new Vector3().fromArray(f.at) });
     this.flip = s.flip;
   }
-}
-
-function dominant(r: HitResult): DamageType {
-  let best: DamageType = 'physical';
-  let v = -1;
-  for (const t of DAMAGE_TYPES) {
-    const d = r.byType[t] ?? 0;
-    if (d > v) {
-      v = d;
-      best = t;
-    }
-  }
-  return best;
 }

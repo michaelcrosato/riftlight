@@ -136,16 +136,26 @@ s({
 
 ## Add a damage type
 
-1. Add it to `DamageType` and `DAMAGE_TYPES` in `core/types.ts` (e.g. `'holy'`).
-2. Place it in `CONVERSION_ORDER` (`combat/damage.ts`), add a colour to `DAMAGE_COLORS`
-   (`combat/numbers.ts`), and add it to `ELEMENTAL` if it should count as elemental.
-3. That's all the pipeline needs: `holy.damage`, `added.holy.min/max`, `res.holy`,
+1. Add it to `DAMAGE_TYPES` in `core/types.ts` (e.g. `'holy'`); `DamageType` is that list.
+2. Run `npm run typecheck`. Every table keyed by damage type is a `Record<DamageType, …>`, so it
+   names each place still missing the new type. Today that is 9 entries in 4 files: in
+   `core/types.ts` its HUD colour (`DAMAGE_COLORS`: damage numbers, the death recap's damage by
+   type, gem icons), its world colours (`DAMAGE_WORLD_COLORS`: telegraph rim and sweep, hazard
+   rings and lights) and its hit burst (`DAMAGE_BURSTS`); in `wire/hazards.ts` a hazard's bolt,
+   sound and zone motes; in `wire/monsters.ts` a monster skill's look (`ELEMENT_LOOK`); in
+   `game/recap.ts` the death recap's tip and its per-type tally. One table is optional on purpose:
+   `AILMENT` in `wire/hazards.ts`, the ailment a hazard of the type applies (none if it has no entry).
+3. Place it in `CONVERSION_ORDER` (`combat/damage.ts`; a test fails until it is there), and add it
+   to `ELEMENTAL` if it should count as elemental.
+4. That's all the pipeline needs: `holy.damage`, `added.holy.min/max`, `res.holy`,
    `res.max.holy`, `pen.holy` and `convert.physical.holy` work at once, because stats are strings.
+   Data that names a type (boss attacks, elite behaviours like `'deathNova:fire'`) is read through
+   `asDamageType`, which throws on a type that doesn't exist instead of turning it into physical.
 
 ```ts
-export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos' | 'holy';
+export const DAMAGE_TYPES = ['physical', 'fire', 'cold', 'lightning', 'chaos', 'holy'] as const;
+export const DAMAGE_COLORS: Readonly<Record<DamageType, PaletteColor>> = { ...colours, holy: 'sand' };
 export const CONVERSION_ORDER: readonly DamageType[] = ['physical', 'lightning', 'cold', 'fire', 'holy', 'chaos'];
-export const DAMAGE_COLORS = { ...colours, holy: 'sand' };
 ```
 
 ## Add an ailment

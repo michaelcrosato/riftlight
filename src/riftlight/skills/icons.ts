@@ -1,5 +1,6 @@
 import type { PaletteColor } from '../../engine/palette';
 import type { Mod } from '../core/mods';
+import { DAMAGE_COLORS, DAMAGE_TYPES } from '../core/types';
 import { SKILLS } from './actives';
 import { SUPPORTS } from './supports';
 import type { SkillGem, SupportGem } from './types';
@@ -65,8 +66,8 @@ export const GLYPHS: Readonly<Record<string, readonly string[]>> = {
 /** Darker partner of a palette colour for an icon's shadow pixels. */
 export const DARK: Partial<Record<PaletteColor, PaletteColor>> = { orange: 'red', red: 'plum', sand: 'orange', cyan: 'blue', sky: 'blue', white: 'mist', mist: 'slate', lime: 'green', green: 'teal', plum: 'night', blue: 'navy' };
 
-/** Colour of a damage type / element tag on icons. */
-const ELEMENT: Readonly<Record<string, PaletteColor>> = { fire: 'orange', cold: 'cyan', lightning: 'sand', chaos: 'lime', physical: 'mist' };
+/** A tag's colour when it names a damage type (`DAMAGE_COLORS`), else none. */
+const ELEMENT: Readonly<Partial<Record<string, PaletteColor>>> = DAMAGE_COLORS;
 
 /** The icon of an active skill gem (the bar and the bags draw the same one). */
 export function activeIcon(gem: SkillGem): GemIcon {
@@ -104,9 +105,12 @@ function supportGlyph(s: SupportGem): string {
 
 /** The colour of a support gem: its element, else what its stats are about. */
 function supportColor(s: SupportGem): PaletteColor {
-  for (const t of [...(s.tags ?? []), ...s.requires]) if (ELEMENT[t]) return ELEMENT[t]!;
+  for (const t of [...(s.tags ?? []), ...s.requires]) {
+    const c = ELEMENT[t];
+    if (c) return c;
+  }
   const st = stats(s.mods);
-  for (const e of ['fire', 'cold', 'lightning', 'chaos']) if (st.includes(e)) return ELEMENT[e]!;
+  for (const e of DAMAGE_TYPES) if (e !== 'physical' && st.includes(e)) return DAMAGE_COLORS[e];
   if (/leech\.life|life/.test(st)) return 'red';
   if (/mana/.test(st)) return 'sky';
   if (s.requires.includes('minion')) return 'lime';
@@ -116,7 +120,9 @@ function supportColor(s: SupportGem): PaletteColor {
 
 /** The icon of a support gem. */
 export function supportIcon(s: SupportGem): GemIcon {
-  const c = supportColor(s);
+  // the highlight is white: a white element (physical) draws its body a step darker so it shows
+  const tone = supportColor(s);
+  const c = tone === 'white' ? DARK.white! : tone;
   return { rows: GLYPHS[supportGlyph(s)]!, colors: { h: 'white', c, d: DARK[c] ?? 'slate' } };
 }
 

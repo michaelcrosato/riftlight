@@ -1,4 +1,5 @@
 import { type Mesh, type Object3D, Vector3 } from 'three/webgpu';
+import { PALETTE } from '../../engine/palette';
 import type { Actor } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
 import { createTelegraph } from '../combat/telegraph';
@@ -6,7 +7,7 @@ import { ringDecal } from '../combat/visuals';
 import { inc, more } from '../core/mods';
 import type { Rng } from '../core/rng';
 import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
-import type { ActorLike, AilmentType, DamageType } from '../core/types';
+import { type ActorLike, type AilmentType, asDamageType as asType, DAMAGE_BURSTS, DAMAGE_TYPES, DAMAGE_WORLD_COLORS, type DamageType } from '../core/types';
 import type { Level } from '../levels/Level';
 import { MONSTER_SKILLS, type MonsterEvent } from '../monsters';
 import { buildSkill } from '../skills/build';
@@ -33,10 +34,12 @@ export interface HazardHost {
   spawnAdds(from: MonsterUnit, o: { count: number; archetype?: string; scale?: number; mode: 'summon' | 'split' | 'clone'; at: Vector3 }): void;
 }
 
-const DAMAGE: readonly DamageType[] = ['physical', 'fire', 'cold', 'lightning', 'chaos'];
-const asType = (v: unknown, d: DamageType = 'physical'): DamageType => (DAMAGE.includes(v as DamageType) ? (v as DamageType) : d);
 const num = (v: unknown, d: number): number => (typeof v === 'number' && Number.isFinite(v) ? v : d);
-const COLOR: Readonly<Record<DamageType, number>> = { physical: 0xef7d57, fire: 0xef7d57, cold: 0x73eff7, lightning: 0x41a6f6, chaos: 0xa7f070 };
+/** A hazard's ring and light: its type's rim colour. */
+const COLOR = (type: DamageType): number => PALETTE[DAMAGE_WORLD_COLORS[type].rim];
+/** What a strike of the type sounds like, and what a zone of it sheds as it burns. */
+const SOUND: Readonly<Record<DamageType, string>> = { physical: 'explode', fire: 'explode', cold: 'ice', lightning: 'zap', chaos: 'explode' };
+const MOTE: Readonly<Record<DamageType, string>> = { physical: 'thorn', fire: 'ember', cold: 'frost', lightning: 'zap', chaos: 'toxic' };
 const BOLT: Readonly<Record<DamageType, string>> = { physical: 'voidbolt', fire: 'firebolt', cold: 'frostbolt', lightning: 'sparkbolt', chaos: 'voidbolt' };
 const AILMENT: Partial<Record<DamageType, AilmentType>> = { fire: 'ignite', cold: 'chill', lightning: 'shock', chaos: 'poison' };
 /** How much darkness dims the level's ambient and sun. */
@@ -66,8 +69,8 @@ function singleBolt(type: DamageType): SkillGem {
  */
 export function monsterGems(id: string): SkillGem | undefined {
   if (id.startsWith('hazard-bolt-')) {
-    const t = id.slice('hazard-bolt-'.length) as DamageType;
-    return DAMAGE.includes(t) ? singleBolt(t) : undefined;
+    const t = id.slice('hazard-bolt-'.length);
+    return (DAMAGE_TYPES as readonly string[]).includes(t) ? singleBolt(t as DamageType) : undefined;
   }
   return MONSTER_SKILLS.has(id) ? monsterGem(MONSTER_SKILLS.get(id)) : undefined;
 }
@@ -230,10 +233,10 @@ class Strike implements Effect {
       const host = this.hz.host;
       const fx = host.ctx;
       const p = at.clone().setY(0.3);
-      fx.particles.burst(type === 'fire' ? 'fire' : type === 'cold' ? 'frost' : type === 'lightning' ? 'zap' : type === 'chaos' ? 'toxic' : 'impact', p, { scale: Math.max(1, radius / 1.5) });
+      fx.particles.burst(DAMAGE_BURSTS[type], p, { scale: Math.max(1, radius / 1.5) });
       fx.particles.burst('dust', p, { scale: Math.max(1, radius / 2) });
-      fx.audio.play(type === 'lightning' ? 'zap' : type === 'cold' ? 'ice' : 'explode', { pitch: host.rng.range(-2, 1), volume: 0.6 });
-      fx.lights.request({ position: [at.x, 1.2, at.z], color: COLOR[type], intensity: 6, radius: radius + 3, lifetime: 0.3, fadeIn: 0.02, priority: 2, name: 'hazard' });
+      fx.audio.play(SOUND[type], { pitch: host.rng.range(-2, 1), volume: 0.6 });
+      fx.lights.request({ position: [at.x, 1.2, at.z], color: COLOR(type), intensity: 6, radius: radius + 3, lifetime: 0.3, fadeIn: 0.02, priority: 2, name: 'hazard' });
       host.shake(Math.min(0.35, 0.08 * radius), 0.15);
     }
     return this.t < this.delay + 0.05;
@@ -287,7 +290,7 @@ class Rings implements Effect {
     readonly slow: number,
   ) {
     for (let i = 0; i < count; i++) {
-      const mesh = ringDecal(COLOR[type], 0.8);
+      const mesh = ringDecal(COLOR(type), 0.8);
       mesh.position.set(center.x, 0.06, center.z);
       mesh.visible = false;
       hz.host.root.add(mesh);
@@ -392,7 +395,7 @@ class Zone implements Effect {
   render(): void {
     this.pose();
     const type = this.type;
-    if (this.hz.host.rng.next() < 0.08) this.hz.host.ctx.particles.burst(type === 'fire' ? 'ember' : type === 'cold' ? 'frost' : type === 'physical' ? 'thorn' : 'toxic', this.at.clone().setY(0.2), { count: 1 });
+    if (this.hz.host.rng.next() < 0.08) this.hz.host.ctx.particles.burst(MOTE[type], this.at.clone().setY(0.2), { count: 1 });
   }
 
   dispose(): void {

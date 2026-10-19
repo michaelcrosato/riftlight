@@ -27,7 +27,7 @@ export {
 export { AILMENTS, type AilmentDef, type AilmentKind } from './ailments';
 export { DELIVERIES, type CastContext, type CastOptions, type CombatEffect, type DeliveryImpl } from './deliveries';
 export { StatQuery } from './stats';
-export { DamageNumbers, DAMAGE_COLORS } from './numbers';
+export { DamageNumbers } from './numbers';
 export { CameraShake } from '../../engine/shake';
 export { LightService } from './lights';
 export { COMBAT_PARTICLES, COMBAT_SFX, registerCombatFx } from './sfx';
