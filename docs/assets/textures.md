@@ -91,7 +91,10 @@ so draw frames with pixels.
 Every converter takes `{ palette, catalog }`; a game adds textures with `TEXTURE_LIBRARY.add(def)`
 or a `TextureCatalog` of its own (`buildModel(id, { textures })` for models).
 Only where they help, later: decals and particle sprites from TextureDefs (today shader-cut
-shapes and squares); Riftlight's item and gem icon recipes stay unless a TextureDef reads better.
+shapes and squares). Riftlight draws its item icons itself (docs/game/ui.md *Item icons*): the
+library has no icons for Riftlight's item classes (sword, bow, helmet, ring...), only for items it
+has no class for (potions, keys, scrolls, maps, spear, cloak...), so editing a library sprite never
+changes Riftlight.
 
 **On models:** a part's `tex` (docs/ASSETS.md *The format*), as `brick-wall` does:
 

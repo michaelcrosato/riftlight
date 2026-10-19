@@ -4,6 +4,9 @@ import { flat } from '../../core/mods';
 import type { Item } from '../../core/types';
 import { currencyItem, makeUnique, rollGem, rollItem } from '../../loot/generate';
 import { RARITY_COLOURS } from '../../loot/filter';
+import { TEXTURE_LIBRARY } from '../../../engine/texture';
+import { ITEM_SIZES } from '../../loot/inventory';
+import { drawIcon } from './icons';
 import type { Painter } from './paint';
 import { wrap } from './paint';
 import { drawTooltip, measureTooltip, TIP_CHARS, tooltipLines } from './tooltip';
@@ -74,5 +77,38 @@ describe('tooltips', () => {
   it('wraps words to the line width', () => {
     expect(wrap('aaa bbb ccc', 7)).toEqual(['aaa bbb', 'ccc']);
     expect(wrap('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij']);
+  });
+});
+
+describe('item icons (ui/items/icons.ts: the one way an item is drawn)', () => {
+  // the names a library icon for a Riftlight item class would take
+  const NAMES: Readonly<Record<string, readonly string[]>> = { helm: ['helmet'], body: ['armor', 'armour'], shield: ['round-shield'] };
+  // a gem draws its skill's glyph (skills/icons.ts), not a cut gem: the library's `gem-icon` is
+  // the guides' `hudSprite` example, nothing an item shows
+  const DRAWN_ELSEWHERE = new Set(['gem']);
+  const CELL = 10; // ItemsUi's
+  const draw = (look: string, w: number, h: number) => {
+    const rects: [number, number, number, number][] = [];
+    const p: Painter = { rect: (x, y, rw, rh) => void rects.push([x, y, rw, rh]), text: () => 0 };
+    drawIcon(p, look, 0, 0, w, h, 0xffffff);
+    return rects;
+  };
+
+  it('every item class draws its own icon inside its box in the bag', () => {
+    for (const [look, [cw, ch]] of Object.entries(ITEM_SIZES)) {
+      // the bag's box for an item, less drawItem's frame (ItemsUi: cells * CELL - 1, then 1 px a side)
+      const [w, h] = [cw * CELL - 3, ch * CELL - 3];
+      const rects = draw(look, w, h);
+      expect(rects.length, `${look} draws`).toBeGreaterThan(0);
+      for (const [x, y, rw, rh] of rects) expect(x >= 0 && y >= 0 && x + rw <= w && y + rh <= h, `${look}: a rect ${x},${y} ${rw}×${rh} inside ${w}×${h}`).toBe(true);
+      if (look !== 'orb') expect(JSON.stringify(rects), `${look} has its own icon (not the fallback)`).not.toBe(JSON.stringify(draw('no-such-look', w, h)));
+    }
+  });
+
+  it('the texture library has no icon for a Riftlight item class (editing one would change nothing)', () => {
+    for (const look of Object.keys(ITEM_SIZES)) {
+      if (DRAWN_ELSEWHERE.has(look)) continue;
+      for (const name of [look, ...(NAMES[look] ?? [])]) for (const id of [name, `${name}-icon`]) expect(TEXTURE_LIBRARY.has(id), `library texture '${id}'`).toBe(false);
+    }
   });
 });
