@@ -265,6 +265,7 @@ export class RealLoot implements LootPort {
     try {
       this.ui?.closeAll();
       this.active = null;
+      this.host = null; // the shell that opened a window last: the next window it opens hooks it up again
       const state = lootFromSave({ hero: save.hero, stash: save.stash, positions: save.positions });
       // gems in the sockets: a new run starts with the starter gems
       const sockets = save.hero.skills.length ? normalizeSockets(save.hero.skills) : starterSockets(new Rng(save.seed).fork('starter'));
