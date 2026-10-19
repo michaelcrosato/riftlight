@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { analyzeClip, validateClip } from '../../engine/animation';
 import { StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
-import type { ActorLike, Hit, HitResult } from '../core/types';
+import { type ActorLike, asDamageType, type Hit, type HitResult } from '../core/types';
 import {
   ARCHETYPES,
   BOSS_ATTACKS,
@@ -42,6 +42,15 @@ describe('registries', () => {
     expect(ARCHETYPES.size).toBeGreaterThanOrEqual(10);
     expect(ELITE_MODS.size).toBeGreaterThanOrEqual(20);
     expect(BOSSES.all().map((b) => b.level).sort((a, b) => a - b)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+  });
+
+  // the elite behaviours whose parameter is a damage type ('deathNova:fire'): ELITE_BEHAVIOURS in brains/elite.ts
+  it('every damage type named in data exists (boss attacks, elite behaviours that hit)', () => {
+    for (const a of BOSS_ATTACKS.all()) if (a.params?.damage !== undefined) expect(() => asDamageType(a.params!.damage), a.id).not.toThrow();
+    for (const e of ELITE_MODS.all()) {
+      const [behaviour, param] = (e.behaviour ?? '').split(':');
+      if (param && ['deathNova', 'trail', 'strikes'].includes(behaviour!)) expect(() => asDamageType(param), e.id).not.toThrow();
+    }
   });
 
   it('parts fit real slots, archetype skills and boss attacks resolve', () => {

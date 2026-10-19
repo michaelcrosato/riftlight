@@ -1,6 +1,7 @@
 // Riftlight headless (headlessRiftlight, docs/game/shell.md *Headless*): the real game in Node, no
 // page. One engine for the file (module state outlives an engine), tests in order.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { DAMAGE_COLORS, DAMAGE_TYPES, type HitResult } from './core/types';
 import { type HeadlessRiftlight, headlessRiftlight } from './headless';
 import type { TreePanel } from './wire/tree';
 
@@ -77,6 +78,29 @@ describe('Riftlight headless', () => {
       engine.input.send({ rl: 'tree', action: { kind: 'close' } });
       engine.step(2);
       expect(rl.ui.stack()).not.toContain('tree');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    "a hit's number takes its damage type's colour from DAMAGE_COLORS; a crit's is sand and ends in '!'",
+    async () => {
+      const { engine, game, rl } = h;
+      rl.newRun({ seed: 3 });
+      await rl.enterDepth(1);
+      engine.step(2);
+      const target = game.level!.monsters()[0]!.actor;
+      const hit = { source: null, tags: [], damage: {}, crit: false };
+      // a distinct total per hit, found again by its text (hits on one target may merge into a number)
+      const number = (total: number, byType: HitResult['byType'], crit = false) => {
+        engine.step(12); // past Floaters.MERGE: two types may share a colour, and would merge into one number
+        game.events.emit('hit', { target, hit, result: { total, byType, crit, killed: false, ailments: [] } });
+        const text = `${total}${crit ? '!' : ''}`;
+        return game.snapshot().floaters.find((f) => f.text === text)?.color;
+      };
+      DAMAGE_TYPES.forEach((t, i) => expect(number(101 + i, { [t]: 100 + i, physical: t === 'physical' ? 101 + i : 1 }), t).toBe(DAMAGE_COLORS[t]));
+      expect(number(77, { lightning: 77 }, true)).toBe('sand');
       expect(engine.errors).toEqual([]);
     },
     T,

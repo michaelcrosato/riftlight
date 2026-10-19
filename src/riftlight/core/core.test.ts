@@ -4,6 +4,7 @@ import { describeMod, flag, flat, inc, more, override, StatSheet } from './mods'
 import { Registry } from './registry';
 import { Rng } from './rng';
 import { SCALING } from './scaling';
+import { asDamageType, DAMAGE_BURSTS, DAMAGE_COLORS, DAMAGE_TYPES, DAMAGE_WORLD_COLORS, dominantType } from './types';
 
 describe('Rng', () => {
   it('is deterministic per seed and forks independently of draw count', () => {
@@ -114,5 +115,24 @@ describe('EventBus', () => {
     off();
     bus.emit('ping', 2);
     expect(got).toEqual([1]);
+  });
+});
+
+describe('damage types', () => {
+  it('reads a type from data: the fallback when missing, an error for a type that does not exist', () => {
+    expect(asDamageType('cold')).toBe('cold');
+    expect(asDamageType(undefined)).toBe('physical');
+    expect(asDamageType(undefined, 'fire')).toBe('fire');
+    expect(() => asDamageType('no-such-type')).toThrow('unknown damage type "no-such-type"');
+    expect(() => asDamageType(3)).toThrow('unknown damage type 3');
+  });
+
+  it('every type has an entry in every table, and no table has more', () => {
+    for (const table of [DAMAGE_COLORS, DAMAGE_WORLD_COLORS, DAMAGE_BURSTS]) expect(Object.keys(table).sort()).toEqual([...DAMAGE_TYPES].sort());
+  });
+
+  it("a hit's type is the one that dealt most of it, ties to the first listed", () => {
+    expect(dominantType({ total: 10, byType: { fire: 3, cold: 7 }, crit: false, killed: false, ailments: [] })).toBe('cold');
+    expect(dominantType({ total: 4, byType: { lightning: 2, fire: 2 }, crit: false, killed: false, ailments: [] })).toBe('fire');
   });
 });

@@ -2,7 +2,7 @@ import { Mesh, MeshBasicNodeMaterial, type Object3D, PlaneGeometry, Vector3 } fr
 import { color, float, step, uv } from 'three/tsl';
 import type { LightHandle } from '../../engine/render/lights';
 import { PALETTE } from '../../engine/palette';
-import { TELEGRAPH_COLORS } from '../combat/telegraph';
+import { telegraphColors } from '../combat/telegraph';
 import type { PaletteColor } from '../../engine/palette';
 import { Actor, type ActorState } from '../actors/Actor';
 import { StatQuery } from '../combat/stats';
@@ -10,7 +10,7 @@ import { flat, more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
 import { type Rank, RANK, SCALING } from '../core/scaling';
-import type { ActorLike, DamageType, Genome, HitResult } from '../core/types';
+import { type ActorLike, asDamageType, type DamageType, type Genome, type HitResult } from '../core/types';
 import type { MonsterBuildOptions, MonsterHandle, MonsterPort, ShellServices, Telegraph } from '../game/ports';
 import {
   ARCHETYPES,
@@ -101,7 +101,8 @@ export function monsterName(g: Genome): string {
   return `${g.rank === 'normal' ? '' : elite}${theme} ${body}`;
 }
 
-const ELEMENT_LOOK: Readonly<Record<string, SkillLook>> = {
+/** A monster skill's look by the damage type it deals (its projectile, glow, burst, sound and light). */
+const ELEMENT_LOOK: Readonly<Record<DamageType, SkillLook>> = {
   fire: { color: 'orange', glow: ['sand', 'orange', 'red'], shape: 'orb', trail: 'ember', burst: 'fire', sound: { cast: 'cast', impact: 'explode', hit: 'burn' }, light: { color: 'orange', intensity: 4, radius: 4 }, shake: 0.12 },
   cold: { color: 'cyan', glow: ['white', 'cyan', 'sky'], shape: 'shard', trail: 'frost', burst: 'frost', sound: { cast: 'cast', hit: 'ice' } },
   lightning: { color: 'sand', glow: ['white', 'cyan'], shape: 'bolt', trail: 'spark', burst: 'zap', sound: { cast: 'zap', hit: 'zap' }, light: { color: 'cyan', intensity: 3, radius: 4 } },
@@ -114,9 +115,8 @@ const gems = new Map<string, SkillGem>();
 export function monsterGem(def: MonsterSkillDef): SkillGem {
   let g = gems.get(def.id);
   if (g) return g;
-  const dmg = def.effects.find((e) => e.kind === 'damage');
-  const type = dmg && dmg.kind === 'damage' ? (Object.keys(dmg.base)[0] ?? 'physical') : 'physical';
-  const look = ELEMENT_LOOK[type] ?? ELEMENT_LOOK.physical!;
+  const type = skillDamageType(def);
+  const look = ELEMENT_LOOK[type];
   g = {
     ...def,
     tags: def.tags.includes('damage') ? def.tags : [...def.tags, 'damage'],
@@ -132,8 +132,7 @@ export function monsterGem(def: MonsterSkillDef): SkillGem {
 /** The damage type a monster skill mostly deals (telegraph colour). */
 export function skillDamageType(def: MonsterSkillDef): DamageType {
   const dmg = def.effects.find((e) => e.kind === 'damage');
-  const t = dmg && dmg.kind === 'damage' ? Object.keys(dmg.base)[0] : undefined;
-  return t === 'fire' || t === 'cold' || t === 'lightning' || t === 'chaos' ? t : 'physical';
+  return asDamageType(dmg && dmg.kind === 'damage' ? Object.keys(dmg.base)[0] : undefined);
 }
 
 export { bossBudget } from './progression';
@@ -905,7 +904,7 @@ export class MonsterUnit implements MonsterHandle {
       return;
     }
     const k = Math.min(1, tl.t / Math.max(0.01, tl.total));
-    const hex = TELEGRAPH_COLORS[this.teleType].rim;
+    const hex = telegraphColors(this.teleType).rim;
     if (!this.teleLight || !this.teleLight.alive) {
       this.teleLight = this.host.services.ctx.lights.request({ position: [tl.at.x, 1, tl.at.z], color: hex, intensity: 1, radius: tl.radius + 2, priority: 3, fadeIn: 0.1, flicker: 'none', name: 'telegraph' });
     }

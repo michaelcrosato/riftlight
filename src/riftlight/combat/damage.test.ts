@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { flag, flat, inc, more, StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
-import type { Hit } from '../core/types';
+import { DAMAGE_TYPES, type Hit } from '../core/types';
 import {
   armourReduction,
   baseRanges,
+  CONVERSION_ORDER,
   convert,
   critChance,
   expectedHit,
@@ -77,6 +78,10 @@ describe('base damage', () => {
 });
 
 describe('conversion', () => {
+  it('orders every damage type once (a new type has its place)', () => {
+    expect([...CONVERSION_ORDER].sort()).toEqual([...DAMAGE_TYPES].sort());
+  });
+
   it('converts a fraction and remembers where damage came from', () => {
     const p = convert(q([flat('convert.physical.fire', 0.5)]), { physical: 100 }, []);
     expect(p).toEqual([

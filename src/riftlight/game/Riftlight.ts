@@ -19,7 +19,7 @@ import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
-import type { ActorLike, DifficultyTuning, GameEvents, LevelSpec, SaveData } from '../core/types';
+import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, type GameEvents, type LevelSpec, type SaveData } from '../core/types';
 import { loadRiftlightPacks } from '../packs';
 import { Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
@@ -287,9 +287,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
       // a crit flashes the spot it lands on (one pooled light, gone in a few frames)
       if (result.crit && result.total > 0) this.flash(at, PALETTE.sand, 7, 4.5, 0.14);
       if (this.settings.damageNumbers && result.total > 0) {
-        const top = (Object.entries(result.byType) as [string, number][]).sort((a, b) => b[1] - a[1])[0]?.[0];
-        const color: PaletteColor = result.crit ? 'sand' : top === 'fire' ? 'orange' : top === 'cold' ? 'sky' : top === 'lightning' ? 'cyan' : 'white';
-        this.floaters.add(at.setY(1.6), String(Math.round(result.total)), color, result.crit, this.rng.range(-1, 1), { key: target.id, value: result.total });
+        const color: PaletteColor = result.crit ? 'sand' : DAMAGE_COLORS[dominantType(result)];
+        this.floaters.add(at.setY(1.6), `${Math.round(result.total)}${result.crit ? '!' : ''}`, color, result.crit, this.rng.range(-1, 1), { key: target.id, value: result.total });
       }
     });
     on('kill', ({ target, rank }) => {

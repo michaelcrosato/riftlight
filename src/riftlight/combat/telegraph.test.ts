@@ -1,6 +1,6 @@
 import type { Mesh } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
-import { createTelegraph, TELEGRAPH_COLORS, telegraphType } from './telegraph';
+import { createTelegraph, telegraphColors, telegraphType } from './telegraph';
 
 describe('telegraph decals', () => {
   it('cones open toward +Z (the monster faces +Z), lines run from the caster along +Z', () => {
@@ -33,7 +33,7 @@ describe('telegraph decals', () => {
     const before = rim.material;
     t.tint!('cold');
     expect(rim.material).not.toBe(before);
-    expect(TELEGRAPH_COLORS.cold.rim).not.toBe(TELEGRAPH_COLORS.fire.rim);
+    expect(telegraphColors('cold').rim).not.toBe(telegraphColors('fire').rim);
     expect(telegraphType(['spell', 'cold', 'area'])).toBe('cold');
     expect(telegraphType(['attack', 'melee'])).toBe('physical');
   });

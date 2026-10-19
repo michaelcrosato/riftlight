@@ -46,7 +46,7 @@ one `Worlds` map (stage → `CombatWorld`).
   light the floor they cover, brighter as the hit nears.
 - **Telegraphs** (`combat/telegraph.ts`, `createTelegraph(shape, colour)`): a 2 px rim and a
   stippled sweep whose front meets the rim on the hit frame, blinking hot in the last 20%;
-  coloured by damage type (`TELEGRAPH_COLORS`: rim + sweep per element), pixel-crisp at any
+  coloured by damage type (`DAMAGE_WORLD_COLORS` in `core/types.ts`: rim + sweep per type), pixel-crisp at any
   size (`fwidth`), transparent and drawn under actors. `{ zone: true }` is the calm look for
   lasting hazards; `tint(type)` recolours one once its attack is known.
 

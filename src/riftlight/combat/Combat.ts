@@ -3,7 +3,7 @@ import { PALETTE, type PaletteColor } from '../../engine/palette';
 import { more, type Mod } from '../core/mods';
 import { Rng } from '../core/rng';
 import { type ActorIndex, type ActorRef, refOf, type Vec } from '../core/saved';
-import type { ActorLike, Effect, Faction, GameEventBus, HitResult } from '../core/types';
+import { type ActorLike, DAMAGE_BURSTS, DAMAGE_TYPES, type DamageType, type Effect, type Faction, type GameEventBus, type HitResult } from '../core/types';
 import { Actor, type ActorState, actorIds, setActorIds } from '../actors/Actor';
 import type { ActorManager } from '../actors/ActorManager';
 import { GridMover, type GridMoverState } from '../actors/movers';
@@ -425,7 +425,7 @@ export class Combat {
         // the element that dealt the most also shows, when the skill's own burst doesn't say it
         // (a sword with added fire throws embers, a frost-converted cleave throws ice)
         const el = elementOf(result);
-        if (el && TYPE_BURST[el] !== look.burst) this.burst(TYPE_BURST[el], at, { count: result.crit ? 8 : 4 });
+        if (el && DAMAGE_BURSTS[el] !== look.burst) this.burst(DAMAGE_BURSTS[el], at, { count: result.crit ? 8 : 4 });
         if (caster === this.heroOf() && look.shake) this.shake.add(look.shake * (result.crit ? 1.6 : 1) * 0.5);
       }
     }
@@ -799,14 +799,12 @@ export function proxyOf(owner: Actor, at: Vector3): Actor {
   return p;
 }
 
-/** The burst each element throws on a hit (`combat/sfx.ts` presets). */
-const TYPE_BURST: Readonly<Record<'fire' | 'cold' | 'lightning' | 'chaos', string>> = { fire: 'fire', cold: 'frost', lightning: 'zap', chaos: 'toxic' };
-
-/** The element that dealt most of a hit, if any dealt at least a quarter of it. */
-function elementOf(r: HitResult): 'fire' | 'cold' | 'lightning' | 'chaos' | null {
-  let best: 'fire' | 'cold' | 'lightning' | 'chaos' | null = null;
+/** The element (not physical) that dealt most of a hit, if any dealt at least a quarter of it. */
+function elementOf(r: HitResult): DamageType | null {
+  let best: DamageType | null = null;
   let v = r.total * 0.25;
-  for (const t of ['fire', 'cold', 'lightning', 'chaos'] as const) {
+  for (const t of DAMAGE_TYPES) {
+    if (t === 'physical') continue;
     const d = r.byType[t] ?? 0;
     if (d > v) {
       v = d;

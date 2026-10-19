@@ -1,7 +1,7 @@
 import { type BufferGeometry, CircleGeometry, Group, type Material, Mesh, MeshBasicNodeMaterial, PlaneGeometry } from 'three/webgpu';
 import { abs, color, float, floor, fwidth, length, max, min, mod, positionGeometry, screenCoordinate, select, time } from 'three/tsl';
 import { PALETTE } from '../../engine/palette';
-import type { DamageType } from '../core/types';
+import { DAMAGE_TYPES, DAMAGE_WORLD_COLORS, type DamageType } from '../core/types';
 
 /** The decal's shape (a monster skill's `TelegraphSpec` fits). */
 export interface TelegraphShape {
@@ -37,7 +37,7 @@ function cachedGeometry(key: string, make: () => BufferGeometry): BufferGeometry
  * screen-door stipple instead of a translucent disc (the floor, the actors' contact shadows
  * and other effects stay readable through it), and the sweep is a denser stipple with a bright
  * front. The last 20% of the wind-up blinks the rim white and fills the stipple in: dodge now.
- * Colours follow the damage type (`TELEGRAPH_COLORS`). Decals are transparent and never write
+ * Colours follow the damage type (`DAMAGE_WORLD_COLORS`, `core/types.ts`). Decals are transparent and never write
  * depth, so actors standing on them draw over them (no z-fighting, no decal over a body).
  * Materials are shared per shape × colour (a fixed small set: no shader builds mid-fight
  * after the first of each).
@@ -54,23 +54,21 @@ export interface Telegraph {
 /** A damage type, or a raw hex colour (rim and sweep share it). */
 export type TelegraphColor = DamageType | number;
 
-/** Rim (bright) and sweep (deeper) colour per damage type. */
-export const TELEGRAPH_COLORS: Readonly<Record<DamageType, { rim: number; fill: number }>> = {
-  physical: { rim: PALETTE.sand, fill: PALETTE.orange },
-  fire: { rim: PALETTE.orange, fill: PALETTE.red },
-  cold: { rim: PALETTE.cyan, fill: PALETTE.sky },
-  lightning: { rim: PALETTE.white, fill: PALETTE.blue },
-  chaos: { rim: PALETTE.lime, fill: PALETTE.green },
-};
+const HEX = Object.fromEntries(DAMAGE_TYPES.map((t) => [t, { rim: PALETTE[DAMAGE_WORLD_COLORS[t].rim], fill: PALETTE[DAMAGE_WORLD_COLORS[t].fill] }])) as Record<DamageType, { readonly rim: number; readonly fill: number }>;
+
+/** A damage type's rim (bright) and sweep (deeper) as hex (`DAMAGE_WORLD_COLORS`). */
+export function telegraphColors(type: DamageType): { readonly rim: number; readonly fill: number } {
+  return HEX[type];
+}
 
 /** The telegraph colour for a skill's tags: its first element, else physical. */
 export function telegraphType(tags: readonly string[]): DamageType {
-  for (const t of ['fire', 'cold', 'lightning', 'chaos'] as const) if (tags.includes(t)) return t;
+  for (const t of DAMAGE_TYPES) if (t !== 'physical' && tags.includes(t)) return t;
   return 'physical';
 }
 
-function colorsOf(c: TelegraphColor): { rim: number; fill: number } {
-  return typeof c === 'number' ? { rim: c, fill: c } : (TELEGRAPH_COLORS[c] ?? TELEGRAPH_COLORS.physical);
+function colorsOf(c: TelegraphColor): { readonly rim: number; readonly fill: number } {
+  return typeof c === 'number' ? { rim: c, fill: c } : telegraphColors(c);
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TSL nodes aren't usefully typed

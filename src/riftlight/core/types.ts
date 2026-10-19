@@ -4,6 +4,7 @@
  * See docs/GAME.md for the design language these follow.
  */
 import type { Object3D, Vector3 } from 'three/webgpu';
+import type { PaletteColor } from '../../engine/palette';
 import type { Entry } from './registry';
 import type { Mod } from './mods';
 import type { Rng } from './rng';
@@ -12,8 +13,59 @@ import type { Rank } from './scaling';
 
 // ------------------------------------------------------------------ combat
 
-export type DamageType = 'physical' | 'fire' | 'cold' | 'lightning' | 'chaos';
-export const DAMAGE_TYPES: readonly DamageType[] = ['physical', 'fire', 'cold', 'lightning', 'chaos'];
+export const DAMAGE_TYPES = ['physical', 'fire', 'cold', 'lightning', 'chaos'] as const;
+export type DamageType = (typeof DAMAGE_TYPES)[number];
+
+// What each damage type looks like: one table per purpose, keyed by every type, so a new type
+// fails typecheck in each table until it has its entry (docs/game/combat.md *Add a damage type*).
+
+/** Its colour on the HUD: damage numbers, the death recap's damage by type, gem icons. */
+export const DAMAGE_COLORS: Readonly<Record<DamageType, PaletteColor>> = {
+  physical: 'white',
+  fire: 'orange',
+  cold: 'cyan',
+  lightning: 'sand',
+  chaos: 'lime',
+};
+
+/** Its colours in the world: a telegraph's rim (bright) and sweep (deeper); a hazard's ring and light are the rim. */
+export const DAMAGE_WORLD_COLORS: Readonly<Record<DamageType, { readonly rim: PaletteColor; readonly fill: PaletteColor }>> = {
+  physical: { rim: 'sand', fill: 'orange' },
+  fire: { rim: 'orange', fill: 'red' },
+  cold: { rim: 'cyan', fill: 'sky' },
+  lightning: { rim: 'white', fill: 'blue' },
+  chaos: { rim: 'lime', fill: 'green' },
+};
+
+/** The particle burst a hit or a hazard of the type throws (`combat/sfx.ts` presets; `impact` is the engine's). */
+export const DAMAGE_BURSTS: Readonly<Record<DamageType, string>> = {
+  physical: 'impact',
+  fire: 'fire',
+  cold: 'frost',
+  lightning: 'zap',
+  chaos: 'toxic',
+};
+
+/** `v` as a damage type: `fallback` when it is missing, an error when it names no type (data that says `'holy'` before holy exists). */
+export function asDamageType(v: unknown, fallback: DamageType = 'physical'): DamageType {
+  if (v === undefined) return fallback;
+  if (typeof v === 'string' && (DAMAGE_TYPES as readonly string[]).includes(v)) return v as DamageType;
+  throw new Error(`unknown damage type ${JSON.stringify(v)} (one of ${DAMAGE_TYPES.join(', ')})`);
+}
+
+/** The type that dealt most of a hit (ties to the earlier in `DAMAGE_TYPES`). */
+export function dominantType(r: HitResult): DamageType {
+  let best: DamageType = 'physical';
+  let v = -1;
+  for (const t of DAMAGE_TYPES) {
+    const d = r.byType[t] ?? 0;
+    if (d > v) {
+      v = d;
+      best = t;
+    }
+  }
+  return best;
+}
 
 export type AilmentType = 'bleed' | 'poison' | 'ignite' | 'chill' | 'freeze' | 'shock' | 'stun';
 

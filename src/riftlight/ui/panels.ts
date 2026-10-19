@@ -6,13 +6,11 @@
 import type { PaletteColor } from '../../engine';
 import { describeMod, type StatSheet } from '../core/mods';
 import { StatQuery } from '../combat/stats';
-import { DAMAGE_TYPES, type DamageType } from '../core/types';
+import { DAMAGE_COLORS, DAMAGE_TYPES } from '../core/types';
 import type { MechanicInfo, Panel, WorldLoot } from '../game/ports';
 import type { Penalty } from '../game/progress';
 import type { Recap } from '../game/recap';
 import { inside, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
-
-const TYPE_COLOR: Record<DamageType, PaletteColor> = { physical: 'mist', fire: 'orange', cold: 'sky', lightning: 'sand', chaos: 'plum' };
 
 // ------------------------------------------------------------------ character sheet
 
@@ -303,8 +301,8 @@ export class DeathRecap implements Panel {
     const max = Math.max(1, ...DAMAGE_TYPES.map((t) => rc.byType[t]));
     for (const t of DAMAGE_TYPES) {
       const v = rc.byType[t];
-      ui.mini(r.x + 4, y + 1, t.toUpperCase(), v > 0 ? TYPE_COLOR[t] : 'slate');
-      ui.bar(r.x + 46, y + 1, 70, 4, v / max, TYPE_COLOR[t], 'night');
+      ui.mini(r.x + 4, y + 1, t.toUpperCase(), v > 0 ? DAMAGE_COLORS[t] : 'slate');
+      ui.bar(r.x + 46, y + 1, 70, 4, v / max, DAMAGE_COLORS[t], 'night');
       ui.mini(r.x + 140, y + 1, String(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
       y += 9;
     }
@@ -353,8 +351,8 @@ export class DeathRecap implements Panel {
     const max = Math.max(1, ...DAMAGE_TYPES.map((t) => rc.byType[t]));
     for (const t of DAMAGE_TYPES) {
       const v = rc.byType[t];
-      ui.mini(x, y, t.slice(0, 5).toUpperCase(), v > 0 ? TYPE_COLOR[t] : 'slate');
-      ui.bar(x + 22, y, w - 22 - 18, 4, v / max, TYPE_COLOR[t], 'night');
+      ui.mini(x, y, t.slice(0, 5).toUpperCase(), v > 0 ? DAMAGE_COLORS[t] : 'slate');
+      ui.bar(x + 22, y, w - 22 - 18, 4, v / max, DAMAGE_COLORS[t], 'night');
       ui.mini(x + w, y, String(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
       y += 7;
     }
