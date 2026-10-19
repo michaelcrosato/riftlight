@@ -15,7 +15,7 @@ export function guideBlocks(markdown) {
   return blocks;
 }
 
-/** Whether a block is a game (it ends by starting the engine) rather than a module a game imports. */
+/** Whether a block is a game (it ends by starting the engine, where there is a page) rather than a module a game imports. */
 export function startsEngine(code) {
-  return /^await Engine\.start\(/m.test(code);
+  return /^(if \(typeof document !== 'undefined'\) )?await Engine\.start\(/m.test(code);
 }

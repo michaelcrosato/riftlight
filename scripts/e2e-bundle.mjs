@@ -23,6 +23,10 @@
 //   errors    a game that throws in update() keeps rendering, shows the error box and fills
 //             engine.errors; one whose setup() throws shows "Failed to start"; check.mjs exits 1
 //             for both, fast.
+//   headless  the kit in Node from a copy of dist/engine/ alone: check.mjs --headless plays the
+//             starter and replays it to the same fingerprint, GUIDE.md's own test.mjs prints the
+//             same; a game that throws, one a replay can't repeat and one that touches `document`
+//             fail (exit 1), a page or a module without createGame() is refused (exit 2).
 //
 // Shots land in .scratch/e2e/bundle/. Self-contained: e2e.mjs passes its helpers in.
 import { createServer } from 'node:http';
@@ -581,5 +585,52 @@ await Engine.start({ name: 'Broken', frames: 0, ${body}, cameraTarget: () => v, 
   } finally {
     await ctx?.browser.close();
     server.close();
+  }
+
+  // the kit in Node (Engine.headless, check.mjs --headless): from a copy of dist/engine/ alone, with
+  // no node_modules above it (Rapier's wasm and the built-in models come from pixel-engine.js)
+  console.log('\n▶ bundle: check.mjs --headless (the kit in Node, no browser)');
+  const node = await mkdtemp(join(tmpdir(), 'pixel-kit-node-'));
+  try {
+    await cp(kitPath, node, { recursive: true });
+    const headless = (module, args = []) => run('node', [join(node, 'check.mjs'), '--headless', module, '--out', join(node, 'check'), ...args]);
+    const t0 = Date.now();
+    const res = await headless(join(node, 'game.js'), ['--keys', 'KeyD*40,Space*5,KeyW*60']);
+    const r = existsSync(join(node, 'check/report.json')) ? JSON.parse(await readFile(join(node, 'check/report.json'), 'utf8')) : {};
+    check(
+      res.code === 0 && r.ok && r.frames === 105 && r.state?.backend === 'headless' && /^coins \d\/4$/.test(r.status ?? '') && r.fingerprint && r.replayed === r.fingerprint && r.errors.length === 0,
+      `the starter boots, plays 105 frames and replays to the same fingerprint in Node from the kit alone (${r.status}, ${r.fingerprint}, ${((Date.now() - t0) / 1000).toFixed(1)} s)${res.code ? ':\n    ' + tail(res.out) : ''}`,
+    );
+    // a game that throws, and one a replay can't repeat (Math.random in play): both fail
+    const broken = (body) => `import { THREE } from './pixel-engine.js';
+const v = new THREE.Vector3();
+export const createGame = () => ({ name: 'Broken', frames: 0, x: 0, setup() {}, ${body}, cameraTarget: () => v });
+`;
+    await writeFile(join(node, 'throws.js'), broken(`update() { if (++this.frames === 10) throw new Error('boom at frame 10'); }`));
+    await writeFile(join(node, 'random.js'), broken(`fixedUpdate() { this.x += Math.random(); }, fingerprint() { return String(this.x); }`));
+    const thrown = await headless(join(node, 'throws.js'));
+    check(thrown.code === 1 && /error: .*boom at frame 10/.test(thrown.out), `a game that throws in update(): --headless names the error and exits 1${thrown.code !== 1 ? ':\n    ' + tail(thrown.out) : ''}`);
+    const random = await headless(join(node, 'random.js'));
+    check(random.code === 1 && /\(not the same\)/.test(random.out), `a game a replay can't repeat (Math.random): --headless says the replay ends elsewhere and exits 1${random.code !== 1 ? ':\n    ' + tail(random.out) : ''}`);
+    await writeFile(join(node, 'plain.js'), `export const level = 1;\n`);
+    // a module that touches the page at import fails to load: exit 1 with the hint, and a report of its own (not the last run's)
+    await writeFile(join(node, 'page.js'), `document.title = 'x';\nexport const createGame = () => ({});\n`);
+    const paged = await headless(join(node, 'page.js'));
+    const pr = JSON.parse(await readFile(join(node, 'check/report.json'), 'utf8'));
+    check(paged.code === 1 && /document is not defined.*guard it, export createGame\(\)/.test(paged.out) && /page\.js$/.test(pr.module) && !pr.ok && /not replayed/.test(paged.out), `a module that touches \`document\` at import: exit 1, saying to guard it, in a report of its own${paged.code !== 1 ? ':\n    ' + tail(paged.out) : ''}`);
+    // GUIDE.md's own test.mjs (section 8), as written, beside game.js
+    const guide = await readFile(new URL('docs/GUIDE.md', root), 'utf8');
+    const block = /```js\n(\/\/ test\.mjs[^\n]*\n[\s\S]*?)```/.exec(guide)?.[1];
+    if (!block) throw new Error("GUIDE.md has no test.mjs block in section 8");
+    await writeFile(join(node, 'test.mjs'), block);
+    const own = await run('node', [join(node, 'test.mjs')]);
+    check(own.code === 0 && /coins \d\/4 true/.test(own.out), `GUIDE.md's test.mjs, as written, plays the starter in Node and replays it ("${own.out.trim().split('\n').pop()}")`);
+    const none = await headless(join(node, 'plain.js'));
+    const page = await headless(join(node, 'index.html'));
+    check(none.code === 2 && /exports no createGame/.test(none.out) && page.code === 2 && /not .*index\.html: pages need the browser/.test(page.out), `a module without createGame() or a page: exit 2, saying what it needs${none.code !== 2 || page.code !== 2 ? ':\n    ' + tail(none.out + page.out) : ''}`);
+  } catch (e) {
+    check(false, `check.mjs --headless: ${e.message}`);
+  } finally {
+    await rm(node, { recursive: true, force: true });
   }
 }

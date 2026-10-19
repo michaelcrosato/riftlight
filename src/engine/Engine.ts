@@ -726,7 +726,8 @@ export class Engine {
    * AudioContext (`audio.counts` still counts), no panels; errors go to `engine.errors` and the
    * console. It runs in manual time from the start: advance it with `step()`, give it input with
    * `input.setKey` / `setPointer` / `send`, or `replay()` a recording. Models and packs are read
-   * by `assets` (`nodeAssets()` from src/engine/node.ts, which the page never imports).
+   * by `assets`, a reader of the game's own files (`(path) => Promise<ArrayBuffer>`; in this
+   * engine's repository, `nodeAssets()`); the engine kit's built-in models need none.
    */
   static async headless(game: Game, options: HeadlessOptions = {}): Promise<Engine> {
     if (options.assets) setAssetReader(options.assets);

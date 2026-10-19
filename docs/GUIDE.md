@@ -184,7 +184,10 @@ class CoinGarden {
   }
 }
 
-await Engine.start(new CoinGarden(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' } }));
+/** A fresh game: the page starts one, and `node check.mjs --headless` plays one in Node (section 8). */
+export const createGame = () => new CoinGarden();
+
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' } }));
 ```
 
 To make it yours: change the blocks (the level), the coin spots, the camera preset, the HUD,
@@ -1031,7 +1034,7 @@ e.step(60);               // manual time: exactly 60 frames (1 s), a hook's exce
 e.input.setKey('KeyD', true); e.step(30); e.input.setKey('KeyD', false);  // play by script
 const rec = e.recording(); const end = e.fingerprint();            // this level's input as JSON, a hash of its state
 await e.replay(rec, () => e.loadGame(new MyGame())); e.fingerprint() === end;  // replayed: the same game
-// Engine.headless(game) runs a game in Node with no page; it runs in this engine's own repository, not yet from the kit
+// Engine.headless(game, { assets }): the same game in Node (below)
 const snap = await e.snapshot(); e.step(300); await e.restore(snap);   // a save-state (Game.snapshot / restore): back at once
 await e.renderer.capture();   // { width, height, pixels }: the exact frame (without the HUD canvas)
 e.game;                   // your game object: e.game.hero.teleport([x, y, z]) to test a spot
@@ -1056,8 +1059,7 @@ node check.mjs "index.html?look=handheld&zoom=1.5"   # with URL flags
 node check.mjs --sheets models.js               # sheets of your own models and textures (ASSETS.md)
 ```
 
-It plays on WebGPU in Chromium's headless shell, so it needs no display (Playwright's
-`npx playwright install chromium` installs the shell with the browser). It writes
+It plays on WebGPU in Chromium's headless shell, so it needs no display. It writes
 `check/<page>.png` (the frame with the HUD), the camera and look shots and
 `check/report.json` (errors, warnings, `state()`), and prints a summary: the backend, frames
 and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
@@ -1066,10 +1068,32 @@ WebGPU, bad arguments, no page, no browser; `--help` lists the options). It need
 (`npm i -D playwright && npx playwright install chromium`; a global install works too), or
 `playwright-core` plus a Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
 
+**Play it in Node.** `Engine.headless(game, { assets })` runs a game as `Engine.start` does, minus
+the GPU and DOM, on manual time, from the kit alone; `assets` reads the game's files.
+`node check.mjs --headless game.js` plays its `createGame()` (the starter's) for the `--keys`,
+replays it in a fresh game and fails on an error or a replay that ends elsewhere. By hand:
+
+```js
+// test.mjs, beside game.js
+import { readFile } from 'node:fs/promises';
+import { Engine } from './pixel-engine.js';
+import { createGame } from './game.js';
+
+const assets = async (path) => new Uint8Array(await readFile(new URL(path, import.meta.url))).buffer;
+const engine = await Engine.headless(createGame(), { assets });
+engine.step(60); // input.setKey to play; a hook's error throws
+const end = engine.fingerprint();
+await engine.replay(engine.recording(), () => engine.loadGame(createGame()));
+console.log(engine.state().status, engine.fingerprint() === end);
+```
+
+Code that touches `document` guards it, as the starter does.
+
 ## 9. Before you hand back
 
 - [ ] `node check.mjs` exits 0 for every page, with `--keys` that actually play the game
       (reach a goal, collect something, lose a life).
+- [ ] `node check.mjs --headless game.js` exits 0 with the same `--keys`.
 - [ ] You looked at the screenshots: the scene reads, the HUD is legible, nothing is black or
       clipped, the hero is on the ground.
 - [ ] `status()` reports the game's state, and it changes as you play.

@@ -5,6 +5,7 @@ import type { ModelCatalog } from './model/catalog';
 import { packCatalog, packTextures, parsePack, parsePackIndex, type ModelPack, type PackIndex } from './model/packs/pack';
 import type { TextureCatalog } from './texture/catalog';
 import { toonify, type ToonifyOptions } from './render/toon';
+import { dataUrlBytes } from './dataUrl';
 
 export interface Model {
   scene: Object3D;
@@ -14,7 +15,8 @@ export interface Model {
 /**
  * Reads an asset's bytes by its path (`assets/hero.glb`, `packs/kenney-nature.json`). Set one with
  * `setAssetReader` where there is no page to fetch from: `nodeAssets()` (src/engine/node.ts) reads
- * `public/` in Node, and `Engine.headless` installs the one it is given.
+ * `public/` in Node, and `Engine.headless` installs the one it is given. Files a build embeds
+ * (`__PIXEL_ASSETS__`: the kit's built-in models) never reach it, as they never reach a page's fetch.
  */
 export type AssetReader = (path: string) => Promise<ArrayBuffer>;
 
@@ -45,7 +47,7 @@ function fetchModel(url: string): Promise<Model> {
     progress.set(url, p);
     // with a reader the bytes are parsed here (three's FileLoader needs the page's ProgressEvent)
     const gltf = reader
-      ? reader(url).then((bytes) => loader.parseAsync(bytes, ''))
+      ? readBytes(reader, url).then((bytes) => loader.parseAsync(bytes, ''))
       : loader.loadAsync(resolveAsset(url), (e) => {
           p.loaded = e.loaded;
           if (e.lengthComputable) p.total = e.total;
@@ -121,7 +123,7 @@ export function parsedPack(url: string): LoadedPack | undefined {
 
 /** JSON by path: through the reader, or fetched from the page's base URL. */
 async function readJson(url: string, what: string): Promise<unknown> {
-  if (reader) return JSON.parse(new TextDecoder().decode(await reader(url))) as unknown;
+  if (reader) return JSON.parse(new TextDecoder().decode(await readBytes(reader, url))) as unknown;
   const r = await fetch(resolveAsset(url));
   if (!r.ok) throw new Error(`${what} ${url}: HTTP ${r.status}`);
   return r.json() as Promise<unknown>;
@@ -178,6 +180,12 @@ export function assetProgress(): number {
   let sum = 0;
   for (const p of progress.values()) sum += p.done ? 1 : p.total > 0 ? Math.min(0.99, p.loaded / p.total) : 0;
   return sum / progress.size;
+}
+
+/** A file's bytes through a reader: what the build embedded (`__PIXEL_ASSETS__`: the kit's built-in models) first, as a page finds it. */
+function readBytes(read: AssetReader, url: string): Promise<ArrayBuffer> {
+  const embedded = (globalThis as { __PIXEL_ASSETS__?: Record<string, string> }).__PIXEL_ASSETS__?.[url];
+  return embedded ? Promise.resolve(dataUrlBytes(embedded)) : read(url);
 }
 
 function resolveAsset(url: string): string {

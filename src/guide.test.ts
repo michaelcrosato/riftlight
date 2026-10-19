@@ -48,7 +48,9 @@ describe('docs/GUIDE.md', () => {
         for (const n of names) expect(code.split(n).length - 1, `${name}: THREE.${n} used`).toBeGreaterThan(1);
       }
       for (const n of imported) expect(code.split(n).length - 1, `${name}: ${n} used`).toBeGreaterThan(1);
-      expect(code, name).toMatch(/await Engine\.start\(new \w+\(\), withUrlOptions\(\{ container: document\.getElementById\('app'\), .*\}\)\);\n$/);
+      // the starter also exports createGame() and starts only where there is a page (check.mjs --headless)
+      const start = name === 'quickstart' ? /\nexport const createGame = \(\) => new \w+\(\);\n\nif \(typeof document !== 'undefined'\) await Engine\.start\(createGame\(\), / : /await Engine\.start\(new \w+\(\), /;
+      expect(code, name).toMatch(new RegExp(`${start.source}withUrlOptions\\(\\{ container: document\\.getElementById\\('app'\\), .*\\}\\)\\);\\n$`));
       // scripts/bundle.mjs gives a block a page only when it starts the engine: every one here does
       expect(startsEngine(code), `${name} is a game (a page in the kit)`).toBe(true);
     }

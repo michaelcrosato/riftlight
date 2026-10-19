@@ -53,6 +53,7 @@
         <li>
           Run <code>node check.mjs</code> before you hand the game back: it plays the page in a browser and fails on any error.
           It needs Playwright (<code>npm i -D playwright &amp;&amp; npx playwright install chromium</code>, or a global install; GUIDE.md, section 8).
+          <code>node check.mjs --headless game.js</code> plays the game in Node, with no browser, and replays it.
         </li>
       </ol>
       <p>
@@ -77,7 +78,7 @@
         <li><a href="/engine/API.md">API.md</a><span>Every export with its signature and doc. Search it.</span></li>
         <li><a href="/engine/ASSETS.md">ASSETS.md</a>, <a href="/engine/LIBRARY.md">LIBRARY.md</a><span>Models and textures as data; every built-in model and texture.</span></li>
         <li><a href="/engine/game.js">game.js</a>, <a href="/engine/index.html">index.html</a><span>The starter game, a complete game to edit into yours. <a href="/engine/">Play it.</a></span></li>
-        <li><a href="/engine/check.mjs">check.mjs</a><span>Plays a page in a real browser, saves screenshots, fails on any error; <code>--sheets</code> draws your models.</span></li>
+        <li><a href="/engine/check.mjs">check.mjs</a><span>Plays a page in a real browser, saves screenshots, fails on any error; <code>--headless</code> plays the game in Node; <code>--sheets</code> draws your models.</span></li>
         <li><a href="/engine/pixel-engine.js">pixel-engine.js</a>, <a href="/engine/pixel-engine.d.ts">pixel-engine.d.ts</a><span>The engine (three.js, Rapier and the built-in models inlined) and its types. Import it; never edit it or read it.</span></li>
         <li><a href="/engine/CHANGELOG.md">CHANGELOG.md</a>, <a href="/engine/CREDITS.md">CREDITS.md</a>, <a href="/engine/LICENSE">LICENSE</a><span>What changed between versions, where everything came from, the MIT licence.</span></li>
       </ul>

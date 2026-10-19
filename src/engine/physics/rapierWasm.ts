@@ -6,10 +6,13 @@
  * real instance to the bindings — explicitly, so the download runs in parallel with the
  * renderer and asset loading instead of blocking the whole module graph (top-level await).
  *
- * Single-file builds inline the `.wasm` as a data: URL; Node (vitest) reads it from disk.
+ * Single-file builds and the engine kit inline the `.wasm` as a data: URL, which Node decodes too
+ * (`Engine.headless` from the kit's `pixel-engine.js`); otherwise Node (vitest, this repository's
+ * tools) reads it from disk.
  */
 import * as bindings from '@dimforge/rapier3d/rapier_wasm3d_bg.js';
 import wasmUrl from '@dimforge/rapier3d/rapier_wasm3d_bg.wasm?url';
+import { dataUrlBytes } from '../dataUrl';
 
 let ready: Promise<void> | null = null;
 
@@ -23,7 +26,8 @@ async function instantiate(): Promise<WebAssembly.Instance> {
   const imports = { './rapier_wasm3d_bg.js': bindings as unknown as WebAssembly.ModuleImports };
   const node = (globalThis as { process?: { versions?: { node?: string } } }).process?.versions?.node;
   if (typeof window === 'undefined' && node) {
-    return (await WebAssembly.instantiate(await readFromDisk(), imports)).instance;
+    const bytes = wasmUrl.startsWith('data:') ? dataUrlBytes(wasmUrl) : await readFromDisk();
+    return (await WebAssembly.instantiate(bytes, imports)).instance;
   }
   const response = fetch(wasmUrl);
   try {
