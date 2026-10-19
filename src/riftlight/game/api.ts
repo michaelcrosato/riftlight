@@ -23,7 +23,7 @@ import { type BotIntent, type BotReport, PlaytestBot } from './bot';
 import { gearScore, type TownReport, type TownVisitOptions, townVisit } from './botTown';
 import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
-import type { Riftlight } from './Riftlight';
+import type { BotAct, Riftlight, SavedIntent } from './Riftlight';
 import { viewSaved } from './save';
 
 export interface RiftlightState {
@@ -109,16 +109,30 @@ export function createApi(game: Riftlight) {
     return { move: len > 1 ? { x: move.x / len, z: move.z / len } : move, aim, attack: !!i.attack, skill: i.skill ?? -1, dodge: !!i.dodge, interact: !!i.interact };
   };
 
+  /**
+   * The hero's intent for the next frame (only that frame: the player's input again after it), or
+   * what the bot does besides: recorded input, never a write to the game, so an agent's run is in
+   * the recording and replays. The intent leaves out what is off (no attack, no skill...).
+   */
+  const hold = (it: BotIntent) => {
+    const intent: SavedIntent = { move: it.move, aim: it.aim.toArray() };
+    if (it.attack) intent.attack = true;
+    if (it.skill >= 0) intent.skill = it.skill;
+    if (it.dodge) intent.dodge = true;
+    if (it.held) intent.held = it.held;
+    if (it.interact) intent.interact = true;
+    engine().input.send({ rl: 'intent', intent });
+  };
+  const act = (a: BotAct) => engine().input.send({ rl: 'bot', act: a });
+
   /** Advance n frames holding an intent (one-shot fields fire on the first frame only). */
   const step = (frames = 1, intent?: IntentInput): RiftlightState => {
     for (let f = 0; f < frames; f++) {
       if (intent) {
-        const it = toIntent(f === 0 ? intent : { ...intent, skill: -1, dodge: false, interact: false });
-        game.botIntent = it;
+        hold(toIntent(f === 0 ? intent : { ...intent, skill: -1, dodge: false, interact: false }));
       }
       engine().step(1);
     }
-    game.botIntent = null;
     return state();
   };
 
@@ -149,7 +163,7 @@ export function createApi(game: Riftlight) {
       if (game.level) {
         const it = toIntent({});
         nav.walk(game.level, p, goal, it);
-        game.botIntent = it;
+        hold(it);
       } else {
         stuck = p.distanceTo(last) < 0.01 ? stuck + 1 : 0;
         if (stuck > 12) side = 30;
@@ -165,12 +179,11 @@ export function createApi(game: Riftlight) {
         const ax = aim.x - p.x;
         const az = aim.z - p.z;
         const ad = Math.hypot(ax, az) || 1;
-        game.botIntent = toIntent({ move: { x: ax / ad - (k * az) / ad, z: az / ad + (k * ax) / ad } });
+        hold(toIntent({ move: { x: ax / ad - (k * az) / ad, z: az / ad + (k * ax) / ad } }));
       }
       last.copy(p);
       engine().step(1);
     }
-    game.botIntent = null;
     const p = game.hero.actor.position;
     return { arrived: Math.hypot(x - p.x, z - p.z) <= r + 0.05, frames, state: state() };
   };
@@ -206,22 +219,22 @@ export function createApi(game: Riftlight) {
         ss.deaths++;
         ss.outcome = 'died';
         ss.done = true;
-        game.goTown('death');
+        act('death');
+        engine().step(1); // home, as a player's click on the recap
         break;
       }
       if (game.layer.has('loot')) {
-        for (const l of [...game.ports.loot.ground()]) if (!l.filtered) game.pickup(l);
         ss.outcome = 'cleared';
         ss.done = true;
-        game.returnToTown();
+        act('portal'); // takes the loot window's loot, then home
+        engine().step(1);
         break;
       }
-      if (game.layer.top) game.layer.close(); // the bot never browses menus
-      game.botIntent = bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: ss.frames });
+      if (game.layer.top) act('close'); // the bot never browses menus
+      hold(bot.decide({ hero: game.hero, level: game.level, loot: game.ports.loot.ground(), frame: ss.frames }));
       engine().step(1);
       ss.frames++;
     }
-    game.botIntent = null;
     return { done: ss.done, report: botReport() };
   };
   const botReport = (): BotReport => {
@@ -273,10 +286,9 @@ export function createApi(game: Riftlight) {
     let frames = 0;
     for (; frames < max && game.level && game.screen === 'level' && !game.dead; frames++) {
       if (!game.level.monsters().some((m) => m.actor.alive)) break;
-      game.botIntent = killer.decide({ hero: game.hero, level: game.level, loot: [], frame: frames });
+      hold(killer.decide({ hero: game.hero, level: game.level, loot: [], frame: frames }));
       engine().step(1);
     }
-    game.botIntent = null;
     return { frames, state: state() };
   };
 
