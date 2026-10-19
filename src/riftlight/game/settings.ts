@@ -65,8 +65,9 @@ export function storeSettings(s: Settings): void {
 
 /**
  * The settings play depends on, not just the picture: zoom and screen shake move the camera, so
- * what the mouse points at; damage numbers, glyphs (mouse or auto aim) and the loot filter
- * change what happens. A recording keeps them (`Riftlight.command`), so a replay plays with them.
+ * what the mouse points at; glyphs (mouse or auto aim) and the loot filter change what happens
+ * (damage numbers only what is drawn: their drift draws from the presentation stream). A
+ * recording keeps them (`Riftlight.command`), so a replay plays with them.
  */
 export function playSettings(s: Partial<Settings>): Partial<Settings> {
   const out: Partial<Settings> = {};
