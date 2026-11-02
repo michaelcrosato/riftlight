@@ -57,7 +57,7 @@ server, or `vite preview` of the build; `--strictPort`, refuses a port someone e
 | `npm run model`, `npm run tex`, `npm run gate-b` | `scripts/model.ts`, `scripts/tex.ts`, `scripts/gate-b.ts` | docs/ASSETS.md, docs/assets/ |
 | `npm run inspect -- <target>` · `diff <a> [b]` | `scripts/inspect.ts`, `src/engine/inspect/` | the script's header |
 | `npm run monster`, `loot`, `tree`, `level`, `combat`, `balance`, `playtest` | `scripts/riftlight/` | docs/game/balance.md *Agent tools* |
-| `npm run build:single` | writes `dist-single/pixel-engine.html`: one offline file (Rapier's `.wasm` inlined as a data: URL, the GLBs and every pack the code loads, cut to the models it names, in `__PIXEL_ASSETS__`) | |
+| `npm run build:single` | writes `dist-single/riftlight.html`: one offline file (Rapier's `.wasm` inlined as a data: URL, the GLBs and every pack the code loads, cut to the models it names, in `__PIXEL_ASSETS__`) | |
 
 **Browser e2e.** `npm run build && npm run test:e2e` runs the production build headless in
 Chromium (`scripts/browser.mjs`, the one launcher every browser tool uses: Chromium's headless

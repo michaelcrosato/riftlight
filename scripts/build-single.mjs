@@ -1,6 +1,7 @@
-// npm run build:single: builds dist-single/pixel-engine.html, the whole game in one self-contained
-// file (JS, Rapier's .wasm, CSS, favicon, GLB assets and the pack models it uses as data URIs).
-// Runs offline, from file://. No options.
+// npm run build:single: builds dist-single/riftlight.html, the game page (index.html: Riftlight,
+// and every `?game=`) in one self-contained file (JS, Rapier's .wasm, CSS, favicon, GLB assets and
+// the pack models it uses as data URIs). Runs offline, from file://. No options. CI publishes it
+// from each green main (the riftlight-html job): how we hand the game out and play-test it.
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { build } from 'vite';
 import { helpExit } from './manual.mjs';
@@ -75,6 +76,6 @@ html = html.replace(new RegExp(`<script type="module"[^>]*${jsFiles[0]}[^>]*></s
 
 if (/(src|href)="\/(assets|favicon)/.test(html)) throw new Error('unresolved external reference left in HTML');
 await mkdir(outDir, { recursive: true });
-await writeFile(`${outDir}/pixel-engine.html`, html);
+await writeFile(`${outDir}/riftlight.html`, html);
 await rm(tmp, { recursive: true, force: true });
-console.log(`dist-single/pixel-engine.html  ${(html.length / 1024 / 1024).toFixed(2)} MB`);
+console.log(`dist-single/riftlight.html  ${(html.length / 1024 / 1024).toFixed(2)} MB`);
