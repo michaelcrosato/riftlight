@@ -139,6 +139,78 @@ jobs:
           SHA: ${{ github.sha }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
+  riftlight-html:
+    # The game as one self-contained HTML file (npm run build:single), how it is handed out and
+    # play-tested: once main's check and e2e pass, the run for main's newest commit recreates the
+    # rolling riftlight-latest release on that commit, holding riftlight.html, so
+    # .../releases/download/riftlight-latest/riftlight.html is always green main's game. The release
+    # is a prerelease that is never "latest": releases/latest stays the engine kit (release job).
+    # A failure leaves the run's verdict alone and opens an issue, as the release job's does.
+    needs: [check, e2e]
+    if: success() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    continue-on-error: true
+    permissions:
+      contents: write
+      issues: write
+    concurrency:
+      group: riftlight-html
+      cancel-in-progress: false
+    env:
+      GH_REPO: ${{ github.repository }}
+      BASE: ${{ github.event.repository.default_branch }}
+      TAG: riftlight-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false # npm's install scripts and the build never see the write token
+      - name: Whether this run is for main's newest commit
+        id: tip
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tip=$(gh api "repos/$GH_REPO/commits/$BASE" --jq .sha)
+          if [ "$tip" = "$GITHUB_SHA" ]; then echo "newest=true" >> "$GITHUB_OUTPUT"
+          else echo "newest=false" >> "$GITHUB_OUTPUT"; echo "$BASE is at ${tip:0:7} now, not ${GITHUB_SHA:0:7}: the run for it publishes"; fi
+      - if: steps.tip.outputs.newest == 'true'
+        uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - if: steps.tip.outputs.newest == 'true'
+        run: npm ci --no-audit --no-fund
+      - if: steps.tip.outputs.newest == 'true'
+        run: npm run build:single
+      - name: Publish riftlight.html
+        if: steps.tip.outputs.newest == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          file=dist-single/riftlight.html
+          size=$(du -h "$file" | cut -f1)
+          notes="Riftlight as one self-contained HTML file ($size), built from $BASE at ${GITHUB_SHA:0:7} after CI passed. Download it and open it in a browser with WebGPU (Chrome or Edge); it runs offline from file://. Add ?game=world, ?game=playground, ... to the URL for the other games. Replaced on every green $BASE."
+          # Recreate it, never move its tag: a GITHUB_TOKEN may not move a ref across a change to
+          # .github/workflows/, and a draft a cancelled run left would block an edit. Creating the
+          # tag through the releases API, as the release job does, works.
+          gh release delete "$TAG" --cleanup-tag --yes 2> /dev/null || true
+          gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$TAG" > /dev/null 2>&1 || true # a tag left without its release
+          gh release create "$TAG" "$file" --target "$GITHUB_SHA" --title "Riftlight (latest $BASE)" \
+            --notes "$notes" --prerelease --latest=false
+          echo "https://github.com/$GH_REPO/releases/download/$TAG/riftlight.html ($size, ${GITHUB_SHA:0:7})"
+      - name: Open an issue when publishing failed
+        if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Publishing riftlight.html failed"
+          if [ -z "$(gh issue list --state open --search "\"$title\" in:title" --json number --jq '.[].number')" ]; then
+            gh label create claude --color 5319e7 --description "Work for Claude" 2>/dev/null || true
+            gh issue create --title "$title" --label claude \
+              --body "CI's riftlight-html job failed on $BASE at ${GITHUB_SHA:0:7}: $RUN_URL. The next green run on $BASE tries again; close this once riftlight-latest holds a current riftlight.html."
+          fi
+
   release:
     # The engine kit as a GitHub Release, one per engine version (README.md, "Handing the engine
     # to another agent"): once main's check and e2e pass, the run for main's newest commit

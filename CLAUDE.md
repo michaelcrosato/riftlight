@@ -9,33 +9,17 @@
 - Skills: `/ship` (verify → commit → push → PR), `/fix-ci` (diagnose and fix a
   failing CI run).
 
-## Deploying to Vercel
+## Distribution: one self-contained HTML file
 
-Vercel deploys `main` to production when a merge changes what the site is built from, and
-nothing else. Branches never deploy, so a PR gets no preview.
+There is no hosted site (Vercel is gone). The game is handed out and play-tested as one file,
+`riftlight.html`: `npm run build:single` writes it to `dist-single/` (the game page with every
+`?game=`, Rapier's wasm, the models and the packs it uses inlined; it runs offline from `file://`).
 
-Why: every Vercel build costs build minutes, and every deployment is stored and billed daily.
-Previews of `claude/*` branches (merged within minutes) and builds of commits that change only
-tests, docs or CI paid for deployments nobody saw.
-
-How (`vercel.json`, `scripts/vercel-ignore.sh`, `src/vercel.test.ts` keeps both true):
-
-- `"git": { "deploymentEnabled": { "**": false, "main": true } }`: only `main` deploys.
-- `"ignoreCommand"`: Vercel skips a `main` build when nothing `npm run build` reads changed since
-  the last deployment (`.github/`, `.claude/`, the agent docs, `docs/` but the two guides the kit
-  is built from, `*.test.ts`, the e2e, CI and check scripts). When unsure, it builds. A new
-  build input outside `src/`, `public/` and the root config is built by default; a new path the
-  build never reads can join the skip list (and the test).
-
-Rules:
-
-- Never turn on deployments for other branches or drop the ignore step.
-- Never deploy by hand (CLI, deploy hooks, the connector's `create_deployment`) unless I ask
-  in this session; then deploy `main` to production with the Vercel connector's
-  `create_deployment` (team michaelcrosato-1122's projects, project `riftlight`, gitSource type
-  `"github"`, org `"michaelcrosato"`, repo `"riftlight"`, ref `"main"`, target `"production"`),
-  wait for the build and report the result and the live URL. The ignore step runs on it too: it
-  comes back CANCELED when nothing the site is built from changed since the last successful
-  deployment, which means the live site already is that build.
-- A merge deploys before CI runs on `main`; a red merge stays live until `revert-red-main`'s
-  revert deploys.
+- Once CI passes on `main`, its `riftlight-html` job replaces the file on the rolling
+  `riftlight-latest` prerelease, so
+  <https://github.com/michaelcrosato/riftlight/releases/download/riftlight-latest/riftlight.html>
+  is always green `main`'s game. It is never the "latest" release: `releases/latest` stays the
+  engine kit. `src/ci.test.ts` keeps the job and `scripts/build-single.mjs` in step.
+- To hand me a build of a branch, run `npm run build:single` and send me
+  `dist-single/riftlight.html`.
+- Don't add hosting or deployments (Vercel or otherwise) unless I ask.

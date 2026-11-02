@@ -21,6 +21,13 @@ engine demos at `/?game=playground` and `?game=sandbox`. The engine's docs are i
 docs/ENGINE.md. How agents work in this repository (commands, checks, the merge flow) is
 [`AGENTS.md`](AGENTS.md); the principles, [`docs/DOCTRINE.md`](docs/DOCTRINE.md).
 
+**Playing it**: there is no hosted site. Riftlight ships as one self-contained HTML file,
+[`riftlight.html`](https://github.com/michaelcrosato/riftlight/releases/download/riftlight-latest/riftlight.html)
+(the rolling `riftlight-latest` prerelease, replaced by CI's `riftlight-html` job on every green
+`main`). Download it and open it in a browser with WebGPU (Chrome or Edge); it runs offline from
+`file://`, and `?game=world` and the rest work on its URL too. `npm run build:single` makes the
+same file from any checkout (`dist-single/riftlight.html`).
+
 ## Handing the engine to another agent
 
 `npm run bundle` builds the **engine kit**, everything an agent needs to make a game outside
@@ -59,10 +66,7 @@ From 0.39.0 on, the engine kit is a
 (`engine-v<version>`): once check and e2e pass, CI's `release` job publishes the version of
 `main`'s newest commit if it has none yet (a version superseded on `main` before its CI passed is
 skipped), with `pixel-engine.zip` (`npm run bundle`) and the version's `CHANGELOG.md` section as
-notes (`scripts/release/notes.mjs`). The site deploys `main` when a merge changes what it is built from, never a branch
-(`vercel.json`; CLAUDE.md, "Deploying to Vercel"), and `npm run build` rebuilds the kit with it
-(`/engine/`, `/engine.zip`): the site deploys before CI, so the handoff page can be ahead of the
-newest release (by fixes, or a version CI hasn't passed yet). The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
+notes (`scripts/release/notes.mjs`). The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
 agent what to download, what to read and how to check its game. The kit's `README.md` and
 `manifest.json` (`latest`, `releases`, `source`) say where newer versions are, so a game finds
 its upgrades.
@@ -80,7 +84,7 @@ Agents write, verify, merge and fix CI here (the loop is in `AGENTS.md`). The pi
 | Agent contract (all tools) | `AGENTS.md` |
 | Claude Code entry point | `CLAUDE.md`; area rules in `.claude/rules/` |
 | Single quality gate (stack auto-detect) | `scripts/check.sh` |
-| CI: check + e2e groups in parallel; a red `main` reverted (`revert-red-main`), then re-landed with a fix | `.github/workflows/ci.yml`, `scripts/ci/revert-red-main.sh` |
+| CI: check + e2e groups in parallel; a red `main` reverted (`revert-red-main`), then re-landed with a fix; a green one published as `riftlight.html` (`riftlight-html`) and, for a new version, the engine kit (`release`) | `.github/workflows/ci.yml`, `scripts/ci/revert-red-main.sh` |
 | `@claude` / `claude` label → implementation | `.github/workflows/claude.yml` |
 | Review (merged PR → issue; held PR → comments) | `.github/workflows/claude-review.yml` |
 | Red `main` or PR branch → Claude fix (needs `AUTOMATION_TOKEN` and a Claude secret) | `.github/workflows/claude-ci-autofix.yml` |

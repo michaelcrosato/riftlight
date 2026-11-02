@@ -28,7 +28,6 @@ coverage/
 dist-single/
 /bundle/
 .claude/worktrees/
-.vercel/
 
 # Gate A judge images (npx tsx scripts/gate-a.ts judge <file.ts>): build output
 *.judge.png

@@ -1153,8 +1153,8 @@ async function runTools(browserExe) {
     const built = await run('node', ['scripts/build-single.mjs']);
     check(built.code === 0, `build:single exits 0${built.code ? ':\n    ' + tail(built.out) : ''}`);
     const files = await readdir(new URL('dist-single/', ROOT), { recursive: true });
-    check(files.length === 1 && files[0] === 'pixel-engine.html', `dist-single holds one HTML file (${files.join(', ')})`);
-    const file = new URL('dist-single/pixel-engine.html', ROOT);
+    check(files.length === 1 && files[0] === 'riftlight.html', `dist-single holds one HTML file (${files.join(', ')})`);
+    const file = new URL('dist-single/riftlight.html', ROOT);
     const s = SCENARIOS[0];
     ctx = await launch(browserExe, s);
     const { page, logs } = ctx;
