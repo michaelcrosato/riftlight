@@ -141,8 +141,8 @@ jobs:
 
   riftlight-html:
     # The game as one self-contained HTML file (npm run build:single), how it is handed out and
-    # play-tested: once main's check and e2e pass, the run for main's newest commit replaces
-    # riftlight.html on the rolling riftlight-latest release and moves its tag to that commit, so
+    # play-tested: once main's check and e2e pass, the run for main's newest commit recreates the
+    # rolling riftlight-latest release on that commit, holding riftlight.html, so
     # .../releases/download/riftlight-latest/riftlight.html is always green main's game. The release
     # is a prerelease that is never "latest": releases/latest stays the engine kit (release job).
     # A failure leaves the run's verdict alone and opens an issue, as the release job's does.
@@ -190,14 +190,13 @@ jobs:
           file=dist-single/riftlight.html
           size=$(du -h "$file" | cut -f1)
           notes="Riftlight as one self-contained HTML file ($size), built from $BASE at ${GITHUB_SHA:0:7} after CI passed. Download it and open it in a browser with WebGPU (Chrome or Edge); it runs offline from file://. Add ?game=world, ?game=playground, ... to the URL for the other games. Replaced on every green $BASE."
-          if gh release view "$TAG" > /dev/null 2>&1; then
-            gh api -X PATCH "repos/$GH_REPO/git/refs/tags/$TAG" -f sha="$GITHUB_SHA" -F force=true > /dev/null
-            gh release upload "$TAG" "$file" --clobber
-            gh release edit "$TAG" --notes "$notes" --prerelease --latest=false
-          else
-            gh release create "$TAG" "$file" --target "$GITHUB_SHA" --title "Riftlight (latest $BASE)" \
-              --notes "$notes" --prerelease --latest=false
-          fi
+          # Recreate it, never move its tag: a GITHUB_TOKEN may not move a ref across a change to
+          # .github/workflows/, and a draft a cancelled run left would block an edit. Creating the
+          # tag through the releases API, as the release job does, works.
+          gh release delete "$TAG" --cleanup-tag --yes 2> /dev/null || true
+          gh api -X DELETE "repos/$GH_REPO/git/refs/tags/$TAG" > /dev/null 2>&1 || true # a tag left without its release
+          gh release create "$TAG" "$file" --target "$GITHUB_SHA" --title "Riftlight (latest $BASE)" \
+            --notes "$notes" --prerelease --latest=false
           echo "https://github.com/$GH_REPO/releases/download/$TAG/riftlight.html ($size, ${GITHUB_SHA:0:7})"
       - name: Open an issue when publishing failed
         if: failure()

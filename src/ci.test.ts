@@ -29,6 +29,7 @@ describe('CI', () => {
     expect(job).toContain(`file=dist-single/${built}`);
     expect(job).toMatch(/needs: \[check, e2e\]\n\s*if: success\(\) && github\.ref == format\('refs\/heads\/\{0\}', github\.event\.repository\.default_branch\)/);
     for (const publish of job!.match(/gh release (?:create|edit) (?:[^\n]*\\\n)*[^\n]*/g) ?? []) expect(publish).toContain('--prerelease --latest=false');
-    expect(job!.match(/gh release (?:create|edit) /g)).toHaveLength(2);
+    expect(job!.match(/gh release (?:create|edit) /g)).toHaveLength(1);
+    expect(job, 'a failed publish leaves main green').toContain('continue-on-error: true');
   });
 });
