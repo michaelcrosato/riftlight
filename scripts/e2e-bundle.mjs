@@ -6,10 +6,9 @@
 //             the starter game, one page per named game block of docs/GUIDE.md and
 //             docs/GUIDE-ASSETS.md (its models module beside them, with no page), check.mjs;
 //             manifest.json lists every file with its size; the kit says where newer versions are
-//             (manifest.json's latest, releases, handoff and source, README.md's build line, all
-//             from package.json's homepage and repository); the zip holds them all; the handoff page
-//             (/handoff/) links only files the kit ships, and its download and build lines, like
-//             the repository README's, are the site's and the repository's.
+//             (manifest.json's latest, releases and source, README.md's build line, all from
+//             package.json's repository); the zip holds them all; the repository README's download
+//             and build lines are the newest release's and the repository's.
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
@@ -85,7 +84,6 @@ export async function runBundle(h) {
   const { version } = meta;
   // where the kit comes from (scripts/bundle.mjs reads the same two fields, the same way)
   const repo = String(meta.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
-  const site = String(meta.homepage ?? '');
   const buildLine = `git clone --depth 1 ${repo} && cd ${repo.split('/').pop()} && npm ci && npm run bundle`;
 
   console.log('\n▶ bundle: kit files');
@@ -96,10 +94,10 @@ export async function runBundle(h) {
     // a game built on the kit finds its upgrades: the newest kit's URL and the repository that builds it
     const readme = await readFile(new URL('README.md', kit), 'utf8');
     check(
-      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo) && /^https:\/\/[^/]+\/$/.test(site) &&
+      /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo) &&
         manifest.source === repo && manifest.releases === `${repo}/releases` && manifest.latest === `${repo}/releases/latest/download/pixel-engine.zip` &&
-        manifest.handoff === `${site}handoff/` && readme.includes(manifest.latest) && readme.includes(manifest.releases) && readme.includes(`\`${buildLine}\``),
-      `the kit says where newer versions are: manifest.json's latest (${manifest.latest}), releases, handoff and source, and README.md's build line`,
+        readme.includes(manifest.latest) && readme.includes(manifest.releases) && readme.includes(`\`${buildLine}\``),
+      `the kit says where newer versions are: manifest.json's latest (${manifest.latest}), releases and source, and README.md's build line`,
     );
     const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
@@ -155,29 +153,14 @@ export async function runBundle(h) {
     const zipped = new Map(entries.map((e) => [e.name.replace(/^engine\//, ''), e.bytes]));
     const same = manifest.files.every((f) => zipped.has(f.path) && (f.bytes === undefined || zipped.get(f.path).length === f.bytes));
     check(entries.length === manifest.files.length && same, `engine.zip holds every file, intact (${entries.length} entries)`);
-    // The handoff page (public/handoff/index.html, served at /handoff/) is a link people give
-    // agents (README.md, *Handing the engine to another agent*, lists the others). Its links are
-    // root-absolute (the site serves /handoff without the slash too), and every way it points
-    // into the kit (an href, or the site's URL in its commands) names engine.zip, the kit's
-    // folder or a file the kit ships. Its curl line is the site's, its build line the repository's.
-    const handoff = await readFile(new URL('dist/handoff/index.html', root), 'utf8');
-    const origin = site.replace(/\/$/, '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const relative = [...handoff.matchAll(/\bhref\s*=\s*["']?([^"'\s>]*)/gi)].map((m) => m[1]).filter((h) => !/^(\/|https?:\/\/)/.test(h));
-    const links = [...handoff.matchAll(new RegExp(`(?:\\bhref\\s*=\\s*["']?|${origin})\\/(engine[^"'\\s<>&]*)`, 'gi'))].map((m) => m[1]);
-    const missing = links.filter((l) => (l === 'engine.zip' || l === 'engine/' ? !existsSync(new URL(`dist/${l}`, root)) : !(l.startsWith('engine/') && listed.has(l.slice('engine/'.length)))));
     // the release's download line, whole: the zip unpacks to pixel-engine/ (CI's release job checks the zip)
     const releaseLine = `curl -fLO ${manifest.latest} && unzip pixel-engine.zip && cd pixel-engine`;
-    check(
-      new RegExp(`curl [^<]*${origin}\\/engine\\.zip\\b`).test(handoff) && handoff.includes(buildLine.replaceAll('&', '&amp;')) && handoff.includes(releaseLine.replaceAll('&', '&amp;')) &&
-        links.includes('engine/README.md') && links.includes('engine/GUIDE.md') && !missing.length && !relative.length,
-      `handoff/index.html: its curl line fetches the site's engine.zip, its release and build lines are the repository's, it links README.md and GUIDE.md, and its ${links.length} kit links are all kit files, root-absolute${missing.length ? `; missing: ${missing.join(', ')}` : ''}${relative.length ? `; relative: ${relative.join(', ')}` : ''}`,
-    );
     // The repository's own README is where an agent given the repo URL lands: its kit download
-    // is the newest release, its build line the repository's, and it names the handoff page.
+    // is the newest release and its build line the repository's.
     const repoReadme = await readFile(new URL('README.md', root), 'utf8');
     check(
-      repoReadme.includes(`\`${releaseLine}\``) && repoReadme.includes(`\`${buildLine}\``) && repoReadme.includes(`<${site}handoff/>`),
-      "README.md sends game-making agents to the newest release's pixel-engine.zip, the repository's build line and the handoff page",
+      repoReadme.includes(`\`${releaseLine}\``) && repoReadme.includes(`\`${buildLine}\``),
+      "README.md sends game-making agents to the newest release's pixel-engine.zip and the repository's build line",
     );
   } catch (e) {
     check(false, `kit files: ${e.message}`);
