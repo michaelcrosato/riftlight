@@ -1,8 +1,9 @@
 # The engine kit (`npm run bundle`)
 
 Games outside this repo use the engine through a kit (`scripts/bundle.mjs`; `npm run build`
-also writes it to `dist/engine/` and `dist/engine.zip`, so the site serves it at `/engine/`; the
-page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
+also writes it to `dist/engine/` and `dist/engine.zip`, which the e2e suite `bundle` checks; there
+is no hosted copy, agents get a GitHub Release or build it: README.md, *Handing the engine to
+another agent*):
 
 - `pixel-engine.js`: a Vite library build of `src/bundle.ts`, one self-contained ES module
   (about 4.8 MB, 1.6 MB gzipped). It exports the public engine API (`src/engine/index.ts`),
@@ -46,8 +47,8 @@ page to give an agent, `public/handoff/index.html`, is served at `/handoff/`):
   that ends elsewhere (no pictures: those need the browser).
 - `CHANGELOG.md`, `README.md` (generated: what is where, sizes, token estimates, where newer
   versions are) and `manifest.json` (version, build, every file with its bytes, and `latest`,
-  `releases`, `handoff` and `source`: the newest release's zip, every release, the handoff page
-  and the repository, from `package.json`'s `homepage` and `repository`, so a game finds its
+  `releases` and `source`: the newest release's zip, every release and the repository, from
+  `package.json`'s `repository`, so a game finds its
   upgrades). The kit is a GitHub Release per engine version, `engine-v<version>`,
   holding its zip: CI's `release` job publishes the version of `main`'s newest commit once check
   and e2e pass (a version superseded on `main` before then is skipped) (`scripts/release/notes.mjs` writes its notes from the version's `CHANGELOG.md`

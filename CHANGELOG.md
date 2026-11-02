@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.46.0
+
+- **No more handoff page**: the engine's site is gone, so `manifest.json` has no `handoff` and the
+  kit's `README.md` no longer names a page for agents. Newer kits are where they were:
+  `latest` (the newest release's zip), `releases` and `source`.
+
 ## 0.45.0
 
 - **The kit runs in Node**: `Engine.headless(game, { assets })` from `pixel-engine.js` alone, with

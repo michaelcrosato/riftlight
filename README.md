@@ -48,7 +48,6 @@ What to give an agent:
 | --- | --- | --- |
 | This repository's URL, `https://github.com/michaelcrosato/riftlight` | An agent with a shell. It needs only GitHub (and npm to build), both on Claude Code cloud's default (*Trusted*) network allowlist | Reads the top of this README, then downloads the newest release or builds the kit from a clone |
 | A release, `https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip` | An agent with a shell that reaches github.com and release-assets.githubusercontent.com (both on the *Trusted* allowlist) | Unzips one file, no build. A version's own link (`…/releases/download/engine-v0.39.0/pixel-engine.zip`) never changes |
-| The handoff page, <https://riftlight.vercel.app/handoff/> | An agent whose sandbox reaches the open web | Downloads the build of the site's last deployment, made from `main` when a merge changes the site. Claude Code cloud environments reach it at the *Full* network level or with its host allowed under *Custom*, not at the default *Trusted* one |
 | `bundle/pixel-engine.zip` (`npm run bundle`) | A chat that runs code but can't download | Unzips the attachment. A chat that can't run code gets `docs/GUIDE.md` alone |
 
 A prompt to start from: *Use this game engine to make our next game:
@@ -66,8 +65,7 @@ From 0.39.0 on, the engine kit is a
 (`engine-v<version>`): once check and e2e pass, CI's `release` job publishes the version of
 `main`'s newest commit if it has none yet (a version superseded on `main` before its CI passed is
 skipped), with `pixel-engine.zip` (`npm run bundle`) and the version's `CHANGELOG.md` section as
-notes (`scripts/release/notes.mjs`). The handoff page ([`public/handoff/index.html`](public/handoff/index.html)) tells an
-agent what to download, what to read and how to check its game. The kit's `README.md` and
+notes (`scripts/release/notes.mjs`). The kit's `README.md` and
 `manifest.json` (`latest`, `releases`, `source`) say where newer versions are, so a game finds
 its upgrades.
 `src/engine/` alone doesn't stand on its own: it builds only inside this repository (Vite, the

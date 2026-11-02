@@ -1,7 +1,7 @@
 // npm run bundle: the engine as a kit for games that live outside this repo (docs/GUIDE.md).
 //
 //   node scripts/bundle.mjs                   bundle/pixel-engine/ + bundle/pixel-engine.zip
-//   node scripts/bundle.mjs --out dist/engine  (npm run build does this: the site serves /engine/)
+//   node scripts/bundle.mjs --out dist/engine  (npm run build does this: the e2e suite "bundle" checks it)
 //
 // The kit: pixel-engine.js (one self-contained ES module: engine, three.js, Rapier + wasm,
 // hero kit, built-in models, CSS), GUIDE.md (docs/GUIDE.md), ASSETS.md (docs/GUIDE-ASSETS.md:
@@ -34,21 +34,16 @@ const t0 = performance.now();
 const meta = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'));
 const { version } = meta;
 // Where the kit comes from and where the newest one is, so a game built on it can find its
-// upgrades: the repository builds it, each engine version is a GitHub Release of it (CI's release
-// job), and the site serves the newest build from main.
+// upgrades: the repository builds it, and each engine version is a GitHub Release of it (CI's
+// release job).
 // npm's own spelling (git+https://….git) is accepted and written as the plain URL people clone.
 const repo = String(meta.repository?.url ?? '').replace(/^git\+/, '').replace(/\.git$/, '');
-const site = String(meta.homepage ?? '');
-if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo) || !/^https:\/\/[^/]+\/$/.test(site)) {
-  throw new Error(
-    'bundle: package.json needs repository.url (https://github.com/<owner>/<repo>) and homepage (the site, https://<host>/, ' +
-      `ending in /); got repository.url ${JSON.stringify(meta.repository?.url)}, homepage ${JSON.stringify(meta.homepage)}`,
-  );
+if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+$/.test(repo)) {
+  throw new Error(`bundle: package.json needs repository.url (https://github.com/<owner>/<repo>); got ${JSON.stringify(meta.repository?.url)}`);
 }
 const repoDir = repo.split('/').pop(); // the folder `git clone` makes
 const releases = `${repo}/releases`;
 const latestZip = `${releases}/latest/download/pixel-engine.zip`;
-const handoffPage = `${site}handoff/`;
 const commit = (() => {
   try {
     return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString().trim();
@@ -238,7 +233,7 @@ Serve it: \`npx serve .\` or \`python3 -m http.server\` here, then open http://l
 ES modules don't load from \`file://\`.
 
 Newer versions: the newest release of the kit is always ${latestZip}, and every release stays
-at ${releases} with what changed in it (the page for agents: ${handoffPage}). To build one from
+at ${releases} with what changed in it. To build one from
 the engine's repository instead: \`git clone --depth 1 ${repo} && cd ${repoDir} && npm ci && npm run bundle\`
 makes \`bundle/pixel-engine/\`. To upgrade a game, see GUIDE.md, section 10.
 `;
@@ -250,7 +245,6 @@ const manifest = {
   source: repo,
   latest: latestZip,
   releases,
-  handoff: handoffPage,
   entry: 'pixel-engine.js',
   readFirst: ['README.md', 'GUIDE.md'],
   starter: { page: 'index.html', script: 'game.js' },
