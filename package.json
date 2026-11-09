@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:e2e": "node scripts/e2e.mjs",
     "assets": "node scripts/generate-assets.mjs",
-    "build:single": "node scripts/build-single.mjs",
+    "build:single": "tsx scripts/build-single.mjs",
     "anim": "tsx scripts/anim.ts",
     "film": "tsx scripts/film.ts",
     "gate-b": "tsx scripts/gate-b.ts",

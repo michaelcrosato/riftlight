@@ -59,3 +59,5 @@ Folders are under `src/riftlight/`. Read only the topic file you need.
 | `showcase/` | a side-scroller, a first-person gallery and photo mode inside Riftlight, as templates | docs/game/showcase.md |
 | labs | `/monster-lab.html` (`src/labs/monster-lab/`), `/tree.html`, `?game=arena`, `?game=lootlab`, `?game=levellab` | the system's doc |
 | `packs.ts` | the imported Kenney packs Riftlight loads before building the town and levels | docs/assets/importing.md |
+| `session/` | AI Hub sessions: a round with friends in parallel, ghost or one shared world; the page built for the hub | docs/game/session.md |
+| `lang/` | every line a player reads (`t()`), the brief and names, translations as data and the hand-over build | docs/game/lang.md |

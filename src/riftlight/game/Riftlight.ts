@@ -51,6 +51,9 @@ import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
 import { PropTarget } from '../levels/mechanics/common';
+import type { HubSession } from '../../engine';
+import { type RoundCommand, type RoundHost, SessionRound } from '../session/round';
+import { pageLanguage } from '../lang';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -70,7 +73,7 @@ interface MutableIntent {
   held: number;
 }
 
-export class Riftlight implements Game, MenuHost, LookHost {
+export class Riftlight implements Game, MenuHost, LookHost, RoundHost {
   readonly name = 'Riftlight';
   readonly assets = [HERO_MODEL, 'assets/tree.glb'];
   readonly ports: RiftlightPorts;
@@ -171,9 +174,12 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   /** New runs' seed when none is given: the `seed` option, else the page's `?seed=` (else the clock: a new run each time). */
   private readonly seed: number | null;
+  /** An AI Hub round (docs/game/session.md): the page opens straight into it. Null outside a session. */
+  readonly round: SessionRound | null;
 
-  constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore; seed?: number } = {}) {
+  constructor(ports: Partial<RiftlightPorts> = {}, options: { store?: SaveStore; seed?: number; session?: HubSession | null } = {}) {
     this.seed = options.seed !== undefined ? options.seed >>> 0 : urlSeed();
+    this.round = options.session ? new SessionRound(options.session, this) : null;
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
     // pass ports to replace any of them.
     this.ports = { ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
@@ -194,6 +200,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
 
   async setup(ctx: GameContext): Promise<void> {
     this.ctx = ctx;
+    // the page's language (?lang=, the player's choice, the browser's) and its translations block;
+    // headless, the game's own (docs/game/lang.md)
+    if (ctx.engine.renderer.container) pageLanguage();
     // ids count from here, as they did in a run this replays (they key loot rolls and random streams)
     setActorIds(1);
     PropTarget.setIds();
@@ -249,7 +258,11 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.sentAtSetup = { settings: JSON.stringify(playSettings(this.settings)), saves: JSON.stringify(this.saves) };
     ctx.input.send({ rl: 'settings', settings: playSettings(this.settings) });
     ctx.input.send({ rl: 'saves', saves: this.saves }); // and so are the save slots the menus show
-    this.toTitle();
+    if (this.round) {
+      // a session opens straight into its round: no title, menus or town (the hub's card is up)
+      this.screen = 'loading';
+      this.round.announce();
+    } else this.toTitle();
   }
 
   /** The engine runs this game now: `window.__RIFTLIGHT__` for tools and agents. */
@@ -419,6 +432,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const m = c as Partial<RiftCommand> | null;
     if (m?.rl === 'run' && typeof m.slot === 'number' && typeof m.seed === 'number') this.newRun(m.slot, m.seed);
     else if (m?.rl === 'load' && typeof m.slot === 'number' && m.data) this.loadData(m.slot, m.data);
+    else if (m?.rl === 'round' && m.info) this.round?.begin(m.info);
     // the setup's settings and slots apply unless the game changed them before its first frame
     // (an agent's newRun): a replay changes nothing before it, so it always takes the recorded ones
     else if (m?.rl === 'settings' && m.settings) {
@@ -601,6 +615,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.musicKey = '';
     this.ctx.audio.play('rl.death');
     this.note('death', `slain by ${this.recap.recap().killer ?? '?'}`);
+    this.round?.heroDied();
   }
 
   private showRecap(): void {
@@ -623,6 +638,41 @@ export class Riftlight implements Game, MenuHost, LookHost {
     this.playMusic('level');
     this.autosave('clear');
     this.note('flow', `clear depth ${depth} in ${this.levelTime.toFixed(1)}s`);
+    this.round?.cleared();
+  }
+
+  // ================================================================ session rounds (RoundHost)
+
+  /** A session round's run: a fresh hero on the hub's seed, levelled for the depth, straight into the level. */
+  async startRound(seed: number, depth: number, level: number): Promise<void> {
+    this.newRun(0, seed);
+    for (let l = 1; l < level; l++) this.devGive('level');
+    this.feed = []; // the levels given are not news
+    await this.enterDepth(depth);
+  }
+
+  /** The level's boss life as a fraction (1 untouched, 0 dead); null without a boss. */
+  bossLife(): number | null {
+    const boss = this.level?.boss();
+    return boss ? Math.max(0, boss.life) / Math.max(1, boss.maxLife) : null;
+  }
+
+  /** A fallen hero rises at the level's start (session rounds: a death never ends the round). */
+  respawn(): void {
+    if (!this.level || !this.dead) return;
+    this.dead = false;
+    this.deathTimer = 0;
+    this.hero.enter(this.level, this.level.start, Math.PI);
+    this.hero.restore();
+    this.ctx.engine.camera.teleport(this.camTarget.copy(this.level.start).setY(0.9));
+    this.ctx.audio.play('rl.portal');
+    this.playMusic('level');
+  }
+
+  /** A centre banner now (it takes over from whatever showed). */
+  banner(title: string, subtitle = '', seconds = 1.2): void {
+    this.banners.clear();
+    this.banners.push('card', title, subtitle, { duration: seconds });
   }
 
   /** Portal reached: the loot window if anything is left, else straight home. */
@@ -1044,12 +1094,13 @@ export class Riftlight implements Game, MenuHost, LookHost {
       this.hero.fixedUpdate(dt, { ...this.intent, attack: false, skill: -1, dodge: false, held: 0 });
     } else this.hero.fixedUpdate(dt, intent);
     this.level?.fixedUpdate(dt, this.hero);
+    this.round?.fixedUpdate(dt);
     if (this.botIntent?.interact) this.interactQueued = true;
   }
 
   /** The world freezes under modal panels (pause, tuning, tree, recap) and while loading. */
   get worldPaused(): boolean {
-    return this.screen === 'loading' || this.layer.modal;
+    return this.screen === 'loading' || this.layer.modal || (this.round?.frozen ?? false);
   }
 
   /** Player intent from keys, mouse, pad and touch (fixed step). */
@@ -1120,6 +1171,7 @@ export class Riftlight implements Game, MenuHost, LookHost {
   update(ctx: GameContext, dt: number): void {
     this.agentInput(ctx);
     for (const c of ctx.input.commands) this.command(c);
+    this.round?.update(ctx.input.commands, dt);
     this.time += dt;
     const ui = this.ui;
     ui.time = this.time;
@@ -1190,6 +1242,8 @@ export class Riftlight implements Game, MenuHost, LookHost {
     const input = ctx.input;
     const pressed = (codes: readonly string[]) => input.wasPressed(...codes);
     if (this.screen === 'title' || this.screen === 'loading') return;
+    // a session round has no menus or panels: the hub starts and ends rounds (and other players play on)
+    if (this.round) return;
     if (this.dead) return;
     if (pressed(KEYS.pause) && !this.layer.top) {
       this.openPanel('pause');
@@ -1298,9 +1352,9 @@ export class Riftlight implements Game, MenuHost, LookHost {
           if (l.drop.kind === 'gold' && Math.hypot(l.position.x - p.x, l.position.z - p.z) < 1.2) this.pickup(l);
         }
       if (!this.cleared && level.exitOpen) this.onClear();
-      if (this.cleared && !this.dead && level.exitOpen && p.distanceTo(level.exit) < 1.4 && !this.layer.has('loot') && !this.layer.top) this.atPortal();
-      // death: a beat to watch the hero fall, then the recap
-      if (this.dead) {
+      if (!this.round && this.cleared && !this.dead && level.exitOpen && p.distanceTo(level.exit) < 1.4 && !this.layer.has('loot') && !this.layer.top) this.atPortal();
+      // death: a beat to watch the hero fall, then the recap (a session round brings the hero back instead)
+      if (this.dead && !this.round) {
         this.deathTimer += dt;
         if (this.deathTimer > 1.6 && !this.layer.has('death')) this.showRecap();
       }
@@ -1899,7 +1953,8 @@ type RiftCommand =
   | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string }
   | { readonly rl: 'storage'; readonly error: string }
   | { readonly rl: 'intent'; readonly intent: SavedIntent }
-  | { readonly rl: 'bot'; readonly act: BotAct };
+  | { readonly rl: 'bot'; readonly act: BotAct }
+  | RoundCommand;
 
 /**
  * An agent's intent as data (`rl.step`, `rl.moveTo`, the bot): a recording keeps it, so the run

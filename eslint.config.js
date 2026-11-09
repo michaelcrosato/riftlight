@@ -3,7 +3,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  { ignores: ['dist', 'dist-single', 'bundle', 'node_modules', '.scratch', 'public', '.claude/worktrees'] },
+  // scripts/hub/session.js is the AI Hub's client, vendored unmodified (docs/game/session.md)
+  { ignores: ['dist', 'dist-single', 'bundle', 'node_modules', '.scratch', 'public', '.claude/worktrees', 'scripts/hub/session.js'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

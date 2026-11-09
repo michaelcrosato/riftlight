@@ -1150,7 +1150,7 @@ async function runTools(browserExe) {
   let ctx;
   try {
     await rm(new URL('dist-single/', ROOT), { recursive: true, force: true });
-    const built = await run('node', ['scripts/build-single.mjs']);
+    const built = await run('npm', ['run', '--silent', 'build:single']);
     check(built.code === 0, `build:single exits 0${built.code ? ':\n    ' + tail(built.out) : ''}`);
     const files = await readdir(new URL('dist-single/', ROOT), { recursive: true });
     check(files.length === 1 && files[0] === 'riftlight.html', `dist-single holds one HTML file (${files.join(', ')})`);
