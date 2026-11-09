@@ -1,4 +1,5 @@
-import { drawText, GLYPH_H, GLYPH_W } from '../animation/font';
+import { drawText, GLYPH_H, pixelCovers } from '../animation/font';
+import { drawDeviceText, surfaceScale, textWidthPx } from './deviceText';
 import type { Framing, Resolution } from '../framing';
 import { PALETTE, type PaletteColor } from '../palette';
 
@@ -45,6 +46,8 @@ export class Hud {
   private drawn = '';
   private size: Resolution = { width: 480, height: 270 };
   private layoutKey = '';
+  /** Device pixels per art pixel the canvas is painted at: above 1 only while it holds device text. */
+  private k = 1;
 
   constructor(private readonly container: HTMLElement | null) {}
 
@@ -57,7 +60,11 @@ export class Hud {
     return this.size.height;
   }
 
-  /** Text in the 5×7 bitmap font (uppercase; digits and common punctuation). */
+  /**
+   * Text in the 5×7 bitmap font (capitals; digits, punctuation, accented Latin capitals). A line
+   * with letters the font lacks (Cyrillic, Chinese, Arabic...) is drawn in the device's font in the
+   * same box, at the screen's resolution (`deviceText.ts`).
+   */
   text(x: number, y: number, text: string, options: HudOptions = {}): void {
     this.items.push({ kind: 'text', x, y, text, o: options });
   }
@@ -84,7 +91,7 @@ export class Hud {
 
   /** Size of `text` in art pixels at `scale`. */
   measure(text: string, scale = 1): { width: number; height: number } {
-    return { width: Math.max(0, text.length * GLYPH_W - 1) * scale, height: (GLYPH_H - 1) * scale };
+    return { width: textWidthPx(text, scale), height: (GLYPH_H - 1) * scale };
   }
 
   /** Engine: follow the renderer's resolution and framing, and repaint if needed. */
@@ -93,12 +100,14 @@ export class Hud {
     if (!this.container) return;
     if (!this.canvas && this.items.length === 0) return;
     const canvas = (this.canvas ??= this.createCanvas(this.container));
-    const layout = `${resolution.width}x${resolution.height}|${framing.cssWidth},${framing.cssHeight},${framing.offsetX},${framing.offsetY}|${this.visible}`;
+    const k = surfaceScale(framing.scale, this.items.some((i) => i.kind === 'text' && !pixelCovers(i.text)));
+    const layout = `${resolution.width}x${resolution.height}|${framing.cssWidth},${framing.cssHeight},${framing.offsetX},${framing.offsetY}|${this.visible}|${k}`;
     if (layout !== this.layoutKey) {
       this.layoutKey = layout;
-      if (canvas.width !== resolution.width || canvas.height !== resolution.height) {
-        canvas.width = resolution.width;
-        canvas.height = resolution.height;
+      this.k = k;
+      if (canvas.width !== resolution.width * k || canvas.height !== resolution.height * k) {
+        canvas.width = resolution.width * k;
+        canvas.height = resolution.height * k;
         this.drawn = '';
       }
       const s = canvas.style;
@@ -134,7 +143,10 @@ export class Hud {
     // CPU-backed: tiny, redrawn with fillRect, and cheap for tools to read back.
     const g = canvas.getContext('2d', { willReadFrequently: true });
     if (!g) return;
+    const k = this.k;
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, canvas.width, canvas.height);
+    g.setTransform(k, 0, 0, k, 0, 0); // art pixels: k×k device pixels each
     for (const item of this.items) {
       if (item.kind === 'rect') {
         const [x, y] = this.place(item.x, item.y, item.w, item.h, item.anchor);
@@ -145,6 +157,11 @@ export class Hud {
         const m = this.measure(item.text, scale);
         const [x, y] = this.place(item.x, item.y, m.width, m.height, item.o.anchor);
         const shadow = item.o.shadow ?? 'ink';
+        if (!pixelCovers(item.text)) {
+          if (shadow !== false) drawDeviceText(g, item.text, x + scale, y + scale, k, scale, css(shadow));
+          drawDeviceText(g, item.text, x, y, k, scale, css(item.o.color ?? 'white'));
+          continue;
+        }
         if (shadow !== false) this.glyphs(g, item.text, x + scale, y + scale, scale, css(shadow));
         this.glyphs(g, item.text, x, y, scale, css(item.o.color ?? 'white'));
       } else {

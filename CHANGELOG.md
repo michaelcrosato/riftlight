@@ -8,6 +8,32 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.47.0
+
+- **AI Hub sessions** (docs/engine/hub.md): `HubSession.join({ mode, seats })` takes part in a round of
+  the AI Hub (AI Hub Session Protocol v1) in `parallel`, `ghost` or `shared-world` mode, and is null
+  outside one. The hub's events (`start`, other copies' `message`s, `leave`, `time-up`, `end`) arrive as
+  input commands (`hubEvents(ctx.input.commands)`), so a session records and replays. `progress`,
+  `result` and `finish` (once, and only an outcome the hub can take), `send` (bundled per destination
+  under the hub's rate and size limits; what the rate holds back waits), and at `end` the engine
+  stands still (speed 0) and goes quiet. `RemoteTrack` draws another copy's state smoothly; `LocalHub`
+  is the hub in memory for tests, held to the real client's limits. `HUB_COLORS`, `HUB_LIMITS`,
+  `headMeta`, `validResult`, `validFinish`.
+- **Languages** (docs/engine/lang.md, AI Hub Languages v1): `Lang` and `langFor(lines)` give lines in
+  the player's language with `t(id, values)`: blanks, plural forms, control tags, numbers formatted for
+  the language, right-to-left isolates, and the original line whenever a translation is missing or
+  broken. `pickLanguage`, `languageName`, `chooseLanguage`, the test languages `en-XA`, `zh-XC`,
+  `ar-XB` (`fakeLine`), `pieces`, `lineWidth`, `blockJson`, `pageBlock`, `HUB_LANGUAGES`.
+- **Text in every writing system**: the pixel font composes accented capitals (`glyphFor`: É, Ñ, Ç, Ş,
+  İ, Ẹ́, plus ¿ ¡ « » „ – — … € Æ Œ Ø Ɓ Ɗ Ƙ) and upper-cases in the drawing language
+  (`setTextLocale`). A line in a language it can't draw (Cyrillic, Chinese, Arabic, Hindi,
+  Vietnamese...) is drawn by `ctx.hud` in the device's own font at the screen's resolution, in the same
+  box (`pixelCovers`, `drawDeviceText`, `surfaceScale`). `hud.measure` and `textWidthPx` measure the
+  font that draws; `wrapText` wraps by measured width at `Intl.Segmenter` word breaks. `textWidth` counts
+  letters with their marks, not UTF-16 units.
+- **Gamepad**: View + Menu held together (buttons 8 and 9, `HOST_CHORD`) press neither until both are
+  let go: the AI Hub opens its bar on them.
+
 ## 0.46.0
 
 - **No more handoff page**: the engine's site is gone, so `manifest.json` has no `handoff` and the

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, type GamepadLike, Input } from './input';
+import { applyDeadzone, GAMEPAD_BUTTONS, type GamepadLike, Input } from './input';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -78,6 +78,28 @@ describe('Gamepad', () => {
     input.beginFrame(0, 1 / 60, [{ ...pad([1, 0, 0, 0], [0]), mapping: '' }]);
     expect(input.moveAxis()).toEqual({ x: 0, y: 0 });
     expect(input.isDown('Space')).toBe(false);
+  });
+
+  it('View + Menu held together are the host page’s: neither presses its key (the AI Hub’s bar)', () => {
+    const input = new Input(target());
+    input.beginFrame(0, 1 / 60, [pad([0, 0, 0, 0], [8])]); // View alone: its key (V)
+    expect(input.isDown(GAMEPAD_BUTTONS[8]!)).toBe(true);
+    input.endFrame();
+    input.beginFrame(1 / 60, 1 / 60, [pad([0, 0, 0, 0], [8, 9, 0])]); // both: neither, other buttons still count
+    expect(input.isDown(GAMEPAD_BUTTONS[8]!)).toBe(false);
+    expect(input.isDown(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    expect(input.isDown('Space')).toBe(true);
+    // letting go of one first presses nothing: both must be let go before either counts again
+    input.endFrame();
+    input.beginFrame(2 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
+    expect(input.isDown(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    input.endFrame();
+    input.beginFrame(3 / 60, 1 / 60, [pad()]);
+    input.endFrame();
+    input.beginFrame(4 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
+    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(true);
   });
 
   it('right stick turns into pointer movement for the camera', () => {
