@@ -12,7 +12,8 @@ gathers the areas' lines (`lang/ui.ts` and its neighbours: one `LineArea` per pa
 The page's `game-lines` block is this list (`npm run build:single` writes it).
 
 The game shows a line with `t(id, values)` from `lang/index.ts`; `pageLanguage()` picks the page's
-language at setup and `installLanguage()` sets it (and how text is drawn: `setTextLocale`).
+language at setup, says it on the page's `<html lang>`, and `installLanguage()` sets it (and how
+text is drawn: `setTextLocale`).
 
 ### Rules for a line
 
