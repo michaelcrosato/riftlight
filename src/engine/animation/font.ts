@@ -78,17 +78,172 @@ const GLYPHS: Record<string, number[]> = {
   '`': [0x08, 0x04, 0x02, 0, 0, 0, 0],
 };
 
+/**
+ * Letters and punctuation the languages Riftlight is translated into need, that don't decompose
+ * into a letter and marks (accented capitals are composed: `glyphFor`).
+ */
+const EXTRA: Record<string, number[]> = {
+  '¡': [0x04, 0, 0x04, 0x04, 0x04, 0x04, 0x04],
+  '¿': [0x04, 0, 0x04, 0x08, 0x10, 0x11, 0x0e],
+  '«': [0, 0x05, 0x0a, 0x14, 0x0a, 0x05, 0],
+  '»': [0, 0x14, 0x0a, 0x05, 0x0a, 0x14, 0],
+  '‹': [0, 0x02, 0x04, 0x08, 0x04, 0x02, 0],
+  '›': [0, 0x08, 0x04, 0x02, 0x04, 0x08, 0],
+  '„': [0, 0, 0, 0, 0x0a, 0x0a, 0x14],
+  '‚': [0, 0, 0, 0, 0x04, 0x04, 0x08],
+  'ʼ': [0x04, 0x04, 0x08, 0, 0, 0, 0], // modifier apostrophe (Hausa ʼY)
+  '–': [0, 0, 0, 0x0e, 0, 0, 0],
+  '—': [0, 0, 0, 0x1f, 0, 0, 0],
+  '…': [0, 0, 0, 0, 0, 0, 0x15],
+  '€': [0x06, 0x09, 0x1c, 0x08, 0x1c, 0x09, 0x06],
+  '×': [0, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0],
+  '÷': [0, 0x04, 0, 0x1f, 0, 0x04, 0],
+  '•': [0, 0, 0x0e, 0x0e, 0x0e, 0, 0],
+  'Æ': [0x0f, 0x14, 0x14, 0x1f, 0x14, 0x14, 0x17],
+  'Œ': [0x0f, 0x14, 0x14, 0x17, 0x14, 0x14, 0x0f],
+  'Ø': [0x0e, 0x13, 0x13, 0x15, 0x19, 0x19, 0x0e],
+  'Đ': [0x1c, 0x12, 0x11, 0x1d, 0x11, 0x12, 0x1c],
+  'Ð': [0x1c, 0x12, 0x11, 0x1d, 0x11, 0x12, 0x1c],
+  'Ł': [0x10, 0x10, 0x14, 0x18, 0x10, 0x10, 0x1f],
+  'Ɓ': [0x1e, 0x09, 0x09, 0x0e, 0x09, 0x09, 0x0e],
+  'Ɗ': [0x1e, 0x09, 0x09, 0x09, 0x09, 0x09, 0x0e],
+  'Ƙ': [0x13, 0x12, 0x14, 0x18, 0x14, 0x12, 0x11],
+};
+
+/** Marks drawn above a capital, in the two rows over the cell (lines sit 9+ pixels apart). */
+const ABOVE: Record<string, [number, number]> = {
+  '\u0300': [0x08, 0x04], // grave
+  '\u0301': [0x02, 0x04], // acute
+  '\u0302': [0x04, 0x0a], // circumflex
+  '\u0303': [0x0d, 0x16], // tilde
+  '\u0304': [0, 0x0e], // macron
+  '\u0306': [0x11, 0x0e], // breve
+  '\u0307': [0, 0x04], // dot above (Turkish İ)
+  '\u0308': [0, 0x0a], // diaeresis
+  '\u030a': [0x04, 0x0a], // ring
+  '\u030b': [0x09, 0x12], // double acute
+  '\u030c': [0x0a, 0x04], // caron
+};
+
+/** Marks drawn below a letter, in the cell's spare eighth row. */
+const BELOW: Record<string, number> = {
+  '\u0323': 0x04, // dot below (Yoruba Ẹ Ọ Ṣ)
+  '\u0326': 0x04, // comma below
+  '\u0327': 0x06, // cedilla
+  '\u0328': 0x03, // ogonek
+  '\u0329': 0x04, // vertical line below
+  '\u0331': 0x0e, // macron below
+};
+
+/** Characters that take no room (isolates and marks of direction, joiners, soft hyphen). */
+const ZERO_WIDTH = /^[\u00ad\u200b-\u200f\u2060-\u2069\ufeff]$/;
+/** Spaces that draw as a space (no-break and thin ones, as number formats use). */
+const SPACES = /^[\u00a0\u2007\u2009\u202f]$/;
+
+/**
+ * One character's pixels: `rows` from the top of the cell (up to 8: a mark below sits in the
+ * eighth), and `over`, the two rows above the cell that a mark above takes (0 when none).
+ */
+export interface Glyph {
+  readonly rows: readonly number[];
+  readonly over: readonly [number, number];
+}
+
+const cache = new Map<string, Glyph | null>();
+const NONE: readonly [number, number] = [0, 0];
+
+/** The font's pixels for one character (a grapheme: a letter and its marks), or null when it has none. */
+export function glyphFor(cluster: string): Glyph | null {
+  let g = cache.get(cluster);
+  if (g !== undefined) return g;
+  const own = GLYPHS[cluster] ?? EXTRA[cluster];
+  g = own ? { rows: own, over: NONE } : compose(cluster);
+  cache.set(cluster, g);
+  return g;
+}
+
+function compose(cluster: string): Glyph | null {
+  if (SPACES.test(cluster)) return { rows: GLYPHS[' ']!, over: NONE };
+  const parts = [...cluster.normalize('NFD')];
+  const base = parts[0]!;
+  const marks = parts.slice(1);
+  const rows = GLYPHS[base] ?? EXTRA[base];
+  if (!rows || !marks.length) return null;
+  const above = marks.filter((m) => ABOVE[m]);
+  const below = marks.filter((m) => BELOW[m] !== undefined);
+  if (above.length + below.length !== marks.length || above.length > 1 || below.length > 1) return null;
+  const out = [...rows.slice(0, 7), 0];
+  if (below.length) out[7] = BELOW[below[0]!]!;
+  return { rows: out, over: above.length ? ABOVE[above[0]!]! : NONE };
+}
+
+let upperLocale: string | undefined;
+let deviceLetters = false;
+
+/**
+ * Languages whose letters the pixel font draws in full (with composed accents). Text in any other
+ * language (Vietnamese stacks its marks; Cyrillic, Chinese, Arabic... have their own letters) is
+ * drawn in the device's font whenever it holds a letter, so a screen never mixes the two fonts.
+ */
+export const PIXEL_LANGUAGES: readonly string[] = ['en', 'es', 'fr', 'pt', 'de', 'id', 'tr', 'sw', 'ha', 'yo', 'it', 'nl', 'pl'];
+
+/**
+ * The language text is drawn in, for its capitals (Turkish i → İ) and its font (`PIXEL_LANGUAGES`):
+ * the game sets it when it picks a language. Undefined: English.
+ */
+export function setTextLocale(locale: string | undefined): void {
+  upperLocale = locale;
+  const language = (locale ?? 'en').split('-')[0]!.toLowerCase();
+  const test = locale === 'en-XA' ? false : locale === 'zh-XC' || locale === 'ar-XB';
+  deviceLetters = test || !PIXEL_LANGUAGES.includes(language);
+}
+
+/** The locale text is upper-cased in (`setTextLocale`). */
+export function textLocale(): string | undefined {
+  return upperLocale;
+}
+
+/** The text as the font draws it: capitals, in the drawing language's way. */
+export function fontCase(text: string): string {
+  try {
+    return upperLocale ? text.toLocaleUpperCase(upperLocale) : text.toUpperCase();
+  } catch {
+    return text.toUpperCase();
+  }
+}
+
+/** A text's characters as the font draws them: whole letters with their marks. */
+export function clusters(text: string): string[] {
+  return text.normalize('NFC').match(/\P{M}\p{M}*|\p{M}+/gu) ?? [];
+}
+
+/** Can the pixel font draw every character of `text` (after its capitals)? Else draw it with the device's font. */
+export function pixelCovers(text: string): boolean {
+  if (deviceLetters && /\p{L}/u.test(text)) return false;
+  for (const c of clusters(fontCase(text))) if (!ZERO_WIDTH.test(c) && !glyphFor(c)) return false;
+  return true;
+}
+
+const QUESTION: Glyph = { rows: GLYPHS['?']!, over: [0, 0] };
+
 export const GLYPH_W = 6;
 export const GLYPH_H = 8;
 
-/** Call `plot(x, y)` for every lit pixel of `text` at (x, y), top-left origin. */
+/**
+ * Call `plot(x, y)` for every lit pixel of `text` at (x, y), top-left origin. A mark above a capital
+ * (É, Ğ, İ) takes the two rows over the cell, a mark below (Ç, Ẹ) the cell's eighth row. A character
+ * the font lacks draws as `?` (surfaces that can draw the device's font check `pixelCovers` first).
+ */
 export function drawText(text: string, x: number, y: number, plot: (x: number, y: number) => void, scale = 1): number {
   let cx = x;
-  for (const ch of text.toUpperCase()) {
-    const g = GLYPHS[ch] ?? GLYPHS['?']!;
-    for (let row = 0; row < 7; row++) {
+  for (const ch of clusters(fontCase(text))) {
+    if (ZERO_WIDTH.test(ch)) continue;
+    const g = glyphFor(ch) ?? QUESTION;
+    for (let row = -2; row < g.rows.length; row++) {
+      const bits = row < 0 ? g.over[row + 2]! : g.rows[row]!;
+      if (!bits) continue;
       for (let col = 0; col < 5; col++) {
-        if (!(g[row]! & (0x10 >> col))) continue;
+        if (!(bits & (0x10 >> col))) continue;
         for (let sy = 0; sy < scale; sy++) for (let sx = 0; sx < scale; sx++) plot(cx + col * scale + sx, y + row * scale + sy);
       }
     }
@@ -97,6 +252,13 @@ export function drawText(text: string, x: number, y: number, plot: (x: number, y
   return cx - x;
 }
 
+/** How many cells `text` takes in the pixel font (its capitals; marks ride on their letter). */
+export function textCells(text: string): number {
+  let n = 0;
+  for (const c of clusters(fontCase(text))) if (!ZERO_WIDTH.test(c)) n++;
+  return n;
+}
+
 export function textWidth(text: string, scale = 1): number {
-  return text.length * GLYPH_W * scale;
+  return textCells(text) * GLYPH_W * scale;
 }

@@ -68,7 +68,7 @@ export {
 export { loadModel, loadPack, loadPackIndex, setAssetReader, type AssetReader, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
-export { GAMEPAD_BUTTONS, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
+export { GAMEPAD_BUTTONS, HOST_CHORD, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
 export { DEFAULT_DEBUG_KEYS, rebindDebugKeys, resolveDebugKeys, type DebugAction, type DebugKeyChanges, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
 export { FPS_OPTIONS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, loadSettings, normalizeSettings, storeSettings, urlSettings, type PlayerSettings, type SettingsHost } from './settings';
 export { SettingsPanel } from './SettingsPanel';
@@ -99,6 +99,58 @@ export {
 } from './audio';
 export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePreset, type ParticlePresetName } from './particles';
 export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
+export { deviceFont, deviceTextWidth, drawDeviceText, runsRtl, surfaceScale, textWidthPx } from './hud/deviceText';
+export { wrapText } from './hud/wrap';
+export { clusters, drawText, fontCase, glyphFor, GLYPH_H, GLYPH_W, PIXEL_LANGUAGES, pixelCovers, setTextLocale, textCells, textLocale, textWidth } from './animation/font';
+export {
+  blockJson,
+  chooseLanguage,
+  fakeLine,
+  HUB_LANGUAGES,
+  isJoined,
+  isRtl,
+  Lang,
+  langFor,
+  languageKey,
+  languageName,
+  LINE_ID,
+  lineWidth,
+  pageBlock,
+  pageLanguageSources,
+  pickLanguage,
+  pieces,
+  PLURAL_FORMS,
+  TEST_LANGUAGES,
+  type LangOptions,
+  type LanguageSources,
+  type Line,
+  type LineList,
+  type LineValues,
+  type PluralForm,
+  type Translation,
+  type Translations,
+} from './lang/lang';
+export {
+  headMeta,
+  HUB_COLORS,
+  HUB_MODES,
+  hubClient,
+  hubEvents,
+  HubSession,
+  type HubCard,
+  type HubClient,
+  type HubEvent,
+  type HubFinish,
+  type HubHost,
+  type HubInfo,
+  type HubMode,
+  type HubPhase,
+  type HubPlayer,
+  type HubResult,
+  type JoinOptions,
+} from './hub/session';
+export { LocalClient, LocalHub, type LocalHubOptions } from './hub/local';
+export { lerpAngle, RemoteTrack, type RemoteTrackOptions } from './hub/track';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton, type TouchButtonState, type TouchCorner } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
 export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, frameView, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
