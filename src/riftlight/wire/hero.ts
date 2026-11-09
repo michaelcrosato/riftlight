@@ -9,7 +9,8 @@ import { HeroController, type HeroControllerState, type InputLike, type SlotSpec
 import { AILMENTS } from '../combat/ailments';
 import { CHARGE_TYPES, CHARGES } from '../combat/charges';
 import type { Mod, StatSheet } from '../core/mods';
-import type { SaveData } from '../core/types';
+import type { GameEvents, SaveData } from '../core/types';
+import { EventBus } from '../core/events';
 import type { ActorIndex } from '../core/saved';
 import type { BuffView, HeroFactory, HeroIntent, HeroPort, ShellServices, SkillSlotView, StageWorld, Vitals } from '../game/ports';
 import { socketsToSlots } from '../loot/sockets';
@@ -161,8 +162,8 @@ export class RealHero implements HeroPort {
   private readonly sources = new Map<string, readonly Mod[]>();
   /**
    * Another player's hero shown in this copy (an AI Hub ghost: docs/game/session.md): it fights in
-   * a combat world of its own in every stage, so nothing it does touches this copy's world, and it
-   * asks the light pool for nothing.
+   * a combat world of its own in every stage, on an event bus of its own, so nothing it does touches
+   * this copy's world; its own glow light stays off (its skills still light up).
    */
   readonly phantom: boolean;
   private level = 1;
@@ -283,8 +284,10 @@ export class RealHero implements HeroPort {
       }
     }
     if (!world) {
-      // a stage without its own world (the town), or a phantom anywhere: the hero brings one
-      world = new CombatWorld({ services: this.services, root: stage.root, depth: 0, ...(stage.wall ? { wall: (from: Vector3, to: Vector3) => stage.wall!(from, to) } : {}) });
+      // a stage without its own world (the town), or a phantom anywhere: the hero brings one. A
+      // phantom's has an event bus of its own too: its hits, lights and deaths stay its own.
+      const services = this.phantom ? (Object.create(this.services, { events: { value: new EventBus<GameEvents>() } }) as ShellServices) : this.services;
+      world = new CombatWorld({ services, root: stage.root, depth: 0, ...(stage.wall ? { wall: (from: Vector3, to: Vector3) => stage.wall!(from, to) } : {}) });
       if (!this.phantom) this.worlds.set(stage, world);
       this.owned = world;
     }

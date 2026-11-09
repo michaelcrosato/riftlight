@@ -9,7 +9,7 @@ import type { GameContext, HubPlayer, HubSession } from '../../engine';
 import type { HeroIntent, HeroPort } from '../game/ports';
 import type { UiCanvas } from '../ui/kit';
 import { project } from '../ui/world';
-import { heroStep, isHeroStep, RemoteHero } from './remote';
+import { heroStep, IDLE, isHeroStep, RemoteHero } from './remote';
 import type { RoundMode } from './round';
 
 /** What ghosts need of the game shell. */
@@ -59,6 +59,16 @@ export class GhostMode implements RoundMode {
   update(dt: number): void {
     const now = this.host.ctx.time;
     for (const r of this.remotes.values()) r.update(dt, now);
+  }
+
+  private wait = 0;
+
+  /** Before play: where our hero stands, ten times a second. */
+  waiting(dt: number): void {
+    this.wait += dt;
+    if (this.wait < 0.1) return;
+    this.wait = 0;
+    this.session.send({ h: heroStep(this.host.ctx.time, IDLE, this.host.hero, this.host.dead) } satisfies HeroMessage);
   }
 
   message(data: unknown, from: number): void {

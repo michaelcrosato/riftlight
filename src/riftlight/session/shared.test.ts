@@ -71,14 +71,46 @@ describe('a shared world', () => {
       const last = frames.at(-1)!.w;
       expect(last[1].length).toBe(r.game.level!.monsters().filter((m) => m.actor.alive).length);
       expect(last[2].map((h) => h[0]).sort()).toEqual([0, 1]);
+      // what the host's monsters start goes to the others: a skill, an add
+      const stage2 = r.game.stageNow()!;
+      const unit = stage2.units().find((u) => u.actor.alive && u.rank !== 'boss' && u.built.skills.length)!;
+      r.got.length = 0;
+      unit.replaySkill(unit.built.skills[0]!, unit.actor.position.clone().setX(unit.actor.position.x + 2));
+      stage2.spawnAdds(unit, { count: 1, mode: 'summon', at: unit.actor.position.clone() });
+      await r.frame(8);
+      expect(r.got.some((m) => (m as { a?: unknown[] }).a?.[0] === unit.actor.id)).toBe(true);
+      expect(r.got.some((m) => (m as { s?: unknown }).s)).toBe(true);
+      // their hero's kill is theirs; nothing drops in a shared world
+      const prey = stage2.units().find((u) => u.actor.alive && u.rank !== 'boss' && u !== unit)!;
+      (prey.actor as Actor).takeHit({ source: mate.actor, tags: ['test'], damage: { chaos: 1e9 }, crit: false });
+      await r.frame(4);
+      expect(world.kills.get(1)).toBe(1);
+      expect(r.game.ports.loot.ground().length).toBe(0);
       // the boss falls (to our hero): the host reports a team win, standings by kills
       const boss = r.game.level!.monsters().find((m) => m.rank === 'boss')!;
       (boss.actor as Actor).takeHit({ source: r.game.hero.actor, tags: ['test'], damage: { chaos: 1e9 }, crit: false });
       await r.frame(10);
       expect(r.hub.finished).toMatchObject({ won: true });
-      expect(r.hub.finished!.standings).toEqual([[0], [1]]);
-      expect(r.hub.finished!.scores).toEqual({ 0: 1, 1: 0 });
+      expect(r.hub.finished!.standings).toEqual([[0, 1]]);
+      expect(r.hub.finished!.scores).toEqual({ 0: 1, 1: 1 });
       expect(r.hub.problems).toEqual([]);
+      expect(r.engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'the host: a player who leaves takes their hero along, down, so nothing goes on chasing it',
+    async () => {
+      const r = await sharedRound(0);
+      const world = r.game.round!.modes.find((m) => m instanceof HostWorld) as HostWorld;
+      const start = r.game.level!.start;
+      await r.frame(20, (f) => r.other.send({ b: [{ h: stand(1 + f / 60, start.x + 1, start.z) }] }));
+      const mate = world.remotes.get(1)!.hero!;
+      r.hub.leave(1);
+      await r.frame(3);
+      expect(mate.actor.alive).toBe(false);
+      expect(r.game.stageNow()!.world.heroActors).not.toContain(mate.actor);
       expect(r.engine.errors).toEqual([]);
     },
     T,
@@ -117,12 +149,21 @@ describe('a shared world', () => {
       r.other.send({ b: [{ d: unit.actor.id }] });
       await r.frame(5);
       expect(unit.actor.alive).toBe(false);
-      // the host says our hero fell: it does, and rises again here after the wait
-      r.other.send({ b: [{ w: [t + 1, [], [[1, 0, 1]], [], []] }] });
+      // a puppet's adds are the host's to make: a summon here makes none
+      const before = r.game.stageNow()!.units().length;
+      r.game.stageNow()!.spawnAdds(units.find((u) => u.actor.alive)!, { count: 2, mode: 'summon', at: from.clone() });
+      expect(r.game.stageNow()!.units().length).toBe(before);
+      // the host says our hero fell (its first death): it does, and rises again here after the wait;
+      // frames that still say "down" after it rose (the host hasn't heard yet) are old news
+      r.other.send({ b: [{ w: [t + 1, [], [[1, 0, 1, 1]], [], []] }] });
       await r.frame(5);
       expect(r.game.dead).toBe(true);
       await r.frame(4 * 60);
       expect(r.game.dead).toBe(false);
+      r.other.send({ b: [{ w: [t + 6, [], [[1, 0, 1, 1]], [], []] }] });
+      await r.frame(5);
+      expect(r.game.dead).toBe(false);
+      expect(r.game.session.deaths).toBe(1);
       // every step went to the host, the latest standing again
       const steps = r.got.filter((m) => (m as { h?: unknown }).h) as { h: HeroStep }[];
       expect(steps.length).toBeGreaterThan(100);

@@ -261,4 +261,17 @@ describe('navigation', () => {
     expect(nav.raycastWalls({ x: 1.5, z: 4.5 }, { x: 1, z: 0 }, 6)).toBeNull();
     expect(nav.rebuilds).toBe(1);
   });
+
+  it('with several targets (a shared world’s heroes) it leads each place to the nearest one', () => {
+    const l = new Layout(9, 5, 'dungeon', 1);
+    l.cells.fill(FLOOR);
+    const nav = new LevelNav(l);
+    const dir = new Vector3();
+    nav.setTargets([{ x: 0.5, z: 2.5 }, { x: 8.5, z: 2.5 }]);
+    expect(nav.direction(2.5, 2.5, dir).x).toBeLessThan(0); // nearer the left hero: west
+    expect(nav.direction(6.5, 2.5, dir).x).toBeGreaterThan(0); // nearer the right one: east
+    expect(nav.distance(6.5, 2.5)).toBeCloseTo(2);
+    nav.setTarget({ x: 0.5, z: 2.5 }); // one again: the right side follows the left hero
+    expect(nav.direction(6.5, 2.5, dir).x).toBeLessThan(0);
+  });
 });

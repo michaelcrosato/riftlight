@@ -45,6 +45,11 @@ const SNAP = 2.5;
 const PULL = 0.15;
 /** Seconds without a step before a remote hero is hidden (its player stopped sending). */
 const SILENT = 3;
+/** Seconds without a step before a remote hero stops what it was doing (no walking on into a wall). */
+const STALE = 0.5;
+
+/** An intent that does nothing: a hero standing still (steps sent before play begins). */
+export const IDLE: HeroIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false, held: 0 };
 
 /** A player's hero as another copy shows it. */
 export class RemoteHero {
@@ -124,6 +129,12 @@ export class RemoteHero {
     }
     i.skill = skill;
     i.dodge = dodge;
+    if (!latest && now - this.lastHeard > STALE) {
+      // its player went quiet: stand still rather than walk on into a wall
+      i.move.x = i.move.z = 0;
+      i.attack = false;
+      i.held = 0;
+    }
     hero.fixedUpdate(dt, i satisfies HeroIntent);
     // follow where its player really is: a pull each step, a jump when far
     const want = this.track.sample(now, lerpPose);

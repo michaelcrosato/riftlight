@@ -27,7 +27,7 @@ import type { UiCanvas } from '../ui/kit';
 import { project } from '../ui/world';
 import type { LevelStage } from '../wire/levels';
 import type { MonsterObserver, MonsterUnit } from '../wire/monsters';
-import { heroStep, isHeroStep, RemoteHero } from './remote';
+import { heroStep, IDLE, isHeroStep, RemoteHero } from './remote';
 import type { RoundMode } from './round';
 import type { Camera } from 'three/webgpu';
 
@@ -49,7 +49,7 @@ export interface SharedShell {
 
 // ------------------------------------------------------------------ the wire
 
-/** A frame of the world: [t, monsters [[id, x, z, facing, life ‰]], heroes [[player, life ‰, dead]], kills [[player, n]], numbers [[id, total, crit]]]. */
+/** A frame of the world: [t, monsters [[id, x, z, facing, life ‰]], heroes [[player, life ‰, dead, deaths]], kills [[player, n]], numbers [[id, total, crit]]]. */
 type WorldFrame = [number, number[][], number[][], number[][], number[][]];
 
 /** What the host sends, besides its own hero's steps. */
@@ -126,9 +126,27 @@ abstract class SharedWorld implements RoundMode {
   }
 
   leave(id: number): void {
-    this.remotes.get(id)?.dispose();
+    const r = this.remotes.get(id);
+    // a player who leaves takes their hero along: down first, so nothing goes on chasing it
+    const a = r?.hero?.actor as Actor | undefined;
+    if (a?.alive) a.die(null, true);
+    r?.dispose();
     this.remotes.delete(id);
   }
+
+  private wait = 0;
+
+  /** Before play: where our hero stands, ten times a second (a host: the world too). */
+  waiting(dt: number): void {
+    this.wait += dt;
+    if (this.wait < 0.1) return;
+    this.wait = 0;
+    if (!this.session.server) this.session.send({ h: heroStep(this.host.ctx.time, IDLE, this.host.hero, this.host.dead) });
+    this.idle();
+  }
+
+  /** What a side sends besides its hero before play (the host: a frame of the world). */
+  protected idle(): void {}
 
   /** Each other player's name over their hero, in their colour. */
   draw(ui: UiCanvas, camera: Camera): void {
@@ -151,6 +169,8 @@ abstract class SharedWorld implements RoundMode {
 /** The host's copy: the real world, told to everyone else. */
 export class HostWorld extends SharedWorld implements MonsterObserver {
   private readonly owner = new Map<ActorLike, number>();
+  /** Each player's hero's deaths, and whether it was up at the last frame (a client applies each death once). */
+  private readonly downs = new Map<number, { deaths: number; up: boolean }>();
   private numbers = new Map<number, [number, number]>();
   private readonly offs: (() => void)[] = [];
 
@@ -204,7 +224,11 @@ export class HostWorld extends SharedWorld implements MonsterObserver {
     const vital = (id: number, hero: HeroPort | null) => {
       if (!hero) return;
       const v = hero.vitals();
-      heroes.push([id, Math.round((Math.max(0, v.life) / Math.max(1, v.maxLife)) * 1000), hero.actor.alive ? 0 : 1]);
+      const d = this.downs.get(id) ?? { deaths: 0, up: true };
+      if (d.up && !hero.actor.alive) d.deaths++;
+      d.up = hero.actor.alive;
+      this.downs.set(id, d);
+      heroes.push([id, Math.round((Math.max(0, v.life) / Math.max(1, v.maxLife)) * 1000), hero.actor.alive ? 0 : 1, d.deaths]);
     };
     if (!this.session.server) vital(this.session.me, this.host.hero);
     for (const r of this.remotes.values()) vital(r.id, r.hero);
@@ -212,6 +236,10 @@ export class HostWorld extends SharedWorld implements MonsterObserver {
     this.numbers.clear();
     const frame: WorldFrame = [r2(this.host.ctx.time), monsters, heroes, [...this.kills.entries()], numbers];
     this.session.send({ w: frame } satisfies HostMessage);
+  }
+
+  protected override idle(): void {
+    this.sendFrame();
   }
 
   // MonsterObserver: what the host's monsters start, for the others to start too
@@ -269,6 +297,8 @@ export class ClientWorld extends SharedWorld {
   private readonly tracks = new Map<number, RemoteTrack<{ x: number; z: number; facing: number }>>();
   private readonly at = new Vector3();
   private lastLife = -1;
+  /** The host's count of our hero's deaths that this copy has played (each once). */
+  private deathsPlayed = 0;
 
   constructor(session: HubSession, host: SharedShell, players: readonly HubPlayer[]) {
     super(session, host, players, false);
@@ -335,14 +365,17 @@ export class ClientWorld extends SharedWorld {
       const max = u.actor.stats.get('life') || 1;
       u.actor.life = (max * life) / 1000;
     }
-    for (const [id, life, dead] of heroes as [number, number, number][]) {
+    for (const [id, life, dead, deaths = 0] of heroes as [number, number, number, number?][]) {
       if (id !== this.session.me) continue;
       const hero = this.host.hero;
       const max = hero.vitals().maxLife;
       const before = this.lastLife;
       this.lastLife = life;
-      if (dead && hero.actor.alive) (hero.actor as Actor).die(null, true);
-      else if (!dead && hero.actor.alive) {
+      if (deaths > this.deathsPlayed) {
+        // a death the host saw: play it once (frames saying "down" after we rose again are old news)
+        this.deathsPlayed = deaths;
+        if (hero.actor.alive) (hero.actor as Actor).die(null, true);
+      } else if (!dead && hero.actor.alive) {
         (hero.actor as Actor).life = (max * life) / 1000;
         if (before >= 0 && life < before) this.host.hurtBy(((before - life) / 1000) * max);
       }

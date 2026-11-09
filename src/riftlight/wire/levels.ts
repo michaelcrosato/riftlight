@@ -911,6 +911,8 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   }
 
   spawnAdds(from: MonsterUnit, o: { count: number; archetype?: string; scale?: number; mode: 'summon' | 'split' | 'clone'; at: Vector3 }): void {
+    // a puppet's adds are its host's to make: they arrive by what the host says (docs/game/session.md)
+    if (from.puppet) return;
     const alive = this.list.filter((u) => u.add && u.actor.alive).length;
     const n = Math.min(o.count, MAX_ADDS - alive);
     const hero = this.heroActor();

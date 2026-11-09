@@ -70,13 +70,16 @@ hero stands), bundled by the session under the hub's rate. A `RemoteHero` plays 
 steps into a hero of its own a little behind time (`RemoteTrack`), the presses between two of its
 steps never lost, and pulls it toward where its player stands (a jump when more than 2.5 m off):
 the same hero, clips and skills, so it runs, swings and dodges as its player did. When its
-player's steps show them rising again, it rises there too.
+player's steps show them rising again, it rises there too; when they stop coming for half a second
+it stands still. Before play (the card, the countdown) every copy sends where its hero stands ten
+times a second (the host a frame of the world too), so traffic flows and the clocks are matched
+from the start.
 
 ### Ghosts (`session/ghosts.ts`)
 
 `GhostMode` shows each other player's hero as a **phantom** (`RealHero` with `phantom`): it fights
-in a combat world of its own, so nothing it does touches this copy's level, and asks the light pool
-for nothing; it is drawn see-through, a ring in its player's colour at its feet and the name over
+in a combat world of its own, on an event bus of its own, so nothing it does touches this copy's
+level (its skills still light up; its own glow stays off); it is drawn see-through, a ring in its player's colour at its feet and the name over
 its head (names come from the hub: drawn as text). A ghost hides while its player is down, and
 after three seconds without a step; a player who leaves takes their ghost along.
 
@@ -89,22 +92,26 @@ after three seconds without a step; a player who leaves takes their ghost along.
   second it sends a frame of the world (`{ w }`: every living monster's place, facing and life, each
   hero's life and whether it is down, the kills by player, the damage numbers); as they happen, what
   its monsters start (`{ a }`: a skill and its aim; `{ g }`: a telegraph; `{ s }`: an add and its
-  genome), watched through `LevelStage.observer`, and their deaths (`{ d }`). When the boss falls it
+  genome), watched through `LevelStage.observer`, and their deaths (`{ d }`). A frame counts each
+  hero's deaths, so a client plays each death once (a frame still saying "down" after it rose is old
+  news). A player who leaves takes their hero along, down first, so nothing goes on chasing it. When the boss falls it
   reports a team win (`won: true`), at time-up a loss; standings go by kills (`killStandings`).
 - **A client** (`ClientWorld`) builds the same level from the same seed (the same monsters with the
   same ids), then makes every monster a **puppet** (`MonsterUnit.makePuppet`: no brain; it walks to
   the host's pose and starts what the host starts, `replaySkill`, so wind-ups, telegraphs and
   projectiles show where the host's land) and its own hero's life the host's: `Actor.puppet` takes
   no life from hits (they still flash) and dies only when told. An add the host makes joins by its
-  genome (`LevelStage.spawnPuppet`). Its hero moves at once under its player; the host's copy
+  genome (`LevelStage.spawnPuppet`); a puppet never makes adds itself (`spawnAdds` refuses: summons,
+  splits, clones are the host's). Its hero moves at once under its player; the host's copy
   follows. Damage numbers and hurts are the host's.
 - **A server** (the hub's copy with no player of its own) is a host whose own hero sits the round
   out (hidden, out of the fight); its camera follows the first player.
 - In a shared world nobody gains experience (the host's hero would outgrow the others'), and
   nothing drops (`LevelStage.noDrops`: the score is kills; a drop is no one's).
 - Known gaps: hazards and level mechanics run on every copy, so a hazard's timing can differ
-  between the host's world (where its damage counts) and a client's (where it shows); the other
-  players' heroes on the host don't pick up health globes (there are none in a shared world).
+  between the host's world (where its damage counts) and a client's (where it shows); kills count
+  for the hero that landed them, so a minion's, a totem's or a trap's kill counts for no one, and a
+  monster that falls into a void counts for the host's hero.
 
 ## Replays
 

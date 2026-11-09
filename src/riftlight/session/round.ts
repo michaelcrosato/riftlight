@@ -61,6 +61,11 @@ export interface RoundMode {
   update?(dt: number): void;
   /** Each fixed step while play is on, with this copy's hero's intent for the step. */
   fixedUpdate?(dt: number, intent?: HeroIntent): void;
+  /**
+   * Each frame before play begins (the card, the countdown: the world is still): a mode tells the
+   * others where its hero stands, so traffic flows and their clocks are matched from the start.
+   */
+  waiting?(dt: number): void;
   /** Its overlays (names over ghosts), each frame of a level. */
   draw?(ui: UiCanvas, camera: Camera): void;
   /** Another copy's data. */
@@ -147,9 +152,11 @@ export class SessionRound {
     for (const e of hubEvents(commands)) this.event(e);
     for (const c of commands) if ((c as { rl?: string } | null)?.rl === 'round-go' && this.phase === 'countdown') this.go();
     if (this.phase === 'countdown') {
-      // the hub's clock, the same on every device (real time; the moment it reaches 0 is recorded)
+      // the hub's clock, the same on every device (real time; the moment it reaches 0 is recorded);
+      // a replay has no hub clock: its countdown runs in game time from the start's `in`
       const now = this.session.time();
       if (Number.isFinite(now)) this.countdown = Math.max(0, -now / 1000);
+      else this.countdown = Math.max(0, this.countdown - dt);
       if (now >= 0 && !this.goSent) {
         this.goSent = true;
         this.host.ctx.input.send({ rl: 'round-go' } satisfies RoundCommand);
@@ -173,6 +180,7 @@ export class SessionRound {
       }
     }
     for (const m of this.modes) m.update?.(dt);
+    if (this.phase === 'waiting' || this.phase === 'countdown') for (const m of this.modes) m.waiting?.(dt);
   }
 
   fixedUpdate(dt: number, intent?: HeroIntent): void {
