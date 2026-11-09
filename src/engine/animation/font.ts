@@ -229,6 +229,15 @@ export function pixelCovers(text: string): boolean {
 
 const QUESTION: Glyph = { rows: GLYPHS['?']!, over: [0, 0] };
 
+/**
+ * Tools see every text drawn (docs/engine/lang.md, *Finding text that isn't a line*): set
+ * `globalThis.__PIXEL_TEXT_LOG__` to a Set and each string the pixel font or the device font draws
+ * (and a surface's own fonts, through `noteText`) is added to it.
+ */
+export function noteText(text: string): void {
+  (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__?.add(text);
+}
+
 export const GLYPH_W = 6;
 export const GLYPH_H = 8;
 
@@ -238,6 +247,7 @@ export const GLYPH_H = 8;
  * the font lacks draws as `?` (surfaces that can draw the device's font check `pixelCovers` first).
  */
 export function drawText(text: string, x: number, y: number, plot: (x: number, y: number) => void, scale = 1): number {
+  noteText(text);
   let cx = x;
   for (const ch of clusters(fontCase(text))) {
     if (ZERO_WIDTH.test(ch)) continue;

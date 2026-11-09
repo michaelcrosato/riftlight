@@ -33,6 +33,7 @@
     "replay": "tsx scripts/replay.ts",
     "balance": "tsx scripts/riftlight/balance.ts",
     "inspect": "tsx scripts/inspect.ts",
+    "lang": "tsx scripts/lang.ts",
     "model": "tsx scripts/model.ts",
     "tex": "tsx scripts/tex.ts",
     "look": "node scripts/look.mjs"

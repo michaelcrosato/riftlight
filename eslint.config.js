@@ -17,7 +17,7 @@ export default tseslint.config(
   },
   {
     // Playwright page.evaluate callbacks run in the browser.
-    files: ['scripts/e2e.mjs', 'scripts/e2e-moves.mjs', 'scripts/e2e-systems.mjs', 'scripts/e2e-riftlight.mjs', 'scripts/e2e-hub.mjs', 'scripts/bundle/check.mjs'],
+    files: ['scripts/e2e.mjs', 'scripts/e2e-moves.mjs', 'scripts/e2e-systems.mjs', 'scripts/e2e-riftlight.mjs', 'scripts/e2e-hub.mjs', 'scripts/lang-audit.mjs', 'scripts/bundle/check.mjs'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );

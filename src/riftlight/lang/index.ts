@@ -6,8 +6,24 @@
  * `build:single -- --translations`). Areas keep their lines beside their code's folder here (`ui.ts`, `data.ts`...).
  */
 import { Lang, type LineList, type LineValues, langFor, setTextLocale } from '../../engine';
+import type { LineArea } from './area';
 import { BRIEF, NAMES } from './brief';
+import { ITEMS } from './items';
+import { LEVELS } from './levels';
+import { MODS } from './mods';
+import { MONSTERS } from './monsters';
+import { PANELS } from './panels';
+import { SHELL } from './shell';
+import { SHOWCASE } from './showcase';
+import { SKILLS } from './skills';
+import { TOWN } from './town';
+import { TREE } from './tree';
 import { UI } from './ui';
+
+export { lineKey, type LineArea } from './area';
+
+/** Every area's lines (an area built from a registry is a function, called once). */
+const AREAS: readonly (LineArea | (() => LineArea))[] = [UI, SHELL, PANELS, TOWN, SHOWCASE, ITEMS, MODS, SKILLS, TREE, MONSTERS, LEVELS];
 
 let lines: LineList | null = null;
 
@@ -17,7 +33,8 @@ export function riftlightLines(): LineList {
   const all: Record<string, LineList['lines'][string]> = {};
   const notes: Record<string, string> = {};
   const max: Record<string, number> = {};
-  for (const area of [UI]) {
+  for (const made of AREAS) {
+    const area = typeof made === 'function' ? made() : made;
     for (const [id, line] of Object.entries(area.lines)) {
       if (id in all) throw new Error(`riftlightLines: line ${id} is given twice`);
       all[id] = line;

@@ -3,13 +3,7 @@
  * `{blanks}`, plural forms where a number counts something, `{key:action}` where a control is
  * named. Grouped by where they show; ids say where (`round.go`).
  */
-import type { Line } from '../../engine';
-
-export interface LineArea {
-  readonly lines: Readonly<Record<string, Line>>;
-  readonly notes?: Readonly<Record<string, string>>;
-  readonly max?: Readonly<Record<string, number>>;
-}
+import type { LineArea } from './area';
 
 /** A session round (session/round.ts): the countdown and its banners. */
 const ROUND: LineArea = {

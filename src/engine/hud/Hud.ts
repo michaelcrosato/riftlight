@@ -1,4 +1,4 @@
-import { drawText, GLYPH_H, pixelCovers } from '../animation/font';
+import { drawText, GLYPH_H, noteText, pixelCovers } from '../animation/font';
 import { drawDeviceText, surfaceScale, textWidthPx } from './deviceText';
 import type { Framing, Resolution } from '../framing';
 import { PALETTE, type PaletteColor } from '../palette';
@@ -66,6 +66,7 @@ export class Hud {
    * same box, at the screen's resolution (`deviceText.ts`).
    */
   text(x: number, y: number, text: string, options: HudOptions = {}): void {
+    noteText(text); // tools see it now, not only when the canvas repaints (docs/engine/lang.md)
     this.items.push({ kind: 'text', x, y, text, o: options });
   }
 

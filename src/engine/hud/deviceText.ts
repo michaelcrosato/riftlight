@@ -6,7 +6,7 @@
  * so the device's letters are drawn at the screen's own resolution in the same 8-pixel cell
  * as a pixel-font line: a Chinese line stays readable without changing any layout.
  */
-import { clusters, fontCase, GLYPH_H, GLYPH_W, pixelCovers, textCells } from '../animation/font';
+import { clusters, fontCase, GLYPH_H, GLYPH_W, noteText, pixelCovers, textCells } from '../animation/font';
 
 /** The device's font, at `px` pixels: a sans-serif stack every system has, bold so it reads small. */
 export function deviceFont(px: number): string {
@@ -76,6 +76,7 @@ export function textWidthPx(text: string, scale = 1): number {
  * pixels per art pixel; (x, y) is the top-left of the text's art-pixel box, as for the pixel font.
  */
 export function drawDeviceText(g: CanvasRenderingContext2D, text: string, x: number, y: number, k: number, scale: number, color: string): void {
+  noteText(text);
   const shown = fontCase(text);
   const rtl = runsRtl(shown);
   const width = deviceTextWidth(text, scale);
