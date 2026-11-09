@@ -62,6 +62,13 @@ describe('RemoteTrack', () => {
     expect(track.latest).toBe(0);
   });
 
+  it('senderTime: the moment of the sender’s clock being drawn', () => {
+    const track = new RemoteTrack<number>({ delay: 0.1 });
+    expect(track.senderTime(5)).toBeNull();
+    track.push(1, 1.3, 1); // 0.3 s late
+    expect(track.senderTime(2)).toBeCloseTo(2 - 0.3 - 0.1);
+  });
+
   it('runs on a little past the newest snapshot, then holds', () => {
     const track = new RemoteTrack<number>({ delay: 0, extrapolate: 0.2 });
     track.push(0, 0, 0);

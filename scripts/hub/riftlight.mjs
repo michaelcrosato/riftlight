@@ -1,12 +1,12 @@
 // Riftlight on the AI Hub: what its page tells the hub (AI Hub Catalogue v1) and each session mode's
 // card (Session Protocol v1). One place for these words: `npm run build:single` writes them into the
-// page's head (scripts/hub/head.mjs), `npm run hub` into the hand-over package. docs/game/session.md.
+// page's head (scripts/hub/head.mjs). docs/game/session.md.
 
 /** The session modes Riftlight plays (docs/game/session.md); the page declares one. */
 export const MODES = ['shared-world', 'ghost', 'parallel'];
 
 /** The mode a page declares when the build is not told otherwise: co-op in one world. */
-export const DEFAULT_MODE = 'parallel';
+export const DEFAULT_MODE = 'shared-world';
 
 export const CATALOGUE = {
   name: 'Riftlight',
@@ -42,7 +42,7 @@ export const ROUND_MINUTES = 5;
 
 /**
  * The page's catalogue and session tags for `mode`. `model` and `effort` name what built this
- * build (the hand-over package is given them: `npm run hub -- --model ... --effort ...`).
+ * build (the hand-over build is given them: `build:single -- --model ... --effort ...`).
  */
 export function riftlightTags(mode = DEFAULT_MODE, { model, effort } = {}) {
   if (!MODES.includes(mode)) throw new Error(`riftlightTags: mode is one of ${MODES.join(', ')}`);

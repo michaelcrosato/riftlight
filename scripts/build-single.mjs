@@ -6,7 +6,7 @@
 // The page is ready for the AI Hub (docs/game/session.md): its head carries the hub's session
 // client and catalogue tags (scripts/hub/riftlight.mjs) and the game's `game-lines` block (every
 // line a player reads, docs/game/lang.md). The translations stay out: the hand-over build adds
-// them (`npm run hub`).
+// them (`--translations`).
 //
 //   --mode <shared-world|ghost|parallel>   the session mode the page declares (default: scripts/hub/riftlight.mjs DEFAULT_MODE)
 //   --translations                         carry the game-translations block (src/riftlight/lang/translations/)
@@ -24,7 +24,10 @@ helpExit(import.meta.url);
 const argv = process.argv.slice(2);
 const opt = (name) => {
   const i = argv.indexOf(`--${name}`);
-  return i >= 0 ? argv[i + 1] : undefined;
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith('--')) throw new Error(`--${name} needs a value`);
+  return v;
 };
 const mode = opt('mode') ?? DEFAULT_MODE;
 if (!MODES.includes(mode)) throw new Error(`--mode is one of ${MODES.join(', ')}`);

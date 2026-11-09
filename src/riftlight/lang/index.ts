@@ -2,8 +2,8 @@
  * Riftlight's words (docs/game/lang.md, AI Hub Languages v1): every line a player reads, under an
  * id, in one `LineList`, `riftlightLines()`. The game shows them through `t(id, values)` in the
  * player's language; the page's `game-lines` block is this list (`npm run build:single` writes
- * it), and translations come from its `game-translations` block (the hand-over build, `npm run
- * hub`). Areas keep their lines beside their code's folder here (`ui.ts`, `data.ts`...).
+ * it), and translations come from its `game-translations` block (the hand-over build,
+ * `build:single -- --translations`). Areas keep their lines beside their code's folder here (`ui.ts`, `data.ts`...).
  */
 import { Lang, type LineList, type LineValues, langFor, setTextLocale } from '../../engine';
 import { BRIEF, NAMES } from './brief';

@@ -21,7 +21,6 @@ const ROUND: LineArea = {
     'round.cleared': 'Rift cleared',
     'round.cleared_in': 'Cleared in {time}',
     'round.respawn': 'Back in {seconds}…',
-    'round.waiting': 'Waiting for the other players',
   },
   notes: {
     'round.get_ready': 'Under the countdown numbers before a round with friends starts.',
@@ -29,6 +28,8 @@ const ROUND: LineArea = {
     'round.clear_the_rift': 'Under "Go!": the round’s goal (kill the rift’s boss).',
     'round.kills': 'The player’s standing on the hub’s scoreboard, at most 24 letters.',
     'round.respawn': 'After the hero falls in a round: seconds until they rise again.',
+    'round.cleared': 'Banner when the rift’s boss falls in a round with friends.',
+    'round.cleared_in': 'Under "Rift cleared": how long it took, as 1:23.',
   },
   max: { 'round.go': 8, 'round.kills': 24 },
 };

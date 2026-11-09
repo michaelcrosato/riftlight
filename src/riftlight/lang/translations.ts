@@ -3,7 +3,7 @@
  * (docs/game/lang.md): `src/riftlight/lang/translations/<code>.json`, one file per language, each
  * line filed under its id with the hash of the English it was made from. A line whose English
  * changed since is **stale**: the hand-over build leaves it out (the player sees the English, never
- * an old meaning) and `npm run lang -- status` lists it for the next translation pass. Development
+ * an old meaning) and `translationStatus` lists it for the next translation pass. Development
  * builds carry no translations at all.
  *
  * Node only (build tools and tests): the game reads translations from its page's

@@ -1,6 +1,6 @@
 // The game's line list keeps to AI Hub Languages v1 (the catalogue checker's rules), and the stored
 // translations stay honest: a line whose English changed is left out until it is translated again.
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -47,6 +47,19 @@ describe('riftlightLines', () => {
       const longest = typeof line === 'string' ? en.t(id) : Object.values(line).map((s) => s!.replace('{count}', '99')).sort((a, b) => b.length - a.length)[0]!;
       expect(longest.replace(/\{[^{}]*\}/g, '').length, `${id} is wider than its max ${w}`).toBeLessThanOrEqual(w);
     }
+  });
+});
+
+describe('the code', () => {
+  it('every line id it shows with t() is in the list (a typo shows the id)', () => {
+    const root = new URL('../', import.meta.url).pathname;
+    const files = readdirSync(root, { recursive: true, encoding: 'utf8' }).filter((f) => f.endsWith('.ts') && !f.endsWith('.test.ts'));
+    const missing: string[] = [];
+    for (const f of files) {
+      const text = readFileSync(root + f, 'utf8');
+      for (const m of text.matchAll(/\bt\(\s*'([a-z0-9_.]+)'/g)) if (!(m[1]! in riftlightLines().lines)) missing.push(`${f}: ${m[1]}`);
+    }
+    expect(missing).toEqual([]);
   });
 });
 

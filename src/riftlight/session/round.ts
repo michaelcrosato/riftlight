@@ -9,10 +9,14 @@
  *   reports a team result.
  *
  * The round's start comes from the page as a recorded command (`{ rl: 'round' }`), and the hub's
- * events as input commands (engine `hubEvents`), so a session replays like any other run. The
- * countdown runs in game time from the hub's `start` (`in` ms), the same on every copy.
+ * events as input commands (engine `hubEvents`), so a session replays like any other run. Play
+ * begins when the hub's clock says so (`AIHub.time()` reaches 0, the same moment on every device):
+ * that moment, read from real time, enters the game as a recorded command too (`{ rl: 'round-go' }`).
  */
+import type { Camera, Vector3 } from 'three/webgpu';
 import { type GameContext, type HubEvent, type HubInfo, type HubMode, hubEvents, type HubSession } from '../../engine';
+import type { HeroIntent } from '../game/ports';
+import type { UiCanvas } from '../ui/kit';
 import { t } from '../lang';
 
 /** Depths a round can be (designed levels short enough for a session round), by round number. */
@@ -32,8 +36,8 @@ export function roundDepth(round: number): number {
 /** What a round needs of the game shell (the `Riftlight` implements it). */
 export interface RoundHost {
   readonly ctx: GameContext;
-  /** Start a run on `seed` with the hero at `level`, then enter `depth` (resolves when the level is built). */
-  startRound(seed: number, depth: number, level: number): Promise<void>;
+  /** Start a run on `seed` with the hero at `level`, then enter `depth` with the hero at `seat`'s place (resolves when the level is built). */
+  startRound(seed: number, depth: number, level: number, seat: number): Promise<void>;
   /** The level's boss life as a fraction (1 untouched, 0 dead), or null when there is none. */
   bossLife(): number | null;
   /** Kills and deaths in this level. */
@@ -42,13 +46,12 @@ export interface RoundHost {
   respawn(): void;
   /** A centre banner (countdown, clear). */
   banner(title: string, subtitle?: string, seconds?: number): void;
+  /** What the round's mode adds (ghosts, a shared world), once the level is built. */
+  roundModes(info: HubInfo): RoundMode[];
 }
 
-/** The round's command from the page: what the hub said in its welcome. */
-export interface RoundCommand {
-  readonly rl: 'round';
-  readonly info: HubInfo;
-}
+/** The round's commands from the page: what the hub said in its welcome, and the moment play began. */
+export type RoundCommand = { readonly rl: 'round'; readonly info: HubInfo } | { readonly rl: 'round-go' };
 
 export type RoundPhase = 'loading' | 'waiting' | 'countdown' | 'playing' | 'over' | 'ended';
 
@@ -56,14 +59,23 @@ export type RoundPhase = 'loading' | 'waiting' | 'countdown' | 'playing' | 'over
 export interface RoundMode {
   /** Each rendered frame while the round runs (after the hub's events). */
   update?(dt: number): void;
-  /** Each fixed step while play is on. */
-  fixedUpdate?(dt: number): void;
+  /** Each fixed step while play is on, with this copy's hero's intent for the step. */
+  fixedUpdate?(dt: number, intent?: HeroIntent): void;
+  /** Its overlays (names over ghosts), each frame of a level. */
+  draw?(ui: UiCanvas, camera: Camera): void;
   /** Another copy's data. */
   message?(data: unknown, from: number): void;
   /** A player left the round. */
   leave?(id: number): void;
   /** The round ended (the engine is quiet). */
   end?(): void;
+  /** The boss fell (a shared world's host reports the round). */
+  cleared?(): void;
+  /** The hub called time (a shared world's host reports the round). */
+  timeUp?(): void;
+  /** Where the camera looks when this copy has no hero of its own (a server), or null. */
+  watch?(): Vector3 | null;
+  dispose?(): void;
 }
 
 /**
@@ -76,8 +88,9 @@ export class SessionRound {
   /** The welcome as the round's command delivered it (null until it arrives). */
   info: HubInfo | null = null;
   depth = 1;
-  /** Seconds of countdown left (game time), from the hub's `start`. */
+  /** Seconds of countdown left (the hub's clock), from its `start`. */
   countdown = 0;
+  private goSent = false;
   /** Seconds of play (game time). */
   playTime = 0;
   /** The hub's clock when the boss fell (the result), or null. */
@@ -108,10 +121,15 @@ export class SessionRound {
     this.info = info;
     this.players = info.players.map((p) => p.id);
     this.depth = roundDepth(info.round);
-    void this.host.startRound(info.seed, this.depth, roundHeroLevel(this.depth)).then(() => {
-      if (this.phase === 'loading') this.phase = 'waiting';
-      this.session.ready();
-    });
+    const seat = info.server ? 0 : Math.max(0, info.players.findIndex((p) => p.id === info.me));
+    void this.host
+      .startRound(info.seed, this.depth, roundHeroLevel(this.depth), seat)
+      .then(() => {
+        this.modes.push(...this.host.roundModes(info));
+        if (this.phase === 'loading') this.phase = 'waiting';
+        this.session.ready();
+      })
+      .catch((e: unknown) => this.session.fail(`Riftlight could not build the round: ${e instanceof Error ? e.message : String(e)}`));
   }
 
   /** The world waits for the start (and stays as it is once the round is over for the hub). */
@@ -124,18 +142,24 @@ export class SessionRound {
     return this.phase === 'playing' || this.phase === 'over';
   }
 
-  /** This frame's hub events (from `ctx.input.commands`), then the countdown and the score. */
+  /** This frame's hub events and round commands (from `ctx.input.commands`), then the countdown and the score. */
   update(commands: readonly unknown[], dt: number): void {
     for (const e of hubEvents(commands)) this.event(e);
+    for (const c of commands) if ((c as { rl?: string } | null)?.rl === 'round-go' && this.phase === 'countdown') this.go();
     if (this.phase === 'countdown') {
-      this.countdown = Math.max(0, this.countdown - dt);
+      // the hub's clock, the same on every device (real time; the moment it reaches 0 is recorded)
+      const now = this.session.time();
+      if (Number.isFinite(now)) this.countdown = Math.max(0, -now / 1000);
+      if (now >= 0 && !this.goSent) {
+        this.goSent = true;
+        this.host.ctx.input.send({ rl: 'round-go' } satisfies RoundCommand);
+      }
       const shown = Math.ceil(this.countdown);
       if (shown !== this.lastShown) {
         this.lastShown = shown;
-        this.host.banner(shown > 0 ? String(shown) : t('round.go'), shown > 0 ? t('round.get_ready') : t('round.clear_the_rift'), shown > 0 ? 0.95 : 1.2);
+        this.host.banner(shown > 0 ? String(shown) : t('round.go'), shown > 0 ? t('round.get_ready') : t('round.clear_the_rift'), shown > 0 ? 1.05 : 1.2); // each number until the next replaces it
         if (shown > 0) this.host.ctx.audio.play('rl.bark', { volume: 0.5 });
       }
-      if (this.countdown <= 0) this.phase = 'playing';
     }
     if (this.playing) {
       this.playTime += dt;
@@ -151,15 +175,26 @@ export class SessionRound {
     for (const m of this.modes) m.update?.(dt);
   }
 
-  fixedUpdate(dt: number): void {
+  fixedUpdate(dt: number, intent?: HeroIntent): void {
     if (!this.playing) return;
-    for (const m of this.modes) m.fixedUpdate?.(dt);
+    for (const m of this.modes) m.fixedUpdate?.(dt, intent);
+  }
+
+  /** The modes' overlays over the level. */
+  draw(ui: UiCanvas, camera: Camera): void {
+    for (const m of this.modes) m.draw?.(ui, camera);
   }
 
   /** Score for the hub's board: kills, and the boss's lost life (it weighs most). */
   score(): number {
     const boss = this.host.bossLife();
     return this.host.session.kills + Math.round((1 - (boss ?? 1)) * 50) + (this.clearedAt !== null ? 100 : 0);
+  }
+
+  /** Play begins (the round's `round-go`, live or replayed). */
+  private go(): void {
+    this.phase = 'playing';
+    this.countdown = 0;
   }
 
   /** The hero fell: up again after a moment (a round never ends on a death). */
@@ -173,6 +208,16 @@ export class SessionRound {
     this.clearedAt = this.session.time();
     this.phase = 'over';
     if (this.mode !== 'shared-world') this.report(true);
+    else for (const m of this.modes) m.cleared?.();
+  }
+
+  /** Where the camera looks when this copy has no hero of its own (a shared world's server). */
+  watch(): Vector3 | null {
+    for (const m of this.modes) {
+      const at = m.watch?.();
+      if (at) return at;
+    }
+    return null;
   }
 
   private progress(): void {
@@ -204,6 +249,7 @@ export class SessionRound {
       for (const m of this.modes) m.leave?.(e.id);
     } else if (e.type === 'time-up') {
       if (this.mode !== 'shared-world') this.report(false);
+      else if (this.clearedAt === null) for (const m of this.modes) m.timeUp?.();
     } else if (e.type === 'end') {
       this.phase = 'ended';
       for (const m of this.modes) m.end?.();

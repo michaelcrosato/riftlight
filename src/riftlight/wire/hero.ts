@@ -159,6 +159,12 @@ export class RealHero implements HeroPort {
   private stage: StageWorld | null = null;
   private light: LightHandle | null = null;
   private readonly sources = new Map<string, readonly Mod[]>();
+  /**
+   * Another player's hero shown in this copy (an AI Hub ghost: docs/game/session.md): it fights in
+   * a combat world of its own in every stage, so nothing it does touches this copy's world, and it
+   * asks the light pool for nothing.
+   */
+  readonly phantom: boolean;
   private level = 1;
   /** The save's sockets the bar was built from. */
   private sockets: SaveData['hero']['skills'] = [];
@@ -170,7 +176,9 @@ export class RealHero implements HeroPort {
     private readonly worlds: Worlds,
     model: Object3D,
     save: SaveData['hero'],
+    options: HeroOptions = {},
   ) {
+    this.phantom = options.phantom === true;
     const ctx = services.ctx;
     // A placeholder world until the first stage: the controller needs a combat runtime.
     const boot = new CombatWorld({ services, root: this.object, depth: 0 });
@@ -264,9 +272,9 @@ export class RealHero implements HeroPort {
 
   enter(stage: StageWorld, at: Vector3, facing: number): void {
     const prev = this.world;
-    let world = this.worlds.get(stage);
+    let world = this.phantom ? undefined : this.worlds.get(stage);
     if (prev && prev !== world) {
-      prev.removeHero();
+      prev.removeHero(this.actor);
       if (prev === this.owned) {
         // the town's world (or the boot one) goes with the hero
         prev.dispose();
@@ -275,9 +283,9 @@ export class RealHero implements HeroPort {
       }
     }
     if (!world) {
-      // a stage without its own world (the town): the hero brings one
+      // a stage without its own world (the town), or a phantom anywhere: the hero brings one
       world = new CombatWorld({ services: this.services, root: stage.root, depth: 0, ...(stage.wall ? { wall: (from: Vector3, to: Vector3) => stage.wall!(from, to) } : {}) });
-      this.worlds.set(stage, world);
+      if (!this.phantom) this.worlds.set(stage, world);
       this.owned = world;
     }
     this.world = world;
@@ -298,6 +306,7 @@ export class RealHero implements HeroPort {
   }
 
   private ensureLight(town: boolean): void {
+    if (this.phantom) return;
     const L = T.light;
     const radius = L.radius * Math.max(0.2, this.actor.stats.get('light.radius') || 1);
     if (!this.light || !this.light.alive) this.light = this.services.ctx.lights.request({ follow: this.hc.model, offset: [0, 1.7, 0], color: L.color, intensity: town ? L.town : L.intensity, radius, priority: 8, flicker: 'candle', name: 'hero' });
@@ -453,6 +462,21 @@ export class RealHero implements HeroPort {
     this.hc.cooldowns.clear();
   }
 
+  /** Move by (dx, dz) without disturbing what the hero is doing (a phantom following its player). */
+  nudge(dx: number, dz: number): void {
+    const m = this.mover.position;
+    m.x += dx;
+    m.z += dz;
+    if (this.stage) m.y = Math.max(m.y, this.stage.groundY(m.x, m.z));
+    this.actor.position.copy(m);
+  }
+
+  /** Put the hero at `at` now (a phantom too far from its player), facing `facing`. */
+  snap(at: Vector3, facing: number): void {
+    this.hc.teleport([at.x, this.stage?.groundY(at.x, at.z) ?? at.y, at.z]);
+    this.actor.facing = facing;
+  }
+
   emote(name: string): void {
     if (name === 'victory' || name === 'wave') this.hc.celebrate();
     // 'death' plays by itself (the controller's dead state), 'hurt' is the hit react
@@ -461,19 +485,24 @@ export class RealHero implements HeroPort {
   dispose(): void {
     this.light?.release();
     this.light = null;
-    this.world?.removeHero();
+    this.world?.removeHero(this.actor);
     this.owned?.dispose();
     this.hc.dispose();
     this.object.removeFromParent();
   }
 }
 
+/** How a hero is made: the player's, or another player's phantom (`RealHero.phantom`). */
+export interface HeroOptions {
+  readonly phantom?: boolean;
+}
+
 /** The HeroFactory over the shared stage worlds. */
 export function realHeroFactory(worlds: Worlds): HeroFactory {
   return {
-    async create(services: ShellServices, save: SaveData['hero']): Promise<HeroPort> {
-      const hero = await services.ctx.loadModel(HERO_MODEL, { castShadow: true });
-      return new RealHero(services, worlds, hero.scene, save);
+    async create(services: ShellServices, save: SaveData['hero'], options: HeroOptions = {}): Promise<HeroPort> {
+      const hero = await services.ctx.loadModel(HERO_MODEL, { castShadow: !options.phantom });
+      return new RealHero(services, worlds, hero.scene, save, options);
     },
   };
 }

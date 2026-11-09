@@ -29,7 +29,7 @@ export const blockJson = (data) => JSON.stringify(data).replace(/</g, '\\u003c')
  */
 export function hubHead(o) {
   const out = [];
-  if (o.client) out.push(`<script>${SESSION_CLIENT.trim()}</script>`);
+  if (o.client) out.push(`<script>${SESSION_CLIENT}</script>`); // byte for byte: an unmodified copy is replaced with each new version
   out.push('<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">');
   out.push(`<title>${esc(o.title)}</title>`);
   out.push(`<meta name="description" content="${esc(o.description)}">`);
@@ -50,8 +50,7 @@ export function hubPage(html, head, lang = 'en') {
   let page = html
     .replace(/<meta name="viewport"[^>]*>\s*/i, '')
     .replace(/<title>[\s\S]*?<\/title>\s*/i, '')
-    .replace(/<link rel="icon"[^>]*>\s*/i, '')
-    .replace(/<meta name="(apple-mobile-web-app-capable|mobile-web-app-capable)"[^>]*>\s*/gi, '');
+    .replace(/<link rel="icon"[^>]*>\s*/i, '');
   page = page.replace(/<html[^>]*>/i, `<html lang="${esc(lang)}">`);
   const charset = /<meta charset="[^"]*"\s*\/?>/i;
   if (!charset.test(page)) throw new Error('hubPage: the page has no <meta charset>');

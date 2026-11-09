@@ -38,6 +38,11 @@ export interface LevelContext {
   readonly events: GameEventBus;
   /** Every live actor (hero + monsters) the game simulates. */
   actors(): readonly ActorLike[];
+  /**
+   * The players' heroes, the player's own first (a shared world has several: docs/game/session.md).
+   * Default: the first living hero-faction actor.
+   */
+  heroes?(): readonly ActorLike[];
   readonly physics?: Physics;
   readonly lights?: LightPool;
   readonly particles?: Particles;
@@ -314,10 +319,15 @@ class LevelRuntime implements Level {
     this.time += dt;
     const hero = this.hero();
     if (hero) {
-      this.nav.setTarget(hero.position);
+      // every player's hero draws monsters (the flow field leads each to its nearest) and wakes what it walks into
+      const heroes = (this.ctx.heroes?.() ?? [hero]).filter((h) => h.alive);
+      if (heroes.length > 1) this.nav.setTargets(heroes.map((h) => h.position));
+      else this.nav.setTarget(hero.position);
       this.nav.update();
-      this.activateEncounters(hero);
-      this.touchFeatures(hero);
+      for (const h of heroes.length ? heroes : [hero]) {
+        this.activateEncounters(h);
+        this.touchFeatures(h);
+      }
       this.touchPortal(hero);
       this.revealTimer -= dt;
       if (this.revealTimer <= 0) {

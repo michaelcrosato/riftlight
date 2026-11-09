@@ -18,7 +18,7 @@ import type { ResolvedSkill } from '../skills/types';
 import { RealHero } from './hero';
 import { Globes, type GlobesState } from './globes';
 import { Hazards, type HazardHost, type HazardsState } from './hazards';
-import { initialUnits, MECHANIC_TAGS, type MonsterHost, MonsterUnit, type MonsterUnitState, registerBoss, unitOf } from './monsters';
+import { initialUnits, MECHANIC_TAGS, type MonsterHost, type MonsterObserver, MonsterUnit, type MonsterUnitState, registerBoss, unitOf } from './monsters';
 import { themeSongs } from './music';
 import type { GridStage } from './stage';
 import { WIRE_TUNING } from './tuning';
@@ -122,6 +122,10 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
   readonly depth: number;
   readonly rng: Rng;
   readonly brainWorld: BrainWorld;
+  /** Watches what monsters start and who joins (a shared world's host: docs/game/session.md). */
+  observer: MonsterObserver | null = null;
+  /** No drops and no health globes (a shared world: the score is kills, and a drop is no one's). */
+  noDrops = false;
   readonly songs?: { level: Song; combat: Song; boss: Song };
   loading = true;
   private readonly list: MonsterUnit[] = [];
@@ -178,6 +182,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
         scene: this.root,
         events: this.services.events,
         actors: () => this.levelActors(),
+        heroes: () => this.world.heroActors,
         lights: ctx.lights,
         particles: ctx.particles,
         audio: ctx.audio,
@@ -778,6 +783,7 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
         if (!u) return;
         this.killed++;
         if (u.add) return;
+        if (this.noDrops) return;
         this.globes.drop(rank, target.position);
         this.drop({ depth: this.depth, rank, level: target.level, at: target.position.clone() }, `kill:${target.id}`);
       }),
@@ -852,7 +858,16 @@ export class LevelStage implements LevelHandle, GridStage, MonsterHost, HazardHo
     this.list.push(handle);
     this.byActor.set(handle.actor, handle);
     this.total++;
+    if (!this.loading) this.observer?.spawn?.(handle, genome, at);
     return handle;
+  }
+
+  /** A monster the host made (a shared world's client): the same body here, a puppet of the host's (docs/game/session.md). */
+  spawnPuppet(genome: Genome, at: Vector3, add: boolean): MonsterUnit {
+    const u = this.build(genome, at, { boss: null, add });
+    u.makePuppet();
+    if (u.runtime.has('Spawn')) u.runtime.play('Spawn', { fade: 0 });
+    return u;
   }
 
   /** Followers flank, alerts spread: one `Pack` per encounter. */

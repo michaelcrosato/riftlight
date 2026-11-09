@@ -1,0 +1,548 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Hub Session Harness</title>
+<meta name="description" content="Test a game against the AI Hub Session Protocol: 1–4 copies next to each other on a simulated network.">
+<style>
+  :root { color-scheme: dark; --bg: #0e0c14; --panel: #191623; --line: #2c2838; --ink: #ece8f4; --dim: #9a93ab; --ok: #4ade80; --bad: #f87171; --warn: #fbbf24; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink); font: 14px/1.4 system-ui, sans-serif; }
+  body { display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 8px 12px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  header label { color: var(--dim); display: inline-flex; gap: 6px; align-items: center; }
+  input, select, button { font: inherit; color: var(--ink); background: #241f31; border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  input[type=number] { width: 70px; }
+  input.game { width: 300px; }
+  button { cursor: pointer; }
+  button:hover { border-color: var(--dim); }
+  main { display: grid; grid-template-columns: 1fr 340px; min-height: 0; }
+  #grid { display: grid; gap: 6px; padding: 6px; min-height: 0; }
+  .cell { position: relative; display: grid; grid-template-rows: auto 1fr; min-height: 0; border: 2px solid var(--line); border-radius: 8px; overflow: hidden; background: #000; }
+  .cell__bar { display: flex; gap: 8px; align-items: center; padding: 3px 8px; background: var(--panel); font-size: 12px; }
+  .cell__dot { width: 10px; height: 10px; border-radius: 50%; }
+  .cell__state { margin-left: auto; color: var(--dim); }
+  .cell iframe { width: 100%; height: 100%; border: 0; background: #000; }
+  .cell.is-out { opacity: .35; }
+  aside { display: grid; grid-template-rows: auto auto 1fr; min-height: 0; border-left: 1px solid var(--line); background: var(--panel); }
+  aside section { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  aside h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--dim); margin: 0 0 6px; }
+  #checks li { list-style: none; }
+  #checks ul { margin: 0; padding: 0; }
+  .ok::before { content: '✓ '; color: var(--ok); }
+  .bad::before { content: '✗ '; color: var(--bad); }
+  .wait::before { content: '… '; color: var(--warn); }
+  #log { overflow: auto; font: 12px/1.35 ui-monospace, monospace; padding: 8px 12px; margin: 0; white-space: pre-wrap; }
+  #round { white-space: pre-wrap; font-size: 13px; }
+  .hint { color: var(--dim); }
+</style>
+</head>
+<body>
+<header>
+  <h1>AI Hub session harness</h1>
+  <label>Game <input class="game" id="game" placeholder="mygame.html or /games/mygame/index.html"></label>
+  <label>Players <select id="players"><option>1</option><option selected>2</option><option>3</option><option>4</option></select></label>
+  <label>Latency <input type="number" id="latency" min="0" value="60"> ms</label>
+  <label>Jitter <input type="number" id="jitter" min="0" value="20"> ms</label>
+  <label>Loss <input type="number" id="loss" min="0" max="50" value="0"> %</label>
+  <button id="restart" type="button">New round</button>
+  <button id="release" type="button" title="End the splash now: the round starts once every game has loaded">Start now</button>
+  <button id="timeup" type="button">Time up</button>
+  <label>Remove <select id="who"></select></label>
+  <button id="remove" type="button">Remove player</button>
+  <button id="hide" type="button" aria-pressed="false">Hide host tab</button>
+</header>
+<main>
+  <div id="grid"><p class="hint" style="padding:16px">Name a game above (a path or URL served alongside this page), then press New round. Click a player's frame to control that player.</p></div>
+  <aside>
+    <section><h2>Round</h2><div id="round" class="hint">No round yet.</div></section>
+    <section id="checks"><h2>Conformance</h2><ul id="checklist"><li class="hint">Run with <code>?auto=1</code> for the automatic checks.</li></ul></section>
+    <pre id="log" aria-live="off"></pre>
+  </aside>
+</main>
+<script type="module">
+import { createBridge, attachFrame, postTo, createLocalNetwork } from './bridge.js';
+import { createRound, limitFor, modeOf, seedsRandom, SELF_REPORTED, TIMINGS } from './round.js';
+
+const NAMES = ['Red Fox', 'Blue Otter', 'Green Heron', 'Gold Lynx'];
+const params = new URLSearchParams(location.search);
+const $ = (id) => document.getElementById(id);
+const auto = params.get('auto') === '1';
+const scenario = params.get('scenario') || 'standard';
+/** ?scenario=server: the shared world runs on one more copy with no player of its own, as a dedicated server would run it. */
+const serverMode = scenario === 'server';
+const playMs = Number(params.get('play')) || 6000;
+const SPLASH_MS = 10_000;
+
+for (const [id, key] of [['game', 'game'], ['players', 'players'], ['latency', 'latency'], ['jitter', 'jitter'], ['loss', 'loss']]) {
+  if (params.has(key)) $(id).value = params.get(key);
+}
+
+const net = createLocalNetwork({});
+let current = null;
+let roundNo = 0;
+const logLines = [];
+function log(text) {
+  const t = (performance.now() / 1000).toFixed(2).padStart(7);
+  logLines.push(`${t}  ${text}`);
+  if (logLines.length > 400) logLines.splice(0, logLines.length - 400);
+  $('log').textContent = logLines.join('\n');
+  $('log').scrollTop = $('log').scrollHeight;
+}
+
+/** The game's head metas, when the page can be fetched from here. */
+async function metasOf(url) {
+  try {
+    const html = await (await fetch(url)).text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const meta = (name) => doc.querySelector(`meta[name="${name}"]`)?.getAttribute('content')?.trim() ?? null;
+    return {
+      session: meta('hub:session'),
+      players: meta('hub:session-players'),
+      mode: meta('hub:session-mode'),
+      minutes: meta('hub:session-minutes'),
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * For a game tagged parallel or ghost, the seed rides in the address: the client seeds Math.random with it before the game's scripts run.
+ * Only a page of this site is loaded: ?game= comes from the address bar, and a javascript: or another site's
+ * address in an unsandboxed frame would run as this origin, where a signed-in player's session is kept.
+ */
+const gameUrl = (game, { tag, seed } = {}) => {
+  let url;
+  try {
+    url = new URL(game, location.href);
+  } catch {
+    return null;
+  }
+  if (url.origin !== location.origin || !/^https?:$/.test(url.protocol)) return null;
+  url.searchParams.set('aihub', '1');
+  if (seedsRandom(tag)) url.searchParams.set('aihub-seed', String(seed >>> 0));
+  return url.href;
+};
+
+function applyNet() {
+  Object.assign(net.settings, {
+    latency: Math.max(0, Number($('latency').value) || 0),
+    jitter: Math.max(0, Number($('jitter').value) || 0),
+    loss: Math.min(0.5, Math.max(0, (Number($('loss').value) || 0) / 100)),
+  });
+}
+
+/** Wrap what a game must not call in hub mode, where the page can reach it. */
+function instrument(cell) {
+  try {
+    const win = cell.frame.contentWindow;
+    for (const name of ['alert', 'confirm', 'prompt', 'open']) {
+      const original = win[name];
+      win[name] = (...args) => {
+        cell.violations.push(`${name}() called`);
+        log(`${cell.name}: ${name}() called — not allowed in a session`);
+        return name === 'confirm' ? false : name === 'prompt' ? null : undefined;
+      };
+      void original;
+    }
+    win.addEventListener('error', (e) => cell.violations.push(`error: ${e.message}`));
+    win.addEventListener('unhandledrejection', (e) => cell.violations.push(`unhandled rejection: ${e.reason?.message || e.reason}`));
+  } catch {
+    cell.instrumented = false;
+  }
+}
+
+async function newRound() {
+  endCurrent();
+  applyNet();
+  const game = $('game').value.trim();
+  if (!game) return null;
+  if (!gameUrl(game)) {
+    log(`Not loading ${game}: the harness only plays pages from this site.`);
+    return null;
+  }
+  const n = Math.max(1, Math.min(4, Number($('players').value) || 2));
+  const metas = await metasOf(game);
+  const mode = modeOf(metas?.mode);
+  const limitMs = params.has('limit') ? Number(params.get('limit')) * 1000 : limitFor(metas?.minutes);
+  const seed = params.has('seed') ? Number(params.get('seed')) >>> 0 : crypto.getRandomValues(new Uint32Array(1))[0];
+  const round = ++roundNo;
+  const players = Array.from({ length: n }, (_, slot) => ({ key: `p${slot}`, slot, name: NAMES[slot] }));
+  const hubEnd = net.endpoint('hub');
+  const grid = $('grid');
+  grid.replaceChildren();
+  const copies = n + (serverMode ? 1 : 0);
+  grid.style.gridTemplateColumns = copies > 1 ? '1fr 1fr' : '1fr';
+  grid.style.gridTemplateRows = `repeat(${Math.ceil(copies / (copies > 1 ? 2 : 1))}, 1fr)`;
+
+  const state = { round, n, metas, mode, limitMs, seed, players, cells: [], hubEnd, status: null, record: null, hidden: false, splashUntil: performance.now() + SPLASH_MS, answers: { ready: new Set(), more: new Set() } };
+  current = state;
+  log(`round ${round}: ${n} player${n > 1 ? 's' : ''}, seed ${seed}, limit ${Math.round(limitMs / 1000)} s, mode ${mode || '(from hello)'}`);
+
+  state.coordinator = createRound({
+    round,
+    players,
+    hostKey: 'p0',
+    serverKey: serverMode ? 'server' : null,
+    mode,
+    seed,
+    limitMs,
+    gate: true,
+    deliver: (key, m) => hubEnd.send(key, { k: 'h', r: round, m }),
+    onStatus: (s) => { state.status = s; render(state); },
+    onEnd: (record) => {
+      state.record = record;
+      log(`round ${round} ${record.status}: ${record.reason}${record.standings ? ' — standings ' + JSON.stringify(record.standings) : ''}`);
+      render(state);
+    },
+  });
+  hubEnd.onMessage((from, env) => {
+    if (env.k !== 'c' || env.r !== round) return;
+    if (env.m?.type !== 'vis') log(`${from} → hub: ${env.m?.type}${env.m?.type === 'result' ? ' ' + JSON.stringify({ time: env.m.time, score: env.m.score }) : ''}${env.m?.type === 'finish' ? ' ' + JSON.stringify(env.m.standings) : ''}`);
+    state.coordinator.receive(from, env.m);
+  });
+
+  for (const p of [...players, ...(serverMode ? [{ key: 'server', slot: null, name: 'Server', server: true }] : [])]) {
+    const color = p.server ? '#8a8a8a' : ['#e8443a', '#3b82f6', '#22c55e', '#f5b700'][p.slot];
+    const frame = document.createElement('iframe');
+    frame.allow = 'fullscreen; autoplay; gamepad; pointer-lock';
+    frame.title = p.name;
+    const label = document.createElement('div');
+    label.className = 'cell__bar';
+    label.innerHTML = `<span class="cell__dot" style="background:${color}"></span><b></b><span class="cell__state"></span>`;
+    label.querySelector('b').textContent = `${p.name} (${p.key})`;
+    const el = document.createElement('div');
+    el.className = 'cell';
+    el.style.borderColor = color;
+    el.append(label, frame);
+    grid.append(el);
+
+    const endpoint = net.endpoint(p.key);
+    const cell = { ...p, el, label, frame, endpoint, violations: [], instrumented: true, gone: false, progress: [], cardSent: '' };
+    const post = postTo(frame);
+    cell.bridge = createBridge({
+      key: p.key,
+      round,
+      coordinator: 'hub',
+      post: (msg) => {
+        if (msg.type !== 'message') log(`hub → ${p.key}: ${msg.type}${msg.type === 'start' ? ` in ${msg.in} ms` : ''}${msg.type === 'leave' ? ` ${msg.id} (${msg.reason})` : ''}${msg.type === 'end' ? ` ${msg.reason}` : ''}`);
+        post(msg);
+      },
+      net: endpoint,
+      onIssue: (i) => log(`${p.key} ✗ ${i.problem}`),
+      onFullscreen: (on) => log(`${p.key} asked for fullscreen ${on ? 'on' : 'off'}: the hub's page takes it`),
+      onAnswer: (what) => answerCard(state, cell, what),
+      // The scoreboard's feed: this cell's own progress, as its bridge passes it on.
+      onProgress: (id, report) => {
+        if (id !== cell.bridge?.me) return;
+        cell.progress.push({ at: performance.now(), ...report });
+        state.coordinator.progress(id, report.score);
+        render(state);
+      },
+    });
+    endpoint.onMessage((from, env) => cell.bridge.fromNet(from, env));
+    cell.detach = attachFrame(frame, (msg) => cell.bridge.fromGame(msg));
+    frame.addEventListener('load', () => instrument(cell), { once: true });
+    frame.src = gameUrl(game, { tag: metas?.mode, seed });
+    state.cells.push(cell);
+  }
+  renderWho(state);
+  render(state);
+  // By hand, the card lifts by itself after ten seconds (more when a player asks), as in a session;
+  // the conformance run releases it itself.
+  const ticker = setInterval(() => {
+    if (state !== current || state.coordinator.released) return clearInterval(ticker);
+    if (!auto && performance.now() >= state.splashUntil) return releaseRound(state);
+    tickCard(state);
+  }, 250);
+  return state;
+}
+
+function releaseRound(state = current) {
+  if (!state || state !== current || state.coordinator.released) return;
+  state.splashUntil = null;
+  tickCard(state);
+  log('splash over: the round starts once every game has loaded');
+  state.coordinator.release();
+}
+
+/** A game's own card, as the hub drives it: the countdown and who is ready, to every copy that shows one. */
+function tickCard(state) {
+  const left = state.splashUntil === null ? null : Math.max(0, state.splashUntil - performance.now());
+  const ready = state.cells.filter((c) => state.answers.ready.has(c.key)).map((c) => c.bridge.me);
+  for (const cell of state.cells) {
+    if (cell.gone || !cell.bridge.showsCard) continue;
+    const card = { left, paused: false, starting: left === null, ready, asking: state.answers.more.size, asked: state.answers.more.has(cell.key) };
+    const id = JSON.stringify({ ...card, left: left === null ? null : Math.ceil(left / 1000) });
+    if (cell.cardSent === id) continue;
+    cell.cardSent = id;
+    cell.bridge.card(card);
+  }
+}
+
+/** A player answered on the game's own card: Ready, or more time (+10 s; again takes it back). */
+function answerCard(state, cell, what) {
+  if (state !== current || state.coordinator.released || cell.server) return;
+  const { ready, more } = state.answers;
+  if (what === 'ready') {
+    ready.add(cell.key);
+    more.delete(cell.key);
+  } else if (more.has(cell.key)) {
+    more.delete(cell.key);
+  } else {
+    more.add(cell.key);
+    ready.delete(cell.key);
+    state.splashUntil += 10_000;
+  }
+  log(`${cell.key} answers ${what} on the game's card`);
+  const players = state.cells.filter((c) => !c.server && !c.gone);
+  if (!auto && players.every((c) => ready.has(c.key))) return releaseRound(state);
+  tickCard(state);
+}
+
+function endCurrent() {
+  if (!current) return;
+  current.coordinator.abort('session-ended');
+  for (const cell of current.cells) removeCell(cell, false);
+  current.hubEnd.close();
+  current = null;
+}
+
+function removeCell(cell, tellRound = true) {
+  if (cell.gone) return;
+  cell.gone = true;
+  cell.detach();
+  cell.endpoint.close();
+  cell.frame.remove();
+  cell.el.classList.add('is-out');
+  if (tellRound) {
+    log(`${cell.key} left`);
+    current?.coordinator.leave(cell.key, 'left');
+  }
+}
+
+function renderWho(state) {
+  $('who').replaceChildren(...state.cells.map((c) => new Option(`${c.name} (${c.key})${c.server ? ' — host, no player' : c.slot === 0 && !serverMode ? ' — host' : ''}`, c.key)));
+}
+
+function render(state) {
+  const s = state.status;
+  if (!s) return;
+  for (const cell of state.cells) {
+    const p = s.players.find((q) => q.key === cell.key) ?? (s.server?.key === cell.key ? s.server : null);
+    if (!p) continue;
+    const bits = [];
+    if (p.out) bits.push(`out: ${p.out}`);
+    else if (p.result) bits.push(`result ${JSON.stringify(p.result)}`);
+    else if (p.ready) bits.push('ready');
+    else if (p.hello) bits.push('welcomed');
+    else bits.push('loading');
+    const last = cell.progress.at(-1);
+    if (last && !p.result) bits.push(`progress ${last.score}${last.label ? ` (${last.label})` : ''}`);
+    bits.push(`↑${cell.bridge.stats.sent} ↓${cell.bridge.stats.received}`);
+    cell.label.querySelector('.cell__state').textContent = bits.join(' · ');
+    cell.el.classList.toggle('is-out', !!p.out || cell.gone);
+  }
+  const lines = [`Round ${s.round} · ${s.mode || 'mode unknown'} · phase ${s.phase}`, `Host: ${s.server ? 'the server, no player' : `player ${s.host}`} · seed ${state.seed}`];
+  if (s.gate && !s.released) lines.push(`Card: ${state.cells.some((c) => c.bridge.showsCard) ? 'the game’s own, ' : ''}${state.splashUntil ? `${Math.max(0, Math.ceil((state.splashUntil - performance.now()) / 1000))} s left` : 'held'} (Start now ends it)`);
+  if (state.record) {
+    const name = (id) => s.players[id]?.name ?? `#${id}`;
+    lines.push(`Ended ${state.record.status} (${state.record.reason})`);
+    if (state.record.standings) state.record.standings.forEach((ids, i) => lines.push(`  ${i + 1}. ${ids.map(name).join(', ')}`));
+  }
+  if (s.issues.length) lines.push(...s.issues.map((i) => `✗ ${i.key}: ${i.problem}`));
+  $('round').textContent = lines.join('\n');
+}
+
+$('restart').onclick = () => newRound();
+$('release').onclick = () => releaseRound();
+$('timeup').onclick = () => current?.coordinator.timeUp();
+$('remove').onclick = () => {
+  const cell = current?.cells.find((c) => c.key === $('who').value);
+  if (cell) removeCell(cell);
+};
+$('hide').onclick = () => {
+  if (!current) return;
+  current.hidden = !current.hidden;
+  $('hide').setAttribute('aria-pressed', String(current.hidden));
+  (current.cells.find((c) => c.server) ?? current.cells[0])?.bridge.visibility(current.hidden);
+  log(`host tab ${current.hidden ? 'hidden' : 'shown'}`);
+};
+for (const id of ['latency', 'jitter', 'loss']) $(id).onchange = applyNet;
+
+/* ---------------------------------------------------------------------------
+ * ?auto=1 — the conformance run. It presses keys inside each frame with
+ * synthetic events while the round plays (the frames must be served from this
+ * page's origin). Results land in window.__hubCheck, and body[data-complete]
+ * turns "true".
+ * ------------------------------------------------------------------------- */
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+async function until(test, ms) {
+  const end = performance.now() + ms;
+  while (performance.now() < end) {
+    if (test()) return true;
+    await sleep(50);
+  }
+  return test();
+}
+
+function poke(cell, key) {
+  const doc = cell.frame.contentDocument;
+  const win = cell.frame.contentWindow;
+  if (!doc || !win) return false;
+  const target = doc.activeElement && doc.activeElement !== doc.documentElement ? doc.activeElement : doc.body || doc.documentElement;
+  const init = { key, code: key === ' ' ? 'Space' : key, bubbles: true, cancelable: true, view: win };
+  target.dispatchEvent(new win.KeyboardEvent('keydown', init));
+  setTimeout(() => target.dispatchEvent(new win.KeyboardEvent('keyup', init)), 120);
+  return true;
+}
+
+async function conformance() {
+  const checks = [];
+  const check = (name, pass, detail = '') => {
+    checks.push({ name, pass: !!pass, detail });
+    renderChecks(checks);
+    return !!pass;
+  };
+  const report = { done: false, pass: false, game: $('game').value, players: Number($('players').value), scenario, checks, log: logLines };
+  window.__hubCheck = report;
+  try {
+    const state = await newRound();
+    if (!state) {
+      check('game named', false, 'pass ?game=<path> of a page on this site');
+      return;
+    }
+    const n = state.n;
+    const m = state.metas;
+    check('head metas', m && m.session === '1' && modeOf(m.mode), m ? `hub:session=${m.session} mode=${m.mode}` : 'could not fetch the page');
+    const seats = String(m?.players ?? '').match(/\d+/g)?.map(Number) ?? [];
+    const [least, most = least] = seats;
+    check('hub:session-players is a range within 1–4', seats.length >= 1 && seats.length <= 2 && least >= 1 && least <= most && most <= 4, `hub:session-players=${m?.players}`);
+    if (m?.minutes != null) check('hub:session-minutes, when given, is a number', Number(m.minutes) > 0, `hub:session-minutes=${m.minutes}`);
+
+    // Every copy: the players, and in a server round the server's copy.
+    const copies = () => [...(state.status?.players ?? []), ...(state.status?.server ? [state.status.server] : [])];
+    const helloed = await until(() => copies().every((p) => p.hello), TIMINGS.helloMs + 1000);
+    check('every copy says hello', helloed, copies().filter((p) => !p.hello).map((p) => p.key).join(', '));
+    if (!helloed) return;
+    const caps = state.coordinator.seats().map((s) => s.caps);
+    check('hello names protocol 1 and the mode', caps.every((c) => c.v === 1 && modeOf(c.mode) === state.coordinator.mode), JSON.stringify(caps[0]));
+    check('hello seats cover this player count', caps.every((c) => Array.isArray(c.seats) && c.seats[0] <= Math.max(2, n) && c.seats[1] >= n), JSON.stringify(caps[0]?.seats));
+    if (state.cells.some((c) => !c.frame.contentDocument)) {
+      check('frames reachable for synthetic input', false, 'serve the game from the same origin as this harness');
+      return;
+    }
+
+    // The card collects ready: every game readies up by itself once loaded, with no prompt and no key.
+    const loaded = await until(() => copies().every((p) => p.ready), 20_000);
+    check('ready without a key press (the card asks the players)', loaded, copies().filter((p) => !p.ready).map((p) => p.key).join(', '));
+    // A game that shows its own card takes the players' answers on it: Enter is Ready.
+    if (caps.some((c) => c?.card)) {
+      const players = state.cells.filter((c) => !c.server);
+      const sent = await until(() => players.every((c) => c.cardSent), 2000);
+      for (const cell of players) poke(cell, 'Enter');
+      const answered = await until(() => players.every((c) => state.answers.ready.has(c.key)), 3000);
+      check('its own card: Enter answers Ready', sent && answered, players.filter((c) => !state.answers.ready.has(c.key)).map((c) => `${c.key}${c.cardSent ? '' : ' (no card yet)'}`).join(', '));
+    }
+    releaseRound(state);
+    const started = await until(() => state.status?.phase !== 'loading', 15_000);
+    check('the round starts when the card ends', started && copies().every((p) => p.ready), copies().filter((p) => !p.ready).map((p) => p.key).join(', ') || state.status?.phase);
+    if (!started || state.record) return;
+
+    await until(() => state.status.phase === 'playing' || state.record, TIMINGS.countdownMs + 2000);
+    const arrows = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's'];
+    const randomly = async (ms) => {
+      const end = performance.now() + ms;
+      while (performance.now() < end && !state.record) {
+        for (const cell of state.cells) if (!cell.gone && !cell.server) poke(cell, arrows[Math.floor(Math.random() * arrows.length)]);
+        await sleep(150);
+      }
+    };
+    await randomly(Math.min(1500, playMs / 4));
+
+    const mode = state.coordinator.mode;
+    // Parallel and ghost: every copy runs its own world from the same seeded start. A game
+    // still tagged race was built to race's contract: no seeded start, and no progress asked.
+    const own = SELF_REPORTED.includes(mode);
+    const legacyRace = own && !seedsRandom(m?.mode);
+    if (own && !legacyRace) {
+      const seeded = state.cells.every((c) => c.frame.contentWindow?.AIHub?.seeded === true);
+      check(`${mode}: Math.random is seeded, the same on every copy`, seeded, state.cells.map((c) => `${c.key}: client ${c.frame.contentWindow?.AIHub?.version ?? '?'} seeded ${c.frame.contentWindow?.AIHub?.seeded}`).join('; '));
+    }
+
+    if (scenario === 'host-leave') removeCell(state.cells[0]);
+    else if (n >= 3) removeCell(state.cells[n - 1]);
+    await randomly(playMs / 2);
+    const remaining = state.cells.filter((c) => !c.gone);
+    if (own) {
+      if (mode === 'parallel') {
+        check('parallel: no game traffic', state.cells.every((c) => c.bridge.stats.sent === 0),
+          state.cells.map((c) => `${c.key} ↑${c.bridge.stats.sent}`).join(' '));
+      } else {
+        check('ghost: every copy sends its player', remaining.every((c) => c.bridge.stats.sent > 0) || n === 1,
+          remaining.map((c) => `${c.key} ↑${c.bridge.stats.sent}`).join(' '));
+      }
+      if (!legacyRace) check(`${mode}: every copy reports its progress`, remaining.every((c) => c.progress.length > 0 || state.status?.players.find((p) => p.key === c.key)?.result),
+        remaining.map((c) => `${c.key}: ${c.progress.length} report${c.progress.length === 1 ? '' : 's'}`).join(', '));
+    } else {
+      check('game traffic flows both ways', remaining.every((c) => c.bridge.stats.sent > 0 && c.bridge.stats.received > 0) || n === 1,
+        remaining.map((c) => `${c.key} ↑${c.bridge.stats.sent} ↓${c.bridge.stats.received}`).join(' '));
+    }
+
+    if (!state.record) state.coordinator.timeUp();
+    const ended = await until(() => state.record, TIMINGS.graceMs + 2000);
+    const record = state.record;
+    if (serverMode) {
+      // The world ran on the server: the players heard it, and only the host may finish a shared world.
+      const serverCell = state.cells.find((c) => c.server);
+      check('a copy with no player of its own runs the world (as a server would)', ended && record.status === 'played' && record.hostId === serverCell.bridge.me && serverCell.bridge.stats.sent > 0,
+        record ? `${record.status} (${record.reason}), host ${record.hostId}, server sent ${serverCell.bridge.stats.sent}` : 'no end');
+    }
+    if (scenario === 'host-leave' && !SELF_REPORTED.includes(state.coordinator.mode)) {
+      check('host leaving voids the round', ended && record.status === 'void' && record.endReason === 'host-left', record ? `${record.status} (${record.reason})` : 'no end');
+    } else {
+      check('the round ends with a valid result', ended && record.status === 'played', record ? `${record.status} (${record.reason})` : 'no end within the grace period');
+    }
+    await sleep(300);
+    check('every remaining copy is told the round ended', remaining.every((c) => c.bridge.ended), remaining.filter((c) => !c.bridge.ended).map((c) => c.key).join(', '));
+    const issues = [...(state.status?.issues ?? []), ...state.cells.flatMap((c) => c.bridge.issues)];
+    check('no protocol problems', issues.length === 0, issues.map((i) => `${i.key}: ${i.problem}`).join('; '));
+    const violations = state.cells.flatMap((c) => {
+      let extra = [];
+      try {
+        extra = c.frame.contentWindow?.__hubViolations ?? [];
+      } catch {}
+      return [...c.violations, ...extra].map((v) => `${c.key}: ${v}`);
+    });
+    check('no errors, dialogs, popups or sockets', violations.length === 0, violations.slice(0, 6).join('; '));
+  } catch (error) {
+    check('harness ran', false, String(error?.stack || error));
+  } finally {
+    report.pass = checks.length > 0 && checks.every((c) => c.pass);
+    report.done = true;
+    document.body.dataset.complete = 'true';
+    log(`conformance: ${report.pass ? 'PASS' : 'FAIL'}`);
+  }
+}
+
+function renderChecks(checks) {
+  $('checklist').replaceChildren(
+    ...checks.map((c) => {
+      const li = document.createElement('li');
+      li.className = c.pass ? 'ok' : 'bad';
+      li.textContent = c.name + (c.detail && !c.pass ? ` — ${c.detail}` : '');
+      li.title = c.detail;
+      return li;
+    }),
+  );
+}
+
+if (auto) conformance();
+else if ($('game').value) newRound();
+</script>
+</body>
+</html>

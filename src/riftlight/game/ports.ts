@@ -204,6 +204,10 @@ export interface HeroPort {
   restore(): void;
   /** Cosmetic: 'wave' | 'victory' | 'hurt' | 'death'. */
   emote(name: string): void;
+  /** Move by (dx, dz) without disturbing the hero's action (a phantom following its player). */
+  nudge?(dx: number, dz: number): void;
+  /** Put the hero at `at`, facing `facing`, now (a phantom too far from its player). */
+  snap?(at: Vector3, facing: number): void;
   /**
    * The skill sockets changed (the skill panel, a load, a new run): rebuild the skill bar
    * from `save.hero.skills` (slot i = keys 1/Q, 2/E, 3/R, 4/T; an empty socket is an empty
@@ -219,7 +223,8 @@ export interface HeroPort {
 }
 
 export interface HeroFactory {
-  create(services: ShellServices, save: SaveData['hero']): Promise<HeroPort>;
+  /** `phantom`: another player's hero in an AI Hub round, touching nothing in this copy (docs/game/session.md). */
+  create(services: ShellServices, save: SaveData['hero'], options?: { readonly phantom?: boolean }): Promise<HeroPort>;
 }
 
 // ------------------------------------------------------------------ levels

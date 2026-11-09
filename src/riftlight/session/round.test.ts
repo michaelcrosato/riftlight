@@ -46,6 +46,8 @@ describe('a session round', () => {
     'opens straight into the level (no title, no town), readies once it is built, and waits for the start',
     async () => {
       const r = await round('parallel');
+      expect(r.game.screen).toBe('loading'); // the level is still building: not ready yet
+      expect(r.hub.allReady).toBe(false);
       await r.until(() => r.hub.allReady, 600, 'ready');
       const round1 = roundDepth(1);
       expect(r.game.screen).toBe('level');
@@ -59,10 +61,16 @@ describe('a session round', () => {
       r.rl.step(30, east);
       expect(r.game.hero.actor.position.distanceTo(at)).toBeLessThan(1e-6);
       expect(r.game.levelTime).toBe(0);
-      // the hub's start: three seconds of countdown in game time, then play
+      // no menus or panels in a round: Escape and I open nothing
+      for (const code of ['Escape', 'KeyI', 'KeyP']) r.rl.press(code);
+      expect(r.game.layer.top).toBeFalsy();
+      // the hub's start: three seconds of countdown on the hub's clock, then play
       r.hub.start();
-      await r.frame(60);
+      await r.frame(90);
       expect(r.game.round!.phase).toBe('countdown');
+      const banner = (r.game as unknown as { banners: { current: { title: string; age: number } | null } }).banners.current;
+      expect(banner?.age).toBeGreaterThan(0.2); // the countdown shows over the still world (it ages: it opens)
+      expect(['3', '2']).toContain(banner?.title);
       await r.until(() => r.game.round!.phase === 'playing', 200, 'play');
       expect(r.game.round!.playTime).toBeLessThan(0.1);
       r.rl.step(30, east); // the same input moves the hero once play is on
@@ -86,6 +94,10 @@ describe('a session round', () => {
         await settle();
       }
       expect(r.game.round!.clearedAt).not.toBeNull();
+      // no portal and no town in a round: the hero stays in the cleared level
+      await r.frame(120);
+      expect(r.game.screen).toBe('level');
+      expect(r.game.layer.has('loot')).toBe(false);
       const result = r.hub.results.get(0)!;
       expect(result.time).toBeGreaterThan(5000);
       expect(result.stats).toMatchObject({ kills: r.game.session.kills, depth: 1 });
@@ -122,6 +134,26 @@ describe('a session round', () => {
       expect(r.game.round!.phase).toBe('ended');
       expect(r.engine.timeScale).toBe(0); // still, and quiet
       expect(r.engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'a recorded round replays with no hub behind it: the same round, the same moment play began, the same fingerprint',
+    async () => {
+      const r = await round('parallel');
+      await r.until(() => r.hub.allReady, 600, 'ready');
+      r.hub.start();
+      await r.until(() => r.game.round!.playing, 300, 'play');
+      const at = r.game.hero.actor.position;
+      r.rl.step(40, { move: { x: 1, z: 0.3 }, aim: [at.x + 5, at.y, at.z] } as never);
+      const live = r.engine.fingerprint();
+      const rec = r.engine.recording()!;
+      await r.engine.replay(rec, () => r.engine.loadGame(new Riftlight({}, { store: new SaveStore(null) })));
+      const replayed = r.engine.game as Riftlight;
+      expect(replayed.round?.phase).toBe('playing');
+      expect(replayed.screen).toBe('level');
+      expect(r.engine.fingerprint()).toBe(live);
     },
     T,
   );

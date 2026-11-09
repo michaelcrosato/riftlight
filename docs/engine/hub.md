@@ -107,6 +107,13 @@ const pos = track.sample(ctx.time, (a, b, k) => lerpXZ(a, b, k)); // every frame
 const facing = lerpAngle(a.facing, b.facing, k);             // angles the short way round
 ```
 
+## Replaying a session: `HubSession.offline`
+
+A recording of a round holds the hub's events (they are input), so it replays without the hub:
+`HubSession.offline(info)` is a session over the round's recorded `info` that sends and reports
+nothing and whose clock never starts. A game makes one when it replays a round's start (Riftlight:
+its `{ rl: 'round' }` command).
+
 ## Testing without a hub: `LocalHub`
 
 `LocalHub` is the hub and its network in memory, on a manual clock: each copy gets a client with the
