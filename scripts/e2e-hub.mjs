@@ -19,10 +19,18 @@ export const HUB_RUNS = [
   ['shared-world', 'players=2&scenario=server'],
 ];
 
+/** The runs the protocol's *Test it* names for a page in `mode`: what the hub runs when it joins. */
+export function protocolRuns(mode) {
+  const runs = ['players=2'];
+  if (mode === 'ghost' || mode === 'shared-world') runs.push(`players=4&${NET}`, `players=4&${NET}&scenario=host-leave`);
+  if (mode === 'shared-world') runs.push('players=2&scenario=server');
+  return runs;
+}
+
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript' };
 
 /** A static server for one folder (the harness frames the game from its own origin). */
-function serve(dir, port) {
+export function serve(dir, port) {
   const server = createServer(async (req, res) => {
     const path = decodeURIComponent(new URL(req.url, 'http://x').pathname).replace(/^\/+/, '') || 'harness.html';
     if (path.includes('..')) return void res.writeHead(400).end();
@@ -34,6 +42,21 @@ function serve(dir, port) {
     }
   });
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
+}
+
+/** One run of the harness at `url` (harness.html?game=...&auto=1): whether the hub's checks pass, and the failed ones. */
+export async function harness(browser, url) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  try {
+    await page.goto(url);
+    await page.waitForFunction(() => document.body.dataset.complete === 'true', null, { timeout: 180_000 });
+    const report = await page.evaluate(() => window.__hubCheck);
+    return { pass: report.pass, checks: report.checks.length, bad: report.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.detail}`) };
+  } catch (e) {
+    return { pass: false, checks: 0, bad: [], error: e.message.split('\n')[0] };
+  } finally {
+    await page.close();
+  }
 }
 
 export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
@@ -49,18 +72,8 @@ export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
   const browser = await chromium.launch({ executablePath: exe, headless: true, args: WEBGPU_ARGS });
   try {
     for (const [mode, q] of HUB_RUNS) {
-      const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
-      try {
-        await page.goto(`http://localhost:${port}/harness.html?game=rl-${mode}.html&${q}&auto=1`);
-        await page.waitForFunction(() => document.body.dataset.complete === 'true', null, { timeout: 180_000 });
-        const report = await page.evaluate(() => window.__hubCheck);
-        const bad = report.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.detail}`);
-        check(report.pass, `${mode} ${q}: the hub's checks pass (${report.checks.length})${bad.length ? '\n    ' + bad.join('\n    ') : ''}`);
-      } catch (e) {
-        check(false, `${mode} ${q}: the harness ran (${e.message})`);
-      } finally {
-        await page.close();
-      }
+      const r = await harness(browser, `http://localhost:${port}/harness.html?game=rl-${mode}.html&${q}&auto=1`);
+      check(r.pass, `${mode} ${q}: ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}`);
     }
   } finally {
     await browser.close();

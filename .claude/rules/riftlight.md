@@ -3,6 +3,7 @@ paths:
   - "src/riftlight/**"
   - "scripts/riftlight/**"
   - "scripts/e2e-riftlight*.mjs"
+  - "scripts/hub/**"
 ---
 # Riftlight (auto-loaded when you open these files)
 
@@ -26,4 +27,4 @@ combat.md · `actors/` → actors.md · `monsters/` → monsters.md, monster-par
 levels.md; `levels/themes/`, `levels/mechanics/` → mechanics.md · `tree/` → tree.md · `loot/`,
 `ui/items/` → loot.md · `balance/` → balance.md · `game/` → shell.md (snapshots: save-states.md) ·
 `ui/` → ui.md · `wire/` → wire.md · `town/` → town.md · `showcase/` → showcase.md · `session/` →
-session.md · `lang/` → lang.md.
+session.md · `lang/` → lang.md · the AI Hub package (`scripts/hub/package.mjs`) → hub.md.

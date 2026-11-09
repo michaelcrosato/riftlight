@@ -60,9 +60,14 @@ export function installLanguage(language: Lang): Lang {
   return language;
 }
 
-/** The page's language: its `?lang=`, the player's choice, the browser's; its translations block. */
-export function pageLanguage(): Lang {
-  return installLanguage(langFor(riftlightLines()));
+/**
+ * The page's language: its `?lang=`, the player's choice, the browser's; its translations block. The
+ * page's `<html lang>` says it (AI Hub Languages v1); headless there is no page.
+ */
+export function pageLanguage(page: { documentElement: { lang: string } } | undefined = typeof document === 'undefined' ? undefined : document): Lang {
+  const language = installLanguage(langFor(riftlightLines()));
+  if (page) page.documentElement.lang = language.code;
+  return language;
 }
 
 /** A line in the player's language, its blanks filled (docs/engine/lang.md). */

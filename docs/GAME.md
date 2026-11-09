@@ -61,3 +61,4 @@ Folders are under `src/riftlight/`. Read only the topic file you need.
 | `packs.ts` | the imported Kenney packs Riftlight loads before building the town and levels | docs/assets/importing.md |
 | `session/` | AI Hub sessions: a round with friends in parallel, ghost or one shared world; the page built for the hub | docs/game/session.md |
 | `lang/` | every line a player reads (`t()`), the brief and names, translations as data and the hand-over build | docs/game/lang.md |
+| `scripts/hub/package.mjs` | the AI Hub package (`npm run hub`): the hand-over page, its covers, the catalogue's checks | docs/game/hub.md |

@@ -3,8 +3,8 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 
 export default tseslint.config(
-  // scripts/hub/session.js and scripts/hub/harness/ are the AI Hub's own, vendored unmodified (docs/game/session.md)
-  { ignores: ['dist', 'dist-single', 'bundle', 'node_modules', '.scratch', 'public', '.claude/worktrees', 'scripts/hub/session.js', 'scripts/hub/harness'] },
+  // scripts/hub/session.js, catalogue-check.mjs and harness/ are the AI Hub's own, vendored unmodified (docs/game/session.md)
+  { ignores: ['dist', 'dist-single', 'bundle', 'node_modules', '.scratch', 'public', '.claude/worktrees', 'scripts/hub/session.js', 'scripts/hub/catalogue-check.mjs', 'scripts/hub/harness'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -17,7 +17,7 @@ export default tseslint.config(
   },
   {
     // Playwright page.evaluate callbacks run in the browser.
-    files: ['scripts/e2e.mjs', 'scripts/e2e-moves.mjs', 'scripts/e2e-systems.mjs', 'scripts/e2e-riftlight.mjs', 'scripts/e2e-hub.mjs', 'scripts/lang-audit.mjs', 'scripts/bundle/check.mjs'],
+    files: ['scripts/e2e.mjs', 'scripts/e2e-moves.mjs', 'scripts/e2e-systems.mjs', 'scripts/e2e-riftlight.mjs', 'scripts/e2e-hub.mjs', 'scripts/lang-audit.mjs', 'scripts/hub/package.mjs', 'scripts/bundle/check.mjs'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 );
