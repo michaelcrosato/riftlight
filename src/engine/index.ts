@@ -101,7 +101,7 @@ export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePre
 export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
 export { deviceFont, deviceTextWidth, drawDeviceText, runsRtl, surfaceScale, textWidthPx } from './hud/deviceText';
 export { wrapText } from './hud/wrap';
-export { clusters, drawText, fontCase, glyphFor, GLYPH_H, GLYPH_W, PIXEL_LANGUAGES, pixelCovers, setTextLocale, textCells, textLocale, textWidth } from './animation/font';
+export { clusters, drawText, fontCase, glyphFor, GLYPH_H, GLYPH_W, noteText, PIXEL_LANGUAGES, pixelCovers, setTextLocale, textCells, textLocale, textWidth } from './animation/font';
 export {
   blockJson,
   chooseLanguage,

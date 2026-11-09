@@ -93,6 +93,8 @@
 //                 updates in under 1 ms, a walk to the portal's frame. The gameplay:
 //                 src/riftlight/levels/levelLab.headless.test.ts.
 //
+// hub             the AI Hub's own session harness (scripts/e2e-hub.mjs, scripts/hub/harness/) plays the
+//                 built page in every session mode: parallel, ghost, a shared world (lossy, host leaves, server)
 // world           Engine World in the page (scripts/e2e-world.mjs): every room renders, the GPU rooms'
 //                 readbacks, the gallery's and workshop's pictures, a pointer on the canvas, the
 //                 sandbox's localStorage, live play recorded and replayed. The rooms' gameplay, the
@@ -134,6 +136,7 @@ import { runRiftlightCombat } from './e2e-riftlight-combat.mjs';
 import { runRiftlightReplay } from './e2e-riftlight-replay.mjs';
 import { runRiftlightSnapshot } from './e2e-riftlight-snapshot.mjs';
 import { runRiftlightMonsters } from './e2e-riftlight-monsters.mjs';
+import { runHub } from './e2e-hub.mjs';
 import { runRiftlightBuilds } from './e2e-riftlight-builds.mjs';
 import { runRiftlightShowcase } from './e2e-riftlight-showcase.mjs';
 import { runRiftlightPhone } from './e2e-riftlight-phone.mjs';
@@ -1150,7 +1153,7 @@ async function runTools(browserExe) {
   let ctx;
   try {
     await rm(new URL('dist-single/', ROOT), { recursive: true, force: true });
-    const built = await run('node', ['scripts/build-single.mjs']);
+    const built = await run('npm', ['run', '--silent', 'build:single']);
     check(built.code === 0, `build:single exits 0${built.code ? ':\n    ' + tail(built.out) : ''}`);
     const files = await readdir(new URL('dist-single/', ROOT), { recursive: true });
     check(files.length === 1 && files[0] === 'riftlight.html', `dist-single holds one HTML file (${files.join(', ')})`);
@@ -1599,6 +1602,7 @@ const SUITES = {
     const helpers = { exe, openPage, ready, check, capture, checkClean, colorCount };
     await runWorld({ ...helpers, scenario: SCENARIOS[0] });
   },
+  hub: (exe) => runHub({ exe, root: ROOT, check, run, tail }),
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
@@ -1607,7 +1611,7 @@ const GROUPS = {
   '@core': ['webgpu', 'no-webgpu', 'touch', 'phone', 'fullscreen', 'moves', 'settings', 'riftlight', 'riftlight-combat'],
   '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
   '@filters': ['filters-webgpu', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
-  '@world': ['world', 'riftlight-replay', 'riftlight-snapshot'],
+  '@world': ['world', 'riftlight-replay', 'riftlight-snapshot', 'hub'],
   // every library model drawn, in slices: the library grows (MODEL_SHARDS)
   '@assets': ['asset-lab', 'asset-lab-models-1'],
   '@assets-2': ['asset-lab-models-2'],

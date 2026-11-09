@@ -1,12 +1,37 @@
 // npm run build:single: builds dist-single/riftlight.html, the game page (index.html: Riftlight,
 // and every `?game=`) in one self-contained file (JS, Rapier's .wasm, CSS, favicon, GLB assets and
-// the pack models it uses as data URIs). Runs offline, from file://. No options. CI publishes it
-// from each green main (the riftlight-html job): how we hand the game out and play-test it.
+// the pack models it uses as data URIs). Runs offline, from file://. CI publishes it from each
+// green main (the riftlight-html job): how we hand the game out and play-test it.
+//
+// The page is ready for the AI Hub (docs/game/session.md): its head carries the hub's session
+// client and catalogue tags (scripts/hub/riftlight.mjs) and the game's `game-lines` block (every
+// line a player reads, docs/game/lang.md). The translations stay out: the hand-over build adds
+// them (`--translations`).
+//
+//   --mode <shared-world|ghost|parallel>   the session mode the page declares (default: scripts/hub/riftlight.mjs DEFAULT_MODE)
+//   --translations                         carry the game-translations block (src/riftlight/lang/translations/)
+//   --model <name> --effort <level>        what built it (hub:model, hub:effort; the hand-over build)
+//   --out <file>                           where to write it (default dist-single/riftlight.html)
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { dirname } from 'node:path';
 import { build } from 'vite';
+import { CATALOGUE, DEFAULT_MODE, MODES, riftlightTags } from './hub/riftlight.mjs';
+import { hubHead, hubPage } from './hub/head.mjs';
 import { helpExit } from './manual.mjs';
 
 helpExit(import.meta.url);
+
+const argv = process.argv.slice(2);
+const opt = (name) => {
+  const i = argv.indexOf(`--${name}`);
+  if (i < 0) return undefined;
+  const v = argv[i + 1];
+  if (v === undefined || v.startsWith('--')) throw new Error(`--${name} needs a value`);
+  return v;
+};
+const mode = opt('mode') ?? DEFAULT_MODE;
+if (!MODES.includes(mode)) throw new Error(`--mode is one of ${MODES.join(', ')}`);
+const withTranslations = argv.includes('--translations');
 
 const root = new URL('..', import.meta.url).pathname;
 const tmp = `${root}.scratch/single-build`;
@@ -60,9 +85,25 @@ for (const url of new Set(code.match(/packs\/[a-z0-9-]+\.json/g) ?? [])) {
 }
 if (packBytes.full) console.log(`  packs: ${(packBytes.embedded / 1024).toFixed(0)} KB of ${(packBytes.full / 1024).toFixed(0)} KB embedded`);
 
-html = html.replace(/<link rel="icon" href="\/favicon.svg"[^>]*>/, () =>
-  `<link rel="icon" href="data:image/svg+xml;base64,${''}__FAVICON__">`);
-html = html.replace('__FAVICON__', await b64(`${root}public/favicon.svg`));
+// The hub's head: the session client first, the catalogue and session tags, the game's lines.
+// The line list is the game's own code: load it as the other tools load the engine (after Vite's build).
+const { registerEngineHooks } = await import('./trace/hooks.ts');
+registerEngineHooks();
+const { riftlightLines } = await import('../src/riftlight/lang/index.ts');
+const { riftlightTranslations } = await import('../src/riftlight/lang/translations.ts');
+const { tags, session } = riftlightTags(mode, { model: opt('model'), effort: opt('effort') });
+const head = hubHead({
+  client: true,
+  title: `${CATALOGUE.name} — ${CATALOGUE.tagline}`,
+  description: CATALOGUE.description,
+  themeColor: CATALOGUE.themeColor,
+  icon: `data:image/svg+xml;base64,${await b64(`${root}public/favicon.svg`)}`,
+  tags,
+  session,
+  lines: riftlightLines(),
+  translations: withTranslations ? riftlightTranslations() : null,
+});
+html = hubPage(html, head, 'en');
 
 for (const f of files.filter((f) => f.endsWith('.css'))) {
   const css = await readFile(`${tmp}/assets/${f}`, 'utf8');
@@ -75,7 +116,15 @@ const assetScript = `<script>window.__PIXEL_ASSETS__=${JSON.stringify(assets)};<
 html = html.replace(new RegExp(`<script type="module"[^>]*${jsFiles[0]}[^>]*></script>`), () => `${assetScript}\n<script type="module">${js}</script>`);
 
 if (/(src|href)="\/(assets|favicon)/.test(html)) throw new Error('unresolved external reference left in HTML');
-await mkdir(outDir, { recursive: true });
-await writeFile(`${outDir}/riftlight.html`, html);
+const out = opt('out');
+if (out) {
+  await mkdir(dirname(out), { recursive: true });
+  await writeFile(out, html);
+} else {
+  await mkdir(outDir, { recursive: true });
+  await writeFile(`${outDir}/riftlight.html`, html);
+}
 await rm(tmp, { recursive: true, force: true });
-console.log(`dist-single/riftlight.html  ${(html.length / 1024 / 1024).toFixed(2)} MB`);
+console.log(`${out ?? 'dist-single/riftlight.html'}  ${(html.length / 1024 / 1024).toFixed(2)} MB (session mode ${mode}${withTranslations ? ', with translations' : ''})`);
+// a module that imported the engine (the line list) keeps Node running: we are done
+process.exit(0);

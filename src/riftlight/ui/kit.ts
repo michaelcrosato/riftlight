@@ -7,7 +7,7 @@
  * Input reaches panels as `UiEvent`s that the shell builds from keyboard, mouse, touch and
  * gamepad alike (see game/controls.ts), so every view works with all four.
  */
-import type { Hud, HudColor, PaletteColor } from '../../engine';
+import { type Hud, type HudColor, noteText, type PaletteColor } from '../../engine';
 
 export type UiEvent =
   | { readonly kind: 'nav'; readonly dir: 'up' | 'down' | 'left' | 'right' }
@@ -139,6 +139,7 @@ export class UiCanvas {
 
   /** 3×5 mini font. */
   mini(x: number, y: number, s: string, color: HudColor = UI.text, align: Align = 'left', shadow: HudColor | false = false): number {
+    noteText(s); // tools see the mini font's text too (docs/engine/lang.md)
     const w = miniWidth(s);
     if (!w) return 0;
     const left = Math.round(align === 'center' ? x - Math.floor(w / 2) : align === 'right' ? x - w : x);

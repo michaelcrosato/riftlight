@@ -29,7 +29,10 @@ export class LevelNav {
   private readonly dist: Float32Array;
   private readonly heap = new MinHeap();
   private target = -1;
+  /** More targets (a shared world's other heroes): the field leads to the nearest. Not saved: set each frame. */
+  private more: number[] = [];
   private builtFor = -1;
+  private builtMore = '';
   private version = -1;
   /** Flow-field rebuilds (inspectors: should be ≤ one per hero cell change). */
   rebuilds = 0;
@@ -94,11 +97,20 @@ export class LevelNav {
     const z = Math.floor(p.z);
     if (!this.layout.inBounds(x, z)) return;
     this.target = z * this.width + x;
+    this.more = [];
   }
 
-  /** Rebuild the field if the target cell or the grid changed. Call once per frame. */
+  /** Point the flow field at several positions (a shared world's heroes): it leads to the nearest. */
+  setTargets(ps: readonly { x: number; z: number }[]): void {
+    const cells = ps.map((p) => [Math.floor(p.x), Math.floor(p.z)] as const).filter(([x, z]) => this.layout.inBounds(x, z)).map(([x, z]) => z * this.width + x);
+    if (!cells.length) return;
+    this.target = cells[0]!;
+    this.more = [...new Set(cells.slice(1))].filter((c) => c !== this.target);
+  }
+
+  /** Rebuild the field if the target cell(s) or the grid changed. Call once per frame. */
   update(): void {
-    if (this.target < 0 || (this.target === this.builtFor && this.version === this.layout.version)) return;
+    if (this.target < 0 || (this.target === this.builtFor && this.more.join() === this.builtMore && this.version === this.layout.version)) return;
     this.build();
   }
 
@@ -181,13 +193,17 @@ export class LevelNav {
     const dist = this.dist;
     dist.fill(Infinity);
     this.builtFor = this.target;
+    this.builtMore = this.more.join();
     this.version = this.layout.version;
     this.rebuilds++;
-    if (this.layout.cells[this.target] !== FLOOR) return;
+    const seeds = [this.target, ...this.more].filter((c) => this.layout.cells[c] === FLOOR);
+    if (!seeds.length) return;
     const heap = this.heap;
     heap.clear();
-    dist[this.target] = 0;
-    heap.push(this.target, 0);
+    for (const c of seeds) {
+      dist[c] = 0;
+      heap.push(c, 0);
+    }
     while (heap.size) {
       const [i, d] = heap.pop();
       if (d > dist[i]! + 1e-6 || d > this.radius) continue;

@@ -1,7 +1,7 @@
 {
   "name": "pixel-engine",
   "private": true,
-  "version": "0.47.0",
+  "version": "0.48.0",
   "license": "MIT",
   "type": "module",
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
@@ -20,7 +20,7 @@
     "test": "vitest run",
     "test:e2e": "node scripts/e2e.mjs",
     "assets": "node scripts/generate-assets.mjs",
-    "build:single": "node scripts/build-single.mjs",
+    "build:single": "tsx scripts/build-single.mjs",
     "anim": "tsx scripts/anim.ts",
     "film": "tsx scripts/film.ts",
     "gate-b": "tsx scripts/gate-b.ts",
@@ -33,6 +33,7 @@
     "replay": "tsx scripts/replay.ts",
     "balance": "tsx scripts/riftlight/balance.ts",
     "inspect": "tsx scripts/inspect.ts",
+    "lang": "tsx scripts/lang.ts",
     "model": "tsx scripts/model.ts",
     "tex": "tsx scripts/tex.ts",
     "look": "node scripts/look.mjs"

@@ -72,6 +72,14 @@ export class RemoteTrack<T> {
     if (this.stamps.length > this.keep) this.stamps.splice(0, this.stamps.length - this.keep);
   }
 
+  /**
+   * The sender's time drawn at the receiver's `now` (what `sample` shows): apply what the sender
+   * did up to then (its inputs, its events) to stay in step with the motion. Null before anything arrived.
+   */
+  senderTime(now: number): number | null {
+    return this.offset === null ? null : now - this.offset - this.delay;
+  }
+
   /** The value to draw at the receiver's time `now`; null before anything arrived. */
   sample(now: number, lerp: (a: T, b: T, k: number) => T): T | null {
     const s = this.stamps;

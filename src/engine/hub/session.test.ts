@@ -227,6 +227,16 @@ describe('HubSession', () => {
     expect(s.playing).toBe(true);
   });
 
+  it('offline: a round with no hub behind it (a replay): the same info, nothing sent, a clock that never starts', async () => {
+    const { copies } = await round('ghost', 2);
+    const s = HubSession.offline(copies[1]!.session.info);
+    expect(s.info).toEqual(copies[1]!.session.info);
+    expect(s.time()).toBe(-Infinity);
+    expect(s.send({ x: 1 })).toBe(true);
+    s.flush();
+    expect(s.result({ score: 3 })).toBe(true); // goes nowhere
+  });
+
   it('progress is for parallel and ghost; a shared world is reported by its host', async () => {
     const { hub, copies } = await round('shared-world', 2);
     copies[1]!.session.progress(10, 'x');

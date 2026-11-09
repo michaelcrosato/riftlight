@@ -25,4 +25,5 @@ Docs for a folder (docs/GAME.md is the index): `core/` → docs/game/core.md · 
 combat.md · `actors/` → actors.md · `monsters/` → monsters.md, monster-parts.md · `levels/` →
 levels.md; `levels/themes/`, `levels/mechanics/` → mechanics.md · `tree/` → tree.md · `loot/`,
 `ui/items/` → loot.md · `balance/` → balance.md · `game/` → shell.md (snapshots: save-states.md) ·
-`ui/` → ui.md · `wire/` → wire.md · `town/` → town.md · `showcase/` → showcase.md.
+`ui/` → ui.md · `wire/` → wire.md · `town/` → town.md · `showcase/` → showcase.md · `session/` →
+session.md · `lang/` → lang.md.

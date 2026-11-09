@@ -47,7 +47,8 @@ export class CombatWorld {
   readonly services: ShellServices;
   /** Monster host of the stage (the level), when it has monsters. */
   host: unknown = null;
-  private hero: Actor | null = null;
+  /** The heroes in this world: the player's first (the primary), then other players' in a shared world. */
+  private heroes: Actor[] = [];
   private readonly claims: { req: LightRequest; handle: LightHandle; age: number }[] = [];
   private readonly offs: (() => void)[] = [];
   private readonly tmp = new Vector3();
@@ -104,7 +105,7 @@ export class CombatWorld {
       particles: ctx.particles as never,
       wall: o.wall,
       rng: o.services.rng.fork(`combat:${o.depth}`),
-      hero: () => this.hero,
+      hero: () => this.heroes[0] ?? null,
     });
     // Combat's trauma becomes the shell's shake (which honours the screen-shake setting).
     this.combat.shake.add = (amount: number) => {
@@ -112,18 +113,19 @@ export class CombatWorld {
     };
   }
 
-  /** The hero joins this world (stage entry). */
+  /** A hero joins this world (stage entry): the first is the player's; more are other players' (a shared world). */
   addHero(actor: Actor): void {
-    if (this.hero === actor) return;
-    this.hero = actor;
+    if (this.heroes.includes(actor)) return;
+    this.heroes.push(actor);
     if (!this.actors.actors.includes(actor)) this.actors.add(actor);
     actor.depth = this.actors.depth;
   }
 
-  /** The hero leaves (without being disposed: it lives on in the next stage). */
-  removeHero(): void {
-    const h = this.hero;
-    if (!h) return;
+  /** A hero leaves (without being disposed: it lives on in the next stage); default the primary. */
+  removeHero(actor: Actor | null = this.heroes[0] ?? null): void {
+    const h = actor;
+    if (!h || !this.heroes.includes(h)) return;
+    this.heroes.splice(this.heroes.indexOf(h), 1);
     const i = this.actors.actors.indexOf(h);
     if (i >= 0) this.actors.actors.splice(i, 1);
     // its effects (channels, auras, projectiles in flight) end with the stage it leaves
@@ -135,11 +137,16 @@ export class CombatWorld {
       }
     }
     h.endMotion(true);
-    this.hero = null;
   }
 
+  /** The player's hero (the primary). */
   get heroActor(): Actor | null {
-    return this.hero;
+    return this.heroes[0] ?? null;
+  }
+
+  /** Every hero in the world, the player's first. */
+  get heroActors(): readonly Actor[] {
+    return this.heroes;
   }
 
   /** One fixed step: actors (brains, statuses, movement), then deliveries. */
@@ -184,7 +191,7 @@ export class CombatWorld {
 
   dispose(): void {
     if (this.disposed) return;
-    this.removeHero();
+    for (const h of [...this.heroes]) this.removeHero(h);
     for (const off of this.offs) off();
     for (const c of this.claims) c.handle.release();
     this.claims.length = 0;

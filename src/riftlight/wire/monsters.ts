@@ -66,6 +66,28 @@ export interface MonsterHost {
   monsterEvent(unit: MonsterUnit, e: MonsterEvent): void;
   /** Animation culling: what the camera looks at. */
   focus(): Vector3;
+  /** Watches what monsters start (a shared world's host tells the other copies: docs/game/session.md). */
+  readonly observer?: MonsterObserver | null;
+}
+
+/** Farther than this from its host's pose (metres), a puppet monster jumps there. */
+const PUPPET_JUMP = 3;
+
+/** What a shared world's host watches its monsters start, to replay it on the other copies. */
+export interface MonsterObserver {
+  /** A skill started at `aim` (after its telegraph, if it has one). */
+  act(unit: MonsterUnit, skill: string, aim: Vector3): void;
+  /** A telegraph went down (the skill that follows lands where it says). */
+  telegraph(unit: MonsterUnit, spec: TelegraphSpec, from: Vector3, to: Vector3, seconds: number): void;
+  /** A monster joined after the level was built (an add: a summon, a split). */
+  spawn?(unit: MonsterUnit, genome: Genome, at: Vector3): void;
+}
+
+/** Where a puppet monster is (a shared world's client follows its host's: docs/game/session.md). */
+export interface PuppetPose {
+  x: number;
+  z: number;
+  facing: number;
 }
 
 // ---------------------------------------------------------------- data
@@ -367,6 +389,8 @@ export class MonsterUnit implements MonsterHandle {
   disposed = false;
   phase = 0;
   private act: Action | null = null;
+  /** Where the host's copy of this monster is (a shared world's client), or null: its own brain drives it. */
+  puppet: PuppetPose | null = null;
   private readonly cds = new Map<string, number>();
   private pending: LiveTelegraph | null = null;
   private tele: LiveTelegraph | null = null;
@@ -579,7 +603,35 @@ export class MonsterUnit implements MonsterHandle {
     this.face(aim);
     a.facing = this.wantFacing ?? a.facing;
     this.runtime.play(clip, { restart: true, rate, fade: 0.08 });
+    this.host.observer?.act(this, id, act.aim);
     return true;
+  }
+
+  /**
+   * The host's monster started a skill (a shared world's client: docs/game/session.md): start it
+   * here too, whatever this copy's cooldowns say. Its hits are a puppet's: they show, the host decides.
+   */
+  replaySkill(id: string, aim: Vector3): boolean {
+    if (!MONSTER_SKILLS.has(id) || !this.actor.alive) return false;
+    if (this.act && !this.act.fired) this.act = null;
+    this.cds.delete(id);
+    this.actor.endMotion(true);
+    return this.useSkill(id, aim);
+  }
+
+  /**
+   * Make this monster a puppet of another copy's (a shared world's client): no brain, no damage
+   * taken or dealt for real (`Actor.puppet`); it walks to `puppet` (the host's pose, set each frame)
+   * and plays what the host starts (`replaySkill`).
+   */
+  makePuppet(): void {
+    this.actor.puppet = true;
+    this.puppet ??= { x: this.actor.position.x, z: this.actor.position.z, facing: this.actor.facing };
+  }
+
+  /** The host's monster died: so does this one (a puppet dies only when told). */
+  dieNow(): void {
+    if (this.actor.alive) this.actor.die(null, true);
   }
 
   teleport(to: Vector3): void {
@@ -596,6 +648,7 @@ export class MonsterUnit implements MonsterHandle {
     this.pending?.decal?.dispose();
     // coloured by damage type once the skill is known (useSkill tints it)
     this.pending = makeTelegraph(this.host.root, spec, from, to, seconds, 'physical', this.actor);
+    this.host.observer?.telegraph(this, spec, from, to, seconds);
   }
 
   setGlow(amount: number): void {
@@ -636,7 +689,8 @@ export class MonsterUnit implements MonsterHandle {
       return;
     }
     this.step(dt);
-    if (this.host.services.dev().ai) this.brain.update(dt, this.host.brainWorld);
+    if (this.puppet) this.follow(this.puppet, dt);
+    else if (this.host.services.dev().ai) this.brain.update(dt, this.host.brainWorld);
     else a.velocity.set(0, 0, 0);
     if (this.act && !this.act.fired) a.velocity.set(0, 0, 0);
     // turn
@@ -646,6 +700,23 @@ export class MonsterUnit implements MonsterHandle {
       const max = (this.act ? 20 : M.turnRate) * dt;
       a.facing += Math.max(-max, Math.min(max, d));
     }
+  }
+
+  /** A puppet walks to its host's pose: a jump when far, else toward it (its walk cycle follows the speed). */
+  private follow(p: PuppetPose, dt: number): void {
+    const a = this.actor;
+    const dx = p.x - a.position.x;
+    const dz = p.z - a.position.z;
+    const d = Math.hypot(dx, dz);
+    if (d > PUPPET_JUMP) {
+      a.mover.teleport(p.x, 0, p.z);
+      a.position.copy(a.mover.position);
+      a.velocity.set(0, 0, 0);
+    } else if (d > 0.04) {
+      const v = Math.min(d / Math.max(dt, 1e-3), Math.max(a.moveSpeed, 1) * 2);
+      a.velocity.set((dx / d) * v, 0, (dz / d) * v);
+    } else a.velocity.set(0, 0, 0);
+    this.wantFacing = d > 0.3 ? Math.atan2(dx, dz) : p.facing;
   }
 
   private step(dt: number): void {

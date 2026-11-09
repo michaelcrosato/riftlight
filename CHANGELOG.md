@@ -8,6 +8,13 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.48.0
+
+- **`HubSession.offline(info)`**: a round with no hub behind it, for replaying a recorded session (its
+  events are recorded input): it sends and reports nothing, and its clock never starts.
+- **`RemoteTrack.senderTime(now)`**: the moment of the sender's clock being drawn, to apply what it
+  did up to then (its inputs, its events) in step with the motion.
+
 ## 0.47.0
 
 - **AI Hub sessions** (docs/engine/hub.md): `HubSession.join({ mode, seats })` takes part in a round of

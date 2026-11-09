@@ -95,6 +95,13 @@ first strong letter does, isolated runs skipped (`runsRtl`).
 **Typewriters** reveal `pieces(line, lang)` one step at a time (whole letters; whole words in Arabic
 script; a `{tag}` is one step that takes no time) and draw the revealed part as one string.
 
+## Finding text that isn't a line
+
+Every string the pixel font draws (`drawText`), the device font draws (`drawDeviceText`) or a
+surface draws with a font of its own (it calls `noteText(text)`) is added to
+`globalThis.__PIXEL_TEXT_LOG__` when a tool has set it to a `Set`. Under `?lang=en-XA` every line is
+bracketed, so anything else in the log is a word that isn't a line (Riftlight: `npm run lang -- audit`).
+
 ## Keys
 
 Keys are read by `event.code` (their place), so WASD works on any keyboard layout. Never write a key

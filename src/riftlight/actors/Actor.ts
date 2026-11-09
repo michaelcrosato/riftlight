@@ -205,6 +205,12 @@ export class Actor implements ActorLike {
   readonly buffs = new Map<string, number>();
   /** Invulnerable while > 0 (dodge rolls). Seconds. */
   iframes = 0;
+  /**
+   * A copy of an actor whose life another copy decides (a shared world's client: docs/game/session.md):
+   * hits still flash it, but take no life, add no ailments and never kill it. What the host sends
+   * sets its life and its death.
+   */
+  puppet = false;
   /** Hit-stop: frames of frozen movement and animation left. */
   hitStop = 0;
   /** Game time, advanced by fixedUpdate. */
@@ -458,6 +464,11 @@ export class Actor implements ActorLike {
 
   takeHit(hit: Hit): HitResult {
     if (!this.alive) return { total: 0, byType: {}, crit: hit.crit, killed: false, ailments: [] };
+    if (this.puppet) {
+      // another copy decides: the hit shows, nothing more (that copy's numbers come over the wire)
+      if (this.iframes <= 0) this.fx.flash(hit.crit ? 0.12 : 0.08);
+      return { total: 0, byType: {}, crit: hit.crit, killed: false, ailments: [] };
+    }
     if (this.iframes > 0) {
       this.counters.evaded++;
       const result: HitResult = { total: 0, byType: {}, crit: false, killed: false, evaded: true, ailments: [] };
@@ -498,9 +509,10 @@ export class Actor implements ActorLike {
     return result;
   }
 
-  /** Life reaches 0: emits `death`, and `kill` with the killer. */
-  die(killer: ActorLike | null = null): void {
+  /** Life reaches 0: emits `death`, and `kill` with the killer. A puppet dies only when told (`force`: the host said so). */
+  die(killer: ActorLike | null = null, force = false): void {
     if (this.deadFor >= 0) return;
+    if (this.puppet && !force) return;
     this.life = 0;
     this.deadFor = 0;
     this.velocity.set(0, 0, 0);

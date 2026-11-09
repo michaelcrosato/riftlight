@@ -231,6 +231,29 @@ export class HubSession {
   private offs: (() => void)[] = [];
   private endHooks: ((reason: string) => void)[] = [];
 
+  /**
+   * A round with no hub behind it: what a replay of a recorded session runs on (the round's info
+   * from the recording; the hub's events are recorded input). It sends and reports nothing, and its
+   * clock never starts (`time()` is -Infinity).
+   */
+  static offline(info: HubInfo): HubSession {
+    const quiet = (): void => {};
+    const client: HubClient = {
+      active: true,
+      connect: () => Promise.resolve(info),
+      ready: quiet,
+      answer: quiet,
+      time: () => -Infinity,
+      on: () => quiet,
+      progress: quiet,
+      result: quiet,
+      finish: quiet,
+      send: () => true,
+      fail: quiet,
+    };
+    return new HubSession(client, info, { mode: info.mode, seats: [1, 4], autoFlush: false });
+  }
+
   /** Connect to the hub. Null when there is none (outside a session): play as usual. */
   static async join(options: JoinOptions): Promise<HubSession | null> {
     const client = options.client === undefined ? hubClient() : options.client;
