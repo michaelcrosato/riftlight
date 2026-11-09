@@ -8,8 +8,14 @@
 import { textLocale } from '../animation/font';
 import { textWidthPx } from './deviceText';
 
-/** Text that may start a line only if nothing else fits: closing punctuation of every script. */
+/** Opening marks (brackets, opening quotes, Spanish ¿ ¡): they go with the word after them. */
+const OPENS = /^[\p{Ps}\p{Pi}\u00bf\u00a1]+$/u;
+/** Closing punctuation of every script: it goes with the word before it. */
 const CLINGS = /^[\p{Pe}\p{Pf}\p{Po}]+$/u;
+/** Quotes that open or close by where they stand ("…" '…'): after a space they open. */
+const EITHER = /^["']+$/;
+/** Spaces that never break a line (French « », number groups like 12 500). */
+const NO_BREAK = /^[\u00a0\u202f\u2007]+$/;
 
 function segments(text: string, lang: string | undefined): string[] {
   if (typeof Intl.Segmenter === 'function') {
@@ -34,12 +40,37 @@ function graphemes(text: string, lang: string | undefined): string[] {
 export function wrapText(text: string, width: number, measure: (s: string) => number = (s) => textWidthPx(s), lang: string | undefined = textLocale()): string[] {
   const out: string[] = [];
   for (const paragraph of text.split('\n')) {
-    // Chunks that never break inside: a word with the punctuation that follows it; spaces apart.
+    // Chunks that never break inside: a word with the marks that open it, the punctuation that
+    // closes it and the no-break spaces between; breakable spaces apart.
     const chunks: string[] = [];
+    let glue = false; // the next piece joins the last chunk (after an opening mark or a no-break space)
+    const last = (): string | undefined => chunks[chunks.length - 1];
+    const join = (piece: string): void => {
+      if (glue && chunks.length && last() !== ' ') chunks[chunks.length - 1] += piece;
+      else chunks.push(piece);
+    };
     for (const seg of segments(paragraph, lang)) {
-      if (/^\s+$/u.test(seg)) chunks.push(' ');
-      else if (chunks.length && CLINGS.test(seg) && chunks[chunks.length - 1] !== ' ') chunks[chunks.length - 1] += seg;
-      else chunks.push(seg);
+      if (NO_BREAK.test(seg)) {
+        if (chunks.length && last() !== ' ') chunks[chunks.length - 1] += seg;
+        else chunks.push(seg);
+        glue = true;
+      } else if (/^\s+$/u.test(seg)) {
+        chunks.push(' ');
+        glue = false;
+      } else if (OPENS.test(seg) || (EITHER.test(seg) && (!chunks.length || last() === ' '))) {
+        join(seg);
+        glue = true;
+      } else if (CLINGS.test(seg) && chunks.length) {
+        if (last() !== ' ') chunks[chunks.length - 1] += seg;
+        else if (chunks.length >= 2) {
+          chunks.pop(); // "QUOI ?": the mark keeps its word, and the space before it
+          chunks[chunks.length - 1] += ' ' + seg;
+        } else chunks.push(seg);
+        glue = false;
+      } else {
+        join(seg);
+        glue = false;
+      }
     }
     let line = '';
     const push = (): void => {

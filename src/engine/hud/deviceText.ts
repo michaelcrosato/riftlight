@@ -18,11 +18,19 @@ const EM = GLYPH_H;
 /** Measured once at this size, then scaled: small sizes measure coarsely. */
 const MEASURE_PX = 64;
 
-const RTL_TEXT = /[֐-ࣿיִ-﷿ﹰ-ﻼ]/;
+const RTL_TEXT = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufefc]/;
 
-/** Does this text run right to left (Arabic, Hebrew, Urdu...)? */
+/** Isolated runs (a name filled into a line): they don't decide the line's direction. */
+const ISOLATED = /[\u2066-\u2068][^\u2069]*\u2069?/g;
+
+/**
+ * Does this text run right to left (Arabic, Hebrew, Urdu...)? As Unicode's rule for a paragraph:
+ * its first strong letter decides, isolated runs skipped (an English line holding an Arabic name
+ * stays left to right).
+ */
 export function runsRtl(text: string): boolean {
-  return RTL_TEXT.test(text);
+  const first = /\p{L}/u.exec(text.replace(ISOLATED, ''));
+  return !!first && RTL_TEXT.test(first[0]);
 }
 
 let measurer: CanvasRenderingContext2D | null | undefined;

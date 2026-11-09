@@ -22,7 +22,7 @@ gets `info.seed`: give it to the engine as its seed and every copy builds the sa
 
 ```ts
 const session = await HubSession.join({ mode: 'ghost', seats: [1, 4] }); // null: no hub, play as usual
-await Engine.start(game, { seed: session?.info.seed });
+const engine = await Engine.start(game, { seed: session?.info.seed });
 session?.attach(engine);   // the hub's events arrive as input commands from now on (and the earlier ones)
 session?.ready();          // once everything is loaded, with no key press: the hub's card asks the players
 ```
@@ -41,13 +41,17 @@ input. Read them in `update`:
 
 ```ts
 for (const e of hubEvents(ctx.input.commands)) {
-  if (e.type === 'start') countdown = e.in / 1000;          // play begins when session.time() reaches 0
+  if (e.type === 'start') countdown = e.in / 1000;          // play begins after this many seconds of game time
   else if (e.type === 'message') onMessage(e.data, e.from); // another copy's data
   else if (e.type === 'leave') dropPlayer(e.id);            // final for the round
   else if (e.type === 'time-up') reportNow();               // within e.graceMs
-  else if (e.type === 'end') { /* the last word: the engine is already paused and silent */ }
+  else if (e.type === 'end') { /* the last word: the engine stands still (speed 0) and is silent */ }
 }
 ```
+
+`session.time()` (the hub's timeline: negative in the countdown, `-Infinity` before the start) and
+`session.playing` are real time: report with them (`result({ time })`), never gate gameplay on
+them, or a replay plays differently. Count the countdown in game time from `start`'s `in`.
 
 `card` (only with `card: true`, a game that shows its own card) carries the countdown, who is
 ready and who asked for more time; answer with `session.answer('ready' | 'more')`.
@@ -63,31 +67,39 @@ ready and who asked for more time; answer with `session.answer('ready' | 'more')
 - On `time-up` report within `graceMs`. A shared world with no `finish()` by then is void.
 - `session.fail(message)`: the game cannot run in this browser.
 
-Calls that the protocol doesn't allow are ignored (a second `result`, `finish` from a copy that
-isn't the host, `result` in a shared world), so a game can call them without bookkeeping.
+Calls the protocol doesn't allow are ignored and return false: a second report, `finish` outside
+a shared world or from a copy that isn't the host, `result` in a shared world, `progress` in a
+shared world, and an outcome the hub couldn't take (a result without a finite `time` or `score`, a
+finish without `standings`): that one does not count as reported, so the game can send a good one.
 
 ## Sending
 
 `session.send(data, to?)` queues JSON for every other copy (or the one player `to`); the session
-flushes bundles at `sendHz` (default 10 a second, on a real-time timer in a page; tests call
-`flush()`). However often a game sends, at most `sendHz` messages leave each copy: the hub allows
-20 a second (bursts of 40) and 16 KB each, and a bundle over 15 KB goes out in pieces. Each item
-arrives as its own `message` event, in order (bundles travel reliably). Parallel copies send
+flushes at `sendHz` (default 10 a second, on a real-time timer in a page; tests call `flush()` and
+give the hub's clock as `clock`). Items are bundled per destination and every bundle goes through
+a token bucket at 90% of the hub's limits (20 messages a second, bursts of 40, 16 KB each, or what
+its welcome says: `session.limits`), so the client never drops one: what the rate holds back waits
+(`session.backlog`) and takes more items while it waits. Each item arrives as its own `message`
+event; one destination's items arrive in order (bundles travel reliably), broadcast and direct ones
+may interleave. Data that isn't JSON is refused (`send` returns false). Parallel copies send
 nothing; nothing leaves after `end`. Send ids and numbers, not sentences: each player sees their
 own language.
 
 ## The end
 
-`end` is the last message of a round: the session delivers it, then pauses the engine and mutes it
-(without saving the mute: `audio.persist` off) and stops sending; `onEnd(fn)` runs after. A shared
-world whose host leaves ends `host-left`, void.
+`end` is the last message of a round: the session delivers it, sets the engine's game speed to 0
+(frames still run, so the game reads the `end` command; nothing moves and presses are dropped),
+mutes it (without saving the mute: `audio.persist` off) and stops sending; `onEnd(fn)` runs after.
+A game must not set its speed again after the end. A shared world whose host leaves ends
+`host-left`, void.
 
 ## Drawing other copies: `RemoteTrack`
 
 What arrives from another copy comes a few times a second, late and unevenly. A `RemoteTrack` keeps
 the last snapshots stamped with the sender's game time and samples them `delay` seconds (default
 0.12) behind the newest, extrapolating a little past it, so ghosts and a shared world's monsters
-move evenly:
+move evenly. The two clocks are matched by the fastest of the last 16 arrivals, so the track
+recovers within a couple of seconds when the sender's clock stood still (a pause, a hidden tab):
 
 ```ts
 track.push(msg.t, ctx.time, msg.pos);                        // as a message arrives (sender's time, ours)
@@ -98,7 +110,9 @@ const facing = lerpAngle(a.facing, b.facing, k);             // angles the short
 ## Testing without a hub: `LocalHub`
 
 `LocalHub` is the hub and its network in memory, on a manual clock: each copy gets a client with the
-shape of `window.AIHub`.
+shape of `window.AIHub`, held to the real client's rules (16 KB, 20 messages a second with bursts of
+40 on the hub's clock, a result needs a finite time or score, a finish its standings and a shared
+world's host; what it refuses is in `stats.refused` and `hub.problems`).
 
 ```ts
 const hub = new LocalHub({ mode: 'shared-world', players: 2, latencyMs: 100 }); // server: true adds a host with no player
@@ -115,4 +129,5 @@ built page.
 ## The controller's hub chord
 
 Holding View and Menu together (Create and Options, gamepad buttons 8 and 9: `HOST_CHORD`) opens
-the hub's bar, so while both are held the engine presses neither (`input.ts`).
+the hub's bar, so once both are held the engine presses neither until both are let go (letting one
+go first presses nothing) (`input.ts`).

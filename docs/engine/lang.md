@@ -67,8 +67,10 @@ boxes under `zh-XC` are a font without a fallback; text that doesn't run right t
 The pixel font (`animation/font.ts`, 5×7 capitals in a 6×8 cell) draws every line in its
 **capitals** (`fontCase`: `toLocaleUpperCase` in the language `setTextLocale(code)` set, so Turkish
 i is İ). It **composes accented capitals** (`glyphFor`): a two-row mark above a five-row letter, a
-mark below in the cell's eighth row, so Spanish, French, Portuguese, German, Turkish, Indonesian,
-Swahili, Hausa and Yoruba (and `en-XA`) stay in pixels (`PIXEL_LANGUAGES`). Isolates and joiners
+mark below in the cell's eighth row, so Spanish, French, Portuguese, German, Italian, Dutch,
+Polish, Turkish, Indonesian, Swahili, Hausa and Yoruba (and `en-XA`) stay in pixels
+(`PIXEL_LANGUAGES`). Marks above a capital take the two rows over the cell, so lines of such text sit
+at least 9 pixels apart. Compatibility forms draw as their plain letter (² as 2). Isolates and joiners
 take no room; no-break and thin spaces are spaces.
 
 Any other language (Vietnamese stacks its marks; Cyrillic, Chinese, Arabic, Hindi, Bengali,
@@ -84,8 +86,11 @@ draws as `?`.
 
 **Widths and wrapping.** Measure with `textWidthPx(text, scale)` (`hud.measure`), never by
 `text.length`. `wrapText(text, width, measure?, lang?)` breaks at `Intl.Segmenter` word boundaries
-(so Chinese and Japanese wrap between characters), keeps punctuation with the word before it, cuts
-a word wider than the line between whole letters, and starts a paragraph at each `\n`.
+(so Chinese and Japanese wrap between characters), keeps closing punctuation with the word before it
+(a French space before `?` too) and opening marks (`¿ ¡ « (` and a quote after a space) with the word
+after it, never breaks at a no-break space (`« BONJOUR »`, `12 500`), cuts a word wider than the
+line between whole letters, and starts a paragraph at each `\n`. A device-font line runs the way its
+first strong letter does, isolated runs skipped (`runsRtl`).
 
 **Typewriters** reveal `pieces(line, lang)` one step at a time (whole letters; whole words in Arabic
 script; a `{tag}` is one step that takes no time) and draw the revealed part as one string.

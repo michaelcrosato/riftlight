@@ -8,7 +8,7 @@
  * Everything the hub says (the start, other copies' messages, a player leaving, time-up, the
  * end) arrives in the game as input commands (`{ hub: HubEvent }`, read with `hubEvents`), so a
  * session is recorded and replays like any other input (docs/DOCTRINE.md, principle 1). What the
- * game sends goes out bundled, at most `sendHz` messages a second, far under the hub's limit.
+ * game sends goes out bundled, under the hub's limits on size and rate.
  */
 
 /** How the copies of a game play a round together. */
@@ -83,11 +83,23 @@ export interface HubFinish {
   readonly awards?: readonly { readonly id: number; readonly title: string; readonly detail?: string }[];
 }
 
+/** The hub's limits on what one copy sends (its welcome may change them). */
+export interface HubLimits {
+  /** Bytes of one message's JSON. */
+  readonly maxBytes: number;
+  /** Messages a second, on average. */
+  readonly ratePerS: number;
+  /** Messages at once. */
+  readonly burst: number;
+}
+
+export const HUB_LIMITS: HubLimits = { maxBytes: 16_384, ratePerS: 20, burst: 40 };
+
 /** The part of `window.AIHub` (session.js 1.x) a game uses. */
 export interface HubClient {
   readonly active: boolean;
   readonly seeded?: boolean;
-  connect(opts: { mode: HubMode; seats: readonly [number, number]; card?: boolean }): Promise<Partial<HubInfo> | null>;
+  connect(opts: { mode: HubMode; seats: readonly [number, number]; card?: boolean }): Promise<(Partial<HubInfo> & { limits?: Partial<HubLimits> }) | null>;
   ready(): void;
   answer(what: 'ready' | 'more'): void;
   time(): number;
@@ -121,11 +133,25 @@ export function hubEvents(commands: readonly unknown[]): HubEvent[] {
   return out;
 }
 
-/** What a session hands the engine: commands in, and a way to go quiet at the end. */
+/** A number the hub can rank: finite, and a number (as the client checks it). */
+const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
+
+/** Would the hub take this as a result: a finite time or score. */
+export function validResult(o: HubResult | null | undefined): boolean {
+  return !!o && typeof o === 'object' && (finite(o.time) || finite(o.score));
+}
+
+/** Would the hub take this as a finish: standings, an array of arrays of player ids. */
+export function validFinish(o: HubFinish | null | undefined): boolean {
+  return !!o && Array.isArray(o.standings) && o.standings.every((s) => Array.isArray(s) && s.every((id) => Number.isInteger(id)));
+}
+
+/** What a session hands the engine: commands in, and a way to go still and quiet at the end. */
 export interface HubHost {
   readonly input: { send(command: unknown): void };
   readonly audio?: { persist: boolean; setMuted(muted: boolean): void };
-  paused?: boolean;
+  /** Game speed: 0 at the end (frames still run, so the game reads the end; nothing moves, presses are dropped). */
+  timeScale?: number;
 }
 
 export interface JoinOptions {
@@ -136,10 +162,12 @@ export interface JoinOptions {
   readonly card?: boolean;
   /** The hub's client: default `window.AIHub`. Tests pass a `LocalHub` copy. */
   readonly client?: HubClient | null;
-  /** Bundled messages a second, at most (default 10; the hub allows 20, bursts of 40). */
+  /** Flushes a second, at most (default 10; each flush is one message per destination, when the rate allows). */
   readonly sendHz?: number;
   /** Flush on a real-time timer (default: in a page). Tests call `flush()` themselves. */
   readonly autoFlush?: boolean;
+  /** Milliseconds now, for the send rate (default real time; tests give the hub's clock). */
+  readonly clock?: () => number;
 }
 
 /** One bundled message: what the game sent since the last flush, in order. */
@@ -147,10 +175,23 @@ interface Bundle {
   readonly b: unknown[];
 }
 
-/** The hub's limit on one message, with room for the envelope. */
-const MAX_BYTES = 15_000;
+/** A bundle waiting for the rate to allow it (it takes more items while it has room). */
+interface Pending {
+  readonly items: unknown[];
+  bytes: number;
+}
 
-export type HubPhase = 'card' | 'countdown' | 'playing' | 'time-up' | 'ended';
+/** The longest queue of bundles kept per destination while the rate holds them back (then the oldest go). */
+const MAX_PENDING = 64;
+
+/** The key of a destination's queue: everyone, or one player. */
+const ALL = -1;
+
+/** Our share of the hub's limits: under the client's, so its own check never drops a message. */
+const SHARE = 0.9;
+
+/** The session's phases: `card` until the hub's start, `countdown` (time() < 0), then play, `time-up`, `ended`. */
+export type HubPhase = 'card' | 'countdown' | 'time-up' | 'ended';
 
 /**
  * A game's side of one round. Join with `HubSession.join()`, `attach()` the engine (or a
@@ -162,20 +203,28 @@ export class HubSession {
   /** The round, as welcomed (players: who is still in, `leave` removes them). */
   readonly info: HubInfo;
   readonly mode: HubMode;
+  /** The hub's limits on what this copy sends. */
+  readonly limits: HubLimits;
   /** Players still in the round, in seat order. */
   players: HubPlayer[];
   phase: HubPhase = 'card';
   /** Why the round ended (`end`), once it has. */
   endReason: string | null = null;
-  /** Messages and bytes sent, for tests and the debug view. */
+  /** Messages and bytes sent, and items dropped (too big to send, or too far behind), for tests and the debug view. */
   readonly sent = { messages: 0, bytes: 0, dropped: 0 };
 
   private readonly client: HubClient;
   private readonly sendHz: number;
+  private readonly clock: () => number;
   private host: HubHost | null = null;
   private early: HubEvent[] = [];
   private outbox: unknown[] = [];
   private direct = new Map<number, unknown[]>();
+  /** Bundles waiting, per destination (`ALL`, or a player's id); sent round-robin as the rate allows. */
+  private pending = new Map<number, Pending[]>();
+  private turn = 0;
+  private tokens: number;
+  private refilled: number;
   private readied = false;
   private reported = false;
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -191,7 +240,7 @@ export class HubSession {
     return new HubSession(client, welcome, options);
   }
 
-  private constructor(client: HubClient, welcome: Partial<HubInfo>, options: JoinOptions) {
+  private constructor(client: HubClient, welcome: Partial<HubInfo> & { limits?: Partial<HubLimits> }, options: JoinOptions) {
     this.client = client;
     const players = (welcome.players ?? []).map((p, i) => ({ id: Number(p.id), name: String(p.name ?? `Player ${i + 1}`), color: String(p.color ?? HUB_COLORS[i % 4]) }));
     const mode = HUB_MODES.includes(welcome.mode as HubMode) ? (welcome.mode as HubMode) : options.mode;
@@ -206,9 +255,15 @@ export class HubSession {
       limitMs: Number(welcome.limitMs ?? 0),
       seed: Number(welcome.seed ?? 0) >>> 0,
     };
+    const given = welcome.limits ?? {};
+    const limit = (k: keyof HubLimits) => (Number(given[k]) > 0 ? Number(given[k]) : HUB_LIMITS[k]);
+    this.limits = { maxBytes: limit('maxBytes'), ratePerS: limit('ratePerS'), burst: limit('burst') };
     this.mode = mode;
     this.players = [...players];
     this.sendHz = Math.max(1, Math.min(18, options.sendHz ?? 10));
+    this.clock = options.clock ?? (() => (typeof performance !== 'undefined' ? performance.now() : Date.now())); // real time: the hub's send rate (never gameplay)
+    this.tokens = Math.floor(this.limits.burst * SHARE);
+    this.refilled = this.clock();
     const on = (type: string, fn: (...args: never[]) => void) => this.offs.push(client.on(type, fn));
     on('card', (card: HubCard) => this.deliver({ type: 'card', card }));
     on('start', (s: { in: number }) => {
@@ -259,19 +314,27 @@ export class HubSession {
     return this.reported;
   }
 
+  /** Bundles waiting for the rate to allow them. */
+  get backlog(): number {
+    let n = 0;
+    for (const q of this.pending.values()) n += q.length;
+    return n;
+  }
+
   /**
    * Route the hub's events into the engine as input commands (`{ hub }`), from now on and every
-   * one that came before; at `end` the engine pauses and its sound stops.
+   * one that came before; at `end` the engine stands still (speed 0) and its sound stops.
    */
   attach(host: HubHost): this {
     this.host = host;
     const early = this.early;
     this.early = [];
     for (const e of early) host.input.send({ hub: e });
+    if (this.ended) this.quiet();
     return this;
   }
 
-  /** Call `fn` when the round ends (after the engine went quiet). */
+  /** Call `fn` when the round ends (after the engine went still and quiet). */
   onEnd(fn: (reason: string) => void): void {
     this.endHooks.push(fn);
   }
@@ -288,34 +351,40 @@ export class HubSession {
     if (!this.ended) this.client.answer(what);
   }
 
-  /** The hub's timeline, ms since play began: negative in the countdown, -Infinity before the start. */
+  /**
+   * The hub's timeline, ms since play began: negative in the countdown, -Infinity before the
+   * start. Real time: report with it (`result({ time })`), never gate gameplay on it (count the
+   * countdown in game time from the `start` event's `in`, so a replay plays the same).
+   */
   time(): number {
     return this.client.time();
   }
 
-  /** Play has begun on the hub's clock (the countdown is over). */
+  /** Play has begun on the hub's clock (real time: see `time()`). */
   get playing(): boolean {
-    return this.phase !== 'card' && this.time() >= 0;
+    return this.phase !== 'card' && this.phase !== 'ended' && this.time() >= 0;
   }
 
   /** Parallel and ghost: this player's standing, for the hub's scoreboard (it takes about one a second). */
   progress(score: number, label?: string): void {
-    if (this.ended || this.reported || !Number.isFinite(score)) return;
-    this.client.progress(label === undefined ? { score } : { score, label });
+    if (this.ended || this.reported || this.mode === 'shared-world' || !finite(score)) return;
+    this.client.progress(label === undefined ? { score } : { score, label: String(label).slice(0, 24) });
   }
 
-  /** Parallel and ghost: this player's round is over. Once. */
-  result(outcome: HubResult): void {
-    if (this.ended || this.reported || this.mode === 'shared-world') return;
+  /** Parallel and ghost: this player's round is over (a finite `time` or `score`). Once: false when not taken. */
+  result(outcome: HubResult): boolean {
+    if (this.ended || this.reported || this.mode === 'shared-world' || !validResult(outcome)) return false;
     this.reported = true;
     this.client.result(outcome);
+    return true;
   }
 
-  /** A shared world's host: the round is over. Once. */
-  finish(outcome: HubFinish): void {
-    if (this.ended || this.reported || !this.isHost) return;
+  /** A shared world's host: the round is over (`standings` of player ids). Once: false when not taken. */
+  finish(outcome: HubFinish): boolean {
+    if (this.ended || this.reported || this.mode !== 'shared-world' || !this.isHost || !validFinish(outcome)) return false;
     this.reported = true;
     this.client.finish(outcome);
+    return true;
   }
 
   /** The game cannot run in this browser. */
@@ -325,27 +394,55 @@ export class HubSession {
 
   /**
    * Send JSON to every other copy (or to the one player `to`) with the next flush. Data is
-   * bundled per flush, so a game can send as often as it likes: what leaves is at most `sendHz`
-   * messages a second. Ignored in parallel (copies send nothing) and after the end.
+   * bundled, so a game can send as often as it likes: bundles leave as the hub's rate allows, and
+   * while they wait they take more items (one destination's items stay in order; different
+   * destinations' may interleave). Ignored in parallel (copies send nothing), after the end, and
+   * for data that isn't JSON (false).
    */
-  send(data: unknown, to?: number): void {
-    if (this.ended || this.mode === 'parallel') return;
-    const copy: unknown = JSON.parse(JSON.stringify(data ?? null));
+  send(data: unknown, to?: number): boolean {
+    if (this.ended || this.mode === 'parallel') return false;
+    let copy: unknown;
+    try {
+      copy = JSON.parse(JSON.stringify(data ?? null)) as unknown;
+    } catch {
+      this.sent.dropped++;
+      return false;
+    }
     if (to === undefined) this.outbox.push(copy);
     else {
       const list = this.direct.get(to) ?? [];
       list.push(copy);
       this.direct.set(to, list);
     }
+    return true;
   }
 
-  /** Post what was sent since the last flush (the timer does it in a page). */
+  /** Bundle what was sent since the last flush, and post what the rate allows (the timer does it in a page). */
   flush(): void {
     if (this.ended) return;
-    if (this.outbox.length) this.post(this.outbox, undefined);
+    if (this.outbox.length) this.bundle(this.outbox, ALL);
     this.outbox = [];
-    for (const [to, items] of this.direct) if (items.length) this.post(items, to);
+    for (const [to, items] of this.direct) if (items.length) this.bundle(items, to);
     this.direct.clear();
+    const now = this.clock();
+    const rate = this.limits.ratePerS * SHARE;
+    this.tokens = Math.min(Math.floor(this.limits.burst * SHARE), this.tokens + ((now - this.refilled) / 1000) * rate);
+    this.refilled = now;
+    // one bundle per destination in turn, while the rate allows
+    while (this.tokens >= 1) {
+      const keys = [...this.pending.keys()].filter((k) => this.pending.get(k)!.length);
+      if (!keys.length) break;
+      const key = keys[this.turn++ % keys.length]!;
+      const p = this.pending.get(key)!.shift()!;
+      this.tokens -= 1;
+      if (!this.client.send({ b: p.items } satisfies Bundle, key === ALL ? undefined : { to: key })) {
+        this.sent.dropped += p.items.length;
+        continue;
+      }
+      this.sent.messages++;
+      this.sent.bytes += p.bytes;
+    }
+    for (const [k, q] of this.pending) if (!q.length) this.pending.delete(k);
   }
 
   /** Stop: no timer, no handlers. The round may still be on (a test, a page closing). */
@@ -356,31 +453,23 @@ export class HubSession {
     this.offs = [];
   }
 
-  private post(items: unknown[], to: number | undefined): void {
-    // One bundle per flush; a bundle over the hub's size goes out in pieces.
-    let chunk: unknown[] = [];
-    let bytes = 8;
-    const out = (): void => {
-      if (!chunk.length) return;
-      const ok = this.client.send({ b: chunk } satisfies Bundle, to === undefined ? undefined : { to });
-      if (ok) {
-        this.sent.messages++;
-        this.sent.bytes += bytes;
-      } else this.sent.dropped++;
-      chunk = [];
-      bytes = 8;
-    };
+  /** Items onto a destination's queue: into its last waiting bundle while it has room, else a new one. */
+  private bundle(items: unknown[], to: number): void {
+    const max = Math.floor(this.limits.maxBytes * SHARE);
+    let queue = this.pending.get(to);
+    if (!queue) this.pending.set(to, (queue = []));
     for (const item of items) {
       const size = JSON.stringify(item).length + 1;
-      if (size > MAX_BYTES) {
+      if (size > max - 8) {
         this.sent.dropped++;
         continue;
       }
-      if (bytes + size > MAX_BYTES) out();
-      chunk.push(item);
-      bytes += size;
+      let last = queue.at(-1);
+      if (!last || last.bytes + size > max) queue.push((last = { items: [], bytes: 8 }));
+      last.items.push(item);
+      last.bytes += size;
     }
-    out();
+    while (queue.length > MAX_PENDING) this.sent.dropped += queue.shift()!.items.length;
   }
 
   private deliver(e: HubEvent): void {
@@ -395,15 +484,24 @@ export class HubSession {
     this.endReason = reason;
     this.outbox = [];
     this.direct.clear();
+    this.pending.clear();
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
-    // After the end the game takes no input and its sound stops: the hub shows its results over it.
+    this.quiet();
+    for (const fn of this.endHooks) fn(reason);
+  }
+
+  /**
+   * After the end the game takes no input and its sound stops: the hub shows its results over it.
+   * Speed 0, not a pause, so frames still run and the game reads the `end` command.
+   */
+  private quiet(): void {
     const host = this.host;
-    if (host?.audio) {
+    if (!host) return;
+    if (host.audio) {
       host.audio.persist = false;
       host.audio.setMuted(true);
     }
-    if (host && 'paused' in host) host.paused = true;
-    for (const fn of this.endHooks) fn(reason);
+    if ('timeScale' in host) host.timeScale = 0;
   }
 }

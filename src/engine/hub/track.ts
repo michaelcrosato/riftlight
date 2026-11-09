@@ -18,6 +18,9 @@ export interface RemoteTrackOptions {
   readonly extrapolate?: number;
 }
 
+/** Arrivals the clock offset is taken from. */
+const GAP_WINDOW = 16;
+
 interface Stamp<T> {
   readonly t: number;
   readonly value: T;
@@ -28,8 +31,10 @@ export class RemoteTrack<T> {
   private readonly keep: number;
   private readonly ahead: number;
   private stamps: Stamp<T>[] = [];
-  /** The receiver's clock minus the sender's, at the fastest arrival seen: this side's view of their time. */
+  /** The receiver's clock minus the sender's, at the fastest of the last arrivals: this side's view of their time. */
   private offset: number | null = null;
+  /** The last arrivals' gaps (receiver − sender): the offset is their minimum, so it recovers after a stall. */
+  private gaps: number[] = [];
   /** The receiver's time of the last arrival. */
   lastArrival = -Infinity;
 
@@ -57,9 +62,11 @@ export class RemoteTrack<T> {
       if (senderTime < last.t - 1) this.clear(); // the sender's clock went back: a new level, start over
       else return; // late or repeated: older than what we have
     }
-    const gap = now - senderTime;
-    // The fastest arrival is the least delayed: take it as the clock offset; let it drift up slowly.
-    this.offset = this.offset === null ? gap : Math.min(gap, this.offset + 0.002);
+    // The fastest recent arrival is the least delayed: its gap is the clock offset. A window (not
+    // all time) lets the offset rise again when the sender's clock stood still (a pause, a hidden tab).
+    this.gaps.push(now - senderTime);
+    if (this.gaps.length > GAP_WINDOW) this.gaps.shift();
+    this.offset = Math.min(...this.gaps);
     this.lastArrival = now;
     this.stamps.push({ t: senderTime, value });
     if (this.stamps.length > this.keep) this.stamps.splice(0, this.stamps.length - this.keep);
@@ -87,6 +94,7 @@ export class RemoteTrack<T> {
   /** Forget everything (the sender left, or a new level). */
   clear(): void {
     this.stamps = [];
+    this.gaps = [];
     this.offset = null;
     this.lastArrival = -Infinity;
   }

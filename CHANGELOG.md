@@ -14,9 +14,11 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   the AI Hub (AI Hub Session Protocol v1) in `parallel`, `ghost` or `shared-world` mode, and is null
   outside one. The hub's events (`start`, other copies' `message`s, `leave`, `time-up`, `end`) arrive as
   input commands (`hubEvents(ctx.input.commands)`), so a session records and replays. `progress`,
-  `result`, `finish`, `send` (bundled, at most `sendHz` messages a second), and at `end` the engine
-  pauses and goes quiet. `RemoteTrack` draws another copy's state smoothly; `LocalHub` is the hub in
-  memory for tests. `HUB_COLORS`, `headMeta`.
+  `result` and `finish` (once, and only an outcome the hub can take), `send` (bundled per destination
+  under the hub's rate and size limits; what the rate holds back waits), and at `end` the engine
+  stands still (speed 0) and goes quiet. `RemoteTrack` draws another copy's state smoothly; `LocalHub`
+  is the hub in memory for tests, held to the real client's limits. `HUB_COLORS`, `HUB_LIMITS`,
+  `headMeta`, `validResult`, `validFinish`.
 - **Languages** (docs/engine/lang.md, AI Hub Languages v1): `Lang` and `langFor(lines)` give lines in
   the player's language with `t(id, values)`: blanks, plural forms, control tags, numbers formatted for
   the language, right-to-left isolates, and the original line whenever a translation is missing or
@@ -29,8 +31,8 @@ bump the version (minor while it is 0.x) and add its section here; `npm test` fa
   box (`pixelCovers`, `drawDeviceText`, `surfaceScale`). `hud.measure` and `textWidthPx` measure the
   font that draws; `wrapText` wraps by measured width at `Intl.Segmenter` word breaks. `textWidth` counts
   letters with their marks, not UTF-16 units.
-- **Gamepad**: View + Menu held together (buttons 8 and 9, `HOST_CHORD`) press neither: the AI Hub opens
-  its bar on them.
+- **Gamepad**: View + Menu held together (buttons 8 and 9, `HOST_CHORD`) press neither until both are
+  let go: the AI Hub opens its bar on them.
 
 ## 0.46.0
 

@@ -30,6 +30,28 @@ describe('RemoteTrack', () => {
     expect(drawn.at(-1)!).toBeGreaterThan(0.25);
   });
 
+  it('moves smoothly again soon after the sender’s clock stood still (a pause, a hidden tab)', () => {
+    const track = new RemoteTrack<number>({ delay: 0.1 });
+    // 10 snapshots a second, 0.1 s late; the sender's game time stops for 5 s at t = 2
+    let senderTime = 0;
+    const drawn: { now: number; v: number }[] = [];
+    let nextSend = 0;
+    for (let now = 0; now < 20; now += 1 / 60) {
+      if (now >= nextSend) {
+        nextSend += 0.1;
+        if (now < 2 || now >= 7) {
+          track.push(senderTime, now + 0.1, senderTime);
+          senderTime += 0.1;
+        }
+      }
+      const v = track.sample(now + 0.1, lerp);
+      if (v !== null) drawn.push({ now, v });
+    }
+    // from 3 s after it resumed, every frame moves about one frame's worth (no 10 Hz steps)
+    const late = drawn.filter((d) => d.now > 10);
+    for (let i = 1; i < late.length; i++) expect(late[i]!.v - late[i - 1]!.v).toBeLessThan(0.03);
+  });
+
   it('drops snapshots older than the newest, and starts over when the sender does', () => {
     const track = new RemoteTrack<number>();
     track.push(5, 6, 5);

@@ -90,6 +90,16 @@ describe('Gamepad', () => {
     expect(input.isDown(GAMEPAD_BUTTONS[9]!)).toBe(false);
     expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(false);
     expect(input.isDown('Space')).toBe(true);
+    // letting go of one first presses nothing: both must be let go before either counts again
+    input.endFrame();
+    input.beginFrame(2 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
+    expect(input.isDown(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(false);
+    input.endFrame();
+    input.beginFrame(3 / 60, 1 / 60, [pad()]);
+    input.endFrame();
+    input.beginFrame(4 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
+    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(true);
   });
 
   it('right stick turns into pointer movement for the camera', () => {

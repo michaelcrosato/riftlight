@@ -252,9 +252,9 @@ export class Lang {
         if (!Object.prototype.hasOwnProperty.call(values, name)) return tag;
         const v = values[name]!;
         const text = typeof v === 'number' ? this.number(textLang).format(v) : String(v);
-        return this.dir === 'rtl' ? '⁨' + text + '⁩' : text; // isolated: a Latin name can't scramble the line
+        return this.dir === 'rtl' ? '\u2068' + text + '\u2069' : text; // isolated: a Latin name can't scramble the line
       });
-    if (!translated && !this.fake && isRtl(this.source.language) !== (this.dir === 'rtl')) line = '⁨' + line + '⁩';
+    if (!translated && !this.fake && isRtl(this.source.language) !== (this.dir === 'rtl')) line = '\u2068' + line + '\u2069';
     return line;
   }
 

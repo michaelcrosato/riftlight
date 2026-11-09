@@ -1,13 +1,15 @@
+import { Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
+import { Engine, type Game, type GameContext } from '../Engine';
 import { LocalHub } from './local';
 import { HubSession, hubEvents, type HubEvent, type HubHost, type HubMode } from './session';
 
 /** A stand-in engine: commands land in a list, as `input.send` would queue them for the next frame. */
-function fakeEngine(): HubHost & { commands: unknown[]; muted: boolean } {
+function fakeEngine(): HubHost & { commands: unknown[]; muted: boolean; timeScale: number } {
   const host = {
     commands: [] as unknown[],
     muted: false,
-    paused: false,
+    timeScale: 1,
     input: { send: (c: unknown) => void host.commands.push(c) },
     audio: { persist: true, setMuted: (m: boolean) => void (host.muted = m) },
   };
@@ -19,7 +21,7 @@ async function round(mode: HubMode, players: number, options: { server?: boolean
   const ids = [...hub.players.map((p) => p.id), ...(hub.serverId === null ? [] : [hub.serverId])];
   const copies = await Promise.all(
     ids.map(async (id) => {
-      const session = (await HubSession.join({ mode, seats: [1, 4], client: hub.client(id), autoFlush: false }))!;
+      const session = (await HubSession.join({ mode, seats: [1, 4], client: hub.client(id), autoFlush: false, clock: () => hub.now }))!;
       const engine = fakeEngine();
       session.attach(engine);
       return { id, session, engine };
@@ -85,8 +87,44 @@ describe('HubSession', () => {
     for (let i = 0; i < 5; i++) copies[0]!.session.send({ big });
     copies[0]!.session.send({ huge: 'y'.repeat(20_000) });
     copies[0]!.session.flush();
-    expect(hub.client(0).stats.sent).toBe(3); // 5 × 6 KB in bundles under 15 KB
+    expect(hub.client(0).stats.sent).toBe(3); // 5 × 6 KB in bundles under the limit
+    expect(hub.client(0).stats.refused).toBe(0);
     expect(copies[0]!.session.sent.dropped).toBe(1);
+  });
+
+  it('never goes over the hub’s rate: what the rate holds back waits its turn, in order, none lost', async () => {
+    const { hub, copies } = await round('shared-world', 4);
+    const host = copies[0]!.session;
+    let next = 0;
+    // a broadcast and a message to each of three players every flush at 60 a second: far over 20/s
+    for (let f = 0; f < 120; f++) {
+      host.send({ n: next++ });
+      for (const to of [1, 2, 3]) host.send({ to }, to);
+      host.flush();
+      hub.advance(1000 / 60);
+    }
+    expect(hub.client(0).stats.refused).toBe(0); // the client never had to drop one
+    expect(host.backlog).toBeGreaterThan(0);
+    // once the game sends less, the backlog drains, and every broadcast arrived in order
+    for (let f = 0; f < 600 && host.backlog; f++) {
+      host.flush();
+      hub.advance(1000 / 60);
+    }
+    hub.advance(100);
+    expect(host.backlog).toBe(0);
+    const got = events(copies[1]!.engine.commands)
+      .filter((e) => e.type === 'message' && typeof (e.data as { n?: number }).n === 'number')
+      .map((e) => (e as { data: { n: number } }).data.n);
+    expect(got).toEqual([...Array(next).keys()]);
+    expect(host.sent.dropped).toBe(0);
+  });
+
+  it('data that isn’t JSON is refused, not thrown into the game', async () => {
+    const { copies } = await round('ghost', 2);
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(copies[0]!.session.send(cyclic)).toBe(false);
+    expect(copies[0]!.session.send({ ok: 1 })).toBe(true);
   });
 
   it('a message to one player reaches only that player', async () => {
@@ -107,21 +145,26 @@ describe('HubSession', () => {
 
   it('reports once: result in parallel and ghost, finish from the host only', async () => {
     const ghost = await round('ghost', 2);
-    ghost.copies[0]!.session.result({ time: 1000 });
+    expect(ghost.copies[0]!.session.finish({ standings: [[0]] })).toBe(false); // player 0 hosts, but this isn't a shared world
+    expect(ghost.copies[0]!.session.result({ time: Number.NaN })).toBe(false); // the hub couldn't rank it: not reported
+    expect(ghost.copies[0]!.session.hasReported).toBe(false);
+    expect(ghost.copies[0]!.session.result({ time: 1000 })).toBe(true);
     ghost.copies[0]!.session.result({ time: 500 });
-    ghost.copies[0]!.session.finish({ standings: [[0]] });
     expect(ghost.hub.results.get(0)).toEqual({ time: 1000 });
     expect(ghost.hub.finished).toBeNull();
+    expect(ghost.hub.problems).toEqual([]);
 
     const shared = await round('shared-world', 2);
     shared.copies[1]!.session.finish({ standings: [[1], [0]] }); // not the host
     shared.copies[0]!.session.result({ score: 3 }); // not in a shared world
     expect(shared.hub.finished).toBeNull();
+    expect(shared.copies[0]!.session.finish({ standings: 'first' as never })).toBe(false);
     shared.copies[0]!.session.finish({ standings: [[0, 1]], won: true });
     expect(shared.hub.finished).toEqual({ standings: [[0, 1]], won: true });
+    expect(shared.hub.problems).toEqual([]);
   });
 
-  it('at the end the engine goes quiet: paused, muted without saving it, nothing more sent', async () => {
+  it('at the end the engine goes quiet: still, muted without saving it, nothing more sent', async () => {
     const { hub, copies } = await round('ghost', 2);
     const [a] = copies;
     let ended = '';
@@ -130,12 +173,40 @@ describe('HubSession', () => {
     hub.end('finished');
     a!.session.flush();
     expect(hub.client(0).stats.sent).toBe(0);
-    expect(a!.engine.paused).toBe(true);
+    expect(a!.engine.timeScale).toBe(0);
     expect(a!.engine.muted).toBe(true);
     expect(a!.engine.audio!.persist).toBe(false);
     expect(ended).toBe('finished');
     expect(a!.session.phase).toBe('ended');
     expect(events(a!.engine.commands).at(-1)).toMatchObject({ type: 'end', reason: 'finished' });
+  });
+
+  it('a real engine’s game reads the end, then stands still', async () => {
+    const hub = new LocalHub({ mode: 'ghost', players: 2 });
+    const session = (await HubSession.join({ mode: 'ghost', seats: [1, 4], client: hub.client(0), autoFlush: false }))!;
+    const seen: string[] = [];
+    let moved = 0;
+    const game: Game = {
+      name: 'Listener',
+      setup() {},
+      fixedUpdate: (_ctx: GameContext, dt: number) => void (moved += dt),
+      update: (ctx: GameContext) => void seen.push(...hubEvents(ctx.input.commands).map((e) => e.type)),
+      cameraTarget: () => new Vector3(),
+    };
+    const engine = await Engine.headless(game);
+    try {
+      session.attach(engine);
+      hub.start();
+      engine.step(2);
+      hub.end('finished');
+      engine.step(3);
+      expect(seen).toEqual(['start', 'end']);
+      const before = moved;
+      engine.step(10);
+      expect(moved).toBe(before); // nothing moves after the end
+    } finally {
+      engine.dispose();
+    }
   });
 
   it('a shared world whose host leaves is void', async () => {
@@ -154,5 +225,11 @@ describe('HubSession', () => {
     hub.advance(3500);
     expect(s.time()).toBe(500);
     expect(s.playing).toBe(true);
+  });
+
+  it('progress is for parallel and ghost; a shared world is reported by its host', async () => {
+    const { hub, copies } = await round('shared-world', 2);
+    copies[1]!.session.progress(10, 'x');
+    expect(hub.progress.size).toBe(0);
   });
 });

@@ -171,6 +171,8 @@ export class Input {
   readonly preventKeys = new Set<string>();
   /** Gamepad button index → key code (defaults: GAMEPAD_BUTTONS). */
   gamepadButtons: Record<number, string> = { ...GAMEPAD_BUTTONS };
+  /** The host's chord (View + Menu) is held: buttons 8 and 9 mean nothing until both are let go. */
+  private hostChord = false;
   /** Stick deadzone (radial, 0..1). */
   gamepadDeadzone = 0.2;
   /** Right stick look speed: pointer pixels per second at full tilt. */
@@ -663,11 +665,13 @@ export class Input {
         return !!b && (b.pressed || (b.value ?? 0) > 0.5);
       };
       // View + Menu (Create + Options, buttons 8 and 9) held together belong to whatever hosts the
-      // page (the AI Hub opens its bar on them): while both are down, neither means anything here.
-      const hostChord = on(HOST_CHORD[0]) && on(HOST_CHORD[1]);
+      // page (the AI Hub opens its bar on them): once both are down, neither means anything here
+      // until both are let go (letting one go first must not press the other).
+      if (on(HOST_CHORD[0]) && on(HOST_CHORD[1])) this.hostChord = true;
+      else if (!on(HOST_CHORD[0]) && !on(HOST_CHORD[1])) this.hostChord = false;
       pad.buttons.forEach((_, i) => {
         const code = this.gamepadButtons[i];
-        if (code && on(i) && !(hostChord && HOST_CHORD.includes(i))) down.add(code);
+        if (code && on(i) && !(this.hostChord && HOST_CHORD.includes(i))) down.add(code);
       });
       const left = applyDeadzone(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0), this.gamepadDeadzone);
       if (Math.hypot(left.x, left.y) > Math.hypot(stick.x, stick.y)) stick = left;

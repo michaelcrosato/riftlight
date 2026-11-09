@@ -7,7 +7,7 @@
  *   const a = await HubSession.join({ mode: 'shared-world', seats: [1, 4], client: hub.client(0), autoFlush: false });
  *   hub.advance(50);
  */
-import { HUB_COLORS, type HubClient, type HubFinish, type HubInfo, type HubMode, type HubPlayer, type HubResult } from './session';
+import { HUB_COLORS, HUB_LIMITS, type HubClient, type HubFinish, type HubInfo, type HubMode, type HubPlayer, type HubResult, validFinish, validResult } from './session';
 
 export interface LocalHubOptions {
   readonly mode: HubMode;
@@ -41,8 +41,10 @@ export class LocalClient implements HubClient {
   private handlers = new Map<string, Handler[]>();
   private pending = new Map<string, unknown[][]>();
   ended = false;
-  /** Messages this copy sent and received (the harness counts these). */
-  readonly stats = { sent: 0, received: 0 };
+  /** Messages this copy sent and received (the harness counts these), and what its limits refused. */
+  readonly stats = { sent: 0, received: 0, refused: 0 };
+  private tokens = HUB_LIMITS.burst;
+  private refilled = 0;
 
   constructor(
     private readonly hub: LocalHub,
@@ -84,19 +86,38 @@ export class LocalClient implements HubClient {
     if (!this.ended) this.hub.progress.set(this.id, p);
   }
 
+  /** As session.js: a result needs a finite time or score; anything else is ignored (and the hub notes it). */
   result(outcome: HubResult): void {
-    if (!this.ended && !this.hub.results.has(this.id)) this.hub.results.set(this.id, outcome);
+    if (this.ended || this.hub.results.has(this.id)) return;
+    if (!validResult(outcome)) return void this.hub.problems.push(`${this.id}: result needs a finite time or score`);
+    this.hub.results.set(this.id, outcome);
   }
 
   finish(outcome: HubFinish): void {
-    if (this.ended || this.id !== this.hub.host) return;
+    if (this.ended) return;
+    if (this.id !== this.hub.host || this.hub.mode !== 'shared-world') return void this.hub.problems.push(`${this.id}: finish is for a shared world's host`);
+    if (!validFinish(outcome)) return void this.hub.problems.push(`${this.id}: finish needs standings`);
     this.hub.finished ??= outcome;
   }
 
+  /** As session.js: at most 16 KB, 20 messages a second with bursts of 40 (on the hub's clock); the rest are dropped. */
   send(data: unknown, opts?: { to?: number; reliable?: boolean }): boolean {
     if (this.ended) return false;
+    const text = JSON.stringify(data);
+    if (text === undefined || text.length > HUB_LIMITS.maxBytes) {
+      this.stats.refused++;
+      return false;
+    }
+    const now = this.hub.now;
+    this.tokens = Math.min(HUB_LIMITS.burst, this.tokens + ((now - this.refilled) / 1000) * HUB_LIMITS.ratePerS);
+    this.refilled = now;
+    if (this.tokens < 1) {
+      this.stats.refused++;
+      return false;
+    }
+    this.tokens -= 1;
     this.stats.sent++;
-    this.hub.route(this.id, JSON.parse(JSON.stringify(data)), opts?.to);
+    this.hub.route(this.id, JSON.parse(text), opts?.to);
     return true;
   }
 
@@ -137,6 +158,8 @@ export class LocalHub {
   readonly progress = new Map<number, { score: number; label?: string }>();
   finished: HubFinish | null = null;
   readonly failures: { id: number; message: string }[] = [];
+  /** What the hub would flag as a protocol problem (a result it can't rank, a finish not from the host). */
+  readonly problems: string[] = [];
   endReason: string | null = null;
   private readonly copies: Copy[];
   private queue: { at: number; to: number; type: string; args: unknown[] }[] = [];

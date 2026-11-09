@@ -164,6 +164,9 @@ export function glyphFor(cluster: string): Glyph | null {
 
 function compose(cluster: string): Glyph | null {
   if (SPACES.test(cluster)) return { rows: GLYPHS[' ']!, over: NONE };
+  // a compatibility form the font draws plainly (² → 2, ｆ → F): its plain letter
+  const plain = cluster.normalize('NFKD');
+  if (plain !== cluster && [...plain].length === 1 && (GLYPHS[plain] ?? EXTRA[plain])) return { rows: (GLYPHS[plain] ?? EXTRA[plain])!, over: NONE };
   const parts = [...cluster.normalize('NFD')];
   const base = parts[0]!;
   const marks = parts.slice(1);

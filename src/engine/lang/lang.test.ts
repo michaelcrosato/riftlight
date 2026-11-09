@@ -35,6 +35,7 @@ describe('t(): a line, its blanks filled', () => {
   it('formats numbers for the language', () => {
     expect(new Lang(SOURCE).t('hud.gold', { gold: 12500 })).toBe('12,500 gold');
     const ar = new Lang(SOURCE, TRANSLATIONS, { code: 'ar' });
+    expect(ar.t('menu.start')).toBe('\u2068Start\u2069'); // an English line in an Arabic screen: isolated
     expect(ar.t('hud.gold', { gold: 12500 })).toBe(`\u2068${new Intl.NumberFormat('ar').format(12500)}\u2069 ذهب`); // isolated: can't scramble the line
   });
 

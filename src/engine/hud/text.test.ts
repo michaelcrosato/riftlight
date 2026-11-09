@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { drawText, glyphFor, pixelCovers, setTextLocale, textCells, textWidth } from '../animation/font';
-import { textWidthPx } from './deviceText';
+import { runsRtl, surfaceScale, textWidthPx } from './deviceText';
 import { wrapText } from './wrap';
 
 /** A text drawn into rows of '#' and '.' (the two rows over the cell first), for looking at glyphs in a test. */
@@ -49,6 +49,23 @@ describe('the pixel font in other languages', () => {
     expect(textCells('⁨Vex⁩')).toBe(3);
     expect(textCells('größe')).toBe(6); // ß is SS in capitals
     expect(textWidthPx('ABC')).toBe(17);
+    expect(textWidth('E\u0301')).toBe(6); // one letter, not two UTF-16 units
+    expect(textWidth('M/S²')).toBe(24); // ² draws as 2
+    expect(pixelCovers('M/S²')).toBe(true);
+  });
+
+  it('a surface is painted at art size while all its text is pixel text; device text paints at the screen’s scale', () => {
+    expect(pixelCovers('NEW RUN · LOAD / IMPORT · SETTINGS')).toBe(true);
+    expect(surfaceScale(3, false)).toBe(1);
+    expect(surfaceScale(3, true)).toBe(3);
+    expect(surfaceScale(9, true)).toBe(6);
+  });
+
+  it('a line runs the way its first strong letter does, isolated names skipped', () => {
+    expect(runsRtl('مرحبا Vex')).toBe(true);
+    expect(runsRtl('WINNER: مرحبا')).toBe(false);
+    expect(runsRtl('\u2068Vex\u2069 قال')).toBe(true);
+    expect(runsRtl('12 ذهب')).toBe(true);
   });
 });
 
@@ -62,6 +79,15 @@ describe('wrapText', () => {
   it('keeps punctuation with the word before it', () => {
     expect(wrapText('WAIT, WHAT?!', 6 * 6)).toEqual(['WAIT,', 'WHAT?!']);
     expect(wrapText('A B C D?!', 6 * 4)).toEqual(['A B', 'C', 'D?!']);
+  });
+
+  it('keeps opening marks with the word after them, never breaks at a no-break space', () => {
+    expect(wrapText('MUY BIEN ¡VAMOS!', 6 * 10)).toEqual(['MUY BIEN', '¡VAMOS!']);
+    expect(wrapText('HOLA AMIGO ¿QUÉ TAL?', 6 * 12)).toEqual(['HOLA AMIGO', '¿QUÉ TAL?']);
+    expect(wrapText('IL DIT «\u00a0BONJOUR\u00a0»', 6 * 11)).toEqual(['IL DIT', '«\u00a0BONJOUR\u00a0»']);
+    expect(wrapText('IL RESTE 12\u202f500 OR', 6 * 12)).toEqual(['IL RESTE', '12\u202f500 OR']);
+    expect(wrapText('ET QUOI ?', 6 * 6)).toEqual(['ET', 'QUOI ?']);
+    expect(wrapText('HE SAID "HELLO"', 6 * 9)).toEqual(['HE SAID', '"HELLO"']);
   });
 
   it('wraps Chinese, which has no spaces, between characters; punctuation never starts a line', () => {
