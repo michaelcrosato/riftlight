@@ -37,6 +37,7 @@ import type { GameEventBus, Item } from '../core/types';
 import { CURRENCY } from './content';
 import { LOOT_SOUNDS } from './data/sounds';
 import { filterTier, type FilterRule, type FilterTier, GOLD_COLOUR, itemClass, itemColour, LOOT_FILTER } from './filter';
+import { goldLabel, itemLabel } from './names';
 import { rollDrops } from './generate';
 import { baseOf } from './itemMods';
 
@@ -460,9 +461,7 @@ export class WorldLoot {
   }
 
   private labelText(d: GroundDrop): string {
-    if (!d.item) return `${d.gold} gold`;
-    const q = d.item.quantity && d.item.quantity > 1 ? `${d.item.quantity}x ` : '';
-    return `${q}${d.item.name}`;
+    return d.item ? itemLabel(d.item) : goldLabel(d.gold);
   }
 
   /** A left click (or a tap) on the game canvas this frame, from `ctx.input`, where it was pressed: on a label, take it. */

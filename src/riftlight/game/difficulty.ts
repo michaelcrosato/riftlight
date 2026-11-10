@@ -16,6 +16,10 @@ export const DIFFICULTY_MAX = 4;
 export const DIFFICULTY_KEYS = ['playerDamage', 'playerLife', 'playerSpeed', 'enemyDamage', 'enemyLife', 'enemySpeed'] as const satisfies readonly (keyof DifficultyTuning)[];
 export type DifficultyKey = (typeof DIFFICULTY_KEYS)[number];
 
+/** A slider's part of a line id (`playerDamage` → `player_damage`: `menu.tuning.player_damage`, `hud.tuned.player_damage`). */
+export const difficultyLineId = (k: DifficultyKey): string => k.replace(/[A-Z]/g, (c) => '_' + c.toLowerCase());
+
+/** The sliders' names (the English of their lines, `menu.tuning.<slider>`: lang/shell.ts). */
 export const DIFFICULTY_LABELS: Record<DifficultyKey, string> = {
   playerDamage: 'Hero damage',
   playerLife: 'Hero life',
@@ -25,14 +29,14 @@ export const DIFFICULTY_LABELS: Record<DifficultyKey, string> = {
   enemySpeed: 'Enemy speed',
 };
 
-/** Short labels for the HUD corner. */
+/** Short labels for the HUD corner (the English of their lines, `hud.tuned.<slider>`, with the value). */
 export const DIFFICULTY_SHORT: Record<DifficultyKey, string> = {
-  playerDamage: 'H.DMG',
-  playerLife: 'H.LIFE',
-  playerSpeed: 'H.SPD',
-  enemyDamage: 'E.DMG',
-  enemyLife: 'E.LIFE',
-  enemySpeed: 'E.SPD',
+  playerDamage: 'H.dmg',
+  playerLife: 'H.life',
+  playerSpeed: 'H.spd',
+  enemyDamage: 'E.dmg',
+  enemyLife: 'E.life',
+  enemySpeed: 'E.spd',
 };
 
 export const NORMAL: Readonly<DifficultyTuning> = { playerDamage: 1, playerLife: 1, playerSpeed: 1, enemyDamage: 1, enemyLife: 1, enemySpeed: 1 };

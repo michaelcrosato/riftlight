@@ -1,6 +1,7 @@
 import { inc, more } from '../../core/mods';
 import { Rng } from '../../core/rng';
 import { generateGenome, type GenomeOptions } from '../genome';
+import { BOSS_PHASES } from './names';
 import type { BossDef, BossPhase } from './types';
 
 /**
@@ -30,9 +31,9 @@ function boss(
     weight: 0,
     genome: g,
     phases: [
-      { from: 1, name: 'Awakened', attacks: phases[0], cadence: c },
-      { from: 0.66, name: 'Wrath', attacks: phases[1], cadence: c * 0.85, onEnter: extra.onEnter?.[0] ?? [], mods: [inc('attack.speed', 0.1)] },
-      { from: 0.33, name: 'Desperation', attacks: phases[2], cadence: c * 0.7, onEnter: extra.onEnter?.[1] ?? [], mods: [more('damage', 0.2), inc('move.speed', 0.15)] },
+      { from: 1, name: BOSS_PHASES[0], attacks: phases[0], cadence: c },
+      { from: 0.66, name: BOSS_PHASES[1], attacks: phases[1], cadence: c * 0.85, onEnter: extra.onEnter?.[0] ?? [], mods: [inc('attack.speed', 0.1)] },
+      { from: 0.33, name: BOSS_PHASES[2], attacks: phases[2], cadence: c * 0.7, onEnter: extra.onEnter?.[1] ?? [], mods: [more('damage', 0.2), inc('move.speed', 0.15)] },
     ],
     signature: extra.signature,
     enrage: { ...ENRAGE, after: ENRAGE.after + level * 5 },

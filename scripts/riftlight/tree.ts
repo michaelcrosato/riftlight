@@ -19,11 +19,15 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Canvas, type RGB } from '../../src/engine/animation/raster';
 import { PALETTE, type PaletteColor } from '../../src/engine/palette';
-import { DEFAULT_TREE_SEED, generateTree, nodeLines, PassiveTree, REGIONS, searchTree, validateTree, type TreeNode } from '../../src/riftlight/tree';
+import type { TreeNode } from '../../src/riftlight/tree';
 import { encodePng } from '../png';
 import { helpExit } from '../manual.mjs';
+import { registerEngineHooks } from '../trace/hooks';
 
 helpExit(import.meta.url);
+// the tree's words are the game's lines (src/riftlight/lang), which load the engine: Node needs the hooks first
+registerEngineHooks();
+const { DEFAULT_TREE_SEED, generateTree, nodeLines, PassiveTree, REGIONS, searchTree, validateTree } = await import('../../src/riftlight/tree');
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

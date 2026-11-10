@@ -13,8 +13,10 @@
  */
 import type { Mod } from '../core/mods';
 import { SCALING } from '../core/scaling';
-import { describeTreeMod, STAT_NAMES } from './data/stats';
+import { lang } from '../lang/index';
+import { modText } from '../lang/mods';
 import { DEFAULT_TREE_SEED, generateTree } from './generate';
+import { kindName, nodeFlavour, nodeLines, nodeName, regionName } from './text';
 import type { TreeNode } from './types';
 
 /** The graph: nodes by id, adjacency and the free root (start) nodes. Immutable. */
@@ -331,28 +333,35 @@ export function treeMods(allocated: readonly string[], tree: PassiveTree = defau
 
 // ------------------------------------------------------------------ search
 
-const haystacks = new WeakMap<TreeNode, string>();
+const haystacks = new WeakMap<TreeNode, { code: string; text: string }>();
 
-/** Everything searchable about a node, lower-case. */
+/** Everything searchable about a node as the player reads it (its name, kind, region, flavour, lines), lower-case. */
 export function nodeText(n: TreeNode): string {
+  const l = lang();
   let h = haystacks.get(n);
-  if (!h) {
-    const mods = [...n.mods, ...(n.options ?? []).flatMap((o) => o.mods)];
-    h = [n.name, n.kind, n.region, n.flavour ?? '', ...(n.lines ?? []), ...(n.tags ?? []), ...mods.map(describeTreeMod), ...mods.map((m) => m.stat), ...mods.map((m) => STAT_NAMES[m.stat] ?? '')]
-      .join(' | ')
-      .toLowerCase();
+  if (h?.code !== l.code) {
+    const parts = [nodeName(n), kindName(n.kind), regionName(n.region), nodeFlavour(n) ?? '', ...nodeLines(n)];
+    h = { code: l.code, text: lower(parts.join(' | '), l.code) };
     haystacks.set(n, h);
   }
-  return h;
+  return h.text;
 }
 
+const lower = (s: string, code: string) => {
+  try {
+    return s.toLocaleLowerCase(code);
+  } catch {
+    return s.toLowerCase();
+  }
+};
+
 /**
- * Node ids matching a query. Every word must appear in the node's name, kind, region,
- * flavour, tags or described mods ("fire res", "keystone", "minion life"). `stat:<name>`
- * matches nodes with a mod on exactly that stat.
+ * Node ids matching a query. Every word must appear in the node's name, kind, region, flavour
+ * or tooltip lines, as shown in the player's language ("fire res", "keystone", "minion life").
+ * `stat:<name>` matches nodes with a mod on exactly that stat.
  */
 export function searchTree(tree: PassiveTree, query: string): string[] {
-  const q = query.trim().toLowerCase();
+  const q = lower(query.trim(), lang().code);
   if (!q) return [];
   const words = q.split(/\s+/);
   const out: string[] = [];
@@ -371,23 +380,27 @@ export function searchTree(tree: PassiveTree, query: string): string[] {
 
 // ------------------------------------------------------------------ stat summary
 
+/** A group of the stat summary: `id` (`offence`, `rules`...) and its title in the player's language. */
 export interface SummaryGroup {
+  readonly id: SummaryGroupId;
   readonly title: string;
   readonly lines: readonly string[];
 }
 
-const GROUPS: readonly [string, RegExp][] = [
-  ['Ailments', /^(ignite|poison|bleed|freeze|chill|shock|ailment)\./],
-  ['Minions and totems', /^(minion|totem)\./],
-  ['Auras and curses', /^(aura|curse)\.|^mana\.reservation$/],
-  ['Defence', /^(armour|evasion|block|res\.|damage\.taken|dodge|stun\.threshold|immune)/],
-  ['Life, mana and shield', /^(life|mana|energy\.shield|es\.)/],
-  ['Offence', /damage|^(attack|cast)\.speed$|^crit\.|^area$|^projectile|^pierce$|^knockback$|^stun\.duration$/],
+export type SummaryGroupId = 'rules' | 'offence' | 'ailments' | 'defence' | 'life' | 'minions' | 'auras' | 'utility';
+
+const GROUPS: readonly [SummaryGroupId, RegExp][] = [
+  ['ailments', /^(ignite|poison|bleed|freeze|chill|shock|ailment)\./],
+  ['minions', /^(minion|totem)\./],
+  ['auras', /^(aura|curse)\.|^mana\.reservation$/],
+  ['defence', /^(armour|evasion|block|res\.|damage\.taken|dodge|stun\.threshold|immune)/],
+  ['life', /^(life|mana|energy\.shield|es\.)/],
+  ['offence', /damage|^(attack|cast)\.speed$|^crit\.|^area$|^projectile|^pierce$|^knockback$|^stun\.duration$/],
 ];
 
-/** A summary group title for a stat. */
-export function statGroup(stat: string): string {
-  return GROUPS.find(([, re]) => re.test(stat))?.[0] ?? 'Utility';
+/** The summary group a stat goes in. */
+export function statGroup(stat: string): SummaryGroupId {
+  return GROUPS.find(([, re]) => re.test(stat))?.[0] ?? 'utility';
 }
 
 /**
@@ -404,21 +417,14 @@ export function summarizeMods(mods: readonly Mod[]): SummaryGroup[] {
     else if (m.kind === 'flat' || m.kind === 'inc') merged.set(key, { ...prev, value: prev.value + m.value });
     else if (m.kind === 'override') merged.set(key, { ...m });
   }
-  const groups = new Map<string, string[]>();
+  const groups = new Map<SummaryGroupId, string[]>();
   for (const m of [...merged.values()].sort((a, b) => (a.stat < b.stat ? -1 : a.stat > b.stat ? 1 : 0))) {
     if ((m.kind === 'flat' || m.kind === 'inc' || m.kind === 'more') && Math.abs(m.value) < 1e-9) continue;
-    const title = m.kind === 'flag' || m.kind === 'override' ? 'Rules' : statGroup(m.stat);
-    let list = groups.get(title);
-    if (!list) groups.set(title, (list = []));
-    list.push(describeTreeMod({ ...m, value: Math.round(m.value * 10000) / 10000 }));
+    const id = m.kind === 'flag' || m.kind === 'override' ? 'rules' : statGroup(m.stat);
+    let list = groups.get(id);
+    if (!list) groups.set(id, (list = []));
+    list.push(modText({ ...m, value: Math.round(m.value * 10000) / 10000 }));
   }
-  const order = ['Rules', 'Offence', 'Ailments', 'Defence', 'Life, mana and shield', 'Minions and totems', 'Auras and curses', 'Utility'];
-  return order.filter((t) => groups.has(t)).map((title) => ({ title, lines: groups.get(title)! }));
-}
-
-/** Tooltip lines for a node: hand-written lines, else its described mods (masteries: every option). */
-export function nodeLines(n: TreeNode, choice?: string): string[] {
-  if (n.lines?.length) return [...n.lines];
-  if (n.options?.length) return n.options.map((o) => `${o.id === choice ? '> ' : '  '}${o.mods.map(describeTreeMod).join(', ')}`);
-  return n.mods.map(describeTreeMod);
+  const order: readonly SummaryGroupId[] = ['rules', 'offence', 'ailments', 'defence', 'life', 'minions', 'auras', 'utility'];
+  return order.filter((id) => groups.has(id)).map((id) => ({ id, title: lang().t(`tree.summary.${id}`), lines: groups.get(id)! }));
 }

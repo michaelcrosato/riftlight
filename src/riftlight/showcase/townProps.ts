@@ -7,6 +7,7 @@
  */
 import { Group, Mesh, type Object3D, BoxGeometry, Vector3 } from 'three/webgpu';
 import { type LightHandle, PALETTE } from '../../engine';
+import { t } from '../lang';
 import { glowMaterial } from '../levels/themes/props';
 import { Kit } from '../town/kit';
 import { type Interactable, iso, type TownExtension } from '../town/Town';
@@ -127,13 +128,41 @@ export function buildShowcaseProps(ctx: GameContext): ShowcaseProps {
   root.add(kit.build(), ...glow);
 
   const interactables: Interactable[] = [
-    { id: 'arcade', name: 'Rift Runner', verb: 'PLAY', position: arcadeFront, radius: 1.6, action: 'showcase' },
-    { id: 'bestiary', name: 'Hall of Beasts', verb: 'ENTER', position: lectern, radius: 1.7, action: 'showcase' },
+    {
+      id: 'arcade',
+      get name() {
+        return t('showcase.arcade.name');
+      },
+      get verb() {
+        return t('showcase.verb.play');
+      },
+      get prompt() {
+        return t('showcase.prompt.arcade', { game: t('showcase.arcade.name') });
+      },
+      position: arcadeFront,
+      radius: 1.6,
+      action: 'showcase',
+    },
+    {
+      id: 'bestiary',
+      get name() {
+        return t('showcase.bestiary.name');
+      },
+      get verb() {
+        return t('showcase.verb.enter');
+      },
+      get prompt() {
+        return t('showcase.prompt.bestiary');
+      },
+      position: lectern,
+      radius: 1.7,
+      action: 'showcase',
+    },
   ];
 
   // lights: the cabinet screen and the braziers, borrowed from the engine's pool while the town shows
   let lights: LightHandle[] = [];
-  let t = 0;
+  let clock = 0;
   const extension: TownExtension = {
     root,
     blockers: kit.blockers,
@@ -150,16 +179,16 @@ export function buildShowcaseProps(ctx: GameContext): ShowcaseProps {
       lights = [];
     },
     update(dt, night) {
-      t += dt;
+      clock += dt;
       // the cabinet's attract mode: its light cycles through the screen's colours
       const screen = lights[0];
-      if (screen) screen.update({ color: [PALETTE.cyan, PALETTE.lime, PALETTE.sand, PALETTE.red][Math.floor(t * 1.5) % 4]!, intensity: 4 + 3 * night });
+      if (screen) screen.update({ color: [PALETTE.cyan, PALETTE.lime, PALETTE.sand, PALETTE.red][Math.floor(clock * 1.5) % 4]!, intensity: 4 + 3 * night });
       for (const l of lights.slice(1)) l.update({ intensity: 5 + 6 * night });
-      if (Math.floor(t * 4) !== Math.floor((t - dt) * 4)) for (const b of braziers) ctx.particles.burst('rl.ember', b);
+      if (Math.floor(clock * 4) !== Math.floor((clock - dt) * 4)) for (const b of braziers) ctx.particles.burst('rl.ember', b);
     },
-    save: () => t,
+    save: () => clock,
     load(s) {
-      t = s as number;
+      clock = s as number;
     },
   };
   return { extension, arcadeScreen, bestiaryDoor };

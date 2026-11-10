@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { computeFraming, RESOLUTIONS } from '../../engine/framing';
+import { Vector3 } from 'three/webgpu';
+import { textWidthPx } from '../../engine';
 import { RIFTLIGHT_TOUCH_BUTTONS } from '../game/touch';
-import { hudGeometry } from './hud';
+import { drawHud, hudGeometry, type HudModel } from './hud';
+import { UiCanvas } from './kit';
 import { type Box, overlaps } from './layout';
 
 /**
@@ -80,5 +83,60 @@ describe('hudGeometry with touch controls', () => {
     expect(g.life).toEqual({ x: g.orbX, y: g.orbY });
     expect(g.mana).toEqual({ x: 480 - g.orbX, y: g.orbY });
     expect(g.xp).toEqual({ x: g.bx - 4, y: g.by - 8, w: g.barW + 2 });
+  });
+});
+
+describe('the top-left label in a longer language', () => {
+  /** The HUD drawn on a stand-in Hud that records where each text goes. */
+  function drawn(W: number, label: string, boss: string | null) {
+    const texts: { x: number; y: number; s: string; w: number }[] = [];
+    const hud = {
+      width: W,
+      height: 270,
+      rect() {},
+      sprite() {},
+      text(x: number, y: number, s: string, o: { scale?: number } = {}) {
+        texts.push({ x, y, s, w: textWidthPx(s, o.scale ?? 1) });
+      },
+      measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }),
+    };
+    const model: HudModel = {
+      time: 0,
+      vitals: { life: 50, maxLife: 100, mana: 20, maxMana: 40, es: 0, maxEs: 0 },
+      levelUpAge: 99,
+      level: 3,
+      xp: 0.5,
+      skills: [],
+      buffs: [],
+      boss: boss ? { name: boss, life: 50, maxLife: 100, phases: [0.5], phase: 0, position: new Vector3() } : null,
+      minimap: null,
+      gold: 0,
+      goldShown: 0,
+      feed: [],
+      card: null,
+      streak: null,
+      difficulty: [],
+      hurt: 0,
+      levelLabel: label,
+      timer: '1:05',
+      pad: false,
+      progress: null,
+    };
+    drawHud(new UiCanvas(hud as never), model);
+    return texts;
+  }
+
+  it('wraps clear of a boss\'s name instead of running into it', () => {
+    const label = '[Ríft 13: [[Stórmspíré ····] [Míré ··] ·] ···]';
+    const boss = '[Gorrak, the Ember Tyrant ·····]';
+    const texts = drawn(480, label, boss);
+    const name = texts.find((x) => x.s === boss)!;
+    const left = name.x; // drawn centred: x is its left edge
+    const rows = texts.filter((x) => x.y < 30 && x.s !== boss && x.x < 40);
+    expect(rows.map((r) => r.s).join(' ').replace(/\s+/g, ' ')).toBe(label.replace(/\s+/g, ' ')); // nothing lost
+    expect(rows.length).toBeGreaterThan(1);
+    for (const r of rows) expect(r.x + r.w, r.s).toBeLessThan(left);
+    // without a boss it has the screen's width
+    expect(drawn(480, label, null).filter((x) => x.s === label)).toHaveLength(1);
   });
 });

@@ -7,8 +7,10 @@
  * currency stacks in one cell up to its stack size.
  */
 import type { Item, SaveData } from '../core/types';
+import type { ReasonId } from '../lang/items';
 import { BASES, CURRENCY } from './content';
 import { baseOf, EQUIP_SLOTS, type EquipSlot, type Equipment, isEquipment, isTwoHanded, requiredLevel } from './itemMods';
+import type { Reason } from './names';
 
 export const INVENTORY_SIZE = { w: 12, h: 5 } as const;
 export const STASH_SIZE = { w: 12, h: 12 } as const;
@@ -33,9 +35,10 @@ export interface LootState {
   readonly gold: number;
 }
 
-export type Result<T> = { ok: true; value: T } | { ok: false; reason: string };
+/** A new value, or why not (a `Reason`: a line id the item windows show, loot/names.ts `reasonText`). */
+export type Result<T> = { ok: true; value: T } | { ok: false; reason: Reason };
 const okr = <T>(value: T): Result<T> => ({ ok: true, value });
-const no = <T>(reason: string): Result<T> => ({ ok: false, reason });
+const no = <T>(id: ReasonId, values?: Reason['values']): Result<T> => ({ ok: false, reason: values ? { id, values } : { id } });
 
 // ---------------------------------------------------------------- sizes
 
@@ -127,7 +130,7 @@ export function findSpace(grid: Grid, item: Item): { x: number; y: number } | nu
 }
 
 export function place(grid: Grid, item: Item, x: number, y: number): Result<Grid> {
-  if (!canPlace(grid, item, x, y)) return no('no room there');
+  if (!canPlace(grid, item, x, y)) return no('no_room_there');
   return okr({ ...grid, items: [...grid.items, { item, x, y }] });
 }
 
@@ -173,10 +176,10 @@ export function addItem(grid: Grid, item: Item): { grid: Grid; rest: Item | null
  * item it covers (returned as `swapped`, e.g. to go back on the cursor).
  */
 export function dropAt(grid: Grid, item: Item, x: number, y: number): Result<{ grid: Grid; swapped: Item | null }> {
-  if (!inBounds(grid, item, x, y)) return no('out of bounds');
+  if (!inBounds(grid, item, x, y)) return no('out_of_bounds');
   const hit = overlaps(grid, item, x, y);
   if (hit.length === 0) return okr({ grid: { ...grid, items: [...grid.items, { item, x, y }] }, swapped: null });
-  if (hit.length > 1) return no('covers more than one item');
+  if (hit.length > 1) return no('covers_two');
   const other = hit[0]!;
   const max = stackSize(item);
   if (max > 1 && other.item.base === item.base) {
@@ -207,10 +210,10 @@ export function defaultSlot(item: Item, equipment: Equipment): EquipSlot | null 
 }
 
 /** Why `item` can't go in `slot` (null = it can). Two-handers and offhands push each other out instead. */
-export function equipBlocker(item: Item, slot: EquipSlot, heroLevel: number): string | null {
-  if (!slotsFor(item).includes(slot)) return `doesn't fit the ${slot} slot`;
+export function equipBlocker(item: Item, slot: EquipSlot, heroLevel: number): Reason | null {
+  if (!slotsFor(item).includes(slot)) return { id: 'wrong_slot' };
   const need = requiredLevel(item);
-  if (heroLevel < need) return `requires level ${need}`;
+  if (heroLevel < need) return { id: 'requires_level', values: { level: need } };
   return null;
 }
 
@@ -227,7 +230,7 @@ export function compatibleHands(weapon: Item | undefined, offhand: Item | undefi
  */
 export function equipItem(equipment: Equipment, item: Item, slot: EquipSlot, heroLevel: number): Result<{ equipment: Equipment; displaced: Item[] }> {
   const blocked = equipBlocker(item, slot, heroLevel);
-  if (blocked) return no(blocked);
+  if (blocked) return { ok: false, reason: blocked };
   const next: Equipment = { ...equipment, [slot]: item };
   const displaced: Item[] = [];
   const old = equipment[slot];
@@ -243,9 +246,9 @@ export function equipItem(equipment: Equipment, item: Item, slot: EquipSlot, her
 /** Equip an inventory item (right-click). Displaced items go back into the inventory. */
 export function equip(state: LootState, uid: string, heroLevel: number, slot?: EquipSlot): Result<LootState> {
   const placed = findItem(state.inventory, uid);
-  if (!placed) return no('not in the inventory');
+  if (!placed) return no('not_in_inventory');
   const target = slot ?? defaultSlot(placed.item, state.equipment);
-  if (!target) return no("can't be equipped");
+  if (!target) return no('cant_equip');
   const r = equipItem(state.equipment, placed.item, target, heroLevel);
   if (!r.ok) return r;
   let inv = removeItem(state.inventory, uid);
@@ -256,7 +259,7 @@ export function equip(state: LootState, uid: string, heroLevel: number, slot?: E
       continue;
     }
     const a = addItem(inv, d);
-    if (a.rest) return no('no room in the inventory');
+    if (a.rest) return no('inventory_full');
     inv = a.grid;
   }
   return okr({ ...state, inventory: inv, equipment: r.value.equipment });
@@ -265,9 +268,9 @@ export function equip(state: LootState, uid: string, heroLevel: number, slot?: E
 /** Unequip into the inventory. */
 export function unequip(state: LootState, slot: EquipSlot): Result<LootState> {
   const item = state.equipment[slot];
-  if (!item) return no('nothing equipped there');
+  if (!item) return no('nothing_equipped');
   const a = addItem(state.inventory, item);
-  if (a.rest) return no('no room in the inventory');
+  if (a.rest) return no('inventory_full');
   const equipment = { ...state.equipment };
   delete equipment[slot];
   return okr({ ...state, inventory: a.grid, equipment });
@@ -279,11 +282,11 @@ export function unequip(state: LootState, slot: EquipSlot): Result<LootState> {
 export function transfer(state: LootState, uid: string, from: 'inventory' | number, to: 'inventory' | number): Result<LootState> {
   const src = from === 'inventory' ? state.inventory : state.stash[from];
   const dst = to === 'inventory' ? state.inventory : state.stash[to];
-  if (!src || !dst) return no('no such tab');
+  if (!src || !dst) return no('no_tab');
   const placed = findItem(src, uid);
-  if (!placed) return no('item not found');
+  if (!placed) return no('not_found');
   const a = addItem(dst, placed.item);
-  if (a.rest) return no(to === 'inventory' ? 'inventory is full' : 'stash tab is full');
+  if (a.rest) return no(to === 'inventory' ? 'inventory_full' : 'stash_full');
   const srcAfter = removeItem(src, uid);
   return okr(setGrid(setGrid(state, from, srcAfter), to, a.grid));
 }
@@ -300,7 +303,7 @@ export function setGrid(state: LootState, where: 'inventory' | number, grid: Gri
 /** Pick up an item from the ground into the inventory. */
 export function pickUp(state: LootState, item: Item): Result<LootState> {
   const a = addItem(state.inventory, item);
-  if (a.rest) return no('inventory is full');
+  if (a.rest) return no('inventory_full');
   return okr({ ...state, inventory: a.grid });
 }
 
@@ -309,7 +312,7 @@ export function addGold(state: LootState, amount: number): LootState {
 }
 
 export function spendGold(state: LootState, amount: number): Result<LootState> {
-  if (amount > state.gold) return no('not enough gold');
+  if (amount > state.gold) return no('not_enough_gold');
   return okr({ ...state, gold: state.gold - amount });
 }
 

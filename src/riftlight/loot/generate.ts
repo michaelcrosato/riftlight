@@ -149,11 +149,13 @@ export function nameList(base: ItemBase): readonly string[] {
   return SECOND[base.slot] ?? SECOND.weapon!;
 }
 
-export function rareName(rng: Rng, base: ItemBase): string {
-  return `${rng.pick(FIRST)} ${rng.pick(nameList(base))}`;
+/** A rare's random name: its two words (`Item.words`, shown through `item.name.rare`) and the English (`Item.name`). */
+export function rareName(rng: Rng, base: ItemBase): { name: string; words: [string, string] } {
+  const words: [string, string] = [rng.pick(FIRST), rng.pick(nameList(base))];
+  return { name: words.join(' '), words };
 }
 
-/** "Prefix Base Suffix" for magic items (either part optional). */
+/** "Prefix Base Suffix" for magic items (either part optional), in English: `itemName` (names.ts) shows it from the same parts. */
 export function magicName(base: ItemBase, affixes: readonly RolledAffix[]): string {
   const p = affixes.map((r) => AFFIXES.get(r.id)).find((a) => a.type === 'prefix');
   const s = affixes.map((r) => AFFIXES.get(r.id)).find((a) => a.type === 'suffix');
@@ -198,7 +200,8 @@ export function rollItem(rng: Rng, opts: RollOptions): Item {
   const base = opts.base ? BASES.get(opts.base) : rollBase(rng, itemLevel);
   const uid = rollUid(rng);
   const affixes = rollAffixes(rng, base, itemLevel, rarity);
-  const name = rarity === 'rare' ? rareName(rng, base) : rarity === 'magic' ? magicName(base, affixes) : base.name;
+  if (rarity === 'rare') return { uid, base: base.id, rarity, level: itemLevel, ...rareName(rng, base), affixes };
+  const name = rarity === 'magic' ? magicName(base, affixes) : base.name;
   return { uid, base: base.id, rarity, level: itemLevel, name, affixes };
 }
 

@@ -13,6 +13,7 @@
  * languages, chosen only by `?lang=`, are made from the game's own lines: `en-XA` (accented,
  * bracketed, 40% longer), `zh-XC` (Chinese characters, no spaces), `ar-XB` (right to left).
  */
+import { segmenter, segmentsOf } from './segment';
 
 export type PluralForm = 'zero' | 'one' | 'two' | 'few' | 'many' | 'other';
 export const PLURAL_FORMS: readonly PluralForm[] = ['zero', 'one', 'two', 'few', 'many', 'other'];
@@ -121,8 +122,7 @@ export function lineWidth(line: string): number {
 }
 
 function graphemes(text: string, lang: string): string[] {
-  if (typeof Intl.Segmenter === 'function') return [...new Intl.Segmenter(lang, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
-  return Array.from(text);
+  return segmentsOf(text, lang, 'grapheme') ?? Array.from(text);
 }
 
 /**
@@ -130,7 +130,7 @@ function graphemes(text: string, lang: string): string[] {
  * `{tag}` is one step that takes no time.
  */
 export function pieces(line: string, lang: string): string[] {
-  const seg = typeof Intl.Segmenter === 'function' ? new Intl.Segmenter(lang, { granularity: isJoined(lang) ? 'word' : 'grapheme' }) : null;
+  const seg = segmenter(lang, isJoined(lang) ? 'word' : 'grapheme');
   return line
     .split(TAG)
     .flatMap((part, i) => (i % 2 ? [part] : seg ? [...seg.segment(part)].map((s) => s.segment) : Array.from(part)))
@@ -261,7 +261,7 @@ export class Lang {
   /** A number formatted for the language (12,500 · 12.500 · 12 500). */
   formatNumber(n: number, options?: Intl.NumberFormatOptions): string {
     const lang = this.fake ? this.source.language : this.code;
-    return options ? new Intl.NumberFormat(lang, options).format(n) : this.number(lang).format(n);
+    return this.number(lang, options).format(n);
   }
 
   /** Capitals the language's way (Turkish i → İ). */
@@ -287,15 +287,17 @@ export class Lang {
     return rules;
   }
 
-  private number(lang: string): Intl.NumberFormat {
-    let f = this.numbers.get(lang);
+  /** One formatter per language and options, made once (the HUD formats numbers every frame). */
+  private number(lang: string, options?: Intl.NumberFormatOptions): Intl.NumberFormat {
+    const key = options ? `${lang}|${JSON.stringify(options)}` : lang;
+    let f = this.numbers.get(key);
     if (!f) {
       try {
-        f = new Intl.NumberFormat(lang);
+        f = new Intl.NumberFormat(lang, options);
       } catch {
-        f = new Intl.NumberFormat('en');
+        f = new Intl.NumberFormat('en', options);
       }
-      this.numbers.set(lang, f);
+      this.numbers.set(key, f);
     }
     return f;
   }

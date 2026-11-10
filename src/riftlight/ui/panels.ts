@@ -1,39 +1,71 @@
 /**
  * Shell views that aren't plain menus: the character sheet (StatSheet + explain), the
  * codex (mechanics with their bypass and exploit), the death recap and the level-clear
- * loot window.
+ * loot window. Their words are lines (lang/panels.ts); what other parts of the game hand them
+ * (a mechanic, a mod, a monster's name, a loot label) comes in the player's language already.
  */
-import type { PaletteColor } from '../../engine';
+import { type PaletteColor, textWidthPx, wrapText } from '../../engine';
 import { describeMod, type StatSheet } from '../core/mods';
 import { StatQuery } from '../combat/stats';
 import { DAMAGE_COLORS, DAMAGE_TYPES } from '../core/types';
 import type { MechanicInfo, Panel, WorldLoot } from '../game/ports';
 import type { Penalty } from '../game/progress';
 import type { Recap } from '../game/recap';
-import { inside, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
+import { lang, lineKey, t } from '../lang';
+import { talkText } from '../town/npcs';
+import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
+
+/** A number in the player's language (12,500 · 12.500), `digits` after the point. */
+const num = (v: number, digits = 0): string => lang().formatNumber(v, { minimumFractionDigits: digits, maximumFractionDigits: digits });
+/** A mini-font row's height: `step`, or a full text row when the mini font can't draw it (accents, other writing systems). */
+const miniStep = (text: string, step: number): number => (miniCovers(text) ? step : 9);
+/** A fraction as a percentage in the player's language (0.12 → 12%, 12 %, %12). */
+const percent = (v: number): string => lang().formatNumber(v, { style: 'percent', maximumFractionDigits: 0 });
 
 // ------------------------------------------------------------------ character sheet
 
 /**
  * The rows: `scale` stats are multipliers combat reads as (1 + Σinc) × Πmore (damage and
- * speeds), the rest are values (flat fractions show as percentages).
+ * speeds), the rest are values (flat fractions show as percentages). Each row's label is the
+ * line `panel.character.stat.<stat>` (`statLabel`).
  */
-const SHEET: { stat: string; label: string; fmt: (v: number) => string; tags?: string[]; scale?: boolean }[] = [
-  { stat: 'life', label: 'Life', fmt: (v) => v.toFixed(0) },
-  { stat: 'mana', label: 'Mana', fmt: (v) => v.toFixed(0) },
-  { stat: 'es', label: 'Energy shield', fmt: (v) => v.toFixed(0) },
-  { stat: 'damage', label: 'Attack damage', fmt: (v) => `${v.toFixed(2)}x`, tags: ['attack', 'melee'], scale: true },
-  { stat: 'attack.speed', label: 'Attack speed', fmt: (v) => `${v.toFixed(2)}x`, scale: true },
-  { stat: 'cast.speed', label: 'Cast speed', fmt: (v) => `${v.toFixed(2)}x`, scale: true },
-  { stat: 'move.speed', label: 'Move speed', fmt: (v) => `${v.toFixed(1)} M/S` },
-  { stat: 'crit.chance', label: 'Crit chance', fmt: (v) => `${pct(v).toFixed(0)}%` },
-  { stat: 'armour', label: 'Armour', fmt: (v) => v.toFixed(0) },
-  { stat: 'res.fire', label: 'Fire res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
-  { stat: 'res.cold', label: 'Cold res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
-  { stat: 'res.lightning', label: 'Lightning res', fmt: (v) => `${Math.min(75, pct(v)).toFixed(0)}%` },
-  { stat: 'life.regen', label: 'Life regen', fmt: (v) => `${v.toFixed(1)}/S` },
-  { stat: 'mana.regen', label: 'Mana regen', fmt: (v) => `${v.toFixed(1)}/S` },
+const SHEET: { stat: string; fmt: (v: number) => string; tags?: string[]; scale?: boolean }[] = [
+  { stat: 'life', fmt: (v) => num(v) },
+  { stat: 'mana', fmt: (v) => num(v) },
+  { stat: 'es', fmt: (v) => num(v) },
+  { stat: 'damage', fmt: (v) => t('panel.character.value.times', { value: num(v, 2) }), tags: ['attack', 'melee'], scale: true },
+  { stat: 'attack.speed', fmt: (v) => t('panel.character.value.times', { value: num(v, 2) }), scale: true },
+  { stat: 'cast.speed', fmt: (v) => t('panel.character.value.times', { value: num(v, 2) }), scale: true },
+  { stat: 'move.speed', fmt: (v) => t('panel.character.value.speed', { value: num(v, 1) }) },
+  { stat: 'crit.chance', fmt: (v) => percent(pct(v) / 100) },
+  { stat: 'armour', fmt: (v) => num(v) },
+  { stat: 'res.fire', fmt: (v) => percent(Math.min(75, pct(v)) / 100) },
+  { stat: 'res.cold', fmt: (v) => percent(Math.min(75, pct(v)) / 100) },
+  { stat: 'res.lightning', fmt: (v) => percent(Math.min(75, pct(v)) / 100) },
+  { stat: 'life.regen', fmt: (v) => t('panel.character.value.per_second', { value: num(v, 1) }) },
+  { stat: 'mana.regen', fmt: (v) => t('panel.character.value.per_second', { value: num(v, 1) }) },
 ];
+
+/** The stats the character sheet lists (lang/panels.ts files a label line for each). */
+export const SHEET_STATS: readonly string[] = SHEET.map((r) => r.stat);
+
+/** A row's label in the player's language. */
+const statLabel = (stat: string): string => t(lineKey('panel.character.stat', stat));
+
+/** Equipment slots with a line of their own (`panel.character.source.item.<slot>`). */
+const SLOTS = new Set(['weapon', 'offhand', 'helm', 'body', 'gloves', 'boots', 'amulet', 'ring1', 'ring2', 'belt']);
+/** Kinds of stat source with a line (`panel.character.source.<kind>`): the part of a source key before its `:`. */
+const SOURCE_KINDS = new Set(['base', 'level', 'tree', 'starter', 'difficulty', 'buff', 'shrine', 'curse', 'charges', 'keystone', 'mechanic']);
+
+/**
+ * Where a stat comes from, for the explain column: a StatSheet source key (`tree`,
+ * `item:weapon`, `mechanic:mire:haste`...) as a line in the player's language.
+ */
+export function sourceLabel(source: string): string {
+  const [kind, rest] = source.split(':') as [string, string | undefined];
+  if (kind === 'item') return SLOTS.has(rest ?? '') ? t(lineKey('panel.character.source.item', rest!)) : t('panel.character.source.item');
+  return SOURCE_KINDS.has(kind) ? t(lineKey('panel.character.source', kind)) : t('panel.character.source.other');
+}
 
 /** Chances and resistances are flat fractions (0.12 = 12%); an old save may hold whole percents. */
 const pct = (v: number) => (Math.abs(v) <= 1.5 ? v * 100 : v);
@@ -41,7 +73,9 @@ const valueOf = (sheet: StatSheet, row: (typeof SHEET)[number]) => (row.scale ? 
 
 export class CharacterSheet implements Panel {
   readonly id = 'character';
-  readonly title = 'Character';
+  get title(): string {
+    return t('panel.character.title');
+  }
   private focus = 3;
   private rows: Rect[] = [];
   /** Room the shell has (`fit`): under 300 the explain column moves under the list. */
@@ -56,7 +90,15 @@ export class CharacterSheet implements Panel {
   }
 
   get size(): { w: number; h: number } {
-    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 14 + SHEET.length * 11 + 64) } : { w: 330, h: 176 };
+    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 14 + SHEET.length * 11 + 64) } : { w: this.listWidth + 180, h: 176 };
+  }
+
+  /** The list column (wide layout): room for the widest label beside the widest value, 150 to 200 (a longer language). */
+  private get listWidth(): number {
+    const sheet = this.sheet();
+    const labels = Math.max(...SHEET.map((row) => textWidthPx(statLabel(row.stat))));
+    const values = Math.max(...SHEET.map((row) => textWidthPx(row.fmt(valueOf(sheet, row)))));
+    return Math.max(150, Math.min(200, labels + values + 14));
   }
 
   constructor(
@@ -71,41 +113,48 @@ export class CharacterSheet implements Panel {
     if (ui.measure(header) <= r.w - 4) ui.text(r.x + 2, r.y + 2, header, { color: 'sand' });
     else ui.mini(r.x + 2, r.y + 3, header, 'sand');
     this.rows = [];
-    const listW = narrow ? r.w : 150;
+    const listW = narrow ? r.w : this.listWidth;
     SHEET.forEach((row, i) => {
       const y = r.y + 14 + i * 11;
       const rect = { x: r.x, y: y - 1, w: listW, h: 10 };
       this.rows.push(rect);
       if (i === this.focus) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
       const value = row.fmt(valueOf(sheet, row));
-      // a narrow sheet shortens labels that would run into their value
-      let label = row.label.toUpperCase();
-      while (label.length > 4 && ui.measure(label) + ui.measure(value) + 8 > listW) label = label.slice(0, -1);
+      // a narrow sheet (or a long language) shortens labels that would run into their value
+      const label = clip(statLabel(row.stat), listW - ui.measure(value) - 8, (s) => ui.measure(s));
       ui.text(r.x + 3, y, label, { color: i === this.focus ? 'white' : 'mist' });
       ui.text(r.x + listW - 3, y, value, { align: 'right', color: 'white' });
     });
     // explain: where the focused stat comes from (a column on the right, or under the list)
     const row = SHEET[this.focus]!;
-    const x = narrow ? r.x + 2 : r.x + 160;
+    const x = narrow ? r.x + 2 : r.x + listW + 10;
     const top = narrow ? r.y + 16 + SHEET.length * 11 : r.y;
     if (narrow) ui.rect(r.x, top - 3, r.w, 1, 'slate');
     else ui.rect(x - 5, r.y, 1, r.h - 4, 'slate');
-    if (!narrow) ui.text(x, top + 2, `${row.label.toUpperCase()} =`, { color: 'sand' });
-    let y = narrow ? top : top + 14;
+    const colW = r.x + r.w - x;
+    let y = narrow ? top : top + 2;
+    if (!narrow) {
+      for (const l of wrap(t('panel.character.explain', { stat: statLabel(row.stat) }), colW)) {
+        ui.text(x, y, l, { color: 'sand' });
+        y += 9;
+      }
+      y += 3;
+    }
     const base = valueOf(sheet, row);
     const parts = sheet.explain(row.stat, row.tags);
-    if (!parts.length) ui.text(x, y, 'BASE ONLY', { color: 'slate' });
+    if (!parts.length) ui.text(x, y, t('panel.character.base_only'), { color: 'slate' });
     for (const p of parts.slice(0, 12)) {
       if (y > r.y + r.h - (narrow ? 22 : 20)) break;
-      ui.mini(x, y, p.source.toUpperCase(), p.source === 'difficulty' ? 'orange' : 'slate');
-      y += 6;
-      for (const line of wrap(describeMod(p.mod).toUpperCase(), r.x + r.w - x)) {
+      const source = clip(sourceLabel(p.source), colW, miniWidth);
+      ui.mini(x, y, source, p.source === 'difficulty' ? 'orange' : 'slate');
+      y += miniStep(source, 6);
+      for (const line of wrap(describeMod(p.mod), colW)) {
         if (y > r.y + r.h - 18) break;
         ui.text(x, y, line, { color: 'sky' });
         y += 9;
       }
     }
-    ui.mini(x, r.y + r.h - 8, `FINAL ${row.fmt(base)}`, 'white');
+    ui.mini(x, r.y + r.h - 8, t('panel.character.final', { value: row.fmt(base) }), 'white');
   }
 
   input(e: UiEvent): boolean {
@@ -128,7 +177,9 @@ export class CharacterSheet implements Panel {
 
 export class Codex implements Panel {
   readonly id = 'codex';
-  readonly title = 'Codex';
+  get title(): string {
+    return t('panel.codex.title');
+  }
   private focus = 0;
   private rows: Rect[] = [];
   /** Room the shell has (`fit`): a phone gets a list of big rows, a tap opens the entry. */
@@ -164,7 +215,7 @@ export class Codex implements Panel {
     if (narrow && this.reading) {
       // the entry, with a back row on top
       this.backRect = { x: r.x, y: r.y, w: r.w, h: TAP_ROW - 1 };
-      ui.button(this.backRect, '< All entries', { focus: true });
+      ui.button(this.backRect, t('panel.codex.all_entries'), { focus: true });
       const m = list[this.focus];
       if (m) this.entry(ui, m, open.has(m.id), r.x + 3, r.y + TAP_ROW + 3, r.w - 6, r.y + r.h);
       return;
@@ -177,7 +228,9 @@ export class Codex implements Panel {
       if (i === this.focus) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
       else if (narrow) ui.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, 'night');
       const known = open.has(m.id);
-      ui.text(r.x + 3, y + 1 + (narrow ? 3 : 0), known ? m.name.toUpperCase() : '? ? ?', { color: known ? (i === this.focus ? 'white' : 'mist') : 'slate' });
+      // a list row is as wide as it is: a long name is cut (the entry shows it whole)
+      const name = known ? clip(m.name, rect.w - (narrow ? 14 : 5), (s) => ui.measure(s)) : '? ? ?';
+      ui.text(r.x + 3, y + 1 + (narrow ? 3 : 0), name, { color: known ? (i === this.focus ? 'white' : 'mist') : 'slate' });
       if (narrow) ui.text(r.x + r.w - 4, y + 4, '>', { color: 'slate', align: 'right' });
     });
     if (narrow) return;
@@ -195,25 +248,24 @@ export class Codex implements Panel {
       y += 9;
     };
     if (!known) {
-      line('NOT YET SEEN', 'slate');
+      line(t('panel.codex.not_seen'), 'slate');
       y += 5;
-      for (const l of wrap('ENTER A LEVEL WITH THIS MECHANIC TO UNLOCK ITS ENTRY.', w)) line(l, 'slate');
+      for (const l of wrap(t('panel.codex.unlock_hint'), w)) line(l, 'slate');
       return;
     }
-    const name = m.name.toUpperCase();
-    if (ui.measure(name, 2) <= w) {
-      ui.text(x, y, name, { color: 'sand', scale: 2 });
+    if (ui.measure(m.name, 2) <= w) {
+      ui.text(x, y, m.name, { color: 'sand', scale: 2 });
       y += 18;
-    } else line(name, 'sand');
-    for (const l of wrap(m.description.toUpperCase(), w)) line(l, 'white');
+    } else for (const l of wrap(m.name, w)) line(l, 'sand');
+    for (const l of wrap(m.description, w)) line(l, 'white');
     y += 4;
-    if (y + 15 <= bottom) ui.mini(x, y, 'BYPASS (CASUAL)', 'lime');
-    y += 7;
-    for (const l of wrap(m.bypass.toUpperCase(), w)) line(l, 'mist');
+    if (y + 15 <= bottom) ui.mini(x, y, t('panel.codex.bypass'), 'lime');
+    y += miniStep(t('panel.codex.bypass'), 7);
+    for (const l of wrap(m.bypass, w)) line(l, 'mist');
     y += 4;
-    if (y + 15 <= bottom) ui.mini(x, y, 'EXPLOIT (SPEEDRUN)', 'orange');
-    y += 7;
-    for (const l of wrap(m.exploit.toUpperCase(), w)) line(l, 'mist');
+    if (y + 15 <= bottom) ui.mini(x, y, t('panel.codex.exploit'), 'orange');
+    y += miniStep(t('panel.codex.exploit'), 7);
+    for (const l of wrap(m.exploit, w)) line(l, 'mist');
   }
 
   input(e: UiEvent): boolean {
@@ -249,6 +301,9 @@ export class Codex implements Panel {
   }
 }
 
+/** A damage type's name, as the death recap labels its bar and the killing blow. */
+const damageType = (type: string): string => t(lineKey('panel.death.type', type));
+
 /** Rows a thumb can hit on a phone (15 art px = 45 CSS px at 3×). */
 const TAP_ROW = 15;
 
@@ -263,7 +318,9 @@ export class DeathRecap implements Panel {
   }
 
   readonly id = 'death';
-  readonly title = 'You died';
+  get title(): string {
+    return t('panel.death.title');
+  }
   private button: Rect = { x: 0, y: 0, w: 0, h: 0 };
   /** Room the shell has (`fit`): a phone stacks the columns. */
   private room = { w: 300, h: 170 };
@@ -287,44 +344,85 @@ export class DeathRecap implements Panel {
     return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 236) } : { w: 300, h: 170 };
   }
 
+  /** Who killed the hero (a monster's name in the player's language), as the recap's heading. */
+  private slainBy(): string {
+    const killer = this.recap.killer;
+    return killer ? t('panel.death.slain_by', { killer }) : t('panel.death.slain_by_rift');
+  }
+
+  /** The killing blow ("Killing blow: 152 fire"), or null when nothing hit. */
+  private blow(): string | null {
+    const b = this.recap.killingBlow;
+    if (!b) return null;
+    return t(b.crit ? 'panel.death.blow_crit' : 'panel.death.blow', { damage: Math.round(b.total), type: damageType(b.type) });
+  }
+
   draw(ui: UiCanvas, r: Rect, time: number): void {
     if (this.narrow) return this.drawNarrow(ui, r);
     const rc = this.recap;
-    ui.text(r.x + r.w / 2, r.y + 2, `SLAIN BY ${(rc.killer ?? 'THE RIFT').toUpperCase()}`, { align: 'center', color: 'red', scale: 1 });
-    ui.text(r.x + r.w / 2, r.y + 12, this.where.toUpperCase(), { align: 'center', color: 'slate' });
-    if (rc.killingBlow) ui.mini(r.x + r.w / 2, r.y + 22, `KILLING BLOW ${Math.round(rc.killingBlow.total)} ${rc.killingBlow.type.toUpperCase()}${rc.killingBlow.crit ? ' CRIT' : ''}`, 'orange', 'center');
-    // damage taken by type
-    let y = r.y + 32;
-    ui.text(r.x + 4, y, 'DAMAGE TAKEN', { color: 'sand' });
-    ui.text(r.x + 140, y, String(Math.round(rc.total)), { align: 'right', color: 'white' });
-    y += 11;
-    const max = Math.max(1, ...DAMAGE_TYPES.map((t) => rc.byType[t]));
-    for (const t of DAMAGE_TYPES) {
-      const v = rc.byType[t];
-      ui.mini(r.x + 4, y + 1, t.toUpperCase(), v > 0 ? DAMAGE_COLORS[t] : 'slate');
-      ui.bar(r.x + 46, y + 1, 70, 4, v / max, DAMAGE_COLORS[t], 'night');
-      ui.mini(r.x + 140, y + 1, String(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
+    const measure = (s: string) => ui.measure(s);
+    ui.text(r.x + r.w / 2, r.y + 2, clip(this.slainBy(), r.w - 8, measure), { align: 'center', color: 'red', scale: 1 });
+    ui.text(r.x + r.w / 2, r.y + 12, clip(this.where, r.w - 8, measure), { align: 'center', color: 'slate' });
+    // the killing blow, wrapped when a language makes it long (what follows moves down)
+    let top = r.y + 22;
+    for (const l of wrapText(this.blow() ?? '', r.w - 8, miniWidth).filter(Boolean).slice(0, 2)) {
+      ui.mini(r.x + r.w / 2, top, l, 'orange', 'center');
+      top += 7;
+    }
+    const y0 = Math.max(r.y + 32, top + 3);
+    // damage taken by type on the left, worst enemies on the right: the left column takes the
+    // room its heading and labels need in a longer language (the right one gives it)
+    const heading = t('panel.death.damage_taken');
+    const total = num(Math.round(rc.total));
+    const labels = Math.max(...DAMAGE_TYPES.map((d) => miniWidth(damageType(d))));
+    const split = Math.max(140, Math.min(r.w / 2 + 20, Math.max(measure(heading) + measure(total) + 8, labels + 4 + 24 + 16)));
+    let y = y0;
+    // a heading too long for its column wraps (the total stays on its first row)
+    ui.text(r.x + split, y, total, { align: 'right', color: 'white' });
+    for (const l of wrap(heading, split - measure(total) - 8)) {
+      ui.text(r.x + 4, y, l, { color: 'sand' });
+      y += 9;
+    }
+    y += 2;
+    const max = Math.max(1, ...DAMAGE_TYPES.map((d) => rc.byType[d]));
+    const labelW = Math.min(split - 40, labels + 4);
+    for (const d of DAMAGE_TYPES) {
+      const v = rc.byType[d];
+      ui.mini(r.x + 4, y + 1, clip(damageType(d), labelW - 4, miniWidth), v > 0 ? DAMAGE_COLORS[d] : 'slate');
+      ui.bar(r.x + 4 + labelW, y + 1, split - 24 - labelW, 4, v / max, DAMAGE_COLORS[d], 'night');
+      ui.mini(r.x + split, y + 1, num(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
       y += 9;
     }
     // sources
-    let sy = r.y + 32;
-    ui.text(r.x + 156, sy, 'WORST ENEMIES', { color: 'sand' });
-    sy += 11;
+    const sx = r.x + split + 16;
+    let sy = y0;
+    for (const l of wrap(t('panel.death.worst_enemies'), r.x + r.w - 4 - sx)) {
+      ui.text(sx, sy, l, { color: 'sand' });
+      sy += 9;
+    }
+    sy += 2;
     for (const s of rc.sources) {
-      ui.mini(r.x + 156, sy + 1, s.name.toUpperCase().slice(0, 18), 'mist');
-      ui.mini(r.x + r.w - 4, sy + 1, `${Math.round(s.total)} / ${s.hits}`, 'white', 'right');
+      const hits = `${num(Math.round(s.total))} / ${num(s.hits)}`;
+      ui.mini(sx, sy + 1, clip(s.name, r.x + r.w - 8 - sx - miniWidth(hits), miniWidth), 'mist');
+      ui.mini(r.x + r.w - 4, sy + 1, hits, 'white', 'right');
       sy += 9;
     }
     // tip and penalty
     y = Math.max(y, sy) + 6;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(`TIP: ${rc.tip.toUpperCase()}`, r.w - 8)) {
+    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), r.w - 8)) {
+      if (y + 8 > r.y + r.h - 22) break;
       ui.text(r.x + 4, y, l, { color: 'lime' });
       y += 9;
     }
-    ui.mini(r.x + 4, r.y + r.h - 22, `LOST ${this.penalty.xp} XP AND ${this.penalty.gold} GOLD`, 'orange');
+    ui.mini(r.x + 4, r.y + r.h - 22, clip(this.lost(), r.w - 8, miniWidth), 'orange');
     this.button = { x: r.x + r.w / 2 - 60, y: r.y + r.h - 15, w: 120, h: 14 };
-    ui.button(this.button, 'Return to town', { focus: time % 1 < 0.5 || true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true });
+  }
+
+  /** What the death cost ("Lost 120 XP and 45 gold"). */
+  private lost(): string {
+    return t('panel.death.lost', { xp: this.penalty.xp, gold: this.penalty.gold });
   }
 
   /** A phone in portrait: one column (killer, damage by type, worst enemies, tip), a full-width button. */
@@ -333,50 +431,64 @@ export class DeathRecap implements Panel {
     const x = r.x + 3;
     const w = r.w - 6;
     const bottom = r.y + r.h - 28; // the penalty line and the button
+    const measure = (s: string) => ui.measure(s);
     let y = r.y + 2;
-    for (const l of wrap(`SLAIN BY ${(rc.killer ?? 'THE RIFT').toUpperCase()}`, w).slice(0, 2)) {
+    for (const l of wrap(this.slainBy(), w).slice(0, 2)) {
       ui.text(r.x + r.w / 2, y, l, { align: 'center', color: 'red' });
       y += 9;
     }
-    ui.mini(r.x + r.w / 2, y, this.where.toUpperCase(), 'slate', 'center');
-    y += 7;
-    if (rc.killingBlow) {
-      ui.mini(r.x + r.w / 2, y, `BLOW ${Math.round(rc.killingBlow.total)} ${rc.killingBlow.type.toUpperCase()}${rc.killingBlow.crit ? ' CRIT' : ''}`, 'orange', 'center');
-      y += 7;
+    ui.mini(r.x + r.w / 2, y, clip(this.where, w, miniWidth), 'slate', 'center');
+    y += miniStep(this.where, 7);
+    const blow = this.blow();
+    if (blow) {
+      for (const l of wrapText(blow, w, miniWidth).slice(0, 2)) {
+        ui.mini(r.x + r.w / 2, y, l, 'orange', 'center');
+        y += miniStep(l, 7);
+      }
     }
     y += 3;
-    ui.text(x, y, 'DAMAGE', { color: 'sand' });
-    ui.text(x + w, y, String(Math.round(rc.total)), { align: 'right', color: 'white' });
-    y += 10;
-    const max = Math.max(1, ...DAMAGE_TYPES.map((t) => rc.byType[t]));
-    for (const t of DAMAGE_TYPES) {
-      const v = rc.byType[t];
-      ui.mini(x, y, t.slice(0, 5).toUpperCase(), v > 0 ? DAMAGE_COLORS[t] : 'slate');
-      ui.bar(x + 22, y, w - 22 - 18, 4, v / max, DAMAGE_COLORS[t], 'night');
-      ui.mini(x + w, y, String(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
-      y += 7;
+    const total = num(Math.round(rc.total));
+    ui.text(x + w, y, total, { align: 'right', color: 'white' });
+    for (const l of wrap(t('panel.death.damage_taken'), w - measure(total) - 4)) {
+      ui.text(x, y, l, { color: 'sand' });
+      y += 9;
+    }
+    y += 1;
+    const max = Math.max(1, ...DAMAGE_TYPES.map((d) => rc.byType[d]));
+    // the labels' column as wide as its widest label, up to half the row (then labels are cut)
+    const labelW = Math.min(Math.floor(w / 2), Math.max(...DAMAGE_TYPES.map((d) => miniWidth(damageType(d)))) + 3);
+    const rowH = Math.max(...DAMAGE_TYPES.map((d) => miniStep(damageType(d), 7)));
+    for (const d of DAMAGE_TYPES) {
+      const v = rc.byType[d];
+      ui.mini(x, y, clip(damageType(d), labelW - 3, miniWidth), v > 0 ? DAMAGE_COLORS[d] : 'slate');
+      ui.bar(x + labelW, y, w - labelW - 18, 4, v / max, DAMAGE_COLORS[d], 'night');
+      ui.mini(x + w, y, num(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
+      y += rowH;
     }
     if (rc.sources.length) {
       y += 3;
-      ui.text(x, y, 'WORST ENEMIES', { color: 'sand' });
-      y += 10;
+      for (const l of wrap(t('panel.death.worst_enemies'), w)) {
+        ui.text(x, y, l, { color: 'sand' });
+        y += 9;
+      }
+      y += 1;
       for (const s of rc.sources.slice(0, 3)) {
-        const v = `${Math.round(s.total)}`;
-        ui.mini(x, y, s.name.toUpperCase().slice(0, Math.max(4, Math.floor((w - v.length * 4 - 4) / 4))), 'mist');
+        const v = num(Math.round(s.total));
+        ui.mini(x, y, clip(s.name, w - miniWidth(v) - 4, miniWidth), 'mist');
         ui.mini(x + w, y, v, 'white', 'right');
-        y += 7;
+        y += miniStep(s.name, 7);
       }
     }
     y += 4;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(`TIP: ${rc.tip.toUpperCase()}`, w)) {
+    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), w)) {
       if (y + 8 > bottom) break;
       ui.text(x, y, l, { color: 'lime' });
       y += 9;
     }
-    ui.mini(r.x + r.w / 2, r.y + r.h - 26, `LOST ${this.penalty.xp} XP · ${this.penalty.gold} GOLD`, 'orange', 'center');
+    ui.mini(r.x + r.w / 2, r.y + r.h - 26, clip(this.lost(), w, miniWidth), 'orange', 'center');
     this.button = { x: r.x, y: r.y + r.h - 17, w: r.w, h: 16 };
-    ui.button(this.button, 'Return to town', { focus: true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: true });
   }
 
   input(e: UiEvent): boolean {
@@ -392,7 +504,9 @@ export class DeathRecap implements Panel {
 
 export class LootWindow implements Panel {
   readonly id = 'loot';
-  readonly title = 'Level clear';
+  get title(): string {
+    return t('panel.loot.title');
+  }
   private focus = 0;
   private rects: Rect[] = [];
   /** Room the shell has (`fit`): a phone wraps the summary, gets tall rows and stacked buttons. */
@@ -419,8 +533,8 @@ export class LootWindow implements Panel {
 
   private actions(): { id: string; label: string; run: () => void }[] {
     return [
-      { id: 'takeAll', label: 'Take all', run: () => [...this.loot()].forEach((l) => this.take(l)) },
-      { id: 'leave', label: 'Return to town', run: this.leave },
+      { id: 'takeAll', label: t('panel.loot.take_all'), run: () => [...this.loot()].forEach((l) => this.take(l)) },
+      { id: 'leave', label: t('panel.button.return_to_town'), run: this.leave },
     ];
   }
 
@@ -441,21 +555,21 @@ export class LootWindow implements Panel {
     let y = r.y + 2;
     for (const s of this.summary()) {
       // a phone breaks the line between its " · " parts rather than inside one
-      const parts = s.toUpperCase().split(' · ');
+      const parts = s.split(' · ');
       const lines: string[] = [];
       for (const p of parts) {
         const joined = lines.length ? `${lines[lines.length - 1]} · ${p}` : p;
         if (lines.length && ui.measure(joined) <= r.w - 6) lines[lines.length - 1] = joined;
         else lines.push(p);
       }
-      for (const l of narrow ? lines.flatMap((x) => wrap(x, r.w - 6)) : [s.toUpperCase()]) {
+      for (const l of narrow ? lines.flatMap((x) => wrap(x, r.w - 6)) : wrap(s, r.w - 6)) {
         ui.text(r.x + 3, y, l, { color: 'sand' });
         y += narrow ? 9 : 10;
       }
     }
     y += 2;
     const items = this.loot();
-    ui.mini(r.x + 3, y, items.length ? 'STILL ON THE FLOOR' : 'NOTHING LEFT BEHIND', 'mist');
+    ui.mini(r.x + 3, y, t(items.length ? 'panel.loot.still_on_floor' : 'panel.loot.nothing_left'), 'mist');
     y += 8;
     this.rects = [];
     const rowH = narrow ? 14 : 10;
@@ -464,12 +578,10 @@ export class LootWindow implements Panel {
       const rect = { x: r.x, y, w: r.w, h: rowH };
       this.rects.push(rect);
       if (this.focus === i) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
-      let label = l.label;
-      while (label.length > 4 && ui.measure(label) > r.w - 8) label = label.slice(0, -1);
-      ui.text(r.x + 4, y + (narrow ? 3 : 1), label, { color: l.color });
+      ui.text(r.x + 4, y + (narrow ? 3 : 1), clip(l.label, r.w - 8, (s) => ui.measure(s)), { color: l.color });
       y += rowH;
     });
-    if (items.length > this.shown) ui.mini(r.x + 4, y + 1, `+${items.length - this.shown} MORE`, 'slate');
+    if (items.length > this.shown) ui.mini(r.x + 4, y + 1, t('panel.loot.more', { count: items.length - this.shown }), 'slate');
     this.actions().forEach((a, i) => {
       const rect = narrow
         ? { x: r.x, y: r.y + r.h - (2 - i) * 17, w: r.w, h: 15 }
@@ -508,9 +620,12 @@ export class LootWindow implements Panel {
 
 // ------------------------------------------------------------------ a line of dialogue over a view
 
-/** Small header panel for NPC lines (shown above the vendor / tree / rift panels). */
+/**
+ * Small header panel for NPC lines (shown above the vendor / tree / rift panels): `line` is what
+ * `Npc.talk` returned (a line id: the speaker and their words, `talkText`) or text to show as it is.
+ */
 export function dialogue(ui: UiCanvas, line: string, panel: Rect): void {
-  const lines = wrap(line.toUpperCase(), Math.min(400, ui.w - 20));
+  const lines = wrap(talkText(line), Math.min(400, ui.w - 20));
   const w = Math.max(...lines.map((l) => ui.measure(l))) + 10;
   const x = Math.floor((ui.w - w) / 2);
   const y = Math.max(2, panel.y - 30 - lines.length * 9);

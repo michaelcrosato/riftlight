@@ -122,11 +122,11 @@ export class Cat {
       this.state = 'flee';
       this.timer = 1.4;
       if (this.meowCd <= 0) {
-        this.bubble = { text: 'MRROW!', at: this.position.clone().setY(0.9), t: 0, life: 1.4 };
+        this.bubble = { line: 'town.cat.mrrow', at: this.position.clone().setY(0.9), t: 0, life: 1.4 };
         this.meowCd = 8;
       }
     } else if (hero && heroD < 3 && this.state === 'sit' && this.meowCd <= 0) {
-      this.bubble = { text: 'MEOW', at: this.position.clone().setY(0.9), t: 0, life: 1.6 };
+      this.bubble = { line: 'town.cat.meow', at: this.position.clone().setY(0.9), t: 0, life: 1.6 };
       this.meowCd = 12;
     }
     let want = 0;

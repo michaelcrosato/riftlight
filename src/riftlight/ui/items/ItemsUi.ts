@@ -26,26 +26,30 @@
  * Narrow screens (a phone in portrait: 124 art pixels wide) stack the left window above a
  * compact bag (no paper doll) and wrap tooltips to the screen.
  */
-import type { GameContext } from '../../../engine';
+import type { GameContext, LineValues } from '../../../engine';
+import { surfaceScale } from '../../../engine/hud/deviceText';
+import { noteText } from '../../../engine/animation/font';
 import { PALETTE } from '../../../engine/palette';
 import type { StatSheet } from '../../core/mods';
 import type { Item } from '../../core/types';
 import { compareEquip, type StatDelta } from '../../loot/compare';
+import { lang, t } from '../../lang';
 import { CURRENCY } from '../../loot/content';
 import { applyCurrency, craftBlocker } from '../../loot/craft';
 import { LOOT_SOUNDS } from '../../loot/data/sounds';
 import { itemClass, itemColour } from '../../loot/filter';
 import { addItem, dropAt, emptyGrid, equip, equipItem, findItem, type Grid, gridOf, itemAt, itemSize, type LootState, removeItem, replaceItem, setGrid, STASH_TABS, transfer, unequip } from '../../loot/inventory';
 import { baseOf, EQUIP_SLOTS, type EquipSlot, isEquipment, requiredLevel } from '../../loot/itemMods';
+import { currencyDescription, currencyName, currencyShort, damageName, goldLabel, itemName, rarityName, type Reason, reasonText } from '../../loot/names';
 import { autoSocket, gemAt, gemProgress, isGem, setSocket, SKILL_SLOTS, skillNumbers, socketBlocker, SUPPORT_LINKS, supportApplies, type SkillNumbers } from '../../loot/sockets';
 import { buy, buyPrice, sell, sellPrice, type VendorKind } from '../../loot/vendor';
 import { SKILLS } from '../../skills/actives';
-import { miniRows, type UiEvent } from '../kit';
+import { clip, miniCovers, miniRows, miniWidth, type UiEvent } from '../kit';
 import { gemIcon } from '../../skills/icons';
 import { drawGemIcon, drawIcon } from './icons';
-import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI } from './paint';
+import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI, wrap } from './paint';
 import type { ItemsStore } from './store';
-import { drawTooltip, measureTooltip, TIP_CHARS, tooltipLines } from './tooltip';
+import { drawTooltip, measureTooltip, TIP_W, tooltipLines } from './tooltip';
 
 export const CELL = 10;
 const PANEL_W = 128;
@@ -116,12 +120,23 @@ export interface ItemsUiOptions {
   titles?: Partial<Record<Exclude<LeftPanel, null>, string>>;
 }
 
-/** Vendor tabs, in order (a kind without stock is not shown). */
+/** Vendor tabs, in order (a kind without stock is not shown); `label` is a line id. */
 const VENDOR_TABS: readonly { kind: VendorKind; label: string }[] = [
-  { kind: 'smith', label: 'WARES' },
-  { kind: 'gems', label: 'GEMS' },
-  { kind: 'gamble', label: 'GAMBLE' },
+  { kind: 'smith', label: 'item.vendor.tab.smith' },
+  { kind: 'gems', label: 'item.vendor.tab.gems' },
+  { kind: 'gamble', label: 'item.vendor.tab.gamble' },
 ];
+
+/** A message under the windows: a line id and its blanks, shown in the player's language. */
+export interface ItemsMessage {
+  readonly id: string;
+  readonly values?: LineValues;
+  /** An older snapshot's finished words (before messages were ids): shown as they are. */
+  readonly text?: string;
+}
+
+/** A reason a loot action can't be done, as a message. */
+const why = (r: Reason): ItemsMessage => ({ id: `item.reason.${r.id}`, ...(r.values ? { values: r.values } : {}) });
 
 /** What the item windows keep while closed (`ItemsUi.viewState`): tabs, the cursor, the last message. */
 export interface ItemsViewState {
@@ -129,7 +144,7 @@ export interface ItemsViewState {
   readonly skillSlot: number;
   readonly cursor: { readonly x: number; readonly y: number };
   readonly cursorMode: 'pointer' | 'pad';
-  readonly message: string;
+  readonly message: ItemsMessage | null;
   readonly messageTime: number;
   readonly time: number;
   readonly pointerAt: { readonly x: number; readonly y: number };
@@ -157,7 +172,7 @@ export class ItemsUi {
   /** Last input device that moved the cursor. */
   cursorMode: 'pointer' | 'pad' = 'pointer';
   altHeld = false;
-  message = '';
+  message: ItemsMessage | null = null;
   /** Touch: the item whose tooltip a first tap opened (a second tap acts on it). */
   private touchPick: string | null = null;
   private lastTouch = false;
@@ -170,9 +185,12 @@ export class ItemsUi {
   private time = 0;
   private compareCache = { key: '', deltas: [] as StatDelta[] };
   private skillCache = { key: '', numbers: [] as (SkillNumbers | null)[] };
+  private hintCache = { key: '', hint: { mini: true, rows: [] as string[] } };
   private vendorCache: { stock: readonly Item[]; grid: Grid } = { stock: [], grid: emptyGrid(VENDOR_SIZE.w, VENDOR_SIZE.h) };
   private size = { w: 480, h: 270 };
   private drawnKey = '';
+  /** The last paint drew text in the device's font: the canvas is painted at the screen's resolution. */
+  private deviceText = false;
 
   constructor(
     private readonly ctx: GameContext,
@@ -198,7 +216,7 @@ export class ItemsUi {
   /** What stays when the windows close, as data (save-states: a snapshot is taken with them closed). */
   viewState(): ItemsViewState {
     if (this.isOpen) throw new Error('the item windows are open');
-    return { stashTab: this.stashTab, skillSlot: this.skillSlot, cursor: { ...this.cursor }, cursorMode: this.cursorMode, message: this.message, messageTime: this.messageTime, time: this.time, pointerAt: { ...this.pointerAt }, lastTouch: this.lastTouch, longPressed: this.longPressed, hoverOrb: this.hoverOrb };
+    return { stashTab: this.stashTab, skillSlot: this.skillSlot, cursor: { ...this.cursor }, cursorMode: this.cursorMode, message: this.message ? { ...this.message } : null, messageTime: this.messageTime, time: this.time, pointerAt: { ...this.pointerAt }, lastTouch: this.lastTouch, longPressed: this.longPressed, hoverOrb: this.hoverOrb };
   }
 
   setViewState(s: ItemsViewState): void {
@@ -207,7 +225,8 @@ export class ItemsUi {
     this.skillSlot = s.skillSlot;
     this.cursor = { ...s.cursor };
     this.cursorMode = s.cursorMode;
-    this.message = s.message;
+    const m = s.message as ItemsMessage | string | null | undefined;
+    this.message = typeof m === 'string' ? { id: '', text: m } : (m ?? null); // an older snapshot kept the text
     this.messageTime = s.messageTime;
     this.time = s.time;
     this.pointerAt = { ...s.pointerAt };
@@ -303,7 +322,20 @@ export class ItemsUi {
   }
 
   private leftH(): number {
-    return this.left === 'vendor' ? VENDOR_H : this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
+    if (this.left === 'vendor') {
+      const hint = this.vendorHint();
+      return VENDOR_H + (hint.mini ? 0 : (hint.rows.length - 1) * 9 + 1);
+    }
+    return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
+  }
+
+  /** The hint under the vendor's goods: a row of the mini font, or rows of the normal font (the window grows). */
+  private vendorHint(): { mini: boolean; rows: string[] } {
+    const text = t(this.narrow ? 'item.vendor.hint_touch' : 'item.vendor.hint');
+    const w = this.panelW() - 10;
+    const key = `${text}|${w}`;
+    if (this.hintCache.key !== key) this.hintCache = { key, hint: miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) } };
+    return this.hintCache.hint;
   }
 
   /** Inventory panel rect (art pixels). */
@@ -362,9 +394,11 @@ export class ItemsUi {
     return { x: r.x + r.w - 15, y: r.y + 3, w: 12, h: 11 };
   }
 
+  /** The title bar's "Gems" button (as wide as its word needs), left of the close box. */
   private skillsButton(): Rect {
     const r = this.rightRect();
-    return { x: r.x + r.w - 49, y: r.y + 3, w: 32, h: 11 };
+    const w = Math.max(32, textWidth(t('item.ui.gems')) + 4);
+    return { x: r.x + r.w - 17 - w, y: r.y + 3, w, h: 11 };
   }
 
   /** The active socket (link −1) or a support link of a skill slot. */
@@ -493,7 +527,7 @@ export class ItemsUi {
     const c = this.canvas;
     if (!c) return { x: -1, y: -1 }; // headless: no page
     const r = c.getBoundingClientRect();
-    return { x: r.left + ((x + 0.5) / c.width) * r.width, y: r.top + ((y + 0.5) / c.height) * r.height };
+    return { x: r.left + ((x + 0.5) / this.size.w) * r.width, y: r.top + ((y + 0.5) / this.size.h) * r.height };
   }
 
   private centre(r: Rect): { x: number; y: number } {
@@ -779,14 +813,14 @@ export class ItemsUi {
       this.touchPick = null;
       this.secondary(d.x, d.y);
     }
-    if (this.message && this.time - this.messageTime > 2.5) this.message = '';
+    if (this.message && this.time - this.messageTime > 2.5) this.message = null;
     this.paint();
   }
 
   // ---------------------------------------------------------------- actions
 
-  private say(text: string, sound: 'loot-deny' | null = 'loot-deny'): void {
-    this.message = text;
+  private say(message: ItemsMessage, sound: 'loot-deny' | null = 'loot-deny'): void {
+    this.message = message;
     this.messageTime = this.time;
     if (sound) this.ctx.audio.play(sound);
   }
@@ -838,7 +872,7 @@ export class ItemsUi {
       if (item && isEquipment(item)) {
         this.benchItem = item.uid;
         this.ctx.audio.play('loot-pickup');
-      } else if (item) this.say(itemClass(item) === 'currency' ? 'pick an orb on the bench' : 'only equipment can be crafted');
+      } else if (item) this.say(itemClass(item) === 'currency' ? { id: 'item.say.pick_orb' } : why({ id: 'equipment_only' }));
       return;
     }
     if (t.kind === 'socket') {
@@ -872,27 +906,27 @@ export class ItemsUi {
     if (t.kind === 'slot') {
       const r = unequip(s, t.slot);
       if (r.ok) this.commit(r.value);
-      else this.say(r.reason);
+      else this.say(why(r.reason));
     } else if (t.kind === 'vendor') this.buyAt(t);
     else if (t.kind === 'socket') this.unsocket(t);
     else if (t.kind === 'grid' && t.where !== 'inventory') {
       const r = transfer(s, item.uid, t.where, 'inventory');
       if (r.ok) this.commit(r.value);
-      else this.say(r.reason);
+      else this.say(why(r.reason));
     } else if (t.kind === 'grid') {
       if (itemClass(item) === 'currency') {
         if (this.left === 'bench' && this.benchTarget()) return this.benchOrb(item.base);
         this.applying = item.uid;
-        this.say(`apply ${item.name}: click an item`, null);
+        this.say({ id: 'item.say.apply_orb', values: { orb: itemName(item) } }, null);
       } else if (isGem(item)) {
-        if (this.left !== 'skills') return this.say('open the skill panel (G) to socket gems');
+        if (this.left !== 'skills') return this.say({ id: 'item.say.open_skills' });
         const ref = autoSocket(this.store.skills, item, this.skillSlot);
-        if (!ref) return this.say(`no free link in skill ${this.skillSlot + 1}`);
+        if (!ref) return this.say({ id: 'item.say.no_free_link', values: { slot: this.skillSlot + 1 } });
         this.socketFromBag(item, ref);
       } else if (isEquipment(item)) {
         const r = equip(s, item.uid, this.store.heroLevel);
         if (r.ok) this.commit(r.value);
-        else this.say(r.reason);
+        else this.say(why(r.reason));
       }
     }
   }
@@ -906,11 +940,11 @@ export class ItemsUi {
       if (this.left === 'stash') {
         const r = transfer(s, item.uid, 'inventory', this.stashTab);
         if (r.ok) this.commit(r.value);
-        else this.say(r.reason);
+        else this.say(why(r.reason));
       } else if (this.left === 'vendor') {
         const r = sell(s, item.uid);
         if (r.ok) this.commit(r.value.state, 'loot-gold');
-        else this.say(r.reason);
+        else this.say(why(r.reason));
       } else if (this.left === 'skills' && isGem(item)) {
         const ref = autoSocket(this.store.skills, item, this.skillSlot);
         if (ref) this.socketFromBag(item, ref);
@@ -918,12 +952,12 @@ export class ItemsUi {
     } else if (t.kind === 'grid') {
       const r = transfer(s, item.uid, t.where, 'inventory');
       if (r.ok) this.commit(r.value);
-      else this.say(r.reason);
+      else this.say(why(r.reason));
     } else if (t.kind === 'vendor') this.buyAt(t);
     else if (t.kind === 'slot') {
       const r = unequip(s, t.slot);
       if (r.ok) this.commit(r.value);
-      else this.say(r.reason);
+      else this.say(why(r.reason));
     } else if (t.kind === 'socket') this.unsocket(t);
   }
 
@@ -931,23 +965,23 @@ export class ItemsUi {
     const item = this.itemAtTarget(t);
     if (!item) return;
     const r = buy(this.store.state, this.store.vendor.stock, item.uid);
-    if (!r.ok) return this.say(r.reason);
+    if (!r.ok) return this.say(why(r.reason));
     this.store.vendor = { ...this.store.vendor, stock: r.value.stock };
     this.commit(r.value.state, 'loot-gold');
   }
 
   /** A gem from the bag into a socket; whatever was there goes back into the bag. */
   private socketFromBag(item: Item, ref: { slot: number; link: number }): void {
-    const why = socketBlocker(item, ref);
-    if (why) return this.say(why);
+    const blocked = socketBlocker(item, ref);
+    if (blocked) return this.say(why(blocked));
     const need = requiredLevel(item);
-    if (need > this.store.heroLevel) return this.say(`requires level ${need}`);
+    if (need > this.store.heroLevel) return this.say(why({ id: 'requires_level', values: { level: need } }));
     const s = this.store.state;
     const r = setSocket(this.store.skills, ref, item);
     let inv = removeItem(s.inventory, item.uid);
     if (r.displaced) {
       const a = addItem(inv, r.displaced);
-      if (a.rest) return this.say('no room in the inventory');
+      if (a.rest) return this.say(why({ id: 'inventory_full' }));
       inv = a.grid;
     }
     this.skillSlot = ref.slot;
@@ -960,14 +994,15 @@ export class ItemsUi {
     const gem = gemAt(this.store.skills, t);
     if (!gem) return;
     const a = addItem(this.store.state.inventory, gem);
-    if (a.rest) return this.say('no room in the inventory');
+    if (a.rest) return this.say(why({ id: 'inventory_full' }));
     const r = setSocket(this.store.skills, t, null);
     this.store.setSkills(r.sockets, { ...this.store.state, inventory: a.grid });
     this.ctx.audio.play('loot-pickup');
   }
 
   private noteSupport(socket: (typeof this.store.skills)[number], item: Item): void {
-    if (item.gem?.support && supportApplies(socket, item) === false) this.say(`${item.name} doesn't support ${socket.gem?.name ?? 'this skill'}`, null);
+    if (item.gem?.support && supportApplies(socket, item) === false)
+      this.say(socket.gem ? { id: 'item.say.not_supported', values: { support: itemName(item), skill: itemName(socket.gem) } } : { id: 'item.say.not_supported_here', values: { support: itemName(item) } }, null);
   }
 
   private pick(t: Target): void {
@@ -1001,27 +1036,27 @@ export class ItemsUi {
       const y = Math.round(t.gy - size.h / 2);
       const grid = gridOf(s, t.where);
       const r = dropAt(grid, held.item, Math.max(0, Math.min(grid.w - size.w, x)), Math.max(0, Math.min(grid.h - size.h, y)));
-      if (!r.ok) return this.say(r.reason);
+      if (!r.ok) return this.say(why(r.reason));
       const swapped = r.value.swapped;
       this.held = swapped ? { item: swapped, origin: held.origin } : null;
       this.commit(setGrid(s, t.where, r.value.grid));
     } else if (t.kind === 'slot') {
       const r = equipItem(s.equipment, held.item, t.slot, this.store.heroLevel);
-      if (!r.ok) return this.say(r.reason);
+      if (!r.ok) return this.say(why(r.reason));
       const [first, ...rest] = r.value.displaced;
       let inv = s.inventory;
       for (const d of rest) {
         const a = addItem(inv, d);
-        if (a.rest) return this.say('no room in the inventory');
+        if (a.rest) return this.say(why({ id: 'inventory_full' }));
         inv = a.grid;
       }
       this.held = first ? { item: first, origin: { kind: 'slot', slot: t.slot } } : null;
       this.commit({ ...s, inventory: inv, equipment: r.value.equipment });
     } else if (t.kind === 'socket') {
-      const why = socketBlocker(held.item, t);
-      if (why) return this.say(why);
+      const blocked = socketBlocker(held.item, t);
+      if (blocked) return this.say(why(blocked));
       const need = requiredLevel(held.item);
-      if (need > this.store.heroLevel) return this.say(`requires level ${need}`);
+      if (need > this.store.heroLevel) return this.say(why({ id: 'requires_level', values: { level: need } }));
       const r = setSocket(this.store.skills, t, held.item);
       this.held = r.displaced ? { item: r.displaced, origin: held.origin } : null;
       this.skillSlot = t.slot;
@@ -1079,9 +1114,9 @@ export class ItemsUi {
   private benchOrb(base: string): void {
     this.hoverOrb = base;
     const target = this.benchTarget();
-    if (!target) return this.say('put an item on the bench first');
+    if (!target) return this.say({ id: 'item.say.bench_first' });
     const orb = this.store.state.inventory.items.find((p) => p.item.base === base)?.item;
-    if (!orb) return this.say(`no ${CURRENCY.get(base).name} in the bag`);
+    if (!orb) return this.say({ id: 'item.say.no_orb', values: { orb: currencyName(base) } });
     this.useOrb(orb, target);
   }
 
@@ -1089,7 +1124,7 @@ export class ItemsUi {
   private useOrb(orb: Item, target: Item): boolean {
     const r = applyCurrency(this.store.rng, orb.base, target);
     if (!r.ok) {
-      this.say(r.reason);
+      this.say(why(r.reason));
       return false;
     }
     const s = this.store.state;
@@ -1106,7 +1141,7 @@ export class ItemsUi {
     const left = (orb.quantity ?? 1) - 1;
     next = { ...next, inventory: left > 0 ? replaceItem(next.inventory, { ...orb, quantity: left }) : removeItem(next.inventory, orb.uid) };
     this.commit(next, 'loot-craft');
-    this.say(r.note ?? `${CURRENCY.get(orb.base).name} used`, null);
+    this.say(r.note ? { id: `item.craft.${r.note}` } : { id: 'item.say.orb_used', values: { orb: currencyName(orb.base) } }, null);
     return true;
   }
 
@@ -1144,32 +1179,43 @@ export class ItemsUi {
     }
     this.size = { w: res.width, h: res.height };
     if (!c) return; // headless: the layout follows the view; nothing to paint
-    if (c.width !== res.width || c.height !== res.height) {
-      c.width = res.width;
-      c.height = res.height;
+    // device pixels per art pixel: the screen's resolution while device text shows (as the engine's Hud)
+    const k = surfaceScale(f.scale, this.deviceText);
+    if (c.width !== res.width * k || c.height !== res.height * k) {
+      c.width = res.width * k;
+      c.height = res.height * k;
       this.drawnKey = '';
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message}|${this.cursorMode}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });
     if (!g) return;
+    g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, c.width, c.height);
-    const p = canvasPainter(g);
+    g.setTransform(k, 0, 0, k, 0, 0); // art pixels: k×k device pixels each
+    const p = canvasPainter(g, k);
     if (this.inventoryOpen) this.drawInventory(p);
     if (this.left) this.drawLeft(p);
     this.drawCursor(p);
     if (this.message) {
-      const text = this.message.toUpperCase();
-      const lines = this.narrow ? wrapChars(text, Math.floor((this.size.w - 10) / 6)) : [text];
+      const lines = wrap(this.message.text ?? t(this.message.id, this.message.values), this.size.w - 10);
       const w = Math.max(...lines.map(textWidth)) + 8;
       const h = lines.length * 9 + 4;
       const x = Math.floor((this.size.w - w) / 2);
       const y = this.size.h - h - 3;
       panel(p, x, y, w, h, UI.panelEdge);
       lines.forEach((l, i) => p.text(x + 4, y + 3 + i * 9, l, UI.text));
+    }
+    // text in the device's font came (or went): paint again at the resolution it needs
+    if (p.device !== this.deviceText) {
+      this.deviceText = p.device;
+      if (surfaceScale(f.scale, p.device) !== k) {
+        this.drawnKey = '';
+        this.paint();
+      }
     }
   }
 
@@ -1181,7 +1227,7 @@ export class ItemsUi {
     p.rect(x + 1, y + 1, w - 2, h - 2, PALETTE.slate);
     p.rect(x + 2, y + 2, w - 4, h - 4, PALETTE.ink);
     p.rect(x + 3, y + 3, w - 6, 11, PALETTE.navy);
-    shadowText(p, x + 6, y + 5, title.toUpperCase(), UI.title);
+    shadowText(p, x + 6, y + 5, title, UI.title);
     const c = this.closeRect(r);
     const hot = this.cursorMode === 'pointer' && this.cursor.x >= c.x && this.cursor.x < c.x + c.w && this.cursor.y >= c.y && this.cursor.y < c.y + c.h;
     p.rect(c.x, c.y, c.w, c.h, hot ? PALETTE.red : PALETTE.plum);
@@ -1198,10 +1244,10 @@ export class ItemsUi {
     p.rect(x, y, w, h, highlight ? UI.panelEdge : 0x2a2f48);
     const gi = item.gem ? gemIcon(item.gem.id, item.gem.support) : null;
     if (gi) drawGemIcon(p, gi, x + 1, y + 1, w - 2, h - 2);
-    else drawIcon(p, baseOf(item).look ?? baseOf(item).slot, x + 1, y + 1, w - 2, h - 2, colour, CURRENCY.has(item.base) ? CURRENCY.get(item.base).short : undefined);
+    else drawIcon(p, baseOf(item).look ?? baseOf(item).slot, x + 1, y + 1, w - 2, h - 2, colour, CURRENCY.has(item.base) ? currencyShort(item.base) : undefined);
     outline(p, x, y, w, h, item.rarity === 'normal' && itemClass(item) === item.rarity ? UI.cellEdge : colour);
-    if ((item.quantity ?? 1) > 1) shadowText(p, x + 1, y + 1, String(item.quantity), PALETTE.white);
-    if (item.gem && h >= 16) shadowText(p, x + 1, y + h - 8, String(item.gem.level), PALETTE.white);
+    if ((item.quantity ?? 1) > 1) shadowText(p, x + 1, y + 1, lang().formatNumber(item.quantity ?? 1), PALETTE.white);
+    if (item.gem && h >= 16) shadowText(p, x + 1, y + h - 8, lang().formatNumber(item.gem.level), PALETTE.white);
     // Items the hero can't use yet get a red corner; the bench's item a sand one.
     if ((isEquipment(item) || item.gem) && requiredLevel(item) > this.store.heroLevel) p.rect(x + w - 3, y + 1, 2, 2, UI.bad);
     if (item.uid === this.benchItem && this.left === 'bench') outline(p, x - 1, y - 1, w + 2, h + 2, PALETTE.sand);
@@ -1224,13 +1270,14 @@ export class ItemsUi {
   private drawInventory(p: Painter): void {
     const r = this.rightRect();
     const compact = this.compact();
-    this.frame(p, r, compact ? 'Bag' : 'Inventory');
+    this.frame(p, r, t(compact ? 'item.window.bag' : 'item.window.inventory'));
     if (!compact) {
       if (this.left === null || this.left === 'skills') {
         const b = this.skillsButton();
         const on = this.left === 'skills';
+        const label = t('item.ui.gems');
         p.rect(b.x, b.y, b.w, b.h, on ? PALETTE.sand : PALETTE.slate);
-        p.text(b.x + 2, b.y + 2, 'GEMS', on ? PALETTE.ink : PALETTE.white);
+        p.text(b.x + Math.floor((b.w - textWidth(label)) / 2), b.y + 2, label, on ? PALETTE.ink : PALETTE.white);
       }
       const eq = this.store.state.equipment;
       const cur = this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y));
@@ -1246,9 +1293,11 @@ export class ItemsUi {
     const g = this.inventoryGridOrigin();
     this.drawGrid(p, this.store.state.inventory, g.x, g.y);
     const by = r.y + r.h - 12;
-    shadowText(p, r.x + 5, by, `GOLD ${this.store.state.gold}`, UI.gold);
-    const lvl = `LV ${this.store.heroLevel}`;
-    p.text(r.x + r.w - 5 - textWidth(lvl), by, lvl, UI.dim);
+    const gold = goldLabel(this.store.state.gold);
+    shadowText(p, r.x + 5, by, gold, UI.gold);
+    const lvl = t('item.ui.level', { level: this.store.heroLevel });
+    // the level gives way to the gold when a language's words leave no room for both (the HUD shows it too)
+    if (textWidth(gold) + 6 + textWidth(lvl) <= r.w - 10) p.text(r.x + r.w - 5 - textWidth(lvl), by, lvl, UI.dim);
   }
 
   private drawLeft(p: Painter): void {
@@ -1256,30 +1305,32 @@ export class ItemsUi {
     const titles = this.opts.titles ?? {};
     const title =
       this.left === 'stash'
-        ? (titles.stash ?? 'Stash')
+        ? (titles.stash ?? t('item.window.stash'))
         : this.left === 'vendor'
-          ? (titles.vendor ?? (this.store.vendor.kind === 'gems' ? 'Gem vendor' : 'Smith'))
+          ? (titles.vendor ?? t(this.store.vendor.kind === 'gems' ? 'item.window.gem_vendor' : 'item.window.smith'))
           : this.left === 'bench'
-            ? (titles.bench ?? 'Crafting bench')
-            : (titles.skills ?? 'Skills');
+            ? (titles.bench ?? t('item.window.bench'))
+            : (titles.skills ?? t('item.window.skills'));
     this.frame(p, r, title);
     if (this.left === 'skills') return this.drawSkills(p, r);
     if (this.left === 'bench') return this.drawBench(p, r);
     if (this.left === 'stash') {
       for (let i = 0; i < STASH_TABS; i++) {
-        const t = this.tabRect(i);
-        p.rect(t.x, t.y, t.w, t.h, i === this.stashTab ? UI.panelEdge : UI.cell);
-        p.text(t.x + 4, t.y + 3, String(i + 1), i === this.stashTab ? UI.title : UI.dim);
+        const tr = this.tabRect(i);
+        p.rect(tr.x, tr.y, tr.w, tr.h, i === this.stashTab ? UI.panelEdge : UI.cell);
+        p.text(tr.x + 4, tr.y + 3, lang().formatNumber(i + 1), i === this.stashTab ? UI.title : UI.dim);
       }
     } else {
       this.vendorTabs().forEach((tab, i) => {
-        const t = this.tabRect(i);
+        const tr = this.tabRect(i);
         const on = tab.kind === this.store.vendor.kind;
-        p.rect(t.x, t.y, t.w, t.h, on ? UI.panelEdge : UI.cell);
-        p.text(t.x + Math.floor((t.w - textWidth(tab.label)) / 2), t.y + 3, tab.label, on ? UI.title : UI.dim);
+        const label = t(tab.label);
+        p.rect(tr.x, tr.y, tr.w, tr.h, on ? UI.panelEdge : UI.cell);
+        p.text(tr.x + Math.floor((tr.w - textWidth(label)) / 2), tr.y + 3, label, on ? UI.title : UI.dim);
       });
-      const hint = this.narrow ? 'TAP TWICE: BUY. DROP: SELL' : 'CTRL-CLICK: BUY / SELL';
-      miniText(p, r.x + 5, r.y + r.h - 10, hint, PALETTE.mist);
+      const hint = this.vendorHint();
+      if (hint.mini) miniText(p, r.x + 5, r.y + r.h - 10, hint.rows[0]!, PALETTE.mist);
+      else hint.rows.forEach((l, i) => p.text(r.x + 5, r.y + VENDOR_H - 11 + i * 9, l, PALETTE.mist));
     }
     const g = this.leftGridOrigin();
     this.drawGrid(p, this.leftGrid()!, g.x, g.y);
@@ -1310,40 +1361,53 @@ export class ItemsUi {
       }
       const n = nums[s];
       const tx = r.x + 72;
-      const chars = Math.floor((r.x + r.w - 3 - tx + 1) / 4);
+      const tw = r.x + r.w - 3 - tx;
       if (n) {
-        miniText(p, tx, row.y + 4, n.name.toUpperCase().slice(0, chars), on ? PALETTE.white : PALETTE.mist);
-        const line = n.channel ? `${fmt(n.cost)}/S` : `${fmt(n.cost)} MP${n.cooldown > 0 ? ` ${fmt(n.cooldown)}S` : ''}`;
-        miniText(p, tx, row.y + 11, line.slice(0, chars), PALETTE.sky);
+        const cost = n.channel ? t('item.skill.row_channel', { cost: num(n.cost) }) : t(n.cooldown > 0 ? 'item.skill.row_cost_cooldown' : 'item.skill.row_cost', { cost: num(n.cost), cooldown: num(n.cooldown) });
+        rowText(p, tx, row.y, tw, n.name, on ? PALETTE.white : PALETTE.mist, cost, PALETTE.sky);
         if (n.unsupported.length) p.rect(r.x + r.w - 5, row.y + 11, 2, 5, PALETTE.red);
-      } else miniText(p, tx, row.y + 7, 'EMPTY', PALETTE.slate);
+      } else rowText(p, tx, row.y, tw, t('item.skill.empty'), PALETTE.slate);
     }
     // details of the selected slot: a pocket `npm run combat -- dps`
     const top = r.y + HEADER + 2 + SKILL_SLOTS * 21 + 1;
     p.rect(r.x + 4, top, r.w - 8, 1, PALETTE.slate);
-    const lines = this.skillLines(nums[this.skillSlot] ?? null, Math.floor((r.w - 10) / 6), this.store.skills[this.skillSlot]?.gem ?? null);
+    const lines = this.skillLines(nums[this.skillSlot] ?? null, r.w - 10, this.store.skills[this.skillSlot]?.gem ?? null).flatMap((l) => wrap(l.text, r.w - 10).map((text) => ({ text, color: l.color })));
     lines.slice(0, 6).forEach((l, i) => p.text(r.x + 5, top + 4 + i * 9, l.text, l.color));
   }
 
-  /** The detail lines for one slot (also the skill panel's test surface). */
-  skillLines(n: SkillNumbers | null, chars = 20, gem: Item | null = null): { text: string; color: number }[] {
-    if (!n) {
-      return [{ text: `SKILL ${this.skillSlot + 1}: EMPTY`, color: UI.dim }, ...wrapChars(this.narrow ? 'HOLD A GEM IN YOUR BAG TO SOCKET IT' : 'RIGHT-CLICK A GEM IN YOUR BAG TO SOCKET IT', chars).map((t) => ({ text: t, color: PALETTE.slate }))];
-    }
+  /**
+   * The detail lines for one slot (also the skill panel's test surface), whole: the panel wraps
+   * them. `width` (art pixels) decides whether the gem's XP fits on the title line.
+   */
+  skillLines(n: SkillNumbers | null, width = 118, gem: Item | null = null): { text: string; color: number }[] {
+    if (!n) return [{ text: t('item.skill.slot_empty', { slot: this.skillSlot + 1 }), color: UI.dim }, { text: t(this.narrow ? 'item.skill.hint_touch' : 'item.skill.hint'), color: PALETTE.slate }];
     // the gem's XP toward its next level when it fits on the title line
     const prog = gem ? gemProgress(gem, this.store.heroLevel) : null;
-    const title = `${n.name.toUpperCase()} LV${n.level}`;
-    const xp = !prog ? '' : prog.max ? ' MAX' : prog.waiting ? ` NEEDS L${prog.nextReq}` : ` ${Math.floor(prog.fraction * 100)}%XP`;
-    const out: { text: string; color: number }[] = [{ text: (title.length + xp.length <= chars ? title + xp : title).slice(0, chars), color: UI.title }];
+    const name = { name: n.name, level: n.level };
+    const title = t('item.skill.title', name);
+    const withXp = !prog
+      ? title
+      : prog.max
+        ? t('item.skill.title_max', name)
+        : prog.waiting
+          ? t('item.skill.title_waits', { ...name, hero: prog.nextReq ?? 0 })
+          : t('item.skill.title_xp', { ...name, percent: lang().formatNumber(Math.floor(prog.fraction * 100) / 100, { style: 'percent' }) });
+    const out: { text: string; color: number }[] = [{ text: textWidth(withXp) <= width ? withXp : title, color: UI.title }];
     if (n.hit > 0) {
-      out.push({ text: `HIT ${fmt(n.hit)} ${(n.types[0] ?? '').toUpperCase()}`.slice(0, chars), color: PALETTE.white });
-      out.push({ text: `DPS ${fmt(n.dps)} ${fmt(n.hitsPerSecond)}/S`.slice(0, chars), color: PALETTE.lime });
-    } else out.push({ text: 'NO DAMAGE', color: UI.dim });
-    out.push({ text: (n.channel ? `COST ${fmt(n.cost)}/S` : `COST ${fmt(n.cost)}${n.cooldown > 0 ? ` CD ${fmt(n.cooldown)}S` : ''}`).slice(0, chars), color: PALETTE.sky });
-    const shape = [`CAST ${fmt(n.castTime)}S`, n.projectiles > 1 ? `X${n.projectiles}` : n.area !== 1 ? `AREA ${Math.round(n.area * 100)}%` : ''].filter(Boolean).join(' ');
-    out.push({ text: shape.slice(0, chars), color: PALETTE.mist });
-    if (n.unsupported.length) out.push({ text: `! ${n.unsupported.length} LINK${n.unsupported.length > 1 ? 'S' : ''} DON'T FIT`.slice(0, chars), color: PALETTE.red });
-    else if (n.supports.length) out.push({ text: `${n.supports.length} SUPPORT${n.supports.length > 1 ? 'S' : ''} LINKED`.slice(0, chars), color: PALETTE.green });
+      out.push({ text: t('item.skill.hit', { hit: num(n.hit), type: n.types[0] ? damageName(n.types[0]) : '' }).trim(), color: PALETTE.white });
+      out.push({ text: t('item.skill.dps', { dps: num(n.dps), rate: num(n.hitsPerSecond) }), color: PALETTE.lime });
+    } else out.push({ text: t('item.skill.no_damage'), color: UI.dim });
+    out.push({ text: n.channel ? t('item.skill.cost_channel', { cost: num(n.cost) }) : t(n.cooldown > 0 ? 'item.skill.cost_cooldown' : 'item.skill.cost', { cost: num(n.cost), cooldown: num(n.cooldown) }), color: PALETTE.sky });
+    const time = num(n.castTime);
+    const shape =
+      n.projectiles > 1
+        ? t('item.skill.cast_projectiles', { time, count: n.projectiles })
+        : n.area !== 1
+          ? t('item.skill.cast_area', { time, area: lang().formatNumber(Math.round(n.area * 100) / 100, { style: 'percent' }) })
+          : t('item.skill.cast', { time });
+    out.push({ text: shape, color: PALETTE.mist });
+    if (n.unsupported.length) out.push({ text: t('item.skill.unfit', { count: n.unsupported.length }), color: PALETTE.red });
+    else if (n.supports.length) out.push({ text: t('item.skill.supports', { count: n.supports.length }), color: PALETTE.green });
     return out;
   }
 
@@ -1365,19 +1429,24 @@ export class ItemsUi {
     outline(p, f.x, f.y, f.w, f.h, UI.cellEdge);
     const target = this.benchTarget();
     const tx = f.x + f.w + 4;
-    const chars = Math.floor((r.x + r.w - 4 - tx) / 6);
+    const tw = r.x + r.w - 4 - tx;
     if (target) {
       const s = itemSize(target);
       const scale = Math.min(1, (f.w - 2) / (s.w * CELL), (f.h - 2) / (s.h * CELL));
       const w = Math.max(8, Math.floor(s.w * CELL * scale));
       const h = Math.max(8, Math.floor(s.h * CELL * scale));
       this.drawItem(p, target, f.x + Math.floor((f.w - w) / 2), f.y + Math.floor((f.h - h) / 2), w, h);
-      wrapChars(target.name.toUpperCase(), chars)
+      wrap(itemName(target), tw)
         .slice(0, 3)
         .forEach((l, i) => p.text(tx, f.y + 1 + i * 9, l, itemColour(target)));
-      miniText(p, tx, f.y + 30, `${target.rarity.toUpperCase()} · ${target.affixes.length} AFFIX${target.affixes.length === 1 ? '' : 'ES'}`, PALETTE.mist);
+      // its rarity and affixes, under the name (two rows of the normal font fit above the orbs)
+      const summary = t('item.bench.summary', { rarity: rarityName(target.rarity), count: target.affixes.length });
+      if (miniCovers(summary) && miniWidth(summary) <= tw) miniText(p, tx, f.y + 30, summary, PALETTE.mist);
+      else wrap(summary, tw).slice(0, 2).forEach((l, i) => p.text(tx, f.y + 29 + i * 9, l, PALETTE.mist));
     } else {
-      wrapChars(this.narrow ? 'TAP AN ITEM IN YOUR BAG' : 'CLICK AN ITEM IN YOUR BAG OR GEAR', chars).forEach((l, i) => p.text(tx, f.y + 1 + i * 9, l, UI.dim));
+      wrap(t(this.narrow ? 'item.bench.hint_touch' : 'item.bench.hint'), tw)
+        .slice(0, 5)
+        .forEach((l, i) => p.text(tx, f.y + 1 + i * 9, l, UI.dim));
     }
     const counts = new Map<string, number>();
     for (const pl of this.store.state.inventory.items) if (CURRENCY.has(pl.item.base)) counts.set(pl.item.base, (counts.get(pl.item.base) ?? 0) + (pl.item.quantity ?? 1));
@@ -1389,20 +1458,20 @@ export class ItemsUi {
       const blocked = target ? craftBlocker(c.action, target) : null;
       const hot = cur?.kind === 'orb' && cur.base === c.id;
       p.rect(o.x, o.y, o.w, o.h, hot ? UI.panelEdge : UI.cell);
-      drawIcon(p, 'orb', o.x + 2, o.y + 1, o.w - 4, o.h - 4, n > 0 && !blocked ? PALETTE.orange : PALETTE.slate, c.short);
+      drawIcon(p, 'orb', o.x + 2, o.y + 1, o.w - 4, o.h - 4, n > 0 && !blocked ? PALETTE.orange : PALETTE.slate, currencyShort(c.id));
       outline(p, o.x, o.y, o.w, o.h, n > 0 && target && !blocked ? PALETTE.sand : UI.cellEdge);
-      if (n > 0) shadowText(p, o.x + 1, o.y + 1, String(n), PALETTE.white);
+      if (n > 0) shadowText(p, o.x + 1, o.y + 1, lang().formatNumber(n), PALETTE.white);
     });
     // what the hovered orb does (and why it can't)
     const iy = this.orbRect(9).y + 26;
+    const lw = r.w - 10;
     if (hovered && CURRENCY.has(hovered)) {
       const c = CURRENCY.get(hovered);
-      const lc = Math.floor((r.w - 10) / 6);
-      const lines: { text: string; color: number }[] = [{ text: c.name.toUpperCase(), color: UI.title }, ...wrapChars(c.description.toUpperCase(), lc).map((t) => ({ text: t, color: PALETTE.mist }))];
-      const why = target ? craftBlocker(c.action, target) : null;
-      if (why) lines.push(...wrapChars(why.toUpperCase(), lc).map((t) => ({ text: t, color: PALETTE.red })));
+      const lines: { text: string; color: number }[] = [...wrap(currencyName(c.id), lw).map((text) => ({ text, color: UI.title })), ...wrap(currencyDescription(c.id), lw).map((text) => ({ text, color: PALETTE.mist }))];
+      const blocked = target ? craftBlocker(c.action, target) : null;
+      if (blocked) lines.push(...wrap(reasonText(blocked), lw).map((text) => ({ text, color: PALETTE.red })));
       lines.slice(0, Math.floor((r.y + r.h - 4 - iy) / 9)).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l.text, l.color));
-    } else wrapChars(this.narrow ? 'TAP AN ORB TO USE IT' : 'CLICK AN ORB TO USE IT', Math.floor((r.w - 10) / 6)).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l, UI.dim));
+    } else wrap(t(this.narrow ? 'item.bench.orb_hint_touch' : 'item.bench.orb_hint'), lw).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l, UI.dim));
   }
 
   private drawCursor(p: Painter): void {
@@ -1434,33 +1503,34 @@ export class ItemsUi {
     }
   }
 
-  private drawTip(p: Painter, item: Item, t: Target, cx: number, cy: number): void {
-    const forSale = t.kind === 'vendor';
-    const inInventory = t.kind === 'grid' && t.where === 'inventory';
-    const price = forSale ? { label: 'Buy', gold: buyPrice(item), affordable: buyPrice(item) <= this.store.state.gold } : this.left === 'vendor' && inInventory ? { label: 'Sells for', gold: sellPrice(item) } : undefined;
-    const right = this.lastTouch && this.cursorMode === 'pointer' ? 'Hold' : this.cursorMode === 'pad' ? 'X' : 'Right-click';
+  private drawTip(p: Painter, item: Item, at: Target, cx: number, cy: number): void {
+    const forSale = at.kind === 'vendor';
+    const inInventory = at.kind === 'grid' && at.where === 'inventory';
+    const price = forSale ? { kind: 'buy' as const, gold: buyPrice(item), affordable: buyPrice(item) <= this.store.state.gold } : this.left === 'vendor' && inInventory ? { kind: 'sell' as const, gold: sellPrice(item) } : undefined;
+    // the control that does it: on a touch screen hold, on a pad X, else the right mouse button
+    const button = this.lastTouch && this.cursorMode === 'pointer' ? t('item.button.hold') : this.cursorMode === 'pad' ? 'X' : t('item.button.right_click');
     const hint =
       inInventory && isEquipment(item)
         ? this.left === 'bench'
           ? undefined
-          : `${right}: equip`
+          : t('item.hint.equip', { button })
         : inInventory && isGem(item)
           ? this.left === 'skills'
-            ? `${right}: socket in skill ${this.skillSlot + 1}`
-            : 'Socket it in the skill panel (G)'
-          : t.kind === 'slot'
-            ? `${right}: unequip`
-            : t.kind === 'socket'
-              ? `${right}: take out`
+            ? t('item.hint.socket', { button, slot: this.skillSlot + 1 })
+            : t('item.hint.socket_panel')
+          : at.kind === 'slot'
+            ? t('item.hint.unequip', { button })
+            : at.kind === 'socket'
+              ? t('item.hint.take_out', { button })
               : undefined;
+    const width = this.narrow ? Math.max(72, this.size.w - 12) : TIP_W;
     let extra: { text: string; color: number }[] | undefined;
-    if (t.kind === 'socket' && t.link < 0) extra = this.skillLines(this.numbers()[t.slot] ?? null, 30, item).slice(1);
-    else if (t.kind === 'socket') {
-      const ok = supportApplies(this.store.skills[t.slot]!, item);
-      if (ok === false) extra = [{ text: `Doesn't support ${this.store.skills[t.slot]!.gem!.name}`, color: UI.bad }];
+    if (at.kind === 'socket' && at.link < 0) extra = this.skillLines(this.numbers()[at.slot] ?? null, width, item).slice(1);
+    else if (at.kind === 'socket') {
+      const ok = supportApplies(this.store.skills[at.slot]!, item);
+      if (ok === false) extra = [{ text: t('item.tip.not_supported', { skill: itemName(this.store.skills[at.slot]!.gem!) }), color: UI.bad }];
     }
-    const chars = this.narrow ? Math.max(12, Math.floor((this.size.w - 12) / 6)) : TIP_CHARS;
-    const lines = tooltipLines(item, { showTiers: this.altHeld, compare: t.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, chars, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(extra ? { extra } : {}) });
+    const lines = tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(extra ? { extra } : {}) });
     const size = measureTooltip(lines);
     let x: number;
     let y: number;
@@ -1486,32 +1556,45 @@ export class ItemsUi {
   }
 }
 
-/** Numbers for the skill panel: 1234, 12.3, 0.62. */
-function fmt(v: number): string {
-  if (v >= 100) return String(Math.round(v));
-  if (v >= 10) return String(Math.round(v * 10) / 10);
-  return String(Math.round(v * 100) / 100).replace(/^0\./, '.');
+/** Numbers for the skill panel in the language's way: 1,234 · 12.3 · 0.62. */
+function num(v: number): string {
+  return lang().formatNumber(v, { maximumFractionDigits: v >= 100 ? 0 : v >= 10 ? 1 : 2 });
 }
 
-/** Word-wrap uppercase text to `chars` characters per line. */
-function wrapChars(text: string, chars: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/).filter(Boolean)) {
-    if (!line) line = word;
-    else if (line.length + 1 + word.length <= chars) line += ` ${word}`;
-    else {
-      out.push(line);
-      line = word;
-    }
-  }
-  if (line) out.push(line);
-  return out;
-}
-
-/** The shell kit's 3×5 mini font (ui/kit.ts) through a Painter. */
+/**
+ * The shell kit's 3×5 mini font (ui/kit.ts) through a Painter; text it can't draw (accents, other
+ * writing systems) in the normal font, a row higher, as `UiCanvas.mini` does.
+ */
 function miniText(p: Painter, x: number, y: number, s: string, color: number): void {
+  if (!miniCovers(s)) {
+    if (s) p.text(x, y - 1, s, color);
+    return;
+  }
+  noteText(s); // tools see the mini font's text too (docs/engine/lang.md)
   miniRows(s).forEach((row, ry) => {
     for (let rx = 0; rx < row.length; rx++) if (row[rx] === 'c') p.rect(x + rx, y + ry, 1, 1, color);
   });
+}
+
+/**
+ * A skill slot's row of text, `w` art pixels wide and 20 high: its name and, under it, a second
+ * line (the cost). Each in the mini font when it draws it and it fits, else the normal font; a
+ * name that needs two rows of the normal font takes the second line's place.
+ */
+function rowText(p: Painter, x: number, y: number, w: number, first: string, c1: number, second?: string, c2: number = c1): void {
+  const small = (s: string) => miniCovers(s) && miniWidth(s) <= w;
+  if (small(first)) miniText(p, x, second ? y + 4 : y + 7, first, c1);
+  else {
+    const rows = wrap(first, w);
+    if (rows.length > 1 || !second) {
+      if (rows.length === 1) return void p.text(x, y + 6, rows[0]!, c1);
+      p.text(x, y + 2, rows[0]!, c1);
+      p.text(x, y + 11, clip(rows.slice(1).join(' '), w, textWidth), c1);
+      return;
+    }
+    p.text(x, y + 2, rows[0]!, c1);
+  }
+  if (!second) return;
+  if (small(second)) miniText(p, x, y + 11, second, c2);
+  else p.text(x, y + 11, clip(second, w, textWidth), c2);
 }

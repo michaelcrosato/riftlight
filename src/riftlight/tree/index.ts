@@ -8,7 +8,6 @@ export {
   TreeState,
   bonusPoints,
   defaultTree,
-  nodeLines,
   nodeText,
   pointBudget,
   respecCost,
@@ -17,8 +16,10 @@ export {
   summarizeMods,
   treeMods,
   type SummaryGroup,
+  type SummaryGroupId,
   type TreeChange,
 } from './tree';
+export { describeTreeMod, kindName, nodeFlavour, nodeLines, nodeName, regionName, ruleLine, smallName, sourceLang } from './text';
 export { VALIDATE_DEFAULTS, treeStats, validateTree, type TreeProblem, type TreeReport, type TreeStats, type ValidateOptions } from './validate';
 export { CLUSTERS, NOTABLES } from './data/clusters';
 export { KEYSTONES, KEYSTONE_FLAGS, TREE_CONDITIONS } from './data/keystones';
@@ -26,5 +27,5 @@ export { MASTERIES } from './data/masteries';
 export { OVERRIDES } from './data/overrides';
 export { REGIONS } from './data/regions';
 export { SHAPES } from './data/shapes';
-export { MOD_COSTS, PERCENT_FLAT, STAT_NAMES, describeTreeMod, modBudget, modsBudget, rollMod } from './data/stats';
-export type { ClusterTemplate, KeystoneDef, MasteryDef, MasteryOption, ModRoll, NodeOverride, NotableDef, RegionDef, ShapeDef, ShapeSlot, TreeNode } from './types';
+export { MOD_COSTS, modBudget, modsBudget, rollMod } from './data/stats';
+export type { ClusterTemplate, KeystoneDef, MasteryDef, MasteryOption, ModRoll, NodeLine, NodeOverride, NotableDef, RegionDef, ShapeDef, ShapeSlot, TreeNode } from './types';

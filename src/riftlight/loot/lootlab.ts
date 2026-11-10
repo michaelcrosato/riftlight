@@ -18,6 +18,7 @@ import { StatSheet } from '../core/mods';
 import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, GameEvents, HitResult, Item, Rarity } from '../core/types';
+import { t } from '../lang';
 import { rollItem } from './generate';
 import { InventoryView, ItemsStore, ItemsUi, StashView, VendorView } from '../ui/items';
 import { addGold, pickUp } from './inventory';
@@ -152,8 +153,9 @@ export class LootLab implements Game {
     ctx.hud.clear();
     this.world.update(dt);
     this.ui.update(dt);
-    ctx.hud.text(4, 4, `LOOT LAB  DEPTH ${this.depth}  GOLD ${this.store.state.gold}`, { color: 'sand' });
-    ctx.hud.text(4, 14, `K KILL  F PICK UP  I INVENTORY  T STASH  U VENDOR  ALT FILTER ${this.world.filterEnabled ? 'ON' : 'OFF'}`, { color: 'mist' });
+    // a developer page: dev. lines (never translated)
+    ctx.hud.text(4, 4, t('dev.lootlab.status', { depth: this.depth, gold: this.store.state.gold }), { color: 'sand' });
+    ctx.hud.text(4, 14, t('dev.lootlab.keys', { filter: t(this.world.filterEnabled ? 'dev.lootlab.on' : 'dev.lootlab.off') }), { color: 'mist' });
   }
 
   cameraTarget(): Vector3 {

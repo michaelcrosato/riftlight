@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { setTextLocale } from '../../../engine/animation/font';
 import { clampZoom, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS } from './camera';
-import { pack, PixelBuffer, wrap } from './pixels';
+import { css, pack, PixelBuffer, textWidth } from './pixels';
 
 describe('tree camera', () => {
   const cam = { x: 100, y: -50, zoom: 0.25 };
@@ -53,7 +54,27 @@ describe('pixel buffer', () => {
     expect(new Set(b.px).size).toBe(3);
   });
 
-  it('wraps text to a column width', () => {
-    expect(wrap('the quick brown fox jumps', 10)).toEqual(['the quick', 'brown fox', 'jumps']);
+  it('paints what the pixel font draws; keeps the rest for the device font, in order with the panels over it', () => {
+    const b = new PixelBuffer(64, 32);
+    b.clear(pack('ink'));
+    expect(b.text('Ab – «c»', 1, 1, pack('white'))).toBe(textWidth('Ab – «c»'));
+    expect(b.overlay).toEqual([]);
+    expect(new Set(b.px).size).toBe(2);
+    b.panel(0, 20, 10, 10, pack('night')); // nothing to cover yet
+    expect(b.overlay).toEqual([]);
+    setTextLocale('ru');
+    try {
+      b.text('Пассивы', 2, 3, pack('sand'), 1, pack('ink'));
+      b.panel(0, 0, 30, 12, pack('night'));
+      b.text('Да', 4, 4, pack('white'));
+      expect(b.overlay.map((o) => (o.kind === 'text' ? o.text : 'panel'))).toEqual(['Пассивы', 'Пассивы', 'panel', 'Да']);
+      expect(b.overlay[1]).toMatchObject({ x: 2, y: 3, color: pack('sand') });
+      expect(b.deviceText).toBe(true);
+      expect(css(pack('red'))).toMatch(/^rgb\(\d+,\d+,\d+\)$/);
+    } finally {
+      setTextLocale(undefined);
+    }
+    b.clear(pack('ink'));
+    expect(b.overlay).toEqual([]);
   });
 });

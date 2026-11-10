@@ -4,7 +4,9 @@
  * and the bot / agent API can reason about them.
  */
 import { SCALING } from '../core/scaling';
-import type { SaveData, SaveStats } from '../core/types';
+import type { LevelSpec, SaveData, SaveStats } from '../core/types';
+import { lang, t } from '../lang';
+import { levelName } from '../lang/levels';
 
 /** Designed levels; deeper is a rift. */
 export const DESIGNED_LEVELS = 12;
@@ -103,12 +105,18 @@ export function roman(n: number): string {
   return out;
 }
 
-/** "III · GALE" for designed levels, "RIFT 37 · FROSTGLASS GRAVEWELL" after. */
-export function levelTitle(depth: number, name: string): string {
-  return isRift(depth) ? `RIFT ${depth} · ${name.toUpperCase()}` : `${roman(depth)} · ${name.toUpperCase()}`;
+/**
+ * A level's title in the player's language: "III · Gale" for a designed level (its depth in Roman
+ * numerals, a line's blank), a rift's name after (`levelName`: "Rift 37: Frostglass Gravewell").
+ * Made from the spec's depth and mechanics, never its stored English name.
+ */
+export function levelTitle(spec: Pick<LevelSpec, 'depth' | 'mechanics'>): string {
+  const name = levelName(spec);
+  return isRift(spec.depth) ? name : t('level_title.designed', { numeral: roman(spec.depth), name });
 }
 
+/** A time as minutes and seconds, "1:05", its digits the language's. */
 export function formatTime(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  return t('time.minutes_seconds', { minutes: Math.floor(s / 60), seconds: lang().formatNumber(s % 60, { minimumIntegerDigits: 2 }) });
 }

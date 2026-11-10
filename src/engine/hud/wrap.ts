@@ -6,6 +6,7 @@
  * (`textWidthPx`: the pixel font, or the device's font).
  */
 import { textLocale } from '../animation/font';
+import { segmentsOf } from '../lang/segment';
 import { textWidthPx } from './deviceText';
 
 /** Opening marks (brackets, opening quotes, Spanish ¿ ¡): they go with the word after them. */
@@ -18,19 +19,11 @@ const EITHER = /^["']+$/;
 const NO_BREAK = /^[\u00a0\u202f\u2007]+$/;
 
 function segments(text: string, lang: string | undefined): string[] {
-  if (typeof Intl.Segmenter === 'function') {
-    try {
-      return [...new Intl.Segmenter(lang, { granularity: 'word' }).segment(text)].map((s) => s.segment);
-    } catch {
-      /* an unknown locale: split on spaces below */
-    }
-  }
-  return text.split(/(\s+)/).filter((s) => s !== '');
+  return segmentsOf(text, lang, 'word') ?? text.split(/(\s+)/).filter((s) => s !== ''); // no segmenter, or an unknown locale: split on spaces
 }
 
 function graphemes(text: string, lang: string | undefined): string[] {
-  if (typeof Intl.Segmenter === 'function') return [...new Intl.Segmenter(lang, { granularity: 'grapheme' }).segment(text)].map((s) => s.segment);
-  return Array.from(text);
+  return segmentsOf(text, lang, 'grapheme') ?? Array.from(text);
 }
 
 /**

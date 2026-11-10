@@ -5,7 +5,7 @@
  */
 import { PALETTE } from '../../../engine/palette';
 import type { GemIcon } from '../../skills/icons';
-import type { Painter } from './paint';
+import { type Painter, textWidth } from './paint';
 
 const METAL = PALETTE.mist;
 const DARK = PALETTE.slate;
@@ -128,7 +128,8 @@ export function drawIcon(p: Painter, look: string, x: number, y: number, w: numb
       r(0.25, 0.15, 0.5, 0.7, colour);
       r(0.15, 0.25, 0.7, 0.5, colour);
       r(0.3, 0.25, 0.15, 0.15, PALETTE.white);
-      if (short && w >= 18) p.text(x + 1, y + h - 8, short.slice(0, Math.floor(w / 6)), PALETTE.ink);
+      // the orb's letters (a line, three letters wide) when they fit the box, never cut
+      if (short && textWidth(short) <= w - 1) p.text(x + 1, y + h - 8, short, PALETTE.ink);
       break;
   }
 }

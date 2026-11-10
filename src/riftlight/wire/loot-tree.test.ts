@@ -6,6 +6,7 @@ import { newSave } from '../game/save';
 import type { ShellServices } from '../game/ports';
 import { GEMS } from '../loot/content';
 import { INNATE_SKILLS } from '../loot/data/gems';
+import { reasonText } from '../loot/names';
 import { autoSocket, emptySockets, gemItem, normalizeSockets, setSocket, skillNumbers, socketBlocker, socketsToSlots, STARTER_GEMS, starterSockets, supportApplies } from '../loot/sockets';
 import { ACTIVE_SKILLS, SKILLS } from '../skills/actives';
 import { SUPPORT_GEMS, SUPPORTS } from '../skills/supports';
@@ -40,8 +41,8 @@ describe('skill sockets', () => {
 
   it('active gems go in the big socket, supports in the links; a socketed gem is displaced', () => {
     const fb = gem('fireball');
-    expect(socketBlocker(fb, { slot: 0, link: 0 })).toMatch(/big socket/);
-    expect(socketBlocker(gem('lmp'), { slot: 0, link: -1 })).toMatch(/link/);
+    expect(socketBlocker(fb, { slot: 0, link: 0 })).toEqual({ id: 'skill_in_socket' });
+    expect(reasonText(socketBlocker(gem('lmp'), { slot: 0, link: -1 })!)).toMatch(/link/);
     const a = setSocket(emptySockets(), { slot: 0, link: -1 }, fb);
     expect(a.displaced).toBeNull();
     const b = setSocket(a.sockets, { slot: 0, link: -1 }, gem('arc'));

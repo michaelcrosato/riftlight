@@ -3,7 +3,8 @@
  * id, in one `LineList`, `riftlightLines()`. The game shows them through `t(id, values)` in the
  * player's language; the page's `game-lines` block is this list (`npm run build:single` writes
  * it), and translations come from its `game-translations` block (the hand-over build,
- * `build:single -- --translations`). Areas keep their lines beside their code's folder here (`ui.ts`, `data.ts`...).
+ * `build:single -- --translations`). Each part of the game keeps its lines in an area file here
+ * (`ui.ts`, `shell.ts`, `items.ts`...).
  */
 import { Lang, type LineList, type LineValues, langFor, setTextLocale } from '../../engine';
 import type { LineArea } from './area';
@@ -68,6 +69,16 @@ export function pageLanguage(page: { documentElement: { lang: string } } | undef
   const language = installLanguage(langFor(riftlightLines()));
   if (page) page.documentElement.lang = language.code;
   return language;
+}
+
+let english: Lang | null = null;
+
+/**
+ * The game's own language (English), whatever the player's: what saves, generated data and anything a
+ * replay compares keep (a monster's name in the bestiary, a small tree node's name).
+ */
+export function sourceLang(): Lang {
+  return (english ??= new Lang(riftlightLines()));
 }
 
 /** A line in the player's language, its blanks filled (docs/engine/lang.md). */

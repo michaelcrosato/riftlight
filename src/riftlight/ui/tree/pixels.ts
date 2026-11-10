@@ -3,9 +3,20 @@
  * one putImageData. Every primitive lands on whole pixels in palette colours, so the view
  * stays crisp at any integer scale. DOM-free (unit-testable); the view wraps `bytes` in an
  * ImageData.
+ *
+ * Text the pixel font can't draw (Cyrillic, Chinese, Arabic... `pixelCovers`) isn't painted:
+ * the buffer keeps it, in order with the panels painted after it (`overlay`), and the view draws
+ * it with the device's font at the screen's resolution over the scaled bitmap
+ * (docs/engine/lang.md, *Drawing text in any writing system*; `TreeView.blit`).
  */
-import { drawText, GLYPH_W } from '../../../engine/animation/font';
+import { drawText, noteText, pixelCovers } from '../../../engine/animation/font';
+import { textWidthPx } from '../../../engine/hud/deviceText';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
+
+/** A packed colour (`pack`) as CSS, for the device's font. */
+export function css(packed: number): string {
+  return `rgb(${packed & 0xff},${(packed >> 8) & 0xff},${(packed >> 16) & 0xff})`;
+}
 
 /** A palette colour packed for a little-endian RGBA Uint32 view. */
 export function pack(c: PaletteColor | number): number {
@@ -13,26 +24,13 @@ export function pack(c: PaletteColor | number): number {
   return ((255 << 24) | ((hex & 0xff) << 16) | (hex & 0xff00) | ((hex >> 16) & 0xff)) >>> 0;
 }
 
-/** Characters the bitmap font lacks, mapped to ones it has. */
-export function fontSafe(s: string): string {
-  return s.replace(/[–—]/g, '-').replace(/[·•]/g, '-').replace(/[’‘]/g, "'").replace(/[“”]/g, '"').replace(/"/g, "'");
-}
-
-/** Greedy word wrap to `chars` columns. */
-export function wrap(text: string, chars: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/)) {
-    if (!word) continue;
-    if (line && line.length + 1 + word.length > chars) {
-      out.push(line);
-      line = '';
-    }
-    line = line ? `${line} ${word}` : word.length > chars ? word.slice(0, chars) : word;
-  }
-  if (line) out.push(line);
-  return out;
-}
+/**
+ * What the device font draws over the bitmap, in paint order: text (art pixels, the top-left of
+ * its box) and the panels painted after it, which cover any device text drawn before them.
+ */
+export type Overlay =
+  | { readonly kind: 'text'; readonly text: string; readonly x: number; readonly y: number; readonly color: number; readonly scale: number }
+  | { readonly kind: 'panel'; readonly x: number; readonly y: number; readonly w: number; readonly h: number };
 
 const masks = new Map<number, number[]>();
 /** Half-widths per row of a pixel disc of radius r (rows -r..r). */
@@ -49,6 +47,8 @@ function discMask(r: number): number[] {
 export class PixelBuffer {
   readonly bytes: Uint8ClampedArray<ArrayBuffer>;
   readonly px: Uint32Array;
+  /** Device-font text and the panels over it, since the last `clear`. */
+  overlay: Overlay[] = [];
 
   constructor(
     readonly width: number,
@@ -60,6 +60,18 @@ export class PixelBuffer {
 
   clear(c: number): void {
     this.px.fill(c);
+    this.overlay = [];
+  }
+
+  /** Does this frame hold text for the device's font? */
+  get deviceText(): boolean {
+    return this.overlay.some((o) => o.kind === 'text');
+  }
+
+  /** A filled box that covers what is under it, device-font text too (tooltips, bars, panels). */
+  panel(x: number, y: number, w: number, h: number, c: number): void {
+    this.rect(x, y, w, h, c);
+    if (this.deviceText) this.overlay.push({ kind: 'panel', x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h) });
   }
 
   set(x: number, y: number, c: number): void {
@@ -158,12 +170,23 @@ export class PixelBuffer {
     }
   }
 
-  /** 5×7 font text; returns its width in pixels. `shadow` draws a 1-px drop shadow first. */
+  /**
+   * Text in the 5×7 pixel font, or kept for the device's font when the pixel font can't draw it;
+   * returns its width in pixels. `shadow` draws a 1-px drop shadow first.
+   */
   text(s: string, x: number, y: number, c: number, scale = 1, shadow?: number): number {
-    const t = fontSafe(s);
-    if (shadow !== undefined) drawText(t, Math.round(x) + scale, Math.round(y) + scale, (px, py) => this.set(px, py, shadow), scale);
-    return drawText(t, Math.round(x), Math.round(y), (px, py) => this.set(px, py, c), scale) - scale;
+    x = Math.round(x);
+    y = Math.round(y);
+    if (!pixelCovers(s)) {
+      noteText(s);
+      if (shadow !== undefined) this.overlay.push({ kind: 'text', text: s, x: x + scale, y: y + scale, color: shadow, scale });
+      this.overlay.push({ kind: 'text', text: s, x, y, color: c, scale });
+      return textWidthPx(s, scale);
+    }
+    if (shadow !== undefined) drawText(s, x + scale, y + scale, (px, py) => this.set(px, py, shadow), scale);
+    return drawText(s, x, y, (px, py) => this.set(px, py, c), scale) - scale;
   }
 }
 
-export const textWidth = (s: string, scale = 1) => Math.max(0, fontSafe(s).length * GLYPH_W - 1) * scale;
+/** Width of `s` in art pixels at `scale`, in whichever font draws it (the engine's `textWidthPx`). */
+export const textWidth = (s: string, scale = 1): number => textWidthPx(s, scale);

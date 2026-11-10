@@ -6,7 +6,7 @@ import { generateGenome } from '../genome';
 import type { BuiltMonster } from '../types';
 import { attackSkill, BOSS_ATTACKS, MECHANIC_THEMES, type BossAttackDef } from './attacks';
 import { DESIGNED_BOSSES } from './designed';
-import { bossName } from './names';
+import { BOSS_PHASES, bossName } from './names';
 import type { BossDef, BossPhase } from './types';
 
 /**
@@ -58,9 +58,9 @@ export function generateBoss(rng: Rng, depth: number, mechanics: readonly string
   const adds = BOSS_ATTACKS.query({ filter: (e) => (e as BossAttackDef).pattern === 'summon' && (e as BossAttackDef).tags.some((t) => mechanics.includes(t) || t === 'generic') });
   const cadence = Math.max(3.5, 6.5 - depth * 0.05);
   const phases: BossPhase[] = [
-    { from: 1, name: 'Awakened', attacks: first, cadence },
-    { from: 0.66, name: 'Wrath', attacks: second, cadence: cadence * 0.85, onEnter: adds.length ? [r.pick(adds).id] : [], mods: [inc('attack.speed', 0.1)] },
-    { from: 0.33, name: 'Desperation', attacks: third, cadence: cadence * 0.7, onEnter: [first[0]!], mods: [more('damage', 0.2), inc('move.speed', 0.15)] },
+    { from: 1, name: BOSS_PHASES[0], attacks: first, cadence },
+    { from: 0.66, name: BOSS_PHASES[1], attacks: second, cadence: cadence * 0.85, onEnter: adds.length ? [r.pick(adds).id] : [], mods: [inc('attack.speed', 0.1)] },
+    { from: 0.33, name: BOSS_PHASES[2], attacks: third, cadence: cadence * 0.7, onEnter: [first[0]!], mods: [more('damage', 0.2), inc('move.speed', 0.15)] },
   ];
   return {
     id: `rift-boss-${depth}`,
@@ -79,6 +79,6 @@ export function generateBoss(rng: Rng, depth: number, mechanics: readonly string
 }
 
 export { BOSS_ATTACKS, MECHANIC_THEMES, attackSkill, type BossAttackDef, type BossPattern } from './attacks';
-export { bossName } from './names';
+export { BOSS_PHASES, bossName, bossNameParts, EPITHETS } from './names';
 export { BossBrain, type BossBrainState } from './brain';
 export type { BossDef, BossPhase } from './types';

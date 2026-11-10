@@ -39,6 +39,7 @@ export const flag = (stat: string, tags?: readonly string[]): Mod => ({ stat, ki
  * Sources are replaced wholesale (`set`) or removed (`remove`), so gear swaps, respecs
  * and expiring buffs are cheap and can't leak stale mods.
  */
+import { modText } from '../lang/modLines';
 import { canonicalMods, canonicalStat } from './stats';
 
 /** A StatSheet as data (`StatSheet.save`). */
@@ -190,26 +191,11 @@ export class StatSheet {
   }
 }
 
-/** Human text for a mod, used by tooltips, the tree view and inspectors. */
-export function describeMod(m: Mod, names: Readonly<Record<string, string>> = {}): string {
-  const name = names[m.stat] ?? m.stat.replace(/\./g, ' ');
-  const scope = m.tags?.length ? ` with ${m.tags.join(' ')}` : '';
-  const cond = m.when ? ` while ${m.when.replace(/([A-Z])/g, ' $1').toLowerCase()}` : '';
-  const pct = (v: number) => `${Math.round(v * 1000) / 10}%`;
-  switch (m.kind) {
-    case 'flat':
-      return `${m.value >= 0 ? '+' : ''}${round(m.value)} ${name}${scope}${cond}`;
-    case 'inc':
-      return `${pct(Math.abs(m.value))} ${m.value >= 0 ? 'increased' : 'reduced'} ${name}${scope}${cond}`;
-    case 'more':
-      return `${pct(Math.abs(m.value))} ${m.value >= 0 ? 'more' : 'less'} ${name}${scope}${cond}`;
-    case 'override':
-      return `${name}${scope} is ${round(m.value)}`;
-    case 'flag':
-      return `${name}${scope}${cond}`;
-  }
-}
-
-function round(v: number): number {
-  return Math.abs(v) >= 10 ? Math.round(v) : Math.round(v * 100) / 100;
+/**
+ * A mod in the player's language: "12% increased fire damage with attacks", "+12% fire
+ * resistance", a flag's rule (tooltips, the tree, the character sheet, inspectors). The words are
+ * lines (lang/modLines.ts `modText`, docs/game/lang.md).
+ */
+export function describeMod(m: Mod): string {
+  return modText(m);
 }

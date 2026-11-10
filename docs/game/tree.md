@@ -53,8 +53,8 @@ Everything is data; the generator queries it by tags, so adding an entry is the 
   become the node id `n:<id>`. Keep it worth 25–45 budget points (`modsBudget`); the validator
   flags anything over 60. Each notable is placed once per tree; more notables in a theme means
   more instances of that cluster.
-- **A keystone** (`data/keystones.ts`): mods plus flags, hand-written `lines` for the tooltip,
-  and a `region`. Each region gets its keystones spread along its rim. Document any new flag
+- **A keystone** (`data/keystones.ts`): mods plus flags, hand-written `lines` for the tooltip
+  (a sentence, a sentence with its numbers in named blanks, or a mod: `NodeLine`), and a `region`. Each region gets its keystones spread along its rim. Document any new flag
   in `KEYSTONE_FLAGS`.
 - **A mastery** (`data/masteries.ts`): tags and three options. Shapes with a mastery slot
   (`wheel1`, `wheel2`) take the best-matching mastery not yet used in that region.
@@ -62,8 +62,13 @@ Everything is data; the generator queries it by tags, so adding an entry is the 
   ±110 across, ~55 between neighbours) and links. Tag it `n0`–`n3` by notable count.
 - **A region** (`data/regions.ts`): an angle, colours, theme weights and a small-node pool. The
   circle is split evenly between regions, so rebalance the angles.
-- **A stat:** give it a tooltip name in `STAT_NAMES` and, if small nodes may roll it, a price
-  in `MOD_COSTS` (value per budget point).
+- **A stat:** give it a name in `STAT_NAMES` (lang/modLines.ts: every mod in the game reads
+  through it) and a short one in `SMALL_NAMES` (lang/tree.ts) and, if small nodes may roll it, a
+  price in `MOD_COSTS` (value per budget point).
+- **Words:** names, flavour and rules are lines (lang/tree.ts builds them from the registries,
+  docs/game/lang.md); a node keeps its English in `name`/`flavour` and where its lines are in
+  `text`, and the view shows them through tree/text.ts (`nodeName`, `nodeFlavour`, `nodeLines`,
+  `smallName`). Search matches the words as the player reads them.
 - **A hand-placed node** (`data/overrides.ts`): `{ id, x, y, name, kind, region, mods, link }`
   adds a node; an override with an existing id patches it (move it, change its mods, `link` /
   `unlink`). Overrides are applied last and always win.

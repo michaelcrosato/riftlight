@@ -5,6 +5,7 @@
  * to the tree in either; the view only adds its pulses and messages from the outcome.
  */
 import type { SoundDef } from '../../../engine/audio/synth';
+import { t } from '../../lang/index';
 import type { PassiveTree, TreeChange, TreeState } from '../../tree/tree';
 import type { TreeNode } from '../../tree/types';
 
@@ -26,13 +27,14 @@ export interface TreeRules {
   refundCost?: (points: number) => number;
   /** Take gold for a refund; return false to refuse it (not enough gold). */
   spendGold?: (amount: number) => boolean;
-  /** Why refunds are refused here (e.g. only the mystic refunds): a message, or null to allow them. */
+  /** Why refunds are refused here (e.g. only the mystic refunds): a message in the player's language, or null to allow them. */
   refundBlocked?: () => string | null;
 }
 
 /** What an action did: the view shows it (a pulse, a message); headless nothing does. */
 export type TreeOutcome =
   | { readonly kind: 'none' }
+  /** `text`: why, in the player's language. */
   | { readonly kind: 'deny'; readonly text: string }
   | { readonly kind: 'mastery'; readonly ids: readonly string[] }
   | { readonly kind: 'allocate'; readonly ids: readonly string[]; readonly node: TreeNode }
@@ -84,10 +86,10 @@ export function activateNode(tree: PassiveTree, s: TreeState, id: string, rules:
     return { kind: 'mastery', ids: [id] };
   }
   const path = s.pathTo(id);
-  if (!path) return deny(rules, 'UNREACHABLE');
-  if (path.length > s.unspent) return deny(rules, s.unspent <= 0 ? 'NO PASSIVE POINTS LEFT' : `NEED ${path.length} POINTS, HAVE ${s.unspent}`);
+  if (!path) return deny(rules, t('tree.deny.unreachable'));
+  if (path.length > s.unspent) return deny(rules, s.unspent <= 0 ? t('tree.deny.no_points') : t('tree.deny.need_points', { count: path.length, have: s.unspent }));
   const got = s.allocatePath(id);
-  if (!got.length) return deny(rules, 'CAN NOT ALLOCATE');
+  if (!got.length) return deny(rules, t('tree.deny.cant'));
   const kind = node.kind;
   rules.audio?.play(kind === 'keystone' ? 'treeKeystone' : kind === 'notable' ? 'treeNotable' : 'treeAllocate');
   rules.onChange?.({ kind: 'allocate', ids: got }, s);
@@ -96,12 +98,12 @@ export function activateNode(tree: PassiveTree, s: TreeState, id: string, rules:
 
 /** Refund one node, if nothing depends on it and the rules allow it. */
 export function refundNode(tree: PassiveTree, s: TreeState, id: string, rules: TreeRules): TreeOutcome {
-  if (!s.allocated.has(id)) return tree.roots.has(id) ? deny(rules, 'THE GATES ARE FREE') : { kind: 'none' };
+  if (!s.allocated.has(id)) return tree.roots.has(id) ? deny(rules, t('tree.deny.gates_free')) : { kind: 'none' };
   const blocked = rules.refundBlocked?.() ?? null;
   if (blocked) return deny(rules, blocked);
-  if (!s.canDeallocate(id)) return deny(rules, 'OTHER NODES DEPEND ON IT');
+  if (!s.canDeallocate(id)) return deny(rules, t('tree.deny.depends'));
   const cost = rules.refundCost?.(1) ?? 0;
-  if (cost > 0 && rules.spendGold && !rules.spendGold(cost)) return deny(rules, `REFUND COSTS ${cost} GOLD`);
+  if (cost > 0 && rules.spendGold && !rules.spendGold(cost)) return deny(rules, t('tree.deny.refund_cost', { cost }));
   s.deallocate(id);
   rules.audio?.play('treeRefund');
   rules.onChange?.({ kind: 'deallocate', ids: [id] }, s);

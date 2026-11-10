@@ -4,13 +4,13 @@
  * keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { FPS_OPTIONS, LOOK_PRESETS, lookPresetLabel, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
+import { FPS_OPTIONS, languageName, LOOK_PRESETS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
-  DIFFICULTY_LABELS,
   DIFFICULTY_PRESETS,
   type DifficultyPreset,
+  difficultyLineId,
   multiplierToSlider,
   NORMAL,
   nudge,
@@ -18,8 +18,12 @@ import {
   sliderToMultiplier,
 } from '../game/difficulty';
 import type { DevFlags } from '../game/ports';
+import { formatTime } from '../game/progress';
+import { lootFilterOptions } from '../loot/names';
 import type { SavesView } from '../game/save';
 import type { Settings } from '../game/settings';
+import { lang, t } from '../lang';
+import { lookName } from './lookStudio';
 import { Menu, type Widget } from './menu';
 
 export interface MenuHost {
@@ -61,64 +65,95 @@ export interface MenuHost {
   lookStudio?(): void;
   /** Open Engine World (the engine's tech demo), at one of its rooms: optional, so other hosts can leave it out. */
   engineWorld?(room?: string): void;
+  /**
+   * The game's languages (docs/game/lang.md): those it has (its own first), the one shown, whether
+   * the address names one (`?lang=`: the AI Hub always does; no Language menu then), and choosing
+   * one (saved, then the game reloads in it). Optional: hosts without it have no Language menu.
+   */
+  readonly language?: { readonly available: readonly string[]; readonly current: string; readonly asked: boolean; choose(code: string): void };
 }
 
 const sound = (h: MenuHost) => (s: 'click' | 'move') => h.sound(s);
+
+/** A number in the language's digits ("Slot 2", a frame rate). */
+const num = (n: number, o?: Intl.NumberFormatOptions): string => lang().formatNumber(n, o);
 
 export function titleMenu(h: MenuHost): Menu {
   return new Menu(
     () => {
       const last = h.saves.last;
       const w: Widget[] = [];
-      if (last !== null) w.push({ kind: 'button', id: 'continue', label: 'Continue', onClick: () => h.play({ kind: 'continue' }), accent: 'teal' });
-      w.push({ kind: 'button', id: 'new', label: 'New Run', onClick: () => h.openMenu(slotsMenu(h, 'new')) });
-      w.push({ kind: 'button', id: 'load', label: 'Load / Import', onClick: () => h.openMenu(slotsMenu(h, 'load')) });
-      w.push({ kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) });
-      if (h.engineWorld) w.push({ kind: 'button', id: 'world', label: 'Engine World', onClick: () => h.engineWorld!(), hint: 'the engine\'s tech demo: a room per technique' });
-      if (h.engineWorld) w.push({ kind: 'button', id: 'gallery', label: 'Asset Gallery', onClick: () => h.engineWorld!('gallery'), hint: 'every model and texture, one at a time' });
+      // the hub names the language in the address (`?lang=`): its own menu is in charge, and
+      // Engine World (an untranslated tech demo) is left out
+      const asked = !!h.language?.asked;
+      if (last !== null) w.push({ kind: 'button', id: 'continue', label: t('menu.title.continue'), onClick: () => h.play({ kind: 'continue' }), accent: 'teal' });
+      w.push({ kind: 'button', id: 'new', label: t('menu.title.new_run'), onClick: () => h.openMenu(slotsMenu(h, 'new')) });
+      w.push({ kind: 'button', id: 'load', label: t('menu.title.load'), onClick: () => h.openMenu(slotsMenu(h, 'load')) });
+      w.push({ kind: 'button', id: 'settings', label: t('menu.title.settings'), onClick: () => h.openMenu(settingsMenu(h)) });
+      if (h.language && !asked && h.language.available.length > 1) w.push({ kind: 'button', id: 'language', label: t('menu.title.language'), onClick: () => h.openMenu(languageMenu(h)) });
+      if (h.engineWorld && !asked) w.push({ kind: 'button', id: 'world', label: t('menu.title.world'), onClick: () => h.engineWorld!(), hint: t('menu.title.world.hint') });
+      if (h.engineWorld && !asked) w.push({ kind: 'button', id: 'gallery', label: t('menu.title.gallery'), onClick: () => h.engineWorld!('gallery'), hint: t('menu.title.gallery.hint') });
       return w;
     },
     { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h) },
   );
 }
 
+/**
+ * The Language menu (title screen, only when the address names no language): every language the
+ * game has, each named in itself (not lines); choosing one saves it and reloads the game in it.
+ */
+export function languageMenu(h: MenuHost): Menu {
+  return new Menu(
+    () => {
+      const l = h.language;
+      if (!l) return [];
+      return l.available.map((code): Widget => ({ kind: 'button', id: `lang.${code}`, label: languageName(code), onClick: () => l.choose(code), accent: code === l.current ? 'teal' : undefined }));
+    },
+    { id: 'language', title: t('menu.language.title'), width: 150, onSound: sound(h) },
+  );
+}
+
 export function pauseMenu(h: MenuHost): Menu {
   return new Menu(
     [
-      { kind: 'button', id: 'resume', label: 'Resume', onClick: () => h.resume() },
-      { kind: 'button', id: 'tuning', label: 'Tuning', onClick: () => h.openMenu(tuningMenu(h)), hint: 'difficulty sliders' },
-      { kind: 'button', id: 'inventory', label: 'Inventory', onClick: () => h.openPanel('inventory'), hint: 'items and gear (I)' },
-      { kind: 'button', id: 'skills', label: 'Skills', onClick: () => h.openPanel('skills'), hint: 'gems in the skill slots (G)' },
-      { kind: 'button', id: 'tree', label: 'Passive tree', onClick: () => h.openPanel('tree'), hint: 'spend passive points (P)' },
-      { kind: 'button', id: 'character', label: 'Character', onClick: () => h.openPanel('character'), hint: 'stats and where they come from (C)' },
-      { kind: 'button', id: 'settings', label: 'Settings', onClick: () => h.openMenu(settingsMenu(h)) },
-      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'look', label: 'Look studio', onClick: () => h.lookStudio!(), hint: 'pixel, cel, palettes... per layer (L)' }] : []),
-      ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: 'Photo mode', onClick: () => h.photoMode!(), hint: 'free camera, filters, save a PNG (O)' }] : []),
-      { kind: 'button', id: 'dev', label: 'Dev', onClick: () => h.openMenu(devMenu(h)), hint: 'debug and agent tools' },
+      { kind: 'button', id: 'resume', label: t('menu.pause.resume'), onClick: () => h.resume() },
+      { kind: 'button', id: 'tuning', label: t('menu.pause.tuning'), onClick: () => h.openMenu(tuningMenu(h)), hint: t('menu.pause.tuning.hint') },
+      { kind: 'button', id: 'inventory', label: t('menu.pause.inventory'), onClick: () => h.openPanel('inventory'), hint: t('menu.pause.inventory.hint') },
+      { kind: 'button', id: 'skills', label: t('menu.pause.skills'), onClick: () => h.openPanel('skills'), hint: t('menu.pause.skills.hint') },
+      { kind: 'button', id: 'tree', label: t('menu.pause.tree'), onClick: () => h.openPanel('tree'), hint: t('menu.pause.tree.hint') },
+      { kind: 'button', id: 'character', label: t('menu.pause.character'), onClick: () => h.openPanel('character'), hint: t('menu.pause.character.hint') },
+      { kind: 'button', id: 'settings', label: t('menu.pause.settings'), onClick: () => h.openMenu(settingsMenu(h)) },
+      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'look', label: t('menu.pause.look'), onClick: () => h.lookStudio!(), hint: t('menu.pause.look.hint') }] : []),
+      ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: t('menu.pause.photo'), onClick: () => h.photoMode!(), hint: t('menu.pause.photo.hint') }] : []),
+      { kind: 'button', id: 'dev', label: t('dev.pause.dev'), onClick: () => h.openMenu(devMenu(h)), hint: t('dev.pause.dev.hint') },
       { kind: 'gap', id: 'g' },
-      { kind: 'button', id: 'quit', label: 'Save & Quit', onClick: () => h.saveAndQuit(), accent: 'plum' },
+      { kind: 'button', id: 'quit', label: t('menu.pause.quit'), onClick: () => h.saveAndQuit(), accent: 'plum' },
     ],
-    { id: 'pause', title: 'Paused', width: 140, onBack: () => h.resume(), onSound: sound(h) },
+    { id: 'pause', title: t('menu.pause.title'), width: 140, onBack: () => h.resume(), onSound: sound(h) },
   );
 }
 
 const PRESETS: DifficultyPreset[] = ['story', 'normal', 'hard', 'nightmare'];
 
+/** A multiplier as the sliders show it, "1.50x" (developer screens). */
+const times = (v: number) => t('menu.tuning.value', { value: num(v, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) });
+
 export function tuningMenu(h: MenuHost): Menu {
   const set = (k: (typeof DIFFICULTY_KEYS)[number], v: number) => h.setDifficulty({ ...h.difficulty(), [k]: v });
   return new Menu(
     () => {
-      const t = h.difficulty();
-      const preset = presetOf(t);
+      const tuning = h.difficulty();
+      const preset = presetOf(tuning);
       const w: Widget[] = [
         {
           kind: 'choice',
           id: 'preset',
-          label: 'Preset',
-          options: [...PRESETS.map((p) => p), 'custom'],
+          label: t('menu.tuning.preset'),
+          options: [...PRESETS.map((p) => t(`menu.tuning.preset.${p}`)), t('menu.tuning.preset.custom')],
           get: () => (preset ? PRESETS.indexOf(preset) : PRESETS.length),
           set: (i) => i < PRESETS.length && h.setDifficulty({ ...DIFFICULTY_PRESETS[PRESETS[i]!] }),
-          hint: 'story / normal / hard / nightmare',
+          hint: t('menu.tuning.preset.hint'),
         },
         { kind: 'gap', id: 'g1', h: 3 },
       ];
@@ -127,34 +162,35 @@ export function tuningMenu(h: MenuHost): Menu {
         w.push({
           kind: 'slider',
           id: k,
-          label: DIFFICULTY_LABELS[k],
+          label: t(`menu.tuning.${difficultyLineId(k)}`),
           get: () => multiplierToSlider(h.difficulty()[k]),
           set: (u) => set(k, sliderToMultiplier(u)),
           step: (_u, dir) => multiplierToSlider(nudge(h.difficulty()[k], dir)),
-          format: () => `${h.difficulty()[k].toFixed(2)}x`,
+          format: () => times(h.difficulty()[k]),
           changed: () => h.difficulty()[k] !== 1,
-          hint: '0.25x to 4x, applied as a difficulty mod',
+          hint: t('menu.tuning.slider.hint'),
         });
       }
-      w.push({ kind: 'gap', id: 'g3', h: 4 }, { kind: 'button', id: 'reset', label: 'Reset to 1.0', onClick: () => h.setDifficulty({ ...NORMAL }) });
+      w.push({ kind: 'gap', id: 'g3', h: 4 }, { kind: 'button', id: 'reset', label: t('menu.tuning.reset'), onClick: () => h.setDifficulty({ ...NORMAL }) });
       return w;
     },
-    { id: 'tuning', title: 'Tuning', width: 230, labelWidth: 96, onSound: sound(h) },
+    { id: 'tuning', title: t('menu.tuning.title'), width: 230, labelWidth: 96, onSound: sound(h) },
   );
 }
 
 /** The settings' looks: the default, every named look, and the studio's custom one once there is one. */
 const looks = (s: Settings) => ['', ...Object.keys(LOOK_PRESETS).filter((n) => n !== 'none'), ...(s.customLook ? ['custom'] : [])];
-const lookLabel = (l: string) => (l ? lookPresetLabel(l) : 'default');
+const lookLabel = (l: string) => (l === 'custom' ? t('look.custom') : lookName(l || 'none'));
 const QUALITIES: (QualityLevel | 'auto')[] = ['auto', 'low', 'medium', 'high'];
-const pct = (v: number) => `${Math.round(v * 100)}%`;
+const GLYPHS = ['auto', 'keyboard', 'controller'] as const;
+const pct = (v: number) => num(v, { style: 'percent' });
 
 export function settingsMenu(h: MenuHost): Menu {
   const s = h.settings;
-  const vol = (ch: 'master' | 'music' | 'sfx', label: string): Widget => ({
+  const vol = (ch: 'master' | 'music' | 'sfx'): Widget => ({
     kind: 'slider',
     id: `vol.${ch}`,
-    label,
+    label: t(`menu.settings.volume.${ch}`),
     get: () => h.audio.volume[ch],
     set: (u) => h.audio.setVolume(ch, Math.round(u * 20) / 20),
     step: (u, d) => Math.min(1, Math.max(0, Math.round((u + d * 0.05) * 20) / 20)),
@@ -166,29 +202,29 @@ export function settingsMenu(h: MenuHost): Menu {
   };
   return new Menu(
     () => [
-      vol('master', 'Master volume'),
-      vol('music', 'Music'),
-      vol('sfx', 'Sound effects'),
-      { kind: 'choice', id: 'quality', label: 'Quality', options: QUALITIES, get: () => QUALITIES.indexOf(s.quality), set: (i) => change(() => (s.quality = QUALITIES[i]!))() },
-      { kind: 'choice', id: 'look', label: 'Look', options: looks(s).map(lookLabel), get: () => Math.max(0, looks(s).indexOf(s.look)), set: (i) => change(() => (s.look = looks(s)[i]!))(), hint: 'pixel art and filters' },
-      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'studio', label: 'Look studio', onClick: () => h.lookStudio!(), hint: 'filters per layer, presets and sliders' }] : []),
+      vol('master'),
+      vol('music'),
+      vol('sfx'),
+      { kind: 'choice', id: 'quality', label: t('menu.settings.quality'), options: QUALITIES.map((q) => t(`menu.settings.quality.${q}`)), get: () => QUALITIES.indexOf(s.quality), set: (i) => change(() => (s.quality = QUALITIES[i]!))() },
+      { kind: 'choice', id: 'look', label: t('menu.settings.look'), options: looks(s).map(lookLabel), get: () => Math.max(0, looks(s).indexOf(s.look)), set: (i) => change(() => (s.look = looks(s)[i]!))(), hint: t('menu.settings.look.hint') },
+      ...(h.lookStudio ? [{ kind: 'button' as const, id: 'studio', label: t('menu.settings.studio'), onClick: () => h.lookStudio!(), hint: t('menu.settings.studio.hint') }] : []),
       {
         kind: 'slider',
         id: 'zoom',
-        label: 'Camera zoom',
+        label: t('menu.settings.zoom'),
         get: () => (s.zoom - 0.6) / 1,
         set: (u) => change(() => (s.zoom = Math.round((0.6 + u) * 20) / 20))(),
         step: (u, d) => Math.min(1, Math.max(0, u + d * 0.05)),
-        format: () => `${s.zoom.toFixed(2)}x`,
+        format: () => t('menu.settings.zoom.value', { value: num(s.zoom, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }),
         changed: () => s.zoom !== 1,
       },
-      { kind: 'toggle', id: 'numbers', label: 'Damage numbers', get: () => s.damageNumbers, set: (v) => change(() => (s.damageNumbers = v))() },
-      { kind: 'choice', id: 'filter', label: 'Loot filter', options: ['show all', 'hide normal', 'rares only'], get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
-      { kind: 'slider', id: 'shake', label: 'Screen shake', get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
-      { kind: 'choice', id: 'glyphs', label: 'Prompts', options: ['auto', 'keyboard', 'controller'], get: () => ['auto', 'keyboard', 'controller'].indexOf(s.glyphs), set: (i) => change(() => (s.glyphs = (['auto', 'keyboard', 'controller'] as const)[i]!))() },
-      { kind: 'button', id: 'engine', label: 'Engine', onClick: () => h.openMenu(engineMenu(h)), hint: 'pixel art, pixel size, frame rate, sound, debug info' },
+      { kind: 'toggle', id: 'numbers', label: t('menu.settings.numbers'), get: () => s.damageNumbers, set: (v) => change(() => (s.damageNumbers = v))() },
+      { kind: 'choice', id: 'filter', label: t('menu.settings.filter'), options: lootFilterOptions(), get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
+      { kind: 'slider', id: 'shake', label: t('menu.settings.shake'), get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
+      { kind: 'choice', id: 'glyphs', label: t('menu.settings.glyphs'), options: GLYPHS.map((g) => t(`menu.settings.glyphs.${g}`)), get: () => GLYPHS.indexOf(s.glyphs), set: (i) => change(() => (s.glyphs = GLYPHS[i]!))(), hint: t('menu.settings.glyphs.hint') },
+      { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
     ],
-    { id: 'settings', title: 'Settings', width: 240, labelWidth: 104, onSound: sound(h) },
+    { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
 }
 
@@ -202,13 +238,13 @@ export function engineMenu(h: MenuHost): Menu {
   const size = () => e.settings.values.pixelSize ?? 'fine'; // the game's own art resolution is fine
   return new Menu(
     () => [
-      { kind: 'toggle', id: 'pixelArt', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }), hint: 'off: smooth 3D, without the look' },
-      { kind: 'choice', id: 'pixelSize', label: 'Pixel size', options: [...PIXEL_SIZES], get: () => PIXEL_SIZES.indexOf(size()), set: (i) => e.settings.set({ pixelSize: PIXEL_SIZES[i] }) },
-      { kind: 'choice', id: 'fps', label: 'Frame rate', options: FPS_OPTIONS.map((f) => (f ? `${f} fps` : 'screen')), get: () => Math.max(0, FPS_OPTIONS.indexOf(e.maxFps)), set: (i) => e.settings.set({ fps: FPS_OPTIONS[i] }) },
-      { kind: 'toggle', id: 'sound', label: 'Sound', get: () => !h.audio.muted, set: (v) => h.audio.setMuted(!v) },
-      { kind: 'toggle', id: 'debugInfo', label: 'Debug info', get: () => e.debugShown, set: (v) => e.settings.set({ debugInfo: v }), hint: 'frame rate, camera, GPU errors' },
+      { kind: 'toggle', id: 'pixelArt', label: t('menu.engine.pixel_art'), get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }), hint: t('menu.engine.pixel_art.hint') },
+      { kind: 'choice', id: 'pixelSize', label: t('menu.engine.pixel_size'), options: PIXEL_SIZES.map((p) => t(`menu.engine.pixel_size.${p}`)), get: () => PIXEL_SIZES.indexOf(size()), set: (i) => e.settings.set({ pixelSize: PIXEL_SIZES[i] }) },
+      { kind: 'choice', id: 'fps', label: t('menu.engine.fps'), options: FPS_OPTIONS.map((f) => (f ? t('menu.engine.fps.value', { fps: f }) : t('menu.engine.fps.screen'))), get: () => Math.max(0, FPS_OPTIONS.indexOf(e.maxFps)), set: (i) => e.settings.set({ fps: FPS_OPTIONS[i] }) },
+      { kind: 'toggle', id: 'sound', label: t('menu.engine.sound'), get: () => !h.audio.muted, set: (v) => h.audio.setMuted(!v) },
+      { kind: 'toggle', id: 'debugInfo', label: t('menu.engine.debug'), get: () => e.debugShown, set: (v) => e.settings.set({ debugInfo: v }), hint: t('menu.engine.debug.hint') },
     ],
-    { id: 'engine', title: 'Engine', width: 240, labelWidth: 104, onSound: sound(h) },
+    { id: 'engine', title: t('menu.engine.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
 }
 
@@ -217,26 +253,28 @@ export function slotsMenu(h: MenuHost, mode: 'new' | 'load'): Menu {
     () => {
       const w: Widget[] = [];
       for (const s of h.saves.slots) {
-        const label = s.empty ? `Slot ${s.slot + 1}: empty` : s.error ? `Slot ${s.slot + 1}: unreadable` : `Slot ${s.slot + 1}: lv ${s.level} deepest ${s.deepest}`;
+        const slot = s.slot + 1;
+        const label = s.empty ? t('menu.slots.empty', { slot }) : s.error ? t('menu.slots.unreadable', { slot }) : t('menu.slots.saved', { slot, level: s.level, depth: s.deepest });
         w.push({
           kind: 'button',
           id: `slot${s.slot}`,
           label,
           onClick: () => h.play({ kind: mode === 'new' || s.empty ? 'new' : 'load', slot: s.slot }),
           accent: mode === 'new' && !s.empty ? 'plum' : 'teal',
-          hint: mode === 'new' ? (s.empty ? 'start a new run here' : 'overwrites this save!') : s.empty ? 'start a new run here' : `load slot ${s.slot + 1}`,
+          hint: s.empty ? t('menu.slots.hint.start') : mode === 'new' ? t('menu.slots.hint.overwrite') : t('menu.slots.hint.load', { slot }),
         });
       }
       w.push({ kind: 'gap', id: 'g' });
-      w.push({ kind: 'choice', id: 'target', label: 'Slot', options: ['1', '2', '3'], get: () => h.slot, set: (i) => (h.slot = i), hint: 'slot for export / import / delete' });
-      w.push({ kind: 'button', id: 'export', label: 'Export slot as JSON', onClick: () => h.exportSlot(h.slot) });
-      w.push({ kind: 'button', id: 'import', label: 'Import JSON into slot', onClick: () => h.importSlot(h.slot) });
-      w.push({ kind: 'button', id: 'delete', label: 'Delete slot', onClick: () => h.deleteSlot(h.slot), accent: 'plum' });
-      if (h.saves.volatile) w.push({ kind: 'label', id: 'vol', label: 'storage blocked: saves last this session', color: 'orange' });
-      if (h.saves.lastError) w.push({ kind: 'label', id: 'err', label: h.saves.lastError.slice(0, 40), color: 'red' });
+      w.push({ kind: 'choice', id: 'target', label: t('menu.slots.target'), options: [1, 2, 3].map((n) => num(n)), get: () => h.slot, set: (i) => (h.slot = i), hint: t('menu.slots.target.hint') });
+      w.push({ kind: 'button', id: 'export', label: t('menu.slots.export'), onClick: () => h.exportSlot(h.slot) });
+      w.push({ kind: 'button', id: 'import', label: t('menu.slots.import'), onClick: () => h.importSlot(h.slot) });
+      w.push({ kind: 'button', id: 'delete', label: t('menu.slots.delete'), onClick: () => h.deleteSlot(h.slot), accent: 'plum' });
+      if (h.saves.volatile) w.push({ kind: 'label', id: 'vol', label: t('menu.slots.volatile'), color: 'orange' });
+      // what the browser said (its own words: not a line), in a line
+      if (h.saves.lastError) w.push({ kind: 'label', id: 'err', label: t('menu.slots.error', { error: h.saves.lastError }), color: 'red' });
       return w;
     },
-    { id: 'slots', title: mode === 'new' ? 'New run: pick a slot' : 'Save slots', width: 220, onSound: sound(h) },
+    { id: 'slots', title: mode === 'new' ? t('menu.slots.title.new') : t('menu.slots.title.load'), width: 220, onSound: sound(h) },
   );
 }
 
@@ -244,28 +282,28 @@ export function devMenu(h: MenuHost): Menu {
   let depth = 1;
   return new Menu(
     () => [
-      { kind: 'choice', id: 'depth', label: 'Depth', options: Array.from({ length: 30 }, (_, i) => String(i + 1)), get: () => depth - 1, set: (i) => (depth = i + 1) },
-      { kind: 'button', id: 'teleport', label: 'Teleport to depth', onClick: () => h.devTeleport(depth) },
-      { kind: 'button', id: 'xp', label: 'Give XP', onClick: () => h.devGive('xp') },
-      { kind: 'button', id: 'level', label: 'Give a level', onClick: () => h.devGive('level') },
-      { kind: 'button', id: 'gold', label: 'Give 500 gold', onClick: () => h.devGive('gold') },
-      { kind: 'button', id: 'item', label: 'Give an item', onClick: () => h.devGive('item') },
-      { kind: 'button', id: 'killall', label: 'Kill all', onClick: () => h.devKillAll() },
-      { kind: 'button', id: 'spawn', label: 'Spawn monster', onClick: () => h.devSpawn() },
-      { kind: 'toggle', id: 'god', label: 'God mode', get: () => h.dev.god, set: (v) => (h.dev.god = v) },
-      { kind: 'toggle', id: 'ai', label: 'Monster AI', get: () => h.dev.ai, set: (v) => (h.dev.ai = v) },
-      { kind: 'toggle', id: 'hitboxes', label: 'Hitboxes', get: () => h.dev.hitboxes, set: (v) => (h.dev.hitboxes = v) },
+      { kind: 'choice', id: 'depth', label: t('dev.menu.depth'), options: Array.from({ length: 30 }, (_, i) => num(i + 1)), get: () => depth - 1, set: (i) => (depth = i + 1) },
+      { kind: 'button', id: 'teleport', label: t('dev.menu.teleport'), onClick: () => h.devTeleport(depth) },
+      { kind: 'button', id: 'xp', label: t('dev.menu.xp'), onClick: () => h.devGive('xp') },
+      { kind: 'button', id: 'level', label: t('dev.menu.level'), onClick: () => h.devGive('level') },
+      { kind: 'button', id: 'gold', label: t('dev.menu.gold', { gold: 500 }), onClick: () => h.devGive('gold') },
+      { kind: 'button', id: 'item', label: t('dev.menu.item'), onClick: () => h.devGive('item') },
+      { kind: 'button', id: 'killall', label: t('dev.menu.kill_all'), onClick: () => h.devKillAll() },
+      { kind: 'button', id: 'spawn', label: t('dev.menu.spawn'), onClick: () => h.devSpawn() },
+      { kind: 'toggle', id: 'god', label: t('dev.menu.god'), get: () => h.dev.god, set: (v) => (h.dev.god = v) },
+      { kind: 'toggle', id: 'ai', label: t('dev.menu.ai'), get: () => h.dev.ai, set: (v) => (h.dev.ai = v) },
+      { kind: 'toggle', id: 'hitboxes', label: t('dev.menu.hitboxes'), get: () => h.dev.hitboxes, set: (v) => (h.dev.hitboxes = v) },
       {
         kind: 'slider',
         id: 'tod',
-        label: 'Time of day',
+        label: t('dev.menu.time_of_day'),
         get: () => h.timeOfDay(),
         set: (u) => h.setTimeOfDay(u),
         step: (u, d) => (u + d * 0.05 + 1) % 1,
-        format: () => `${Math.floor(((h.timeOfDay() * 24 + 6) % 24))}H`,
+        format: () => t('dev.menu.time_of_day.value', { hour: Math.floor((h.timeOfDay() * 24 + 6) % 24) }),
       },
     ],
-    { id: 'dev', title: 'Dev tools', width: 210, labelWidth: 96, footer: () => 'window.__RIFTLIGHT__ for agents', onSound: sound(h) },
+    { id: 'dev', title: t('dev.menu.title'), width: 210, labelWidth: 96, footer: () => t('dev.menu.footer'), onSound: sound(h) },
   );
 }
 
@@ -276,16 +314,11 @@ export function riftMenu(h: MenuHost): Menu {
       const next = list.find((d) => d.next);
       const done = list.filter((d) => !d.next).reverse().slice(0, 7);
       const w: Widget[] = [];
-      if (next) w.push({ kind: 'button', id: `depth${next.depth}`, label: `${next.title}`, onClick: () => h.enterDepth(next.depth), accent: 'teal', hint: 'deeper: new territory' });
-      if (done.length) w.push({ kind: 'label', id: 'cleared', label: 'cleared', color: 'slate' });
-      for (const d of done) w.push({ kind: 'button', id: `depth${d.depth}`, label: `${d.title}${d.best ? `  ${fmt(d.best)}` : ''}`, onClick: () => h.enterDepth(d.depth), hint: 'replay for loot and xp' });
+      if (next) w.push({ kind: 'button', id: `depth${next.depth}`, label: next.title, onClick: () => h.enterDepth(next.depth), accent: 'teal', hint: t('menu.rift.next.hint') });
+      if (done.length) w.push({ kind: 'label', id: 'cleared', label: t('menu.rift.cleared'), color: 'slate' });
+      for (const d of done) w.push({ kind: 'button', id: `depth${d.depth}`, label: d.best ? t('menu.rift.best', { level: d.title, time: formatTime(d.best) }) : d.title, onClick: () => h.enterDepth(d.depth), hint: t('menu.rift.done.hint') });
       return w;
     },
-    { id: 'rift', title: 'The Rift Obelisk', width: 230, onSound: sound(h) },
+    { id: 'rift', title: t('menu.rift.title'), width: 230, onSound: sound(h) },
   );
-}
-
-function fmt(s: number): string {
-  const v = Math.round(s);
-  return `${Math.floor(v / 60)}:${String(v % 60).padStart(2, '0')}`;
 }

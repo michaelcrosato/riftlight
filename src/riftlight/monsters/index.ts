@@ -20,9 +20,10 @@ export { MonsterRuntime, type MonsterRuntimeState, type RuntimeEvent, type Updat
 export { createTelegraph, type Telegraph } from './telegraph';
 export { renderPortrait, grid, stack, checkMonster, type MonsterCheck, type PortraitOptions } from './inspect';
 export { ARCHETYPES } from './brains/archetypes';
+export { monsterNameParts, PLAN_WORD, THEME_WORD, type MonsterNameParts } from './names';
 export { MONSTER_SKILLS, boltFor, type MonsterSkillDef, type TelegraphSpec, type SkillRole } from './brains/skills';
 export { ELITE_MODS, ELITE_BEHAVIOURS, eliteBehaviour, type MonsterEliteDef, type EliteBehaviour, type EliteContext, type EliteHost } from './brains/elite';
 export { MonsterBrain, type BrainOptions, type BrainState, type MonsterBrainState } from './brains/brain';
 export { Pack, type PackState } from './brains/pack';
 export type { MonsterBody, BrainWorld, BrainLike, MonsterEvent, ActionId, Decision } from './brains/types';
-export { BOSSES, BOSS_ATTACKS, BossBrain, type BossBrainState, bossName, bossSkills, buildBoss, designedBoss, generateBoss, MECHANIC_THEMES, type BossDef, type BossPhase, type BossAttackDef, type BossPattern } from './bosses';
+export { BOSSES, BOSS_ATTACKS, BOSS_PHASES, BossBrain, type BossBrainState, bossName, bossNameParts, bossSkills, EPITHETS, buildBoss, designedBoss, generateBoss, MECHANIC_THEMES, type BossDef, type BossPhase, type BossAttackDef, type BossPattern } from './bosses';

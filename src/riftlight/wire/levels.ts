@@ -10,7 +10,8 @@ import type { BossView, KillInfo, LevelDeps, LevelHandle, LevelPort, MechanicInf
 import { buildLevel, type Level, type LevelHooks, type LevelState, type MonsterSpawn } from '../levels/Level';
 import { type LevelPlan, planLevel } from '../levels/plan';
 import { FLOOR, VOID, WALL } from '../levels/layout/grid';
-import { MECHANIC_ORDER, MECHANICS } from '../levels/mechanics';
+import { MECHANIC_ORDER } from '../levels/mechanics';
+import { mechanicText } from '../lang/levels';
 import { levelSpec } from '../levels/rift';
 import { ARCHETYPES, BOSS_ATTACKS, type BossDef, type BrainWorld, buildMonster, designedBoss, generateBoss, generateGenome, genomeBudget, Pack, type PackState, PLANS, type MonsterEvent } from '../monsters';
 import type { Slot } from '../monsters/types';
@@ -949,10 +950,8 @@ export class RealLevels implements LevelPort {
   }
 
   mechanics(): readonly MechanicInfo[] {
-    return MECHANIC_ORDER.map((id) => {
-      const m = MECHANICS.get(id);
-      return { id, name: m.name, description: m.description, bypass: m.bypass, exploit: m.exploit };
-    });
+    // in the player's language (lang/levels.ts): the codex shows what this returns
+    return MECHANIC_ORDER.map((id) => ({ id, ...mechanicText(id) }));
   }
 
   /** The plan a spec makes, in a few numbers (layout, packs, elements, features, props): data only, no build. */

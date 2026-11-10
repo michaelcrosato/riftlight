@@ -12,7 +12,11 @@
  * whole picture in view); a press anywhere or back shows it again.
  */
 import type { Panel } from '../game/ports';
-import { inside, type Rect, type UiCanvas, type UiEvent } from './kit';
+import { t } from '../lang';
+import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from './kit';
+
+/** The close box's cross (5 × 5). */
+const CROSS = ['x...x', '.x.x.', '..x..', '.x.x.', 'x...x'];
 
 export interface Open {
   panel: Panel;
@@ -36,6 +40,8 @@ export interface Open {
    * still tweak the focused control). The text is the hint shown while it is hidden.
    */
   peek?: string;
+  /** The first row a bare panel may use, read as it draws (the title menu stays under the logo). */
+  below?: () => number;
 }
 
 export type OpenOptions = {
@@ -48,6 +54,7 @@ export type OpenOptions = {
   dim?: boolean;
   solo?: boolean;
   peek?: string;
+  below?: () => number;
 };
 
 export class UiLayer {
@@ -88,6 +95,7 @@ export class UiLayer {
       dim: o.dim,
       solo: o.solo,
       peek: o.peek,
+      below: o.below,
     });
     panel.open?.();
     if (!o.silent) this.onSound?.('open');
@@ -187,25 +195,27 @@ export class UiLayer {
       // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can
       // lay out narrower do (`fit`), and nothing is ever drawn wider than the screen
       const roomW = ui.w - (o.bare ? 4 : 12);
-      const roomH = ui.h - (o.bare ? 4 : 26);
+      const floor = o.below?.() ?? 0; // rows above it are someone else's (the title's logo)
+      const roomH = ui.h - (o.bare ? 4 : 26) - Math.max(0, floor - 2);
       o.panel.fit?.(roomW, roomH);
       const w = Math.min(o.panel.size.w, roomW);
       const h = Math.min(o.panel.size.h, roomH);
       const open = Math.min(1, o.age / 0.12);
       const x = o.dock === 'right' ? Math.max(6, ui.w - w - 6) : Math.floor((ui.w - w) / 2);
-      const y = Math.max(o.bare ? 2 : 16, Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
+      const y = Math.max(o.bare ? 2 : 16, floor, Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
       o.rect = { x, y, w, h };
       if (!o.bare) {
         ui.panel(x - 6, y - 16, w + 12, h + 22, 'ink', last ? 'slate' : 'night');
         ui.rect(x - 3, y - 13, w + 6, 11, last ? 'navy' : 'night');
-        const title = o.panel.title.toUpperCase();
-        if (ui.measure(title) <= w - 14) ui.text(x, y - 11, title, { color: last ? 'sand' : 'slate' });
-        else ui.mini(x, y - 10, title, last ? 'sand' : 'slate');
+        const title = o.panel.title;
+        const room = w - (o.sticky ? 2 : 14);
+        if (ui.measure(title) <= room) ui.text(x, y - 11, title, { color: last ? 'sand' : 'slate' });
+        else ui.mini(x, y - 10, clip(title, room, miniWidth), last ? 'sand' : 'slate');
         if (!o.sticky) {
           const cx = x + w - 13;
           const hot = ui.hover({ x: cx, y: y - 13, w: 12, h: 11 });
           ui.rect(cx, y - 13, 12, 11, hot ? 'red' : 'plum');
-          ui.text(cx + 3, y - 11, 'X', { color: 'white' });
+          ui.sprite(cx + 3, y - 10, CROSS, { x: 'white' });
         }
       }
       o.panel.draw(ui, o.rect, time);
@@ -213,13 +223,14 @@ export class UiLayer {
     const top = this.top;
     if (this.peeking && top?.peek) {
       // a short strip (clear of the HUD's corners) with what the keys tweak now, and how to get the panel back
-      const line = [top.panel.focusLine?.() || top.panel.title, top.peek].filter((t) => t).join(' · ').toUpperCase();
+      const control = top.panel.focusLine?.() || top.panel.title;
+      const line = top.peek ? t('menu.peek_strip', { control, hint: top.peek }) : control;
       const fits = ui.measure(line) <= ui.w - 14;
-      const w = Math.min(ui.w - 4, (fits ? ui.measure(line) : line.length * 4) + 10);
+      const w = Math.min(ui.w - 4, (fits ? ui.measure(line) : miniWidth(line)) + 10);
       const x = Math.floor((ui.w - w) / 2);
       ui.panel(x, 2, w, 13, 'ink', 'slate');
       if (fits) ui.text(ui.w / 2, 5, line, { align: 'center', color: 'sand' });
-      else ui.mini(ui.w / 2, 6, line.slice(0, Math.floor((w - 6) / 4)), 'sand', 'center');
+      else ui.mini(ui.w / 2, 6, clip(line, w - 6, miniWidth), 'sand', 'center');
     }
   }
 }

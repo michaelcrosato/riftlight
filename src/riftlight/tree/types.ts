@@ -7,6 +7,7 @@
  *   NotableDef / KeystoneDef / Mastery ─┤
  *   RegionDef (theme weights, pool)    ─┘
  */
+import type { Line } from '../../engine/lang/lang';
 import type { Entry } from '../core/registry';
 import type { Mod, ModKind } from '../core/mods';
 import type { PassiveNode } from '../core/types';
@@ -23,13 +24,21 @@ export interface ModRoll {
   readonly negative?: boolean;
 }
 
+/**
+ * A hand-written tooltip line (keystones' rules): a sentence, the same with its numbers in named
+ * blanks (`{ text: 'Kills grant Rampage for {seconds} s', values: { seconds: 4 } }`; plural forms
+ * when a blank counts something), or a mod, read like every other. Its words are the line
+ * `<node's text>.line.<n>` (lang/tree.ts), n counting from 1.
+ */
+export type NodeLine = string | { readonly text: Line; readonly values: Readonly<Record<string, number>> } | Mod;
+
 /** A hand-written notable: a named, flavoured bundle of mods (3–5 small nodes' worth). */
 export interface NotableDef extends Entry {
   readonly name: string;
   readonly mods: readonly Mod[];
   readonly flavour: string;
   /** Hand-written tooltip lines, used instead of describing the mods. */
-  readonly lines?: readonly string[];
+  readonly lines?: readonly NodeLine[];
 }
 
 /** A keystone: a build-defining trade-off, as mods plus flags combat reads. */
@@ -37,7 +46,7 @@ export interface KeystoneDef extends Entry {
   readonly name: string;
   readonly mods: readonly Mod[];
   /** Tooltip lines: keystone rules are read as sentences, not as stat sums. */
-  readonly lines: readonly string[];
+  readonly lines: readonly NodeLine[];
   readonly flavour: string;
   /** The region it sits at the edge of. */
   readonly region: string;
@@ -104,7 +113,7 @@ export interface NodeOverride {
   readonly region?: string;
   readonly mods?: readonly Mod[];
   readonly flavour?: string;
-  readonly lines?: readonly string[];
+  readonly lines?: readonly NodeLine[];
   /** Links to add (both ways). */
   readonly link?: readonly string[];
   /** Links to remove (both ways). */
@@ -118,7 +127,14 @@ export interface TreeNode extends PassiveNode {
   /** The template id for cluster nodes. */
   readonly template?: string;
   /** Hand-written tooltip lines (keystones, some notables). */
-  readonly lines?: readonly string[];
+  readonly lines?: readonly NodeLine[];
+  /**
+   * Where its words are in the game's lines: `<text>.name`, `.flavour`, `.line.<n>`
+   * (`tree.notable.<id>`, `tree.keystone.<id>`, `tree.mastery.<id>`, `tree.region.<id>` for a
+   * gate, `tree.override.<id>`); `name` and `flavour` keep the English. Small nodes have none:
+   * their names are made from their mods (tree/text.ts `nodeName`).
+   */
+  readonly text?: string;
   /** Mastery choices. */
   readonly options?: readonly MasteryOption[];
   /** Budget points the generator spent on a small node (validation compares). */

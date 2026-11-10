@@ -1222,7 +1222,7 @@ async function runTools(browserExe) {
     const out = new URL('balance/', OUT);
     await rm(out, { recursive: true, force: true });
     const t0 = Date.now();
-    const ran = await run('npx', ['tsx', 'scripts/riftlight/balance.ts', '--depths', '1,13', '--max', '13', '--samples', '2', '--candidates', '2', '--out', '.scratch/e2e/balance', '--json']);
+    const ran = await run('npm', ['run', '--silent', 'balance', '--', '--depths', '1,13', '--max', '13', '--samples', '2', '--candidates', '2', '--out', '.scratch/e2e/balance', '--json']);
     check(ran.code === 0, `balance exits 0 in ${((Date.now() - t0) / 1000).toFixed(1)} s${ran.code ? ':\n    ' + tail(ran.out) : ''}`);
     const report = JSON.parse(await readFile(new URL('balance.json', out), 'utf8'));
     const rows = report.rows;
@@ -1243,7 +1243,7 @@ async function runTools(browserExe) {
   try {
     const out = new URL('inspect/', OUT);
     await rm(out, { recursive: true, force: true });
-    const ran = await run('npx', ['tsx', 'scripts/inspect.ts', 'hero', 'monster:3', 'prop:brazier', '--out', '.scratch/e2e/inspect', '--json']);
+    const ran = await run('npm', ['run', '--silent', 'inspect', '--', 'hero', 'monster:3', 'prop:brazier', '--out', '.scratch/e2e/inspect', '--json']);
     check(ran.code === 0, `inspect exits 0${ran.code ? ':\n    ' + tail(ran.out) : ''}`);
     const hero = JSON.parse(await readFile(new URL('hero.json', out), 'utf8'));
     check(hero.triangles > 100 && hero.joints.length === 15 && hero.clips.length > 20 && hero.bounds.size[1] > 1.5, `hero: ${hero.triangles} tris, ${hero.joints.length} joints, ${hero.clips.length} clips, ${hero.bounds.size[1]} m tall`);
@@ -1253,7 +1253,7 @@ async function runTools(browserExe) {
       const p = await pngSize(new URL(`${name}.png`, out));
       check(p.width > 1000 && p.height > 400 && p.bytes > 10000, `${name}.png ${p.width}×${p.height}`);
     }
-    const diff = await run('npx', ['tsx', 'scripts/inspect.ts', 'diff', 'coin', 'tree', '--out', '.scratch/e2e/inspect', '--json']);
+    const diff = await run('npm', ['run', '--silent', 'inspect', '--', 'diff', 'coin', 'tree', '--out', '.scratch/e2e/inspect', '--json']);
     const d = JSON.parse(await readFile(new URL('diff-coin-vs-tree.json', out), 'utf8'));
     check(diff.code === 0 && !d.same && d.counts.meshes[2] === 1 && d.clips.removed.includes('Spin'), `diff coin tree: meshes +${d.counts.meshes[2]}, clips -${d.clips.removed.join(',')}`);
   } catch (e) {

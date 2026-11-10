@@ -5,9 +5,10 @@
  *   keys / d-pad: up/down move focus, left/right change sliders and choices, confirm activates.
  * Every Riftlight menu (title, pause, tuning, settings, slots, dev) is one of these.
  */
-import type { HudColor } from '../../engine';
+import { type HudColor, wrapText } from '../../engine';
 import type { Panel } from '../game/ports';
-import { inside, type Rect, UI, type UiCanvas, type UiEvent } from './kit';
+import { t } from '../lang';
+import { clip, inside, miniWidth, type Rect, UI, type UiCanvas, type UiEvent } from './kit';
 
 export type Widget =
   | { kind: 'button'; id: string; label: string; onClick: () => void; disabled?: boolean; hint?: string; accent?: HudColor }
@@ -27,9 +28,11 @@ export type Widget =
       hint?: string;
       /** What the control is, on its own (the focus line while its menu is hidden); default: the label. */
       name?: string;
+      /** Drawn indented, under the row it belongs to (a filter's preset and sliders). */
+      indent?: boolean;
     }
-  | { kind: 'toggle'; id: string; label: string; get: () => boolean; set: (v: boolean) => void; hint?: string; name?: string }
-  | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string; name?: string }
+  | { kind: 'toggle'; id: string; label: string; get: () => boolean; set: (v: boolean) => void; hint?: string; name?: string; indent?: boolean }
+  | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string; name?: string; indent?: boolean }
   | { kind: 'label'; id: string; label: string; color?: HudColor }
   | { kind: 'gap'; id: string; h?: number };
 
@@ -91,8 +94,9 @@ export class Menu implements Panel {
   get size() {
     // room for the hint / footer line under the widgets
     const narrow = this.narrow;
-    const h = this.widgets.reduce((s, w) => s + rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0), 0) + 14;
-    return { w: Math.min(this.o.width ?? 200, this.room), h };
+    const w = Math.min(this.o.width ?? 200, this.room);
+    const h = this.widgets.reduce((s, x) => s + rowHeight(x, w) + (narrow && isControl(x) ? NARROW_EXTRA : 0), 0) + 14;
+    return { w, h };
   }
 
   /** The widget list (rebuilt from the factory, if any, on every draw). */
@@ -129,9 +133,9 @@ export class Menu implements Panel {
     const w = this.widgets[this.focus];
     if (!w || w.kind === 'gap') return '';
     const name = ('name' in w && w.name) || w.label.trim();
-    if (w.kind === 'slider') return `${name} ${w.format()}`;
-    if (w.kind === 'toggle') return `${name} ${w.get() ? 'on' : 'off'}`;
-    if (w.kind === 'choice') return `${name} ${w.options[w.get()] ?? ''}`;
+    if (w.kind === 'slider') return t('menu.focus_line', { control: name, value: w.format() });
+    if (w.kind === 'toggle') return t('menu.focus_line', { control: name, value: t(w.get() ? 'menu.on' : 'menu.off') });
+    if (w.kind === 'choice') return t('menu.focus_line', { control: name, value: w.options[w.get()] ?? '' });
     return name;
   }
 
@@ -139,9 +143,11 @@ export class Menu implements Panel {
     this.refresh();
     this.rects.clear();
     const narrow = this.narrow;
-    const labelW = narrow ? 4 : (this.o.labelWidth ?? Math.floor(r.w * 0.45));
+    // the label column: as wide as the menu asks, wider for longer labels (another language's), up to 3/5 of the row
+    const widest = Math.max(0, ...this.widgets.filter(isControl).map((w) => ui.measure((w as { label: string }).label) + ((w as { indent?: boolean }).indent ? 12 : 0) + 9));
+    const labelW = narrow ? 4 : Math.max(this.o.labelWidth ?? Math.floor(r.w * 0.45), Math.min(widest, Math.floor(r.w * 0.6)));
     // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
-    const heights = this.widgets.map((w) => rowHeight(w) + (narrow && isControl(w) ? NARROW_EXTRA : 0));
+    const heights = this.widgets.map((w) => rowHeight(w, r.w) + (narrow && isControl(w) ? NARROW_EXTRA : 0));
     const total = heights.reduce((a, b) => a + b, 0);
     const view = r.h - 14; // the footer line
     this.scrolls = total > view;
@@ -166,7 +172,7 @@ export class Menu implements Panel {
       if (w.kind === 'button') {
         this.rects.set(w.id, ui.button(row, w.label, { focus, disabled: w.disabled, accent: w.accent }));
       } else if (w.kind === 'label') {
-        ui.text(r.x + r.w / 2, y + 2, w.label.toUpperCase(), { align: 'center', color: w.color ?? UI.accent });
+        labelLines(w.label, r.w).forEach((line, k) => ui.text(r.x + r.w / 2, y + 2 + k * LABEL_LINE, clip(line, r.w - 4, (s) => ui.measure(s)), { align: 'center', color: w.color ?? UI.accent }));
       } else if (w.kind === 'gap') {
         /* spacing */
       } else {
@@ -174,9 +180,11 @@ export class Menu implements Panel {
         if (focus || ui.hover(row)) ui.rect(row.x, row.y, row.w, row.h, 'night');
         if (focus) ui.rect(row.x, row.y, 2, row.h, UI.focus);
         const color = focus ? 'white' : 'mist';
-        ui.text(r.x + 5, y + 3, w.label.toUpperCase(), { color });
         const cx = r.x + labelW;
         const cw = r.w - labelW - 4;
+        // the label in its column (the whole row when narrow), indented under its parent row
+        const lx = r.x + 5 + (w.indent ? 12 : 0);
+        ui.text(lx, y + 3, clip(w.label, (narrow ? r.x + r.w - 4 : cx - 3) - lx, (s) => ui.measure(s)), { color });
         // narrow: the control sits on its own line under the label
         if (narrow) y += NARROW_EXTRA;
         if (w.kind === 'slider') {
@@ -198,11 +206,11 @@ export class Menu implements Panel {
           ui.rect(cx, y + 2, 17, 9, 'ink');
           ui.rect(cx + 1, y + 3, 15, 7, on ? 'green' : 'night');
           ui.rect(on ? cx + 9 : cx + 1, y + 3, 7, 7, focus ? UI.focus : 'white');
-          ui.text(cx + 22, y + 3, on ? 'ON' : 'OFF', { color: on ? UI.good : 'slate' });
+          ui.text(cx + 22, y + 3, t(on ? 'menu.on' : 'menu.off'), { color: on ? UI.good : 'slate' });
         } else if (w.kind === 'choice') {
           const label = w.options[w.get()] ?? '?';
           ui.text(cx, y + 3, '<', { color: focus ? UI.focus : 'slate' });
-          ui.text(cx + Math.floor(cw / 2), y + 3, label.toUpperCase(), { align: 'center', color });
+          ui.text(cx + Math.floor(cw / 2), y + 3, clip(label, cw - 14, (s) => ui.measure(s)), { align: 'center', color });
           ui.text(cx + cw - 5, y + 3, '>', { color: focus ? UI.focus : 'slate' });
         }
       }
@@ -215,9 +223,8 @@ export class Menu implements Panel {
     const foot = hint ?? this.o.footer?.();
     if (foot) {
       // a narrow menu (a phone) falls back to the mini font, cut to the width
-      const text = foot.toUpperCase();
-      if (ui.measure(text) <= r.w - 2) ui.text(r.x + r.w / 2, r.y + r.h - 10, text, { align: 'center', color: 'slate' });
-      else ui.mini(r.x + r.w / 2, r.y + r.h - 9, text.slice(0, Math.floor((r.w + 1) / 4)), 'slate', 'center');
+      if (ui.measure(foot) <= r.w - 2) ui.text(r.x + r.w / 2, r.y + r.h - 10, foot, { align: 'center', color: 'slate' });
+      else ui.mini(r.x + r.w / 2, r.y + r.h - 9, clip(foot, r.w - 2, miniWidth), 'slate', 'center');
     }
   }
 
@@ -358,4 +365,7 @@ export class Menu implements Panel {
 const NARROW_EXTRA = 10;
 const isControl = (w: Widget) => w.kind === 'slider' || w.kind === 'toggle' || w.kind === 'choice';
 const focusable = (w: Widget) => w.kind !== 'label' && w.kind !== 'gap' && !(w.kind === 'button' && w.disabled);
-const rowHeight = (w: Widget) => (w.kind === 'gap' ? (w.h ?? 6) : w.kind === 'button' ? BUTTON_H + 3 : w.kind === 'label' ? 12 : ROW);
+/** A label's rows: wrapped to the menu's width (a long notice, a longer language). */
+const LABEL_LINE = 9;
+const labelLines = (label: string, width: number): string[] => wrapText(label, width - 4);
+const rowHeight = (w: Widget, width: number) => (w.kind === 'gap' ? (w.h ?? 6) : w.kind === 'button' ? BUTTON_H + 3 : w.kind === 'label' ? 12 + (labelLines(w.label, width).length - 1) * LABEL_LINE : ROW);

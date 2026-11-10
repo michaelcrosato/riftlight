@@ -30,9 +30,11 @@ import { filterTier, itemClass } from '../loot/filter';
 import { rollDrops, rollItem } from '../loot/generate';
 import { allItems, findItem, INVENTORY_SIZE, type LootState, lootFromSave, lootToSave, pickUp, removeItem } from '../loot/inventory';
 import { EQUIP_SLOTS, itemMods, sourceKey } from '../loot/itemMods';
+import { goldLabel, itemLabel } from '../loot/names';
 import { normalizeSockets, type SkillSocket, socketedGems, starterSockets } from '../loot/sockets';
 import { vendorStock, type VendorKind } from '../loot/vendor';
 import { type GroundDrop, WorldLoot as WorldLootSystem, type WorldLootState } from '../loot/world';
+import { t } from '../lang';
 import { type Drop, ITEM_GROUP, type KillInfo, type LootPort, type Panel, type PanelHost, type ShellServices, type StageWorld, type WorldLoot } from '../game/ports';
 import { ItemsStore } from '../ui/items/store';
 import { type ItemsViewState, ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
@@ -41,8 +43,8 @@ import type { UiCanvas, UiEvent } from '../ui/kit';
 /** Label colours by item class (the shell's labels use palette names). */
 const CLASS_COLOR: Readonly<Record<string, PaletteColor>> = { normal: 'white', magic: 'sky', rare: 'sand', unique: 'orange', currency: 'mist', gem: 'cyan' };
 
-/** Window titles: the townsfolk who own them. */
-const TITLES = { stash: 'Stash', vendor: "Ilsa's wares", bench: "Brann's anvil", skills: 'Skills' } as const;
+/** Window titles: the townsfolk who own them (lines, in the player's language). */
+const titles = () => ({ stash: t('item.window.stash'), vendor: t('item.window.ilsa'), bench: t('item.window.brann'), skills: t('item.window.skills') });
 
 /** A drop on the ground as the shell sees it (wraps R3's GroundDrop). */
 interface PortDrop extends WorldLoot {
@@ -58,7 +60,7 @@ function portDrop(g: GroundDrop, drop: Drop, tier: PortDrop['tier'], filtered: b
     drop,
     ground: g,
     position: g.to,
-    label: drop.kind === 'gold' ? `${drop.amount} GOLD` : `${drop.item.quantity && drop.item.quantity > 1 ? `${drop.item.quantity}X ` : ''}${drop.item.name.toUpperCase()}`,
+    label: drop.kind === 'gold' ? goldLabel(drop.amount) : itemLabel(drop.item),
     color: drop.kind === 'gold' ? 'sand' : (CLASS_COLOR[itemClass(drop.item)] ?? 'white'),
     filtered,
     tier,
@@ -465,7 +467,7 @@ export class RealLoot implements LootPort {
     }
     if (!this.ui) {
       const ctx = this.ctx;
-      this.ui = new ItemsUi(ctx, this.store, { hosted: true, sheet: () => this.heroStats(), onClose: () => this.active?.host.close(), titles: TITLES });
+      this.ui = new ItemsUi(ctx, this.store, { hosted: true, sheet: () => this.heroStats(), onClose: () => this.active?.host.close(), titles: titles() });
     }
     return this.ui;
   }
@@ -490,23 +492,23 @@ export class RealLoot implements LootPort {
   }
 
   inventoryView(host: PanelHost): Panel {
-    return new ItemsPanel(this, host, 'inventory', 'inventory', 'Inventory');
+    return new ItemsPanel(this, host, 'inventory', 'inventory', t('item.window.inventory'));
   }
 
   stashView(host: PanelHost): Panel {
-    return new ItemsPanel(this, host, 'stash', 'stash', 'Stash');
+    return new ItemsPanel(this, host, 'stash', 'stash', t('item.window.stash'));
   }
 
   vendorView(host: PanelHost): Panel {
-    return new ItemsPanel(this, host, 'vendor', 'vendor', TITLES.vendor);
+    return new ItemsPanel(this, host, 'vendor', 'vendor', titles().vendor);
   }
 
   craftingView(host: PanelHost): Panel {
-    return new ItemsPanel(this, host, 'crafting', 'bench', TITLES.bench);
+    return new ItemsPanel(this, host, 'crafting', 'bench', titles().bench);
   }
 
   skillsView(host: PanelHost): Panel {
-    return new ItemsPanel(this, host, 'skills', 'skills', 'Skills');
+    return new ItemsPanel(this, host, 'skills', 'skills', t('item.window.skills'));
   }
 
   /** Tests / tools: drop an item from the bag (it is gone, not on the ground). */

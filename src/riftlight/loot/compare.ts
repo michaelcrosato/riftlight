@@ -6,6 +6,7 @@
  */
 import type { Mod, StatSheet } from '../core/mods';
 import type { Item } from '../core/types';
+import { t } from '../lang';
 import { defaultSlot, equipItem } from './inventory';
 import { applyEquipment, type EquipSlot, type Equipment, EQUIP_SLOTS, itemMods } from './itemMods';
 import { describeItemMod } from './stats';
@@ -20,7 +21,7 @@ export interface StatDelta {
   readonly delta: number;
   /** True when the change is good for the hero. */
   readonly better: boolean;
-  /** Tooltip text, e.g. "+12 maximum life". */
+  /** Tooltip text in the player's language, e.g. "+12 maximum life". */
   readonly text: string;
 }
 
@@ -84,7 +85,7 @@ export function diffEquipment(sheet: StatSheet, before: Equipment, after: Equipm
     if (Math.abs(delta) < 1e-6) continue;
     const better = LOWER_IS_BETTER.has(m.stat) ? delta < 0 : delta > 0;
     const shown: Mod = { stat: m.stat, kind: mult ? 'inc' : m.kind === 'flag' ? 'flag' : 'flat', value: delta, ...(m.tags ? { tags: m.tags } : {}), ...(m.when ? { when: m.when } : {}) };
-    const text = m.kind === 'flag' ? `${delta > 0 ? 'gain' : 'lose'}: ${describeItemMod(shown)}` : describeItemMod(shown);
+    const text = m.kind === 'flag' ? t(delta > 0 ? 'item.compare.gain' : 'item.compare.lose', { mod: describeItemMod(shown) }) : describeItemMod(shown);
     out.push({ stat: m.stat, ...(m.tags ? { tags: m.tags } : {}), ...(m.when ? { when: m.when } : {}), before: before0, after: after0, delta, better, text });
   }
   return out;

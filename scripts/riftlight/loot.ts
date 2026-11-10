@@ -17,20 +17,24 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Canvas, type RGB } from '../../src/engine/animation/raster';
-import { Rng } from '../../src/riftlight/core/rng';
-import { type Rank, SCALING } from '../../src/riftlight/core/scaling';
+import type { Rank } from '../../src/riftlight/core/scaling';
 import type { Item, Rarity } from '../../src/riftlight/core/types';
-import { AFFIXES, BASES, UNIQUES } from '../../src/riftlight/loot/content';
-import { RARITY_COLOURS } from '../../src/riftlight/loot/filter';
-import { makeUnique, rarityBoost, rarityWeights, RARITIES, rollDrops, rollItem } from '../../src/riftlight/loot/generate';
-import { itemMods } from '../../src/riftlight/loot/itemMods';
-import { describeItemMods } from '../../src/riftlight/loot/stats';
 import type { Painter } from '../../src/riftlight/ui/items/paint';
-import { drawTooltip, measureTooltip, tooltipLines } from '../../src/riftlight/ui/items/tooltip';
 import { encodePng } from '../png';
 import { helpExit } from '../manual.mjs';
+import { registerEngineHooks } from '../trace/hooks';
 
 helpExit(import.meta.url);
+// tooltips are lines in the game's language (src/riftlight/lang), which load the engine index
+registerEngineHooks();
+const { Rng } = await import('../../src/riftlight/core/rng');
+const { SCALING } = await import('../../src/riftlight/core/scaling');
+const { AFFIXES, BASES, UNIQUES } = await import('../../src/riftlight/loot/content');
+const { RARITY_COLOURS } = await import('../../src/riftlight/loot/filter');
+const { makeUnique, rarityBoost, rarityWeights, RARITIES, rollDrops, rollItem } = await import('../../src/riftlight/loot/generate');
+const { itemMods } = await import('../../src/riftlight/loot/itemMods');
+const { describeItemMods } = await import('../../src/riftlight/loot/stats');
+const { drawTooltip, measureTooltip, tooltipLines } = await import('../../src/riftlight/ui/items/tooltip');
 
 process.stdout.on('error', (e: NodeJS.ErrnoException) => {
   if (e.code === 'EPIPE') process.exit(0);

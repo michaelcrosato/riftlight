@@ -77,7 +77,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'might',
     tags: ['might', 'life'],
     mods: [flag('skills.costLife'), override('mana', 0), inc('life', 0.1)],
-    lines: ['Skills cost life instead of mana', 'You have no mana', '10% increased maximum life'],
+    lines: ['Skills cost life instead of mana', 'You have no mana', inc('life', 0.1)],
     flavour: 'Pay in the oldest coin there is.',
   }),
   K({
@@ -86,7 +86,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'might',
     tags: ['might', 'life'],
     mods: [more('life', 0.25), more('move.speed', -0.15), more('attack.speed', -0.05)],
-    lines: ['25% more maximum life', '15% less movement speed', '5% less attack speed'],
+    lines: [more('life', 0.25), more('move.speed', -0.15), more('attack.speed', -0.05)],
     flavour: 'The mountain does not hurry.',
   }),
   // ------------------------------------------------------------ Edge
@@ -114,7 +114,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'edge',
     tags: ['edge', 'damage'],
     mods: [more('damage', 0.3), more('damage.taken', 0.3)],
-    lines: ['30% more damage', '30% more damage taken'],
+    lines: [more('damage', 0.3), more('damage.taken', 0.3)],
     flavour: 'Brilliant, brittle, brief.',
   }),
   K({
@@ -123,7 +123,11 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'edge',
     tags: ['edge', 'onkill'],
     mods: [flag('rampage'), more('damage', -0.1)],
-    lines: ['Kills grant Rampage for 4 s, up to 25 stacks', 'Each stack: 2% more damage, 1% more movement speed', '10% less damage'],
+    lines: [
+      { text: 'Kills grant Rampage for {seconds} s, up to {stacks} stacks', values: { seconds: 4, stacks: 25 } },
+      { text: 'Each stack: {damage}% more damage, {speed}% more movement speed', values: { damage: 2, speed: 1 } },
+      more('damage', -0.1),
+    ],
     flavour: 'Slow to start. Impossible to stop.',
   }),
   // ------------------------------------------------------------ Grace
@@ -133,7 +137,10 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'grace',
     tags: ['grace', 'projectile'],
     mods: [flag('pointBlank')],
-    lines: ['Projectiles deal up to 30% more damage to close targets', 'and up to 30% less damage to far targets'],
+    lines: [
+      { text: 'Projectiles deal up to {value}% more damage to close targets', values: { value: 30 } },
+      { text: 'Projectiles deal up to {value}% less damage to far targets', values: { value: 30 } },
+    ],
     flavour: 'Close enough to see the whites of their eyes.',
   }),
   K({
@@ -142,7 +149,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'grace',
     tags: ['grace', 'defence'],
     mods: [flat('dodge.chance', 0.3), more('armour', -0.5), more('energy.shield', -0.5)],
-    lines: ['30% chance to dodge hits', '50% less armour', '50% less energy shield'],
+    lines: [{ text: '{value}% chance to dodge hits', values: { value: 30 } }, more('armour', -0.5), more('energy.shield', -0.5)],
     flavour: 'Armour is for people who stand still.',
   }),
   K({
@@ -151,7 +158,10 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'grace',
     tags: ['grace', 'defence'],
     mods: [more('evasion', 0.4, ['projectile']), more('evasion', -0.5, ['melee'])],
-    lines: ['40% more evasion against projectiles', '50% less evasion against melee'],
+    lines: [
+      { text: '{value}% more evasion against projectiles', values: { value: 40 } },
+      { text: '{value}% less evasion against melee', values: { value: 50 } },
+    ],
     flavour: 'Watch the archer, not the arrow.',
   }),
   K({
@@ -160,7 +170,10 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'grace',
     tags: ['grace', 'defence'],
     mods: [more('damage.taken', -0.2, undefined, 'notHitRecently'), more('damage.taken', 0.2, undefined, 'hitRecently')],
-    lines: ['20% less damage taken if not hit recently', '20% more damage taken if hit recently'],
+    lines: [
+      { text: '{value}% less damage taken if not hit recently', values: { value: 20 } },
+      { text: '{value}% more damage taken if hit recently', values: { value: 20 } },
+    ],
     flavour: 'The first blow is the hardest to land.',
   }),
   // ------------------------------------------------------------ Guile
@@ -170,7 +183,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'guile',
     tags: ['guile', 'ailment'],
     mods: [flag('crit.affectsAilments'), more('damage', -0.3, ['hit'])],
-    lines: ['Critical strike multiplier applies to ailments', '30% less damage with hits'],
+    lines: ['Critical strike multiplier applies to ailments', more('damage', -0.3, ['hit'])],
     flavour: 'The wound is a message. The pain is the reply.',
   }),
   K({
@@ -179,7 +192,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'guile',
     tags: ['guile', 'dark'],
     mods: [more('damage', 0.3, undefined, 'inDark'), more('light.radius', -0.5)],
-    lines: ['30% more damage while in the dark', '50% less light radius'],
+    lines: [more('damage', 0.3, undefined, 'inDark'), more('light.radius', -0.5)],
     flavour: 'Snuff the lantern. You see better without it.',
   }),
   K({
@@ -188,7 +201,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'guile',
     tags: ['guile', 'rift'],
     mods: [flat('damage.morePerMechanic', 0.08), more('life', -0.15)],
-    lines: ['8% more damage for each mechanic active in the level', '15% less maximum life'],
+    lines: [{ text: '{value}% more damage for each mechanic active in the level', values: { value: 8 } }, more('life', -0.15)],
     flavour: 'Every broken law of the rift is a door.',
   }),
   K({
@@ -197,7 +210,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'guile',
     tags: ['guile', 'spell'],
     mods: [more('damage', 0.3, ['spell'], 'lowLife'), more('life.recovery', -0.3)],
-    lines: ['30% more spell damage while on low life', '30% less life recovery'],
+    lines: [{ text: '{value}% more spell damage while on low life', values: { value: 30 } }, more('life.recovery', -0.3)],
     flavour: 'Pain is a lens. Focus.',
   }),
   // ------------------------------------------------------------ Wit
@@ -207,7 +220,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'wit',
     tags: ['wit', 'es'],
     mods: [override('life', 1), flag('immune.chaos')],
-    lines: ['Maximum life is 1', 'Immune to chaos damage'],
+    lines: [{ text: 'Maximum life is {value}', values: { value: 1 } }, 'Immune to chaos damage'],
     flavour: 'Give up the flesh; the void has nothing left to bite.',
   }),
   K({
@@ -216,7 +229,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'wit',
     tags: ['wit', 'elemental'],
     mods: [flag('elementalOverload'), flag('crit.noMultiplier')],
-    lines: ['Critical strikes grant 40% more elemental damage for 8 s', 'Your critical strikes deal no extra damage'],
+    lines: [{ text: 'Critical strikes grant {value}% more elemental damage for {seconds} s', values: { value: 40, seconds: 8 } }, 'Your critical strikes deal no extra damage'],
     flavour: 'Not a harder blow. A bigger storm.',
   }),
   K({
@@ -234,7 +247,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'wit',
     tags: ['wit', 'mana'],
     mods: [flat('damage.toMana', 0.3), more('mana.regen', -0.2)],
-    lines: ['30% of damage is taken from mana before life', '20% less mana regeneration'],
+    lines: [{ text: '{value}% of damage is taken from mana before life', values: { value: 30 } }, more('mana.regen', -0.2)],
     flavour: 'It only hurts if you let it reach you.',
   }),
   // ------------------------------------------------------------ Zeal
@@ -244,7 +257,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'zeal',
     tags: ['zeal', 'fire'],
     mods: [flat('convert.toFire', 0.5), flag('nonFireDamage.none')],
-    lines: ['50% of physical, cold and lightning damage is converted to fire', 'Deal no non-fire damage'],
+    lines: [{ text: '{value}% of physical, cold and lightning damage is converted to fire', values: { value: 50 } }, 'Deal no non-fire damage'],
     flavour: 'Everything you touch remembers the brazier.',
   }),
   K({
@@ -253,7 +266,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'zeal',
     tags: ['zeal', 'totem'],
     mods: [flat('totem.count', 1), flag('cannotDealDamage.self')],
-    lines: ['+1 totem you can summon', "You can't deal damage with skills yourself"],
+    lines: [{ text: { one: '+{count} totem you can summon', other: '+{count} totems you can summon' }, values: { count: 1 } }, "You can't deal damage with skills yourself"],
     flavour: 'Let the ancestors fight. You keep the drum.',
   }),
   K({
@@ -262,7 +275,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'zeal',
     tags: ['zeal', 'light'],
     mods: [more('light.radius', 0.5), more('damage', 0.25, undefined, 'inLight'), more('damage.taken', 0.2, undefined, 'inDark')],
-    lines: ['50% more light radius', '25% more damage while in light', '20% more damage taken while in the dark'],
+    lines: [more('light.radius', 0.5), more('damage', 0.25, undefined, 'inLight'), more('damage.taken', 0.2, undefined, 'inDark')],
     flavour: 'Carry the flame into the Gloom, and never let it go out.',
   }),
   K({
@@ -271,7 +284,7 @@ export const KEYSTONES = new Registry<KeystoneDef>('keystone', [
     region: 'zeal',
     tags: ['zeal', 'aura'],
     mods: [more('aura.effect', 0.5), flag('auras.selfOnly')],
-    lines: ['50% more effect of auras on you', 'Your auras only affect you'],
+    lines: [{ text: '{value}% more effect of auras on you', values: { value: 50 } }, 'Your auras only affect you'],
     flavour: 'The faithful? You are the faith.',
   }),
 ]);

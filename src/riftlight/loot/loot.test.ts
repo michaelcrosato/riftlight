@@ -7,6 +7,7 @@ import { compareEquip, cloneSheet } from './compare';
 import { AFFIXES, affixFits, BASES, CORRUPTIONS, CURRENCY, equipmentBases, GEMS, UNIQUES } from './content';
 import { annul, applyCurrency, augment, chaos, corrupt, craftBlocker, divine, exalt, regal, scour, transmute } from './craft';
 import { filterTier } from './filter';
+import { reasonText } from './names';
 import {
   AFFIX_LIMITS,
   currencyItem,
@@ -234,8 +235,8 @@ describe('crafting', () => {
   });
 
   it('refuses the wrong targets and corrupted items', () => {
-    expect(craftBlocker('chaos', normal())).toMatch(/rare/);
-    expect(craftBlocker('transmute', makeUnique(new Rng(1), 'emberheart'))).toMatch(/unique/);
+    expect(craftBlocker('chaos', normal())).toEqual({ id: 'needs_rare' });
+    expect(reasonText(craftBlocker('transmute', makeUnique(new Rng(1), 'emberheart'))!)).toMatch(/unique/i);
     expect(applyCurrency(new Rng(1), 'kindling-shard', currencyItem(new Rng(1), 'ember-bead')).ok).toBe(false);
     let corrupted = 0;
     for (let s = 0; s < 40; s++) {

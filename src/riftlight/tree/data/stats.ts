@@ -1,6 +1,6 @@
 /**
- * The tree's stat vocabulary, its names for tooltips, and the **budget**: how much of each
- * stat one budget point buys. Small nodes are rolled from a budget (generate.ts), and the
+ * The tree's stat budget: how much of each stat one budget point buys (the stats' names and
+ * how mods read are the game's lines: lang/mods.ts, tree/text.ts). Small nodes are rolled from a budget (generate.ts), and the
  * validator measures every node with the same table, so a region can't quietly end up
  * stronger than its neighbours.
  *
@@ -13,155 +13,9 @@
  *   Skill-type scoping uses tags: `inc('damage', 0.1, ['melee'])`.
  * - `res.elemental` adds to fire, cold and lightning resistance.
  */
-import { describeMod, type Mod } from '../../core/mods';
+import type { Mod } from '../../core/mods';
+import { isPercentStat } from '../../core/stats';
 import type { ModRoll } from '../types';
-
-/** Tooltip names for stats (anything missing reads as the stat with dots as spaces). */
-export const STAT_NAMES: Readonly<Record<string, string>> = {
-  life: 'maximum life',
-  mana: 'maximum mana',
-  'energy.shield': 'maximum energy shield',
-  'es.recharge': 'energy shield recharge rate',
-  'es.onKill': 'energy shield on kill',
-  'life.regen': 'life regenerated per second',
-  'life.regenPct': 'of life regenerated per second',
-  'life.recovery': 'life recovery',
-  'life.leech': 'of damage leeched as life',
-  'mana.leech': 'of damage leeched as mana',
-  'leech.rate': 'leech rate',
-  'life.onKill': 'life on kill',
-  'mana.onKill': 'mana on kill',
-  'mana.regen': 'mana regeneration rate',
-  'mana.cost': 'mana cost of skills',
-  'mana.reservation': 'mana reserved by auras',
-  'crit.chance': 'critical strike chance',
-  'crit.multi': 'critical strike multiplier',
-  'attack.speed': 'attack speed',
-  'cast.speed': 'cast speed',
-  'move.speed': 'movement speed',
-  'projectile.speed': 'projectile speed',
-  'projectile.count': 'projectiles',
-  pierce: 'projectile pierces',
-  area: 'area of effect',
-  'cooldown.recovery': 'cooldown recovery rate',
-  duration: 'skill effect duration',
-  damage: 'damage',
-  'physical.damage': 'physical damage',
-  'fire.damage': 'fire damage',
-  'cold.damage': 'cold damage',
-  'lightning.damage': 'lightning damage',
-  'chaos.damage': 'chaos damage',
-  'elemental.damage': 'elemental damage',
-  'res.fire': 'fire resistance',
-  'res.cold': 'cold resistance',
-  'res.lightning': 'lightning resistance',
-  'res.chaos': 'chaos resistance',
-  'res.elemental': 'elemental resistances',
-  block: 'chance to block',
-  'block.recovery': 'block recovery',
-  'damage.taken': 'damage taken',
-  'ignite.chance': 'chance to ignite',
-  'ignite.damage': 'ignite damage',
-  'poison.chance': 'chance to poison',
-  'poison.damage': 'poison damage',
-  'bleed.chance': 'chance to cause bleeding',
-  'bleed.damage': 'bleeding damage',
-  'freeze.chance': 'chance to freeze',
-  'chill.effect': 'effect of chill',
-  'shock.chance': 'chance to shock',
-  'shock.effect': 'effect of shock',
-  'ailment.duration': 'duration of ailments',
-  'ailment.damage': 'damage over time from ailments',
-  'stun.duration': 'stun duration',
-  'stun.threshold': 'stun threshold',
-  knockback: 'knockback',
-  'minion.damage': 'minion damage',
-  'minion.life': 'minion life',
-  'minion.speed': 'minion movement and attack speed',
-  'minion.count': 'maximum minions',
-  'aura.effect': 'effect of auras',
-  'aura.radius': 'aura radius',
-  'curse.effect': 'effect of curses',
-  'curse.duration': 'curse duration',
-  'curse.count': 'curses you can apply',
-  'trap.speed': 'trap throwing speed',
-  'trap.count': 'traps you can place',
-  'totem.life': 'totem life',
-  'totem.count': 'totems you can summon',
-  'totem.speed': 'totem placement speed',
-  'endurance.max': 'maximum endurance charges',
-  'frenzy.max': 'maximum frenzy charges',
-  'power.max': 'maximum power charges',
-  'charge.duration': 'charge duration',
-  'charge.onKill': 'chance to gain a charge on kill',
-  'dodge.recovery': 'dodge roll speed',
-  'dodge.distance': 'dodge roll distance',
-  'light.radius': 'light radius',
-  armour: 'armour',
-  evasion: 'evasion rating',
-};
-
-/** Flat stats that are fractions shown as percentages ("+12% fire resistance"). */
-export const PERCENT_FLAT = new Set([
-  'crit.chance',
-  'crit.multi',
-  'res.fire',
-  'res.cold',
-  'res.lightning',
-  'res.chaos',
-  'res.elemental',
-  'block',
-  'life.leech',
-  'mana.leech',
-  'life.regenPct',
-  'ignite.chance',
-  'poison.chance',
-  'bleed.chance',
-  'freeze.chance',
-  'shock.chance',
-  'charge.onKill',
-  'dodge.chance',
-]);
-
-/** Readable names for scope tags in tooltips ("with two-handed weapons"). */
-export const TAG_NAMES: Readonly<Record<string, string>> = {
-  twohand: 'two-handed weapons',
-  dualwield: 'dual wielding',
-  bow: 'bows',
-  attack: 'attacks',
-  spell: 'spells',
-  projectile: 'projectiles',
-  trap: 'traps',
-  totem: 'totems',
-  slam: 'slams',
-  area: 'area skills',
-  minion: 'minions',
-  curse: 'curses',
-  hit: 'hits',
-  fire: 'fire skills',
-  cold: 'cold skills',
-  lightning: 'lightning skills',
-  physical: 'physical hits',
-  bleed: 'bleeding',
-  poison: 'poison',
-  ignite: 'ignite',
-  endurance: 'endurance charges',
-  frenzy: 'frenzy charges',
-  power: 'power charges',
-};
-
-/** Human text for a tree mod: describeMod, with percentage flats printed as percentages and readable tags. */
-export function describeTreeMod(mod: Mod): string {
-  const m: Mod = mod.tags?.length ? { ...mod, tags: mod.tags.map((t) => TAG_NAMES[t] ?? t) } : mod;
-  if (m.kind === 'flat' && PERCENT_FLAT.has(m.stat)) {
-    const name = STAT_NAMES[m.stat] ?? m.stat.replace(/\./g, ' ');
-    const pct = Math.round(m.value * 1000) / 10;
-    const scope = m.tags?.length ? ` with ${m.tags.join(' and ')}` : '';
-    const cond = m.when ? ` while ${m.when.replace(/([A-Z])/g, ' $1').toLowerCase()}` : '';
-    return `${pct >= 0 ? '+' : ''}${pct}% ${name}${scope}${cond}`;
-  }
-  return describeMod(m, STAT_NAMES);
-}
 
 /**
  * Value bought by ONE budget point, per `kind:stat` (falling back to `kind:*`). A small
@@ -288,7 +142,7 @@ export function modsBudget(mods: readonly Mod[]): number {
 function stepFor(roll: ModRoll): number {
   if (roll.kind === 'flat') {
     if (roll.stat.endsWith('.leech') || roll.stat === 'life.regenPct') return 0.001;
-    if (PERCENT_FLAT.has(roll.stat)) return 0.005;
+    if (isPercentStat(roll.stat)) return 0.005;
     const per = costPer(roll.stat, 'flat');
     return per >= 1 ? 1 : per >= 0.2 ? 0.1 : 0.01;
   }
@@ -316,100 +170,3 @@ export const R = (stat: string, kind: ModRoll['kind'], weight = 1, tags?: readon
   ...(when ? { when } : {}),
   ...(negative ? { negative } : {}),
 });
-
-/** Short stat names for small-node titles ("Melee Damage", "Fire Resistance"). */
-const SHORT_NAMES: Readonly<Record<string, string>> = {
-  life: 'Life',
-  mana: 'Mana',
-  'energy.shield': 'Energy Shield',
-  'es.recharge': 'Shield Recharge',
-  'es.onKill': 'Shield on Kill',
-  'life.regen': 'Life Regeneration',
-  'life.regenPct': 'Life Regeneration',
-  'life.recovery': 'Life Recovery',
-  'life.leech': 'Life Leech',
-  'mana.leech': 'Mana Leech',
-  'leech.rate': 'Leech Rate',
-  'life.onKill': 'Life on Kill',
-  'mana.onKill': 'Mana on Kill',
-  'mana.regen': 'Mana Regeneration',
-  'mana.cost': 'Mana Cost',
-  'mana.reservation': 'Reservation',
-  'crit.chance': 'Critical Chance',
-  'crit.multi': 'Critical Multiplier',
-  'attack.speed': 'Attack Speed',
-  'cast.speed': 'Cast Speed',
-  'move.speed': 'Movement Speed',
-  'projectile.speed': 'Projectile Speed',
-  pierce: 'Pierce',
-  area: 'Area',
-  'cooldown.recovery': 'Cooldown Recovery',
-  duration: 'Duration',
-  damage: 'Damage',
-  'physical.damage': 'Physical Damage',
-  'fire.damage': 'Fire Damage',
-  'cold.damage': 'Cold Damage',
-  'lightning.damage': 'Lightning Damage',
-  'chaos.damage': 'Chaos Damage',
-  'elemental.damage': 'Elemental Damage',
-  'res.fire': 'Fire Resistance',
-  'res.cold': 'Cold Resistance',
-  'res.lightning': 'Lightning Resistance',
-  'res.chaos': 'Chaos Resistance',
-  'res.elemental': 'Elemental Resistance',
-  block: 'Block',
-  'block.recovery': 'Block Recovery',
-  'ignite.chance': 'Ignite Chance',
-  'ignite.damage': 'Ignite Damage',
-  'poison.chance': 'Poison Chance',
-  'poison.damage': 'Poison Damage',
-  'bleed.chance': 'Bleed Chance',
-  'bleed.damage': 'Bleed Damage',
-  'freeze.chance': 'Freeze Chance',
-  'chill.effect': 'Chill Effect',
-  'shock.chance': 'Shock Chance',
-  'ailment.duration': 'Ailment Duration',
-  'ailment.damage': 'Ailment Damage',
-  'stun.duration': 'Stun Duration',
-  'stun.threshold': 'Stun Threshold',
-  knockback: 'Knockback',
-  'minion.damage': 'Minion Damage',
-  'minion.life': 'Minion Life',
-  'minion.speed': 'Minion Speed',
-  'aura.effect': 'Aura Effect',
-  'aura.radius': 'Aura Radius',
-  'curse.effect': 'Curse Effect',
-  'curse.duration': 'Curse Duration',
-  'trap.speed': 'Trap Speed',
-  'totem.life': 'Totem Life',
-  'totem.speed': 'Totem Placement',
-  'charge.duration': 'Charge Duration',
-  'charge.onKill': 'Charges on Kill',
-  'dodge.recovery': 'Dodge Speed',
-  'dodge.distance': 'Dodge Distance',
-  'light.radius': 'Light Radius',
-  armour: 'Armour',
-  evasion: 'Evasion',
-};
-
-const WHEN_SHORT: Readonly<Record<string, string>> = {
-  inDark: 'in Dark',
-  inLight: 'in Light',
-  lowLife: 'on Low Life',
-  recentlyKilled: 'after Kills',
-  notHitRecently: 'Unhurt',
-};
-
-const title = (s: string) => s.replace(/(^|\s)\w/g, (c) => c.toUpperCase());
-
-/** A small node's title from its mods: "Melee Damage", "Life and Armour". */
-export function smallName(mods: readonly Mod[]): string {
-  const one = (m: Mod) => {
-    const base = SHORT_NAMES[m.stat] ?? title(m.stat.replace(/\./g, ' '));
-    const short: Record<string, string> = { twohand: 'Two-Handed', dualwield: 'Dual Wield' };
-    const scope = m.tags?.length ? `${m.tags.map((t) => short[t] ?? title(t)).join(' ')} ` : '';
-    const cond = m.when ? ` ${WHEN_SHORT[m.when] ?? title(m.when)}` : '';
-    return `${scope}${base}${cond}`;
-  };
-  return [...new Set(mods.map(one))].join(' and ');
-}

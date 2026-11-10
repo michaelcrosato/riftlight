@@ -69,3 +69,36 @@ describe('hiding a panel (peek)', () => {
     expect(layer.peeking).toBe(false);
   });
 });
+
+describe('a bare panel under the title (below)', () => {
+  /** A bare panel of `h` rows that remembers the rect it was drawn in. */
+  const panel = (h: number) => {
+    const p = { id: 'title', title: '', size: { w: 100, h }, drawn: null as null | { y: number; h: number }, draw: (_ui: unknown, r: { y: number; h: number }) => (p.drawn = { y: r.y, h: r.h }), handle: () => false };
+    return p;
+  };
+  const ui = { w: 320, h: 240 } as unknown as Parameters<UiLayer['draw']>[0];
+
+  it('centres as before when the logo leaves room, and starts under it when not', () => {
+    const layer = new UiLayer();
+    const p = panel(80);
+    let below = 40;
+    layer.open(p as unknown as Panel, { modal: false, bare: true, silent: true, below: () => below });
+    for (let i = 0; i < 10; i++) layer.update?.(0.05);
+    layer.draw(ui, 1);
+    expect(p.drawn).toEqual({ y: 80, h: 80 }); // centred: (240 - 80) / 2
+    below = 110; // a 4:3 screen: the logo and its tagline reach row 110
+    layer.draw(ui, 1);
+    expect(p.drawn!.y).toBe(110);
+    expect(p.drawn!.y + p.drawn!.h).toBeLessThanOrEqual(240 - 2);
+  });
+
+  it('a menu taller than the room left under the logo gets only that room (it scrolls)', () => {
+    const layer = new UiLayer();
+    const p = panel(200);
+    layer.open(p as unknown as Panel, { modal: false, bare: true, silent: true, below: () => 100 });
+    for (let i = 0; i < 10; i++) layer.update?.(0.05);
+    layer.draw(ui, 1);
+    expect(p.drawn!.y).toBe(100);
+    expect(p.drawn!.h).toBe(240 - 100 - 2);
+  });
+});

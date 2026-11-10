@@ -19,6 +19,8 @@
 import { AnimationMixer, BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
 import { type GameContext, type Hud, type Input, mergeStaticMeshes, type MoveInput, PALETTE, type PaletteColor, toonMaterial, type Trigger } from '../../../engine';
 import type RAPIER from '@dimforge/rapier3d';
+import { t } from '../../lang';
+import { hints } from '../hints';
 import { moveInput, Visitor } from '../visitor';
 import { ARCADE_COLORS, ARCADE_STAGE, type ArcadeBlock, type ArcadeScenery } from './stage';
 
@@ -403,29 +405,37 @@ export class ArcadeStage {
     return this.target.set(p.x + ahead, Math.max(this.origin.y + 3.8, p.y + 1.6), this.origin.z);
   }
 
-  /** Coins, timer and best on the pixel HUD (the caller clears it first). */
+  /** Coins, timer and best on the pixel HUD (the caller clears it first). Words are lines (lang/showcase.ts). */
   drawHud(hud: Hud): void {
     hud.sprite(6, 6, COIN_ICON, COIN_COLORS);
     hud.text(16, 6, `${String(this.coins).padStart(2, '0')}/${this.total}`, { color: 'sand', shadow: 'ink' });
-    hud.text(0, 5, S.name, { anchor: 'top', color: 'white', shadow: 'ink' });
+    hud.text(0, 5, t('showcase.arcade.name'), { anchor: 'top', color: 'white', shadow: 'ink' });
     hud.text(0, 15, formatRace(this.time), { anchor: 'top', color: this.phase === 'done' ? 'lime' : 'sand', shadow: 'ink' });
-    hud.text(6, 6, this.best > 0 ? `BEST ${formatRace(this.best)}` : 'BEST --:--.--', { anchor: 'top-right', color: 'mist', shadow: 'ink' });
+    hud.text(6, 6, this.best > 0 ? t('showcase.arcade.best', { time: formatRace(this.best) }) : t('showcase.arcade.best_none'), { anchor: 'top-right', color: 'mist', shadow: 'ink' });
     if (this.phase === 'ready') {
-      hud.text(0, -10, this.phaseTime < READY_TIME * 0.6 ? 'READY?' : 'GO!', { anchor: 'center', scale: 3, color: 'sand', shadow: 'ink' });
+      hud.text(0, -10, this.phaseTime < READY_TIME * 0.6 ? t('showcase.arcade.ready') : t('showcase.arcade.go'), { anchor: 'center', scale: 3, color: 'sand', shadow: 'ink' });
     } else if (this.phase === 'play' && this.time < 4) {
-      hud.text(0, 8, 'ARROWS RUN  SPACE JUMP  C POUND  ESC LEAVE', { anchor: 'bottom', color: 'white', shadow: 'ink' });
+      hud.text(0, 8, hints(['run', 'jump', 'pound', 'leave'], '   '), { anchor: 'bottom', color: 'white', shadow: 'ink' });
     }
     const r = this.result;
     if (this.phase === 'done' && r) {
-      const w = 180;
+      const title = t('showcase.arcade.clear');
+      const rows = [
+        r.newBest ? t('showcase.arcade.time_new_best', { time: formatRace(r.time) }) : t('showcase.arcade.time', { time: formatRace(r.time) }),
+        t('showcase.arcade.coins_par', { coins: r.coins, total: r.total, par: formatRace(S.par) }),
+        r.reward > 0 ? t('showcase.arcade.reward', { gold: r.reward }) : t('showcase.arcade.best', { time: formatRace(r.best) }),
+        hints(['again', 'leave'], '   '),
+      ];
+      // the card grows to its words (a longer language), never past the screen
+      const w = Math.min(hud.width - 8, Math.max(180, hud.measure(title, 2).width + 16, ...rows.map((x) => hud.measure(x).width + 12)));
       const h = 74;
       hud.rect(0, -6, w, h, 'ink', 'center');
       hud.rect(0, -6, w - 4, h - 4, 'navy', 'center');
-      hud.text(0, -34, 'COURSE CLEAR!', { anchor: 'center', scale: 2, color: 'sand', shadow: 'ink' });
-      hud.text(0, -14, `TIME ${formatRace(r.time)}${r.newBest ? '  NEW BEST!' : ''}`, { anchor: 'center', color: r.newBest ? 'lime' : 'white' });
-      hud.text(0, -3, `COINS ${r.coins}/${r.total}   PAR ${formatRace(S.par)}`, { anchor: 'center', color: 'white' });
-      hud.text(0, 8, r.reward > 0 ? `+${r.reward} GOLD` : `BEST ${formatRace(r.best)}`, { anchor: 'center', color: 'sand' });
-      if (this.phaseTime > 0.8) hud.text(0, 21, 'ENTER AGAIN   ESC LEAVE', { anchor: 'center', color: 'mist' });
+      hud.text(0, -34, title, { anchor: 'center', scale: 2, color: 'sand', shadow: 'ink' });
+      hud.text(0, -14, rows[0]!, { anchor: 'center', color: r.newBest ? 'lime' : 'white' });
+      hud.text(0, -3, rows[1]!, { anchor: 'center', color: 'white' });
+      hud.text(0, 8, rows[2]!, { anchor: 'center', color: 'sand' });
+      if (this.phaseTime > 0.8) hud.text(0, 21, rows[3]!, { anchor: 'center', color: 'mist' });
     }
   }
 
