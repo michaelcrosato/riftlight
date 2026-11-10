@@ -7,7 +7,8 @@
  * Input reaches panels as `UiEvent`s that the shell builds from keyboard, mouse, touch and
  * gamepad alike (see game/controls.ts), so every view works with all four.
  */
-import { type Hud, type HudColor, noteText, type PaletteColor } from '../../engine';
+import { clusters, fontCase, type Hud, type HudColor, noteText, type PaletteColor, pixelCovers, textWidthPx, wrapText } from '../../engine';
+import { CONTROLS, type ControlAction, keyCap, padName } from '../game/controls';
 
 export type UiEvent =
   | { readonly kind: 'nav'; readonly dir: 'up' | 'down' | 'left' | 'right' }
@@ -72,18 +73,40 @@ const MINI: Record<string, string> = {
   '@': '111101111100011',
 };
 
-/** Mini-font sprite rows for `text` (3×5 glyphs, 1 px gap). */
+/**
+ * Can the mini font draw `text`? It has capitals A–Z, digits and a few symbols: anything else
+ * (accents, other writing systems, a language drawn in the device's font) is drawn with the
+ * normal font instead (`UiCanvas.mini`), so every language reads.
+ */
+export function miniCovers(text: string): boolean {
+  return pixelCovers(text) && [...fontCase(text)].every((ch) => ch in MINI);
+}
+
+/** Mini-font sprite rows for `text` (3×5 glyphs, 1 px gap; its capitals, as the font draws them). */
 export function miniRows(text: string): string[] {
   const rows = ['', '', '', '', ''];
-  const chars = [...text];
+  const chars = [...fontCase(text)];
   chars.forEach((ch, i) => {
-    const g = MINI[ch] ?? MINI[ch.toUpperCase()] ?? MINI['?']!;
+    const g = MINI[ch] ?? MINI['?']!;
     for (let r = 0; r < 5; r++) rows[r] += g.slice(r * 3, r * 3 + 3).replace(/1/g, 'c').replace(/0/g, '.') + (i < chars.length - 1 ? '.' : '');
   });
   return rows;
 }
 
-export const miniWidth = (text: string) => Math.max(0, [...text].length * 4 - 1);
+/** Width of `text` as `UiCanvas.mini` draws it: the mini font, or the normal font when it can't. */
+export const miniWidth = (text: string): number => (miniCovers(text) ? Math.max(0, [...fontCase(text)].length * 4 - 1) : textWidthPx(text));
+
+/**
+ * `text` cut to `width` art pixels (whole letters, a `.` where it was cut): the last resort for
+ * a line in a box that can't grow (a loot label on a phone, the feed).
+ */
+export function clip(text: string, width: number, measure: (s: string) => number): string {
+  if (measure(text) <= width) return text;
+  const letters = clusters(text);
+  let n = letters.length;
+  while (n > 1 && measure(letters.slice(0, n).join('') + '.') > width) n--;
+  return letters.slice(0, n).join('').trimEnd() + '.';
+}
 
 /**
  * Drawing helpers over `Hud` in absolute art pixels, plus the pointer in art pixels.
@@ -137,8 +160,9 @@ export class UiCanvas {
     return w;
   }
 
-  /** 3×5 mini font. */
+  /** 3×5 mini font; text it can't draw (accents, other writing systems) in the normal font, a row higher. */
   mini(x: number, y: number, s: string, color: HudColor = UI.text, align: Align = 'left', shadow: HudColor | false = false): number {
+    if (!miniCovers(s)) return s ? this.text(x, y - 1, s, { color, align, shadow }) : 0;
     noteText(s); // tools see the mini font's text too (docs/engine/lang.md)
     const w = miniWidth(s);
     if (!w) return 0;
@@ -176,21 +200,24 @@ export class UiCanvas {
     this.rect(r.x, r.y + 1, r.w, r.h - 2, 'ink');
     this.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, hot && !state.disabled ? UI.focus : 'slate');
     this.rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
-    this.text(r.x + r.w / 2, r.y + Math.floor((r.h - 7) / 2), label.toUpperCase(), { align: 'center', color: state.disabled ? 'slate' : hot ? 'white' : 'mist' });
+    this.text(r.x + r.w / 2, r.y + Math.floor((r.h - 7) / 2), clip(label, r.w - 6, (t) => this.measure(t)), { align: 'center', color: state.disabled ? 'slate' : hot ? 'white' : 'mist' });
     return r;
   }
 
   /**
-   * An input glyph: a key cap ("F", "ESC"), a mouse button ("LMB", "RMB") or, with
-   * `pad`, a controller button ("A", "B", "X", "Y", "LB", "RB", "START"). Returns the width.
+   * The glyph of the control that does `action` (game/controls.ts `CONTROLS`): a key cap ("F",
+   * "Esc"), a mouse button or, with `pad`, a controller button (A, B, X, Y round; LB, Start...
+   * as a cap). Returns the width.
    */
-  glyph(x: number, y: number, key: string, padButton?: string): number {
-    if (this.pad && padButton) return this.padGlyph(x, y, padButton);
-    if (key === 'LMB' || key === 'RMB') {
-      const rows = key === 'LMB' ? MOUSE_L : MOUSE_R;
+  glyph(x: number, y: number, action: ControlAction): number {
+    const c: { key: string; pad?: string } = CONTROLS[action];
+    if (this.pad && c.pad) return this.padGlyph(x, y, c.pad);
+    if (c.key === 'MouseLeft' || c.key === 'MouseRight') {
+      const rows = c.key === 'MouseLeft' ? MOUSE_L : MOUSE_R;
       this.sprite(x, y - 1, rows, { o: 'ink', w: 'white', f: 'sand', g: 'mist' });
       return 7;
     }
+    const key = keyCap(c.key);
     const w = miniWidth(key) + 4;
     this.rect(x, y, w, 8, 'ink');
     this.rect(x, y - 1, w, 8, 'mist');
@@ -199,9 +226,16 @@ export class UiCanvas {
     return w;
   }
 
-  private padGlyph(x: number, y: number, b: string): number {
-    const face: Record<string, PaletteColor> = { A: 'green', B: 'red', X: 'blue', Y: 'sand' };
-    const c = face[b];
+  /** The glyph's width (`glyph` draws it). */
+  glyphWidth(action: ControlAction): number {
+    const c: { key: string; pad?: string } = CONTROLS[action];
+    if (this.pad && c.pad) return FACE[c.pad] ? 7 : miniWidth(padName(c.pad)) + 4;
+    return c.key === 'MouseLeft' || c.key === 'MouseRight' ? 7 : miniWidth(keyCap(c.key)) + 4;
+  }
+
+  private padGlyph(x: number, y: number, code: string): number {
+    const c = FACE[code];
+    const b = padName(code);
     if (c) {
       this.sprite(x, y - 1, PAD_ROUND, { o: 'ink', c, w: 'white' });
       this.mini(x + 2, y, b, 'white');
@@ -215,40 +249,28 @@ export class UiCanvas {
     return w;
   }
 
-  /** "[glyph] LABEL" prompt; returns its width. */
-  prompt(x: number, y: number, key: string, pad: string | undefined, label: string, color: HudColor = 'white', align: Align = 'left'): number {
-    const gw = this.pad && pad ? (['A', 'B', 'X', 'Y'].includes(pad) ? 7 : miniWidth(pad) + 4) : key === 'LMB' || key === 'RMB' ? 7 : miniWidth(key) + 4;
+  /** "[glyph] label" prompt for `action`; returns its width. */
+  prompt(x: number, y: number, action: ControlAction, label: string, color: HudColor = 'white', align: Align = 'left'): number {
+    const gw = this.glyphWidth(action);
     const total = gw + 3 + this.measure(label);
     const left = align === 'center' ? x - Math.floor(total / 2) : align === 'right' ? x - total : x;
-    this.glyph(left, y, key, pad);
+    this.glyph(left, y, action);
     this.text(left + gw + 3, y, label, { color });
     return total;
   }
 }
 
+/** The pad's face buttons, round in their colours. */
+const FACE: Readonly<Record<string, PaletteColor>> = { PadA: 'green', PadB: 'red', PadX: 'blue', PadY: 'sand' };
+
 const MOUSE_L = ['.ooooo.', 'offowwo', 'offowwo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'];
 const MOUSE_R = ['.ooooo.', 'owwoffo', 'owwoffo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'];
 const PAD_ROUND = ['.ooooo.', 'occccco', 'occccco', 'occccco', 'occccco', 'occccco', '.ooooo.'];
 
-/** Wrap text to lines of at most `width` art pixels (5×7 font). */
+/**
+ * Wrap text to lines of at most `width` art pixels at `scale`, measured as it is drawn, broken
+ * where the language breaks words (the engine's `wrapText`).
+ */
 export function wrap(text: string, width: number, scale = 1): string[] {
-  const max = Math.max(1, Math.floor((width + scale) / (6 * scale)));
-  const out: string[] = [];
-  for (const para of text.split('\n')) {
-    let line = '';
-    for (const word of para.split(/\s+/).filter(Boolean)) {
-      if (!line) line = word;
-      else if (line.length + 1 + word.length <= max) line += ' ' + word;
-      else {
-        out.push(line);
-        line = word;
-      }
-      while (line.length > max) {
-        out.push(line.slice(0, max));
-        line = line.slice(max);
-      }
-    }
-    out.push(line);
-  }
-  return out;
+  return wrapText(text, width, (s) => textWidthPx(s, scale));
 }

@@ -32,8 +32,10 @@ import { MASTERIES } from './data/masteries';
 import { OVERRIDES } from './data/overrides';
 import { REGIONS } from './data/regions';
 import { notableSlots, SHAPES } from './data/shapes';
-import { rollMod, smallName } from './data/stats';
-import type { ClusterTemplate, KeystoneDef, MasteryDef, MasteryOption, ModRoll, NodeOverride, NotableDef, RegionDef, ShapeDef, TreeNode } from './types';
+import { rollMod } from './data/stats';
+import { lineKey } from '../lang/area';
+import { smallName, sourceLang } from './text';
+import type { ClusterTemplate, KeystoneDef, MasteryDef, MasteryOption, ModRoll, NodeLine, NodeOverride, NotableDef, RegionDef, ShapeDef, TreeNode } from './types';
 
 export const DEFAULT_TREE_SEED = 'riftlight';
 
@@ -93,9 +95,10 @@ interface Draft {
   template?: string;
   tags: string[];
   flavour?: string;
-  lines?: readonly string[];
+  lines?: readonly NodeLine[];
   options?: readonly MasteryOption[];
   budget?: number;
+  text?: string;
 }
 
 interface Slot {
@@ -150,7 +153,7 @@ export function generateTree(options: TreeGenOptions = {}): TreeNode[] {
   };
   const small = (id: string, x: number, y: number, region: RegionDef, cluster: string, pool: readonly ModRoll[], budget: number, extra: Partial<Draft> = {}): Draft => {
     const mods = smallMods(id, pool, budget);
-    return add({ id, name: smallName(mods), kind: 'small', mods, x, y, region: region.id, cluster, tags: [], budget, ...extra });
+    return add({ id, name: smallName(mods, sourceLang()), kind: 'small', mods, x, y, region: region.id, cluster, tags: [], budget, ...extra });
   };
   const bandBudget = (band: number) => L.smallBudget * (1 + 0.04 * Math.max(0, band));
 
@@ -227,7 +230,7 @@ export function generateTree(options: TreeGenOptions = {}): TreeNode[] {
     const a = rad(r.angle);
     starts.set(
       r.id,
-      add({ id: `start:${r.id}`, name: `${r.name} Gate`, kind: 'start', mods: [], x: L.startRadius * Math.cos(a), y: L.startRadius * Math.sin(a), region: r.id, cluster: 'ring', tags: ['start', r.id], flavour: r.flavour }),
+      add({ id: `start:${r.id}`, name: sourceLang().t('tree.start.name', { region: r.name }), kind: 'start', mods: [], x: L.startRadius * Math.cos(a), y: L.startRadius * Math.sin(a), region: r.id, cluster: 'ring', tags: ['start', r.id], flavour: r.flavour, text: lineKey('tree.region', r.id) }),
     );
   }
   regions.forEach((r, i) => {
@@ -308,13 +311,13 @@ export function generateTree(options: TreeGenOptions = {}): TreeNode[] {
       let node: Draft | null = null;
       if (s.kind === 'notable') {
         const def = picked[notableIndex++]!;
-        node = add({ ...base, id: `n:${def.id}`, name: def.name, kind: 'notable', mods: [...def.mods], tags, flavour: def.flavour, ...(def.lines ? { lines: def.lines } : {}) });
+        node = add({ ...base, id: `n:${def.id}`, name: def.name, kind: 'notable', mods: [...def.mods], tags, flavour: def.flavour, ...(def.lines ? { lines: def.lines } : {}), text: lineKey('tree.notable', def.id) });
       } else if (s.kind === 'mastery' && template) {
         const options = masteries.query({ any: template.tags }).filter((m) => !usedMasteries.has(`${r.id}:${m.id}`));
         if (options.length) {
           const def = rng.weighted(options, (m) => m.tags!.filter((x) => template.tags.includes(x)).length);
           usedMasteries.add(`${r.id}:${def.id}`);
-          node = add({ ...base, id: `m:${r.id}:${def.id}`, name: def.name, kind: 'mastery', mods: [], tags: [...tags, 'mastery'], options: def.options, flavour: 'Allocate, then choose one.' });
+          node = add({ ...base, id: `m:${r.id}:${def.id}`, name: def.name, kind: 'mastery', mods: [], tags: [...tags, 'mastery'], options: def.options, flavour: sourceLang().t('tree.mastery.flavour'), text: lineKey('tree.mastery', def.id) });
         }
       }
       node ??= small(`${slot.key}.${s.key}`, x, y, r, slot.key, pool, bandBudget(slot.band), { tags, ...(template ? { template: template.id } : {}) });
@@ -374,6 +377,7 @@ export function generateTree(options: TreeGenOptions = {}): TreeNode[] {
         tags: ['keystone', ...(k.tags ?? [])],
         flavour: k.flavour,
         lines: k.lines,
+        text: lineKey('tree.keystone', k.id),
       });
       const near = [...(byRegionBand.get(`${r.id}:${L.bands - 1}`) ?? [])].sort((x, y) => angleDiff(x.angle, angle) - angleDiff(y.angle, angle))[0];
       if (near) connect(near.key, ports(near), r, node.id, [node], r, L.bands);
@@ -401,6 +405,7 @@ function applyOverride(nodes: Map<string, Draft>, o: NodeOverride): void {
   if (o.mods) node.mods = [...o.mods];
   if (o.flavour) node.flavour = o.flavour;
   if (o.lines) node.lines = o.lines;
+  if (o.name || o.flavour || o.lines) node.text = lineKey('tree.override', o.id);
   for (const id of o.link ?? []) {
     const other = nodes.get(id);
     if (!other) throw new Error(`tree override ${o.id}: link to unknown node ${id}`);
@@ -431,6 +436,7 @@ function freeze(d: Draft): TreeNode {
     ...(d.lines ? { lines: d.lines } : {}),
     ...(d.options ? { options: d.options } : {}),
     ...(d.budget !== undefined ? { budget: Math.round(d.budget * 100) / 100 } : {}),
+    ...(d.text ? { text: d.text } : {}),
   };
 }
 

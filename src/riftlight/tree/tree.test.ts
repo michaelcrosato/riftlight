@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { strays as straysIn } from '../../../scripts/lang-strays.mjs';
 import { flat, inc, more, StatSheet } from '../core/mods';
 import { Registry } from '../core/registry';
 import {
@@ -7,6 +8,9 @@ import {
   generateTree,
   KEYSTONES,
   modsBudget,
+  nodeFlavour,
+  nodeLines,
+  nodeName,
   NOTABLES,
   PassiveTree,
   pointBudget,
@@ -19,8 +23,11 @@ import {
   validateTree,
   type TreeNode,
 } from '.';
+import { Lang } from '../../engine/lang/lang';
+import { riftlightLines } from '../lang/index';
+import { hasStatName } from '../lang/mods';
 import { KEYSTONE_FLAGS } from './data/keystones';
-import { describeTreeMod, STAT_NAMES } from './data/stats';
+import { describeTreeMod, smallName } from './text';
 
 const n = (id: string, links: string[], kind: TreeNode['kind'] = 'small', extra: Partial<TreeNode> = {}): TreeNode => ({ id, name: id, kind, mods: [], x: 0, y: 0, links, region: 'might', cluster: 'test', ...extra });
 
@@ -52,8 +59,8 @@ describe('content', () => {
   });
 
   it('names every stat it uses and documents every keystone flag', () => {
-    for (const nb of NOTABLES.all()) for (const m of nb.mods) expect(STAT_NAMES[m.stat], `${nb.id}: ${m.stat}`).toBeDefined();
-    for (const k of KEYSTONES.all()) for (const m of k.mods) if (m.kind === 'flag' || !STAT_NAMES[m.stat]) expect(KEYSTONE_FLAGS[m.stat] ?? STAT_NAMES[m.stat], `${k.id}: ${m.stat}`).toBeDefined();
+    for (const nb of NOTABLES.all()) for (const m of nb.mods) expect(hasStatName(m.stat), `${nb.id}: ${m.stat}`).toBe(true);
+    for (const k of KEYSTONES.all()) for (const m of k.mods) if (m.kind === 'flag' || !hasStatName(m.stat)) expect(KEYSTONE_FLAGS[m.stat], `${k.id}: ${m.stat}`).toBeDefined();
   });
 
   it('describes percentage stats as percentages', () => {
@@ -213,17 +220,58 @@ describe('points, gold, search and summary', () => {
     expect(searchTree(tree, 'resolute')).toEqual(['k:resolute-technique']);
     const fire = searchTree(tree, 'fire resistance');
     expect(fire.length).toBeGreaterThan(5);
-    expect(fire.every((id) => tree.node(id).mods.some((m) => m.stat === 'res.fire' || m.stat === 'res.elemental') || tree.node(id).options?.length || /fire resistance/i.test(tree.node(id).lines?.join() ?? ''))).toBe(true);
+    expect(fire.every((id) => tree.node(id).mods.some((m) => m.stat === 'res.fire' || m.stat === 'res.elemental') || tree.node(id).options?.length || /fire resistance/i.test(nodeLines(tree.node(id)).join()))).toBe(true);
     expect(searchTree(tree, 'stat:minion.count').length).toBeGreaterThan(0);
     expect(searchTree(tree, '')).toEqual([]);
   });
 
   it('summarises aggregated mods in groups', () => {
     const groups = summarizeMods([inc('damage', 0.1), inc('damage', 0.15), flat('life', 10), flat('life', 5), more('damage', 0.1), more('damage', 0.1), flat('res.fire', 0.1)]);
-    const lines = Object.fromEntries(groups.map((g) => [g.title, g.lines]));
-    expect(lines.Offence).toContain('25% increased damage');
-    expect(lines.Offence).toContain('21% more damage');
-    expect(lines['Life, mana and shield']).toEqual(['+15 maximum life']);
-    expect(lines.Defence).toEqual(['+10% fire resistance']);
+    const lines = Object.fromEntries(groups.map((g) => [g.id, g.lines]));
+    expect(lines.offence).toContain('25% increased damage');
+    expect(lines.offence).toContain('21% more damage');
+    expect(lines.life).toEqual(['+15 maximum life']);
+    expect(lines.defence).toEqual(['+10% fire resistance']);
+    expect(groups.map((g) => g.title)).toEqual(['Offence', 'Defence', 'Life, mana and shield']);
   });
 });
+
+describe('words', () => {
+  const tree = defaultTree();
+  const fake = new Lang(riftlightLines(), {}, { code: 'en-XA' });
+  /** Words not from a line (scripts/lang-strays.mjs: the audit's test); proper names aside. */
+  const strays = (text: string) => straysIn(text, riftlightLines().names);
+
+  it('names nodes from their lines: notables, keystones, gates, masteries, small nodes from their mods', () => {
+    expect(nodeName(tree.node('k:resolute-technique'))).toBe('Resolute Technique');
+    expect(nodeName(tree.node('start:might'))).toBe('Might Gate');
+    expect(nodeName(tree.node('core:heart'))).toBe('Heart of the Rift');
+    expect(nodeFlavour(tree.node('core:heart'))).toBe('Every road out of the rift starts here.');
+    const mastery = tree.nodes.find((x) => x.kind === 'mastery')!;
+    expect(nodeFlavour(mastery)).toBe('Allocate, then choose one.');
+    // every word comes from a line: under a test language nothing is left unbracketed
+    for (const x of tree.nodes) {
+      for (const text of [nodeName(x, fake), nodeFlavour(x, fake) ?? '[]', ...nodeLines(x, undefined, fake)]) expect(strays(text), `${x.id}: ${text}`).toEqual([]);
+    }
+  });
+
+  it('builds small names from parts, in the order a language gives', () => {
+    expect(smallName([inc('damage', 0.1, ['melee'])])).toBe('Melee Damage');
+    expect(smallName([flat('life', 10), inc('armour', 0.1)])).toBe('Life and Armour');
+    expect(smallName([inc('damage', 0.1, undefined, 'inDark')])).toBe('Damage in Dark');
+    expect(smallName([inc('attack.speed', 0.05, ['twohand'])])).toBe('Two-Handed Attack Speed');
+  });
+
+  it('keystone rules read with their numbers filled in', () => {
+    expect(nodeLines(tree.node('k:rampage'))).toEqual(['Kills grant Rampage for 4 s, up to 25 stacks', 'Each stack: 2% more damage, 1% more movement speed', '10% less damage']);
+    expect(nodeLines(tree.node('k:ancestral-bond'))[0]).toBe('+1 totem you can summon');
+    expect(nodeLines(tree.node('k:blood-magic'))).toEqual(['Skills cost life instead of mana', 'You have no mana', '10% increased maximum life']);
+    expect(nodeLines(tree.node('k:gloomwalker'))[0]).toBe('30% more damage while in the dark');
+  });
+
+  it('searches the words as shown', () => {
+    expect(searchTree(tree, 'gloomwalker')).toEqual(['k:gloomwalker']);
+    expect(searchTree(tree, 'rampage stacks')).toEqual(['k:rampage']);
+  });
+});
+

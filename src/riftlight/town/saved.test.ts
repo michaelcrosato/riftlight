@@ -21,7 +21,7 @@ describe('town save-states', () => {
       n.path = path;
       return n;
     };
-    const look = (n: Npc) => ({ at: n.position.toArray(), yaw: n.yaw, bubble: n.bubble?.text ?? null, clip: n.player.name, t: +n.player.time.toFixed(6), save: kept(n.save()) });
+    const look = (n: Npc) => ({ at: n.position.toArray(), yaw: n.yaw, bubble: n.bubble?.line ?? null, clip: n.player.name, t: +n.player.time.toFixed(6), save: kept(n.save()) });
     const a = make();
     for (let f = 0; f < 400; f++) a.update(DT, heroAt(f));
     const s = kept(a.save());

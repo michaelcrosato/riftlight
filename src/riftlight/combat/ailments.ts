@@ -19,6 +19,7 @@ export type AilmentKind = 'dot' | 'slow' | 'stop' | 'amp';
 
 export interface AilmentDef extends Entry {
   readonly id: AilmentType;
+  /** English (the source line `ailment.<id>`): shown through lang/skills.ts `ailmentName`. */
   readonly name: string;
   readonly kind: AilmentKind;
   /** Damage types whose landed damage can cause it (and set its magnitude). */

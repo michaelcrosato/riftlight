@@ -19,8 +19,10 @@ import { Vector3 } from 'three/webgpu';
 import type { CameraConfig, CameraPreset, GameContext, Look, RenderMode } from '../../engine';
 import { lookFromFilters, OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
+import { sourceLang, t } from '../lang';
 import { CAMERA, type Riftlight } from '../game/Riftlight';
 import type { UiCanvas, UiEvent } from '../ui/kit';
+import { monsterName, unitOf } from '../wire/monsters';
 import { ArcadeMode } from './arcade/ArcadeMode';
 import { BestiaryMode } from './bestiary/BestiaryMode';
 import { PhotoMode } from './photo/PhotoMode';
@@ -101,7 +103,10 @@ export class Showcase {
         const body = (target as { body?: { userData?: { genome?: Genome } } }).body;
         const genome = body?.userData?.genome;
         if (!genome) return;
-        recordKill(showcaseOf(game.save).bestiary, genome, { name: target.name ?? 'Monster', rank: rank as Rank, depth });
+        // English, whatever the player's language (a save keeps no finished words, and a replay in
+        // another language must end the same): a boss by its name (`bossNameShown` shows it), any
+        // other by its words (`monsterName` shows them)
+        recordKill(showcaseOf(game.save).bestiary, genome, { name: unitOf(target)?.boss?.name ?? monsterName(genome, sourceLang()), rank: rank as Rank, depth });
       }),
     );
   }
@@ -265,7 +270,7 @@ export class Showcase {
     }
     if (this.loading) {
       ui.rect(0, 0, ui.w, ui.h, 'ink');
-      ui.text(ui.w / 2, ui.h / 2 - 4, 'LOADING' + '.'.repeat(1 + (Math.floor(this.time * 4) % 3)), { align: 'center', color: 'cyan' });
+      ui.text(ui.w / 2, ui.h / 2 - 4, t('showcase.loading') + '.'.repeat(1 + (Math.floor(this.time * 4) % 3)), { align: 'center', color: 'cyan' });
       return;
     }
     const mode = this.mode;

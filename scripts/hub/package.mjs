@@ -36,7 +36,7 @@ import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from '../browser.mjs';
 import { harness, protocolRuns, serve } from '../e2e-hub.mjs';
-import { strays } from '../lang-audit.mjs';
+import { strays } from '../lang-strays.mjs';
 import { helpExit } from '../manual.mjs';
 import { engineReady } from '../page.mjs';
 import { MODES } from './riftlight.mjs';

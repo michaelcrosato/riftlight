@@ -1,47 +1,60 @@
 /**
  * Crafting: one pure function per currency action. Each takes an Rng and an item and
  * returns a new item (items are immutable; the uid is kept so inventories still find it),
- * or a reason it can't apply. `applyCurrency(rng, currencyId, item)` looks up the action.
+ * or a reason it can't apply (a `Reason`: a line id the item windows show, loot/names.ts).
+ * `applyCurrency(rng, currencyId, item)` looks up the action.
  */
 import type { Rng } from '../core/rng';
 import type { Item, RolledAffix } from '../core/types';
+import type { CraftNote, ReasonId } from '../lang/items';
 import { AFFIXES, affixFits, BASES, CORRUPTIONS, CURRENCY } from './content';
 import type { CraftAction } from './data/currency';
 import { addAffix, AFFIX_LIMITS, magicName, rareName, rollAffixes, rollTierMods } from './generate';
 import { baseOf, isEquipment } from './itemMods';
+import type { Reason } from './names';
 
-export type CraftResult = { ok: true; item: Item; note?: string } | { ok: false; reason: string };
+/** A crafted item (and, for a corrupting orb, what it did), or why the orb can't be used. */
+export type CraftResult = { ok: true; item: Item; note?: CraftNote } | { ok: false; reason: Reason };
 
-const fail = (reason: string): CraftResult => ({ ok: false, reason });
-const ok = (item: Item, note?: string): CraftResult => ({ ok: true, item, ...(note ? { note } : {}) });
+const fail = (reason: Reason): CraftResult => ({ ok: false, reason });
+const ok = (item: Item, note?: CraftNote): CraftResult => ({ ok: true, item, ...(note ? { note } : {}) });
 
 /** Why `action` can't apply to `item`, or null when it can. */
-export function craftBlocker(action: CraftAction, item: Item): string | null {
-  if (!isEquipment(item)) return 'only equipment can be crafted';
-  if (item.corrupted) return 'corrupted items cannot be modified';
+export function craftBlocker(action: CraftAction, item: Item): Reason | null {
+  const why = (id: ReasonId | null): Reason | null => (id ? { id } : null);
+  if (!isEquipment(item)) return why('equipment_only');
+  if (item.corrupted) return why('corrupted');
   if (action === 'corrupt') return null;
-  if (item.rarity === 'unique') return 'uniques cannot be modified';
+  if (item.rarity === 'unique') return why('unique');
   const n = item.affixes.length;
   switch (action) {
     case 'transmute':
-      return item.rarity === 'normal' ? null : 'needs a normal item';
+      return why(item.rarity === 'normal' ? null : 'needs_normal');
     case 'augment':
-      return item.rarity !== 'magic' ? 'needs a magic item' : n >= AFFIX_LIMITS.magic.max ? 'no room for another affix' : null;
+      return why(item.rarity !== 'magic' ? 'needs_magic' : n >= AFFIX_LIMITS.magic.max ? 'no_affix_room' : null);
     case 'alteration':
-      return item.rarity === 'magic' ? null : 'needs a magic item';
+      return why(item.rarity === 'magic' ? null : 'needs_magic');
     case 'regal':
-      return item.rarity === 'magic' ? null : 'needs a magic item';
+      return why(item.rarity === 'magic' ? null : 'needs_magic');
     case 'chaos':
-      return item.rarity === 'rare' ? null : 'needs a rare item';
+      return why(item.rarity === 'rare' ? null : 'needs_rare');
     case 'exalt':
-      return item.rarity !== 'rare' ? 'needs a rare item' : n >= AFFIX_LIMITS.rare.max ? 'no room for another affix' : null;
+      return why(item.rarity !== 'rare' ? 'needs_rare' : n >= AFFIX_LIMITS.rare.max ? 'no_affix_room' : null);
     case 'annul':
-      return n > 0 ? null : 'has no affix to remove';
+      return why(n > 0 ? null : 'no_affix');
     case 'scour':
-      return item.rarity === 'magic' || item.rarity === 'rare' ? null : 'needs a magic or rare item';
+      return why(item.rarity === 'magic' || item.rarity === 'rare' ? null : 'needs_magic_or_rare');
     case 'divine':
-      return n > 0 ? null : 'has no affix values to reroll';
+      return why(n > 0 ? null : 'no_affix_values');
   }
+}
+
+/** The item without a rare's name words (it is no longer rare). */
+function plain(item: Item): Item {
+  if (!item.words) return item;
+  const out: { -readonly [K in keyof Item]: Item[K] } = { ...item };
+  delete out.words;
+  return out;
 }
 
 /** Upgrade a normal item to magic (1–2 affixes). */
@@ -78,7 +91,7 @@ export function regal(rng: Rng, item: Item): CraftResult {
   return run('regal', item, () => {
     const base = baseOf(item);
     const a = addAffix(rng, base, item.level, 'rare', item.affixes);
-    return { ...item, rarity: 'rare', affixes: a ? [...item.affixes, a] : [...item.affixes], name: rareName(rng, base) };
+    return { ...item, rarity: 'rare', affixes: a ? [...item.affixes, a] : [...item.affixes], ...rareName(rng, base) };
   });
 }
 
@@ -106,7 +119,7 @@ export function annul(rng: Rng, item: Item): CraftResult {
 
 /** Strip every affix: back to a normal item. */
 export function scour(_rng: Rng, item: Item): CraftResult {
-  return run('scour', item, () => ({ ...item, rarity: 'normal', affixes: [], name: baseOf(item).name }));
+  return run('scour', item, () => ({ ...plain(item), rarity: 'normal', affixes: [], name: baseOf(item).name }));
 }
 
 /** Reroll every affix value within its tier. */
@@ -132,17 +145,18 @@ export function corrupt(rng: Rng, item: Item): CraftResult {
     const rolled: RolledAffix = { id: c.id, tier: 0, mods: rollTierMods(rng, c.tiers[0]!) };
     return { ...item, corrupted: true, implicits: [...(item.implicits ?? []), rolled] };
   };
-  if (outcome === 'nothing') return ok({ ...item, corrupted: true }, 'nothing happened');
+  if (outcome === 'nothing') return ok({ ...item, corrupted: true }, 'nothing');
   if (outcome === 'upgrade' && upgradable.length) {
     const { a, i } = rng.pick(upgradable);
     const tier = a.tier + 1;
     const up: RolledAffix = { id: a.id, tier, mods: rollTierMods(rng, AFFIXES.get(a.id).tiers[tier]!) };
-    return ok({ ...item, corrupted: true, affixes: item.affixes.map((x, k) => (k === i ? up : x)) }, 'an affix grew stronger');
+    return ok({ ...item, corrupted: true, affixes: item.affixes.map((x, k) => (k === i ? up : x)) }, 'upgrade');
   }
   if (outcome === 'reroll' && item.rarity !== 'unique') {
-    return ok({ ...item, corrupted: true, rarity: 'rare', affixes: rollAffixes(rng, base, item.level, 'rare'), name: item.rarity === 'rare' ? item.name : rareName(rng, base) }, 'the item was remade');
+    const affixes = rollAffixes(rng, base, item.level, 'rare');
+    return ok({ ...item, corrupted: true, rarity: 'rare', affixes, ...(item.rarity === 'rare' ? {} : rareName(rng, base)) }, 'remade');
   }
-  return ok(addImplicit(), 'a corrupted implicit appeared');
+  return ok(addImplicit(), 'implicit');
 }
 
 const ACTIONS: Record<CraftAction, (rng: Rng, item: Item) => CraftResult> = { transmute, augment, alteration, regal, chaos, exalt, annul, scour, divine, corrupt };
@@ -171,5 +185,5 @@ function run(action: CraftAction, item: Item, fn: () => Item | null): CraftResul
   const blocked = craftBlocker(action, item);
   if (blocked) return fail(blocked);
   const out = fn();
-  return out ? ok(out) : fail('no affix can roll on this item');
+  return out ? ok(out) : fail({ id: 'no_affix_fits' });
 }

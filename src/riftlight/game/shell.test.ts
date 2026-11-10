@@ -14,8 +14,14 @@ import {
   sanitizeTuning,
   sliderToMultiplier,
 } from './difficulty';
-import { addXp, applyDeath, deathPenalty, levelTitle, recordClear, roman, unlockedDepths, xpFraction } from './progress';
+import { addXp, applyDeath, deathPenalty, formatTime, levelTitle, recordClear, roman, unlockedDepths, xpFraction } from './progress';
+import { Lang } from '../../engine';
+import { installLanguage, riftlightLines } from '../lang';
 import { RecapTracker } from './recap';
+import { Rng } from '../core/rng';
+import { generateGenome } from '../monsters/genome';
+import { DESIGNED_BOSSES } from '../monsters/bosses/designed';
+import { monsterName } from '../wire/monsters';
 import { SONGS, SOUNDS } from './audio';
 import { exportSave, type KeyValueStore, migrate, newSave, parseSave, SAVE_VERSION, SaveStore } from './save';
 
@@ -95,11 +101,20 @@ describe('progress', () => {
     expect(unlockedDepths(save)).toEqual([1, 2]);
   });
 
-  it('names levels', () => {
+  it('names levels (lines: the depth in Roman numerals and the level\'s name; a rift by its number and mechanics)', () => {
     expect(roman(3)).toBe('III');
     expect(roman(12)).toBe('XII');
-    expect(levelTitle(3, 'Gale')).toBe('III · GALE');
-    expect(levelTitle(37, 'Frostglass Gravewell')).toBe('RIFT 37 · FROSTGLASS GRAVEWELL');
+    expect(levelTitle({ depth: 3, mechanics: ['gale'] })).toBe('III · Gale');
+    expect(levelTitle({ depth: 37, mechanics: ['frostglass', 'gravewell'] })).toBe('Rift 37: Frostglass Gravewell');
+    // in another language the title is that language's lines, never the English kept in the spec
+    installLanguage(new Lang(riftlightLines(), {}, { code: 'en-XA' }));
+    try {
+      expect(levelTitle({ depth: 3, mechanics: ['gale'] })).toMatch(/^\[III · \[Gálé ·+\] ·+\]$/);
+      expect(formatTime(65)).toMatch(/^\[1:05 ·+\]$/);
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(formatTime(65)).toBe('1:05');
   });
 });
 
@@ -167,6 +182,37 @@ describe('recap', () => {
     expect(out.killer).toBe('Ember Imp');
     expect(out.tip).toMatch(/critical/);
     expect(out.tip).toMatch(/fire/i);
+  });
+
+  it('keeps what names an attacker, not its name: a snapshot shows in today\'s language; an old one as it was', () => {
+    const genome = generateGenome(new Rng(5).fork('genome'), { depth: 3, rank: 'normal' });
+    const boss = DESIGNED_BOSSES[0]!;
+    const zero = { physical: 0, fire: 0, cold: 0, lightning: 0, chaos: 0 };
+    const r = new RecapTracker();
+    r.load({
+      byType: { ...zero, fire: 30 },
+      total: 30,
+      hits: 3,
+      sources: [
+        { name: 'boss:x', total: 20, hits: 1, who: { boss: { id: boss.id, name: boss.name } } },
+        { name: 'monster:x', total: 6, hits: 1, who: { genome } },
+        { name: 'Ember Imp', total: 4, hits: 1 }, // a snapshot from before: the English it kept
+      ],
+      last: { name: 'boss:x', total: 20, type: 'fire', crit: false, who: { boss: { id: boss.id, name: boss.name } } },
+    });
+    const en = r.recap();
+    expect(en.killer).toBe(boss.name);
+    expect(en.sources.map((x) => x.name)).toEqual([boss.name, monsterName(genome), 'Ember Imp']);
+    installLanguage(new Lang(riftlightLines(), {}, { code: 'en-XA' }));
+    try {
+      const xa = r.recap();
+      expect(xa.killer).toMatch(/^\[/); // the boss's line, in the language shown now
+      expect(xa.sources[1]!.name).toMatch(/^\[/);
+      expect(xa.sources[2]!.name).toBe('Ember Imp');
+      expect(JSON.stringify(r.save())).not.toContain('·'); // no finished words in the state
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
   });
 });
 

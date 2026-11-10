@@ -206,7 +206,8 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
       const lines = ui()
         .skillLines(ui().numbers()[0]!)
         .map((l) => l.text);
-      expect(lines.some((l) => /^HIT \d/.test(l)) && lines.some((l) => /^DPS \d/.test(l)) && lines.some((l) => /^COST \d/.test(l)), lines.join(' | ')).toBe(true);
+      expect(lines.some((l) => /^Hit \d/.test(l)) && lines.some((l) => /^DPS \d/.test(l)) && lines.some((l) => /^Cost \d/.test(l)), lines.join(' | ')).toBe(true);
+      expect(lines, 'one support linked: the plural line').toContain('1 support linked');
       // the pointer over skill 1's socket (its tooltip); keys / pad: Enter takes the cursor there, X takes the gem out
       const sock = ui().socketCenter(0, -1);
       pointAtArt(engine, sock.x, sock.y);
@@ -339,4 +340,14 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
     },
     T,
   );
+
+  it('a snapshot from before messages were ids keeps its words: shown as they are', () => {
+    if (h.game.screen === 'title') h.rl.continueRun();
+    h.rl.ui.open('inventory'); // the windows are built (a snapshot is taken with them closed)
+    h.rl.ui.close();
+    const before = ui().viewState();
+    ui().setViewState({ ...before, message: 'NOT ENOUGH GOLD' as never });
+    expect(ui().viewState().message).toEqual({ id: '', text: 'NOT ENOUGH GOLD' });
+    ui().setViewState(before);
+  });
 });

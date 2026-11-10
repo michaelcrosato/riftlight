@@ -85,10 +85,11 @@ describe('StatSheet', () => {
     expect(s.explain('crit.chance').map((e) => e.source).sort()).toEqual(['item', 'keystone']);
   });
 
-  it('describes mods for tooltips', () => {
-    expect(describeMod(inc('damage', 0.2, ['melee']))).toBe('20% increased damage with melee');
+  it('describes mods for tooltips with the game\'s lines (lang/modLines.ts)', () => {
+    expect(describeMod(inc('damage', 0.2, ['melee']))).toBe('20% increased damage with melee skills');
     expect(describeMod(more('attack.speed', -0.1))).toBe('10% less attack speed');
-    expect(describeMod(flat('life', 25))).toBe('+25 life');
+    expect(describeMod(flat('life', 25))).toBe('+25 maximum life');
+    expect(describeMod(flat('res.fire', 0.3))).toBe('+30% fire resistance');
   });
 });
 

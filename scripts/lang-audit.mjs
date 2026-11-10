@@ -6,18 +6,10 @@
 // level (its card, a fight, the clear), a death. Writes .scratch/lang/audit.json and a PNG per screen.
 import { mkdir, writeFile } from 'node:fs/promises';
 import { launchChromium } from './browser.mjs';
+import { strays } from './lang-strays.mjs';
 import { engineReady, startServer } from './page.mjs';
 
-/** The words in a drawn string that aren't the test language (proper names, digits and symbols aside). */
-export function strays(text, names) {
-  let rest = text;
-  for (let prev = ''; prev !== rest; ) {
-    prev = rest;
-    rest = rest.replace(/\[[^[\]]*\]/g, ' '); // en-XA lines, innermost first (names built from lines nest)
-  }
-  for (const n of names) rest = rest.split(n.toUpperCase()).join(' ').split(n).join(' ');
-  return rest.match(/[A-Za-z]{2,}/g) ?? [];
-}
+export { strays };
 
 /** The screens, as actions in the page (window.__RIFTLIGHT__) with an argument; each waits a little after. */
 const SCREENS = [
@@ -59,20 +51,23 @@ export async function audit({ root, lang = 'en-XA', names = [], out = `${root}.s
     await page.waitForTimeout(800);
     const all = new Map();
     for (const [name, act, arg] of SCREENS) {
-      await page.evaluate(() => {
+      await page.evaluate((keep) => {
         const rl = window.__RIFTLIGHT__;
-        for (let i = 0; i < 8 && rl.ui.stack().length; i++) rl.ui.close();
+        if (!keep) for (let i = 0; i < 8 && rl.ui.stack().length; i++) rl.ui.close(); // the title keeps its menu
         window.__PIXEL_TEXT_LOG__.clear();
-      });
+      }, name === 'title');
       try {
         await page.evaluate(act, arg);
       } catch (e) {
         report.errors.push(`${name}: ${e.message.split('\n')[0]}`);
       }
-      // frames, not milliseconds: a software renderer may draw only a few a second
-      const from = await page.evaluate(() => window.__PIXEL_ENGINE__.state().frame);
+      await page.evaluate(() => window.__RIFTLIGHT__.realtime()); // the API's moves step by hand: give time back to the page so frames draw
+      // frames, not milliseconds: a software renderer may draw only a few a second. The browser's
+      // frames, not the engine's: a window that pauses the game stops the engine's frame count
       const frames = name === 'death' ? 10 : 4;
-      await page.waitForFunction(([f, n]) => window.__PIXEL_ENGINE__.state().frame >= f + n, [from, frames], { timeout: 60000 }).catch(() => report.errors.push(`${name}: no frames`));
+      await page
+        .evaluate((n) => new Promise((done) => { let left = n; const next = () => (--left <= 0 ? done() : requestAnimationFrame(next)); requestAnimationFrame(next); }), frames) // prettier-ignore
+        .catch(() => report.errors.push(`${name}: no frames`));
       if (name === 'death') await page.waitForTimeout(2600);
       const texts = await page.evaluate(() => [...window.__PIXEL_TEXT_LOG__]);
       const offenders = texts.filter((t) => strays(t, names).length);

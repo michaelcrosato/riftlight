@@ -33,12 +33,14 @@ import {
   lookPresetLabel,
   lookPresetOf,
   paramsOf,
+  type FilterDef,
   type FilterGroup,
   type FilterParam,
   type Look,
   type LookTarget,
   type PixelLook,
 } from '../../engine';
+import { lang, lineKey, t } from '../lang';
 import { Menu, type Widget } from './menu';
 
 export interface LookHost {
@@ -54,124 +56,72 @@ export interface LookHost {
 }
 
 export const LOOK_STUDIO_TARGETS: readonly LookTarget[] = ['scene', 'actors', 'environment'];
-const TARGET_SHORT: Readonly<Record<LookTarget, string>> = {
-  scene: 'whole scene',
-  actors: 'characters',
-  environment: 'environment',
-};
 
-/** Filter names that fit a menu row (the full name is the row's hint). */
-const SHORT: Readonly<Record<string, string>> = {
-  cel: 'Cel shading',
-  '8bit': '8-bit NES',
-  '16bit': '16-bit',
-  ps1: 'PlayStation',
-  sweetie16: 'Sweetie 16',
-  pico8: 'PICO-8',
-  nes: 'NES',
-  c64: 'C64',
-  zx: 'ZX Spectrum',
-  ega: 'EGA',
-  cga: 'CGA',
-  gameboy: 'Game Boy',
-  gbpocket: 'GB Pocket',
-  virtualboy: 'Virtual Boy',
-  onebit: '1-bit Mac',
-  dither: 'Dither',
-  posterize: 'Posterize',
-  adjust: 'Adjust',
-  grayscale: 'Grayscale',
-  sepia: 'Sepia',
-  invert: 'Invert',
-  bleach: 'Bleach',
-  sunset: 'Sunset',
-  moonlight: 'Moonlight',
-  thermal: 'Thermal',
-  nightvision: 'Night vision',
-  scanlines: 'Scanlines',
-  lcd: 'LCD grid',
-  crt: 'CRT',
-  vignette: 'Vignette',
-  chromatic: 'Chromatic',
-  grain: 'Film grain',
-  vhs: 'VHS tape',
-  ntsc: 'NTSC bleed',
-  bloom: 'Bloom',
-  halftone: 'Halftone',
-  sketch: 'Ink sketch',
-};
+/**
+ * The studio's words are lines (lang/shell.ts), most made from the engine's registries (filters,
+ * their parameters and presets, the looks): an id's line, or the registry's English for one
+ * added since the line list was made.
+ */
+const lineOr = (id: string, english: string): string => (lang().has(id) ? t(id) : english);
 
-export const filterName = (id: string): string => SHORT[id] ?? getFilter(id)?.label ?? id;
+/** A part of the picture, short ("whole scene", "characters"). */
+const targetShort = (target: LookTarget): string => t(lineKey('look.target', target, 'short'));
 
-/** The studio's pages of filters, one per filter type. */
+/** A filter's name that fits a menu row (`look.filter.<id>`; the full name is its row's hint). */
+export const filterName = (id: string): string => lineOr(lineKey('look.filter', id), getFilter(id)?.label ?? id);
+
+/** A filter's full name (`look.filter.<id>.full`, else its short one). */
+const filterFull = (id: string): string => lineOr(lineKey('look.filter', id, 'full'), filterName(id));
+
+/** A filter parameter's name (strength is every filter's: `look.param.amount`); `def` null: a pixel-art parameter. */
+function paramName(def: FilterDef | null, p: FilterParam): string {
+  if (p.key === 'amount') return t('look.param.amount');
+  return lineOr(def ? lineKey('look.filter', def.id, 'param', p.key) : lineKey('look.pixel.param', p.key), p.label);
+}
+
+/** The studio's pages of filters, one per filter type (their names and hints: `look.section.<id>`, `.hint`). */
 export const LOOK_SECTIONS: readonly {
   id: string;
-  label: string;
   groups: readonly FilterGroup[];
-  hint: string;
 }[] = [
-  {
-    id: 'shading',
-    label: 'Cel shading',
-    groups: ['shading'],
-    hint: 'flat light bands and ink lines',
-  },
-  {
-    id: 'palette',
-    label: 'Palettes',
-    groups: ['palette'],
-    hint: 'retro palettes, dither, posterize',
-  },
-  {
-    id: 'color',
-    label: 'Colour grade',
-    groups: ['color'],
-    hint: 'adjust, grayscale, sepia, moonlight...',
-  },
-  {
-    id: 'era',
-    label: 'Consoles',
-    groups: ['era'],
-    hint: '8-bit, 16-bit, PlayStation',
-  },
-  {
-    id: 'display',
-    label: 'Screen',
-    groups: ['display'],
-    hint: 'scanlines, LCD, CRT, vignette',
-  },
-  {
-    id: 'signal',
-    label: 'Signal',
-    groups: ['signal'],
-    hint: 'chromatic, grain, VHS, NTSC',
-  },
-  {
-    id: 'stylize',
-    label: 'Stylize',
-    groups: ['stylize'],
-    hint: 'bloom, halftone, ink sketch',
-  },
+  { id: 'shading', groups: ['shading'] },
+  { id: 'palette', groups: ['palette'] },
+  { id: 'color', groups: ['color'] },
+  { id: 'era', groups: ['era'] },
+  { id: 'display', groups: ['display'] },
+  { id: 'signal', groups: ['signal'] },
+  { id: 'stylize', groups: ['stylize'] },
 ];
+
+const sectionName = (id: string): string => t(lineKey('look.section', id));
+const sectionHint = (id: string): string => t(lineKey('look.section', id, 'hint'));
 
 const nice = (name: string) => name.replace(/_/g, ' ');
 
-/** Value text for a parameter (fits the slider's 34-pixel value column). */
+/** A whole look's name (`look.whole.<name>`; `none` is the default). */
+export const lookName = (name: string): string => lineOr(lineKey('look.whole', name), lookPresetLabel(name));
+/** A pixel-art preset's name (`look.pixel.presets.<name>`). */
+const pixelPresetName = (name: string): string => lineOr(lineKey('look.pixel.presets', name), nice(name));
+/** A filter preset's name: the filter's own (`look.filter.<id>.preset.<name>`), else a strength (`look.strength.<name>`). */
+const filterPresetName = (def: FilterDef, name: string): string => (def.presets ? lineOr(lineKey('look.filter', def.id, 'preset', name), nice(name)) : lineOr(lineKey('look.strength', name), nice(name)));
+
+/** Value text for a parameter (fits the slider's 34-pixel value column), in the language's digits. */
 export function formatParam(p: FilterParam, v: number): string {
-  const num = (x: number) => String(Number(x.toFixed(2)));
-  if (p.unit === '%') return `${Math.round(v * 100)}%`;
-  if (p.unit === 'x') return `${num(v)}x`;
-  if (p.unit === 'px') return `${num(v)}px`;
+  const num = (x: number) => lang().formatNumber(Number(x.toFixed(2)), { maximumFractionDigits: 2 });
+  if (p.unit === '%') return lang().formatNumber(Math.round(v * 100) / 100, { style: 'percent' });
+  if (p.unit === 'x') return t('look.unit.times', { value: num(v) });
+  if (p.unit === 'px') return t('look.unit.px', { value: num(v) });
   return num(v);
 }
 
-function paramSlider(id: string, label: string, p: FilterParam, get: () => number, set: (v: number) => void, hint?: string, name?: string): Widget {
+function paramSlider(id: string, label: string, p: FilterParam, get: () => number, set: (v: number) => void, hint?: string, name?: string, indent?: boolean): Widget {
   const span = p.max - p.min;
   return {
     kind: 'slider',
     id,
     label,
     name,
+    indent,
     get: () => (get() - p.min) / span,
     set: (u) => set(clampParam(p, p.min + u * span)),
     step: (u, dir) => (clampParam(p, p.min + u * span + dir * p.step) - p.min) / span,
@@ -188,16 +138,18 @@ function presetChoice(
   names: readonly string[],
   current: string | null,
   apply: (name: string) => void,
-  hint?: string,
-  name?: string,
-  labelOf: (name: string) => string = nice,
+  hint: string | undefined,
+  name: string | undefined,
+  labelOf: (name: string) => string,
+  indent?: boolean,
 ): Widget {
-  const options = current ? names.map(labelOf) : [...names.map(labelOf), 'custom'];
+  const options = current ? names.map(labelOf) : [...names.map(labelOf), t('look.custom')];
   return {
     kind: 'choice',
     id,
     label,
     name,
+    indent,
     options,
     get: () => (current ? names.indexOf(current) : names.length),
     set: (i) => {
@@ -245,43 +197,48 @@ export function toggleFilter(look: Look, t: LookTarget, id: string, on: boolean)
 }
 
 /** Short text of what is on for a target ("pixel 2x · cel · NES"). */
-export function lookSummary(look: Look, t: LookTarget): string {
+export function lookSummary(look: Look, target: LookTarget): string {
   const parts: string[] = [];
-  if (t === 'scene') {
+  if (target === 'scene') {
     const a = look.actors.pixel;
     const e = look.environment.pixel;
-    if (a && e) parts.push(a.size === e.size ? `pixel ${a.size}x` : 'pixel');
-    else if (a || e) parts.push(a ? 'pixel characters' : 'pixel world');
-    else parts.push('clean');
+    if (a && e) parts.push(a.size === e.size ? t('look.summary.pixel_size', { size: a.size }) : t('look.summary.pixel'));
+    else if (a || e) parts.push(t(a ? 'look.summary.pixel_characters' : 'look.summary.pixel_world'));
+    else parts.push(t('look.summary.clean'));
   } else {
-    const p = look[t].pixel;
-    parts.push(p ? `pixel ${p.size}x` : 'clean');
+    const p = look[target].pixel;
+    parts.push(p ? t('look.summary.pixel_size', { size: p.size }) : t('look.summary.clean'));
   }
-  for (const f of lookFilters(look, t)) parts.push(filterName(f.id).toLowerCase());
+  for (const f of lookFilters(look, target)) parts.push(filterName(f.id));
   return parts.join(' · ');
 }
 
-function pixelText(look: Look, t: LookTarget): string {
-  if (t === 'scene') {
+function pixelText(look: Look, target: LookTarget): string {
+  if (target === 'scene') {
     const a = look.actors.pixel;
     const e = look.environment.pixel;
-    if (!a && !e) return 'off';
-    if (!a || !e) return 'mixed';
-    return a.size === e.size ? `${a.size}x` : 'mixed';
+    if (!a && !e) return t('look.state.off');
+    if (!a || !e) return t('look.state.mixed');
+    return a.size === e.size ? t('look.state.size', { size: a.size }) : t('look.state.mixed');
   }
-  const p = look[t].pixel;
-  return p ? `${p.size}x` : 'off';
+  const p = look[target].pixel;
+  return p ? t('look.state.size', { size: p.size }) : t('look.state.off');
 }
 
-function sectionText(look: Look, t: LookTarget, groups: readonly FilterGroup[]): string {
-  const on = lookFilters(look, t).filter((f) => groups.includes(getFilter(f.id)?.group ?? 'era'));
-  if (!on.length) return 'off';
+/** Pixel art on one layer and off the other (the whole scene's row then edits both). */
+function pixelMixed(look: Look, target: LookTarget): boolean {
+  return target === 'scene' && (!look.actors.pixel !== !look.environment.pixel || (!!look.actors.pixel && look.actors.pixel.size !== look.environment.pixel?.size));
+}
+
+function sectionText(look: Look, target: LookTarget, groups: readonly FilterGroup[]): string {
+  const on = lookFilters(look, target).filter((f) => groups.includes(getFilter(f.id)?.group ?? 'era'));
+  if (!on.length) return t('look.state.off');
   const first = filterName(on[0]!.id);
-  return on.length > 1 ? `${first} +${on.length - 1}` : first;
+  return on.length > 1 ? t('look.state.more', { filter: first, count: on.length - 1 }) : first;
 }
 
 // narrow enough that the hero (centre of the screen) stays in view beside the panel
-const MAIN = { id: 'look', title: 'Look studio', width: 172, labelWidth: 58 };
+const MAIN = { id: 'look', width: 172, labelWidth: 58 };
 const PAGE = { width: 176, labelWidth: 84 };
 
 /** Shared by every page of one studio: the part of the picture being edited. */
@@ -296,39 +253,39 @@ export function lookStudio(h: LookHost): Menu {
   return new Menu(
     () => {
       const look = h.look();
-      const t = st.target;
+      const target = st.target;
       const w: Widget[] = [
-        presetChoice('preset', 'Look', names, lookPresetOf(look), (n) => h.setLook(LOOK_PRESETS[n]!), 'a whole look to start from, then tweak it', 'Look', lookPresetLabel),
+        presetChoice('preset', t('look.row.look'), names, lookPresetOf(look), (n) => h.setLook(LOOK_PRESETS[n]!), t('look.row.look.hint'), t('look.row.look'), lookName),
         {
           kind: 'choice',
           id: 'target',
-          label: 'Apply to',
-          options: LOOK_STUDIO_TARGETS.map((x) => TARGET_SHORT[x]),
+          label: t('look.row.target'),
+          options: LOOK_STUDIO_TARGETS.map(targetShort),
           get: () => LOOK_STUDIO_TARGETS.indexOf(st.target),
           set: (i) => (st.target = LOOK_STUDIO_TARGETS[i]!),
-          hint: 'whole scene, characters + objects, or environment',
+          hint: t('look.row.target.hint'),
         },
         {
           kind: 'label',
           id: 'summary',
-          label: lookSummary(look, t).slice(0, 30),
+          label: lookSummary(look, target),
           color: 'sand',
         },
         {
           kind: 'button',
           id: 'pixel',
-          label: `Pixel art: ${pixelText(look, t)}`,
+          label: t('look.row.pixel', { state: pixelText(look, target) }),
           onClick: () => h.openStudioPage(pixelPage(h, st)),
-          hint: 'pixel size and outlines, or clean',
+          hint: t('look.row.pixel.hint'),
         },
       ];
       for (const sec of LOOK_SECTIONS) {
         w.push({
           kind: 'button',
           id: sec.id,
-          label: `${sec.label}: ${sectionText(look, t, sec.groups)}`,
+          label: t('look.row.section', { section: sectionName(sec.id), state: sectionText(look, target, sec.groups) }),
           onClick: () => h.openStudioPage(sectionPage(h, st, sec)),
-          hint: sec.hint,
+          hint: sectionHint(sec.id),
         });
       }
       w.push(
@@ -337,30 +294,30 @@ export function lookStudio(h: LookHost): Menu {
         {
           kind: 'button',
           id: 'clear',
-          label: `Clear ${TARGET_SHORT[t]} filters`,
-          onClick: () => edit(h, (l) => lookFilters(l, t).splice(0)),
-          hint: 'turns off every filter of this part (pixel art stays)',
+          label: t(lineKey('look.clear', target)),
+          onClick: () => edit(h, (l) => lookFilters(l, target).splice(0)),
+          hint: t('look.clear.hint'),
         },
         {
           kind: 'button',
           id: 'reset',
-          label: 'Reset to default',
+          label: t('look.reset'),
           onClick: () => h.setLook(defaultLook()),
           accent: 'plum',
-          hint: 'pixel art everywhere, no filters',
+          hint: t('look.reset.hint'),
         },
       );
       return w;
     },
-    { ...MAIN, footer: () => `editing: ${TARGET_SHORT[st.target]}`, onSound },
+    { ...MAIN, title: t('look.title'), footer: () => t(lineKey('look.editing', st.target)), onSound },
   );
 }
 
-function pageHeader(t: LookTarget): Widget {
+function pageHeader(target: LookTarget): Widget {
   return {
     kind: 'label',
     id: 'for',
-    label: LOOK_TARGET_LABELS[t],
+    label: lineOr(lineKey('look.target', target), LOOK_TARGET_LABELS[target]),
     color: 'sand',
   };
 }
@@ -368,33 +325,33 @@ function pageHeader(t: LookTarget): Widget {
 /** "Hide panel (H)": the whole picture; arrows still tweak the focused control, H or a tap shows it again. */
 function peekButton(h: LookHost): Widget[] {
   if (!h.peek) return [];
-  return [{ kind: 'button', id: 'peek', label: 'Hide panel (H)', onClick: () => h.peek!(), hint: 'arrows still tweak, H or a tap shows it' }];
+  return [{ kind: 'button', id: 'peek', label: t('look.peek'), onClick: () => h.peek!(), hint: t('look.peek.hint') }];
 }
 
 function pixelPage(h: LookHost, st: StudioState): Menu {
   return new Menu(
     () => {
-      const t = st.target;
+      const target = st.target;
       const look = h.look();
-      const w: Widget[] = [pageHeader(t), ...peekButton(h)];
-      const mixed = t === 'scene' && pixelText(look, t) === 'mixed';
+      const w: Widget[] = [pageHeader(target), ...peekButton(h)];
+      const mixed = pixelMixed(look, target);
       w.push({
         kind: 'toggle',
         id: 'on',
-        label: 'Pixel art',
-        get: () => pixelOn(h.look(), t),
-        set: (v) => edit(h, (l) => setPixel(l, t, v ? (pixelOf(l, t) ?? DEFAULT_PIXEL) : null)),
-        hint: 'off = clean, full resolution',
+        label: t('look.pixel.on'),
+        get: () => pixelOn(h.look(), target),
+        set: (v) => edit(h, (l) => setPixel(l, target, v ? (pixelOf(l, target) ?? DEFAULT_PIXEL) : null)),
+        hint: t('look.pixel.on.hint'),
       });
       if (mixed)
         w.push({
           kind: 'label',
           id: 'mixed',
-          label: 'layers differ: edits set both',
+          label: t('look.pixel.mixed'),
           color: 'orange',
         });
-      const p = pixelOf(look, t);
-      if (p && (pixelOn(look, t) || mixed)) {
+      const p = pixelOf(look, target);
+      if (p && (pixelOn(look, target) || mixed)) {
         const presetNames = Object.keys(PIXEL_PRESETS);
         const current = presetNames.find((n) => {
           const q = PIXEL_PRESETS[n]!;
@@ -403,25 +360,26 @@ function pixelPage(h: LookHost, st: StudioState): Menu {
         w.push(
           presetChoice(
             'preset',
-            'Preset',
+            t('look.pixel.preset'),
             presetNames,
             mixed ? null : (current ?? null),
-            (n) => edit(h, (l) => setPixel(l, t, PIXEL_PRESETS[n]!)),
-            'crisp, chunky, blocky, mosaic...',
-            'Pixel preset',
+            (n) => edit(h, (l) => setPixel(l, target, PIXEL_PRESETS[n]!)),
+            t('look.pixel.preset.hint'),
+            t('look.pixel.preset.name'),
+            pixelPresetName,
           ),
         );
         for (const q of PIXEL_PARAMS) {
           w.push(
             paramSlider(
               q.key,
-              q.label,
+              paramName(null, q),
               q,
-              () => (pixelOf(h.look(), t) as unknown as Record<string, number> | null)?.[q.key] ?? q.default,
+              () => (pixelOf(h.look(), target) as unknown as Record<string, number> | null)?.[q.key] ?? q.default,
               (v) =>
                 edit(h, (l) =>
-                  setPixel(l, t, {
-                    ...(pixelOf(l, t) ?? DEFAULT_PIXEL),
+                  setPixel(l, target, {
+                    ...(pixelOf(l, target) ?? DEFAULT_PIXEL),
                     [q.key]: v,
                   }),
                 ),
@@ -433,9 +391,9 @@ function pixelPage(h: LookHost, st: StudioState): Menu {
     },
     {
       id: 'look.pixel',
-      title: 'Pixel art',
+      title: t('look.pixel.title'),
       ...PAGE,
-      footer: () => `editing: ${TARGET_SHORT[st.target]}`,
+      footer: () => t(lineKey('look.editing', st.target)),
       onSound: (s) => h.sound(s),
     },
   );
@@ -445,23 +403,23 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
   const defs = FILTERS.filter((f) => sec.groups.includes(f.group));
   return new Menu(
     () => {
-      const t = st.target;
+      const target = st.target;
       const look = h.look();
-      const w: Widget[] = [pageHeader(t), ...peekButton(h)];
+      const w: Widget[] = [pageHeader(target), ...peekButton(h)];
       for (const def of defs) {
-        if (t !== 'scene' && def.sceneOnly) {
+        if (target !== 'scene' && def.sceneOnly) {
           // a warp on one layer would no longer line up with the other
-          w.push({ kind: 'label', id: def.id, label: `${filterName(def.id)}: whole scene only`, color: 'slate' });
+          w.push({ kind: 'label', id: def.id, label: t('look.filter_scene_only', { filter: filterName(def.id) }), color: 'slate' });
           continue;
         }
-        const on = lookFilters(look, t).find((f) => f.id === def.id);
+        const on = lookFilters(look, target).find((f) => f.id === def.id);
         w.push({
           kind: 'toggle',
           id: def.id,
           label: filterName(def.id),
-          get: () => lookFilters(h.look(), t).some((f) => f.id === def.id),
-          set: (v) => edit(h, (l) => toggleFilter(l, t, def.id, v)),
-          hint: def.label,
+          get: () => lookFilters(h.look(), target).some((f) => f.id === def.id),
+          set: (v) => edit(h, (l) => toggleFilter(l, target, def.id, v)),
+          hint: filterFull(def.id),
         });
         if (!on) continue;
         const values = paramsOf(on);
@@ -471,12 +429,12 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
         w.push(
           presetChoice(
             `${def.id}.preset`,
-            '  Preset',
+            t('look.filter_preset'),
             Object.keys(presets),
             current,
             (n) =>
               edit(h, (l) => {
-                const f = lookFilters(l, t).find((x) => x.id === def.id);
+                const f = lookFilters(l, target).find((x) => x.id === def.id);
                 if (f)
                   f.params = {
                     ...defaults,
@@ -484,27 +442,30 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
                     ...presets[n],
                   };
               }),
-            `${def.label} preset`,
-            `${filterName(def.id)} preset`,
+            t('look.filter_preset.hint', { filter: filterFull(def.id) }),
+            t('look.filter_preset.name', { filter: filterName(def.id) }),
+            (n) => filterPresetName(def, n),
+            true,
           ),
         );
         for (const p of filterParams(def)) {
           w.push(
             paramSlider(
               `${def.id}.${p.key}`,
-              `  ${p.label}`,
+              paramName(def, p),
               p,
               () => {
-                const f = lookFilters(h.look(), t).find((x) => x.id === def.id);
+                const f = lookFilters(h.look(), target).find((x) => x.id === def.id);
                 return f ? (paramsOf(f)[p.key] ?? p.default) : p.default;
               },
               (v) =>
                 edit(h, (l) => {
-                  const f = lookFilters(l, t).find((x) => x.id === def.id);
+                  const f = lookFilters(l, target).find((x) => x.id === def.id);
                   if (f) f.params = { ...paramsOf(f), [p.key]: v };
                 }),
-              `${def.label}: ${p.label.toLowerCase()}`,
-              `${filterName(def.id)} ${p.label.toLowerCase()}`,
+              t('look.param.hint', { filter: filterFull(def.id), param: paramName(def, p) }),
+              t('look.param.name', { filter: filterName(def.id), param: paramName(def, p) }),
+              true,
             ),
           );
         }
@@ -513,9 +474,9 @@ function sectionPage(h: LookHost, st: StudioState, sec: (typeof LOOK_SECTIONS)[n
     },
     {
       id: `look.${sec.id}`,
-      title: sec.label,
+      title: sectionName(sec.id),
       ...PAGE,
-      footer: () => `editing: ${TARGET_SHORT[st.target]}`,
+      footer: () => t(lineKey('look.editing', st.target)),
       onSound: (s) => h.sound(s),
     },
   );

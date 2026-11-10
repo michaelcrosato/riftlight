@@ -21,10 +21,8 @@ import {
   buildMonster,
   type BuiltMonster,
   createTelegraph,
-  ELITE_MODS,
   generateBoss,
   generateGenome,
-  genomeTags,
   MONSTER_SKILLS,
   MonsterBrain,
   type MonsterBody,
@@ -33,8 +31,12 @@ import {
   type MonsterRuntimeState,
   type MonsterSkillDef,
   MonsterRuntime,
+  monsterNameParts,
   type TelegraphSpec,
 } from '../monsters';
+import { lang, lineKey } from '../lang';
+import type { Lang } from '../../engine/lang/lang';
+import { bossNameShown, eliteName } from '../lang/monsters';
 import type { Telegraph as Decal, TelegraphColor } from '../monsters/telegraph';
 import { buildSkill } from '../skills/build';
 import type { SkillGem, SkillLook } from '../skills/types';
@@ -107,20 +109,15 @@ export function translateMods(mods: readonly Mod[]): Mod[] {
   return out;
 }
 
-const THEME_WORD: Readonly<Record<string, string>> = {
-  fire: 'Cinder', ice: 'Frost', undead: 'Grave', insect: 'Chitin', beast: 'Feral', construct: 'Iron', void: 'Void', storm: 'Storm',
-  poison: 'Blight', nature: 'Thorn', blood: 'Blood', earth: 'Stone', shadow: 'Shade', crystal: 'Crystal', arcane: 'Rune', water: 'Tide',
-};
-const PLAN_WORD: Readonly<Record<string, string>> = {
-  biped: 'Stalker', brute: 'Brute', quadruped: 'Hound', hexapod: 'Crawler', serpent: 'Serpent', floater: 'Wisp', blob: 'Ooze', avian: 'Shrike', centipede: 'Centipede',
-};
-
-/** "Hasted Cinder Hound": theme word + body word, elite mods in front. */
-export function monsterName(g: Genome): string {
-  const theme = THEME_WORD[genomeTags(g)[0] ?? ''] ?? 'Rift';
-  const body = PLAN_WORD[g.plan] ?? 'Beast';
-  const elite = g.elite[0] && ELITE_MODS.has(g.elite[0]) ? `${ELITE_MODS.get(g.elite[0]).name} ` : '';
-  return `${g.rank === 'normal' ? '' : elite}${theme} ${body}`;
+/**
+ * A monster's name in the player's language (or `language`: the bestiary keeps English), from its words (monsters/names.ts): theme word +
+ * body word, a magic or rare monster's first elite modifier in front ("Hasted Cinder Hound").
+ */
+export function monsterName(g: Genome, language: Pick<Lang, 't'> = lang()): string {
+  const p = monsterNameParts(g);
+  const theme = language.t(lineKey('monster.word.theme', p.theme));
+  const body = language.t(lineKey('monster.word.body', p.body));
+  return p.elite ? language.t('monster.name.elite', { elite: eliteName(p.elite, language), theme, body }) : language.t('monster.name.normal', { theme, body });
 }
 
 /** A monster skill's look by the damage type it deals (its projectile, glow, burst, sound and light). */
@@ -426,7 +423,7 @@ export class MonsterUnit implements MonsterHandle {
     this.object.userData.genome = this.boss?.genome ?? genome;
     this.runtime = new MonsterRuntime(this.built);
     this.rank = genome.rank;
-    this.name = this.boss?.name ?? monsterName(genome);
+    this.name = this.boss ? bossNameShown(this.boss) : monsterName(genome);
     const depth = o.depth;
     const radius = Math.max(0.3, Math.min(1.6, this.built.radius));
     // walls are checked with a slim footprint: every body fits through a 1-cell corridor

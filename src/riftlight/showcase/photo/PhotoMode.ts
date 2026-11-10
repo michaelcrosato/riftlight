@@ -14,15 +14,21 @@
  */
 import { Vector3 } from 'three/webgpu';
 import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
-import { inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
+import { lang, lineKey, t } from '../../lang';
+import { clip, inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
+import { hints, miniHints } from '../hints';
 import type { Showcase } from '../Showcase';
 
-/** One look per step: off, every preset stack, then every filter on its own. */
-export const PHOTO_LOOKS: readonly { name: string; filters: readonly string[] }[] = [
-  ...Object.entries(FILTER_PRESETS).map(([name, filters]) => ({ name: name.replace(/_/g, ' '), filters })),
-  ...FILTER_IDS.map((id) => ({ name: id, filters: [id] })),
+/**
+ * One look per step: off, every preset stack, then every filter on its own. `name` is how
+ * agents pick one; `line` its name for the player (lang/showcase.ts).
+ */
+export const PHOTO_LOOKS: readonly { name: string; line: string; filters: readonly string[] }[] = [
+  ...Object.entries(FILTER_PRESETS).map(([name, filters]) => ({ name: name.replace(/_/g, ' '), line: lineKey('showcase.photo.look', name), filters })),
+  ...FILTER_IDS.map((id) => ({ name: id, line: lineKey('showcase.photo.filter', id), filters: [id] })),
 ];
 
+/** Fill light colours; `name` is the line's last word (`showcase.photo.light.<name>`). */
 const FILL_LIGHTS: readonly { name: string; color: number | null }[] = [
   { name: 'off', color: null },
   { name: 'warm', color: PALETTE.sand },
@@ -261,7 +267,7 @@ export class PhotoMode {
     }
     this.last = { width: frame.width, height: frame.height, bytes: Math.floor((dataUrl.length - 22) * 0.75), filters: [...this.engine.filters], mode: this.engine.renderer.mode, name };
     this.flash = 1;
-    this.toast = `SAVED ${name.toUpperCase()}`;
+    this.toast = t('showcase.photo.saved', { file: name });
     this.toastAge = 0;
     this.host.ctx.audio.play('rl.click', { pitch: 7 });
     return { width: frame.width, height: frame.height, dataUrl, name };
@@ -321,7 +327,7 @@ export class PhotoMode {
     if (this.toastAge < 2) ui.text(ui.w / 2, ui.h - 22, this.toast, { align: 'center', color: 'sand', shadow: 'ink' });
     if (this.capturing) return;
     if (this.hidden) {
-      ui.mini(ui.w - 4, ui.h - 8, 'H SHOW', 'slate', 'right');
+      ui.mini(ui.w - 4, ui.h - 8, hints(['show']), 'slate', 'right');
       return;
     }
     const rows = this.rows();
@@ -330,56 +336,64 @@ export class PhotoMode {
     const value = (id: RowId): string => {
       switch (id) {
         case 'look':
-          return PHOTO_LOOKS[this.look]!.name;
+          return t(PHOTO_LOOKS[this.look]!.line);
         case 'mode':
-          return e.renderer.mode;
+          return t(lineKey('showcase.photo.mode', e.renderer.mode));
         case 'res':
           return `${e.renderer.resolution.width}x${e.renderer.resolution.height}`;
         case 'time':
           return dayLabel(game.town.dayTime);
         case 'sun':
-          return `${Math.round(this.sunScale * 100)}%`;
+          return lang().formatNumber(this.sunScale, { style: 'percent', maximumFractionDigits: 0 });
         case 'ambient':
-          return `${Math.round(this.ambientScale * 100)}%`;
+          return lang().formatNumber(this.ambientScale, { style: 'percent', maximumFractionDigits: 0 });
         case 'light':
-          return FILL_LIGHTS[this.fill]!.name;
+          return t(lineKey('showcase.photo.light', FILL_LIGHTS[this.fill]!.name));
         case 'capture':
-          return 'P';
+          return lang().controlLabel('photo_save');
         case 'exit':
-          return 'ESC';
+          return lang().controlLabel('pause');
       }
     };
-    const label: Record<RowId, string> = { look: 'LOOK', mode: 'RENDER', res: 'ART RES', time: 'TIME', sun: 'SUN', ambient: 'AMBIENT', light: 'FILL LIGHT', capture: 'SAVE PNG', exit: 'BACK TO GAME' };
+    const label = (id: RowId): string => t(`showcase.photo.row.${id}`);
+    const measure = (s: string) => ui.measure(s);
+    // the columns are as wide as their words: the labels, then < value > as wide as the widest look
+    const choices = rows.filter((id) => id !== 'capture' && id !== 'exit');
+    const labelW = Math.max(...choices.map((id) => measure(label(id))));
+    const valueW = Math.max(measure(value('res')), ...PHOTO_LOOKS.map((l) => measure(t(l.line))), ...FILL_LIGHTS.map((l) => measure(t(lineKey('showcase.photo.light', l.name)))));
     const x = 6;
-    const w = 150;
+    const w = Math.max(150, Math.min(ui.w - 12, 6 + labelW + 6 + 8 + valueW + 4 + 9));
+    const arrowL = x + Math.min(6 + labelW + 6, w - 70);
     let y = 22;
     const h = rows.length * 12 + 26;
     ui.panel(x, y - 14, w, h, 'ink', this.sub === 'edit' ? 'sand' : 'slate');
-    ui.text(x + 5, y - 11, 'PHOTO MODE', { color: 'sand' });
-    ui.mini(x + w - 5, y - 10, this.sub === 'edit' ? 'EDIT' : 'FLY', this.sub === 'edit' ? 'sand' : 'mist', 'right');
+    const sub = t(this.sub === 'edit' ? 'showcase.photo.sub.edit' : 'showcase.photo.sub.fly');
+    ui.text(x + 5, y - 11, clip(t('showcase.photo.title'), w - 16 - ui.measure(sub), measure), { color: 'sand' });
+    ui.mini(x + w - 5, y - 10, sub, this.sub === 'edit' ? 'sand' : 'mist', 'right');
     this.rects.clear();
     rows.forEach((id, i) => {
       const focus = this.sub === 'edit' && i === this.row;
       const r: Rect = { x: x + 2, y, w: w - 4, h: 11 };
       if (focus || ui.hover(r)) ui.rect(r.x, r.y, r.w, r.h, 'night');
       if (focus) ui.rect(r.x, r.y, 2, r.h, 'sand');
-      ui.text(x + 6, y + 2, label[id], { color: focus ? 'white' : 'mist' });
-      const v = value(id).toUpperCase();
+      const v = value(id);
       const action = id === 'capture' || id === 'exit';
       if (action) {
+        ui.text(x + 6, y + 2, clip(label(id), w - 20 - ui.measure(v), measure), { color: focus ? 'white' : 'mist' });
         ui.mini(x + w - 8, y + 3, v, 'slate', 'right');
         this.rects.set(`${id}:r`, r);
       } else {
-        ui.text(x + w - 14, y + 2, v.length > 14 ? v.slice(0, 13) + '.' : v, { align: 'right', color: focus ? 'sand' : 'white' });
+        ui.text(x + 6, y + 2, clip(label(id), arrowL - x - 10, measure), { color: focus ? 'white' : 'mist' });
+        ui.text(x + w - 14, y + 2, clip(v, x + w - 14 - (arrowL + 8), measure), { align: 'right', color: focus ? 'sand' : 'white' });
         ui.text(x + w - 9, y + 2, '>', { color: focus ? 'sand' : 'slate' });
-        ui.text(x + 72, y + 2, '<', { color: focus ? 'sand' : 'slate' });
-        this.rects.set(`${id}:l`, { x: x + 66, y, w: 14, h: 11 });
-        this.rects.set(`${id}:r`, { x: x + 80, y, w: w - 82, h: 11 });
+        ui.text(arrowL, y + 2, '<', { color: focus ? 'sand' : 'slate' });
+        this.rects.set(`${id}:l`, { x: arrowL - 6, y, w: 14, h: 11 });
+        this.rects.set(`${id}:r`, { x: arrowL + 8, y, w: x + w - 2 - (arrowL + 8), h: 11 });
       }
       y += 12;
     });
-    const help = this.sub === 'fly' ? 'WASD Q E FLY · DRAG LOOK · WHEEL FOV · TAB EDIT · P SAVE · H HIDE · ESC BACK' : 'ARROWS PICK AND CHANGE · ENTER · TAB FLY · P SAVE · ESC BACK';
-    ui.mini(ui.w / 2, ui.h - 8, help, 'mist', 'center', 'ink');
+    const help = this.sub === 'fly' ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back']) : hints(['pick', 'change', 'fly', 'save', 'back']);
+    miniHints(ui, ui.w / 2, ui.h - 8, help, 'mist', 'ink');
   }
 
   /** The free camera's focus: a point ahead of it (the light pool lights what it looks at). */

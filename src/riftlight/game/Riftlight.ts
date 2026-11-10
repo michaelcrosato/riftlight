@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, type PaletteColor, rebindDebugKeys } from '../../engine';
+import { chooseLanguage, defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -24,7 +24,7 @@ import { loadRiftlightPacks } from '../packs';
 import { Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
-import { type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
+import { clip, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
@@ -34,8 +34,8 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer, type PointerState } from './controls';
-import { changedSliders, DIFFICULTY_SHORT, difficultyMods, sanitizeTuning } from './difficulty';
+import { cameraBasis, controlLabel, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer, type PointerState } from './controls';
+import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
 import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
@@ -56,7 +56,9 @@ import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from 
 import { GhostMode, type GhostHost } from '../session/ghosts';
 import { ClientWorld, HostWorld, type SharedShell } from '../session/shared';
 import { LevelStage } from '../wire/levels';
-import { pageLanguage, t } from '../lang';
+import { lang, pageLanguage, t } from '../lang';
+import { mechanicName } from '../lang/levels';
+import { gemName, itemLabel } from '../loot/names';
 
 export type Screen = 'title' | 'town' | 'level' | 'loading';
 
@@ -106,6 +108,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   touchPad!: TouchPad;
   /** The touch controls' rects in art pixels this frame (the HUD lays out around them). */
   private hudControls: Box[] = [];
+  /** The last row the title's logo and tagline take (the title menu starts under it). */
+  private titleBottom = 0;
   private readonly menuInput = new MenuInput();
   private rng = new Rng(1);
   /**
@@ -223,6 +227,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
+    // `{key:action}` in a line names the key, pad button or touch button on the device in use
+    lang().controlLabel = (action) => controlLabel(action, this.controlDevice());
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     const rng = () => this.rng;
@@ -375,7 +381,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   private openTitleMenu(): void {
     this.layer.closeAll();
-    this.layer.open(titleMenu(this), { modal: false, bare: true, sticky: true, silent: true });
+    this.layer.open(titleMenu(this), { modal: false, bare: true, sticky: true, silent: true, below: () => this.titleBottom + 6 });
   }
 
   /** Start a fresh run in a slot. */
@@ -430,7 +436,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const slot = choice.kind === 'continue' ? this.saves.last : (choice.slot ?? null);
     if (slot === null) return this.play({ kind: 'new', slot: 0 });
     const data = this.store.load(slot);
-    if (!data) return this.ctx.input.send({ rl: 'storage', error: this.store.lastError || `slot ${slot + 1}: empty` });
+    if (!data) return this.ctx.input.send({ rl: 'storage', error: this.store.lastError || t('menu.slots.error.empty', { slot: slot + 1 }) });
     this.ctx.input.send({ rl: 'load', slot, data });
   }
 
@@ -546,7 +552,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.zoomGoal = CAMERA.town;
     this.playMusic('town');
     this.banners.clear();
-    this.banners.push('card', 'EMBERFALL', 'the town', { duration: 2.2 }); // a shorter card at home
+    this.banners.push('card', t('place.emberfall'), t('banner.town'), { duration: 2.2 }); // a shorter card at home
     this.autosave('town');
     this.note('flow', `town (${reason})`);
   }
@@ -589,7 +595,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     stats.runs++;
     for (const m of spec.mechanics) this.unlockCodex(m);
     this.banners.clear();
-    this.banners.push('card', levelTitle(d, spec.name), d > 12 ? 'a rift' : `depth ${d}`);
+    this.banners.push('card', levelTitle(spec), d > 12 ? t('banner.level.rift') : t('banner.level.depth', { depth: d }));
     this.combatHeat = 0;
     this.playMusic('level');
     this.note('flow', `level ${d} ${spec.name}`);
@@ -633,7 +639,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const recap = this.recap.recap();
     const penalty = applyDeath(this.save);
     this.goldShown = this.save.hero.gold;
-    const where = this.level ? levelTitle(this.level.spec.depth, this.level.spec.name) : 'Emberfall';
+    const where = this.level ? levelTitle(this.level.spec) : t('place.emberfall');
     this.layer.open(new DeathRecap(recap, penalty, where, () => this.goTown('death')), { modal: true, sticky: true });
   }
 
@@ -645,7 +651,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
     this.ctx.audio.play('rl.clear');
     if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
-    else this.banners.push('clear', 'LEVEL CLEAR', `${formatTime(this.levelTime)}${deeper ? ' · new depth unlocked' : ''}`);
+    else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
     this.hero.emote('victory');
     this.playMusic('level');
     this.autosave('clear');
@@ -776,7 +782,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.layer.open(
       new LootWindow(
         () => this.ports.loot.ground().filter((l) => !l.filtered),
-        () => [`${levelTitle(this.level!.spec.depth, this.level!.spec.name)} cleared in ${formatTime(this.levelTime)}`, `${this.session.kills} kills · +${this.session.xp} xp · +${this.session.gold} gold`],
+        () => [
+          t('loot_window.cleared', { level: levelTitle(this.level!.spec), time: formatTime(this.levelTime) }),
+          t('loot_window.summary', { kills: t('loot_window.kills', { count: this.session.kills }), xp: t('loot_window.xp', { count: this.session.xp }), gold: t('loot_window.gold', { count: this.session.gold }) }),
+        ],
         (l) => this.pickup(l),
         () => this.returnToTown(),
       ),
@@ -803,7 +812,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.hero.setLevel(this.save.hero.level);
       this.hero.restore();
       this.levelUpAge = 0;
-      this.banners.push('levelup', `LEVEL ${this.save.hero.level}`, this.padGlyphs() ? '+1 passive point · start' : '+1 passive point · P');
+      this.banners.push('levelup', t('banner.levelup', { level: this.save.hero.level }), t('banner.levelup.point'));
       this.ctx.audio.play('rl.levelUp');
       this.ctx.particles.burst('rl.levelup', this.hero.actor.position.clone().setY(0.2));
       this.flash(this.hero.actor.position, PALETTE.lime, 8, 6, 0.6);
@@ -823,7 +832,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (!r.levelled.length) return;
     this.hero.setSkills?.(r.sockets);
     for (const g of r.levelled) {
-      this.feedLine(`${g.name.toUpperCase()} REACHED LEVEL ${g.level}`, 'cyan');
+      this.feedLine(t('feed.gem_level', { gem: gemName(g.id, g.link >= 0), level: g.level }), 'cyan');
       this.note('gem', `${g.id} level ${g.level}`);
     }
     this.ctx.audio.play('rl.levelUp', { pitch: 5, volume: 0.6 });
@@ -840,7 +849,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   pickup(l: WorldLoot): boolean {
     const r = this.ports.loot.pickup(l);
     if (!r.ok) {
-      this.feedLine('INVENTORY FULL', 'red');
+      this.feedLine(t('feed.inventory_full'), 'red');
       this.sound('error');
       return false;
     }
@@ -849,7 +858,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.events.emit('gold', { amount: r.gold, at: l.position });
       this.ctx.audio.play('rl.gold', { pitch: this.fx.range(-1, 2) });
       this.ctx.particles.burst('rl.coins', l.position.clone().setY(0.3));
-      this.feedLine(`+${r.gold} GOLD`, 'sand');
+      this.feedGold(r.gold);
     }
     if (r.item) {
       this.session.items++;
@@ -857,20 +866,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.ctx.audio.play('rl.drop');
       // a pop in the item's rarity colour where it was picked up
       this.ctx.particles.burst('sparkle', l.position.clone().setY(0.5), { count: 10, colors: ['white', l.color] });
-      this.feedLine(r.item.name.toUpperCase(), l.color);
+      this.feedLine(itemLabel(r.item), l.color);
     }
     return true;
   }
 
-  private feedLine(text: string, color: PaletteColor): void {
-    const same = this.feed.find((f) => f.t < 1 && f.text.endsWith(' GOLD') && text.endsWith(' GOLD'));
+  private feedLine(text: string, color: PaletteColor, gold?: number): void {
+    this.feed.unshift({ text, color, t: 0, ...(gold !== undefined ? { gold } : {}) });
+    if (this.feed.length > 6) this.feed.pop();
+  }
+
+  /** "+120 gold" in the feed; pickups close together add up into one line. */
+  private feedGold(amount: number): void {
+    const same = this.feed.find((f) => f.t < 1 && f.gold !== undefined);
     if (same) {
-      same.text = `+${Number(same.text.replace(/\D/g, '')) + Number(text.replace(/\D/g, ''))} GOLD`;
+      same.gold! += amount;
+      same.text = t('feed.gold', { count: same.gold! });
       same.t = 0;
       return;
     }
-    this.feed.unshift({ text, color, t: 0 });
-    if (this.feed.length > 6) this.feed.pop();
+    this.feedLine(t('feed.gold', { count: amount }), 'sand', amount);
   }
 
   unlockCodex(id: string): void {
@@ -878,7 +893,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (codex.includes(id)) return;
     codex.push(id);
     const m = this.ports.levels.mechanics().find((x) => x.id === id);
-    if (m && this.screen !== 'title') this.feedLine(`CODEX: ${m.name.toUpperCase()}`, 'cyan');
+    if (m && this.screen !== 'title') this.feedLine(t('feed.codex', { mechanic: mechanicName(m.id) }), 'cyan');
   }
 
   autosave(why: string): boolean {
@@ -888,7 +903,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     stats.playtime = Math.round(this.playtime);
     const ok = this.replaying || this.store.save(this.slot, this.save);
     viewSaved(this.saves, this.slot, this.save);
-    if (!ok) this.ctx.input.send({ rl: 'storage', error: this.store.lastError || 'the save could not be written' });
+    if (!ok) this.ctx.input.send({ rl: 'storage', error: this.store.lastError || t('menu.slots.error.unwritable') });
     this.note('save', `${why} → slot ${this.slot + 1}${ok ? '' : ' (memory only)'}`);
     return ok;
   }
@@ -989,7 +1004,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   depths(): { depth: number; title: string; best?: number; next: boolean }[] {
     return unlockedDepths(this.save).map((depth) => {
       const spec = this.ports.levels.spec(depth, this.save.seed);
-      return { depth, title: levelTitle(depth, spec.name), best: this.save.stats?.best[String(depth)], next: depth === this.save.deepest + 1 };
+      return { depth, title: levelTitle(spec), best: this.save.stats?.best[String(depth)], next: depth === this.save.deepest + 1 };
     });
   }
 
@@ -998,10 +1013,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     else if (what === 'level') this.gainXp(Math.max(1, (this.save.hero.xp > 0 ? 0 : 1) + SCALING.xpToNext(this.save.hero.level) - this.save.hero.xp));
     else if (what === 'gold') {
       this.addGold(500);
-      this.feedLine('+500 GOLD', 'sand');
+      this.feedGold(500);
     } else {
       const item = this.ports.loot.give(this.rng.fork(`give:${this.gifts++}`), this.save.hero.level);
-      if (item) this.feedLine(item.name.toUpperCase(), 'sand');
+      if (item) this.feedLine(itemLabel(item), 'sand');
     }
   }
 
@@ -1087,7 +1102,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         break;
       case 'character':
         this.closeItems(); // the item windows' canvas would cover a HUD panel
-        panel = new CharacterSheet(() => this.hero.actor.stats, () => `LEVEL ${this.save.hero.level} · DEEPEST ${this.save.deepest}`);
+        panel = new CharacterSheet(() => this.hero.actor.stats, () => t('character.subtitle', { level: this.save.hero.level, depth: this.save.deepest }));
         modal = false;
         break;
       case 'codex':
@@ -1261,6 +1276,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return this.settings.glyphs === 'controller' || (this.settings.glyphs === 'auto' && this.ctx.input.gamepadConnected && this.pointer.idle > 2);
   }
 
+  /** The device prompts name controls for (`{key:action}` in a line): the pad, a touch screen's buttons, else the keyboard and mouse. */
+  controlDevice(): 'keyboard' | 'pad' | 'touch' {
+    if (this.padGlyphs()) return 'pad';
+    return this.touchPad?.active && this.pointer?.touch ? 'touch' : 'keyboard';
+  }
+
   update(ctx: GameContext, dt: number): void {
     this.agentInput(ctx);
     for (const c of ctx.input.commands) this.command(c);
@@ -1326,8 +1347,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
-      if (near) return { verb: 'TAKE', name: near.label };
-      if (this.level.exitOpen && p.distanceTo(this.level.exit) < 2.4) return { verb: 'GO', name: 'portal' };
+      if (near) return { verb: t('touch.verb.take'), name: near.label };
+      if (this.level.exitOpen && p.distanceTo(this.level.exit) < 2.4) return { verb: t('touch.verb.go'), name: t('touch.portal') };
     }
     return null;
   }
@@ -1545,11 +1566,16 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       const lh = 7 * scale + 5;
       drawRift(ui, ui.w / 2, ly + Math.round(lh / 2), Math.min(ui.w - 8, 6 * 9 * scale + 60), this.time);
       drawLogo(ui, ui.w / 2, ly, this.time, 'RIFTLIGHT', scale);
-      const tag = 'A HACK-AND-SLASH OF ENDLESS RIFTS';
-      if (ui.measure(tag) <= ui.w - 8) ui.text(ui.w / 2, ly + lh + 8, tag, { align: 'center', color: 'mist', shadow: 'ink' });
-      else {
-        ui.mini(ui.w / 2, ly + lh + 6, 'A HACK-AND-SLASH', 'mist', 'center', 'ink');
-        ui.mini(ui.w / 2, ly + lh + 13, 'OF ENDLESS RIFTS', 'mist', 'center', 'ink');
+      const tag = t('title.tagline');
+      if (ui.measure(tag) <= ui.w - 8) {
+        ui.text(ui.w / 2, ly + lh + 8, tag, { align: 'center', color: 'mist', shadow: 'ink' });
+        this.titleBottom = ly + lh + 8 + 9;
+      } else {
+        // a phone: the mini font, on as many rows as it takes (rows 7 apart; 9 for the normal font's accents)
+        const rows = wrapText(tag, ui.w - 8, miniWidth);
+        const gap = rows.every(miniCovers) ? 7 : 9;
+        rows.forEach((row, i) => ui.mini(ui.w / 2, ly + lh + 6 + i * gap, row, 'mist', 'center', 'ink'));
+        this.titleBottom = ly + lh + 6 + rows.length * gap;
       }
       ui.mini(ui.w - 4, ui.h - 8, 'RIFTLIGHT', 'slate', 'right');
       this.layer.draw(ui, this.time);
@@ -1557,7 +1583,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
     if (this.screen === 'loading') {
       ui.rect(0, 0, ui.w, ui.h, 'ink');
-      ui.text(ui.w / 2, ui.h / 2 - 4, 'OPENING THE RIFT' + '.'.repeat(1 + (Math.floor(this.time * 4) % 3)), { align: 'center', color: 'cyan' });
+      ui.text(ui.w / 2, ui.h / 2 - 4, t('loading.opening'), { align: 'center', color: 'cyan' });
+      // three dots under it, filling in turn (the line itself never changes)
+      const lit = 1 + (Math.floor(this.time * 4) % 3);
+      for (let i = 0; i < 3; i++) ui.rect(ui.w / 2 - 5 + i * 4, ui.h / 2 + 7, 2, 2, i < lit ? 'cyan' : 'navy');
       return;
     }
     // the HUD's zones first: world overlays are placed around them, most important first
@@ -1572,14 +1601,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
-      if (it) this.prompt(`${it.verb} ${it.name.toUpperCase()}`, it.npc?.def.title);
+      if (it) this.prompt(it.prompt, it.title);
     }
     this.lootFocus = null;
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
       const p = this.hero.actor.position;
-      if (near) this.prompt(`PICK UP ${near.label}`);
-      else if (!this.round && this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt('RETURN TO TOWN', 'the portal is open');
+      if (near) this.prompt(t('prompt.pick_up', { item: near.label }));
+      else if (!this.round && this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt(t('prompt.return'), t('prompt.return.sub'));
       // labels: the focused one first, then loud ones, then by distance (near labels win)
       const labels = this.ports.loot
         .ground()
@@ -1607,23 +1636,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.dead && !this.layer.has('death')) {
       const k = Math.min(1, this.deathTimer / 1.2);
       for (let y = 0; y < ui.h; y += 2) if ((y / 2) % 3 < k * 3) ui.rect(0, y, ui.w, 1, 'plum');
-      ui.text(ui.w / 2, ui.h / 2 - 20, 'YOU DIED', { align: 'center', scale: 3, color: 'red', shadow: 'ink' });
+      const died = t('death.title');
+      ui.text(ui.w / 2, ui.h / 2 - 20, died, { align: 'center', scale: ui.measure(died, 3) <= ui.w - 8 ? 3 : 2, color: 'red', shadow: 'ink' });
       const rise = this.round?.respawnIn;
       if (rise !== null && rise !== undefined) ui.text(ui.w / 2, ui.h / 2 + 6, t('round.respawn', { seconds: Math.max(1, Math.ceil(rise)) }), { align: 'center', color: 'white', shadow: 'ink' });
     }
   }
 
-  /** "[F] TALK BRANN" centred above the skill bar. */
+  /** "[F] Talk to Brann" centred above the skill bar. */
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
     const g = hudGeometry(ui.w, ui.h, this.hudControls);
     // above the bar; on a phone above the orbs (and the touch controls), with the label cut to the screen
     const y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
     // on a touch screen the interact button says what F does: the prompt has no key glyph
-    const put = (x: number, yy: number, t: string) => (g.touch ? (ui.text(x, yy, t, { align: 'center', color: 'white' }), ui.measure(t)) : ui.prompt(x, yy, 'F', 'RT', t, 'white', 'center'));
-    let text = label;
-    while (text.length > 6 && put(-1000, -1000, text) + 10 > ui.w) text = text.slice(0, -2);
-    if (text !== label) text = `${text.slice(0, -1)}.`;
+    const put = (x: number, yy: number, s: string) => (g.touch ? (ui.text(x, yy, s, { align: 'center', color: 'white' }), ui.measure(s)) : ui.prompt(x, yy, 'interact', s, 'white', 'center'));
+    const text = clip(label, ui.w - 10 - (g.touch ? 0 : ui.glyphWidth('interact') + 3), (s) => ui.measure(s));
     const w = put(-1000, -1000, text);
     const box = { x: Math.round(ui.w / 2 - w / 2 - 4), y: y - 3, w: w + 8, h: sub ? 21 : 13 };
     this.hudLayout.reserve(box);
@@ -1631,9 +1659,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.outline(box.x, box.y, box.w, box.h, 'slate');
     put(ui.w / 2, y, text);
     if (sub) {
-      const s2 = sub.toUpperCase();
-      if (ui.measure(s2) <= box.w) ui.text(ui.w / 2, y + 9, s2, { align: 'center', color: 'mist' });
-      else ui.mini(ui.w / 2, y + 10, s2, 'mist', 'center');
+      if (ui.measure(sub) <= box.w) ui.text(ui.w / 2, y + 9, sub, { align: 'center', color: 'mist' });
+      else ui.mini(ui.w / 2, y + 10, clip(sub, ui.w - 4, miniWidth), 'mist', 'center');
     }
   }
 
@@ -1644,8 +1671,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const r = g.orbR;
     const orb = (id: string, o: { x: number; y: number }) => ({ id, x: o.x - r - 2, y: o.y - r - 2, w: 2 * r + 5, h: 2 * r + 5 });
     const zones: (Box & { id: string })[] = [orb('life', g.life), orb('mana', g.mana), { id: 'xp', x: g.xp.x, y: g.xp.y, w: g.xp.w, h: 3 }];
-    const lv = `LV ${this.save.hero.level}`;
-    const lw = g.levelAt.mini ? lv.length * 4 - 1 : ui.measure(lv);
+    const lv = g.levelAt.mini ? t('hud.level', { level: this.save.hero.level }) : lang().formatNumber(this.save.hero.level);
+    const lw = g.levelAt.mini ? miniWidth(lv) : ui.measure(lv);
     zones.push({ id: 'level', x: Math.round(g.levelAt.align === 'center' ? g.levelAt.x - lw / 2 : g.levelAt.x - lw), y: g.levelAt.y, w: lw, h: g.levelAt.mini ? 5 : 7 });
     if (!g.touch) zones.push({ id: 'skillbar', x: g.bx - 5, y: g.by - 4, w: g.barW + 4, h: g.slot + 10 });
     zones.push({ id: 'where', x: g.textX, y: 5, w: Math.min(ui.w / 2, 60), h: 5 });
@@ -1671,7 +1698,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         origin: level.origin,
       };
     }
-    const t = this.save.difficulty;
+    const tuning = this.save.difficulty;
     return {
       time: this.time,
       vitals: this.hero.vitals(),
@@ -1687,9 +1714,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       feed: this.feed,
       card: this.banners.current,
       streak: this.streak,
-      difficulty: changedSliders(t).map((k) => `${DIFFICULTY_SHORT[k]} ${t[k].toFixed(2)}X`),
+      difficulty: changedSliders(tuning).map((k) => t(`hud.tuned.${difficultyLineId(k)}`, { value: lang().formatNumber(tuning[k], { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })),
       hurt: this.hurt,
-      levelLabel: level ? levelTitle(level.spec.depth, level.spec.name) : 'EMBERFALL',
+      levelLabel: level ? levelTitle(level.spec) : t('place.emberfall'),
       timer: level ? formatTime(this.levelTime) : null,
       pad: this.padGlyphs(),
       progress: level ? level.progress() : null,
@@ -1727,7 +1754,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /** Studio pages dock to the right without dimming, so the picture stays in view; H hides them. */
   openStudioPage(menu: Menu): void {
-    this.layer.open(menu, { modal: true, dock: 'right', dim: false, solo: true, peek: this.pointer.touch ? 'tap to show' : 'H shows' });
+    this.layer.open(menu, { modal: true, dock: 'right', dim: false, solo: true, peek: this.pointer.touch ? t('look.peek.tap') : t('look.peek.key') });
   }
 
   /** Hide the look studio (the arrows still tweak) or show it again. */
@@ -1738,6 +1765,23 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Pause / settings → Look studio. */
   lookStudio(): void {
     this.openStudioPage(lookStudio(this));
+  }
+
+  /**
+   * The Language menu's languages (MenuHost): the game's and its translations', the one shown;
+   * none when the address names one (the hub's own menu is in charge then). Choosing one saves it
+   * and reloads the page in it (headless: nothing to reload).
+   */
+  get language(): NonNullable<MenuHost['language']> {
+    const l = lang();
+    return {
+      available: l.available,
+      current: l.code,
+      asked: !!pageLanguageSources().asked,
+      choose: (code: string) => {
+        if (this.ctx.engine.renderer.container && !this.replaying) chooseLanguage(code);
+      },
+    };
   }
 
   /** Title → Engine World: the same page with ?game=world (other URL options kept), at `room` (the Asset Gallery) or the Atrium. */

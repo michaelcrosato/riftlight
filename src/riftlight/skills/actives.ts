@@ -190,7 +190,7 @@ export const ACTIVE_SKILLS: readonly SkillGem[] = [
   }),
   // ------------------------------------------------------------------ movement
   g({
-    id: 'dodge-roll', name: 'Dodge Roll', description: 'Roll out of danger; invulnerable for most of it. Always on Space.',
+    id: 'dodge-roll', name: 'Dodge Roll', description: 'Roll out of danger; invulnerable for most of it. Always on {key:dodge}.',
     tags: ['movement', 'dodge'],
     cost: 0, cooldown: 0, castTime: 0.42, anim: 'Roll', moveDuringCast: 0,
     delivery: { kind: 'dash', distance: 4.2, hitWidth: 0 },

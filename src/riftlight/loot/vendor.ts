@@ -95,6 +95,7 @@ export function vendorStock(seed: number, depth: number, visit: number, kind: Ve
       if (!pool.length) continue;
       const top = Math.max(...pool.map((b) => b.level));
       const base = rng.weighted(pool, (b) => (top - b.level > 30 ? 0.35 : 1) * (b.weight ?? 1));
+      // the name in English (tools); the windows show `item.name.unrevealed` (loot/names.ts itemName)
       out.push({ uid: rollUid(rng), base: base.id, rarity: 'normal', level: itemLevel, name: `Unrevealed ${base.name}`, affixes: [], gamble: { price: gamblePrice(depth, slot) } });
     }
     return out;
@@ -113,7 +114,7 @@ export function vendorStock(seed: number, depth: number, visit: number, kind: Ve
 /** Sell an inventory item: removes it and adds its price to the wallet. */
 export function sell(state: LootState, uid: string): Result<{ state: LootState; gold: number; item: Item }> {
   const placed = findItem(state.inventory, uid);
-  if (!placed) return { ok: false, reason: 'not in the inventory' };
+  if (!placed) return { ok: false, reason: { id: 'not_in_inventory' } };
   const gold = sellPrice(placed.item);
   return { ok: true, value: { state: { ...state, inventory: removeItem(state.inventory, uid), gold: state.gold + gold }, gold, item: placed.item } };
 }
@@ -121,11 +122,11 @@ export function sell(state: LootState, uid: string): Result<{ state: LootState; 
 /** Buy `uid` from `stock` into the inventory (the stock loses it). */
 export function buy(state: LootState, stock: readonly Item[], uid: string): Result<{ state: LootState; stock: Item[]; price: number }> {
   const item = stock.find((i) => i.uid === uid);
-  if (!item) return { ok: false, reason: 'not for sale' };
+  if (!item) return { ok: false, reason: { id: 'not_for_sale' } };
   const price = buyPrice(item);
-  if (price > state.gold) return { ok: false, reason: 'not enough gold' };
+  if (price > state.gold) return { ok: false, reason: { id: 'not_enough_gold' } };
   // a gamble is revealed as it is bought
   const a = addItem(state.inventory, item.gamble ? revealGamble(item) : item);
-  if (a.rest) return { ok: false, reason: 'inventory is full' };
+  if (a.rest) return { ok: false, reason: { id: 'inventory_full' } };
   return { ok: true, value: { state: { ...state, inventory: a.grid, gold: state.gold - price }, stock: stock.filter((i) => i.uid !== uid), price } };
 }

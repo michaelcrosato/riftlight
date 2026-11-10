@@ -15,8 +15,9 @@
  * pixels from the screen corner (`TouchButton.at`), so tap targets keep their size whatever
  * the art scale is.
  */
-import type { Engine, TouchButton, TouchButtonState } from '../../engine';
+import { clusters, type Engine, type TouchButton, type TouchButtonState } from '../../engine';
 import { PALETTE, type PaletteColor } from '../../engine/palette';
+import { t } from '../lang';
 import type { Box } from '../ui/layout';
 import type { SkillSlotView } from './ports';
 
@@ -46,7 +47,11 @@ const polar = (angle: number, r: number, size: number) => {
 /** Key codes the buttons press (the shell's `KEYS`: J attack, Space dodge, 1-4 skills, F interact, Esc pause). */
 export const TOUCH_CODES = { attack: 'KeyJ', dodge: 'Space', skills: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], interact: 'KeyF', menu: 'Escape' } as const;
 
-/** Riftlight's on-screen buttons for phones (`EngineOptions.touchButtons`). The attack comes first (the engine colours the first button). */
+/**
+ * Riftlight's on-screen buttons for phones (`EngineOptions.touchButtons`). The attack comes first
+ * (the engine colours the first button). The page is made before the game's language is chosen:
+ * `TouchPad.sync` puts the hints in it (lines `touch.hint.*`) once the game runs.
+ */
 export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
   { label: 'A', code: TOUCH_CODES.attack, hint: 'attack', at: { ...L.attack } },
   ...TOUCH_CODES.skills.map((code, i) => ({ label: String(i + 1), code, hint: 'skill', at: polar(L.angles[i]!, L.ring, L.skill) })),
@@ -62,7 +67,7 @@ export interface TouchFrame {
   /** A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, interact and ≡ only. */
   showcase?: boolean;
   skills: readonly SkillSlotView[];
-  /** The interaction on offer (`Riftlight.interactOffer`: TALK, OPEN, TAKE, GO and its target), or null. */
+  /** The interaction on offer (`Riftlight.interactOffer`: a short verb, Talk, Open, Take, Go, and its target, in the player's language), or null. */
   interact: { verb: string; name: string } | null;
 }
 
@@ -111,21 +116,23 @@ export class TouchPad {
     touch.show(f.playing || !!f.showcase);
     if (!touch.visible) return;
     const find = (slot: SkillSlotView['slot']) => f.skills.find((s) => s.slot === slot);
-    this.slot(TOUCH_CODES.attack, find('attack'), 'A');
-    this.slot(TOUCH_CODES.dodge, find('dodge'), 'B');
+    this.slot(TOUCH_CODES.attack, find('attack'), 'A', t('touch.hint.attack'));
+    this.slot(TOUCH_CODES.dodge, find('dodge'), 'B', t('touch.hint.dodge'));
     TOUCH_CODES.skills.forEach((code, i) => {
       if (f.showcase) touch.set(code, { hidden: true });
-      else this.slot(code, find(i), String(i + 1));
+      else this.slot(code, find(i), String(i + 1), t('touch.hint.skill'));
     });
-    const it = f.showcase ? { verb: 'F', name: 'use' } : f.interact;
-    touch.set(TOUCH_CODES.interact, it ? { hidden: false, label: it.verb.split(' ')[0]!.slice(0, 5), hint: it.name.toLowerCase().slice(0, 9) } : { hidden: true });
+    const it = f.showcase ? { verb: 'F', name: t('touch.use') } : f.interact;
+    // the hint under the verb is the target's name, cut to the button (whole letters)
+    touch.set(TOUCH_CODES.interact, it ? { hidden: false, label: it.verb, hint: clusters(it.name).slice(0, 9).join('') } : { hidden: true });
   }
 
   /** One skill button from its bar slot: icon, shutter, seconds, cost, dimmed when unaffordable. */
-  private slot(code: string, s: SkillSlotView | undefined, label: string): void {
+  private slot(code: string, s: SkillSlotView | undefined, label: string, hint: string): void {
     const st = this.state;
     st.hidden = false;
     st.label = label;
+    st.hint = hint;
     st.icon = s?.id && s.icon && s.colors ? this.icon(code, s.id, s.icon, s.colors) : null;
     const cooling = !!s && s.remaining > 0 && s.cooldown > 0;
     st.cooldown = cooling ? Math.min(1, s.remaining / s.cooldown) : 0;

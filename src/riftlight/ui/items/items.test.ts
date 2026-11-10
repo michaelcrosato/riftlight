@@ -7,9 +7,11 @@ import { RARITY_COLOURS } from '../../loot/filter';
 import { TEXTURE_LIBRARY } from '../../../engine/texture';
 import { ITEM_SIZES } from '../../loot/inventory';
 import { drawIcon } from './icons';
+import { Lang } from '../../../engine';
+import { installLanguage, riftlightLines } from '../../lang';
 import type { Painter } from './paint';
-import { wrap } from './paint';
-import { drawTooltip, measureTooltip, TIP_CHARS, tooltipLines } from './tooltip';
+import { textWidth, wrap } from './paint';
+import { drawTooltip, measureTooltip, TIP_W, tooltipLines } from './tooltip';
 
 const texts = (item: Item, opts = {}) => tooltipLines(item, opts).map((l) => l.text);
 
@@ -24,7 +26,7 @@ describe('tooltips', () => {
     expect(t).toMatch(/physical damage: \d+-\d+/);
     expect(t).toMatch(/Attacks per second/);
     expect(t).toMatch(/critical strike multiplier/); // the sword implicit
-    expect(lines.every((l) => l.text.length <= TIP_CHARS)).toBe(true);
+    expect(lines.every((l) => textWidth(l.text) <= TIP_W)).toBe(true);
   });
 
   it('show affix tiers with Alt, flavour for uniques, comparisons in green and red', () => {
@@ -74,9 +76,31 @@ describe('tooltips', () => {
     expect(maxY).toBeLessThanOrEqual(20 + size.h);
   });
 
-  it('wraps words to the line width', () => {
-    expect(wrap('aaa bbb ccc', 7)).toEqual(['aaa bbb', 'ccc']);
-    expect(wrap('abcdefghij', 4)).toEqual(['abcd', 'efgh', 'ij']);
+  it('wraps words to the line width, measured as drawn (6 px a letter in the pixel font)', () => {
+    expect(wrap('aaa bbb ccc', 7 * 6 - 1)).toEqual(['aaa bbb', 'ccc']);
+    expect(wrap('abcdefghij', 4 * 6 - 1)).toEqual(['abcd', 'efgh', 'ij']);
+    // accents ride on their letter: a French line is as wide as its letters
+    expect(textWidth('Épée lourde')).toBe(11 * 6 - 1);
+  });
+
+  it('every word on a tooltip is a line (en-XA brackets each one)', () => {
+    installLanguage(new Lang(riftlightLines(), {}, { code: 'en-XA' }));
+    try {
+      // a rare sword (its name, class, numbers, mods, tiers), an orb, a gem
+      const items = [rollItem(new Rng(5), { base: 'rusted-blade', itemLevel: 20, rarity: 'rare' }), currencyItem(new Rng(1), 'kindling-shard', 3), rollGem(new Rng(1), 30, false)];
+      for (const item of items) {
+        const lines = tooltipLines(item, { price: { kind: 'buy', gold: 1200 }, showTiers: true }).filter((l) => !l.sep);
+        // a line wrapped across rows is checked whole: join the rows back
+        let text = lines.map((l) => l.text).join(' ');
+        for (let prev = ''; prev !== text; ) {
+          prev = text;
+          text = text.replace(/\[[^[\]]*\]/g, ' ');
+        }
+        expect(text.match(/[A-Za-z]{2,}/g) ?? [], `${item.base}: ${text}`).toEqual([]);
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
   });
 });
 

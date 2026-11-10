@@ -15,6 +15,7 @@
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
 import type { Engine, Input } from '../../engine';
+import { t } from '../lang';
 import type { UiEvent } from '../ui/kit';
 
 export const PAD_BUTTONS: Record<number, string> = {
@@ -72,21 +73,109 @@ export const KEYS = {
 /** The pointer's buttons as the engine's keys (`MOUSE_BUTTONS`, `TOUCH_KEY`): left (or a finger on the world) attacks, right is skill 1. */
 export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as const;
 
-/** Labels for prompts: [key, pad button]. */
-export const GLYPHS = {
-  attack: ['LMB', 'A'],
-  dodge: ['SPACE', 'B'],
-  skill0: ['1', 'X'],
-  skill1: ['2', 'Y'],
-  skill2: ['3', 'LB'],
-  skill3: ['4', 'RB'],
-  interact: ['F', 'RT'],
-  pause: ['ESC', 'START'],
-  tree: ['P', 'START'],
-  inventory: ['I', 'BACK'],
-  confirm: ['ENTER', 'A'],
-  back: ['ESC', 'B'],
-} as const;
+/**
+ * The actions a line can name as a control tag, `{key:dodge}` (docs/game/lang.md), and the key
+ * (an `event.code`, a mouse button or the wheel, or a name for several: `WASD`, `QE`), pad button
+ * (`PAD_BUTTONS`' codes, `PadStick`) and touch button (its label, or a name for a gesture:
+ * `TouchStick`, `TouchDrag`) that do each. Actions without a pad or touch button of their own
+ * are in the pause menu (Start / ≡ opens it); the showcase's own (the arcade, the Hall of Beasts,
+ * photo mode) show the key where a device has nothing for them.
+ */
+export const CONTROLS = {
+  attack: { key: 'MouseLeft', pad: 'PadA', touch: 'A' },
+  dodge: { key: 'Space', pad: 'PadB', touch: 'B' },
+  skill1: { key: 'Digit1', pad: 'PadX', touch: '1' },
+  skill2: { key: 'Digit2', pad: 'PadY', touch: '2' },
+  skill3: { key: 'Digit3', pad: 'PadLB', touch: '3' },
+  skill4: { key: 'Digit4', pad: 'PadRB', touch: '4' },
+  interact: { key: 'KeyF', pad: 'PadRT', touch: 'TouchInteract' },
+  pause: { key: 'Escape', pad: 'PadStart', touch: '≡' },
+  inventory: { key: 'KeyI', pad: 'PadBack', touch: '≡' },
+  skills: { key: 'KeyG', pad: 'PadStart', touch: '≡' },
+  tree: { key: 'KeyP', pad: 'PadStart', touch: '≡' },
+  character: { key: 'KeyC', pad: 'PadStart', touch: '≡' },
+  codex: { key: 'KeyK', pad: 'PadStart', touch: '≡' },
+  photo: { key: 'KeyO', pad: 'PadStart', touch: '≡' },
+  look: { key: 'KeyL', pad: 'PadStart', touch: '≡' },
+  hide: { key: 'KeyH', pad: 'PadStart', touch: '≡' },
+  zoom: { key: 'Wheel', pad: 'PadStart', touch: '≡' },
+  // the showcase (showcase/: ArcadeStage, BestiaryMode, PhotoMode)
+  move: { key: 'WASD', pad: 'PadStick', touch: 'TouchStick' },
+  jump: { key: 'Space', pad: 'PadA', touch: 'B' },
+  pound: { key: 'KeyC', pad: 'PadB', touch: 'TouchStickDown' },
+  confirm: { key: 'Enter', pad: 'PadA', touch: 'TouchTap' },
+  turn: { key: 'MouseOrQE', pad: 'PadStick', touch: 'TouchDrag' },
+  drag: { key: 'MouseDrag', pad: 'PadStick', touch: 'TouchDrag' },
+  orbit: { key: 'DragOrQE', pad: 'PadStick', touch: 'TouchDrag' },
+  rise: { key: 'QE' },
+  switch_view: { key: 'Tab', pad: 'PadY' },
+  next_wing: { key: 'KeyN' },
+  photo_save: { key: 'KeyP', pad: 'PadX' },
+} as const satisfies Record<string, { key: string; pad?: string; touch?: string }>;
+export type ControlAction = keyof typeof CONTROLS;
+
+/** The device prompts name controls for. */
+export type ControlDevice = 'keyboard' | 'pad' | 'touch';
+
+/** Keys whose names are words (lines), and names for several keys; a letter or digit key shows its own character. */
+const KEY_LINES: Readonly<Record<string, string>> = {
+  Space: 'key.space',
+  Escape: 'key.esc',
+  Enter: 'key.enter',
+  NumpadEnter: 'key.enter',
+  Tab: 'key.tab',
+  Backspace: 'key.backspace',
+  ShiftLeft: 'key.shift',
+  ShiftRight: 'key.shift',
+  MouseLeft: 'key.mouse_left',
+  MouseRight: 'key.mouse_right',
+  Wheel: 'key.mouse_wheel',
+  WASD: 'key.wasd',
+  QE: 'key.q_e',
+  MouseOrQE: 'key.mouse_or_q_e',
+  MouseDrag: 'key.mouse_drag',
+  DragOrQE: 'key.drag_or_q_e',
+};
+/** The short forms key caps use where a whole name doesn't fit (the skill bar's 20-pixel slots). */
+const KEY_CAP_LINES: Readonly<Record<string, string>> = { Space: 'key.space.short' };
+/** Pad buttons whose names are words; the face buttons (A B X Y) show their letter. */
+const PAD_LINES: Readonly<Record<string, string>> = { PadLB: 'pad.lb', PadRB: 'pad.rb', PadLT: 'pad.lt', PadRT: 'pad.rt', PadStart: 'pad.start', PadBack: 'pad.back', PadStick: 'pad.stick' };
+/** Touch controls that are words (gestures, the joystick); a button shows its label. */
+const TOUCH_LINES: Readonly<Record<string, string>> = {
+  TouchInteract: 'key.touch.interact',
+  TouchStick: 'key.touch.stick',
+  TouchStickDown: 'key.touch.stick_down',
+  TouchTap: 'key.touch.tap',
+  TouchDrag: 'key.touch.drag',
+};
+
+/** A key's name (`KeyF` → F, `Space` → its line). */
+export function keyName(code: string): string {
+  const line = KEY_LINES[code];
+  if (line) return t(line);
+  return code.replace(/^(Key|Digit|Numpad)/, '');
+}
+
+/** A key's name on a key cap: the short form when there is one. */
+export function keyCap(code: string): string {
+  const line = KEY_CAP_LINES[code];
+  return line ? t(line) : keyName(code);
+}
+
+/** A pad button's name (`PadA` → A, `PadStart` → its line). */
+export function padName(code: string): string {
+  const line = PAD_LINES[code];
+  return line ? t(line) : code.replace(/^Pad/, '');
+}
+
+/** The control that does `action` on `device`, as a prompt names it (`{key:action}` in a line); the key where the device has none for it. */
+export function controlLabel(action: string, device: ControlDevice): string {
+  const c = (CONTROLS as Record<string, { key: string; pad?: string; touch?: string }>)[action];
+  if (!c) return action;
+  if (device === 'pad' && c.pad) return padName(c.pad);
+  if (device === 'touch' && c.touch) return TOUCH_LINES[c.touch] ? t(TOUCH_LINES[c.touch]!) : c.touch;
+  return keyName(c.key);
+}
 
 /** A point in normalised device coordinates over the canvas → art pixels (`renderer.resolution`). */
 export function ndcToArt(engine: Engine, x: number, y: number): { x: number; y: number } {

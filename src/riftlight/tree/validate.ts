@@ -3,7 +3,8 @@
  * Errors make the CLI exit 1; warnings are printed.
  */
 import { REGIONS } from './data/regions';
-import { modBudget, modsBudget, STAT_NAMES } from './data/stats';
+import { hasStatName } from '../lang/mods';
+import { modBudget, modsBudget } from './data/stats';
 import { KEYSTONE_FLAGS } from './data/keystones';
 import { PassiveTree } from './tree';
 import type { TreeNode } from './types';
@@ -154,7 +155,7 @@ export function validateTree(nodes: readonly TreeNode[], options: ValidateOption
         if (n.kind !== 'keystone') warn('rule-outside-keystone', `${n.id} sets ${m.kind} ${m.stat}`, [n.id]);
         continue;
       }
-      if (!STAT_NAMES[m.stat] && !KEYSTONE_FLAGS[m.stat]) warn('unknown-stat', `${n.id} uses unnamed stat ${m.stat}`, [n.id]);
+      if (!hasStatName(m.stat) && !KEYSTONE_FLAGS[m.stat]) warn('unknown-stat', `${n.id} uses unnamed stat ${m.stat}`, [n.id]);
     }
   }
   const stats = treeStats(nodes);

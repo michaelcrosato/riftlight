@@ -20,6 +20,7 @@ import { SUPPORTS } from '../skills/supports';
 import type { ResolvedSkill } from '../skills/types';
 import { GEMS } from './content';
 import { rollUid } from './generate';
+import { gemName, itemName, type Reason } from './names';
 import type { Rng } from '../core/rng';
 import { gemXpToNext, SCALING } from '../core/scaling';
 
@@ -90,11 +91,11 @@ export function gemAt(s: Sockets, ref: SocketRef): Item | null {
 }
 
 /** Why `item` can't go in `ref` (null = it can). Supports that don't fit the skill still socket (they just don't apply). */
-export function socketBlocker(item: Item, ref: SocketRef): string | null {
-  if (ref.slot < 0 || ref.slot >= SKILL_SLOTS || ref.link < -1 || ref.link >= SUPPORT_LINKS) return 'no such socket';
-  if (!isGem(item)) return 'only gems go in skill sockets';
-  if (ref.link < 0 && !isActive(item)) return 'support gems go in the small link sockets';
-  if (ref.link >= 0 && !isSupport(item)) return 'skill gems go in the big socket';
+export function socketBlocker(item: Item, ref: SocketRef): Reason | null {
+  if (ref.slot < 0 || ref.slot >= SKILL_SLOTS || ref.link < -1 || ref.link >= SUPPORT_LINKS) return { id: 'no_socket' };
+  if (!isGem(item)) return { id: 'gems_only' };
+  if (ref.link < 0 && !isActive(item)) return { id: 'support_in_link' };
+  if (ref.link >= 0 && !isSupport(item)) return { id: 'skill_in_socket' };
   return null;
 }
 
@@ -161,6 +162,7 @@ export interface GemLevelUp {
   /** −1 for the skill gem, 0.. for a support link. */
   readonly link: number;
   readonly id: string;
+  /** The gem's name in the player's language (a toast shows it). */
   readonly name: string;
   readonly level: number;
 }
@@ -218,7 +220,7 @@ export function addGemXp(s: Sockets, xp: number, heroLevel: number): { sockets: 
   const one = (item: Item | null, slot: number, link: number): Item | null => {
     if (!item?.gem) return item;
     const r = gemWithXp(item, xp, heroLevel);
-    if (r.levels > 0) levelled.push({ slot, link, id: item.gem.id, name: item.name, level: r.item.gem!.level });
+    if (r.levels > 0) levelled.push({ slot, link, id: item.gem.id, name: itemName(item), level: r.item.gem!.level });
     return r.item;
   };
   const sockets = s.map((x) => ({ ...x, gem: one(x.gem, x.slot, -1), supports: (x.supports ?? []).map((g, k) => one(g, x.slot, k)) }));
@@ -235,6 +237,7 @@ export function resolveSocket(socket: SkillSocket, sheet: StatSheet | null): Res
 /** The skill panel's numbers: a pocket `npm run combat -- dps` (one target, no defences). */
 export interface SkillNumbers {
   readonly id: string;
+  /** The skill's name in the player's language. */
   readonly name: string;
   readonly level: number;
   readonly cost: number;
@@ -283,7 +286,7 @@ export function skillNumbers(socket: SkillSocket, sheet: StatSheet | null): Skil
   const hitsPerSecond = s.damage ? uses * s.repeats : 0;
   return {
     id: s.id,
-    name: s.def.name,
+    name: gemName(s.id, false),
     level: s.level,
     cost: s.cost,
     cooldown: s.cooldown,

@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
 import { RESOLUTIONS, type PlayerSettings } from '../../engine';
-import { engineMenu, settingsMenu } from './menus';
+import { languageName } from '../../engine';
+import { engineMenu, languageMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
@@ -25,12 +26,38 @@ describe('links between Riftlight and Engine World', () => {
     expect(titleMenu(host()).items().map((w) => w.id)).not.toContain('gallery');
   });
 
+  it('with the language in the address (the AI Hub), no Engine World or Asset Gallery: they are not translated', () => {
+    const language = { available: ['en'], current: 'en', asked: true, choose: () => {} };
+    const ids = titleMenu(host({ engineWorld: () => {}, language })).items().map((w) => w.id);
+    expect(ids).not.toContain('world');
+    expect(ids).not.toContain('gallery');
+    expect(ids).not.toContain('language');
+  });
+
   it('Engine World\'s pause menu leaves for Riftlight', () => {
     let left = 0;
     const none = () => {};
     const menu = pauseMenu(false, { resume: none, guide: none, tweak: none, rooms: none, glossary: none, atrium: none, reset: none, riftlight: () => left++ });
     expect(menu.activate('riftlight')).toBe(true);
     expect(left).toBe(1);
+  });
+});
+
+describe('the Language menu', () => {
+  it('shows on the title only when the address names no language; lists each language in itself; choosing one chooses it', () => {
+    const chosen: string[] = [];
+    const language = { available: ['en', 'es-419', 'zh-Hant'], current: 'en', asked: false, choose: (c: string) => chosen.push(c) };
+    let opened: { items(): readonly { id: string; label?: string }[]; activate(id: string): boolean } | null = null;
+    const title = titleMenu(host({ language, openMenu: (m: never) => (opened = m) }));
+    expect(title.items().map((w) => w.id)).toContain('language');
+    expect(titleMenu(host()).items().map((w) => w.id)).not.toContain('language'); // a host without languages
+    const english = { ...language, available: ['en'] }; // a development build: no translations, nothing to choose
+    expect(titleMenu(host({ language: english })).items().map((w) => w.id)).not.toContain('language');
+    title.activate('language');
+    const menu = opened as unknown as ReturnType<typeof languageMenu>;
+    expect(menu.items().map((w) => (w as { label: string }).label)).toEqual(['English', languageName('es-419'), '繁體中文']);
+    menu.activate('lang.es-419');
+    expect(chosen).toEqual(['es-419']);
   });
 });
 

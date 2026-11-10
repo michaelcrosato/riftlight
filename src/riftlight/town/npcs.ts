@@ -10,11 +10,17 @@ import { setLookLayer } from '../../engine/render/lookLayer';
 import { HERO_RIG } from '../../game/hero/rig';
 import type { Rng } from '../core/rng';
 import { ClipPlayer, type ClipPlayerState } from '../game/clipPlayer';
+import { lang, lineKey, t } from '../lang';
 import { COIN_FRAMES, HAMMER_STRIKE_FRAME, NPC_CLIPS } from './npcClips';
 import { TOWNSFOLK } from './npcModel';
 
 export type NpcAction = 'craft' | 'vendor' | 'tree' | 'rift' | null;
 
+/**
+ * A townsperson as data. Their words are English here and lines in the game's line list
+ * (lang/town.ts: `town.npc.<id>.name`, `.title`, `.bark.<n>`, `.talk.<n>`); the game shows them
+ * through `npcName`, `npcTitle` and the line ids `Npc.say` and `Npc.talk` use.
+ */
 export interface NpcDef {
   readonly id: string;
   readonly name: string;
@@ -28,7 +34,7 @@ export interface NpcDef {
   readonly greet?: string;
   /** Said when the hero comes near. */
   readonly barks: readonly string[];
-  /** Said when talked to (the panel header). */
+  /** Said when talked to (a bubble, and the panel header with their name: `talkText`). Just the speech. */
   readonly lines: readonly string[];
   /** Turns the whole body toward the hero (not just the head). */
   readonly turns?: boolean;
@@ -46,7 +52,7 @@ export const NPCS: Record<string, NpcDef> = {
     idle: 'Hammer',
     talk: 'Nod',
     barks: ['Steel sings today!', 'Mind the sparks.', 'Bring me something worth reforging.', 'Rifts dull a blade fast.'],
-    lines: ['Brann: "Lay it on the anvil. I can reforge what the rift gave you."', 'Brann: "Gold first, sparks after."'],
+    lines: ['Lay it on the anvil. I can reforge what the rift gave you.', 'Gold first, sparks after.'],
     head: 2.05,
   },
   ilsa: {
@@ -58,7 +64,7 @@ export const NPCS: Record<string, NpcDef> = {
     idle: 'Shuffle',
     greet: 'Greet',
     barks: ['Fresh from the rifts!', 'Over here, traveller!', 'Coin for your trinkets?', 'Best prices this side of the obelisk.'],
-    lines: ['Ilsa: "Buy, sell, haggle. Mostly buy."', 'Ilsa: "Everything here came back from a rift. Mostly in one piece."'],
+    lines: ['Buy, sell, haggle. Mostly buy.', 'Everything here came back from a rift. Mostly in one piece.'],
     head: 1.85,
   },
   oru: {
@@ -70,7 +76,7 @@ export const NPCS: Record<string, NpcDef> = {
     idle: 'Meditate',
     talk: 'Bless',
     barks: ['The stars are restless...', 'Your path branches.', 'Breathe. Then choose.'],
-    lines: ['Oru: "Your passives are threads. I can unpick a few, for a price."'],
+    lines: ['Your passives are threads. I can unpick a few, for a price.'],
     head: 2.25,
   },
   vex: {
@@ -82,7 +88,7 @@ export const NPCS: Record<string, NpcDef> = {
     idle: 'StaffIdle',
     talk: 'Gesture',
     barks: ['The rift hums for you.', 'Deeper is darker.', 'Ready when you are.'],
-    lines: ['Vex: "The obelisk can open any depth you have earned, and one more."'],
+    lines: ['The obelisk can open any depth you have earned, and one more.'],
     turns: true,
     head: 2.1,
   },
@@ -90,8 +96,29 @@ export const NPCS: Record<string, NpcDef> = {
   villager2: { id: 'villager2', name: 'Pell', title: 'Villager', action: null, scale: 0.86, idle: 'Idle', barks: ['Did you hear that?', 'The obelisk glows brighter lately.', 'Watch your step out there.'], lines: [], head: 1.7 },
 };
 
+/** A townsperson's name in the player's language. */
+export const npcName = (def: NpcDef): string => t(lineKey('town.npc', def.id, 'name'));
+/** What they do in town (Blacksmith...), in the player's language. */
+export const npcTitle = (def: NpcDef): string => t(lineKey('town.npc', def.id, 'title'));
+
+const SAID = /^town\.npc\.([a-z0-9_]+)\.(?:talk|bark)\.\d+$/;
+
+/**
+ * The header a talk shows over the panel the townsperson opens: their name and what they said
+ * (`town.talk.said`), from the line id `Npc.talk` returned. Anything else shows as it is (an old
+ * snapshot's English).
+ */
+export function talkText(said: string): string {
+  const who = SAID.exec(said)?.[1];
+  const def = who ? Object.values(NPCS).find((d) => lineKey('town.npc', d.id) === `town.npc.${who}`) : undefined;
+  if (!def || !lang().has(said)) return said;
+  return t('town.talk.said', { name: npcName(def), speech: t(said) });
+}
+
 export interface Bubble {
-  text: string;
+  /** The line it says (an id in the line list); `text` instead in an old snapshot (its English, shown as it is). */
+  line?: string;
+  text?: string;
   /** World point above the head. */
   at: Vector3;
   /** Seconds shown so far / total. */
@@ -168,17 +195,19 @@ export class Npc {
     this.sync();
   }
 
-  /** Say something (a pixel bubble above the head). */
-  say(text: string, seconds = 3.2): void {
-    this.bubble = { text, at: this.position.clone().setY(this.def.head * this.def.scale), t: 0, life: seconds };
+  /** Say a line (its id: a pixel bubble above the head, shown in the player's language). */
+  say(line: string, seconds = 3.2): void {
+    this.bubble = { line, at: this.position.clone().setY(this.def.head * this.def.scale), t: 0, life: seconds };
   }
 
-  /** Talked to: react, face the hero, say a line. */
+  /** Talked to: react, face the hero, say a line. Returns its id (`talkText` makes the panel header of it). */
   talk(): string {
     this.talking = true;
     if (this.def.talk) this.player.play(this.def.talk, { once: true, restart: true, fade: 0.2 });
-    const line = this.rng.pick(this.def.lines.length ? this.def.lines : this.def.barks);
-    this.say(line.replace(/^[^:]+: /, '').replace(/^"|"$/g, ''), 3.5);
+    const talks = this.def.lines.length > 0;
+    const i = this.rng.int(0, (talks ? this.def.lines : this.def.barks).length - 1);
+    const line = lineKey('town.npc', this.def.id, talks ? 'talk' : 'bark', i + 1);
+    this.say(line, 3.5);
     return line;
   }
 
@@ -216,7 +245,7 @@ export class Npc {
     const close = d < 4.2;
     this.barkCd -= dt;
     if (close && !this.near && this.barkCd <= 0 && !this.talking) {
-      this.say(this.rng.pick(this.def.barks));
+      this.say(lineKey('town.npc', this.def.id, 'bark', this.rng.int(0, this.def.barks.length - 1) + 1));
       this.barkCd = 14;
       if (this.def.greet) this.player.play(this.def.greet, { once: true, restart: true, fade: 0.15 });
     }
@@ -297,6 +326,11 @@ export class Npc {
   dispose(): void {
     this.player.dispose();
   }
+}
+
+/** What a bubble shows, in the player's language. */
+export function bubbleText(b: Pick<Bubble, 'line' | 'text'>): string {
+  return b.line ? t(b.line) : (b.text ?? '');
 }
 
 function angle(a: number): number {

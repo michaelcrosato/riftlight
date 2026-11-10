@@ -1,20 +1,24 @@
 /**
- * The tiny drawing surface the item UI paints through: filled rects and 5×7 pixel text in
- * art pixels. The game implements it on a 2D canvas (`canvasPainter`); the loot CLI
- * implements it on the engine's software raster to render tooltip PNGs headlessly.
+ * The tiny drawing surface the item UI paints through: filled rects and text in art pixels. Text
+ * is the game's font (capitals; accented capitals composed) or, for letters it lacks (Cyrillic,
+ * Chinese, Arabic...), the device's font at the screen's resolution, as the engine's Hud does
+ * (docs/engine/lang.md *Drawing text*). The game implements it on a 2D canvas (`canvasPainter`);
+ * the loot CLI implements it on the engine's software raster to render tooltip PNGs headlessly.
  */
-import { drawText, GLYPH_W } from '../../../engine/animation/font';
+import { drawText, noteText, pixelCovers } from '../../../engine/animation/font';
+import { drawDeviceText, textWidthPx } from '../../../engine/hud/deviceText';
+import { wrapText } from '../../../engine/hud/wrap';
 import { PALETTE } from '../../../engine/palette';
 
 export interface Painter {
   rect(x: number, y: number, w: number, h: number, color: number): void;
-  /** Uppercase 5×7 text; returns its width in pixels. */
+  /** Text in the game's font (its capitals) with its top-left at (x, y); returns its width in art pixels. */
   text(x: number, y: number, text: string, color: number): number;
 }
 
-export const CHAR_W = GLYPH_W;
 export const LINE_H = 9;
-export const textWidth = (s: string): number => Math.max(0, s.length * CHAR_W - 1);
+/** Width of `text` in art pixels as it is drawn (the pixel font, or the device's font). */
+export const textWidth = (s: string): number => textWidthPx(s);
 
 /** UI colours (PALETTE only). */
 export const UI = {
@@ -38,18 +42,32 @@ export const UI = {
   invalid: PALETTE.red,
 } as const;
 
-export function canvasPainter(g: CanvasRenderingContext2D): Painter {
+/**
+ * A Painter on a 2D canvas painted `k` device pixels per art pixel (the caller sets that transform):
+ * rects and pixel glyphs fill k×k blocks, device text is drawn at the screen's resolution
+ * (`drawDeviceText`). `device` turns true once a text needed the device's font (the surface then
+ * needs `k` above 1: `surfaceScale`).
+ */
+export function canvasPainter(g: CanvasRenderingContext2D, k = 1): Painter & { device: boolean } {
   const css = (c: number) => `#${c.toString(16).padStart(6, '0')}`;
-  return {
-    rect(x, y, w, h, color) {
+  const p = {
+    device: false,
+    rect(x: number, y: number, w: number, h: number, color: number) {
       g.fillStyle = css(color);
       g.fillRect(Math.round(x), Math.round(y), Math.round(w), Math.round(h));
     },
-    text(x, y, text, color) {
-      g.fillStyle = css(color);
-      return drawText(text, Math.round(x), Math.round(y), (px, py) => g.fillRect(px, py, 1, 1));
+    text(x: number, y: number, text: string, color: number) {
+      if (!pixelCovers(text)) {
+        p.device = true;
+        drawDeviceText(g, text, Math.round(x), Math.round(y), k, 1, css(color));
+      } else {
+        g.fillStyle = css(color);
+        drawText(text, Math.round(x), Math.round(y), (px, py) => g.fillRect(px, py, 1, 1));
+      }
+      return textWidthPx(text);
     },
   };
+  return p;
 }
 
 /** A framed panel: dark fill, 1-px edge with a lighter top-left (bevelled pixel look). */
@@ -75,23 +93,13 @@ export function shadowText(p: Painter, x: number, y: number, s: string, color: n
   p.text(x, y, s, color);
 }
 
-/** Word-wrap to at most `chars` characters per line. */
-export function wrap(text: string, chars: number): string[] {
-  const out: string[] = [];
-  let line = '';
-  for (const word of text.split(/\s+/)) {
-    if (!word) continue;
-    if (!line) line = word;
-    else if (line.length + 1 + word.length <= chars) line += ` ${word}`;
-    else {
-      out.push(line);
-      line = word;
-    }
-    while (line.length > chars) {
-      out.push(line.slice(0, chars));
-      line = line.slice(chars);
-    }
-  }
-  if (line) out.push(line);
-  return out.length ? out : [''];
+/**
+ * `text` in lines no wider than `width` art pixels, measured as drawn, broken where the language
+ * breaks words (`wrapText`). A text that wraps is noted whole, so tools that look for words that
+ * aren't lines see the line it came from (docs/engine/lang.md).
+ */
+export function wrap(text: string, width: number): string[] {
+  const lines = wrapText(text, Math.max(1, width), textWidthPx);
+  if (lines.length > 1) noteText(text);
+  return lines;
 }

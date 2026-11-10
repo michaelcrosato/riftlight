@@ -16,7 +16,9 @@ import type { StatQuery } from './stats';
  *   const r = target.curses.apply({ id: 'vulnerability', ... }, target.time);   // 'applied' | 'refreshed' | 'immune'
  */
 export interface CurseInstance {
+  /** The curse skill's id: its name shows through lang/skills.ts `curseName`. */
   readonly id: string;
+  /** English, as cast (saves keep it; screens show `curseName`). */
   readonly name: string;
   readonly mods: readonly Mod[];
   /** Game time (the target's) it ends. */

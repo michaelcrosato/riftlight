@@ -100,6 +100,37 @@ export const CANONICAL_STATS: Readonly<Record<string, string>> = {
   'shatter.chance': 'flat chance for an enemy you kill to shatter (Frostglass)',
 };
 
+/**
+ * Stats whose flat values are fractions (0.12), shown as percentages ("+12% fire resistance") and
+ * rolled in percent steps. Canonical names; every `<x>.chance`, `avoid.<x>`, `pen.<x>`,
+ * `convert.<x>` and `res.<x>` is one too (`isPercentStat`).
+ */
+export const PERCENT_STATS: ReadonlySet<string> = new Set([
+  'block.chance',
+  'spell.block',
+  'dodge.chance',
+  'crit.chance',
+  'crit.multiplier',
+  'weapon.crit',
+  'leech.life',
+  'leech.mana',
+  'life.regen.pct',
+  'thorns.reflect',
+  'charge.onKill',
+  'charge.onHit',
+  'charge.onCrit',
+  'charge.onStun',
+  'added.fire.ratio',
+  'damage.toMana',
+  'damage.morePerMechanic',
+]);
+
+/** Is a flat value of `stat` (any of its names) a fraction, shown as a percentage? */
+export function isPercentStat(stat: string): boolean {
+  const s = canonicalStat(stat);
+  return PERCENT_STATS.has(s) || /^(res|pen|avoid|convert)\.|\.chance$/.test(s);
+}
+
 /** Canonical name of one stat (aliases resolved; `chance.<x>` → `<x>.chance`). */
 export function canonicalStat(stat: string): string {
   const a = STAT_ALIASES[stat];

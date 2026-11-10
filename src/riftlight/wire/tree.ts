@@ -19,6 +19,7 @@
  * (`ui/tree/actions.ts`) to its state, so a replay in Node does the same to the tree too.
  */
 import type { Mod } from '../core/mods';
+import { t } from '../lang';
 import { defaultTree, type PassiveTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
 import type { UiEvent } from '../ui/kit';
@@ -65,7 +66,7 @@ export class TreePanel implements Panel {
       audio: ctx.audio,
       refundCost: this.respec ? (n) => respecCost(n, host.level()) : undefined,
       spendGold: this.respec ? (g) => host.addGold(-g) : undefined,
-      refundBlocked: this.respec ? undefined : () => 'ONLY ORU THE MYSTIC CAN REFUND',
+      refundBlocked: this.respec ? undefined : () => t('tree.deny.refund_oru'),
       onChange: (_change, s) => {
         host.save().hero.allocated = s.serialize();
         host.changed('tree');

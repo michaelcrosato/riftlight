@@ -19,12 +19,16 @@
  * replay of the game does the same to the tree.
  */
 import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
+import { drawDeviceText, surfaceScale } from '../../../engine/hud/deviceText';
+import { wrapText } from '../../../engine/hud/wrap';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
+import { lang, t } from '../../lang/index';
 import { REGIONS } from '../../tree/data/regions';
-import { defaultTree, nodeLines, PassiveTree, searchTree, summarizeMods, TreeState } from '../../tree/tree';
+import { kindName, nodeFlavour, nodeLines, nodeName, regionName } from '../../tree/text';
+import { defaultTree, PassiveTree, searchTree, summarizeMods, TreeState } from '../../tree/tree';
 import type { TreeNode } from '../../tree/types';
 import { clampCam, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS, type TreeCam } from './camera';
-import { pack, PixelBuffer, textWidth, wrap } from './pixels';
+import { css, pack, PixelBuffer, textWidth } from './pixels';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeOutcome, type TreeRules } from './actions';
 
 export type { TreeAction, TreeAudio } from './actions';
@@ -75,6 +79,8 @@ export class TreeView {
   private readonly g: CanvasRenderingContext2D | null;
   private buf: PixelBuffer;
   private image: ImageData | null = null;
+  /** The bitmap at art size, scaled onto the canvas when the frame holds device-font text. */
+  private artCanvas: HTMLCanvasElement | null = null;
   private framing: Framing | null = null;
   private readonly index: PointIndex<TreeNode>;
   private readonly links: [TreeNode, TreeNode][] = [];
@@ -130,7 +136,7 @@ export class TreeView {
     search.type = 'text';
     search.autocomplete = 'off';
     search.spellcheck = false;
-    search.setAttribute('aria-label', 'Search the passive tree');
+    search.setAttribute('aria-label', t('tree.view.search_label'));
     search.dataset.riftTree = 'search';
     Object.assign(search.style, { position: 'absolute', left: '0', top: '0', width: '1px', height: '1px', opacity: '0', border: '0', padding: '0' });
     root.append(canvas, search);
@@ -629,11 +635,11 @@ export class TreeView {
     else if (o.kind === 'mastery') this.pulse(o.ids, C.cyan);
     else if (o.kind === 'allocate') {
       this.pulse(o.ids, C.sand);
-      this.say(`+${o.ids.length} ${o.node.name.toUpperCase()}`, C.sand);
+      this.say(t('tree.msg.taken', { count: o.ids.length, name: nodeName(o.node) }), C.sand);
       this.preview = null;
     } else if (o.kind === 'refund') {
       this.pulse([o.id], C.red);
-      this.say(o.cost > 0 ? `REFUNDED FOR ${o.cost} GOLD` : 'REFUNDED', C.orange);
+      this.say(o.cost > 0 ? t('tree.msg.refunded_gold', { cost: o.cost }) : t('tree.msg.refunded'), C.orange);
       this.preview = null;
     }
   }
@@ -738,7 +744,7 @@ export class TreeView {
       for (const r of REGIONS.all()) {
         const a = (r.angle * Math.PI) / 180;
         const [sx, sy] = S(Math.cos(a) * 1500, Math.sin(a) * 1500);
-        const name = r.name.toUpperCase();
+        const name = regionName(r.id);
         b.text(name, sx - textWidth(name, 2) / 2, sy - 7, pack(r.dim), 2);
       }
     }
@@ -815,7 +821,7 @@ export class TreeView {
       for (const n of visible) {
         if (n.kind !== 'keystone' && !(tier === 2 && (n.kind === 'notable' || n.kind === 'mastery'))) continue;
         const [sx, sy] = S(n.x, n.y);
-        const name = n.name.toUpperCase();
+        const name = nodeName(n);
         const tw = textWidth(name);
         b.text(name, sx - tw / 2, sy + radius(n.kind, tier) + (n.kind === 'keystone' && tier >= 1 ? 5 : 3), n.kind === 'keystone' ? C.sand : C.mist, 1, C.ink);
       }
@@ -842,13 +848,13 @@ export class TreeView {
     if (this.showStats) this.drawStats();
     if (this.hover) this.drawTooltip(this.tree.node(this.hover), path);
     if (this.message) {
-      const t = this.message.text;
-      const tw = textWidth(t);
+      const rows = wrapText(this.message.text, W - 16);
+      const tw = Math.max(...rows.map((r) => textWidth(r)));
       const mx = Math.round((W - tw) / 2);
-      const my = H - BOTTOM - 16;
-      b.rect(mx - 4, my - 3, tw + 8, 13, C.ink);
-      b.frame(mx - 4, my - 3, tw + 8, 13, this.message.color);
-      b.text(t, mx, my, this.message.color);
+      const my = H - BOTTOM - 7 - rows.length * 9;
+      b.panel(mx - 4, my - 3, tw + 8, rows.length * 9 + 4, C.ink);
+      b.frame(mx - 4, my - 3, tw + 8, rows.length * 9 + 4, this.message.color);
+      rows.forEach((r, i) => b.text(r, mx, my + i * 9, this.message!.color));
     }
     this.blit();
   }
@@ -857,43 +863,73 @@ export class TreeView {
     const b = this.buf;
     const W = b.width;
     const H = b.height;
-    b.rect(0, 0, W, TOP, C.night);
+    b.panel(0, 0, W, TOP, C.night);
     b.rect(0, TOP, W, 1, C.ink);
     const narrow = this.narrowBar;
-    if (!narrow) b.text('PASSIVE TREE', 4, 3, C.sand);
+    const box = this.searchBox();
     const s = this.stateRef;
-    const pts = Number.isFinite(s.points) ? `${narrow ? 'PTS' : 'POINTS'} ${s.unspent}/${s.points}` : `SPENT ${owned.size - this.tree.roots.size}`;
-    // a phone shows the gold only where it pays for something (the respec)
-    const gold = this.options.gold && (!narrow || this.options.spendGold) ? (narrow ? ` ${this.options.gold()}G` : `  GOLD ${this.options.gold()}`) : '';
-    const right = `${pts}${gold}`;
     const close = this.closeBox();
-    b.text(right, (close ? close.x - 3 : W - 4) - textWidth(right), 3, s.unspent > 0 ? C.lime : C.mist);
+    const right = close ? close.x - 3 : W - 4;
+    // the right of the bar: points (and gold where it pays for something), short forms when the long ones don't fit
+    const count = this.query ? textWidth(lang().formatNumber(this.matchList.length)) + 8 : 0;
+    const room = right - (box.x + box.w + 4 + count);
+    const parts = (short: boolean): string[] => {
+      const pts = Number.isFinite(s.points) ? t(short ? 'tree.view.points_short' : 'tree.view.points', { left: s.unspent, total: s.points }) : t('tree.view.spent', { count: owned.size - this.tree.roots.size });
+      // a phone shows the gold only where it pays for something (the respec)
+      const gold = this.options.gold && (!narrow || this.options.spendGold) ? t(short ? 'tree.view.gold_short' : 'tree.view.gold', { gold: this.options.gold() }) : null;
+      return gold ? [pts, gold] : [pts];
+    };
+    const width = (p: string[]) => p.reduce((w, x) => w + textWidth(x), 0) + (p.length - 1) * 8;
+    let shown = parts(narrow);
+    if (!narrow && width(shown) > room) shown = parts(true);
+    let x = right - width(shown);
+    for (const p of shown) x += b.text(p, x, 3, s.unspent > 0 ? C.lime : C.mist) + 8;
+    if (!narrow) {
+      const title = t('tree.view.title');
+      if (textWidth(title) <= box.x - 8) b.text(title, 4, 3, C.sand);
+    }
     if (close) {
       b.rect(close.x, 0, close.w, TOP, C.plum);
-      b.text('X', close.x + 5, 3, C.white);
+      b.text('×', close.x + 5, 3, C.white);
     }
-    const box = this.searchBox();
     const focused = document.activeElement === this.search;
     b.rect(box.x, box.y, box.w, box.h, C.ink);
     b.frame(box.x, box.y, box.w, box.h, focused ? C.white : C.slate);
-    const maxChars = Math.floor((box.w - 6) / 6);
-    let label = this.query ? this.query.toUpperCase() : focused ? '' : narrow ? '/FIND' : '/ SEARCH';
-    if (label.length > maxChars) label = label.slice(label.length - maxChars);
-    b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
-    if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + label.length * 6, box.y + 2, 1, 7, C.white);
-    if (this.query) {
-      const t = `${this.matchList.length}`;
-      b.text(t, box.x + box.w + 4, 3, this.matchList.length ? C.lime : C.red);
+    const fits = box.w - 6;
+    let label = this.query;
+    if (!label && !focused) {
+      label = t(narrow ? 'tree.view.search_short' : 'tree.view.search');
+      if (textWidth(label) > fits) label = t('tree.view.search_short');
+      while (label && textWidth(label) > fits) label = [...label].slice(0, -1).join('');
     }
-    // Bottom hints.
-    b.rect(0, H - BOTTOM, W, BOTTOM, C.night);
+    // typed text keeps its end in view
+    while (label && textWidth(label) > fits) label = [...label].slice(1).join('');
+    b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
+    if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + (label ? textWidth(label) + 1 : 0), box.y + 2, 1, 7, C.white);
+    if (this.query) b.text(lang().formatNumber(this.matchList.length), box.x + box.w + 4, 3, this.matchList.length ? C.lime : C.red);
+    // Bottom hints: as many as fit, the most useful first (shown in their usual order).
+    b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
-    const hint = narrow
+    const hints = narrow
       ? this.padCursor
-        ? 'A TAKE  B CLOSE'
-        : 'TAP TWICE: TAKE'
-      : this.padCursor ? `STICK MOVE  A TAKE  ${refunds ? 'X REFUND  ' : ''}Y STATS  LT/RT ZOOM  B CLOSE` : `DRAG PAN  WHEEL ZOOM  CLICK TAKE  ${refunds ? 'R-CLICK REFUND  ' : ''}TAB STATS  / FIND`;
-    b.text(hint, Math.max(2, Math.round((W - textWidth(hint)) / 2)), H - BOTTOM + 2, C.slate);
+        ? ['tree.pad.take', 'tree.pad.close']
+        : ['tree.hint.tap']
+      : this.padCursor
+        ? ['tree.pad.move', 'tree.pad.take', ...(refunds ? ['tree.pad.refund'] : []), 'tree.pad.stats', 'tree.pad.zoom', 'tree.pad.close']
+        : ['tree.hint.pan', 'tree.hint.zoom', 'tree.hint.take', ...(refunds ? ['tree.hint.refund'] : []), 'tree.hint.stats', 'tree.hint.find'];
+    const priority = ['tree.hint.take', 'tree.pad.take', 'tree.pad.close', 'tree.hint.tap', 'tree.hint.refund', 'tree.pad.refund', 'tree.hint.stats', 'tree.pad.stats', 'tree.hint.find', 'tree.pad.move', 'tree.hint.pan', 'tree.hint.zoom', 'tree.pad.zoom'];
+    const gap = 12;
+    const keep = new Set<string>();
+    let used = -gap;
+    for (const id of [...hints].sort((a, c) => priority.indexOf(a) - priority.indexOf(c))) {
+      const w = textWidth(t(id)) + gap;
+      if (used + w <= W - 4) {
+        keep.add(id);
+        used += w;
+      }
+    }
+    let hx = Math.max(2, Math.round((W - used) / 2));
+    for (const id of hints) if (keep.has(id)) hx += b.text(t(id), hx, H - BOTTOM + 2, C.slate) + gap;
   }
 
   private drawStats(): void {
@@ -904,14 +940,15 @@ export class TreeView {
     const x = W - w;
     const y = TOP + 1;
     const h = H - TOP - BOTTOM - 1;
-    b.rect(x, y, w, h, C.ink);
+    b.panel(x, y, w, h, C.ink);
     b.rect(x, y, 1, h, C.slate);
-    const lines: Line[] = [{ text: `ALLOCATED ${this.stateRef.spent}`, color: C.sand }];
+    const lines: Line[] = [{ text: t('tree.summary.allocated', { count: this.stateRef.spent }), color: C.sand }];
     for (const g of summarizeMods(this.stateRef.mods())) {
-      lines.push({ text: '', color: C.ink }, { text: g.title.toUpperCase(), color: C.sand });
-      for (const l of g.lines) for (const part of wrap(l.toUpperCase(), 28)) lines.push({ text: part, color: C.white });
+      lines.push({ text: '', color: C.ink });
+      for (const part of wrapText(g.title, w - 10)) lines.push({ text: part, color: C.sand });
+      for (const l of g.lines) for (const part of wrapText(l, w - 10)) lines.push({ text: part, color: C.white });
     }
-    if (lines.length === 1) lines.push({ text: '', color: C.ink }, { text: 'NOTHING ALLOCATED YET', color: C.slate });
+    if (lines.length === 1) lines.push({ text: '', color: C.ink }, { text: t('tree.summary.nothing'), color: C.slate });
     const rows = Math.floor((h - 6) / 9);
     this.statsScroll = Math.min(this.statsScroll, Math.max(0, lines.length - rows));
     lines.slice(this.statsScroll, this.statsScroll + rows).forEach((l, i) => b.text(l.text, x + 5, y + 4 + i * 9, l.color));
@@ -924,29 +961,29 @@ export class TreeView {
     const s = this.stateRef;
     const region = REGIONS.has(n.region) ? REGIONS.get(n.region) : null;
     const lines: Line[] = [];
-    const chars = 34;
-    const titleColor = n.kind === 'keystone' ? C.sand : n.kind === 'mastery' ? C.cyan : n.kind === 'small' ? C.mist : C.white;
-    for (const t of wrap(n.name.toUpperCase(), chars)) lines.push({ text: t, color: titleColor });
-    lines.push({ text: `${n.kind.toUpperCase()}  ${region ? region.name.toUpperCase() : 'HEART'}`, color: region ? pack(region.color) : C.white });
-    for (const l of nodeLines(n, s.masteries.get(n.id))) for (const t of wrap(l.toUpperCase(), chars)) lines.push({ text: t, color: C.white });
-    if (n.flavour && n.kind !== 'small') for (const t of wrap(n.flavour.toUpperCase(), chars)) lines.push({ text: t, color: C.slate });
-    let status: Line;
-    if (this.tree.roots.has(n.id)) status = { text: 'A GATE: ALWAYS YOURS', color: C.lime };
+    const wide = Math.min(204, W - 14);
+    const add = (text: string, color: number) => {
+      for (const part of wrapText(text, wide)) lines.push({ text: part, color });
+    };
+    add(nodeName(n), n.kind === 'keystone' ? C.sand : n.kind === 'mastery' ? C.cyan : n.kind === 'small' ? C.mist : C.white);
+    add(t('tree.tip.kind_region', { kind: kindName(n.kind), region: regionName(n.region) }), region ? pack(region.color) : C.white);
+    for (const l of nodeLines(n, s.masteries.get(n.id))) add(l, C.white);
+    const flavour = n.kind !== 'small' ? nodeFlavour(n) : null;
+    if (flavour) add(flavour, C.slate);
+    if (this.tree.roots.has(n.id)) add(t('tree.tip.gate'), C.lime);
     else if (s.allocated.has(n.id)) {
       const cost = this.options.refundCost?.(1) ?? 0;
-      const mastery = n.options?.length ? 'CLICK: NEXT CHOICE. ' : '';
+      if (n.options?.length) add(t('tree.tip.next_choice'), C.cyan);
       const blocked = this.options.refundBlocked?.() ?? null;
-      status = blocked
-        ? { text: `${mastery}${blocked}`, color: C.slate }
-        : s.canDeallocate(n.id)
-          ? { text: `${mastery}R-CLICK: REFUND${cost ? ` (${cost} GOLD)` : ''}`, color: C.orange }
-          : { text: `${mastery}OTHERS DEPEND ON IT`, color: C.slate };
-    } else if (!this.preview?.path) status = { text: 'UNREACHABLE', color: C.red };
+      if (blocked) add(blocked, C.slate);
+      else if (s.canDeallocate(n.id)) add(cost ? t('tree.tip.refund_cost', { cost }) : t('tree.tip.refund'), C.orange);
+      else add(t('tree.tip.depends'), C.slate);
+    } else if (!this.preview?.path) add(t('tree.tip.unreachable'), C.red);
     else {
       const cost = path.size;
-      status = cost <= s.unspent ? { text: `CLICK: TAKE ${cost} POINT${cost === 1 ? '' : 'S'} (${s.unspent} LEFT)`, color: C.cyan } : { text: `NEEDS ${cost} POINTS, ${Math.max(0, s.unspent)} LEFT`, color: C.red };
+      if (cost <= s.unspent) add(t('tree.tip.take', { count: cost, left: s.unspent }), C.cyan);
+      else add(t('tree.tip.needs', { count: cost, left: Math.max(0, s.unspent) }), C.red);
     }
-    for (const t of wrap(status.text, chars)) lines.push({ text: t, color: status.color });
     const w = Math.max(...lines.map((l) => textWidth(l.text))) + 10;
     const h = lines.length * 9 + 6;
     const [nx, ny] = toScreen(this.cam, W, H, n.x, n.y);
@@ -954,16 +991,52 @@ export class TreeView {
     if (x + w > W - 2) x = nx - 12 - w;
     x = Math.max(2, Math.min(W - w - 2, x));
     const y = Math.max(TOP + 2, Math.min(H - BOTTOM - h - 2, ny - 10));
-    b.rect(x, y, w, h, C.ink);
+    b.panel(x, y, w, h, C.ink);
     b.frame(x, y, w, h, region ? pack(region.color) : C.white);
     lines.forEach((l, i) => b.text(l.text, x + 5, y + 4 + i * 9, l.color));
   }
 
+  /**
+   * The frame onto the canvas: the bitmap at art size; when the frame holds device-font text
+   * (a language the pixel font can't draw), the bitmap scaled `k` device pixels per art pixel
+   * (`surfaceScale`, no smoothing) and the text drawn over it at that resolution, in paint order:
+   * a panel painted after a text is laid over it again, so a tooltip covers the labels under it.
+   */
   private blit(): void {
-    if (!this.g) return;
+    const g = this.g;
+    if (!g) return;
     const b = this.buf;
     if (!this.image || this.image.width !== b.width || this.image.height !== b.height) this.image = new ImageData(b.bytes, b.width, b.height);
-    this.g.putImageData(this.image, 0, 0);
+    const k = b.deviceText ? surfaceScale(this.framing?.scale ?? 1, true) : 1;
+    const c = this.canvas;
+    if (c.width !== b.width * k || c.height !== b.height * k) {
+      c.width = b.width * k;
+      c.height = b.height * k;
+    }
+    if (!b.deviceText) {
+      g.putImageData(this.image, 0, 0);
+      return;
+    }
+    const art = (this.artCanvas ??= document.createElement('canvas'));
+    if (art.width !== b.width || art.height !== b.height) {
+      art.width = b.width;
+      art.height = b.height;
+    }
+    art.getContext('2d')?.putImageData(this.image, 0, 0);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.imageSmoothingEnabled = false;
+    g.drawImage(art, 0, 0, b.width * k, b.height * k);
+    for (const o of b.overlay) {
+      if (o.kind === 'text') {
+        drawDeviceText(g, o.text, o.x, o.y, k, o.scale, css(o.color));
+        continue;
+      }
+      const x0 = Math.max(0, o.x);
+      const y0 = Math.max(0, o.y);
+      const x1 = Math.min(b.width, o.x + o.w);
+      const y1 = Math.min(b.height, o.y + o.h);
+      if (x1 > x0 && y1 > y0) g.drawImage(art, x0, y0, x1 - x0, y1 - y0, x0 * k, y0 * k, (x1 - x0) * k, (y1 - y0) * k);
+    }
   }
 }
 

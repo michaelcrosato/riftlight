@@ -36,7 +36,9 @@ U vendor, Alt filter).
   Cinder (magic → rare), Rift Ember (reroll rare), Starfall Orb (add an affix), Hollow Orb
   (remove one), Cleansing Salt (back to normal), Sunsoul Orb (reroll values), Abyssal Eye
   (corrupt: nothing / an implicit / an affix up a tier / remade as a rare; no more crafting).
-- New stats only need a human name in `loot/stats.ts` (`STAT_NAMES`, `PERCENT_STATS`).
+- New stats only need a name in `STAT_NAMES` (lang/modLines.ts, the game's one table: items,
+  the tree and the character sheet read mods through `modText`) and, when a flat value is a
+  fraction, `PERCENT_STATS` (core/stats.ts).
 
 **Rarity math** (`loot/generate.ts`, numbers in one place):
 

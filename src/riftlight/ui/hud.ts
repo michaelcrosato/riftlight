@@ -5,15 +5,19 @@
  * the boss bar with phase ticks, the minimap, gold, the loot feed, the level card, the kill
  * streak counter and the difficulty corner.
  */
-import type { HudColor, PaletteColor } from '../../engine';
+import { clusters, type HudColor, type PaletteColor, textWidthPx, wrapText } from '../../engine';
+import type { ControlAction } from '../game/controls';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
-import { UI, type UiCanvas } from './kit';
+import { lang, t } from '../lang';
+import { clip, miniWidth, UI, type UiCanvas } from './kit';
 import { type BannerKind, type Box, type HudLayout, overlaps } from './layout';
 
 export interface FeedLine {
   text: string;
   color: PaletteColor;
   t: number;
+  /** Gold picked up (the line counts it): pickups close together add up into one line. */
+  gold?: number;
 }
 
 export interface MinimapModel {
@@ -59,6 +63,9 @@ export interface HudModel {
 }
 
 const ORB_R = 22;
+
+/** A number on its own on the HUD, in the language's digits (no grouping: it sits in a tight spot). */
+const num = (n: number): string => lang().formatNumber(n, { useGrouping: false });
 
 /**
  * Where the fixed HUD goes on a screen of `W` × `H` art pixels. A narrow screen (a phone in
@@ -158,11 +165,38 @@ export function hudZones(W: number, H: number, m: HudModel): Box[] {
   } else z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
   for (const o of [g.life, g.mana]) z.push({ x: o.x - g.orbR - 3, y: o.y - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
   if (m.minimap) z.push({ x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 });
-  z.push({ x: g.textX - 2, y: 4, w: Math.min(W / 2, 90), h: 12 + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
+  z.push({ x: g.textX - 2, y: 4, w: Math.min(W / 2, 90), h: 12 + (whereRows(W, m, g).length - 1) * WHERE_ROW + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
   if (m.boss) z.push({ x: Math.floor((W - g.bossW) / 2) - 2, y: 5, w: g.bossW + 20, h: 20 });
   const b = bannerRect(W, m);
   if (b) z.push(b);
   return z;
+}
+
+/** Rows of the top-left label (where you are), 9 pixels apart: room for accents above capitals. */
+const WHERE_ROW = 9;
+
+/** The boss bar's name: in the normal font when it fits the screen, else its mini font form. */
+function bossName(W: number, name: string): { text: string; mini: boolean } {
+  if (textWidthPx(name) <= W - 8) return { text: name, mini: false };
+  return { text: clip(name.split(/[,،，、]/)[0]!, W - 8, miniWidth), mini: true };
+}
+
+/**
+ * The top-left label (where you are) in rows that fit its room: up to the minimap, and clear of a
+ * boss's name and bar (a long level name in a longer language wraps under itself, at most three
+ * rows, never under the boss's name). A phone has one row in the mini font, cut to fit.
+ */
+function whereRows(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): string[] {
+  let right = W - (m.minimap ? g.map.w + 10 : 6);
+  if (m.boss) {
+    const name = bossName(W, m.boss.name);
+    const nameW = name.mini ? miniWidth(name.text) : textWidthPx(name.text);
+    right = Math.min(right, Math.floor(Math.min((W - g.bossW) / 2, (W - nameW) / 2)) - 4);
+  }
+  const room = Math.max(24, right - g.textX);
+  if (g.compact) return [clip(m.levelLabel, room, miniWidth)];
+  const rows = wrapText(m.levelLabel, room);
+  return rows.length <= 3 ? rows : [rows[0]!, rows[1]!, clip(rows.slice(2).join(' '), room, (s) => textWidthPx(s))];
 }
 
 /** The banner's rect (null when none shows). */
@@ -241,7 +275,7 @@ function shieldRing(ui: UiCanvas, cx: number, cy: number, frac: number, r = ORB_
   }
 }
 
-function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, key: string, pad: string, t: number, SLOT = 20): void {
+function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, action: ControlAction | null, t: number, SLOT = 20): void {
   ui.rect(x - 1, y - 1, SLOT + 2, SLOT + 2, 'ink');
   ui.rect(x, y, SLOT, SLOT, s.id ? 'slate' : 'night');
   ui.rect(x + 1, y + 1, SLOT - 2, SLOT - 2, 'navy');
@@ -250,23 +284,23 @@ function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, key: st
     const sc = iw * 2 <= SLOT - 4 ? 2 : 1;
     ui.sprite(x + Math.floor((SLOT - iw * sc) / 2), y + Math.floor((SLOT - s.icon.length * sc) / 2), s.icon, s.colors as Record<string, HudColor>, sc);
   }
-  else if (s.id) ui.text(x + SLOT / 2, y + 7, s.name.slice(0, 2).toUpperCase(), { align: 'center' });
+  else if (s.id) ui.text(x + SLOT / 2, y + 7, clusters(s.name).slice(0, 2).join(''), { align: 'center' }); // no icon: its first letters
   // cooldown sweep: a dark shutter that drops away
   if (s.remaining > 0 && s.cooldown > 0) {
     const h = Math.ceil((SLOT - 2) * Math.min(1, s.remaining / s.cooldown));
     for (let row = 0; row < h; row++) ui.rect(x + 1, y + 1 + row, SLOT - 2, 1, (row & 1) === 0 ? 'ink' : 'night');
-    ui.mini(x + SLOT / 2, y + 8, s.remaining >= 1 ? String(Math.ceil(s.remaining)) : (Math.ceil(s.remaining * 10) / 10).toFixed(1).slice(1), 'white', 'center', 'ink');
+    ui.mini(x + SLOT / 2, y + 8, s.remaining >= 1 ? String(Math.ceil(s.remaining)) : (Math.ceil(s.remaining * 10) / 10).toFixed(1).slice(1), 'white', 'center', 'ink'); // digits: the mini font's
   } else if (!s.usable) {
     for (let row = 0; row < SLOT - 2; row += 2) ui.rect(x + 1, y + 1 + row, SLOT - 2, 1, 'navy');
   } else if (s.remaining <= 0 && s.cooldown > 0 && t % 1 < 0.04) ui.outline(x, y, SLOT, SLOT, 'white');
-  if (s.cost > 0) ui.mini(x + SLOT - 1, y + 1, String(s.cost), s.usable ? 'sky' : 'red', 'right', 'ink');
-  if (key) ui.glyph(x + 1, y + SLOT - 4, key, pad);
+  if (s.cost > 0) ui.mini(x + SLOT - 1, y + 1, num(s.cost), s.usable ? 'sky' : 'red', 'right', 'ink');
+  if (action) ui.glyph(x + 1, y + SLOT - 4, action);
 }
 
 export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const W = ui.w;
   const H = ui.h;
-  const t = m.time;
+  const time = m.time;
   ui.pad = m.pad;
   const g = hudGeometry(W, H, m.controls);
   const SLOT = g.slot;
@@ -290,18 +324,18 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const lx = g.life.x;
   const ly = g.life.y;
   const r = g.orbR;
-  orb(ui, lx, ly, lifeFrac, low && t % 0.6 < 0.3 ? 'orange' : 'red', 'orange', 'plum', t, low ? 1 : 0, r);
+  orb(ui, lx, ly, lifeFrac, low && time % 0.6 < 0.3 ? 'orange' : 'red', 'orange', 'plum', time, low ? 1 : 0, r);
   shieldRing(ui, lx, ly, v.maxEs > 0 ? v.es / v.maxEs : 0, r);
-  ui.mini(lx, ly + r + 3 - (g.compact ? 18 : 33), `${Math.ceil(v.life)}`, 'white', 'center', 'ink');
+  ui.mini(lx, ly + r + 3 - (g.compact ? 18 : 33), num(Math.ceil(v.life)), 'white', 'center', 'ink');
   const mx = g.mana.x;
   const my = g.mana.y;
-  orb(ui, mx, my, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', t + 1.7, 0, r);
+  orb(ui, mx, my, v.maxMana > 0 ? v.mana / v.maxMana : 0, 'blue', 'sky', 'navy', time + 1.7, 0, r);
   reservedCap(ui, mx, my, v.maxMana > 0 ? (v.reserved ?? 0) / v.maxMana : 0, r);
-  ui.mini(mx, my + r + 3 - (g.compact ? 18 : 33), `${Math.floor(v.mana)}`, 'white', 'center', 'ink');
+  ui.mini(mx, my + r + 3 - (g.compact ? 18 : 33), num(Math.floor(v.mana)), 'white', 'center', 'ink');
 
   // skill bar: attack, dodge, then the four skills (on a touch screen the buttons are the bar)
   if (!g.touch) {
-    const order: [string, string][] = [['LMB', 'A'], ['SPC', 'B'], ['1', 'X'], ['2', 'Y'], ['3', 'LB'], ['4', 'RB']];
+    const order: ControlAction[] = ['attack', 'dodge', 'skill1', 'skill2', 'skill3', 'skill4'];
     const slots = [m.skills.find((s) => s.slot === 'attack'), m.skills.find((s) => s.slot === 'dodge'), ...[0, 1, 2, 3].map((i) => m.skills.find((s) => s.slot === i))];
     const barW = g.barW;
     const bx = g.bx;
@@ -310,7 +344,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     ui.rect(bx - 4, by - 3, barW + 2, SLOT + 8, 'night');
     slots.forEach((s, i) => {
       const x = bx + i * (SLOT + g.gap) + (i >= 2 ? g.split : 0);
-      if (s) skillSlot(ui, x, by, s, g.compact ? '' : order[i]![0], g.compact ? '' : order[i]![1], t, SLOT);
+      if (s) skillSlot(ui, x, by, s, g.compact ? null : order[i]!, time, SLOT);
       else {
         ui.rect(x, by, SLOT, SLOT, 'ink');
         ui.rect(x + 1, by + 1, SLOT - 2, SLOT - 2, 'night');
@@ -323,8 +357,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   ui.bar(xx, xy, xw, 3, m.xp, flash ? 'white' : UI.xp, 'night');
   for (let i = 1; i < 10; i++) ui.rect(xx + Math.round((xw * i) / 10), xy, 1, 3, 'ink');
   const lv = g.levelAt;
-  if (lv.mini) ui.mini(lv.x, lv.y, `LV ${m.level}`, flash ? 'white' : 'sand', lv.align, 'ink');
-  else ui.text(lv.x, lv.y, `${m.level}`, { align: lv.align, color: flash ? 'white' : 'sand' });
+  if (lv.mini) ui.mini(lv.x, lv.y, t('hud.level', { level: m.level }), flash ? 'white' : 'sand', lv.align, 'ink');
+  else ui.text(lv.x, lv.y, lang().formatNumber(m.level), { align: lv.align, color: flash ? 'white' : 'sand' });
 
   // buffs above the life orb
   m.buffs.forEach((b, i) => {
@@ -334,39 +368,38 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     ui.rect(x + 1, y + 1, 9, 9, b.debuff ? 'plum' : 'night');
     ui.rect(x + 3, y + 3, 5, 5, b.color);
     ui.rect(x + 1, y + 10, Math.round(9 * Math.max(0, b.remaining / b.duration)), 1, 'white');
-    if (b.stacks && b.stacks > 1) ui.mini(x + 11, y - 2, String(b.stacks), 'white', 'right', 'ink');
+    if (b.stacks && b.stacks > 1) ui.mini(x + 11, y - 2, num(b.stacks), 'white', 'right', 'ink');
   });
 
   // minimap, gold under it (top-right); the counter glows while it rolls up
   const mw = g.map.w;
-  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, 4, mw, g.map.h, t);
+  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, 4, mw, g.map.h, time);
   const gy = m.minimap ? g.map.h + 10 : 6;
-  const gold = String(Math.round(m.goldShown));
+  const gold = lang().formatNumber(Math.round(m.goldShown));
   const gw = ui.measure(gold) + 8;
   ui.sprite(W - 6 - gw, gy, ['.ooo.', 'oyyyo', 'oywyo', 'oyyyo', '.ooo.'], { o: 'orange', y: 'sand', w: 'white' });
   ui.text(W - 6, gy - 1, gold, { color: m.goldShown < m.gold - 0.5 ? 'white' : 'sand', align: 'right' });
 
   // top-left: where you are, the clock, progress, difficulty
-  // (right of the touch menu button, and cut short of the minimap)
+  // (right of the touch menu button, clear of the minimap and a boss's name and bar: a long
+  // name wraps under itself)
   const tx = g.textX;
-  const room = W - tx - (m.minimap ? g.map.w + 10 : 6);
-  let label = m.levelLabel;
-  if (g.compact) {
-    while (label.length > 3 && label.length * 4 - 1 > room) label = label.slice(0, -1);
-    ui.mini(tx, 5, label, 'sand', 'left', 'ink');
-  } else ui.text(tx, 6, label, { color: 'sand' });
-  let ty = g.compact ? 12 : 16;
+  const rows = whereRows(W, m, g);
+  if (g.compact) ui.mini(tx, 5, rows[0]!, 'sand', 'left', 'ink');
+  else rows.forEach((row, i) => ui.text(tx, 6 + i * WHERE_ROW, row, { color: 'sand' }));
+  let ty = (g.compact ? 12 : 16) + (rows.length - 1) * WHERE_ROW;
   if (m.timer) {
     ui.mini(tx, ty, m.timer, 'mist');
     ty += 7;
   }
   if (m.progress && m.progress.total > 0) {
-    ui.mini(tx, ty, `${m.progress.killed}/${m.progress.total}${g.compact ? '' : ' SLAIN'}`, m.progress.killed >= m.progress.total ? 'lime' : 'mist');
+    const { killed, total } = m.progress;
+    ui.mini(tx, ty, g.compact ? `${lang().formatNumber(killed)}/${lang().formatNumber(total)}` : t('hud.slain', { killed, total }), killed >= total ? 'lime' : 'mist');
     ty += 7;
   }
   if (m.difficulty.length) {
     ty += 2;
-    ui.mini(tx, ty, 'TUNED', 'orange');
+    ui.mini(tx, ty, t('hud.tuned'), 'orange');
     ty += 7;
     for (const d of m.difficulty) {
       ui.mini(tx, ty, d, 'orange');
@@ -379,9 +412,10 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     const bw = g.bossW;
     const x = Math.floor((W - bw) / 2);
     const y = 18;
-    const name = m.boss.name.toUpperCase();
-    if (ui.measure(name) <= W - 8) ui.text(W / 2, y - 11, name, { align: 'center', color: 'orange' });
-    else ui.mini(W / 2, y - 8, name.split(',')[0]!, 'orange', 'center', 'ink');
+    // a long name in the mini font, its epithet ("…, the Ember Tyrant") dropped, and cut to the screen
+    const name = bossName(W, m.boss.name);
+    if (!name.mini) ui.text(W / 2, y - 11, name.text, { align: 'center', color: 'orange' });
+    else ui.mini(W / 2, y - 8, name.text, 'orange', 'center', 'ink');
     ui.bar(x, y, bw, 5, m.boss.life / m.boss.maxLife, 'red', 'plum');
     for (const p of m.boss.phases) ui.rect(x + Math.round(bw * p), y - 2, 1, 9, 'white');
     for (let i = 0; i <= m.boss.phase; i++) ui.rect(x + bw + 4 + i * 5, y, 3, 5, 'orange');
@@ -396,11 +430,9 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     const blink = f.t < 0.15;
     const color = blink ? 'white' : f.t > 3.4 ? 'slate' : f.color;
     const maxW = g.compact ? W - 8 : Math.min(W / 2, 240);
-    let text = f.text;
-    const mini = g.compact || ui.measure(text) > maxW;
-    const width = (s: string) => (mini ? s.length * 4 - 1 : ui.measure(s));
-    while (text.length > 4 && width(text) > maxW) text = text.slice(0, -2);
-    if (text !== f.text) text = `${text.slice(0, -1)}.`;
+    const mini = g.compact || ui.measure(f.text) > maxW;
+    const width = (s: string) => (mini ? miniWidth(s) : ui.measure(s));
+    const text = clip(f.text, maxW, width);
     const w = width(text);
     const h = mini ? 6 : 8;
     const want = { x: W - 6 - w, y: feedBottom - shown * (h + 2), w, h };
@@ -416,8 +448,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     const s = m.streak.age < 0.12 ? 3 : 2;
     const x = 8;
     const y = Math.floor(H / 2) - 20;
-    ui.text(x, y, `${m.streak.count}`, { scale: s, color: m.streak.count >= 10 ? 'orange' : 'sand' });
-    ui.text(x, y + 8 * s, m.streak.count >= 10 ? 'RAMPAGE' : m.streak.count >= 6 ? 'SLAUGHTER' : 'STREAK', { color: m.streak.age > 2.5 ? 'slate' : 'white' });
+    ui.text(x, y, lang().formatNumber(m.streak.count), { scale: s, color: m.streak.count >= 10 ? 'orange' : 'sand' });
+    ui.text(x, y + 8 * s, t(m.streak.count >= 10 ? 'hud.streak.rampage' : m.streak.count >= 6 ? 'hud.streak.slaughter' : 'hud.streak.streak'), { color: m.streak.age > 2.5 ? 'slate' : 'white' });
   }
 
   drawBanner(ui, m);
@@ -449,10 +481,10 @@ function drawBanner(ui: UiCanvas, m: HudModel): void {
   const titleColor: PaletteColor = flash ? 'white' : kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
   const ty = rect.y + (big ? 6 : 4) + (scale === 1 && big ? 3 : 0);
   ui.text(W / 2, ty, c.title, { align: 'center', scale, color: titleColor, shadow: kind === 'levelup' ? 'green' : 'plum' });
-  const sub = c.subtitle.toUpperCase();
+  const sub = c.subtitle;
   const sy = rect.y + rect.h - (big ? 11 : 9);
   if (ui.measure(sub) <= rect.w - 6) ui.text(W / 2, sy, sub, { align: 'center', color: 'mist' });
-  else ui.mini(W / 2, sy + 1, sub, 'mist', 'center');
+  else ui.mini(W / 2, sy + 1, clip(sub, rect.w - 6, miniWidth), 'mist', 'center');
 }
 
 function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, t: number): void {

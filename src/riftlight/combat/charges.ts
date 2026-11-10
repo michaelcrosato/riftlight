@@ -22,6 +22,7 @@ import { StatQuery } from './stats';
  */
 export interface ChargeDef {
   readonly id: ChargeType;
+  /** English (in the line `charge.<id>`, "Frenzy charges"): shown through lang/skills.ts `chargeName`. */
   readonly name: string;
   /** Stat that raises the maximum (flat). */
   readonly maxStat: string;
@@ -31,6 +32,7 @@ export interface ChargeDef {
   readonly glow: PaletteColor;
   /** Mods per charge held. */
   readonly perCharge: readonly Mod[];
+  /** English (the line `charge.<id>.description`): lang/skills.ts `chargeDescription`. */
   readonly description: string;
 }
 

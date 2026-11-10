@@ -88,7 +88,8 @@ const cmd = argv[0] ?? 'help';
 
 if (cmd === 'lines') {
   if (argv.includes('--json')) {
-    console.log(JSON.stringify(source, null, 1));
+    // into a pipe stdout is asynchronous: finish writing before the process.exit below
+    await new Promise<void>((done) => process.stdout.write(JSON.stringify(source, null, 1) + '\n', () => done()));
   } else {
     const by = new Map<string, number>();
     for (const id of Object.keys(lines)) by.set(areaOf(id), (by.get(areaOf(id)) ?? 0) + 1);

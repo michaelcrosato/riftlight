@@ -21,7 +21,8 @@ import { type Blocker, collideBlockers, faceted, Kit, overlapsBlocker } from './
 import { iso, screenOf, TOWN_LAYOUT } from './layout';
 import { TownNav } from './nav';
 import { bridgeDeck, buildOutskirts, groundPieces, onWater } from './outskirts';
-import { type Bubble, Npc, type NpcAction, NPCS, type NpcState } from './npcs';
+import { t } from '../lang';
+import { bubbleText, Npc, type NpcAction, npcName, NPCS, type NpcState, npcTitle } from './npcs';
 
 export { iso, screenOf, TOWN_LAYOUT } from './layout';
 
@@ -41,11 +42,17 @@ const facePlaza = (sx: number, sy: number) => {
   return (Math.atan2(-x, -z) * 180) / Math.PI;
 };
 
-/** Where the hero walks to talk to an NPC or use a prop. */
+/**
+ * Where the hero walks to talk to an NPC or use a prop. Its words are in the player's language
+ * (getters: lines of lang/town.ts or lang/showcase.ts): `prompt` is the whole prompt the key goes
+ * before ("Talk to Brann"), `verb` one short word for a touch button, `title` a line under it.
+ */
 export interface Interactable {
   readonly id: string;
   readonly name: string;
   readonly verb: string;
+  readonly prompt: string;
+  readonly title?: string;
   readonly position: Vector3;
   readonly radius: number;
   /** `showcase`: one of the showcase pieces (arcade, bestiary), by `id` (showcase/Showcase.ts). */
@@ -403,7 +410,21 @@ export class Town implements StageWorld {
     lid.add(pivot);
     this.chestLid = pivot;
     this.root.add(lid);
-    this.interactables.push({ id: 'stash', name: 'Stash', verb: 'OPEN', position: new Vector3(x, 0, z), radius: 2, action: 'stash' });
+    this.interactables.push({
+      id: 'stash',
+      get name() {
+        return t('town.stash.name');
+      },
+      get verb() {
+        return t('town.verb.open');
+      },
+      get prompt() {
+        return t('town.prompt.stash');
+      },
+      position: new Vector3(x, 0, z),
+      radius: 2,
+      action: 'stash',
+    });
   }
 
   private house(k: Kit, sx: number, sy: number, roof: PaletteColor): void {
@@ -511,7 +532,26 @@ export class Town implements StageWorld {
     for (const n of this.npcs) {
       if (!n.def.action) continue;
       const front = n.position.clone().add(new Vector3(Math.sin(n.yaw), 0, Math.cos(n.yaw)).multiplyScalar(n.def.id === 'brann' ? 1.5 : 1.0));
-      this.interactables.push({ id: n.def.id, name: n.def.name, verb: 'TALK', position: front, radius: n.def.id === 'vex' ? 2.2 : 2.0, action: n.def.action, npc: n });
+      const def = n.def;
+      this.interactables.push({
+        id: def.id,
+        get name() {
+          return npcName(def);
+        },
+        get verb() {
+          return t('town.verb.talk');
+        },
+        get prompt() {
+          return t('town.prompt.talk', { name: npcName(def) });
+        },
+        get title() {
+          return npcTitle(def);
+        },
+        position: front,
+        radius: def.id === 'vex' ? 2.2 : 2.0,
+        action: def.action,
+        npc: n,
+      });
     }
     void ilsa;
   }
@@ -737,11 +777,10 @@ export class Town implements StageWorld {
     return [];
   }
 
-  /** Every bubble on screen (HUD). */
-  bubbles(): Bubble[] {
-    const out: Bubble[] = [];
-    for (const n of this.npcs) if (n.bubble) out.push(n.bubble);
-    if (this.cat.bubble) out.push(this.cat.bubble);
+  /** Every bubble on screen (HUD): what it says in the player's language, where and how long it has shown. */
+  bubbles(): { text: string; at: Vector3; t: number; life: number }[] {
+    const out: { text: string; at: Vector3; t: number; life: number }[] = [];
+    for (const b of [...this.npcs.map((n) => n.bubble), this.cat.bubble]) if (b) out.push({ text: bubbleText(b), at: b.at, t: b.t, life: b.life });
     return out;
   }
 

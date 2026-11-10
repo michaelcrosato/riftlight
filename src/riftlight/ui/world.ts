@@ -5,7 +5,8 @@
  */
 import { type Camera, Vector3 } from 'three/webgpu';
 import type { PaletteColor } from '../../engine';
-import { type UiCanvas, wrap } from './kit';
+import type { ControlAction } from '../game/controls';
+import { clip, type UiCanvas, wrap } from './kit';
 import type { HudLayout } from './layout';
 
 const v = new Vector3();
@@ -112,7 +113,7 @@ export class Floaters {
 export function bubble(ui: UiCanvas, camera: Camera, at: Vector3, text: string, age: number): void {
   const p = project(at, camera, ui);
   if (!p) return;
-  const lines = wrap(text.toUpperCase(), 120);
+  const lines = wrap(text, 120);
   const w = Math.max(...lines.map((l) => ui.measure(l))) + 8;
   const h = lines.length * 9 + 5;
   // pop in
@@ -137,15 +138,15 @@ export function bubble(ui: UiCanvas, camera: Camera, at: Vector3, text: string, 
   lines.forEach((l, i) => ui.text(x + 4, y + 3 + i * 9, l, { color: 'ink', shadow: false }));
 }
 
-/** "[F] TALK BRANN" over a point. */
-export function promptAt(ui: UiCanvas, camera: Camera, at: Vector3, key: string, pad: string, label: string, sub?: string): void {
+/** "[F] Talk to Brann" over a point: the glyph of the control that does `action`, then the label. */
+export function promptAt(ui: UiCanvas, camera: Camera, at: Vector3, action: ControlAction, label: string, sub?: string): void {
   const p = project(at, camera, ui);
   if (!p) return;
-  const w = ui.prompt(-1000, -1000, key, pad, label); // measure
+  const w = ui.prompt(-1000, -1000, action, label); // measure
   const x = Math.round(p.x - w / 2);
   ui.rect(x - 3, p.y - 3, w + 6, sub ? 21 : 12, 'ink');
-  ui.prompt(x, p.y, key, pad, label, 'white');
-  if (sub) ui.text(p.x, p.y + 9, sub.toUpperCase(), { align: 'center', color: 'mist' });
+  ui.prompt(x, p.y, action, label, 'white');
+  if (sub) ui.text(p.x, p.y + 9, sub, { align: 'center', color: 'mist' });
 }
 
 /**
@@ -167,9 +168,7 @@ export function lootLabel(
   const p = project(at, camera, ui);
   if (!p) return null;
   // a narrow screen (a phone) cuts long names
-  let label = text;
-  while (label.length > 6 && ui.measure(label) + 6 > ui.w - 4) label = label.slice(0, -2);
-  if (label !== text) label = `${label.slice(0, -1)}.`;
+  const label = clip(text, ui.w - 10, (s) => ui.measure(s));
   const w = ui.measure(label) + 6;
   const want = { x: Math.max(1, Math.min(ui.w - w - 1, Math.round(p.x - w / 2))), y: p.y - 14, w, h: 10 };
   const r = layout ? layout.place(want, { tries: focus ? 10 : 6, step: 11 }) : want;

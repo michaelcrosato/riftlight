@@ -257,7 +257,14 @@ export interface Item {
   readonly base: string;
   readonly rarity: Rarity;
   readonly level: number;
+  /**
+   * The name in English, as it was rolled (tools, logs, old saves). The game shows `itemName(item)`
+   * (loot/names.ts): the name in the player's language, made from the item's parts (its base,
+   * affixes, unique, gem; `words` for a rare).
+   */
   readonly name: string;
+  /** A rare's name: its two words (loot/data/names.ts: FIRST, then the base's SECOND list). Absent in older saves (`name` shows). */
+  readonly words?: readonly [first: string, second: string];
   readonly affixes: readonly RolledAffix[];
   readonly unique?: string;
   /**

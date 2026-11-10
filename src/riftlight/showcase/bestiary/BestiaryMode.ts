@@ -14,14 +14,17 @@
  * Leaving: walk back out of the door, or Esc.
  */
 import { Color, type Object3D, Vector3 } from 'three/webgpu';
-import { type CameraConfig, FirstPersonRig, FreeRig, type LightHandle, PALETTE, type PaletteColor, readMoveInput } from '../../../engine';
+import { type CameraConfig, FirstPersonRig, FreeRig, type LightHandle, PALETTE, type PaletteColor, readMoveInput, wrapText } from '../../../engine';
 import { setLookLayer } from '../../../engine/render/lookLayer';
 import { Rng } from '../../core/rng';
 import type { Genome } from '../../core/types';
-import { ARCHETYPES, buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, PARTS, PLANS, validateGenome } from '../../monsters';
+import { lang, lineKey, t } from '../../lang';
+import { archetypeName, bossNameShown, partName, planName } from '../../lang/monsters';
+import { buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, validateGenome } from '../../monsters';
 import type { UiCanvas, UiEvent, Rect } from '../../ui/kit';
-import { inside } from '../../ui/kit';
+import { clip, inside, miniCovers, miniWidth, wrap } from '../../ui/kit';
 import { monsterName } from '../../wire/monsters';
+import { hints, miniHints } from '../hints';
 import { type BestiaryEntry, exhibitOrder, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput, Visitor } from '../visitor';
@@ -53,13 +56,35 @@ interface Button {
   id: string;
   label: string;
   act: () => void;
-  /** Choice rows: left / right. */
+  /** Choice rows: left / right; `label` is the choice, drawn between arrows. */
   step?: (dir: 1 | -1) => void;
   accent?: PaletteColor;
 }
 
 const RANK_COLOR: Record<string, PaletteColor> = { normal: 'white', magic: 'sky', rare: 'sand', boss: 'orange' };
+/** The card's width: 150, wider (to 220) for buttons a longer language or a long name needs. */
 const CARD_W = 150;
+const CARD_MAX = 220;
+
+/**
+ * An exhibit's name in the player's language: a monster's from its genome (its words are lines),
+ * a boss's from the English name the save keeps (`bossNameShown`).
+ */
+export function entryName(e: Pick<BestiaryEntry, 'name' | 'rank' | 'genome'>): string {
+  return e.rank === 'boss' ? bossNameShown(e.name) : monsterName(e.genome);
+}
+
+/** A monster animation's name for its button (`showcase.bestiary.clip.<clip>`); an unknown clip shows its name. */
+function clipName(clip: string): string {
+  const id = lineKey('showcase.bestiary.clip', clip);
+  return lang().has(id) ? t(id) : clip;
+}
+
+/** Depths an entry was killed at: one, or first to last (`showcase.bestiary.<line>` / `<line>_range`). */
+function depthLine(line: 'plaque' | 'kills_depth', e: Pick<BestiaryEntry, 'kills' | 'first' | 'last'>): string {
+  const values = { kills: e.kills, first: e.first, last: e.last };
+  return e.last !== e.first ? t(`showcase.bestiary.${line}_range`, values) : t(`showcase.bestiary.${line}`, values);
+}
 
 export class BestiaryMode implements ShowcaseMode {
   readonly id = 'bestiary' as const;
@@ -435,20 +460,20 @@ export class BestiaryMode implements ShowcaseMode {
     if (this.view === 'inspect' && this.focus) {
       const ex = this.focus;
       return [
-        ...ex.built.clipNames.map((c) => ({ id: `clip:${c}`, label: c, act: () => void this.play(ex, c), accent: ex.clip === c ? ('teal' as const) : undefined })),
-        { id: 'turntable', label: `Turntable ${this.turntable ? 'on' : 'off'}`, act: () => (this.turntable = !this.turntable) },
-        { id: 'back', label: 'Back', act: () => this.setView('walk'), accent: 'plum' },
+        ...ex.built.clipNames.map((c) => ({ id: `clip:${c}`, label: clipName(c), act: () => void this.play(ex, c), accent: ex.clip === c ? ('teal' as const) : undefined })),
+        { id: 'turntable', label: t(this.turntable ? 'showcase.bestiary.turntable_on' : 'showcase.bestiary.turntable_off'), act: () => (this.turntable = !this.turntable) },
+        { id: 'back', label: t('showcase.bestiary.back'), act: () => this.setView('walk'), accent: 'plum' },
       ];
     }
     if (this.view === 'breed') {
       const list = this.entries;
-      const name = (i: number) => list[i]?.name ?? '-';
+      const name = (i: number) => (list[i] ? entryName(list[i]) : t('showcase.bestiary.none'));
       return [
-        { id: 'parentA', label: `< ${name(this.altar.a)} >`, act: () => this.cycleParent(0, 1), step: (d) => this.cycleParent(0, d) },
-        { id: 'parentB', label: `< ${name(this.altar.b)} >`, act: () => this.cycleParent(1, 1), step: (d) => this.cycleParent(1, d) },
-        { id: 'breed', label: 'Breed', act: () => void this.breed(), accent: 'teal' },
-        { id: 'mutate', label: 'Mutate child', act: () => void this.mutateChild() },
-        { id: 'back', label: 'Back', act: () => this.setView('walk'), accent: 'plum' },
+        { id: 'parentA', label: name(this.altar.a), act: () => this.cycleParent(0, 1), step: (d) => this.cycleParent(0, d) },
+        { id: 'parentB', label: name(this.altar.b), act: () => this.cycleParent(1, 1), step: (d) => this.cycleParent(1, d) },
+        { id: 'breed', label: t('showcase.bestiary.breed'), act: () => void this.breed(), accent: 'teal' },
+        { id: 'mutate', label: t('showcase.bestiary.mutate'), act: () => void this.mutateChild() },
+        { id: 'back', label: t('showcase.bestiary.back'), act: () => this.setView('walk'), accent: 'plum' },
       ];
     }
     return [];
@@ -488,8 +513,9 @@ export class BestiaryMode implements ShowcaseMode {
     const cam = ctx.engine.camera.camera;
     const list = this.entries;
     const kills = list.reduce((s, e) => s + e.kills, 0);
-    ui.text(ui.w / 2, 4, 'HALL OF BEASTS', { align: 'center', color: 'sand', shadow: 'ink' });
-    ui.mini(ui.w / 2, 13, `${list.length} SPECIES · ${kills} KILLS${this.wings > 1 ? ` · WING ${this.page + 1}/${this.wings}` : ''}`, 'mist', 'center');
+    ui.text(ui.w / 2, 4, t('showcase.bestiary.name'), { align: 'center', color: 'sand', shadow: 'ink' });
+    const counts = { species: t('showcase.bestiary.species', { count: list.length }), kills: t('showcase.bestiary.kills', { count: kills }) };
+    ui.mini(ui.w / 2, 13, this.wings > 1 ? t('showcase.bestiary.summary_wing', { ...counts, wing: this.page + 1, wings: this.wings }) : t('showcase.bestiary.summary', counts), 'mist', 'center');
     if (this.view === 'walk' || this.view === 'fly') {
       // plaques over the exhibits near the camera
       for (const ex of this.exhibits) {
@@ -500,24 +526,26 @@ export class BestiaryMode implements ShowcaseMode {
         if (s.z > 1 || Math.abs(s.x) > 1.1 || Math.abs(s.y) > 1.1) continue;
         const x = Math.round(((s.x + 1) / 2) * ui.w);
         const y = Math.round(((1 - s.y) / 2) * ui.h);
-        const label = e.name.toUpperCase();
-        const w = ui.measure(label) + 6;
+        const label = entryName(e);
+        const plaque = depthLine('plaque', e);
+        const w = Math.max(ui.measure(label), miniWidth(plaque)) + 6;
         ui.rect(x - w / 2, y - 10, w, 19, 'ink');
         ui.text(x, y - 8, label, { align: 'center', color: RANK_COLOR[e.rank] ?? 'white' });
-        ui.mini(x, y + 1, `X${e.kills}  DEPTH ${e.first}${e.last !== e.first ? `-${e.last}` : ''}`, 'mist', 'center');
+        ui.mini(x, y + 1, plaque, 'mist', 'center');
       }
       if (!list.length) {
-        ui.text(ui.w / 2, ui.h / 2 - 20, 'THE PEDESTALS ARE EMPTY', { align: 'center', color: 'mist', shadow: 'ink' });
-        ui.text(ui.w / 2, ui.h / 2 - 8, 'SLAY MONSTERS IN THE RIFTS TO FILL THE HALL', { align: 'center', color: 'slate', shadow: 'ink' });
+        ui.text(ui.w / 2, ui.h / 2 - 20, t('showcase.bestiary.empty'), { align: 'center', color: 'mist', shadow: 'ink' });
+        wrap(t('showcase.bestiary.empty_hint'), ui.w - 16).forEach((l, i) => ui.text(ui.w / 2, ui.h / 2 - 8 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
       }
       const near = this.view === 'walk' ? this.nearest() : null;
       if (near) {
-        const label = near === 'altar' ? 'BREED AT THE RIFT ALTAR' : `INSPECT ${near.entry!.name.toUpperCase()}`;
-        const w = ui.prompt(-1000, -1000, 'F', 'RT', label);
+        const label = near === 'altar' ? t('showcase.bestiary.prompt.altar') : t('showcase.bestiary.prompt.inspect', { name: entryName(near.entry!) });
+        const w = ui.glyphWidth('interact') + 3 + ui.measure(label);
         ui.rect(ui.w / 2 - w / 2 - 4, ui.h - 40, w + 8, 13, 'ink');
-        ui.prompt(ui.w / 2, ui.h - 37, 'F', 'RT', label, 'white', 'center');
+        ui.prompt(ui.w / 2, ui.h - 37, 'interact', label, 'white', 'center');
       }
-      ui.mini(ui.w / 2, ui.h - 9, `WASD MOVE · MOUSE / Q E LOOK · TAB ${this.view === 'walk' ? 'FLY' : 'WALK'}${this.wings > 1 ? ' · N NEXT WING' : ''} · O PHOTO · ESC LEAVE`, 'mist', 'center');
+      const help = hints(['move', 'look', this.view === 'walk' ? 'fly' : 'walk', ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
+      miniHints(ui, ui.w / 2, ui.h - 9, help, 'mist');
       if (this.view === 'walk') {
         // a crosshair dot
         ui.rect(ui.w / 2 - 1, ui.h / 2 - 1, 3, 3, 'ink');
@@ -529,50 +557,62 @@ export class BestiaryMode implements ShowcaseMode {
   }
 
   private drawCard(ui: UiCanvas): void {
-    const x = ui.w - CARD_W - 6;
+    const buttons = this.cardButtons();
+    this.buttons = buttons;
+    const measure = (s: string) => ui.measure(s);
+    /** A button's text: a choice row's between arrows, its choice cut (the last resort) so the arrows stay. */
+    const shown = (b: Button, w: number) => (b.step ? `< ${clip(b.label, w - measure('<  >'), measure)} >` : b.label);
+    const cardW = Math.min(CARD_MAX, ui.w - 12, Math.max(CARD_W, ...buttons.map((b) => measure(shown(b, Infinity)) + 16)));
+    const x = ui.w - cardW - 6;
     let y = 24;
     const lines: { text: string; color: PaletteColor; mini?: boolean }[] = [];
+    // a line too long for the card wraps (a longer language, a long name)
+    const add = (text: string, color: PaletteColor, mini = false) => {
+      for (const l of mini ? wrapText(text, cardW - 10, miniWidth) : wrap(text, cardW - 10)) lines.push({ text: l, color, mini });
+    };
     if (this.view === 'inspect' && this.focus) {
       const ex = this.focus;
       const e = ex.entry!;
       const g = ex.genome;
-      lines.push({ text: e.name.toUpperCase(), color: RANK_COLOR[e.rank] ?? 'white' });
-      lines.push({ text: `${e.rank.toUpperCase()} ${PLANS.has(g.plan) ? PLANS.get(g.plan).name.toUpperCase() : g.plan.toUpperCase()}`, color: 'mist', mini: true });
-      lines.push({ text: `ARCHETYPE ${ARCHETYPES.has(g.archetype) ? ARCHETYPES.get(g.archetype).name.toUpperCase() : g.archetype.toUpperCase()}`, color: 'mist', mini: true });
-      lines.push({ text: `KILLS ${e.kills} · DEPTH ${e.first}${e.last !== e.first ? `-${e.last}` : ''}`, color: 'sand', mini: true });
-      const parts = [...new Set(g.parts.map((p) => (PARTS.has(p.part) ? PARTS.get(p.part).name : p.part)))];
-      for (let i = 0; i < parts.length; i += 2) lines.push({ text: parts.slice(i, i + 2).join(' · ').toUpperCase(), color: 'slate', mini: true });
+      add(entryName(e), RANK_COLOR[e.rank] ?? 'white');
+      add(t('showcase.bestiary.rank_plan', { rank: t(lineKey('showcase.bestiary.rank', e.rank)), plan: planName(g.plan) }), 'mist', true);
+      add(t('showcase.bestiary.archetype', { name: archetypeName(g.archetype) }), 'mist', true);
+      add(depthLine('kills_depth', e), 'sand', true);
+      const parts = [...new Set(g.parts.map((p) => partName(p.part)))];
+      for (let i = 0; i < parts.length; i += 2) add(parts.slice(i, i + 2).join(' · '), 'slate', true);
     } else if (this.view === 'breed') {
       const c = this.altar.child;
-      lines.push({ text: 'THE RIFT ALTAR', color: 'cyan' });
-      lines.push({ text: 'CROSSOVER + MUTATE TWO KILLS', color: 'mist', mini: true });
+      add(t('showcase.bestiary.altar'), 'cyan');
+      add(t('showcase.bestiary.altar_hint'), 'mist', true);
       if (c) {
         const g = c.genome;
-        lines.push({ text: monsterName(g).toUpperCase(), color: 'lime' });
-        lines.push({ text: `GENERATION ${this.altar.generation} · ${PLANS.has(g.plan) ? PLANS.get(g.plan).name.toUpperCase() : g.plan}`, color: 'mist', mini: true });
-        lines.push({ text: `ARCHETYPE ${ARCHETYPES.has(g.archetype) ? ARCHETYPES.get(g.archetype).name.toUpperCase() : g.archetype}`, color: 'mist', mini: true });
-        lines.push({ text: `${g.parts.length} PARTS · SEED ${g.seed}`, color: 'slate', mini: true });
-      } else lines.push({ text: 'PICK TWO PARENTS, THEN BREED', color: 'slate', mini: true });
+        add(monsterName(g), 'lime');
+        add(t('showcase.bestiary.generation', { generation: this.altar.generation, plan: planName(g.plan) }), 'mist', true);
+        add(t('showcase.bestiary.archetype', { name: archetypeName(g.archetype) }), 'mist', true);
+        add(t('showcase.bestiary.parts_seed', { count: g.parts.length, seed: g.seed }), 'slate', true);
+      } else add(t('showcase.bestiary.pick_parents'), 'slate', true);
     }
-    const buttons = this.cardButtons();
-    this.buttons = buttons;
-    const rowsH = lines.reduce((s, l) => s + (l.mini ? 7 : 10), 0);
-    const h = 8 + rowsH + 4 + buttons.length * 13 + 14;
-    ui.panel(x, y - 4, CARD_W, h, 'ink', 'slate');
+    // a mini row the mini font can't draw (accents, other writing systems) takes a text row's height
+    const rowH = (l: { text: string; mini?: boolean }) => (l.mini && miniCovers(l.text) ? 7 : 10);
+    const rowsH = lines.reduce((s, l) => s + rowH(l), 0);
+    const help = wrapText(hints(['orbit', 'zoom', 'back']), cardW - 6, miniWidth);
+    const helpH = help.every(miniCovers) ? 7 : 9;
+    const h = 8 + rowsH + 4 + buttons.length * 13 + 7 + help.length * helpH;
+    ui.panel(x, y - 4, cardW, h, 'ink', 'slate');
     for (const l of lines) {
       if (l.mini) ui.mini(x + 5, y + 1, l.text, l.color);
       else ui.text(x + 5, y, l.text, { color: l.color });
-      y += l.mini ? 7 : 10;
+      y += rowH(l);
     }
     y += 4;
     this.rects.clear();
     buttons.forEach((b, i) => {
-      const r = { x: x + 4, y, w: CARD_W - 8, h: 12 };
-      ui.button(r, b.label, { focus: i === this.cursor, accent: b.accent });
+      const r = { x: x + 4, y, w: cardW - 8, h: 12 };
+      ui.button(r, shown(b, r.w - 6), { focus: i === this.cursor, accent: b.accent });
       this.rects.set(b.id, r);
       y += 13;
     });
-    ui.mini(x + CARD_W / 2, y + 3, 'DRAG / Q E ORBIT · WHEEL ZOOM · ESC BACK', 'slate', 'center');
+    help.forEach((row, i) => ui.mini(x + cardW / 2, y + 3 + i * helpH, row, 'slate', 'center'));
   }
 
   // ------------------------------------------------------------------ camera
