@@ -1798,17 +1798,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /**
    * Title or the town's Engine Workshop → Engine World: the same page with ?game=world (other URL
-   * options kept), at `room` (the Asset Gallery) or the Atrium. From town the run is saved first;
-   * Engine World's way back opens the title, where Continue picks it up.
+   * options kept), at `room` (the Asset Gallery) or the Atrium. From town the run is saved first,
+   * and the hero stays when it can't be kept (the write failed, or saves live only in this page):
+   * leaving would lose it. Engine World's way back opens the title, where Continue picks it up.
+   * Returns whether the game goes (headless and in a replay there is no page to leave).
    */
-  engineWorld(room?: string): void {
-    if (this.screen === 'town') this.autosave('engine world');
-    if (!this.ctx.engine.renderer.container || this.replaying) return; // headless: there is no page to leave
+  engineWorld(room?: string): boolean {
+    if (this.screen === 'town') {
+      const kept = this.autosave('engine world'); // a failed write says so itself (the storage toast)
+      if (!this.replaying && (!kept || this.store.volatile)) {
+        if (kept) this.feedLine(t('menu.slots.volatile'), 'orange');
+        return false;
+      }
+    }
+    if (!this.ctx.engine.renderer.container || this.replaying) return true;
     const u = new URL(location.href);
     u.searchParams.set('game', 'world');
     if (room) u.searchParams.set('room', room);
     else u.searchParams.delete('room');
     location.assign(u.toString());
+    return true;
   }
 
   /** Pause → Photo mode. */

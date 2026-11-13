@@ -64,7 +64,7 @@ export interface MenuHost {
   /** The look studio (filters per layer): optional, so other hosts can leave it out. */
   lookStudio?(): void;
   /** Open Engine World (the engine's tech demo), at one of its rooms: optional, so other hosts can leave it out. */
-  engineWorld?(room?: string): void;
+  engineWorld?(room?: string): unknown;
   /**
    * The game's languages (docs/game/lang.md): those it has (its own first), the one shown, whether
    * the address names one (`?lang=`: the AI Hub always does; no Language menu then), and choosing
