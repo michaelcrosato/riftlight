@@ -2,7 +2,7 @@
 // and the engine's input (moved from e2e riftlight-showcase, whose pictures, photo mode and URL
 // check stay in the browser); then what needs a page (pointer lock, a picture, a file download or
 // picker) does nothing, and the game plays on. One engine for the file, tests in order.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type HeadlessRiftlight, headlessRiftlight, stepUntil } from '../headless';
 
 const T = 30_000;
@@ -28,6 +28,30 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       expect(ids).toContain('arcade');
       expect(ids).toContain('bestiary');
       physics0 = JSON.stringify(engine.physics.counts());
+    },
+    T,
+  );
+
+  it(
+    'the Engine Workshop in town opens Engine World and its Asset Gallery (the run saved first); headless the page stays',
+    () => {
+      const { rl, game, engine } = h;
+      const ids = game.town.interactables.map((i) => i.id);
+      expect(ids).toEqual(expect.arrayContaining(['world', 'gallery']));
+      const opened = vi.spyOn(game, 'engineWorld');
+      const saved = vi.spyOn(game, 'autosave');
+      expect(rl.talkTo('gallery').ok, 'walk to the easel and use it').toBe(true);
+      expect(opened).toHaveBeenLastCalledWith('gallery');
+      expect(saved).toHaveBeenLastCalledWith('engine world');
+      expect(rl.talkTo('world').ok, 'walk to the ring and use it').toBe(true);
+      expect(opened).toHaveBeenLastCalledWith(undefined);
+      expect(opened).toHaveBeenCalledTimes(2);
+      opened.mockRestore();
+      saved.mockRestore();
+      expect(rl.state().screen).toBe('town');
+      expect(game.showcase.active).toBe(false);
+      engine.step(10);
+      expect(engine.errors).toEqual([]);
     },
     T,
   );

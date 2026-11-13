@@ -56,10 +56,11 @@ describe("the townsfolk's words", () => {
 });
 
 describe('prompts in town', () => {
-  it('every interactable (townsfolk, stash, arcade, Hall of Beasts) says its prompt, name, verb and title as lines', async () => {
+  it('every interactable (townsfolk, stash, arcade, Hall of Beasts, the Engine Workshop) says its prompt, name, verb and title as lines', async () => {
     const { game, engine } = await headlessRiftlight();
     const ids = game.town.interactables.map((i) => i.id);
-    expect(ids).toEqual(expect.arrayContaining(['brann', 'ilsa', 'oru', 'vex', 'stash', 'arcade', 'bestiary']));
+    expect(ids).toEqual(expect.arrayContaining(['brann', 'ilsa', 'oru', 'vex', 'stash', 'arcade', 'bestiary', 'world', 'gallery']));
+    expect(game.town.interactables.find((i) => i.id === 'gallery')!.prompt).toBe('Browse the Asset Gallery');
     const brann = game.town.interactables.find((i) => i.id === 'brann')!;
     expect([brann.prompt, brann.name, brann.verb, brann.title]).toEqual(['Talk to Brann', 'Brann', 'Talk', 'Blacksmith']);
     expect(game.town.interactables.find((i) => i.id === 'stash')!.prompt).toBe('Open the stash');

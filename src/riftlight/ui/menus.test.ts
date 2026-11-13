@@ -26,11 +26,11 @@ describe('links between Riftlight and Engine World', () => {
     expect(titleMenu(host()).items().map((w) => w.id)).not.toContain('gallery');
   });
 
-  it('with the language in the address (the AI Hub), no Engine World or Asset Gallery: they are not translated', () => {
-    const language = { available: ['en'], current: 'en', asked: true, choose: () => {} };
+  it('with the language in the address (the AI Hub), Engine World and the Asset Gallery stay; the Language menu is the hub\'s', () => {
+    const language = { available: ['en', 'fr'], current: 'en', asked: true, choose: () => {} };
     const ids = titleMenu(host({ engineWorld: () => {}, language })).items().map((w) => w.id);
-    expect(ids).not.toContain('world');
-    expect(ids).not.toContain('gallery');
+    expect(ids).toContain('world');
+    expect(ids).toContain('gallery');
     expect(ids).not.toContain('language');
   });
 

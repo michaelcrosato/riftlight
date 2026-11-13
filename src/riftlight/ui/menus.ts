@@ -83,16 +83,15 @@ export function titleMenu(h: MenuHost): Menu {
     () => {
       const last = h.saves.last;
       const w: Widget[] = [];
-      // the hub names the language in the address (`?lang=`): its own menu is in charge, and
-      // Engine World (an untranslated tech demo) is left out
+      // the hub names the language in the address (`?lang=`): its own menu is in charge
       const asked = !!h.language?.asked;
       if (last !== null) w.push({ kind: 'button', id: 'continue', label: t('menu.title.continue'), onClick: () => h.play({ kind: 'continue' }), accent: 'teal' });
       w.push({ kind: 'button', id: 'new', label: t('menu.title.new_run'), onClick: () => h.openMenu(slotsMenu(h, 'new')) });
       w.push({ kind: 'button', id: 'load', label: t('menu.title.load'), onClick: () => h.openMenu(slotsMenu(h, 'load')) });
       w.push({ kind: 'button', id: 'settings', label: t('menu.title.settings'), onClick: () => h.openMenu(settingsMenu(h)) });
       if (h.language && !asked && h.language.available.length > 1) w.push({ kind: 'button', id: 'language', label: t('menu.title.language'), onClick: () => h.openMenu(languageMenu(h)) });
-      if (h.engineWorld && !asked) w.push({ kind: 'button', id: 'world', label: t('menu.title.world'), onClick: () => h.engineWorld!(), hint: t('menu.title.world.hint') });
-      if (h.engineWorld && !asked) w.push({ kind: 'button', id: 'gallery', label: t('menu.title.gallery'), onClick: () => h.engineWorld!('gallery'), hint: t('menu.title.gallery.hint') });
+      if (h.engineWorld) w.push({ kind: 'button', id: 'world', label: t('menu.title.world'), onClick: () => h.engineWorld!(), hint: t('menu.title.world.hint') });
+      if (h.engineWorld) w.push({ kind: 'button', id: 'gallery', label: t('menu.title.gallery'), onClick: () => h.engineWorld!('gallery'), hint: t('menu.title.gallery.hint') });
       return w;
     },
     { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h) },

@@ -1648,20 +1648,32 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const ui = this.ui;
     const g = hudGeometry(ui.w, ui.h, this.hudControls);
     // above the bar; on a phone above the orbs (and the touch controls), with the label cut to the screen
-    const y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
+    let y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
     // on a touch screen the interact button says what F does: the prompt has no key glyph
     const put = (x: number, yy: number, s: string) => (g.touch ? (ui.text(x, yy, s, { align: 'center', color: 'white' }), ui.measure(s)) : ui.prompt(x, yy, 'interact', s, 'white', 'center'));
     const text = clip(label, ui.w - 10 - (g.touch ? 0 : ui.glyphWidth('interact') + 3), (s) => ui.measure(s));
     const w = put(-1000, -1000, text);
-    const box = { x: Math.round(ui.w / 2 - w / 2 - 4), y: y - 3, w: w + 8, h: sub ? 21 : 13 };
+    // the line under it: the normal font when it fits the label's box or the mini font can't draw
+    // it, else the mini font; cut to the screen, and the box grows to hold it
+    const big = sub && (ui.measure(sub) <= w + 8 || !miniCovers(sub)) ? clip(sub, ui.w - 12, (s) => ui.measure(s)) : '';
+    const small = sub && !big ? clip(sub, ui.w - 12, miniWidth) : '';
+    const sw = big ? ui.measure(big) : small ? miniWidth(small) : 0;
+    const bw = Math.max(w, sw) + 8;
+    const box = { x: Math.round(ui.w / 2 - bw / 2), y: y - 3, w: bw, h: big ? 22 : sub ? 21 : 13 }; // the normal font's tails (Q, a comma) need a row more
+    // a box wider than the room between the orbs goes up over their frames (they are drawn after it)
+    const orbTop = Math.min(g.life.y, g.mana.y) - g.orbR - 3;
+    const overOrbs = box.x < g.life.x + g.orbR + 3 || box.x + box.w > g.mana.x - g.orbR - 3;
+    if (overOrbs && box.y + box.h > orbTop) {
+      const lift = box.y + box.h - orbTop;
+      box.y -= lift;
+      y -= lift;
+    }
     this.hudLayout.reserve(box);
     ui.rect(box.x, box.y, box.w, box.h, 'ink');
     ui.outline(box.x, box.y, box.w, box.h, 'slate');
     put(ui.w / 2, y, text);
-    if (sub) {
-      if (ui.measure(sub) <= box.w) ui.text(ui.w / 2, y + 9, sub, { align: 'center', color: 'mist' });
-      else ui.mini(ui.w / 2, y + 10, clip(sub, ui.w - 4, miniWidth), 'mist', 'center');
-    }
+    if (big) ui.text(ui.w / 2, y + 9, big, { align: 'center', color: 'mist' });
+    else if (small) ui.mini(ui.w / 2, y + 10, small, 'mist', 'center');
   }
 
   /** The fixed HUD's rects in art pixels and the touch controls (agent API `ui.hud()`, the phone e2e). */
@@ -1784,9 +1796,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     };
   }
 
-  /** Title → Engine World: the same page with ?game=world (other URL options kept), at `room` (the Asset Gallery) or the Atrium. */
+  /**
+   * Title or the town's Engine Workshop → Engine World: the same page with ?game=world (other URL
+   * options kept), at `room` (the Asset Gallery) or the Atrium. From town the run is saved first;
+   * Engine World's way back opens the title, where Continue picks it up.
+   */
   engineWorld(room?: string): void {
-    if (!this.ctx.engine.renderer.container) return; // headless: there is no page to leave
+    if (this.screen === 'town') this.autosave('engine world');
+    if (!this.ctx.engine.renderer.container || this.replaying) return; // headless: there is no page to leave
     const u = new URL(location.href);
     u.searchParams.set('game', 'world');
     if (room) u.searchParams.set('room', room);

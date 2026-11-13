@@ -7,6 +7,7 @@ mode. Each piece is small and complete, written to be copied as the start of a n
 | --- | --- | --- | --- |
 | **Arcade: Rift Runner** | the cabinet booth south-west of the plaza (F) · `?game=arcade` on its own | `side` | `showcase/arcade/` |
 | **Hall of Beasts** | the archway and lectern south-east of the plaza (F) | `first`, `free`, an orbit on `fixed` | `showcase/bestiary/` |
+| **Engine Workshop** | east of the plaza, by the road to the bridge (F): the ring opens Engine World, the easel its Asset Gallery (the run is saved, then the page goes to `?game=world`; Engine World's way back opens the title) | Engine World's own | `showcase/townProps.ts` |
 | **Photo mode** | anywhere in town, a level, the arcade or the hall: **O**, or pause → Photo mode | `free` | `showcase/photo/` |
 
 **How it plugs into the shell** (`showcase/Showcase.ts`). Riftlight asks the showcase first in
@@ -19,7 +20,7 @@ thing you used and an iris closes (HUD rects), the mode builds behind it, then
 swap the look and the iris opens. Leaving puts back the player's look, the render mode and the
 game's own iso preset. No `engine.loadGame`: the town, the hero, the save and the music player survive, and each
 stage removes every collider, trigger and controller it added (`showcase/headless.test.ts` checks
-`physics.counts()` comes back to where it was). The town gets the booth and the archway through
+`physics.counts()` comes back to where it was). The town gets the booth, the archway and the workshop through
 `Town.extend({ root, blockers, interactables, activate, deactivate, update })`
 (`showcase/townProps.ts`), lights from the engine's pool only while the town shows.
 

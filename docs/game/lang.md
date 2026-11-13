@@ -72,8 +72,9 @@ never imports the line list), and areas stay function declarations.
 - **Choosing the language**: the hub's `?lang=`, then the player's choice, the browser's, English.
   The title's **Language** entry lists the languages the page has, each in its own name, and
   restarts in the one chosen; it shows only when the address has no `?lang=` (then the hub's menu
-  is in charge) and the page has more than English (a development build has no translations). With
-  `?lang=` the title also hides Engine World and the Asset Gallery (developer pages, not translated).
+  is in charge) and the page has more than English (a development build has no translations).
+  Engine World and the Asset Gallery are on the title (and at the town's Engine Workshop) in every
+  build: their entries are lines, the pages themselves are the engine's tech demo, in English.
 - **Room that grows**: text is measured (`textWidthPx`, `ui.measure`) and wrapped (`wrapText`, the
   kit's `wrap`), never counted in characters; boxes, columns and buttons grow to fit. A cut
   (`clip`) is the last resort. The 3×5 mini font draws only what it covers (`miniCovers`); other
