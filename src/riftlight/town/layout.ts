@@ -45,6 +45,8 @@ export const TOWN_LAYOUT = {
     [-2.2, -26.4],
     [8.6, -16.6],
   ] as const,
+  /** The showcase's Engine Workshop (showcase/townProps.ts): east of the plaza below the road to the bridge; the woods keep clear of it. */
+  workshop: [14, -12] as const,
   spawn: [0, -2.9] as const,
   portalSpawn: [0, 5.1] as const,
   /**

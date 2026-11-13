@@ -666,7 +666,7 @@ class Outskirts {
   woodlands(): void {
     const keep: Keep = (sx, sy) => {
       const r = Math.hypot(sx, sy);
-      return r < 15.5 || Math.abs(sx - L.stream.sx) < 2.6 || nearPath(sx, sy);
+      return r < 15.5 || Math.abs(sx - L.stream.sx) < 2.6 || nearPath(sx, sy) || Math.hypot(sx - L.workshop[0], sy - L.workshop[1]) < 4.2;
     };
     const oaks = ['kenney-nature/tree-oak', 'kenney-nature/tree-fat', 'kenney-nature/tree-oak', 'kenney-nature/tree-fat'];
     const pines = ['kenney-nature/tree-pine-round-d', 'kenney-nature/tree-pine-small-b', 'kenney-nature/tree-pine-small-c', 'kenney-nature/tree-pine-small-c'];

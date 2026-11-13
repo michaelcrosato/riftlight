@@ -120,7 +120,7 @@ export class Showcase {
     return this.mode !== null || this.iris !== null || this.loading || this.photo.active;
   }
 
-  /** Add the arcade booth and the Hall of Beasts to the town. */
+  /** Add the arcade booth, the Hall of Beasts and the Engine Workshop to the town. */
   buildTown(): void {
     this.props = buildShowcaseProps(this.ctx);
     this.game.town.extend(this.props.extension);
@@ -130,6 +130,8 @@ export class Showcase {
   interact(id: string): boolean {
     if (id === 'arcade') return this.open(this.arcade), true;
     if (id === 'bestiary') return this.open(this.bestiary), true;
+    // the Engine Workshop: Engine World and its Asset Gallery are pages of their own (the run is saved first)
+    if (id === 'world' || id === 'gallery') return this.game.engineWorld(id === 'gallery' ? 'gallery' : undefined), true;
     return false;
   }
 

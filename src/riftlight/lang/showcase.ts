@@ -83,6 +83,9 @@ const FIXED: LineArea = {
     'showcase.bestiary.name': 'Hall of Beasts',
     'showcase.prompt.bestiary': 'Enter the Hall of Beasts',
     'showcase.verb.enter': 'Enter',
+    'showcase.prompt.world': 'Step into Engine World',
+    'showcase.prompt.gallery': 'Browse the Asset Gallery',
+    'showcase.verb.visit': 'Visit',
     // the arcade
     'showcase.arcade.best': 'Best {time}',
     'showcase.arcade.best_none': 'Best --:--.--',
@@ -153,6 +156,9 @@ const FIXED: LineArea = {
     'showcase.bestiary.name': 'A gallery in town where every kind of monster the hero has killed stands on a pedestal. Its name, and the title over it.',
     'showcase.prompt.bestiary': 'Prompt at the Hall of Beasts’ lectern; the key to press is drawn before it.',
     'showcase.verb.enter': 'The touch button at the Hall of Beasts (one word).',
+    'showcase.prompt.world': 'Prompt at the Engine Workshop’s glowing ring in town: going through leaves the game for Engine World, a separate tech demo of the game engine (a name, as on the title screen). The key to press is drawn before it.',
+    'showcase.prompt.gallery': 'Prompt at the Engine Workshop’s easel in town: leaves the game for the Asset Gallery, every 3D model and texture the game has (a name, as on the title screen). The key to press is drawn before it.',
+    'showcase.verb.visit': 'The touch button at the Engine Workshop (one word): go to Engine World or the Asset Gallery.',
     'showcase.arcade.best': 'The arcade’s best time, top right ({time} like 01:23.45).',
     'showcase.arcade.best_none': 'The arcade’s best time before any finish (the dashes stand for the digits).',
     'showcase.arcade.ready': 'Big, before the arcade run starts.',
@@ -192,6 +198,7 @@ const FIXED: LineArea = {
   max: {
     'showcase.verb.play': 5,
     'showcase.verb.enter': 5,
+    'showcase.verb.visit': 6,
     'showcase.photo.row.look': 10,
     'showcase.photo.row.mode': 10,
     'showcase.photo.row.res': 10,
