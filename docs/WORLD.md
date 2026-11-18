@@ -132,6 +132,20 @@ held while a menu freezes the room), the card's length comes from the recorded a
 fresh start, 8 s through a door), and a room's level starts with nothing held (`roomStarted`), so
 whether the card or a toast takes a click is input-derived and a recording replays it at any frame rate.
 
+A room's HUD keeps clear of the shell's and of a phone's controls: its line of counts or state
+goes through `room.hudLine(text, color)` (bottom left over the prompts, over the joystick and the
+buttons where they share its columns, wrapped to a phone's 130 columns); a block of its own
+starts at `room.lineTop(width, rows)` (the Time Lab's prompt and bar), a panel along the bottom
+ends at `room.hudFloor(x0, x1)` (the Gallery's), one `width` art pixels wide along the top
+starts at `room.hudTop(width)` (under ≡ GO ?: the mixer, the robots' tree), and
+`room.touchBoxes()` gives the controls for a room that lays a whole panel out around them (the
+Workshop keeps left of its slots up the right edge). Without a page they are where their data puts
+them (`worldTouchLayout`) while touch controls are on: headless with `touch: true`, or a replay of
+a phone's recording (the recording keeps that the page had them, `Recording.touch`), so
+`touchHud.headless.test.ts` holds every room's HUD clear of them on a phone held either way, and a
+replay lays it out as the phone did. With a mouse and a keyboard they all sit where the rooms'
+lines and panels always were.
+
 ## Add a room
 
 1. Write `src/world/rooms/<id>.ts` exporting a `RoomDef` (copy the closest room). Keep the

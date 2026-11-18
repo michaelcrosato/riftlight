@@ -10,7 +10,7 @@ import { Hud } from './hud/Hud';
 import { Input, type InputDevice } from './input';
 import type { Recording } from './replay';
 import type { PlayerSettings } from './settings';
-import { type TouchControls, TouchFollow } from './TouchControls';
+import { type TouchControls, TouchFollow, zonePath } from './TouchControls';
 
 describe('touch controls follow the device in use (TouchFollow)', () => {
   it('step aside when a pad or the keyboard is picked up, and come back on the next touch; a device that only stays moves nothing', () => {
@@ -65,6 +65,25 @@ describe('touch controls follow the device in use (TouchFollow)', () => {
   });
 });
 
+describe("a floating stick's zone gives way to a panel open over it (TouchControls.giveWay)", () => {
+  /** The squares a clip path of `zonePath` is made of, and whether a point is inside one: where the zone still takes touches. */
+  const squares = (d: string) => [...d.matchAll(/M([\d.]+) ([\d.]+)H([\d.]+)V([\d.]+)H[\d.]+Z/g)].map((m) => m.slice(1).map(Number));
+  const takes = (d: string, x: number, y: number) => squares(d).some(([x0, y0, x1, y1]) => x > x0! && x < x1! && y > y0! && y < y1!);
+
+  it('cuts the panels out of the zone (their touches reach the game) and keeps the rest of it the stick\'s', () => {
+    expect(zonePath(100, 200, [])).toBe('M0 0H100V200H0Z');
+    // a panel across the zone's top right (photo mode's, held sideways), and a small one low on the left
+    const d = zonePath(100, 200, [
+      { x0: 40, y0: 0, x1: 100, y1: 120 },
+      { x0: 10, y0: 150, x1: 30, y1: 170 },
+    ]);
+    for (const [x, y] of [[50, 60], [99, 1], [41, 119], [20, 160]] as const) expect(takes(d, x, y), `${x},${y} given way`).toBe(false);
+    for (const [x, y] of [[20, 60], [39, 1], [50, 130], [5, 160], [20, 190], [99, 199]] as const) expect(takes(d, x, y), `${x},${y} still the stick's`).toBe(true);
+    // a zone wholly given way: nothing of it takes a touch
+    expect(squares(zonePath(100, 200, [{ x0: 0, y0: 0, x1: 100, y1: 200 }]))).toEqual([]);
+  });
+});
+
 describe('touch density on a phone (EngineOptions.touchDensity)', () => {
   class Still implements Game {
     readonly name = 'Still';
@@ -110,6 +129,40 @@ describe('touch density on a phone (EngineOptions.touchDensity)', () => {
     const plain = { ...rec, density: undefined }; // a recording without touch controls
     await tool.replay(plain, () => tool.loadGame(new Still()));
     expect(tool.renderer.resolution).toEqual({ width: 633, height: 293 });
+    tool.dispose();
+  });
+
+  it('a recording keeps whether the page had touch controls, and a headless replay has them too (prompts name them, a HUD lays out around them), at any touch density', async () => {
+    class Prompt implements Game {
+      readonly name = 'Prompt';
+      readonly controls = { jump: { key: 'Space', pad: 'PadA', touch: 'B' } };
+      seen: string[] = [];
+      setup(): void {}
+      update(ctx: GameContext): void {
+        this.seen.push(ctx.engine.controls.label('jump'));
+      }
+      cameraTarget() {
+        return new Vector3();
+      }
+    }
+    const viewport = { width: 390, height: 844, dpr: 3 };
+    // a game that keeps the art size the viewport gives on a phone (no touchDensity, as Engine World)
+    const phone = await Engine.headless(new Prompt(), { viewport, touch: true });
+    phone.input.noteTouch();
+    phone.step(2);
+    const rec = JSON.parse(JSON.stringify(phone.recording())) as Recording;
+    const live = (phone.game as Prompt).seen;
+    phone.dispose();
+    expect([rec.touch, rec.density, live.at(-1)]).toEqual([true, undefined, 'B']);
+    const tool = await Engine.headless(new Prompt()); // npm run replay: no touch option
+    expect(tool.controls.touch).toBe(false);
+    let game = new Prompt();
+    await tool.replay(rec, () => tool.loadGame(game));
+    expect([tool.controls.touch, game.seen]).toEqual([true, live]);
+    // a recording made without them (a desktop, a touch-screen laptop's tap): a finger names the keys
+    const desk = { ...rec, touch: undefined };
+    await tool.replay(desk, () => tool.loadGame((game = new Prompt())));
+    expect([tool.controls.touch, game.seen.at(-1)]).toEqual([false, 'Space']);
     tool.dispose();
   });
 });

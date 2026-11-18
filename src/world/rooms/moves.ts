@@ -156,7 +156,7 @@ this.loseSpeedToWalls();`,
         for (const c of coins) if (!c.got) c.mixer.update(dt);
       },
       draw() {
-        ctx.hud.text(4, 18, `COINS ${got}/${coins.length}`, { color: 'sand', anchor: 'bottom-left' });
+        room.hudLine(`COINS ${got}/${coins.length}`, 'sand');
       },
       // on a phone PRONE shows here (hidden in the other rooms): the crawl tunnel needs it
       touch: () => PRONE_SHOWN,

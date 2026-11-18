@@ -5,7 +5,6 @@
  */
 import { Color, InstancedMesh, Matrix4, Mesh, MeshBasicNodeMaterial, SphereGeometry, Vector3 } from 'three/webgpu';
 import { BulletPool, emitter, type Emitter, FIXED_DT, PALETTE, type PatternDef, setLookLayer, toonMaterial } from '../../engine';
-import { touchFloor } from '../controls';
 import type { Knob, RoomDef } from '../types';
 
 /** On a phone the hero fires its fan toward the turret by itself this often (seconds), so a thumb is free to weave. */
@@ -198,9 +197,7 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
         turret.rotation.y += 0.02;
       },
       draw() {
-        const hud = ctx.hud;
-        // over the shell's prompts, and over a phone's joystick
-        hud.text(4, Math.min(hud.height - 25, touchFloor(e, 4, 180) - 9), `BULLETS ${pool.alive} · HITS ${hits} · GRAZE ${grazes} · TURRET ${hp}%`, { color: 'sand' });
+        room.hudLine(`BULLETS ${pool.alive} · HITS ${hits} · GRAZE ${grazes} · TURRET ${hp}%`, 'sand');
       },
       // the camera holds the whole arena, wherever you are in it
       cameraTarget: () => ARENA_CENTER,

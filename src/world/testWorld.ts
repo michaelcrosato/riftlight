@@ -1,7 +1,7 @@
 // Engine World headless, for tests: one engine per test file (the World shell is one per process),
 // rooms loaded one after another with `__WORLD__.goto`, as a page does. Node only: imports node.ts.
 import { expect } from 'vitest';
-import type { Engine, EngineOptions } from '../engine';
+import type { Engine, HeadlessOptions } from '../engine';
 import { headlessGame } from '../riftlight/headless';
 import { worldApi, WORLD_OPTIONS, worldGame } from './index';
 import type { RoomGame } from './shell';
@@ -9,8 +9,8 @@ import type { RoomGame } from './shell';
 /** How long a World test may take: boots and room loads are a few hundred ms each in Node. */
 export const WORLD_T = 30_000;
 
-/** Engine World headless, first in `room` (the Atrium by default), with any other engine `options` (a fake hub's settings). Dispose the engine when done. */
-export async function headlessWorld(room = 'atrium', seed = 1, options: Partial<EngineOptions> = {}): Promise<{ engine: Engine; w: typeof worldApi }> {
+/** Engine World headless, first in `room` (the Atrium by default), with any other engine `options` (a fake hub's settings, a phone's viewport). Dispose the engine when done. */
+export async function headlessWorld(room = 'atrium', seed = 1, options: Partial<HeadlessOptions> = {}): Promise<{ engine: Engine; w: typeof worldApi }> {
   const engine = await headlessGame(worldGame({ room, from: null }), { ...WORLD_OPTIONS, ...options, seed });
   return { engine, w: worldApi };
 }

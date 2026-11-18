@@ -55,6 +55,12 @@ export interface Recording {
    * the least CSS pixels per art pixel on a phone); left out for none. A headless replay frames with it.
    */
   readonly density?: number;
+  /**
+   * The page showed touch controls (`EngineOptions.touch`; `engine.controls.touch`); left out
+   * without them. A headless replay has them too: prompts name them, and a game that lays its HUD
+   * out around them (where their data puts them) does so as on the phone.
+   */
+  readonly touch?: boolean;
 }
 
 /** Frames a recording keeps: an hour at 60 fps. */
@@ -79,6 +85,7 @@ export function recordingProblem(v: unknown): string | null {
   }
   if (r.device !== undefined && !INPUT_DEVICES.includes(r.device)) return `device must be ${INPUT_DEVICES.join(', ')}`;
   if (r.density !== undefined && !(typeof r.density === 'number' && Number.isFinite(r.density) && r.density > 0)) return 'density must be a number above 0';
+  if (r.touch !== undefined && typeof r.touch !== 'boolean') return 'touch must be true or false';
   if (r.from !== undefined) {
     const p = snapshotProblem(r.from);
     if (p) return `from: ${p}`;

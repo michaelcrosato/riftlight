@@ -24,6 +24,9 @@
 //   - real touches (CDP): a quick swipe from the pause menu closes it, one down from the tree's top
 //     bar closes the tree; the floating stick and a skill button work at once; two fingers on the
 //     world pinch the zoom and hold no press, and are no swing landing a frame apart
+//   - photo mode: the floating stick's zone gives way to its open panel (a tap on a row's < inside
+//     the zone steps that row back), a thumb in the zone off the panel still moves the stick, and ≡
+//     leaves photo mode with the whole zone the stick's again
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
 //   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
@@ -96,15 +99,23 @@ export async function runRiftlightPhone(h, orientation) {
     check(title.top === 'title' && title.ids.length >= 4 && title.hidden.length === 0 && title.least >= 40, `${orientation}: every title entry shows, at least 40 CSS px tall, with no save (${title.ids.join(' ')}; hidden ${title.hidden.join(' ') || 'none'}; ${Math.round(title.least)} CSS px)`);
     await shot('title');
 
-    // a level, safe to tap around in: god mode, monsters idle
-    await R(async () => {
+    // a level, safe to tap around in: god mode, monsters idle; the controls step aside while it
+    // loads (no frame of the game's runs then, so none would hide them) and come back in it
+    const loading = await R(async () => {
       const rl = window.__RIFTLIGHT__;
+      const e = window.__PIXEL_ENGINE__;
       rl.newRun({ slot: 0, seed: 4242 });
-      await rl.enterDepth(1);
+      e.step(2);
+      const town = e.touch.visible;
+      const entering = rl.enterDepth(1);
+      const during = e.touch.visible;
+      await entering;
       rl.dev.god = true;
       rl.dev.ai = false;
-      window.__PIXEL_ENGINE__.step(30);
+      e.step(30);
+      return { town, during, level: e.touch.visible };
     });
+    check(loading.town && !loading.during && loading.level, `${orientation}: the touch controls step aside while a level loads (town ${loading.town}, loading ${loading.during}, level ${loading.level})`);
     // record every key the touch buttons press
     await R(() => {
       const input = window.__PIXEL_ENGINE__.input;
@@ -373,6 +384,79 @@ export async function runRiftlightPhone(h, orientation) {
       }, c.zoom);
     })();
     check(apart.steps >= 8 && apart.swings === 0, `${orientation}: two fingers a frame apart pinch with no swing either (${apart.swings} swings in ${apart.steps} steps)`);
+
+    // photo mode: the floating stick's zone gives way to the open panel, so a finger taps a row's <
+    // inside the zone (it steps that row back); the zone keeps the rest (a thumb there still moves
+    // the stick), ≡ goes back to the game, and the whole zone is the stick's again
+    const photo = await (async () => {
+      const at = await R(() => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        rl.photo.open();
+        e.step(3);
+        const g = rl.game;
+        const p = g.showcase.photo;
+        const c = e.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / g.ui.w;
+        const z = e.touch.rects().zone;
+        const panel = p.panelRect;
+        const client = (r) => ({ x: c.left + r.x * k, y: c.top + r.y * k, w: r.w * k, h: r.h * k });
+        const inZone = (x, y) => x > z.left && x < z.right && y > z.top && y < z.bottom;
+        // the rows' < (a sun, ambient, light or look row: nothing that resizes the art), the first inside the zone
+        const order = ['sun', 'ambient', 'light', 'look'];
+        const arrows = [...p.rects]
+          .filter(([id]) => id.endsWith(':l') && order.includes(id.split(':')[0]))
+          .map(([id, r]) => ({ row: id.split(':')[0], ...client(r) }))
+          .map((r) => ({ ...r, cx: r.x + r.w / 2, cy: r.y + r.h / 2 }))
+          .filter((r) => inZone(r.cx, r.cy))
+          .sort((a, b) => order.indexOf(a.row) - order.indexOf(b.row));
+        // a point of the zone off the panel: under it, else left of it
+        const pc = client(panel);
+        const below = pc.y + pc.h + 12 < z.bottom - 8 ? { x: z.left + z.width * 0.4, y: (pc.y + pc.h + z.bottom) / 2 } : { x: (z.left + pc.x) / 2, y: z.top + z.height * 0.6 };
+        return { arrow: arrows[0] ?? null, rows: arrows.map((a) => a.row), off: inZone(below.x, below.y) && !(below.x > pc.x && below.x < pc.x + pc.w && below.y > pc.y && below.y < pc.y + pc.h) ? below : null };
+      });
+      if (!at.arrow) return { ...at, tapped: false };
+      const value = (row) =>
+        R((row) => {
+          const g = window.__RIFTLIGHT__.game;
+          const p = g.showcase.photo;
+          return { sun: p.sunScale, ambient: p.ambientScale, light: p.fill, look: p.look }[row];
+        }, row);
+      const before = await value(at.arrow.row);
+      await touch('touchStart', [[at.arrow.cx, at.arrow.cy, 61]]);
+      await touch('touchEnd', []);
+      await R(() => window.__PIXEL_ENGINE__.step(2));
+      const after = await value(at.arrow.row);
+      // a thumb in the zone off the panel: the stick
+      let analog = null;
+      if (at.off) {
+        await touch('touchStart', [[at.off.x, at.off.y, 62]]);
+        await touch('touchMove', [[at.off.x + 50, at.off.y, 62]]);
+        analog = await R(() => {
+          window.__PIXEL_ENGINE__.step(1);
+          return window.__PIXEL_ENGINE__.input.analog.x;
+        });
+        await touch('touchEnd', []);
+        await R(() => window.__PIXEL_ENGINE__.step(2));
+      }
+      await shot('photo');
+      await tapCode('Escape');
+      const closed = await R(() => {
+        window.__PIXEL_ENGINE__.step(3);
+        const zone = document.querySelector('.touch-ui .stick-zone');
+        return { active: window.__RIFTLIGHT__.photo.state().active, clip: zone ? getComputedStyle(zone).clipPath : null };
+      });
+      return { ...at, before, after, analog, closed };
+    })();
+    // back, not just changed: sun and ambient step down (from 1, never at their floor), light and
+    // look go to the one before (from the first, round to the last)
+    const back = !photo.arrow ? false : ['sun', 'ambient'].includes(photo.arrow.row) ? photo.after < photo.before : photo.after === photo.before - 1 || (photo.before === 0 && photo.after > 0);
+    check(
+      back,
+      `${orientation}: in photo mode a tap on a row's < inside the stick's zone steps the row back (${photo.arrow ? `${photo.arrow.row} ${photo.before} → ${photo.after}` : `no < in the zone: ${JSON.stringify(photo)}`})`,
+    );
+    check(photo.off === null || photo.analog > 0.3, `${orientation}: in photo mode a thumb in the zone off the panel still moves the stick (analog ${photo.analog})`);
+    check(photo.closed && !photo.closed.active && photo.closed.clip === 'none', `${orientation}: ≡ leaves photo mode and the zone is the stick's again (${JSON.stringify(photo.closed)})`);
 
     // the passive tree draws at the game's art size (its phone density) and names a finger's gestures;
     // the view paints its first frame as it opens (its own canvas: no frame of the game's needed)

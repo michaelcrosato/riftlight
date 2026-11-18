@@ -9,7 +9,7 @@ import { Object3D, Vector3 } from 'three/webgpu';
 import { hudSprite, type LightHandle, type PaletteColor, searchDefs, SpriteBatch, spriteSheet, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import { pageParam } from '../page';
-import { keyText, TOUCH_SLOTS, touchFloor, WORLD_CONTROLS, WORLD_KEYS } from '../controls';
+import { keyText, TOUCH_SLOTS, WORLD_CONTROLS, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
 import { assetsOf, clean, count, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, textureLine, tilePatch, wrap } from './shelves';
 
@@ -249,7 +249,7 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
         const lh = 9;
         const panelW = Math.max(...lines.map((l) => hud.measure(l.text).width)) + 8;
         // over the shell's prompts, and over a phone's joystick where it shares the panel's columns
-        const top = Math.min(hud.height - 16, touchFloor(ctx.engine, 2, 2 + panelW) - 2) - lines.length * lh;
+        const top = Math.min(hud.height - 16, room.hudFloor(2, 2 + panelW) - 2) - lines.length * lh;
         hud.rect(2, top - 3, panelW, lines.length * lh + 4, 'ink');
         lines.forEach((l, k) => hud.text(6, top + k * lh, l.text, { color: l.color }));
         // a texture's own pixels, exact, above the panel

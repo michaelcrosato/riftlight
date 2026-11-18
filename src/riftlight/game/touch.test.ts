@@ -16,6 +16,7 @@ function fakeEngine(hub: boolean) {
     touch: {
       visible: true,
       show() {},
+      giveWay() {},
       set: (code: string, s: TouchButtonState) => set.set(code, { ...set.get(code), ...s }),
     },
   };

@@ -95,11 +95,13 @@ export interface PickerLayout {
 /**
  * The picker on a HUD of `w` × `h` art pixels: down the right side under the room's title, or
  * along the bottom of a narrow (portrait) screen. `top` and `bottom`: where a phone's touch bar ends and
- * its controls start (the panel stays between them, with fewer rows and lines); `touch`: the hints say tap.
+ * its controls start (the panel stays between them, with fewer rows and lines); `right`: where the
+ * buttons up a phone's right edge start (the panel keeps left of them); `touch`: the hints say tap.
  */
-export function pickerLayout(w: number, h: number, o: { readonly top?: number; readonly bottom?: number; readonly touch?: boolean; readonly pad?: PadStyle } = {}): PickerLayout {
+export function pickerLayout(w: number, h: number, o: { readonly top?: number; readonly bottom?: number; readonly right?: number; readonly touch?: boolean; readonly pad?: PadStyle } = {}): PickerLayout {
   const wide = w >= 300;
-  const pw = wide ? Math.min(180, Math.floor(w * 0.37)) : w - 4;
+  const right = Math.min(w, o.right ?? w);
+  const pw = wide ? Math.min(180, Math.floor(w * 0.37)) : right - 4;
   const top = Math.max(24, o.top ?? 0);
   const bottom = Math.min(h, o.bottom ?? h) - 2;
   // the keys, as many as the panel's width has room for (3×5 font: 4 px a character)
@@ -121,7 +123,7 @@ export function pickerLayout(w: number, h: number, o: { readonly top?: number; r
   if (fit() < 3) hinted = 0;
   const rows = Math.max(3, Math.min(wide ? 12 : 4, fit()));
   const ph = height(lines, hinted, rows);
-  const x = wide ? w - pw - 2 : 2;
+  const x = wide ? right - pw - 2 : 2;
   const y = wide ? top : bottom - ph;
   const list = { x: x + 4, y: y + 28, w: pw - 8, h: rows * ROW };
   return {
@@ -313,27 +315,36 @@ const t = -origin.y / dir.y;`,
     /** The picker on this screen, kept between a phone's touch bar and its controls where they share its columns. */
     const layout = (): PickerLayout => {
       const { width: w, height: h } = ctx.hud;
-      const touch = ctx.engine.touch?.visible ? ctx.engine.touch : null;
-      const canvas = ctx.hud.canvas;
       // the hints name the device in use: a controller's buttons, the keys, a tap
       const controls = ctx.engine.controls;
       const pad = controls.device === 'pad' ? controls.style : undefined;
-      if (!touch || !canvas) return pickerLayout(w, h, { pad });
-      const span = pickerLayout(w, h, { touch: !pad, pad }).panel;
-      const r = canvas.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return pickerLayout(w, h, { touch: !pad, pad });
-      const c = touch.rects();
-      const across = (b: DOMRect) => ((b.right - r.left) / r.width) * w > span.x && ((b.left - r.left) / r.width) * w < span.x + span.w;
-      const artY = (y: number) => ((y - r.top) / r.height) * h;
-      // over the joystick and the buttons along the bottom, under the top-left ones (≡ GO ?) and a debug bar
-      const high = (b: DOMRect) => b.top < r.top + r.height / 3;
-      const shown = c.buttons.filter((x) => !x.hidden).map((x) => x.rect);
+      // the page's controls, or where a page puts them without one (headless, a replay of a phone's recording)
+      const boxes = room.touchBoxes();
+      if (!boxes.length) return pickerLayout(w, h, { pad });
+      // over the joystick and the buttons along the bottom, under the top-left ones (≡ GO ?) and a
+      // debug bar; left of the room's buttons up the right edge where 3 rows would not fit above them
       let bottom = h;
-      for (const b of [c.stick, ...shown.filter((b) => !high(b))]) if (b && across(b)) bottom = Math.min(bottom, Math.floor(artY(b.top)));
-      const tops = [c.bar, ...shown.filter(high)];
       let top = 0;
-      for (const b of tops) if (b && across(b)) top = Math.max(top, Math.ceil(artY(b.bottom)) + 2);
-      return pickerLayout(w, h, { top, bottom, touch: !pad, pad });
+      let right = w;
+      let span = pickerLayout(w, h, { touch: !pad, pad }).panel;
+      const across = (b: Rect) => b.x + b.w > span.x && b.x < span.x + span.w;
+      for (const b of boxes) if (b.high && across(b)) top = Math.max(top, b.y + b.h + 2);
+      const least = pickerLayout(w, h, { top, bottom: top, touch: !pad, pad }).panel.h; // the panel at its shortest
+      for (let tries = 0; tries < 4 && w >= 300; tries++) {
+        const side = boxes.filter((b) => !b.high && across(b) && b.x > w / 2 && b.y < Math.max(24, top) + least + 2);
+        if (!side.length) break;
+        right = Math.min(right, ...side.map((b) => b.x - 2));
+        span = pickerLayout(w, h, { top, right, touch: !pad, pad }).panel;
+      }
+      for (const b of boxes) if (!b.high && across(b)) bottom = Math.min(bottom, b.y);
+      const bar = ctx.engine.touch?.rects().bar;
+      const canvas = ctx.hud.canvas;
+      if (bar && canvas) {
+        const r = canvas.getBoundingClientRect();
+        const b = { x: ((bar.left - r.left) / r.width) * w, y: 0, w: (bar.width / r.width) * w, h: 1 };
+        if (r.width > 0 && r.height > 0 && across(b)) top = Math.max(top, Math.ceil(((bar.bottom - r.top) / r.height) * h) + 2);
+      }
+      return pickerLayout(w, h, { top, bottom, right, touch: !pad, pad });
     };
     let lay = layout();
 
@@ -796,7 +807,7 @@ const t = -origin.y / dir.y;`,
           ui.rect(bx, by, bw, bh, 'ink');
           hud.sprite(bx + 3, by + 3, spr.rows, spr.colors, { scale });
         }
-        if (lay.wide && yaw) hud.text(4, 18, `NEXT ONE TURNED ${Math.round((yaw * 180) / Math.PI)}°`, { anchor: 'bottom-left', color: 'sky' });
+        if (lay.wide && yaw) room.hudLine(`NEXT ONE TURNED ${Math.round((yaw * 180) / Math.PI)}°`, 'sky');
       },
       // the hero in the middle of what the panel leaves free (left of it, or above it), so what goes down in front isn't under it
       cameraTarget() {

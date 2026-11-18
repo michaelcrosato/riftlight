@@ -231,7 +231,7 @@ this.mesh.setMatrixAt(i, this.m.compose(this.p, this.q, this.one));`,
       draw() {
         const n = boxes.count + balls.count;
         if (n === 0) return;
-        ctx.hud.text(4, 18, `BODIES ${n} · ASLEEP ${boxes.sleeping() + balls.sleeping()} · STEP ${physics.stepMs.toFixed(2)} MS`, { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(`BODIES ${n} · ASLEEP ${boxes.sleeping() + balls.sleeping()} · STEP ${physics.stepMs.toFixed(2)} MS`, 'sand');
       },
       status: () => `crates ${crates.length} stress ${boxes.count + balls.count} asleep ${boxes.sleeping() + balls.sleeping()} step ${physics.stepMs.toFixed(2)}ms`,
       api: {

@@ -14,7 +14,7 @@
  *
  * Leaving: walk back out of the door, or Esc.
  */
-import { Color, type Object3D, Vector3 } from 'three/webgpu';
+import { Color, type Object3D, PerspectiveCamera, Vector3 } from 'three/webgpu';
 import { type CameraConfig, FirstPersonRig, FreeRig, KEYMAP, type LightHandle, PALETTE, type PaletteColor, readMoveInput, wrapText } from '../../../engine';
 import { setLookLayer } from '../../../engine/render/lookLayer';
 import { Rng } from '../../core/rng';
@@ -25,7 +25,7 @@ import { buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, val
 import type { UiCanvas, UiEvent, Rect } from '../../ui/kit';
 import { clip, inside, miniCovers, miniWidth, wrap } from '../../ui/kit';
 import { monsterName } from '../../wire/monsters';
-import { hints, miniHints, touchFloor } from '../hints';
+import { clearAbove, controlBoxes, drawHints, hints, hintsAt } from '../hints';
 import { type BestiaryEntry, exhibitOrder, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput, Visitor } from '../visitor';
@@ -66,6 +66,19 @@ const RANK_COLOR: Record<string, PaletteColor> = { normal: 'white', magic: 'sky'
 /** The card's width: 150, wider (to 220) for buttons a longer language or a long name needs. */
 const CARD_W = 150;
 const CARD_MAX = 220;
+/** How much of a narrow screen's height the card under the exhibit may take (a phone held upright): the exhibit keeps the rest. */
+const CARD_SHARE = 0.5;
+/** The rows the Hall's name and counts take along the top: a narrow screen's subject sits between them and the card. */
+const CARD_TOP = 22;
+/** How much farther the orbit camera starts on a narrow screen, so the subject fits over the card. */
+const NARROW_DIST = 1.8;
+/** The farthest the orbit camera starts from an exhibit: inside the hall, short of the far wall (`HALL`: pedestals 3.8 m out, walls at 6). */
+const ORBIT_MAX = 9;
+
+/** The card sits right of the exhibit on a screen `w` art pixels wide, else under it (a phone held upright). */
+function cardBeside(w: number): boolean {
+  return w >= 2 * CARD_W;
+}
 
 /**
  * An exhibit's name in the player's language: a monster's from its genome (its words are lines),
@@ -115,10 +128,13 @@ export class BestiaryMode implements ShowcaseMode {
   /** A finger down on a card button (pressed when it lifts there, unless it swiped). */
   private tapOn: { id: string; dir: 1 | -1 } | null = null;
   private cursor = 0;
+  /** The card is too tall for the screen as a button per clip: the clips are one choice row (`cardButtons`); set as it is drawn. */
+  private compact = false;
+  /** The clip the compact card's choice row is on. */
+  private clipAt = 0;
   private readonly target = new Vector3();
   private readonly tmp = new Vector3();
   private time = 0;
-  private wasLocked = false;
   private readonly dark = new Color(PALETTE.ink);
 
   constructor(private readonly host: Showcase) {}
@@ -231,12 +247,16 @@ export class BestiaryMode implements ShowcaseMode {
     this.host.ctx.audio.play('rl.open');
   }
 
-  /** Play a clip on an exhibit (one-shots go back to Idle after a beat). */
+  /**
+   * Play a clip on an exhibit (one-shots go back to Idle after a beat). On the inspected one, the
+   * compact card's clip row names it, however it was played (its button by id, an agent).
+   */
   play(ex: Exhibit, clip: string): boolean {
     if (!ex.built.clipNames.includes(clip)) return false;
     ex.runtime.play(clip, { fade: 0.12, restart: true });
     ex.clip = clip;
     ex.back = 0;
+    if (ex === this.focus) this.clipAt = ex.built.clipNames.indexOf(clip);
     return true;
   }
 
@@ -322,17 +342,21 @@ export class BestiaryMode implements ShowcaseMode {
     this.view = view;
     this.focus = view === 'inspect' ? focus : null;
     this.cursor = 0;
+    this.clipAt = Math.max(0, this.focus?.built.clipNames.indexOf(this.focus.clip) ?? 0); // the clip it is playing
     this.cardRect = this.tapOn = null;
     if (view === 'inspect' && focus) {
-      this.orbit.target.copy(focus.at).setY(focus.at.y + Math.min(1.2, focus.built.height * 0.45));
+      const tall = focus.built.height * focus.fit; // as it stands on its pedestal (scaled to fit it)
+      this.orbit.target.copy(focus.at).setY(focus.at.y + Math.min(1.2, tall * 0.45));
       this.orbit.yaw = focus.yaw;
       this.orbit.pitch = 0.22;
-      this.orbit.dist = Math.max(3.2, focus.built.height * 2.4);
+      // farther on a narrow screen (a phone held upright): the subject fits over the card; never
+      // past the hall's far wall (the camera faces the exhibit from across the aisle)
+      this.orbit.dist = Math.min(ORBIT_MAX, Math.max(3.2, tall * 2.4) * (cardBeside(this.host.ctx.hud.width) ? 1 : NARROW_DIST));
     } else if (view === 'breed' && this.hall) {
       this.orbit.target.copy(this.hall.altar.child).setY(1.1);
       this.orbit.yaw = 0;
       this.orbit.pitch = 0.32;
-      this.orbit.dist = 8;
+      this.orbit.dist = 8 * (cardBeside(this.host.ctx.hud.width) ? 1 : NARROW_DIST);
     }
     const rig = e.setCamera(this.camera(), { syncUrl: false });
     if (view === 'walk' && rig instanceof FirstPersonRig) {
@@ -413,11 +437,12 @@ export class BestiaryMode implements ShowcaseMode {
       if (this.turntable && ex === this.focus) ex.built.object.rotation.y += dt * 0.7;
     }
     if (this.altar.child) this.altar.child.built.object.rotation.y += dt * 0.5;
-    const locked = typeof document !== 'undefined' && !!document.pointerLockElement;
-    const esc = input.wasPressed('Escape', 'PadStart') && !this.wasLocked;
+    // Esc or Options: recorded input only, so a replay does what the run did, never the page's
+    // pointer lock, which no recording holds (a press that reaches the game pauses, the mouse
+    // locked or not, and the pause lets go of the mouse)
+    const esc = input.wasPressed('Escape', 'PadStart');
     // a frame that began with the card up: its presses are the card's (Cross on Back never jumps, Circle never crouches)
     const carded = this.view === 'inspect' || this.view === 'breed';
-    this.wasLocked = locked;
     for (const e of events) if (e.kind === 'pointer' && e.type === 'down') this.downAt = { x: e.x, y: e.y };
 
     if (this.view === 'inspect' || this.view === 'breed') {
@@ -429,10 +454,22 @@ export class BestiaryMode implements ShowcaseMode {
       if (input.wheel || held) o.dist = Math.min(14, Math.max(2, o.dist * Math.pow(1.1, input.wheel) * Math.pow(2.2, held * dt)));
       const rig = ctx.engine.camera;
       if (rig instanceof FreeRig) {
-        // look a little to the right of the subject: it sits left of centre, clear of the card
-        const pos = this.orbitPosition(rig.camera.position);
-        const right = this.tmp.set(o.target.z - pos.z, 0, pos.x - o.target.x).normalize();
-        rig.camera.lookAt(right.multiplyScalar(-o.dist * 0.2).add(o.target));
+        const cam = rig.camera;
+        const pos = this.orbitPosition(cam.position);
+        if (cardBeside(ctx.hud.width)) {
+          // look a little to the right of the subject: it sits left of centre, clear of the card
+          const right = this.tmp.set(o.target.z - pos.z, 0, pos.x - o.target.x).normalize();
+          cam.lookAt(right.multiplyScalar(-o.dist * 0.2).add(o.target));
+        } else {
+          // a narrow screen: look under the subject, so it sits in the middle of what the card leaves above it
+          cam.lookAt(o.target);
+          const h = ctx.hud.height;
+          const free = this.cardRect?.y ?? h * (1 - CARD_SHARE);
+          const ny = 1 - (CARD_TOP + free) / h; // that middle in device coordinates
+          const fov = cam instanceof PerspectiveCamera ? cam.fov : 40;
+          const up = this.tmp.set(0, 1, 0).applyQuaternion(cam.quaternion);
+          cam.lookAt(up.multiplyScalar(-ny * o.dist * Math.tan((fov * Math.PI) / 360)).add(o.target));
+        }
       }
       this.cardInput(events);
       if (esc && (this.view === 'inspect' || this.view === 'breed')) this.setView('walk');
@@ -504,7 +541,24 @@ export class BestiaryMode implements ShowcaseMode {
 
   // ------------------------------------------------------------------ the card (inspect / breed)
 
+  /**
+   * The card's buttons as drawn: every clip a button, or, on a card too tall for the screen (a
+   * phone held either way: `compact`), the clips as one choice row (< RUN >, each step plays it).
+   */
   private cardButtons(): Button[] {
+    const all = this.allCardButtons();
+    const ex = this.focus;
+    if (!this.compact || this.view !== 'inspect' || !ex) return all;
+    const clips = ex.built.clipNames;
+    const pick = (dir: 1 | -1) => {
+      this.clipAt = (this.clipAt + dir + clips.length) % clips.length;
+      this.play(ex, clips[this.clipAt]!);
+    };
+    const row: Button = { id: 'clips', label: clipName(clips[this.clipAt] ?? 'Idle'), act: () => pick(1), step: pick, accent: 'teal' };
+    return [row, ...all.filter((b) => !b.id.startsWith('clip:'))];
+  }
+
+  private allCardButtons(): Button[] {
     if (this.view === 'inspect' && this.focus) {
       const ex = this.focus;
       return [
@@ -568,7 +622,7 @@ export class BestiaryMode implements ShowcaseMode {
 
   /** Press a card button by id (agents use this too). */
   activate(id: string, dir: 1 | -1 = 1): boolean {
-    const b = this.cardButtons().find((x) => x.id === id);
+    const b = this.cardButtons().find((x) => x.id === id) ?? this.allCardButtons().find((x) => x.id === id);
     if (!b) return false;
     if (b.step && dir === -1) b.step(-1);
     else b.act();
@@ -607,19 +661,31 @@ export class BestiaryMode implements ShowcaseMode {
         ui.text(ui.w / 2, ui.h / 2 - 20, t('showcase.bestiary.empty'), { align: 'center', color: 'mist', shadow: 'ink' });
         wrap(t('showcase.bestiary.empty_hint'), ui.w - 16).forEach((l, i) => ui.text(ui.w / 2, ui.h / 2 - 8 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
       }
-      // the prompts' bottom row: over a phone's stick and buttons
-      const bottom = Math.min(ui.h - 9, touchFloor(ctx.engine, 0, ui.w) - 8);
-      const near = this.view === 'walk' ? this.nearest() : null;
-      if (near) {
-        const label = near === 'altar' ? t('showcase.bestiary.prompt.altar') : t('showcase.bestiary.prompt.inspect', { name: entryName(near.entry!) });
-        const w = ui.glyphWidth('interact') + 3 + ui.measure(label);
-        ui.rect(ui.w / 2 - w / 2 - 4, bottom - 31, w + 8, 13, 'ink');
-        ui.prompt(ui.w / 2, bottom - 28, 'interact', label, 'white', 'center');
-      }
       // a phone has no button to fly with: its hints leave it out
       const touch = ctx.engine.controls.device === 'touch';
       const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
-      miniHints(ui, ui.w / 2, bottom, help, 'mist');
+      // the hints along the bottom: between a phone's stick and its buttons where they leave room, else over them
+      const boxes = controlBoxes(this.host.game);
+      const top = drawHints(ui, hintsAt(ui, help, boxes, ui.h - 9), 'mist');
+      const near = this.view === 'walk' ? this.nearest() : null;
+      if (near) {
+        const label = near === 'altar' ? t('showcase.bestiary.prompt.altar') : t('showcase.bestiary.prompt.inspect', { name: entryName(near.entry!) });
+        // the name under the verb where the line is wider than the screen (a phone held upright)
+        const gw = ui.glyphWidth('interact') + 3;
+        const rows = wrap(label, ui.w - 16 - gw);
+        const w = gw + Math.max(...rows.map((r) => ui.measure(r)));
+        const h = 13 + (rows.length - 1) * 9;
+        // over the hints, clear of the controls under its columns; without a phone's controls where
+        // it has always sat (its box ending 27 rows up), the hints wrapped higher pushing it up
+        const y = clearAbove(boxes, ui.w / 2, w + 8, boxes.length ? top - 5 : Math.min(top - 5, ui.h - 27), h);
+        ui.rect(ui.w / 2 - w / 2 - 4, y, w + 8, h, 'ink');
+        if (rows.length === 1) ui.prompt(ui.w / 2, y + 3, 'interact', label, 'white', 'center');
+        else {
+          const x = Math.round(ui.w / 2 - w / 2);
+          ui.prompt(x, y + 3, 'interact', rows[0]!, 'white');
+          rows.slice(1).forEach((r, i) => ui.text(x + gw, y + 12 + i * 9, r, { color: 'white' }));
+        }
+      }
       this.wingRects = touch && this.wings > 1 ? this.drawWingButtons(ui) : null;
       if (this.view === 'walk') {
         // a crosshair dot
@@ -647,18 +713,19 @@ export class BestiaryMode implements ShowcaseMode {
   }
 
   private drawCard(ui: UiCanvas): void {
-    const buttons = this.cardButtons();
-    this.buttons = buttons;
     const measure = (s: string) => ui.measure(s);
     /** A button's text: a choice row's between arrows, its choice cut (the last resort) so the arrows stay. */
     const shown = (b: Button, w: number) => (b.step ? `< ${clip(b.label, w - measure('<  >'), measure)} >` : b.label);
-    const cardW = Math.min(CARD_MAX, ui.w - 12, Math.max(CARD_W, ...buttons.map((b) => measure(shown(b, Infinity)) + 16)));
-    const x = ui.w - cardW - 6;
-    let y = 24;
-    const lines: { text: string; color: PaletteColor; mini?: boolean }[] = [];
+    const all = this.allCardButtons();
+    const cardW = Math.min(CARD_MAX, ui.w - 12, Math.max(CARD_W, ...all.map((b) => measure(shown(b, Infinity)) + 16)));
+    // beside the exhibit (right of it), or under it on a narrow screen (a phone held upright)
+    const beside = cardBeside(ui.w);
+    const room = beside ? ui.h - 28 : Math.floor(ui.h * CARD_SHARE);
+    /** The card's lines; `part`: the row of parts each came from (a row too long wraps), dropped whole on a short screen. */
+    const lines: { text: string; color: PaletteColor; mini?: boolean; part?: number }[] = [];
     // a line too long for the card wraps (a longer language, a long name)
-    const add = (text: string, color: PaletteColor, mini = false) => {
-      for (const l of mini ? wrapText(text, cardW - 10, miniWidth) : wrap(text, cardW - 10)) lines.push({ text: l, color, mini });
+    const add = (text: string, color: PaletteColor, mini = false, part?: number) => {
+      for (const l of mini ? wrapText(text, cardW - 10, miniWidth) : wrap(text, cardW - 10)) lines.push({ text: l, color, mini, part });
     };
     if (this.view === 'inspect' && this.focus) {
       const ex = this.focus;
@@ -669,7 +736,7 @@ export class BestiaryMode implements ShowcaseMode {
       add(t('showcase.bestiary.archetype', { name: archetypeName(g.archetype) }), 'mist', true);
       add(depthLine('kills_depth', e), 'sand', true);
       const parts = [...new Set(g.parts.map((p) => partName(p.part)))];
-      for (let i = 0; i < parts.length; i += 2) add(parts.slice(i, i + 2).join(' · '), 'slate', true);
+      for (let i = 0; i < parts.length; i += 2) add(parts.slice(i, i + 2).join(' · '), 'slate', true, i);
     } else if (this.view === 'breed') {
       const c = this.altar.child;
       add(t('showcase.bestiary.altar'), 'cyan');
@@ -684,10 +751,29 @@ export class BestiaryMode implements ShowcaseMode {
     }
     // a mini row the mini font can't draw (accents, other writing systems) takes a text row's height
     const rowH = (l: { text: string; mini?: boolean }) => (l.mini && miniCovers(l.text) ? 7 : 10);
-    const rowsH = lines.reduce((s, l) => s + rowH(l), 0);
     const help = wrapText(hints(['orbit', 'zoom', 'card_back']), cardW - 6, miniWidth);
     const helpH = help.every(miniCovers) ? 7 : 9;
-    const h = 8 + rowsH + 4 + buttons.length * 13 + 7 + help.length * helpH;
+    const height = (n: number) => 8 + lines.reduce((s, l) => s + rowH(l), 0) + 4 + n * 13 + 7 + help.length * helpH;
+    // too tall for the screen: the clips as one choice row, then fewer rows of parts
+    const was = this.buttons[this.cursor]?.id;
+    this.compact = height(all.length) > room;
+    const buttons = this.cardButtons();
+    this.buttons = buttons;
+    if (buttons[this.cursor]?.id !== was) {
+      // the clips folded into their row or out of it (the phone turned): the cursor stays on its
+      // button, a clip's on the row and the row's on the clip it names, else in the list
+      const clips = this.focus?.built.clipNames ?? [];
+      const id = was?.startsWith('clip:') ? 'clips' : was === 'clips' ? `clip:${clips[this.clipAt]}` : was;
+      const at = buttons.findIndex((b) => b.id === id);
+      this.cursor = at >= 0 ? at : Math.max(0, Math.min(this.cursor, buttons.length - 1));
+    }
+    while (height(buttons.length) > room && lines.at(-1)?.part !== undefined) {
+      const part = lines.at(-1)!.part;
+      while (lines.at(-1)?.part === part) lines.pop();
+    }
+    const h = height(buttons.length);
+    const x = beside ? ui.w - cardW - 6 : Math.floor((ui.w - cardW) / 2);
+    let y = beside ? 24 : ui.h - h; // the panel's top is 4 over y
     ui.panel(x, y - 4, cardW, h, 'ink', 'slate');
     this.cardRect = { x, y: y - 4, w: cardW, h };
     for (const l of lines) {

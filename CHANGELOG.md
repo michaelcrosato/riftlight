@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.66.0
+
+- **`Recording.touch`**: a recording keeps whether the page had touch controls (left out without them), and a headless replay has them too: `engine.replay` sets `engine.controls.touch` from it, as it applies the recorded touch density. Prompts in a replay booted with no touch option (`npm run replay`) name the touch controls, and a game that lays its HUD out around them does so as on the phone, even a game with no `touchDensity` (Engine World). Before, such a replay drew the keyboard's prompts and no controls.
+- **`TouchControls.giveWay(rects)`** (client CSS px): a floating stick's zone gives way where these rects lie, so a touch landing there reaches the game instead of the stick (a panel open over the zone keeps its taps, such as Riftlight's photo-mode rows), while the rest of the zone still brings the stick. Each call replaces the last, `[]` gives the whole zone back, `rects().zone` stays the zone's whole extent, and it does nothing with a fixed stick. `zonePath` is the pure clip it draws.
+- **The kit's starter `game.js` (Coin Garden) keeps its garden in view on a phone held upright**: its page starts `camera: { preset: 'iso', minWidth: 14 }` and the hero starts in the middle of the coins at (2, 0, 2), so all four coins show from the start on a 390x844 phone; a TV still shows the whole garden. GUIDE.md's quick start says so.
+
 ## 0.65.0
 
 - **`input.beginFrame(now, dt, pads?, runs?)`**: a new optional `runs` (default true). The engine passes false for a render-loop frame that never reaches the game: paused, the settings panel open, a level loading. No pad joins on such a frame (`joinWith`), and a join press held from it does not join later. Before, such a poll added the pad to `input.joined` but cleared `joinedNow` before any game read it, and recorded nothing, so the pad stayed joined with no seat.

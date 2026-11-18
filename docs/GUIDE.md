@@ -137,7 +137,7 @@ class CoinGarden {
     setLookLayer(this.model, 'actors');
     this.shadow = new ContactShadow(0.42);
     scene.add(this.model, this.shadow);
-    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 4], lockDepth: ctx.camera.lockDepth });
+    this.hero = new PlatformerCharacter(physics, { position: [2, 0, 2], lockDepth: ctx.camera.lockDepth });
     this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model), HERO_RIG);
   }
 
@@ -175,7 +175,7 @@ class CoinGarden {
   }
 
   cameraTarget() {
-    const p = this.model?.position ?? this.target.set(0, 0, 4);
+    const p = this.model?.position ?? this.target.set(2, 0, 2);
     return this.target.set(p.x, p.y + 0.9, p.z);
   }
 
@@ -192,12 +192,15 @@ class CoinGarden {
 /** A fresh game: the page starts one, and `node check.mjs --headless` plays one in Node (section 8). */
 export const createGame = () => new CoinGarden();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', minWidth: 14 }, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
 ```
 
 To make it yours: change the level, the coin spots, the camera, the HUD, the win condition.
-`withUrlOptions(options)` adds the review flags from the page URL on top of your options
-(`?camera=side`, `?zoom=1.5`, `?look=noir`, `?debug=1`; section 8), the camera key by key.
+The hero starts in the middle of the coins and `minWidth: 14` keeps 14 m across in view, so a
+phone held upright sees every coin from the start (a TV sees the whole garden): move the coins
+and widen it to match. `withUrlOptions(options)` adds the review flags from the page URL on top
+of your options (`?camera=side`, `?zoom=1.5`, `?look=noir`, `?debug=1`; section 8), the camera
+key by key.
 
 ## 4. The API by system
 

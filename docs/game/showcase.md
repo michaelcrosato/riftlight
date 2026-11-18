@@ -43,7 +43,11 @@ phone (`Showcase.touch()` → `TouchPad.sync`) the stick, A, B (it jumps), ≡ a
 interact (the Hall's LOOK, only at an exhibit; the nearest is enough there) show, no skill icons;
 none of them over the Hall's card, whose hint names its way back there as the swipe (`card_back`:
 Esc, Circle, a swipe from the card; photo mode's `back` is the ≡, Options or Esc, which leave it
-there); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
+there); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`; `controlBoxes` gives them
+where the page lays them out, or from their data without a page, as a replay of a phone's
+recording draws them), and hints along the bottom sit in a gap between the stick and the buttons
+where one holds them, else over them (`hintsAt`, `drawHints`; the prompt over them, `clearAbove`):
+`phone.headless.test.ts` checks the Hall and photo mode on a phone held either way.
 
 **The hero as a platformer** (`showcase/visitor.ts`). `Visitor` is the hero model on the engine's
 `PlatformerCharacter` (the whole Mario-64 moveset) with the playground's sounds and dust, clips
@@ -98,9 +102,12 @@ Both stages walk with it.
   Tab / pad Y flies with `free`, N / R1 (L1 back) or a phone's < > turn the wing. **Inspecting**
   (F, R2, a left click, a phone's LOOK; recorded input only, so a replay inspects what the run did)
   switches to `fixed` and moves the camera by hand around the exhibit (drag, Q/E or the right
-  stick; the wheel, a pinch or R1 / L1), framing it left of the card; Circle, Esc or a sideways
-  swipe from the card goes back; a button per clip
-  (`MonsterRuntime.play`), the turntable. **Breeding**: `crossover` + `mutate` of two species,
+  stick; the wheel, a pinch or R1 / L1), framing it left of the card (above it on a narrow
+  screen, a phone held upright, where the card sits along the bottom and the camera starts
+  farther out, never past the far wall); Circle, Esc or a sideways swipe from the card goes back;
+  a button per clip (`MonsterRuntime.play`; one < clip > row on a card too tall for the screen,
+  then fewer rows of parts), the turntable. Esc and Options pause the Hall from recorded input
+  only, never the page's pointer lock (`replay.headless.test.ts`). **Breeding**: `crossover` + `mutate` of two species,
   the child grows on the vat (`Spawn`), a seed from the save keeps it reproducible.
 
 ## Build a photo mode (`showcase/photo/PhotoMode.ts`)
@@ -114,7 +121,12 @@ switches fly / edit (the rig's `fixed` flag), drag looks (no pointer lock, so th
 clickable). P / Square saves `renderer.capture()` as a PNG through a 2D canvas (the HUD is not in
 it); H, L1 (`photo_hide`: Triangle is taken), Create or a sideways swipe from the panel hides it (a
 tap on "show" brings it back); R1 steps the field of view (`nextFovStep`); Circle leaves the rows,
-then photo mode; Esc or Options puts everything back.
+then photo mode; Esc or Options puts everything back. The panel is as wide as its words up to the
+HUD's width: narrower (a phone held upright), each value wraps under its label, the title starts
+right of a phone's ≡, and held sideways the panel sits right of the joystick. On a phone the
+floating stick's zone gives way to the open panel (`Showcase.touch().giveWay` → `TouchPad.sync` →
+`TouchControls.giveWay`), so a finger taps its rows there too (the phone e2e taps a < inside the
+zone, upright and sideways) while the rest of the zone still brings the stick.
 
 ## Agent API
 

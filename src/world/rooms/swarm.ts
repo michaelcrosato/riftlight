@@ -100,7 +100,7 @@ p.addAssign(v.mul(dt));`,
         swarm.update(ctx.engine.renderer, dt);
       },
       draw() {
-        ctx.hud.text(4, 18, `${swarm.count.toLocaleString('en')} PARTICLES · 1 COMPUTE DISPATCH + 1 DRAW PER FRAME`, { anchor: 'bottom-left', color: 'sky' });
+        room.hudLine(`${swarm.count.toLocaleString('en')} PARTICLES · 1 COMPUTE DISPATCH + 1 DRAW PER FRAME`, 'sky');
       },
       dispose() {
         swarm.dispose();

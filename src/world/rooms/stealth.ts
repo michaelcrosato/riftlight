@@ -345,7 +345,7 @@ export const STEALTH: RoomDef = {
       },
       draw() {
         const worst = Math.max(...guards.map((g) => g.meter));
-        ctx.hud.text(4, 18, alarm > 0 ? `ALARM ${alarm.toFixed(1)}` : worst > 0 ? `SEEN ${Math.round(worst * 100)}%` : 'HIDDEN', { anchor: 'bottom-left', color: alarm > 0 ? 'red' : worst > 0 ? 'orange' : 'lime' });
+        room.hudLine(alarm > 0 ? `ALARM ${alarm.toFixed(1)}` : worst > 0 ? `SEEN ${Math.round(worst * 100)}%` : 'HIDDEN', alarm > 0 ? 'red' : worst > 0 ? 'orange' : 'lime');
       },
       status: () => `alarm ${alarm > 0} caught ${caught} states ${guards.map((g) => g.state).join(',')}`,
       api: {

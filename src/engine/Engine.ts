@@ -274,7 +274,8 @@ export interface EngineOptions {
    * The on-screen joystick: `fixed` (default) at the bottom left, or `floating`: its base appears
    * under the thumb anywhere in the lower left of the screen (about 45% of the width, the lower 60%
    * in portrait and 75% in landscape, the placed buttons excepted). That zone takes every touch in
-   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`).
+   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`), or have it give
+   * way to a panel open over it (`engine.touch.giveWay`).
    */
   touchStick?: 'fixed' | 'floating';
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
@@ -942,6 +943,7 @@ export class Engine {
       if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⓘ button
     }
     this.controls.touch = this.touch !== null;
+    if (this.rec) this.rec.touch = this.controls.touch; // the first level's recording began before the page made them
     const o = options.settings ?? {};
     const corner = o.button;
     const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice, motion: o.motion }));
@@ -1312,7 +1314,7 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; density: number; device: InputDevice; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
+  private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; density: number; touch: boolean; device: InputDevice; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
@@ -1330,7 +1332,7 @@ export class Engine {
   private reseed(game: Game): void {
     this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
-    this.rec = { game: game.name, ...gameArgs(game), seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false };
+    this.rec = { game: game.name, ...gameArgs(game), seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, touch: this.controls.touch, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false };
   }
 
   /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
@@ -1353,7 +1355,7 @@ export class Engine {
   recording(): Recording | null {
     const r = this.rec;
     if (!r) return null;
-    return { format: 1, engine: ENGINE_VERSION, game: r.game, ...(r.args !== undefined ? { args: r.args } : {}), seed: r.seed, time: r.time, view: { ...r.view }, ...(r.density > 0 ? { density: r.density } : {}), ...(r.device !== 'keyboard' ? { device: r.device } : {}), frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, ...(r.args !== undefined ? { args: r.args } : {}), seed: r.seed, time: r.time, view: { ...r.view }, ...(r.density > 0 ? { density: r.density } : {}), ...(r.touch ? { touch: true } : {}), ...(r.device !== 'keyboard' ? { device: r.device } : {}), frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
   }
 
   /**
@@ -1375,6 +1377,7 @@ export class Engine {
     const v = rec.view;
     if (this.renderer instanceof HeadlessView) {
       this.renderer.setTouchDensity(rec.density ?? 0); // a phone's touch density, as it was recorded
+      this.controls.touch = rec.touch === true; // the page's touch controls, as recorded: prompts name them, a HUD lays out around them
       if (v) this.renderer.setViewport(v);
     } else if (v && (['width', 'height', 'dpr'] as const).some((k) => v[k] !== this.renderer.viewport[k])) {
       const at = ({ width, height, dpr }: Viewport) => `${width}×${height} at DPR ${dpr}`;
@@ -1541,7 +1544,7 @@ export class Engine {
     } finally {
       this.manual = manual;
     }
-    this.rec = { game: game.name, ...gameArgs(game), seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
+    this.rec = { game: game.name, ...gameArgs(game), seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, touch: this.controls.touch, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
   }
 
   /** A task boundary: promise callbacks queued so far (and chains of them) have run when it resolves. */

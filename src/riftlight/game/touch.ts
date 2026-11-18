@@ -122,9 +122,10 @@ export interface TouchFrame {
   /**
    * A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, ≡ and its own interact
    * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons;
-   * none of them while `controls` is false (the Hall's card takes the screen).
+   * none of them while `controls` is false (the Hall's card takes the screen). `giveWay`: a panel
+   * open over the floating stick's zone (photo mode's, art pixels), whose rows a finger taps there.
    */
-  showcase?: boolean | { readonly interact: { verb: string; name: string } | null; readonly controls?: boolean };
+  showcase?: boolean | { readonly interact: { verb: string; name: string } | null; readonly controls?: boolean; readonly giveWay?: readonly Box[] };
   skills: readonly SkillSlotView[];
   /** The interaction on offer (`Riftlight.interactOffer`: a short verb, Talk, Open, Take, Go, and its target, in the player's language), or null. */
   interact: { verb: string; name: string } | null;
@@ -213,6 +214,17 @@ export class TouchPad {
     return touchLayout(width, height, this.buttons).map((c) => this.toArt(c));
   }
 
+  /** Art pixels as a client CSS px rect: `Pointer.toArt` the other way, on the canvas's client rect. Null without a page. */
+  private toClient(b: Box): Box | null {
+    const canvas = this.engine.gpu?.renderer.domElement;
+    if (!canvas) return null;
+    const r = canvas.getBoundingClientRect();
+    const res = this.engine.renderer.resolution;
+    const kx = r.width / res.width;
+    const ky = r.height / res.height;
+    return { x: r.left + b.x * kx, y: r.top + b.y * ky, w: b.w * kx, h: b.h * ky };
+  }
+
   /**
    * A CSS px rect of the page (its viewport) as art pixels, by the view's framing: the arithmetic
    * of `Pointer.toArt` on the canvas's client rect (its offset and size: a fill canvas can reach
@@ -244,6 +256,9 @@ export class TouchPad {
     const touch = this.engine.touch;
     if (!touch) return;
     touch.show(f.showcase ? f.showcase === true || f.showcase.controls !== false : f.playing); // none over the Hall's card
+    // the floating stick's zone gives way to a panel open over it (photo mode's rows take taps there)
+    const way = typeof f.showcase === 'object' ? (f.showcase.giveWay ?? []) : [];
+    touch.giveWay(way.flatMap((b) => this.toClient(b) ?? []));
     if (!touch.visible) return;
     // in the showcase the buttons are the stage's (B jumps), not the skill bar's
     const find = (slot: SkillSlotView['slot']) => (f.showcase ? undefined : f.skills.find((s) => s.slot === slot));
