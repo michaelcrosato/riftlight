@@ -10,7 +10,7 @@ import { Hud } from './hud/Hud';
 import { Input, type InputDevice } from './input';
 import type { Recording } from './replay';
 import type { PlayerSettings } from './settings';
-import { type TouchControls, TouchFollow } from './TouchControls';
+import { type TouchControls, TouchFollow, zonePath } from './TouchControls';
 
 describe('touch controls follow the device in use (TouchFollow)', () => {
   it('step aside when a pad or the keyboard is picked up, and come back on the next touch; a device that only stays moves nothing', () => {
@@ -62,6 +62,25 @@ describe('touch controls follow the device in use (TouchFollow)', () => {
     expect(follow.mock.calls.map(([d]) => d), 'the replay: the recorded device, frame by frame').toEqual(plan);
     expect(game.devices).toEqual(live);
     engine.dispose();
+  });
+});
+
+describe("a floating stick's zone gives way to a panel open over it (TouchControls.giveWay)", () => {
+  /** The squares a clip path of `zonePath` is made of, and whether a point is inside one: where the zone still takes touches. */
+  const squares = (d: string) => [...d.matchAll(/M([\d.]+) ([\d.]+)H([\d.]+)V([\d.]+)H[\d.]+Z/g)].map((m) => m.slice(1).map(Number));
+  const takes = (d: string, x: number, y: number) => squares(d).some(([x0, y0, x1, y1]) => x > x0! && x < x1! && y > y0! && y < y1!);
+
+  it('cuts the panels out of the zone (their touches reach the game) and keeps the rest of it the stick\'s', () => {
+    expect(zonePath(100, 200, [])).toBe('M0 0H100V200H0Z');
+    // a panel across the zone's top right (photo mode's, held sideways), and a small one low on the left
+    const d = zonePath(100, 200, [
+      { x0: 40, y0: 0, x1: 100, y1: 120 },
+      { x0: 10, y0: 150, x1: 30, y1: 170 },
+    ]);
+    for (const [x, y] of [[50, 60], [99, 1], [41, 119], [20, 160]] as const) expect(takes(d, x, y), `${x},${y} given way`).toBe(false);
+    for (const [x, y] of [[20, 60], [39, 1], [50, 130], [5, 160], [20, 190], [99, 199]] as const) expect(takes(d, x, y), `${x},${y} still the stick's`).toBe(true);
+    // a zone wholly given way: nothing of it takes a touch
+    expect(squares(zonePath(100, 200, [{ x0: 0, y0: 0, x1: 100, y1: 200 }]))).toEqual([]);
   });
 });
 

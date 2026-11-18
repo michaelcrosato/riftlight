@@ -170,6 +170,11 @@ export class PhotoMode {
     this.host.ctx.audio.play('rl.close');
   }
 
+  /** The panel while it is open (art pixels, as drawn last), else null: a phone's floating stick gives way to it (`Showcase.touch`), so its rows take taps there. */
+  openPanel(): Rect | null {
+    return this.active && !this.hidden ? this.panelRect : null;
+  }
+
   // ------------------------------------------------------------------ changes (UI and agents)
 
   setLook(i: number): string {

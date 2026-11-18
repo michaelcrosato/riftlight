@@ -96,7 +96,8 @@ export interface TouchControlsOptions {
    * lower left (`.stick-zone`: about 45% of the width, the lower 60% in portrait and 75% in
    * landscape; the placed buttons stay on top of it) brings the joystick's base under it. The zone
    * takes every touch landing in it (a camera drag, a swipe, a tap there moves the stick): keep a
-   * game's tappable HUD and swipe areas out of `rects().zone`.
+   * game's tappable HUD and swipe areas out of `rects().zone`, or have the zone give way to a panel
+   * open over it (`giveWay`).
    */
   stick?: TouchStick;
 }
@@ -130,6 +131,8 @@ export class TouchControls {
   private releaseStick: () => void = () => {};
   /** A floating stick's resting place while a thumb holds it elsewhere (`rects().stick`). */
   private stickRest: DOMRect | null = null;
+  /** Where the zone gives way now (`giveWay`), as the zone's size and the gaps cut to it: '' for nowhere. */
+  private gaps = '';
   readonly stickMode: TouchStick;
 
   constructor(
@@ -237,6 +240,29 @@ export class TouchControls {
       buttons: this.views.map((v) => ({ code: v.def.code, label: v.def.label, hidden: v.shown.hidden, rect: v.el.getBoundingClientRect() })),
       bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null,
     };
+  }
+
+  /**
+   * Where a floating stick's zone gives way (client CSS px rects, as `rects()` measures): a touch
+   * landing in one of them reaches the game under it instead of the stick, so a panel open over the
+   * zone keeps its taps (a photo mode's rows) while the rest of the zone still brings the stick.
+   * Each call replaces the last; `[]` gives the whole zone back. `rects().zone` stays the zone's
+   * whole extent. Call it each frame the panel shows (the cut follows a rotation). Nothing with a
+   * fixed stick.
+   */
+  giveWay(rects: readonly { readonly x: number; readonly y: number; readonly w: number; readonly h: number }[]): void {
+    const zone = this.zone;
+    if (!zone || (!rects.length && !this.gaps)) return;
+    const z = zone.getBoundingClientRect(); // nothing while the controls are hidden: none to cut
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    const gaps = rects
+      .map((r) => ({ x0: r2(Math.max(0, r.x - z.left)), y0: r2(Math.max(0, r.y - z.top)), x1: r2(Math.min(z.width, r.x + r.w - z.left)), y1: r2(Math.min(z.height, r.y + r.h - z.top)) }))
+      .filter((g) => g.x1 > g.x0 && g.y1 > g.y0);
+    const key = gaps.length ? `${r2(z.width)}x${r2(z.height)}:${gaps.map((g) => `${g.x0},${g.y0},${g.x1},${g.y1}`).join(';')}` : '';
+    if (key === this.gaps) return;
+    this.gaps = key;
+    // the zone's clip is also where it is hit: the gaps cut out of it pass touches on
+    zone.style.clipPath = gaps.length ? `path('${zonePath(r2(z.width), r2(z.height), gaps)}')` : '';
   }
 
   private makeButton(b: TouchButton, i: number): ButtonView {
@@ -397,6 +423,27 @@ export class TouchControls {
     hit.addEventListener('pointerup', end);
     hit.addEventListener('pointercancel', end);
   }
+}
+
+/**
+ * An SVG path of a `w` × `h` box without `gaps` (rects in its own pixels, inside it): the cells of
+ * the grid the gaps' edges make that no gap covers, each its own square (their union, under the
+ * default nonzero rule). `TouchControls.giveWay`'s clip; pure (unit-tested).
+ */
+export function zonePath(w: number, h: number, gaps: readonly { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number }[]): string {
+  const edges = (a: number[]) => [...new Set(a)].sort((p, q) => p - q);
+  const xs = edges([0, w, ...gaps.flatMap((g) => [g.x0, g.x1])]);
+  const ys = edges([0, h, ...gaps.flatMap((g) => [g.y0, g.y1])]);
+  let d = '';
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < ys.length; j++) {
+      const cx = (xs[i]! + xs[i + 1]!) / 2;
+      const cy = (ys[j]! + ys[j + 1]!) / 2;
+      if (gaps.some((g) => cx > g.x0 && cx < g.x1 && cy > g.y0 && cy < g.y1)) continue;
+      d += `M${xs[i]} ${ys[j]}H${xs[i + 1]}V${ys[j + 1]}H${xs[i]}Z`;
+    }
+  }
+  return d || 'M0 0Z'; // a zone wholly given way: no touch is the stick's
 }
 
 /** Pointer capture is best-effort: it throws if the pointer is already gone. */

@@ -123,7 +123,10 @@ it); H, L1 (`photo_hide`: Triangle is taken), Create or a sideways swipe from th
 tap on "show" brings it back); R1 steps the field of view (`nextFovStep`); Circle leaves the rows,
 then photo mode; Esc or Options puts everything back. The panel is as wide as its words up to the
 HUD's width: narrower (a phone held upright), each value wraps under its label, the title starts
-right of a phone's ≡, and held sideways the panel sits right of the joystick.
+right of a phone's ≡, and held sideways the panel sits right of the joystick. On a phone the
+floating stick's zone gives way to the open panel (`Showcase.touch().giveWay` → `TouchPad.sync` →
+`TouchControls.giveWay`), so a finger taps its rows there too (the phone e2e taps a < inside the
+zone, upright and sideways) while the rest of the zone still brings the stick.
 
 ## Agent API
 

@@ -274,7 +274,8 @@ export interface EngineOptions {
    * The on-screen joystick: `fixed` (default) at the bottom left, or `floating`: its base appears
    * under the thumb anywhere in the lower left of the screen (about 45% of the width, the lower 60%
    * in portrait and 75% in landscape, the placed buttons excepted). That zone takes every touch in
-   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`).
+   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`), or have it give
+   * way to a panel open over it (`engine.touch.giveWay`).
    */
   touchStick?: 'fixed' | 'floating';
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */

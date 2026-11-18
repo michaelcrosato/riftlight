@@ -21,7 +21,7 @@ import { KEYMAP, lookFromFilters, OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
 import { sourceLang, t } from '../lang';
 import { CAMERA, type Riftlight } from '../game/Riftlight';
-import type { UiCanvas, UiEvent } from '../ui/kit';
+import type { Rect, UiCanvas, UiEvent } from '../ui/kit';
 import { monsterName, unitOf } from '../wire/monsters';
 import { ArcadeMode } from './arcade/ArcadeMode';
 import { BestiaryMode } from './bestiary/BestiaryMode';
@@ -261,12 +261,14 @@ export class Showcase {
 
   /**
    * The phone's buttons while the showcase owns the frame (`TouchPad.sync`): the mode's interact, if
-   * it has one now, and whether the stick and buttons show (not over the Hall's card, whose own
-   * buttons are tapped there).
+   * it has one now, whether the stick and buttons show (not over the Hall's card, whose own
+   * buttons are tapped there), and where the floating stick's zone gives way (photo mode's open
+   * panel: its rows take taps there).
    */
-  touch(): { readonly interact: { verb: string; name: string } | null; readonly controls: boolean } {
+  touch(): { readonly interact: { verb: string; name: string } | null; readonly controls: boolean; readonly giveWay: readonly Rect[] } {
     const mode = this.mode && !this.pause && !this.photo.active ? this.mode : null;
-    return { interact: mode?.touchOffer?.() ?? null, controls: mode?.touchControls?.() ?? true };
+    const panel = this.photo.openPanel();
+    return { interact: mode?.touchOffer?.() ?? null, controls: mode?.touchControls?.() ?? true, giveWay: panel ? [panel] : [] };
   }
 
   /** Pause the mode on screen (its stage stands still behind the menu). */
