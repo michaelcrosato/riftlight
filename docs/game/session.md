@@ -15,13 +15,11 @@ online mode:
 - the catalogue and session tags from `scripts/hub/riftlight.mjs` (the one place for the name,
   description, controls, tags, the ways it plays together and each mode's card text), written by
   `scripts/hub/head.mjs`: `hub:multiplayer` names every online mode (`MULTIPLAYER`: a shared world
-  co-op 1-4 and versus 2-4, ghost 1-4, parallel 1-4, moments 1-4) and couch co-op on one device
-  (`same-screen co-op 2-4`: the game's own menu's, never a session's: `headSession`, the harness
-  runs and the package's checks read the online four alone), `hub:session-mode` the one it
+  co-op 1-4 and versus 2-4, ghost 1-4, parallel 1-4, moments 1-4), `hub:session-mode` the one it
   plays when nothing says which (`DEFAULT_MODE`, the shared world), `hub:session-players` 1-4,
-  `hub:players` 1-4, the default's card as `hub:session-goal`/`-howto` and each online mode's own as
+  `hub:players` 1-4, the default's card as `hub:session-goal`/`-howto` and each mode's own as
   `hub:session-goal-WORD`/`-howto-WORD` (`CARD`, by the hub's word: `co-op`, `versus`, `ghost`,
-  `parallel`, `moments`); the rest of the head's words: docs/game/hub.md *What the head says*;
+  `parallel`, `moments`);
 - one `hub:moment` per moment (`ID VERB SECONDS GOAL`, from `MOMENTS`: *Moments*);
 - the `game-lines` block (every line a player reads: docs/game/lang.md).
 
