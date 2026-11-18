@@ -22,7 +22,8 @@ engine.fingerprint();                         // the same as the page's for the 
 
 "Headless" means no renderer and no page. three.js's scene graph (objects, skinning,
 `AnimationMixer`) and Rapier still run, because they are libraries doing JS and wasm math. A
-headless frame is the page's frame with only the drawing skipped (both start in one
+headless frame is the page's frame with the drawing, the engine's debug hotkeys and the audio
+update skipped (both start in one
 `startFrame`: game time, input, the recording; then `advance`: physics → tweens → `update` →
 particles → shake → camera and shadow box → lights; then the screen transitions), so whatever
 presentation feeds into gameplay stays the same. `ctx.hud.width` / `height` are the view's art size
