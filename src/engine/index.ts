@@ -110,6 +110,7 @@ export { FocusList, MENU_KEYS, MENU_REPEAT, MenuInput, ndcToHud, type FocusListS
 export { DEFAULT_DEBUG_KEYS, rebindDebugKeys, resolveDebugKeys, type DebugAction, type DebugKeyChanges, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
 export { FPS_OPTIONS, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, loadSettings, normalizeSettings, storeSettings, urlSettings, type PadGlyphs, type PlayerSettings, type SettingsHost } from './settings';
 export { SettingsPanel } from './SettingsPanel';
+export { SETTINGS_CONTROLS, SETTINGS_LINES, SETTINGS_PAGES, SETTINGS_RESET_WINDOW, SettingsMenu, type SettingsFeatures, type SettingsFrame, type SettingsLegendItem, type SettingsLineId, type SettingsPage, type SettingsRow } from './ui/settingsMenu';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {
   type AudioBus,

@@ -26,9 +26,14 @@ export interface PlayerSettings {
   padGlyphs?: PadGlyphs;
   /** How strongly the controller rumbles (`input.rumble`), 0 (off) to 1 (left out: full). */
   vibration?: number;
+  /**
+   * The game's voice feature (`settings: { voice: true }`): false turns it off. Left out it is on
+   * once the player has allowed games the microphone in 52in1 (`engine.voiceOn`).
+   */
+  voice?: boolean;
 }
 
-const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration'] as const satisfies readonly (keyof PlayerSettings)[];
+const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration', 'voice'] as const satisfies readonly (keyof PlayerSettings)[];
 export const PIXEL_SIZES = ['fine', 'chunky'] as const;
 export const QUALITY_OPTIONS: readonly QualityOption[] = ['auto', 'low', 'medium', 'high'];
 export const FPS_OPTIONS: readonly number[] = [60, 30, 0];
@@ -50,6 +55,7 @@ export function normalizeSettings(raw: unknown): PlayerSettings {
   if (PAD_GLYPHS.includes(v.padGlyphs as PadGlyphs)) out.padGlyphs = v.padGlyphs as PadGlyphs;
   // a share in steps of 0.05 (a slider's), held to 0..1
   if (typeof v.vibration === 'number' && Number.isFinite(v.vibration)) out.vibration = Math.round(Math.min(1, Math.max(0, v.vibration)) * 20) / 20;
+  if (typeof v.voice === 'boolean') out.voice = v.voice;
   return out;
 }
 

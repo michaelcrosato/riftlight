@@ -106,6 +106,12 @@ describe('player settings', () => {
     expect(normalizeSettings('noir')).toEqual({});
   });
 
+  it('keep the voice feature switch', () => {
+    expect(normalizeSettings({ voice: false })).toEqual({ voice: false });
+    expect(normalizeSettings({ voice: true })).toEqual({ voice: true });
+    expect(normalizeSettings({ voice: 'on' })).toEqual({});
+  });
+
   it("keep the controller's button prompts (PlayStation or Xbox) and its vibration (0..1, in steps of 0.05)", () => {
     expect(normalizeSettings({ padGlyphs: 'xbox', vibration: 0.5 })).toEqual({ padGlyphs: 'xbox', vibration: 0.5 });
     expect(normalizeSettings({ padGlyphs: 'playstation', vibration: 0 })).toEqual({ padGlyphs: 'playstation', vibration: 0 });

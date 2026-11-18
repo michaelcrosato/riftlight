@@ -88,8 +88,9 @@ sockets survive a load. Device settings (look, the look studio's custom look, qu
 damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
 store, and the engine's own settings (the controller's button prompts and vibration on the Settings
 page; pixel art, pixel size, frame rate, debug info: Settings → Engine) in
-`pixel-engine:settings:riftlight`. Prompts follow the input used last (`input.device`) by
-themselves: there is no setting for which device they show. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
+`pixel-engine:settings:riftlight`. Prompts follow the input used last (`engine.controls.device`: a
+touch names the keys while no touch controls show) by themselves, the HUD's glyphs as the lines'
+`{key:action}`: there is no setting for which device they show. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
 read from storage once at setup (and recorded: docs/game/actors.md *The hero's controls*) and kept by the game's own
 saves, deletes and imports, so a replay shows the slots the recorded run saw.
 

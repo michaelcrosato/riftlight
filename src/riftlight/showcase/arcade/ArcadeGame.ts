@@ -26,6 +26,7 @@ import { ARCADE_SONG } from './stage';
 export const ARCADE_OPTIONS: Partial<EngineOptions> = {
   camera: { preset: 'side', viewHeight: 12 },
   filters: ['16bit', 'crt'],
+  settings: { padButton: true }, // no pause menu of its own: Options (Esc) opens the engine's settings
 };
 
 export class ArcadeGame implements Game {

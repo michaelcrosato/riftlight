@@ -8,6 +8,18 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.56.0
+
+- **A ten-foot settings panel** (docs/engine/game-api.md *Player settings*). `SettingsPanel` is rebuilt for a TV and a pad: one setting per large row (text `clamp(18px, 3.2vmin, 40px)`, targets at least 44 CSS px), values stepped ◀ value ▶ with no dropdowns, sliders or checkboxes, a ringed focus, pages Picture / Sound / Controls turned with L1 / R1 (Q / E) that keep the tallest page's height, and a legend of the device's buttons (✕ Change · ○ Close · △ Reset; Enter · Esc · R; Tap · Swipe) drawn at whole-pixel scales.
+- **Driving it**: the d-pad, the left stick (with repeat) and the arrows / WASD move and change; Cross / Enter change; Circle / Esc / Options close; Triangle / R reset everything only on a second press within 2 s (the legend says *Press again to reset*). With the mouse, hover moves the focus and a click acts (the keyboard focus stays on the rows, so Enter after a click acts once). On touch a tap acts and a swipe down or sideways closes it; the legend's *Tap · Change* is a hint, not a button. The rows are a listbox with `aria-activedescendant`, and a status region announces a changed value. The Controls page has button prompts (PlayStation / Xbox, `settings.padGlyphs`) and vibration, with a rumble to feel it on a pad.
+- **The panel's rules are data**: `SettingsMenu` (headless; `requestReset`, `resetPending`), `SETTINGS_LINES` (engine lines a game translates through `engine.controls.names`), `SETTINGS_PAGES`, `SETTINGS_CONTROLS`, `SETTINGS_RESET_WINDOW`, `SettingsRow`, `SettingsFeatures`, `SettingsLegendItem`.
+- **The panel's DOM changed**: code that drove `.settings-ui [data-s=…]` controls must use `engine.settings`, or the rows (`[data-row]`, `[data-step]`, `[data-act]`).
+- **`settings: { padButton: true }`**: Options (and Esc) open and close the panel, for a game with no pause menu of its own (default off). It opens at the end of the frame the button went down on, after that frame ran with the keys still held, so a recording that opens it while walking replays exactly.
+- **`settings: { voice: true }`** adds a Microphone row, on only while 52in1 allows games the microphone (otherwise it shows off, with a line saying where 52in1 allows it, or to open the game again). `PlayerSettings.voice`, `engine.voiceOn`.
+- **`input.release()`** latches what is still held: keys and pad buttons read as up (no new press, no auto-repeat) until let go, and a leaning stick reads as centred until it goes back inside its deadzone. The press that opened a menu, or a stick held into it, never acts in it or behind it.
+- **The right stick** turns the camera and aims (`mouseDelta`, `lookAxis`) only while the pad is the device in use or the stick leans past a quarter of its travel: a stick resting just past its deadzone no longer creeps a keyboard and mouse player's camera.
+- **`engine.controls.touch`**: while the engine shows no touch controls, a touch reads as the keyboard for prompts (`Controls.device`), so a tap on a touch-screen laptop never names buttons that aren't on screen. Headless follows `EngineOptions.touch`.
+
 ## 0.55.0
 
 - `HubSession.join` called with no mode (an untyped caller passing `undefined` or `null`) now throws its own "HubSession: mode is one or more of parallel, ghost, shared-world, moments" error instead of a TypeError ("mode is not iterable").

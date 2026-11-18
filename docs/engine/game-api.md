@@ -73,7 +73,7 @@ it (by `Game.name`, with `Game.args`: what a lab or a room was made with).
 Engine.start(game, {
   debugUI: false,                              // default: on in dev (vite) or with ?debug=1
   debugKeys: { resolution: 'F2', mute: null }, // with the debug panel: R on F2, no mute key (true / false: always on / off)
-  settings: { button: 'top-left', key: 'my-game' }, // the ⚙'s corner (false: none) and where the settings are saved
+  settings: { button: 'top-left', key: 'my-game', padButton: true }, // the ⚙'s corner (false: none), where they are saved, Options opens them
   touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
   touchBar: false,                             // no ⓘ P R ◐ ♪ hotkey bar on phones unless ?debug=1
 });
@@ -91,21 +91,49 @@ keys that are off off. The touch top bar follows them, and the debug panel lists
 `engine.settings` holds the player's picture and engine options as plain data (`PlayerSettings`:
 look, pixel art, pixel size, quality, frame rate, debug info, the controller's button prompts
 `padGlyphs`, `'playstation'` (left out, the default) or `'xbox'` (`PAD_GLYPHS`), and its
-`vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it); sound is `audio`'s),
-applies them over the game's own choices and saves them per game in localStorage
-(`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false` for none).
-A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all of them.
-A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
+`vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it), and a voice feature's
+`voice`; sound is `audio`'s), applies them over the game's own choices and saves them per game in
+localStorage (`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false`
+for none). A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all
+of them. A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
 `?debug=`) wins over a saved value at start (which stays saved), and a chosen look wins over each
-new level's own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none.
-The settings panel (`SettingsPanel`, DOM like the debug panel) shows them with the volumes; the
-⚙ button opens it (`settings.button`: a corner, default top-right, shown on a mouse only while
-the pointer moves; `false`: none, so a game opens it from its own menu with
-`engine.settings.open()`). Open, it pauses the game, and keys pressed in it never reach the game;
-Escape or Done closes it. It stays shut while a replay plays; a replay never saves settings
-(`persist`) and puts the player's back when it ends. Riftlight has them in its own Settings menu:
-look, quality and the volumes on its page, the rest on its Engine page. Engine World's tweak
-panel (T) sets the same look, pixel art and quality.
+new level's own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none. The
+settings panel (`SettingsPanel`, DOM like the debug panel, so it stays legible at any art size) is
+made for a TV at ten feet and a pad first: one setting per large row (text `clamp(18px, 3.2vmin,
+40px)`), its value stepped ◀ value ▶ (no dropdowns, sliders or boxes), a ringed focus, three pages
+turned with L1 / R1 (Q / E): **Picture** (look, pixel art, pixel size, quality, frame rate, debug
+info), **Sound** (on, volume, music, effects: `audio`'s), and **Controls** (button prompts
+PlayStation / Xbox, vibration: a rumble to feel when it changes on a pad), and a legend of the
+device's buttons (✕ Change · ○ Close · △ Reset; Enter · Esc · R on the keyboard; Tap · Swipe on a
+touch screen, where Tap is a hint, not a button). The d-pad or the left stick (with repeat) and the
+arrows / WASD move and change, Cross / Enter changes too, Circle / Esc / Options close, Triangle / R
+pressed twice within 2 s resets everything (the first press arms it: the legend says *Press again to
+reset*; anything else, or the time running out, disarms it); the mouse's hover moves the focus and a
+click acts (◀ ▶, a row, a legend button; beside the panel: close), leaving the keyboard focus on the
+panel, so the next Enter acts once; on a touch screen a tap acts and a quick swipe down or sideways
+closes it. Turning a page never moves the panel: it keeps the height of its tallest page. The rows
+are a listbox whose `aria-activedescendant` follows the focus, so a screen reader names each row as
+the focus moves and each value as it changes. Its rows and rules are data (`SettingsMenu`,
+src/engine/ui/settingsMenu.ts, driven by `MenuInput` / `FocusList` from the engine's input:
+headless-testable), its words lines (`SETTINGS_LINES`: a game with a line of the same id in
+`engine.controls.names` shows its own). The ⚙ button opens it (`settings.button`: a corner, default
+top-right, shown on a mouse only while the pointer moves; `false`: none, so a game opens it from its
+own menu with `engine.settings.open()`); `settings.padButton: true` lets Options (and Esc) open it,
+for a game with no pause menu of its own (default off: a game's Options is its own; the playground,
+the sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad button held when it
+opens or closes reads as up until let go, and a stick held then reads centred until it goes back
+inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
+leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero
+after. Options (Esc) opens it at the end of the frame it was pressed on, so that frame runs with the
+keys still held, as it was recorded (a replay, which never opens it, runs it the same). It stays shut
+while a replay plays; a replay never saves settings (`persist`) and puts the player's back when it ends.
+
+A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
+on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off with a
+line saying 52in1 allows it in its Settings, under Sound (while `micLater`: to open the game again;
+outside 52in1: that it needs 52in1); `engine.voiceOn` says whether to open it. Riftlight has the
+player settings in its own Settings menu: look, quality and the volumes on its page, the rest on its
+Engine page. Engine World's tweak panel (T) sets the same look, pixel art and quality.
 
 ## Picking with the mouse
 
@@ -137,7 +165,9 @@ Firefox and Safari report for DualSense / Xbox / Switch Pro and most others) nee
 setup; pads with an unknown layout are ignored rather than guessed at. For them: the left stick
 feeds `input.moveAxis()` (radial deadzone 0.15, `GAMEPAD_DEADZONE`, `applyDeadzone`), the right
 stick turns into pointer movement (camera look, `input.gamepadLookSpeed`; the AI Hub's gyro aim
-adds to it) and reads as `input.lookAxis` (y up: twin-stick aim), the analog triggers read 0..1 as
+adds to it) and reads as `input.lookAxis` (y up: twin-stick aim) while the pad is the device in use
+or the stick leans past a quarter of its travel (a stick resting just past its deadzone never creeps
+a keyboard and mouse player's camera), the analog triggers read 0..1 as
 `input.triggers.left` / `.right`, and buttons press their own codes through `input.gamepadButtons`
 (`GAMEPAD_BUTTONS`, one scheme for every game): `PadA` Cross · `PadB` Circle · `PadX` Square ·
 `PadY` Triangle · `PadLB` / `PadRB` L1 / R1 · `PadLT` / `PadRT` L2 / R2 · `PadBack` Create (View) ·
@@ -157,7 +187,8 @@ browser's again).
 **The input used last** is `input.device`: `'keyboard'` (a key; the mouse's click, wheel or a move
 of a few pixels), `'pad'` (a button pressed, a stick pushed past a quarter of its travel, a trigger
 past 0.3) or `'touch'` (a finger on the canvas, a touch control: `TouchControls` call
-`input.noteTouch()`). It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a
+`input.noteTouch()`; prompts name the keys for a touch while the engine shows no touch controls,
+`engine.controls.touch`: a tap on a touch-screen laptop). It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a
 pad that is only connected (`gamepadConnected`), a stick resting or jittering near its deadzone
 and a trigger resting where the pad was first seen never change it, so a keyboard player with a
 DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (a recording

@@ -244,13 +244,17 @@ export interface EngineOptions {
    */
   debugKeys?: DebugKeysOption;
   /**
-   * The player's settings (`engine.settings`): look, pixel art, pixel size, quality, frame rate,
-   * sound and debug info, in a panel the ⚙ button opens. `button`: its corner (default, or true:
-   * 'top-right'; on a mouse it shows while the pointer moves), or false for none: open the
-   * panel from your own menu (`engine.settings.open()`). `key`: where they are saved
-   * (localStorage `pixel-engine:settings:<key>`; default the first game's name), false: nowhere.
+   * The player's settings (`engine.settings`): picture (look, pixel art, pixel size, quality, frame
+   * rate, debug info), sound (on, volume, music, effects) and controls (button prompts, vibration),
+   * in a panel the ⚙ button opens. `button`: its corner (default, or true: 'top-right'; on a mouse
+   * it shows while the pointer moves), or false for none: open the panel from your own menu
+   * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
+   * a game with no pause menu of its own (default false: a game's Options is its own). `voice`: the
+   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `key`: where they
+   * are saved (localStorage `pixel-engine:settings:<key>`; default the first game's name), false:
+   * nowhere.
    */
-  settings?: { button?: TouchCorner | boolean; key?: string | false };
+  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
@@ -415,9 +419,21 @@ export class Engine {
    * Sound is `audio`'s.
    */
   readonly settings: Settings;
+
+  /**
+   * The game's voice feature is on (`EngineOptions.settings.voice`, the panel's Microphone row):
+   * the player has allowed games the microphone in 52in1 (`hubSettings.micAllowed`) and not turned
+   * it off here. Open it with `hubSettings.openMicrophone()`; never ask the browser yourself.
+   */
+  get voiceOn(): boolean {
+    return this.hubSettings.micAllowed && this.settings.values.voice !== false;
+  }
+
   private settingsPanel: SettingsPanel | null = null;
   /** Whether the game was paused when the settings opened (they pause it, and give it back). */
   private pausedBeforeSettings = false;
+  /** Options (Esc) opens the settings panel (`EngineOptions.settings.padButton`). */
+  private settingsKeys = false;
   /** The dynamic light pool, created on first use of `ctx.lights` / `engine.lights`. */
   private _lights: LightPool | null = null;
   /** Active engine hotkeys (from EngineOptions.debugKeys; none until the engine starts). */
@@ -514,6 +530,7 @@ export class Engine {
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
     this.hud = new Hud(renderer.container, () => renderer.resolution); // lays out on the view at every moment
     this.controls = new Controls(this.input, this.settings);
+    this.controls.touch = options.touch === true; // a page says once its touch controls exist (finishStart)
     this.hud.controls = this.controls;
     setActiveControls(this.controls); // `{key:action}` in every line names this game's controls
     renderer.onError = (e) => this.reportError(e); // a view or mirror that throws: on screen, in errors
@@ -869,13 +886,16 @@ export class Engine {
       this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
       if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⓘ button
     }
-    const corner = options.settings?.button;
-    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner));
+    this.controls.touch = this.touch !== null;
+    const o = options.settings ?? {};
+    const corner = o.button;
+    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice }));
+    this.settingsKeys = o.padButton === true;
     this.settings.onOpen = () => {
       if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)
       this.pausedBeforeSettings = this.paused;
       this.paused = true;
-      this.input.release(); // no key stays held through the menu
+      this.input.release(); // no key stays held through the menu (nor the button that opened it)
       panel.show();
     };
     this.settings.onClose = () => {
@@ -1531,7 +1551,10 @@ export class Engine {
       this.input.clearQueued(); // presses made during a pause never fire later
     }
 
-    if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads
+    const settingsOpen = this.ready && this.settings.isOpen;
+    if (settingsOpen) this.updateSettings(dt);
+    // hotkeys work while paused (not in the settings, whose keys they are, nor while a level loads)
+    if (this.ready && !this.settings.isOpen) this.handleDebugKeys();
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
     this.audio.update();
 
@@ -1543,6 +1566,10 @@ export class Engine {
       }
     }
     if (this.disposed) return; // a game hook disposed the engine during this frame
+    // Options (Esc) opens the panel once this frame has run as it was recorded (its keys still
+    // held): a replay never opens it, so the frame must not run with them let go. Not on the
+    // frame the panel closed (the Esc that closed it).
+    if (this.ready && !settingsOpen) this.openSettingsOnKey();
     this.renderer.screen.update(dt, this.camera.camera); // transitions run on real time, loads included
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
@@ -1570,6 +1597,23 @@ export class Engine {
     }
     const more = this.errors.length > 1 ? `\n(+${this.errors.length - 1} more: engine.errors, the console)` : '';
     box.textContent = `GAME ERROR: ${this.errors[0]}${more}\nFix the first one first; the console has the stack.`;
+  }
+
+  /**
+   * The settings panel's frame while it is open: its keys and the pad (`dt`: real seconds, for key
+   * repeat). Never during a replay: its input plays on untouched.
+   */
+  private updateSettings(dt: number): void {
+    if (this.settingsPanel && !this.input.playing) this.settingsPanel.update(dt);
+  }
+
+  /**
+   * Options (Esc) opens the settings panel for a game that asked (`settings.padButton`), at the end
+   * of the frame it was pressed on (`tick()`). Never during a replay.
+   */
+  private openSettingsOnKey(): void {
+    if (!this.settingsPanel || !this.settingsKeys || this.input.playing || this.settings.isOpen) return;
+    if (this.input.wasPressed('PadStart', 'Escape')) this.settings.open();
   }
 
   private handleDebugKeys(): void {

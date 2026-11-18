@@ -83,6 +83,21 @@ describe('Riftlight headless', () => {
     T,
   );
 
+  it('a touch with no touch controls on screen gives the HUD the keys’ glyphs, as the lines name the keys (a touch-screen laptop)', () => {
+    const { engine, game, rl } = h;
+    rl.newRun({ seed: 2 });
+    engine.input.noteDevice('touch'); // a tap: headless shows no touch controls (EngineOptions.touch)
+    engine.step(1);
+    expect([engine.input.device, engine.controls.device, game.ui.device, game.controlDevice()]).toEqual(['touch', 'keyboard', 'keyboard', 'keyboard']);
+    engine.controls.touch = true; // the engine shows touch controls: a touch is theirs
+    engine.step(1);
+    expect([engine.controls.device, game.ui.device]).toEqual(['touch', 'touch']);
+    engine.controls.touch = false;
+    engine.input.noteDevice('keyboard');
+    engine.step(1);
+    expect(engine.errors).toEqual([]);
+  });
+
   it(
     "a hit's number takes its damage type's colour from DAMAGE_COLORS; a crit's is sand and ends in '!'",
     async () => {

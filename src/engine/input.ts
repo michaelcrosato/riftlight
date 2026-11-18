@@ -217,6 +217,19 @@ export class Input {
   private readonly queued = new Map<string, number>();
   /** Keys held through gamepad buttons (merged into isDown). */
   private readonly padHeld = new Set<string>();
+  /**
+   * Pad buttons that were held when `release()` let go of everything: they read as up until they
+   * are let go, so the press that opened a menu (or closed it) never presses again behind it.
+   */
+  private readonly padLatched = new Set<string>();
+  /** Keys held when `release()` let go of everything: their auto-repeat holds nothing until they are let go. */
+  private readonly keyLatched = new Set<string>();
+  /**
+   * The sticks (left, right) since `release()`: each reads centred until it goes back inside its
+   * deadzone, so a stick still leaning from a run never steps a menu opened over it (nor turns on
+   * behind it).
+   */
+  private readonly stickLatched = [false, false];
   private readonly listeners = new AbortController();
   /** Pointer movement this frame, in CSS pixels (drag or pointer lock). */
   readonly mouseDelta = { x: 0, y: 0 };
@@ -314,12 +327,21 @@ export class Input {
         if (isGameKey(e.code) || this.preventKeys.has(e.code)) e.preventDefault();
         if (this._playing) return;
         this.use('keyboard');
+        if (e.repeat && this.keyLatched.has(e.code)) return; // held through release(): up until let go
+        this.keyLatched.delete(e.code);
         if (!e.repeat) this.press(e.code);
         this.held.add(e.code);
       },
       { signal },
     );
-    target.addEventListener('keyup', (e) => !this._playing && this.held.delete(e.code), { signal });
+    target.addEventListener(
+      'keyup',
+      (e) => {
+        this.keyLatched.delete(e.code);
+        if (!this._playing) this.held.delete(e.code);
+      },
+      { signal },
+    );
     target.addEventListener(
       'blur',
       () => {
@@ -328,6 +350,7 @@ export class Input {
         for (const [code] of MOUSE_BUTTONS) this.button(code, false);
         this.button(TOUCH_KEY, false);
         this.held.clear();
+        this.keyLatched.clear();
       },
       { signal },
     );
@@ -556,10 +579,19 @@ export class Input {
     this.reset();
   }
 
-  /** Let go of everything held (keys, gamepad buttons, sticks, pointer buttons); queued presses stay. */
+  /**
+   * Let go of everything held (keys, gamepad buttons, sticks, pointer buttons); queued presses stay.
+   * A key or pad button still held reads as up until it is let go (it does not press again, and a
+   * key's auto-repeat holds nothing), and a stick still leaning reads centred until it goes back
+   * inside its deadzone: the key that opened a menu never acts in it or behind it, and a stick held
+   * from a run never steps its rows.
+   */
   release(): void {
+    for (const code of this.held) this.keyLatched.add(code);
     this.held.clear();
+    for (const code of this.padHeld) this.padLatched.add(code);
     this.padHeld.clear();
+    this.stickLatched[0] = this.stickLatched[1] = true; // a stick at rest lets go at the next poll
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
@@ -571,6 +603,9 @@ export class Input {
     this.held.clear();
     this.queued.clear();
     this.padHeld.clear();
+    this.padLatched.clear();
+    this.keyLatched.clear();
+    this.stickLatched[0] = this.stickLatched[1] = false;
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
@@ -909,6 +944,8 @@ export class Input {
     const down = new Set<string>();
     let stick = { x: 0, y: 0 };
     let look = { x: 0, y: 0 };
+    /** Each pad's right stick (after its deadzone): it turns once the device in use is known. */
+    const rights: { x: number; y: number }[] = [];
     let left = 0;
     let right = 0;
     let connected = false;
@@ -954,9 +991,7 @@ export class Input {
       const l = applyDeadzone(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0), this.gamepadDeadzone);
       if (Math.hypot(l.x, l.y) > Math.hypot(stick.x, stick.y)) stick = l;
       const r = applyDeadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0, this.gamepadDeadzone);
-      if (Math.hypot(r.x, r.y) > Math.hypot(look.x, look.y)) look = { x: r.x, y: -r.y };
-      this.mouseDelta.x += r.x * this.gamepadLookSpeed * dt;
-      this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
+      rights.push(r);
       left = Math.max(left, value(6));
       right = Math.max(right, value(7));
       // Used, not merely connected: a button that went down, a trigger pulled past TRIGGER_USE, a
@@ -975,13 +1010,19 @@ export class Input {
       if (index === this._padIndex) rumblePad = pad;
     }
     this.padSeen = seenNow;
+    // a button held through release() reads as up until it is let go
+    for (const code of this.padLatched) if (!down.has(code)) this.padLatched.delete(code);
+    for (const code of this.padLatched) down.delete(code);
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
     this.padHeld.clear();
     for (const code of down) this.padHeld.add(code);
+    // a stick held through release() reads centred until it goes back inside its deadzone
+    if (this.stickLatched[0] && !stick.x && !stick.y) this.stickLatched[0] = false;
+    if (this.stickLatched[0]) stick = { x: 0, y: 0 };
+    if (this.stickLatched[1] && rights.every((r) => !r.x && !r.y)) this.stickLatched[1] = false;
+    if (this.stickLatched[1]) rights.length = 0;
     this.padAxis.x = stick.x;
     this.padAxis.y = stick.y;
-    this.lookAxis.x = look.x;
-    this.lookAxis.y = look.y;
     this.triggers.left = left;
     this.triggers.right = right;
     this.gamepadConnected = connected;
@@ -991,6 +1032,18 @@ export class Input {
       rumblePad = used.pad;
     }
     this.rumblePad = rumblePad;
+    // The right stick turns the camera and aims while the pad is the device in use (this poll's
+    // use counts: the poll that picks the pad up turns), or once it leans past STICK_USE: a
+    // stick resting just past its deadzone never creeps a keyboard and mouse player's camera.
+    const padInUse = this._device === 'pad';
+    for (const r of rights) {
+      if (!padInUse && Math.hypot(r.x, r.y) < STICK_USE) continue;
+      if (Math.hypot(r.x, r.y) > Math.hypot(look.x, look.y)) look = { x: r.x, y: -r.y };
+      this.mouseDelta.x += r.x * this.gamepadLookSpeed * dt;
+      this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
+    }
+    this.lookAxis.x = look.x;
+    this.lookAxis.y = look.y;
   }
 }
 

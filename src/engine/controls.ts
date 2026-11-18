@@ -296,15 +296,22 @@ export class Controls {
   table: ControlTable = {};
   /** Where names come from when no language is given: the game's (`Lang`), or null for English. */
   names: LineSource | null = null;
+  /**
+   * The engine shows touch controls (`TouchControls`; headless: `EngineOptions.touch`). Without
+   * them a touch means the keyboard's prompts: a tap on a touch-screen laptop must not name
+   * buttons that are not on screen.
+   */
+  touch = false;
 
   constructor(
     private readonly input: Pick<Input, 'device'>,
     private readonly settings: { readonly values: Readonly<PlayerSettings> },
   ) {}
 
-  /** The device prompts are for: the input used last. */
+  /** The device prompts are for: the input used last (a touch is the keyboard's while no touch controls show). */
   get device(): InputDevice {
-    return this.input.device;
+    const d = this.input.device;
+    return d === 'touch' && !this.touch ? 'keyboard' : d;
   }
 
   /** The player's button style (`settings.padGlyphs`; PlayStation unless they chose Xbox). */

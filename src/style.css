@@ -186,13 +186,49 @@ canvas[data-engine-canvas] {
   top: calc(max(8px, env(safe-area-inset-top)) + 44px);
 }
 
+/* a touch screen: a ⚙ a thumb can hit */
+@media (pointer: coarse) {
+  .settings-button {
+    width: 44px;
+    height: 44px;
+    font-size: 26px;
+  }
+}
+
+/* The settings panel (SettingsPanel): made for a TV at ten feet and a pad first. One setting per
+   large row, its value stepped ◀ value ▶, the focused row ringed, a legend of the device's buttons. */
 .settings-ui {
   position: absolute;
   inset: 0;
   z-index: 20;
   display: grid;
   place-items: center;
-  background: rgb(13 14 22 / 0.55);
+  box-sizing: border-box;
+  padding: max(8px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  font: 600 clamp(18px, 3.2vmin, 40px) / 1.25 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: #f4f4f4;
+  background: rgb(13 14 22 / 0.62);
+  /* a pad's glyphs are drawn at a whole multiple of their 7 art pixels (SettingsPanel) */
+  --glyph-scale: 3;
+}
+
+@media (min-width: 1000px) and (min-height: 700px) {
+  .settings-ui {
+    --glyph-scale: 4;
+  }
+}
+
+/* a TV: 1080 lines and up */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .settings-ui {
+    --glyph-scale: 5;
+  }
+}
+
+@media (min-width: 2200px) and (min-height: 1250px) {
+  .settings-ui {
+    --glyph-scale: 6;
+  }
 }
 
 .settings-ui[hidden] {
@@ -200,106 +236,264 @@ canvas[data-engine-canvas] {
 }
 
 .settings-ui .panel {
-  width: min(320px, calc(100% - 24px));
-  max-height: calc(100% - 24px);
-  overflow-y: auto;
-  box-sizing: border-box;
-  padding: 8px 14px 12px;
-  font-size: 13px;
-  line-height: 1.4;
-  color: #f4f4f4;
-  background: rgb(26 28 44 / 0.96);
-  border: 2px solid #566c86;
-}
-
-.settings-ui .head {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 15px;
-  color: #ffcd75;
+  flex-direction: column;
+  width: min(30em, 100%);
+  max-height: 100%;
+  box-sizing: border-box;
+  padding: 0.4em 0.6em 0.5em;
+  background: rgb(26 28 44 / 0.97);
+  border: max(2px, 0.1em) solid #566c86;
+  border-radius: 0.3em;
+  outline: none;
 }
 
-.settings-ui .group {
-  margin: 10px 0 2px;
+.settings-ui .tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.3em;
+  margin-bottom: 0.35em;
+}
+
+.settings-ui .tab {
+  flex: 1;
+  min-width: 0;
+  min-height: 44px;
+  padding: 0.25em 0.2em;
+  font: inherit;
   color: #94b0c2;
-  border-bottom: 1px solid #333c57;
+  background: none;
+  border: 0;
+  border-bottom: max(3px, 0.12em) solid #333c57;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  cursor: pointer;
+}
+
+.settings-ui .tab[aria-selected='true'] {
+  color: #ffcd75;
+  border-bottom-color: #ffcd75;
+}
+
+.settings-ui .page-glyph {
+  display: flex;
+  flex: none;
+}
+
+.settings-ui .page-glyph:empty {
+  display: none;
+}
+
+.settings-ui .rows {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0.15em;
+  outline: none; /* it holds the keyboard focus; the ringed row shows it */
 }
 
 .settings-ui .row {
   display: grid;
-  grid-template-columns: 1fr 140px;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
-  min-height: 30px;
+  column-gap: 0.6em;
+  min-height: max(44px, 2.1em);
+  padding: 0 0.4em;
+  border-radius: 0.25em;
+  cursor: pointer;
 }
 
-.settings-ui .row:has(i) {
-  grid-template-columns: 1fr 100px 36px;
+/* the focus: a ring a room away can see */
+.settings-ui .row.focus {
+  background: #333c57;
+  box-shadow: inset 0 0 0 max(3px, 0.13em) #ffcd75;
 }
 
-.settings-ui .row i {
-  font-style: normal;
-  text-align: right;
+.settings-ui .row.off .label,
+.settings-ui .row.off .value {
+  color: #566c86;
+}
+
+.settings-ui .label {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.settings-ui .stepper {
+  display: flex;
+  align-items: center;
+}
+
+.settings-ui .value {
+  min-width: 7.5em;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.settings-ui .row.focus .value {
+  color: #ffcd75;
+}
+
+.settings-ui .arrow {
+  width: max(44px, 1.8em);
+  height: max(44px, 1.8em);
+  padding: 0;
+  font: inherit;
+  font-size: 0.8em;
+  color: #ffcd75;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  visibility: hidden;
+}
+
+/* the arrows show on the focused row, and on every row for a finger (each is a target) */
+.settings-ui .row.focus .arrow,
+.settings-ui[data-device='touch'] .arrow {
+  visibility: visible;
+}
+
+.settings-ui[data-device='touch'] .row:not(.focus) .arrow {
   color: #94b0c2;
 }
 
-.settings-ui select,
-.settings-ui button {
+.settings-ui .arrow.end,
+.settings-ui .row.off .arrow {
+  opacity: 0.25;
+}
+
+.settings-ui .note {
+  grid-column: 1 / -1;
+  padding-bottom: 0.3em;
+  font-size: max(14px, 0.7em);
+  font-weight: 500;
+  color: #94b0c2;
+}
+
+.settings-ui .note:empty {
+  display: none;
+}
+
+.settings-ui .legend {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.2em 1em;
+  margin-top: 0.4em;
+  padding-top: 0.35em;
+  border-top: max(2px, 0.08em) solid #333c57;
+  font-size: 0.85em;
+}
+
+.settings-ui .legend button,
+.settings-ui .legend .hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35em;
+  min-height: 44px;
+  padding: 0 0.3em;
   font: inherit;
   color: #f4f4f4;
-  background: #333c57;
-  border: 1px solid #566c86;
-  padding: 3px 6px;
-}
-
-/* the Look with pixel art off: smooth 3D draws no look */
-.settings-ui select:disabled {
-  opacity: 0.5;
-}
-
-.settings-ui input[type='checkbox'] {
-  justify-self: start;
-  width: 18px;
-  height: 18px;
-  margin: 0;
-  accent-color: #38b764;
-}
-
-.settings-ui input[type='range'] {
-  width: 100%;
-  margin: 0;
-  accent-color: #38b764;
-}
-
-.settings-ui .head button {
-  padding: 0 7px;
-  line-height: 22px;
+  background: none;
+  border: 0;
   cursor: pointer;
 }
 
-.settings-ui .foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  margin-top: 12px;
+/* words, not a button (on touch: Tap · Change, a tap on a row changes it) */
+.settings-ui .legend .hint {
+  cursor: default;
 }
 
-.settings-ui .foot button {
-  min-width: 72px;
-  min-height: 30px;
-  cursor: pointer;
+/* tabs and legend buttons; a row's own hover moves the focus ring to it instead */
+.settings-ui button:hover {
+  color: #ffcd75;
 }
 
-.settings-ui .foot button[data-a='done'] {
+/* the device's buttons: a pad's drawn as the HUD draws them, outlined in their face's colour
+   (the HUD's ink outline is this panel's background), at a whole multiple of their 7 art pixels
+   (--glyph-scale; SettingsPanel sizes them); keys as key caps */
+.settings-ui .glyph {
+  flex: none;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* said aloud, not shown: a changed value, for a screen reader */
+.settings-ui .sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.settings-ui kbd.cap {
+  padding: 0.08em 0.4em;
+  font: inherit;
+  font-size: 0.75em;
   color: #1a1c2c;
-  background: #94b0c2;
+  background: #f4f4f4;
+  border-radius: 0.25em;
+  box-shadow: 0 0.15em 0 #566c86;
 }
 
-.settings-ui button:hover,
-.settings-ui button:focus-visible {
-  outline: 2px solid #ffcd75;
-  outline-offset: -2px;
+.settings-ui kbd.cap.round {
+  color: #f4f4f4;
+  background: #333c57;
+  border-radius: 0.8em;
+  box-shadow: 0 0 0 0.1em #1a1c2c;
+}
+
+/* a portrait phone: each label above its stepper, the arrows at the row's ends */
+@media (max-width: 560px) {
+  .settings-ui .row {
+    grid-template-columns: minmax(0, 1fr);
+    padding: 0.2em 0.4em;
+  }
+
+  .settings-ui .stepper {
+    justify-content: space-between;
+  }
+
+  .settings-ui .value {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+/* a landscape phone: rows, tabs and legend buttons keep 44 CSS px (a thumb's target); the space
+   comes from the panel's padding and margins and a smaller legend, so a page fits without scrolling */
+@media (max-height: 480px) {
+  .settings-ui {
+    padding-block: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-bottom));
+  }
+
+  .settings-ui .panel {
+    padding-block: 0 0.1em;
+    border-width: 2px;
+  }
+
+  .settings-ui .rows {
+    padding-block: 0;
+  }
+
+  .settings-ui .arrow {
+    height: 44px;
+  }
+
+  .settings-ui .tabs {
+    margin-bottom: 0;
+  }
+
+  .settings-ui .legend {
+    margin-top: 0;
+    padding-top: 0;
+    font-size: 0.8em;
+  }
 }
 
 /* ---------- touch controls ---------- */

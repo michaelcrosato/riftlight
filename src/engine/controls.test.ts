@@ -107,10 +107,19 @@ describe('engine.controls', () => {
     values.padGlyphs = 'xbox';
     expect([c.label('jump'), c.label('pause'), sprite(c.glyph('jump'))!.colors.f]).toEqual(['A', 'Menu', 'green']);
     input.noteDevice('touch');
+    c.touch = true; // the engine shows touch controls
     expect([c.label('jump'), c.label('attack'), c.glyph('jump')]).toEqual(['A', 'Tap', { kind: 'cap', text: 'A', round: true }]);
     expect(c.label('nothing')).toBe('nothing'); // not in the table: its id, as before
     expect(c.label('PadB')).toBe('B'); // a code alone: on its own device, in the style
     expect(c.glyph('KeyQ')).toEqual({ kind: 'cap', text: 'Q', round: false });
+  });
+
+  it('names the keys for a touch while the engine shows no touch controls (a tap on a touch-screen laptop)', () => {
+    const { input, c } = make();
+    input.noteDevice('touch');
+    expect([c.device, c.label('jump'), c.label('attack'), c.glyph('jump')]).toEqual(['keyboard', 'Space', 'LMB', { kind: 'cap', text: 'Spc', round: false }]);
+    c.touch = true;
+    expect([c.device, c.label('jump')]).toEqual(['touch', 'A']);
   });
 
   it("fills {key:action} in every Lang's lines for the running game, in that language, until the engine goes", async () => {

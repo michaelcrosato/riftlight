@@ -27,10 +27,13 @@ export interface GameEntry {
   make(args?: unknown): Game;
 }
 
+/** A demo with no pause menu of its own: Options (Esc) opens the engine's settings. */
+const SETTINGS_ON_OPTIONS: Partial<EngineOptions> = { settings: { padButton: true } };
+
 export const GAMES: readonly GameEntry[] = [
   { id: 'riftlight', name: 'Riftlight', options: RIFTLIGHT_OPTIONS, make: () => new Riftlight() },
-  { id: 'playground', name: 'Move Playground', options: {}, make: () => new Playground() },
-  { id: 'sandbox', name: 'Sandbox', options: {}, make: () => new Sandbox() },
+  { id: 'playground', name: 'Move Playground', options: SETTINGS_ON_OPTIONS, make: () => new Playground() },
+  { id: 'sandbox', name: 'Sandbox', options: SETTINGS_ON_OPTIONS, make: () => new Sandbox() },
   { id: 'lootlab', name: 'Loot Lab', options: {}, make: () => new LootLab() },
   // Riftlight levels: ?game=levellab&depth=N
   { id: 'levellab', name: 'Riftlight Level Lab', options: {}, argsFromUrl: LevelLab.optionsFromUrl, make: (args) => new LevelLab(args as LevelLabOptions) },
