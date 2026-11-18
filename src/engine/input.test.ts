@@ -115,6 +115,56 @@ describe('Gamepad', () => {
     expect(input.gamepadConnected).toBe(true);
   });
 
+  it("a right stick resting just past its deadzone never creeps a keyboard player's camera; on the pad, it turns", () => {
+    const input = new Input(target());
+    input.noteDevice('keyboard');
+    for (let i = 0; i < 3; i++) {
+      input.beginFrame(i / 60, 1 / 60, [pad([0, 0, 0.17, 0])]); // between the deadzone (0.15) and a use (0.25)
+      expect([input.device, input.mouseDelta.x, input.lookAxis.x]).toEqual(['keyboard', 0, 0]);
+      input.endFrame();
+    }
+    input.noteDevice('pad'); // a button pressed: the pad is in use, and the same small lean turns
+    input.beginFrame(3 / 60, 1 / 60, [pad([0, 0, 0.17, 0])]);
+    expect(input.mouseDelta.x).toBeGreaterThan(0);
+    expect(input.lookAxis.x).toBeGreaterThan(0);
+    input.endFrame();
+    input.noteDevice('keyboard');
+    input.beginFrame(4 / 60, 1 / 60, [pad([0, 0, 0.9, 0])]); // pushed well over: the poll that picks the pad up turns
+    expect([input.device, input.mouseDelta.x > 0, input.lookAxis.x > 0]).toEqual(['pad', true, true]);
+  });
+
+  it("release() lets go of a held key for good: its auto-repeat holds nothing until it is let go and pressed anew", () => {
+    const t = target();
+    const input = new Input(t);
+    const repeat = (code: string) => Object.assign(new Event('keydown'), { code, repeat: true });
+    t.dispatchEvent(key('keydown', 'KeyD')); // walking right, then a menu opens
+    input.release();
+    t.dispatchEvent(repeat('KeyD'));
+    t.dispatchEvent(repeat('KeyD'));
+    expect(input.isDown('KeyD')).toBe(false);
+    t.dispatchEvent(key('keyup', 'KeyD'));
+    input.endFrame();
+    t.dispatchEvent(key('keydown', 'KeyD'));
+    expect([input.isDown('KeyD'), input.wasPressed('KeyD')]).toEqual([true, true]);
+  });
+
+  it('release() lets go of a held pad button for good: it does not press again until let go and pressed anew', () => {
+    const input = new Input(target());
+    input.beginFrame(0, 1 / 60, [pad([0, 0, 0, 0], [9])]); // Options opens a menu
+    expect(input.wasPressed('PadStart')).toBe(true);
+    input.endFrame();
+    input.release(); // what opening the menu does
+    for (let i = 1; i < 4; i++) {
+      input.beginFrame(i / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]); // still held
+      expect([input.wasPressed('PadStart'), input.isDown('PadStart')]).toEqual([false, false]);
+      input.endFrame();
+    }
+    input.beginFrame(4 / 60, 1 / 60, [pad()]);
+    input.endFrame();
+    input.beginFrame(5 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
+    expect([input.wasPressed('PadStart'), input.isDown('PadStart')]).toEqual([true, true]);
+  });
+
   it('its state as data: keys held, presses still queued with their age, the pointer (save-states)', () => {
     const a = new Input(new EventTarget() as unknown as Window);
     a.beginFrame(1, 1 / 60, []);

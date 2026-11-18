@@ -213,8 +213,9 @@ the hub's `change`. They are the player's, not the game's: never stored, never r
   `micLater` (allowed after this game was opened: it reaches the game once it is opened again),
   `micMuted` (the DualSense's mute button). A voice feature's settings row is off, with a line
   saying 52in1 allows the microphone in its Settings, under Sound (while `micLater`: to open the
-  game again), until `micAllowed`; then `await hubSettings.openMicrophone()` gives a stream or
-  null. The game never asks the browser itself, and nothing opens during a replay. What a voice
+  game again), until `micAllowed`: the engine's settings panel has that row for a game that passes
+  `settings: { voice: true }` (docs/engine/game-api.md *Player settings*), and `engine.voiceOn`
+  says it is on; then `await hubSettings.openMicrophone()` gives a stream or null. The game never asks the browser itself, and nothing opens during a replay. What a voice
   feature hears is input: it reaches gameplay through `ctx.input.send`, so it replays.
 
 `ctx.dualsense` (`DualSense`, `src/engine/hub/dualsense.ts`) is the controller's outputs, each

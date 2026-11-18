@@ -212,10 +212,10 @@ await engine.loadGame(new Level2());     // next level: same renderer, camera, i
 ```
 
 Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
-`?debug=1`. Players get those options in the settings panel instead (look, pixel art, pixel size,
-quality, frame rate, sound, debug info; saved per game): the ⚙ button opens it, top right
-(`settings: { button: 'top-left' }` moves it; `false` hides it, for a game that opens it from its
-own menu with `engine.settings.open()`). A game that uses R, P or M itself moves that hotkey for
+`?debug=1`. Players get those options in the settings panel instead (picture, sound, controls; saved per
+game): the ⚙ button opens it, top right (`settings: { button: 'top-left' }`
+moves it; `false` hides it, for a game that opens it from its own menu with
+`engine.settings.open()`; `padButton: true` lets Options open it, for a game with no pause menu). A game that uses R, P or M itself moves that hotkey for
 `?debug=1` with `debugKeys: { resolution: 'F2' }`. `touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }]`
 replaces the on-screen buttons.
 `loadGame` can be called from anywhere (a trigger, `update`); the swap happens after the
@@ -1013,7 +1013,7 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
 | A colour is black or a material missing | a colour name that isn't in the palette | the 16 names in section 4 |
 | A model 404s | path not relative to the page | `assets/x.glb` next to `index.html`; built-ins need no file |
 | A key does nothing in `fixedUpdate` | `wasPressed` there | `consumePress` in `fixedUpdate`, `wasPressed` in `update` |
-| The ⚙ sits over the HUD's top-right corner on a phone | the settings button | `settings: { button: 'top-left' }`, or `false` (see *Starting*) |
+| The ⚙ sits over the HUD's top-right corner | the settings button | `settings: { button: 'top-left' }` (see *Starting*) |
 | Side-scroller hero drifts off the lane | `lockDepth` not passed | `lockDepth: ctx.camera.lockDepth` |
 | The camera doesn't follow | `cameraTarget` returns nothing before `setup` ends | return a fallback vector (see the quick start) |
 | Slow, low fps | hundreds of separate meshes | `mergeStaticMeshes` the static level; share materials (`toonMaterial` caches) |

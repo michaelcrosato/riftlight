@@ -17,7 +17,7 @@ const hudText = () => (engine.hud as unknown as { items: { kind: string; text?: 
 
 beforeAll(async () => {
   game = new ArcadeGame();
-  engine = await headlessGame(game);
+  engine = await headlessGame(game, { touch: true }); // as on a phone: touch controls show, so a touch names them
   await stepUntil(engine, () => game.stage.phase === 'play', { max: 600, what: 'the race starts' });
 }, 60_000);
 
