@@ -10,6 +10,7 @@
  *   attack        J                     Square · X                   HIT
  *   crouch        C / Ctrl              Circle · B                   DUCK
  *   grab          F (hold)              Triangle · Y                 GRAB
+ *   prone         Z                     L1 · LB                      PRONE (the Moveset's crawl tunnel)
  *   menu          Esc                   Options · Menu               ≡
  *   rooms         G                     Create · View                GO
  *   guide         H                     R3 (or the touchpad) · RS    ?
@@ -19,7 +20,7 @@
  * (the Time Lab's rewind, the Gallery's shelves, the car) are here too, so their prompts follow
  * the device like the shell's.
  */
-import type { ControlTable, Engine, TouchButton } from '../engine';
+import type { ControlTable, Engine, TouchButton, TouchButtonState } from '../engine';
 import { lang } from '../riftlight/lang';
 
 export const WORLD_CONTROLS = {
@@ -35,7 +36,7 @@ export const WORLD_CONTROLS = {
   rooms: { key: 'KeyG', pad: 'PadBack', touch: 'GO' },
   guide: { key: 'KeyH', pad: 'PadR3', touch: '?' },
   tweak: { key: 'KeyT', pad: 'PadStart', touch: '≡' },
-  card: { key: 'KeyI', touch: 'TouchTap' },
+  card: { key: 'KeyI', pad: 'PadStart', touch: 'TouchTap' },
   back: { key: 'Escape', pad: 'PadB', touch: 'TouchSwipe' },
   change: { key: 'Arrows', pad: 'DPad', touch: 'TouchTap' },
   // the rooms' own
@@ -90,16 +91,18 @@ export type TouchSlot = (typeof TOUCH_SLOTS)[number];
 
 /**
  * The phone's buttons (`EngineOptions.touchButtons`): the hero's moves in a cluster at the
- * bottom right (JUMP the big one), the menu, the room list and the guide along the top left, and
- * three slots over the joystick that a room fills with its own actions (`RoomLogic.touch`: the
- * Time Lab's REWIND, the Gallery's < >, the car's EXIT), hidden in every other room. Positions are
- * CSS pixels from a corner, so a tap target keeps its size at any art scale.
+ * bottom right (JUMP the big one; PRONE above DUCK only where a room asks for it, `ON_ASK`), the
+ * menu, the room list and the guide along the top left, and three slots up the right edge that a
+ * room fills with its own actions (`RoomLogic.touch`: the Time Lab's REWIND, the Gallery's < >,
+ * the car's EXIT), hidden in every other room. Positions are CSS pixels from a corner, so a tap
+ * target keeps its size at any art scale.
  */
 export const WORLD_TOUCH_BUTTONS: readonly TouchButton[] = [
   { label: 'JUMP', code: 'Space', at: { x: 60, y: 64, size: 76 } },
   { label: 'HIT', code: 'KeyJ', at: { x: 150, y: 52, size: 54 } },
   { label: 'GRAB', code: 'KeyF', at: { x: 52, y: 152, size: 54 } },
   { label: 'DUCK', code: 'KeyC', at: { x: 128, y: 126, size: 48 } },
+  { label: 'PRONE', code: 'KeyZ', at: { x: 128, y: 184, size: 46 } },
   { label: '≡', code: 'Escape', at: { x: 26, y: 26, size: 44, corner: 'top-left' } },
   { label: 'GO', code: 'KeyG', hint: 'rooms', at: { x: 76, y: 26, size: 44, corner: 'top-left' } },
   { label: '?', code: 'KeyH', hint: 'how', at: { x: 126, y: 26, size: 44, corner: 'top-left' } },
@@ -108,10 +111,28 @@ export const WORLD_TOUCH_BUTTONS: readonly TouchButton[] = [
 
 export { touchFloor } from '../riftlight/showcase/hints';
 
-/** Codes the World's base buttons press, each with its label and hint (a room relabels or hides them). */
-export const BASE_TOUCH: Readonly<Record<string, { readonly label: string; readonly hint: string }>> = Object.fromEntries(
-  WORLD_TOUCH_BUTTONS.filter((b) => !b.code.startsWith('TouchSlot')).map((b) => [b.code, { label: b.label, hint: b.hint ?? '' }]),
+/** Base buttons hidden unless a room shows them (`RoomLogic.touch`): PRONE, for the Moveset's crawl tunnel. */
+export const ON_ASK: ReadonlySet<string> = new Set(['KeyZ']);
+
+/** Codes the World's base buttons press, each with its label, hint and whether it hides by default (a room relabels, hides or shows them). */
+export const BASE_TOUCH: Readonly<Record<string, { readonly label: string; readonly hint: string; readonly hidden: boolean }>> = Object.fromEntries(
+  WORLD_TOUCH_BUTTONS.filter((b) => !b.code.startsWith('TouchSlot')).map((b) => [b.code, { label: b.label, hint: b.hint ?? '', hidden: ON_ASK.has(b.code) }]),
 );
+
+/**
+ * Every phone button's state for a frame, by the code it presses, from what the room wants
+ * (`RoomLogic.touch`): the base buttons as they are unless the room says otherwise, its slots
+ * hidden unless it fills them.
+ */
+export function touchStates(own: Readonly<Record<string, TouchButtonState | undefined>>): Record<string, TouchButtonState> {
+  const out: Record<string, TouchButtonState> = {};
+  for (const [code, base] of Object.entries(BASE_TOUCH)) out[code] = { disabled: false, ...base, ...own[code] };
+  for (const code of TOUCH_SLOTS) {
+    const s = own[code];
+    out[code] = s ? { label: '', hint: '', disabled: false, ...s, hidden: s.hidden ?? false } : { hidden: true };
+  }
+  return out;
+}
 
 /** The control that does `action` on the device in use, named as `{key:action}` names it (in the game's language when it has the name). */
 export function controlText(engine: Engine | null, action: string): string {

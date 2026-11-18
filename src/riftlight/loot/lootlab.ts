@@ -129,7 +129,9 @@ export class LootLab implements Game {
   }
 
   fixedUpdate(ctx: GameContext, dt: number): void {
-    // While item windows are open the hero stands still (clicks and keys belong to the UI).
+    // While item windows are open the hero stands still (clicks and keys belong to the UI). Create
+    // opens the inventory here (`update`), so its press is never the hero's wave.
+    ctx.input.clearQueued('PadBack');
     const input = this.ui.isOpen ? NO_INPUT : (this.moveInput = readMoveInput(ctx, this.hero, this.moveInput));
     this.hero.fixedUpdate(dt, input);
   }

@@ -29,8 +29,13 @@ Restart in the arcade, Photo mode, Back to town; the stage and its clock stand s
 pause's Back to town is the way out. While the showcase owns the frame it puts
 `SHOWCASE_CONTROLS` (`hints.ts`) in `engine.controls`, so every `{key:...}` hint names what its
 screens do: R1 / L1 zoom (the card, photo mode's field of view; the wheel and a pinch on the
-others), R1 / L1 or a swipe turn the Hall's wing, Create hides photo mode's panel, R2 / L2 fly
-it up and down; Circle or a sideways swipe backs out of the Hall's card and of photo mode. On a
+others), R1 / L1 or the < > at the screen's sides on a phone turn the Hall's wing (never the
+hero's lie down and prone), Create hides photo mode's panel, R2 / L2 fly it up and down; Circle
+backs out of the Hall's card and of photo mode. A swipe acts only where it starts on what it
+moves, since a drag looks or orbits everywhere else (and a quick one is a swipe too): a sideways
+one from the Hall's card closes it, one from photo mode's panel hides it (a tap on "show" brings
+it back), and a finger presses a card button or a panel arrow when it lifts there without
+swiping (a click at once). On a
 phone (`Showcase.touch()` → `TouchPad.sync`) the stick, A, B (it jumps), ≡ and the mode's own
 interact (the Hall's LOOK, only at an exhibit; the nearest is enough there) show, no skill icons;
 HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
@@ -85,10 +90,11 @@ Both stages walk with it.
   and every exhibit, the door lamps and the altar request a light from the engine's pool (8 of
   13 lit at medium quality, the ones near the camera).
 - **Walking**: the `first` preset and `readMoveInput` (WASD strafe, the hero faces the camera),
-  Tab / pad Y flies with `free`, N / R1 / a swipe turns the wing. **Inspecting** (F, R2, a phone's
-  LOOK) switches to `fixed` and moves the camera by hand around the exhibit (drag, Q/E or the right
+  Tab / pad Y flies with `free`, N / R1 (L1 back) or a phone's < > turn the wing. **Inspecting**
+  (F, R2, a left click, a phone's LOOK; recorded input only, so a replay inspects what the run did)
+  switches to `fixed` and moves the camera by hand around the exhibit (drag, Q/E or the right
   stick; the wheel, a pinch or R1 / L1), framing it left of the card; Circle, Esc or a sideways
-  swipe goes back; a button per clip
+  swipe from the card goes back; a button per clip
   (`MonsterRuntime.play`), the turntable. **Breeding**: `crossover` + `mutate` of two species,
   the child grows on the vat (`Spawn`), a seed from the save keeps it reproducible.
 
@@ -101,9 +107,9 @@ advancing it), and give each setting a row: every `FILTER_PRESETS` look and ever
 scale, a fill light that follows the camera (`ctx.lights.request({ follow: camera })`). Tab
 switches fly / edit (the rig's `fixed` flag), drag looks (no pointer lock, so the panel stays
 clickable). P / Square saves `renderer.capture()` as a PNG through a 2D canvas (the HUD is not in
-it); H, L1 (`photo_hide`: Triangle is taken), Create or a sideways swipe hides the panel; R1 steps
-the field of view (`nextFovStep`); Circle leaves the rows, then photo mode; Esc or Options puts
-everything back.
+it); H, L1 (`photo_hide`: Triangle is taken), Create or a sideways swipe from the panel hides it (a
+tap on "show" brings it back); R1 steps the field of view (`nextFovStep`); Circle leaves the rows,
+then photo mode; Esc or Options puts everything back.
 
 ## Agent API
 

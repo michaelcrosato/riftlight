@@ -66,9 +66,10 @@ export interface TouchFrame {
   playing: boolean;
   /**
    * A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, ≡ and its own interact
-   * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons.
+   * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons;
+   * none of them while `controls` is false (the Hall's card takes the screen).
    */
-  showcase?: boolean | { readonly interact: { verb: string; name: string } | null };
+  showcase?: boolean | { readonly interact: { verb: string; name: string } | null; readonly controls?: boolean };
   skills: readonly SkillSlotView[];
   /** The interaction on offer (`Riftlight.interactOffer`: a short verb, Talk, Open, Take, Go, and its target, in the player's language), or null. */
   interact: { verb: string; name: string } | null;
@@ -117,7 +118,7 @@ export class TouchPad {
   sync(f: TouchFrame): void {
     const touch = this.engine.touch;
     if (!touch) return;
-    touch.show(f.playing || !!f.showcase);
+    touch.show(f.showcase ? f.showcase === true || f.showcase.controls !== false : f.playing); // none over the Hall's card
     if (!touch.visible) return;
     // in the showcase the buttons are the stage's (B jumps), not the skill bar's
     const find = (slot: SkillSlotView['slot']) => (f.showcase ? undefined : f.skills.find((s) => s.slot === slot));

@@ -6,7 +6,7 @@
  *   H · R3 / touchpad · ?   how it works (the station guide)
  *   T                       tweak: the room's and the engine's settings (and the player's)
  *   G · Create · GO         go to any room          I · a tap on it   the room's card again / away
- *   Esc · Options · ≡       menu (all of the above, field guide, back to the Atrium, reset)
+ *   Esc · Options · ≡       menu (all of the above, the room card, field guide, back to the Atrium, reset)
  *
  * Every prompt names the control for the input used last (controls.ts `WORLD_CONTROLS`, the
  * rooms' `Game.controls`); Circle closes a panel, a sideways swipe too, and a swipe or a tap
@@ -34,7 +34,7 @@ import { MENU_BINDINGS, Pointer } from '../riftlight/game/controls';
 import { inside, type Rect, UiCanvas, type UiEvent, wrap } from '../riftlight/ui/kit';
 import { UiLayer } from '../riftlight/ui/layer';
 import { moveInput, Visitor } from '../riftlight/showcase/visitor';
-import { BASE_TOUCH, controlText, keyText, SHELL_PAD, TOUCH_SLOTS, WORLD_CONTROLS, WORLD_KEYS, type WorldAction } from './controls';
+import { controlText, keyText, SHELL_PAD, touchStates, WORLD_CONTROLS, WORLD_KEYS, type WorldAction } from './controls';
 import { type KitHost, type Label, type Pad, RoomKit } from './kit/RoomKit';
 import type { Knob, RoomDef, RoomLogic, RoomRuntime, Vec3 } from './types';
 import { fieldGuide, guidePanel, pauseMenu, roomsMenu, tweakMenu } from './ui/panels';
@@ -239,11 +239,13 @@ export class WorldShell {
         guide: () => (close(), this.openGuide()),
         tweak: () => (close(), this.openTweak()),
         rooms: () => (close(), this.openRooms()),
+        // the room card away or back (a pad has no button for it: here it is)
+        card: () => (close(), this.toggleCard()),
         glossary: () => (close(), this.openGlossary()),
         atrium: () => void this.leave(),
         reset: () => void this.reset(),
         riftlight: () => this.toRiftlight(),
-      }, { guide: this.tag('guide'), tweak: this.tag('tweak'), rooms: this.tag('rooms') }),
+      }, { guide: this.tag('guide'), tweak: this.tag('tweak'), rooms: this.tag('rooms'), card: this.engine?.controls.device === 'keyboard' ? this.tag('card') : '' }, this.cardTime > 0),
       { modal: true, onClose: () => this.unfreeze() },
     );
     this.freeze();
@@ -255,6 +257,11 @@ export class WorldShell {
 
   showCard(seconds = 14): void {
     this.cardTime = seconds;
+  }
+
+  /** The room's card away, or back for 30 s (I, the menu's Room card). */
+  toggleCard(): void {
+    this.cardTime = this.cardTime > 0 ? 0 : 30;
   }
 
   /**
@@ -309,12 +316,16 @@ export class WorldShell {
     ];
   }
 
-  /** A modal panel stops the room (game speed 0) until it closes. */
+  /**
+   * A modal panel stops the room (game speed 0) until it closes, and a DualSense's triggers let go
+   * meanwhile, as in the engine's pause (the car's gas and brake push back only while you drive).
+   */
   private freeze(): void {
     const e = this.engine;
     if (!e || this.frozenSpeed !== null) return;
     this.frozenSpeed = e.timeScale;
     e.timeScale = 0;
+    e.dualsense.hold(true);
   }
 
   private unfreeze(): void {
@@ -323,6 +334,7 @@ export class WorldShell {
     if (this.layer.stack.some((o) => o.modal)) return;
     e.timeScale = this.frozenSpeed;
     this.frozenSpeed = null;
+    e.dualsense.hold(e.paused); // the engine's own pause, if any, keeps them let go
   }
 
   /** Room unloaded: panels about it go, a frozen room thaws. */
@@ -330,7 +342,10 @@ export class WorldShell {
     if (this.room !== room) return;
     this.layer.closeAll();
     this.toastTime = 0;
-    if (this.engine && this.frozenSpeed !== null) this.engine.timeScale = this.frozenSpeed;
+    if (this.engine && this.frozenSpeed !== null) {
+      this.engine.timeScale = this.frozenSpeed;
+      this.engine.dualsense.hold(this.engine.paused);
+    }
     this.frozenSpeed = null;
     this.room = null;
   }
@@ -382,7 +397,7 @@ export class WorldShell {
     else if (input.wasPressed(...KEY.tweak)) this.openTweak();
     else if (input.wasPressed(...KEY.rooms)) this.openRooms();
     else if (input.wasPressed(...KEY.menu)) this.openPause();
-    else if (input.wasPressed(...KEY.card)) this.cardTime = this.cardTime > 0 ? 0 : 30;
+    else if (input.wasPressed(...KEY.card)) this.toggleCard();
   }
 
   /** A swipe, or a tap or click on it, sends the card (else the toast) away; the room under them plays on. */
@@ -409,12 +424,7 @@ export class WorldShell {
     const show = !panel && !this.busy;
     if (touch.visible !== show) touch.show(show);
     if (!show) return;
-    const own = this.room?.logic.touch?.() ?? {};
-    for (const [code, base] of Object.entries(BASE_TOUCH)) touch.set(code, { ...base, disabled: false, hidden: false, ...own[code] });
-    for (const code of TOUCH_SLOTS) {
-      const s = own[code];
-      touch.set(code, s ? { label: '', hint: '', disabled: false, ...s, hidden: s.hidden ?? false } : { hidden: true });
-    }
+    for (const [code, s] of Object.entries(touchStates(this.room?.logic.touch?.() ?? {}))) touch.set(code, s);
   }
 
   /** The HUD: labels, the room's own, the card, a toast, hints, panels. */
@@ -499,7 +509,8 @@ export class WorldShell {
     ui.text(x + 6, y + 6, def.title.toUpperCase(), { color: wg.color });
     ui.mini(x + 6, y + 16, wg.title.toUpperCase(), 'slate');
     lines.forEach((l, i) => ui.text(x + 6, y + 26 + i * 9, l, { color: l.startsWith('- ') ? 'white' : 'mist' }));
-    const foot: [WorldAction, string][] = device === 'touch' ? [['card', 'TO HIDE'], ['guide', 'HOW IT WORKS']] : device === 'pad' ? [['guide', 'HOW IT WORKS']] : [['guide', 'HOW IT WORKS'], ['card', 'HIDE']];
+    // a pad hides it in the menu: Options, then its room card row (`card`'s pad is the menu's)
+    const foot: [WorldAction, string][] = device === 'touch' ? [['card', 'TO HIDE'], ['guide', 'HOW IT WORKS']] : [['guide', 'HOW IT WORKS'], ['card', 'HIDE']];
     this.promptRow(x + 6, y + h - 11, foot, w - 12, 'sand');
     return { x, y, w, h };
   }

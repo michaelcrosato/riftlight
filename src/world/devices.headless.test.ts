@@ -3,12 +3,14 @@
 // pad's buttons in the player's style, a phone's buttons), swipes and taps send the card, a toast
 // and panels away, and the rooms' own actions play on a pad and a phone: the Time Lab's rewind,
 // the Gallery's shelves, the car's analog triggers, the Sandbox's carry, Bullet Hell's rumble and
-// a phone's auto-fire. One engine for the file (the World shell is one per process).
+// a phone's auto-fire; a phone's PRONE in the Moveset Playground, the room card on a pad (the
+// menu), a DualSense's triggers let go in the menu. One engine for the file (the World shell is
+// one per process), with a fake 52in1 hub's DualSense so what the controller is sent shows.
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
-import type { Engine } from '../engine';
+import { type Engine, type HubSettingsSource, KEYMAP } from '../engine';
 import { hudTexts, pointAtArt } from '../riftlight/headless';
 import type { Menu } from '../riftlight/ui/menu';
-import { keyText, WORLD_CONTROLS } from './controls';
+import { keyText, touchStates, WORLD_CONTROLS, WORLD_TOUCH_BUTTONS } from './controls';
 import type { worldApi } from './index';
 import { shell } from './shell';
 import { headlessWorld, roomApi, roomGame, teleport, WORLD_T } from './testWorld';
@@ -17,8 +19,11 @@ let engine: Engine;
 let w: typeof worldApi;
 const room = () => roomApi(w);
 
+/** A 52in1 hub with a DualSense whose light bar and triggers the player lets games use (what it was sent: `engine.dualsense.sent`). */
+const HUB: HubSettingsSource = { dualsense: { connected: true, lightbar: true, triggers: true, light: () => {}, trigger: () => {} } };
+
 beforeAll(async () => {
-  ({ engine, w } = await headlessWorld('atrium'));
+  ({ engine, w } = await headlessWorld('atrium', 1, { hubSettings: HUB }));
 }, WORLD_T);
 afterAll(() => engine?.dispose());
 
@@ -181,6 +186,37 @@ it('a sideways swipe closes a panel; a swipe, or a tap on it, sends the card and
   expect(w.state().card).toBe(false);
 });
 
+it('a pad hides the room card and brings it back from the menu (Options, its Room card row), as the card\'s footer says; the keyboard\'s row names I', () => {
+  try {
+    engine.input.setGamepads([pad()]);
+    engine.input.noteDevice('pad');
+    engine.step(2);
+    shell.showCard(10);
+    engine.step(1);
+    expect(w.state().card).toBe(true);
+    expect(texts(), 'the card says where a pad hides it').toEqual(expect.arrayContaining(['R3', 'HOW IT WORKS', 'Options', 'HIDE']));
+    const row = (label: string) => {
+      tap(9); // Options
+      expect(w.state().panel).toBe('pause');
+      const labels = menuLabels();
+      expect(labels).toContain(label);
+      for (let i = 0; i < labels.indexOf(label); i++) tap(13); // down the menu
+      tap(0); // Cross
+    };
+    row('Hide the room card');
+    expect(w.state().panel).toBeNull();
+    expect(w.state().card).toBe(false);
+    row('Show the room card');
+    expect(w.state().card).toBe(true);
+    keyboard();
+    w.open('pause');
+    expect(menuLabels()).toContain('Hide the room card (I)');
+  } finally {
+    w.close();
+    keyboard();
+  }
+});
+
 it(
   'the Time Lab rewinds on L2 held and on a phone\'s REWIND, its one touch slot',
   async () => {
@@ -242,6 +278,29 @@ it(
 );
 
 it(
+  'a phone goes prone: PRONE (Z) shows in the Moveset Playground, whose crawl tunnel names it, and in no room that does not ask for it',
+  async () => {
+    const prone = WORLD_TOUCH_BUTTONS.find((b) => b.label === WORLD_CONTROLS.prone.touch);
+    expect(prone?.code, 'the button {key:prone} names on a phone').toBe('KeyZ');
+    expect(KEYMAP.prone).toContain(prone!.code);
+    expect(touchStates(roomGame(engine).logic.touch?.() ?? {}).KeyZ?.hidden, 'hidden in the Gallery').toBe(true);
+    await w.goto('moves', { instant: true });
+    engine.step(10);
+    expect(touchStates(roomGame(engine).logic.touch?.() ?? {}).KeyZ).toMatchObject({ hidden: false, label: 'PRONE' });
+    try {
+      engine.input.noteDevice('touch');
+      expect(keyText(engine, 'CRAWL TUNNEL · {key:prone}')).toBe('CRAWL TUNNEL · PRONE');
+      press('KeyZ'); // what the button presses
+      step(40);
+      expect(roomGame(engine).visitor?.hero?.stance).toBe('prone');
+    } finally {
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
   'the car: R2 is the gas as far as it is pulled and never gets out; L2 brakes; Circle gets out',
   async () => {
     await w.goto('drift', { instant: true });
@@ -268,6 +327,40 @@ it(
       tap(1); // Circle
       expect(room().driving()).toBe(false);
     } finally {
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'the car\'s adaptive triggers push back while you drive, and let go in the menu (it stops the room) and under a panel',
+  async () => {
+    await w.goto('drift', { instant: true });
+    engine.step(10);
+    room().keys(); // in the car
+    const sent = () => engine.dualsense.sent;
+    try {
+      engine.step(5);
+      expect(sent().right, 'R2 pushes back').not.toBeNull();
+      expect(sent().left, 'L2 pushes back').not.toBeNull();
+      w.open('pause');
+      engine.step(3);
+      expect(engine.timeScale, 'the menu stops the room').toBe(0);
+      expect(sent(), 'the menu lets them go').toMatchObject({ left: null, right: null });
+      w.close();
+      engine.step(5);
+      expect(sent().right, 'back in the car').not.toBeNull();
+      w.open('guide'); // the room plays on under it, the car is not yours
+      engine.step(5);
+      expect(sent()).toMatchObject({ left: null, right: null });
+      w.close();
+      engine.step(5);
+      expect(sent().left).not.toBeNull();
+      expect(room().getOut(), 'out of the car').toBe(true);
+      expect(sent()).toMatchObject({ left: null, right: null });
+    } finally {
+      w.close();
       keyboard();
     }
   },

@@ -199,10 +199,12 @@ export const DRIFT: RoomDef = {
         const sliding = driving && car.slipAngle > 0.3 && Math.abs(car.speed) > 2;
         if (driving && knock > 1.2) e.input.rumble({ strong: Math.min(1, knock / 6), weak: 0.4, ms: 140 });
         else if (sliding) e.input.rumble({ strong: 0, weak: 0.25, ms: 60 });
-        if (driving) {
+        // (a panel over the room, the guide or tweak, takes the pad from the car: they let go then;
+        // the menu's freeze lets them go too, `WorldShell.freeze`)
+        if (driving && room.inputFree) {
           ctx.dualsense.trigger('right', sliding ? SLIDE : GAS);
           ctx.dualsense.trigger('left', BRAKE);
-        }
+        } else if (driving) ctx.dualsense.trigger('both', null);
         // skid marks under the rear wheels while the tail slides, laid along the chassis
         skid = Math.max(0, skid - dt);
         const lv = car.body.linvel();

@@ -22,6 +22,9 @@ const STATIONS: { at: Vec3; text: string }[] = [
   { at: [9, 1.2, 14], text: 'SPIKES · KNOCKBACK' },
 ];
 
+/** The phone's PRONE button (`controls.ts` `ON_ASK`), shown in this room. */
+const PRONE_SHOWN = { KeyZ: { hidden: false } } as const;
+
 export const MOVES: RoomDef = {
   id: 'moves',
   title: 'Moveset Playground',
@@ -155,6 +158,8 @@ this.loseSpeedToWalls();`,
       draw() {
         ctx.hud.text(4, 18, `COINS ${got}/${coins.length}`, { color: 'sand', anchor: 'bottom-left' });
       },
+      // on a phone PRONE shows here (hidden in the other rooms): the crawl tunnel needs it
+      touch: () => PRONE_SHOWN,
       status: () => `coins ${got}/${coins.length}`,
       api: { coins: () => ({ got, total: coins.length }) },
     };

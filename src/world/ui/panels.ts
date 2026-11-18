@@ -127,6 +127,8 @@ export interface PauseActions {
   guide(): void;
   tweak(): void;
   rooms(): void;
+  /** The room's card away or back (the row shows only with it). */
+  card?(): void;
   glossary(): void;
   atrium(): void;
   reset(): void;
@@ -135,15 +137,18 @@ export interface PauseActions {
 }
 
 /**
- * The menu (Esc, Options, ≡): every panel, the way back and out. `tags`: the control that opens
- * a row's panel on the device in use (" (H)", " (Create)"; nothing where it is only in this menu).
+ * The menu (Esc, Options, ≡): every panel, the room's card, the way back and out. `tags`: the
+ * control that opens a row's panel on the device in use (" (H)", " (Create)"; nothing where it is
+ * only in this menu). `cardShown`: the card is up (its row hides it, else shows it).
  */
-export function pauseMenu(inAtrium: boolean, a: PauseActions, tags: { guide?: string; tweak?: string; rooms?: string } = { guide: ' (H)', tweak: ' (T)', rooms: ' (G)' }): Menu {
+export function pauseMenu(inAtrium: boolean, a: PauseActions, tags: { guide?: string; tweak?: string; rooms?: string; card?: string } = { guide: ' (H)', tweak: ' (T)', rooms: ' (G)', card: ' (I)' }, cardShown = false): Menu {
+  const card = a.card;
   const widgets: Widget[] = [
     { kind: 'button', id: 'resume', label: 'Resume', onClick: a.resume },
     { kind: 'button', id: 'guide', label: `How it works${tags.guide ?? ''}`, onClick: a.guide },
     { kind: 'button', id: 'tweak', label: `Tweak and settings${tags.tweak ?? ''}`, onClick: a.tweak },
     { kind: 'button', id: 'rooms', label: `Go to a room${tags.rooms ?? ''}`, onClick: a.rooms },
+    ...(card ? [{ kind: 'button' as const, id: 'card', label: `${cardShown ? 'Hide' : 'Show'} the room card${tags.card ?? ''}`, onClick: card }] : []),
     { kind: 'button', id: 'glossary', label: 'Field guide', onClick: a.glossary },
     ...(inAtrium ? [] : [{ kind: 'button' as const, id: 'atrium', label: 'Back to the Atrium', onClick: a.atrium }]),
     { kind: 'button', id: 'reset', label: 'Reset room', onClick: a.reset },

@@ -9,7 +9,7 @@
 import type { Mesh, Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
-import { headlessGame } from '../headless';
+import { headlessGame, hudTexts } from '../headless';
 import { LAB_KEYS, LevelLab } from './levelLab';
 
 const T = 30_000;
@@ -99,6 +99,15 @@ describe.each(LEVELS)('Level Lab depth $depth', ({ depth, seed }) => {
       lab.teleport(p.x, p.z);
       e.step(5);
       expect(lab.exited, `${label}: the hero takes the open portal (onExit)`).toBe(true);
+      // the next depth is N, or Options on a pad: named in the player's button style (Menu on an Xbox pad)
+      const banner = () => hudTexts(e, 20).map((t) => t.text).find((t) => t.startsWith('PORTAL TAKEN'));
+      expect(banner()).toBe('PORTAL TAKEN - PRESS N');
+      e.input.noteDevice('pad');
+      expect(banner()).toBe('PORTAL TAKEN - PRESS OPTIONS');
+      e.settings.set({ padGlyphs: 'xbox' });
+      expect(banner()).toBe('PORTAL TAKEN - PRESS MENU');
+      e.settings.set({ padGlyphs: undefined });
+      e.input.noteDevice('keyboard');
       expect(e.errors, label).toEqual([]);
     },
     T,

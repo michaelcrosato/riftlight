@@ -4,7 +4,8 @@
  * town. It is the Spore generator's window inside the game:
  *
  *   walk     the `first` preset: WASD, mouse (click to lock) or Q/E to look; the hero is a
- *            `PlatformerCharacter` (Space still jumps). Tab: fly with the `free` camera.
+ *            `PlatformerCharacter` (Space still jumps). Tab: fly with the `free` camera. N, R1 /
+ *            L1 or, on a phone, the < > at the screen's sides turn the wing (more than ten species).
  *   inspect  F at a pedestal: an orbit camera (the `fixed` preset, moved by hand: drag or
  *            Q/E to circle, wheel to zoom), the card (name, rank, plan, archetype, parts,
  *            kills, depths), a button per clip, the turntable.
@@ -105,6 +106,14 @@ export class BestiaryMode implements ShowcaseMode {
   private readonly orbit = { target: new Vector3(), yaw: 0, pitch: 0.25, dist: 4.5 };
   private buttons: Button[] = [];
   private rects = new Map<string, Rect>();
+  /** Where the card was drawn last (a sideways swipe that starts on it closes it). */
+  private cardRect: Rect | null = null;
+  /** A phone's < > for the wings, where they were drawn last (null: not shown). */
+  private wingRects: { prev: Rect; next: Rect } | null = null;
+  /** Where the latest touch or click went down (a swipe begins there), in art pixels. */
+  private downAt: { x: number; y: number } | null = null;
+  /** A finger down on a card button (pressed when it lifts there, unless it swiped). */
+  private tapOn: { id: string; dir: 1 | -1 } | null = null;
   private cursor = 0;
   private readonly target = new Vector3();
   private readonly tmp = new Vector3();
@@ -214,8 +223,9 @@ export class BestiaryMode implements ShowcaseMode {
     this.exhibits = [];
   }
 
-  /** Next / previous wing (more than ten species). */
+  /** Next / previous wing (more than ten species; with one wing nothing changes). */
   turnWing(dir: 1 | -1): void {
+    if (this.wings <= 1) return;
     this.page = (this.page + dir + this.wings) % this.wings;
     this.fillWing();
     this.host.ctx.audio.play('rl.open');
@@ -312,6 +322,7 @@ export class BestiaryMode implements ShowcaseMode {
     this.view = view;
     this.focus = view === 'inspect' ? focus : null;
     this.cursor = 0;
+    this.cardRect = this.tapOn = null;
     if (view === 'inspect' && focus) {
       this.orbit.target.copy(focus.at).setY(focus.at.y + Math.min(1.2, focus.built.height * 0.45));
       this.orbit.yaw = focus.yaw;
@@ -362,6 +373,8 @@ export class BestiaryMode implements ShowcaseMode {
     if (!v?.hero) return;
     const ctx = this.host.ctx;
     const walking = this.view === 'walk';
+    // R1 / L1 are the hall's (the wing, the card's zoom), not the hero's lie down and prone
+    ctx.input.clearQueued('PadLB', 'PadRB');
     const input = walking ? readMoveInput(ctx, v.hero, this.input) : this.still();
     // F / Triangle and R2 are the hall's (inspect, walk / fly): nothing here is grabbed
     input.grab = false;
@@ -402,6 +415,7 @@ export class BestiaryMode implements ShowcaseMode {
     const locked = typeof document !== 'undefined' && !!document.pointerLockElement;
     const esc = input.wasPressed('Escape', 'PadStart') && !this.wasLocked;
     this.wasLocked = locked;
+    for (const e of events) if (e.kind === 'pointer' && e.type === 'down') this.downAt = { x: e.x, y: e.y };
 
     if (this.view === 'inspect' || this.view === 'breed') {
       // orbit: drag, Q/E or the right stick to circle; the wheel, a pinch or R1 / L1 held to zoom
@@ -421,15 +435,23 @@ export class BestiaryMode implements ShowcaseMode {
       if (esc && (this.view === 'inspect' || this.view === 'breed')) this.setView('walk');
     } else {
       if (input.wasPressed('Tab', 'PadY')) this.setView(this.view === 'walk' ? 'fly' : 'walk');
-      // F, R2, a phone's LOOK, or a left click while the mouse looks (the exhibit under the crosshair)
-      if (this.view === 'walk' && (input.wasPressed('KeyF', 'PadRT') || (locked && input.wasPressed('MouseLeft')))) {
+      // F, R2, a phone's LOOK, or a left click (the exhibit the crosshair is on; recorded input
+      // only, so a replay inspects what the run did: never the page's pointer lock)
+      if (this.view === 'walk' && input.wasPressed('KeyF', 'PadRT', 'MouseLeft')) {
         const near = this.nearest();
         if (near === 'altar') this.setView('breed');
         else if (near) this.setView('inspect', near);
       }
-      // the next wing: N, R1 (L1 the one before) or a sideways swipe
-      if (input.wasPressed('KeyN', 'PadRB') || events.some((e) => e.kind === 'swipe' && e.dir === 'left')) this.turnWing(1);
-      if (input.wasPressed('PadLB') || events.some((e) => e.kind === 'swipe' && e.dir === 'right')) this.turnWing(-1);
+      // the next wing: N or R1 (L1 the one before), on a phone a tap on the < > at the sides; never
+      // a swipe, which is a quick look here (a drag looks)
+      let turn = (input.wasPressed('KeyN', 'PadRB') ? 1 : 0) - (input.wasPressed('PadLB') ? 1 : 0);
+      const w = this.wingRects;
+      for (const e of events) {
+        if (!w || e.kind !== 'pointer' || e.type !== 'down') continue;
+        if (inside(w.next, e.x, e.y)) turn = 1;
+        else if (inside(w.prev, e.x, e.y)) turn = -1;
+      }
+      if (turn) this.turnWing(turn > 0 ? 1 : -1);
       // Options, Esc or ≡: the showcase's pause (Resume, Photo mode, Leave)
       if (esc) this.host.openPause();
       // out through the door
@@ -443,6 +465,11 @@ export class BestiaryMode implements ShowcaseMode {
     const near = this.view === 'walk' ? this.nearest() : null;
     if (!near) return null;
     return { verb: t('touch.verb.look'), name: near === 'altar' ? t('showcase.bestiary.altar') : entryName(near.entry!) };
+  }
+
+  /** The card (inspect, breed) is a phone's whole screen: its buttons, not the stick and A / B, are tapped then. */
+  touchControls(): boolean {
+    return this.view === 'walk' || this.view === 'fly';
   }
 
   /** The exhibit (or the altar) the hero stands at and looks toward, if any. */
@@ -499,9 +526,19 @@ export class BestiaryMode implements ShowcaseMode {
   private cardInput(events: readonly UiEvent[]): void {
     this.buttons = this.cardButtons();
     const n = this.buttons.length;
+    const input = this.host.ctx.input;
+    // a finger that swiped this frame made no tap (its lift is no press)
+    const swiped = input.wasPressed('SwipeLeft', 'SwipeRight', 'SwipeUp', 'SwipeDown');
+    const under = (x: number, y: number) => {
+      for (const [id, r] of this.rects) if (inside(r, x, y)) return { id, dir: (x < r.x + 14 ? -1 : 1) as 1 | -1 };
+      return null;
+    };
     for (const e of events) {
-      // Circle, Backspace or a sideways swipe: back to the hall (Esc and Options too, below)
-      if (e.kind === 'back' || (e.kind === 'swipe' && (e.dir === 'left' || e.dir === 'right'))) {
+      // Circle, Backspace, or a sideways swipe that starts on the card (one elsewhere is a quick
+      // orbit, a drag): back to the hall (Esc and Options too, below)
+      const fromCard = !!this.downAt && !!this.cardRect && inside(this.cardRect, this.downAt.x, this.downAt.y);
+      if (e.kind === 'back' || (e.kind === 'swipe' && (e.dir === 'left' || e.dir === 'right') && fromCard)) {
+        this.tapOn = null;
         this.host.game.sound('close');
         return this.setView('walk');
       }
@@ -511,7 +548,14 @@ export class BestiaryMode implements ShowcaseMode {
       } else if (e.kind === 'nav') this.buttons[this.cursor]?.step?.(e.dir === 'left' ? -1 : 1);
       else if (e.kind === 'confirm') this.activate(this.buttons[this.cursor]?.id ?? '');
       else if (e.kind === 'pointer' && e.type === 'down') {
-        for (const [id, r] of this.rects) if (inside(r, e.x, e.y)) this.activate(id, e.x < r.x + 14 ? -1 : 1);
+        // a click presses at once; a finger when it lifts on the same button (a swipe from it presses nothing)
+        const b = under(e.x, e.y);
+        if (e.touch) this.tapOn = b;
+        else if (b) this.activate(b.id, b.dir);
+      } else if (e.kind === 'pointer' && e.type === 'up' && e.touch) {
+        const b = this.tapOn;
+        this.tapOn = null;
+        if (b && !swiped && under(e.x, e.y)?.id === b.id) this.activate(b.id, b.dir);
       } else if (e.kind === 'pointer' && e.type === 'move') {
         for (const [id, r] of this.rects) if (inside(r, e.x, e.y)) this.cursor = Math.max(0, this.buttons.findIndex((b) => b.id === id));
       }
@@ -572,6 +616,7 @@ export class BestiaryMode implements ShowcaseMode {
       const touch = ctx.engine.controls.device === 'touch';
       const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
       miniHints(ui, ui.w / 2, bottom, help, 'mist');
+      this.wingRects = touch && this.wings > 1 ? this.drawWingButtons(ui) : null;
       if (this.view === 'walk') {
         // a crosshair dot
         ui.rect(ui.w / 2 - 1, ui.h / 2 - 1, 3, 3, 'ink');
@@ -580,6 +625,21 @@ export class BestiaryMode implements ShowcaseMode {
       return;
     }
     this.drawCard(ui);
+  }
+
+  /**
+   * A phone's < > for the wings, half way up each side of the screen (clear of the stick, the
+   * buttons and the crosshair). Returns where a tap turns them: wider than drawn, a fingertip.
+   */
+  private drawWingButtons(ui: UiCanvas): { prev: Rect; next: Rect } {
+    const w = 14;
+    const h = 24;
+    const y = Math.round(ui.h / 2 - h / 2);
+    const prev = { x: 3, y, w, h };
+    const next = { x: ui.w - 3 - w, y, w, h };
+    ui.button(prev, '<');
+    ui.button(next, '>');
+    return { prev: { x: 0, y: y - 10, w: w + 14, h: h + 20 }, next: { x: ui.w - w - 14, y: y - 10, w: w + 14, h: h + 20 } };
   }
 
   private drawCard(ui: UiCanvas): void {
@@ -625,6 +685,7 @@ export class BestiaryMode implements ShowcaseMode {
     const helpH = help.every(miniCovers) ? 7 : 9;
     const h = 8 + rowsH + 4 + buttons.length * 13 + 7 + help.length * helpH;
     ui.panel(x, y - 4, cardW, h, 'ink', 'slate');
+    this.cardRect = { x, y: y - 4, w: cardW, h };
     for (const l of lines) {
       if (l.mini) ui.mini(x + 5, y + 1, l.text, l.color);
       else ui.text(x + 5, y, l.text, { color: l.color });

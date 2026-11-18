@@ -57,6 +57,8 @@ export interface ShowcaseMode {
   restart?(): void;
   /** What a phone's interact button does here now (the Hall: inspect the exhibit near), or null: hidden. */
   touchOffer?(): { verb: string; name: string } | null;
+  /** False while the mode's own panel takes a phone's whole screen (the Hall's card): the stick and buttons step aside. */
+  touchControls?(): boolean;
 }
 
 interface Iris {
@@ -248,9 +250,14 @@ export class Showcase {
     this.mode?.fixedUpdate(dt);
   }
 
-  /** The phone's buttons while the showcase owns the frame (`TouchPad.sync`): the mode's interact, if it has one now. */
-  touch(): { readonly interact: { verb: string; name: string } | null } {
-    return { interact: this.mode && !this.pause && !this.photo.active ? (this.mode.touchOffer?.() ?? null) : null };
+  /**
+   * The phone's buttons while the showcase owns the frame (`TouchPad.sync`): the mode's interact, if
+   * it has one now, and whether the stick and buttons show (not over the Hall's card, whose own
+   * buttons are tapped there).
+   */
+  touch(): { readonly interact: { verb: string; name: string } | null; readonly controls: boolean } {
+    const mode = this.mode && !this.pause && !this.photo.active ? this.mode : null;
+    return { interact: mode?.touchOffer?.() ?? null, controls: mode?.touchControls?.() ?? true };
   }
 
   /** Pause the mode on screen (its stage stands still behind the menu). */

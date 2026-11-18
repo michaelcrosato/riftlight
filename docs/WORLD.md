@@ -9,12 +9,12 @@ complete, small example of an engine system, written to be copied.
 
 | Keyboard and mouse | Pad (PlayStation · Xbox) | Phone | Does |
 | --- | --- | --- | --- |
-| WASD, Space, C, J, F, Z... | left stick, Cross, Circle, Square, Triangle, L1... | stick, JUMP, DUCK, HIT, GRAB | the hero's whole moveset (docs/engine/character.md) |
-| **Esc** | **Options** · Menu | **≡** | menu: every panel below, Tweak and settings, field guide, back to the Atrium, reset the room, Riftlight |
+| WASD, Space, C, J, F, Z... | left stick, Cross, Circle, Square, Triangle, L1... | stick, JUMP, DUCK, HIT, GRAB (and PRONE in the Moveset Playground) | the hero's whole moveset (docs/engine/character.md) |
+| **Esc** | **Options** · Menu | **≡** | menu: every panel below, Tweak and settings, the room card, field guide, back to the Atrium, reset the room, Riftlight (it stops the room; a DualSense's triggers let go) |
 | **G** (F2) | **Create** · View | **GO** | go to any room |
 | **H** (F1) | **R3** or the touchpad · RS | **?** | how it works: the room's station guide |
 | **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound) and the player's (music, effects, the controller's buttons, vibration), saved |
-| **I** | | a tap on it | the room's card again, or away |
+| **I** | in the menu | a tap on it | the room's card again, or away |
 | Esc / Backspace | Circle | a sideways swipe, the close box | close a panel |
 
 Walk into a door to enter a room; every room has its pads on the floor: step on one to
