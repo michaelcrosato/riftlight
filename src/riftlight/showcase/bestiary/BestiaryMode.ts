@@ -247,12 +247,16 @@ export class BestiaryMode implements ShowcaseMode {
     this.host.ctx.audio.play('rl.open');
   }
 
-  /** Play a clip on an exhibit (one-shots go back to Idle after a beat). */
+  /**
+   * Play a clip on an exhibit (one-shots go back to Idle after a beat). On the inspected one, the
+   * compact card's clip row names it, however it was played (its button by id, an agent).
+   */
   play(ex: Exhibit, clip: string): boolean {
     if (!ex.built.clipNames.includes(clip)) return false;
     ex.runtime.play(clip, { fade: 0.12, restart: true });
     ex.clip = clip;
     ex.back = 0;
+    if (ex === this.focus) this.clipAt = ex.built.clipNames.indexOf(clip);
     return true;
   }
 
@@ -338,7 +342,7 @@ export class BestiaryMode implements ShowcaseMode {
     this.view = view;
     this.focus = view === 'inspect' ? focus : null;
     this.cursor = 0;
-    this.clipAt = 0;
+    this.clipAt = Math.max(0, this.focus?.built.clipNames.indexOf(this.focus.clip) ?? 0); // the clip it is playing
     this.cardRect = this.tapOn = null;
     if (view === 'inspect' && focus) {
       const tall = focus.built.height * focus.fit; // as it stands on its pedestal (scaled to fit it)
@@ -671,8 +675,9 @@ export class BestiaryMode implements ShowcaseMode {
         const rows = wrap(label, ui.w - 16 - gw);
         const w = gw + Math.max(...rows.map((r) => ui.measure(r)));
         const h = 13 + (rows.length - 1) * 9;
-        // over the hints, clear of the controls under its columns
-        const y = clearAbove(boxes, ui.w / 2, w + 8, top - 5, h);
+        // over the hints, clear of the controls under its columns; without a phone's controls where
+        // it has always sat (its box ending 27 rows up), the hints wrapped higher pushing it up
+        const y = clearAbove(boxes, ui.w / 2, w + 8, boxes.length ? top - 5 : Math.min(top - 5, ui.h - 27), h);
         ui.rect(ui.w / 2 - w / 2 - 4, y, w + 8, h, 'ink');
         if (rows.length === 1) ui.prompt(ui.w / 2, y + 3, 'interact', label, 'white', 'center');
         else {
@@ -750,9 +755,18 @@ export class BestiaryMode implements ShowcaseMode {
     const helpH = help.every(miniCovers) ? 7 : 9;
     const height = (n: number) => 8 + lines.reduce((s, l) => s + rowH(l), 0) + 4 + n * 13 + 7 + help.length * helpH;
     // too tall for the screen: the clips as one choice row, then fewer rows of parts
+    const was = this.buttons[this.cursor]?.id;
     this.compact = height(all.length) > room;
     const buttons = this.cardButtons();
     this.buttons = buttons;
+    if (buttons[this.cursor]?.id !== was) {
+      // the clips folded into their row or out of it (the phone turned): the cursor stays on its
+      // button, a clip's on the row and the row's on the clip it names, else in the list
+      const clips = this.focus?.built.clipNames ?? [];
+      const id = was?.startsWith('clip:') ? 'clips' : was === 'clips' ? `clip:${clips[this.clipAt]}` : was;
+      const at = buttons.findIndex((b) => b.id === id);
+      this.cursor = at >= 0 ? at : Math.max(0, Math.min(this.cursor, buttons.length - 1));
+    }
     while (height(buttons.length) > room && lines.at(-1)?.part !== undefined) {
       const part = lines.at(-1)!.part;
       while (lines.at(-1)?.part === part) lines.pop();

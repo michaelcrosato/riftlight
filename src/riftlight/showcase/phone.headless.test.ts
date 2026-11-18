@@ -137,6 +137,82 @@ describe('the Hall of Beasts and photo mode on a phone held either way', () => {
   );
 
   it(
+    'with a mouse and a keyboard (no phone controls) the Hall\'s inspect prompt sits where it always has: 37 rows up from the bottom, over the hints',
+    async () => {
+      const { rl, game, engine } = h;
+      const lead = t('showcase.bestiary.prompt.inspect', { name: '' }).trim();
+      for (const viewport of [
+        { width: 1920, height: 1080, dpr: 1 },
+        { width: 1280, height: 720, dpr: 1 },
+      ]) {
+        (engine.renderer as HeadlessView).setViewport(viewport);
+        await rl.bestiary.open();
+        try {
+          engine.input.noteDevice('keyboard');
+          const m = game.showcase.bestiary;
+          m.goTo(m.hall!.pedestals[2]!);
+          engine.step(5);
+          const prompt = texts().filter((b) => b.what.startsWith(lead));
+          expect(prompt.map((b) => b.y), `the prompt at ${engine.hud.width}x${engine.hud.height}`).toEqual([engine.hud.height - 37]);
+        } finally {
+          rl.bestiary.close();
+          engine.input.noteTouch();
+        }
+      }
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'the card folded for a phone: its clip row names the clip a clip\'s id or an agent played, and a rotation that folds it keeps the cursor on its button',
+    async () => {
+      const { rl, game, engine } = h;
+      const m = game.showcase.bestiary;
+      const card = () => m as unknown as { compact: boolean; cursor: number; buttons: readonly { id: string; label: string }[] };
+      const focused = () => card().buttons[card().cursor]?.id;
+      const row = () => card().buttons.find((b) => b.id === 'clips')?.label;
+      (engine.renderer as HeadlessView).setViewport({ width: 1920, height: 1080, dpr: 1 });
+      await rl.bestiary.open();
+      try {
+        rl.bestiary.inspect(0);
+        engine.step(2);
+        expect(card().compact, 'a button per clip on a wide screen').toBe(false);
+        const names = Object.fromEntries(card().buttons.map((b) => [b.id, b.label]));
+        const clips = m.focus!.built.clipNames;
+        expect(clips.length).toBeGreaterThan(2);
+        // the cursor down to the turntable (past every clip), then the phone held upright: the clips fold into one row
+        card().cursor = card().buttons.findIndex((b) => b.id === 'turntable');
+        (engine.renderer as HeadlessView).setViewport(PHONES[0]);
+        engine.step(2);
+        expect(card().compact, 'the clips one row on a phone').toBe(true);
+        expect(focused(), 'the cursor still on the turntable').toBe('turntable');
+        // a clip by its id (an agent, a hook): the row names it, and the row's next step goes on from it
+        const last = clips.at(-1)!;
+        expect(m.activate(`clip:${last}`)).toBe(true);
+        engine.step(1);
+        expect(row()).toBe(names[`clip:${last}`]);
+        m.activate('clips');
+        engine.step(1);
+        expect(row(), 'the next clip after it (round to the first)').toBe(names[`clip:${clips[0]}`]);
+        // the agents' play: the row follows it too
+        rl.bestiary.play(clips[1]!);
+        expect(row()).toBe(names[`clip:${clips[1]}`]);
+        // the cursor on the clips row, then a wide screen again: on the clip it names
+        card().cursor = 0;
+        (engine.renderer as HeadlessView).setViewport({ width: 1920, height: 1080, dpr: 1 });
+        engine.step(2);
+        expect(card().compact).toBe(false);
+        expect(focused()).toBe(`clip:${clips[1]}`);
+      } finally {
+        rl.bestiary.close();
+      }
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     'the inspect card fits the screen and leaves the exhibit in view: beside it held sideways, above it held upright',
     async () => {
       const { rl, game, engine } = h;
