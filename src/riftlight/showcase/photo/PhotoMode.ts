@@ -17,7 +17,7 @@ import { Vector3 } from 'three/webgpu';
 import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
 import { lang, lineKey, t } from '../../lang';
 import { clip, inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
-import { hints, miniHints } from '../hints';
+import { hints, miniHints, touchFloor } from '../hints';
 import type { Showcase } from '../Showcase';
 
 /** The free camera's zooms R1 steps through on a pad (`nextFovStep`): wide to close, then wide again. */
@@ -420,7 +420,7 @@ export class PhotoMode {
       : this.sub === 'fly'
         ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back'])
         : hints(['pick', 'change', 'fly', 'save', 'back']);
-    miniHints(ui, ui.w / 2, ui.h - 8, help, 'mist', 'ink');
+    miniHints(ui, ui.w / 2, Math.min(ui.h - 8, touchFloor(this.engine, 0, ui.w) - 8), help, 'mist', 'ink'); // over a phone's stick and buttons
   }
 
   /** The free camera's focus: a point ahead of it (the light pool lights what it looks at). */

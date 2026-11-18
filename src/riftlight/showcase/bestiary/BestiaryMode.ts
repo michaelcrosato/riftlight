@@ -24,7 +24,7 @@ import { buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, val
 import type { UiCanvas, UiEvent, Rect } from '../../ui/kit';
 import { clip, inside, miniCovers, miniWidth, wrap } from '../../ui/kit';
 import { monsterName } from '../../wire/monsters';
-import { hints, miniHints } from '../hints';
+import { hints, miniHints, touchFloor } from '../hints';
 import { type BestiaryEntry, exhibitOrder, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput, Visitor } from '../visitor';
@@ -421,7 +421,8 @@ export class BestiaryMode implements ShowcaseMode {
       if (esc && (this.view === 'inspect' || this.view === 'breed')) this.setView('walk');
     } else {
       if (input.wasPressed('Tab', 'PadY')) this.setView(this.view === 'walk' ? 'fly' : 'walk');
-      if (this.view === 'walk' && input.wasPressed('KeyF', 'PadRT')) {
+      // F, R2, a phone's LOOK, or a left click while the mouse looks (the exhibit under the crosshair)
+      if (this.view === 'walk' && (input.wasPressed('KeyF', 'PadRT') || (locked && input.wasPressed('MouseLeft')))) {
         const near = this.nearest();
         if (near === 'altar') this.setView('breed');
         else if (near) this.setView('inspect', near);
@@ -558,17 +559,19 @@ export class BestiaryMode implements ShowcaseMode {
         ui.text(ui.w / 2, ui.h / 2 - 20, t('showcase.bestiary.empty'), { align: 'center', color: 'mist', shadow: 'ink' });
         wrap(t('showcase.bestiary.empty_hint'), ui.w - 16).forEach((l, i) => ui.text(ui.w / 2, ui.h / 2 - 8 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
       }
+      // the prompts' bottom row: over a phone's stick and buttons
+      const bottom = Math.min(ui.h - 9, touchFloor(ctx.engine, 0, ui.w) - 8);
       const near = this.view === 'walk' ? this.nearest() : null;
       if (near) {
         const label = near === 'altar' ? t('showcase.bestiary.prompt.altar') : t('showcase.bestiary.prompt.inspect', { name: entryName(near.entry!) });
         const w = ui.glyphWidth('interact') + 3 + ui.measure(label);
-        ui.rect(ui.w / 2 - w / 2 - 4, ui.h - 40, w + 8, 13, 'ink');
-        ui.prompt(ui.w / 2, ui.h - 37, 'interact', label, 'white', 'center');
+        ui.rect(ui.w / 2 - w / 2 - 4, bottom - 31, w + 8, 13, 'ink');
+        ui.prompt(ui.w / 2, bottom - 28, 'interact', label, 'white', 'center');
       }
       // a phone has no button to fly with: its hints leave it out
       const touch = ctx.engine.controls.device === 'touch';
       const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
-      miniHints(ui, ui.w / 2, ui.h - 9, help, 'mist');
+      miniHints(ui, ui.w / 2, bottom, help, 'mist');
       if (this.view === 'walk') {
         // a crosshair dot
         ui.rect(ui.w / 2 - 1, ui.h / 2 - 1, 3, 3, 'ink');
