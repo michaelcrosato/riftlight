@@ -10,14 +10,14 @@ import type { RoomDef, Vec3 } from '../types';
 
 const STATIONS: { at: Vec3; text: string }[] = [
   { at: [-6, 2.2, 0], text: 'STAIRS · TEETER AT THE EDGE' },
-  { at: [-8, 1.8, 7], text: 'CRAWL TUNNEL · Z' },
+  { at: [-8, 1.8, 7], text: 'CRAWL TUNNEL · {key:prone}' },
   { at: [6.5, 3.6, 0], text: 'LEDGE · JUMP, HANG, PULL UP' },
   { at: [8, 5.6, -9], text: 'VINES · CLIMB OVER' },
   { at: [12.5, 3.4, -9], text: 'ICE SLOPE · SLIDE' },
   { at: [-5.6, 5.8, -9], text: 'CHIMNEY · WALL KICKS' },
   { at: [-12, 8.2, -9], text: 'TOWER · CLIMB, DIVE OFF' },
   { at: [2.5, 1.8, 0], text: 'CRATE · PUSH' },
-  { at: [11.5, 2.6, 6], text: 'NOOK · F GRAB + PULL' },
+  { at: [11.5, 2.6, 6], text: 'NOOK · {key:grab} GRAB + PULL' },
   { at: [8.5, 2.2, 10], text: 'RAMP · FEET ON SLOPES' },
   { at: [9, 1.2, 14], text: 'SPIKES · KNOCKBACK' },
 ];
@@ -30,9 +30,9 @@ export const MOVES: RoomDef = {
     'A station for every move of the platformer controller: steps and teetering, crawling, ledge hangs, climbing, slope slides, wall kicks, dives, pushing and pulling crates, knockback. Twelve coins hide around it.',
   try: [
     'Run, skid, then jump during the skid for a side flip',
-    'Jump three times in a row for the triple jump; C + Space while running is a long jump',
-    'Wall-kick up the chimney: jump into a wall, then Space again',
-    'Grab the crate in the nook with F and pull it out',
+    'Jump three times in a row for the triple jump; {key:crouch} + {key:jump} while running is a long jump',
+    'Wall-kick up the chimney: jump into a wall, then {key:jump} again',
+    'Grab the crate in the nook with {key:grab} and pull it out',
   ],
   spawn: [0, 0, 3],
   facing: Math.PI,

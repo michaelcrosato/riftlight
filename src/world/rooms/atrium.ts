@@ -70,7 +70,7 @@ export const ATRIUM: RoomDef = {
   wing: 'hub',
   about:
     'The hub of Engine World. Every door leads to a room that shows one thing the engine does, with pads to step on and a guide that explains it. Corridors east, north, west and south hold the wings.',
-  try: ['Walk into any door (or press G for the list)', 'Press H in any room for how it works', 'Press T to change the game speed, the look or the camera anywhere'],
+  try: ['Walk into any door (or press {key:rooms} for the list)', 'Press {key:guide} in any room for how it works', 'Tweak and settings ({key:tweak}): the game speed, the look or the camera anywhere'],
   spawn: [0, 0, 7],
   facing: Math.PI,
   background: 'navy',
@@ -80,7 +80,7 @@ export const ATRIUM: RoomDef = {
       'Every room is its own Game object. A door calls engine.loadGame(room): the engine unloads the old room (its meshes, materials, physics bodies, triggers, lights, particles and music) and builds the new one, so a room can never leak into the next.',
       'The screen transition is engine.screen: an iris closes on the hero before the load and opens after it. It runs on real time, so it keeps moving while the room loads.',
       'Rooms are mostly data: an ASCII map (one character per metre: walls, floors, steps, pads), a card, a guide and pads. Neighbouring cells that build the same thing merge into one box, and every static box merges into one draw call per material.',
-      'The shell (H, T, G, Esc, the card, the toasts, the labels) survives every load: it lives outside the rooms and draws on the engine HUD each frame.',
+      'The shell ({key:guide}, {key:tweak}, {key:rooms}, {key:menu}, the card, the toasts, the labels) survives every load: it lives outside the rooms and draws on the engine HUD each frame.',
       'Arriving back here, the hero stands in front of the door of the room they left.',
     ],
     uses: [
@@ -147,7 +147,7 @@ grow: while (row + h < height) {
     ctx.scene.add(orb);
     kit.light({ position: [0, 3.2, 0], color: PALETTE.cyan, intensity: 9, radius: 9, flicker: 'pulse', priority: 2 });
     kit.label([0, 3.9, 0], 'ENGINE WORLD', { color: 'sand', always: true, scale: 1 });
-    kit.label([0, 0.3, 5.5], 'WALK INTO A DOOR · G FOR ANY ROOM', { color: 'white', range: 6 });
+    kit.label([0, 0.3, 5.5], 'WALK INTO A DOOR · {key:rooms} FOR ANY ROOM', { color: 'white', range: 6 });
 
     // corridors
     CORRIDORS.forEach((c, i) => {

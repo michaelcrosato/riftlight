@@ -3,15 +3,23 @@
  * `Game`, loaded with `engine.loadGame`). It owns the UI (card, toasts, labels, panels),
  * the hotkeys, the room transitions and the list of visited rooms.
  *
- *   H  how it works (the station guide)      T  tweak: the room's and the engine's settings
- *   G  go to any room                        I  the room's card again
- *   Esc / Options  menu (field guide, back to the Atrium, reset the room)
+ *   H · R3 / touchpad · ?   how it works (the station guide)
+ *   T                       tweak: the room's and the engine's settings (and the player's)
+ *   G · Create · GO         go to any room          I · a tap on it   the room's card again / away
+ *   Esc · Options · ≡       menu (all of the above, field guide, back to the Atrium, reset)
+ *
+ * Every prompt names the control for the input used last (controls.ts `WORLD_CONTROLS`, the
+ * rooms' `Game.controls`); Circle closes a panel, a sideways swipe too, and a swipe or a tap
+ * sends the card and a toast away. On a phone the hero's buttons, the menu, the room list and
+ * the guide are on screen, with up to three of the room's own (`RoomLogic.touch`).
  */
 import { type Camera, Color, Vector3 } from 'three/webgpu';
 import {
   type Engine,
   type Game,
   type GameContext,
+  type HudColor,
+  type InputDevice,
   type Look,
   LOOK_PRESETS,
   MenuInput,
@@ -23,9 +31,10 @@ import {
 } from '../engine';
 import { HERO_MODEL } from '../game/hero';
 import { MENU_BINDINGS, Pointer } from '../riftlight/game/controls';
-import { UiCanvas, wrap } from '../riftlight/ui/kit';
+import { inside, type Rect, UiCanvas, type UiEvent, wrap } from '../riftlight/ui/kit';
 import { UiLayer } from '../riftlight/ui/layer';
 import { moveInput, Visitor } from '../riftlight/showcase/visitor';
+import { BASE_TOUCH, controlText, keyText, SHELL_PAD, TOUCH_SLOTS, WORLD_CONTROLS, WORLD_KEYS, type WorldAction } from './controls';
 import { type KitHost, type Label, type Pad, RoomKit } from './kit/RoomKit';
 import type { Knob, RoomDef, RoomLogic, RoomRuntime, Vec3 } from './types';
 import { fieldGuide, guidePanel, pauseMenu, roomsMenu, tweakMenu } from './ui/panels';
@@ -33,13 +42,24 @@ import { wing } from './wings';
 
 /** Keys the shell claims from the browser (F1 help, Tab focus). */
 const SHELL_KEYS = ['F1', 'F2', 'Tab'];
-const KEY = {
-  guide: ['KeyH', 'F1'],
-  tweak: ['KeyT'],
-  rooms: ['KeyG', 'F2'],
-  card: ['KeyI'],
-  menu: ['Escape', 'PadStart'],
-} as const;
+const KEY = WORLD_KEYS;
+/** The prompts along the bottom while nothing is open, most wanted first (a narrow screen drops from the end). */
+const HINTS: Readonly<Record<'keyboard' | 'pad', readonly (readonly [WorldAction, string])[]>> = {
+  keyboard: [
+    ['menu', 'MENU'],
+    ['guide', 'HOW IT WORKS'],
+    ['rooms', 'ROOMS'],
+    ['tweak', 'TWEAK'],
+  ],
+  pad: [
+    ['menu', 'MENU'],
+    ['guide', 'HOW IT WORKS'],
+    ['rooms', 'ROOMS'],
+  ],
+};
+const percent = (v: number) => `${Math.round(v * 100)}%`;
+/** A swipe this far across sends a panel away (the engine's convention: vertical ones scroll). */
+const DISMISS = new Set(['left', 'right']);
 
 const UI_SOUNDS = {
   'ui-move': { wave: 'square', duty: 0.25, freq: 880, attack: 0.001, decay: 0.03, volume: 0.08 },
@@ -80,6 +100,9 @@ export class WorldShell {
   private cardTime = 0;
   private toastText = '';
   private toastTime = 0;
+  /** Where the card and the toast were drawn last (a tap on one sends it away). */
+  private cardRect: Rect | null = null;
+  private toastRect: Rect | null = null;
   private lastNow = -1;
   /** Game speed while a modal panel froze the room. */
   private frozenSpeed: number | null = null;
@@ -139,6 +162,21 @@ export class WorldShell {
     this.toastTime = seconds;
   }
 
+  /** The toast on screen (its text with `{key:...}` filled in), or null. */
+  get toastShown(): string | null {
+    return this.toastTime > 0 ? keyText(this.engine, this.toastText) : null;
+  }
+
+  /** The room's card is on screen. */
+  get cardShown(): boolean {
+    return this.cardTime > 0;
+  }
+
+  /** `{key:action}` in the World's words, for the device in use. */
+  keys(text: string): string {
+    return keyText(this.engine, text);
+  }
+
   /** True while the UI owns the keys (a panel is open or a room is changing). */
   get capturing(): boolean {
     return this.busy || !!this.layer.top;
@@ -149,16 +187,29 @@ export class WorldShell {
   openGuide(): void {
     const room = this.room;
     if (!room) return;
-    this.layer.open(guidePanel(room.def, room.kit.pads, room.logic.knobs ?? []), { modal: false, dock: 'right', dim: false });
+    this.layer.open(guidePanel(room.def, room.kit.pads, room.logic.knobs ?? [], (s) => this.keys(s)), { modal: false, dock: 'right', dim: false });
   }
 
   openTweak(): void {
     const room = this.room;
     if (!room || !this.engine) return;
     this.layer.open(
-      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak')),
+      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak'), () => this.keys('{key:change} change · {key:back} closes')),
       { modal: false, dock: 'right', dim: false },
     );
+  }
+
+  /**
+   * " (H)": the control that opens `action` on the device in use, for a menu row; nothing where
+   * the menu is that control (Tweak on a pad or a phone lives in this menu).
+   */
+  private tag(action: WorldAction): string {
+    const e = this.engine;
+    if (!e) return '';
+    const c = WORLD_CONTROLS[action] as { key: string; pad?: string; touch?: string };
+    const d = e.controls.device;
+    if ((d === 'pad' && (!c.pad || c.pad === 'PadStart')) || (d === 'touch' && (!c.touch || c.touch === '≡'))) return '';
+    return ` (${controlText(e, action)})`;
   }
 
   /** The menu's way to Riftlight: the same page without ?game (Riftlight is the default), other URL options kept. Headless: nothing (no page to leave). */
@@ -192,14 +243,14 @@ export class WorldShell {
         atrium: () => void this.leave(),
         reset: () => void this.reset(),
         riftlight: () => this.toRiftlight(),
-      }),
+      }, { guide: this.tag('guide'), tweak: this.tag('tweak'), rooms: this.tag('rooms') }),
       { modal: true, onClose: () => this.unfreeze() },
     );
     this.freeze();
   }
 
   openGlossary(): void {
-    this.layer.open(fieldGuide(), { modal: false, dock: 'right', dim: false });
+    this.layer.open(fieldGuide((s) => this.keys(s)), { modal: false, dock: 'right', dim: false });
   }
 
   showCard(seconds = 14): void {
@@ -250,6 +301,11 @@ export class WorldShell {
       { kind: 'choice', id: 'engine-transition', label: 'Room change', options: TRANSITIONS, get: () => TRANSITIONS.indexOf(this.transition), set: (i) => (this.transition = TRANSITIONS[i]!) },
       { id: 'engine-shake', label: 'Screen shake', min: 0, max: 2, step: 0.1, initial: 1, get: () => e.shake.strength, set: (v) => (e.shake.strength = v) },
       { kind: 'toggle', id: 'engine-sound', label: 'Sound', get: () => !e.audio.muted, set: (v) => e.audio.setMuted(!v) },
+      // the player's own, saved: the ⚙ panel's on a page that has one (the World shows these here, on every device)
+      { id: 'engine-music', label: 'Music', min: 0, max: 1, step: 0.05, get: () => e.audio.volume.music, set: (v) => e.audio.setVolume('music', v), format: percent },
+      { id: 'engine-effects', label: 'Effects', min: 0, max: 1, step: 0.05, get: () => e.audio.volume.sfx, set: (v) => e.audio.setVolume('sfx', v), format: percent },
+      { kind: 'choice', id: 'engine-buttons', label: 'Controller', options: ['PlayStation', 'Xbox'], get: () => (e.settings.values.padGlyphs === 'xbox' ? 1 : 0), set: (i) => e.settings.set({ padGlyphs: i ? 'xbox' : undefined }), hint: 'The buttons prompts show on a controller.' },
+      { id: 'engine-vibration', label: 'Vibration', min: 0, max: 1, step: 0.05, get: () => e.settings.values.vibration ?? 1, set: (v) => e.settings.set({ vibration: v >= 1 ? undefined : v }), format: percent },
     ];
   }
 
@@ -304,6 +360,7 @@ export class WorldShell {
     this.layer.update(real);
     // keys pressed for a panel (Space, J, F confirm) must not reach the hero when it closes
     if (hadPanel || this.busy) input.clearQueued();
+    this.syncTouch(hadPanel);
     if (hadPanel) {
       const top = this.layer.top!.panel.id;
       // the key that opened a panel closes it again
@@ -314,16 +371,50 @@ export class WorldShell {
       }
       for (const ev of events) {
         if (ev.kind === 'key') continue;
-        this.layer.input(ev);
+        // a sideways flick sends the panel away (Circle's back on a phone); an up or down one scrolls
+        this.layer.input(ev.kind === 'swipe' && DISMISS.has(ev.dir) ? { kind: 'back' } : ev);
       }
       return;
     }
     if (this.busy) return;
+    this.dismiss(events);
     if (input.wasPressed(...KEY.guide)) this.openGuide();
     else if (input.wasPressed(...KEY.tweak)) this.openTweak();
     else if (input.wasPressed(...KEY.rooms)) this.openRooms();
     else if (input.wasPressed(...KEY.menu)) this.openPause();
     else if (input.wasPressed(...KEY.card)) this.cardTime = this.cardTime > 0 ? 0 : 30;
+  }
+
+  /** A swipe, or a tap or click on it, sends the card (else the toast) away; the room under them plays on. */
+  private dismiss(events: readonly UiEvent[]): void {
+    for (const ev of events) {
+      if (ev.kind === 'swipe') {
+        if (this.cardTime > 0) this.cardTime = 0;
+        else this.toastTime = 0;
+      } else if (ev.kind === 'pointer' && ev.type === 'down') {
+        if (this.cardTime > 0 && this.cardRect && inside(this.cardRect, ev.x, ev.y)) this.cardTime = 0;
+        else if (this.toastTime > 0 && this.toastRect && inside(this.toastRect, ev.x, ev.y)) this.toastTime = 0;
+      }
+    }
+  }
+
+  /**
+   * The phone's buttons for this frame: hidden while a panel or a room change owns the screen;
+   * otherwise the World's own (`WORLD_TOUCH_BUTTONS`) as the room wants them (`RoomLogic.touch`:
+   * a base button relabelled or hidden, a slot with the room's action).
+   */
+  private syncTouch(panel: boolean): void {
+    const touch = this.engine?.touch;
+    if (!touch) return;
+    const show = !panel && !this.busy;
+    if (touch.visible !== show) touch.show(show);
+    if (!show) return;
+    const own = this.room?.logic.touch?.() ?? {};
+    for (const [code, base] of Object.entries(BASE_TOUCH)) touch.set(code, { ...base, disabled: false, hidden: false, ...own[code] });
+    for (const code of TOUCH_SLOTS) {
+      const s = own[code];
+      touch.set(code, s ? { label: '', hint: '', disabled: false, ...s, hidden: s.hidden ?? false } : { hidden: true });
+    }
   }
 
   /** The HUD: labels, the room's own, the card, a toast, hints, panels. */
@@ -339,47 +430,93 @@ export class WorldShell {
     const w = wing(def.wing);
     const title = def.title.toUpperCase();
     if (this.cardTime <= 0 && !this.layer.top) {
-      ui.text(ui.w - 4, 4, title, { align: 'right', color: 'white' });
-      ui.mini(ui.w - 4, 13, w.title.toUpperCase(), w.color, 'right', 'ink');
+      // under a phone's top-left buttons when it would run into them (a long title on a narrow screen)
+      const corner = this.touchCorner();
+      const y = ui.w - 4 - ui.measure(title) < corner.right + 4 ? corner.bottom + 1 : 4;
+      ui.text(ui.w - 4, y, title, { align: 'right', color: 'white' });
+      ui.mini(ui.w - 4, y + 9, w.title.toUpperCase(), w.color, 'right', 'ink');
     }
-    if (this.cardTime > 0 && !this.layer.top) this.drawCard(def);
-    if (this.toastTime > 0) this.drawToast();
-    if (!this.layer.top && this.cardTime <= 0) {
-      const hint = 'H HOW IT WORKS · T TWEAK · G ROOMS · ESC MENU';
-      if (ui.measure(hint) < ui.w - 8) ui.mini(4, ui.h - 8, hint, 'mist', 'left', 'ink');
-    }
+    const device = this.engine?.controls.device ?? 'keyboard';
+    this.cardRect = this.cardTime > 0 && !this.layer.top ? this.drawCard(def, device) : null;
+    this.toastRect = this.toastTime > 0 ? this.drawToast(device) : null;
+    // the controls along the bottom (a phone's buttons are its prompts)
+    if (!this.layer.top && this.cardTime <= 0 && device !== 'touch') this.promptRow(5, ui.h - 11, HINTS[device], ui.w - 10, 'mist', true);
     this.layer.draw(ui, ui.time);
   }
 
-  private drawCard(def: RoomDef): void {
+  /** Prompts in a row from (x, y), the glyph of each control then its words; as many as fit `width`. Returns the width drawn. */
+  private promptRow(x: number, y: number, items: readonly (readonly [WorldAction, string])[], width: number, color: HudColor = 'mist', back = false): number {
+    const hud = this.ui.hud;
+    const GAP = 8;
+    const fit: [WorldAction, string, number][] = [];
+    let used = 0;
+    for (const [action, label] of items) {
+      const w = hud.glyphWidth(action) + 3 + hud.measure(label).width;
+      if (used + w > width) break;
+      fit.push([action, label, used]);
+      used += w + GAP;
+    }
+    const total = Math.max(0, used - GAP);
+    // on an ink strip: it reads over any floor, at ten feet too
+    if (back && total > 0) hud.rect(x - 3, y - 3, total + 6, 13, 'ink');
+    for (const [action, label, at] of fit) hud.prompt(x + at, y, action, label, { color, shadow: back ? false : 'ink' });
+    return total;
+  }
+
+  /**
+   * Where the top-left touch buttons (≡ GO ?) end, in art pixels: the card starts under them and a
+   * long title keeps clear. Zero without touch controls (and headless, where nothing has a place on a page).
+   */
+  private touchCorner(): { right: number; bottom: number } {
+    const touch = this.engine?.touch;
+    const out = { right: 0, bottom: 0 };
+    if (!touch?.visible || !this.pointer) return out;
+    for (const b of touch.rects().buttons) {
+      if (b.hidden || !['Escape', 'KeyG', 'KeyH'].includes(b.code)) continue;
+      const at = this.pointer.toArt(b.rect.right, b.rect.bottom);
+      out.right = Math.max(out.right, at.x);
+      out.bottom = Math.max(out.bottom, at.y + 2);
+    }
+    return out;
+  }
+
+  /** The room's card (top left: what it shows, what to try), as tall as the screen has room for. Returns its rect. */
+  private drawCard(def: RoomDef, device: InputDevice): Rect {
     const ui = this.ui;
     const w = Math.min(204, ui.w - 8);
     const inner = w - 12;
-    const about = wrap(def.about.toUpperCase(), inner);
-    const tries = def.try.slice(0, 2).flatMap((t) => wrap(`- ${t}`.toUpperCase(), inner));
-    const room = Math.floor((ui.h - 60) / 9);
-    const lines = [...about, ...(tries.length ? ['', ...tries] : [])].slice(0, Math.max(3, room));
-    const h = 28 + lines.length * 9 + 12;
     const x = 4;
-    const y = 4;
+    const y = Math.max(4, this.touchCorner().bottom + 1);
+    const about = wrap(this.keys(def.about).toUpperCase(), inner);
+    const tries = def.try.slice(0, 2).flatMap((t) => wrap(`- ${this.keys(t)}`.toUpperCase(), inner));
+    // at most half the screen on a phone (the room stays in view under it); a tall screen gets it all
+    const room = Math.floor((Math.min(ui.h - 60, Math.max(ui.h * 0.5, 120)) - y) / 9);
+    const lines = [...about, ...(tries.length ? ['', ...tries] : [])].slice(0, Math.max(3, room));
+    while (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const h = 28 + lines.length * 9 + 14;
     const wg = wing(def.wing);
     ui.panel(x, y, w, h, 'ink', wg.color);
     ui.text(x + 6, y + 6, def.title.toUpperCase(), { color: wg.color });
     ui.mini(x + 6, y + 16, wg.title.toUpperCase(), 'slate');
     lines.forEach((l, i) => ui.text(x + 6, y + 26 + i * 9, l, { color: l.startsWith('- ') ? 'white' : 'mist' }));
-    ui.mini(x + 6, y + h - 9, 'H HOW IT WORKS · I HIDE', 'sand');
+    const foot: [WorldAction, string][] = device === 'touch' ? [['card', 'TO HIDE'], ['guide', 'HOW IT WORKS']] : device === 'pad' ? [['guide', 'HOW IT WORKS']] : [['guide', 'HOW IT WORKS'], ['card', 'HIDE']];
+    this.promptRow(x + 6, y + h - 11, foot, w - 12, 'sand');
+    return { x, y, w, h };
   }
 
-  private drawToast(): void {
+  /** The toast (bottom middle, over the prompts). Returns its rect. */
+  private drawToast(device: InputDevice): Rect {
     const ui = this.ui;
     const width = Math.min(300, ui.w - 16);
-    const lines = wrap(this.toastText.toUpperCase(), width - 12).slice(0, 4);
+    const lines = wrap(this.keys(this.toastText).toUpperCase(), width - 12).slice(0, 4);
     const h = lines.length * 9 + 8;
     const w = Math.min(width, Math.max(...lines.map((l) => ui.measure(l))) + 12);
     const x = Math.floor((ui.w - w) / 2);
-    const y = ui.h - h - 14;
+    // on a phone over the controls' row (the joystick and the buttons fill the bottom corners)
+    const y = ui.h - h - (device === 'touch' ? Math.min(Math.floor(ui.h * 0.3), 90) : 14);
     ui.panel(x, y, w, h, 'ink', 'sand');
     lines.forEach((l, i) => ui.text(ui.w / 2, y + 5 + i * 9, l, { align: 'center', color: 'white' }));
+    return { x, y, w, h };
   }
 
   private readonly tmp = new Vector3();
@@ -411,8 +548,16 @@ export class WorldShell {
     const ui = this.ui;
     const x = Math.round(((v.x + 1) / 2) * ui.w);
     const y = Math.round(((1 - v.y) / 2) * ui.h);
-    if (small) ui.mini(x, y - 2, l.text, l.color === 'white' ? 'mist' : l.color, 'center', 'ink');
-    else ui.text(x, y - 4, l.text, { align: 'center', color: l.color, scale: l.scale });
+    const text = this.keys(l.text).toUpperCase();
+    if (small) ui.mini(x, y - 2, text, l.color === 'white' ? 'mist' : l.color, 'center', 'ink');
+    else {
+      // kept on screen: a label wider than the screen (a phone in portrait) wraps, one near an edge slides in
+      const scale = l.scale ?? 1;
+      const rows = wrap(text, ui.w - 8, scale);
+      const half = Math.max(...rows.map((r) => ui.measure(r) * scale)) / 2;
+      const cx = Math.min(ui.w - 4 - half, Math.max(4 + half, x));
+      rows.forEach((r, i) => ui.text(cx, y - 4 - (rows.length - 1 - i) * 9 * scale, r, { align: 'center', color: l.color, scale: l.scale }));
+    }
   }
 }
 
@@ -423,6 +568,8 @@ export const shell = new WorldShell();
 export class RoomGame implements Game {
   readonly name: string;
   readonly assets: readonly string[];
+  /** The World's actions and their keys, pad buttons and touch buttons: what prompts and `{key:action}` name. */
+  readonly controls = WORLD_CONTROLS;
   visitor: Visitor | null = null;
   logic: RoomLogic = {};
   kit!: RoomKit;
@@ -525,6 +672,9 @@ export class RoomGame implements Game {
 
   fixedUpdate(ctx: GameContext, dt: number): void {
     const v = this.visitor;
+    // Create, R3 and the touchpad are the shell's (rooms, the guide), a room's own pad buttons
+    // its own: the hero never waves on Create or lies down on the Gallery's R1
+    ctx.input.clearQueued(...SHELL_PAD, ...(this.logic.claims ?? []));
     if (v?.hero) v.fixedUpdate(dt, shell.capturing || !ctx.camera.controlsCharacter ? this.idle : readMoveInput(ctx, v.hero, this.input));
     this.logic.fixedUpdate?.(dt);
   }

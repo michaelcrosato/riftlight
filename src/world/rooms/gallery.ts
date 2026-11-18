@@ -9,6 +9,7 @@ import { Object3D, Vector3 } from 'three/webgpu';
 import { hudSprite, type LightHandle, type PaletteColor, searchDefs, SpriteBatch, spriteSheet, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import { pageParam } from '../page';
+import { keyText, TOUCH_SLOTS, touchFloor, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
 import { assetsOf, clean, count, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, textureLine, tilePatch, wrap } from './shelves';
 
@@ -37,8 +38,8 @@ export const GALLERY: RoomDef = {
   id: 'gallery',
   title: 'Asset Gallery',
   wing: 'looks',
-  about: 'Every model and texture the engine carries, one at a time on a turntable: the built-in library family by family, then every imported pack. Q and E step through a shelf, comma and period change shelf; the panel says what each asset is, how big it is and where it came from.',
-  try: ['Step through a shelf with E, and ten at a time with Shift+E', 'Change shelf with the period key: the textures and imported packs come after the models', 'Pick level or town zoom in T to see an asset at the game’s own scale', 'Walk off to reach the pads; the next step brings the camera back to the exhibit'],
+  about: 'Every model and texture the engine carries, one at a time on a turntable: the built-in library family by family, then every imported pack. {key:prev_item} and {key:next_item} step through a shelf, {key:prev_shelf} and {key:next_shelf} change shelf; the panel says what each asset is, how big it is and where it came from.',
+  try: ['Step through a shelf with {key:next_item} (on a keyboard Shift+E: ten at a time)', 'Change shelf with {key:next_shelf}: the textures and imported packs come after the models', 'Pick level or town zoom in Tweak ({key:tweak}) to see an asset at the game’s own scale', 'Walk off to reach the pads; the next step brings the camera back to the exhibit'],
   camera: { preset: 'iso', yaw: GAME_VIEW.yaw, pitch: GAME_VIEW.pitch, viewHeight: GAME_VIEW.viewHeight, stiffness: 9, minZoom: 0.3, maxZoom: 24 },
   spawn: [0, 0, 6],
   facing: Math.PI,
@@ -177,14 +178,28 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       return false;
     };
     const everything = () => shelves.flatMap((s) => [...assetsOf(s)]);
+    /** Each step's codes: the keys, the pad's shoulders and triggers, the phone's < > >> (the room's touch slots). */
+    const KEYS = {
+      prev: [...WORLD_KEYS.prev_item, TOUCH_SLOTS[0]],
+      next: [...WORLD_KEYS.next_item, TOUCH_SLOTS[1]],
+      prevShelf: WORLD_KEYS.prev_shelf,
+      nextShelf: [...WORLD_KEYS.next_shelf, TOUCH_SLOTS[2]],
+    };
+    /** The panel's last line: how to step, for the device in use. */
+    const hint = () => {
+      const e = ctx.engine;
+      const d = e.controls.device;
+      if (d === 'touch') return '< > NEXT · >> SHELF';
+      return keyText(e, `{key:prev_item}/{key:next_item} NEXT${d === 'keyboard' ? ' · SHIFT X10' : ''} · {key:prev_shelf}/{key:next_shelf} SHELF`).toUpperCase();
+    };
 
     const wanted = pageParam('asset');
     if (!(wanted && open(wanted))) go(0, 0);
 
-    kit.pad([-4.5, 0, 4], { label: '< PREV', color: 'sky', note: 'The previous asset on this shelf (Q; Shift+Q: ten back).', apply: () => step(-1) });
-    kit.pad([-1.5, 0, 4], { label: 'NEXT >', color: 'sky', note: 'The next asset on this shelf (E; Shift+E: ten on).', apply: () => step(1) });
-    kit.pad([1.5, 0, 4], { label: '< SHELF', color: 'sand', note: 'The previous shelf (comma).', apply: () => turn(-1) });
-    kit.pad([4.5, 0, 4], { label: 'SHELF >', color: 'sand', note: 'The next shelf (period): library families, then textures, then imported packs.', apply: () => turn(1) });
+    kit.pad([-4.5, 0, 4], { label: '< PREV', color: 'sky', note: 'The previous asset on this shelf ({key:prev_item}; Shift+Q: ten back).', apply: () => step(-1) });
+    kit.pad([-1.5, 0, 4], { label: 'NEXT >', color: 'sky', note: 'The next asset on this shelf ({key:next_item}; Shift+E: ten on).', apply: () => step(1) });
+    kit.pad([1.5, 0, 4], { label: '< SHELF', color: 'sand', note: 'The previous shelf ({key:prev_shelf}).', apply: () => turn(-1) });
+    kit.pad([4.5, 0, 4], { label: 'SHELF >', color: 'sand', note: 'The next shelf ({key:next_shelf}): library families, then textures, then imported packs.', apply: () => turn(1) });
 
     const knobs: Knob[] = [
       { kind: 'choice', id: 'shelf', label: 'Shelf', options: shelves.map((s) => `${s.title} (${count(s)})`), get: () => shelf, set: (i) => go(i, 0), hint: 'Every shelf: the library’s families, its textures, then every imported pack.' },
@@ -198,11 +213,13 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
       update(dt) {
         clock += dt;
         if (room.inputFree) {
-          const shift = ctx.input.isDown('ShiftLeft', 'ShiftRight');
-          if (ctx.input.consumePress('KeyE')) step(shift ? 10 : 1);
-          if (ctx.input.consumePress('KeyQ')) step(shift ? -10 : -1);
-          if (ctx.input.consumePress('Period')) turn(1);
-          if (ctx.input.consumePress('Comma')) turn(-1);
+          // this frame's presses (L1 / R1 are the room's, not the hero's prone and lie: `claims`)
+          const input = ctx.input;
+          const shift = input.isDown('ShiftLeft', 'ShiftRight');
+          if (input.wasPressed(...KEYS.next)) step(shift ? 10 : 1);
+          if (input.wasPressed(...KEYS.prev)) step(shift ? -10 : -1);
+          if (input.wasPressed(...KEYS.nextShelf)) turn(1);
+          if (input.wasPressed(...KEYS.prevShelf)) turn(-1);
         }
         if (!exhibit) return;
         if (focus === 'exhibit' && room.hero && room.hero.position.distanceTo(anchor) > 0.6) {
@@ -225,11 +242,12 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
           ...wrap(clean(def.about), width, 2).map((text) => ({ text, color: 'sand' as PaletteColor })),
           { text: clean(exhibit.line).slice(0, width), color: 'mist' },
           ...(pack ? [{ text: clean(sourceOf(def)).slice(0, width), color: 'slate' as PaletteColor }] : []),
-          { text: 'Q/E NEXT · SHIFT X10 · ,/. SHELF', color: 'slate' },
+          { text: hint(), color: 'slate' },
         ];
         const lh = 9;
         const panelW = Math.max(...lines.map((l) => hud.measure(l.text).width)) + 8;
-        const top = hud.height - 16 - lines.length * lh;
+        // over the shell's prompts, and over a phone's joystick where it shares the panel's columns
+        const top = Math.min(hud.height - 16, touchFloor(ctx.engine, 2, 2 + panelW) - 2) - lines.length * lh;
         hud.rect(2, top - 3, panelW, lines.length * lh + 4, 'ink');
         lines.forEach((l, k) => hud.text(6, top + k * lh, l.text, { color: l.color }));
         // a texture's own pixels, exact, above the panel
@@ -242,6 +260,9 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
           hud.sprite(5, y, spr.rows, spr.colors, { scale });
         }
       },
+      claims: ['PadLB', 'PadRB'],
+      // a phone's < > step through the shelf, >> turns to the next
+      touch: () => ({ TouchSlot1: { label: '<', hint: 'prev' }, TouchSlot2: { label: '>', hint: 'next' }, TouchSlot3: { label: '>>', hint: 'shelf' } }),
       cameraTarget: () => (focus === 'exhibit' ? (exhibit?.centre ?? null) : null),
       status: () => `${shelves[shelf]?.id ?? '-'} ${item + 1}/${count(shelves[shelf]!)} ${exhibit?.id ?? '-'}`,
       dispose() {

@@ -7,7 +7,7 @@
  * Every room is a whole `Game` (`engine.loadGame`), so leaving one frees everything it built
  * and any room opens on its own: `?game=world&room=lights`.
  */
-import type { CameraConfig, GameContext, Look, PaletteColor } from '../engine';
+import type { CameraConfig, GameContext, Look, PaletteColor, TouchButtonState } from '../engine';
 import type { Visitor } from '../riftlight/showcase/visitor';
 import type { RoomKit } from './kit/RoomKit';
 
@@ -144,6 +144,18 @@ export interface RoomLogic {
   cameraTarget?(): import('three/webgpu').Vector3 | null;
   /** Agent / test hooks (`__WORLD__.room`). */
   readonly api?: Record<string, unknown>;
+  /**
+   * The phone's buttons in this room, every frame, by the code they press (controls.ts
+   * `WORLD_TOUCH_BUTTONS`): a slot (`TouchSlot1`..`3`, hidden unless given) with this room's
+   * action (REWIND, < >, EXIT), or a base button relabelled or hidden (the car: JUMP → BRAKE).
+   */
+  touch?(): Readonly<Record<string, TouchButtonState | undefined>>;
+  /**
+   * Pad buttons this room reads itself whose presses the hero's moves must not also take (the
+   * Gallery's L1 / R1, which are prone and lie down to `KEYMAP`): read them in `update` with
+   * `wasPressed`, since the shell drops their queued presses before the hero's step.
+   */
+  readonly claims?: readonly string[];
 }
 
 export interface RoomDef {

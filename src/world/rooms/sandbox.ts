@@ -5,7 +5,11 @@
  */
 import { BoxGeometry, CylinderGeometry, Mesh, Quaternion, SphereGeometry, Vector3 } from 'three/webgpu';
 import { PALETTE, RAPIER, setLookLayer, toonMaterial } from '../../engine';
+import { TOUCH_SLOTS } from '../controls';
 import type { Knob, RoomDef } from '../types';
+
+/** Carry what is in front of the hero while held: E, R2, or the phone's HOLD (the room's first touch slot). */
+const CARRY = ['KeyE', 'PadRT', TOUCH_SLOTS[0]] as const;
 
 type V3 = [number, number, number];
 type Kind = 'crate' | 'ball' | 'plank' | 'barrel';
@@ -33,8 +37,8 @@ export const SANDBOX: RoomDef = {
   title: 'Sandbox',
   wing: 'workshop',
   about:
-    'A yard to build in: spawn crates, balls, planks and barrels, grab anything with the mouse and drag it about (let go while it moves to throw it), stack a tower and knock it down. Save the layout and load it back later.',
-  try: ['Spawn some CRATES and stack them with the mouse', 'Drag a ball and let go mid-swing: a throw', 'SAVE, wreck it all, LOAD'],
+    'A yard to build in: spawn crates, balls, planks and barrels, grab anything with the mouse and drag it about (let go while it moves to throw it), or walk up to it and hold {key:hold} to carry it (let go to throw), stack a tower and knock it down. Save the layout and load it back later.',
+  try: ['Spawn some CRATES and stack them (the mouse drags, {key:hold} carries)', 'Drag a ball and let go mid-swing: a throw', 'SAVE, wreck it all, LOAD'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'sand',
@@ -156,7 +160,10 @@ export const SANDBOX: RoomDef = {
     for (let y = 0; y < 5; y++) spawn('crate', [4, 0.4 + y * 0.8, -4]);
 
     // grabbing with the mouse
-    let grab: { prop: Prop; local: Vector3; height: number } | null = null;
+    /** What is held: by the mouse (`carry` false: a point on it follows the pointer's ray) or carried in front of the hero. */
+    let grab: { prop: Prop; local: Vector3; height: number; carry?: boolean } | null = null;
+    let carryWas = false;
+    const fwd = new Vector3();
     let wasDown = false;
     const origin = new Vector3();
     const dir = new Vector3();
@@ -183,8 +190,46 @@ export const SANDBOX: RoomDef = {
       grab = { prop, local: hit.point.clone().sub(at.set(t.x, t.y, t.z)).applyQuaternion(q), height: hit.point.y + 0.6 };
       return true;
     };
+    /** The prop nearest in front of the hero (within 2.6 m), picked up to be carried. */
+    const tryCarry = () => {
+      const h = room.hero?.hero;
+      if (!h) return false;
+      const p = room.hero!.position;
+      h.forwardInto(fwd);
+      let best: Prop | null = null;
+      let bd = 2.6;
+      for (const prop of props) {
+        const t = prop.body.translation();
+        const dx = t.x - p.x;
+        const dz = t.z - p.z;
+        const d = Math.hypot(dx, dz);
+        if (d < bd && t.y < p.y + 2.5 && (dx * fwd.x + dz * fwd.z) / Math.max(d, 1e-3) > 0.2) {
+          bd = d;
+          best = prop;
+        }
+      }
+      if (!best) return false;
+      grab = { prop: best, local: new Vector3(), height: 0, carry: true };
+      return true;
+    };
+    /** A carried prop springs to a point ahead of the hero's chest. */
+    const carry = () => {
+      const h = room.hero?.hero;
+      if (!grab || !h) return;
+      const p = room.hero!.position;
+      h.forwardInto(fwd);
+      const body = grab.prop.body;
+      const t = body.translation();
+      const d = target.set(p.x + fwd.x * 1.3 - t.x, p.y + 1.2 - t.y, p.z + fwd.z * 1.3 - t.z);
+      const len = d.length();
+      if (len > 1) d.divideScalar(len);
+      body.setLinvel({ x: d.x * pull, y: d.y * pull, z: d.z * pull }, true);
+      const w = body.angvel();
+      body.setAngvel({ x: w.x * 0.9, y: w.y * 0.9, z: w.z * 0.9 }, true);
+    };
     const drag = () => {
       if (!grab) return;
+      if (grab.carry) return carry();
       const body = grab.prop.body;
       const t = body.translation();
       const r = body.rotation();
@@ -213,18 +258,32 @@ export const SANDBOX: RoomDef = {
       fixedUpdate() {
         // not through a panel or the pause menu: only a click on the game itself grabs
         const down = room.inputFree && (e.input.mouseButtons & 1) === 1 && e.input.pointer.over;
-        if (down && !wasDown) tryGrab();
-        if (!down && grab) {
+        if (down && !wasDown && !grab?.carry) tryGrab();
+        if (!down && grab && !grab.carry) {
           const v = grab.prop.body.linvel();
           if (Math.hypot(v.x, v.y, v.z) > 4) throws++;
           grab = null;
         }
         wasDown = down;
+        // a pad (or a phone's HOLD) carries what is in front of the hero; letting go throws it forward
+        const carrying = room.inputFree && e.input.anyDown(CARRY);
+        if (carrying && !carryWas && !grab) tryCarry();
+        if (!carrying && grab?.carry) {
+          const body = grab.prop.body;
+          const v = body.linvel();
+          room.hero?.hero?.forwardInto(fwd);
+          body.setLinvel({ x: v.x + fwd.x * 7, y: v.y + 3, z: v.z + fwd.z * 7 }, true);
+          throws++;
+          grab = null;
+        }
+        carryWas = carrying;
         drag();
       },
       draw() {
-        if (grab) ctx.hud.text(4, 18, `HOLDING A ${grab.prop.kind.toUpperCase()}`, { anchor: 'bottom-left', color: 'plum' });
+        if (grab) ctx.hud.text(4, 18, `${grab.carry ? 'CARRYING' : 'HOLDING'} A ${grab.prop.kind.toUpperCase()}`, { anchor: 'bottom-left', color: 'plum' });
       },
+      // a phone's HOLD carries like R2 (a finger on a prop drags it, as the mouse does)
+      touch: () => ({ [TOUCH_SLOTS[0]]: { label: 'HOLD', hint: grab?.carry ? 'throw' : 'carry' } }),
       status: () => `props ${props.length} holding ${grab?.prop.kind ?? 'nothing'}`,
       api: {
         /** Spawn a prop (at the drop point, or `at`): the props there are now, or -1 if `kind` is not one. */

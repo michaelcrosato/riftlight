@@ -41,7 +41,7 @@ export const PLATFORMS: RoomDef = {
   wing: 'physics',
   about:
     'A loop of things that move and carry you: ride the Ferris wheel up to the ledge, jump on the pendulum platform across the pit, take the lift down and the shuttle back. Then stand on the turntable and the conveyor belts. The hero rides them exactly, frame after frame.',
-  try: ['The loop: Ferris wheel, pendulum, lift, shuttle', 'Stand still on the turntable: you turn with it', 'Ride a conveyor belt, then walk against it', 'Slow the game down (T): the platforms slow down with everything else'],
+  try: ['The loop: Ferris wheel, pendulum, lift, shuttle', 'Stand still on the turntable: you turn with it', 'Ride a conveyor belt, then walk against it', 'Slow the game down ({key:tweak}): the platforms slow down with everything else'],
   spawn: [0, 0, 8],
   facing: Math.PI,
   background: 'navy',

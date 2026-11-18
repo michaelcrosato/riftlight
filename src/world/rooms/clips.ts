@@ -20,7 +20,7 @@ export const CLIPS: RoomDef = {
   title: 'Clip Gallery',
   wing: 'animation',
   about: 'The hero\'s animations, eight at a time on mannequins. Every clip is plain data (key poses and timing), compiled to three.js animation tracks against the rig and checked by numbers: feet on the floor, no sliding, smooth loops.',
-  try: ['Walk the family pads from left to right', 'Slow everything down with T (clip speed) to see the poses hold', 'Stand next to Run and compare it with your own run: the game blends Walk and Run by speed'],
+  try: ['Walk the family pads from left to right', 'Slow everything down in Tweak ({key:tweak}: clip speed) to see the poses hold', 'Stand next to Run and compare it with your own run: the game blends Walk and Run by speed'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'navy',

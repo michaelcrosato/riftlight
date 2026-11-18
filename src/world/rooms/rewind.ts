@@ -6,7 +6,11 @@
 import { Mesh, SphereGeometry, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor, RAPIER, Rewind, rebindDebugKeys, setLookLayer, toonMaterial } from '../../engine';
 import { TUNING } from '../../engine/character/tuning';
+import { TOUCH_SLOTS, touchFloor, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
+
+/** Hold to rewind: R, L2, or the phone's REWIND (the room's first touch slot). */
+const HOLD = [...WORLD_KEYS.rewind, TOUCH_SLOTS[0]];
 
 type V3 = [number, number, number];
 
@@ -15,8 +19,8 @@ export const REWIND: RoomDef = {
   title: 'Time Lab',
   wing: 'workshop',
   about:
-    'Knock things down, then hold R: everything plays backwards, for up to six seconds, and the hero glides back along the way it came. Let go and time runs forward again from there, the bodies carrying on with the speeds they had. A line of dominoes, a crate pyramid and a ball on a ramp to try it on.',
-  try: ['Step on DOMINOES, then hold R', 'Wreck the pyramid, rewind, wreck it differently', 'Rewind halfway and walk somewhere else'],
+    'Knock things down, then hold {key:rewind}: everything plays backwards, for up to six seconds, and the hero glides back along the way it came. Let go and time runs forward again from there, the bodies carrying on with the speeds they had. A line of dominoes, a crate pyramid and a ball on a ramp to try it on.',
+  try: ['Step on DOMINOES, then hold {key:rewind}', 'Wreck the pyramid, rewind, wreck it differently', 'Rewind halfway and walk somewhere else'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'navy',
@@ -106,7 +110,7 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
     kit.pad([-4, 0, 3.5], { label: 'DOMINOES', color: 'orange', note: 'A nudge to the first domino.', apply: nudge, enabled });
     kit.pad([5, 0, 0.2], { label: 'BLAST', color: 'red', note: 'A blast at the pyramid\'s foot.', apply: () => ctx.physics.explode([5, 0.2, -2.2], { radius: 3, impulse: 6 }), enabled });
     kit.pad([9.5, 0, 6], { label: 'ROLL', color: 'sky', note: 'The ball rolls down the ramp.', apply: () => ball.wakeUp(), enabled });
-    kit.pad([0, 0, 8.5], { label: 'REWIND 3 S', color: 'plum', note: 'Three seconds back, hands-free (or hold R as long as you like).', apply: () => (scripted = 180), enabled });
+    kit.pad([0, 0, 8.5], { label: 'REWIND 3 S', color: 'plum', note: 'Three seconds back, hands-free (or hold {key:rewind} as long as you like).', apply: () => (scripted = 180), enabled });
     kit.light({ position: [0, 5, 0], color: PALETTE.white, intensity: 4, radius: 16, flicker: 'none' });
     const knobs: Knob[] = [];
     return {
@@ -116,7 +120,7 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
           ball.sleep();
           rewind.reset(); // history starts with the ball asleep
         }
-        const held = room.inputFree && e.input.isDown('KeyR');
+        const held = room.inputFree && e.input.anyDown(HOLD);
         rewind.rewinding = (held || scripted > 0) && rewind.length > 0;
         if (scripted > 0) scripted--;
         if (rewind.rewinding) rewound++;
@@ -126,12 +130,21 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
       },
       draw() {
         const bars = Math.round(rewind.fill * 20);
-        ctx.hud.text(4, 18, `${rewind.rewinding ? '<< REWIND' : 'HOLD R TO REWIND'}  ${'#'.repeat(bars)}${'.'.repeat(20 - bars)}`, { anchor: 'bottom-left', color: rewind.rewinding ? 'sky' : 'mist' });
+        const hud = ctx.hud;
+        const y = Math.min(hud.height - 25, touchFloor(e, 4, 200) - 9); // where the rooms' line sits, clear of the shell's prompts and a phone's joystick
+        let w: number;
+        if (rewind.rewinding) {
+          hud.text(4, y, '<< REWIND', { color: 'sky' });
+          w = hud.measure('<< REWIND').width;
+        } else w = hud.prompt(4, y, 'rewind', 'HOLD TO REWIND', { color: 'mist' });
+        hud.text(4 + w + 8, y, `${'#'.repeat(bars)}${'.'.repeat(20 - bars)}`, { color: rewind.rewinding ? 'sky' : 'mist' });
       },
       dispose() {
         rewind.dispose();
         e.debugKeys = keys;
       },
+      // a phone's << (rewind), held like R
+      touch: () => ({ TouchSlot1: { label: '<<', hint: 'rewind', disabled: rewind.length === 0 } }),
       status: () => `history ${(rewind.fill * 100).toFixed(0)}% rewinding ${rewind.rewinding}`,
       api: {
         rewind: (steps: number) => (scripted = steps),
