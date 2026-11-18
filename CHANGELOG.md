@@ -8,6 +8,21 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.54.0
+
+- **52in1 sessions, every online mode** (docs/engine/hub.md, AI Hub Session Protocol v1, https://52in1.com/lib/hub/README.md): `moments` joins `HubMode`. Each moment is a fresh load, reported once with `session.result({ won, time })` (`HubResult.won`). `send` and `progress` refuse in moments, and `validResult(outcome, mode)` holds a moment to `won` plus a finite time.
+- **Several modes per game**: `HubSession.join({ mode })` takes one mode or every online mode a game offers (`mode: ['shared-world', 'ghost', 'moments']`) and plays the one the hub picks. `info.play` (`HubPlay`: `co-op`, `versus`, `other`, or null; `HUB_PLAYS`) says how a shared world plays, and `info.moment` says which moment a load plays. Both are recorded with the round's info and are null in older recordings.
+- **`session.rng(label)`**: the numbers the client's `AIHub.rng(label)` gives, from the recorded `info.seed`. Use it for a set-up that must be the same on every copy and in a replay.
+- **`headSession()`, `onlineModes()`, `parseMultiplayer()`** (`HeadSession`, `HubWay`): read a page's `hub:multiplayer`, `hub:session-mode` and `hub:session-players` into the modes and seats to join with.
+- **`LocalHub`** runs a round the way the hub's coordinator does:
+  - time is called at the limit;
+  - the round ends `finished` once everyone has reported, or at a shared world's finish;
+  - after time-up's grace (5 s, a moment's 2 s) it ends either way;
+  - `moment: { id, seconds }` plays one moment and `play` sets a shared world's play;
+  - `card()` and `answers` drive a game's own card;
+  - `problems` lists a hello that doesn't offer the round's mode, a result before the start, and traffic or progress where the mode has none.
+- **`LocalHub` and `HubSession` follow 52in1's `round.js` more closely**: `advance(ms)`(ms) handles messages, time-up and the end in time order, and time-up is called when it was due, so one long step can end a round. A reply sent with no delay as a message lands waits for the next step. standings() ranks players who left with no result last, in a group of their own. A round no player is left in ends void in every mode. HubSession accepts the older mode names race, co-op and versus (sent as ghost and shared-world), and an offline replay in a mode that isn't one of today's no longer throws. session.rng() with no label works. parseMultiplayer drops a one-device way that seats one player. protocolRuns (npm run hub) follows the protocol's Test it section.
+
 ## 0.53.0
 
 - **Prompts for the device in use** (docs/engine/game-api.md *Prompts*): `Game.controls` (a `ControlTable` of `Control`s: each action's key, pad button and touch button) and `engine.controls` (`Controls`: the running game's table on `input.device` in the player's `settings.padGlyphs`; `label`, `glyph`, `names`). `Lang.controlLabel` now names `{key:action}` with them by default, so any game with a table shows the key, pad button or touch control in use in every line: PlayStation's names (Cross, Circle, Square, Triangle, L1, R2, Options...) unless the player chose Xbox's (A, B, X, Y, LB, RT, Menu...).
