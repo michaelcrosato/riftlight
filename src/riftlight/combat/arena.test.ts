@@ -3,14 +3,15 @@
 // flash and a damage number, a dodge roll moves the hero with i-frames and cancels an attack, a
 // fireball pays mana, flies and hits, the left mouse button attacks, its prompts name the buttons
 // it plays with, a kill emits kill and death and the corpse pops and is removed; R is a skill key,
-// so the engine's resolution hotkey sits on F2 when the hotkeys are on. The picture stays in e2e.
-// Tests run in order on one engine; the hotkey test boots its own after the first is disposed.
+// so the engine's resolution hotkey sits on F2 when the hotkeys are on; the HUD fits every window
+// shape. The picture stays in e2e. Tests run in order on one engine; the hotkey test boots its own
+// after the first is disposed.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Control, ControlTable, Engine } from '../../engine';
 import { HERO_KEYS } from '../actors/controls';
 import { heroCodes } from '../game/controls';
-import { headlessGame, hudTexts } from '../headless';
-import { Arena } from './arena';
+import { headlessGame, hudOverlap, hudTexts } from '../headless';
+import { Arena, arenaHudLayout } from './arena';
 
 const T = 30_000;
 
@@ -276,6 +277,52 @@ describe('the combat arena', () => {
     },
     T,
   );
+});
+
+describe('the arena at every window shape, on every device', () => {
+  // fill gives the art the window's shape: 960×720 is 320 art columns, 768×1024 a tablet in
+  // portrait, 390×844 a phone (130 columns); the skill bar goes beside the bars or under them
+  it.each([
+    [1280, 720],
+    [960, 720],
+    [768, 1024],
+    [390, 844],
+  ])(
+    '%i×%i: the bars, the skill bar and the status fit the screen and none overlaps another; the bar shows the pad\'s buttons on a pad',
+    async (width, height) => {
+      const e = await headlessGame(new Arena(), { viewport: { width, height, dpr: 1 } });
+      try {
+        e.step(3);
+        for (const device of ['keyboard', 'pad'] as const) {
+          e.input.noteDevice(device);
+          const lines = hudTexts(e);
+          const names = lines.map((l) => l.text);
+          expect(names, 'the skill bar\'s names').toEqual(expect.arrayContaining(['CLEAV', 'FIREB', 'WHIRL']));
+          if (device === 'keyboard') expect(names, 'its keys (the mouse button is drawn)').toEqual(expect.arrayContaining(['1', '2', '3', '4', 'F']));
+          else expect(names, 'its pad buttons, by their caps').toEqual(expect.arrayContaining(['L1', 'R1', 'R2']));
+          for (const l of lines) expect(l.x >= 0 && l.x + l.w <= e.hud.width, `"${l.text}" (${l.x}..${l.x + l.w}) inside ${e.hud.width} columns`).toBe(true);
+          for (const [i, a] of lines.entries()) for (const b of lines.slice(i + 1)) expect(hudOverlap(a, b), `"${a.text}" / "${b.text}" (${device})`).toBe(false);
+        }
+        expect(e.errors).toEqual([]);
+      } finally {
+        e.dispose();
+      }
+    },
+    T,
+  );
+
+  it('keeps every slot clear of the bars and of the next slot at any width', () => {
+    for (let width = 120; width <= 700; width += 7) {
+      const lay = arenaHudLayout(width, 6);
+      lay.slots.forEach((s, i) => {
+        expect(s.x - 15 >= 0 && s.x + 15 <= width, `slot ${i} at ${width}`).toBe(true);
+        const next = lay.slots[i + 1];
+        if (next && next.y === s.y) expect(next.x - s.x, `slots ${i}, ${i + 1} at ${width}`).toBeGreaterThanOrEqual(30);
+        // on the bars' rows only right of them
+        if (s.y < lay.barsY + 20 && s.y + 17 > lay.barsY) expect(s.x - 15, `slot ${i} right of the bars at ${width}`).toBeGreaterThanOrEqual(104);
+      });
+    }
+  });
 });
 
 describe('the arena with the engine hotkeys on (?debug=1)', () => {

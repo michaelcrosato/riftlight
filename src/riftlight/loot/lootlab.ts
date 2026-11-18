@@ -138,13 +138,14 @@ export class LootLab implements Game {
     this.hero.updateVisual(this.heroModel, dt, ctx.physics.alpha);
     if (this.hero.feet.y < -10) this.hero.teleport([0, 0, 0]);
     const input = ctx.input;
-    if (input.wasPressed('KeyI')) this.inventory.toggle();
-    if (input.wasPressed('KeyT')) this.stash.toggle();
-    if (input.wasPressed('KeyU')) {
+    // a developer page, on a pad too: Create the inventory, Options the stash, R3 the vendor, R2 a kill
+    if (input.wasPressed('KeyI', 'PadBack')) this.inventory.toggle();
+    if (input.wasPressed('KeyT', 'PadStart')) this.stash.toggle();
+    if (input.wasPressed('KeyU', 'PadR3')) {
       if (this.vendor.isOpen()) this.vendor.close();
       else this.vendor.open('smith', vendorStock(this.seed, this.depth, Math.floor(ctx.time), 'smith'));
     }
-    if (!this.ui.isOpen && input.wasPressed('KeyK')) {
+    if (!this.ui.isOpen && input.wasPressed('KeyK', 'PadRT')) {
       const d = this.nearestDummy();
       if (d) {
         this.kill(d === this.dummies[0] ? 'boss' : 'rare', 1, this.dummies.indexOf(d));

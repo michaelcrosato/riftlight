@@ -11,31 +11,51 @@
  *     and the pixel HUD.
  *
  * Its controls are Riftlight's (`controls`: the engine names them for the device in use, so the
- * hints read "WASD run · Space jump" on a keyboard, "Left stick run · Cross jump" on a pad). Enter,
- * Cross or a tap restarts after the finish. Agents: `window.__ARCADE__` (`state()`, `autoplay()`).
+ * hints read "WASD run · Space jump" on a keyboard, "Left stick run · Cross jump" on a pad, "Stick
+ * run · B jump" on a phone, whose buttons are `ARCADE_TOUCH_BUTTONS`). Enter, Cross or a tap
+ * restarts after the finish; Options, Esc or ≡ pause it (Resume, Restart: `StagePause`, the clock
+ * stopped). Agents: `window.__ARCADE__` (`state()`, `autoplay()`).
  */
 import { Color, type Vector3 } from 'three/webgpu';
-import type { EngineOptions, Game, GameContext } from '../../../engine';
-import { CONTROLS } from '../../game/controls';
+import { type EngineOptions, type Game, type GameContext, MenuInput, type TouchButton } from '../../../engine';
+import { MENU_BINDINGS } from '../../game/controls';
+import { UiCanvas } from '../../ui/kit';
+import { SHOWCASE_CONTROLS } from '../hints';
+import { StagePause } from '../pause';
 import { moveInput } from '../visitor';
 import { arcadeAutopilot } from './autoplay';
-import { ArcadeStage, readArcadeInput } from './ArcadeStage';
+import { ARCADE_AGAIN, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
 import { ARCADE_SONG } from './stage';
+
+/**
+ * A side-scroller's buttons on a phone (CSS pixels from a corner): a big B that jumps (as
+ * `CONTROLS.jump` names it), A that attacks beside it, ≡ for the pause; the stick runs, and down
+ * on it crouches (a ground pound in the air).
+ */
+export const ARCADE_TOUCH_BUTTONS: readonly TouchButton[] = [
+  { label: 'B', code: 'Space', hint: 'jump', at: { x: 62, y: 70, size: 84 } },
+  { label: 'A', code: 'KeyJ', hint: 'attack', at: { x: 160, y: 50, size: 58 } },
+  { label: '≡', code: 'Escape', at: { x: 26, y: 26, size: 44, corner: 'top-left' } },
+];
 
 /** The engine options the arcade is designed for (main.ts: URL options still win). */
 export const ARCADE_OPTIONS: Partial<EngineOptions> = {
   camera: { preset: 'side', viewHeight: 12 },
   filters: ['16bit', 'crt'],
-  settings: { padButton: true }, // no pause menu of its own: Options (Esc) opens the engine's settings
+  touchButtons: ARCADE_TOUCH_BUTTONS,
 };
 
 export class ArcadeGame implements Game {
   readonly name = 'Rift Runner';
   readonly assets = ['assets/hero.glb', 'assets/coin.glb'];
-  /** Riftlight's actions and their keys, pad buttons and touch buttons: what `{key:jump}` in the hints names. */
-  readonly controls = CONTROLS;
+  /** Riftlight's actions and their keys, pad buttons and touch buttons, as the showcase names them: what `{key:jump}` in the hints names. */
+  readonly controls = SHOWCASE_CONTROLS;
   stage!: ArcadeStage;
+  /** The pause (Options, Esc, ≡), or null. */
+  pause: StagePause | null = null;
   private readonly input = moveInput();
+  private readonly menu = new MenuInput(MENU_BINDINGS);
+  private ui: UiCanvas | null = null;
   private best = 0;
 
   async setup(ctx: GameContext): Promise<void> {
@@ -73,13 +93,32 @@ export class ArcadeGame implements Game {
   }
 
   fixedUpdate(ctx: GameContext, dt: number): void {
+    if (this.pause) return; // the run stands still, its clock too
     this.stage.fixedUpdate(dt, readArcadeInput(ctx.input, this.input));
   }
 
   update(ctx: GameContext, dt: number): void {
-    this.stage.update(dt);
-    if (this.stage.phase === 'done' && this.stage.phaseTime > 0.8 && ctx.input.wasPressed('Enter', 'NumpadEnter', 'PadA', 'Touch')) this.stage.start(); // what "again" names
+    const input = ctx.input;
+    const events = this.menu.events(input, dt);
+    const ui = (this.ui ??= new UiCanvas(ctx.hud));
+    ui.device = ctx.engine.controls.device; // the pause's focused row shows the pad's ✕
+    ui.padStyle = ctx.engine.controls.style;
+    ctx.camera.setZoom(arcadeZoom(ctx.hud.width / ctx.hud.height));
     ctx.hud.clear();
+    if (this.pause) {
+      this.stage.drawHud(ctx.hud);
+      this.pause.draw(ui);
+      const pick = this.pause.update(events, input, ctx.hud).pick;
+      if (pick) {
+        this.pause = null;
+        input.clearQueued(); // what chose a row must not jump once the run goes on
+        if (pick === 'restart') this.stage.start();
+      }
+      return;
+    }
+    this.stage.update(dt);
+    if (input.wasPressed('Escape', 'PadStart')) this.pause = new StagePause(['resume', 'restart']);
+    else if (this.stage.phase === 'done' && this.stage.phaseTime > 0.8 && input.wasPressed(...ARCADE_AGAIN)) this.stage.start(); // what "again" names
     this.stage.drawHud(ctx.hud);
   }
 

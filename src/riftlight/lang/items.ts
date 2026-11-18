@@ -206,7 +206,7 @@ const FIXED: LineArea = {
     'item.say.not_supported_here': "{support} doesn't support this skill",
     // ---- the Loot Lab (a developer page)
     'dev.lootlab.status': 'Loot Lab  depth {depth}  gold {gold}',
-    'dev.lootlab.keys': 'K kill  F pick up  I inventory  T stash  U vendor  Alt filter {filter}',
+    'dev.lootlab.keys': 'K kill  F pick up  I inventory  T stash  U vendor  Alt filter {filter}  pad: R2 kill  Triangle pick up  Create inventory  Options stash  R3 vendor',
     'dev.lootlab.on': 'on',
     'dev.lootlab.off': 'off',
     // ---- reasons and corrupting

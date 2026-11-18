@@ -404,11 +404,12 @@ export class BestiaryMode implements ShowcaseMode {
     this.wasLocked = locked;
 
     if (this.view === 'inspect' || this.view === 'breed') {
-      // orbit: drag or Q/E to circle, wheel to zoom
+      // orbit: drag, Q/E or the right stick to circle; the wheel, a pinch or R1 / L1 held to zoom
       const o = this.orbit;
       o.yaw -= input.mouseDelta.x * 0.008 + ((input.isDown('KeyE') ? 1 : 0) - (input.isDown('KeyQ') ? 1 : 0)) * 1.6 * dt;
       o.pitch = Math.min(1.1, Math.max(-0.05, o.pitch + input.mouseDelta.y * 0.005));
-      if (input.wheel) o.dist = Math.min(14, Math.max(2, o.dist * Math.pow(1.1, input.wheel)));
+      const held = (input.isDown('PadLB') ? 1 : 0) - (input.isDown('PadRB') ? 1 : 0);
+      if (input.wheel || held) o.dist = Math.min(14, Math.max(2, o.dist * Math.pow(1.1, input.wheel) * Math.pow(2.2, held * dt)));
       const rig = ctx.engine.camera;
       if (rig instanceof FreeRig) {
         // look a little to the right of the subject: it sits left of centre, clear of the card
@@ -417,7 +418,7 @@ export class BestiaryMode implements ShowcaseMode {
         rig.camera.lookAt(right.multiplyScalar(-o.dist * 0.2).add(o.target));
       }
       this.cardInput(events);
-      if (esc) this.setView('walk');
+      if (esc && (this.view === 'inspect' || this.view === 'breed')) this.setView('walk');
     } else {
       if (input.wasPressed('Tab', 'PadY')) this.setView(this.view === 'walk' ? 'fly' : 'walk');
       if (this.view === 'walk' && input.wasPressed('KeyF', 'PadRT')) {
@@ -425,12 +426,22 @@ export class BestiaryMode implements ShowcaseMode {
         if (near === 'altar') this.setView('breed');
         else if (near) this.setView('inspect', near);
       }
-      if (input.wasPressed('KeyN')) this.turnWing(1);
-      if (esc) this.wantsLeave = true;
+      // the next wing: N, R1 (L1 the one before) or a sideways swipe
+      if (input.wasPressed('KeyN', 'PadRB') || events.some((e) => e.kind === 'swipe' && e.dir === 'left')) this.turnWing(1);
+      if (input.wasPressed('PadLB') || events.some((e) => e.kind === 'swipe' && e.dir === 'right')) this.turnWing(-1);
+      // Options, Esc or ≡: the showcase's pause (Resume, Photo mode, Leave)
+      if (esc) this.host.openPause();
       // out through the door
       if (v.hero && v.position.z - hall.origin.z > HALL.exitZ) this.wantsLeave = true;
     }
     input.wheel = 0;
+  }
+
+  /** A phone's interact button: LOOK at the exhibit near (or the altar), hidden when there is none. */
+  touchOffer(): { verb: string; name: string } | null {
+    const near = this.view === 'walk' ? this.nearest() : null;
+    if (!near) return null;
+    return { verb: t('touch.verb.look'), name: near === 'altar' ? t('showcase.bestiary.altar') : entryName(near.entry!) };
   }
 
   /** The exhibit (or the altar) the hero stands at and looks toward, if any. */
@@ -440,13 +451,15 @@ export class BestiaryMode implements ShowcaseMode {
     if (!v?.hero || !hall) return null;
     const p = v.position;
     const fwd = v.hero.forwardInto(this.tmp);
+    // on a phone (the device in use, recorded) the nearest exhibit is enough: no need to face it squarely
+    const facing = this.host.ctx.input.device === 'touch' ? -1 : 0.2;
     let best: Exhibit | null = null;
     let bd = 3.6;
     for (const ex of this.exhibits) {
       const dx = ex.at.x - p.x;
       const dz = ex.at.z - p.z;
       const d = Math.hypot(dx, dz);
-      if (d < bd && (dx * fwd.x + dz * fwd.z) / Math.max(d, 1e-3) > 0.2) {
+      if (d < bd && (dx * fwd.x + dz * fwd.z) / Math.max(d, 1e-3) > facing) {
         bd = d;
         best = ex;
       }
@@ -486,6 +499,11 @@ export class BestiaryMode implements ShowcaseMode {
     this.buttons = this.cardButtons();
     const n = this.buttons.length;
     for (const e of events) {
+      // Circle, Backspace or a sideways swipe: back to the hall (Esc and Options too, below)
+      if (e.kind === 'back' || (e.kind === 'swipe' && (e.dir === 'left' || e.dir === 'right'))) {
+        this.host.game.sound('close');
+        return this.setView('walk');
+      }
       if (e.kind === 'nav' && (e.dir === 'up' || e.dir === 'down')) {
         this.cursor = (this.cursor + (e.dir === 'down' ? 1 : -1) + n) % n;
         this.host.game.sound('move');
@@ -547,7 +565,9 @@ export class BestiaryMode implements ShowcaseMode {
         ui.rect(ui.w / 2 - w / 2 - 4, ui.h - 40, w + 8, 13, 'ink');
         ui.prompt(ui.w / 2, ui.h - 37, 'interact', label, 'white', 'center');
       }
-      const help = hints(['move', 'look', this.view === 'walk' ? 'fly' : 'walk', ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
+      // a phone has no button to fly with: its hints leave it out
+      const touch = ctx.engine.controls.device === 'touch';
+      const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
       miniHints(ui, ui.w / 2, ui.h - 9, help, 'mist');
       if (this.view === 'walk') {
         // a crosshair dot

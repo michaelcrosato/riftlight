@@ -64,8 +64,11 @@ export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
 export interface TouchFrame {
   /** The world is playable (town or level, alive, no panel on top). */
   playing: boolean;
-  /** A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, interact and ≡ only. */
-  showcase?: boolean;
+  /**
+   * A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, ≡ and its own interact
+   * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons.
+   */
+  showcase?: boolean | { readonly interact: { verb: string; name: string } | null };
   skills: readonly SkillSlotView[];
   /** The interaction on offer (`Riftlight.interactOffer`: a short verb, Talk, Open, Take, Go, and its target, in the player's language), or null. */
   interact: { verb: string; name: string } | null;
@@ -116,14 +119,15 @@ export class TouchPad {
     if (!touch) return;
     touch.show(f.playing || !!f.showcase);
     if (!touch.visible) return;
-    const find = (slot: SkillSlotView['slot']) => f.skills.find((s) => s.slot === slot);
+    // in the showcase the buttons are the stage's (B jumps), not the skill bar's
+    const find = (slot: SkillSlotView['slot']) => (f.showcase ? undefined : f.skills.find((s) => s.slot === slot));
     this.slot(TOUCH_CODES.attack, find('attack'), 'A', t('touch.hint.attack'));
-    this.slot(TOUCH_CODES.dodge, find('dodge'), 'B', t('touch.hint.dodge'));
+    this.slot(TOUCH_CODES.dodge, find('dodge'), 'B', t(f.showcase ? 'touch.hint.jump' : 'touch.hint.dodge'));
     TOUCH_CODES.skills.forEach((code, i) => {
       if (f.showcase) touch.set(code, { hidden: true });
       else this.slot(code, find(i), String(i + 1), t('touch.hint.skill'));
     });
-    const it = f.showcase ? { verb: 'F', name: t('touch.use') } : f.interact;
+    const it = f.showcase ? (typeof f.showcase === 'object' ? f.showcase.interact : null) : f.interact;
     // the hint under the verb is the target's name, cut to the button (whole letters)
     touch.set(TOUCH_CODES.interact, it ? { hidden: false, label: it.verb, hint: clusters(it.name).slice(0, 9).join('') } : { hidden: true });
   }

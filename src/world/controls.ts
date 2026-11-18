@@ -106,30 +106,7 @@ export const WORLD_TOUCH_BUTTONS: readonly TouchButton[] = [
   ...TOUCH_SLOTS.map((code, i) => ({ label: '', code, at: { x: 40, y: 214 + i * 52, size: 46 } })),
 ];
 
-/**
- * The lowest art row a HUD panel spanning columns `x0`..`x1` can reach without going under a
- * touch control (the joystick, a button): `hud.height` without touch controls on screen (and
- * headless, where nothing has a place on a page).
- */
-export function touchFloor(engine: Engine, x0: number, x1: number): number {
-  const h = engine.hud.height;
-  const touch = engine.touch;
-  const canvas = engine.hud.canvas;
-  if (!touch?.visible || !canvas) return h;
-  const r = canvas.getBoundingClientRect();
-  if (r.width <= 0 || r.height <= 0) return h;
-  const w = engine.hud.width;
-  const c = touch.rects();
-  let floor = h;
-  for (const b of [c.stick, ...c.buttons.filter((x) => !x.hidden).map((x) => x.rect)]) {
-    // the controls along the bottom (the top-left ≡ GO ? are over the HUD's top, not its floor)
-    if (!b || b.top < r.top + r.height / 3) continue;
-    const left = ((b.left - r.left) / r.width) * w;
-    const right = ((b.right - r.left) / r.width) * w;
-    if (right > x0 && left < x1) floor = Math.min(floor, Math.floor(((b.top - r.top) / r.height) * h) - 2);
-  }
-  return floor;
-}
+export { touchFloor } from '../riftlight/showcase/hints';
 
 /** Codes the World's base buttons press, each with its label and hint (a room relabels or hides them). */
 export const BASE_TOUCH: Readonly<Record<string, { readonly label: string; readonly hint: string }>> = Object.fromEntries(

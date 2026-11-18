@@ -4,6 +4,7 @@
 // picker) does nothing, and the game plays on. One engine for the file, tests in order.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { type HeadlessRiftlight, headlessRiftlight, stepUntil } from '../headless';
+import { t } from '../lang';
 
 const T = 30_000;
 let h: HeadlessRiftlight;
@@ -112,10 +113,25 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
   );
 
   it(
-    'Esc walks back to town: iso camera, no filters, the hero shown, nothing left in the physics world',
+    'Esc (Options, ≡) pauses the run, its clock stopped; Circle resumes; the pause\'s Back to town walks back: iso camera, no filters, the hero shown, nothing left in the physics world',
     async () => {
       const { rl, game, engine } = h;
+      const stage = game.showcase.arcade.stage!;
+      game.showcase.arcade.restart();
+      engine.step(120);
       rl.press('Escape');
+      expect(game.showcase.pause?.items).toEqual(['resume', 'restart', 'photo', 'leave']);
+      const clock = stage.time;
+      engine.step(60);
+      expect(stage.time, 'the run\'s clock stands still').toBe(clock);
+      rl.press('PadB'); // Circle: back to the run
+      expect(game.showcase.pause).toBeNull();
+      engine.step(30);
+      expect(stage.time).toBeGreaterThan(clock);
+      rl.press('Escape');
+      rl.press('ArrowUp'); // from Resume round to the last row
+      expect(game.showcase.pause?.list.index).toBe(3);
+      rl.press('Enter');
       await stepUntil(h.engine, () => !game.showcase.active, { max: 120, every: 5, what: 'back in town' });
       expect(engine.camera.preset).toBe('iso');
       expect([...engine.filters]).toEqual([]);
@@ -196,6 +212,52 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       expect(h.game.showcase.active).toBe(false);
       expect(engine.camera.preset).toBe('iso');
       expect(JSON.stringify(engine.physics.counts())).toBe(physics0);
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'on a pad and a phone: the card closes on Circle or a sideways swipe, every hint names a control that does it here, Options pauses (Photo mode in it), photo mode hides on Create and backs out on Circle',
+    async () => {
+      const { rl, game, engine } = h;
+      const sc = game.showcase;
+      await rl.bestiary.open();
+      try {
+        rl.bestiary.inspect(0);
+        rl.press('PadB');
+        expect(rl.bestiary.state().view, 'Circle: back to the hall').toBe('walk');
+        rl.bestiary.inspect(0);
+        rl.press('SwipeRight');
+        expect(rl.bestiary.state().view, 'a sideways swipe').toBe('walk');
+        // the phone's interact button: LOOK at the exhibit in front, nothing in the arcade
+        sc.bestiary.goTo(sc.bestiary.hall!.pedestals[0]!);
+        engine.step(2);
+        expect(sc.touch().interact?.verb).toBe(t('touch.verb.look'));
+        engine.input.noteDevice('pad');
+        expect([t('showcase.hint.zoom'), t('showcase.hint.next_wing'), t('showcase.hint.photo'), t('showcase.hint.leave')]).toEqual(['R1 zoom', 'R1 next wing', 'Options photo', 'Options leave']);
+        rl.press('PadStart');
+        expect(sc.pause?.items, 'Options: the pause, its Photo mode and Leave').toEqual(['resume', 'photo', 'leave']);
+        rl.press('ArrowDown');
+        rl.press('PadA');
+        expect(sc.photo.active).toBe(true);
+        const hidden = sc.photo.hidden;
+        rl.press('PadBack');
+        expect(sc.photo.hidden, 'Create hides the panel').toBe(!hidden);
+        rl.press('PadBack');
+        rl.press('PadY'); // into the panel's rows
+        rl.press('PadB'); // Circle: out of the rows
+        expect(sc.photo.active).toBe(true);
+        rl.press('PadB'); // and out of photo mode
+        expect(sc.photo.active).toBe(false);
+        expect(sc.active, 'back in the hall').toBe(true);
+      } finally {
+        rl.bestiary.close();
+      }
+      // the town's prompts again: Options opens the pause menu there, where zoom is
+      expect(engine.controls.table).toBe(game.controls);
+      expect(t('showcase.hint.zoom')).toBe('Options zoom');
+      engine.input.noteDevice('keyboard');
       expect(engine.errors).toEqual([]);
     },
     T,

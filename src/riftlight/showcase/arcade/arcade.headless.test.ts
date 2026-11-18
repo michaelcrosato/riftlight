@@ -8,7 +8,7 @@ import type { Engine } from '../../../engine';
 import { headlessGame, stepUntil } from '../../headless';
 import { lang, t } from '../../lang';
 import { hints } from '../hints';
-import { ArcadeGame } from './ArcadeGame';
+import { ARCADE_TOUCH_BUTTONS, ArcadeGame } from './ArcadeGame';
 
 let engine: Engine;
 let game: ArcadeGame;
@@ -43,6 +43,42 @@ describe('Rift Runner standalone: prompts', () => {
     engine.input.noteDevice('keyboard');
     // standalone there is nowhere to leave to: no hint says so
     expect(hudText().join(' ')).not.toContain(t('showcase.hint.leave'));
+  });
+
+  it('Options (or Esc, ≡) pauses it: the clock stops; Circle resumes; Restart starts the course over', () => {
+    const tap = (code: string) => {
+      engine.input.setKey(code, true);
+      engine.step(1);
+      engine.input.setKey(code, false);
+      engine.step(1);
+    };
+    game.stage.start();
+    game.stage.skipIntro();
+    engine.step(90);
+    tap('PadStart');
+    expect(game.pause?.items).toEqual(['resume', 'restart']);
+    const clock = game.stage.time;
+    engine.step(60);
+    expect(game.stage.time, 'the clock stands still').toBe(clock);
+    expect(hudText()).toContain(t('menu.pause.title'));
+    tap('PadB');
+    expect(game.pause).toBeNull();
+    engine.step(30);
+    expect(game.stage.time).toBeGreaterThan(clock);
+    tap('Escape');
+    tap('ArrowDown');
+    tap('PadA');
+    expect(game.pause).toBeNull();
+    expect(game.stage.time, 'Restart: the run from the start').toBe(0);
+    // a phone: B jumps, A attacks, ≡ pauses, as the hints name them
+    expect(ARCADE_TOUCH_BUTTONS.map((b) => [b.label, b.code])).toEqual([
+      ['B', 'Space'],
+      ['A', 'KeyJ'],
+      ['≡', 'Escape'],
+    ]);
+    engine.input.noteDevice('touch');
+    expect(t('showcase.hint.jump')).toBe('B jump');
+    engine.input.noteDevice('keyboard');
   });
 
   it('"again" restarts it from the pad too', async () => {

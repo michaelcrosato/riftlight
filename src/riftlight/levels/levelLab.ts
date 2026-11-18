@@ -47,11 +47,11 @@ interface Bolt {
 const HERO_SPEED = 6;
 const MONSTER_SPEED = 3.1;
 
-/** The lab hero's keys: a swing, a firebolt, and N for the next depth once the portal is taken. */
+/** The lab hero's keys: a swing, a firebolt, and N (pad Options) for the next depth once the portal is taken. */
 export const LAB_KEYS = {
   attack: ['KeyJ', 'Space', 'PadX', 'PadA'],
   firebolt: ['KeyK', 'PadY'],
-  next: ['KeyN'],
+  next: ['KeyN', 'PadStart'],
 } as const;
 
 /** What `LAB_KEYS` does, as prompts name it (its page has the engine's touch buttons). */
@@ -388,7 +388,7 @@ export class LevelLab implements Game {
     const lifeFrac = this.hero.life / (this.hero.stats.get('life') || 1);
     hud.rect(4, 6, 80, 5, 'ink', 'bottom-left');
     hud.rect(4, 6, Math.round(80 * lifeFrac), 5, 'red', 'bottom-left');
-    if (lv.cleared) hud.text(0, 30, this.exited ? 'PORTAL TAKEN - PRESS N' : 'BOSS DOWN - PORTAL OPEN', { anchor: 'top', color: 'lime' });
+    if (lv.cleared) hud.text(0, 30, this.exited ? `PORTAL TAKEN - PRESS ${ctx.engine.controls.label('next').toUpperCase()}` : 'BOSS DOWN - PORTAL OPEN', { anchor: 'top', color: 'lime' });
     this.drawMinimap(ctx);
   }
 

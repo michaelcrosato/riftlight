@@ -16,7 +16,7 @@
  * `engine.loadGame`: the town, the hero and the save stay where they are.
  */
 import { Vector3 } from 'three/webgpu';
-import type { CameraConfig, CameraPreset, GameContext, Look, RenderMode } from '../../engine';
+import type { CameraConfig, CameraPreset, GameContext, Look, MenuEvent, RenderMode } from '../../engine';
 import { lookFromFilters, OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
 import { sourceLang, t } from '../lang';
@@ -25,6 +25,8 @@ import type { UiCanvas, UiEvent } from '../ui/kit';
 import { monsterName, unitOf } from '../wire/monsters';
 import { ArcadeMode } from './arcade/ArcadeMode';
 import { BestiaryMode } from './bestiary/BestiaryMode';
+import { SHOWCASE_CONTROLS } from './hints';
+import { type PauseItem, StagePause } from './pause';
 import { PhotoMode } from './photo/PhotoMode';
 import { recordKill, showcaseOf } from './save';
 import { buildShowcaseProps, type ShowcaseProps } from './townProps';
@@ -49,8 +51,12 @@ export interface ShowcaseMode {
   cameraTarget(): Vector3;
   eye?(): Vector3;
   onCameraChange?(): void;
-  /** The mode wants out (Esc, the exit door): the host runs the transition. */
+  /** The mode wants out (the pause's Leave, the exit door): the host runs the transition. */
   readonly wantsLeave: boolean;
+  /** Start the stage over (the pause's Restart; a mode without one has no such row). */
+  restart?(): void;
+  /** What a phone's interact button does here now (the Hall: inspect the exhibit near), or null: hidden. */
+  touchOffer?(): { verb: string; name: string } | null;
 }
 
 interface Iris {
@@ -86,6 +92,8 @@ export class Showcase {
   loading = false;
   props: ShowcaseProps | null = null;
   private saved: Saved | null = null;
+  /** The pause over a mode (Options, Esc, ≡: `pause.ts`), or null. */
+  pause: StagePause | null = null;
   private readonly target = new Vector3();
   private readonly unsubs: (() => void)[] = [];
   private time = 0;
@@ -196,6 +204,7 @@ export class Showcase {
   close(o: { instant?: boolean } = {}): void {
     const mode = this.mode;
     if (!mode || this.iris || this.loading) return;
+    this.pause = null;
     if (this.photo.active) this.photo.close();
     const back = () => {
       mode.leave();
@@ -226,6 +235,7 @@ export class Showcase {
       }
       game.ctx.audio.playMusic(SONGS.town, 'riftlight:town');
       game.ctx.audio.play('rl.portal', { pitch: -3 });
+      this.syncControls();
     };
     if (o.instant) return back();
     this.iris = { dir: 'close', t: 0, dur: 0.35, at: null, swoop: null, then: back };
@@ -234,12 +244,48 @@ export class Showcase {
   // ------------------------------------------------------------------ the shell's hooks
 
   fixedUpdate(dt: number): void {
-    if (this.photo.active || this.iris || this.loading) return;
+    if (this.photo.active || this.iris || this.loading || this.pause) return;
     this.mode?.fixedUpdate(dt);
+  }
+
+  /** The phone's buttons while the showcase owns the frame (`TouchPad.sync`): the mode's interact, if it has one now. */
+  touch(): { readonly interact: { verb: string; name: string } | null } {
+    return { interact: this.mode && !this.pause && !this.photo.active ? (this.mode.touchOffer?.() ?? null) : null };
+  }
+
+  /** Pause the mode on screen (its stage stands still behind the menu). */
+  openPause(): void {
+    const mode = this.mode;
+    if (!mode || this.pause || this.iris || this.loading) return;
+    this.pause = new StagePause(['resume', ...(mode.restart ? (['restart'] as const) : []), 'photo', 'leave']);
+    this.game.sound('open');
+  }
+
+  /** Close the pause; `item` is what was chosen (Resume when left out). */
+  closePause(item: PauseItem = 'resume'): void {
+    if (!this.pause) return;
+    this.pause = null;
+    const mode = this.mode;
+    this.ctx.input.clearQueued(); // what chose a row must not jump or punch once the stage runs
+    if (item === 'resume') this.game.sound('close');
+    else if (item === 'restart') mode?.restart?.();
+    else if (item === 'photo') this.photo.open();
+    else if (item === 'leave') this.close();
+  }
+
+  /**
+   * The prompts' control table: the showcase's (`SHOWCASE_CONTROLS`) while it owns the frame, the
+   * game's once it lets go (a mode left, photo mode closed).
+   */
+  syncControls(): void {
+    const controls = this.ctx.engine.controls;
+    const want = this.active ? SHOWCASE_CONTROLS : this.game.controls;
+    if (controls.table !== want) controls.table = want;
   }
 
   update(dt: number, events: readonly UiEvent[]): void {
     const ctx = this.ctx;
+    this.syncControls();
     this.time += dt;
     const ui = this.game.ui;
     ctx.hud.clear();
@@ -277,6 +323,20 @@ export class Showcase {
     }
     const mode = this.mode;
     if (!mode) return;
+    if (this.pause) {
+      mode.draw(ui); // the stage stands still under the menu: no update, no input
+      const pause = this.pause;
+      pause.draw(ui);
+      const r = pause.update(
+        events.filter((e): e is MenuEvent => e.kind !== 'pointer'),
+        ctx.input,
+        ctx.hud,
+      );
+      if (r.moved) this.game.sound('move');
+      if (r.pick && r.pick !== 'resume') this.game.sound('click');
+      if (r.pick) this.closePause(r.pick);
+      return;
+    }
     if (ctx.input.wasPressed('KeyO')) {
       this.photo.open();
       return;
@@ -309,6 +369,8 @@ export class Showcase {
   }
 
   dispose(): void {
+    this.pause = null;
+    if (this.ctx?.engine.controls.table === SHOWCASE_CONTROLS) this.ctx.engine.controls.table = this.game.controls;
     for (const u of this.unsubs) u();
     if (this.photo.active) this.photo.close();
     if (this.mode) this.mode.leave();

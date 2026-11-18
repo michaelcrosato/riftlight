@@ -33,6 +33,8 @@ const KEYS: LineArea = {
     'key.touch.stick_down': 'Stick down',
     'key.touch.tap': 'Tap',
     'key.touch.drag': 'Drag',
+    'key.touch.swipe': 'Swipe',
+    'key.touch.pinch': 'Pinch',
     'pad.ps.cross': 'Cross',
     'pad.ps.circle': 'Circle',
     'pad.ps.square': 'Square',
@@ -79,6 +81,8 @@ const KEYS: LineArea = {
     'key.touch.stick_down': 'On a phone: pushing the on-screen joystick down, inside lines.',
     'key.touch.tap': 'On a phone: a tap on the screen, inside lines ("Tap change").',
     'key.touch.drag': 'On a phone: dragging a finger on the screen, inside lines ("Drag look").',
+    'key.touch.swipe': 'On a phone: a quick flick of a finger across the screen, inside lines ("Swipe hide").',
+    'key.touch.pinch': 'On a phone: two fingers moving apart or together, inside lines ("Pinch zoom").',
     'pad.stick': 'A game controller’s stick, inside lines ("Stick move").',
     'pad.ps.cross': 'A PlayStation controller’s ✕ button, by the name players in your language call it ("Cross to jump"). Prompts draw the symbol itself where they can.',
     'pad.ps.circle': 'A PlayStation controller’s ○ button, by its name in your language.',
@@ -332,6 +336,8 @@ const PLAY: LineArea = {
     'touch.hint.attack': 'Attack',
     'touch.hint.skill': 'Skill',
     'touch.hint.dodge': 'Dodge',
+    'touch.hint.jump': 'Jump',
+    'touch.verb.look': 'Look',
 
     'loading.opening': 'Opening the rift',
     'death.title': 'You died',
@@ -386,6 +392,8 @@ const PLAY: LineArea = {
     'touch.hint.attack': 'Small text under the attack touch button.',
     'touch.hint.skill': 'Small text under each skill touch button.',
     'touch.hint.dodge': 'Small text under the dodge touch button.',
+    'touch.hint.jump': 'Small text under the jump touch button (the arcade and the Hall of Beasts).',
+    'touch.verb.look': 'Touch button (one short word) in the Hall of Beasts: look closely at the monster nearby.',
     'loading.opening': 'The loading screen while a level is built.',
     'death.title': 'Big words over the screen when the hero dies.',
     'death.source.monster': 'On the death screen: what killed the hero, when it has no name.',
@@ -398,7 +406,7 @@ const PLAY: LineArea = {
     'loot_window.xp': 'Experience points earned in the level ("xp").',
     'character.subtitle': 'Under the character sheet’s title: the hero’s level and the deepest level reached.',
   },
-  max: { 'hud.level': 7, 'hud.tuned': 8, 'touch.verb.take': 5, 'touch.verb.go': 5, 'touch.use': 9, 'touch.portal': 9, 'touch.hint.attack': 8, 'touch.hint.skill': 8, 'touch.hint.dodge': 8 },
+  max: { 'hud.level': 7, 'hud.tuned': 8, 'touch.verb.take': 5, 'touch.verb.go': 5, 'touch.use': 9, 'touch.portal': 9, 'touch.hint.attack': 8, 'touch.hint.skill': 8, 'touch.hint.dodge': 8, 'touch.hint.jump': 8, 'touch.verb.look': 5 },
 };
 
 /** The pause menu's Tuning (difficulty presets and sliders: players use them) and the developer screens (`dev.` ids, never translated: the dev tools, the Loot Lab). */

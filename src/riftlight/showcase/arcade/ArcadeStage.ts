@@ -21,7 +21,7 @@ import { type GameContext, type Hud, type Input, mergeStaticMeshes, type MoveInp
 import type RAPIER from '@dimforge/rapier3d';
 import { t } from '../../lang';
 import { wrapRow } from '../../ui/kit';
-import { hintRows, hints } from '../hints';
+import { hintRows, hints, touchFloor, touchLeft } from '../hints';
 import { moveInput, Visitor } from '../visitor';
 import { ARCADE_COLORS, ARCADE_STAGE, type ArcadeBlock, type ArcadeScenery } from './stage';
 
@@ -62,6 +62,18 @@ export const ARCADE_KEYS = {
   attack: ['KeyJ', 'PadX'],
   walk: ['ShiftLeft', 'ShiftRight', 'PadRT'],
 } as const;
+
+/**
+ * The side camera's zoom on a screen of this aspect (width / height): 1 on anything as wide as
+ * 3:4, less on a phone in portrait, so the course ahead stays in view (at least 9 m across with
+ * the camera's 12 m view height) at the cost of a smaller hero.
+ */
+export function arcadeZoom(aspect: number): number {
+  return Math.max(0.4, Math.min(1, (12 * aspect) / 9));
+}
+
+/** What starts the course again once it is done ("again" on the results card): Enter, Cross, a tap on the screen or the phone's jump. */
+export const ARCADE_AGAIN = ['Enter', 'NumpadEnter', 'PadA', 'Touch', 'Space'] as const;
 
 /**
  * Side-scroller input: the stick's x runs along the course (world +x), down or C crouches
@@ -424,7 +436,9 @@ export class ArcadeStage {
     const coins = `${String(this.coins).padStart(2, '0')}/${this.total}`;
     const best = this.best > 0 ? t('showcase.arcade.best', { time: formatRace(this.best) }) : t('showcase.arcade.best_none');
     const title = t('showcase.arcade.name');
-    const coinsEnd = 16 + hud.measure(coins).width + GAP;
+    // right of a phone's top-left button (≡), when it has one
+    const left = Math.max(6, touchLeft(this.ctx.engine) + 3);
+    const coinsEnd = left + 10 + hud.measure(coins).width + GAP;
     const bestStart = W - 6 - hud.measure(best).width - GAP;
     // the best time beside the coins (top right), or under them; the title and the timer
     // between the two, or under everything
@@ -432,8 +446,8 @@ export class ArcadeStage {
     const titleW = hud.measure(title).width;
     const titleX = Math.floor((W - titleW) / 2);
     const titleY = bestY === 6 && titleX >= coinsEnd && titleX + titleW <= bestStart ? 5 : bestY + 12;
-    hud.sprite(6, 6, COIN_ICON, COIN_COLORS);
-    hud.text(16, 6, coins, { color: 'sand', shadow: 'ink' });
+    hud.sprite(left, 6, COIN_ICON, COIN_COLORS);
+    hud.text(left + 10, 6, coins, { color: 'sand', shadow: 'ink' });
     hud.text(0, titleY, title, { anchor: 'top', color: 'white', shadow: 'ink' });
     hud.text(0, titleY + 10, formatRace(this.time), { anchor: 'top', color: this.phase === 'done' ? 'lime' : 'sand', shadow: 'ink' });
     hud.text(6, bestY, best, { anchor: 'top-right', color: 'mist', shadow: 'ink' });
@@ -443,7 +457,9 @@ export class ArcadeStage {
       hud.text(0, -10, word, { anchor: 'center', scale, color: 'sand', shadow: 'ink' });
     } else if (this.phase === 'play' && this.time < 4) {
       const rows = hintRows(this.options.canLeave === false ? ['run', 'jump', 'pound'] : ['run', 'jump', 'pound', 'leave'], W - 8);
-      rows.forEach((row, i) => hud.text(0, 8 + (rows.length - 1 - i) * 10, row, { anchor: 'bottom', color: 'white', shadow: 'ink' }));
+      // over a phone's stick and buttons where they share the rows' columns
+      const lift = Math.max(8, hud.height - touchFloor(this.ctx.engine, 0, W) + 2);
+      rows.forEach((row, i) => hud.text(0, lift + (rows.length - 1 - i) * 10, row, { anchor: 'bottom', color: 'white', shadow: 'ink' }));
     }
     const r = this.result;
     if (this.phase === 'done' && r) this.drawResults(hud, r);

@@ -8,7 +8,8 @@
  *          single filter (palettes, consoles, displays), pixel / raw, 480 / 320, time of day
  *          (town), sun and ambient strength, a fill light that rides with the camera.
  *   P      save a PNG of exactly what the pipeline presents (`renderer.capture()`).
- *   (pad: Triangle switches fly / edit, Square saves, L1 hides the panel, Options goes back)
+ *   (pad: Triangle switches fly / edit, Square saves, L1 or Create hides the panel, R1 steps the
+ *   field of view, Options goes back)
  *   H      hide the panel (`photo_hide`) · Esc back to the game: camera, filters, mode, resolution and lights
  *          come back as they were.
  */
@@ -18,6 +19,14 @@ import { lang, lineKey, t } from '../../lang';
 import { clip, inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
 import { hints, miniHints } from '../hints';
 import type { Showcase } from '../Showcase';
+
+/** The free camera's zooms R1 steps through on a pad (`nextFovStep`): wide to close, then wide again. */
+export const FOV_STEPS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
+
+/** The step after `zoom` (the first above it), or the widest from the closest. */
+export function nextFovStep(zoom: number): number {
+  return FOV_STEPS.find((z) => z > zoom + 1e-3) ?? FOV_STEPS[0];
+}
 
 /**
  * One look per step: off, every preset stack, then every filter on its own. `name` is how
@@ -129,6 +138,7 @@ export class PhotoMode {
     const e = this.engine;
     const game = this.host.game;
     this.active = false;
+    this.host.syncControls(); // the town's prompts again (a mode under it keeps the showcase's)
     this.light?.release();
     this.light = null;
     e.setLook(s.look);
@@ -291,8 +301,11 @@ export class PhotoMode {
       rig.controlsCharacter = false;
     }
     if (input.wasPressed('KeyP', 'PadX')) this.shoot();
-    if (input.wasPressed('KeyH', 'PadLB')) this.hidden = !this.hidden; // CONTROLS.photo_hide
+    // the panel away and back: H, L1 (`photo_hide`), Create, or a sideways swipe
+    if (input.wasPressed('KeyH', 'PadLB', 'PadBack') || events.some((e) => e.kind === 'swipe' && (e.dir === 'left' || e.dir === 'right'))) this.hidden = !this.hidden;
     if (input.wasPressed('Escape', 'PadStart')) return this.close();
+    // the field of view on a pad: R1 steps it closer, from the closest back to the widest (the wheel and a pinch on the others)
+    if (input.wasPressed('PadRB') && rig instanceof FreeRig) rig.setZoom(nextFovStep(rig.zoom));
     const rows = this.rows();
     this.row = Math.min(this.row, rows.length - 1);
     for (const e of events) {
@@ -303,6 +316,14 @@ export class PhotoMode {
           this.row = rows.indexOf(id);
           this.change(id, side === 'l' ? -1 : 1);
         }
+        continue;
+      }
+      // Circle: out of the panel's rows back to flying, and from flying out of photo mode
+      if (e.kind === 'back' && !input.wasPressed('Escape')) {
+        if (this.sub === 'edit') {
+          this.sub = 'fly';
+          this.host.game.sound('move');
+        } else return this.close();
         continue;
       }
       if (this.sub !== 'edit') continue;
@@ -392,7 +413,13 @@ export class PhotoMode {
       }
       y += 12;
     });
-    const help = this.sub === 'fly' ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back']) : hints(['pick', 'change', 'fly', 'save', 'back']);
+    // a phone taps the panel's rows and swipes it away: no fly up and down, no edit switch
+    const touch = this.engine.controls.device === 'touch';
+    const help = touch
+      ? hints(['move', 'drag_look', 'field_of_view', 'save', 'hide', 'back'])
+      : this.sub === 'fly'
+        ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back'])
+        : hints(['pick', 'change', 'fly', 'save', 'back']);
     miniHints(ui, ui.w / 2, ui.h - 8, help, 'mist', 'ink');
   }
 
