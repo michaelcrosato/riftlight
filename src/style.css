@@ -208,6 +208,27 @@ canvas[data-engine-canvas] {
   font: 600 clamp(18px, 3.2vmin, 40px) / 1.25 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   color: #f4f4f4;
   background: rgb(13 14 22 / 0.62);
+  /* a pad's glyphs are drawn at a whole multiple of their 7 art pixels (SettingsPanel) */
+  --glyph-scale: 3;
+}
+
+@media (min-width: 1000px) and (min-height: 700px) {
+  .settings-ui {
+    --glyph-scale: 4;
+  }
+}
+
+/* a TV: 1080 lines and up */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .settings-ui {
+    --glyph-scale: 5;
+  }
+}
+
+@media (min-width: 2200px) and (min-height: 1250px) {
+  .settings-ui {
+    --glyph-scale: 6;
+  }
 }
 
 .settings-ui[hidden] {
@@ -270,6 +291,7 @@ canvas[data-engine-canvas] {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 0.15em;
+  outline: none; /* it holds the keyboard focus; the ringed row shows it */
 }
 
 .settings-ui .row {
@@ -366,7 +388,8 @@ canvas[data-engine-canvas] {
   font-size: 0.85em;
 }
 
-.settings-ui .legend button {
+.settings-ui .legend button,
+.settings-ui .legend .hint {
   display: inline-flex;
   align-items: center;
   gap: 0.35em;
@@ -379,17 +402,33 @@ canvas[data-engine-canvas] {
   cursor: pointer;
 }
 
-.settings-ui button:hover,
-.settings-ui .row:hover .label {
+/* words, not a button (on touch: Tap · Change, a tap on a row changes it) */
+.settings-ui .legend .hint {
+  cursor: default;
+}
+
+/* tabs and legend buttons; a row's own hover moves the focus ring to it instead */
+.settings-ui button:hover {
   color: #ffcd75;
 }
 
-/* the device's buttons: a pad's drawn as the HUD draws them, keys as key caps */
+/* the device's buttons: a pad's drawn as the HUD draws them, outlined in their face's colour
+   (the HUD's ink outline is this panel's background), at a whole multiple of their 7 art pixels
+   (--glyph-scale; SettingsPanel sizes them); keys as key caps */
 .settings-ui .glyph {
-  width: 1.35em;
-  height: 1.35em;
+  flex: none;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
+}
+
+/* said aloud, not shown: a changed value, for a screen reader */
+.settings-ui .sr-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 
 .settings-ui kbd.cap {
@@ -426,29 +465,34 @@ canvas[data-engine-canvas] {
   }
 }
 
-/* a landscape phone: tighter rows, so a page fits without scrolling */
+/* a landscape phone: rows, tabs and legend buttons keep 44 CSS px (a thumb's target); the space
+   comes from the panel's padding and margins and a smaller legend, so a page fits without scrolling */
 @media (max-height: 480px) {
-  .settings-ui .panel {
-    padding-block: 0.2em 0.3em;
+  .settings-ui {
+    padding-block: max(4px, env(safe-area-inset-top)) max(4px, env(safe-area-inset-bottom));
   }
 
-  .settings-ui .row,
-  .settings-ui .tab,
-  .settings-ui .legend button {
-    min-height: 40px;
+  .settings-ui .panel {
+    padding-block: 0 0.1em;
+    border-width: 2px;
+  }
+
+  .settings-ui .rows {
+    padding-block: 0;
   }
 
   .settings-ui .arrow {
-    height: 40px;
+    height: 44px;
   }
 
   .settings-ui .tabs {
-    margin-bottom: 0.15em;
+    margin-bottom: 0;
   }
 
   .settings-ui .legend {
-    margin-top: 0.2em;
-    padding-top: 0.15em;
+    margin-top: 0;
+    padding-top: 0;
+    font-size: 0.8em;
   }
 }
 

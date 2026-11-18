@@ -250,12 +250,11 @@ export interface EngineOptions {
    * it shows while the pointer moves), or false for none: open the panel from your own menu
    * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
    * a game with no pause menu of its own (default false: a game's Options is its own). `voice`: the
-   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
-   * aims by motion, and the panel has Motion aim and its sensitivity (`engine.motionOn`). `key`:
-   * where they are saved (localStorage `pixel-engine:settings:<key>`; default the first game's
-   * name), false: nowhere.
+   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `key`: where they
+   * are saved (localStorage `pixel-engine:settings:<key>`; default the first game's name), false:
+   * nowhere.
    */
-  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean; motion?: boolean };
+  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
@@ -428,16 +427,6 @@ export class Engine {
    */
   get voiceOn(): boolean {
     return this.hubSettings.micAllowed && this.settings.values.voice !== false;
-  }
-
-  /**
-   * Motion aim is on (`EngineOptions.settings.motion`, the panel's Motion aim row): a DualSense's
-   * motion reaches games through 52in1 (`hubSettings.values.dualsense.motion`) and the player has
-   * it on here (left out: on while 52in1's own Motion aim is).
-   */
-  get motionOn(): boolean {
-    const d = this.hubSettings.values.dualsense;
-    return d.motion && (this.settings.values.motion ?? d.aim);
   }
 
   private settingsPanel: SettingsPanel | null = null;
@@ -900,7 +889,7 @@ export class Engine {
     this.controls.touch = this.touch !== null;
     const o = options.settings ?? {};
     const corner = o.button;
-    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice, motion: o.motion }));
+    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice }));
     this.settingsKeys = o.padButton === true;
     this.settings.onOpen = () => {
       if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)

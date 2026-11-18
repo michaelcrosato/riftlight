@@ -91,46 +91,48 @@ keys that are off off. The touch top bar follows them, and the debug panel lists
 `engine.settings` holds the player's picture and engine options as plain data (`PlayerSettings`:
 look, pixel art, pixel size, quality, frame rate, debug info, the controller's button prompts
 `padGlyphs`, `'playstation'` (left out, the default) or `'xbox'` (`PAD_GLYPHS`), and its
-`vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it), a voice feature's
-`voice` and motion aim's `motion` and `motionSensitivity` (0.25..3); sound is `audio`'s),
-applies them over the game's own choices and saves them per game in localStorage
-(`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false` for none).
-A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all of them.
-A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
+`vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it), and a voice feature's
+`voice`; sound is `audio`'s), applies them over the game's own choices and saves them per game in
+localStorage (`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false`
+for none). A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all
+of them. A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
 `?debug=`) wins over a saved value at start (which stays saved), and a chosen look wins over each
-new level's own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none.
-The settings panel (`SettingsPanel`, DOM like the debug panel, so it stays legible at any art
-size) is made for a TV at ten feet and a pad first: one setting per large row (text
-`clamp(18px, 3.2vmin, 40px)`), its value stepped ◀ value ▶ (no dropdowns, sliders or boxes),
-a ringed focus, three pages turned with L1 / R1 (Q / E): **Picture** (look, pixel art, pixel
-size, quality, frame rate, debug info), **Sound** (on, volume, music, effects: `audio`'s), and
-**Controls** (button prompts PlayStation / Xbox, vibration: a rumble to feel when it changes on a
-pad), and a legend of the device's buttons (✕ Change · ○ Close · △ Reset; Enter · Esc · R on the
-keyboard; Tap · Swipe on a touch screen). The d-pad or the left stick (with repeat) and the
-arrows / WASD move and change, Cross / Enter changes too, Circle / Esc / Options close, Triangle /
-R resets everything; the mouse's hover moves the focus and a click acts (◀ ▶, a row, a legend
-button; beside the panel: close); on a touch screen a tap acts and a quick swipe down or sideways
-closes it. Its rows and rules are data (`SettingsMenu`, src/engine/ui/settingsMenu.ts, driven by
-`MenuInput` / `FocusList` from the engine's input: headless-testable), its words lines
-(`SETTINGS_LINES`: a game with a line of the same id in `engine.controls.names` shows its own).
-The ⚙ button opens it (`settings.button`: a corner, default top-right, shown on a mouse only
-while the pointer moves; `false`: none, so a game opens it from its own menu with
-`engine.settings.open()`); `settings.padButton: true` lets Options (and Esc) open it, for a game
-with no pause menu of its own (default off: a game's Options is its own; the playground, the
-sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad button held when it
-opens or closes reads as up until let go (`input.release()`), so the press that opened it never
-acts in it, and the Cross that changed a value never jumps the hero after. It stays shut while a
-replay plays; a replay never saves settings (`persist`) and puts the player's back when it ends.
+new level's own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none. The
+settings panel (`SettingsPanel`, DOM like the debug panel, so it stays legible at any art size) is
+made for a TV at ten feet and a pad first: one setting per large row (text `clamp(18px, 3.2vmin,
+40px)`), its value stepped ◀ value ▶ (no dropdowns, sliders or boxes), a ringed focus, three pages
+turned with L1 / R1 (Q / E): **Picture** (look, pixel art, pixel size, quality, frame rate, debug
+info), **Sound** (on, volume, music, effects: `audio`'s), and **Controls** (button prompts
+PlayStation / Xbox, vibration: a rumble to feel when it changes on a pad), and a legend of the
+device's buttons (✕ Change · ○ Close · △ Reset; Enter · Esc · R on the keyboard; Tap · Swipe on a
+touch screen, where Tap is a hint, not a button). The d-pad or the left stick (with repeat) and the
+arrows / WASD move and change, Cross / Enter changes too, Circle / Esc / Options close, Triangle / R
+pressed twice within 2 s resets everything (the first press arms it: the legend says *Press again to
+reset*; anything else, or the time running out, disarms it); the mouse's hover moves the focus and a
+click acts (◀ ▶, a row, a legend button; beside the panel: close), leaving the keyboard focus on the
+panel, so the next Enter acts once; on a touch screen a tap acts and a quick swipe down or sideways
+closes it. Turning a page never moves the panel: it keeps the height of its tallest page. The rows
+are a listbox whose `aria-activedescendant` follows the focus, so a screen reader names each row as
+the focus moves and each value as it changes. Its rows and rules are data (`SettingsMenu`,
+src/engine/ui/settingsMenu.ts, driven by `MenuInput` / `FocusList` from the engine's input:
+headless-testable), its words lines (`SETTINGS_LINES`: a game with a line of the same id in
+`engine.controls.names` shows its own). The ⚙ button opens it (`settings.button`: a corner, default
+top-right, shown on a mouse only while the pointer moves; `false`: none, so a game opens it from its
+own menu with `engine.settings.open()`); `settings.padButton: true` lets Options (and Esc) open it,
+for a game with no pause menu of its own (default off: a game's Options is its own; the playground,
+the sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad button held when it
+opens or closes reads as up until let go, and a stick held then reads centred until it goes back
+inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
+leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero
+after. It stays shut while a replay plays; a replay never saves settings (`persist`) and puts the
+player's back when it ends.
 
-A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under
-Sound, on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off
-with a line saying 52in1 allows it in its Settings, under Sound (while `micLater`: to open the game
-again; outside 52in1: that it needs 52in1); `engine.voiceOn` says whether to open it.
-`settings.motion: true` (motion aim) adds **Motion aim** and its **sensitivity** under Controls,
-there while a DualSense's motion reaches games through 52in1 (on by default while 52in1's own
-Motion aim is: `engine.motionOn`). Riftlight has them in its own Settings menu: look, quality and
-the volumes on its page, the rest on its Engine page. Engine World's tweak panel (T) sets the same
-look, pixel art and quality.
+A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
+on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off with a
+line saying 52in1 allows it in its Settings, under Sound (while `micLater`: to open the game again;
+outside 52in1: that it needs 52in1); `engine.voiceOn` says whether to open it. Riftlight has the
+player settings in its own Settings menu: look, quality and the volumes on its page, the rest on its
+Engine page. Engine World's tweak panel (T) sets the same look, pixel art and quality.
 
 ## Picking with the mouse
 

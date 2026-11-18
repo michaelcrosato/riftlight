@@ -2,7 +2,7 @@
  * The engine's settings screen as data: pages of rows, one setting each, whose value steps
  * ◀ value ▶, driven by the engine's menu input (`MenuInput`, `FocusList`) from `ctx.input`: the
  * d-pad or the left stick (with repeat) moves, left / right change, Cross / Enter changes too,
- * L1 / R1 (Q / E) turn the page, Circle / Esc / Options close, Triangle / R resets. `SettingsPanel`
+ * L1 / R1 (Q / E) turn the page, Circle / Esc / Options close, Triangle / R twice resets. `SettingsPanel`
  * draws it in the DOM (legible at ten feet at any art size) and adds the pointer: hover moves the
  * focus, a click or a tap acts, a swipe closes. It reads no DOM, so it runs headless in tests.
  *
@@ -13,7 +13,7 @@ import { type Control, controlGlyph, type Glyph, type LineSource } from '../cont
 import type { Engine } from '../Engine';
 import type { Input } from '../input';
 import { LOOK_PRESETS, lookPresetLabel } from '../render/look';
-import { FPS_OPTIONS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS } from '../settings';
+import { FPS_OPTIONS, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS } from '../settings';
 import { FocusList, MenuInput } from './menu';
 
 /** The settings screen's words, by line id (English). A game translates one by having a line of the same id. */
@@ -52,12 +52,10 @@ export const SETTINGS_LINES = {
   'settings.pad_glyphs.playstation': 'PlayStation',
   'settings.pad_glyphs.xbox': 'Xbox',
   'settings.vibration': 'Vibration',
-  'settings.motion': 'Motion aim',
-  'settings.motion.none': 'Motion aim needs a DualSense in 52in1.',
-  'settings.motion_sensitivity': 'Motion sensitivity',
   'settings.change': 'Change',
   'settings.close': 'Close',
   'settings.reset': 'Reset',
+  'settings.reset.again': 'Press again to reset',
 } as const satisfies Readonly<Record<string, string>>;
 
 export type SettingsLineId = keyof typeof SETTINGS_LINES;
@@ -70,8 +68,6 @@ export type SettingsPage = (typeof SETTINGS_PAGES)[number];
 export interface SettingsFeatures {
   /** A voice feature: a Microphone row (on only while 52in1 allows games the microphone). */
   readonly voice?: boolean;
-  /** Motion aim: Motion aim and Motion sensitivity rows (a DualSense's motion through 52in1). */
-  readonly motion?: boolean;
 }
 
 /** A row as it is drawn. */
@@ -93,6 +89,11 @@ export interface SettingsLegendItem {
   readonly action: 'change' | 'close' | 'reset';
   readonly control: Control;
   readonly label: string;
+  /**
+   * The pointer can press it. On a touch screen Tap · Change only says how to change a row (a tap
+   * on it): as a button it would change whichever row has the focus.
+   */
+  readonly act: boolean;
 }
 
 /** The legend's controls: Cross / Enter / a tap change, Circle / Esc / a swipe close, Triangle / R reset. */
@@ -103,6 +104,12 @@ export const SETTINGS_CONTROLS = {
   pagePrev: { key: 'KeyQ', pad: 'PadLB' },
   pageNext: { key: 'KeyE', pad: 'PadRB' },
 } as const satisfies Readonly<Record<string, Control>>;
+
+/**
+ * Seconds the first Triangle / R (or the legend's Reset) waits for the second that resets every
+ * setting: the legend says *Press again to reset* meanwhile.
+ */
+export const SETTINGS_RESET_WINDOW = 2;
 
 /** What a frame of the settings screen did. */
 export interface SettingsFrame {
@@ -143,6 +150,8 @@ export class SettingsMenu {
   readonly list = new FocusList(0, { dismiss: [] });
   private pageIndex = 0;
   private readonly defs: readonly RowDef[];
+  /** Seconds left for the second Reset press (0: not armed). */
+  private resetArmed = 0;
 
   constructor(
     private readonly engine: Engine,
@@ -187,7 +196,18 @@ export class SettingsMenu {
 
   /** The legend's buttons, each with the control that does it on the device in use. */
   legend(): SettingsLegendItem[] {
-    return (['change', 'close', 'reset'] as const).map((action) => ({ action, control: SETTINGS_CONTROLS[action], label: this.t(`settings.${action}`) }));
+    const touch = this.engine.controls.device === 'touch';
+    return (['change', 'close', 'reset'] as const).map((action) => ({
+      action,
+      control: SETTINGS_CONTROLS[action],
+      label: this.t(action === 'reset' && this.resetPending ? 'settings.reset.again' : `settings.${action}`),
+      act: !(touch && action === 'change'),
+    }));
+  }
+
+  /** The first Reset press is waiting for the second (`SETTINGS_RESET_WINDOW`). */
+  get resetPending(): boolean {
+    return this.resetArmed > 0;
   }
 
   /** How `control` is drawn on the device in use, in the player's button style (null: on touch, a control with no touch gesture). */
@@ -199,6 +219,7 @@ export class SettingsMenu {
 
   /** Open on the first page's first row. */
   reset(): void {
+    this.resetArmed = 0;
     this.pageIndex = 0;
     this.list.count = this.visible().length;
     this.list.index = 0;
@@ -206,6 +227,7 @@ export class SettingsMenu {
 
   /** Show page `n` (wrapping), its first row focused. */
   turnPage(n: number): void {
+    this.resetArmed = 0;
     const count = SETTINGS_PAGES.length;
     this.pageIndex = (((this.pageIndex + n) % count) + count) % count;
     this.list.count = this.visible().length;
@@ -223,6 +245,7 @@ export class SettingsMenu {
    * `round` makes a number go round too: Cross on 100% gives 0%). False when nothing changed.
    */
   step(i: number, dir: 1 | -1, round = false): boolean {
+    this.resetArmed = 0;
     const d = this.visible()[i];
     if (!d || !(d.enabled?.() ?? true)) return false;
     const n = d.count();
@@ -240,14 +263,31 @@ export class SettingsMenu {
     return this.step(i, 1, true);
   }
 
-  /** Forget the player's choices: the game's own picture and sound again (Triangle / R). */
+  /**
+   * Triangle / R / the legend's Reset: the first press arms it (the legend says *Press again to
+   * reset*), a second within `SETTINGS_RESET_WINDOW` seconds resets every setting (`resetAll`).
+   * True when it reset.
+   */
+  requestReset(): boolean {
+    if (this.resetArmed > 0) {
+      this.resetAll();
+      return true;
+    }
+    this.resetArmed = SETTINGS_RESET_WINDOW;
+    return false;
+  }
+
+  /** Forget the player's choices: the game's own picture and sound again. */
   resetAll(): void {
+    this.resetArmed = 0;
     this.engine.settings.reset();
     this.engine.audio.resetVolumes();
   }
 
   /** One frame of keys and the pad while the screen is open (`dt`: the frame's seconds, for key repeat). */
   update(input: Input, dt: number): SettingsFrame {
+    const armed = this.resetArmed > 0;
+    this.resetArmed = Math.max(0, this.resetArmed - dt);
     const events = this.menu.events(input, dt);
     const before = this.pageIndex;
     for (const e of events) if (e.kind === 'tab') this.turnPage(e.dir);
@@ -257,17 +297,17 @@ export class SettingsMenu {
       { width: 1, height: 1 },
     );
     let changed = r.moved || this.pageIndex !== before;
+    if (r.moved) this.resetArmed = 0; // anything else the player does lets the first Reset go
     if (r.adjust) changed = this.step(this.list.index, r.adjust) || changed;
     if (r.confirm >= 0) changed = this.activate(r.confirm) || changed;
     let close = r.back;
     for (const e of events) {
       if (e.kind !== 'key') continue;
       if (e.code === 'PadStart') close = true;
-      else {
-        this.resetAll();
-        changed = true;
-      }
+      else if (this.requestReset()) changed = true;
     }
+    if (close) this.resetArmed = 0;
+    if (armed !== this.resetArmed > 0) changed = true; // the legend says Reset again, or Press again
     return { close, changed };
   }
 
@@ -322,8 +362,6 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
   };
   const fpsValues = () => (FPS_OPTIONS.includes(e.maxFps) ? FPS_OPTIONS : [e.maxFps, ...FPS_OPTIONS]);
   const hub = e.hubSettings;
-  const motionOn = () => hub.values.dualsense.motion;
-  const sensitivities = Array.from({ length: Math.round((MOTION_SENSITIVITY.max - MOTION_SENSITIVITY.min) / MOTION_SENSITIVITY.step) + 1 }, (_, i) => MOTION_SENSITIVITY.min + i * MOTION_SENSITIVITY.step);
   return [
     choice('look', 'picture', 'settings.look', () => looks, () => s.values.look ?? '', (look) => s.set({ look: look || undefined }), lookName, {
       enabled: () => e.renderer.mode === 'pixel', // a look is drawn by the pixel pass: smooth 3D shows none
@@ -349,21 +387,5 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
       s.set({ vibration });
       e.input.rumble({ strong: 0.7, weak: 0.7, ms: 160 }); // feel it (on a pad; scaled by the new setting)
     }),
-    toggle('motion', 'controls', 'settings.motion', () => e.motionOn, (on) => s.set({ motion: on }), {
-      shown: () => features.motion === true,
-      enabled: motionOn,
-      note: () => t('settings.motion.none'),
-    }),
-    choice('motionSensitivity', 'controls', 'settings.motion_sensitivity', () => sensitivities, () => nearest(sensitivities, s.values.motionSensitivity ?? 1), (motionSensitivity) => s.set({ motionSensitivity }), (v) => `${Math.round(v * 100)}%`, {
-      round: false,
-      shown: () => features.motion === true,
-      enabled: () => motionOn() && e.motionOn,
-      note: () => (motionOn() ? '' : t('settings.motion.none')), // motion aim is off: nothing to say
-    }),
   ];
-}
-
-/** The value of `values` nearest to `v`. */
-function nearest(values: readonly number[], v: number): number {
-  return values.reduce((best, x) => (Math.abs(x - v) < Math.abs(best - v) ? x : best), values[0]!);
 }

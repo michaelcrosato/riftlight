@@ -165,6 +165,25 @@ describe('Gamepad', () => {
     expect([input.wasPressed('PadStart'), input.isDown('PadStart')]).toEqual([true, true]);
   });
 
+  it('release() centres a stick still leaning until it goes back inside its deadzone: a run held into a menu never steps it', () => {
+    const input = new Input(target());
+    const frame = (i: number, axes: number[]) => {
+      input.beginFrame(i / 60, 1 / 60, [pad(axes)]);
+      const r = { move: input.padAxis.x, look: input.lookAxis.x, turn: input.mouseDelta.x };
+      input.endFrame();
+      return r;
+    };
+    expect(frame(0, [1, 0, 1, 0]).move).toBeGreaterThan(0.9); // running right, the camera turning
+    input.release(); // a menu opens
+    for (let i = 1; i < 60; i++) expect(frame(i, [1, 0, 1, 0])).toEqual({ move: 0, look: 0, turn: 0 }); // still held: centred
+    expect(frame(60, [0.1, 0, 0.1, 0])).toEqual({ move: 0, look: 0, turn: 0 }); // back inside the deadzone: let go
+    expect(frame(61, [1, 0, 0, 0]).move).toBeGreaterThan(0.9); // leaned anew: it reads
+    expect(frame(62, [0, 0, 1, 0]).look).toBeGreaterThan(0.9);
+    input.release(); // a stick at rest when it happens reads at once
+    expect(frame(63, [0, 0, 0, 0]).move).toBe(0);
+    expect(frame(64, [-1, 0, 0, 0]).move).toBeLessThan(-0.9);
+  });
+
   it('its state as data: keys held, presses still queued with their age, the pointer (save-states)', () => {
     const a = new Input(new EventTarget() as unknown as Window);
     a.beginFrame(1, 1 / 60, []);

@@ -9,19 +9,26 @@
 //   hotkeys  off without ?debug=1: R, P, M, ], ` change nothing
 //   button   the ⚙ waits faded until the mouse moves, shows, fades again; it opens the panel
 //   keys     open, the game is paused; a key held when it opened holds nothing in it; the arrows
-//            move the focus and change values (◀ value ▶), Enter changes, Q / E turn the page;
+//            move the focus and change values (◀ value ▶), Enter changes, Q / E turn the page,
+//            and the panel never moves as they do (it keeps its tallest page's height); the rows
+//            are a listbox whose aria-activedescendant follows the focus;
 //            every row changes the engine: look, pixel art, pixel size, quality, frame rate, debug
 //            info, sound, volume, button prompts, vibration; smooth 3D draws no look, so Look is
 //            off then; the legend shows the keys; Escape closes it and the game goes on
 //   saved    the choices are saved per game and applied at the next start; a review flag in
-//            the URL (?look=) wins over the saved look; the legend's Reset gives the game its
-//            own picture
+//            the URL (?look=) wins over the saved look; the legend's Reset, pressed twice (the
+//            first says Press again to reset), gives the game its own picture
 //   pad      Options opens it (and the press that opened it does not close it), the legend shows
 //            the pad's buttons (Xbox's when chosen), the d-pad moves and changes, R1 turns the
-//            page, Circle closes; the Cross pressed in it never jumps the hero after
-//   mouse    hover moves the focus, a click on ▶ changes the row, a click beside it closes
-//   touch    (a phone, touch controls on) a tap on the ⚙ opens it, the legend says Tap and Swipe,
-//            a tap on ▶ changes a row, a quick swipe down closes it
+//            page, Circle closes; the Cross pressed in it never jumps the hero after; the pad's
+//            glyphs are drawn at a whole multiple of their 7 art pixels; a left stick still held
+//            from a run when Options opens it steps nothing until it goes back to rest
+//   mouse    hover moves the focus, a click on ▶ changes the row and leaves the keys the panel's
+//            (the next Enter steps once; after a click on Reset, Enter changes the row only), a
+//            click beside it closes
+//   touch    (a phone, touch controls on) a tap on the ⚙ opens it, the legend says Tap and Swipe
+//            (Tap · Change a hint, not a button), a tap on ▶ changes a row, a quick swipe down
+//            closes it
 //   replay   the settings stay shut while a replay plays (its input must play on untouched)
 //
 // Frames land in .scratch/e2e/settings-*.png (the panel as the player sees it).
@@ -73,6 +80,11 @@ export async function runSettings(h) {
           device: root.dataset.device,
           font: parseFloat(getComputedStyle(root).fontSize),
           rowHeight: rows[0]?.getBoundingClientRect().height ?? 0,
+          box: (({ top, height }) => [Math.round(top), Math.round(height)])(root.querySelector('.panel').getBoundingClientRect()),
+          // the rows hold the keyboard focus, and name the focused row to a screen reader
+          aria: root.querySelector('.rows').getAttribute('aria-activedescendant') === rows.find((r) => r.classList.contains('focus'))?.id && document.activeElement === root.querySelector('.rows'),
+          glyphs: [...root.querySelectorAll('.legend canvas')].map((c) => parseFloat(getComputedStyle(c).width)),
+          resetWords: root.querySelector('.legend [data-act="reset"] > span')?.textContent,
         };
       });
     const lookOf = (name) => E((n) => JSON.stringify(window.__PIXEL_ENGINE__.lookPresets[n]), name);
@@ -126,6 +138,18 @@ export async function runSettings(h) {
     check(
       first.font >= 18 && first.rowHeight >= 44 && JSON.stringify(first.legend) === JSON.stringify([['Enter', 'Change'], ['Esc', 'Close'], ['R', 'Reset']]) && first.pageGlyphs.join() === 'Q,E',
       `ten-foot rows (${first.font}px text, ${first.rowHeight.toFixed(0)}px rows) and a legend of the keys: ${JSON.stringify(first.legend)}, pages ${first.pageGlyphs.join(' ')}`,
+    );
+    await key('KeyE');
+    const soundPage = await panel();
+    await key('KeyE');
+    const controlsPage = await panel();
+    await key('KeyE'); // round to Picture
+    await key('ArrowDown');
+    const moved = await panel();
+    await key('ArrowUp');
+    check(
+      [soundPage, controlsPage].every((p) => p.box.join() === first.box.join()) && controlsPage.page === 'controls' && first.aria && moved.aria && moved.focus === 'pixelArt',
+      `turning the page never moves the panel (top, height: ${first.box} on Picture, ${soundPage.box} on Sound, ${controlsPage.box} on Controls); the rows hold the keys and name the focused row (${first.aria}, ${moved.aria})`,
     );
     await key('ArrowRight'); // Look: the next one
     await key('ArrowDown');
@@ -209,12 +233,24 @@ export async function runSettings(h) {
     await waitFrames(page, 2);
     await page.locator('.settings-ui .legend [data-act="reset"]').click();
     await waitFrames(page, 2);
+    const armed = await engine();
+    const armedPanel = await panel();
+    await page.locator('.settings-ui .legend [data-act="reset"]').click();
+    await waitFrames(page, 2);
     const reset = await engine();
     const left = await E(() => localStorage.getItem('pixel-engine:settings:playground'));
     check(
-      reset.look === before.look && reset.mode === 'pixel' && reset.height === 270 && reset.quality === 'medium' && reset.fps === 60 && !reset.debug && !reset.muted && reset.master === 0.8 && left === null,
-      `the legend's Reset gives the game its own picture and the default sound back, and forgets the choices (${reset.mode}, ${reset.height} rows, ${reset.quality}, ${reset.fps} fps)`,
+      armed.mode === 'raw' && armedPanel.resetWords === 'Press again to reset' && reset.look === before.look && reset.mode === 'pixel' && reset.height === 270 && reset.quality === 'medium' && reset.fps === 60 && !reset.debug && !reset.muted && reset.master === 0.8 && left === null,
+      `the legend's Reset asks for a second press (${armedPanel.resetWords}; still ${armed.mode}), then gives the game its own picture and the default sound back, and forgets the choices (${reset.mode}, ${reset.height} rows, ${reset.quality}, ${reset.fps} fps)`,
     );
+    await key('Enter'); // on Look: after a click on Reset, Enter changes the row, and only the row
+    const afterReset = await engine();
+    const afterResetPanel = await panel();
+    check(
+      JSON.stringify(Object.keys(afterReset.values)) === '["look"]' && afterResetPanel.resetWords === 'Reset' && afterResetPanel.aria,
+      `after a click on the legend's Reset, Enter changes the focused row only (${JSON.stringify(afterReset.values)}; the legend says ${afterResetPanel.resetWords})`,
+    );
+    await E(() => window.__PIXEL_ENGINE__.settings.reset());
     await page.locator('.settings-ui .legend [data-act="close"]').click();
     await until(page, (e) => !e.settings.isOpen);
 
@@ -239,6 +275,10 @@ export async function runSettings(h) {
     check(
       padOpen.open && padOpen.paused && padPanel.device === 'pad' && padPanel.legend.every(([g]) => g === 'glyph') && padPanel.pageGlyphs.join() === 'L1,R1',
       `Options opens it (held, it stays open), and the legend shows the pad's buttons: ${JSON.stringify(padPanel.legend)}, pages ${padPanel.pageGlyphs.join(' ')}`,
+    );
+    check(
+      padPanel.glyphs.length === 3 && padPanel.glyphs.every((w) => w >= 21 && w % 7 === 0),
+      `the pad's glyphs are drawn at a whole multiple of their 7 art pixels (${padPanel.glyphs.join(', ')} px)`,
     );
     await press([13]); // d-pad down
     await press([15]); // right: pixel art off
@@ -265,6 +305,28 @@ export async function runSettings(h) {
     await press([9]);
     await press([9]);
     check(!(await engine()).open, 'Options opens and closes it');
+    // a left stick still held from a run when Options opens it steps nothing (keys and buttons are
+    // latched the same way), until it goes back to rest
+    await E(() => window.__PIXEL_ENGINE__.settings.reset()); // pixel art again: Look can change
+    const valuesBefore = JSON.stringify((await engine()).values);
+    await E(() => (window.__pad.axes[0] = 1)); // running right
+    await waitFrames(page, 10);
+    await press([9]); // Options, the thumb still on the stick
+    await page.waitForTimeout(1200); // past the menu's repeat delay (0.35 s), many times over
+    const leaning = await engine();
+    const leanPanel = await panel();
+    await E(() => (window.__pad.axes[0] = 0)); // let go
+    await waitFrames(page, 3);
+    await E(() => (window.__pad.axes[0] = 1)); // and lean again: now it steps
+    await page.waitForTimeout(900);
+    await E(() => (window.__pad.axes[0] = 0));
+    await waitFrames(page, 3);
+    const leanAgain = await engine();
+    check(
+      leaning.open && leanPanel.focus === 'look' && JSON.stringify(leaning.values) === valuesBefore && leanAgain.values.look !== undefined,
+      `a stick held from a run into the panel steps nothing for a second (focus ${leanPanel.focus}, ${JSON.stringify(leaning.values)} as before ${valuesBefore}); let go and leaned again, it steps (look ${leanAgain.values.look}, ${JSON.stringify(leanAgain.values)}, open ${leanAgain.open})`,
+    );
+    await press([9]);
     await E(() => {
       navigator.getGamepads = window.__realPads;
       window.__PIXEL_ENGINE__.settings.reset();
@@ -284,11 +346,13 @@ export async function runSettings(h) {
     await page.mouse.click(arrow.x + arrow.width / 2, arrow.y + arrow.height / 2);
     await waitFrames(page, 2);
     const clicked = await panel();
+    await key('Enter'); // the keys are still the panel's: one step, not the ▶ pressed again as well
+    const entered = await panel();
     await page.mouse.click(8, 8); // beside the panel
     await until(page, (e) => !e.settings.isOpen);
     check(
-      hovered.focus === 'quality' && clicked.values.quality === 'Low' && hovered.device === 'keyboard',
-      `hover moves the focus (${hovered.focus}), a click on ▶ changes the row (${clicked.values.quality}), a click beside the panel closes it`,
+      hovered.focus === 'quality' && clicked.values.quality === 'Low' && hovered.device === 'keyboard' && entered.values.quality === 'Medium' && clicked.aria,
+      `hover moves the focus (${hovered.focus}), a click on ▶ changes the row (${clicked.values.quality}) and leaves the keys the panel's (Enter: ${entered.values.quality}, one step), a click beside the panel closes it`,
     );
     await E(() => window.__PIXEL_ENGINE__.settings.reset());
 
@@ -312,7 +376,8 @@ export async function runSettings(h) {
     await waitFrames(P, 2);
     const touchPanel = await P.evaluate(() => ({
       device: document.querySelector('.settings-ui').dataset.device,
-      legend: [...document.querySelectorAll('.settings-ui .legend button')].map((b) => b.textContent),
+      legend: [...document.querySelectorAll('.settings-ui .legend > *')].map((b) => b.textContent),
+      acts: [...document.querySelectorAll('.settings-ui .legend > *')].map((b) => b.dataset.act ?? 'hint'),
       width: document.querySelector('.settings-ui .panel').getBoundingClientRect().width,
       overflow: document.documentElement.scrollWidth > window.innerWidth,
     }));
@@ -334,8 +399,8 @@ export async function runSettings(h) {
     await waitFrames(P, 3);
     const swiped = await P.evaluate(() => window.__PIXEL_ENGINE__.settings.isOpen);
     check(
-      touchPanel.device === 'touch' && touchPanel.legend.join('|') === 'TapChange|SwipeClose|Reset' && tapped === 'chunky' && !swiped && !touchPanel.overflow && touchPanel.width <= 390 - 32,
-      `on a phone a tap on the ⚙ opens it, the legend says ${touchPanel.legend.join(' · ')}, a tap on ▶ changes a row (${tapped}), a swipe down closes it (open ${swiped}); it fits (${touchPanel.width}px wide)`,
+      touchPanel.device === 'touch' && touchPanel.legend.join('|') === 'TapChange|SwipeClose|Reset' && touchPanel.acts.join() === 'hint,close,reset' && tapped === 'chunky' && !swiped && !touchPanel.overflow && touchPanel.width <= 390 - 32,
+      `on a phone a tap on the ⚙ opens it, the legend says ${touchPanel.legend.join(' · ')} (${touchPanel.acts.join(', ')}), a tap on ▶ changes a row (${tapped}), a swipe down closes it (open ${swiped}); it fits (${touchPanel.width}px wide)`,
     );
     await P.evaluate(() => window.__PIXEL_ENGINE__.settings.reset());
     checkClean(await state(P), phone.logs, 'settings (phone): ');

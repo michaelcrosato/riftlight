@@ -224,6 +224,12 @@ export class Input {
   private readonly padLatched = new Set<string>();
   /** Keys held when `release()` let go of everything: their auto-repeat holds nothing until they are let go. */
   private readonly keyLatched = new Set<string>();
+  /**
+   * The sticks (left, right) since `release()`: each reads centred until it goes back inside its
+   * deadzone, so a stick still leaning from a run never steps a menu opened over it (nor turns on
+   * behind it).
+   */
+  private readonly stickLatched = [false, false];
   private readonly listeners = new AbortController();
   /** Pointer movement this frame, in CSS pixels (drag or pointer lock). */
   readonly mouseDelta = { x: 0, y: 0 };
@@ -576,13 +582,16 @@ export class Input {
   /**
    * Let go of everything held (keys, gamepad buttons, sticks, pointer buttons); queued presses stay.
    * A key or pad button still held reads as up until it is let go (it does not press again, and a
-   * key's auto-repeat holds nothing): the key that opened a menu never acts in it or behind it.
+   * key's auto-repeat holds nothing), and a stick still leaning reads centred until it goes back
+   * inside its deadzone: the key that opened a menu never acts in it or behind it, and a stick held
+   * from a run never steps its rows.
    */
   release(): void {
     for (const code of this.held) this.keyLatched.add(code);
     this.held.clear();
     for (const code of this.padHeld) this.padLatched.add(code);
     this.padHeld.clear();
+    this.stickLatched[0] = this.stickLatched[1] = true; // a stick at rest lets go at the next poll
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
@@ -596,6 +605,7 @@ export class Input {
     this.padHeld.clear();
     this.padLatched.clear();
     this.keyLatched.clear();
+    this.stickLatched[0] = this.stickLatched[1] = false;
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
@@ -1006,6 +1016,11 @@ export class Input {
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
     this.padHeld.clear();
     for (const code of down) this.padHeld.add(code);
+    // a stick held through release() reads centred until it goes back inside its deadzone
+    if (this.stickLatched[0] && !stick.x && !stick.y) this.stickLatched[0] = false;
+    if (this.stickLatched[0]) stick = { x: 0, y: 0 };
+    if (this.stickLatched[1] && rights.every((r) => !r.x && !r.y)) this.stickLatched[1] = false;
+    if (this.stickLatched[1]) rights.length = 0;
     this.padAxis.x = stick.x;
     this.padAxis.y = stick.y;
     this.triggers.left = left;
