@@ -107,7 +107,9 @@ opens on it. A room can never leak into the next (`src/world/rooms.headless.test
 Atrium's physics and scene counts after visiting every room, headless), and any room opens on its
 own from the URL.
 
-**Rooms are mostly data.** A `RoomDef` holds the card (`about`, `try`), the station guide
+**Rooms are mostly data.** A `RoomDef` holds the card (`about`, `try`; where all of it doesn't fit, a
+summary and the tries that fit, each whole, wider held sideways if need be: `touchHud.headless.test.ts`
+checks every room's on a phone held either way and a desktop), the station guide
 (`guide`: what you are seeing, how it works step by step, where games use it, what to ask
 for, what it costs, the engine's code, field-guide words) and a `build(room)` that uses the
 kit. Floors and walls can be an ASCII map (one character per metre, merged into boxes);
