@@ -116,6 +116,8 @@ export class UiCanvas {
   device: InputDevice = 'keyboard';
   /** The pad's buttons prompts show (`settings.padGlyphs`): PlayStation's unless the player chose Xbox. */
   padStyle: PadGlyphs = 'playstation';
+  /** A DualSense's touchpad swipes page the character screens (`touchpadSwipes`): prompts draw them beside L1 / R1. */
+  touchpad = false;
 
   constructor(readonly hud: Hud) {}
 

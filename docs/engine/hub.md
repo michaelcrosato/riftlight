@@ -256,7 +256,9 @@ asks, and never during a replay, so what they do arrives as recorded input. `ctx
 true`: a quick swipe on the touchpad presses `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap
 `PadTouchpadTap` (`TOUCHPAD_KEYS`, `touchpadGesture`: one finger, a swipe within 0.5 s over 40%
 of the pad's height, a tap within 0.3 s), once, recorded, a use of the pad; its click is the button
-`PadTouchpad`. Give each a button that does the same. Motion aim (`input.motion = { on, sensitivity, lean
+`PadTouchpad`. Give each a button that does the same; a prompt draws a gesture with `padGlyph` (the
+pad with the swipe's way, a dot for a tap) beside that button, while 52in1 lets the game read the
+touchpad (`hubSettings.values.dualsense.touchpad`). Motion aim (`input.motion = { on, sensitivity, lean
 }`; a game with `settings: { motion: true }` has the engine keep it at the player's setting,
 `engine.motionOn`): while on and the pad is in use, the controller's turns add to the right stick's,
 gyro × dt × sensitivity into `mouseDelta` (8 pointer pixels a degree past a 4°/s still hand,

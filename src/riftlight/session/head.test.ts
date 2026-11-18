@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { checkPage, DUALSENSE, readMultiplayer } from '../../../scripts/hub/catalogue-check.mjs';
 import { hubHead, hubPage, readHead } from '../../../scripts/hub/head.mjs';
 import { CATALOGUE, riftlightTags } from '../../../scripts/hub/riftlight.mjs';
-import { headSession } from '../../engine';
+import { headSession, TOUCHPAD_KEYS } from '../../engine';
 import { KEYS, MOUSE } from '../game/controls';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { riftlightLines } from '../lang';
@@ -87,7 +87,8 @@ describe('Riftlight’s 52in1 head', () => {
       'adaptive triggers': /\bdualsense\.trigger\(/.test(src),
       haptics: /\binput\.rumble\(/.test(src),
       motion: RIFTLIGHT_OPTIONS.settings?.motion === true && /\bmotionTurn\b/.test(src),
-      touchpad: (KEYS.map as readonly string[]).includes('PadTouchpad') || /\bdualsense\.touches\b|\binput\.touchpad\b/.test(src),
+      // its gestures, not only its press (which a browser reports as a button with 52in1's touchpad off): the game reads them, and a binding uses one
+      touchpad: /\binput\.touchpad = true\b/.test(src) && Object.values(TOUCHPAD_KEYS).some((code) => (Object.values(KEYS).flat(2) as string[]).includes(code)),
       speaker: /\bbus: 'speaker'/.test(src),
       microphone: /\bopenMicrophone\(/.test(src),
     };

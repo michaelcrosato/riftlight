@@ -3,7 +3,8 @@
  * framed panel or menu (✕ Select · ○ Back · L1 R1 Screens with a pad; Enter Select · Esc Back · Q E
  * Screens on the keyboard) and the character screens' strip ([L1] Inventory Skills Passive tree
  * Character Codex [R1]). Drawn with the kit's glyphs (`UiCanvas.glyph`), so a pad shows its buttons
- * in the player's style; hidden on a touch screen, whose buttons and taps say it.
+ * in the player's style, and a DualSense whose touchpad swipes page the screens the swipes beside
+ * L1 / R1 (`UiCanvas.touchpad`); hidden on a touch screen, whose buttons and taps say it.
  */
 import type { ControlAction, Page } from '../game/controls';
 import { PAGE_LINES, PAGES } from '../game/controls';
@@ -13,6 +14,8 @@ import { clip, type Rect, type UiCanvas } from './kit';
 /** One entry: the controls that do it (drawn side by side) and what it does. */
 export interface LegendItem {
   readonly actions: readonly ControlAction[];
+  /** A DualSense's touchpad gestures that do it too, drawn after `actions` while they do (`UiCanvas.touchpad`, a pad in use). */
+  readonly touchpad?: readonly ControlAction[];
   readonly label: string;
 }
 
@@ -26,13 +29,25 @@ export function menuLegend(back = true): LegendItem[] {
   return [{ actions: ['confirm'], label: t('legend.select') }, ...(back ? [{ actions: ['back'] as const, label: t('legend.back') }] : [])];
 }
 
-/** The character screens' entry: L1 R1 (Q E) page through them. */
-export const pagesLegend = (): LegendItem => ({ actions: ['page_prev', 'page_next'], label: t('legend.screens') });
+/** The character screens' entry: L1 R1 (Q E) page through them, and a swipe either way on a DualSense's touchpad. */
+export const pagesLegend = (): LegendItem => ({ actions: ['page_prev', 'page_next'], touchpad: ['page_swipe_prev', 'page_swipe_next'], label: t('legend.screens') });
+
+/** Whether the touchpad's gestures show: a pad in use, its swipes on (`UiCanvas.touchpad`). */
+const swipes = (ui: UiCanvas): boolean => ui.device === 'pad' && ui.touchpad;
+
+/** The glyphs `item` draws on the device in use. */
+const glyphsOf = (ui: UiCanvas, item: LegendItem): readonly ControlAction[] => (swipes(ui) && item.touchpad ? [...item.actions, ...item.touchpad] : item.actions);
 
 const glyphsWidth = (ui: UiCanvas, actions: readonly ControlAction[]): number => actions.reduce((w, a, i) => w + ui.glyphWidth(a) + (i ? 2 : 0), 0);
 
+/** Draw `actions`' glyphs side by side from `x`; returns the x after them. */
+function drawGlyphs(ui: UiCanvas, x: number, y: number, actions: readonly ControlAction[]): number {
+  actions.forEach((a, i) => (x += ui.glyph(x, y, a) + (i < actions.length - 1 ? 2 : 0)));
+  return x;
+}
+
 /** How wide `item` draws. */
-const itemWidth = (ui: UiCanvas, item: LegendItem): number => glyphsWidth(ui, item.actions) + 3 + ui.measure(item.label);
+const itemWidth = (ui: UiCanvas, item: LegendItem): number => glyphsWidth(ui, glyphsOf(ui, item)) + 3 + ui.measure(item.label);
 
 /**
  * Draw `items` in one row centred on `cx` at `y` (the glyphs' row), at most `maxW` wide: entries
@@ -44,8 +59,7 @@ export function drawLegend(ui: UiCanvas, items: readonly LegendItem[], cx: numbe
   let x = Math.max(2, Math.min(ui.w - 2 - w, Math.round(cx - w / 2)));
   ui.rect(x - 3, y - 2, w + 6, 11, 'ink'); // a plate: it reads over the world and the HUD behind
   for (const item of shown) {
-    item.actions.forEach((a, i) => (x += ui.glyph(x, y, a) + (i < item.actions.length - 1 ? 2 : 0)));
-    x += 3;
+    x = drawGlyphs(ui, x, y, glyphsOf(ui, item)) + 3;
     x += ui.text(x, y, item.label, { color: 'mist' }) + GAP;
   }
   return w;
@@ -78,14 +92,17 @@ export interface PageStrip {
 
 /**
  * The character screens' strip across the top of the screen while one of them is open: the page
- * before's control, every page's name (the open one bright), the next's control. On a screen too
- * narrow for every name, the open one alone between the controls. Nothing on a touch screen.
+ * before's control, every page's name (the open one bright), the next's control (a DualSense whose
+ * swipes page them: the swipe outside each button). On a screen too narrow for every name, the
+ * open one alone between the controls. Nothing on a touch screen.
  */
 export function drawPageStrip(ui: UiCanvas, open: Page): PageStrip {
   if (ui.device === 'touch') return { rects: [] };
   const names = PAGES.map((p) => ({ page: p, text: t(PAGE_LINES[p]) }));
-  const gl = ui.glyphWidth('page_prev');
-  const gr = ui.glyphWidth('page_next');
+  const prev: readonly ControlAction[] = swipes(ui) ? ['page_swipe_prev', 'page_prev'] : ['page_prev'];
+  const next: readonly ControlAction[] = swipes(ui) ? ['page_next', 'page_swipe_next'] : ['page_next'];
+  const gl = glyphsWidth(ui, prev);
+  const gr = glyphsWidth(ui, next);
   const all = names.reduce((w, n, i) => w + ui.measure(n.text) + (i ? GAP : 0), 0);
   const room = ui.w - 8 - gl - gr - 12;
   const shown = all <= room ? names : names.filter((n) => n.page === open);
@@ -96,7 +113,7 @@ export function drawPageStrip(ui: UiCanvas, open: Page): PageStrip {
   const y = 4;
   ui.rect(x - 4, y - 3, total + 8, 13, 'ink');
   ui.outline(x - 4, y - 3, total + 8, 13, 'night');
-  ui.glyph(x, y, 'page_prev');
+  drawGlyphs(ui, x, y, prev);
   x += gl + 6;
   const rects: (Rect & { page: Page })[] = [];
   for (const n of shown) {
@@ -109,6 +126,6 @@ export function drawPageStrip(ui: UiCanvas, open: Page): PageStrip {
     rects.push(rect);
     x += w + GAP;
   }
-  ui.glyph(x - GAP + 6, y, 'page_next');
+  drawGlyphs(ui, x - GAP + 6, y, next);
   return { rects };
 }

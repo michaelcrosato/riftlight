@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { CONTROL_LINES, type ControlTable, Controls, controlName, GLYPH_SIZE, type Glyph, keyCap, keyGlyph, keyName, padGlyph, padName, touchName } from './controls';
 import { Engine, type Game } from './Engine';
 import { Hud } from './hud/Hud';
-import { Input } from './input';
+import { Input, TOUCHPAD_KEYS } from './input';
 import { Lang } from './lang/lang';
 import type { PlayerSettings } from './settings';
 
@@ -72,9 +72,23 @@ describe('glyphs', () => {
     expect(sprite(padGlyph('ArrowLeft'))!.rows[3]).toBe('osffffo'); // the d-pad's left arm lit
   });
 
+  it('the touchpad’s press is a cap; its gestures are the pad drawn wide with the swipe’s way, or a dot for a tap, in either style', () => {
+    expect(padGlyph('PadTouchpad')).toEqual({ kind: 'cap', text: 'Touchpad', round: true });
+    const ways = Object.values(TOUCHPAD_KEYS).map((c) => sprite(padGlyph(c))!);
+    expect(ways.map((g) => g.rows.slice(2, 5))).toEqual([
+      ['ffsffff', 'fsssssf', 'ffsffff'], // left: the arrow's head on the left
+      ['ffffsff', 'fsssssf', 'ffffsff'],
+      ['ffsssff', 'fsfsfsf', 'fffsfff'], // up: its head at the top
+      ['fffsfff', 'fsfsfsf', 'ffsssff'],
+      ['fffsfff', 'ffsssff', 'fffsfff'], // tap: a dot
+    ]);
+    for (const g of ways) expect([g.rows[0], g.rows[6], g.rows[1]!.length, g.rows[1]![0], g.rows[2]![0]]).toEqual(['.......', '.......', 7, '.', 'f']); // wider than tall, round corners
+    for (const c of Object.values(TOUCHPAD_KEYS)) expect(padGlyph(c, 'xbox')).toEqual(padGlyph(c));
+  });
+
   it('every sprite is 7×7 and every pixel has a colour (or is clear)', () => {
     const all = [
-      ...['PadA', 'PadB', 'PadX', 'PadY', 'PadStick', 'PadLStick', 'PadRStick', 'DPad', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].flatMap((c) => [padGlyph(c), padGlyph(c, 'xbox')]),
+      ...['PadA', 'PadB', 'PadX', 'PadY', 'PadStick', 'PadLStick', 'PadRStick', 'DPad', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', ...Object.values(TOUCHPAD_KEYS)].flatMap((c) => [padGlyph(c), padGlyph(c, 'xbox')]),
       ...['MouseLeft', 'MouseRight', 'MouseMiddle', 'Wheel'].map((c) => keyGlyph(c)),
     ];
     for (const g of all) {
