@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.49.0
+
+- `ctx.hud.width` / `height` are the view's art size at every moment (from `setup` on, in `step()` and in replays), not the size the last render-loop frame synced. A replay of a recording made on a non-16:9 viewport now lays its HUD out where the pointer maps, and ends on the recorded fingerprint.
+- `new Hud(container, view?)`: an optional source of the art size (the engine passes its view's resolution); without it, `width` / `height` are the size `sync` last gave.
+- Documented: `engine.paused` pauses the render loop's frames; `step()` and `replay()` are manual time and advance a paused game.
+
 ## 0.48.0
 
 - **`HubSession.offline(info)`**: a round with no hub behind it, for replaying a recorded session (its
