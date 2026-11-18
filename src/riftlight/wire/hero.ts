@@ -25,45 +25,29 @@ import { CombatWorld, type Worlds } from './world';
 
 const T = WIRE_TUNING.hero;
 
-/** Gem ids the loot tables used before the skills registry existed → their skills-registry ids. */
-export const GEM_ALIASES: Readonly<Record<string, string>> = {
-  'ice-nova': 'frost-nova',
-  spark: 'arc',
-  'frost-blink': 'blink',
-  'flame-dash': 'dash',
-  'whirling-blades': 'shield-charge',
-  'poison-arrow': 'split-arrow',
-  'multiple-projectiles': 'gmp',
-};
+export { GEM_ALIASES } from '../loot/sockets';
 
-/** A gem item with its id renamed through GEM_ALIASES (old saves). */
-function aliased<T>(g: T): T {
-  const item = g as { gem?: { id: string } } | null;
-  const id = item?.gem?.id;
-  return id && GEM_ALIASES[id] ? ({ ...item, gem: { ...item.gem, id: GEM_ALIASES[id] } } as T) : g;
-}
-
-function alias(skills: SaveData['hero']['skills'] | undefined): SaveData['hero']['skills'] {
-  return (skills ?? []).map((s) => (s && typeof s === 'object' ? { ...s, gem: aliased(s.gem), supports: (s.supports ?? []).map(aliased) } : s));
-}
-
-/** True when nothing is socketed (a save from before sockets): the bar uses the default gems. */
+/**
+ * True for a hero handed no sockets at all (a game without the loot port's; with it, the loot
+ * load has socketed `STARTER_GEMS` into a save from before sockets): its bar is the default gems. A save with sockets never is, even with every one
+ * emptied: the player took the gems out (they are in the bag), and the bar stays empty.
+ */
 export function usesDefaultGems(skills: SaveData['hero']['skills'] | undefined): boolean {
-  return !socketsToSlots(alias(skills)).some(Boolean);
+  return !skills?.length;
 }
 
 /**
- * The skill bar from a save's sockets (`socketsToSlots`: each slot's gem, its linked supports
- * and gear's `skill.level` from the hero's sheet), unknown gems skipped. A save with nothing
- * socketed (from before sockets) gets the default gems (`WIRE_TUNING.defaultSkills`), which
- * level with the hero; an empty slot in a socketed bar stays empty.
+ * The skill bar from a save's sockets (`socketsToSlots`: each slot's gem, old ids renamed, its
+ * linked supports and gear's `skill.level` from the hero's sheet), unknown gems skipped. A hero
+ * with no sockets at all (`usesDefaultGems`) gets the default gems (`WIRE_TUNING.defaultSkills`),
+ * which level with the hero; an empty slot, or every slot emptied, stays empty (the basic attack).
  */
 export function slotsFromSave(save: SaveData['hero'], level: number, sheet: StatSheet | null = null): (SlotSpec | null)[] {
-  const out: (SlotSpec | null)[] = socketsToSlots(alias(save.skills), sheet)
+  const out: (SlotSpec | null)[] = socketsToSlots(save.skills ?? [], sheet)
     .slice(0, 4)
     .map((x) => (x && SKILLS.has(x.skill) ? { skill: x.skill, level: x.level, supports: x.supports.filter((g) => SUPPORTS.has(g.gem)) } : null));
   while (out.length < 4) out.push(null);
-  if (out.some(Boolean)) return out;
+  if (!usesDefaultGems(save.skills)) return out;
   const gemLevel = Math.max(1, Math.min(20, 1 + Math.floor((level - 1) * T.gemLevelPerLevel)));
   return WIRE_TUNING.defaultSkills.slice(0, 4).map((skill) => ({ skill, level: gemLevel }));
 }

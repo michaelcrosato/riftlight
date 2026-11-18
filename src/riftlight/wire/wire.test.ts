@@ -13,6 +13,7 @@ import { RANK } from '../core/scaling';
 import { canonicalMods, canonicalStat } from '../core/stats';
 import { PlaytestBot } from '../game/bot';
 import { BOSSES, buildMonster } from '../monsters';
+import { emptySockets } from '../loot/sockets';
 import { buildSkill } from '../skills/build';
 import { GEM_ALIASES, levelMods, slotsFromSave, starterWeapon, usesDefaultGems } from './hero';
 import { bossBudget, monsterGem, monsterName, translateMods } from './monsters';
@@ -149,10 +150,13 @@ describe('keystones reach combat', () => {
 });
 
 describe('hero wiring', () => {
-  it('builds the bar from the sockets (old gem ids mapped, gear skill levels); defaults only for a bar with nothing socketed', () => {
+  it('builds the bar from the sockets (old gem ids mapped, gear skill levels); defaults only for a hero with no sockets at all', () => {
     const save = { level: 1, xp: 0, gold: 0, allocated: [], equipment: {}, inventory: [], skills: [] };
     expect(slotsFromSave(save, 1).map((s) => s?.skill)).toEqual(WIRE_TUNING.defaultSkills);
     expect(usesDefaultGems(save.skills)).toBe(true);
+    const emptied = { ...save, skills: emptySockets() }; // the player took every gem out
+    expect(slotsFromSave(emptied, 1)).toEqual([null, null, null, null]);
+    expect(usesDefaultGems(emptied.skills)).toBe(false);
     const gem = (id: string) => ({ uid: id, base: 'skill-gem', rarity: 'normal' as const, level: 1, name: id, affixes: [], gem: { id, level: 4, support: false } });
     const custom = { ...save, skills: [{ slot: 1, gem: gem('ice-nova'), supports: [{ ...gem('multiple-projectiles'), gem: { id: 'multiple-projectiles', level: 2, support: true } }] }] };
     const slots = slotsFromSave(custom, 1);
