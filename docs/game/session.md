@@ -192,4 +192,12 @@ holds the round's phase).
   (`&mode=`/`&how=` pick the online mode, `&moment=a,b,c` the moments); it passes when
   `window.__hubCheck.pass` is true. The `hub` e2e suite (`scripts/e2e-hub.mjs`) runs every mode the
   page names, with a host leaving and a server host; `npm run hub` runs the protocol's whole set on
-  the hand-over page (`protocolRuns`).
+  the hand-over page (`protocolRuns`). Each run is `harness()`: a run that fails, or never
+  finishes, leaves what its page was doing (the harness's log of every hub message, each copy's
+  phase and frame, every frame's console, a stuck thread's stack, a picture) in
+  `.scratch/hub/evidence/` (the suite) or `<dir>-checks/harness-evidence/` (`npm run hub`). A
+  page whose renderer dies ends its run at once, as a crash (`CRASHED`): Playwright's waits never
+  notice a dead page and would sit out the whole timeout. A four-copy harness page is the biggest
+  browser process on a machine (about 0.8 GB, and 0.5 GB more in its GPU process), the one an
+  out-of-memory killer takes first: on a WSL machine with earlyoom, `journalctl --user -u earlyoom`
+  says whether it did.

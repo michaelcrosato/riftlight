@@ -240,9 +240,11 @@ if (offer.modes.length) {
   browser = await launchChromium();
   try {
     for (const q of protocolRuns(offer)) {
-      const r = await harness(browser, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`);
-      if (!r.pass) problems.push(`the session harness, ${q}: ${r.error ?? r.bad.join('; ')}`);
-      console.log(`${r.pass ? '✓' : '✗'} the session harness: ${q}${r.pass ? ` (${r.checks} checks)` : ''}`);
+      // a run that fails leaves what its page was doing (its log, its copies, its console) beside the pictures
+      const evidence = join(shots, 'harness-evidence', q.replace(/[^\w=-]+/g, '_').slice(0, 120));
+      const r = await harness(browser, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`, { evidence });
+      if (!r.pass) problems.push(`the session harness, ${q}: ${r.error ?? r.bad.join('; ')}${r.evidence ? ` (what its page was doing: ${r.evidence}.json)` : ''}`);
+      console.log(`${r.pass ? '✓' : '✗'} the session harness: ${q}${r.pass ? ` (${r.checks} checks)` : r.crashed ? ': its page crashed' : ''}`);
     }
   } finally {
     await browser.close();
