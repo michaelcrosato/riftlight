@@ -18,7 +18,7 @@ import { Vector3 } from 'three/webgpu';
 import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
 import { lang, lineKey, t } from '../../lang';
 import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
-import { hints, miniHints, touchFloor } from '../hints';
+import { controlBoxes, drawHints, hints, hintsAt, touchFloor } from '../hints';
 import type { Showcase } from '../Showcase';
 
 /** The free camera's zooms R1 steps through on a pad (`nextFovStep`): wide to close, then wide again. */
@@ -425,28 +425,50 @@ export class PhotoMode {
     const choices = rows.filter((id) => id !== 'capture' && id !== 'exit');
     const labelW = Math.max(...choices.map((id) => measure(label(id))));
     const valueW = Math.max(measure(value('res')), ...PHOTO_LOOKS.map((l) => measure(t(l.line))), ...FILL_LIGHTS.map((l) => measure(t(lineKey('showcase.photo.light', l.name)))));
-    const x = 6;
-    const w = Math.max(150, Math.min(ui.w - 12, 6 + labelW + 6 + 8 + valueW + 4 + 9));
+    // the panel as wide as its words up to the HUD's width (a phone held upright has 130 columns):
+    // narrower than a row's label and < value > side by side, each value wraps under its label
+    const want = 6 + labelW + 6 + 8 + valueW + 4 + 9;
+    const w = Math.min(ui.w - 12, Math.max(150, want));
+    const wrapped = want > w;
+    const choice = (id: RowId) => id !== 'capture' && id !== 'exit';
+    const rowH = (id: RowId) => (wrapped && choice(id) ? 17 : 12);
+    const h = rows.reduce((n, id) => n + rowH(id), 0) + (wrapped ? 17 : 26);
+    // a phone's ≡ (top left) beside the title where it ends over the first row (held upright),
+    // else the panel under it; right of the joystick where the panel reaches down to it and the
+    // screen has the room (held sideways)
+    const boxes = controlBoxes(game);
+    const corner = boxes.filter((b) => b.y < ui.h / 4 && b.x < ui.w / 2);
+    const cornerBottom = corner.reduce((m, b) => Math.max(m, b.y + b.h + 2), 0);
+    const cornerRight = corner.reduce((m, b) => Math.max(m, b.x + b.w + 2), 0);
+    let y = cornerBottom <= 22 ? 22 : cornerBottom + 14;
+    const stick = boxes.filter((b) => b.y >= ui.h / 4 && b.x < ui.w / 3 && b.x < 6 + w && b.y < y - 14 + h).reduce((m, b) => Math.max(m, b.x + b.w + 2), 0);
+    const x = stick && stick + w <= ui.w - 6 ? stick : 6;
     const arrowL = x + Math.min(6 + labelW + 6, w - 70);
-    let y = 22;
-    const h = rows.length * 12 + 26;
     ui.panel(x, y - 14, w, h, 'ink', this.sub === 'edit' ? 'sand' : 'slate');
     this.panelRect = { x, y: y - 14, w, h };
     const sub = t(this.sub === 'edit' ? 'showcase.photo.sub.edit' : 'showcase.photo.sub.fly');
-    ui.text(x + 5, y - 11, clip(t('showcase.photo.title'), w - 16 - ui.measure(sub), measure), { color: 'sand' });
+    const titleX = Math.max(x + 5, cornerBottom > y - 12 ? cornerRight + 1 : 0);
+    ui.text(titleX, y - 11, clip(t('showcase.photo.title'), x + w - 11 - titleX - ui.measure(sub), measure), { color: 'sand' });
     ui.mini(x + w - 5, y - 10, sub, this.sub === 'edit' ? 'sand' : 'mist', 'right');
     this.rects.clear();
     rows.forEach((id, i) => {
       const focus = this.sub === 'edit' && i === this.row;
-      const r: Rect = { x: x + 2, y, w: w - 4, h: 11 };
+      const r: Rect = { x: x + 2, y, w: w - 4, h: rowH(id) - 1 };
       if (focus || ui.hover(r)) ui.rect(r.x, r.y, r.w, r.h, 'night');
       if (focus) ui.rect(r.x, r.y, 2, r.h, 'sand');
       const v = value(id);
-      const action = id === 'capture' || id === 'exit';
-      if (action) {
+      if (!choice(id)) {
         ui.text(x + 6, y + 2, clip(label(id), w - 20 - ui.measure(v), measure), { color: focus ? 'white' : 'mist' });
         ui.mini(x + w - 8, y + 3, v, 'slate', 'right');
         this.rects.set(`${id}:r`, r);
+      } else if (wrapped) {
+        // the label, then < value > under it across the panel; the left of the row steps back, the rest on
+        ui.text(x + 6, y + 1, clip(label(id), w - 12, measure), { color: focus ? 'white' : 'mist' });
+        ui.text(x + 6, y + 9, '<', { color: focus ? 'sand' : 'slate' });
+        ui.text(x + w / 2 + 1, y + 9, clip(v, w - 30, measure), { align: 'center', color: focus ? 'sand' : 'white' });
+        ui.text(x + w - 9, y + 9, '>', { color: focus ? 'sand' : 'slate' });
+        this.rects.set(`${id}:l`, { x: x + 2, y, w: 22, h: r.h });
+        this.rects.set(`${id}:r`, { x: x + 24, y, w: w - 26, h: r.h });
       } else {
         ui.text(x + 6, y + 2, clip(label(id), arrowL - x - 10, measure), { color: focus ? 'white' : 'mist' });
         ui.text(x + w - 14, y + 2, clip(v, x + w - 14 - (arrowL + 8), measure), { align: 'right', color: focus ? 'sand' : 'white' });
@@ -455,7 +477,7 @@ export class PhotoMode {
         this.rects.set(`${id}:l`, { x: arrowL - 6, y, w: 14, h: 11 });
         this.rects.set(`${id}:r`, { x: arrowL + 8, y, w: x + w - 2 - (arrowL + 8), h: 11 });
       }
-      y += 12;
+      y += rowH(id);
     });
     // a phone taps the panel's rows and swipes it away (from the panel): no fly up and down, no edit switch
     const touch = this.engine.controls.device === 'touch';
@@ -464,7 +486,8 @@ export class PhotoMode {
       : this.sub === 'fly'
         ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back'])
         : hints(['pick', 'change', 'fly', 'save', 'back']);
-    miniHints(ui, ui.w / 2, Math.min(ui.h - 8, touchFloor(this.engine, 0, ui.w) - 8), help, 'mist', 'ink'); // over a phone's stick and buttons
+    // along the bottom: between a phone's stick and its buttons where they leave room, else over them
+    drawHints(ui, hintsAt(ui, help, boxes), 'mist', 'ink');
   }
 
   /** The free camera's focus: a point ahead of it (the light pool lights what it looks at). */
