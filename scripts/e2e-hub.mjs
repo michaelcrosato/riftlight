@@ -101,9 +101,10 @@ const within = (promise, ms, fallback) => {
 
 /**
  * How long each read of a failed run's page may take (`capture`), in ms: its state, whether it
- * draws, its debugger pausing it, the state where it paused, letting it go, its picture, closing it.
+ * draws, its debugger pausing it, the state where it paused, letting it go, a gone browser's
+ * last log line (how it exited), its picture, closing it.
  */
-const BOUNDS = { state: 8000, drawing: 3000, pause: 5000, paused: 5000, evaluate: 5000, release: 4000, picture: 12_000, close: 10_000 };
+const BOUNDS = { state: 8000, drawing: 3000, pause: 5000, paused: 5000, evaluate: 5000, release: 4000, exit: 2000, picture: 12_000, close: 10_000 };
 
 /** The longest a run lasts past its timeout: its stalls read (3 s), then every read of `capture`. */
 export const CAPTURE_MS = 3000 + Object.values(BOUNDS).reduce((a, b) => a + b, 0);
@@ -113,6 +114,41 @@ export const UNFINISHED = 'the harness page did not finish in its timeout';
 
 /** A run whose page's renderer died: Playwright's waits never notice one, and would sit out their whole timeout. */
 export const CRASHED = 'the harness page crashed: its renderer died (out of memory? `journalctl --user -u earlyoom` says whether earlyoom killed it)';
+
+/** The line a browser's log (`browserLog`) has once its process is gone: its exit code, or the signal that killed it. */
+const EXITED = /<process did exit: exitCode=\S+, signal=\S+>/;
+
+/** Each harness browser's own log (`keepLog`), its last `LOG_LINES` lines. */
+const browserLogs = new WeakMap();
+const LOG_LINES = 50;
+
+/**
+ * Keeps `browser`'s own log in `browserLogs` as it grows: Playwright's record of its process (its
+ * launch, its stderr, where a Chromium FATAL line goes, and `<process did exit: exitCode=…,
+ * signal=…>`). Playwright 1.56's launch `logger` is given only API calls, never these lines, so
+ * they are read where Playwright keeps them (its in-process server's browser); a Playwright
+ * without that keeps no log here, and the hub suite's dead-browser check says so.
+ */
+function keepLog(browser) {
+  try {
+    const ring = [];
+    browser._connection.toImpl(browser).options.browserLogsCollector.onMessage((line) => {
+      ring.push(line.slice(0, 400));
+      if (ring.length > LOG_LINES) ring.shift();
+    });
+    browserLogs.set(browser, ring);
+  } catch {
+    /* no log to keep */
+  }
+}
+
+/** `browser`'s log (`keepLog`) once its process is gone, waiting up to `ms` for the line that says how it exited; null if none is kept. */
+async function exitLog(browser, ms) {
+  const log = browser && browserLogs.get(browser);
+  if (!log) return null;
+  for (const end = Date.now() + ms; !log.some((l) => EXITED.test(l)) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 100));
+  return [...log];
+}
 
 /** The harness page's state, read in it: its checks, its log (every hub message), the round, each copy's phase and frame. */
 function harnessState() {
@@ -197,12 +233,14 @@ async function pauseStuck(debug) {
  * thread), the debugger enabled at the run's start (`debuggerOf`) pauses it: where its script is
  * (`stack`, or why there is none), and the state read where it stopped. A page whose browser is
  * gone (`closed`: an out-of-memory kill can take the whole browser) is not stuck; for it, as for a
- * crash, `killed` holds what earlyoom killed meanwhile. Every read is bounded (`BOUNDS`): a stuck
- * page never holds the run.
+ * crash, `killed` holds what earlyoom killed meanwhile and `browserLog` its browser's last log
+ * lines (`keepLog`: how its process exited, a Chromium FATAL line). Every read is bounded
+ * (`BOUNDS`): a stuck page never holds the run.
  */
 async function capture(page, debug, { consoleLines, seen, crashed, error, since }, evidence) {
   // a page whose browser is gone (an out-of-memory kill can take all of it) answers nothing, and is no stuck thread
-  const closed = !crashed && (page.isClosed() || !page.context().browser()?.isConnected());
+  const browser = page.context().browser();
+  const closed = !crashed && (page.isClosed() || !browser?.isConnected());
   const silent = `the page did not answer in ${BOUNDS.state / 1000} s`;
   let now = crashed ? 'the page crashed' : closed ? 'the page is gone: its browser closed' : await within(page.evaluate(harnessState), BOUNDS.state, silent);
   const stuck = now === silent; // not an answer that is an error (`within` brackets those)
@@ -215,8 +253,9 @@ async function capture(page, debug, { consoleLines, seen, crashed, error, since 
     // whether the page still draws: the harness's checks wait on timers, its games on frames
     now.drawing = await within(page.evaluate(() => Promise.race([new Promise((r) => requestAnimationFrame(() => r(true))), new Promise((r) => setTimeout(() => r(false), 1000))])), BOUNDS.drawing, null);
   }
+  const browserLog = crashed ? (browserLogs.get(browser)?.slice() ?? null) : closed ? await exitLog(browser, BOUNDS.exit) : null;
   await mkdir(dirname(evidence), { recursive: true });
-  await writeFile(`${evidence}.json`, JSON.stringify({ at: new Date().toISOString(), url: page.url(), error, crashed, closed, killed: crashed || closed ? earlyoomKills(since) : null, stuck, now, seen, stack, console: consoleLines }, null, 1));
+  await writeFile(`${evidence}.json`, JSON.stringify({ at: new Date().toISOString(), url: page.url(), error, crashed, closed, killed: crashed || closed ? earlyoomKills(since) : null, browserLog, stuck, now, seen, stack, console: consoleLines }, null, 1));
   if (!crashed && !closed) await within(page.screenshot({ path: `${evidence}.png`, timeout: BOUNDS.picture - 2000 }), BOUNDS.picture, null);
 }
 
@@ -368,7 +407,8 @@ export const HARNESS_FILES = ['harness.html', 'bridge.js', 'round.js'];
 /**
  * Harness runs' browser, launched again when it is gone (`isConnected()` false: a run's
  * out-of-memory kill can take the whole browser, not only its page). `get()` before each run;
- * `launches` counts the browsers it started.
+ * `launches` counts the browsers it started. Each keeps its own log (`keepLog`): a run's evidence
+ * says how a browser that died went (`browserLog`).
  */
 export function harnessBrowser(launch) {
   let browser = null;
@@ -381,6 +421,7 @@ export function harnessBrowser(launch) {
       if (browser?.isConnected()) return browser;
       await browser?.close().catch(() => {});
       browser = await launch();
+      keepLog(browser);
       launches++;
       return browser;
     },
@@ -430,8 +471,8 @@ async function openedPage(browser, url) {
 /**
  * Whether a harness browser that dies in a run (as an out-of-memory kill can take it all) fails
  * only that run: `harness` returns its error (never throws) at once, its evidence says the page is
- * gone (`closed`), not that its thread is stuck, and `harnessBrowser` launches a new browser for
- * the next run.
+ * gone (`closed`), not that its thread is stuck, and how its process ended (`browserLog`), and
+ * `harnessBrowser` launches a new browser for the next run.
  */
 async function deadBrowserSeen(browsers, dir, port) {
   const dead = await browsers.get();
@@ -446,8 +487,9 @@ async function deadBrowserSeen(browsers, dir, port) {
   const json = await readFile(`${evidence}.json`, 'utf8').then(JSON.parse, () => null);
   const next = await browsers.get();
   const renewed = next !== dead && next.isConnected();
-  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 25_000 && json?.closed === true && json?.stuck === false && renewed;
-  return { pass, detail: `the run: ${r.error ?? 'passed'}, ended in ${(took / 1000).toFixed(1)} s; its evidence: ${json ? `closed ${json.closed}, stuck ${json.stuck}` : 'none'}; the next: ${renewed ? 'a new browser' : 'no new browser'}` };
+  const exit = Array.isArray(json?.browserLog) ? json.browserLog.find((l) => EXITED.test(l)) : null;
+  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 25_000 && json?.closed === true && json?.stuck === false && !!exit && renewed;
+  return { pass, detail: `the run: ${r.error ?? 'passed'}, ended in ${(took / 1000).toFixed(1)} s; its evidence: ${json ? `closed ${json.closed}, stuck ${json.stuck}, its browser's log: ${exit ?? (json.browserLog ? 'no exit in it' : 'none')}` : 'none'}; the next: ${renewed ? 'a new browser' : 'no new browser'}` };
 }
 
 /**
@@ -473,7 +515,7 @@ export async function harnessChecks(browsers, dir, port, check) {
   const busy = await busySeen(await browsers.get(), dir, port);
   check(busy.pass, `a harness page whose thread is stuck ends its run at its timeout, timed in Node (Playwright's waits never time out on it), and its evidence says where it is stuck: ${busy.detail}`);
   const dead = await deadBrowserSeen(browsers, dir, port);
-  check(dead.pass, `a harness browser that dies in a run fails only that run (an error, not a crash of the tool), its evidence says the page is gone (not stuck), and the next run has a new browser: ${dead.detail}`);
+  check(dead.pass, `a harness browser that dies in a run fails only that run (an error, not a crash of the tool), its evidence says the page is gone (not stuck) and how its browser's process ended, and the next run has a new browser: ${dead.detail}`);
   check(await crashSeen(await browsers.get(), port), 'a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout)');
 }
 

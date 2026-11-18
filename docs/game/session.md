@@ -206,7 +206,9 @@ holds the round's phase).
   pause). A page whose renderer dies ends its run at once, as a crash (`CRASHED`): Playwright's
   waits never notice a dead page and would sit out the whole timeout. A browser that dies fails
   only the run it was in (`harness` returns its error; its evidence says `closed`, never `stuck`,
-  and what earlyoom killed meanwhile), and the next run has a new one (`harnessBrowser`). The suite checks all three on pages that fail on purpose (`harnessChecks`).
+  what earlyoom killed meanwhile, and `browserLog`, the last 50 lines of the browser's own log:
+  its stderr, where a Chromium FATAL line goes, and its process's exit code or signal), and the
+  next run has a new one (`harnessBrowser`, which keeps each browser's log). The suite checks all three on pages that fail on purpose (`harnessChecks`).
   A four-copy harness page is the biggest
   browser process on a machine (about 0.8 GB, and 0.5 GB more in its GPU process), the one an
   out-of-memory killer takes first: on a WSL machine with earlyoom, `journalctl --user -u earlyoom`
