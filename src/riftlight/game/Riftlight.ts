@@ -131,10 +131,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private hudZonesShown: (Box & { weight: number })[] = [];
   /**
    * The heroes as they stood when the guests' strips were placed (`HudModel.heroes`, which the
-   * strips keep off), and the stage, the guests and the screen's size then: taken again when one
-   * of those changes (once the heroes are known: `heroBoxes`), so the strips stay put as the heroes move.
+   * strips keep off), the seats whose heroes were made and the screen's size then: taken again
+   * when a stage opens (dropped there), a guest's hero comes or goes, or the screen's size changes
+   * (once the heroes are known: `heroBoxes`), so the strips stay put as the heroes move. Null without guests.
    */
-  private stripHeroes: { stage: object; guests: number; w: number; h: number; boxes: readonly Box[] } | null = null;
+  private stripHeroes: { seats: string; w: number; h: number; boxes: readonly Box[] } | null = null;
   /** The last row the title's logo and tagline take (the title menu starts under it). */
   private titleBottom = 0;
   private readonly menuInput = new MenuInput(SHELL_MENU_BINDINGS);
@@ -666,6 +667,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.hero.enter(this.town, at, reason === 'portal' ? Math.PI * 0.75 : Math.PI * 0.75 + Math.PI);
     this.hero.restore();
     this.coop.enter(at, reason === 'portal' ? Math.PI * 0.75 : Math.PI * 0.75 + Math.PI);
+    this.stripHeroes = null; // a new stage: the strips placed anew once its heroes are known
     this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(at.y + 0.9));
     this.zoomGoal = CAMERA.town;
     this.playMusic('town');
@@ -703,6 +705,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.hero.restore();
     this.screen = 'level';
     this.coop.enter(level.start, Math.PI);
+    this.stripHeroes = null; // a new stage: the strips placed anew once its heroes are known
     this.ctx.engine.camera.teleport(this.camTarget.copy(level.start).setY(0.9));
     this.zoomGoal = CAMERA.level;
     this.levelTime = 0;
@@ -2290,13 +2293,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const card = this.banners.current;
     if (card && !card.heroes) card.heroes = this.heroBoxes(cam) ?? (card.age > 0.1 ? [] : undefined);
     // the guests' strips keep off the heroes as they stood when the strips were placed: a stage
-    // opened, a guest joined or left, the screen turned (`stripHeroes`); they stay put as the heroes move
-    const stage: object = this.level ?? this.town;
+    // opened, a guest's hero came (a tick or two after it joined) or went, the screen turned
+    // (`stripHeroes`); they stay put as the heroes move
     const s = this.stripHeroes;
-    const guests = this.coop.guests.length;
-    if (guests && (!s || s.stage !== stage || s.guests !== guests || s.w !== ui.w || s.h !== ui.h)) {
+    const seats = this.coop.guests.filter((g) => g.hero).map((g) => g.seat).join();
+    if (!this.coop.guests.length) this.stripHeroes = null;
+    else if (!s || s.seats !== seats || s.w !== ui.w || s.h !== ui.h) {
       const boxes = this.heroBoxes(cam);
-      if (boxes?.length) this.stripHeroes = { stage, guests, w: ui.w, h: ui.h, boxes };
+      if (boxes?.length) this.stripHeroes = { seats, w: ui.w, h: ui.h, boxes };
     }
     // the HUD's zones first: world overlays are placed around them, most important first
     // (the prompt, the focused loot label, other labels, damage numbers)

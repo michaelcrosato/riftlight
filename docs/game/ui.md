@@ -28,8 +28,8 @@ that is clear (a short landscape phone, 360 to 412 CSS px tall, with the tuning'
 top-left block) beside the top-left block under a boss's bar at the top, else under the minimap and
 gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. Of the
 clear spots they take the first out of the rows the heroes stood in as they were placed
-(`HudModel.heroes`, the same boxes as the banner's: the shell takes them again only when the stage,
-the guests or the screen's size change, so the strips stay put all level): on a short landscape
+(`HudModel.heroes`, the same boxes as the banner's: the shell takes them again only when a stage
+opens, a guest's hero comes or goes or the screen's size changes, so the strips stay put all level): on a short landscape
 phone with the tuning's rows, beside the top-left block at the top, not two side by side under it
 across the middle, over the heroes. With no clear spot out of their rows, the one over the least of
 the heroes, beside the top-left block ahead of a row of strips across the screen's middle. The

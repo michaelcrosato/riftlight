@@ -72,8 +72,9 @@ export interface HudModel {
   guests?: readonly GuestStrip[];
   /**
    * The heroes on screen as the guests' strips were placed (art pixels, feet to seat tag: the shell
-   * takes them again when the stage, the guests or the screen's size change), which the strips keep
-   * off (`guestsRect`): where they stood then, so the strips stay put as they move. Absent: not known.
+   * takes them again when a stage opens, a guest's hero comes or goes or the screen's size
+   * changes), which the strips keep off (`guestsRect`): where they stood then, so the strips stay
+   * put as they move. Absent: not known.
    */
   heroes?: readonly Box[];
 }
