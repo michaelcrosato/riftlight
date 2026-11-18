@@ -19,6 +19,15 @@ another agent*):
   the others `examples/<name>.html`. `src/guide.test.ts` checks that they import only real
   exports and that its lists (palette, looks, filters, sounds, particles, cameras, URL flags,
   built-in models) are the engine's; the `bundle` e2e suite plays every one of them.
+- `CONTROLS.md` (docs/GUIDE-CONTROLS.md, stamped): the standard every game built on the kit meets
+  (controller first at ten feet, keyboard and mouse native, prompts for the device in use, menus,
+  touch as an add-on, the player's 52in1 settings and the DualSense, sessions in every online mode
+  and moments, the head tags, play on one device), as a checklist, then recipes. Its blocks are
+  Beacon Yard and Gem Rush, `examples/beacon-yard.html` and `examples/gem-rush.html`.
+  `src/guide-controls.test.ts` checks their imports, plays both headless (prompts follow the device,
+  Options pauses as it is let go and never under 52in1's chord; a moment in a `LocalHub` round
+  reports once), checks the codes and names the prose gives, the head tags against 52in1's
+  catalogue checker (`scripts/hub/catalogue-check.mjs`) and its budget.
 - `ASSETS.md` (docs/GUIDE-ASSETS.md, stamped): models and textures for outside agents, written for
   someone with only the kit (docs/ASSETS.md stays the in-repo guide). Its blocks are Market
   Corner, `examples/market.html`, and the module of the game's own models it imports
@@ -36,8 +45,8 @@ another agent*):
   typechecks against them (the `bundle` e2e suite does it).
 - `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool (Playwright beside
   the game or installed globally, found through `npm root -g`). It serves the kit
-  folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, `--cameras`,
-  `--looks`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
+  folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, where a `Pad*`
+  code is held on a fake standard pad so the pad's prompts show; `--cameras`, `--looks`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
   console, game or GPU error or a blank frame. `--sheets models.js,crate` plays no page: it
   imports the module and the engine on an empty page and draws, with the engine's `modelSheet`
   and `textureSheet` (the software rasterizer the CLIs use), a sheet of every def the module

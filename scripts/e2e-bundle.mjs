@@ -2,9 +2,10 @@
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
-//   files     README, GUIDE, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its types,
-//             the starter game, one page per named game block of docs/GUIDE.md and
-//             docs/GUIDE-ASSETS.md (its models module beside them, with no page), check.mjs;
+//   files     README, GUIDE, CONTROLS, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its
+//             types, the starter game, one page per named game block of docs/GUIDE.md,
+//             docs/GUIDE-CONTROLS.md and docs/GUIDE-ASSETS.md (its models module beside them, with
+//             no page), check.mjs;
 //             manifest.json lists every file with its size; the kit says where newer versions are
 //             (manifest.json's latest, releases and source, README.md's build line, all from
 //             package.json's repository); the zip holds them all; the repository README's download
@@ -15,7 +16,8 @@
 //             every shot; copied away from any node_modules, it plays with a global Playwright.
 //   play      every recipe does what the guide says: Coin Garden's coins, Cliff Run's
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
-//             Market Corner's models, light and textured floor.
+//             Beacon Yard on a pad (its prompts, Options' menu), Gem Rush alone, Market Corner's
+//             models, light and textured floor; check.mjs --keys holds a Pad* code on a fake pad.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
 //             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
 //             on a broken def, a module with no defs or one that never loads, an unknown id.
@@ -99,10 +101,13 @@ export async function runBundle(h) {
         readme.includes(manifest.latest) && readme.includes(manifest.releases) && readme.includes(`\`${buildLine}\``),
       `the kit says where newer versions are: manifest.json's latest (${manifest.latest}), releases and source, and README.md's build line`,
     );
-    const need = ['README.md', 'GUIDE.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
+    const need = ['README.md', 'GUIDE.md', 'CONTROLS.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
-    check(manifest.examples.length >= 4 && manifest.examples.includes('examples/market.html'), `one page per guide recipe: ${manifest.examples.join(', ')}`);
+    check(
+      manifest.examples.length >= 6 && ['market', 'beacon-yard', 'gem-rush'].every((n) => manifest.examples.includes(`examples/${n}.html`)) && manifest.readFirst.includes('CONTROLS.md'),
+      `one page per guide recipe: ${manifest.examples.join(', ')}; CONTROLS.md is read first`,
+    );
     check(listed.has('examples/market-models.js') && !listed.has('examples/market-models.html'), "ASSETS.md's models module ships beside its game, with no page of its own");
     // every file but manifest.json itself carries its size
     const sizes = await Promise.all(manifest.files.map(async (f) => (f.path === 'manifest.json' ? undefined : (await stat(new URL(f.path, kit))).size)));
@@ -111,6 +116,8 @@ export async function runBundle(h) {
     check(engine.startsWith(`/*! Pixel Engine ${version} `) && engine.length > 3e6 && !/new URL\(["'`][^"'`]*\.wasm/.test(engine), `pixel-engine.js is one self-contained module (${(engine.length / 1e6).toFixed(1)} MB, version banner, wasm inlined)`);
     const guide = await readFile(new URL('GUIDE.md', kit), 'utf8');
     check(guide.includes(`Pixel Engine **${version}**`), 'GUIDE.md is stamped with the version');
+    const controls = await readFile(new URL('CONTROLS.md', kit), 'utf8');
+    check(controls.includes(`Pixel Engine **${version}**`) && controls.includes('```js beacon-yard') && readme.includes('`CONTROLS.md`'), 'CONTROLS.md (docs/GUIDE-CONTROLS.md) is stamped with the version, holds its games, and README.md sends readers to it');
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
     // LIBRARY.md: a row per model and texture (variants share one), the library's by family, then each pack's.
@@ -217,6 +224,15 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     const r = await report('flags');
     // (handheld is a 4-shade palette: few colours, but not blank)
     check(res.code === 0 && r.shots.length === 7 && r.shots.every((s) => s.colors >= 4), `--keys --cameras --looks: 7 shots (${r.shots.map((s) => `${s.name} ${s.colors}`).join(', ')})${res.code ? ':\n    ' + tail(res.out) : ''}`);
+    // a Pad* code is held on a fake standard pad: the device turns pad, in the page and in Node
+    const onPad = await checkTool(join(kitPath, 'examples/beacon-yard.html'), ['--keys', 'KeyD*10,PadA*3', '--out', fileURLToPath(new URL('flags-pad', out))]);
+    const padReport = await report('flags-pad');
+    const padNode = await checkTool('', ['--headless', join(kitPath, 'examples/beacon-yard.js'), '--keys', 'KeyD*10,PadA*3', '--out', fileURLToPath(new URL('flags-pad-node', out))]);
+    const padNodeReport = await report('flags-pad-node');
+    check(
+      onPad.code === 0 && padReport.state?.status === 'beacons 0/4, pad' && padNode.code === 0 && padNodeReport.status === 'beacons 0/4, pad',
+      `--keys PadA*3 presses Cross on a fake pad: the device is the pad in the page ("${padReport.state?.status}") and headless ("${padNodeReport.status}", replayed)${onPad.code || padNode.code ? ':\n    ' + tail(onPad.out + padNode.out) : ''}`,
+    );
     const bad = await checkTool(join(kitPath, 'index.html'), ['--looks', 'nope', '--out', fileURLToPath(new URL('flags-bad', out))]);
     check(bad.code === 1 && /unknown look "nope"/.test(bad.out), 'an unknown look fails the check');
     // URL flags on a local page; withUrlOptions keeps the game's own camera preset under ?zoom=
@@ -418,6 +434,58 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
       check(JSON.stringify(r) === JSON.stringify(['look storybook heroes', 'look noir', true, 3, null]), `Look Lab: 4 picks noir, 2 the custom look, T makes its characters chunky (${JSON.stringify(r)})`);
     },
     'Look Lab',
+  );
+
+  await play(
+    'examples/beacon-yard.html',
+    async (page) => {
+      const r = await page.evaluate(() => {
+        const e = window.__PIXEL_ENGINE__;
+        const g = e.game;
+        const pad = (...on) => e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'fake', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on.includes(i), value: on.includes(i) ? 1 : 0 })) }]);
+        const tap = (button) => {
+          pad(button);
+          e.step(1);
+          pad();
+          e.step(2);
+        };
+        const seen = [e.state().status];
+        g.at.set(-6, 0.6, -4);
+        tap(0); // Cross by the first beacon
+        seen.push(e.state().status, e.controls.label('use'), e.controls.label('pause'));
+        tap(9); // Options: the pause menu, as it is let go
+        seen.push(e.state().status);
+        tap(1); // Circle closes it
+        seen.push(e.state().status);
+        e.input.setGamepads(null);
+        return seen;
+      });
+      check(
+        JSON.stringify(r.slice(1)) === JSON.stringify(['beacons 1/4, pad', 'Cross', 'Options', 'beacons 1/4, pad, menu', 'beacons 1/4, pad']),
+        `Beacon Yard on a pad: Cross lights a beacon, the prompts name the pad's buttons, Options opens the menu, Circle closes it (${r.join(' | ')})`,
+      );
+    },
+    'Beacon Yard',
+  );
+  await play(
+    'examples/gem-rush.html',
+    async (page) => {
+      const r = await page.evaluate(() => {
+        const e = window.__PIXEL_ENGINE__;
+        const g = e.game;
+        const x0 = g.at.x;
+        e.input.setKey('KeyD', true);
+        e.step(30);
+        e.input.setKey('KeyD', false);
+        const before = g.got; // the walk may have crossed one already
+        g.at.copy(g.gems.find((gem) => gem.visible).position);
+        e.step(2);
+        return { moved: g.at.x !== x0, before, got: g.got, status: e.state().status, session: g.session, coin: e.audio.counts.coin };
+      });
+      // (a gem lying beside it is grabbed too)
+      check(r.moved && r.got > r.before && r.status === `gems ${r.got}/12` && r.session === null && r.coin === r.got, `Gem Rush alone (no 52in1): it plays at once, a gem is grabbed (${JSON.stringify(r)})`);
+    },
+    'Gem Rush',
   );
 
   await play(

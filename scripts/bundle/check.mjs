@@ -10,7 +10,9 @@
 //   node check.mjs --headless game.js    play the game in Node, no browser: steps, errors, a replay
 //
 // Options:
-//   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames)
+//   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames);
+//                                    a pad button's code (PadA, PadStart: CONTROLS.md) is held on a fake
+//                                    standard pad, so the device in use turns pad and the prompts follow
 //   --cameras                        also shoot the iso, topdown, side and third camera presets
 //   --looks pixel_heroes,noir        also shoot these looks (names from engine.lookPresets)
 //   --out check                      folder for the PNGs and report.json (default: ./check)
@@ -222,6 +224,21 @@ function engineDir(from) {
  * module imports (the nearest one above it), so the game and the check share one engine; files the
  * game loads are read from the module's folder.
  */
+/**
+ * Hold or let go of a --keys code: a pad button (`Pad*`, one `input.gamepadButtons` maps) on a fake
+ * standard pad, which stays connected, so `input.device` turns pad as a player's would; anything
+ * else as a key. In the page too (passed to it as source: it runs there).
+ */
+function holdKey(e, code, down) {
+  const button = code?.startsWith('Pad') ? Object.keys(e.input.gamepadButtons).find((i) => e.input.gamepadButtons[i] === code) : undefined;
+  if (button === undefined) {
+    if (code) e.input.setKey(code, down);
+    return;
+  }
+  const on = (i) => down && i === Number(button);
+  e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'check.mjs pad', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on(i), value: on(i) ? 1 : 0 })) }]);
+}
+
 async function runHeadless(file) {
   const path = resolve(file);
   if (!/\.m?js$/.test(path)) fail(`--headless plays a game module (game.js), not ${file}: pages need the browser (no --headless)`);
@@ -265,9 +282,9 @@ async function runHeadless(file) {
   try {
     engine = await within(Engine.headless(make(), { assets: read, viewport: { width: vw, height: vh, dpr: 1 } }), 'the game\'s start');
     for (const k of keys) {
-      if (k.code) engine.input.setKey(k.code, true);
+      holdKey(engine, k.code, true);
       engine.step(k.frames);
-      if (k.code) engine.input.setKey(k.code, false);
+      holdKey(engine, k.code, false);
     }
     report.fingerprint = engine.fingerprint();
     report.frames = engine.state().frame;
@@ -480,19 +497,20 @@ try {
   // Play: hold each key for its frames (frame-exact manual time). A hook that throws during
   // step() throws here: report it as the game's error, stop playing, still take the shots.
   for (const k of keys) {
-    const thrown = await page.evaluate(({ code, frames }) => {
+    const thrown = await page.evaluate(({ code, frames, hold }) => {
       const e = window.__PIXEL_ENGINE__;
+      const holdKey = new Function(`return ${hold}`)();
       try {
-        if (code) e.input.setKey(code, true);
+        holdKey(e, code, true);
         e.step(frames);
-        if (code) e.input.setKey(code, false);
+        holdKey(e, code, false);
         e.step(1);
         return null;
       } catch (err) {
-        if (code) e.input.setKey(code, false);
+        holdKey(e, code, false);
         return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       }
-    }, k);
+    }, { ...k, hold: holdKey.toString() });
     if (thrown) {
       report.errors.push(`game: ${thrown} (while holding ${k.code ?? 'nothing'})`);
       break;

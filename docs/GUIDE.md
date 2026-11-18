@@ -34,7 +34,7 @@ The kit's `index.html` and `game.js` are exactly that: copy the kit folder and e
   bigger page, give the container your own size and position (your CSS comes later and wins).
 - **Browsers.** WebGPU only: a recent Chrome or Edge, Safari 26, Firefox 141 on Windows. A
   browser without it is told so ("Failed to start: WebGPU unavailable: …"). Phones and tablets
-  get on-screen touch controls by themselves.
+  get touch controls.
 - **Your own models.** Put GLBs in `assets/` and call `ctx.loadModel('assets/ship.glb')`
   (paths are relative to the page). To ship one file with no `assets/` folder, set
   `window.__PIXEL_ASSETS__ = { 'assets/ship.glb': 'data:model/gltf-binary;base64,...' }`
@@ -62,7 +62,7 @@ the pixel HUD, the loading screen and the debug tools. You write a class:
 | `cameraTarget(ctx)` | every frame | return the `Vector3` the camera follows |
 | `status(ctx)` | tooling | a one-line summary (`'coins 3/4'`), shown by the check tool |
 | `fingerprint(ctx)` | tooling | the game's own state as a string (positions, counters), part of `engine.fingerprint()` so a replay can be compared |
-| `snapshot(ctx)`, `restore(ctx, state)`, `beforeRestore(ctx)` | save-states | the game's own state as plain data (as it is, not through JSON), and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles; `beforeRestore` leaves a mode with its own camera first |
+| `snapshot(ctx)`, `restore(ctx, state)`, `beforeRestore(ctx)` | save-states | the game's own state as plain data, and back (`await engine.snapshot()`, `await engine.restore(snap)`); physics bodies are the engine's: keep their handles; `beforeRestore` leaves a mode with its own camera first |
 | `onCameraChange(ctx)`, `eyePosition(ctx)`, `dispose(ctx)` | optional | camera swaps, first-person eye, cleanup |
 | `ready(ctx)` | optional: when the engine starts running the game, and after each `loadGame` | page handles for tools (`window.__MYGAME__`) |
 
@@ -85,7 +85,7 @@ A complete game, and the kit's `game.js`. Walk with WASD or the arrows, jump wit
 collect the four coins.
 
 ```js quickstart
-// Coin Garden: walk (WASD / arrows / stick), jump (Space), collect every coin.
+// Coin Garden: walk (WASD / arrows / stick), jump (Space / Cross), collect every coin; Esc / Options: settings.
 import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, Mesh, Vector3 } = THREE;
@@ -102,6 +102,8 @@ function block(ctx, [x, y, z], [w, h, d], color) {
 class CoinGarden {
   name = 'Coin Garden';
   assets = [HERO_MODEL, 'assets/coin.glb']; // start downloading before setup runs
+  // each action's controls: prompts show the device in use (CONTROLS.md)
+  controls = { move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' }, jump: { key: 'Space', pad: 'PadA', touch: 'A' }, settings: { key: 'Escape', pad: 'PadStart' } };
   coins = [];
   collected = 0;
   won = false;
@@ -166,6 +168,7 @@ class CoinGarden {
     }
     ctx.hud.clear();
     ctx.hud.text(6, 6, `COINS ${this.collected}/${this.coins.length}`, { color: 'sand' });
+    ctx.hud.legend(6, ctx.hud.height - 12, [['move', 'WALK'], ['jump', 'JUMP'], ['settings', 'SETTINGS']]);
     if (this.won) ctx.hud.text(0, 0, 'YOU WIN!', { anchor: 'center', scale: 2, shadow: 'navy' });
   }
 
@@ -187,13 +190,12 @@ class CoinGarden {
 /** A fresh game: the page starts one, and `node check.mjs --headless` plays one in Node (section 8). */
 export const createGame = () => new CoinGarden();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' } }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true } }));
 ```
 
-To make it yours: change the blocks (the level), the coin spots, the camera preset, the HUD,
-the win condition. `withUrlOptions(options)` adds the review flags from the page URL on top of
-your options (`?camera=side`, `?zoom=1.5`, `?look=noir`, `?debug=1`; section 8): the camera is
-merged key by key, and with no flags your options are used as they are.
+To make it yours: change the level, the coin spots, the camera, the HUD, the win condition.
+`withUrlOptions(options)` adds the review flags from the page URL on top of your options
+(`?camera=side`, `?zoom=1.5`, `?look=noir`, `?debug=1`; section 8), the camera key by key.
 
 ## 4. The API by system
 
@@ -212,15 +214,13 @@ await engine.loadGame(new Level2());     // next level: same renderer, camera, i
 ```
 
 Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
-`?debug=1`. Players get those options in the settings panel instead (picture, sound, controls; saved per
-game): the ⚙ button opens it, top right (`settings: { button: 'top-left' }`
-moves it; `false` hides it, for a game that opens it from its own menu with
-`engine.settings.open()`; `padButton: true` lets Options open it, for a game with no pause menu). A game that uses R, P or M itself moves that hotkey for
-`?debug=1` with `debugKeys: { resolution: 'F2' }`. `touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }]`
-replaces the on-screen buttons.
+`?debug=1`; players get a settings panel (picture, sound, controls; saved per game) from the ⚙
+button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it; `padButton: true`:
+Options opens it). A game that uses R, P or M itself moves that hotkey for `?debug=1` with
+`debugKeys: { resolution: 'F2' }`; `touchButtons` replaces the on-screen buttons (CONTROLS.md).
 `loadGame` can be called from anywhere (a trigger, `update`); the swap happens after the
 frame. It unloads the old game: scene objects, physics, triggers, particles, HUD, music and
-lights are freed, so a level never leaks into the next.
+lights are freed.
 
 ### Building a level
 
@@ -245,12 +245,11 @@ lights are freed, so a level never leaks into the next.
 - **Shadow blob:** `new ContactShadow(radius)`, placed every frame with
   `shadow.place(x, groundY, z, heightAboveGround)` (see the quick start).
 
-**Models and textures as data.** Besides GLBs, the kit has a library of models (crates, stalls,
-lamps, trees, doors, weapons...) and pixel-art textures, and a format to write your own as plain
-data: `buildModel('market-stall', { palette: { cloth: 'blue' } })` gives merged toon meshes, their
-collider data and light, and `textureMap('cobbles')` a map for `toonMaterial`. `ASSETS.md` is their
-guide (the format, the loop, the style rules, an example scene), `LIBRARY.md` lists the library,
-and `node check.mjs --sheets models.js` draws what you write. Read `ASSETS.md` before you write one.
+**Models and textures as data.** The kit has a library of models (crates, stalls, lamps, trees,
+doors, weapons...) and pixel-art textures, and a format to write your own:
+`buildModel('market-stall', { palette: { cloth: 'blue' } })` gives merged toon meshes, their
+collider data and light, `textureMap('cobbles')` a map for `toonMaterial`. Read `ASSETS.md` (the
+format, the loop, the style rules) before you write one; `LIBRARY.md` lists the library.
 
 ### The hero
 
@@ -290,8 +289,8 @@ collider carries the `'character'` tag. For a simpler walk-and-jump capsule ther
 between steps), `moveAxis()` (`{ x, y }` from keys, stick or touch). Codes are
 `KeyboardEvent.code` values: `KeyA`, `Space`, `ArrowUp`, `Digit1`, `ShiftLeft`; a pad's are `Pad*`
 (`PadA` Cross, `PadB` Circle, `PadStart` Options...: `GAMEPAD_BUTTONS`; the d-pad is the arrows),
-so bind both: `isDown('Space', 'PadA')`. A game's `controls` (`{ jump: { key: 'Space',
-pad: 'PadA' } }`) make `{key:jump}` and `ctx.hud.prompt(x, y, 'jump', 'JUMP')` show the one in use.
+so bind both: `isDown('Space', 'PadA')`. **`CONTROLS.md` is the standard every game meets** (a
+pad first, prompts for the device in use, menus, touch, 52in1's settings and sessions): read it.
 
 ### Physics queries and triggers
 
@@ -1100,9 +1099,8 @@ Code that touches `document` guards it, as the starter does.
       clipped, the hero is on the ground.
 - [ ] `status()` reports the game's state, and it changes as you play.
 - [ ] No WebGL-era APIs, no second three.js, no `new PointLight`, no unknown palette names.
-- [ ] The controls are written down (the header comment of `game.js`, or on screen).
-- [ ] It plays on a pad (each action has a `Pad*` button) and on a phone (or `?touch=1`) with
-      the touch buttons, or `touchButtons` of its own.
+- [ ] It meets `CONTROLS.md`'s checklist (a pad, the keyboard, touch, every window shape), and
+      the controls are written down (the header comment of `game.js`) and prompted on screen.
 
 ## 10. Versions
 
@@ -1110,6 +1108,6 @@ Code that touches `document` guards it, as the starter does.
 the kit's `CHANGELOG.md` says what changed in each. To upgrade a game, replace
 `pixel-engine.js` (and `pixel-engine.d.ts`, `types/` if you use them), read the changelog
 entries since the old version, then run `node check.mjs` again. The newest release of the kit is
-at the URL in `manifest.json`'s `latest`, and every release (from 0.39.0, its changelog as the
-notes) stays downloadable from `releases`. The kit's `README.md` says how to build
+at the URL in `manifest.json`'s `latest`, and every release stays downloadable from
+`releases`. The kit's `README.md` says how to build
 it from the engine's repository (`source`) instead.

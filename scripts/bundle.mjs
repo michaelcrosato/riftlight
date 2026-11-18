@@ -4,7 +4,8 @@
 //   node scripts/bundle.mjs --out dist/engine  (npm run build does this: the e2e suite "bundle" checks it)
 //
 // The kit: pixel-engine.js (one self-contained ES module: engine, three.js, Rapier + wasm,
-// hero kit, built-in models, CSS), GUIDE.md (docs/GUIDE.md), ASSETS.md (docs/GUIDE-ASSETS.md:
+// hero kit, built-in models, CSS), GUIDE.md (docs/GUIDE.md), CONTROLS.md (docs/GUIDE-CONTROLS.md:
+// controllers, prompts, touch, 52in1's settings and sessions), ASSETS.md (docs/GUIDE-ASSETS.md:
 // models and textures), LIBRARY.md and CREDITS.md (generated from the model and texture
 // libraries, scripts/bundle/assets.ts), API.md (generated from the TypeScript),
 // pixel-engine.d.ts + types/, CHANGELOG.md, a starter game (index.html + game.js, the guide's
@@ -133,6 +134,9 @@ writeFileSync(join(out, 'API.md'), api.markdown);
 const guide = readFileSync(join(root, 'docs/GUIDE.md'), 'utf8');
 const stamp = `> Pixel Engine **${version}**, build ${buildId}. The kit: \`README.md\` (what is where), this guide, \`API.md\`, \`pixel-engine.js\`.\n`;
 writeFileSync(join(out, 'GUIDE.md'), guide.replace(/^(# .*\n)/, `$1\n${stamp}`));
+const controlsGuide = readFileSync(join(root, 'docs/GUIDE-CONTROLS.md'), 'utf8');
+const controlsStamp = `> Pixel Engine **${version}**, build ${buildId}. Read \`GUIDE.md\` first; \`API.md\` has every signature.\n`;
+writeFileSync(join(out, 'CONTROLS.md'), controlsGuide.replace(/^(# .*\n)/, `$1\n${controlsStamp}`));
 const assetsGuide = readFileSync(join(root, 'docs/GUIDE-ASSETS.md'), 'utf8');
 const assetsStamp = `> Pixel Engine **${version}**, build ${buildId}. Read \`GUIDE.md\` first. \`LIBRARY.md\` lists the built-in models and textures, \`CREDITS.md\` where they came from.\n`;
 writeFileSync(join(out, 'ASSETS.md'), assetsGuide.replace(/^(# .*\n)/, `$1\n${assetsStamp}`));
@@ -177,9 +181,9 @@ const quick = blocks.find((b) => b.name === 'quickstart');
 if (!quick) throw new Error('bundle: docs/GUIDE.md has no ```js quickstart block');
 writeFileSync(join(out, 'game.js'), quick.code);
 writeFileSync(join(out, 'index.html'), page('Pixel Engine game', 'game.js'));
-// examples/<name>.js for both guides' other blocks; a page for each that starts the engine (a
+// examples/<name>.js for the guides' other blocks; a page for each that starts the engine (a
 // game), none for a module a game imports (ASSETS.md's models)
-const scripts = [...blocks.filter((b) => b.name !== 'quickstart'), ...guideBlocks(assetsGuide)];
+const scripts = [...blocks.filter((b) => b.name !== 'quickstart'), ...guideBlocks(controlsGuide), ...guideBlocks(assetsGuide)];
 const names = scripts.map((b) => b.name);
 if (new Set(names).size !== names.length) throw new Error(`bundle: two guide blocks share a name (${names.join(', ')})`);
 const examples = scripts.filter((b) => startsEngine(b.code));
@@ -211,9 +215,10 @@ and a look system (filters per layer). This folder is everything a game needs.
 Read in this order:
 
 1. \`GUIDE.md\` (~${Math.round(tokens(join(out, 'GUIDE.md')) / 1000)}k tokens): how to host a game, the mental model, a complete game, recipes, the rules and common mistakes. Read it whole.
-2. \`API.md\` (~${Math.round(tokens(join(out, 'API.md')) / 1000)}k tokens): every export with its signature and doc. Search it; don't read it whole.
-3. \`game.js\`: the guide's quick start, a complete game. Edit it into yours.
-4. \`ASSETS.md\` (~${Math.round(tokens(join(out, 'ASSETS.md')) / 1000)}k tokens), when the game builds with models and textures: the library, the format, the loop and the style rules. Read it whole; \`LIBRARY.md\` (~${Math.round(tokens(join(out, 'LIBRARY.md')) / 1000)}k tokens) lists every model and texture, built in or from a pack: search it (or filter \`library.json\`).
+2. \`CONTROLS.md\` (~${Math.round(tokens(join(out, 'CONTROLS.md')) / 1000)}k tokens): the standard every game meets (controller first, prompts for the device in use, touch, 52in1's settings and sessions), with two games. Read it whole before you write the controls.
+3. \`API.md\` (~${Math.round(tokens(join(out, 'API.md')) / 1000)}k tokens): every export with its signature and doc. Search it; don't read it whole.
+4. \`game.js\`: the guide's quick start, a complete game. Edit it into yours.
+5. \`ASSETS.md\` (~${Math.round(tokens(join(out, 'ASSETS.md')) / 1000)}k tokens), when the game builds with models and textures: the library, the format, the loop and the style rules. Read it whole; \`LIBRARY.md\` (~${Math.round(tokens(join(out, 'LIBRARY.md')) / 1000)}k tokens) lists every model and texture, built in or from a pack: search it (or filter \`library.json\`).
 
 | File | What |
 | --- | --- |
@@ -246,7 +251,7 @@ const manifest = {
   latest: latestZip,
   releases,
   entry: 'pixel-engine.js',
-  readFirst: ['README.md', 'GUIDE.md'],
+  readFirst: ['README.md', 'GUIDE.md', 'CONTROLS.md'],
   starter: { page: 'index.html', script: 'game.js' },
   examples: examples.map((b) => `examples/${b.name}.html`),
   assets: { guide: 'ASSETS.md', library: 'LIBRARY.md', index: 'library.json', packs: 'packs/index.json', credits: 'CREDITS.md' },
