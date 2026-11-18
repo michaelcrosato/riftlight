@@ -21,7 +21,7 @@
  *   `addGold` (the save's gold is the one wallet).
  */
 import { Group, Vector3 } from 'three/webgpu';
-import type { GameContext, PaletteColor } from '../../engine';
+import type { GameContext, PaletteColor, SwipeDirection } from '../../engine';
 import { EventBus } from '../core/events';
 import type { Mod } from '../core/mods';
 import { Rng } from '../core/rng';
@@ -573,6 +573,11 @@ export class ItemsPanel implements Panel {
 
   legendAt(w: number, avoid: readonly LegendAvoid[]): { x: number; y: number } | null {
     return this.loot.active === this ? this.loot.itemsUi().legendAt(w, avoid) : null;
+  }
+
+  /** A swipe down from a window's title bar closes the windows (`ItemsUi.swipeCloses`); a quick drag elsewhere moves an item. */
+  swipeCloses(dir: SwipeDirection, x: number, y: number): boolean {
+    return this.loot.active === this && this.loot.itemsUi().swipeCloses(dir, x, y);
   }
 }
 

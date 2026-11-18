@@ -850,6 +850,33 @@ async function runTouch(browserExe) {
     });
     check(swiped.pressed.includes('SwipeLeft') && swiped.device === 'touch', `a flick on the game presses SwipeLeft, recorded (${JSON.stringify(swiped)})`);
 
+    // Two fingers on the game are a pinch (it zooms: wheel ticks), not a press: the finger's Touch lets go until both are up.
+    const pinched = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const c = e.renderer.renderer.domElement;
+      const r = c.getBoundingClientRect();
+      const at = (type, id, x) => c.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: id, isPrimary: id === 51, clientX: r.left + x, clientY: r.top + r.height / 2, bubbles: true }));
+      const frame = () => new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      at('pointerdown', 51, r.width * 0.45);
+      await frame();
+      const one = e.input.isDown('Touch');
+      at('pointerdown', 52, r.width * 0.55);
+      await frame();
+      const two = e.input.isDown('Touch');
+      for (let k = 1; k <= 6; k++) {
+        at('pointermove', 51, r.width * (0.45 - k * 0.03));
+        at('pointermove', 52, r.width * (0.55 + k * 0.03));
+        await frame();
+      }
+      at('pointerup', 52, r.width * 0.73);
+      await frame();
+      const oneLeft = e.input.isDown('Touch');
+      at('pointerup', 51, r.width * 0.27);
+      await frame();
+      return { one, two, oneLeft, after: e.input.isDown('Touch') };
+    });
+    check(pinched.one && !pinched.two && !pinched.oneLeft && !pinched.after, `a second finger makes a pinch: the first finger's press lets go and stays up until both are lifted (${JSON.stringify(pinched)})`);
+
     // A pad or the keyboard picked up: the controls step aside (the game looks like the pad game); the next touch brings them back.
     const away = await page.evaluate(async () => {
       const e = window.__PIXEL_ENGINE__;

@@ -439,7 +439,8 @@ export class TreeView {
         this.drag.moved = true;
         clearTimeout(this.longPress);
       }
-      if (this.drag.moved) this.cam = this.clamp({ ...this.drag.cam, x: this.drag.cam.x - dx / this.cam.zoom, y: this.drag.cam.y - dy / this.cam.zoom });
+      // a finger dragged down from the top bar may be a swipe that closes the view: no panning from there
+      if (this.drag.moved && !this.fromBar(this.drag)) this.cam = this.clamp({ ...this.drag.cam, x: this.drag.cam.x - dx / this.cam.zoom, y: this.drag.cam.y - dy / this.cam.zoom });
     }
     this.updateHover();
     this.dirty = true;
@@ -451,6 +452,15 @@ export class TreeView {
     if (this.pointers.size < 2) this.pinch = null;
     const d = this.drag;
     if (this.pointers.size === 0) this.drag = null;
+    // a finger pulled down from the top bar (a swipe down) closes the view, as × does (sent, so recorded)
+    if (d && !cancel && this.pointers.size === 0 && this.fromBar(d)) {
+      const [x, y] = this.art(e);
+      const dy = y - d.y;
+      if (dy >= Math.max(24, this.buf.height * 0.15) && Math.abs(x - d.x) < dy) {
+        this.act({ kind: 'close' });
+        return;
+      }
+    }
     if (!d || d.moved || cancel || this.pointers.size > 0) return;
     this.updateHover();
     const id = this.hover;
@@ -670,6 +680,11 @@ export class TreeView {
   private inSearchBox(x: number, y: number): boolean {
     const b = this.searchBox();
     return x >= b.x && x < b.x + b.w && y >= 0 && y < TOP;
+  }
+
+  /** A finger went down on the top bar (not its search box): a drag from there pulls the view down to close it, not a pan. */
+  private fromBar(d: { readonly x: number; readonly y: number; readonly type: string }): boolean {
+    return d.type === 'touch' && d.y < TOP && !this.inSearchBox(d.x, d.y) && !!this.closeBox();
   }
 
   /** The top bar's close box (touch and mouse), when the view can be closed. */

@@ -134,6 +134,13 @@ export class BannerQueue {
     this.queue.length = 0;
   }
 
+  /** The banner showing goes now (swiped away): the next waiting one opens. */
+  skip(): void {
+    if (!this.current) return;
+    this.current = this.queue.shift() ?? null;
+    if (this.current) this.current.age = Math.min(this.current.age, 0);
+  }
+
   /** The banner showing and those waiting, as data (save-states). */
   save(): { current: Banner | null; queue: Banner[] } {
     return { current: this.current ? { ...this.current } : null, queue: this.queue.map((b) => ({ ...b })) };

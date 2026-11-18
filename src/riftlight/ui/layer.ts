@@ -11,6 +11,7 @@
  * at the top names the focused control, and keys still drive it (tweak a slider with the
  * whole picture in view); a press anywhere or back shows it again.
  */
+import type { SwipeDirection } from '../../engine';
 import type { Panel } from '../game/ports';
 import { t } from '../lang';
 import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from './kit';
@@ -217,6 +218,26 @@ export class UiLayer {
     if (top.modal) return true;
     if (e.kind !== 'pointer') return false;
     return top.panel.overlay ? !!top.panel.covers?.(e.x, e.y) : inside(top.rect, e.x, e.y);
+  }
+
+  /**
+   * A swipe (`dir`) that started at art pixel (x, y): it closes the top panel the way back does
+   * when it starts on it (a framed panel's frame: left, right or down, unless the panel moves with
+   * that swipe itself, `Panel.swipes`, and always from its title bar; an overlay where it says,
+   * `Panel.swipeCloses`), never a panel that can't be closed (`sticky`). True when it did.
+   */
+  swipe(dir: SwipeDirection, x: number, y: number): boolean {
+    const top = this.top;
+    if (!top || top.sticky || (this.peeking && top.peek)) return false;
+    let closes = false;
+    if (top.panel.swipeCloses) closes = top.panel.swipeCloses(dir, x, y);
+    else if (!top.bare) {
+      const r = top.rect;
+      const frame = { x: r.x - 6, y: r.y - 16, w: r.w + 12, h: r.h + 22 };
+      const title = { ...frame, h: 16 };
+      closes = dir !== 'up' && inside(frame, x, y) && (inside(title, x, y) || !top.panel.swipes?.(dir, x, y));
+    }
+    return closes && this.input({ kind: 'back' });
   }
 
   /** True when art pixel (x, y) is on an open panel (framed or overlay). */

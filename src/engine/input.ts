@@ -620,6 +620,8 @@ export class Input {
     this.lockTarget = el;
     const active = new Map<number, { x: number; y: number }>();
     let pinch = 0;
+    /** Two fingers on the canvas: a pinch, which presses nothing until every finger is up (`TOUCH_KEY` let go). */
+    let pinching = false;
     /** The one finger down that may be a swipe: where and when it went down (a second finger makes it a pinch). */
     let flick: { id: number; x: number; y: number; t: number } | null = null;
     const spread = () => {
@@ -664,7 +666,12 @@ export class Input {
         if (e.pointerType === 'touch') flick = active.size === 0 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp } : null;
         active.set(e.pointerId, { x: e.clientX, y: e.clientY });
         capture(el, e.pointerId);
-        this.button(e.pointerType === 'touch' ? TOUCH_KEY : MOUSE_BUTTONS[e.button]?.[0], true);
+        if (e.pointerType !== 'touch') this.button(MOUSE_BUTTONS[e.button]?.[0], true);
+        else if (active.size >= 2) {
+          // a second finger: a pinch (it zooms), not a press held for as long as it lasts
+          pinching = true;
+          this.button(TOUCH_KEY, false);
+        } else if (!pinching) this.button(TOUCH_KEY, true);
         pinch = spread();
         if (this.wantsPointerLock && e.pointerType === 'mouse' && document.pointerLockElement !== el) void el.requestPointerLock?.();
       },
@@ -680,6 +687,7 @@ export class Input {
         const dir = e.type === 'pointerup' && !this._playing ? swipeDirection(e.clientX - f.x, e.clientY - f.y, e.timeStamp - f.t, Math.min(r.width, r.height)) : null;
         if (dir) this.press(SWIPE_KEYS[dir]);
       }
+      if (!active.size) pinching = false;
       if (this._playing) return;
       if (e.pointerType === 'touch') {
         if (![...active.keys()].length) this.button(TOUCH_KEY, false);

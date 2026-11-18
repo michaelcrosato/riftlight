@@ -843,7 +843,7 @@ export class LootWindow implements Panel {
  * Small header panel for NPC lines (shown above the vendor / tree / rift panels): `line` is what
  * `Npc.talk` returned (a line id: the speaker and their words, `talkText`) or text to show as it is.
  */
-export function dialogue(ui: UiCanvas, line: string, panel: Rect): void {
+export function dialogue(ui: UiCanvas, line: string, panel: Rect): Rect {
   const lines = wrap(talkText(line), Math.min(400, ui.w - 20));
   const w = Math.max(...lines.map((l) => ui.measure(l))) + 10;
   const x = Math.floor((ui.w - w) / 2);
@@ -851,4 +851,5 @@ export function dialogue(ui: UiCanvas, line: string, panel: Rect): void {
   ui.rect(x, y, w, lines.length * 9 + 6, 'ink');
   ui.outline(x, y, w, lines.length * 9 + 6, UI.edge);
   lines.forEach((l, i) => ui.text(x + 5, y + 4 + i * 9, l, { color: 'white' }));
+  return { x, y, w, h: lines.length * 9 + 6 };
 }

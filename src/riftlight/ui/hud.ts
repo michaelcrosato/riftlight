@@ -609,7 +609,13 @@ function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, action:
   if (action) ui.glyph(x + 1, y + SLOT - 4, action);
 }
 
-export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
+/** What `drawHud` drew that a finger may swipe away: the loot feed's lines (art pixels). */
+export interface HudDrawn {
+  readonly feed: Box[];
+}
+
+export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): HudDrawn {
+  const feedRects: Box[] = [];
   const W = ui.w;
   const H = ui.h;
   const time = m.time;
@@ -722,6 +728,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   // loot feed (right, above the mana orb): newest first, at most 4 (2 on a phone), each line
   // placed around whatever else is there (the prompt, labels) and cut to fit
   const feedBottom = g.touch ? my - r - 10 : g.compact ? ly - r - 10 : H - 66;
+  // on a touch screen it ends over the mana orb's right edge (a landscape phone's button cluster is right of it)
+  const feedRight = g.touch ? Math.min(W - 6, mx + r) : W - 6;
   let shown = 0;
   for (const f of m.feed) {
     if (f.t > 4 || shown >= (g.compact ? 2 : 4)) continue;
@@ -733,12 +741,13 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     const text = clip(f.text, maxW, width);
     const w = width(text);
     const h = mini ? 6 : 8;
-    const want = { x: W - 6 - w, y: feedBottom - shown * (h + 2), w, h };
+    const want = { x: feedRight - w, y: feedBottom - shown * (h + 2), w, h };
     const at = layout ? layout.place(want, { tries: 3, step: h + 2 }) : want;
     if (!at) continue;
     shown++;
-    if (mini) ui.mini(W - 6, at.y, text, color, 'right', 'ink');
-    else ui.text(W - 6, at.y, text, { align: 'right', color });
+    feedRects.push({ x: feedRight - w - 1, y: at.y - 1, w: w + 2, h: h + 2 });
+    if (mini) ui.mini(feedRight, at.y, text, color, 'right', 'ink');
+    else ui.text(feedRight, at.y, text, { align: 'right', color });
   }
 
   // kill streak (left, half way down; right of couch guests' strips it would run into)
@@ -755,6 +764,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   }
 
   drawBanner(ui, m, g);
+  return { feed: feedRects };
 }
 
 /** How far a banner's plate is open (0 shut, 1 open): it opens over `BANNER_OPENS` s and closes over its last 0.3 s. */

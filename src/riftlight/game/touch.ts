@@ -60,6 +60,37 @@ export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
   { label: '≡', code: TOUCH_CODES.menu, at: { ...L.menu, corner: 'top-left' } },
 ];
 
+/** The engine's joystick at rest (style.css `.touch-ui .stick`): 16 CSS px from the bottom-left corner, 128 px and a 2 px border. */
+const STICK = { margin: 16, size: 132 } as const;
+
+/** The floating joystick's zone (style.css `.stick-zone`): the left 45% of the screen, its lower 75% in landscape and 60% in portrait. */
+export const STICK_ZONE = { width: 0.45, landscape: 0.75, portrait: 0.6 } as const;
+
+/**
+ * Where the touch controls sit on a `width` × `height` CSS px screen, from their data (the
+ * buttons' `at`, from an 8 px margin, and the joystick at rest), as CSS rects: what the page lays
+ * out (with no notch insets), for where there is no page (headless, a replay of a phone's
+ * recording) and for the checks.
+ */
+export function touchLayout(width: number, height: number, buttons: readonly TouchButton[] = RIFTLIGHT_TOUCH_BUTTONS): Box[] {
+  const out: Box[] = [{ x: STICK.margin, y: height - STICK.margin - STICK.size, w: STICK.size, h: STICK.size }];
+  for (const b of buttons) {
+    if (!b.at) continue;
+    const size = b.at.size ?? 58;
+    const corner = b.at.corner ?? 'bottom-right';
+    const x = corner.endsWith('left') ? 8 + b.at.x - size / 2 : width - 8 - b.at.x - size / 2;
+    const y = corner.startsWith('top') ? 8 + b.at.y - size / 2 : height - 8 - b.at.y - size / 2;
+    out.push({ x, y, w: size, h: size });
+  }
+  return out;
+}
+
+/** The floating joystick's zone on a `width` × `height` CSS px screen (`STICK_ZONE`): a touch there moves the stick, never the game's HUD. */
+export function stickZone(width: number, height: number): Box {
+  const h = height * (height >= width ? STICK_ZONE.portrait : STICK_ZONE.landscape);
+  return { x: 0, y: height - h, w: width * STICK_ZONE.width, h };
+}
+
 /** What the shell tells the pad each frame. */
 export interface TouchFrame {
   /** The world is playable (town or level, alive, no panel on top). */
@@ -96,7 +127,7 @@ export class TouchPad {
    */
   zones(toArt: (x: number, y: number) => { x: number; y: number }): Box[] {
     const touch = this.engine.touch;
-    if (!touch) return [];
+    if (!touch) return this.fromData();
     if (touch.deviceHidden) return []; // a pad or the keyboard in use: their layout, with its skill bar
     if (!touch.visible) return this.last;
     const r = touch.rects();
@@ -114,6 +145,39 @@ export class TouchPad {
   }
 
   private last: Box[] = [];
+
+  /**
+   * Without a page (headless, a replay of a phone's recording): where the page's controls would
+   * be on a page with touch controls (`touchDensity` set, recorded) while a finger is the device in
+   * use (recorded), from their data (`touchLayout`); none otherwise. So the HUD a replay draws, and
+   * what a tap on it hits, is the phone's.
+   */
+  private fromData(): Box[] {
+    const e = this.engine;
+    if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return [];
+    return touchLayout(e.renderer.framing.cssWidth, e.renderer.framing.cssHeight).map((c) => this.toArt(c));
+  }
+
+  /** A CSS px rect of the page as art pixels, by the view's framing (a whole canvas: the fill aspect's). */
+  private toArt(c: Box): Box {
+    const f = this.engine.renderer.framing;
+    const k = f.artWidth / f.cssWidth;
+    const x = Math.floor(c.x * k);
+    const y = Math.floor(c.y * k);
+    return { x, y, w: Math.floor((c.x + c.w) * k) - x + 1, h: Math.floor((c.y + c.h) * k) - y + 1 };
+  }
+
+  /**
+   * The floating joystick's zone in art pixels while the controls show for a finger (on a page
+   * with touch controls: `touchDensity` set, recorded; a finger the device in use, recorded), or
+   * null: the game keeps what a finger taps out of it (a touch there moves the stick). From the
+   * data (`stickZone`), so a replay agrees.
+   */
+  stickZone(): Box | null {
+    const e = this.engine;
+    if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return null;
+    return this.toArt(stickZone(e.renderer.framing.cssWidth, e.renderer.framing.cssHeight));
+  }
 
   sync(f: TouchFrame): void {
     const touch = this.engine.touch;
