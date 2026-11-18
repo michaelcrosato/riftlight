@@ -9,6 +9,7 @@ import { inc } from '../core/mods';
 import { Combat } from '../combat/Combat';
 import { Actor, actorIds, setActorIds } from './Actor';
 import { ActorManager } from './ActorManager';
+import { AIM } from './aim';
 import { HeroController, type InputLike } from './HeroController';
 import { GridMover, openFloor } from './movers';
 
@@ -89,6 +90,20 @@ describe('HeroController', () => {
     // Slash1: hit at frame 5 of 12, the whole clip in 0.42 s → 0.175 s ≈ 10.5 steps
     expect(frames).toBeGreaterThanOrEqual(10);
     expect(frames).toBeLessThanOrEqual(13);
+  });
+  it('the right stick aims along itself, snapped to a monster within the aim assist’s few degrees (the shell’s rule, actors/aim.ts)', async () => {
+    const w = await world();
+    const d = w.dummy(3, 0.4); // about 8° off the stick held right
+    const input = w.input as FakeInput & { lookAxis?: { x: number; y: number } };
+    input.lookAxis = { x: 1, y: 0 };
+    w.step(1);
+    expect(w.hero.aim.distanceTo(d.position)).toBeLessThan(1e-6);
+    input.lookAxis = { x: 0, y: -1 }; // down the screen (+Z here): nobody there
+    w.step(1);
+    expect(w.hero.aim.distanceTo(w.hero.actor.position.clone().setZ(w.hero.actor.position.z + AIM.reach))).toBeLessThan(0.01); // the hero settles a hair after aiming
+    input.lookAxis = { x: 0.1, y: 0 }; // inside its lean: the auto-aim's cone along the facing instead
+    w.step(1);
+    expect(w.hero.aim.distanceTo(d.position)).toBeGreaterThan(1);
   });
   it('chains the 3-hit combo on repeated presses and starts over after a pause', async () => {
     const w = await world();

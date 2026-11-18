@@ -3,15 +3,24 @@
 ## The hero's controls
 
 Riftlight's keys are `KEYS` and `MOUSE` in `game/controls.ts` (its header lists them), the pad's
-buttons the engine's `Pad*` codes (`GAMEPAD_BUTTONS`): WASD / left stick moves (camera-relative);
-the mouse aims at the ground under the cursor (with a pad, the nearest enemy ahead). LMB / J / pad A is the 3-hit combo (hold to keep swinging), RMB or
-1 Q · 2 E · 3 R · 4 T / pad X Y LB RB are the skill bar, Space / pad B is the dodge roll, F / pad RT
-interacts. Pad buttons are `Pad*` codes, not keys, so menus tell A = confirm from Space = dodge.
+buttons the engine's `Pad*` codes (`GAMEPAD_BUTTONS`): WASD / left stick moves (camera-relative).
+LMB / J / pad Cross is the 3-hit combo (hold to keep swinging), RMB or 1 Q · 2 E · 3 R · 4 T / pad
+Square Triangle L1 R1 are the skill bar, Space / pad Circle is the dodge roll, F / pad R2 interacts.
+Pad buttons are `Pad*` codes, not keys, so menus tell Cross = confirm from Space = dodge.
+
+**Aim, one rule** (`actors/aim.ts`, the shell's `readIntent` and `HeroController.updateAim` alike):
+the mouse aims at the ground under the cursor (while it is in use: moved, clicked, or a button
+held); a pad's right stick (`input.lookAxis`, past `AIM.stick`) aims along itself, snapped to the
+nearest monster within `AIM.assist` (18°) of it and `AIM.range` m (aim assist), else `AIM.reach` m
+along it, and the AI Hub's Motion aim adds the controller's turns to that stick, so gyro aiming
+needs nothing of the game's own; keys, the left stick and a finger take the nearest monster in the
+`AIM.cone` (70°) ahead along the move (standing, along the last aim), else the nearest within 7 m
+whichever way (the shell's last resort), else straight on.
 Presses buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,
 casting slows movement instead of locking it (the legs keep running under the arms), and attack
 clips play at the rate attack / cast speed asks for. On a phone the touch buttons are the bar
-(docs/game/ui.md *On a touch screen*). The shell moves the engine's debug hotkeys P and R to F8 and
-F7 (`rebindDebugKeys`). The arena (`?game=arena`, `combat/arena.ts`) keeps its own map,
+(docs/game/ui.md *On a touch screen*). The shell moves the engine's debug hotkeys P, R and M to F8,
+F7 and F9 (`rebindDebugKeys`: M is the map). The arena (`?game=arena`, `combat/arena.ts`) keeps its own map,
 `HERO_KEYS` in `actors/controls.ts` (RMB / K, Q, E, R, F, or 1–4; pad X attacks, A dodges, B Y LB
 RB RT are the bar), and passes `HERO_DEBUG_KEYS` (R is a skill there, so with `?debug=1` the
 resolution hotkey moves to F2). Every timing is in `HERO_TUNING`.

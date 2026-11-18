@@ -51,7 +51,7 @@ import { gemIcon } from '../../skills/icons';
 import { drawGemIcon, drawIcon } from './icons';
 import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI, wrap } from './paint';
 import type { ItemsStore } from './store';
-import { drawTooltip, measureTooltip, TIP_W, tooltipLines } from './tooltip';
+import { drawTooltip, measureTooltip, TIP_W, type TipLine, tooltipLines } from './tooltip';
 
 export const CELL = 10;
 const PANEL_W = 128;
@@ -1523,9 +1523,8 @@ export class ItemsUi {
       }
       this.drawItem(p, this.held.item, cx - Math.floor((s.w * CELL) / 2), cy - Math.floor((s.h * CELL) / 2), s.w * CELL - 1, s.h * CELL - 1);
     } else {
-      const item = this.itemAtTarget(t);
-      const touchOk = !this.lastTouch || this.cursorMode === 'pad' || item?.uid === this.touchPick;
-      if (item && touchOk) this.drawTip(p, item, t!, cx, cy);
+      const shown = this.tipTarget(t);
+      if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
     }
     if (this.applying) {
       drawIcon(p, 'orb', cx + 3, cy + 3, 7, 7, UI.dim);
@@ -1536,7 +1535,26 @@ export class ItemsUi {
     }
   }
 
+  /** The item whose tooltip shows at the cursor's target `t` (none while an item is carried; on a touch screen only the one picked). */
+  private tipTarget(t: Target | null): { item: Item; at: Target } | null {
+    if (this.held || !t) return null;
+    const item = this.itemAtTarget(t);
+    const touchOk = !this.lastTouch || this.cursorMode === 'pad' || item?.uid === this.touchPick;
+    return item && touchOk ? { item, at: t } : null;
+  }
+
+  /** The tooltip the cursor shows now, line by line (tools and tests: headless nothing is painted), or null. */
+  tipText(): string[] | null {
+    const shown = this.tipTarget(this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y)));
+    return shown ? this.tipLines(shown.item, shown.at).filter((l) => !l.sep).map((l) => l.text) : null;
+  }
+
   private drawTip(p: Painter, item: Item, at: Target, cx: number, cy: number): void {
+    this.placeTip(p, this.tipLines(item, at), cx, cy);
+  }
+
+  /** An item's tooltip at `at`: its lines, with the price and the hint for the device that drives the windows. */
+  private tipLines(item: Item, at: Target): TipLine[] {
     const forSale = at.kind === 'vendor';
     const inInventory = at.kind === 'grid' && at.where === 'inventory';
     const price = forSale ? { kind: 'buy' as const, gold: buyPrice(item), affordable: buyPrice(item) <= this.store.state.gold } : this.left === 'vendor' && inInventory ? { kind: 'sell' as const, gold: sellPrice(item) } : undefined;
@@ -1564,7 +1582,11 @@ export class ItemsUi {
       if (ok === false) extra = [{ text: t('item.tip.not_supported', { skill: itemName(this.store.skills[at.slot]!.gem!) }), color: UI.bad }];
     }
     const orbHint = this.cursorMode === 'pad' ? padOrbHint(this.ctx.engine.controls.style) : undefined;
-    const lines = tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(orbHint ? { orbHint } : {}), ...(extra ? { extra } : {}) });
+    return tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(orbHint ? { orbHint } : {}), ...(extra ? { extra } : {}) });
+  }
+
+  /** Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`), and drawn there. */
+  private placeTip(p: Painter, lines: readonly TipLine[], cx: number, cy: number): void {
     const size = measureTooltip(lines);
     let x: number;
     let y: number;

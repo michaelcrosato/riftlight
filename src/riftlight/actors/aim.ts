@@ -1,0 +1,69 @@
+/**
+ * Aiming without a mouse, one rule for the hero controller (the Arena) and the game shell
+ * (Riftlight's pad, keyboard and touch aim): a target counts when it lies within a cone around
+ * the way the player means (the right stick, the left stick, the facing), the nearest such wins.
+ * The right stick aims along itself with a narrow cone (aim assist); the left stick and the facing
+ * use a wide one (auto-aim). Plain maths on positions: nothing here is state.
+ */
+import type { Vector3 } from 'three/webgpu';
+
+export const AIM = {
+  /** Auto-aim along the move direction or the facing: targets this far (m) within this half-angle (deg). */
+  range: 9,
+  cone: 70,
+  /** Right-stick aim assist: a hostile within this half-angle (deg) of the stick and `range` is aimed at. */
+  assist: 18,
+  /** The right stick aims once it leans this far (after the engine's deadzone, 0..1). */
+  stick: 0.3,
+  /** Where the right stick aims with nobody to snap to: this far (m) along it. */
+  reach: 5,
+} as const;
+
+/** True when `at` lies within `cos` (the cosine of the half-angle) of the ground direction (`dx`, `dz`, unit) from `from`; a target on top of `from` counts. */
+export function inCone(from: Vector3, dx: number, dz: number, cos: number, at: Vector3): boolean {
+  const x = at.x - from.x;
+  const z = at.z - from.z;
+  const d = Math.hypot(x, z);
+  return d < 0.01 || (x * dx + z * dz) / d >= cos;
+}
+
+/** The cosine of a half-angle in degrees (`inCone`'s `cos`). */
+export const coneCos = (deg: number): number => Math.cos((deg * Math.PI) / 180);
+
+/**
+ * The nearest of `targets` (living, `ok`) within `range` m of `from` and inside the cone of
+ * `deg` degrees around the ground direction (`dx`, `dz`), or null. Ties keep the earlier target.
+ */
+export function coneTarget<T extends { readonly position: Vector3; readonly alive: boolean }>(from: Vector3, dx: number, dz: number, deg: number, range: number, targets: Iterable<T>, ok: (t: T) => boolean = () => true): T | null {
+  const len = Math.hypot(dx, dz);
+  if (len < 1e-6) return null;
+  const ux = dx / len;
+  const uz = dz / len;
+  const cos = coneCos(deg);
+  let best: T | null = null;
+  let bd = range;
+  for (const t of targets) {
+    if (!t.alive || !ok(t)) continue;
+    const d = Math.hypot(t.position.x - from.x, t.position.z - from.z);
+    if (d < bd && inCone(from, ux, uz, cos, t.position)) {
+      bd = d;
+      best = t;
+    }
+  }
+  return best;
+}
+
+/**
+ * Where the right stick aims from `from` along its ground direction (`dx`, `dz`): at the nearest
+ * hostile (`ok`) within `AIM.assist` degrees of it and `AIM.range` m (aim assist), else `AIM.reach`
+ * m along it, into `out`. Returns the target snapped to, or null.
+ */
+export function stickAim<T extends { readonly position: Vector3; readonly alive: boolean }>(from: Vector3, dx: number, dz: number, targets: Iterable<T>, ok: (t: T) => boolean, out: Vector3): T | null {
+  const target = coneTarget(from, dx, dz, AIM.assist, AIM.range, targets, ok);
+  if (target) out.copy(target.position);
+  else {
+    const len = Math.hypot(dx, dz) || 1;
+    out.set(from.x + (dx / len) * AIM.reach, from.y, from.z + (dz / len) * AIM.reach);
+  }
+  return target;
+}

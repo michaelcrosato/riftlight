@@ -277,6 +277,33 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
   );
 
   it(
+    'an orb’s tooltip says how to use it on the device that drives the windows: right-click and click with the mouse, Square then Cross with the pad cursor',
+    () => {
+      const { rl, engine } = h;
+      loot().add(item({ uid: 'e2e-tip-orb', base: 'kindling-shard', name: 'Kindling Shard', quantity: 2 } as Partial<Item> & Pick<Item, 'uid' | 'base'>));
+      expect(rl.press('KeyI').ui.join()).toBe('inventory');
+      const orb = bag().find((p) => p.item.base === 'kindling-shard')!.item.uid; // stacked with the shards there
+      const at = ui().itemCenter(orb)!;
+      pointAtArt(engine, at.x, at.y);
+      engine.step(2);
+      expect(ui().cursorMode).toBe('pointer');
+      expect(ui().tipText()?.join(' '), 'the mouse').toContain('Right-click, then click an item to use');
+      rl.press('Enter'); // the keys / pad take over the cursor
+      expect(ui().cursorMode).toBe('pad');
+      ui().cursor = { ...at };
+      const pad = ui().tipText()?.join(' ') ?? '';
+      expect(pad, 'the pad cursor').toContain('Square, then Cross on an item to use');
+      expect(pad).not.toMatch(/click/i);
+      engine.settings.set({ padGlyphs: 'xbox' });
+      expect(ui().tipText()?.join(' '), 'in Xbox’s buttons when chosen').toContain('X, then A on an item to use');
+      engine.settings.set({ padGlyphs: undefined });
+      rl.press('Escape');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     'the chest opens the stash: Ctrl-click stores the boots, drag and drop moves them to another cell',
     () => {
       const { rl, engine } = h;

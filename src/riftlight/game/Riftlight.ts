@@ -22,7 +22,7 @@ import { RANK, SCALING } from '../core/scaling';
 import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, type GameEvents, type LevelSpec, type SaveData } from '../core/types';
 import { loadRiftlightPacks } from '../packs';
 import { Town, type TownState } from '../town/Town';
-import { type HudModel, drawHud, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
+import { type HudModel, drawHud, drawMap, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
 import { clip, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
@@ -38,6 +38,7 @@ import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, 
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
+import { LEVEL_GAP, lightFor, PadFeel, RUMBLE } from './padFeel';
 import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type MonsterHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
@@ -50,6 +51,7 @@ import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
+import { AIM, coneTarget, stickAim } from '../actors/aim';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
@@ -112,6 +114,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   pointer!: Pointer;
   /** The phone controls (the engine's touch buttons as an action cluster); inert without touch. */
   touchPad!: TouchPad;
+  /** What the pad says back: rumbles on hits, crits, level-ups, rare drops, the portal and death; the DualSense's light bar. */
+  feel!: PadFeel;
+  /** The level's map over the play (Tab / M, R3 or the touchpad's press): a HUD overlay, the world runs on. */
+  mapOpen = false;
   /** The touch controls' rects in art pixels this frame (the HUD lays out around them). */
   private hudControls: Box[] = [];
   /** The last row the title's logo and tagline take (the title menu starts under it). */
@@ -216,6 +222,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return this.ctx.audio;
   }
 
+  /** The developer tools are on (the dev server or `?debug=1`: the engine's hotkeys are): the pause menu offers Dev. */
+  get devTools(): boolean {
+    return Object.values(this.ctx.engine.debugKeys).some((keys) => keys.length > 0);
+  }
+
   /** The engine (MenuHost: its player settings). */
   get engine() {
     return this.ctx.engine;
@@ -236,12 +247,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     registerFx(ctx.particles);
     // Engine hotkeys (on with ?debug=1) move off the game's keys (P = passive tree, R = skill 3).
     this.savedKeys = engine.debugKeys;
-    engine.debugKeys = rebindDebugKeys(engine.debugKeys, { mode: 'F8', resolution: 'F7' });
+    engine.debugKeys = rebindDebugKeys(engine.debugKeys, { mode: 'F8', resolution: 'F7', mute: 'F9' }); // and M = the map
+    ctx.input.preventKeys.add('Tab'); // the map, and menus' tabs: never the browser's focus
     this.savedGamepad = ctx.input.gamepadButtons;
     ctx.input.gamepadButtons = { ...GAMEPAD_BUTTONS }; // the engine's own pad codes (a lab before may have remapped them)
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
+    this.feel = new PadFeel(ctx);
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     const rng = () => this.rng;
@@ -305,6 +318,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.fileInput?.remove();
     if (this.savedKeys) ctx.engine.debugKeys = this.savedKeys;
     if (this.savedGamepad) ctx.input.gamepadButtons = this.savedGamepad;
+    ctx.input.preventKeys.delete('Tab');
     this.level?.dispose();
     this.level = null;
     this.hero?.dispose();
@@ -324,8 +338,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         this.hurt = Math.min(1, this.hurt + 0.3 + result.total / Math.max(1, this.hero.vitals().maxLife));
         this.services.shake(0.15 + Math.min(0.4, result.total / 40), 0.15);
         this.ctx.audio.play('hurt', { volume: 0.5 });
+        if (result.total > 0) this.feel.rumble(RUMBLE.hurt(result.total / Math.max(1, this.hero.vitals().maxLife)));
         return;
       }
+      if (result.crit && result.total > 0 && this.hero && hit.source === this.hero.actor) this.feel.rumble(RUMBLE.crit);
       const at = target.position.clone().setY(1.2);
       this.combatHeat = Math.min(1, this.combatHeat + 0.25);
       this.combatSince = 0;
@@ -365,6 +381,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       if (this.hero && actor === this.hero.actor && !this.dead) this.onHeroDeath();
     });
     on('mechanic', ({ id }) => this.unlockCodex(id));
+    on('landed', ({ item, loud }) => {
+      if (loud) this.feel.rumble(RUMBLE.loud);
+      else if (item.rarity === 'rare' || item.rarity === 'unique') this.feel.rumble(RUMBLE.rare);
+    });
     on('levelClear', () => (this.clearEmitted = true));
   }
 
@@ -577,7 +597,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.layer.closeAll();
     this.endTalk();
     this.screen = 'loading';
-    this.ctx.audio.play('rl.portal');
+    this.portalSound();
     this.leaveLevel();
     this.town.deactivate();
     this.ctx.scene.background = new Color(PALETTE.ink);
@@ -620,6 +640,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   private leaveLevel(): void {
     this.levelEntry = null;
+    this.mapOpen = false;
     if (!this.level) return;
     this.ports.loot.clearGround();
     this.level.dispose();
@@ -631,11 +652,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Through the portal (or the loot window) back to town. */
   returnToTown(): void {
     if (this.screen !== 'level') return;
-    this.ctx.audio.play('rl.portal');
+    this.portalSound();
     this.goTown('portal');
   }
 
+  /** The portal's whoosh: from a DualSense's speaker while the player allows it, else with the other sounds. */
+  private portalSound(): void {
+    this.ctx.audio.play('rl.portal', { bus: 'speaker' });
+  }
+
   private onHeroDeath(): void {
+    this.feel.rumble(RUMBLE.death);
     this.dead = true;
     this.deathTimer = 0;
     this.session.deaths++;
@@ -662,6 +689,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const depth = this.level.spec.depth;
     const deeper = recordClear(this.save, depth, this.levelTime);
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
+    this.feel.rumble(RUMBLE.portal); // the portal opens
     if (this.round?.moment) {
       // a moment says its own cleared or failed, with its own sound (session/round.ts)
     } else {
@@ -684,7 +712,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    */
   async startRound(seed: number, depth: number, level: number, seat: number): Promise<void> {
     this.newRun(0, seed);
+    this.quietLevels = true; // levels given to start a round are not news: no banner rumble
     for (let l = 1; l < level; l++) this.devGive('level');
+    this.quietLevels = false;
     this.feed = []; // the levels given are not news
     await this.enterDepth(depth);
     const at = this.seatSpot(seat);
@@ -757,7 +787,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.hero.enter(this.level, this.level.start, Math.PI);
     this.hero.restore();
     this.ctx.engine.camera.teleport(this.camTarget.copy(this.level.start).setY(0.9));
-    this.ctx.audio.play('rl.portal');
+    this.portalSound();
     this.playMusic('level');
   }
 
@@ -819,6 +849,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.hurt = Math.min(1, this.hurt + 0.3 + total / Math.max(1, this.hero.vitals().maxLife));
     this.services.shake(0.15 + Math.min(0.4, total / 40), 0.15);
     this.ctx.audio.play('hurt', { volume: 0.5 });
+    if (total > 0) this.feel.rumble(RUMBLE.hurt(total / Math.max(1, this.hero.vitals().maxLife)));
   }
 
   /** A centre banner now (it takes over from whatever showed), `age` seconds into its showing (0: it opens). */
@@ -857,6 +888,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   // ================================================================ progression
 
+  /** Levels given at once (a session round's start): no rumble for them. */
+  private quietLevels = false;
+
   gainXp(amount: number): void {
     const gained = addXp(this.save.hero, amount);
     this.session.xp += amount;
@@ -867,6 +901,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.levelUpAge = 0;
       this.banners.push('levelup', t('banner.levelup', { level: this.save.hero.level }), t('banner.levelup.point'));
       this.ctx.audio.play('rl.levelUp');
+      if (!this.quietLevels) this.feel.pulses(RUMBLE.levelUp, LEVEL_GAP);
       this.ctx.particles.burst('rl.levelup', this.hero.actor.position.clone().setY(0.2));
       this.flash(this.hero.actor.position, PALETTE.lime, 8, 6, 0.6);
       this.events.emit('levelUp', { level: this.save.hero.level });
@@ -1273,10 +1308,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     cameraBasis(ctx.engine, this.right, this.forward);
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
-    // a finger aims by itself (the nearest enemy ahead); the mouse aims where it points
+    // the mouse aims where it points; a pad's right stick along itself, snapped to a monster close
+    // to that line (aim assist: the hub's Motion aim adds the controller's turns to the stick);
+    // else, and with a finger, the nearest monster ahead (`autoAim`)
     const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
     const hp = this.hero.actor.position;
-    if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
+    const look = input.lookAxis;
+    if (input.device === 'pad' && Math.hypot(look.x, look.y) > AIM.stick) {
+      const dx = this.right.x * look.x + this.forward.x * look.y;
+      const dz = this.right.z * look.x + this.forward.z * look.y;
+      stickAim(hp, dx, dz, this.level?.actors() ?? [], hostile, i.aim);
+    } else if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
     else i.aim.copy(this.autoAim());
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
     // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
@@ -1301,22 +1343,21 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return i;
   }
 
-  /** Pad / keyboard aim: the nearest living monster in front, else straight ahead. */
+  /**
+   * Aim without a mouse or the right stick (keys, the left stick, a finger): the nearest monster in
+   * the cone ahead (along the move, else where the hero aimed last: the hero's rule, actors/aim.ts),
+   * else the nearest one around (within `AIM_AROUND` m), else on along the move or where it aimed.
+   */
   private autoAim(): Vector3 {
     const hp = this.hero.actor.position;
-    let best: Vector3 | null = null;
-    let bd = 7;
-    for (const a of this.level?.actors() ?? []) {
-      if (!a.alive) continue;
-      const d = a.position.distanceTo(hp);
-      if (d < bd) {
-        bd = d;
-        best = a.position;
-      }
-    }
-    if (best) return best;
     const m = this.intent.move;
-    if (Math.hypot(m.x, m.z) > 0.1) return this.tmp.set(hp.x + m.x * 3, hp.y, hp.z + m.z * 3);
+    const moving = Math.hypot(m.x, m.z) > 0.1;
+    const foes = this.level?.actors() ?? [];
+    const dx = moving ? m.x : this.intent.aim.x - hp.x;
+    const dz = moving ? m.z : this.intent.aim.z - hp.z;
+    const target = coneTarget(hp, dx, dz, AIM.cone, AIM.range, foes, hostile) ?? coneTarget(hp, 1, 0, 180, AIM_AROUND, foes, hostile);
+    if (target) return target.position;
+    if (moving) return this.tmp.set(hp.x + m.x * 3, hp.y, hp.z + m.z * 3);
     return this.tmp.copy(this.intent.aim);
   }
 
@@ -1350,14 +1391,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
     // pointer and menu input → the panel stack, then game hotkeys
-    const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)];
+    const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)].map((e) => (e.kind === 'tab' && e.dir === 1 && this.shiftTab(ctx) ? { kind: 'tab', dir: -1 } : e));
     ui.pointer.x = this.pointer.art.x;
     ui.pointer.y = this.pointer.art.y;
     ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
     this.syncTouch();
+    this.feel.update(dt);
+    this.lightBar();
     if (this.showcase.active) return this.showcase.update(dt, events);
     this.layer.update(dt);
-    let consumed = false;
+    // Options from any screen of play: it pauses, and on the pause menu it resumes (a press no menu reads)
+    let consumed = ctx.input.wasPressed(...KEYS.options) && this.options();
     for (const e of events) {
       // H on the look studio hides its panel (or shows it): the layer still routes keys to it
       if (e.kind === 'key' && (KEYS.hide as readonly string[]).includes(e.code) && this.layer.togglePeek()) {
@@ -1388,6 +1432,40 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.settings.zoom = Math.max(0.6, Math.min(1.6, this.settings.zoom * Math.pow(1.08, -ctx.input.wheel)));
     }
     ctx.input.wheel = 0;
+  }
+
+  /** Shift+Tab: the tab before (the menus hear Tab as the next one). */
+  private shiftTab(ctx: GameContext): boolean {
+    return ctx.input.wasPressed('Tab') && ctx.input.anyDown(SHIFT);
+  }
+
+  /**
+   * Options (a pad's Start) in town or a level, the console's way: with nothing open it pauses; on
+   * the pause menu (and what opened over it) it resumes; over another panel (the item windows, the
+   * character sheet, the codex, the tree, a townsperson's menu) it closes them and pauses. Not
+   * while the death recap shows, in a session round or a showcase mode. Esc stays back first, then
+   * pause. True when it did something.
+   */
+  private options(): boolean {
+    if ((this.screen !== 'town' && this.screen !== 'level') || this.round || this.dead || this.showcase.active) return false;
+    const stack = this.layer.stack;
+    if (stack.some((o) => o.sticky)) return false;
+    if (this.layer.has('pause')) {
+      while (this.layer.stack.length > 1) this.layer.close(undefined, true);
+      this.resume();
+      return true;
+    }
+    if (stack.length) this.layer.closeAll();
+    this.openPanel('pause');
+    return true;
+  }
+
+  /** The light bar says how the hero is (`lightFor`): only when its colour changes; the hub's own on the title and in a showcase mode. */
+  private lightBar(): void {
+    if (this.screen === 'loading') return; // between the town and a level: as it was
+    const off = this.screen === 'title' || this.showcase.active;
+    const v = this.hero.vitals();
+    this.feel.light(lightFor({ where: off ? 'off' : this.screen === 'town' ? 'town' : 'level', dead: this.dead, life: v.maxLife > 0 ? v.life / v.maxLife : 0, boss: this.music === 'boss', time: this.time }));
   }
 
   /** The touch buttons follow the game: shown while you play, the bar's icons and cooldowns, what F does here. */
@@ -1423,6 +1501,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.openPanel('pause');
       return;
     }
+    // the map over the play: a HUD overlay (the world runs on), in a level
+    if (pressed(KEYS.map) && !this.layer.top) this.mapOpen = !this.mapOpen && !!this.level;
     if (this.layer.top?.modal) return;
     const toggle = (id: Parameters<Riftlight['openPanel']>[0], panelId = id) => {
       if (this.layer.has(panelId)) this.layer.close(panelId);
@@ -1688,6 +1768,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
       this.floaters.draw(ui, cam, layout);
       this.round?.draw(ui, cam);
+    }
+    // the level's map over the play, under the HUD (which drops its corner map meanwhile)
+    if (this.mapOpen && model.minimap && !this.layer.top) {
+      const g = hudGeometry(ui.w, ui.h, this.hudControls);
+      const top = model.boss ? 30 : 8;
+      drawMap(ui, model.minimap, { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top }, this.time);
+      model.minimap = null;
     }
     drawHud(ui, model, layout);
     // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
@@ -1980,6 +2067,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         music: this.music,
         session: this.session,
         interactQueued: this.interactQueued,
+        map: this.mapOpen,
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
         hurt: this.hurt,
@@ -2094,6 +2182,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.combatSince = t.combatSince;
     Object.assign(this.session, t.session);
     this.interactQueued = t.interactQueued;
+    this.mapOpen = t.map ?? false;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
     this.goldShown = t.goldShown;
@@ -2121,6 +2210,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
   }
 }
+
+/** Either Shift key. */
+const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
+
+/** Auto-aim's last resort: the nearest monster this close (m), whichever way it stands. */
+const AIM_AROUND = 7;
+
+/** What the shell's aim snaps to: monsters (a level's actors; the hero's own minions are not). */
+const hostile = (a: ActorLike): boolean => a.faction === 'monster';
 
 /** What a level was built from: the spec, the run's random stream and the id counters as `build` was called. */
 interface LevelEntry {
@@ -2164,6 +2262,8 @@ interface RiftSnapshot {
     readonly music: SongName | null;
     readonly session: Riftlight['session'];
     readonly interactQueued: boolean;
+    /** The map is open (left out by snapshots from before it). */
+    readonly map?: boolean;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;
     readonly hurt: number;

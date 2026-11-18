@@ -57,8 +57,10 @@ export interface MenuHost {
   setTimeOfDay(t: number): void;
   timeOfDay(): number;
   sound(s: 'click' | 'move'): void;
-  /** Open a game view on top of the menu (pause → inventory, skills, tree: touch and pad players have no hotkeys). */
-  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character'): unknown;
+  /** Open a game view on top of the menu (pause → inventory, skills, tree, character, codex: touch and pad players have no hotkeys). */
+  openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex'): unknown;
+  /** The developer tools are on (the dev server or `?debug=1`): the pause menu shows Dev. */
+  readonly devTools?: boolean;
   /** Photo mode (the showcase): optional, so other hosts can leave it out. */
   photoMode?(): void;
   /** The look studio (filters per layer): optional, so other hosts can leave it out. */
@@ -122,10 +124,11 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'button', id: 'skills', label: t('menu.pause.skills'), onClick: () => h.openPanel('skills'), hint: t('menu.pause.skills.hint') },
       { kind: 'button', id: 'tree', label: t('menu.pause.tree'), onClick: () => h.openPanel('tree'), hint: t('menu.pause.tree.hint') },
       { kind: 'button', id: 'character', label: t('menu.pause.character'), onClick: () => h.openPanel('character'), hint: t('menu.pause.character.hint') },
+      { kind: 'button', id: 'codex', label: t('menu.pause.codex'), onClick: () => h.openPanel('codex'), hint: t('menu.pause.codex.hint') },
       { kind: 'button', id: 'settings', label: t('menu.pause.settings'), onClick: () => h.openMenu(settingsMenu(h)) },
       ...(h.lookStudio ? [{ kind: 'button' as const, id: 'look', label: t('menu.pause.look'), onClick: () => h.lookStudio!(), hint: t('menu.pause.look.hint') }] : []),
       ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: t('menu.pause.photo'), onClick: () => h.photoMode!(), hint: t('menu.pause.photo.hint') }] : []),
-      { kind: 'button', id: 'dev', label: t('dev.pause.dev'), onClick: () => h.openMenu(devMenu(h)), hint: t('dev.pause.dev.hint') },
+      ...(h.devTools ? [{ kind: 'button' as const, id: 'dev', label: t('dev.pause.dev'), onClick: () => h.openMenu(devMenu(h)), hint: t('dev.pause.dev.hint') }] : []),
       { kind: 'gap', id: 'g' },
       { kind: 'button', id: 'quit', label: t('menu.pause.quit'), onClick: () => h.saveAndQuit(), accent: 'plum' },
     ],

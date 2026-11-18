@@ -593,31 +593,51 @@ function drawBanner(ui: UiCanvas, m: HudModel, g: ReturnType<typeof hudGeometry>
   rows.forEach((row, i) => (mini ? ui.mini(W / 2, sy + 1 + i * gap, row, 'mist', 'center') : ui.text(W / 2, sy + i * gap, row, { align: 'center', color: 'mist' })));
 }
 
-function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, t: number): void {
+function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, time: number): void {
   ui.rect(x - 2, y - 2, w + 4, h + 4, 'ink');
   ui.rect(x - 1, y - 1, w + 2, h + 2, 'slate');
   ui.rect(x, y, w, h, 'ink');
   const S = 2; // art pixels per cell
   const cols = Math.floor(w / S);
   const rows = Math.floor(h / S);
-  const hx = mm.hero.x - mm.origin.x;
-  const hz = mm.hero.z - mm.origin.z;
-  const x0 = Math.floor(hx - cols / 2);
-  const z0 = Math.floor(hz - rows / 2);
-  // run-length rows: one rect per run of the same colour
+  const x0 = Math.floor(mm.hero.x - mm.origin.x - cols / 2);
+  const z0 = Math.floor(mm.hero.z - mm.origin.z - rows / 2);
+  mapCells(ui, mm, { x, y, cols, rows, x0, z0, S }, time, 'night');
+}
+
+/** A window onto the level's cells: `cols` × `rows` cells from cell (`x0`, `z0`), `S` art pixels each, drawn at (`x`, `y`). */
+export interface MapView {
+  readonly x: number;
+  readonly y: number;
+  readonly cols: number;
+  readonly rows: number;
+  readonly x0: number;
+  readonly z0: number;
+  readonly S: number;
+}
+
+/** The explored floor (in `floor`) and walls in view, then the exit, the boss and the hero (those two pinned to the edge when outside). */
+function mapCells(ui: UiCanvas, mm: MinimapModel, v: MapView, time: number, floor: HudColor, seeThrough = false): void {
+  const { x, y, cols, rows, x0, z0, S } = v;
+  const w = cols * S;
+  const h = rows * S;
+  // run-length rows: one rect per run of the same colour (a see-through floor: every other pixel row, the world between)
   for (let r = 0; r < rows; r++) {
     const cz = z0 + r;
     let run: HudColor | null = null;
     let start = 0;
     const flush = (end: number) => {
-      if (run) ui.rect(x + start * S, y + r * S, (end - start) * S, S, run);
+      if (!run) return;
+      const top = y + r * S;
+      if (!seeThrough || run !== floor) ui.rect(x + start * S, top, (end - start) * S, S, run);
+      else for (let k = 0; k < S; k++) if ((top + k) % 2 === 0) ui.rect(x + start * S, top + k, (end - start) * S, 1, run);
     };
     for (let c = 0; c <= cols; c++) {
       const cx = x0 + c;
       let color: HudColor | null = null;
       if (c < cols && cx >= 0 && cz >= 0 && cx < mm.width && cz < mm.height && mm.explored[cz * mm.width + cx]) {
-        const v = mm.cell(cx, cz);
-        color = v === 1 ? 'night' : v === 2 ? 'mist' : null;
+        const value = mm.cell(cx, cz);
+        color = value === 1 ? floor : value === 2 ? 'mist' : null;
       }
       if (color !== run) {
         flush(c);
@@ -626,21 +646,90 @@ function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: nu
       }
     }
   }
-  const dot = (wx: number, wz: number, color: HudColor, size = 3, always = false) => {
+  const mark = Math.max(3, S + 1); // the hero's dot; the exit and the boss a pixel bigger
+  const dot = (wx: number, wz: number, color: HudColor, size: number, always = false) => {
     const px = x + Math.round((wx - mm.origin.x - x0) * S);
     const pz = y + Math.round((wz - mm.origin.z - z0) * S);
     const inside = px >= x && pz >= y && px < x + w - 1 && pz < y + h - 1;
     if (!inside && !always) return;
     const cx = Math.max(x, Math.min(x + w - size, px - (size >> 1)));
     const cz = Math.max(y, Math.min(y + h - size, pz - (size >> 1)));
+    if (seeThrough) ui.rect(cx - 1, cz - 1, size + 2, size + 2, 'ink'); // a rim: it reads over the fight behind
     ui.rect(cx, cz, size, size, color);
   };
   if (mm.exit) {
     const ex = Math.floor(mm.exit.x - mm.origin.x);
     const ez = Math.floor(mm.exit.z - mm.origin.z);
     const seen = ex >= 0 && ez >= 0 && ex < mm.width && ez < mm.height && mm.explored[ez * mm.width + ex];
-    if (seen || mm.exit.open) dot(mm.exit.x, mm.exit.z, mm.exit.open ? (t % 0.8 < 0.4 ? 'cyan' : 'white') : 'sky', 4, mm.exit.open);
+    if (seen || mm.exit.open) dot(mm.exit.x, mm.exit.z, mm.exit.open ? (time % 0.8 < 0.4 ? 'cyan' : 'white') : 'sky', mark + 1, mm.exit.open);
   }
-  if (mm.boss) dot(mm.boss.x, mm.boss.z, t % 0.6 < 0.3 ? 'red' : 'orange', 4, true);
-  dot(mm.hero.x, mm.hero.z, 'white', 3, true);
+  if (mm.boss) dot(mm.boss.x, mm.boss.z, time % 0.6 < 0.3 ? 'red' : 'orange', mark + 1, true);
+  dot(mm.hero.x, mm.hero.z, 'white', mark, true);
+}
+
+/** Where the level's map goes in `room` (art pixels, `drawMap`): the window onto its cells and the box they fill. */
+export function mapView(room: Box, mm: Pick<MinimapModel, 'width' | 'height' | 'hero' | 'origin' | 'explored' | 'exit'>): MapView & { readonly w: number; readonly h: number } {
+  // what the player knows: the explored cells, the hero and an open exit, two cells around them
+  const hx = Math.floor(mm.hero.x - mm.origin.x);
+  const hz = Math.floor(mm.hero.z - mm.origin.z);
+  let x0 = hx;
+  let z0 = hz;
+  let x1 = hx;
+  let z1 = hz;
+  for (let z = 0; z < mm.height; z++) {
+    const row = z * mm.width;
+    for (let x = 0; x < mm.width; x++) {
+      if (!mm.explored[row + x]) continue;
+      if (x < x0) x0 = x;
+      if (x > x1) x1 = x;
+      if (z < z0) z0 = z;
+      if (z > z1) z1 = z;
+    }
+  }
+  if (mm.exit?.open) {
+    const ex = Math.floor(mm.exit.x - mm.origin.x);
+    const ez = Math.floor(mm.exit.z - mm.origin.z);
+    x0 = Math.min(x0, ex);
+    x1 = Math.max(x1, ex);
+    z0 = Math.min(z0, ez);
+    z1 = Math.max(z1, ez);
+  }
+  x0 = Math.max(0, x0 - 2);
+  z0 = Math.max(0, z0 - 2);
+  x1 = Math.min(mm.width - 1, x1 + 2);
+  z1 = Math.min(mm.height - 1, z1 + 2);
+  const bw = x1 - x0 + 1;
+  const bh = z1 - z0 + 1;
+  const inner = { w: Math.max(8, room.w - 6), h: Math.max(8, room.h - 14) }; // the frame, its title and the close control on its edges
+  const S = Math.max(1, Math.min(5, Math.floor(Math.min(inner.w / bw, inner.h / bh))));
+  const cols = Math.min(bw, Math.floor(inner.w / S));
+  const rows = Math.min(bh, Math.floor(inner.h / S));
+  // all of it when it fits; else the part of it around the hero
+  const cx = cols < bw ? Math.max(x0, Math.min(x1 + 1 - cols, hx - Math.floor(cols / 2))) : x0;
+  const cz = rows < bh ? Math.max(z0, Math.min(z1 + 1 - rows, hz - Math.floor(rows / 2))) : z0;
+  const w = cols * S;
+  const h = rows * S;
+  return { x: room.x + Math.floor((room.w - w) / 2), y: room.y + Math.floor((room.h - h) / 2), cols, rows, x0: cx, z0: cz, S, w, h };
+}
+
+/**
+ * The level's map over the play (Tab / M, R3 or the touchpad's press): what the player has explored,
+ * as big as `room` takes it (around the hero when it can't take all of it), on a dimmed plate the
+ * fight shows through (the world runs on), its title and the control that closes it on its frame.
+ * Drawn under the HUD, so the orbs, the skill bar and a boss's bar stay in view.
+ */
+export function drawMap(ui: UiCanvas, mm: MinimapModel, room: Box, time: number): void {
+  const v = mapView(room, mm);
+  const f = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
+  for (let y = f.y + (f.y % 2); y < f.y + f.h; y += 2) ui.rect(f.x, y, f.w, 1, 'ink');
+  ui.outline(f.x, f.y, f.w, f.h, 'slate');
+  mapCells(ui, mm, v, time, 'blue', true);
+  const title = t('hud.map.title');
+  const tw = ui.measure(title);
+  ui.rect(f.x + 4, f.y - 4, tw + 6, 9, 'ink');
+  ui.text(f.x + 7, f.y - 3, title, { color: 'sand' });
+  const close = t('hud.map.close');
+  const pw = ui.glyphWidth('map') + 3 + ui.measure(close);
+  ui.rect(f.x + f.w - pw - 10, f.y + f.h - 5, pw + 6, 10, 'ink');
+  ui.prompt(f.x + f.w - 7, f.y + f.h - 4, 'map', close, 'mist', 'right');
 }

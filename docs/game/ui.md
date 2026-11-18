@@ -16,7 +16,10 @@ the mini font, at most four rows) with the plate growing to hold it. A 52in1 mom
 left (`HudModel.timeLeft`) go at the top centre, moved down under whatever they'd touch (the
 label, the minimap and gold, a boss's bar, a touch control), and the banner goes under them.
 Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar, a
-small minimap.
+small minimap. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press) fits what the
+hero explored into the room between the HUD's top and bottom (`mapView`, up to 5 art pixels a
+cell; around the hero when it can't fit), on a see-through plate under the HUD (the corner
+minimap hides meanwhile), its title and the control that closes it on its frame.
 
 ## On a touch screen (`game/touch.ts`)
 

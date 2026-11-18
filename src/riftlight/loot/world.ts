@@ -104,6 +104,8 @@ export interface WorldLootOptions {
   labels?: boolean;
   /** Adjust a landing spot in place (push it out of walls, onto the floor). */
   place?: (to: Vector3) => void;
+  /** A drop the player can see landed (presentation: the game shell rumbles the pad for a rare one). */
+  onLand?: (d: GroundDrop) => void;
 }
 
 export interface GroundDrop {
@@ -404,7 +406,9 @@ export class WorldLoot {
     const colourName: PaletteColor = d.item ? (PALETTE_NAME[cls] ?? 'white') : 'sand';
     this.ctx.particles.burst('loot-burst', d.to, { colors: [colourName, 'white'], count: d.tier === 'loud' ? 18 : 8 });
     if (!this.isVisible(d)) return;
-    this.ctx.audio.play(d.item ? `loot-${cls}` : 'loot-gold', d.tier === 'loud' ? { volume: 1 } : {});
+    // a loud drop (a unique, what the filter shouts) chimes from a DualSense's speaker while the player allows it, else with the rest
+    this.ctx.audio.play(d.item ? `loot-${cls}` : 'loot-gold', d.tier === 'loud' ? { volume: 1, bus: 'speaker' } : {});
+    this.opts.onLand?.(d);
     if (d.item && (d.item.rarity === 'rare' || d.item.rarity === 'unique' || d.tier === 'loud')) {
       d.beam = this.beamFor(d, d.item);
       d.light = this.lightFor(d, d.item);

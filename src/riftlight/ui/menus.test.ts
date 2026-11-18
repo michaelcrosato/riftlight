@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
 import { RESOLUTIONS, type PlayerSettings } from '../../engine';
 import { languageName } from '../../engine';
-import { engineMenu, languageMenu, settingsMenu } from './menus';
+import { engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
@@ -121,5 +121,17 @@ describe("the settings' engine page", () => {
     expect(audio.muted).toBe(true);
     row(menu, 'debugInfo').set!(true as never);
     expect(chosen.debugInfo).toBe(true);
+  });
+});
+
+describe('the pause menu', () => {
+  it('reaches every screen a pad has no button for (the codex too); Dev only with the developer tools on', () => {
+    const opened: string[] = [];
+    const ids = (more: object = {}) => riftPauseMenu(host({ openPanel: (id: string) => opened.push(id), ...more })).items().map((w) => w.id);
+    expect(ids()).toEqual(expect.arrayContaining(['resume', 'inventory', 'skills', 'tree', 'character', 'codex', 'settings', 'quit']));
+    expect(ids(), 'players see no developer tools').not.toContain('dev');
+    expect(ids({ devTools: true }), 'the dev server or ?debug=1').toContain('dev');
+    riftPauseMenu(host({ openPanel: (id: string) => opened.push(id) })).activate('codex');
+    expect(opened).toEqual(['codex']);
   });
 });

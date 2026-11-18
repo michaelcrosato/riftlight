@@ -8,6 +8,7 @@ import { Rng } from '../core/rng';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
 import { HERO_DEBUG_KEYS, SLOT_LABELS } from '../actors/controls';
+import { CONTROLS } from '../game/controls';
 import { HeroController, type SlotSpec } from '../actors/HeroController';
 import { openFloor, GridMover } from '../actors/movers';
 import { buildSkill } from '../skills/build';
@@ -104,6 +105,8 @@ export interface ArenaOptions {
 
 export class Arena implements Game {
   readonly name = 'Riftlight Arena';
+  /** Riftlight's controls: its lines name them (`{key:dodge}`) for the device in use. */
+  readonly controls = CONTROLS;
   readonly assets = [HERO_MODEL];
 
   /** `args`: plain JSON (`Game.args`), so a recording of the arena replays with the same bar. */

@@ -43,6 +43,22 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   than wide zooms out (`CAMERA.portrait`, 0.8×) so the fight around the hero fits 124 art
   pixels, and with touch controls on screen the target slides toward the camera so the hero
   stands in the middle of the room left above them.
+- **On a controller** (`game/controls.ts`): Options pauses from any screen of play (over an item
+  window, the character sheet, the codex or a townsperson's menu it closes them first) and resumes
+  from the pause menu, as Circle does; Esc stays back first, then pause. The pause menu reaches
+  every screen a pad has no button for (inventory, skills, tree, character, codex); Dev shows only
+  with the developer tools on (the dev server, `?debug=1`). Tab / M / R3 / the DualSense's
+  touchpad press open the level's map over the play (`drawMap`: the world runs on under it).
+  Shift+Tab is the tab before in the item windows.
+- **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
+  replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a
+  level-up (two pulses), a rare or loud item landing in view, the portal opening and the hero's
+  death, never in menus (`input.rumble`, scaled by the player's vibration and the hub's). The
+  DualSense's light bar (`lightFor`, sent only when it changes) is the town's orange, the hero's life
+  in a level (green, amber, then red pulsing under a quarter), steady red in a boss fight, plum when
+  dead, and the hub's own on the title and in a showcase mode. The portal and a loud drop's chime
+  play on the `speaker` bus (the controller's speaker while the player allows it). The adaptive
+  triggers are left alone: no skill sits on L2 or R2 (R2 interacts).
 - **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
   arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
   boss song near a boss. UI and game sounds are `rl.*` SFX data.

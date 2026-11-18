@@ -10,6 +10,7 @@ import { OctaGeo } from './mechanics/common';
 import type { LevelHooks, MonsterSpawn } from './mechanics/types';
 import { levelSpec } from './rift';
 import { glowMaterial } from './themes/props';
+import { CONTROLS } from '../game/controls';
 
 /** What the Level Lab runs: the depth and run seed, the hero's god mode, the camera. */
 export interface LevelLabOptions {
@@ -48,6 +49,8 @@ const MONSTER_SPEED = 3.1;
 
 export class LevelLab implements Game {
   readonly name = 'Riftlight Level Lab';
+  /** Riftlight's controls: its lines name them for the device in use. */
+  readonly controls = CONTROLS;
   readonly events = new EventBus<GameEvents>();
   level!: Level;
   hero!: LabActor;
