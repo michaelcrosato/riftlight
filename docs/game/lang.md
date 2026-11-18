@@ -107,6 +107,9 @@ sees the English, never an old meaning) until the next translation pass.
   notes, widths, the names, the brief, the language's plural forms);
 - `npm run lang -- apply <code> <file> --by <who>` files a translation after the checks (tags kept
   exactly, plural forms the language needs, within `max`); `npm run lang -- check` re-checks all.
+  The checks are `lineProblems` / `translationProblems` (`lang/translations.ts`), and `npm test`
+  runs them over every stored language's current lines (`lang/translations.test.ts`): a hand-edited
+  file fails the tests. Stale lines are not checked (the page leaves them out).
 
 **The hand-over build** (`build:single -- --translations`, which `npm run hub` makes: docs/game/hub.md)
 adds the page's `game-translations` block: every stored language with its current lines.
