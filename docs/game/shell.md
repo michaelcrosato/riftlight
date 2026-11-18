@@ -52,7 +52,9 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   session round too).
   Shift+Tab is the tab before in the item windows. The character screens are one ring (`PAGES`:
   inventory, skills, tree, character, codex): L1 / R1 or Q / E page through it in place (a pause
-  menu under them stays), a strip across the top names them (each a button for the mouse); in the
+  menu under them stays), a strip across the top names them (each a button for the mouse; the
+  tree's view covers the screen, so its own bottom bar names them: the shell passes the TreeView
+  `pages`, and it leaves Q / E to the game instead of zooming with them); in the
   stash, the vendor and the bench they are those windows' tabs, as are Tab and L2 / R2 everywhere.
 - **The mouse in the world** (the ARPG way): a townsperson, the stash, a showcase piece, a loot
   label or the open portal under the mouse shows what a click does there (`thingLabel`, the mouse's

@@ -3,7 +3,8 @@
 // use; the character sheet in pages; the death recap's summary first and its tables behind Details;
 // the mouse in the world (a click on a townsperson walks there and talks, no swing); the pad's
 // focus framed round a whole item; the HUD's clock and counts in the normal font. One engine for
-// the file, tests in order.
+// the file, tests in order. `rl.press` is the engine's input, not the page's: the tree's view
+// takes the page's keyboard, so real Q / E through the tree are scripts/e2e-riftlight-items.mjs'.
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Snapshot } from '../../engine';

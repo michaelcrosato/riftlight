@@ -12,7 +12,9 @@
  *
  * Input: while open the TreeView owns the keyboard (it captures keys, so Escape / P close
  * it and never reach the pause menu), the mouse, touch and the pad's sticks and A / X / Y;
- * the shell's `back` (pad B, the agent API) closes it through the panel stack. What the
+ * the shell's `back` (pad B, the agent API) closes it through the panel stack. Q / E are the
+ * shell's (`pages`: the game hears them and pages round the character screens, as L1 / R1 do,
+ * which the view never reads); its bottom bar names them. What the
  * player does to the tree (allocate, refund, close) is sent through `ctx.input.send` and done
  * when it arrives (`draw`), so a recording of the game keeps it and a replay does the same.
  * Without a page (`Engine.headless`) the panel opens with no view and applies the same actions
@@ -21,6 +23,7 @@
 import type { Mod } from '../core/mods';
 import { t } from '../lang';
 import { defaultTree, type PassiveTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
+import { KEYS } from '../game/controls';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
 import type { UiEvent } from '../ui/kit';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeRules } from '../ui/tree/actions';
@@ -89,6 +92,8 @@ export class TreePanel implements Panel {
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
       padGlyphs: () => ctx.engine.controls.style,
+      // the character screens' ring: Q / E (and L1 / R1, the shell's own read) page from the tree too
+      pages: { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => c.startsWith('Pad')) },
       gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();

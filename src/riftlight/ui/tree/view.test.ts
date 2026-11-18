@@ -97,4 +97,15 @@ describe('bottom bar hints', () => {
     expect(mouse.every((h) => h.glyphs.length === 0)).toBe(true);
     expect(treeHints({ narrow: true, pad: true, refunds: true, style: 'playstation' }).map((h) => h.id)).toEqual(['take', 'close']);
   });
+
+  it('in the game, names the host’s screens either side of the tree: L1 R1 with a pad, the Q E key caps with the keyboard', () => {
+    const pages = { keys: ['KeyQ', 'KeyE'], pad: ['PadLB', 'PadRB'] };
+    const ps = treeHints({ narrow: false, pad: true, refunds: false, style: 'playstation', pages });
+    expect(ps.map((h) => h.id)).toEqual(['move', 'take', 'stats', 'zoom', 'screens', 'close']);
+    expect(ps.find((h) => h.id === 'screens')).toEqual({ id: 'screens', text: 'screens', glyphs: [{ kind: 'cap', text: 'L1', round: true }, { kind: 'cap', text: 'R1', round: true }] });
+    const keys = treeHints({ narrow: false, pad: false, refunds: false, style: 'playstation', pages });
+    expect(keys.at(-1)).toEqual({ id: 'screens', text: 'screens', glyphs: [{ kind: 'cap', text: 'Q', round: false }, { kind: 'cap', text: 'E', round: false }] });
+    // the tree page (no host): none
+    expect(treeHints({ narrow: false, pad: false, refunds: false, style: 'playstation' }).map((h) => h.id)).not.toContain('screens');
+  });
 });
