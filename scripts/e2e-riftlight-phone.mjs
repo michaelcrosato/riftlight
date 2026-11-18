@@ -14,6 +14,8 @@
 //     draws no skill bar
 //   - a pad picked up: the controls step aside and the HUD draws the pad's skill bar; a touch
 //     brings the touch layout back
+//   - every title entry shows, a thumb tall (two columns of tiles in landscape), with a save and
+//     without (landscape)
 //   - ≡ opens the pause menu, the panel's close box closes it (taps)
 //   - the pause menu's rows are at least 40 CSS px in both orientations (two columns of tiles in
 //     landscape); the passive tree draws at the game's art size and names a finger's gestures
@@ -49,6 +51,17 @@ export async function runRiftlightPhone(h, orientation) {
     const dom = await R(() => ({ bar: document.querySelectorAll('.touch-ui .bar').length, panel: document.querySelectorAll('.debug-ui').length, hidden: !!document.querySelector('.touch-ui.hidden') }));
     check(dom.bar === 0 && dom.panel === 0, `${orientation}: no engine tool bar or debug panel without ?debug (bar ${dom.bar}, panel ${dom.panel})`);
     check(dom.hidden, `${orientation}: the touch controls stay off the title menu`);
+    // every entry of the title menu shows (two columns of tiles under the logo in landscape), a thumb tall
+    const titleRows = () =>
+      R(() => {
+        const rl = window.__RIFTLIGHT__;
+        const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / rl.game.ui.w;
+        const ws = rl.ui.widgets().filter((w) => w.kind === 'button');
+        return { top: rl.state().ui.at(-1), ids: ws.map((w) => w.id), hidden: ws.filter((w) => !w.rect).map((w) => w.id), least: Math.min(...ws.filter((w) => w.rect).map((w) => w.rect.h * k)) };
+      });
+    const title = await titleRows();
+    check(title.top === 'title' && title.ids.length >= 4 && title.hidden.length === 0 && title.least >= 40, `${orientation}: every title entry shows, at least 40 CSS px tall, with no save (${title.ids.join(' ')}; hidden ${title.hidden.join(' ') || 'none'}; ${Math.round(title.least)} CSS px)`);
     await shot('title');
 
     // a level, safe to tap around in: god mode, monsters idle
@@ -289,6 +302,18 @@ export async function runRiftlightPhone(h, orientation) {
       check(panels.loot.id === 'loot' && panels.loot.fits && panels.loot.inPanel && panels.loot.row >= 40, `${orientation}: the loot window fits, its rows and buttons are at least 40 CSS px (${Math.round(panels.loot.row)})`);
       check(panels.recap.id === 'death' && panels.recap.fits && panels.recap.inPanel && panels.recap.button >= 40, `${orientation}: the death recap fits with a ${Math.round(panels.recap.button)} CSS px button`);
       await shot('recap');
+    }
+    if (!portrait) {
+      // back to the title with a save: Continue joins the entries, and every one still shows
+      await R(() => {
+        const rl = window.__RIFTLIGHT__;
+        rl.save(0);
+        rl.game.saveAndQuit();
+        window.__PIXEL_ENGINE__.step(3);
+      });
+      const saved = await titleRows();
+      check(saved.top === 'title' && saved.ids.includes('continue') && saved.hidden.length === 0 && saved.least >= 40, `${orientation}: every title entry shows, at least 40 CSS px tall, with a save (${saved.ids.join(' ')}; hidden ${saved.hidden.join(' ') || 'none'}; ${Math.round(saved.least)} CSS px)`);
+      await shot('title-save');
     }
     checkClean(await state(page), logs, `${orientation}: `);
     await ctx.browser.close();

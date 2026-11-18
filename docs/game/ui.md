@@ -58,15 +58,21 @@ On a phone Riftlight draws its art at two CSS pixels per art pixel at least (`to
 panels lay out in about 195 rows in landscape. On a page with touch controls every panel gets a
 thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44 CSS px, 22 art
 rows in landscape, 15 in portrait; `Panel.fit`'s third argument): menu rows, the character sheet's
-tabs and rows, the codex's list, the loot window's and the death recap's buttons; the pause menu
-lays its buttons out as two columns of tiles where one column would scroll (`MenuOptions.grid`: a
-landscape phone), and the d-pad moves through the grid. A mouse's or a pad's screen keeps its
-layout (`tap` 0). Hints name the device in use, never the screen's width: the tree's bottom bar
-(`TreeViewOptions.device`: Drag pan · Pinch zoom · Tap twice: take · Hold refund on a touch
-screen, its art at the game's density: `TreeViewOptions.touchDensity`) and the item windows'
-(`windowHint` by `engine.controls.device`; the vendor window keeps the size of the taller hint,
-so a tap lands where it was aimed whichever device the hint names). The Arena (`?game=arena`)
-gets the same cluster (`ARENA_TOUCH_BUTTONS` in `combat/arena.ts`: no ≡ and no F).
+tabs and rows, the codex's list, the loot window's and the death recap's buttons. A menu never
+hides an entry it could show (`Menu.plan`): where its thumb-tall rows would scroll, the title and
+pause menus lay their buttons out as two columns of tiles (`MenuOptions.grid`: a landscape phone;
+the d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
+its room when that keeps them all in view (the save slots, the tuning, the rift keeper's depths on
+a landscape phone); one that scrolls even so (the settings, the languages) keeps its thumb-tall
+rows and shows a scroll bar beside them. A mouse's or a pad's screen keeps its layout (`tap` 0),
+whatever device was used last. Hints name the device in use, never the screen's width: the tree's
+bottom bar (`TreeViewOptions.device`: Drag pan · Pinch zoom · Tap twice: take · Hold refund on a
+touch screen, its art at the game's density: `TreeViewOptions.touchDensity`; `/tree.html` names a
+finger's gestures on a coarse pointer before the first touch) and the item windows' (`windowHint`
+by `engine.controls.device`; on a page with touch controls the vendor window keeps the size of
+the taller of a finger's and the mouse's hint, so a tap lands where it was aimed whichever device
+the hint names, while a desktop's holds its own hint: the mouse's, as it always did). The Arena
+(`?game=arena`) gets the same cluster (`ARENA_TOUCH_BUTTONS` in `combat/arena.ts`: no ≡ and no F).
 
 The engine's touch buttons are the skill bar, laid out as
 an action cluster: a floating joystick (`touchStick: 'floating'`: its base comes under the thumb

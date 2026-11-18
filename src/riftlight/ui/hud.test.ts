@@ -92,6 +92,21 @@ describe('hudGeometry with touch controls', () => {
       for (const a of [...of('life'), ...of('mana'), ...of('xp')]) for (const b of [...of('minimap'), ...of('gold'), ...of('control')]) expect(overlaps(a, b, 0), `${a.id} ${JSON.stringify(a)} over ${b.id} ${JSON.stringify(b)}`).toBe(false);
     });
 
+  it('an orb pushed up its side by the controls stops short of the minimap and the gold: it moves in along its row instead', () => {
+    // a landscape phone's 422×195 whose right half is taken from row 60 down (a cluster of
+    // buttons that tall): the mana orb's lowest spot is at the top, where the corner map is
+    const W = 422;
+    const H = 195;
+    const controls: Box[] = [{ x: 211, y: 60, w: 211, h: 135 }];
+    const g = hudGeometry(W, H, controls);
+    const mana = orbBox(g.mana, g.orbR);
+    expect(mana.y + mana.h, 'it climbed above the controls').toBeLessThanOrEqual(60);
+    const z = hudBoxes(W, H, { ...hudModel(controls), minimap: MINIMAP, gold: 9_876_543, goldShown: 9_876_543 });
+    for (const b of z.filter((x) => x.id === 'minimap' || x.id === 'gold')) expect(overlaps(mana, b, 0), `the mana orb ${JSON.stringify(mana)} under the ${b.id} ${JSON.stringify(b)}`).toBe(false);
+    for (const c of controls) expect(overlaps(mana, c, 0)).toBe(false);
+    expect(g.mana.x, 'still on its own side').toBeGreaterThan(W / 2);
+  });
+
   it('portrait: the top-left text starts right of the ≡ button', () => {
     const { W, H, boxes } = controlsFor(390, 844, 2);
     const g = hudGeometry(W, H, boxes);

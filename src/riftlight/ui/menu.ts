@@ -50,9 +50,10 @@ export interface MenuOptions {
   onBack?: () => void;
   onSound?: (s: 'click' | 'move') => void;
   /**
-   * A menu of buttons only (the pause menu) may lay them out as tiles in two columns where its rows
-   * are a thumb tall (`fit`'s `tap`) and one column would scroll: a landscape phone, whose screen
-   * is wide and short. Elsewhere one column.
+   * A menu of buttons only (the pause menu, the title menu) may lay them out as tiles in two
+   * columns on a page with touch controls (`fit`'s `tap`) where one column of rows that tall would
+   * scroll or shrink more than the tiles: a landscape phone, whose screen is wide and short.
+   * Elsewhere one column (`plan`).
    */
   grid?: boolean;
 }
@@ -106,11 +107,11 @@ export class Menu implements Panel {
     this.tap = tap;
   }
 
-  /** A widget's row, art pixels: a button or a control at least a thumb tall (`tap`), the control's label over it when narrow. */
-  private rowH(w: Widget, width: number): number {
+  /** A widget's row, art pixels: a button or a control at least `tap` + 2 tall (a thumb's), the control's label over it when narrow. */
+  private rowH(w: Widget, width: number, tap: number): number {
     const base = rowHeight(w, width);
-    if (w.kind === 'button') return Math.max(base, this.tap + 2);
-    if (isControl(w)) return Math.max(base, this.tap + 2) + (this.narrow ? NARROW_EXTRA : 0);
+    if (w.kind === 'button') return Math.max(base, tap + 2);
+    if (isControl(w)) return Math.max(base, tap + 2) + (this.narrow ? NARROW_EXTRA : 0);
     return base;
   }
 
@@ -119,12 +120,45 @@ export class Menu implements Panel {
     return Math.min(this.o.width ?? 200, this.room);
   }
 
-  /** Two columns of tiles (`MenuOptions.grid`): rows a thumb tall, one column would scroll, and two fit the room both ways. */
+  /** One column's height with rows `tap` + 2 tall, its footer line included. */
+  private columnH(tap: number): number {
+    return this.widgets.reduce((s, x) => s + this.rowH(x, this.colW, tap), 0) + 14;
+  }
+
+  /** A grid's height with tiles `tap` + 2 tall, its footer line included. */
+  private gridH(tap: number): number {
+    return this.gridRows() * this.tileH(tap) + 14;
+  }
+
+  /**
+   * How the menu lays out in its room (`fit`), on a page with touch controls (`tap` > 0; elsewhere
+   * one column, as it always was): one column of rows a thumb tall where they fit; else whichever
+   * of one column or a grid's two (`MenuOptions.grid`) keeps its rows tallest without scrolling, its
+   * rows shrunk to the room (never under a mouse's); and when nothing fits, one column of
+   * thumb-tall rows that scrolls (a phone's settings), its scroll bar showing there is more.
+   */
+  private plan(): { cols: 1 | 2; tap: number } {
+    const tap = this.tap;
+    if (tap <= 0 || this.columnH(tap) <= this.roomH) return { cols: 1, tap };
+    // the tallest rows that fit (-1: none do)
+    const tallest = (height: (t: number) => number) => {
+      for (let t = tap; t >= 0; t--) if (height(t) <= this.roomH) return t;
+      return -1;
+    };
+    const one = tallest((t) => this.columnH(t));
+    const grid = this.gridable ? tallest((t) => this.gridH(t)) : -1;
+    if (grid >= 0 && grid > one) return { cols: 2, tap: grid };
+    return { cols: 1, tap: one >= 0 ? one : tap };
+  }
+
+  /** The menu can lay out as a grid (`MenuOptions.grid`): buttons only, and two columns fit its width. */
+  private get gridable(): boolean {
+    return !!this.o.grid && this.room >= 2 * this.colW + GRID_GAP && this.widgets.every((w) => w.kind === 'button' || w.kind === 'gap');
+  }
+
+  /** Two columns of tiles (`MenuOptions.grid`, `plan`) or one. */
   get columns(): 1 | 2 {
-    if (!this.o.grid || this.tap <= 0 || this.room < 2 * this.colW + GRID_GAP) return 1;
-    if (!this.widgets.every((w) => w.kind === 'button' || w.kind === 'gap')) return 1;
-    const one = this.widgets.reduce((s, x) => s + this.rowH(x, this.colW), 0) + 14;
-    return one > this.roomH && this.gridRows() * this.tileH + 14 <= this.roomH ? 2 : 1;
+    return this.plan().cols;
   }
 
   /** The buttons a grid lays out as tiles, in order (its gaps are dropped). */
@@ -136,17 +170,16 @@ export class Menu implements Panel {
     return Math.ceil(this.tiles().length / 2);
   }
 
-  /** A tile's row in a grid: a button's. */
-  private get tileH(): number {
-    return Math.max(BUTTON_H + 3, this.tap + 2);
+  /** A tile's row in a grid: a button's, at least `tap` + 2. */
+  private tileH(tap: number): number {
+    return Math.max(BUTTON_H + 3, tap + 2);
   }
 
   get size() {
     // room for the hint / footer line under the widgets
-    if (this.columns === 2) return { w: Math.min(2 * this.colW + GRID_GAP, this.room), h: this.gridRows() * this.tileH + 14 };
-    const w = this.colW;
-    const h = this.widgets.reduce((s, x) => s + this.rowH(x, w), 0) + 14;
-    return { w, h };
+    const plan = this.plan();
+    if (plan.cols === 2) return { w: Math.min(2 * this.colW + GRID_GAP, this.room), h: this.gridH(plan.tap) };
+    return { w: this.colW, h: this.columnH(plan.tap) };
   }
 
   /** The widget list (rebuilt from the factory, if any, on every draw). */
@@ -192,8 +225,9 @@ export class Menu implements Panel {
   draw(ui: UiCanvas, r: Rect): void {
     this.refresh();
     this.rects.clear();
-    if (this.columns === 2) {
-      this.drawGrid(ui, r);
+    const plan = this.plan();
+    if (plan.cols === 2) {
+      this.drawGrid(ui, r, plan.tap);
       return;
     }
     const narrow = this.narrow;
@@ -201,7 +235,7 @@ export class Menu implements Panel {
     const widest = Math.max(0, ...this.widgets.filter(isControl).map((w) => ui.measure((w as { label: string }).label) + ((w as { indent?: boolean }).indent ? 12 : 0) + 9));
     const labelW = narrow ? 4 : Math.max(this.o.labelWidth ?? Math.floor(r.w * 0.45), Math.min(widest, Math.floor(r.w * 0.6)));
     // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
-    const heights = this.widgets.map((w) => this.rowH(w, r.w));
+    const heights = this.widgets.map((w) => this.rowH(w, r.w, plan.tap));
     const total = heights.reduce((a, b) => a + b, 0);
     const view = r.h - 14; // the footer line
     this.scrolls = total > view;
@@ -275,6 +309,13 @@ export class Menu implements Panel {
     // more above / below: a small arrow at the right edge
     if (this.scroll > 0) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + k, 1 + 2 * k, 1, 'sand');
     if (this.scroll < total - view) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + view + 4 - k, 1 + 2 * k, 1, 'sand');
+    // and a scroll bar in the gutter beside the rows (inside a panel's frame): how much more there is, and where the view is
+    if (this.scrolls) {
+      const bx = Math.min(r.x + r.w + 1, ui.w - 3);
+      const th = Math.max(6, Math.round((view * view) / total));
+      ui.rect(bx, r.y + 2, 2, view, 'night');
+      ui.rect(bx, r.y + 2 + Math.round(((view - th) * this.scroll) / Math.max(1, total - view)), 2, th, 'sand');
+    }
     this.drawFooter(ui, r);
   }
 
@@ -290,11 +331,11 @@ export class Menu implements Panel {
   }
 
   /** Two columns of tiles, row by row (`columns`). */
-  private drawGrid(ui: UiCanvas, r: Rect): void {
+  private drawGrid(ui: UiCanvas, r: Rect, tap: number): void {
     this.scrolls = false;
     this.scroll = 0;
     const w = Math.floor((r.w - GRID_GAP) / 2);
-    const h = this.tileH;
+    const h = this.tileH(tap);
     this.tiles().forEach(({ w: b, i }, k) => {
       const row: Rect = { x: r.x + (k % 2) * (r.w - w), y: r.y + 3 + Math.floor(k / 2) * h, w, h: h - 2 };
       this.rects.set(b.id, ui.button(row, b.label, { focus: i === this.focus, disabled: b.disabled, accent: b.accent }));
@@ -302,21 +343,33 @@ export class Menu implements Panel {
     this.drawFooter(ui, r);
   }
 
-  /** In a grid: up and down go a row (two tiles), left and right the tile beside, wrapping around. */
+  /**
+   * In a grid: up and down go a row (two tiles), left and right the tile beside, wrapping around;
+   * a tile that can't be focused (disabled) is passed over in the same direction.
+   */
   private moveTile(by: number): void {
     const tiles = this.tiles();
     const n = tiles.length;
-    const at = Math.max(0, tiles.findIndex((x) => x.i === this.focus));
     if (!n) return;
-    let k = at + by;
-    if (Math.abs(by) === 1) k = (k + n) % n;
-    else if (k >= n) k = at % 2; // past the last row: the top of its column
-    else if (k < 0) k = (n - 1) % 2 === at % 2 ? n - 1 : n - 2; // above the first: the bottom of its column
-    k = Math.max(0, Math.min(n - 1, k));
-    if (!focusable(tiles[k]!.w)) return;
-    this.follow = true;
-    this.focus = tiles[k]!.i;
-    this.o.onSound?.('move');
+    const at = Math.max(0, tiles.findIndex((x) => x.i === this.focus));
+    const next = (k: number): number => {
+      let j = k + by;
+      if (Math.abs(by) === 1) j = (j + n) % n;
+      else if (j >= n) j = k % 2; // past the last row: the top of its column
+      else if (j < 0) j = (n - 1) % 2 === k % 2 ? n - 1 : n - 2; // above the first: the bottom of its column
+      return Math.max(0, Math.min(n - 1, j));
+    };
+    let k = at;
+    for (let step = 0; step < n; step++) {
+      k = next(k);
+      if (k === at) return;
+      if (focusable(tiles[k]!.w)) {
+        this.follow = true;
+        this.focus = tiles[k]!.i;
+        this.o.onSound?.('move');
+        return;
+      }
+    }
   }
 
   input(e: UiEvent): boolean {

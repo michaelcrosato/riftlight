@@ -348,10 +348,13 @@ export class ItemsUi {
 
   private leftH(): number {
     if (this.left === 'vendor') {
-      // the window holds the hint in rows: the pad's, else the taller of a finger's and the mouse's
-      // (the layout never changes with the device: a tap lands where it was aimed)
+      // the window holds the hint in rows: the pad's; on a page with touch controls the taller of a
+      // finger's and the mouse's (the layout never changes between them: a tap lands where it was
+      // aimed); elsewhere the hint's own (a mouse's and a pad's screen keep their layout)
       const extra = (hint: { mini: boolean; rows: string[] }) => (hint.mini ? 0 : (hint.rows.length - 1) * 9 + 1);
-      return VENDOR_H + (this.cursorMode === 'pad' ? extra(this.vendorHint('pad')) : Math.max(extra(this.vendorHint('touch')), extra(this.vendorHint('mouse'))));
+      const mode = this.hintMode();
+      const modes = mode !== 'pad' && this.ctx.engine.renderer.touchDensity > 0 ? (['touch', 'mouse'] as const) : [mode];
+      return VENDOR_H + Math.max(...modes.map((m) => extra(this.vendorHint(m))));
     }
     return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
   }
