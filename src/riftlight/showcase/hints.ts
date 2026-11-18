@@ -6,11 +6,16 @@
 import { type HudColor, wrapText } from '../../engine';
 import { t } from '../lang';
 import type { HintName } from '../lang/showcase';
-import { miniCovers, miniWidth, type UiCanvas } from '../ui/kit';
+import { miniCovers, miniWidth, type UiCanvas, wrapRow } from '../ui/kit';
 
 /** A row of hints in the player's language ("WASD move · Esc leave"). */
 export function hints(names: readonly HintName[], separator = ' · '): string {
   return names.map((n) => t(`showcase.hint.${n}`)).join(separator);
+}
+
+/** The row of hints in lines no wider than `width` art pixels (the HUD's font): whole hints on each line, as many as fit. */
+export function hintRows(names: readonly HintName[], width: number, separator = '   '): string[] {
+  return wrapRow(names.map((n) => t(`showcase.hint.${n}`)), width, separator);
 }
 
 /**

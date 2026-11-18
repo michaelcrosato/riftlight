@@ -100,7 +100,8 @@ in Node. Deterministic math across runtimes is an open decision (michaelcrosato/
   that reads the page's URL outside the engine (a room's `?asset=`) guards on `typeof location`.
 - `stepUntil(engine, done, { max, every, what })` and `settle()` (`src/engine/node.ts`) step and let
   promise callbacks run between frames, as a page's `waitForFunction` waits. Riftlight's tests add
-  `headlessRiftlight`, `headlessGame`, `pointAtArt` (`src/riftlight/headless.ts`); Engine World's
+  `headlessRiftlight`, `headlessGame`, `pointAtArt`, `hudTexts` (where each HUD line lands, to
+  check it fits `engine.hud.width`) and `hudOverlap(a, b)` (whether two of those boxes overlap) (`src/riftlight/headless.ts`); Engine World's
   `headlessWorld`, `expectNoLeak` (`src/world/testWorld.ts`); the Playground's `bootPlayground`
   (`src/game/testPlayground.ts`).
 - One engine at a time per test file; give headless tests their own timeout (vitest's default is

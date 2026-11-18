@@ -4,17 +4,17 @@
  * The canvas backing store is sized to `art × scale` device pixels with an integer
  * `scale`, and the scene renders at exactly the art resolution (pixelSize = scale). Every
  * art pixel therefore covers an integer block of device pixels, and the canvas is centered
- * inside the viewport. Fixed/adaptive framing letterboxes; fill framing crops only the
- * excess device pixels at the edges of the last art pixel.
+ * inside the viewport. Fill framing (the default) crops only the excess device pixels at the
+ * edges of the last art pixel; fixed/adaptive framing letterboxes.
  *
  * Three aspect modes:
- * - `fixed`: the art resolution is exactly `internal` (16:9); other screen shapes letterbox.
- * - `adaptive`: the art *height* stays `internal.height` and the art width follows the
- *   screen's aspect (clamped to ADAPTIVE_ASPECT), so phones in portrait or landscape and
- *   odd window shapes fill the screen. Still integer-scaled. On a 16:9 screen it is
- *   identical to `fixed`.
- * - `fill`: the art width and height follow the viewport at the nearest integer scale
- *   to `internal.height`. The canvas covers every edge without stretching art pixels.
+ * - `fill` (default): the art width and height follow the viewport at the nearest integer
+ *   scale to `internal.height`. The canvas covers every edge without stretching art pixels:
+ *   the whole window at every shape, as 52in1 requires.
+ * - `adaptive` (opt-in, letterboxes): the art *height* stays `internal.height` and the art
+ *   width follows the screen's aspect (clamped to ADAPTIVE_ASPECT), integer-scaled: bars
+ *   wherever the largest integer scale leaves room. On a 16:9 screen it is `fixed`.
+ * - `fixed` (opt-in, letterboxes): the art resolution is exactly `internal` (16:9).
  */
 
 export interface Resolution {
@@ -81,15 +81,15 @@ const clampWidth = (w: number, height: number) =>
  * @param viewportHeight viewport height in CSS pixels
  * @param devicePixelRatio window.devicePixelRatio
  * @param internal the art resolution (in adaptive mode: its height, and the 16:9 fallback)
- * @param aspect `fixed` (exactly `internal`), `adaptive` (art width follows the screen),
- * or `fill` (both art dimensions follow the screen, with no letterbox)
+ * @param aspect `fill` (default: both art dimensions follow the screen, with no letterbox),
+ * `adaptive` (the art width follows the screen) or `fixed` (exactly `internal`); both letterbox
  */
 export function computeFraming(
   viewportWidth: number,
   viewportHeight: number,
   devicePixelRatio: number,
   internal: Resolution,
-  aspect: AspectMode = 'fixed',
+  aspect: AspectMode = 'fill',
 ): Framing {
   const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
   const deviceRound = aspect === 'fill' ? Math.ceil : Math.floor;

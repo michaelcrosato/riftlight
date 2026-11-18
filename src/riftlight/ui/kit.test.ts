@@ -2,7 +2,7 @@
 // widths measured as the text is drawn, wrapping by width at the language's word breaks.
 import { afterEach, describe, expect, it } from 'vitest';
 import { setTextLocale, textWidthPx } from '../../engine';
-import { clip, miniCovers, miniWidth, wrap } from './kit';
+import { clip, miniCovers, miniWidth, wrap, wrapRow } from './kit';
 
 afterEach(() => setTextLocale(undefined));
 
@@ -41,5 +41,15 @@ describe('measuring and cutting', () => {
     expect(lines.length).toBeGreaterThan(1);
     for (const l of lines) expect(textWidthPx(l)).toBeLessThanOrEqual(60);
     expect(lines.join('').replace(/\s/g, '')).toBe('Ahack-and-slashofendlessrifts'); // nothing lost
+  });
+
+  it('wrapRow puts whole parts on each line, as many as fit; a part wider than a line wraps inside', () => {
+    const parts = ['K kill', 'F pick up', 'I inventory', 'T stash'];
+    expect(wrapRow(parts, 480)).toEqual(['K kill  F pick up  I inventory  T stash']);
+    const lines = wrapRow(parts, textWidthPx('K kill  F pick up'));
+    expect(lines).toEqual(['K kill  F pick up', 'I inventory', 'T stash']);
+    expect(wrapRow(parts, 130, '   ')).toEqual(['K kill   F pick up', 'I inventory   T stash']);
+    const narrow = wrapRow(['Alt filter off'], textWidthPx('Alt filter'));
+    expect(narrow).toEqual(['Alt filter', 'off']);
   });
 });

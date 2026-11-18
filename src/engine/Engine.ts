@@ -189,10 +189,12 @@ export interface EngineOptions {
   container?: HTMLElement;
   resolution?: Resolution;
   /**
-   * `adaptive` (default): the art height stays `resolution.height` and the art width
-   * follows the screen's aspect (portrait phones fill the screen). `fixed`: always exactly
-   * `resolution`, letterboxed. `fill`: adjusts both art dimensions to cover the viewport
-   * at an integer scale, without black borders or stretched pixels.
+   * `fill` (default): both art dimensions follow the viewport at the integer scale nearest
+   * `resolution.height`, so the picture reaches every edge at every window shape (16:9, 21:9,
+   * 4:3, a phone), without bars or stretched pixels, as 52in1 requires. Opt-ins that letterbox
+   * (not for a 52in1 game): `adaptive` keeps the art height at `resolution.height` and gives the
+   * art the screen's aspect (clamped, then integer-scaled: bars around it), `fixed` is always
+   * exactly `resolution`.
    */
   aspect?: AspectMode;
   /**
@@ -291,7 +293,7 @@ const NO_READER: AssetReader = (path) => Promise.reject(new Error(`Engine.headle
 /**
  * Read engine options from the URL:
  *   ?mode=raw  ?res=320  ?debug=1|0
- *   ?aspect=fixed|adaptive  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
+ *   ?aspect=fill|adaptive|fixed  ?fps=30 (0 = uncapped)  ?quality=low|medium|high|auto
  *   ?camera=iso|topdown|side|third|first|free|fixed  ?zoom=1.5
  *   ?cam=<JSON CameraConfig>   (e.g. the config printed by the free camera)
  *   ?filters=crt,lcd  or  ?look=handheld (a LOOK_PRESETS name, e.g. pixel_heroes)

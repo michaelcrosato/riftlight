@@ -38,7 +38,10 @@ Both stages walk with it.
   town): merged meshes, one collider per block, coin and goal **triggers** filtered to the hero's
   collider, READY → GO, a timer, checkpoints and a kill plane, the ground pound that breaks the
   slabs (`hero.state === 'groundPoundLand'` over them → `physics.remove` their colliders),
-  parallax layers that follow the camera at a fraction, and its HUD on `ctx.hud`.
+  parallax layers that follow the camera at a fraction, and its HUD on `ctx.hud`, laid out by
+  `hud.width` (a phone in portrait is 130 art columns: the best time and the title stack under
+  the coins, the controls wrap with `hintRows`, the results card shrinks its title and wraps;
+  `arcade/hud.test.ts` checks every line stays on screen and apart).
 - **Input** (`readArcadeInput`): the stick's x runs along the course, down or C crouches (a
   ground pound in the air), Space / pad A / touch B jumps. The character is created with
   `lockDepth: true`, so any camera works, but the game uses `side` (`ARCADE_OPTIONS`:

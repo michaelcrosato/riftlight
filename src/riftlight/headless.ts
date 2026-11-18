@@ -9,7 +9,7 @@
  * Node only: it reads the models and packs from `public/` (`nodeAssets`).
  */
 import { fileURLToPath } from 'node:url';
-import { Engine, type EngineOptions, type Game, type HeadlessOptions, type Viewport } from '../engine';
+import { Engine, type EngineOptions, type Game, type HeadlessOptions, hudPlace, type Viewport } from '../engine';
 import { nodeAssets } from '../engine/node';
 
 export { settle, stepUntil } from '../engine/node';
@@ -64,3 +64,46 @@ export function pointAtArt(engine: Engine, x: number, y: number, down?: boolean)
   const { width, height } = engine.renderer.resolution;
   engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2, down);
 }
+
+/** A text the game put on the pixel HUD: where it lands on screen, its drop shadow included, in art pixels. */
+export interface HudTextBox {
+  text: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/**
+ * The texts the game draws on the pixel HUD over the next `frames` frames (the last frame's, since
+ * a game clears and redraws it each frame), placed as the HUD places them: tests check that every
+ * line fits the screen (`engine.hud.width`) and that none overlaps another.
+ */
+export function hudTexts(engine: Engine, frames = 1): HudTextBox[] {
+  const hud = engine.hud;
+  const own = hud.text;
+  let seen: HudTextBox[] = [];
+  const clear = hud.clear;
+  hud.clear = () => {
+    seen = [];
+    clear.call(hud);
+  };
+  hud.text = (x, y, text, o = {}) => {
+    const scale = Math.max(1, Math.round(o.scale ?? 1));
+    const shadow = o.shadow === false ? 0 : scale;
+    const m = hud.measure(text, scale);
+    const [px, py] = hudPlace(x, y, m.width, m.height, o.anchor ?? 'top-left', { width: hud.width, height: hud.height });
+    seen.push({ text, x: px, y: py, w: m.width + shadow, h: m.height + shadow });
+    own.call(hud, x, y, text, o);
+  };
+  try {
+    engine.step(frames);
+  } finally {
+    hud.text = own;
+    hud.clear = clear;
+  }
+  return seen;
+}
+
+/** Two HUD boxes share a pixel. */
+export const hudOverlap = (a: HudTextBox, b: HudTextBox): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;

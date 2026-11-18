@@ -9,6 +9,7 @@ import { setAssetReader } from './assets';
 import { Engine, type Game, type GameContext } from './Engine';
 import { nodeAssets } from './node';
 import { GpuSwarm } from './render/gpuSwarm';
+import type { HeadlessView } from './render/headlessView';
 import { drawSheet } from './render/sprites';
 import type { Recording } from './replay';
 
@@ -111,6 +112,18 @@ describe('Engine.headless', () => {
     },
     T,
   );
+
+  it('fills the whole window by default, at every shape the 52in1 hub checks', async () => {
+    const engine = await Engine.headless(new Dice());
+    expect(engine.state().aspect).toBe('fill');
+    for (const [width, height] of [[1600, 900], [2100, 900], [1200, 900], [390, 844], [960, 720]] as const) {
+      (engine.renderer as HeadlessView).setViewport({ width, height, dpr: 1 });
+      const f = engine.renderer.framing;
+      expect([f.offsetX <= 0, f.offsetY <= 0, f.offsetX + f.cssWidth >= width, f.offsetY + f.cssHeight >= height], `${width}×${height}: no bars`).toEqual([true, true, true, true]);
+      expect(f.integer && f.canvasWidth === f.artWidth * f.scale, 'square, integer-scaled art pixels').toBe(true);
+    }
+    engine.dispose();
+  });
 
   it('a recording replays on its own viewport', async () => {
     const engine = await Engine.headless(new Dice(), { viewport: { width: 1280, height: 720, dpr: 1 }, aspect: 'fill' });

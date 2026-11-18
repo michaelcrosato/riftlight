@@ -44,7 +44,7 @@ Split a bigger game into more modules (`import { Level } from './level.js'`) as 
 
 **The engine renders 3D as pixel art.** You build a small 3D world out of chunky low-poly
 shapes and toon materials in a 16-colour palette. The renderer draws it at a low art
-resolution (480×270, wider or taller to fit the screen), adds pixel outlines and scales it
+resolution (about 270 rows, shaped like the window), adds pixel outlines and scales it
 up by whole pixels. You never draw sprites; the pixel art comes from the camera and the
 pipeline. A **look** can change that: other palettes, CRT, cel shading, or clean
 full-resolution rendering, per layer (section 4, *Looks*).

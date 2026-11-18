@@ -7,7 +7,7 @@
 // in e2e. The tests run in order on one engine, as the e2e flow did.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
-import { headlessGame, pointAtArt } from '../headless';
+import { headlessGame, hudOverlap, hudTexts, pointAtArt } from '../headless';
 import { LootLab } from './lootlab';
 
 const T = 30_000;
@@ -165,4 +165,31 @@ describe('the Loot Lab', () => {
     expect(lab.ui.isOpen, 'Escape closes the windows').toBe(false);
     expect(e.errors).toEqual([]);
   });
+});
+
+describe('the Loot Lab at every window shape', () => {
+  // fill, the engine's default, gives the art the window's shape: 960×720 (the hub's cover) is
+  // 320 art columns, a phone in portrait 130; its two lines of status and keys wrap to the width
+  it.each([
+    [960, 540],
+    [960, 720],
+    [1600, 900],
+    [390, 844],
+  ])(
+    '%i×%i: every line of its HUD fits the screen and none overlaps another',
+    async (width, height) => {
+      const e = await headlessGame(new LootLab(), { viewport: { width, height, dpr: 1 } });
+      try {
+        e.step(2);
+        const lines = hudTexts(e);
+        expect(lines.map((l) => l.text).join(' ')).toMatch(/K KILL.*ALT FILTER ON/i);
+        for (const l of lines) expect(l.x >= 0 && l.x + l.w <= e.hud.width, `"${l.text}" (${l.x}..${l.x + l.w}) inside ${e.hud.width} columns`).toBe(true);
+        for (const [i, a] of lines.entries()) for (const b of lines.slice(i + 1)) expect(hudOverlap(a, b), `"${a.text}" / "${b.text}"`).toBe(false);
+        expect(e.errors).toEqual([]);
+      } finally {
+        e.dispose();
+      }
+    },
+    T,
+  );
 });

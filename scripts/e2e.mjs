@@ -29,7 +29,7 @@
 //                 sliders don't rebuild the graph; Raw 3D mode bypasses filters.
 // touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⓘ debug panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
-// phone           portrait viewport fills the screen (adaptive aspect, integer blocks); a lost
+// phone           portrait viewport fills the screen (fill, the default aspect; integer blocks); a lost
 //                 GPU device is recovered with a working renderer;
 //                 Riftlight as a player opens it on a phone, portrait and landscape,
 //                 no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
@@ -1413,8 +1413,8 @@ async function runPhone(browserExe) {
 }
 
 async function runEnginePhone(browserExe) {
-  console.log('\n▶ phone (portrait adaptive aspect, GPU device loss)');
-  // Portrait phone: the art keeps 270 rows and narrows to the screen instead of a 16:9 strip.
+  console.log('\n▶ phone (portrait fill aspect, GPU device loss)');
+  // Portrait phone: the default aspect fills it to every edge, art rows near 270 at an integer scale.
   {
     const browser = await chromium.launch({ executablePath: browserExe, args: SCENARIOS[0].args, headless: true });
     try {
@@ -1425,8 +1425,8 @@ async function runEnginePhone(browserExe) {
       const st = await state(page);
       const f = st.framing;
       const cover = (f.cssWidth * f.cssHeight) / (390 * 844);
-      check(st.aspect === 'adaptive' && f.integer && f.artHeight === 270 && f.artWidth < 200, `portrait art ${f.artWidth}×${f.artHeight} at ${f.scale}× (adaptive)`);
-      check(cover > 0.85, `canvas covers ${(cover * 100).toFixed(0)}% of a portrait screen`);
+      check(st.aspect === 'fill' && f.integer && f.scale === 3 && f.artHeight === 282 && f.artWidth === 130, `portrait art ${f.artWidth}×${f.artHeight} at ${f.scale}× (fill, the default)`);
+      check(cover >= 1 && f.offsetX <= 0 && f.offsetY <= 0, `canvas covers ${(cover * 100).toFixed(0)}% of a portrait screen, every edge`);
       check(Math.abs((st.view.right - st.view.left) / (st.view.top - st.view.bottom) - f.artWidth / f.artHeight) < 1e-6, 'camera aspect follows the art');
       const shot = await capture(page, 'phone-portrait.png');
       check(colorCount(shot) > 8 && blockUniformity(shot, f.scale) > 0.995, `portrait frame renders with uniform ${f.scale}×${f.scale} blocks`);
