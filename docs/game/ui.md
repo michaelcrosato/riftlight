@@ -5,7 +5,7 @@ Panels, `UiEvent`s and `PanelHost`: docs/game/shell.md *Ports*.
 ## HUD layout (`ui/layout.ts`)
 
 The fixed HUD (`hudZones`, named by `hudBoxes`: orbs, bar, minimap, gold, the top-left block, boss
-bar, a moment's seconds left, banner) reserves its rects each frame; world overlays are placed around them by priority with
+bar, a moment's seconds left, banner, couch guests' strips) reserves its rects each frame; world overlays are placed around them by priority with
 `HudLayout.place`: the prompt, a moment's way-out mark (`beacon`), the focused loot label, the
 other labels (loud first, then near), then damage numbers (which merge quick hits on one target
 and stack per target). Whatever finds no room is skipped for that frame. The centre banner is a
@@ -20,7 +20,11 @@ small minimap. The top-left block reserves every row it draws (where you are, th
 the tuning: a longer language's are wider). A boss's name and bar go at the top centre between the
 minimap and its mirror on the left (`bossPlace`), and where the bar would be shorter than 100 there
 (a phone in portrait, a window narrower than about 330) across the screen under the minimap, the
-gold and the top-left block; the banner then goes under it. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
+gold and the top-left block; the banner then goes under it. Couch guests' strips (`guestsRect`)
+go under the top-left block, under a boss's bar that runs across the screen (it stays put as guests
+come and go), and side by side, two or three a row, where a column of them would run into the rest
+of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); the banner goes
+under them and a kill streak right of them. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
 tap on the corner minimap) fits what the hero explored into the room between the HUD's top and
 bottom (`mapView`, up to 5 art pixels a cell; around the hero when it can't fit), on a
 see-through plate under the HUD (ink on two pixel rows of every three, `PLATE_GAP`: it reads
@@ -60,8 +64,9 @@ thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44
 rows in landscape, 15 in portrait; `Panel.fit`'s third argument): menu rows, the character sheet's
 tabs and rows, the codex's list, the loot window's and the death recap's buttons. A menu never
 hides an entry it could show (`Menu.plan`): where its thumb-tall rows would scroll, the title and
-pause menus lay their buttons out as two columns of tiles (`MenuOptions.grid`: a landscape phone;
-the d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
+pause menus lay their buttons out as two columns of tiles (`MenuOptions.grid`: a landscape phone,
+the tiles narrower than the menu on a small one, 284×160, while each holds the widest label; the
+d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
 its room when that keeps them all in view (the save slots, the tuning, the rift keeper's depths on
 a landscape phone); one that scrolls even so (the settings, the languages) keeps its thumb-tall
 rows and shows a scroll bar beside them. A mouse's or a pad's screen keeps its layout (`tap` 0),

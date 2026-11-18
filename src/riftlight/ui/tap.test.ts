@@ -16,6 +16,7 @@ import { tapArt, TAP_CSS } from './layer';
 import { Menu, type Widget } from './menu';
 import { pauseMenu, slotsMenu, titleMenu } from './menus';
 import { CharacterSheet, SHEET_PAGES } from './panels';
+import { NORMAL } from '../game/difficulty';
 
 /** The renderer's view on a page: its framing at Riftlight's density, touch controls or not. */
 function view(width: number, height: number, dpr: number, touch: boolean) {
@@ -42,13 +43,15 @@ function canvas(W: number, H: number) {
   return { ui: new UiCanvas(hud as never), texts, rects };
 }
 
-const host = (o: { last?: number | null; languages?: number } = {}) =>
+const host = (o: { last?: number | null; languages?: number; opened?: string[] } = {}) =>
   ({
     saves: { last: o.last ?? null, slots: [0, 1, 2].map((slot) => ({ slot, empty: slot !== 0, error: false, level: 3, deepest: 2 })), volatile: false, lastError: '' },
     slot: 0,
     sound: () => {},
     resume: () => {},
-    openPanel: () => {},
+    openPanel: (id: string) => o.opened?.push(id),
+    openMenu: (m: Menu) => o.opened?.push(m.id),
+    difficulty: () => NORMAL,
     photoMode: () => {},
     lookStudio: () => {},
     engineWorld: () => {},
@@ -70,8 +73,9 @@ describe('a thumb on the panels', () => {
     expect(tapArt(view(844, 390, 2, false))).toBe(0);
   });
 
-  it('the pause menu: two columns of thumb-tall tiles on a landscape phone (no scrolling), one column elsewhere; the d-pad moves through the grid', () => {
-    const menu = pauseMenu(host());
+  it('the pause menu: two columns of thumb-tall tiles on a landscape phone (no scrolling), one column elsewhere; the d-pad moves through the grid, a tap acts on a tile', () => {
+    const opened: string[] = [];
+    const menu = pauseMenu(host({ opened }));
     // a landscape phone's room inside the frame (422×195 art: 410×169)
     menu.fit(410, 169, 22);
     expect(menu.columns).toBe(2);
@@ -95,7 +99,11 @@ describe('a thumb on the panels', () => {
     expect(at()).toBe(3);
     menu.input({ kind: 'nav', dir: 'up' });
     expect(at()).toBe(1);
-    // a tap on a tile acts on it
+    // a tap on a tile acts on it (Tuning opens its menu)
+    const tuning = menu.rects.get('tuning')!;
+    menu.input({ kind: 'pointer', type: 'down', x: tuning.x + 4, y: tuning.y + 4 });
+    menu.input({ kind: 'pointer', type: 'up', x: tuning.x + 4, y: tuning.y + 4 });
+    expect(opened, 'the tap on Tuning opened the tuning menu').toEqual(['tuning']);
     menu.focusId('resume');
     // a portrait phone: one column of rows a thumb tall
     menu.fit(118, 256, 15);
@@ -110,6 +118,32 @@ describe('a thumb on the panels', () => {
     expect(menu.columns).toBe(1);
     menu.draw(canvas(480, 270).ui, { x: 170, y: 30, w: menu.size.w, h: menu.size.h });
     expect(menu.rects.get('resume')!.h).toBe(14);
+  });
+
+  it('a small landscape phone (568×320: 284×160 art, a room 272 wide) gets the pause menu\'s grid too, its tiles narrowed to the room: every entry in view', () => {
+    const v = view(568, 320, 2, true);
+    expect([v.framing.artWidth, v.framing.artHeight]).toEqual([284, 160]);
+    const tap = tapArt(v);
+    const menu = pauseMenu(host());
+    // the room inside the frame, the legend's rows under it (`UiLayer.draw`)
+    menu.fit(272, 123, tap);
+    expect(menu.columns, 'two columns of tiles narrower than the menu').toBe(2);
+    expect(menu.size.w).toBeLessThanOrEqual(272);
+    expect(menu.size.h).toBeLessThanOrEqual(123);
+    const r = { x: 6, y: 16, w: menu.size.w, h: menu.size.h };
+    const { ui, texts } = canvas(284, 160);
+    menu.draw(ui, r);
+    const buttons = menu.items().filter((w) => w.kind === 'button');
+    for (const b of buttons) {
+      const rect = menu.rects.get(b.id);
+      expect(rect, `${b.id}: shown, nothing scrolled away`).toBeDefined();
+      expect(inside(rect!, r), `${b.id} ${JSON.stringify(rect)} inside the menu`).toBe(true);
+      expect(texts.map((x) => x.s), `${b.id}: its label whole`).toContain(b.label);
+    }
+    expect(new Set(buttons.map((b) => menu.rects.get(b.id)!.x)).size, 'two columns').toBe(2);
+    // a room too narrow for two tiles that hold the labels stays one column
+    menu.fit(120, 123, tap);
+    expect(menu.columns).toBe(1);
   });
 
   it('the character sheet on a phone in portrait turns its pages with a pager: every page name whole, its tabs and rows a thumb tall', () => {

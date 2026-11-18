@@ -95,7 +95,8 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
   seat colours (`HUB_COLORS`): a ring at its feet, its tag (`hud.coop.seat`, P2) over its head and
   a compact strip under the top-left block (`GuestStrip`: its life, its four skills' readiness, the
   seconds until it rises; beside a phone's minimap it narrows to the gap, or goes under the minimap
-  and gold). While guests play, player 1 has seat 1's ring and a P1 tag too. **Leave** in the same
+  and gold; under a boss's bar across the screen; two or three a row where a column would run into
+  the HUD below, a landscape phone's: docs/game/ui.md *HUD layout*). While guests play, player 1 has seat 1's ring and a P1 tag too. **Leave** in the same
   menu sends it home; its pad plays player 1 again. The title sends every guest home.
 - **A guest is a teammate**, as a shared world's host makes one (`teammate`): player 1's level,
   skills, tree, gear (and difficulty), refitted at every stage entry (`fitGuest`), a fighter in the

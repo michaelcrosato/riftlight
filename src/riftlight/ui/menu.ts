@@ -5,7 +5,7 @@
  *   keys / d-pad: up/down move focus, left/right change sliders and choices, confirm activates.
  * Every Riftlight menu (title, pause, tuning, settings, slots, dev) is one of these.
  */
-import { type HudColor, wrapText } from '../../engine';
+import { type HudColor, textWidthPx, wrapText } from '../../engine';
 import type { Panel } from '../game/ports';
 import { t } from '../lang';
 import { clip, inside, miniWidth, type Rect, UI, type UiCanvas, type UiEvent } from './kit';
@@ -60,6 +60,9 @@ export interface MenuOptions {
 
 /** Art pixels between the two columns of a grid menu (`MenuOptions.grid`). */
 const GRID_GAP = 4;
+
+/** A grid's tile holds its label and this much more: its frame and the button's margin (`UiCanvas.button` cuts a label 6 short of its width), and some air. */
+const TILE_PAD = 12;
 
 export class Menu implements Panel {
   readonly id: string;
@@ -151,9 +154,20 @@ export class Menu implements Panel {
     return { cols: 1, tap: one >= 0 ? one : tap };
   }
 
-  /** The menu can lay out as a grid (`MenuOptions.grid`): buttons only, and two columns fit its width. */
+  /** A grid's tile width: two in the room side by side, each at most the menu's width (`colW`). */
+  private get tileW(): number {
+    return Math.min(this.colW, Math.floor((this.room - GRID_GAP) / 2));
+  }
+
+  /**
+   * The menu can lay out as a grid (`MenuOptions.grid`): buttons only, and two columns fit its
+   * width, the tiles narrower than the menu (a small landscape phone's 272 columns) while each still
+   * holds the widest label and its room around it (`TILE_PAD`).
+   */
   private get gridable(): boolean {
-    return !!this.o.grid && this.room >= 2 * this.colW + GRID_GAP && this.widgets.every((w) => w.kind === 'button' || w.kind === 'gap');
+    if (!this.o.grid || !this.widgets.every((w) => w.kind === 'button' || w.kind === 'gap')) return false;
+    const widest = Math.max(0, ...this.tiles().map(({ w }) => textWidthPx(w.label)));
+    return this.tileW >= widest + TILE_PAD;
   }
 
   /** Two columns of tiles (`MenuOptions.grid`, `plan`) or one. */
@@ -178,7 +192,7 @@ export class Menu implements Panel {
   get size() {
     // room for the hint / footer line under the widgets
     const plan = this.plan();
-    if (plan.cols === 2) return { w: Math.min(2 * this.colW + GRID_GAP, this.room), h: this.gridH(plan.tap) };
+    if (plan.cols === 2) return { w: 2 * this.tileW + GRID_GAP, h: this.gridH(plan.tap) };
     return { w: this.colW, h: this.columnH(plan.tap) };
   }
 

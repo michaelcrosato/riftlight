@@ -741,13 +741,17 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     else ui.text(W - 6, at.y, text, { align: 'right', color });
   }
 
-  // kill streak
+  // kill streak (left, half way down; right of couch guests' strips it would run into)
   if (m.streak && m.streak.count >= 3 && m.streak.age < 3 && !g.compact) {
     const s = m.streak.age < 0.12 ? 3 : 2;
-    const x = 8;
+    const count = lang().formatNumber(m.streak.count);
+    const word = t(m.streak.count >= 10 ? 'hud.streak.rampage' : m.streak.count >= 6 ? 'hud.streak.slaughter' : 'hud.streak.streak');
     const y = Math.floor(H / 2) - 20;
-    ui.text(x, y, lang().formatNumber(m.streak.count), { scale: s, color: m.streak.count >= 10 ? 'orange' : 'sand' });
-    ui.text(x, y + 8 * s, t(m.streak.count >= 10 ? 'hud.streak.rampage' : m.streak.count >= 6 ? 'hud.streak.slaughter' : 'hud.streak.streak'), { color: m.streak.age > 2.5 ? 'slate' : 'white' });
+    const box = { x: 8, y, w: Math.max(textWidthPx(count, 3), textWidthPx(word)) + 1, h: 8 * 3 + 9 };
+    const guests = guestsRect(W, H, m, g);
+    const x = guests && overlaps(box, guests, 1) ? guests.x + guests.w + 4 : 8;
+    ui.text(x, y, count, { scale: s, color: m.streak.count >= 10 ? 'orange' : 'sand' });
+    ui.text(x, y + 8 * s, word, { color: m.streak.age > 2.5 ? 'slate' : 'white' });
   }
 
   drawBanner(ui, m, g);

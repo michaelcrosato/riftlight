@@ -520,4 +520,28 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
     }
     expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 3);
   });
+
+  it('a kill streak goes right of the strips where it would run into them, never over them', () => {
+    let checked = 0;
+    for (const [name, vw, vh, dpr] of SCREENS) {
+      for (const [touch, density] of PAGES) {
+        const f = controlsFor(vw, vh, dpr, 'fill', density);
+        const controls = touch ? f.boxes : [];
+        const { W, H } = f;
+        for (const guests of [1, 2, 3]) {
+          for (const [boss, tuned] of [[false, 0], [true, 2]] as const) {
+            for (const streak of [{ count: 7, age: 1 }, { count: 12, age: 0.05 }]) {
+              const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}, a streak of ${streak.count}`;
+              const m: HudModel = { ...model(controls, { guests, boss, tuned, map: true }), streak };
+              const strips = hudBoxes(W, H, m).find((b) => b.id === 'guests')!;
+              const inStrips = (x: Box) => x.x >= strips.x && x.y >= strips.y && x.x + x.w <= strips.x + strips.w + 1 && x.y + x.h <= strips.y + strips.h + 1;
+              for (const x of drawn(W, H, m).filter((x) => !inStrips(x))) expect(overlaps(strips, x, 0), `${where}: ${JSON.stringify(x)} over the strips ${JSON.stringify(strips)}`).toBe(false);
+              checked++;
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 2);
+  });
 });
