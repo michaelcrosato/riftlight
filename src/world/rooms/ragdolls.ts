@@ -45,7 +45,7 @@ export const RAGDOLLS: RoomDef = {
   wing: 'animation',
   about:
     'Training dummies that go limp when you hit them: their joints become physics bodies that fall, tumble down the stairs and get knocked about by cannonballs. When they come to rest, the ragdoll pose blends into a get-up animation that matches how they landed, on their back or their front.',
-  try: ['Punch or kick a dummy (J, K)', 'PUSH the dummy at the top of the stairs', 'Fire the CANNON', 'Make them floppier (T)'],
+  try: ['Punch a dummy ({key:attack}); keep punching: the combo ends in kicks', 'PUSH the dummy at the top of the stairs', 'Fire the CANNON', 'Make them floppier in Tweak ({key:tweak})'],
   spawn: [0, 0, 5],
   facing: Math.PI,
   background: 'plum',

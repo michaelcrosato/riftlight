@@ -46,7 +46,7 @@ export const DUNGEON: RoomDef = {
   wing: 'procedural',
   about:
     'A dungeon built by wave function collapse: ten little tiles (and their turns) whose edges must match their neighbours. Watch it decide one square at a time, always the least certain one next, each choice ruling out tiles next door. Then walk in. A flood fill from the door finds the rooms nobody can reach.',
-  try: ['Step on SOLVE and watch it collapse', 'NEW SEED, then walk the halls', 'Mazes, Halls or Mixed (T)', 'Find a sealed room (dark floor)'],
+  try: ['Step on SOLVE and watch it collapse', 'NEW SEED, then walk the halls', 'Mazes, Halls or Mixed in Tweak ({key:tweak})', 'Find a sealed room (dark floor)'],
   spawn: [0, 0, 11],
   facing: Math.PI,
   background: 'night',

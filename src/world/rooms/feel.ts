@@ -15,8 +15,8 @@ export const FEEL: RoomDef = {
   title: 'Game Feel Lab',
   wing: 'movement',
   about:
-    'Why some hits feel heavy: a few frames of freeze (hitstop), a jolt of screen shake, a flash, a puff of particles, a sound. Punch the bags (J) with each of them on and off, slow the game down, and ground-pound the slam plate.',
-  try: ['Punch a bag (J, three times for a combo) with everything ON, then step on JUICE OFF', 'SLOW-MO 0.25x, then punch: physics, animation and particles all slow down', 'Ground pound (jump, then C) on the SLAM plate'],
+    'Why some hits feel heavy: a few frames of freeze (hitstop), a jolt of screen shake, a flash, a puff of particles, a sound. Punch the bags ({key:attack}) with each of them on and off, slow the game down, and ground-pound the slam plate.',
+  try: ['Punch a bag ({key:attack}, three times for a combo) with everything ON, then step on JUICE OFF', 'SLOW-MO 0.25x, then punch: physics, animation and particles all slow down', 'Ground pound ({key:jump}, then {key:crouch}) on the SLAM plate'],
   spawn: [0, 0, 5],
   facing: Math.PI,
   background: 'night',
@@ -102,7 +102,7 @@ k * (Math.sin(t * 41.3) * 0.6 + Math.sin(t * 73.7 + 1.3) * 0.4),`,
         b.rope.quaternion.copy(q.setFromUnitVectors(up, d.normalize()));
       }
     };
-    kit.label([0, 4, -4], 'PUNCH THE BAGS · J', { color: 'sand', range: 10 });
+    kit.label([0, 4, -4], 'PUNCH THE BAGS · {key:attack}', { color: 'sand', range: 10 });
     // juice switches
     const toggles: [keyof typeof juice, string, string][] = [
       ['hitstop', 'HITSTOP', 'The game freezes for a few frames when a hit lands.'],

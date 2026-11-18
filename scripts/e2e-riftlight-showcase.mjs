@@ -5,7 +5,8 @@
 // headless in src/riftlight/showcase/headless.test.ts; here, what needs a page:
 //
 //   arcade    walk to the cabinet in Emberfall and use it: the swoop and the stage render; Esc
-//             walks back out and the URL keeps the game's own camera.
+//             pauses it (a frame of the pause menu) and its Back to town walks back out; the URL
+//             keeps the game's own camera.
 //   bestiary  kill level 1's monsters, open the Hall of Beasts: the hall renders (frames of
 //             inspect and breeding too).
 //   photo     O in town: free camera; a gameboy look captured as a PNG (the frame holds only the
@@ -49,8 +50,19 @@ export async function runRiftlightShowcase(h) {
     await R(() => window.__PIXEL_ENGINE__.step(80));
     const arcadeShot = await capture(page, `showcase-${tag}-arcade.png`);
     check(colorCount(arcadeShot) > 12, `the stage renders (${colorCount(arcadeShot)} colours)`);
-    // Esc, the player's way out
-    await R(() => window.__RIFTLIGHT__.press('Escape'));
+    // Esc pauses (Options and ≡ too); the pause's last row, Back to town, is the player's way out
+    const paused = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      rl.press('Escape');
+      return rl.game.showcase.pause?.items ?? null;
+    });
+    check(paused?.join(',') === 'resume,restart,photo,leave', `Esc pauses the run (${paused})`);
+    await page.screenshot({ path: `.scratch/e2e/showcase-${tag}-arcade-pause.png` }); // the page: the menu is on the HUD
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      rl.press('ArrowUp');
+      rl.press('Enter');
+    });
     await page.waitForFunction(
       () => {
         window.__PIXEL_ENGINE__.step(1);

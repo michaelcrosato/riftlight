@@ -8,16 +8,26 @@
  *          single filter (palettes, consoles, displays), pixel / raw, 480 / 320, time of day
  *          (town), sun and ambient strength, a fill light that rides with the camera.
  *   P      save a PNG of exactly what the pipeline presents (`renderer.capture()`).
- *   (pad: Triangle switches fly / edit, Square saves, L1 hides the panel, Options goes back)
- *   H      hide the panel (`photo_hide`) · Esc back to the game: camera, filters, mode, resolution and lights
- *          come back as they were.
+ *   (pad: Triangle switches fly / edit, Square saves, L1 or Create hides the panel, R1 steps the
+ *   field of view, Options goes back)
+ *   H      hide the panel (`photo_hide`: L1, Create; on a phone a sideways swipe that starts on it,
+ *          and a tap on "show" brings it back) · Esc back to the game: camera, filters, mode,
+ *          resolution and lights come back as they were.
  */
 import { Vector3 } from 'three/webgpu';
 import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
 import { lang, lineKey, t } from '../../lang';
-import { clip, inside, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
-import { hints, miniHints } from '../hints';
+import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
+import { hints, miniHints, touchFloor } from '../hints';
 import type { Showcase } from '../Showcase';
+
+/** The free camera's zooms R1 steps through on a pad (`nextFovStep`): wide to close, then wide again. */
+export const FOV_STEPS = [0.5, 0.75, 1, 1.5, 2, 3] as const;
+
+/** The step after `zoom` (the first above it), or the widest from the closest. */
+export function nextFovStep(zoom: number): number {
+  return FOV_STEPS.find((z) => z > zoom + 1e-3) ?? FOV_STEPS[0];
+}
 
 /**
  * One look per step: off, every preset stack, then every filter on its own. `name` is how
@@ -70,6 +80,13 @@ export class PhotoMode {
   private row = 0;
   private light: LightHandle | null = null;
   private readonly rects = new Map<string, Rect>();
+  /** Where the panel was drawn last (a sideways swipe that starts on it hides it), and the "show" hint while hidden (a tap on it). */
+  private panelRect: Rect | null = null;
+  private showRect: Rect | null = null;
+  /** The latest touch or click went down on the panel (the swipe it makes hides it). */
+  private downOnPanel = false;
+  /** A finger down on a row's arrow (it changes when the finger lifts there, unless it swiped). */
+  private tapOn: string | null = null;
   private readonly target = new Vector3();
   private readonly dir = new Vector3();
   private flash = 0;
@@ -117,6 +134,8 @@ export class PhotoMode {
     this.hidden = false;
     this.sub = 'fly';
     this.row = 0;
+    this.panelRect = this.showRect = this.tapOn = null;
+    this.downOnPanel = false;
     this.active = true;
     const free = e.setCamera({ preset: 'free', fov: 50 }, { syncUrl: false });
     if (free instanceof FreeRig) free.onFix = null; // Enter is ours, not the rig's "print the fixed config"
@@ -129,6 +148,7 @@ export class PhotoMode {
     const e = this.engine;
     const game = this.host.game;
     this.active = false;
+    this.host.syncControls(); // the town's prompts again (a mode under it keeps the showcase's)
     this.light?.release();
     this.light = null;
     e.setLook(s.look);
@@ -291,18 +311,55 @@ export class PhotoMode {
       rig.controlsCharacter = false;
     }
     if (input.wasPressed('KeyP', 'PadX')) this.shoot();
-    if (input.wasPressed('KeyH', 'PadLB')) this.hidden = !this.hidden; // CONTROLS.photo_hide
+    // the panel away and back: H, L1 (`photo_hide`) or Create (a phone's are below: a swipe from the panel, a tap on "show")
+    if (input.wasPressed('KeyH', 'PadLB', 'PadBack')) this.hidden = !this.hidden;
     if (input.wasPressed('Escape', 'PadStart')) return this.close();
+    // the field of view on a pad: R1 steps it closer, from the closest back to the widest (the wheel and a pinch on the others)
+    if (input.wasPressed('PadRB') && rig instanceof FreeRig) rig.setZoom(nextFovStep(rig.zoom));
     const rows = this.rows();
     this.row = Math.min(this.row, rows.length - 1);
+    // a finger that swiped this frame made no tap (its lift changes nothing)
+    const swiped = input.wasPressed('SwipeLeft', 'SwipeRight', 'SwipeUp', 'SwipeDown');
+    const under = (x: number, y: number) => [...this.rects].find(([, r]) => inside(r, x, y))?.[0] ?? null;
+    const press = (key: string) => {
+      const [id, side] = key.split(':') as [RowId, string];
+      this.row = rows.indexOf(id);
+      this.change(id, side === 'l' ? -1 : 1);
+    };
     for (const e of events) {
-      if (e.kind === 'pointer' && e.type === 'down' && !this.hidden) {
-        for (const [key, r] of this.rects) {
-          if (!inside(r, e.x, e.y)) continue;
-          const [id, side] = key.split(':') as [RowId, string];
-          this.row = rows.indexOf(id);
-          this.change(id, side === 'l' ? -1 : 1);
+      if (e.kind === 'pointer' && e.type === 'down') {
+        this.downOnPanel = !this.hidden && !!this.panelRect && inside(this.panelRect, e.x, e.y);
+        if (this.hidden) {
+          if (this.showRect && inside(this.showRect, e.x, e.y)) {
+            this.hidden = false;
+            this.host.game.sound('move');
+          }
+          continue;
         }
+        // a click changes a row at once; a finger when it lifts on the same arrow (a swipe from it changes nothing)
+        const key = under(e.x, e.y);
+        if (e.touch) this.tapOn = key;
+        else if (key) press(key);
+        continue;
+      }
+      if (e.kind === 'pointer' && e.type === 'up' && e.touch) {
+        const key = this.tapOn;
+        this.tapOn = null;
+        if (key && !swiped && !this.hidden && under(e.x, e.y) === key) press(key);
+        continue;
+      }
+      // a sideways swipe that starts on the panel sends it away (one elsewhere is a quick look: a drag looks)
+      if (e.kind === 'swipe') {
+        if ((e.dir === 'left' || e.dir === 'right') && this.downOnPanel && !this.hidden) this.hidden = true;
+        this.downOnPanel = false;
+        continue;
+      }
+      // Circle: out of the panel's rows back to flying, and from flying out of photo mode
+      if (e.kind === 'back' && !input.wasPressed('Escape')) {
+        if (this.sub === 'edit') {
+          this.sub = 'fly';
+          this.host.game.sound('move');
+        } else return this.close();
         continue;
       }
       if (this.sub !== 'edit') continue;
@@ -327,9 +384,16 @@ export class PhotoMode {
     if (this.toastAge < 2) ui.text(ui.w / 2, ui.h - 22, this.toast, { align: 'center', color: 'sand', shadow: 'ink' });
     if (this.capturing) return;
     if (this.hidden) {
-      ui.mini(ui.w - 4, ui.h - 8, hints(['show']), 'slate', 'right');
+      // over a phone's buttons there, on a dark strip, and a tap on it brings the panel back
+      const text = hints(['show']);
+      const w = miniWidth(text);
+      const y = Math.min(ui.h - 8, touchFloor(this.engine, ui.w - 8 - w, ui.w) - 8);
+      if (this.engine.controls.device === 'touch') ui.rect(ui.w - 7 - w, y - 3, w + 6, 11, 'ink');
+      ui.mini(ui.w - 4, y, text, 'slate', 'right');
+      this.showRect = { x: ui.w - 12 - w, y: y - 8, w: w + 12, h: 20 };
       return;
     }
+    this.showRect = null;
     const rows = this.rows();
     const e = this.engine;
     const game = this.host.game;
@@ -367,6 +431,7 @@ export class PhotoMode {
     let y = 22;
     const h = rows.length * 12 + 26;
     ui.panel(x, y - 14, w, h, 'ink', this.sub === 'edit' ? 'sand' : 'slate');
+    this.panelRect = { x, y: y - 14, w, h };
     const sub = t(this.sub === 'edit' ? 'showcase.photo.sub.edit' : 'showcase.photo.sub.fly');
     ui.text(x + 5, y - 11, clip(t('showcase.photo.title'), w - 16 - ui.measure(sub), measure), { color: 'sand' });
     ui.mini(x + w - 5, y - 10, sub, this.sub === 'edit' ? 'sand' : 'mist', 'right');
@@ -392,8 +457,14 @@ export class PhotoMode {
       }
       y += 12;
     });
-    const help = this.sub === 'fly' ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back']) : hints(['pick', 'change', 'fly', 'save', 'back']);
-    miniHints(ui, ui.w / 2, ui.h - 8, help, 'mist', 'ink');
+    // a phone taps the panel's rows and swipes it away (from the panel): no fly up and down, no edit switch
+    const touch = this.engine.controls.device === 'touch';
+    const help = touch
+      ? hints(['move', 'drag_look', 'field_of_view', 'save', 'hide', 'back'])
+      : this.sub === 'fly'
+        ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back'])
+        : hints(['pick', 'change', 'fly', 'save', 'back']);
+    miniHints(ui, ui.w / 2, Math.min(ui.h - 8, touchFloor(this.engine, 0, ui.w) - 8), help, 'mist', 'ink'); // over a phone's stick and buttons
   }
 
   /** The free camera's focus: a point ahead of it (the light pool lights what it looks at). */

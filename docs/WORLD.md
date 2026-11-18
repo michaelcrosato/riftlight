@@ -7,18 +7,36 @@ complete, small example of an engine system, written to be copied.
 
 ## Playing it
 
-| Key | Does |
-| --- | --- |
-| WASD, Space, C, J, F, Z... | the hero's whole moveset (docs/engine/character.md) |
-| **H** (F1) | how it works: the room's station guide |
-| **T** | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound; look, pixel art and quality are the player's settings, saved like the ⚙ panel's) |
-| **G** (F2) | go to any room |
-| **I** | the room's card again |
-| **Esc** | menu: field guide, back to the Atrium, reset the room |
+| Keyboard and mouse | Pad (PlayStation · Xbox) | Phone | Does |
+| --- | --- | --- | --- |
+| WASD, Space, C, J, F, Z... | left stick, Cross, Circle, Square, Triangle, L1... | stick, JUMP, DUCK, HIT, GRAB (and PRONE in the Moveset Playground) | the hero's whole moveset (docs/engine/character.md) |
+| **Esc** | **Options** · Menu | **≡** | menu: every panel below, Tweak and settings, the room card, field guide, back to the Atrium, reset the room, Riftlight (it stops the room; a DualSense's triggers let go) |
+| **G** (F2) | **Create** · View | **GO** | go to any room |
+| **H** (F1) | **R3** or the touchpad · RS | **?** | how it works: the room's station guide |
+| **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, camera, the room-change transition, shake) and every one of the player's, saved (look, pixel art, pixel size, quality (auto or a level), frame rate, sound, volume, music, effects, the controller's buttons, vibration, debug info), and Reset settings |
+| **I** | in the menu | a tap on it | the room's card again, or away |
+| Esc / Backspace | Circle | a sideways swipe, the close box | close a panel |
 
 Walk into a door to enter a room; every room has its pads on the floor: step on one to
-change something (the toast says what and why; the guide lists them all). Phones: the
-touch buttons add **?** (how it works) and **GO** (rooms).
+change something (the toast says what and why; the guide lists them all). A swipe or a tap sends
+the card and a toast away, and a click or a tap on one is the shell's: nothing is placed, grabbed
+or skipped behind it, even when the finger lifts (`RoomRuntime.pointerFree`); so is one a panel
+took (a menu row, the close box) until it lets go, and the Cutscene skips on a tap as it lifts, so
+the swipe that sends the card away skips nothing. Every prompt (the row along the bottom, the card, toasts, labels, the
+guide, the menu) names the control for the input used last (`controls.ts` `WORLD_CONTROLS`, each
+room's `Game.controls`; a line names one as `{key:action}`, `keyText`). Rooms with actions of their
+own have them on every device: the Time Lab rewinds on R, L2 or <<; the Gallery steps on Q / E,
+L1 / R1 or a phone's < > and changes shelf on comma / period, L2 / R2 or >> (back a shelf on a
+phone: its < SHELF pad); the Workshop picks on
+Q / E or L1 / R1, changes shelf on comma / period or L2 / R2 and places, turns and undoes on
+Square, Triangle and Circle (a phone taps a row, the panel's arrows for a shelf and the floor to
+place, and has UNDO); the press that closes a panel is the panel's, never the room's too
+(`RoomRuntime.inputFree`), and while it is held (`RoomRuntime.held`, `showcase/held.ts`): the
+Circle that closed the guide never crouches the hero, the Cross that chose Resume never pulls the
+car's handbrake; the Sandbox carries on E, R2 or HOLD; the car
+drives on analog R2 / L2 (adaptive triggers that push back, rumble on knocks and slides) and
+gets out on C or Circle; Bullet Hell rumbles on hits and grazes, lights the DualSense's bar and
+fires by itself on a phone. There is no DOM ⚙: the menu's Tweak and settings has all the player's settings.
 
 ## Rooms
 
@@ -72,6 +90,7 @@ touch buttons add **?** (how it works) and **GO** (rooms).
 | --- | --- |
 | `types.ts` | `RoomDef` (a room as data: card, guide, camera, look, spawn, `build`), `RoomLogic` (what `build` returns: per-frame hooks, knobs, HUD, an agent API), `PadDef`, `Knob`, `Guide` |
 | `shell.ts` | `WorldShell`: what survives room loads (the UI, hotkeys, transitions, visited rooms); `RoomGame`: a room as a `Game` (the hero, the room's build and logic, the shell's UI) |
+| `controls.ts` | the World's controls on every device: `WORLD_CONTROLS` (key, pad, touch per action: the prompts), `WORLD_KEYS` (the codes each reads), `WORLD_TOUCH_BUTTONS` (the hero's cluster, ≡ GO ?, three room slots), `keyText` |
 | `kit/RoomKit.ts` | the building kit: `box`, `cylinder`, `solid`, `crate`, `map` / `room` (ASCII maps), `pad` / `padGrid`, `label`, `door`, `light`, `glow` |
 | `kit/map.ts` | ASCII maps merged into as few boxes as possible (pure, unit-tested) |
 | `kit/mannequin.ts`, `kit/diorama.ts` | hero clones playing a clip; the village the look rooms show |
@@ -93,7 +112,25 @@ own from the URL.
 for, what it costs, the engine's code, field-guide words) and a `build(room)` that uses the
 kit. Floors and walls can be an ASCII map (one character per metre, merged into boxes);
 pads are `{ label, note, group, apply(room, pad), enabled? }` (`enabled()` false: stepping on
-it does nothing, no note, no sound).
+it does nothing, no note, no sound). A room's words name controls as `{key:action}` (an action of
+`WORLD_CONTROLS`), filled in for the device in use; `RoomDef.controls` renames an action where the
+room's own controls differ on a device (the Workshop's shelves on a phone are its panel's < >), so
+a line never names a button the room has not got, nor a bare key: the hero's moves and Tweak are
+tags too ("Punch ({key:attack})", "in Tweak ({key:tweak})"), and a keyboard's or a mouse's own way
+says so ("on a keyboard Shift+E", "with a mouse, a right click"); `words.headless.test.ts` reads
+every room's card, guide, pads, labels and Tweak rows on a pad and a phone. A room's own actions read keys and pad buttons
+together (`WORLD_KEYS`); `RoomLogic.touch()` puts them on a phone (a touch slot `TouchSlot1`..`3`
+with its label, or a base button relabelled or hidden: the car's JUMP is BRAKE), and
+`RoomLogic.claims` lists pad buttons the hero's moves must not also take (the Gallery's L1 / R1).
+A room reads input itself only while `room.inputFree`: false while a panel or a room change owns
+the keys and for the rest of a frame that began with one, so the Circle that closes the guide is
+not the Workshop's undo as well; a held action through `room.held(...codes)`, which leaves out a
+key a panel's press still holds; the pointer's buttons only while `room.pointerFree` (a click or
+a tap that hid the card, or that a panel took, is theirs until it lets go). The card and a toast
+count down on the frame's recorded time (`shownTime`: unscaled, so slow motion doesn't hold them;
+held while a menu freezes the room), the card's length comes from the recorded args (14 s on a
+fresh start, 8 s through a door), and a room's level starts with nothing held (`roomStarted`), so
+whether the card or a toast takes a click is input-derived and a recording replays it at any frame rate.
 
 ## Add a room
 

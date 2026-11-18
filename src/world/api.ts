@@ -36,6 +36,9 @@ export const worldApi = {
       busy: shell.busy,
       visited: [...shell.visited],
       panel: shell.layer.top?.panel.id ?? null,
+      /** The room's card is up; the toast on screen (its words for the device in use), or null. */
+      card: shell.cardShown,
+      toast: shell.toastShown,
       transition: shell.transition,
       hero: h && p ? { at: [+p.x.toFixed(3), +p.y.toFixed(3), +p.z.toFixed(3)], state: h.state, anim: h.anim } : null,
       pads: r?.kit.pads.map((pad) => ({ label: pad.def.label, active: pad.active, group: pad.def.group ?? null })) ?? [],
@@ -74,7 +77,7 @@ export const worldApi = {
     const def = id ? roomById(id) : shell.room?.def;
     if (!def) return [];
     const isCurrent = shell.room?.def === def;
-    const blocks = guideBlocks(def, isCurrent ? shell.room!.kit.pads : [], isCurrent ? (shell.room!.logic.knobs ?? []) : []);
+    const blocks = guideBlocks(def, isCurrent ? shell.room!.kit.pads : [], isCurrent ? (shell.room!.logic.knobs ?? []) : [], (s) => shell.keys(s));
     return blocks.map((b) => (b.kind === 'h' ? `## ${b.text}` : b.kind === 'code' ? `[${b.title}] ${b.file}\n${b.src}` : b.kind === 'gap' ? '' : b.kind === 'li' ? `${b.bullet ?? '-'} ${b.text}` : b.text));
   },
 };

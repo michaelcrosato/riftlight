@@ -5,7 +5,11 @@
  */
 import { Color, InstancedMesh, Matrix4, Mesh, MeshBasicNodeMaterial, SphereGeometry, Vector3 } from 'three/webgpu';
 import { BulletPool, emitter, type Emitter, FIXED_DT, PALETTE, type PatternDef, setLookLayer, toonMaterial } from '../../engine';
+import { touchFloor } from '../controls';
 import type { Knob, RoomDef } from '../types';
+
+/** On a phone the hero fires its fan toward the turret by itself this often (seconds), so a thumb is free to weave. */
+const AUTO_FIRE = 0.5;
 
 const ARENA = 9; // half size
 const PATTERNS: (PatternDef & { label: string; count: number; speed: number })[] = [
@@ -27,8 +31,8 @@ export const BULLETS: RoomDef = {
   title: 'Bullet Hell',
   wing: 'genres',
   about:
-    'A shoot-\'em-up arena from above: the turret in the middle fires patterns (aimed streams, fans, rings, spirals, sweeping waves and bursts) while you weave through them. Shoot back with J, graze bullets for points, slow time down. Hundreds of bullets at once (the pool holds 6000) are just numbers, drawn in one draw call.',
-  try: ['Survive the SPIRAL and the WAVE', 'Graze: pass close without being hit', 'Shoot back (J) and empty its bar', 'ALL patterns at once, then SLOW-MO'],
+    'A shoot-\'em-up arena from above: the turret in the middle fires patterns (aimed streams, fans, rings, spirals, sweeping waves and bursts) while you weave through them. Shoot back with {key:attack} (on a phone it fires by itself), graze bullets for points, slow time down. Hundreds of bullets at once (the pool holds 6000) are just numbers, drawn in one draw call.',
+  try: ['Survive the SPIRAL and the WAVE', 'Graze: pass close without being hit', 'Shoot back ({key:attack}) and empty its bar', 'ALL patterns at once, then SLOW-MO'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'ink',
@@ -99,6 +103,8 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
       },
     });
     let hp = 100;
+    let invulnerable = 0;
+    let autoFire = AUTO_FIRE;
     let hits = 0;
     let grazes = 0;
     let shots = 0;
@@ -127,10 +133,16 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
           em.update(pool, dt, ORIGIN, aim);
         });
         pool.step(dt, (x, z) => Math.abs(x) < ARENA && Math.abs(z) < ARENA);
+        invulnerable = Math.max(0, invulnerable - dt);
         if (h && feet) {
-          // the hero shoots back with punches: a little fan of player bullets
-          if (h.anim !== lastAnim && (h.anim === 'Punch' || h.anim === 'Punch2' || h.anim === 'Kick')) {
-            const f = h.forwardInto(fwd);
+          // the hero shoots back with punches: a little fan of player bullets; on a phone (the
+          // device in use, recorded) it also fires toward the turret by itself, every AUTO_FIRE s
+          const punched = h.anim !== lastAnim && (h.anim === 'Punch' || h.anim === 'Punch2' || h.anim === 'Kick');
+          autoFire = punched ? AUTO_FIRE : autoFire - dt;
+          const auto = !punched && e.input.device === 'touch' && autoFire <= 0 && Math.hypot(feet.x, feet.z) > 0.5;
+          if (auto) autoFire = AUTO_FIRE;
+          if (punched || auto) {
+            const f = punched ? h.forwardInto(fwd) : fwd.set(-feet.x, 0, -feet.z).normalize();
             for (const a of [-0.15, 0, 0.15]) {
               const ca = Math.cos(a);
               const sa = Math.sin(a);
@@ -146,9 +158,13 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
             e.screen.flash(0xb13e53, { duration: 0.12, strength: 0.6 });
             e.shake.add(0.4);
             ctx.audio.play('hurt');
+            e.input.rumble({ strong: 0.9, weak: 0.5, ms: 120 }); // the pad in your hands takes the hit too
+            invulnerable = 0.6;
           }
-          // grazes: enemy bullets that came close and missed, each once
-          grazes += pool.graze(feet.x, feet.z, 0.7, 'enemy');
+          // grazes: enemy bullets that came close and missed, each once (a tick in the pad's light motor)
+          const grazed = pool.graze(feet.x, feet.z, 0.7, 'enemy');
+          if (grazed) e.input.rumble({ strong: 0, weak: 0.35, ms: 30 });
+          grazes += grazed;
         }
         // player bullets hit the turret
         const struck = pool.hits(0, 0, 0.8, 'player', out).length;
@@ -166,6 +182,8 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
         }
       },
       update() {
+        // the light bar: red while the hero is hit, else the turret's health (a DualSense in 52in1)
+        ctx.dualsense.light(invulnerable > 0 ? PALETTE.red : hp > 66 ? PALETTE.lime : hp > 33 ? PALETTE.orange : PALETTE.red);
         mesh.count = pool.alive;
         // drawn between the last two physics steps: bullets fly straight, so back off along their velocity
         const back = (1 - ctx.physics.alpha) * FIXED_DT;
@@ -180,12 +198,15 @@ for (let i = 0; i < n; i++) shoot(pool, at, angle + (i / n) * Math.PI * 2, speed
         turret.rotation.y += 0.02;
       },
       draw() {
-        ctx.hud.text(4, 18, `BULLETS ${pool.alive} · HITS ${hits} · GRAZE ${grazes} · TURRET ${hp}%`, { anchor: 'bottom-left', color: 'sand' });
+        const hud = ctx.hud;
+        // over the shell's prompts, and over a phone's joystick
+        hud.text(4, Math.min(hud.height - 25, touchFloor(e, 4, 180) - 9), `BULLETS ${pool.alive} · HITS ${hits} · GRAZE ${grazes} · TURRET ${hp}%`, { color: 'sand' });
       },
       // the camera holds the whole arena, wherever you are in it
       cameraTarget: () => ARENA_CENTER,
       dispose() {
         e.timeScale = 1;
+        ctx.dualsense.light(null);
       },
       status: () => `bullets ${pool.alive} hits ${hits} hp ${hp}`,
       api: { bullets: () => pool.alive, hits: () => hits, hp: () => hp, fired: () => pool.fired, shots: () => shots, patterns: (ids: number[]) => (active = new Set(ids)) },

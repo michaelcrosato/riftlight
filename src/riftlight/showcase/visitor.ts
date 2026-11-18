@@ -128,12 +128,15 @@ export class Visitor {
       if (kind === 'WallKick') particles.burst('dust', [feet.x, feet.y + 0.6, feet.z], { count: 5 });
     }
     if (h.stats.landings > s.landings) {
+      // the pad in the player's hands feels it too (output only: nothing headless or in a replay)
       if (h.state === 'groundPoundLand') {
         audio.play('groundPound');
+        this.ctx.input.rumble({ strong: 0.8, weak: 0.4, ms: 140 });
         particles.burst('impact', feet);
         particles.burst('dust', feet, { scale: 1.5, speed: 1.6 });
       } else if (h.state === 'hardLand') {
         audio.play('land', { pitch: -4 });
+        this.ctx.input.rumble({ strong: 0.45, weak: 0.3, ms: 90 });
         particles.burst('dust', feet, { scale: 1.4, speed: 1.4 });
       } else {
         audio.play('land');
@@ -144,7 +147,10 @@ export class Visitor {
       if (h.state === 'skid') audio.play('skid');
       if (h.state === 'groundPound') audio.play('whoosh');
     }
-    if (h.anim !== s.anim && PUNCHES.has(h.anim)) audio.play('punch', { pitch: h.anim === 'Kick' || h.anim === 'SweepKick' ? -3 : h.anim === 'Punch2' ? 2 : 0 });
+    if (h.anim !== s.anim && PUNCHES.has(h.anim)) {
+      audio.play('punch', { pitch: h.anim === 'Kick' || h.anim === 'SweepKick' ? -3 : h.anim === 'Punch2' ? 2 : 0 });
+      this.ctx.input.rumble({ strong: 0, weak: 0.25, ms: 40 });
+    }
     s.puff -= dt;
     if ((h.state === 'skid' || h.state === 'crouchSlide') && s.puff <= 0) {
       particles.burst('skid', feet, { direction: [h.hvel.x, 0.6, h.hvel.z] });

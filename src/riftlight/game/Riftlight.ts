@@ -1604,7 +1604,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private syncTouch(): void {
     if (!this.touchPad.active) return;
     const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
-    this.touchPad.sync({ playing, showcase: this.showcase.active, skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
+    this.touchPad.sync({ playing, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
   }
 
   /** What F (the touch interact button) would do now: the verb and its target, or null. */

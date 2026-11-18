@@ -24,6 +24,27 @@ stage removes every collider, trigger and controller it added (`showcase/headles
 `Town.extend({ root, blockers, interactables, activate, deactivate, update })`
 (`showcase/townProps.ts`), lights from the engine's pool only while the town shows.
 
+**On every device.** Options, Esc or ≡ pause a mode (`showcase/pause.ts` `StagePause`: Resume,
+Restart in the arcade, Photo mode, Back to town; the stage and its clock stand still), and the
+pause's Back to town is the way out (standalone Rift Runner's pause has Settings instead: the
+engine's panel, which a pad drives, over the pause). While the showcase owns the frame it puts
+`SHOWCASE_CONTROLS` (`hints.ts`) in `engine.controls`, so every `{key:...}` hint names what its
+screens do: R1 / L1 zoom the card (the wheel and a pinch on the others), R1 steps photo mode's
+field of view, R1 / L1 or the < > at the screen's sides on a phone turn the Hall's wing (never the
+hero's lie down and prone), L1 (`photo_hide`) or Create hides photo mode's panel, R2 / L2 fly it up and down; Circle
+backs out of the Hall's card and of photo mode. A swipe acts only where it starts on what it
+moves, since a drag looks or orbits everywhere else (and a quick one is a swipe too): a sideways
+one from the Hall's card closes it, one from photo mode's panel hides it (a tap on "show" brings
+it back, and its hint says tap: `show`), and a finger presses a card button or a panel arrow when it lifts there without
+swiping (a click at once). A press the card, the pause or photo mode took is theirs
+(`showcase/held.ts`, `Showcase.presses`): the Cross or Space that chose Back never jumps the
+hero, and the Circle that closed one never crouches it while it is held. On a
+phone (`Showcase.touch()` → `TouchPad.sync`) the stick, A, B (it jumps), ≡ and the mode's own
+interact (the Hall's LOOK, only at an exhibit; the nearest is enough there) show, no skill icons;
+none of them over the Hall's card, whose hint names its way back there as the swipe (`card_back`:
+Esc, Circle, a swipe from the card; photo mode's `back` is the ≡, Options or Esc, which leave it
+there); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
+
 **The hero as a platformer** (`showcase/visitor.ts`). `Visitor` is the hero model on the engine's
 `PlatformerCharacter` (the whole Mario-64 moveset) with the playground's sounds and dust, clips
 compiled once and shared by every clone; `spawn(physics, at, { lockDepth })` / `despawn()`.
@@ -49,8 +70,11 @@ Both stages walk with it.
   `{ preset: 'side', viewHeight: 12 }` and the `16bit` + `crt` look).
 - **The template** is `ArcadeGame.ts` (`?game=arcade`): about 60 lines around the stage. Its
   `controls` are Riftlight's `CONTROLS`, so the engine names its hints for the device in use
-  ("WASD run · Space jump", "Left stick run · Cross jump"); it promises no "leave" (`canLeave:
-  false`), and Enter, Cross or a tap restarts it (`arcade/arcade.headless.test.ts`).
+  ("WASD run · Space jump", "Left stick run · Cross jump", "Stick run · B jump" on its phone
+  buttons, `ARCADE_TOUCH_BUTTONS`: B jumps, A attacks, ≡ pauses); it promises no "leave"
+  (`canLeave: false`), Options, Esc or ≡ pause it (Resume, Restart), and Enter, Cross or a tap
+  restarts it once done (`ARCADE_AGAIN`, `arcade/arcade.headless.test.ts`). In portrait the side
+  camera pulls back (`arcadeZoom`) so the course ahead stays in view.
 - **Scripted run** (`autoplay.ts`): a reactive pilot in beats (run, jump the pit, double jump
   from the step's edge, wall-kick the chimney, ground-pound the slabs, hop to the flag) that
   reads the hero's state, so `showcase/headless.test.ts` proves the course can be finished with the real
@@ -71,8 +95,11 @@ Both stages walk with it.
   and every exhibit, the door lamps and the altar request a light from the engine's pool (8 of
   13 lit at medium quality, the ones near the camera).
 - **Walking**: the `first` preset and `readMoveInput` (WASD strafe, the hero faces the camera),
-  Tab / pad Y flies with `free`. **Inspecting** switches to `fixed` and moves the camera by hand
-  around the exhibit (drag or Q/E, wheel), framing it left of the card; a button per clip
+  Tab / pad Y flies with `free`, N / R1 (L1 back) or a phone's < > turn the wing. **Inspecting**
+  (F, R2, a left click, a phone's LOOK; recorded input only, so a replay inspects what the run did)
+  switches to `fixed` and moves the camera by hand around the exhibit (drag, Q/E or the right
+  stick; the wheel, a pinch or R1 / L1), framing it left of the card; Circle, Esc or a sideways
+  swipe from the card goes back; a button per clip
   (`MonsterRuntime.play`), the turntable. **Breeding**: `crossover` + `mutate` of two species,
   the child grows on the vat (`Spawn`), a seed from the save keeps it reproducible.
 
@@ -84,9 +111,10 @@ advancing it), and give each setting a row: every `FILTER_PRESETS` look and ever
 `FILTER_IDS` filter (`PHOTO_LOOKS`), pixel / raw, 480 / 320, time of day (town), sun and ambient
 scale, a fill light that follows the camera (`ctx.lights.request({ follow: camera })`). Tab
 switches fly / edit (the rig's `fixed` flag), drag looks (no pointer lock, so the panel stays
-clickable). P saves `renderer.capture()` as a PNG through a 2D canvas (the HUD is not in it);
-H hides the panel; Esc puts everything back. On a pad: Triangle switches, Square saves, L1 hides
-(`photo_hide`: Triangle is taken), Options goes back.
+clickable). P / Square saves `renderer.capture()` as a PNG through a 2D canvas (the HUD is not in
+it); H, L1 (`photo_hide`: Triangle is taken), Create or a sideways swipe from the panel hides it (a
+tap on "show" brings it back); R1 steps the field of view (`nextFovStep`); Circle leaves the rows,
+then photo mode; Esc or Options puts everything back.
 
 ## Agent API
 

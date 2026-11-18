@@ -202,7 +202,7 @@ export const FILTER_BENCH: RoomDef = {
   title: 'Filter Bench',
   wing: 'looks',
   about: 'Every filter on its own pad. Step on pads to add them to the stack, step again to take them off; the stack runs in the order you added them. CLEAR empties it.',
-  try: ['Stack NES, then SCANLINES, then CRT', 'Add BLOOM before and after a palette: order matters', 'Press T to see every parameter of the stack'],
+  try: ['Stack NES, then SCANLINES, then CRT', 'Add BLOOM before and after a palette: order matters', 'Open Tweak ({key:tweak}) to see every parameter of the stack'],
   spawn: [0, 0, 7],
   facing: Math.PI,
   camera: { preset: 'iso', pitch: 40, yaw: 45, viewHeight: 19, stiffness: 7, minZoom: 0.4, maxZoom: 3 },
@@ -384,7 +384,7 @@ if (ok) await e.screen.reveal(kind, { duration: speed, center });`,
     kit.pad([0, 0, 7], {
       label: 'USE FOR DOORS',
       color: 'sand',
-      note: 'The last transition you played is now the one every door in Engine World uses (T changes it too).',
+      note: 'The last transition you played is now the one every door in Engine World uses (Tweak, {key:tweak}, changes it too).',
       apply: () => (shell.transition = last),
     });
     const crates = [[5, 6], [7, 6], [6, 8], [5.5, 7], [6.5, 7]].map(([x, z]) => kit.crate([x!, 0.5, z!], { size: 0.8 }));

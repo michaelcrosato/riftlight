@@ -2,7 +2,8 @@
  * Engine World (`?game=world`, `?game=world&room=<id>`): the engine's tech demo. See
  * docs/WORLD.md.
  */
-import { DEFAULT_TOUCH_BUTTONS, type EngineOptions, type Game } from '../engine';
+import type { EngineOptions, Game } from '../engine';
+import { WORLD_TOUCH_BUTTONS } from './controls';
 import { worldApi } from './api';
 import { ROOMS } from './rooms';
 import { RoomGame, roomById, WORLD_CAMERA } from './shell';
@@ -11,12 +12,16 @@ export { ROOMS } from './rooms';
 export { RoomGame, shell, WORLD_CAMERA } from './shell';
 export { worldApi } from './api';
 export type { RoomDef, RoomLogic, RoomRuntime, Knob, Guide, PadDef, WingId } from './types';
+export { WORLD_CONTROLS, WORLD_KEYS, WORLD_TOUCH_BUTTONS } from './controls';
 
 /** Engine options Engine World is designed for (URL options still win). */
 export const WORLD_OPTIONS: Partial<EngineOptions> = {
   aspect: 'fill',
   camera: { ...WORLD_CAMERA },
-  touchButtons: [...DEFAULT_TOUCH_BUTTONS, { label: '?', code: 'KeyH', hint: 'how it works' }, { label: 'GO', code: 'KeyG', hint: 'rooms' }],
+  // the hero's moves, the menu, the room list, the guide and three slots for a room's own (controls.ts)
+  touchButtons: [...WORLD_TOUCH_BUTTONS],
+  // no DOM ⚙: the menu's Tweak and settings has the player's settings, on a pad and a phone too
+  settings: { button: false },
 };
 
 /** The first room: once the engine runs it, `window.__WORLD__` exists (and stays, room to room). */

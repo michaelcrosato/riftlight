@@ -4,6 +4,7 @@
  * kit panel (mouse, touch, keys and gamepad alike).
  */
 import { Menu, type Widget } from '../../riftlight/ui/menu';
+import { keyText } from '../controls';
 import { GLOSSARY, SECTIONS, term } from '../glossary';
 import type { Knob, RoomDef } from '../types';
 import { wing, WINGS } from '../wings';
@@ -35,8 +36,15 @@ export function formatNumber(v: number): string {
   return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : v.toFixed(2);
 }
 
-/** The station guide's pages for a room. */
-export function guideBlocks(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[]): Block[] {
+/**
+ * The station guide's pages for a room. `fill` fills the words' `{key:action}` in for the device
+ * in use (controls.ts `keyText`); left out, the tags are named by their keys.
+ */
+export function guideBlocks(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[], fill: (text: string) => string = (s) => keyText(null, s)): Block[] {
+  return guideOf(def, pads, knobs).map((b) => (b.kind === 'h' || b.kind === 'p' || b.kind === 'li' ? { ...b, text: fill(b.text) } : b));
+}
+
+function guideOf(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[]): Block[] {
   const g = def.guide;
   const blocks: Block[] = [{ kind: 'p', text: `${wing(def.wing).title} wing`, color: wing(def.wing).color }];
   blocks.push({ kind: 'h', text: "What you're seeing" }, { kind: 'p', text: g.what });
@@ -50,7 +58,7 @@ export function guideBlocks(def: RoomDef, pads: readonly Pad[], knobs: readonly 
   }
   if (knobs.length) {
     blocks.push({ kind: 'h', text: 'Tweak it live' });
-    blocks.push({ kind: 'p', text: `Press T for sliders: ${knobs.map((k) => k.label).join(', ')}. Pads and leaving the room set them back.` });
+    blocks.push({ kind: 'p', text: `Open Tweak ({key:tweak}) for sliders: ${knobs.map((k) => k.label).join(', ')}. Pads and leaving the room set them back.` });
   }
   blocks.push({ kind: 'h', text: 'Try this' });
   for (const t of def.try) blocks.push({ kind: 'li', text: t });
@@ -73,13 +81,13 @@ export function guideBlocks(def: RoomDef, pads: readonly Pad[], knobs: readonly 
   return blocks;
 }
 
-export function guidePanel(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[]): Reader {
-  return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs), { width: 250, height: 236 });
+export function guidePanel(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[], fill?: (text: string) => string): Reader {
+  return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs, fill), { width: 250, height: 236 });
 }
 
-/** The field guide: every word, by section. */
-export function fieldGuide(): Reader {
-  const blocks: Block[] = [{ kind: 'p', text: 'Every word the station guides use. Tab jumps between sections.' }];
+/** The field guide: every word, by section. `touch`: on a phone, which has no Tab to jump between them. */
+export function fieldGuide(fill: (text: string) => string = (s) => keyText(null, s), touch = false): Reader {
+  const blocks: Block[] = [{ kind: 'p', text: fill(touch ? 'Every word the station guides use; drag to scroll.' : 'Every word the station guides use. {key:tab} jumps between sections.') }];
   for (const [id, title] of Object.entries(SECTIONS)) {
     const terms = GLOSSARY.filter((t) => t.section === id);
     if (!terms.length) continue;
@@ -89,14 +97,16 @@ export function fieldGuide(): Reader {
   return new Reader('glossary', 'Field guide', blocks, { width: 250, height: 236 });
 }
 
-/** The tweak panel: the room's knobs, then the engine's. */
-export function tweakMenu(title: string, room: readonly Knob[], engine: readonly Knob[], onBack: () => void): Menu {
+/** The tweak panel: the room's knobs, then the engine's. `footer`: how to change and close it on the device in use. */
+export function tweakMenu(title: string, room: readonly Knob[], engine: readonly Knob[], onBack: () => void, footer: () => string = () => 'arrows change · esc closes', resetSettings?: () => void): Menu {
   const widgets = (): Widget[] => [
     ...(room.length ? [{ kind: 'label' as const, id: 'l-room', label: 'This room' }, ...room.map(knobWidget)] : []),
     { kind: 'label', id: 'l-engine', label: 'Engine' },
     ...engine.map(knobWidget),
+    // the player's settings back to the game's (a settings panel's Reset)
+    ...(resetSettings ? [{ kind: 'button' as const, id: 'reset-settings', label: 'Reset settings', onClick: resetSettings, hint: 'Your saved settings and volumes back to the defaults.' }] : []),
   ];
-  return new Menu(widgets, { id: 'tweak', title, width: 236, labelWidth: 110, onBack, footer: () => 'arrows change · esc closes' });
+  return new Menu(widgets, { id: 'tweak', title, width: 236, labelWidth: 110, onBack, footer });
 }
 
 /** The room list (G): every room by wing; visited ones are ticked. */
@@ -119,6 +129,8 @@ export interface PauseActions {
   guide(): void;
   tweak(): void;
   rooms(): void;
+  /** The room's card away or back (the row shows only with it). */
+  card?(): void;
   glossary(): void;
   atrium(): void;
   reset(): void;
@@ -126,12 +138,19 @@ export interface PauseActions {
   riftlight(): void;
 }
 
-export function pauseMenu(inAtrium: boolean, a: PauseActions): Menu {
+/**
+ * The menu (Esc, Options, ≡): every panel, the room's card, the way back and out. `tags`: the
+ * control that opens a row's panel on the device in use (" (H)", " (Create)"; nothing where it is
+ * only in this menu). `cardShown`: the card is up (its row hides it, else shows it).
+ */
+export function pauseMenu(inAtrium: boolean, a: PauseActions, tags: { guide?: string; tweak?: string; rooms?: string; card?: string } = { guide: ' (H)', tweak: ' (T)', rooms: ' (G)', card: ' (I)' }, cardShown = false): Menu {
+  const card = a.card;
   const widgets: Widget[] = [
     { kind: 'button', id: 'resume', label: 'Resume', onClick: a.resume },
-    { kind: 'button', id: 'guide', label: 'How it works (H)', onClick: a.guide },
-    { kind: 'button', id: 'tweak', label: 'Tweak (T)', onClick: a.tweak },
-    { kind: 'button', id: 'rooms', label: 'Go to a room (G)', onClick: a.rooms },
+    { kind: 'button', id: 'guide', label: `How it works${tags.guide ?? ''}`, onClick: a.guide },
+    { kind: 'button', id: 'tweak', label: `Tweak and settings${tags.tweak ?? ''}`, onClick: a.tweak },
+    { kind: 'button', id: 'rooms', label: `Go to a room${tags.rooms ?? ''}`, onClick: a.rooms },
+    ...(card ? [{ kind: 'button' as const, id: 'card', label: `${cardShown ? 'Hide' : 'Show'} the room card${tags.card ?? ''}`, onClick: card }] : []),
     { kind: 'button', id: 'glossary', label: 'Field guide', onClick: a.glossary },
     ...(inAtrium ? [] : [{ kind: 'button' as const, id: 'atrium', label: 'Back to the Atrium', onClick: a.atrium }]),
     { kind: 'button', id: 'reset', label: 'Reset room', onClick: a.reset },

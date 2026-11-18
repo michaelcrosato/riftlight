@@ -7,8 +7,9 @@
  * Every room is a whole `Game` (`engine.loadGame`), so leaving one frees everything it built
  * and any room opens on its own: `?game=world&room=lights`.
  */
-import type { CameraConfig, GameContext, Look, PaletteColor } from '../engine';
+import type { CameraConfig, Control, GameContext, Look, PaletteColor, TouchButtonState } from '../engine';
 import type { Visitor } from '../riftlight/showcase/visitor';
+import type { WorldAction } from './controls';
 import type { RoomKit } from './kit/RoomKit';
 
 export type Vec3 = [number, number, number];
@@ -124,8 +125,23 @@ export interface RoomRuntime {
   leaveWorld(): void;
   /** Put the hero back in the world at `at` (feet), with the room's settings (shove, weight, depth lock). */
   enterWorld(at: Vec3, facing?: number): void;
-  /** False while a panel or a room change owns the keys: read input yourself only when true. */
+  /**
+   * False while a panel or a room change owns the keys, and for the rest of a frame that began
+   * with one (the press that closed a panel was the panel's), or whose click or tap sent the card or a
+   * toast away: read input yourself only when true.
+   */
   readonly inputFree: boolean;
+  /**
+   * `inputFree`, and no click or tap that sent the card or a toast away, or that a panel took (a
+   * menu row, the close box), is still held (that press is theirs until it lets go): read the
+   * pointer's buttons (`MouseLeft`, `Touch`) only when true.
+   */
+  readonly pointerFree: boolean;
+  /**
+   * `input.isDown(...codes)`, but not a key or button still held from a press a panel took: read a
+   * held action with it (the car's handbrake is not the Cross that chose Resume, held a moment longer).
+   */
+  held(...codes: string[]): boolean;
 }
 
 /** What a room's `build` returns: its own per-frame logic and live settings. */
@@ -144,6 +160,18 @@ export interface RoomLogic {
   cameraTarget?(): import('three/webgpu').Vector3 | null;
   /** Agent / test hooks (`__WORLD__.room`). */
   readonly api?: Record<string, unknown>;
+  /**
+   * The phone's buttons in this room, every frame, by the code they press (controls.ts
+   * `WORLD_TOUCH_BUTTONS`): a slot (`TouchSlot1`..`3`, hidden unless given) with this room's
+   * action (REWIND, < >, EXIT), or a base button relabelled or hidden (the car: JUMP → BRAKE).
+   */
+  touch?(): Readonly<Record<string, TouchButtonState | undefined>>;
+  /**
+   * Pad buttons this room reads itself whose presses the hero's moves must not also take (the
+   * Gallery's L1 / R1, which are prone and lie down to `KEYMAP`): read them in `update` with
+   * `wasPressed`, since the shell drops their queued presses before the hero's step.
+   */
+  readonly claims?: readonly string[];
 }
 
 export interface RoomDef {
@@ -168,6 +196,11 @@ export interface RoomDef {
   readonly hero?: boolean;
   /** Models to start downloading before setup (GLB urls). */
   readonly assets?: readonly string[];
+  /**
+   * The room's own names for `WORLD_CONTROLS` actions, where its controls differ on a device (the
+   * Workshop's shelves on a phone are its panel's < >): what `{key:action}` names in this room.
+   */
+  readonly controls?: Partial<Record<WorldAction, Control>>;
   /** Build the room. Returns its own logic (or nothing). */
   build(room: RoomRuntime): RoomLogic | void | Promise<RoomLogic | void>;
 }

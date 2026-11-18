@@ -42,7 +42,7 @@ export const JOINTS: RoomDef = {
   wing: 'physics',
   about:
     'Bodies tied together by joints: a rope bridge that sags where you stand (cut it!), a wrecking ball on a chain, a seesaw that tips toward the heavier crate, spring pads that sink under your weight, and saloon doors that swing open when you walk through.',
-  try: ['Walk the bridge, then step on CUT and watch it swing down', 'SWING the wrecking ball into the crates, or punch it (J)', 'Stand on the SOFT, MEDIUM and FIRM spring pads', 'Walk through the saloon doors, then LOCK them'],
+  try: ['Walk the bridge, then step on CUT and watch it swing down', 'SWING the wrecking ball into the crates, or punch it ({key:attack})', 'Stand on the SOFT, MEDIUM and FIRM spring pads', 'Walk through the saloon doors, then LOCK them'],
   spawn: [-6, 0, 0],
   facing: Math.PI / 2,
   background: 'night',

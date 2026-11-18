@@ -229,6 +229,26 @@ describe('the Loot Lab', () => {
       e.input.setGamepads(null);
     }
   });
+
+  it('on a pad Create opens and closes the inventory, and the hero never waves on it (Create is the wave to the platformer)', () => {
+    expect(lab.ui.isOpen).toBe(false);
+    const states = new Set<string>();
+    // standing (the last punch over): a wave would start now
+    for (let i = 0; i < 180 && lab.hero.state !== 'idle'; i++) e.step(1);
+    expect(lab.hero.state).toBe('idle');
+    press('PadBack');
+    states.add(lab.hero.state);
+    for (let i = 0; i < 20; i++) {
+      e.step(1);
+      states.add(lab.hero.state);
+    }
+    expect(lab.inventory.isOpen(), 'Create: the inventory').toBe(true);
+    expect([...states], 'Create is the inventory\'s, not the hero\'s wave').not.toContain('emote');
+    press('PadBack');
+    e.step(1);
+    expect(lab.inventory.isOpen()).toBe(false);
+    expect(e.errors).toEqual([]);
+  });
 });
 
 describe('the Loot Lab at every window shape', () => {

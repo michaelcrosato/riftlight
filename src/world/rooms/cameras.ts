@@ -12,9 +12,9 @@ const PRESETS: { label: string; note: string; camera: CameraConfig }[] = [
   { label: 'HIGH ISO', note: 'Steeper (55 degrees): more floor, less wall. Good for busy rooms.', camera: { ...WORLD_CAMERA, pitch: 55 } },
   { label: 'TOP-DOWN', note: 'Straight down, screen-up is north: Zelda, twin-stick shooters, strategy.', camera: { preset: 'topdown', viewHeight: 17 } },
   { label: 'SIDE', note: 'Straight side-on: a side-scroller. The hero is locked to their depth lane.', camera: { preset: 'side', viewHeight: 12 } },
-  { label: 'THIRD', note: 'Perspective orbit behind the hero; drag or Q / E to orbit; it pulls in when walls block the view.', camera: { preset: 'third', distance: 7, pitch: 22 } },
-  { label: 'FIRST', note: 'Through the hero\'s eyes: click to lock the mouse, Q / E to turn. The hero model hides.', camera: { preset: 'first', fov: 72 } },
-  { label: 'CINEMATIC', note: 'A fixed perspective shot of the course (what the free camera\'s Enter key gives you).', camera: { preset: 'fixed', projection: 'perspective', position: [9, 7, 13], target: [0, 0.5, -1], fov: 50 } },
+  { label: 'THIRD', note: 'Perspective orbit behind the hero; {key:orbit} to orbit; it pulls in when walls block the view.', camera: { preset: 'third', distance: 7, pitch: 22 } },
+  { label: 'FIRST', note: 'Through the hero\'s eyes: {key:turn} to turn (with a mouse, a click locks it). The hero model hides.', camera: { preset: 'first', fov: 72 } },
+  { label: 'CINEMATIC', note: 'A fixed perspective shot of the course (on a keyboard, the free camera\'s Enter prints one like it).', camera: { preset: 'fixed', projection: 'perspective', position: [9, 7, 13], target: [0, 0.5, -1], fov: 50 } },
 ];
 
 export const CAMERAS: RoomDef = {
@@ -82,7 +82,7 @@ pos.copy(this.right).multiplyScalar(r).addScaledVector(this.up, up)
         apply: () => e.setCamera(p.camera, { syncUrl: false }),
       }),
     );
-    kit.pad([-3, 0, 6.5], { label: 'ZOOM IN', color: 'teal', note: 'camera.setZoom(zoom x 1.5) (the wheel and + / - do the same).', apply: () => e.camera.setZoom(e.camera.zoom * 1.5) });
+    kit.pad([-3, 0, 6.5], { label: 'ZOOM IN', color: 'teal', note: 'camera.setZoom(zoom x 1.5) (with a mouse the wheel, on a keyboard + / -, on a phone a pinch).', apply: () => e.camera.setZoom(e.camera.zoom * 1.5) });
     kit.pad([0, 0, 6.5], { label: 'ZOOM OUT', color: 'teal', note: 'camera.setZoom(zoom / 1.5).', apply: () => e.camera.setZoom(e.camera.zoom / 1.5) });
     kit.pad([3, 0, 6.5], { label: 'SHAKE', color: 'red', note: 'engine.shake.add(0.8): the same shake in every preset (by whole art pixels in the ortho ones).', apply: () => e.shake.add(0.8) });
     return {

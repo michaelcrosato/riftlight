@@ -4,10 +4,16 @@
  * bottom and the bars slide in. Skip it and the world still ends up the way the scene left it.
  */
 import { BoxGeometry, type Camera, Mesh, PerspectiveCamera, Vector3 } from 'three/webgpu';
-import { type CameraConfig, type CameraRig, PALETTE, Timeline, toonMaterial } from '../../engine';
+import { type CameraConfig, type CameraRig, PALETTE, SWIPE_KEYS, Timeline, toonMaterial } from '../../engine';
+import { WORLD_KEYS } from '../controls';
 import { mannequin, type Mannequin } from '../kit/mannequin';
 import { WORLD_CAMERA } from '../shell';
 import type { Knob, RoomDef } from '../types';
+
+/** Skips the scene: Space, Enter, Cross, or a tap on the screen (when it lifts, `tapped`). */
+const SKIP = WORLD_KEYS.skip;
+/** A finger's flicks (`SWIPE_KEYS`): a swipe sends the room card away, it is no tap. */
+const SWIPES = Object.values(SWIPE_KEYS);
 
 const GUIDE_AT: [number, number, number] = [-2, 0, -2];
 
@@ -33,7 +39,7 @@ export const CUTSCENE: RoomDef = {
   wing: 'direction',
   about:
     'A short scene played from a timeline: the camera glides through keys and cuts between shots, two actors wave and shout on cues, subtitles run, the bars slide in. Skip it halfway and the chest and the gate still end up open.',
-  try: ['Step on PLAY SCENE', 'Press SPACE to skip: the world ends the same', 'Slow the scene down (T) and watch the camera ease into each key'],
+  try: ['Step on PLAY SCENE', 'Press {key:skip} to skip: the world ends the same', 'Slow the scene down ({key:tweak}) and watch the camera ease into each key'],
   spawn: [0, 0, 3],
   facing: Math.PI,
   background: 'navy',
@@ -160,6 +166,8 @@ export const CUTSCENE: RoomDef = {
     });
 
     const camera = (): Camera => e.camera.camera;
+    /** A finger the room had is down (a tap skips when it lifts: `tapped`). */
+    let finger = false;
     /** The scene's own rig, and the camera to go back to after it. */
     let rig: CameraRig | null = null;
     let back: CameraConfig = WORLD_CAMERA;
@@ -176,6 +184,7 @@ export const CUTSCENE: RoomDef = {
       if (playing) return;
       resetSet();
       playing = true;
+      finger = false; // a finger already down is no tap of this scene's
       lastCut = 0;
       firedFrom = scene.fired.length;
       room.leaveWorld();
@@ -191,6 +200,23 @@ export const CUTSCENE: RoomDef = {
     const skip = () => {
       if (playing) scene.skip();
     };
+    /**
+     * A tap on the screen: a finger the room had (not one that sent the card or a toast away,
+     * `pointerFree`) lifted without swiping. A swipe sends the card away from anywhere on a phone,
+     * so its press must not skip the scene too.
+     */
+    const tapped = (): boolean => {
+      const input = ctx.input;
+      const pressed = input.consumePress('Touch');
+      const down = input.isDown('Touch');
+      if (!room.pointerFree) return (finger = false);
+      const swiped = input.wasPressed(...SWIPES);
+      if (pressed && !down) return !swiped; // down and up inside one frame
+      if (pressed) finger = true;
+      if (down || !finger) return false;
+      finger = false;
+      return !swiped;
+    };
     const tmp = new Vector3();
     /** Put the camera where the timeline says. */
     const frame = () => {
@@ -205,7 +231,7 @@ export const CUTSCENE: RoomDef = {
       }
       cam.updateMatrixWorld();
     };
-    kit.pad([0, 0, 6], { label: 'PLAY SCENE', color: 'lime', quiet: true, note: 'The timeline takes the camera; SPACE skips.', apply: play });
+    kit.pad([0, 0, 6], { label: 'PLAY SCENE', color: 'lime', quiet: true, note: 'The timeline takes the camera; {key:skip} skips.', apply: play });
     const knobs: Knob[] = [
       {
         id: 'speed',
@@ -229,7 +255,8 @@ export const CUTSCENE: RoomDef = {
         // another camera picked mid-scene (the T panel): the scene ends there, leaving it be
         if (e.camera !== rig) return skip();
         // consumed, not just seen: the hero is back next frame and must not jump on the same press
-        if (room.inputFree && ctx.input.consumePress('Space', 'Enter', 'PadA')) skip();
+        if (room.inputFree && ctx.input.consumeAny(SKIP)) skip();
+        else if (tapped()) skip();
         const before = scene.camera();
         scene.update(dt);
         if (!playing) return; // ended this frame: the game camera is back
@@ -254,7 +281,7 @@ export const CUTSCENE: RoomDef = {
           hud.rect(0, 0, hud.width, bottom, 'ink', 'bottom-left');
         }
         rows.forEach((r, i) => hud.text(0, 8 + (rows.length - 1 - i) * 9, r, { anchor: 'bottom', color: line!.who === 'SMITH' ? 'orange' : 'sand' }));
-        if (top > 30) hud.text(4, 22, 'SPACE SKIP', { anchor: 'top-left', color: 'slate' }); // under the room's title (narrow screens)
+        if (top > 30) hud.prompt(4, 22, 'skip', 'SKIP', { color: 'slate' }); // under the room's title (narrow screens)
       },
       dispose() {
         playing = false;

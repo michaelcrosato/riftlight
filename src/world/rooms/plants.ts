@@ -27,7 +27,7 @@ export const PLANTS_ROOM: RoomDef = {
   wing: 'procedural',
   about:
     'Four plants grown from a line of text. An L-system rewrites a string by rules (every F becomes F[+F]F[-F]F, say) a few times over, then a turtle reads it: F walk forward drawing a branch, + and - turn, [ remember this spot, ] go back to it. The plinths show each rule; GROW draws them again, branch by branch.',
-  try: ['Step on GROW and watch the turtle draw', 'NEW SEEDS: the weed differs every time', 'More or fewer generations (T)', 'Wider or narrower angles (T)'],
+  try: ['Step on GROW and watch the turtle draw', 'NEW SEEDS: the weed differs every time', 'More or fewer generations in Tweak ({key:tweak})', 'Wider or narrower angles in Tweak ({key:tweak})'],
   spawn: [0, 0, 4],
   facing: Math.PI,
   background: 'sky',

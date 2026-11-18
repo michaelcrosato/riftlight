@@ -9,10 +9,13 @@ import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
 import { HERO_DEBUG_KEYS } from '../actors/controls';
 import { type ControlAction, CONTROLS, heroCodes } from '../game/controls';
+import { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from '../game/touch';
 import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { openFloor, GridMover } from '../actors/movers';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SkillGem } from '../skills/types';
+import { touchFloor } from '../showcase/hints';
+import { wrapRow } from '../ui/kit';
 import { Combat, type WallQuery } from './Combat';
 
 /**
@@ -100,6 +103,13 @@ export function parseSlots(param: string | null): SlotSpec[] {
 const SLOT_ACTIONS: readonly ControlAction[] = ['attack', 'skill1', 'skill2', 'skill3', 'skill4', 'interact'];
 
 /**
+ * The Arena's buttons on a phone (`EngineOptions.touchButtons`): Riftlight's attack, skills 1-4 and
+ * dodge where the game puts them, pressing the game's keys (`heroCodes`), so `CONTROLS`' touch
+ * labels name them. No interact (the fifth slot has no phone button) and no ≡ (the Arena has no pause).
+ */
+export const ARENA_TOUCH_BUTTONS = RIFTLIGHT_TOUCH_BUTTONS.filter((b) => b.code !== TOUCH_CODES.interact && b.code !== TOUCH_CODES.menu);
+
+/**
  * The engine's input as the hero controller reads it: its action tokens (`HERO_KEYS`) pressed by
  * the game's keys, mouse buttons and pad buttons (game/controls.ts `heroCodes`: one key map for the
  * game and its labs).
@@ -135,7 +145,11 @@ export interface ArenaOptions {
 
 export class Arena implements Game {
   readonly name = 'Riftlight Arena';
-  /** Riftlight's controls: the Arena plays with the game's key map (`heroCodes`), so a line's `{key:dodge}` names what dodges here too. */
+  /**
+   * Riftlight's controls: the Arena plays with the game's key map (`heroCodes`), so a line's
+   * `{key:dodge}` names what dodges here too, and the HUD draws each slot's key, pad button or
+   * phone button for the device in use.
+   */
   readonly controls = CONTROLS;
   readonly assets = [HERO_MODEL];
 
@@ -306,15 +320,17 @@ export class Arena implements Game {
     const { hud } = ctx;
     const a = this.hero.actor;
     hud.clear();
-    // life and mana bars, bottom left
-    bar(hud, 6, 6, 70, a.life / a.maxLife, 'red', `${Math.ceil(a.life)}`);
-    bar(hud, 6, 16, 70, a.mana / Math.max(1, a.maxMana), 'blue', `${Math.floor(a.mana)}`);
-    // skill bar, bottom centre
     const slots = [this.hero.basic, ...this.hero.slots];
-    const w = 34;
-    const x0 = -((slots.length - 1) * w) / 2;
+    // on a phone its buttons are the skill bar (ARENA_TOUCH_BUTTONS): the bars go over them
+    const touch = !!ctx.engine.touch?.visible;
+    const lay = touch ? { slots: [], barsY: Math.max(6, hud.height - touchFloor(ctx.engine, 0, BARS_SPAN) + 2) } : arenaHudLayout(hud.width, slots.length);
+    // life and mana bars, bottom left (over the skill bar when the screen is too narrow for both)
+    bar(hud, 6, lay.barsY, BAR_W, a.life / a.maxLife, 'red', `${Math.ceil(a.life)}`);
+    bar(hud, 6, lay.barsY + 10, BAR_W, a.mana / Math.max(1, a.maxMana), 'blue', `${Math.floor(a.mana)}`);
+    // the skill bar: each slot's control (a key cap, the pad's button, the mouse) over its skill's name
     slots.forEach((s, i) => {
-      const x = Math.round(x0 + i * w);
+      if (!lay.slots[i]) return;
+      const { x, y } = lay.slots[i]!;
       const cd = s ? (this.hero.cooldowns.get(s.id) ?? 0) : 0;
       const cost = s ? s.cost : 0;
       const ok = s && cd <= 0 && a.mana >= (s.channel ? cost * 0.25 : cost);
@@ -322,14 +338,16 @@ export class Arena implements Game {
       // mouse), as Riftlight's skill bar draws it: a slot's width, where a pad's names would overprint
       const action = SLOT_ACTIONS[i]!;
       const gw = hud.glyphWidth(action);
-      hud.glyph(Math.round(hud.width / 2 + x - gw / 2), hud.height - 16 - 8, action);
-      hud.text(x, 6, s ? short(s.def.name) : '-', { anchor: 'bottom', color: ok ? 'white' : 'slate' });
+      hud.glyph(Math.round(x - gw / 2), hud.height - y - 17, action);
+      hud.text(x - Math.round(hud.width / 2), y, s ? short(s.def.name) : '-', { anchor: 'bottom', color: ok ? 'white' : 'slate' });
     });
     // damage per second over the last 4 s
     while (this.dealt.length && this.time - this.dealt[0]!.t > 4) this.dealt.shift();
     const dps = this.dealt.reduce((s, d) => s + d.amount, 0) / 4;
-    hud.text(6, 6, `DPS ${Math.round(dps)}`, { anchor: 'top-right', color: 'sand' });
-    hud.text(6, 6, this.status(), { color: 'mist' });
+    const meter = `DPS ${Math.round(dps)}`;
+    hud.text(6, 6, meter, { anchor: 'top-right', color: 'sand' });
+    // the status beside it, its parts wrapped to the room left (a phone in portrait: several rows)
+    wrapRow(this.status().split(' | '), hud.width - 18 - hud.measure(meter).width, ' | ').forEach((row, i) => hud.text(6, 6 + i * 9, row, { color: 'mist' }));
     if (this.hero.feedback && this.hero.feedback.until > this.time) hud.text(0, 40, this.hero.feedback.text, { anchor: 'center', color: 'sand' });
     if (!a.alive) hud.text(0, 0, 'DOWN', { anchor: 'center', scale: 2, color: 'red' });
     this.combat.drawNumbers(hud, ctx.camera.camera);
@@ -363,6 +381,38 @@ function box(): BoxGeometry {
     boxGeo.userData.shared = true;
   }
   return boxGeo;
+}
+
+/** The life and mana bars' length (art pixels); their numbers go after them. */
+const BAR_W = 70;
+/** The bars and their numbers: what the skill bar must keep clear of on the bottom rows. */
+const BARS_SPAN = 6 + BAR_W + 4 + 24;
+
+/**
+ * Where the arena's HUD goes on a screen `width` art pixels wide (`fill` gives the art the
+ * window's shape: 427 columns at 1280×720, 320 at 960×720, 130 on a phone in portrait): each
+ * skill slot's centre (x from the left, y up from the bottom to its name) and the bars' bottom
+ * row. The skill bar sits right of the bars when the screen is wide enough, else under them,
+ * centred, in as many rows as it needs; a slot is at least as wide as a name (five letters).
+ */
+export function arenaHudLayout(width: number, count: number): { slots: { x: number; y: number }[]; barsY: number } {
+  const MIN = 32;
+  const step = (room: number) => Math.min(36, Math.floor(room / count));
+  if (step(width - BARS_SPAN - 6) >= MIN) {
+    const w = step(width - BARS_SPAN - 6);
+    const left = BARS_SPAN + Math.floor((width - BARS_SPAN - 6 - w * count) / 2);
+    return { slots: Array.from({ length: count }, (_, i) => ({ x: left + w * i + Math.floor(w / 2), y: 6 })), barsY: 6 };
+  }
+  const perRow = Math.max(1, Math.min(count, Math.floor((width - 8) / MIN)));
+  const rows = Math.ceil(count / perRow);
+  const w = Math.min(36, Math.floor((width - 8) / perRow));
+  const slots = Array.from({ length: count }, (_, i) => {
+    const row = Math.floor(i / perRow);
+    const inRow = Math.min(perRow, count - row * perRow);
+    const left = Math.floor((width - w * inRow) / 2);
+    return { x: left + w * (i % perRow) + Math.floor(w / 2), y: 6 + (rows - 1 - row) * 22 };
+  });
+  return { slots, barsY: 6 + rows * 22 + 2 };
 }
 
 function short(name: string): string {

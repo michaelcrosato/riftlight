@@ -14,7 +14,7 @@ export const SPRITES: RoomDef = {
   wing: 'animation',
   about:
     'Flat pixel-art sprites living in the 3D world, like Doom\'s monsters or Paper Mario: little critters drawn in code, animated by flipping frames, always turned to the camera and mirrored to face where they walk. A crowd of one sheet is one draw call. Walk among them and change the camera.',
-  try: ['Walk among the critters', 'Change the camera (T): they always face you', 'A crowd of 300 is still one draw call'],
+  try: ['Walk among the critters', 'Change the camera in Tweak ({key:tweak}): they always face you', 'A crowd of 300 is still one draw call'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'teal',

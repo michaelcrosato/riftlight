@@ -10,7 +10,7 @@ import { Sandbox } from './game/sandbox';
 import { Riftlight, RIFTLIGHT_OPTIONS } from './riftlight';
 import { LootLab } from './riftlight/loot/lootlab';
 import { LevelLab, type LevelLabOptions } from './riftlight/levels/levelLab';
-import { Arena, type ArenaOptions } from './riftlight/combat/arena';
+import { ARENA_TOUCH_BUTTONS, Arena, type ArenaOptions } from './riftlight/combat/arena';
 import { ARCADE_OPTIONS, ArcadeGame } from './riftlight/showcase/arcade/ArcadeGame';
 import { ROOMS, WORLD_OPTIONS, worldArgsFromUrl, worldGame } from './world';
 
@@ -27,7 +27,7 @@ export interface GameEntry {
   make(args?: unknown): Game;
 }
 
-/** A demo with no pause menu of its own: Options (Esc) opens the engine's settings. */
+/** A demo with no pause menu of its own: Options (Esc) opens the engine's settings (Rift Runner's pause has a Settings row). */
 const SETTINGS_ON_OPTIONS: Partial<EngineOptions> = { settings: { padButton: true } };
 
 export const GAMES: readonly GameEntry[] = [
@@ -37,7 +37,7 @@ export const GAMES: readonly GameEntry[] = [
   { id: 'lootlab', name: 'Loot Lab', options: {}, make: () => new LootLab() },
   // Riftlight levels: ?game=levellab&depth=N
   { id: 'levellab', name: 'Riftlight Level Lab', options: {}, argsFromUrl: LevelLab.optionsFromUrl, make: (args) => new LevelLab(args as LevelLabOptions) },
-  { id: 'arena', name: 'Riftlight Arena', options: {}, argsFromUrl: Arena.optionsFromUrl, make: (args) => new Arena(args as ArenaOptions) },
+  { id: 'arena', name: 'Riftlight Arena', options: { touchButtons: ARENA_TOUCH_BUTTONS }, argsFromUrl: Arena.optionsFromUrl, make: (args) => new Arena(args as ArenaOptions) },
   // Riftlight's arcade cabinet on its own: a side-scroller template
   { id: 'arcade', name: 'Rift Runner', options: ARCADE_OPTIONS, make: () => new ArcadeGame() },
   // Engine World: the engine's tech demo, a room per technique (&room=<id>)

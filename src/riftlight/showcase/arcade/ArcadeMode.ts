@@ -11,7 +11,7 @@ import { recordArcadeRun, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput } from '../visitor';
 import { arcadeAutopilot } from './autoplay';
-import { ArcadeStage, readArcadeInput } from './ArcadeStage';
+import { ARCADE_AGAIN, ARCADE_KEYS, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
 import { ARCADE_SONG } from './stage';
 
 /** Where the stage is built: far from the town and from any level (levels build around 0, 0). */
@@ -62,7 +62,9 @@ export class ArcadeMode implements ShowcaseMode {
   }
 
   fixedUpdate(dt: number): void {
-    this.stage?.fixedUpdate(dt, readArcadeInput(this.host.ctx.input, this.input));
+    const input = this.host.ctx.input;
+    // the Circle that closed the pause (photo mode) is not a crouch while it is held
+    this.stage?.fixedUpdate(dt, this.host.presses.mask(input, readArcadeInput(input, this.input), ARCADE_KEYS));
   }
 
   update(dt: number): void {
@@ -70,9 +72,11 @@ export class ArcadeMode implements ShowcaseMode {
     if (!stage) return;
     const input = this.host.ctx.input;
     stage.update(dt);
-    if (input.wasPressed('Escape', 'PadStart')) this.wantsLeave = true;
-    if (stage.phase === 'done' && stage.phaseTime > 0.8 && input.wasPressed('Enter', 'NumpadEnter', 'PadA')) this.restart();
+    // Options, Esc or ≡: the showcase's pause (Resume, Restart, Photo mode, Leave), the run's clock stopped
+    if (input.wasPressed('Escape', 'PadStart')) return this.host.openPause();
+    if (stage.phase === 'done' && stage.phaseTime > 0.8 && input.wasPressed(...ARCADE_AGAIN)) this.restart();
     input.wheel = 0; // the side view keeps its framing
+    this.host.ctx.camera.setZoom(arcadeZoom(this.host.ctx.hud.width / this.host.ctx.hud.height));
   }
 
   draw(ui: UiCanvas): void {

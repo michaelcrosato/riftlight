@@ -13,7 +13,8 @@ import { lineKey } from './area';
  * Space), `pound` (the arcade's C), `confirm` (Enter), `turn` (the Hall: mouse or Q / E),
  * `drag` (photo mode: drag the mouse), `orbit` (the Hall's card: drag or Q / E), `rise`
  * (photo mode: Q / E), `switch_view` (Tab / pad Y), `next_wing` (N), `photo_save` (P / pad X),
- * `photo_hide` (H / pad L1).
+ * `photo_hide` (H / pad L1), `card_back` (the Hall's card: Esc, Circle, a swipe from it; photo
+ * mode's way back is `pause`'s), `show` (photo mode's panel back: H, L1, a tap on the hint).
  */
 export const HINTS = {
   run: '{key:move} run',
@@ -30,13 +31,14 @@ export const HINTS = {
   orbit: '{key:orbit} orbit',
   zoom: '{key:zoom} zoom',
   back: '{key:pause} back',
+  card_back: '{key:card_back} back',
   fly_camera: '{key:move} {key:rise} fly',
   drag_look: '{key:drag} look',
   field_of_view: '{key:zoom} field of view',
   edit: '{key:switch_view} edit',
   save: '{key:photo_save} save',
   hide: '{key:photo_hide} hide',
-  show: '{key:photo_hide} show',
+  show: '{key:show} show',
   pick: '{key:move} pick and change',
   change: '{key:confirm} change',
 } as const;
@@ -124,6 +126,8 @@ const FIXED: LineArea = {
     'showcase.bestiary.turntable_on': 'Turntable: on',
     'showcase.bestiary.turntable_off': 'Turntable: off',
     'showcase.bestiary.back': 'Back',
+    'showcase.pause.restart': 'Restart',
+    'showcase.pause.leave': 'Back to town',
     'showcase.bestiary.breed': 'Breed',
     'showcase.bestiary.mutate': 'Mutate child',
     'showcase.bestiary.none': 'None',
@@ -168,6 +172,8 @@ const FIXED: LineArea = {
     'showcase.arcade.time_new_best': 'Results card: the run’s time, and it beat the best time.',
     'showcase.arcade.coins_par': 'Results card: coins taken of all coins, and the par time (the time to beat).',
     'showcase.arcade.reward': 'Results card: the gold the run paid out.',
+    'showcase.pause.restart': 'The pause menu over the arcade’s run: start the run again from the beginning.',
+    'showcase.pause.leave': 'The pause menu over the arcade and the Hall of Beasts: leave it and walk back into the town.',
     'showcase.bestiary.summary': 'Under the Hall’s title: how many kinds of monster ({species}: "12 species") and how many kills ({kills}: "40 kills").',
     'showcase.bestiary.summary_wing': 'As the summary, with the wing of the hall shown (a wing holds a page of exhibits): wing 1/3.',
     'showcase.bestiary.species': 'Kinds of monster in the Hall (a count).',

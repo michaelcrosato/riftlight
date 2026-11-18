@@ -5,7 +5,13 @@
  */
 import { BoxGeometry, CylinderGeometry, Group, Mesh, Quaternion, Vector3 } from 'three/webgpu';
 import { Decals, PALETTE, RAPIER, setLookLayer, toonMaterial, Vehicle } from '../../engine';
+import { WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
+
+/** The adaptive triggers while driving (a DualSense in 52in1): the gas and the brake push back a little, the gas buzzes while the tail slides. */
+const GAS = { kind: 'resist', from: 0.1, strength: 0.35 } as const;
+const BRAKE = { kind: 'resist', from: 0.05, strength: 0.6 } as const;
+const SLIDE = { kind: 'vibrate', from: 0.1, strength: 0.45, frequency: 28 } as const;
 
 const UP = new Vector3(0, 1, 0);
 
@@ -14,8 +20,8 @@ export const DRIFT: RoomDef = {
   title: 'Drift Track',
   wing: 'genres',
   about:
-    'A little car on a ray-cast vehicle: four wheels that are rays with springs, each with grip along and across. Get in, drive round the cones, and pull the handbrake (Space) in a corner: the rear tyres lose their grip and the tail swings out. Skid marks show where they slid.',
-  try: ['Step on DRIVE and lap the cones', 'Handbrake (Space) into a corner: drift', 'Less grip, more power (T)', 'EXIT on C'],
+    'A little car on a ray-cast vehicle: four wheels that are rays with springs, each with grip along and across. Get in, drive round the cones, and pull the handbrake ({key:handbrake}) in a corner: the rear tyres lose their grip and the tail swings out. Skid marks show where they slid.',
+  try: ['Step on DRIVE and lap the cones (on a pad R2 is the gas and L2 the brake, as far as you press them)', 'Handbrake ({key:handbrake}) into a corner: drift', 'Less grip, more power ({key:tweak})', 'Get out with {key:exit}'],
   spawn: [0, 0, 9],
   facing: Math.PI,
   background: 'teal',
@@ -89,11 +95,21 @@ export const DRIFT: RoomDef = {
     let skid = 0;
     let marks = 0;
     let topSpeed = 0;
+    let lastSpeed = 0;
     const getIn = () => {
       if (driving || !room.hero?.hero) return;
       room.leaveWorld();
       driving = true;
-      room.toast('Driving: W/S or up/down, A/D or left/right, Space handbrake, C to get out.', 4);
+      const d = e.controls.device;
+      room.toast(
+        d === 'pad'
+          ? 'Driving: {key:throttle} gas, {key:brake} brake and reverse, {key:move} steers, {key:handbrake} handbrake, {key:exit} gets out.'
+          : d === 'touch'
+            ? 'Driving: the stick drives and steers, {key:handbrake} is the handbrake, {key:exit} gets out.'
+            : 'Driving: W/S or up/down, A/D or left/right, {key:handbrake} handbrake, {key:exit} to get out.',
+        4,
+      );
+      ctx.dualsense.light(PALETTE.red); // the car's colour on the light bar
     };
     // getting out: beside the car (right, left), then ahead and behind, on the ground, where a
     // hero-sized capsule touches nothing
@@ -133,6 +149,8 @@ export const DRIFT: RoomDef = {
       }
       driving = scripted = false;
       room.enterWorld(at, car.yaw);
+      ctx.dualsense.trigger('both', null);
+      ctx.dualsense.light(null);
       return true;
     };
     kit.pad([-9, 0, 4.5], { label: 'DRIVE', color: 'red', note: 'Get in the car: the hero leaves the world and the camera follows the car.', apply: getIn });
@@ -157,13 +175,15 @@ export const DRIFT: RoomDef = {
             const ax = inp.moveAxis();
             const keyY = (inp.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (inp.isDown('KeyS', 'ArrowDown') ? 1 : 0);
             const keyX = (inp.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (inp.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
-            const want = keyY || ax.y;
+            // the triggers as far as they are pulled (R2 gas, L2 brake and reverse) win over the stick
+            const trig = inp.triggers.right - inp.triggers.left;
+            const want = keyY || (Math.abs(trig) > 0.02 ? trig : ax.y);
             const v = car.speed;
             input.brake = (want < 0 && v > 1) || (want > 0 && v < -1);
             input.throttle = input.brake ? 0 : want;
             input.steer = keyX || ax.x;
-            input.handbrake = inp.isDown('Space', 'PadA');
-            if (inp.consumePress('KeyC', 'PadB')) getOut();
+            input.handbrake = room.held(...WORLD_KEYS.handbrake); // not the Cross that chose Resume
+            if (inp.consumeAny(WORLD_KEYS.exit)) getOut();
           } else Object.assign(input, { throttle: 0, steer: 0, brake: false, handbrake: false });
         } else if (!driving) {
           input.throttle = input.steer = 0;
@@ -172,6 +192,19 @@ export const DRIFT: RoomDef = {
         }
         car.drive(input, dt);
         topSpeed = Math.max(topSpeed, Math.abs(car.speed));
+        // the pad in your hands: a knock when the car hits something (the speed gone in a step), a
+        // buzz while the tail slides; the triggers push back while you drive (outputs only: nothing headless or in a replay)
+        const knock = Math.abs(car.speed - lastSpeed);
+        lastSpeed = car.speed;
+        const sliding = driving && car.slipAngle > 0.3 && Math.abs(car.speed) > 2;
+        if (driving && knock > 1.2) e.input.rumble({ strong: Math.min(1, knock / 6), weak: 0.4, ms: 140 });
+        else if (sliding) e.input.rumble({ strong: 0, weak: 0.25, ms: 60 });
+        // (a panel over the room, the guide or tweak, takes the pad from the car: they let go then;
+        // the menu's freeze lets them go too, `WorldShell.freeze`)
+        if (driving && room.inputFree) {
+          ctx.dualsense.trigger('right', sliding ? SLIDE : GAS);
+          ctx.dualsense.trigger('left', BRAKE);
+        } else if (driving) ctx.dualsense.trigger('both', null);
         // skid marks under the rear wheels while the tail slides, laid along the chassis
         skid = Math.max(0, skid - dt);
         const lv = car.body.linvel();
@@ -190,7 +223,10 @@ export const DRIFT: RoomDef = {
         wheels.forEach((w, i) => car.wheelPose(i, w.position, w.quaternion, true));
       },
       cameraTarget: () => (driving ? body.position : null),
+      // on a phone the car's own buttons: JUMP is the handbrake, DUCK gets out
+      touch: () => (driving ? { Space: { label: 'BRAKE' }, KeyC: { label: 'EXIT' }, KeyJ: { hidden: true }, KeyF: { hidden: true } } : {}),
       dispose() {
+        ctx.dualsense.trigger('both', null);
         car.dispose();
       },
       status: () => `driving ${driving} speed ${car.speed.toFixed(1)} slip ${((car.slipAngle * 180) / Math.PI).toFixed(0)}°`,
@@ -212,6 +248,8 @@ export const DRIFT: RoomDef = {
           scripted = true;
           Object.assign(input, { throttle, steer, handbrake, brake: false });
         },
+        /** What the player's input is to the car this step (throttle, steer, brake, handbrake). */
+        input: () => ({ ...input }),
         /** Back to the keyboard (tests): the keys drive again. */
         keys: () => {
           if (!driving) getIn();

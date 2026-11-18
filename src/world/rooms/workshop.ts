@@ -12,7 +12,23 @@ import { hudSprite, type LightHandle, type ModelBuild, type ModelDef, type Model
 import { GAME_VIEW } from '../../engine/model/view';
 import { inside, type Rect, UiCanvas } from '../../riftlight/ui/kit';
 import { pageParam } from '../page';
+import { TOUCH_SLOTS, WORLD_CONTROLS, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef, Vec3 } from '../types';
+
+/**
+ * The picker's codes: keys, the pad (L1 / R1 the pick, L2 / R2 the shelf, Square places, Triangle
+ * turns, Circle undoes, L3 the DEF view) and the phone's UNDO (the room's first touch slot).
+ */
+const PICK = {
+  prev: WORLD_KEYS.prev_item,
+  next: WORLD_KEYS.next_item,
+  prevShelf: WORLD_KEYS.prev_shelf,
+  nextShelf: WORLD_KEYS.next_shelf,
+  def: ['Tab', 'PadL3'],
+  turn: ['KeyY', 'PadY'],
+  undo: ['Backspace', 'PadB', TOUCH_SLOTS[0]],
+  place: ['Enter', 'NumpadEnter', 'PadX'],
+} as const;
 import { type Asset, assetsOf, clean, count, LIBRARY_SOURCE, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, type StoodModel, textureLine, tilePatch, wrap } from './shelves';
 
 type Kind = 'model' | 'surface' | 'sprite';
@@ -81,13 +97,21 @@ export interface PickerLayout {
  * along the bottom of a narrow (portrait) screen. `top` and `bottom`: where a phone's touch bar ends and
  * its controls start (the panel stays between them, with fewer rows and lines); `touch`: the hints say tap.
  */
-export function pickerLayout(w: number, h: number, o: { readonly top?: number; readonly bottom?: number; readonly touch?: boolean } = {}): PickerLayout {
+export function pickerLayout(w: number, h: number, o: { readonly top?: number; readonly bottom?: number; readonly touch?: boolean; readonly pad?: PadStyle } = {}): PickerLayout {
   const wide = w >= 300;
   const pw = wide ? Math.min(180, Math.floor(w * 0.37)) : w - 4;
   const top = Math.max(24, o.top ?? 0);
   const bottom = Math.min(h, o.bottom ?? h) - 2;
   // the keys, as many as the panel's width has room for (3×5 font: 4 px a character)
-  const hints = o.touch || !wide ? [`${o.touch ? 'TAP' : 'CLICK'} A ROW, THEN THE FLOOR`] : pw >= 162 ? ['WHEEL Q/E PICK · ,/. SHELF · TAB DEF', 'ENTER/CLICK PLACE · Y TURN · BKSP UNDO'] : ['WHEEL PICK · ,/. SHELF', 'CLICK THE FLOOR: PLACE'];
+  const hints = o.touch
+    ? ['TAP A ROW, THEN THE FLOOR']
+    : o.pad
+      ? padHints(o.pad, pw)
+      : !wide
+        ? ['CLICK A ROW, THEN THE FLOOR']
+        : pw >= 162
+          ? ['WHEEL Q/E PICK · ,/. SHELF · TAB DEF', 'ENTER/CLICK PLACE · Y TURN · BKSP UNDO']
+          : ['WHEEL PICK · ,/. SHELF', 'CLICK THE FLOOR: PLACE'];
   const height = (lines: number, hinted: number, rows: number) => 28 + rows * ROW + 5 + lines * ROW + 3 + hinted * 7 + 3;
   // as many rows (up to 12; 4 on a narrow screen) and lines of the pick (7; 3) as fit: fewer lines, then no hints, before fewer than 3 rows
   let lines = wide ? 7 : 3;
@@ -113,6 +137,17 @@ export function pickerLayout(w: number, h: number, o: { readonly top?: number; r
     minis: Math.floor((pw - 9) / 4),
     hints: hints.slice(0, hinted),
   };
+}
+
+/** A controller's buttons in the picker's hints (`pickerLayout`'s `pad`): PlayStation's or Xbox's names. */
+export type PadStyle = 'playstation' | 'xbox';
+
+/** The picker's controller hints, as many as the panel's width (`pw`) holds in the 3×5 font. */
+function padHints(style: PadStyle, pw: number): string[] {
+  const ps = style === 'playstation';
+  const [shoulders, triggers, place, turn, undo, def] = ps ? ['L1/R1', 'L2/R2', 'SQUARE', 'TRIANGLE', 'CIRCLE', 'L3'] : ['LB/RB', 'LT/RT', 'X', 'Y', 'B', 'LS'];
+  const rows = [`${shoulders} PICK · ${triggers} SHELF · ${def} DEF`, `${place} PLACE · ${turn} TURN · ${undo} UNDO`];
+  return rows.every((r) => r.length * 4 - 1 <= pw - 10) ? rows : [`${shoulders} PICK · ${triggers} SHELF`, `${place} PLACE`];
 }
 
 /** The models a def places by id (`use`), at its default params. */
@@ -189,25 +224,32 @@ export const WORKSHOP: RoomDef = {
   title: 'Asset Workshop',
   wing: 'workshop',
   about:
-    'Every model and texture the engine carries, in a picker: the library family by family, then every imported pack. Scroll a shelf, pick an asset and put as many as you like on the floor, by key, by pad or by clicking where it goes. The pads at the back explain how assets work.',
+    'Every model and texture the engine carries, in a picker: the library family by family, then every imported pack. Scroll a shelf, pick an asset and put as many as you like on the floor, by key, by pad, or by a click or a tap where it goes. The pads at the back explain how assets work.',
   try: [
-    'Scroll the list with the mouse wheel (or Q and E); comma and period change shelf',
-    'Click the floor to place the pick there; right click takes one away, Backspace the last',
-    'Press Tab: what the pick is made of (parts, palette slots, params)',
+    'Scroll the list with {key:prev_item} and {key:next_item}; {key:prev_shelf} and {key:next_shelf} change shelf',
+    'Click or tap the floor to place the pick there ({key:place} puts it where its preview hovers); {key:undo} takes the last one away',
+    'Press {key:def_view}: what the pick is made of (parts, palette slots, params)',
     'Step on FIND IT: one search across the library and every pack, models and textures together',
   ],
+  // a phone has no < > << >> here: a finger drags the list, and the panel's own < > change shelf
+  controls: {
+    prev_item: { ...WORLD_CONTROLS.prev_item, touch: 'DRAG DOWN' },
+    next_item: { ...WORLD_CONTROLS.next_item, touch: 'DRAG UP' },
+    prev_shelf: { ...WORLD_CONTROLS.prev_shelf, touch: '<' },
+    next_shelf: { ...WORLD_CONTROLS.next_shelf, touch: '>' },
+  },
   camera: { preset: 'iso', yaw: GAME_VIEW.yaw, pitch: GAME_VIEW.pitch, viewHeight: GAME_VIEW.viewHeight, zoom: GAME_VIEW.zooms.level, stiffness: 7, minZoom: 0.4, maxZoom: 3 }, // the game's own scale
   spawn: [0, 0, 4.5],
   facing: Math.PI,
   background: 'night',
   guide: {
-    what: 'A floor to build on and a picker holding every model and texture the engine carries, shelf by shelf: the library’s families, its surfaces, icons and sprites, then every imported pack. The panel names the pick, measures it and says where it came from; Tab shows what it is made of. A hovering preview shows where Enter puts it.',
+    what: 'A floor to build on and a picker holding every model and texture the engine carries, shelf by shelf: the library’s families, its surfaces, icons and sprites, then every imported pack. The panel names the pick, measures it and says where it came from; {key:def_view} shows what it is made of. A hovering preview shows where {key:place} puts it.',
     how: [
       'A model is data, a ModelDef: parts (boxes, cylinders, lathes, extruded paths, imported meshes) in palette slots bound to the engine’s 16 colours, params with ranges, and use to place another model by its id. buildModel turns it into a few merged toon meshes, with its bounds, colliders and light.',
       'A texture is data too, a TextureDef: layers of pixel rows, seeded patterns, paths and an outline, in palette slots. A tiling one becomes a floor or a wall (textureMap: nearest texels, repeated); a sprite stands up facing the camera (spriteSheet in a SpriteBatch); hudSprite draws it on the HUD, as the panel does.',
       'Imported packs are other people’s kits converted once (npm run model -- import-pack, tex -- import-pack) into the same format and palette: one JSON file per pack in public/packs, listed in packs/index.json. loadPack loads one when a game needs it; every asset keeps its source and licence (npm run model -- credits lists them).',
       'Finding is one search everywhere: searchDefs, a catalog’s search, npm run model -- find (models) and npm run tex -- find (textures) score a word in the id over a tag over the about line; model -- find shows a model’s variants (rock-large-a to -f) as one entry. FIND IT runs searchDefs over both kinds at once.',
-      'Placing: the pick is built (buildModel(def, { catalog })), stood with the bottom of its bounds on the floor and its footprint centred, and given its light from the light pool, on a point inside it. A click is a ray from the camera through the pointer, met with the floor; a right click takes away the first placed thing the ray hits. A game adds addModelColliders(physics, build, at, yaw) too; here you walk through what you place.',
+      'Placing: the pick is built (buildModel(def, { catalog })), stood with the bottom of its bounds on the floor and its footprint centred, and given its light from the light pool, on a point inside it. A click or a tap is a ray from the camera through the pointer, met with the floor; with a mouse, a right click takes away the first placed thing the ray hits. A game adds addModelColliders(physics, build, at, yaw) too; here you walk through what you place.',
       'To vary an asset, write a few lines, not a copy: a def that uses it with a scale or a palette (docs/ASSETS.md, Variants).',
     ],
     uses: [
@@ -273,17 +315,25 @@ const t = -origin.y / dir.y;`,
       const { width: w, height: h } = ctx.hud;
       const touch = ctx.engine.touch?.visible ? ctx.engine.touch : null;
       const canvas = ctx.hud.canvas;
-      if (!touch || !canvas) return pickerLayout(w, h);
-      const span = pickerLayout(w, h, { touch: true }).panel;
+      // the hints name the device in use: a controller's buttons, the keys, a tap
+      const controls = ctx.engine.controls;
+      const pad = controls.device === 'pad' ? controls.style : undefined;
+      if (!touch || !canvas) return pickerLayout(w, h, { pad });
+      const span = pickerLayout(w, h, { touch: !pad, pad }).panel;
       const r = canvas.getBoundingClientRect();
-      if (r.width <= 0 || r.height <= 0) return pickerLayout(w, h, { touch: true });
+      if (r.width <= 0 || r.height <= 0) return pickerLayout(w, h, { touch: !pad, pad });
       const c = touch.rects();
       const across = (b: DOMRect) => ((b.right - r.left) / r.width) * w > span.x && ((b.left - r.left) / r.width) * w < span.x + span.w;
       const artY = (y: number) => ((y - r.top) / r.height) * h;
+      // over the joystick and the buttons along the bottom, under the top-left ones (≡ GO ?) and a debug bar
+      const high = (b: DOMRect) => b.top < r.top + r.height / 3;
+      const shown = c.buttons.filter((x) => !x.hidden).map((x) => x.rect);
       let bottom = h;
-      for (const b of [c.stick, ...c.buttons.map((x) => x.rect)]) if (b && across(b)) bottom = Math.min(bottom, Math.floor(artY(b.top)));
-      const top = c.bar && across(c.bar) ? Math.ceil(artY(c.bar.bottom)) + 2 : 0;
-      return pickerLayout(w, h, { top, bottom, touch: true });
+      for (const b of [c.stick, ...shown.filter((b) => !high(b))]) if (b && across(b)) bottom = Math.min(bottom, Math.floor(artY(b.top)));
+      const tops = [c.bar, ...shown.filter(high)];
+      let top = 0;
+      for (const b of tops) if (b && across(b)) top = Math.max(top, Math.ceil(artY(b.bottom)) + 2);
+      return pickerLayout(w, h, { top, bottom, touch: !pad, pad });
     };
     let lay = layout();
 
@@ -561,13 +611,13 @@ const t = -origin.y / dir.y;`,
       kit.lightPad(defPad, on);
     };
     const front = 8;
-    kit.pad([-6, 0, front], { label: 'SPAWN', color: 'lime', note: 'The pick goes down in front of you (Enter does the same where the preview hovers).', apply: () => void placePick(ahead(preview ? reach(preview) : 0.5)) });
-    kit.pad([-3, 0, front], { label: 'UNDO', color: 'sand', note: 'The last thing placed is gone (Backspace; a right click takes the one under the mouse).', apply: () => void undo() });
-    kit.pad([0, 0, front], { label: 'TURN', color: 'sky', note: 'The next thing goes down turned another 45 degrees (Y). A sprite always faces the camera.', apply: () => (yaw = turned(yaw + TURN)) });
+    kit.pad([-6, 0, front], { label: 'SPAWN', color: 'lime', note: 'The pick goes down in front of you ({key:place} does the same where the preview hovers).', apply: () => void placePick(ahead(preview ? reach(preview) : 0.5)) });
+    kit.pad([-3, 0, front], { label: 'UNDO', color: 'sand', note: 'The last thing placed is gone ({key:undo}; with a mouse, a right click takes the one under it).', apply: () => void undo() });
+    kit.pad([0, 0, front], { label: 'TURN', color: 'sky', note: 'The next thing goes down turned another 45 degrees ({key:spin}). A sprite always faces the camera.', apply: () => (yaw = turned(yaw + TURN)) });
     kit.pad([3, 0, front], { label: 'CLEAR', color: 'red', note: 'Everything placed is gone: each one’s meshes and light freed.', apply: () => void clear() });
-    const defPad = kit.pad([6, 0, front], { label: 'DEF VIEW', color: 'plum', note: 'The panel shows what the pick is made of: its parts, palette slots, params and the models it uses (Tab).', apply: () => setDef(!defView) });
+    const defPad = kit.pad([6, 0, front], { label: 'DEF VIEW', color: 'plum', note: 'The panel shows what the pick is made of: its parts, palette slots, params and the models it uses ({key:def_view}).', apply: () => setDef(!defView) });
     const back = -8;
-    kit.pad([-6.75, 0, back], { label: 'MODELS ARE DATA', color: 'orange', note: 'A model is a ModelDef, plain data: parts in palette slots, params, and use to place other models. buildModel makes toon meshes of it. Tab shows the pick’s.', apply: () => setDef(true) }, [2.8, 1.6]);
+    kit.pad([-6.75, 0, back], { label: 'MODELS ARE DATA', color: 'orange', note: 'A model is a ModelDef, plain data: parts in palette slots, params, and use to place other models. buildModel makes toon meshes of it. {key:def_view} shows the pick’s.', apply: () => setDef(true) }, [2.8, 1.6]);
     kit.pad([-2.25, 0, back], { label: 'TEXTURES', color: 'cyan', note: 'A texture is a TextureDef: layers of pixels, patterns and paths in palette slots. Tiles lie as floors (textureMap), sprites stand (spriteSheet). Here: the next shelf.', apply: () => nextShelf((s) => !!s.textures) }, [2.8, 1.6]);
     kit.pad([2.25, 0, back], { label: 'PACKS', color: 'green', note: 'Other people’s kits, converted once into this format and palette: a JSON file each in public/packs, loaded by loadPack, each asset with its licence. Here: the next pack.', apply: () => nextShelf((s) => s.source !== LIBRARY_SOURCE) }, [2.8, 1.6]);
     kit.pad([6.75, 0, back], {
@@ -595,9 +645,9 @@ const t = -origin.y / dir.y;`,
     const knobs: Knob[] = [
       { kind: 'choice', id: 'shelf', label: 'Shelf', options: shelves.map((s) => `${s.title} (${count(s)})`), get: () => shelf, set: (i) => choose(i, left[i] ?? 0), hint: 'Every shelf: the library’s families, its textures, then every imported pack.' },
       { id: 'item', label: 'Item', min: 0, max: 1, step: 0.001, get: () => (count(current()) > 1 ? item / (count(current()) - 1) : 0), set: (v) => choose(shelf, Math.round(v * (count(current()) - 1))), format: () => `${item + 1} / ${count(current())}` },
-      { kind: 'choice', id: 'turn', label: 'Turn', options: ['0', '45', '90', '135', '180', '225', '270', '315'].map((d) => `${d} degrees`), get: () => Math.round(yaw / TURN) % 8, set: (i) => (yaw = i * TURN), hint: 'How the next thing goes down (Y): models turn, sprites face the camera.' },
+      { kind: 'choice', id: 'turn', label: 'Turn', options: ['0', '45', '90', '135', '180', '225', '270', '315'].map((d) => `${d} degrees`), get: () => Math.round(yaw / TURN) % 8, set: (i) => (yaw = i * TURN), hint: 'How the next thing goes down: models turn, sprites face the camera.' },
       { kind: 'toggle', id: 'def', label: 'Def view', get: () => defView, set: setDef },
-      { kind: 'toggle', id: 'preview', label: 'Preview', get: () => previewOn, set: (v) => (previewOn = v), hint: 'The pick hovering where Enter puts it.' },
+      { kind: 'toggle', id: 'preview', label: 'Preview', get: () => previewOn, set: (v) => (previewOn = v), hint: 'The pick hovering where it will go down.' },
     ];
 
     /** The pick's lines for the panel: what it is, how big, where from (or, in the DEF view, what it is made of). */
@@ -621,6 +671,11 @@ const t = -origin.y / dir.y;`,
 
     return {
       knobs,
+      // the pad's picker buttons, which the hero's moves must not also take: L1 / R1 (prone, lie
+      // down), Square (a punch), Triangle and Circle (a grab, a duck: held, they still do), L3 (sit)
+      claims: ['PadLB', 'PadRB', 'PadX', 'PadY', 'PadB', 'PadL3'],
+      // a phone picks by tapping a row and places by tapping the floor: UNDO is its one button
+      touch: () => ({ [TOUCH_SLOTS[0]]: { label: 'UNDO', disabled: placed.length === 0 } }),
       update(dt) {
         clock += dt;
         lay = layout();
@@ -641,25 +696,29 @@ const t = -origin.y / dir.y;`,
         if (hero) lastHero.copy(hero);
         if (room.inputFree) {
           const shift = input.isDown('ShiftLeft', 'ShiftRight');
-          if (input.consumePress('KeyE')) scroll(shift ? 10 : 1);
-          if (input.consumePress('KeyQ')) scroll(shift ? -10 : -1);
-          if (input.consumePress('Period')) turnShelf(1);
-          if (input.consumePress('Comma')) turnShelf(-1);
-          if (input.consumePress('Tab')) setDef(!defView);
-          if (input.consumePress('KeyY')) yaw = turned(yaw + TURN);
-          if (input.consumePress('Backspace')) undo();
-          if (input.consumePress('Enter', 'NumpadEnter')) placePick(target());
+          // this frame's presses: the pad's buttons here are the picker's, not the hero's (`claims`)
+          if (input.wasPressed(...PICK.next)) scroll(shift ? 10 : 1);
+          if (input.wasPressed(...PICK.prev)) scroll(shift ? -10 : -1);
+          if (input.wasPressed(...PICK.nextShelf)) turnShelf(1);
+          if (input.wasPressed(...PICK.prevShelf)) turnShelf(-1);
+          if (input.wasPressed(...PICK.def)) setDef(!defView);
+          if (input.wasPressed(...PICK.turn)) yaw = turned(yaw + TURN);
+          if (input.wasPressed(...PICK.undo)) undo();
+          if (input.wasPressed(...PICK.place)) placePick(target());
           // the wheel over the list scrolls it, and doesn't zoom the camera
           if (overPanel && input.wheel) {
             scroll(Math.sign(input.wheel));
             input.wheel = 0;
           }
-          const tap = finger();
-          if (input.consumePress('MouseLeft') || tap) pressAt(p.x, p.y);
-          if (input.consumePress('MouseRight')) {
-            const hit = overPanel ? null : pickAt(p.x, p.y);
-            if (hit) remove(hit);
-          }
+          // not the click or tap that hid the room card, nor that finger when it lifts
+          if (room.pointerFree) {
+            const tap = finger();
+            if (input.consumePress('MouseLeft') || tap) pressAt(p.x, p.y);
+            if (input.consumePress('MouseRight')) {
+              const hit = overPanel ? null : pickAt(p.x, p.y);
+              if (hit) remove(hit);
+            }
+          } else touch.down = false;
         } else touch.down = false; // a panel took the finger
 
         const frame = Math.floor(clock * 8);
