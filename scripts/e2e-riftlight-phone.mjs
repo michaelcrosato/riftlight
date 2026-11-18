@@ -43,6 +43,8 @@ export async function runRiftlightPhone(h, orientation) {
     ctx = await launch(exe, s, { viewport, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
     const { page, logs } = ctx;
     const R = (fn, arg) => page.evaluate(fn, arg);
+    // a condition in the page, waited for but bounded: true once it holds, false if it never does
+    const until = (fn, arg, timeout = 10000) => page.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
     // a screenshot needs the render loop (Engine.step does not present the 3D frame): a moment of real time first
     const shot = async (name) => {
       await R(() => (window.__PIXEL_ENGINE__.manual = false));
@@ -246,9 +248,28 @@ export async function runRiftlightPhone(h, orientation) {
     st = await R(() => ({ ui: window.__RIFTLIGHT__.state().ui, hidden: !!document.querySelector('.touch-ui.hidden') }));
     check(st.ui.length === 0 && !st.hidden, `${orientation}: tapping the close box closes it and the controls come back (ui ${st.ui.join(',') || 'none'})`);
 
-    // a finger's gestures on the real page (CDP touches, as a phone sends them)
+    // a finger's gestures on the real page (CDP touches, as a phone sends them): a gesture's events
+    // carry its own clock, a frame (16 ms) apart at most from the first finger down, so a quick
+    // swipe stays quick (SWIPE.ms is event time) however long a slow machine takes to deliver them
     const cdp = await page.context().newCDPSession(page);
-    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, id]) => ({ x, y, id, radiusX: 3, radiusY: 3, force: 1 })) });
+    let fingers = 0;
+    let at = 0;
+    const touch = (type, points) => {
+      const now = Date.now() / 1000; // real time: CDP's timestamp is seconds since the epoch
+      at = fingers === 0 ? now : Math.min(now, at + 1 / 60);
+      fingers = points.length; // touchEnd lists the fingers still down
+      return cdp.send('Input.dispatchTouchEvent', { type, timestamp: at, touchPoints: points.map(([x, y, id]) => ({ x, y, id, radiusX: 3, radiusY: 3, force: 1 })) });
+    };
+    // the last finger lifts; true once the page has had its pointerup (a check then steps the frames
+    // that act on it: manual time, never a guess at how much real time they take)
+    const lift = async () => {
+      await R(() => {
+        window.__lifted = false;
+        window.addEventListener('pointerup', () => (window.__lifted = true), { capture: true, once: true });
+      });
+      await touch('touchEnd', []);
+      return until(() => window.__lifted);
+    };
     // a quick swipe sideways from the pause menu closes it (the game resumes)
     await tapCode('Escape');
     await R(() => window.__PIXEL_ENGINE__.step(3));
@@ -261,12 +282,13 @@ export async function runRiftlightPhone(h, orientation) {
     });
     await touch('touchStart', [[pr.x, pr.y, 21]]);
     for (let k = 1; k <= 4; k++) await touch('touchMove', [[pr.x - k * 35, pr.y, 21]]);
-    await touch('touchEnd', []);
+    const swipeLifted = await lift();
     st = await R(() => {
       window.__PIXEL_ENGINE__.step(3);
       return { ui: window.__RIFTLIGHT__.state().ui };
     });
-    check(st.ui.length === 0, `${orientation}: a quick swipe sideways from the pause menu closes it (ui ${st.ui.join(',') || 'none'})`);
+    check(swipeLifted && st.ui.length === 0, `${orientation}: a quick swipe sideways from the pause menu closes it (ui ${st.ui.join(',') || 'none'}${swipeLifted ? '' : '; the page never had the pointerup'})`);
+    if (st.ui.length) await R(() => (window.__RIFTLIGHT__.ui.close(), window.__PIXEL_ENGINE__.step(2))); // the checks after it play on
     // the floating stick and a skill at once: the stick held off to the right while skill 1 is pressed
     const both = await (async () => {
       const skill = (await controls()).find((c) => c.code === 'Digit1');
@@ -342,39 +364,34 @@ export async function runRiftlightPhone(h, orientation) {
     })();
     check(apart.steps >= 8 && apart.swings === 0, `${orientation}: two fingers a frame apart pinch with no swing either (${apart.swings} swings in ${apart.steps} steps)`);
 
-    // the passive tree draws at the game's art size (its phone density) and names a finger's gestures
-    const tree = await R(async () => {
-      const rl = window.__RIFTLIGHT__;
-      rl.ui.open('tree');
-      window.__PIXEL_ENGINE__.manual = false;
-      await new Promise((r) => setTimeout(r, 300));
-      const view = rl.game.layer.find('tree').view;
+    // the passive tree draws at the game's art size (its phone density) and names a finger's gestures;
+    // the view paints its first frame as it opens (its own canvas: no frame of the game's needed)
+    await R(() => window.__RIFTLIGHT__.ui.open('tree'));
+    const drawn = await until(() => window.__RIFTLIGHT__.game.layer.find('tree')?.view?.debug().frames > 0);
+    const tree = await R(() => {
+      const view = window.__RIFTLIGHT__.game.layer.find('tree')?.view?.debug();
       const res = window.__PIXEL_ENGINE__.renderer.resolution;
-      const out = { art: view.debug().art, res: { width: res.width, height: res.height }, hints: view.debug().hints };
-      rl.ui.close();
-      window.__PIXEL_ENGINE__.manual = true;
-      return out;
+      window.__RIFTLIGHT__.ui.close();
+      return { art: view?.art ?? {}, res: { width: res.width, height: res.height }, hints: view?.hints ?? [] };
     });
-    check(tree.art.width === tree.res.width && tree.art.height === tree.res.height && tree.hints.includes('tap') && !tree.hints.includes('take'), `${orientation}: the passive tree draws at the game's ${tree.res.width}×${tree.res.height} and its bar names taps, not clicks (${tree.hints.join(', ')})`);
-    // a swipe down from the tree's top bar closes it (its own canvas: sent, so recorded), off its search box
-    await R(() => {
-      window.__RIFTLIGHT__.ui.open('tree');
-      window.__PIXEL_ENGINE__.manual = false;
-    });
-    await page.waitForTimeout(300);
+    check(drawn && tree.art.width === tree.res.width && tree.art.height === tree.res.height && tree.hints.includes('tap') && !tree.hints.includes('take'), `${orientation}: the passive tree draws at the game's ${tree.res.width}×${tree.res.height} and its bar names taps, not clicks (${tree.hints.join(', ')}${drawn ? '' : '; never drawn'})`);
+    // a swipe down from the tree's top bar closes it (its own canvas: sent, so recorded), off its
+    // search box: the finger lands as the tree opens, on the view's canvas, and the frames that do
+    // the close it sent are stepped (manual time: no guess at how many frames real time holds)
     const topBar = await R((share) => {
+      window.__RIFTLIGHT__.ui.open('tree');
       const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
       return { x: c.left + c.width * share, y: c.top + 4 };
     }, portrait ? 0.6 : 0.08);
+    const onBar = await until(({ x, y }) => window.__RIFTLIGHT__.game.layer.find('tree')?.view?.debug().frames > 0 && document.elementFromPoint(x, y)?.dataset.riftTree === 'canvas', topBar);
     await touch('touchStart', [[topBar.x, topBar.y, 51]]);
     for (let k = 1; k <= 4; k++) await touch('touchMove', [[topBar.x, topBar.y + k * 40, 51]]);
-    await touch('touchEnd', []);
-    await page.waitForTimeout(300);
+    const treeLifted = await lift();
     const treeUi = await R(() => {
-      window.__PIXEL_ENGINE__.manual = true;
+      window.__PIXEL_ENGINE__.step(2);
       return window.__RIFTLIGHT__.state().ui;
     });
-    check(!treeUi.includes('tree'), `${orientation}: a swipe down from the tree's top bar closes it (ui ${treeUi.join(',') || 'none'})`);
+    check(onBar && treeLifted && !treeUi.includes('tree'), `${orientation}: a swipe down from the tree's top bar closes it (ui ${treeUi.join(',') || 'none'}${onBar ? '' : '; the tree was not open under the finger'}${treeLifted ? '' : '; the page never had the pointerup'})`);
     if (treeUi.includes('tree')) await R(() => window.__RIFTLIGHT__.ui.close('tree'));
     if (portrait) {
       // the settings menu is taller than a phone: a drag scrolls it until its last row shows
