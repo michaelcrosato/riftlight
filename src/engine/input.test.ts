@@ -750,6 +750,51 @@ describe('couch co-op: each pad on its own (input.player)', () => {
     expect([f.joined, f.p1.a]).toEqual([[], true]);
   });
 
+  it('a controller seen twice (a virtual pad beside the real one: DS4Windows, Steam Input) never joins its own twin: a Cross player 1’s pad pressed in the same poll', () => {
+    for (const mine of [0, 1]) {
+      const { input, frame } = couch();
+      input.joinWith = ['PadA'];
+      const twin = 1 - mine;
+      /** The two pads as the browser lists them, both pressing `buttons` (one controller, two pads). */
+      const both = (buttons: number[]) => [pad([0, 0, 0, 0], buttons), pad([0, 0, 0, 0], buttons)];
+      // player 1 picks up their pad (the twin's press is a use too: the higher index's wins, so pick it by its own press)
+      frame(mine === 0 ? [pad([0, 0, 0, 0], [3]), pad()] : [pad(), pad([0, 0, 0, 0], [3])]);
+      frame([pad(), pad()]);
+      expect([input.device, input.padIndex], `player 1 on pad ${mine}`).toEqual(['pad', mine]);
+      // every press shows on both: Cross is player 1's, nobody joins
+      for (let n = 0; n < 3; n++) {
+        const f = frame(both([0]));
+        expect([f.joined, [...input.joined], input.isDown('PadA')], `pad ${twin} is pad ${mine}'s twin`).toEqual([[], [], true]);
+        frame(both([]));
+      }
+      // another controller (pad 2) still joins
+      const f = frame([pad(), pad(), pad([0, 0, 0, 0], [0])]);
+      expect([f.joined, [...input.joined]]).toEqual([[2], [2]]);
+    }
+  });
+
+  it('records each joined pad on its own, and only those: player 1’s pad is in the merged input already', () => {
+    const { input, frame } = couch();
+    const frames: InputFrame[] = [];
+    const memory = { held: '', pointer: '' };
+    const poll = (pads: (GamepadLike | null)[]) => {
+      input.beginFrame(frames.length / 60 + 1 / 60, 1 / 60, pads.map((p, i) => (p ? { ...p, index: i } : null)));
+      frames.push(input.snapshot(1 / 60, memory));
+      input.endFrame();
+    };
+    // player 1 on pad 0, its stick and buttons moving; pad 1 there, not joined: nothing per pad
+    poll([pad([0, 0, 0, 0], [3]), pad()]);
+    poll([pad([0.8, 0, 0.5, 0], [0]), pad([0, 0, 0, 0], [1])]);
+    poll([pad([0.2, 0.4, 0, 0]), pad()]);
+    expect(frames.flatMap((f) => [f.pads, f.padPressed]).filter((x) => x !== undefined), 'nobody joined').toEqual([]);
+    // pad 1 joins: its own frames and presses are recorded
+    input.joined.add(1);
+    poll([pad(), pad([0.9, 0, 0, 0], [2])]);
+    const last = frames.at(-1)!;
+    expect([last.pads?.map((p) => p[0]), last.padPressed]).toEqual([[1], [[1, 'PadX']]]);
+    void frame;
+  });
+
   it('is kept by a snapshot: each pad’s held buttons and queued presses, and the pads that joined', () => {
     const { input, frame } = couch();
     input.joined.add(2);

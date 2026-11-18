@@ -5,13 +5,16 @@
 // the recording replays to the same fingerprint. A save-state is refused while a guest plays. Then
 // the town join, the leash, rising after a fall, leaving, and the camera's zoom. One engine, tests in
 // order.
-import { Vector3 } from 'three/webgpu';
+import { type Mesh, type MeshBasicNodeMaterial, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HUB_COLORS, type GamepadLike, type Recording } from '../../engine';
 import type { Actor } from '../actors/Actor';
 import { AIM } from '../actors/aim';
 import type { ActorLike } from '../core/types';
-import { currentRiftlightApi, type HeadlessRiftlight, headlessRiftlight, makeRiftlight, settle } from '../headless';
+import { currentRiftlightApi, type HeadlessRiftlight, headlessRiftlight, hudTexts, makeRiftlight, settle } from '../headless';
+import { t } from '../lang';
+import { overlaps } from '../ui/layout';
+import { project, worldBox } from '../ui/world';
 import { COOP } from './coop';
 import { cameraBasis } from './controls';
 
@@ -41,6 +44,15 @@ const tap = (slot: number, b: number) => {
   h.engine.step(1);
 };
 const focused = () => h.rl.ui.widgets().find((w) => w.focus)?.id;
+/** Rings in seat colours under player 1's hero (`seatRing`). */
+const p1Rings = () => {
+  const out: string[] = [];
+  h.game.hero.object.traverse((o) => {
+    const m = o as Mesh;
+    if (m.isMesh && m.geometry?.type === 'RingGeometry') out.push(`#${(m.material as MeshBasicNodeMaterial).color.getHexString()}`);
+  });
+  return out;
+};
 const guest = () => h.game.coop.guests[0];
 
 beforeAll(async () => {
@@ -218,6 +230,39 @@ describe('couch co-op', () => {
     expect(engine.errors).toEqual([]);
   });
 
+  it('each seat stands clear on screen (seat 4 well below player 1: no hero’s body or tag over another’s body or ring); player 1 has seat 1’s ring and a P1 tag while guests play', () => {
+    const { game, engine } = h;
+    engine.step(2);
+    const cam = engine.camera.camera;
+    const ui = game.ui;
+    const where = 'in town';
+    const p = game.hero.actor.position.clone();
+    const spots = [p, ...[2, 3, 4].map((seat) => game.besideSpot(p, seat))];
+    const right = new Vector3();
+    const forward = new Vector3();
+    cameraBasis(engine, right, forward);
+    // each hero from its head down to the front of its ring at its feet (`seatRing`: 0.56 m)
+    const bodies = spots.map((at) => {
+      const b = worldBox(at, 1.9, 0.9, cam, ui)!;
+      const front = project(at.clone().addScaledVector(forward, -0.56), cam, ui)!;
+      return { ...b, h: Math.max(b.h, front.y - b.y) };
+    });
+    const tags = spots.map((at, k) => {
+      const c = project(at.clone().setY(at.y + 2.3), cam, ui)!;
+      const w = ui.measure(t('hud.coop.seat', { seat: k + 1 }));
+      return { x: c.x - Math.floor(w / 2), y: c.y, w: w + 1, h: 8 };
+    });
+    for (let i = 0; i < 4; i++)
+      for (let j = 0; j < 4; j++) {
+        if (i === j) continue;
+        expect(overlaps(bodies[i]!, bodies[j]!, 0), `${where}: P${i + 1}'s body ${JSON.stringify(bodies[i])} over P${j + 1}'s ${JSON.stringify(bodies[j])}`).toBe(false);
+        expect(overlaps(tags[i]!, bodies[j]!, 0), `${where}: P${i + 1}'s tag ${JSON.stringify(tags[i])} over P${j + 1}'s body or ring ${JSON.stringify(bodies[j])}`).toBe(false);
+      }
+    expect(p1Rings(), 'player 1’s ring in seat 1’s colour').toEqual([HUB_COLORS[0]]);
+    expect(hudTexts(engine).map((x) => x.text), 'a tag over every hero').toEqual(expect.arrayContaining(['P1', 'P2', 'P3']));
+    expect(engine.errors).toEqual([]);
+  });
+
   it('a straggler past the leash comes back beside player 1; a fallen guest rises beside player 1; the camera zooms out to its cap', () => {
     const { game, engine } = h;
     const third = game.coop.guests.find((g) => g.seat === 3)!.hero!;
@@ -257,6 +302,7 @@ describe('couch co-op', () => {
     rl.toTitle();
     engine.step(1);
     expect([game.coop.guests.length, [...engine.input.joined]]).toEqual([0, []]);
+    expect(p1Rings(), 'alone: player 1’s ring goes').toEqual([]);
     expect(engine.errors).toEqual([]);
   });
 });

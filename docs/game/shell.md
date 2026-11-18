@@ -86,18 +86,25 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
 - **Joining**: Cross on another pad (`KEYS.join`, `input.joinWith`, decided each frame by
   `joinPolicy`): in the pause menu's **Couch co-op** (`coopMenu`: the seats, a Leave button per
   guest, *Press ✕ on another controller to join*), any pad but player 1's in use; in town, while
-  player 1 plays on a pad, any other pad, and the town says so at the top (`joinHint`). Player 1 on
-  the keyboard picking a pad up in town joins nobody (the menu is the way then). A guest takes the
-  first free seat, 2 to 4, in 52in1's seat colours (`HUB_COLORS`): a ring at its feet, its tag
-  (`hud.coop.seat`, P2) over its head and a compact strip under the top-left block (`GuestStrip`:
-  its life, its four skills' readiness, the seconds until it rises). **Leave** in the same menu
-  sends it home; its pad plays player 1 again. The title sends every guest home.
+  player 1 plays on a pad, any other pad, and the town says so (`joinHint`, `joinLine`: at the top
+  centre while that is clear of the HUD, else above the bottom HUD and any prompt, a phone held
+  upright; wrapped and placed through the HUD's layout, over no other text). Player 1 on the
+  keyboard picking a pad up in town joins nobody (the menu is the way then). Couch co-op is not
+  offered in a 52in1 round (its players are the hub's) nor in the showcase (`couchOffered`: no
+  pause entry, no town line, nobody joins). A guest takes the first free seat, 2 to 4, in 52in1's
+  seat colours (`HUB_COLORS`): a ring at its feet, its tag (`hud.coop.seat`, P2) over its head and
+  a compact strip under the top-left block (`GuestStrip`: its life, its four skills' readiness, the
+  seconds until it rises; beside a phone's minimap it narrows to the gap, or goes under the minimap
+  and gold). While guests play, player 1 has seat 1's ring and a P1 tag too. **Leave** in the same
+  menu sends it home; its pad plays player 1 again. The title sends every guest home.
 - **A guest is a teammate**, as a shared world's host makes one (`teammate`): player 1's level,
   skills, tree, gear (and difficulty), refitted at every stage entry (`fitGuest`), a fighter in the
   level's combat world (monsters chase the nearest hero), with no save, inventory or loot of its
   own: what it kills is player 1's XP, gold and loot. It reads its pad by player 1's rules
   (`guestIntent`: `readActions` for the attack, skills and dodge; the right stick's aim with
-  `AIM.assist`, else `autoAim` along the move), enters each stage beside player 1 (`besideSpot`),
+  `AIM.assist`, else `autoAim` along the move), enters each stage beside player 1 (`besideSpot`:
+  seat 2 to the right, 3 to the left, 4 `COOP.below` (3.2 m) below, so that no hero's body or tag
+  covers another's on screen),
   is put beside player 1 when it strays past `COOP.leash` (12 m), and rises beside player 1
   `COOP.rise` (5) s after it falls. Player 1's death is the run's, as always (the recap, then town
   with everyone). Monsters stay as they are for one player: balance is not part of this.

@@ -187,11 +187,12 @@ export interface InputFrame {
   /** The controller's turn by motion aim this frame (`motionTurn`, degrees), while it turns. */
   turn?: [number, number];
   /**
-   * Each pad on its own (`padPlayers`, couch co-op: `player(slot)`), when any of them changed:
-   * one `PadFrame` per connected pad. Left out, every pad is as the frame before.
+   * Each joined pad on its own (`padPlayers`, `joined`, couch co-op: `player(slot)`), when any of
+   * them changed: one `PadFrame` per connected joined pad (a pad that has not joined drives the
+   * merged input, recorded as that). Left out, every pad is as the frame before.
    */
   pads?: PadFrame[];
-  /** Presses on each pad on its own this frame (`padPlayers`): [slot, ...codes]. */
+  /** Presses on each joined pad on its own this frame (`padPlayers`): [slot, ...codes]. */
   padPressed?: [number, ...string[]][];
   /** Pads that joined this frame (`joinWith`, `joinedNow`): their slots. */
   join?: number[];
@@ -266,7 +267,8 @@ export interface KeyReader {
  * One pad on its own (`input.player(slot)`, couch co-op), read the way the merged input is: its
  * buttons' `Pad*` codes (the d-pad's arrows too) held, pressed this frame and queued for fixed-step
  * code (`consumePress`, the same press window), its sticks after the deadzone and its triggers. Only
- * while `input.padPlayers` is on; recorded per pad, so a replay reads the same.
+ * while `input.padPlayers` is on; recorded per pad while it has joined (`joined`), so a replay
+ * reads a player's pad the same (one that has not joined reads as nothing in a replay).
  */
 export class PadPlayer implements KeyReader {
   /** A pad is in this slot. */
@@ -484,7 +486,7 @@ export class Input {
   /** True while any gamepad is connected (that alone never changes `device`). */
   gamepadConnected = false;
   /**
-   * Couch co-op: read every pad on its own too (`player(slot)`), recorded per pad
+   * Couch co-op: read every pad on its own too (`player(slot)`), each joined one recorded per pad
    * (`InputFrame.pads`). Off (the default) nothing is read or recorded per pad.
    */
   padPlayers = false;
@@ -753,9 +755,11 @@ export class Input {
 
   /**
    * The pad in `slot` (its `navigator.getGamepads()` slot, 0 to `MAX_PADS` - 1) on its own, couch
-   * co-op's player input: read while `padPlayers` is on, recorded and replayed, kept by
-   * snapshots. The merged input stays player 1's: a game reads the pads of players 2 to 4 here,
-   * and lists them in `joined` so they no longer drive player 1.
+   * co-op's player input: read while `padPlayers` is on, recorded and replayed while it has joined
+   * (`joined`), kept by snapshots. The merged input stays player 1's: a game reads the pads of
+   * players 2 to 4 here, and lists them in `joined` so they no longer drive player 1 (and are
+   * recorded on their own). A pad that has not joined reads live only (what a game may show, such
+   * as how to join), never in a replay: play reads only joined pads.
    */
   player(slot: number): PadPlayer {
     const p = this.pads[slot];
@@ -1171,11 +1175,13 @@ export class Input {
     if (!last || last.touch === undefined || this.pointer.touch !== last.touch) f.touch = this.pointer.touch;
     if (this._commands.length) f.commands = JSON.parse(JSON.stringify(this._commands)) as unknown[]; // the game may change what it got
     if (this._buttonEvents.length) f.clicks = this._buttonEvents.map((e) => [e.code, e.down ? 1 : 0, e.x, e.y]);
-    // each pad on its own (couch co-op): when any changed, and its presses
-    const pads = this.pads.filter((p) => p.connected).map((p) => p.frame());
+    // each joined pad on its own (couch co-op), when any changed, and its presses: the others drive
+    // the merged input (player 1's), recorded already; the game reads only joined ones on their own
+    const own = this.pads.filter((p) => this.joined.has(p.slot));
+    const pads = own.filter((p) => p.connected).map((p) => p.frame());
     const padsKey = JSON.stringify(pads);
     if (padsKey !== (last?.pads ?? '[]')) f.pads = pads;
-    const padPressed = this.pads.filter((p) => p.pressed.size).map((p): [number, ...string[]] => [p.slot, ...[...p.pressed].sort()]);
+    const padPressed = own.filter((p) => p.pressed.size).map((p): [number, ...string[]] => [p.slot, ...[...p.pressed].sort()]);
     if (padPressed.length) f.padPressed = padPressed;
     if (this._joinedNow.length) f.join = [...this._joinedNow];
     if (last) {
@@ -1281,6 +1287,8 @@ export class Input {
     const owns: OwnPoll[] = [];
     const seen = this.padSeen;
     const seenNow = new Map<number, PadSeen>();
+    /** The join codes player 1's pad in use pressed in this poll: a pad pressing one of them now is its twin (one controller seen twice), never a join. */
+    const firstPressed = this.padPlayers && this.joinWith && this._device === 'pad' && !this._playing ? this.joinPressed(list, this._padIndex, seen) : null;
     /** Create and Options held alone: held, but they press only as they are let go (`taps`). */
     const chordHeld = new Set<string>();
     const taps: string[] = [];
@@ -1341,7 +1349,8 @@ export class Input {
       const own = this.padPlayers && !this._playing && index < MAX_PADS ? this.pads[index]! : null;
       if (own) {
         const mineInUse = this._device === 'pad' && this._padIndex === index;
-        if (this.joinWith && !this.joined.has(index) && !mineInUse && this.joinWith.some((c) => padDown.has(c) && !own.held.has(c))) {
+        const fresh = this.joinWith?.filter((c) => padDown.has(c) && !own.held.has(c)) ?? [];
+        if (this.joinWith && !this.joined.has(index) && !mineInUse && fresh.length && !fresh.some((c) => firstPressed?.has(c))) {
           this.joined.add(index);
           this._joinedNow.push(index);
           for (const c of this.joinWith) if (padDown.has(c)) own.latched.add(c); // the press that joined presses nothing
@@ -1443,6 +1452,26 @@ export class Input {
     }
     this.lookAxis.x = look.x;
     this.lookAxis.y = look.y;
+  }
+
+  /**
+   * The `joinWith` codes the pad at `index` (`navigator.getGamepads()` slot) went down on in this
+   * poll (not down at the poll before, `seen`). One controller can show the browser two pads (a
+   * virtual one beside the real one: DS4Windows or Steam Input without HidHide), every press on
+   * both: a pad pressing what player 1's pad in use pressed in the same poll is that twin, not
+   * another player joining.
+   */
+  private joinPressed(list: readonly (GamepadLike | null)[], index: number, seen: ReadonlyMap<number, PadSeen>): Set<string> {
+    const out = new Set<string>();
+    const n = list.findIndex((p, k) => !!p && p.connected !== false && (Number.isInteger(p.index) ? p.index : k) === index);
+    const pad = n >= 0 ? list[n] : null;
+    if (!pad || !this.joinWith) return out;
+    const was = seen.get(index);
+    pad.buttons.forEach((b, i) => {
+      const code = this.gamepadButtons[i];
+      if (code && b && this.joinWith!.includes(code) && (b.pressed || (b.value ?? 0) > 0.5) && !was?.buttons[i]) out.add(code);
+    });
+    return out;
   }
 
   /** Each pad on its own after a poll (`padPlayers`; never during a replay, which sets them from the recording). */

@@ -34,8 +34,10 @@ export const COOP = {
   zoomOut: 0.72,
   /** Seconds a fallen guest lies before rising beside player 1. */
   rise: 5,
-  /** Metres from player 1 a guest is put (joining, rising, a new stage, the leash). */
+  /** Metres from player 1 a guest is put (joining, rising, a new stage, the leash): seats 2 and 3 to its sides. */
   beside: 1.4,
+  /** Metres seat 4 is put below player 1 on screen: far enough that its body and tag cover nothing of player 1's, its ring either. */
+  below: 3.2,
   /** The nearest monster whichever way a guest's cone finds nothing ahead (the shell's last resort, as player 1's). */
   around: 7,
 } as const;
@@ -100,6 +102,8 @@ export interface GuestView {
 /** Couch co-op: the guests at this screen and what they do each step. */
 export class LocalCoop {
   readonly guests: Guest[] = [];
+  /** Player 1's ring in seat 1's colour while guests play (null alone). */
+  private ring: Mesh | null = null;
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly mid = new Vector3();
@@ -133,6 +137,7 @@ export class LocalCoop {
     input.joined.add(slot);
     const guest = new Guest(slot, seat);
     this.guests.push(guest);
+    this.ring ??= seatRing(this.host.hero(), HUB_COLORS[0]!); // player 1 in seat 1's colour while anyone else plays
     this.guests.sort((a, b) => a.seat - b.seat);
     this.host.feed(t('feed.coop.joined', { seat }));
     void this.make(guest);
@@ -161,6 +166,7 @@ export class LocalCoop {
     const [guest] = this.guests.splice(i, 1);
     this.host.input.joined.delete(guest!.slot);
     this.drop(guest!);
+    if (!this.guests.length) this.dropRing();
     this.host.feed(t('feed.coop.left', { seat }));
   }
 
@@ -171,6 +177,12 @@ export class LocalCoop {
       this.drop(g);
     }
     this.guests.length = 0;
+    this.dropRing();
+  }
+
+  private dropRing(): void {
+    disposeRing(this.ring);
+    this.ring = null;
   }
 
   private drop(guest: Guest): void {
@@ -233,13 +245,15 @@ export class LocalCoop {
     g.down = null;
   }
 
-  /** Each frame: bodies, rings. */
+  /** Each frame: bodies, rings (player 1's too). */
   update(dt: number): void {
     for (const g of this.guests) {
       if (!g.hero) continue;
       g.hero.update(dt);
       this.placeRing(g);
     }
+    const p = this.host.hero().actor.position;
+    this.ring?.position.set(p.x, p.y + 0.04, p.z);
   }
 
   private placeRing(g: Guest): void {
@@ -287,14 +301,16 @@ export class LocalCoop {
     });
   }
 
-  /** Each guest's seat tag over its head, in its colour. */
+  /** Each player's seat tag over its head, in its colour: player 1's (P1) too while guests play. */
   draw(ui: UiCanvas, camera: Camera): void {
-    for (const g of this.guests) {
-      const a = g.hero?.actor;
-      if (!a?.alive) continue;
+    if (!this.guests.length) return;
+    const tag = (a: ActorLike | undefined, seat: number, color: string) => {
+      if (!a?.alive) return;
       const at = project(a.position.clone().setY(a.position.y + 2.3), camera, ui);
-      if (at) ui.text(at.x, at.y, t('hud.coop.seat', { seat: g.seat }), { align: 'center', color: parseInt(g.color.slice(1), 16), shadow: 'ink' });
-    }
+      if (at) ui.text(at.x, at.y, t('hud.coop.seat', { seat }), { align: 'center', color: parseInt(color.slice(1), 16), shadow: 'ink' });
+    };
+    tag(this.host.hero().actor, 1, HUB_COLORS[0]!);
+    for (const g of this.guests) tag(g.hero?.actor, g.seat, g.color);
   }
 
   /** The guests as data (fingerprints, tests). */

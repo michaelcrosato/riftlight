@@ -927,14 +927,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /**
    * Where a couch guest of `seat` stands beside `p`, as the screen shows it (seat 2 to the right,
-   * 3 to the left, 4 below: never hidden behind player 1), on ground a hero can stand on; else
-   * the other side, else `p` itself.
+   * 3 to the left, 4 below, `COOP.below` down so that neither its body nor its tag covers player
+   * 1's), on ground a hero can stand on; else nearer or the other side, else `p` itself.
    */
   besideSpot(p: Vector3, seat: number): Vector3 {
     const stage = this.stageNow();
     cameraBasis(this.ctx.engine, this.right, this.forward);
     const side = seat === 2 ? this.right : seat === 3 ? this.right.clone().negate() : this.forward.clone().negate();
-    for (const r of [COOP.beside, COOP.beside * 0.6, -COOP.beside]) {
+    // seat 4 nearer than `COOP.below` would cover player 1: above them instead (player 1 then covers nothing of it but its feet)
+    for (const r of seat === 4 ? [COOP.below, -COOP.below] : [COOP.beside, COOP.beside * 0.6, -COOP.beside]) {
       const at = new Vector3(p.x + side.x * r, p.y, p.z + side.z * r);
       if (this.screen === 'level' ? !stage || stage.walkable(at.x, at.z, false) : this.town.wall(p, at) === null) return at;
     }
@@ -1612,7 +1613,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.syncTouch();
     this.feel.update(dt);
     this.lightBar();
-    if (this.showcase.active) return this.showcase.update(dt, events);
+    if (this.showcase.active) {
+      ctx.input.joinWith = null; // nobody joins in the showcase (`joinPolicy` runs only out of it)
+      return this.showcase.update(dt, events);
+    }
     this.layer.update(dt);
     // Options from any screen of play: it pauses, and on the pause menu it resumes (a press no menu reads)
     let consumed = ctx.input.wasPressed(...KEYS.options) && this.options();
@@ -1666,21 +1670,35 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /**
+   * Couch co-op is offered (its pause menu entry, the town's line, joins): never in a 52in1 round
+   * (its players are the hub's) nor in the showcase.
+   */
+  private get couchOffered(): boolean {
+    return !this.round && !this.showcase?.active;
+  }
+
+  /** The Couch co-op menu's seats while couch co-op is offered (`MenuHost.couch`), else null. */
+  couch(): LocalCoop | null {
+    return this.couchOffered ? this.coop : null;
+  }
+
+  /**
    * Couch co-op (`game/coop.ts`): who may join at the next poll (`input.joinWith`, Cross). In the
    * Couch co-op menu any pad but player 1's in use; in town, while player 1 plays on a pad, another
    * pad (player 1 on the keyboard picking a pad up must not join by mistake: the menu is the way
-   * then). Never in a 52in1 round, nor with every seat taken. Joins themselves are recorded input.
+   * then). Never in a 52in1 round or the showcase, nor with every seat taken. Joins themselves are
+   * recorded input.
    */
   private joinPolicy(ctx: GameContext): void {
     const input = ctx.input;
     const town = this.screen === 'town' && !this.layer.top && !this.dead && input.device === 'pad';
-    input.joinWith = this.coop.open && !this.round && !this.showcase.active && (this.layer.has('coop') || town) ? KEYS.join : null;
+    input.joinWith = this.coop.open && this.couchOffered && (this.layer.has('coop') || town) ? KEYS.join : null;
   }
 
-  /** The town says how to join (`menu.coop.join`): player 1 on a pad, a seat free, and a pad that isn't player 1's connected. */
+  /** The town says how to join (`menu.coop.join`): couch co-op offered, player 1 on a pad, a seat free, and a pad that isn't player 1's connected. */
   private joinHint(): boolean {
     const input = this.ctx.input;
-    if (!this.coop.open || this.round || this.layer.top || this.dead || input.device !== 'pad') return false;
+    if (!this.coop.open || !this.couchOffered || this.layer.top || this.dead || input.device !== 'pad') return false;
     for (let slot = 0; slot < MAX_PADS; slot++) if (input.player(slot).connected && !input.joined.has(slot) && slot !== input.padIndex) return true;
     return false;
   }
@@ -2082,11 +2100,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
       for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
-      // couch co-op: another pad may join here (player 1 on a pad, a seat free): say how
-      if (this.joinHint()) ui.text(ui.w / 2, 6, clip(t('menu.coop.join'), ui.w - 12, (s) => ui.measure(s)), { align: 'center', color: 'mist', shadow: 'ink' });
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
       if (it) this.prompt(it.prompt, it.title);
+      // couch co-op: another pad may join here (player 1 on a pad, a seat free): say how
+      if (this.joinHint()) this.joinLine();
     }
     // the mouse in the world (not over a panel, not a finger): the thing under it shows what a click does there
     const mouse = ui.pointer.used && !this.padGlyphs() && !this.layer.covers(ui.pointer.x, ui.pointer.y) && !this.showcase.active;
@@ -2160,6 +2178,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /** "[F] Talk to Brann" centred above the skill bar. */
+  /**
+   * Couch co-op's line in town (`joinHint`): how another pad joins, in rows that fit the screen. At
+   * the top centre while that is clear of the HUD (the place name, the gold), else above the bottom
+   * HUD and any prompt (a phone held upright); placed through the HUD's layout, so it covers no
+   * other text, and the loot feed goes around it.
+   */
+  private joinLine(): void {
+    const ui = this.ui;
+    const rows = wrapText(t('menu.coop.join'), ui.w - 12, (s) => ui.measure(s)).map((r) => clip(r, ui.w - 12, (s) => ui.measure(s)));
+    const w = Math.max(...rows.map((r) => ui.measure(r))) + 4;
+    const h = rows.length * 9 + 1;
+    const x = Math.round(ui.w / 2 - w / 2);
+    const layout = this.hudLayout;
+    let at: Box | null = { x, y: 3, w, h };
+    if (layout.free(at)) layout.reserve(at);
+    else at = layout.place({ x, y: hudGeometry(ui.w, ui.h, this.hudControls).top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
+    if (!at) return;
+    rows.forEach((r, i) => ui.text(ui.w / 2, at.y + 2 + i * 9, r, { align: 'center', color: 'mist', shadow: 'ink' }));
+  }
+
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
     const g = hudGeometry(ui.w, ui.h, this.hudControls);

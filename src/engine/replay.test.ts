@@ -284,15 +284,15 @@ describe('recording and replaying input', () => {
 
 describe('couch co-op in a recording: each pad on its own', () => {
   const tpad = (index: number, axes: number[], pressed: number[] = []): GamepadLike => ({ ...pad(axes, pressed), index });
-  /** What each player reads: player 1 (the merged input) and the pads on their own. */
+  /** What each player reads: player 1 (the merged input) and the joined pads on their own (what play reads; a pad that has not joined is recorded only as part of player 1's input). */
   const readAll = (i: Input) => ({
     p1: { down: KEYS.filter((c) => i.isDown(c)), axis: i.moveAxis(), look: { ...i.lookAxis }, device: i.device },
-    pads: [0, 1, 2].map((s) => ({ connected: i.player(s).connected, down: ['PadA', 'PadB', 'PadX', 'ArrowUp'].filter((c) => i.player(s).isDown(c)), pressed: i.player(s).wasPressed('PadA', 'PadX'), x: i.player(s).consumePress('PadX'), axis: i.player(s).moveAxis(), look: { ...i.player(s).lookAxis }, trig: { ...i.player(s).triggers } })),
+    pads: [0, 1, 2].map((s) => !i.joined.has(s) ? null : ({ connected: i.player(s).connected, down: ['PadA', 'PadB', 'PadX', 'ArrowUp'].filter((c) => i.player(s).isDown(c)), pressed: i.player(s).wasPressed('PadA', 'PadX'), x: i.player(s).consumePress('PadX'), axis: i.player(s).moveAxis(), look: { ...i.player(s).lookAxis }, trig: { ...i.player(s).triggers } })),
     joinedNow: [...i.joinedNow],
     joined: [...i.joined].sort(),
   });
 
-  it('records every pad on its own when they change, and the pads that join; a replay reads every player exactly', () => {
+  it('records every joined pad on its own when they change, and the pads that join; a replay reads every player exactly', () => {
     const live = new Input(target());
     live.padPlayers = true;
     live.joinWith = ['PadA'];
@@ -324,8 +324,9 @@ describe('couch co-op in a recording: each pad on its own', () => {
     expect(seen[3]!.pads[1]!.x, 'pad 1’s Square, its own').toBe(true);
     expect(seen[3]!.p1.down, 'none of pad 1 is player 1’s').toEqual([]);
     expect(seen[8]!.pads[1]!.connected).toBe(false);
-    // left out while no pad changed
-    expect([frames[1]!.join, frames[8]!.pads]).toEqual([[1], undefined]);
+    // left out while no joined pad changed; a pad that has not joined is never recorded on its own (player 1's pad 0 drives the merged input)
+    expect([frames[0]!.pads, frames[1]!.join, frames[8]!.pads]).toEqual([undefined, [1], undefined]);
+    expect(frames.flatMap((f) => f.pads ?? []).map((p) => p[0]).filter((slot) => slot === 0)).toEqual([]);
     const again = new Input(target());
     again.playing = true;
     now = 0;
@@ -339,6 +340,7 @@ describe('couch co-op in a recording: each pad on its own', () => {
       return r;
     });
     expect(replayed).toEqual(seen);
+    expect(again.player(0).connected, 'a pad that never joined reads as nothing in a replay').toBe(false);
     expect(recordingProblem({ format: 1, game: 'g', seed: 1, time: 0, frames })).toBeNull();
   });
 

@@ -67,8 +67,12 @@ export interface MenuHost {
   lookStudio?(): void;
   /** Open Engine World (the engine's tech demo), at one of its rooms: optional, so other hosts can leave it out. */
   engineWorld?(room?: string): unknown;
-  /** Couch co-op (`game/coop.ts`): the seats taken (2 to 4), and a guest leaving. Optional: hosts without it have no Couch co-op menu. */
-  readonly coop?: { readonly seats: readonly number[]; leave(seat: number): void };
+  /**
+   * Couch co-op (`game/coop.ts`): the seats taken (2 to 4) and a guest leaving, while another player
+   * may join; null while nobody may (a 52in1 round, the showcase): no Couch co-op entry then.
+   * Optional: hosts without it have no Couch co-op menu.
+   */
+  couch?(): { readonly seats: readonly number[]; leave(seat: number): void } | null;
   /**
    * The game's languages (docs/game/lang.md): those it has (its own first), the one shown, whether
    * the address names one (`?lang=`: 52in1 always does; no Language menu then), and choosing
@@ -128,7 +132,7 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'button', id: 'character', label: t('menu.pause.character'), onClick: () => h.openPanel('character'), hint: t('menu.pause.character.hint') },
       { kind: 'button', id: 'codex', label: t('menu.pause.codex'), onClick: () => h.openPanel('codex'), hint: t('menu.pause.codex.hint') },
       { kind: 'button', id: 'settings', label: t('menu.pause.settings'), onClick: () => h.openMenu(settingsMenu(h)) },
-      ...(h.coop ? [{ kind: 'button' as const, id: 'coop', label: t('menu.pause.coop'), onClick: () => h.openMenu(coopMenu(h)), hint: t('menu.pause.coop.hint') }] : []),
+      ...(h.couch?.() ? [{ kind: 'button' as const, id: 'coop', label: t('menu.pause.coop'), onClick: () => h.openMenu(coopMenu(h)), hint: t('menu.pause.coop.hint') }] : []),
       ...(h.lookStudio ? [{ kind: 'button' as const, id: 'look', label: t('menu.pause.look'), onClick: () => h.lookStudio!(), hint: t('menu.pause.look.hint') }] : []),
       ...(h.photoMode ? [{ kind: 'button' as const, id: 'photo', label: t('menu.pause.photo'), onClick: () => h.photoMode!(), hint: t('menu.pause.photo.hint') }] : []),
       ...(h.devTools ? [{ kind: 'button' as const, id: 'dev', label: t('dev.pause.dev'), onClick: () => h.openMenu(devMenu(h)), hint: t('dev.pause.dev.hint') }] : []),
@@ -146,14 +150,16 @@ export function pauseMenu(h: MenuHost): Menu {
 export function coopMenu(h: MenuHost): Menu {
   return new Menu(
     () => {
-      const seats = h.coop?.seats ?? [];
+      const couch = h.couch?.() ?? null;
+      const seats = couch?.seats ?? [];
       const w: Widget[] = [{ kind: 'label', id: 'seat1', label: t('menu.coop.you', { seat: 1 }), color: 'sand' }];
       for (let seat = 2; seat <= 4; seat++) {
-        if (seats.includes(seat)) w.push({ kind: 'button', id: `leave${seat}`, label: t('menu.coop.leave', { seat }), onClick: () => h.coop?.leave(seat), accent: 'plum', hint: t('menu.coop.leave.hint') });
+        if (seats.includes(seat)) w.push({ kind: 'button', id: `leave${seat}`, label: t('menu.coop.leave', { seat }), onClick: () => h.couch?.()?.leave(seat), accent: 'plum', hint: t('menu.coop.leave.hint') });
         else w.push({ kind: 'label', id: `seat${seat}`, label: t('menu.coop.free', { seat }), color: 'slate' });
       }
       w.push({ kind: 'gap', id: 'g' });
-      w.push({ kind: 'label', id: 'join', label: seats.length >= 3 ? t('menu.coop.full') : t('menu.coop.join'), color: 'cyan' });
+      // how to join, while anyone may (never in a 52in1 round or the showcase)
+      if (couch) w.push({ kind: 'label', id: 'join', label: seats.length >= 3 ? t('menu.coop.full') : t('menu.coop.join'), color: 'cyan' });
       return w;
     },
     { id: 'coop', title: t('menu.coop.title'), width: 220, onSound: sound(h) },

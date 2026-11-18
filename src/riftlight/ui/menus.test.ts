@@ -5,7 +5,7 @@ import { languageName } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import { UiCanvas } from './kit';
-import { engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
+import { coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
@@ -193,5 +193,52 @@ describe('the pause menu', () => {
     expect(ids({ devTools: true }), 'the dev server or ?debug=1').toContain('dev');
     riftPauseMenu(host({ openPanel: (id: string) => opened.push(id) })).activate('codex');
     expect(opened).toEqual(['codex']);
+  });
+});
+
+describe('the Couch co-op hints', () => {
+  it('fit their menus in every stored language: the pause menu’s Couch co-op, the Couch co-op menu’s Leave', () => {
+    const translations = riftlightTranslations();
+    const cut: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        const h = host({ couch: () => ({ seats: [2], leave: () => {} }), openMenu: () => {}, openPanel: () => {}, resume: () => {}, saveAndQuit: () => {} });
+        for (const [menu, id] of [[riftPauseMenu(h), 'coop'], [coopMenu(h), 'leave2']] as const) {
+          menu.focusId(id);
+          const drawn: string[] = [];
+          const hud = { width: 480, height: 270, rect() {}, sprite() {}, text: (_x: number, _y: number, s: string) => drawn.push(s), measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+          const ui = new UiCanvas(hud as never);
+          const mini = ui.mini.bind(ui);
+          ui.mini = (x, y, s, ...more) => (drawn.push(s), mini(x, y, s, ...more));
+          const { w, h: height } = menu.size; // their own widths, as on a TV and a phone held sideways
+          menu.draw(ui, { x: 0, y: 0, w, h: height });
+          const hint = (menu.items().find((x) => x.id === id) as { hint: string }).hint;
+          if (!drawn.includes(hint)) cut.push(`${code} ${id}'s hint: ${hint}`);
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(cut).toEqual([]);
+  });
+});
+
+describe('the Couch co-op entry', () => {
+  it('is in the pause menu, with the line saying how to join, only while another player may join (never in a 52in1 round or the showcase)', () => {
+    const left: number[] = [];
+    let couch: { seats: number[]; leave(seat: number): void } | null = { seats: [2], leave: (seat) => left.push(seat) };
+    const h = host({ couch: () => couch, openMenu: () => {}, openPanel: () => {}, resume: () => {}, saveAndQuit: () => {} });
+    const ids = (m: { items(): readonly unknown[] }) => m.items().map((w) => (w as { id: string }).id);
+    expect(ids(riftPauseMenu(h))).toContain('coop');
+    const menu = coopMenu(h);
+    expect(ids(menu)).toEqual(['seat1', 'leave2', 'seat3', 'seat4', 'g', 'join']);
+    menu.activate('leave2');
+    expect(left).toEqual([2]);
+    couch = null; // a round, the showcase
+    expect(ids(riftPauseMenu(h))).not.toContain('coop');
+    menu.refresh();
+    expect(ids(menu)).not.toContain('join');
+    expect(ids(riftPauseMenu(host({ openMenu: () => {} })))).not.toContain('coop'); // a host without couch co-op
   });
 });

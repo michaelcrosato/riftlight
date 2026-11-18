@@ -31,13 +31,18 @@ for (const slot of ctx.input.joinedNow) seat(slot); // the pads that joined this
   at once, before its press reaches anything: it is added to `joined`, its slot is in `joinedNow`
   for that frame, and the press reads as up until let go (it presses nothing in a menu nor in
   play). Turn `joinWith` on only where a join is meant (a co-op menu; a hub while player 1 is on a
-  pad: player 1 on the keyboard picking a pad up must not join by mistake). A game removes a pad
-  that leaves with `joined.delete(slot)`; it then drives player 1 again.
-- **Recorded**: every pad on its own as `InputFrame.pads` (`PadFrame`: slot, held codes, sticks,
-  triggers; left out while no pad changed), their presses as `padPressed`, and the joins as `join`,
-  so a replay reads every player exactly and joins the same pads at the same frames (`joinWith` is
-  not needed then). A recording without them (an older one) has one player. A replay starts with no
-  pad on its own and nobody joined. `engine.snapshot()` keeps each pad's held buttons and queued
+  pad: player 1 on the keyboard picking a pad up must not join by mistake). One controller the
+  browser sees twice (a virtual pad beside the real one: DS4Windows or Steam Input without
+  HidHide, every press on both) never joins its own twin: a pad pressing a join code that player
+  1's pad in use pressed in the same poll does not join. A game removes a pad that leaves with
+  `joined.delete(slot)`; it then drives player 1 again.
+- **Recorded**: every joined pad on its own as `InputFrame.pads` (`PadFrame`: slot, held codes,
+  sticks, triggers; left out while no joined pad changed), their presses as `padPressed`, and the
+  joins as `join`, so a replay reads every player exactly and joins the same pads at the same frames
+  (`joinWith` is not needed then). A pad that has not joined is recorded only as part of the merged
+  input (player 1's): read one on its own for what a game shows (a line saying how to join), never
+  for play. A recording without them (an older one) has one player. A replay starts with no pad on
+  its own and nobody joined. `engine.snapshot()` keeps each pad's held buttons and queued
   presses and `joined` (`InputState.pads`, `.joined`; an older snapshot has none).
 
 Headless tests feed pads with `input.setGamepads([...])` (each `GamepadLike` with its `index`):
