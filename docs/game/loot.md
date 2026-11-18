@@ -97,8 +97,9 @@ filter off and on.
 `InventoryView`, `StashView` and `VendorView` (`open`/`close`/`isOpen`); call `ui.update(dt)`
 every frame and don't feed hero movement while `ui.isOpen`. Click or drag to move items,
 right-click to equip or start applying an orb, Ctrl-click to stash, sell or buy, Alt shows
-affix tiers; touch long-press is right-click; the gamepad stick moves a cursor (A click,
-X right-click, Y Ctrl-click, B close). Tooltips compare against the equipped item on a
+affix tiers; touch long-press is right-click; the gamepad stick moves a cursor (Cross / A click,
+Square / X right-click, Triangle / Y Ctrl-click, Circle / B close), and the windows' hints name the
+pad's buttons then (`item.*.hint_pad`, in the player's button style). Tooltips compare against the equipped item on a
 clone of the hero's StatSheet (`StatSheet.clone()`). In the game shell the windows are hosted
 (`new ItemsUi(ctx, store, { hosted: true })`): the shell routes keys and the pad through
 `handle(UiEvent)` and closes them (docs/game/wire.md), and they add the crafting

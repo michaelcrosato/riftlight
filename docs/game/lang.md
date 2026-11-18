@@ -54,15 +54,19 @@ never imports the line list), and areas stay function declarations.
   `'{prefix} {base} {suffix}'`, a monster's `'{theme} {body}'`, a rift's `'Rift {depth}: {mechanics}'`,
   so a translation can reorder them.
 - **Controls** are tags, `{key:dodge}`, never a key written into the sentence. `CONTROLS`
-  (`game/controls.ts`) maps each action to its key, pad button and touch button; the shell sets
-  `lang().controlLabel` to name them on the device in use (`controlDevice()`).
+  (`game/controls.ts`) maps each action to its key, pad button and touch button; it is
+  `Riftlight.controls` (and the standalone Rift Runner's), so the engine names them on the device
+  in use (`input.device`) and in the player's button style (PlayStation's by default, Xbox's when
+  chosen). The names are Riftlight's lines under the engine's ids (`key.space`, `pad.ps.cross`,
+  `pad.lb`, `pad.xbox.menu`, `pad.stick.left`, `key.touch.tap`: docs/engine/game-api.md *Prompts*).
 - **Notes** say who speaks, to whom, where it shows; **max** the width of a tight spot (a button).
 - **Not lines**: debug text, numbers on their own, what players type, ids, a generated boss's
   invented name. Developer-only screens (the dev menu, the Loot Lab) use ids starting `dev.`: never
   translated. The pause menu's Tuning is the players' (difficulty presets): `menu.tuning.*`.
 - **Saves keep ids and values, never finished sentences**, so a save shows in today's language: a
   rare item keeps its two `words`, a speech bubble its line id, the death recap what rebuilds a
-  killer's name (a genome, a boss's id). Where a save must keep a name (the bestiary), it keeps the
+  killer's name (a genome, a boss's id) and its tip as line ids (`recapTip` tells it when drawn, so
+  `{key:dodge}` names the control of the device in use then). Where a save must keep a name (the bestiary), it keeps the
   English (`sourceLang()`), so a run ends on the same fingerprint in any language. An old save
   holding English shows it as it is.
 - **Proper names** (people, places, products) are in `NAMES` (`lang/brief.ts`).

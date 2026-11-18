@@ -38,6 +38,8 @@ export interface TooltipOptions {
   price?: { kind: 'buy' | 'sell'; gold: number; affordable?: boolean };
   /** A hint line at the bottom (e.g. "Right-click: equip"), in the player's language. */
   hint?: string;
+  /** How to use an orb on the device in use (the pad: "Square, then Cross on an item"); default the mouse's (`item.tip.use_orb`). */
+  orbHint?: string;
   /** Widest line in art pixels (default TIP_W; narrow screens pass less). Longer text wraps. */
   width?: number;
   /** Extra lines after the body (the skill panel adds a socketed gem's resolved numbers). */
@@ -78,7 +80,7 @@ export function tooltipLines(item: Item, opts: TooltipOptions = {}): TipLine[] {
     const c = CURRENCY.get(item.base);
     add(t('item.tip.stack_size', { size: item.quantity ?? 1, max: c.stack }), UI.dim);
     add(currencyDescription(c.id), UI.text);
-    add(t('item.tip.use_orb'), UI.dim);
+    add(opts.orbHint ?? t('item.tip.use_orb'), UI.dim);
     return finish(lines, opts, sep, add);
   }
   if (cls === 'gem' && item.gem) {

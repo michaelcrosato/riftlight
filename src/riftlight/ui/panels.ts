@@ -10,7 +10,7 @@ import { StatQuery } from '../combat/stats';
 import { DAMAGE_COLORS, DAMAGE_TYPES } from '../core/types';
 import type { MechanicInfo, Panel, WorldLoot } from '../game/ports';
 import type { Penalty } from '../game/progress';
-import type { Recap } from '../game/recap';
+import { type Recap, recapTip } from '../game/recap';
 import { lang, lineKey, t } from '../lang';
 import { talkText } from '../town/npcs';
 import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
@@ -410,14 +410,14 @@ export class DeathRecap implements Panel {
     // tip and penalty
     y = Math.max(y, sy) + 6;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), r.w - 8)) {
+    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), r.w - 8)) {
       if (y + 8 > r.y + r.h - 22) break;
       ui.text(r.x + 4, y, l, { color: 'lime' });
       y += 9;
     }
     ui.mini(r.x + 4, r.y + r.h - 22, clip(this.lost(), r.w - 8, miniWidth), 'orange');
     this.button = { x: r.x + r.w / 2 - 60, y: r.y + r.h - 15, w: 120, h: 14 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true, glyph: 'confirm' });
   }
 
   /** What the death cost ("Lost 120 XP and 45 gold"). */
@@ -481,14 +481,14 @@ export class DeathRecap implements Panel {
     }
     y += 4;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), w)) {
+    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), w)) {
       if (y + 8 > bottom) break;
       ui.text(x, y, l, { color: 'lime' });
       y += 9;
     }
     ui.mini(r.x + r.w / 2, r.y + r.h - 26, clip(this.lost(), w, miniWidth), 'orange', 'center');
     this.button = { x: r.x, y: r.y + r.h - 17, w: r.w, h: 16 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: true, glyph: 'confirm' });
   }
 
   input(e: UiEvent): boolean {
@@ -587,7 +587,7 @@ export class LootWindow implements Panel {
         ? { x: r.x, y: r.y + r.h - (2 - i) * 17, w: r.w, h: 15 }
         : { x: r.x + 6 + i * (r.w / 2), y: r.y + r.h - 16, w: r.w / 2 - 12, h: 14 };
       this.rects.push(rect);
-      ui.button(rect, a.label, { focus: this.focus === rows.length + i });
+      ui.button(rect, a.label, { focus: this.focus === rows.length + i, glyph: 'confirm' });
     });
   }
 

@@ -47,6 +47,8 @@ export interface ArcadeStageOptions {
   onFinish?: (run: ArcadeRun) => { best: number; newBest: boolean; reward: number };
   /** Best time to show before the first finish (seconds, 0 = none). */
   best?: number;
+  /** Whether pause leaves the cabinet (Riftlight's; default true): the hints promise it only then. */
+  canLeave?: boolean;
 }
 
 /**
@@ -440,7 +442,7 @@ export class ArcadeStage {
       const scale = [3, 2].find((k) => hud.measure(word, k).width <= W - 8) ?? 1;
       hud.text(0, -10, word, { anchor: 'center', scale, color: 'sand', shadow: 'ink' });
     } else if (this.phase === 'play' && this.time < 4) {
-      const rows = hintRows(['run', 'jump', 'pound', 'leave'], W - 8);
+      const rows = hintRows(this.options.canLeave === false ? ['run', 'jump', 'pound'] : ['run', 'jump', 'pound', 'leave'], W - 8);
       rows.forEach((row, i) => hud.text(0, 8 + (rows.length - 1 - i) * 10, row, { anchor: 'bottom', color: 'white', shadow: 'ink' }));
     }
     const r = this.result;
@@ -455,7 +457,8 @@ export class ArcadeStage {
       [t('showcase.arcade.coins_par', { coins: r.coins, total: r.total, par: formatRace(S.par) }), 'white'],
       [r.reward > 0 ? t('showcase.arcade.reward', { gold: r.reward }) : t('showcase.arcade.best', { time: formatRace(r.best) }), 'sand'],
     ];
-    const help = hints(['again', 'leave'], '   ');
+    const again = this.options.canLeave === false ? (['again'] as const) : (['again', 'leave'] as const);
+    const help = hints(again, '   ');
     const w = Math.min(hud.width - 8, Math.max(180, hud.measure(title, 2).width + 16, ...[...rows.map(([x]) => x), help].map((x) => hud.measure(x).width + 12)));
     const ts = hud.measure(title, 2).width + 16 <= w ? 2 : 1;
     // a line too wide breaks between its parts (two or more spaces apart: "Coins 20/20   Par 00:30.00")
@@ -470,7 +473,7 @@ export class ArcadeStage {
       }
     }
     const helpAt = at + 2;
-    const helpRows = hintRows(['again', 'leave'], w - 12);
+    const helpRows = hintRows(this.options.canLeave === false ? ['again'] : ['again', 'leave'], w - 12);
     const h = helpAt + (helpRows.length - 1) * 11 + 10;
     const top = -6 - h / 2; // the card's centre stays 6 px above the screen's
     hud.rect(0, -6, w, h, 'ink', 'center');

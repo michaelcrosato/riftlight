@@ -45,6 +45,8 @@ offsets from the `anchor` (`top-left` default, `top`, `top-right`, `left`, `cent
 `bottom-left`, `bottom`, `bottom-right`); `hud.measure(text, scale)` gives the size, and
 `hud.width` / `hud.height` are the art size now (the view's, from `setup` on, in replays too). It only
 repaints when the content or layout changed, and `renderer.capture()` does not include it.
+Button prompts (`hud.glyph`, `hud.glyphWidth`, `hud.prompt`: a key cap or a pad button for the
+device in use) are in docs/engine/game-api.md *Prompts*.
 
 ## Weather, sky and fog
 

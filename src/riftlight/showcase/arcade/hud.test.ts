@@ -37,7 +37,8 @@ describe("Rift Runner's HUD at every window shape", () => {
         await stepUntil(e, () => game.stage.phase === 'play', { max: 600, what: 'GO' });
         e.step(10);
         const play = hudTexts(e);
-        expect(play.map((l) => l.text).join(' '), 'the controls show at the start of the run').toMatch(/run.*jump.*pound.*leave/);
+        expect(play.map((l) => l.text).join(' '), 'the controls show at the start of the run').toMatch(/run.*jump.*pound/);
+        expect(play.map((l) => l.text).join(' '), 'the standalone game has nowhere to leave to').not.toMatch(/leave/i);
         expectLaidOut(play, e.hud, 'the run');
 
         game.stage.autopilot = arcadeAutopilot();
@@ -45,7 +46,8 @@ describe("Rift Runner's HUD at every window shape", () => {
         e.step(60);
         const done = hudTexts(e);
         expect(game.stage.result?.newBest, 'the first finish is a new best (the longest line)').toBe(true);
-        expect(done.map((l) => l.text).join(' ')).toMatch(/Course clear!.*New best!.*again.*leave/);
+        expect(done.map((l) => l.text).join(' ')).toMatch(/Course clear!.*New best!.*again/);
+        expect(done.map((l) => l.text).join(' ')).not.toMatch(/leave/i);
         expectLaidOut(done, e.hud, 'the results');
         expect(e.errors).toEqual([]);
       } finally {

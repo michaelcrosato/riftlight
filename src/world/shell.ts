@@ -294,6 +294,8 @@ export class WorldShell {
     const events = [...(this.pointer?.frame(real) ?? []), ...this.menuInput.events(input, real)];
     const ui = this.ui;
     ui.time += real;
+    ui.device = e.controls.device; // prompts follow the input used last, in the player's button style
+    ui.padStyle = e.controls.style;
     if (this.pointer) {
       ui.pointer.x = this.pointer.art.x;
       ui.pointer.y = this.pointer.art.y;

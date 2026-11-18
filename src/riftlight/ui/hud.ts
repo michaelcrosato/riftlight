@@ -5,7 +5,7 @@
  * the boss bar with phase ticks, the minimap, gold, the loot feed, the level card, the kill
  * streak counter and the difficulty corner.
  */
-import { clusters, type HudColor, type PaletteColor, textWidthPx, wrapText } from '../../engine';
+import { clusters, type HudColor, type InputDevice, type PadGlyphs, type PaletteColor, textWidthPx, wrapText } from '../../engine';
 import type { ControlAction } from '../game/controls';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
 import { lang, t } from '../lang';
@@ -56,7 +56,9 @@ export interface HudModel {
   hurt: number;
   levelLabel: string;
   timer: string | null;
-  pad: boolean;
+  /** The device prompts are for (the input used last) and the pad's buttons they show. */
+  device: InputDevice;
+  padStyle: PadGlyphs;
   progress: { killed: number; total: number } | null;
   /** Touch controls on screen, in art pixels: the HUD drops its skill bar and lays out around them. */
   controls?: readonly Box[];
@@ -301,7 +303,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const W = ui.w;
   const H = ui.h;
   const time = m.time;
-  ui.pad = m.pad;
+  ui.device = m.device;
+  ui.padStyle = m.padStyle;
   const g = hudGeometry(W, H, m.controls);
   const SLOT = g.slot;
 

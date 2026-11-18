@@ -33,8 +33,24 @@ export interface Recap {
   sources: RecapSource[];
   killer: string | null;
   killingBlow: { total: number; type: DamageType; crit: boolean } | null;
-  /** A tip from the biggest threat, in the player's language (`death.tip.*`). */
-  tip: string;
+  /** A tip from the biggest threat (`death.tip.*`), told when drawn (`recapTip`): it names the controls of the device in use then. */
+  tip: RecapTip;
+}
+
+/** A tip as its line and the lines that fill it (`death.tip.crit` wraps another tip as `{tip}`). */
+export interface RecapTip {
+  readonly id: string;
+  readonly values?: Readonly<Record<string, RecapTip>>;
+}
+
+/**
+ * A tip in today's language, naming the controls of the device in use now (`{key:dodge}`): told
+ * each time it is drawn, so a recap opened on a pad says Space once the keyboard is used.
+ */
+export function recapTip(tip: RecapTip): string {
+  const values: Record<string, string> = {};
+  for (const [k, v] of Object.entries(tip.values ?? {})) values[k] = recapTip(v);
+  return t(tip.id, values);
 }
 
 /**
@@ -128,9 +144,9 @@ export class RecapTracker {
     let worst: DamageType = 'physical';
     for (const type of DAMAGE_TYPES) if (this.byType[type] > this.byType[worst]) worst = type;
     const sources = [...this.sources.values()].sort((a, b) => b.total - a.total);
-    let tip = t(`death.tip.${worst}`);
-    if (this.last?.crit) tip = t('death.tip.crit', { tip });
-    if (sources.length >= 4) tip = t('death.tip.crowd');
+    let tip: RecapTip = { id: `death.tip.${worst}` };
+    if (this.last?.crit) tip = { id: 'death.tip.crit', values: { tip } };
+    if (sources.length >= 4) tip = { id: 'death.tip.crowd' };
     return {
       byType: { ...this.byType },
       total: this.total,

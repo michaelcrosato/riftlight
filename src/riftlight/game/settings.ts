@@ -1,8 +1,10 @@
 /**
  * Player settings that belong to the device, not the save slot: look (a preset or the look
- * studio's custom one), quality, camera zoom, damage numbers, loot filter, screen shake,
- * prompt glyphs. Volumes live in the engine's AudioManager (it persists them itself).
- * Stored in localStorage under `riftlight:settings`.
+ * studio's custom one), quality, camera zoom, damage numbers, loot filter, screen shake.
+ * Volumes live in the engine's AudioManager (it persists them itself), the controller's button
+ * prompts and vibration in the engine's settings (`engine.settings`: `padGlyphs`, `vibration`);
+ * prompts follow the input used last (`input.device`). Stored in localStorage under
+ * `riftlight:settings` (an older save's `glyphs` is dropped).
  */
 import type { QualityLevel } from '../../engine';
 import { type Look, lookPresetName, normalizeLook } from '../../engine/render/look';
@@ -22,7 +24,6 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   damageNumbers: true,
   lootFilter: 0,
   screenShake: 0.7,
-  glyphs: 'auto',
   look: '',
   customLook: null,
   quality: 'auto',
@@ -39,7 +40,6 @@ export function loadSettings(): Settings {
       if (typeof raw.damageNumbers === 'boolean') out.damageNumbers = raw.damageNumbers;
       if (typeof raw.lootFilter === 'number') out.lootFilter = Math.max(0, Math.min(2, Math.round(raw.lootFilter)));
       if (typeof raw.screenShake === 'number') out.screenShake = Math.max(0, Math.min(1, raw.screenShake));
-      if (raw.glyphs === 'auto' || raw.glyphs === 'keyboard' || raw.glyphs === 'controller') out.glyphs = raw.glyphs;
       if (raw.customLook && typeof raw.customLook === 'object') out.customLook = normalizeLook(raw.customLook);
       if (typeof raw.look === 'string') {
         // a named look (an old name resolves to its new one), the custom look if stored, else the default
@@ -65,7 +65,7 @@ export function storeSettings(s: Settings): void {
 
 /**
  * The settings play depends on, not just the picture: zoom and screen shake move the camera, so
- * what the mouse points at; glyphs (mouse or auto aim) and the loot filter change what happens
+ * what the mouse points at; the loot filter changes what happens
  * (damage numbers only what is drawn: their drift draws from the presentation stream). A
  * recording keeps them (`Riftlight.command`), so a replay plays with them.
  */
@@ -75,6 +75,5 @@ export function playSettings(s: Partial<Settings>): Partial<Settings> {
   if (typeof s.screenShake === 'number') out.screenShake = s.screenShake;
   if (typeof s.damageNumbers === 'boolean') out.damageNumbers = s.damageNumbers;
   if (typeof s.lootFilter === 'number') out.lootFilter = s.lootFilter;
-  if (s.glyphs === 'auto' || s.glyphs === 'keyboard' || s.glyphs === 'controller') out.glyphs = s.glyphs;
   return out;
 }

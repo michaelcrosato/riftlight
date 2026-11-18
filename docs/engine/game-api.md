@@ -210,6 +210,49 @@ moves, so a resting mouse never fights the d-pad, and a menu opened under it kee
 press and release on the same item confirms it; a list whose `count` shrank clamps its focus. Both read only `ctx.input`, so what a menu does replays; their state is data (`save` / `load`).
 Riftlight's menus and Engine World's panels run on `MenuInput`.
 
+## Prompts
+
+```ts
+class MyGame implements Game {
+  readonly controls = {                               // Game.controls: each action's key, pad button, touch button
+    jump: { key: 'Space', pad: 'PadA', touch: 'A' },
+    attack: { key: 'MouseLeft', pad: 'PadX', touch: 'TouchTap' },
+    pause: { key: 'Escape', pad: 'PadStart', touch: '≡' },
+  };
+}
+t('help.jump');                                       // "{key:jump} to jump" → "Space to jump" / "Cross to jump" / "A to jump"
+ctx.hud.prompt(8, 250, 'jump', 'JUMP');               // the glyph, then the label: ✕ JUMP on a DualSense
+ctx.hud.glyph(8, 240, 'PadB');                        // a code alone: ○ (or B)
+ctx.engine.controls.label('pause');                   // "Esc" / "Options" / "Menu" / "≡"
+```
+
+`engine.controls` (`src/engine/controls.ts`) holds the running game's `controls` (a `ControlTable`,
+set at each level) and follows `input.device` (the input used last) and the player's
+`settings.padGlyphs`: every `Lang`'s `{key:action}` names the control in use by default
+(`Lang.controlLabel`; the action's id when the game has no table), and `hud.glyph` / `hud.prompt`
+draw it. On a pad that is PlayStation's buttons unless the player chose Xbox's: Cross, Circle,
+Square and Triangle as round buttons with their symbol in its colour (blue, red, pink: the palette's
+plum, green: its teal) on a light face; Xbox's A B X Y as round buttons in their colours (green, red,
+blue, yellow) with the letter; L1 / R1 / L2 / R2 / L3 / R3 / Create / Options / Touchpad (LB RB LT
+RT LS RS View Menu) as dark caps with their name; the sticks (`PadStick`, `PadLStick`, `PadRStick`)
+and the d-pad (`DPad`, its arms the arrow codes) drawn. On the keyboard a key is a light key cap
+with its short name (`keyCap`: `Space` → Spc), the mouse's buttons and wheel are drawn; on a touch
+screen it is the touch button's label or a gesture's name (`TouchTap` → Tap). Glyph sprites are 7×7
+(`GLYPH_SIZE`), the height of a line of the 5×7 font, in `hud.sprite`'s row format: a surface of the
+game's own draws them from `controlGlyph`, `padGlyph` and `keyGlyph` (Riftlight's UI kit and its
+passive tree's canvas do).
+
+Names are lines: `CONTROL_LINES` lists every id the engine names a control by, with its English
+(`key.space`, `key.esc`, `key.mouse_left`, `pad.ps.cross`, `pad.ps.options`, `pad.lb`,
+`pad.xbox.menu`, `pad.stick.left`, `key.touch.tap`...); a game with a line of the same id shows its
+own (and its translations), and a game's own code is named by `key.<snake_case>`
+(`MouseOrQE` → `key.mouse_or_q_e`), `pad.<snake_case>`, `key.touch.<snake_case>`. Letters and
+digits show themselves (`KeyF` → F), Xbox's face buttons their letter. `keyName`, `keyCap`,
+`padName(code, style)`, `touchName` and `controlName(control, device, style)` take a language
+(`names`, a `Lang`) for a game's own surfaces; `engine.controls.names = lang` names `hud.glyph`'s
+caps in it. Prompts are presentation: they read `input.device`,
+which is recorded, so a replay draws the same.
+
 ## Time: game speed and hitstop
 
 ```ts

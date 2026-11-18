@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { setTextLocale } from '../../../engine/animation/font';
 import { clampZoom, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS } from './camera';
 import { css, pack, PixelBuffer, textWidth } from './pixels';
+import { treeHints } from './TreeView';
 
 describe('tree camera', () => {
   const cam = { x: 100, y: -50, zoom: 0.25 };
@@ -76,5 +77,24 @@ describe('pixel buffer', () => {
     }
     b.clear(pack('ink'));
     expect(b.overlay).toEqual([]);
+  });
+});
+
+
+describe('bottom bar hints', () => {
+  it('with the pad: each button’s glyph (PlayStation’s, or Xbox’s) and a verb; with the mouse: words', () => {
+    const ps = treeHints({ narrow: false, pad: true, refunds: true, style: 'playstation' });
+    expect(ps.map((h) => h.id)).toEqual(['move', 'take', 'refund', 'stats', 'zoom', 'close']);
+    expect(ps.map((h) => h.text)).toEqual(['move', 'take', 'refund', 'stats', 'zoom', 'close']);
+    const take = ps.find((h) => h.id === 'take')!.glyphs[0]!;
+    expect(take.kind === 'sprite' && take.colors.s).toBe('blue'); // ✕, blue
+    expect(ps.find((h) => h.id === 'zoom')!.glyphs).toEqual([{ kind: 'cap', text: 'L2', round: true }, { kind: 'cap', text: 'R2', round: true }]);
+    const xbox = treeHints({ narrow: false, pad: true, refunds: false, style: 'xbox' });
+    expect(xbox.map((h) => h.id)).not.toContain('refund');
+    expect(xbox.find((h) => h.id === 'zoom')!.glyphs.map((g) => (g.kind === 'cap' ? g.text : ''))).toEqual(['LT', 'RT']);
+    const mouse = treeHints({ narrow: false, pad: false, refunds: true, style: 'playstation' });
+    expect(mouse.map((h) => h.text)).toEqual(['Drag pan', 'Wheel zoom', 'Click take', 'R-click refund', 'Tab stats', '/ find']);
+    expect(mouse.every((h) => h.glyphs.length === 0)).toBe(true);
+    expect(treeHints({ narrow: true, pad: true, refunds: true, style: 'playstation' }).map((h) => h.id)).toEqual(['take', 'close']);
   });
 });

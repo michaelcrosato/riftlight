@@ -241,7 +241,7 @@ export async function runRiftlightReplay(h) {
       other.hero.level = 7;
       other.hero.gold = 12345;
       g.store.save(0, other);
-      localStorage.setItem('riftlight:settings', JSON.stringify({ screenShake: 0, zoom: 1.4, damageNumbers: false, glyphs: 'keyboard' }));
+      localStorage.setItem('riftlight:settings', JSON.stringify({ screenShake: 0, zoom: 1.4, damageNumbers: false, lootFilter: 2 }));
       const e = window.__PIXEL_ENGINE__;
       for (const [ch, v] of [['master', 0.2], ['sfx', 0.3], ['music', 0.4]]) e.audio.setVolume(ch, v);
       return { slot: localStorage.getItem('riftlight:slot:0'), settings: localStorage.getItem('riftlight:settings'), audio: localStorage.getItem('pixel-engine:audio'), volume: { ...e.audio.volume } };
@@ -293,7 +293,7 @@ export async function runRiftlightReplay(h) {
       `and to the same run: hero at ${again.end.hero.position.join(', ')}, ${again.end.monsters.killed} kills, ${again.end.hero.xp} xp, ${again.end.hero.gold} gold`,
     );
     // the slot as it was; the settings as they were (a game's setup writes them back whole, same values)
-    const kept = (a, b) => ['screenShake', 'zoom', 'damageNumbers', 'glyphs'].every((k) => JSON.parse(a)[k] === JSON.parse(b)[k]);
+    const kept = (a, b) => ['screenShake', 'zoom', 'damageNumbers', 'lootFilter'].every((k) => JSON.parse(a)[k] === JSON.parse(b)[k]);
     check(
       again.writes.length === 0 && again.slot === stored.slot && kept(again.settings, stored.settings) && again.audio === stored.audio,
       `the replay wrote nothing to storage (${again.writes.length ? `wrote ${[...new Set(again.writes)].join(', ')}` : 'no writes'}): slot 1 ${again.slot === stored.slot ? 'kept' : 'overwritten'}, settings ${kept(again.settings, stored.settings) ? 'kept' : `changed (${again.settings})`}, volumes ${again.audio === stored.audio ? 'kept' : `changed (${again.audio})`}`,

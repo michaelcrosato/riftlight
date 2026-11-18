@@ -34,7 +34,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, controlLabel, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -80,6 +80,8 @@ interface MutableIntent {
 
 export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost, SharedShell {
   readonly name = 'Riftlight';
+  /** Its actions' keys, pad buttons and touch buttons: the engine names them in every `{key:action}` and prompt, for the device in use. */
+  readonly controls = CONTROLS;
   readonly assets = [HERO_MODEL, 'assets/tree.glb'];
   readonly ports: RiftlightPorts;
   readonly events = new EventBus<GameEvents>();
@@ -227,8 +229,6 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
-    // `{key:action}` in a line names the key, pad button or touch button on the device in use
-    lang().controlLabel = (action) => controlLabel(action, this.controlDevice());
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     const rng = () => this.rng;
@@ -1272,14 +1272,18 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90;
   }
 
+  /** Prompts show the pad's buttons: the pad is the input used last (`input.device`; a pad merely connected is not). */
   padGlyphs(): boolean {
-    return this.settings.glyphs === 'controller' || (this.settings.glyphs === 'auto' && this.ctx.input.gamepadConnected && this.pointer.idle > 2);
+    return this.controlDevice() === 'pad';
   }
 
-  /** The device prompts name controls for (`{key:action}` in a line): the pad, a touch screen's buttons, else the keyboard and mouse. */
-  controlDevice(): 'keyboard' | 'pad' | 'touch' {
-    if (this.padGlyphs()) return 'pad';
-    return this.touchPad?.active && this.pointer?.touch ? 'touch' : 'keyboard';
+  /**
+   * The device prompts name controls for (`{key:action}` in a line, glyphs): the engine's input
+   * used last, recorded, so a replay shows (and aims) the same. The keyboard and mouse, the pad, or
+   * a touch screen's buttons.
+   */
+  controlDevice(): ControlDevice {
+    return this.ctx.input.device;
   }
 
   update(ctx: GameContext, dt: number): void {
@@ -1289,7 +1293,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.time += dt;
     const ui = this.ui;
     ui.time = this.time;
-    ui.pad = this.padGlyphs();
+    ui.device = this.controlDevice();
+    ui.padStyle = ctx.engine.controls.style;
     // pointer and menu input → the panel stack, then game hotkeys
     const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)];
     ui.pointer.x = this.pointer.art.x;
@@ -1730,7 +1735,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       hurt: this.hurt,
       levelLabel: level ? levelTitle(level.spec) : t('place.emberfall'),
       timer: level ? formatTime(this.levelTime) : null,
-      pad: this.padGlyphs(),
+      device: this.controlDevice(),
+      padStyle: this.ctx.engine.controls.style,
       progress: level ? level.progress() : null,
     };
   }

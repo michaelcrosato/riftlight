@@ -37,7 +37,8 @@ function canvas(w = 480, h = 270): { ui: UiCanvas; drawn: string[] } {
   const ui = {
     w,
     h,
-    pad: false,
+    device: 'keyboard',
+    padStyle: 'playstation',
     pointer: { x: -1, y: -1, down: false, used: false },
     measure: (s: string, scale = 1) => textWidthPx(s, scale),
     hover: () => false,

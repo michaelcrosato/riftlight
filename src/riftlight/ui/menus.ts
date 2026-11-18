@@ -4,7 +4,7 @@
  * keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { FPS_OPTIONS, languageName, LOOK_PRESETS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
+import { FPS_OPTIONS, languageName, LOOK_PRESETS, PAD_GLYPHS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -33,7 +33,7 @@ export interface MenuHost {
   readonly dev: DevFlags;
   readonly audio: AudioManager;
   /** The engine's own player settings (pixel art, pixel size, frame rate, debug info: `engine.settings`, saved by the engine) and what they show. */
-  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown'>;
+  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input'>;
   slot: number;
   screen: string;
   difficulty(): DifficultyTuning;
@@ -181,7 +181,6 @@ export function tuningMenu(h: MenuHost): Menu {
 const looks = (s: Settings) => ['', ...Object.keys(LOOK_PRESETS).filter((n) => n !== 'none'), ...(s.customLook ? ['custom'] : [])];
 const lookLabel = (l: string) => (l === 'custom' ? t('look.custom') : lookName(l || 'none'));
 const QUALITIES: (QualityLevel | 'auto')[] = ['auto', 'low', 'medium', 'high'];
-const GLYPHS = ['auto', 'keyboard', 'controller'] as const;
 const pct = (v: number) => num(v, { style: 'percent' });
 
 export function settingsMenu(h: MenuHost): Menu {
@@ -220,7 +219,18 @@ export function settingsMenu(h: MenuHost): Menu {
       { kind: 'toggle', id: 'numbers', label: t('menu.settings.numbers'), get: () => s.damageNumbers, set: (v) => change(() => (s.damageNumbers = v))() },
       { kind: 'choice', id: 'filter', label: t('menu.settings.filter'), options: lootFilterOptions(), get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
       { kind: 'slider', id: 'shake', label: t('menu.settings.shake'), get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
-      { kind: 'choice', id: 'glyphs', label: t('menu.settings.glyphs'), options: GLYPHS.map((g) => t(`menu.settings.glyphs.${g}`)), get: () => GLYPHS.indexOf(s.glyphs), set: (i) => change(() => (s.glyphs = GLYPHS[i]!))(), hint: t('menu.settings.glyphs.hint') },
+      // the controller's: the engine's settings (prompts follow the input used last by themselves)
+      { kind: 'choice', id: 'padGlyphs', label: t('menu.settings.pad_glyphs'), options: PAD_GLYPHS.map((g) => t(`menu.settings.pad_glyphs.${g}`)), get: () => PAD_GLYPHS.indexOf(h.engine.settings.values.padGlyphs ?? 'playstation'), set: (i) => h.engine.settings.set({ padGlyphs: PAD_GLYPHS[i] }), hint: t('menu.settings.pad_glyphs.hint') },
+      {
+        kind: 'slider',
+        id: 'vibration',
+        label: t('menu.settings.vibration'),
+        get: () => h.engine.settings.values.vibration ?? 1,
+        set: (u) => (h.engine.settings.set({ vibration: Math.round(u * 20) / 20 }), h.engine.input.rumble({ strong: 0.6, weak: 0.6, ms: 140 })), // feel the new strength
+        step: (u, d) => Math.min(1, Math.max(0, Math.round((u + d * 0.1) * 20) / 20)),
+        format: () => pct(h.engine.settings.values.vibration ?? 1),
+        hint: t('menu.settings.vibration.hint'),
+      },
       { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
     ],
     { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },

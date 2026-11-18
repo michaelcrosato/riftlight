@@ -7,7 +7,11 @@
 // in e2e. The tests run in order on one engine, as the e2e flow did.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
+import { Rng } from '../core/rng';
 import { headlessGame, hudOverlap, hudTexts, pointAtArt } from '../headless';
+import { messageText } from '../ui/items/ItemsUi';
+import { currencyItem } from './generate';
+import { pickUp } from './inventory';
 import { LootLab } from './lootlab';
 
 const T = 30_000;
@@ -189,24 +193,36 @@ describe('the Loot Lab', () => {
       press('KeyI');
       e.step(1);
       expect(lab.inventory.isOpen()).toBe(true);
-      // steer the cursor onto the amulet with the left stick
-      const at = lab.ui.itemCenter(amulet)!;
-      for (let i = 0; i < 240; i++) {
-        const dx = at.x - lab.ui.cursor.x;
-        const dy = at.y - lab.ui.cursor.y;
-        const len = Math.hypot(dx, dy);
-        if (len < 1) break;
-        const lean = 0.15 + 0.85 * Math.min(1, len / 30); // past the deadzone, slower when close
-        e.input.setGamepads([pad([], (dx / len) * lean, (dy / len) * lean)]);
+      /** Steer the cursor onto an item with the left stick. */
+      const steer = (uid: string) => {
+        const at = lab.ui.itemCenter(uid)!;
+        for (let i = 0; i < 240; i++) {
+          const dx = at.x - lab.ui.cursor.x;
+          const dy = at.y - lab.ui.cursor.y;
+          const len = Math.hypot(dx, dy);
+          if (len < 1) break;
+          const lean = 0.15 + 0.85 * Math.min(1, len / 30); // past the deadzone, slower when close
+          e.input.setGamepads([pad([], (dx / len) * lean, (dy / len) * lean)]);
+          e.step(1);
+        }
+        e.input.setGamepads([pad()]);
         e.step(1);
-      }
-      e.input.setGamepads([pad()]);
-      e.step(1);
-      expect(lab.ui.itemAtTarget(lab.ui.hit(Math.floor(lab.ui.cursor.x), Math.floor(lab.ui.cursor.y)))?.uid, 'the pad cursor is on the amulet').toBe(amulet);
+        expect(lab.ui.itemAtTarget(lab.ui.hit(Math.floor(lab.ui.cursor.x), Math.floor(lab.ui.cursor.y)))?.uid, 'the pad cursor is on it').toBe(uid);
+      };
+      steer(amulet);
       tap(2); // X (Square): a right-click
       expect(lab.store.state.equipment.amulet?.uid, 'pad X equips it').toBe(amulet);
+      // an orb picked with Square: the message names the pad's button, not a click
+      const orb = currencyItem(new Rng(5), 'kindling-shard', 3);
+      const got = pickUp(lab.store.state, orb);
+      if (got.ok) lab.store.set(got.value);
+      e.step(1);
+      steer(orb.uid);
+      tap(2);
       tap(1); // B (Circle)
       expect(lab.ui.isOpen, 'pad B closes the windows').toBe(false);
+      const said = lab.ui.viewState().message!;
+      expect(messageText(said, e.controls.style), 'the orb waits for Cross on an item').toMatch(/: Cross on an item$/);
       expect(e.errors).toEqual([]);
     } finally {
       e.input.setGamepads(null);

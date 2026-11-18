@@ -3,7 +3,8 @@ import { strays as straysIn } from '../../../scripts/lang-strays.mjs';
 import { Lang, textWidthPx } from '../../engine';
 import { describeMod, flat, StatSheet } from '../core/mods';
 import type { MechanicInfo, WorldLoot } from '../game/ports';
-import type { Recap } from '../game/recap';
+import { controlLabel } from '../game/controls';
+import { type Recap, RecapTracker } from '../game/recap';
 import { installLanguage, lang, riftlightLines, t } from '../lang';
 import type { UiCanvas } from './kit';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, SHEET_STATS, sourceLabel } from './panels';
@@ -22,7 +23,8 @@ function recorder(w = 480, h = 270): { ui: UiCanvas; drawn: string[] } {
   const ui = {
     w,
     h,
-    pad: false,
+    device: 'keyboard',
+    padStyle: 'playstation',
     pointer: { x: -1, y: -1, down: false, used: false },
     measure: (s: string, scale = 1) => textWidthPx(s, scale),
     hover: () => false,
@@ -77,7 +79,7 @@ describe('the panels in any language', () => {
       sources: [{ name: '[Çíñdér Hóúñd]', total: 140, hits: 6 }],
       killer: '[Çíñdér Hóúñd]',
       killingBlow: { total: 52, type: 'fire', crit: true },
-      tip: '[Fíré húrt móst.]',
+      tip: { id: 'death.tip.fire' },
     };
     const loot = [{ label: '[Íróñ Swórd]', color: 'white' }] as unknown as WorldLoot[];
     for (const [w, h] of [
@@ -126,5 +128,23 @@ describe('the panels in any language', () => {
     sheet.draw(ui, RECT(330, 176));
     expect(drawn).toContain(`${lang().formatNumber(4.3, { minimumFractionDigits: 1 })} m/s`);
     expect(drawn).toContain('12\u00a0%'); // German puts a no-break space before %
+  });
+
+  it('the death recap’s tip names the control of the device in use when it is drawn, not when the hero died', () => {
+    let device: 'keyboard' | 'pad' = 'pad'; // what the engine's controls follow (input.device)
+    lang().controlLabel = (a) => controlLabel(a, device);
+    const tracker = new RecapTracker();
+    tracker.record({ source: null } as never, { total: 30, byType: { physical: 30 }, crit: true, killed: true, ailments: [] }); // a crit: its tip wraps the physical one
+    const death = new DeathRecap(tracker.recap(), { xp: 0, gold: 0 } as never, '', () => {});
+    const tip = () => {
+      const { ui, drawn } = recorder();
+      death.draw(ui, RECT(330, 200), 0);
+      return drawn.join(' ');
+    };
+    expect(tip()).toContain('critical strike');
+    expect(tip()).toContain('(Circle)'); // died on a pad
+    device = 'keyboard'; // then the keyboard is used, the recap still open
+    expect(tip()).toContain('(Space)');
+    expect(tip()).not.toContain('Circle');
   });
 });

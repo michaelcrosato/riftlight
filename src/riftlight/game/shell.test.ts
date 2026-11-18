@@ -17,7 +17,7 @@ import {
 import { addXp, applyDeath, deathPenalty, formatTime, levelTitle, recordClear, roman, unlockedDepths, xpFraction } from './progress';
 import { Lang } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
-import { RecapTracker } from './recap';
+import { RecapTracker, recapTip } from './recap';
 import { Rng } from '../core/rng';
 import { generateGenome } from '../monsters/genome';
 import { DESIGNED_BOSSES } from '../monsters/bosses/designed';
@@ -180,8 +180,9 @@ describe('recap', () => {
     expect(out.total).toBe(40);
     expect(out.sources[0]).toMatchObject({ name: 'Ember Imp', total: 35, hits: 2 });
     expect(out.killer).toBe('Ember Imp');
-    expect(out.tip).toMatch(/critical/);
-    expect(out.tip).toMatch(/fire/i);
+    expect(out.tip).toEqual({ id: 'death.tip.crit', values: { tip: { id: 'death.tip.fire' } } }); // told when drawn
+    expect(recapTip(out.tip)).toMatch(/critical/);
+    expect(recapTip(out.tip)).toMatch(/fire/i);
   });
 
   it('keeps what names an attacker, not its name: a snapshot shows in today\'s language; an old one as it was', () => {

@@ -32,6 +32,7 @@ export const NAMES: string[] = [
   'Game Boy Pocket',
   'Virtual Boy',
   'PlayStation',
+  'Xbox',
   'Famicom',
   'Commodore 64',
   'ZX Spectrum',

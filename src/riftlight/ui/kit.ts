@@ -7,8 +7,9 @@
  * Input reaches panels as `UiEvent`s that the shell builds from keyboard, mouse, touch and
  * gamepad alike (see game/controls.ts), so every view works with all four.
  */
-import { clusters, fontCase, type Hud, type HudColor, type MenuEvent, noteText, type PaletteColor, pixelCovers, textWidthPx, wrapText } from '../../engine';
-import { CONTROLS, type ControlAction, keyCap, padName } from '../game/controls';
+import { clusters, controlGlyph, fontCase, type Glyph, type Hud, type HudColor, type InputDevice, type MenuEvent, noteText, type PadGlyphs, type PaletteColor, pixelCovers, textWidthPx, wrapText } from '../../engine';
+import { CONTROLS, type ControlAction } from '../game/controls';
+import { lang } from '../lang';
 
 /** The engine's menu events (`MenuInput`: nav, confirm, back, tab, wheel, key, swipe) and the pointer's, in art pixels. */
 export type UiEvent = MenuEvent | { readonly kind: 'pointer'; readonly type: 'move' | 'down' | 'up'; readonly x: number; readonly y: number; readonly button?: number; readonly touch?: boolean };
@@ -111,8 +112,10 @@ export class UiCanvas {
   readonly pointer = { x: -1, y: -1, down: false, used: false };
   /** Animation clock for blinking carets, glints... (seconds). */
   time = 0;
-  /** Controller glyphs instead of keys in prompts. */
-  pad = false;
+  /** The device prompts are for (the engine's `input.device`, the input used last): the shell sets it each frame. */
+  device: InputDevice = 'keyboard';
+  /** The pad's buttons prompts show (`settings.padGlyphs`): PlayStation's unless the player chose Xbox. */
+  padStyle: PadGlyphs = 'playstation';
 
   constructor(readonly hud: Hud) {}
 
@@ -186,61 +189,73 @@ export class UiCanvas {
     return this.pointer.used && inside(r, this.pointer.x, this.pointer.y);
   }
 
-  /** A button; focus/hover draws it highlighted. Returns its rect. */
-  button(r: Rect, label: string, state: { focus?: boolean; disabled?: boolean; accent?: HudColor } = {}): Rect {
+  /**
+   * A button; focus/hover draws it highlighted. With `glyph`, the focused button shows the glyph of
+   * what presses it before its label while a pad is in use (✕ Return to town). Returns its rect.
+   */
+  button(r: Rect, label: string, state: { focus?: boolean; disabled?: boolean; accent?: HudColor; glyph?: ControlAction } = {}): Rect {
     const hot = state.focus || this.hover(r);
     const fill: HudColor = state.disabled ? 'ink' : hot ? (state.accent ?? 'slate') : 'night';
     this.rect(r.x + 1, r.y, r.w - 2, r.h, 'ink');
     this.rect(r.x, r.y + 1, r.w, r.h - 2, 'ink');
     this.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, hot && !state.disabled ? UI.focus : 'slate');
     this.rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
-    this.text(r.x + r.w / 2, r.y + Math.floor((r.h - 7) / 2), clip(label, r.w - 6, (t) => this.measure(t)), { align: 'center', color: state.disabled ? 'slate' : hot ? 'white' : 'mist' });
+    const color = state.disabled ? 'slate' : hot ? 'white' : 'mist';
+    const ty = r.y + Math.floor((r.h - 7) / 2);
+    const glyph = state.glyph && state.focus && !state.disabled && this.pad ? state.glyph : null;
+    if (!glyph) {
+      this.text(r.x + r.w / 2, ty, clip(label, r.w - 6, (t) => this.measure(t)), { align: 'center', color });
+      return r;
+    }
+    const gw = this.glyphWidth(glyph);
+    const text = clip(label, r.w - 9 - gw, (t) => this.measure(t));
+    const left = r.x + Math.floor((r.w - gw - 3 - this.measure(text)) / 2);
+    this.glyph(left, ty, glyph);
+    this.text(left + gw + 3, ty, text, { color });
     return r;
   }
 
+  /** Controller glyphs in prompts: the pad is the device in use. */
+  get pad(): boolean {
+    return this.device === 'pad';
+  }
+
+  /** How `action` (game/controls.ts `CONTROLS`) is drawn on the device in use: the engine's glyph (`controlGlyph`), named in the game's language. */
+  private glyphOf(action: ControlAction): Glyph {
+    return controlGlyph(CONTROLS[action], this.device, this.padStyle, lang());
+  }
+
   /**
-   * The glyph of the control that does `action` (game/controls.ts `CONTROLS`): a key cap ("F",
-   * "Esc"), a mouse button or, with `pad`, a controller button (A, B, X, Y round; LB, Start...
-   * as a cap). Returns the width.
+   * The glyph of the control that does `action`: the engine's (`controlGlyph`) on the device in
+   * use. On a pad PlayStation's Cross, Circle, Square, Triangle (or Xbox's A B X Y) as round
+   * buttons in their colours, L1 / Options... as round caps; on the keyboard a key cap ("F",
+   * "Esc") or a mouse button; on a phone the touch button's label. Returns the width.
    */
   glyph(x: number, y: number, action: ControlAction): number {
-    const c: { key: string; pad?: string } = CONTROLS[action];
-    if (this.pad && c.pad) return this.padGlyph(x, y, c.pad);
-    if (c.key === 'MouseLeft' || c.key === 'MouseRight') {
-      const rows = c.key === 'MouseLeft' ? MOUSE_L : MOUSE_R;
-      this.sprite(x, y - 1, rows, { o: 'ink', w: 'white', f: 'sand', g: 'mist' });
+    const g = this.glyphOf(action);
+    if (g.kind === 'sprite') {
+      this.sprite(x, y - 1, g.rows, g.colors as Record<string, HudColor>);
       return 7;
     }
-    const key = keyCap(c.key);
-    const w = miniWidth(key) + 4;
-    this.rect(x, y, w, 8, 'ink');
-    this.rect(x, y - 1, w, 8, 'mist');
-    this.rect(x + 1, y, w - 2, 6, 'white');
-    this.mini(x + 2, y, key, 'ink');
+    const w = miniWidth(g.text) + 4;
+    if (g.round) {
+      this.rect(x + 1, y - 1, w - 2, 8, 'ink');
+      this.rect(x, y, w, 6, 'ink');
+      this.rect(x + 1, y, w - 2, 6, 'slate');
+      this.mini(x + 2, y, g.text, 'white');
+    } else {
+      this.rect(x, y, w, 8, 'ink');
+      this.rect(x, y - 1, w, 8, 'mist');
+      this.rect(x + 1, y, w - 2, 6, 'white');
+      this.mini(x + 2, y, g.text, 'ink');
+    }
     return w;
   }
 
   /** The glyph's width (`glyph` draws it). */
   glyphWidth(action: ControlAction): number {
-    const c: { key: string; pad?: string } = CONTROLS[action];
-    if (this.pad && c.pad) return FACE[c.pad] ? 7 : miniWidth(padName(c.pad)) + 4;
-    return c.key === 'MouseLeft' || c.key === 'MouseRight' ? 7 : miniWidth(keyCap(c.key)) + 4;
-  }
-
-  private padGlyph(x: number, y: number, code: string): number {
-    const c = FACE[code];
-    const b = padName(code);
-    if (c) {
-      this.sprite(x, y - 1, PAD_ROUND, { o: 'ink', c, w: 'white' });
-      this.mini(x + 2, y, b, 'white');
-      return 7;
-    }
-    const w = miniWidth(b) + 4;
-    this.rect(x + 1, y - 1, w - 2, 8, 'ink');
-    this.rect(x, y, w, 6, 'ink');
-    this.rect(x + 1, y, w - 2, 6, 'slate');
-    this.mini(x + 2, y, b, 'white');
-    return w;
+    const g = this.glyphOf(action);
+    return g.kind === 'sprite' ? 7 : miniWidth(g.text) + 4;
   }
 
   /** "[glyph] label" prompt for `action`; returns its width. */
@@ -253,13 +268,6 @@ export class UiCanvas {
     return total;
   }
 }
-
-/** The pad's face buttons, round in their colours. */
-const FACE: Readonly<Record<string, PaletteColor>> = { PadA: 'green', PadB: 'red', PadX: 'blue', PadY: 'sand' };
-
-const MOUSE_L = ['.ooooo.', 'offowwo', 'offowwo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'];
-const MOUSE_R = ['.ooooo.', 'owwoffo', 'owwoffo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'];
-const PAD_ROUND = ['.ooooo.', 'occccco', 'occccco', 'occccco', 'occccco', 'occccco', '.ooooo.'];
 
 /**
  * Wrap text to lines of at most `width` art pixels at `scale`, measured as it is drawn, broken

@@ -63,8 +63,6 @@ export interface ShellSettings {
   lootFilter: number;
   /** 0..1 */
   screenShake: number;
-  /** Prompts show controller buttons instead of keys. */
-  glyphs: 'auto' | 'keyboard' | 'controller';
 }
 
 export interface DevFlags {
