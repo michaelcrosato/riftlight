@@ -7,17 +7,11 @@
  * Input reaches panels as `UiEvent`s that the shell builds from keyboard, mouse, touch and
  * gamepad alike (see game/controls.ts), so every view works with all four.
  */
-import { clusters, fontCase, type Hud, type HudColor, noteText, type PaletteColor, pixelCovers, textWidthPx, wrapText } from '../../engine';
+import { clusters, fontCase, type Hud, type HudColor, type MenuEvent, noteText, type PaletteColor, pixelCovers, textWidthPx, wrapText } from '../../engine';
 import { CONTROLS, type ControlAction, keyCap, padName } from '../game/controls';
 
-export type UiEvent =
-  | { readonly kind: 'nav'; readonly dir: 'up' | 'down' | 'left' | 'right' }
-  | { readonly kind: 'confirm' }
-  | { readonly kind: 'back' }
-  | { readonly kind: 'tab'; readonly dir: 1 | -1 }
-  | { readonly kind: 'pointer'; readonly type: 'move' | 'down' | 'up'; readonly x: number; readonly y: number; readonly button?: number; readonly touch?: boolean }
-  | { readonly kind: 'wheel'; readonly dy: number }
-  | { readonly kind: 'key'; readonly code: string };
+/** The engine's menu events (`MenuInput`: nav, confirm, back, tab, wheel, key, swipe) and the pointer's, in art pixels. */
+export type UiEvent = MenuEvent | { readonly kind: 'pointer'; readonly type: 'move' | 'down' | 'up'; readonly x: number; readonly y: number; readonly button?: number; readonly touch?: boolean };
 
 export interface Rect {
   x: number;

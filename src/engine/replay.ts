@@ -16,7 +16,7 @@
  * docs/engine/determinism.md *Recording and replay*.
  */
 import type { Viewport } from './framing';
-import type { InputFrame } from './input';
+import { type InputFrame, INPUT_DEVICES } from './input';
 import { type Snapshot, snapshotProblem } from './snapshot';
 
 export type { InputFrame } from './input';
@@ -78,10 +78,11 @@ export function recordingProblem(v: unknown): string | null {
     if (typeof f.dt !== 'number' || !(f.dt >= 0) || f.dt > 1) return bad('dt must be 0..1 s');
     if (f.held !== undefined && !codes(f.held)) return bad('held must be key codes');
     if (f.pressed !== undefined && !codes(f.pressed)) return bad('pressed must be key codes');
-    for (const k of ['analog', 'pad', 'delta'] as const) if (f[k] !== undefined && !pair(f[k])) return bad(`${k} must be two numbers`);
+    for (const k of ['analog', 'pad', 'look', 'trig', 'delta'] as const) if (f[k] !== undefined && !pair(f[k])) return bad(`${k} must be two numbers`);
     if (f.wheel !== undefined && !(typeof f.wheel === 'number' && Number.isFinite(f.wheel))) return bad('wheel must be a number');
     if (f.pointer !== undefined && !(Array.isArray(f.pointer) && f.pointer.length === 4 && f.pointer.every((x) => typeof x === 'number' && Number.isFinite(x)))) return bad('pointer must be four numbers');
     if (f.gamepad !== undefined && typeof f.gamepad !== 'boolean') return bad('gamepad must be true or false');
+    if (f.device !== undefined && !INPUT_DEVICES.includes(f.device)) return bad(`device must be ${INPUT_DEVICES.join(', ')}`);
     if (f.touch !== undefined && typeof f.touch !== 'boolean') return bad('touch must be true or false');
     if (f.commands !== undefined && !Array.isArray(f.commands)) return bad('commands must be a list');
     if (f.clicks !== undefined && !(Array.isArray(f.clicks) && f.clicks.every((c) => Array.isArray(c) && c.length === 4 && typeof c[0] === 'string' && (c[1] === 0 || c[1] === 1) && Number.isFinite(c[2]) && Number.isFinite(c[3])))) return bad('clicks must be [key, 0 or 1, x, y] lists');

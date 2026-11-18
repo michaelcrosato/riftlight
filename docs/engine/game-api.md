@@ -89,8 +89,10 @@ keys that are off off. The touch top bar follows them, and the debug panel lists
 ## Player settings
 
 `engine.settings` holds the player's picture and engine options as plain data (`PlayerSettings`:
-look, pixel art, pixel size, quality, frame rate, debug info; sound is `audio`'s), applies them
-over the game's own choices and saves them per game in localStorage
+look, pixel art, pixel size, quality, frame rate, debug info, the controller's button prompts
+`padGlyphs`, `'playstation'` (left out, the default) or `'xbox'` (`PAD_GLYPHS`), and its
+`vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it); sound is `audio`'s),
+applies them over the game's own choices and saves them per game in localStorage
 (`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false` for none).
 A field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all of them.
 A review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`,
@@ -131,13 +133,42 @@ with `third` a left drag also turns the camera.
 ## Input: gamepads and press timing
 
 Gamepads with the W3C **standard** mapping (`gamepad.mapping === 'standard'`, what Chrome,
-Firefox and Safari report for Xbox / PlayStation / Switch Pro and most others) need no
-setup; pads with an unknown layout are ignored rather than guessed at. For them: the left stick feeds `input.moveAxis()` (radial
-deadzone 0.2, `applyDeadzone`), the right stick turns into pointer movement (camera look,
-`input.gamepadLookSpeed`), and buttons press key codes through `input.gamepadButtons`
-(`GAMEPAD_BUTTONS`: A Space · B C · X J · Y F · LB Z · RB X · LT Shift · RT C · Back V ·
-Start B · d-pad arrows), so `KEYMAP` / `readMoveInput` work unchanged. Remap with
-`input.gamepadButtons[2] = 'KeyF'`.
+Firefox and Safari report for DualSense / Xbox / Switch Pro and most others) need no
+setup; pads with an unknown layout are ignored rather than guessed at. For them: the left stick
+feeds `input.moveAxis()` (radial deadzone 0.15, `GAMEPAD_DEADZONE`, `applyDeadzone`), the right
+stick turns into pointer movement (camera look, `input.gamepadLookSpeed`; the AI Hub's gyro aim
+adds to it) and reads as `input.lookAxis` (y up: twin-stick aim), the analog triggers read 0..1 as
+`input.triggers.left` / `.right`, and buttons press their own codes through `input.gamepadButtons`
+(`GAMEPAD_BUTTONS`, one scheme for every game): `PadA` Cross · `PadB` Circle · `PadX` Square ·
+`PadY` Triangle · `PadLB` / `PadRB` L1 / R1 · `PadLT` / `PadRT` L2 / R2 · `PadBack` Create (View) ·
+`PadStart` Options (Menu) · `PadL3` / `PadR3` · `PadTouchpad` (button 17, the DualSense's press in
+Chrome) · the d-pad presses the arrows. A game binds them beside its keys (`KEYMAP.jump` is
+`['Space', 'PadA']`; `readMoveInput` plays the Playground on a pad), Options is left free for a
+pause, and Circle means back in menus. The home button (16, `HOME_BUTTON`) is never read, even when
+mapped, and Create + Options held together are the host's (the AI Hub's bar: `HOST_CHORD`). Remap
+with `input.gamepadButtons[2] = 'KeyF'`. Triggers, the right stick and the device are recorded.
+
+**The input used last** is `input.device`: `'keyboard'` (a key; the mouse's click, wheel or a move
+of a few pixels), `'pad'` (a button pressed, a stick moved past its deadzone, a trigger past 0.3)
+or `'touch'` (a finger on the canvas, a touch control: `TouchControls` call `input.noteTouch()`).
+It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a pad that is only
+connected (`gamepadConnected`) never changes it, so a keyboard player with a DualSense plugged in
+keeps key prompts and mouse aim. It is recorded when it changes (a recording without it was made on
+the keyboard) and kept by save-states, so prompts, menus and touch assists can follow it and still
+replay. `input.noteDevice(d)` sets it from a page's own controls or a test.
+
+**Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
+buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame
+ends, the strongest request of the frame, scaled by the player's `settings.vibration` (0..1,
+`input.vibration`). The AI Hub scales every rumble by its own vibration setting on top: never
+multiply by `AIHubSettings.vibration` yourself. It does nothing headless, during a replay, at
+vibration 0, while the device is not the pad, or on a pad without `vibrationActuator` (Firefox);
+a refused effect is caught. Output only, never recorded. Short pulses on hits, landings and
+explosions say more than long rumbles.
+
+**Swipes**: a quick one-finger flick on the canvas (under 0.35 s, over 8% of its short side:
+`swipeDirection`) presses `SwipeLeft` / `SwipeRight` / `SwipeUp` / `SwipeDown` (`SWIPE_KEYS`) once,
+recorded like any press; a slow drag still orbits the camera and two fingers pinch.
 
 Keys whose browser default should not fire (a game's own F1 / F2 / Tab panels) go in
 `input.preventKeys` (arrows and Space always are).
@@ -148,6 +179,27 @@ true (or a level is loading, including the start-up loading screen) the render l
 (`ctx.time`) stops and queued presses are dropped, so nothing fires on resume. `paused` is the
 render loop's: `step()` and `replay()` are manual time, the tool's own clock, and advance a paused
 game too (a replay plays every recorded frame).
+
+## Menus on every device
+
+```ts
+const menu = new MenuInput();                         // keys, pad, left stick, swipes → menu events
+const list = new FocusList(3);                        // a list's focus (index, wrap, columns)
+const events = menu.events(ctx.input, dt);            // in update: nav (with repeat), confirm, back, tab, wheel, key, swipe
+const r = list.update(events, ctx.input, ctx.hud, rects); // rects: each item's box in HUD pixels
+if (r.confirm >= 0) choose(r.confirm);                // Enter / Space / Cross, or a click or tap on the item
+if (r.back) close();                                  // Esc / Backspace / Circle, or a sideways swipe
+```
+
+`MenuInput` (`src/engine/ui/menu.ts`, `MENU_KEYS`): Enter / Space / Cross confirm, Esc /
+Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a held
+direction repeats after 0.35 s, `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
+confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
+`key` events. `FocusList` moves with those events (left / right on a one-column list come back as
+`adjust`, for a slider), and with the pointer: hovering an item focuses it (only when the pointer
+moves, so a resting mouse never fights the d-pad), a press and release on the same item confirms
+it. Both read only `ctx.input`, so what a menu does replays; their state is data (`save` / `load`).
+Riftlight's menus and Engine World's panels run on `MenuInput`.
 
 ## Time: game speed and hitstop
 

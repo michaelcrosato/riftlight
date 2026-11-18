@@ -9,6 +9,7 @@ import type { Engine } from './Engine';
 import type { CameraConfig, CameraPreset } from './camera';
 import type { Playground } from '../game/playground';
 import { bootPlayground } from '../game/testPlayground';
+import { KEYMAP } from './character/controls';
 
 const T = 15_000;
 
@@ -138,5 +139,17 @@ describe('camera hot-swap keeps the player', () => {
       expect(game.collected, `→ ${preset}: coins kept`).toBe(coins);
       expect(game.heroModel.visible, `→ ${preset}: player model ${preset === 'first' ? 'hidden' : 'shown'}`).toBe(preset !== 'first');
     }
+  }, T);
+});
+
+describe('the Playground on a pad', () => {
+  it('every move has a pad button beside its keys (KEYMAP), Options is left free, and Cross jumps', () => {
+    for (const [action, codes] of Object.entries(KEYMAP)) expect(codes.some((c: string) => c.startsWith('Pad')), `${action} on a pad`).toBe(true);
+    expect(Object.values(KEYMAP).flat()).not.toContain('PadStart'); // a game's pause or menu
+    engine.setCamera({ preset: 'iso' });
+    fresh();
+    const jumps = game.hero.stats.jumps;
+    hold('PadA', 100); // what a pad's Cross / A presses (GAMEPAD_BUTTONS)
+    expect(within(60, () => game.hero.stats.jumps > jumps), 'Cross jumps').toBe(true);
   }, T);
 });

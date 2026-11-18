@@ -20,7 +20,7 @@ config to `?cam=`, so a reload brings back the same shot.
 | `side` | ortho, straight side-on; **locks the player to their Z lane** | follows player | wheel / `+` `-` |
 | `third` | perspective orbit; pulls in when walls block the view | drag or Q/E to orbit | wheel / `+` `-` (distance) |
 | `first` | perspective at the eyes; hides the player model; player strafes | click to lock mouse, Q/E turn | **none** |
-| `free` | authoring fly-cam | WASD, Q/E down/up, drag or click to look, Shift fast, Enter = fix | wheel (FOV) |
+| `free` | authoring fly-cam | WASD (left stick), Q/E (L2/R2) down/up, drag or click to look (right stick), Shift (L3) fast, Enter = fix | wheel (FOV) |
 | `fixed` | a frozen view (what `free` produces) | none | wheel |
 
 A game may also swap presets as part of play (Riftlight's arcade cabinet goes `side`, its

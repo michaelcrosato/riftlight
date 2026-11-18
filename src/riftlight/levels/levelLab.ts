@@ -195,11 +195,11 @@ export class LevelLab implements Game {
         this.wish.copy(right).multiplyScalar(a.x).addScaledVector(forward, a.y);
         if (this.wish.lengthSq() > 1) this.wish.normalize();
       }
-      if (ctx.input.consumePress('KeyJ', 'Space') && this.swing <= 0) {
+      if (ctx.input.consumePress('KeyJ', 'Space', 'PadX', 'PadA') && this.swing <= 0) {
         this.swing = 0.35;
         this.attack(hero, hero.position.clone().addScaledVector(this.facing(), 0.9), 1, true);
       }
-      if (ctx.input.consumePress('KeyK')) this.firebolt();
+      if (ctx.input.consumePress('KeyK', 'PadY')) this.firebolt();
     }
     this.swing -= dt;
     hero.step(level.layout, this.wish, HERO_SPEED * (hero.stats.get('move.speed') || 1), dt);

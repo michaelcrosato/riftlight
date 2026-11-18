@@ -242,6 +242,11 @@ describe('Engine.headless', () => {
     expect(engine.audio.persist).toBe(false);
     engine.settings.set({ pixelSize: 'chunky', debugInfo: true });
     expect(engine.renderer.resolution).toEqual({ width: 320, height: 180 });
+    expect(engine.input.vibration).toBe(1);
+    engine.settings.set({ vibration: 0.4 }); // rumbles follow the player's vibration
+    expect(engine.input.vibration).toBe(0.4);
+    engine.settings.set({ vibration: undefined });
+    expect(engine.input.vibration).toBe(1);
     expect(engine.debugShown).toBe(false);
     engine.showDebug(true);
     expect(engine.debugShown).toBe(false);

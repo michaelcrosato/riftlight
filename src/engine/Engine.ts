@@ -396,9 +396,10 @@ export class Engine {
   debug: DebugUI | null = null;
   touch: TouchControls | null = null;
   /**
-   * The player's settings: look, pixel art, pixel size, quality, frame rate and debug info (plain
-   * data, saved per game), applied over the game's own choices; `open()` shows them in the
-   * settings panel (the ⚙ button, `EngineOptions.settings`). Sound is `audio`'s.
+   * The player's settings: look, pixel art, pixel size, quality, frame rate, debug info, the pad's
+   * button prompts and its vibration (plain data, saved per game), applied over the game's own
+   * choices; `open()` shows them in the settings panel (the ⚙ button, `EngineOptions.settings`).
+   * Sound is `audio`'s.
    */
   readonly settings: Settings;
   private settingsPanel: SettingsPanel | null = null;
@@ -490,6 +491,9 @@ export class Engine {
     this.hubSettings.onChange(hub);
     const key = options.settings?.key;
     this.settings = new Settings(this, key === false ? null : (key ?? (page ? game.name : null)));
+    // rumbles follow the player's vibration (a host's, such as the AI Hub's, scales on top of it)
+    this.input.vibration = this.settings.values.vibration ?? 1;
+    this.settings.onChange((v) => (this.input.vibration = v.vibration ?? 1));
     const clock = () => this.time;
     const random = () => this._random;
     const rig = () => this.camera;

@@ -4,26 +4,33 @@ import type { GameContext } from '../Engine';
 import type { MoveInput, PlatformerCharacter } from './PlatformerCharacter';
 
 /**
- * Default key map for PlatformerCharacter. Movement is camera-relative for every preset
- * (strafing in first person; left/right only on a side-scroller lane, except while
- * climbing or hanging). Call from Game.fixedUpdate.
+ * Default key map for PlatformerCharacter: keys and pad buttons (`GAMEPAD_BUTTONS`' `Pad*` codes,
+ * PlayStation names in brackets) side by side. Movement is camera-relative for every preset
+ * (strafing in first person; left/right only on a side-scroller lane, except while climbing or
+ * hanging). Call from Game.fixedUpdate. Options / Menu (`PadStart`) is left free for a pause or
+ * menu, and Circle / B means back in menus (`MenuInput`) while it crouches in play.
  *
- *   WASD / arrows  move          Shift   walk / tiptoe
- *   Space          jump          C / Ctrl crouch (air: ground pound)
- *   Z              prone toggle  X        lie down / get up
- *   F (hold)       grab / pull   J        attack (punch, punch, kick; air: dive / kick)
- *   V              wave          B        sit
+ *   WASD / arrows / left stick / d-pad   move
+ *   Space · A (Cross)                    jump
+ *   Shift · LT (L2)                      walk / tiptoe
+ *   C / Ctrl · B (Circle) / RT (R2)      crouch (air: ground pound)
+ *   Z · LB (L1)                          prone toggle
+ *   X · RB (R1)                          lie down / get up
+ *   F (hold) · Y (Triangle)              grab / pull
+ *   J · X (Square)                       attack (punch, punch, kick; air: dive / kick)
+ *   V · View (Create)                    wave
+ *   B · L3                               sit
  */
 export const KEYMAP = {
-  jump: ['Space'],
-  walk: ['ShiftLeft', 'ShiftRight'],
-  crouch: ['KeyC', 'ControlLeft', 'ControlRight'],
-  prone: ['KeyZ'],
-  lie: ['KeyX'],
-  grab: ['KeyF'],
-  attack: ['KeyJ'],
-  wave: ['KeyV'],
-  sit: ['KeyB'],
+  jump: ['Space', 'PadA'],
+  walk: ['ShiftLeft', 'ShiftRight', 'PadLT'],
+  crouch: ['KeyC', 'ControlLeft', 'ControlRight', 'PadB', 'PadRT'],
+  prone: ['KeyZ', 'PadLB'],
+  lie: ['KeyX', 'PadRB'],
+  grab: ['KeyF', 'PadY'],
+  attack: ['KeyJ', 'PadX'],
+  wave: ['KeyV', 'PadBack'],
+  sit: ['KeyB', 'PadL3'],
 } as const;
 
 /**

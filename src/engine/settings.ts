@@ -22,12 +22,19 @@ export interface PlayerSettings {
   fps?: number;
   /** The debug panel: frame rate, camera, GPU errors and the game's status. */
   debugInfo?: boolean;
+  /** Which buttons a controller's prompts show: `playstation` (Cross, Circle...: left out, the default) or `xbox` (A, B, X, Y). */
+  padGlyphs?: PadGlyphs;
+  /** How strongly the controller rumbles (`input.rumble`), 0 (off) to 1 (left out: full). */
+  vibration?: number;
 }
 
-const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo'] as const satisfies readonly (keyof PlayerSettings)[];
+const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration'] as const satisfies readonly (keyof PlayerSettings)[];
 export const PIXEL_SIZES = ['fine', 'chunky'] as const;
 export const QUALITY_OPTIONS: readonly QualityOption[] = ['auto', 'low', 'medium', 'high'];
 export const FPS_OPTIONS: readonly number[] = [60, 30, 0];
+/** The button prompts a controller can show (`PlayerSettings.padGlyphs`): PlayStation's first. */
+export const PAD_GLYPHS = ['playstation', 'xbox'] as const;
+export type PadGlyphs = (typeof PAD_GLYPHS)[number];
 
 /** Keep only fields with a valid value: what storage or a caller handed over may be anything. */
 export function normalizeSettings(raw: unknown): PlayerSettings {
@@ -40,6 +47,9 @@ export function normalizeSettings(raw: unknown): PlayerSettings {
   if (QUALITY_OPTIONS.includes(v.quality as QualityOption)) out.quality = v.quality as QualityOption;
   if (typeof v.fps === 'number' && FPS_OPTIONS.includes(v.fps)) out.fps = v.fps;
   if (typeof v.debugInfo === 'boolean') out.debugInfo = v.debugInfo;
+  if (PAD_GLYPHS.includes(v.padGlyphs as PadGlyphs)) out.padGlyphs = v.padGlyphs as PadGlyphs;
+  // a share in steps of 0.05 (a slider's), held to 0..1
+  if (typeof v.vibration === 'number' && Number.isFinite(v.vibration)) out.vibration = Math.round(Math.min(1, Math.max(0, v.vibration)) * 20) / 20;
   return out;
 }
 

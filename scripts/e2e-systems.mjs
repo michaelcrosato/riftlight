@@ -7,7 +7,8 @@
 //              follows R (320×180), draws the coin counter in palette colors
 //   audio      unlock on first input, music, mute (key, panel, persisted)
 //   particles  visible in the frame
-//   gamepad    standard gamepad: left stick moves, A jumps
+//   gamepad    standard gamepad: left stick moves, A jumps; the device used last follows use (a
+//              connected pad is not a use, a press is, a mouse move gives it back); rumble
 //   pause      game time and presses freeze while paused (the live loop); nothing fires on resume
 //   keys       engine hotkeys are configurable (engine.debugKeys)
 //   lifecycle  engine.loadGame between two games ×5: GPU geometries/textures back to baseline;
@@ -121,12 +122,16 @@ export async function runSystems(h) {
       const e = window.__PIXEL_ENGINE__;
       const T = window.__T;
       await T.place([0, 0, 4]);
-      const fake = { connected: true, mapping: 'standard', axes: [1, 0, 0, 0], buttons: Array.from({ length: 17 }, () => ({ pressed: false, value: 0 })) };
+      const rumbles = [];
+      const vibrationActuator = { playEffect: (type, params) => (rumbles.push([type, params.strongMagnitude, params.weakMagnitude]), Promise.reject(new Error('fake pad: no motors'))) };
+      const fake = { connected: true, mapping: 'standard', index: 0, axes: [1, 0, 0, 0], buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })), vibrationActuator };
       const real = navigator.getGamepads;
       navigator.getGamepads = () => [fake];
+      e.input.noteDevice('keyboard');
       const x0 = e.game.hero.feet.toArray();
       await T.frames(40);
       const x1 = e.game.hero.feet.toArray();
+      const connectedOnly = e.input.device; // the stick was already over at first sight: not a use
       fake.axes = [0.1, 0.1, 0, 0]; // inside the deadzone
       await T.frames(30);
       const axisRest = e.input.moveAxis();
@@ -135,7 +140,10 @@ export async function runSystems(h) {
       await T.frames(3);
       fake.buttons[0] = { pressed: false, value: 0 };
       await T.frames(3);
-      const r = { moved: Math.hypot(x1[0] - x0[0], x1[2] - x0[2]), jumped: e.game.hero.stats.jumps - jumps, axisRest, connected: e.input.gamepadConnected };
+      const used = e.input.device;
+      e.input.rumble({ strong: 0.5, weak: 1, ms: 80 }); // a rejected effect must log nothing
+      await T.frames(2);
+      const r = { moved: Math.hypot(x1[0] - x0[0], x1[2] - x0[2]), jumped: e.game.hero.stats.jumps - jumps, axisRest, connected: e.input.gamepadConnected, connectedOnly, used, rumbles };
       navigator.getGamepads = real;
       await T.frames(60);
       return r;
@@ -143,6 +151,18 @@ export async function runSystems(h) {
     check(pad.connected && pad.moved > 1, `gamepad left stick moves the hero (${pad.moved.toFixed(2)})`);
     check(pad.axisRest.x === 0 && pad.axisRest.y === 0, 'stick deadzone reads as centred');
     check(pad.jumped === 1, 'gamepad A jumps');
+    check(pad.connectedOnly === 'keyboard' && pad.used === 'pad', `the device follows use, not connection (${pad.connectedOnly} → ${pad.used})`);
+    check(JSON.stringify(pad.rumbles) === JSON.stringify([['dual-rumble', 0.5, 1]]), `rumble plays a dual-rumble on the pad in use (${JSON.stringify(pad.rumbles)})`);
+    // the mouse moving over the canvas takes the device back to the keyboard and mouse
+    const box = await E(() => {
+      window.__PIXEL_ENGINE__.input.noteDevice('pad'); // as if the pad was in use
+      const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    });
+    await page.mouse.move(box.x, box.y);
+    await page.mouse.move(box.x + 40, box.y + 10, { steps: 4 });
+    const afterMouse = await E(() => window.__PIXEL_ENGINE__.input.device);
+    check(afterMouse === 'keyboard', `a mouse move over the canvas is the keyboard and mouse again (${afterMouse})`);
 
     // ---------------------------------------------------------------- capture freshness
     // renderer.capture() right after engine.step() in a frame the loop already rendered

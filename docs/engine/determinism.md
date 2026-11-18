@@ -20,7 +20,7 @@ interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 
 **Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
 its start: the seed, the game's name, the game time it began at and each frame's input (held keys,
-with gamepad and mouse buttons as keys, presses, sticks, pointer, wheel, gamepad connected, touch,
+with gamepad and mouse buttons as keys, presses, sticks, triggers, pointer, wheel, gamepad connected, the device used last, touch,
 button presses and releases with where the pointer was, commands, `dt`), only what changed, and
 whether promise callbacks ran before the frame.
 
@@ -86,7 +86,7 @@ engine.recording().from === snap;        // the recording starts again from it: 
 A snapshot (`src/engine/snapshot.ts`) is the engine's part of a running level (game time, the
 clock's speed and hitstop, `ctx.random`, the fixed step's accumulator, the whole Rapier world as
 Rapier's own snapshot with the collider tags, conveyor belts and force fields' `enabled` beside
-it, the camera rig, the shake, held keys, presses still queued with their age, the pointer, data
+it, the camera rig, the shake, held keys, presses still queued with their age, the pointer, the device used last, data
 sent and not yet delivered) and the game's own, from `Game.snapshot(ctx)`: plain data, which
 the game returns as it is (never through JSON). Numbers JSON can't hold exactly (`-0`,
 `Infinity`, `NaN`) are marked as strings (and a game's own string starting with `@` gets one

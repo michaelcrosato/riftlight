@@ -501,11 +501,11 @@ export class FreeRig extends CameraRig {
     this.yaw -= u.input.mouseDelta.x * 0.003;
     this.pitch = MathUtils.clamp(this.pitch - u.input.mouseDelta.y * 0.003, -1.55, 1.55);
     this.camera.rotation.set(this.pitch, this.yaw, 0);
-    const speed = (u.input.isDown('ShiftLeft', 'ShiftRight') ? 18 : 6) * u.dt;
+    const speed = (u.input.isDown('ShiftLeft', 'ShiftRight', 'PadL3') ? 18 : 6) * u.dt;
     const fwd = new Vector3(0, 0, -1).applyEuler(this.camera.rotation);
     const right = new Vector3(1, 0, 0).applyEuler(this.camera.rotation);
     const a = u.input.moveAxis();
-    const lift = (u.input.isDown('KeyE', 'Space') ? 1 : 0) - (u.input.isDown('KeyQ', 'KeyC') ? 1 : 0);
+    const lift = (u.input.isDown('KeyE', 'Space', 'PadRT') ? 1 : 0) - (u.input.isDown('KeyQ', 'KeyC', 'PadLT') ? 1 : 0);
     this.camera.position.addScaledVector(fwd, a.y * speed).addScaledVector(right, a.x * speed).addScaledVector(UP, lift * speed);
   }
 

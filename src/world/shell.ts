@@ -5,7 +5,7 @@
  *
  *   H  how it works (the station guide)      T  tweak: the room's and the engine's settings
  *   G  go to any room                        I  the room's card again
- *   Esc  menu (field guide, back to the Atrium, reset the room)
+ *   Esc / Options  menu (field guide, back to the Atrium, reset the room)
  */
 import { type Camera, Color, Vector3 } from 'three/webgpu';
 import {
@@ -14,6 +14,7 @@ import {
   type GameContext,
   type Look,
   LOOK_PRESETS,
+  MenuInput,
   type MoveInput,
   PALETTE,
   readMoveInput,
@@ -21,7 +22,7 @@ import {
   type TransitionKind,
 } from '../engine';
 import { HERO_MODEL } from '../game/hero';
-import { MenuInput, Pointer } from '../riftlight/game/controls';
+import { MENU_BINDINGS, Pointer } from '../riftlight/game/controls';
 import { UiCanvas, wrap } from '../riftlight/ui/kit';
 import { UiLayer } from '../riftlight/ui/layer';
 import { moveInput, Visitor } from '../riftlight/showcase/visitor';
@@ -37,7 +38,7 @@ const KEY = {
   tweak: ['KeyT'],
   rooms: ['KeyG', 'F2'],
   card: ['KeyI'],
-  menu: ['Escape'],
+  menu: ['Escape', 'PadStart'],
 } as const;
 
 const UI_SOUNDS = {
@@ -66,7 +67,7 @@ export class WorldShell {
   ui!: UiCanvas;
   readonly layer = new UiLayer();
   pointer: Pointer | null = null;
-  private readonly menuInput = new MenuInput();
+  private readonly menuInput = new MenuInput(MENU_BINDINGS);
   readonly visited = new Set<string>();
   /** The room on screen. */
   room: RoomGame | null = null;
@@ -304,7 +305,7 @@ export class WorldShell {
     if (hadPanel) {
       const top = this.layer.top!.panel.id;
       // the key that opened a panel closes it again
-      const toggles: Record<string, readonly string[]> = { guide: KEY.guide, tweak: KEY.tweak, rooms: KEY.rooms, glossary: KEY.guide };
+      const toggles: Record<string, readonly string[]> = { guide: KEY.guide, tweak: KEY.tweak, rooms: KEY.rooms, glossary: KEY.guide, pause: KEY.menu };
       if (toggles[top] && input.wasPressed(...toggles[top]!)) {
         this.layer.close(top);
         return;

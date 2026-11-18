@@ -701,6 +701,8 @@ export class ItemsUi {
       }
       case 'wheel':
         return this.covers(this.cursor.x, this.cursor.y);
+      case 'swipe':
+        return false; // dragging items: a quick drag is not a dismissal
     }
   }
 
