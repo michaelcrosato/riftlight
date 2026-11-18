@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.58.0
+
+- **Create and Options press as they are let go** (`HOST_CHORD`, 52in1's bar): each presses `PadBack` / `PadStart` when it is released, and only if the other never went down while it was held (per pad). A thumb that reaches Options a poll before Create no longer opens `settings.padButton`'s panel, or a game's own pause on `PadStart`, behind 52in1's bar. Held alone, `isDown` reads them at once; `input.release()` and `reset()` drop a pending press. A game that acts on `wasPressed('PadStart')` / `consumePress('PadBack')` now acts as the button is let go (so `settings.padButton`'s Options opens the panel on release); recordings replay as recorded.
+- Docs: while a game reads the DualSense's gyro (every poll), 52in1's own Motion aim leaves the right stick alone and has it back half a second after the reads stop; reading `touches` takes nothing from it (`HubDualSenseSource.gyro`).
+
 ## 0.57.0
 
 - **Touch steps aside** (docs/engine/character.md *Touch is an add-on*): `TouchControls.follow(device)`, which the engine calls every frame: the joystick and buttons hide when the device in use turns `pad` or `keyboard`, and come back on the next touch. The device is recorded, so replays agree. `touch.visible` is now the effective state; new `touch.deviceHidden` and `TouchFollow`. A key typed into a text field, or by a phone's soft keyboard, doesn't change the device, so the controls stay.
