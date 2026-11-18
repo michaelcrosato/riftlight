@@ -235,7 +235,7 @@ frees the old game's scene objects, physics, triggers, particles, HUD, music and
 - **Colliders:** `physics.addStaticBox({ position, halfExtents, rotationY?, friction? })` and
   `physics.addStaticCylinder(position, halfHeight, radius)`. One per solid block, matching
   the mesh (half extents are half the size). Anything else through `RAPIER` and
-  `physics.world` (see the top-down recipe's crates).
+  `physics.world` (`RECIPES.md`'s Lantern Night pushes crates).
 - **Collider tags** the hero understands: `physics.tag(collider, 'climbable')`, `'pushable'`,
   `'grabbable'`, `'slippery'`, `'noLedge'`, `'noCamera'` (camera rays ignore it).
 - **Models:** `const m = await ctx.loadModel('assets/tree.glb')` returns `{ scene, animations }`,
@@ -418,10 +418,13 @@ const hum = ctx.audio.loop('coin', { volume: 0 }); // per frame: const s = spati
 | `first` | first person, mouse look (click locks the pointer) | `ctx.camera.hidesTarget`: hide your model |
 | `free`, `fixed` | authoring fly-cam; a frozen view | `{ preset: 'fixed', position, target, fov }` |
 
-Config: `{ preset, zoom, minZoom, maxZoom, viewHeight, pitch, yaw, fov, distance, stiffness }`.
-Players zoom with the wheel or + / -. `engine.setCamera(config, { syncUrl: false })` swaps
-the preset during play (a cutscene, a minigame); the game's `onCameraChange` fixes up
-anything preset-specific.
+Config:
+`{ preset, zoom, minZoom, maxZoom, viewHeight, minWidth, pitch, yaw, fov, distance, stiffness }`.
+Players zoom with the wheel or + / -. `minWidth` (ortho presets) keeps that many metres across in
+view: a phone held upright zooms out until they fit (past `minZoom` if it must), the player zooms
+within it, and a wider window has the zoom asked for back; pass it rather than zooming each frame.
+`engine.setCamera(config, { syncUrl: false })` swaps the preset during play (a cutscene, a
+minigame); the game's `onCameraChange` fixes up anything preset-specific.
 
 ### HUD
 
@@ -443,7 +446,7 @@ ctx.hud.sprite(6, 20, ['.oo.', 'oyyo', '.oo.'], { o: 'orange', y: 'sand' }); // 
 ctx.audio.play('coin');                       // built-in: jump doubleJump land coin step skid punch groundPound whoosh hurt fanfare
 ctx.audio.play('coin', { pitch: 5, volume: 0.6, pan: -0.3 });
 ctx.audio.register('zap', { wave: 'square', duty: 0.25, freq: 1200, freqEnd: 200, decay: 0.15, volume: 0.3 });
-ctx.audio.playMusic(SONG);                    // a Song (data, see the top-down recipe); playMusic(null) stops
+ctx.audio.playMusic(SONG);                    // a Song (data: RECIPES.md's Lantern Night); playMusic(null) stops
 await ctx.audio.load('door', 'assets/door.ogg');
 ```
 
@@ -515,13 +518,24 @@ changing which filters are on rebuilds the pipeline once.
 
 ## 5. Recipes
 
-Each recipe is a whole game, built into the kit as `examples/<name>.html`. Steal from them.
+Each recipe is a whole game that meets `CONTROLS.md`'s checklist, built into the kit as a page.
+Steal from them. Cliff Run is below; the other guides hold the rest:
+
+| Page | Game | What it shows |
+| --- | --- | --- |
+| `examples/side-scroller.html` | Cliff Run (here) | levels as data, enemies, level progression |
+| `examples/top-down.html` | Lantern Night (`RECIPES.md`) | night lights, pushable crates, music, custom particles |
+| `examples/looks.html` | Look Lab (`RECIPES.md`) | art styles per layer, looks picked on every device |
+| `examples/beacon-yard.html` | Beacon Yard (`CONTROLS.md`) | prompts for the device in use, a pause menu at ten feet |
+| `examples/gem-rush.html` | Gem Rush (`CONTROLS.md`) | 52in1 sessions: parallel rounds and moments |
+| `examples/market.html` | Market Corner (`ASSETS.md`) | library models, a model of its own, textures |
 
 ### Side-scroller: levels as data, enemies, level progression
 
 ```js side-scroller
-// Cliff Run: a side-scroller. Run (A/D or arrows), jump (Space; again on landing for a higher
-// one), stomp the slimes, reach the flag. Two levels, then it starts over.
+// Cliff Run: a side-scroller. Run (A/D, arrows, a stick), jump (Space, Cross, A on touch; again on
+// landing for a higher one), stomp the slimes, reach the flag. Two levels, then it starts over.
+// Esc / Options: settings.
 import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, mergeStaticMeshes, PALETTE, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, CylinderGeometry, Group, Mesh, SphereGeometry, Vector3 } = THREE;
@@ -536,6 +550,8 @@ const START = [-2, 0, 0];
 class CliffRun {
   name = 'Cliff Run';
   assets = [HERO_MODEL, 'assets/tree.glb'];
+  // each action's controls: the legend shows the device in use (CONTROLS.md)
+  controls = { move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' }, jump: { key: 'Space', pad: 'PadA', touch: 'A' }, settings: { key: 'Escape', pad: 'PadStart' } };
   slimes = [];
   stomps = 0;
   falls = 0;
@@ -556,7 +572,7 @@ class CliffRun {
     const parts = [];
     for (const [x0, x1, top] of this.data.platforms) {
       const w = x1 - x0;
-      const h = top + 4; // every platform reaches down out of view
+      const h = top + 16; // every platform reaches down out of view, a phone held upright too
       physics.addStaticBox({ position: [(x0 + x1) / 2, top - h / 2, 0], halfExtents: [w / 2, h / 2, 2] });
       const body = new Mesh(new BoxGeometry(w, h, 4), toonMaterial(palette.sand));
       body.position.set((x0 + x1) / 2, top - h / 2, 0);
@@ -665,10 +681,17 @@ class CliffRun {
       void ctx.engine.loadGame(new CliffRun((this.level + 1) % LEVELS.length));
     }
     const time = (this.clearedAt ?? ctx.time) - this.startTime;
-    ctx.hud.clear();
-    ctx.hud.text(6, 6, `LEVEL ${this.level + 1}`, { color: 'sand' });
-    ctx.hud.text(6, 16, `TIME ${time.toFixed(1)}  STOMPS ${this.stomps}`);
-    if (this.clearedAt !== null) ctx.hud.text(0, 0, 'LEVEL CLEAR!', { anchor: 'center', scale: 2, shadow: 'navy' });
+    const { hud } = ctx;
+    hud.clear();
+    // short lines top left: clear of the ⚙ (top right) and the touch controls (along the bottom)
+    hud.text(6, 6, `LEVEL ${this.level + 1}`, { color: 'sand' });
+    hud.text(6, 16, `TIME ${time.toFixed(1)}`);
+    hud.text(6, 26, `STOMPS ${this.stomps}`);
+    // the controls in use, what fits (touch has its stick and button)
+    const legend = [['move', 'RUN'], ['jump', 'JUMP'], ['settings', 'SETTINGS']];
+    while (hud.legendWidth(legend) > hud.width - 12) legend.pop();
+    if (!ctx.engine.touch?.visible) hud.legend(6, hud.height - 12, legend);
+    if (this.clearedAt !== null) hud.text(0, 0, 'LEVEL CLEAR!', { anchor: 'center', scale: hud.width < 160 ? 1 : 2, shadow: 'navy' });
   }
 
   cameraTarget() {
@@ -686,283 +709,7 @@ class CliffRun {
   }
 }
 
-await Engine.start(new CliffRun(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2 }, background: PALETTE.sky }));
-```
-
-### Top-down at night: lights, pushable crates, music, custom particles
-
-```js top-down
-// Lantern Night: walk (WASD / arrows), push both crates onto the glowing pads (walk into a
-// crate to push it), then leave through the gate in the north wall.
-import { compileClips, ContactShadow, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, PALETTE, PlatformerCharacter, RAPIER, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
-
-const { BoxGeometry, Color, CylinderGeometry, Mesh, Vector3 } = THREE;
-
-const SONG = {
-  bpm: 84,
-  tracks: { lead: { wave: 'triangle', decay: 0.3, volume: 0.12 }, bass: { wave: 'square', duty: 0.125, decay: 0.25, volume: 0.05 } },
-  patterns: { a: { lead: 'A4 . C5 . E5 . . . D5 . C5 . B4 . . .', bass: 'A2 . . . . . . . F2 . . . . . . .' } },
-  order: ['a'],
-};
-const PADS = [[-3, -4], [3, -4]];
-const CRATES = [[-3, 1], [3, 1]];
-
-class LanternNight {
-  name = 'Lantern Night';
-  assets = [HERO_MODEL, 'assets/tree.glb'];
-  crates = [];
-  pads = [];
-  solved = false;
-  escaped = false;
-  nextFirefly = 0;
-  target = new Vector3();
-  at = new Vector3();
-
-  async setup(ctx) {
-    const { scene, physics, palette, engine } = ctx;
-    this.sparkle = ctx.random.fork('fireflies'); // drawn per frame (cosmetic): its own stream, so gameplay's never depends on the frame rate
-    // Night: dim the engine's sun and ambient light (reset for the next game on unload).
-    engine.sun.color.setHex(PALETTE.sky);
-    engine.sun.intensity = 1.2;
-    engine.ambient.color.setHex(PALETTE.navy);
-    engine.ambient.intensity = 1.4;
-    scene.background = new Color(PALETTE.ink);
-
-    const parts = [];
-    const wall = (x, z, w, d) => {
-      physics.addStaticBox({ position: [x, 0.6, z], halfExtents: [w / 2, 0.6, d / 2] });
-      const m = new Mesh(new BoxGeometry(w, 1.2, d), toonMaterial(palette.slate));
-      m.position.set(x, 0.6, z);
-      m.castShadow = m.receiveShadow = true;
-      parts.push(m);
-    };
-    const floor = new Mesh(new BoxGeometry(30, 1, 30), toonMaterial(palette.teal));
-    floor.position.y = -0.5;
-    floor.receiveShadow = true;
-    parts.push(floor);
-    physics.addStaticBox({ position: [0, -0.5, 0], halfExtents: [15, 0.5, 15] });
-    wall(-4.75, -8, 6.5, 1); // north wall, with a 3 m gap for the gate
-    wall(4.75, -8, 6.5, 1);
-    wall(0, 8, 17, 1);
-    wall(-8, 0, 1, 15);
-    wall(8, 0, 1, 15);
-    for (const [x, z] of [[-6.5, -6.5], [6.5, -6.5], [-6.5, 6.5], [6.5, 6.5]]) {
-      const post = new Mesh(new CylinderGeometry(0.12, 0.15, 1.6, 6), toonMaterial(palette.plum));
-      post.position.set(x, 0.8, z);
-      parts.push(post);
-      ctx.lights.request({ position: [x, 1.8, z], color: 0xffa040, intensity: 7, radius: 7, flicker: 'torch' });
-    }
-    scene.add(...mergeStaticMeshes(parts));
-
-    // The gate: a collider we remove when the puzzle is solved.
-    this.gate = new Mesh(new BoxGeometry(3, 1.6, 0.6), toonMaterial(palette.red));
-    this.gate.position.set(0, 0.8, -8);
-    scene.add(this.gate);
-    this.gateCollider = physics.addStaticBox({ position: [0, 0.8, -8], halfExtents: [1.5, 0.8, 0.3] });
-    physics.trigger({ box: [1.5, 1, 0.5] }, [0, 1, -9.2], { tag: 'character', once: true, onEnter: () => this.escape(ctx) });
-
-    // Pads and crates. A crate is a dynamic Rapier body the hero pushes (tag 'pushable').
-    for (const [x, z] of PADS) {
-      const mesh = new Mesh(new BoxGeometry(1.2, 0.06, 1.2), toonMaterial(palette.navy));
-      mesh.position.set(x, 0.03, z);
-      scene.add(mesh);
-      this.pads.push({ x, z, mesh, lit: false });
-    }
-    for (const [x, z] of CRATES) {
-      const mesh = new Mesh(new BoxGeometry(0.98, 0.98, 0.98), toonMaterial(palette.orange));
-      mesh.castShadow = mesh.receiveShadow = true;
-      setLookLayer(mesh, 'actors');
-      scene.add(mesh);
-      const body = physics.world.createRigidBody(RAPIER.RigidBodyDesc.dynamic().setTranslation(x, 0.5, z).setLinearDamping(4).enabledRotations(false, false, false));
-      physics.tag(physics.world.createCollider(RAPIER.ColliderDesc.cuboid(0.49, 0.49, 0.49).setFriction(0.1).setDensity(8), body), 'pushable');
-      physics.bind(body, mesh);
-      this.crates.push(body);
-    }
-
-    const tree = await ctx.loadModel('assets/tree.glb');
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2;
-      const t = tree.scene.clone(true);
-      t.position.set(Math.cos(a) * 11.5, 0, Math.sin(a) * 11.5);
-      scene.add(t);
-    }
-
-    const hero = await ctx.loadModel(HERO_MODEL, { castShadow: false });
-    this.model = hero.scene;
-    setLookLayer(this.model, 'actors');
-    this.shadow = new ContactShadow(0.42);
-    scene.add(this.model, this.shadow);
-    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 5], lockDepth: ctx.camera.lockDepth });
-    this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model), HERO_RIG);
-    ctx.lights.request({ follow: this.model, offset: [0, 1.5, 0], color: 0xffe0a0, intensity: 5, radius: 6, priority: 8 }); // the lantern
-
-    ctx.particles.register('firefly', { count: [1, 1], life: [1.5, 2.5], speed: [0.2, 0.5], gravity: -0.2, size: [1, 1], colors: ['lime', 'sand', 'lime'] });
-    ctx.audio.register('chime', { wave: 'triangle', freq: 880, decay: 0.4, volume: 0.3, arp: [0, 4, 7], arpRate: 0.06 });
-    ctx.audio.playMusic(SONG, 'night');
-  }
-
-  escape(ctx) {
-    this.escaped = true;
-    this.hero.celebrate();
-    ctx.audio.play('fanfare');
-  }
-
-  fixedUpdate(ctx, dt) {
-    this.input = readMoveInput(ctx, this.hero, this.input);
-    if (this.escaped) this.input.move.set(0, 0, 0); // the end: stand and celebrate
-    this.hero.fixedUpdate(dt, this.input);
-  }
-
-  update(ctx, dt) {
-    this.hero.updateVisual(this.model, dt, ctx.physics.alpha);
-    const feet = this.model.position;
-    this.shadow.place(feet.x, 0, feet.z, feet.y); // flat floor: the ground is y = 0
-    // A pad lights when a crate sits on it; both lit opens the gate.
-    for (const pad of this.pads) {
-      const on = this.crates.some((b) => Math.hypot(b.translation().x - pad.x, b.translation().z - pad.z) < 0.5);
-      if (on && !pad.lit) {
-        pad.lit = true;
-        pad.mesh.material = toonMaterial(ctx.palette.lime);
-        ctx.lights.request({ position: [pad.x, 0.6, pad.z], color: 0x9cf060, intensity: 5, radius: 4, flicker: 'pulse' });
-        ctx.audio.play('chime');
-      }
-    }
-    if (!this.solved && this.pads.every((p) => p.lit)) {
-      this.solved = true;
-      ctx.physics.remove(this.gateCollider);
-      this.gate.visible = false;
-      ctx.particles.burst('smoke', this.gate.position, { count: 24 });
-      ctx.audio.play('groundPound');
-    }
-    if (ctx.time > this.nextFirefly) {
-      this.nextFirefly = ctx.time + 0.3;
-      ctx.particles.burst('firefly', this.at.set(this.sparkle.range(-7, 7), this.sparkle.range(0.5, 2), this.sparkle.range(-7, 7)));
-    }
-    const lit = this.pads.filter((p) => p.lit).length;
-    ctx.hud.clear();
-    ctx.hud.text(6, 6, this.escaped ? 'YOU ESCAPED!' : this.solved ? 'THE GATE IS OPEN' : `PADS ${lit}/${this.pads.length}`, { color: 'sand' });
-  }
-
-  cameraTarget() {
-    const p = this.model?.position ?? this.target.set(0, 0, 5);
-    return this.target.set(p.x, p.y + 0.9, p.z);
-  }
-
-  status() {
-    return this.escaped ? 'escaped' : `pads ${this.pads.filter((p) => p.lit).length}/${this.pads.length}`;
-  }
-}
-
-await Engine.start(new LanternNight(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', zoom: 1.1 }, look: LOOK_PRESETS.dream }));
-```
-
-### Looks: mixing art styles per layer
-
-```js looks
-// Look Lab: one scene, six looks. Keys 1-6 pick a look, T toggles chunky pixels on the custom
-// one. Walk around (WASD): characters & objects (the 'actors' layer) and the environment each
-// get their own look.
-import { compileClips, Engine, HERO_CLIPS, HERO_MODEL, HERO_RIG, LOOK_PRESETS, mergeStaticMeshes, PlatformerCharacter, readMoveInput, setLookLayer, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
-
-const { BoxGeometry, Mesh, Vector3 } = THREE;
-
-// A look of our own: pixel-art characters on a clean, cel-shaded world, a vignette on top.
-const STORYBOOK_HEROES = {
-  scene: [{ id: 'vignette', params: { intensity: 0.35 } }],
-  actors: { pixel: { size: 1, outline: 0.85, crease: 0.2 }, filters: [{ id: 'nes' }] },
-  environment: { pixel: null, filters: [{ id: 'cel', params: { bands: 4, ink: 0.6 } }] },
-};
-const LOOKS = [
-  ['default', LOOK_PRESETS.none],
-  ['storybook heroes', STORYBOOK_HEROES],
-  ['pixel heroes', LOOK_PRESETS.pixel_heroes],
-  ['noir', LOOK_PRESETS.noir],
-  ['sin city', LOOK_PRESETS.sin_city],
-  ['handheld', LOOK_PRESETS.handheld],
-];
-
-class LookLab {
-  name = 'Look Lab';
-  assets = [HERO_MODEL, 'assets/coin.glb', 'assets/tree.glb'];
-  current = 1;
-  target = new Vector3();
-
-  async setup(ctx) {
-    const { scene, physics, palette } = ctx;
-    const parts = [];
-    for (const [x, z, w, h, d, c] of [[0, 0, 16, 1, 12, 'green'], [-4, -3, 2, 2, 2, 'slate'], [4, -3, 3, 1, 2, 'sand'], [0, -5, 6, 3, 1, 'plum']]) {
-      const y = c === 'green' ? -0.5 : h / 2;
-      physics.addStaticBox({ position: [x, y, z], halfExtents: [w / 2, h / 2, d / 2] });
-      const m = new Mesh(new BoxGeometry(w, h, d), toonMaterial(palette[c]));
-      m.position.set(x, y, z);
-      m.castShadow = m.receiveShadow = true;
-      parts.push(m);
-    }
-    scene.add(...mergeStaticMeshes(parts));
-    for (const [x, z] of [[-6, 3], [6, 2], [-2, -4]]) {
-      const tree = await ctx.loadModel('assets/tree.glb'); // environment: no layer tag
-      tree.scene.position.set(x, 0, z);
-      scene.add(tree.scene);
-    }
-    // Objects on the actors layer: coins and a crate.
-    const coin = await ctx.loadModel('assets/coin.glb');
-    this.coins = [[-1.5, 0.6, 1], [0, 0.6, 1], [1.5, 0.6, 1]].map(([x, y, z]) => {
-      const c = coin.scene.clone(true);
-      c.position.set(x, y, z);
-      setLookLayer(c, 'actors');
-      scene.add(c);
-      return c;
-    });
-    const crate = new Mesh(new BoxGeometry(1, 1, 1), toonMaterial(palette.orange));
-    crate.position.set(3, 0.5, 2);
-    crate.castShadow = true;
-    setLookLayer(crate, 'actors');
-    scene.add(crate);
-    physics.addStaticBox({ position: [3, 0.5, 2], halfExtents: [0.5, 0.5, 0.5] });
-
-    const hero = await ctx.loadModel(HERO_MODEL);
-    this.model = hero.scene;
-    setLookLayer(this.model, 'actors');
-    scene.add(this.model);
-    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 3], lockDepth: ctx.camera.lockDepth });
-    this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model), HERO_RIG);
-  }
-
-  fixedUpdate(ctx, dt) {
-    this.input = readMoveInput(ctx, this.hero, this.input);
-    this.hero.fixedUpdate(dt, this.input);
-  }
-
-  update(ctx, dt) {
-    this.hero.updateVisual(this.model, dt, ctx.physics.alpha);
-    for (const c of this.coins) c.rotation.y += dt * 2;
-    for (let i = 0; i < LOOKS.length; i++) {
-      if (ctx.input.wasPressed(`Digit${i + 1}`)) {
-        this.current = i;
-        ctx.engine.setLook(LOOKS[i][1]);
-      }
-    }
-    if (ctx.input.wasPressed('KeyT')) {
-      // Parameters and pixel sizes are uniforms: changing them never rebuilds the pipeline.
-      STORYBOOK_HEROES.actors.pixel.size = STORYBOOK_HEROES.actors.pixel.size === 1 ? 3 : 1;
-      if (this.current === 1) ctx.engine.setLook(STORYBOOK_HEROES);
-    }
-    ctx.hud.clear();
-    ctx.hud.text(6, 6, `LOOK ${this.current + 1}/${LOOKS.length}: ${LOOKS[this.current][0].toUpperCase()}`, { color: 'sand' });
-    ctx.hud.text(6, 6, '1-6 LOOKS  T CHUNKY', { anchor: 'bottom-left' });
-  }
-
-  cameraTarget() {
-    const p = this.model?.position ?? this.target.set(0, 0, 3);
-    return this.target.set(p.x, p.y + 0.9, p.z);
-  }
-
-  status() {
-    return `look ${LOOKS[this.current][0]}`;
-  }
-}
-
-await Engine.start(new LookLab(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.3 }, look: STORYBOOK_HEROES }));
+await Engine.start(new CliffRun(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2, minWidth: 10 }, background: PALETTE.sky, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
 ```
 
 ## 6. Rules

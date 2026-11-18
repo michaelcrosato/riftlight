@@ -120,7 +120,6 @@ class BeaconYard {
   update(ctx, dt) {
     const { hud, input } = ctx;
     this.keeper.position.copy(this.at);
-    ctx.camera.setZoom(Math.min(1, (16 * ctx.camera.aspect) / 14)); // 14 m across at least (16 m high at zoom 1)
     const opening = !this.menu && input.wasPressed('Escape', 'PadStart');
     if (opening) {
       this.menu = { input: new MenuInput({ keys: ['PadStart'] }), list: new FocusList(ROWS.length) };
@@ -131,18 +130,20 @@ class BeaconYard {
     hud.clear();
     if (this.menu) return this.updateMenu(ctx, opening ? [] : this.menu.input.events(input, dt));
     const touch = ctx.engine.touch?.visible; // the stick, LIGHT and ≡ are on screen
+    const big = hud.width < 160 ? 1 : 2; // big text, smaller on a narrow HUD
     hud.text(6, 6, `BEACONS ${this.lit()}/${SPOTS.length}`, { color: 'sand' });
-    if (!touch) hud.prompt(hud.width - 6, 6, 'pause', 'MENU', { align: 'right' });
-    if (this.lit() === SPOTS.length) return void hud.text(0, 24, 'ALL LIT!', { anchor: 'top', scale: 2 });
-    // clear of MENU / ≡ and the stick, wrapped to a phone's 130 columns
-    wrapText(lang.t('help.walk'), hud.width - 48).forEach((line, i) => hud.text(6, 18 + i * 10, line));
-    if (this.near && !touch) hud.prompt(hud.width / 2, hud.height - 24, 'use', 'LIGHT', { align: 'center', scale: 2 }); // touch: the LIGHT button
+    if (!touch) hud.prompt(6, 16, 'pause', 'MENU'); // touch: the ≡
+    if (this.lit() === SPOTS.length) return void hud.text(0, 28, 'ALL LIT!', { anchor: 'top', scale: big });
+    // short lines top left, a long one wrapped clear of the ≡
+    wrapText(lang.t('help.walk'), hud.width - (touch ? 48 : 12)).forEach((line, i) => hud.text(6, (touch ? 18 : 28) + i * 10, line));
+    if (this.near && !touch) hud.prompt(hud.width / 2, hud.height - 24, 'use', 'LIGHT', { align: 'center', scale: big }); // touch: the LIGHT button
   }
 
   /** Big rows, a focus, a legend: the d-pad or stick, a click, a tap; Circle, Esc, Options or a swipe closes. */
   updateMenu(ctx, events) {
     const { hud, input } = ctx;
     const w = Math.min(160, hud.width - 16);
+    const k = hud.width < 160 ? 1 : 2; // the rows' text, smaller on a narrow HUD
     const rects = ROWS.map((_, i) => ({ x: Math.floor((hud.width - w) / 2), y: Math.floor(hud.height / 2) - 40 + i * 28, w, h: 22 }));
     const r = this.menu.list.update(events, input, hud, rects);
     if (r.moved) ctx.audio.play('step');
@@ -156,10 +157,13 @@ class BeaconYard {
     rects.forEach((b, i) => {
       const on = i === this.menu.list.index;
       const text = lang.t(ROWS[i]);
+      const size = hud.measure(text, k);
       hud.rect(b.x, b.y, b.w, b.h, on ? 'sand' : 'navy');
-      hud.text(b.x + Math.floor((b.w - hud.measure(text, 2).width) / 2), b.y + 4, text, { color: on ? 'ink' : 'white', scale: 2, shadow: false });
+      hud.text(b.x + Math.floor((b.w - size.width) / 2), b.y + Math.floor((b.h - size.height) / 2), text, { color: on ? 'ink' : 'white', scale: k, shadow: false });
     });
-    hud.legend(Math.floor(hud.width / 2), hud.height - 14, [['confirm', 'SELECT'], ['back', 'BACK']], { align: 'center' });
+    const legend = [['confirm', 'SELECT'], ['back', 'BACK']];
+    while (hud.legendWidth(legend) > hud.width - 12) legend.pop(); // what fits
+    hud.legend(Math.floor(hud.width / 2), hud.height - 14, legend, { align: 'center' });
   }
 
   cameraTarget() {
@@ -174,7 +178,7 @@ class BeaconYard {
 /** A fresh game: the page starts one, `node check.mjs --headless` plays one. */
 export const createGame = () => new BeaconYard();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, settings: { button: false }, touchButtons: TOUCH, touchStick: 'floating', touchDensity: 2 }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', minWidth: 14 }, settings: { button: false }, touchButtons: TOUCH, touchStick: 'floating', touchDensity: 2 }));
 ```
 
 ## 3. Menus at ten feet
@@ -196,8 +200,7 @@ pauses, Gem Rush turns both off (`settings: { button: !session, padButton: !sess
 
 - `touchButtons` places the buttons (each presses a key code; `at` puts one in a corner, sized
   for a thumb); `touchStick: 'floating'` brings the stick under the thumb in the lower left;
-  `touchDensity: 2` keeps a phone's art at two CSS pixels a pixel or more (a HUD of about 180
-  rows). The stick and buttons take fingers at once.
+  `touchDensity: 2` keeps a phone's art at two CSS pixels a pixel or more.
 - **Context buttons**: `ctx.engine.touch?.set('KeyE', { hidden, label, cooldown, badge })` each
   frame from the game's state (`?.`: null headless and without touch controls).
 - **Swipes**: a quick flick presses `SwipeLeft`, `SwipeRight`, `SwipeUp` or `SwipeDown`
@@ -205,10 +208,10 @@ pauses, Gem Rush turns both off (`settings: { button: !session, padButton: !sess
 - **Assists** where precise thumbs are hard: aim at the nearest target, a longer reach, auto-run,
   when `ctx.input.device === 'touch'` (recorded: a replay agrees).
 - **Phones both ways**: in portrait the art can be 130 columns wide. Keep the play area in view
-  (both games zoom out by `ctx.camera.aspect`; or follow the player) and the HUD clear of the
-  controls while they show (`ctx.engine.touch?.visible`, `rects()`: a floating stick rests low in
-  its `zone`, which takes every touch in it); hide them (`ctx.engine.touch?.show(false)`) while a
-  menu or a result owns the screen.
+  (both games pass their ground's width, `camera: { minWidth }` (14 m, 19 m); or follow the
+  player) and the HUD clear of the controls while they show (`ctx.engine.touch?.visible`,
+  `rects()`: a floating stick rests low in its `zone`, which takes every touch in it); hide them
+  (`ctx.engine.touch?.show(false)`) while a menu or a result owns the screen.
 
 ## 5. The player's settings and the DualSense
 
@@ -333,7 +336,6 @@ class GemRush {
     if (again && ctx.input.wasPressed('Space', 'PadA', 'Touch')) return void ctx.engine.loadGame(createGame());
     ctx.engine.touch?.show(this.countdown <= 0 && !this.over); // the stick only while it plays
     this.runner.position.copy(this.at);
-    ctx.camera.setZoom(Math.min(1, (16 * ctx.camera.aspect) / 19)); // the whole arena, upright too
     for (const gem of this.gems) gem.rotation.y += dt * 3;
     ctx.dualsense.light(this.over || this.left > 3 ? PALETTE.cyan : PALETTE.red); // the light bar: time running out
     const { hud } = ctx;
@@ -341,7 +343,7 @@ class GemRush {
     hud.text(6, 6, `GEMS ${this.got}/${this.gems.length}`, { color: 'cyan' });
     hud.text(6, 16, `TIME ${Math.ceil(Math.max(0, this.left))}`, { color: this.left > 3 ? 'white' : 'red' }); // clear of the ⚙
     if (this.countdown > 0 && this.countdown < Infinity) hud.text(0, 0, `${Math.ceil(this.countdown)}`, { anchor: 'center', scale: 3, color: 'sand' });
-    if (this.over) hud.text(0, 0, this.over === 'cleared' ? 'CLEARED!' : 'TIME!', { anchor: 'center', scale: 2, color: 'sand' });
+    if (this.over) hud.text(0, 0, this.over === 'cleared' ? 'CLEARED!' : 'TIME!', { anchor: 'center', scale: hud.width < 160 ? 1 : 2, color: 'sand' });
     if (again) hud.prompt(hud.width / 2, hud.height / 2 + 14, 'again', 'AGAIN', { align: 'center' });
   }
 
@@ -359,7 +361,7 @@ export const createGame = (session = null) => new GemRush(session);
 // In 52in1 (hub:session 1 in the head) join the round it picks; elsewhere headSession() is null: alone.
 const offer = headSession();
 const session = offer && (await HubSession.join({ mode: offer.modes, seats: offer.seats }));
-if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, seed: session?.info.seed, settings: { button: !session, padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
+if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', minWidth: 19 }, seed: session?.info.seed, settings: { button: !session, padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
 ```
 
 - **In a session** the game opens straight into the round: no title, menu or prompt to press. It
@@ -399,12 +401,10 @@ triggers`, `haptics`, `motion`, `touchpad`, `speaker`, `microphone`).
 ## 7. Several players on one device
 
 `same-screen`, `split-screen` and `hot-seat` modes are the game's own menu's, named in
-`hub:multiplayer` (`split-screen versus 2-4`) and `hub:players`, never a session's. The engine's
-input is one player's: every pad, the keys and touch press the same codes, and every pad's stick
-moves `moveAxis()` (pad 2 moves player 1 too). A second keyboard player reads keys of their own
-(WASD for one, the arrows for the other). For a pad each, read `navigator.getGamepads()` in
-`update`, hand each pad's state to the game with `ctx.input.send({ pads })` (the next frame's
-`ctx.input.commands`, recorded, so it replays) and move each player by their pad there alone
-(`ctx.input.gamepadButtons = {}` turns the shared codes off). Split screen gives each player a view
-at every window shape; same-screen keeps everyone in view; hot-seat says whose turn it is, with a
-screen between turns.
+`hub:multiplayer` (`split-screen versus 2-4`) and `hub:players`, never a session's. The input is
+player 1's: the keys, the mouse, touch and every pad. For a pad each, turn on
+`ctx.input.padPlayers` and, where joining is meant, `ctx.input.joinWith = ['PadA']`: a pad that
+presses Cross joins (`ctx.input.joinedNow`), stops moving player 1, and `ctx.input.player(slot)`
+reads it alone (recorded: it replays). A second keyboard player reads keys of their own (WASD and
+the arrows). Split screen gives each player a view at every window shape; same-screen keeps
+everyone in view; hot-seat says whose turn it is, with a screen between turns.

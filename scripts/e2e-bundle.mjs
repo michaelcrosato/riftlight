@@ -2,10 +2,10 @@
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
-//   files     README, GUIDE, CONTROLS, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine with its
-//             types, the starter game, one page per named game block of docs/GUIDE.md,
-//             docs/GUIDE-CONTROLS.md and docs/GUIDE-ASSETS.md (its models module beside them, with
-//             no page), check.mjs;
+//   files     README, GUIDE, CONTROLS, RECIPES, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine
+//             with its types, the starter game, one page per named game block of docs/GUIDE.md,
+//             docs/GUIDE-CONTROLS.md, docs/GUIDE-RECIPES.md and docs/GUIDE-ASSETS.md (its models
+//             module beside them, with no page), check.mjs;
 //             manifest.json lists every file with its size; the kit says where newer versions are
 //             (manifest.json's latest, releases and source, README.md's build line, all from
 //             package.json's repository); the zip holds them all; the repository README's download
@@ -20,13 +20,14 @@
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
 //             Beacon Yard on a pad (its prompts, Options' menu), Gem Rush alone, Market Corner's
 //             models, light and textured floor.
-//   phone     on a touch screen held upright and sideways (real taps) and on a TV with a pad, Coin
-//             Garden, Beacon Yard and Gem Rush in every state a player reaches (playing, a menu,
-//             the settings, won and lost, a 52in1 round's start): the touch buttons their guide gives
-//             them (Beacon Yard's LIGHT only by a dark beacon, nothing but its menu while it shows),
-//             every HUD text inside the HUD and clear of the controls (the stick, its zone, a
-//             button, the ⚙), every tap target reachable, a phone held sideways at two CSS pixels a
-//             pixel at least; phone-*.png and tv-*.png show each state as the player sees it. Gem
+//   phone     on a touch screen held upright and sideways (real taps) and on a TV with a pad, every
+//             game page of the kit in every state a player reaches (playing, a menu, the settings,
+//             won and lost, a 52in1 round's start, Look Lab's looks): the touch buttons their guide
+//             gives them (Beacon Yard's LIGHT only by a dark beacon, nothing but its menu while it
+//             shows, none at all on Market Corner), the pad's legend on a TV, every HUD text inside
+//             the HUD and clear of the controls (the stick, its zone, a button, the ⚙), every tap
+//             target reachable, a phone held sideways at two CSS pixels a pixel at least;
+//             phone-*.png and tv-*.png show each state as the player sees it. Gem
 //             Rush's own page in a LocalHub round (window.AIHub): it joins from its head, no ⚙,
 //             and neither Esc nor Options pauses the round.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
@@ -112,11 +113,11 @@ export async function runBundle(h) {
         readme.includes(manifest.latest) && readme.includes(manifest.releases) && readme.includes(`\`${buildLine}\``),
       `the kit says where newer versions are: manifest.json's latest (${manifest.latest}), releases and source, and README.md's build line`,
     );
-    const need = ['README.md', 'GUIDE.md', 'CONTROLS.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
+    const need = ['README.md', 'GUIDE.md', 'CONTROLS.md', 'RECIPES.md', 'ASSETS.md', 'LIBRARY.md', 'library.json', 'packs/index.json', 'CREDITS.md', 'API.md', 'CHANGELOG.md', 'LICENSE', 'pixel-engine.js', 'pixel-engine.d.ts', 'types/bundle.d.ts', 'index.html', 'game.js', 'check.mjs', 'manifest.json'];
     const listed = new Map(manifest.files.map((f) => [f.path, f.bytes]));
     check(need.every((f) => listed.has(f)), `the kit has ${need.join(', ')}`);
     check(
-      manifest.examples.length >= 6 && ['market', 'beacon-yard', 'gem-rush'].every((n) => manifest.examples.includes(`examples/${n}.html`)) && manifest.readFirst.includes('CONTROLS.md'),
+      manifest.examples.length >= 6 && ['market', 'beacon-yard', 'gem-rush', 'top-down', 'looks'].every((n) => manifest.examples.includes(`examples/${n}.html`)) && manifest.readFirst.includes('CONTROLS.md'),
       `one page per guide recipe: ${manifest.examples.join(', ')}; CONTROLS.md is read first`,
     );
     check(listed.has('examples/market-models.js') && !listed.has('examples/market-models.html'), "ASSETS.md's models module ships beside its game, with no page of its own");
@@ -131,6 +132,11 @@ export async function runBundle(h) {
     check(
       controls.includes(`Pixel Engine **${version}**`) && controls.includes('```js beacon-yard') && readme.includes('`CONTROLS.md`') && readme.includes('`--keys PadA*10`') && readme.includes('`"index.html?touch=1" --size 390x844`'),
       'CONTROLS.md (docs/GUIDE-CONTROLS.md) is stamped with the version, holds its games, and README.md sends readers to it and says how check.mjs plays its checklist’s devices (a fake pad, a phone)',
+    );
+    const recipes = await readFile(new URL('RECIPES.md', kit), 'utf8');
+    check(
+      recipes.includes(`Pixel Engine **${version}**`) && recipes.includes('```js top-down') && recipes.includes('```js looks') && readme.includes('`RECIPES.md`'),
+      'RECIPES.md (docs/GUIDE-RECIPES.md) is stamped with the version and holds its games, and README.md names it',
     );
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
@@ -450,12 +456,23 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
         const seen = [e.state().status];
         press('Digit4');
         seen.push(e.state().status, JSON.stringify(e.look) === JSON.stringify(e.lookPresets.noir));
+        press('KeyE');
+        seen.push(e.state().status);
+        press('KeyQ');
+        press('KeyQ');
+        seen.push(e.state().status);
+        press('Digit1');
+        press('KeyQ');
+        seen.push(e.state().status);
         press('Digit2');
         press('KeyT');
         seen.push(e.look.actors.pixel.size, e.look.environment.pixel);
         return seen;
       });
-      check(JSON.stringify(r) === JSON.stringify(['look storybook heroes', 'look noir', true, 3, null]), `Look Lab: 4 picks noir, 2 the custom look, T makes its characters chunky (${JSON.stringify(r)})`);
+      check(
+        JSON.stringify(r) === JSON.stringify(['look storybook heroes', 'look noir', true, 'look sin city', 'look pixel heroes', 'look handheld', 3, null]),
+        `Look Lab: 4 picks noir, E the next look and Q the one before (round from the first to the last), 2 the custom look, T makes its characters chunky (${JSON.stringify(r)})`,
+      );
     },
     'Look Lab',
   );
@@ -891,6 +908,128 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     'Gem Rush on a TV with a pad',
     TV,
   );
+
+  // The kit's other recipes (GUIDE.md's Cliff Run, RECIPES.md's Lantern Night and Look Lab,
+  // ASSETS.md's Market Corner) on the same phones and TV: the touch buttons their guide gives them
+  // (none where walking does it all; Market Corner, with nothing to press, keeps the stick away too),
+  // no legend while the touch controls show and the pad's on a TV, the ⚙ (a real tap) or Options
+  // opening the settings, and each one's own states (Look Lab's looks picked by real taps on > < PX
+  // and by R1 L1 Triangle, the hero standing through them); every HUD text inside the HUD and clear
+  // of the controls, every tap target reachable, two CSS pixels a pixel at least on a phone.
+  const RECIPES = [
+    {
+      page: 'examples/side-scroller.html',
+      name: 'Cliff Run',
+      buttons: ['A Space'],
+      legend: ['RUN', 'JUMP', 'SETTINGS'],
+      /** A real tap on A (Cross on a pad) jumps; the flag reached, LEVEL CLEAR! in the middle. */
+      async more(page, at, device) {
+        const jumps = () => page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps);
+        const before = await jumps();
+        if (device === 'touch') await tapOn(page, '.touch-ui button[data-i="0"]'); // in the buttons' grid
+        else await page.evaluate(() => window.__kit.press(0));
+        await at('jumped');
+        const jumped = (await jumps()) > before;
+        await page.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          e.game.clear(e.context);
+        });
+        const clear = await at('clear');
+        return [jumped && clear.texts.includes('LEVEL CLEAR!'), `${device === 'touch' ? 'a tap on A' : 'Cross'} jumps (${jumped}), LEVEL CLEAR!`];
+      },
+    },
+    {
+      page: 'examples/top-down.html',
+      name: 'Lantern Night',
+      buttons: [],
+      legend: ['WALK', 'SETTINGS'],
+      /** The goal on screen, then both pads lit (the gate open) and out through it. */
+      async more(page, at) {
+        const goal = /CRATES ONTO PADS/.test((await at('goal')).texts.join(' '));
+        await page.evaluate(() => window.__PIXEL_ENGINE__.game.pads.forEach((p) => (p.lit = true)));
+        const open = await at('open');
+        await page.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          e.game.escape(e.context);
+        });
+        const escaped = await at('escaped');
+        return [goal && open.texts.includes('GATE OPEN') && escaped.texts.includes('YOU ESCAPED!'), 'the goal, the gate open, escaped'];
+      },
+    },
+    {
+      page: 'examples/looks.html',
+      name: 'Look Lab',
+      buttons: ['> KeyE', '< KeyQ', 'PX KeyT'],
+      legend: ['PREV', 'NEXT', 'CHUNKY', 'WALK', 'SETTINGS'],
+      /** The next look, the one before, chunky pixels: real taps on > < PX, or R1 L1 Triangle (the hero's lie, prone and grab, taken off it here). */
+      async more(page, at, device) {
+        const seen = [];
+        for (const [state, button, i] of [['next', 5, 0], ['prev', 4, 1], ['chunky', 3, 2]]) {
+          if (device === 'touch') await tapOn(page, `.touch-ui button[data-i="${i}"]`);
+          else await page.evaluate((b) => window.__kit.press(b), button);
+          seen.push((await at(state)).status);
+        }
+        const r = await page.evaluate(() => ({ size: window.__PIXEL_ENGINE__.look.actors.pixel?.size, hero: window.__PIXEL_ENGINE__.game.hero.state }));
+        seen.push(r.size, /prone|crawl|lie|lying|grab/i.test(r.hero) ? r.hero : 'standing');
+        return [JSON.stringify(seen) === JSON.stringify(['look pixel heroes', 'look storybook heroes', 'look storybook heroes', 3, 'standing']), seen.join(', ')];
+      },
+    },
+    {
+      page: 'examples/market.html',
+      name: 'Market Corner',
+      buttons: [],
+      legend: ['SETTINGS'],
+      away: true, // nothing to press: no stick either
+      more: async () => [true, 'nothing to press'],
+    },
+  ];
+  for (const r of RECIPES) {
+    const id = r.page.replace(/^examples\/|\.html$/g, '');
+    for (const [w, h] of PHONES) {
+      await play(
+        r.page,
+        async (page) => {
+          await helpers(page);
+          const states = {};
+          const at = async (state) => (states[state] = await look(page, `phone-${id}-${state}-${w}x${h}`));
+          const s = await at('playing');
+          const tapped = await tapOn(page, '.settings-button'); // a real tap on the ⚙, then on Close
+          const settings = (await at('settings')).settings;
+          await tapOn(page, '.settings-ui [data-act="close"]');
+          const closed = !(await at('closed')).settings;
+          const [ok, did] = await r.more(page, at, 'touch');
+          check(
+            s.device === 'touch' && s.visible === !r.away && JSON.stringify(s.buttons) === JSON.stringify(r.buttons) && !r.legend.some((t) => s.texts.includes(t)) && s.scale >= 2 && tapped && settings && closed && ok && !clean(states).length,
+            `${r.name} on a ${w}x${h} phone: two CSS pixels a pixel at least, ${r.away ? 'no touch controls' : `the stick and ${r.buttons.length ? r.buttons.join(', ') : 'no buttons'}`} and no legend, the ⚙ opens the settings and Close closes them (real taps), ${did}; every text inside the HUD and clear of the controls, every tap target reachable (${clean(states).join('; ') || say(states)})`,
+          );
+        },
+        `${r.name} on a ${w}x${h} phone`,
+        phone(w, h),
+      );
+    }
+    await play(
+      r.page,
+      async (page) => {
+        await helpers(page);
+        const states = {};
+        const at = async (state) => (states[state] = await look(page, tvShot(id, state)));
+        await page.evaluate(() => window.__kit.press(0)); // Cross: the pad is the device in use
+        const s = await at('playing');
+        await page.evaluate(() => window.__kit.press(9)); // Options, let go
+        const settings = (await at('settings')).settings;
+        await page.evaluate(() => window.__kit.press(1)); // Circle
+        const closed = !(await at('closed')).settings;
+        const [ok, did] = await r.more(page, at, 'pad');
+        await page.evaluate(() => window.__PIXEL_ENGINE__.input.setGamepads(null));
+        check(
+          s.device === 'pad' && !s.visible && r.legend.every((t) => s.texts.includes(t)) && settings && closed && ok && !clean(states).length,
+          `${r.name} on a TV with a pad: the pad's legend (${r.legend.join(' ')}), Options opens the settings and Circle closes them, ${did}; every text inside the HUD (${clean(states).join('; ') || say(states)})`,
+        );
+      },
+      `${r.name} on a TV with a pad`,
+      TV,
+    );
+  }
 
   // Gem Rush's own page in a 52in1 round of moments: the head's tags (headSession) and the hub's
   // client as window.AIHub (a LocalHub here, its clock moved by real time) make HubSession.join find

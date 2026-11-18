@@ -30,13 +30,17 @@ const listAfter = (marker: string) => {
 const section = (title: string) => guide.split(/^### /m).find((s) => s.startsWith(`${title}\n`)) ?? '';
 
 describe('docs/GUIDE.md', () => {
-  it('has a quick start and uniquely named recipes', () => {
+  it('has a quick start and uniquely named recipes, and names every game page of the kit', () => {
     const names = blocks.map((b) => b.name);
     expect(names[0]).toBe('quickstart');
-    expect(names.length).toBeGreaterThanOrEqual(4);
+    expect(names.length).toBeGreaterThanOrEqual(2);
     expect(new Set(names).size).toBe(names.length);
-    // the guide names its recipe pages by these names
-    for (const [, page] of guide.matchAll(/examples\/([a-z0-9-]+)\.html/g)) expect(names, page).toContain(page);
+    // its recipes and the other guides' games (RECIPES.md, CONTROLS.md, ASSETS.md), by their pages' names
+    const pages = ['docs/GUIDE.md', 'docs/GUIDE-RECIPES.md', 'docs/GUIDE-CONTROLS.md', 'docs/GUIDE-ASSETS.md']
+      .flatMap((path) => guideBlocks(read(path)))
+      .filter((b) => b.name !== 'quickstart' && startsEngine(b.code))
+      .map((b) => b.name);
+    expect([...new Set([...guide.matchAll(/examples\/([a-z0-9-]+)\.html/g)].map((m) => m[1]!))].sort()).toEqual(pages.sort());
   });
 
   it('every game imports only names pixel-engine.js exports, and starts the engine', () => {

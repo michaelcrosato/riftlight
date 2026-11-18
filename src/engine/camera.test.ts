@@ -49,6 +49,38 @@ describe('camera presets', () => {
     expect(rig.zoom).toBeGreaterThan(1.3);
   });
 
+  it('minWidth: a narrow window zooms out until that many metres fit across (past minZoom), the wheel and + / - zoom within it, and a wider window gets the zoom asked for back', () => {
+    const config = { preset: 'topdown', zoom: 1.2, minWidth: 19 } as const;
+    const at = (rig: OrthoRig, width: number, height: number, over: Partial<Record<string, unknown>> = {}) => {
+      rig.update({ target: new Vector3(), eye: new Vector3(), dt: 1 / 60, resolution: { width, height }, input: fakeInput(over), world: {} });
+      return rig.camera.right - rig.camera.left; // metres across
+    };
+    const rig = createCameraRig(config) as OrthoRig;
+    expect(at(rig, 480, 270)).toBeGreaterThan(19); // 16:9 has room: the zoom asked for
+    expect(rig.zoom).toBe(1.2);
+    expect(at(rig, 90, 250)).toBeCloseTo(19); // a phone held upright: 19 m across, below minZoom
+    expect(rig.zoom).toBeLessThan(rig.minZoom);
+    const held = createCameraRig(config) as OrthoRig; // a snapshot taken while held out
+    held.setState(decodeState(JSON.parse(JSON.stringify(encodeState(rig.state())))) as never);
+    expect(at(rig, 90, 250, { wheel: -2 })).toBeCloseTo(19); // closer does nothing
+    expect([at(rig, 480, 270), rig.zoom]).toEqual([expect.any(Number), 1.2]); // and asks for nothing
+    expect([at(held, 480, 270), held.zoom]).toEqual([expect.any(Number), 1.2]);
+    expect(at(rig, 120, 250)).toBeCloseTo(19);
+    const fit = rig.zoom;
+    expect(at(rig, 120, 250, { wheel: 1 })).toBeGreaterThan(20); // out, as far as the player likes
+    expect(rig.zoom).toBeCloseTo(fit / 1.12);
+    expect(at(rig, 120, 250, { isDown: (k: string) => k === 'Equal' })).toBeGreaterThan(20); // back in by + ...
+    for (let i = 0; i < 30; i++) at(rig, 120, 250, { isDown: (k: string) => k === 'Equal' });
+    expect(rig.zoom).toBe(fit); // ... no closer than 19 m across
+    expect(at(rig, 120, 250, { isDown: (k: string) => k === 'Minus' })).toBeGreaterThan(19);
+    const out = rig.zoom;
+    at(rig, 480, 270);
+    expect(rig.zoom).toBe(out); // the player's zoom holds on a wide window
+    const third = createCameraRig({ preset: 'third', minWidth: 19 }); // perspective presets: no width kept
+    third.setAspect(0.36);
+    expect(third.zoom).toBe(1);
+  });
+
   it('top-down looks straight down with screen-up = world -Z', () => {
     const rig = createCameraRig({ preset: 'topdown' });
     update(rig);

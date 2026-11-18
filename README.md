@@ -36,12 +36,13 @@ three.js, Rapier, the hero and the built-in models), [`docs/GUIDE.md`](docs/GUID
 manual: host it, the mental model, a complete game, recipes, rules, common mistakes, checks),
 [`docs/GUIDE-CONTROLS.md`](docs/GUIDE-CONTROLS.md) as `CONTROLS.md` (the controls standard every
 game meets: controller first, prompts for the device in use, touch, 52in1's settings and
-sessions), [`docs/GUIDE-ASSETS.md`](docs/GUIDE-ASSETS.md) as `ASSETS.md` (models and textures as
-data, with a generated `LIBRARY.md` and `CREDITS.md`), a generated `API.md`, TypeScript types, a
-starter `game.js`, the guides' recipes as pages and `check.mjs`, which plays a page in a browser
-and fails on any error (`--sheets` draws a game's own models). The receiving agent reads
-`README.md`, then `GUIDE.md`, then `CONTROLS.md` (about 22k tokens together; `API.md` and
-`LIBRARY.md` are searched, not read), edits `game.js` and runs `node check.mjs` before handing
+sessions), [`docs/GUIDE-RECIPES.md`](docs/GUIDE-RECIPES.md) as `RECIPES.md` (more whole games
+that meet that standard), [`docs/GUIDE-ASSETS.md`](docs/GUIDE-ASSETS.md) as `ASSETS.md` (models
+and textures as data, with a generated `LIBRARY.md` and `CREDITS.md`), a generated `API.md`,
+TypeScript types, a starter `game.js`, the guides' recipes as pages and `check.mjs`, which plays a
+page in a browser and fails on any error (`--sheets` draws a game's own models). The receiving
+agent reads `README.md`, then `GUIDE.md`, then `CONTROLS.md` (about 19k tokens together; `API.md`
+and `LIBRARY.md` are searched, not read), edits `game.js` and runs `node check.mjs` before handing
 back. Engine changes that a game can see
 bump `package.json`'s version and get a `CHANGELOG.md` section.
 

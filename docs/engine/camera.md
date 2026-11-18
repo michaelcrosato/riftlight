@@ -33,10 +33,21 @@ The view freezes, the player gets control, and the config (e.g.
 is printed to the console, copied to the clipboard and shown in the debug UI. Paste it into
 `EngineOptions.camera`, or pass it as `?cam=<json>`. Press Enter again to unfix.
 
-Config keys (`CameraConfig`): `preset`, `zoom`, `minZoom`, `maxZoom`, `viewHeight` (ortho),
-`pitch`/`yaw` (iso, third, first), `fov`, `distance` (third), `position`/`target`/`projection`
+Config keys (`CameraConfig`): `preset`, `zoom`, `minZoom`, `maxZoom`, `viewHeight` and `minWidth`
+(ortho), `pitch`/`yaw` (iso, third, first), `fov`, `distance` (third), `position`/`target`/`projection`
 (fixed/free), `stiffness` (follow smoothing). Movement is always camera-relative through
 `camera.groundBasis()`.
+
+### Keeping the play area across: `minWidth`
+
+`minWidth` (ortho presets) is the fewest metres the picture shows across. The rig keeps the zoom
+asked for (the config's `zoom`, `?zoom=`, `setZoom`, the player's wheel and `+` / `-`) apart from
+`rig.zoom`, the zoom on screen: `min(asked, viewHeight × aspect / minWidth)`. So a narrow window (a
+phone held upright) zooms out until `minWidth` fits, below `minZoom` if it must; a wider one has the
+zoom asked for back. The player zooms from what is on screen: out as far as `minZoom`, back in no
+closer than `minWidth` allows (zooming in while held out changes nothing). A game passes it rather
+than calling `setZoom` every frame, which would undo the player's zoom. The zoom asked for is part
+of the rig's state (`CameraRigState.wanted`), so a snapshot restores it.
 
 ## Screen shake
 
