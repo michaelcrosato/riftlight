@@ -41,7 +41,8 @@ the game canvas with the framing's integer scale and letterbox offset, so one HU
 one art pixel at every size and after `R`. It is drawn after (outside) the post filters and
 the pixel pass: text stays crisp in Raw 3D mode and under CRT/VHS looks. x/y are art-pixel
 offsets from the `anchor` (`top-left` default, `top`, `top-right`, `left`, `center`, `right`,
-`bottom-left`, `bottom`, `bottom-right`); `hud.measure(text, scale)` gives the size. It only
+`bottom-left`, `bottom`, `bottom-right`); `hud.measure(text, scale)` gives the size, and
+`hud.width` / `hud.height` are the art size now (the view's, from `setup` on, in replays too). It only
 repaints when the content or layout changed, and `renderer.capture()` does not include it.
 
 ## Weather, sky and fog
