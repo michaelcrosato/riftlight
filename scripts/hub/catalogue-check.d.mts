@@ -10,3 +10,8 @@ export interface PageProblem {
 }
 /** A page's HTML as 52in1's catalogue reads it (`folder`: a folder game's files, by path; null, the default: a game in one file). */
 export function checkPage(html: string, options?: { folder?: { files: Set<string> } | null; parse?: boolean; where?: string }): { fields: Record<string, string | string[] | null>; problems: PageProblem[]; checks: number };
+/** The catalogue's words: `hub:tags`, the online modes (a session's), the local ones (the game's own menu), `hub:dualsense`'s extras. */
+export const TAGS: readonly string[];
+export const MODES: readonly string[];
+export const LOCAL: readonly string[];
+export const DUALSENSE: readonly string[];

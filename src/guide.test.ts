@@ -82,17 +82,23 @@ describe('docs/GUIDE.md', () => {
     for (const flag of flags) expect(Object.keys(optionsFromUrl(flag)), flag).not.toEqual([]);
   });
 
-  it('the starter’s legend fits the HUD at every window shape (a phone held either way too), on the keyboard and a pad', async () => {
+  it('the starter’s legend fits the HUD at every window shape (a phone held either way too, as a touch page at its density), on the keyboard and a pad', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'guide-quickstart-'));
     try {
       // the kit's game.js, its './pixel-engine.js' this repo's src/bundle.ts
+      const code = blocks[0]!.code;
       const file = join(tmp, 'game.mjs');
-      writeFileSync(file, blocks[0]!.code.replaceAll(`from './pixel-engine.js'`, `from ${JSON.stringify(fileURLToPath(new URL('./bundle.ts', import.meta.url)))}`));
+      writeFileSync(file, code.replaceAll(`from './pixel-engine.js'`, `from ${JSON.stringify(fileURLToPath(new URL('./bundle.ts', import.meta.url)))}`));
       const { createGame } = (await import(/* @vite-ignore */ file)) as { createGame: () => bundle.Game };
+      // a phone's page has touch controls: the art at the density the page asks for (`touchDensity`),
+      // two CSS pixels an art pixel at least, so COINS 0/4 reads on a phone held sideways too
+      const touchDensity = Number(/\btouchDensity: (\d+)/.exec(code)?.[1] ?? 0);
       const seen: string[] = [];
-      for (const [width, height] of [[960, 540], [390, 844], [844, 390], [2100, 900]] as const) {
-        const engine = await bundle.Engine.headless(createGame(), { assets: nodeAssets(), viewport: { width, height, dpr: 1 } });
+      for (const [width, height, touch] of [[960, 540, false], [390, 844, false], [844, 390, false], [2100, 900, false], [390, 844, true], [844, 390, true]] as const) {
+        const engine = await bundle.Engine.headless(createGame(), { assets: nodeAssets(), viewport: { width, height, dpr: 1 }, touch, touchDensity });
         try {
+          const shape = `${width}x${height}${touch ? ' touch' : ''}`;
+          if (touch) seen.push(`${shape}: ${engine.renderer.framing.scale >= 2 ? 'fits' : `${engine.renderer.framing.scale} CSS px an art pixel`}`);
           for (const device of ['keyboard', 'pad'] as const) {
             const legend = vi.spyOn(engine.hud, 'legend');
             engine.input.noteDevice(device);
@@ -101,14 +107,14 @@ describe('docs/GUIDE.md', () => {
             const right = x + (legend.mock.results.at(-1)!.value as number);
             legend.mockRestore();
             // drawn whole inside the HUD's 6-pixel margin, with WALK and JUMP at least
-            seen.push(`${width}x${height} ${device}: ${right <= engine.hud.width - 6 && items.length >= 2 ? 'fits' : `${items.length} items to ${right} of ${engine.hud.width}`}`);
+            seen.push(`${shape} ${device}: ${right <= engine.hud.width - 6 && items.length >= 2 ? 'fits' : `${items.length} items to ${right} of ${engine.hud.width}`}`);
           }
         } finally {
           engine.dispose();
         }
       }
       expect(seen.filter((s) => !s.endsWith(': fits'))).toEqual([]);
-      expect(seen.length).toBe(8);
+      expect(seen.length).toBe(14);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

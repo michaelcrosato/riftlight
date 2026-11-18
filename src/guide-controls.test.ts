@@ -4,7 +4,9 @@
 // games import only what pixel-engine.js exports and play headless as the guide says (prompts follow
 // the device, Options pauses as it is let go and never under 52in1's chord, a moment readies up by
 // itself and reports once in a LocalHub round); the names and codes its prose and its unnamed code
-// give are the engine's (dotted ones walked on a live engine and session); a page holding its head
+// give are the engine's (dotted ones walked on a live engine and session, `Game.<x>` one of the
+// Game hooks; a bare option or field, `touchDensity: 2`, `micLater`, read from the engine's
+// source: EngineOptions, the touch controls, the 52in1 settings); a page holding its head
 // tags passes 52in1's catalogue checker on them, and they name the game's moments; it stays within
 // its token budget. The bundle e2e suite then plays its pages with check.mjs, on a phone too (the
 // touch buttons each game passes, a HUD clear of the controls).
@@ -14,9 +16,9 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
 import ts from 'typescript';
-import { afterAll, describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it, vi } from 'vitest';
 import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
-import { checkPage, opensWithKeys, readMoments, readMultiplayer } from '../scripts/hub/catalogue-check.mjs';
+import { checkPage, DUALSENSE, LOCAL, MODES, opensWithKeys, readMoments, readMultiplayer, TAGS } from '../scripts/hub/catalogue-check.mjs';
 import * as bundle from './bundle';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -24,6 +26,85 @@ const guide = read('docs/GUIDE-CONTROLS.md');
 const blocks = guideBlocks(guide);
 /** The prose: the guide without its fenced code. */
 const prose = guide.replace(/^```[\s\S]*?^```$/gm, '');
+/** The prose's code spans. */
+const spans = prose.split('`').filter((_, i) => i % 2 === 1);
+
+/**
+ * The public members of the interfaces and classes `names` declared in `path`, read from the source
+ * (so they keep in step with it): each name, with the members of an object type it holds
+ * (`settings: { padButton }`, `rects(): { zone }`) under it. Every one of `names` must be there.
+ */
+function members(path: string, ...names: string[]): Map<string, Set<string>> {
+  const source = ts.createSourceFile(path, read(path), ts.ScriptTarget.Latest, true);
+  const out = new Map<string, Set<string>>();
+  const found: string[] = [];
+  const inner = (type: ts.Node, into: Set<string>): void => {
+    if (ts.isTypeLiteralNode(type)) for (const m of type.members) member(m, into);
+    else ts.forEachChild(type, (t) => inner(t, into));
+  };
+  const member = (m: ts.Node, into?: Set<string>): void => {
+    if (!(ts.isPropertySignature(m) || ts.isMethodSignature(m) || ts.isPropertyDeclaration(m) || ts.isMethodDeclaration(m) || ts.isGetAccessorDeclaration(m) || ts.isSetAccessorDeclaration(m))) return;
+    if (!ts.isIdentifier(m.name) || ts.getCombinedModifierFlags(m) & (ts.ModifierFlags.Private | ts.ModifierFlags.Protected)) return;
+    into?.add(m.name.text);
+    const held = out.get(m.name.text) ?? new Set<string>();
+    out.set(m.name.text, held);
+    if (m.type) inner(m.type, held);
+  };
+  ts.forEachChild(source, (node) => {
+    if ((ts.isInterfaceDeclaration(node) || ts.isClassDeclaration(node)) && node.name && names.includes(node.name.text)) {
+      found.push(node.name.text);
+      for (const m of node.members) member(m);
+    }
+  });
+  expect(found.sort(), path).toEqual([...names].sort());
+  return out;
+}
+/** Every name in `map`, its members' members too. */
+const flat = (map: Map<string, Set<string>>) => new Set([...map.keys(), ...[...map.values()].flatMap((s) => [...s])]);
+
+/** The `Game` hooks (`Game.controls`): a `Game.<x>` in the prose is one of them. */
+const GAME_HOOKS = new Set(members('src/engine/Engine.ts', 'Game').keys());
+/** An option the prose names as `name: value`: `Engine.start`'s (EngineOptions, its `settings`' under it) or a HUD text's (`scale: 2`). */
+const OPTIONS = new Map([...members('src/engine/Engine.ts', 'EngineOptions'), ...members('src/engine/hud/Hud.ts', 'HudOptions')]);
+/**
+ * A bare lower-case name the prose gives (`touchButtons`, `micLater`, `zone`, `at`, `height`,
+ * `update`): an option, a hook, a field of the touch controls (`ctx.engine.touch`, a button), the
+ * player's 52in1 settings (`ctx.engine.hubSettings`), the HUD or a controls table, an export; or
+ * one of 52in1's words (a tag, a mode, a DualSense extra, a hub event).
+ */
+const FIELDS = new Set([
+  ...flat(OPTIONS),
+  ...GAME_HOOKS,
+  ...flat(members('src/engine/TouchControls.ts', 'TouchControls', 'TouchButton', 'TouchButtonState')),
+  ...flat(members('src/engine/hub/settings.ts', 'HubSettings')),
+  ...flat(members('src/engine/hud/Hud.ts', 'Hud')),
+  ...flat(members('src/engine/controls.ts', 'Control')),
+  ...Object.keys(bundle),
+  ...TAGS,
+  ...MODES,
+  ...LOCAL,
+  ...DUALSENSE,
+  ...[...read('src/engine/hub/session.ts').matchAll(/\| \{ readonly type: '([\w-]+)'/g)].map((m) => m[1]!),
+]);
+/**
+ * The bare lower-case names in `texts` (code spans: a name alone, or `name: value`, an option with
+ * the names of an object value under it) that are not the engine's or 52in1's.
+ */
+function unknownNames(texts: readonly string[]): string[] {
+  const unknown: string[] = [];
+  for (const text of texts) {
+    const m = /^([a-z][A-Za-z0-9]*)(?::\s+([\s\S]*))?$/.exec(text); // (a meta tag's name, `hub:tags`, aside)
+    if (!m) continue;
+    const [, name, value] = m as unknown as [string, string, string | undefined];
+    if (value === undefined) {
+      if (!FIELDS.has(name)) unknown.push(name);
+      continue;
+    }
+    if (!OPTIONS.has(name)) unknown.push(name);
+    else if (value.startsWith('{')) for (const [, key] of value.matchAll(/([A-Za-z_$][\w$]*)\s*:/g)) if (!OPTIONS.get(name)!.has(key!)) unknown.push(`${name}.${key}`);
+  }
+  return unknown;
+}
 
 const tmp = mkdtempSync(join(tmpdir(), 'guide-controls-'));
 afterAll(() => rmSync(tmp, { recursive: true, force: true }));
@@ -37,6 +118,28 @@ async function load(name: string): Promise<Record<string, unknown>> {
 
 /** The engine's input, HUD, engine, controls, sessions, touch controls, audio, settings and lights: a bare call in the prose (`rects()`) is one of theirs. */
 const CLASSES = [bundle.Input, bundle.Hud, bundle.Engine, bundle.Controls, bundle.HubSession, bundle.LocalHub, bundle.HubSettings, bundle.DualSense, bundle.Lang, bundle.TouchControls, bundle.AudioManager, bundle.Settings, bundle.LightPool];
+
+/**
+ * The texts the next frame draws that reach outside the HUD (`what` says the state), each placed as
+ * `hud.text` places it: a phone held upright has 130 columns.
+ */
+function textsOutside(engine: bundle.Engine, what: string): string[] {
+  const { hud } = engine;
+  const text = vi.spyOn(hud, 'text');
+  try {
+    engine.step(1);
+    const size = { width: hud.width, height: hud.height };
+    return text.mock.calls
+      .filter(([x, y, s, o = {}]) => {
+        const { width, height } = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
+        const [left, top] = bundle.hudPlace(x, y, width, height, o.anchor ?? 'top-left', size);
+        return left < 0 || top < 0 || left + width > size.width || top + height > size.height;
+      })
+      .map(([, , s]) => `${what} at ${size.width}x${size.height}: ${s}`);
+  } finally {
+    text.mockRestore();
+  }
+}
 
 /** A standard pad holding `pressed` (button indices). */
 const pad = (...pressed: number[]): bundle.GamepadLike => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
@@ -74,7 +177,6 @@ describe('docs/GUIDE-CONTROLS.md', () => {
 
   it('the names and codes its prose gives are the engine’s', () => {
     const TYPES = ['Game']; // type-only exports (API.md has them)
-    const spans = prose.split('`').filter((_, i) => i % 2 === 1);
     // (a file's name and a pattern of codes, `Pad*`, aside)
     const lead = spans.map((s) => s.match(/^(?:new )?([A-Za-z_$][\w$]*)(.*)/s)).filter((m): m is RegExpMatchArray => !!m && !/^\.(md|m?js|html|png)\b/.test(m[2]!) && m[2] !== '*');
     // input codes: a pad's must be one the engine presses or draws, a swipe's one it presses
@@ -98,7 +200,6 @@ describe('docs/GUIDE-CONTROLS.md', () => {
   });
 
   it('every dotted name in its prose and its unnamed code is the engine’s', async () => {
-    const spans = prose.split('`').filter((_, i) => i % 2 === 1);
     const unnamed = [...guide.matchAll(/^```js\n([\s\S]*?)^```$/gm)].map((m) => m[1]!);
     expect(unnamed.length, 'section 5’s snippet').toBeGreaterThan(0);
     // `a.b.c` and `a?.b(`: the root, then each member (a file's name and the page's own globals aside)
@@ -117,7 +218,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       const roots: Record<string, unknown> = { ...bundle, ctx, input: ctx.input, hud: ctx.hud, engine: ctx.engine, session, info: session.info, lang: bundle.Lang.prototype };
       const onPage: Record<string, object> = { touch: bundle.TouchControls.prototype };
       const resolves = ([root, ...path]: string[]): boolean => {
-        if (root === 'Game') return true; // a type (API.md has it)
+        if (root === 'Game') return path.length === 1 && GAME_HOOKS.has(path[0]!); // a type (API.md has it): one of its hooks
         if (!(root! in roots)) return false;
         let at: unknown = roots[root!];
         let held = root!;
@@ -130,9 +231,20 @@ describe('docs/GUIDE-CONTROLS.md', () => {
         return true;
       };
       expect(chains.filter((c) => !resolves(c)).map((c) => c.join('.'))).toEqual([]);
+      // a misspelt hook, member or field fails
+      expect(['Game.controls', 'Game.control', 'Game.anything', 'ctx.engine.touch.show', 'ctx.engine.touch.shown', 'ctx.engine.hubSettings.micLatr'].filter((c) => !resolves(c.split('.')))).toEqual(['Game.control', 'Game.anything', 'ctx.engine.touch.shown', 'ctx.engine.hubSettings.micLatr']);
     } finally {
       engine.dispose();
     }
+  });
+
+  it('the bare names its prose gives (an option, a hook, a field) are the engine’s, or 52in1’s words', () => {
+    const bare = spans.filter((s) => /^[a-z][A-Za-z0-9]*(:\s|$)/.test(s));
+    expect(bare.length, 'touchButtons, micLater, zone, touchDensity: 2...').toBeGreaterThan(30);
+    expect(unknownNames(spans)).toEqual([]);
+    // the lists are the source's: an option or a field misspelt, or one the engine doesn't have, fails
+    expect([...OPTIONS.keys()]).toEqual(expect.arrayContaining(['touchDensity', 'touchStick', 'touchButtons', 'aspect', 'settings', 'scale']));
+    expect(unknownNames(['touchDensity: 2', 'touchDensty: 2', 'touchStik', 'micLater', 'micLatr', 'zone', 'zones', 'settings: { padButton: true }', 'settings: { padButon: true }', 'gamepad', 'gamepads', 'time-up'])).toEqual(['touchDensty', 'touchStik', 'micLatr', 'zones', 'settings.padButon', 'gamepads']);
   });
 
   it('Beacon Yard plays as it says: prompts follow the device, Options pauses as it is let go (never under 52in1’s chord), its menu', async () => {
@@ -274,6 +386,57 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     } finally {
       engine.dispose();
     }
+  });
+
+  it('every text its games draw is inside the HUD in every state, on a phone held either way (at the density their pages ask for) and on a TV', async () => {
+    const outside: string[] = [];
+    const shapes = [[390, 844], [844, 390], [1920, 1080]] as const;
+    const { createGame: yard } = await load('beacon-yard');
+    type Yard = bundle.Game & { at: THREE.Vector3; menu: unknown; beacons: { mesh: THREE.Mesh }[]; light(ctx: bundle.GameContext, beacon: unknown): void };
+    for (const [width, height] of shapes) {
+      const game = (yard as () => Yard)();
+      const engine = await bundle.Engine.headless(game, { touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } });
+      try {
+        for (const device of ['touch', 'keyboard', 'pad'] as const) {
+          engine.input.noteDevice(device);
+          game.at.set(0, 0.6, 0);
+          outside.push(...textsOutside(engine, `Beacon Yard on ${device}`));
+          game.at.copy(game.beacons[0]!.mesh.position);
+          engine.step(1);
+          outside.push(...textsOutside(engine, `Beacon Yard by a beacon on ${device}`));
+          engine.input.setKey('Escape', true);
+          engine.step(1);
+          engine.input.setKey('Escape', false);
+          expect(game.menu, 'Esc opens the menu').not.toBeNull();
+          outside.push(...textsOutside(engine, `Beacon Yard's menu on ${device}`));
+          engine.input.setKey('Escape', true);
+          engine.step(1);
+          engine.input.setKey('Escape', false);
+          engine.step(1);
+          expect(game.menu, 'Esc closes it').toBeNull();
+        }
+        for (const beacon of game.beacons) game.light(engine.context, beacon);
+        outside.push(...textsOutside(engine, 'Beacon Yard all lit'));
+      } finally {
+        engine.dispose();
+      }
+    }
+    const { createGame: rush } = await load('gem-rush');
+    type Rush = bundle.Game & { countdown: number; finish(ctx: bundle.GameContext, won: boolean): void };
+    for (const [width, height] of shapes) {
+      for (const state of ['playing', 'counting down', 'cleared', 'failed'] as const) {
+        const game = (rush as (session: null) => Rush)(null);
+        const engine = await bundle.Engine.headless(game, { touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } });
+        try {
+          if (state === 'counting down') game.countdown = 2.5;
+          if (state === 'cleared' || state === 'failed') game.finish(engine.context, state === 'cleared');
+          outside.push(...textsOutside(engine, `Gem Rush ${state}`));
+        } finally {
+          engine.dispose();
+        }
+      }
+    }
+    expect(outside).toEqual([]);
   });
 
   it('a page with its head tags passes 52in1’s catalogue checker on them, and they name Gem Rush’s moments', async () => {

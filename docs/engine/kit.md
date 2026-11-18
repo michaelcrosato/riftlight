@@ -19,7 +19,8 @@ another agent*):
   the others `examples/<name>.html`. `src/guide.test.ts` checks that they import only real
   exports, that its lists (palette, looks, filters, sounds, particles, cameras, URL flags,
   built-in models) are the engine's and that the starter's legend fits the HUD at every window
-  shape (played headless, a phone held either way too); the `bundle` e2e suite plays every one of
+  shape (played headless, a phone held either way too, and as a touch page at the `touchDensity` it
+  passes: two CSS pixels a pixel at least, sideways too); the `bundle` e2e suite plays every one of
   them.
 - `CONTROLS.md` (docs/GUIDE-CONTROLS.md, stamped): the standard every game built on the kit meets
   (controller first at ten feet, keyboard and mouse native, prompts for the device in use, menus,
@@ -29,11 +30,18 @@ another agent*):
   `src/guide-controls.test.ts` checks their imports, plays both headless (prompts follow the device,
   Options pauses as it is let go and never under 52in1's chord; a moment in a `LocalHub` round
   readies up by itself and reports once), checks the codes and names its prose and its unnamed code
-  give (a dotted one walked member by member on a live engine and session), runs a page holding its
-  head tags through 52in1's catalogue checker (`checkPage`, `scripts/hub/catalogue-check.mjs`) and
-  holds its budget. The `bundle` e2e suite plays the starter and both games on a phone (Playwright's
-  touch screen, upright and sideways): each has the touch buttons its guide gives it (Beacon Yard's
-  LIGHT only by a dark beacon), and no HUD text lies under a control, the ⚙ or another text.
+  give (a dotted one walked member by member on a live engine and session, `Game.<x>` one of the
+  `Game` hooks, a bare option or field such as `touchDensity: 2` or `micLater` one the engine's
+  source declares: `EngineOptions`, the touch controls, the HUD, 52in1's settings), runs a page
+  holding its head tags through 52in1's catalogue checker (`checkPage`,
+  `scripts/hub/catalogue-check.mjs`) and holds its budget; every text the games draw lies inside the
+  HUD in every state, on a phone held either way and on a TV. The `bundle` e2e suite plays the
+  starter and both games on a phone (Playwright's touch screen, upright and sideways, real taps) and
+  on a TV with a fake pad, in every state a player reaches (playing, a menu, the settings, won and
+  lost, a 52in1 round's start): each has the touch buttons its guide gives it (Beacon Yard's LIGHT
+  only by a dark beacon, none over its menu), every HUD text lies inside the HUD and clear of the
+  controls (the stick, its zone, a button, the ⚙) and other texts, every tap target is reachable,
+  and a phone held sideways shows the art at two CSS pixels a pixel at least.
 - `ASSETS.md` (docs/GUIDE-ASSETS.md, stamped): models and textures for outside agents, written for
   someone with only the kit (docs/ASSETS.md stays the in-repo guide). Its blocks are Market
   Corner, `examples/market.html`, and the module of the game's own models it imports

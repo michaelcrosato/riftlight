@@ -1,9 +1,9 @@
 # Pixel Engine: controls, devices and 52in1
 
 The standard every game built on the kit meets, and the engine parts that do most of it. The
-first player sits on a couch three metres from a TV, with a controller; the keyboard and mouse
-player and the one on a phone come right after, and 52in1 (the hub that runs the games) gives all
-three their settings and friends to play with.
+first player sits three metres from a TV with a controller; the keyboard and mouse player and the
+phone player come right after; 52in1 (the hub that runs the games) gives all three their settings
+and friends to play with.
 
 ## 1. The checklist
 
@@ -35,9 +35,8 @@ three their settings and friends to play with.
 - [ ] **The head says so**: `hub:controls`, `hub:tags` with `gamepad` and `touch`, `hub:dualsense`,
   `hub:multiplayer`, `hub:moment` (section 6).
 - [ ] **Checked on each device**, and you looked at the PNGs: `node check.mjs --keys PadA*10` (a
-  `Pad*` code presses a fake standard pad, so the pad's prompts show), `"index.html?touch=1"` with
-  `--size 390x844` and `--size 844x390` (a phone held each way, touch in use; `index-page.png` shows
-  its touch controls), and `--size 2100x900` (21:9).
+  `Pad*` code presses a fake pad), `"index.html?touch=1"` with `--size 390x844` and `--size 844x390`
+  (a phone each way; `index-page.png` has its controls), and `--size 2100x900` (21:9).
 
 ## 2. Controls as data, prompts for the device in use
 
@@ -53,9 +52,9 @@ Prompts also draw `PadLStick`, `PadRStick` and `DPad`. A table's `key` may be a 
 (`WASD`, `Arrows`); its `touch` is a button's label or a gesture (`TouchTap`, `TouchSwipe`,
 `TouchStick`).
 
-Beacon Yard plays on all three devices: its prompts and help line follow the device, a pause
-menu on Options holds the engine's settings, the light button shows only next to a dark beacon,
-and on a DualSense the light bar and rumble join in (`examples/beacon-yard.html`):
+Beacon Yard plays on all three devices: its prompts follow the device, Options opens a pause menu
+holding the engine's settings, LIGHT shows only by a dark beacon, and a DualSense's light bar and
+rumble join in (`examples/beacon-yard.html`):
 
 ```js beacon-yard
 // Beacon Yard: light the four beacons on a pad, the keyboard or touch (the prompts follow the
@@ -130,14 +129,15 @@ class BeaconYard {
       this.menu = { input: new MenuInput({ keys: ['PadStart'] }), list: new FocusList(ROWS.length) };
       input.release(); // the press that opened it never acts in it
     }
-    ctx.engine.touch?.set('KeyE', { hidden: !this.near || !!this.menu }); // there only when there is something to light
+    ctx.engine.touch?.show(!this.menu); // no stick, zone or button over the menu
+    ctx.engine.touch?.set('KeyE', { hidden: !this.near }); // there only when there is something to light
     hud.clear();
     if (this.menu) return this.updateMenu(ctx, opening ? [] : this.menu.input.events(input, dt));
     const touch = ctx.engine.touch?.visible; // the stick, LIGHT and ≡ are on screen
     hud.text(6, 6, `BEACONS ${this.lit()}/${SPOTS.length}`, { color: 'sand' });
     if (!touch) hud.prompt(hud.width - 6, 6, 'pause', 'MENU', { align: 'right' });
-    if (this.lit() === SPOTS.length) return void hud.text(0, 0, 'THE YARD IS LIT', { anchor: 'center', scale: 2 });
-    // at the top, clear of MENU / ≡ and the touch controls; wrapped to a phone's 130 columns too
+    if (this.lit() === SPOTS.length) return void hud.text(0, 24, 'ALL LIT!', { anchor: 'top', scale: 2 }); // fits 130 columns, above the stick's zone
+    // at the top, clear of MENU / ≡ and the stick's zone; wrapped to a phone's 130 columns too
     wrapText(lang.t('help.walk'), hud.width - 48).forEach((line, i) => hud.text(6, 18 + i * 10, line));
     if (this.near && !touch) hud.prompt(hud.width / 2, hud.height - 24, 'use', 'LIGHT', { align: 'center', scale: 2 }); // touch: the LIGHT button
   }
@@ -210,7 +210,8 @@ never pauses).
   when `ctx.input.device === 'touch'` (recorded, so a replay agrees).
 - **Phones both ways**: in portrait the art can be 130 columns wide. Keep the HUD clear of the
   controls while they show (`ctx.engine.touch?.visible`, `rects()`: a floating stick rests low in
-  its `zone`), and tappable HUD out of that zone.
+  its `zone`, which takes every touch in it); hide them (`ctx.engine.touch?.show(false)`) while a
+  menu or a result owns the screen.
 
 ## 5. The player's settings and the DualSense
 
@@ -220,14 +221,14 @@ volume) and the hub scales rumble; outside 52in1 everything still plays.
 
 ```js
 Engine.start(game, { settings: { motion: true, voice: true } }); // Motion aim and Microphone rows in the panel
-ctx.input.rumble({ strong: 0.3, weak: 0.6, ms: 120 });            // the pad in use, × the player's vibration
-ctx.dualsense.light(PALETTE.red);                                  // the light bar says something; null gives it back
+ctx.input.rumble({ strong: 0.3, weak: 0.6, ms: 120 }); // the pad in use, × the player's vibration
+ctx.dualsense.light(PALETTE.red); // the light bar says something; null gives it back
 ctx.dualsense.trigger('right', { kind: 'weapon', from: 0.3, to: 0.6, strength: 0.8 }); // resist | weapon | vibrate
-ctx.dualsense.trigger('right', null);                              // let it go when its use ends
-const throttle = ctx.input.triggers.right;                         // 0..1, every pad's analog trigger
-const aim = ctx.input.lookAxis;                                    // the right stick, y up (motion aim adds to it)
-ctx.input.touchpad = true;                                         // swipes and taps press PadTouchpadLeft ... Tap
-ctx.audio.play('hurt', { bus: 'speaker' });                        // from the controller's speaker, else with the rest
+ctx.dualsense.trigger('right', null); // let it go when its use ends
+const throttle = ctx.input.triggers.right; // 0..1, every pad's analog trigger
+const aim = ctx.input.lookAxis; // the right stick, y up (motion aim adds to it)
+ctx.input.touchpad = true; // swipes and taps press PadTouchpadLeft ... Tap
+ctx.audio.play('hurt', { bus: 'speaker' }); // from the controller's speaker, else with the rest
 if (ctx.engine.voiceOn) mic = await ctx.engine.hubSettings.openMicrophone(); // only once 52in1 allows it
 ```
 
@@ -236,7 +237,7 @@ if (ctx.engine.voiceOn) mic = await ctx.engine.hubSettings.openMicrophone(); // 
 - The light bar says something (health, the team, danger); the engine gives it back between
   levels. Let a trigger go when its use ends; the engine lets go while paused.
 - Motion and the touchpad are input: read them through `ctx.input` (recorded), never
-  `window.AIHubSettings.dualsense` yourself; never `navigator.hid` or `getUserMedia`.
+  `window.AIHubSettings.dualsense` yourself; never `navigator.hid` or `navigator.mediaDevices`.
 - A voice feature's row stays off until 52in1 allows games the microphone
   (`ctx.engine.hubSettings.micAllowed`; `micLater`: allowed since this game opened, so after a
   reload); what it hears reaches gameplay through `ctx.input.send`.
@@ -331,6 +332,7 @@ class GemRush {
       if (e.type === 'start') this.countdown = e.in / 1000; // counted in game time, so a replay agrees
       else if (e.type === 'time-up') this.finish(ctx, false); // the hub's clock ran out first
     }
+    ctx.engine.touch?.show(this.countdown <= 0 && !this.over); // the stick only while it plays
     this.runner.position.copy(this.at);
     for (const gem of this.gems) gem.rotation.y += dt * 3;
     ctx.dualsense.light(this.over || this.left > 3 ? PALETTE.cyan : PALETTE.red); // the light bar: time running out
@@ -338,8 +340,8 @@ class GemRush {
     hud.clear();
     hud.text(6, 6, `GEMS ${this.got}/${this.gems.length}`, { color: 'cyan' });
     hud.text(6, 16, `TIME ${Math.ceil(Math.max(0, this.left))}`, { color: this.left > 3 ? 'white' : 'red' }); // clear of the ⚙
-    if (this.countdown > 0 && this.countdown < Infinity) hud.text(0, 0, `${Math.ceil(this.countdown)}`, { anchor: 'center', scale: 3 });
-    if (this.over) hud.text(0, 0, this.over === 'cleared' ? 'CLEARED!' : 'TIME!', { anchor: 'center', scale: 2 });
+    if (this.countdown > 0 && this.countdown < Infinity) hud.text(0, 0, `${Math.ceil(this.countdown)}`, { anchor: 'center', scale: 3, color: 'sand' });
+    if (this.over) hud.text(0, 0, this.over === 'cleared' ? 'CLEARED!' : 'TIME!', { anchor: 'center', scale: 2, color: 'sand' });
   }
 
   cameraTarget() {
@@ -354,7 +356,7 @@ class GemRush {
 export const createGame = (session = null) => new GemRush(session);
 
 // In 52in1 (hub:session 1 in the head, the hub's client its first script) join the round it picks;
-// elsewhere headSession() is null: alone, where Options opens the settings. Touch: a stick alone.
+// elsewhere headSession() is null: alone, where Options opens the settings.
 const offer = headSession();
 const session = offer && (await HubSession.join({ mode: offer.modes, seats: offer.seats }));
 if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, seed: session?.info.seed, settings: { padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));

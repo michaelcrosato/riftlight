@@ -1,4 +1,4 @@
-/* global window, document, requestAnimationFrame -- page.evaluate callbacks run in the browser */
+/* global window, document, location, requestAnimationFrame -- page.evaluate callbacks run in the browser */
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
@@ -20,10 +20,13 @@
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
 //             Beacon Yard on a pad (its prompts, Options' menu), Gem Rush alone, Market Corner's
 //             models, light and textured floor.
-//   phone     on a touch screen held upright or sideways, Coin Garden, Gem Rush and Beacon Yard have
-//             the touch buttons their guide gives them (Beacon Yard's LIGHT only by a dark beacon),
-//             no HUD text under a control on screen or the ⚙, and alone Gem Rush's Options opens the
-//             settings; phone-<name>.png shows each page as the player sees it.
+//   phone     on a touch screen held upright and sideways (real taps) and on a TV with a pad, Coin
+//             Garden, Beacon Yard and Gem Rush in every state a player reaches (playing, a menu,
+//             the settings, won and lost, a 52in1 round's start): the touch buttons their guide gives
+//             them (Beacon Yard's LIGHT only by a dark beacon, nothing but its menu while it shows),
+//             every HUD text inside the HUD and clear of the controls (the stick, its zone, a
+//             button, the ⚙), every tap target reachable, a phone held sideways at two CSS pixels a
+//             pixel at least; phone-*.png and tv-*.png show each state as the player sees it.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
 //             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
 //             on a broken def, a module with no defs or one that never loads, an unknown id.
@@ -504,116 +507,384 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     'Gem Rush',
   );
 
-  // On a phone (a touch screen, held upright or sideways): each game has the touch buttons the guide
-  // gives it, and no HUD text lies under a control on screen (the stick at rest, a button, the ⚙) or
-  // over another text. A shot of each page as the player sees it lands in phone-<name>.png.
+  // On a phone (a touch screen held upright and sideways, real taps) and on a TV (1920x1080, a fake
+  // standard pad), the starter, Beacon Yard and Gem Rush in every state a player reaches: playing, a
+  // menu, the settings, won and lost, a 52in1 round's start. In each, every HUD text and glyph lies
+  // inside the HUD, none under a touch control on screen (the stick, its zone, a button, the ⚙), no
+  // text over another, every tap target reachable (nothing over a touch button, the ⚙, a menu row
+  // or a settings row; real taps on ≡, a menu row's edge, the ⚙, the settings' Close). Each game has
+  // the touch buttons its guide gives it (Beacon Yard's LIGHT only by a dark beacon), and a phone
+  // held sideways shows the art at two CSS pixels a pixel at least. phone-<page>-<state>-<w>x<h>.png
+  // and tv-<page>-<state>.png show each state as the player sees it.
   const phone = (width, height) => ({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
-  /** After one frame: the touch controls on screen, the HUD's texts, and those that cover a control or each other. */
-  const onPhone = async (page, shot) => {
-    const r = await page.evaluate(async () => {
+  const PHONES = [
+    [390, 844],
+    [844, 390],
+  ];
+  const TV = { viewport: { width: 1920, height: 1080 }, deviceScaleFactor: 1 };
+  /** Page helpers: live frames, a fake standard pad and a press on it (Options acts as it is let go, so live frames). */
+  const helpers = (page) =>
+    page.evaluate(() => {
       const e = window.__PIXEL_ENGINE__;
-      const hud = e.hud;
-      const texts = [];
-      const text = hud.text;
-      hud.text = function (x, y, s, o = {}) {
-        texts.push({ x, y, s, o });
-        return text.call(this, x, y, s, o);
+      const frames = (n) => new Promise((done) => requestAnimationFrame(() => (n > 1 ? frames(n - 1).then(done) : done())));
+      const pad = (...on) => e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'fake', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on.includes(i), value: on.includes(i) ? 1 : 0 })) }]);
+      window.__kit = {
+        frames,
+        pad,
+        async press(button) {
+          e.manual = false;
+          pad(button);
+          await frames(3);
+          pad();
+          await frames(4);
+        },
       };
-      try {
-        e.step(1);
-      } finally {
-        delete hud.text;
-      }
-      // each text's box on screen (CSS pixels, as the controls' rects are)
-      const at = hud.canvas.getBoundingClientRect();
-      const kx = at.width / hud.width;
-      const ky = at.height / hud.height;
-      const boxes = texts.map(({ x, y, s, o }) => {
-        const k = Math.max(1, Math.round(o.scale ?? 1));
-        const { width, height } = hud.measure(s, k);
-        const [px, py] = hud.place(x, y, width, height, o.anchor);
-        return { s, left: at.left + px * kx, top: at.top + py * ky, right: at.left + (px + width) * kx, bottom: at.top + (py + height) * ky };
-      });
-      const r = e.touch?.rects();
-      const controls = [...(r?.stick ? [['the stick', r.stick]] : []), ...(r?.buttons ?? []).filter((b) => !b.hidden).map((b) => [b.label, b.rect])];
-      const gear = document.querySelector('.settings-button');
-      if (gear) controls.push(['⚙', gear.getBoundingClientRect()]);
-      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
-      const over = [
-        ...boxes.flatMap((t) => controls.filter(([, c]) => hits(t, c)).map(([name]) => `${t.s} under ${name}`)),
-        ...boxes.flatMap((t, i) => boxes.slice(i + 1).filter((u) => hits(t, u)).map((u) => `${t.s} over ${u.s}`)),
-      ];
-      e.renderer.render(); // manual time draws nothing by itself: the frame, for the shot
-      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
-      return { device: e.input.device, visible: !!e.touch?.visible, zone: !!r?.zone, buttons: (r?.buttons ?? []).map((b) => `${b.label} ${b.code}${b.hidden ? ' hidden' : ''}`), texts: boxes.map((t) => t.s), over };
     });
-    await page.screenshot({ path: fileURLToPath(new URL(`phone-${shot}.png`, out)) });
+  /**
+   * The screen after a few live frames: the device in use, the touch controls, the HUD's texts, the
+   * framing scale, the settings panel, and what is wrong: a text or glyph outside the HUD, under a
+   * control on screen or a text over another; something over a touch button, the ⚙, a settings row
+   * (at its left, middle and right) or a row of the game's menu (`rows`: the HUD's bars `rowHeight`
+   * art pixels high). A shot of the page in `<shot>.png`.
+   */
+  const look = async (page, shot, rowHeight = 0) => {
+    const r = await page.evaluate(async (rowHeight) => {
+      const e = window.__PIXEL_ENGINE__;
+      e.manual = false;
+      await window.__kit.frames(3);
+      const { hud } = e;
+      const size = { width: hud.width, height: hud.height };
+      const at = hud.canvas.getBoundingClientRect();
+      const kx = at.width / size.width;
+      const ky = at.height / size.height;
+      const onScreen = (px, py, w, h) => ({ left: at.left + px * kx, top: at.top + py * ky, right: at.left + (px + w) * kx, bottom: at.top + (py + h) * ky });
+      // each text's and glyph's box: in art pixels, then on screen (CSS pixels, as the controls' rects are)
+      const boxes = hud.items
+        .filter((i) => i.kind !== 'rect')
+        .map((i) => {
+          const k = Math.max(1, Math.round(i.o.scale ?? 1));
+          const { width, height } = i.kind === 'text' ? hud.measure(i.text, k) : { width: Math.max(...i.rows.map((row) => row.length)) * k, height: i.rows.length * k };
+          const [px, py] = hud.place(i.x, i.y, width, height, i.o.anchor);
+          return { s: i.kind === 'text' ? i.text : 'a glyph', text: i.kind === 'text', inside: px >= 0 && py >= 0 && px + width <= size.width && py + height <= size.height, ...onScreen(px, py, width, height) };
+        });
+      const r = e.touch?.rects();
+      const gear = document.querySelector('.settings-button');
+      const gearOn = !!gear && !gear.hidden && !gear.classList.contains('idle') && gear.getBoundingClientRect().width > 0;
+      const controls = [...(r?.stick ? [['the stick', r.stick]] : []), ...(r?.zone ? [["the stick's zone", r.zone]] : []), ...(r?.buttons ?? []).filter((b) => !b.hidden).map((b) => [b.label, b.rect]), ...(gearOn ? [['⚙', gear.getBoundingClientRect()]] : [])];
+      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const texts = boxes.filter((b) => b.text);
+      const settings = e.settings.isOpen;
+      const wrong = [
+        ...boxes.filter((t) => !t.inside).map((t) => `${t.s} outside the ${size.width}x${size.height} HUD`),
+        ...(settings ? [] : boxes.flatMap((t) => controls.filter(([, c]) => hits(t, c)).map(([name]) => `${t.s} under ${name}`))),
+        ...texts.flatMap((t, i) => texts.slice(i + 1).filter((u) => hits(t, u)).map((u) => `${t.s} over ${u.s}`)),
+      ];
+      // tap targets: what a finger lands on at the left, the middle and the right of each
+      const lands = (box, ok, name) => {
+        for (const f of [0.04, 0.5, 0.96]) {
+          const el = document.elementFromPoint(box.left + (box.right - box.left) * f, (box.top + box.bottom) / 2);
+          if (el && !ok(el)) wrong.push(`${el.className || el.tagName} over ${name}`);
+        }
+      };
+      if (!settings) {
+        for (const el of e.touch?.root.querySelectorAll('button') ?? []) {
+          const b = el.getBoundingClientRect();
+          if (b.width && !el.classList.contains('hidden') && e.touch.visible) lands({ left: b.left, top: b.top, right: b.right, bottom: b.bottom }, (top) => el.contains(top), `the ${el.textContent.trim()} button`);
+        }
+        if (gearOn) lands(gear.getBoundingClientRect(), (top) => gear.contains(top), 'the ⚙');
+      }
+      const rows = settings || !rowHeight ? [] : hud.items.filter((i) => i.kind === 'rect' && i.h === rowHeight).map((i) => onScreen(...hud.place(i.x, i.y, i.w, i.h, i.anchor), i.w, i.h));
+      rows.forEach((row, i) => lands(row, (top) => !top.closest('.touch-ui, .settings-button, .settings-ui'), `the menu's row ${i}`));
+      if (settings)
+        for (const el of document.querySelectorAll('.settings-ui [data-row], .settings-ui [data-page], .settings-ui [data-act]')) {
+          const b = el.getBoundingClientRect();
+          if (b.width && b.height) lands(b, (top) => !top.closest('.touch-ui, .settings-button') && !!top.closest('.settings-ui'), `the settings' ${el.textContent.trim()}`);
+        }
+      return {
+        status: e.state().status,
+        device: e.input.device,
+        settings,
+        scale: e.renderer.framing.scale,
+        visible: !!e.touch?.visible,
+        zone: !!r?.zone,
+        buttons: (r?.buttons ?? []).map((b) => `${b.label} ${b.code}${b.hidden ? ' hidden' : ''}`),
+        texts: texts.map((t) => t.s),
+        rows: rows.map((b) => ({ x: b.left, y: (b.top + b.bottom) / 2, w: b.right - b.left })),
+        wrong,
+      };
+    }, rowHeight);
+    await page.screenshot({ path: fileURLToPath(new URL(`${shot}.png`, out)) });
     return r;
   };
-  for (const [w, h] of [[390, 844], [844, 390]]) {
+  /** A real tap at the centre of the element `selector` matches (on a page, not in it). */
+  const tapOn = async (page, selector) => {
+    const b = await page.evaluate((selector) => {
+      const r = document.querySelector(selector)?.getBoundingClientRect();
+      return r && { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, selector);
+    if (b) await page.touchscreen.tap(b.x, b.y);
+    return !!b;
+  };
+  /** Every state seen clean: `states` maps a state's name to what `look` saw. */
+  const clean = (states) => Object.entries(states).flatMap(([name, r]) => r.wrong.map((w) => `${name}: ${w}`));
+  const say = (states) => JSON.stringify(Object.fromEntries(Object.entries(states).map(([name, r]) => [name, { status: r.status, device: r.device, scale: r.scale, visible: r.visible, buttons: r.buttons, texts: r.texts }])));
+  // Beacon Yard's menu rows are the HUD's 22-pixel bars; Coin Garden walks onto each coin (the block under it)
+  const ROW = 22;
+  const COINS = [
+    [4, 1, -2],
+    [7, 2.5, -2],
+    [-5, 1.5, 4],
+    [-2, 0, -5],
+  ];
+  const collectCoins = (page) =>
+    page.evaluate((spots) => {
+      const e = window.__PIXEL_ENGINE__;
+      for (const at of spots) {
+        e.game.hero.teleport(at);
+        e.step(10);
+      }
+      e.step(20);
+    }, COINS);
+  /** Gem Rush in a 52in1 round of moments (a LocalHub in the page): loaded, readied up, still until the start. */
+  const gemRound = (page) =>
+    page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const { HubSession, LocalHub } = await import(new URL('../pixel-engine.js', location.href).href);
+      const { createGame, MOMENTS } = await import(new URL('./gem-rush.js', location.href).href);
+      const hub = new LocalHub({ mode: 'moments', moment: { id: 'gem-dash', seconds: MOMENTS['gem-dash'].seconds }, players: 1, seed: 5 });
+      const session = await HubSession.join({ mode: ['parallel', 'moments'], seats: [1, 4], client: hub.client(0), clock: () => hub.now });
+      window.__kit.hub = hub;
+      await e.loadGame(createGame(session));
+      e.manual = false;
+      await window.__kit.frames(3);
+      return hub.allReady;
+    });
+  /** The round starts: the hub's start reaches the game, which counts down. */
+  const gemStart = (page) =>
+    page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      window.__kit.hub.start();
+      window.__kit.hub.advance(1);
+      for (let i = 0; i < 30 && !(e.game.countdown < Infinity); i++) await window.__kit.frames(1);
+      return e.game.countdown;
+    });
+  const gemEnd = (page, won) =>
+    page.evaluate(async (won) => {
+      const e = window.__PIXEL_ENGINE__;
+      const { createGame } = await import(new URL('./gem-rush.js', location.href).href);
+      await e.loadGame(createGame(null));
+      e.game.finish(e.context, won);
+    }, won);
+
+  for (const [w, h] of PHONES) {
+    const shot = (page, state) => `phone-${page}-${state}-${w}x${h}`;
     await play(
       'index.html',
       async (page) => {
-        const r = await onPhone(page, `coin-garden-${w}x${h}`);
+        await helpers(page);
+        const states = { playing: await look(page, shot('coin-garden', 'playing')) };
+        const tapped = await tapOn(page, '.settings-button'); // a real tap on the ⚙
+        states.settings = await look(page, shot('coin-garden', 'settings'));
+        await tapOn(page, '.settings-ui [data-act="close"]');
+        states.closed = await look(page, shot('coin-garden', 'closed'));
+        await collectCoins(page);
+        states.won = await look(page, shot('coin-garden', 'won'));
+        const s = states.playing;
         check(
-          r.device === 'touch' && r.visible && JSON.stringify(r.buttons) === '["A Space"]' && !r.over.length && !r.texts.includes('WALK'),
-          `Coin Garden on a ${w}x${h} phone: the A button (jump) alone, no legend (the stick and A say it), no HUD under a control (${JSON.stringify(r)})`,
+          s.device === 'touch' && s.visible && JSON.stringify(s.buttons) === '["A Space"]' && !s.texts.includes('WALK') && s.scale >= 2 && tapped && states.settings.settings && !states.closed.settings && states.won.texts.includes('YOU WIN!') && !clean(states).length,
+          `Coin Garden on a ${w}x${h} phone: two CSS pixels a pixel at least, the A button (jump) alone and no legend, the ⚙ opens the settings and Close closes them (real taps), won; every text inside the HUD and clear of the controls, every tap target reachable (${clean(states).join('; ') || say(states)})`,
         );
       },
       `Coin Garden on a ${w}x${h} phone`,
       phone(w, h),
     );
+    await play(
+      'examples/beacon-yard.html',
+      async (page) => {
+        await helpers(page);
+        const states = { far: await look(page, shot('beacon-yard', 'far')) };
+        await page.evaluate(() => window.__PIXEL_ENGINE__.game.at.set(-6, 0.6, -4));
+        states.near = await look(page, shot('beacon-yard', 'near'));
+        // a real tap on ≡: the pause menu, the touch controls out of its way
+        const paused = await tapOn(page, '.touch-ui > button[data-i="1"]');
+        states.menu = await look(page, shot('beacon-yard', 'menu'), ROW);
+        const [resume, settings] = states.menu.rows;
+        // a real tap on the left edge of Settings opens the engine's settings; their Close goes back to the menu
+        if (settings) await page.touchscreen.tap(settings.x + settings.w * 0.04, settings.y);
+        states.settings = await look(page, shot('beacon-yard', 'settings'));
+        await tapOn(page, '.settings-ui [data-act="close"]');
+        states.back = await look(page, shot('beacon-yard', 'back'), ROW);
+        // a real tap on the right edge of Resume: playing again, the controls back
+        if (resume) await page.touchscreen.tap(resume.x + resume.w * 0.96, resume.y);
+        states.resumed = await look(page, shot('beacon-yard', 'resumed'));
+        await page.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          for (const beacon of e.game.beacons) e.game.light(e.context, beacon);
+        });
+        states.lit = await look(page, shot('beacon-yard', 'lit'));
+        const { far, near, menu } = states;
+        check(
+          far.device === 'touch' &&
+            JSON.stringify([far.buttons, near.buttons, states.lit.buttons]) === JSON.stringify([['LIGHT KeyE hidden', '≡ Escape'], ['LIGHT KeyE', '≡ Escape'], ['LIGHT KeyE hidden', '≡ Escape']]) &&
+            /light a beacon/i.test(far.texts.join(' ')) &&
+            paused &&
+            menu.status.endsWith(', menu') &&
+            !menu.visible &&
+            !menu.zone &&
+            menu.rows.length === 3 &&
+            menu.texts.includes('SELECT') &&
+            states.settings.settings &&
+            !states.back.settings &&
+            states.back.status.endsWith(', menu') &&
+            !states.resumed.status.endsWith(', menu') &&
+            states.resumed.visible &&
+            states.lit.status.startsWith('beacons 4/4') &&
+            states.lit.texts.length >= 2 &&
+            !clean(states).length,
+          `Beacon Yard on a ${w}x${h} phone: LIGHT only by a dark beacon, ≡ (a real tap) opens the menu with no stick, zone or button over its rows or legend, a tap on a row's left edge opens the settings and on its right edge resumes, the controls come back; all lit, every text inside the HUD and clear of the controls, every tap target reachable (${clean(states).join('; ') || say(states)})`,
+        );
+      },
+      `Beacon Yard on a ${w}x${h} phone`,
+      phone(w, h),
+    );
+    await play(
+      'examples/gem-rush.html',
+      async (page) => {
+        await helpers(page);
+        const states = { playing: await look(page, shot('gem-rush', 'playing')) };
+        const tapped = await tapOn(page, '.settings-button');
+        states.settings = await look(page, shot('gem-rush', 'settings'));
+        await tapOn(page, '.settings-ui [data-act="close"]');
+        await gemEnd(page, true);
+        states.cleared = await look(page, shot('gem-rush', 'cleared'));
+        await gemEnd(page, false);
+        states.failed = await look(page, shot('gem-rush', 'failed'));
+        const ready = await gemRound(page);
+        states.waiting = await look(page, shot('gem-rush', 'waiting'));
+        const countdown = await gemStart(page);
+        states.countdown = await look(page, shot('gem-rush', 'countdown'));
+        const p = states.playing;
+        check(
+          p.device === 'touch' &&
+            p.visible &&
+            p.zone &&
+            p.buttons.length === 0 &&
+            tapped &&
+            states.settings.settings &&
+            states.cleared.texts.includes('CLEARED!') &&
+            states.failed.texts.includes('TIME!') &&
+            ready &&
+            countdown > 0 &&
+            countdown < Infinity &&
+            !states.countdown.visible &&
+            !clean(states).length,
+          `Gem Rush on a ${w}x${h} phone: a floating stick and no buttons, the ⚙ opens the settings, cleared and failed, a moment's round readied up and counting down with the stick away; every text inside the HUD and clear of the controls (its time clear of the ⚙), every tap target reachable (${clean(states).join('; ') || say({ ...states, countdown: { ...states.countdown, status: `${states.countdown.status} (${countdown})` } })})`,
+        );
+      },
+      `Gem Rush on a ${w}x${h} phone`,
+      phone(w, h),
+    );
   }
+
+  // on a TV with a pad: the prompts and legends are the pad's, Options opens the menu or the settings
+  const tvShot = (page, state) => `tv-${page}-${state}`;
   await play(
-    'examples/gem-rush.html',
+    'index.html',
     async (page) => {
-      const r = await onPhone(page, 'gem-rush-390x844');
-      // alone (no 52in1), Options opens the settings as it is let go (the live loop's: real frames)
-      const opened = await page.evaluate(async () => {
-        const e = window.__PIXEL_ENGINE__;
-        const frames = (n) => new Promise((done) => requestAnimationFrame(() => (n > 1 ? frames(n - 1).then(done) : done())));
-        const pad = (...on) => e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'fake', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on.includes(i), value: on.includes(i) ? 1 : 0 })) }]);
-        e.manual = false;
-        pad(9);
-        await frames(4);
-        pad();
-        await frames(4);
-        const open = e.settings.isOpen;
-        e.settings.close();
-        e.input.setGamepads(null);
-        return open;
-      });
+      await helpers(page);
+      await page.evaluate(() => window.__kit.press(0)); // Cross: the pad is the device in use
+      const states = { playing: await look(page, tvShot('coin-garden', 'playing')) };
+      await page.evaluate(() => window.__kit.press(9)); // Options, let go
+      states.settings = await look(page, tvShot('coin-garden', 'settings'));
+      await page.evaluate(() => window.__kit.press(1)); // Circle
+      states.closed = await look(page, tvShot('coin-garden', 'closed'));
+      await collectCoins(page);
+      states.won = await look(page, tvShot('coin-garden', 'won'));
+      await page.evaluate(() => window.__PIXEL_ENGINE__.input.setGamepads(null));
+      const s = states.playing;
       check(
-        r.device === 'touch' && r.visible && r.zone && r.buttons.length === 0 && !r.over.length && opened,
-        `Gem Rush on a phone: a floating stick and no buttons, no HUD under a control (its time clear of the ⚙); alone, Options opens the settings (${JSON.stringify({ ...r, opened })})`,
+        s.device === 'pad' && !s.visible && ['WALK', 'JUMP', 'SETTINGS'].every((t) => s.texts.includes(t)) && states.settings.settings && !states.closed.settings && states.won.texts.includes('YOU WIN!') && !clean(states).length,
+        `Coin Garden on a TV with a pad: the pad's legend, Options opens the settings and Circle closes them, won; every text inside the HUD (${clean(states).join('; ') || say(states)})`,
       );
     },
-    'Gem Rush on a phone',
-    phone(390, 844),
+    'Coin Garden on a TV with a pad',
+    TV,
   );
   await play(
     'examples/beacon-yard.html',
     async (page) => {
-      const far = await onPhone(page, 'beacon-yard-390x844');
+      await helpers(page);
+      await page.evaluate(() => window.__kit.press(0));
+      const states = { far: await look(page, tvShot('beacon-yard', 'far')) };
       await page.evaluate(() => window.__PIXEL_ENGINE__.game.at.set(-6, 0.6, -4));
-      const near = await onPhone(page, 'beacon-yard-near-390x844');
+      states.near = await look(page, tvShot('beacon-yard', 'near'));
+      await page.evaluate(() => window.__kit.press(9)); // Options: the menu
+      states.menu = await look(page, tvShot('beacon-yard', 'menu'), ROW);
+      await page.evaluate(async () => {
+        await window.__kit.press(13); // the d-pad down: Settings
+        await window.__kit.press(0); // Cross
+      });
+      states.settings = await look(page, tvShot('beacon-yard', 'settings'));
+      for (let i = 0; i < 3 && (await page.evaluate(() => window.__PIXEL_ENGINE__.settings.isOpen || window.__PIXEL_ENGINE__.game.menu)); i++) await page.evaluate(() => window.__kit.press(1)); // Circle, Circle
+      states.resumed = await look(page, tvShot('beacon-yard', 'resumed'));
       await page.evaluate(() => {
         const e = window.__PIXEL_ENGINE__;
-        e.input.setKey('KeyE', true); // as the LIGHT button presses it
-        e.step(1);
-        e.input.setKey('KeyE', false);
+        for (const beacon of e.game.beacons) e.game.light(e.context, beacon);
+        e.input.setGamepads(null);
       });
-      const lit = await onPhone(page, 'beacon-yard-lit-390x844');
+      states.lit = await look(page, tvShot('beacon-yard', 'lit'));
+      const { far, near, menu } = states;
       check(
-        far.device === 'touch' &&
-          JSON.stringify([far.buttons, near.buttons, lit.buttons]) === JSON.stringify([['LIGHT KeyE hidden', '≡ Escape'], ['LIGHT KeyE', '≡ Escape'], ['LIGHT KeyE hidden', '≡ Escape']]) &&
-          ![...far.over, ...near.over, ...lit.over].length &&
-          /light a beacon/i.test(far.texts.join(' ')),
-        `Beacon Yard on a phone: the LIGHT button only by a dark beacon, ≡ always, the help line and the HUD clear of the controls (${JSON.stringify({ far, near, lit })})`,
+        far.device === 'pad' &&
+          far.texts.includes('MENU') &&
+          near.texts.includes('LIGHT') &&
+          menu.status.endsWith(', menu') &&
+          menu.texts.includes('SELECT') &&
+          states.settings.settings &&
+          !states.resumed.settings &&
+          !states.resumed.status.endsWith(', menu') &&
+          states.lit.status.startsWith('beacons 4/4') &&
+          !clean(states).length,
+        `Beacon Yard on a TV with a pad: MENU and LIGHT prompts, Options opens the menu, the d-pad and Cross its Settings, Circle back out; all lit; every text inside the HUD (${clean(states).join('; ') || say(states)})`,
       );
     },
-    'Beacon Yard on a phone',
-    phone(390, 844),
+    'Beacon Yard on a TV with a pad',
+    TV,
+  );
+  await play(
+    'examples/gem-rush.html',
+    async (page) => {
+      await helpers(page);
+      await page.evaluate(() => window.__kit.press(0));
+      const states = { playing: await look(page, tvShot('gem-rush', 'playing')) };
+      await page.evaluate(() => window.__kit.press(9)); // alone, Options opens the settings as it is let go
+      states.settings = await look(page, tvShot('gem-rush', 'settings'));
+      await page.evaluate(() => window.__kit.press(1));
+      states.closed = await look(page, tvShot('gem-rush', 'closed'));
+      await gemEnd(page, true);
+      states.cleared = await look(page, tvShot('gem-rush', 'cleared'));
+      await gemEnd(page, false);
+      states.failed = await look(page, tvShot('gem-rush', 'failed'));
+      const ready = await gemRound(page);
+      states.waiting = await look(page, tvShot('gem-rush', 'waiting'));
+      const countdown = await gemStart(page);
+      states.countdown = await look(page, tvShot('gem-rush', 'countdown'));
+      await page.evaluate(() => window.__PIXEL_ENGINE__.input.setGamepads(null));
+      check(
+        states.playing.device === 'pad' &&
+          states.settings.settings &&
+          !states.closed.settings &&
+          states.cleared.texts.includes('CLEARED!') &&
+          states.failed.texts.includes('TIME!') &&
+          ready &&
+          countdown > 0 &&
+          countdown < Infinity &&
+          !clean(states).length,
+        `Gem Rush on a TV with a pad: alone, Options opens the settings and Circle closes them; cleared, failed, a moment's round counting down; every text inside the HUD (${clean(states).join('; ') || say(states)})`,
+      );
+    },
+    'Gem Rush on a TV with a pad',
+    TV,
   );
 
   await play(

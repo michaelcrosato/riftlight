@@ -192,7 +192,7 @@ class CoinGarden {
 /** A fresh game: the page starts one, and `node check.mjs --headless` plays one in Node (section 8). */
 export const createGame = () => new CoinGarden();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }] }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
 ```
 
 To make it yours: change the level, the coin spots, the camera, the HUD, the win condition.

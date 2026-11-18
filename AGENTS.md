@@ -101,7 +101,7 @@ film for anything that plays in the game.
 | `src/engine/texture/`, `scripts/tex.ts` | Textures as data (docs/assets/textures.md): `TextureDef` layers and patterns, `bakeTexture`, `textureMap` / `spriteSheet` / `hudSprite`; `npm run tex -- check / sheet / find / zoo` |
 | `scripts/model.ts`, `asset-lab.html` | `npm run model -- check / sheet / diff / find / zoo / tokens`: check and look at models; the Asset Lab shows them in the real renderer (`window.__ASSET_LAB__`) |
 | `scripts/film.ts` | `npm run film -- <scenario>`: film the real game frame by frame (filmstrip, timeline, pops/slips, GIF); exits 1 if a scenario never reaches a state it waits for |
-| `src/lab/`, `lab.html`, `asset-lab.html` | Animation Lab (preview, scrub, metrics, sheets, `window.__ANIM_LAB__`) and Asset Lab (`assetLab.ts`: library models in the real renderer, `window.__ASSET_LAB__`) |
+| `src/lab/`, `lab.html`, `asset-lab.html` | Animation Lab (preview, scrub, metrics, sheets, `window.__ANIM_LAB__`) and Asset Lab (`assetLab.ts`, above) |
 | `src/engine/framing.ts` | Integer scaling / letterbox math (unit-tested) |
 | `src/game/playground.ts` | Movement demo (`?game=playground`): a station for every move, a complete example of the `Game` API |
 | `src/riftlight/showcase/` | Other genres inside Riftlight, as templates: a side-scroller (`?game=arcade`), a first-person gallery, photo mode (docs/game/showcase.md) |
@@ -112,7 +112,7 @@ film for anything that plays in the game.
 | `scripts/riftlight/playtest.ts` | `npm run playtest -- <depth> [--runs n] [--film]`: the bot plays the real game headless (Chromium with `--film`), reports clear time, deaths, loot |
 | `scripts/generate-assets.mjs` | Deterministic GLB generator (`npm run assets`); hero rig (geometry + joints only) in `scripts/assets/hero.mjs` |
 | `scripts/forbidden-apis.mjs` | Guardrail run by `npm run lint` |
-| `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md`, `docs/GUIDE-ASSETS.md` | The engine kit for agents outside this repo (`npm run bundle`; a GitHub Release per version): one-module `pixel-engine.js`, the guides (GUIDE.md; GUIDE-ASSETS.md ships as `ASSETS.md`; their named code blocks become pages; `src/guide.test.ts` and `src/guide-assets.test.ts` keep their names true), generated `API.md`, `LIBRARY.md` and `CREDITS.md`, `check.mjs` (`--sheets` draws a game's models). Engine changes a game can see bump the version and add a `CHANGELOG.md` section; once CI passes on `main`, its `release` job publishes that version's kit as a GitHub Release (`engine-v<version>`) |
+| `src/bundle.ts`, `scripts/bundle.mjs`, `docs/GUIDE.md`, `docs/GUIDE-CONTROLS.md`, `docs/GUIDE-ASSETS.md` | The engine kit for agents outside this repo (`npm run bundle`): one-module `pixel-engine.js`, the guides (GUIDE.md; GUIDE-CONTROLS.md ships as `CONTROLS.md`, GUIDE-ASSETS.md as `ASSETS.md`; their named code blocks become pages; `src/guide.test.ts`, `src/guide-controls.test.ts`, `src/guide-assets.test.ts` keep them true), generated `API.md`, `LIBRARY.md` and `CREDITS.md`, `check.mjs` (`--sheets` draws a game's models). Engine changes a game can see bump the version and add a `CHANGELOG.md` section; once CI passes on `main`, its `release` job publishes that version's kit as a GitHub Release (`engine-v<version>`) |
 | `scripts/e2e.mjs` | Browser verification (`npm run build && npm run test:e2e`): pictures, the DOM, the GPU; the Riftlight shell in `scripts/e2e-riftlight.mjs`; engine suites open `?game=playground` through `urlFor` |
 
 Hard constraints (enforced by lint): no `WebGLRenderer`, `EffectComposer`,
