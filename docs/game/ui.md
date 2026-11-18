@@ -94,7 +94,56 @@ under the minimap and the gold (beside the joystick and the cluster on the botto
 above them in portrait), the XP bar runs between the orbs or sits over the life
 orb, the top-left text starts right of ≡, the prompt drops its key glyph. The controls hide on
 the title, under every panel and when the hero is dead, and their rects are world-overlay
-zones too. Riftlight ships without the engine's ⓘ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`
+zones too. Without a page (headless, a replay of a phone's recording) `TouchPad.zones` gives
+where the page's controls would be on a page with touch controls while a finger is the device in
+use (`touchLayout` in the recorded viewport, a hidden button keeping its place as on the page,
+mapped to art pixels with the page's arithmetic: `TouchPad.dataLayout`, all of it recorded), so a
+replay lays the HUD out, and its taps land, as the phone's; the phone e2e holds the two to the same
+art pixels, the floating stick's zone too, at DPR 2 and 3. One gap: a notched phone keeps its
+controls inside the safe area (`env(safe-area-inset-*)` past the margins), which a recording does
+not keep, so a replay of such a phone's session without its page lays the HUD out around controls
+a few pixels off where the player saw them. What the last frame drew that a tap hits (the loot
+labels, the prompt, the feed, the talk line) and the controls the HUD laid out around are in a
+snapshot (`shell.touchable`, `shell.hudControls`, and a finger's wait to swing, `shell.fingerHeld`),
+so a replay from a save-state taps the same.
+
+**Swipes** (recorded presses, where they started: `Pointer.touchDown`, from the recorded touches):
+a swipe left, right or down that starts on a panel's frame closes it as back does (`UiLayer.swipe`;
+never a sticky one; a list that scrolls keeps up and down for itself and a slider its sideways
+swipe, `Panel.swipes`, though its title bar always closes it); one that starts on an NPC's line
+over its panel ends the talk (where the line shows: under the item windows only between them); with no panel, one from the centre banner ends it (`BannerQueue.skip`,
+not in a 52in1 round) and one from the loot feed's lines clears them (a finger that lands on either
+is no swing for as long as it stays down and wherever it slides: `pressTaken`).
+The item windows close on a swipe down from a window's title bar (`Panel.swipeCloses`: elsewhere a
+quick drag moves an item), the passive tree on a finger pulled down from its top bar (its own
+canvas: sent as the × is). A finger acts on a menu as it lets go where it went down, so a swipe
+across a button presses nothing. **Taps**: a tap on a loot label picks the item up (walking there,
+`goTo`) and a tap on the interact prompt does what F does; neither is a swing, held or not, and
+whether or not a fixed step runs in the frame it lands in (a 90 or 120 Hz screen). The prompt keeps out
+of the floating stick's zone (`TouchPad.stickZone`: beside it on a wide screen, over it in
+portrait). On a landscape phone the loot feed ends over the mana orb's right edge (the cluster is
+right of it). **The item windows** show no hidden gestures: a tap picks an item (its tooltip) and,
+under it, a row of buttons a thumb can hit for what it can do there (`touchActions`: Equip,
+Unequip, Use, Socket, Take out, To bag, To stash, Buy, Sell, Move; in rows on a narrow screen);
+the row never covers the tooltip (`pickLayout`: under it, else over it, else at the top of the
+screen with the tooltip moved down under it, its last lines cut by the screen's edge rather than
+its name by the buttons) nor a window's title bar (its close box, the Gems button: the row slides
+beside it along its line, else goes under it with the tooltip under the row); a second tap and a
+long-press still work. **Assists**
+(`Riftlight.touchAssist`, a finger on a page with touch controls only: the recorded `input.device`
+and density, each a setting shown on such a page, where it applies, and on by default, kept by
+recordings as play settings; a touch on a desktop's page, a touchscreen laptop's, gets none): auto attack (`touchAutoAttack`: the basic attack on the
+nearest living monster in its reach, `attackReach`, the playtest bot's rule, when no skill or dodge
+was pressed, the hero isn't busy or walking somewhere and the stick doesn't point away from it, so
+kiting works) and aim assist (`touchAimAssist`: with the stick pushed, the nearest monster within
+7 m in a 40° cone of it, else one point-blank within 2.5 m, else along the stick: `TOUCH_AIM`). The
+pad, the keyboard and the mouse play as they did. Two fingers on the world pinch the zoom and are
+no swing: a finger alone on the world swings once it has stayed down two fixed steps after the one
+it landed in (`FINGER_WAIT`, about 33 ms; a tap shorter than that is no swing), and a second
+finger landing by then lets go of its press (`Input`; landing in the same frame, its press is taken
+back), so fingers a frame or two apart pinch without a swing; the mouse's button swings at once. The
+floating stick and the buttons take several fingers at once. A finger that slides sideways off a
+menu row is a swipe, not a tap; a mouse's click that drifts sideways still clicks. Riftlight ships without the engine's ⓘ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`
 brings it back. `__RIFTLIGHT__.ui.hud()` returns the HUD's rects and the controls (the phone
 e2e checks that none overlap).
 

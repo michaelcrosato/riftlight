@@ -16,9 +16,14 @@
 //     brings the touch layout back
 //   - every title entry shows, a thumb tall (two columns of tiles in landscape), with a save and
 //     without (landscape)
+//   - the controls laid out from their data (headless, a replay) are where the page lays them, and
+//     so is the floating stick's zone, with the interact button hidden and shown, at DPR 2 and 3
 //   - ≡ opens the pause menu, the panel's close box closes it (taps)
 //   - the pause menu's rows are at least 40 CSS px in both orientations (two columns of tiles in
 //     landscape); the passive tree draws at the game's art size and names a finger's gestures
+//   - real touches (CDP): a quick swipe from the pause menu closes it, one down from the tree's top
+//     bar closes the tree; the floating stick and a skill button work at once; two fingers on the
+//     world pinch the zoom and hold no press, and are no swing landing a frame apart
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
@@ -43,6 +48,21 @@ export async function runRiftlightPhone(h, orientation) {
       await R(() => (window.__PIXEL_ENGINE__.manual = false));
       await page.waitForTimeout(1000);
       await page.screenshot({ path: new URL(`${tag}-${name}.png`, OUT).pathname });
+    };
+    // the controls as the page lays them out (the HUD's rects, the floating stick's zone) and as
+    // their data does where there is no page (headless, a replay of a phone's recording): the same art pixels
+    const agree = async (where) => {
+      const a = await R(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const e = window.__PIXEL_ENGINE__;
+        e.step(1);
+        const z = e.touch.rects().zone;
+        const tl = z && g.pointer.toArt(z.left, z.top);
+        const br = z && g.pointer.toArt(z.right, z.bottom);
+        return { page: window.__RIFTLIGHT__.ui.hud().controls, data: g.touchPad.dataLayout(), zone: z && { x: tl.x, y: tl.y, w: br.x - tl.x + 1, h: br.y - tl.y + 1 }, dataZone: g.touchPad.stickZone() };
+      });
+      const same = JSON.stringify(a.page) === JSON.stringify(a.data) && JSON.stringify(a.zone) === JSON.stringify(a.dataZone);
+      check(same && a.page.length >= 7, `${orientation} ${where}: the controls from their data are where the page lays them (${a.page.length} rects${same ? '' : `: page ${JSON.stringify(a.page)} zone ${JSON.stringify(a.zone)} vs data ${JSON.stringify(a.data)} zone ${JSON.stringify(a.dataZone)}`})`);
     };
     // what a player opens: no ?debug (touch=1 forces the controls; a phone gets them from its coarse pointer)
     await page.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
@@ -141,6 +161,7 @@ export async function runRiftlightPhone(h, orientation) {
     const inZone = (r) => dense.zone && r.x < dense.zone.x + dense.zone.w && dense.zone.x < r.x + r.w && r.y < dense.zone.y + dense.zone.h && dense.zone.y < r.y + r.h;
     check(dense.mode === 'floating' && !!dense.zone && dense.zone.x === 0 && !!map && !inZone(map), `${orientation}: the joystick floats in the lower left and the corner map is out of its zone (${JSON.stringify(dense.zone)})`);
     await shot('level');
+    await agree('in a level');
 
     // a pad picked up: the touch controls step aside and the HUD takes the pad's layout, its own
     // skill bar drawn (never neither); the next touch brings the touch layout back
@@ -225,6 +246,102 @@ export async function runRiftlightPhone(h, orientation) {
     st = await R(() => ({ ui: window.__RIFTLIGHT__.state().ui, hidden: !!document.querySelector('.touch-ui.hidden') }));
     check(st.ui.length === 0 && !st.hidden, `${orientation}: tapping the close box closes it and the controls come back (ui ${st.ui.join(',') || 'none'})`);
 
+    // a finger's gestures on the real page (CDP touches, as a phone sends them)
+    const cdp = await page.context().newCDPSession(page);
+    const touch = (type, points) => cdp.send('Input.dispatchTouchEvent', { type, touchPoints: points.map(([x, y, id]) => ({ x, y, id, radiusX: 3, radiusY: 3, force: 1 })) });
+    // a quick swipe sideways from the pause menu closes it (the game resumes)
+    await tapCode('Escape');
+    await R(() => window.__PIXEL_ENGINE__.step(3));
+    const pr = await R(() => {
+      const g = window.__RIFTLIGHT__.game;
+      const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+      const k = c.width / g.ui.w;
+      const r = g.layer.top.rect;
+      return { x: c.left + (r.x + r.w / 2) * k, y: c.top + (r.y + r.h / 2) * k };
+    });
+    await touch('touchStart', [[pr.x, pr.y, 21]]);
+    for (let k = 1; k <= 4; k++) await touch('touchMove', [[pr.x - k * 35, pr.y, 21]]);
+    await touch('touchEnd', []);
+    st = await R(() => {
+      window.__PIXEL_ENGINE__.step(3);
+      return { ui: window.__RIFTLIGHT__.state().ui };
+    });
+    check(st.ui.length === 0, `${orientation}: a quick swipe sideways from the pause menu closes it (ui ${st.ui.join(',') || 'none'})`);
+    // the floating stick and a skill at once: the stick held off to the right while skill 1 is pressed
+    const both = await (async () => {
+      const skill = (await controls()).find((c) => c.code === 'Digit1');
+      const zone = await R(() => {
+        const z = window.__PIXEL_ENGINE__.touch.rects().zone;
+        return { x: z.left + z.width * 0.4, y: z.top + z.height * 0.6 };
+      });
+      await R(() => {
+        const g = window.__RIFTLIGHT__.game;
+        for (let f = 0; f < 120 && g.hero.busy > 0; f++) window.__PIXEL_ENGINE__.step(1);
+        g.hero.actor.mana = g.hero.vitals().maxMana;
+        window.__touchKeys.length = 0;
+      });
+      await touch('touchStart', [[zone.x, zone.y, 31]]);
+      await touch('touchMove', [[zone.x + 50, zone.y, 31]]);
+      await touch('touchStart', [[zone.x + 50, zone.y, 31], [skill.x + skill.w / 2, skill.y + skill.h / 2, 32]]);
+      const held = await R(() => {
+        const e = window.__PIXEL_ENGINE__;
+        e.step(2);
+        return { analog: e.input.analog.x, keys: [...window.__touchKeys] };
+      });
+      await touch('touchEnd', [[zone.x + 50, zone.y, 31]]);
+      await touch('touchEnd', []);
+      await R(() => window.__PIXEL_ENGINE__.step(2));
+      return held;
+    })();
+    check(both.analog > 0.3 && both.keys.includes('Digit1'), `${orientation}: the floating stick and a skill button work at once (analog ${both.analog.toFixed(2)}, keys ${both.keys.join(' ')})`);
+    // two fingers on the world pinch the camera's zoom, and are no swing (the finger's press lets go)
+    const pinch = await (async () => {
+      const c = await R(() => {
+        const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        return { x: r.left + r.width * 0.62, y: r.top + r.height * 0.3, zoom: window.__RIFTLIGHT__.game.settings.zoom };
+      });
+      await touch('touchStart', [[c.x - 20, c.y, 41]]);
+      await touch('touchStart', [[c.x - 20, c.y, 41], [c.x + 20, c.y, 42]]);
+      const down = await R(() => window.__PIXEL_ENGINE__.input.isDown('Touch'));
+      for (let k = 1; k <= 6; k++) await touch('touchMove', [[c.x - 20 - k * 12, c.y, 41], [c.x + 20 + k * 12, c.y, 42]]);
+      await touch('touchEnd', []);
+      const zoom = await R(() => {
+        window.__PIXEL_ENGINE__.step(2);
+        return window.__RIFTLIGHT__.game.settings.zoom;
+      });
+      return { before: c.zoom, after: zoom, down };
+    })();
+    check(pinch.after !== pinch.before && !pinch.down, `${orientation}: two fingers pinch the zoom (${pinch.before} → ${pinch.after}) and hold no press (Touch ${pinch.down})`);
+    await R((z) => (window.__RIFTLIGHT__.game.settings.zoom = z), pinch.before);
+    // the second finger a frame after the first: still no swing (a finger alone on the world waits a
+    // moment before it swings, and the second lets go of its press); auto attack off, the hero's
+    // steps recorded as it gets them
+    const apart = await (async () => {
+      const c = await R(() => {
+        const g = window.__RIFTLIGHT__.game;
+        g.settings.touchAutoAttack = false;
+        const step = g.hero.fixedUpdate.bind(g.hero);
+        window.__swings = [];
+        g.hero.fixedUpdate = (dt, i) => (window.__swings.push(i.attack), step(dt, i));
+        const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        return { x: r.left + r.width * 0.62, y: r.top + r.height * 0.3, zoom: g.settings.zoom };
+      });
+      await touch('touchStart', [[c.x - 20, c.y, 43]]);
+      await R(() => window.__PIXEL_ENGINE__.step(1));
+      await touch('touchStart', [[c.x - 20, c.y, 43], [c.x + 20, c.y, 44]]);
+      await R(() => window.__PIXEL_ENGINE__.step(6));
+      await touch('touchEnd', []);
+      return R((zoom) => {
+        const g = window.__RIFTLIGHT__.game;
+        window.__PIXEL_ENGINE__.step(2);
+        delete g.hero.fixedUpdate; // its own method again
+        g.settings.touchAutoAttack = true;
+        g.settings.zoom = zoom;
+        return { steps: window.__swings.length, swings: window.__swings.filter(Boolean).length };
+      }, c.zoom);
+    })();
+    check(apart.steps >= 8 && apart.swings === 0, `${orientation}: two fingers a frame apart pinch with no swing either (${apart.swings} swings in ${apart.steps} steps)`);
+
     // the passive tree draws at the game's art size (its phone density) and names a finger's gestures
     const tree = await R(async () => {
       const rl = window.__RIFTLIGHT__;
@@ -239,6 +356,26 @@ export async function runRiftlightPhone(h, orientation) {
       return out;
     });
     check(tree.art.width === tree.res.width && tree.art.height === tree.res.height && tree.hints.includes('tap') && !tree.hints.includes('take'), `${orientation}: the passive tree draws at the game's ${tree.res.width}×${tree.res.height} and its bar names taps, not clicks (${tree.hints.join(', ')})`);
+    // a swipe down from the tree's top bar closes it (its own canvas: sent, so recorded), off its search box
+    await R(() => {
+      window.__RIFTLIGHT__.ui.open('tree');
+      window.__PIXEL_ENGINE__.manual = false;
+    });
+    await page.waitForTimeout(300);
+    const topBar = await R((share) => {
+      const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+      return { x: c.left + c.width * share, y: c.top + 4 };
+    }, portrait ? 0.6 : 0.08);
+    await touch('touchStart', [[topBar.x, topBar.y, 51]]);
+    for (let k = 1; k <= 4; k++) await touch('touchMove', [[topBar.x, topBar.y + k * 40, 51]]);
+    await touch('touchEnd', []);
+    await page.waitForTimeout(300);
+    const treeUi = await R(() => {
+      window.__PIXEL_ENGINE__.manual = true;
+      return window.__RIFTLIGHT__.state().ui;
+    });
+    check(!treeUi.includes('tree'), `${orientation}: a swipe down from the tree's top bar closes it (ui ${treeUi.join(',') || 'none'})`);
+    if (treeUi.includes('tree')) await R(() => window.__RIFTLIGHT__.ui.close('tree'));
     if (portrait) {
       // the settings menu is taller than a phone: a drag scrolls it until its last row shows
       const before = await R(() => {
@@ -303,6 +440,19 @@ export async function runRiftlightPhone(h, orientation) {
       check(panels.recap.id === 'death' && panels.recap.fits && panels.recap.inPanel && panels.recap.button >= 40, `${orientation}: the death recap fits with a ${Math.round(panels.recap.button)} CSS px button`);
       await shot('recap');
     }
+    // in town by the stash: the interact button shows too
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      rl.toTown();
+      window.__PIXEL_ENGINE__.step(5);
+      window.__PIXEL_ENGINE__.input.noteTouch();
+      const stash = rl.game.town.interactables.find((x) => x.id === 'stash');
+      rl.moveTo(stash.position.x, stash.position.z, { radius: Math.min(1.2, stash.radius - 0.4) });
+      window.__PIXEL_ENGINE__.step(3);
+    });
+    const offered = await R(() => [...document.querySelectorAll('.touch-ui > button')].some((b) => b.dataset.code === 'KeyF' && getComputedStyle(b).display !== 'none'));
+    check(offered, `${orientation}: by the stash the interact button shows`);
+    await agree('in town, interact on offer');
     if (!portrait) {
       // back to the title with a save: Continue joins the entries, and every one still shows
       await R(() => {
@@ -316,6 +466,38 @@ export async function runRiftlightPhone(h, orientation) {
       await shot('title-save');
     }
     checkClean(await state(page), logs, `${orientation}: `);
+    await ctx.browser.close();
+    ctx = null;
+
+    // DPR 3 (an iPhone's, most Androids'): the data and the page agree there too
+    ctx = await launch(exe, s, { viewport, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    {
+      const page3 = ctx.page;
+      const R3 = (fn, arg) => page3.evaluate(fn, arg);
+      await page3.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
+      await ready(page3);
+      await page3.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+      await R3(async () => {
+        const rl = window.__RIFTLIGHT__;
+        rl.newRun({ slot: 0, seed: 4242 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        window.__PIXEL_ENGINE__.input.noteTouch();
+        window.__PIXEL_ENGINE__.step(30);
+      });
+      const a = await R3(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const e = window.__PIXEL_ENGINE__;
+        e.step(1);
+        const z = e.touch.rects().zone;
+        const tl = g.pointer.toArt(z.left, z.top);
+        const br = g.pointer.toArt(z.right, z.bottom);
+        return { page: window.__RIFTLIGHT__.ui.hud().controls, data: g.touchPad.dataLayout(), zone: { x: tl.x, y: tl.y, w: br.x - tl.x + 1, h: br.y - tl.y + 1 }, dataZone: g.touchPad.stickZone() };
+      });
+      const same = JSON.stringify(a.page) === JSON.stringify(a.data) && JSON.stringify(a.zone) === JSON.stringify(a.dataZone);
+      check(same && a.page.length >= 7, `${orientation} at DPR 3: the controls from their data are where the page lays them (${a.page.length} rects${same ? '' : `: page ${JSON.stringify(a.page)} zone ${JSON.stringify(a.zone)} vs data ${JSON.stringify(a.data)} zone ${JSON.stringify(a.dataZone)}`})`);
+      checkClean(await state(page3), ctx.logs, `${orientation} at DPR 3: `);
+    }
     await ctx.browser.close();
     ctx = null;
 

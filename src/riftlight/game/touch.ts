@@ -60,6 +60,40 @@ export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
   { label: '≡', code: TOUCH_CODES.menu, at: { ...L.menu, corner: 'top-left' } },
 ];
 
+/** The engine's joystick at rest (style.css `.touch-ui .stick`): 16 CSS px from the bottom-left corner, 128 px and a 2 px border. */
+const STICK = { margin: 16, size: 132 } as const;
+
+/** The floating joystick's zone (style.css `.stick-zone`): the left 45% of the screen, its lower 75% in landscape and 60% in portrait. */
+export const STICK_ZONE = { width: 0.45, landscape: 0.75, portrait: 0.6 } as const;
+
+/**
+ * Where the touch controls sit on a `width` × `height` CSS px screen (the page's viewport), from
+ * their data (the buttons' `at`, from an 8 px margin, and the joystick at rest), as CSS rects: what
+ * the page lays out, for where there is no page (headless, a replay of a phone's recording) and for
+ * the checks. The page keeps its controls inside a notched phone's safe area (`env(safe-area-inset-*)`
+ * past the margins), which a recording does not keep: on such a phone a replay without the page
+ * lays the HUD out around controls a few pixels off where the player saw them (the phone e2e checks
+ * the two agree where there is no notch).
+ */
+export function touchLayout(width: number, height: number, buttons: readonly TouchButton[] = RIFTLIGHT_TOUCH_BUTTONS): Box[] {
+  const out: Box[] = [{ x: STICK.margin, y: height - STICK.margin - STICK.size, w: STICK.size, h: STICK.size }];
+  for (const b of buttons) {
+    if (!b.at) continue;
+    const size = b.at.size ?? 58;
+    const corner = b.at.corner ?? 'bottom-right';
+    const x = corner.endsWith('left') ? 8 + b.at.x - size / 2 : width - 8 - b.at.x - size / 2;
+    const y = corner.startsWith('top') ? 8 + b.at.y - size / 2 : height - 8 - b.at.y - size / 2;
+    out.push({ x, y, w: size, h: size });
+  }
+  return out;
+}
+
+/** The floating joystick's zone on a `width` × `height` CSS px screen (`STICK_ZONE`): a touch there moves the stick, never the game's HUD. */
+export function stickZone(width: number, height: number): Box {
+  const h = height * (height >= width ? STICK_ZONE.portrait : STICK_ZONE.landscape);
+  return { x: 0, y: height - h, w: width * STICK_ZONE.width, h };
+}
+
 /** What the shell tells the pad each frame. */
 export interface TouchFrame {
   /** The world is playable (town or level, alive, no panel on top). */
@@ -96,7 +130,7 @@ export class TouchPad {
    */
   zones(toArt: (x: number, y: number) => { x: number; y: number }): Box[] {
     const touch = this.engine.touch;
-    if (!touch) return [];
+    if (!touch) return this.fromData();
     if (touch.deviceHidden) return []; // a pad or the keyboard in use: their layout, with its skill bar
     if (!touch.visible) return this.last;
     const r = touch.rects();
@@ -114,6 +148,60 @@ export class TouchPad {
   }
 
   private last: Box[] = [];
+
+  /** The rects that stood in while the controls were hidden, as a snapshot kept them (`Riftlight.restoreNow`). */
+  restoreLast(boxes: readonly Box[]): void {
+    this.last = boxes.map((b) => ({ ...b }));
+  }
+
+  /**
+   * Without a page (headless, a replay of a phone's recording): where the page's controls would
+   * be on a page with touch controls (`touchDensity` set, recorded) while a finger is the device in
+   * use (recorded), from their data (`dataLayout`); none otherwise. So the HUD a replay draws, and
+   * what a tap on it hits, is the phone's (but for a notch's safe area: `touchLayout`).
+   */
+  private fromData(): Box[] {
+    const e = this.engine;
+    if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return [];
+    return this.dataLayout();
+  }
+
+  /**
+   * The controls laid out from their data in the recorded viewport, in art pixels: the joystick at
+   * rest and every placed button, a hidden one too (it keeps its place on the page: the HUD
+   * doesn't jump when the interact button comes and goes). The phone e2e holds it to the page's.
+   */
+  dataLayout(): Box[] {
+    const { width, height } = this.engine.renderer.viewport;
+    return touchLayout(width, height).map((c) => this.toArt(c));
+  }
+
+  /**
+   * A CSS px rect of the page (its viewport) as art pixels, by the view's framing: the arithmetic
+   * of `Pointer.toArt` on the canvas's client rect (its offset and size: a fill canvas can reach
+   * past the viewport's edges), so the page's rects and the data's land on the same art pixels.
+   */
+  private toArt(c: Box): Box {
+    const f = this.engine.renderer.framing;
+    const ax = (x: number) => Math.floor(((x - f.offsetX) / f.cssWidth) * f.artWidth);
+    const ay = (y: number) => Math.floor(((y - f.offsetY) / f.cssHeight) * f.artHeight);
+    const x = ax(c.x);
+    const y = ay(c.y);
+    return { x, y, w: ax(c.x + c.w) - x + 1, h: ay(c.y + c.h) - y + 1 };
+  }
+
+  /**
+   * The floating joystick's zone in art pixels while the controls show for a finger (on a page
+   * with touch controls: `touchDensity` set, recorded; a finger the device in use, recorded), or
+   * null: the game keeps what a finger taps out of it (a touch there moves the stick). From the
+   * data (`stickZone`), so a replay agrees.
+   */
+  stickZone(): Box | null {
+    const e = this.engine;
+    if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return null;
+    const { width, height } = e.renderer.viewport;
+    return this.toArt(stickZone(width, height));
+  }
 
   sync(f: TouchFrame): void {
     const touch = this.engine.touch;

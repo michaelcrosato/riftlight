@@ -237,10 +237,31 @@ describe('recording and replaying input', () => {
         ['MouseLeft', false, 0.5],
       ]);
       frame(() => {});
-      // a finger is Touch, not a click; two fingers lift one by one
-      expect(frame(() => (el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 5, button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 6, button: 0, buttons: 1 }))))).toEqual({ held: ['Touch'], pressed: ['Touch'], buttons: 1, touch: true });
-      expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 5, button: 0 })))).toEqual({ held: ['Touch'], pressed: [], buttons: 1, touch: true });
+      // a finger is Touch, not a click; a second finger makes a pinch: Touch lets go, and stays up
+      // until both are lifted, one by one
+      expect(frame(() => el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 5, button: 0, buttons: 1 })))).toEqual({ held: ['Touch'], pressed: ['Touch'], buttons: 1, touch: true });
+      expect(frame(() => el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 6, button: 0, buttons: 1 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 5, button: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
       expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 6, button: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      // both up: the next finger presses again
+      expect(frame(() => el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 7, button: 0, buttons: 1 })))).toEqual({ held: ['Touch'], pressed: ['Touch'], buttons: 1, touch: true });
+      expect(frame(() => el.dispatchEvent(ev('pointerup', { type: 'touch', id: 7, button: 0 })))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      // both fingers down in one frame (a pinch's touchstart with two points): nothing pressed at
+      // all, nothing queued, no press recorded; a tap earlier in that frame still counts
+      expect(frame(() => (el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 8, button: 0, buttons: 1 })), el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 9, button: 0, buttons: 1 }))))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      expect(input.consumePress('Touch'), 'no press waits').toBe(false);
+      expect(frame(() => (el.dispatchEvent(ev('pointerup', { type: 'touch', id: 8, button: 0 })), el.dispatchEvent(ev('pointerup', { type: 'touch', id: 9, button: 0 }))))).toEqual({ held: [], pressed: [], buttons: 0, touch: true });
+      el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 10, button: 0, buttons: 1 }));
+      el.dispatchEvent(ev('pointerup', { type: 'touch', id: 10, button: 0 }));
+      el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 11, button: 0, buttons: 1 }));
+      el.dispatchEvent(ev('pointerdown', { type: 'touch', id: 12, button: 0, buttons: 1 }));
+      expect(input.buttonEvents.map((e) => [e.code, e.down])).toEqual([
+        ['Touch', true],
+        ['Touch', false],
+      ]);
+      expect(frame(() => {})).toEqual({ held: [], pressed: ['Touch'], buttons: 0, touch: true });
+      for (const id of [11, 12]) el.dispatchEvent(ev('pointerup', { type: 'touch', id, button: 0 }));
+      frame(() => {});
       input.dispose();
     } finally {
       if (!hadDocument) delete doc.document;

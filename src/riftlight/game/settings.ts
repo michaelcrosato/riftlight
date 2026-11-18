@@ -18,6 +18,10 @@ export interface Settings extends ShellSettings {
   quality: QualityLevel | 'auto';
   /** Multiplies the stage zoom (0.6..1.6). */
   zoom: number;
+  /** A finger's auto attack: the basic attack on a monster in reach while no skill is pressed (touch only; `Riftlight.touchAssist`). */
+  touchAutoAttack: boolean;
+  /** A finger's aim assist: skills and attacks snap to the monster the stick points at (touch only). */
+  touchAimAssist: boolean;
 }
 
 export const DEFAULT_SETTINGS: Readonly<Settings> = {
@@ -28,6 +32,8 @@ export const DEFAULT_SETTINGS: Readonly<Settings> = {
   customLook: null,
   quality: 'auto',
   zoom: 1,
+  touchAutoAttack: true,
+  touchAimAssist: true,
 };
 
 const KEY = 'riftlight:settings';
@@ -48,6 +54,8 @@ export function loadSettings(): Settings {
       }
       if (raw.quality === 'auto' || raw.quality === 'low' || raw.quality === 'medium' || raw.quality === 'high') out.quality = raw.quality;
       if (typeof raw.zoom === 'number') out.zoom = Math.max(0.6, Math.min(1.6, raw.zoom));
+      if (typeof raw.touchAutoAttack === 'boolean') out.touchAutoAttack = raw.touchAutoAttack;
+      if (typeof raw.touchAimAssist === 'boolean') out.touchAimAssist = raw.touchAimAssist;
     }
   } catch {
     /* storage blocked or corrupt: defaults */
@@ -65,7 +73,7 @@ export function storeSettings(s: Settings): void {
 
 /**
  * The settings play depends on, not just the picture: zoom and screen shake move the camera, so
- * what the mouse points at; the loot filter changes what happens
+ * what the mouse points at; the loot filter and a finger's assists change what happens
  * (damage numbers only what is drawn: their drift draws from the presentation stream). A
  * recording keeps them (`Riftlight.command`), so a replay plays with them.
  */
@@ -75,5 +83,7 @@ export function playSettings(s: Partial<Settings>): Partial<Settings> {
   if (typeof s.screenShake === 'number') out.screenShake = s.screenShake;
   if (typeof s.damageNumbers === 'boolean') out.damageNumbers = s.damageNumbers;
   if (typeof s.lootFilter === 'number') out.lootFilter = s.lootFilter;
+  if (typeof s.touchAutoAttack === 'boolean') out.touchAutoAttack = s.touchAutoAttack;
+  if (typeof s.touchAimAssist === 'boolean') out.touchAimAssist = s.touchAimAssist;
   return out;
 }

@@ -255,6 +255,8 @@ export interface PointerState {
   readonly buttons: number;
   readonly idle: number;
   readonly touch: boolean;
+  /** Where the last finger went down (absent in older save-states: none). */
+  readonly touchDown?: readonly [number, number] | null;
 }
 
 export class Pointer {
@@ -265,6 +267,8 @@ export class Pointer {
   /** Seconds since the mouse last moved, clicked or let go, not counting while a button is held (big = keyboard / pad player). */
   idle = 1e9;
   touch = false;
+  /** Where the last finger went down, art pixels (from the recorded touches): a swipe started there. Null before any. */
+  touchDown: { x: number; y: number } | null = null;
   private readonly ray = new Raycaster();
   private readonly ndc = new Vector2();
 
@@ -305,6 +309,7 @@ export class Pointer {
       if (!b) continue;
       moveTo(e.x, e.y);
       out.push({ kind: 'pointer', type: e.down ? 'down' : 'up', x: this.art.x, y: this.art.y, button: b[0], touch: e.code === 'Touch' });
+      if (e.down && e.code === 'Touch') this.touchDown = { x: this.art.x, y: this.art.y };
       this.buttons = e.down ? this.buttons | b[1] : this.buttons & ~b[1];
       this.idle = 0;
     }
@@ -332,7 +337,7 @@ export class Pointer {
 
   /** Where it was and what it held, as data (save-states). */
   save(): PointerState {
-    return { art: [this.art.x, this.art.y], buttons: this.buttons, idle: this.idle, touch: this.touch };
+    return { art: [this.art.x, this.art.y], buttons: this.buttons, idle: this.idle, touch: this.touch, touchDown: this.touchDown ? [this.touchDown.x, this.touchDown.y] : null };
   }
 
   load(s: PointerState): void {
@@ -340,6 +345,7 @@ export class Pointer {
     this.buttons = s.buttons;
     this.idle = s.idle;
     this.touch = s.touch;
+    this.touchDown = s.touchDown ? { x: s.touchDown[0], y: s.touchDown[1] } : null;
   }
 
   /** Nothing to let go of: the pointer is the engine's. */

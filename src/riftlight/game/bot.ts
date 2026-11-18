@@ -18,6 +18,7 @@
 import { Vector3 } from 'three/webgpu';
 import type { LayoutLike } from '../core/types';
 import { roleOfTags, type SkillRole } from './botTown';
+import { MELEE_REACH } from '../actors/aim';
 import { bfs } from './nav';
 import type { HeroIntent, HeroPort, LevelHandle, MonsterHandle, SkillSlotView, Telegraph, WorldLoot } from './ports';
 
@@ -218,7 +219,7 @@ export class PlaytestBot {
     if (target && td < 10 && !(v.level.exitOpen && this.o.exit !== false && td > 6)) {
       const tp = target.actor.position;
       i.aim.copy(tp);
-      const reach = 1.7 + target.actor.radius;
+      const reach = MELEE_REACH + target.actor.radius;
       const elite = target.rank !== 'normal';
       const use = (s: SkillSlotView | undefined) => {
         if (s) i.skill = s.slot as number;

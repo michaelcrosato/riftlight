@@ -760,13 +760,15 @@ it(
       engine.input.noteDevice('touch');
       w.open('pause');
       engine.step(2);
-      // the Resume row (the menu acts on the press), over the floor
+      // the Resume row, over the floor: a finger chooses it as it lifts where it went down (a
+      // swipe across a menu chooses nothing)
       const row = hudTexts(engine).find((t) => t.text === 'Resume')!;
       const box = { x: row.x + 2, y: row.y + 3 };
       finger(box.x, box.y, true);
-      expect(w.state().panel, 'the finger chose Resume').toBeNull();
+      expect(w.state().panel, 'the finger down: the menu waits to see a tap').toBe('pause');
       engine.step(4);
       finger(box.x, box.y, false);
+      expect(w.state().panel, 'the finger chose Resume as it lifted').toBeNull();
       engine.step(2);
       expect(placed(), 'the tap was the menu\'s').toBe(0);
       finger(box.x, box.y, true);

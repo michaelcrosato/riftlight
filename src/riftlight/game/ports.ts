@@ -22,7 +22,7 @@
  */
 import type { ActorIndex } from '../core/saved';
 import type { Object3D, Vector3 } from 'three/webgpu';
-import type { GameContext, PaletteColor } from '../../engine';
+import type { GameContext, PaletteColor, SwipeDirection } from '../../engine';
 import type { Mod } from '../core/mods';
 import type { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
@@ -454,6 +454,18 @@ export interface Panel {
    * a page with touch controls, 0 elsewhere): rows and tabs at least that tall.
    */
   fit?(w: number, h: number, tap?: number): void;
+  /**
+   * Optional: the panel moves with a swipe this way from art pixel (x, y) itself (a list that
+   * scrolls takes up and down, a slider sideways), so the swipe doesn't close it (`UiLayer.swipe`).
+   */
+  swipes?(dir: SwipeDirection, x: number, y: number): boolean;
+  /**
+   * Optional: whether a swipe this way from (x, y) closes it, for a panel with rules of its own
+   * (the item windows: down from a window's title bar). Left out, a framed panel closes on a swipe
+   * left, right or down that starts on its frame, unless it takes that swipe itself (`swipes`; from
+   * its title bar it always closes); an overlay never.
+   */
+  swipeCloses?(dir: SwipeDirection, x: number, y: number): boolean;
   /**
    * Not one of the character screens' ring although its id is one (Oru's respec tree is a `tree`
    * view): L1 / R1 don't page away from it and the ring's strip doesn't show over it.

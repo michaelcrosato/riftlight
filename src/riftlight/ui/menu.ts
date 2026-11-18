@@ -91,7 +91,8 @@ export class Menu implements Panel {
   private scrolls = false;
   /** Keep the focused row in view (keys, pad, wheel); a finger's drag turns it off. */
   private follow = true;
-  private press: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+  /** A press waiting to see a tap or a drag (`pointer`): where, the scroll then, whether it moved, and whether a finger made it. */
+  private press: { x: number; y: number; scroll: number; moved: boolean; touch: boolean } | null = null;
   /** Width the shell has room for (`fit`); below the menu's width it lays out narrow. */
   private room = Infinity;
   /** Height the shell has room for (`fit`): a grid menu takes two columns when one would be taller. */
@@ -223,6 +224,15 @@ export class Menu implements Panel {
     this.widgets = this.source();
     const again = this.widgets.findIndex((w) => w.id === id);
     this.focus = again >= 0 ? again : Math.min(this.focus, this.widgets.length - 1);
+  }
+
+  /** A list that scrolls moves with a swipe up or down, a slider with one sideways from its track: not a swipe that closes the menu (`UiLayer.swipe`). */
+  swipes(dir: 'left' | 'right' | 'up' | 'down', x: number, y: number): boolean {
+    if (dir === 'up' || dir === 'down') return this.scrolls;
+    return this.widgets.some((w) => {
+      const t = this.rects.get(`${w.id}:track`);
+      return w.kind === 'slider' && !!t && inside(t, x, y);
+    });
   }
 
   /** The focused control and its value ("Game Boy dither 0.9"), for when the menu is hidden. */
@@ -408,7 +418,7 @@ export class Menu implements Panel {
         }
         return false;
       case 'pointer':
-        return this.pointer(e.type, e.x, e.y);
+        return this.pointer(e.type, e.x, e.y, !!e.touch);
       case 'wheel':
         this.move(e.dy > 0 ? 1 : -1);
         return true;
@@ -462,11 +472,11 @@ export class Menu implements Panel {
     return this.adjust(w, 1);
   }
 
-  private pointer(type: 'move' | 'down' | 'up', x: number, y: number): boolean {
+  private pointer(type: 'move' | 'down' | 'up', x: number, y: number, touch = false): boolean {
     if (type === 'up') {
       const was = this.dragging;
       this.dragging = null;
-      // a menu that scrolls acts on release, unless the finger dragged the list
+      // a menu that scrolls, or a finger, acts on release, unless it dragged the list (or swiped)
       const p = this.press;
       this.press = null;
       if (p && !p.moved) return this.hit('down', p.x, p.y) || true;
@@ -480,21 +490,23 @@ export class Menu implements Panel {
     }
     if (this.press && type === 'move') {
       const dy = y - this.press.y;
-      if (Math.abs(dy) > 3) this.press.moved = true;
-      if (this.press.moved) {
+      // a finger that slides sideways is a swipe, not a tap; a mouse's click keeps its sideways drift
+      if (Math.abs(dy) > 3 || (this.press.touch && Math.abs(x - this.press.x) > 3)) this.press.moved = true;
+      if (this.press.moved && this.scrolls) {
         this.scroll = this.press.scroll - dy;
         this.follow = false;
       }
       return true;
     }
-    if (type === 'down' && this.scrolls) {
+    // a finger acts as it lets go, where it went down (a swipe across the menu presses nothing)
+    if (type === 'down' && (this.scrolls || touch)) {
       // a slider's track still drags at once; anything else waits to see a tap or a drag
       const onTrack = this.widgets.some((w) => {
         const t = this.rects.get(`${w.id}:track`);
         return w.kind === 'slider' && t && inside(t, x, y);
       });
       if (!onTrack) {
-        this.press = { x, y, scroll: this.scroll, moved: false };
+        this.press = { x, y, scroll: this.scroll, moved: false, touch };
         return true;
       }
     }

@@ -7,8 +7,10 @@
  * (ui/kit.ts: bevelled frame, navy title bar, close box).
  *
  * Input: mouse (click to pick up / drop, drag and drop, right-click to equip, socket or use,
- * Ctrl-click to stash / sell / buy, Alt for affix tiers), touch (tap shows the tooltip, a
- * second tap acts, long-press = right-click) and keys or a gamepad (a cursor that steps
+ * Ctrl-click to stash / sell / buy, Alt for affix tiers), touch (a tap picks an item: its
+ * tooltip and, under it, a row of buttons a thumb can hit for what it can do there, Equip / Use /
+ * Socket / Sell / To stash / Move...: `touchActions`; a second tap still acts, a long-press is still
+ * the right-click; a swipe down from a window's title bar closes the windows) and keys or a gamepad (a cursor that steps
  * between cells and slots: confirm = click, X = right-click, Y / V = Ctrl-click, tab = the
  * next tab, back = put the held item back / close). Every change is a pure
  * `loot/inventory` or `loot/sockets` operation committed to the ItemsStore.
@@ -46,7 +48,9 @@ import { currencyDescription, currencyName, currencyShort, damageName, goldLabel
 import { autoSocket, gemAt, gemProgress, isGem, setSocket, SKILL_SLOTS, skillNumbers, socketBlocker, SUPPORT_LINKS, supportApplies, type SkillNumbers } from '../../loot/sockets';
 import { buy, buyPrice, sell, sellPrice, type VendorKind } from '../../loot/vendor';
 import { SKILLS } from '../../skills/actives';
-import { clip, miniCovers, miniRows, miniWidth, type UiEvent } from '../kit';
+import { clip, inside, miniCovers, miniRows, miniWidth, type UiEvent } from '../kit';
+import { overlaps } from '../layout';
+import { tapArt } from '../layer';
 import { gemIcon } from '../../skills/icons';
 import { drawGemIcon, drawIcon } from './icons';
 import { canvasPainter, outline, type Painter, panel, shadowText, textWidth, UI, wrap } from './paint';
@@ -199,6 +203,8 @@ export class ItemsUi {
   message: ItemsMessage | null = null;
   /** Touch: the item whose tooltip a first tap opened (a second tap acts on it). */
   private touchPick: string | null = null;
+  /** Where the item a finger picked was tapped (its tooltip and action buttons stay while the finger goes to them). */
+  private touchAt: { x: number; y: number } | null = null;
   private lastTouch = false;
   private hoverOrb: string | null = null;
   private messageTime = 0;
@@ -314,6 +320,7 @@ export class ItemsUi {
       this.applying = null;
       this.benchItem = null;
       this.touchPick = null;
+      this.touchAt = null;
       this.downAt = null;
       this.longPressed = false;
       this.paint(); // hide the canvas now: a hosted view gets no more updates once closed
@@ -733,15 +740,166 @@ export class ItemsUi {
 
   /** Touch tap: the first tap on an item shows its tooltip, a second tap acts (empty cells and buttons act at once). */
   tap(x: number, y: number): void {
+    // a button of the picked item's action row does what it says, on the item where it was picked
+    const act = this.touchActions().find((a) => inside(a.rect, x, y));
+    if (act) return this.touchAct(act.id);
     const t = this.hit(x, y);
     const item = this.held || this.applying ? null : this.itemAtTarget(t);
     if (item && this.touchPick !== item.uid && t?.kind !== 'bench') {
       this.touchPick = item.uid;
+      this.touchAt = { x, y };
       this.ctx.audio.play('loot-pickup', { volume: 0.25 });
       return;
     }
     this.touchPick = null;
+    this.touchAt = null;
     this.primary(x, y, { ctrl: false, shift: false });
+  }
+
+  /**
+   * A finger's picked item, its target where it was tapped: null when nothing is picked (or an item
+   * is carried, an orb is being applied, the pad drives the windows).
+   */
+  private picked(): { item: Item; at: Target; x: number; y: number } | null {
+    if (!this.lastTouch || this.cursorMode === 'pad' || this.held || this.applying || !this.touchPick || !this.touchAt) return null;
+    const { x, y } = this.touchAt;
+    const at = this.hit(x, y);
+    const item = at ? this.itemAtTarget(at) : null;
+    return at && item && item.uid === this.touchPick ? { item, at, x, y } : null;
+  }
+
+  /**
+   * What a finger can do with the item it picked, as buttons a thumb can hit (no hidden gestures):
+   * `use` the right-click's (Equip, Unequip, Use, Socket, Take out, To bag, Buy), `quick` the
+   * Ctrl-click's where it differs (To stash, Sell), `move` the click's (pick it up to put it
+   * elsewhere), each as tall as a thumb's target (`tapArt`), placed with its tooltip (`pickLayout`).
+   * Pure layout from the windows' state: a replay hits the same buttons.
+   */
+  touchActions(): { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] {
+    return this.pickLayout()?.actions ?? [];
+  }
+
+  /**
+   * A finger's picked item laid out: its tooltip where it was tapped and its action buttons (in
+   * rows on a narrow screen) under the tooltip, else over it; with room for neither (a tall
+   * tooltip on a phone) the row at the top of the screen and the tooltip moved down under it, its
+   * last lines cut off by the screen's edge rather than its name by the buttons. Never over each
+   * other, nor over a window's title bar (its close box: a row slides beside it along its line, else
+   * goes under it).
+   */
+  private pickLayout(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
+    const p = this.picked();
+    if (!p) return null;
+    const { item, at } = p;
+    const lines = this.tipLines(item, at);
+    const tip = this.tipRect(lines, p.x, p.y);
+    const acts: { id: 'use' | 'quick' | 'move'; label: string }[] = [];
+    const inBag = at.kind === 'grid' && at.where === 'inventory';
+    const use =
+      at.kind === 'slot'
+        ? 'item.act.unequip'
+        : at.kind === 'vendor'
+          ? 'item.act.buy'
+          : at.kind === 'socket'
+            ? 'item.act.take_out'
+            : at.kind === 'grid' && !inBag
+              ? 'item.act.to_bag'
+              : inBag && itemClass(item) === 'currency'
+                ? 'item.act.use'
+                : inBag && isGem(item)
+                  ? this.left === 'skills'
+                    ? 'item.act.socket'
+                    : null
+                  : inBag && isEquipment(item) && this.left !== 'bench'
+                    ? 'item.act.equip'
+                    : null;
+    if (use) acts.push({ id: 'use', label: t(use) });
+    if (inBag && this.left === 'stash') acts.push({ id: 'quick', label: t('item.act.to_stash') });
+    if (inBag && this.left === 'vendor') acts.push({ id: 'quick', label: t('item.act.sell') });
+    if (at.kind !== 'vendor' && this.left !== 'bench') acts.push({ id: 'move', label: t('item.act.move') });
+    if (!acts.length) return { item, at, lines, tip, actions: [] };
+    const h = Math.max(14, tapArt(this.ctx.engine.renderer));
+    const gap = 3;
+    const room = this.size.w - 2;
+    // as wide as two thumbs each, else as wide as its word; rows of as many as fit (a phone in portrait)
+    const roomy = acts.map((a) => Math.max(h * 2, textWidth(a.label) + 12));
+    const widths = roomy.reduce((s, w) => s + w, 0) + gap * (acts.length - 1) <= room ? roomy : acts.map((a) => Math.min(room, textWidth(a.label) + 10));
+    const rows: number[][] = [];
+    let used = room + 1;
+    widths.forEach((w, i) => {
+      if (used + gap + w > room) {
+        rows.push([]);
+        used = -gap;
+      }
+      rows[rows.length - 1]!.push(i);
+      used += gap + w;
+    });
+    const tall = rows.length * h + (rows.length - 1) * gap;
+    const totals = rows.map((row) => row.reduce((s, i) => s + widths[i]!, 0) + gap * (row.length - 1));
+    // never over a window's title bar either (its close box, the Gems button, where a swipe down
+    // closes them): each row slides along its line beside the bars it would cover
+    const bars = this.rects().map((b) => ({ x: b.x, y: b.y, w: b.w, h: HEADER }));
+    /** Where a row `total` wide at `ry` goes along: centred on the tooltip, else the nearest spot beside the bars clear of them and of the tooltip; null with none. */
+    const along = (total: number, ry: number, tipAt: Rect): number | null => {
+      const centre = Math.max(1, Math.min(this.size.w - total - 1, Math.round(tipAt.x + tipAt.w / 2 - total / 2)));
+      const xs = [centre, ...bars.flatMap((b) => [b.x - total - 1, b.x + b.w + 1])].filter((x) => x >= 1 && x + total <= this.size.w - 1);
+      xs.sort((p, q) => Math.abs(p - centre) - Math.abs(q - centre));
+      return xs.find((x) => ![...bars, tipAt].some((b) => overlaps({ x, y: ry, w: total, h }, b))) ?? null;
+    };
+    // the lines it may take, in order: under the tooltip; over it; with room for neither (a tall
+    // tooltip on a phone) at the top, the tooltip under it; else under a title bar, the tooltip
+    // under the row where they would meet
+    const spots: { y: number; tipY: number }[] = [];
+    const under = tip.y + tip.h + 2;
+    if (under + tall <= this.size.h - 1) spots.push({ y: under, tipY: tip.y });
+    else if (tip.y - tall - 2 >= 1) spots.push({ y: tip.y - tall - 2, tipY: tip.y });
+    else spots.push({ y: 1, tipY: Math.max(tip.y, 1 + tall + 2) });
+    for (const b of bars) {
+      const y = b.y + b.h + 1;
+      if (y + tall <= this.size.h - 1) spots.push({ y, tipY: y + tall + 2 > tip.y && y < tip.y + tip.h + 2 ? y + tall + 2 : tip.y });
+    }
+    let line = spots[0]!;
+    let xs: (number | null)[] = [];
+    for (const l of spots) {
+      const tipAt = { ...tip, y: l.tipY };
+      const found = totals.map((total, r) => along(total, l.y + r * (h + gap), tipAt));
+      if (!found.includes(null)) {
+        line = l;
+        xs = found;
+        break;
+      }
+    }
+    const y = line.y;
+    tip.y = line.tipY;
+    const actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] = [];
+    rows.forEach((row, r) => {
+      const total = totals[r]!;
+      let x = xs[r] ?? Math.max(1, Math.min(this.size.w - total - 1, Math.round(tip.x + tip.w / 2 - total / 2)));
+      for (const i of row) {
+        actions.push({ ...acts[i]!, rect: { x, y: y + r * (h + gap), w: widths[i]!, h } });
+        x += widths[i]! + gap;
+      }
+    });
+    return { item, at, lines, tip, actions };
+  }
+
+  /** A button of the picked item's action row (`touchActions`), on the item where it was picked. */
+  private touchAct(id: 'use' | 'quick' | 'move'): void {
+    const p = this.picked();
+    this.touchPick = null;
+    this.touchAt = null;
+    if (!p) return;
+    if (id === 'use') this.secondary(p.x, p.y);
+    else if (id === 'quick') this.quick(p.at);
+    else this.primary(p.x, p.y, { ctrl: false, shift: false });
+  }
+
+  /**
+   * A swipe (the shell's) closes the windows when it is a downward one that starts on a window's
+   * title bar; elsewhere a quick drag moves an item, never closes them.
+   */
+  swipeCloses(dir: 'left' | 'right' | 'up' | 'down', x: number, y: number): boolean {
+    return dir === 'down' && this.rects().some((r) => x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + HEADER);
   }
 
   // ---------------------------------------------------------------- keys / pad (hosted)
@@ -902,6 +1060,7 @@ export class ItemsUi {
     if (d?.touch && !d.moved && !this.longPressed && this.time - d.t > 0.45) {
       this.longPressed = true;
       this.touchPick = null;
+      this.touchAt = null;
       this.secondary(d.x, d.y);
     }
     if (this.message && this.time - this.messageTime > 2.5) this.message = null;
@@ -1582,8 +1741,15 @@ export class ItemsUi {
       }
       this.drawItem(p, this.held.item, cx - Math.floor((s.w * CELL) / 2), cy - Math.floor((s.h * CELL) / 2), s.w * CELL - 1, s.h * CELL - 1);
     } else {
-      const shown = this.tipTarget(t);
-      if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
+      // a finger's picked item: its tooltip where it was tapped, and its row of action buttons clear of it
+      const picked = this.pickLayout();
+      const shown = picked ? null : this.tipTarget(t);
+      if (picked) drawTooltip(p, picked.tip.x, picked.tip.y, picked.lines);
+      else if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
+      for (const a of picked?.actions ?? []) {
+        panel(p, a.rect.x, a.rect.y, a.rect.w, a.rect.h, UI.title);
+        shadowText(p, a.rect.x + Math.floor((a.rect.w - textWidth(a.label)) / 2), a.rect.y + Math.floor((a.rect.h - 7) / 2), a.label, PALETTE.white);
+      }
     }
     if (this.applying) {
       drawIcon(p, 'orb', cx + 3, cy + 3, 7, 7, UI.dim);
@@ -1696,6 +1862,12 @@ export class ItemsUi {
 
   /** Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`), and drawn there. */
   private placeTip(p: Painter, lines: readonly TipLine[], cx: number, cy: number): void {
+    const r = this.tipRect(lines, cx, cy);
+    drawTooltip(p, r.x, r.y, lines);
+  }
+
+  /** Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`) (pure: the action row goes under it). */
+  private tipRect(lines: readonly TipLine[], cx: number, cy: number): Rect {
     const size = measureTooltip(lines);
     let x: number;
     let y: number;
@@ -1717,7 +1889,7 @@ export class ItemsUi {
       x = Math.max(2, Math.min(this.size.w - size.w - 2, x));
       y = Math.max(2, Math.min(this.size.h - size.h - 2, cy - Math.floor(size.h / 2)));
     }
-    drawTooltip(p, x, y, lines);
+    return { x, y, w: size.w, h: size.h };
   }
 }
 

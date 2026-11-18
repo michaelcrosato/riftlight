@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -23,7 +23,7 @@ import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, typ
 import { loadRiftlightPacks } from '../packs';
 import { type Interactable, Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, drawMap, type FeedLine, hudBoxes, hudGeometry, mapView, type MinimapModel } from '../ui/hud';
-import { BannerQueue, type Box, HudLayout } from '../ui/layout';
+import { BannerQueue, type Box, HudLayout, overlaps } from '../ui/layout';
 import { clip, inside, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { tapArt, UiLayer } from '../ui/layer';
 import { drawPageStrip, type PageStrip, pagesLegend } from '../ui/legend';
@@ -53,7 +53,7 @@ import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
-import { AIM, autoAim, stickAim, turnOnScreen } from '../actors/aim';
+import { AIM, attackReach, autoAim, coneTarget, stickAim, TOUCH_AIM, turnOnScreen } from '../actors/aim';
 import { COOP, LocalCoop } from './coop';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
@@ -198,6 +198,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
    */
   private pressTaken = false;
+  /** Fixed steps a finger alone has been down on the world, the one it landed in counting 1 (0: none; `FINGER_WAIT`). */
+  private fingerHeld = 0;
+  /**
+   * What a finger can tap or swipe away, as last drawn (art pixels): the loot labels (a tap picks
+   * one up, or walks there), the interact prompt's box (a tap does it), the loot feed's lines and
+   * the NPC's line over a panel (a swipe from one dismisses it).
+   */
+  private touchable: { loot: { id: number; rect: Box }[]; prompt: Box | null; feed: Box[]; dialogue: Box | null } = { loot: [], prompt: null, feed: [], dialogue: null };
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly tmp = new Vector3();
@@ -1486,17 +1494,29 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
     // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
     // frame); a press is used up here even when a panel takes it, so it never fires later
-    const press = input.consumeAny(MOUSE.left);
+    const fingerPress = input.consumeAny(FINGER);
+    const mousePress = input.consumeAny(MOUSE_LEFT);
+    const press = fingerPress || mousePress;
     const hold = input.anyDown(MOUSE.left);
-    // a click on a thing in the world (a townsperson, a loot label, the portal) goes there: no
-    // swing while that button stays down (nor while a press the map took stays down)
-    if (press) this.pressTaken = !!this.worldFocus;
-    else if (!hold) this.pressTaken = false;
-    const left = (press || hold) && !this.pressTaken;
-    const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
     // a press this frame counts where it went down (a tap's finger: the pointer is placed after this step)
-    let down: { x: number; y: number } | null = null;
-    for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = ndcToArt(ctx.engine, e.x, e.y);
+    let down: { x: number; y: number; touch: boolean } | null = null;
+    for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = { ...ndcToArt(ctx.engine, e.x, e.y), touch: e.code === TOUCH_KEY };
+    // a click on a thing in the world (a townsperson, a loot label, the portal) goes there, and a
+    // finger's tap on a loot label or the interact prompt does it (`update`); a finger on the loot
+    // feed or the centre banner may swipe it away: no swing while that button stays down (nor
+    // while a press the map took stays down). `update` takes a finger's press there as well, for a
+    // finger that lands in a frame no fixed step runs in
+    if (press) this.pressTaken = !!this.worldFocus || (!!down?.touch && this.fingerTaken(down.x, down.y));
+    else if (!hold) this.pressTaken = false;
+    // a finger alone on the world swings once it has stayed down `FINGER_WAIT` steps after the one
+    // it landed in: a second finger landing by then lets go of it (a pinch: `Input`), so a pinch is
+    // no swing, its fingers a frame or two apart too (the mouse's button swings at once)
+    const finger = input.anyDown(FINGER) && !input.anyDown(MOUSE_LEFT);
+    this.fingerHeld = !finger ? 0 : fingerPress ? 1 : this.fingerHeld + 1;
+    // a finger's press never swings by itself, only a finger still down past the wait: a pinch's
+    // first finger let go before a step read it (a frame with no fixed step) is no swing either
+    const left = (mousePress || hold) && !this.pressTaken && !(finger && this.fingerHeld <= FINGER_WAIT);
+    const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
     const onHud = this.pointerOnHud(down ?? this.pointer.art);
     // the keys' and buttons' actions (a couch guest's pad reads the same: `readActions`), then the mouse's
     readActions(input, i);
@@ -1515,8 +1535,58 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       motion.idle = i.attack || i.skill >= 0 || i.held ? 0 : motion.idle + dt;
       if (motion.idle >= AIM.hold) this.motionAim = null;
     }
+    // a finger's assists on a page with touch controls, where Settings has their rows (recorded
+    // input, density and settings only: the pad, the keyboard and the mouse play as they always
+    // have, and so does a touch on a desktop's page, a touchscreen laptop's)
+    if (this.touchControls && input.device === 'touch' && !panelOpen) this.touchAssist(i, axis);
     this.walk(i, axis, panelOpen, dt);
     return i;
+  }
+
+  /**
+   * What a touch screen adds to the hero's intent, each a setting (on by default):
+   * - aim assist (`touchAimAssist`): with the stick pushed, the nearest monster within
+   *   `TOUCH_AIM.range` m in a `TOUCH_AIM.cone`° cone of it, else one point-blank
+   *   (`TOUCH_AIM.blank` m), else along the stick (`touchAim`);
+   * - auto attack (`touchAutoAttack`): the basic attack on the nearest living monster in its reach
+   *   (`attackReach`: the bot's rule) when no skill or dodge was pressed, the hero isn't busy or on
+   *   its way somewhere, and the stick doesn't point away from it (so kiting works), so the other
+   *   thumb is free for the skills.
+   */
+  private touchAssist(i: MutableIntent, axis: { x: number; y: number }): void {
+    const foes = this.level?.actors() ?? [];
+    if (this.settings.touchAimAssist) this.touchAim(i, axis, foes);
+    if (!this.settings.touchAutoAttack || i.attack || i.skill >= 0 || i.dodge || this.walkTo || this.hero.busy > 0 || this.dead) return;
+    const hp = this.hero.actor.position;
+    const slot = this.hero.skills().find((s) => s.slot === 'attack');
+    let target: ActorLike | null = null;
+    let best = Infinity;
+    for (const a of foes) {
+      if (!a.alive || !hostile(a)) continue;
+      const dx = a.position.x - hp.x;
+      const dz = a.position.z - hp.z;
+      const d = Math.hypot(dx, dz);
+      if (d > attackReach(slot?.tags, a.radius) || d >= best) continue;
+      // the stick leaning away from it: the player is getting away (kiting), not fighting
+      if (Math.hypot(axis.x, axis.y) > 0.1 && dx * i.move.x + dz * i.move.z < 0) continue;
+      best = d;
+      target = a;
+    }
+    if (!target) return;
+    i.attack = true;
+    i.aim.copy(target.position);
+  }
+
+  /** A finger's aim (`touchAssist`): along the stick at the monster nearest it, else one point-blank, else on along it; the stick idle, auto-aim. */
+  private touchAim(i: MutableIntent, axis: { x: number; y: number }, foes: readonly ActorLike[]): void {
+    if (Math.hypot(axis.x, axis.y) <= TOUCH_AIM.stick) return; // `autoAim` stands
+    const hp = this.hero.actor.position;
+    const target = coneTarget(hp, i.move.x, i.move.z, TOUCH_AIM.cone, TOUCH_AIM.range, foes, hostile) ?? coneTarget(hp, 1, 0, 180, TOUCH_AIM.blank, foes, hostile);
+    if (target) i.aim.copy(target.position);
+    else {
+      const len = Math.hypot(i.move.x, i.move.z) || 1;
+      i.aim.set(hp.x + (i.move.x / len) * AIM.reach, hp.y, hp.z + (i.move.z / len) * AIM.reach);
+    }
   }
 
   /**
@@ -1561,6 +1631,58 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return this.tmp;
   }
 
+  /**
+   * A swipe (recorded) where it started (`Pointer.touchDown`, from the recorded touches): on the
+   * NPC's line over a panel it ends the talk; on a panel (`UiLayer.swipe`) it closes it as back
+   * does; with no panel, on the centre banner it ends it and on the loot feed it clears it. A
+   * swipe a panel moves with (a list's scroll, a slider) or that starts elsewhere does nothing here.
+   */
+  private swipe(dir: SwipeDirection): boolean {
+    const at = this.pointer.touchDown;
+    if (!at) return false;
+    const on = (r: Box | null | undefined) => !!r && inside(r, at.x, at.y);
+    const top = this.layer.top;
+    if (top) {
+      // the line where it shows: over a framed panel all of it, under the item windows (an
+      // overlay) only between them (a swipe on a window is the window's)
+      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky && !(top.panel.overlay && this.layer.covers(at.x, at.y))) {
+        this.layer.close(top.panel.id);
+        return true;
+      }
+      return this.layer.swipe(dir, at.x, at.y);
+    }
+    if (this.screen !== 'town' && this.screen !== 'level') return false;
+    if (!this.round && this.banners.current && on(this.hudRects().zones.find((z) => z.id === 'banner'))) {
+      this.banners.skip();
+      return true;
+    }
+    if (this.touchable.feed.some(on)) {
+      this.feed.length = 0;
+      return true;
+    }
+    return false;
+  }
+
+  /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
+  private fingerTaken(x: number, y: number): boolean {
+    return this.touchTarget(x, y) !== null || this.onDismissable(x, y);
+  }
+
+  /** (`x`, `y`) art pixels is on the loot feed or the centre banner as last drawn (a swipe from there dismisses it). */
+  private onDismissable(x: number, y: number): boolean {
+    if (this.touchable.feed.some((r) => inside(r, x, y))) return true;
+    const banner = this.banners.current && !this.round ? this.hudRects().zones.find((z) => z.id === 'banner') : undefined;
+    return !!banner && inside(banner, x, y);
+  }
+
+  /** What a finger's tap at (`x`, `y`) art pixels does in the world, as last drawn: the interact prompt, a loot label, or nothing (null). */
+  private touchTarget(x: number, y: number): 'prompt' | { loot: number } | null {
+    if (this.layer.top || this.showcase?.active) return null;
+    if (this.touchable.prompt && inside(this.touchable.prompt, x, y)) return 'prompt';
+    const label = this.touchable.loot.find((l) => inside(l.rect, x, y));
+    return label ? { loot: label.id } : null;
+  }
+
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
     return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
   }
@@ -1593,6 +1715,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       top = Math.max(30, bar ? bar.y + bar.h + 5 : 0);
     }
     return { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
+  }
+
+  /** The page has touch controls (its art density is a touch page's: recorded): a finger's assists apply, and Settings shows their rows (`MenuHost.touchControls`). */
+  get touchControls(): boolean {
+    return this.ctx.engine.renderer.touchDensity > 0;
   }
 
   /** Prompts show the pad's buttons: the pad is the input used last (`controls.device`; a pad merely connected is not). */
@@ -1638,6 +1765,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // Options from any screen of play: it pauses, and on the pause menu it resumes (a press no menu reads)
     let consumed = ctx.input.wasPressed(...KEYS.options) && this.options();
     for (const e of events) {
+      // a swipe dismisses what it started on: a panel, the NPC's line, a banner, the loot feed
+      if (e.kind === 'swipe' && this.swipe(e.dir)) {
+        consumed = true;
+        continue;
+      }
       // H on the look studio hides its panel (or shows it): the layer still routes keys to it
       if (e.kind === 'key' && (KEYS.hide as readonly string[]).includes(e.code) && this.layer.togglePeek()) {
         consumed = true;
@@ -1666,6 +1798,18 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
       // the world: a click on a townsperson, the stash, a loot label or the open portal goes there and does it
       if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch && this.worldFocus) this.goTo(this.worldFocus);
+      // a finger's tap on a loot label picks it up (walking there), on the interact prompt does it;
+      // one there, on the loot feed or on the centre banner (a swipe from there dismisses it) is no
+      // swing while it stays down, whether or not a fixed step ran in the frame it landed (`readIntent`)
+      if (e.kind === 'pointer' && e.type === 'down' && e.touch && !this.layer.top && !this.dead) {
+        const hit = this.touchTarget(e.x, e.y);
+        if (hit === 'prompt') this.interactQueued = true;
+        else if (hit) this.goTo({ kind: 'loot', id: hit.loot });
+        if (this.fingerTaken(e.x, e.y)) {
+          ctx.input.clearQueued(...MOUSE.left);
+          this.pressTaken = true;
+        }
+      }
     }
     this.arrive();
     // a key a menu used this frame (Esc closing a panel) must not also reopen one
@@ -2110,6 +2254,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // (the prompt, the focused loot label, other labels, damage numbers)
     const model = this.hudModel();
     model.controls = this.hudControls = this.touchPad.zones((x, y) => this.pointer.toArt(x, y));
+    this.touchable = { loot: [], prompt: null, feed: [], dialogue: null };
     const layout = this.hudLayout;
     layout.clear(ui.w, ui.h);
     this.hudZonesShown = hudBoxes(ui.w, ui.h, model).map(({ id, x, y, w, h }) => ({ x, y, w, h, weight: id === 'banner' || id === 'boss' || id === 'where' || id === 'time' ? 1 : 10 }));
@@ -2154,6 +2299,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       for (const l of labels) {
         const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near || this.walkTo?.target.kind === 'loot' && this.walkTo.target.id === l.id, l.tier, layout);
         if (r && this.ui.hover(r)) this.lootFocus = l;
+        if (r) this.touchable.loot.push({ id: l.id, rect: r });
       }
       if (mouse && this.lootFocus) this.worldFocus = { kind: 'loot', id: this.lootFocus.id };
       // the open portal under the mouse: a click goes home
@@ -2175,13 +2321,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       drawMap(ui, model.minimap, this.mapRoom(), this.time);
       model.minimap = null;
     }
-    drawHud(ui, model, layout);
+    this.touchable.feed = drawHud(ui, model, layout).feed;
     // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
     // and under an item window
     const talk = this.dialogueLine && this.layer.top ? this.layer.top : null;
-    if (talk?.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
+    if (talk?.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
     this.layer.draw(ui, this.time);
-    if (talk && !talk.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
+    if (talk && !talk.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
     // a character screen on top: the ring's strip across the top (the tree's view covers the screen: its own bar says it)
     const top = pageOf(this.layer.top?.panel);
     this.pageStrip = top && top !== 'tree' ? drawPageStrip(ui, top).rects : [];
@@ -2240,12 +2386,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       box.y -= lift;
       y -= lift;
     }
+    // a finger taps it (it does what F does): never in the floating stick's zone, which takes every
+    // touch there: beside it on a wide screen, else over it
+    const zone = g.touch ? this.touchPad.stickZone() : null;
+    let cx = ui.w / 2;
+    if (zone && overlaps(box, zone)) {
+      const right = zone.x + zone.w + 2;
+      const clear = (b: Box) => !this.hudControls.some((c) => overlaps(b, c));
+      const beside = { ...box, x: right };
+      if (right + box.w <= ui.w - 2 && clear(beside)) {
+        box.x = beside.x;
+        cx = box.x + box.w / 2;
+      } else {
+        const lift = box.y + box.h - (zone.y - 2);
+        box.y -= lift;
+        y -= lift;
+      }
+    }
+    this.touchable.prompt = { ...box };
     this.hudLayout.reserve(box);
     ui.rect(box.x, box.y, box.w, box.h, 'ink');
     ui.outline(box.x, box.y, box.w, box.h, 'slate');
-    put(ui.w / 2, y, text);
-    if (big) ui.text(ui.w / 2, y + 9, big, { align: 'center', color: 'mist' });
-    else if (small) ui.mini(ui.w / 2, y + 10, small, 'mist', 'center');
+    put(cx, y, text);
+    if (big) ui.text(cx, y + 9, big, { align: 'center', color: 'mist' });
+    else if (small) ui.mini(cx, y + 10, small, 'mist', 'center');
   }
 
   /** The fixed HUD's rects in art pixels and the touch controls (agent API `ui.hud()`, the phone e2e). */
@@ -2502,8 +2666,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         session: this.session,
         interactQueued: this.interactQueued,
         pressTaken: this.pressTaken,
+        fingerHeld: this.fingerHeld,
         map: this.mapOpen,
         worldFocus: this.worldFocus,
+        // what the last frame drew that the next frame's input hits (a finger's targets, the touch controls the HUD laid out around)
+        touchable: this.touchable,
+        hudControls: this.hudControls,
         walk: this.walkTo && { target: this.walkTo.target, time: this.walkTo.time, best: this.walkTo.best, since: this.walkTo.since, nav: this.walkTo.nav.save() },
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
@@ -2622,8 +2790,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     Object.assign(this.session, t.session);
     this.interactQueued = t.interactQueued;
     this.pressTaken = t.pressTaken ?? false;
+    this.fingerHeld = t.fingerHeld ?? 0;
     this.mapOpen = t.map ?? false;
     this.worldFocus = t.worldFocus ?? null;
+    const tt = t.touchable;
+    this.touchable = tt ? { loot: tt.loot.map((l) => ({ id: l.id, rect: { ...l.rect } })), prompt: tt.prompt && { ...tt.prompt }, feed: tt.feed.map((b) => ({ ...b })), dialogue: tt.dialogue && { ...tt.dialogue } } : { loot: [], prompt: null, feed: [], dialogue: null };
+    this.hudControls = t.hudControls ? t.hudControls.map((c) => ({ ...c })) : [];
+    this.touchPad.restoreLast(this.hudControls); // what stands in while the controls are hidden
     this.walkTo = t.walk?.nav ? { target: t.walk.target, time: t.walk.time, best: t.walk.best, since: t.walk.since, nav: HeroWalk.load(t.walk.nav) } : null;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
@@ -2684,6 +2857,17 @@ interface WalkTo {
 /** Either Shift key. */
 const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 
+/** `MOUSE.left`'s finger and its mouse button, apart (`readIntent`: a finger's swing waits, the mouse's doesn't). */
+const FINGER = [TOUCH_KEY] as const;
+const MOUSE_LEFT = ['MouseLeft'] as const;
+
+/**
+ * Fixed steps after the one it landed in that a finger alone on the world waits before it swings
+ * (about 33 ms): a pinch's second finger landing by then lets go of the first's press, so a pinch
+ * is no swing; a tap shorter than that is none either.
+ */
+const FINGER_WAIT = 2;
+
 /** A character screen's id (`PAGES`). */
 const isPage = (id: string | undefined): id is Page => (PAGES as readonly string[]).includes(id ?? '');
 
@@ -2743,10 +2927,16 @@ interface RiftSnapshot {
     readonly interactQueued: boolean;
     /** A held press a thing in the world or the map took (left out by snapshots from before it). */
     readonly pressTaken?: boolean;
+    /** Steps a finger alone has been down on the world (`Riftlight.fingerHeld`; left out by older snapshots). */
+    readonly fingerHeld?: number;
     /** The map is open (left out by snapshots from before it). */
     readonly map?: boolean;
     /** What the mouse was over in the world and the thing a click walks the hero to (left out by older snapshots). */
     readonly worldFocus?: WalkTarget | null;
+    /** What a finger could tap or swipe away as the last frame drew it (`Riftlight.touchable`; left out by older snapshots). */
+    readonly touchable?: { readonly loot: readonly { readonly id: number; readonly rect: Box }[]; readonly prompt: Box | null; readonly feed: readonly Box[]; readonly dialogue: Box | null };
+    /** The touch controls the last frame's HUD laid out around, art pixels (left out by older snapshots). */
+    readonly hudControls?: readonly Box[];
     readonly walk?: { readonly target: WalkTarget; readonly time: number; readonly best: number; readonly since: number; readonly nav: HeroWalkState } | null;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;

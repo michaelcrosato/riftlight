@@ -107,3 +107,25 @@ export function turnOnScreen(dx: number, dz: number, deg: number, right: Vector3
   const ry = sy * c - sx * s;
   return { x: right.x * rx + forward.x * ry, z: right.z * rx + forward.z * ry };
 }
+
+/**
+ * A finger's aim assist (Riftlight's touch play, `touchAim`): with the stick leaning past `stick`,
+ * the nearest hostile within `range` m in a cone of `cone`° (half-angle) around it, else the
+ * nearest within `blank` m (point-blank, any side), else along the stick.
+ */
+export const TOUCH_AIM = { stick: 0.3, cone: 20, range: 7, blank: 2.5 } as const;
+
+/** A swing's reach past its target's centre, m: the playtest bot fights within it, a finger's auto attack swings within it. */
+export const MELEE_REACH = 1.7;
+
+/** A ranged basic attack's reach (a projectile gem in the attack slot), m: as far as auto-aim looks around. */
+export const RANGED_REACH = 7;
+
+/**
+ * How near (m, centre to centre) a target of `radius` must be for the basic attack to reach it: a
+ * projectile attack (`tags` has `projectile`) `RANGED_REACH`, else a swing, `MELEE_REACH` past its
+ * radius.
+ */
+export function attackReach(tags: readonly string[] | undefined, radius: number): number {
+  return tags?.includes('projectile') ? RANGED_REACH : MELEE_REACH + radius;
+}

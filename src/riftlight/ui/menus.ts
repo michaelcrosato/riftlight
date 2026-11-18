@@ -61,6 +61,11 @@ export interface MenuHost {
   openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex'): unknown;
   /** The developer tools are on (the dev server or `?debug=1`): the pause menu shows Dev. */
   readonly devTools?: boolean;
+  /**
+   * The page has touch controls (a phone, a tablet: recorded with the recording's art density):
+   * Settings shows a finger's assists. Optional: a host without it has none.
+   */
+  readonly touchControls?: boolean;
   /** Photo mode (the showcase): optional, so other hosts can leave it out. */
   photoMode?(): void;
   /** The look studio (filters per layer): optional, so other hosts can leave it out. */
@@ -253,6 +258,13 @@ export function settingsMenu(h: MenuHost): Menu {
       { kind: 'toggle', id: 'numbers', label: t('menu.settings.numbers'), get: () => s.damageNumbers, set: (v) => change(() => (s.damageNumbers = v))() },
       { kind: 'choice', id: 'filter', label: t('menu.settings.filter'), options: lootFilterOptions(), get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
       { kind: 'slider', id: 'shake', label: t('menu.settings.shake'), get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
+      // a finger's assists (`Riftlight.touchAssist`), on a page with touch controls only
+      ...(h.touchControls
+        ? [
+            { kind: 'toggle' as const, id: 'touchAttack', label: t('menu.settings.touch_attack'), get: () => s.touchAutoAttack, set: (v: boolean) => change(() => (s.touchAutoAttack = v))(), hint: t('menu.settings.touch_attack.hint') },
+            { kind: 'toggle' as const, id: 'touchAim', label: t('menu.settings.touch_aim'), get: () => s.touchAimAssist, set: (v: boolean) => change(() => (s.touchAimAssist = v))(), hint: t('menu.settings.touch_aim.hint') },
+          ]
+        : []),
       // the controller's: the engine's settings (prompts follow the input used last by themselves)
       { kind: 'choice', id: 'padGlyphs', label: t('menu.settings.pad_glyphs'), options: PAD_GLYPHS.map((g) => t(`menu.settings.pad_glyphs.${g}`)), get: () => PAD_GLYPHS.indexOf(h.engine.settings.values.padGlyphs ?? 'playstation'), set: (i) => h.engine.settings.set({ padGlyphs: PAD_GLYPHS[i] }), hint: t('menu.settings.pad_glyphs.hint') },
       {
