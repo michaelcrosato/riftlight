@@ -1,13 +1,17 @@
 // CI's e2e job runs one matrix entry per group in scripts/e2e.mjs (GROUPS); a group missing from
 // the matrix would never run, and e2e.mjs's own guard only sees GROUPS. It keeps the suites' frames
-// and what a failed 52in1 harness run's page was doing (the hub suite's EVIDENCE). The riftlight-html job
+// and what a failed 52in1 harness run's page was doing (the hub suite's EVIDENCE: each run's own, an
+// earlier run's emptied). The riftlight-html job
 // publishes the file `npm run build:single` writes, and never takes releases/latest from the kit.
 // Every workflow that runs Claude skips itself, with a notice, when no Claude secret is set. The
 // Node the tools need is package.json's `engines`, and an older one is told so.
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { evidenceFolder, protocolRuns } from '../scripts/e2e-hub.mjs';
 import { registerHooksApi } from '../scripts/trace/hooks';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -31,6 +35,29 @@ describe('CI', () => {
     const evidence = /export const EVIDENCE = '([^']+)'/.exec(readFileSync(new URL('../scripts/e2e-hub.mjs', import.meta.url), 'utf8'))?.[1];
     expect(evidence, 'scripts/e2e-hub.mjs: EVIDENCE, where failed runs leave theirs').toBeDefined();
     expect(paths, "ci.yml: the e2e job's upload-artifact path, a block list").toEqual(['.scratch/e2e/', evidence]);
+  });
+
+  it('a failed harness run’s evidence is its own: an earlier run’s is gone, and no two runs share a name', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hub-evidence-'));
+    try {
+      writeFileSync(join(dir, 'moments_old.json'), '{}');
+      const evidenceOf = await evidenceFolder(dir);
+      expect(existsSync(join(dir, 'moments_old.json')), 'an earlier run’s evidence, gone: a green run leaves none').toBe(false);
+      // a page with many moments, long named: its moments runs differ only after them all (`&players=`)
+      const moments = Array.from({ length: 8 }, (_, i) => `the-long-named-moment-${i + 1}`);
+      const modes = [
+        { where: 'moments', play: null, seats: [1, 4] as const },
+        { where: 'shared-world', play: 'co-op', seats: [1, 4] as const },
+      ];
+      for (const full of [true, false]) {
+        const runs = protocolRuns({ modes, moments }, { full });
+        const names = runs.map((q, i) => evidenceOf(i, q));
+        expect(new Set(names).size, `${full ? 'the hub’s' : 'the suite’s'} ${runs.length} runs, ${names.length} names`).toBe(runs.length);
+        expect(names.every((n) => dirname(n) === dir)).toBe(true);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('publishes the single-file game build:single writes, never as the latest release', () => {

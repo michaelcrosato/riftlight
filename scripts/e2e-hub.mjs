@@ -7,7 +7,7 @@
 import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
-import { dirname, extname } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { WEBGPU_ARGS } from './browser.mjs';
@@ -457,6 +457,17 @@ export async function harnessChecks(browsers, dir, port, check) {
 /** Where the `hub` suite's runs that fail leave their evidence (CI keeps it: ci.yml's e2e job). */
 export const EVIDENCE = '.scratch/hub/evidence/';
 
+/**
+ * An empty evidence folder at `dir` (a path): an earlier run's evidence is gone, so a green run
+ * leaves none behind. Returns where the run `query`, the `index`th of its set (from 0), leaves its
+ * evidence there (`harness`'s `evidence`): the run's number first, as a long query cut to a short
+ * file name can name two runs alike (moments' runs differ after their every moment).
+ */
+export async function evidenceFolder(dir) {
+  await rm(dir, { recursive: true, force: true });
+  return (index, query) => join(dir, `${String(index + 1).padStart(2, '0')}-${query.replace(/[^\w=-]+/g, '_').slice(0, 120)}`);
+}
+
 export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
   console.log('\n▶ hub: 52in1 session harness, every online mode the page names');
   const dir = new URL('.scratch/hub/', root);
@@ -469,9 +480,10 @@ export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
   check(offer.modes.length >= 4 && offer.moments.length >= 3, `the page offers ${offer.modes.map((m) => [m.where, m.play].filter(Boolean).join(' ')).join(', ')}; ${offer.moments.length} moments`);
   const server = await serve(dir, port);
   const browsers = harnessBrowser(() => chromium.launch({ executablePath: exe, headless: true, args: WEBGPU_ARGS }));
+  const evidenceOf = await evidenceFolder(fileURLToPath(new URL(EVIDENCE, root)));
   try {
-    for (const q of protocolRuns(offer, { full: false })) {
-      const evidence = fileURLToPath(new URL(`${EVIDENCE}${q.replace(/[^\w=-]+/g, '_').slice(0, 120)}`, root));
+    for (const [i, q] of protocolRuns(offer, { full: false }).entries()) {
+      const evidence = evidenceOf(i, q);
       const r = await harness(await browsers.get(), `http://localhost:${port}/harness.html?game=riftlight.html&${q}&auto=1`, { evidence });
       check(r.pass, `${q}: ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}${r.evidence ? `\n    what the page was doing: ${r.evidence}.json` : ''}`);
     }

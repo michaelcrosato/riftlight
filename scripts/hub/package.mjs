@@ -36,7 +36,7 @@ import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from '../browser.mjs';
-import { HARNESS_FILES, harness, harnessBrowser, pageModes, protocolRuns, serve } from '../e2e-hub.mjs';
+import { evidenceFolder, HARNESS_FILES, harness, harnessBrowser, pageModes, protocolRuns, serve } from '../e2e-hub.mjs';
 import { strays } from '../lang-strays.mjs';
 import { helpExit } from '../manual.mjs';
 import { engineReady } from '../page.mjs';
@@ -241,10 +241,11 @@ if (offer.modes.length) {
   const server = await serve(pathToFileURL(bench), port);
   // a browser that dies in a run (an out-of-memory kill can take all of it) fails that run alone: the next has a new one
   const browsers = harnessBrowser(launchChromium);
+  // a run that fails leaves what its page was doing (its log, its copies, its console) beside the pictures
+  const evidenceOf = await evidenceFolder(join(shots, 'harness-evidence'));
   try {
-    for (const q of protocolRuns(offer)) {
-      // a run that fails leaves what its page was doing (its log, its copies, its console) beside the pictures
-      const evidence = join(shots, 'harness-evidence', q.replace(/[^\w=-]+/g, '_').slice(0, 120));
+    for (const [i, q] of protocolRuns(offer).entries()) {
+      const evidence = evidenceOf(i, q);
       const launched = browsers.launches;
       const r = await browsers.get().then(
         (b) => harness(b, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`, { evidence }),

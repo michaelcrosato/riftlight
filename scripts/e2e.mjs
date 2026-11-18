@@ -97,7 +97,11 @@
 //
 // hub             52in1's own session harness (scripts/e2e-hub.mjs, scripts/hub/harness/) plays the built
 //                 page in every online mode it names: a shared world co-op (lossy, host leaves, server) and
-//                 versus, ghost, parallel, and moments (every moment the page names)
+//                 versus, ghost, parallel, and moments (every moment the page names); a round of moments
+//                 on a phone with touch controls (no ≡). Then the harness checks itself (harnessChecks):
+//                 a page whose thread is stuck ends its run at its timeout with evidence of where, a
+//                 browser that dies fails only its run, a page whose renderer dies ends its run at once.
+//                 A failed run leaves what its page was doing in .scratch/hub/evidence/ (CI keeps it).
 // world           Engine World in the page (scripts/e2e-world.mjs): every room renders, the GPU rooms'
 //                 readbacks, the gallery's and workshop's pictures, a pointer on the canvas, the
 //                 sandbox's localStorage, live play recorded and replayed. The rooms' gameplay, the

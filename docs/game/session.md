@@ -195,7 +195,9 @@ holds the round's phase).
   the hand-over page (`protocolRuns`). Each run is `harness()`: a run that fails, or never
   finishes, leaves what its page was doing (the harness's log of every hub message, each copy's
   phase and frame, every frame's console, a picture) in `.scratch/hub/evidence/` (the suite; CI
-  keeps it with the e2e job's frames) or `<dir>-checks/harness-evidence/` (`npm run hub`). A run
+  keeps it with the e2e job's frames) or `<dir>-checks/harness-evidence/` (`npm run hub`), named
+  by the run's number and its query (`evidenceFolder`, which empties the folder first: a green run
+  leaves no earlier failure's evidence behind). A run
   ends at its timeout timed in Node (`UNFINISHED`), at most `CAPTURE_MS` later: Playwright's own
   waits never time out on a page whose thread is stuck (a frame's script in a loop; the frames
   share the harness's thread). The page's debugger is on from the run's start, because one turned
