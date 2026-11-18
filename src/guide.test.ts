@@ -1,9 +1,9 @@
 // docs/GUIDE.md is the engine's manual for agents outside this repo (it ships in the kit,
 // scripts/bundle.mjs). These checks keep it true to the code: its games import only what
 // pixel-engine.js exports, the lists it gives (palette, looks, filters, sounds, particles,
-// cameras, URL flags) are the engine's, the starter's legend fits the HUD at every window shape, it
-// stays within its token budget, and CHANGELOG.md has a section for this version. The bundle e2e
-// suite then plays its games.
+// cameras, URL flags) are the engine's, the starter's legend fits the HUD and its hero and coins
+// stay in view at every window shape, it stays within its token budget, and CHANGELOG.md has a
+// section for this version. The bundle e2e suite then plays its games.
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -123,6 +123,66 @@ describe('docs/GUIDE.md', () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
+
+  it(
+    'the starter keeps its garden in view at every window shape: the hero and its four coins from the start, under none of its texts, on a phone held either way, a tall narrow window and a TV',
+    async () => {
+      const code = blocks[0]!.code;
+      // the camera its page starts (`camera: { preset, minWidth }`): a phone held upright zooms out to keep it across
+      const cam = /camera: \{ preset: '(\w+)', minWidth: (\d+) \}/.exec(code);
+      expect(cam, 'the starter keeps its garden’s width in view (CONTROLS.md)').not.toBeNull();
+      const camera = { preset: cam![1] as bundle.CameraPreset, minWidth: Number(cam![2]) };
+      const touchDensity = Number(/\btouchDensity: (\d+)/.exec(code)?.[1] ?? 0);
+      const tmp = mkdtempSync(join(tmpdir(), 'guide-quickstart-'));
+      try {
+        const file = join(tmp, 'game.mjs');
+        writeFileSync(file, code.replaceAll(`from './pixel-engine.js'`, `from ${JSON.stringify(fileURLToPath(new URL('./bundle.ts', import.meta.url)))}`));
+        const { createGame } = (await import(/* @vite-ignore */ file)) as { createGame: () => bundle.Game };
+        type Garden = bundle.Game & { model: THREE.Object3D; coins: { mesh: THREE.Object3D }[] };
+        const out: string[] = [];
+        let seen = 0;
+        for (const [width, height] of [[390, 844], [344, 882], [360, 1000], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const) {
+          const game = createGame() as Garden;
+          const engine = await bundle.Engine.headless(game, { assets: nodeAssets(), camera, touch: true, touchDensity, viewport: { width, height, dpr: 1 } });
+          try {
+            engine.step(60); // the camera settles on the hero
+            for (const device of ['touch', 'keyboard', 'pad'] as const) {
+              engine.input.noteDevice(device);
+              const text = vi.spyOn(engine.hud, 'text');
+              engine.step(1);
+              const { hud } = engine;
+              const boxes = text.mock.calls.map(([x, y, s, o = {}]) => {
+                const m = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
+                const [left, top] = bundle.hudPlace(x, y, m.width, m.height, o.anchor ?? 'top-left', { width: hud.width, height: hud.height });
+                return { s, left, top, right: left + m.width, bottom: top + m.height };
+              });
+              text.mockRestore();
+              const things: [string, THREE.Vector3, number][] = [['the hero', game.model.position.clone(), 0.5], ...game.coins.map((c, i): [string, THREE.Vector3, number] => [`coin ${i}`, c.mesh.position.clone(), 0.4])];
+              expect(things.length).toBe(5);
+              const cam3 = engine.camera.camera;
+              for (const [what, at, r] of things) {
+                seen++;
+                const corners = [-r, r].flatMap((dx) => [-r, r].map((dz) => at.clone().add(new THREE.Vector3(dx, 0, dz)).project(cam3)));
+                if (corners.some((c) => Math.abs(c.x) > 1 || Math.abs(c.y) > 1)) out.push(`${width}x${height}: ${what} (${at.x.toFixed(1)}, ${at.z.toFixed(1)}) out of view`);
+                const xs = corners.map((c) => ((c.x + 1) / 2) * hud.width);
+                const ys = corners.map((c) => ((1 - c.y) / 2) * hud.height);
+                const under = boxes.find((t) => t.left < Math.max(...xs) && Math.min(...xs) < t.right && t.top < Math.max(...ys) && Math.min(...ys) < t.bottom);
+                if (under) out.push(`${width}x${height} on ${device}: ${what} under ${under.s}`);
+              }
+            }
+            expect(engine.errors).toEqual([]);
+          } finally {
+            engine.dispose();
+          }
+        }
+        expect(out).toEqual([]);
+        expect(seen).toBe(8 * 3 * 5);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    },
+    60_000,
+  );
 
   it('stays within its token budget (~4 characters a token)', () => {
     expect(guide.length / 4).toBeLessThan(15000);
