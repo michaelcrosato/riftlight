@@ -128,6 +128,67 @@ describe('Engine.headless', () => {
     other.dispose();
   });
 
+  it('the HUD lays out on the view from the first frame, live, stepped and replayed (a menu click lands)', async () => {
+    /** A menu with one button near the right edge: clicks count when the pointer is on it. */
+    class Menu implements Game {
+      readonly name = 'Menu';
+      clicks = 0;
+      /** The HUD width every frame's update saw. */
+      widths: number[] = [];
+      setup(): void {}
+      update(ctx: GameContext): void {
+        const { hud, input } = ctx;
+        const res = ctx.engine.renderer.resolution; // where the pointer is, as Riftlight's Pointer maps it
+        const x = ((input.pointer.x + 1) / 2) * res.width;
+        const y = ((1 - input.pointer.y) / 2) * res.height;
+        const [bx, by, bw, bh] = [hud.width - 60, 20, 40, 16];
+        this.widths.push(hud.width);
+        hud.clear();
+        hud.rect(bx, by, bw, bh, 'sand');
+        if (input.wasPressed('MouseLeft') && x >= bx && x < bx + bw && y >= by && y < by + bh) this.clicks++;
+      }
+      cameraTarget(ctx: GameContext) {
+        return ctx.camera.focus.clone();
+      }
+      fingerprint(): string {
+        return `${this.clicks}`;
+      }
+    }
+    const view = { width: 1200, height: 900, dpr: 1 }; // 4:3: not the 480×270 a HUD starts at
+    const game = new Menu();
+    const engine = await Engine.headless(game, { viewport: view, aspect: 'fill' });
+    const { width } = engine.renderer.resolution;
+    expect(width).not.toBe(480);
+    expect([engine.hud.width, engine.hud.height], 'before any frame').toEqual([width, engine.renderer.resolution.height]);
+    for (let i = 0; i < 12; i++) {
+      engine.input.setPointer(((width - 50 + 0.5) / width) * 2 - 1, 1 - (28.5 / engine.renderer.resolution.height) * 2);
+      engine.input.setKey('MouseLeft', i % 4 === 1); // pressed on frames 1, 5 and 9
+      engine.step(1);
+    }
+    expect(game.clicks, 'the button is where the pointer maps').toBe(3);
+    expect(new Set(game.widths)).toEqual(new Set([width]));
+    const rec = engine.recording()!;
+    const end = engine.fingerprint();
+    engine.dispose(); // one engine at a time
+    const other = await Engine.headless(new Menu(), { aspect: 'fill' }); // 16:9: a 480×270 HUD
+    let replayed: Menu | null = null;
+    await other.replay(rec, () => other.loadGame((replayed = new Menu())));
+    expect(new Set(replayed!.widths), 'every replayed frame lays out on the recorded view').toEqual(new Set([width]));
+    expect(replayed!.clicks).toBe(3);
+    expect(other.fingerprint(), 'the replay ends where the run did').toBe(end);
+    other.dispose();
+  });
+
+  it('step() is the tool’s clock: it advances a paused game (the render loop is what pauses)', async () => {
+    const engine = await Engine.headless(new Dice(), { seed: 2 });
+    engine.paused = true;
+    const t0 = engine.time;
+    engine.step(10);
+    expect(engine.time - t0).toBeCloseTo(10 / 60, 9);
+    expect(engine.paused).toBe(true);
+    engine.dispose();
+  });
+
   it('an asset load without a reader names the one to pass', async () => {
     setAssetReader(null); // the process has none yet (a reader set earlier stays: the Playground's)
     const engine = await Engine.headless(new Dice());

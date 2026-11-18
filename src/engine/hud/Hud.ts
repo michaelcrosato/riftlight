@@ -44,20 +44,29 @@ export class Hud {
   visible = true;
   private items: Item[] = [];
   private drawn = '';
+  /** The size the canvas was last painted at (`sync`). */
   private size: Resolution = { width: 480, height: 270 };
   private layoutKey = '';
   /** Device pixels per art pixel the canvas is painted at: above 1 only while it holds device text. */
   private k = 1;
 
-  constructor(private readonly container: HTMLElement | null) {}
+  /**
+   * `view` is the art resolution now (the engine passes its view's): `width` / `height` follow it
+   * at every moment, in `setup`, live frames, `step()` and replays alike, so a layout always
+   * agrees with where the pointer maps. Without one they are the size `sync` was last given.
+   */
+  constructor(
+    private readonly container: HTMLElement | null,
+    private readonly view: (() => Resolution) | null = null,
+  ) {}
 
   /** HUD width/height in art pixels (the internal resolution). */
   get width(): number {
-    return this.size.width;
+    return (this.view?.() ?? this.size).width;
   }
 
   get height(): number {
-    return this.size.height;
+    return (this.view?.() ?? this.size).height;
   }
 
   /**
@@ -97,7 +106,7 @@ export class Hud {
 
   /** Engine: follow the renderer's resolution and framing, and repaint if needed. */
   sync(resolution: Resolution, framing: Framing): void {
-    this.size = resolution; // the layout follows the view with or without a page (headless lays out the same)
+    this.size = resolution;
     if (!this.container) return;
     if (!this.canvas && this.items.length === 0) return;
     const canvas = (this.canvas ??= this.createCanvas(this.container));

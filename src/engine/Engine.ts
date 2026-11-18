@@ -460,7 +460,7 @@ export class Engine {
     const rig = () => this.camera;
     const lights = () => this.lights;
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
-    this.hud = new Hud(renderer.container);
+    this.hud = new Hud(renderer.container, () => renderer.resolution); // lays out on the view at every moment
     renderer.onError = (e) => this.reportError(e); // a view or mirror that throws: on screen, in errors
     this.context = {
       engine: this,
@@ -539,7 +539,9 @@ export class Engine {
 
   /**
    * Freeze simulation, animation, particles and game time (rendering continues). For
-   * tooling, capture and pause menus. Queued key presses are dropped while paused.
+   * tooling, capture and pause menus. Queued key presses are dropped while paused. It pauses
+   * the render loop's frames: `step()` and `replay()` (manual time, the tool's own clock) advance
+   * either way.
    */
   get paused(): boolean {
     return this._paused;
@@ -986,7 +988,8 @@ export class Engine {
 
   /**
    * Tooling: switch to manual time and advance `n` frames of `dt` seconds (simulation,
-   * animation, camera). Nothing is drawn; call `renderer.capture()` to see the result.
+   * animation, camera). Nothing is drawn; call `renderer.capture()` to see the result. The frames
+   * run whatever `paused` says: a tool steps a paused game, as a replay plays every frame.
    */
   step(n = 1, dt = 1 / 60): void {
     // Before the first start finishes nothing can advance, and manual time would freeze the
@@ -1003,14 +1006,7 @@ export class Engine {
    * replay it is reported and the replay goes on, as in live play (`tick()`).
    */
   private frameStep(dt: number, play?: InputFrame): void {
-    const gameDt = this.clock.delta(dt);
-    this.time += gameDt;
-    if (play) this.input.playBefore(play);
-    this.input.beginFrame(this.time, gameDt, play ? NO_PADS : undefined);
-    if (play) this.input.playAfter(play);
-    else this.input.deliver();
-    if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
-    this.record(dt);
+    const gameDt = this.startFrame(dt, play);
     let thrown: { error: unknown } | null = null;
     try {
       this.advance(gameDt, dt);
@@ -1021,6 +1017,23 @@ export class Engine {
     this.renderer.screen.update(dt, this.camera.camera);
     this.endFrame();
     if (thrown) throw thrown.error;
+  }
+
+  /**
+   * The start of every frame that runs, live (`tick()`) or manual (`frameStep()`, its input
+   * live or a recorded frame's `play`): game time, this frame's input, its recording. One
+   * function, so the render loop and `step()` / `replay()` can't drift. Returns the game dt.
+   */
+  private startFrame(dt: number, play?: InputFrame): number {
+    const gameDt = this.clock.delta(dt);
+    this.time += gameDt;
+    if (play) this.input.playBefore(play);
+    this.input.beginFrame(this.time, gameDt, play ? NO_PADS : undefined);
+    if (play) this.input.playAfter(play);
+    else this.input.deliver(); // commands sent while paused or loading wait for a frame that runs
+    if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
+    this.record(dt);
+    return gameDt;
   }
 
   /** The end of every frame: input's per-frame state goes, and a marker notes when promise callbacks run. */
@@ -1445,15 +1458,12 @@ export class Engine {
     this.lastTime = t;
     if (this.manual) return;
     const running = this.ready && !this.paused;
-    const gameDt = running ? this.clock.delta(dt) : 0;
-    this.time += gameDt; // game time stops while paused or loading
     this.measure(timeMs);
-    this.input.beginFrame(this.time, running ? gameDt : dt);
-    // presses made during a pause (or at speed 0, a menu) never fire later
-    if (!running || this.clock.frozen) this.input.clearQueued();
-    if (running) {
-      this.input.deliver(); // commands sent while paused or loading wait for a frame that runs
-      this.record(dt);
+    let gameDt = 0; // game time stops while paused or loading
+    if (running) gameDt = this.startFrame(dt);
+    else {
+      this.input.beginFrame(this.time, dt);
+      this.input.clearQueued(); // presses made during a pause never fire later
     }
 
     if (this.ready) this.handleDebugKeys(); // hotkeys work while paused, not while a level loads

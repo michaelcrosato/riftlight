@@ -142,8 +142,10 @@ Keys whose browser default should not fire (a game's own F1 / F2 / Tab panels) g
 
 `consumePress` keeps a press for at most `input.pressWindow` = **150 ms of game time**, so a
 jump pressed during a hitch still lands, but presses never pile up. While `engine.paused` is
-true (or a level is loading, including the start-up loading screen) game time (`ctx.time`)
-stops and queued presses are dropped, so nothing fires on resume.
+true (or a level is loading, including the start-up loading screen) the render loop's game time
+(`ctx.time`) stops and queued presses are dropped, so nothing fires on resume. `paused` is the
+render loop's: `step()` and `replay()` are manual time, the tool's own clock, and advance a paused
+game too (a replay plays every recorded frame).
 
 ## Time: game speed and hitstop
 
