@@ -112,6 +112,40 @@ describe('touch density on a phone (EngineOptions.touchDensity)', () => {
     expect(tool.renderer.resolution).toEqual({ width: 633, height: 293 });
     tool.dispose();
   });
+
+  it('a recording keeps whether the page had touch controls, and a headless replay has them too (prompts name them, a HUD lays out around them), at any touch density', async () => {
+    class Prompt implements Game {
+      readonly name = 'Prompt';
+      readonly controls = { jump: { key: 'Space', pad: 'PadA', touch: 'B' } };
+      seen: string[] = [];
+      setup(): void {}
+      update(ctx: GameContext): void {
+        this.seen.push(ctx.engine.controls.label('jump'));
+      }
+      cameraTarget() {
+        return new Vector3();
+      }
+    }
+    const viewport = { width: 390, height: 844, dpr: 3 };
+    // a game that keeps the art size the viewport gives on a phone (no touchDensity, as Engine World)
+    const phone = await Engine.headless(new Prompt(), { viewport, touch: true });
+    phone.input.noteTouch();
+    phone.step(2);
+    const rec = JSON.parse(JSON.stringify(phone.recording())) as Recording;
+    const live = (phone.game as Prompt).seen;
+    phone.dispose();
+    expect([rec.touch, rec.density, live.at(-1)]).toEqual([true, undefined, 'B']);
+    const tool = await Engine.headless(new Prompt()); // npm run replay: no touch option
+    expect(tool.controls.touch).toBe(false);
+    let game = new Prompt();
+    await tool.replay(rec, () => tool.loadGame(game));
+    expect([tool.controls.touch, game.seen]).toEqual([true, live]);
+    // a recording made without them (a desktop, a touch-screen laptop's tap): a finger names the keys
+    const desk = { ...rec, touch: undefined };
+    await tool.replay(desk, () => tool.loadGame((game = new Prompt())));
+    expect([tool.controls.touch, game.seen.at(-1)]).toEqual([false, 'Space']);
+    tool.dispose();
+  });
 });
 
 describe('hud.legend', () => {
