@@ -10,7 +10,8 @@
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory;
  *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume);
- *             open, Q / E or L1 / R1 page through them (`PAGES`), Tab or L2 / R2 their own tabs
+ *             open, Q / E or L1 / R1 (or a swipe on a DualSense's touchpad) page through them (`PAGES`),
+ *             Tab or L2 / R2 their own tabs
  *   map       Tab / M / pad R3 or the touchpad's press / a click or tap on the corner map: the level's
  *             map over the play (Esc, or a tap on it, closes it too)
  *   looks     L look studio · H / pad Triangle hides its panel (the arrows still tweak) · O photo mode
@@ -24,7 +25,7 @@
  * PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type KeyReader, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
+import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type KeyReader, type MenuKeys, type PadGlyphs, padName as enginePadName, TOUCHPAD_KEYS } from '../../engine';
 import { lang } from '../lang';
 import type { UiEvent } from '../ui/kit';
 
@@ -69,10 +70,11 @@ export const KEYS = {
   tabPrev: ['PadLT'],
   /**
    * The character screens' ring (`PAGES`: inventory, skills, tree, character, codex), as on a
-   * console: L1 / R1, Q / E. In the stash, the vendor and the bench they are their tabs.
+   * console: L1 / R1, Q / E, and a swipe left / right on a DualSense's touchpad (through 52in1:
+   * `input.touchpad`, `touchpadSwipes`). In the stash, the vendor and the bench they are their tabs.
    */
-  pagePrev: ['PadLB', 'KeyQ'],
-  pageNext: ['PadRB', 'KeyE'],
+  pagePrev: ['PadLB', 'KeyQ', TOUCHPAD_KEYS.left],
+  pageNext: ['PadRB', 'KeyE', TOUCHPAD_KEYS.right],
   /** Item windows: X / pad X = right-click (equip, socket, use), V / pad Y = Ctrl-click (move, sell, buy). */
   secondary: ['KeyX', 'PadX'],
   quick: ['KeyV', 'PadY'],
@@ -161,6 +163,22 @@ const HERO_CODES: Readonly<Record<string, readonly string[]>> = {
 export const PAGES = ['inventory', 'skills', 'tree', 'character', 'codex'] as const;
 export type Page = (typeof PAGES)[number];
 
+/**
+ * A DualSense's touchpad swipes page player 1's ring: 52in1 lets games read its touchpad, the game
+ * does (`input.touchpad`), and the DualSense is not a couch guest's (`input.dualSenseGuest`: its
+ * swipes are that guest's). Prompts then draw a swipe beside L1 / R1 (`UiCanvas.touchpad`).
+ */
+export function touchpadSwipes(engine: Engine): boolean {
+  return engine.input.touchpad && engine.hubSettings.values.dualsense.touchpad && !engine.input.dualSenseGuest;
+}
+
+/** The pad's controls that page the ring, as prompts draw them: L1 / R1, and the touchpad's swipes while they do (`touchpadSwipes`). */
+export function pagePad(swipes: boolean): string[] {
+  const touchpad: readonly string[] = [TOUCHPAD_KEYS.left, TOUCHPAD_KEYS.right];
+  const buttons = [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => c.startsWith('Pad') && !touchpad.includes(c));
+  return swipes ? [...buttons, ...touchpad] : buttons;
+}
+
 /** Each page's name in the ring's strip (the pause menu's buttons for them). */
 export const PAGE_LINES: Readonly<Record<Page, string>> = { inventory: 'menu.pause.inventory', skills: 'menu.pause.skills', tree: 'menu.pause.tree', character: 'menu.pause.character', codex: 'menu.pause.codex' };
 
@@ -201,6 +219,9 @@ export const CONTROLS = {
   back: { key: 'Escape', pad: 'PadB', touch: '≡' },
   page_prev: { key: 'KeyQ', pad: 'PadLB' },
   page_next: { key: 'KeyE', pad: 'PadRB' },
+  /** The same on a DualSense's touchpad: a swipe left or right (prompts draw it beside L1 / R1 while it pages: `touchpadSwipes`). */
+  page_swipe_prev: { key: 'KeyQ', pad: TOUCHPAD_KEYS.left },
+  page_swipe_next: { key: 'KeyE', pad: TOUCHPAD_KEYS.right },
   tab_prev: { key: 'ArrowLeft', pad: 'PadLT' },
   tab_next: { key: 'ArrowRight', pad: 'PadRT' },
   details: { key: 'Tab', pad: 'PadY' },

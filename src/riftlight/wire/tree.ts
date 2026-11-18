@@ -23,7 +23,7 @@
 import type { Mod } from '../core/mods';
 import { t } from '../lang';
 import { defaultTree, type PassiveTree, pointBudget, respecCost, TreeState, treeMods } from '../tree/tree';
-import { KEYS } from '../game/controls';
+import { KEYS, pagePad, touchpadSwipes } from '../game/controls';
 import type { Panel, PanelHost, TreePort } from '../game/ports';
 import type { UiEvent } from '../ui/kit';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeRules } from '../ui/tree/actions';
@@ -97,9 +97,9 @@ export class TreePanel implements Panel {
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
       padGlyphs: () => ctx.engine.controls.style,
-      // the character screens' ring: Q / E (and L1 / R1, the shell's own read) page from the tree too;
-      // Oru's respec is no screen of the ring (Q / E zoom there)
-      pages: this.respec ? undefined : { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => c.startsWith('Pad')) },
+      // the character screens' ring: Q / E (and L1 / R1 or a swipe on a DualSense's touchpad, the
+      // shell's own read) page from the tree too; Oru's respec is no screen of the ring (Q / E zoom there)
+      pages: this.respec ? undefined : { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: pagePad(touchpadSwipes(ctx.engine)) },
       gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();

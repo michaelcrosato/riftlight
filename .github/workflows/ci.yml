@@ -110,7 +110,10 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: e2e-frames-${{ strategy.job-index }}
-          path: .scratch/e2e/
+          # the suites' frames, and what a failed 52in1 harness run's page was doing (the hub suite)
+          path: |
+            .scratch/e2e/
+            .scratch/hub/evidence/
           if-no-files-found: ignore
 
   revert-red-main:

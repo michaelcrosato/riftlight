@@ -35,7 +35,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, readActions, SHELL_MENU_BINDINGS } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, readActions, SHELL_MENU_BINDINGS, touchpadSwipes } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -299,6 +299,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // motion aim turns a kept aim direction (`turnAim`), never leans the aim stick
     this.savedLean = ctx.input.motion.lean;
     ctx.input.motion.lean = false;
+    ctx.input.touchpad = true; // a DualSense's swipes page the character screens (`KEYS.pagePrev`); its press is the map
     // couch co-op: every pad read on its own too, so players 2 to 4 can join (`game/coop.ts`)
     ctx.input.padPlayers = true;
     this.coop = new LocalCoop({
@@ -387,6 +388,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.savedKeys) ctx.engine.debugKeys = this.savedKeys;
     if (this.savedGamepad) ctx.input.gamepadButtons = this.savedGamepad;
     ctx.input.motion.lean = this.savedLean;
+    ctx.input.touchpad = false;
     this.coop?.dispose();
     ctx.input.padPlayers = false;
     ctx.input.joinWith = null;
@@ -1755,6 +1757,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.time = this.time;
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
+    ui.touchpad = touchpadSwipes(ctx.engine);
     // rows and tabs a thumb tall on a page with touch controls (the art size: recorded)
     this.layer.tap = tapArt(ctx.engine.renderer);
     // pointer and menu input → the panel stack, then game hotkeys

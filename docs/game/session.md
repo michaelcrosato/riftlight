@@ -192,4 +192,25 @@ holds the round's phase).
   (`&mode=`/`&how=` pick the online mode, `&moment=a,b,c` the moments); it passes when
   `window.__hubCheck.pass` is true. The `hub` e2e suite (`scripts/e2e-hub.mjs`) runs every mode the
   page names, with a host leaving and a server host; `npm run hub` runs the protocol's whole set on
-  the hand-over page (`protocolRuns`).
+  the hand-over page (`protocolRuns`). Each run is `harness()`: a run that fails, or never
+  finishes, leaves what its page was doing (the harness's log of every hub message, each copy's
+  phase and frame, every frame's console, a picture) in `.scratch/hub/evidence/` (the suite; CI
+  keeps it with the e2e job's frames) or `<dir>-checks/harness-evidence/` (`npm run hub`), named
+  by the run's number and its query (`evidenceFolder`, which empties the folder first: a green run
+  leaves no earlier failure's evidence behind). A run
+  ends at its timeout timed in Node (`UNFINISHED`), at most `CAPTURE_MS` later: Playwright's own
+  waits never time out on a page whose thread is stuck (a frame's script in a loop; the frames
+  share the harness's thread). The page's debugger is on from the run's start, because one turned
+  on once the thread is stuck never answers: it pauses a stuck thread, and the evidence holds
+  `stuck`, the stack where it paused and the state read there (or, in `stack`, why it could not
+  pause). A page whose renderer dies ends its run at once, as a crash (`CRASHED`; its evidence has
+  `killed` and `browserLog` too): Playwright's waits never notice a dead page and would sit out the
+  whole timeout. A browser that dies fails
+  only the run it was in (`harness` returns its error; its evidence says `closed`, never `stuck`,
+  what earlyoom killed meanwhile, and `browserLog`, the last 50 lines of the browser's own log:
+  its stderr, where a Chromium FATAL line goes, and its process's exit code or signal), and the
+  next run has a new one (`harnessBrowser`, which keeps each browser's log). The suite checks all three on pages that fail on purpose (`harnessChecks`).
+  A four-copy harness page is the biggest
+  browser process on a machine (about 0.8 GB, and 0.5 GB more in its GPU process), the one an
+  out-of-memory killer takes first: on a WSL machine with earlyoom, `journalctl --user -u earlyoom`
+  says whether it did.

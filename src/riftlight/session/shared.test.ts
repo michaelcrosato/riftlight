@@ -16,16 +16,17 @@ afterEach(() => {
   open = null;
 });
 
-/** The real game as copy `me` of a two-player shared world (played co-op, or versus); the other copy is the test's. */
-async function sharedRound(me: 0 | 1, play: 'co-op' | 'versus' = 'co-op') {
-  const hub = new LocalHub({ mode: 'shared-world', play, players: 2, seed: 4242, latencyMs: 60 });
+/** The real game as copy `me` of a shared world of `players` (two; played co-op, or versus); the other copies are the test's. */
+async function sharedRound(me: 0 | 1, play: 'co-op' | 'versus' = 'co-op', players = 2) {
+  const hub = new LocalHub({ mode: 'shared-world', play, players, seed: 4242, latencyMs: 60 });
   const session = (await HubSession.join({ mode: ['shared-world', 'ghost', 'parallel', 'moments'], seats: [1, 4], client: hub.client(me), autoFlush: false, clock: () => hub.now }))!;
   const game = new Riftlight({}, { store: new SaveStore(null), session });
   const h = await headlessRiftlight({ game, seed: session.info.seed });
   open = h;
   session.attach(h.engine);
-  const other = hub.client(me === 0 ? 1 : 0);
-  other.ready();
+  const others = Array.from({ length: players }, (_, id) => id).filter((id) => id !== me).map((id) => hub.client(id));
+  for (const o of others) o.ready();
+  const other = others[0]!;
   const got: unknown[] = [];
   other.on('message', ((data: { b?: unknown[] }) => got.push(...(data?.b ?? []))) as never);
   const frame = async (n = 1, each?: (f: number) => void) => {
@@ -40,7 +41,7 @@ async function sharedRound(me: 0 | 1, play: 'co-op' | 'versus' = 'co-op') {
   for (let f = 0; f < 600 && !hub.allReady; f++) await frame();
   hub.start();
   for (let f = 0; f < 300 && !game.round!.playing; f++) await frame();
-  return { hub, session, other, got, ...h, frame };
+  return { hub, session, other, others, got, ...h, frame };
 }
 
 /** A step of the test's own hero, standing at (x, z). */
@@ -131,6 +132,33 @@ describe('a shared world', () => {
       expect(r.hub.finished).toMatchObject({ won: true });
       expect(r.hub.finished!.standings).toEqual([[0, 1]]);
       expect(r.hub.finished!.scores).toEqual({ 0: 1, 1: 1 });
+      expect(r.hub.problems).toEqual([]);
+      expect(r.engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'versus at four: a player leaves mid-round and time is called: the host finishes within the grace, every player still in placed, and the round counts',
+    async () => {
+      const r = await sharedRound(0, 'versus', 4);
+      const world = r.game.round!.modes.find((m) => m instanceof HostWorld) as HostWorld;
+      const start = r.game.level!.start;
+      const steps = (f: number) => r.others.forEach((o, i) => o.send({ b: [{ h: stand(1 + f / 60, start.x + 1 + i * 0.6, start.z) }] }));
+      await r.frame(30, steps);
+      expect([...world.remotes.keys()]).toEqual([1, 2, 3]);
+      r.hub.leave(3); // the harness's 4-player run: the last player's tab closes mid-round
+      await r.frame(30, steps);
+      expect([...world.remotes.keys()], 'their hero went with them').toEqual([1, 2]);
+      expect(r.session.players.map((p) => p.id)).toEqual([0, 1, 2]);
+      expect(r.hub.endReason).toBeNull();
+      r.hub.timeUp();
+      await r.frame(6, steps); // a tenth of a second: well inside time-up's five
+      expect(r.hub.endReason).toBe('finished');
+      const done = r.hub.finished!;
+      expect(done.won, 'versus: the standings say who won').toBeUndefined();
+      expect(done.standings.flat().sort(), 'every player still in, once').toEqual([0, 1, 2]);
+      expect(Object.keys(done.scores ?? {}).sort()).toEqual(['0', '1', '2']);
       expect(r.hub.problems).toEqual([]);
       expect(r.engine.errors).toEqual([]);
     },

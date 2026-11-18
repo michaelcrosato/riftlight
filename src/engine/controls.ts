@@ -244,6 +244,17 @@ const DPAD: Readonly<Record<string, readonly string[]>> = {
   ArrowLeft: ['..ooo..', '..ofo..', 'ooofooo', 'osffffo', 'ooofooo', '..ofo..', '..ooo..'],
   ArrowRight: ['..ooo..', '..ofo..', 'ooofooo', 'offffso', 'ooofooo', '..ofo..', '..ooo..'],
 };
+/**
+ * A DualSense's touchpad gestures (`TOUCHPAD_KEYS`): the pad, wider than tall with round corners
+ * (`f`, a cap's slate), and the gesture on it (`s`): a swipe's way as an arrow, a tap as a dot.
+ */
+const TOUCHPAD: Readonly<Record<string, readonly string[]>> = {
+  PadTouchpadLeft: ['.......', '.fffff.', 'ffsffff', 'fsssssf', 'ffsffff', '.fffff.', '.......'],
+  PadTouchpadRight: ['.......', '.fffff.', 'ffffsff', 'fsssssf', 'ffffsff', '.fffff.', '.......'],
+  PadTouchpadUp: ['.......', '.ffsff.', 'ffsssff', 'fsfsfsf', 'fffsfff', '.ffsff.', '.......'],
+  PadTouchpadDown: ['.......', '.ffsff.', 'fffsfff', 'fsfsfsf', 'ffsssff', '.ffsff.', '.......'],
+  PadTouchpadTap: ['.......', '.fffff.', 'fffsfff', 'ffsssff', 'fffsfff', '.fffff.', '.......'],
+};
 /** The mouse: its body, the button (or the wheel) that does it lit (`s`). */
 const MOUSE: Readonly<Record<string, readonly string[]>> = {
   MouseLeft: ['.ooooo.', 'ossowwo', 'ossowwo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'],
@@ -259,7 +270,7 @@ export function keyGlyph(code: string, names?: LineSource | null): Glyph {
   return { kind: 'cap', text: keyCap(code, names), round: false };
 }
 
-/** The glyph of a pad button in a style: the face buttons, sticks and d-pad drawn, the rest a round cap with its name (L1, Options; LB, Menu). */
+/** The glyph of a pad button in a style: the face buttons, sticks, d-pad and the touchpad's gestures drawn, the rest a round cap with its name (L1, Options; LB, Menu). */
 export function padGlyph(code: string, style: PadGlyphs = 'playstation', names?: LineSource | null): Glyph {
   if (style === 'xbox') {
     const f = XBOX_FACES[code];
@@ -272,6 +283,8 @@ export function padGlyph(code: string, style: PadGlyphs = 'playstation', names?:
   if (stick) return { kind: 'sprite', rows: stick, colors: { o: 'ink', f: 'slate', d: 'night', s: 'white' } };
   const dpad = DPAD[code];
   if (dpad) return { kind: 'sprite', rows: dpad, colors: { o: 'ink', f: 'slate', s: 'white' } };
+  const touchpad = TOUCHPAD[code];
+  if (touchpad) return { kind: 'sprite', rows: touchpad, colors: { f: 'slate', s: 'white' } };
   return { kind: 'cap', text: padName(code, style, names), round: true };
 }
 

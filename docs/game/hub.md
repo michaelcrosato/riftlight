@@ -43,8 +43,8 @@ uses them, couch co-op to one device.
 | Tag | Riftlight's | Why |
 | --- | --- | --- |
 | `hub:tags` | `action-rpg, pixel art, co-op, gamepad, touch` | what it is; co-op (the default online mode, and the couch); `gamepad` and `touch` because it plays fully on a controller and by touch alone (52in1's input filters and the Friends view go by them). 5 is the cap: `isometric` and `loot` stay in the description |
-| `hub:controls` | `WASD to move; click to attack; right click or 1–4 for skills; Space to dodge; F to interact; Tab for the map; gamepad or touch to play; gamepads for players 2–4` | keys first, in the Couch's keycap words, at most 160 characters; then a pad or touch for it all, then the couch's pads (the catalogue: on one device `hub:controls` names them) |
-| `hub:dualsense` | `light bar, haptics, motion, touchpad, speaker` | the hero's life on the light bar and play's rumbles (`game/padFeel.ts`), motion aim (`turnAim`), the touchpad's press opens the map, the portal and loud drops on the `speaker` bus. No adaptive triggers (only Engine World's Drift Track has them), no microphone |
+| `hub:controls` | `WASD to move; click to attack; 1–4 or right click for skills; Space to dodge; F to interact; Tab for the map; gamepad or touch to play; gamepads for players 2–4` | keys first, in the Couch's keycap words, at most 160 characters; then a pad or touch for it all, then the couch's pads (the catalogue: on one device `hub:controls` names them) |
+| `hub:dualsense` | `light bar, haptics, motion, touchpad, speaker` | the hero's life on the light bar and play's rumbles (`game/padFeel.ts`), motion aim (`turnAim`), the touchpad (a swipe left or right pages the character screens as L1 / R1 do; its press opens the map), the portal and loud drops on the `speaker` bus. No adaptive triggers (only Engine World's Drift Track has them), no microphone |
 | `hub:multiplayer` | `shared-world co-op 1-4, shared-world versus 2-4, ghost 1-4, parallel 1-4, moments 1-4, same-screen co-op 2-4` | the four online modes (sessions: docs/game/session.md) and couch co-op (docs/game/shell.md *Couch co-op*), the game's own menu's: never offered to a session, no card of its own |
 | `hub:players` | `1-4` | the most a shared world, a ghost round or the couch seats (parallel and moments aside) |
 | `hub:session-howto` | `WASD move · click attack · 1-4 skills · Space dodge · or a gamepad or touch` | the session card's controls, at most 80 characters; every online mode's card has the same |
@@ -76,8 +76,10 @@ fails (numbered as the catalogue numbers them; the script runs them 3, 2, 1):
    (`protocolRuns` in `scripts/e2e-hub.mjs`, reading the page as the hub does: `pageModes`):
    parallel and moments at 1 and 2 players, the others at 2, 3 and 4, each on a poor network; each
    once more with a player leaving; a shared world once more hosted by a server with no player;
-   moments play every moment the page names (the hub picks three by the seed). The `hub` e2e suite
-   runs a shorter set in every mode on development builds (docs/game/session.md, *Checking it*).
+   moments play every moment the page names (the hub picks three by the seed). A run that fails
+   leaves what its page was doing in `<dir>-checks/harness-evidence/`; a browser that dies in one
+   fails that run alone, and the next has a new one. The `hub` e2e suite runs a shorter set in
+   every mode on development builds (docs/game/session.md, *Checking it*).
 3. **The browser**: the picture reaches every edge at 1600×900, 2100×900 and 1200×900 (loaded at
    one, resized to the others: `engine.state().framing`). Under `?lang=en-XA`, `zh-XC` and `ar-XB`
    the page sets `<html lang>`, and every text the title and the town draw

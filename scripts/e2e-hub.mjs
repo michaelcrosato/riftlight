@@ -4,9 +4,11 @@
 // lossy network, with a host leaving and a server with no player of its own. One page offers every
 // mode (`npm run build:single`); `&mode=` and `&how=` pick the one a run plays, `&moment=` the moments.
 // Then a round of moments on a phone held upright with its touch controls: no ≡ in a round.
+import { execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { copyFile, mkdir, readFile } from 'node:fs/promises';
-import { extname } from 'node:path';
+import { copyFile, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { dirname, extname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright-core';
 import { WEBGPU_ARGS } from './browser.mjs';
 import { readHead } from './hub/head.mjs';
@@ -87,18 +89,283 @@ export function serve(dir, port) {
   return new Promise((resolve) => server.listen(port, () => resolve(server)));
 }
 
-/** One run of the harness at `url` (harness.html?game=...&auto=1): whether the hub's checks pass, and the failed ones. */
-export async function harness(browser, url) {
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+/**
+ * Resolves to `promise`'s value (its error's first line, in brackets, if it fails), or to `fallback`
+ * after `ms`, timed in Node: a page whose thread is stuck never answers, and Playwright's own
+ * timeouts wait on it (1.56's `waitForFunction` sat out minutes past its timeout on a busy page).
+ */
+const within = (promise, ms, fallback) => {
+  let timer;
+  return Promise.race([promise.catch((e) => `(${e.message.split('\n')[0]})`), new Promise((r) => (timer = setTimeout(() => r(fallback), ms)))]).finally(() => clearTimeout(timer));
+};
+
+/**
+ * How long each read of a failed run's page may take (`capture`), in ms: its state, whether it
+ * draws, its debugger pausing it, the state where it paused, letting it go, a gone browser's
+ * last log line (how it exited), its picture, closing it.
+ */
+const BOUNDS = { state: 8000, drawing: 3000, pause: 5000, paused: 5000, evaluate: 5000, release: 4000, exit: 2000, picture: 12_000, close: 10_000 };
+
+/** The longest a run lasts past its timeout: its stalls read (3 s), then every read of `capture`. */
+export const CAPTURE_MS = 3000 + Object.values(BOUNDS).reduce((a, b) => a + b, 0);
+
+/** A run that never finished in its timeout, timed in Node (the page may be too busy to answer Playwright's own waits). */
+export const UNFINISHED = 'the harness page did not finish in its timeout';
+
+/** A run whose page's renderer died: Playwright's waits never notice one, and would sit out their whole timeout. */
+export const CRASHED = 'the harness page crashed: its renderer died (out of memory? `journalctl --user -u earlyoom` says whether earlyoom killed it)';
+
+/** The line a browser's log (`browserLog`) has once its process is gone: its exit code, or the signal that killed it. */
+const EXITED = /<process did exit: exitCode=\S+, signal=\S+>/;
+
+/** Each harness browser's own log (`keepLog`), its last `LOG_LINES` lines. */
+const browserLogs = new WeakMap();
+const LOG_LINES = 50;
+
+/**
+ * Keeps `browser`'s own log in `browserLogs` as it grows: Playwright's record of its process (its
+ * launch, its stderr, where a Chromium FATAL line goes, and `<process did exit: exitCode=…,
+ * signal=…>`). Playwright 1.56's launch `logger` is given only API calls, never these lines, so
+ * they are read where Playwright keeps them (its in-process server's browser); a Playwright
+ * without that keeps no log here, and the hub suite's dead-browser check says so.
+ */
+function keepLog(browser) {
   try {
-    await page.goto(url);
-    await page.waitForFunction(() => document.body.dataset.complete === 'true', null, { timeout: 300_000 });
-    const report = await page.evaluate(() => window.__hubCheck);
-    return { pass: report.pass, checks: report.checks.length, bad: report.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.detail}`) };
+    const ring = [];
+    browser._connection.toImpl(browser).options.browserLogsCollector.onMessage((line) => {
+      if (/:INFO:CONSOLE[:(]/.test(line)) return; // Chromium's copies of pages' console (the evidence has those): the browser's own lines only
+      ring.push(line.slice(0, 400));
+      if (ring.length > LOG_LINES) ring.shift();
+    });
+    browserLogs.set(browser, ring);
+  } catch {
+    /* no log to keep */
+  }
+}
+
+/** `browser`'s log (`keepLog`) once its process is gone, waiting up to `ms` for the line that says how it exited; null if none is kept. */
+async function exitLog(browser, ms) {
+  const log = browser && browserLogs.get(browser);
+  if (!log) return null;
+  for (const end = Date.now() + ms; !log.some((l) => EXITED.test(l)) && Date.now() < end; ) await new Promise((r) => setTimeout(r, 100));
+  return [...log];
+}
+
+/** The harness page's state, read in it: its checks, its log (every hub message), the round, each copy's phase and frame. */
+function harnessState() {
+  return {
+    complete: document.body.dataset.complete ?? null,
+    checks: window.__hubCheck?.checks ?? null,
+    round: document.getElementById('round')?.textContent ?? null,
+    log: window.__hubCheck?.log ?? null,
+    stalls: window.__stalls ?? null,
+    copies: [...document.querySelectorAll('iframe')].map((f) => {
+      try {
+        const w = f.contentWindow;
+        const round = w.__RIFTLIGHT__?.game?.round ?? null;
+        return { title: f.title, time: w.AIHub?.time?.() ?? null, phase: round?.phase ?? null, players: round?.players ?? null, cleared: round?.clearedAt ?? null, frame: w.__PIXEL_ENGINE__?.state?.().frame ?? null };
+      } catch (e) {
+        return { title: f.title, error: String(e) };
+      }
+    }),
+  };
+}
+
+/** What earlyoom (a memory-capped machine's out-of-memory killer) killed since `since` (ms), where it runs: a crashed page's likely cause. */
+function earlyoomKills(since) {
+  try {
+    const out = execFileSync('journalctl', ['--user', '-u', 'earlyoom', '--since', `@${Math.floor(since / 1000)}`, '--no-pager', '-o', 'short-iso'], { timeout: 3000, stdio: ['ignore', 'pipe', 'ignore'] });
+    return out.toString().split('\n').filter((l) => /sending SIG/.test(l)).map((l) => l.slice(0, 300));
+  } catch {
+    return null; // no journal here
+  }
+}
+
+/**
+ * The page's debugger, enabled before its run: a thread stuck later can still be paused (one
+ * enabled once the thread is stuck never answers: enabling waits on the thread, pausing doesn't).
+ * It never stops the run itself (`setSkipAllPauses`: a `debugger` statement goes by). Null if the
+ * browser gives none.
+ */
+async function debuggerOf(page) {
+  try {
+    const cdp = await page.context().newCDPSession(page);
+    const scripts = new Map(); // script id → its page (a paused frame names only the id)
+    cdp.on('Debugger.scriptParsed', (e) => scripts.set(e.scriptId, e.url));
+    await cdp.send('Debugger.enable', { maxScriptsCacheSize: 0 }); // no sources of collected scripts kept: a harness page is a big process already
+    await cdp.send('Debugger.setSkipAllPauses', { skip: true });
+    return { cdp, scripts };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * A stuck thread paused by its debugger (`debuggerOf`, each step bounded): where its script is (the
+ * stack, innermost first), the harness's state read where it stopped, and the script then ended
+ * (`Runtime.terminateExecution`: the page answers again, for its picture). `stack` says so, in
+ * words, when there is no debugger or the thread did not pause.
+ */
+async function pauseStuck(debug) {
+  if (!debug) return { stack: 'no debugger: the page had none from its start, so its stuck thread could not be paused', state: null };
+  const { cdp, scripts } = debug;
+  const paused = new Promise((r) => cdp.once('Debugger.paused', r));
+  cdp.send('Debugger.setSkipAllPauses', { skip: false }).catch(() => {}); // the thread reads it with the pause, in order
+  const sent = await within(cdp.send('Debugger.pause'), BOUNDS.pause, `no answer in ${BOUNDS.pause / 1000} s`);
+  const at = await within(paused, BOUNDS.paused, null);
+  if (!at?.callFrames) return { stack: `the thread did not pause in ${(BOUNDS.pause + BOUNDS.paused) / 1000} s (Debugger.pause: ${typeof sent === 'string' ? sent : 'sent'})`, state: null };
+  const where = (f) => (scripts.get(f.location.scriptId) || f.url || '?').split('/').pop();
+  const stack = at.callFrames.map((f) => `${f.functionName || '(anonymous)'} ${where(f)}:${f.location.lineNumber + 1}:${(f.location.columnNumber ?? 0) + 1}`);
+  const read = await within(cdp.send('Runtime.evaluate', { expression: `(${harnessState})()`, returnByValue: true }), BOUNDS.evaluate, null);
+  const state = read && typeof read === 'object' && read.result?.value && typeof read.result.value === 'object' ? read.result.value : null;
+  await within(
+    cdp.send('Debugger.resume').then(() => cdp.send('Runtime.terminateExecution')),
+    BOUNDS.release,
+    null,
+  );
+  return { stack, state };
+}
+
+/**
+ * What a harness page was doing when its run failed or never finished, written to `<evidence>.json`
+ * (and a picture, `<evidence>.png`, while the page lives): its state now, or when it is gone the
+ * last state read while it ran (`seen`); whether it still draws; the console of every frame. When
+ * its thread is stuck (`stuck`: a frame's script in a loop; the frames share the harness's
+ * thread), the debugger enabled at the run's start (`debuggerOf`) pauses it: where its script is
+ * (`stack`, or why there is none), and the state read where it stopped. A page whose browser is
+ * gone (`closed`: an out-of-memory kill can take the whole browser) is not stuck; for it, as for a
+ * crash, `killed` holds what earlyoom killed meanwhile and `browserLog` its browser's last log
+ * lines (`keepLog`: how its process exited, a Chromium FATAL line). Every read is bounded
+ * (`BOUNDS`): a stuck page never holds the run.
+ */
+async function capture(page, debug, { consoleLines, seen, crashed, error, since }, evidence) {
+  // a page whose browser is gone (an out-of-memory kill can take all of it) answers nothing, and is no stuck thread
+  const browser = page.context().browser();
+  const closed = !crashed && (page.isClosed() || !browser?.isConnected());
+  const silent = `the page did not answer in ${BOUNDS.state / 1000} s`;
+  let now = crashed ? 'the page crashed' : closed ? 'the page is gone: its browser closed' : await within(page.evaluate(harnessState), BOUNDS.state, silent);
+  const stuck = now === silent; // not an answer that is an error (`within` brackets those)
+  let stack = null;
+  if (stuck) {
+    const at = await pauseStuck(debug);
+    stack = at.stack;
+    if (at.state) now = { ...at.state, drawing: false, pausedAt: stack[0] ?? null };
+  } else if (now && typeof now === 'object') {
+    // whether the page still draws: the harness's checks wait on timers, its games on frames
+    now.drawing = await within(page.evaluate(() => Promise.race([new Promise((r) => requestAnimationFrame(() => r(true))), new Promise((r) => setTimeout(() => r(false), 1000))])), BOUNDS.drawing, null);
+  }
+  const browserLog = crashed ? (browserLogs.get(browser)?.slice() ?? null) : closed ? await exitLog(browser, BOUNDS.exit) : null;
+  await mkdir(dirname(evidence), { recursive: true });
+  await writeFile(`${evidence}.json`, JSON.stringify({ at: new Date().toISOString(), url: page.url(), error, crashed, closed, killed: crashed || closed ? earlyoomKills(since) : null, browserLog, stuck, now, seen, stack, console: consoleLines }, null, 1));
+  if (!crashed && !closed) await within(page.screenshot({ path: `${evidence}.png`, timeout: BOUNDS.picture - 2000 }), BOUNDS.picture, null);
+}
+
+/**
+ * One run of the harness at `url` (harness.html?game=...&auto=1): whether the hub's checks pass, and
+ * the failed ones; `stalls`, the harness page's longest gap between frames and longest task (its
+ * games share its thread). A page that crashes ends the run at once (`crashed`, `CRASHED`); one
+ * that never finishes ends it at `timeout` ms, timed in Node (`UNFINISHED`: a page whose thread is
+ * stuck never answers Playwright's own waits), at most `CAPTURE_MS` later. A run that fails leaves
+ * what its page was doing at `evidence` (a path without its extension: `.json`, and `.png` while
+ * the page lives), when given (`capture`). A browser that is gone (`isConnected()` false) fails the
+ * run with its error: it never throws.
+ */
+export async function harness(browser, url, { timeout = 300_000, evidence = null } = {}) {
+  const since = Date.now();
+  const consoleLines = [];
+  const note = (line) => {
+    consoleLines.push(line);
+    if (consoleLines.length > 400) consoleLines.splice(0, consoleLines.length - 400);
+  };
+  let page = null;
+  let crashed = false;
+  let read = null;
+  let timer = null;
+  try {
+    page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+    page.on('console', (m) => note(`${m.type()} ${m.location()?.url?.split('/').pop() ?? ''}: ${m.text()}`));
+    page.on('pageerror', (e) => note(`pageerror: ${e.message}`));
+    const crash = new Promise((resolve) =>
+      page.once('crash', () => {
+        crashed = true;
+        note(`crash: ${CRASHED}`);
+        resolve();
+      }),
+    );
+    // the harness page's stalls: its longest gap between frames and its longest task
+    await page.addInitScript(() => {
+      if (window.top !== window) return;
+      const stalls = (window.__stalls = { frameGap: 0, task: 0, tasks: 0 });
+      let last = -1;
+      const tick = (t) => {
+        if (last >= 0) stalls.frameGap = Math.max(stalls.frameGap, Math.round(t - last));
+        last = t;
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+      try {
+        new PerformanceObserver((list) => {
+          for (const e of list.getEntries()) {
+            stalls.tasks++;
+            stalls.task = Math.max(stalls.task, Math.round(e.duration));
+          }
+        }).observe({ type: 'longtask', buffered: true });
+      } catch {
+        /* no long task timing */
+      }
+    });
+    const debug = evidence ? await within(debuggerOf(page), 10_000, null) : null;
+    // what the page is doing, read every few seconds while it runs: the evidence if it dies
+    let seen = null;
+    let reading = false;
+    read = setInterval(() => {
+      if (reading || crashed) return;
+      reading = true;
+      page
+        .evaluate(harnessState)
+        .then((s) => (seen = { ...s, at: new Date().toISOString() }))
+        .catch(() => {})
+        .finally(() => (reading = false));
+    }, 3000);
+    let error = null;
+    const finished = (async () => {
+      await page.goto(url, { timeout });
+      // polled on a timer, not on frames: a page that stopped drawing is still read
+      await page.waitForFunction(() => document.body.dataset.complete === 'true', null, { timeout, polling: 500 });
+    })();
+    finished.catch(() => {}); // it may settle long after the run ends (a busy page's waits outlast their timeout)
+    try {
+      await Promise.race([
+        finished,
+        crash.then(() => {
+          throw new Error(CRASHED);
+        }),
+        // timed in Node: Playwright's waits on a page whose thread is stuck never time out
+        new Promise((_, reject) => (timer = setTimeout(() => reject(new Error(`${UNFINISHED} (${timeout / 1000} s)`)), timeout))),
+      ]);
+    } catch (e) {
+      error = e.message.split('\n')[0];
+    } finally {
+      clearTimeout(timer);
+    }
+    const report = error ? null : await within(page.evaluate(() => window.__hubCheck), 10_000, null);
+    const result =
+      report && typeof report === 'object'
+        ? { pass: report.pass, checks: report.checks.length, bad: report.checks.filter((c) => !c.pass).map((c) => `${c.name}: ${c.detail}`) }
+        : { pass: false, checks: 0, bad: [], error: error ?? 'the harness page gave no report' };
+    if (crashed) result.crashed = true;
+    result.stalls = crashed ? (seen?.stalls ?? null) : await within(page.evaluate(() => window.__stalls ?? null), 3000, null);
+    if (!result.pass && evidence) {
+      await capture(page, debug, { consoleLines, seen, crashed, error: result.error ?? null, since }, evidence);
+      result.evidence = evidence;
+    }
+    return result;
   } catch (e) {
-    return { pass: false, checks: 0, bad: [], error: e.message.split('\n')[0] };
+    return { pass: false, checks: 0, bad: [], error: e.message.split('\n')[0], ...(crashed ? { crashed } : {}) };
   } finally {
-    await page.close();
+    clearInterval(read);
+    clearTimeout(timer);
+    if (page) await within(page.close(), BOUNDS.close, null);
   }
 }
 
@@ -138,6 +405,136 @@ export async function touchRound(browser, url) {
 /** The vendored harness's files, copied next to the page it plays. */
 export const HARNESS_FILES = ['harness.html', 'bridge.js', 'round.js'];
 
+/**
+ * Harness runs' browser, launched again when it is gone (`isConnected()` false: a run's
+ * out-of-memory kill can take the whole browser, not only its page). `get()` before each run;
+ * `launches` counts the browsers it started. Each keeps its own log (`keepLog`): a run's evidence
+ * says how a browser that died went (`browserLog`).
+ */
+export function harnessBrowser(launch) {
+  let browser = null;
+  let launches = 0;
+  return {
+    get launches() {
+      return launches;
+    },
+    async get() {
+      if (browser?.isConnected()) return browser;
+      await browser?.close().catch(() => {});
+      browser = await launch();
+      keepLog(browser);
+      launches++;
+      return browser;
+    },
+    async close() {
+      await browser?.close().catch(() => {});
+      browser = null;
+    },
+  };
+}
+
+/** A page whose script loops for ever, a while after it loads: its thread never answers again. */
+const BUSY_PAGE = `<!doctype html><meta charset="utf-8"><title>busy</title><body>A page whose script loops for ever.<script>
+function spin() { for (;;) {} }
+setTimeout(function stuck() { spin(); }, 500);
+</script>`;
+
+/**
+ * Whether `harness` ends a run whose page's thread is stuck (a script in a loop: Playwright's own
+ * waits never time out on it) at its timeout, timed in Node, within `CAPTURE_MS` more, and leaves
+ * evidence that says so: `stuck`, and the stack where the debugger paused it (`spin`, in the page).
+ */
+async function busySeen(browser, dir, port) {
+  await writeFile(new URL('busy.html', dir), BUSY_PAGE);
+  const evidence = fileURLToPath(new URL('checks/busy', dir)); // not in evidence/: CI keeps that for runs that failed
+  await rm(`${evidence}.json`, { force: true });
+  const timeout = 8000;
+  const from = Date.now();
+  const r = await within(harness(browser, `http://localhost:${port}/busy.html`, { timeout, evidence }), timeout + CAPTURE_MS + 5000, null);
+  const took = Date.now() - from;
+  const json = await readFile(`${evidence}.json`, 'utf8').then(JSON.parse, () => null);
+  const top = Array.isArray(json?.stack) ? json.stack[0] : json?.stack;
+  // a page still alive keeps no browser log (that is for a browser that died: no wait for its exit line)
+  const pass = !!r && took <= timeout + CAPTURE_MS && r.error?.startsWith(UNFINISHED) && json?.stuck === true && /^spin busy\.html:2:/.test(top ?? '') && json?.browserLog === null;
+  return { pass, detail: `${r ? `ended in ${(took / 1000).toFixed(1)} s (${r.error})` : `still running after ${(took / 1000).toFixed(0)} s`}; its evidence: ${json ? `stuck ${json.stuck}, paused at ${top ?? 'nothing'}, browser log ${json.browserLog === null ? 'none' : 'kept'}` : 'none'}` };
+}
+
+/** The harness page `url` ends with, once `browser` has opened it (null after 10 s). */
+async function openedPage(browser, url) {
+  const from = Date.now();
+  while (Date.now() - from < 10_000) {
+    const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith(url));
+    if (page) return page;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
+/**
+ * Whether a harness browser that dies in a run (as an out-of-memory kill can take it all) fails
+ * only that run: `harness` returns its error (never throws) at once, its evidence says the page is
+ * gone (`closed`), not that its thread is stuck, and how its process ended (`browserLog`), and
+ * `harnessBrowser` launches a new browser for the next run.
+ */
+async function deadBrowserSeen(browsers, dir, port) {
+  const dead = await browsers.get();
+  const evidence = fileURLToPath(new URL('checks/dead', dir)); // not in evidence/: CI keeps that for runs that failed
+  await rm(`${evidence}.json`, { force: true });
+  const from = Date.now();
+  const run = harness(dead, `http://localhost:${port}/stuck.html`, { timeout: 30_000, evidence });
+  const opened = !!(await openedPage(dead, '/stuck.html'));
+  await dead.close();
+  const r = await run;
+  const took = Date.now() - from;
+  const json = await readFile(`${evidence}.json`, 'utf8').then(JSON.parse, () => null);
+  const next = await browsers.get();
+  const renewed = next !== dead && next.isConnected();
+  const exit = Array.isArray(json?.browserLog) ? json.browserLog.find((l) => EXITED.test(l)) : null;
+  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 25_000 && json?.closed === true && json?.stuck === false && !!exit && renewed;
+  return { pass, detail: `the run: ${r.error ?? 'passed'}, ended in ${(took / 1000).toFixed(1)} s; its evidence: ${json ? `closed ${json.closed}, stuck ${json.stuck}, its browser's log: ${exit ?? (json.browserLog ? 'no exit in it' : 'none')}` : 'none'}; the next: ${renewed ? 'a new browser' : 'no new browser'}` };
+}
+
+/**
+ * Whether `harness` ends a run whose page's renderer dies at once, as a crash: a page that never
+ * finishes, crashed through the debugger (`Page.crash`, as earlyoom's kill or an out-of-memory would).
+ */
+async function crashSeen(browser, port) {
+  const from = Date.now();
+  const run = harness(browser, `http://localhost:${port}/stuck.html`, { timeout: 30_000 });
+  const page = await openedPage(browser, '/stuck.html');
+  if (page) (await page.context().newCDPSession(page)).send('Page.crash').catch(() => {}); // it answers nothing: it is gone
+  const r = await run;
+  return !!page && r.crashed === true && r.error === CRASHED && Date.now() - from < 15_000;
+}
+
+/**
+ * `harness`'s own checks, on pages that fail on purpose (served from `dir` at `port`): a page whose
+ * thread is stuck, a browser that dies, a page whose renderer dies. Each ends its run in a bounded
+ * time, and never takes the tool down.
+ */
+export async function harnessChecks(browsers, dir, port, check) {
+  await writeFile(new URL('stuck.html', dir), '<!doctype html><meta charset="utf-8"><title>stuck</title><body>A page that never finishes.</body>');
+  const busy = await busySeen(await browsers.get(), dir, port);
+  check(busy.pass, `a harness page whose thread is stuck ends its run at its timeout, timed in Node (Playwright's waits never time out on it), and its evidence says where it is stuck: ${busy.detail}`);
+  const dead = await deadBrowserSeen(browsers, dir, port);
+  check(dead.pass, `a harness browser that dies in a run fails only that run (an error, not a crash of the tool), its evidence says the page is gone (not stuck) and how its browser's process ended, and the next run has a new browser: ${dead.detail}`);
+  check(await crashSeen(await browsers.get(), port), 'a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout)');
+}
+
+/** Where the `hub` suite's runs that fail leave their evidence (CI keeps it: ci.yml's e2e job). */
+export const EVIDENCE = '.scratch/hub/evidence/';
+
+/**
+ * An empty evidence folder at `dir` (a path): an earlier run's evidence is gone, so a green run
+ * leaves none behind. Returns where the run `query`, the `index`th of its set (from 0), leaves its
+ * evidence there (`harness`'s `evidence`): the run's number first, as a long query cut to a short
+ * file name can name two runs alike (moments' runs differ after their every moment).
+ */
+export async function evidenceFolder(dir) {
+  await rm(dir, { recursive: true, force: true });
+  return (index, query) => join(dir, `${String(index + 1).padStart(2, '0')}-${query.replace(/[^\w=-]+/g, '_').slice(0, 120)}`);
+}
+
 export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
   console.log('\n▶ hub: 52in1 session harness, every online mode the page names');
   const dir = new URL('.scratch/hub/', root);
@@ -149,17 +546,20 @@ export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
   const offer = pageModes(await readFile(new URL('riftlight.html', dir), 'utf8'));
   check(offer.modes.length >= 4 && offer.moments.length >= 3, `the page offers ${offer.modes.map((m) => [m.where, m.play].filter(Boolean).join(' ')).join(', ')}; ${offer.moments.length} moments`);
   const server = await serve(dir, port);
-  const browser = await chromium.launch({ executablePath: exe, headless: true, args: WEBGPU_ARGS });
+  const browsers = harnessBrowser(() => chromium.launch({ executablePath: exe, headless: true, args: WEBGPU_ARGS }));
+  const evidenceOf = await evidenceFolder(fileURLToPath(new URL(EVIDENCE, root)));
   try {
-    for (const q of protocolRuns(offer, { full: false })) {
-      const r = await harness(browser, `http://localhost:${port}/harness.html?game=riftlight.html&${q}&auto=1`);
-      check(r.pass, `${q}: ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}`);
+    for (const [i, q] of protocolRuns(offer, { full: false }).entries()) {
+      const evidence = evidenceOf(i, q);
+      const r = await harness(await browsers.get(), `http://localhost:${port}/harness.html?game=riftlight.html&${q}&auto=1`, { evidence });
+      check(r.pass, `${q}: ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}${r.evidence ? `\n    what the page was doing: ${r.evidence}.json` : ''}`);
     }
     // a round on a phone, its touch controls on: no ≡ (a round has no pause menu: the hub's bar is the menu there)
-    const round = await touchRound(browser, `http://localhost:${port}/harness.html?game=${encodeURIComponent('riftlight.html?touch=1')}&mode=moments&moment=${offer.moments[0]}&players=1&play=8000&auto=1`);
+    const round = await touchRound(await browsers.get(), `http://localhost:${port}/harness.html?game=${encodeURIComponent('riftlight.html?touch=1')}&mode=moments&moment=${offer.moments[0]}&players=1&play=8000&auto=1`);
     check(round.ok, `a round of moments on a phone with touch controls: ≡ hidden (${round.detail})`);
+    await harnessChecks(browsers, dir, port, check);
   } finally {
-    await browser.close();
+    await browsers.close();
     server.close();
   }
 }

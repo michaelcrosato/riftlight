@@ -41,12 +41,13 @@ export const CATALOGUE = {
    * Keys first, as the Couch draws them (keycaps, then what they do: the catalogue's *Controls*;
    * game/controls.ts `KEYS`, `MOUSE`), then a pad or touch for it all, then couch co-op's pads.
    */
-  controls: 'WASD to move; click to attack; right click or 1–4 for skills; Space to dodge; F to interact; Tab for the map; gamepad or touch to play; gamepads for players 2–4',
+  controls: 'WASD to move; click to attack; 1–4 or right click for skills; Space to dodge; F to interact; Tab for the map; gamepad or touch to play; gamepads for players 2–4',
   /**
    * A DualSense's extras it uses through 52in1 (`hub:dualsense`): the light bar (the hero's life,
-   * game/padFeel.ts), haptics (play's rumbles), motion aim (`turnAim`), the touchpad's press (the
-   * map) and the speaker (the portal and loud drops on the `speaker` bus). No adaptive triggers
-   * (only Engine World's Drift Track has them), no microphone.
+   * game/padFeel.ts), haptics (play's rumbles), motion aim (`turnAim`), the touchpad (a swipe pages
+   * the character screens as L1 / R1 do, `KEYS.pagePrev`; its press opens the map) and the speaker
+   * (the portal and loud drops on the `speaker` bus). No adaptive triggers (only Engine World's
+   * Drift Track has them), no microphone.
    */
   dualsense: 'light bar, haptics, motion, touchpad, speaker',
   /** The agent tool that builds it (the model and its effort are given to the hand-over build). */

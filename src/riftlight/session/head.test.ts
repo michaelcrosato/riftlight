@@ -9,7 +9,8 @@ import { describe, expect, it } from 'vitest';
 import { checkPage, DUALSENSE, readMultiplayer } from '../../../scripts/hub/catalogue-check.mjs';
 import { hubHead, hubPage, readHead } from '../../../scripts/hub/head.mjs';
 import { CATALOGUE, riftlightTags } from '../../../scripts/hub/riftlight.mjs';
-import { headSession } from '../../engine';
+import { headSession, TOUCHPAD_KEYS } from '../../engine';
+import { COOP } from '../game/coop';
 import { KEYS, MOUSE } from '../game/controls';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { riftlightLines } from '../lang';
@@ -87,7 +88,8 @@ describe('Riftlight’s 52in1 head', () => {
       'adaptive triggers': /\bdualsense\.trigger\(/.test(src),
       haptics: /\binput\.rumble\(/.test(src),
       motion: RIFTLIGHT_OPTIONS.settings?.motion === true && /\bmotionTurn\b/.test(src),
-      touchpad: (KEYS.map as readonly string[]).includes('PadTouchpad') || /\bdualsense\.touches\b|\binput\.touchpad\b/.test(src),
+      // its gestures, not only its press (which a browser reports as a button with 52in1's touchpad off): the game reads them, and a binding uses one
+      touchpad: /\binput\.touchpad = true\b/.test(src) && Object.values(TOUCHPAD_KEYS).some((code) => (Object.values(KEYS).flat(2) as string[]).includes(code)),
       speaker: /\bbus: 'speaker'/.test(src),
       microphone: /\bopenMicrophone\(/.test(src),
     };
@@ -97,7 +99,9 @@ describe('Riftlight’s 52in1 head', () => {
 
   it('offers couch co-op on one device, and only the online modes to a session', () => {
     const ways = readMultiplayer(one('hub:multiplayer')).modes.map((m) => `${m.key} ${m.seats.join('-')}`);
-    expect(ways).toEqual(['shared-world co-op 1-4', 'shared-world versus 2-4', 'ghost 1-4', 'parallel 1-4', 'moments 1-4', 'same-screen co-op 2-4']);
+    // couch co-op as the game seats it (game/coop.ts): player 1 and a guest at the fewest, `COOP.seats` at the most
+    const couch = `same-screen co-op 2-${COOP.seats}`;
+    expect(ways).toEqual(['shared-world co-op 1-4', 'shared-world versus 2-4', 'ghost 1-4', 'parallel 1-4', 'moments 1-4', couch]);
     expect([one('hub:players'), one('hub:session-players'), one('hub:session-mode')]).toEqual(['1-4', '1-4', 'shared-world']);
     // what the page joins a session with (src/main.ts): the online four, never the couch
     expect(headSession((name) => head.one(name) ?? null)).toEqual({ modes: ['shared-world', 'ghost', 'parallel', 'moments'], seats: [1, 4] });
