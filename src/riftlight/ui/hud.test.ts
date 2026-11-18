@@ -9,6 +9,7 @@ import { bossNameShown } from '../lang/monsters';
 import { riftlightTranslations } from '../lang/translations';
 import { designedBoss } from '../monsters/bosses';
 import { MOMENTS, momentGoal } from '../session/moments';
+import type { SkillSlotView } from '../game/ports';
 import { drawHud, type GuestStrip, hudBoxes, hudGeometry, type HudModel, hudZones } from './hud';
 import { type Align, miniCovers, miniWidth, UiCanvas } from './kit';
 import { type Box, overlaps } from './layout';
@@ -168,6 +169,66 @@ function hudModel(controls: Box[], o: { boss?: string | null; label?: string; di
     controls,
   };
 }
+
+describe('the skill bar names its buttons', () => {
+  /** Attack, dodge and the four skills, a skill cooling down (its seconds over the slot's middle). */
+  const SKILLS: SkillSlotView[] = (['attack', 'dodge', 0, 1, 2, 3] as const).map((slot, i) => ({ slot, id: `s${i}`, name: `Skill ${i}`, icon: ['xxxxxxx', 'x.....x', 'x.....x', 'x.....x', 'x.....x', 'x.....x', 'xxxxxxx'], colors: { x: 'white' }, cost: i, cooldown: 4, remaining: i === 3 ? 2.5 : 0, usable: true }));
+  /** The glyphs `drawHud` draws (their art pixels: a sprite or cap from a row above its `y`, 8 tall) and the mini font's digits. */
+  function drawn(W: number, H: number, m: HudModel): { glyphs: (Box & { action: string })[]; digits: Box[] } {
+    const glyphs: (Box & { action: string })[] = [];
+    const digits: Box[] = [];
+    const hud = { width: W, height: H, rect() {}, sprite() {}, text() {}, measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+    let inGlyph = false;
+    class Recording extends UiCanvas {
+      override glyph(x: number, y: number, action: Parameters<UiCanvas['glyph']>[2]): number {
+        glyphs.push({ action, x, y: y - 1, w: this.glyphWidth(action), h: 8 });
+        inGlyph = true;
+        try {
+          return super.glyph(x, y, action);
+        } finally {
+          inGlyph = false;
+        }
+      }
+      override mini(x: number, y: number, s: string, color?: HudColor, align: Align = 'left', shadow?: HudColor | false): number {
+        if (!inGlyph && /^[\d.]+$/.test(s)) digits.push({ x: Math.round(align === 'center' ? x - Math.floor(miniWidth(s) / 2) : align === 'right' ? x - miniWidth(s) : x), y, w: miniWidth(s), h: 5 });
+        return super.mini(x, y, s, color, align, shadow);
+      }
+    }
+    drawHud(new Recording(hud as never), m);
+    return { glyphs, digits };
+  }
+
+  afterAll(() => void installLanguage(new Lang(riftlightLines())));
+
+  it('on a pad, a phone held upright’s tight bar as well (PlayStation’s and Xbox’s): each slot’s button over its lower-left corner, on screen, clear of the next and of a cooldown’s seconds; a key’s where it fits', () => {
+    const translations = riftlightTranslations();
+    // English, and languages whose L1 (Russian's space bar) the mini font can't draw: the normal font's, wider
+    for (const [code, [vw, vh, dpr]] of ['en', 'ja', 'ru'].flatMap((code) => ([[390, 844, 3], [360, 740, 2], [844, 390, 3], [1280, 720, 1]] as const).map((s) => [code, s] as const))) {
+      installLanguage(new Lang(riftlightLines(), translations, { code }));
+      const { W, H } = controlsFor(vw, vh, dpr);
+      const g = hudGeometry(W, H, []);
+      const slotX = (i: number) => g.bx + i * (g.slot + g.gap) + (i >= 2 ? g.split : 0);
+      for (const [device, padStyle] of [['pad', 'playstation'], ['pad', 'xbox'], ['keyboard', 'playstation']] as const) {
+        const where = `${code}, ${vw}×${vh} (${W}×${H}${g.compact ? ', compact' : ''}), ${device}${device === 'pad' ? `, ${padStyle}` : ''}`;
+        const m: HudModel = { ...hudModel([]), device, padStyle, skills: SKILLS };
+        const { glyphs, digits } = drawn(W, H, m);
+        const bar = hudBoxes(W, H, m).find((b) => b.id === 'bar')!;
+        if (device === 'pad' || !g.compact) expect(glyphs.map((x) => x.action), `${where}: every slot's button`).toEqual(['attack', 'dodge', 'skill1', 'skill2', 'skill3', 'skill4']);
+        else expect(glyphs.length, `${where}: the keys that fit`).toBeGreaterThan(0);
+        for (const x of glyphs) {
+          const i = ['attack', 'dodge', 'skill1', 'skill2', 'skill3', 'skill4'].indexOf(x.action);
+          // within its slot (a wide bar's long key names, Russian's space bar, may run past it: into its 3 px gap)
+          if (g.compact || device === 'pad') expect(x.x >= slotX(i) && x.x + x.w <= slotX(i) + g.slot, `${where}: ${x.action} ${JSON.stringify(x)} over its slot (x ${slotX(i)}, ${g.slot} wide)`).toBe(true);
+          expect(x.y >= g.by && x.y + x.h <= H, `${where}: ${x.action} ${JSON.stringify(x)} on screen, over the slot's lower half`).toBe(true);
+          expect(x.x >= bar.x && x.x + x.w <= bar.x + bar.w && x.y >= bar.y, `${where}: ${x.action} in the bar's zone ${JSON.stringify(bar)}`).toBe(true);
+          for (const d of digits) expect(overlaps(x, d, 0), `${where}: ${x.action} ${JSON.stringify(x)} over the digits ${JSON.stringify(d)}`).toBe(false);
+        }
+        for (const [a, b] of glyphs.flatMap((a, i) => glyphs.slice(i + 1).map((b) => [a, b] as const))) expect(overlaps(a, b, 0), `${where}: ${a.action} over ${b.action}`).toBe(false);
+        expect(digits.length, `${where}: the cooldown's seconds and the costs drawn`).toBeGreaterThan(1);
+      }
+    }
+  });
+});
 
 describe('a boss\'s name and bar', () => {
   it('never run under the minimap and the gold: at the top beside the minimap where they fit, else across the screen under it (a phone in portrait, a narrow window)', () => {

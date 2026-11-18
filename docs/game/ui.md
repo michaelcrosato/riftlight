@@ -15,8 +15,8 @@ on a narrow wide screen, and its line under the title wraps (`bannerSub`: the no
 the mini font, at most four rows) with the plate growing to hold it. A 52in1 moment's seconds
 left (`HudModel.timeLeft`) go at the top centre, moved down under whatever they'd touch (the
 label, the minimap and gold, a boss's bar, a touch control), and the banner goes under them.
-Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar, a
-small minimap. The top-left block reserves every row it draws (where you are, the clock, the kills,
+Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar (each
+slot's button glyph where it fits the slot: a pad's always), a small minimap. The top-left block reserves every row it draws (where you are, the clock, the kills,
 the tuning: a longer language's are wider). A boss's name and bar go at the top centre between the
 minimap and its mirror on the left (`bossPlace`), and where the bar would be shorter than 100 there
 (a phone in portrait, a window narrower than about 330) across the screen under the minimap, the

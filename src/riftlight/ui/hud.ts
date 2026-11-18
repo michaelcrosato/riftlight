@@ -770,7 +770,8 @@ function skillSlot(ui: UiCanvas, x: number, y: number, s: SkillSlotView, action:
     for (let row = 0; row < SLOT - 2; row += 2) ui.rect(x + 1, y + 1 + row, SLOT - 2, 1, 'navy');
   } else if (s.remaining <= 0 && s.cooldown > 0 && t % 1 < 0.04) ui.outline(x, y, SLOT, SLOT, 'white');
   if (s.cost > 0) ui.mini(x + SLOT - 1, y + 1, num(s.cost), s.usable ? 'sky' : 'red', 'right', 'ink');
-  if (action) ui.glyph(x + 1, y + SLOT - 4, action);
+  // over its lower-left corner (a phone's tight bar: lower, under a cooldown's seconds)
+  if (action) ui.glyph(x + 1, y + SLOT - (SLOT < 20 ? 2 : 4), action);
 }
 
 /** What `drawHud` drew that a finger may swipe away: the loot feed's lines (art pixels). */
@@ -827,7 +828,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): HudDrawn
     ui.rect(bx - 4, by - 3, barW + 2, SLOT + 8, 'night');
     slots.forEach((s, i) => {
       const x = bx + i * (SLOT + g.gap) + (i >= 2 ? g.split : 0);
-      if (s) skillSlot(ui, x, by, s, g.compact ? null : order[i]!, time, SLOT);
+      // a phone's tight bar names a slot's button where its glyph fits the slot (a pad's all do)
+      if (s) skillSlot(ui, x, by, s, !g.compact || ui.glyphWidth(order[i]!) < SLOT ? order[i]! : null, time, SLOT);
       else {
         ui.rect(x, by, SLOT, SLOT, 'ink');
         ui.rect(x + 1, by + 1, SLOT - 2, SLOT - 2, 'night');
