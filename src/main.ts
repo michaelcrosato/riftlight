@@ -1,5 +1,5 @@
 import './style.css';
-import { Engine, type EngineOptions, type Game, headMeta, HUB_MODES, type HubMode, HubSession, optionsFromUrl } from './engine';
+import { Engine, type EngineOptions, type Game, headSession, HubSession, optionsFromUrl } from './engine';
 import { DEFAULT_GAME, GAMES, gameById } from './games';
 import { Riftlight } from './riftlight';
 
@@ -14,15 +14,15 @@ const fromPage = (id: string): Game => {
 const PIXEL_GAMES: Record<string, () => Game> = Object.fromEntries(GAMES.map((g) => [g.id, () => fromPage(g.id)]));
 
 /**
- * An AI Hub session (docs/game/session.md): a page built for the hub carries its session tags,
- * and the hub opens it with `?aihub=1` in a frame. Then Riftlight opens straight into the round,
- * on the hub's seed. Null for any other page or visit: the game runs as it does on its own.
+ * A 52in1 session (docs/game/session.md): a page built for the hub carries its session tags, and
+ * the hub opens it with `?aihub=1` in a frame. The page joins with every online mode its
+ * `hub:multiplayer` names (else its `hub:session-mode`), the hub picks the round's, and Riftlight
+ * opens straight into that round on the hub's seed. Null for any other page or visit: the game
+ * runs as it does on its own.
  */
 async function hubSession(): Promise<HubSession | null> {
-  const mode = headMeta('hub:session-mode') as HubMode | null;
-  if (headMeta('hub:session') !== '1' || !mode || !HUB_MODES.includes(mode)) return null;
-  const [min = 1, max = min] = (headMeta('hub:session-players') ?? '1-4').match(/\d+/g)?.map(Number) ?? [];
-  return HubSession.join({ mode, seats: [min, max] });
+  const offer = headSession();
+  return offer ? HubSession.join({ mode: offer.modes, seats: offer.seats }) : null;
 }
 
 const session = await hubSession();

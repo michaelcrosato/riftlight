@@ -2,7 +2,7 @@
 
 `src/engine/lang/`, `src/engine/hud/deviceText.ts`, `src/engine/hud/wrap.ts`,
 `src/engine/animation/font.ts`. The engine follows
-[AI Hub Languages v1](https://raw.githubusercontent.com/michaelcrosato/ai-hub/main/lib/hub/languages.md):
+[AI Hub Languages v1](https://52in1.com/lib/hub/languages.md):
 a game is written in one language; every word a player reads is a **line** under an id; translation
 is a separate step that adds a second table to the page without changing the game.
 

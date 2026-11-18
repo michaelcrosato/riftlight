@@ -127,7 +127,7 @@ holds the round's phase).
   frozen until the start, no menus, the countdown, a bot's clear time, no portal, a death and
   respawn, time-up, the end, a replay); `session/ghosts.test.ts` (a scripted player's ghost follows
   them and touches nothing); `session/shared.test.ts` (the real game as host, then as a client).
-- The hub's own harness (`harness.html`, `bridge.js`, `round.js` from the ai-hub repository): serve
+- The hub's own harness (`harness.html`, `bridge.js`, `round.js` from 52in1.com/lib/hub): serve
   them next to the built page and open
   `harness.html?game=riftlight.html&players=4&latency=150&jitter=50&loss=5&auto=1`; it passes when
   `window.__hubCheck.pass` is true. The hub also runs `&scenario=host-leave`, and a shared world

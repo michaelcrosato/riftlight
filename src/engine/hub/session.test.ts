@@ -1,8 +1,10 @@
+import { readFileSync } from 'node:fs';
+import { runInNewContext } from 'node:vm';
 import { Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { Engine, type Game, type GameContext } from '../Engine';
 import { LocalHub } from './local';
-import { HubSession, hubEvents, type HubEvent, type HubHost, type HubMode } from './session';
+import { headSession, type HubClient, HubSession, hubEvents, type HubEvent, type HubHost, type HubInfo, type HubMode, type HubResult, onlineModes, parseMultiplayer } from './session';
 
 /** A stand-in engine: commands land in a list, as `input.send` would queue them for the next frame. */
 function fakeEngine(): HubHost & { commands: unknown[]; muted: boolean; timeScale: number; letGo: boolean } {
@@ -147,6 +149,7 @@ describe('HubSession', () => {
 
   it('reports once: result in parallel and ghost, finish from the host only', async () => {
     const ghost = await round('ghost', 2);
+    ghost.hub.start(); // the hub takes no result before the start
     expect(ghost.copies[0]!.session.finish({ standings: [[0]] })).toBe(false); // player 0 hosts, but this isn't a shared world
     expect(ghost.copies[0]!.session.result({ time: Number.NaN })).toBe(false); // the hub couldn't rank it: not reported
     expect(ghost.copies[0]!.session.hasReported).toBe(false);
@@ -157,6 +160,7 @@ describe('HubSession', () => {
     expect(ghost.hub.problems).toEqual([]);
 
     const shared = await round('shared-world', 2);
+    shared.hub.start();
     shared.copies[1]!.session.finish({ standings: [[1], [0]] }); // not the host
     shared.copies[0]!.session.result({ score: 3 }); // not in a shared world
     expect(shared.hub.finished).toBeNull();
@@ -244,5 +248,240 @@ describe('HubSession', () => {
     const { hub, copies } = await round('shared-world', 2);
     copies[1]!.session.progress(10, 'x');
     expect(hub.progress.size).toBe(0);
+  });
+});
+
+/** The hub's own client (scripts/hub/session.js, vendored unmodified), loaded outside a session. */
+function realClient(): { seed: number; rng(label: string): () => number } {
+  const context: Record<string, unknown> = { location: { search: '' }, setTimeout, console };
+  runInNewContext(readFileSync(new URL('../../../scripts/hub/session.js', import.meta.url), 'utf8'), context);
+  return context.AIHub as never;
+}
+
+/** A client that answers `connect` with `welcome` and keeps what the game asked for. */
+function stubClient(welcome: Partial<HubInfo>): HubClient & { asked: unknown[] } {
+  const quiet = (): void => {};
+  const asked: unknown[] = [];
+  return {
+    asked,
+    active: true,
+    connect: (opts) => (asked.push(opts), Promise.resolve(welcome)),
+    ready: quiet,
+    answer: quiet,
+    time: () => -Infinity,
+    on: () => quiet,
+    progress: quiet,
+    result: quiet,
+    finish: quiet,
+    send: () => true,
+    fail: quiet,
+  };
+}
+
+const welcome = (o: Partial<HubInfo>): Partial<HubInfo> => ({ me: 0, host: 0, players: [{ id: 0, name: 'Red Fox', color: '#e8443a' }], round: 1, limitMs: 60_000, seed: 7, ...o });
+
+describe('several modes', () => {
+  it('joins with every mode it offers; the round plays the one the hub picked', async () => {
+    const client = stubClient(welcome({ mode: 'ghost' }));
+    const s = (await HubSession.join({ mode: ['shared-world', 'ghost', 'parallel', 'moments'], seats: [1, 4], client, autoFlush: false }))!;
+    expect(client.asked[0]).toMatchObject({ mode: ['shared-world', 'ghost', 'parallel', 'moments'], seats: [1, 4] });
+    expect(s.mode).toBe('ghost');
+    expect(s.info).toMatchObject({ mode: 'ghost', play: null, moment: null });
+  });
+
+  it('one mode alone goes as itself; a welcome naming a mode not offered plays the first offered', async () => {
+    const client = stubClient(welcome({ mode: 'moments' }));
+    const s = (await HubSession.join({ mode: ['parallel'], seats: [1, 4], client, autoFlush: false }))!;
+    expect(client.asked[0]).toMatchObject({ mode: 'parallel' });
+    expect(s.mode).toBe('parallel');
+    await expect(HubSession.join({ mode: [], seats: [1, 4], client, autoFlush: false })).rejects.toThrow(/mode/);
+  });
+
+  it('keeps how a shared world plays, and which moment a load plays; each only in its own mode', async () => {
+    const versus = (await HubSession.join({ mode: ['shared-world', 'ghost'], seats: [1, 4], client: stubClient(welcome({ mode: 'shared-world', play: 'versus' })), autoFlush: false }))!;
+    expect(versus.info).toMatchObject({ mode: 'shared-world', play: 'versus', moment: null });
+    const odd = (await HubSession.join({ mode: 'shared-world', seats: [1, 4], client: stubClient(welcome({ mode: 'shared-world', play: 'deathmatch' as never })), autoFlush: false }))!;
+    expect(odd.info.play).toBeNull();
+    const moment = (await HubSession.join({ mode: ['ghost', 'moments'], seats: [1, 4], client: stubClient(welcome({ mode: 'moments', moment: 'forge-brute', play: 'co-op' })), autoFlush: false }))!;
+    expect(moment.info).toMatchObject({ mode: 'moments', moment: 'forge-brute', play: null });
+    // the round's info, recorded, makes the same session again (a replay)
+    expect(HubSession.offline(versus.info).info).toEqual(versus.info);
+    expect(HubSession.offline(moment.info).info).toEqual(moment.info);
+    // a recording from before several modes has neither: both null
+    const old: Record<string, unknown> = { ...versus.info };
+    delete old.play;
+    delete old.moment;
+    expect(HubSession.offline(old as unknown as HubInfo).info).toMatchObject({ play: null, moment: null });
+  });
+
+  it('LocalHub flags a hello that does not offer the round’s mode', async () => {
+    const hub = new LocalHub({ mode: 'ghost', players: 1 });
+    await HubSession.join({ mode: 'parallel', seats: [1, 4], client: hub.client(0), autoFlush: false });
+    expect(hub.problems).toEqual(['0: hello says mode parallel, the round is ghost']);
+    const ok = new LocalHub({ mode: 'shared-world', play: 'co-op', players: 1 });
+    const s = (await HubSession.join({ mode: ['parallel', 'shared-world'], seats: [1, 4], client: ok.client(0), autoFlush: false }))!;
+    expect(s.info).toMatchObject({ mode: 'shared-world', play: 'co-op' });
+    expect(ok.problems).toEqual([]);
+  });
+});
+
+describe('the page’s modes (hub:multiplayer)', () => {
+  it('reads every way to play together; what does not read is left out', () => {
+    expect(parseMultiplayer('shared-world co-op 1-4, ghost 1-4, parallel 1-4, moments 1-4, split-screen versus 2-8')).toEqual([
+      { where: 'shared-world', play: 'co-op', seats: [1, 4], online: true },
+      { where: 'ghost', play: null, seats: [1, 4], online: true },
+      { where: 'parallel', play: null, seats: [1, 4], online: true },
+      { where: 'moments', play: null, seats: [1, 4], online: true },
+      { where: 'split-screen', play: 'versus', seats: [2, 8], online: false },
+    ]);
+    // a race with a play, a shared world without one, too many players, a place that isn't one, a repeat
+    expect(parseMultiplayer('ghost versus 2, shared-world 2-4, parallel 1-6, couch co-op 2, ghost 2, ghost 1-4')).toEqual([{ where: 'ghost', play: null, seats: [2, 2], online: true }]);
+    expect(parseMultiplayer(null)).toEqual([]);
+  });
+
+  it('the online modes to join with: the session mode first, then each one named once', () => {
+    expect(onlineModes('ghost 1-4, shared-world co-op 1-4, shared-world versus 2-4, moments 1-4, same-screen co-op 2-4', 'shared-world')).toEqual(['shared-world', 'ghost', 'moments']);
+    expect(onlineModes(null, 'parallel')).toEqual(['parallel']);
+    expect(onlineModes('moments 1-4', 'race')).toEqual(['ghost', 'moments']); // an older tag still plays as before
+    expect(onlineModes('same-screen co-op 2', null)).toEqual([]);
+  });
+
+  it('a head’s session tags: the modes and the seats, or null without hub:session 1', () => {
+    const head = (tags: Record<string, string>) => (name: string) => tags[name] ?? null;
+    expect(headSession(head({ 'hub:session': '1', 'hub:session-mode': 'shared-world', 'hub:multiplayer': 'shared-world co-op 1-4, ghost 1-4, moments 1-4', 'hub:session-players': '1-4' }))).toEqual({
+      modes: ['shared-world', 'ghost', 'moments'],
+      seats: [1, 4],
+    });
+    expect(headSession(head({ 'hub:session': '1', 'hub:session-mode': 'ghost' }))).toEqual({ modes: ['ghost'], seats: [1, 4] });
+    expect(headSession(head({ 'hub:session': '1', 'hub:multiplayer': 'shared-world versus 2-4, ghost 2-3' }))).toEqual({ modes: ['shared-world', 'ghost'], seats: [2, 4] });
+    expect(headSession(head({ 'hub:session': '0', 'hub:session-mode': 'ghost' }))).toBeNull();
+    expect(headSession(head({ 'hub:session': '1' }))).toBeNull();
+    expect(headSession()).toBeNull(); // no page here
+  });
+});
+
+describe('moments', () => {
+  const MOMENT = { id: 'forge-brute', seconds: 20 };
+  async function moment(players = 2) {
+    const hub = new LocalHub({ mode: 'moments', moment: MOMENT, players, seed: 99 });
+    const copies = await Promise.all(
+      hub.players.map(async (p) => {
+        const session = (await HubSession.join({ mode: ['parallel', 'moments'], seats: [1, 4], client: hub.client(p.id), autoFlush: false, clock: () => hub.now }))!;
+        const engine = fakeEngine();
+        session.attach(engine);
+        return { session, engine };
+      }),
+    );
+    return { hub, copies };
+  }
+
+  it('welcomes the moment with its id and its length as the limit', async () => {
+    const { copies } = await moment();
+    expect(copies[0]!.session.info).toMatchObject({ mode: 'moments', moment: 'forge-brute', limitMs: 20_000, play: null });
+    expect(() => new LocalHub({ mode: 'moments', players: 1 })).toThrow(/one moment/);
+  });
+
+  it('reports once whether it was cleared, with a finite time; sends nothing and shows no progress', async () => {
+    const { hub, copies } = await moment();
+    const [a, b] = copies;
+    hub.start();
+    hub.advance(3000 + 4200);
+    expect(a!.session.result({ time: 4200 })).toBe(false); // a moment says won
+    expect(a!.session.result({ won: true, score: 3 })).toBe(false); // and a time
+    expect(a!.session.result({ won: true, time: Number.NaN })).toBe(false);
+    expect(a!.session.hasReported).toBe(false);
+    a!.session.progress(5, 'x');
+    expect(hub.progress.size).toBe(0);
+    expect(a!.session.send({ x: 1 })).toBe(false);
+    a!.session.flush();
+    expect(hub.client(0).stats.sent).toBe(0);
+    expect(a!.session.result({ won: true, time: 4200, stats: { kills: 3 } })).toBe(true);
+    expect(a!.session.result({ won: false, time: 5000 })).toBe(false); // once
+    expect(hub.results.get(0)).toEqual({ won: true, time: 4200, stats: { kills: 3 } });
+    expect(hub.endReason).toBeNull(); // the other player is still in it
+    hub.advance(2000);
+    b!.session.result({ won: false, time: b!.session.time() });
+    expect(hub.endReason).toBe('finished'); // everyone reported: the moment is over
+    expect(hub.standings()).toEqual([[0], [1]]);
+    expect(hub.problems).toEqual([]);
+  });
+
+  it('time is called at the moment’s length; the hub waits its short grace, then ends it', async () => {
+    const { hub, copies } = await moment(3);
+    hub.start();
+    hub.advance(3000 + 19_990);
+    expect(events(copies[0]!.engine.commands).map((e) => e.type)).toEqual(['start']);
+    hub.advance(20);
+    expect(events(copies[0]!.engine.commands).at(-1)).toEqual({ type: 'time-up', graceMs: 2000 });
+    // the goal was to last: cleared at time-up; one failed earlier; one says nothing
+    copies[0]!.session.result({ won: true, time: 20_010 });
+    hub.results.set(1, { won: false, time: 8000 });
+    hub.advance(1990);
+    expect(hub.endReason).toBeNull();
+    hub.advance(20);
+    expect(hub.endReason).toBe('finished');
+    expect(hub.results.get(0)!.time).toBe(20_000); // kept within the moment
+    expect(hub.standings()).toEqual([[0], [1], [2]]); // cleared, failed, silent
+  });
+
+  it('LocalHub holds a game that skips HubSession to the hub’s rules: won, the start, no traffic', async () => {
+    const hub = new LocalHub({ mode: 'moments', moment: MOMENT, players: 2 });
+    const raw = hub.client(0);
+    await raw.connect({ mode: 'moments', seats: [1, 4] });
+    raw.result({ won: true, time: 10 });
+    hub.start();
+    hub.advance(3500);
+    raw.progress({ score: 1 });
+    raw.send({ x: 1 });
+    hub.client(1).result({ time: 400 } as HubResult);
+    expect(hub.problems).toEqual(['0: result before start', '0: progress is for parallel and ghost, not moments', '0: send in moments, where the copies send nothing', "1: a moment's result says won: true or false"]);
+    expect(hub.results.get(1)).toEqual({ won: false, time: 400 });
+  });
+});
+
+describe('session.rng', () => {
+  it('draws the numbers the hub’s client draws for the same label, from the round’s seed', async () => {
+    const client = realClient();
+    for (const seed of [0, 1, 99, 4242, 0xffffffff]) {
+      const hub = new LocalHub({ mode: 'moments', moment: { id: 'm', seconds: 5 }, players: 1, seed });
+      const s = (await HubSession.join({ mode: 'moments', seats: [1, 4], client: hub.client(0), autoFlush: false }))!;
+      client.seed = seed >>> 0;
+      for (const label of ['', 'forge-brute', 'card', 'ü']) {
+        const theirs = client.rng(label);
+        const ours = s.rng(label);
+        for (let i = 0; i < 8; i++) expect(ours.next()).toBe(theirs());
+      }
+      // each call starts the label's stream afresh; a replay's session (the recorded info) draws the same
+      expect(s.rng('forge-brute').next()).toBe(HubSession.offline(s.info).rng('forge-brute').next());
+      expect(s.rng('a').next()).not.toBe(s.rng('b').next());
+    }
+  });
+});
+
+describe('the game’s own card', () => {
+  it('card events arrive as input; answers count from the first card until the start', async () => {
+    const hub = new LocalHub({ mode: 'parallel', players: 2 });
+    const own = (await HubSession.join({ mode: 'parallel', seats: [1, 4], card: true, client: hub.client(0), autoFlush: false }))!;
+    const other = (await HubSession.join({ mode: 'parallel', seats: [1, 4], client: hub.client(1), autoFlush: false }))!;
+    const engine = fakeEngine();
+    own.attach(engine);
+    own.answer('ready'); // before its first card: the hub drops it
+    expect(hub.answers.size).toBe(0);
+    hub.card(9000);
+    expect(events(engine.commands)).toEqual([{ type: 'card', card: { left: 9000, paused: false, starting: false, ready: [], asking: 0, asked: false } }]);
+    own.answer('more');
+    own.answer('more'); // again takes it back
+    expect(hub.answers.size).toBe(0);
+    own.answer('more');
+    hub.card(8000);
+    expect(events(engine.commands).at(-1)).toMatchObject({ type: 'card', card: { asking: 1, asked: true } });
+    own.answer('ready');
+    hub.card(7000);
+    expect(events(engine.commands).at(-1)).toMatchObject({ type: 'card', card: { ready: [0], asking: 0, asked: false } });
+    other.answer('ready'); // its game shows the hub's card, not its own
+    expect(hub.problems).toEqual(['1: answer without its own card: connect({ card: true })']);
+    hub.start();
+    own.answer('more'); // after the start: dropped
+    expect(hub.answers.get(0)).toBe('ready');
   });
 });

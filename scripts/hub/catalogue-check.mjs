@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /*!
  * AI Hub Catalogue v1: the checker.
- * https://raw.githubusercontent.com/michaelcrosato/ai-hub/main/lib/hub/catalogue.md
+ * https://52in1.com/lib/hub/catalogue.md
  *
  *   node catalogue-check.mjs PACKAGE      every game in PACKAGE/games, with its screenshots
  *   node catalogue-check.mjs GAME.html    one game page, without screenshots
@@ -12,7 +12,7 @@
  *   --json           print one JSON report instead of the list
  *
  * Exits with 0 when every game passes and 1 when any fails. Node 18 or later,
- * nothing to install. The AI Hub's importer and tests use the same functions,
+ * nothing to install. 52in1's importer and tests use the same functions,
  * so a game that passes here passes there.
  */
 
@@ -24,7 +24,7 @@ import { fileURLToPath } from 'node:url';
 
 export const VERSION = 1;
 /** The wall's catalogue: every game on it, with the fields this page names. */
-export const LIBRARY_URL = 'https://crosato-arcade.michael-crosato.workers.dev/data/games.json';
+export const LIBRARY_URL = 'https://52in1.com/data/games.json';
 
 const MiB = 1024 * 1024;
 
@@ -40,7 +40,12 @@ export const TAGS = [
   'top-down', 'touch', 'turn-based', 'tycoon', 'vehicles', 'versus',
 ];
 export const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
-export const MODES = ['parallel', 'ghost', 'shared-world'];
+export const MODES = ['parallel', 'ghost', 'shared-world', 'moments'];
+/** hub:multiplayer: where the players are (online, a session's modes; or on one device), and how they play. */
+export const LOCAL = ['same-screen', 'split-screen', 'hot-seat'];
+export const PLAYS = ['co-op', 'versus', 'other'];
+/** The most players: online, the four seats of a session; on one device, eight. */
+export const MOST = Object.freeze({ online: 4, local: 8 });
 /** AI Hub Languages v1, *Languages*: both sets. */
 export const LANGUAGES = ['en', 'zh-Hans', 'hi', 'es-419', 'ar', 'fr', 'bn', 'pt-BR', 'ru', 'id', 'ja', 'de', 'ko', 'zh-Hant', 'ur', 'tr', 'vi', 'sw', 'ha', 'am', 'yo'];
 
@@ -52,8 +57,23 @@ export const LIMITS = Object.freeze({
 export const STRIP = Object.freeze({ frames: ['0.jpg', '1.jpg', '2.jpg'], width: 640, height: 480, quality: 58, small: 6000 });
 
 /** The hub:* tags a game may carry: this page's, then the session protocol's. Any other becomes a stray field on the wall. */
-export const CATALOGUE_TAGS = ['hub:catalogue', 'hub:type', 'hub:genre', 'hub:tags', 'hub:controls', 'hub:model', 'hub:effort', 'hub:harness', 'hub:session', 'hub:source', 'hub:series', 'hub:players', 'hub:webgpu', 'hub:name', 'hub:tagline'];
-export const SESSION_TAGS = ['hub:session-players', 'hub:session-mode', 'hub:session-goal', 'hub:session-howto', 'hub:session-minutes'];
+export const CATALOGUE_TAGS = ['hub:catalogue', 'hub:type', 'hub:genre', 'hub:tags', 'hub:controls', 'hub:model', 'hub:effort', 'hub:harness', 'hub:session', 'hub:source', 'hub:series', 'hub:players', 'hub:multiplayer', 'hub:webgpu', 'hub:dualsense', 'hub:name', 'hub:tagline'];
+export const SESSION_TAGS = ['hub:session-players', 'hub:session-mode', 'hub:session-goal', 'hub:session-howto', 'hub:session-minutes', 'hub:moment'];
+/** The card's text for one online mode of several: hub:session-goal-versus. WORD is the mode's own, or a shared world's play. */
+export const MODE_TEXT = /^hub:session-(goal|howto|minutes)-(parallel|ghost|moments|co-op|versus|other)$/;
+/** What a game does with a DualSense, beyond what every controller does (hub:dualsense, *Settings and the DualSense*). */
+export const DUALSENSE = ['light bar', 'adaptive triggers', 'haptics', 'motion', 'touchpad', 'speaker', 'microphone'];
+/** The tags a page gives once a moment, and so the one tag it may give many times. */
+export const REPEATED = ['hub:moment'];
+/** What a player does in a moment (hub:moment), the session protocol's list; the hub's is lib/hub/round.js VERBS. */
+export const VERBS = [
+  'aim', 'balance', 'block', 'build', 'catch', 'climb', 'collect', 'defeat', 'defend', 'destroy',
+  'dodge', 'drift', 'escape', 'find', 'fly', 'hide', 'hit', 'jump', 'land', 'park',
+  'race', 'reach', 'score', 'shoot', 'sneak', 'solve', 'steer', 'stop', 'survive', 'throw',
+];
+/** Moments, as the session protocol bounds them: at least three a game, each 3 to 30 seconds. */
+export const MOMENTS = Object.freeze({ least: 3, shortest: 3, longest: 30, id: 24, goal: 60 });
+const isSessionTag = (name) => SESSION_TAGS.includes(name) || MODE_TEXT.test(name);
 
 /* --- text ------------------------------------------------------------------ */
 
@@ -309,7 +329,7 @@ const NETWORK = [
 ];
 const SHELF_NOTE = 'only three.js and Rapier may come from a CDN, at a version the hub keeps';
 const SHARED = [
-  ['warning', /\b(?:localStorage|sessionStorage)\s*\.\s*clear\s*\(/, 'clears the storage the hub and every game share: on a page of its own that signs the player out of the hub (remove the game\'s own keys)'],
+  ['warning', /\b(?:localStorage|sessionStorage)\s*\.\s*clear\s*\(/, 'clears the storage every game shares, wiping the other games\' saves (remove the game\'s own keys)'],
   ['error', /["'`]ai-hub:/, 'uses the hub\'s own storage keys (ai-hub:…)'],
   ['error', /\b(?:window\.|self\.)?(?:top|parent)\.location\s*(?:=(?!=)|\.(?:href\s*=(?!=)|replace\s*\(|assign\s*\())/, 'navigates the hub\'s page'],
   ['warning', /\bwindow\.open\s*\(/, 'opens a window or tab, which leaves the hub and isn\'t allowed in a session'],
@@ -470,6 +490,110 @@ function translationsProblems(raw, source) {
  * paths }, so its icon may be a file. `parse` parses inline scripts.
  * Returns { fields, problems, checks }.
  */
+/**
+ * hub:multiplayer, read: "shared-world co-op 2, split-screen versus 2-4".
+ * Each entry is WHERE, then HOW (not for parallel, ghost or moments, which are
+ * always a race), then MIN-MAX players. Returns the modes that read, and a
+ * problem for each entry that doesn't. The hub reads it the same way
+ * (lib/hub/round.js).
+ */
+export function readMultiplayer(text) {
+  const modes = [];
+  const problems = [];
+  for (const raw of String(text ?? '').split(',')) {
+    const entry = raw.trim().replace(/\s+/g, ' ');
+    if (!entry) continue;
+    const words = entry.toLowerCase().split(' ');
+    const where = words[0];
+    const play = words.length === 3 ? words[1] : null;
+    const seats = /^(\d+)(?:\s*[-–]\s*(\d+))?$/.exec(words.at(-1) ?? '');
+    const wrong = (why) => problems.push(`${quoted(entry)}: ${why}`);
+    if (words.length < 2 || words.length > 3) {
+      wrong('WHERE, then HOW (not for parallel, ghost or moments), then MIN-MAX players');
+      continue;
+    }
+    if (!MODES.includes(where) && !LOCAL.includes(where)) {
+      wrong(`${quoted(where)} is not one of ${list([...MODES, ...LOCAL])}`);
+      continue;
+    }
+    const race = where === 'parallel' || where === 'ghost' || where === 'moments';
+    if (race && play !== null) {
+      wrong(`${where} is always a race: leave out ${quoted(play)}`);
+      continue;
+    }
+    if (!race && !PLAYS.includes(play)) {
+      wrong(`${where} needs how they play: ${list(PLAYS)}`);
+      continue;
+    }
+    if (!seats) {
+      wrong('ends with the players, MIN-MAX');
+      continue;
+    }
+    const low = Number(seats[1]);
+    const high = Number(seats[2] ?? seats[1]);
+    const most = MODES.includes(where) ? MOST.online : MOST.local;
+    if (low < 1 || high < low || high > most) {
+      wrong(`players from 1 to ${most}, MIN-MAX`);
+      continue;
+    }
+    if (LOCAL.includes(where) && high < 2) {
+      wrong('on one device it seats 2 or more');
+      continue;
+    }
+    const key = play ? `${where} ${play}` : where;
+    if (modes.some((m) => m.key === key)) {
+      wrong(`${key} is given twice`);
+      continue;
+    }
+    modes.push({ where, play, seats: [low, high], key });
+  }
+  return { modes, problems };
+}
+
+/**
+ * hub:moment, read: one tag a moment, "ID VERB SECONDS GOAL". Returns the
+ * moments that read, and a problem for each tag that doesn't. The hub reads
+ * them the same way (lib/hub/round.js, parseMoments).
+ */
+export function readMoments(texts) {
+  const moments = [];
+  const problems = [];
+  for (const raw of texts) {
+    const text = squish(raw);
+    if (!text) continue;
+    const [id, verb = '', secondsText = '', ...rest] = text.split(' ');
+    const goal = rest.join(' ');
+    const wrong = (why) => problems.push(`${quoted(text)}: ${why}`);
+    if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(id) || id.length > MOMENTS.id) {
+      wrong(`ID, then VERB, SECONDS and GOAL: the id is lowercase letters, digits and hyphens, at most ${MOMENTS.id} characters`);
+      continue;
+    }
+    if (!VERBS.includes(verb.toLowerCase())) {
+      wrong(`${verb ? `${quoted(verb)} is not` : 'the verb is'} one of ${list(VERBS)}`);
+      continue;
+    }
+    const seconds = Number(secondsText);
+    if (!/^\d+$/.test(secondsText) || seconds < MOMENTS.shortest || seconds > MOMENTS.longest) {
+      wrong(`lasts a whole number of seconds, ${MOMENTS.shortest} to ${MOMENTS.longest}`);
+      continue;
+    }
+    if (!goal) {
+      wrong('ends with its goal: what clears it');
+      continue;
+    }
+    if (goal.length > MOMENTS.goal) {
+      wrong(`its goal is ${goal.length} characters: at most ${MOMENTS.goal}`);
+      continue;
+    }
+    if (moments.some((m) => m.id === id)) {
+      wrong(`the id ${id} is given twice`);
+      continue;
+    }
+    moments.push({ id, verb: verb.toLowerCase(), seconds, goal });
+  }
+  return { moments, problems };
+}
+
 export function checkPage(html, { folder = null, parse = true, where = 'the page' } = {}) {
   const page = readPage(html);
   const problems = [];
@@ -490,7 +614,7 @@ export function checkPage(html, { folder = null, parse = true, where = 'the page
     tags.get(meta.name).push(meta);
   }
   const one = (name) => tags.get(name)?.[0]?.content ?? '';
-  for (const [name, found] of tags) if (found.length > 1 && (name.startsWith('hub:') || ['description', 'theme-color', 'viewport'].includes(name))) error(`${name} is given ${found.length} times: give it once`);
+  for (const [name, found] of tags) if (found.length > 1 && !REPEATED.includes(name) && (name.startsWith('hub:') || ['description', 'theme-color', 'viewport'].includes(name))) error(`${name} is given ${found.length} times: give it once`);
 
   // Before anything else in the head: the scan reads the first 512 KB and takes the first of each tag.
   const client = sessionClient(page);
@@ -511,7 +635,7 @@ export function checkPage(html, { folder = null, parse = true, where = 'the page
   // The tags this page defines, and only those.
   for (const name of tags.keys()) {
     if (!name.startsWith('hub:')) continue;
-    check(CATALOGUE_TAGS.includes(name) || SESSION_TAGS.includes(name), () => error(`${name} is not a tag of this page or the session protocol: every hub:* tag becomes a field on the wall, so leave it out`));
+    check(CATALOGUE_TAGS.includes(name) || isSessionTag(name), () => error(`${name} is not a tag of this page or the session protocol: every hub:* tag becomes a field on the wall, so leave it out`));
   }
   check(one('hub:catalogue') === String(VERSION), () => error(tags.has('hub:catalogue') ? `hub:catalogue is ${quoted(one('hub:catalogue'))}: it is 1` : 'no <meta name="hub:catalogue" content="1">'));
 
@@ -613,6 +737,40 @@ export function checkPage(html, { folder = null, parse = true, where = 'the page
   }
   if (tags.has('hub:webgpu')) check(one('hub:webgpu') === 'required', () => error('hub:webgpu is "required", or left out'));
 
+  // A DualSense's extras: named from the list, each once, on a game that plays fully on any controller, and reached through AIHubSettings.
+  if (tags.has('hub:dualsense')) {
+    const extras = one('hub:dualsense').split(',').map((x) => x.trim()).filter(Boolean);
+    if (check(extras.length, () => error('hub:dualsense is empty: leave it out for a game that uses none of the extras'))) {
+      const unknown = extras.filter((x) => !DUALSENSE.includes(x));
+      check(!unknown.length, () => error(`hub:dualsense has ${list(unknown.map(quoted))}: name extras from ${list(DUALSENSE)}`));
+      check(new Set(extras).size === extras.length, () => error('hub:dualsense names an extra twice'));
+    }
+    check(tagList.includes('gamepad'), () => warning('hub:dualsense is on a game that plays fully on any controller: tag it gamepad too'));
+    // A folder game's code may be in files of its own: only a game in one file is read for it.
+    if (!folder) check(/\bAIHubSettings\b/.test(html), () => warning('hub:dualsense names extras, but the page never reads window.AIHubSettings, which hands them to it'));
+  }
+  check(!/\bnavigator\s*\.\s*hid\b/.test(html), () => warning("the page opens a controller itself (navigator.hid): in the hub it cannot, and a DualSense's extras come through window.AIHubSettings"));
+
+  // Every way it plays together: hub:multiplayer names each, and the older tags agree with it.
+  const multiplayerText = one('hub:multiplayer');
+  const multiplayer = tags.has('hub:multiplayer') ? readMultiplayer(multiplayerText) : null;
+  if (multiplayer) {
+    for (const problem of multiplayer.problems) error(`hub:multiplayer ${problem}`);
+    check(multiplayer.modes.length || multiplayer.problems.length, () => error('hub:multiplayer is empty: leave it out for a game one person plays at a time'));
+  }
+  const modes = multiplayer?.modes ?? [];
+  const online = modes.filter((m) => MODES.includes(m.where));
+
+  // Moments: one hub:moment a moment, at least three, for a game that plays them (moments in hub:multiplayer).
+  const momentTexts = (tags.get('hub:moment') ?? []).map((m) => m.content);
+  const playsMoments = online.some((m) => m.where === 'moments') || (!multiplayer && one('hub:session-mode') === 'moments');
+  if (momentTexts.length || playsMoments) {
+    const { moments, problems: momentProblems } = readMoments(momentTexts);
+    for (const problem of momentProblems) error(`hub:moment ${problem}`);
+    if (playsMoments) check(moments.length >= MOMENTS.least, () => error(`moments are played ${MOMENTS.least} at a time: give at least ${MOMENTS.least} hub:moment tags that read (it has ${moments.length})`));
+    else error('hub:moment goes with moments in hub:multiplayer, the mode that plays them');
+  }
+
   // Sessions: the protocol's tags and client, and what the wall asks of a game friends play together.
   const session = one('hub:session');
   check(['0', '1'].includes(session), () => error(tags.has('hub:session') ? `hub:session is ${quoted(session)}: 1 or 0` : 'no hub:session: 1 when the game follows the session protocol, 0 when it has no score, time or finish to play a round by'));
@@ -633,15 +791,56 @@ export function checkPage(html, { folder = null, parse = true, where = 'the page
       check(page.charset && page.charset.end <= client.start, () => error('<meta charset> comes before the session client'));
     }
     check(type !== 'Tech demo' && type !== 'Tool', () => error(`sessions deal games only: a ${type.toLowerCase()} gives hub:session 0`));
-    if (mode === 'ghost' || mode === 'shared-world') {
-      const want = mode === 'ghost' ? ['race'] : ['co-op', 'versus'];
-      check(tagList.some((t) => want.includes(t)), () => error(`a ${mode} game is tagged ${want.map(quoted).join(' or ')}`));
-      const most = seats ? Math.min(4, seats[1]) : 4;
-      check(players && players[0] === 1 && players[1] >= most && players[1] <= 4, () => error(`a ${mode} game gives hub:players as 1-N, N from ${most} to 4: the seats its session takes`));
+    if (multiplayer) {
+      // The session's tags sum up its online modes: the main one, and the seats of them all.
+      if (check(online.length, () => error('hub:session is 1: hub:multiplayer names its online modes too, parallel, ghost, shared-world or moments'))) {
+        check(online.some((o) => o.where === mode), () => error(`hub:session-mode is ${quoted(mode)}: the mode of one of its online modes in hub:multiplayer (${list([...new Set(online.map((o) => o.where))])}), the one it plays when nothing says which`));
+        const union = [Math.min(...online.map((o) => o.seats[0])), Math.max(...online.map((o) => o.seats[1]))];
+        const want = union[0] === union[1] ? String(union[0]) : `${union[0]}-${union[1]}`;
+        check(seats && seats[0] === union[0] && seats[1] === union[1], () => error(`hub:session-players is ${quoted(seatsText)}: ${want}, the players of its online modes in hub:multiplayer`));
+      }
+      // The card's text for one mode of several: hub:session-goal-versus.
+      const words = new Set(online.map((o) => (o.where === 'shared-world' ? o.play : o.where)));
+      for (const name of tags.keys()) {
+        const own = MODE_TEXT.exec(name);
+        if (!own) continue;
+        const [, part, word] = own;
+        if (!check(words.has(word), () => error(`${name} is the card's text for an online mode called ${word}: hub:multiplayer has none`))) continue;
+        const text = one(name);
+        if (part === 'goal') check(text && text.length <= LIMITS.sessionGoal, () => error(`${name} is how to win in that mode, at most ${LIMITS.sessionGoal} characters`));
+        else if (part === 'howto') check(text && text.length <= LIMITS.sessionHowto, () => error(`${name} is that mode's controls, at most ${LIMITS.sessionHowto} characters`));
+        else check(Number(text) > 0, () => error(`${name} is a number of minutes`));
+      }
+    } else {
+      for (const name of tags.keys()) if (MODE_TEXT.test(name)) error(`${name} goes with hub:multiplayer, which names the mode`);
+      if (mode === 'ghost' || mode === 'shared-world') {
+        const want = mode === 'ghost' ? ['race'] : ['co-op', 'versus'];
+        check(tagList.some((t) => want.includes(t)), () => error(`a ${mode} game is tagged ${want.map(quoted).join(' or ')}`));
+        const most = seats ? Math.min(4, seats[1]) : 4;
+        check(players && players[0] === 1 && players[1] >= most && players[1] <= 4, () => error(`a ${mode} game gives hub:players as 1-N, N from ${most} to 4: the seats its session takes`));
+      }
     }
+  } else if (online.length) {
+    error(`hub:multiplayer names ${list(online.map((o) => o.key))}, played online in a session: give hub:session 1 and follow the session protocol, or leave them out`);
   }
-  const together = session === '1' && (mode === 'ghost' || mode === 'shared-world');
-  if (players && players[1] >= 2 && !together) check(tagList.includes('co-op') || tagList.includes('versus'), () => error('a game several people play on one screen is tagged "co-op" or "versus"'));
+  if (multiplayer) {
+    // hub:players is how many play at once, at most: the most any mode seats, a parallel one aside.
+    const together = modes.filter((m) => m.where !== 'parallel' && m.where !== 'moments');
+    if (together.length) {
+      const most = Math.max(...together.map((m) => m.seats[1]));
+      const least = Math.min(...together.map((m) => m.seats[0]));
+      check(players && players[1] === most && players[0] <= least, () => error(`hub:players is ${tags.has('hub:players') ? quoted(playersText) : 'missing'}: MIN-${most}, the most its modes in hub:multiplayer seat, MIN 1 when one person can play alone`));
+    } else check(!tags.has('hub:players'), () => error('hub:players counts players at once on one device or in a ghost or shared world: a game that plays only in parallel or moments leaves it out'));
+    // The play tags say what a mode says, and no more.
+    const has = (where, play) => modes.some((m) => (!where || m.where === where) && (!play || m.play === play));
+    if (tagList.includes('co-op')) check(has(null, 'co-op'), () => error('hub:tags has "co-op": hub:multiplayer names no co-op mode'));
+    if (tagList.includes('versus')) check(has(null, 'versus'), () => error('hub:tags has "versus": hub:multiplayer names no versus mode'));
+    if (tagList.includes('race')) check(has('ghost'), () => error('hub:tags has "race": hub:multiplayer names no ghost mode'));
+  } else {
+    const together = session === '1' && (mode === 'ghost' || mode === 'shared-world');
+    if (players && players[1] >= 2 && !together) check(tagList.includes('co-op') || tagList.includes('versus'), () => error('a game several people play on one screen is tagged "co-op" or "versus"'));
+    if ((players && players[1] >= 2) || session === '1') warning('no hub:multiplayer: name every way it plays together, online and on one device (catalogue page, *Playing together*), so each one is dealt and found');
+  }
   if (session !== '1') {
     const stray = SESSION_TAGS.filter((t) => tags.has(t));
     if (stray.length) warning(`${list(stray)} count only with hub:session 1`);
@@ -688,7 +887,7 @@ export function checkPage(html, { folder = null, parse = true, where = 'the page
 
   const fields = {
     name, tagline, description, themeColor: theme, type, genre, tags: tagList, controls, model, effort, harness, source, series,
-    players: playersText, session, sessionMode: mode, sessionPlayers: one('hub:session-players'), lang: page.lang, client: client?.version ?? null, language: lines?.language ?? null,
+    players: playersText, multiplayer: multiplayerText, session, sessionMode: mode, sessionPlayers: one('hub:session-players'), lang: page.lang, client: client?.version ?? null, language: lines?.language ?? null,
   };
   return { fields, problems, checks };
 }
@@ -698,7 +897,7 @@ function near(tag) {
   const key = (s) => s.toLowerCase().replace(/[^a-z0-9.]/g, '');
   const match = TAGS.find((t) => key(t) === key(tag));
   if (match) return `${tag} is ${quoted(match)}`;
-  const aliases = { controller: 'gamepad', multiplayer: 'co-op or versus', 'local multiplayer': 'co-op or versus', 'open-world': 'open world', destruction: 'demolition', 'webgpu-required': 'hub:webgpu' };
+  const aliases = { controller: 'gamepad', multiplayer: 'hub:multiplayer', 'local multiplayer': 'hub:multiplayer', 'split-screen': 'hub:multiplayer', 'split screen': 'hub:multiplayer', 'hot-seat': 'hub:multiplayer', 'hot seat': 'hub:multiplayer', couch: 'hub:multiplayer', pvp: 'versus', 'open-world': 'open world', destruction: 'demolition', 'webgpu-required': 'hub:webgpu' };
   return aliases[tag.toLowerCase()] ? `for ${tag}, use ${aliases[tag.toLowerCase()]}` : '';
 }
 

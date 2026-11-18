@@ -173,14 +173,19 @@ export {
 } from './lang/lang';
 export {
   headMeta,
+  headSession,
   HUB_COLORS,
   HUB_LIMITS,
   HUB_MODES,
+  HUB_PLAYS,
   hubClient,
   hubEvents,
   HubSession,
+  onlineModes,
+  parseMultiplayer,
   validFinish,
   validResult,
+  type HeadSession,
   type HubCard,
   type HubClient,
   type HubEvent,
@@ -190,8 +195,10 @@ export {
   type HubLimits,
   type HubMode,
   type HubPhase,
+  type HubPlay,
   type HubPlayer,
   type HubResult,
+  type HubWay,
   type JoinOptions,
 } from './hub/session';
 export { LocalClient, LocalHub, type LocalHubOptions } from './hub/local';
