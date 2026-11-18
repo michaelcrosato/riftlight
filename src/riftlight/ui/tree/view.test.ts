@@ -83,29 +83,31 @@ describe('pixel buffer', () => {
 
 describe('bottom bar hints', () => {
   it('with the pad: each button’s glyph (PlayStation’s, or Xbox’s) and a verb; with the mouse: words', () => {
-    const ps = treeHints({ narrow: false, pad: true, refunds: true, style: 'playstation' });
+    const ps = treeHints({ mode: 'pad', refunds: true, style: 'playstation' });
     expect(ps.map((h) => h.id)).toEqual(['move', 'take', 'refund', 'stats', 'zoom', 'close']);
     expect(ps.map((h) => h.text)).toEqual(['move', 'take', 'refund', 'stats', 'zoom', 'close']);
     const take = ps.find((h) => h.id === 'take')!.glyphs[0]!;
     expect(take.kind === 'sprite' && take.colors.s).toBe('blue'); // ✕, blue
     expect(ps.find((h) => h.id === 'zoom')!.glyphs).toEqual([{ kind: 'cap', text: 'L2', round: true }, { kind: 'cap', text: 'R2', round: true }]);
-    const xbox = treeHints({ narrow: false, pad: true, refunds: false, style: 'xbox' });
+    const xbox = treeHints({ mode: 'pad', refunds: false, style: 'xbox' });
     expect(xbox.map((h) => h.id)).not.toContain('refund');
     expect(xbox.find((h) => h.id === 'zoom')!.glyphs.map((g) => (g.kind === 'cap' ? g.text : ''))).toEqual(['LT', 'RT']);
-    const mouse = treeHints({ narrow: false, pad: false, refunds: true, style: 'playstation' });
+    const mouse = treeHints({ mode: 'mouse', refunds: true, style: 'playstation' });
     expect(mouse.map((h) => h.text)).toEqual(['Drag pan', 'Wheel zoom', 'Click take', 'R-click refund', 'Tab stats', '/ find']);
     expect(mouse.every((h) => h.glyphs.length === 0)).toBe(true);
-    expect(treeHints({ narrow: true, pad: true, refunds: true, style: 'playstation' }).map((h) => h.id)).toEqual(['take', 'close']);
+    // a finger: its gestures, whatever the screen's width (a landscape phone is as wide as a small window)
+    expect(treeHints({ mode: 'touch', refunds: true, style: 'playstation' }).map((h) => h.text)).toEqual(['Drag pan', 'Pinch zoom', 'Tap twice: take', 'Hold refund']);
+    expect(treeHints({ mode: 'touch', refunds: false, style: 'playstation', pages: { keys: ['KeyQ'], pad: ['PadLB'] } }).map((h) => h.id)).toEqual(['pan', 'pinch', 'tap']);
   });
 
   it('in the game, names the host’s screens either side of the tree: L1 R1 with a pad, the Q E key caps with the keyboard', () => {
     const pages = { keys: ['KeyQ', 'KeyE'], pad: ['PadLB', 'PadRB'] };
-    const ps = treeHints({ narrow: false, pad: true, refunds: false, style: 'playstation', pages });
+    const ps = treeHints({ mode: 'pad', refunds: false, style: 'playstation', pages });
     expect(ps.map((h) => h.id)).toEqual(['move', 'take', 'stats', 'zoom', 'screens', 'close']);
     expect(ps.find((h) => h.id === 'screens')).toEqual({ id: 'screens', text: 'screens', glyphs: [{ kind: 'cap', text: 'L1', round: true }, { kind: 'cap', text: 'R1', round: true }] });
-    const keys = treeHints({ narrow: false, pad: false, refunds: false, style: 'playstation', pages });
+    const keys = treeHints({ mode: 'mouse', refunds: false, style: 'playstation', pages });
     expect(keys.at(-1)).toEqual({ id: 'screens', text: 'screens', glyphs: [{ kind: 'cap', text: 'Q', round: false }, { kind: 'cap', text: 'E', round: false }] });
     // the tree page (no host): none
-    expect(treeHints({ narrow: false, pad: false, refunds: false, style: 'playstation' }).map((h) => h.id)).not.toContain('screens');
+    expect(treeHints({ mode: 'mouse', refunds: false, style: 'playstation' }).map((h) => h.id)).not.toContain('screens');
   });
 });

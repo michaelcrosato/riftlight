@@ -24,15 +24,20 @@ export { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_LAYOUT, TOUCH_CODES } from './game/touch
 
 /**
  * Engine options the game is designed for: the iso preset at an ARPG angle and zoom, the
- * touch action cluster (`game/touch.ts`), no engine tool bar on phones (it shows with
- * `?debug=1`), no ⚙ button: Riftlight's own Settings menu holds the engine's options, and motion
- * aim (a DualSense's turns through 52in1 turn the pad's aim: its rows are in that menu).
+ * touch action cluster (`game/touch.ts`) with a floating joystick (its base comes under the
+ * thumb anywhere in the lower left), a phone's art at two CSS pixels per art pixel at least
+ * (`touchDensity`: the HUD and the panels lay out in a landscape phone's 195 rows, with targets a
+ * thumb tall), no engine tool bar on phones (it shows with `?debug=1`), no ⚙ button: Riftlight's
+ * own Settings menu holds the engine's options, and motion aim (a DualSense's turns through 52in1
+ * turn the pad's aim: its rows are in that menu).
  */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   aspect: 'fill',
   // the angle the town is laid out for (it closes the ground this view can't see behind tall things)
   camera: { preset: 'iso', pitch: TOWN_LAYOUT.view.pitch, yaw: TOWN_LAYOUT.view.yaw, viewHeight: 15, stiffness: 7, minZoom: 0.5, maxZoom: 2.4 },
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
+  touchDensity: 2,
+  touchStick: 'floating',
   touchBar: false,
   settings: { button: false, motion: true },
 };

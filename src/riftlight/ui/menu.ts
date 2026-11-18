@@ -49,7 +49,16 @@ export interface MenuOptions {
   footer?: () => string;
   onBack?: () => void;
   onSound?: (s: 'click' | 'move') => void;
+  /**
+   * A menu of buttons only (the pause menu) may lay them out as tiles in two columns where its rows
+   * are a thumb tall (`fit`'s `tap`) and one column would scroll: a landscape phone, whose screen
+   * is wide and short. Elsewhere one column.
+   */
+  grid?: boolean;
 }
+
+/** Art pixels between the two columns of a grid menu (`MenuOptions.grid`). */
+const GRID_GAP = 4;
 
 export class Menu implements Panel {
   readonly id: string;
@@ -81,21 +90,62 @@ export class Menu implements Panel {
   private press: { x: number; y: number; scroll: number; moved: boolean } | null = null;
   /** Width the shell has room for (`fit`); below the menu's width it lays out narrow. */
   private room = Infinity;
+  /** Height the shell has room for (`fit`): a grid menu takes two columns when one would be taller. */
+  private roomH = Infinity;
+  /** The least height of a row a finger presses, art pixels (`fit`; 0: none, a mouse's or a pad's screen). */
+  private tap = 0;
 
   /** Narrow: sliders, toggles and choices put their label above the control. */
   get narrow(): boolean {
     return this.room < (this.o.width ?? 200) && this.room < 180;
   }
 
-  fit(w: number): void {
+  fit(w: number, h = Infinity, tap = 0): void {
     this.room = w;
+    this.roomH = h;
+    this.tap = tap;
+  }
+
+  /** A widget's row, art pixels: a button or a control at least a thumb tall (`tap`), the control's label over it when narrow. */
+  private rowH(w: Widget, width: number): number {
+    const base = rowHeight(w, width);
+    if (w.kind === 'button') return Math.max(base, this.tap + 2);
+    if (isControl(w)) return Math.max(base, this.tap + 2) + (this.narrow ? NARROW_EXTRA : 0);
+    return base;
+  }
+
+  /** One column's width. */
+  private get colW(): number {
+    return Math.min(this.o.width ?? 200, this.room);
+  }
+
+  /** Two columns of tiles (`MenuOptions.grid`): rows a thumb tall, one column would scroll, and two fit the room both ways. */
+  get columns(): 1 | 2 {
+    if (!this.o.grid || this.tap <= 0 || this.room < 2 * this.colW + GRID_GAP) return 1;
+    if (!this.widgets.every((w) => w.kind === 'button' || w.kind === 'gap')) return 1;
+    const one = this.widgets.reduce((s, x) => s + this.rowH(x, this.colW), 0) + 14;
+    return one > this.roomH && this.gridRows() * this.tileH + 14 <= this.roomH ? 2 : 1;
+  }
+
+  /** The buttons a grid lays out as tiles, in order (its gaps are dropped). */
+  private tiles(): { w: Extract<Widget, { kind: 'button' }>; i: number }[] {
+    return this.widgets.flatMap((w, i) => (w.kind === 'button' ? [{ w, i }] : []));
+  }
+
+  private gridRows(): number {
+    return Math.ceil(this.tiles().length / 2);
+  }
+
+  /** A tile's row in a grid: a button's. */
+  private get tileH(): number {
+    return Math.max(BUTTON_H + 3, this.tap + 2);
   }
 
   get size() {
     // room for the hint / footer line under the widgets
-    const narrow = this.narrow;
-    const w = Math.min(this.o.width ?? 200, this.room);
-    const h = this.widgets.reduce((s, x) => s + rowHeight(x, w) + (narrow && isControl(x) ? NARROW_EXTRA : 0), 0) + 14;
+    if (this.columns === 2) return { w: Math.min(2 * this.colW + GRID_GAP, this.room), h: this.gridRows() * this.tileH + 14 };
+    const w = this.colW;
+    const h = this.widgets.reduce((s, x) => s + this.rowH(x, w), 0) + 14;
     return { w, h };
   }
 
@@ -142,12 +192,16 @@ export class Menu implements Panel {
   draw(ui: UiCanvas, r: Rect): void {
     this.refresh();
     this.rects.clear();
+    if (this.columns === 2) {
+      this.drawGrid(ui, r);
+      return;
+    }
     const narrow = this.narrow;
     // the label column: as wide as the menu asks, wider for longer labels (another language's), up to 3/5 of the row
     const widest = Math.max(0, ...this.widgets.filter(isControl).map((w) => ui.measure((w as { label: string }).label) + ((w as { indent?: boolean }).indent ? 12 : 0) + 9));
     const labelW = narrow ? 4 : Math.max(this.o.labelWidth ?? Math.floor(r.w * 0.45), Math.min(widest, Math.floor(r.w * 0.6)));
     // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
-    const heights = this.widgets.map((w) => rowHeight(w, r.w) + (narrow && isControl(w) ? NARROW_EXTRA : 0));
+    const heights = this.widgets.map((w) => this.rowH(w, r.w));
     const total = heights.reduce((a, b) => a + b, 0);
     const view = r.h - 14; // the footer line
     this.scrolls = total > view;
@@ -182,6 +236,8 @@ export class Menu implements Panel {
         const color = focus ? 'white' : 'mist';
         const cx = r.x + labelW;
         const cw = r.w - labelW - 4;
+        // a row a thumb tall (`tap`): its words and control in the middle of it
+        y += Math.floor((h - (narrow ? NARROW_EXTRA : 0) - ROW) / 2);
         // the label in its column (the whole row when narrow), indented under its parent row
         const lx = r.x + 5 + (w.indent ? 12 : 0);
         ui.text(lx, y + 3, clip(w.label, (narrow ? r.x + r.w - 4 : cx - 3) - lx, (s) => ui.measure(s)), { color });
@@ -192,7 +248,7 @@ export class Menu implements Panel {
           const vw = 34;
           const tw = cw - vw - 4;
           const track: Rect = { x: cx, y: y + 5, w: tw, h: 3 };
-          this.rects.set(`${w.id}:track`, { x: cx - 2, y: y, w: tw + 4, h: row.h });
+          this.rects.set(`${w.id}:track`, { x: cx - 2, y: narrow ? y : row.y, w: tw + 4, h: row.h });
           ui.rect(track.x, track.y, track.w, track.h, 'ink');
           const u = Math.min(1, Math.max(0, w.get()));
           ui.rect(track.x, track.y + 1, Math.round(track.w * u), 1, w.changed?.() ? UI.accent : 'sky');
@@ -219,6 +275,11 @@ export class Menu implements Panel {
     // more above / below: a small arrow at the right edge
     if (this.scroll > 0) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + k, 1 + 2 * k, 1, 'sand');
     if (this.scroll < total - view) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + view + 4 - k, 1 + 2 * k, 1, 'sand');
+    this.drawFooter(ui, r);
+  }
+
+  /** The focused widget's hint, else the menu's footer, on the last row. */
+  private drawFooter(ui: UiCanvas, r: Rect): void {
     const hint = (this.widgets[this.focus] as { hint?: string } | undefined)?.hint;
     const foot = hint ?? this.o.footer?.();
     if (foot) {
@@ -228,10 +289,44 @@ export class Menu implements Panel {
     }
   }
 
+  /** Two columns of tiles, row by row (`columns`). */
+  private drawGrid(ui: UiCanvas, r: Rect): void {
+    this.scrolls = false;
+    this.scroll = 0;
+    const w = Math.floor((r.w - GRID_GAP) / 2);
+    const h = this.tileH;
+    this.tiles().forEach(({ w: b, i }, k) => {
+      const row: Rect = { x: r.x + (k % 2) * (r.w - w), y: r.y + 3 + Math.floor(k / 2) * h, w, h: h - 2 };
+      this.rects.set(b.id, ui.button(row, b.label, { focus: i === this.focus, disabled: b.disabled, accent: b.accent }));
+    });
+    this.drawFooter(ui, r);
+  }
+
+  /** In a grid: up and down go a row (two tiles), left and right the tile beside, wrapping around. */
+  private moveTile(by: number): void {
+    const tiles = this.tiles();
+    const n = tiles.length;
+    const at = Math.max(0, tiles.findIndex((x) => x.i === this.focus));
+    if (!n) return;
+    let k = at + by;
+    if (Math.abs(by) === 1) k = (k + n) % n;
+    else if (k >= n) k = at % 2; // past the last row: the top of its column
+    else if (k < 0) k = (n - 1) % 2 === at % 2 ? n - 1 : n - 2; // above the first: the bottom of its column
+    k = Math.max(0, Math.min(n - 1, k));
+    if (!focusable(tiles[k]!.w)) return;
+    this.follow = true;
+    this.focus = tiles[k]!.i;
+    this.o.onSound?.('move');
+  }
+
   input(e: UiEvent): boolean {
     const w = this.widgets[this.focus];
     switch (e.kind) {
       case 'nav':
+        if (this.columns === 2) {
+          this.moveTile(e.dir === 'up' ? -2 : e.dir === 'down' ? 2 : e.dir === 'left' ? -1 : 1);
+          return true;
+        }
         if (e.dir === 'up' || e.dir === 'down') {
           this.move(e.dir === 'up' ? -1 : 1);
           return true;

@@ -139,7 +139,7 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'gap', id: 'g' },
       { kind: 'button', id: 'quit', label: t('menu.pause.quit'), onClick: () => h.saveAndQuit(), accent: 'plum' },
     ],
-    { id: 'pause', title: t('menu.pause.title'), width: 140, onBack: () => h.resume(), onSound: sound(h) },
+    { id: 'pause', title: t('menu.pause.title'), width: 140, onBack: () => h.resume(), onSound: sound(h), grid: true },
   );
 }
 

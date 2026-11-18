@@ -128,6 +128,8 @@ export class TouchControls {
   /** A pad or the keyboard is the device in use (`follow`). */
   private readonly device: TouchFollow;
   private releaseStick: () => void = () => {};
+  /** A floating stick's resting place while a thumb holds it elsewhere (`rects().stick`). */
+  private stickRest: DOMRect | null = null;
   readonly stickMode: TouchStick;
 
   constructor(
@@ -223,12 +225,14 @@ export class TouchControls {
    * with the key code it presses. A hidden button keeps its place (`hidden` says it isn't
    * drawn), so a HUD laid out around them doesn't move when a contextual button comes and goes.
    * `zone`: a floating stick's zone, which takes every touch in it (lay tappable HUD out of it).
-   * Nothing but the bar while `show(false)` or while they step aside (`deviceHidden`).
+   * `stick`: a floating stick's resting place, also while a thumb holds it elsewhere, so a HUD laid
+   * out around it doesn't follow the thumb. Nothing but the bar while `show(false)` or while they
+   * step aside (`deviceHidden`).
    */
   rects(): { stick: DOMRect | null; zone: DOMRect | null; buttons: { code: string; label: string; hidden: boolean; rect: DOMRect }[]; bar: DOMRect | null } {
     if (!this.visible) return { stick: null, zone: null, buttons: [], bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null };
     return {
-      stick: this.stick.getBoundingClientRect(),
+      stick: this.stickRest ?? this.stick.getBoundingClientRect(),
       zone: this.zone?.getBoundingClientRect() ?? null,
       buttons: this.views.map((v) => ({ code: v.def.code, label: v.def.label, hidden: v.shown.hidden, rect: v.el.getBoundingClientRect() })),
       bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null,
@@ -356,6 +360,7 @@ export class TouchControls {
       id = e.pointerId;
       capture(hit, e.pointerId);
       if (floating) {
+        this.stickRest = base.getBoundingClientRect(); // where it waits: `rects().stick` while it's held
         const r = base.offsetWidth / 2; // its border included: centred on the thumb
         const box = this.root.getBoundingClientRect();
         cx = Math.min(Math.max(e.clientX, box.left + r), box.right - r);
@@ -381,6 +386,7 @@ export class TouchControls {
       if (floating) {
         base.style.left = base.style.top = base.style.bottom = ''; // back to rest
         base.classList.remove('held');
+        this.stickRest = null;
       }
       this.input.analog.x = 0;
       this.input.analog.y = 0;

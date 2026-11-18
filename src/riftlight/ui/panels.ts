@@ -92,19 +92,35 @@ export class CharacterSheet implements Panel {
   private focus = 0;
   private rows: Rect[] = [];
   private tabs: Rect[] = [];
+  /** A narrow sheet whose page names don't fit as tabs turns its pages instead: ‹ before, › after. */
+  private pager: { prev: Rect; next: Rect } | null = null;
   /** Room the shell has (`fit`): under 300 the explain column moves under the list. */
   private room = { w: 330, h: 244 };
+  /** A finger's target height (`fit`'s `tap`): tabs and rows at least that tall (the rows as tall as fit). */
+  private tap = 0;
 
-  fit(w: number, h: number): void {
+  fit(w: number, h: number, tap = 0): void {
     this.room = { w, h };
+    this.tap = tap;
   }
 
   get narrow(): boolean {
     return this.room.w < 300;
   }
 
+  /** The tabs' height, the list's first text row (from the top), and a row's height: a thumb's on a touch screen, as tall as the room lets the longest page be. */
+  private get metrics(): { tabH: number; listTop: number; rowH: number } {
+    const tabH = Math.max(11, this.tap);
+    const listTop = 17 + tabH;
+    const most = Math.max(...SHEET_PAGES.map((p) => p.stats.length));
+    const fits = Math.floor((this.room.h - listTop - (this.narrow ? 72 : 4)) / most);
+    return { tabH, listTop, rowH: Math.max(ROW, Math.min(Math.max(ROW, this.tap), fits)) };
+  }
+
   get size(): { w: number; h: number } {
-    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 28 + 6 * ROW + 72) } : { w: this.listWidth + 190, h: 160 };
+    const { listTop, rowH } = this.metrics;
+    const list = 6 * rowH;
+    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, listTop + list + 72) } : { w: this.listWidth + 190, h: Math.max(160, listTop + list + 4) };
   }
 
   /** The rows of the page shown. */
@@ -130,31 +146,62 @@ export class CharacterSheet implements Panel {
     return [{ actions: ['tab_prev', 'tab_next'], label: t('legend.pages') }, { actions: ['back'], label: t('legend.back') }];
   }
 
-  draw(ui: UiCanvas, r: Rect): void {
-    const sheet = this.sheet();
-    const narrow = this.narrow;
-    const header = this.header();
-    ui.text(r.x + 2, r.y + 2, clip(header, r.w - 4, (s) => ui.measure(s)), { color: 'sand' });
-    // the pages as tabs (a click turns to one)
+  /**
+   * The pages as tabs (a click or tap turns to one), or on a narrow sheet whose names don't fit
+   * their thirds a pager: ‹ the page's name in full, a dot for each page, › (a tap on either side
+   * turns), so no name is ever cut.
+   */
+  private drawTabs(ui: UiCanvas, r: Rect, tabH: number): void {
     this.tabs = [];
-    let tx = r.x;
+    this.pager = null;
+    const names = SHEET_PAGES.map((p) => t(`panel.character.page.${p.id}`));
     const tabW = Math.floor(r.w / SHEET_PAGES.length);
-    SHEET_PAGES.forEach((p, i) => {
-      const rect = narrow ? { x: r.x + i * tabW, y: r.y + 12, w: tabW - 1, h: 11 } : { x: tx, y: r.y + 12, w: ui.measure(t(`panel.character.page.${p.id}`)) + 8, h: 11 };
+    const y = r.y + 12;
+    const ty = y + Math.floor((tabH - 7) / 2);
+    if (this.narrow && names.some((n) => ui.measure(n) > tabW - 6)) {
+      const third = Math.floor(r.w / 3);
+      this.pager = { prev: { x: r.x, y, w: third, h: tabH }, next: { x: r.x + r.w - third, y, w: third, h: tabH } };
+      ui.rect(r.x, y, r.w, tabH, 'navy');
+      ui.rect(r.x, y + tabH - 1, r.w, 1, 'sand');
+      ui.text(r.x + 3, ty, '<', { color: ui.hover(this.pager.prev) ? 'white' : 'sand' });
+      ui.text(r.x + r.w - 3, ty, '>', { align: 'right', color: ui.hover(this.pager.next) ? 'white' : 'sand' });
+      const name = names[this.page]!;
+      // a tab a thumb tall has room under the name for where it is among the pages: a dot each, the page shown bright
+      const dots = tabH >= 15;
+      const ny = ty - (dots ? 2 : 1);
+      // the name in full: the normal font, else the mini font, else cut between the arrows
+      if (ui.measure(name) <= r.w - 20) ui.text(r.x + r.w / 2, ny, name, { align: 'center', color: 'sand' });
+      else if (miniCovers(name) && miniWidth(name) <= r.w - 20) ui.mini(r.x + r.w / 2, ny + 1, name, 'sand', 'center');
+      else ui.text(r.x + r.w / 2, ny, clip(name, r.w - 20, (x) => ui.measure(x)), { align: 'center', color: 'sand' });
+      if (dots) SHEET_PAGES.forEach((_, i) => ui.rect(r.x + Math.round(r.w / 2) - 5 + i * 4, y + tabH - 4, 2, 2, i === this.page ? 'sand' : 'slate'));
+      return;
+    }
+    let tx = r.x;
+    SHEET_PAGES.forEach((_, i) => {
+      const rect = this.narrow ? { x: r.x + i * tabW, y, w: tabW - 1, h: tabH } : { x: tx, y, w: ui.measure(names[i]!) + 8, h: tabH };
       this.tabs.push(rect);
       const on = i === this.page;
       ui.rect(rect.x, rect.y, rect.w, rect.h, on ? 'navy' : 'ink');
       if (on) ui.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, 'sand');
-      ui.text(rect.x + 4, rect.y + 2, clip(t(`panel.character.page.${p.id}`), rect.w - 6, (s) => ui.measure(s)), { color: on ? 'sand' : ui.hover(rect) ? 'white' : 'slate' });
+      ui.text(rect.x + 4, ty, clip(names[i]!, rect.w - 6, (s) => ui.measure(s)), { color: on ? 'sand' : ui.hover(rect) ? 'white' : 'slate' });
       tx += rect.w + 3;
     });
+  }
+
+  draw(ui: UiCanvas, r: Rect): void {
+    const sheet = this.sheet();
+    const narrow = this.narrow;
+    const header = this.header();
+    const { tabH, listTop, rowH } = this.metrics;
+    ui.text(r.x + 2, r.y + 2, clip(header, r.w - 4, (s) => ui.measure(s)), { color: 'sand' });
+    this.drawTabs(ui, r, tabH);
     this.rows = [];
     const listW = narrow ? r.w : this.listWidth;
     const list = this.list;
     this.focus = Math.min(this.focus, list.length - 1);
     list.forEach((row, i) => {
-      const y = r.y + 28 + i * ROW;
-      const rect = { x: r.x, y: y - 2, w: listW, h: ROW - 1 };
+      const rect = { x: r.x, y: r.y + listTop - 2 + i * rowH, w: listW, h: rowH - 1 };
+      const y = rect.y + Math.floor((rowH - 9) / 2);
       this.rows.push(rect);
       if (i === this.focus) {
         ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
@@ -169,7 +216,7 @@ export class CharacterSheet implements Panel {
     // explain: where the focused stat comes from (a column on the right, or under the list)
     const row = list[this.focus]!;
     const x = narrow ? r.x + 2 : r.x + listW + 10;
-    const top = narrow ? r.y + 30 + list.length * ROW : r.y + 26; // under the pages' tabs
+    const top = narrow ? r.y + listTop + 2 + list.length * rowH : r.y + listTop - 2; // under the pages' tabs
     if (narrow) ui.rect(r.x, top - 3, r.w, 1, 'slate');
     else ui.rect(x - 5, top, 1, r.y + r.h - top - 2, 'slate');
     const colW = r.x + r.w - x;
@@ -219,6 +266,10 @@ export class CharacterSheet implements Panel {
     if (e.kind === 'pointer') {
       const tab = this.tabs.findIndex((r) => inside(r, e.x, e.y));
       if (tab >= 0 && e.type === 'down') return this.turn(tab);
+      // the pager: a tap on its left half turns back, on its right half on
+      const pager = this.pager;
+      const strip = pager && { x: pager.prev.x, y: pager.prev.y, w: pager.next.x + pager.next.w - pager.prev.x, h: pager.prev.h };
+      if (pager && strip && e.type === 'down' && inside(strip, e.x, e.y)) return this.turn(this.page + (e.x < strip.x + strip.w / 2 ? -1 : 1));
       const i = this.rows.findIndex((r) => inside(r, e.x, e.y));
       if (i >= 0) {
         this.focus = i;
@@ -240,6 +291,8 @@ export class Codex implements Panel {
   private rows: Rect[] = [];
   /** Room the shell has (`fit`): a phone gets a list of big rows, a tap opens the entry. */
   private room = { w: 360, h: 178 };
+  /** A finger's target height (`fit`'s `tap`): the list's rows as close to it as the room lets them be. */
+  private tap = 0;
   /** Narrow only: the entry is open (else the list shows). */
   private reading = false;
   private backRect: Rect | null = null;
@@ -249,8 +302,9 @@ export class Codex implements Panel {
     private readonly unlocked: () => readonly string[],
   ) {}
 
-  fit(w: number, h: number): void {
+  fit(w: number, h: number, tap = 0): void {
     this.room = { w, h };
+    this.tap = tap;
   }
 
   get narrow(): boolean {
@@ -259,7 +313,14 @@ export class Codex implements Panel {
 
   get size(): { w: number; h: number } {
     if (!this.narrow) return { w: 360, h: 178 };
-    return { w: this.room.w, h: Math.min(this.room.h, Math.max(150, this.mechanics().length * TAP_ROW + 4)) };
+    return { w: this.room.w, h: Math.min(this.room.h, Math.max(150, this.mechanics().length * this.rowH + 4)) };
+  }
+
+  /** A list row: a phone's tall one (a thumb's), the wide list's as tall as a thumb's where every entry still fits. */
+  private get rowH(): number {
+    if (this.narrow) return Math.max(TAP_ROW, this.tap);
+    const n = Math.max(1, this.mechanics().length);
+    return Math.max(12, Math.min(this.tap, Math.floor((Math.min(this.room.h, 178) - 4) / n)));
   }
 
   draw(ui: UiCanvas, r: Rect): void {
@@ -270,16 +331,16 @@ export class Codex implements Panel {
     const narrow = this.narrow;
     if (narrow && this.reading) {
       // the entry, with a back row on top
-      this.backRect = { x: r.x, y: r.y, w: r.w, h: TAP_ROW - 1 };
+      this.backRect = { x: r.x, y: r.y, w: r.w, h: this.rowH - 1 };
       ui.button(this.backRect, t('panel.codex.all_entries'), { focus: true });
       const m = list[this.focus];
-      if (m) this.entry(ui, m, open.has(m.id), r.x + 3, r.y + TAP_ROW + 3, r.w - 6, r.y + r.h);
+      if (m) this.entry(ui, m, open.has(m.id), r.x + 3, r.y + this.rowH + 3, r.w - 6, r.y + r.h);
       return;
     }
-    const rowH = narrow ? TAP_ROW : 12;
+    const rowH = this.rowH;
     list.forEach((m, i) => {
-      const y = r.y + 2 + i * rowH;
-      const rect = { x: r.x, y: y - 1, w: narrow ? r.w : 104, h: rowH - 1 };
+      const y = r.y + 2 + i * rowH + Math.floor((rowH - (narrow ? TAP_ROW : 12)) / 2);
+      const rect = { x: r.x, y: r.y + 1 + i * rowH, w: narrow ? r.w : 104, h: rowH - 1 };
       this.rows.push(rect);
       if (i === this.focus) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
       else if (narrow) ui.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, 'night');
@@ -397,6 +458,8 @@ export class DeathRecap implements Panel {
   private focus: 'details' | 'continue' = 'continue';
   /** Room the shell has (`fit`): a phone stacks the columns. */
   private room = { w: 300, h: 170 };
+  /** A finger's target height (`fit`'s `tap`): the buttons that tall. */
+  private tap = 0;
 
   constructor(
     private readonly recap: Recap,
@@ -405,16 +468,22 @@ export class DeathRecap implements Panel {
     private readonly onContinue: () => void,
   ) {}
 
-  fit(w: number, h: number): void {
+  fit(w: number, h: number, tap = 0): void {
     this.room = { w, h };
+    this.tap = tap;
   }
 
   get narrow(): boolean {
     return this.room.w < 240;
   }
 
+  /** The buttons' height (wide layout): a thumb's on a touch screen. */
+  private get buttonH(): number {
+    return Math.max(14, this.tap);
+  }
+
   get size(): { w: number; h: number } {
-    return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 236) } : { w: 300, h: 170 };
+    return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 236) } : { w: 300, h: 170 + this.buttonH - 14 };
   }
 
   /** △ (Tab) shows the tables or the summary again; the button says what Cross does. */
@@ -452,15 +521,16 @@ export class DeathRecap implements Panel {
     y += 3;
     ui.rect(r.x + 2, y - 2, r.w - 4, 1, 'slate');
     y += 2;
-    const bottom = r.y + r.h - 29; // the penalty line and the buttons
+    const bh = this.buttonH;
+    const bottom = r.y + r.h - bh - 15; // the penalty line and the buttons
     if (this.details) this.drawTables(ui, r, y, bottom);
     else this.drawSummary(ui, r, y, bottom);
-    ui.text(r.x + r.w / 2, r.y + r.h - 27, clip(this.lost(), r.w - 8, measure), { align: 'center', color: 'orange' });
+    ui.text(r.x + r.w / 2, r.y + r.h - bh - 13, clip(this.lost(), r.w - 8, measure), { align: 'center', color: 'orange' });
     // Details (or Summary) and Return to town: a pad's Cross presses the focused one, △ toggles the tables
     const bw = Math.floor((r.w - 18) / 2);
     this.buttons = [
-      { id: 'details', rect: { x: r.x + 6, y: r.y + r.h - 16, w: bw, h: 14 } },
-      { id: 'continue', rect: { x: r.x + r.w - 6 - bw, y: r.y + r.h - 16, w: bw, h: 14 } },
+      { id: 'details', rect: { x: r.x + 6, y: r.y + r.h - bh - 2, w: bw, h: bh } },
+      { id: 'continue', rect: { x: r.x + r.w - 6 - bw, y: r.y + r.h - bh - 2, w: bw, h: bh } },
     ];
     ui.button(this.buttons[0]!.rect, t(this.details ? 'legend.summary' : 'legend.details'), { focus: this.focus === 'details', glyph: 'confirm' });
     ui.button(this.buttons[1]!.rect, t('panel.button.return_to_town'), { focus: this.focus === 'continue', glyph: 'confirm' });
@@ -640,6 +710,8 @@ export class LootWindow implements Panel {
   private rects: Rect[] = [];
   /** Room the shell has (`fit`): a phone wraps the summary, gets tall rows and stacked buttons. */
   private room = { w: 260, h: 150 };
+  /** A finger's target height (`fit`'s `tap`): rows and buttons that tall, fewer rows. */
+  private tap = 0;
 
   constructor(
     private readonly loot: () => readonly WorldLoot[],
@@ -648,8 +720,9 @@ export class LootWindow implements Panel {
     private readonly leave: () => void,
   ) {}
 
-  fit(w: number, h: number): void {
+  fit(w: number, h: number, tap = 0): void {
     this.room = { w, h };
+    this.tap = tap;
   }
 
   get narrow(): boolean {
@@ -657,7 +730,16 @@ export class LootWindow implements Panel {
   }
 
   get size(): { w: number; h: number } {
-    return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 200) } : { w: 260, h: 150 };
+    return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 200) } : { w: 260, h: 150 + Math.max(0, this.tap - 14) };
+  }
+
+  /** A row's height and a button's (wide layout): a thumb's on a touch screen. */
+  private get rowH(): number {
+    return this.narrow ? Math.max(14, this.tap) : Math.max(10, this.tap);
+  }
+
+  private get buttonH(): number {
+    return this.narrow ? Math.max(15, this.tap) : Math.max(14, this.tap);
   }
 
   private actions(): { id: string; label: string; run: () => void }[] {
@@ -676,7 +758,7 @@ export class LootWindow implements Panel {
 
   /** Rows shown: a phone has room for fewer, taller ones. */
   private get shown(): number {
-    return this.narrow ? 4 : 6;
+    return this.narrow ? 4 : this.tap > 10 ? 3 : 6;
   }
 
   draw(ui: UiCanvas, r: Rect): void {
@@ -704,13 +786,13 @@ export class LootWindow implements Panel {
     else ui.text(r.x + 3, y, clip(note, r.w - 6, (s) => ui.measure(s)), { color: 'mist' });
     y += narrow ? 8 : 10;
     this.rects = [];
-    const rowH = narrow ? 14 : 10;
+    const rowH = this.rowH;
     const rows = items.slice(0, this.shown);
     rows.forEach((l, i) => {
       const rect = { x: r.x, y, w: r.w, h: rowH };
       this.rects.push(rect);
       if (this.focus === i) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
-      ui.text(r.x + 4, y + (narrow ? 3 : 1), clip(l.label, r.w - 8, (s) => ui.measure(s)), { color: l.color });
+      ui.text(r.x + 4, y + Math.floor((rowH - 8) / 2), clip(l.label, r.w - 8, (s) => ui.measure(s)), { color: l.color });
       y += rowH;
     });
     const more = t('panel.loot.more', { count: items.length - this.shown });
@@ -718,10 +800,11 @@ export class LootWindow implements Panel {
       if (narrow) ui.mini(r.x + 4, y + 1, more, 'slate');
       else ui.text(r.x + 4, y + 1, more, { color: 'slate' });
     }
+    const bh = this.buttonH;
     this.actions().forEach((a, i) => {
       const rect = narrow
-        ? { x: r.x, y: r.y + r.h - (2 - i) * 17, w: r.w, h: 15 }
-        : { x: r.x + 6 + i * (r.w / 2), y: r.y + r.h - 16, w: r.w / 2 - 12, h: 14 };
+        ? { x: r.x, y: r.y + r.h - (2 - i) * (bh + 2), w: r.w, h: bh }
+        : { x: r.x + 6 + i * (r.w / 2), y: r.y + r.h - bh - 2, w: r.w / 2 - 12, h: bh };
       this.rects.push(rect);
       ui.button(rect, a.label, { focus: this.focus === rows.length + i, glyph: 'confirm' });
     });

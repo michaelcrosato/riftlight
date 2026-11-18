@@ -40,6 +40,8 @@ export class TreePanel implements Panel {
   readonly title: string;
   readonly overlay = true;
   readonly size = { w: 480, h: 270 };
+  /** Oru's respec is a tree view of its own, not a character screen: L1 / R1 don't page away from it (`Panel.ring`). */
+  readonly ring?: false;
   view: TreeView | null = null;
   state: TreeState | null = null;
   private tree: PassiveTree | null = null;
@@ -51,6 +53,7 @@ export class TreePanel implements Panel {
     readonly respec: boolean,
   ) {
     this.title = respec ? 'Passive tree · respec' : 'Passive tree';
+    if (respec) this.ring = false;
   }
 
   open(): void {
@@ -89,11 +92,14 @@ export class TreePanel implements Panel {
       state,
       resolution: ctx.engine.renderer.baseResolution,
       aspect: ctx.engine.renderer.aspect,
+      touchDensity: ctx.engine.renderer.touchDensity, // a phone's art density, as the game's
+      device: () => ctx.engine.controls.device, // its hints name the device in use
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
       padGlyphs: () => ctx.engine.controls.style,
-      // the character screens' ring: Q / E (and L1 / R1, the shell's own read) page from the tree too
-      pages: { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => c.startsWith('Pad')) },
+      // the character screens' ring: Q / E (and L1 / R1, the shell's own read) page from the tree too;
+      // Oru's respec is no screen of the ring (Q / E zoom there)
+      pages: this.respec ? undefined : { keys: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => !c.startsWith('Pad')), pad: [...KEYS.pagePrev, ...KEYS.pageNext].filter((c) => c.startsWith('Pad')) },
       gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();
