@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, frameView, snapToGrid, worldUnitsPerPixel } from './framing';
+import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, frameView, snapToGrid, touchScale, worldUnitsPerPixel } from './framing';
 
 describe('computeFraming', () => {
   it('fills by default: the whole window at every shape (52in1), as EngineOptions.aspect', () => {
@@ -182,6 +182,52 @@ describe('frameView (both views: PixelRenderer and HeadlessView)', () => {
     expect(changed).not.toBe(D);
     expect(changed).toEqual({ width: 500, height: 270 });
     expect(art({ width: 960, height: 540, dpr: 1 }, D, 'fill', current).resolution).toBe(D); // back to the preset: the preset object
+  });
+});
+
+describe('touch density on a phone (touchScale, EngineOptions.touchDensity)', () => {
+  const css = (f: { scale: number }, dpr: number) => f.scale / dpr;
+
+  it('a landscape phone gets fewer, bigger art pixels: at least 2 CSS pixels each, at DPR 2 and 3', () => {
+    const base = RESOLUTIONS.default;
+    for (const dpr of [2, 3]) {
+      const v = { width: 844, height: 390, dpr };
+      const before = frameView(v, base, 'fill', base).framing;
+      const after = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect(css(before, dpr), `DPR ${dpr} before`).toBeLessThan(2);
+      expect(css(after, dpr), `DPR ${dpr}`).toBeGreaterThanOrEqual(2);
+      expect([after.artWidth, after.artHeight, after.integer]).toEqual([422, 195, true]);
+      // still the whole window, edge to edge
+      expect([after.offsetX <= 0, after.offsetY <= 0, after.offsetX + after.cssWidth >= 844, after.offsetY + after.cssHeight >= 390]).toEqual([true, true, true, true]);
+    }
+  });
+
+  it('a portrait phone already is (3 CSS pixels an art pixel): unchanged; so are tablets, laptops, TVs, and a density of 0', () => {
+    const base = RESOLUTIONS.default;
+    for (const v of [
+      { width: 390, height: 844, dpr: 3 },
+      { width: 390, height: 844, dpr: 1 },
+    ]) {
+      expect(touchScale(v, 2)).toBe(Math.ceil(2 * v.dpr));
+      expect(frameView(v, base, 'fill', base, touchScale(v, 2)).framing).toEqual(frameView(v, base, 'fill', base).framing);
+    }
+    for (const v of [
+      { width: 1024, height: 768, dpr: 2 },
+      { width: 1280, height: 720, dpr: 1 },
+      { width: 1920, height: 1080, dpr: 1 },
+    ])
+      expect(touchScale(v, 2), `${v.width}×${v.height}`).toBe(1);
+    expect(touchScale({ width: 844, height: 390, dpr: 2 }, 0)).toBe(1);
+  });
+
+  it('follows a rotation, and only fill changes its art size (fixed and adaptive keep theirs)', () => {
+    const base = RESOLUTIONS.default;
+    const land = { width: 844, height: 390, dpr: 3 };
+    const port = { width: 390, height: 844, dpr: 3 };
+    expect(frameView(land, base, 'fill', base, touchScale(land, 2)).resolution).toEqual({ width: 422, height: 195 });
+    expect(frameView(port, base, 'fill', base, touchScale(port, 2)).resolution).toEqual({ width: 130, height: 282 });
+    expect(computeFraming(844, 390, 2, base, 'fixed', 4)).toEqual(computeFraming(844, 390, 2, base, 'fixed'));
+    expect(computeFraming(844, 390, 2, base, 'adaptive', 4)).toEqual(computeFraming(844, 390, 2, base, 'adaptive'));
   });
 });
 

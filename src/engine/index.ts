@@ -1,5 +1,5 @@
 // Public engine API. Games import from here, not from internal modules.
-export { Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext, type HeadlessOptions } from './Engine';
+export { DEFAULT_TOUCH_DENSITY, Engine, optionsFromUrl, withUrlOptions, type EngineOptions, type Game, type GameContext, type HeadlessOptions } from './Engine';
 export { ENGINE_VERSION } from './version';
 export {
   CAMERA_PRESETS,
@@ -75,19 +75,25 @@ export {
   HOST_CHORD,
   INPUT_DEVICES,
   Input,
+  MOTION_AIM,
   MOUSE_BUTTONS,
   PRESS_WINDOW,
   SWIPE,
   SWIPE_KEYS,
   TOUCH_KEY,
+  TOUCHPAD,
+  TOUCHPAD_KEYS,
   applyDeadzone,
   swipeDirection,
+  touchpadGesture,
   type ButtonEvent,
+  type DualSenseInput,
   type GamepadLike,
   type InputDevice,
   type InputState,
   type Rumble,
   type SwipeDirection,
+  type TouchpadGesture,
 } from './input';
 export {
   CONTROL_LINES,
@@ -140,7 +146,7 @@ export {
   type Wave,
 } from './audio';
 export { PARTICLES, ParticlePool, Particles, type BurstOptions, type ParticlePreset, type ParticlePresetName } from './particles';
-export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions } from './hud/Hud';
+export { Hud, hudPlace, type HudAnchor, type HudColor, type HudOptions, type LegendItem } from './hud/Hud';
 export { deviceFont, deviceTextWidth, drawDeviceText, runsRtl, surfaceScale, textWidthPx } from './hud/deviceText';
 export { wrapText } from './hud/wrap';
 export { clusters, drawText, fontCase, glyphFor, GLYPH_H, GLYPH_W, noteText, PIXEL_LANGUAGES, pixelCovers, setTextLocale, textCells, textLocale, textWidth } from './animation/font';
@@ -209,6 +215,7 @@ export {
   HubSettings,
   type HubSettingsSource,
   type HubSettingsValues,
+  hubPadInput,
   hubSettingsSource,
   NO_HUB_SETTINGS,
   readHubSettings,
@@ -217,9 +224,9 @@ export {
 } from './hub/settings';
 export { DualSense, type DualSenseSent } from './hub/dualsense';
 export { lerpAngle, RemoteTrack, type RemoteTrackOptions } from './hub/track';
-export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton, type TouchButtonState, type TouchCorner } from './TouchControls';
+export { DEFAULT_TOUCH_BUTTONS, TouchControls, TouchFollow, type TouchButton, type TouchButtonState, type TouchControlsOptions, type TouchCorner, type TouchStick } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';
-export { ADAPTIVE_ASPECT, RESOLUTIONS, computeFraming, frameView, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
+export { ADAPTIVE_ASPECT, PHONE_SHORT_SIDE, RESOLUTIONS, computeFraming, frameView, touchScale, type AspectMode, type Framing, type Resolution, type Viewport } from './framing';
 export { QUALITY, QUALITY_LEVELS, FrameLimiter, type QualityLevel, type QualityOption, type QualitySettings } from './quality';
 export { assetProgress, preloadModels } from './assets';
 export { LoadingScreen } from './LoadingScreen';

@@ -7,7 +7,7 @@
  * calling them, and `capture()` rejects (pictures need the browser: `npm run look`, `npm run film`).
  */
 import type { Camera } from 'three/webgpu';
-import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, type Viewport, frameView } from '../framing';
+import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, touchScale, type Viewport, frameView } from '../framing';
 import { cloneLook, type Look, lookFromFilters, normalizeLook, planLook, startingLook } from './look';
 import { type BackendName, type CapturedFrame, DEFAULT_EDGES, type EdgeSettings, type GpuErrorRecord, type RenderMode } from './PixelRenderer';
 import { ScreenFx } from './screenFx';
@@ -27,6 +27,8 @@ export interface HeadlessViewOptions {
   edges?: EdgeSettings;
   filters?: readonly string[];
   look?: Look;
+  /** The least CSS pixels per art pixel on a phone (`touchScale`), as a page's with touch controls. */
+  touchDensity?: number;
 }
 
 export class HeadlessView implements View {
@@ -43,6 +45,7 @@ export class HeadlessView implements View {
   private _baseResolution: Resolution;
   private _resolution: Resolution;
   private _aspect: AspectMode;
+  private _touchDensity: number;
   private _mode: RenderMode;
   private _look: Look;
   private _filters: readonly string[] = [];
@@ -55,6 +58,7 @@ export class HeadlessView implements View {
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
     this._aspect = options.aspect ?? 'fill';
+    this._touchDensity = options.touchDensity ?? 0;
     this._mode = options.mode ?? 'pixel';
     this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
     this.syncFilters();
@@ -72,7 +76,7 @@ export class HeadlessView implements View {
   }
 
   layout(): void {
-    const { framing, resolution } = frameView(this._viewport, this._baseResolution, this._aspect, this._resolution);
+    const { framing, resolution } = frameView(this._viewport, this._baseResolution, this._aspect, this._resolution, touchScale(this._viewport, this._touchDensity));
     this.framing = framing;
     this._resolution = resolution;
   }
@@ -96,6 +100,15 @@ export class HeadlessView implements View {
 
   setAspect(aspect: AspectMode): void {
     this._aspect = aspect;
+    this.layout();
+  }
+
+  get touchDensity(): number {
+    return this._touchDensity;
+  }
+
+  setTouchDensity(cssPerArt: number): void {
+    this._touchDensity = cssPerArt > 0 ? cssPerArt : 0;
     this.layout();
   }
 

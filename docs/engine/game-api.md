@@ -76,8 +76,14 @@ Engine.start(game, {
   settings: { button: 'top-left', key: 'my-game', padButton: true }, // the ⚙'s corner (false: none), where they are saved, Options opens them
   touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
   touchBar: false,                             // no ⓘ P R ◐ ♪ hotkey bar on phones unless ?debug=1
+  touchStick: 'floating',                      // the joystick's base comes under the thumb (default 'fixed')
+  touchDensity: 2,                             // on a phone with touch controls, ≥ 2 CSS px per art px (the default; 0: off)
 });
 ```
+
+Touch controls step aside while a pad or the keyboard is in use, can float under the thumb
+(`touchStick`), and keep a phone's art at 2 CSS pixels a pixel or more (`touchDensity`):
+docs/engine/character.md *Touch is an add-on*.
 
 The hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the panel on
 demand) · `nextLook` ] · `prevLook` [ · `mute` M. They are developer tools: on with the debug
@@ -206,6 +212,11 @@ vibration 0, while the device is not the pad, or on a pad without `vibrationActu
 a refused effect is caught. Output only, never recorded. Short pulses on hits, landings and
 explosions say more than long rumbles.
 
+**The DualSense's touchpad and motion** (52in1): `ctx.input.touchpad = true` presses
+`PadTouchpadLeft` / `Right` / `Up` / `Down` / `Tap` (`TOUCHPAD_KEYS`), and motion aim
+(`input.motion`, `settings: { motion: true }`) adds the controller's turns to the right stick's,
+both recorded: docs/engine/hub.md *Motion and the touchpad*.
+
 **Swipes**: a quick one-finger flick on the canvas (under 0.35 s, over 8% of its short side:
 `swipeDirection`) presses `SwipeLeft` / `SwipeRight` / `SwipeUp` / `SwipeDown` (`SWIPE_KEYS`) once,
 recorded like any press; a slow drag still orbits the camera and two fingers pinch.
@@ -272,6 +283,12 @@ screen it is the touch button's label or a gesture's name (`TouchTap` → Tap). 
 (`GLYPH_SIZE`), the height of a line of the 5×7 font, in `hud.sprite`'s row format: a surface of the
 game's own draws them from `controlGlyph`, `padGlyph` and `keyGlyph` (Riftlight's UI kit and its
 passive tree's canvas do).
+
+**Legends**: `ctx.hud.legend(x, y, [['confirm', 'SELECT'], ['back', 'BACK']], { align: 'center' })`
+lays out each button's glyph and words for the device in use, one way for every game (✕ SELECT
+○ BACK on a DualSense, ENTER SELECT ESC BACK on the keyboard, TAP SELECT SWIPE BACK on a touch
+screen); an item whose control the device has none of (`engine.controls.onDevice(action)` false:
+no touch gesture for it) shows its words alone. `hud.legendWidth(items)` measures it.
 
 Names are lines: `CONTROL_LINES` lists every id the engine names a control by, with its English
 (`key.space`, `key.esc`, `key.mouse_left`, `pad.ps.cross`, `pad.ps.options`, `pad.lb`,

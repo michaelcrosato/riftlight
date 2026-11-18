@@ -82,6 +82,52 @@ const TRIGGER_WAKE = 0.05;
 /** How far the mouse travels (CSS pixels) before it counts as used (`device`): a bumped desk does not. */
 const MOUSE_USE = 6;
 
+/**
+ * A DualSense's touchpad gestures (`input.touchpad`): a quick swipe presses a direction, a tap
+ * (a touch, not the pad's click, which is `PadTouchpad`) presses `tap`. Once each, recorded.
+ */
+export const TOUCHPAD_KEYS = { left: 'PadTouchpadLeft', right: 'PadTouchpadRight', up: 'PadTouchpadUp', down: 'PadTouchpadDown', tap: 'PadTouchpadTap' } as const;
+export type TouchpadGesture = keyof typeof TOUCHPAD_KEYS;
+
+/**
+ * Touchpad gestures, in the pad's height (it is about twice as wide as it is tall): a swipe lasts
+ * at most `swipeS` seconds and travels `swipe` of it; a tap at most `tapS` seconds and `tap` of it.
+ */
+export const TOUCHPAD = { swipeS: 0.5, swipe: 0.4, tapS: 0.3, tap: 0.08 } as const;
+
+/**
+ * The gesture a one-finger touch on the DualSense's touchpad made (`dx`, `dy`: how far it went
+ * in the pad's 0..1 coordinates, y down; `seconds`: how long it was down), or null.
+ */
+export function touchpadGesture(dx: number, dy: number, seconds: number): TouchpadGesture | null {
+  const px = Math.abs(dx * 2); // the pad's width is about twice its height
+  const py = Math.abs(dy);
+  const far = Math.max(px, py);
+  if (seconds <= TOUCHPAD.swipeS && far >= TOUCHPAD.swipe) return px >= py ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+  if (seconds <= TOUCHPAD.tapS && far < TOUCHPAD.tap) return 'tap';
+  return null;
+}
+
+/**
+ * Motion aim (`input.motion`): turns slower than `still` degrees a second are a hand holding still;
+ * past it the camera turns `pixels` pointer pixels per degree the controller turns (at sensitivity
+ * 1), and the aim stick leans as 52in1's own Motion aim leans it (`floor` at once, all the way at
+ * `full` degrees a second past still).
+ */
+export const MOTION_AIM = { still: 4, pixels: 8, floor: 0.2, full: 150 } as const;
+
+/** Where a DualSense's motion and touchpad come from (the engine's: 52in1's `AIHubSettings.dualsense`). */
+export interface DualSenseInput {
+  /** The player lets games read the controller's motion. */
+  readonly motion: boolean;
+  /** The player lets games read the touchpad. */
+  readonly touchpad: boolean;
+  /** How fast the controller turns, degrees a second (`x` tips its front up, `y` turns it left, `z` rolls it left). Reading it turns 52in1's own Motion aim off. */
+  gyro(): { readonly x: number; readonly y: number; readonly z: number } | null;
+  /** The fingers on the touchpad (at most two; `x`, `y` 0..1 from its top left). */
+  touches(): readonly { readonly id: number; readonly x: number; readonly y: number }[] | null;
+}
+
 /** The parts of the Gamepad API that Input reads (tests can pass plain objects). */
 export interface GamepadLike {
   readonly connected?: boolean;
@@ -257,6 +303,27 @@ export class Input {
   readonly lookAxis = { x: 0, y: 0 };
   /** The analog triggers, 0..1 (L2 / LT, R2 / RT): a throttle, a brake, a bowstring. Pressed (as the browser says, or past half), they also press `PadLT` / `PadRT`. */
   readonly triggers = { left: 0, right: 0 };
+  /**
+   * A DualSense's motion and touchpad through 52in1 (the engine sets it from `AIHubSettings`; null
+   * outside 52in1 and headless). Read only while a game asks (`motion.on`, `touchpad`), never during
+   * a replay: what they do arrives as recorded input (pointer movement, the aim stick, presses).
+   */
+  dualsense: DualSenseInput | null = null;
+  /**
+   * Motion aim: while `on` (the engine keeps it at the player's setting for a game with
+   * `settings: { motion: true }`), and the pad is the device in use, the DualSense's turns add to the
+   * right stick's camera turn (`mouseDelta`: gyro × dt × `sensitivity`) and to the aim stick
+   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place.
+   */
+  readonly motion = { on: false, sensitivity: 1 };
+  /**
+   * Read the DualSense's touchpad (a game that uses it turns this on): a quick swipe presses
+   * `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap `PadTouchpadTap` (`TOUCHPAD_KEYS`), once,
+   * recorded. Its click is the button `PadTouchpad`. Give each a button that does the same.
+   */
+  touchpad = false;
+  /** The finger on the touchpad that may be a gesture (`touchpad`). */
+  private pad1: { id: number; x0: number; y0: number; x: number; y: number; t: number; spoilt: boolean } | null = null;
   /** True while any gamepad is connected (that alone never changes `device`). */
   gamepadConnected = false;
   /**
@@ -610,6 +677,7 @@ export class Input {
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
     this.triggers.left = this.triggers.right = 0;
+    this.pad1 = null;
     this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
   }
@@ -1014,6 +1082,13 @@ export class Input {
     for (const code of this.padLatched) if (!down.has(code)) this.padLatched.delete(code);
     for (const code of this.padLatched) down.delete(code);
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
+    // the DualSense's touchpad (52in1, when the game reads it): a swipe or a tap is a press, and a use
+    const ds = this._playing ? null : this.dualsense;
+    const gesture = ds?.touchpad && this.touchpad ? this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad')) : ((this.pad1 = null), null);
+    if (gesture) {
+      this.press(TOUCHPAD_KEYS[gesture]);
+      this.use('pad');
+    }
     this.padHeld.clear();
     for (const code of down) this.padHeld.add(code);
     // a stick held through release() reads centred until it goes back inside its deadzone
@@ -1042,8 +1117,46 @@ export class Input {
       this.mouseDelta.x += r.x * this.gamepadLookSpeed * dt;
       this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
     }
+    // Motion aim (52in1, while the game has it on): the controller's turns add to the stick's, on
+    // the pad in use. Read only while on: reading the gyro turns 52in1's own Motion aim off.
+    const gyro = ds?.motion && this.motion.on ? ds.gyro() : null;
+    if (gyro && padInUse) {
+      const k = Number.isFinite(this.motion.sensitivity) ? Math.max(0, this.motion.sensitivity) : 1;
+      const yaw = beyond(-gyro.y, MOTION_AIM.still); // turned left (+): the view goes left
+      const pitch = beyond(-gyro.x, MOTION_AIM.still); // tipped up (+): the view goes up (pointer y down)
+      this.mouseDelta.x += yaw * dt * k * MOTION_AIM.pixels;
+      this.mouseDelta.y += pitch * dt * k * MOTION_AIM.pixels;
+      const ax = look.x + aimLean(yaw) * k;
+      const ay = look.y - aimLean(pitch) * k;
+      const len = Math.hypot(ax, ay);
+      look = len > 1 ? { x: ax / len, y: ay / len } : { x: ax, y: ay };
+    }
     this.lookAxis.x = look.x;
     this.lookAxis.y = look.y;
+  }
+
+  /**
+   * One poll of the touchpad's fingers (`touchpad`): a finger that went down and came up again
+   * within a swipe's or a tap's time makes a gesture (one finger only: a second spoils it, and so
+   * does the pad's click, which is its own button). Returns the gesture that ended, or null.
+   */
+  private touchpadFrame(touches: readonly { readonly id: number; readonly x: number; readonly y: number }[] | null, dt: number, clicked: boolean): TouchpadGesture | null {
+    const list = Array.isArray(touches) ? touches : [];
+    const f = this.pad1;
+    const t = list[0];
+    if (!t || !Number.isFinite(t.x) || !Number.isFinite(t.y)) {
+      this.pad1 = null;
+      return f && !f.spoilt ? touchpadGesture(f.x - f.x0, f.y - f.y0, f.t) : null;
+    }
+    if (!f || f.id !== t.id) {
+      this.pad1 = { id: t.id, x0: t.x, y0: t.y, x: t.x, y: t.y, t: 0, spoilt: list.length > 1 || clicked };
+      return null;
+    }
+    f.x = t.x;
+    f.y = t.y;
+    f.t += dt;
+    if (list.length > 1 || clicked) f.spoilt = true;
+    return null;
   }
 }
 
@@ -1068,6 +1181,20 @@ function stickUsed(was: readonly [number, number], now: readonly [number, number
 }
 
 /** A value clamped to 0..1 (0 when it is not a number). */
+/** How far `v` goes past ±`still` (0 inside it): a hand holding a controller still turns it a little. */
+function beyond(v: number, still: number): number {
+  if (!Number.isFinite(v)) return 0;
+  const past = Math.abs(v) - still;
+  return past > 0 ? Math.sign(v) * past : 0;
+}
+
+/** How far motion aim leans the aim stick for a turn `past` degrees a second beyond still (as 52in1's Motion aim does). */
+function aimLean(past: number): number {
+  if (past === 0) return 0;
+  const push = MOTION_AIM.floor + (1 - MOTION_AIM.floor) * Math.min(1, Math.abs(past) / MOTION_AIM.full);
+  return Math.sign(past) * push;
+}
+
 function unit(v: number | undefined): number {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v!)) : 0;
 }

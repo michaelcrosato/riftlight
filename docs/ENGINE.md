@@ -9,8 +9,8 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/lights.md | `ctx.lights`: the fixed pool of point lights shared by any number of requests |
 | docs/engine/looks.md | filters (art vs display space, parameters, presets) and per-layer looks |
 | docs/engine/camera.md | camera presets, free → fixed workflow, `CameraConfig`, screen shake |
-| docs/engine/character.md | `PlatformerCharacter`: the moveset, touch controls, states, tuning, hurt, teleport |
-| docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads (the one pad scheme, the device used last, triggers, rumble, swipes) and press timing, menus on every device (`MenuInput`, `FocusList`), prompts and glyphs (`Game.controls`, `engine.controls`, `hud.glyph` / `hud.prompt`), game speed and hitstop |
+| docs/engine/character.md | `PlatformerCharacter`: the moveset, touch controls (stepping aside for a pad or keys, the floating stick, a phone's touch density), states, tuning, hurt, teleport |
+| docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads (the one pad scheme, the device used last, triggers, rumble, swipes) and press timing, menus on every device (`MenuInput`, `FocusList`), prompts, glyphs and legends (`Game.controls`, `engine.controls`, `hud.glyph` / `hud.prompt` / `hud.legend`), the ten-foot settings panel, game speed and hitstop |
 | docs/engine/physics.md | triggers, movers and conveyors, force fields, joints, destruction, `InstancedBodies`, vehicles, bullets |
 | docs/engine/physics-soft.md | cloth, ropes, jelly, ragdolls, water and buoyancy |
 | docs/engine/audio.md | sound effects and songs as data, audio unlock, spatial sound and looping voices, the buses and the player's 52in1 volumes |
@@ -22,7 +22,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/procgen.md | noise, terrain and erosion, wave function collapse, L-systems |
 | docs/engine/procedural-motion.md | spring chains, squash, leg steppers, two-bone IK |
 | docs/engine/tooling.md | `window.__PIXEL_ENGINE__`, the CLIs, browser e2e, how to build an agent tool |
-| docs/engine/hub.md | 52in1 sessions: `HubSession` (parallel, ghost, shared world, moments; several modes; rng), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests; the player's 52in1 settings (`engine.hubSettings`, the microphone's gate) and a DualSense's light bar, triggers and speaker (`ctx.dualsense`) |
+| docs/engine/hub.md | 52in1 sessions: `HubSession` (parallel, ghost, shared world, moments; several modes; rng), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests; the player's 52in1 settings (`engine.hubSettings`, the microphone's gate) and a DualSense's light bar, triggers and speaker (`ctx.dualsense`), its touchpad and motion as recorded input |
 | docs/engine/lang.md | languages: lines and translations (`Lang`, `t()`), choosing the language, the test languages, text in every writing system (accented pixel capitals, the device font), wrapping |
 | docs/engine/kit.md | the engine kit for outside agents (`npm run bundle`), its diagnostics, build size |
 

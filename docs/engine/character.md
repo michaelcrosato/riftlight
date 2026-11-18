@@ -43,6 +43,23 @@ A game lays out and drives its own buttons (Riftlight's action cluster, `src/rif
 - The top bar is for development: `touchBar: false` keeps it off a shipped game, and it then
   shows only with the debug UI (`?debug=1`, dev builds).
 
+**Touch is an add-on.** The touch controls (`engine.touch`, `TouchControls`) step aside when the
+player picks up a pad or a keyboard (`input.device` turns `pad` or `keyboard`: the engine calls
+`touch.follow` every frame, and `touch.deviceHidden` says so), so the game looks like the pad or
+keyboard game, and the next touch brings them back; only a change of device moves them (a page that
+starts on the keyboard keeps the controls `?touch=1` asked for). The device is recorded, so a
+replay shows and hides them as the player saw. `touchStick: 'floating'`: a thumb anywhere in the
+lower left (`.stick-zone`, about 45% of the width, the lower 60% in portrait and 75% in landscape;
+the placed buttons stay on top of it) brings the joystick's base under it, still writing
+`input.analog` (`touch.rects().zone`). `touchDensity` (default 2, `DEFAULT_TOUCH_DENSITY`): while the
+touch controls show on a phone (the viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`)
+the art has at least that many CSS pixels per art pixel, in both orientations and again at every
+rotation (`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone at DPR 2
+or 3 draws 422×195 instead of 563×260, so text and targets are thumb-sized; the world in view (the
+camera's view height, the field of view) is the same. Headless it follows `touch: true`, as a page
+with touch controls. Riftlight and Rift Runner pass `touchDensity: 0` until their landscape HUDs
+fit 195 rows.
+
 Automatic moves: **step up / step down** (autostep 0.4; Rapier's autostep alone misses a
 riser met at speed, so `riseAhead` lifts the body onto a flat step found just ahead and holds
 it there while it crosses the edge, `TUNING.body.stepAssist`), **teeter** at edges, **fall**, soft

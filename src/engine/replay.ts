@@ -50,6 +50,11 @@ export interface Recording {
    * warns when its own differs. A page resized during the level is not followed.
    */
   readonly view?: Viewport;
+  /**
+   * The touch density it framed with (`EngineOptions.touchDensity`, while touch controls showed: the
+   * least CSS pixels per art pixel on a phone); left out for none. A headless replay frames with it.
+   */
+  readonly density?: number;
 }
 
 /** Frames a recording keeps: an hour at 60 fps. */
@@ -73,6 +78,7 @@ export function recordingProblem(v: unknown): string | null {
     if (!v || typeof v !== 'object' || !size(v.width) || !size(v.height) || !(size(v.dpr) && v.dpr! > 0)) return 'view must be { width, height, dpr } (sizes from 0, dpr above 0)';
   }
   if (r.device !== undefined && !INPUT_DEVICES.includes(r.device)) return `device must be ${INPUT_DEVICES.join(', ')}`;
+  if (r.density !== undefined && !(typeof r.density === 'number' && Number.isFinite(r.density) && r.density > 0)) return 'density must be a number above 0';
   if (r.from !== undefined) {
     const p = snapshotProblem(r.from);
     if (p) return `from: ${p}`;

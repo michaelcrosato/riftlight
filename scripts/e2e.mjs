@@ -772,7 +772,9 @@ async function runTouch(browserExe) {
     const cx = stick.x + stick.width / 2;
     const cy = stick.y + stick.height / 2;
     const t0 = (await state(page)).target;
-    await page.evaluate(() => window.__PIXEL_ENGINE__.input.noteDevice('keyboard')); // the joystick must make it touch, not the page's start
+    // a phone: fewer, bigger art pixels, two CSS pixels each at least (EngineOptions.touchDensity)
+    const dense = await state(page);
+    check(dense.framing.scale >= 2 && dense.resolution.height < 270, `on a landscape phone with touch controls the art is ${dense.resolution.width}×${dense.resolution.height} at ${dense.framing.scale} CSS px per art px`);
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx, cy - 60, { steps: 4 });
@@ -820,6 +822,79 @@ async function runTouch(browserExe) {
       return { pressed: e.recording().frames.slice(from).flatMap((f) => f.pressed ?? []), device: e.input.device };
     });
     check(swiped.pressed.includes('SwipeLeft') && swiped.device === 'touch', `a flick on the game presses SwipeLeft, recorded (${JSON.stringify(swiped)})`);
+
+    // A pad or the keyboard picked up: the controls step aside (the game looks like the pad game); the next touch brings them back.
+    const away = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const frames = (n) => new Promise((res) => { let k = 0; const f = () => (++k >= n ? res() : requestAnimationFrame(f)); requestAnimationFrame(f); });
+      const shown = () => ({ visible: e.touch.visible, away: e.touch.deviceHidden, stick: getComputedStyle(document.querySelector('.touch-ui .stick')).display !== 'none', buttons: e.touch.rects().buttons.length });
+      const pad = { connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })) };
+      const real = navigator.getGamepads;
+      navigator.getGamepads = () => [pad];
+      await frames(2);
+      pad.buttons[0] = { pressed: true, value: 1 }; // Cross
+      await frames(3);
+      pad.buttons[0] = { pressed: false, value: 0 };
+      await frames(2);
+      const onPad = { device: e.input.device, ...shown() };
+      navigator.getGamepads = real;
+      const c = e.renderer.renderer.domElement;
+      const r = c.getBoundingClientRect();
+      const at = (type) => c.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 61, isPrimary: true, clientX: r.left + r.width * 0.6, clientY: r.top + r.height * 0.4, bubbles: true }));
+      at('pointerdown');
+      at('pointerup');
+      await frames(2);
+      const touched = { device: e.input.device, ...shown() };
+      e.input.noteDevice('keyboard');
+      await frames(2);
+      const keys = shown();
+      at('pointerdown');
+      at('pointerup');
+      await frames(2);
+      return { onPad, touched, keys, back: shown() };
+    });
+    check(
+      away.onPad.device === 'pad' && !away.onPad.visible && away.onPad.away && !away.onPad.stick && away.onPad.buttons === 0 && !away.keys.visible && away.touched.visible && away.touched.stick && away.back.visible,
+      `a pad picked up hides the touch controls, a touch brings them back, the keyboard hides them again (${JSON.stringify(away)})`,
+    );
+
+    // A floating joystick (TouchControls stick: 'floating'): its base comes under the thumb anywhere in the lower left.
+    const floating = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const TC = e.touch.constructor;
+      e.touch.show(false);
+      const f = new TC(document.getElementById('app'), e.input, [{ label: 'A', code: 'Space', at: { x: 50, y: 50, size: 70 } }], [], { stick: 'floating' });
+      const zone = f.rects().zone;
+      const rest = f.rects().stick;
+      const z = f.root.querySelector('.stick-zone');
+      const x = zone.left + zone.width * 0.6;
+      const y = zone.top + zone.height * 0.4;
+      const ev = (type, dx, dy) => z.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 71, isPrimary: true, clientX: x + dx, clientY: y + dy, bubbles: true }));
+      ev('pointerdown', 0, 0);
+      const base = f.root.querySelector('.stick').getBoundingClientRect();
+      ev('pointermove', 0, -50);
+      const analog = { ...e.input.analog };
+      ev('pointerup', 0, -50);
+      const after = f.root.querySelector('.stick').getBoundingClientRect();
+      const btn = f.root.querySelector('button.placed').getBoundingClientRect();
+      const onTop = document.elementFromPoint(btn.left + btn.width / 2, btn.top + btn.height / 2)?.closest('button')?.dataset.code ?? null;
+      const out = {
+        zone: [zone.left, zone.width / innerWidth, zone.bottom, zone.height / innerHeight].map((v) => Math.round(v * 100) / 100),
+        under: Math.round(Math.hypot(base.left + base.width / 2 - x, base.top + base.height / 2 - y)),
+        analog,
+        released: e.input.analog.y === 0,
+        rest: Math.round(Math.hypot(after.left - rest.left, after.top - rest.top)),
+        onTop,
+        device: e.input.device,
+      };
+      f.root.remove();
+      e.touch.show(true);
+      return out;
+    });
+    check(
+      floating.zone[0] === 0 && Math.abs(floating.zone[1] - 0.45) < 0.02 && Math.abs(floating.zone[3] - 0.75) < 0.02 && floating.under <= 2 && floating.analog.y > 0.3 && floating.released && floating.rest <= 1 && floating.onTop === 'Space' && floating.device === 'touch',
+      `a floating stick's base comes under the thumb in the lower left 45% × 75% (landscape), drives input.analog, goes back to rest, and a placed button stays on top (${JSON.stringify(floating)})`,
+    );
 
     // ⓘ shows the debug panel.
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerdown');

@@ -237,6 +237,27 @@ lets both go and gives the light back (`light(null)`) when a level unloads, and 
 round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,
 the team, danger): give it back on a title screen. Motion and the touchpad are input: they reach
 a game through `ctx.input` (recorded), never by reading `dualsense.gyro`, `accel` or `touches`
-(reading them turns the hub's own Motion aim off); `navigator.hid` and `getUserMedia` are never
-used (`npm run lint`). Tests pass a fake: `Engine.headless(game, { hubSettings })`
+itself (reading the gyro turns the hub's own Motion aim off): `ctx.input.touchpad = true` turns
+touchpad swipes and taps into presses (`TOUCHPAD_KEYS`), and `settings: { motion: true }` gives the
+game motion aim with a settings row and its sensitivity (`input.motion`, on by default while the
+hub's own Motion aim is), both read through `hubPadInput` only while asked for
+(*Motion and the touchpad*, below); `navigator.hid` and `getUserMedia`
+are never used (`npm run lint`). Tests pass a fake: `Engine.headless(game, { hubSettings })`
 (`src/engine/hub/settings.test.ts`; the systems e2e suite does it in a page).
+
+### Motion and the touchpad
+
+The DualSense's touchpad and motion come through 52in1 (`AIHubSettings.dualsense`, which the
+engine hands to `input.dualsense`; nothing outside 52in1 or headless): read only while the game
+asks, and never during a replay, so what they do arrives as recorded input. `ctx.input.touchpad =
+true`: a quick swipe on the touchpad presses `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap
+`PadTouchpadTap` (`TOUCHPAD_KEYS`, `touchpadGesture`: one finger, a swipe within 0.5 s over 40%
+of the pad's height, a tap within 0.3 s), once, recorded, a use of the pad; its click is the button
+`PadTouchpad`. Give each a button that does the same. Motion aim (`input.motion = { on, sensitivity
+}`; a game with `settings: { motion: true }` has the engine keep it at the player's setting,
+`engine.motionOn`): while on and the pad is in use, the controller's turns add to the right stick's,
+gyro × dt × sensitivity into `mouseDelta` (8 pointer pixels a degree past a 4°/s still hand,
+`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. Reading the gyro
+turns 52in1's own Motion aim off, so it is read only while on; the touchpad's fingers never turn
+it off.
+

@@ -675,9 +675,37 @@ canvas[data-engine-canvas] {
 }
 
 .touch-ui.hidden .stick,
+.touch-ui.hidden .stick-zone,
 .touch-ui.hidden .pad,
 .touch-ui.hidden > button {
   display: none;
+}
+
+/* a floating joystick (TouchControls stick: 'floating'): a thumb anywhere in the lower left
+   brings its base under it; at rest it waits, faint, where a fixed one sits */
+.touch-ui .stick-zone {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 75%;
+  pointer-events: auto;
+  touch-action: none;
+}
+
+@media (orientation: portrait) {
+  .touch-ui .stick-zone {
+    height: 60%;
+  }
+}
+
+.touch-ui[data-stick='floating'] .stick {
+  pointer-events: none;
+  opacity: 0.55;
+}
+
+.touch-ui[data-stick='floating'] .stick.held {
+  opacity: 1;
 }
 
 .touch-ui .bar {

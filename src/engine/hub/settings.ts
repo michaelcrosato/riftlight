@@ -10,8 +10,11 @@
  * controller's extras, src/engine/hub/dualsense.ts). docs/engine/hub.md *The player's settings*.
  *
  * Never read `dualsense.gyro`, `accel` or `touches` here: reading them turns the hub's own Motion
- * aim off. They are input, and input reaches a game through `ctx.input` (recorded).
+ * aim off. They are input, and input reaches a game through `ctx.input` (recorded): `hubPadInput`
+ * hands them to `input.dualsense`, which reads them only while a game asks (its motion aim on, its
+ * touchpad on).
  */
+import type { DualSenseInput } from '../input';
 
 /** The DualSense's extras the player allows games (all false while none is connected). */
 export interface DualSenseFlags {
@@ -64,6 +67,10 @@ export type TriggerEffect =
 
 /** `AIHubSettings.dualsense` as the hub gives it: the parts the engine uses. */
 export interface HubDualSenseSource extends Partial<DualSenseFlags> {
+  /** How fast the controller turns, degrees a second. Reading it turns the hub's own Motion aim off (`hubPadInput` only). */
+  readonly gyro?: { readonly x: number; readonly y: number; readonly z: number };
+  /** The fingers on the touchpad, at most two, `x` and `y` 0..1 from its top left (`hubPadInput` only). */
+  readonly touches?: readonly { readonly id: number; readonly x: number; readonly y: number }[];
   light?(colour: string | null): void;
   trigger?(which: TriggerSide, effect: TriggerEffect | null): void;
   /** A node in `context` that plays from the controller's speaker, or null. */
@@ -204,4 +211,37 @@ export class HubSettings {
     this.source?.removeEventListener?.('change', this.onSourceChange);
     this.listeners.clear();
   }
+}
+
+/** A number, or 0. */
+const num = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n) ? n : 0);
+
+/**
+ * A DualSense's motion and touchpad from 52in1 (`window.AIHubSettings.dualsense`) for
+ * `input.dualsense`: `motion` / `touchpad` say whether the player lets games read them, and
+ * `gyro()` / `touches()` read them, only when called (Input calls them only while a game has its
+ * motion aim or its touchpad on: reading `gyro` turns 52in1's own Motion aim off). Null values
+ * where the hub gives nothing usable.
+ */
+export function hubPadInput(hub: HubSettings): DualSenseInput {
+  const pad = () => {
+    const d = hub.source?.dualsense;
+    return d && typeof d === 'object' ? d : null;
+  };
+  return {
+    get motion() {
+      return hub.values.dualsense.motion;
+    },
+    get touchpad() {
+      return hub.values.dualsense.touchpad;
+    },
+    gyro: () => {
+      const g = pad()?.gyro;
+      return g && typeof g === 'object' ? { x: num(g.x), y: num(g.y), z: num(g.z) } : null;
+    },
+    touches: () => {
+      const t = pad()?.touches;
+      return Array.isArray(t) ? t.slice(0, 2).map((f) => ({ id: num(f?.id), x: Math.min(1, Math.max(0, num(f?.x))), y: Math.min(1, Math.max(0, num(f?.y))) })) : null;
+    },
+  };
 }

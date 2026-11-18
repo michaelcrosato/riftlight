@@ -1,4 +1,4 @@
-import type { Input } from './input';
+import type { Input, InputDevice } from './input';
 
 /** Corner of the screen a placed touch button is measured from (inside the safe area). */
 export type TouchCorner = 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
@@ -65,11 +65,51 @@ interface ButtonView {
 }
 
 /**
- * On-screen controls for phones and tablets: a virtual joystick (bottom-left) that feeds
- * `input.analog`, action buttons (bottom-right, in a grid or placed one by one with `at`)
- * that press key codes, and a small top bar (debug panel, Pixel/Raw, resolution, looks).
- * Camera: drag on the game to orbit/look, pinch to zoom (handled by Input.attachPointer).
+ * Whether touch controls stand aside for another device (`TouchControls.follow`): a change of the
+ * device in use to a pad or the keyboard puts them `away`, a change back to touch brings them
+ * back; a device that only stays what it was moves nothing (a page that starts on the keyboard
+ * keeps the controls `?touch=1` asked for). Plain data: it follows the recorded `input.device`, so
+ * a replay shows and hides them as the player saw.
+ */
+export class TouchFollow {
+  away = false;
+
+  constructor(private seen: InputDevice) {}
+
+  /** The device in use now; true when `away` changed. */
+  follow(device: InputDevice): boolean {
+    if (device === this.seen) return false;
+    this.seen = device;
+    const away = device !== 'touch';
+    if (away === this.away) return false;
+    this.away = away;
+    return true;
+  }
+}
+
+/** How the on-screen joystick sits (`TouchControlsOptions.stick`, `EngineOptions.touchStick`). */
+export type TouchStick = 'fixed' | 'floating';
+
+export interface TouchControlsOptions {
+  /**
+   * `fixed` (default): the joystick waits at the bottom left. `floating`: a thumb anywhere in the
+   * lower left (`.stick-zone`: about 45% of the width, the lower 60% in portrait and 75% in
+   * landscape; the placed buttons stay on top of it) brings the joystick's base under it.
+   */
+  stick?: TouchStick;
+}
+
+/**
+ * On-screen controls for phones and tablets: a virtual joystick (bottom-left, or floating under
+ * the thumb) that feeds `input.analog`, action buttons (bottom-right, in a grid or placed one by
+ * one with `at`) that press key codes, and a small top bar (debug panel, Pixel/Raw, resolution,
+ * looks). Camera: drag on the game to orbit/look, pinch to zoom (handled by Input.attachPointer).
  * Shown automatically on coarse pointers, or with `?touch=1`.
+ *
+ * Touch is an add-on: when a player picks up a pad or a keyboard (`input.device` turns `pad` or
+ * `keyboard`; the engine calls `follow` each frame) the joystick and buttons step aside and the
+ * game looks like the pad or keyboard game; the next touch brings them back. The device is
+ * recorded, so a replay shows and hides them as the player saw.
  *
  * A game drives it at runtime: `set(code, state)` (icon, cooldown, badge, disabled, hidden),
  * `show(false)` while a menu owns the screen, and `rects()` to lay its HUD out around the
@@ -79,19 +119,29 @@ export class TouchControls {
   readonly root: HTMLDivElement;
   private readonly views: ButtonView[] = [];
   private readonly stick: HTMLDivElement;
+  private readonly zone: HTMLDivElement | null;
   private readonly bar: HTMLDivElement;
+  /** The game's wish (`show`). */
   private shownAll = true;
+  /** A pad or the keyboard is the device in use (`follow`). */
+  private readonly device: TouchFollow;
   private releaseStick: () => void = () => {};
+  readonly stickMode: TouchStick;
 
   constructor(
     container: HTMLElement,
     private readonly input: Input,
     buttons: readonly TouchButton[] = DEFAULT_TOUCH_BUTTONS,
     topBar: readonly TouchButton[] = [],
+    options: TouchControlsOptions = {},
   ) {
+    this.stickMode = options.stick === 'floating' ? 'floating' : 'fixed';
+    this.device = new TouchFollow(input.device);
     this.root = document.createElement('div');
     this.root.className = 'touch-ui';
+    this.root.dataset.stick = this.stickMode;
     this.root.innerHTML = `
+      ${this.stickMode === 'floating' ? '<div class="stick-zone" data-t="zone"></div>' : ''}
       <div class="stick" data-t="stick"><div class="knob"></div></div>
       <div class="pad"></div>
       <div class="bar">${topBar.map((b, i) => `<button data-top="${i}">${b.label}</button>`).join('')}</div>`;
@@ -111,7 +161,8 @@ export class TouchControls {
     });
     if (!topBar.length) this.bar.remove();
     this.stick = this.root.querySelector<HTMLDivElement>('[data-t="stick"]')!;
-    this.bindStick(this.stick);
+    this.zone = this.root.querySelector<HTMLDivElement>('[data-t="zone"]');
+    this.bindStick(this.zone ?? this.stick, this.stick);
   }
 
   static wanted(search = location.search): boolean {
@@ -129,19 +180,40 @@ export class TouchControls {
   /**
    * Show or hide the joystick and the action buttons (the top bar stays): hide them while a
    * menu or a full-screen view owns the screen. Hiding releases every held key and the stick.
+   * While a pad or the keyboard is in use they stay hidden either way (`follow`).
    */
   show(on: boolean): void {
     if (on === this.shownAll) return;
     this.shownAll = on;
+    this.applyShown();
+  }
+
+  /**
+   * The device in use (the engine calls it each frame with `input.device`, recorded): when it
+   * changes to a pad or the keyboard the controls step aside, and the next touch brings them back.
+   */
+  follow(device: InputDevice): void {
+    if (this.device.follow(device)) this.applyShown();
+  }
+
+  /** On screen now: the game shows them (`show`) and touch is the device in use (`follow`). */
+  get visible(): boolean {
+    return this.shownAll && !this.device.away;
+  }
+
+  /** Hidden because a pad or the keyboard is in use (`follow`): lay the HUD out for that device, not around the controls. */
+  get deviceHidden(): boolean {
+    return this.device.away;
+  }
+
+  private applyShown(): void {
+    const on = this.visible;
+    if (on !== this.root.classList.contains('hidden')) return; // already so
     this.root.classList.toggle('hidden', !on);
     if (!on) {
       for (const v of this.views) this.release(v);
       this.releaseStick();
     }
-  }
-
-  get visible(): boolean {
-    return this.shownAll;
   }
 
   /**
@@ -150,10 +222,11 @@ export class TouchControls {
    * drawn), so a HUD laid out around them doesn't move when a contextual button comes and goes.
    * Nothing but the bar while `show(false)`.
    */
-  rects(): { stick: DOMRect | null; buttons: { code: string; label: string; hidden: boolean; rect: DOMRect }[]; bar: DOMRect | null } {
-    if (!this.shownAll) return { stick: null, buttons: [], bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null };
+  rects(): { stick: DOMRect | null; zone: DOMRect | null; buttons: { code: string; label: string; hidden: boolean; rect: DOMRect }[]; bar: DOMRect | null } {
+    if (!this.visible) return { stick: null, zone: null, buttons: [], bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null };
     return {
       stick: this.stick.getBoundingClientRect(),
+      zone: this.zone?.getBoundingClientRect() ?? null,
       buttons: this.views.map((v) => ({ code: v.def.code, label: v.def.label, hidden: v.shown.hidden, rect: v.el.getBoundingClientRect() })),
       bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null,
     };
@@ -248,8 +321,14 @@ export class TouchControls {
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
 
-  private bindStick(base: HTMLDivElement): void {
+  /**
+   * The joystick: a press on `hit` (the base itself, or the floating zone) holds it. A fixed
+   * stick's centre is its base's; a floating one's base moves under the thumb (whole on screen)
+   * and goes back to rest when let go.
+   */
+  private bindStick(hit: HTMLDivElement, base: HTMLDivElement): void {
     const knob = base.firstElementChild as HTMLDivElement;
+    const floating = hit !== base;
     let id: number | null = null;
     let cx = 0;
     let cy = 0;
@@ -267,31 +346,47 @@ export class TouchControls {
       this.input.analog.x = dx / r;
       this.input.analog.y = -dy / r; // screen up = forward
     };
-    base.addEventListener('pointerdown', (e) => {
+    hit.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      if (floating && id !== null) return; // one thumb holds it
       this.input.noteTouch();
       id = e.pointerId;
-      capture(base, e.pointerId);
-      const rect = base.getBoundingClientRect();
-      cx = rect.left + rect.width / 2;
-      cy = rect.top + rect.height / 2;
+      capture(hit, e.pointerId);
+      if (floating) {
+        const r = base.offsetWidth / 2; // its border included: centred on the thumb
+        const box = this.root.getBoundingClientRect();
+        cx = Math.min(Math.max(e.clientX, box.left + r), box.right - r);
+        cy = Math.min(Math.max(e.clientY, box.top + r), box.bottom - r);
+        base.style.left = `${cx - box.left - r}px`;
+        base.style.top = `${cy - box.top - r}px`;
+        base.style.bottom = 'auto';
+        base.classList.add('held');
+      } else {
+        const rect = base.getBoundingClientRect();
+        cx = rect.left + rect.width / 2;
+        cy = rect.top + rect.height / 2;
+      }
       set(e.clientX, e.clientY);
     });
-    base.addEventListener('pointermove', (e) => {
+    hit.addEventListener('pointermove', (e) => {
       if (e.pointerId === id) set(e.clientX, e.clientY);
     });
     this.releaseStick = () => {
       if (id === null) return;
       id = null;
       knob.style.transform = '';
+      if (floating) {
+        base.style.left = base.style.top = base.style.bottom = ''; // back to rest
+        base.classList.remove('held');
+      }
       this.input.analog.x = 0;
       this.input.analog.y = 0;
     };
     const end = (e: PointerEvent) => {
       if (e.pointerId === id) this.releaseStick();
     };
-    base.addEventListener('pointerup', end);
-    base.addEventListener('pointercancel', end);
+    hit.addEventListener('pointerup', end);
+    hit.addEventListener('pointercancel', end);
   }
 }
 

@@ -21,7 +21,7 @@ import {
 import { SCREEN_LAYER } from './renderView';
 import { convertToTexture, float, min, pass, renderOutput, rtt, screenUV, select, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
-import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, type Viewport, frameView } from '../framing';
+import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, touchScale, type Viewport, frameView } from '../framing';
 import { FILTERS, type FilterContext, applyFilter, filterParams, getFilter } from './filters';
 import {
   type Look,
@@ -75,6 +75,8 @@ export interface PixelRendererOptions {
   filters?: readonly string[];
   /** A full look (per-layer pixel art and filters); wins over `filters` and `edges`. */
   look?: Look;
+  /** The least CSS pixels per art pixel on a phone (`touchScale`; `EngineOptions.touchDensity`), 0 for none. */
+  touchDensity?: number;
 }
 
 export interface CapturedFrame {
@@ -184,6 +186,7 @@ export class PixelRenderer implements View {
   private _baseResolution: Resolution;
   private _resolution: Resolution;
   private _aspect: AspectMode;
+  private _touchDensity: number;
   /** Device pixels per art pixel (the framing's integer scale). */
   private readonly scale = uniform(1);
   private _look: Look;
@@ -213,6 +216,7 @@ export class PixelRenderer implements View {
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
     this._aspect = options.aspect ?? 'fill';
+    this._touchDensity = options.touchDensity ?? 0;
     this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
     this.plan = planLook(this._look);
     this.syncLookState();
@@ -438,6 +442,15 @@ export class PixelRenderer implements View {
     this.layout();
   }
 
+  get touchDensity(): number {
+    return this._touchDensity;
+  }
+
+  setTouchDensity(cssPerArt: number): void {
+    this._touchDensity = cssPerArt > 0 ? cssPerArt : 0;
+    this.layout();
+  }
+
   /** The camera the frame is drawn from (mirrors reflect it). */
   get activeCamera(): Camera {
     return this.camera;
@@ -474,7 +487,7 @@ export class PixelRenderer implements View {
   layout(): void {
     const rect = this.container.getBoundingClientRect();
     this.viewport = { width: rect.width, height: rect.height, dpr: window.devicePixelRatio };
-    const { framing: f, resolution } = frameView(this.viewport, this._baseResolution, this._aspect, this._resolution);
+    const { framing: f, resolution } = frameView(this.viewport, this._baseResolution, this._aspect, this._resolution, touchScale(this.viewport, this._touchDensity));
     this.framing = f;
     this._resolution = resolution;
     this.scale.value = f.scale; // a pixel-art pass renders at canvas / (scale × pixel size)
