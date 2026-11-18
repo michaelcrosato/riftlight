@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.65.0
+
+- **`input.beginFrame(now, dt, pads?, runs?)`**: a new optional `runs` (default true). The engine passes false for a render-loop frame that never reaches the game: paused, the settings panel open, a level loading. No pad joins on such a frame (`joinWith`), and a join press held from it does not join later. Before, such a poll added the pad to `input.joined` but cleared `joinedNow` before any game read it, and recorded nothing, so the pad stayed joined with no seat.
+- **Couch co-op twins** (one controller seen as two pads: DS4Windows / ViGEm, Steam Input without HidHide): while player 1 is on a pad, a join press within `TWIN_SECONDS.window` (new export, 50 ms) of the same press on player 1's pad in use is that pad's twin and never joins. This holds whichever press comes first, and also while that pad holds the code; before, only a press in the same poll counted. So while player 1 is on a pad a join now waits `TWIN_SECONDS.wait` (33 ms), and its pad drives nothing of player 1's meanwhile; with player 1 on the keyboard it joins at once, as before. Both are timed by the frames' `dt` (game time; a poll at least), so they last as long at 120 fps as at 60. A join is a code that went down in that poll, not one held from before. Joins are recorded, so replays never time them.
+- **`input.clearQueued()`** with no codes also drops each pad's own queued presses (`input.player(slot)`), not only player 1's. The engine calls it during a pause, so a couch guest's press made under the settings panel no longer fires once play resumes (that press was in no recorded frame). With codes it still clears only the merged input's (player 1's).
+
 ## 0.64.0
 
 - **`CameraConfig.minWidth`** (ortho presets: iso, topdown, side; docs/engine/camera.md): the fewest metres the picture shows across. A narrow window, such as a phone held upright, zooms the camera out until they fit, below `minZoom` if it must. The zoom asked for (the config's `zoom`, `?zoom=`, `setZoom`, the player's wheel and + / -) is kept apart from `rig.zoom`, the zoom on screen (the smaller of the two), and comes back on a wider window; the wheel and + / - zoom from the zoom on screen. `CameraRigState.wanted` (new, optional) carries the zoom asked for through `engine.snapshot()`. Without `minWidth` nothing changes.

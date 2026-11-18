@@ -5,7 +5,7 @@ import { languageName } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import { UiCanvas } from './kit';
-import { coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
+import { controllerMenu, coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
@@ -86,12 +86,17 @@ describe("the settings' engine page", () => {
   type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void };
   const row = (menu: { items(): readonly unknown[] }, id: string) => menu.items().find((w) => (w as Row).id === id) as Row;
 
-  it("the settings page holds the controller's: button prompts (PlayStation or Xbox) and vibration, the engine's own settings", () => {
+  it("the settings open the controller's page: button prompts (PlayStation or Xbox) and vibration, the engine's own settings", () => {
     const { chosen, rumbles, h } = engineHost();
-    const menu = settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    let opened: ReturnType<typeof controllerMenu> | null = null;
+    const settings = settingsMenu({ ...(h as object), openMenu: (m: never) => (opened = m), applySettings: () => {} } as never);
+    expect(settings.items().map((w) => (w as Row).id), 'Settings: the Controller page, its rows not').toEqual(expect.arrayContaining(['controller', 'engine']));
+    expect(settings.items().map((w) => (w as Row).id)).not.toContain('padGlyphs');
+    expect(settings.activate('controller')).toBe(true);
+    const menu = opened as unknown as ReturnType<typeof controllerMenu>;
+    expect(menu.id).toBe('controller');
     const ids = menu.items().map((w) => (w as Row).id);
-    expect(ids).toContain('padGlyphs');
-    expect(ids).toContain('vibration');
+    expect(ids).toEqual(['padGlyphs', 'vibration']);
     expect(ids).not.toContain('glyphs'); // prompts follow the device used last by themselves
     expect(row(menu, 'padGlyphs').get!()).toBe(0); // PlayStation unless chosen
     row(menu, 'padGlyphs').set!(1 as never);
@@ -101,13 +106,13 @@ describe("the settings' engine page", () => {
     expect([chosen.vibration, rumbles.length]).toEqual([0.4, 1]); // in steps of 0.05, and a pulse to feel it
   });
 
-  it('motion aim and its sensitivity are there while 52in1 lets games read a DualSense’s motion, as the engine’s settings', () => {
+  it('motion aim and its sensitivity are on the Controller page while 52in1 lets games read a DualSense’s motion, as the engine’s settings', () => {
     const { chosen, dualsense, h } = engineHost();
-    const menu = () => settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    const menu = () => controllerMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
     const ids = () => menu().items().map((w) => (w as Row).id);
     expect(ids()).not.toContain('motion');
     dualsense.motion = true;
-    expect(ids()).toEqual(expect.arrayContaining(['vibration', 'motion', 'motionSensitivity']));
+    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity']);
     expect(row(menu(), 'motion').get!()).toBe(true); // on by default (the engine's motionOn)
     row(menu(), 'motion').set!(false as never);
     expect([chosen.motion, row(menu(), 'motion').get!()]).toEqual([false, false]);
@@ -123,7 +128,7 @@ describe("the settings' engine page", () => {
     expect(chosen.motionSensitivity).toBe(1);
   });
 
-  it('in every stored language the motion rows fit the Settings menu: each label whole in its column, each hint whole on its line', () => {
+  it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its line', () => {
     const translations = riftlightTranslations();
     /** Lines the menu cut short. */
     const cut: string[] = [];
@@ -131,9 +136,10 @@ describe("the settings' engine page", () => {
       for (const code of ['en', ...Object.keys(translations)]) {
         installLanguage(new Lang(riftlightLines(), translations, { code }));
         const { dualsense, h } = engineHost();
-        dualsense.motion = true;
-        const menu = settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
-        for (const id of ['motion', 'motionSensitivity']) {
+        const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
+        for (const [id, motion] of [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false]] as const) {
+          dualsense.motion = motion;
+          const menu = id === 'controller' ? settingsMenu(host) : controllerMenu(host);
           menu.focusId(id); // its hint shows under the rows
           /** What the menu writes, as written (cut with a "." where it didn't fit). */
           const drawn: string[] = [];
@@ -145,7 +151,7 @@ describe("the settings' engine page", () => {
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const shown = row(menu, id) as Row & { label: string; hint: string };
           if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
-          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint: ${shown.hint}`);
+          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
         }
       }
     } finally {

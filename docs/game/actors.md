@@ -20,12 +20,13 @@ sensitivity; turned left, the aim turns left: `turnOnScreen`), taken once a fram
 where the hero aims; it aims along that direction with the same assist as the stick, the stick
 sets it outright while it leans, and it lets go `AIM.hold` (6) s after it last turned or the hero
 last attacked or cast along it, as the mouse's aim does (a snapshot keeps it: `shell.motionAim`).
-It lets go too when motion aim goes off (the Settings row, or 52in1 no longer lets games read the
-motion: the shell sees `input.motion.on` go off live and sends `{ rl: 'motion', on: false }`, so a
-replay lets go at the same frame), on the way into town or a level (a new run and a load go to
-town) and at a death; while a panel is open (the inventory) a turn of the controller never turns it.
+It lets go too while motion aim is off (the Settings row, or 52in1 no longer lets games read the
+motion: on any live frame with `input.motion.on` off and a direction kept, a save-state restored
+while steering too, the shell sends `{ rl: 'motion', on: false }`, so a replay lets go at the same
+frame), on the way into town or a level (a new run and a load go to town) and at a death; while a
+panel is open (the inventory) a turn of the controller never turns it.
 The engine's lean of the aim stick is off (`input.motion.lean = false`), so the stick aims as the
-stick alone. Settings has **Motion aim** and **Motion sensitivity** (the engine's `motion` and
+stick alone. Settings → Controller has **Motion aim** and **Motion sensitivity** (the engine's `motion` and
 `motionSensitivity`) while 52in1 lets games read the controller's motion; with Motion aim off,
 52in1's own Motion aim (if the player has it on there) steers the right stick again half a second
 later, as the engine leaves it (the row's hint says so). Keys, the left stick and

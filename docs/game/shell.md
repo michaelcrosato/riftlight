@@ -106,15 +106,24 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
   `AIM.assist`, else `autoAim` along the move), enters each stage beside player 1 (`besideSpot`:
   seat 2 to the right, 3 to the left, 4 `COOP.below` (3.2 m) below, so that no hero's body or tag
   covers another's on screen),
-  is put beside player 1 when it strays past `COOP.leash` (12 m), and rises beside player 1
-  `COOP.rise` (5) s after it falls. Player 1's death is the run's, as always (the recap, then town
-  with everyone). Monsters stay as they are for one player: balance is not part of this.
+  is put beside player 1 when it strays past `COOP.leash` (12 m) or past `COOP.edge` (0.95) of the
+  screen as the camera shows it, its feet or its head (a phone held upright shows less across than
+  the leash: there a guest walking sideways comes back at about 9 m, never off screen), and rises
+  beside player 1 `COOP.rise` (5) s after it falls. Player 1's death is the run's, as always (the
+  recap, then town with everyone). Monsters stay as they are for one player: balance is not part of this.
 - **The camera** follows the group's centre (`coop.centre`, no aim lead) and zooms out as it
-  spreads, down to `COOP.zoomOut` of its zoom (`coop.zoom`).
+  spreads, down to `COOP.zoomOut` of its zoom (`coop.zoom`): every hero standing projected into the
+  view (`CoopHost.view`: the camera's screen axes, the picture's aspect), the zoom that keeps them
+  within `COOP.spread` (0.7) of the way to its edge, so it zooms out by how far across the screen they
+  are, sooner on a phone held upright (`game/coop.view.test.ts` walks a guest away at 390×844).
 - **Replays and save-states**: the guests' pads and their joins are recorded input, so a couch
   session replays to the same fingerprint (which holds the guests: `coop.view`); a save-state is
   refused while a guest plays (it holds player 1's hero alone; a restore sends guests home): replay
-  the recording instead. `rl.state().coop` lists the guests. Tested headless in
+  the recording instead. Where a guest about to leave the screen is put depends on the viewport
+  (`COOP.edge`, the camera's zoom: a phone held upright shows less across), as the HUD's layout and
+  pointer aim do: a recording keeps the viewport the level began with (`Recording.view`) and a
+  headless replay frames for it, but a page resized or turned mid-level is not followed, so from
+  there a replay can put a guest elsewhere (docs/engine/headless.md). `rl.state().coop` lists the guests. Tested headless in
   `game/coop.test.ts` (a two-pad clear of depth 1 and its replay) and in a page at 1920×1080 by
   the riftlight e2e suite (`runRiftlightCouch`).
 
@@ -157,8 +166,10 @@ level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, death
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
-store, and the engine's own settings (the controller's button prompts and vibration on the Settings
-page, and motion aim and its sensitivity there while 52in1 lets games read a DualSense's motion; pixel art, pixel size, frame rate, debug info: Settings → Engine) in
+store, and the engine's own settings (the controller's button prompts and vibration, and motion aim
+and its sensitivity while 52in1 lets games read a DualSense's motion: Settings → Controller, so the
+Settings list fits a 1920×1080 screen with them; pixel art, pixel size, frame rate, debug info:
+Settings → Engine) in
 `pixel-engine:settings:riftlight`. Prompts follow the input used last (`engine.controls.device`: a
 touch names the keys while no touch controls show) by themselves, the HUD's glyphs as the lines'
 `{key:action}`: there is no setting for which device they show. The menus never read storage: they read `Riftlight.saves` (`SavesView`),

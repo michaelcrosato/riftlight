@@ -6,18 +6,22 @@
 // - the item windows' button legend keeps clear of the HUD (at 960×540 the inventory's would sit
 //   over the mana orb, the skill bar and the minimap);
 // - a landscape phone draws Riftlight's denser art (two CSS pixels per art pixel at least);
-// - the Arena (?game=arena) gets Riftlight's touch buttons, each naming a control it has.
+// - the Arena (?game=arena) gets Riftlight's touch buttons, each naming a control it has;
+// - a phone's recording (and save-state) made in 52in1 replays with ≡ where 52in1 put it, below the
+//   hub's wake band, with no hub behind the replay: the HUD it lays out, and a tap lands on, is the
+//   recorded one.
 import { afterEach, describe, expect, it } from 'vitest';
 import { Lang } from '../../engine';
 import { gameById } from '../../games';
-import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
+import { type HeadlessRiftlight, headlessRiftlight, makeRiftlight } from '../headless';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import type { Box } from '../ui/layout';
 import type { RealLoot } from '../wire/loot';
 import { CONTROLS, KEYS } from './controls';
 import { ARENA_TOUCH_BUTTONS } from '../combat/arena';
-import { RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from './touch';
+import { HUB_WAKE, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from './touch';
+import { SaveStore } from './save';
 
 const T = 60_000;
 let h: HeadlessRiftlight | null = null;
@@ -214,4 +218,44 @@ describe('the Arena on a phone', () => {
     TOUCH_CODES.skills.forEach((c, i) => expect(labels[c]).toBe(CONTROLS[`skill${i + 1}` as 'skill1'].touch));
     expect(ARENA_TOUCH_BUTTONS.length).toBe(RIFTLIGHT_TOUCH_BUTTONS.length - 2);
   });
+});
+
+describe('a phone in 52in1, replayed without the hub', () => {
+  it(
+    'lays the touch controls out as the recorded page had them: ≡ below the wake band, the HUD around it the recorded one (a replay and a save-state)',
+    async () => {
+      const viewport = { width: 390, height: 844, dpr: 3 };
+      const store = new SaveStore(null);
+      // in 52in1 (the hub's settings on the page): ≡ below the hub's wake band
+      h = await headlessRiftlight({ seed: 9, viewport, store, options: { touch: true, hubSettings: {} } });
+      h.engine.input.send({ rl: 'run', slot: 0, seed: 9 }); // a new run, as the title's menu starts one (recorded)
+      h.engine.input.noteTouch();
+      h.engine.step(30);
+      expect(h.game.screen).toBe('town');
+      const live = h.game.hudRects();
+      const menu = live.controls.at(-1)!;
+      const css = h.engine.renderer.framing.cssWidth / h.engine.renderer.framing.artWidth; // CSS px per art pixel
+      expect(live.touch, 'the touch layout').toBe(true);
+      expect(menu.y * css, '≡ below the wake band').toBeGreaterThanOrEqual(HUB_WAKE - css);
+      const snap = await h.engine.snapshot();
+      const rec = JSON.parse(JSON.stringify(h.engine.recording())) as Parameters<typeof h.engine.replay>[0];
+      h.engine.dispose();
+      // no hub behind it (a bug report replayed in Node): the recorded page's layout all the same
+      h = await headlessRiftlight({ seed: 9, viewport, store: new SaveStore(null), options: { touch: true } });
+      expect(h.game.touchPad.dataLayout().at(-1)!.y, 'on its own page ≡ is in the corner').toBeLessThan(menu.y);
+      const again = makeRiftlight(store, 9);
+      await h.engine.replay(rec, () => h!.engine.loadGame(again));
+      expect(again.hudRects().controls, 'replayed: the recorded controls').toEqual(live.controls);
+      expect(again.hudRects().zones, 'replayed: the HUD around them').toEqual(live.zones);
+      expect(h.engine.errors).toEqual([]);
+      h.engine.dispose();
+      // a save-state taken in 52in1, restored with no hub behind it
+      h = await headlessRiftlight({ seed: 9, viewport, store: new SaveStore(null), options: { touch: true } });
+      await h.engine.restore(snap);
+      h.engine.step(1);
+      expect(h.game.hudRects().controls, 'restored: the controls as they were').toEqual(live.controls);
+      expect(h.engine.errors).toEqual([]);
+    },
+    T,
+  );
 });

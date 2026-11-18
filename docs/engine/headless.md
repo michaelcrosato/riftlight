@@ -39,7 +39,10 @@ at every moment, so a HUD lays out where the pointer maps in every frame, replay
 - **The viewport** (`{ width, height, dpr }`, default 960×540 at DPR 1) frames the view through
   `frameView`, the one function both views call, so the art size (`fill`, `adaptive`, `fixed`, the
   pixel size setting) is the page's for the same viewport. Pointer aim and the HUD's layout depend
-  on it: a recording keeps it (`Recording.view`), and a headless replay frames for it.
+  on it, and so does what a game decides by what is on screen (Riftlight's couch co-op puts a guest
+  about to leave the screen beside player 1): a recording keeps it (`Recording.view`, as the level
+  began), and a headless replay frames for it. A page resized or turned mid-level is not followed:
+  from there a replay may play out differently.
 - **The screen effects are real**: transitions advance with `step()`, `cover()` / `reveal()`
   resolve. `render`, `precompile` and the animation loop do nothing; `onBeforeRender` hooks are
   kept and never called (mirrors, render-to-texture views); `GpuSwarm.update` does nothing;

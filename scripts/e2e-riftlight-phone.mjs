@@ -26,6 +26,8 @@
 //     world pinch the zoom and hold no press, and are no swing landing a frame apart
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
+//   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
+//     px or lower), the top-left block right of it, the data's layout the page's
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -524,6 +526,44 @@ export async function runRiftlightPhone(h, orientation) {
       const same = JSON.stringify(a.page) === JSON.stringify(a.data) && JSON.stringify(a.zone) === JSON.stringify(a.dataZone);
       check(same && a.page.length >= 7, `${orientation} at DPR 3: the controls from their data are where the page lays them (${a.page.length} rects${same ? '' : `: page ${JSON.stringify(a.page)} zone ${JSON.stringify(a.zone)} vs data ${JSON.stringify(a.data)} zone ${JSON.stringify(a.dataZone)}`})`);
       checkClean(await state(page3), ctx.logs, `${orientation} at DPR 3: `);
+    }
+    await ctx.browser.close();
+    ctx = null;
+
+    // in 52in1 (its companion sets window.AIHubSettings before the game's first script): ≡ below the
+    // hub's wake band (a touch above 90 CSS px brings the hub's bar over the game), the top-left
+    // text right of it, the data's layout the page's
+    ctx = await launch(exe, s, { viewport, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    {
+      const pageH = ctx.page;
+      await pageH.addInitScript(() => {
+        const dualsense = { connected: false, lightbar: false, triggers: false, motion: false, touchpad: false, speaker: false, aim: false };
+        window.AIHubSettings = Object.assign(new EventTarget(), { version: 1, music: 1, effects: 1, vibration: 1, mic: false, micLater: false, muted: false, dualsense, openMicrophone: async () => null });
+      });
+      await pageH.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
+      await ready(pageH);
+      await pageH.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+      const hub = await pageH.evaluate(async () => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        rl.newRun({ slot: 0, seed: 4242 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        e.input.noteTouch();
+        e.step(30);
+        const g = rl.game;
+        const menu = e.touch.rects().buttons.find((b) => b.code === 'Escape');
+        const where = rl.ui.hud().zones.find((z) => z.id === 'where');
+        const m = g.touchPad.dataLayout().at(-1);
+        return { hub: e.hubSettings.present, top: menu.rect.top, cy: menu.rect.top + menu.rect.height / 2, hidden: menu.hidden, page: rl.ui.hud().controls, data: g.touchPad.dataLayout(), where, menuArt: m };
+      });
+      const same = JSON.stringify(hub.page) === JSON.stringify(hub.data);
+      check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${orientation} in 52in1: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
+      check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${orientation} in 52in1: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
+      await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
+      await pageH.waitForTimeout(1000);
+      await pageH.screenshot({ path: new URL(`${tag}-hub.png`, OUT).pathname });
+      checkClean(await state(pageH), ctx.logs, `${orientation} in 52in1: `);
     }
     await ctx.browser.close();
     ctx = null;

@@ -1,5 +1,6 @@
-// Riftlight on a controller, headless: the right stick aims with aim assist and the cone auto-aim
-// picks the monster ahead; Options pauses from any screen and resumes; the codex is in the pause
+// Riftlight on a controller, headless: the right stick aims with aim assist (only while the pad is
+// the device in use: a stick leaning on a pad just picked up leaves the mouse's aim) and the cone
+// auto-aim picks the monster ahead; Options pauses from any screen and resumes; the codex is in the pause
 // menu; the map opens on Tab, M, R3 and the touchpad's press; the pad rumbles on the moments that
 // matter and the DualSense's light bar says how the hero is (through a fake 52in1); the portal plays
 // from the controller's speaker; a moment's start gives levels without rumbling. A fake standard
@@ -136,6 +137,34 @@ describe('Riftlight on a controller', () => {
     },
     T,
   );
+
+  it('the right stick aims only while the pad is the device in use: a pad picked up with its stick already leaning (the engine reads its look, the keyboard still in use) leaves the mouse’s aim', { timeout: T }, () => {
+    const { game, engine } = h;
+    for (const m of game.level!.monsters()) m.actor.life = 0;
+    engine.input.setGamepads([]); // no pad: the next one is seen for the first time
+    engine.input.noteDevice('keyboard');
+    // the mouse up the screen from the hero
+    const hp = game.hero.actor.position;
+    const right = new Vector3();
+    const forward = new Vector3();
+    cameraBasis(engine, right, forward);
+    pointAtArt(engine, Math.round(game.ui.w / 2), Math.round(game.ui.h * 0.2));
+    engine.step(2);
+    const mouse = aim().clone();
+    expect(mouse.clone().sub(hp).dot(forward), 'the mouse aims up the screen').toBeGreaterThan(1);
+    // a pad seen for the first time, its right stick resting hard right: not a use, but past a
+    // quarter of its travel the engine reads it as the look (`lookAxis`)
+    engine.input.setGamepads([pad([], [0, 0], [0.9, 0])]);
+    engine.step(3);
+    expect([engine.input.device, engine.input.lookAxis.x > 0.8], 'the keyboard in use, the stick read').toEqual(['keyboard', true]);
+    const along = aim().clone().sub(game.hero.actor.position).setY(0);
+    expect(along.dot(right), 'not AIM.reach along the stick').toBeLessThan(AIM.reach - 1);
+    expect(along.dot(forward), 'up the screen, where the mouse points').toBeGreaterThan(1);
+    expect(aim().distanceTo(mouse), 'the mouse’s aim (the camera eases a little)').toBeLessThan(0.5);
+    engine.input.setGamepads([pad()]);
+    engine.step(2);
+    expect(engine.errors).toEqual([]);
+  });
 
   it('the map opens over the play on Tab, M, R3 and the touchpad’s press; the world runs on under it', () => {
     const { rl, game, engine } = h;

@@ -7,7 +7,8 @@
  * save, inventory or loot of its own (what it kills is player 1's XP and loot). It reads its pad by
  * player 1's rules (`readActions`; the right stick's aim with assist, else the cone along the move),
  * rises beside player 1 `COOP.rise` s after it falls, and is put beside player 1 when it strays past
- * the leash. The camera follows the group's centre and zooms out to keep it in view, to a cap.
+ * the leash, or as it is about to leave the screen. The camera follows the group's centre and zooms
+ * out to keep everyone in view (projected: a phone held upright shows less across than up), to a cap.
  * Monsters stay as they are for one player (balance is not part of this). Everything a guest does
  * comes from recorded input (its pad, the join), so a couch session replays.
  */
@@ -28,8 +29,10 @@ export const COOP = {
   seats: 4,
   /** A guest farther than this (m) from player 1 is put beside them. */
   leash: 12,
-  /** The group's spread (m from its centre) the camera shows before it zooms out. */
-  spread: 5,
+  /** The share of the view (from its centre to its edge, NDC) everyone stays within before the camera zooms out. */
+  spread: 0.7,
+  /** A guest past this share of the view on screen (its feet or its head, NDC) is put beside player 1: it is about to leave the screen. */
+  edge: 0.95,
   /** The camera zooms out to this share of its zoom at most. */
   zoomOut: 0.72,
   /** Seconds a fallen guest lies before rising beside player 1. */
@@ -62,8 +65,25 @@ export interface CoopHost {
   foes(): readonly ActorLike[];
   /** The camera's ground basis (screen right, screen up). */
   basis(right: Vector3, forward: Vector3): void;
+  /** The camera's view, for keeping the group in it (`LocalCoop.zoom`). */
+  view(): CoopView;
+  /** Where `p` is on screen now, into `out` (NDC: x right, y up, ±1 at the edges), as the camera shows it (the leash). */
+  project(p: Vector3, out: Vector3): Vector3;
   /** A line in the loot feed. */
   feed(text: string): void;
+}
+
+/**
+ * What the camera shows (an orthographic view): its screen axes in the world (`right`, `up`, unit),
+ * the picture's aspect (width over height), the metres it shows top to bottom at zoom 1 and the zoom
+ * it asks for without co-op (the stage's, the player's, a phone held upright's).
+ */
+export interface CoopView {
+  readonly right: Vector3;
+  readonly up: Vector3;
+  readonly aspect: number;
+  readonly height: number;
+  readonly zoom: number;
 }
 
 /** A player 2 to 4 at this screen. */
@@ -107,6 +127,8 @@ export class LocalCoop {
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly mid = new Vector3();
+  private readonly screen = new Vector3();
+  private readonly head = new Vector3();
 
   constructor(private readonly host: CoopHost) {}
 
@@ -231,10 +253,36 @@ export class LocalCoop {
       g.down = null;
       guestIntent(host.input.player(g.slot), this.right, this.forward, hero.actor.position, foes, i);
       hero.fixedUpdate(dt, i);
-      // past the leash: beside player 1 again
+      // past the leash, or about to leave the screen: beside player 1 again
       const p = hero.actor.position;
-      if (p1.alive && Math.hypot(p.x - p1.position.x, p.z - p1.position.z) > COOP.leash) hero.snap?.(host.besideSpot(p1.position, g.seat), (p1 as { facing?: number }).facing ?? 0);
+      if (p1.alive && (Math.hypot(p.x - p1.position.x, p.z - p1.position.z) > COOP.leash || this.outOfView(p))) hero.snap?.(host.besideSpot(p1.position, g.seat), (p1 as { facing?: number }).facing ?? 0);
     }
+  }
+
+  /**
+   * Where `p` is in the view around the group's centre (`centre`: where the camera heads for) at
+   * `zoom`, as a share of the way to its edge (NDC: 1 at the edge), on the axis it is nearer the edge on.
+   */
+  private reach(p: Vector3, zoom: number, v: CoopView): number {
+    const c = this.centre(this.mid);
+    const dx = p.x - c.x;
+    const dy = p.y - c.y;
+    const dz = p.z - c.z;
+    const half = v.height / (2 * zoom);
+    return Math.max(Math.abs(dx * v.right.x + dy * v.right.y + dz * v.right.z) / (half * v.aspect), Math.abs(dx * v.up.x + dy * v.up.y + dz * v.up.z) / half);
+  }
+
+  /**
+   * A guest at `p` is past `COOP.edge` of the screen as the camera shows it now, its feet or its
+   * head: it is about to leave the screen (the camera zoomed out as far as it goes, or it can't
+   * keep up: a phone held upright shows less across than the leash).
+   */
+  private outOfView(p: Vector3): boolean {
+    const host = this.host;
+    const feet = host.project(p, this.screen);
+    if (Math.max(Math.abs(feet.x), Math.abs(feet.y)) > COOP.edge) return true;
+    const head = host.project(this.head.copy(p).setY(p.y + HEAD), this.screen);
+    return Math.max(Math.abs(head.x), Math.abs(head.y)) > COOP.edge;
   }
 
   private rise(g: Guest): void {
@@ -274,12 +322,19 @@ export class LocalCoop {
     return out.multiplyScalar(1 / n);
   }
 
-  /** How far the camera zooms out (1: not at all) to keep the group in view: down to `COOP.zoomOut`. */
+  /**
+   * How far the camera zooms out (1: not at all) to keep the group in view: each hero standing
+   * projected into the view around the group's centre, the zoom that keeps them all within
+   * `COOP.spread` of it (a phone held upright shows less across than up, so a guest walking
+   * sideways zooms it out sooner), down to `COOP.zoomOut`.
+   */
   zoom(): number {
     if (!this.guests.length) return 1;
-    const c = this.centre(this.mid);
-    let far = Math.hypot(this.host.hero().actor.position.x - c.x, this.host.hero().actor.position.z - c.z);
-    for (const g of this.guests) if (g.hero?.actor.alive) far = Math.max(far, Math.hypot(g.hero.actor.position.x - c.x, g.hero.actor.position.z - c.z));
+    const v = this.host.view();
+    if (!(v.height > 0 && v.aspect > 0 && v.zoom > 0)) return 1;
+    // at zoom z a hero at share r of the view (at the zoom asked for) is at r × z / v.zoom
+    let far = this.reach(this.host.hero().actor.position, v.zoom, v);
+    for (const g of this.guests) if (g.hero?.actor.alive) far = Math.max(far, this.reach(g.hero.actor.position, v.zoom, v));
     return Math.max(COOP.zoomOut, Math.min(1, COOP.spread / Math.max(COOP.spread, far)));
   }
 
@@ -306,7 +361,7 @@ export class LocalCoop {
     if (!this.guests.length) return;
     const tag = (a: ActorLike | undefined, seat: number, color: string) => {
       if (!a?.alive) return;
-      const at = project(a.position.clone().setY(a.position.y + 2.3), camera, ui);
+      const at = project(a.position.clone().setY(a.position.y + TAG_AT), camera, ui);
       if (at) ui.text(at.x, at.y, t('hud.coop.seat', { seat }), { align: 'center', color: parseInt(color.slice(1), 16), shadow: 'ink' });
     };
     tag(this.host.hero().actor, 1, HUB_COLORS[0]!);
@@ -344,3 +399,8 @@ export function guestIntent(pad: KeyReader, right: Vector3, forward: Vector3, fr
 }
 
 const hostile = (a: ActorLike): boolean => a.faction === 'monster';
+
+/** A hero's head above its feet (m): the top of what must stay on screen (and of what the centre banner keeps off: `Riftlight.heroBoxes`). */
+export const HEAD = 1.9;
+/** A seat tag's top over a hero's feet (m, `LocalCoop.draw`): with guests, the top of what the centre banner keeps off. */
+export const TAG_AT = 2.3;

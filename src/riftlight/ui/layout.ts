@@ -77,6 +77,12 @@ export interface Banner {
   age: number;
   /** Seconds it stays. */
   duration: number;
+  /**
+   * The heroes on screen as it opened (art pixels, feet to head: the shell sets it on the frame it
+   * first draws), which it keeps off (`bannerRect`): where they stood then, so it doesn't jump
+   * about as they move. Unset until it shows.
+   */
+  heroes?: readonly Box[];
 }
 
 /** Seconds a banner's plate takes to open sideways (its words show once it is open). */

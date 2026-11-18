@@ -3,6 +3,7 @@
 // library (docs/game/session.md): a shared world co-op and versus, ghost, parallel and moments, on a
 // lossy network, with a host leaving and a server with no player of its own. One page offers every
 // mode (`npm run build:single`); `&mode=` and `&how=` pick the one a run plays, `&moment=` the moments.
+// Then a round of moments on a phone held upright with its touch controls: no ≡ in a round.
 import { createServer } from 'node:http';
 import { copyFile, mkdir, readFile } from 'node:fs/promises';
 import { extname } from 'node:path';
@@ -101,6 +102,39 @@ export async function harness(browser, url) {
   }
 }
 
+/**
+ * One harness run at `url` on a phone held upright with a touch screen: once a frame's round is on
+ * (its card, the countdown, play) with the touch controls showing (the harness plays a round on the
+ * keyboard, which steps them aside), whether ≡ (Escape) among them is hidden.
+ */
+export async function touchRound(browser, url) {
+  const context = await browser.newContext({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, hasTouch: true, isMobile: true });
+  try {
+    const page = await context.newPage();
+    await page.goto(url);
+    for (let i = 0; i < 240; i++) {
+      for (const frame of page.frames()) {
+        const s = await frame
+          .evaluate(() => {
+            const e = window.__PIXEL_ENGINE__;
+            const round = window.__RIFTLIGHT__?.game?.round;
+            if (!e?.touch?.visible || !round) return null;
+            const buttons = e.touch.rects().buttons;
+            return { phase: round.phase, buttons: buttons.length, menu: buttons.find((b) => b.code === 'Escape')?.hidden ?? null, errors: e.errors };
+          })
+          .catch(() => null);
+        if (s?.buttons) return { ok: s.menu === true && !s.errors.length, detail: `${s.phase}: ${s.buttons} buttons, ≡ hidden ${s.menu}${s.errors.length ? `, errors ${s.errors.join('; ')}` : ''}` };
+      }
+      await page.waitForTimeout(250);
+    }
+    return { ok: false, detail: 'no round showed its touch controls' };
+  } catch (e) {
+    return { ok: false, detail: e.message.split('\n')[0] };
+  } finally {
+    await context.close();
+  }
+}
+
 /** The vendored harness's files, copied next to the page it plays. */
 export const HARNESS_FILES = ['harness.html', 'bridge.js', 'round.js'];
 
@@ -121,6 +155,9 @@ export async function runHub({ exe, root, check, run, tail, port = 4790 }) {
       const r = await harness(browser, `http://localhost:${port}/harness.html?game=riftlight.html&${q}&auto=1`);
       check(r.pass, `${q}: ${r.error ? `the harness ran (${r.error})` : `the hub's checks pass (${r.checks})${r.bad.length ? '\n    ' + r.bad.join('\n    ') : ''}`}`);
     }
+    // a round on a phone, its touch controls on: no ≡ (a round has no pause menu: the hub's bar is the menu there)
+    const round = await touchRound(browser, `http://localhost:${port}/harness.html?game=${encodeURIComponent('riftlight.html?touch=1')}&mode=moments&moment=${offer.moments[0]}&players=1&play=8000&auto=1`);
+    check(round.ok, `a round of moments on a phone with touch controls: ≡ hidden (${round.detail})`);
   } finally {
     await browser.close();
     server.close();

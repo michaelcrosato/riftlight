@@ -13,7 +13,7 @@
  * pool and the music survive, and a level is just a root object the shell adds and
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
-import { Color, Vector3 } from 'three/webgpu';
+import { type Camera, Color, Vector3 } from 'three/webgpu';
 import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
@@ -54,7 +54,7 @@ import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
 import { AIM, attackReach, autoAim, coneTarget, stickAim, TOUCH_AIM, turnOnScreen } from '../actors/aim';
-import { COOP, LocalCoop } from './coop';
+import { COOP, type CoopView, HEAD, LocalCoop, TAG_AT } from './coop';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
@@ -180,14 +180,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * town (a new run, a load) or a level, and at a death (so it rises without one).
    */
   private motionAim: { x: number; z: number; idle: number } | null = null;
-  /** Motion aim was on (`input.motion.on`) at the last live frame (`watchMotion`). */
-  private motionWasOn = false;
   /** `input.motion.lean` before this game set it (given back at dispose). */
   private savedLean = true;
   /** Couch co-op: the players 2 to 4 at this screen, a pad each (`game/coop.ts`). */
   coop!: LocalCoop;
   /** Where the camera follows a couch group (its centre). */
   private readonly groupAt = new Vector3();
+  /** The camera's screen axes in the world, for couch co-op's view (`coopView`). */
+  private readonly viewRight = new Vector3();
+  private readonly viewUp = new Vector3();
   private interactQueued = false;
   /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
   worldFocus: WalkTarget | null = null;
@@ -309,6 +310,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       enterStage: (hero, at, facing) => hero.enter(this.level ?? this.town, at, facing),
       foes: () => this.level?.actors() ?? [],
       basis: (right, forward) => cameraBasis(ctx.engine, right, forward),
+      view: () => this.coopView(ctx),
+      project: (p, out) => out.copy(p).project(ctx.engine.camera.camera),
       feed: (text) => this.feedLine(text, 'cyan'),
     });
     this.ui = new Canvas(ctx.hud);
@@ -359,6 +362,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.sentAtSetup = { settings: JSON.stringify(playSettings(this.settings)), saves: JSON.stringify(this.saves) };
     ctx.input.send({ rl: 'settings', settings: playSettings(this.settings) });
     ctx.input.send({ rl: 'saves', saves: this.saves }); // and so are the save slots the menus show
+    ctx.input.send({ rl: 'touch', hub: this.touchPad.hub }); // and where the page's ≡ is (52in1's place: the HUD lays out around it)
     if (this.round) {
       // a session opens straight into its round: no title, menus or town (the hub's card is up)
       this.screen = 'loading';
@@ -563,6 +567,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       if (m.data) viewSaved(this.saves, m.slot, m.data);
       this.saves.lastError = m.error ?? '';
       this.sound(m.data ? 'open' : 'error');
+    } else if (m?.rl === 'touch' && typeof m.hub === 'boolean') {
+      this.touchPad.hub = m.hub; // a replay lays the touch controls out as the recorded page had them
     } else if (m?.rl === 'storage' && typeof m.error === 'string') {
       this.saves.lastError = m.error; // a save that failed to load or to write
       this.sound('error');
@@ -1387,15 +1393,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /**
-   * Motion aim going off (the Settings row, or 52in1 no longer lets games read the controller's
-   * motion: `input.motion.on`, which no recording holds) lets go of the direction it kept, through
-   * a command (`rl: 'motion'`, in `agentInput` next frame), so a replay lets go where the run did.
-   * Live frames only: a replay has the recorded commands.
+   * Motion aim off (the Settings row, or 52in1 no longer lets games read the controller's motion:
+   * `input.motion.on`, which no recording holds) with a direction kept lets go of it, through a
+   * command (`rl: 'motion'`, in `agentInput` next frame), so a replay lets go where the run did. On
+   * any live frame, not only as it goes off: a save-state restored, or a replay that ended, while
+   * steering keeps a direction with motion aim off. Live frames only: a replay has the recorded
+   * commands.
    */
   private watchMotion(ctx: GameContext): void {
-    const on = ctx.input.motion.on;
-    if (this.motionWasOn && !on && this.motionAim && !this.replaying) ctx.input.send({ rl: 'motion', on: false });
-    this.motionWasOn = on;
+    if (!ctx.input.motion.on && this.motionAim && !this.replaying) ctx.input.send({ rl: 'motion', on: false });
   }
 
   /**
@@ -1932,7 +1938,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private syncTouch(): void {
     if (!this.touchPad.active) return;
     const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
-    this.touchPad.sync({ playing, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
+    this.touchPad.sync({ playing, round: !!this.round, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
   }
 
   /** What F (the touch interact button) would do now: the verb and its target, or null. */
@@ -2192,8 +2198,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.shakeStrength = 0;
       this.shakeOffset.set(0, 0, 0);
     }
-    const goal = this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1) * (this.screen === 'title' ? 1 : this.coop.zoom());
+    const goal = this.baseZoom() * (this.screen === 'title' ? 1 : this.coop.zoom());
     if ('zoom' in rig && Math.abs(rig.zoom - goal) > 1e-3) rig.setZoom(rig.zoom + (goal - rig.zoom) * (1 - Math.exp(-4 * dt)));
+  }
+
+  /** The zoom the camera asks for, couch co-op's aside: the stage's, the player's (Settings, the wheel), less on a phone held upright. */
+  private baseZoom(): number {
+    return this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1);
+  }
+
+  /** The camera's view for couch co-op (`CoopHost.view`): its screen axes, the picture's aspect, the metres it shows up at zoom 1, the zoom asked for. */
+  private coopView(ctx: GameContext): CoopView {
+    const m = ctx.engine.camera.camera.matrixWorld;
+    const rig = ctx.camera as { viewHeight?: number; zoom?: number };
+    return {
+      right: this.viewRight.setFromMatrixColumn(m, 0).normalize(),
+      up: this.viewUp.setFromMatrixColumn(m, 1).normalize(),
+      aspect: this.ui.h > 0 ? this.ui.w / this.ui.h : 0,
+      height: (rig.viewHeight ?? 0) * (rig.zoom ?? 1),
+      zoom: this.baseZoom(),
+    };
   }
 
   /**
@@ -2250,6 +2274,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       for (let i = 0; i < 3; i++) ui.rect(ui.w / 2 - 5 + i * 4, ui.h / 2 + 7, 2, 2, i < lit ? 'cyan' : 'navy');
       return;
     }
+    // a banner keeps off the heroes as they stood when it opened (`Banner.heroes`): it doesn't jump
+    // as they move, and shows once they are known (`hudModel`; a tenth of a second at most)
+    const card = this.banners.current;
+    if (card && !card.heroes) card.heroes = this.heroBoxes(cam) ?? (card.age > 0.1 ? [] : undefined);
     // the HUD's zones first: world overlays are placed around them, most important first
     // (the prompt, the focused loot label, other labels, damage numbers)
     const model = this.hudModel();
@@ -2431,6 +2459,28 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return { art: { w: ui.w, h: ui.h }, touch: g.touch, controls: this.hudControls, zones };
   }
 
+  /**
+   * The heroes standing on screen, player 1's and each couch guest's, as art-pixel boxes from their
+   * feet to their heads (to their seat tags with guests) with a quarter of that around (what the
+   * centre banner keeps off: the room the camera's settling, as a stage opens, moves them by); null
+   * while the camera is not on player 1 standing (the frame a stage is entered draws with the camera
+   * where it was).
+   */
+  private heroBoxes(cam: Camera): Box[] | null {
+    const ui = this.ui;
+    const out: Box[] = [];
+    if (!this.hero.object.visible) return out;
+    const top = this.coop.guests.length ? TAG_AT : HEAD; // with guests a seat tag over every head (`LocalCoop.draw`)
+    for (const a of [this.hero.actor, ...this.coop.guests.map((g) => g.hero?.actor)]) {
+      if (!a?.alive) continue;
+      const b = worldBox(a.position, top, 0.9, cam, ui);
+      const m = b ? Math.ceil(b.h / 4) : 0;
+      if (b && b.x + b.w > 0 && b.y + b.h > 0 && b.x < ui.w && b.y < ui.h) out.push({ x: b.x - m, y: b.y - m, w: b.w + 2 * m, h: b.h + 2 * m });
+      else if (a === this.hero.actor) return null;
+    }
+    return out;
+  }
+
   /** The level's cells, what is explored, the hero, the exit and the boss: the corner map and the big one (null outside a level). */
   private minimapModel(): MinimapModel | null {
     const level = this.level;
@@ -2469,7 +2519,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       gold: this.save.hero.gold,
       goldShown: this.goldShown,
       feed: this.feed,
-      card: this.banners.current,
+      card: this.banners.current?.heroes ? this.banners.current : null, // from the frame it knows where the heroes stand (`draw`)
       streak: this.streak,
       difficulty: changedSliders(tuning).map((k) => t(`hud.tuned.${difficultyLineId(k)}`, { value: lang().formatNumber(tuning[k], { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })),
       hurt: this.hurt,
@@ -2672,6 +2722,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         // what the last frame drew that the next frame's input hits (a finger's targets, the touch controls the HUD laid out around)
         touchable: this.touchable,
         hudControls: this.hudControls,
+        touchHub: this.touchPad.hub,
         walk: this.walkTo && { target: this.walkTo.target, time: this.walkTo.time, best: this.walkTo.best, since: this.walkTo.since, nav: this.walkTo.nav.save() },
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
@@ -2797,6 +2848,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.touchable = tt ? { loot: tt.loot.map((l) => ({ id: l.id, rect: { ...l.rect } })), prompt: tt.prompt && { ...tt.prompt }, feed: tt.feed.map((b) => ({ ...b })), dialogue: tt.dialogue && { ...tt.dialogue } } : { loot: [], prompt: null, feed: [], dialogue: null };
     this.hudControls = t.hudControls ? t.hudControls.map((c) => ({ ...c })) : [];
     this.touchPad.restoreLast(this.hudControls); // what stands in while the controls are hidden
+    if (t.touchHub !== undefined) this.touchPad.hub = t.touchHub; // ≡ where the page had it (52in1's place, or the corner)
     this.walkTo = t.walk?.nav ? { target: t.walk.target, time: t.walk.time, best: t.walk.best, since: t.walk.since, nav: HeroWalk.load(t.walk.nav) } : null;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
@@ -2937,6 +2989,8 @@ interface RiftSnapshot {
     readonly touchable?: { readonly loot: readonly { readonly id: number; readonly rect: Box }[]; readonly prompt: Box | null; readonly feed: readonly Box[]; readonly dialogue: Box | null };
     /** The touch controls the last frame's HUD laid out around, art pixels (left out by older snapshots). */
     readonly hudControls?: readonly Box[];
+    /** The page's ≡ in 52in1's place (`TouchPad.hub`; left out by older snapshots). */
+    readonly touchHub?: boolean;
     readonly walk?: { readonly target: WalkTarget; readonly time: number; readonly best: number; readonly since: number; readonly nav: HeroWalkState } | null;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;
@@ -2965,6 +3019,8 @@ type RiftCommand =
   | { readonly rl: 'saves'; readonly saves: SavesView }
   | { readonly rl: 'imported'; readonly slot: number; readonly data?: SaveData; readonly error?: string }
   | { readonly rl: 'storage'; readonly error: string }
+  /** The page's touch controls (sent at setup): in 52in1 ≡ is below the hub's wake band (`TouchPad.hub`). */
+  | { readonly rl: 'touch'; readonly hub: boolean }
   | { readonly rl: 'intent'; readonly intent: SavedIntent }
   | { readonly rl: 'bot'; readonly act: BotAct }
   /** Motion aim went off: its kept direction lets go (`watchMotion`). */

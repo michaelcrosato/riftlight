@@ -1,5 +1,5 @@
-// Riftlight's motion aim, headless, through a fake 52in1 whose DualSense the test turns: the
-// Settings menu has Motion aim and its sensitivity while 52in1 lets games read the controller's
+// Riftlight's motion aim, headless, through a fake 52in1 whose DualSense the test turns: Settings →
+// Controller has Motion aim and its sensitivity while 52in1 lets games read the controller's
 // motion; on the pad, turning the controller turns the aim (left turns it left) and it stays where
 // it was turned, the right stick still sets it outright, the aim assist still snaps it to a monster
 // near its line, it lets go `AIM.hold` s after the last turn; off, or on the keyboard, a turn does
@@ -57,13 +57,19 @@ beforeAll(async () => {
 afterAll(() => h?.engine.dispose());
 
 describe('motion aim in Riftlight', () => {
-  it('the Settings menu has Motion aim and its sensitivity while 52in1 lets games read a DualSense’s motion', () => {
+  it('Settings → Controller has Motion aim and its sensitivity while 52in1 lets games read a DualSense’s motion', () => {
     const { rl, engine } = h;
     const ids = () => rl.ui.widgets().map((w) => w.id);
     expect(engine.input.motion, 'on, as 52in1’s own Motion aim is; leaning no stick').toEqual({ on: true, sensitivity: 1, lean: false });
     rl.ui.click('settings');
     engine.step(1);
-    expect(ids()).toEqual(expect.arrayContaining(['vibration', 'motion', 'motionSensitivity']));
+    expect(ids(), 'the Settings list: the Controller page').toContain('controller');
+    expect(ids()).not.toContain('motion');
+    expect(engine.renderer.resolution, 'the art of a 1920×1080 screen').toEqual({ width: 480, height: 270 });
+    expect(rl.ui.widgets().filter((w) => !w.rect).map((w) => w.id), 'every row in view, none behind a ▼').toEqual([]);
+    rl.ui.click('controller');
+    engine.step(1);
+    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity']);
     rl.ui.click('motion');
     expect([engine.settings.values.motion, engine.input.motion.on]).toEqual([false, false]);
     rl.ui.click('motion');
@@ -82,6 +88,7 @@ describe('motion aim in Riftlight', () => {
     hub.target.dispatchEvent(new Event('change'));
     engine.step(1);
     expect(ids()).toContain('motion');
+    rl.ui.close();
     rl.ui.close();
     engine.step(1);
     expect(engine.errors).toEqual([]);
@@ -191,8 +198,10 @@ describe('motion aim in Riftlight', () => {
       // off in the Settings menu: let go, and attacks never bring it back
       steer();
       expect(rl.ui.open('settings')).toBe(true);
+      rl.ui.click('controller');
       rl.ui.click('motion');
       expect(engine.input.motion.on).toBe(false);
+      rl.ui.close();
       rl.ui.close();
       engine.step(2);
       expect(inside().motionAim, 'let go when motion aim went off').toBeNull();
@@ -245,6 +254,36 @@ describe('motion aim in Riftlight', () => {
       game.dev.god = true;
       for (const m of game.level!.monsters()) m.actor.life = 0;
       engine.step(2);
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'a save-state taken while steering, restored with motion aim off, lets go of the kept direction (Cross never keeps it alive)',
+    async () => {
+      const { engine } = h;
+      engine.input.setGamepads([pad()]);
+      engine.input.noteDevice('pad');
+      engine.settings.set({ motion: undefined });
+      turn(-64, 10);
+      expect(inside().motionAim, 'steering').not.toBeNull();
+      const steering = await engine.snapshot();
+      engine.settings.set({ motion: false });
+      engine.step(2);
+      expect(inside().motionAim, 'off: let go').toBeNull();
+      await engine.restore(steering);
+      expect([inside().motionAim !== null, engine.input.motion.on], 'the save-state keeps the line; motion aim stays off').toEqual([true, false]);
+      // Cross attacks along the kept line, which would keep it from letting go `AIM.hold` s on
+      for (let k = 0; k < 3; k++) {
+        engine.input.setGamepads([pad([0, 0], [0])]);
+        engine.step(2);
+        engine.input.setGamepads([pad()]);
+        engine.step(10);
+      }
+      expect(inside().motionAim, 'let go: motion aim is off').toBeNull();
+      engine.settings.set({ motion: undefined });
+      engine.step(1);
       expect(engine.errors).toEqual([]);
     },
     T,

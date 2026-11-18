@@ -6,7 +6,9 @@
  *   bottom-right  a big attack button in the corner, the four skills on an arc around it,
  *                 the dodge outside the arc and a contextual interact button next to it
  *                 (TALK, OPEN, TAKE, GO) that shows only when there is something to use
- *   top-left      ≡ (the pause menu: inventory, skills, tree, settings...)
+ *   top-left      ≡ (the pause menu: inventory, skills, tree, settings...); in 52in1 lower, out of
+ *                 the hub's wake band (`HUB_WAKE`), and hidden in a 52in1 round (the hub's bar is
+ *                 the menu there)
  *
  * The buttons ARE the skill bar on a touch screen: each one shows its gem's icon
  * (`skills/icons.ts`, the same pixels as the HUD's bar), its cooldown shutter and seconds, its
@@ -36,7 +38,16 @@ export const TOUCH_LAYOUT = {
   dodge: { angle: 38, r: 172, size: 52 },
   interact: { angle: 56, r: 182, size: 50 },
   menu: { x: 26, y: 26, size: 44 },
+  /** ≡ in 52in1 (`RIFTLIGHT_HUB_TOUCH_BUTTONS`): its top edge on the hub's wake band (`HUB_WAKE`), its centre 112 CSS px down. */
+  menuHub: { x: 26, y: 104, size: 44 },
 } as const;
+
+/**
+ * 52in1's wake band: a touch (or the mouse) less than this many CSS px from the top of the game's
+ * frame brings the hub's bar back over the game (its companion script posts 'wake'), so no touch
+ * control of the game sits in it there.
+ */
+export const HUB_WAKE = 90;
 
 const L = TOUCH_LAYOUT;
 const polar = (angle: number, r: number, size: number) => {
@@ -48,17 +59,25 @@ const polar = (angle: number, r: number, size: number) => {
 export const TOUCH_CODES = { attack: 'KeyJ', dodge: 'Space', skills: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], interact: 'KeyF', menu: 'Escape' } as const;
 
 /**
- * Riftlight's on-screen buttons for phones (`EngineOptions.touchButtons`). The attack comes first
- * (the engine colours the first button). The page is made before the game's language is chosen:
- * `TouchPad.sync` puts the hints in it (lines `touch.hint.*`) once the game runs.
+ * Riftlight's on-screen buttons for phones (`EngineOptions.touchButtons`), with ≡ in the top-left
+ * corner, or (`hub`: in 52in1) below the hub's wake band. The attack comes first (the engine colours
+ * the first button). The page is made before the game's language is chosen: `TouchPad.sync` puts
+ * the hints in it (lines `touch.hint.*`) once the game runs.
  */
-export const RIFTLIGHT_TOUCH_BUTTONS: readonly TouchButton[] = [
-  { label: 'A', code: TOUCH_CODES.attack, hint: 'attack', at: { ...L.attack } },
-  ...TOUCH_CODES.skills.map((code, i) => ({ label: String(i + 1), code, hint: 'skill', at: polar(L.angles[i]!, L.ring, L.skill) })),
-  { label: 'B', code: TOUCH_CODES.dodge, hint: 'dodge', at: polar(L.dodge.angle, L.dodge.r, L.dodge.size) },
-  { label: 'F', code: TOUCH_CODES.interact, hint: 'talk', at: polar(L.interact.angle, L.interact.r, L.interact.size) },
-  { label: '≡', code: TOUCH_CODES.menu, at: { ...L.menu, corner: 'top-left' } },
-];
+export function riftlightTouchButtons(hub: boolean): readonly TouchButton[] {
+  return [
+    { label: 'A', code: TOUCH_CODES.attack, hint: 'attack', at: { ...L.attack } },
+    ...TOUCH_CODES.skills.map((code, i) => ({ label: String(i + 1), code, hint: 'skill', at: polar(L.angles[i]!, L.ring, L.skill) })),
+    { label: 'B', code: TOUCH_CODES.dodge, hint: 'dodge', at: polar(L.dodge.angle, L.dodge.r, L.dodge.size) },
+    { label: 'F', code: TOUCH_CODES.interact, hint: 'talk', at: polar(L.interact.angle, L.interact.r, L.interact.size) },
+    { label: '≡', code: TOUCH_CODES.menu, at: { ...(hub ? L.menuHub : L.menu), corner: 'top-left' } },
+  ];
+}
+
+/** Riftlight's on-screen buttons on its own page (`riftlightTouchButtons`): ≡ in the top-left corner. */
+export const RIFTLIGHT_TOUCH_BUTTONS = riftlightTouchButtons(false);
+/** Riftlight's on-screen buttons in 52in1 (`riftlightTouchButtons`): ≡ below the hub's wake band (`HUB_WAKE`). */
+export const RIFTLIGHT_HUB_TOUCH_BUTTONS = riftlightTouchButtons(true);
 
 /** The engine's joystick at rest (style.css `.touch-ui .stick`): 16 CSS px from the bottom-left corner, 128 px and a 2 px border. */
 const STICK = { margin: 16, size: 132 } as const;
@@ -98,6 +117,8 @@ export function stickZone(width: number, height: number): Box {
 export interface TouchFrame {
   /** The world is playable (town or level, alive, no panel on top). */
   playing: boolean;
+  /** A 52in1 round: no ≡ (a round has no pause menu; the hub's bar is the menu there). */
+  round?: boolean;
   /**
    * A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, ≡ and its own interact
    * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons;
@@ -117,10 +138,26 @@ export class TouchPad {
   private readonly icons = new Map<string, HTMLCanvasElement>();
   private readonly state: TouchButtonState = {};
 
-  constructor(private readonly engine: Engine) {}
+  /**
+   * The page runs in 52in1 (the hub's settings on it: `engine.hubSettings.present`, as the page's
+   * options read `window.AIHubSettings`), so its ≡ is below the hub's wake band (`buttons`). The
+   * HUD lays out around it and a tap lands on that HUD, so a recording keeps it (`Riftlight`'s
+   * setup sends `{ rl: 'touch', hub }`): a replay with no hub behind it lays the controls out as
+   * the recorded page had them.
+   */
+  hub: boolean;
+
+  constructor(private readonly engine: Engine) {
+    this.hub = engine.hubSettings.present;
+  }
 
   get active(): boolean {
     return !!this.engine.touch;
+  }
+
+  /** The buttons the page has (`RIFTLIGHT_OPTIONS.touchButtons`): in 52in1 (`hub`) ≡ is below the hub's wake band. */
+  get buttons(): readonly TouchButton[] {
+    return this.hub ? RIFTLIGHT_HUB_TOUCH_BUTTONS : RIFTLIGHT_TOUCH_BUTTONS;
   }
 
   /**
@@ -173,7 +210,7 @@ export class TouchPad {
    */
   dataLayout(): Box[] {
     const { width, height } = this.engine.renderer.viewport;
-    return touchLayout(width, height).map((c) => this.toArt(c));
+    return touchLayout(width, height, this.buttons).map((c) => this.toArt(c));
   }
 
   /**
@@ -219,6 +256,8 @@ export class TouchPad {
     const it = f.showcase ? (typeof f.showcase === 'object' ? f.showcase.interact : null) : f.interact;
     // the hint under the verb is the target's name, cut to the button (whole letters)
     touch.set(TOUCH_CODES.interact, it ? { hidden: false, label: it.verb, hint: clusters(it.name).slice(0, 9).join('') } : { hidden: true });
+    // a 52in1 round has no pause menu: ≡ would do nothing (the hub's bar is the menu there)
+    touch.set(TOUCH_CODES.menu, { hidden: !!f.round });
   }
 
   /** One skill button from its bar slot: icon, shutter, seconds, cost, dimmed when unaffordable. */
