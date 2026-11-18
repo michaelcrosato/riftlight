@@ -621,7 +621,8 @@ function mapCells(ui: UiCanvas, mm: MinimapModel, v: MapView, time: number, floo
   const { x, y, cols, rows, x0, z0, S } = v;
   const w = cols * S;
   const h = rows * S;
-  // run-length rows: one rect per run of the same colour (a see-through floor: every other pixel row, the world between)
+  // run-length rows: one rect per run of the same colour (a see-through floor: two pixel rows of
+  // every three, the world in the third: `PLATE_GAP`)
   for (let r = 0; r < rows; r++) {
     const cz = z0 + r;
     let run: HudColor | null = null;
@@ -630,7 +631,7 @@ function mapCells(ui: UiCanvas, mm: MinimapModel, v: MapView, time: number, floo
       if (!run) return;
       const top = y + r * S;
       if (!seeThrough || run !== floor) ui.rect(x + start * S, top, (end - start) * S, S, run);
-      else for (let k = 0; k < S; k++) if ((top + k) % 2 === 0) ui.rect(x + start * S, top + k, (end - start) * S, 1, run);
+      else for (let k = 0; k < S; k++) if (plateRow(top + k)) ui.rect(x + start * S, top + k, (end - start) * S, 1, run);
     };
     for (let c = 0; c <= cols; c++) {
       const cx = x0 + c;
@@ -666,6 +667,14 @@ function mapCells(ui: UiCanvas, mm: MinimapModel, v: MapView, time: number, floo
   if (mm.boss) dot(mm.boss.x, mm.boss.z, time % 0.6 < 0.3 ? 'red' : 'orange', mark + 1, true);
   dot(mm.hero.x, mm.hero.z, 'white', mark, true);
 }
+
+/**
+ * The big map's see-through plate: ink on two pixel rows of every three, the fight behind in the
+ * third (every other row read poorly at ten feet over a bright level: lava, a lit hall).
+ */
+export const PLATE_GAP = 3;
+/** A pixel row of the big map's plate (and its floor) that is drawn: all but every `PLATE_GAP`th. */
+const plateRow = (y: number): boolean => y % PLATE_GAP !== PLATE_GAP - 1;
 
 /** Where the level's map goes in `room` (art pixels, `drawMap`): the window onto its cells and the box they fill. */
 export function mapView(room: Box, mm: Pick<MinimapModel, 'width' | 'height' | 'hero' | 'origin' | 'explored' | 'exit'>): MapView & { readonly w: number; readonly h: number } {
@@ -715,13 +724,13 @@ export function mapView(room: Box, mm: Pick<MinimapModel, 'width' | 'height' | '
 /**
  * The level's map over the play (Tab / M, R3 or the touchpad's press): what the player has explored,
  * as big as `room` takes it (around the hero when it can't take all of it), on a dimmed plate the
- * fight shows through (the world runs on), its title and the control that closes it on its frame.
+ * fight shows through (the world runs on: one pixel row in three, `PLATE_GAP`), its title and the control that closes it on its frame.
  * Drawn under the HUD, so the orbs, the skill bar and a boss's bar stay in view.
  */
 export function drawMap(ui: UiCanvas, mm: MinimapModel, room: Box, time: number): void {
   const v = mapView(room, mm);
   const f = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
-  for (let y = f.y + (f.y % 2); y < f.y + f.h; y += 2) ui.rect(f.x, y, f.w, 1, 'ink');
+  for (let y = f.y; y < f.y + f.h; y++) if (plateRow(y)) ui.rect(f.x, y, f.w, 1, 'ink');
   ui.outline(f.x, f.y, f.w, f.h, 'slate');
   mapCells(ui, mm, v, time, 'blue', true);
   const title = t('hud.map.title');

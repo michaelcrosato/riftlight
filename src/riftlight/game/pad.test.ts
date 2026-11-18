@@ -157,6 +157,50 @@ describe('Riftlight on a controller', () => {
     expect(game.mapOpen, 'R3').toBe(true);
     tap(17); // the DualSense's touchpad, pressed
     expect(game.mapOpen, 'the touchpad').toBe(false);
+    // Esc closes the map (keyboard players expect it) before it pauses; Circle is the dodge: the map stays
+    rl.press('Tab');
+    expect(rl.press('Escape').ui, 'Esc: no pause menu').toEqual([]);
+    expect(game.mapOpen, 'Esc closes the map').toBe(false);
+    expect(rl.press('Escape').ui, 'then Esc pauses').toEqual(['pause']);
+    rl.press('Escape');
+    tap(11);
+    tap(1); // Circle
+    expect(game.mapOpen, 'Circle dodges, the map stays open').toBe(true);
+    tap(11);
+    // a click or tap on the corner map opens it, one on the map closes it; neither is an attack,
+    // held a few frames either (a mouse click lasts a tenth of a second)
+    const click = (x: number, y: number) => {
+      pointAtArt(engine, x, y, true);
+      engine.step(5);
+      pointAtArt(engine, x, y, false);
+      engine.step(1);
+    };
+    const corner = rl.ui.hud().zones.find((z) => z.id === 'minimap')!;
+    const attacks: boolean[] = []; // the intent is one object, changed each step: read it as it goes in
+    const step = game.hero.fixedUpdate.bind(game.hero);
+    const spy = vi.spyOn(game.hero, 'fixedUpdate').mockImplementation((dt, i) => (attacks.push(i.attack), step(dt, i)));
+    click(corner.x + corner.w / 2, corner.y + corner.h / 2);
+    expect(game.mapOpen, 'a click on the corner map opens the map').toBe(true);
+    click(Math.round(game.ui.w / 2), Math.round(game.ui.h / 2));
+    expect(game.mapOpen, 'a click on the map closes it').toBe(false);
+    spy.mockRestore();
+    expect(attacks.length).toBeGreaterThan(2);
+    expect(attacks.includes(true), 'neither click is an attack').toBe(false);
+    // on a phone the close prompt names the tap
+    click(corner.x + corner.w / 2, corner.y + corner.h / 2);
+    engine.input.noteDevice('touch');
+    const drawn = new Set<string>();
+    (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__ = drawn;
+    try {
+      engine.step(1);
+    } finally {
+      delete (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__;
+    }
+    expect(drawn, 'the tap closes it').toContain(t('key.touch.tap'));
+    expect(drawn).toContain(t('hud.map.close'));
+    click(Math.round(game.ui.w / 2), Math.round(game.ui.h / 2));
+    expect(game.mapOpen).toBe(false);
+    engine.input.noteDevice('pad');
     expect(engine.errors).toEqual([]);
   });
 
@@ -258,7 +302,7 @@ describe('Riftlight on a controller', () => {
     }
   });
 
-  it('holding the mouse button keeps the mouse’s aim with the mouse still (hitting a boss)', () => {
+  it('holding the mouse button keeps the mouse’s aim with the mouse still (hitting a boss)', { timeout: T }, () => {
     const { game, engine } = h;
     engine.input.setGamepads(null);
     engine.input.noteDevice('keyboard');
@@ -301,9 +345,49 @@ describe('Riftlight on a controller', () => {
     expect(engine.errors).toEqual([]);
   });
 
-  it('back on the title the light bar is the hub’s again', () => {
-    h.rl.toTitle();
-    h.engine.step(2);
+  it('photo mode on a pad: L1 hides its panel (Triangle switches fly / edit), and its hints say so', () => {
+    const { rl, game, engine } = h;
+    engine.input.setGamepads([pad()]);
+    engine.step(1);
+    rl.photo.open();
+    const drawn = () => {
+      const seen = new Set<string>();
+      (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__ = seen;
+      try {
+        engine.step(1);
+      } finally {
+        delete (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__;
+      }
+      return [...seen].join(' | ');
+    };
+    const help = drawn();
+    expect(help, 'hide is L1').toContain(t('showcase.hint.hide'));
+    expect(t('showcase.hint.hide')).toBe('L1 hide');
+    expect(t('showcase.hint.edit'), 'Triangle switches').toBe('Triangle edit');
+    tap(4); // L1
+    expect(game.showcase.photo.hidden, 'L1 hides the panel').toBe(true);
+    expect(game.showcase.photo.sub, 'and leaves fly / edit alone').toBe('fly');
+    expect(drawn()).toContain('L1 show');
+    tap(4);
+    expect(game.showcase.photo.hidden, 'L1 shows it again').toBe(false);
+    tap(3); // Triangle
+    expect([game.showcase.photo.sub, game.showcase.photo.hidden], 'Triangle: edit, the panel stays').toEqual(['edit', false]);
+    rl.photo.close();
+    engine.step(1);
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('back on the title the light bar is the hub’s again, and a level-up’s second pulse no longer comes', () => {
+    const rumble = vi.spyOn(h.engine.input, 'rumble');
+    try {
+      h.rl.give({ levels: 1 });
+      expect(rumble.mock.calls.map((c) => c[0]), 'the first pulse').toEqual([RUMBLE.levelUp[0]]);
+      h.rl.toTitle(); // Save & Quit before the second
+      h.engine.step(Math.ceil(LEVEL_GAP * 60) + 2);
+      expect(rumble.mock.calls.map((c) => c[0]), 'dropped on the title').toEqual([RUMBLE.levelUp[0]]);
+    } finally {
+      rumble.mockRestore();
+    }
     expect(lights.at(-1)).toBeNull();
   });
 });

@@ -3,14 +3,16 @@
  *
  *   move      WASD / arrows / left stick / touch joystick
  *   aim       mouse cursor on the ground; with a pad, the right stick with aim assist (the AI Hub's
- *             Motion aim adds to it), else the nearest enemy ahead
+ *             Motion aim adds to the stick only while the controller turns), else the nearest enemy ahead
  *   attack    LMB / J / pad Cross (A) / touch A          dodge   Space / pad Circle (B) / touch B
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory;
  *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume)
- *   map       Tab / M / pad R3 or the touchpad's press: the level's map over the play
+ *   map       Tab / M / pad R3 or the touchpad's press / a click or tap on the corner map: the level's
+ *             map over the play (Esc, or a tap on it, closes it too)
  *   looks     L look studio · H / pad Triangle hides its panel (the arrows still tweak) · O photo mode
+ *             (H / pad L1 hides its panel)
  *   items     click / Enter / pad Cross · X / pad Square = right-click · V / pad Triangle = Ctrl-click
  *
  * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
@@ -49,6 +51,8 @@ export const KEYS = {
   hide: ['KeyH', 'PadY'],
   /** The level's map over the play (the world runs on): Tab or M; R3 or the DualSense's touchpad press. */
   map: ['Tab', 'KeyM', 'PadR3', 'PadTouchpad'],
+  /** The map open: Esc closes it before it pauses (on a pad Circle dodges, so the map stays). */
+  mapBack: ['Escape'],
   confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ', 'PadA'],
   back: ['Escape', 'Backspace', 'PadB'],
   up: ['ArrowUp', 'KeyW'],
@@ -105,7 +109,7 @@ export const CONTROLS = {
   look: { key: 'KeyL', pad: 'PadStart', touch: '≡' },
   hide: { key: 'KeyH', pad: 'PadY', touch: '≡' },
   zoom: { key: 'Wheel', pad: 'PadStart', touch: '≡' },
-  map: { key: 'Tab', pad: 'PadR3' },
+  map: { key: 'Tab', pad: 'PadR3', touch: 'TouchTap' },
   // the showcase (showcase/: ArcadeStage, BestiaryMode, PhotoMode)
   move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' },
   jump: { key: 'Space', pad: 'PadA', touch: 'B' },
@@ -118,6 +122,8 @@ export const CONTROLS = {
   switch_view: { key: 'Tab', pad: 'PadY' },
   next_wing: { key: 'KeyN' },
   photo_save: { key: 'KeyP', pad: 'PadX' },
+  /** Photo mode's panel hidden or shown: H, or L1 (Triangle switches fly / edit there). */
+  photo_hide: { key: 'KeyH', pad: 'PadLB' },
 } as const satisfies ControlTable;
 export type ControlAction = keyof typeof CONTROLS;
 

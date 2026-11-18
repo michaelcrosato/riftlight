@@ -69,12 +69,14 @@ export function lightFor(s: LightState): string | null {
   return hex(s.life >= LIGHT_OK ? PALETTE.green : PALETTE.sand);
 }
 
-/** The pad's rumbles (some a beat later: a level-up's second pulse) and the light bar, sent only when its colour changes. */
+/**
+ * The pad's rumbles (some a beat later: a level-up's second pulse) and the light bar. The colour
+ * is asked for every frame: the engine's `ctx.dualsense` sends only changes, and drops what is
+ * asked while a replay plays, so the frame after one hands control back puts the right colour on.
+ */
 export class PadFeel {
   private readonly later: { at: number; r: Rumble }[] = [];
   private time = 0;
-  /** The colour last sent (undefined: none yet). */
-  private shown: string | null | undefined = undefined;
 
   constructor(private readonly ctx: GameContext) {}
 
@@ -89,16 +91,14 @@ export class PadFeel {
     rs.forEach((r, i) => this.rumble(r, i * gap));
   }
 
-  /** The light bar's colour (null: the hub's), sent when it changed. */
+  /** The light bar's colour (null: the hub's), every frame (the engine sends it when it changed). */
   light(colour: string | null): void {
-    if (colour === this.shown) return;
-    this.shown = colour;
     this.ctx.dualsense.light(colour);
   }
 
-  /** The colour sent last (tests). */
-  get lit(): string | null | undefined {
-    return this.shown;
+  /** Pulses still to come (tests). */
+  get pending(): number {
+    return this.later.length;
   }
 
   /** Each frame: the rumbles due now. */
@@ -112,7 +112,7 @@ export class PadFeel {
     }
   }
 
-  /** A pulse still to come is dropped (the title, a new run): nothing rumbles out of its moment. */
+  /** A pulse still to come is dropped (the shell calls it on the title, a new run and leaving a level): nothing rumbles out of its moment. */
   cancel(): void {
     this.later.length = 0;
   }

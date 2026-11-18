@@ -22,7 +22,7 @@ import { RANK, SCALING } from '../core/scaling';
 import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, type GameEvents, type LevelSpec, type SaveData } from '../core/types';
 import { loadRiftlightPacks } from '../packs';
 import { Town, type TownState } from '../town/Town';
-import { type HudModel, drawHud, drawMap, type FeedLine, hudGeometry, hudZones } from '../ui/hud';
+import { type HudModel, drawHud, drawMap, type FeedLine, hudGeometry, hudZones, mapView, type MinimapModel } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
 import { clip, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
@@ -34,7 +34,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { beacon, bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, ndcToArt, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -164,6 +164,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** The frame's commands `agentInput` took last (it runs once a frame). */
   private agentTaken: readonly unknown[] | null = null;
   private interactQueued = false;
+  /** The left button (or finger) now held went down on the map and opened or closed it: no attack until it is let go. */
+  private pressTaken = false;
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
   private readonly tmp = new Vector3();
@@ -638,9 +640,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return { services: this.services, monsters: this.ports.monsters, loot: this.ports.loot, hero: this.hero };
   }
 
+  /** Out of the level (to town, the title, a new run, another level): its map closes, a pulse still to come is dropped. */
   private leaveLevel(): void {
     this.levelEntry = null;
     this.mapOpen = false;
+    this.feel.cancel();
     if (!this.level) return;
     this.ports.loot.clearGround();
     this.level.dispose();
@@ -1309,8 +1313,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
     // the mouse aims where it points; a pad's right stick along itself, snapped to a monster close
-    // to that line (aim assist: the hub's Motion aim adds the controller's turns to the stick);
-    // else, and with a finger, the nearest monster ahead (`autoAim`)
+    // to that line (aim assist: the hub's Motion aim adds the controller's turning speed to the
+    // stick, so it aims only while the controller turns); else, and with a finger, the nearest
+    // monster ahead (`autoAim`)
     const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
     const hp = this.hero.actor.position;
     const look = input.lookAxis;
@@ -1325,7 +1330,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // frame); a press is used up here even when a panel takes it, so it never fires later
     const left = input.consumeAny(MOUSE.left) || input.anyDown(MOUSE.left);
     const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
-    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !this.pointerOnHud()));
+    if (!input.anyDown(MOUSE.left)) this.pressTaken = false;
+    // a press this frame counts where it went down (a tap's finger: the pointer is placed after this step)
+    let down: { x: number; y: number } | null = null;
+    for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = ndcToArt(ctx.engine, e.x, e.y);
+    const onHud = this.pointerOnHud(down ?? this.pointer.art);
+    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !this.pressTaken && !onHud));
     i.skill = -1;
     for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
     if (right && !overUi) i.skill = 0;
@@ -1361,9 +1371,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return this.tmp.copy(this.intent.aim);
   }
 
-  private pointerOnHud(): boolean {
-    const p = this.pointer.art;
-    return p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90;
+  private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
+    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
+  }
+
+  /** (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or tap there opens or closes it (and is no attack). */
+  private onMap(x: number, y: number): boolean {
+    if (!this.level || this.layer.top || this.screen !== 'level') return false;
+    const ui = this.ui;
+    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    let box: Box = { x: ui.w - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 };
+    if (this.mapOpen) {
+      const v = mapView(this.mapRoom(), this.minimapModel()!);
+      box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
+    }
+    return x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+  }
+
+  /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD. */
+  private mapRoom(): Box {
+    const ui = this.ui;
+    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const boss = this.level?.boss();
+    const top = boss && boss.life > 0 ? 30 : 8;
+    return { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
   }
 
   /** Prompts show the pad's buttons: the pad is the input used last (`controls.device`; a pad merely connected is not). */
@@ -1414,6 +1445,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         if (e.kind === 'pointer' && e.type === 'down') ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
         continue;
       }
+      // a click or tap on the corner map opens the level's map, one on the map closes it
+      if (e.kind === 'pointer' && e.type === 'down' && e.button === 0 && this.onMap(e.x, e.y)) {
+        this.mapOpen = !this.mapOpen;
+        this.pressTaken = true;
+        ctx.input.clearQueued(...MOUSE.left);
+        continue;
+      }
       // the world: a pointer press on a loot label picks it up
       if (e.kind === 'pointer' && e.type === 'down' && this.lootFocus && this.screen === 'level') this.tryPickup(this.lootFocus);
     }
@@ -1460,7 +1498,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return true;
   }
 
-  /** The light bar says how the hero is (`lightFor`): only when its colour changes; the hub's own on the title and in a showcase mode. */
+  /** The light bar says how the hero is (`lightFor`), asked every frame (the engine sends changes); the hub's own on the title and in a showcase mode. */
   private lightBar(): void {
     if (this.screen === 'loading') return; // between the town and a level: as it was
     const off = this.screen === 'title' || this.showcase.active;
@@ -1496,6 +1534,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.screen === 'title' || this.screen === 'loading') return;
     // the map over the play: a HUD overlay (the world runs on), in a level; a session round's too
     if (pressed(KEYS.map) && !this.layer.top) this.mapOpen = !this.mapOpen && !!this.level;
+    // Esc closes the map before it pauses (Circle is the dodge: the map stays open through a fight)
+    else if (this.mapOpen && pressed(KEYS.mapBack) && !this.layer.top) {
+      this.mapOpen = false;
+      return;
+    }
     // a session round has no menus or panels: the hub starts and ends rounds (and other players play on)
     if (this.round) return;
     if (this.dead) return;
@@ -1771,9 +1814,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
     // the level's map over the play, under the HUD (which drops its corner map meanwhile)
     if (this.mapOpen && model.minimap && !this.layer.top) {
-      const g = hudGeometry(ui.w, ui.h, this.hudControls);
-      const top = model.boss ? 30 : 8;
-      drawMap(ui, model.minimap, { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top }, this.time);
+      drawMap(ui, model.minimap, this.mapRoom(), this.time);
       model.minimap = null;
     }
     drawHud(ui, model, layout);
@@ -1842,24 +1883,29 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return { art: { w: ui.w, h: ui.h }, touch: g.touch, controls: this.hudControls, zones };
   }
 
+  /** The level's cells, what is explored, the hero, the exit and the boss: the corner map and the big one (null outside a level). */
+  private minimapModel(): MinimapModel | null {
+    const level = this.level;
+    if (!level) return null;
+    const boss = level.boss();
+    const L = level.layout;
+    const p = this.hero.actor.position;
+    return {
+      width: L.width,
+      height: L.height,
+      cell: (x, z) => L.cell(x, z),
+      explored: level.explored(),
+      hero: { x: p.x, z: p.z },
+      exit: { x: level.exit.x, z: level.exit.z, open: level.exitOpen },
+      boss: boss && boss.life > 0 ? { x: boss.position.x, z: boss.position.z } : null,
+      origin: level.origin,
+    };
+  }
+
   private hudModel(): HudModel {
     const level = this.level;
     const boss = level?.boss() ?? null;
-    let minimap: HudModel['minimap'] = null;
-    if (level) {
-      const L = level.layout;
-      const p = this.hero.actor.position;
-      minimap = {
-        width: L.width,
-        height: L.height,
-        cell: (x, z) => L.cell(x, z),
-        explored: level.explored(),
-        hero: { x: p.x, z: p.z },
-        exit: { x: level.exit.x, z: level.exit.z, open: level.exitOpen },
-        boss: boss && boss.life > 0 ? { x: boss.position.x, z: boss.position.z } : null,
-        origin: level.origin,
-      };
-    }
+    const minimap = this.minimapModel();
     const tuning = this.save.difficulty;
     const left = this.round?.timeLeft() ?? null;
     return {
@@ -2067,6 +2113,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         music: this.music,
         session: this.session,
         interactQueued: this.interactQueued,
+        pressTaken: this.pressTaken,
         map: this.mapOpen,
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
@@ -2182,6 +2229,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.combatSince = t.combatSince;
     Object.assign(this.session, t.session);
     this.interactQueued = t.interactQueued;
+    this.pressTaken = t.pressTaken ?? false;
     this.mapOpen = t.map ?? false;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
@@ -2262,6 +2310,8 @@ interface RiftSnapshot {
     readonly music: SongName | null;
     readonly session: Riftlight['session'];
     readonly interactQueued: boolean;
+    /** A held press the map took (left out by snapshots from before it). */
+    readonly pressTaken?: boolean;
     /** The map is open (left out by snapshots from before it). */
     readonly map?: boolean;
     readonly lootFocus: number | null;

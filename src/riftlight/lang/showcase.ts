@@ -12,7 +12,8 @@ import { lineKey } from './area';
  * of them. Actions beyond the shell's own: `move` (WASD / arrows / stick), `jump` (the arcade's
  * Space), `pound` (the arcade's C), `confirm` (Enter), `turn` (the Hall: mouse or Q / E),
  * `drag` (photo mode: drag the mouse), `orbit` (the Hall's card: drag or Q / E), `rise`
- * (photo mode: Q / E), `switch_view` (Tab / pad Y), `next_wing` (N), `photo_save` (P / pad X).
+ * (photo mode: Q / E), `switch_view` (Tab / pad Y), `next_wing` (N), `photo_save` (P / pad X),
+ * `photo_hide` (H / pad L1).
  */
 export const HINTS = {
   run: '{key:move} run',
@@ -34,8 +35,8 @@ export const HINTS = {
   field_of_view: '{key:zoom} field of view',
   edit: '{key:switch_view} edit',
   save: '{key:photo_save} save',
-  hide: '{key:hide} hide',
-  show: '{key:hide} show',
+  hide: '{key:photo_hide} hide',
+  show: '{key:photo_hide} show',
   pick: '{key:move} pick and change',
   change: '{key:confirm} change',
 } as const;

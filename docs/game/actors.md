@@ -12,8 +12,9 @@ Pad buttons are `Pad*` codes, not keys, so menus tell Cross = confirm from Space
 the mouse aims at the ground under the cursor (while it is in use: moved, clicked, or a button
 held); a pad's right stick (`input.lookAxis`, past `AIM.stick`) aims along itself, snapped to the
 nearest monster within `AIM.assist` (18°) of it and `AIM.range` m (aim assist), else `AIM.reach` m
-along it, and the AI Hub's Motion aim adds the controller's turns to that stick, so gyro aiming
-needs nothing of the game's own; keys, the left stick and a finger take the nearest monster in the
+along it (the AI Hub's Motion aim adds the controller's turning speed to that stick, so gyro nudges
+the aim only while the controller turns and the cone takes over once the stick recentres: proper
+motion aim needs the engine's opt-in motion input, still to come); keys, the left stick and a finger take the nearest monster in the
 `AIM.cone` (70°) ahead along the move (standing, along the last aim), else the nearest within 7 m
 whichever way (the shell's last resort), else straight on.
 Presses buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,

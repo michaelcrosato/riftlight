@@ -85,7 +85,8 @@ advancing it), and give each setting a row: every `FILTER_PRESETS` look and ever
 scale, a fill light that follows the camera (`ctx.lights.request({ follow: camera })`). Tab
 switches fly / edit (the rig's `fixed` flag), drag looks (no pointer lock, so the panel stays
 clickable). P saves `renderer.capture()` as a PNG through a 2D canvas (the HUD is not in it);
-Esc puts everything back.
+H hides the panel; Esc puts everything back. On a pad: Triangle switches, Square saves, L1 hides
+(`photo_hide`: Triangle is taken), Options goes back.
 
 ## Agent API
 

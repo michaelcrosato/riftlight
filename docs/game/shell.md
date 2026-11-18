@@ -146,9 +146,10 @@ random stream (`services.rng`, forked again per level) is play's alone: screen s
 damage-number drift and sound pitch draw from the shell's presentation stream (`fx`, forked from
 the run's wherever that one starts, kept in a snapshot), so turning shake or damage numbers off
 no longer moves play's stream: the same inputs roll the same drops (`game/presentation.test.ts`).
-Shake and zoom still move the camera, and so what the mouse points at (`playSettings`). The
-pause menu's **Dev** panel has the same tools (teleport to depth, give, god mode, kill all, spawn,
-AI off, hitboxes, time of day).
+Shake and zoom still move the camera, and so what the mouse points at (`playSettings`). With the
+developer tools on (`?debug=1` or the dev server: `Riftlight.devTools`) the pause menu's **Dev**
+panel has the same tools (teleport to depth, give, god mode, kill all, spawn, AI off, hitboxes,
+time of day); otherwise it is not on the menu, and `rl.ui.open('dev')` or the calls above reach them.
 
 ## Headless (`riftlight/headless.ts`)
 
