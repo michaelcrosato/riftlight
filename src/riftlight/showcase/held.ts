@@ -60,6 +60,11 @@ export class HeldPresses {
     return m;
   }
 
+  /** Nothing taken any more: a level that starts (a replay's too) starts from nothing held. */
+  clear(): void {
+    this.codes.clear();
+  }
+
   /** A taken press still held. */
   get size(): number {
     return this.codes.size;

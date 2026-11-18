@@ -41,7 +41,7 @@ export const DESTRUCTION: RoomDef = {
   wing: 'physics',
   about:
     'Things that break: punch through walls of 4, 12 and 30 pieces (they shatter from where your fist lands), cross a bridge of tiles that crumble a moment after you step on them, and punch the red barrels: they blow up and break everything around them. The pieces are real bodies for a few seconds, then dissolve away.',
-  try: ['Punch (J) the three walls: the pieces fly from your fist', 'Run across the crumbling bridge without stopping', 'Punch a red barrel next to the blocks', 'SLOW-MO, then break something'],
+  try: ['Punch ({key:attack}) the three walls: the pieces fly from your fist', 'Run across the crumbling bridge without stopping', 'Punch a red barrel next to the blocks', 'SLOW-MO, then break something'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'night',

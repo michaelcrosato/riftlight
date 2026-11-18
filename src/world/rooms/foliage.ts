@@ -20,7 +20,7 @@ export const FOLIAGE: RoomDef = {
   wing: 'effects',
   about:
     'A meadow of thousands of grass blades in one draw call: they lean with the wind, ripple as gusts roll across, and part around you as you walk through, and around the ball when you kick it. The trees and flowers sway with the same wind.',
-  try: ['Run through the grass and look behind you', 'Kick the ball through the meadow (walk into it)', 'GALE, then turn the wind with the knob (T)', 'Fill the meadow: 12 000 blades'],
+  try: ['Run through the grass and look behind you', 'Kick the ball through the meadow (walk into it)', 'GALE, then turn the wind with the knob in Tweak ({key:tweak})', 'Fill the meadow: 12 000 blades'],
   spawn: [0, 0, 8],
   facing: Math.PI,
   background: 'sky',

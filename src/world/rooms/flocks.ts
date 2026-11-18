@@ -15,7 +15,7 @@ export const FLOCKS: RoomDef = {
   wing: 'genres',
   about:
     'Birds wheeling over a meadow, fish schooling in a pond and sheep grazing in a pen. Nobody tells them where to go: each one only looks at its neighbours (keep your distance, go where they go, stay with them) and that is enough for a flock. Walk into them and they scatter.',
-  try: ['Walk into the sheep pen', 'Wade into the pond: the school splits round you', 'Make them tighter or looser (T)', 'BIRDS HOME calls the flock to a point'],
+  try: ['Walk into the sheep pen', 'Wade into the pond: the school splits round you', 'Make them tighter or looser in Tweak ({key:tweak})', 'BIRDS HOME calls the flock to a point'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'sky',

@@ -457,6 +457,20 @@ export class WorldShell {
     e.dualsense.hold(e.paused); // the engine's own pause, if any, keeps them let go
   }
 
+  /**
+   * A room's level starts (`RoomGame.setup`, a replay's too): nothing the last one held is still the
+   * shell's or a panel's (no click that sent a card away, no press a panel took), and no card or
+   * toast drawn before it can take this level's first click. A recording starts from nothing held.
+   */
+  roomStarted(): void {
+    this.taken.clear();
+    this.panelHeld.clear();
+    this.presses.clear();
+    this.swallowed = -1;
+    this.begun = -1;
+    this.cardRect = this.toastRect = null;
+  }
+
   /** Room unloaded: panels about it go, a frozen room thaws. */
   roomGone(room: RoomGame): void {
     if (this.room !== room) return;
@@ -472,14 +486,20 @@ export class WorldShell {
 
   // ------------------------------------------------------------------ per frame
 
-  /** UI input and hotkeys (from the room's `update`). */
-  frame(ctx: GameContext): void {
+  /**
+   * UI input and hotkeys (from the room's `update`; `dt`: its game seconds). The card and a toast
+   * count down on the frame's recorded time, unscaled (`shownTime`), so whether one is still up to
+   * take a click or a tap is input-derived and a replay agrees at any live frame rate; the panels'
+   * animations and key repeat run on real time, also while a menu freezes the room.
+   */
+  frame(ctx: GameContext, dt: number): void {
     const e = ctx.engine;
     const now = performance.now() / 1000; // real time: UI timers run while the game is paused
     const real = e.manual ? 1 / 60 : this.lastNow < 0 ? 1 / 60 : Math.min(0.1, Math.max(0, now - this.lastNow));
     this.lastNow = now;
-    this.cardTime = Math.max(0, this.cardTime - real);
-    this.toastTime = Math.max(0, this.toastTime - real);
+    const shown = shownTime(dt, e.timeScale);
+    this.cardTime = Math.max(0, this.cardTime - shown);
+    this.toastTime = Math.max(0, this.toastTime - shown);
     const input = ctx.input;
     this.begin(); // a click on the card is the shell's (once a frame: a fixed step may have run it)
     const hadPanel = !!this.layer.top;
@@ -733,6 +753,7 @@ export class RoomGame implements Game {
     this.ctx = ctx;
     const e = ctx.engine;
     shell.attach(e);
+    shell.roomStarted();
     shell.room = this;
     shell.visited.add(this.def.id);
     e.setCamera(this.def.camera ?? WORLD_CAMERA, { syncUrl: false });
@@ -754,7 +775,8 @@ export class RoomGame implements Game {
     const look = this.def.look;
     if (look) e.setLook(typeof look === 'string' ? (LOOK_PRESETS[look] ?? e.look) : look);
     else if (shell.baseLook) e.setLook(shell.baseLook);
-    shell.showCard(shell.visited.size <= 1 || this.arrivedFrom === null ? 14 : 8);
+    // longer on a fresh start (no door behind it): by the recorded args alone, so a replay shows it as long
+    shell.showCard(this.arrivedFrom === null ? 14 : 8);
   }
 
   /** What the room's code sees. */
@@ -814,7 +836,7 @@ export class RoomGame implements Game {
   }
 
   update(ctx: GameContext, dt: number): void {
-    shell.frame(ctx);
+    shell.frame(ctx, dt);
     const v = this.visitor;
     if (v) {
       v.update(dt, !ctx.camera.hidesTarget);
@@ -903,6 +925,15 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     },
     held: (...codes: string[]) => shell.held(codes),
   };
+}
+
+/**
+ * The seconds the card and a toast count down this frame: the frame's game seconds unscaled (the
+ * recorded frame's real `dt` less a hitstop), so slow motion doesn't hold them up, and nothing
+ * while a menu freezes the room (speed 0). Input-derived: the same frames count the same in a replay.
+ */
+export function shownTime(dt: number, timeScale: number): number {
+  return timeScale > 0 ? dt / timeScale : 0;
 }
 
 /** The most mass the hero shoves by walking into it (PlatformerCharacter.shove). */

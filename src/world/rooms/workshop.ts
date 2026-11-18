@@ -224,10 +224,10 @@ export const WORKSHOP: RoomDef = {
   title: 'Asset Workshop',
   wing: 'workshop',
   about:
-    'Every model and texture the engine carries, in a picker: the library family by family, then every imported pack. Scroll a shelf, pick an asset and put as many as you like on the floor, by key, by pad or by clicking where it goes. The pads at the back explain how assets work.',
+    'Every model and texture the engine carries, in a picker: the library family by family, then every imported pack. Scroll a shelf, pick an asset and put as many as you like on the floor, by key, by pad, or by a click or a tap where it goes. The pads at the back explain how assets work.',
   try: [
-    'Scroll the list with the mouse wheel (or {key:prev_item} and {key:next_item}); {key:prev_shelf} and {key:next_shelf} change shelf',
-    'Click the floor to place the pick there ({key:place} puts it where it hovers); right click takes one away, {key:undo} the last',
+    'Scroll the list with {key:prev_item} and {key:next_item}; {key:prev_shelf} and {key:next_shelf} change shelf',
+    'Click or tap the floor to place the pick there ({key:place} puts it where its preview hovers); {key:undo} takes the last one away',
     'Press {key:def_view}: what the pick is made of (parts, palette slots, params)',
     'Step on FIND IT: one search across the library and every pack, models and textures together',
   ],
@@ -243,13 +243,13 @@ export const WORKSHOP: RoomDef = {
   facing: Math.PI,
   background: 'night',
   guide: {
-    what: 'A floor to build on and a picker holding every model and texture the engine carries, shelf by shelf: the library’s families, its surfaces, icons and sprites, then every imported pack. The panel names the pick, measures it and says where it came from; Tab shows what it is made of. A hovering preview shows where Enter puts it.',
+    what: 'A floor to build on and a picker holding every model and texture the engine carries, shelf by shelf: the library’s families, its surfaces, icons and sprites, then every imported pack. The panel names the pick, measures it and says where it came from; {key:def_view} shows what it is made of. A hovering preview shows where {key:place} puts it.',
     how: [
       'A model is data, a ModelDef: parts (boxes, cylinders, lathes, extruded paths, imported meshes) in palette slots bound to the engine’s 16 colours, params with ranges, and use to place another model by its id. buildModel turns it into a few merged toon meshes, with its bounds, colliders and light.',
       'A texture is data too, a TextureDef: layers of pixel rows, seeded patterns, paths and an outline, in palette slots. A tiling one becomes a floor or a wall (textureMap: nearest texels, repeated); a sprite stands up facing the camera (spriteSheet in a SpriteBatch); hudSprite draws it on the HUD, as the panel does.',
       'Imported packs are other people’s kits converted once (npm run model -- import-pack, tex -- import-pack) into the same format and palette: one JSON file per pack in public/packs, listed in packs/index.json. loadPack loads one when a game needs it; every asset keeps its source and licence (npm run model -- credits lists them).',
       'Finding is one search everywhere: searchDefs, a catalog’s search, npm run model -- find (models) and npm run tex -- find (textures) score a word in the id over a tag over the about line; model -- find shows a model’s variants (rock-large-a to -f) as one entry. FIND IT runs searchDefs over both kinds at once.',
-      'Placing: the pick is built (buildModel(def, { catalog })), stood with the bottom of its bounds on the floor and its footprint centred, and given its light from the light pool, on a point inside it. A click is a ray from the camera through the pointer, met with the floor; a right click takes away the first placed thing the ray hits. A game adds addModelColliders(physics, build, at, yaw) too; here you walk through what you place.',
+      'Placing: the pick is built (buildModel(def, { catalog })), stood with the bottom of its bounds on the floor and its footprint centred, and given its light from the light pool, on a point inside it. A click or a tap is a ray from the camera through the pointer, met with the floor; with a mouse, a right click takes away the first placed thing the ray hits. A game adds addModelColliders(physics, build, at, yaw) too; here you walk through what you place.',
       'To vary an asset, write a few lines, not a copy: a def that uses it with a scale or a palette (docs/ASSETS.md, Variants).',
     ],
     uses: [
@@ -612,12 +612,12 @@ const t = -origin.y / dir.y;`,
     };
     const front = 8;
     kit.pad([-6, 0, front], { label: 'SPAWN', color: 'lime', note: 'The pick goes down in front of you ({key:place} does the same where the preview hovers).', apply: () => void placePick(ahead(preview ? reach(preview) : 0.5)) });
-    kit.pad([-3, 0, front], { label: 'UNDO', color: 'sand', note: 'The last thing placed is gone ({key:undo}; a right click takes the one under the mouse).', apply: () => void undo() });
-    kit.pad([0, 0, front], { label: 'TURN', color: 'sky', note: 'The next thing goes down turned another 45 degrees (Y). A sprite always faces the camera.', apply: () => (yaw = turned(yaw + TURN)) });
+    kit.pad([-3, 0, front], { label: 'UNDO', color: 'sand', note: 'The last thing placed is gone ({key:undo}; with a mouse, a right click takes the one under it).', apply: () => void undo() });
+    kit.pad([0, 0, front], { label: 'TURN', color: 'sky', note: 'The next thing goes down turned another 45 degrees ({key:spin}). A sprite always faces the camera.', apply: () => (yaw = turned(yaw + TURN)) });
     kit.pad([3, 0, front], { label: 'CLEAR', color: 'red', note: 'Everything placed is gone: each one’s meshes and light freed.', apply: () => void clear() });
     const defPad = kit.pad([6, 0, front], { label: 'DEF VIEW', color: 'plum', note: 'The panel shows what the pick is made of: its parts, palette slots, params and the models it uses ({key:def_view}).', apply: () => setDef(!defView) });
     const back = -8;
-    kit.pad([-6.75, 0, back], { label: 'MODELS ARE DATA', color: 'orange', note: 'A model is a ModelDef, plain data: parts in palette slots, params, and use to place other models. buildModel makes toon meshes of it. Tab shows the pick’s.', apply: () => setDef(true) }, [2.8, 1.6]);
+    kit.pad([-6.75, 0, back], { label: 'MODELS ARE DATA', color: 'orange', note: 'A model is a ModelDef, plain data: parts in palette slots, params, and use to place other models. buildModel makes toon meshes of it. {key:def_view} shows the pick’s.', apply: () => setDef(true) }, [2.8, 1.6]);
     kit.pad([-2.25, 0, back], { label: 'TEXTURES', color: 'cyan', note: 'A texture is a TextureDef: layers of pixels, patterns and paths in palette slots. Tiles lie as floors (textureMap), sprites stand (spriteSheet). Here: the next shelf.', apply: () => nextShelf((s) => !!s.textures) }, [2.8, 1.6]);
     kit.pad([2.25, 0, back], { label: 'PACKS', color: 'green', note: 'Other people’s kits, converted once into this format and palette: a JSON file each in public/packs, loaded by loadPack, each asset with its licence. Here: the next pack.', apply: () => nextShelf((s) => s.source !== LIBRARY_SOURCE) }, [2.8, 1.6]);
     kit.pad([6.75, 0, back], {
@@ -645,9 +645,9 @@ const t = -origin.y / dir.y;`,
     const knobs: Knob[] = [
       { kind: 'choice', id: 'shelf', label: 'Shelf', options: shelves.map((s) => `${s.title} (${count(s)})`), get: () => shelf, set: (i) => choose(i, left[i] ?? 0), hint: 'Every shelf: the library’s families, its textures, then every imported pack.' },
       { id: 'item', label: 'Item', min: 0, max: 1, step: 0.001, get: () => (count(current()) > 1 ? item / (count(current()) - 1) : 0), set: (v) => choose(shelf, Math.round(v * (count(current()) - 1))), format: () => `${item + 1} / ${count(current())}` },
-      { kind: 'choice', id: 'turn', label: 'Turn', options: ['0', '45', '90', '135', '180', '225', '270', '315'].map((d) => `${d} degrees`), get: () => Math.round(yaw / TURN) % 8, set: (i) => (yaw = i * TURN), hint: 'How the next thing goes down (Y): models turn, sprites face the camera.' },
+      { kind: 'choice', id: 'turn', label: 'Turn', options: ['0', '45', '90', '135', '180', '225', '270', '315'].map((d) => `${d} degrees`), get: () => Math.round(yaw / TURN) % 8, set: (i) => (yaw = i * TURN), hint: 'How the next thing goes down: models turn, sprites face the camera.' },
       { kind: 'toggle', id: 'def', label: 'Def view', get: () => defView, set: setDef },
-      { kind: 'toggle', id: 'preview', label: 'Preview', get: () => previewOn, set: (v) => (previewOn = v), hint: 'The pick hovering where Enter puts it.' },
+      { kind: 'toggle', id: 'preview', label: 'Preview', get: () => previewOn, set: (v) => (previewOn = v), hint: 'The pick hovering where it will go down.' },
     ];
 
     /** The pick's lines for the panel: what it is, how big, where from (or, in the DEF view, what it is made of). */

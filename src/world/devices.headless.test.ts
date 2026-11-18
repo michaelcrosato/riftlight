@@ -23,7 +23,8 @@ const room = () => roomApi(w);
 const HUB: HubSettingsSource = { dualsense: { connected: true, lightbar: true, triggers: true, light: () => {}, trigger: () => {} } };
 
 beforeAll(async () => {
-  ({ engine, w } = await headlessWorld('atrium', 1, { hubSettings: HUB }));
+  // touch: as a phone's page, which shows touch controls, so a touch names them (on a laptop's touch screen without them it names keys)
+  ({ engine, w } = await headlessWorld('atrium', 1, { hubSettings: HUB, touch: true }));
 }, WORLD_T);
 afterAll(() => engine?.dispose());
 
@@ -858,10 +859,10 @@ it(
       await w.goto('workshop', { instant: true });
       engine.step(5);
       const line = roomGame(engine).def.try[0]!;
-      expect(keyText(engine, line)).toBe('Scroll the list with the mouse wheel (or DRAG DOWN and DRAG UP); < and > change shelf');
+      expect(keyText(engine, line)).toBe('Scroll the list with DRAG DOWN and DRAG UP; < and > change shelf');
       expect(shown().filter((l) => /[<>]/.test(l)), 'no < > buttons in the Workshop: the panel has them').toEqual([]);
       engine.input.noteDevice('pad');
-      expect(keyText(engine, line)).toBe('Scroll the list with the mouse wheel (or L1 and R1); L2 and R2 change shelf');
+      expect(keyText(engine, line)).toBe('Scroll the list with L1 and R1; L2 and R2 change shelf');
       engine.input.noteDevice('touch');
       w.open('glossary');
       engine.step(1);

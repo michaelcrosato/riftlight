@@ -104,7 +104,7 @@ export const STEALTH: RoomDef = {
   wing: 'genres',
   about:
     'A warehouse with guards on patrol, each with a cone of vision that stops at walls and crates. Sneak from cover to cover: if a guard sees you long enough it raises the alarm and they all come for you along the shortest paths, then lose you and go back to their rounds.',
-  try: ['Reach the GOAL in the far corner unseen', 'Get spotted on purpose, then break line of sight', 'Crouch (C) to sneak: you are seen more slowly'],
+  try: ['Reach the GOAL in the far corner unseen', 'Get spotted on purpose, then break line of sight', 'Crouch ({key:crouch}) to sneak: you are seen more slowly'],
   spawn: [-11.5, 0, 6], // the bottom-left corner; the goal is the top-right
   facing: Math.PI,
   background: 'night',

@@ -17,7 +17,7 @@ export const TRAILS: RoomDef = {
   wing: 'effects',
   about:
     'The marks things leave behind: footprints in the sand that fade, ribbons that follow your fists and feet, a comet with a long tail, paint splats where you punch the wall, cracks where you ground-pound and scorch marks where a bomb goes off.',
-  try: ['Walk on the sand and look back', 'Punch the wall (J): paint', 'Ground-pound (jump, C): a crack', 'Step on BOMB'],
+  try: ['Walk on the sand and look back', 'Punch the wall ({key:attack}): paint', 'Ground-pound ({key:jump}, then {key:crouch}): a crack', 'Step on BOMB'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'night',

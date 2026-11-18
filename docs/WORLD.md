@@ -115,7 +115,10 @@ pads are `{ label, note, group, apply(room, pad), enabled? }` (`enabled()` false
 it does nothing, no note, no sound). A room's words name controls as `{key:action}` (an action of
 `WORLD_CONTROLS`), filled in for the device in use; `RoomDef.controls` renames an action where the
 room's own controls differ on a device (the Workshop's shelves on a phone are its panel's < >), so
-a line never names a button the room has not got. A room's own actions read keys and pad buttons
+a line never names a button the room has not got, nor a bare key: the hero's moves and Tweak are
+tags too ("Punch ({key:attack})", "in Tweak ({key:tweak})"), and a keyboard's or a mouse's own way
+says so ("on a keyboard Shift+E", "with a mouse, a right click"); `words.headless.test.ts` reads
+every room's card, guide, pads, labels and Tweak rows on a pad and a phone. A room's own actions read keys and pad buttons
 together (`WORLD_KEYS`); `RoomLogic.touch()` puts them on a phone (a touch slot `TouchSlot1`..`3`
 with its label, or a base button relabelled or hidden: the car's JUMP is BRAKE), and
 `RoomLogic.claims` lists pad buttons the hero's moves must not also take (the Gallery's L1 / R1).
@@ -123,7 +126,11 @@ A room reads input itself only while `room.inputFree`: false while a panel or a 
 the keys and for the rest of a frame that began with one, so the Circle that closes the guide is
 not the Workshop's undo as well; a held action through `room.held(...codes)`, which leaves out a
 key a panel's press still holds; the pointer's buttons only while `room.pointerFree` (a click or
-a tap that hid the card, or that a panel took, is theirs until it lets go).
+a tap that hid the card, or that a panel took, is theirs until it lets go). The card and a toast
+count down on the frame's recorded time (`shownTime`: unscaled, so slow motion doesn't hold them;
+held while a menu freezes the room), the card's length comes from the recorded args (14 s on a
+fresh start, 8 s through a door), and a room's level starts with nothing held (`roomStarted`), so
+whether the card or a toast takes a click is input-derived and a recording replays it at any frame rate.
 
 ## Add a room
 

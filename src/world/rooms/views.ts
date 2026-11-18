@@ -35,7 +35,7 @@ export const VIEWS: RoomDef = {
   wing: 'rendering',
   about:
     'The room drawn three more times every frame. Two security cameras render it into small textures shown on the monitors (render to texture: a minimap, a scope, a portal works the same way), and the mirror renders it again from a camera reflected in the glass. Walk about and watch yourself on all three.',
-  try: ['Wave at the mirror', 'Walk where CAM 1 and CAM 2 can see you', 'NIGHT VISION on the monitors', 'Lower the refresh rate or the resolution (T)'],
+  try: ['Wave at the mirror', 'Walk where CAM 1 and CAM 2 can see you', 'NIGHT VISION on the monitors', 'Lower the refresh rate or the resolution in Tweak ({key:tweak})'],
   spawn: [-1, 0, 2],
   facing: Math.PI,
   background: 'navy',

@@ -13,8 +13,8 @@ const PRESETS: { label: string; note: string; camera: CameraConfig }[] = [
   { label: 'TOP-DOWN', note: 'Straight down, screen-up is north: Zelda, twin-stick shooters, strategy.', camera: { preset: 'topdown', viewHeight: 17 } },
   { label: 'SIDE', note: 'Straight side-on: a side-scroller. The hero is locked to their depth lane.', camera: { preset: 'side', viewHeight: 12 } },
   { label: 'THIRD', note: 'Perspective orbit behind the hero; {key:orbit} to orbit; it pulls in when walls block the view.', camera: { preset: 'third', distance: 7, pitch: 22 } },
-  { label: 'FIRST', note: 'Through the hero\'s eyes: {key:turn} to turn (a click locks the mouse). The hero model hides.', camera: { preset: 'first', fov: 72 } },
-  { label: 'CINEMATIC', note: 'A fixed perspective shot of the course (what the free camera\'s Enter key gives you).', camera: { preset: 'fixed', projection: 'perspective', position: [9, 7, 13], target: [0, 0.5, -1], fov: 50 } },
+  { label: 'FIRST', note: 'Through the hero\'s eyes: {key:turn} to turn (with a mouse, a click locks it). The hero model hides.', camera: { preset: 'first', fov: 72 } },
+  { label: 'CINEMATIC', note: 'A fixed perspective shot of the course (on a keyboard, the free camera\'s Enter prints one like it).', camera: { preset: 'fixed', projection: 'perspective', position: [9, 7, 13], target: [0, 0.5, -1], fov: 50 } },
 ];
 
 export const CAMERAS: RoomDef = {

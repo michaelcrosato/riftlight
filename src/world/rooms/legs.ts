@@ -43,7 +43,7 @@ export const LEGS: RoomDef = {
   wing: 'animation',
   about:
     'Creatures whose walk is worked out every frame instead of keyed: a six-legged walker that follows you over steps and ramps, a crab and a four-legged robot. Each foot stays planted until it falls too far behind, then steps ahead in an arc while its neighbours hold; the knees come from two-bone IK.',
-  try: ['Walk around: the walker follows you, feet planted', 'Lead it up the steps', 'Make the steps longer or quicker (T)', 'Watch a foot: it never slides'],
+  try: ['Walk around: the walker follows you, feet planted', 'Lead it up the steps', 'Make the steps longer or quicker in Tweak ({key:tweak})', 'Watch a foot: it never slides'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'night',

@@ -46,7 +46,7 @@ export const SECONDARY: RoomDef = {
   wing: 'animation',
   about:
     'The motion that follows motion: a scarf that streams behind you, a tail that swings, an antenna that wobbles when you stop, and slimes that squash when they land and stretch when they jump. None of it is keyed: springs work it out every frame. Switch each off to see what it adds.',
-  try: ['Run, stop, turn: watch the scarf and the antenna', 'Jump and land', 'Switch them OFF one by one', 'Make them floppy or stiff (T)'],
+  try: ['Run, stop, turn: watch the scarf and the antenna', 'Jump and land', 'Switch them OFF one by one', 'Make them floppy or stiff in Tweak ({key:tweak})'],
   spawn: [0, 0, 4],
   facing: Math.PI,
   background: 'navy',

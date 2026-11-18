@@ -384,7 +384,7 @@ if (ok) await e.screen.reveal(kind, { duration: speed, center });`,
     kit.pad([0, 0, 7], {
       label: 'USE FOR DOORS',
       color: 'sand',
-      note: 'The last transition you played is now the one every door in Engine World uses (T changes it too).',
+      note: 'The last transition you played is now the one every door in Engine World uses (Tweak, {key:tweak}, changes it too).',
       apply: () => (shell.transition = last),
     });
     const crates = [[5, 6], [7, 6], [6, 8], [5.5, 7], [6.5, 7]].map(([x, z]) => kit.crate([x!, 0.5, z!], { size: 0.8 }));

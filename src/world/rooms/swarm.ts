@@ -16,7 +16,7 @@ export const SWARM: RoomDef = {
   wing: 'rendering',
   about:
     'Tens of thousands of particles, and the CPU never touches one. Their positions and speeds live in GPU memory; every frame one compute shader moves them all at once (pulled to a point, swirled round it, stirred by flowing noise) and one draw shows them. FOLLOW and they come after you.',
-  try: ['Step on FOLLOW and run', 'SCATTER them, watch them gather', 'A hundred thousand of them (T)', 'More swirl, more turbulence (T)'],
+  try: ['Step on FOLLOW and run', 'SCATTER them, watch them gather', 'A hundred thousand of them in Tweak ({key:tweak})', 'More swirl, more turbulence in Tweak ({key:tweak})'],
   spawn: [0, 0, 5],
   facing: Math.PI,
   background: 'night',

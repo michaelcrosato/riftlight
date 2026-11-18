@@ -20,7 +20,7 @@ export const TERRAIN: RoomDef = {
   wing: 'procedural',
   about:
     'A landscape grown from one number, the seed. Layers of noise make hills with detail on detail, ridged noise makes mountain crests, and simulated rain carves gullies down them. Walk on it: the same grid of heights is the ground you stand on. Another seed is another land; the same seed is always the same one.',
-  try: ['NEW LAND, then climb a hill', 'RIDGES: crests instead of rolling hills', 'ERODE and watch the rain carve gullies', 'Height, scale and roughness (T)'],
+  try: ['NEW LAND, then climb a hill', 'RIDGES: crests instead of rolling hills', 'ERODE and watch the rain carve gullies', 'Height, scale and roughness in Tweak ({key:tweak})'],
   spawn: [0, 0, 10.5],
   facing: Math.PI,
   background: 'sky',

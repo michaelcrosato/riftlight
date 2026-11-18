@@ -198,8 +198,8 @@ export function loadPack(url: string, opts: { readonly into?: ModelCatalog; read
     const wanted = pageParam('asset');
     if (!(wanted && open(wanted))) go(0, 0);
 
-    kit.pad([-4.5, 0, 4], { label: '< PREV', color: 'sky', note: 'The previous asset on this shelf ({key:prev_item}; Shift+Q: ten back).', apply: () => step(-1) });
-    kit.pad([-1.5, 0, 4], { label: 'NEXT >', color: 'sky', note: 'The next asset on this shelf ({key:next_item}; Shift+E: ten on).', apply: () => step(1) });
+    kit.pad([-4.5, 0, 4], { label: '< PREV', color: 'sky', note: 'The previous asset on this shelf ({key:prev_item}; on a keyboard Shift+Q: ten back).', apply: () => step(-1) });
+    kit.pad([-1.5, 0, 4], { label: 'NEXT >', color: 'sky', note: 'The next asset on this shelf ({key:next_item}; on a keyboard Shift+E: ten on).', apply: () => step(1) });
     kit.pad([1.5, 0, 4], { label: '< SHELF', color: 'sand', note: 'The previous shelf ({key:prev_shelf}).', apply: () => turn(-1) });
     kit.pad([4.5, 0, 4], { label: 'SHELF >', color: 'sand', note: 'The next shelf ({key:next_shelf}): library families, then textures, then imported packs.', apply: () => turn(1) });
 

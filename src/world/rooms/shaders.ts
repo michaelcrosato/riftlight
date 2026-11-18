@@ -15,7 +15,7 @@ export const SHADERS: RoomDef = {
   wing: 'rendering',
   about:
     'Six materials and not one texture among them: every pixel\'s colour is worked out from where it is, which way it faces and what time it is, in TSL (three.js\'s shader language, written as JavaScript). A hologram, a force field, lava, marble, wood and crystal.',
-  try: ['Walk round the hologram: its rim glows', 'Stand inside the force field', 'Speed time up or freeze it (T)', 'Look closely: the see-through ones dither'],
+  try: ['Walk round the hologram: its rim glows', 'Stand inside the force field', 'Speed time up or freeze it in Tweak ({key:tweak})', 'Look closely: the see-through ones dither'],
   spawn: [0, 0, 5],
   facing: Math.PI,
   background: 'ink',
