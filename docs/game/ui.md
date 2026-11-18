@@ -23,8 +23,17 @@ minimap and its mirror on the left (`bossPlace`), and where the bar would be sho
 gold and the top-left block; the banner then goes under it. Couch guests' strips (`guestsRect`)
 go under the top-left block, under a boss's bar that runs across the screen (it stays put as guests
 come and go), and side by side, two or three a row, where a column of them would run into the rest
-of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); the banner goes
-under them and a kill streak right of them. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
+of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); where none of
+that is clear (a short landscape phone, 360 to 412 CSS px tall, with the tuning's rows in the
+top-left block) beside the top-left block under a boss's bar at the top, else under the minimap and
+gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. The
+banner never covers the strips, a touch control, the skill bar, an orb, the XP bar, the minimap, a
+boss's bar or a moment's seconds left: where its plate would, it moves aside in its row (narrower if
+it must, never narrower than its title: drawn centred on the plate), else up above what it hit,
+under the top-left block or under the strips, the spot covering least of the rest (on a phone held
+sideways the action cluster reaches up the right side). The 'under the minimap' place is for a
+phone held upright only (a 568×320 phone's compact HUD keeps it at the top, beside the minimap).
+A kill streak goes right of the strips. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
 tap on the corner minimap) fits what the hero explored into the room between the HUD's top and
 bottom (`mapView`, up to 5 art pixels a cell; around the hero when it can't fit), on a
 see-through plate under the HUD (ink on two pixel rows of every three, `PLATE_GAP`: it reads
@@ -85,14 +94,20 @@ anywhere in the lower left; the HUD lays out around where it rests, and keeps wh
 the corner map, out of its zone); a big attack button in the bottom-right corner,
 skills 1-4 on an arc around it, the dodge outside the arc and a contextual interact button
 next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
-inventory, skills, tree and settings are) top-left. `TouchPad` drives them each frame from
+inventory, skills, tree and settings are) top-left. In 52in1 (the page's `window.AIHubSettings`,
+which the hub's companion script sets before the game's first script: `RIFTLIGHT_OPTIONS` reads it,
+and `TouchPad.buttons` by `engine.hubSettings.present`) ≡ sits lower, its top on the hub's wake band
+(`HUB_WAKE`, 90 CSS px: a touch above it brings the hub's bar over the game), its centre 112 CSS px
+down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame.round`: a round has
+no pause menu, the hub's bar is the menu there). `TouchPad` drives them each frame from
 `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
 orb takes the lowest free spot in its corner third, half the width on a landscape phone, never
 under the minimap and the gold (beside the joystick and the cluster on the bottom row in landscape,
 above them in portrait), the XP bar runs between the orbs or sits over the life
-orb, the top-left text starts right of ≡, the prompt drops its key glyph. The controls hide on
+orb, the top-left text starts right of ≡ (any control in the top-left third: ≡ lower down in
+52in1 too), the prompt drops its key glyph. The controls hide on
 the title, under every panel and when the hero is dead, and their rects are world-overlay
 zones too. Without a page (headless, a replay of a phone's recording) `TouchPad.zones` gives
 where the page's controls would be on a page with touch controls while a finger is the device in

@@ -1,7 +1,7 @@
 /**
  * Every menu in the shell, as widget data (ui/menu.ts): title, pause, tuning (the
- * difficulty sliders), settings and their engine page, save slots, dev tools and the rift
- * keeper's depth list.
+ * difficulty sliders), settings and their controller and engine pages, save slots, dev tools and
+ * the rift keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
 import { FPS_OPTIONS, languageName, LOOK_PRESETS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
@@ -265,7 +265,25 @@ export function settingsMenu(h: MenuHost): Menu {
             { kind: 'toggle' as const, id: 'touchAim', label: t('menu.settings.touch_aim'), get: () => s.touchAimAssist, set: (v: boolean) => change(() => (s.touchAimAssist = v))(), hint: t('menu.settings.touch_aim.hint') },
           ]
         : []),
-      // the controller's: the engine's settings (prompts follow the input used last by themselves)
+      // the controller's own page: button prompts, vibration, motion aim (a list that fits at 1920×1080 with all of them)
+      { kind: 'button', id: 'controller', label: t('menu.settings.controller'), onClick: () => h.openMenu(controllerMenu(h)), hint: motionAllowed(h) ? t('menu.settings.controller.hint_motion') : t('menu.settings.controller.hint') },
+      { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
+    ],
+    { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },
+  );
+}
+
+/** 52in1 lets games read a DualSense's motion: the Controller page has motion aim's rows. */
+const motionAllowed = (h: MenuHost): boolean => h.engine.hubSettings.values.dualsense.motion;
+
+/**
+ * Settings → Controller: the controller's settings, the engine's (`engine.settings`, which saves
+ * them): button prompts (prompts follow the input used last by themselves), vibration, and motion
+ * aim and its sensitivity while 52in1 lets games read a DualSense's motion.
+ */
+export function controllerMenu(h: MenuHost): Menu {
+  return new Menu(
+    () => [
       { kind: 'choice', id: 'padGlyphs', label: t('menu.settings.pad_glyphs'), options: PAD_GLYPHS.map((g) => t(`menu.settings.pad_glyphs.${g}`)), get: () => PAD_GLYPHS.indexOf(h.engine.settings.values.padGlyphs ?? 'playstation'), set: (i) => h.engine.settings.set({ padGlyphs: PAD_GLYPHS[i] }), hint: t('menu.settings.pad_glyphs.hint') },
       {
         kind: 'slider',
@@ -278,10 +296,9 @@ export function settingsMenu(h: MenuHost): Menu {
         hint: t('menu.settings.vibration.hint'),
       },
       // motion aim (the engine's `motion` and `motionSensitivity`): only while 52in1 lets games read a DualSense's motion
-      ...(h.engine.hubSettings.values.dualsense.motion ? motionRows(h) : []),
-      { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
+      ...(motionAllowed(h) ? motionRows(h) : []),
     ],
-    { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },
+    { id: 'controller', title: t('menu.controller.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
 }
 

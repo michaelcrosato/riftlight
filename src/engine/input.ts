@@ -80,6 +80,13 @@ const STICK_USE = 0.25;
 const STICK_MOVE = 0.05;
 /** How far a trigger first seen part-way must move before it reads (some pads report half until first pulled). */
 const TRIGGER_WAKE = 0.05;
+/**
+ * Polls (this one and the ones before: 50 ms at 60 Hz) within which a pad's join press and the
+ * same press on player 1's pad in use, in either order, are one controller seen twice (`joinWith`):
+ * DS4Windows and Steam Input feed the virtual pad a few milliseconds after the real one, so its
+ * press often lands a poll later, or a poll earlier.
+ */
+export const TWIN_POLLS = 3;
 /** How far the mouse travels (CSS pixels) before it counts as used (`device`): a bumped desk does not. */
 const MOUSE_USE = 6;
 
@@ -500,7 +507,11 @@ export class Input {
    * While set (and `padPlayers` is on), a pad pressing one of these codes joins (`joined`) before
    * its press reaches anything: a pad that has not joined and is not player 1's pad in use (the pad
    * is `device` and it is `padIndex`). The press that joins reads as up until let go, and the slot
-   * is in `joinedNow` for that frame (recorded). Null: nobody joins.
+   * is in `joinedNow` for that frame (recorded). Null: nobody joins. Only on a poll whose frame runs
+   * (not paused, not loading: `beginFrame`'s `runs`). While player 1 is on a pad, a press within
+   * `TWIN_POLLS` of the same press on player 1's pad (either first), or while player 1's pad holds
+   * that code, is that controller's twin and never joins; so a join waits `TWIN_POLLS` - 1 polls,
+   * its pad driving nothing meanwhile.
    */
   joinWith: readonly string[] | null = null;
   /** Pads that joined this frame (`joinWith`; recorded, replayed). */
@@ -508,6 +519,12 @@ export class Input {
     return this._joinedNow;
   }
   private _joinedNow: number[] = [];
+  /** Polls so far (the clock of `TWIN_POLLS`). */
+  private polls = 0;
+  /** The poll on which player 1's pad in use last went down on each join code (`TWIN_POLLS`). */
+  private readonly firstDown = new Map<string, number>();
+  /** Pads whose join waits to see whether player 1's pad presses the same (`TWIN_POLLS`): by index, the codes and the poll it pressed on. */
+  private readonly joinHold = new Map<number, { readonly codes: readonly string[]; readonly at: number }>();
   private readonly pads: readonly PadPlayer[] = Array.from({ length: MAX_PADS }, (_, i) => new PadPlayer(i, this));
   /**
    * How strongly `rumble()` shakes the pad, 0..1: the player's vibration setting (the engine keeps
@@ -546,6 +563,7 @@ export class Input {
       // the recording says which pads play on their own, and what they hold
       for (const p of this.pads) p.forget();
       this.joined.clear();
+      this.joinHold.clear();
     }
     this.rumbleWant = null;
     if (on) this.outbox = []; // what was sent before a replay is not part of it
@@ -891,6 +909,7 @@ export class Input {
     this.pad1 = null;
     this.padMulti = false;
     for (const p of this.pads) p.forget();
+    this.joinHold.clear();
     this.dropTaps();
     this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
@@ -903,12 +922,14 @@ export class Input {
 
   /**
    * Engine: begin a frame at game time `now` (seconds). Polls gamepads and drops expired
-   * queued presses. `pads` defaults to `navigator.getGamepads()`; tests can pass fakes.
+   * queued presses. `pads` defaults to `navigator.getGamepads()`; tests can pass fakes. `runs`
+   * false: the frame never reaches the game (paused, loading), so no pad joins on it (`joinWith`):
+   * a join must reach the game in a frame that runs, and is recorded with it.
    */
-  beginFrame(now: number, dt: number, pads?: readonly (GamepadLike | null)[]): void {
+  beginFrame(now: number, dt: number, pads?: readonly (GamepadLike | null)[], runs = true): void {
     // gamepad presses queue at the frame before's time, like keys pressed since then (so a
     // recording, which replays every press that way, gives them the same expiry)
-    this.pollGamepads(dt, pads);
+    this.pollGamepads(dt, pads, runs);
     this.now = now;
     // no negative zeros (a stick at rest reads -0): JSON writes them as 0, so a recording would
     // replay a different number, and atan2(-0, x) is not atan2(0, x)
@@ -1017,6 +1038,7 @@ export class Input {
     }
     this.joined.clear();
     for (const slot of s.joined ?? []) this.joined.add(slot);
+    this.joinHold.clear();
     this.endFrame();
   }
 
@@ -1294,7 +1316,7 @@ export class Input {
     this.queued.set(code, this.now);
   }
 
-  private pollGamepads(dt: number, pads?: readonly (GamepadLike | null)[]): void {
+  private pollGamepads(dt: number, pads?: readonly (GamepadLike | null)[], runs = true): void {
     let list: readonly (GamepadLike | null)[] = pads ?? this.fakePads ?? [];
     if (!pads && !this.fakePads) {
       try {
@@ -1316,8 +1338,16 @@ export class Input {
     const owns: OwnPoll[] = [];
     const seen = this.padSeen;
     const seenNow = new Map<number, PadSeen>();
-    /** The join codes player 1's pad in use pressed in this poll: a pad pressing one of them now is its twin (one controller seen twice), never a join. */
-    const firstPressed = this.padPlayers && this.joinWith && this._device === 'pad' && !this._playing ? this.joinPressed(list, this._padIndex, seen) : null;
+    // couch co-op's joins (`joinWith`): only on a poll whose frame runs, never in a replay (it has them)
+    this.polls++;
+    const joining = this.padPlayers && !!this.joinWith && !this._playing && runs;
+    if (!joining) this.dropJoinHolds();
+    /** Player 1 is on a pad: a join press near the same press on it is its twin (one controller seen twice), never a join (`TWIN_POLLS`). */
+    const twins = joining && this._device === 'pad';
+    /** The join codes player 1's pad in use went down on in this poll, and those it holds. */
+    const first = twins ? this.joinPressed(list, this._padIndex, seen) : null;
+    for (const c of first?.pressed ?? []) this.firstDown.set(c, this.polls);
+    const twin = (c: string) => !!first && (first.held.has(c) || this.polls - (this.firstDown.get(c) ?? -Infinity) < TWIN_POLLS);
     /** Create and Options held alone: held, but they press only as they are let go (`taps`). */
     const chordHeld = new Set<string>();
     const taps: string[] = [];
@@ -1377,12 +1407,22 @@ export class Input {
       // couch co-op: the pad on its own; one that joins does so before its press reaches anything
       const own = this.padPlayers && !this._playing && index < MAX_PADS ? this.pads[index]! : null;
       if (own) {
-        const mineInUse = this._device === 'pad' && this._padIndex === index;
-        const fresh = this.joinWith?.filter((c) => padDown.has(c) && !own.held.has(c)) ?? [];
-        if (this.joinWith && !this.joined.has(index) && !mineInUse && fresh.length && !fresh.some((c) => firstPressed?.has(c))) {
-          this.joined.add(index);
-          this._joinedNow.push(index);
-          for (const c of this.joinWith) if (padDown.has(c)) own.latched.add(c); // the press that joined presses nothing
+        const hold = this.joinHold.get(index);
+        if (hold && !this.joined.has(index)) {
+          // a join waiting: player 1's pad pressing the same meanwhile makes it that pad's twin (it
+          // drives player 1's input with it again); else it joins once the wait is over
+          if (hold.codes.some((c) => first?.pressed.has(c))) this.joinHold.delete(index);
+          else if (this.polls - hold.at >= TWIN_POLLS - 1) this.join(index, own, padDown);
+        } else if (joining && !this.joined.has(index) && !(this._device === 'pad' && this._padIndex === index)) {
+          // a join code that went down in this poll (not held from before)
+          const fresh = this.joinWith!.filter((c) => padDown.has(c) && !pad.buttons.some((_, i) => this.gamepadButtons[i] === c && was?.buttons[i]));
+          if (fresh.length && !fresh.some(twin)) {
+            if (!twins) this.join(index, own, padDown);
+            else {
+              this.joinHold.set(index, { codes: fresh, at: this.polls });
+              for (const c of fresh) own.latched.add(c); // the press that may join presses nothing
+            }
+          }
         }
         owns.push({ own, down: padDown, chord: padChord, taps: padTaps, l, r, lt: value(6), rt: value(7) });
       }
@@ -1399,7 +1439,8 @@ export class Input {
         tap,
       };
       seenNow.set(index, now);
-      if (this.joined.has(index)) continue; // a player of its own: it never drives the merged input (player 1's)
+      // a player of its own, or one whose join waits: it never drives the merged input (player 1's)
+      if (this.joined.has(index) || this.joinHold.has(index)) continue;
       for (const c of padDown) down.add(c);
       for (const c of padChord) chordHeld.add(c);
       taps.push(...padTaps);
@@ -1412,6 +1453,7 @@ export class Input {
       if (index === this._padIndex) rumblePad = pad;
     }
     this.padSeen = seenNow;
+    for (const index of [...this.joinHold.keys()]) if (!seenNow.has(index) || this.joined.has(index)) this.joinHold.delete(index); // gone, or joined
     this.pollOwn(owns);
     // a button held through release() reads as up until it is let go
     for (const code of this.padLatched) if (!down.has(code)) this.padLatched.delete(code);
@@ -1485,22 +1527,42 @@ export class Input {
 
   /**
    * The `joinWith` codes the pad at `index` (`navigator.getGamepads()` slot) went down on in this
-   * poll (not down at the poll before, `seen`). One controller can show the browser two pads (a
-   * virtual one beside the real one: DS4Windows or Steam Input without HidHide), every press on
-   * both: a pad pressing what player 1's pad in use pressed in the same poll is that twin, not
-   * another player joining.
+   * poll (not down at the poll before, `seen`), and those it holds. One controller can show the
+   * browser two pads (a virtual one beside the real one: DS4Windows or Steam Input without
+   * HidHide), every press on both, the virtual one's a few milliseconds late: a pad pressing what
+   * player 1's pad in use pressed within `TWIN_POLLS`, or holds, is that twin, not another player
+   * joining.
    */
-  private joinPressed(list: readonly (GamepadLike | null)[], index: number, seen: ReadonlyMap<number, PadSeen>): Set<string> {
-    const out = new Set<string>();
+  private joinPressed(list: readonly (GamepadLike | null)[], index: number, seen: ReadonlyMap<number, PadSeen>): { pressed: Set<string>; held: Set<string> } {
+    const out = { pressed: new Set<string>(), held: new Set<string>() };
     const n = list.findIndex((p, k) => !!p && p.connected !== false && (Number.isInteger(p.index) ? p.index : k) === index);
     const pad = n >= 0 ? list[n] : null;
     if (!pad || !this.joinWith) return out;
     const was = seen.get(index);
     pad.buttons.forEach((b, i) => {
       const code = this.gamepadButtons[i];
-      if (code && b && this.joinWith!.includes(code) && (b.pressed || (b.value ?? 0) > 0.5) && !was?.buttons[i]) out.add(code);
+      if (!code || !b || !this.joinWith!.includes(code) || !(b.pressed || (b.value ?? 0) > 0.5)) return;
+      out.held.add(code);
+      if (!was?.buttons[i]) out.pressed.add(code);
     });
     return out;
+  }
+
+  /** The pad at `index` joins (`joinWith`): a player of its own from this frame, the press that joined pressing nothing. */
+  private join(index: number, own: PadPlayer, down: ReadonlySet<string>): void {
+    this.joinHold.delete(index);
+    this.joined.add(index);
+    this._joinedNow.push(index);
+    for (const c of this.joinWith ?? []) if (down.has(c)) own.latched.add(c);
+  }
+
+  /**
+   * Joins that wait (`TWIN_POLLS`) are dropped (a frame that doesn't run, `joinWith` cleared, a
+   * replay): their pads drive player 1's input again, the join press held reading as up until let go.
+   */
+  private dropJoinHolds(): void {
+    for (const { codes } of this.joinHold.values()) for (const c of codes) this.padLatched.add(c);
+    this.joinHold.clear();
   }
 
   /** Each pad on its own after a poll (`padPlayers`; never during a replay, which sets them from the recording). */

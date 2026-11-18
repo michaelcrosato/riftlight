@@ -7,7 +7,7 @@
 // order.
 import { type Mesh, type MeshBasicNodeMaterial, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HUB_COLORS, type GamepadLike, type Recording } from '../../engine';
+import { HUB_COLORS, type GamepadLike, type Recording, TWIN_POLLS } from '../../engine';
 import type { Actor } from '../actors/Actor';
 import { AIM } from '../actors/aim';
 import type { ActorLike } from '../core/types';
@@ -40,6 +40,16 @@ const setPads = (next: (Pad | null)[]) => {
 const tap = (slot: number, b: number) => {
   setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [b] } : p)));
   h.engine.step(1);
+  setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [] } : p)));
+  h.engine.step(1);
+};
+/**
+ * Cross on pad `slot`, held for `TWIN_POLLS` frames and let go: a join (player 1 on a pad, the
+ * engine waits `TWIN_POLLS` - 1 polls for a twin's press before it joins: `input.joinWith`).
+ */
+const join = (slot: number) => {
+  setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [0] } : p)));
+  h.engine.step(TWIN_POLLS);
   setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [] } : p)));
   h.engine.step(1);
 };
@@ -85,7 +95,8 @@ describe('couch co-op', () => {
       expect(rl.ui.widgets().map((w) => w.id)).toEqual(['seat1', 'seat2', 'seat3', 'seat4', 'g', 'join']);
       tap(0, 0); // player 1's own Cross joins nobody
       expect(game.coop.guests).toEqual([]);
-      tap(1, 0); // Cross on pad 1: it joins
+      engine.step(TWIN_POLLS); // past the window a twin's Cross would come in
+      join(1); // Cross on pad 1: it joins
       await settle(); // the guest's hero is made (a model already loaded: microtasks)
       expect(game.coop.seats).toEqual([2]);
       expect([...engine.input.joined]).toEqual([1]);
@@ -222,7 +233,7 @@ describe('couch co-op', () => {
     engine.step(1);
     said.text = text;
     expect(lines.some((l) => /another controller/.test(l)), 'the town says how to join').toBe(true);
-    tap(2, 0);
+    join(2);
     await settle();
     engine.step(1);
     expect(game.coop.seats).toEqual([2, 3]);
@@ -277,13 +288,23 @@ describe('couch co-op', () => {
     expect(game.coop.strips().find((s) => s.seat === 3)!.rise).toBeGreaterThan(0);
     engine.step(40);
     expect(third.actor.alive).toBe(true);
-    // the camera keeps everyone in view: it zooms out as they spread, down to its cap
+    // the camera keeps everyone in view: it zooms out as they spread up the screen (its short side
+    // here), down to its cap; a 16:9 view holds a long spread across as it is
     expect(game.coop.zoom()).toBe(1);
     const second = game.coop.guests.find((g) => g.seat === 2)!.hero!;
-    second.snap!(game.hero.actor.position.clone().add(new Vector3(COOP.leash - 1, 0, 0)), 0);
+    const right = new Vector3();
+    const forward = new Vector3();
+    cameraBasis(engine, right, forward);
+    const p1 = game.hero.actor.position.clone();
+    second.snap!(p1.clone().addScaledVector(right, 9), 0);
+    expect(game.coop.zoom(), 'across: in view as it is').toBe(1);
+    second.snap!(p1.clone().addScaledVector(forward, 12), 0);
     expect(game.coop.zoom()).toBeLessThan(1);
-    expect(game.coop.zoom()).toBeGreaterThanOrEqual(COOP.zoomOut);
+    expect(game.coop.zoom()).toBeGreaterThan(COOP.zoomOut);
+    second.snap!(p1.clone().addScaledVector(forward, 40), 0);
+    expect(game.coop.zoom(), 'no farther than its cap').toBe(COOP.zoomOut);
     engine.step(1);
+    expect(second.actor.position.distanceTo(game.hero.actor.position), 'and the leash brings it back').toBeLessThan(COOP.beside + 0.2);
     expect(engine.errors).toEqual([]);
   });
 

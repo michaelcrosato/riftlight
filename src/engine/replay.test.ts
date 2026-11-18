@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type GamepadLike, Input, type InputFrame } from './input';
+import { type GamepadLike, Input, type InputFrame, TWIN_POLLS } from './input';
 import { type Recording, recordingProblem } from './replay';
 
 const target = () => new EventTarget() as unknown as Window;
@@ -324,8 +324,9 @@ describe('couch co-op in a recording: each pad on its own', () => {
       [tpad(0, [0, 0, 0, 0]), tpad(1, [0.7, -0.4, 0.2, 0.9], [2, 7])],
       [tpad(0, [0.5, 0, 0, 0], [1]), tpad(1, [0, 0, 0, 0], [12])], // player 1 on pad 0
       [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0])],
-      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0]), tpad(2, [0, 0, 0, 0], [0])], // pad 2 joins
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0]), tpad(2, [0, 0, 0, 0], [0])], // pad 2 presses Cross: player 1 is on a pad, so it joins TWIN_POLLS - 1 polls on
       [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])], // pad 1 unplugged
+      [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])], // pad 2 joins
       [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])],
     ];
     const frames: InputFrame[] = [];
@@ -341,12 +342,14 @@ describe('couch co-op in a recording: each pad on its own', () => {
       live.endFrame();
     }
     expect(seen[1]!.joinedNow).toEqual([1]);
-    expect(seen[6]!.joinedNow).toEqual([2]);
+    expect(TWIN_POLLS).toBe(3);
+    expect(seen.slice(6).map((s) => s.joinedNow)).toEqual([[], [], [2], []]);
+    expect(seen[7]!.p1.axis, 'a pad whose join waits drives nothing of player 1’s').toEqual({ x: 0, y: 0 });
     expect(seen[3]!.pads[1]!.x, 'pad 1’s Square, its own').toBe(true);
     expect(seen[3]!.p1.down, 'none of pad 1 is player 1’s').toEqual([]);
-    expect(seen[8]!.pads[1]!.connected).toBe(false);
+    expect(seen[9]!.pads[1]!.connected).toBe(false);
     // left out while no joined pad changed; a pad that has not joined is never recorded on its own (player 1's pad 0 drives the merged input)
-    expect([frames[0]!.pads, frames[1]!.join, frames[8]!.pads]).toEqual([undefined, [1], undefined]);
+    expect([frames[0]!.pads, frames[1]!.join, frames[8]!.join, frames[9]!.pads]).toEqual([undefined, [1], [2], undefined]);
     expect(frames.flatMap((f) => f.pads ?? []).map((p) => p[0]).filter((slot) => slot === 0)).toEqual([]);
     const again = new Input(target());
     again.playing = true;

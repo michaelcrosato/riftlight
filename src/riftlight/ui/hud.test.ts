@@ -1,8 +1,8 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { type AspectMode, computeFraming, RESOLUTIONS, touchScale } from '../../engine/framing';
 import { Vector3 } from 'three/webgpu';
-import { type HudColor, Lang, textWidthPx } from '../../engine';
-import { RIFTLIGHT_TOUCH_BUTTONS } from '../game/touch';
+import { type HudColor, Lang, textWidthPx, type TouchButton } from '../../engine';
+import { HUB_WAKE, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, touchLayout } from '../game/touch';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { bossNameShown } from '../lang/monsters';
@@ -20,7 +20,7 @@ import { type Box, overlaps } from './layout';
  * per art pixel at least on a phone). The e2e `phone` suite checks the same thing against the
  * real DOM rects.
  */
-function controlsFor(vw: number, vh: number, dpr: number, aspect: AspectMode = 'fill', density = RIFTLIGHT_OPTIONS.touchDensity ?? 0): { W: number; H: number; boxes: Box[] } {
+function controlsFor(vw: number, vh: number, dpr: number, aspect: AspectMode = 'fill', density = RIFTLIGHT_OPTIONS.touchDensity ?? 0, buttons: readonly TouchButton[] = RIFTLIGHT_TOUCH_BUTTONS): { W: number; H: number; boxes: Box[] } {
   const f = computeFraming(vw, vh, dpr, RESOLUTIONS.default, aspect, touchScale({ width: vw, height: vh, dpr }, density));
   const k = f.artWidth / f.cssWidth; // art pixels per CSS pixel
   const toArt = (x: number, y: number, w: number, h: number): Box => {
@@ -29,7 +29,7 @@ function controlsFor(vw: number, vh: number, dpr: number, aspect: AspectMode = '
     return { x: ax, y: ay, w: Math.floor((x + w - f.offsetX) * k) - ax + 1, h: Math.floor((y + h - f.offsetY) * k) - ay + 1 };
   };
   const boxes = [toArt(16, vh - 16 - 132, 132, 132)];
-  for (const b of RIFTLIGHT_TOUCH_BUTTONS) {
+  for (const b of buttons) {
     const at = b.at!;
     const size = at.size ?? 58;
     const corner = at.corner ?? 'bottom-right';
@@ -112,6 +112,21 @@ describe('hudGeometry with touch controls', () => {
     const g = hudGeometry(W, H, boxes);
     const menu = boxes[boxes.length - 1]!;
     expect(g.textX).toBeGreaterThan(menu.x + menu.w);
+  });
+
+  it('in 52in1 ≡ sits below the hub’s wake band (a touch above it brings the hub’s bar), still beside the top-left block, over none of the fixed HUD', () => {
+    for (const [vw, vh, dpr] of [[390, 844, 3], [844, 390, 3], [740, 360, 2], [915, 412, 2.625]] as const) {
+      const where = `${vw}×${vh} at DPR ${dpr}`;
+      const css = touchLayout(vw, vh, RIFTLIGHT_HUB_TOUCH_BUTTONS).at(-1)!;
+      expect(css.y, `${where}: ≡'s top below the wake band`).toBeGreaterThanOrEqual(HUB_WAKE);
+      expect(touchLayout(vw, vh).at(-1)!.y, `${where}: on its own page it is in the corner`).toBeLessThan(HUB_WAKE);
+      const { W, H, boxes } = controlsFor(vw, vh, dpr, 'fill', RIFTLIGHT_OPTIONS.touchDensity ?? 0, RIFTLIGHT_HUB_TOUCH_BUTTONS);
+      const menu = boxes.at(-1)!;
+      const g = hudGeometry(W, H, boxes);
+      expect(g.textX, `${where}: the top-left text right of ≡`).toBeGreaterThan(menu.x + menu.w);
+      const m = { time: 0, vitals: { life: 50, maxLife: 100, mana: 20, maxMana: 40, es: 0, maxEs: 0 }, levelUpAge: 99, level: 7, xp: 0.3, skills: [], buffs: [], boss: null, minimap: null, gold: 10, goldShown: 10, feed: [], card: null, streak: null, difficulty: ['x2', 'x3'], hurt: 0, levelLabel: 'Depth 3 · The Gale Steps', timer: '4:05', device: 'touch', padStyle: 'playstation', progress: { killed: 1, total: 9 }, controls: boxes } satisfies HudModel;
+      for (const z of hudBoxes(W, H, m).filter((z) => z.id !== 'control')) expect(overlaps(z, menu, 0), `${where}: the ${z.id} ${JSON.stringify(z)} under ≡ ${JSON.stringify(menu)}`).toBe(false);
+    }
   });
 
   it('without controls it is the desktop / compact layout', () => {
@@ -395,9 +410,20 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
     ['360×740 phone', 360, 740, 2],
     ['844×390 phone', 844, 390, 3],
     ['844×390 phone dpr 2', 844, 390, 2],
+    // the short landscape phones: 195 rows and fewer at Riftlight's touch density
+    ['915×412 phone', 915, 412, 2.625],
+    ['812×375 phone', 812, 375, 3],
+    ['740×360 phone', 740, 360, 2],
+    ['740×360 phone dpr 4', 740, 360, 4],
+    ['780×360 phone', 780, 360, 3],
+    ['800×360 phone', 800, 360, 3],
+    ['640×360 phone', 640, 360, 3],
+    ['568×320 phone', 568, 320, 2],
     ['1280×720', 1280, 720, 1],
     ['the hub’s frame, 1000×850', 1000, 850, 1],
   ] as const;
+  /** The HUD around the guests' strips: a boss and its bar, and the tuning's rows (sliders off 1.0) in the top-left block. */
+  const CASES = [[false, 0, true], [true, 2, true], [true, 4, true], [false, 0, false]] as const;
   const minimap: HudModel['minimap'] = { width: 8, height: 8, cell: () => 1, explored: new Uint8Array(64), hero: { x: 4, z: 4 }, exit: null, boss: null, origin: { x: 0, z: 0 } };
   /** A page with touch controls (and Riftlight's touch density), the same page on a pad (the controls stepped aside), and a page without touch controls (no touch density). */
   const PAGES = [
@@ -469,7 +495,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
         const controls = touch ? f.boxes : [];
         const { W, H } = f;
         for (const guests of [1, 2, 3]) {
-          for (const [boss, tuned, map] of [[false, 0, true], [true, 2, true], [false, 0, false]] as const) {
+          for (const [boss, tuned, map] of CASES) {
             const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}${map ? '' : ', no minimap'}`;
             const m = model(controls, { guests, boss, tuned, map });
             const others = hudZones(W, H, { ...m, guests: [] });
@@ -489,27 +515,29 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
         }
       }
     }
-    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 3);
+    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * CASES.length);
   });
 
-  it('a banner (the level card, a level-up, LEVEL CLEAR) goes under the strips, never over them; a boss’s bar stays put as guests come and go', () => {
+  it('a banner (the level card, a level-up, LEVEL CLEAR) is on screen and never over the strips, a touch control, an orb or the XP bar (aside in its row, else under them); a boss’s bar stays put as guests come and go', () => {
     let checked = 0;
     for (const [name, vw, vh, dpr] of SCREENS) {
       for (const [touch, density] of PAGES) {
         const f = controlsFor(vw, vh, dpr, 'fill', density);
         const controls = touch ? f.boxes : [];
         const { W, H } = f;
-        for (const guests of [1, 2, 3]) {
+        for (const guests of [0, 1, 2, 3]) {
           for (const boss of [false, true]) {
             for (const kind of ['card', 'levelup', 'clear'] as const) {
               const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}, a ${kind} banner`;
               const m: HudModel = { ...model(controls, { guests, boss, tuned: 0, map: true }), card: { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind } };
               const z = hudBoxes(W, H, m);
-              const strips = z.find((b) => b.id === 'guests')!;
               const banner = z.find((b) => b.id === 'banner')!;
               expect(banner, where).toBeDefined();
-              expect(overlaps(banner, strips, 0), `${where}: the banner ${JSON.stringify(banner)} over the strips ${JSON.stringify(strips)}`).toBe(false);
-              expect(banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
+              expect(banner.x >= 0 && banner.y >= 0 && banner.x + banner.w <= W && banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
+              // a phone held sideways (568×320's compact HUD too) keeps it off the gold under the minimap as well
+              const never = ['guests', 'control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss', ...(W > H ? ['gold'] : [])];
+              for (const b of z.filter((b) => never.includes(b.id))) expect(overlaps(banner, b, 0), `${where}: the banner ${JSON.stringify(banner)} over the ${b.id} ${JSON.stringify(b)}`).toBe(false);
+              expect(banner.w, `${where}: the plate holds its title`).toBeGreaterThanOrEqual(textWidthPx('The Gale Steps'));
               const alone = hudBoxes(W, H, { ...m, guests: [] });
               expect(z.find((b) => b.id === 'boss'), `${where}: the boss's bar where it was without guests`).toEqual(alone.find((b) => b.id === 'boss'));
               checked++;
@@ -518,7 +546,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
         }
       }
     }
-    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 3);
+    expect(checked).toBe(SCREENS.length * PAGES.length * 4 * 2 * 3);
   });
 
   it('a kill streak goes right of the strips where it would run into them, never over them', () => {

@@ -15,6 +15,7 @@ export { strays };
 const SCREENS = [
   ['title', () => {}],
   ['title-settings', () => window.__RIFTLIGHT__.ui.open('settings')],
+  ['title-controller', () => window.__RIFTLIGHT__.ui.click('controller')],
   ['title-slots', () => window.__RIFTLIGHT__.ui.open('slots')],
   ['title-look', () => window.__RIFTLIGHT__.ui.open('look')],
   ['town', () => window.__RIFTLIGHT__.newRun({ seed: 7 })],

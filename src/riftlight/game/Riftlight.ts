@@ -54,7 +54,7 @@ import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
 import { AIM, attackReach, autoAim, coneTarget, stickAim, TOUCH_AIM, turnOnScreen } from '../actors/aim';
-import { COOP, LocalCoop } from './coop';
+import { COOP, type CoopView, LocalCoop } from './coop';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
@@ -180,14 +180,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * town (a new run, a load) or a level, and at a death (so it rises without one).
    */
   private motionAim: { x: number; z: number; idle: number } | null = null;
-  /** Motion aim was on (`input.motion.on`) at the last live frame (`watchMotion`). */
-  private motionWasOn = false;
   /** `input.motion.lean` before this game set it (given back at dispose). */
   private savedLean = true;
   /** Couch co-op: the players 2 to 4 at this screen, a pad each (`game/coop.ts`). */
   coop!: LocalCoop;
   /** Where the camera follows a couch group (its centre). */
   private readonly groupAt = new Vector3();
+  /** The camera's screen axes in the world, for couch co-op's view (`coopView`). */
+  private readonly viewRight = new Vector3();
+  private readonly viewUp = new Vector3();
   private interactQueued = false;
   /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
   worldFocus: WalkTarget | null = null;
@@ -309,6 +310,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       enterStage: (hero, at, facing) => hero.enter(this.level ?? this.town, at, facing),
       foes: () => this.level?.actors() ?? [],
       basis: (right, forward) => cameraBasis(ctx.engine, right, forward),
+      view: () => this.coopView(ctx),
+      project: (p, out) => out.copy(p).project(ctx.engine.camera.camera),
       feed: (text) => this.feedLine(text, 'cyan'),
     });
     this.ui = new Canvas(ctx.hud);
@@ -1387,15 +1390,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /**
-   * Motion aim going off (the Settings row, or 52in1 no longer lets games read the controller's
-   * motion: `input.motion.on`, which no recording holds) lets go of the direction it kept, through
-   * a command (`rl: 'motion'`, in `agentInput` next frame), so a replay lets go where the run did.
-   * Live frames only: a replay has the recorded commands.
+   * Motion aim off (the Settings row, or 52in1 no longer lets games read the controller's motion:
+   * `input.motion.on`, which no recording holds) with a direction kept lets go of it, through a
+   * command (`rl: 'motion'`, in `agentInput` next frame), so a replay lets go where the run did. On
+   * any live frame, not only as it goes off: a save-state restored, or a replay that ended, while
+   * steering keeps a direction with motion aim off. Live frames only: a replay has the recorded
+   * commands.
    */
   private watchMotion(ctx: GameContext): void {
-    const on = ctx.input.motion.on;
-    if (this.motionWasOn && !on && this.motionAim && !this.replaying) ctx.input.send({ rl: 'motion', on: false });
-    this.motionWasOn = on;
+    if (!ctx.input.motion.on && this.motionAim && !this.replaying) ctx.input.send({ rl: 'motion', on: false });
   }
 
   /**
@@ -1932,7 +1935,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private syncTouch(): void {
     if (!this.touchPad.active) return;
     const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
-    this.touchPad.sync({ playing, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
+    this.touchPad.sync({ playing, round: !!this.round, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
   }
 
   /** What F (the touch interact button) would do now: the verb and its target, or null. */
@@ -2192,8 +2195,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.shakeStrength = 0;
       this.shakeOffset.set(0, 0, 0);
     }
-    const goal = this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1) * (this.screen === 'title' ? 1 : this.coop.zoom());
+    const goal = this.baseZoom() * (this.screen === 'title' ? 1 : this.coop.zoom());
     if ('zoom' in rig && Math.abs(rig.zoom - goal) > 1e-3) rig.setZoom(rig.zoom + (goal - rig.zoom) * (1 - Math.exp(-4 * dt)));
+  }
+
+  /** The zoom the camera asks for, couch co-op's aside: the stage's, the player's (Settings, the wheel), less on a phone held upright. */
+  private baseZoom(): number {
+    return this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1);
+  }
+
+  /** The camera's view for couch co-op (`CoopHost.view`): its screen axes, the picture's aspect, the metres it shows up at zoom 1, the zoom asked for. */
+  private coopView(ctx: GameContext): CoopView {
+    const m = ctx.engine.camera.camera.matrixWorld;
+    const rig = ctx.camera as { viewHeight?: number; zoom?: number };
+    return {
+      right: this.viewRight.setFromMatrixColumn(m, 0).normalize(),
+      up: this.viewUp.setFromMatrixColumn(m, 1).normalize(),
+      aspect: this.ui.h > 0 ? this.ui.w / this.ui.h : 0,
+      height: (rig.viewHeight ?? 0) * (rig.zoom ?? 1),
+      zoom: this.baseZoom(),
+    };
   }
 
   /**

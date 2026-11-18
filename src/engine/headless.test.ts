@@ -202,6 +202,58 @@ describe('Engine.headless', () => {
     engine.dispose();
   });
 
+  it('couch co-op: a pad pressing the join code while the render loop is paused (a settings panel) joins nobody; a press in a frame that runs joins, the game sees it, and it is recorded', { timeout: T }, async () => {
+    /** Turns joins on, and keeps every pad that joined in a frame it ran (`input.joinedNow`). */
+    class Couch implements Game {
+      readonly name = 'Couch';
+      readonly seen: number[] = [];
+      setup(ctx: GameContext): void {
+        ctx.input.padPlayers = true;
+        ctx.input.joinWith = ['PadA'];
+      }
+      update(ctx: GameContext): void {
+        this.seen.push(...ctx.input.joinedNow);
+      }
+      cameraTarget(ctx: GameContext) {
+        return ctx.camera.focus.clone();
+      }
+    }
+    const game = new Couch();
+    const engine = await Engine.headless(game, { seed: 3 });
+    const pad = (index: number, pressed: number[] = []) => ({ connected: true, mapping: 'standard', index, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+    engine.input.setGamepads([pad(0), pad(1)]);
+    engine.step(2);
+    // the render loop's frames (`tick`), as a page runs them
+    const live = engine as unknown as { tick(ms: number): void; manual: boolean };
+    let ms = 1_000_000;
+    const frames = (n: number) => {
+      for (let i = 0; i < n; i++) live.tick((ms += 1000 / 60));
+    };
+    engine.maxFps = 0;
+    live.manual = false;
+    try {
+      frames(2);
+      engine.paused = true; // what the settings panel does
+      engine.input.setGamepads([pad(0), pad(1, [0])]); // Cross on pad 1, held into the frames that run
+      frames(3);
+      expect([[...engine.input.joined], game.seen], 'paused: nobody joined').toEqual([[], []]);
+      engine.paused = false;
+      engine.input.noteDevice('keyboard'); // player 1 on the keyboard (pad 1's press drove player 1's input, as a pad's that has not joined does)
+      frames(3);
+      expect([[...engine.input.joined], game.seen], 'pressed in a pause: it joins nobody later').toEqual([[], []]);
+      engine.input.setGamepads([pad(0), pad(1)]);
+      frames(1);
+      engine.input.setGamepads([pad(0), pad(1, [0])]);
+      frames(2);
+      expect([[...engine.input.joined], game.seen], 'pressed in a frame that runs: it joins, and the game sees it').toEqual([[1], [1]]);
+    } finally {
+      live.manual = true;
+    }
+    expect(engine.recording()?.frames.filter((f) => f.join).map((f) => f.join), 'recorded').toEqual([[1]]);
+    expect(engine.errors).toEqual([]);
+    engine.dispose();
+  });
+
   it('a level set up on a pad replays its setup on the pad, whatever the live device is', async () => {
     /** Its setup branches on the device in use (prompts, a layout), as a game may. */
     class SetupDevice implements Game {

@@ -1605,7 +1605,7 @@ export class Engine {
     let gameDt = 0; // game time stops while paused or loading
     if (running) gameDt = this.startFrame(dt);
     else {
-      this.input.beginFrame(this.time, dt);
+      this.input.beginFrame(this.time, dt, undefined, false); // no pad joins on a frame the game never sees (nor records)
       this.input.clearQueued(); // presses made during a pause never fire later
       this.touch?.follow(this.input.device);
     }

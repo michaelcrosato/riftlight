@@ -27,15 +27,20 @@ for (const slot of ctx.input.joinedNow) seat(slot); // the pads that joined this
   go, as the merged input's do (`HOST_CHORD`). Nothing is latched by `release()`: a guest's held
   button goes on through player 1's menu.
 - **Joining**: while `joinWith` is set (and `padPlayers` on), a pad that has not joined and is not
-  player 1's pad in use (`device` is the pad and it is `padIndex`) pressing one of its codes joins
-  at once, before its press reaches anything: it is added to `joined`, its slot is in `joinedNow`
-  for that frame, and the press reads as up until let go (it presses nothing in a menu nor in
-  play). Turn `joinWith` on only where a join is meant (a co-op menu; a hub while player 1 is on a
-  pad: player 1 on the keyboard picking a pad up must not join by mistake). One controller the
-  browser sees twice (a virtual pad beside the real one: DS4Windows or Steam Input without
-  HidHide, every press on both) never joins its own twin: a pad pressing a join code that player
-  1's pad in use pressed in the same poll does not join. A game removes a pad that leaves with
-  `joined.delete(slot)`; it then drives player 1 again.
+  player 1's pad in use (`device` is the pad and it is `padIndex`) pressing one of its codes joins,
+  before its press reaches anything: it is added to `joined`, its slot is in `joinedNow` for that
+  frame, and the press reads as up until let go (it presses nothing in a menu nor in play). Only in
+  a frame that runs: a press while the render loop is paused (the settings panel) or a level loads
+  joins nobody, then or later (`beginFrame`'s `runs`). Turn `joinWith` on only where a join is
+  meant (a co-op menu; a hub while player 1 is on a pad: player 1 on the keyboard picking a pad up
+  must not join by mistake). One controller the browser sees twice (a virtual pad beside the real
+  one: DS4Windows or Steam Input without HidHide, every press on both, the virtual pad's a few
+  milliseconds late) never joins its own twin: while player 1 is on a pad, a join press within
+  `TWIN_POLLS` (3) polls of the same press on player 1's pad in use, before or after it, or while
+  player 1's pad holds that code, does not join. So a join waits `TWIN_POLLS` - 1 polls (33 ms at
+  60 Hz) while player 1 is on a pad, the pad driving nothing meanwhile; with player 1 on the
+  keyboard it joins at once. A game removes a pad that leaves with `joined.delete(slot)`; it then
+  drives player 1 again.
 - **Recorded**: every joined pad on its own as `InputFrame.pads` (`PadFrame`: slot, held codes,
   sticks, triggers; left out while no joined pad changed), their presses as `padPressed`, and the
   joins as `join`, so a replay reads every player exactly and joins the same pads at the same frames

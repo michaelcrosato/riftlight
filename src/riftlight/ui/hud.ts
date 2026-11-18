@@ -99,7 +99,7 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * corner's third of the screen around the controls (beside the joystick and the button cluster
  * on a wide screen, above them on a phone in portrait), the XP bar runs between the orbs when
  * they share a row (else it sits over the life orb), and the top-left text starts right of
- * any control there (the ≡ button).
+ * any control in the top-left corner (the ≡ button, at the top or, in 52in1, lower down).
  */
 export function hudGeometry(W: number, H: number, controls: readonly Box[] = []) {
   const compact = W < 300;
@@ -149,8 +149,9 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [])
     }
     top = Math.min(life.y - orbR, mana.y - orbR, levelAt.y);
     buffs = { x: Math.max(2, l.x), y: Math.min(l.y, levelAt.y) - 14 };
-    // the top-left text starts right of a control in that corner (the ≡ button)
-    for (const c of controls) if (c.y < 24 && c.x < W / 3) textX = Math.max(textX, c.x + c.w + 3);
+    // the top-left text starts right of a control in that corner (the ≡ button: in 52in1 lower
+    // down, out of the hub's wake band, still beside the top-left block and the guests' strips)
+    for (const c of controls) if (c.y < H / 3 && c.x < W / 3) textX = Math.max(textX, c.x + c.w + 3);
   }
   return { compact, touch, slot, gap, split, barW, bx, by, orbR, orbY, orbX, life, mana, xp, levelAt, textX, top, buffs, map, bossW };
 }
@@ -240,7 +241,10 @@ interface GuestsPlace extends Box {
  * boss's name and bar where that runs across the screen (`bossPlace`), so the bar stays put as
  * guests come and go. Where a column of them would run into the rest of the HUD (a landscape
  * phone's 195 rows, the stick and the life orb under them) they sit side by side, two or three a
- * row.
+ * row. Where none of that is clear (a short landscape phone with a long top-left block: the
+ * tuning's rows) they go beside the top-left block, under a boss's bar at the top, else under the
+ * minimap and gold on the right; and with no clear spot at all, the one covering the least of the
+ * fixed HUD, never an orb.
  */
 function guestsRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudGeometry>): GuestsPlace | null {
   const n = m.guests?.length ?? 0;
@@ -248,26 +252,54 @@ function guestsRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   const where = whereZone(W, m, g);
   const map = minimapZone(W, m, g);
   const boss = bossZone(W, m, g);
+  const top = bossPlace(W, m, g)?.top ?? false;
   const around = fixedBoxes(W, H, m, g);
-  let first: GuestsPlace | null = null;
+  const spots: GuestsPlace[] = [];
+  const place = (x: number, y: number, cols: number, w: number): GuestsPlace => {
+    const rows = Math.ceil(n / cols);
+    return { x, y, w: cols * w + (cols - 1) * STRIP.gap, h: rows * (STRIP.h + STRIP.gap) - STRIP.gap, cols, strip: w };
+  };
   for (let cols = 1; cols <= n; cols++) {
     const fit = (room: number) => Math.min(STRIP.w, Math.floor((room - (cols - 1) * STRIP.gap) / cols));
+    // under the top-left block
     let y = where.y + where.h + 3;
-    if (boss && !bossPlace(W, m, g)!.top) y = Math.max(y, boss.y + boss.h + 2);
+    if (boss && !top) y = Math.max(y, boss.y + boss.h + 2);
     let w = fit(W - 4 - g.textX);
     if (map && y < map.y + map.h && g.textX + cols * w + (cols - 1) * STRIP.gap > map.x - 2) {
       const room = fit(map.x - 2 - g.textX);
       if (room >= STRIP.min) w = room;
       else y = map.y + map.h + 2;
     }
-    if (w < STRIP.min) continue;
-    const rows = Math.ceil(n / cols);
-    const place: GuestsPlace = { x: g.textX, y, w: cols * w + (cols - 1) * STRIP.gap, h: rows * (STRIP.h + STRIP.gap) - STRIP.gap, cols, strip: w };
-    first ??= place;
-    if (place.y + place.h <= H && !around.some((z) => overlaps(place, z, 0))) return place;
+    if (w >= STRIP.min) spots.push(place(g.textX, y, cols, w));
   }
-  return first;
+  // beside the top-left block (under a boss's bar at the top), up to the minimap
+  const beside = { x: where.x + where.w + 3, y: boss && top ? boss.y + boss.h + 2 : where.y };
+  // under the minimap and gold on the right (and under a boss's bar across the screen)
+  const under = Math.max(map ? map.y + map.h : 0, goldZone(W, m, g).y + 8, boss && !top ? boss.y + boss.h : 0) + 2;
+  for (let cols = 1; cols <= n; cols++) {
+    const fit = (room: number) => Math.min(STRIP.w, Math.floor((room - (cols - 1) * STRIP.gap) / cols));
+    const w = fit((map ? map.x - 2 : W - 4) - beside.x);
+    if (w >= STRIP.min) spots.push(place(beside.x, beside.y, cols, w));
+  }
+  for (let cols = 1; cols <= n; cols++) {
+    const w = Math.min(STRIP.w, Math.floor((Math.floor(W / 2) - (cols - 1) * STRIP.gap) / cols));
+    if (w < STRIP.min) continue;
+    const p = place(0, under, cols, w);
+    spots.push({ ...p, x: W - 4 - p.w });
+  }
+  const onScreen = (p: Box) => p.x >= 0 && p.y >= 0 && p.x + p.w <= W && p.y + p.h <= H;
+  const clear = spots.find((p) => onScreen(p) && !around.some((z) => overlaps(p, z, 0)));
+  if (clear) return clear;
+  // no clear spot: the one covering the least of the fixed HUD (never an orb, while one doesn't)
+  const orb = (p: Box) => around.some((z) => (z.id === 'life' || z.id === 'mana') && overlaps(p, z, 0));
+  const covered = (p: Box) => around.reduce((sum, z) => sum + overlapArea(p, z), 0);
+  const fair = spots.filter((p) => onScreen(p) && !orb(p));
+  const pool = fair.length ? fair : spots.filter(onScreen).length ? spots.filter(onScreen) : spots;
+  return pool.reduce((best, p) => (covered(p) < covered(best) ? p : best), pool[0]!);
 }
+
+/** How many art pixels of `b` the box `a` covers. */
+const overlapArea = (a: Box, b: Box): number => Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
 
 /** Each couch guest's strip: its seat tag in its colour, its life, its skills (bright when ready), and the seconds until it rises. */
 function drawGuests(ui: UiCanvas, m: HudModel, at: GuestsPlace): void {
@@ -498,30 +530,76 @@ function bannerSub(sub: string, room: number): BannerSub {
 /** Rows of a banner's line under its title, apart: the mini font's, and the normal font's (room for accents). */
 const SUB_ROW = { mini: 7, normal: 9 } as const;
 
+/** The banner as placed (`bannerRect`): its plate, whether it is the big one, its line under the title, and the column its words are centred on. */
+type BannerPlace = Box & { readonly big: boolean; readonly sub: BannerSub; readonly cx: number };
+
 /**
  * The banner's rect (null when none shows), whether it is the big plate, and its line under the
  * title: its plate grows a row for each row more that line takes, keeps clear of the minimap, and
- * goes under a moment's seconds left.
+ * goes under a moment's seconds left. A phone held upright has it under the minimap and the level
+ * label. Where that plate would cover the couch guests' strips, a touch control, the skill bar,
+ * an orb, the XP bar, the minimap, a boss's bar or a moment's seconds left (`BANNER_NEVER`: on a
+ * landscape phone's 195 rows and fewer the action cluster reaches up the right side), it moves
+ * aside within its row (narrower if it must, never narrower than its title; its words centred on
+ * it, `cx`), or into the row above what it hit, under the top-left block or under the strips:
+ * of those clear of all of them, the one covering least of the rest of the HUD (the top-left
+ * block, the gold). With none clear, under the strips as before.
  */
-function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudGeometry>): (Box & { big: boolean; sub: BannerSub }) | null {
+function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudGeometry>): BannerPlace | null {
   const c = m.card;
   if (!c || c.age < 0 || c.age >= (c.duration ?? 4)) return null;
   const big = (c.kind ?? 'card') !== 'levelup' && W >= 300;
-  // a phone: under the minimap and the level label; under a boss's bar
+  // a phone held upright: under the minimap and the level label; under a boss's bar
   const boss = bossPlace(W, m, g);
-  let y = boss && !boss.top ? boss.y + 9 : W < 300 ? (boss ? 60 : 50) : boss ? 34 : big ? 24 : 26;
-  // beside the minimap on a narrow wide screen (a phone has it under the minimap)
-  const w = Math.min(W - 8, big ? 280 : 200, W >= 300 && m.minimap ? W - 2 * (g.map.w + 10) : Infinity);
-  const sub = bannerSub(c.subtitle, w - 6);
-  const h = (big ? 34 : 22) + Math.max(0, sub.rows.length - 1) * (sub.mini ? SUB_ROW.mini : SUB_ROW.normal);
-  const x = Math.floor((W - w) / 2);
+  const upright = W < 300 && H > W;
+  let y = boss && !boss.top ? boss.y + 9 : upright ? (boss ? 60 : 50) : boss ? 34 : big ? 24 : 26;
+  // beside the minimap on a wide screen (one held upright has it under the minimap)
+  const wide = Math.min(W - 8, big ? 280 : 200, !upright && m.minimap ? W - 2 * (g.map.w + 10) : Infinity);
+  const plate = (x: number, top: number, w: number, cx = x + w / 2): BannerPlace => {
+    const sub = bannerSub(c.subtitle, w - 6);
+    const h = (big ? 34 : 22) + Math.max(0, sub.rows.length - 1) * (sub.mini ? SUB_ROW.mini : SUB_ROW.normal);
+    return { x, y: top, w, h, big, sub, cx };
+  };
+  const x = Math.floor((W - wide) / 2);
   const left = timeLeftRect(W, m, g);
-  if (left && overlaps({ x, y, w, h }, left)) y = left.y + left.h + 1;
-  // never over the couch guests' strips (a phone): under them
+  if (left && overlaps(plate(x, y, wide), left)) y = left.y + left.h + 1;
+  const nominal = plate(x, y, wide, W / 2);
+  // what it must never cover, and what it had better not
   const guests = guestsRect(W, H, m, g);
-  if (guests && overlaps({ x, y, w, h }, guests)) y = guests.y + guests.h + 2;
-  return { x, y, w, h, big, sub };
+  const fixed = fixedBoxes(W, H, m, g);
+  const hard: Box[] = [...fixed.filter((z) => BANNER_NEVER.has(z.id)), ...(guests ? [guests] : [])];
+  const soft = fixed.filter((z) => !BANNER_NEVER.has(z.id));
+  const clear = (p: Box) => p.y >= 0 && p.y + p.h <= H && p.x >= 0 && p.x + p.w <= W && !hard.some((z) => overlaps(p, z));
+  if (clear(nominal)) return nominal;
+  // aside within the row from `top`: the widest free span around the middle, the plate as close to the middle as it goes
+  const least = textWidthPx(c.title) + 4;
+  const aside = (top: number): BannerPlace | null => {
+    let a = 4;
+    let b = W - 4;
+    for (const z of hard) {
+      if (z.y >= top + nominal.h || z.y + z.h <= top) continue;
+      if (z.x + z.w / 2 < W / 2) a = Math.max(a, z.x + z.w + 2);
+      else b = Math.min(b, z.x - 2);
+    }
+    const w = Math.min(wide, b - a);
+    if (w < least) return null;
+    const p = plate(Math.min(Math.max(Math.round(W / 2 - w / 2), a), b - w), top, w);
+    return clear(p) ? p : null;
+  };
+  const rows = [y, ...hard.filter((z) => overlaps(nominal, z) && z.y > y).map((z) => z.y - nominal.h - 1), whereZone(W, m, g).y + whereZone(W, m, g).h + 2, ...(guests ? [guests.y + guests.h + 2] : [])];
+  const covered = (p: Box) => soft.reduce((sum, z) => sum + overlapArea(p, z), 0);
+  let best: BannerPlace | null = null;
+  for (const top of rows) {
+    const p = aside(top);
+    if (p && (!best || covered(p) < covered(best))) best = p;
+  }
+  if (best) return best;
+  // nowhere clear: under the strips, as it always went
+  return guests && overlaps(nominal, guests) ? plate(x, guests.y + guests.h + 2, wide, W / 2) : nominal;
 }
+
+/** What the centre banner never covers (`bannerRect`): the touch controls, the skill bar, the orbs, the XP bar, the minimap, a boss's bar, a moment's seconds left. */
+const BANNER_NEVER: ReadonlySet<HudBox['id']> = new Set(['control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss', 'time']);
 
 /** One liquid orb: per-column fill with a travelling wave on the surface. */
 function orb(ui: UiCanvas, cx: number, cy: number, frac: number, fill: PaletteColor, light: PaletteColor, dark: PaletteColor, t: number, wobble: number, r = ORB_R): void {
@@ -784,12 +862,12 @@ function drawBanner(ui: UiCanvas, m: HudModel, g: ReturnType<typeof hudGeometry>
   const c = m.card;
   const rect = bannerRect(ui.w, ui.h, m, g);
   if (!c || !rect) return;
-  const W = ui.w;
   const a = c.age;
   const kind = c.kind ?? 'card';
   const open = bannerOpen(c);
   const ww = Math.max(2, Math.round(rect.w * open));
-  const x = Math.round(W / 2 - ww / 2);
+  const cx = rect.cx; // the middle of the screen, or of the plate where it moved aside (`bannerRect`)
+  const x = Math.round(cx - ww / 2);
   const accent: PaletteColor = kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
   ui.rect(x, rect.y, ww, rect.h, 'ink');
   ui.rect(x, rect.y, ww, 1, accent);
@@ -800,12 +878,12 @@ function drawBanner(ui: UiCanvas, m: HudModel, g: ReturnType<typeof hudGeometry>
   const flash = kind === 'levelup' && a < 0.6 && a % 0.2 < 0.1;
   const titleColor: PaletteColor = flash ? 'white' : kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
   const ty = rect.y + (big ? 6 : 4) + (scale === 1 && big ? 3 : 0);
-  ui.text(W / 2, ty, c.title, { align: 'center', scale, color: titleColor, shadow: kind === 'levelup' ? 'green' : 'plum' });
+  ui.text(cx, ty, c.title, { align: 'center', scale, color: titleColor, shadow: kind === 'levelup' ? 'green' : 'plum' });
   // the line under the title, its last row where a one-row line goes
   const { rows, mini } = rect.sub;
   const gap = mini ? SUB_ROW.mini : SUB_ROW.normal;
   const sy = rect.y + rect.h - (big ? 11 : 9) - (rows.length - 1) * gap;
-  rows.forEach((row, i) => (mini ? ui.mini(W / 2, sy + 1 + i * gap, row, 'mist', 'center') : ui.text(W / 2, sy + i * gap, row, { align: 'center', color: 'mist' })));
+  rows.forEach((row, i) => (mini ? ui.mini(cx, sy + 1 + i * gap, row, 'mist', 'center') : ui.text(cx, sy + i * gap, row, { align: 'center', color: 'mist' })));
 }
 
 function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, time: number): void {
