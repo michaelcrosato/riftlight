@@ -159,9 +159,9 @@ export interface FocusListState {
  * A menu's focus: which of `count` items is chosen, moved by `MenuInput`'s events (up / down;
  * left / right too in a grid of `columns`) and by the pointer: hovering an item focuses it (only
  * when the pointer moves, so a resting mouse never fights the d-pad), and a click or a tap on an
- * item focuses and confirms it. Back comes from Esc / Circle and from a swipe in one of
- * `dismiss`'s directions (default left and right, so vertical swipes can scroll). Plain data:
- * `save` / `load` for save-states.
+ * item focuses and confirms it (a swipe across one never does). Back comes from Esc / Circle and
+ * from a swipe in one of `dismiss`'s directions (default left and right, so vertical swipes can
+ * scroll). Plain data: `save` / `load` for save-states.
  */
 export class FocusList {
   index = 0;
@@ -203,6 +203,9 @@ export class FocusList {
     }
     if (rects.length) {
       const hit = (x: number, y: number) => rects.findIndex((r, i) => i < this.count && x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h);
+      // a finger let go at the end of a swipe across the item never taps it (a sideways flick on
+      // Restart closes the menu, and restarts nothing)
+      const swiped = SWIPES.some((d) => input.wasPressed(SWIPE_KEYS[d]));
       const p = input.pointer;
       if (p.over) {
         const here = ndcToHud(p.x, p.y, hud);
@@ -220,7 +223,7 @@ export class FocusList {
           this.down = i;
           if (i >= 0) this.index = i;
         } else {
-          if (i >= 0 && i === this.down) confirm = i;
+          if (i >= 0 && i === this.down && !swiped) confirm = i;
           this.down = -1;
         }
       }

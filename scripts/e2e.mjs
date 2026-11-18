@@ -104,9 +104,10 @@
 //                 src/world/*.headless.test.ts, src/world/rooms/*.headless.test.ts.
 //
 // bundle          the engine kit in dist/engine (scripts/e2e-bundle.mjs): its files, manifest and
-//                 zip, its types, its check.mjs on every page, every guide
-//                 recipe played as the guide describes, errors reported (box, engine.errors),
-//                 and the kit in Node (check.mjs --headless).
+//                 zip, its types, its check.mjs on every page (and as on a phone), every guide
+//                 recipe played as the guide describes, the starter and the controls guide's games
+//                 on a phone (their touch buttons, a HUD clear of the controls), errors reported
+//                 (box, engine.errors), and the kit in Node (check.mjs --headless).
 //
 // The debug panel is off by default in production builds: every page gets ?debug=1 unless
 // the suite asks for ?debug=0 (urlFor). "One canvas" means one rendering canvas: the pixel

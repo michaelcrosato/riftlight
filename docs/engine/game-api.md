@@ -256,10 +256,11 @@ if (r.back) close();                                  // Esc / Backspace / Circl
 Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a held
 direction repeats after 0.35 s, `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
 confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
-`key` events. `FocusList` moves with those events (left / right on a one-column list come back as
-`adjust`, for a slider), and with the pointer: hovering an item focuses it (only when the pointer
-moves, so a resting mouse never fights the d-pad, and a menu opened under it keeps its focus), a
-press and release on the same item confirms it; a list whose `count` shrank clamps its focus. Both read only `ctx.input`, so what a menu does replays; their state is data (`save` / `load`).
+`key` events. `FocusList` moves with those events (left / right on a one-column list as `adjust`,
+for a slider), and with the pointer: hovering an item focuses it (only when the pointer moves, so a
+resting mouse never fights the d-pad, and a menu opened under it keeps its focus), a press and
+release on the same item confirms it (not a swipe across it); a shrunk `count` clamps its focus.
+Both read only `ctx.input`, so a menu replays; their state is data (`save` / `load`).
 Riftlight's menus and Engine World's panels run on `MenuInput`.
 
 ## Prompts

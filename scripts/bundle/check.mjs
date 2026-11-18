@@ -5,12 +5,19 @@
 //   node check.mjs                       index.html in the current folder
 //   node check.mjs examples/looks.html   any page (served from the folder that holds pixel-engine.js)
 //   node check.mjs "index.html?look=noir&camera=side"   with URL flags
+//   node check.mjs "index.html?touch=1" --size 390x844  as on a phone: a touch screen (touch is the
+//                                        device in use, so its prompts show), and <page>-page.png,
+//                                        the page as the player sees it (the touch controls and the
+//                                        ⚙ are page elements over the frame); report.json's `touch`
+//                                        has where each control is (engine.touch.rects())
 //   node check.mjs http://localhost:5173/
 //   node check.mjs --sheets models.js    sheets of your own models and textures (no page played)
 //   node check.mjs --headless game.js    play the game in Node, no browser: steps, errors, a replay
 //
 // Options:
-//   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames)
+//   --keys KeyD*60,Space*4,KeyW*30   hold each key for that many frames, in order (default: 90 idle frames);
+//                                    a pad button's code (PadA, PadStart: CONTROLS.md) is held on a fake
+//                                    standard pad, so the device in use turns pad and the prompts follow
 //   --cameras                        also shoot the iso, topdown, side and third camera presets
 //   --looks pixel_heroes,noir        also shoot these looks (names from engine.lookPresets)
 //   --out check                      folder for the PNGs and report.json (default: ./check)
@@ -218,6 +225,21 @@ function engineDir(from) {
 }
 
 /**
+ * Hold or let go of a --keys code: a pad button (`Pad*`, one `input.gamepadButtons` maps) on a fake
+ * standard pad, which stays connected, so `input.device` turns pad as a player's would; anything
+ * else as a key. In the page too (passed to it as source: it runs there).
+ */
+function holdKey(e, code, down) {
+  const button = code?.startsWith('Pad') ? Object.keys(e.input.gamepadButtons).find((i) => e.input.gamepadButtons[i] === code) : undefined;
+  if (button === undefined) {
+    if (code) e.input.setKey(code, down);
+    return;
+  }
+  const on = (i) => down && i === Number(button);
+  e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'check.mjs pad', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on(i), value: on(i) ? 1 : 0 })) }]);
+}
+
+/**
  * --headless: the game in Node (Engine.headless), no browser. The engine is the pixel-engine.js the
  * module imports (the nearest one above it), so the game and the check share one engine; files the
  * game loads are read from the module's folder.
@@ -265,9 +287,9 @@ async function runHeadless(file) {
   try {
     engine = await within(Engine.headless(make(), { assets: read, viewport: { width: vw, height: vh, dpr: 1 } }), 'the game\'s start');
     for (const k of keys) {
-      if (k.code) engine.input.setKey(k.code, true);
+      holdKey(engine, k.code, true);
       engine.step(k.frames);
-      if (k.code) engine.input.setKey(k.code, false);
+      holdKey(engine, k.code, false);
     }
     report.fingerprint = engine.fingerprint();
     report.frames = engine.state().frame;
@@ -447,11 +469,13 @@ if (!/^https?:/.test(target)) {
 
 const browser = await launch(server);
 
-const report = { page: target, url, ok: false, errors: [], warnings: [], shots: [], state: null };
+/** `?touch=1`: a phone's touch screen (a coarse pointer, so the page has its touch controls). */
+const touch = new URL(url, 'http://localhost/').searchParams.get('touch') === '1';
+const report = { page: target, url, ok: false, errors: [], warnings: [], shots: [], state: null, ...(touch ? { touch: null } : {}) };
 /** The browser had no WebGPU (the engine's "WebGPU unavailable"): the environment's fault, not the game's. */
 let noWebGPU = false;
 try {
-  const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1 });
+  const page = await browser.newPage({ viewport: { width: vw, height: vh }, deviceScaleFactor: 1, ...(touch ? { hasTouch: true, isMobile: true } : {}) });
   page.on('console', (m) => {
     const text = m.text();
     if (NOISE.some((re) => re.test(text))) return;
@@ -477,22 +501,27 @@ try {
     await new Promise((r) => setTimeout(r, 250));
   }
 
+  // On a touch screen the player starts on touch (the engine sees the coarse pointer; said again
+  // here, as a tap would): its prompts and controls show.
+  if (touch) await page.evaluate(() => window.__PIXEL_ENGINE__.input.noteDevice('touch'));
+
   // Play: hold each key for its frames (frame-exact manual time). A hook that throws during
   // step() throws here: report it as the game's error, stop playing, still take the shots.
   for (const k of keys) {
-    const thrown = await page.evaluate(({ code, frames }) => {
+    const thrown = await page.evaluate(({ code, frames, hold }) => {
       const e = window.__PIXEL_ENGINE__;
+      const holdKey = new Function(`return ${hold}`)();
       try {
-        if (code) e.input.setKey(code, true);
+        holdKey(e, code, true);
         e.step(frames);
-        if (code) e.input.setKey(code, false);
+        holdKey(e, code, false);
         e.step(1);
         return null;
       } catch (err) {
-        if (code) e.input.setKey(code, false);
+        holdKey(e, code, false);
         return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
       }
-    }, k);
+    }, { ...k, hold: holdKey.toString() });
     if (thrown) {
       report.errors.push(`game: ${thrown} (while holding ${k.code ?? 'nothing'})`);
       break;
@@ -538,7 +567,26 @@ try {
     return { colors: counts.size, top };
   };
 
-  const first = await shoot(basename(target.split('?')[0]).replace(/\.html?$/, '') || 'page');
+  const shotName = basename(target.split('?')[0]).replace(/\.html?$/, '') || 'page';
+  const first = await shoot(shotName);
+  if (touch) {
+    // the page as the player sees it: the frame drawn to the canvas (manual time draws nothing by
+    // itself), the HUD, and the touch controls and the ⚙ (page elements over it)
+    await page.evaluate(() => new Promise((done) => {
+      window.__PIXEL_ENGINE__.renderer.render();
+      requestAnimationFrame(() => requestAnimationFrame(done));
+    }));
+    const file = join(out, `${shotName}-page.png`);
+    mkdirSync(out, { recursive: true });
+    await page.screenshot({ path: file });
+    report.shots.push({ name: `${shotName}-page`, file, colors: null, topColorShare: null });
+    report.touch = await page.evaluate(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const box = (r) => r && { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+      const r = e.touch?.rects();
+      return { device: e.input.device, controls: !!e.touch, visible: !!e.touch?.visible, stick: box(r?.stick), zone: box(r?.zone), buttons: (r?.buttons ?? []).map((b) => ({ code: b.code, label: b.label, hidden: b.hidden, rect: box(b.rect) })) };
+    });
+  }
   // Blank: one colour (nearly) everywhere. Low-colour looks (gameboy, onebit) have few
   // colours but are not blank.
   if (first.colors <= 2 || first.top > 0.99) report.errors.push(`blank frame: ${first.colors} colours, the commonest covers ${(first.top * 100).toFixed(1)}%`);
@@ -575,7 +623,8 @@ mkdirSync(out, { recursive: true });
 writeFileSync(join(out, 'report.json'), JSON.stringify(report, null, 2));
 const s = report.state;
 console.log(`${report.ok ? 'OK' : 'FAILED'}  ${report.page}${s ? `  (${s.backend}, engine ${s.version}, ${s.frame} frames, "${s.status}")` : ''}`);
-for (const shot of report.shots) console.log(`  shot ${shot.file}  (${shot.colors} colours)`);
+for (const shot of report.shots) console.log(`  shot ${shot.file}  (${shot.colors === null ? 'the page, with the touch controls' : `${shot.colors} colours`})`);
+if (report.touch) console.log(`  touch: ${report.touch.controls ? `${report.touch.visible ? 'shown' : 'hidden'}, the device in use ${report.touch.device}, buttons ${report.touch.buttons.map((b) => `${b.label} (${b.code}${b.hidden ? ', hidden' : ''})`).join(', ') || 'none'}` : 'no touch controls'}`);
 for (const w of report.warnings.slice(0, 10)) console.log(`  warning: ${w}`);
 for (const e of report.errors) console.log(`  error: ${e}`);
 console.log(`  report ${join(out, 'report.json')}`);

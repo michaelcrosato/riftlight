@@ -1,9 +1,10 @@
-// The named code blocks of docs/GUIDE.md and docs/GUIDE-ASSETS.md: a fence whose info string is
-// `js <name>` is a whole game (it imports from './pixel-engine.js' and starts the engine) or, in
-// GUIDE-ASSETS.md, a module a game imports ('./<name>.js', the game's own models). `quickstart`
-// becomes the kit's game.js, every other one examples/<name>.js, with a page when it starts the
-// engine. The bundle e2e suite plays every game, so the guides' code can't rot. Plain ```js
-// fences are snippets and aren't run.
+// The named code blocks of docs/GUIDE.md, docs/GUIDE-CONTROLS.md (the kit's CONTROLS.md) and
+// docs/GUIDE-ASSETS.md: a fence whose info string is `js <name>` is a whole game (it imports from
+// './pixel-engine.js' and starts the engine) or, in GUIDE-ASSETS.md, a module a game imports
+// ('./<name>.js', the game's own models). `quickstart` becomes the kit's game.js, every other one
+// examples/<name>.js, with a page when it starts the engine. src/guide.test.ts,
+// src/guide-controls.test.ts and src/guide-assets.test.ts check them; the bundle e2e suite plays
+// every game, so the guides' code can't rot. Plain ```js fences are snippets and aren't run.
 
 /** @returns {{ name: string, code: string, line: number }[]} */
 export function guideBlocks(markdown) {

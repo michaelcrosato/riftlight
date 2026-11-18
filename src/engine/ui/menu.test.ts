@@ -143,6 +143,29 @@ describe('FocusList', () => {
     expect(list.index).toBe(0);
   });
 
+  it('a swipe across an item is never a tap on it (a dismissing flick on Restart only closes the menu)', () => {
+    const input = new Input(target());
+    const list = new FocusList(3);
+    // a finger down at item 2's left edge, a quick flick to its right edge: the swipe and the release land in one frame
+    input.setPointer(...ndc(102, 95), true);
+    input.setPointer(...ndc(178, 95), false);
+    input.setKey(SWIPE_KEYS.right, true);
+    expect(list.update([{ kind: 'swipe', dir: 'right' }], input, hud, rects)).toMatchObject({ confirm: -1, back: true });
+    input.endFrame();
+    input.setKey(SWIPE_KEYS.right, false);
+    // a vertical flick along an item, with no menu events passed: no tap either
+    input.setPointer(...ndc(120, 91), true);
+    input.setPointer(...ndc(121, 99), false);
+    input.setKey(SWIPE_KEYS.down, true);
+    expect(list.update([], input, hud, rects).confirm).toBe(-1);
+    input.endFrame();
+    input.setKey(SWIPE_KEYS.down, false);
+    // a tap still is one
+    input.setPointer(...ndc(120, 95), true);
+    input.setPointer(...ndc(120, 95), false);
+    expect(list.update([], input, hud, rects).confirm).toBe(2);
+  });
+
   it('a sideways swipe dismisses; vertical ones are left to scroll; its state is data', () => {
     const input = new Input(target());
     const list = new FocusList(3);
