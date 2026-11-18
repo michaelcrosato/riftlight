@@ -36,8 +36,9 @@ update(ctx: GameContext) {
 }
 ```
 
-The HUD is a 2D canvas at the internal resolution (480×270 or 320×180), placed exactly over
-the game canvas with the framing's integer scale and letterbox offset, so one HUD pixel is
+The HUD is a 2D canvas at the art resolution (which follows the window under the default
+`fill` aspect: `ctx.hud.width` / `height`), placed exactly over the game canvas with the
+framing's integer scale and offset, so one HUD pixel is
 one art pixel at every size and after `R`. It is drawn after (outside) the post filters and
 the pixel pass: text stays crisp in Raw 3D mode and under CRT/VHS looks. x/y are art-pixel
 offsets from the `anchor` (`top-left` default, `top`, `top-right`, `left`, `center`, `right`,
