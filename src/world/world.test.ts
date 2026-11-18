@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { GLOSSARY, term } from './glossary';
+import { worldGame } from './index';
 import { ROOMS } from './rooms';
 import { doorLayout, inFrontOf } from './rooms/atrium';
 import { WINGS } from './wings';
@@ -10,6 +11,20 @@ describe('Engine World rooms', () => {
     expect(ROOMS[0]!.id).toBe('atrium');
     expect(new Set(ROOMS.map((r) => r.id)).size).toBe(ROOMS.length);
     for (const r of ROOMS) expect(r.id, r.id).toMatch(/^[a-z][a-z0-9-]*$/);
+  });
+
+  it('?room= opens that room; a wing id or a typo opens the Atrium with a console warning', () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      expect(worldGame({ room: 'bodies' }).name).toBe(`Engine World: ${ROOMS.find((r) => r.id === 'bodies')!.title}`);
+      expect(warn).not.toHaveBeenCalled();
+      expect(WINGS.some((w) => w.id === 'physics') && !ROOMS.some((r) => r.id === 'physics')).toBe(true);
+      expect(worldGame({ room: 'physics' }).name).toBe(`Engine World: ${ROOMS[0]!.title}`);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(String(warn.mock.calls[0]![0])).toMatch(/\?room=physics names no room/);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it('belong to known wings and keep titles short enough for a door', () => {

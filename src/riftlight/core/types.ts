@@ -416,6 +416,11 @@ export interface LevelSpec {
   readonly seed: number;
   readonly layout: { style: string; rooms: number; size: number };
   readonly archetypes: readonly string[];
+  /**
+   * A placeholder boss genome (`bossGenome`): the plan takes the boss pack's archetype from it, and
+   * `MonsterSpawn.genome` carries it, but the game's boss is the monsters system's own
+   * (`designedBoss(depth)` for depths 1–12, `generateBoss` beyond: `wire/levels.ts`), not this.
+   */
   readonly boss: Genome | null;
 }
 

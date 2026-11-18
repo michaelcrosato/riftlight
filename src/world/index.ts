@@ -28,11 +28,13 @@ class FirstRoom extends RoomGame {
 
 /**
  * The first room: `args.room` (the page's `?room=<id>`), else the Atrium, entered by the door
- * `args.from` (a recording's `RoomGame.args`). Sets `window.__WORLD__` once it runs.
+ * `args.from` (a recording's `RoomGame.args`). Sets `window.__WORLD__` once it runs. A `room` that
+ * names no room (a wing's id, a typo) opens the Atrium with a console warning.
  */
 export function worldGame(args: { room?: string; from?: string | null } = worldArgsFromUrl()): Game {
-  const def = roomById(args.room ?? 'atrium') ?? ROOMS[0]!;
-  return new FirstRoom(def, args.from ?? null);
+  const def = roomById(args.room ?? 'atrium');
+  if (!def) console.warn(`[world] ?room=${args.room} names no room (a wing's id is not one; the rooms: ROOMS in src/world/rooms, docs/WORLD.md): opening the Atrium`);
+  return new FirstRoom(def ?? ROOMS[0]!, args.from ?? null);
 }
 
 /** `?room=<id>` from the page (nothing in Node). */

@@ -6,12 +6,16 @@ import { getTheme, type LevelTheme } from './themes/themes';
 
 /**
  * The 12 designed levels (docs/game/levels.md). Each introduces one mechanic and is named after
- * it; levels 7–12 bring back an earlier mechanic. Seeds, styles, sizes, themes, archetypes
- * and bosses are hand-tuned here. Archetype ids are the monsters system's (strings).
+ * it; levels 7–12 bring back an earlier mechanic. Seeds, styles, sizes, themes and archetypes
+ * are hand-tuned here; `boss` is a placeholder (`LevelSpec.boss`: the game's designed bosses are
+ * the monsters system's `designedBoss(depth)`). Archetype ids are the monsters system's (strings).
  */
 export const ARCHETYPES = ['charger', 'skirmisher', 'caster', 'summoner', 'bomber', 'tank', 'swarm', 'sniper', 'leaper', 'totem'] as const;
 
-/** A placeholder boss genome (the monsters system replaces it with `generateGenome`). */
+/**
+ * A placeholder boss genome (`LevelSpec.boss`): the level plan takes the boss pack's archetype from
+ * it; the game spawns the monsters system's boss instead (`designedBoss` / `generateBoss`).
+ */
 export function bossGenome(seed: number, plan: string, archetype: string, theme: string, scale = 2.4): Genome {
   const t = getTheme(theme.split('~')[0]!);
   return {

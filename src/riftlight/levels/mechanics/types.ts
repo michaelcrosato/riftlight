@@ -79,7 +79,7 @@ export interface MonsterSpawn {
   /** Pack id (members of one pack share it) and the room it guards. */
   readonly pack: number;
   readonly room: number;
-  /** Boss genome (null for normal monsters: the monsters system generates one). */
+  /** The spec's placeholder boss genome (`LevelSpec.boss`; the game's monsters port spawns its own boss); null for the rest. */
   readonly genome: Genome | null;
   /** Elite-mod budget for magic/rare/boss monsters (SCALING.eliteBudget). */
   readonly eliteBudget: number;

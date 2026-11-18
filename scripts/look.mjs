@@ -3,20 +3,21 @@
 //   npm run look -- "<query or URL>" [--keys KeyD*60,Space*4] [--out dir] [check.mjs options]
 //
 //   npm run look -- "?game=riftlight"                    the game at /, as a player opens it
-//   npm run look -- "?game=world&room=physics" --keys KeyW*60
+//   npm run look -- "?game=world&room=bodies" --keys KeyW*60
 //   npm run look -- "asset-lab.html?model=crate"         any page of the build, with its query
 //   npm run look -- http://localhost:5173/?game=arena     a page someone already serves
 //
 // It serves the build (`vite preview` of dist/: run `npm run build` first, and again after an
-// edit; it says so when src/ is newer than the build) on LOOK_PORT (default: a free one from 4600),
-// then runs the engine kit's check.mjs (scripts/bundle/check.mjs) on the page in the repo's
-// headless Chromium: it waits for the engine, holds --keys (default: 90 idle frames), writes a PNG
-// of the frame and report.json (engine.state(), errors, warnings) to --out (default
-// .scratch/look), and exits 1 if the page logged an error, the engine reported one or the frame
-// is blank. Other options pass through to check.mjs: --cameras, --looks noir,snes, --size 960x540.
+// edit; it says so when src/, public/, a root HTML page or vite.config.ts is newer than the build)
+// on LOOK_PORT (default: a free one from 4600), then runs the engine kit's check.mjs
+// (scripts/bundle/check.mjs) on the page in the repo's headless Chromium: it waits for the engine,
+// holds --keys (default: 90 idle frames), writes a PNG of the frame and report.json
+// (engine.state(), errors, warnings) to --out (default .scratch/look), and exits 1 if the page
+// logged an error, the engine reported one or the frame is blank. Other options pass through to
+// check.mjs: --cameras, --looks noir,snes, --size 960x540.
 import { spawn } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { headlessShell } from './browser.mjs';
 import { helpExit } from './manual.mjs';
@@ -61,7 +62,10 @@ if (!/^https?:\/\//.test(target)) {
     process.exit(2);
   }
   const built = statSync(join(ROOT, 'dist/index.html')).mtimeMs;
-  if (newest(join(ROOT, 'src')) > built) console.warn('look: src/ has changed since the last build: this is the build, run npm run build to look at your edits');
+  // what the build is made of: src/, public/, the root HTML pages and vite.config.ts
+  const inputs = ['src', 'public', 'vite.config.ts', ...readdirSync(ROOT).filter((f) => f.endsWith('.html'))].map((f) => join(ROOT, f)).filter((p) => existsSync(p));
+  const changed = inputs.filter((p) => (statSync(p).isDirectory() ? newest(p) : statSync(p).mtimeMs) > built);
+  if (changed.length) console.warn(`look: ${changed.map((p) => relative(ROOT, p) + (statSync(p).isDirectory() ? '/' : '')).join(', ')} changed since the last build: this is the build, run npm run build to look at your edits`);
   const port = Number(process.env.LOOK_PORT) || 4600 + Math.floor(Math.random() * 400);
   try {
     server = await startServer({ port, mode: 'preview', portEnv: 'LOOK_PORT', timeout: 30000 });
