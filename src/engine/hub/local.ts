@@ -294,18 +294,31 @@ export class LocalHub {
     for (const c of this.live()) c.client.emit('start', { in: this.countdownMs });
   }
 
-  /** Move the clock and deliver every message that is due; call time at the limit, and end the round after its grace. */
+  /**
+   * Move the clock and do what falls due on the way, in time order, each at its own time: deliver
+   * messages, call time at the limit, and end the round once time-up's grace is over (one long
+   * step can cross all three). At equal times messages go first, then time-up, then the end.
+   */
   advance(ms: number): void {
-    this.now += ms;
-    const due = this.queue.filter((m) => m.at <= this.now);
-    this.queue = this.queue.filter((m) => m.at > this.now);
-    for (const m of due) {
-      const copy = this.copies.find((c) => c.id === m.to);
-      if (copy && !copy.out) copy.client.emit(m.type, ...m.args);
+    const until = this.now + ms;
+    for (;;) {
+      const msgAt = this.queue.reduce((first, m) => Math.min(first, m.at), Infinity);
+      const timeAt = this.goAt !== null && this.timeUpAt === null && !this.endReason ? this.goAt + this.limitMs : Infinity;
+      const endAt = this.timeUpAt !== null && !this.endReason ? this.timeUpAt + this.graceMs : Infinity;
+      const at = Math.min(msgAt, timeAt, endAt);
+      if (at > until) break;
+      this.now = Math.max(this.now, at);
+      if (msgAt === at) {
+        const due = this.queue.filter((m) => m.at <= at);
+        this.queue = this.queue.filter((m) => m.at > at);
+        for (const m of due) {
+          const copy = this.copies.find((c) => c.id === m.to);
+          if (copy && !copy.out) copy.client.emit(m.type, ...m.args);
+        }
+      } else if (timeAt === at) this.callTime(at);
+      else this.end(this.selfReported || this.finished ? 'finished' : 'void');
     }
-    if (this.endReason) return;
-    if (this.goAt !== null && this.timeUpAt === null && this.now >= this.goAt + this.limitMs) this.timeUp();
-    if (this.timeUpAt !== null && this.now >= this.timeUpAt + this.graceMs) this.end(this.selfReported || this.finished ? 'finished' : 'void');
+    this.now = until;
   }
 
   route(from: number, data: unknown, to: number | undefined): void {
@@ -334,23 +347,19 @@ export class LocalHub {
     this.end('finished');
   }
 
-  /** A player leaves the round; a shared world whose host leaves is void. */
+  /** A player leaves the round; a shared world whose host leaves is void, and so is a round no player is left in. */
   leave(id: number, reason = 'left'): void {
     const copy = this.copies.find((c) => c.id === id);
     if (!copy || copy.out || this.endReason) return;
     copy.out = reason;
     copy.client.ended = true;
     for (const c of this.live()) c.client.emit('leave', { id, reason });
-    if (this.mode === 'shared-world' && id === this.host) this.end('host-left');
-    else this.settle();
+    this.settle();
   }
 
-  /** The hub calls time: the game reports within the grace period (a moment's is shorter). */
+  /** The hub calls time now: the game reports within the grace period (a moment's is shorter). */
   timeUp(graceMs: number = this.mode === 'moments' ? LOCAL_HUB_GRACE.momentGraceMs : LOCAL_HUB_GRACE.graceMs): void {
-    if (this.timeUpAt !== null || this.endReason) return;
-    this.timeUpAt = this.now;
-    this.graceMs = graceMs;
-    for (const c of this.live()) c.client.emit('time-up', { graceMs });
+    this.callTime(this.now, graceMs);
   }
 
   /** The last message of the round. */
@@ -364,11 +373,15 @@ export class LocalHub {
   /**
    * The round's order: a shared world's from its host; in moments the cleared first (quickest
    * first), then the failed (the last to fail first); else by time, then score (the last progress
-   * for a player with no result). Players with nothing come last, tied; equal values tie.
+   * for a player still here with no result). Players still here with nothing come next, tied; then
+   * the players who left with no result, tied last (round.js finishResults, finishMoment). A player
+   * who reported and then left keeps their place. Equal values tie.
    */
   standings(): number[][] {
     if (this.mode === 'shared-world') return (this.finished?.standings ?? []).map((s) => [...s]);
-    const ids = this.players.map((p) => p.id).filter((id) => this.results.has(id) || !this.copies.find((c) => c.id === id)?.out);
+    const out = (id: number) => Boolean(this.copies.find((c) => c.id === id)?.out);
+    const ids = this.players.map((p) => p.id).filter((id) => this.results.has(id) || !out(id));
+    const gone = this.players.map((p) => p.id).filter((id) => !this.results.has(id) && out(id));
     const groups: [number, number][][] = [[], [], []];
     const silent: number[] = [];
     for (const id of ids) {
@@ -381,15 +394,28 @@ export class LocalHub {
       else if (Number.isFinite(score)) groups[2]!.push([id, score!]);
       else silent.push(id);
     }
-    return [...grouped(groups[0]!, 1), ...grouped(groups[1]!, -1), ...grouped(groups[2]!, -1), ...(silent.length ? [silent] : [])];
+    return [...grouped(groups[0]!, 1), ...grouped(groups[1]!, -1), ...grouped(groups[2]!, -1), ...(silent.length ? [silent] : []), ...(gone.length ? [gone] : [])];
   }
 
-  /** Every player still in the round has reported (parallel, ghost, moments): the round is over. */
+  /** Time is called at `at` (the limit, or now): the grace runs from then. */
+  private callTime(at: number, graceMs: number = this.mode === 'moments' ? LOCAL_HUB_GRACE.momentGraceMs : LOCAL_HUB_GRACE.graceMs): void {
+    if (this.timeUpAt !== null || this.endReason) return;
+    this.timeUpAt = at;
+    this.graceMs = graceMs;
+    for (const c of this.live()) c.client.emit('time-up', { graceMs });
+  }
+
+  /**
+   * As round.js settles a round after a leave or a result: void once no player is left (in any
+   * mode, a server's shared world too), void when a shared world's host left, and over once every
+   * player still in it has reported (parallel, ghost, moments).
+   */
   private settle(): void {
-    if (this.endReason || !this.selfReported) return;
+    if (this.endReason) return;
     const left = this.players.filter((p) => !this.copies.find((c) => c.id === p.id)?.out);
-    if (!left.length) this.end('void');
-    else if (left.every((p) => this.results.has(p.id))) this.end('finished');
+    if (!left.length) return this.end('void');
+    if (!this.selfReported && this.copies.find((c) => c.id === this.host)?.out) return this.end('host-left');
+    if (this.selfReported && left.every((p) => this.results.has(p.id))) this.end('finished');
   }
 
   private live(): Copy[] {

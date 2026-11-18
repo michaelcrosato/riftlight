@@ -222,6 +222,62 @@ describe('HubSession', () => {
     expect(copies[1]!.session.endReason).toBe('host-left');
   });
 
+  it('a shared world a server hosts is void once every player has left', async () => {
+    const { hub, copies } = await round('shared-world', 2, { server: true });
+    hub.start();
+    hub.leave(0);
+    expect(hub.endReason).toBeNull(); // a player is still in it
+    hub.leave(1);
+    expect(hub.endReason).toBe('void');
+    expect(copies.find((c) => c.session.server)!.session.endReason).toBe('void');
+  });
+
+  it('one long step does what falls due in time order: a message, time-up, a later message, the end', async () => {
+    const hub = new LocalHub({ mode: 'ghost', players: 2, latencyMs: 100, limitMs: 10_000 });
+    const [a, b] = await Promise.all(hub.players.map((p) => HubSession.join({ mode: 'ghost', seats: [1, 4], client: hub.client(p.id), autoFlush: false, clock: () => hub.now })));
+    const engine = fakeEngine();
+    b!.attach(engine);
+    hub.start();
+    hub.advance(3000 + 9850);
+    a!.send({ n: 1 }); // arrives at 12 950, before time is called at 13 000
+    a!.flush();
+    hub.advance(100);
+    a!.send({ n: 2 }); // arrives at 13 050, after it
+    a!.flush();
+    hub.advance(30_000);
+    expect(events(engine.commands).map((e) => e.type)).toEqual(['start', 'message', 'time-up', 'message', 'end']);
+    expect(hub.timeUpAt).toBe(13_000);
+    expect(hub.endReason).toBe('finished'); // after the grace, ranked as it stands
+  });
+
+  it('ranks parallel by time, then score, then those with nothing, then those who left; equal values share a place', async () => {
+    const { hub, copies } = await round('parallel', 6);
+    hub.start();
+    hub.advance(3000);
+    copies[4]!.session.progress(9);
+    hub.leave(5); // left with nothing: last
+    copies[0]!.session.result({ time: 2000 });
+    copies[1]!.session.result({ time: 2000 });
+    copies[2]!.session.result({ score: 30 });
+    copies[3]!.session.result({ score: 30 });
+    expect(hub.endReason).toBeNull(); // 4 is still playing
+    hub.timeUp();
+    hub.advance(5000);
+    expect(hub.endReason).toBe('finished');
+    expect(hub.standings()).toEqual([[0, 1], [2, 3], [4], [5]]); // 4 by its last progress
+  });
+
+  it('a player who leaves with no result is ranked last, not dropped', async () => {
+    const { hub, copies } = await round('parallel', 3);
+    hub.start();
+    hub.advance(4000);
+    copies[0]!.session.result({ time: 1000 });
+    hub.leave(2);
+    copies[1]!.session.result({ time: 2000 });
+    expect(hub.endReason).toBe('finished');
+    expect(events(copies[0]!.engine.commands).at(-1)).toEqual({ type: 'end', reason: 'finished', standings: [[0], [1], [2]] });
+  });
+
   it('time() is the hub’s timeline: -Infinity before the start, negative in the countdown', async () => {
     const { hub, copies } = await round('ghost', 1);
     const s = copies[0]!.session;
@@ -314,6 +370,18 @@ describe('several modes', () => {
     expect(HubSession.offline(old as unknown as HubInfo).info).toMatchObject({ play: null, moment: null });
   });
 
+  it('reads the older mode names as the hub does; a recording in a mode that is none of today’s still replays', async () => {
+    const client = stubClient(welcome({ mode: 'shared-world' }));
+    const s = (await HubSession.join({ mode: ['co-op', 'versus', 'race'] as unknown as HubMode[], seats: [1, 4], client, autoFlush: false }))!;
+    expect(client.asked[0]).toMatchObject({ mode: ['shared-world', 'ghost'] });
+    expect(s.mode).toBe('shared-world');
+    const race = (await HubSession.join({ mode: 'race' as HubMode, seats: [1, 4], client: stubClient(welcome({ mode: 'race' as HubMode })), autoFlush: false }))!;
+    expect(race.mode).toBe('ghost');
+    const old = HubSession.offline({ ...s.info, mode: 'race' as HubMode });
+    expect(old.mode).toBe('ghost');
+    expect(() => HubSession.offline({ ...s.info, mode: 'tag-team' as HubMode })).not.toThrow();
+  });
+
   it('LocalHub flags a hello that does not offer the round’s mode', async () => {
     const hub = new LocalHub({ mode: 'ghost', players: 1 });
     await HubSession.join({ mode: 'parallel', seats: [1, 4], client: hub.client(0), autoFlush: false });
@@ -337,6 +405,8 @@ describe('the page’s modes (hub:multiplayer)', () => {
     // a race with a play, a shared world without one, too many players, a place that isn't one, a repeat
     expect(parseMultiplayer('ghost versus 2, shared-world 2-4, parallel 1-6, couch co-op 2, ghost 2, ghost 1-4')).toEqual([{ where: 'ghost', play: null, seats: [2, 2], online: true }]);
     expect(parseMultiplayer(null)).toEqual([]);
+    // on one device it seats 2 or more (as round.js and the catalogue check read it)
+    expect(parseMultiplayer('same-screen co-op 1, hot-seat versus 1-1, split-screen co-op 1-2')).toEqual([{ where: 'split-screen', play: 'co-op', seats: [1, 2], online: false }]);
   });
 
   it('the online modes to join with: the session mode first, then each one named once', () => {
@@ -416,7 +486,8 @@ describe('moments', () => {
     // the goal was to last: cleared at time-up; one failed earlier; one says nothing
     copies[0]!.session.result({ won: true, time: 20_010 });
     hub.results.set(1, { won: false, time: 8000 });
-    hub.advance(1990);
+    expect(hub.timeUpAt).toBe(3000 + 20_000); // when time was due, not when the clock was next moved
+    hub.advance(1980);
     expect(hub.endReason).toBeNull();
     hub.advance(20);
     expect(hub.endReason).toBe('finished');
@@ -437,6 +508,42 @@ describe('moments', () => {
     expect(hub.problems).toEqual(['0: result before start', '0: progress is for parallel and ghost, not moments', '0: send in moments, where the copies send nothing', "1: a moment's result says won: true or false"]);
     expect(hub.results.get(1)).toEqual({ won: false, time: 400 });
   });
+
+  it('one long step past the limit and the grace calls time, then ends the moment', async () => {
+    const { hub, copies } = await moment();
+    hub.start();
+    hub.advance(60_000);
+    expect(events(copies[0]!.engine.commands).map((e) => e.type)).toEqual(['start', 'time-up', 'end']);
+    expect(hub.timeUpAt).toBe(3000 + 20_000);
+    expect(hub.endReason).toBe('finished');
+    expect(hub.standings()).toEqual([[0, 1]]); // neither reported: tied
+  });
+
+  it('ranks the cleared quickest first, then the failed, the last to fail first; equal times share a place', async () => {
+    const { hub } = await moment(4);
+    hub.start();
+    hub.advance(3000);
+    hub.client(0).result({ won: false, time: 5000 });
+    hub.client(1).result({ won: false, time: 9000 });
+    hub.client(2).result({ won: true, time: 12_000 });
+    hub.client(3).result({ won: true, time: 12_000 });
+    expect(hub.endReason).toBe('finished');
+    expect(hub.standings()).toEqual([[2, 3], [1], [0]]);
+  });
+
+  it('a player who left with no result comes last; one who reported and then left keeps their place', async () => {
+    const { hub, copies } = await moment(4);
+    hub.start();
+    hub.advance(3000 + 2000);
+    hub.client(3).result({ won: false, time: 2000 });
+    hub.leave(3); // reported, then left
+    hub.leave(2); // left with nothing
+    hub.client(0).result({ won: true, time: 4000 });
+    hub.client(1).result({ won: false, time: 6000 });
+    expect(hub.endReason).toBe('finished');
+    expect(hub.standings()).toEqual([[0], [1], [3], [2]]);
+    expect(events(copies[0]!.engine.commands).at(-1)).toEqual({ type: 'end', reason: 'finished', standings: [[0], [1], [3], [2]] });
+  });
 });
 
 describe('session.rng', () => {
@@ -451,6 +558,10 @@ describe('session.rng', () => {
         const ours = s.rng(label);
         for (let i = 0; i < 8; i++) expect(ours.next()).toBe(theirs());
       }
+      // no label is the empty one, as the client reads it (a JS game may call rng() bare)
+      const bare = client.rng(undefined as never);
+      const none = s.rng();
+      for (let i = 0; i < 4; i++) expect(none.next()).toBe(bare());
       // each call starts the label's stream afresh; a replay's session (the recorded info) draws the same
       expect(s.rng('forge-brute').next()).toBe(HubSession.offline(s.info).rng('forge-brute').next());
       expect(s.rng('a').next()).not.toBe(s.rng('b').next());

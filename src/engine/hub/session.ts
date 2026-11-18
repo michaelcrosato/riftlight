@@ -181,6 +181,7 @@ export function parseMultiplayer(text: string | null | undefined): HubWay[] {
     const low = Number(m[1]);
     const high = Number(m[2] ?? m[1]);
     if (low < 1 || high < low || high > (online ? 4 : 8)) continue;
+    if (!online && high < 2) continue; // on one device it seats 2 or more
     if (ways.some((w) => w.where === where && w.play === play)) continue;
     ways.push({ where, play, seats: [low, high], online });
   }
@@ -286,10 +287,17 @@ interface Pending {
   bytes: number;
 }
 
-/** The modes a game joins with, each once, in its order (its first is its default). */
+/**
+ * The modes a game joins with, each once, in its order (its first is its default), the older names
+ * read as the hub reads them (race as ghost, co-op and versus as a shared world). Empty when none
+ * is a mode.
+ */
 function offeredModes(mode: HubMode | readonly HubMode[]): HubMode[] {
-  const list = (typeof mode === 'string' ? [mode] : [...mode]).filter((m, i, all) => HUB_MODES.includes(m) && all.indexOf(m) === i);
-  if (!list.length) throw new Error(`HubSession: mode is one or more of ${HUB_MODES.join(', ')}`);
+  const list: HubMode[] = [];
+  for (const m of typeof mode === 'string' ? [mode] : [...mode]) {
+    const known = hubModeOf(m);
+    if (known && !list.includes(known)) list.push(known);
+  }
   return list;
 }
 
@@ -375,6 +383,7 @@ export class HubSession {
     const client = options.client === undefined ? hubClient() : options.client;
     if (!client || !client.active) return null;
     const offered = offeredModes(options.mode);
+    if (!offered.length) throw new Error(`HubSession: mode is one or more of ${HUB_MODES.join(', ')}`);
     const welcome = await client.connect({ mode: offered.length === 1 ? offered[0]! : offered, seats: options.seats, card: options.card === true });
     if (!welcome) return null;
     return new HubSession(client, welcome, options);
@@ -383,9 +392,11 @@ export class HubSession {
   private constructor(client: HubClient, welcome: Partial<HubInfo> & { limits?: Partial<HubLimits> }, options: JoinOptions) {
     this.client = client;
     const players = (welcome.players ?? []).map((p, i) => ({ id: Number(p.id), name: String(p.name ?? `Player ${i + 1}`), color: String(p.color ?? HUB_COLORS[i % 4]) }));
-    // the hub's pick, when it is one the game offered; else the game's first (its default)
+    // the hub's pick, when it is one the game offered; else the game's first (its default); a
+    // recording whose mode is none of today's replays in it as recorded
     const offered = offeredModes(options.mode);
-    const mode = offered.includes(welcome.mode as HubMode) ? (welcome.mode as HubMode) : offered[0]!;
+    const picked = hubModeOf(welcome.mode);
+    const mode = picked && offered.includes(picked) ? picked : (offered[0] ?? (welcome.mode as HubMode));
     const play = mode === 'shared-world' && HUB_PLAYS.includes(welcome.play as HubPlay) ? (welcome.play as HubPlay) : null;
     const moment = mode === 'moments' && typeof welcome.moment === 'string' && welcome.moment ? welcome.moment : null;
     this.info = {
@@ -518,9 +529,10 @@ export class HubSession {
    * shared world's first spawn); the seed is recorded with the round's info, so a replay draws the
    * same. Each call starts the label's stream afresh.
    */
-  rng(label: string): Rng {
+  rng(label?: string): Rng {
+    const text = String(label === undefined ? '' : label); // as the client reads it: no label is ''
     let h = 0x811c9dc5; // FNV-1a, as the client hashes the label
-    for (let i = 0; i < label.length; i++) h = Math.imul(h ^ label.charCodeAt(i), 0x01000193);
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
     const rng = new Rng(1);
     rng.state = (this.info.seed ^ h) >>> 0; // mulberry32 from the client's start (zero too)
     return rng;

@@ -44,14 +44,15 @@ session?.attach(engine);   // the hub's events arrive as input commands from now
 session?.ready();          // once everything is loaded, with no key press: the hub's card asks the players
 ```
 
-- `mode` is one mode or a list (one alone goes to the hub as itself). The session plays the mode the
-  welcome names when the game offered it, else the game's first.
+- `mode` is one mode or a list (one alone goes to the hub as itself; the older names `race`,
+  `co-op` and `versus` go as `ghost` and `shared-world`, as the hub reads them). The session plays
+  the mode the welcome names when the game offered it, else the game's first.
 - `info`: `me`, `players` (`{ id, name, color }`, ids in seat order; `session.players` drops those
   who leave), `host`, `isHost`, `server` (a copy that hosts a shared world with no player of its
   own: `session.self` is null), `mode`, `play` (a shared world's, else null), `moment` (in moments,
   the moment's id, else null), `round`, `limitMs`, `seed`. A recording from before `play` and
   `moment` replays with both null.
-- `session.rng(label)` is an `Rng` with the numbers the client's `AIHub.rng(label)` gives, from
+- `session.rng(label)` is an `Rng` with the numbers the client's `AIHub.rng(label)` gives (no label is ''), from
   `info.seed`: the same on every copy, and in a replay (the seed is recorded with the round's info).
   Draw a set-up from it (a moment's start); each call starts the label's stream afresh.
 - Names come from the hub: draw them as text, never as HTML. Colours follow the seat (`HUB_COLORS`).
@@ -164,10 +165,15 @@ shape of `window.AIHub`, held to the real client's and hub's rules (16 KB, 20 me
 bursts of 40 on the hub's clock; a result needs a finite time or score, after the start, and in
 moments `won`; a finish its standings and a shared world's host; a hello must offer the round's
 mode; no traffic in parallel or moments, no progress in a shared world or moments; what it refuses
-is in `stats.refused` and `hub.problems`). It runs the round as the hub's coordinator does: time is
-called at `limitMs` after play begins, the round ends `finished` once every player still in has
-reported (a shared world: at the host's finish), and after time-up's grace (5 s, a moment's 2 s) it
-ends either way (a shared world with no finish: `void`).
+is in `stats.refused` and `hub.problems`). It runs the round as the hub's coordinator does
+(`round.js`): time is called at `limitMs` after play begins, the round ends `finished` once every
+player still in has reported (a shared world: at the host's finish), and after time-up's grace (5 s,
+a moment's 2 s) it ends either way (a shared world with no finish: `void`); a round no player is
+left in is `void` in any mode. `advance(ms)` does what falls due in time order, each at its own time,
+so one long step can deliver messages, call time and end the round. `standings()` ranks as the hub
+does: in moments the cleared quickest first, then the failed (the last to fail first); otherwise by
+time, then score (a player's last progress when they gave no result); then those still in with
+nothing, tied; then those who left with nothing, tied last. Equal values share a place.
 
 ```ts
 const hub = new LocalHub({ mode: 'shared-world', play: 'co-op', players: 2, latencyMs: 100 }); // server: true adds a host with no player
