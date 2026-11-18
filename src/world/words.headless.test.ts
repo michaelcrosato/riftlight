@@ -33,6 +33,10 @@ const BARE = [
   /\bEnter\b(?! the Gungeon)/,
   /\bmouse wheel\b|\bright[- ]click/i,
   /\bShift\+/,
+  /\([A-Z],/,
+  /\bthen [A-Z]\)/,
+  /\+ \/ -/,
+  /\bthe mouse\b/i,
 ];
 
 /** Words that say which device they are for are fine: "on a keyboard Shift+E: ten at a time", "with a mouse, a right click...". */

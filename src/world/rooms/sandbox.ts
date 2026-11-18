@@ -37,16 +37,16 @@ export const SANDBOX: RoomDef = {
   title: 'Sandbox',
   wing: 'workshop',
   about:
-    'A yard to build in: spawn crates, balls, planks and barrels, grab anything with the mouse and drag it about (let go while it moves to throw it), or walk up to it and hold {key:hold} to carry it (let go to throw), stack a tower and knock it down. Save the layout and load it back later.',
-  try: ['Spawn some CRATES and stack them (the mouse drags, {key:hold} carries)', 'Drag a ball and let go mid-swing: a throw', 'SAVE, wreck it all, LOAD'],
+    'A yard to build in: spawn crates, balls, planks and barrels, grab anything with a click or a finger and drag it about (let go while it moves to throw it), or walk up to it and keep {key:hold} down to carry it (let go to throw), stack a tower and knock it down. Save the layout and load it back later.',
+  try: ['Spawn some CRATES and stack them (a click or a finger drags; {key:hold} carries)', 'Drag a ball and let go mid-swing: a throw', 'SAVE, wreck it all, LOAD'],
   spawn: [0, 0, 6],
   facing: Math.PI,
   background: 'sand',
   guide: {
     what: 'A yard with a drop point, pads that spawn props, and pads that save, load and clear the layout.',
     how: [
-      'Picking: the mouse position becomes a ray from the camera through that pixel; the physics engine casts it and returns the first collider it hits. A dynamic body there is grabbed at that point.',
-      'Dragging: the grabbed point is pulled toward where the mouse ray meets a level plane at the height you grabbed it (a little higher, so it lifts off the floor); with the camera looking across instead of down (the side view), an upright plane facing the camera. It is a spring, not a teleport: the body gets a velocity toward its target every step, so it still collides, pushes others and swings.',
+      'Picking: the pointer (a mouse or a finger) becomes a ray from the camera through that pixel; the physics engine casts it and returns the first collider it hits. A dynamic body there is grabbed at that point.',
+      'Dragging: the grabbed point is pulled toward where the pointer ray meets a level plane at the height you grabbed it (a little higher, so it lifts off the floor); with the camera looking across instead of down (the side view), an upright plane facing the camera. It is a spring, not a teleport: the body gets a velocity toward its target every step, so it still collides, pushes others and swings.',
       'Throwing: let go and the body keeps the velocity the spring gave it.',
       'Saving: a layout is data, the kind, position and rotation of every prop, written as JSON to the browser\'s local storage (and given to agents as the same JSON).',
     ],
@@ -54,7 +54,7 @@ export const SANDBOX: RoomDef = {
       'Level editors and sandboxes: Garry\'s Mod, Besiege, Teardown, Minecraft.',
       'Grab and throw: Half-Life 2\'s gravity gun, Zelda: Tears of the Kingdom\'s Ultrahand.',
     ],
-    ask: ['pick up objects with the mouse', 'a level editor that saves to JSON', 'spawn physics props from a menu', 'throw what you grab'],
+    ask: ['pick up objects with a click or a finger', 'a level editor that saves to JSON', 'spawn physics props from a menu', 'throw what you grab'],
     cost: 'A ray cast when you click, a velocity set per step while you drag; saving walks the props once.',
     code: [
       {
@@ -174,7 +174,7 @@ export const SANDBOX: RoomDef = {
     const q = new Quaternion();
     let pull = 12;
     let throws = 0;
-    const knobs: Knob[] = [{ id: 'pull', label: 'Drag spring', min: 2, max: 30, step: 1, get: () => pull, set: (v) => (pull = v), initial: 12, hint: 'How hard a grabbed prop is pulled to the mouse: soft and swingy, or stiff.' }];
+    const knobs: Knob[] = [{ id: 'pull', label: 'Drag spring', min: 2, max: 30, step: 1, get: () => pull, set: (v) => (pull = v), initial: 12, hint: 'How hard a grabbed prop is pulled to the pointer: soft and swingy, or stiff.' }];
     const NOT_HERO = ['character'];
     const pointerRay = () => {
       ctx.camera.rayAt(e.input.pointer.x, e.input.pointer.y, origin, dir);

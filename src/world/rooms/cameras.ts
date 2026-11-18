@@ -82,7 +82,7 @@ pos.copy(this.right).multiplyScalar(r).addScaledVector(this.up, up)
         apply: () => e.setCamera(p.camera, { syncUrl: false }),
       }),
     );
-    kit.pad([-3, 0, 6.5], { label: 'ZOOM IN', color: 'teal', note: 'camera.setZoom(zoom x 1.5) (the wheel and + / - do the same).', apply: () => e.camera.setZoom(e.camera.zoom * 1.5) });
+    kit.pad([-3, 0, 6.5], { label: 'ZOOM IN', color: 'teal', note: 'camera.setZoom(zoom x 1.5) (with a mouse the wheel, on a keyboard + / -, on a phone a pinch).', apply: () => e.camera.setZoom(e.camera.zoom * 1.5) });
     kit.pad([0, 0, 6.5], { label: 'ZOOM OUT', color: 'teal', note: 'camera.setZoom(zoom / 1.5).', apply: () => e.camera.setZoom(e.camera.zoom / 1.5) });
     kit.pad([3, 0, 6.5], { label: 'SHAKE', color: 'red', note: 'engine.shake.add(0.8): the same shake in every preset (by whole art pixels in the ortho ones).', apply: () => e.shake.add(0.8) });
     return {
