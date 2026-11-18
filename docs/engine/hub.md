@@ -138,3 +138,44 @@ built page.
 Holding View and Menu together (Create and Options, gamepad buttons 8 and 9: `HOST_CHORD`) opens
 the hub's bar, so once both are held the engine presses neither until both are let go (letting one
 go first presses nothing) (`input.ts`).
+
+## The player's settings and the DualSense
+
+In 52in1 the page has the player's settings from its first script on, `window.AIHubSettings`
+(the hub's companion script; [Catalogue v1](https://raw.githubusercontent.com/michaelcrosato/ai-hub/main/lib/hub/catalogue.md),
+*Settings and the DualSense*). The engine reads them as `engine.hubSettings` (`HubSettings`,
+`src/engine/hub/settings.ts`): typed, every value its default outside 52in1 and headless
+(`NO_HUB_SETTINGS`: volumes 1, vibration 1, no microphone, no DualSense extras), read again on
+the hub's `change`. They are the player's, not the game's: never stored, never recorded.
+
+- **Volumes**: the engine multiplies the music bus by `music` and every other sound by `effects`
+  itself (docs/engine/audio.md *Buses and the player's 52in1 volumes*); never a master volume.
+- **Vibration**: the hub scales every rumble by it itself; `hubSettings.values.vibration` reads it.
+- **The microphone**: `hubSettings.micAllowed` (the player allowed games the microphone),
+  `micLater` (allowed after this game was opened: it reaches the game once it is opened again),
+  `micMuted` (the DualSense's mute button). A voice feature's settings row is off, with a line
+  saying 52in1 allows the microphone in its Settings, under Sound (while `micLater`: to open the
+  game again), until `micAllowed`; then `await hubSettings.openMicrophone()` gives a stream or
+  null. The game never asks the browser itself, and nothing opens during a replay. What a voice
+  feature hears is input: it reaches gameplay through `ctx.input.send`, so it replays.
+
+`ctx.dualsense` (`DualSense`, `src/engine/hub/dualsense.ts`) is the controller's outputs, each
+only while its flag (`dualsense.flags`) is true, so the game plays the same without them:
+
+```ts
+ctx.dualsense.light(hurt ? PALETTE.red : PALETTE.green);   // '#RRGGBB' too; null: the hub's colour
+ctx.dualsense.trigger('right', { kind: 'weapon', from: 0.3, to: 0.6, strength: 0.8 }); // resist | weapon | vibrate
+ctx.dualsense.trigger('right', null);                      // let it go when its use ends
+ctx.audio.play('radio', { bus: 'speaker' });               // the controller's speaker, else with the rest
+```
+
+Call them as often as you like: the controller is sent only what changed, and what the game
+wants is sent again when the player turns an extra back on. They are outputs: nothing is sent
+outside 52in1, headless or during a replay. The engine lets the triggers go while it is paused,
+lets both go and gives the light back (`light(null)`) when a level unloads, and for good at a
+round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,
+the team, danger): give it back on a title screen. Motion and the touchpad are input: they reach
+a game through `ctx.input` (recorded), never by reading `dualsense.gyro`, `accel` or `touches`
+(reading them turns the hub's own Motion aim off); `navigator.hid` and `getUserMedia` are never
+used (`npm run lint`). Tests pass a fake: `Engine.headless(game, { hubSettings })`
+(`src/engine/hub/settings.test.ts`; the systems e2e suite does it in a page).

@@ -13,7 +13,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads and press timing, game speed and hitstop |
 | docs/engine/physics.md | triggers, movers and conveyors, force fields, joints, destruction, `InstancedBodies`, vehicles, bullets |
 | docs/engine/physics-soft.md | cloth, ropes, jelly, ragdolls, water and buoyancy |
-| docs/engine/audio.md | sound effects and songs as data, audio unlock, spatial sound and looping voices |
+| docs/engine/audio.md | sound effects and songs as data, audio unlock, spatial sound and looping voices, the buses and the player's 52in1 volumes |
 | docs/engine/effects.md | particles, the pixel HUD, weather and fog, grass, trails and decals, pixel sprites, screen transitions, tweens |
 | docs/engine/ai.md | `NavGrid`, flow fields, boids, behaviour trees |
 | docs/engine/cinematic.md | `Timeline` cutscenes |
@@ -22,7 +22,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/procgen.md | noise, terrain and erosion, wave function collapse, L-systems |
 | docs/engine/procedural-motion.md | spring chains, squash, leg steppers, two-bone IK |
 | docs/engine/tooling.md | `window.__PIXEL_ENGINE__`, the CLIs, browser e2e, how to build an agent tool |
-| docs/engine/hub.md | AI Hub sessions: `HubSession` (parallel, ghost, shared world), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests |
+| docs/engine/hub.md | AI Hub sessions: `HubSession` (parallel, ghost, shared world), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests; the player's 52in1 settings (`engine.hubSettings`, the microphone's gate) and a DualSense's light bar, triggers and speaker (`ctx.dualsense`) |
 | docs/engine/lang.md | languages: lines and translations (`Lang`, `t()`), choosing the language, the test languages, text in every writing system (accented pixel capitals, the device font), wrapping |
 | docs/engine/kit.md | the engine kit for outside agents (`npm run bundle`), its diagnostics, build size |
 

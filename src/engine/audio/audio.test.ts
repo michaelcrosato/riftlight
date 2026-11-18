@@ -1,8 +1,9 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AudioManager } from './AudioManager';
 import { PLAYGROUND_SONG, parseSong, type Song } from './music';
 import { SFX } from './sfx';
 import { envelope, frequencyAt, noteFrequency, renderSound, soundDuration, type SoundDef } from './synth';
+import { FakeContext, FakeNode, type FakeParam } from './testAudio';
 
 const SR = 8000;
 
@@ -112,5 +113,93 @@ describe('AudioManager without Web Audio (headless)', () => {
       if (was) Object.defineProperty(globalThis, 'localStorage', was);
       else delete (globalThis as { localStorage?: unknown }).localStorage;
     }
+  });
+});
+
+describe('AudioManager buses: music, sfx and the controller’s speaker', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  type Gain = FakeNode & { gain: FakeParam };
+  type Bus = 'sfx' | 'music' | 'speaker';
+  const wired = (audio: AudioManager) => audio as unknown as { master: Gain; buses: Record<Bus, Gain>; speakerOut: Gain | null };
+  /** The bus a sound's chain reaches (source → gain → panner → bus). */
+  const busOf = (audio: AudioManager, from: FakeNode): Bus | undefined => {
+    const buses = Object.entries(wired(audio).buses) as [Bus, Gain][];
+    for (let at: FakeNode | undefined = from; at; at = at.outs[0]) {
+      const hit = buses.find(([, g]) => g === at);
+      if (hit) return hit[0];
+    }
+    return undefined;
+  };
+
+  it('plays a sound on the bus it names: music from an audio file follows the music volume', () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    FakeContext.made = [];
+    const audio = new AudioManager(new EventTarget());
+    audio.register('theme', { wave: 'triangle', freq: 220, sustain: 0.2 });
+    audio.unlock();
+    const ctx = FakeContext.made[0]!;
+    expect(audio.play('theme', { bus: 'music' })).toBe(true);
+    expect(busOf(audio, ctx.sources.at(-1)!)).toBe('music');
+    audio.play('coin', { volume: 0.5, pan: 0.2 });
+    expect(busOf(audio, ctx.sources.at(-1)!)).toBe('sfx');
+    const loop = audio.loop('theme', { bus: 'music', volume: 0.4 });
+    audio.update();
+    expect(loop.bus).toBe('music');
+    expect(busOf(audio, ctx.sources.at(-1)!)).toBe('music');
+    expect(audio.loop('coin').bus).toBe('sfx');
+    audio.dispose();
+  });
+
+  it('the buses play at the game’s own volumes × the player’s 52in1 ones; the master stays the game’s', () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    const audio = new AudioManager(new EventTarget());
+    audio.unlock();
+    audio.setHubVolumes({ music: 0.5, effects: 0.25 });
+    const { master, buses } = wired(audio);
+    const own = audio.volume;
+    expect(master.gain.value).toBe(own.master);
+    expect(buses.music.gain.value).toBeCloseTo(own.music * 0.5);
+    expect(buses.sfx.gain.value).toBeCloseTo(own.sfx * 0.25);
+    expect(buses.speaker.gain.value).toBeCloseTo(own.sfx * 0.25);
+    audio.setHubVolumes({ effects: 1 }); // the hub's change event
+    expect(buses.sfx.gain.value).toBeCloseTo(own.sfx);
+    expect(buses.music.gain.value).toBeCloseTo(own.music * 0.5);
+    audio.dispose();
+  });
+
+  it('routes the speaker bus to the controller’s speaker once it opens, and back to the others without it', async () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    FakeContext.made = [];
+    const audio = new AudioManager(new EventTarget());
+    const controller = new FakeNode();
+    const opened: unknown[] = [];
+    const open = async (c: AudioContext) => (opened.push(c), controller as unknown as AudioNode);
+    audio.useSpeaker(open); // before the first input: opened once audio unlocks
+    expect(opened).toEqual([]);
+    audio.unlock();
+    const ctx = FakeContext.made[0]!;
+    const w = wired(audio);
+    expect(opened).toEqual([ctx]);
+    expect(w.buses.speaker.outs).toEqual([w.master]); // until it resolves: with the other sounds
+    await Promise.resolve();
+    expect(audio.speakerRouted).toBe(true);
+    expect(w.buses.speaker.outs).toEqual([w.speakerOut]);
+    expect(w.speakerOut!.outs).toEqual([controller]);
+    expect(w.speakerOut!.gain.value).toBe(audio.volume.master); // past the master node: the master again
+    audio.play('coin', { bus: 'speaker' });
+    expect(busOf(audio, ctx.sources.at(-1)!)).toBe('speaker');
+    audio.setMuted(true);
+    expect(w.speakerOut!.gain.value).toBe(0);
+    audio.setMuted(false);
+    audio.useSpeaker(open); // the same: not opened again
+    expect(opened).toHaveLength(1);
+    audio.useSpeaker(null); // the player turned the speaker off
+    expect(audio.speakerRouted).toBe(false);
+    expect(w.buses.speaker.outs).toEqual([w.master]);
+    audio.useSpeaker(async () => null); // no DualSense speaker after all
+    await Promise.resolve();
+    expect(audio.speakerRouted).toBe(false);
+    expect(w.buses.speaker.outs).toEqual([w.master]);
+    audio.dispose();
   });
 });

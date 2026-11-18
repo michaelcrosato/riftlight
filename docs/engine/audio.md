@@ -70,3 +70,25 @@ clicks) and `stop` fades out before it lets go of the chain. Before the first in
 headless, a voice keeps its settings silently (`voice.settings`, `audio.loops`) and starts once
 audio unlocks (or its sound is registered: an unknown name is warned about once). A looped
 `SoundDef` wants `attack: 0, decay: 0` (a fade would dip at every repeat).
+
+## Buses and the player's 52in1 volumes
+
+Every sound plays on one of three buses under the game's master gain: `sfx` (the default:
+every sound but music, looping voices included), `music` (songs, and music from audio files:
+`play('theme', { bus: 'music' })`, `loop('theme', { bus: 'music' })`) and `speaker` (the
+controller's speaker, below). Nothing else makes sound: `npm run lint` refuses an
+`AudioContext`, `new Audio()` or `speechSynthesis` outside `AudioManager.ts`.
+
+In 52in1 (`window.AIHubSettings`, docs/engine/hub.md *The player's settings*) the engine sets
+`audio.setHubVolumes({ music, effects })` at start and on every `change`: the music bus plays at
+the game's own music volume × the hub's `music`, the sfx and speaker buses at its sfx volume ×
+`effects`. The game's own volumes and mute stay and multiply; the hub's are never stored, never
+recorded, and never a master volume (the hub applies its master itself, in front of the
+speakers). `audio.levels` is what the gains are (`{ master, sfx, music }`, headless too) and
+`audio.hubVolumes` the hub's part (1 and 1 outside the hub).
+
+The `speaker` bus plays from a DualSense's speaker while the player allows it
+(`dualsense.speaker`): the engine hands `audio.useSpeaker` the hub's `openSpeaker`, which gives a
+node in the game's AudioContext once audio unlocks. Until then, and without one, the bus plays
+with the other sounds at the same volume (`audio.speakerRouted` says which). Use it for what
+belongs in the player's hands: a radio call, a reload, a ringing phone.

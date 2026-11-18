@@ -4,6 +4,29 @@ import { renderSound, type SoundDef } from './synth';
 
 export type VolumeChannel = 'master' | 'sfx' | 'music';
 
+/**
+ * Where a sound plays: `sfx` (default: every sound but music, voices included), `music` (songs, and
+ * music played from audio files), `speaker` (the controller's speaker while 52in1 opens it for the
+ * game, `ctx.dualsense`; with the other sounds otherwise). `speaker` plays at the sfx volume.
+ */
+export type AudioBus = 'sfx' | 'music' | 'speaker';
+
+/** The player's 52in1 volumes (`AIHubSettings` music and effects), each 0..1: 1 outside the hub. */
+export interface HubVolumes {
+  music: number;
+  effects: number;
+}
+
+/** The gains the AudioManager's nodes play at (`AudioManager.levels`), kept headless too. */
+export interface AudioLevels {
+  /** The game's own master volume, 0 while muted (the hub's master the hub applies itself). */
+  readonly master: number;
+  /** The game's own sfx volume × the hub's effects (the `speaker` bus plays at this too). */
+  readonly sfx: number;
+  /** The game's own music volume × the hub's music. */
+  readonly music: number;
+}
+
 export interface AudioSettings {
   master: number;
   sfx: number;
@@ -18,6 +41,8 @@ export interface PlayOptions {
   pitch?: number;
   /** Stereo position -1 (left) .. 1 (right). */
   pan?: number;
+  /** Which bus it plays on (default `sfx`); music from an audio file plays on `music`. */
+  bus?: AudioBus;
 }
 
 export interface VoiceSettings {
@@ -34,6 +59,8 @@ export interface VoiceSettings {
 /** A looping sound steered while it plays (`AudioManager.loop`): a hum, a fire, a waterfall. */
 export interface Voice {
   readonly name: string;
+  /** The bus it plays on (`AudioManager.loop`'s `bus`; fixed while it plays). */
+  readonly bus: AudioBus;
   /** The values last set (kept headless too, so games and tests can read them). */
   readonly settings: Readonly<Required<VoiceSettings>>;
   /** Really sounding: Web Audio running and the loop started. */
@@ -73,8 +100,14 @@ export class AudioManager {
   readonly counts: Record<string, number> = {};
   context: AudioContext | null = null;
   private master: GainNode | null = null;
-  private buses: Partial<Record<'sfx' | 'music', GainNode>> = {};
+  private buses: Partial<Record<AudioBus, GainNode>> = {};
+  /** The speaker bus's way to the controller's speaker: the master volume, then the hub's node. */
+  private speakerOut: GainNode | null = null;
+  private speakerNode: AudioNode | null = null;
+  private speakerOpen: ((context: AudioContext) => Promise<AudioNode | null>) | null = null;
+  private speakerToken = 0;
   private readonly settings: AudioSettings;
+  private readonly hub: HubVolumes = { music: 1, effects: 1 };
   private readonly buffers = new WeakMap<SoundDef, AudioBuffer>();
   private readonly files = new Map<string, AudioBuffer>();
   private readonly pendingFiles = new Map<string, ArrayBuffer>();
@@ -136,12 +169,13 @@ export class AudioManager {
         this.context = ctx;
         this.master = ctx.createGain();
         this.master.connect(ctx.destination);
-        for (const bus of ['sfx', 'music'] as const) {
+        for (const bus of ['sfx', 'music', 'speaker'] as const) {
           const g = ctx.createGain();
           g.connect(this.master);
           this.buses[bus] = g;
         }
         this.applyVolumes();
+        if (this.speakerOpen) this.routeSpeaker();
         for (const [name, data] of this.pendingFiles) void this.decode(name, data);
         this.pendingFiles.clear();
       }
@@ -198,7 +232,7 @@ export class AudioManager {
     this.log.push({ name, at: typeof performance !== 'undefined' ? performance.now() : 0 }); // real time: when it was asked for (a tooling log)
     if (this.log.length > 64) this.log.shift();
     const ctx = this.context;
-    const bus = this.buses.sfx;
+    const bus = this.buses[options.bus ?? 'sfx'];
     if (!ctx || !bus || this.settings.muted || ctx.state !== 'running') return false;
     let buffer: AudioBuffer | undefined;
     if (typeof sound === 'string') {
@@ -215,10 +249,11 @@ export class AudioManager {
    * Start a sound looping, as a voice you steer while it plays (volume, pan, muffle, pitch:
    * with `spatialize` it sits at a place in the world). Before the first user input, or with
    * no Web Audio, the voice keeps its settings silently and starts once audio unlocks.
-   * Stop it when you are done (a level's `dispose`).
+   * Stop it when you are done (a level's `dispose`). `bus` (default `sfx`): a music file looping
+   * plays on `music`.
    */
-  loop(sound: string | SoundDef, settings: VoiceSettings = {}): Voice {
-    const voice = new LoopVoice(typeof sound === 'string' ? sound : 'custom', sound, this, settings);
+  loop(sound: string | SoundDef, settings: VoiceSettings & { bus?: AudioBus } = {}): Voice {
+    const voice = new LoopVoice(typeof sound === 'string' ? sound : 'custom', sound, this, settings, settings.bus ?? 'sfx');
     this.voices.add(voice);
     this.startVoice(voice);
     return voice;
@@ -237,7 +272,7 @@ export class AudioManager {
   /** @internal Wire a voice to Web Audio if it can sound now. */
   startVoice(voice: LoopVoice): void {
     const ctx = this.context;
-    const bus = this.buses.sfx;
+    const bus = this.buses[voice.bus];
     if (voice.nodes || voice.stopped || !ctx || !bus || ctx.state !== 'running') return;
     const buffer = typeof voice.sound === 'string' ? (this.files.get(voice.sound) ?? (this.sounds.get(voice.sound) ? this.bufferFor(this.sounds.get(voice.sound)!) : undefined)) : this.bufferFor(voice.sound);
     if (!buffer) {
@@ -335,6 +370,46 @@ export class AudioManager {
     return this.settings.muted;
   }
 
+  /**
+   * The player's 52in1 volumes (the engine sets them from `AIHubSettings` and again on its
+   * `change`): the music bus plays at the game's music volume × `music`, every other sound at its
+   * sfx volume × `effects`. Never stored, never recorded, and no master volume: the hub applies its
+   * master itself.
+   */
+  setHubVolumes(v: Partial<HubVolumes>): void {
+    const unit = (n: number | undefined, d: number) => (n === undefined || !Number.isFinite(n) ? d : Math.min(1, Math.max(0, n)));
+    this.hub.music = unit(v.music, this.hub.music);
+    this.hub.effects = unit(v.effects, this.hub.effects);
+    this.applyVolumes();
+  }
+
+  /** The player's 52in1 volumes in use (1 and 1 outside the hub). */
+  get hubVolumes(): Readonly<HubVolumes> {
+    return { ...this.hub };
+  }
+
+  /** The gains the buses play at: the game's own volumes × the player's 52in1 ones (headless too). */
+  get levels(): AudioLevels {
+    const s = this.settings;
+    return { master: s.muted ? 0 : s.master, sfx: s.sfx * this.hub.effects, music: s.music * this.hub.music };
+  }
+
+  /**
+   * Where the `speaker` bus can reach the controller's speaker: `open` gives a node in the
+   * AudioContext that plays from it, or null (the engine passes `ctx.dualsense.openSpeaker` while
+   * the player allows it). With none, or until it resolves, the bus plays with the other sounds.
+   */
+  useSpeaker(open: ((context: AudioContext) => Promise<AudioNode | null>) | null): void {
+    if (open === this.speakerOpen) return;
+    this.speakerOpen = open;
+    this.routeSpeaker();
+  }
+
+  /** The `speaker` bus plays from the controller's speaker now (else with the other sounds). */
+  get speakerRouted(): boolean {
+    return this.speakerNode !== null;
+  }
+
   /** The default volumes, sound on (the settings panel's Reset). */
   resetVolumes(): void {
     Object.assign(this.settings, DEFAULTS);
@@ -389,10 +464,43 @@ export class AudioManager {
     this.lifetime.abort();
     this.stopMusic();
     this.stopLoops();
+    this.speakerToken++;
     void this.context?.close().catch(() => {});
     this.context = null;
     this.master = null;
     this.buses = {};
+    this.speakerOut = null;
+    this.speakerNode = null;
+  }
+
+  /** Open the controller's speaker for the `speaker` bus (when there is a context), else fall back. */
+  private routeSpeaker(): void {
+    const token = ++this.speakerToken;
+    this.connectSpeaker(null);
+    const ctx = this.context;
+    const open = this.speakerOpen;
+    if (!ctx || !open || this.disposed) return;
+    open(ctx).then(
+      (node) => {
+        if (token === this.speakerToken && this.context === ctx && node) this.connectSpeaker(node);
+      },
+      () => {}, // no speaker: the bus plays with the other sounds
+    );
+  }
+
+  private connectSpeaker(node: AudioNode | null): void {
+    const ctx = this.context;
+    const bus = this.buses.speaker;
+    if (!ctx || !bus || !this.master || node === this.speakerNode) return;
+    bus.disconnect();
+    this.speakerOut?.disconnect();
+    if (node) {
+      this.speakerOut ??= ctx.createGain();
+      this.speakerOut.connect(node);
+      bus.connect(this.speakerOut);
+    } else bus.connect(this.master);
+    this.speakerNode = node;
+    this.applyVolumes();
   }
 
   private start(buffer: AudioBuffer, bus: GainNode, when: number, o: PlayOptions): AudioBufferSourceNode {
@@ -445,10 +553,12 @@ export class AudioManager {
   }
 
   private applyVolumes(): void {
-    const s = this.settings;
-    if (this.master) this.master.gain.value = s.muted ? 0 : s.master;
-    if (this.buses.sfx) this.buses.sfx.gain.value = s.sfx;
-    if (this.buses.music) this.buses.music.gain.value = s.music;
+    const l = this.levels;
+    if (this.master) this.master.gain.value = l.master;
+    if (this.speakerOut) this.speakerOut.gain.value = l.master; // the controller's speaker is past the master node
+    if (this.buses.sfx) this.buses.sfx.gain.value = l.sfx;
+    if (this.buses.speaker) this.buses.speaker.gain.value = l.sfx;
+    if (this.buses.music) this.buses.music.gain.value = l.music;
   }
 }
 
@@ -464,6 +574,7 @@ class LoopVoice implements Voice {
     readonly sound: string | SoundDef,
     private readonly manager: AudioManager,
     settings: VoiceSettings,
+    readonly bus: AudioBus,
   ) {
     this.assign(settings);
   }
