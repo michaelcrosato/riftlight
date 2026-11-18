@@ -35,13 +35,17 @@ another agent*):
   source declares: `EngineOptions`, the touch controls, the HUD, 52in1's settings), runs a page
   holding its head tags through 52in1's catalogue checker (`checkPage`,
   `scripts/hub/catalogue-check.mjs`) and holds its budget; every text the games draw lies inside the
-  HUD in every state, on a phone held either way and on a TV. The `bundle` e2e suite plays the
-  starter and both games on a phone (Playwright's touch screen, upright and sideways, real taps) and
-  on a TV with a fake pad, in every state a player reaches (playing, a menu, the settings, won and
-  lost, a 52in1 round's start): each has the touch buttons its guide gives it (Beacon Yard's LIGHT
-  only by a dark beacon, none over its menu), every HUD text lies inside the HUD and clear of the
-  controls (the stick, its zone, a button, the ⚙) and other texts, every tap target is reachable,
-  and a phone held sideways shows the art at two CSS pixels a pixel at least.
+  HUD in every state, on a phone held either way and on a TV, and what a player needs is in view at
+  every window shape (Gem Rush's whole arena, every beacon from Beacon Yard's start: both zoom out
+  by the camera's aspect, a phone upright included); Gem Rush alone plays again once it is over. The
+  `bundle` e2e suite plays Gem Rush's own page in a `LocalHub` round (no ⚙, Esc and Options never
+  pause it), and the starter and both games on a phone (Playwright's touch screen, upright and
+  sideways, real taps) and on a TV with a fake pad, in every state a player reaches (playing, a
+  menu, the settings, won and lost, a 52in1 round's start): each has the touch buttons its guide
+  gives it (Beacon Yard's LIGHT only by a dark beacon, none over its menu), every HUD text lies
+  inside the HUD and clear of the controls (the stick, its zone, a button, the ⚙) and other texts,
+  every tap target is reachable, and a phone held sideways shows the art at two CSS pixels a pixel
+  at least.
 - `ASSETS.md` (docs/GUIDE-ASSETS.md, stamped): models and textures for outside agents, written for
   someone with only the kit (docs/ASSETS.md stays the in-repo guide). Its blocks are Market
   Corner, `examples/market.html`, and the module of the game's own models it imports

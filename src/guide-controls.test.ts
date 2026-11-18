@@ -18,6 +18,7 @@ import * as THREE from 'three/webgpu';
 import ts from 'typescript';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
+import { settle } from './engine/node';
 import { checkPage, DUALSENSE, LOCAL, MODES, opensWithKeys, readMoments, readMultiplayer, TAGS } from '../scripts/hub/catalogue-check.mjs';
 import * as bundle from './bundle';
 
@@ -308,8 +309,16 @@ describe('docs/GUIDE-CONTROLS.md', () => {
 
   it('Gem Rush: every copy of a moment sets up the same, readies up with no key press, waits for the start, and reports once whether it was cleared; a parallel round reports progress, then its result', async () => {
     const { createGame, MOMENTS } = await load('gem-rush');
-    type Rush = bundle.Game & { at: THREE.Vector3; gems: THREE.Mesh[]; got: number; over: string | null };
+    type Rush = bundle.Game & { at: THREE.Vector3; gems: THREE.Mesh[]; got: number; over: string | null; finish(ctx: bundle.GameContext, won: boolean): void };
     const make = createGame as (session: bundle.HubSession | null) => Rush;
+    /** Space pressed for a frame, then a few frames: a `loadGame` swaps in after its frame. */
+    const space = async (engine: bundle.Engine) => {
+      engine.input.setKey('Space', true);
+      engine.step(1);
+      engine.input.setKey('Space', false);
+      await settle();
+      engine.step(2);
+    };
     const moments = MOMENTS as Record<string, { gems: number; seconds: number }>;
     /** A round in a LocalHub: each player's session, game and engine. */
     async function round(options: ConstructorParameters<typeof bundle.LocalHub>[0]) {
@@ -352,6 +361,9 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       expect([b!.game.over, hub.results.get(1)?.won]).toEqual(['failed', false]);
       hub.advance(3000);
       expect([hub.endReason, hub.standings(), hub.problems]).toEqual(['finished', [[0], [1]], []]);
+      step(90);
+      await space(a!.engine);
+      expect(a!.engine.game, 'in a session the hub moves on: no press plays again').toBe(a!.game);
       expect([...a!.engine.errors, ...b!.engine.errors]).toEqual([]);
     } finally {
       copies.forEach((c) => c.engine.dispose());
@@ -376,13 +388,21 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       solo!.engine.dispose();
     }
 
-    // alone (no 52in1): it plays at once
+    // alone (no 52in1): it plays at once; once over, Space (Cross, a tap) plays again, not at once
     const alone = make(null);
     const engine = await bundle.Engine.headless(alone);
     try {
       engine.input.setKey('KeyD', true);
       engine.step(30);
+      engine.input.setKey('KeyD', false);
       expect([alone.at.x > 0, alone.gems.length]).toEqual([true, 12]);
+      alone.finish(engine.context, false);
+      engine.step(30);
+      await space(engine);
+      expect(engine.game, 'a press as it ends never skips the result').toBe(alone);
+      engine.step(40);
+      await space(engine);
+      expect([engine.game === alone, (engine.game as Rush).over, (engine.game as Rush).gems.length]).toEqual([false, null, 12]);
     } finally {
       engine.dispose();
     }
@@ -424,12 +444,13 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     const { createGame: rush } = await load('gem-rush');
     type Rush = bundle.Game & { countdown: number; finish(ctx: bundle.GameContext, won: boolean): void };
     for (const [width, height] of shapes) {
-      for (const state of ['playing', 'counting down', 'cleared', 'failed'] as const) {
+      for (const state of ['playing', 'counting down', 'cleared', 'failed', 'play again'] as const) {
         const game = (rush as (session: null) => Rush)(null);
         const engine = await bundle.Engine.headless(game, { touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } });
         try {
           if (state === 'counting down') game.countdown = 2.5;
-          if (state === 'cleared' || state === 'failed') game.finish(engine.context, state === 'cleared');
+          if (state === 'cleared' || state === 'failed' || state === 'play again') game.finish(engine.context, state === 'cleared');
+          if (state === 'play again') engine.step(70);
           outside.push(...textsOutside(engine, `Gem Rush ${state}`));
         } finally {
           engine.dispose();
@@ -437,6 +458,54 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       }
     }
     expect(outside).toEqual([]);
+  });
+
+  it('what a player needs is in view at every window shape: Gem Rush’s whole arena (every gem, the runner in each corner it reaches), every beacon from Beacon Yard’s start', async () => {
+    const shapes = [[390, 844], [344, 882], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const;
+    /** What of `things` (a name, a point and a radius) the camera leaves out of the picture. */
+    const outOfView = (engine: bundle.Engine, what: string, things: [string, THREE.Vector3, number][]) => {
+      const cam = engine.camera.camera;
+      const p = new THREE.Vector3();
+      const edge = new THREE.Vector3();
+      return things
+        .filter(([, at, r]) => [-r, r].some((dx) => [-r, r].some((dz) => (p.copy(at).add(edge.set(dx, 0, dz)).project(cam), Math.abs(p.x) > 1 || Math.abs(p.y) > 1))))
+        .map(([name, at]) => `${what} at ${engine.hud.width}x${engine.hud.height}: ${name} (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
+    };
+    // the camera both pages start with (Engine.headless's default is iso)
+    const camera = { preset: 'topdown' } as const;
+    for (const { name, code } of blocks) expect(code, name).toContain("camera: { preset: 'topdown' }");
+    const { createGame: rush } = await load('gem-rush');
+    type Rush = bundle.Game & { gems: THREE.Mesh[]; runner: THREE.Mesh };
+    const { createGame: yard } = await load('beacon-yard');
+    type Yard = bundle.Game & { beacons: { mesh: THREE.Mesh }[] };
+    const out: string[] = [];
+    for (const [width, height] of shapes) {
+      const options = { camera, touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } };
+      const g = (rush as (session: null) => Rush)(null);
+      const engine = await bundle.Engine.headless(g, options);
+      try {
+        engine.step(2);
+        out.push(...outOfView(engine, 'Gem Rush', g.gems.map((gem, i) => [`gem ${i}`, gem.position, 0.35])));
+        for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+          engine.input.setKey(x < 0 ? 'KeyA' : 'KeyD', true);
+          engine.input.setKey(z < 0 ? 'KeyW' : 'KeyS', true);
+          engine.step(240); // into the corner
+          for (const key of ['KeyA', 'KeyD', 'KeyW', 'KeyS']) engine.input.setKey(key, false);
+          out.push(...outOfView(engine, 'Gem Rush', [['the runner', g.runner.position, 0.3]]));
+        }
+      } finally {
+        engine.dispose();
+      }
+      const y = (yard as () => Yard)();
+      const yardEngine = await bundle.Engine.headless(y, options);
+      try {
+        yardEngine.step(2);
+        out.push(...outOfView(yardEngine, 'Beacon Yard’s start', y.beacons.map((b, i) => [`beacon ${i}`, b.mesh.position, 0.4])));
+      } finally {
+        yardEngine.dispose();
+      }
+    }
+    expect(out).toEqual([]);
   });
 
   it('a page with its head tags passes 52in1’s catalogue checker on them, and they name Gem Rush’s moments', async () => {

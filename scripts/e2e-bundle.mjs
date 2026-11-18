@@ -26,7 +26,9 @@
 //             them (Beacon Yard's LIGHT only by a dark beacon, nothing but its menu while it shows),
 //             every HUD text inside the HUD and clear of the controls (the stick, its zone, a
 //             button, the ⚙), every tap target reachable, a phone held sideways at two CSS pixels a
-//             pixel at least; phone-*.png and tv-*.png show each state as the player sees it.
+//             pixel at least; phone-*.png and tv-*.png show each state as the player sees it. Gem
+//             Rush's own page in a LocalHub round (window.AIHub): it joins from its head, no ⚙,
+//             and neither Esc nor Options pauses the round.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
 //             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
 //             on a broken def, a module with no defs or one that never loads, an unknown id.
@@ -126,7 +128,10 @@ export async function runBundle(h) {
     const guide = await readFile(new URL('GUIDE.md', kit), 'utf8');
     check(guide.includes(`Pixel Engine **${version}**`), 'GUIDE.md is stamped with the version');
     const controls = await readFile(new URL('CONTROLS.md', kit), 'utf8');
-    check(controls.includes(`Pixel Engine **${version}**`) && controls.includes('```js beacon-yard') && readme.includes('`CONTROLS.md`'), 'CONTROLS.md (docs/GUIDE-CONTROLS.md) is stamped with the version, holds its games, and README.md sends readers to it');
+    check(
+      controls.includes(`Pixel Engine **${version}**`) && controls.includes('```js beacon-yard') && readme.includes('`CONTROLS.md`') && readme.includes('`--keys PadA*10`') && readme.includes('`"index.html?touch=1" --size 390x844`'),
+      'CONTROLS.md (docs/GUIDE-CONTROLS.md) is stamped with the version, holds its games, and README.md sends readers to it and says how check.mjs plays its checklist’s devices (a fake pad, a phone)',
+    );
     const assets = await readFile(new URL('ASSETS.md', kit), 'utf8');
     check(assets.includes(`Pixel Engine **${version}**`) && assets.includes('```js market-models'), 'ASSETS.md (docs/GUIDE-ASSETS.md) is stamped with the version and holds the example');
     // LIBRARY.md: a row per model and texture (variants share one), the library's by family, then each pack's.
@@ -307,7 +312,7 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     let ctx;
     try {
       ctx = await launch(exe, s, pageOptions);
-      await ctx.page.goto(`${base}engine/${path}`);
+      await ctx.page.goto(/^https?:/.test(path) ? path : `${base}engine/${path}`);
       await ready(ctx.page);
       await fn(ctx.page);
       const st = await ctx.page.evaluate(() => window.__PIXEL_ENGINE__.state());
@@ -886,6 +891,71 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     'Gem Rush on a TV with a pad',
     TV,
   );
+
+  // Gem Rush's own page in a 52in1 round of moments: the head's tags (headSession) and the hub's
+  // client as window.AIHub (a LocalHub here, its clock moved by real time) make HubSession.join find
+  // the round, as in 52in1. The game readies up by itself and plays the round; there is no ⚙, and
+  // neither Esc nor Options opens the settings or pauses: the round's clock never stops.
+  const roundDir = new URL('round/', out);
+  await mkdir(new URL('examples/', roundDir), { recursive: true });
+  await symlink(join(kitPath, 'pixel-engine.js'), fileURLToPath(new URL('pixel-engine.js', roundDir)));
+  await symlink(join(kitPath, 'examples/gem-rush.js'), fileURLToPath(new URL('examples/gem-rush.js', roundDir)));
+  const tags = (await readFile(new URL('docs/GUIDE-CONTROLS.md', root), 'utf8')).match(/^```html\n([\s\S]*?)^```$/m)?.[1] ?? '';
+  await writeFile(
+    new URL('examples/round.html', roundDir),
+    `<!doctype html><html><head><meta charset="utf-8">${tags}<link rel="icon" href="data:,"><style>html, body { margin: 0; height: 100%; } #app { position: fixed; inset: 0; }</style></head><body><div id="app"></div>
+<script type="module">
+import { LocalHub } from '../pixel-engine.js';
+const hub = (window.__hub = new LocalHub({ mode: 'moments', moment: { id: 'gem-hunt', seconds: 15 }, players: 1, seed: 3 }));
+window.AIHub = hub.client(0);
+let last = performance.now();
+setInterval(() => {
+  const now = performance.now();
+  hub.advance(now - last);
+  last = now;
+}, 20);
+await import('./gem-rush.js');
+</script></body></html>`,
+  );
+  const roundServer = await serve(fileURLToPath(roundDir));
+  try {
+    for (const [where, options] of [
+      ['a phone', phone(390, 844)],
+      ['a TV with a pad', TV],
+    ]) {
+      await play(
+        `http://127.0.0.1:${roundServer.address().port}/examples/round.html`,
+        async (page) => {
+          await helpers(page);
+          const r = await page.evaluate(async () => {
+            const e = window.__PIXEL_ENGINE__;
+            const hub = window.__hub;
+            e.manual = false;
+            for (let i = 0; i < 120 && !hub.allReady; i++) await window.__kit.frames(1);
+            const ready = hub.allReady;
+            hub.start();
+            for (let i = 0; i < 400 && e.game.countdown > 0; i++) await window.__kit.frames(1);
+            const playing = e.game.countdown <= 0 && !e.game.over;
+            // Esc, then Options (let go), while the round plays
+            e.input.setKey('Escape', true);
+            await window.__kit.frames(2);
+            e.input.setKey('Escape', false);
+            await window.__kit.press(9);
+            return { ready, playing, mode: e.game.session?.info.mode, moment: e.game.moment, gear: !!document.querySelector('.settings-button'), settings: e.settings.isOpen, paused: e.paused };
+          });
+          check(
+            r.ready && r.playing && r.mode === 'moments' && r.moment === 'gem-hunt' && !r.gear && !r.settings && !r.paused,
+            `Gem Rush's page in a 52in1 round on ${where}: it joins the round from its head (window.AIHub), readies up by itself and plays it; no ⚙, and Esc and Options neither open the settings nor pause (${JSON.stringify(r)})`,
+          );
+          await page.evaluate(() => window.__PIXEL_ENGINE__.input.setGamepads(null));
+        },
+        `Gem Rush in a round on ${where}`,
+        options,
+      );
+    }
+  } finally {
+    roundServer.close();
+  }
 
   await play(
     'examples/market.html',
