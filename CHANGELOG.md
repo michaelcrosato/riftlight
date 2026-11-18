@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.64.0
+
+- **`CameraConfig.minWidth`** (ortho presets: iso, topdown, side; docs/engine/camera.md): the fewest metres the picture shows across. A narrow window, such as a phone held upright, zooms the camera out until they fit, below `minZoom` if it must. The zoom asked for (the config's `zoom`, `?zoom=`, `setZoom`, the player's wheel and + / -) is kept apart from `rig.zoom`, the zoom on screen (the smaller of the two), and comes back on a wider window; the wheel and + / - zoom from the zoom on screen. `CameraRigState.wanted` (new, optional) carries the zoom asked for through `engine.snapshot()`. Without `minWidth` nothing changes.
+- **The kit gains `RECIPES.md`** (docs/GUIDE-RECIPES.md): Lantern Night and Look Lab, moved out of `GUIDE.md`, whose section 5 keeps Cliff Run and lists every game page of the kit. Page names (`examples/top-down.html`, `examples/looks.html`) are unchanged.
+- **Every kit page meets CONTROLS.md's checklist**: Cliff Run, Lantern Night, Look Lab and Market Corner each get a `controls` table and a legend of the controls in use (hidden while touch controls show), their own `touchButtons` (Market Corner none at all), `touchDensity: 2`, the settings on Options or Esc, a HUD laid out from `hud.width` clear of the ⚙ and the touch controls and in whole words at every window shape (down to a 90-column 360x1000 window), and `camera: { minWidth }` so the play area stays in view on a phone held upright while the player's own zoom still works. Look Lab changes looks with Q/E, L1/R1 or its `PX < >` touch buttons. Beacon Yard and Gem Rush (CONTROLS.md) use `minWidth` too and fit a 90-column window.
+
 ## 0.63.0
 
 - A pinch on the canvas presses nothing. A second finger releases `Touch` (`TOUCH_KEY`), and it stays up until every finger is lifted. When both fingers land in the same frame, the first finger's press is taken back as if it never happened: no `wasPressed`, no queued press, nothing recorded (`Input.unpress`). Before, the first finger held `Touch` for the whole pinch, so a game that reads it as a click or an attack kept firing while the fingers stayed down.
