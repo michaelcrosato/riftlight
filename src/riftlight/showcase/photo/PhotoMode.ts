@@ -8,8 +8,8 @@
  *          single filter (palettes, consoles, displays), pixel / raw, 480 / 320, time of day
  *          (town), sun and ambient strength, a fill light that rides with the camera.
  *   P      save a PNG of exactly what the pipeline presents (`renderer.capture()`).
- *   (pad: Y switches fly / edit, X saves, Start goes back)
- *   H      hide the panel · Esc back to the game: camera, filters, mode, resolution and lights
+ *   (pad: Triangle switches fly / edit, Square saves, L1 hides the panel, Options goes back)
+ *   H      hide the panel (`photo_hide`) · Esc back to the game: camera, filters, mode, resolution and lights
  *          come back as they were.
  */
 import { Vector3 } from 'three/webgpu';
@@ -291,7 +291,7 @@ export class PhotoMode {
       rig.controlsCharacter = false;
     }
     if (input.wasPressed('KeyP', 'PadX')) this.shoot();
-    if (input.wasPressed('KeyH')) this.hidden = !this.hidden;
+    if (input.wasPressed('KeyH', 'PadLB')) this.hidden = !this.hidden; // CONTROLS.photo_hide
     if (input.wasPressed('Escape', 'PadStart')) return this.close();
     const rows = this.rows();
     this.row = Math.min(this.row, rows.length - 1);

@@ -430,6 +430,8 @@ export interface GameEvents extends Record<string, unknown> {
   hit: { target: ActorLike; result: HitResult; hit: Hit };
   kill: { target: ActorLike; killer: ActorLike | null; rank: Rank; depth: number };
   loot: { item: Item; at: Vector3 };
+  /** An item landed on the ground in view (presentation only: the shell rumbles the pad for a rare or loud one). `loud`: the loot filter shouts it. */
+  landed: { item: Item; at: Vector3; loud: boolean };
   gold: { amount: number; at: Vector3 };
   xp: { amount: number; level: number };
   levelUp: { level: number };

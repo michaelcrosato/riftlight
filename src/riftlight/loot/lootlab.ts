@@ -20,6 +20,7 @@ import { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, GameEvents, HitResult, Item, Rarity } from '../core/types';
 import { t } from '../lang';
+import { CONTROLS } from '../game/controls';
 import { rollItem } from './generate';
 import { InventoryView, ItemsStore, ItemsUi, StashView, VendorView } from '../ui/items';
 import { wrapRow } from '../ui/kit';
@@ -31,6 +32,8 @@ const NO_INPUT: MoveInput = { move: new Vector3(), jump: false, jumpHeld: false,
 
 export class LootLab implements Game {
   readonly name = 'Loot Lab';
+  /** Riftlight's controls: its item windows' lines name them (`{key:skills}`) for the device in use. */
+  readonly controls = CONTROLS;
   readonly assets = [HERO_MODEL];
   hero!: PlatformerCharacter;
   heroModel!: Object3D;

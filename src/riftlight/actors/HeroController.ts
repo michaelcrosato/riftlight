@@ -14,6 +14,7 @@ import { loadSkill, type SavedSkill, saveSkill } from '../skills/saved';
 import type { ResolvedSkill, SupportLink } from '../skills/types';
 import { Actor, type ActorState } from './Actor';
 import type { ActorIndex } from '../core/saved';
+import { AIM, coneCos, inCone, stickAim } from './aim';
 import { HERO_KEYS } from './controls';
 import { HeroAnimator, type HeroAnimatorState } from './heroAnimator';
 import { ControllerMover, type Mover } from './movers';
@@ -40,9 +41,9 @@ export const HERO_TUNING = {
   fadeOut: 0.25,
   /** Taking at least this share of max life in one hit plays the hit react. */
   hitReactShare: 0.08,
-  /** Auto-aim (keys / pad / touch): nearest enemy within this range and cone (deg) ahead. */
-  autoAimRange: 9,
-  autoAimCone: 70,
+  /** Auto-aim (keys / pad / touch): nearest enemy within this range and cone (deg) ahead (actors/aim.ts, shared with the shell). */
+  autoAimRange: AIM.range,
+  autoAimCone: AIM.cone,
   /**
    * Foot placement (engine FootPlacement, docs/ANIMATION.md): planted feet stay where they
    * landed through blends and attacks; when the body moves on more than `maxDrift` m they
@@ -761,26 +762,28 @@ export class HeroController {
     const p = a.position;
     if (input.aimAt?.(this.aim)) return; // the game decides the aim (one input path)
     if (this.camera && this.mouse.recent() && this.mouse.ground(this.camera, p.y, this.aim)) return;
-    const look = input.gamepadConnected ? input.mouseDelta : null;
+    // the right stick (y up), past its lean: along it, snapped to a hostile close to that line (aim assist)
+    const stick = input.lookAxis;
+    if (stick && Math.hypot(stick.x, stick.y) > AIM.stick && this.camera) {
+      const { right, forward } = groundBasisOf(this.camera);
+      const dir = tmp.set(0, 0, 0).addScaledVector(right, stick.x).addScaledVector(forward, stick.y);
+      stickAim(p, dir.x, dir.z, this.combat.actors.actors, (x) => a.hostileTo(x), this.aim);
+      return;
+    }
+    const look = !stick && input.gamepadConnected ? input.mouseDelta : null;
     if (look && Math.hypot(look.x, look.y) > 0.5 && this.camera) {
-      // right stick: screen direction → ground direction
+      // an input without `lookAxis`: the right stick as pointer movement (screen direction → ground direction)
       const { right, forward } = groundBasisOf(this.camera);
       const dir = tmp.set(0, 0, 0).addScaledVector(right, look.x).addScaledVector(forward, -look.y).normalize();
-      this.aim.copy(p).addScaledVector(dir, 5);
+      this.aim.copy(p).addScaledVector(dir, AIM.reach);
       return;
     }
     // keys / touch: the nearest enemy roughly ahead (or along the stick), else straight ahead
     const ahead = this.moveWish.lengthSq() > 0.04 ? Math.atan2(this.moveWish.x, this.moveWish.z) : a.facing;
-    const cone = Math.cos((HERO_TUNING.autoAimCone * Math.PI) / 180);
+    const cone = coneCos(HERO_TUNING.autoAimCone);
     const fx = Math.sin(ahead);
     const fz = Math.cos(ahead);
-    const target = this.combat.actors.nearest(p, HERO_TUNING.autoAimRange, (x) => {
-      if (!x.alive || !a.hostileTo(x)) return false;
-      const dx = x.position.x - p.x;
-      const dz = x.position.z - p.z;
-      const d = Math.hypot(dx, dz);
-      return d < 0.01 || (dx * fx + dz * fz) / d >= cone;
-    });
+    const target = this.combat.actors.nearest(p, HERO_TUNING.autoAimRange, (x) => x.alive && a.hostileTo(x) && inCone(p, fx, fz, cone, x.position));
     if (target) this.aim.copy(target.position);
     else this.aim.set(p.x + fx * 4, p.y, p.z + fz * 4);
   }
@@ -1104,6 +1107,8 @@ export interface InputLike {
   anyDown(codes: readonly string[]): boolean;
   readonly gamepadConnected: boolean;
   readonly mouseDelta: { x: number; y: number };
+  /** Optional: the right stick after its deadzone (y up; the engine's `input.lookAxis`): it aims, with aim assist. */
+  readonly lookAxis?: { readonly x: number; readonly y: number };
   /** Optional: the game's own aim point (fills `out`, returns true); skips mouse / stick / auto-aim. */
   aimAt?(out: Vector3): boolean;
 }

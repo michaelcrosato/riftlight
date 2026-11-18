@@ -3,13 +3,14 @@
 // the level builds (layout, critical path, mechanics) with its theme's floor surface, the light
 // pool (quality medium: 8) shares its lights between many moving requests, the autopilot walks
 // start → exit with encounters on the way and lights following, and killing the boss opens the
-// portal the hero then takes. The pictures, the shader cache and the pool's CPU time stay in e2e.
-// One engine at a time: each depth's is disposed before the next boots.
+// portal the hero then takes; its prompts name the lab's own buttons (`LAB_KEYS`). The pictures,
+// the shader cache and the pool's CPU time stay in e2e. One engine at a time: each depth's is
+// disposed before the next boots.
 import type { Mesh, Object3D } from 'three/webgpu';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
 import { headlessGame } from '../headless';
-import { LevelLab } from './levelLab';
+import { LAB_KEYS, LevelLab } from './levelLab';
 
 const T = 30_000;
 const LEVELS = [{ depth: 1 }, { depth: 6 }, { depth: 12 }, { depth: 20, seed: 7 }];
@@ -99,6 +100,43 @@ describe.each(LEVELS)('Level Lab depth $depth', ({ depth, seed }) => {
       e.step(5);
       expect(lab.exited, `${label}: the hero takes the open portal (onExit)`).toBe(true);
       expect(e.errors, label).toEqual([]);
+    },
+    T,
+  );
+});
+
+describe('the Level Lab’s controls', () => {
+  it(
+    'its prompts name what plays there (LAB_KEYS, not the shell’s: J and pad Square swing, K and Triangle cast), and the button named does it',
+    async () => {
+      const lab = new LevelLab({ depth: 1, god: true });
+      engine = await headlessGame(lab);
+      const e = engine;
+      e.step(2);
+      const actions = ['attack', 'firebolt', 'next'];
+      expect(actions.map((a) => e.controls.label(a)), 'on the keyboard').toEqual(['J', 'K', 'N']);
+      e.input.noteDevice('pad');
+      e.step(1);
+      expect(actions.map((a) => e.controls.label(a)).slice(0, 2), 'on a pad').toEqual(['Square', 'Triangle']);
+      // every key and pad button the table names is one the lab reads for that action
+      for (const [action, c] of Object.entries(lab.controls)) {
+        if (action === 'move') continue;
+        expect(LAB_KEYS[action as keyof typeof LAB_KEYS], action).toEqual(expect.arrayContaining([c.key, ...(c.pad ? [c.pad] : [])]));
+      }
+      const cast: string[] = [];
+      lab.events.on('skill', (s) => void cast.push(String(s.skill)));
+      const tap = (code: string) => {
+        e.input.setKey(code, true);
+        e.step(1);
+        e.input.setKey(code, false);
+        e.step(30);
+      };
+      tap(lab.controls.attack!.pad!);
+      tap(lab.controls.firebolt!.pad!);
+      tap(lab.controls.attack!.key);
+      tap(lab.controls.firebolt!.key);
+      expect(cast, 'each named button does its action').toEqual(['swing', 'firebolt', 'swing', 'firebolt']);
+      expect(e.errors).toEqual([]);
     },
     T,
   );

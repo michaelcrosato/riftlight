@@ -2,12 +2,18 @@
  * Input for Riftlight: one action map for keyboard, mouse, touch and gamepad.
  *
  *   move      WASD / arrows / left stick / touch joystick
- *   aim       mouse cursor on the ground; with a pad, the nearest enemy ahead
+ *   aim       mouse cursor on the ground; with a pad, the right stick with aim assist, else the nearest
+ *             enemy ahead (the AI Hub's own Motion aim adds to the stick only while the controller turns;
+ *             the engine's motion input, `settings: { motion: true }`, exists: Riftlight doesn't opt in yet)
  *   attack    LMB / J / pad Cross (A) / touch A          dodge   Space / pad Circle (B) / touch B
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
- *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory)
- *   looks     L look studio · H hides its panel (the arrows still tweak) · O photo mode
+ *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory;
+ *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume)
+ *   map       Tab / M / pad R3 or the touchpad's press / a click or tap on the corner map: the level's
+ *             map over the play (Esc, or a tap on it, closes it too)
+ *   looks     L look studio · H / pad Triangle hides its panel (the arrows still tweak) · O photo mode
+ *             (H / pad L1 hides its panel)
  *   items     click / Enter / pad Cross · X / pad Square = right-click · V / pad Triangle = Ctrl-click
  *
  * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
@@ -31,6 +37,8 @@ export const KEYS = {
   ],
   interact: ['KeyF', 'PadRT'],
   pause: ['Escape', 'PadStart'],
+  /** Options alone: it pauses from any screen of play and resumes from the pause menu (Esc is back first). */
+  options: ['PadStart'],
   inventory: ['KeyI', 'PadBack'],
   skills: ['KeyG'],
   tree: ['KeyP'],
@@ -41,7 +49,11 @@ export const KEYS = {
   /** The look studio: pixel art, cel shading, palettes... per layer, with presets and sliders. */
   look: ['KeyL'],
   /** The look studio open: hide its panel (the arrows still tweak) or show it again. */
-  hide: ['KeyH'],
+  hide: ['KeyH', 'PadY'],
+  /** The level's map over the play (the world runs on): Tab or M; R3 or the DualSense's touchpad press. */
+  map: ['Tab', 'KeyM', 'PadR3', 'PadTouchpad'],
+  /** The map open: Esc closes it before it pauses (on a pad Circle dodges, so the map stays). */
+  mapBack: ['Escape'],
   confirm: ['Enter', 'NumpadEnter', 'Space', 'KeyF', 'KeyJ', 'PadA'],
   back: ['Escape', 'Backspace', 'PadB'],
   up: ['ArrowUp', 'KeyW'],
@@ -96,8 +108,9 @@ export const CONTROLS = {
   codex: { key: 'KeyK', pad: 'PadStart', touch: '≡' },
   photo: { key: 'KeyO', pad: 'PadStart', touch: '≡' },
   look: { key: 'KeyL', pad: 'PadStart', touch: '≡' },
-  hide: { key: 'KeyH', pad: 'PadStart', touch: '≡' },
+  hide: { key: 'KeyH', pad: 'PadY', touch: '≡' },
   zoom: { key: 'Wheel', pad: 'PadStart', touch: '≡' },
+  map: { key: 'Tab', pad: 'PadR3', touch: 'TouchTap' },
   // the showcase (showcase/: ArcadeStage, BestiaryMode, PhotoMode)
   move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' },
   jump: { key: 'Space', pad: 'PadA', touch: 'B' },
@@ -110,6 +123,8 @@ export const CONTROLS = {
   switch_view: { key: 'Tab', pad: 'PadY' },
   next_wing: { key: 'KeyN' },
   photo_save: { key: 'KeyP', pad: 'PadX' },
+  /** Photo mode's panel hidden or shown: H, or L1 (Triangle switches fly / edit there). */
+  photo_hide: { key: 'KeyH', pad: 'PadLB' },
 } as const satisfies ControlTable;
 export type ControlAction = keyof typeof CONTROLS;
 
@@ -159,7 +174,7 @@ export class Pointer {
   readonly art = { x: -1, y: -1 };
   /** Buttons held: 1 left, 2 right, 4 a finger. */
   buttons = 0;
-  /** Seconds since the mouse last moved or clicked (big = keyboard / pad player). */
+  /** Seconds since the mouse last moved, clicked or let go, not counting while a button is held (big = keyboard / pad player). */
   idle = 1e9;
   touch = false;
   private readonly ray = new Raycaster();
@@ -184,7 +199,8 @@ export class Pointer {
    * tap's finger has gone by the frame after, and the tap stays where it was).
    */
   frame(dt: number): UiEvent[] {
-    this.idle += dt;
+    // a button held is the mouse in use, moved or not (holding the attack on a boss with a still mouse keeps its aim)
+    if (this.buttons === 0) this.idle += dt;
     const input = this.engine.input;
     this.touch = input.pointer.touch;
     const out: UiEvent[] = [];

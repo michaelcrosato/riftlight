@@ -1,5 +1,5 @@
 import { Mesh, Vector3 } from 'three/webgpu';
-import type { Game, GameContext, LightHandle } from '../../engine';
+import { DEFAULT_TOUCH_BUTTONS, type ControlTable, type Game, type GameContext, type LightHandle } from '../../engine';
 import { EventBus } from '../core/events';
 import type { ActorLike, GameEvents, Hit } from '../core/types';
 import { SCALING } from '../core/scaling';
@@ -10,6 +10,7 @@ import { OctaGeo } from './mechanics/common';
 import type { LevelHooks, MonsterSpawn } from './mechanics/types';
 import { levelSpec } from './rift';
 import { glowMaterial } from './themes/props';
+import { controlOf } from '../actors/controls';
 
 /** What the Level Lab runs: the depth and run seed, the hero's god mode, the camera. */
 export interface LevelLabOptions {
@@ -46,8 +47,25 @@ interface Bolt {
 const HERO_SPEED = 6;
 const MONSTER_SPEED = 3.1;
 
+/** The lab hero's keys: a swing, a firebolt, and N for the next depth once the portal is taken. */
+export const LAB_KEYS = {
+  attack: ['KeyJ', 'Space', 'PadX', 'PadA'],
+  firebolt: ['KeyK', 'PadY'],
+  next: ['KeyN'],
+} as const;
+
+/** What `LAB_KEYS` does, as prompts name it (its page has the engine's touch buttons). */
+export const LAB_CONTROLS: ControlTable = {
+  move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' },
+  attack: controlOf(LAB_KEYS.attack, DEFAULT_TOUCH_BUTTONS),
+  firebolt: controlOf(LAB_KEYS.firebolt, DEFAULT_TOUCH_BUTTONS),
+  next: controlOf(LAB_KEYS.next, DEFAULT_TOUCH_BUTTONS),
+};
+
 export class LevelLab implements Game {
   readonly name = 'Riftlight Level Lab';
+  /** The lab's own controls (`LAB_KEYS`, not the shell's), so its prompts name what plays here. */
+  readonly controls = LAB_CONTROLS;
   readonly events = new EventBus<GameEvents>();
   level!: Level;
   hero!: LabActor;
@@ -195,11 +213,11 @@ export class LevelLab implements Game {
         this.wish.copy(right).multiplyScalar(a.x).addScaledVector(forward, a.y);
         if (this.wish.lengthSq() > 1) this.wish.normalize();
       }
-      if (ctx.input.consumePress('KeyJ', 'Space', 'PadX', 'PadA') && this.swing <= 0) {
+      if (ctx.input.consumePress(...LAB_KEYS.attack) && this.swing <= 0) {
         this.swing = 0.35;
         this.attack(hero, hero.position.clone().addScaledVector(this.facing(), 0.9), 1, true);
       }
-      if (ctx.input.consumePress('KeyK', 'PadY')) this.firebolt();
+      if (ctx.input.consumePress(...LAB_KEYS.firebolt)) this.firebolt();
     }
     this.swing -= dt;
     hero.step(level.layout, this.wish, HERO_SPEED * (hero.stats.get('move.speed') || 1), dt);
@@ -242,7 +260,7 @@ export class LevelLab implements Game {
       l.mesh.removeFromParent();
       this.loot.splice(i, 1);
     }
-    if (this.exited && ctx.input.wasPressed('KeyN')) void ctx.engine.loadGame(new LevelLab({ ...this.args, depth: this.depth + 1 }));
+    if (this.exited && ctx.input.wasPressed(...LAB_KEYS.next)) void ctx.engine.loadGame(new LevelLab({ ...this.args, depth: this.depth + 1 }));
     this.hudTimer -= dt;
     if (this.hudTimer <= 0) {
       this.hudTimer = 0.25;

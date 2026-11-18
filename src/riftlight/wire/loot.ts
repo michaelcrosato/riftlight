@@ -157,6 +157,7 @@ export class RealLoot implements LootPort {
       labels: false,
       blocked: () => this.ui?.isOpen ?? false,
       place: (to) => this.stage?.collide(to, 0.25),
+      onLand: (d) => d.item && this.services?.events.emit('landed', { item: d.item, at: d.to.clone(), loud: d.tier === 'loud' }),
       lights: {
         request: (at, color, intensity, distance) => {
           const h = ctx.lights.request({ position: at, color, intensity, radius: distance, priority: 2, name: 'loot beam' });

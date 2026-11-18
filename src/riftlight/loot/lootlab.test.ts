@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
 import { Rng } from '../core/rng';
 import { headlessGame, hudOverlap, hudTexts, pointAtArt } from '../headless';
+import { t } from '../lang';
 import { messageText } from '../ui/items/ItemsUi';
 import { currencyItem } from './generate';
 import { pickUp } from './inventory';
@@ -255,4 +256,19 @@ describe('the Loot Lab at every window shape', () => {
     },
     T,
   );
+});
+
+describe('the Loot Lab’s lines name Riftlight’s controls', () => {
+  it('a line with {key:skills} names the key on the keyboard and the pause menu’s button on a pad (the lab plays with Riftlight’s control table)', async () => {
+    const e = await headlessGame(new LootLab());
+    try {
+      e.step(1);
+      expect(t('item.say.open_skills')).toBe('Open the skill panel (G) to socket gems');
+      e.input.noteDevice('pad');
+      e.step(1);
+      expect(t('item.say.open_skills')).toBe('Open the skill panel (Options) to socket gems');
+    } finally {
+      e.dispose();
+    }
+  });
 });

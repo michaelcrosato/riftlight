@@ -4,6 +4,6 @@ export { Actor, type ActorOptions, type ActorWorld, type AilmentInstance, type B
 export { ActorManager } from './ActorManager';
 export { ControllerMover, GridMover, layoutWalkable, openFloor, type Mover, type WalkableQuery } from './movers';
 export { HeroController, HERO_TUNING, compileHeroClips, type HeroOptions, type HeroState, type SlotSpec } from './HeroController';
-export { HERO_DEBUG_KEYS, HERO_KEYS, HERO_TOUCH_BUTTONS, MOUSE_LEFT, MOUSE_RIGHT, SLOT_LABELS } from './controls';
+export { controlOf, HERO_DEBUG_KEYS, HERO_KEYS, HERO_TOUCH_BUTTONS, heroControls, MOUSE_LEFT, MOUSE_RIGHT, SLOT_LABELS } from './controls';
 export { attachSword, Bow, BOW, createSword, HeroWeapons, SWORD_TILT, WEAPON_KINDS, weaponClassOf, type WeaponClass } from './weapons';
 export { BodyFx } from './bodyFx';

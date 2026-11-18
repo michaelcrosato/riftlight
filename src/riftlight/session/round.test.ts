@@ -56,6 +56,17 @@ describe('a session round', () => {
       expect(r.game.save.hero.level).toBe(roundHeroLevel(round1));
       expect(r.game.save.seed).toBe(r.session.info.seed);
       expect(r.game.layer.top).toBeFalsy(); // no menus
+      // but the map: a HUD overlay over the play (Tab / M, R3, the touchpad's press)
+      r.engine.input.setKey('Tab', true);
+      await r.frame();
+      r.engine.input.setKey('Tab', false);
+      await r.frame();
+      expect(r.game.mapOpen, 'the map in a round').toBe(true);
+      r.engine.input.setKey('KeyM', true);
+      await r.frame();
+      r.engine.input.setKey('KeyM', false);
+      await r.frame();
+      expect(r.game.mapOpen).toBe(false);
       // frozen before the start: the hero can't move and the level's clock stands still
       const at = r.game.hero.actor.position.clone();
       const east = { move: { x: 1, z: 0 }, aim: [at.x + 5, at.y, at.z] } as never;
