@@ -17,6 +17,7 @@ import { t } from '../lang';
 import { findItem } from '../loot/inventory';
 import { type Box, overlaps } from '../ui/layout';
 import type { RealLoot } from '../wire/loot';
+import { HEADER } from '../ui/items/ItemsUi';
 import type { HeroIntent } from './ports';
 
 const T = 60_000;
@@ -62,6 +63,27 @@ const stack = () => h.rl.state().ui;
 const top = () => h.game.layer.top!;
 const mid = (r: Box) => ({ x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) });
 const inside = (r: Box, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
+
+/** A finger held down slides to art pixel (x, y) (its button stays as it is). */
+function slide(x: number, y: number, engine: Engine = h.engine): void {
+  const { width, height } = engine.renderer.resolution;
+  engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2);
+  (engine.input.pointer as { touch: boolean }).touch = true;
+}
+
+/** Each fixed step's attack intent while `run` runs (the hero's steps, as it gets them). */
+function attacks(run: () => void, engine: Engine = h.engine, game = h.game): boolean[] {
+  const out: boolean[] = [];
+  const step = game.hero.fixedUpdate.bind(game.hero);
+  const spy = vi.spyOn(game.hero, 'fixedUpdate').mockImplementation((dt: number, i: HeroIntent) => (out.push(i.attack), step(dt, i)));
+  try {
+    run();
+  } finally {
+    spy.mockRestore();
+  }
+  void engine;
+  return out;
+}
 
 describe('a finger swipes away what it starts on', () => {
   it(
@@ -180,6 +202,54 @@ describe('a finger swipes away what it starts on', () => {
   );
 
   it(
+    'a finger that lands on the banner or a feed line is no swing however long it stays down and slides (auto attack off)',
+    async () => {
+      const { rl, engine, game } = h;
+      await rl.enterDepth(1);
+      rl.dev.ai = false;
+      engine.input.noteTouch();
+      game.settings.touchAutoAttack = false;
+      try {
+        engine.step(30);
+        const banner = game.hudRects().zones.find((z) => z.id === 'banner');
+        expect(banner, 'the level card shows').toBeDefined();
+        (game as unknown as { feed: { text: string; color: string; t: number }[] }).feed.unshift({ text: 'Ember Bead', color: 'white', t: 0.5 });
+        engine.step(2);
+        const feed = (game as unknown as { touchable: { feed: Box[] } }).touchable.feed;
+        expect(feed.length, 'the feed shows').toBeGreaterThan(0);
+        for (const [name, from] of [
+          ['the banner', mid(banner!)],
+          ['a feed line', mid(feed[0]!)],
+        ] as const) {
+          const seen = attacks(() => {
+            finger(from.x, from.y, true);
+            for (let k = 1; k <= 10; k++) {
+              slide(from.x + k * 3, from.y);
+              engine.step(1);
+            }
+            finger(from.x + 30, from.y, false);
+            engine.step(1);
+          });
+          expect(seen.length, `${name}: steps ran`).toBeGreaterThan(8);
+          expect(seen.filter(Boolean).length, `${name}: no swing while the finger slides`).toBe(0);
+        }
+        // a finger on the world, held as long, does swing (after its wait): the check above can fail
+        const world = attacks(() => {
+          finger(200, 120, true);
+          engine.step(10);
+          finger(200, 120, false);
+          engine.step(1);
+        });
+        expect(world.some(Boolean), 'a finger on the world swings').toBe(true);
+      } finally {
+        game.settings.touchAutoAttack = true;
+      }
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     'the item windows: down from a window\'s title bar closes them; from an item it is a drag, not a dismissal',
     () => {
       const { rl, engine, game } = h;
@@ -216,6 +286,89 @@ describe("a finger's taps", () => {
       spy.mockRestore();
       expect(rl.state().loot.items, 'picked up').toBe(before - 1);
       expect(intents.includes(true), 'no swing').toBe(false);
+    },
+    T,
+  );
+
+  it(
+    'on a loot label in a frame no fixed step runs in (a 120 Hz screen) is no swing either, held for frames: the item is picked up',
+    () => {
+      const { rl, engine, game } = h;
+      game.settings.touchAutoAttack = false;
+      try {
+        const loot = game.ports.loot as RealLoot;
+        const p = game.hero.actor.position;
+        loot.spawn([{ kind: 'item', item: loot.give(game.services.rng, 1)! }], new Vector3(p.x + 2.5, 0, p.z), game.level!, game.services.rng);
+        engine.step(40);
+        const labels = (game as unknown as { touchable: { loot: { id: number; rect: Box }[] } }).touchable.loot;
+        expect(labels.length, 'its label shows').toBeGreaterThan(0);
+        const at = mid(labels[0]!.rect);
+        const before = rl.state().loot.items;
+        const physics = engine.physics as unknown as { accumulator: number };
+        if (physics.accumulator > 0) engine.step(1, 1 / 60 - physics.accumulator);
+        expect(physics.accumulator, 'a zero accumulator').toBeCloseTo(0, 9);
+        const first = attacks(() => {
+          finger(at.x, at.y, true);
+          engine.step(1, 1 / 120); // the frame it lands in: no fixed step
+        });
+        expect(first.length, 'no fixed step in the frame the finger landed in').toBe(0);
+        const held = attacks(() => {
+          engine.step(8, 1 / 120); // held a while
+          finger(at.x, at.y, false);
+          for (let f = 0; f < 240 && rl.state().loot.items >= before; f++) engine.step(1, 1 / 120);
+        });
+        expect(held.length).toBeGreaterThan(3);
+        expect(held.filter(Boolean).length, 'no swing').toBe(0);
+        expect(rl.state().loot.items, 'picked up').toBe(before - 1);
+      } finally {
+        game.settings.touchAutoAttack = true;
+      }
+    },
+    T,
+  );
+
+  it(
+    'two fingers on the world a frame or two apart are a pinch: no swing; one finger alone swings once it has stayed down a moment, and so does a held mouse button at once',
+    () => {
+      const { engine, game } = h;
+      const input = engine.input as unknown as { unpress(code: string): void };
+      game.settings.touchAutoAttack = false;
+      try {
+        engine.step(2);
+        for (const apart of [1, 2]) {
+          const seen = attacks(() => {
+            finger(200, 120, true);
+            engine.step(apart);
+            // the second finger lands: the canvas lets go of the first's press (`Input.attachPointer`), and the pinch zooms
+            input.unpress('Touch');
+            engine.step(10);
+          });
+          expect(seen.filter(Boolean).length, `a second finger ${apart} frame(s) later: no swing`).toBe(0);
+        }
+        // one finger alone: it swings from its third step
+        const alone = attacks(() => {
+          finger(200, 120, true);
+          engine.step(6);
+          finger(200, 120, false);
+          engine.step(1);
+        });
+        expect(alone.slice(0, 3), 'it waits two steps after the one it landed in').toEqual([false, false, true]);
+        // the mouse's button swings at once
+        const mouse = attacks(() => {
+          engine.input.setPointer(0.1, -0.1, true);
+          engine.step(2);
+          engine.input.setPointer(0.1, -0.1, false);
+          engine.step(1);
+        });
+        expect(mouse[0], 'a click swings at once').toBe(true);
+        // a finger again (the pointer a finger's: no mouse aim after)
+        slide(200, 120);
+        engine.input.noteTouch();
+        engine.step(2);
+      } finally {
+        game.settings.touchAutoAttack = true;
+      }
+      expect(engine.errors).toEqual([]);
     },
     T,
   );
@@ -402,12 +555,17 @@ describe('the item windows by touch in portrait', () => {
 
 describe('a picked item\'s buttons and its tooltip', () => {
   it(
-    'never cover each other: with room for neither (a tall tooltip on a phone) the buttons go on top and the tooltip under them, its name in view',
+    'never cover each other nor a window\'s title bar: with room for neither (a tall tooltip on a phone) the buttons go on top and the tooltip under them, its name in view; with the stash or the vendor open the buttons keep off their title bars and close boxes',
     async () => {
-      for (const viewport of [
-        { width: 844, height: 390, dpr: 2 },
-        { width: 390, height: 844, dpr: 3 },
-      ]) {
+      for (const [viewport, windows] of [
+        [{ width: 844, height: 390, dpr: 2 }, 'inventory'],
+        [{ width: 844, height: 390, dpr: 2 }, 'stash'],
+        [{ width: 844, height: 390, dpr: 2 }, 'vendor'],
+        [{ width: 390, height: 844, dpr: 3 }, 'inventory'],
+        [{ width: 390, height: 844, dpr: 3 }, 'stash'],
+        [{ width: 390, height: 844, dpr: 3 }, 'vendor'],
+        [{ width: 1024, height: 768, dpr: 1 }, 'vendor'],
+      ] as const) {
         const p = await headlessRiftlight({ seed: 21, viewport, options: { touch: true } });
         try {
           p.rl.newRun({ slot: 1, seed: 21 });
@@ -420,29 +578,40 @@ describe('a picked item\'s buttons and its tooltip', () => {
             if (loot.add(it)) items.push(it);
           }
           expect(items.length).toBeGreaterThan(2);
-          expect(p.rl.ui.open('inventory')).toBe(true);
+          expect(p.rl.ui.open(windows)).toBe(true);
           p.engine.step(2);
           const ui = loot.ui! as unknown as {
             pickLayout(): { tip: Box; actions: { label: string; rect: Box }[] } | null;
             cellCenter(where: 'inventory', x: number, y: number): { x: number; y: number };
+            rects(): Box[];
             store: { state: { inventory: Parameters<typeof findItem>[0] } };
           };
           const { width, height } = p.engine.renderer.resolution;
+          const where = `${windows} at ${width}×${height}`;
+          // each window's title bar: its name, its close box (and the Gems button)
+          const bars = ui.rects().map((r) => ({ x: r.x, y: r.y, w: r.w, h: HEADER }));
+          expect(bars.length, `${where}: the windows`).toBe(windows === 'inventory' ? 1 : 2);
           let tall = 0;
           for (const it of items) {
             const placed = findItem(ui.store.state.inventory, it.uid)!;
             const at = ui.cellCenter('inventory', placed.x, placed.y);
+            // a tap on another item picks it, unless the last one's buttons are over it: put that down first
+            if (ui.pickLayout()?.actions.some((a) => inside(a.rect, at.x, at.y))) (ui as unknown as { touchPick: string | null }).touchPick = null;
             tapAt(at.x, at.y, p.engine);
             const layout = ui.pickLayout()!;
+            expect(layout, `${it.name} (${where}): picked`).not.toBeNull();
             expect(layout.actions.length, `${it.name}: its buttons`).toBeGreaterThan(0);
             const { tip } = layout;
             if (tip.h > height / 2) tall++;
             // its name, the tooltip's first line, on screen
-            expect(tip.y >= 0 && tip.y + 12 <= height, `${it.name} at ${width}×${height}: the tooltip's first line on screen ${JSON.stringify(tip)}`).toBe(true);
-            for (const a of layout.actions) expect(overlaps(a.rect, tip), `${it.name} at ${width}×${height}: ${a.label} ${JSON.stringify(a.rect)} over the tooltip ${JSON.stringify(tip)}`).toBe(false);
-            tapAt(2, 2, p.engine); // put it down
+            expect(tip.y >= 0 && tip.y + 12 <= height, `${it.name} (${where}): the tooltip's first line on screen ${JSON.stringify(tip)}`).toBe(true);
+            for (const a of layout.actions) {
+              expect(a.rect.x >= 0 && a.rect.y >= 0 && a.rect.x + a.rect.w <= width && a.rect.y + a.rect.h <= height, `${it.name} (${where}): ${a.label} on screen ${JSON.stringify(a.rect)}`).toBe(true);
+              expect(overlaps(a.rect, tip), `${it.name} (${where}): ${a.label} ${JSON.stringify(a.rect)} over the tooltip ${JSON.stringify(tip)}`).toBe(false);
+              for (const b of bars) expect(overlaps(a.rect, b), `${it.name} (${where}): ${a.label} ${JSON.stringify(a.rect)} over a title bar ${JSON.stringify(b)}`).toBe(false);
+            }
           }
-          expect(tall, 'tooltips taller than half the screen were tried').toBeGreaterThan(0);
+          if (windows === 'inventory' && width < 1000) expect(tall, 'tooltips taller than half the screen were tried').toBeGreaterThan(0);
           expect(p.engine.errors).toEqual([]);
         } finally {
           p.engine.dispose();
@@ -571,6 +740,41 @@ describe('a touch session replays', () => {
         const rec = JSON.parse(JSON.stringify(engine.recording())) as Parameters<typeof engine.replay>[0];
         await engine.replay(rec, () => engine.loadGame(makeRiftlight(game.store, engine.seed)));
         expect(engine.fingerprint()).toBe(live);
+        expect(engine.errors).toEqual([]);
+      } finally {
+        engine.dispose();
+      }
+    },
+    T,
+  );
+
+  it(
+    'from a save-state taken while a finger waits to swing: the wait is in the snapshot, and the replay swings on the same step',
+    async () => {
+      const { engine, game, rl } = await headlessRiftlight({ seed: 79, viewport: VIEW, options: { touch: true } });
+      try {
+        rl.newRun({ slot: 1, seed: 79 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        engine.input.noteTouch();
+        game.settings.touchAutoAttack = false;
+        engine.step(30);
+        finger(200, 120, true, engine);
+        engine.step(1); // its first step: it waits
+        const shell = game as unknown as { fingerHeld: number };
+        expect(shell.fingerHeld).toBe(1);
+        const snap = await engine.snapshot();
+        shell.fingerHeld = 9;
+        await engine.restore(snap); // the recording starts at this moment, the finger down
+        expect(shell.fingerHeld, 'restored').toBe(1);
+        const live = attacks(() => engine.step(6), engine, game);
+        expect(live.slice(0, 3), 'live: it swings on its second step from here').toEqual([false, true, true]);
+        finger(200, 120, false, engine);
+        engine.step(30);
+        const print = engine.fingerprint();
+        const rec = JSON.parse(JSON.stringify(engine.recording())) as Parameters<typeof engine.replay>[0];
+        await engine.replay(rec, () => engine.loadGame(makeRiftlight(game.store, engine.seed)));
+        expect(engine.fingerprint()).toBe(print);
         expect(engine.errors).toEqual([]);
       } finally {
         engine.dispose();

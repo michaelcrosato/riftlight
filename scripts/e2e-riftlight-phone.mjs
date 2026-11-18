@@ -23,7 +23,7 @@
 //     landscape); the passive tree draws at the game's art size and names a finger's gestures
 //   - real touches (CDP): a quick swipe from the pause menu closes it, one down from the tree's top
 //     bar closes the tree; the floating stick and a skill button work at once; two fingers on the
-//     world pinch the zoom and hold no press
+//     world pinch the zoom and hold no press, and are no swing landing a frame apart
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
@@ -313,6 +313,34 @@ export async function runRiftlightPhone(h, orientation) {
     })();
     check(pinch.after !== pinch.before && !pinch.down, `${orientation}: two fingers pinch the zoom (${pinch.before} → ${pinch.after}) and hold no press (Touch ${pinch.down})`);
     await R((z) => (window.__RIFTLIGHT__.game.settings.zoom = z), pinch.before);
+    // the second finger a frame after the first: still no swing (a finger alone on the world waits a
+    // moment before it swings, and the second lets go of its press); auto attack off, the hero's
+    // steps recorded as it gets them
+    const apart = await (async () => {
+      const c = await R(() => {
+        const g = window.__RIFTLIGHT__.game;
+        g.settings.touchAutoAttack = false;
+        const step = g.hero.fixedUpdate.bind(g.hero);
+        window.__swings = [];
+        g.hero.fixedUpdate = (dt, i) => (window.__swings.push(i.attack), step(dt, i));
+        const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        return { x: r.left + r.width * 0.62, y: r.top + r.height * 0.3, zoom: g.settings.zoom };
+      });
+      await touch('touchStart', [[c.x - 20, c.y, 43]]);
+      await R(() => window.__PIXEL_ENGINE__.step(1));
+      await touch('touchStart', [[c.x - 20, c.y, 43], [c.x + 20, c.y, 44]]);
+      await R(() => window.__PIXEL_ENGINE__.step(6));
+      await touch('touchEnd', []);
+      return R((zoom) => {
+        const g = window.__RIFTLIGHT__.game;
+        window.__PIXEL_ENGINE__.step(2);
+        delete g.hero.fixedUpdate; // its own method again
+        g.settings.touchAutoAttack = true;
+        g.settings.zoom = zoom;
+        return { steps: window.__swings.length, swings: window.__swings.filter(Boolean).length };
+      }, c.zoom);
+    })();
+    check(apart.steps >= 8 && apart.swings === 0, `${orientation}: two fingers a frame apart pinch with no swing either (${apart.swings} swings in ${apart.steps} steps)`);
 
     // the passive tree draws at the game's art size (its phone density) and names a finger's gestures
     const tree = await R(async () => {

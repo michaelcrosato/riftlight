@@ -49,6 +49,7 @@ import { autoSocket, gemAt, gemProgress, isGem, setSocket, SKILL_SLOTS, skillNum
 import { buy, buyPrice, sell, sellPrice, type VendorKind } from '../../loot/vendor';
 import { SKILLS } from '../../skills/actives';
 import { clip, inside, miniCovers, miniRows, miniWidth, type UiEvent } from '../kit';
+import { overlaps } from '../layout';
 import { tapArt } from '../layer';
 import { gemIcon } from '../../skills/icons';
 import { drawGemIcon, drawIcon } from './icons';
@@ -782,7 +783,9 @@ export class ItemsUi {
    * A finger's picked item laid out: its tooltip where it was tapped and its action buttons (in
    * rows on a narrow screen) under the tooltip, else over it; with room for neither (a tall
    * tooltip on a phone) the row at the top of the screen and the tooltip moved down under it, its
-   * last lines cut off by the screen's edge rather than its name by the buttons. Never over each other.
+   * last lines cut off by the screen's edge rather than its name by the buttons. Never over each
+   * other, nor over a window's title bar (its close box: a row slides beside it along its line, else
+   * goes under it).
    */
   private pickLayout(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
     const p = this.picked();
@@ -832,19 +835,46 @@ export class ItemsUi {
       used += gap + w;
     });
     const tall = rows.length * h + (rows.length - 1) * gap;
-    let y = tip.y + tip.h + 2; // under the tooltip
-    if (y + tall > this.size.h - 1) {
-      y = tip.y - tall - 2; // over it
-      if (y < 1) {
-        // room for neither: the row at the top, the tooltip under it
-        y = 1;
-        tip.y = Math.max(tip.y, y + tall + 2);
+    const totals = rows.map((row) => row.reduce((s, i) => s + widths[i]!, 0) + gap * (row.length - 1));
+    // never over a window's title bar either (its close box, the Gems button, where a swipe down
+    // closes them): each row slides along its line beside the bars it would cover
+    const bars = this.rects().map((b) => ({ x: b.x, y: b.y, w: b.w, h: HEADER }));
+    /** Where a row `total` wide at `ry` goes along: centred on the tooltip, else the nearest spot beside the bars clear of them and of the tooltip; null with none. */
+    const along = (total: number, ry: number, tipAt: Rect): number | null => {
+      const centre = Math.max(1, Math.min(this.size.w - total - 1, Math.round(tipAt.x + tipAt.w / 2 - total / 2)));
+      const xs = [centre, ...bars.flatMap((b) => [b.x - total - 1, b.x + b.w + 1])].filter((x) => x >= 1 && x + total <= this.size.w - 1);
+      xs.sort((p, q) => Math.abs(p - centre) - Math.abs(q - centre));
+      return xs.find((x) => ![...bars, tipAt].some((b) => overlaps({ x, y: ry, w: total, h }, b))) ?? null;
+    };
+    // the lines it may take, in order: under the tooltip; over it; with room for neither (a tall
+    // tooltip on a phone) at the top, the tooltip under it; else under a title bar, the tooltip
+    // under the row where they would meet
+    const spots: { y: number; tipY: number }[] = [];
+    const under = tip.y + tip.h + 2;
+    if (under + tall <= this.size.h - 1) spots.push({ y: under, tipY: tip.y });
+    else if (tip.y - tall - 2 >= 1) spots.push({ y: tip.y - tall - 2, tipY: tip.y });
+    else spots.push({ y: 1, tipY: Math.max(tip.y, 1 + tall + 2) });
+    for (const b of bars) {
+      const y = b.y + b.h + 1;
+      if (y + tall <= this.size.h - 1) spots.push({ y, tipY: y + tall + 2 > tip.y && y < tip.y + tip.h + 2 ? y + tall + 2 : tip.y });
+    }
+    let line = spots[0]!;
+    let xs: (number | null)[] = [];
+    for (const l of spots) {
+      const tipAt = { ...tip, y: l.tipY };
+      const found = totals.map((total, r) => along(total, l.y + r * (h + gap), tipAt));
+      if (!found.includes(null)) {
+        line = l;
+        xs = found;
+        break;
       }
     }
+    const y = line.y;
+    tip.y = line.tipY;
     const actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] = [];
     rows.forEach((row, r) => {
-      const total = row.reduce((s, i) => s + widths[i]!, 0) + gap * (row.length - 1);
-      let x = Math.max(1, Math.min(this.size.w - total - 1, Math.round(tip.x + tip.w / 2 - total / 2)));
+      const total = totals[r]!;
+      let x = xs[r] ?? Math.max(1, Math.min(this.size.w - total - 1, Math.round(tip.x + tip.w / 2 - total / 2)));
       for (const i of row) {
         actions.push({ ...acts[i]!, rect: { x, y: y + r * (h + gap), w: widths[i]!, h } });
         x += widths[i]! + gap;

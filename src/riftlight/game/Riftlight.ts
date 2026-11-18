@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -198,6 +198,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
    */
   private pressTaken = false;
+  /** Fixed steps a finger alone has been down on the world, the one it landed in counting 1 (0: none; `FINGER_WAIT`). */
+  private fingerHeld = 0;
   /**
    * What a finger can tap or swipe away, as last drawn (art pixels): the loot labels (a tap picks
    * one up, or walks there), the interact prompt's box (a tap does it), the loot feed's lines and
@@ -1496,16 +1498,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const hold = input.anyDown(MOUSE.left);
     // a press this frame counts where it went down (a tap's finger: the pointer is placed after this step)
     let down: { x: number; y: number; touch: boolean } | null = null;
-    for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = { ...ndcToArt(ctx.engine, e.x, e.y), touch: e.code === 'Touch' };
+    for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = { ...ndcToArt(ctx.engine, e.x, e.y), touch: e.code === TOUCH_KEY };
     // a click on a thing in the world (a townsperson, a loot label, the portal) goes there, and a
-    // finger's tap on a loot label or the interact prompt does it (`update`): no swing while that
-    // button stays down (nor while a press the map took stays down)
-    if (press) this.pressTaken = !!this.worldFocus || (!!down?.touch && this.touchTarget(down.x, down.y) !== null);
+    // finger's tap on a loot label or the interact prompt does it (`update`); a finger on the loot
+    // feed or the centre banner may swipe it away: no swing while that button stays down (nor
+    // while a press the map took stays down). `update` takes a finger's press there as well, for a
+    // finger that lands in a frame no fixed step runs in
+    if (press) this.pressTaken = !!this.worldFocus || (!!down?.touch && this.fingerTaken(down.x, down.y));
     else if (!hold) this.pressTaken = false;
-    const left = (press || hold) && !this.pressTaken;
+    // a finger alone on the world swings once it has stayed down `FINGER_WAIT` steps after the one
+    // it landed in: a second finger landing by then lets go of it (a pinch: `Input`), so a pinch is
+    // no swing, its fingers a frame or two apart too (the mouse's button swings at once)
+    const finger = input.anyDown(FINGER) && !input.anyDown(MOUSE_LEFT);
+    this.fingerHeld = !finger ? 0 : press ? 1 : this.fingerHeld + 1;
+    const left = (press || hold) && !this.pressTaken && !(finger && this.fingerHeld <= FINGER_WAIT);
     const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
-    // a finger on the loot feed or the centre banner is no swing (a swipe from there dismisses it)
-    const onHud = this.pointerOnHud(down ?? this.pointer.art) || (!!down?.touch && this.onDismissable(down.x, down.y));
+    const onHud = this.pointerOnHud(down ?? this.pointer.art);
     // the keys' and buttons' actions (a couch guest's pad reads the same: `readActions`), then the mouse's
     readActions(input, i);
     i.attack = !overUi && (i.attack || (left && !onHud));
@@ -1651,6 +1659,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return false;
   }
 
+  /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
+  private fingerTaken(x: number, y: number): boolean {
+    return this.touchTarget(x, y) !== null || this.onDismissable(x, y);
+  }
+
   /** (`x`, `y`) art pixels is on the loot feed or the centre banner as last drawn (a swipe from there dismisses it). */
   private onDismissable(x: number, y: number): boolean {
     if (this.touchable.feed.some((r) => inside(r, x, y))) return true;
@@ -1781,12 +1794,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
       // the world: a click on a townsperson, the stash, a loot label or the open portal goes there and does it
       if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch && this.worldFocus) this.goTo(this.worldFocus);
-      // a finger's tap on a loot label picks it up (walking there), on the interact prompt does it
+      // a finger's tap on a loot label picks it up (walking there), on the interact prompt does it;
+      // one there, on the loot feed or on the centre banner (a swipe from there dismisses it) is no
+      // swing while it stays down, whether or not a fixed step ran in the frame it landed (`readIntent`)
       if (e.kind === 'pointer' && e.type === 'down' && e.touch && !this.layer.top && !this.dead) {
         const hit = this.touchTarget(e.x, e.y);
         if (hit === 'prompt') this.interactQueued = true;
         else if (hit) this.goTo({ kind: 'loot', id: hit.loot });
-        if (hit) ctx.input.clearQueued(...MOUSE.left);
+        if (this.fingerTaken(e.x, e.y)) {
+          ctx.input.clearQueued(...MOUSE.left);
+          this.pressTaken = true;
+        }
       }
     }
     this.arrive();
@@ -2644,6 +2662,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         session: this.session,
         interactQueued: this.interactQueued,
         pressTaken: this.pressTaken,
+        fingerHeld: this.fingerHeld,
         map: this.mapOpen,
         worldFocus: this.worldFocus,
         // what the last frame drew that the next frame's input hits (a finger's targets, the touch controls the HUD laid out around)
@@ -2767,6 +2786,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     Object.assign(this.session, t.session);
     this.interactQueued = t.interactQueued;
     this.pressTaken = t.pressTaken ?? false;
+    this.fingerHeld = t.fingerHeld ?? 0;
     this.mapOpen = t.map ?? false;
     this.worldFocus = t.worldFocus ?? null;
     const tt = t.touchable;
@@ -2833,6 +2853,17 @@ interface WalkTo {
 /** Either Shift key. */
 const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 
+/** `MOUSE.left`'s finger and its mouse button, apart (`readIntent`: a finger's swing waits, the mouse's doesn't). */
+const FINGER = [TOUCH_KEY] as const;
+const MOUSE_LEFT = ['MouseLeft'] as const;
+
+/**
+ * Fixed steps after the one it landed in that a finger alone on the world waits before it swings
+ * (about 33 ms): a pinch's second finger landing by then lets go of the first's press, so a pinch
+ * is no swing; a tap shorter than that is none either.
+ */
+const FINGER_WAIT = 2;
+
 /** A character screen's id (`PAGES`). */
 const isPage = (id: string | undefined): id is Page => (PAGES as readonly string[]).includes(id ?? '');
 
@@ -2892,6 +2923,8 @@ interface RiftSnapshot {
     readonly interactQueued: boolean;
     /** A held press a thing in the world or the map took (left out by snapshots from before it). */
     readonly pressTaken?: boolean;
+    /** Steps a finger alone has been down on the world (`Riftlight.fingerHeld`; left out by older snapshots). */
+    readonly fingerHeld?: number;
     /** The map is open (left out by snapshots from before it). */
     readonly map?: boolean;
     /** What the mouse was over in the world and the thing a click walks the hero to (left out by older snapshots). */
