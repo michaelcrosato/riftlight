@@ -83,6 +83,22 @@ export function riftlightTranslations(dir = TRANSLATIONS_DIR, source: LineList =
   return out;
 }
 
+/**
+ * The plural forms a language needs (Intl.PluralRules), always in `PLURAL_FORMS` order (zero, one,
+ * two, few, many, other): V8 lists a language's categories in an order that changes between Node
+ * versions (French is `one many other` on Node 24, `many one other` on Node 22), and the checks and
+ * `npm run lang -- todo` must say the same thing on every Node. An unknown code needs `other` only.
+ */
+export function pluralFormsOf(code: string): string[] {
+  let categories: readonly string[] = ['other'];
+  try {
+    categories = new Intl.PluralRules(code).resolvedOptions().pluralCategories;
+  } catch {
+    /* an unknown code: other only */
+  }
+  return PLURAL_FORMS.filter((f) => categories.includes(f));
+}
+
 const tagsOf = (s: string): string[] => s.match(/\{[^{}]*\}/g) ?? [];
 const texts = (l: Line): string[] => (typeof l === 'string' ? [l] : Object.values(l).filter((v): v is string => typeof v === 'string'));
 
@@ -108,13 +124,7 @@ export function lineProblems(code: string, id: string, line: unknown, source: Li
   } else {
     if (!line || typeof line !== 'object' || Array.isArray(line)) return [`${id}: plural forms (an object)`];
     const forms = line as Record<string, unknown>;
-    let need: string[] = ['other'];
-    try {
-      need = new Intl.PluralRules(code).resolvedOptions().pluralCategories as string[];
-    } catch {
-      /* an unknown code: other only */
-    }
-    for (const f of need) if (!ok(forms[f])) bad.push(`${id}: needs the plural form ${f}`);
+    for (const f of pluralFormsOf(code)) if (!ok(forms[f])) bad.push(`${id}: needs the plural form ${f}`);
     for (const [f, v] of Object.entries(forms)) {
       if (!PLURAL_FORMS.includes(f as never)) bad.push(`${id}: ${f} is not a plural form`);
       if (!ok(v)) bad.push(`${id}: form ${f} is empty`);

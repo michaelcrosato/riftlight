@@ -8,7 +8,9 @@
 //   npm run lang -- apply <code> <file> --by <who>
 //                                           file a translation ({ lines, names? }) into
 //                                           src/riftlight/lang/translations/<code>.json after the checks
-//   npm run lang -- check                   every stored translation against the checks
+//   npm run lang -- check                   every stored language's current lines against the checks
+//                                           (stale lines are left out of the page and not checked; nor
+//                                           are lines no longer in the game, or dev. lines)
 //   npm run lang -- audit [--lang en-XA]    play the built game (npm run build first) under a test
 //                                           language and list every string on screen that isn't a line
 //                                           (.scratch/lang/audit.json); exit 1 if there is any
@@ -36,7 +38,7 @@ const opt = (name: string): string | undefined => {
 };
 
 const { riftlightLines } = await import('../src/riftlight/lang/index');
-const { lineHash, lineProblems, storedTranslations, translationProblems, translationStatus, TRANSLATIONS_DIR } = await import('../src/riftlight/lang/translations');
+const { lineHash, lineProblems, pluralFormsOf, storedTranslations, translationProblems, translationStatus, TRANSLATIONS_DIR } = await import('../src/riftlight/lang/translations');
 const { HUB_LANGUAGES } = await import('../src/engine/lang/lang');
 type Line = string | Partial<Record<string, string>>;
 
@@ -80,12 +82,7 @@ if (cmd === 'lines') {
   const stored = storedTranslations()[code];
   const st = stored ? translationStatus(stored, source) : { missing: Object.keys(lines).filter((id) => !id.startsWith('dev.')), stale: [] as string[] };
   const ids = [...st.missing, ...st.stale];
-  let forms: string[] = ['other'];
-  try {
-    forms = new Intl.PluralRules(code).resolvedOptions().pluralCategories as string[];
-  } catch {
-    /* other only */
-  }
+  const forms = pluralFormsOf(code);
   const todo = {
     language: code,
     pluralForms: forms,

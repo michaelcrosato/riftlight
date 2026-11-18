@@ -2,10 +2,10 @@
 // files them with (`translationProblems`, the one function `npm run lang -- check` runs too), so a
 // hand-edited file or a bad merge fails `npm test`, not the hand-over build. Stale lines are not
 // checked: the page leaves them out, and changing the English must never fail a test.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { LineList } from '../../engine';
 import { riftlightLines } from './index';
-import { lineHash, lineProblems, storedTranslations, translationProblems, type StoredTranslation } from './translations';
+import { lineHash, lineProblems, pluralFormsOf, storedTranslations, translationProblems, type StoredTranslation } from './translations';
 
 describe('stored translations', () => {
   const source = riftlightLines();
@@ -35,5 +35,29 @@ describe('stored translations', () => {
     // a stale line (its English changed since) is not shipped and not checked
     const stale = fr({ 'a.gold': 'Or : {nombre}' });
     expect(translationProblems('fr', { ...stale, source: { 'a.gold': 'old' } }, list)).toEqual([]);
+  });
+
+  describe('plural forms come in one order on every Node', () => {
+    afterEach(() => vi.restoreAllMocks());
+    // V8 orders a language's categories differently between versions (French: one many other on
+    // Node 24, many one other on Node 22, which CI runs): force each order and expect the same answer.
+    const orders = [
+      ['one', 'many', 'other'],
+      ['many', 'one', 'other'],
+      ['other', 'many', 'one'],
+    ] as const;
+    const list: LineList = { version: 1, language: 'en', lines: { 'a.kills': { one: '{count} kill', other: '{count} kills' } }, names: [], brief: '' };
+    for (const order of orders) {
+      it(order.join(' '), () => {
+        const real = Intl.PluralRules.prototype.resolvedOptions;
+        vi.spyOn(Intl.PluralRules.prototype, 'resolvedOptions').mockImplementation(function (this: Intl.PluralRules) {
+          return { ...real.call(this), pluralCategories: [...order] };
+        });
+        expect(pluralFormsOf('fr')).toEqual(['one', 'many', 'other']);
+        const t: StoredTranslation = { by: 'test', lines: { 'a.kills': { other: '{count} victimes' } }, source: { 'a.kills': lineHash(list.lines['a.kills']!) } };
+        expect(translationProblems('fr', t, list)).toEqual(['a.kills: needs the plural form one', 'a.kills: needs the plural form many']);
+      });
+    }
+    it('an unknown code needs other only', () => expect(pluralFormsOf('not a language')).toEqual(['other']));
   });
 });

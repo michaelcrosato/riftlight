@@ -4,7 +4,7 @@
 //
 // Models are chunky low-poly primitives colored from the engine palette; the engine
 // re-shades every loaded material with its 3-band toon material, so only base colors matter.
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { hero } from './assets/hero.mjs';
@@ -98,7 +98,12 @@ await mkdir(new URL('../public/assets/', import.meta.url), { recursive: true });
 for (const [name, build] of Object.entries({ hero, coin, tree })) {
   const { scene, animations } = build();
   stableColors(scene);
-  const glb = await exporter.parseAsync(scene, { binary: true, animations });
-  await writeFile(new URL(`../public/assets/${name}.glb`, import.meta.url), Buffer.from(glb));
-  console.log(`public/assets/${name}.glb  ${glb.byteLength} bytes  clips: ${animations.map((a) => a.name).join(', ') || '-'}`);
+  const glb = Buffer.from(await exporter.parseAsync(scene, { binary: true, animations }));
+  // Write only a file whose bytes changed: an unchanged model keeps its mtime, so a run of this
+  // (check.sh's assets_unchanged step runs it every time) doesn't make `npm run look` call the
+  // build stale.
+  const file = new URL(`../public/assets/${name}.glb`, import.meta.url);
+  const same = await readFile(file).then((old) => old.equals(glb), () => false);
+  if (!same) await writeFile(file, glb);
+  console.log(`public/assets/${name}.glb  ${glb.byteLength} bytes  clips: ${animations.map((a) => a.name).join(', ') || '-'}${same ? '  (unchanged)' : ''}`);
 }

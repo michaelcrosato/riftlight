@@ -106,10 +106,12 @@ sees the English, never an old meaning) until the next translation pass.
 - `npm run lang -- todo <code>` writes what a translator needs (missing and stale lines with their
   notes, widths, the names, the brief, the language's plural forms);
 - `npm run lang -- apply <code> <file> --by <who>` files a translation after the checks (tags kept
-  exactly, plural forms the language needs, within `max`); `npm run lang -- check` re-checks all.
-  The checks are `lineProblems` / `translationProblems` (`lang/translations.ts`), and `npm test`
-  runs them over every stored language's current lines (`lang/translations.test.ts`): a hand-edited
-  file fails the tests. Stale lines are not checked (the page leaves them out).
+  exactly, plural forms the language needs, within `max`); `npm run lang -- check` runs them over
+  every stored language's current lines, and so does `npm test` (`lang/translations.test.ts`): a
+  hand-edited file fails the tests. Stale lines are left out of the page and not checked, nor are
+  lines no longer in the game or `dev.` lines. The checks are `lineProblems` /
+  `translationProblems` (`lang/translations.ts`); a plural line's forms come in one order
+  (`pluralFormsOf`: zero, one, two, few, many, other) on every Node.
 
 **The hand-over build** (`build:single -- --translations`, which `npm run hub` makes: docs/game/hub.md)
 adds the page's `game-translations` block: every stored language with its current lines.
