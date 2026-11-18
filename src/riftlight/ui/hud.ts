@@ -10,7 +10,7 @@ import type { ControlAction } from '../game/controls';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
 import { lang, t } from '../lang';
 import { clip, miniWidth, UI, type UiCanvas } from './kit';
-import { type BannerKind, type Box, type HudLayout, overlaps } from './layout';
+import { BANNER_OPENS, type BannerKind, type Box, type HudLayout, overlaps } from './layout';
 
 export interface FeedLine {
   text: string;
@@ -458,6 +458,15 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   drawBanner(ui, m);
 }
 
+/** How far a banner's plate is open (0 shut, 1 open): it opens over `BANNER_OPENS` s and closes over its last 0.3 s. */
+export function bannerOpen(c: { readonly age: number; readonly duration?: number }): number {
+  const dur = c.duration ?? 4;
+  return Math.min(1, c.age / BANNER_OPENS) * Math.min(1, (dur - c.age) / 0.3);
+}
+
+/** A banner's words show once its plate is this far open. */
+export const BANNER_WORDS = 0.9;
+
 /**
  * The centre banner: the level card and LEVEL CLEAR are a framed plate that opens sideways;
  * a level-up is a smaller plate with its hint on one line, so it never covers the fight.
@@ -468,16 +477,15 @@ function drawBanner(ui: UiCanvas, m: HudModel): void {
   if (!c || !rect) return;
   const W = ui.w;
   const a = c.age;
-  const dur = c.duration ?? 4;
   const kind = c.kind ?? 'card';
-  const open = Math.min(1, a / 0.2) * Math.min(1, (dur - a) / 0.3);
+  const open = bannerOpen(c);
   const ww = Math.max(2, Math.round(rect.w * open));
   const x = Math.round(W / 2 - ww / 2);
   const accent: PaletteColor = kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
   ui.rect(x, rect.y, ww, rect.h, 'ink');
   ui.rect(x, rect.y, ww, 1, accent);
   ui.rect(x, rect.y + rect.h - 1, ww, 1, accent);
-  if (open < 0.9) return;
+  if (open < BANNER_WORDS) return;
   const big = rect.h > 30;
   const scale = big && ui.measure(c.title, 2) <= rect.w - 8 ? 2 : 1;
   const flash = kind === 'levelup' && a < 0.6 && a % 0.2 < 0.1;

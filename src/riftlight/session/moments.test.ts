@@ -1,10 +1,14 @@
-// Riftlight's moments: the tags the hub reads, and each moment played headless against the hub in
-// memory (engine LocalHub) by a decent player (the playtest bot; a run for the spot) and idle.
+// Riftlight's moments: the tags the hub reads, the set-up, time-up, the end and a replay, played
+// headless against the hub in memory (engine LocalHub); each moment cleared by a decent player and
+// failed idle is its own file, moments.<id>.test.ts (session/testMoments.ts).
+import { existsSync } from 'node:fs';
 import { afterEach, describe, expect, it } from 'vitest';
-import { HubSession, LocalHub } from '../../engine';
+import { bfs } from '../game/nav';
 import { Riftlight } from '../game/Riftlight';
-import { SaveStore } from '../game/save';
-import { type HeadlessRiftlight, headlessRiftlight, settle } from '../headless';
+import { type KeyValueStore, SaveStore } from '../game/save';
+import { type HeadlessMoment, headlessMoment, type HeadlessRiftlight, playMoment } from '../headless';
+import { t } from '../lang';
+import { BANNER_WORDS, bannerOpen } from '../ui/hud';
 import { MOMENTS, type MomentSpec, momentGoal, momentTags } from './moments';
 
 const T = 90_000;
@@ -18,47 +22,11 @@ afterEach(() => {
 type HubRound = { MOMENTS: { least: number }; parseMoments(tags: string[]): { moments: { id: string }[]; problems: string[] } };
 const hubRound = (): Promise<HubRound> => import(/* @vite-ignore */ new URL('../../../scripts/hub/harness/round.js', import.meta.url).href) as Promise<HubRound>;
 
-/** Frames a player takes to react to Go (0.4 s). */
-const REACT = 24;
-
-/** Every online mode the hand-over page offers: the hub picks moments. */
-const OFFERED = ['shared-world', 'ghost', 'parallel', 'moments'] as const;
-
-/** The real game as the one copy of a moment, ready and counted down: play begins on the hub's clock. */
-async function moment(m: MomentSpec, seed = 4242) {
-  const hub = new LocalHub({ mode: 'moments', moment: { id: m.id, seconds: m.seconds }, players: 1, seed });
-  const session = (await HubSession.join({ mode: OFFERED, seats: [1, 4], client: hub.client(0), autoFlush: false, clock: () => hub.now }))!;
-  const game = new Riftlight({}, { store: new SaveStore(null), session });
-  const h = await headlessRiftlight({ game, seed: session.info.seed });
-  open = h;
-  session.attach(h.engine);
-  /** One frame of the game (`step`: how it moves) and of the hub's clock. */
-  const frame = async (step = () => h.engine.step(1)) => {
-    step();
-    hub.advance(1000 / 60);
-    session.flush();
-    await settle();
-  };
-  for (let f = 0; f < 600 && !hub.allReady; f++) await frame();
-  expect(hub.allReady).toBe(true);
-  return { hub, session, ...h, frame };
-}
-
-/** Play until the hub has this player's result (or the round ended), a frame at a time. */
-async function play(r: Awaited<ReturnType<typeof moment>>, how: 'decent' | 'idle', m: MomentSpec) {
-  r.hub.start();
-  for (let f = 0; f < 400 && !r.game.round!.playing; f++) await r.frame();
-  r.rl.bot.start();
-  const spot = r.game.momentAim?.spot;
-  let frames = 0;
-  const step =
-    how === 'idle'
-      ? undefined
-      : m.clear === 'escape'
-        ? () => void (frames++ < REACT ? r.engine.step(1) : r.rl.moveTo(spot!.x, spot!.z, { radius: 1, maxFrames: 1 })) // run for it, a beat after Go
-        : () => void r.rl.bot.advance(1); // fight it out
-  for (let f = 0; f < (m.seconds + 4) * 60 && !r.hub.results.has(0) && !r.hub.endReason; f++) await r.frame(step);
-  return r.hub.results.get(0);
+/** A moment headless (its copy and the hub in memory), closed after the test. */
+async function moment(m: MomentSpec, seed = 4242, store = new SaveStore(null)): Promise<HeadlessMoment> {
+  const r = await headlessMoment(m, { seed, store });
+  open = r;
+  return r;
 }
 
 describe('moments', () => {
@@ -73,6 +41,7 @@ describe('moments', () => {
     for (const m of MOMENTS) {
       expect(momentGoal(m)).not.toMatch(/[{}]/); // its goal shown in the game, the name filled in
       expect(m.depth).toBeGreaterThanOrEqual(1);
+      expect(existsSync(new URL(`./moments.${m.id}.test.ts`, import.meta.url)), `${m.id} is played decent and idle: moments.${m.id}.test.ts`).toBe(true);
     }
   });
 
@@ -117,32 +86,53 @@ describe('moments', () => {
     T,
   );
 
-  for (const m of MOMENTS) {
-    it(
-      `${m.id} (${m.verb} ${m.seconds} s): a decent player clears it; idle, it is failed; one result each, nothing sent`,
-      async () => {
-        const decent = await moment(m);
-        const won = await play(decent, 'decent', m);
-        expect(won, `${m.id}: the decent player's result`).toMatchObject({ won: true });
-        expect(won!.time).toBeGreaterThan(0);
-        expect(won!.time).toBeLessThanOrEqual(m.seconds * 1000);
-        expect(decent.game.round!.outcome).toBe('cleared');
-        expect(decent.hub.client(0).stats.sent).toBe(0); // moments send nothing
-        expect(decent.hub.progress.size).toBe(0); // and show no progress
-        expect(decent.hub.problems).toEqual([]);
-        expect(decent.engine.errors).toEqual([]);
-        decent.engine.dispose();
+  it(
+    'an escape’s way out is clear: no other pack near the hero’s start or the way to the ring, which is in sight along it',
+    async () => {
+      for (const m of MOMENTS.filter((x) => x.clear === 'escape')) {
+        const r = await moment(m);
+        const level = r.game.level!;
+        const aim = r.game.momentAim!;
+        const spot = aim.spot!;
+        const hero = r.game.hero.actor.position;
+        const L = level.layout;
+        expect(L.cell(Math.floor(spot.x), Math.floor(spot.z)), `${m.id}: the ring is on the floor`).toBe(1);
+        const way = bfs(L, { x: Math.floor(hero.x), z: Math.floor(hero.z) }, { x: Math.floor(spot.x), z: Math.floor(spot.z) }).map((c) => ({ x: c.x + 0.5, z: c.z + 0.5 }));
+        const straight = Math.hypot(spot.x - hero.x, spot.z - hero.z);
+        expect(straight, `${m.id}: a run, not a step`).toBeGreaterThan(8);
+        expect(way.length, `${m.id}: the way to the ring goes where its arrow points (no wall between)`).toBeLessThanOrEqual(Math.ceil(straight * 1.25) + 1);
+        const others = level.monsters().filter((x) => !aim.targets.includes(x));
+        const nearest = Math.min(...[{ x: hero.x, z: hero.z }, ...way].flatMap((p) => others.map((o) => Math.hypot(o.actor.position.x - p.x, o.actor.position.z - p.z))));
+        expect(nearest, `${m.id}: the nearest monster of another pack to the hero's start or the way out`).toBeGreaterThan(15);
+        r.engine.dispose();
         open = null;
+      }
+    },
+    T,
+  );
 
-        const idle = await moment(m);
-        const lost = await play(idle, 'idle', m);
-        expect(lost, `${m.id}: the idle player's result`).toMatchObject({ won: false });
-        expect(idle.game.round!.outcome).toBe('failed');
-        expect(idle.hub.problems).toEqual([]);
-      },
-      T * 2,
-    );
-  }
+  it(
+    'a moment’s end: its clear sounds once, its banner shows its words though the hub ends the moment at once, the saves are untouched, and no save-state is taken',
+    async () => {
+      const writes: string[] = [];
+      const storage: KeyValueStore = { getItem: () => null, setItem: (key) => void writes.push(key), removeItem: (key) => void writes.push(key) };
+      const m = MOMENTS.find((x) => x.id === 'vorgath')!;
+      const r = await moment(m, 4242, new SaveStore(storage));
+      expect(() => r.game.snapshot()).toThrow(/52in1 round/); // its state is the hub's too: it replays from its recording
+      const won = await playMoment(r, 'decent');
+      expect(won).toMatchObject({ won: true });
+      expect(r.hub.endReason).toBe('finished'); // the one result in: the hub ends the moment at once
+      for (let f = 0; f < 30; f++) await r.frame();
+      expect(r.engine.timeScale).toBe(0); // and the end stills the game
+      const card = (r.game as unknown as { banners: { current: { title: string; age: number; duration: number } | null } }).banners.current!;
+      expect(card.title).toBe(t('round.moment_cleared'));
+      expect(bannerOpen(card)).toBeGreaterThanOrEqual(BANNER_WORDS); // open, its words shown, not stopped while opening
+      expect(r.engine.audio.counts['rl.clear']).toBe(1); // the boss's fall clears the level and the moment: one sound
+      expect(writes).toEqual([]); // the round's throwaway run never reaches the player's slots
+      expect(new Riftlight({}, { session: r.session }).store.volatile).toBe(true); // a session's store is memory only
+    },
+    T,
+  );
 
   it(
     'time-up: a moment to defeat is failed, one to survive is cleared; reported at once, within the grace',
@@ -175,7 +165,7 @@ describe('moments', () => {
     async () => {
       const m = MOMENTS.find((x) => x.id === 'gale-escape')!;
       const r = await moment(m);
-      await play(r, 'idle', m);
+      await playMoment(r, 'idle');
       expect(r.game.round!.outcome).toBe('failed');
       const live = r.engine.fingerprint();
       const rec = r.engine.recording()!;

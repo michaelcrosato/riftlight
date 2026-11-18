@@ -199,8 +199,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
     // pass ports to replace any of them.
     this.ports = { ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
-    this.store = options.store ?? new SaveStore();
+    // a session's runs are the hub's rounds, thrown away after each: memory only, never the player's slots
+    this.store = options.store ?? new SaveStore(options.session ? null : undefined);
     this.saves = this.store.view();
+  }
+
+  /**
+   * Saves go to the store: not in a replay (the player's slots are not the recording's), nor in a
+   * session round (its run is the hub's, thrown away after the round), whatever store it was given.
+   */
+  private get storing(): boolean {
+    return !this.replaying && !this.round;
   }
 
   get audio() {
@@ -393,7 +402,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.startRun();
     this.slot = slot;
     this.save = newSave(seed);
-    if (!this.replaying) this.store.save(slot, this.save);
+    if (this.storing) this.store.save(slot, this.save);
     viewSaved(this.saves, slot, this.save);
     this.applySave();
     this.note('run', `new run in slot ${slot + 1} seed ${seed}`);
@@ -653,11 +662,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const depth = this.level.spec.depth;
     const deeper = recordClear(this.save, depth, this.levelTime);
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
-    this.ctx.audio.play('rl.clear');
     if (this.round?.moment) {
-      // a moment says its own cleared or failed (session/round.ts)
-    } else if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
-    else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
+      // a moment says its own cleared or failed, with its own sound (session/round.ts)
+    } else {
+      this.ctx.audio.play('rl.clear');
+      if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
+      else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
+    }
     this.hero.emote('victory');
     this.playMusic('level');
     this.autosave('clear');
@@ -706,7 +717,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const at = new Vector3(s.x, level.start.y, s.z);
     this.hero.snap?.(at, Math.atan2(aim.x - at.x, aim.z - at.z));
     this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(0.9));
-    const away = moment.clear === 'escape' ? momentSpot(level.layout, aim, moment.away ?? moment.back * 2) : null;
+    const away = moment.clear === 'escape' ? moment.spot : undefined;
+    if (moment.clear === 'escape' && !away) throw new Error(`moment ${moment.id}: an escape names its spot`);
     this.momentAim = { targets, spot: away ? new Vector3(away.x, level.start.y, away.z) : null };
   }
 
@@ -809,10 +821,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ctx.audio.play('hurt', { volume: 0.5 });
   }
 
-  /** A centre banner now (it takes over from whatever showed). */
-  banner(title: string, subtitle = '', seconds = 1.2): void {
+  /** A centre banner now (it takes over from whatever showed), `age` seconds into its showing (0: it opens). */
+  banner(title: string, subtitle = '', seconds = 1.2, age = 0): void {
     this.banners.clear();
-    this.banners.push('card', title, subtitle, { duration: seconds });
+    this.banners.push('card', title, subtitle, { duration: seconds, age });
   }
 
   /** Portal reached: the loot window if anything is left, else straight home. */
@@ -942,7 +954,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ports.loot.write(this.save);
     const stats = (this.save.stats ??= emptyStats());
     stats.playtime = Math.round(this.playtime);
-    const ok = this.replaying || this.store.save(this.slot, this.save);
+    const ok = !this.storing || this.store.save(this.slot, this.save);
     viewSaved(this.saves, this.slot, this.save);
     if (!ok) this.ctx.input.send({ rl: 'storage', error: this.store.lastError || t('menu.slots.error.unwritable') });
     this.note('save', `${why} → slot ${this.slot + 1}${ok ? '' : ' (memory only)'}`);
@@ -1912,8 +1924,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * save and the slots it knows, the run's random stream, the id counters, the hero, the loot,
    * the town and everything the shell keeps (timers, the HUD's banners and numbers, the camera's
    * lead, the pointer) and, in a level, what the level was built from and its own state
-   * (`LevelHandle.saveState`). In town or a level, mid-fight included, with no panel open and
-   * nobody talked to. The settings kept are those play reads (`playSettings`); the rest are the player's.
+   * (`LevelHandle.saveState`). In town or a level, mid-fight included, with no panel open,
+   * nobody talked to and no 52in1 round on. The settings kept are those play reads (`playSettings`); the rest are the player's.
    */
   snapshot(): RiftSnapshot {
     const refuse = (why: string): never => {
@@ -1925,6 +1937,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.showcase.active) refuse('the showcase is open');
     if (this.layer.top) refuse(`a panel is open (${this.layer.top.panel.id}): close it first`);
     if (this.talkingTo) refuse('the hero is talking to someone');
+    // a round's state is the hub's as much as the game's (its clock, the other copies, a moment's
+    // targets): a round is replayed from its recording, not restored
+    if (this.round) refuse('a 52in1 round is on (replay its recording instead)');
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.saveState || !hero.loadState) refuse('this hero port keeps no state (saveState / loadState)');

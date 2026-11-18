@@ -34,7 +34,10 @@ build*). Outside a session (the page opened on its own, or by the hub's catalogu
 the page names (`headSession()`); the hub picks the round's (`info.mode`, and `info.play` for a
 shared world). Riftlight starts on the hub's seed (`info.seed`: every copy builds the same round)
 with `new Riftlight({}, { session })`, the session is attached to the engine, and a browser that
-can't run the game says so (`session.fail`).
+can't run the game says so (`session.fail`). A round's run is thrown away after it: a session's
+saves stay in memory, and nothing a round does is written to the player's slots (whatever store the
+game was given); a save-state (`snapshot()`) is refused while a round is on (its state is the hub's
+as much as the game's: a round replays from its recording).
 
 ## A round
 
@@ -86,14 +89,16 @@ line `moment.*` whose English is the tag's GOAL, the boss's name filled in):
 | `vorgath` | defeat, 20 | level 1, hero level 2, 7 m short of the boss | the boss falls | the bot fells him in 8 to 10 s / time runs out, or the hero falls |
 | `crypt-hall` | defeat, 12 | level 2, hero level 2, 6 m short of the first hall's two packs | every monster of them falls | the bot in 4.6 to 8.6 s / falls in 5.5 to 10 s |
 | `skraal` | survive, 20 | level 3, hero level 5, 6 m short of the boss | still standing when time runs out | the bot stands with 127 to 171 life / falls in 6 to 8.5 s |
-| `gale-escape` | escape, 8 | level 3, hero level 4, 9 m short of an elite pack | at the ring 20 m back from it | a run (0.4 s to react) in 3.6 to 4.8 s / falls in 3 to 6 s |
+| `gale-escape` | escape, 8 | level 3, hero level 2, 6 m short of Gale's first pack (a leader and five) at the corridor's mouth | at the ring up the corridor, past the level's start (`spot`; no other pack within 15 m of the way) | a run (0.4 s to react) in 2.2 s, untouched / falls in 5.8 to 7.7 s, or time runs out |
 
 - **The set-up** (`Riftlight.startMoment`): a fresh run on a seed from `session.rng(moment id)`
   (the hub's seed for this moment, recorded with the round's info), the hero at the moment's level,
   straight into its designed level, placed `back` metres short of its targets on the grid route
   from the level's start (`momentSpot`), facing them. The level's design places the targets: the
-  same on every copy. Tune a moment with its set-up only (hero level, placement, which packs),
-  never the game's balance, and measure it again (`session/moments.test.ts`).
+  same on every copy. An escape names its ring's spot, on a way out no other pack watches and in
+  sight along it (the ring's arrow never points across a wall). Tune a moment with its set-up only
+  (hero level, placement, which packs), never the game's balance, and measure it again
+  (`session/moments.<id>.test.ts` plays seeds 1-3; headless `headlessMoment` and `playMoment`).
 - **Play**: frozen until the hub's start like any round; the countdown shows the goal
   (`momentGoal`), the seconds left show at the top (`round.moment_left`), an escape's spot is a
   cyan ring on the ground.
@@ -171,7 +176,9 @@ holds the round's phase).
   respawn, time-up, the end, a replay); `session/ghosts.test.ts` (a scripted player's ghost follows
   them and touches nothing); `session/shared.test.ts` (the real game as host, then as a client;
   versus standings); `session/moments.test.ts` (the tags as the hub reads them, the set-up the same
-  on every copy, each moment cleared by a decent player and failed idle, time-up, a replay).
+  on every copy, an escape's clear way out, the end's banner and sound, no saves, time-up, a
+  replay); `session/moments.<id>.test.ts`, one per moment (`testMoments.ts`: cleared by a decent
+  player and failed idle, on three of the hub's seeds).
 - The hub's own harness (`harness.html`, `bridge.js`, `round.js` from 52in1.com/lib/hub): serve
   them next to the built page and open
   `harness.html?game=riftlight.html&mode=shared-world&how=co-op&players=4&latency=150&jitter=50&loss=5&auto=1`

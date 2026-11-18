@@ -9,8 +9,8 @@
  * is the same on every copy: the level's layout and packs are its design, the run's seed comes from
  * the hub's (`session.rng(moment id)`, recorded with the round), and the hero's spot is found on
  * the layout. Tune a moment with its set-up only (hero level, placement, which packs), never the
- * game's balance: `session/moments.test.ts` plays each one as a decent player (the playtest bot,
- * or a run for the spot) and idle.
+ * game's balance: `session/moments.<id>.test.ts` plays each one as a decent player (the playtest
+ * bot, or a run for the spot) and idle.
  */
 import type { LayoutLike } from '../core/types';
 import { bfs } from '../game/nav';
@@ -24,8 +24,8 @@ export type MomentVerb = 'defeat' | 'survive' | 'escape';
 
 /**
  * What clears a moment: `defeat`, its targets fallen; `survive`, the hero still standing when time
- * runs out; `escape`, the hero at its spot (`away` metres back from the targets). A fallen hero fails
- * any of them; time running out fails all but `survive`.
+ * runs out; `escape`, the hero at its spot (`spot`). A fallen hero fails any of them; time running
+ * out fails all but `survive`.
  */
 export type MomentClear = 'defeat' | 'survive' | 'escape';
 
@@ -48,13 +48,18 @@ export interface MomentSpec {
   /** Metres from the targets the hero starts, on the way in from the level's start. */
   readonly back: number;
   readonly clear: MomentClear;
-  /** Escape: metres from the targets of the spot to get to, on the way back out. */
-  readonly away?: number;
+  /**
+   * Escape: the spot to get to, a floor cell of the level's design (metres, the layout's x and z):
+   * on a way out that no other pack watches, in sight of the hero's start (the ring's arrow points
+   * along the way, never across a wall).
+   */
+  readonly spot?: { readonly x: number; readonly z: number };
 }
 
 /**
- * The moments, each measured as a decent player plays it and idle (`moments.test.ts`, seeds 11-14:
- * the numbers below). Each from a different stretch of the first three levels.
+ * The moments, each measured as a decent player plays it and idle over the hub's seeds 1-6 (the
+ * numbers below; `moments.<id>.test.ts` play seeds 1-3 of them). Each from a different stretch of the
+ * first three levels.
  */
 export const MOMENTS: readonly MomentSpec[] = [
   // Embers' boss, at his door: the bot fells him in 8 to 10 s; idle, he still stands at time-up, or the hero falls.
@@ -63,8 +68,10 @@ export const MOMENTS: readonly MomentSpec[] = [
   { id: 'crypt-hall', verb: 'defeat', seconds: 12, goal: 'moment.crypt_hall', depth: 2, heroLevel: 2, target: { packs: [0, 1] }, back: 6, clear: 'defeat' },
   // Gale's boss: the bot stays up for the 20 s (she can't be felled that fast); idle falls in 6 to 8.5 s.
   { id: 'skraal', verb: 'survive', seconds: 20, goal: 'moment.skraal', depth: 3, heroLevel: 5, target: { boss: true }, back: 6, clear: 'survive' },
-  // Gale's elite pack, too strong to fight: running back (after 0.4 s to react) takes 3.6 to 4.8 s; idle falls in 3 to 6 s.
-  { id: 'gale-escape', verb: 'escape', seconds: 8, goal: 'moment.gale_escape', depth: 3, heroLevel: 4, target: { packs: [2] }, back: 9, clear: 'escape', away: 20 },
+  // Gale's first pack, a leader and five, 6 m off at the corridor's mouth; the ring is up the corridor,
+  // past the level's start, and no other pack is within 15 m of the way: running for it (after 0.4 s
+  // to react) takes 2.2 s, untouched; idle falls in 5.8 to 7.7 s, or is still up at time-up.
+  { id: 'gale-escape', verb: 'escape', seconds: 8, goal: 'moment.gale_escape', depth: 3, heroLevel: 2, target: { packs: [0] }, back: 6, clear: 'escape', spot: { x: 76.5, z: 3.5 } },
 ];
 
 /** The moment called `id`, or null. */

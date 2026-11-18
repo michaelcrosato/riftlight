@@ -77,8 +77,10 @@ describe('a shared world', () => {
       const done = r.hub.finished!;
       expect(done.won).toBeUndefined(); // the standings say who won
       expect(world.bossKiller).toBe(0);
-      expect(done.scores![0]).toBeGreaterThan(100); // the boss, and most of its life
-      expect(done.scores![1]).toBeGreaterThanOrEqual(2);
+      // each hit on the boss counts for whoever struck it: theirs a fifth of its life, ours the rest
+      expect(world.bossDamage.get(1)).toBeCloseTo((boss.actor as Actor).maxLife * 0.2, 6);
+      // ours: a kill (the boss), its life's share (all of it: 50), felling it (100); theirs: two kills, a fifth of 50
+      expect(done.scores).toEqual({ 0: 1 + 50 + 100, 1: 2 + 10 });
       expect(done.standings).toEqual([[0], [1]]);
       expect(r.hub.endReason).toBe('finished');
       expect(r.hub.problems).toEqual([]);

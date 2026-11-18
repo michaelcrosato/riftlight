@@ -19,6 +19,7 @@ import type { Camera, Vector3 } from 'three/webgpu';
 import { type GameContext, type HubEvent, type HubInfo, type HubMode, hubEvents, type HubSession } from '../../engine';
 import type { HeroIntent } from '../game/ports';
 import type { UiCanvas } from '../ui/kit';
+import { BANNER_OPENS } from '../ui/layout';
 import { t } from '../lang';
 import { MOMENTS, momentById, momentGoal, type MomentSpec } from './moments';
 
@@ -47,8 +48,8 @@ export interface RoundHost {
   readonly session: { readonly kills: number; readonly deaths: number };
   /** Bring a fallen hero back at the level's start. */
   respawn(): void;
-  /** A centre banner (countdown, clear). */
-  banner(title: string, subtitle?: string, seconds?: number): void;
+  /** A centre banner (countdown, clear), `age` seconds into its showing (0: it opens). */
+  banner(title: string, subtitle?: string, seconds?: number, age?: number): void;
   /** What the round's mode adds (ghosts, a shared world), once the level is built. */
   roundModes(info: HubInfo): RoundMode[];
   /** Moments: a fresh run on `seed`, the moment's level built and its hero placed (resolves when built). */
@@ -270,7 +271,9 @@ export class SessionRound {
     const now = this.session.time();
     const time = Math.round(Math.min(this.info.limitMs, Math.max(0, Number.isFinite(now) ? now : this.playTime * 1000)));
     this.session.result({ won, time, stats: { [t('round.stat.kills')]: this.host.session.kills } });
-    this.host.banner(won ? t('round.moment_cleared') : t('round.moment_failed'), momentGoal(this.moment), 3);
+    // already open: the last result in ends the moment at once, and the end stills the game (its
+    // banner too), so one still opening would stay shut, its words never shown
+    this.host.banner(won ? t('round.moment_cleared') : t('round.moment_failed'), momentGoal(this.moment), 3, BANNER_OPENS);
     if (won) this.host.ctx.audio.play('rl.clear');
   }
 

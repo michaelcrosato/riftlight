@@ -79,6 +79,9 @@ export interface Banner {
   duration: number;
 }
 
+/** Seconds a banner's plate takes to open sideways (its words show once it is open). */
+export const BANNER_OPENS = 0.2;
+
 /** Higher first: a level clear cuts a level-up short, a level-up waits for the level card. */
 const PRIORITY: Readonly<Record<BannerKind, number>> = { clear: 3, card: 2, levelup: 1, notice: 0 };
 const DURATION: Readonly<Record<BannerKind, number>> = { card: 3.2, clear: 4, levelup: 2.4, notice: 2 };

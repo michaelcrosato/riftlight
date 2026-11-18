@@ -9,13 +9,14 @@
  * Node only: it reads the models and packs from `public/` (`nodeAssets`).
  */
 import { fileURLToPath } from 'node:url';
-import { Engine, type EngineOptions, type Game, type HeadlessOptions, hudPlace, type Viewport } from '../engine';
-import { nodeAssets } from '../engine/node';
+import { Engine, type EngineOptions, type Game, type HeadlessOptions, hudPlace, type HubResult, HubSession, LocalHub, type Viewport } from '../engine';
+import { nodeAssets, settle } from '../engine/node';
 
 export { settle, stepUntil } from '../engine/node';
 import { Riftlight, RIFTLIGHT_OPTIONS } from './index';
 import { type RiftlightApi } from './game/api';
 import { SaveStore } from './game/save';
+import type { MomentSpec } from './session/moments';
 
 /** Where the site's assets live, whatever the working directory. */
 export const PUBLIC_DIR = fileURLToPath(new URL('../../public/', import.meta.url));
@@ -107,3 +108,62 @@ export function hudTexts(engine: Engine, frames = 1): HudTextBox[] {
 
 /** Two HUD boxes share a pixel. */
 export const hudOverlap = (a: HudTextBox, b: HudTextBox): boolean => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+
+/** Every online mode the hand-over page offers (a moment's copy joins with them all; the hub picks moments). */
+const OFFERED = ['shared-world', 'ghost', 'parallel', 'moments'] as const;
+
+/** A moment headless: its one copy, the hub in memory behind it, and a frame of both. */
+export interface HeadlessMoment extends HeadlessRiftlight {
+  hub: LocalHub;
+  session: HubSession;
+  /** One frame of the game (`step`: how it moves; default one engine step) and of the hub's clock. */
+  frame(step?: () => void): Promise<void>;
+}
+
+/**
+ * The real game as the one copy of moment `m` against the hub in memory (engine `LocalHub`, round
+ * seed `seed`), loaded and ready: start it with `hub.start()` (docs/game/session.md, *Moments*).
+ */
+export async function headlessMoment(m: MomentSpec, o: { seed?: number; store?: SaveStore } = {}): Promise<HeadlessMoment> {
+  const hub = new LocalHub({ mode: 'moments', moment: { id: m.id, seconds: m.seconds }, players: 1, seed: o.seed ?? 4242 });
+  const session = (await HubSession.join({ mode: OFFERED, seats: [1, 4], client: hub.client(0), autoFlush: false, clock: () => hub.now }))!;
+  const game = new Riftlight({}, { store: o.store ?? new SaveStore(null), session });
+  const h = await headlessRiftlight({ game, seed: session.info.seed });
+  session.attach(h.engine);
+  const frame = async (step = () => h.engine.step(1)): Promise<void> => {
+    step();
+    hub.advance(1000 / 60);
+    session.flush();
+    await settle();
+  };
+  for (let f = 0; f < 600 && !hub.allReady; f++) await frame();
+  if (!hub.allReady) {
+    h.engine.dispose();
+    throw new Error(`headlessMoment: ${m.id} never got ready`);
+  }
+  return { ...h, hub, session, frame };
+}
+
+/** Frames a player takes to react to Go (0.4 s). */
+const REACT = 24;
+
+/**
+ * Start moment `r` and play it until the hub has the player's result (or the moment ended): `decent`
+ * plays it as the playtest bot (an escape: a run for the spot, a beat after Go), `idle` stands still.
+ */
+export async function playMoment(r: HeadlessMoment, how: 'decent' | 'idle'): Promise<HubResult | undefined> {
+  const m = r.game.round!.moment!;
+  r.hub.start();
+  for (let f = 0; f < 400 && !r.game.round!.playing; f++) await r.frame();
+  r.rl.bot.start();
+  const spot = r.game.momentAim?.spot;
+  let frames = 0;
+  const step =
+    how === 'idle'
+      ? undefined
+      : m.clear === 'escape'
+        ? () => void (frames++ < REACT ? r.engine.step(1) : r.rl.moveTo(spot!.x, spot!.z, { radius: 1, maxFrames: 1 })) // run for it, a beat after Go
+        : () => void r.rl.bot.advance(1); // fight it out
+  for (let f = 0; f < (m.seconds + 4) * 60 && !r.hub.results.has(0) && !r.hub.endReason; f++) await r.frame(step);
+  return r.hub.results.get(0);
+}
