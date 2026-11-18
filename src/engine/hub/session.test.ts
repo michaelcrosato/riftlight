@@ -5,13 +5,15 @@ import { LocalHub } from './local';
 import { HubSession, hubEvents, type HubEvent, type HubHost, type HubMode } from './session';
 
 /** A stand-in engine: commands land in a list, as `input.send` would queue them for the next frame. */
-function fakeEngine(): HubHost & { commands: unknown[]; muted: boolean; timeScale: number } {
+function fakeEngine(): HubHost & { commands: unknown[]; muted: boolean; timeScale: number; letGo: boolean } {
   const host = {
     commands: [] as unknown[],
     muted: false,
     timeScale: 1,
+    letGo: false,
     input: { send: (c: unknown) => void host.commands.push(c) },
     audio: { persist: true, setMuted: (m: boolean) => void (host.muted = m) },
+    dualsense: { close: () => void (host.letGo = true) },
   };
   return host;
 }
@@ -164,7 +166,7 @@ describe('HubSession', () => {
     expect(shared.hub.problems).toEqual([]);
   });
 
-  it('at the end the engine goes quiet: still, muted without saving it, nothing more sent', async () => {
+  it('at the end the engine goes quiet: still, muted without saving it, the DualSense the hub’s, nothing more sent', async () => {
     const { hub, copies } = await round('ghost', 2);
     const [a] = copies;
     let ended = '';
@@ -176,6 +178,7 @@ describe('HubSession', () => {
     expect(a!.engine.timeScale).toBe(0);
     expect(a!.engine.muted).toBe(true);
     expect(a!.engine.audio!.persist).toBe(false);
+    expect(a!.engine.letGo).toBe(true);
     expect(ended).toBe('finished');
     expect(a!.session.phase).toBe('ended');
     expect(events(a!.engine.commands).at(-1)).toMatchObject({ type: 'end', reason: 'finished' });

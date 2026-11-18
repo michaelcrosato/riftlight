@@ -12,7 +12,8 @@ example of every hook; `src/game/sandbox.ts` a second, smaller level.
   and vertex colours kept), clones are skeleton-aware (`SkeletonUtils.clone`).
 - `input.anyDown(codes)` / `input.consumeAny(codes)` take an array (no rest-argument garbage).
 - Everything else hangs off the `GameContext` passed to every hook (`ctx.audio`, `ctx.particles`,
-  `ctx.hud`, `ctx.physics`, `ctx.input`, `ctx.lights`, `ctx.tweens`, `ctx.random`) or the `Engine`.
+  `ctx.hud`, `ctx.physics`, `ctx.input`, `ctx.lights`, `ctx.tweens`, `ctx.random`, `ctx.dualsense`:
+  docs/engine/hub.md *The player's settings*) or the `Engine`.
 - New GLB assets: extend `scripts/generate-assets.mjs` (deterministic) or drop GLBs into `public/assets/`.
 
 ## Level lifecycle
@@ -37,7 +38,8 @@ object that is not engine-owned (`userData.engineOwned`: the lights, the particl
 disposes its geometry, materials and textures (also textures used only inside TSL node
 graphs, and skinned meshes' bone textures), except resources marked `userData.shared`
 (cached toon materials, the toon gradient, GLB geometry and textures that other clones
-share). It clears physics, particles, the HUD and music, resets input, and resets the
+share). It clears physics, particles, the HUD and music, resets input, gives a DualSense's light
+bar back to the hub and lets its triggers go (`ctx.dualsense`), and resets the
 scene background, fog and the sun / ambient light colors and intensities to the engine
 defaults (the sun's direction too, TSL `fogNode` fog, the game speed, tweens and screen shake).
 **Carried over** between levels: filters, render mode, resolution, quality,

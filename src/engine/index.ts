@@ -74,6 +74,8 @@ export { FPS_OPTIONS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, 
 export { SettingsPanel } from './SettingsPanel';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {
+  type AudioBus,
+  type AudioLevels,
   AudioManager,
   attenuation,
   muffleCutoff,
@@ -83,6 +85,7 @@ export {
   parseSong,
   renderSound,
   type AudioSettings,
+  type HubVolumes,
   type Instrument,
   type PlayOptions,
   type SfxName,
@@ -154,6 +157,19 @@ export {
   type JoinOptions,
 } from './hub/session';
 export { LocalClient, LocalHub, type LocalHubOptions } from './hub/local';
+export {
+  type DualSenseFlags,
+  type HubDualSenseSource,
+  HubSettings,
+  type HubSettingsSource,
+  type HubSettingsValues,
+  hubSettingsSource,
+  NO_HUB_SETTINGS,
+  readHubSettings,
+  type TriggerEffect,
+  type TriggerSide,
+} from './hub/settings';
+export { DualSense, type DualSenseSent } from './hub/dualsense';
 export { lerpAngle, RemoteTrack, type RemoteTrackOptions } from './hub/track';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, type TouchButton, type TouchButtonState, type TouchCorner } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';

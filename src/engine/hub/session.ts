@@ -152,6 +152,8 @@ export interface HubHost {
   readonly audio?: { persist: boolean; setMuted(muted: boolean): void };
   /** Game speed: 0 at the end (frames still run, so the game reads the end; nothing moves, presses are dropped). */
   timeScale?: number;
+  /** A DualSense's outputs (`engine.dualsense`): at the end the triggers go and the light bar is the hub's again. */
+  readonly dualsense?: { close(): void };
 }
 
 export interface JoinOptions {
@@ -346,7 +348,8 @@ export class HubSession {
 
   /**
    * Route the hub's events into the engine as input commands (`{ hub }`), from now on and every
-   * one that came before; at `end` the engine stands still (speed 0) and its sound stops.
+   * one that came before; at `end` the engine stands still (speed 0), its sound stops and the
+   * DualSense's light bar and triggers go back to the hub.
    */
   attach(host: HubHost): this {
     this.host = host;
@@ -515,7 +518,8 @@ export class HubSession {
   }
 
   /**
-   * After the end the game takes no input and its sound stops: the hub shows its results over it.
+   * After the end the game takes no input, its sound stops and a DualSense's light bar and
+   * triggers are the hub's again: the hub shows its results over it.
    * Speed 0, not a pause, so frames still run and the game reads the `end` command.
    */
   private quiet(): void {
@@ -525,6 +529,7 @@ export class HubSession {
       host.audio.persist = false;
       host.audio.setMuted(true);
     }
+    host.dualsense?.close();
     if ('timeScale' in host) host.timeScale = 0;
   }
 }

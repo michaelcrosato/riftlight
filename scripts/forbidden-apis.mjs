@@ -30,6 +30,18 @@ const RULES = [
     allow: /^\/\/ real time: \S/,
     tools: true,
   },
+  // The player's 52in1 settings (docs/engine/hub.md *The player's settings*): every sound plays on
+  // ctx.audio's buses, which follow the player's music and effects volumes, and the hub holds the
+  // controller and the microphone.
+  {
+    re: /\bnew\s+(webkit)?AudioContext\b|\bnew\s+Audio\s*\(|\bcreateElement\s*\(\s*['"`](audio|video)['"`]|\bspeechSynthesis\b/,
+    why: "play sound through ctx.audio (AudioManager): its buses follow the player's 52in1 music and effects volumes",
+    only: /^src\/engine\/audio\/AudioManager\.ts$/,
+  },
+  {
+    re: /\bnavigator\s*\.\s*hid\b|\bgetUserMedia\b/,
+    why: '52in1 holds the DualSense and the microphone: use ctx.dualsense and engine.hubSettings.openMicrophone()',
+  },
 ];
 
 /** Interactive tools (not games) may use real randomness and time (paths from the repo root). */
@@ -69,8 +81,9 @@ for await (const file of walk(join(ROOT, 'src'))) {
   const rel = file.slice(ROOT.length);
   lines.forEach((line, i) => {
     const { code, comment } = split(line);
-    for (const { re, why, allow, tools } of RULES) {
+    for (const { re, why, allow, tools, only } of RULES) {
       if (tools && TOOLS.test(rel)) continue;
+      if (only?.test(rel)) continue; // the one file that may
       if (allow?.test(comment)) continue;
       if (re.test(code)) problems.push(`${rel}:${i + 1}: ${line.trim()}\n    → ${why}`);
     }

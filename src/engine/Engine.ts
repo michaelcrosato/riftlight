@@ -17,6 +17,8 @@ import { DebugUI } from './DebugUI';
 import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys, startingDebugKeys } from './debugKeys';
 import { type AspectMode, RESOLUTIONS, type Resolution, type Viewport, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
+import { DualSense } from './hub/dualsense';
+import { HubSettings, type HubSettingsSource, hubSettingsSource } from './hub/settings';
 import { Input, type InputFrame, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
@@ -87,6 +89,12 @@ export interface GameContext {
   readonly random: Rng;
   /** Sound effects, music, volumes (src/engine/audio). */
   readonly audio: AudioManager;
+  /**
+   * A DualSense's light bar and adaptive triggers through 52in1, only while the player allows them
+   * (src/engine/hub/dualsense.ts): `dualsense.light(PALETTE.red)`. Outside 52in1, headless and
+   * during a replay it sends nothing.
+   */
+  readonly dualsense: DualSense;
   /** Pixel particles: `particles.burst('dust', at)` (src/engine/particles). */
   readonly particles: Particles;
   /** Pixel HUD text and icons in art pixels (src/engine/hud). */
@@ -245,6 +253,11 @@ export interface EngineOptions {
    */
   touchBar?: boolean;
   background?: number;
+  /**
+   * The player's 52in1 settings (`engine.hubSettings`, docs/engine/hub.md *The player's settings*):
+   * default the page's `window.AIHubSettings` (none outside 52in1, none headless). Tests pass a fake.
+   */
+  hubSettings?: HubSettingsSource | null;
 }
 
 /** `Engine.headless`: the page's options (those about the page do nothing), and where it runs. */
@@ -360,6 +373,13 @@ export class Engine {
   readonly ambient: AmbientLight;
   readonly context: GameContext;
   readonly audio: AudioManager;
+  /**
+   * The player's 52in1 settings (`window.AIHubSettings`; defaults outside the hub): the engine
+   * applies the music and effects volumes itself; a game reads the microphone's gate here.
+   */
+  readonly hubSettings: HubSettings;
+  /** A DualSense's outputs through 52in1 (`ctx.dualsense`). */
+  readonly dualsense: DualSense;
   readonly particles: Particles;
   readonly hud: Hud;
   /** Tweens on game time (`ctx.tweens`). */
@@ -453,6 +473,19 @@ export class Engine {
     this.input = new Input(page ? window : null);
     this.audio = page ? new AudioManager() : new AudioManager(null);
     if (!page) this.audio.persist = false;
+    // the player's 52in1 settings: their volumes multiply the game's own, the controller's speaker
+    // takes the `speaker` bus; outputs go quiet during a replay (input.playing)
+    const live = () => !this.input.playing;
+    this.hubSettings = new HubSettings(options.hubSettings !== undefined ? options.hubSettings : page ? hubSettingsSource() : null, live);
+    this.dualsense = new DualSense(this.hubSettings, live);
+    const speaker = (c: AudioContext) => this.dualsense.openSpeaker(c);
+    const hub = () => {
+      const s = this.hubSettings.values;
+      this.audio.setHubVolumes({ music: s.music, effects: s.effects });
+      this.audio.useSpeaker(s.dualsense.speaker ? speaker : null);
+    };
+    hub();
+    this.hubSettings.onChange(hub);
     const key = options.settings?.key;
     this.settings = new Settings(this, key === false ? null : (key ?? (page ? game.name : null)));
     const clock = () => this.time;
@@ -479,6 +512,7 @@ export class Engine {
         return random();
       },
       audio: this.audio,
+      dualsense: this.dualsense,
       particles: this.particles,
       hud: this.hud,
       get lights() {
@@ -550,6 +584,7 @@ export class Engine {
   set paused(value: boolean) {
     if (value) this.input.clearQueued();
     this._paused = value;
+    this.dualsense.hold(value); // no trigger pushes back in a pause menu
   }
 
   /**
@@ -1057,7 +1092,8 @@ export class Engine {
    * Unloading calls the old game's `dispose(ctx)`, removes every scene object that is not
    * engine-owned and frees its GPU resources, clears physics (bodies, colliders, joints,
    * controllers, triggers, tags, movers, force fields, belts; gravity and the solver back to
-   * their defaults), particles, HUD and music, and resets the scene background, fog and the
+   * their defaults), particles, HUD and music, lets a DualSense's triggers go and gives its light
+   * bar back to the hub (`ctx.dualsense`), and resets the scene background, fog and the
    * sun / ambient light to the engine defaults. Filters, render
    * mode, resolution, quality, volumes and the camera rig carry over; pass `camera` to
    * switch the preset (applied before `setup()`, so `ctx.camera` is already the new one).
@@ -1120,6 +1156,8 @@ export class Engine {
     this.renderer.setAnimationLoop(null);
     this.ready = false;
     this.audio.dispose();
+    this.dualsense.close(); // the triggers go and the light bar is the hub's again
+    this.hubSettings.dispose();
     this.debug?.root.remove();
     this.touch?.root.remove();
     this.settingsPanel?.dispose();
@@ -1425,6 +1463,7 @@ export class Engine {
     this.game.dispose?.(this.context);
     this.audio.stopMusic();
     this.audio.stopLoops();
+    this.dualsense.release(); // the next level (a title) starts with the hub's light bar, triggers let go
     this.tweens.clear();
     this.shake.reset();
     this.clock.reset();

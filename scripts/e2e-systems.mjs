@@ -14,6 +14,10 @@
 //              the sandbox's textured toon floor and its textured model (brick-wall), built and
 //              merged, show their textures; the first frame after a slow load; dispose() frees
 //              the canvases and UI
+//   52in1      a fake window.AIHubSettings: the real bus gains are the game's volumes × the hub's
+//              (never its master), again on change; the speaker bus plays from the controller's
+//              node; the light bar and triggers are sent once, only while allowed, given back at
+//              loadGame (the headless side: src/engine/hub/settings.test.ts)
 //
 // Gameplay checks run headless in vitest: hero events → sounds, particles and coin triggers in
 // src/engine/systems.test.ts; loadGame (world counts, level doors, concurrent loads, input while
@@ -22,13 +26,14 @@
 // Frames land in .scratch/e2e/systems-*.png. Self-contained: e2e.mjs passes its helpers in.
 import { writeFile } from 'node:fs/promises';
 import { PAGE_HELPERS } from './e2e-moves.mjs';
+import { watchConsole } from './page.mjs';
 
 /**
  * @param {object} h helpers from e2e.mjs:
  *   { exe, scenario, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT }
  */
 export async function runSystems(h) {
-  const { exe, scenario: s, openPage, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT } = h;
+  const { exe, scenario: s, openPage, ready, until, check, capture, state, waitFrames, colorCount, meanDiff, checkClean, encodePng, OUT } = h;
   const tag = s.name;
   console.log(`\n▶ systems (${s.backend})`);
   let ctx;
@@ -324,10 +329,116 @@ export async function runSystems(h) {
     check(disposed.canvases === 0 && !disposed.debug, `engine.dispose() during a loadGame: canvases and UI go (${JSON.stringify(disposed)})`);
     await page.waitForTimeout(300);
     check(logs.length === 0, `no errors after dispose${logs.length ? ': ' + logs.join(' | ') : ''}`);
+
+    await hubSettings(ctx.browser, page.url());
   } catch (e) {
     check(false, `systems crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {
     await ctx?.browser.close();
+  }
+
+  /**
+   * The player's 52in1 settings in a real page (docs/engine/hub.md *The player's settings*): a
+   * fake `window.AIHubSettings`, as the hub's companion script makes it, from the page's first
+   * script on. The real buses' gains are the game's own volumes × the hub's (its master never),
+   * again on `change`; the speaker bus reaches the node `openSpeaker` gives (an analyser hears it);
+   * the light bar and triggers are sent once, only while allowed, and given back at loadGame; the
+   * DualSense's motion and touches are never read.
+   */
+  async function hubSettings(browser, url) {
+    const hubPage = await browser.newPage({ viewport: { width: 960, height: 540 }, deviceScaleFactor: 1 });
+    const hubLogs = watchConsole(hubPage, { warnings: true });
+    try {
+      await hubPage.addInitScript(() => {
+        const calls = (window.__hubCalls = []);
+        const ds = {
+          connected: true,
+          lightbar: true,
+          triggers: true,
+          motion: true,
+          touchpad: true,
+          speaker: true,
+          aim: false,
+          light: (c) => calls.push(['light', c]),
+          trigger: (which, effect) => calls.push(['trigger', which, effect]),
+          // a node in the game's own context: what reaches it plays from the controller
+          openSpeaker: async (context) => {
+            calls.push(['speaker']);
+            const analyser = context.createAnalyser();
+            window.__speaker = analyser;
+            return analyser;
+          },
+        };
+        for (const f of ['gyro', 'accel', 'touches']) Object.defineProperty(ds, f, { enumerable: true, get: () => (calls.push(['read', f]), f === 'touches' ? [] : { x: 0, y: 0, z: 0 }) });
+        window.AIHubSettings = Object.assign(new EventTarget(), { version: 1, music: 0.5, effects: 0.25, vibration: 1, mic: false, micLater: false, muted: false, dualsense: ds, openMicrophone: async () => null });
+      });
+      await hubPage.goto(url);
+      await ready(hubPage);
+      await hubPage.mouse.click(700, 400); // a gesture: audio starts
+      await until(hubPage, (e) => e.audio.unlocked && e.audio.speakerRouted, null, 120);
+      /** The real nodes' gains next to the game's own volumes. */
+      const gains = () =>
+        hubPage.evaluate(() => {
+          const a = window.__PIXEL_ENGINE__.audio;
+          return { own: { ...a.volume }, master: a.master.gain.value, sfx: a.buses.sfx.gain.value, music: a.buses.music.gain.value, speaker: a.buses.speaker.gain.value, routed: a.speakerRouted, running: a.unlocked };
+        });
+      const near = (a, b) => Math.abs(a - b) < 1e-4;
+      const g = await gains();
+      const ownMaster = g.own.muted ? 0 : g.own.master;
+      check(g.running && near(g.music, g.own.music * 0.5) && near(g.sfx, g.own.sfx * 0.25) && near(g.speaker, g.sfx), `52in1's volumes multiply the game's: music ${g.music.toFixed(3)} = ${g.own.music} × 0.5, sfx ${g.sfx.toFixed(3)} = ${g.own.sfx} × 0.25`);
+      check(near(g.master, ownMaster), `the hub's master is never applied: the master gain is the game's own (${g.master.toFixed(3)})`);
+      await hubPage.evaluate(() => {
+        Object.assign(window.AIHubSettings, { music: 1, effects: 0.5 });
+        window.AIHubSettings.dispatchEvent(new Event('change'));
+      });
+      const g2 = await gains();
+      check(near(g2.music, g2.own.music) && near(g2.sfx, g2.own.sfx * 0.5), `again on the hub's change: music ${g2.music.toFixed(3)}, sfx ${g2.sfx.toFixed(3)}`);
+
+      // the speaker bus plays from the controller: the analyser the hub's node is hears it, and only it
+      const loudness = () =>
+        hubPage.evaluate(async () => {
+          const an = window.__speaker;
+          const buf = new Float32Array(an.fftSize);
+          let peak = 0;
+          for (let i = 0; i < 12; i++) {
+            await new Promise((r) => setTimeout(r, 25));
+            an.getFloatTimeDomainData(buf);
+            for (const v of buf) peak = Math.max(peak, Math.abs(v));
+          }
+          return peak;
+        });
+      const before = await loudness();
+      await hubPage.evaluate(() => window.__PIXEL_ENGINE__.audio.play('fanfare', { bus: 'speaker' }));
+      const during = await loudness();
+      check(g.routed && before < 1e-4 && during > 0.01, `a sound on the speaker bus plays from the controller's speaker, and nothing else does (peak ${before.toFixed(4)} → ${during.toFixed(4)})`);
+
+      const ds = await hubPage.evaluate(async () => {
+        const e = window.__PIXEL_ENGINE__;
+        const calls = window.__hubCalls;
+        const bow = { kind: 'resist', from: 0.2, strength: 0.7 };
+        for (let i = 0; i < 3; i++) {
+          e.dualsense.light('#FF8800');
+          e.dualsense.trigger('right', bow);
+        }
+        const once = JSON.stringify(calls.filter((c) => c[0] !== 'speaker'));
+        const mark = calls.length;
+        await e.loadGame(window.__PIXEL_GAMES__.sandbox());
+        const unloaded = JSON.stringify(calls.slice(mark));
+        Object.assign(window.AIHubSettings.dualsense, { lightbar: false });
+        window.AIHubSettings.dispatchEvent(new Event('change'));
+        const off = calls.length;
+        e.dualsense.light('#00ff00'); // the player took the light bar back: nothing is sent
+        return { once, unloaded, whileOff: calls.length - off, reads: calls.filter((c) => c[0] === 'read').length, speakers: calls.filter((c) => c[0] === 'speaker').length };
+      });
+      check(ds.once === JSON.stringify([['light', '#ff8800'], ['trigger', 'right', { kind: 'resist', from: 0.2, strength: 0.7 }]]), `the light bar and R2 are sent once, however often the game asks (${ds.once})`);
+      check(ds.unloaded === JSON.stringify([['light', null], ['trigger', 'right', null]]), `the next level gives the light bar back and lets R2 go (${ds.unloaded})`);
+      check(ds.whileOff === 0, 'nothing is sent while the player has the light bar off for games');
+      check(ds.reads === 0 && ds.speakers === 1, `the DualSense's motion and touches are never read (${ds.reads}), its speaker opened once (${ds.speakers})`);
+      await hubPage.waitForTimeout(200);
+      check(hubLogs.length === 0, `52in1 settings: zero console errors/warnings${hubLogs.length ? ': ' + hubLogs.join(' | ') : ''}`);
+    } finally {
+      await hubPage.close();
+    }
   }
 
   /** A capture of the current state (renderer.capture() starts a fresh node frame). */
