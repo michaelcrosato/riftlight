@@ -91,7 +91,8 @@ export class Menu implements Panel {
   private scrolls = false;
   /** Keep the focused row in view (keys, pad, wheel); a finger's drag turns it off. */
   private follow = true;
-  private press: { x: number; y: number; scroll: number; moved: boolean } | null = null;
+  /** A press waiting to see a tap or a drag (`pointer`): where, the scroll then, whether it moved, and whether a finger made it. */
+  private press: { x: number; y: number; scroll: number; moved: boolean; touch: boolean } | null = null;
   /** Width the shell has room for (`fit`); below the menu's width it lays out narrow. */
   private room = Infinity;
   /** Height the shell has room for (`fit`): a grid menu takes two columns when one would be taller. */
@@ -489,7 +490,8 @@ export class Menu implements Panel {
     }
     if (this.press && type === 'move') {
       const dy = y - this.press.y;
-      if (Math.abs(dy) > 3 || Math.abs(x - this.press.x) > 3) this.press.moved = true;
+      // a finger that slides sideways is a swipe, not a tap; a mouse's click keeps its sideways drift
+      if (Math.abs(dy) > 3 || (this.press.touch && Math.abs(x - this.press.x) > 3)) this.press.moved = true;
       if (this.press.moved && this.scrolls) {
         this.scroll = this.press.scroll - dy;
         this.follow = false;
@@ -504,7 +506,7 @@ export class Menu implements Panel {
         return w.kind === 'slider' && t && inside(t, x, y);
       });
       if (!onTrack) {
-        this.press = { x, y, scroll: this.scroll, moved: false };
+        this.press = { x, y, scroll: this.scroll, moved: false, touch };
         return true;
       }
     }

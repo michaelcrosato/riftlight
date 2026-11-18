@@ -272,4 +272,25 @@ describe('a thumb on the panels', () => {
     menu.input({ kind: 'nav', dir: 'up' }); // b is disabled, and so is f below: back to d, no move
     expect(at()).toBe('d');
   });
+
+  it('a scrolling menu: a mouse\'s click that drifts sideways still clicks; a finger that slides sideways is a swipe and presses nothing', () => {
+    let clicked = 0;
+    const widgets: Widget[] = Array.from({ length: 14 }, (_, i) => ({ kind: 'button', id: `b${i}`, label: `Button ${i}`, onClick: () => clicked++ }));
+    const menu = new Menu(widgets, { id: 'long', title: 'Long', width: 200 });
+    menu.fit(410, 120, 0); // a laptop's small window: it scrolls
+    const r = { x: 100, y: 25, w: menu.size.w, h: 120 };
+    menu.draw(canvas(422, 195).ui, r);
+    const b = menu.rects.get('b0')!;
+    const press = (touch: boolean, dx: number) => {
+      menu.input({ kind: 'pointer', type: 'down', x: b.x + 20, y: b.y + 4, touch });
+      menu.input({ kind: 'pointer', type: 'move', x: b.x + 20 + dx, y: b.y + 4, touch });
+      menu.input({ kind: 'pointer', type: 'up', x: b.x + 20 + dx, y: b.y + 4, touch });
+    };
+    press(false, 6);
+    expect(clicked, 'the mouse: clicked').toBe(1);
+    press(true, 6);
+    expect(clicked, 'a finger sliding sideways: nothing').toBe(1);
+    press(true, 1);
+    expect(clicked, 'a finger\'s tap').toBe(2);
+  });
 });

@@ -67,10 +67,13 @@ const STICK = { margin: 16, size: 132 } as const;
 export const STICK_ZONE = { width: 0.45, landscape: 0.75, portrait: 0.6 } as const;
 
 /**
- * Where the touch controls sit on a `width` × `height` CSS px screen, from their data (the
- * buttons' `at`, from an 8 px margin, and the joystick at rest), as CSS rects: what the page lays
- * out (with no notch insets), for where there is no page (headless, a replay of a phone's
- * recording) and for the checks.
+ * Where the touch controls sit on a `width` × `height` CSS px screen (the page's viewport), from
+ * their data (the buttons' `at`, from an 8 px margin, and the joystick at rest), as CSS rects: what
+ * the page lays out, for where there is no page (headless, a replay of a phone's recording) and for
+ * the checks. The page keeps its controls inside a notched phone's safe area (`env(safe-area-inset-*)`
+ * past the margins), which a recording does not keep: on such a phone a replay without the page
+ * lays the HUD out around controls a few pixels off where the player saw them (the phone e2e checks
+ * the two agree where there is no notch).
  */
 export function touchLayout(width: number, height: number, buttons: readonly TouchButton[] = RIFTLIGHT_TOUCH_BUTTONS): Box[] {
   const out: Box[] = [{ x: STICK.margin, y: height - STICK.margin - STICK.size, w: STICK.size, h: STICK.size }];
@@ -146,25 +149,45 @@ export class TouchPad {
 
   private last: Box[] = [];
 
+  /** The rects that stood in while the controls were hidden, as a snapshot kept them (`Riftlight.restoreNow`). */
+  restoreLast(boxes: readonly Box[]): void {
+    this.last = boxes.map((b) => ({ ...b }));
+  }
+
   /**
    * Without a page (headless, a replay of a phone's recording): where the page's controls would
    * be on a page with touch controls (`touchDensity` set, recorded) while a finger is the device in
-   * use (recorded), from their data (`touchLayout`); none otherwise. So the HUD a replay draws, and
-   * what a tap on it hits, is the phone's.
+   * use (recorded), from their data (`dataLayout`); none otherwise. So the HUD a replay draws, and
+   * what a tap on it hits, is the phone's (but for a notch's safe area: `touchLayout`).
    */
   private fromData(): Box[] {
     const e = this.engine;
     if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return [];
-    return touchLayout(e.renderer.framing.cssWidth, e.renderer.framing.cssHeight).map((c) => this.toArt(c));
+    return this.dataLayout();
   }
 
-  /** A CSS px rect of the page as art pixels, by the view's framing (a whole canvas: the fill aspect's). */
+  /**
+   * The controls laid out from their data in the recorded viewport, in art pixels: the joystick at
+   * rest and every placed button, a hidden one too (it keeps its place on the page: the HUD
+   * doesn't jump when the interact button comes and goes). The phone e2e holds it to the page's.
+   */
+  dataLayout(): Box[] {
+    const { width, height } = this.engine.renderer.viewport;
+    return touchLayout(width, height).map((c) => this.toArt(c));
+  }
+
+  /**
+   * A CSS px rect of the page (its viewport) as art pixels, by the view's framing: the arithmetic
+   * of `Pointer.toArt` on the canvas's client rect (its offset and size: a fill canvas can reach
+   * past the viewport's edges), so the page's rects and the data's land on the same art pixels.
+   */
   private toArt(c: Box): Box {
     const f = this.engine.renderer.framing;
-    const k = f.artWidth / f.cssWidth;
-    const x = Math.floor(c.x * k);
-    const y = Math.floor(c.y * k);
-    return { x, y, w: Math.floor((c.x + c.w) * k) - x + 1, h: Math.floor((c.y + c.h) * k) - y + 1 };
+    const ax = (x: number) => Math.floor(((x - f.offsetX) / f.cssWidth) * f.artWidth);
+    const ay = (y: number) => Math.floor(((y - f.offsetY) / f.cssHeight) * f.artHeight);
+    const x = ax(c.x);
+    const y = ay(c.y);
+    return { x, y, w: ax(c.x + c.w) - x + 1, h: ay(c.y + c.h) - y + 1 };
   }
 
   /**
@@ -176,7 +199,8 @@ export class TouchPad {
   stickZone(): Box | null {
     const e = this.engine;
     if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return null;
-    return this.toArt(stickZone(e.renderer.framing.cssWidth, e.renderer.framing.cssHeight));
+    const { width, height } = e.renderer.viewport;
+    return this.toArt(stickZone(width, height));
   }
 
   sync(f: TouchFrame): void {

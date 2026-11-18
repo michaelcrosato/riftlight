@@ -876,6 +876,30 @@ async function runTouch(browserExe) {
       return { one, two, oneLeft, after: e.input.isDown('Touch') };
     });
     check(pinched.one && !pinched.two && !pinched.oneLeft && !pinched.after, `a second finger makes a pinch: the first finger's press lets go and stays up until both are lifted (${JSON.stringify(pinched)})`);
+    // both fingers landing together (one touchstart with two points, as a pinch often does): no press at all, none recorded
+    const cdp = await page.context().newCDPSession(page);
+    const box = await page.evaluate(() => {
+      const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+      return { x: r.left, y: r.top + r.height / 2, w: r.width, from: window.__PIXEL_ENGINE__.recording().frames.length };
+    });
+    const two = (k) => [
+      { x: box.x + box.w * (0.45 - k * 0.03), y: box.y, id: 1 },
+      { x: box.x + box.w * (0.55 + k * 0.03), y: box.y, id: 2 },
+    ];
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: two(0) });
+    await waitFrames(page, 2);
+    for (let k = 1; k <= 4; k++) {
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: two(k) });
+      await waitFrames(page, 1);
+    }
+    await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await waitFrames(page, 2);
+    const together = await page.evaluate((from) => {
+      const frames = window.__PIXEL_ENGINE__.recording().frames.slice(from);
+      return { frames: frames.length, presses: frames.filter((f) => (f.pressed ?? []).includes('Touch')).length, clicks: frames.flatMap((f) => (f.clicks ?? []).filter((c) => c[0] === 'Touch')).length };
+    }, box.from);
+    check(together.frames > 0 && together.presses === 0 && together.clicks === 0, `two fingers landing in one frame press nothing (${JSON.stringify(together)})`);
+    await cdp.detach();
 
     // A pad or the keyboard picked up: the controls step aside (the game looks like the pad game); the next touch brings them back.
     const away = await page.evaluate(async () => {

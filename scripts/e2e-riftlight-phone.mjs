@@ -16,6 +16,8 @@
 //     brings the touch layout back
 //   - every title entry shows, a thumb tall (two columns of tiles in landscape), with a save and
 //     without (landscape)
+//   - the controls laid out from their data (headless, a replay) are where the page lays them, and
+//     so is the floating stick's zone, with the interact button hidden and shown, at DPR 2 and 3
 //   - ≡ opens the pause menu, the panel's close box closes it (taps)
 //   - the pause menu's rows are at least 40 CSS px in both orientations (two columns of tiles in
 //     landscape); the passive tree draws at the game's art size and names a finger's gestures
@@ -46,6 +48,21 @@ export async function runRiftlightPhone(h, orientation) {
       await R(() => (window.__PIXEL_ENGINE__.manual = false));
       await page.waitForTimeout(1000);
       await page.screenshot({ path: new URL(`${tag}-${name}.png`, OUT).pathname });
+    };
+    // the controls as the page lays them out (the HUD's rects, the floating stick's zone) and as
+    // their data does where there is no page (headless, a replay of a phone's recording): the same art pixels
+    const agree = async (where) => {
+      const a = await R(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const e = window.__PIXEL_ENGINE__;
+        e.step(1);
+        const z = e.touch.rects().zone;
+        const tl = z && g.pointer.toArt(z.left, z.top);
+        const br = z && g.pointer.toArt(z.right, z.bottom);
+        return { page: window.__RIFTLIGHT__.ui.hud().controls, data: g.touchPad.dataLayout(), zone: z && { x: tl.x, y: tl.y, w: br.x - tl.x + 1, h: br.y - tl.y + 1 }, dataZone: g.touchPad.stickZone() };
+      });
+      const same = JSON.stringify(a.page) === JSON.stringify(a.data) && JSON.stringify(a.zone) === JSON.stringify(a.dataZone);
+      check(same && a.page.length >= 7, `${orientation} ${where}: the controls from their data are where the page lays them (${a.page.length} rects${same ? '' : `: page ${JSON.stringify(a.page)} zone ${JSON.stringify(a.zone)} vs data ${JSON.stringify(a.data)} zone ${JSON.stringify(a.dataZone)}`})`);
     };
     // what a player opens: no ?debug (touch=1 forces the controls; a phone gets them from its coarse pointer)
     await page.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
@@ -144,6 +161,7 @@ export async function runRiftlightPhone(h, orientation) {
     const inZone = (r) => dense.zone && r.x < dense.zone.x + dense.zone.w && dense.zone.x < r.x + r.w && r.y < dense.zone.y + dense.zone.h && dense.zone.y < r.y + r.h;
     check(dense.mode === 'floating' && !!dense.zone && dense.zone.x === 0 && !!map && !inZone(map), `${orientation}: the joystick floats in the lower left and the corner map is out of its zone (${JSON.stringify(dense.zone)})`);
     await shot('level');
+    await agree('in a level');
 
     // a pad picked up: the touch controls step aside and the HUD takes the pad's layout, its own
     // skill bar drawn (never neither); the next touch brings the touch layout back
@@ -394,6 +412,19 @@ export async function runRiftlightPhone(h, orientation) {
       check(panels.recap.id === 'death' && panels.recap.fits && panels.recap.inPanel && panels.recap.button >= 40, `${orientation}: the death recap fits with a ${Math.round(panels.recap.button)} CSS px button`);
       await shot('recap');
     }
+    // in town by the stash: the interact button shows too
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      rl.toTown();
+      window.__PIXEL_ENGINE__.step(5);
+      window.__PIXEL_ENGINE__.input.noteTouch();
+      const stash = rl.game.town.interactables.find((x) => x.id === 'stash');
+      rl.moveTo(stash.position.x, stash.position.z, { radius: Math.min(1.2, stash.radius - 0.4) });
+      window.__PIXEL_ENGINE__.step(3);
+    });
+    const offered = await R(() => [...document.querySelectorAll('.touch-ui > button')].some((b) => b.dataset.code === 'KeyF' && getComputedStyle(b).display !== 'none'));
+    check(offered, `${orientation}: by the stash the interact button shows`);
+    await agree('in town, interact on offer');
     if (!portrait) {
       // back to the title with a save: Continue joins the entries, and every one still shows
       await R(() => {
@@ -407,6 +438,38 @@ export async function runRiftlightPhone(h, orientation) {
       await shot('title-save');
     }
     checkClean(await state(page), logs, `${orientation}: `);
+    await ctx.browser.close();
+    ctx = null;
+
+    // DPR 3 (an iPhone's, most Androids'): the data and the page agree there too
+    ctx = await launch(exe, s, { viewport, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    {
+      const page3 = ctx.page;
+      const R3 = (fn, arg) => page3.evaluate(fn, arg);
+      await page3.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
+      await ready(page3);
+      await page3.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+      await R3(async () => {
+        const rl = window.__RIFTLIGHT__;
+        rl.newRun({ slot: 0, seed: 4242 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        window.__PIXEL_ENGINE__.input.noteTouch();
+        window.__PIXEL_ENGINE__.step(30);
+      });
+      const a = await R3(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const e = window.__PIXEL_ENGINE__;
+        e.step(1);
+        const z = e.touch.rects().zone;
+        const tl = g.pointer.toArt(z.left, z.top);
+        const br = g.pointer.toArt(z.right, z.bottom);
+        return { page: window.__RIFTLIGHT__.ui.hud().controls, data: g.touchPad.dataLayout(), zone: { x: tl.x, y: tl.y, w: br.x - tl.x + 1, h: br.y - tl.y + 1 }, dataZone: g.touchPad.stickZone() };
+      });
+      const same = JSON.stringify(a.page) === JSON.stringify(a.data) && JSON.stringify(a.zone) === JSON.stringify(a.dataZone);
+      check(same && a.page.length >= 7, `${orientation} at DPR 3: the controls from their data are where the page lays them (${a.page.length} rects${same ? '' : `: page ${JSON.stringify(a.page)} zone ${JSON.stringify(a.zone)} vs data ${JSON.stringify(a.data)} zone ${JSON.stringify(a.dataZone)}`})`);
+      checkClean(await state(page3), ctx.logs, `${orientation} at DPR 3: `);
+    }
     await ctx.browser.close();
     ctx = null;
 

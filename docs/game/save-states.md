@@ -18,7 +18,9 @@ hops), the town's combat world), the loot
 (`RealLoot.saveState`: bags, gear, sockets, this visit's vendor stock, the crafting stream, the
 item windows' tabs), the town (`Town.saveState`: its clock and time of day, each townsperson's
 walk, timers, random stream and clip, the cat, the extensions' own) and what the shell keeps
-(timers, banners, damage numbers, the camera's lead, the pointer, key repeat). Only the
+(timers, banners, damage numbers, the camera's lead, the pointer, key repeat, and what the last
+frame drew that the next frame's input hits: a finger's targets, the touch controls the HUD laid
+out around). Only the
 settings play reads are kept (`playSettings`); storage is not touched. Each part is plain
 data with a `save`/`load` (or `saveState`/`loadState`) beside the code that owns it, returned
 as it is (a buff that never ends expires at `Infinity`: never copy state through JSON), and a

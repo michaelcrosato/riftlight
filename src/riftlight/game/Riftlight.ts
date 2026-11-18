@@ -1523,9 +1523,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       motion.idle = i.attack || i.skill >= 0 || i.held ? 0 : motion.idle + dt;
       if (motion.idle >= AIM.hold) this.motionAim = null;
     }
-    // a finger's assists (recorded input and the recorded settings only: the pad, the keyboard
-    // and the mouse play as they always have)
-    if (input.device === 'touch' && !panelOpen) this.touchAssist(i, axis);
+    // a finger's assists on a page with touch controls, where Settings has their rows (recorded
+    // input, density and settings only: the pad, the keyboard and the mouse play as they always
+    // have, and so does a touch on a desktop's page, a touchscreen laptop's)
+    if (this.touchControls && input.device === 'touch' && !panelOpen) this.touchAssist(i, axis);
     this.walk(i, axis, panelOpen, dt);
     return i;
   }
@@ -1630,7 +1631,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const on = (r: Box | null | undefined) => !!r && inside(r, at.x, at.y);
     const top = this.layer.top;
     if (top) {
-      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky) {
+      // the line where it shows: over a framed panel all of it, under the item windows (an
+      // overlay) only between them (a swipe on a window is the window's)
+      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky && !(top.panel.overlay && this.layer.covers(at.x, at.y))) {
         this.layer.close(top.panel.id);
         return true;
       }
@@ -1697,7 +1700,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
   }
 
-  /** The page has touch controls (its art density is a touch page's: recorded), so Settings shows a finger's assists (`MenuHost.touchControls`). */
+  /** The page has touch controls (its art density is a touch page's: recorded): a finger's assists apply, and Settings shows their rows (`MenuHost.touchControls`). */
   get touchControls(): boolean {
     return this.ctx.engine.renderer.touchDensity > 0;
   }
@@ -2643,6 +2646,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         pressTaken: this.pressTaken,
         map: this.mapOpen,
         worldFocus: this.worldFocus,
+        // what the last frame drew that the next frame's input hits (a finger's targets, the touch controls the HUD laid out around)
+        touchable: this.touchable,
+        hudControls: this.hudControls,
         walk: this.walkTo && { target: this.walkTo.target, time: this.walkTo.time, best: this.walkTo.best, since: this.walkTo.since, nav: this.walkTo.nav.save() },
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
@@ -2763,6 +2769,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.pressTaken = t.pressTaken ?? false;
     this.mapOpen = t.map ?? false;
     this.worldFocus = t.worldFocus ?? null;
+    const tt = t.touchable;
+    this.touchable = tt ? { loot: tt.loot.map((l) => ({ id: l.id, rect: { ...l.rect } })), prompt: tt.prompt && { ...tt.prompt }, feed: tt.feed.map((b) => ({ ...b })), dialogue: tt.dialogue && { ...tt.dialogue } } : { loot: [], prompt: null, feed: [], dialogue: null };
+    this.hudControls = t.hudControls ? t.hudControls.map((c) => ({ ...c })) : [];
+    this.touchPad.restoreLast(this.hudControls); // what stands in while the controls are hidden
     this.walkTo = t.walk?.nav ? { target: t.walk.target, time: t.walk.time, best: t.walk.best, since: t.walk.since, nav: HeroWalk.load(t.walk.nav) } : null;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
@@ -2886,6 +2896,10 @@ interface RiftSnapshot {
     readonly map?: boolean;
     /** What the mouse was over in the world and the thing a click walks the hero to (left out by older snapshots). */
     readonly worldFocus?: WalkTarget | null;
+    /** What a finger could tap or swipe away as the last frame drew it (`Riftlight.touchable`; left out by older snapshots). */
+    readonly touchable?: { readonly loot: readonly { readonly id: number; readonly rect: Box }[]; readonly prompt: Box | null; readonly feed: readonly Box[]; readonly dialogue: Box | null };
+    /** The touch controls the last frame's HUD laid out around, art pixels (left out by older snapshots). */
+    readonly hudControls?: readonly Box[];
     readonly walk?: { readonly target: WalkTarget; readonly time: number; readonly best: number; readonly since: number; readonly nav: HeroWalkState } | null;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;

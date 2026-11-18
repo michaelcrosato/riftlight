@@ -668,9 +668,10 @@ export class Input {
         capture(el, e.pointerId);
         if (e.pointerType !== 'touch') this.button(MOUSE_BUTTONS[e.button]?.[0], true);
         else if (active.size >= 2) {
-          // a second finger: a pinch (it zooms), not a press held for as long as it lasts
+          // a second finger: a pinch (it zooms), not a press held for as long as it lasts; both
+          // fingers down in one frame press nothing at all (the first one's press is taken back)
           pinching = true;
-          this.button(TOUCH_KEY, false);
+          this.unpress(TOUCH_KEY);
         } else if (!pinching) this.button(TOUCH_KEY, true);
         pinch = spread();
         if (this.wantsPointerLock && e.pointerType === 'mouse' && document.pointerLockElement !== el) void el.requestPointerLock?.();
@@ -1110,6 +1111,26 @@ export class Input {
     else {
       this.press(code);
       this.held.add(code);
+    }
+  }
+
+  /**
+   * Let go of a pointer button held, and when it went down this very frame take its press back
+   * too, as if it never was (a pinch's first finger when the second came in the same frame: its
+   * `wasPressed` and queued press are gone, and the frame records no press).
+   */
+  private unpress(code: string): void {
+    if (this._playing || !this.held.has(code)) return;
+    // held, so its last event this frame, if any, is its going down
+    let i = this._buttonEvents.length - 1;
+    while (i >= 0 && this._buttonEvents[i]!.code !== code) i--;
+    if (i < 0) return this.button(code, false); // it went down in an earlier frame: it lets go
+    this._buttonEvents.splice(i, 1);
+    this.held.delete(code);
+    // another press of it this frame (a tap before this finger) stands
+    if (!this._buttonEvents.some((e) => e.code === code && e.down)) {
+      this.pressed.delete(code);
+      this.queued.delete(code);
     }
   }
 

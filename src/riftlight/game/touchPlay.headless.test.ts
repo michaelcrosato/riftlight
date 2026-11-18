@@ -15,7 +15,7 @@ import type { Item } from '../core/types';
 import { type HeadlessRiftlight, headlessRiftlight, makeRiftlight } from '../headless';
 import { t } from '../lang';
 import { findItem } from '../loot/inventory';
-import type { Box } from '../ui/layout';
+import { type Box, overlaps } from '../ui/layout';
 import type { RealLoot } from '../wire/loot';
 import type { HeroIntent } from './ports';
 
@@ -61,6 +61,7 @@ function swipe(x: number, y: number, dir: SwipeDirection, engine: Engine = h.eng
 const stack = () => h.rl.state().ui;
 const top = () => h.game.layer.top!;
 const mid = (r: Box) => ({ x: Math.round(r.x + r.w / 2), y: Math.round(r.y + r.h / 2) });
+const inside = (r: Box, x: number, y: number) => x >= r.x && y >= r.y && x < r.x + r.w && y < r.y + r.h;
 
 describe('a finger swipes away what it starts on', () => {
   it(
@@ -117,12 +118,20 @@ describe('a finger swipes away what it starts on', () => {
       const r = top().rect;
       swipe(mid(r).x, mid(r).y, 'down');
       expect(stack(), 'down on the list scrolls it').toEqual(['settings']);
-      const shake = rl.ui.widgets().find((w) => w.id === 'zoom' || w.id === 'shake');
-      const track = (top().panel as unknown as { rects: Map<string, Box> }).rects.get(`${shake?.id}:track`);
-      if (track) {
-        swipe(mid(track).x, mid(track).y, 'right');
-        expect(stack(), 'sideways on a slider moves it').toEqual(['settings']);
-      }
+      // the screen shake's slider, scrolled into view as the d-pad would (focus the row under it, then up)
+      const ids = rl.ui.widgets().map((w) => w.id);
+      const menu = top().panel as unknown as { focusId(id: string): boolean; input(e: { kind: 'nav'; dir: 'up' }): boolean; rects: Map<string, Box>; items(): { id: string; get?: () => number }[] };
+      expect(menu.focusId(ids[ids.indexOf('shake') + 1]!)).toBe(true);
+      menu.input({ kind: 'nav', dir: 'up' });
+      engine.step(2);
+      expect(rl.ui.widgets().find((w) => w.focus)?.id).toBe('shake');
+      const track = menu.rects.get('shake:track');
+      expect(track, 'the slider in view').toBeDefined();
+      const shake = menu.items().find((w) => w.id === 'shake')!;
+      const was = shake.get!();
+      swipe(mid(track!).x, mid(track!).y, 'right');
+      expect(stack(), 'sideways on a slider moves it').toEqual(['settings']);
+      expect(shake.get!(), 'the slider moved, the menu stayed').not.toBe(was);
       swipe(r.x + 10, r.y - 8, 'down');
       expect(stack(), 'down from the title bar closes it').toEqual([]);
       void game;
@@ -345,10 +354,9 @@ describe('the item windows by touch', () => {
       expect(acts.map((a) => a.label), 'its buttons').toEqual(expect.arrayContaining([t('item.act.move')]));
       for (const a of acts) expect(a.rect.h * 2, `${a.label}: a thumb tall (44 CSS px)`).toBeGreaterThanOrEqual(44);
       const equip = acts.find((a) => a.label === t('item.act.equip'));
-      if (equip) {
-        tapAt(mid(equip.rect).x, mid(equip.rect).y);
-        expect(findItem(ui.store.state.inventory, item.uid), 'out of the bag: worn').toBeUndefined();
-      }
+      expect(equip, `equipment in the bag offers Equip (${acts.map((a) => a.label).join(', ')})`).toBeDefined();
+      tapAt(mid(equip!.rect).x, mid(equip!.rect).y);
+      expect(findItem(ui.store.state.inventory, item.uid), 'out of the bag: worn').toBeUndefined();
       rl.ui.close();
       engine.step(2);
       expect(engine.errors).toEqual([]);
@@ -392,6 +400,59 @@ describe('the item windows by touch in portrait', () => {
   );
 });
 
+describe('a picked item\'s buttons and its tooltip', () => {
+  it(
+    'never cover each other: with room for neither (a tall tooltip on a phone) the buttons go on top and the tooltip under them, its name in view',
+    async () => {
+      for (const viewport of [
+        { width: 844, height: 390, dpr: 2 },
+        { width: 390, height: 844, dpr: 3 },
+      ]) {
+        const p = await headlessRiftlight({ seed: 21, viewport, options: { touch: true } });
+        try {
+          p.rl.newRun({ slot: 1, seed: 21 });
+          p.engine.input.noteTouch();
+          const loot = p.game.ports.loot as RealLoot;
+          // deep, many-lined items: rares and uniques of level 40 (taller tooltips than the screen)
+          const items: Item[] = [];
+          for (let k = 0; k < 5; k++) {
+            const it = loot.give(p.game.services.rng, 40, k % 2 ? 'rare' : 'unique')!;
+            if (loot.add(it)) items.push(it);
+          }
+          expect(items.length).toBeGreaterThan(2);
+          expect(p.rl.ui.open('inventory')).toBe(true);
+          p.engine.step(2);
+          const ui = loot.ui! as unknown as {
+            pickLayout(): { tip: Box; actions: { label: string; rect: Box }[] } | null;
+            cellCenter(where: 'inventory', x: number, y: number): { x: number; y: number };
+            store: { state: { inventory: Parameters<typeof findItem>[0] } };
+          };
+          const { width, height } = p.engine.renderer.resolution;
+          let tall = 0;
+          for (const it of items) {
+            const placed = findItem(ui.store.state.inventory, it.uid)!;
+            const at = ui.cellCenter('inventory', placed.x, placed.y);
+            tapAt(at.x, at.y, p.engine);
+            const layout = ui.pickLayout()!;
+            expect(layout.actions.length, `${it.name}: its buttons`).toBeGreaterThan(0);
+            const { tip } = layout;
+            if (tip.h > height / 2) tall++;
+            // its name, the tooltip's first line, on screen
+            expect(tip.y >= 0 && tip.y + 12 <= height, `${it.name} at ${width}×${height}: the tooltip's first line on screen ${JSON.stringify(tip)}`).toBe(true);
+            for (const a of layout.actions) expect(overlaps(a.rect, tip), `${it.name} at ${width}×${height}: ${a.label} ${JSON.stringify(a.rect)} over the tooltip ${JSON.stringify(tip)}`).toBe(false);
+            tapAt(2, 2, p.engine); // put it down
+          }
+          expect(tall, 'tooltips taller than half the screen were tried').toBeGreaterThan(0);
+          expect(p.engine.errors).toEqual([]);
+        } finally {
+          p.engine.dispose();
+        }
+      }
+    },
+    T,
+  );
+});
+
 describe('in town by touch', () => {
   it(
     'a tap on the interact prompt does what F does (the stash opens); a swipe on an NPC\'s line over its panel ends the talk',
@@ -416,7 +477,15 @@ describe('in town by touch', () => {
       engine.step(2);
       const line = (game as unknown as { touchable: { dialogue: Box | null } }).touchable.dialogue;
       expect(line, 'his line shows').not.toBeNull();
-      expect(stack().length).toBeGreaterThan(0);
+      const talking = stack();
+      expect(talking.length).toBeGreaterThan(0);
+      // the item windows go over his line: a swipe from a window where they cover it is the window's
+      const windows = (game.ports.loot as RealLoot).ui!.rects();
+      const under = windows.map((w) => ({ x: Math.max(w.x, line!.x) + 2, y: Math.max(w.y, line!.y) + 2, w })).find((p) => inside(line!, p.x, p.y) && inside(p.w, p.x, p.y));
+      expect(under, `a window ${JSON.stringify(windows)} over his line ${JSON.stringify(line)}`).toBeDefined();
+      swipe(under!.x, under!.y, 'up');
+      expect(stack(), 'a swipe up from a window over the line: still talking').toEqual(talking);
+      expect(windows.some((w) => inside(w, mid(line!).x, mid(line!).y)), 'its middle shows between the windows').toBe(false);
       swipe(mid(line!).x, mid(line!).y, 'right');
       expect(stack(), 'the talk is over').toEqual([]);
       expect(engine.errors).toEqual([]);
@@ -438,6 +507,45 @@ describe('Settings on a touch screen', () => {
     expect(desk.rl.ui.widgets().map((w) => w.id)).not.toContain('touchAttack');
     desk.engine.dispose();
   });
+
+  it(
+    'a touch on a desktop\'s page (a touchscreen laptop: no touch controls, no assist rows) gets no assist: the hero swings only when told to',
+    async () => {
+      const desk = await headlessRiftlight({ seed: 4, viewport: { width: 1920, height: 1080, dpr: 1 } });
+      try {
+        const { engine, rl, game } = desk;
+        expect(engine.renderer.touchDensity, 'no touch controls').toBe(0);
+        rl.newRun({ slot: 1, seed: 4 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        rl.dev.god = true;
+        engine.step(30);
+        rl.killAll();
+        engine.step(30);
+        const p = game.hero.actor.position;
+        expect(rl.spawn({ seed: 9, x: p.x + 1.6, z: p.z }), 'a monster in reach').toBeTruthy();
+        engine.input.noteTouch();
+        engine.step(2);
+        rl.ui.open('settings');
+        engine.step(2);
+        expect(rl.ui.widgets().map((w) => w.id), 'Settings has no rows for them').not.toContain('touchAttack');
+        rl.ui.close();
+        engine.step(2);
+        const swings: boolean[] = [];
+        const step = game.hero.fixedUpdate.bind(game.hero);
+        const spy = vi.spyOn(game.hero, 'fixedUpdate').mockImplementation((dt: number, i: HeroIntent) => (swings.push(i.attack), step(dt, i)));
+        engine.input.noteTouch();
+        engine.step(20);
+        spy.mockRestore();
+        expect(engine.input.device).toBe('touch');
+        expect(swings.length).toBeGreaterThan(0);
+        expect(swings.some(Boolean), 'no auto attack').toBe(false);
+      } finally {
+        desk.engine.dispose();
+      }
+    },
+    T,
+  );
 });
 
 describe('a touch session replays', () => {
@@ -461,6 +569,41 @@ describe('a touch session replays', () => {
         engine.step(60);
         const live = engine.fingerprint();
         const rec = JSON.parse(JSON.stringify(engine.recording())) as Parameters<typeof engine.replay>[0];
+        await engine.replay(rec, () => engine.loadGame(makeRiftlight(game.store, engine.seed)));
+        expect(engine.fingerprint()).toBe(live);
+        expect(engine.errors).toEqual([]);
+      } finally {
+        engine.dispose();
+      }
+    },
+    T,
+  );
+
+  it(
+    'from a save-state: a tap on a loot label in its first frame hits the label the replay saw too (what a finger can tap is in the snapshot)',
+    async () => {
+      const { engine, game, rl } = await headlessRiftlight({ seed: 78, viewport: VIEW, options: { touch: true } });
+      try {
+        rl.newRun({ slot: 1, seed: 78 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        engine.input.noteTouch();
+        engine.step(30);
+        const loot = game.ports.loot as RealLoot;
+        const p = game.hero.actor.position;
+        loot.spawn([{ kind: 'item', item: loot.give(game.services.rng, 1)! }], new Vector3(p.x + 2.5, 0, p.z), game.level!, game.services.rng);
+        engine.step(40);
+        const labels = (game as unknown as { touchable: { loot: { id: number; rect: Box }[] } }).touchable.loot;
+        expect(labels.length, 'its label shows').toBeGreaterThan(0);
+        const at = mid(labels[0]!.rect);
+        const before = rl.state().loot.items;
+        await engine.restore(await engine.snapshot()); // the recording starts at this moment
+        tapAt(at.x, at.y, engine); // its first frame
+        engine.step(150);
+        expect(rl.state().loot.items, 'live: picked up').toBe(before - 1);
+        const live = engine.fingerprint();
+        const rec = JSON.parse(JSON.stringify(engine.recording())) as Parameters<typeof engine.replay>[0];
+        expect(rec.from, 'a recording from a save-state').toBeDefined();
         await engine.replay(rec, () => engine.loadGame(makeRiftlight(game.store, engine.seed)));
         expect(engine.fingerprint()).toBe(live);
         expect(engine.errors).toEqual([]);

@@ -771,13 +771,25 @@ export class ItemsUi {
    * What a finger can do with the item it picked, as buttons a thumb can hit (no hidden gestures):
    * `use` the right-click's (Equip, Unequip, Use, Socket, Take out, To bag, Buy), `quick` the
    * Ctrl-click's where it differs (To stash, Sell), `move` the click's (pick it up to put it
-   * elsewhere). In a row under its tooltip (over it without room), each as tall as a thumb's target
-   * (`tapArt`). Pure layout from the windows' state: a replay hits the same buttons.
+   * elsewhere), each as tall as a thumb's target (`tapArt`), placed with its tooltip (`pickLayout`).
+   * Pure layout from the windows' state: a replay hits the same buttons.
    */
   touchActions(): { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] {
+    return this.pickLayout()?.actions ?? [];
+  }
+
+  /**
+   * A finger's picked item laid out: its tooltip where it was tapped and its action buttons (in
+   * rows on a narrow screen) under the tooltip, else over it; with room for neither (a tall
+   * tooltip on a phone) the row at the top of the screen and the tooltip moved down under it, its
+   * last lines cut off by the screen's edge rather than its name by the buttons. Never over each other.
+   */
+  private pickLayout(): { item: Item; at: Target; lines: TipLine[]; tip: Rect; actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] } | null {
     const p = this.picked();
-    if (!p) return [];
+    if (!p) return null;
     const { item, at } = p;
+    const lines = this.tipLines(item, at);
+    const tip = this.tipRect(lines, p.x, p.y);
     const acts: { id: 'use' | 'quick' | 'move'; label: string }[] = [];
     const inBag = at.kind === 'grid' && at.where === 'inventory';
     const use =
@@ -802,7 +814,7 @@ export class ItemsUi {
     if (inBag && this.left === 'stash') acts.push({ id: 'quick', label: t('item.act.to_stash') });
     if (inBag && this.left === 'vendor') acts.push({ id: 'quick', label: t('item.act.sell') });
     if (at.kind !== 'vendor' && this.left !== 'bench') acts.push({ id: 'move', label: t('item.act.move') });
-    if (!acts.length) return [];
+    if (!acts.length) return { item, at, lines, tip, actions: [] };
     const h = Math.max(14, tapArt(this.ctx.engine.renderer));
     const gap = 3;
     const room = this.size.w - 2;
@@ -820,19 +832,25 @@ export class ItemsUi {
       used += gap + w;
     });
     const tall = rows.length * h + (rows.length - 1) * gap;
-    const tip = this.tipRect(this.tipLines(item, at), p.x, p.y);
-    let y = tip.y + tip.h + 2;
-    if (y + tall > this.size.h - 1) y = Math.max(1, tip.y - tall - 2);
-    const out: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] = [];
+    let y = tip.y + tip.h + 2; // under the tooltip
+    if (y + tall > this.size.h - 1) {
+      y = tip.y - tall - 2; // over it
+      if (y < 1) {
+        // room for neither: the row at the top, the tooltip under it
+        y = 1;
+        tip.y = Math.max(tip.y, y + tall + 2);
+      }
+    }
+    const actions: { id: 'use' | 'quick' | 'move'; label: string; rect: Rect }[] = [];
     rows.forEach((row, r) => {
       const total = row.reduce((s, i) => s + widths[i]!, 0) + gap * (row.length - 1);
       let x = Math.max(1, Math.min(this.size.w - total - 1, Math.round(tip.x + tip.w / 2 - total / 2)));
       for (const i of row) {
-        out.push({ ...acts[i]!, rect: { x, y: y + r * (h + gap), w: widths[i]!, h } });
+        actions.push({ ...acts[i]!, rect: { x, y: y + r * (h + gap), w: widths[i]!, h } });
         x += widths[i]! + gap;
       }
     });
-    return out;
+    return { item, at, lines, tip, actions };
   }
 
   /** A button of the picked item's action row (`touchActions`), on the item where it was picked. */
@@ -1693,11 +1711,12 @@ export class ItemsUi {
       }
       this.drawItem(p, this.held.item, cx - Math.floor((s.w * CELL) / 2), cy - Math.floor((s.h * CELL) / 2), s.w * CELL - 1, s.h * CELL - 1);
     } else {
-      // a finger's picked item: its tooltip where it was tapped, and its row of action buttons
-      const picked = this.picked();
-      const shown = picked ? { item: picked.item, at: picked.at } : this.tipTarget(t);
-      if (shown) this.drawTip(p, shown.item, shown.at, picked ? picked.x : cx, picked ? picked.y : cy);
-      for (const a of this.touchActions()) {
+      // a finger's picked item: its tooltip where it was tapped, and its row of action buttons clear of it
+      const picked = this.pickLayout();
+      const shown = picked ? null : this.tipTarget(t);
+      if (picked) drawTooltip(p, picked.tip.x, picked.tip.y, picked.lines);
+      else if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
+      for (const a of picked?.actions ?? []) {
         panel(p, a.rect.x, a.rect.y, a.rect.w, a.rect.h, UI.title);
         shadowText(p, a.rect.x + Math.floor((a.rect.w - textWidth(a.label)) / 2), a.rect.y + Math.floor((a.rect.h - 7) / 2), a.label, PALETTE.white);
       }
