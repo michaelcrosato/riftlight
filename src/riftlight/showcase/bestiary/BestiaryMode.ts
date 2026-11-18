@@ -637,9 +637,18 @@ export class BestiaryMode implements ShowcaseMode {
     const cam = ctx.engine.camera.camera;
     const list = this.entries;
     const kills = list.reduce((s, e) => s + e.kills, 0);
-    ui.text(ui.w / 2, 4, t('showcase.bestiary.name'), { align: 'center', color: 'sand', shadow: 'ink' });
+    const boxes = controlBoxes(this.host.game);
+    const name = t('showcase.bestiary.name');
     const counts = { species: t('showcase.bestiary.species', { count: list.length }), kills: t('showcase.bestiary.kills', { count: kills }) };
-    ui.mini(ui.w / 2, 13, this.wings > 1 ? t('showcase.bestiary.summary_wing', { ...counts, wing: this.page + 1, wings: this.wings }) : t('showcase.bestiary.summary', counts), 'mist', 'center');
+    const summary = this.wings > 1 ? t('showcase.bestiary.summary_wing', { ...counts, wing: this.page + 1, wings: this.wings }) : t('showcase.bestiary.summary', counts);
+    // the name and the counts centred along the top; beside a phone's ≡ (top left) where they would
+    // run under it (a phone held upright, a long language), else under it
+    const corner = boxes.filter((b) => b.y < ui.h / 4 && b.x < ui.w / 2).reduce((c, b) => ({ right: Math.max(c.right, b.x + b.w + 2), bottom: Math.max(c.bottom, b.y + b.h + 2) }), { right: 0, bottom: 0 });
+    const wide = Math.max(ui.measure(name), miniCovers(summary) ? miniWidth(summary) : ui.measure(summary));
+    const beside = ui.w / 2 - wide / 2 >= corner.right ? ui.w / 2 : wide <= ui.w - 2 - corner.right ? Math.floor((corner.right + ui.w - 2) / 2) : null;
+    const headY = beside === null ? corner.bottom : 4;
+    ui.text(beside ?? ui.w / 2, headY, name, { align: 'center', color: 'sand', shadow: 'ink' });
+    ui.mini(beside ?? ui.w / 2, headY + 9, summary, 'mist', 'center');
     if (this.view === 'walk' || this.view === 'fly') {
       // plaques over the exhibits near the camera
       for (const ex of this.exhibits) {
@@ -658,14 +667,20 @@ export class BestiaryMode implements ShowcaseMode {
         ui.mini(x, y + 1, plaque, 'mist', 'center');
       }
       if (!list.length) {
-        ui.text(ui.w / 2, ui.h / 2 - 20, t('showcase.bestiary.empty'), { align: 'center', color: 'mist', shadow: 'ink' });
-        wrap(t('showcase.bestiary.empty_hint'), ui.w - 16).forEach((l, i) => ui.text(ui.w / 2, ui.h / 2 - 8 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
+        // both wrapped to the screen (a phone held upright, a long language), in the middle of it, the
+        // hint under the title's last row; lifted over a phone's controls under their columns (sideways)
+        const title = wrap(t('showcase.bestiary.empty'), ui.w - 16);
+        const hint = wrap(t('showcase.bestiary.empty_hint'), ui.w - 16);
+        const blockW = Math.max(...[...title, ...hint].map((l) => ui.measure(l)));
+        const blockH = (title.length + hint.length) * 9 + 3;
+        const y0 = Math.max(headY + 20, clearAbove(boxes, ui.w / 2, blockW + 4, Math.round(ui.h / 2) - 8 + hint.length * 9, blockH));
+        title.forEach((l, i) => ui.text(ui.w / 2, y0 + i * 9, l, { align: 'center', color: 'mist', shadow: 'ink' }));
+        hint.forEach((l, i) => ui.text(ui.w / 2, y0 + title.length * 9 + 3 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
       }
       // a phone has no button to fly with: its hints leave it out
       const touch = ctx.engine.controls.device === 'touch';
       const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
       // the hints along the bottom: between a phone's stick and its buttons where they leave room, else over them
-      const boxes = controlBoxes(this.host.game);
       const top = drawHints(ui, hintsAt(ui, help, boxes, ui.h - 9), 'mist');
       const near = this.view === 'walk' ? this.nearest() : null;
       if (near) {
