@@ -77,7 +77,8 @@ Every sound plays on one of three buses under the game's master gain: `sfx` (the
 every sound but music, looping voices included), `music` (songs, and music from audio files:
 `play('theme', { bus: 'music' })`, `loop('theme', { bus: 'music' })`) and `speaker` (the
 controller's speaker, below). Nothing else makes sound: `npm run lint` refuses an
-`AudioContext`, `new Audio()` or `speechSynthesis` outside `AudioManager.ts`.
+`AudioContext`, `new Audio()`, `createElement('audio' | 'video')` or `speechSynthesis` outside
+`AudioManager.ts`.
 
 In 52in1 (`window.AIHubSettings`, docs/engine/hub.md *The player's settings*) the engine sets
 `audio.setHubVolumes({ music, effects })` at start and on every `change`: the music bus plays at
@@ -89,6 +90,7 @@ speakers). `audio.levels` is what the gains are (`{ master, sfx, music }`, headl
 
 The `speaker` bus plays from a DualSense's speaker while the player allows it
 (`dualsense.speaker`): the engine hands `audio.useSpeaker` the hub's `openSpeaker`, which gives a
-node in the game's AudioContext once audio unlocks. Until then, and without one, the bus plays
-with the other sounds at the same volume (`audio.speakerRouted` says which). Use it for what
+node in the game's AudioContext once audio unlocks. Until then, and without one (an opener that
+throws or gives no node too: audio still unlocks), the bus plays with the other sounds at the same
+volume (`audio.speakerRouted` says which). Use it for what
 belongs in the player's hands: a radio call, a reload, a ringing phone.

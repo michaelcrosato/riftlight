@@ -202,4 +202,36 @@ describe('AudioManager buses: music, sfx and the controller’s speaker', () => 
     expect(w.buses.speaker.outs).toEqual([w.master]);
     audio.dispose();
   });
+
+  it('a speaker opener that throws, gives no promise or no node only leaves the speaker bus with the other sounds', async () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    FakeContext.made = [];
+    const audio = new AudioManager(new EventTarget());
+    audio.useSpeaker(() => {
+      throw new Error('the hub lost the controller');
+    });
+    audio.unlock();
+    const ctx = FakeContext.made[0]!;
+    expect(FakeContext.made, 'one context, kept').toHaveLength(1);
+    expect(audio.context, 'audio still plays').toBe(ctx);
+    const w = wired(audio);
+    expect(w.buses.speaker.outs).toEqual([w.master]);
+    expect(audio.play('coin', { bus: 'speaker' })).toBe(true);
+    type Opener = (c: AudioContext) => Promise<AudioNode | null>;
+    const settle = () => new Promise((r) => setTimeout(r, 0));
+    for (const broken of [() => 'not a node, nor a promise', async () => ({ notANode: true })]) {
+      audio.useSpeaker(broken as unknown as Opener);
+      await settle();
+      expect(audio.context).toBe(ctx);
+      expect(audio.speakerRouted).toBe(false);
+      expect(w.buses.speaker.outs).toEqual([w.master]);
+    }
+    const controller = new FakeNode();
+    audio.useSpeaker((() => controller) as unknown as Opener); // a node without a promise works
+    await settle();
+    expect(audio.speakerRouted).toBe(true);
+    expect(w.buses.speaker.outs).toEqual([w.speakerOut]);
+    expect(w.speakerOut!.outs).toEqual([controller]);
+    audio.dispose();
+  });
 });

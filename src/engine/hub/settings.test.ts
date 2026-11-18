@@ -145,6 +145,7 @@ describe('DualSense', () => {
     ds.trigger('both', null);
     ds.trigger('both', { kind: 'vibrate', from: 0, strength: 0.5, frequency: 900 });
     expect(triggers(hub.calls)).toEqual([
+      ['left', null], // turned on: what is wanted on each side (the hub had them), a let-go too
       ['right', bow],
       ['left', { kind: 'weapon', from: 0.4, to: 0.4, strength: 1 }],
       ['both', null],
@@ -168,6 +169,33 @@ describe('DualSense', () => {
     ds.light('#ffffff'); // after the end: nothing
     ds.trigger('left', gun);
     expect(hub.calls.slice(-2)).toEqual([['light', '#0000ff'], ['light', null]]);
+    expect(ds.sent).toEqual({ light: null, left: null, right: null });
+  });
+
+  it('lets go even while the player has the extras off, and sends what is wanted, a let-go too, once they are on again', () => {
+    const hub = fakeHub();
+    const ds = new DualSense(new HubSettings(hub.source));
+    const gun: TriggerEffect = { kind: 'weapon', from: 0.3, to: 0.6, strength: 0.8 };
+    ds.light('#ff0000');
+    ds.trigger('right', gun);
+    hub.change({ ds: { lightbar: false, triggers: false } }); // the player takes them back
+    const mark = hub.calls.length;
+    ds.trigger('right', null); // its use ends while the hub has the triggers
+    ds.release(); // a level unloads
+    ds.light(null); // asked again, every frame: sent once
+    ds.trigger('both', null);
+    expect(hub.calls.slice(mark)).toEqual([['trigger', 'right', null], ['light', null]]);
+    ds.light('#00ff00'); // a colour is not sent while the hub has the light bar
+    expect(hub.calls.slice(mark)).toHaveLength(2);
+    hub.change({ ds: { lightbar: true, triggers: true } });
+    expect(hub.calls.slice(mark + 2)).toEqual([['light', '#00ff00'], ['trigger', 'both', null]]);
+    // off again, everything given back (a round's close), on again: the hub hears the nulls
+    hub.change({ ds: { lightbar: false, triggers: false } });
+    ds.trigger('left', gun);
+    ds.close();
+    hub.calls.length = 0;
+    hub.change({ ds: { lightbar: true, triggers: true } });
+    expect(hub.calls).toEqual([['light', null], ['trigger', 'both', null]]);
     expect(ds.sent).toEqual({ light: null, left: null, right: null });
   });
 

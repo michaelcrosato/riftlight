@@ -34,7 +34,7 @@ const RULES = [
   // ctx.audio's buses, which follow the player's music and effects volumes, and the hub holds the
   // controller and the microphone.
   {
-    re: /\bnew\s+(webkit)?AudioContext\b|\bnew\s+Audio\s*\(|\bspeechSynthesis\b/,
+    re: /\bnew\s+(webkit)?AudioContext\b|\bnew\s+Audio\s*\(|\bcreateElement\s*\(\s*['"`](audio|video)['"`]|\bspeechSynthesis\b/,
     why: "play sound through ctx.audio (AudioManager): its buses follow the player's 52in1 music and effects volumes",
     only: /^src\/engine\/audio\/AudioManager\.ts$/,
   },

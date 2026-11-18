@@ -6,10 +6,12 @@
  * (`navigator.hid`): the hub holds it.
  *
  * A game says what it wants, whenever it likes (every frame is fine): the controller is sent only
- * what changed, only while the player allows it, and what was wanted is sent again when the player
- * turns the extra back on. Outside 52in1, headless and during a replay nothing is sent (outputs are
- * not recorded). The engine lets the triggers go while it is paused, lets both go and gives the
- * light back when a level unloads, and for good when a round ends or the engine is disposed.
+ * what changed, only while the player allows it, and what was wanted is sent again (a let-go too)
+ * when the player turns the extra back on. Letting go is sent even while an extra is off (it is
+ * harmless), so a light or trigger given back then is never left stale. Outside 52in1, headless
+ * and during a replay nothing is sent (outputs are not recorded). The engine lets the triggers go
+ * while it is paused, lets both go and gives the light back when a level unloads, and for good
+ * when a round ends or the engine is disposed.
  */
 import type { DualSenseFlags, HubSettings, TriggerEffect, TriggerSide } from './settings';
 
@@ -22,6 +24,7 @@ export interface DualSenseSent {
 
 type Side = 'left' | 'right';
 const SIDES: readonly Side[] = ['left', 'right'];
+type Output = 'light' | Side;
 
 /** `colour` as '#rrggbb' (a '#RRGGBB' string or a 0xRRGGBB number, as PALETTE holds), null for none, undefined when it is neither. */
 export function lightColour(colour: string | number | null): string | null | undefined {
@@ -50,6 +53,12 @@ export class DualSense {
   /** What the game asked for last. */
   private readonly want: { light: string | null; left: TriggerEffect | null; right: TriggerEffect | null } = { light: null, left: null, right: null };
   private readonly out: { light: string | null; left: TriggerEffect | null; right: TriggerEffect | null } = { light: null, left: null, right: null };
+  /**
+   * The outputs the hub had since they were last sent (the player had the extra off, or no DualSense
+   * was connected): what the controller shows there is not known, so `want` is sent again once
+   * the extra is back on, even when it is null.
+   */
+  private readonly gated = new Set<Output>();
   private held = false;
   private closed = false;
   private readonly warned = new Set<string>();
@@ -80,7 +89,8 @@ export class DualSense {
   /**
    * Colour the light bar: '#RRGGBB' or a 0xRRGGBB number (`PALETTE.red`); null gives it back to
    * the hub, which glows it in the game's cabinet colour. It should say something: health, the
-   * team, a warning. Sent only while the player lets games colour it, and only when it changes.
+   * team, a warning. Sent only while the player lets games colour it (giving it back always), and
+   * only when it changes.
    */
   light(colour: string | number | null): void {
     if (this.closed || !this.live()) return;
@@ -92,8 +102,8 @@ export class DualSense {
 
   /**
    * Push back on L2 (`left`), R2 (`right`) or `both` (`TriggerEffect`); null lets it go. Let a
-   * trigger go when its use ends. Sent only while the player has trigger effects on (the hub
-   * scales `strength` by the player's setting), and only when it changes.
+   * trigger go when its use ends. Sent only while the player has trigger effects on (letting go
+   * always; the hub scales `strength` by the player's setting), and only when it changes.
    */
   trigger(which: TriggerSide, effect: TriggerEffect | null): void {
     if (this.closed || !this.live()) return;
@@ -138,28 +148,39 @@ export class DualSense {
     this.sync();
   }
 
-  /** Send the controller what changed between what is wanted (and allowed) and what it has. */
+  /**
+   * Send the controller what changed between what is wanted (and allowed) and what it has. While an
+   * extra is off only a let-go goes (harmless, and the hub may keep what it was sent last); once it
+   * is on again what is wanted is sent whatever was sent before.
+   */
   private sync(): void {
     const flags = this.flags;
     const ds = this.hub.source?.dualsense;
-    if (!flags.lightbar) this.out.light = null; // the hub has it while games may not colour it
-    else if (this.want.light !== this.out.light && typeof ds?.light === 'function') {
-      this.out.light = this.want.light;
-      ds.light(this.want.light);
-    }
-    if (!flags.triggers) {
-      this.out.left = this.out.right = null;
-      return;
+    if (typeof ds?.light === 'function') {
+      const want = this.want.light;
+      let send: boolean;
+      if (!flags.lightbar) {
+        this.gated.add('light'); // the hub has it while games may not colour it: only a let-go goes
+        send = want === null && this.out.light !== null;
+      } else send = this.gated.delete('light') || want !== this.out.light;
+      if (send) {
+        this.out.light = want;
+        ds.light(want);
+      }
     }
     if (typeof ds?.trigger !== 'function') return;
     const target = (side: Side) => (this.held ? null : this.want[side]);
-    const changed = SIDES.filter((side) => key(target(side)) !== key(this.out[side]));
-    if (changed.length === 2 && key(target('left')) === key(target('right'))) {
+    let sides: Side[];
+    if (!flags.triggers) {
+      for (const side of SIDES) this.gated.add(side);
+      sides = SIDES.filter((side) => target(side) === null && this.out[side] !== null);
+    } else sides = SIDES.filter((side) => this.gated.delete(side) || key(target(side)) !== key(this.out[side]));
+    if (sides.length === 2 && key(target('left')) === key(target('right'))) {
       this.out.left = this.out.right = target('left');
       ds.trigger('both', target('left'));
       return;
     }
-    for (const side of changed) {
+    for (const side of sides) {
       this.out[side] = target(side);
       ds.trigger(side, target(side));
     }

@@ -181,6 +181,7 @@ export class AudioManager {
       }
       this.resume();
     } catch {
+      void this.context?.close().catch(() => {});
       this.context = null; // no audio device: stay silent
     }
   }
@@ -480,11 +481,19 @@ export class AudioManager {
     const ctx = this.context;
     const open = this.speakerOpen;
     if (!ctx || !open || this.disposed) return;
-    open(ctx).then(
+    // no speaker, or an opener that throws or gives no promise or no node: the bus plays with the
+    // other sounds (never in unlock()'s way)
+    let opening: Promise<AudioNode | null>;
+    try {
+      opening = Promise.resolve(open(ctx));
+    } catch {
+      return;
+    }
+    opening.then(
       (node) => {
         if (token === this.speakerToken && this.context === ctx && node) this.connectSpeaker(node);
       },
-      () => {}, // no speaker: the bus plays with the other sounds
+      () => {},
     );
   }
 
@@ -494,12 +503,18 @@ export class AudioManager {
     if (!ctx || !bus || !this.master || node === this.speakerNode) return;
     bus.disconnect();
     this.speakerOut?.disconnect();
+    this.speakerNode = null;
     if (node) {
-      this.speakerOut ??= ctx.createGain();
-      this.speakerOut.connect(node);
-      bus.connect(this.speakerOut);
-    } else bus.connect(this.master);
-    this.speakerNode = node;
+      try {
+        this.speakerOut ??= ctx.createGain();
+        this.speakerOut.connect(node);
+        bus.connect(this.speakerOut);
+        this.speakerNode = node;
+      } catch {
+        this.speakerOut?.disconnect(); // not a node this context reaches: with the other sounds
+      }
+    }
+    if (!this.speakerNode) bus.connect(this.master);
     this.applyVolumes();
   }
 

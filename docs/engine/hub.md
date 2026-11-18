@@ -89,7 +89,9 @@ own language.
 
 `end` is the last message of a round: the session delivers it, sets the engine's game speed to 0
 (frames still run, so the game reads the `end` command; nothing moves and presses are dropped),
-mutes it (without saving the mute: `audio.persist` off) and stops sending; `onEnd(fn)` runs after.
+mutes it (without saving the mute: `audio.persist` off), closes the DualSense
+(`engine.dualsense.close()`: the light bar given back to the hub, the triggers let go, the game's
+later `ctx.dualsense` calls ignored) and stops sending; `onEnd(fn)` runs after.
 A game must not set its speed again after the end. A shared world whose host leaves ends
 `host-left`, void.
 
@@ -170,7 +172,9 @@ ctx.audio.play('radio', { bus: 'speaker' });               // the controller's s
 ```
 
 Call them as often as you like: the controller is sent only what changed, and what the game
-wants is sent again when the player turns an extra back on. They are outputs: nothing is sent
+wants is sent again, a let-go too, when the player turns an extra back on (or plugs the controller
+in again). Letting go (`null`) is sent even while an extra is off, so nothing given back then stays
+on the controller. They are outputs: nothing is sent
 outside 52in1, headless or during a replay. The engine lets the triggers go while it is paused,
 lets both go and gives the light back (`light(null)`) when a level unloads, and for good at a
 round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,

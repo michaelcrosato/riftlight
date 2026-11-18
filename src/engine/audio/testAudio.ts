@@ -11,6 +11,7 @@ export class FakeParam {
 export class FakeNode {
   readonly outs: FakeNode[] = [];
   connect<T extends FakeNode>(n: T): T {
+    if (!(n instanceof FakeNode)) throw new TypeError('connect: not an AudioNode'); // as Web Audio does
     this.outs.push(n);
     return n;
   }
