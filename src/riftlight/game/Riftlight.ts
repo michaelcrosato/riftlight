@@ -1274,7 +1274,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
     // a finger aims by itself (the nearest enemy ahead); the mouse aims where it points
-    const mouseAim = !this.padGlyphs() && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
+    const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
     const hp = this.hero.actor.position;
     if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
     else i.aim.copy(this.autoAim());
@@ -1325,18 +1325,19 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90;
   }
 
-  /** Prompts show the pad's buttons: the pad is the input used last (`input.device`; a pad merely connected is not). */
+  /** Prompts show the pad's buttons: the pad is the input used last (`controls.device`; a pad merely connected is not). */
   padGlyphs(): boolean {
     return this.controlDevice() === 'pad';
   }
 
   /**
-   * The device prompts name controls for (`{key:action}` in a line, glyphs): the engine's input
-   * used last, recorded, so a replay shows (and aims) the same. The keyboard and mouse, the pad, or
-   * a touch screen's buttons.
+   * The device prompts name controls for (glyphs, as `{key:action}` in a line does): the engine's
+   * (`engine.controls.device`), the input used last, except that a touch names the keys while no
+   * touch controls show (a tap on a touch-screen laptop). The keyboard and mouse, the pad, or a touch
+   * screen's buttons. Prompts only: what steers aim reads `input.device`, which is recorded.
    */
   controlDevice(): ControlDevice {
-    return this.ctx.input.device;
+    return this.ctx.engine.controls.device;
   }
 
   update(ctx: GameContext, dt: number): void {

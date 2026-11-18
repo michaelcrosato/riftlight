@@ -124,8 +124,9 @@ the sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad 
 opens or closes reads as up until let go, and a stick held then reads centred until it goes back
 inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
 leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero
-after. It stays shut while a replay plays; a replay never saves settings (`persist`) and puts the
-player's back when it ends.
+after. Options (Esc) opens it at the end of the frame it was pressed on, so that frame runs with the
+keys still held, as it was recorded (a replay, which never opens it, runs it the same). It stays shut
+while a replay plays; a replay never saves settings (`persist`) and puts the player's back when it ends.
 
 A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
 on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off with a

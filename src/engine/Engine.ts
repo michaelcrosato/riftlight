@@ -1551,7 +1551,8 @@ export class Engine {
       this.input.clearQueued(); // presses made during a pause never fire later
     }
 
-    if (this.ready) this.handleSettingsKeys(dt);
+    const settingsOpen = this.ready && this.settings.isOpen;
+    if (settingsOpen) this.updateSettings(dt);
     // hotkeys work while paused (not in the settings, whose keys they are, nor while a level loads)
     if (this.ready && !this.settings.isOpen) this.handleDebugKeys();
     this.input.wantsPointerLock = this.camera.preset === 'first' || (this.camera instanceof FreeRig && !this.camera.fixed);
@@ -1565,6 +1566,10 @@ export class Engine {
       }
     }
     if (this.disposed) return; // a game hook disposed the engine during this frame
+    // Options (Esc) opens the panel once this frame has run as it was recorded (its keys still
+    // held): a replay never opens it, so the frame must not run with them let go. Not on the
+    // frame the panel closed (the Esc that closed it).
+    if (this.ready && !settingsOpen) this.openSettingsOnKey();
     this.renderer.screen.update(dt, this.camera.camera); // transitions run on real time, loads included
     this.renderer.render();
     this.hud.sync(this.renderer.resolution, this.renderer.framing);
@@ -1595,15 +1600,20 @@ export class Engine {
   }
 
   /**
-   * The settings panel's frame: its keys and the pad while it is open (`dt`: real seconds, for key
-   * repeat), and Options (Esc) opening it for a game that asked (`settings.padButton`). Never during
-   * a replay: its input plays on untouched.
+   * The settings panel's frame while it is open: its keys and the pad (`dt`: real seconds, for key
+   * repeat). Never during a replay: its input plays on untouched.
    */
-  private handleSettingsKeys(dt: number): void {
-    const panel = this.settingsPanel;
-    if (!panel || this.input.playing) return;
-    if (this.settings.isOpen) panel.update(dt);
-    else if (this.settingsKeys && this.input.wasPressed('PadStart', 'Escape')) this.settings.open();
+  private updateSettings(dt: number): void {
+    if (this.settingsPanel && !this.input.playing) this.settingsPanel.update(dt);
+  }
+
+  /**
+   * Options (Esc) opens the settings panel for a game that asked (`settings.padButton`), at the end
+   * of the frame it was pressed on (`tick()`). Never during a replay.
+   */
+  private openSettingsOnKey(): void {
+    if (!this.settingsPanel || !this.settingsKeys || this.input.playing || this.settings.isOpen) return;
+    if (this.input.wasPressed('PadStart', 'Escape')) this.settings.open();
   }
 
   private handleDebugKeys(): void {

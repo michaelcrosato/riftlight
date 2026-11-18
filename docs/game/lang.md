@@ -56,7 +56,7 @@ never imports the line list), and areas stay function declarations.
 - **Controls** are tags, `{key:dodge}`, never a key written into the sentence. `CONTROLS`
   (`game/controls.ts`) maps each action to its key, pad button and touch button; it is
   `Riftlight.controls` (and the standalone Rift Runner's), so the engine names them on the device
-  in use (`input.device`) and in the player's button style (PlayStation's by default, Xbox's when
+  in use (`engine.controls.device`) and in the player's button style (PlayStation's by default, Xbox's when
   chosen). The names are Riftlight's lines under the engine's ids (`key.space`, `pad.ps.cross`,
   `pad.lb`, `pad.xbox.menu`, `pad.stick.left`, `key.touch.tap`: docs/engine/game-api.md *Prompts*).
 - **Notes** say who speaks, to whom, where it shows; **max** the width of a tight spot (a button).

@@ -112,7 +112,7 @@ export class UiCanvas {
   readonly pointer = { x: -1, y: -1, down: false, used: false };
   /** Animation clock for blinking carets, glints... (seconds). */
   time = 0;
-  /** The device prompts are for (the engine's `input.device`, the input used last): the shell sets it each frame. */
+  /** The device prompts are for (the engine's `controls.device`, the input used last): the shell sets it each frame. */
   device: InputDevice = 'keyboard';
   /** The pad's buttons prompts show (`settings.padGlyphs`): PlayStation's unless the player chose Xbox. */
   padStyle: PadGlyphs = 'playstation';

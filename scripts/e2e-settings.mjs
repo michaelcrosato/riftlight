@@ -29,7 +29,9 @@
 //   touch    (a phone, touch controls on) a tap on the ⚙ opens it, the legend says Tap and Swipe
 //            (Tap · Change a hint, not a button), a tap on ▶ changes a row, a quick swipe down
 //            closes it
-//   replay   the settings stay shut while a replay plays (its input must play on untouched)
+//   replay   the settings stay shut while a replay plays (its input must play on untouched); a run
+//            recorded live that opens the panel with Options while D is held replays to the same
+//            state (the frame Options was pressed on runs as recorded, D still held)
 //
 // Frames land in .scratch/e2e/settings-*.png (the panel as the player sees it).
 import { fileURLToPath } from 'node:url';
@@ -366,6 +368,42 @@ export async function runSettings(h) {
       return shut;
     });
     check(!duringReplay.open && !duringReplay.paused, `the settings stay shut while a replay plays, and the game unpaused (open ${duringReplay.open}, paused ${duringReplay.paused})`);
+    // a run that opens the panel with Options while walking replays to the same state: a replay
+    // never opens it, so the frame Options was pressed on must run as recorded (D held), the
+    // panel opening (and letting go of D) after it
+    await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const pad = { connected: true, mapping: 'standard', index: 0, id: 'fake', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, () => ({ pressed: false, value: 0 })) };
+      window.__pad = pad;
+      window.__realPads = navigator.getGamepads;
+      navigator.getGamepads = () => [pad];
+      await e.loadGame(new e.game.constructor()); // a fresh level: its recording starts here
+    });
+    await page.keyboard.down('KeyD');
+    await waitFrames(page, 20);
+    await E(() => ((window.__pad.buttons[9].pressed = true), (window.__pad.buttons[9].value = 1))); // Options, D still held
+    await until(page, (e) => e.settings.isOpen && e.paused);
+    const walkedRun = await E(() => {
+      const e = window.__PIXEL_ENGINE__;
+      window.__pad.buttons[9].pressed = false;
+      window.__pad.buttons[9].value = 0;
+      const rec = e.recording();
+      return { print: e.fingerprint(), frames: rec.frames.length, held: rec.frames.some((f) => f.held?.includes('KeyD')), options: rec.frames.findIndex((f) => f.pressed?.includes('PadStart')) };
+    });
+    await page.keyboard.up('KeyD');
+    const replayed = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const rec = JSON.parse(JSON.stringify(e.recording()));
+      await e.replay(rec, () => e.loadGame(new e.game.constructor()));
+      const print = e.fingerprint();
+      navigator.getGamepads = window.__realPads;
+      e.manual = false; // live again
+      return { print, open: e.settings.isOpen };
+    });
+    check(
+      walkedRun.held && walkedRun.options === walkedRun.frames - 1 && replayed.print === walkedRun.print && !replayed.open,
+      `a run that opens the panel with Options while D is held replays to the same state (${walkedRun.frames} frames, Options on the last: ${walkedRun.options === walkedRun.frames - 1}; ${walkedRun.print} vs ${replayed.print})`,
+    );
     checkClean(await state(page), logs, 'settings: ');
 
     // ---------------------------------------------------------------- a phone: taps and swipes

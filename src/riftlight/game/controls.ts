@@ -113,7 +113,7 @@ export const CONTROLS = {
 } as const satisfies ControlTable;
 export type ControlAction = keyof typeof CONTROLS;
 
-/** The device prompts name controls for (the engine's `input.device`). */
+/** The device prompts name controls for (the engine's `controls.device`: the input used last; a touch is the keys' without touch controls). */
 export type ControlDevice = InputDevice;
 
 /** A key's name on a key cap, in the game's language: the short form when there is one (`Space` → Spc). */
