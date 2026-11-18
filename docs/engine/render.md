@@ -88,7 +88,11 @@ everything but the final copy.
   memory pressure. `PixelRenderer` notices (`device.lost`), builds a new renderer, canvas, scene passes and pipeline for the same
   scene, camera, filters and framing, re-attaches pointer input and keeps the loop going
   (`state().gpuRecoveries`). If that fails, or happens more than 3 times in 30 s, it shows a
-  "tap to reload" overlay.
+  "tap to reload" overlay. When the GPU process dies (an out-of-memory kill) while three builds
+  pipelines, their error scopes (popped in three with no catch) would reject unhandled
+  (`OperationError: Instance dropped in popErrorScope`), which a page counting errors (52in1's
+  session harness) takes for one: the compat shim settles exactly those, on a lost device, as
+  empty scopes (`render/deviceLoss.ts`, counted in `renderer.droppedScopes`).
 - **Start-up.** `Game.assets` lists the models `setup` loads; `Engine.start` begins those
   downloads, the renderer (adapter/device) and Rapier's wasm in parallel, behind a
   pixel-styled loading bar (`LoadingScreen`; `index.html` ships its first frame). The scene
@@ -100,7 +104,8 @@ everything but the final copy.
 - **GPU errors.** `renderer.onError` is captured into `renderer.gpuErrors` and shown in the
   debug UI (uncaptured validation errors). It must stay at 0.
 - **Compat shim.** `webgpuCompat.ts` drops three r186's identity `swizzle: 'rgba'` from
-  texture views, which Chromium ≤ 141 rejects (black screen otherwise).
+  texture views, which Chromium ≤ 141 rejects (black screen otherwise), and settles a lost
+  device's dropped error scopes (above).
 
 ## Textured and vertex-colored toon materials
 

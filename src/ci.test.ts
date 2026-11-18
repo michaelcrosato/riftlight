@@ -1,5 +1,6 @@
 // CI's e2e job runs one matrix entry per group in scripts/e2e.mjs (GROUPS); a group missing from
-// the matrix would never run, and e2e.mjs's own guard only sees GROUPS. The riftlight-html job
+// the matrix would never run, and e2e.mjs's own guard only sees GROUPS. It keeps the suites' frames
+// and what a failed 52in1 harness run's page was doing (the hub suite's EVIDENCE). The riftlight-html job
 // publishes the file `npm run build:single` writes, and never takes releases/latest from the kit.
 // Every workflow that runs Claude skips itself, with a notice, when no Claude secret is set. The
 // Node the tools need is package.json's `engines`, and an older one is told so.
@@ -20,6 +21,16 @@ describe('CI', () => {
     expect(groups.length).toBeGreaterThan(1);
     expect(matrix, 'ci.yml: the e2e job\'s matrix.group as a one-line ["@core", …] list').toBeDefined();
     expect((JSON.parse(`[${matrix}]`) as string[]).sort()).toEqual(groups.sort());
+  });
+
+  it('keeps what the e2e suites leave: their frames, and a failed harness run’s evidence (the hub suite)', () => {
+    const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    const job = /^ {2}e2e:\n([\s\S]*?)(?=^ {2}\S)/m.exec(ci)?.[1];
+    const upload = /uses: actions\/upload-artifact@\S+\n\s*with:\n([\s\S]*?)(?=\n\s*- |$)/.exec(job ?? '')?.[1] ?? '';
+    const paths = /path: \|\n((?:\s+\S+\n?)+?)\s*if-no-files-found/.exec(upload)?.[1]?.split('\n').map((l) => l.trim()).filter(Boolean);
+    const evidence = /export const EVIDENCE = '([^']+)'/.exec(readFileSync(new URL('../scripts/e2e-hub.mjs', import.meta.url), 'utf8'))?.[1];
+    expect(evidence, 'scripts/e2e-hub.mjs: EVIDENCE, where failed runs leave theirs').toBeDefined();
+    expect(paths, "ci.yml: the e2e job's upload-artifact path, a block list").toEqual(['.scratch/e2e/', evidence]);
   });
 
   it('publishes the single-file game build:single writes, never as the latest release', () => {

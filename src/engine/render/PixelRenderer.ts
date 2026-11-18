@@ -22,6 +22,7 @@ import { SCREEN_LAYER } from './renderView';
 import { convertToTexture, float, min, pass, renderOutput, rtt, screenUV, select, uniform } from 'three/tsl';
 import { pixelationPass } from 'three/addons/tsl/display/PixelationPassNode.js';
 import { type AspectMode, type Framing, type Resolution, RESOLUTIONS, touchScale, type Viewport, frameView } from '../framing';
+import { droppedScopes } from './deviceLoss';
 import { FILTERS, type FilterContext, applyFilter, filterParams, getFilter } from './filters';
 import {
   type Look,
@@ -162,6 +163,13 @@ export class PixelRenderer implements View {
   viewport: Viewport = { width: 0, height: 0, dpr: 1 };
   /** How many times a lost GPU device was recovered from. */
   recoveries = 0;
+  /**
+   * Three's pipeline error scopes a lost GPU device dropped (`DROPPED_SCOPE`, render/deviceLoss.ts),
+   * settled as empty: they would reject unhandled in three, though the device is recovered from.
+   */
+  get droppedScopes(): number {
+    return droppedScopes();
+  }
   /** Counts look changes (UIs that mirror the look re-sync when it moves). */
   lookVersion = 0;
   /** Called after a lost device was recovered with a new renderer and canvas. */

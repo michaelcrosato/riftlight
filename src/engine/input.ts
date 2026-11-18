@@ -108,6 +108,9 @@ export type TouchpadGesture = keyof typeof TOUCHPAD_KEYS;
  */
 export const TOUCHPAD = { swipeS: 0.5, swipe: 0.4, tapS: 0.3, tap: 0.08 } as const;
 
+/** A DualSense (or DualSense Edge) by its `Gamepad.id`: Chrome's `Vendor: 054c Product: 0ce6`, Firefox's `054c-0ce6-…`, Safari's name. */
+const DUALSENSE_ID = /dualsense|\b054c\b.{1,12}\b0(?:ce6|df2)\b/i;
+
 /**
  * The gesture a one-finger touch on the DualSense's touchpad made (`dx`, `dy`: how far it went
  * in the pad's 0..1 coordinates, y down; `seconds`: how long it was down), or null.
@@ -152,6 +155,8 @@ export interface GamepadLike {
   readonly mapping?: string;
   /** Its slot in `navigator.getGamepads()` (the position in the list when left out). */
   readonly index?: number;
+  /** Its name as the browser gives it (`Gamepad.id`): couch co-op tells a DualSense by it (`touchpad`, `motion`). */
+  readonly id?: string;
   readonly axes: readonly number[];
   readonly buttons: readonly { readonly pressed: boolean; readonly value?: number }[];
   /** Rumble (`input.rumble`): Chrome, Edge and Safari have it; Firefox and some pads don't. */
@@ -488,7 +493,8 @@ export class Input {
   /**
    * Read the DualSense's touchpad (a game that uses it turns this on): a quick swipe presses
    * `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap `PadTouchpadTap` (`TOUCHPAD_KEYS`), once,
-   * recorded. Its click is the button `PadTouchpad`. Give each a button that does the same.
+   * recorded. Its click is the button `PadTouchpad`. Give each a button that does the same. A couch
+   * guest's DualSense (its pad `joined`, told by its `id`) presses on that pad alone (`player(slot)`).
    */
   touchpad = false;
   /** The finger on the touchpad that may be a gesture (`touchpad`). */
@@ -1487,15 +1493,19 @@ export class Input {
     for (const code of this.padLatched) down.delete(code);
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code) && !chordHeld.has(code)) this.press(code);
     for (const code of taps) this.press(code);
-    // the DualSense's touchpad (52in1, when the game reads it): a swipe or a tap is a press, and a use
+    // the DualSense's touchpad (52in1, when the game reads it): a swipe or a tap is a press, and a use;
+    // a couch guest's DualSense (`dualSenseGuests`) presses on that guest's own pad, never player 1's
     const ds = this._playing ? null : this.dualsense;
+    const guests = ds ? this.dualSenseGuests(list) : null;
     let gesture: TouchpadGesture | null = null;
-    if (ds?.touchpad && this.touchpad) gesture = this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad'));
+    if (ds?.touchpad && this.touchpad) gesture = this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad') || !!guests?.some((s) => this.pads[s]?.held.has('PadTouchpad')));
     else {
       this.pad1 = null;
       this.padMulti = false;
     }
-    if (gesture) {
+    if (gesture && guests) {
+      if (guests.length === 1) this.pads[guests[0]!]?.press(TOUCHPAD_KEYS[gesture]); // recorded with its pad (`padPressed`); several: whose is unknown
+    } else if (gesture) {
       this.press(TOUCHPAD_KEYS[gesture]);
       this.use('pad');
     }
@@ -1530,8 +1540,9 @@ export class Input {
     // Motion aim (52in1, while the game has it on): the controller's turns add to the stick's, on
     // the pad in use. Read on every poll while on, the pad in use or not (52in1's own Motion aim
     // leaves the stick alone only while the game reads the gyro), and never while off (52in1's
-    // own, if the player has it on, has the stick back half a second later).
-    const gyro = ds?.motion && this.motion.on ? ds.gyro() : null;
+    // own, if the player has it on, has the stick back half a second later). A couch guest's
+    // DualSense is never read: its turns are not player 1's (52in1's own aim turns its stick).
+    const gyro = ds?.motion && this.motion.on && !guests ? ds.gyro() : null;
     this.motionTurn.x = this.motionTurn.y = 0;
     if (gyro && padInUse) {
       const k = Number.isFinite(this.motion.sensitivity) ? Math.max(0, this.motion.sensitivity) : 1;
@@ -1590,6 +1601,25 @@ export class Input {
   private dropJoinHolds(): void {
     for (const { codes } of this.joinHold.values()) for (const c of codes) this.padLatched.add(c);
     this.joinHold.clear();
+  }
+
+  /**
+   * Couch co-op: the DualSense 52in1 reads (`dualsense`: it never says which pad it is) is a guest's
+   * when every pad whose `id` names a DualSense has joined (`joined`): their slots, its gestures
+   * pressing on that pad alone (one slot; several: whose is unknown, nobody's) and its motion never
+   * read. Null while one drives player 1's input, nobody joined, or no pad's `id` names one: player 1's.
+   */
+  private dualSenseGuests(list: readonly (GamepadLike | null)[]): number[] | null {
+    if (!this.joined.size) return null;
+    const slots: number[] = [];
+    for (let n = 0; n < list.length; n++) {
+      const pad = list[n];
+      if (!pad || pad.connected === false || (pad.mapping !== undefined && pad.mapping !== 'standard') || !DUALSENSE_ID.test(pad.id ?? '')) continue;
+      const index = Number.isInteger(pad.index) ? pad.index! : n;
+      if (!this.joined.has(index)) return null;
+      slots.push(index);
+    }
+    return slots.length ? slots : null;
   }
 
   /** Each pad on its own after a poll (`padPlayers`; never during a replay, which sets them from the recording). */

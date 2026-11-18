@@ -53,6 +53,12 @@ for (const slot of ctx.input.joinedNow) seat(slot); // the pads that joined this
   for play. A recording without them (an older one) has one player. A replay starts with no pad on
   its own and nobody joined. `engine.snapshot()` keeps each pad's held buttons and queued
   presses and `joined` (`InputState.pads`, `.joined`; an older snapshot has none).
+- **A guest's DualSense** (its touchpad and motion come through 52in1, which never says which pad
+  it is): while every pad whose `Gamepad.id` names a DualSense has joined (`GamepadLike.id`), its
+  touchpad gestures (`input.touchpad`) press on that pad alone (`player(slot)`, recorded as its
+  `padPressed`; two joined DualSenses: on neither, whose is unknown), and its gyro is not read (it
+  never turns player 1's aim; 52in1's own Motion aim turns its own stick). One driving player 1, or
+  no `id` naming one: player 1's, as without couch co-op.
 
 Headless tests feed pads with `input.setGamepads([...])` (each `GamepadLike` with its `index`):
 `src/engine/input.test.ts`, `src/engine/replay.test.ts` *couch co-op*.

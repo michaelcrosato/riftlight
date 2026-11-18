@@ -76,8 +76,10 @@ fails (numbered as the catalogue numbers them; the script runs them 3, 2, 1):
    (`protocolRuns` in `scripts/e2e-hub.mjs`, reading the page as the hub does: `pageModes`):
    parallel and moments at 1 and 2 players, the others at 2, 3 and 4, each on a poor network; each
    once more with a player leaving; a shared world once more hosted by a server with no player;
-   moments play every moment the page names (the hub picks three by the seed). The `hub` e2e suite
-   runs a shorter set in every mode on development builds (docs/game/session.md, *Checking it*).
+   moments play every moment the page names (the hub picks three by the seed). A run that fails
+   leaves what its page was doing in `<dir>-checks/harness-evidence/`; a browser that dies in one
+   fails that run alone, and the next has a new one. The `hub` e2e suite runs a shorter set in
+   every mode on development builds (docs/game/session.md, *Checking it*).
 3. **The browser**: the picture reaches every edge at 1600×900, 2100×900 and 1200×900 (loaded at
    one, resized to the others: `engine.state().framing`). Under `?lang=en-XA`, `zh-XC` and `ar-XB`
    the page sets `<html lang>`, and every text the title and the town draw

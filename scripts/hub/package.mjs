@@ -16,6 +16,7 @@
 //      zh-XC and ar-XB set <html lang> and draw only test-language text on the title and in town
 //      (`__PIXEL_TEXT_LOG__`: a word that isn't a line fails); nothing logs an error
 //   2. the session harness: the protocol's runs (its *Test it*) for every online mode the page names
+//      (a browser that dies in a run fails that run alone: the next run has a new one)
 //   1. the hub's checker (scripts/hub/catalogue-check.mjs, vendored unmodified) on the folder
 //
 // and exits 1 if any fails. Pictures of the browser checks go to <dir>-checks/ (never the package),
@@ -35,7 +36,7 @@ import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from '../browser.mjs';
-import { HARNESS_FILES, harness, pageModes, protocolRuns, serve } from '../e2e-hub.mjs';
+import { HARNESS_FILES, harness, harnessBrowser, pageModes, protocolRuns, serve } from '../e2e-hub.mjs';
 import { strays } from '../lang-strays.mjs';
 import { helpExit } from '../manual.mjs';
 import { engineReady } from '../page.mjs';
@@ -238,17 +239,23 @@ if (offer.modes.length) {
   await copyFile(page, join(bench, 'game.html'));
   const port = Number(process.env.HUB_PORT) || 4795;
   const server = await serve(pathToFileURL(bench), port);
-  browser = await launchChromium();
+  // a browser that dies in a run (an out-of-memory kill can take all of it) fails that run alone: the next has a new one
+  const browsers = harnessBrowser(launchChromium);
   try {
     for (const q of protocolRuns(offer)) {
       // a run that fails leaves what its page was doing (its log, its copies, its console) beside the pictures
       const evidence = join(shots, 'harness-evidence', q.replace(/[^\w=-]+/g, '_').slice(0, 120));
-      const r = await harness(browser, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`, { evidence });
+      const launched = browsers.launches;
+      const r = await browsers.get().then(
+        (b) => harness(b, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`, { evidence }),
+        (e) => ({ pass: false, checks: 0, bad: [], error: `the harness browser would not start: ${e.message.split('\n')[0]}` }),
+      );
+      if (launched && browsers.launches > launched) console.log('  (the harness browser was gone after the run before: a new one)');
       if (!r.pass) problems.push(`the session harness, ${q}: ${r.error ?? r.bad.join('; ')}${r.evidence ? ` (what its page was doing: ${r.evidence}.json)` : ''}`);
       console.log(`${r.pass ? '✓' : '✗'} the session harness: ${q}${r.pass ? ` (${r.checks} checks)` : r.crashed ? ': its page crashed' : ''}`);
     }
   } finally {
-    await browser.close();
+    await browsers.close();
     server.close();
   }
 }

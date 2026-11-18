@@ -4,7 +4,8 @@
 // swipe does nothing and the pad's press still opens the map; the legend and the strip draw the
 // swipes beside L1 / R1 on the pad while 52in1 lets the game read the touchpad, and neither the
 // swipes nor their glyphs once 52in1's touchpad is off (its press still reaches the game, as a
-// browser reports it). One engine, tests in order.
+// browser reports it); a couch guest's DualSense swipes for that guest alone, never paging player 1's
+// screens. One engine, tests in order.
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HubSettingsSource } from '../../engine';
 import { type HeadlessRiftlight, headlessRiftlight } from '../headless';
@@ -135,6 +136,32 @@ describe('a DualSense’s touchpad in Riftlight', () => {
     tap(17);
     hub.dualsense.touchpad = true;
     hub.target.dispatchEvent(new Event('change'));
+    expect(engine.errors).toEqual([]);
+  }, T);
+
+  it('a couch guest’s DualSense swipes for that guest alone: player 1’s screen never pages, nor turns to the pad', () => {
+    const { rl, engine, game } = h;
+    const xbox = { ...pad(), index: 0, id: 'Xbox Wireless Controller (STANDARD GAMEPAD Vendor: 045e Product: 0b13)' };
+    const sense = { ...pad(), index: 1, id: 'DualSense Wireless Controller (STANDARD GAMEPAD Vendor: 054c Product: 0ce6)' };
+    engine.input.setGamepads([xbox, sense]);
+    engine.step(1);
+    expect(game.coop.join(1), 'the DualSense sits down as player 2').not.toBeNull();
+    engine.step(2);
+    engine.input.noteDevice('keyboard');
+    expect(rl.press('KeyI').ui).toEqual(['inventory']);
+    const from = engine.recording()!.frames.length;
+    swipe(0.2, 0.8);
+    expect([stack(), engine.input.device], 'player 1’s inventory, on the keyboard').toEqual([['inventory'], 'keyboard']);
+    const frames = engine.recording()!.frames.slice(from);
+    expect(
+      [frames.flatMap((f) => f.padPressed ?? []), frames.flatMap((f) => f.pressed ?? []).filter((c) => c.startsWith('PadTouchpad'))],
+      'the guest’s swipe, recorded on its pad',
+    ).toEqual([[[1, 'PadTouchpadRight']], []]);
+    game.coop.leaveAll();
+    swipe(0.2, 0.8);
+    expect([stack(), engine.input.device], 'gone home: the DualSense is player 1’s again').toEqual([['skills'], 'pad']);
+    rl.press('Escape');
+    engine.input.setGamepads([pad()]);
     expect(engine.errors).toEqual([]);
   }, T);
 });

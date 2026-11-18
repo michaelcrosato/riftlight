@@ -31,7 +31,8 @@
 //                 touch as the device used last, ⓘ debug panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (fill, the default aspect; integer blocks); a lost
-//                 GPU device is recovered with a working renderer;
+//                 GPU device is recovered with a working renderer, and so is a GPU process killed
+//                 under error scopes in flight (no unhandled rejection: render/deviceLoss.ts);
 //                 Riftlight as a player opens it on a phone, portrait and landscape,
 //                 no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
 //                 a touch button for every skill-bar slot that reaches the game, no HUD element
@@ -1640,6 +1641,49 @@ async function runEnginePhone(browserExe) {
       checkClean(await state(page), logs, `${s.backend}: `);
     } catch (e) {
       check(false, `device loss (${s.name}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+    } finally {
+      await ctx?.browser.close();
+    }
+  }
+  // The GPU process dies (an out-of-memory kill) while error scopes are being popped, as three pops
+  // its pipelines' (with no catch): the dropped scopes settle as empty (render/deviceLoss.ts), so the
+  // page's own listener (52in1's harness counts every unhandled rejection) hears nothing, and the
+  // engine recovers.
+  for (const s of [SCENARIOS[0]]) {
+    let ctx;
+    try {
+      ctx = await launch(browserExe, { ...s, expectedWarnings: [...(s.expectedWarnings ?? []), /A valid external Instance reference no longer exists/] }); // the browser's own word on the killed GPU process
+      await ctx.page.addInitScript(() => {
+        window.__rejected = [];
+        window.addEventListener('unhandledrejection', (e) => window.__rejected.push(`${e.reason?.name}: ${e.reason?.message ?? e.reason}`));
+      });
+      await ctx.page.goto(urlFor(s, 'debug=0'));
+      await ready(ctx.page);
+      const { page, logs } = ctx;
+      // scopes in flight to the GPU process all the time, popped as three pops them (no catch), until the device is lost
+      await page.evaluate(() => {
+        const device = window.__PIXEL_ENGINE__.renderer.renderer.backend.device;
+        let gone = false;
+        void device.lost.then(() => (gone = true));
+        const churn = setInterval(() => {
+          if (gone) return clearInterval(churn);
+          for (let i = 0; i < 50; i++) {
+            device.pushErrorScope('validation');
+            void device.popErrorScope().then(() => {});
+          }
+        }, 1);
+      });
+      await page.waitForTimeout(300);
+      await (await ctx.browser.newBrowserCDPSession()).send('Browser.crashGpuProcess');
+      await page.waitForFunction(() => window.__PIXEL_ENGINE__.state().gpuRecoveries === 1, null, { timeout: 60000 });
+      await waitFrames(page, 10);
+      const after = await page.evaluate(() => ({ rejected: window.__rejected, dropped: window.__PIXEL_ENGINE__.renderer.droppedScopes }));
+      check(after.dropped > 0 && after.rejected.length === 0, `${s.backend}: the GPU process killed under popped error scopes: ${after.dropped} dropped scopes settled as empty, ${after.rejected.length} unhandled rejections${after.rejected.length ? ` (${[...new Set(after.rejected)].join('; ')})` : ''}`);
+      const shot = await capture(page, `gpu-process-killed-${s.name}.png`);
+      check(colorCount(shot) > 8 && blockUniformity(shot, 2) > 0.995, `${s.backend}: renders again after the GPU process died (${colorCount(shot)} colors)`);
+      checkClean(await state(page), logs, `${s.backend}: `);
+    } catch (e) {
+      check(false, `GPU process killed (${s.name}) crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
     } finally {
       await ctx?.browser.close();
     }
