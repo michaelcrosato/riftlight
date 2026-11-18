@@ -151,6 +151,21 @@ it('the menu names the control that opens each panel on the device in use, and h
     w.knob('engine-vibration', 0.5);
     expect(engine.settings.values.vibration).toBe(0.5);
     w.knob('engine-vibration', 1);
+    // no ⚙ in the World: every one of the player's settings is in Tweak and settings
+    expect(ids).toEqual(expect.arrayContaining(['engine-look', 'engine-pixel', 'engine-pixel-size', 'engine-quality', 'engine-fps', 'engine-sound', 'engine-volume', 'engine-debug']));
+    const master = engine.audio.volume.master;
+    try {
+      w.knob('engine-pixel-size', 1);
+      w.knob('engine-fps', 1);
+      w.knob('engine-volume', 0.5);
+      w.knob('engine-debug', true);
+      expect(engine.settings.values).toMatchObject({ pixelSize: 'chunky', fps: 30, debugInfo: true });
+      expect(engine.maxFps).toBe(30);
+      expect(engine.audio.volume.master).toBe(0.5);
+    } finally {
+      engine.settings.set({ pixelSize: undefined, fps: undefined, debugInfo: undefined });
+      engine.audio.setVolume('master', master);
+    }
   } finally {
     w.close();
     keyboard();
@@ -245,6 +260,48 @@ it(
 );
 
 it(
+  'the press that closes a panel is the panel\'s: Circle or Backspace closing the guide, the menu or the tweak panel undoes nothing in the Workshop; with nothing open Circle undoes',
+  async () => {
+    await w.goto('workshop', { instant: true });
+    engine.step(10);
+    room().clear();
+    room().spawn('barrel', [-2, 2]);
+    room().spawn('barrel', [-3, 2]);
+    engine.step(2);
+    const placed = () => (room().spawned() as unknown[]).length;
+    try {
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      w.open('guide');
+      engine.step(1);
+      tap(1); // Circle
+      expect(w.state().panel).toBeNull();
+      expect(placed(), 'Circle closed the guide, and undid nothing').toBe(2);
+      tap(9); // Options: the menu
+      expect(w.state().panel).toBe('pause');
+      tap(1);
+      expect(w.state().panel).toBeNull();
+      expect(placed(), 'Circle closed the menu, and undid nothing').toBe(2);
+      keyboard();
+      w.open('tweak');
+      engine.step(1);
+      press('Backspace'); // the keyboard's back, and the picker's undo
+      expect(w.state().panel).toBeNull();
+      expect(placed(), 'Backspace closed the tweak panel, and undid nothing').toBe(2);
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      tap(1); // nothing open: Circle is the picker's undo
+      expect(placed()).toBe(1);
+    } finally {
+      w.close();
+      room().clear();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
   'the Gallery steps on R1 / L1 and turns shelves on R2, and the hero does not lie down or go prone for them',
   async () => {
     await w.goto('gallery', { instant: true });
@@ -271,6 +328,41 @@ it(
       press('TouchSlot2');
       expect(room().current().index).toBe(next + 1);
     } finally {
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'the press that closes a panel is the panel\'s: the Gallery does not also step on it',
+  async () => {
+    await w.goto('gallery', { instant: true });
+    engine.step(10);
+    const at = room().current().index;
+    try {
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      w.open('guide');
+      engine.step(1);
+      tap(1, 5); // Circle and R1 in one frame
+      expect(w.state().panel).toBeNull();
+      expect(room().current().index, 'R1 went with the Circle that closed the guide').toBe(at);
+      keyboard();
+      w.open('tweak');
+      engine.step(1);
+      engine.input.setKey('Escape', true);
+      engine.input.setKey('KeyE', true);
+      engine.step(1);
+      engine.input.setKey('Escape', false);
+      engine.input.setKey('KeyE', false);
+      engine.step(1);
+      expect(w.state().panel).toBeNull();
+      expect(room().current().index, 'E went with the Esc that closed the tweak panel').toBe(at);
+      press('KeyE'); // with nothing open, E steps
+      expect(room().current().index).toBe(at + 1);
+    } finally {
+      w.close();
       keyboard();
     }
   },

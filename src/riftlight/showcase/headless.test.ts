@@ -6,6 +6,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { FirstPersonRig } from '../../engine';
 import { type HeadlessRiftlight, headlessRiftlight, pointAtArt, stepUntil } from '../headless';
 import { t } from '../lang';
+import { UiCanvas } from '../ui/kit';
 import { showcaseOf } from './save';
 
 const T = 30_000;
@@ -271,7 +272,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         engine.step(2);
         expect(sc.touch().interact?.verb).toBe(t('touch.verb.look'));
         engine.input.noteDevice('pad');
-        expect([t('showcase.hint.zoom'), t('showcase.hint.next_wing'), t('showcase.hint.photo'), t('showcase.hint.leave')]).toEqual(['R1 zoom', 'R1 next wing', 'Options photo', 'Options leave']);
+        expect([t('showcase.hint.zoom'), t('showcase.hint.next_wing'), t('showcase.hint.photo'), t('showcase.hint.leave'), t('showcase.hint.back')]).toEqual(['R1 zoom', 'R1 next wing', 'Options photo', 'Options leave', 'Circle back']);
         rl.press('PadStart');
         expect(sc.pause?.items, 'Options: the pause, its Photo mode and Leave').toEqual(['resume', 'photo', 'leave']);
         rl.press('ArrowDown');
@@ -329,6 +330,15 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         // inspecting: a fast orbit flick on the exhibit keeps the card; one from the card closes it
         rl.bestiary.inspect(0);
         expect(sc.touch().controls, 'the card takes a phone\'s screen: no stick or A / B over its buttons').toBe(false);
+        // and no ≡ either: the card's hint names its way back on a phone, a swipe from it
+        expect(t('showcase.hint.back')).toBe(`${t('key.touch.swipe')} back`);
+        const mini = vi.spyOn(UiCanvas.prototype, 'mini');
+        try {
+          engine.step(1);
+          expect(mini.mock.calls.map((c) => c[2]).join(' · '), 'the hint on the card').toContain(`${t('key.touch.swipe')} back`);
+        } finally {
+          mini.mockRestore();
+        }
         flick(60, engine.hud.height / 2, 90);
         expect(rl.bestiary.state().view, 'an orbit is no way back').toBe('inspect');
         const turntable = (sc.bestiary as unknown as { rects: Map<string, { x: number; y: number; w: number; h: number }> }).rects.get('turntable')!;

@@ -16,6 +16,7 @@
 import { type Camera, Color, Vector3 } from 'three/webgpu';
 import {
   type Engine,
+  FPS_OPTIONS,
   type Game,
   type GameContext,
   type HudColor,
@@ -25,6 +26,7 @@ import {
   MenuInput,
   type MoveInput,
   PALETTE,
+  PIXEL_SIZES,
   readMoveInput,
   TRANSITIONS,
   type TransitionKind,
@@ -106,6 +108,8 @@ export class WorldShell {
   private lastNow = -1;
   /** Game speed while a modal panel froze the room. */
   private frozenSpeed: number | null = null;
+  /** The last engine frame that began with a panel open or a room change under way: its presses were theirs. */
+  private swallowed = -1;
 
   /** Once per page: the UI canvas, pointer, sounds and claimed keys. */
   attach(engine: Engine): void {
@@ -180,6 +184,15 @@ export class WorldShell {
   /** True while the UI owns the keys (a panel is open or a room is changing). */
   get capturing(): boolean {
     return this.busy || !!this.layer.top;
+  }
+
+  /**
+   * A room may read input itself (`RoomRuntime.inputFree`): nothing owns the keys, and nothing did
+   * when this frame began. The press that closes a panel (Circle, Backspace, Esc, the key that
+   * opened it) is the panel's: the Workshop must not also undo on it, nor the Gallery step.
+   */
+  get roomInputFree(): boolean {
+    return !this.capturing && this.swallowed !== this.engine?.frame;
   }
 
   // ------------------------------------------------------------------ panels
@@ -265,9 +278,10 @@ export class WorldShell {
   }
 
   /**
-   * The engine's own settings, under the room's in the tweak panel. Look, pixel art and quality
-   * are the player's (`engine.settings`, the same as the ⚙ panel's): saved, and a chosen look
-   * wins over every room's own.
+   * The engine's own settings, under the room's in the tweak panel. Look, pixel art, pixel size,
+   * quality, frame rate, the volumes, the controller's buttons, vibration and debug info are the
+   * player's (`engine.settings` and the audio's volumes, the same as the ⚙ panel's): saved, and a
+   * chosen look wins over every room's own. The World has no ⚙, so all of them are here.
    */
   engineKnobs(): Knob[] {
     const e = this.engine!;
@@ -304,15 +318,20 @@ export class WorldShell {
         set: (i) => void e.setCamera({ preset: cams[i]! }, { syncUrl: false }),
       },
       { kind: 'toggle', id: 'engine-pixel', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }) },
+      // the room's own art resolution is fine; chunky halves it
+      { kind: 'choice', id: 'engine-pixel-size', label: 'Pixel size', options: PIXEL_SIZES, get: () => PIXEL_SIZES.indexOf(e.settings.values.pixelSize ?? 'fine'), set: (i) => e.settings.set({ pixelSize: PIXEL_SIZES[i]! }) },
       { kind: 'choice', id: 'engine-quality', label: 'Quality', options: qualities, get: () => qualities.indexOf(e.quality), set: (i) => e.settings.set({ quality: qualities[i]! }) },
+      { kind: 'choice', id: 'engine-fps', label: 'Frame rate', options: FPS_OPTIONS.map((f) => (f ? `${f} fps` : 'screen')), get: () => Math.max(0, FPS_OPTIONS.indexOf(e.maxFps)), set: (i) => e.settings.set({ fps: FPS_OPTIONS[i]! }) },
       { kind: 'choice', id: 'engine-transition', label: 'Room change', options: TRANSITIONS, get: () => TRANSITIONS.indexOf(this.transition), set: (i) => (this.transition = TRANSITIONS[i]!) },
       { id: 'engine-shake', label: 'Screen shake', min: 0, max: 2, step: 0.1, initial: 1, get: () => e.shake.strength, set: (v) => (e.shake.strength = v) },
       { kind: 'toggle', id: 'engine-sound', label: 'Sound', get: () => !e.audio.muted, set: (v) => e.audio.setMuted(!v) },
       // the player's own, saved: the ⚙ panel's on a page that has one (the World shows these here, on every device)
+      { id: 'engine-volume', label: 'Volume', min: 0, max: 1, step: 0.05, get: () => e.audio.volume.master, set: (v) => e.audio.setVolume('master', v), format: percent },
       { id: 'engine-music', label: 'Music', min: 0, max: 1, step: 0.05, get: () => e.audio.volume.music, set: (v) => e.audio.setVolume('music', v), format: percent },
       { id: 'engine-effects', label: 'Effects', min: 0, max: 1, step: 0.05, get: () => e.audio.volume.sfx, set: (v) => e.audio.setVolume('sfx', v), format: percent },
       { kind: 'choice', id: 'engine-buttons', label: 'Controller', options: ['PlayStation', 'Xbox'], get: () => (e.settings.values.padGlyphs === 'xbox' ? 1 : 0), set: (i) => e.settings.set({ padGlyphs: i ? 'xbox' : undefined }), hint: 'The buttons prompts show on a controller.' },
       { id: 'engine-vibration', label: 'Vibration', min: 0, max: 1, step: 0.05, get: () => e.settings.values.vibration ?? 1, set: (v) => e.settings.set({ vibration: v >= 1 ? undefined : v }), format: percent },
+      { kind: 'toggle', id: 'engine-debug', label: 'Debug info', get: () => e.debugShown, set: (v) => e.settings.set({ debugInfo: v }), hint: 'The engine\'s panel: renderer, resolution, camera, frame rate, the room\'s state.' },
     ];
   }
 
@@ -362,6 +381,8 @@ export class WorldShell {
     this.toastTime = Math.max(0, this.toastTime - real);
     const input = ctx.input;
     const hadPanel = !!this.layer.top;
+    // the rest of this frame's input is the panel's (or the room change's), even once it closes
+    if (hadPanel || this.busy) this.swallowed = e.frame;
     const events = [...(this.pointer?.frame(real) ?? []), ...this.menuInput.events(input, real)];
     const ui = this.ui;
     ui.time += real;
@@ -773,7 +794,7 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     leaveWorld: () => game.removeHero(),
     enterWorld: (at: Vec3, facing?: number) => game.placeHero(at, facing ?? 0),
     get inputFree() {
-      return !shell.capturing;
+      return shell.roomInputFree;
     },
   };
 }

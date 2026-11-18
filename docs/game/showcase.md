@@ -38,7 +38,8 @@ it back), and a finger presses a card button or a panel arrow when it lifts ther
 swiping (a click at once). On a
 phone (`Showcase.touch()` → `TouchPad.sync`) the stick, A, B (it jumps), ≡ and the mode's own
 interact (the Hall's LOOK, only at an exhibit; the nearest is enough there) show, no skill icons;
-HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
+none of them over the Hall's card, whose hint names its way back there as the swipe (`card_back`:
+Esc, Circle, a swipe from the card); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
 
 **The hero as a platformer** (`showcase/visitor.ts`). `Visitor` is the hero model on the engine's
 `PlatformerCharacter` (the whole Mario-64 moveset) with the playground's sounds and dust, clips

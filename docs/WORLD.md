@@ -13,7 +13,7 @@ complete, small example of an engine system, written to be copied.
 | **Esc** | **Options** · Menu | **≡** | menu: every panel below, Tweak and settings, the room card, field guide, back to the Atrium, reset the room, Riftlight (it stops the room; a DualSense's triggers let go) |
 | **G** (F2) | **Create** · View | **GO** | go to any room |
 | **H** (F1) | **R3** or the touchpad · RS | **?** | how it works: the room's station guide |
-| **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, look, camera, pixel art, quality, the room-change transition, shake, sound) and the player's (music, effects, the controller's buttons, vibration), saved |
+| **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, camera, the room-change transition, shake) and every one of the player's, saved (look, pixel art, pixel size, quality, frame rate, sound, volume, music, effects, the controller's buttons, vibration, debug info) |
 | **I** | in the menu | a tap on it | the room's card again, or away |
 | Esc / Backspace | Circle | a sideways swipe, the close box | close a panel |
 
@@ -22,12 +22,15 @@ change something (the toast says what and why; the guide lists them all). A swip
 the card and a toast away. Every prompt (the row along the bottom, the card, toasts, labels, the
 guide, the menu) names the control for the input used last (`controls.ts` `WORLD_CONTROLS`, each
 room's `Game.controls`; a line names one as `{key:action}`, `keyText`). Rooms with actions of their
-own have them on every device: the Time Lab rewinds on R, L2 or <<; the Gallery and the Workshop
-step on Q / E, L1 / R1 or < >, change shelf on comma / period or L2 / R2; the Workshop places,
-turns and undoes on Square, Triangle and Circle; the Sandbox carries on E, R2 or HOLD; the car
+own have them on every device: the Time Lab rewinds on R, L2 or <<; the Gallery steps on Q / E,
+L1 / R1 or a phone's < > and changes shelf on comma / period, L2 / R2 or >>; the Workshop picks on
+Q / E or L1 / R1, changes shelf on comma / period or L2 / R2 and places, turns and undoes on
+Square, Triangle and Circle (a phone taps a row, the panel's arrows for a shelf and the floor to
+place, and has UNDO); the press that closes a panel is the panel's, never the room's too
+(`RoomRuntime.inputFree`); the Sandbox carries on E, R2 or HOLD; the car
 drives on analog R2 / L2 (adaptive triggers that push back, rumble on knocks and slides) and
 gets out on C or Circle; Bullet Hell rumbles on hits and grazes, lights the DualSense's bar and
-fires by itself on a phone. There is no DOM ⚙: the menu's Tweak and settings has the player's.
+fires by itself on a phone. There is no DOM ⚙: the menu's Tweak and settings has all the player's settings.
 
 ## Rooms
 
@@ -108,6 +111,9 @@ it does nothing, no note, no sound). A room's words name controls as `{key:actio
 together (`WORLD_KEYS`); `RoomLogic.touch()` puts them on a phone (a touch slot `TouchSlot1`..`3`
 with its label, or a base button relabelled or hidden: the car's JUMP is BRAKE), and
 `RoomLogic.claims` lists pad buttons the hero's moves must not also take (the Gallery's L1 / R1).
+A room reads input itself only while `room.inputFree`: false while a panel or a room change owns
+the keys and for the rest of a frame that began with one, so the Circle that closes the guide is
+not the Workshop's undo as well.
 
 ## Add a room
 

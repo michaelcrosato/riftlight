@@ -124,7 +124,10 @@ export interface RoomRuntime {
   leaveWorld(): void;
   /** Put the hero back in the world at `at` (feet), with the room's settings (shove, weight, depth lock). */
   enterWorld(at: Vec3, facing?: number): void;
-  /** False while a panel or a room change owns the keys: read input yourself only when true. */
+  /**
+   * False while a panel or a room change owns the keys, and for the rest of a frame that began
+   * with one (the press that closed a panel was the panel's): read input yourself only when true.
+   */
   readonly inputFree: boolean;
 }
 

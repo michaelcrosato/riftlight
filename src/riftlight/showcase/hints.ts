@@ -20,6 +20,7 @@ import { miniCovers, miniWidth, type UiCanvas, wrapRow } from '../ui/kit';
  *   rise        Q / E · R2 up, L2 down                       (photo mode's free camera)
  *   next_wing   N · R1 (L1 back) · the < > at the sides      (the Hall)
  *   photo_save  P · Square · a tap on Save                   (photo mode)
+ *   card_back   Esc · Circle · a sideways swipe from the card (the Hall's card: a phone's ≡ is hidden under it)
  *
  * A swipe acts only where it starts on what it moves (the card, the panel): a drag elsewhere looks
  * or orbits, and a quick one is a swipe too.
@@ -31,6 +32,7 @@ export const SHOWCASE_CONTROLS: ControlTable = {
   rise: { key: 'QE', pad: 'PadRT' },
   next_wing: { key: 'KeyN', pad: 'PadRB', touch: '< >' },
   photo_save: { key: 'KeyP', pad: 'PadX', touch: 'TouchTap' },
+  card_back: { key: 'Escape', pad: 'PadB', touch: 'TouchSwipe' },
 };
 
 /** A row of hints in the player's language ("WASD move · Esc leave"). */
