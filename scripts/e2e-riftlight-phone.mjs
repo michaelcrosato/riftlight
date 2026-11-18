@@ -99,15 +99,23 @@ export async function runRiftlightPhone(h, orientation) {
     check(title.top === 'title' && title.ids.length >= 4 && title.hidden.length === 0 && title.least >= 40, `${orientation}: every title entry shows, at least 40 CSS px tall, with no save (${title.ids.join(' ')}; hidden ${title.hidden.join(' ') || 'none'}; ${Math.round(title.least)} CSS px)`);
     await shot('title');
 
-    // a level, safe to tap around in: god mode, monsters idle
-    await R(async () => {
+    // a level, safe to tap around in: god mode, monsters idle; the controls step aside while it
+    // loads (no frame of the game's runs then, so none would hide them) and come back in it
+    const loading = await R(async () => {
       const rl = window.__RIFTLIGHT__;
+      const e = window.__PIXEL_ENGINE__;
       rl.newRun({ slot: 0, seed: 4242 });
-      await rl.enterDepth(1);
+      e.step(2);
+      const town = e.touch.visible;
+      const entering = rl.enterDepth(1);
+      const during = e.touch.visible;
+      await entering;
       rl.dev.god = true;
       rl.dev.ai = false;
-      window.__PIXEL_ENGINE__.step(30);
+      e.step(30);
+      return { town, during, level: e.touch.visible };
     });
+    check(loading.town && !loading.during && loading.level, `${orientation}: the touch controls step aside while a level loads (town ${loading.town}, loading ${loading.during}, level ${loading.level})`);
     // record every key the touch buttons press
     await R(() => {
       const input = window.__PIXEL_ENGINE__.input;

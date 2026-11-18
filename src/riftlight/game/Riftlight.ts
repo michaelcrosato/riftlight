@@ -366,6 +366,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.round) {
       // a session opens straight into its round: no title, menus or town (the hub's card is up)
       this.screen = 'loading';
+      this.syncTouch(); // the page's controls start shown: none over the loading screen (no frame runs till the level is built)
       this.round.announce();
     } else this.toTitle();
   }
@@ -673,6 +674,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.layer.closeAll();
     this.endTalk();
     this.screen = 'loading';
+    this.syncTouch(); // no frame runs while the level builds: the controls step aside now
     this.portalSound();
     this.leaveLevel();
     this.motionAim = null;
@@ -2799,6 +2801,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.town.deactivate();
       this.town.loadState(s.town);
       this.screen = 'loading';
+      this.syncTouch(); // no frame runs while the level builds: the controls step aside now
       this.ctx.scene.background = new Color(PALETTE.ink);
       this.rng.state = e.rng;
       setActorIds(e.actors);
