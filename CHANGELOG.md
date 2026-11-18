@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.63.0
+
+- A pinch on the canvas presses nothing. A second finger releases `Touch` (`TOUCH_KEY`), and it stays up until every finger is lifted. When both fingers land in the same frame, the first finger's press is taken back as if it never happened: no `wasPressed`, no queued press, nothing recorded (`Input.unpress`). Before, the first finger held `Touch` for the whole pinch, so a game that reads it as a click or an attack kept firing while the fingers stayed down.
+
 ## 0.62.0
 
 - `TouchControls.rects().stick` is now a floating stick's resting place (`touchStick: 'floating'`) even while a thumb holds the stick elsewhere, so a HUD laid out around the controls no longer follows the thumb. Before, it returned the stick's rect wherever the thumb had dragged it.
