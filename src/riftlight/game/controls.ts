@@ -19,8 +19,9 @@
  *
  * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
  * "Cross = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat from the engine's
- * `MenuInput` (with `MENU_BINDINGS`). Prompts name and draw `CONTROLS` through the engine
- * (`engine.controls`: the device used last, PlayStation or Xbox buttons as the player chose).
+ * `MenuInput` (with `SHELL_MENU_BINDINGS`; another host of the UI kit, `MENU_BINDINGS`). Prompts
+ * name and draw `CONTROLS` through the engine (`engine.controls`: the device used last,
+ * PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
 import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
@@ -76,8 +77,10 @@ export const KEYS = {
 } as const;
 
 /**
- * The menus' bindings for the engine's `MenuInput` (Riftlight's own: F and J confirm too; Q / E
- * and L1 / R1 page the character screens, so they arrive as `key` events the shell reads).
+ * The bindings for menus of Riftlight's UI kit (the engine's `MenuInput`) in any host, Engine World
+ * too: Riftlight's own (F and J confirm too, no Q / E tabs since they are skills), L1 / R1 and Tab
+ * the tabs (a reader's headings). The Riftlight shell pages its character screens with L1 / R1:
+ * `SHELL_MENU_BINDINGS`.
  */
 export const MENU_BINDINGS: Partial<MenuKeys> = {
   confirm: KEYS.confirm,
@@ -86,6 +89,18 @@ export const MENU_BINDINGS: Partial<MenuKeys> = {
   down: KEYS.down,
   left: KEYS.left,
   right: KEYS.right,
+  tabNext: ['PadRB', 'Tab'],
+  tabPrev: ['PadLB'],
+  keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide],
+};
+
+/**
+ * The Riftlight shell's menu bindings: Q / E and L1 / R1 page the character screens (`PAGES`), so
+ * they arrive as `key` events the shell reads (in the stash, the vendor and the bench it makes
+ * them their tabs); Tab, L2 / R2 a window's own tabs.
+ */
+export const SHELL_MENU_BINDINGS: Partial<MenuKeys> = {
+  ...MENU_BINDINGS,
   tabNext: KEYS.tabNext,
   tabPrev: KEYS.tabPrev,
   keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide, ...KEYS.pagePrev, ...KEYS.pageNext],

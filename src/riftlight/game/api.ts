@@ -25,6 +25,7 @@ import { sanitizeTuning } from './difficulty';
 import type { HeroIntent } from './ports';
 import type { BotAct, Riftlight, SavedIntent } from './Riftlight';
 import { viewSaved } from './save';
+import { HeroWalk } from './walk';
 
 export interface RiftlightState {
   screen: string;
@@ -137,51 +138,32 @@ export function createApi(game: Riftlight) {
   };
 
   /**
-   * Walk to a ground point: in a level along the grid route (the bot's navigation), in town
-   * along the town's walkable grid (`Town.nav`; the route is found again every 30 frames), steering at a point a
-   * few cells ahead, sidestepping whatever it bumps into (a townsperson in the way).
+   * Walk to a ground point the way a click in the world walks the hero (`game/walk.ts`): in a level
+   * along the grid route (the bot's navigation), in town along the town's walkable grid (`Town.nav`;
+   * the route is found again every 30 frames), steering at a point a few cells ahead, sidestepping
+   * whatever it bumps into (a townsperson in the way).
    */
   const moveTo = (x: number, z: number, o: { maxFrames?: number; radius?: number } = {}) => {
     const max = o.maxFrames ?? 900;
     const r = o.radius ?? 0.6;
-    const nav = new PlaytestBot();
+    const walk = new HeroWalk(game.hero.actor.position);
     const goal = new Vector3(x, 0, z);
     let frames = 0;
-    let stuck = 0;
-    let side = 0;
-    let route: { x: number; z: number }[] = [];
-    const last = new Vector3().copy(game.hero.actor.position);
     const screen = game.screen;
     for (; frames < max; frames++) {
       // a panel that pauses the world (the loot window at the portal) or a stage change ends the walk
       if (game.worldPaused || game.screen !== screen) break;
       const p = game.hero.actor.position;
-      const dx = x - p.x;
-      const dz = z - p.z;
-      const d = Math.hypot(dx, dz);
-      if (d <= r) break;
+      if (Math.hypot(x - p.x, z - p.z) <= r) break;
       if (game.level) {
         const it = toIntent({});
-        nav.walk(game.level, p, goal, it);
+        walk.level(game.level, p, goal, it.move);
         hold(it);
       } else {
-        stuck = p.distanceTo(last) < 0.01 ? stuck + 1 : 0;
-        if (stuck > 12) side = 30;
-        const k = side-- > 0 ? 1 : 0;
-        if (frames % 30 === 0) route = game.town.nav().route(p, goal);
-        // the cell nearest the hero on the route, then a few ahead (or the goal itself, close by)
-        let aim = { x, z };
-        if (route.length > 1 && d > 1.5) {
-          let near = 0;
-          for (let i = 1; i < route.length; i++) if (Math.hypot(route[i]!.x - p.x, route[i]!.z - p.z) < Math.hypot(route[near]!.x - p.x, route[near]!.z - p.z)) near = i;
-          aim = route[Math.min(route.length - 1, near + 4)]!;
-        }
-        const ax = aim.x - p.x;
-        const az = aim.z - p.z;
-        const ad = Math.hypot(ax, az) || 1;
-        hold(toIntent({ move: { x: ax / ad - (k * az) / ad, z: az / ad + (k * ax) / ad } }));
+        const move = { x: 0, z: 0 };
+        walk.town(game.town, p, goal, move);
+        hold(toIntent({ move }));
       }
-      last.copy(p);
       engine().step(1);
     }
     const p = game.hero.actor.position;

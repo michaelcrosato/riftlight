@@ -30,6 +30,19 @@ export interface BotIntent extends HeroIntent {
   interact: boolean;
 }
 
+/** The bot's walking as data (`PlaytestBot.saveNav`): its grid route and how it gets out of corners. */
+export interface BotNavState {
+  readonly route: readonly { readonly x: number; readonly z: number }[];
+  readonly routeFor: string;
+  readonly routeAge: number;
+  readonly lastPos: readonly [number, number, number];
+  readonly stillFrames: number;
+  readonly sidestep: number;
+  readonly sideDir: number;
+  readonly careful: number;
+  readonly stuckCount: number;
+}
+
 export interface BotView {
   hero: HeroPort;
   level: LevelHandle;
@@ -344,7 +357,24 @@ export class PlaytestBot {
     }
   }
 
-  /** One frame of walking toward `to` outside `decide` (the `moveTo` helper): watches for corners too. */
+  /** Its walking as data (a walk in progress in a snapshot: `game/walk.ts`). */
+  saveNav(): BotNavState {
+    return { route: this.route.map((c) => ({ x: c.x, z: c.z })), routeFor: this.routeFor, routeAge: this.routeAge, lastPos: [this.lastPos.x, this.lastPos.y, this.lastPos.z], stillFrames: this.stillFrames, sidestep: this.sidestep, sideDir: this.sideDir, careful: this.careful, stuckCount: this.stuckCount };
+  }
+
+  loadNav(s: BotNavState): void {
+    this.route = s.route.map((c) => ({ x: c.x, z: c.z }));
+    this.routeFor = s.routeFor;
+    this.routeAge = s.routeAge;
+    this.lastPos.set(...s.lastPos);
+    this.stillFrames = s.stillFrames;
+    this.sidestep = s.sidestep;
+    this.sideDir = s.sideDir;
+    this.careful = s.careful;
+    this.stuckCount = s.stuckCount;
+  }
+
+  /** One frame of walking toward `to` outside `decide` (`game/walk.ts`: `moveTo`, a click in the world): watches for corners too. */
   walk(level: LevelHandle, p: Vector3, to: Vector3, i: BotIntent): void {
     this.track(p);
     this.goTo(level, p, to, i);

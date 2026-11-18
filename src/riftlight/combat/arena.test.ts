@@ -5,7 +5,7 @@
 // it plays with, a kill emits kill and death and the corpse pops and is removed; R is a skill key,
 // so the engine's resolution hotkey sits on F2 when the hotkeys are on. The picture stays in e2e.
 // Tests run in order on one engine; the hotkey test boots its own after the first is disposed.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Control, ControlTable, Engine } from '../../engine';
 import { HERO_KEYS } from '../actors/controls';
 import { heroCodes } from '../game/controls';
@@ -55,10 +55,37 @@ describe('the combat arena', () => {
     expect(e.debugKeys.resolution).toEqual([]);
   });
 
+  /**
+   * The skill bar's labels this frame (each slot's glyph: a key cap, a pad's button, the mouse) as
+   * boxes: what `hud.glyph` drew on the row over the skills' names, and any text there outside them.
+   */
+  const labelBoxes = () => {
+    const glyphs: { x: number; y: number; w: number; h: number }[] = [];
+    const own = e.hud.glyph.bind(e.hud);
+    const spy = vi.spyOn(e.hud, 'glyph').mockImplementation((x, y, action, scale) => {
+      const w = own(x, y, action, scale);
+      glyphs.push({ x, y: y - 1, w, h: 9 });
+      return w;
+    });
+    let texts: { x: number; y: number; w: number; h: number }[];
+    try {
+      // the row over the names, the bar's six slots 34 pixels apart (the mana bar's number is left of it)
+      texts = hudTexts(e).filter((t) => t.y + t.h > e.hud.height - 26 && t.y < e.hud.height - 15 && Math.abs(t.x + t.w / 2 - e.hud.width / 2) < 3 * 34);
+    } finally {
+      spy.mockRestore();
+    }
+    const within = (t: { x: number; y: number; w: number; h: number }, g: { x: number; y: number; w: number; h: number }) => t.x >= g.x && t.x < g.x + g.w;
+    return [...glyphs, ...texts.filter((t) => !glyphs.some((g) => within(t, g)))];
+  };
+  const overprinted = (boxes: { x: number; y: number; w: number; h: number }[]) =>
+    boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h).map((b) => `${JSON.stringify(a)} × ${JSON.stringify(b)}`));
+
   it('plays on the game’s one key map: its bar is labelled for the device in use, and a pad’s Square casts the first skill', () => {
     const texts = () => hudTexts(e).map((t) => t.text);
     e.input.noteDevice('keyboard');
-    expect(texts(), 'keys').toEqual(expect.arrayContaining(['LMB', '1', '2', '3', '4', 'F']));
+    expect(texts(), 'keys').toEqual(expect.arrayContaining(['1', '2', '3', '4', 'F']));
+    expect(labelBoxes().length, 'a label per slot').toBe(6);
+    expect(overprinted(labelBoxes()), 'no label over the next').toEqual([]);
     const pad = (pressed: number[] = []) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i) })) });
     e.input.setGamepads([pad()]);
     e.step(30);
@@ -68,7 +95,9 @@ describe('the combat arena', () => {
     e.input.setGamepads([pad()]);
     e.step(1);
     expect(e.input.device).toBe('pad');
-    expect(texts(), 'the pad’s buttons').toEqual(expect.arrayContaining(['Cross', 'Square', 'Triangle', 'L1', 'R1', 'R2']));
+    expect(texts(), 'the pad’s buttons').toEqual(expect.arrayContaining(['L1', 'R1', 'R2']));
+    expect(labelBoxes().length, 'a label per slot').toBe(6);
+    expect(overprinted(labelBoxes()), 'no label over the next (CROSSSQUARTRIANGLE once)').toEqual([]);
     expect(g.hero.actor.mana, 'Cleave was cast').toBeLessThan(mana);
     e.step(60);
     e.input.setGamepads(null);

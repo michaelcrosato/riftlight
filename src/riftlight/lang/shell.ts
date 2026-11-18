@@ -213,6 +213,7 @@ const MENUS: LineArea = {
     'legend.back': 'Back',
     'legend.screens': 'Screens',
     'legend.hide': 'Hide',
+    'legend.tabs': 'Tabs',
   },
   notes: {
     'title.tagline': 'Under the game’s logo on the title screen: what kind of game this is.',
@@ -267,6 +268,7 @@ const MENUS: LineArea = {
     'legend.back': 'Under a menu, after the button that goes back or closes it (a controller’s Circle, the Esc key).',
     'legend.screens': 'Under the inventory, skills, passive tree, character and codex screens, after the two buttons that go to the screen before and after (L1 and R1, Q and E).',
     'legend.hide': 'Under the look studio, after the button that hides the panel to see the whole picture.',
+    'legend.tabs': 'Under the stash and the vendor, after the two buttons that switch their tabs (L1 and R1, Q and E).',
   },
   max: {
     'menu.title.continue': 20,

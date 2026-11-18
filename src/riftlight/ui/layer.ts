@@ -124,14 +124,23 @@ export class UiLayer {
   }
 
   /**
+   * Button legends under the top panel (ui/legend.ts), for hosts whose controls they name: the
+   * Riftlight shell turns them on; another host of these panels (Engine World) keeps its own hints.
+   */
+  legends = false;
+
+  /**
    * The shell's own entries for a panel's legend, after the panel's (the character screens: L1 R1
    * page through them).
    */
   legendExtra?: (panel: Panel) => readonly LegendItem[];
 
-  /** The legend under `o`'s frame for the device in use: its own (`Panel.legend`) or select and back, then the shell's. */
+  /**
+   * The legend under `o`'s frame for the device in use: its own (`Panel.legend`) or select and
+   * back, then the shell's. An overlay (the item windows, the tree) has one only when it says so.
+   */
   private legendOf(o: Open, ui: UiCanvas): readonly LegendItem[] {
-    if (ui.device === 'touch' || o.panel.overlay) return [];
+    if (!this.legends || ui.device === 'touch' || (o.panel.overlay && !o.panel.legend)) return [];
     const own = o.panel.legend?.() ?? menuLegend(!o.sticky);
     const items = [...own, ...(this.legendExtra?.(o.panel) ?? [])];
     if (o.peek) items.push({ actions: ['hide'], label: t('legend.hide') });
@@ -203,9 +212,13 @@ export class UiLayer {
         for (let y = 0; y < ui.h; y += 2) ui.rect(0, y, ui.w, 1, 'ink');
       }
       if (o.panel.overlay) {
-        // its own canvas: the whole screen is its rect, the shell draws nothing around it
+        // its own canvas: the whole screen is its rect, the shell draws nothing around it but
+        // its legend, where it says (clear of its windows)
         o.rect = { x: 0, y: 0, w: ui.w, h: ui.h };
         o.panel.draw(ui, o.rect, time);
+        const at = last && !this.peeking ? (o.panel.legendAt?.() ?? null) : null;
+        const legend = at ? this.legendOf(o, ui) : [];
+        if (at && legend.length) drawLegend(ui, legend, at.x, at.y, ui.w - 4);
         return;
       }
       // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can

@@ -474,6 +474,8 @@ export interface Panel {
    * select and back (no back while it can't be closed); an empty list: none.
    */
   legend?(): readonly LegendItem[];
+  /** Overlay: where its legend goes (the row's centre and glyph row, art pixels: clear of its windows), or null when there is no room. */
+  legendAt?(): { readonly x: number; readonly y: number } | null;
 }
 
 /** What a panel may ask of the shell (state it edits, money, sounds, closing itself). */

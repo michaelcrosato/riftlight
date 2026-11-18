@@ -20,7 +20,7 @@
 //   place x y z [yaw]    teleport and settle (not recorded); in the arena also: back on its
 //                        feet, full mana, no cooldowns, the default skill bar and the sword,
 //                        and fresh dummies where they first stood (scenarios don't share them)
-//   skills a,b+sup,...   (arena) the skill bar, RMB/K Q E R F (gem+support+...)
+//   skills a,b+sup,...   (arena) the skill bar, RMB/1/Q 2/E 3/R 4/T F (gem+support+...)
 //   weapon CLASS [2h]    (arena) equip a weapon class: sword axe mace sceptre dagger wand staff bow
 //   hurt SHARE [dx dz]   (arena) the hero loses SHARE of its life, knocked away from (dx, dz)
 //   kill                 (arena) the hero dies

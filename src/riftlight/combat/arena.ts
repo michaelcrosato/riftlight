@@ -29,7 +29,7 @@ export const ARENA = {
   size: 15,
   spawn: [0, 0, 4] as [number, number, number],
   pillars: [[-6, 0, -5], [6, 0, -5], [-6, 0, 6], [6, 0, 6]] as [number, number, number][],
-  /** Default skill bar: RMB/K, Q, E, R, F. */
+  /** Default skill bar: RMB / 1 / Q (pad Square), 2 / E (Triangle), 3 / R (L1), 4 / T (R1), F (R2). */
   slots: ['cleave', 'fireball', 'frost-nova', 'leap-slam', 'whirlwind'],
   dummies: [
     { at: [0, 0, -2], life: 400, still: true },
@@ -311,8 +311,6 @@ export class Arena implements Game {
     bar(hud, 6, 16, 70, a.mana / Math.max(1, a.maxMana), 'blue', `${Math.floor(a.mana)}`);
     // skill bar, bottom centre
     const slots = [this.hero.basic, ...this.hero.slots];
-    // what does each, named for the device in use (the game's controls: a pad's buttons, keys)
-    const labels = SLOT_ACTIONS.map((a) => ctx.engine.controls.label(a));
     const w = 34;
     const x0 = -((slots.length - 1) * w) / 2;
     slots.forEach((s, i) => {
@@ -320,7 +318,11 @@ export class Arena implements Game {
       const cd = s ? (this.hero.cooldowns.get(s.id) ?? 0) : 0;
       const cost = s ? s.cost : 0;
       const ok = s && cd <= 0 && a.mana >= (s.channel ? cost * 0.25 : cost);
-      hud.text(x, 16, labels[i]!, { anchor: 'bottom', color: 'mist' });
+      // what does each: its control's glyph for the device in use (a pad's ✕ □ L1, a key cap, the
+      // mouse), as Riftlight's skill bar draws it: a slot's width, where a pad's names would overprint
+      const action = SLOT_ACTIONS[i]!;
+      const gw = hud.glyphWidth(action);
+      hud.glyph(Math.round(hud.width / 2 + x - gw / 2), hud.height - 16 - 8, action);
       hud.text(x, 6, s ? short(s.def.name) : '-', { anchor: 'bottom', color: ok ? 'white' : 'slate' });
     });
     // damage per second over the last 4 s

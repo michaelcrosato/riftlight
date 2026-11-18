@@ -35,10 +35,11 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, SHELL_MENU_BINDINGS } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
+import { HeroWalk, type HeroWalkState } from './walk';
 import { LEVEL_GAP, lightFor, PadFeel, RUMBLE } from './padFeel';
 import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type MonsterHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addGemXp } from '../loot/sockets';
@@ -123,7 +124,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private hudControls: Box[] = [];
   /** The last row the title's logo and tagline take (the title menu starts under it). */
   private titleBottom = 0;
-  private readonly menuInput = new MenuInput(MENU_BINDINGS);
+  private readonly menuInput = new MenuInput(SHELL_MENU_BINDINGS);
   private rng = new Rng(1);
   /**
    * Presentation's own random stream (screen shake, damage-number drift, sound pitch): forked
@@ -167,8 +168,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private interactQueued = false;
   /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
   worldFocus: WalkTarget | null = null;
-  /** A thing clicked out of reach: the hero walks there and does it (`walk`, `arrive`); seconds on the way. */
-  walkTo: { target: WalkTarget; time: number } | null = null;
+  /** A thing clicked out of reach: the hero walks there along the way (`HeroWalk`) and does it on arrival (`walk`, `arrive`). */
+  walkTo: WalkTo | null = null;
   /**
    * The left button (or finger) now held went down on something that took it (a thing in the
    * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
@@ -269,6 +270,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.feel = new PadFeel(ctx);
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
+    this.layer.legends = true; // the button legends under panels name this shell's controls
     this.layer.legendExtra = (panel) => (isPage(panel.id) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
     const rng = () => this.rng;
     this.services = {
@@ -1375,9 +1377,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /**
-   * On the way to a thing clicked (`walkTo`): the hero walks straight at it, unless the player
-   * moves, attacks, casts or dodges, a panel opens, it is gone, or `WALK.giveUp` seconds pass.
-   * Arriving does it (`arrive`, in `update`).
+   * On the way to a thing clicked (`walkTo`): the hero walks there the way `moveTo` does (`HeroWalk`:
+   * the town's walkable grid, a level's grid route), unless the player moves, attacks, casts or
+   * dodges, a panel opens, it is gone, or it gets no closer for `WALK.giveUp` steps (something in
+   * the way). Arriving does it (`arrive`, in `update`).
    */
   private walk(i: MutableIntent, axis: { x: number; y: number }, panelOpen: boolean, dt: number): void {
     const w = this.walkTo;
@@ -1385,17 +1388,24 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const goal = this.walkGoal(w.target);
     w.time += dt;
     const own = Math.hypot(axis.x, axis.y) > 0.1 || i.attack || i.skill >= 0 || i.dodge;
-    if (!goal || own || panelOpen || w.time > WALK.giveUp) {
+    const p = this.hero.actor.position;
+    const d = goal ? Math.hypot(goal.x - p.x, goal.z - p.z) : 0;
+    if (d < w.best - WALK.progress) {
+      w.best = d;
+      w.since = 0;
+    } else w.since++;
+    if (!goal || own || panelOpen || w.since > WALK.giveUp) {
       this.walkTo = null;
       return;
     }
-    const p = this.hero.actor.position;
-    const dx = goal.x - p.x;
-    const dz = goal.z - p.z;
-    const d = Math.hypot(dx, dz);
-    if (d < 1e-3) return;
-    i.move.x = dx / d;
-    i.move.z = dz / d;
+    i.move.x = i.move.z = 0;
+    if (this.level) w.nav.level(this.level, p, goal, i.move);
+    else w.nav.town(this.town, p, goal, i.move);
+    const len = Math.hypot(i.move.x, i.move.z);
+    if (len > 1) {
+      i.move.x /= len;
+      i.move.z /= len;
+    }
   }
 
   /**
@@ -1676,7 +1686,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * the hero walks there (`walkTo`) and does it on arrival.
    */
   goTo(target: WalkTarget): void {
-    this.walkTo = { target, time: 0 };
+    const p = this.hero.actor.position;
+    const goal = this.walkGoal(target);
+    this.walkTo = { target, time: 0, best: goal ? Math.hypot(goal.x - p.x, goal.z - p.z) : 0, since: 0, nav: new HeroWalk(p) };
     this.arrive();
   }
 
@@ -1701,8 +1713,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const d = Math.hypot(goal.x - p.x, goal.z - p.z);
     const t = w.target;
     if (t.kind === 'it') {
+      // the F rule: it is the one in reach, nearest (or in reach, and the hero gets no closer)
       const it = this.town.interactables.find((x) => x.id === t.id)!;
-      if (d >= it.radius - 0.3) return false;
+      if (this.town.nearest(p) !== it && (d >= it.radius || w.since < WALK.settle)) return false;
       this.walkTo = null;
       return this.interactWith(it);
     }
@@ -2273,7 +2286,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         pressTaken: this.pressTaken,
         map: this.mapOpen,
         worldFocus: this.worldFocus,
-        walk: this.walkTo,
+        walk: this.walkTo && { target: this.walkTo.target, time: this.walkTo.time, best: this.walkTo.best, since: this.walkTo.since, nav: this.walkTo.nav.save() },
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
         hurt: this.hurt,
@@ -2391,7 +2404,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.pressTaken = t.pressTaken ?? false;
     this.mapOpen = t.map ?? false;
     this.worldFocus = t.worldFocus ?? null;
-    this.walkTo = t.walk ? { target: t.walk.target, time: t.walk.time } : null;
+    this.walkTo = t.walk?.nav ? { target: t.walk.target, time: t.walk.time, best: t.walk.best, since: t.walk.since, nav: HeroWalk.load(t.walk.nav) } : null;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
     this.goldShown = t.goldShown;
@@ -2428,8 +2441,24 @@ export function thingBox(it: Interactable, camera: import('three/webgpu').Camera
   return it.npc ? worldBox(it.npc.position, 1.9, 0.9, camera, ui) : worldBox(it.position, 1.4, 1.4, camera, ui);
 }
 
-/** A walk to a thing clicked gives up after this many seconds (something in the way). */
-const WALK = { giveUp: 6 } as const;
+/** A walk to a thing clicked (`Riftlight.walk`). */
+const WALK = {
+  /** Closer by this much (m) is progress... */
+  progress: 0.1,
+  /** ...none for this many steps (4 s) and it gives up (something in the way). */
+  giveUp: 240,
+  /** In reach of a townsperson but another is nearer: done once no closer for this many steps. */
+  settle: 20,
+} as const;
+
+/** `Riftlight.walkTo`: what the click was on, seconds on the way, its closest yet (m) and steps since, the steering. */
+interface WalkTo {
+  readonly target: WalkTarget;
+  time: number;
+  best: number;
+  since: number;
+  readonly nav: HeroWalk;
+}
 
 /** Either Shift key. */
 const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
@@ -2494,7 +2523,7 @@ interface RiftSnapshot {
     readonly map?: boolean;
     /** What the mouse was over in the world and the thing a click walks the hero to (left out by older snapshots). */
     readonly worldFocus?: WalkTarget | null;
-    readonly walk?: { readonly target: WalkTarget; readonly time: number } | null;
+    readonly walk?: { readonly target: WalkTarget; readonly time: number; readonly best: number; readonly since: number; readonly nav: HeroWalkState } | null;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;
     readonly hurt: number;

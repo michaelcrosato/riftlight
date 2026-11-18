@@ -56,9 +56,12 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   stash, the vendor and the bench they are those windows' tabs, as are Tab and L2 / R2 everywhere.
 - **The mouse in the world** (the ARPG way): a townsperson, the stash, a showcase piece, a loot
   label or the open portal under the mouse shows what a click does there (`thingLabel`, the mouse's
-  glyph and the prompt); a click does it in reach, else the hero walks there and does it on arrival
-  (`goTo`, `walkTo`, giving up when the player moves, attacks or opens a panel), and the press is
-  not a swing. A pad keeps the proximity prompts.
+  glyph and the prompt, under the thing near the top of the screen); a click does it in reach, else
+  the hero walks there the way `moveTo` does (`game/walk.ts` `HeroWalk`: the town's walkable grid,
+  a level's grid route, round whatever is in the way) and does it on arrival by the F rule (the
+  townsperson it went to is the one in reach: `Town.nearest`), giving up when the player moves,
+  attacks or opens a panel, or when it gets no closer for 4 s (`goTo`, `walkTo`: a snapshot keeps a
+  walk in progress); the press is not a swing. A pad keeps the proximity prompts.
 - **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
   replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a
   level-up (two pulses), a rare or loud item landing in view, the portal opening and the hero's

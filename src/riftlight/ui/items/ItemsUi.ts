@@ -603,6 +603,28 @@ export class ItemsUi {
     return [...(this.inventoryOpen ? [this.rightRect()] : []), ...(this.left ? [this.leftRect()] : [])];
   }
 
+  /** The left window has tabs to switch (the stash's, the vendor's when it sells more than one kind). */
+  tabbed(): boolean {
+    return this.left === 'stash' || (this.left === 'vendor' && this.vendorTabs().length > 1);
+  }
+
+  /**
+   * Where the shell's button legend goes (ui/legend.ts: the row's centre and glyph row, art
+   * pixels): under the windows, else over them, centred on them; null without room for its row.
+   */
+  legendAt(): { x: number; y: number } | null {
+    const rs = this.rects();
+    if (!rs.length) return null;
+    const left = Math.min(...rs.map((r) => r.x));
+    const right = Math.max(...rs.map((r) => r.x + r.w));
+    const top = Math.min(...rs.map((r) => r.y));
+    const bottom = Math.max(...rs.map((r) => r.y + r.h));
+    const x = Math.round((left + right) / 2);
+    if (bottom + 4 + 9 <= this.size.h) return { x, y: bottom + 4 }; // its plate: 2 rows above the glyphs, 9 below
+    if (top - 11 >= 2) return { x, y: top - 10 };
+    return null;
+  }
+
   // ---------------------------------------------------------------- pointer input
 
   /**
