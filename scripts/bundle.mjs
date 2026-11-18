@@ -159,7 +159,17 @@ const pkg = (name, title, url) => {
   const p = JSON.parse(readFileSync(join(dir, 'package.json'), 'utf8'));
   return { name: `${title} (${name})`, version: p.version, licence: p.license, url, text: readFileSync(join(dir, 'LICENSE'), 'utf8') };
 };
-const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs')];
+// 52in1's session client, pasted unmodified into examples/gem-rush.html (the 52in1 project's own
+// code, which says to paste it into games as it is): no licence file or SPDX tag to copy
+const sessionHead = readFileSync(join(root, 'scripts/hub/session.js'), 'utf8').match(/aihub-session (\S+)/);
+const session = {
+  name: "52in1's session client (aihub-session, in examples/gem-rush.html)",
+  version: sessionHead?.[1] ?? '?',
+  licence: 'no licence declared',
+  url: 'https://github.com/michaelcrosato/52in1 (lib/hub/session.js)',
+  text: 'aihub-session declares no licence (no SPDX tag, no licence file). Its header says: "Paste it into your game unmodified." It is the 52in1 project\'s own client, carried here unmodified.',
+};
+const code = [pkg('three', 'three.js', 'https://threejs.org/'), pkg('@dimforge/rapier3d', 'Rapier', 'https://rapier.rs'), session];
 writeFileSync(join(out, 'CREDITS.md'), creditsMarkdown({ version, builtins: Object.keys(builtins), code }));
 cpSync(join(root, 'CHANGELOG.md'), join(out, 'CHANGELOG.md'));
 cpSync(join(root, 'LICENSE'), join(out, 'LICENSE'));
