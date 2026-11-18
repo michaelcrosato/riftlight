@@ -208,7 +208,7 @@ pauses, Gem Rush turns both off (`settings: { button: !session, padButton: !sess
 - **Assists** where precise thumbs are hard: aim at the nearest target, a longer reach, auto-run,
   when `ctx.input.device === 'touch'` (recorded: a replay agrees).
 - **Phones both ways**: in portrait the art can be 130 columns wide. Keep the play area in view
-  (both games keep their ground's width in view, `camera: { minWidth: 14 }`; or follow the
+  (both games pass their ground's width, `camera: { minWidth }` (14 m, 19 m); or follow the
   player) and the HUD clear of the controls while they show (`ctx.engine.touch?.visible`,
   `rects()`: a floating stick rests low in its `zone`, which takes every touch in it); hide them
   (`ctx.engine.touch?.show(false)`) while a menu or a result owns the screen.

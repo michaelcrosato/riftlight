@@ -572,7 +572,7 @@ class CliffRun {
     const parts = [];
     for (const [x0, x1, top] of this.data.platforms) {
       const w = x1 - x0;
-      const h = top + 12; // every platform reaches down out of view, a phone held upright too
+      const h = top + 16; // every platform reaches down out of view, a phone held upright too
       physics.addStaticBox({ position: [(x0 + x1) / 2, top - h / 2, 0], halfExtents: [w / 2, h / 2, 2] });
       const body = new Mesh(new BoxGeometry(w, h, 4), toonMaterial(palette.sand));
       body.position.set((x0 + x1) / 2, top - h / 2, 0);

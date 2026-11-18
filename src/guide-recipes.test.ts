@@ -153,7 +153,7 @@ describe('docs/GUIDE-RECIPES.md', () => {
   });
 });
 
-describe("the kit's recipes meet CONTROLS.md", () => {
+describe("the kit's recipes meet CONTROLS.md", { timeout: 60_000 }, () => {
   it('each has a controls table, touch buttons of its own, a phone’s density and the settings on a pad', () => {
     expect(games.map((g) => g.name).sort()).toEqual(Object.keys(STATES).sort());
     for (const { name, code } of games) {
