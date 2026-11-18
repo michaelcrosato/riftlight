@@ -305,6 +305,7 @@ class GemRush {
     this.at.x = Math.max(-8.5, Math.min(8.5, this.at.x + m.x * 6 * dt));
     this.at.z = Math.max(-5.5, Math.min(5.5, this.at.z - m.y * 6 * dt));
     for (const gem of this.gems) if (gem.visible && gem.position.distanceTo(this.at) < 0.8) this.grab(ctx, gem);
+    this.session?.progress(this.got, 'GEMS'); // the hub's scoreboard (parallel and ghost), from the start
     this.left -= dt;
     if (this.got === this.gems.length) this.finish(ctx, true);
     else if (this.left <= 0) this.finish(ctx, false);
@@ -315,7 +316,6 @@ class GemRush {
     this.got++;
     ctx.audio.play('coin');
     ctx.input.rumble({ weak: 0.5, ms: 60 });
-    this.session?.progress(this.got, 'GEMS'); // the hub's scoreboard (parallel and ghost)
   }
 
   /** Cleared or failed: reported once, with the hub's time (real time: the report's, never play's). */
@@ -376,10 +376,10 @@ if (typeof document !== 'undefined') await Engine.start(createGame(session), wit
   moment: { id: 'gem-dash', seconds: 8 }, players: 2 })`, its `client(i)` to `HubSession.join`).
   Then 52in1's harness on the built page, every mode.
 
-The page's head, after `<meta charset>` and the session client, names what the game does (the
-52in1 catalogue: https://52in1.com/lib/hub/catalogue.md):
+Gem Rush's page names what it does in its head, after `<meta charset>` and the session client
+(copy both; the 52in1 catalogue: https://52in1.com/lib/hub/catalogue.md):
 
-```html
+```html gem-rush
 <meta name="hub:tags" content="3d, arcade, top-down, gamepad, touch">
 <meta name="hub:controls" content="WASD or arrows to walk; gamepad to play it all; touch to play on a phone">
 <meta name="hub:dualsense" content="light bar, haptics">
