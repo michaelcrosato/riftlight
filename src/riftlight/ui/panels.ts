@@ -10,7 +10,7 @@ import { StatQuery } from '../combat/stats';
 import { DAMAGE_COLORS, DAMAGE_TYPES } from '../core/types';
 import type { MechanicInfo, Panel, WorldLoot } from '../game/ports';
 import type { Penalty } from '../game/progress';
-import type { Recap } from '../game/recap';
+import { type Recap, recapTip } from '../game/recap';
 import { lang, lineKey, t } from '../lang';
 import { talkText } from '../town/npcs';
 import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
@@ -410,7 +410,7 @@ export class DeathRecap implements Panel {
     // tip and penalty
     y = Math.max(y, sy) + 6;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), r.w - 8)) {
+    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), r.w - 8)) {
       if (y + 8 > r.y + r.h - 22) break;
       ui.text(r.x + 4, y, l, { color: 'lime' });
       y += 9;
@@ -481,7 +481,7 @@ export class DeathRecap implements Panel {
     }
     y += 4;
     ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(t('panel.death.tip', { tip: rc.tip }), w)) {
+    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), w)) {
       if (y + 8 > bottom) break;
       ui.text(x, y, l, { color: 'lime' });
       y += 9;

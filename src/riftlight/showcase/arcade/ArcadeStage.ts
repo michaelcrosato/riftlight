@@ -457,7 +457,7 @@ export class ArcadeStage {
       [t('showcase.arcade.coins_par', { coins: r.coins, total: r.total, par: formatRace(S.par) }), 'white'],
       [r.reward > 0 ? t('showcase.arcade.reward', { gold: r.reward }) : t('showcase.arcade.best', { time: formatRace(r.best) }), 'sand'],
     ];
-    const again = this.options.canLeave === false ? ['again'] : ['again', 'leave'];
+    const again = this.options.canLeave === false ? (['again'] as const) : (['again', 'leave'] as const);
     const help = hints(again, '   ');
     const w = Math.min(hud.width - 8, Math.max(180, hud.measure(title, 2).width + 16, ...[...rows.map(([x]) => x), help].map((x) => hud.measure(x).width + 12)));
     const ts = hud.measure(title, 2).width + 16 <= w ? 2 : 1;

@@ -12,7 +12,7 @@ import { installLanguage, riftlightLines } from '../../lang';
 import type { Painter } from './paint';
 import { textWidth, wrap } from './paint';
 import { drawTooltip, measureTooltip, TIP_W, tooltipLines } from './tooltip';
-import { windowHint } from './ItemsUi';
+import { messageText, padOrbHint, windowHint } from './ItemsUi';
 
 const texts = (item: Item, opts = {}) => tooltipLines(item, opts).map((l) => l.text);
 
@@ -147,5 +147,18 @@ describe('hints for the device that drives the windows', () => {
     expect(windowHint('item.vendor.hint', 'PadY', 'touch', 'playstation')).toBe('Tap twice: buy. Drop: sell');
     expect(windowHint('item.skill.hint', 'PadX', 'pad', 'playstation')).toBe('Square on a gem in your bag to socket it');
     expect(windowHint('item.bench.orb_hint', 'PadA', 'pad', 'xbox')).toBe('A on an orb to use it');
+  });
+
+  it('an orb says how to use it with the pad cursor: Square, then Cross on an item (X, then A)', () => {
+    const orb = currencyItem(new Rng(1), 'kindling-shard', 3);
+    expect(texts(orb).join(' ')).toContain('Right-click, then click an item to use');
+    expect(padOrbHint('playstation')).toBe('Square, then Cross on an item to use');
+    expect(padOrbHint('xbox')).toBe('X, then A on an item to use');
+    const pad = texts(orb, { orbHint: padOrbHint('playstation') });
+    expect(pad.join(' ')).toContain('Square, then Cross on an item to use');
+    expect(pad.join(' ')).not.toMatch(/click/i);
+    expect(messageText({ id: 'item.say.apply_orb_pad', values: { orb: 'Kindling Shard' }, pad: 'PadA' }, 'playstation')).toBe('Apply Kindling Shard: Cross on an item');
+    expect(messageText({ id: 'item.say.apply_orb_pad', values: { orb: 'Kindling Shard' }, pad: 'PadA' }, 'xbox')).toBe('Apply Kindling Shard: A on an item');
+    expect(messageText({ id: 'item.say.apply_orb', values: { orb: 'Kindling Shard' } }, 'xbox')).toBe('Apply Kindling Shard: click an item');
   });
 });

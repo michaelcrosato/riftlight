@@ -133,6 +133,8 @@ const VENDOR_TABS: readonly { kind: VendorKind; label: string }[] = [
 export interface ItemsMessage {
   readonly id: string;
   readonly values?: LineValues;
+  /** A pad button (`PadA`) whose name fills the line's `{button}`, in the player's style when drawn. */
+  readonly pad?: string;
   /** An older snapshot's finished words (before messages were ids): shown as they are. */
   readonly text?: string;
 }
@@ -145,6 +147,16 @@ export interface ItemsMessage {
 export function windowHint(id: string, padButton: string, mode: 'pad' | 'touch' | 'mouse', style: PadGlyphs): string {
   if (mode === 'pad') return t(`${id}_pad`, { button: padName(padButton, style, lang()) });
   return t(mode === 'touch' ? `${id}_touch` : id);
+}
+
+/** An orb's tooltip with the pad cursor: Square (X) picks the orb, then Cross (A) on an item uses it. */
+export function padOrbHint(style: PadGlyphs): string {
+  return t('item.tip.use_orb_pad', { button: padName('PadX', style, lang()), button2: padName('PadA', style, lang()) });
+}
+
+/** A message's words in the player's language, a pad button in its style (`PadA` → Cross or A). */
+export function messageText(m: ItemsMessage, style: PadGlyphs): string {
+  return t(m.id, m.pad ? { ...m.values, button: padName(m.pad, style, lang()) } : m.values);
 }
 
 /** A reason a loot action can't be done, as a message. */
@@ -937,7 +949,8 @@ export class ItemsUi {
       if (itemClass(item) === 'currency') {
         if (this.left === 'bench' && this.benchTarget()) return this.benchOrb(item.base);
         this.applying = item.uid;
-        this.say({ id: 'item.say.apply_orb', values: { orb: itemName(item) } }, null);
+        // the next item clicked gets it: with the pad cursor, Cross (A) on it
+        this.say(this.cursorMode === 'pad' ? { id: 'item.say.apply_orb_pad', values: { orb: itemName(item) }, pad: 'PadA' } : { id: 'item.say.apply_orb', values: { orb: itemName(item) } }, null);
       } else if (isGem(item)) {
         if (this.left !== 'skills') return this.say({ id: 'item.say.open_skills' });
         const ref = autoSocket(this.store.skills, item, this.skillSlot);
@@ -1221,7 +1234,7 @@ export class ItemsUi {
     if (this.left) this.drawLeft(p);
     this.drawCursor(p);
     if (this.message) {
-      const lines = wrap(this.message.text ?? t(this.message.id, this.message.values), this.size.w - 10);
+      const lines = wrap(this.message.text ?? messageText(this.message, this.ctx.engine.controls.style), this.size.w - 10);
       const w = Math.max(...lines.map(textWidth)) + 8;
       const h = lines.length * 9 + 4;
       const x = Math.floor((this.size.w - w) / 2);
@@ -1550,7 +1563,8 @@ export class ItemsUi {
       const ok = supportApplies(this.store.skills[at.slot]!, item);
       if (ok === false) extra = [{ text: t('item.tip.not_supported', { skill: itemName(this.store.skills[at.slot]!.gem!) }), color: UI.bad }];
     }
-    const lines = tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(extra ? { extra } : {}) });
+    const orbHint = this.cursorMode === 'pad' ? padOrbHint(this.ctx.engine.controls.style) : undefined;
+    const lines = tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(orbHint ? { orbHint } : {}), ...(extra ? { extra } : {}) });
     const size = measureTooltip(lines);
     let x: number;
     let y: number;

@@ -65,7 +65,8 @@ never imports the line list), and areas stay function declarations.
   translated. The pause menu's Tuning is the players' (difficulty presets): `menu.tuning.*`.
 - **Saves keep ids and values, never finished sentences**, so a save shows in today's language: a
   rare item keeps its two `words`, a speech bubble its line id, the death recap what rebuilds a
-  killer's name (a genome, a boss's id). Where a save must keep a name (the bestiary), it keeps the
+  killer's name (a genome, a boss's id) and its tip as line ids (`recapTip` tells it when drawn, so
+  `{key:dodge}` names the control of the device in use then). Where a save must keep a name (the bestiary), it keeps the
   English (`sourceLang()`), so a run ends on the same fingerprint in any language. An old save
   holding English shows it as it is.
 - **Proper names** (people, places, products) are in `NAMES` (`lang/brief.ts`).
