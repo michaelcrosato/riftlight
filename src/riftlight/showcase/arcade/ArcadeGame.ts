@@ -13,8 +13,9 @@
  * Its controls are Riftlight's (`controls`: the engine names them for the device in use, so the
  * hints read "WASD run · Space jump" on a keyboard, "Left stick run · Cross jump" on a pad, "Stick
  * run · B jump" on a phone, whose buttons are `ARCADE_TOUCH_BUTTONS`). Enter, Cross or a tap
- * restarts after the finish; Options, Esc or ≡ pause it (Resume, Restart: `StagePause`, the clock
- * stopped). Agents: `window.__ARCADE__` (`state()`, `autoplay()`).
+ * restarts after the finish; Options, Esc or ≡ pause it (Resume, Restart, Settings: `StagePause`, the
+ * clock stopped; Settings opens the engine's panel, which a pad drives, over the pause). Agents:
+ * `window.__ARCADE__` (`state()`, `autoplay()`).
  */
 import { Color, type Vector3 } from 'three/webgpu';
 import { type EngineOptions, type Game, type GameContext, MenuInput, type TouchButton } from '../../../engine';
@@ -114,14 +115,16 @@ export class ArcadeGame implements Game {
       const pick = this.pause.update(events, input, ctx.hud).pick;
       // what chose a row must not jump once the run goes on, nor crouch while it is held
       this.presses.take(input);
-      if (pick) {
+      // Settings: the engine's panel over the pause (it pauses the engine; closed, the pause is still up)
+      if (pick === 'settings') ctx.engine.settings.open();
+      else if (pick) {
         this.pause = null;
         if (pick === 'restart') this.stage.start();
       }
       return;
     }
     this.stage.update(dt);
-    if (input.wasPressed('Escape', 'PadStart')) this.pause = new StagePause(['resume', 'restart']);
+    if (input.wasPressed('Escape', 'PadStart')) this.pause = new StagePause(['resume', 'restart', 'settings']);
     else if (this.stage.phase === 'done' && this.stage.phaseTime > 0.8 && input.wasPressed(...ARCADE_AGAIN)) this.stage.start(); // what "again" names
     this.stage.drawHud(ctx.hud);
   }

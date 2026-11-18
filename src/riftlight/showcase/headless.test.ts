@@ -3,10 +3,11 @@
 // check stay in the browser); then what needs a page (pointer lock, a picture, a file download or
 // picker) does nothing, and the game plays on. One engine for the file, tests in order.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { FirstPersonRig } from '../../engine';
+import { FirstPersonRig, FreeRig } from '../../engine';
 import { type HeadlessRiftlight, headlessRiftlight, pointAtArt, stepUntil } from '../headless';
 import { t } from '../lang';
 import { UiCanvas } from '../ui/kit';
+import { FOV_STEPS, nextFovStep } from './photo/PhotoMode';
 import { showcaseOf } from './save';
 
 const T = 30_000;
@@ -264,7 +265,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
   );
 
   it(
-    'on a pad and a phone: the card closes on Circle or a sideways swipe, every hint names a control that does it here, Options pauses (Photo mode in it), photo mode hides on Create and backs out on Circle',
+    'on a pad and a phone: the card closes on Circle or a sideways swipe, every hint names a control that does it here, Options pauses (Photo mode in it), photo mode hides on L1 or Create, steps its field of view on R1 and backs out on Circle',
     async () => {
       const { rl, game, engine } = h;
       const sc = game.showcase;
@@ -292,6 +293,19 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         rl.press('PadBack');
         expect(sc.photo.hidden, 'Create hides the panel').toBe(!hidden);
         rl.press('PadBack');
+        rl.press('PadLB');
+        expect(sc.photo.hidden, 'L1 hides it too (photo_hide), as its hint says').toBe(!hidden);
+        rl.press('PadLB');
+        expect([t('showcase.hint.hide'), t('showcase.hint.field_of_view')]).toEqual(['L1 hide', 'R1 field of view']);
+        // R1 steps the field of view closer, and from the closest back to the widest
+        const rig = engine.camera as FreeRig;
+        const steps: number[] = [];
+        for (let i = 0; i <= FOV_STEPS.length; i++) {
+          rl.press('PadRB');
+          steps.push(rig.zoom);
+        }
+        expect(steps.slice(-FOV_STEPS.length - 1, -1).slice().sort((a, b) => a - b), 'every step once').toEqual([...FOV_STEPS]);
+        expect(steps.at(-1), 'round again').toBe(nextFovStep(steps.at(-2)!));
         rl.press('PadY'); // into the panel's rows
         rl.press('PadB'); // Circle: out of the rows
         expect(sc.photo.active).toBe(true);
@@ -382,6 +396,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       for (let i = 0; list.length <= 12; i++) list.push({ ...list[i % kept]!, key: `test:${i}`, rank: 'normal', kills: 1 });
       await rl.bestiary.open();
       try {
+        engine.controls.touch = true; // as on a phone: touch controls show, so a touch names them
         engine.input.noteDevice('touch');
         engine.step(2);
         expect(rl.bestiary.state().wings).toBe(2);
@@ -427,6 +442,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         list.length = kept;
         rl.bestiary.close();
         engine.input.noteDevice('keyboard');
+        engine.controls.touch = false;
       }
       expect(engine.errors).toEqual([]);
     },
@@ -479,6 +495,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       const photo = game.showcase.photo;
       rl.photo.open();
       try {
+        engine.controls.touch = true; // as on a phone: touch controls show, so a touch names them
         engine.input.noteDevice('touch');
         const mini = vi.spyOn(UiCanvas.prototype, 'mini');
         try {
@@ -516,6 +533,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       } finally {
         rl.photo.close();
         engine.input.noteDevice('keyboard');
+        engine.controls.touch = false;
       }
       expect(engine.errors).toEqual([]);
     },

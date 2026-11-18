@@ -1,7 +1,7 @@
 /**
  * The showcase's pause: Options, Esc or ≡ in the arcade (Riftlight's cabinet and `?game=arcade`)
  * and the Hall of Beasts. The stage stands still behind a short menu (Resume, Restart, Photo mode,
- * Leave), on every device: the d-pad or the stick and Cross, Circle, Options again or a sideways
+ * Leave; standalone Rift Runner's Settings, the engine's panel), on every device: the d-pad or the stick and Cross, Circle, Options again or a sideways
  * swipe to resume, hover and click, a tap. Reads only `ctx.input` (the engine's `MenuInput`
  * events and `FocusList`), so a recording replays it.
  */
@@ -10,11 +10,11 @@ import { t } from '../lang';
 import { clip, type UiCanvas } from '../ui/kit';
 
 /** A row of the pause. */
-export type PauseItem = 'resume' | 'restart' | 'photo' | 'leave';
+export type PauseItem = 'resume' | 'restart' | 'photo' | 'settings' | 'leave';
 
 /** A row's words (lines: `menu.pause.*`, `showcase.pause.*`). */
 export function pauseLabel(item: PauseItem): string {
-  return t(item === 'resume' ? 'menu.pause.resume' : item === 'photo' ? 'menu.pause.photo' : `showcase.pause.${item}`);
+  return t(item === 'resume' || item === 'photo' || item === 'settings' ? `menu.pause.${item}` : `showcase.pause.${item}`);
 }
 
 export class StagePause {

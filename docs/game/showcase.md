@@ -26,11 +26,12 @@ stage removes every collider, trigger and controller it added (`showcase/headles
 
 **On every device.** Options, Esc or ≡ pause a mode (`showcase/pause.ts` `StagePause`: Resume,
 Restart in the arcade, Photo mode, Back to town; the stage and its clock stand still), and the
-pause's Back to town is the way out. While the showcase owns the frame it puts
+pause's Back to town is the way out (standalone Rift Runner's pause has Settings instead: the
+engine's panel, which a pad drives, over the pause). While the showcase owns the frame it puts
 `SHOWCASE_CONTROLS` (`hints.ts`) in `engine.controls`, so every `{key:...}` hint names what its
-screens do: R1 / L1 zoom (the card, photo mode's field of view; the wheel and a pinch on the
-others), R1 / L1 or the < > at the screen's sides on a phone turn the Hall's wing (never the
-hero's lie down and prone), Create hides photo mode's panel, R2 / L2 fly it up and down; Circle
+screens do: R1 / L1 zoom the card (the wheel and a pinch on the others), R1 steps photo mode's
+field of view, R1 / L1 or the < > at the screen's sides on a phone turn the Hall's wing (never the
+hero's lie down and prone), L1 (`photo_hide`) or Create hides photo mode's panel, R2 / L2 fly it up and down; Circle
 backs out of the Hall's card and of photo mode. A swipe acts only where it starts on what it
 moves, since a drag looks or orbits everywhere else (and a quick one is a swipe too): a sideways
 one from the Hall's card closes it, one from photo mode's panel hides it (a tap on "show" brings

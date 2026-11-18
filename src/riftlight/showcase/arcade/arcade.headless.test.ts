@@ -3,7 +3,7 @@
 // controlLabel), so the standalone cabinet read "MOVE RUN  JUMP JUMP  POUND POUND"; the engine now
 // names any game's `controls` itself. It promises no "leave" (there is nothing to leave to), and its
 // "again" is what restarts it on every device.
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { Engine } from '../../../engine';
 import { headlessGame, stepUntil } from '../../headless';
 import { lang, t } from '../../lang';
@@ -45,7 +45,7 @@ describe('Rift Runner standalone: prompts', () => {
     expect(hudText().join(' ')).not.toContain(t('showcase.hint.leave'));
   });
 
-  it('Options (or Esc, ≡) pauses it: the clock stops; Circle resumes (and never crouches the hero while held); Restart starts the course over', () => {
+  it('Options (or Esc, ≡) pauses it: the clock stops; Circle resumes (and never crouches the hero while held); Restart starts the course over; Settings opens the engine\'s panel over it', () => {
     const tap = (code: string) => {
       engine.input.setKey(code, true);
       engine.step(1);
@@ -56,7 +56,7 @@ describe('Rift Runner standalone: prompts', () => {
     game.stage.skipIntro();
     engine.step(90);
     tap('PadStart');
-    expect(game.pause?.items).toEqual(['resume', 'restart']);
+    expect(game.pause?.items).toEqual(['resume', 'restart', 'settings']);
     const clock = game.stage.time;
     engine.step(60);
     expect(game.stage.time, 'the clock stands still').toBe(clock);
@@ -79,6 +79,21 @@ describe('Rift Runner standalone: prompts', () => {
     tap('PadA');
     expect(game.pause).toBeNull();
     expect(game.stage.time, 'Restart: the run from the start').toBe(0);
+    // Settings: the engine's panel (a pad drives it) over the pause, which stays up under it
+    const open = vi.spyOn(engine.settings, 'open');
+    try {
+      tap('PadStart');
+      tap('ArrowDown');
+      tap('ArrowDown');
+      expect(hudText()).toContain(t('menu.pause.settings'));
+      tap('PadA');
+      expect(open, 'Settings opens the engine\'s panel').toHaveBeenCalledTimes(1);
+      expect(game.pause?.items, 'the pause stays under it').toEqual(['resume', 'restart', 'settings']);
+    } finally {
+      open.mockRestore();
+    }
+    tap('PadB');
+    expect(game.pause, 'Circle resumes').toBeNull();
     // a phone: B jumps, A attacks, ≡ pauses, as the hints name them
     expect(ARCADE_TOUCH_BUTTONS.map((b) => [b.label, b.code])).toEqual([
       ['B', 'Space'],

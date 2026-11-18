@@ -27,7 +27,7 @@ export interface GameEntry {
   make(args?: unknown): Game;
 }
 
-/** A demo with no pause menu of its own: Options (Esc) opens the engine's settings. */
+/** A demo with no pause menu of its own: Options (Esc) opens the engine's settings (Rift Runner's pause has a Settings row). */
 const SETTINGS_ON_OPTIONS: Partial<EngineOptions> = { settings: { padButton: true } };
 
 export const GAMES: readonly GameEntry[] = [
