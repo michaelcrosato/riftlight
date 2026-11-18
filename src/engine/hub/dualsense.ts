@@ -163,10 +163,7 @@ export class DualSense {
         this.gated.add('light'); // the hub has it while games may not colour it: only a let-go goes
         send = want === null && this.out.light !== null;
       } else send = this.gated.delete('light') || want !== this.out.light;
-      if (send) {
-        this.out.light = want;
-        ds.light(want);
-      }
+      if (send && this.call('light', () => ds.light!(want))) this.out.light = want;
     }
     if (typeof ds?.trigger !== 'function') return;
     const target = (side: Side) => (this.held ? null : this.want[side]);
@@ -176,13 +173,26 @@ export class DualSense {
       sides = SIDES.filter((side) => target(side) === null && this.out[side] !== null);
     } else sides = SIDES.filter((side) => this.gated.delete(side) || key(target(side)) !== key(this.out[side]));
     if (sides.length === 2 && key(target('left')) === key(target('right'))) {
-      this.out.left = this.out.right = target('left');
-      ds.trigger('both', target('left'));
+      if (this.call('trigger', () => ds.trigger!('both', target('left')))) this.out.left = this.out.right = target('left');
       return;
     }
     for (const side of sides) {
-      this.out[side] = target(side);
-      ds.trigger(side, target(side));
+      if (this.call('trigger', () => ds.trigger!(side, target(side)))) this.out[side] = target(side);
+    }
+  }
+
+  /**
+   * One call into the hub's controller. A hub callback that throws must not leave the engine code
+   * that synced (a level unload, `dispose`, the pause setter, a settings change) half done: the error
+   * is a warning, and what it would have sent is not recorded as sent, so the next change tries again.
+   */
+  private call(what: 'light' | 'trigger', send: () => void): boolean {
+    try {
+      send();
+      return true;
+    } catch (error) {
+      this.warn(`the hub's ${what}() threw: ${error instanceof Error ? error.message : String(error)}`);
+      return false;
     }
   }
 

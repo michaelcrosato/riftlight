@@ -314,6 +314,37 @@ describe('the engine with the player’s 52in1 settings', () => {
     expect(hub.read).toEqual([]);
   });
 
+  it('a hub callback that throws is a warning: loading a game and dispose still finish, and what never arrived is tried again', async () => {
+    const hub = fakeHub();
+    const ds = (hub.source as unknown as { dualsense: { light: (c: string | null) => void } }).dualsense;
+    const light = ds.light;
+    let broken = true;
+    ds.light = (c) => {
+      if (broken) throw new Error('hid write failed');
+      light(c);
+    };
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    try {
+      const engine = await Engine.headless(new Lamp(), { hubSettings: hub.source });
+      engine.step(2);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("the hub's light() threw: hid write failed"));
+      expect(lights(hub.calls)).toEqual([]);
+      broken = false;
+      hub.change({}); // the colour never reached the controller: the next sync sends it
+      expect(lights(hub.calls)).toEqual(['#b13e53']);
+      broken = true;
+      await engine.loadGame({ name: 'Title', setup() {}, cameraTarget: () => new Vector3() });
+      expect(engine.game.name).toBe('Title'); // the unload's let-go threw, and the load went on
+      broken = false;
+      engine.dispose(); // the let-go that failed goes now
+      expect(lights(hub.calls)).toEqual(['#b13e53', null]);
+      hub.change({ music: 0.1 }); // dispose finished: no longer listening
+      expect(engine.audio.hubVolumes.music).toBe(0.5);
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
   it('a replay sends nothing: outputs are not recorded', async () => {
     const hub = fakeHub();
     const lamp = new Lamp();
