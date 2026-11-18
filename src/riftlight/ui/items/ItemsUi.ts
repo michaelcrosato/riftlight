@@ -363,7 +363,8 @@ export class ItemsUi {
     const text = this.hint('item.vendor.hint', 'PadY'); // Ctrl-click: buy / sell
     const w = this.panelW() - 10;
     const key = `${text}|${w}`;
-    if (this.hintCache.key !== key) this.hintCache = { key, hint: miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) } };
+    // the normal font, read from the couch; a phone's narrow window: one row of the mini font when it fits
+    if (this.hintCache.key !== key) this.hintCache = { key, hint: this.narrow && miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) } };
     return this.hintCache.hint;
   }
 
@@ -602,6 +603,28 @@ export class ItemsUi {
     return [...(this.inventoryOpen ? [this.rightRect()] : []), ...(this.left ? [this.leftRect()] : [])];
   }
 
+  /** The left window has tabs to switch (the stash's, the vendor's when it sells more than one kind). */
+  tabbed(): boolean {
+    return this.left === 'stash' || (this.left === 'vendor' && this.vendorTabs().length > 1);
+  }
+
+  /**
+   * Where the shell's button legend goes (ui/legend.ts: the row's centre and glyph row, art
+   * pixels): under the windows, else over them, centred on them; null without room for its row.
+   */
+  legendAt(): { x: number; y: number } | null {
+    const rs = this.rects();
+    if (!rs.length) return null;
+    const left = Math.min(...rs.map((r) => r.x));
+    const right = Math.max(...rs.map((r) => r.x + r.w));
+    const top = Math.min(...rs.map((r) => r.y));
+    const bottom = Math.max(...rs.map((r) => r.y + r.h));
+    const x = Math.round((left + right) / 2);
+    if (bottom + 4 + 9 <= this.size.h) return { x, y: bottom + 4 }; // its plate: 2 rows above the glyphs, 9 below
+    if (top - 11 >= 2) return { x, y: top - 10 };
+    return null;
+  }
+
   // ---------------------------------------------------------------- pointer input
 
   /**
@@ -713,6 +736,8 @@ export class ItemsUi {
         this.cycleTab(e.dir);
         return true;
       case 'key': {
+        // X / Square and V / Triangle are the windows' own (a page key, H: the shell's)
+        if (!['KeyX', 'PadX', 'KeyV', 'PadY'].includes(e.code)) return false;
         const cx = Math.floor(this.cursor.x);
         const cy = Math.floor(this.cursor.y);
         if (this.cursorMode !== 'pad') this.padStart();
@@ -1474,7 +1499,7 @@ export class ItemsUi {
         .forEach((l, i) => p.text(tx, f.y + 1 + i * 9, l, itemColour(target)));
       // its rarity and affixes, under the name (two rows of the normal font fit above the orbs)
       const summary = t('item.bench.summary', { rarity: rarityName(target.rarity), count: target.affixes.length });
-      if (miniCovers(summary) && miniWidth(summary) <= tw) miniText(p, tx, f.y + 30, summary, PALETTE.mist);
+      if (this.narrow && miniCovers(summary) && miniWidth(summary) <= tw) miniText(p, tx, f.y + 30, summary, PALETTE.mist);
       else wrap(summary, tw).slice(0, 2).forEach((l, i) => p.text(tx, f.y + 29 + i * 9, l, PALETTE.mist));
     } else {
       wrap(this.hint('item.bench.hint', 'PadA'), tw)
@@ -1530,8 +1555,58 @@ export class ItemsUi {
       drawIcon(p, 'orb', cx + 3, cy + 3, 7, 7, UI.dim);
     }
     if (this.cursorMode === 'pad') {
-      p.rect(cx - 3, cy, 7, 1, PALETTE.white);
-      p.rect(cx, cy - 3, 1, 7, PALETTE.white);
+      // the pad's focus, read from the couch: a thick sand frame round what Cross would press
+      // (the item's whole footprint, a slot, a socket, an orb), an ink rim outside it
+      const r = this.held ? null : this.targetRect(t);
+      if (r) {
+        outline(p, r.x - 3, r.y - 3, r.w + 6, r.h + 6, PALETTE.ink);
+        outline(p, r.x - 2, r.y - 2, r.w + 4, r.h + 4, UI.title);
+        outline(p, r.x - 1, r.y - 1, r.w + 2, r.h + 2, UI.title);
+      } else {
+        p.rect(cx - 4, cy - 1, 9, 3, PALETTE.ink);
+        p.rect(cx - 1, cy - 4, 3, 9, PALETTE.ink);
+        p.rect(cx - 3, cy, 7, 1, UI.title);
+        p.rect(cx, cy - 3, 1, 7, UI.title);
+      }
+    }
+  }
+
+  /** The box of what the pad cursor is on (an item's whole footprint in a grid), or null where there is nothing to press. */
+  focusRect(): Rect | null {
+    return this.targetRect(this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y)));
+  }
+
+  private targetRect(t: Target | null): Rect | null {
+    if (!t) return null;
+    const cell = (o: { x: number; y: number }, grid: Grid | null, x: number, y: number): Rect => {
+      const placed = grid ? itemAt(grid, x, y) : undefined;
+      const s = placed ? itemSize(placed.item) : { w: 1, h: 1 };
+      const at = placed ?? { x, y };
+      return { x: o.x + at.x * CELL, y: o.y + at.y * CELL, w: s.w * CELL - 1, h: s.h * CELL - 1 };
+    };
+    switch (t.kind) {
+      case 'grid':
+        return t.where === 'inventory' ? cell(this.inventoryGridOrigin(), this.store.state.inventory, t.cx, t.cy) : cell(this.leftGridOrigin(), this.leftGrid(), t.cx, t.cy);
+      case 'vendor':
+        return cell(this.leftGridOrigin(), this.leftGrid(), t.cx, t.cy);
+      case 'slot':
+        return this.slotRect(t.slot);
+      case 'socket':
+        return this.socketRect(t.slot, t.link);
+      case 'skillrow':
+        return this.skillRowRect(t.slot);
+      case 'orb':
+        return this.orbRect(CURRENCY.all().findIndex((c) => c.id === t.base));
+      case 'bench':
+        return this.benchFrame();
+      case 'button':
+        return this.skillsButton();
+      case 'tab':
+        return this.tabRect(t.index);
+      case 'close':
+        return this.closeRect(t.panel === 'right' ? this.rightRect() : this.leftRect());
+      case 'panel':
+        return null;
     }
   }
 

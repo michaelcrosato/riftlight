@@ -193,7 +193,9 @@ function minimapZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>):
 function whereZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box {
   const rows = whereRows(W, m, g);
   const widest = Math.max(...rows.map((r) => (g.compact ? miniWidth(r) : textWidthPx(r))));
-  return { x: g.textX - 2, y: 4, w: Math.max(Math.min(W / 2, 90), widest + 4), h: 12 + (rows.length - 1) * WHERE_ROW + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) };
+  // the clock and the kills in the normal font off a phone (drawHud): 9 pixels a row, 7 in the mini font
+  const row = g.compact ? 7 : 9;
+  return { x: g.textX - 2, y: 4, w: Math.max(Math.min(W / 2, 90), widest + 4), h: 13 + (rows.length - 1) * WHERE_ROW + (m.timer ? row : 0) + (m.progress ? row : 0) };
 }
 
 /** A boss's name and bar (top centre), or null without a boss. */
@@ -480,23 +482,26 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
   const rows = whereRows(W, m, g);
   if (g.compact) ui.mini(tx, 5, rows[0]!, 'sand', 'left', 'ink');
   else rows.forEach((row, i) => ui.text(tx, 6 + i * WHERE_ROW, row, { color: 'sand' }));
-  let ty = (g.compact ? 12 : 16) + (rows.length - 1) * WHERE_ROW;
+  // the clock, the kills and the tuning in the normal font, read from the couch (a phone's compact HUD: the mini font)
+  let ty = (g.compact ? 12 : 17) + (rows.length - 1) * WHERE_ROW;
+  const small = (s: string, color: HudColor) => (g.compact ? ui.mini(tx, ty, s, color) : ui.text(tx, ty, s, { color }));
+  const step = g.compact ? 7 : 9;
   if (m.timer) {
-    ui.mini(tx, ty, m.timer, 'mist');
-    ty += 7;
+    small(m.timer, 'mist');
+    ty += step;
   }
   if (m.progress && m.progress.total > 0) {
     const { killed, total } = m.progress;
-    ui.mini(tx, ty, g.compact ? `${lang().formatNumber(killed)}/${lang().formatNumber(total)}` : t('hud.slain', { killed, total }), killed >= total ? 'lime' : 'mist');
-    ty += 7;
+    small(g.compact ? `${lang().formatNumber(killed)}/${lang().formatNumber(total)}` : t('hud.slain', { killed, total }), killed >= total ? 'lime' : 'mist');
+    ty += step;
   }
   if (m.difficulty.length) {
     ty += 2;
-    ui.mini(tx, ty, t('hud.tuned'), 'orange');
-    ty += 7;
+    small(t('hud.tuned'), 'orange');
+    ty += step;
     for (const d of m.difficulty) {
-      ui.mini(tx, ty, d, 'orange');
-      ty += 6;
+      small(d, 'orange');
+      ty += g.compact ? 6 : 9;
     }
   }
 

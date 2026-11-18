@@ -79,12 +79,26 @@ export async function runRiftlightBuilds(h) {
         },
         { k, before, after },
       );
+    // what each frame shows, so a key that casts something else (or nothing) goes red, not a wrong picture
+    const shown = () =>
+      R(() => {
+        const g = window.__PIXEL_ENGINE__.game;
+        return {
+          cursed: g.dummies.filter((d) => d.alive && d.curses.has('vulnerability')).length,
+          totems: g.actors.actors.filter((a) => a.alive && a.tags.includes('totem')).length,
+          traps: g.combat.active('trap').length,
+        };
+      });
+    // the bar on the game's key map (game/controls.ts heroCodes): Q the curse, E the totem, R the trap
     // the curse: the hex circle fades, the rune under the cursed dummy stays
-    await press('KeyK', { dummies: true, at: [0, 0, 1], facing: Math.PI, frames: 4 }, 60);
+    await press('KeyQ', { dummies: true, at: [0, 0, 1], facing: Math.PI, frames: 4 }, 60);
+    check((await shown()).cursed > 0, 'arena: Q (the bar\'s first slot) curses a dummy with Vulnerability');
     await capture(page, `riftlight-builds-${tag}-curse.png`);
-    await press('KeyQ', { at: [0, 0, 3], facing: Math.PI, frames: 10 }, 150);
+    await press('KeyE', { at: [0, 0, 3], facing: Math.PI, frames: 10 }, 150);
+    check((await shown()).totems > 0, 'arena: E (the second slot) plants a Spell Totem');
     await capture(page, `riftlight-builds-${tag}-totem.png`);
-    await press('KeyE', { dummies: true, at: [5, 0, 6], facing: 0, frames: 4 }, 60);
+    await press('KeyR', { dummies: true, at: [5, 0, 6], facing: 0, frames: 4 }, 60);
+    check((await shown()).traps > 0, 'arena: R (the third slot) throws a trap');
     await capture(page, `riftlight-builds-${tag}-trap.png`);
     checkClean(await state(page), logs, 'arena: ');
   } catch (e) {

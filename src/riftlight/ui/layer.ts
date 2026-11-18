@@ -14,6 +14,7 @@
 import type { Panel } from '../game/ports';
 import { t } from '../lang';
 import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from './kit';
+import { drawLegend, LEGEND_ROOM, type LegendItem, menuLegend } from './legend';
 
 /** The close box's cross (5 × 5). */
 const CROSS = ['x...x', '.x.x.', '..x..', '.x.x.', 'x...x'];
@@ -122,6 +123,30 @@ export class UiLayer {
     for (const o of this.stack) o.age += dt;
   }
 
+  /**
+   * Button legends under the top panel (ui/legend.ts), for hosts whose controls they name: the
+   * Riftlight shell turns them on; another host of these panels (Engine World) keeps its own hints.
+   */
+  legends = false;
+
+  /**
+   * The shell's own entries for a panel's legend, after the panel's (the character screens: L1 R1
+   * page through them).
+   */
+  legendExtra?: (panel: Panel) => readonly LegendItem[];
+
+  /**
+   * The legend under `o`'s frame for the device in use: its own (`Panel.legend`) or select and
+   * back, then the shell's. An overlay (the item windows, the tree) has one only when it says so.
+   */
+  private legendOf(o: Open, ui: UiCanvas): readonly LegendItem[] {
+    if (!this.legends || ui.device === 'touch' || (o.panel.overlay && !o.panel.legend)) return [];
+    const own = o.panel.legend?.() ?? menuLegend(!o.sticky);
+    const items = [...own, ...(this.legendExtra?.(o.panel) ?? [])];
+    if (o.peek) items.push({ actions: ['hide'], label: t('legend.hide') });
+    return items;
+  }
+
   /** Hide or show the top panel, when it can be hidden (`peek`). Returns false when it can't. */
   togglePeek(): boolean {
     if (!this.top?.peek) return false;
@@ -187,22 +212,28 @@ export class UiLayer {
         for (let y = 0; y < ui.h; y += 2) ui.rect(0, y, ui.w, 1, 'ink');
       }
       if (o.panel.overlay) {
-        // its own canvas: the whole screen is its rect, the shell draws nothing around it
+        // its own canvas: the whole screen is its rect, the shell draws nothing around it but
+        // its legend, where it says (clear of its windows)
         o.rect = { x: 0, y: 0, w: ui.w, h: ui.h };
         o.panel.draw(ui, o.rect, time);
+        const at = last && !this.peeking ? (o.panel.legendAt?.() ?? null) : null;
+        const legend = at ? this.legendOf(o, ui) : [];
+        if (at && legend.length) drawLegend(ui, legend, at.x, at.y, ui.w - 4);
         return;
       }
       // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can
-      // lay out narrower do (`fit`), and nothing is ever drawn wider than the screen
+      // lay out narrower do (`fit`), and nothing is ever drawn wider than the screen; the top
+      // framed panel keeps rows under its frame for its button legend
+      const legend = last && !o.bare && !this.peeking ? this.legendOf(o, ui) : [];
       const roomW = ui.w - (o.bare ? 4 : 12);
       const floor = o.below?.() ?? 0; // rows above it are someone else's (the title's logo)
-      const roomH = ui.h - (o.bare ? 4 : 26) - Math.max(0, floor - 2);
+      const roomH = ui.h - (o.bare ? 4 : 26) - Math.max(0, floor - 2) - (legend.length ? LEGEND_ROOM : 0);
       o.panel.fit?.(roomW, roomH);
       const w = Math.min(o.panel.size.w, roomW);
       const h = Math.min(o.panel.size.h, roomH);
       const open = Math.min(1, o.age / 0.12);
       const x = o.dock === 'right' ? Math.max(6, ui.w - w - 6) : Math.floor((ui.w - w) / 2);
-      const y = Math.max(o.bare ? 2 : 16, floor, Math.floor((ui.h - h) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
+      const y = Math.max(o.bare ? 2 : 16, floor, Math.floor((ui.h - h - (legend.length ? LEGEND_ROOM : 0)) / 2) + (o.bare ? 0 : 6)) + Math.round((1 - open) * 8);
       o.rect = { x, y, w, h };
       if (!o.bare) {
         ui.panel(x - 6, y - 16, w + 12, h + 22, 'ink', last ? 'slate' : 'night');
@@ -219,6 +250,8 @@ export class UiLayer {
         }
       }
       o.panel.draw(ui, o.rect, time);
+      // under the frame, what the controls do here (none on a touch screen)
+      if (legend.length && open >= 1) drawLegend(ui, legend, x + w / 2, y + h + 9, ui.w - 4);
     });
     const top = this.top;
     if (this.peeking && top?.peek) {

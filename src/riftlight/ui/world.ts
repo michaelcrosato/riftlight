@@ -20,6 +20,45 @@ export function project(p: Vector3, camera: Camera, ui: UiCanvas, out = { x: 0, 
   return out;
 }
 
+const head = new Vector3();
+
+/**
+ * A thing standing in the world (a townsperson, the stash, the portal) as a box on screen, art
+ * pixels: from its feet at `at` to `height` m above, `width` m across (at least 8 × 10 pixels, a
+ * mouse's target); null behind the camera.
+ */
+export function worldBox(at: Vector3, height: number, width: number, camera: Camera, ui: UiCanvas): { x: number; y: number; w: number; h: number } | null {
+  const feet = project(at, camera, ui, { x: 0, y: 0 });
+  const top = project(head.copy(at).setY(at.y + height), camera, ui, { x: 0, y: 0 });
+  if (!feet || !top) return null;
+  const h = Math.max(10, feet.y - top.y);
+  const w = Math.max(8, Math.round((h * width) / height));
+  return { x: Math.round(feet.x - w / 2), y: feet.y - h, w, h };
+}
+
+/**
+ * The thing the mouse is over: what a click does there ("Talk to Brann") after the control that
+ * clicks (the mouse's left button), on a plate over its head, placed around the HUD: above the
+ * thing, else under it (near the top of the screen), else the first free row from the top down
+ * (under the place name); never over the HUD's text. Returns where it went.
+ */
+export function thingLabel(ui: UiCanvas, box: { x: number; y: number; w: number; h: number }, text: string, action: ControlAction, layout?: HudLayout): Box {
+  const label = clip(text, ui.w - 16 - ui.glyphWidth(action), (s) => ui.measure(s));
+  const w = ui.glyphWidth(action) + 3 + ui.measure(label) + 8;
+  const x = Math.max(1, Math.min(ui.w - w - 1, Math.round(box.x + box.w / 2 - w / 2)));
+  const above = { x, y: box.y - 14, w, h: 12 };
+  const r = !layout
+    ? above
+    : (layout.place(above, { tries: 8, step: 12 }) ??
+      layout.place({ x, y: Math.max(1, box.y + box.h + 3), w, h: 12 }, { dir: 1, tries: 8, step: 12 }) ??
+      layout.place({ x, y: 1, w, h: 12 }, { dir: 1, tries: Math.floor(ui.h / 12), step: 12 }) ??
+      above);
+  ui.rect(r.x, r.y, r.w, r.h, 'night');
+  ui.outline(r.x - 1, r.y - 1, r.w + 2, r.h + 2, 'white');
+  ui.prompt(r.x + 4, r.y + 3, action, label, 'white');
+  return r;
+}
+
 export interface Floater {
   at: Vector3;
   text: string;

@@ -101,7 +101,7 @@ describe('the build systems in the arena', () => {
       g.hero.facing = Math.PI;
       e.step(4);
       const from = log.length;
-      press('KeyK');
+      press('KeyQ');
       e.step(40);
       const cursed = g.dummies.filter((d) => d.curses.has('vulnerability'));
       expect(cursed.length, 'cursed dummies').toBeGreaterThan(0);
@@ -120,7 +120,7 @@ describe('the build systems in the arena', () => {
       g.hero.facing = Math.PI;
       e.step(10);
       const from = log.length;
-      press('KeyQ');
+      press('KeyE');
       e.step(150);
       const t = g.actors.actors.find((x) => x.tags.includes('totem'));
       const after = log.slice(from);
@@ -141,7 +141,7 @@ describe('the build systems in the arena', () => {
       g.hero.facing = 0;
       e.step(4);
       const from = log.length;
-      press('KeyE');
+      press('KeyR');
       e.step(60);
       expect(g.combat.active('trap').length, 'traps').toBe(1);
       expect(g.combat.active('trap').some((t) => !(t as { sprung?: boolean }).sprung), 'armed').toBe(true);
@@ -166,11 +166,11 @@ describe('the build systems in the arena', () => {
       g.hero.teleport([0, 0, 2]);
       a.mana = a.maxMana;
       e.step(30);
-      press('KeyR');
+      press('KeyT');
       e.step(60);
       expect(a.reservedFraction).toBeCloseTo(0.25, 6);
       expect(a.mana).toBeLessThanOrEqual(a.maxMana * 0.75 + 1e-6);
-      press('KeyR');
+      press('KeyT');
       e.step(30);
       expect(a.reservedFraction, 'toggled off').toBe(0);
       // Discharge: every charge for one big storm

@@ -16,10 +16,15 @@ const actors = new ActorManager(events, ctx.scene);              // events: the 
 const combat = new Combat({ actors, scene: ctx.scene, audio: ctx.audio, particles: ctx.particles, wall, hero: () => hero.actor });
 const hero = new HeroController({ physics: ctx.physics, combat, model, clips: HERO_CLIPS, at: [0, 0, 0], slots: [{ skill: 'fireball', supports: ['gmp'] }] });
 actors.add(hero.actor);
-// fixedUpdate: hero.fixedUpdate(ctx, dt); actors.fixedUpdate(dt); combat.fixedUpdate(dt);
+// fixedUpdate: hero.fixedUpdate({ input: new HeroKeysInput(ctx.input), camera: ctx.camera }, dt);
+//              actors.fixedUpdate(dt); combat.fixedUpdate(dt);
 // update:      actors.update(dt, ctx.physics.alpha); hero.update(dt); combat.update(dt);
 //              combat.shake.apply(ctx.camera, dt); hud.clear(); …; combat.drawNumbers(ctx.hud, ctx.camera.camera);
 ```
+
+The controller asks its input for action tokens (`HERO_KEYS`: `attack`, `dodge`, `slot:0`..), never
+keys: `HeroKeysInput` (`combat/arena.ts`) turns them into the game's keys, mouse and pad buttons
+through `heroCodes` (`game/controls.ts`). Handed `ctx` itself, the hero ignores every key.
 
 - **A monster** is an `Actor` with `faction: 'monster'`, a `body`, a `GridMover` over the level's
   `WalkableQuery` (`layoutWalkable(layout)`), and a `Brain` whose `think()` sets `velocity` /

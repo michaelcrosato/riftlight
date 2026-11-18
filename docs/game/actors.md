@@ -22,10 +22,12 @@ Presses buffer for 0.2 s, any action cancels into a dodge or the next action aft
 casting slows movement instead of locking it (the legs keep running under the arms), and attack
 clips play at the rate attack / cast speed asks for. On a phone the touch buttons are the bar
 (docs/game/ui.md *On a touch screen*). The shell moves the engine's debug hotkeys P, R and M to F8,
-F7 and F9 (`rebindDebugKeys`: M is the map). The arena (`?game=arena`, `combat/arena.ts`) keeps its own map,
-`HERO_KEYS` in `actors/controls.ts` (RMB / K, Q, E, R, F, or 1–4; pad X attacks, A dodges, B Y LB
-RB RT are the bar) and the control table built from it (`heroControls`, so its prompts name those
-buttons, not the shell's), and passes `HERO_DEBUG_KEYS` (R is a skill there, so with `?debug=1` the
+F7 and F9 (`rebindDebugKeys`: M is the map). One key map: `HeroController` asks for its actions
+as tokens (`HERO_KEYS` in `actors/controls.ts`: `attack`, `dodge`, `slot:0`..`slot:4`), and the
+game's map says which keys press them (`heroCodes` in `game/controls.ts`); the shell hands the
+controller its intent, the arena (`?game=arena`, `combat/arena.ts`) the engine's input through
+that map (`HeroKeysInput`: the same keys and pad buttons as the game, F / R2 its fifth slot, its
+labels the game's `controls`), and passes `HERO_DEBUG_KEYS` (R is a skill, so with `?debug=1` the
 resolution hotkey moves to F2). Every timing is in `HERO_TUNING`.
 
 **All of it is `ctx.input`, so a session replays** (docs/engine/determinism.md *Recording and replay*):

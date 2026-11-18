@@ -21,6 +21,8 @@ const view = new TreeView({
   onClose: () => (engine.paused = false),
 });
 view.open();                                   // pause the game while open; view.isOpen(), view.close()
+// in the game: pages: { keys: ['KeyQ', 'KeyE'], pad: ['PadLB', 'PadRB'] } leaves Q / E to the game
+// (the shell's ring of character screens) instead of zooming, and the bottom bar names them
 state.points = pointBudget(newLevel, deepest).total; view.refresh();   // on level-up
 ```
 

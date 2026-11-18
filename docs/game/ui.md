@@ -23,6 +23,25 @@ see-through plate under the HUD (ink on two pixel rows of every three, `PLATE_GA
 over a bright level at ten feet; the corner minimap hides meanwhile), its title and the control
 that closes it on its frame (Esc, or a tap on the map, closes it too).
 
+## At ten feet (`ui/legend.ts`)
+
+A TV at ten feet reads the normal 5×7 font (about 32 px tall at 1080p); the 3×5 mini font is for
+digits on icons (costs, cooldowns, stacks, the orbs) and for a phone's compact layouts. The top
+framed panel shows a **legend** under its frame for the device in use (`Panel.legend`, else
+select and back; the layer keeps its rows free; the shell adds L1 R1 for the character screens):
+✕ Select · ○ Back with a pad, Enter Select · Esc Back on the keyboard, none on a touch screen. An
+overlay that says so has one too, where it says (`Panel.legendAt`): the item windows' under them,
+with L1 R1 Tabs in the stash and the vendor. Legends are the Riftlight shell's (`UiLayer.legends`):
+another host of these panels (Engine World) keeps its own hints, and its menus `MENU_BINDINGS`
+(L1 / R1 tabs: a reader's headings) where the shell's are `SHELL_MENU_BINDINGS`. The
+**character sheet** is pages (Offence, Defence, Resistances: L2 / R2, ← →, Tab or a click), each a
+short list with its sources in the normal font. The **death recap** opens with what matters (who,
+where, the killing blow, the damage taken and its biggest type, the tip, the cost); its tables
+(damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
+kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
+the normal font. The pad's focus in the item windows frames the whole item, slot, socket or orb
+under it (`ItemsUi.focusRect`: a two-pixel sand frame with an ink rim).
+
 ## On a touch screen (`game/touch.ts`)
 
 The engine's touch buttons are the skill bar, laid out as

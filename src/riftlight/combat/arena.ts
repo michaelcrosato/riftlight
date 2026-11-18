@@ -1,5 +1,5 @@
 import { BoxGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
-import { ContactShadow, DEFAULT_TOUCH_BUTTONS, mergeStaticMeshes, toonMaterial, type Game, type GameContext } from '../../engine';
+import { ContactShadow, mergeStaticMeshes, toonMaterial, type Game, type GameContext } from '../../engine';
 import { rebindDebugKeys, type DebugKeyMap } from '../../engine/debugKeys';
 import { PALETTE } from '../../engine/palette';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
@@ -7,8 +7,9 @@ import { flat } from '../core/mods';
 import { Rng } from '../core/rng';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
-import { HERO_DEBUG_KEYS, heroControls, SLOT_LABELS } from '../actors/controls';
-import { HeroController, type SlotSpec } from '../actors/HeroController';
+import { HERO_DEBUG_KEYS } from '../actors/controls';
+import { type ControlAction, CONTROLS, heroCodes } from '../game/controls';
+import { HeroController, type InputLike, type SlotSpec } from '../actors/HeroController';
 import { openFloor, GridMover } from '../actors/movers';
 import { buildSkill } from '../skills/build';
 import type { ResolvedSkill, SkillGem } from '../skills/types';
@@ -28,7 +29,7 @@ export const ARENA = {
   size: 15,
   spawn: [0, 0, 4] as [number, number, number],
   pillars: [[-6, 0, -5], [6, 0, -5], [-6, 0, 6], [6, 0, 6]] as [number, number, number][],
-  /** Default skill bar: RMB/K, Q, E, R, F. */
+  /** Default skill bar: RMB / 1 / Q (pad Square), 2 / E (Triangle), 3 / R (L1), 4 / T (R1), F (R2). */
   slots: ['cleave', 'fireball', 'frost-nova', 'leap-slam', 'whirlwind'],
   dummies: [
     { at: [0, 0, -2], life: 400, still: true },
@@ -95,6 +96,36 @@ export function parseSlots(param: string | null): SlotSpec[] {
   });
 }
 
+/** The skill bar's slots (the basic attack, then five skills) as the game's actions, for their labels. */
+const SLOT_ACTIONS: readonly ControlAction[] = ['attack', 'skill1', 'skill2', 'skill3', 'skill4', 'interact'];
+
+/**
+ * The engine's input as the hero controller reads it: its action tokens (`HERO_KEYS`) pressed by
+ * the game's keys, mouse buttons and pad buttons (game/controls.ts `heroCodes`: one key map for the
+ * game and its labs).
+ */
+export class HeroKeysInput implements InputLike {
+  constructor(private readonly input: GameContext['input']) {}
+  moveAxis(): { x: number; y: number } {
+    return this.input.moveAxis();
+  }
+  consumeAny(tokens: readonly string[]): boolean {
+    return this.input.consumeAny(heroCodes(tokens));
+  }
+  anyDown(tokens: readonly string[]): boolean {
+    return this.input.anyDown(heroCodes(tokens));
+  }
+  get gamepadConnected(): boolean {
+    return this.input.gamepadConnected;
+  }
+  get mouseDelta(): { x: number; y: number } {
+    return this.input.mouseDelta;
+  }
+  get lookAxis(): { x: number; y: number } {
+    return this.input.lookAxis;
+  }
+}
+
 /** What the Arena runs: the hero's skill bar as `?skills=` writes it (`parseSlots`). */
 export interface ArenaOptions {
   readonly skills?: string;
@@ -104,12 +135,8 @@ export interface ArenaOptions {
 
 export class Arena implements Game {
   readonly name = 'Riftlight Arena';
-  /**
-   * The controls the Arena plays with (`HERO_KEYS`, not the shell's: pad Square attacks, Cross
-   * dodges), so a line's `{key:dodge}` names them for the device in use; its page has the engine's
-   * touch buttons.
-   */
-  readonly controls = heroControls(DEFAULT_TOUCH_BUTTONS);
+  /** Riftlight's controls: the Arena plays with the game's key map (`heroCodes`), so a line's `{key:dodge}` names what dodges here too. */
+  readonly controls = CONTROLS;
   readonly assets = [HERO_MODEL];
 
   /** `args`: plain JSON (`Game.args`), so a recording of the arena replays with the same bar. */
@@ -137,10 +164,12 @@ export class Arena implements Game {
   /** Hero damage dealt in the last seconds (HUD meter). */
   private readonly dealt: { t: number; amount: number }[] = [];
   private time = 0;
+  /** The engine's input as the hero reads it: its actions as the game's keys (`heroCodes`). */
+  private input: HeroKeysInput | null = null;
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics } = ctx;
-    // R is a skill key here: move the resolution hotkey (when on) to F2 (the pad's buttons are in HERO_KEYS)
+    // R is a skill key here: move the resolution hotkey (when on) to F2 (the keys and pad buttons are the game's: game/controls.ts)
     this.savedInput = { keys: ctx.engine.debugKeys };
     ctx.engine.debugKeys = rebindDebugKeys(ctx.engine.debugKeys, HERO_DEBUG_KEYS);
 
@@ -246,7 +275,8 @@ export class Arena implements Game {
 
   fixedUpdate(ctx: GameContext, dt: number): void {
     this.time += dt;
-    this.hero.fixedUpdate(ctx, dt);
+    this.input ??= new HeroKeysInput(ctx.input);
+    this.hero.fixedUpdate({ input: this.input, camera: ctx.camera }, dt);
     this.actors.fixedUpdate(dt);
     this.combat.fixedUpdate(dt);
     if (this.dummies.length && this.dummies.every((d) => !d.alive)) {
@@ -281,7 +311,6 @@ export class Arena implements Game {
     bar(hud, 6, 16, 70, a.mana / Math.max(1, a.maxMana), 'blue', `${Math.floor(a.mana)}`);
     // skill bar, bottom centre
     const slots = [this.hero.basic, ...this.hero.slots];
-    const labels = ['LMB', ...SLOT_LABELS];
     const w = 34;
     const x0 = -((slots.length - 1) * w) / 2;
     slots.forEach((s, i) => {
@@ -289,7 +318,11 @@ export class Arena implements Game {
       const cd = s ? (this.hero.cooldowns.get(s.id) ?? 0) : 0;
       const cost = s ? s.cost : 0;
       const ok = s && cd <= 0 && a.mana >= (s.channel ? cost * 0.25 : cost);
-      hud.text(x, 16, labels[i]!, { anchor: 'bottom', color: 'mist' });
+      // what does each: its control's glyph for the device in use (a pad's ✕ □ L1, a key cap, the
+      // mouse), as Riftlight's skill bar draws it: a slot's width, where a pad's names would overprint
+      const action = SLOT_ACTIONS[i]!;
+      const gw = hud.glyphWidth(action);
+      hud.glyph(Math.round(hud.width / 2 + x - gw / 2), hud.height - 16 - 8, action);
       hud.text(x, 6, s ? short(s.def.name) : '-', { anchor: 'bottom', color: ok ? 'white' : 'slate' });
     });
     // damage per second over the last 4 s

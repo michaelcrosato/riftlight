@@ -7,7 +7,8 @@
 //
 //   one run through every window for its frame (drops, the inventory and a tooltip, the skill
 //   panel, Ilsa's gems, Brann's anvil, the stash) → the passive tree's canvas: a click on a node
-//   allocates it; real Escape closes it without the pause menu; P toggles it → a loot label click
+//   allocates it; real Escape closes it without the pause menu; P toggles it; real Q / E page round
+//   the character screens through the tree, whose bar names them → a loot label click
 //   after a GPU device loss → a portrait phone (390×844): every window and a tap's tooltip as
 //   frames, the tree's canvas fills the screen.
 //
@@ -145,6 +146,39 @@ export async function runRiftlightItems(h) {
     await step(2);
     rs = await st();
     check(rs.ui.length === 0, `P toggles the tree open and shut (ui ${rs.ui.join(',') || 'none'})`);
+    // the character screens' ring on a real keyboard: E round it from the inventory, through the
+    // tree (its view takes the keyboard, but Q / E are the ring's, not its zoom), Q back onto it;
+    // the tree's bar names them
+    await page.keyboard.press('KeyI');
+    await step(2);
+    const ring = [];
+    let treeBar = null;
+    for (let i = 0; i < 5; i++) {
+      await page.keyboard.press('KeyE');
+      await step(2);
+      const ui = (await st()).ui.join(',');
+      ring.push(ui);
+      if (ui === 'tree') {
+        await new Promise((r) => setTimeout(r, 150)); // the tree view repaints on its own frame
+        treeBar = await R(() => window.__RIFTLIGHT__.game.layer.find('tree').view.debug().hints);
+      }
+    }
+    check(ring.join(' → ') === 'skills → tree → character → codex → inventory', `real E pages round the character screens, through the tree (${ring.join(' → ')})`);
+    check(treeBar?.includes('screens'), `the tree's bar names Q E screens (${treeBar?.join(', ')})`);
+    await page.keyboard.press('KeyQ');
+    await step(2);
+    await page.keyboard.press('KeyQ');
+    await step(2);
+    await page.keyboard.press('KeyQ');
+    await step(2);
+    rs = await st();
+    check(rs.ui.join(',') === 'tree', `real Q pages back onto the tree (ui ${rs.ui.join(',') || 'none'})`);
+    await page.keyboard.press('KeyQ');
+    await step(2);
+    rs = await st();
+    check(rs.ui.join(',') === 'skills', `real Q on the tree pages to the screen before it (ui ${rs.ui.join(',') || 'none'})`);
+    await page.keyboard.press('Escape');
+    await step(2);
 
     // ---------------------------------------------------------------- Ilsa's gems tab, Brann's anvil, the stash
     await talkTo('ilsa');

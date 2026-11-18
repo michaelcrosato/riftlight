@@ -7,7 +7,7 @@ import { controlLabel } from '../game/controls';
 import { type Recap, RecapTracker } from '../game/recap';
 import { installLanguage, lang, riftlightLines, t } from '../lang';
 import type { UiCanvas } from './kit';
-import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, SHEET_STATS, sourceLabel } from './panels';
+import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, SHEET_PAGES, SHEET_STATS, sourceLabel } from './panels';
 
 // The panels' words are lines (docs/game/lang.md): drawn under the test language en-XA, every word
 // they write themselves is bracketed; what they are handed (a monster's name, a mod, a mechanic)
@@ -89,10 +89,14 @@ describe('the panels in any language', () => {
       const { ui, drawn } = recorder(w, h);
       const fit = <P extends { fit(w: number, h: number): void; size: { w: number; h: number } }>(p: P) => (p.fit(w - 8, h - 30), RECT(p.size.w, p.size.h));
       const character = new CharacterSheet(() => sheet, () => '[Lévél 3]');
-      for (let i = 0; i < SHEET_STATS.length; i++) {
-        character.draw(ui, fit(character));
-        character.input({ kind: 'nav', dir: 'down' });
+      for (const page of SHEET_PAGES) {
+        for (let i = 0; i < page.stats.length; i++) {
+          character.draw(ui, fit(character));
+          character.input({ kind: 'nav', dir: 'down' });
+        }
+        character.input({ kind: 'tab', dir: 1 }); // the next page
       }
+      expect(SHEET_PAGES.flatMap((p) => p.stats).sort(), 'every stat on a page').toEqual([...SHEET_STATS].sort());
       const codex = new Codex(() => [mechanic, { ...mechanic, id: 'gale' }], () => ['mire']);
       codex.draw(ui, fit(codex));
       codex.input({ kind: 'nav', dir: 'down' });
@@ -103,7 +107,9 @@ describe('the panels in any language', () => {
       }
       for (const r of [recap, { ...recap, killer: null, killingBlow: null, sources: [] }]) {
         const death = new DeathRecap(r, { xp: 1200, gold: 45 } as never, '[Déptħ 3]', () => {});
-        death.draw(ui, fit(death), 0);
+        death.draw(ui, fit(death));
+        death.input({ kind: 'tab', dir: 1 }); // its tables
+        death.draw(ui, fit(death));
       }
       for (const items of [loot, Array.from({ length: 9 }, () => loot[0]!), []]) {
         const window = new LootWindow(() => items, () => ['[Çléáréd] · [12 kíllś]'], () => true, () => {});
@@ -138,7 +144,7 @@ describe('the panels in any language', () => {
     const death = new DeathRecap(tracker.recap(), { xp: 0, gold: 0 } as never, '', () => {});
     const tip = () => {
       const { ui, drawn } = recorder();
-      death.draw(ui, RECT(330, 200), 0);
+      death.draw(ui, RECT(330, 200));
       return drawn.join(' ');
     };
     expect(tip()).toContain('critical strike');

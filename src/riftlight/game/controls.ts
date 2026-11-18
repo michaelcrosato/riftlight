@@ -9,7 +9,8 @@
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory;
- *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume)
+ *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume);
+ *             open, Q / E or L1 / R1 page through them (`PAGES`), Tab or L2 / R2 their own tabs
  *   map       Tab / M / pad R3 or the touchpad's press / a click or tap on the corner map: the level's
  *             map over the play (Esc, or a tap on it, closes it too)
  *   looks     L look studio · H / pad Triangle hides its panel (the arrows still tweak) · O photo mode
@@ -18,8 +19,9 @@
  *
  * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
  * "Cross = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat from the engine's
- * `MenuInput` (with `MENU_BINDINGS`). Prompts name and draw `CONTROLS` through the engine
- * (`engine.controls`: the device used last, PlayStation or Xbox buttons as the player chose).
+ * `MenuInput` (with `SHELL_MENU_BINDINGS`; another host of the UI kit, `MENU_BINDINGS`). Prompts
+ * name and draw `CONTROLS` through the engine (`engine.controls`: the device used last,
+ * PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
 import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
@@ -60,14 +62,26 @@ export const KEYS = {
   down: ['ArrowDown', 'KeyS'],
   left: ['ArrowLeft', 'KeyA'],
   right: ['ArrowRight', 'KeyD'],
-  tabNext: ['PadRB', 'Tab'],
-  tabPrev: ['PadLB'],
+  /** A window's own tabs (the stash's, the vendor's, the character sheet's pages): Tab / Shift+Tab, L2 / R2. */
+  tabNext: ['Tab', 'PadRT'],
+  tabPrev: ['PadLT'],
+  /**
+   * The character screens' ring (`PAGES`: inventory, skills, tree, character, codex), as on a
+   * console: L1 / R1, Q / E. In the stash, the vendor and the bench they are their tabs.
+   */
+  pagePrev: ['PadLB', 'KeyQ'],
+  pageNext: ['PadRB', 'KeyE'],
   /** Item windows: X / pad X = right-click (equip, socket, use), V / pad Y = Ctrl-click (move, sell, buy). */
   secondary: ['KeyX', 'PadX'],
   quick: ['KeyV', 'PadY'],
 } as const;
 
-/** The menus' bindings for the engine's `MenuInput` (Riftlight's own: F and J confirm too, no Q / E tabs since they are skills). */
+/**
+ * The bindings for menus of Riftlight's UI kit (the engine's `MenuInput`) in any host, Engine World
+ * too: Riftlight's own (F and J confirm too, no Q / E tabs since they are skills), L1 / R1 and Tab
+ * the tabs (a reader's headings). The Riftlight shell pages its character screens with L1 / R1:
+ * `SHELL_MENU_BINDINGS`.
+ */
 export const MENU_BINDINGS: Partial<MenuKeys> = {
   confirm: KEYS.confirm,
   back: KEYS.back,
@@ -75,13 +89,54 @@ export const MENU_BINDINGS: Partial<MenuKeys> = {
   down: KEYS.down,
   left: KEYS.left,
   right: KEYS.right,
+  tabNext: ['PadRB', 'Tab'],
+  tabPrev: ['PadLB'],
+  keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide],
+};
+
+/**
+ * The Riftlight shell's menu bindings: Q / E and L1 / R1 page the character screens (`PAGES`), so
+ * they arrive as `key` events the shell reads (in the stash, the vendor and the bench it makes
+ * them their tabs); Tab, L2 / R2 a window's own tabs.
+ */
+export const SHELL_MENU_BINDINGS: Partial<MenuKeys> = {
+  ...MENU_BINDINGS,
   tabNext: KEYS.tabNext,
   tabPrev: KEYS.tabPrev,
-  keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide],
+  keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide, ...KEYS.pagePrev, ...KEYS.pageNext],
 };
 
 /** The pointer's buttons as the engine's keys (`MOUSE_BUTTONS`, `TOUCH_KEY`): left (or a finger on the world) attacks, right is skill 1. */
 export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as const;
+
+/**
+ * The hero controller's action tokens (actors/controls.ts `HERO_KEYS`) as the game's keys, mouse
+ * buttons and pad buttons: attack LMB / J / Cross, dodge Space / Circle, slot 0 RMB / 1 / Q /
+ * Square, 1 2 / E / Triangle, 2 3 / R / L1, 3 4 / T / R1, the Arena's fifth F / R2.
+ */
+export function heroCodes(tokens: readonly string[]): readonly string[] {
+  let codes = heroCodeCache.get(tokens);
+  if (!codes) heroCodeCache.set(tokens, (codes = tokens.flatMap((tok) => HERO_CODES[tok] ?? [tok])));
+  return codes;
+}
+/** Each token list's codes, by the list (`HERO_KEYS` arrays: the same each step). */
+const heroCodeCache = new Map<readonly string[], readonly string[]>();
+const HERO_CODES: Readonly<Record<string, readonly string[]>> = {
+  attack: [MOUSE.left[0], ...KEYS.attack],
+  dodge: KEYS.dodge,
+  'slot:0': [MOUSE.right[0], ...KEYS.skill[0]],
+  'slot:1': KEYS.skill[1],
+  'slot:2': KEYS.skill[2],
+  'slot:3': KEYS.skill[3],
+  'slot:4': KEYS.interact,
+};
+
+/** The character screens as one ring a pad pages through with L1 / R1 (Q / E on the keyboard): their panels' ids, in order. */
+export const PAGES = ['inventory', 'skills', 'tree', 'character', 'codex'] as const;
+export type Page = (typeof PAGES)[number];
+
+/** Each page's name in the ring's strip (the pause menu's buttons for them). */
+export const PAGE_LINES: Readonly<Record<Page, string>> = { inventory: 'menu.pause.inventory', skills: 'menu.pause.skills', tree: 'menu.pause.tree', character: 'menu.pause.character', codex: 'menu.pause.codex' };
 
 /**
  * The actions a line can name as a control tag, `{key:dodge}` (docs/game/lang.md), and the key
@@ -116,6 +171,13 @@ export const CONTROLS = {
   jump: { key: 'Space', pad: 'PadA', touch: 'B' },
   pound: { key: 'KeyC', pad: 'PadB', touch: 'TouchStickDown' },
   confirm: { key: 'Enter', pad: 'PadA', touch: 'TouchTap' },
+  // the legend under menus and panels (ui/legend.ts), the character screens' ring, their tabs
+  back: { key: 'Escape', pad: 'PadB', touch: '≡' },
+  page_prev: { key: 'KeyQ', pad: 'PadLB' },
+  page_next: { key: 'KeyE', pad: 'PadRB' },
+  tab_prev: { key: 'ArrowLeft', pad: 'PadLT' },
+  tab_next: { key: 'ArrowRight', pad: 'PadRT' },
+  details: { key: 'Tab', pad: 'PadY' },
   turn: { key: 'MouseOrQE', pad: 'PadRStick', touch: 'TouchDrag' },
   drag: { key: 'MouseDrag', pad: 'PadRStick', touch: 'TouchDrag' },
   orbit: { key: 'DragOrQE', pad: 'PadRStick', touch: 'TouchDrag' },

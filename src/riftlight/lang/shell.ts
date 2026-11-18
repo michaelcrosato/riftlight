@@ -209,6 +209,11 @@ const MENUS: LineArea = {
     'menu.off': 'Off',
     'menu.focus_line': '{control} {value}',
     'menu.peek_strip': '{control} · {hint}',
+    'legend.select': 'Select',
+    'legend.back': 'Back',
+    'legend.screens': 'Screens',
+    'legend.hide': 'Hide',
+    'legend.tabs': 'Tabs',
   },
   notes: {
     'title.tagline': 'Under the game’s logo on the title screen: what kind of game this is.',
@@ -259,6 +264,11 @@ const MENUS: LineArea = {
     'menu.off': 'Beside an on/off switch in a menu: off.',
     'menu.focus_line': 'A strip at the top while the look studio is hidden: the setting being changed and its value ("Game Boy dither 60%").',
     'menu.peek_strip': 'The strip at the top while a panel is hidden: the setting being changed, and how to show the panel again.',
+    'legend.select': 'Under a menu, after the button that chooses the highlighted entry (a controller’s Cross, the Enter key).',
+    'legend.back': 'Under a menu, after the button that goes back or closes it (a controller’s Circle, the Esc key).',
+    'legend.screens': 'Under the inventory, skills, passive tree, character and codex screens, after the two buttons that go to the screen before and after (L1 and R1, Q and E).',
+    'legend.hide': 'Under the look studio, after the button that hides the panel to see the whole picture.',
+    'legend.tabs': 'Under the stash and the vendor, after the two buttons that switch their tabs (L1 and R1, Q and E).',
   },
   max: {
     'menu.title.continue': 20,

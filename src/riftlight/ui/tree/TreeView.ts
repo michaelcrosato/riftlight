@@ -7,19 +7,20 @@
  *   const view = new TreeView({ container, state, audio: ctx.audio, onChange: (c, s) => save(s) });
  *   view.open();  view.close();  view.isOpen();
  *
- * Controls: drag / WASD / arrows / right stick pan; wheel / pinch / Q E / triggers zoom;
- * hover or tap shows the tooltip with the path cost; click / Enter / A allocates the path;
- * right-click / long-press / Backspace / X refunds; Tab / Y shows the stat summary; / or F
- * searches; Escape (or `closeKeys`) / B closes. The left stick drives a cursor that snaps to
- * the nearest node; the d-pad steps from node to node.
+ * Controls: drag / WASD / arrows / right stick pan; wheel / pinch / + - / triggers zoom (Q E
+ * too, unless the host takes them: `pages`); hover or tap shows the tooltip with the path cost;
+ * click / Enter / A allocates the path; right-click / long-press / Backspace / X refunds; Tab / Y
+ * shows the stat summary; / or F searches; Escape (or `closeKeys`) / B closes. The left stick
+ * drives a cursor that snaps to the nearest node; the d-pad steps from node to node.
  *
- * While open the view takes the keyboard (key events don't reach the game) and polls the
- * first standard gamepad itself; the shell should pause the game while it is open. A view in
+ * While open the view takes the keyboard (key events don't reach the game, except its host's
+ * `pages` keys) and polls the first standard gamepad itself; the shell should pause the game
+ * while it is open. A view in
  * a game passes `defer`: what the player does to the tree (allocate, refund, close) goes to it
  * instead of happening, and the game hands it back to `perform` from its recorded input, so a
  * replay of the game does the same to the tree.
  */
-import { type Glyph, padGlyph } from '../../../engine/controls';
+import { type Glyph, keyGlyph, padGlyph } from '../../../engine/controls';
 import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
 import type { PadGlyphs } from '../../../engine/settings';
 import { drawDeviceText, surfaceScale } from '../../../engine/hud/deviceText';
@@ -53,6 +54,13 @@ export interface TreeViewOptions extends TreeRules {
   padCloses?: boolean;
   /** The pad's buttons the hints show (the engine's `settings.padGlyphs`; default PlayStation's). */
   padGlyphs?: () => PadGlyphs;
+  /**
+   * The host's screens either side of the tree (the Riftlight shell's ring of character screens):
+   * its `keys` (Q / E) are left to the game, not zoom, so the host pages away on them as on the
+   * other screens; the pad's (`pad`, L1 / R1) the host reads from its own input (the view never
+   * takes them). The bottom bar names them: "screens". Absent (the tree page): Q / E zoom.
+   */
+  pages?: TreePages;
   onClose?: () => void;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
@@ -65,6 +73,12 @@ export interface TreeViewOptions extends TreeRules {
 
 
 
+/** `TreeViewOptions.pages`: the keys and pad buttons that go to the screens either side of the tree. */
+export interface TreePages {
+  readonly keys: readonly string[];
+  readonly pad: readonly string[];
+}
+
 /** A hint in the tree's bottom bar: its words, and the pad buttons drawn before them (none for the mouse's). */
 export interface TreeHint {
   readonly id: string;
@@ -74,16 +88,26 @@ export interface TreeHint {
 
 /**
  * The bottom bar's hints, in their usual order: with the pad cursor each is its button's glyph (in
- * the player's style) and a verb (✕ take, ○ close, □ refund, △ stats, L2 R2 zoom); with the mouse,
- * words ("Click take"); on a narrow screen only the most needed.
+ * the player's style) and a verb (✕ take, ○ close, □ refund, △ stats, L2 R2 zoom, L1 R1 screens);
+ * with the mouse, words ("Click take"), and the host's keys as key caps ("Q E screens"); on a narrow
+ * screen only the most needed.
  */
-export function treeHints(o: { narrow: boolean; pad: boolean; refunds: boolean; style: PadGlyphs }): TreeHint[] {
-  const pad = (id: string, codes: string[]): TreeHint => ({ id, text: t(`tree.verb.${id}`), glyphs: codes.map((c) => padGlyph(c, o.style, lang())) });
+export function treeHints(o: { narrow: boolean; pad: boolean; refunds: boolean; style: PadGlyphs; pages?: TreePages }): TreeHint[] {
+  const pad = (id: string, codes: readonly string[]): TreeHint => ({ id, text: t(`tree.verb.${id}`), glyphs: codes.map((c) => padGlyph(c, o.style, lang())) });
   const key = (id: string): TreeHint => ({ id, text: t(`tree.hint.${id}`), glyphs: [] });
   if (o.narrow) return o.pad ? [pad('take', ['PadA']), pad('close', ['PadB'])] : [key('tap')];
+  const pages = o.pages;
   return o.pad
-    ? [pad('move', ['PadLStick']), pad('take', ['PadA']), ...(o.refunds ? [pad('refund', ['PadX'])] : []), pad('stats', ['PadY']), pad('zoom', ['PadLT', 'PadRT']), pad('close', ['PadB'])]
-    : [key('pan'), key('zoom'), key('take'), ...(o.refunds ? [key('refund')] : []), key('stats'), key('find')];
+    ? [pad('move', ['PadLStick']), pad('take', ['PadA']), ...(o.refunds ? [pad('refund', ['PadX'])] : []), pad('stats', ['PadY']), pad('zoom', ['PadLT', 'PadRT']), ...(pages ? [pad('screens', pages.pad)] : []), pad('close', ['PadB'])]
+    : [
+        key('pan'),
+        key('zoom'),
+        key('take'),
+        ...(o.refunds ? [key('refund')] : []),
+        key('stats'),
+        key('find'),
+        ...(pages ? [{ id: 'screens', text: t('tree.verb.screens'), glyphs: pages.keys.map((c) => keyGlyph(c, lang())) }] : []),
+      ];
 }
 
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
@@ -138,6 +162,8 @@ export class TreeView {
   private matchIndex = -1;
   private showStats = false;
   private statsScroll = 0;
+  /** The bottom bar's hints as last drawn (their ids, in order: `debug().hints`). */
+  private hintsShown: string[] = [];
   private readonly ac = new AbortController();
   private openAc: AbortController | null = null;
 
@@ -298,6 +324,7 @@ export class TreeView {
       scale: this.framing?.scale ?? 0,
       showStats: this.showStats,
       cursor: { ...this.cursor },
+      hints: [...this.hintsShown],
     };
   }
 
@@ -441,6 +468,8 @@ export class TreeView {
       this.held.delete(e.code);
       return;
     }
+    // the host's keys (the shell's ring: Q / E page round the character screens): the game hears them
+    if (e.target !== this.search && this.options.pages?.keys.includes(e.code)) return;
     // The tree owns the keyboard while it is open: the game never sees these presses.
     e.stopImmediatePropagation();
     if (e.target === this.search) {
@@ -937,8 +966,8 @@ export class TreeView {
     // pad, each is its button's glyph (PlayStation's or Xbox's, as the player chose) and a verb.
     b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
-    const hints = treeHints({ narrow, pad: this.padCursor, refunds, style: this.options.padGlyphs?.() ?? 'playstation' });
-    const priority = ['take', 'close', 'tap', 'refund', 'stats', 'find', 'move', 'pan', 'zoom'];
+    const hints = treeHints({ narrow, pad: this.padCursor, refunds, style: this.options.padGlyphs?.() ?? 'playstation', pages: this.options.pages });
+    const priority = ['take', 'close', 'tap', 'refund', 'stats', 'screens', 'find', 'move', 'pan', 'zoom'];
     const glyphs = (h: TreeHint) => h.glyphs.reduce((w, g) => w + glyphWidth(g) + 1, h.glyphs.length ? 2 : 0);
     const gap = 12;
     const keep = new Set<TreeHint>();
@@ -952,6 +981,7 @@ export class TreeView {
     }
     let hx = Math.max(2, Math.round((W - used) / 2));
     const y = H - BOTTOM + 2;
+    this.hintsShown = hints.filter((h) => keep.has(h)).map((h) => h.id);
     for (const h of hints) {
       if (!keep.has(h)) continue;
       for (const g of h.glyphs) hx += b.glyph(g, hx, y) + 1;

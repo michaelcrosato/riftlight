@@ -138,6 +138,9 @@ longer version's frames.
     (the skill bar), `weapon CLASS [2h]` (sword, axe, mace, sceptre, dagger, wand, staff, bow),
     `hurt SHARE [dx dz]` (lose that share of life, shoved away from dx, dz), `kill`. `place`
     there also revives, refills mana, clears cooldowns and puts back the default bar and sword.
+    The Arena plays on the game's key map (the bar is Q / RMB, E, R, T, then F; J attacks, Space
+    dodges); the scenarios live in `scripts/film-scenarios.ts`, and `combat/film.arena.test.ts`
+    plays the `arena-*` ones headless, so one that presses a key nothing reads goes red.
 - Output in `.scratch/film/`:
   - A PNG filmstrip. Each cell shows state, dominant clip and blend partner, from a camera
     that follows the hero.

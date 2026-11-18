@@ -102,7 +102,7 @@ export interface HeroOptions {
   at: [number, number, number];
   /** Basic attack (LMB / J), default 'slash'. */
   basic?: SlotSpec;
-  /** Skill bar: RMB/K, Q, E, R, F. */
+  /** Skill bar, slots 0..4 (`HERO_KEYS.slots`; the game's keys, game/controls.ts `heroCodes`): RMB / 1 / Q, 2 / E, 3 / R, 4 / T, the Arena's fifth F. */
   slots?: readonly (SlotSpec | null)[];
   /** Extra stat sources at spawn (tree, items...). */
   mods?: Readonly<Record<string, readonly Mod[]>>;
@@ -406,7 +406,7 @@ export class HeroController {
     Object.assign(this, { hips: d.hips, backpedal: d.backpedal, lift: d.lift, lastClip: d.lastClip, gaitLegs: d.gaitLegs, gaitPhase: d.gaitPhase, gaitRun: d.gaitRun, gaitRate: d.gaitRate, gaitHold: d.gaitHold, startT: d.startT, lastSpeed: d.lastSpeed, viewYaw: d.viewYaw, snapView: d.snapView, hop: d.hop ? { ...d.hop } : null, spinAngle: d.spinAngle, spinT: d.spinT, spinRate: d.spinRate });
   }
 
-  /** Put a gem in a slot (0..4 = RMB/K, Q, E, R, F). */
+  /** Put a gem in a slot (0..4 = RMB / 1 / Q, 2 / E, 3 / R, 4 / T, the Arena's F). */
   setSlot(i: number, spec: SlotSpec | null): void {
     this.specs.slots[i] = spec;
     this.rebuild();

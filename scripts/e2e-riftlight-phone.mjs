@@ -242,7 +242,8 @@ export async function runRiftlightPhone(h, orientation) {
         for (let f = 0; f < 240 && !rl.state().ui.includes('death'); f++) window.__PIXEL_ENGINE__.step(1);
         window.__PIXEL_ENGINE__.step(2);
         p = g.layer.top;
-        out.recap = { id: p?.panel.id, fits: p && inside(p.rect), button: p ? p.panel.button.h * k : 0, inPanel: p ? p.panel.button.y + p.panel.button.h <= p.rect.y + p.rect.h : false };
+        const back = p?.panel.buttons?.find((b) => b.id === 'continue')?.rect; // Return to town
+        out.recap = { id: p?.panel.id, fits: p && inside(p.rect), button: back ? back.h * k : 0, inPanel: back ? back.y + back.h <= p.rect.y + p.rect.h : false };
         return out;
       });
       check(panels.codex.narrow && panels.codex.fits && panels.codex.row >= 40, `${orientation}: the codex lists its entries in rows a thumb can hit (${Math.round(panels.codex.row)} CSS px) and fits`);

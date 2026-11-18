@@ -192,6 +192,7 @@ const VIEW: Readonly<Record<string, Line>> = {
   'tree.verb.stats': 'stats',
   'tree.verb.move': 'move',
   'tree.verb.zoom': 'zoom',
+  'tree.verb.screens': 'screens',
   // a node's tooltip: what clicking it does
   'tree.tip.gate': 'A gate: always yours',
   'tree.tip.next_choice': 'Click: next choice',
@@ -232,6 +233,7 @@ const VIEW_NOTES: Readonly<Record<string, string>> = {
   'tree.view.search_short': 'The search box’s placeholder on a phone; / is the key that opens it.',
   'tree.hint.take': 'Bottom bar hints with a mouse: an action, then what it does. Key and button names (Tab, /, R-click) stay as they are.',
   'tree.verb.take': 'Bottom bar hints with a gamepad: what a button does, drawn after the button’s picture (✕ take, ○ close, □ refund, △ stats, the stick move, L2 R2 zoom). One short verb or noun, lower case where your language has it.',
+  'tree.verb.screens': 'Bottom bar hint in the game: after the two buttons (L1 R1, or the keys Q E) that leave the passive tree for the inventory, skills, character and codex screens either side of it. One short noun, lower case where your language has it (as the other verbs there).',
   'tree.tip.refund': 'R-click is a right click (a long press on a phone).',
   'tree.msg.taken': 'After allocating: {count} points spent to reach the node {name}.',
 };

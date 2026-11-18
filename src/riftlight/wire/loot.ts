@@ -39,6 +39,7 @@ import { type Drop, ITEM_GROUP, type KillInfo, type LootPort, type Panel, type P
 import { ItemsStore } from '../ui/items/store';
 import { type ItemsViewState, ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
 import type { UiCanvas, UiEvent } from '../ui/kit';
+import { type LegendItem, menuLegend } from '../ui/legend';
 
 /** Label colours by item class (the shell's labels use palette names). */
 const CLASS_COLOR: Readonly<Record<string, PaletteColor>> = { normal: 'white', magic: 'sky', rare: 'sand', unique: 'orange', currency: 'mist', gem: 'cyan' };
@@ -562,6 +563,16 @@ export class ItemsPanel implements Panel {
 
   covers(x: number, y: number): boolean {
     return this.loot.active === this && this.loot.itemsUi().covers(x, y);
+  }
+
+  /** Under the windows: select and back, and the controls that switch the stash's or the vendor's tabs (L1 R1, Q E). */
+  legend(): LegendItem[] {
+    const tabs = this.loot.active === this && this.loot.itemsUi().tabbed();
+    return [...menuLegend(), ...(tabs ? [{ actions: ['page_prev', 'page_next'] as const, label: t('legend.tabs') }] : [])];
+  }
+
+  legendAt(): { x: number; y: number } | null {
+    return this.loot.active === this ? this.loot.itemsUi().legendAt() : null;
   }
 }
 
