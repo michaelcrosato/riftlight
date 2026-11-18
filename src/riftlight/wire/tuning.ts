@@ -17,7 +17,7 @@ export const WIRE_TUNING = {
     /** The hero's own light (Gloom reads `light.radius`). */
     light: { color: 0xffd8a8, intensity: 3.2, radius: 6.5, town: 1.4 },
   },
-  /** Default gems when a save's slot is empty: a fun bar out of the box (slot 0..3). */
+  /** The bar of a hero handed no sockets at all (`usesDefaultGems`: a game without the loot port's; with it, old saves get `STARTER_GEMS`); slots 0..3. */
   defaultSkills: ['cleave', 'fireball', 'leap-slam', 'frost-nova'],
   monster: {
     /** Base life at depth 1 before rank, archetype and part mods. */

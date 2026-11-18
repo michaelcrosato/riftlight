@@ -13,8 +13,11 @@ one `Worlds` map (stage → `CombatWorld`).
 - **The hero** (`wire/hero.ts` `RealHero`): the actors' `HeroController` with a `StageMover`
   (kinematic: slides along walls, rounds corners, falls into a pit only when shoved). One input
   path: the shell's `HeroIntent` (keys, mouse, pads, touch, the bot) becomes its input. The bar
-  comes from the save's sockets (`socketsToSlots`, gear's `skill.level`); a save with nothing
-  socketed gets `WIRE_TUNING.defaultSkills`. Stats: `HERO_BASE_STATS` + the `level` source
+  comes from the save's sockets (`socketsToSlots`, gear's `skill.level`; old gem ids renamed by
+  `GEM_ALIASES`); only a hero handed no sockets at all (a game without the loot port's: with it,
+  `RealLoot.load` socketed `STARTER_GEMS` into a save from before sockets) gets
+  `WIRE_TUNING.defaultSkills`. A bar whose gems the player took out stays
+  empty: the basic attack only. Stats: `HERO_BASE_STATS` + the `level` source
   (`progression.ts` `levelMods`) + the starter sword until gear brings a weapon + `setMods`
   sources (gear, tree, difficulty). `skills()` / `buffs()` / `vitals()` feed the HUD.
 - **Levels** (`wire/levels.ts` `LevelStage`): the levels system's `buildLevel` with every hook wired
@@ -79,8 +82,9 @@ Touch: a tap shows the tooltip, a second tap acts, a long press is a right-click
 screen (a phone in portrait, 124 art pixels) stacks the left window over a compact bag.
 
 **Skill sockets.** `save.hero.skills[slot] = { slot, gem, supports: [gem, gem, gem] }` with gem
-*items* (`loot/sockets.ts`); a new run starts with Cleave, Frost Nova, Dash and War Cry
-socketed. Gems are the skills system's `SKILLS` / `SUPPORTS` (`loot/data/gems.ts` lists every active but the
+*items* (`loot/sockets.ts`); a new run (or a save from before sockets) starts with Cleave,
+Frost Nova, Dash and War Cry socketed, and `normalizeSockets` renames an old save's gem ids
+(`GEM_ALIASES`). Gems are the skills system's `SKILLS` / `SUPPORTS` (`loot/data/gems.ts` lists every active but the
 basic attack and the dodge, and every support); they drop (~6% of items) and Ilsa's gems tab
 sells them. The panel shows each slot's `buildSkill` numbers on the hero's StatSheet (hit,
 DPS, cost, cooldown, cast time, area / projectiles, links that don't fit: a pocket

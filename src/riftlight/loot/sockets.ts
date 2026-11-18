@@ -45,13 +45,32 @@ export const isGem = (item: Item | null | undefined): item is Item & { gem: NonN
 const isActive = (item: Item | null | undefined) => isGem(item) && !item.gem.support && SKILLS.has(item.gem.id);
 const isSupport = (item: Item | null | undefined) => isGem(item) && item.gem.support && SUPPORTS.has(item.gem.id);
 
+/** Gem ids the loot tables used before the skills registry existed → their skills-registry ids (old saves). */
+export const GEM_ALIASES: Readonly<Record<string, string>> = {
+  'ice-nova': 'frost-nova',
+  spark: 'arc',
+  'frost-blink': 'blink',
+  'flame-dash': 'dash',
+  'whirling-blades': 'shield-charge',
+  'poison-arrow': 'split-arrow',
+  'multiple-projectiles': 'gmp',
+};
+
+/** A gem item with its id renamed through GEM_ALIASES (an old save's), else the item itself. */
+function aliased(g: unknown): Item | null | undefined {
+  const item = g as Item | null | undefined;
+  const id = item?.gem?.id;
+  return id && GEM_ALIASES[id] ? { ...item, gem: { ...item.gem!, id: GEM_ALIASES[id] } } : item;
+}
+
 export function emptySockets(): SkillSocket[] {
   return Array.from({ length: SKILL_SLOTS }, (_, slot) => ({ slot, gem: null, supports: Array<Item | null>(SUPPORT_LINKS).fill(null) }));
 }
 
 /**
- * Any saved shape → exactly SKILL_SLOTS sockets of SUPPORT_LINKS links. Unknown gems (a
- * skill was removed) and gems in the wrong kind of socket are dropped, never thrown.
+ * Any saved shape → exactly SKILL_SLOTS sockets of SUPPORT_LINKS links. Old gem ids are renamed
+ * (GEM_ALIASES); unknown gems (a skill was removed) and gems in the wrong kind of socket are
+ * dropped, never thrown.
  */
 export function normalizeSockets(saved: readonly unknown[] | null | undefined): SkillSocket[] {
   const out = emptySockets();
@@ -61,9 +80,11 @@ export function normalizeSockets(saved: readonly unknown[] | null | undefined): 
     const slot = typeof r.slot === 'number' ? r.slot : i;
     const s = out[slot];
     if (!s) continue;
-    if (isActive(r.gem)) s.gem = r.gem!;
-    (r.supports ?? []).slice(0, SUPPORT_LINKS).forEach((g, k) => {
-      if (isSupport(g)) s.supports[k] = g;
+    const gem = aliased(r.gem);
+    if (isActive(gem)) s.gem = gem!;
+    (r.supports ?? []).slice(0, SUPPORT_LINKS).forEach((raw, k) => {
+      const g = aliased(raw);
+      if (isSupport(g)) s.supports[k] = g!;
     });
   }
   return out;
