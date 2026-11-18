@@ -573,6 +573,11 @@ canvas[data-engine-canvas] {
   font-size: 18px;
 }
 
+/* a long label (PRONE): smaller, so it fits the round button (TouchControls' LONG_LABEL) */
+.touch-ui .pad button.long b {
+  font-size: 14px;
+}
+
 .touch-ui .pad button small {
   font-size: 9px;
   color: #94b0c2;

@@ -998,7 +998,7 @@ async function runTouch(browserExe) {
       t.set('KeyJ', { hidden: true });
       const r = t.rects();
       const hidden = { kept: r.buttons.length, flagged: r.buttons.find((x) => x.code === 'KeyJ').hidden, visibility: getComputedStyle(b).visibility, stick: !!r.stick };
-      t.set('KeyJ', { hidden: false, disabled: false, cooldown: 0, timer: '', badge: '', label: 'B' });
+      t.set('KeyJ', { hidden: false, disabled: false, cooldown: 0, timer: '', badge: '', label: 'HIT' });
       // hiding the controls releases a held button and the stick
       b.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 7, bubbles: true }));
       const held = input.isDown('KeyJ');

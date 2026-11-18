@@ -2,6 +2,9 @@ import { AnimationMixer, BoxGeometry, ConeGeometry, Group, Mesh, type Object3D, 
 import {
   compileClip,
   ContactShadow,
+  type ControlTable,
+  DEFAULT_TOUCH_BUTTONS,
+  type LegendItem,
   mergeStaticMeshes,
   type Game,
   type GameContext,
@@ -40,7 +43,8 @@ import { HERO_RIG } from './hero/rig';
  * Game systems on show: coins are trigger volumes (physics.trigger), hero moves play
  * retro sound effects and kick up pixel particles (detected from hero.stats / state /
  * anim in fixedUpdate, see heroEvents), a chiptune loops (the ⚙ settings mute it), and the coin counter
- * is pixel HUD text.
+ * and a legend of the moves (`controls`: the keys, the pad's buttons, none on a phone, whose
+ * buttons are named by their moves) are pixel HUD text.
  */
 
 type Vec3 = [number, number, number];
@@ -151,6 +155,33 @@ import.meta.hot?.accept('./hero/animations', (mod) => {
   if (clips) reloadClips?.(clips);
 });
 
+/** The engine's touch button that presses `code` (DEFAULT_TOUCH_BUTTONS, the page's): its label. */
+const touchOf = (code: string) => DEFAULT_TOUCH_BUTTONS.find((b) => b.code === code)?.label;
+
+/**
+ * Every move's controls (the engine's KEYMAP and touch buttons; ⚙ settings on Esc · Options), so
+ * the legend names them on the device in use. Wave, sit and walk have no touch button.
+ */
+export const PLAYGROUND_CONTROLS = {
+  move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' },
+  jump: { key: 'Space', pad: 'PadA', touch: touchOf('Space') },
+  attack: { key: 'KeyJ', pad: 'PadX', touch: touchOf('KeyJ') },
+  grab: { key: 'KeyF', pad: 'PadY', touch: touchOf('KeyF') },
+  crouch: { key: 'KeyC', pad: 'PadB', touch: touchOf('KeyC') },
+  walk: { key: 'ShiftLeft', pad: 'PadLT' },
+  prone: { key: 'KeyZ', pad: 'PadLB', touch: touchOf('KeyZ') },
+  lie: { key: 'KeyX', pad: 'PadRB', touch: touchOf('KeyX') },
+  wave: { key: 'KeyV', pad: 'PadBack' },
+  sit: { key: 'KeyB', pad: 'PadL3' },
+  settings: { key: 'Escape', pad: 'PadStart' },
+} as const satisfies ControlTable;
+
+/** The legend along the bottom, two rows (each as much as fits); a phone's buttons say it themselves. */
+const LEGEND: readonly (readonly LegendItem[])[] = [
+  [['move', 'RUN'], ['jump', 'JUMP'], ['attack', 'HIT'], ['grab', 'GRAB'], ['crouch', 'DUCK']],
+  [['walk', 'TIPTOE'], ['prone', 'PRONE'], ['lie', 'LIE'], ['wave', 'WAVE'], ['sit', 'SIT'], ['settings', 'SETTINGS']],
+];
+
 const COIN_ICON = ['..ooo..', '.oyyyo.', 'oyywyyo', 'oyywyyo', 'oyywyyo', '.oyyyo.', '..ooo..'];
 const COIN_COLORS = { o: 'orange', y: 'sand', w: 'white' } as const;
 const PUNCHES = new Set(['Punch', 'Punch2', 'Kick', 'SweepKick', 'JumpKick']);
@@ -158,6 +189,7 @@ const STEPPING = new Set<MoveState>(['walk', 'run', 'crouchWalk', 'crawl', 'push
 
 export class Playground implements Game {
   readonly name = 'Move Playground';
+  readonly controls = PLAYGROUND_CONTROLS;
   /** Downloaded while the renderer and physics start up. */
   readonly assets = ['assets/tree.glb', 'assets/coin.glb', HERO_MODEL];
   hero!: PlatformerCharacter;
@@ -429,6 +461,12 @@ export class Playground implements Game {
     hud.text(16, 6, `${this.collected}/${this.coins.length}`, { color: 'sand' });
     if (this.won) hud.text(0, 18, 'ALL COINS!', { anchor: 'top', color: 'sand', scale: 2 });
     if (ctx.audio.muted) hud.text(6, 6, 'MUTE', { anchor: 'top-right', color: 'mist' });
+    if (ctx.engine.controls.device === 'touch') return; // the buttons name their moves
+    LEGEND.forEach((row, i) => {
+      const fit = [...row];
+      while (hud.legendWidth(fit) > hud.width - 12) fit.pop();
+      hud.legend(6, hud.height - 12 * (LEGEND.length - i), fit, { color: 'white' });
+    });
   }
 
   cameraTarget(): Vector3 {

@@ -40,15 +40,21 @@ export interface TouchButtonState {
   hidden?: boolean;
 }
 
-/** Default buttons for PlatformerCharacter (see character/controls.ts KEYMAP). */
+/**
+ * Default buttons for PlatformerCharacter (see character/controls.ts KEYMAP), named by what they
+ * do: a pad's letters differ (its B crouches, its X attacks), so a letter here would contradict them.
+ */
 export const DEFAULT_TOUCH_BUTTONS: readonly TouchButton[] = [
-  { label: 'A', code: 'Space', hint: 'jump' },
-  { label: 'B', code: 'KeyJ', hint: 'attack' },
-  { label: 'C', code: 'KeyC', hint: 'crouch' },
-  { label: 'G', code: 'KeyF', hint: 'grab' },
-  { label: 'Z', code: 'KeyZ', hint: 'prone' },
-  { label: 'X', code: 'KeyX', hint: 'lie' },
+  { label: 'JUMP', code: 'Space' },
+  { label: 'HIT', code: 'KeyJ' },
+  { label: 'DUCK', code: 'KeyC' },
+  { label: 'GRAB', code: 'KeyF' },
+  { label: 'PRONE', code: 'KeyZ' },
+  { label: 'LIE', code: 'KeyX' },
 ];
+
+/** A label longer than this gets a smaller size in the default grid's 58 px buttons (`long`), so it fits. */
+const LONG_LABEL = 4;
 
 interface ButtonView {
   readonly def: TouchButton;
@@ -270,6 +276,7 @@ export class TouchControls {
     el.dataset.i = String(i);
     el.dataset.code = b.code;
     el.innerHTML = `<i class="shutter"></i><b>${b.label}</b><small>${b.hint ?? ''}</small><em class="timer"></em><s class="badge"></s>`;
+    el.classList.toggle('long', [...b.label].length > LONG_LABEL);
     if (b.at) {
       const size = b.at.size ?? 58;
       const corner = b.at.corner ?? 'bottom-right';
@@ -296,7 +303,10 @@ export class TouchControls {
 
   private apply(v: ButtonView, s: TouchButtonState): void {
     const was = v.shown;
-    if (s.label !== undefined && s.label !== was.label) v.label.textContent = was.label = s.label;
+    if (s.label !== undefined && s.label !== was.label) {
+      v.label.textContent = was.label = s.label;
+      v.el.classList.toggle('long', [...s.label].length > LONG_LABEL);
+    }
     if (s.hint !== undefined && s.hint !== was.hint) v.hint.textContent = was.hint = s.hint;
     if (s.icon !== undefined && s.icon !== v.icon) {
       v.icon?.remove();
