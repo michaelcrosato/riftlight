@@ -102,7 +102,8 @@ export function titleMenu(h: MenuHost): Menu {
       if (h.engineWorld) w.push({ kind: 'button', id: 'gallery', label: t('menu.title.gallery'), onClick: () => h.engineWorld!('gallery'), hint: t('menu.title.gallery.hint') });
       return w;
     },
-    { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h) },
+    // a landscape phone: two columns of tiles under the logo, every entry in view (`MenuOptions.grid`)
+    { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h), grid: true },
   );
 }
 
@@ -139,7 +140,7 @@ export function pauseMenu(h: MenuHost): Menu {
       { kind: 'gap', id: 'g' },
       { kind: 'button', id: 'quit', label: t('menu.pause.quit'), onClick: () => h.saveAndQuit(), accent: 'plum' },
     ],
-    { id: 'pause', title: t('menu.pause.title'), width: 140, onBack: () => h.resume(), onSound: sound(h) },
+    { id: 'pause', title: t('menu.pause.title'), width: 140, onBack: () => h.resume(), onSound: sound(h), grid: true },
   );
 }
 

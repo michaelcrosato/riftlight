@@ -21,7 +21,7 @@
  * replay of the game does the same to the tree.
  */
 import { type Glyph, keyGlyph, padGlyph } from '../../../engine/controls';
-import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
+import { computeFraming, RESOLUTIONS, touchScale, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
 import type { PadGlyphs } from '../../../engine/settings';
 import { drawDeviceText, surfaceScale } from '../../../engine/hud/deviceText';
 import { wrapText } from '../../../engine/hud/wrap';
@@ -48,6 +48,14 @@ export interface TreeViewOptions extends TreeRules {
   resolution?: Resolution;
   /** Match the containing game's presentation. Default: fill, the engine's (the tree covers the window). */
   aspect?: AspectMode;
+  /** The game's art density on a phone (`EngineOptions.touchDensity`, the renderer's `touchDensity`), so the tree is as big as the HUD. Default 0: none. */
+  touchDensity?: number;
+  /**
+   * The device in use (the engine's `controls.device`): the bottom bar names its controls (taps and
+   * pinches, the mouse and keys, a pad's buttons) whatever the screen's width. Default: a touch
+   * once a finger has used the view, else the mouse and keys.
+   */
+  device?: () => 'keyboard' | 'pad' | 'touch';
   /** Key codes that close the view. Default ['Escape']; [] = can't be closed by key. */
   closeKeys?: readonly string[];
   /** Gamepad B closes the view (default true when closeKeys isn't empty). */
@@ -86,28 +94,31 @@ export interface TreeHint {
   readonly glyphs: readonly Glyph[];
 }
 
+/** Whose controls the tree's bottom bar names: a pad's buttons, a finger's gestures, or the mouse and keys. */
+export type TreeHintMode = 'pad' | 'touch' | 'mouse';
+
 /**
- * The bottom bar's hints, in their usual order: with the pad cursor each is its button's glyph (in
- * the player's style) and a verb (✕ take, ○ close, □ refund, △ stats, L2 R2 zoom, L1 R1 screens);
- * with the mouse, words ("Click take"), and the host's keys as key caps ("Q E screens"); on a narrow
- * screen only the most needed.
+ * The bottom bar's hints, in their usual order, for the device in use (never the screen's width:
+ * the bar keeps as many as fit, the most useful first): with the pad cursor each is its button's
+ * glyph (in the player's style) and a verb (✕ take, ○ close, □ refund, △ stats, L2 R2 zoom, L1 R1
+ * screens); with a finger, its gestures ("Tap twice: take", "Pinch zoom"); with the mouse, words
+ * ("Click take"), and the host's keys as key caps ("Q E screens").
  */
-export function treeHints(o: { narrow: boolean; pad: boolean; refunds: boolean; style: PadGlyphs; pages?: TreePages }): TreeHint[] {
+export function treeHints(o: { mode: TreeHintMode; refunds: boolean; style: PadGlyphs; pages?: TreePages }): TreeHint[] {
   const pad = (id: string, codes: readonly string[]): TreeHint => ({ id, text: t(`tree.verb.${id}`), glyphs: codes.map((c) => padGlyph(c, o.style, lang())) });
   const key = (id: string): TreeHint => ({ id, text: t(`tree.hint.${id}`), glyphs: [] });
-  if (o.narrow) return o.pad ? [pad('take', ['PadA']), pad('close', ['PadB'])] : [key('tap')];
   const pages = o.pages;
-  return o.pad
-    ? [pad('move', ['PadLStick']), pad('take', ['PadA']), ...(o.refunds ? [pad('refund', ['PadX'])] : []), pad('stats', ['PadY']), pad('zoom', ['PadLT', 'PadRT']), ...(pages ? [pad('screens', pages.pad)] : []), pad('close', ['PadB'])]
-    : [
-        key('pan'),
-        key('zoom'),
-        key('take'),
-        ...(o.refunds ? [key('refund')] : []),
-        key('stats'),
-        key('find'),
-        ...(pages ? [{ id: 'screens', text: t('tree.verb.screens'), glyphs: pages.keys.map((c) => keyGlyph(c, lang())) }] : []),
-      ];
+  if (o.mode === 'pad') return [pad('move', ['PadLStick']), pad('take', ['PadA']), ...(o.refunds ? [pad('refund', ['PadX'])] : []), pad('stats', ['PadY']), pad('zoom', ['PadLT', 'PadRT']), ...(pages ? [pad('screens', pages.pad)] : []), pad('close', ['PadB'])];
+  if (o.mode === 'touch') return [key('pan'), key('pinch'), key('tap'), ...(o.refunds ? [key('hold')] : [])];
+  return [
+    key('pan'),
+    key('zoom'),
+    key('take'),
+    ...(o.refunds ? [key('refund')] : []),
+    key('stats'),
+    key('find'),
+    ...(pages ? [{ id: 'screens', text: t('tree.verb.screens'), glyphs: pages.keys.map((c) => keyGlyph(c, lang())) }] : []),
+  ];
 }
 
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
@@ -148,6 +159,10 @@ export class TreeView {
   private longPress = 0;
   private cursor = { x: 240, y: 135 };
   private padCursor = false;
+  /** What last used the view itself (a finger or the mouse on it, a key): its hints, until then the host's device. */
+  private used: 'touch' | 'mouse' | null = null;
+  /** The host's device the bottom bar last named (`TreeViewOptions.device`). */
+  private deviceShown: 'keyboard' | 'pad' | 'touch' | undefined;
   private padHeld: boolean[] = [];
   private padStick = false;
   private hover: string | null = null;
@@ -219,6 +234,7 @@ export class TreeView {
   open(): void {
     if (this.opened) return;
     this.opened = true;
+    this.used = null;
     this.root.style.display = '';
     const ac = (this.openAc = new AbortController());
     const sig = { signal: ac.signal };
@@ -374,6 +390,7 @@ export class TreeView {
     }
     this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
     this.padCursor = false;
+    this.used = e.pointerType === 'mouse' ? 'mouse' : 'touch';
     this.cursor = { x, y };
     if (this.inSearchBox(x, y)) {
       this.search.focus();
@@ -406,6 +423,7 @@ export class TreeView {
     const p = this.pointers.get(e.pointerId);
     if (p) [p.x, p.y] = [x, y];
     this.padCursor = false;
+    this.used = e.pointerType === 'mouse' ? 'mouse' : 'touch';
     this.cursor = { x, y };
     if (this.pinch && this.pointers.size >= 2) {
       const [a, b] = this.twoPointers();
@@ -468,6 +486,7 @@ export class TreeView {
       this.held.delete(e.code);
       return;
     }
+    this.used = 'mouse'; // the keys' hints: the keyboard and mouse
     // the host's keys (the shell's ring: Q / E page round the character screens): the game hears them
     if (e.target !== this.search && this.options.pages?.keys.includes(e.code)) return;
     // The tree owns the keyboard while it is open: the game never sees these presses.
@@ -716,7 +735,8 @@ export class TreeView {
     const w = c.clientWidth || window.innerWidth;
     const h = c.clientHeight || window.innerHeight;
     const res = this.options.resolution ?? RESOLUTIONS.default;
-    const f = (this.framing = computeFraming(w, h, window.devicePixelRatio || 1, res, this.options.aspect));
+    const dpr = window.devicePixelRatio || 1;
+    const f = (this.framing = computeFraming(w, h, dpr, res, this.options.aspect, touchScale({ width: w, height: h, dpr }, this.options.touchDensity ?? 0)));
     if (f.artWidth !== this.buf.width || f.artHeight !== this.buf.height) {
       const [tx, ty] = [this.cam.x, this.cam.y];
       this.buf = new PixelBuffer(f.artWidth, f.artHeight);
@@ -758,6 +778,7 @@ export class TreeView {
     }
     for (const [id, p] of this.pulses) if (this.time - p.t0 > PULSE) this.pulses.delete(id);
     if (this.pulses.size || this.matches.size || document.activeElement === this.search) this.dirty = true;
+    if (this.options.device && this.options.device() !== this.deviceShown) this.dirty = true; // the bottom bar names another device's controls
     if (this.dirty) this.render();
   }
 
@@ -966,8 +987,11 @@ export class TreeView {
     // pad, each is its button's glyph (PlayStation's or Xbox's, as the player chose) and a verb.
     b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
-    const hints = treeHints({ narrow, pad: this.padCursor, refunds, style: this.options.padGlyphs?.() ?? 'playstation', pages: this.options.pages });
-    const priority = ['take', 'close', 'tap', 'refund', 'stats', 'screens', 'find', 'move', 'pan', 'zoom'];
+    // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
+    const device = (this.deviceShown = this.options.device?.());
+    const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
+    const hints = treeHints({ mode, refunds, style: this.options.padGlyphs?.() ?? 'playstation', pages: this.options.pages });
+    const priority = ['take', 'close', 'tap', 'refund', 'hold', 'stats', 'screens', 'find', 'move', 'pan', 'pinch', 'zoom'];
     const glyphs = (h: TreeHint) => h.glyphs.reduce((w, g) => w + glyphWidth(g) + 1, h.glyphs.length ? 2 : 0);
     const gap = 12;
     const keep = new Set<TreeHint>();

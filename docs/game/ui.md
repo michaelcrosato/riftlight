@@ -4,8 +4,8 @@ Panels, `UiEvent`s and `PanelHost`: docs/game/shell.md *Ports*.
 
 ## HUD layout (`ui/layout.ts`)
 
-The fixed HUD (`hudZones`: orbs, bar, minimap, boss bar, a moment's seconds left,
-banner) reserves its rects each frame; world overlays are placed around them by priority with
+The fixed HUD (`hudZones`, named by `hudBoxes`: orbs, bar, minimap, gold, the top-left block, boss
+bar, a moment's seconds left, banner, couch guests' strips) reserves its rects each frame; world overlays are placed around them by priority with
 `HudLayout.place`: the prompt, a moment's way-out mark (`beacon`), the focused loot label, the
 other labels (loud first, then near), then damage numbers (which merge quick hits on one target
 and stack per target). Whatever finds no room is skipped for that frame. The centre banner is a
@@ -16,7 +16,15 @@ the mini font, at most four rows) with the plate growing to hold it. A 52in1 mom
 left (`HudModel.timeLeft`) go at the top centre, moved down under whatever they'd touch (the
 label, the minimap and gold, a boss's bar, a touch control), and the banner goes under them.
 Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar, a
-small minimap. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
+small minimap. The top-left block reserves every row it draws (where you are, the clock, the kills,
+the tuning: a longer language's are wider). A boss's name and bar go at the top centre between the
+minimap and its mirror on the left (`bossPlace`), and where the bar would be shorter than 100 there
+(a phone in portrait, a window narrower than about 330) across the screen under the minimap, the
+gold and the top-left block; the banner then goes under it. Couch guests' strips (`guestsRect`)
+go under the top-left block, under a boss's bar that runs across the screen (it stays put as guests
+come and go), and side by side, two or three a row, where a column of them would run into the rest
+of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); the banner goes
+under them and a kill streak right of them. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
 tap on the corner minimap) fits what the hero explored into the room between the HUD's top and
 bottom (`mapView`, up to 5 art pixels a cell; around the hero when it can't fit), on a
 see-through plate under the HUD (ink on two pixel rows of every three, `PLATE_GAP`: it reads
@@ -31,11 +39,16 @@ framed panel shows a **legend** under its frame for the device in use (`Panel.le
 select and back; the layer keeps its rows free; the shell adds L1 R1 for the character screens):
 ✕ Select · ○ Back with a pad, Enter Select · Esc Back on the keyboard, none on a touch screen. An
 overlay that says so has one too, where it says (`Panel.legendAt`): the item windows' under them,
-with L1 R1 Tabs in the stash and the vendor. Legends are the Riftlight shell's (`UiLayer.legends`):
+else over them, slid along its row clear of the HUD (`UiLayer.avoid`: the shell's zones, weighted:
+an orb, the bar or the minimap matter more than a passing banner or the top-left text), and where
+nothing is clear over as little of it as it can; with L1 R1 Tabs in the stash and the vendor. Legends are the Riftlight shell's (`UiLayer.legends`):
 another host of these panels (Engine World) keeps its own hints, and its menus `MENU_BINDINGS`
 (L1 / R1 tabs: a reader's headings) where the shell's are `SHELL_MENU_BINDINGS`. The
 **character sheet** is pages (Offence, Defence, Resistances: L2 / R2, ← →, Tab or a click), each a
-short list with its sources in the normal font. The **death recap** opens with what matters (who,
+short list with its sources in the normal font; a narrow sheet whose page names don't fit as tabs
+turns them with a pager (‹ the page's name whole, a dot per page ›; a tap on either half). Oru's
+respec tree is a tree view but no screen of the ring (`Panel.ring: false`): L1 R1 don't page away
+from it and its bar names no screens. The **death recap** opens with what matters (who,
 where, the killing blow, the damage taken and its biggest type, the tip, the cost); its tables
 (damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
 kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
@@ -44,16 +57,41 @@ under it (`ItemsUi.focusRect`: a two-pixel sand frame with an ink rim).
 
 ## On a touch screen (`game/touch.ts`)
 
+On a phone Riftlight draws its art at two CSS pixels per art pixel at least (`touchDensity: 2`;
+422×195 on an 844×390 landscape phone at DPR 2 or 3, 130×282 in portrait), so the HUD and the
+panels lay out in about 195 rows in landscape. On a page with touch controls every panel gets a
+thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44 CSS px, 22 art
+rows in landscape, 15 in portrait; `Panel.fit`'s third argument): menu rows, the character sheet's
+tabs and rows, the codex's list, the loot window's and the death recap's buttons. A menu never
+hides an entry it could show (`Menu.plan`): where its thumb-tall rows would scroll, the title and
+pause menus lay their buttons out as two columns of tiles (`MenuOptions.grid`: a landscape phone,
+the tiles narrower than the menu on a small one, 284×160, while each holds the widest label; the
+d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
+its room when that keeps them all in view (the save slots, the tuning, the rift keeper's depths on
+a landscape phone); one that scrolls even so (the settings, the languages) keeps its thumb-tall
+rows and shows a scroll bar beside them. A mouse's or a pad's screen keeps its layout (`tap` 0),
+whatever device was used last. Hints name the device in use, never the screen's width: the tree's
+bottom bar (`TreeViewOptions.device`: Drag pan · Pinch zoom · Tap twice: take · Hold refund on a
+touch screen, its art at the game's density: `TreeViewOptions.touchDensity`; `/tree.html` names a
+finger's gestures on a coarse pointer before the first touch) and the item windows' (`windowHint`
+by `engine.controls.device`; on a page with touch controls the vendor window keeps the size of
+the taller of a finger's and the mouse's hint, so a tap lands where it was aimed whichever device
+the hint names, while a desktop's holds its own hint: the mouse's, as it always did). The Arena
+(`?game=arena`) gets the same cluster (`ARENA_TOUCH_BUTTONS` in `combat/arena.ts`: no ≡ and no F).
+
 The engine's touch buttons are the skill bar, laid out as
-an action cluster: the joystick bottom-left; a big attack button in the bottom-right corner,
+an action cluster: a floating joystick (`touchStick: 'floating'`: its base comes under the thumb
+anywhere in the lower left; the HUD lays out around where it rests, and keeps what a finger taps,
+the corner map, out of its zone); a big attack button in the bottom-right corner,
 skills 1-4 on an arc around it, the dodge outside the arc and a contextual interact button
 next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
 inventory, skills, tree and settings are) top-left. `TouchPad` drives them each frame from
 `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
-orb takes the lowest free spot in its corner third (beside the joystick and the cluster on a
-wide screen, above them in portrait), the XP bar runs between the orbs or sits over the life
+orb takes the lowest free spot in its corner third, half the width on a landscape phone, never
+under the minimap and the gold (beside the joystick and the cluster on the bottom row in landscape,
+above them in portrait), the XP bar runs between the orbs or sits over the life
 orb, the top-left text starts right of ≡, the prompt drops its key glyph. The controls hide on
 the title, under every panel and when the hero is dead, and their rects are world-overlay
 zones too. Riftlight ships without the engine's ⓘ P R ◐ ♪ bar (`touchBar: false`); `?debug=1`

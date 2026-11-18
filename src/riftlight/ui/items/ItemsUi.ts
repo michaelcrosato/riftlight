@@ -209,7 +209,8 @@ export class ItemsUi {
   private time = 0;
   private compareCache = { key: '', deltas: [] as StatDelta[] };
   private skillCache = { key: '', numbers: [] as (SkillNumbers | null)[] };
-  private hintCache = { key: '', hint: { mini: true, rows: [] as string[] } };
+  /** The vendor's hint laid out, by its words and width. */
+  private readonly hintCache = new Map<string, { mini: boolean; rows: string[] }>();
   private vendorCache: { stock: readonly Item[]; grid: Grid } = { stock: [], grid: emptyGrid(VENDOR_SIZE.w, VENDOR_SIZE.h) };
   private size = { w: 480, h: 270 };
   private drawnKey = '';
@@ -347,25 +348,36 @@ export class ItemsUi {
 
   private leftH(): number {
     if (this.left === 'vendor') {
-      const hint = this.vendorHint();
-      return VENDOR_H + (hint.mini ? 0 : (hint.rows.length - 1) * 9 + 1);
+      // the window holds the hint in rows: the pad's; on a page with touch controls the taller of a
+      // finger's and the mouse's (the layout never changes between them: a tap lands where it was
+      // aimed); elsewhere the hint's own (a mouse's and a pad's screen keep their layout)
+      const extra = (hint: { mini: boolean; rows: string[] }) => (hint.mini ? 0 : (hint.rows.length - 1) * 9 + 1);
+      const mode = this.hintMode();
+      const modes = mode !== 'pad' && this.ctx.engine.renderer.touchDensity > 0 ? (['touch', 'mouse'] as const) : [mode];
+      return VENDOR_H + Math.max(...modes.map((m) => extra(this.vendorHint(m))));
     }
     return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
   }
 
-  /** A window's hint for the device that drives it (`windowHint`): the pad cursor, a phone's narrow screen, else the mouse. */
-  private hint(id: string, padButton: string): string {
-    return windowHint(id, padButton, this.cursorMode === 'pad' ? 'pad' : this.narrow ? 'touch' : 'mouse', this.ctx.engine.controls.style);
+  /** Whose controls the windows' hints name: the pad cursor's, else the device in use (a finger's, or the mouse's), never the screen's width. */
+  private hintMode(): 'pad' | 'touch' | 'mouse' {
+    return this.cursorMode === 'pad' ? 'pad' : this.ctx.engine.controls.device === 'touch' ? 'touch' : 'mouse';
+  }
+
+  /** A window's hint for the device that drives it (`windowHint`, `hintMode`). */
+  private hint(id: string, padButton: string, mode = this.hintMode()): string {
+    return windowHint(id, padButton, mode, this.ctx.engine.controls.style);
   }
 
   /** The hint under the vendor's goods: a row of the mini font, or rows of the normal font (the window grows). */
-  private vendorHint(): { mini: boolean; rows: string[] } {
-    const text = this.hint('item.vendor.hint', 'PadY'); // Ctrl-click: buy / sell
+  private vendorHint(mode = this.hintMode()): { mini: boolean; rows: string[] } {
+    const text = this.hint('item.vendor.hint', 'PadY', mode); // Ctrl-click: buy / sell
     const w = this.panelW() - 10;
-    const key = `${text}|${w}`;
+    const key = `${text}|${w}|${this.narrow}`;
+    let hint = this.hintCache.get(key);
     // the normal font, read from the couch; a phone's narrow window: one row of the mini font when it fits
-    if (this.hintCache.key !== key) this.hintCache = { key, hint: this.narrow && miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) } };
-    return this.hintCache.hint;
+    if (!hint) this.hintCache.set(key, (hint = this.narrow && miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) }));
+    return hint;
   }
 
   /** Inventory panel rect (art pixels). */
@@ -610,19 +622,41 @@ export class ItemsUi {
 
   /**
    * Where the shell's button legend goes (ui/legend.ts: the row's centre and glyph row, art
-   * pixels): under the windows, else over them, centred on them; null without room for its row.
+   * pixels; `w` its width, plate included): under the windows, else over them, centred on them,
+   * clear of `avoid` (the HUD's orbs, bar and minimap); slid along its row beside what is in the
+   * way when centred it isn't; where nothing is clear (a small screen with a boss's bar and the
+   * level's card up), over as little of the HUD as it can. Null without room for its row.
    */
-  legendAt(): { x: number; y: number } | null {
+  legendAt(w = 0, avoid: readonly (Rect & { readonly weight?: number })[] = []): { x: number; y: number } | null {
     const rs = this.rects();
     if (!rs.length) return null;
     const left = Math.min(...rs.map((r) => r.x));
     const right = Math.max(...rs.map((r) => r.x + r.w));
     const top = Math.min(...rs.map((r) => r.y));
     const bottom = Math.max(...rs.map((r) => r.y + r.h));
-    const x = Math.round((left + right) / 2);
-    if (bottom + 4 + 9 <= this.size.h) return { x, y: bottom + 4 }; // its plate: 2 rows above the glyphs, 9 below
-    if (top - 11 >= 2) return { x, y: top - 10 };
-    return null;
+    const cx = Math.round((left + right) / 2);
+    const rows: number[] = [];
+    if (bottom + 4 + 9 <= this.size.h) rows.push(bottom + 4); // its plate: 2 rows above the glyphs, 9 below
+    if (top - 11 >= 2) rows.push(top - 10);
+    if (!rows.length) return null;
+    const half = Math.ceil(w / 2);
+    // the plate centred on x (drawLegend keeps it on screen); how much of the HUD it covers (a window: never)
+    const plateX = (x: number) => Math.max(2, Math.min(this.size.w - 2 - w, x - half));
+    const cover = (x: number, y: number): number => {
+      const r = { x: plateX(x), y: y - 2, w, h: 11 };
+      const area = (b: Rect) => Math.max(0, Math.min(r.x + r.w, b.x + b.w) - Math.max(r.x, b.x)) * Math.max(0, Math.min(r.y + r.h, b.y + b.h) - Math.max(r.y, b.y));
+      return rs.some((b) => area(b) > 0) ? Infinity : avoid.reduce((sum, b) => sum + area(b) * (b.weight ?? 1), 0);
+    };
+    // centred first, then beside each thing in the way, the nearest the centre first; the first clear spot, else the least covered
+    const xs = [cx, ...avoid.flatMap((b) => [b.x - 1 - half, b.x + b.w + 1 + half])].sort((a, b) => Math.abs(a - cx) - Math.abs(b - cx));
+    let best: { x: number; y: number; cover: number } | null = null;
+    for (const y of rows)
+      for (const x of xs) {
+        const c = cover(x, y);
+        if (c === 0) return { x: plateX(x) + half, y };
+        if (!best || c < best.cover) best = { x: plateX(x) + half, y, cover: c };
+      }
+    return best && best.cover < Infinity ? { x: best.x, y: best.y } : { x: cx, y: rows[0]! };
   }
 
   // ---------------------------------------------------------------- pointer input
@@ -1246,7 +1280,7 @@ export class ItemsUi {
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });

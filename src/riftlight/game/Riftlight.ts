@@ -22,10 +22,10 @@ import { RANK, SCALING } from '../core/scaling';
 import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, type GameEvents, type LevelSpec, type SaveData } from '../core/types';
 import { loadRiftlightPacks } from '../packs';
 import { type Interactable, Town, type TownState } from '../town/Town';
-import { type HudModel, drawHud, drawMap, type FeedLine, hudGeometry, hudZones, mapView, type MinimapModel } from '../ui/hud';
+import { type HudModel, drawHud, drawMap, type FeedLine, hudBoxes, hudGeometry, mapView, type MinimapModel } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
 import { clip, inside, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
-import { UiLayer } from '../ui/layer';
+import { tapArt, UiLayer } from '../ui/layer';
 import { drawPageStrip, type PageStrip, pagesLegend } from '../ui/legend';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
@@ -123,6 +123,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   mapOpen = false;
   /** The touch controls' rects in art pixels this frame (the HUD lays out around them). */
   private hudControls: Box[] = [];
+  /**
+   * The fixed HUD's zones as drawn this frame: an item window's legend keeps clear of them
+   * (`UiLayer.avoid`), above all of the orbs, the bar and the minimap (a passing banner, a boss's
+   * name and the top-left text matter less: `weight`).
+   */
+  private hudZonesShown: (Box & { weight: number })[] = [];
   /** The last row the title's logo and tagline take (the title menu starts under it). */
   private titleBottom = 0;
   private readonly menuInput = new MenuInput(SHELL_MENU_BINDINGS);
@@ -304,7 +310,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     this.layer.legends = true; // the button legends under panels name this shell's controls
-    this.layer.legendExtra = (panel) => (isPage(panel.id) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
+    this.layer.avoid = () => this.hudZonesShown;
+    this.layer.legendExtra = (panel) => (pageOf(panel) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
     const rng = () => this.rng;
     this.services = {
       ctx,
@@ -1576,7 +1583,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const ui = this.ui;
     const g = hudGeometry(ui.w, ui.h, this.hudControls);
     const boss = this.level?.boss();
-    const top = boss && boss.life > 0 ? 30 : 8;
+    let top = 8;
+    if (boss && boss.life > 0) {
+      // under the boss's name and bar as the HUD places them while the big map shows (no corner map)
+      const model = this.hudModel();
+      model.controls = this.hudControls;
+      model.minimap = null;
+      const bar = hudBoxes(ui.w, ui.h, model).find((b) => b.id === 'boss');
+      top = Math.max(30, bar ? bar.y + bar.h + 5 : 0);
+    }
     return { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
   }
 
@@ -1605,6 +1620,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.time = this.time;
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
+    // rows and tabs a thumb tall on a page with touch controls (the art size: recorded)
+    this.layer.tap = tapArt(ctx.engine.renderer);
     // pointer and menu input → the panel stack, then game hotkeys
     const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)].map((e) => this.shellEvent(ctx, e));
     ui.pointer.x = this.pointer.art.x;
@@ -1716,14 +1733,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (e.kind === 'tab' && e.dir === 1 && this.shiftTab(ctx)) return { kind: 'tab', dir: -1 };
     const dir = e.kind === 'key' ? pageDir(e.code) : 0;
     const top = this.layer.top?.panel;
-    if (dir && top?.group === ITEM_GROUP && !isPage(top.id)) return { kind: 'tab', dir };
+    if (dir && top?.group === ITEM_GROUP && !pageOf(top)) return { kind: 'tab', dir };
     return e;
   }
 
   /** L1 / R1 (Q / E) on a character screen: the one before or after it in the ring (`PAGES`), in its place. */
   page(dir: 1 | -1): boolean {
-    const top = this.layer.top?.panel.id;
-    if (!isPage(top)) return false;
+    const top = pageOf(this.layer.top?.panel);
+    if (!top) return false;
     const i = PAGES.indexOf(top);
     for (let k = 1; k < PAGES.length; k++) if (this.showPage(PAGES[(i + dir * k + PAGES.length * k) % PAGES.length]!)) return true;
     return false;
@@ -1731,10 +1748,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /** Open a character screen in place of the one showing (a pause menu under it stays). False when it can't open (no such view). */
   showPage(page: Page): boolean {
-    const was = this.layer.top?.panel.id;
-    if (was === page) return false;
+    const was = pageOf(this.layer.top?.panel);
+    if (this.layer.top?.panel.id === page) return false;
     if (!this.openPanel(page)) return false;
-    if (isPage(was) && this.layer.has(was)) this.layer.close(was, true);
+    if (was && this.layer.has(was)) this.layer.close(was, true);
     return true;
   }
 
@@ -2095,7 +2112,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     model.controls = this.hudControls = this.touchPad.zones((x, y) => this.pointer.toArt(x, y));
     const layout = this.hudLayout;
     layout.clear(ui.w, ui.h);
-    for (const z of hudZones(ui.w, ui.h, model)) layout.reserve(z);
+    this.hudZonesShown = hudBoxes(ui.w, ui.h, model).map(({ id, x, y, w, h }) => ({ x, y, w, h, weight: id === 'banner' || id === 'boss' || id === 'where' || id === 'time' ? 1 : 10 }));
+    for (const { x, y, w, h } of this.hudZonesShown) layout.reserve({ x, y, w, h });
     // world overlays
     this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
@@ -2165,8 +2183,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.layer.draw(ui, this.time);
     if (talk && !talk.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
     // a character screen on top: the ring's strip across the top (the tree's view covers the screen: its own bar says it)
-    const top = this.layer.top?.panel.id;
-    this.pageStrip = isPage(top) && top !== 'tree' ? drawPageStrip(ui, top).rects : [];
+    const top = pageOf(this.layer.top?.panel);
+    this.pageStrip = top && top !== 'tree' ? drawPageStrip(ui, top).rects : [];
     if (this.dead && !this.layer.has('death')) {
       const k = Math.min(1, this.deathTimer / 1.2);
       for (let y = 0; y < ui.h; y += 2) if ((y / 2) % 3 < k * 3) ui.rect(0, y, ui.w, 1, 'plum');
@@ -2241,8 +2259,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const lw = g.levelAt.mini ? miniWidth(lv) : ui.measure(lv);
     zones.push({ id: 'level', x: Math.round(g.levelAt.align === 'center' ? g.levelAt.x - lw / 2 : g.levelAt.x - lw), y: g.levelAt.y, w: lw, h: g.levelAt.mini ? 5 : 7 });
     if (!g.touch) zones.push({ id: 'skillbar', x: g.bx - 5, y: g.by - 4, w: g.barW + 4, h: g.slot + 10 });
-    zones.push({ id: 'where', x: g.textX, y: 5, w: Math.min(ui.w / 2, 60), h: 5 });
-    if (this.level) zones.push({ id: 'minimap', x: ui.w - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 });
+    // the rest as the HUD lays it out this frame: the minimap (and the gold under it), the gold,
+    // the top-left block, a boss's name and bar, a moment's seconds left, the centre banner
+    const model = this.hudModel();
+    model.controls = this.hudControls;
+    for (const b of hudBoxes(ui.w, ui.h, model)) if (b.id !== 'control' && b.id !== 'bar' && b.id !== 'xp' && b.id !== 'life' && b.id !== 'mana') zones.push(b);
     return { art: { w: ui.w, h: ui.h }, touch: g.touch, controls: this.hudControls, zones };
   }
 
@@ -2665,6 +2686,9 @@ const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 
 /** A character screen's id (`PAGES`). */
 const isPage = (id: string | undefined): id is Page => (PAGES as readonly string[]).includes(id ?? '');
+
+/** The character screen `panel` is in the ring (`PAGES`), or null: not one, or kept out of it (`Panel.ring`: Oru's respec tree). */
+const pageOf = (panel: Panel | undefined): Page | null => (panel && panel.ring !== false && isPage(panel.id) ? panel.id : null);
 
 /** The ring's way for a page key: -1 L1 / Q, 1 R1 / E, else 0. */
 const pageDir = (code: string): 1 | -1 | 0 => ((KEYS.pagePrev as readonly string[]).includes(code) ? -1 : (KEYS.pageNext as readonly string[]).includes(code) ? 1 : 0);

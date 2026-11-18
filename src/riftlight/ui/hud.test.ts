@@ -1,24 +1,27 @@
 import { afterAll, describe, expect, it } from 'vitest';
-import { type AspectMode, computeFraming, RESOLUTIONS } from '../../engine/framing';
+import { type AspectMode, computeFraming, RESOLUTIONS, touchScale } from '../../engine/framing';
 import { Vector3 } from 'three/webgpu';
 import { type HudColor, Lang, textWidthPx } from '../../engine';
 import { RIFTLIGHT_TOUCH_BUTTONS } from '../game/touch';
+import { RIFTLIGHT_OPTIONS } from '../index';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { bossNameShown } from '../lang/monsters';
 import { riftlightTranslations } from '../lang/translations';
 import { designedBoss } from '../monsters/bosses';
 import { MOMENTS, momentGoal } from '../session/moments';
-import { drawHud, type GuestStrip, hudGeometry, type HudModel, hudZones } from './hud';
+import { drawHud, type GuestStrip, hudBoxes, hudGeometry, type HudModel, hudZones } from './hud';
 import { type Align, miniCovers, miniWidth, UiCanvas } from './kit';
 import { type Box, overlaps } from './layout';
 
 /**
  * The touch controls of a phone screen in art pixels, from the button data and the engine's
  * CSS (stick 128 px + 2 px border, 16 px from the corner; placed buttons from an 8 px safe
- * margin). The e2e `phone` suite checks the same thing against the real DOM rects.
+ * margin), on the art the game draws there (`fill`, at Riftlight's `touchDensity`: two CSS pixels
+ * per art pixel at least on a phone). The e2e `phone` suite checks the same thing against the
+ * real DOM rects.
  */
-function controlsFor(vw: number, vh: number, dpr: number, aspect: AspectMode = 'adaptive'): { W: number; H: number; boxes: Box[] } {
-  const f = computeFraming(vw, vh, dpr, RESOLUTIONS.default, aspect);
+function controlsFor(vw: number, vh: number, dpr: number, aspect: AspectMode = 'fill', density = RIFTLIGHT_OPTIONS.touchDensity ?? 0): { W: number; H: number; boxes: Box[] } {
+  const f = computeFraming(vw, vh, dpr, RESOLUTIONS.default, aspect, touchScale({ width: vw, height: vh, dpr }, density));
   const k = f.artWidth / f.cssWidth; // art pixels per CSS pixel
   const toArt = (x: number, y: number, w: number, h: number): Box => {
     const ax = Math.floor((x - f.offsetX) * k);
@@ -66,13 +69,42 @@ describe('hudGeometry with touch controls', () => {
     });
   }
 
-  it('landscape: the orbs sit beside the controls on the bottom row with the XP bar between them', () => {
-    const { W, H, boxes } = controlsFor(844, 390, 3);
-    const g = hudGeometry(W, H, boxes);
-    expect(g.life.y).toBe(g.mana.y);
-    expect(g.life.y + g.orbR).toBeGreaterThan(H - 12);
-    expect(g.xp.x).toBeGreaterThan(g.life.x + g.orbR);
-    expect(g.xp.x + g.xp.w).toBeLessThan(g.mana.x - g.orbR);
+  for (const [vw, vh, dpr] of [
+    [844, 390, 2],
+    [844, 390, 3],
+    [852, 393, 3],
+    [740, 360, 2],
+    [915, 412, 2.625],
+  ] as const)
+    it(`landscape ${vw}×${vh} at DPR ${dpr}: the phone's denser art, the orbs beside the controls on the bottom row with the XP bar between them, clear of the minimap and the gold`, () => {
+      const { W, H, boxes } = controlsFor(vw, vh, dpr);
+      expect(H, 'a landscape phone draws about 180 to 200 rows (two CSS pixels per art pixel)').toBeGreaterThanOrEqual(175);
+      expect(H).toBeLessThanOrEqual(210);
+      const g = hudGeometry(W, H, boxes);
+      expect(g.life.y).toBe(g.mana.y);
+      expect(g.life.y + g.orbR).toBeGreaterThan(H - 12);
+      expect(g.xp.x).toBeGreaterThan(g.life.x + g.orbR);
+      expect(g.xp.x + g.xp.w).toBeLessThan(g.mana.x - g.orbR);
+      // the minimap, the gold under it and the orbs never meet (a level, with a big purse)
+      const m = { ...hudModel(boxes), minimap: MINIMAP, gold: 9_876_543, goldShown: 9_876_543 };
+      const z = hudBoxes(W, H, m);
+      const of = (id: string) => z.filter((b) => b.id === id);
+      for (const a of [...of('life'), ...of('mana'), ...of('xp')]) for (const b of [...of('minimap'), ...of('gold'), ...of('control')]) expect(overlaps(a, b, 0), `${a.id} ${JSON.stringify(a)} over ${b.id} ${JSON.stringify(b)}`).toBe(false);
+    });
+
+  it('an orb pushed up its side by the controls stops short of the minimap and the gold: it moves in along its row instead', () => {
+    // a landscape phone's 422×195 whose right half is taken from row 60 down (a cluster of
+    // buttons that tall): the mana orb's lowest spot is at the top, where the corner map is
+    const W = 422;
+    const H = 195;
+    const controls: Box[] = [{ x: 211, y: 60, w: 211, h: 135 }];
+    const g = hudGeometry(W, H, controls);
+    const mana = orbBox(g.mana, g.orbR);
+    expect(mana.y + mana.h, 'it climbed above the controls').toBeLessThanOrEqual(60);
+    const z = hudBoxes(W, H, { ...hudModel(controls), minimap: MINIMAP, gold: 9_876_543, goldShown: 9_876_543 });
+    for (const b of z.filter((x) => x.id === 'minimap' || x.id === 'gold')) expect(overlaps(mana, b, 0), `the mana orb ${JSON.stringify(mana)} under the ${b.id} ${JSON.stringify(b)}`).toBe(false);
+    for (const c of controls) expect(overlaps(mana, c, 0)).toBe(false);
+    expect(g.mana.x, 'still on its own side').toBeGreaterThan(W / 2);
   });
 
   it('portrait: the top-left text starts right of the ≡ button', () => {
@@ -88,6 +120,98 @@ describe('hudGeometry with touch controls', () => {
     expect(g.life).toEqual({ x: g.orbX, y: g.orbY });
     expect(g.mana).toEqual({ x: 480 - g.orbX, y: g.orbY });
     expect(g.xp).toEqual({ x: g.bx - 4, y: g.by - 8, w: g.barW + 2 });
+  });
+});
+
+/** The corner map of a level (its cells don't matter here). */
+const MINIMAP: HudModel['minimap'] = { width: 8, height: 8, cell: () => 1, explored: new Uint8Array(64), hero: { x: 4, z: 4 }, exit: null, boss: null, origin: { x: 0, z: 0 } };
+
+/** A level's HUD model on a phone (or not: no controls). */
+function hudModel(controls: Box[], o: { boss?: string | null; label?: string; difficulty?: string[] } = {}): HudModel {
+  return {
+    time: 0,
+    vitals: { life: 50, maxLife: 100, mana: 20, maxMana: 40, es: 0, maxEs: 0 },
+    levelUpAge: 99,
+    level: 3,
+    xp: 0.5,
+    skills: [],
+    buffs: [],
+    boss: o.boss ? { name: o.boss, life: 50, maxLife: 100, phases: [0.66, 0.33], phase: 1, position: new Vector3() } : null,
+    minimap: MINIMAP,
+    gold: 1234,
+    goldShown: 1234,
+    feed: [],
+    card: null,
+    streak: null,
+    difficulty: o.difficulty ?? [],
+    hurt: 0,
+    levelLabel: o.label ?? 'II · Gloom',
+    timer: '12:34',
+    device: controls.length ? 'touch' : 'keyboard',
+    padStyle: 'playstation',
+    progress: { killed: 12, total: 57 },
+    controls,
+  };
+}
+
+describe('a boss\'s name and bar', () => {
+  it('never run under the minimap and the gold: at the top beside the minimap where they fit, else across the screen under it (a phone in portrait, a narrow window)', () => {
+    const boss = 'Nyx-Hollow, the Lantern Eater';
+    for (const W of [130, 160, 260, 300, 334, 360, 400, 422, 427, 460, 480, 640]) {
+      const H = W < 300 ? 282 : 240;
+      const z = hudBoxes(W, H, hudModel([], { boss }));
+      const bar = z.find((b) => b.id === 'boss')!;
+      expect(bar, `${W}`).toBeDefined();
+      expect(bar.x >= 0 && bar.x + bar.w <= W, `${W}: on screen ${JSON.stringify(bar)}`).toBe(true);
+      for (const id of ['minimap', 'gold', 'where'] as const) {
+        const o = z.find((b) => b.id === id)!;
+        expect(overlaps(bar, o, 0), `${W}: the boss's bar ${JSON.stringify(bar)} over the ${id} ${JSON.stringify(o)}`).toBe(false);
+      }
+    }
+    // a wide screen keeps it where it was: centred at the top, 200 wide
+    const wide = hudBoxes(480, 270, hudModel([], { boss })).find((b) => b.id === 'boss')!;
+    expect(wide).toEqual({ id: 'boss', x: 138, y: 5, w: 220, h: 20 });
+  });
+});
+
+describe('the top-left block', () => {
+  afterAll(() => void installLanguage(new Lang(riftlightLines())));
+
+  it('reserves every row it draws, the clock, the kills and the tuning too, as wide as the widest (a longer language)', () => {
+    const translations = riftlightTranslations();
+    for (const code of ['en', 'tr', 'de', 'ru']) {
+      installLanguage(new Lang(riftlightLines(), translations, { code }));
+      const tuned = [t('hud.tuned.enemy_damage', { value: '1.50' }), t('hud.tuned.enemy_life', { value: '2.00' })];
+      for (const [W, H] of [
+        [480, 270],
+        [422, 195],
+        [130, 282],
+      ] as const) {
+        const m = hudModel([], { difficulty: tuned, label: 'II · Gloom' });
+        const texts: { x: number; y: number; w: number; s: string }[] = [];
+        const hud = {
+          width: W,
+          height: H,
+          rect() {},
+          sprite() {},
+          text(x: number, y: number, s: string, o: { scale?: number } = {}) {
+            texts.push({ x, y, w: textWidthPx(s, o.scale ?? 1), s });
+          },
+          measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }),
+        };
+        class Minis extends UiCanvas {
+          override mini(x: number, y: number, s: string, color?: HudColor, align: Align = 'left', shadow?: HudColor | false): number {
+            if (align === 'left') texts.push({ x, y, w: miniWidth(s), s });
+            return super.mini(x, y, s, color, align, shadow);
+          }
+        }
+        drawHud(new Minis(hud as never), m);
+        const where = hudBoxes(W, H, m).find((b) => b.id === 'where')!;
+        const left = texts.filter((x) => x.x <= where.x + 4 && x.y < 80);
+        expect(left.map((x) => x.s), `${code} ${W}: the clock and the tuning drawn`).toEqual(expect.arrayContaining(['12:34', t('hud.tuned'), ...tuned]));
+        for (const x of left) expect(x.x + x.w <= where.x + where.w && x.y + 7 <= where.y + where.h, `${code} ${W}: "${x.s}" ${JSON.stringify(x)} inside ${JSON.stringify(where)}`).toBe(true);
+      }
+    }
   });
 });
 
@@ -275,6 +399,12 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
     ['the hub’s frame, 1000×850', 1000, 850, 1],
   ] as const;
   const minimap: HudModel['minimap'] = { width: 8, height: 8, cell: () => 1, explored: new Uint8Array(64), hero: { x: 4, z: 4 }, exit: null, boss: null, origin: { x: 0, z: 0 } };
+  /** A page with touch controls (and Riftlight's touch density), the same page on a pad (the controls stepped aside), and a page without touch controls (no touch density). */
+  const PAGES = [
+    [true, RIFTLIGHT_OPTIONS.touchDensity ?? 0],
+    [false, RIFTLIGHT_OPTIONS.touchDensity ?? 0],
+    [false, 0],
+  ] as const;
   const strip = (seat: number): GuestStrip => ({ seat, color: 0x3f7fff, life: 0.6, skills: [1, 0.4, -1, 0], rise: seat === 3 ? 3.2 : null });
   function model(controls: Box[], o: { guests: number; boss: boolean; tuned: number; map: boolean }): HudModel {
     return {
@@ -333,13 +463,14 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
   it('are on screen, clear of the minimap and gold, the top-left block, a boss’s bar, the orbs, the bars, every text and every touch control', () => {
     let checked = 0;
     for (const [name, vw, vh, dpr] of SCREENS) {
-      for (const touch of [true, false]) {
-        const f = controlsFor(vw, vh, dpr, 'fill');
+      // a page with touch controls draws at Riftlight's touch density (a pad picked up there too); a page without at the art size the viewport gives
+      for (const [touch, density] of PAGES) {
+        const f = controlsFor(vw, vh, dpr, 'fill', density);
         const controls = touch ? f.boxes : [];
         const { W, H } = f;
         for (const guests of [1, 2, 3]) {
           for (const [boss, tuned, map] of [[false, 0, true], [true, 2, true], [false, 0, false]] as const) {
-            const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}${map ? '' : ', no minimap'}`;
+            const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}${map ? '' : ', no minimap'}`;
             const m = model(controls, { guests, boss, tuned, map });
             const others = hudZones(W, H, { ...m, guests: [] });
             const zones = hudZones(W, H, m);
@@ -358,6 +489,59 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
         }
       }
     }
-    expect(checked).toBe(SCREENS.length * 2 * 3 * 3);
+    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 3);
+  });
+
+  it('a banner (the level card, a level-up, LEVEL CLEAR) goes under the strips, never over them; a boss’s bar stays put as guests come and go', () => {
+    let checked = 0;
+    for (const [name, vw, vh, dpr] of SCREENS) {
+      for (const [touch, density] of PAGES) {
+        const f = controlsFor(vw, vh, dpr, 'fill', density);
+        const controls = touch ? f.boxes : [];
+        const { W, H } = f;
+        for (const guests of [1, 2, 3]) {
+          for (const boss of [false, true]) {
+            for (const kind of ['card', 'levelup', 'clear'] as const) {
+              const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}, a ${kind} banner`;
+              const m: HudModel = { ...model(controls, { guests, boss, tuned: 0, map: true }), card: { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind } };
+              const z = hudBoxes(W, H, m);
+              const strips = z.find((b) => b.id === 'guests')!;
+              const banner = z.find((b) => b.id === 'banner')!;
+              expect(banner, where).toBeDefined();
+              expect(overlaps(banner, strips, 0), `${where}: the banner ${JSON.stringify(banner)} over the strips ${JSON.stringify(strips)}`).toBe(false);
+              expect(banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
+              const alone = hudBoxes(W, H, { ...m, guests: [] });
+              expect(z.find((b) => b.id === 'boss'), `${where}: the boss's bar where it was without guests`).toEqual(alone.find((b) => b.id === 'boss'));
+              checked++;
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 3);
+  });
+
+  it('a kill streak goes right of the strips where it would run into them, never over them', () => {
+    let checked = 0;
+    for (const [name, vw, vh, dpr] of SCREENS) {
+      for (const [touch, density] of PAGES) {
+        const f = controlsFor(vw, vh, dpr, 'fill', density);
+        const controls = touch ? f.boxes : [];
+        const { W, H } = f;
+        for (const guests of [1, 2, 3]) {
+          for (const [boss, tuned] of [[false, 0], [true, 2]] as const) {
+            for (const streak of [{ count: 7, age: 1 }, { count: 12, age: 0.05 }]) {
+              const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}, a streak of ${streak.count}`;
+              const m: HudModel = { ...model(controls, { guests, boss, tuned, map: true }), streak };
+              const strips = hudBoxes(W, H, m).find((b) => b.id === 'guests')!;
+              const inStrips = (x: Box) => x.x >= strips.x && x.y >= strips.y && x.x + x.w <= strips.x + strips.w + 1 && x.y + x.h <= strips.y + strips.h + 1;
+              for (const x of drawn(W, H, m).filter((x) => !inStrips(x))) expect(overlaps(strips, x, 0), `${where}: ${JSON.stringify(x)} over the strips ${JSON.stringify(strips)}`).toBe(false);
+              checked++;
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 2);
   });
 });

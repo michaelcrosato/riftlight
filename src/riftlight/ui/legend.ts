@@ -39,15 +39,7 @@ const itemWidth = (ui: UiCanvas, item: LegendItem): number => glyphsWidth(ui, it
  * that don't fit are dropped from the end. Returns the row's width (0 on a touch screen: none).
  */
 export function drawLegend(ui: UiCanvas, items: readonly LegendItem[], cx: number, y: number, maxW: number): number {
-  if (ui.device === 'touch' || !items.length) return 0;
-  const shown: LegendItem[] = [];
-  let w = 0;
-  for (const item of items) {
-    const iw = itemWidth(ui, item) + (shown.length ? GAP : 0);
-    if (w + iw > maxW) break;
-    shown.push(item);
-    w += iw;
-  }
+  const { shown, w } = fitLegend(ui, items, maxW);
   if (!shown.length) return 0;
   let x = Math.max(2, Math.min(ui.w - 2 - w, Math.round(cx - w / 2)));
   ui.rect(x - 3, y - 2, w + 6, 11, 'ink'); // a plate: it reads over the world and the HUD behind
@@ -57,6 +49,26 @@ export function drawLegend(ui: UiCanvas, items: readonly LegendItem[], cx: numbe
     x += ui.text(x, y, item.label, { color: 'mist' }) + GAP;
   }
   return w;
+}
+
+/** The entries of `items` that fit `maxW` (from the start) and their row's width; none on a touch screen. */
+function fitLegend(ui: UiCanvas, items: readonly LegendItem[], maxW: number): { shown: LegendItem[]; w: number } {
+  const shown: LegendItem[] = [];
+  let w = 0;
+  if (ui.device === 'touch') return { shown, w };
+  for (const item of items) {
+    const iw = itemWidth(ui, item) + (shown.length ? GAP : 0);
+    if (w + iw > maxW) break;
+    shown.push(item);
+    w += iw;
+  }
+  return { shown, w };
+}
+
+/** How wide `drawLegend` draws `items` in at most `maxW`, its plate included (0: nothing to draw). */
+export function legendWidth(ui: UiCanvas, items: readonly LegendItem[], maxW: number): number {
+  const { shown, w } = fitLegend(ui, items, maxW);
+  return shown.length ? w + 6 : 0;
 }
 
 /** The strip's rects by page, as last drawn (a click on one opens it). */

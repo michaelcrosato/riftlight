@@ -37,11 +37,16 @@ function saved(): string[] {
 const state = TreeState.load(tree, saved(), points);
 const audio = new AudioManager();
 const container = document.getElementById('app')!;
+// no engine here to say which device is in use: a phone's or a tablet's coarse pointer is a finger
+// (the bottom bar names taps before the first touch), anything else the mouse and keys; what then
+// uses the view itself takes over
+const coarse = typeof matchMedia === 'function' ? matchMedia('(pointer: coarse)') : null;
 const view = new TreeView({
   container,
   tree,
   state,
   audio,
+  device: () => (coarse?.matches ? 'touch' : 'keyboard'),
   closeKeys: [],
   onChange: (_change, s) => {
     try {

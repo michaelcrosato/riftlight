@@ -899,6 +899,7 @@ async function runTouch(browserExe) {
       const ev = (type, dx, dy) => z.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 71, isPrimary: true, clientX: x + dx, clientY: y + dy, bubbles: true }));
       ev('pointerdown', 0, 0);
       const base = f.root.querySelector('.stick').getBoundingClientRect();
+      const held = f.rects().stick; // a HUD laid out around the stick keeps its resting place
       ev('pointermove', 0, -50);
       const analog = { ...e.input.analog };
       ev('pointerup', 0, -50);
@@ -911,6 +912,7 @@ async function runTouch(browserExe) {
         analog,
         released: e.input.analog.y === 0,
         rest: Math.round(Math.hypot(after.left - rest.left, after.top - rest.top)),
+        reported: Math.round(Math.hypot(held.left - rest.left, held.top - rest.top)),
         onTop,
         device: e.input.device,
       };
@@ -919,8 +921,8 @@ async function runTouch(browserExe) {
       return out;
     });
     check(
-      floating.zone[0] === 0 && Math.abs(floating.zone[1] - 0.45) < 0.02 && Math.abs(floating.zone[3] - 0.75) < 0.02 && floating.under <= 2 && floating.analog.y > 0.3 && floating.released && floating.rest <= 1 && floating.onTop === 'Space' && floating.device === 'touch',
-      `a floating stick's base comes under the thumb in the lower left 45% × 75% (landscape), drives input.analog, goes back to rest, and a placed button stays on top (${JSON.stringify(floating)})`,
+      floating.zone[0] === 0 && Math.abs(floating.zone[1] - 0.45) < 0.02 && Math.abs(floating.zone[3] - 0.75) < 0.02 && floating.under <= 2 && floating.analog.y > 0.3 && floating.released && floating.rest <= 1 && floating.reported <= 1 && floating.onTop === 'Space' && floating.device === 'touch',
+      `a floating stick's base comes under the thumb in the lower left 45% × 75% (landscape), drives input.analog, goes back to rest, rects().stick stays its resting place while held, and a placed button stays on top (${JSON.stringify(floating)})`,
     );
 
     // ⓘ shows the debug panel.

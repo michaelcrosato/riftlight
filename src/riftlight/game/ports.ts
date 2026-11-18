@@ -449,9 +449,16 @@ export interface Panel {
   /**
    * Optional: the room there is (art pixels inside the frame) before `size` is read, every
    * frame. A panel that can lay itself out narrower (a phone in portrait is 124 wide) adapts
-   * here; the shell clamps whatever `size` says to the room either way.
+   * here; the shell clamps whatever `size` says to the room either way. `tap`: the least height,
+   * in art pixels, of something a finger presses on this screen (`UiLayer.tap`: about 44 CSS px on
+   * a page with touch controls, 0 elsewhere): rows and tabs at least that tall.
    */
-  fit?(w: number, h: number): void;
+  fit?(w: number, h: number, tap?: number): void;
+  /**
+   * Not one of the character screens' ring although its id is one (Oru's respec tree is a `tree`
+   * view): L1 / R1 don't page away from it and the ring's strip doesn't show over it.
+   */
+  readonly ring?: false;
   draw(ui: UiCanvas, rect: { x: number; y: number; w: number; h: number }, time: number): void;
   /** Return true when the event was used (the shell then stops routing it). */
   input?(e: UiEvent): boolean;
@@ -474,8 +481,21 @@ export interface Panel {
    * select and back (no back while it can't be closed); an empty list: none.
    */
   legend?(): readonly LegendItem[];
-  /** Overlay: where its legend goes (the row's centre and glyph row, art pixels: clear of its windows), or null when there is no room. */
-  legendAt?(): { readonly x: number; readonly y: number } | null;
+  /**
+   * Overlay: where its legend goes (the row's centre and glyph row, art pixels: clear of its windows
+   * and of `avoid`, the shell's HUD, or over as little of it as it can, by `weight`), or null when
+   * there is no room. `w`: the row's width, its plate included.
+   */
+  legendAt?(w: number, avoid: readonly LegendAvoid[]): { readonly x: number; readonly y: number } | null;
+}
+
+/** Something an overlay's legend keeps clear of (`Panel.legendAt`): a rect in art pixels, and how much covering it matters (default 1). */
+export interface LegendAvoid {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+  readonly weight?: number;
 }
 
 /** What a panel may ask of the shell (state it edits, money, sounds, closing itself). */

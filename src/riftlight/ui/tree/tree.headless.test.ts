@@ -77,6 +77,11 @@ describe('riftlight passive tree', () => {
       engine.step(1);
       expect(rl.state().ui).toContain('tree');
       expect(panel().respec).toBe(true);
+      // Oru's respec is no character screen: R1 / L1 (E / Q) don't page away from it
+      expect(panel().ring).toBe(false);
+      expect(rl.press('PadRB').ui, 'R1 keeps the respec tree').toEqual(['tree']);
+      expect(rl.press('PadLB').ui, 'L1 keeps the respec tree').toEqual(['tree']);
+      expect(panel().respec).toBe(true);
       const gold = rl.state().hero.gold;
       act({ kind: 'refund', id: node.id });
       expect(allocated(node.id), 'refunded').toBe(false);

@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.62.0
+
+- `TouchControls.rects().stick` is now a floating stick's resting place (`touchStick: 'floating'`) even while a thumb holds the stick elsewhere, so a HUD laid out around the controls no longer follows the thumb. Before, it returned the stick's rect wherever the thumb had dragged it.
+
 ## 0.61.0
 
 - Couch co-op, a pad per player (docs/engine/couch.md): `input.padPlayers` (new, default false) also reads every pad on its own. `input.player(slot)` returns a `PadPlayer` for slots 0 to `MAX_PADS` - 1 (`MAX_PADS` = 4; any other slot throws RangeError). A `PadPlayer` implements the new `KeyReader` interface (the merged input's reading API: isDown, anyDown, wasPressed, consumePress, consumeAny, moveAxis, padAxis, lookAxis, triggers) plus `connected`. Create and Options press when released, as on the merged input. The merged input stays player 1's, so existing games are unchanged.

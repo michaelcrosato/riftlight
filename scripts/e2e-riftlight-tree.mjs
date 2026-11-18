@@ -6,7 +6,8 @@
 // colours; drag, WASD and wheel move/zoom the camera; hovering a node shows it; a click
 // allocates the path (with a sound), a right-click refunds a leaf and refuses a node others
 // depend on; search highlights matches; Tab shows the stat summary; a standard gamepad moves
-// the snapping cursor and A allocates; refreshing keeps the allocation; zero console errors.
+// the snapping cursor and A allocates; refreshing keeps the allocation; zero console errors; the
+// bottom bar names clicks on a mouse's page and a finger's gestures on a phone's before any touch.
 //
 // Frames land in .scratch/e2e/riftlight-tree-*.png. Self-contained: e2e.mjs passes its helpers in.
 /* global window, document */
@@ -196,7 +197,19 @@ export async function runRiftlightTree(h) {
     const after = await E(() => window.__RIFT_TREE__.state.serialize());
     check(JSON.stringify(before) === JSON.stringify(after) && after.length > 0, `allocation survives a reload (${after.length} entries)`);
     await E(() => localStorage.clear());
+    const desk = await dbg();
+    check(desk.hints.includes('take') && !desk.hints.includes('tap'), `a mouse's page: the bottom bar names clicks (${desk.hints.join(', ')})`);
     check(logs.length === 0, `zero console errors/warnings${logs.length ? ':\n    ' + logs.join('\n    ') : ''}`);
+    await ctx.browser.close();
+
+    // a phone (a coarse pointer): the bottom bar names a finger's gestures before the first touch
+    ctx = await launch(exe, { name: 'riftlight-tree', args: [] }, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+    await ctx.page.goto(`${BASE}tree.html?points=40`);
+    await ctx.page.waitForFunction(() => window.__RIFT_TREE__?.view.debug().frames > 0, null, { timeout: 30000 });
+    const phone = await ctx.page.evaluate(() => window.__RIFT_TREE__.view.debug().hints);
+    // (a phone's narrow bar keeps the most useful hint: Tap twice: take)
+    check(phone.includes('tap') && !phone.includes('take') && !phone.includes('zoom'), `a phone: the bottom bar names a finger's taps before any touch, not clicks (${phone.join(', ')})`);
+    check(ctx.logs.length === 0, `a phone: zero console errors/warnings${ctx.logs.length ? ':\n    ' + ctx.logs.join('\n    ') : ''}`);
   } catch (e) {
     check(false, `riftlight-tree crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
   } finally {

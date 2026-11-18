@@ -35,7 +35,7 @@ import { normalizeSockets, type SkillSocket, socketedGems, starterSockets } from
 import { vendorStock, type VendorKind } from '../loot/vendor';
 import { type GroundDrop, WorldLoot as WorldLootSystem, type WorldLootState } from '../loot/world';
 import { t } from '../lang';
-import { type Drop, ITEM_GROUP, type KillInfo, type LootPort, type Panel, type PanelHost, type ShellServices, type StageWorld, type WorldLoot } from '../game/ports';
+import { type Drop, ITEM_GROUP, type KillInfo, type LegendAvoid, type LootPort, type Panel, type PanelHost, type ShellServices, type StageWorld, type WorldLoot } from '../game/ports';
 import { ItemsStore } from '../ui/items/store';
 import { type ItemsViewState, ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
 import type { UiCanvas, UiEvent } from '../ui/kit';
@@ -571,8 +571,8 @@ export class ItemsPanel implements Panel {
     return [...menuLegend(), ...(tabs ? [{ actions: ['page_prev', 'page_next'] as const, label: t('legend.tabs') }] : [])];
   }
 
-  legendAt(): { x: number; y: number } | null {
-    return this.loot.active === this ? this.loot.itemsUi().legendAt() : null;
+  legendAt(w: number, avoid: readonly LegendAvoid[]): { x: number; y: number } | null {
+    return this.loot.active === this ? this.loot.itemsUi().legendAt(w, avoid) : null;
   }
 }
 

@@ -14,7 +14,21 @@
 import type { Panel } from '../game/ports';
 import { t } from '../lang';
 import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from './kit';
-import { drawLegend, LEGEND_ROOM, type LegendItem, menuLegend } from './legend';
+import { drawLegend, LEGEND_ROOM, type LegendItem, legendWidth, menuLegend } from './legend';
+
+/** How tall a fingertip's target should be, CSS pixels (the platforms' guides say 44 to 48). */
+export const TAP_CSS = 44;
+
+/**
+ * The least height of something a finger presses, in art pixels, on `view` (the engine's renderer):
+ * `TAP_CSS` at its CSS pixels per art pixel on a page with touch controls (`touchDensity` set: 22 on
+ * a landscape phone, 15 in portrait), 0 elsewhere (a mouse's or a pad's screen keeps its layout).
+ * It follows the recorded viewport and density, so a replay lays its panels out the same.
+ */
+export function tapArt(view: { readonly touchDensity: number; readonly framing: { readonly cssWidth: number; readonly artWidth: number } }): number {
+  const k = view.framing.cssWidth / view.framing.artWidth;
+  return view.touchDensity > 0 && k > 0 ? Math.ceil(TAP_CSS / k - 1e-9) : 0;
+}
 
 /** The close box's cross (5 × 5). */
 const CROSS = ['x...x', '.x.x.', '..x..', '.x.x.', 'x...x'];
@@ -130,6 +144,18 @@ export class UiLayer {
   legends = false;
 
   /**
+   * The least height, in art pixels, of something a finger presses (`tapArt`: about 44 CSS px on a
+   * page with touch controls; 0 elsewhere): handed to the panels with their room (`Panel.fit`).
+   */
+  tap = 0;
+
+  /**
+   * What an overlay's legend keeps clear of, art pixels (the shell's HUD: its orbs, bar, minimap...;
+   * `Panel.legendAt`), each with how much covering it matters (`weight`, default 1).
+   */
+  avoid?: () => readonly (Rect & { readonly weight?: number })[];
+
+  /**
    * The shell's own entries for a panel's legend, after the panel's (the character screens: L1 R1
    * page through them).
    */
@@ -216,9 +242,10 @@ export class UiLayer {
         // its legend, where it says (clear of its windows)
         o.rect = { x: 0, y: 0, w: ui.w, h: ui.h };
         o.panel.draw(ui, o.rect, time);
-        const at = last && !this.peeking ? (o.panel.legendAt?.() ?? null) : null;
-        const legend = at ? this.legendOf(o, ui) : [];
-        if (at && legend.length) drawLegend(ui, legend, at.x, at.y, ui.w - 4);
+        const legend = last && !this.peeking ? this.legendOf(o, ui) : [];
+        const w = legend.length ? legendWidth(ui, legend, ui.w - 4) : 0;
+        const at = w ? (o.panel.legendAt?.(w, this.avoid?.() ?? []) ?? null) : null;
+        if (at) drawLegend(ui, legend, at.x, at.y, ui.w - 4);
         return;
       }
       // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can
@@ -228,7 +255,7 @@ export class UiLayer {
       const roomW = ui.w - (o.bare ? 4 : 12);
       const floor = o.below?.() ?? 0; // rows above it are someone else's (the title's logo)
       const roomH = ui.h - (o.bare ? 4 : 26) - Math.max(0, floor - 2) - (legend.length ? LEGEND_ROOM : 0);
-      o.panel.fit?.(roomW, roomH);
+      o.panel.fit?.(roomW, roomH, this.tap);
       const w = Math.min(o.panel.size.w, roomW);
       const h = Math.min(o.panel.size.h, roomH);
       const open = Math.min(1, o.age / 0.12);

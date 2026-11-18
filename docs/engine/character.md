@@ -58,7 +58,8 @@ width, the lower 60% in portrait and 75% in landscape; the placed buttons stay o
 the joystick's base under it, still writing `input.analog` (`touch.rects().zone`). The zone takes
 every touch that lands in it: a camera drag, a swipe or a tap on the canvas there moves the stick
 instead. Keep the game's tappable HUD and its swipe areas out of `rects().zone` (lay them out
-around it, as around the buttons), or keep the stick `fixed`.
+around it, as around the buttons), or keep the stick `fixed`. `rects().stick` is where a floating
+stick rests, also while a thumb holds it elsewhere, so a HUD laid out around it stays put.
 
 `touchDensity` (default 0, `DEFAULT_TOUCH_DENSITY`: the art size the viewport gives): a game opts
 in, `touchDensity: 2`, once its HUD fits a landscape phone's 181 to 195 rows. Then on a phone (the
