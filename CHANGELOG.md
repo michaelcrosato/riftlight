@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.51.0
+
+- **The default aspect is `fill`** (`EngineOptions.aspect`, `PixelRenderer`, `HeadlessView`, `computeFraming`): the picture reaches every edge at every window shape (16:9, 21:9, 4:3, a phone) and follows resizes, as a game in the 52in1 hub must. Only pixel density changes with the window, not the world in view: at 1600×900 the art is 534×300 at 3×, on a 390×844 phone 130×282 (3× at DPR 1, 9× at DPR 3). `adaptive` and `fixed` stay as opt-ins that letterbox (not for a 52in1 game). A game that wants the old bars back passes `aspect: 'adaptive'`.
+- **Lay a HUD out from `ctx.hud.width` / `height`**: under `fill` the art is often narrower or shorter than 480×270 (427×240 at 1280×720, 320×240 at 960×720, 130 columns on a portrait phone); docs/engine/effects.md says so.
+
 ## 0.50.0
 
 - **The player's 52in1 settings** (docs/engine/hub.md *The player's settings and the DualSense*): `engine.hubSettings` (`HubSettings`) reads `window.AIHubSettings`, typed. Outside 52in1 and headless every value is its default (`NO_HUB_SETTINGS`, `readHubSettings`), and it is read again on the hub's `change`. It holds `values` (music, effects, vibration, the DualSense's flags) and the microphone's gate (`micAllowed`, `micLater`, `micMuted`). `openMicrophone()` returns a stream only once the player has allowed games the microphone, never during a replay. `EngineOptions.hubSettings` passes a fake in tests.
