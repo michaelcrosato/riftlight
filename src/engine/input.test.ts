@@ -105,7 +105,45 @@ describe('Gamepad', () => {
     input.beginFrame(3 / 60, 1 / 60, [pad()]);
     input.endFrame();
     input.beginFrame(4 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
-    expect(input.wasPressed(GAMEPAD_BUTTONS[9]!)).toBe(true);
+    expect([input.isDown('PadStart'), input.wasPressed('PadStart')]).toEqual([true, false]); // alone: held, pressed as it is let go
+    input.endFrame();
+    input.beginFrame(5 / 60, 1 / 60, [pad()]);
+    expect([input.isDown('PadStart'), input.wasPressed('PadStart'), input.consumePress('PadStart')]).toEqual([false, true, true]);
+  });
+
+  it('Create and Options press as they are let go, never when the other went down while held (52in1’s bar, however the two are pressed)', () => {
+    /** Each poll's buttons down, on one pad; what pressed PadStart and PadBack at each. */
+    const run = (polls: number[][], before?: (input: Input, poll: number) => void) => {
+      const input = new Input(target());
+      return polls.map((buttons, n) => {
+        before?.(input, n);
+        input.beginFrame(n / 60, 1 / 60, [pad([0, 0, 0, 0], buttons)]);
+        const out = [input.wasPressed('PadStart') && 'Options', input.wasPressed('PadBack') && 'Create'].filter(Boolean).join() || '-';
+        input.endFrame();
+        return out;
+      });
+    };
+    const second = Array.from({ length: 60 }, () => [8, 9]); // the hub opens its bar after a second of both
+    expect(run([[9], ...second, []]), 'Options a poll before Create').toEqual(Array(62).fill('-'));
+    expect(run([[8], ...second, []]), 'Create a poll before Options').toEqual(Array(62).fill('-'));
+    expect(run([[9], [9], [9], [9], [9], [9], [9], [9], [9], [9], ...second, [9], []]), 'Options, then Create a slow sixth of a second later, Options let go last').toEqual(Array(72).fill('-'));
+    expect(run([[9], []])).toEqual(['-', 'Options']); // Options alone: as it is let go
+    expect(run([[9], [9], [9], [9], [9], [9], [9], [9], [9], [9], []])).toEqual([...Array(10).fill('-'), 'Options']); // held a while, alone: the same
+    expect(run([[8, 0], [0], []])).toEqual(['-', 'Create', '-']); // other buttons never spoil it
+    expect(run([[9], [], [8], []])).toEqual(['-', 'Options', '-', 'Create']); // one after the other, each let go first: both
+    // held through release() (a menu opened over it), it presses nothing as it is let go
+    expect(run([[9], [9], []], (input, n) => n === 1 && input.release())).toEqual(['-', '-', '-']);
+    expect(run([[9], [9], []], (input, n) => n === 1 && input.reset())).toEqual(['-', '-', '-']); // reset() drops it too
+    // two pads: each pad's chord is its own, and one pad's buttons never end another's
+    const input = new Input(target());
+    const polls: [number[], number[]][] = [[[8, 9], []], [[9], []], [[9], []], [[], []]];
+    const pressed = polls.map(([a, b], n) => {
+      input.beginFrame(n / 60, 1 / 60, [pad([0, 0, 0, 0], a, { index: 0 }), pad([0, 0, 0, 0], b, { index: 1 })]);
+      const out = input.wasPressed('PadStart');
+      input.endFrame();
+      return out;
+    });
+    expect(pressed, 'Create let go first on the first pad, a second pad idle beside it').toEqual([false, false, false, false]);
   });
 
   it('right stick turns into pointer movement for the camera', () => {
@@ -150,19 +188,19 @@ describe('Gamepad', () => {
 
   it('release() lets go of a held pad button for good: it does not press again until let go and pressed anew', () => {
     const input = new Input(target());
-    input.beginFrame(0, 1 / 60, [pad([0, 0, 0, 0], [9])]); // Options opens a menu
-    expect(input.wasPressed('PadStart')).toBe(true);
+    input.beginFrame(0, 1 / 60, [pad([0, 0, 0, 0], [3])]); // Triangle opens a menu
+    expect(input.wasPressed('PadY')).toBe(true);
     input.endFrame();
     input.release(); // what opening the menu does
     for (let i = 1; i < 4; i++) {
-      input.beginFrame(i / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]); // still held
-      expect([input.wasPressed('PadStart'), input.isDown('PadStart')]).toEqual([false, false]);
+      input.beginFrame(i / 60, 1 / 60, [pad([0, 0, 0, 0], [3])]); // still held
+      expect([input.wasPressed('PadY'), input.isDown('PadY')]).toEqual([false, false]);
       input.endFrame();
     }
     input.beginFrame(4 / 60, 1 / 60, [pad()]);
     input.endFrame();
-    input.beginFrame(5 / 60, 1 / 60, [pad([0, 0, 0, 0], [9])]);
-    expect([input.wasPressed('PadStart'), input.isDown('PadStart')]).toEqual([true, true]);
+    input.beginFrame(5 / 60, 1 / 60, [pad([0, 0, 0, 0], [3])]);
+    expect([input.wasPressed('PadY'), input.isDown('PadY')]).toEqual([true, true]);
   });
 
   it('release() centres a stick still leaning until it goes back inside its deadzone: a run held into a menu never steps it', () => {

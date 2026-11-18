@@ -106,7 +106,7 @@ field left out is the game's: `set({ look: undefined })` gives one back, `reset(
 review flag in the URL (`?look=`, `?filters=`, `?mode=`, `?res=`, `?quality=`, `?fps=`, `?debug=`)
 wins over a saved value at start (which stays saved), and a chosen look wins over each new level's
 own. A look is drawn by the pixel pass, so smooth 3D (pixel art off) shows none. The settings panel
-(`SettingsPanel`, DOM like the debug panel, so it stays legible at any art size) is made for a TV at
+(`SettingsPanel`, DOM, so it stays legible at any art size) is made for a TV at
 ten feet and a pad first: one setting per large row (text `clamp(18px, 3.2vmin, 40px)`), its value
 stepped ◀ value ▶ (no dropdowns, sliders or boxes), a ringed focus, three pages turned with L1 / R1
 (Q / E): **Picture** (look, pixel art, pixel size, quality, frame rate, debug info), **Sound** (on,
@@ -115,26 +115,26 @@ a rumble to feel when it changes on a pad), and a legend of the device's buttons
 · △ Reset; Enter · Esc · R on the keyboard; Tap · Swipe on a touch screen, where Tap is a hint, not
 a button). The d-pad or the left stick (with repeat) and the arrows / WASD move and change, Cross /
 Enter changes too, Circle / Esc / Options close, Triangle / R pressed twice within 2 s resets
-everything (the first press arms it: the legend says *Press again to reset*; anything else, or the
-time running out, disarms it); the mouse's hover moves the focus and a click acts (◀ ▶, a row, a
+everything (the legend says *Press again to reset* between; anything else disarms it); the mouse's
+hover moves the focus and a click acts (◀ ▶, a row, a
 legend button; beside the panel: close), leaving the keyboard focus on the panel, so the next Enter
 acts once; on a touch screen a tap acts and a quick swipe down or sideways closes it. Turning a page
-never moves the panel: it keeps the height of its tallest page. The rows are a listbox whose
-`aria-activedescendant` follows the focus, so a screen reader names each row as the focus moves and
-each value as it changes. Its rows and rules are data (`SettingsMenu`,
+never moves the panel (it keeps its tallest page's height). The rows are a listbox whose
+`aria-activedescendant` follows the focus, so a screen reader names each row and value. Its rows
+and rules are data (`SettingsMenu`,
 src/engine/ui/settingsMenu.ts, driven by `MenuInput` / `FocusList` from the engine's input:
 headless-testable), its words lines (`SETTINGS_LINES`: a game with a line of the same id in
 `engine.controls.names` shows its own). The ⚙ button opens it (`settings.button`: a corner, default
 top-right, shown on a mouse only while the pointer moves; `false`: none, so a game opens it from its
 own menu with `engine.settings.open()`); `settings.padButton: true` lets Options (and Esc) open it,
-for a game with no pause menu of its own (default off: a game's Options is its own; the playground,
-the sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad button held when it
+for a game with no pause menu of its own (default off; the playground, the sandbox and Rift Runner
+turn it on). Open, it pauses the game; a key or pad button held when it
 opens or closes reads as up until let go, and a stick held then reads centred until it goes back
 inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
-leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero
-after. Options (Esc) opens it once its frame has run as recorded, keys still held (a replay never
-opens it). It stays shut while a replay plays; a replay never saves settings (`persist`) and puts
-the player's back when it ends.
+leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero.
+Esc opens it once its frame has run as recorded (keys still held), Options as it is let go
+(`HOST_CHORD`). It stays shut while a replay plays; a replay never saves settings (`persist`) and
+puts the player's back when it ends.
 
 A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
 on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off with a
@@ -189,8 +189,10 @@ a keyboard and mouse player's camera), the analog triggers read 0..1 as
 Chrome) · the d-pad presses the arrows. A game binds them beside its keys (`KEYMAP.jump` is
 `['Space', 'PadA']`; `readMoveInput` plays the Playground on a pad), Options is left free for a
 pause, and Circle means back in menus. The home button (16, `HOME_BUTTON`) is never read, even when
-mapped, and Create + Options held together are the host's (the AI Hub's bar: `HOST_CHORD`). Remap
-with `input.gamepadButtons[2] = 'KeyF'`. Triggers, the right stick and the device are recorded. A
+mapped, and Create + Options together are the host's (the AI Hub's bar: `HOST_CHORD`): each
+presses as it is let go, only if the other never went down meanwhile, so a pause on Options never
+opens behind the bar, whichever went down first (`isDown` reads it at once). Remap with
+`input.gamepadButtons[2] = 'KeyF'`. Triggers, the right stick and the device are recorded. A
 movement key held (WASD, the arrows, the d-pad) wins over the left stick in `moveAxis()` unless the
 pad is the device in use and its stick leans past a quarter of its travel, so a connected pad's
 stick resting just past the deadzone never takes the keyboard's movement away. A trigger the pad

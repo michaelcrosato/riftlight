@@ -5,7 +5,8 @@
  * in brackets: 0 A (Cross) · 1 B (Circle) · 2 X (Square) · 3 Y (Triangle) · 4 LB (L1) · 5 RB (R1)
  * · 6 LT (L2) · 7 RT (R2) · 8 View (Create) · 9 Menu (Options) · 10 L3 · 11 R3 · 12–15 the
  * d-pad, which presses the arrow keys · 17 the DualSense touchpad's press (Chrome, Edge). 16, the
- * PS / Xbox / Home button, is never read (`HOME_BUTTON`): it is the system's or the host's.
+ * PS / Xbox / Home button, is never read (`HOME_BUTTON`): it is the system's or the host's, and
+ * View and Menu press as they are let go, unless held together (`HOST_CHORD`, the host's).
  * Change `input.gamepadButtons` to remap.
  */
 export const GAMEPAD_BUTTONS: Readonly<Record<number, string>> = {
@@ -248,8 +249,9 @@ export interface ButtonEvent {
  *   code (`consumePress`). Queued presses expire after `pressWindow` s of game time.
  * - Gamepads (standard mapping): the left stick feeds `moveAxis()` (radial deadzone), the
  *   right stick feeds the pointer delta (camera look) and `lookAxis` (aim), buttons press
- *   `Pad*` codes (`gamepadButtons`), the analog triggers read 0..1 (`triggers`). Polled once
- *   per frame by the engine (`beginFrame`). `rumble()` shakes the pad in use.
+ *   `Pad*` codes (`gamepadButtons`; Create and Options as they are let go, `HOST_CHORD`), the
+ *   analog triggers read 0..1 (`triggers`). Polled once per frame by the engine (`beginFrame`).
+ *   `rumble()` shakes the pad in use.
  * - `device`: the input used last (keyboard and mouse, pad, touch), from real use only: a pad
  *   that is merely connected changes nothing. Prompts and touch assists follow it.
  * - Pointer: accumulated movement per frame (while a button is held or the pointer is
@@ -348,8 +350,6 @@ export class Input {
   readonly preventKeys = new Set<string>();
   /** Gamepad button index → key code (defaults: GAMEPAD_BUTTONS). */
   gamepadButtons: Record<number, string> = { ...GAMEPAD_BUTTONS };
-  /** The host's chord (View + Menu) is held: buttons 8 and 9 mean nothing until both are let go. */
-  private hostChord = false;
   /** Stick deadzone (radial, 0..1). */
   gamepadDeadzone = GAMEPAD_DEADZONE;
   /** Right stick look speed: pointer pixels per second at full tilt. */
@@ -668,6 +668,7 @@ export class Input {
     this.held.clear();
     for (const code of this.padHeld) this.padLatched.add(code);
     this.padHeld.clear();
+    this.dropTaps(); // Create or Options held through it presses nothing as it is let go
     this.stickLatched[0] = this.stickLatched[1] = true; // a stick at rest lets go at the next poll
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
@@ -689,8 +690,14 @@ export class Input {
     this.triggers.left = this.triggers.right = 0;
     this.pad1 = null;
     this.padMulti = false;
+    this.dropTaps();
     this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
+  }
+
+  /** Create and Options held alone now press nothing as they are let go (`release`, `reset`). */
+  private dropTaps(): void {
+    for (const seen of this.padSeen.values()) seen.tap = [false, false];
   }
 
   /**
@@ -1032,6 +1039,9 @@ export class Input {
     let rumblePad: GamepadLike | null = null;
     const seen = this.padSeen;
     const seenNow = new Map<number, PadSeen>();
+    /** Create and Options held alone: held, but they press only as they are let go (`taps`). */
+    const chordHeld = new Set<string>();
+    const taps: string[] = [];
     for (let n = 0; n < list.length; n++) {
       const pad = list[n];
       if (!pad || pad.connected === false) continue;
@@ -1059,10 +1069,22 @@ export class Input {
       };
       // View + Menu (Create + Options, buttons 8 and 9) held together belong to whatever hosts the
       // page (the AI Hub opens its bar on them): once both are down, neither means anything here
-      // until both are let go (letting one go first must not press the other).
-      if (on(HOST_CHORD[0]) && on(HOST_CHORD[1])) this.hostChord = true;
-      else if (!on(HOST_CHORD[0]) && !on(HOST_CHORD[1])) this.hostChord = false;
-      const mine = (i: number) => i !== HOME_BUTTON && !(this.hostChord && HOST_CHORD.includes(i));
+      // until both are let go (letting one go first must not press the other). Each presses as it
+      // is let go (a tap), and only if the other never went down while it was held: a thumb that
+      // reaches Options a poll before Create opens no pause or settings behind the hub's bar.
+      const create = on(HOST_CHORD[0]);
+      const options = on(HOST_CHORD[1]);
+      const chord = (create && options) || (!!was?.chord && (create || options));
+      const mine = (i: number) => i !== HOME_BUTTON && !(chord && HOST_CHORD.includes(i));
+      const tap: [boolean, boolean] = [false, false];
+      HOST_CHORD.forEach((i, k) => {
+        const code = this.gamepadButtons[i];
+        if (chord || !code) return;
+        if (on(i)) {
+          tap[k] = was?.buttons[i] ? was.tap[k] === true : true; // went down alone now, or still held since
+          chordHeld.add(code);
+        } else if (was?.tap[k]) taps.push(code);
+      });
       pad.buttons.forEach((_, i) => {
         const code = this.gamepadButtons[i];
         if (code && on(i) && mine(i)) down.add(code);
@@ -1082,6 +1104,8 @@ export class Input {
         left: [l.x, l.y],
         right: [r.x, r.y],
         rest,
+        chord,
+        tap,
       };
       seenNow.set(index, now);
       const pressedNow = now.buttons.some((b, i) => b && (was ? !was.buttons[i] : i !== 6 && i !== 7));
@@ -1092,7 +1116,8 @@ export class Input {
     // a button held through release() reads as up until it is let go
     for (const code of this.padLatched) if (!down.has(code)) this.padLatched.delete(code);
     for (const code of this.padLatched) down.delete(code);
-    for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
+    for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code) && !chordHeld.has(code)) this.press(code);
+    for (const code of taps) this.press(code);
     // the DualSense's touchpad (52in1, when the game reads it): a swipe or a tap is a press, and a use
     const ds = this._playing ? null : this.dualsense;
     let gesture: TouchpadGesture | null = null;
@@ -1192,6 +1217,10 @@ interface PadSeen {
   right: [number, number];
   /** Each trigger's value when the pad was first seen part-way, while it rests there (null: it reads). */
   rest: [number | null, number | null];
+  /** The host's chord (`HOST_CHORD`) is held on this pad: buttons 8 and 9 mean nothing until both are let go. */
+  chord: boolean;
+  /** Create, Options (`HOST_CHORD`): held alone since it went down, so letting it go presses it. */
+  tap: [boolean, boolean];
 }
 
 /**
@@ -1233,7 +1262,12 @@ function touchFirst(): boolean {
   }
 }
 
-/** Gamepad buttons that, held together, are the host page's (View and Menu: Create and Options). */
+/**
+ * Gamepad buttons that, held together, are the host page's (View and Menu: Create and Options; 52in1
+ * opens its bar on them). Each presses its code as it is let go, and only if the other never went
+ * down while it was held, so a pause or menu on Options (or Create) never opens behind the host's
+ * bar however the two are pressed; held alone, each reads as held (`isDown`) as any button does.
+ */
 export const HOST_CHORD: readonly [number, number] = [8, 9];
 
 /**

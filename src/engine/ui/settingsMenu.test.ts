@@ -70,7 +70,7 @@ describe('the settings screen', () => {
   });
 
   it('on a pad: the d-pad moves the focus, left and right change a value, Cross changes it too, L1 / R1 turn the page, Circle closes', async () => {
-    const { e, menu, press, value } = await open();
+    const { e, menu, frame, press, value } = await open();
     expect([menu.list.index, value('quality').value]).toEqual([0, 'Auto']);
     press(13); // d-pad down
     press(13);
@@ -90,7 +90,7 @@ describe('the settings screen', () => {
     press(4); // L1
     expect(menu.page).toBe('picture');
     expect(press(1).close).toBe(true); // Circle
-    expect(press(9).close).toBe(true); // Options
+    expect([frame([9]).close, frame().close]).toEqual([false, true]); // Options: as it is let go (Create + Options is 52in1's bar)
   });
 
   it('a held d-pad or stick repeats; a number stops at its ends (Cross on its last goes round)', async () => {

@@ -270,7 +270,13 @@ export async function runSettings(h) {
       await E(() => window.__pad.buttons.forEach((x) => ((x.pressed = false), (x.value = 0))));
       await waitFrames(page, 3);
     };
-    await press([9], 12); // Options, held a while: the press that opens it must not close it
+    // Create + Options held a second is 52in1's bar: Options down a frame before Create opens nothing
+    await E(() => ((window.__pad.buttons[9].pressed = true), (window.__pad.buttons[9].value = 1)));
+    await waitFrames(page, 1);
+    await press([8, 9], 70);
+    const chordShut = await engine();
+    check(!chordShut.open && !chordShut.paused, `Create + Options (52in1's bar), Options a frame first, opens no panel behind it (open ${chordShut.open}, paused ${chordShut.paused})`);
+    await press([9], 12); // Options, held a while: it opens as it is let go, and stays open
     const padOpen = await engine();
     const padPanel = await panel();
     await shot('pad');
@@ -382,11 +388,11 @@ export async function runSettings(h) {
     await page.keyboard.down('KeyD');
     await waitFrames(page, 20);
     await E(() => ((window.__pad.buttons[9].pressed = true), (window.__pad.buttons[9].value = 1))); // Options, D still held
+    await waitFrames(page, 3);
+    await E(() => ((window.__pad.buttons[9].pressed = false), (window.__pad.buttons[9].value = 0))); // let go: it opens
     await until(page, (e) => e.settings.isOpen && e.paused);
     const walkedRun = await E(() => {
       const e = window.__PIXEL_ENGINE__;
-      window.__pad.buttons[9].pressed = false;
-      window.__pad.buttons[9].value = 0;
       const rec = e.recording();
       return { print: e.fingerprint(), frames: rec.frames.length, held: rec.frames.some((f) => f.held?.includes('KeyD')), options: rec.frames.findIndex((f) => f.pressed?.includes('PadStart')) };
     });
