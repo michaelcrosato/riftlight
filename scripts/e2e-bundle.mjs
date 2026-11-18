@@ -1,4 +1,4 @@
-/* global window, document -- page.evaluate callbacks run in the browser */
+/* global window, document, requestAnimationFrame -- page.evaluate callbacks run in the browser */
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
@@ -13,11 +13,17 @@
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
-//             every shot; copied away from any node_modules, it plays with a global Playwright.
+//             every shot; --keys holds a Pad* code on a fake pad; "page.html?touch=1" plays as on a
+//             phone (touch in use, its controls in the report, a shot of the page); copied away
+//             from any node_modules, it plays with a global Playwright.
 //   play      every recipe does what the guide says: Coin Garden's coins, Cliff Run's
 //             stomp, flag and next level, Lantern Night's crates, pads and gate, Look Lab's keys,
 //             Beacon Yard on a pad (its prompts, Options' menu), Gem Rush alone, Market Corner's
-//             models, light and textured floor; check.mjs --keys holds a Pad* code on a fake pad.
+//             models, light and textured floor.
+//   phone     on a touch screen held upright or sideways, Coin Garden, Gem Rush and Beacon Yard have
+//             the touch buttons their guide gives them (Beacon Yard's LIGHT only by a dark beacon),
+//             no HUD text under a control on screen or the ⚙, and alone Gem Rush's Options opens the
+//             settings; phone-<name>.png shows each page as the player sees it.
 //   sheets    check.mjs --sheets draws the market's own models module and library ids (defs grouped
 //             in arrays and objects too; ids from outside the kit), and fails, naming the problem,
 //             on a broken def, a module with no defs or one that never loads, an unknown id.
@@ -233,6 +239,16 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
       onPad.code === 0 && padReport.state?.status === 'beacons 0/4, pad' && padNode.code === 0 && padNodeReport.status === 'beacons 0/4, pad',
       `--keys PadA*3 presses Cross on a fake pad: the device is the pad in the page ("${padReport.state?.status}") and headless ("${padNodeReport.status}", replayed)${onPad.code || padNode.code ? ':\n    ' + tail(onPad.out + padNode.out) : ''}`,
     );
+    // "page.html?touch=1": a phone's touch screen, so touch is the device in use (its prompts), the
+    // report says where each touch control is, and a shot of the page shows them
+    const onTouch = await checkTool(`${join(kitPath, 'examples/beacon-yard.html')}?touch=1`, ['--size', '390x844', '--out', fileURLToPath(new URL('flags-touch', out))]);
+    const touchReport = await report('flags-touch');
+    const pageShot = touchReport.shots.find((x) => x.name === 'beacon-yard-page');
+    const touchButtons = touchReport.touch?.buttons.map((b) => `${b.label} ${b.code}${b.hidden ? ' hidden' : ''}`);
+    check(
+      onTouch.code === 0 && touchReport.state?.status === 'beacons 0/4, touch' && JSON.stringify(touchButtons) === '["LIGHT KeyE hidden","≡ Escape"]' && !!touchReport.touch?.stick && !!pageShot && existsSync(pageShot.file),
+      `"beacon-yard.html?touch=1" --size 390x844 plays as on a phone: touch in use ("${touchReport.state?.status}"), its controls in report.json (${JSON.stringify(touchButtons)}), the page shot (${pageShot?.file})${onTouch.code ? ':\n    ' + tail(onTouch.out) : ''}`,
+    );
     const bad = await checkTool(join(kitPath, 'index.html'), ['--looks', 'nope', '--out', fileURLToPath(new URL('flags-bad', out))]);
     check(bad.code === 1 && /unknown look "nope"/.test(bad.out), 'an unknown look fails the check');
     // URL flags on a local page; withUrlOptions keeps the game's own camera preset under ?zoom=
@@ -284,10 +300,10 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
 
   console.log('\n▶ bundle: the recipes play as the guide says');
   const s = scenarios[0];
-  const play = async (path, fn, label) => {
+  const play = async (path, fn, label, pageOptions = {}) => {
     let ctx;
     try {
-      ctx = await launch(exe, s);
+      ctx = await launch(exe, s, pageOptions);
       await ctx.page.goto(`${base}engine/${path}`);
       await ready(ctx.page);
       await fn(ctx.page);
@@ -486,6 +502,118 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
       check(r.moved && r.got > r.before && r.status === `gems ${r.got}/12` && r.session === null && r.coin === r.got, `Gem Rush alone (no 52in1): it plays at once, a gem is grabbed (${JSON.stringify(r)})`);
     },
     'Gem Rush',
+  );
+
+  // On a phone (a touch screen, held upright or sideways): each game has the touch buttons the guide
+  // gives it, and no HUD text lies under a control on screen (the stick at rest, a button, the ⚙) or
+  // over another text. A shot of each page as the player sees it lands in phone-<name>.png.
+  const phone = (width, height) => ({ viewport: { width, height }, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
+  /** After one frame: the touch controls on screen, the HUD's texts, and those that cover a control or each other. */
+  const onPhone = async (page, shot) => {
+    const r = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const hud = e.hud;
+      const texts = [];
+      const text = hud.text;
+      hud.text = function (x, y, s, o = {}) {
+        texts.push({ x, y, s, o });
+        return text.call(this, x, y, s, o);
+      };
+      try {
+        e.step(1);
+      } finally {
+        delete hud.text;
+      }
+      // each text's box on screen (CSS pixels, as the controls' rects are)
+      const at = hud.canvas.getBoundingClientRect();
+      const kx = at.width / hud.width;
+      const ky = at.height / hud.height;
+      const boxes = texts.map(({ x, y, s, o }) => {
+        const k = Math.max(1, Math.round(o.scale ?? 1));
+        const { width, height } = hud.measure(s, k);
+        const [px, py] = hud.place(x, y, width, height, o.anchor);
+        return { s, left: at.left + px * kx, top: at.top + py * ky, right: at.left + (px + width) * kx, bottom: at.top + (py + height) * ky };
+      });
+      const r = e.touch?.rects();
+      const controls = [...(r?.stick ? [['the stick', r.stick]] : []), ...(r?.buttons ?? []).filter((b) => !b.hidden).map((b) => [b.label, b.rect])];
+      const gear = document.querySelector('.settings-button');
+      if (gear) controls.push(['⚙', gear.getBoundingClientRect()]);
+      const hits = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
+      const over = [
+        ...boxes.flatMap((t) => controls.filter(([, c]) => hits(t, c)).map(([name]) => `${t.s} under ${name}`)),
+        ...boxes.flatMap((t, i) => boxes.slice(i + 1).filter((u) => hits(t, u)).map((u) => `${t.s} over ${u.s}`)),
+      ];
+      e.renderer.render(); // manual time draws nothing by itself: the frame, for the shot
+      await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done)));
+      return { device: e.input.device, visible: !!e.touch?.visible, zone: !!r?.zone, buttons: (r?.buttons ?? []).map((b) => `${b.label} ${b.code}${b.hidden ? ' hidden' : ''}`), texts: boxes.map((t) => t.s), over };
+    });
+    await page.screenshot({ path: fileURLToPath(new URL(`phone-${shot}.png`, out)) });
+    return r;
+  };
+  for (const [w, h] of [[390, 844], [844, 390]]) {
+    await play(
+      'index.html',
+      async (page) => {
+        const r = await onPhone(page, `coin-garden-${w}x${h}`);
+        check(
+          r.device === 'touch' && r.visible && JSON.stringify(r.buttons) === '["A Space"]' && !r.over.length && !r.texts.includes('WALK'),
+          `Coin Garden on a ${w}x${h} phone: the A button (jump) alone, no legend (the stick and A say it), no HUD under a control (${JSON.stringify(r)})`,
+        );
+      },
+      `Coin Garden on a ${w}x${h} phone`,
+      phone(w, h),
+    );
+  }
+  await play(
+    'examples/gem-rush.html',
+    async (page) => {
+      const r = await onPhone(page, 'gem-rush-390x844');
+      // alone (no 52in1), Options opens the settings as it is let go (the live loop's: real frames)
+      const opened = await page.evaluate(async () => {
+        const e = window.__PIXEL_ENGINE__;
+        const frames = (n) => new Promise((done) => requestAnimationFrame(() => (n > 1 ? frames(n - 1).then(done) : done())));
+        const pad = (...on) => e.input.setGamepads([{ connected: true, mapping: 'standard', index: 0, id: 'fake', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: on.includes(i), value: on.includes(i) ? 1 : 0 })) }]);
+        e.manual = false;
+        pad(9);
+        await frames(4);
+        pad();
+        await frames(4);
+        const open = e.settings.isOpen;
+        e.settings.close();
+        e.input.setGamepads(null);
+        return open;
+      });
+      check(
+        r.device === 'touch' && r.visible && r.zone && r.buttons.length === 0 && !r.over.length && opened,
+        `Gem Rush on a phone: a floating stick and no buttons, no HUD under a control (its time clear of the ⚙); alone, Options opens the settings (${JSON.stringify({ ...r, opened })})`,
+      );
+    },
+    'Gem Rush on a phone',
+    phone(390, 844),
+  );
+  await play(
+    'examples/beacon-yard.html',
+    async (page) => {
+      const far = await onPhone(page, 'beacon-yard-390x844');
+      await page.evaluate(() => window.__PIXEL_ENGINE__.game.at.set(-6, 0.6, -4));
+      const near = await onPhone(page, 'beacon-yard-near-390x844');
+      await page.evaluate(() => {
+        const e = window.__PIXEL_ENGINE__;
+        e.input.setKey('KeyE', true); // as the LIGHT button presses it
+        e.step(1);
+        e.input.setKey('KeyE', false);
+      });
+      const lit = await onPhone(page, 'beacon-yard-lit-390x844');
+      check(
+        far.device === 'touch' &&
+          JSON.stringify([far.buttons, near.buttons, lit.buttons]) === JSON.stringify([['LIGHT KeyE hidden', '≡ Escape'], ['LIGHT KeyE', '≡ Escape'], ['LIGHT KeyE hidden', '≡ Escape']]) &&
+          ![...far.over, ...near.over, ...lit.over].length &&
+          /light a beacon/i.test(far.texts.join(' ')),
+        `Beacon Yard on a phone: the LIGHT button only by a dark beacon, ≡ always, the help line and the HUD clear of the controls (${JSON.stringify({ far, near, lit })})`,
+      );
+    },
+    'Beacon Yard on a phone',
+    phone(390, 844),
   );
 
   await play(

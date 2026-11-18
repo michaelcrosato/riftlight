@@ -17,8 +17,10 @@ another agent*):
 - `GUIDE.md` (docs/GUIDE.md, stamped with the version and build): the manual. Its fenced
   blocks `js <name>` are whole games: `quickstart` becomes the kit's `game.js` (+ `index.html`),
   the others `examples/<name>.html`. `src/guide.test.ts` checks that they import only real
-  exports and that its lists (palette, looks, filters, sounds, particles, cameras, URL flags,
-  built-in models) are the engine's; the `bundle` e2e suite plays every one of them.
+  exports, that its lists (palette, looks, filters, sounds, particles, cameras, URL flags,
+  built-in models) are the engine's and that the starter's legend fits the HUD at every window
+  shape (played headless, a phone held either way too); the `bundle` e2e suite plays every one of
+  them.
 - `CONTROLS.md` (docs/GUIDE-CONTROLS.md, stamped): the standard every game built on the kit meets
   (controller first at ten feet, keyboard and mouse native, prompts for the device in use, menus,
   touch as an add-on, the player's 52in1 settings and the DualSense, sessions in every online mode
@@ -26,8 +28,12 @@ another agent*):
   Beacon Yard and Gem Rush, `examples/beacon-yard.html` and `examples/gem-rush.html`.
   `src/guide-controls.test.ts` checks their imports, plays both headless (prompts follow the device,
   Options pauses as it is let go and never under 52in1's chord; a moment in a `LocalHub` round
-  reports once), checks the codes and names the prose gives, the head tags against 52in1's
-  catalogue checker (`scripts/hub/catalogue-check.mjs`) and its budget.
+  readies up by itself and reports once), checks the codes and names its prose and its unnamed code
+  give (a dotted one walked member by member on a live engine and session), runs a page holding its
+  head tags through 52in1's catalogue checker (`checkPage`, `scripts/hub/catalogue-check.mjs`) and
+  holds its budget. The `bundle` e2e suite plays the starter and both games on a phone (Playwright's
+  touch screen, upright and sideways): each has the touch buttons its guide gives it (Beacon Yard's
+  LIGHT only by a dark beacon), and no HUD text lies under a control, the ⚙ or another text.
 - `ASSETS.md` (docs/GUIDE-ASSETS.md, stamped): models and textures for outside agents, written for
   someone with only the kit (docs/ASSETS.md stays the in-repo guide). Its blocks are Market
   Corner, `examples/market.html`, and the module of the game's own models it imports
@@ -46,7 +52,10 @@ another agent*):
 - `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool (Playwright beside
   the game or installed globally, found through `npm root -g`). It serves the kit
   folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, where a `Pad*`
-  code is held on a fake standard pad so the pad's prompts show; `--cameras`, `--looks`), saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
+  code is held on a fake standard pad so the pad's prompts show; `--cameras`, `--looks`; a page
+  with `?touch=1` plays as on a phone, Playwright's touch screen, touch the device in use, and adds
+  `<page>-page.png`, the page with its touch controls, and the controls' rects as `report.touch`),
+  saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
   console, game or GPU error or a blank frame. `--sheets models.js,crate` plays no page: it
   imports the module and the engine on an empty page and draws, with the engine's `modelSheet`
   and `textureSheet` (the software rasterizer the CLIs use), a sheet of every def the module

@@ -20,8 +20,7 @@ my-game/
   assets/             your own .glb models, if any (optional)
 ```
 
-The kit's `index.html` and `game.js` are exactly that: copy the kit folder and edit `game.js`
-(split a bigger one into modules as usual).
+The kit's `index.html` and `game.js` are exactly that: copy the kit folder and edit `game.js`.
 
 - **Serve it over HTTP** (ES modules don't load from `file://`): `npx serve .`,
   `python3 -m http.server`, any static host.
@@ -168,7 +167,10 @@ class CoinGarden {
     }
     ctx.hud.clear();
     ctx.hud.text(6, 6, `COINS ${this.collected}/${this.coins.length}`, { color: 'sand' });
-    ctx.hud.legend(6, ctx.hud.height - 12, [['move', 'WALK'], ['jump', 'JUMP'], ['settings', 'SETTINGS']]);
+    // the controls in use, what fits (touch has its stick and button)
+    const legend = [['move', 'WALK'], ['jump', 'JUMP'], ['settings', 'SETTINGS']];
+    while (ctx.hud.legendWidth(legend) > ctx.hud.width - 12) legend.pop();
+    if (!ctx.engine.touch?.visible) ctx.hud.legend(6, ctx.hud.height - 12, legend);
     if (this.won) ctx.hud.text(0, 0, 'YOU WIN!', { anchor: 'center', scale: 2, shadow: 'navy' });
   }
 
@@ -190,7 +192,7 @@ class CoinGarden {
 /** A fresh game: the page starts one, and `node check.mjs --headless` plays one in Node (section 8). */
 export const createGame = () => new CoinGarden();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true } }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso' }, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }] }));
 ```
 
 To make it yours: change the level, the coin spots, the camera, the HUD, the win condition.
@@ -218,9 +220,8 @@ Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are
 button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it; `padButton: true`:
 Options opens it). A game that uses R, P or M itself moves that hotkey for `?debug=1` with
 `debugKeys: { resolution: 'F2' }`; `touchButtons` replaces the on-screen buttons (CONTROLS.md).
-`loadGame` can be called from anywhere (a trigger, `update`); the swap happens after the
-frame. It unloads the old game: scene objects, physics, triggers, particles, HUD, music and
-lights are freed.
+`loadGame` works from anywhere (a trigger, `update`); the swap happens after the frame and
+frees the old game's scene objects, physics, triggers, particles, HUD, music and lights.
 
 ### Building a level
 
@@ -289,8 +290,8 @@ collider carries the `'character'` tag. For a simpler walk-and-jump capsule ther
 between steps), `moveAxis()` (`{ x, y }` from keys, stick or touch). Codes are
 `KeyboardEvent.code` values: `KeyA`, `Space`, `ArrowUp`, `Digit1`, `ShiftLeft`; a pad's are `Pad*`
 (`PadA` Cross, `PadB` Circle, `PadStart` Options...: `GAMEPAD_BUTTONS`; the d-pad is the arrows),
-so bind both: `isDown('Space', 'PadA')`. **`CONTROLS.md` is the standard every game meets** (a
-pad first, prompts for the device in use, menus, touch, 52in1's settings and sessions): read it.
+so bind both: `isDown('Space', 'PadA')`. **`CONTROLS.md` is the standard every game meets** (pads,
+prompts, menus, touch, 52in1): read it.
 
 ### Physics queries and triggers
 
@@ -446,8 +447,8 @@ ctx.audio.playMusic(SONG);                    // a Song (data, see the top-down 
 await ctx.audio.load('door', 'assets/door.ogg');
 ```
 
-Sounds are synthesised from data, so a game needs no audio files. Browsers start sound on
-the first key or tap; before that, calls are silent (and still counted in `ctx.audio.counts`).
+Sounds are synthesised from data: no audio files. Browsers start sound on the first key or
+tap; before that, calls are silent (and still counted in `ctx.audio.counts`).
 
 ### Particles and lights
 
@@ -482,8 +483,8 @@ ctx.tweens.call(1.5, () => spawnWave());     // a timer
 ctx.engine.setSunDirection([1, 0.3, 0.2]);   // a low dawn sun; the next level resets it
 ```
 
-Transitions, flashes and shockwaves are uniforms at the end of the pipeline: they never
-compile a shader, work with every look, and keep running while a level loads.
+Transitions, flashes and shockwaves never compile a shader, work with every look, and keep
+running while a level loads.
 
 ### Looks
 

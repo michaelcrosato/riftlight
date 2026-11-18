@@ -2,10 +2,12 @@
 // built on the kit meets (controller first, prompts for the device in use, menus at ten feet, touch
 // as an add-on, the player's 52in1 settings, sessions). These checks keep it true to the code: its
 // games import only what pixel-engine.js exports and play headless as the guide says (prompts follow
-// the device, Options pauses as it is let go and never under 52in1's chord, a moment reports once in
-// a LocalHub round); the names and codes its prose gives are the engine's; its head tags pass 52in1's
-// catalogue rules and name the game's moments; it stays within its token budget. The bundle e2e
-// suite then plays its pages with check.mjs.
+// the device, Options pauses as it is let go and never under 52in1's chord, a moment readies up by
+// itself and reports once in a LocalHub round); the names and codes its prose and its unnamed code
+// give are the engine's (dotted ones walked on a live engine and session); a page holding its head
+// tags passes 52in1's catalogue checker on them, and they name the game's moments; it stays within
+// its token budget. The bundle e2e suite then plays its pages with check.mjs, on a phone too (the
+// touch buttons each game passes, a HUD clear of the controls).
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -14,7 +16,7 @@ import * as THREE from 'three/webgpu';
 import ts from 'typescript';
 import { afterAll, describe, expect, it } from 'vitest';
 import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
-import { CATALOGUE_TAGS, DUALSENSE, LIMITS, opensWithKeys, readMoments, readMultiplayer, SESSION_TAGS, TAGS } from '../scripts/hub/catalogue-check.mjs';
+import { checkPage, opensWithKeys, readMoments, readMultiplayer } from '../scripts/hub/catalogue-check.mjs';
 import * as bundle from './bundle';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
@@ -32,6 +34,9 @@ async function load(name: string): Promise<Record<string, unknown>> {
   writeFileSync(file, b.code.replaceAll(`from './pixel-engine.js'`, `from ${JSON.stringify(fileURLToPath(new URL('./bundle.ts', import.meta.url)))}`));
   return (await import(/* @vite-ignore */ file)) as Record<string, unknown>;
 }
+
+/** The engine's input, HUD, engine, controls, sessions, touch controls, audio, settings and lights: a bare call in the prose (`rects()`) is one of theirs. */
+const CLASSES = [bundle.Input, bundle.Hud, bundle.Engine, bundle.Controls, bundle.HubSession, bundle.LocalHub, bundle.HubSettings, bundle.DualSense, bundle.Lang, bundle.TouchControls, bundle.AudioManager, bundle.Settings, bundle.LightPool];
 
 /** A standard pad holding `pressed` (button indices). */
 const pad = (...pressed: number[]): bundle.GamepadLike => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
@@ -80,12 +85,11 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(codes.filter((c) => c.startsWith('Touch') && !['TouchTap', 'TouchSwipe', 'TouchStick', 'TouchControls'].includes(c))).toEqual([]);
     // a capitalised name is an export; a call, an export or a method of the engine's input, HUD,
     // engine, controls or a session
-    const classes = [bundle.Input, bundle.Hud, bundle.Engine, bundle.Controls, bundle.HubSession, bundle.LocalHub, bundle.HubSettings, bundle.DualSense, bundle.Lang];
     const named = lead.filter((m) => !codes.includes(m[1]!) && /^[A-Z]/.test(m[1]!)).map((m) => m[1]!);
     const called = lead.filter((m) => /^[a-z]/.test(m[1]!) && m[2]!.startsWith('(')).map((m) => m[1]!);
     expect(named.length + called.length).toBeGreaterThan(15);
     expect([...new Set(named)].filter((n) => !(n in bundle) && !TYPES.includes(n))).toEqual([]);
-    expect([...new Set(called)].filter((n) => !(n in bundle) && !classes.some((c) => n in c.prototype))).toEqual([]);
+    expect([...new Set(called)].filter((n) => !(n in bundle) && !CLASSES.some((c) => n in c.prototype))).toEqual([]);
     // every pad button it lists by name is the engine's, and every button the engine presses is listed
     const listed = guide.match(/^Pad codes: ([\s\S]*?)\n\n/m)![1]!;
     const buttons = new Set(Object.values(bundle.GAMEPAD_BUTTONS).filter((c) => c.startsWith('Pad')));
@@ -93,7 +97,45 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(bundle.HOST_CHORD.map((i) => bundle.GAMEPAD_BUTTONS[i])).toEqual(['PadBack', 'PadStart']);
   });
 
-  it('Beacon Yard plays as it says: prompts follow the device, Options pauses as it is let go (never under 52in1’s chord), its menu, the light button only by a dark beacon', async () => {
+  it('every dotted name in its prose and its unnamed code is the engine’s', async () => {
+    const spans = prose.split('`').filter((_, i) => i % 2 === 1);
+    const unnamed = [...guide.matchAll(/^```js\n([\s\S]*?)^```$/gm)].map((m) => m[1]!);
+    expect(unnamed.length, 'section 5’s snippet').toBeGreaterThan(0);
+    // `a.b.c` and `a?.b(`: the root, then each member (a file's name and the page's own globals aside)
+    const chains = [...spans, ...unnamed]
+      .flatMap((text) => [...text.matchAll(/(?<![\w$.'"/-])([A-Za-z_$][\w$]*)((?:\??\.[A-Za-z_$][\w$]*)+)/g)].map((m) => [m[1]!, ...m[2]!.split(/\??\./).slice(1)]))
+      .filter((c) => !/^(md|m?js|html|png|json)$/.test(c.at(-1)!) && !['window', 'navigator'].includes(c[0]!));
+    expect(chains.length).toBeGreaterThan(30);
+    // each member walked on a live engine's context and a session in a round of moments (a member
+    // null headless, `ctx.engine.touch`, on the class it holds on a page): a renamed method or field
+    // fails, and a name with a root of its own has to be added here
+    const engine = await bundle.Engine.headless({ name: 'Names', setup() {}, cameraTarget: () => new THREE.Vector3() });
+    try {
+      const hub = new bundle.LocalHub({ mode: 'moments', moment: { id: 'gem-dash', seconds: 8 }, players: 1 });
+      const session = (await bundle.HubSession.join({ mode: 'moments', seats: [1, 4], client: hub.client(0), autoFlush: false, clock: () => hub.now }))!;
+      const ctx = engine.context;
+      const roots: Record<string, unknown> = { ...bundle, ctx, input: ctx.input, hud: ctx.hud, engine: ctx.engine, session, info: session.info, lang: bundle.Lang.prototype };
+      const onPage: Record<string, object> = { touch: bundle.TouchControls.prototype };
+      const resolves = ([root, ...path]: string[]): boolean => {
+        if (root === 'Game') return true; // a type (API.md has it)
+        if (!(root! in roots)) return false;
+        let at: unknown = roots[root!];
+        let held = root!;
+        for (const [i, name] of path.entries()) {
+          at ??= onPage[held];
+          if (at === undefined || !(name in Object(at))) return false;
+          if (i < path.length - 1) at = (at as Record<string, unknown>)[name];
+          held = name;
+        }
+        return true;
+      };
+      expect(chains.filter((c) => !resolves(c)).map((c) => c.join('.'))).toEqual([]);
+    } finally {
+      engine.dispose();
+    }
+  });
+
+  it('Beacon Yard plays as it says: prompts follow the device, Options pauses as it is let go (never under 52in1’s chord), its menu', async () => {
     const { createGame } = await load('beacon-yard');
     type Yard = bundle.Game & { at: THREE.Vector3; menu: unknown; lit(): number; status(ctx: unknown): string };
     const game = (createGame as () => Yard)();
@@ -152,7 +194,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     }
   });
 
-  it('Gem Rush: every copy of a moment sets up the same, waits for the start, and reports once whether it was cleared; a parallel round reports progress, then its result', async () => {
+  it('Gem Rush: every copy of a moment sets up the same, readies up with no key press, waits for the start, and reports once whether it was cleared; a parallel round reports progress, then its result', async () => {
     const { createGame, MOMENTS } = await load('gem-rush');
     type Rush = bundle.Game & { at: THREE.Vector3; gems: THREE.Mesh[]; got: number; over: string | null };
     const make = createGame as (session: bundle.HubSession | null) => Rush;
@@ -180,6 +222,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
       a!.engine.input.setKey('KeyD', true);
       step(60);
       expect(a!.game.at.x, 'still until the start').toBe(0);
+      expect(hub.allReady, 'every copy readied up with no key press').toBe(true);
       hub.start();
       hub.advance(3000);
       step(200); // the countdown, in game time
@@ -205,7 +248,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     const run = await round({ mode: 'parallel', players: 1, seed: 7 });
     const [solo] = run.copies;
     try {
-      expect(solo!.game.gems.length).toBe(12);
+      expect([solo!.game.gems.length, run.hub.allReady]).toEqual([12, true]);
       run.hub.start();
       run.hub.advance(3000);
       run.step(200);
@@ -233,27 +276,29 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     }
   });
 
-  it('its head tags pass 52in1’s catalogue rules and name Gem Rush’s moments', async () => {
+  it('a page with its head tags passes 52in1’s catalogue checker on them, and they name Gem Rush’s moments', async () => {
     const head = guide.match(/^```html\n([\s\S]*?)^```$/m)![1]!;
     const tags = [...head.matchAll(/^<meta name="([\w:-]+)" content="([^"]*)">$/gm)].map((m) => [m[1]!, m[2]!] as const);
     expect(tags.length).toBe(head.trim().split('\n').length); // every line is a tag that reads
     const all = (name: string) => tags.filter(([k]) => k === name).map(([, v]) => v);
     const one = (name: string) => all(name)[0] ?? '';
-    expect(tags.map(([k]) => k).filter((k) => !CATALOGUE_TAGS.includes(k) && !SESSION_TAGS.includes(k))).toEqual([]);
-    const tagList = one('hub:tags').split(', ');
-    expect([tagList.filter((t) => !TAGS.includes(t)), tagList.length >= 2 && tagList.length <= 5, tagList.includes('gamepad') && tagList.includes('touch')]).toEqual([[], true, true]);
-    const controls = one('hub:controls');
-    expect(controls.length).toBeLessThanOrEqual(LIMITS.controls);
-    expect(controls.split(';').filter((c) => !opensWithKeys(c.trim()))).toEqual([]);
-    expect(controls).toMatch(/\bgamepad\b/);
-    expect(one('hub:dualsense').split(', ').filter((d) => !DUALSENSE.includes(d))).toEqual([]);
-    const multiplayer = readMultiplayer(one('hub:multiplayer'));
-    expect(multiplayer.problems).toEqual([]);
-    expect(multiplayer.modes.map((m) => m.where)).toEqual(['parallel', 'moments']);
-    const read = readMoments(all('hub:moment'));
-    expect(read.problems).toEqual([]);
+    // a kit game's page (a folder: the engine, in pixel-engine.js, reads window.AIHubSettings), the
+    // tags where the guide puts them: after <meta charset> and the session client, its first script
+    const page = `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<script>${read('scripts/hub/session.js')}</script>\n${head}<title>Gem Rush</title>\n</head>\n<body><script type="module" src="game.js"></script></body>\n</html>\n`;
+    const { problems, fields } = checkPage(page, { folder: { files: new Set(['index.html', 'game.js', 'pixel-engine.js']) } });
+    expect([fields.session, fields.sessionMode, fields.sessionPlayers, typeof fields.client]).toEqual(['1', 'parallel', '1-4', 'string']);
+    // every problem about the guide's tags, the ones it names or where they sit (the rest, hub:model,
+    // the title..., is each game's own)
+    const ours = [...new Set(tags.map(([k]) => k)), 'hub:session', 'hub:moment', 'hub:multiplayer', 'hub:tags', 'hub:controls', 'hub:dualsense', 'moments', 'after a script'];
+    expect(problems.filter((p) => ours.some((w) => p.text.includes(w)))).toEqual([]);
+    expect(problems.some((p) => /hub:model/.test(p.text)), 'the checker read the page').toBe(true);
+    // the Couch draws each control's keys as keycaps; a pad and touch play it all
+    expect(one('hub:controls').split(';').filter((c) => !opensWithKeys(c.trim()))).toEqual([]);
+    expect([one('hub:tags').split(', ').filter((t) => t === 'gamepad' || t === 'touch'), /\bgamepad\b/.test(one('hub:controls'))]).toEqual([['gamepad', 'touch'], true]);
+    expect(readMultiplayer(one('hub:multiplayer')).modes.map((m) => m.where)).toEqual(['parallel', 'moments']);
+    const { moments } = readMoments(all('hub:moment'));
     const { MOMENTS } = await load('gem-rush');
-    expect(Object.fromEntries(read.moments.map((m) => [m.id, m.seconds]))).toEqual(Object.fromEntries(Object.entries(MOMENTS as Record<string, { seconds: number }>).map(([id, m]) => [id, m.seconds])));
+    expect(Object.fromEntries(moments.map((m) => [m.id, m.seconds]))).toEqual(Object.fromEntries(Object.entries(MOMENTS as Record<string, { seconds: number }>).map(([id, m]) => [id, m.seconds])));
     // what the game joins with, read from these tags as a page would
     expect(bundle.headSession((name) => one(name) || null)).toEqual({ modes: ['parallel', 'moments'], seats: [1, 4] });
   });

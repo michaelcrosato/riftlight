@@ -1,14 +1,19 @@
 // docs/GUIDE.md is the engine's manual for agents outside this repo (it ships in the kit,
 // scripts/bundle.mjs). These checks keep it true to the code: its games import only what
 // pixel-engine.js exports, the lists it gives (palette, looks, filters, sounds, particles,
-// cameras, URL flags) are the engine's, it stays within its token budget, and CHANGELOG.md
-// has a section for this version. The bundle e2e suite then plays its games.
-import { readFileSync, readdirSync } from 'node:fs';
+// cameras, URL flags) are the engine's, the starter's legend fits the HUD at every window shape, it
+// stays within its token budget, and CHANGELOG.md has a section for this version. The bundle e2e
+// suite then plays its games.
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import * as THREE from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { guideBlocks, startsEngine } from '../scripts/bundle/guide.mjs';
 import * as bundle from './bundle';
 import { CAMERA_PRESETS, FILTER_IDS, LOOK_PRESETS, PALETTE, PARTICLES, SFX, optionsFromUrl } from './engine';
+import { nodeAssets } from './engine/node';
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 const guide = read('docs/GUIDE.md');
@@ -75,6 +80,38 @@ describe('docs/GUIDE.md', () => {
     const flags = listAfter('URL flags (with `withUrlOptions` in `Engine.start`):').filter((f) => f.startsWith('?'));
     expect(flags.length).toBeGreaterThanOrEqual(10);
     for (const flag of flags) expect(Object.keys(optionsFromUrl(flag)), flag).not.toEqual([]);
+  });
+
+  it('the starter’s legend fits the HUD at every window shape (a phone held either way too), on the keyboard and a pad', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'guide-quickstart-'));
+    try {
+      // the kit's game.js, its './pixel-engine.js' this repo's src/bundle.ts
+      const file = join(tmp, 'game.mjs');
+      writeFileSync(file, blocks[0]!.code.replaceAll(`from './pixel-engine.js'`, `from ${JSON.stringify(fileURLToPath(new URL('./bundle.ts', import.meta.url)))}`));
+      const { createGame } = (await import(/* @vite-ignore */ file)) as { createGame: () => bundle.Game };
+      const seen: string[] = [];
+      for (const [width, height] of [[960, 540], [390, 844], [844, 390], [2100, 900]] as const) {
+        const engine = await bundle.Engine.headless(createGame(), { assets: nodeAssets(), viewport: { width, height, dpr: 1 } });
+        try {
+          for (const device of ['keyboard', 'pad'] as const) {
+            const legend = vi.spyOn(engine.hud, 'legend');
+            engine.input.noteDevice(device);
+            engine.step(2);
+            const [x, , items] = legend.mock.calls.at(-1)!;
+            const right = x + (legend.mock.results.at(-1)!.value as number);
+            legend.mockRestore();
+            // drawn whole inside the HUD's 6-pixel margin, with WALK and JUMP at least
+            seen.push(`${width}x${height} ${device}: ${right <= engine.hud.width - 6 && items.length >= 2 ? 'fits' : `${items.length} items to ${right} of ${engine.hud.width}`}`);
+          }
+        } finally {
+          engine.dispose();
+        }
+      }
+      expect(seen.filter((s) => !s.endsWith(': fits'))).toEqual([]);
+      expect(seen.length).toBe(8);
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 
   it('stays within its token budget (~4 characters a token)', () => {

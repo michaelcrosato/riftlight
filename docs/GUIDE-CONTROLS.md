@@ -1,18 +1,17 @@
 # Pixel Engine: controls, devices and 52in1
 
-The standard every game built on the kit meets, and the engine parts that do most of it. Read
-`GUIDE.md` first; `API.md` has every signature. Picture the player on a couch, three metres from a
-TV, with a controller: they are the first player. The keyboard and mouse player at a desk and the
-one on a phone come right after, and 52in1 (the hub that runs the games) gives all three their
-settings and friends to play with.
+The standard every game built on the kit meets, and the engine parts that do most of it. The
+first player sits on a couch three metres from a TV, with a controller; the keyboard and mouse
+player and the one on a phone come right after, and 52in1 (the hub that runs the games) gives all
+three their settings and friends to play with.
 
 ## 1. The checklist
 
 - [ ] **Controller first, at ten feet.** Every action, menus included, plays on any standard pad,
   the DualSense first. Bind a pad button beside each key: `isDown('Space', 'PadA')`. Options
-  (`PadStart`) pauses, Circle (`PadB`) goes back. PS (button 16) and Create + Options held together
-  open 52in1's bar (`HOST_CHORD`): the engine never reads PS, and presses Options (and Create) as it
-  is let go, only when the other never joined it, so a pause never opens behind the bar.
+  (`PadStart`) pauses, Circle (`PadB`) goes back. PS and Create + Options held together open
+  52in1's bar (`HOST_CHORD`): the engine never reads PS, and presses Options (and Create) as it is
+  let go, only when the other never joined it, so a pause never opens behind the bar.
 - [ ] **Keyboard and mouse native for the genre**: WASD and the mouse to aim in a shooter, WASD or
   the arrows and Space in a platformer, clicks in a strategy game. Never the pad's layout on keys.
 - [ ] **Prompts follow the device used last** (`input.device`: `'keyboard'`, `'pad'` or
@@ -37,15 +36,15 @@ settings and friends to play with.
   `hub:multiplayer`, `hub:moment` (section 6).
 - [ ] **Checked on each device**, and you looked at the PNGs: `node check.mjs --keys PadA*10` (a
   `Pad*` code presses a fake standard pad, so the pad's prompts show), `"index.html?touch=1"` with
-  `--size 390x844` (a phone, portrait) and `--size 844x390`, and `--size 2100x900` (21:9).
+  `--size 390x844` and `--size 844x390` (a phone held each way, touch in use; `index-page.png` shows
+  its touch controls), and `--size 2100x900` (21:9).
 
 ## 2. Controls as data, prompts for the device in use
 
-A game's `controls` (`Game.controls`) names each action's key, pad button and touch button. The
-engine reads it at each level: `{key:action}` in a line (`langFor`, `lang.t`), `hud.prompt`,
-`hud.legend` and `hud.glyph` show the control in use. The game reads input by codes as before
-(`consumePress('KeyE', 'PadA')`); a touch button presses its key code (`touchButtons`), so the
-code list stays the same on every device.
+A game's `controls` (`Game.controls`, read at each level) names each action's key, pad button
+and touch button: `{key:action}` in a line (`langFor`, `lang.t`), `hud.prompt`, `hud.legend` and
+`hud.glyph` show the one in use. The game reads input by codes (`consumePress('KeyE', 'PadA')`);
+a touch button presses its key code (`touchButtons`), so the codes are the same on every device.
 
 Pad codes: `PadA` Cross / A · `PadB` Circle / B · `PadX` Square / X · `PadY` Triangle / Y ·
 `PadLB` `PadRB` L1 R1 · `PadLT` `PadRT` L2 R2 · `PadBack` Create / View · `PadStart` Options /
@@ -54,19 +53,19 @@ Prompts also draw `PadLStick`, `PadRStick` and `DPad`. A table's `key` may be a 
 (`WASD`, `Arrows`); its `touch` is a button's label or a gesture (`TouchTap`, `TouchSwipe`,
 `TouchStick`).
 
-Beacon Yard plays on all three devices: prompts and the line at the bottom follow the device,
-a pause menu on Options holds the engine's settings, the light button shows only next to a dark
-beacon, and on a DualSense the light bar and rumble join in (`examples/beacon-yard.html`):
+Beacon Yard plays on all three devices: its prompts and help line follow the device, a pause
+menu on Options holds the engine's settings, the light button shows only next to a dark beacon,
+and on a DualSense the light bar and rumble join in (`examples/beacon-yard.html`):
 
 ```js beacon-yard
-// Beacon Yard: light the four beacons. A pad (any standard one), the keyboard or touch: every
-// prompt shows the device used last. Options / Esc / the ≡ button pause.
+// Beacon Yard: light the four beacons on a pad, the keyboard or touch (the prompts follow the
+// device used last). Options / Esc / the ≡ button pause.
 import { Engine, FocusList, langFor, MenuInput, PALETTE, THREE, toonMaterial, withUrlOptions, wrapText } from './pixel-engine.js';
 
 const { BoxGeometry, CylinderGeometry, Mesh, Vector3 } = THREE;
 
 /** Every word is a line: `{key:action}` names the key, pad button or touch button in use. */
-const lang = langFor({ version: 1, language: 'en', lines: { 'help.walk': '{key:move} to walk, {key:use} to light', 'menu.resume': 'Resume', 'menu.settings': 'Settings', 'menu.restart': 'Restart' } });
+const lang = langFor({ version: 1, language: 'en', lines: { 'help.walk': '{key:move}: walk, {key:use}: light a beacon', 'menu.resume': 'Resume', 'menu.settings': 'Settings', 'menu.restart': 'Restart' } });
 const ROWS = ['menu.resume', 'menu.settings', 'menu.restart'];
 const SPOTS = [[-6, -4], [6, -4], [-6, 4], [6, 4]];
 /** Touch: the stick, a light button and a pause button (each presses its key). */
@@ -134,11 +133,13 @@ class BeaconYard {
     ctx.engine.touch?.set('KeyE', { hidden: !this.near || !!this.menu }); // there only when there is something to light
     hud.clear();
     if (this.menu) return this.updateMenu(ctx, opening ? [] : this.menu.input.events(input, dt));
+    const touch = ctx.engine.touch?.visible; // the stick, LIGHT and ≡ are on screen
     hud.text(6, 6, `BEACONS ${this.lit()}/${SPOTS.length}`, { color: 'sand' });
-    if (ctx.engine.controls.device !== 'touch') hud.prompt(hud.width - 6, 6, 'pause', 'MENU', { align: 'right' }); // on touch: the ≡ button
-    if (this.lit() === SPOTS.length) hud.text(0, 0, 'THE YARD IS LIT', { anchor: 'center', scale: 2 });
-    else if (this.near) hud.prompt(hud.width / 2, hud.height - 24, 'use', 'LIGHT', { align: 'center', scale: 2 });
-    else wrapText(lang.t('help.walk'), hud.width - 12).reverse().forEach((line, i) => hud.text(0, 8 + i * 10, line, { anchor: 'bottom' })); // a phone's 130 columns too
+    if (!touch) hud.prompt(hud.width - 6, 6, 'pause', 'MENU', { align: 'right' });
+    if (this.lit() === SPOTS.length) return void hud.text(0, 0, 'THE YARD IS LIT', { anchor: 'center', scale: 2 });
+    // at the top, clear of MENU / ≡ and the touch controls; wrapped to a phone's 130 columns too
+    wrapText(lang.t('help.walk'), hud.width - 48).forEach((line, i) => hud.text(6, 18 + i * 10, line));
+    if (this.near && !touch) hud.prompt(hud.width / 2, hud.height - 24, 'use', 'LIGHT', { align: 'center', scale: 2 }); // touch: the LIGHT button
   }
 
   /** Big rows, a focus, a legend: the d-pad or stick, a click, a tap; Circle, Esc, Options or a swipe closes. */
@@ -192,7 +193,8 @@ Cross that chose Resume never reaches `fixedUpdate`).
 The engine's settings panel (picture, sound, controls; saved per game) is made the same way. A
 game with a pause menu opens it from there (`ctx.engine.settings.open()`) and hides the ⚙ button
 (`settings: { button: false }`); a game with no pause menu passes `settings: { padButton: true }`,
-so Options and Esc open it, as the kit's `game.js` does.
+so Options and Esc open it, as the kit's `game.js` does (Gem Rush, alone: a 52in1 round's clock
+never pauses).
 
 ## 4. Touch as an add-on
 
@@ -206,8 +208,9 @@ so Options and Esc open it, as the kit's `game.js` does.
   (`SWIPE_KEYS`): dismiss a dialogue or a card with them; `FocusList` closes on a sideways one.
 - **Assists** where precise thumbs are hard: aim at the nearest target, a longer reach, auto-run,
   when `ctx.input.device === 'touch'` (recorded, so a replay agrees).
-- **Phones both ways**: in portrait the art can be 130 columns wide; keep the HUD clear of the
-  controls (`ctx.engine.touch?.rects()`), and of the stick's zone with a floating stick.
+- **Phones both ways**: in portrait the art can be 130 columns wide. Keep the HUD clear of the
+  controls while they show (`ctx.engine.touch?.visible`, `rects()`: a floating stick rests low in
+  its `zone`), and tappable HUD out of that zone.
 
 ## 5. The player's settings and the DualSense
 
@@ -235,8 +238,8 @@ if (ctx.engine.voiceOn) mic = await ctx.engine.hubSettings.openMicrophone(); // 
 - Motion and the touchpad are input: read them through `ctx.input` (recorded), never
   `window.AIHubSettings.dualsense` yourself; never `navigator.hid` or `getUserMedia`.
 - A voice feature's row stays off until 52in1 allows games the microphone
-  (`ctx.engine.hubSettings.micAllowed`; `micLater`: allowed after this game was opened, so it
-  needs opening again); what it hears reaches gameplay through `ctx.input.send`.
+  (`ctx.engine.hubSettings.micAllowed`; `micLater`: allowed since this game opened, so after a
+  reload); what it hears reaches gameplay through `ctx.input.send`.
 
 ## 6. 52in1 sessions and the head
 
@@ -248,8 +251,8 @@ with all of them and plays the one the hub picks (`info.mode`). Gem Rush plays p
 moments, and alone outside 52in1 (`examples/gem-rush.html`):
 
 ```js gem-rush
-// Gem Rush: grab every gem before the time runs out. In 52in1 it plays the round the hub picks:
-// parallel (the fastest clear wins) or one moment (each a fresh load); anywhere else, alone.
+// Gem Rush: grab every gem before the time runs out. In 52in1: a parallel round (the fastest
+// clear wins) or one moment a load; anywhere else, alone.
 import { Engine, headSession, HubSession, hubEvents, PALETTE, THREE, toonMaterial, withUrlOptions } from './pixel-engine.js';
 
 const { BoxGeometry, Mesh, OctahedronGeometry, Vector3 } = THREE;
@@ -334,7 +337,7 @@ class GemRush {
     const { hud } = ctx;
     hud.clear();
     hud.text(6, 6, `GEMS ${this.got}/${this.gems.length}`, { color: 'cyan' });
-    hud.text(6, 6, `${Math.ceil(Math.max(0, this.left))}`, { anchor: 'top-right', color: this.left > 3 ? 'white' : 'red' });
+    hud.text(6, 16, `TIME ${Math.ceil(Math.max(0, this.left))}`, { color: this.left > 3 ? 'white' : 'red' }); // clear of the ⚙
     if (this.countdown > 0 && this.countdown < Infinity) hud.text(0, 0, `${Math.ceil(this.countdown)}`, { anchor: 'center', scale: 3 });
     if (this.over) hud.text(0, 0, this.over === 'cleared' ? 'CLEARED!' : 'TIME!', { anchor: 'center', scale: 2 });
   }
@@ -350,11 +353,11 @@ class GemRush {
 
 export const createGame = (session = null) => new GemRush(session);
 
-// In 52in1 (hub:session 1 in the head, the hub's client its first script) join the round the hub
-// picks; anywhere else there is no hub, headSession() is null and it plays alone.
+// In 52in1 (hub:session 1 in the head, the hub's client its first script) join the round it picks;
+// elsewhere headSession() is null: alone, where Options opens the settings. Touch: a stick alone.
 const offer = headSession();
 const session = offer && (await HubSession.join({ mode: offer.modes, seats: offer.seats }));
-if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, seed: session?.info.seed }));
+if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, seed: session?.info.seed, settings: { padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
 ```
 
 - **In a session** the game opens straight into the round: no title, menu or prompt to press. It
@@ -379,6 +382,8 @@ The page's head, after `<meta charset>` and the session client, names what the g
 <meta name="hub:session" content="1">
 <meta name="hub:session-mode" content="parallel">
 <meta name="hub:session-players" content="1-4">
+<meta name="hub:session-goal" content="Grab every gem, fastest">
+<meta name="hub:session-howto" content="WASD, arrows, a stick or touch to run over the gems">
 <meta name="hub:multiplayer" content="parallel 1-4, moments 1-4">
 <meta name="hub:moment" content="gem-dash collect 8 Grab three gems in eight seconds">
 <meta name="hub:moment" content="gem-hunt collect 15 Grab six gems in fifteen seconds">
@@ -393,9 +398,11 @@ triggers`, `haptics`, `motion`, `touchpad`, `speaker`, `microphone`).
 
 `same-screen`, `split-screen` and `hot-seat` modes are the game's own menu's, named in
 `hub:multiplayer` (`split-screen versus 2-4`) and `hub:players`, never a session's. The engine's
-input is one player's: every pad, the keys and touch press the same codes. A second player on the
-keyboard reads keys of their own (WASD for one, the arrows for the other). For a pad each, read
-`navigator.getGamepads()` in `update` and hand each pad's state to the game with
-`ctx.input.send({ pads })`, so it is recorded and replays. A split screen gives each player a view
-at every window shape, a same-screen game keeps everyone in view, and a hot-seat game says whose
-turn it is, with a screen between turns.
+input is one player's: every pad, the keys and touch press the same codes, and every pad's stick
+moves `moveAxis()` (pad 2 moves player 1 too). A second player on the keyboard reads keys of their
+own (WASD for one, the arrows for the other). For a pad each, read `navigator.getGamepads()` in
+`update`, hand each pad's state to the game with `ctx.input.send({ pads })` (the next frame's
+`ctx.input.commands`, recorded, so it replays) and move each player by their pad there alone
+(`ctx.input.gamepadButtons = {}` turns the shared codes off). A split screen gives each player a
+view at every window shape, a same-screen game keeps everyone in view, and a hot-seat game says
+whose turn it is, with a screen between turns.
