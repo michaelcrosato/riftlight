@@ -34,7 +34,8 @@ phone with the tuning's rows, beside the top-left block at the top, not two side
 across the middle, over the heroes. With no clear spot out of their rows, the one over the least of
 the heroes, beside the top-left block ahead of a row of strips across the screen's middle. The
 banner never covers the strips, a touch control, the skill bar, an orb, the XP bar, the minimap, a
-boss's bar or a moment's seconds left: where its plate would, it moves aside in its row (narrower if
+boss's bar or a moment's seconds left (nor, held sideways, the gold, wherever that leaves it room):
+where its plate would, it moves aside in its row (narrower if
 it must, never narrower than its title: drawn centred on the plate), else up above what it hit,
 under the top-left block or under the strips, the spot covering least of the rest (on a phone held
 sideways the action cluster reaches up the right side). It keeps off the heroes as they stood

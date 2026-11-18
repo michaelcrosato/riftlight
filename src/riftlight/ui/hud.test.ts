@@ -593,7 +593,8 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
           for (const boss of [false, true]) {
             for (const kind of ['card', 'levelup', 'clear'] as const) {
               const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}, a ${kind} banner`;
-              const m: HudModel = { ...model(controls, { guests, boss, tuned: 0, map: true }), card: { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind } };
+              // the shell sets the heroes as the strips were placed (`HudModel.heroes`) whenever guests play
+              const m: HudModel = { ...model(controls, { guests, boss, tuned: 0, map: true }), card: { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind }, ...(guests ? { heroes: heroesOn(W, H, guests) } : {}) };
               const z = hudBoxes(W, H, m);
               const banner = z.find((b) => b.id === 'banner')!;
               expect(banner, where).toBeDefined();
@@ -634,7 +635,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
             for (const kind of ['card', 'levelup', 'clear'] as const) {
               const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? `, ${tuned} tuned` : ''}${map ? '' : ', no minimap'}, a ${kind} banner`;
               const heroes = heroesOn(W, H, guests);
-              const m: HudModel = { ...model(controls, { guests, boss, tuned, map }), card: { title: 'I · Embers', subtitle: 'Depth 1', age: 1, kind, heroes } };
+              const m: HudModel = { ...model(controls, { guests, boss, tuned, map }), card: { title: 'I · Embers', subtitle: 'Depth 1', age: 1, kind, heroes }, ...(guests ? { heroes } : {}) };
               const z = hudBoxes(W, H, m);
               const banner = z.find((b) => b.id === 'banner')!;
               expect(banner.x >= 0 && banner.y >= 0 && banner.x + banner.w <= W && banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
