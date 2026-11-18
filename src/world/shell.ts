@@ -32,15 +32,16 @@ import {
   QUALITY_OPTIONS,
   readMoveInput,
   TRANSITIONS,
+  type TouchButtonState,
   type TransitionKind,
 } from '../engine';
 import { HERO_MODEL } from '../game/hero';
 import { MENU_BINDINGS, ndcToArt, Pointer } from '../riftlight/game/controls';
-import { inside, type Rect, UiCanvas, type UiEvent, wrap } from '../riftlight/ui/kit';
+import { inside, miniWidth, type Rect, UiCanvas, type UiEvent, wrap } from '../riftlight/ui/kit';
 import { UiLayer } from '../riftlight/ui/layer';
 import { HeldPresses } from '../riftlight/showcase/held';
 import { moveInput, Visitor } from '../riftlight/showcase/visitor';
-import { controlText, keyText, SHELL_PAD, touchStates, WORLD_CONTROLS, WORLD_KEYS, type WorldAction } from './controls';
+import { controlText, keyText, SHELL_PAD, touchStates, WORLD_CONTROLS, WORLD_KEYS, type WorldAction, worldTouchLayout } from './controls';
 import { type KitHost, type Label, type Pad, RoomKit } from './kit/RoomKit';
 import type { Knob, RoomDef, RoomLogic, RoomRuntime, Vec3 } from './types';
 import { fieldGuide, guidePanel, pauseMenu, roomsMenu, tweakMenu } from './ui/panels';
@@ -559,12 +560,88 @@ export class WorldShell {
    * a base button relabelled or hidden, a slot with the room's action).
    */
   private syncTouch(panel: boolean): void {
+    const show = !panel && !this.busy;
+    const states = touchStates(this.room?.logic.touch?.() ?? {});
+    this.touchShown = show ? states : null; // where a page would show them, for the HUD without one (`touchBoxes`)
     const touch = this.engine?.touch;
     if (!touch) return;
-    const show = !panel && !this.busy;
     if (touch.visible !== show) touch.show(show);
     if (!show) return;
-    for (const [code, s] of Object.entries(touchStates(this.room?.logic.touch?.() ?? {}))) touch.set(code, s);
+    for (const [code, s] of Object.entries(states)) touch.set(code, s);
+  }
+
+  /** The phone's buttons as `syncTouch` showed them this frame, or null while a panel or a room change hides them. */
+  private touchShown: Readonly<Record<string, TouchButtonState>> | null = null;
+
+  /**
+   * The phone's controls on screen, in art pixels, each `high` when it is along the top (≡ GO ?):
+   * where the page lays them out (`touch.rects()`), or, without a page (headless, a replay of a
+   * phone's recording), where their data puts them (`worldTouchLayout`) while a page would show
+   * them (touch controls on, a finger the device in use, no panel or room change). None otherwise.
+   * The HUD (the card, the title, a room's line and panels) keeps clear of them.
+   */
+  touchBoxes(): (Rect & { high: boolean })[] {
+    const e = this.engine;
+    if (!e) return [];
+    const h = e.hud.height;
+    const out: (Rect & { high: boolean })[] = [];
+    const touch = e.touch;
+    if (touch) {
+      if (!touch.visible || !this.pointer) return out;
+      const c = touch.rects();
+      for (const r of [c.stick, ...c.buttons.filter((b) => !b.hidden).map((b) => b.rect)]) {
+        if (!r || r.width <= 0 || r.height <= 0) continue;
+        const a = this.pointer.toArt(r.left, r.top);
+        const b = this.pointer.toArt(r.right, r.bottom);
+        if (a.x < 0 && b.x < 0) continue; // no canvas laid out yet
+        out.push({ x: a.x, y: a.y, w: b.x - a.x + 1, h: b.y - a.y + 1, high: a.y < h / 3 });
+      }
+      return out;
+    }
+    if (!e.controls.touch || e.input.device !== 'touch' || !this.touchShown) return out;
+    const { width, height } = e.renderer.viewport;
+    const f = e.renderer.framing;
+    const ax = (x: number) => Math.floor(((x - f.offsetX) / f.cssWidth) * f.artWidth);
+    const ay = (y: number) => Math.floor(((y - f.offsetY) / f.cssHeight) * f.artHeight);
+    for (const c of worldTouchLayout(width, height, this.touchShown)) {
+      const x = ax(c.x);
+      const y = ay(c.y);
+      out.push({ x, y, w: ax(c.x + c.w) - x + 1, h: ay(c.y + c.h) - y + 1, high: y < h / 3 });
+    }
+    return out;
+  }
+
+  /**
+   * The lowest art row a HUD block across columns `x0`..`x1` can reach: over the phone's controls
+   * along the bottom that share its columns (`touchBoxes`), else the screen's last row.
+   */
+  floor(x0: number, x1: number): number {
+    let floor = this.engine?.hud.height ?? 0;
+    for (const b of this.touchBoxes()) if (!b.high && b.x + b.w > x0 && b.x < x1) floor = Math.min(floor, b.y - 2);
+    return floor;
+  }
+
+  /**
+   * Where a room's lines of HUD text start (`RoomRuntime.lineTop`): the top of the first of `rows`
+   * rows from the left edge, `width` art pixels wide, at the bottom left over the shell's prompts,
+   * and over a phone's joystick and buttons where they share its columns.
+   */
+  lineTop(width: number, rows = 1): number {
+    const h = this.engine?.hud.height ?? 0;
+    return Math.min(h - 24, this.floor(4, 4 + width) - 9) - (rows - 1) * 9;
+  }
+
+  /**
+   * A room's line of HUD text (what it counts, the state it is in: `RoomRuntime.hudLine`), at
+   * `lineTop`, wrapped to the screen's width (a phone held upright has 130 columns). Returns its top.
+   */
+  hudLine(text: string, color: HudColor): number {
+    const hud = this.engine?.hud;
+    if (!hud) return 0;
+    const rows = wrap(text, hud.width - 8);
+    const top = this.lineTop(Math.max(0, ...rows.map((r) => hud.measure(r).width)), rows.length);
+    rows.forEach((r, i) => hud.text(4, top + i * 9, r, { color }));
+    return top;
   }
 
   /** The HUD: labels, the room's own, the card, a toast, hints, panels. */
@@ -580,9 +657,7 @@ export class WorldShell {
     const w = wing(def.wing);
     const title = def.title.toUpperCase();
     if (this.cardTime <= 0 && !this.layer.top) {
-      // under a phone's top-left buttons when it would run into them (a long title on a narrow screen)
-      const corner = this.touchCorner();
-      const y = ui.w - 4 - ui.measure(title) < corner.right + 4 ? corner.bottom + 1 : 4;
+      const { y } = this.titleRect(def);
       ui.text(ui.w - 4, y, title, { align: 'right', color: 'white' });
       ui.mini(ui.w - 4, y + 9, w.title.toUpperCase(), w.color, 'right', 'ink');
     }
@@ -614,18 +689,46 @@ export class WorldShell {
   }
 
   /**
-   * Where the top-left touch buttons (≡ GO ?) end, in art pixels: the card starts under them and a
-   * long title keeps clear. Zero without touch controls (and headless, where nothing has a place on a page).
+   * Where the room's title and its wing go (top right): under a phone's top-left buttons when it
+   * would run into them (a long title on a narrow screen). A room's panel along the top keeps clear
+   * of it (`RoomRuntime.hudTop`).
    */
-  private touchCorner(): { right: number; bottom: number } {
-    const touch = this.engine?.touch;
+  titleRect(def: RoomDef): Rect {
+    const ui = this.ui;
+    const title = def.title.toUpperCase();
+    const w = Math.max(ui.measure(title), miniWidth(wing(def.wing).title.toUpperCase()));
+    const corner = this.touchCorner();
+    const y = ui.w - 4 - ui.measure(title) < corner.right + 4 ? corner.bottom + 1 : 4;
+    return { x: ui.w - 4 - w, y, w, h: 16 };
+  }
+
+  /**
+   * The first art row a panel along the top left, `width` art pixels wide, may use: under a
+   * phone's ≡ GO ?, and under the room's title where the title came down under them into its
+   * columns (a phone held upright). 1 on a screen without either in its way.
+   */
+  hudTop(width: number): number {
+    const room = this.room;
+    let top = Math.max(1, this.touchCorner().bottom + 1);
+    if (room && this.cardTime <= 0 && !this.layer.top) {
+      const t = this.titleRect(room.def);
+      if (t.y > 4 && t.x < 1 + width) top = Math.max(top, t.y + t.h + 2);
+    }
+    return top;
+  }
+
+  /**
+   * Where the top-left touch buttons (≡ GO ?) end, in art pixels (`touchBoxes`): the card and a
+   * room's panel along the top (`RoomRuntime.hudTop`) start under them and a long title keeps clear.
+   * Zero without touch controls on screen.
+   */
+  touchCorner(): { right: number; bottom: number } {
     const out = { right: 0, bottom: 0 };
-    if (!touch?.visible || !this.pointer) return out;
-    for (const b of touch.rects().buttons) {
-      if (b.hidden || !['Escape', 'KeyG', 'KeyH'].includes(b.code)) continue;
-      const at = this.pointer.toArt(b.rect.right, b.rect.bottom);
-      out.right = Math.max(out.right, at.x);
-      out.bottom = Math.max(out.bottom, at.y + 2);
+    const w = this.engine?.hud.width ?? 0;
+    for (const b of this.touchBoxes()) {
+      if (!b.high || b.x > w / 2) continue;
+      out.right = Math.max(out.right, b.x + b.w - 1);
+      out.bottom = Math.max(out.bottom, b.y + b.h + 1);
     }
     return out;
   }
@@ -912,6 +1015,11 @@ function roomRuntime(game: RoomGame): RoomRuntime {
       return game.visitor;
     },
     toast: (text: string, seconds?: number) => shell.toast(text, seconds),
+    hudLine: (text: string, color: HudColor) => shell.hudLine(text, color),
+    lineTop: (width: number, rows?: number) => shell.lineTop(width, rows),
+    hudFloor: (x0: number, x1: number) => shell.floor(x0, x1),
+    hudTop: (width: number) => shell.hudTop(width),
+    touchBoxes: () => shell.touchBoxes(),
     goto: (id: string) => void shell.goto(id),
     setSpawn: (at: Vec3, facing?: number) => game.setSpawn(at, facing),
     respawn: () => game.respawn(),

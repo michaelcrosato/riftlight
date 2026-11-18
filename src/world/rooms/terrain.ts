@@ -182,7 +182,7 @@ const amount = Math.min((cap - sediment) * erodeRate, -dh);`,
         }
       },
       draw() {
-        ctx.hud.text(4, 18, `SEED ${seed} · ${ridges ? 'RIDGES' : 'HILLS'} · ${drops ? `${drops} DROPS OF RAIN` : 'UNERODED'}`, { anchor: 'bottom-left', color: 'white' });
+        room.hudLine(`SEED ${seed} · ${ridges ? 'RIDGES' : 'HILLS'} · ${drops ? `${drops} DROPS OF RAIN` : 'UNERODED'}`, 'white');
       },
       status: () => `seed ${seed} ridges ${ridges} drops ${drops} trees ${trees.count}`,
       api: {

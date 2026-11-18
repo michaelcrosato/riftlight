@@ -199,7 +199,7 @@ _clip.multiplyScalar(2 / _clip.dot(_q));`,
       },
       draw() {
         const feeds = cams.map((c) => `${c.name} ${c.view.renders}`).join(' · ');
-        ctx.hud.text(4, 18, `${mirrorOn ? 'MIRROR ON' : 'MIRROR OFF'} · ${feeds} RENDERS`, { anchor: 'bottom-left', color: 'sky' });
+        room.hudLine(`${mirrorOn ? 'MIRROR ON' : 'MIRROR OFF'} · ${feeds} RENDERS`, 'sky');
       },
       dispose() {
         for (const c of cams) {

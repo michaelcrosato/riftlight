@@ -6,7 +6,7 @@
 import { Mesh, SphereGeometry, Vector3 } from 'three/webgpu';
 import { PALETTE, type PaletteColor, RAPIER, Rewind, rebindDebugKeys, setLookLayer, toonMaterial } from '../../engine';
 import { TUNING } from '../../engine/character/tuning';
-import { TOUCH_SLOTS, touchFloor, WORLD_KEYS } from '../controls';
+import { TOUCH_SLOTS, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
 
 /** Hold to rewind: R, L2, or the phone's REWIND (the room's first touch slot). */
@@ -131,13 +131,18 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
       draw() {
         const bars = Math.round(rewind.fill * 20);
         const hud = ctx.hud;
-        const y = Math.min(hud.height - 25, touchFloor(e, 4, 200) - 9); // where the rooms' line sits, clear of the shell's prompts and a phone's joystick
+        const bar = `${'#'.repeat(bars)}${'.'.repeat(20 - bars)}`;
+        // the prompt, then the bar beside it, or under it on a narrow screen (a phone held upright)
+        const pw = Math.max(hud.measure('<< REWIND').width, hud.glyphWidth('rewind') + 3 + hud.measure('HOLD TO REWIND').width);
+        const bw = hud.measure(bar).width;
+        const beside = 4 + pw + 8 + bw <= hud.width - 4;
+        const y = room.lineTop(beside ? pw + 8 + bw : Math.max(pw, bw), beside ? 1 : 2); // where the rooms' line sits, clear of the shell's prompts and a phone's controls
         let w: number;
         if (rewind.rewinding) {
           hud.text(4, y, '<< REWIND', { color: 'sky' });
           w = hud.measure('<< REWIND').width;
         } else w = hud.prompt(4, y, 'rewind', 'HOLD TO REWIND', { color: 'mist' });
-        hud.text(4 + w + 8, y, `${'#'.repeat(bars)}${'.'.repeat(20 - bars)}`, { color: rewind.rewinding ? 'sky' : 'mist' });
+        hud.text(beside ? 4 + w + 8 : 4, beside ? y : y + 9, bar, { color: rewind.rewinding ? 'sky' : 'mist' });
       },
       dispose() {
         rewind.dispose();

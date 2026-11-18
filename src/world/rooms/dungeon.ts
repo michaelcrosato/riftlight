@@ -262,7 +262,7 @@ this.ban(n, b);`,
           : !wfc.done
             ? `COLLAPSING · ${undecided} SQUARES UNDECIDED · ATTEMPT ${wfc.attempt}`
             : `SEED ${seed} · ${wfc.choices} CHOICES · ${wfc.attempt - 1} CONTRADICTIONS · ${Math.round((100 * reach.reachable) / Math.max(1, reach.floor))}% OF THE FLOOR REACHABLE`;
-        ctx.hud.text(4, 18, line, { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(line, 'sand');
       },
       status: () => `seed ${seed} done ${wfc.done} attempt ${wfc.attempt} reach ${reach.reachable}/${reach.floor}`,
       api: {

@@ -21,7 +21,9 @@
  * the device like the shell's.
  */
 import type { ControlTable, Engine, TouchButton, TouchButtonState } from '../engine';
+import { touchLayout } from '../riftlight/game/touch';
 import { lang } from '../riftlight/lang';
+import type { Box } from '../riftlight/ui/layout';
 
 export const WORLD_CONTROLS = {
   // the hero (the engine's KEYMAP)
@@ -109,7 +111,20 @@ export const WORLD_TOUCH_BUTTONS: readonly TouchButton[] = [
   ...TOUCH_SLOTS.map((code, i) => ({ label: '', code, at: { x: 40, y: 214 + i * 52, size: 46 } })),
 ];
 
-export { touchFloor } from '../riftlight/showcase/hints';
+/**
+ * Where the World's phone controls sit on a `width` × `height` CSS px page, from their data, as CSS
+ * rects: the joystick at rest, then each button `states` shows (`touchStates`) by its `at`, from an
+ * 8 px margin (Riftlight's `touchLayout`, which its phone e2e holds to the page's). For where there
+ * is no page (headless, a replay of a phone's recording): the World's HUD keeps clear of them as it
+ * does of the page's (`WorldShell.touchBoxes`).
+ */
+export function worldTouchLayout(width: number, height: number, states: Readonly<Record<string, TouchButtonState>>): Box[] {
+  return touchLayout(
+    width,
+    height,
+    WORLD_TOUCH_BUTTONS.filter((b) => !states[b.code]?.hidden),
+  );
+}
 
 /** Base buttons hidden unless a room shows them (`RoomLogic.touch`): PRONE, for the Moveset's crawl tunnel. */
 export const ON_ASK: ReadonlySet<string> = new Set(['KeyZ']);

@@ -222,7 +222,7 @@ k * (Math.sin(t * 41.3) * 0.6 + Math.sin(t * 73.7 + 1.3) * 0.4),`,
       },
       update: ropes,
       draw() {
-        ctx.hud.text(4, 18, `HITS ${hits} · SPEED ${e.timeScale.toFixed(2)}X`, { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(`HITS ${hits} · SPEED ${e.timeScale.toFixed(2)}X`, 'sand');
       },
       status: () => `hits ${hits} slams ${slams} juice ${Object.entries(juice).filter(([, v]) => v).map(([k]) => k).join(',')}`,
       api: { juice: () => ({ ...juice }), hits: () => hits, slams: () => slams, hit: () => hit(new Vector3(0, 1.5, -4), new Vector3(0, 0, -1), 1) },

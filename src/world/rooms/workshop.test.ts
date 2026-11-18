@@ -48,6 +48,10 @@ describe('Asset Workshop picker', () => {
       expect(lay.rows, `${w}x${h}`).toBeGreaterThanOrEqual(3);
       expect(lay.hints.every((t) => t.startsWith('TAP')), `${w}x${h}`).toBe(true);
     }
+    // a phone held sideways with the room's buttons up its right edge (from column 515): the panel keeps left of them
+    const side = pickerLayout(563, 260, { top: 40, right: 513, touch: true });
+    expect(side.panel.x + side.panel.w).toBeLessThanOrEqual(513);
+    expect(side.panel.w, 'as wide as without them').toBe(pickerLayout(563, 260, { top: 40, touch: true }).panel.w);
   });
 
   it('shortens a shelf’s title to fit the header, dropping what says least first', () => {

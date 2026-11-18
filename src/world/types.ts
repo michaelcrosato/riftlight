@@ -7,7 +7,7 @@
  * Every room is a whole `Game` (`engine.loadGame`), so leaving one frees everything it built
  * and any room opens on its own: `?game=world&room=lights`.
  */
-import type { CameraConfig, Control, GameContext, Look, PaletteColor, TouchButtonState } from '../engine';
+import type { CameraConfig, Control, GameContext, HudColor, Look, PaletteColor, TouchButtonState } from '../engine';
 import type { Visitor } from '../riftlight/showcase/visitor';
 import type { WorldAction } from './controls';
 import type { RoomKit } from './kit/RoomKit';
@@ -115,6 +115,31 @@ export interface RoomRuntime {
   readonly hero: Visitor | null;
   /** Show a toast at the bottom of the screen. */
   toast(text: string, seconds?: number): void;
+  /**
+   * The room's line of HUD text (what it counts, the state it is in), drawn from `draw`: at the
+   * bottom left over the shell's prompts and a phone's controls, wrapped to the screen's width.
+   * Returns its top row.
+   */
+  hudLine(text: string, color: HudColor): number;
+  /**
+   * Where a room's own block of HUD lines starts at the bottom left (`rows` rows, `width` art
+   * pixels wide: a prompt and a bar), as `hudLine` places its text.
+   */
+  lineTop(width: number, rows?: number): number;
+  /** The lowest art row a HUD block across columns `x0`..`x1` reaches clear of a phone's controls along the bottom (the screen's height without them). */
+  hudFloor(x0: number, x1: number): number;
+  /**
+   * The first art row a HUD panel along the top left, `width` art pixels wide, may use: under a
+   * phone's ≡ GO ?, and under the room's title where it came down into the panel's columns (a
+   * phone held upright); 1 without them.
+   */
+  hudTop(width: number): number;
+  /**
+   * The phone's controls on screen in art pixels, `high` along the top (≡ GO ?): the page's, or
+   * where a page puts them without one (headless, a replay of a phone's recording); none without
+   * touch controls on screen. For a room that lays a whole panel out around them (the Workshop).
+   */
+  touchBoxes(): readonly { readonly x: number; readonly y: number; readonly w: number; readonly h: number; readonly high: boolean }[];
   /** Go to another room (a door): a transition, then that room. */
   goto(id: string): void;
   /** Where the hero starts (call from `build`; arrivals at the Atrium use it). */

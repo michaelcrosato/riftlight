@@ -280,7 +280,7 @@ export const SANDBOX: RoomDef = {
         drag();
       },
       draw() {
-        if (grab) ctx.hud.text(4, 18, `${grab.carry ? 'CARRYING' : 'HOLDING'} A ${grab.prop.kind.toUpperCase()}`, { anchor: 'bottom-left', color: 'plum' });
+        if (grab) room.hudLine(`${grab.carry ? 'CARRYING' : 'HOLDING'} A ${grab.prop.kind.toUpperCase()}`, 'plum');
       },
       // a phone's HOLD carries like R2 (a finger on a prop drags it, as the mouse does)
       touch: () => ({ [TOUCH_SLOTS[0]]: { label: 'HOLD', hint: grab?.carry ? 'throw' : 'carry' } }),

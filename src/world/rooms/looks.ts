@@ -272,7 +272,7 @@ export const FILTER_BENCH: RoomDef = {
     return {
       draw() {
         const text = stack.length ? `STACK: ${stack.join(' > ')}` : 'STACK: EMPTY';
-        ctx.hud.text(4, 18, text.toUpperCase().slice(0, 70), { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(text.toUpperCase(), 'sand');
       },
       status: () => `stack ${stack.join(',') || 'empty'}`,
       api: { stack: () => [...stack] },

@@ -5,6 +5,7 @@
  */
 import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshBasicNodeMaterial, OctahedronGeometry, SphereGeometry, Vector3 } from 'three/webgpu';
 import { BehaviorTree, bt, type BtStatus, NavGrid, PALETTE, setLookLayer, type SoundDef, toonMaterial } from '../../engine';
+import { clip, wrap } from '../../riftlight/ui/kit';
 import type { Label } from '../kit/RoomKit';
 import type { Knob, RoomDef } from '../types';
 
@@ -412,13 +413,26 @@ bt.sequence('recharge', bt.condition('battery low?', (b) => (b.needsCharge ||= b
       draw() {
         const b = bots[watched]!;
         const hud = ctx.hud;
-        const rows = b.tree.trace().map((row) => ({ x: 4 + row.depth * 8, text: `${row.status ? STATUS_MARK[row.status] : ' '} ${row.name.toUpperCase()}`, color: row.status ? STATUS_COLOR[row.status] : ('slate' as const) }));
-        const title = `${b.name} · BATTERY ${Math.round(b.battery * 100)}%`;
-        const width = Math.max(hud.measure(title).width, ...rows.map((r) => r.x - 4 + hud.measure(r.text).width));
-        hud.rect(1, 1, width + 6, 16 + rows.length * 9, 'ink');
-        hud.text(4, 4, title, { color: 'white' });
-        rows.forEach((r, i) => hud.text(r.x, 15 + i * 9, r.text, { color: r.color }));
-        hud.text(4, 18, `DELIVERED ${delivered} · ${crystals.length} CRYSTALS LEFT`, { anchor: 'bottom-left', color: 'cyan' });
+        const line = room.hudLine(`DELIVERED ${delivered} · ${crystals.length} CRYSTALS LEFT`, 'cyan');
+        // the tree top left, under a phone's ≡ GO ? and the room's title: on a narrow screen
+        // indented less, and only the branch that ran this tick when the whole tree doesn't fit
+        // over the room's line
+        const indent = hud.width < 200 ? 4 : 8;
+        const max = hud.width - 8;
+        const measure = (s: string) => hud.measure(s).width;
+        const rows = b.tree.trace().map((row) => {
+          const x = 4 + row.depth * indent;
+          return { x, ran: !!row.status, text: clip(`${row.status ? STATUS_MARK[row.status] : ' '} ${row.name.toUpperCase()}`, max - (x - 4), measure), color: row.status ? STATUS_COLOR[row.status] : ('slate' as const) };
+        });
+        const head = wrap(`${b.name} · BATTERY ${Math.round(b.battery * 100)}%`, max); // the battery under the name on a narrow screen
+        const width = Math.max(...head.map(measure), ...rows.map((r) => r.x - 4 + measure(r.text)));
+        const top = room.hudTop(width + 6);
+        const below = top + 14 + (head.length - 1) * 9;
+        const space = Math.floor((Math.min(line - 3, room.hudFloor(1, width + 7)) - below - 2) / 9);
+        const shown = rows.length <= space ? rows : rows.filter((r) => r.ran).slice(0, Math.max(1, space));
+        hud.rect(1, top, width + 6, below - top + 2 + shown.length * 9, 'ink');
+        head.forEach((l, i) => hud.text(4, top + 3 + i * 9, l, { color: 'white' }));
+        shown.forEach((r, i) => hud.text(r.x, below + i * 9, r.text, { color: r.color }));
       },
       status: () => `delivered ${delivered} doing ${bots.map(leaf).join(', ')}`,
       api: {

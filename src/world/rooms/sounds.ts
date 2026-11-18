@@ -166,19 +166,26 @@ export const SOUNDS: RoomDef = {
       },
       draw() {
         const hud = ctx.hud;
-        hud.rect(1, 1, 166, 8 + emitters.length * 11, 'ink');
+        // the mixer under a phone's top-left buttons; its bars narrower on a narrow screen (a phone held upright)
+        const narrow = hud.width < 172;
+        const vx = narrow ? 8 + Math.max(...emitters.map((s) => hud.measure(s.name).width)) : 70;
+        const vw = narrow ? 24 : 40;
+        const px = vx + vw + 6;
+        const pw = narrow ? 15 : 31;
+        const top = room.hudTop(px + pw + 19);
+        hud.rect(1, top, px + pw + 19, 8 + emitters.length * 11, 'ink');
         emitters.forEach((s, i) => {
-          const y = 5 + i * 11;
+          const y = top + 4 + i * 11;
           hud.text(4, y, s.name, { color: s.color });
           // volume
-          hud.rect(70, y, 40, 6, 'night');
-          hud.rect(70, y, Math.round(40 * s.gain * (1 - s.muffle * 0.6)), 6, s.muffle > 0.4 ? 'slate' : s.color);
+          hud.rect(vx, y, vw, 6, 'night');
+          hud.rect(vx, y, Math.round(vw * s.gain * (1 - s.muffle * 0.6)), 6, s.muffle > 0.4 ? 'slate' : s.color);
           // left .. right
-          hud.rect(116, y + 2, 31, 2, 'night');
-          hud.rect(116 + Math.round((s.pan + 1) * 15) - 1, y, 3, 6, 'white');
-          if (s.muffle > 0.4) hud.text(150, y, 'M', { color: 'red' });
+          hud.rect(px, y + 2, pw, 2, 'night');
+          hud.rect(px + Math.round(((s.pan + 1) * (pw - 1)) / 2) - 1, y, 3, 6, 'white');
+          if (s.muffle > 0.4) hud.text(px + pw + 3, y, 'M', { color: 'red' });
         });
-        hud.text(4, 18, `${occlusion ? 'OCCLUSION ON' : 'OCCLUSION OFF'} · ${stereo ? 'STEREO' : 'MONO'} · M = MUFFLED`, { anchor: 'bottom-left', color: 'mist' });
+        room.hudLine(`${occlusion ? 'OCCLUSION ON' : 'OCCLUSION OFF'} · ${stereo ? 'STEREO' : 'MONO'} · M = MUFFLED`, 'mist');
       },
       dispose() {
         for (const s of emitters) s.voice?.stop();

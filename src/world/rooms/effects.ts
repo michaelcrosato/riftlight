@@ -146,7 +146,7 @@ const u = snapToGrid(center.dot(this.sunUp), texel);`,
       },
       draw() {
         const s = ctx.lights.stats();
-        ctx.hud.text(4, 18, `LIGHT POOL ${s.lit}/${s.size} LIT · ${s.requests} REQUESTS`, { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(`LIGHT POOL ${s.lit}/${s.size} LIT · ${s.requests} REQUESTS`, 'sand');
       },
       status: () => JSON.stringify(ctx.lights.stats()),
       api: { stats: () => ctx.lights.stats(), sun: () => e.sunDir.toArray() },
@@ -242,7 +242,7 @@ ctx.particles.burst(name, at, { scale: size * (k > 1 ? 1.5 : 1), count, directio
         }
       },
       draw() {
-        ctx.hud.text(4, 18, `PARTICLES ALIVE ${ctx.particles.alive}`, { anchor: 'bottom-left', color: 'sand' });
+        room.hudLine(`PARTICLES ALIVE ${ctx.particles.alive}`, 'sand');
       },
       status: () => `alive ${ctx.particles.alive}`,
       api: { alive: () => ctx.particles.alive, burst: (name: string) => burst(name, new Vector3(0, 1, 0), 2) },
