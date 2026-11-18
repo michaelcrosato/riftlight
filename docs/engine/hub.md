@@ -256,11 +256,15 @@ asks, and never during a replay, so what they do arrives as recorded input. `ctx
 true`: a quick swipe on the touchpad presses `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap
 `PadTouchpadTap` (`TOUCHPAD_KEYS`, `touchpadGesture`: one finger, a swipe within 0.5 s over 40%
 of the pad's height, a tap within 0.3 s), once, recorded, a use of the pad; its click is the button
-`PadTouchpad`. Give each a button that does the same. Motion aim (`input.motion = { on, sensitivity
+`PadTouchpad`. Give each a button that does the same. Motion aim (`input.motion = { on, sensitivity, lean
 }`; a game with `settings: { motion: true }` has the engine keep it at the player's setting,
 `engine.motionOn`): while on and the pad is in use, the controller's turns add to the right stick's,
 gyro × dt × sensitivity into `mouseDelta` (8 pointer pixels a degree past a 4°/s still hand,
-`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. 52in1 leaves
+`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick; the turn in
+degrees is `input.motionTurn` (x right, y down, as `mouseDelta`; recorded as `InputFrame.turn`). A
+game that keeps an aim direction (a twin-stick's) turns it by `motionTurn` and sets
+`input.motion.lean = false`, so its aim stick is the stick alone (Riftlight: docs/game/actors.md
+*The hero's controls*). 52in1 leaves
 the stick alone only while the game reads the gyro: a game that stops reading it has 52in1's own
 Motion aim (if the player has it on) back on its right stick half a second later. So while the
 game's motion aim is on, the engine reads the gyro on every poll (the pad in use or not): 52in1

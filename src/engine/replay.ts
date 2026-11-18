@@ -90,7 +90,7 @@ export function recordingProblem(v: unknown): string | null {
     if (typeof f.dt !== 'number' || !(f.dt >= 0) || f.dt > 1) return bad('dt must be 0..1 s');
     if (f.held !== undefined && !codes(f.held)) return bad('held must be key codes');
     if (f.pressed !== undefined && !codes(f.pressed)) return bad('pressed must be key codes');
-    for (const k of ['analog', 'pad', 'look', 'trig', 'delta'] as const) if (f[k] !== undefined && !pair(f[k])) return bad(`${k} must be two numbers`);
+    for (const k of ['analog', 'pad', 'look', 'turn', 'trig', 'delta'] as const) if (f[k] !== undefined && !pair(f[k])) return bad(`${k} must be two numbers`);
     if (f.wheel !== undefined && !(typeof f.wheel === 'number' && Number.isFinite(f.wheel))) return bad('wheel must be a number');
     if (f.pointer !== undefined && !(Array.isArray(f.pointer) && f.pointer.length === 4 && f.pointer.every((x) => typeof x === 'number' && Number.isFinite(x)))) return bad('pointer must be four numbers');
     if (f.gamepad !== undefined && typeof f.gamepad !== 'boolean') return bad('gamepad must be true or false');

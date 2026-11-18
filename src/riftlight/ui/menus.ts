@@ -4,7 +4,7 @@
  * keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { FPS_OPTIONS, languageName, LOOK_PRESETS, PAD_GLYPHS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
+import { FPS_OPTIONS, languageName, LOOK_PRESETS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -33,7 +33,7 @@ export interface MenuHost {
   readonly dev: DevFlags;
   readonly audio: AudioManager;
   /** The engine's own player settings (pixel art, pixel size, frame rate, debug info: `engine.settings`, saved by the engine) and what they show. */
-  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input'>;
+  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input' | 'hubSettings' | 'motionOn'>;
   slot: number;
   screen: string;
   difficulty(): DifficultyTuning;
@@ -234,10 +234,35 @@ export function settingsMenu(h: MenuHost): Menu {
         format: () => pct(h.engine.settings.values.vibration ?? 1),
         hint: t('menu.settings.vibration.hint'),
       },
+      // motion aim (the engine's `motion` and `motionSensitivity`): only while 52in1 lets games read a DualSense's motion
+      ...(h.engine.hubSettings.values.dualsense.motion ? motionRows(h) : []),
       { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
     ],
     { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
+}
+
+/** Motion sensitivity as a slider: its steps over 0..1. */
+const SENS = MOTION_SENSITIVITY;
+const sensitivity = (h: MenuHost) => h.engine.settings.values.motionSensitivity ?? 1;
+
+/** Motion aim on and off, and how far it turns (the engine's settings: `input.motion` follows them). */
+function motionRows(h: MenuHost): Widget[] {
+  const set = (v: number) => h.engine.settings.set({ motionSensitivity: Math.min(SENS.max, Math.max(SENS.min, Math.round(v / SENS.step) * SENS.step)) });
+  return [
+    { kind: 'toggle', id: 'motion', label: t('menu.settings.motion'), get: () => h.engine.motionOn, set: (v) => h.engine.settings.set({ motion: v }), hint: t('menu.settings.motion.hint') },
+    {
+      kind: 'slider',
+      id: 'motionSensitivity',
+      label: t('menu.settings.motion_sensitivity'),
+      get: () => (sensitivity(h) - SENS.min) / (SENS.max - SENS.min),
+      set: (u) => set(SENS.min + u * (SENS.max - SENS.min)),
+      step: (_u, d) => (sensitivity(h) + d * SENS.step - SENS.min) / (SENS.max - SENS.min),
+      format: () => pct(sensitivity(h)),
+      changed: () => sensitivity(h) !== 1,
+      hint: t('menu.settings.motion_sensitivity.hint'),
+    },
+  ];
 }
 
 /**

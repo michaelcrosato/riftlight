@@ -184,6 +184,8 @@ export interface InputFrame {
   trig?: [number, number];
   /** The gamepad's right stick (`lookAxis`, after its deadzone; y = up), while it is tilted. */
   look?: [number, number];
+  /** The controller's turn by motion aim this frame (`motionTurn`, degrees), while it turns. */
+  turn?: [number, number];
   /** Whether a gamepad is connected (`gamepadConnected`), when that changes. */
   gamepad?: boolean;
   /** The input used last (`device`), when that changes; a recording without it was made on the keyboard. */
@@ -319,13 +321,21 @@ export class Input {
   /**
    * Motion aim: while `on` (the engine keeps it at the player's setting for a game with
    * `settings: { motion: true }`), and the pad is the device in use, the DualSense's turns add to the
-   * right stick's camera turn (`mouseDelta`: gyro × dt × `sensitivity`) and to the aim stick
-   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place. While on,
-   * the gyro is read on every poll (the pad in use or not), so 52in1's own Motion aim leaves the
-   * stick alone and this sensitivity applies; while off nothing is read, and 52in1's own Motion aim
-   * (if the player has it on) steers the right stick again half a second later.
+   * right stick's camera turn (`mouseDelta`: gyro × dt × `sensitivity`), to `motionTurn`, and (while
+   * `lean`, the default) to the aim stick (`lookAxis`), as 52in1's own Motion aim would. Added to
+   * the stick, never in its place. While on, the gyro is read on every poll (the pad in use or not),
+   * so 52in1's own Motion aim leaves the stick alone and this sensitivity applies; while off nothing
+   * is read, and 52in1's own Motion aim (if the player has it on) steers the right stick again half a
+   * second later. A game that keeps an aim direction and turns it by `motionTurn` (a twin-stick's)
+   * sets `lean` false: its stick then aims as the stick alone does.
    */
-  readonly motion = { on: false, sensitivity: 1 };
+  readonly motion = { on: false, sensitivity: 1, lean: true };
+  /**
+   * How far the controller turned this frame by motion aim (`motion`, the pad in use), in degrees
+   * past a still hand × `motion.sensitivity`, as `mouseDelta` turns (x right, y down): 0 otherwise.
+   * Recorded (`InputFrame.turn`), so a game may turn its aim by it and still replay.
+   */
+  readonly motionTurn = { x: 0, y: 0 };
   /**
    * Read the DualSense's touchpad (a game that uses it turns this on): a quick swipe presses
    * `PadTouchpadLeft` / `Right` / `Up` / `Down` and a tap `PadTouchpadTap` (`TOUCHPAD_KEYS`), once,
@@ -673,6 +683,7 @@ export class Input {
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
     this.lookAxis.x = this.lookAxis.y = 0;
+    this.motionTurn.x = this.motionTurn.y = 0;
     this.triggers.left = this.triggers.right = 0;
   }
 
@@ -717,6 +728,8 @@ export class Input {
     this.padAxis.y += 0;
     this.lookAxis.x += 0;
     this.lookAxis.y += 0;
+    this.motionTurn.x += 0;
+    this.motionTurn.y += 0;
     this.mouseDelta.x += 0;
     this.mouseDelta.y += 0;
     for (const [code, t] of this.queued) if (now - t > this.pressWindow) this.queued.delete(code);
@@ -836,6 +849,8 @@ export class Input {
     this._buttonEvents = [];
     this.mouseDelta.x = 0;
     this.mouseDelta.y = 0;
+    this.motionTurn.x = 0;
+    this.motionTurn.y = 0;
     this.wheel = 0;
   }
 
@@ -941,6 +956,7 @@ export class Input {
     if (this.analog.x || this.analog.y) f.analog = [this.analog.x, this.analog.y];
     if (this.padAxis.x || this.padAxis.y) f.pad = [this.padAxis.x, this.padAxis.y];
     if (this.lookAxis.x || this.lookAxis.y) f.look = [this.lookAxis.x, this.lookAxis.y];
+    if (this.motionTurn.x || this.motionTurn.y) f.turn = [this.motionTurn.x, this.motionTurn.y];
     if (this.triggers.left || this.triggers.right) f.trig = [this.triggers.left, this.triggers.right];
     if (this.mouseDelta.x || this.mouseDelta.y) f.delta = [this.mouseDelta.x, this.mouseDelta.y];
     if (this.wheel) f.wheel = this.wheel;
@@ -984,6 +1000,7 @@ export class Input {
     [this.analog.x, this.analog.y] = f.analog ?? [0, 0];
     [this.padAxis.x, this.padAxis.y] = f.pad ?? [0, 0];
     [this.lookAxis.x, this.lookAxis.y] = f.look ?? [0, 0];
+    [this.motionTurn.x, this.motionTurn.y] = f.turn ?? [0, 0];
     [this.triggers.left, this.triggers.right] = f.trig ?? [0, 0];
     [this.mouseDelta.x, this.mouseDelta.y] = f.delta ?? [0, 0];
     this.wheel = f.wheel ?? 0;
@@ -1163,16 +1180,21 @@ export class Input {
     // leaves the stick alone only while the game reads the gyro), and never while off (52in1's
     // own, if the player has it on, has the stick back half a second later).
     const gyro = ds?.motion && this.motion.on ? ds.gyro() : null;
+    this.motionTurn.x = this.motionTurn.y = 0;
     if (gyro && padInUse) {
       const k = Number.isFinite(this.motion.sensitivity) ? Math.max(0, this.motion.sensitivity) : 1;
-      const yaw = beyond(-gyro.y, MOTION_AIM.still); // turned left (+): the view goes left
-      const pitch = beyond(-gyro.x, MOTION_AIM.still); // tipped up (+): the view goes up (pointer y down)
+      const yaw = beyond(-gyro.y, MOTION_AIM.still); // turned right (+): the view goes right
+      const pitch = beyond(-gyro.x, MOTION_AIM.still); // tipped up: the view goes up (pointer y down)
+      this.motionTurn.x = yaw * dt * k;
+      this.motionTurn.y = pitch * dt * k;
       this.mouseDelta.x += yaw * dt * k * MOTION_AIM.pixels;
       this.mouseDelta.y += pitch * dt * k * MOTION_AIM.pixels;
-      const ax = look.x + aimLean(yaw) * k;
-      const ay = look.y - aimLean(pitch) * k;
-      const len = Math.hypot(ax, ay);
-      look = len > 1 ? { x: ax / len, y: ay / len } : { x: ax, y: ay };
+      if (this.motion.lean !== false) {
+        const ax = look.x + aimLean(yaw) * k;
+        const ay = look.y - aimLean(pitch) * k;
+        const len = Math.hypot(ax, ay);
+        look = len > 1 ? { x: ax / len, y: ay / len } : { x: ax, y: ay };
+      }
     }
     this.lookAxis.x = look.x;
     this.lookAxis.y = look.y;

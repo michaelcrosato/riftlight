@@ -12,12 +12,20 @@ Pad buttons are `Pad*` codes, not keys, so menus tell Cross = confirm from Space
 the mouse aims at the ground under the cursor (while it is in use: moved, clicked, or a button
 held); a pad's right stick (`input.lookAxis`, past `AIM.stick`) aims along itself, snapped to the
 nearest monster within `AIM.assist` (18°) of it and `AIM.range` m (aim assist), else `AIM.reach` m
-along it (the AI Hub's own Motion aim adds the controller's turning speed to that stick, so gyro
-nudges the aim only while the controller turns and the cone takes over once the stick recentres.
-The engine's motion input exists, opt-in: `settings: { motion: true }`, `engine.motionOn`,
-`input.motion`; Riftlight doesn't opt in yet, a later change will); keys, the left stick and a
-finger take the nearest monster in the `AIM.cone` (70°) ahead along the move (standing, along the
-last aim), else the nearest within 7 m whichever way (the shell's last resort), else straight on.
+along it. **Motion aim** (a DualSense through 52in1: `RIFTLIGHT_OPTIONS.settings.motion`, so the
+engine reads the gyro while the player has it on, `engine.motionOn`, and 52in1's own Motion aim
+leaves the stick alone): the shell keeps an aim direction that the controller's turns turn
+(`input.motionTurn`, recorded; `AIM.gyro` 2 degrees of aim a degree turned, times the player's
+sensitivity; turned left, the aim turns left: `turnOnScreen`), taken once a frame (`turnAim`) from
+where the hero aims; it aims along that direction with the same assist as the stick, the stick
+sets it outright while it leans, and it lets go `AIM.hold` (6) s after it last turned or the hero
+last attacked or cast along it, as the mouse's aim does (a snapshot keeps it: `shell.motionAim`).
+The engine's lean of the aim stick is off (`input.motion.lean = false`), so the stick aims as the
+stick alone. Settings has **Motion aim** and **Motion sensitivity** (the engine's `motion` and
+`motionSensitivity`) while 52in1 lets games read the controller's motion. Keys, the left stick and
+a finger take the nearest monster in the `AIM.cone` (70°) ahead along the move (standing, along the
+last aim), else the nearest within 7 m whichever way (the shell's last resort), else straight on;
+motion aim is the pad's only.
 Presses buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,
 casting slows movement instead of locking it (the legs keep running under the arms), and attack
 clips play at the rate attack / cast speed asks for. On a phone the touch buttons are the bar

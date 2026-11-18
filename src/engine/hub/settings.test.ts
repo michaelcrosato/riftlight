@@ -474,7 +474,7 @@ describe('a DualSense’s touchpad and motion through 52in1, as recorded input',
     const hub = movingHub({ aim: true });
     const game = new Feel();
     const engine = await Engine.headless(game, { hubSettings: hub.source, settings: { motion: true } });
-    expect([engine.input.motion, hub.read]).toEqual([{ on: true, sensitivity: 1 }, []]); // on, as 52in1's own Motion aim is; read by the polls alone
+    expect([engine.input.motion, hub.read]).toEqual([{ on: true, sensitivity: 1, lean: true }, []]); // on, as 52in1's own Motion aim is; read by the polls alone
     engine.input.noteDevice('pad');
     hub.now.gyro = { x: 0, y: -64, z: 0 }; // turning right, 64° a second
     engine.step(1);
@@ -495,6 +495,8 @@ describe('a DualSense’s touchpad and motion through 52in1, as recorded input',
     // stick alone only while the game reads the gyro
     expect(hub.read).toEqual(['gyro', 'gyro', 'gyro', 'gyro']);
     const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+    // the turn in degrees too (`motionTurn`), for a game that turns an aim direction by it
+    expect(rec.frames.filter((f) => f.turn).map((f) => f.turn![0] * MOTION_AIM.pixels)).toEqual(game.turn.filter((t) => t > 0).map((t) => expect.closeTo(t, 9)));
     const turns = game.turn.slice();
     // turned off: nothing is read or added (52in1's own Motion aim, if the player has it on, steers
     // the right stick again half a second later: the engine sees it as the stick)

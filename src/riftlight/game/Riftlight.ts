@@ -53,7 +53,7 @@ import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
-import { AIM, coneTarget, stickAim } from '../actors/aim';
+import { AIM, coneTarget, stickAim, turnOnScreen } from '../actors/aim';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
@@ -163,8 +163,16 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private readonly intent: MutableIntent = { move: { x: 0, z: 0 }, aim: new Vector3(), attack: false, skill: -1, dodge: false, held: 0 };
   /** An agent's intent this frame (`agentInput`: it arrives as recorded input), else null (the player's). */
   botIntent: (HeroIntent & { interact?: boolean }) | null = null;
-  /** The frame's commands `agentInput` took last (it runs once a frame). */
-  private agentTaken: readonly unknown[] | null = null;
+  /** The frame's commands `frameInput` took last (it runs once a frame). */
+  private frameTaken: readonly unknown[] | null = null;
+  /**
+   * Motion aim on the pad (a DualSense through 52in1): the ground direction (unit) the controller's
+   * turns keep and turn (`turnAim`) and the right stick sets, and the seconds since it was last
+   * turned or acted along (it lets go after `AIM.hold`); null while motion aim is not steering.
+   */
+  private motionAim: { x: number; z: number; idle: number } | null = null;
+  /** `input.motion.lean` before this game set it (given back at dispose). */
+  private savedLean = true;
   private interactQueued = false;
   /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
   worldFocus: WalkTarget | null = null;
@@ -264,6 +272,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ctx.input.preventKeys.add('Tab'); // the map, and menus' tabs: never the browser's focus
     this.savedGamepad = ctx.input.gamepadButtons;
     ctx.input.gamepadButtons = { ...GAMEPAD_BUTTONS }; // the engine's own pad codes (a lab before may have remapped them)
+    // motion aim turns a kept aim direction (`turnAim`), never leans the aim stick
+    this.savedLean = ctx.input.motion.lean;
+    ctx.input.motion.lean = false;
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
@@ -333,6 +344,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.fileInput?.remove();
     if (this.savedKeys) ctx.engine.debugKeys = this.savedKeys;
     if (this.savedGamepad) ctx.input.gamepadButtons = this.savedGamepad;
+    ctx.input.motion.lean = this.savedLean;
     ctx.input.preventKeys.delete('Tab');
     this.level?.dispose();
     this.level = null;
@@ -1272,15 +1284,23 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   // ================================================================ per frame
 
   /**
-   * An agent's input this frame (`rl.step`, `rl.moveTo`, `rl.fight`, the bot: the intent it holds
-   * and what the bot does besides), recorded like the keys, so an agent's run replays. Taken once
-   * a frame, as early as it can be: before the first fixed step, or in `update` on a frame
-   * without one.
+   * What input brings once a frame, taken as early as it can be (before the first fixed step, or in
+   * `update` on a frame without one): an agent's input (`agentInput`) and the controller's turn
+   * (`turnAim`).
    */
-  private agentInput(ctx: GameContext): void {
+  private frameInput(ctx: GameContext): void {
     const commands = ctx.input.commands;
-    if (commands === this.agentTaken) return;
-    this.agentTaken = commands;
+    if (commands === this.frameTaken) return;
+    this.frameTaken = commands;
+    this.agentInput(commands);
+    this.turnAim(ctx);
+  }
+
+  /**
+   * An agent's input this frame (`rl.step`, `rl.moveTo`, `rl.fight`, the bot: the intent it holds
+   * and what the bot does besides), recorded like the keys, so an agent's run replays.
+   */
+  private agentInput(commands: readonly unknown[]): void {
     this.botIntent = null; // an intent lasts the frame it arrives in: the player's input again after
     for (const c of commands) {
       const m = c as Partial<RiftCommand> | null;
@@ -1298,8 +1318,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
   }
 
+  /**
+   * Motion aim (a DualSense through 52in1, recorded as `input.motionTurn`): the controller's turn
+   * this frame turns the pad's aim, `AIM.gyro` degrees a degree as the screen shows it (turned left:
+   * the aim turns left), from where motion aim keeps it, else from where the hero aims now. In play,
+   * on the pad, while the right stick lets it (the stick sets the direction itself: `readIntent`);
+   * the keyboard and mouse and touch never keep one.
+   */
+  private turnAim(ctx: GameContext): void {
+    const input = ctx.input;
+    const deg = input.device === 'pad' ? input.motionTurn.x * AIM.gyro : 0;
+    if (!deg || (this.screen !== 'town' && this.screen !== 'level') || this.worldPaused || this.dead || this.showcase?.active || this.botIntent) return;
+    if (Math.hypot(input.lookAxis.x, input.lookAxis.y) > AIM.stick) return;
+    cameraBasis(ctx.engine, this.right, this.forward);
+    const hp = this.hero.actor.position;
+    let dx = this.motionAim ? this.motionAim.x : this.intent.aim.x - hp.x;
+    let dz = this.motionAim ? this.motionAim.z : this.intent.aim.z - hp.z;
+    if (Math.hypot(dx, dz) < 1e-3) [dx, dz] = [this.forward.x, this.forward.z]; // aimed at its own feet: up the screen
+    const d = turnOnScreen(dx, dz, deg, this.right, this.forward);
+    const len = Math.hypot(d.x, d.z);
+    this.motionAim = { x: d.x / len, z: d.z / len, idle: 0 };
+  }
+
   fixedUpdate(ctx: GameContext, dt: number): void {
-    this.agentInput(ctx);
+    this.frameInput(ctx);
     if (this.showcase?.active) return this.showcase.fixedUpdate(dt);
     if (this.screen !== 'town' && this.screen !== 'level') return;
     if (this.worldPaused) return;
@@ -1328,19 +1370,21 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
     // the mouse aims where it points; a pad's right stick (while the pad is the device in use,
-    // recorded) along itself, snapped to a monster close to that line (aim assist: the hub's own
-    // Motion aim adds the controller's turning speed to the stick, so it aims only while the
-    // controller turns; the engine's motion input, `settings: { motion: true }` / `input.motion`,
-    // exists, and Riftlight doesn't opt in yet); else, and with a finger, the nearest monster ahead
-    // (`autoAim`)
-    const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
+    // recorded) along itself, snapped to a monster close to that line (aim assist), and so does
+    // motion aim along the direction the controller's turns keep (`turnAim`; the stick sets that
+    // direction while it leans); else, and with a finger, the nearest monster ahead (`autoAim`)
+    const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < AIM.hold;
     const hp = this.hero.actor.position;
     const look = input.lookAxis;
+    if (input.device !== 'pad') this.motionAim = null;
+    const motion = this.motionAim;
     if (input.device === 'pad' && Math.hypot(look.x, look.y) > AIM.stick) {
       const dx = this.right.x * look.x + this.forward.x * look.y;
       const dz = this.right.z * look.x + this.forward.z * look.y;
       stickAim(hp, dx, dz, this.level?.actors() ?? [], hostile, i.aim);
-    } else if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
+      if (motion) Object.assign(motion, { x: dx / Math.hypot(dx, dz), z: dz / Math.hypot(dx, dz), idle: 0 });
+    } else if (motion) stickAim(hp, motion.x, motion.z, this.level?.actors() ?? [], hostile, i.aim);
+    else if (mouseAim && this.pointer.ground(this.tmp, hp.y)) i.aim.copy(this.tmp);
     else i.aim.copy(this.autoAim());
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
     // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
@@ -1371,6 +1415,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       i.attack = false;
       i.skill = -1;
       i.dodge = false;
+    }
+    // motion aim holds while the hero acts along it, and lets go `AIM.hold` s after it last did or turned
+    if (motion) {
+      motion.idle = i.attack || i.skill >= 0 || i.held ? 0 : motion.idle + dt;
+      if (motion.idle >= AIM.hold) this.motionAim = null;
     }
     this.walk(i, axis, panelOpen, dt);
     return i;
@@ -1468,7 +1517,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   update(ctx: GameContext, dt: number): void {
-    this.agentInput(ctx);
+    this.frameInput(ctx);
     for (const c of ctx.input.commands) this.command(c);
     this.round?.update(ctx.input.commands, dt);
     this.time += dt;
@@ -2294,6 +2343,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         streak: this.streak,
         feed: this.feed,
         intent: { ...this.intent, aim: v(this.intent.aim) },
+        motionAim: this.motionAim && { ...this.motionAim },
         botIntent: this.botIntent ? { ...this.botIntent, aim: v(this.botIntent.aim) } : null,
         camera: { target: v(this.camTarget), lead: v(this.lead), shake: v(this.shakeOffset), shakeTime: this.shakeTime, shakeStrength: this.shakeStrength, zoomGoal: this.zoomGoal },
       },
@@ -2411,6 +2461,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.streak = t.streak ? { ...t.streak } : null;
     this.feed = t.feed.map((f) => ({ ...f }));
     Object.assign(this.intent, { ...t.intent, move: { ...t.intent.move }, aim: this.intent.aim.fromArray(t.intent.aim) });
+    this.motionAim = t.motionAim ? { ...t.motionAim } : null;
     this.botIntent = t.botIntent ? fromSaved(t.botIntent) : null;
     this.camTarget.fromArray(t.camera.target);
     this.lead.fromArray(t.camera.lead);
@@ -2531,6 +2582,8 @@ interface RiftSnapshot {
     readonly streak: { count: number; age: number } | null;
     readonly feed: readonly FeedLine[];
     readonly intent: Omit<MutableIntent, 'aim'> & { readonly aim: readonly number[] };
+    /** Motion aim's kept direction (left out by snapshots from before it). */
+    readonly motionAim?: { readonly x: number; readonly z: number; readonly idle: number } | null;
     readonly botIntent: SavedIntent | null;
     readonly camera: { readonly target: readonly number[]; readonly lead: readonly number[]; readonly shake: readonly number[]; readonly shakeTime: number; readonly shakeStrength: number; readonly zoomGoal: number };
   };

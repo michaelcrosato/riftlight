@@ -2,8 +2,9 @@
  * Aiming without a mouse, one rule for the hero controller (the Arena) and the game shell
  * (Riftlight's pad, keyboard and touch aim): a target counts when it lies within a cone around
  * the way the player means (the right stick, the left stick, the facing), the nearest such wins.
- * The right stick aims along itself with a narrow cone (aim assist); the left stick and the facing
- * use a wide one (auto-aim). Plain maths on positions: nothing here is state.
+ * The right stick aims along itself with a narrow cone (aim assist), and so does motion aim along
+ * the direction the controller's turns keep; the left stick and the facing use a wide one
+ * (auto-aim). Plain maths on positions: nothing here is state.
  */
 import type { Vector3 } from 'three/webgpu';
 
@@ -17,6 +18,13 @@ export const AIM = {
   stick: 0.3,
   /** Where the right stick aims with nobody to snap to: this far (m) along it. */
   reach: 5,
+  /**
+   * Motion aim (a DualSense's turns, `input.motionTurn`): the pad's aim turns this many degrees for
+   * each degree the controller turns (at sensitivity 1), so a quarter turn of the wrists aims behind.
+   */
+  gyro: 2,
+  /** Motion aim keeps its direction this long (s) after the controller last turned it or the hero last acted along it, as the mouse's aim does. */
+  hold: 6,
 } as const;
 
 /** True when `at` lies within `cos` (the cosine of the half-angle) of the ground direction (`dx`, `dz`, unit) from `from`; a target on top of `from` counts. */
@@ -66,4 +74,20 @@ export function stickAim<T extends { readonly position: Vector3; readonly alive:
     out.set(from.x + (dx / len) * AIM.reach, from.y, from.z + (dz / len) * AIM.reach);
   }
   return target;
+}
+
+/**
+ * The ground direction (`dx`, `dz`) turned `deg` degrees as the screen shows it (+: clockwise, the
+ * way a controller turned right turns the aim), on the camera's ground basis (`right`, `forward`:
+ * unit, at right angles: `cameraBasis`).
+ */
+export function turnOnScreen(dx: number, dz: number, deg: number, right: Vector3, forward: Vector3): { x: number; z: number } {
+  const sx = dx * right.x + dz * right.z;
+  const sy = dx * forward.x + dz * forward.z;
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  const rx = sx * c + sy * s;
+  const ry = sy * c - sx * s;
+  return { x: right.x * rx + forward.x * ry, z: right.z * rx + forward.z * ry };
 }

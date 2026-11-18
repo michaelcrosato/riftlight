@@ -209,7 +209,7 @@ describe('the settings screen', () => {
     expect([row('motion').enabled, row('motion').note, row('motionSensitivity').enabled, e.motionOn, e.input.motion.on]).toEqual([false, 'Motion aim needs a DualSense in 52in1.', false, false, false]);
     dualsense.motion = true;
     hub.dispatchEvent(new Event('change'));
-    expect([row('motion').value, row('motionSensitivity').value, row('motionSensitivity').enabled, e.motionOn, e.input.motion]).toEqual(['On', '100%', true, true, { on: true, sensitivity: 1 }]);
+    expect([row('motion').value, row('motionSensitivity').value, row('motionSensitivity').enabled, e.motionOn, e.input.motion]).toEqual(['On', '100%', true, true, { on: true, sensitivity: 1, lean: true }]);
     menu.step(3, 1);
     expect([row('motionSensitivity').value, e.settings.values.motionSensitivity, e.input.motion.sensitivity]).toEqual(['125%', 1.25, 1.25]);
     menu.activate(2);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS } from './input';
+import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS } from './input';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -587,5 +587,78 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
     frame(a(0.5));
     input.setGamepads([]);
     expect([...frame(a(0.5)), ...frame()]).toEqual([]);
+  });
+});
+
+describe("motion aim's turn (input.motionTurn)", () => {
+  /** An Input reading a gyro the test turns, its motion aim on, the pad in use; `frame` polls it once and returns what a game reads. */
+  function gyro() {
+    const input = new Input(null);
+    let now = { x: 0, y: 0, z: 0 };
+    input.dualsense = { motion: true, touchpad: false, gyro: () => now, touches: () => null } satisfies DualSenseInput;
+    input.motion.on = true;
+    input.setGamepads([pad()]);
+    input.noteDevice('pad');
+    let t = 0;
+    const frames: InputFrame[] = [];
+    const last = { held: '', pointer: '' };
+    const frame = (turn: { x: number; y: number; z: number } = now) => {
+      now = turn;
+      t += 1 / 60;
+      input.beginFrame(t, 1 / 60);
+      frames.push(input.snapshot(1 / 60, last));
+      const out = { turn: { ...input.motionTurn }, look: { ...input.lookAxis }, delta: { ...input.mouseDelta } };
+      input.endFrame();
+      return out;
+    };
+    return { input, frame, frames };
+  }
+  const dt = 1 / 60;
+  const right64 = { x: 0, y: -64, z: 0 }; // turning right, 64° a second
+
+  it('is the turn this frame in degrees past a still hand, times the sensitivity, as mouseDelta turns; nothing off the pad, still, or off', () => {
+    const { input, frame } = gyro();
+    const a = frame(right64);
+    expect(a.turn.x).toBeCloseTo((64 - MOTION_AIM.still) * dt, 9);
+    expect(a.turn.y).toBe(0);
+    expect(a.delta.x).toBeCloseTo(a.turn.x * MOTION_AIM.pixels, 9); // the camera's turn, in pointer pixels
+    expect(a.look.x, 'leaning the aim stick, as 52in1’s own Motion aim does').toBeGreaterThan(MOTION_AIM.floor);
+    expect(frame({ x: 20, y: 0, z: 0 }).turn.y, 'tipped up: up, as the pointer goes (y down)').toBeCloseTo(-(20 - MOTION_AIM.still) * dt, 9);
+    input.motion.sensitivity = 2;
+    expect(frame(right64).turn.x).toBeCloseTo(2 * (64 - MOTION_AIM.still) * dt, 9);
+    expect(frame({ x: 0, y: -3, z: 0 }).turn, 'a hand holding still').toEqual({ x: 0, y: 0 });
+    input.noteDevice('keyboard');
+    expect(frame(right64).turn, 'the pad put down').toEqual({ x: 0, y: 0 });
+    input.noteDevice('pad');
+    input.motion.on = false;
+    expect(frame(right64).turn, 'motion aim off').toEqual({ x: 0, y: 0 });
+  });
+
+  it('with lean off, the aim stick is the stick alone while the turn still arrives', () => {
+    const { input, frame } = gyro();
+    input.motion.lean = false;
+    const a = frame(right64);
+    expect([a.look, a.turn.x > 0, a.delta.x > 0]).toEqual([{ x: 0, y: 0 }, true, true]);
+    input.setGamepads([pad([0, 0, 0.6, 0])]);
+    expect(frame(right64).look.x, 'the stick, exactly').toBeCloseTo((0.6 - GAMEPAD_DEADZONE) / (1 - GAMEPAD_DEADZONE), 9);
+  });
+
+  it('is recorded while it turns and replayed exactly, and lasts the frame', () => {
+    const { input, frame, frames } = gyro();
+    const seen = [frame(right64), frame({ x: 0, y: 30, z: 0 }), frame({ x: 0, y: 0, z: 0 })].map((f) => f.turn);
+    expect([frames[0]!.turn, frames[2]!.turn]).toEqual([[seen[0]!.x, seen[0]!.y], undefined]);
+    expect(input.motionTurn, 'gone once the frame ends').toEqual({ x: 0, y: 0 });
+    const again = new Input(null);
+    let t = 0;
+    const replayed = (JSON.parse(JSON.stringify(frames)) as InputFrame[]).map((f) => {
+      again.playBefore(f);
+      t += f.dt;
+      again.beginFrame(t, f.dt, []);
+      again.playAfter(f);
+      const turn = { ...again.motionTurn };
+      again.endFrame();
+      return turn;
+    });
+    expect(replayed).toEqual(seen);
   });
 });
