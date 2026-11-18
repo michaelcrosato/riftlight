@@ -31,15 +31,24 @@ export interface PlayerSettings {
    * once the player has allowed games the microphone in 52in1 (`engine.voiceOn`).
    */
   voice?: boolean;
+  /**
+   * Motion aim (`settings: { motion: true }`: a DualSense's motion through 52in1, `input.motion`).
+   * Left out: on while the player has 52in1's own Motion aim on (`engine.motionOn`).
+   */
+  motion?: boolean;
+  /** How far motion aim turns for a turn of the controller, 0.25 to 3 in steps of 0.25 (left out: 1). */
+  motionSensitivity?: number;
 }
 
-const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration', 'voice'] as const satisfies readonly (keyof PlayerSettings)[];
+const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration', 'voice', 'motion', 'motionSensitivity'] as const satisfies readonly (keyof PlayerSettings)[];
 export const PIXEL_SIZES = ['fine', 'chunky'] as const;
 export const QUALITY_OPTIONS: readonly QualityOption[] = ['auto', 'low', 'medium', 'high'];
 export const FPS_OPTIONS: readonly number[] = [60, 30, 0];
 /** The button prompts a controller can show (`PlayerSettings.padGlyphs`): PlayStation's first. */
 export const PAD_GLYPHS = ['playstation', 'xbox'] as const;
 export type PadGlyphs = (typeof PAD_GLYPHS)[number];
+/** Motion aim's sensitivity range (`PlayerSettings.motionSensitivity`). */
+export const MOTION_SENSITIVITY = { min: 0.25, max: 3, step: 0.25 } as const;
 
 /** Keep only fields with a valid value: what storage or a caller handed over may be anything. */
 export function normalizeSettings(raw: unknown): PlayerSettings {
@@ -56,6 +65,10 @@ export function normalizeSettings(raw: unknown): PlayerSettings {
   // a share in steps of 0.05 (a slider's), held to 0..1
   if (typeof v.vibration === 'number' && Number.isFinite(v.vibration)) out.vibration = Math.round(Math.min(1, Math.max(0, v.vibration)) * 20) / 20;
   if (typeof v.voice === 'boolean') out.voice = v.voice;
+  if (typeof v.motion === 'boolean') out.motion = v.motion;
+  // a sensitivity in its steps, held to its range
+  const m = MOTION_SENSITIVITY;
+  if (typeof v.motionSensitivity === 'number' && Number.isFinite(v.motionSensitivity)) out.motionSensitivity = Math.round(Math.min(m.max, Math.max(m.min, v.motionSensitivity)) / m.step) * m.step;
   return out;
 }
 

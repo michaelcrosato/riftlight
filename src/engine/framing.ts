@@ -59,14 +59,30 @@ export interface Viewport {
   readonly dpr: number;
 }
 
+/** A phone: a viewport whose short side is under this many CSS pixels (`touchScale`). */
+export const PHONE_SHORT_SIDE = 500;
+
+/**
+ * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) for at least
+ * `cssPerArt` CSS pixels per art pixel (`EngineOptions.touchDensity`, on a page with touch controls,
+ * also while they step aside for a pad or the keyboard): on a phone (the viewport's short side under
+ * `PHONE_SHORT_SIDE`) in either orientation, so text and targets stay thumb-sized; 1 (no minimum)
+ * elsewhere, or when `cssPerArt` is 0.
+ */
+export function touchScale(viewport: Viewport, cssPerArt: number): number {
+  if (!(cssPerArt > 0) || Math.min(viewport.width, viewport.height) >= PHONE_SHORT_SIDE) return 1;
+  return Math.max(1, Math.ceil(cssPerArt * (viewport.dpr > 0 ? viewport.dpr : 1) - 1e-9));
+}
+
 /**
  * The framing and art resolution of a view (PixelRenderer's canvas, or a HeadlessView's viewport):
  * `computeFraming`, and the art size as a resolution. Identity is kept where nothing changed: the
  * `current` object while the art size stays, else `base` itself when the art size equals it (a
- * fixed or 16:9 view reports the preset it was given), else a new one.
+ * fixed or 16:9 view reports the preset it was given), else a new one. `minScale`: the least
+ * device pixels per art pixel under `fill` (`touchScale`).
  */
-export function frameView(viewport: Viewport, base: Resolution, aspect: AspectMode, current: Resolution): { framing: Framing; resolution: Resolution } {
-  const framing = computeFraming(viewport.width, viewport.height, viewport.dpr, base, aspect);
+export function frameView(viewport: Viewport, base: Resolution, aspect: AspectMode, current: Resolution, minScale = 1): { framing: Framing; resolution: Resolution } {
+  const framing = computeFraming(viewport.width, viewport.height, viewport.dpr, base, aspect, minScale);
   const { artWidth: width, artHeight: height } = framing;
   const resolution = current.width === width && current.height === height ? current : base.width === width && base.height === height ? base : { width, height };
   return { framing, resolution };
@@ -83,6 +99,8 @@ const clampWidth = (w: number, height: number) =>
  * @param internal the art resolution (in adaptive mode: its height, and the 16:9 fallback)
  * @param aspect `fill` (default: both art dimensions follow the screen, with no letterbox),
  * `adaptive` (the art width follows the screen) or `fixed` (exactly `internal`); both letterbox
+ * @param minScale `fill` only: at least this many device pixels per art pixel (fewer, bigger art
+ * pixels: a phone's touch density, `touchScale`); the other modes keep their art size
  */
 export function computeFraming(
   viewportWidth: number,
@@ -90,6 +108,7 @@ export function computeFraming(
   devicePixelRatio: number,
   internal: Resolution,
   aspect: AspectMode = 'fill',
+  minScale = 1,
 ): Framing {
   const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
   const deviceRound = aspect === 'fill' ? Math.ceil : Math.floor;
@@ -98,7 +117,7 @@ export function computeFraming(
   if (aspect === 'fill') {
     // Keep square, whole-device-pixel blocks. Grow the art target by the final partial
     // block instead of leaving the unused space around a fixed-height target black.
-    const scale = Math.max(1, Math.round(deviceHeight / internal.height));
+    const scale = Math.max(1, Math.round(deviceHeight / internal.height), Math.floor(minScale));
     const artWidth = Math.ceil(deviceWidth / scale);
     const artHeight = Math.ceil(deviceHeight / scale);
     const canvasWidth = artWidth * scale;

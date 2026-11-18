@@ -93,6 +93,7 @@ export class TouchPad {
   zones(toArt: (x: number, y: number) => { x: number; y: number }): Box[] {
     const touch = this.engine.touch;
     if (!touch) return [];
+    if (touch.deviceHidden) return []; // a pad or the keyboard in use: their layout, with its skill bar
     if (!touch.visible) return this.last;
     const r = touch.rects();
     const out: Box[] = [];

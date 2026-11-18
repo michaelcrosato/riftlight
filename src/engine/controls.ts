@@ -69,6 +69,11 @@ export const CONTROL_LINES = {
   'pad.ps.create': 'Create',
   'pad.ps.options': 'Options',
   'pad.ps.touchpad': 'Touchpad',
+  'pad.touchpad_left': 'Touchpad left',
+  'pad.touchpad_right': 'Touchpad right',
+  'pad.touchpad_up': 'Touchpad up',
+  'pad.touchpad_down': 'Touchpad down',
+  'pad.touchpad_tap': 'Touchpad tap',
   'pad.lb': 'LB',
   'pad.rb': 'RB',
   'pad.lt': 'LT',
@@ -336,6 +341,17 @@ export class Controls {
   glyph(action: string, names: LineSource | null = this.names): Glyph | null {
     const f = this.find(action);
     return f ? controlGlyph(f.control, f.device, this.style, names) : null;
+  }
+
+  /**
+   * Whether the device in use has a control of its own for `action`: a pad button on the pad, a
+   * touch button or gesture on a touch screen (the keyboard always has its key). Without one,
+   * `glyph` falls back to the key; a legend shows the words alone (`hud.legend`).
+   */
+  onDevice(action: string): boolean {
+    const f = this.find(action);
+    if (!f) return false;
+    return f.device === 'pad' ? !!f.control.pad : f.device === 'touch' ? !!f.control.touch : true;
   }
 }
 

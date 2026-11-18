@@ -8,6 +8,8 @@
 //     across, and tapping each one reaches the game (its key; the four skills fire)
 //   - no fixed-HUD element (orbs, XP bar, level, top-left text, minimap) overlaps a touch
 //     control (DOM rects vs `__RIFTLIGHT__.ui.hud()`), and the HUD draws no skill bar
+//   - a pad picked up: the controls step aside and the HUD draws the pad's skill bar; a touch
+//     brings the touch layout back
 //   - ≡ opens the pause menu, the panel's close box closes it (taps)
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
@@ -104,6 +106,26 @@ export async function runRiftlightPhone(h, orientation) {
     const under = hud.zones.flatMap((z) => visible.filter((c) => z.x < c.x + c.w && c.x < z.x + z.w && z.y < c.y + c.h && c.y < z.y + z.h).map((c) => `${z.id} under ${c.code}`));
     check(under.length === 0, `${orientation}: no HUD element overlaps a touch control${under.length ? ` (${under.join(', ')})` : ` (${hud.zones.map((z) => z.id).join(', ')})`}`);
     await shot('level');
+
+    // a pad picked up: the touch controls step aside and the HUD takes the pad's layout, its own
+    // skill bar drawn (never neither); the next touch brings the touch layout back
+    const devices = await R(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const layout = () => {
+        const h = window.__RIFTLIGHT__.ui.hud();
+        return { device: e.input.device, away: e.touch.deviceHidden, touch: h.touch, skillbar: h.zones.some((z) => z.id === 'skillbar') };
+      };
+      e.input.noteDevice('pad');
+      e.step(2);
+      const pad = layout();
+      e.input.noteTouch();
+      e.step(2);
+      return { pad, back: layout() };
+    });
+    check(
+      devices.pad.away && !devices.pad.touch && devices.pad.skillbar && !devices.back.away && devices.back.touch && !devices.back.skillbar,
+      `${orientation}: a pad picked up gives the HUD the pad's layout with its skill bar, a touch gives the touch layout back (${JSON.stringify(devices)})`,
+    );
 
     // every slot reachable by touch: each tap presses its key, and the four skills fire
     const tapCode = async (code) => {

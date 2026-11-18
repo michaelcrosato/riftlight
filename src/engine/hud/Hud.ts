@@ -7,6 +7,9 @@ import { type Controls, GLYPH_SIZE, type Glyph } from '../controls';
 /** Where an element is attached on screen; it is also aligned that way (right-anchored text grows left). */
 export type HudAnchor = 'top-left' | 'top' | 'top-right' | 'left' | 'center' | 'right' | 'bottom-left' | 'bottom' | 'bottom-right';
 
+/** One button of a legend (`hud.legend`): what does it (an action of `Game.controls`, or a code: `PadB`) and its words. */
+export type LegendItem = readonly [action: string, label: string];
+
 export type HudColor = PaletteColor | number;
 
 export interface HudOptions {
@@ -150,6 +153,41 @@ export class Hud {
     this.glyph(left, y, action, k);
     this.text(left + gw + gap, y, label, { color: options.color, shadow: options.shadow, scale: k });
     return total;
+  }
+
+  /**
+   * A legend of buttons: each item's glyph on the device in use (`glyph`) then its words, in one
+   * row `gap` art pixels apart (default 8): ✕ SELECT ○ BACK on a DualSense (A B on Xbox's), ENTER
+   * SELECT ESC BACK on the keyboard, TAP SELECT SWIPE BACK on a touch screen. An item whose control
+   * the device has none of (no touch gesture for it) shows its words alone, a button the game can
+   * place a tap on. `align` places the row around x. Returns its width (`legendWidth`).
+   *
+   *   ctx.hud.legend(ctx.hud.width / 2, ctx.hud.height - 10, [['confirm', 'SELECT'], ['back', 'BACK']], { align: 'center' });
+   */
+  legend(x: number, y: number, items: readonly LegendItem[], options: Omit<HudOptions, 'anchor'> & { align?: 'left' | 'center' | 'right'; gap?: number } = {}): number {
+    const k = Math.max(1, Math.round(options.scale ?? 1));
+    const total = this.legendWidth(items, options);
+    let left = options.align === 'center' ? x - Math.floor(total / 2) : options.align === 'right' ? x - total : x;
+    const text = { color: options.color, shadow: options.shadow, scale: k };
+    for (const [action, label] of items) {
+      const w = this.legendItemWidth(action, label, k);
+      if (this.controls?.onDevice(action)) this.prompt(left, y, action, label, text);
+      else this.text(left, y, label, text);
+      left += w + (options.gap ?? 8) * k;
+    }
+    return total;
+  }
+
+  /** The width `legend` draws `items` at. */
+  legendWidth(items: readonly LegendItem[], options: { scale?: number; gap?: number } = {}): number {
+    const k = Math.max(1, Math.round(options.scale ?? 1));
+    if (!items.length) return 0;
+    return items.reduce((w, [action, label]) => w + this.legendItemWidth(action, label, k), 0) + (items.length - 1) * (options.gap ?? 8) * k;
+  }
+
+  private legendItemWidth(action: string, label: string, k: number): number {
+    const gw = this.controls?.onDevice(action) ? this.glyphWidth(action, k) : 0;
+    return gw + (gw ? 3 * k : 0) + this.measure(label, k).width;
   }
 
   /** Remove everything. */

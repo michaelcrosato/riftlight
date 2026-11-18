@@ -30,6 +30,7 @@ const rec = engine.recording();                                   // plain JSON:
 await engine.replay(rec, () => engine.loadGame(new Level1()));    // seed and time restored, every frame replayed
 engine.fingerprint();                                             // hash of game time, physics (bodies, colliders), ctx.random, Game.fingerprint
 rec.view;                                                         // the viewport it ran on: { width, height, dpr }
+rec.density;                                                      // a phone's touch density (touchDensity), if it framed with one
 ctx.input.send({ kind: 'load', data: store.load(slot) });         // data from the page: delivered (and recorded) next frame
 for (const c of ctx.input.commands) apply(c);                     // in update (they last one frame): live or replayed
 ```

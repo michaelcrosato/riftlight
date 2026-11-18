@@ -5,7 +5,9 @@ import { Vector3 } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { AudioManager } from '../audio/AudioManager';
 import { Engine, type Game, type GameContext } from '../Engine';
+import { MOTION_AIM, TOUCHPAD_KEYS } from '../input';
 import { PALETTE } from '../palette';
+import type { Recording } from '../replay';
 import { DualSense } from './dualsense';
 import { LocalHub } from './local';
 import { HubSession } from './session';
@@ -379,5 +381,184 @@ describe('the engine with the player’s 52in1 settings', () => {
     } finally {
       engine.dispose();
     }
+  });
+});
+
+describe('a DualSense’s touchpad and motion through 52in1, as recorded input', () => {
+  /** A hub whose DualSense's gyro and touches the test moves, and which notes every read of them. */
+  function movingHub(flags: Partial<Record<'motion' | 'touchpad' | 'aim', boolean>> = {}) {
+    const read: string[] = [];
+    const now = { gyro: { x: 0, y: 0, z: 0 }, touches: [] as { id: number; x: number; y: number }[] };
+    const dualsense = { connected: true, motion: true, touchpad: true, aim: true, ...flags };
+    for (const field of ['gyro', 'touches'] as const) Object.defineProperty(dualsense, field, { enumerable: true, get: () => (read.push(field), now[field]) });
+    const target = Object.assign(new EventTarget(), { dualsense });
+    return { source: target as HubSettingsSource, target, read, now, dualsense };
+  }
+  /** Notes what a game sees each frame: the touchpad's presses, the camera turn, the aim stick. */
+  class Feel implements Game {
+    readonly name = 'Feel';
+    seen: string[] = [];
+    turn: number[] = [];
+    aim: number[] = [];
+    setup(): void {}
+    update(ctx: GameContext): void {
+      for (const code of Object.values(TOUCHPAD_KEYS)) if (ctx.input.wasPressed(code)) this.seen.push(code);
+      this.turn.push(ctx.input.mouseDelta.x);
+      this.aim.push(ctx.input.lookAxis.x);
+    }
+    cameraTarget() {
+      return new Vector3();
+    }
+  }
+  const finger = (now: { touches: { id: number; x: number; y: number }[] }, ...touches: { id: number; x: number; y: number }[]) => (now.touches = touches);
+
+  it('reads nothing unless the game asks: its motion aim on, its touchpad on', async () => {
+    const hub = movingHub();
+    const engine = await Engine.headless(new Feel(), { hubSettings: hub.source });
+    engine.input.noteDevice('pad');
+    engine.step(10);
+    expect(hub.read).toEqual([]); // 52in1's own Motion aim stays on
+    expect(engine.input.motion.on).toBe(false);
+    engine.dispose();
+  });
+
+  it('a swipe on the touchpad presses a direction and a tap presses tap, once, recorded; two fingers or the click are not a tap', async () => {
+    const hub = movingHub();
+    const game = new Feel();
+    const engine = await Engine.headless(game, { hubSettings: hub.source });
+    engine.input.touchpad = true;
+    engine.input.noteDevice('keyboard');
+    for (const x of [0.2, 0.4, 0.6, 0.8]) {
+      finger(hub.now, { id: 1, x, y: 0.5 });
+      engine.step(1);
+    }
+    finger(hub.now);
+    engine.step(1);
+    expect([game.seen, engine.input.device]).toEqual([['PadTouchpadRight'], 'pad']); // a use of the pad
+    finger(hub.now, { id: 2, x: 0.5, y: 0.2 });
+    engine.step(1);
+    finger(hub.now, { id: 2, x: 0.5, y: 0.9 });
+    engine.step(1);
+    finger(hub.now);
+    engine.step(1);
+    finger(hub.now, { id: 3, x: 0.5, y: 0.5 });
+    engine.step(2);
+    finger(hub.now);
+    engine.step(1);
+    expect(game.seen).toEqual(['PadTouchpadRight', 'PadTouchpadDown', 'PadTouchpadTap']);
+    finger(hub.now, { id: 4, x: 0.5, y: 0.5 }, { id: 5, x: 0.2, y: 0.5 }); // two fingers
+    engine.step(2);
+    finger(hub.now);
+    engine.step(1);
+    const click = Array.from({ length: 18 }, (_, i) => ({ pressed: i === 17 }));
+    engine.input.setGamepads([{ connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: click }]);
+    finger(hub.now, { id: 6, x: 0.5, y: 0.5 }); // the click's own touch
+    engine.step(2);
+    engine.input.setGamepads([]);
+    finger(hub.now);
+    engine.step(1);
+    expect(game.seen).toEqual(['PadTouchpadRight', 'PadTouchpadDown', 'PadTouchpadTap']);
+    expect(hub.read.every((f) => f === 'touches')).toBe(true); // the touchpad alone: 52in1's Motion aim stays on
+    // the presses are in the recording, and a replay reads nothing of the hub
+    const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+    expect(rec.frames.flatMap((f) => f.pressed ?? []).filter((c) => c.startsWith('PadTouchpad') && c !== 'PadTouchpad')).toEqual(['PadTouchpadRight', 'PadTouchpadDown', 'PadTouchpadTap']);
+    const reads = hub.read.length;
+    finger(hub.now, { id: 7, x: 0.1, y: 0.5 }); // live, during the replay: never read
+    const again = new Feel();
+    await engine.replay(rec, () => engine.loadGame(again));
+    expect([again.seen, hub.read.length]).toEqual([game.seen, reads]);
+    engine.dispose();
+  });
+
+  it('motion aim adds the controller’s turns to the camera and the aim stick, by its sensitivity, on the pad in use; recorded', async () => {
+    const hub = movingHub({ aim: true });
+    const game = new Feel();
+    const engine = await Engine.headless(game, { hubSettings: hub.source, settings: { motion: true } });
+    expect([engine.input.motion, hub.read]).toEqual([{ on: true, sensitivity: 1 }, []]); // on, as 52in1's own Motion aim is; read by the polls alone
+    engine.input.noteDevice('pad');
+    hub.now.gyro = { x: 0, y: -64, z: 0 }; // turning right, 64° a second
+    engine.step(1);
+    const dt = 1 / 60;
+    expect(game.turn.at(-1)).toBeCloseTo((64 - MOTION_AIM.still) * dt * MOTION_AIM.pixels, 6);
+    expect(game.aim.at(-1)!).toBeGreaterThan(MOTION_AIM.floor);
+    engine.settings.set({ motionSensitivity: 2 });
+    engine.step(1);
+    expect(game.turn.at(-1)).toBeCloseTo(2 * (64 - MOTION_AIM.still) * dt * MOTION_AIM.pixels, 6);
+    hub.now.gyro = { x: 0, y: -3, z: 0 }; // a hand holding still
+    engine.step(1);
+    expect([game.turn.at(-1), game.aim.at(-1)]).toEqual([0, 0]);
+    hub.now.gyro = { x: 0, y: -64, z: 0 };
+    engine.input.noteDevice('keyboard'); // the pad put down: its turns move nothing
+    engine.step(1);
+    expect(game.turn.at(-1)).toBe(0);
+    // read once on every poll while on, the pad in use or not: 52in1's own Motion aim leaves the
+    // stick alone only while the game reads the gyro
+    expect(hub.read).toEqual(['gyro', 'gyro', 'gyro', 'gyro']);
+    const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+    const turns = game.turn.slice();
+    // turned off: nothing is read or added (52in1's own Motion aim, if the player has it on, steers
+    // the right stick again half a second later: the engine sees it as the stick)
+    engine.settings.set({ motion: false });
+    expect(engine.input.motion.on).toBe(false);
+    const reads = hub.read.length;
+    engine.input.noteDevice('pad');
+    engine.step(3);
+    expect([hub.read.length, game.turn.slice(-3), game.aim.slice(-3)]).toEqual([reads, [0, 0, 0], [0, 0, 0]]);
+    const again = new Feel();
+    engine.settings.set({ motion: true });
+    await engine.replay(rec, () => engine.loadGame(again));
+    expect([again.turn, hub.read.length]).toEqual([turns, reads]); // what was recorded, nothing read
+    engine.dispose();
+  });
+
+  it('a game with motion aim reads the gyro on every poll while it is on, and never while it is off (not even at start)', async () => {
+    const hub = movingHub({ aim: false }); // the player keeps 52in1's Motion aim off: the game's is off too
+    const game = new Feel();
+    const engine = await Engine.headless(game, { hubSettings: hub.source, settings: { motion: true } });
+    expect([engine.input.motion.on, hub.read]).toEqual([false, []]); // off: nothing read
+    engine.input.noteDevice('pad');
+    hub.now.gyro = { x: 0, y: -64, z: 0 };
+    engine.step(5);
+    expect([hub.read, game.turn.every((t) => t === 0)]).toEqual([[], true]); // off: nothing read, nothing added
+    engine.settings.set({ motion: true });
+    engine.step(3);
+    expect([hub.read, game.turn.slice(-3).every((t) => t > 0)]).toEqual([['gyro', 'gyro', 'gyro'], true]); // on: every poll, its turns added
+    engine.input.noteDevice('keyboard'); // the pad put down: still read, so 52in1 keeps off the stick
+    engine.step(2);
+    expect(hub.read.length).toBe(5);
+    engine.settings.set({ motion: false }); // off again: never read, so 52in1's own Motion aim (if on) has the stick back half a second later
+    engine.input.noteDevice('pad');
+    engine.step(3);
+    expect([hub.read.length, game.turn.slice(-3)]).toEqual([5, [0, 0, 0]]);
+    engine.dispose();
+    // no DualSense's motion yet: nothing read; once 52in1 lets games have it, read by the polls alone
+    const later = movingHub({ motion: false });
+    const engine2 = await Engine.headless(new Feel(), { hubSettings: later.source, settings: { motion: true } });
+    expect(later.read).toEqual([]);
+    later.dualsense.motion = true;
+    later.target.dispatchEvent(new Event('change'));
+    expect([engine2.input.motion.on, later.read]).toEqual([true, []]);
+    engine2.step(2);
+    expect(later.read).toEqual(['gyro', 'gyro']);
+    engine2.dispose();
+    // a game without motion aim of its own never reads it: 52in1's Motion aim stays the player's
+    const none = movingHub();
+    const engine3 = await Engine.headless(new Feel(), { hubSettings: none.source });
+    engine3.input.noteDevice('pad');
+    engine3.step(3);
+    expect(none.read).toEqual([]);
+    engine3.dispose();
+  });
+
+  it('motion aim is off without a DualSense’s motion, and while 52in1’s own Motion aim is off until the player turns it on', async () => {
+    const hub = movingHub({ aim: false });
+    const engine = await Engine.headless(new Feel(), { hubSettings: hub.source, settings: { motion: true } });
+    expect(engine.input.motion.on).toBe(false);
+    engine.settings.set({ motion: true });
+    expect(engine.input.motion.on).toBe(true);
+    hub.dualsense.motion = false;
+    hub.target.dispatchEvent(new Event('change'));
+    expect(engine.input.motion.on).toBe(false);
+    engine.dispose();
   });
 });

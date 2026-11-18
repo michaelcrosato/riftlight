@@ -18,7 +18,7 @@ import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys, startingDebug
 import { type AspectMode, RESOLUTIONS, type Resolution, type Viewport, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
 import { DualSense } from './hub/dualsense';
-import { HubSettings, type HubSettingsSource, hubSettingsSource } from './hub/settings';
+import { HubSettings, type HubSettingsSource, hubPadInput, hubSettingsSource } from './hub/settings';
 import { Input, type InputDevice, type InputFrame, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
@@ -250,13 +250,32 @@ export interface EngineOptions {
    * it shows while the pointer moves), or false for none: open the panel from your own menu
    * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
    * a game with no pause menu of its own (default false: a game's Options is its own). `voice`: the
-   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `key`: where they
-   * are saved (localStorage `pixel-engine:settings:<key>`; default the first game's name), false:
-   * nowhere.
+   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
+   * aims by a DualSense's motion (`input.motion`), and the panel has Motion aim and its sensitivity
+   * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`;
+   * default the first game's name), false: nowhere.
    */
-  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean };
+  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean; motion?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
+  /**
+   * On a phone (the viewport's short side under 500 CSS px, either orientation) on a page with touch
+   * controls, at least this many CSS pixels per art pixel: fewer, bigger art pixels, so text and
+   * targets stay thumb-sized. It holds while the page has touch controls, also while they step
+   * aside for a pad or the keyboard (the art size never changes with the device in use). The world
+   * in view is the same (the camera's view height and field of view are kept); only the pixel
+   * density changes, again on every resize and rotation. Under `fill` (the default aspect).
+   * Default 0 (`DEFAULT_TOUCH_DENSITY`: the art size the viewport gives); pass 2 once the game's HUD
+   * fits about 180 rows (a landscape phone at 2 has 181 to 195).
+   */
+  touchDensity?: number;
+  /**
+   * The on-screen joystick: `fixed` (default) at the bottom left, or `floating`: its base appears
+   * under the thumb anywhere in the lower left of the screen (about 45% of the width, the lower 60%
+   * in portrait and 75% in landscape, the placed buttons excepted). That zone takes every touch in
+   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`).
+   */
+  touchStick?: 'fixed' | 'floating';
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
   touchButtons?: readonly TouchButton[];
   /**
@@ -297,6 +316,13 @@ interface BootSteps {
   /** Ready to run, before `__PIXEL_ENGINE__` is set: the page's panels and the loop, or manual time. */
   finish(engine: Engine): void;
 }
+
+/**
+ * `EngineOptions.touchDensity`'s default: none, the art size the viewport gives. A game opts in
+ * (2: two CSS pixels per art pixel on a phone, at least) once its HUD fits a landscape phone's
+ * 181 to 195 rows.
+ */
+export const DEFAULT_TOUCH_DENSITY = 0;
 
 /** Headless without `assets`: a load says what to pass. */
 const NO_READER: AssetReader = (path) => Promise.reject(new Error(`Engine.headless: no asset reader for ${path}; pass \`assets: nodeAssets()\` (src/engine/node.ts)`));
@@ -429,6 +455,17 @@ export class Engine {
     return this.hubSettings.micAllowed && this.settings.values.voice !== false;
   }
 
+  /**
+   * Motion aim is on (`EngineOptions.settings.motion`, the panel's Motion aim row; `input.motion`
+   * follows it): a DualSense's motion reaches games through 52in1
+   * (`hubSettings.values.dualsense.motion`) and the player has it on here (left out: on while 52in1's
+   * own Motion aim is).
+   */
+  get motionOn(): boolean {
+    const d = this.hubSettings.values.dualsense;
+    return d.motion && (this.settings.values.motion ?? d.aim);
+  }
+
   private settingsPanel: SettingsPanel | null = null;
   /** Whether the game was paused when the settings opened (they pause it, and give it back). */
   private pausedBeforeSettings = false;
@@ -523,6 +560,21 @@ export class Engine {
     // rumbles follow the player's vibration (a host's, such as the AI Hub's, scales on top of it)
     this.input.vibration = this.settings.values.vibration ?? 1;
     this.settings.onChange((v) => (this.input.vibration = v.vibration ?? 1));
+    // a DualSense's motion and touchpad through 52in1, read only while the game asks for them
+    if (this.hubSettings.present) this.input.dualsense = hubPadInput(this.hubSettings);
+    if (options.settings?.motion) {
+      // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).
+      // While it is on, Input reads the gyro on every poll: 52in1's own Motion aim leaves the stick
+      // alone and this game's sensitivity applies. While it is off nothing is read, and 52in1's own
+      // Motion aim (if the player has it on) steers the right stick again half a second later.
+      const motion = () => {
+        this.input.motion.on = this.motionOn;
+        this.input.motion.sensitivity = this.settings.values.motionSensitivity ?? 1;
+      };
+      motion();
+      this.settings.onChange(motion);
+      this.hubSettings.onChange(motion);
+    }
     const clock = () => this.time;
     const random = () => this._random;
     const rig = () => this.camera;
@@ -763,6 +815,7 @@ export class Engine {
             edges: options.edges,
             filters: options.filters,
             look: options.look,
+            touchDensity: (options.touch ?? TouchControls.wanted()) ? (options.touchDensity ?? DEFAULT_TOUCH_DENSITY) : 0,
           })
             .then((r) => (gpu = r))
             .finally(() => (done.renderer = true)),
@@ -819,6 +872,7 @@ export class Engine {
           edges: options.edges,
           filters: options.filters,
           look: options.look,
+          touchDensity: options.touch === true ? (options.touchDensity ?? DEFAULT_TOUCH_DENSITY) : 0, // as a page with touch controls
         }),
       made: (engine) => (engine.debugKeys = startingDebugKeys(options.debugKeys, false)),
       finish: (engine) => {
@@ -883,13 +937,13 @@ export class Engine {
         { label: '◐', code: k.nextLook[0] ?? '' },
         { label: '♪', code: k.mute[0] ?? '' },
       ];
-      this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code));
+      this.touch = new TouchControls(container, this.input, options.touchButtons, bar.filter((b) => b.code), { stick: options.touchStick });
       if (this.debug?.visible) this.debug.toggle(); // small screens: panel behind the ⓘ button
     }
     this.controls.touch = this.touch !== null;
     const o = options.settings ?? {};
     const corner = o.button;
-    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice }));
+    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice, motion: o.motion }));
     this.settingsKeys = o.padButton === true;
     this.settings.onOpen = () => {
       if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)
@@ -1110,6 +1164,7 @@ export class Engine {
     if (play) this.input.playAfter(play);
     else this.input.deliver(); // commands sent while paused or loading wait for a frame that runs
     if (this.clock.frozen) this.input.clearQueued(); // speed 0 is a pause: nothing queued fires later
+    this.touch?.follow(this.input.device); // a pad or the keyboard in use: the touch controls step aside (recorded: a replay agrees)
     this.record(dt);
     return gameDt;
   }
@@ -1256,7 +1311,7 @@ export class Engine {
   private _seed: number;
   private _random = new Rng(1);
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
-  private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; device: InputDevice; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
+  private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; density: number; device: InputDevice; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
@@ -1274,7 +1329,7 @@ export class Engine {
   private reseed(game: Game): void {
     this._random = new Rng(hashString(`${this._seed}:${game.name}`));
     this.particles.reseed(this._random.fork('particles'));
-    this.rec = { game: game.name, ...gameArgs(game), seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false };
+    this.rec = { game: game.name, ...gameArgs(game), seed: this._seed, time: this.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false };
   }
 
   /** Keep this frame's input in the level's recording (live play and `step()`, not replays). */
@@ -1297,7 +1352,7 @@ export class Engine {
   recording(): Recording | null {
     const r = this.rec;
     if (!r) return null;
-    return { format: 1, engine: ENGINE_VERSION, game: r.game, ...(r.args !== undefined ? { args: r.args } : {}), seed: r.seed, time: r.time, view: { ...r.view }, ...(r.device !== 'keyboard' ? { device: r.device } : {}), frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
+    return { format: 1, engine: ENGINE_VERSION, game: r.game, ...(r.args !== undefined ? { args: r.args } : {}), seed: r.seed, time: r.time, view: { ...r.view }, ...(r.density > 0 ? { density: r.density } : {}), ...(r.device !== 'keyboard' ? { device: r.device } : {}), frames: [...r.frames], ...(r.truncated ? { truncated: true } : {}), ...(r.from ? { from: r.from } : {}) };
   }
 
   /**
@@ -1317,8 +1372,10 @@ export class Engine {
     if (problem) throw new Error(`Engine.replay: ${problem}`);
     // pointer aim and the art size follow the viewport: headless takes the recording's, a page says when its own differs
     const v = rec.view;
-    if (v && this.renderer instanceof HeadlessView) this.renderer.setViewport(v);
-    else if (v && (['width', 'height', 'dpr'] as const).some((k) => v[k] !== this.renderer.viewport[k])) {
+    if (this.renderer instanceof HeadlessView) {
+      this.renderer.setTouchDensity(rec.density ?? 0); // a phone's touch density, as it was recorded
+      if (v) this.renderer.setViewport(v);
+    } else if (v && (['width', 'height', 'dpr'] as const).some((k) => v[k] !== this.renderer.viewport[k])) {
       const at = ({ width, height, dpr }: Viewport) => `${width}×${height} at DPR ${dpr}`;
       console.warn(`[engine] replay: recorded on a ${at(v)} viewport, playing on ${at(this.renderer.viewport)}; pointer aim and the HUD may not match`);
     }
@@ -1483,7 +1540,7 @@ export class Engine {
     } finally {
       this.manual = manual;
     }
-    this.rec = { game: game.name, ...gameArgs(game), seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
+    this.rec = { game: game.name, ...gameArgs(game), seed: snap.seed, time: snap.time, view: { ...this.renderer.viewport }, density: this.renderer.touchDensity, device: this.input.device, frames: [], last: { ...FULL_FRAME }, truncated: false, from: saved };
   }
 
   /** A task boundary: promise callbacks queued so far (and chains of them) have run when it resolves. */
@@ -1549,6 +1606,7 @@ export class Engine {
     else {
       this.input.beginFrame(this.time, dt);
       this.input.clearQueued(); // presses made during a pause never fire later
+      this.touch?.follow(this.input.device);
     }
 
     const settingsOpen = this.ready && this.settings.isOpen;

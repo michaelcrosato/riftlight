@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, SWIPE_KEYS, swipeDirection } from './input';
+import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS } from './input';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -462,5 +462,92 @@ describe('Rumble', () => {
     expect(() => input.endFrame()).not.toThrow();
     await new Promise((r) => setTimeout(r, 0)); // an unhandled rejection would fail the run here
     expect(rejected).toBe(1);
+  });
+});
+
+describe('the device in use and typing', () => {
+  it("a phone's soft keyboard, or a key typed into a text field, is not a keyboard picked up (the touch controls stay)", () => {
+    const t = target();
+    const input = new Input(t);
+    input.noteDevice('touch');
+    const typed = (o: { key?: string; keyCode?: number; isComposing?: boolean; target?: object }) => {
+      const e = Object.assign(new Event('keydown'), { code: 'KeyA', key: o.key ?? 'a', keyCode: o.keyCode ?? 65, isComposing: o.isComposing ?? false, repeat: false });
+      if (o.target) Object.defineProperty(e, 'target', { value: o.target });
+      t.dispatchEvent(e);
+      t.dispatchEvent(Object.assign(new Event('keyup'), { code: 'KeyA' }));
+      return input.device;
+    };
+    expect(typed({ key: 'Unidentified', keyCode: 229 })).toBe('touch'); // Android's soft keyboard composing
+    expect(typed({ keyCode: 229 })).toBe('touch');
+    expect(typed({ isComposing: true })).toBe('touch');
+    expect(typed({ target: { tagName: 'INPUT' } })).toBe('touch'); // the tree's search box
+    expect(typed({ target: { tagName: 'TEXTAREA' } })).toBe('touch');
+    expect(typed({ target: { tagName: 'DIV', isContentEditable: true } })).toBe('touch');
+    expect(typed({ target: { tagName: 'CANVAS' } })).toBe('keyboard'); // a key on the game: the keyboard
+  });
+});
+
+describe("the DualSense's touchpad (input.touchpad)", () => {
+  type Finger = { id: number; x: number; y: number };
+  /** An Input reading a touchpad the test moves; `frame` polls it once and returns this frame's gestures. */
+  function touchpad() {
+    const input = new Input(null);
+    let touches: Finger[] = [];
+    input.dualsense = { motion: false, touchpad: true, gyro: () => null, touches: () => touches } satisfies DualSenseInput;
+    input.touchpad = true;
+    input.setGamepads([]);
+    let t = 0;
+    const frame = (...fingers: Finger[]) => {
+      touches = fingers;
+      t += 1 / 60;
+      input.beginFrame(t, 1 / 60);
+      const out = Object.entries(TOUCHPAD_KEYS)
+        .filter(([, code]) => input.wasPressed(code))
+        .map(([g]) => g);
+      input.endFrame();
+      return out;
+    };
+    return { input, frame };
+  }
+  const a = (x: number, y = 0.5) => ({ id: 1, x, y });
+  const b = (x: number, y = 0.5) => ({ id: 2, x, y });
+
+  it('a one-finger tap and swipe are gestures', () => {
+    const { frame } = touchpad();
+    frame(a(0.5));
+    frame(a(0.5));
+    expect(frame()).toEqual(['tap']);
+    for (const x of [0.2, 0.4, 0.6, 0.8]) frame(a(x));
+    expect(frame()).toEqual(['right']);
+  });
+
+  it('two fingers are never a gesture, however they lift: together, or one at a time in either order', () => {
+    const { frame } = touchpad();
+    const seen: string[] = [];
+    // a two-finger tap, the first finger lifted first
+    seen.push(...frame(a(0.3), b(0.7)), ...frame(a(0.3), b(0.7)), ...frame(b(0.7)), ...frame());
+    // the second lifted first
+    seen.push(...frame(a(0.3), b(0.7)), ...frame(a(0.3)), ...frame());
+    // a two-finger swipe, one finger lifting before the other
+    for (const x of [0.2, 0.4, 0.6]) seen.push(...frame(a(x), b(x + 0.1)));
+    seen.push(...frame(b(0.8)), ...frame());
+    // a second finger landing during a one-finger swipe
+    seen.push(...frame(a(0.2)), ...frame(a(0.4), b(0.5)), ...frame(a(0.6)), ...frame(a(0.8)), ...frame());
+    expect(seen).toEqual([]);
+    expect([...frame(a(0.5)), ...frame()]).toEqual(['tap']); // bare again: the next touch is a tap
+  });
+
+  it('another finger taking the lead while fingers stay is no gesture either', () => {
+    const { frame } = touchpad();
+    expect([...frame(a(0.5)), ...frame(b(0.5)), ...frame()]).toEqual([]); // one lifted as another landed, in one poll
+  });
+
+  it("the pad's click held is no tap", () => {
+    const { input, frame } = touchpad();
+    const click = Array.from({ length: 18 }, (_, i) => ({ pressed: i === 17 }));
+    input.setGamepads([{ connected: true, mapping: 'standard', axes: [0, 0, 0, 0], buttons: click }]);
+    frame(a(0.5));
+    input.setGamepads([]);
+    expect([...frame(a(0.5)), ...frame()]).toEqual([]);
   });
 });

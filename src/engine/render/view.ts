@@ -29,6 +29,8 @@ export interface View {
   /** The configured resolution preset. */
   readonly baseResolution: Resolution;
   readonly aspect: AspectMode;
+  /** The least CSS pixels per art pixel on a phone, on a page with touch controls (`EngineOptions.touchDensity`), 0 for none. */
+  readonly touchDensity: number;
   readonly mode: RenderMode;
   readonly filters: readonly string[];
   /** The current look (a copy). */
@@ -47,6 +49,7 @@ export interface View {
   setEdges(edges: Partial<EdgeSettings>): void;
   setResolution(resolution: Resolution): void;
   setAspect(aspect: AspectMode): void;
+  setTouchDensity(cssPerArt: number): void;
   setCamera(camera: Camera): void;
   layout(): void;
   /** Run `f` before every frame's render (render-to-texture views). Returns an unsubscribe. */
