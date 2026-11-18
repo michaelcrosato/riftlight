@@ -85,9 +85,11 @@ JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on tow
 level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
-damage numbers, loot filter, shake, prompt glyphs) live in `riftlight:settings`; volumes in the
-engine's audio store, and the engine's own settings (pixel art, pixel size, frame rate, debug info:
-Settings → Engine) in `pixel-engine:settings:riftlight`. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
+damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
+store, and the engine's own settings (the controller's button prompts and vibration on the Settings
+page; pixel art, pixel size, frame rate, debug info: Settings → Engine) in
+`pixel-engine:settings:riftlight`. Prompts follow the input used last (`input.device`) by
+themselves: there is no setting for which device they show. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
 read from storage once at setup (and recorded: docs/game/actors.md *The hero's controls*) and kept by the game's own
 saves, deletes and imports, so a replay shows the slots the recorded run saw.
 

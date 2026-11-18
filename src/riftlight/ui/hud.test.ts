@@ -119,7 +119,8 @@ describe('the top-left label in a longer language', () => {
       hurt: 0,
       levelLabel: label,
       timer: '1:05',
-      pad: false,
+      device: 'keyboard',
+      padStyle: 'playstation',
       progress: null,
     };
     drawHud(new UiCanvas(hud as never), model);

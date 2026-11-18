@@ -88,6 +88,7 @@ export class TreePanel implements Panel {
       aspect: ctx.engine.renderer.aspect,
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
+      padGlyphs: () => ctx.engine.controls.style,
       gold: () => host.gold(),
       onClose: () => {
         if (!this.closing) host.close();

@@ -19,7 +19,9 @@
  * instead of happening, and the game hands it back to `perform` from its recorded input, so a
  * replay of the game does the same to the tree.
  */
+import { type Glyph, padGlyph } from '../../../engine/controls';
 import { computeFraming, RESOLUTIONS, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
+import type { PadGlyphs } from '../../../engine/settings';
 import { drawDeviceText, surfaceScale } from '../../../engine/hud/deviceText';
 import { wrapText } from '../../../engine/hud/wrap';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
@@ -29,7 +31,7 @@ import { kindName, nodeFlavour, nodeLines, nodeName, regionName } from '../../tr
 import { defaultTree, PassiveTree, searchTree, summarizeMods, TreeState } from '../../tree/tree';
 import type { TreeNode } from '../../tree/types';
 import { clampCam, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS, type TreeCam } from './camera';
-import { css, pack, PixelBuffer, textWidth } from './pixels';
+import { css, glyphWidth, pack, PixelBuffer, textWidth } from './pixels';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeOutcome, type TreeRules } from './actions';
 
 export type { TreeAction, TreeAudio } from './actions';
@@ -49,6 +51,8 @@ export interface TreeViewOptions extends TreeRules {
   closeKeys?: readonly string[];
   /** Gamepad B closes the view (default true when closeKeys isn't empty). */
   padCloses?: boolean;
+  /** The pad's buttons the hints show (the engine's `settings.padGlyphs`; default PlayStation's). */
+  padGlyphs?: () => PadGlyphs;
   onClose?: () => void;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
@@ -60,6 +64,27 @@ export interface TreeViewOptions extends TreeRules {
 }
 
 
+
+/** A hint in the tree's bottom bar: its words, and the pad buttons drawn before them (none for the mouse's). */
+export interface TreeHint {
+  readonly id: string;
+  readonly text: string;
+  readonly glyphs: readonly Glyph[];
+}
+
+/**
+ * The bottom bar's hints, in their usual order: with the pad cursor each is its button's glyph (in
+ * the player's style) and a verb (✕ take, ○ close, □ refund, △ stats, L2 R2 zoom); with the mouse,
+ * words ("Click take"); on a narrow screen only the most needed.
+ */
+export function treeHints(o: { narrow: boolean; pad: boolean; refunds: boolean; style: PadGlyphs }): TreeHint[] {
+  const pad = (id: string, codes: string[]): TreeHint => ({ id, text: t(`tree.verb.${id}`), glyphs: codes.map((c) => padGlyph(c, o.style, lang())) });
+  const key = (id: string): TreeHint => ({ id, text: t(`tree.hint.${id}`), glyphs: [] });
+  if (o.narrow) return o.pad ? [pad('take', ['PadA']), pad('close', ['PadB'])] : [key('tap')];
+  return o.pad
+    ? [pad('move', ['PadLStick']), pad('take', ['PadA']), ...(o.refunds ? [pad('refund', ['PadX'])] : []), pad('stats', ['PadY']), pad('zoom', ['PadLT', 'PadRT']), pad('close', ['PadB'])]
+    : [key('pan'), key('zoom'), key('take'), ...(o.refunds ? [key('refund')] : []), key('stats'), key('find')];
+}
 
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
 const TOP = 12;
@@ -908,29 +933,31 @@ export class TreeView {
     b.text(label, box.x + 3, box.y + 2, this.query ? C.white : C.slate);
     if (focused && Math.floor(this.time * 3) % 2 === 0) b.rect(box.x + 3 + (label ? textWidth(label) + 1 : 0), box.y + 2, 1, 7, C.white);
     if (this.query) b.text(lang().formatNumber(this.matchList.length), box.x + box.w + 4, 3, this.matchList.length ? C.lime : C.red);
-    // Bottom hints: as many as fit, the most useful first (shown in their usual order).
+    // Bottom hints: as many as fit, the most useful first (shown in their usual order). With the
+    // pad, each is its button's glyph (PlayStation's or Xbox's, as the player chose) and a verb.
     b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
-    const hints = narrow
-      ? this.padCursor
-        ? ['tree.pad.take', 'tree.pad.close']
-        : ['tree.hint.tap']
-      : this.padCursor
-        ? ['tree.pad.move', 'tree.pad.take', ...(refunds ? ['tree.pad.refund'] : []), 'tree.pad.stats', 'tree.pad.zoom', 'tree.pad.close']
-        : ['tree.hint.pan', 'tree.hint.zoom', 'tree.hint.take', ...(refunds ? ['tree.hint.refund'] : []), 'tree.hint.stats', 'tree.hint.find'];
-    const priority = ['tree.hint.take', 'tree.pad.take', 'tree.pad.close', 'tree.hint.tap', 'tree.hint.refund', 'tree.pad.refund', 'tree.hint.stats', 'tree.pad.stats', 'tree.hint.find', 'tree.pad.move', 'tree.hint.pan', 'tree.hint.zoom', 'tree.pad.zoom'];
+    const hints = treeHints({ narrow, pad: this.padCursor, refunds, style: this.options.padGlyphs?.() ?? 'playstation' });
+    const priority = ['take', 'close', 'tap', 'refund', 'stats', 'find', 'move', 'pan', 'zoom'];
+    const glyphs = (h: TreeHint) => h.glyphs.reduce((w, g) => w + glyphWidth(g) + 1, h.glyphs.length ? 2 : 0);
     const gap = 12;
-    const keep = new Set<string>();
+    const keep = new Set<TreeHint>();
     let used = -gap;
-    for (const id of [...hints].sort((a, c) => priority.indexOf(a) - priority.indexOf(c))) {
-      const w = textWidth(t(id)) + gap;
+    for (const h of [...hints].sort((a, c) => priority.indexOf(a.id) - priority.indexOf(c.id))) {
+      const w = glyphs(h) + textWidth(h.text) + gap;
       if (used + w <= W - 4) {
-        keep.add(id);
+        keep.add(h);
         used += w;
       }
     }
     let hx = Math.max(2, Math.round((W - used) / 2));
-    for (const id of hints) if (keep.has(id)) hx += b.text(t(id), hx, H - BOTTOM + 2, C.slate) + gap;
+    const y = H - BOTTOM + 2;
+    for (const h of hints) {
+      if (!keep.has(h)) continue;
+      for (const g of h.glyphs) hx += b.glyph(g, hx, y) + 1;
+      if (h.glyphs.length) hx += 2;
+      hx += b.text(h.text, hx, y, C.slate) + gap;
+    }
   }
 
   private drawStats(): void {

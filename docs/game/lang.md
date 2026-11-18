@@ -54,8 +54,11 @@ never imports the line list), and areas stay function declarations.
   `'{prefix} {base} {suffix}'`, a monster's `'{theme} {body}'`, a rift's `'Rift {depth}: {mechanics}'`,
   so a translation can reorder them.
 - **Controls** are tags, `{key:dodge}`, never a key written into the sentence. `CONTROLS`
-  (`game/controls.ts`) maps each action to its key, pad button and touch button; the shell sets
-  `lang().controlLabel` to name them on the device in use (`controlDevice()`).
+  (`game/controls.ts`) maps each action to its key, pad button and touch button; it is
+  `Riftlight.controls` (and the standalone Rift Runner's), so the engine names them on the device
+  in use (`input.device`) and in the player's button style (PlayStation's by default, Xbox's when
+  chosen). The names are Riftlight's lines under the engine's ids (`key.space`, `pad.ps.cross`,
+  `pad.lb`, `pad.xbox.menu`, `pad.stick.left`, `key.touch.tap`: docs/engine/game-api.md *Prompts*).
 - **Notes** say who speaks, to whom, where it shows; **max** the width of a tight spot (a button).
 - **Not lines**: debug text, numbers on their own, what players type, ids, a generated boss's
   invented name. Developer-only screens (the dev menu, the Loot Lab) use ids starting `dev.`: never

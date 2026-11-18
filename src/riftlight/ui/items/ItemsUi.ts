@@ -27,6 +27,8 @@
  * compact bag (no paper doll) and wrap tooltips to the screen.
  */
 import type { GameContext, LineValues } from '../../../engine';
+import { padName } from '../../../engine/controls';
+import type { PadGlyphs } from '../../../engine/settings';
 import { surfaceScale } from '../../../engine/hud/deviceText';
 import { noteText } from '../../../engine/animation/font';
 import { PALETTE } from '../../../engine/palette';
@@ -133,6 +135,16 @@ export interface ItemsMessage {
   readonly values?: LineValues;
   /** An older snapshot's finished words (before messages were ids): shown as they are. */
   readonly text?: string;
+}
+
+/**
+ * A window's hint for the device that drives it: with the pad `<id>_pad`, its `{button}` the pad
+ * button that does it in the player's style (`PadY` → Triangle or Y); on a phone `<id>_touch`; else
+ * the mouse's `<id>` ("Ctrl-click: buy / sell").
+ */
+export function windowHint(id: string, padButton: string, mode: 'pad' | 'touch' | 'mouse', style: PadGlyphs): string {
+  if (mode === 'pad') return t(`${id}_pad`, { button: padName(padButton, style, lang()) });
+  return t(mode === 'touch' ? `${id}_touch` : id);
 }
 
 /** A reason a loot action can't be done, as a message. */
@@ -329,9 +341,14 @@ export class ItemsUi {
     return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
   }
 
+  /** A window's hint for the device that drives it (`windowHint`): the pad cursor, a phone's narrow screen, else the mouse. */
+  private hint(id: string, padButton: string): string {
+    return windowHint(id, padButton, this.cursorMode === 'pad' ? 'pad' : this.narrow ? 'touch' : 'mouse', this.ctx.engine.controls.style);
+  }
+
   /** The hint under the vendor's goods: a row of the mini font, or rows of the normal font (the window grows). */
   private vendorHint(): { mini: boolean; rows: string[] } {
-    const text = t(this.narrow ? 'item.vendor.hint_touch' : 'item.vendor.hint');
+    const text = this.hint('item.vendor.hint', 'PadY'); // Ctrl-click: buy / sell
     const w = this.panelW() - 10;
     const key = `${text}|${w}`;
     if (this.hintCache.key !== key) this.hintCache = { key, hint: miniCovers(text) && miniWidth(text) <= w ? { mini: true, rows: [text] } : { mini: false, rows: wrap(text, w) } };
@@ -1191,7 +1208,7 @@ export class ItemsUi {
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });
@@ -1383,7 +1400,7 @@ export class ItemsUi {
    * them. `width` (art pixels) decides whether the gem's XP fits on the title line.
    */
   skillLines(n: SkillNumbers | null, width = 118, gem: Item | null = null): { text: string; color: number }[] {
-    if (!n) return [{ text: t('item.skill.slot_empty', { slot: this.skillSlot + 1 }), color: UI.dim }, { text: t(this.narrow ? 'item.skill.hint_touch' : 'item.skill.hint'), color: PALETTE.slate }];
+    if (!n) return [{ text: t('item.skill.slot_empty', { slot: this.skillSlot + 1 }), color: UI.dim }, { text: this.hint('item.skill.hint', 'PadX'), color: PALETTE.slate }];
     // the gem's XP toward its next level when it fits on the title line
     const prog = gem ? gemProgress(gem, this.store.heroLevel) : null;
     const name = { name: n.name, level: n.level };
@@ -1447,7 +1464,7 @@ export class ItemsUi {
       if (miniCovers(summary) && miniWidth(summary) <= tw) miniText(p, tx, f.y + 30, summary, PALETTE.mist);
       else wrap(summary, tw).slice(0, 2).forEach((l, i) => p.text(tx, f.y + 29 + i * 9, l, PALETTE.mist));
     } else {
-      wrap(t(this.narrow ? 'item.bench.hint_touch' : 'item.bench.hint'), tw)
+      wrap(this.hint('item.bench.hint', 'PadA'), tw)
         .slice(0, 5)
         .forEach((l, i) => p.text(tx, f.y + 1 + i * 9, l, UI.dim));
     }
@@ -1474,7 +1491,7 @@ export class ItemsUi {
       const blocked = target ? craftBlocker(c.action, target) : null;
       if (blocked) lines.push(...wrap(reasonText(blocked), lw).map((text) => ({ text, color: PALETTE.red })));
       lines.slice(0, Math.floor((r.y + r.h - 4 - iy) / 9)).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l.text, l.color));
-    } else wrap(t(this.narrow ? 'item.bench.orb_hint_touch' : 'item.bench.orb_hint'), lw).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l, UI.dim));
+    } else wrap(this.hint('item.bench.orb_hint', 'PadA'), lw).forEach((l, i) => p.text(r.x + 5, iy + i * 9, l, UI.dim));
   }
 
   private drawCursor(p: Painter): void {
@@ -1510,8 +1527,8 @@ export class ItemsUi {
     const forSale = at.kind === 'vendor';
     const inInventory = at.kind === 'grid' && at.where === 'inventory';
     const price = forSale ? { kind: 'buy' as const, gold: buyPrice(item), affordable: buyPrice(item) <= this.store.state.gold } : this.left === 'vendor' && inInventory ? { kind: 'sell' as const, gold: sellPrice(item) } : undefined;
-    // the control that does it: on a touch screen hold, on a pad X, else the right mouse button
-    const button = this.lastTouch && this.cursorMode === 'pointer' ? t('item.button.hold') : this.cursorMode === 'pad' ? 'X' : t('item.button.right_click');
+    // the control that does it: on a touch screen hold, on a pad Square (X), else the right mouse button
+    const button = this.lastTouch && this.cursorMode === 'pointer' ? t('item.button.hold') : this.cursorMode === 'pad' ? padName('PadX', this.ctx.engine.controls.style, lang()) : t('item.button.right_click');
     const hint =
       inInventory && isEquipment(item)
         ? this.left === 'bench'

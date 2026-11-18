@@ -6,13 +6,14 @@
  *
  *   t('menu.start');                          // "Start"
  *   t('hud.lives', { count: 3 });             // plural forms, picked by {count}
- *   t('help.dodge', {});                      // "{key:dodge} to dodge": the game's controlLabel fills it
+ *   t('help.dodge', {});                      // "{key:dodge} to dodge": the running game's controls fill it
  *
  * The language is the first of: `?lang=` (the AI Hub adds it), the player's choice from the
  * game's Language menu (`chooseLanguage`), the browser's languages, the game's own. Three test
  * languages, chosen only by `?lang=`, are made from the game's own lines: `en-XA` (accented,
  * bracketed, 40% longer), `zh-XC` (Chinese characters, no spaces), `ar-XB` (right to left).
  */
+import { activeControlLabel } from '../controls';
 import { segmenter, segmentsOf } from './segment';
 
 export type PluralForm = 'zero' | 'one' | 'two' | 'few' | 'many' | 'other';
@@ -200,8 +201,13 @@ export class Lang {
   readonly dir: 'ltr' | 'rtl';
   /** A test language (`en-XA`, `zh-XC`, `ar-XB`). */
   readonly fake: boolean;
-  /** The key, gamepad symbol or touch button that does an action on the device in use (`{key:jump}`). */
-  controlLabel: (action: string) => string = (action) => action;
+  /**
+   * The key, pad button or touch button that does an action on the device in use (`{key:jump}`):
+   * by default the running game's (`Game.controls`, `engine.controls`), its names in this language
+   * where it has their lines (`key.space`, `pad.ps.cross`: `CONTROL_LINES`); the action's id when
+   * there is no table. A game may set its own.
+   */
+  controlLabel: (action: string) => string = (action) => activeControlLabel(action, this);
   private readonly table: Readonly<Record<string, Line>>;
   private readonly plurals = new Map<string, Intl.PluralRules>();
   private readonly numbers = new Map<string, Intl.NumberFormat>();

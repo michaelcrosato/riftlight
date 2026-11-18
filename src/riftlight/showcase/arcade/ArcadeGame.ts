@@ -10,10 +10,13 @@
  *   - systems: Rapier colliders and triggers, the engine's chiptune player, SFX, particles
  *     and the pixel HUD.
  *
- * Enter restarts after the finish. Agents: `window.__ARCADE__` (`state()`, `autoplay()`).
+ * Its controls are Riftlight's (`controls`: the engine names them for the device in use, so the
+ * hints read "WASD run · Space jump" on a keyboard, "Left stick run · Cross jump" on a pad). Enter,
+ * Cross or a tap restarts after the finish. Agents: `window.__ARCADE__` (`state()`, `autoplay()`).
  */
 import { Color, type Vector3 } from 'three/webgpu';
 import type { EngineOptions, Game, GameContext } from '../../../engine';
+import { CONTROLS } from '../../game/controls';
 import { moveInput } from '../visitor';
 import { arcadeAutopilot } from './autoplay';
 import { ArcadeStage, readArcadeInput } from './ArcadeStage';
@@ -28,6 +31,8 @@ export const ARCADE_OPTIONS: Partial<EngineOptions> = {
 export class ArcadeGame implements Game {
   readonly name = 'Rift Runner';
   readonly assets = ['assets/hero.glb', 'assets/coin.glb'];
+  /** Riftlight's actions and their keys, pad buttons and touch buttons: what `{key:jump}` in the hints names. */
+  readonly controls = CONTROLS;
   stage!: ArcadeStage;
   private readonly input = moveInput();
   private best = 0;
@@ -35,6 +40,7 @@ export class ArcadeGame implements Game {
   async setup(ctx: GameContext): Promise<void> {
     ctx.scene.background = new Color(ctx.palette.sky);
     this.stage = new ArcadeStage(ctx, {
+      canLeave: false, // nothing to leave to: the hints don't promise it
       onFinish: (run) => {
         const newBest = this.best <= 0 || run.time < this.best;
         if (newBest) this.best = run.time;
@@ -71,7 +77,7 @@ export class ArcadeGame implements Game {
 
   update(ctx: GameContext, dt: number): void {
     this.stage.update(dt);
-    if (this.stage.phase === 'done' && this.stage.phaseTime > 0.8 && ctx.input.wasPressed('Enter', 'NumpadEnter')) this.stage.start();
+    if (this.stage.phase === 'done' && this.stage.phaseTime > 0.8 && ctx.input.wasPressed('Enter', 'NumpadEnter', 'PadA', 'Touch')) this.stage.start(); // what "again" names
     ctx.hud.clear();
     this.stage.drawHud(ctx.hud);
   }

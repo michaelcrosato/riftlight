@@ -33,7 +33,8 @@ lang.t('hud.lives', { count: 3 });  // "3 lives left"
 - **`t(id, values)`** fills blanks (numbers formatted for the language with `Intl.NumberFormat`,
   and wrapped in Unicode isolates in right-to-left languages), control tags `{key:action}` from
   `lang.controlLabel(action)` (the key, pad button or touch button that does it on the device in
-  use), and picks the plural form. **A missing, empty or broken translation shows the original
+  use: by default the running game's `Game.controls`, named in this language where the game has the
+  name's line, docs/engine/game-api.md *Prompts*), and picks the plural form. **A missing, empty or broken translation shows the original
   line** (AI Hub's *Critical* rule); an unknown id shows the id.
 - `lang.formatNumber(n)`, `lang.upper(text)` (Turkish İ), `lang.dir` (`rtl` for Arabic, Urdu…).
 

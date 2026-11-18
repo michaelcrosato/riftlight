@@ -183,7 +183,7 @@ export async function runRiftlightPhone(h, orientation) {
       });
       await page.mouse.move(before.from.x, before.from.y);
       await page.mouse.down();
-      await page.mouse.move(before.from.x, before.from.y - 60 * before.k, { steps: 6 });
+      await page.mouse.move(before.from.x, before.from.y - 100 * before.k, { steps: 8 }); // far enough for every row's worth of overflow
       await page.mouse.up();
       const after = await R(() => {
         window.__PIXEL_ENGINE__.step(2);

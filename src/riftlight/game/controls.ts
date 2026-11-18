@@ -3,20 +3,21 @@
  *
  *   move      WASD / arrows / left stick / touch joystick
  *   aim       mouse cursor on the ground; with a pad, the nearest enemy ahead
- *   attack    LMB / J / pad A / touch A          dodge   Space / pad B / touch B
- *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB / touch 1-4 (game/touch.ts)
- *   interact  F / pad RT / touch TALK…            pause   Esc / pad Start / touch ≡
- *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Back = inventory)
+ *   attack    LMB / J / pad Cross (A) / touch A          dodge   Space / pad Circle (B) / touch B
+ *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
+ *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
+ *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory)
  *   looks     L look studio · H hides its panel (the arrows still tweak) · O photo mode
- *   items     click / Enter / pad A · X / pad X = right-click · V / pad Y = Ctrl-click
+ *   items     click / Enter / pad Cross · X / pad Square = right-click · V / pad Triangle = Ctrl-click
  *
  * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
- * "A = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat from the engine's
- * `MenuInput` (with `MENU_BINDINGS`).
+ * "Cross = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat from the engine's
+ * `MenuInput` (with `MENU_BINDINGS`). Prompts name and draw `CONTROLS` through the engine
+ * (`engine.controls`: the device used last, PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import type { Engine, MenuKeys } from '../../engine';
-import { t } from '../lang';
+import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
+import { lang } from '../lang';
 import type { UiEvent } from '../ui/kit';
 
 export const KEYS = {
@@ -73,10 +74,11 @@ export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as 
 /**
  * The actions a line can name as a control tag, `{key:dodge}` (docs/game/lang.md), and the key
  * (an `event.code`, a mouse button or the wheel, or a name for several: `WASD`, `QE`), pad button
- * (the engine's `GAMEPAD_BUTTONS` codes, `PadStick`) and touch button (its label, or a name for a gesture:
- * `TouchStick`, `TouchDrag`) that do each. Actions without a pad or touch button of their own
- * are in the pause menu (Start / ≡ opens it); the showcase's own (the arcade, the Hall of Beasts,
- * photo mode) show the key where a device has nothing for them.
+ * (the engine's `GAMEPAD_BUTTONS` codes, `PadLStick`, `PadRStick`) and touch button (its label, or a
+ * name for a gesture: `TouchStick`, `TouchDrag`) that do each: `Riftlight.controls`, so the engine
+ * names them in every line (a name is a line: `key.<code>`, `pad.ps.cross`). Actions without a pad
+ * or touch button of their own are in the pause menu (Options / ≡ opens it); the showcase's own
+ * (the arcade, the Hall of Beasts, photo mode) show the key where a device has nothing for them.
  */
 export const CONTROLS = {
   attack: { key: 'MouseLeft', pad: 'PadA', touch: 'A' },
@@ -97,81 +99,37 @@ export const CONTROLS = {
   hide: { key: 'KeyH', pad: 'PadStart', touch: '≡' },
   zoom: { key: 'Wheel', pad: 'PadStart', touch: '≡' },
   // the showcase (showcase/: ArcadeStage, BestiaryMode, PhotoMode)
-  move: { key: 'WASD', pad: 'PadStick', touch: 'TouchStick' },
+  move: { key: 'WASD', pad: 'PadLStick', touch: 'TouchStick' },
   jump: { key: 'Space', pad: 'PadA', touch: 'B' },
   pound: { key: 'KeyC', pad: 'PadB', touch: 'TouchStickDown' },
   confirm: { key: 'Enter', pad: 'PadA', touch: 'TouchTap' },
-  turn: { key: 'MouseOrQE', pad: 'PadStick', touch: 'TouchDrag' },
-  drag: { key: 'MouseDrag', pad: 'PadStick', touch: 'TouchDrag' },
-  orbit: { key: 'DragOrQE', pad: 'PadStick', touch: 'TouchDrag' },
+  turn: { key: 'MouseOrQE', pad: 'PadRStick', touch: 'TouchDrag' },
+  drag: { key: 'MouseDrag', pad: 'PadRStick', touch: 'TouchDrag' },
+  orbit: { key: 'DragOrQE', pad: 'PadRStick', touch: 'TouchDrag' },
   rise: { key: 'QE' },
   switch_view: { key: 'Tab', pad: 'PadY' },
   next_wing: { key: 'KeyN' },
   photo_save: { key: 'KeyP', pad: 'PadX' },
-} as const satisfies Record<string, { key: string; pad?: string; touch?: string }>;
+} as const satisfies ControlTable;
 export type ControlAction = keyof typeof CONTROLS;
 
-/** The device prompts name controls for. */
-export type ControlDevice = 'keyboard' | 'pad' | 'touch';
+/** The device prompts name controls for (the engine's `input.device`). */
+export type ControlDevice = InputDevice;
 
-/** Keys whose names are words (lines), and names for several keys; a letter or digit key shows its own character. */
-const KEY_LINES: Readonly<Record<string, string>> = {
-  Space: 'key.space',
-  Escape: 'key.esc',
-  Enter: 'key.enter',
-  NumpadEnter: 'key.enter',
-  Tab: 'key.tab',
-  Backspace: 'key.backspace',
-  ShiftLeft: 'key.shift',
-  ShiftRight: 'key.shift',
-  MouseLeft: 'key.mouse_left',
-  MouseRight: 'key.mouse_right',
-  Wheel: 'key.mouse_wheel',
-  WASD: 'key.wasd',
-  QE: 'key.q_e',
-  MouseOrQE: 'key.mouse_or_q_e',
-  MouseDrag: 'key.mouse_drag',
-  DragOrQE: 'key.drag_or_q_e',
-};
-/** The short forms key caps use where a whole name doesn't fit (the skill bar's 20-pixel slots). */
-const KEY_CAP_LINES: Readonly<Record<string, string>> = { Space: 'key.space.short' };
-/** Pad buttons whose names are words; the face buttons (A B X Y) show their letter. */
-const PAD_LINES: Readonly<Record<string, string>> = { PadLB: 'pad.lb', PadRB: 'pad.rb', PadLT: 'pad.lt', PadRT: 'pad.rt', PadStart: 'pad.start', PadBack: 'pad.back', PadStick: 'pad.stick' };
-/** Touch controls that are words (gestures, the joystick); a button shows its label. */
-const TOUCH_LINES: Readonly<Record<string, string>> = {
-  TouchInteract: 'key.touch.interact',
-  TouchStick: 'key.touch.stick',
-  TouchStickDown: 'key.touch.stick_down',
-  TouchTap: 'key.touch.tap',
-  TouchDrag: 'key.touch.drag',
-};
-
-/** A key's name (`KeyF` → F, `Space` → its line). */
-export function keyName(code: string): string {
-  const line = KEY_LINES[code];
-  if (line) return t(line);
-  return code.replace(/^(Key|Digit|Numpad)/, '');
-}
-
-/** A key's name on a key cap: the short form when there is one. */
+/** A key's name on a key cap, in the game's language: the short form when there is one (`Space` → Spc). */
 export function keyCap(code: string): string {
-  const line = KEY_CAP_LINES[code];
-  return line ? t(line) : keyName(code);
+  return engineKeyCap(code, lang());
 }
 
-/** A pad button's name (`PadA` → A, `PadStart` → its line). */
-export function padName(code: string): string {
-  const line = PAD_LINES[code];
-  return line ? t(line) : code.replace(/^Pad/, '');
+/** A pad button's name in the game's language and the player's style (`PadA` → Cross or A). */
+export function padName(code: string, style: PadGlyphs = 'playstation'): string {
+  return enginePadName(code, style, lang());
 }
 
 /** The control that does `action` on `device`, as a prompt names it (`{key:action}` in a line); the key where the device has none for it. */
-export function controlLabel(action: string, device: ControlDevice): string {
-  const c = (CONTROLS as Record<string, { key: string; pad?: string; touch?: string }>)[action];
-  if (!c) return action;
-  if (device === 'pad' && c.pad) return padName(c.pad);
-  if (device === 'touch' && c.touch) return TOUCH_LINES[c.touch] ? t(TOUCH_LINES[c.touch]!) : c.touch;
-  return keyName(c.key);
+export function controlLabel(action: string, device: ControlDevice, style: PadGlyphs = 'playstation'): string {
+  const c = (CONTROLS as ControlTable)[action];
+  return c ? controlName(c, device, style, lang()) : action;
 }
 
 /** A point in normalised device coordinates over the canvas → art pixels (`renderer.resolution`). */

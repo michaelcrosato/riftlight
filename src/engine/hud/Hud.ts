@@ -2,6 +2,7 @@ import { drawText, GLYPH_H, noteText, pixelCovers } from '../animation/font';
 import { drawDeviceText, surfaceScale, textWidthPx } from './deviceText';
 import type { Framing, Resolution } from '../framing';
 import { PALETTE, type PaletteColor } from '../palette';
+import { type Controls, GLYPH_SIZE, type Glyph } from '../controls';
 
 /** Where an element is attached on screen; it is also aligned that way (right-anchored text grows left). */
 export type HudAnchor = 'top-left' | 'top' | 'top-right' | 'left' | 'center' | 'right' | 'bottom-left' | 'bottom' | 'bottom-right';
@@ -92,6 +93,63 @@ export class Hud {
    */
   sprite(x: number, y: number, rows: readonly string[], colors: Record<string, HudColor>, options: HudOptions = {}): void {
     this.items.push({ kind: 'sprite', x, y, rows, colors, o: options });
+  }
+
+  /** @internal The engine's controls (`engine.controls`): what `glyph` and `prompt` draw. */
+  controls: Controls | null = null;
+
+  /**
+   * The glyph of what does `action` (an action of the game's `Game.controls`, or a code: `PadA`,
+   * `KeyF`, `MouseLeft`) on the device in use, its top-left at (x, y) in art pixels, as tall as a
+   * line of text there: PlayStation's ✕ ○ □ △ (or Xbox's A B X Y, `settings.padGlyphs`) as round
+   * buttons in their colours, L1 / Options... as round caps, keys as key caps, the mouse's buttons
+   * drawn. Returns its width (0 when the action has no control).
+   */
+  glyph(x: number, y: number, action: string, scale = 1): number {
+    const g = this.controls?.glyph(action);
+    if (!g) return 0;
+    const k = Math.max(1, Math.round(scale));
+    if (g.kind === 'sprite') {
+      this.sprite(x, y, g.rows, g.colors as Record<string, HudColor>, { scale: k });
+      return GLYPH_SIZE * k;
+    }
+    const w = this.glyphWidth(action, k);
+    if (g.round) {
+      this.rect(x + k, y - k, w - 2 * k, 9 * k, 'ink');
+      this.rect(x, y, w, 7 * k, 'ink');
+      this.rect(x + k, y, w - 2 * k, 7 * k, 'night');
+      this.text(x + 2 * k, y, g.text, { color: 'white', shadow: false, scale: k });
+    } else {
+      this.rect(x, y - k, w, 9 * k, 'mist'); // the cap's rim, its shadow below
+      this.rect(x, y + 7 * k, w, k, 'slate');
+      this.rect(x + k, y, w - 2 * k, 7 * k, 'white');
+      this.text(x + 2 * k, y, g.text, { color: 'ink', shadow: false, scale: k });
+    }
+    return w;
+  }
+
+  /** The width `glyph` draws `action` at (0 when it has no control). */
+  glyphWidth(action: string, scale = 1): number {
+    const g: Glyph | null | undefined = this.controls?.glyph(action);
+    if (!g) return 0;
+    const k = Math.max(1, Math.round(scale));
+    return g.kind === 'sprite' ? GLYPH_SIZE * k : this.measure(g.text, k).width + 4 * k;
+  }
+
+  /**
+   * A prompt: the glyph of `action` (`glyph`), then `label` as text. `align` places it around x
+   * (`center`, `right`); the text takes the other options (`color`, `shadow`, `scale`). Returns
+   * its width. On a pad it shows ✕ JUMP, on the keyboard SPACE JUMP, in the player's language.
+   */
+  prompt(x: number, y: number, action: string, label: string, options: Omit<HudOptions, 'anchor'> & { align?: 'left' | 'center' | 'right' } = {}): number {
+    const k = Math.max(1, Math.round(options.scale ?? 1));
+    const gw = this.glyphWidth(action, k);
+    const gap = gw ? 3 * k : 0;
+    const total = gw + gap + this.measure(label, k).width;
+    const left = options.align === 'center' ? x - Math.floor(total / 2) : options.align === 'right' ? x - total : x;
+    this.glyph(left, y, action, k);
+    this.text(left + gw + gap, y, label, { color: options.color, shadow: options.shadow, scale: k });
+    return total;
   }
 
   /** Remove everything. */

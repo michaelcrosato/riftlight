@@ -66,16 +66,33 @@ describe("the settings' engine page", () => {
   const engineHost = () => {
     const chosen: PlayerSettings = {};
     const audio = { muted: false, setMuted: (m: boolean) => (audio.muted = m), volume: { master: 1, music: 1, sfx: 1 }, setVolume: () => {} };
+    const rumbles: unknown[] = [];
     const engine = {
       settings: { values: chosen, set: (p: PlayerSettings) => Object.assign(chosen, p) },
+      input: { rumble: (r: unknown) => rumbles.push(r) },
       renderer: { get mode() { return chosen.pixelArt === false ? 'raw' : 'pixel'; }, get baseResolution() { return chosen.pixelSize === 'chunky' ? RESOLUTIONS.compare : RESOLUTIONS.default; } },
       get maxFps() { return chosen.fps ?? 60; },
       get debugShown() { return chosen.debugInfo ?? false; },
     };
-    return { chosen, audio, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0, glyphs: 'auto' } }) };
+    return { chosen, audio, rumbles, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
   };
   type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void };
   const row = (menu: { items(): readonly unknown[] }, id: string) => menu.items().find((w) => (w as Row).id === id) as Row;
+
+  it("the settings page holds the controller's: button prompts (PlayStation or Xbox) and vibration, the engine's own settings", () => {
+    const { chosen, rumbles, h } = engineHost();
+    const menu = settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    const ids = menu.items().map((w) => (w as Row).id);
+    expect(ids).toContain('padGlyphs');
+    expect(ids).toContain('vibration');
+    expect(ids).not.toContain('glyphs'); // prompts follow the device used last by themselves
+    expect(row(menu, 'padGlyphs').get!()).toBe(0); // PlayStation unless chosen
+    row(menu, 'padGlyphs').set!(1 as never);
+    expect([chosen.padGlyphs, row(menu, 'padGlyphs').get!()]).toEqual(['xbox', 1]);
+    expect(row(menu, 'vibration').get!()).toBe(1);
+    row(menu, 'vibration').set!(0.42 as never);
+    expect([chosen.vibration, rumbles.length]).toEqual([0.4, 1]); // in steps of 0.05, and a pulse to feel it
+  });
 
   it('the settings open it', () => {
     let opened = '';

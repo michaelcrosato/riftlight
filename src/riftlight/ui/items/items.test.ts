@@ -12,6 +12,7 @@ import { installLanguage, riftlightLines } from '../../lang';
 import type { Painter } from './paint';
 import { textWidth, wrap } from './paint';
 import { drawTooltip, measureTooltip, TIP_W, tooltipLines } from './tooltip';
+import { windowHint } from './ItemsUi';
 
 const texts = (item: Item, opts = {}) => tooltipLines(item, opts).map((l) => l.text);
 
@@ -134,5 +135,17 @@ describe('item icons (ui/items/icons.ts: the one way an item is drawn)', () => {
       if (DRAWN_ELSEWHERE.has(look)) continue;
       for (const name of [look, ...(NAMES[look] ?? [])]) for (const id of [name, `${name}-icon`]) expect(TEXTURE_LIBRARY.has(id), `library texture '${id}'`).toBe(false);
     }
+  });
+});
+
+
+describe('hints for the device that drives the windows', () => {
+  it('name the pad’s button in the player’s style with the pad cursor, the mouse’s words otherwise, a phone’s on a narrow screen', () => {
+    expect(windowHint('item.vendor.hint', 'PadY', 'pad', 'playstation')).toBe('Triangle: buy / sell');
+    expect(windowHint('item.vendor.hint', 'PadY', 'pad', 'xbox')).toBe('Y: buy / sell');
+    expect(windowHint('item.vendor.hint', 'PadY', 'mouse', 'playstation')).toBe('Ctrl-click: buy / sell');
+    expect(windowHint('item.vendor.hint', 'PadY', 'touch', 'playstation')).toBe('Tap twice: buy. Drop: sell');
+    expect(windowHint('item.skill.hint', 'PadX', 'pad', 'playstation')).toBe('Square on a gem in your bag to socket it');
+    expect(windowHint('item.bench.orb_hint', 'PadA', 'pad', 'xbox')).toBe('A on an orb to use it');
   });
 });

@@ -90,7 +90,7 @@ function services(): ShellServices & { lights: never } {
     rng: new Rng(7),
     difficulty: () => NORMAL,
     difficultyMods: () => [],
-    settings: () => ({ damageNumbers: false, lootFilter: 0, screenShake: 0, glyphs: 'auto' }),
+    settings: () => ({ damageNumbers: false, lootFilter: 0, screenShake: 0 }),
     dev: () => ({ god: false, ai: false, hitboxes: false }),
     shake() {},
     hero: () => null,

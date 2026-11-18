@@ -10,6 +10,7 @@
  * (docs/engine/lang.md, *Drawing text in any writing system*; `TreeView.blit`).
  */
 import { drawText, noteText, pixelCovers } from '../../../engine/animation/font';
+import { GLYPH_SIZE, type Glyph } from '../../../engine/controls';
 import { textWidthPx } from '../../../engine/hud/deviceText';
 import { PALETTE, type PaletteColor } from '../../../engine/palette';
 
@@ -186,7 +187,35 @@ export class PixelBuffer {
     if (shadow !== undefined) drawText(s, x + scale, y + scale, (px, py) => this.set(px, py, shadow), scale);
     return drawText(s, x, y, (px, py) => this.set(px, py, c), scale) - scale;
   }
+
+  /**
+   * A control's glyph (the engine's `controlGlyph` / `padGlyph`), its top-left at (x, y), as tall
+   * as a line of text there: a sprite (PlayStation's ✕ ○ □ △ or Xbox's A B X Y in their colours,
+   * a stick, the mouse) or a cap with a name (L2, Options; a key). Returns its width.
+   */
+  glyph(g: Glyph, x: number, y: number): number {
+    x = Math.round(x);
+    y = Math.round(y);
+    if (g.kind === 'sprite') {
+      g.rows.forEach((row, ry) => {
+        for (let rx = 0; rx < row.length; rx++) {
+          const c = g.colors[row[rx]!];
+          if (c !== undefined) this.set(x + rx, y + ry, pack(c));
+        }
+      });
+      return GLYPH_SIZE;
+    }
+    const w = glyphWidth(g);
+    this.rect(x + 1, y - 1, w - 2, 9, pack('ink'));
+    this.rect(x, y, w, 7, pack('ink'));
+    this.rect(x + 1, y, w - 2, 7, pack(g.round ? 'night' : 'white'));
+    this.text(g.text, x + 2, y, pack(g.round ? 'white' : 'ink'));
+    return w;
+  }
 }
+
+/** The width `PixelBuffer.glyph` draws `g` at. */
+export const glyphWidth = (g: Glyph): number => (g.kind === 'sprite' ? GLYPH_SIZE : textWidthPx(g.text) + 4);
 
 /** Width of `s` in art pixels at `scale`, in whichever font draws it (the engine's `textWidthPx`). */
 export const textWidth = (s: string, scale = 1): number => textWidthPx(s, scale);

@@ -25,6 +25,7 @@ import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
 import { type TouchButton, TouchControls, type TouchCorner } from './TouchControls';
 import { Settings, urlSettings } from './settings';
+import { type ControlTable, Controls, setActiveControls } from './controls';
 import { SettingsPanel } from './SettingsPanel';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
@@ -128,6 +129,12 @@ export interface Game {
    * engine start downloading while the renderer and physics initialise.
    */
   readonly assets?: readonly string[];
+  /**
+   * The game's actions and their controls: each one's key, pad button and touch button
+   * (`{ jump: { key: 'Space', pad: 'PadA', touch: 'A' } }`). With it, `{key:jump}` in any line and
+   * `ctx.hud.glyph` / `ctx.hud.prompt` show the control on the device in use (`engine.controls`).
+   */
+  readonly controls?: ControlTable;
   /** Build the level: load models, add colliders, spawn entities. */
   setup(ctx: GameContext): Promise<void> | void;
   /** Runs before every fixed 60 Hz physics step. Move characters/apply forces here. */
@@ -384,6 +391,12 @@ export class Engine {
   readonly dualsense: DualSense;
   readonly particles: Particles;
   readonly hud: Hud;
+  /**
+   * The running game's controls (`Game.controls`) on the device in use (`input.device`) in the
+   * player's button style (`settings.padGlyphs`): what `{key:action}`, `hud.glyph` and
+   * `hud.prompt` show.
+   */
+  readonly controls: Controls;
   /** Tweens on game time (`ctx.tweens`). */
   readonly tweens = new Tweens();
   /**
@@ -500,6 +513,9 @@ export class Engine {
     const lights = () => this.lights;
     this.particles = new Particles(() => ({ camera: this.camera.camera, focus: this.camera.focus, height: this.renderer.resolution.height }));
     this.hud = new Hud(renderer.container, () => renderer.resolution); // lays out on the view at every moment
+    this.controls = new Controls(this.input, this.settings);
+    this.hud.controls = this.controls;
+    setActiveControls(this.controls); // `{key:action}` in every line names this game's controls
     renderer.onError = (e) => this.reportError(e); // a view or mirror that throws: on screen, in errors
     this.context = {
       engine: this,
@@ -817,6 +833,7 @@ export class Engine {
       engine.wireRig(camera);
 
       engine.reseed(game);
+      engine.controls.table = game.controls ?? {};
       await game.setup(engine.context);
       steps.setupDone?.();
       camera.teleport(game.cameraTarget(engine.context));
@@ -1121,6 +1138,7 @@ export class Engine {
       this._game = game;
       if (options.camera) this.useCamera(options.camera);
       this.reseed(game);
+      this.controls.table = game.controls ?? {};
       await game.setup(this.context);
       if (!live()) return; // superseded: the newer load (or dispose) unloads what setup built
       this.settings.levelStarted(); // a look the player chose wins over the level's
@@ -1168,6 +1186,7 @@ export class Engine {
     this.touch?.root.remove();
     this.settingsPanel?.dispose();
     this.input.dispose();
+    setActiveControls(null, this.controls);
     const free = () => {
       this.unloadGame();
       this.particles.dispose();

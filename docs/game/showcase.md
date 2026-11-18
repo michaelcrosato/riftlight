@@ -47,7 +47,10 @@ Both stages walk with it.
   attacks, Shift / pad R2 held walks. The character is created with
   `lockDepth: true`, so any camera works, but the game uses `side` (`ARCADE_OPTIONS`:
   `{ preset: 'side', viewHeight: 12 }` and the `16bit` + `crt` look).
-- **The template** is `ArcadeGame.ts` (`?game=arcade`): about 60 lines around the stage.
+- **The template** is `ArcadeGame.ts` (`?game=arcade`): about 60 lines around the stage. Its
+  `controls` are Riftlight's `CONTROLS`, so the engine names its hints for the device in use
+  ("WASD run · Space jump", "Left stick run · Cross jump"); it promises no "leave" (`canLeave:
+  false`), and Enter, Cross or a tap restarts it (`arcade/arcade.headless.test.ts`).
 - **Scripted run** (`autoplay.ts`): a reactive pilot in beats (run, jump the pit, double jump
   from the step's edge, wall-kick the chimney, ground-pound the slabs, hop to the flag) that
   reads the hero's state, so `showcase/headless.test.ts` proves the course can be finished with the real

@@ -417,7 +417,7 @@ export class DeathRecap implements Panel {
     }
     ui.mini(r.x + 4, r.y + r.h - 22, clip(this.lost(), r.w - 8, miniWidth), 'orange');
     this.button = { x: r.x + r.w / 2 - 60, y: r.y + r.h - 15, w: 120, h: 14 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true, glyph: 'confirm' });
   }
 
   /** What the death cost ("Lost 120 XP and 45 gold"). */
@@ -488,7 +488,7 @@ export class DeathRecap implements Panel {
     }
     ui.mini(r.x + r.w / 2, r.y + r.h - 26, clip(this.lost(), w, miniWidth), 'orange', 'center');
     this.button = { x: r.x, y: r.y + r.h - 17, w: r.w, h: 16 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: true });
+    ui.button(this.button, t('panel.button.return_to_town'), { focus: true, glyph: 'confirm' });
   }
 
   input(e: UiEvent): boolean {
@@ -587,7 +587,7 @@ export class LootWindow implements Panel {
         ? { x: r.x, y: r.y + r.h - (2 - i) * 17, w: r.w, h: 15 }
         : { x: r.x + 6 + i * (r.w / 2), y: r.y + r.h - 16, w: r.w / 2 - 12, h: 14 };
       this.rects.push(rect);
-      ui.button(rect, a.label, { focus: this.focus === rows.length + i });
+      ui.button(rect, a.label, { focus: this.focus === rows.length + i, glyph: 'confirm' });
     });
   }
 
