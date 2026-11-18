@@ -662,3 +662,106 @@ describe("motion aim's turn (input.motionTurn)", () => {
     expect(replayed).toEqual(seen);
   });
 });
+
+describe('couch co-op: each pad on its own (input.player)', () => {
+  /** An Input reading `pads` (by slot) on their own; `frame` polls once and returns what the game would read. */
+  function couch() {
+    const input = new Input(null);
+    input.padPlayers = true;
+    let t = 0;
+    const frame = (pads: (GamepadLike | null)[]) => {
+      t += 1 / 60;
+      input.beginFrame(t, 1 / 60, pads.map((p, i) => (p ? { ...p, index: i } : null)));
+      const seen = {
+        p1: { a: input.isDown('PadA'), pressed: input.wasPressed('PadA'), move: input.moveAxis(), look: { ...input.lookAxis }, device: input.device },
+        p2: { a: input.player(1).isDown('PadA'), pressed: input.player(1).wasPressed('PadA'), move: input.player(1).moveAxis(), look: { ...input.player(1).lookAxis }, triggers: { ...input.player(1).triggers } },
+        joined: [...input.joinedNow],
+      };
+      input.endFrame();
+      return seen;
+    };
+    return { input, frame };
+  }
+
+  it('reads every pad on its own while the merged input stays player 1’s; a pad that joined no longer drives player 1', () => {
+    const { input, frame } = couch();
+    // two pads: both drive the merged input (every game as before), and each reads on its own too
+    let f = frame([pad([0, 0, 0, 0]), pad([0.9, 0, 0, -0.9], [0, 7])]);
+    expect([f.p1.a, f.p2.a, f.p2.pressed, f.p2.move.x > 0.8, f.p2.look.y > 0.8, f.p2.triggers.right]).toEqual([true, true, true, true, true, 1]);
+    expect(input.player(0).isDown('PadA'), 'pad 0 holds nothing').toBe(false);
+    frame([pad(), pad()]);
+    // pad 1 joins: its buttons and sticks are its own from now on, player 1 never sees them
+    input.noteDevice('keyboard');
+    input.joined.add(1);
+    f = frame([pad(), pad([0.9, 0, 0, 0], [0, 12])]);
+    expect([f.p1.a, f.p1.move, f.p1.look, f.p2.a, f.p2.pressed, f.p2.move.x > 0.8]).toEqual([false, { x: 0, y: 0 }, { x: 0, y: 0 }, true, true, true]);
+    expect(input.player(1).isDown('ArrowUp'), 'its d-pad too').toBe(true);
+    expect(input.device, 'a joined pad is never player 1’s device in use').toBe('keyboard');
+    // the d-pad moves it when the stick rests
+    f = frame([pad(), pad([0, 0, 0, 0], [15])]);
+    expect(f.p2.move).toEqual({ x: 1, y: 0 });
+    // its presses queue for fixed-step code, as the merged input's do
+    frame([pad(), pad([0, 0, 0, 0], [2])]);
+    expect([input.player(1).consumePress('PadX'), input.player(1).consumePress('PadX'), input.consumePress('PadX')]).toEqual([true, false, false]);
+    // left: it drives player 1 again
+    input.joined.delete(1);
+    frame([pad(), pad()]);
+    f = frame([pad(), pad([0, 0, 0, 0], [0])]);
+    expect([f.p1.a, f.p2.a]).toEqual([true, true]);
+    // gone: nothing held
+    frame([pad(), null]);
+    expect([input.player(1).connected, input.player(1).isDown('PadA'), input.player(0).connected]).toEqual([false, false, true]);
+    expect(() => input.player(4)).toThrow(RangeError);
+  });
+
+  it('off (the default), nothing is read on its own', () => {
+    const input = new Input(null);
+    input.beginFrame(1 / 60, 1 / 60, [pad([0, 0, 0, 0], [0])]);
+    expect([input.isDown('PadA'), input.player(0).isDown('PadA'), input.player(0).connected]).toEqual([true, false, false]);
+  });
+
+  it('joinWith: another pad pressing Cross joins before the press reaches anything; player 1’s pad in use never does', () => {
+    const { input, frame } = couch();
+    input.joinWith = ['PadA'];
+    // player 1 picks up pad 0 (its press is a use), then presses Cross on it: player 1's, no join
+    frame([pad([0, 0, 0, 0], [3]), pad()]);
+    frame([pad(), pad()]);
+    expect([input.device, input.padIndex]).toEqual(['pad', 0]);
+    let f = frame([pad([0, 0, 0, 0], [0]), pad()]);
+    expect([f.joined, f.p1.pressed]).toEqual([[], true]);
+    frame([pad(), pad()]);
+    // pad 1's Cross: it joins, and the press that joined presses nothing (held, it reads as up until let go)
+    f = frame([pad(), pad([0, 0, 0, 0], [0])]);
+    expect([f.joined, [...input.joined], f.p1.pressed, f.p1.a, f.p2.pressed, f.p2.a, input.padIndex]).toEqual([[1], [1], false, false, false, false, 0]);
+    f = frame([pad(), pad([0, 0, 0, 0], [0])]);
+    expect([f.joined, f.p2.a]).toEqual([[], false]);
+    frame([pad(), pad()]);
+    f = frame([pad(), pad([0, 0, 0, 0], [0])]);
+    expect([f.p2.pressed, f.p2.a, f.p1.a]).toEqual([true, true, false]); // pressed anew: its own
+    // player 1 on the keyboard: any pad that has not joined may join
+    input.noteDevice('keyboard');
+    f = frame([pad([0, 0, 0, 0], [0]), pad()]);
+    expect([f.joined, [...input.joined].sort()]).toEqual([[0], [0, 1]]);
+    // nobody joins while joinWith is null
+    input.joined.clear();
+    input.joinWith = null;
+    frame([pad(), pad()]);
+    f = frame([pad(), pad([0, 0, 0, 0], [0])]);
+    expect([f.joined, f.p1.a]).toEqual([[], true]);
+  });
+
+  it('is kept by a snapshot: each pad’s held buttons and queued presses, and the pads that joined', () => {
+    const { input, frame } = couch();
+    input.joined.add(2);
+    frame([pad(), null, pad([0, 0, 0, 0], [0, 1])]);
+    const s = JSON.parse(JSON.stringify(input.state())) as ReturnType<Input['state']>;
+    expect([s.joined, s.pads?.map((p) => p[0])]).toEqual([[2], [0, 2]]);
+    const b = new Input(null);
+    b.setState(s, 5);
+    expect([[...b.joined], b.player(2).isDown('PadA'), b.player(2).consumePress('PadB'), b.player(0).connected]).toEqual([[2], true, true, true]);
+    // a snapshot without pads (an older one) has none
+    const older = { ...s, pads: undefined, joined: undefined };
+    b.setState(JSON.parse(JSON.stringify(older)) as typeof s, 6);
+    expect([[...b.joined], b.player(2).connected]).toEqual([[], false]);
+  });
+});

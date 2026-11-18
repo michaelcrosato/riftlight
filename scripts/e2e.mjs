@@ -128,7 +128,7 @@ import { chromium } from 'playwright-core';
 import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
 import { engineReady, startServer, watchConsole } from './page.mjs';
 import { PAGE_HELPERS } from './e2e-moves.mjs';
-import { runRiftlight } from './e2e-riftlight.mjs';
+import { runRiftlight, runRiftlightCouch } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSettings } from './e2e-settings.mjs';
@@ -1682,6 +1682,7 @@ const SUITES = {
     const helpers = { exe, openPage, check, capture, state, checkClean, colorCount, encodePng, OUT };
     await runRiftlight({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightItems({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightCouch({ ...helpers, scenario: SCENARIOS[0] });
   },
   tools: (exe) => runTools(exe),
   bundle: (exe) => runBundle({ exe, root: ROOT, out: OUT, base: BASE, scenarios: SCENARIOS, launch, ready, check, run, tail }),
