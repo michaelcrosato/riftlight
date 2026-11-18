@@ -133,22 +133,23 @@ const CLASSES = [bundle.Input, bundle.Hud, bundle.Engine, bundle.Controls, bundl
  * What is amiss with the texts the next frame draws (`what` says the state), each placed as
  * `hud.text` places it (a phone held upright has 130 columns, a tall narrow window 90): one reaching
  * outside the HUD, one over another, or a piece of a word wrapped apart (a word neither the game's
- * `code` nor the names of its controls on the device in use have; a glyph's caption, drawn with no
- * shadow, aside).
+ * `code` nor the names of its controls on the device in use have; what `hud.prompt` and
+ * `hud.legend` draw, a glyph's caption and its words, aside).
  */
 function textsAmiss(engine: bundle.Engine, what: string, code: string): string[] {
   const { hud } = engine;
   const words = (s: string) => s.toUpperCase().split(/[^\p{L}]+/u).filter(Boolean);
   const known = new Set([...words(code), ...Object.keys(engine.game.controls ?? {}).flatMap((a) => words(engine.controls.label(a)))]);
   const text = vi.spyOn(hud, 'text');
+  const captions = captionCalls(hud, text);
   try {
     engine.step(1);
     const { width, height } = hud;
     const at = `${what} at ${width}x${height}`;
-    const boxes = text.mock.calls.map(([x, y, s, o = {}]) => {
+    const boxes = text.mock.calls.map(([x, y, s, o = {}], i) => {
       const size = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
       const [left, top] = bundle.hudPlace(x, y, size.width, size.height, o.anchor ?? 'top-left', { width, height });
-      return { s, left, top, right: left + size.width, bottom: top + size.height, caption: o.shadow === false };
+      return { s, left, top, right: left + size.width, bottom: top + size.height, caption: captions.has(i) };
     });
     return [
       ...boxes.filter((b) => b.left < 0 || b.top < 0 || b.right > width || b.bottom > height).map((b) => `${at}: ${b.s}`),
@@ -156,8 +157,34 @@ function textsAmiss(engine: bundle.Engine, what: string, code: string): string[]
       ...boxes.filter((b) => !b.caption).flatMap((b) => words(b.s).filter((w) => !known.has(w)).map((w) => `${at}: ${b.s} (${w}: a piece of a word)`)),
     ];
   } finally {
+    captions.restore();
     text.mockRestore();
   }
+}
+
+/**
+ * Which of `text`'s calls `hud.prompt` and `hud.legend` make (a glyph's caption and its words),
+ * by their index, as the frame draws: the rest are the game's own texts, Beacon Yard's menu rows
+ * (drawn with no shadow) too. `restore` puts the two back. (src/guide-recipes.test.ts finds them
+ * the same way.)
+ */
+function captionCalls(hud: bundle.Hud, text: { mock: { calls: unknown[] } }): Set<number> & { restore(): void } {
+  const inside = new Set<number>() as Set<number> & { restore(): void };
+  // wrapped by hand, not with vi.spyOn: a caller may be spying on them already (the legend)
+  const owns = (['prompt', 'legend'] as const).map((name) => {
+    const own = hud[name] as (...a: unknown[]) => number;
+    (hud as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
+      const from = text.mock.calls.length;
+      try {
+        return own.apply(hud, args);
+      } finally {
+        for (let i = from; i < text.mock.calls.length; i++) inside.add(i);
+      }
+    };
+    return () => ((hud as unknown as Record<string, unknown>)[name] = own);
+  });
+  inside.restore = () => owns.forEach((put) => put());
+  return inside;
 }
 
 /** A standard pad holding `pressed` (button indices). */
@@ -424,6 +451,36 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     } finally {
       engine.dispose();
     }
+  });
+
+  it('the word check finds a menu row wrapped mid-word, drawn with no shadow as Beacon Yard’s rows are, and leaves what a prompt and a legend draw alone', async () => {
+    /** A menu row drawn as Beacon Yard draws its rows (no shadow), cut in two at `cut`, over a prompt and a legend. */
+    const menu = (cut: number): bundle.Game => ({
+      name: 'Menu rows',
+      controls: { confirm: { key: 'Enter', pad: 'PadA', touch: 'TouchTap' }, back: { key: 'Escape', pad: 'PadB', touch: 'TouchSwipe' } },
+      setup() {},
+      cameraTarget: () => new THREE.Vector3(),
+      update(ctx) {
+        const { hud } = ctx;
+        hud.clear();
+        const row = 'RESUME';
+        hud.text(10, 10, row.slice(0, cut), { shadow: false });
+        if (cut < row.length) hud.text(10, 20, row.slice(cut), { shadow: false });
+        hud.prompt(10, 40, 'confirm', 'PICK'); // words the game's code doesn't have: a prompt's and a legend's are theirs
+        hud.legend(10, 60, [['confirm', 'PICK'], ['back', 'CLOSE']]);
+      },
+    });
+    const amissFor = async (cut: number) => {
+      const engine = await bundle.Engine.headless(menu(cut));
+      try {
+        engine.input.noteDevice('pad');
+        return textsAmiss(engine, 'a menu', 'RESUME');
+      } finally {
+        engine.dispose();
+      }
+    };
+    expect(await amissFor(6), 'the whole row, a prompt and a legend: nothing amiss').toEqual([]);
+    expect(await amissFor(3), 'the row wrapped mid-word').toEqual(['a menu at 480x270: RES (RES: a piece of a word)', 'a menu at 480x270: UME (UME: a piece of a word)']);
   });
 
   it('every text its games draw is inside the HUD, clear of the others and in whole words, in every state, on a phone held either way (at the density their pages ask for), a tall narrow window and a TV', async () => {

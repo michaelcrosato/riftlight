@@ -53,26 +53,56 @@ async function load(name: string): Promise<{ createGame: () => bundle.Game; star
   return (await import(/* @vite-ignore */ join(tmp, `${name}.mjs`))) as Awaited<ReturnType<typeof load>>;
 }
 
-/** The texts the next frame draws (`what` says the state), each with the box `hud.text` places it in. */
+/**
+ * The texts the next frame draws (`what` says the state), each with the box `hud.text` places it
+ * in; `caption` when `hud.prompt` or `hud.legend` drew it (a glyph's caption, the control's words).
+ */
 function textBoxes(engine: bundle.Engine): { s: string; left: number; top: number; right: number; bottom: number; caption: boolean }[] {
   const { hud } = engine;
   const text = vi.spyOn(hud, 'text');
+  const captions = captionCalls(hud, text);
   try {
     engine.step(1);
-    return text.mock.calls.map(([x, y, s, o = {}]) => {
+    return text.mock.calls.map(([x, y, s, o = {}], i) => {
       const { width, height } = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
       const [left, top] = bundle.hudPlace(x, y, width, height, o.anchor ?? 'top-left', { width: hud.width, height: hud.height });
-      return { s, left, top, right: left + width, bottom: top + height, caption: o.shadow === false }; // a glyph's caption: no shadow
+      return { s, left, top, right: left + width, bottom: top + height, caption: captions.has(i) };
     });
   } finally {
+    captions.restore();
     text.mockRestore();
   }
 }
 
 /**
+ * Which of `text`'s calls `hud.prompt` and `hud.legend` make (a glyph's caption and its words),
+ * by their index, as the frame draws: the rest are the game's own texts, its menu rows (drawn with
+ * no shadow, as Beacon Yard's are) too. `restore` puts the two back. (src/guide-controls.test.ts
+ * finds them the same way.)
+ */
+function captionCalls(hud: bundle.Hud, text: { mock: { calls: unknown[] } }): Set<number> & { restore(): void } {
+  const inside = new Set<number>() as Set<number> & { restore(): void };
+  // wrapped by hand, not with vi.spyOn: a caller may be spying on them already (the legend)
+  const owns = (['prompt', 'legend'] as const).map((name) => {
+    const own = hud[name] as (...a: unknown[]) => number;
+    (hud as unknown as Record<string, unknown>)[name] = (...args: unknown[]) => {
+      const from = text.mock.calls.length;
+      try {
+        return own.apply(hud, args);
+      } finally {
+        for (let i = from; i < text.mock.calls.length; i++) inside.add(i);
+      }
+    };
+    return () => ((hud as unknown as Record<string, unknown>)[name] = own);
+  });
+  inside.restore = () => owns.forEach((put) => put());
+  return inside;
+}
+
+/**
  * What is amiss with the texts the next frame draws (`what` says the state): one reaching outside
  * the HUD, one over another, or a piece of a word wrapped apart (a word neither the game's `code`
- * nor the names of its controls on the device in use have; a glyph's caption aside).
+ * nor the names of its controls on the device in use have; what `hud.prompt` and `hud.legend` draw aside).
  */
 function textsAmiss(engine: bundle.Engine, what: string, code: string): string[] {
   const words = (s: string) => s.toUpperCase().split(/[^\p{L}]+/u).filter(Boolean);
@@ -162,6 +192,36 @@ describe("the kit's recipes meet CONTROLS.md", { timeout: 60_000 }, () => {
       expect(code, `${name}: a legend of the device's controls`).toMatch(/hud\.legend\(/);
       expect([/\btouchButtons: /.test(start), /\btouchDensity: 2\b/.test(start), /\bsettings: \{ padButton: true \}/.test(start)], name).toEqual([true, true, true]);
     }
+  });
+
+  it('the word check finds a menu row wrapped mid-word, drawn with no shadow, and leaves what a prompt and a legend draw alone', async () => {
+    /** A menu row drawn with no shadow, cut in two at `cut`, over a prompt and a legend. */
+    const menu = (cut: number): bundle.Game => ({
+      name: 'Menu rows',
+      controls: { confirm: { key: 'Enter', pad: 'PadA', touch: 'TouchTap' }, back: { key: 'Escape', pad: 'PadB', touch: 'TouchSwipe' } },
+      setup() {},
+      cameraTarget: () => new THREE.Vector3(),
+      update(ctx) {
+        const { hud } = ctx;
+        hud.clear();
+        const row = 'RESUME';
+        hud.text(10, 10, row.slice(0, cut), { shadow: false });
+        if (cut < row.length) hud.text(10, 20, row.slice(cut), { shadow: false });
+        hud.prompt(10, 40, 'confirm', 'PICK'); // words the game's code doesn't have: a prompt's and a legend's are theirs
+        hud.legend(10, 60, [['confirm', 'PICK'], ['back', 'CLOSE']]);
+      },
+    });
+    const amissFor = async (cut: number) => {
+      const engine = await bundle.Engine.headless(menu(cut));
+      try {
+        engine.input.noteDevice('keyboard');
+        return textsAmiss(engine, 'a menu', 'RESUME');
+      } finally {
+        engine.dispose();
+      }
+    };
+    expect(await amissFor(6), 'the whole row, a prompt and a legend: nothing amiss').toEqual([]);
+    expect(await amissFor(2), 'the row wrapped mid-word').toEqual(['a menu at 480x270: RE (RE: a piece of a word)', 'a menu at 480x270: SUME (SUME: a piece of a word)']);
   });
 
   it('every text each draws is inside the HUD, clear of the others and in whole words, in every state, on every device, on a phone held either way, a tall window and a TV; on a TV the keyboard and a pad get a legend', async () => {
