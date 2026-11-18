@@ -47,8 +47,8 @@ export interface HudModel {
   /** Gold counter roll-up target vs shown. */
   goldShown: number;
   feed: readonly FeedLine[];
-  /** The centre banner (level card, LEVEL CLEAR, level-up: `BannerQueue.current`). */
-  card: { title: string; subtitle: string; age: number; kind?: BannerKind; duration?: number } | null;
+  /** The centre banner (level card, LEVEL CLEAR, level-up: `BannerQueue.current`), and the heroes on screen as it opened (`Banner.heroes`), which it keeps off. */
+  card: { title: string; subtitle: string; age: number; kind?: BannerKind; duration?: number; heroes?: readonly Box[] } | null;
   streak: { count: number; age: number } | null;
   /** HUD-corner difficulty labels (only non-1.0 sliders). */
   difficulty: readonly string[];
@@ -543,7 +543,12 @@ type BannerPlace = Box & { readonly big: boolean; readonly sub: BannerSub; reado
  * aside within its row (narrower if it must, never narrower than its title; its words centred on
  * it, `cx`), or into the row above what it hit, under the top-left block or under the strips:
  * of those clear of all of them, the one covering least of the rest of the HUD (the top-left
- * block, the gold). With none clear, under the strips as before.
+ * block, the gold). With none clear, under the strips as before. The heroes as they stood when it
+ * opened (`card.heroes`) weigh more than the HUD it may cover: a hero most (`HERO_COVER`), the rows
+ * they stand in across the screen next (`BAND_COVER`: the fight goes on there), so where its place
+ * would be over them it moves aside of them in its row, the row under the strips first (on a short
+ * landscape phone with three guests and the tuning's rows, over the top-left block's last rows
+ * rather than over the heroes for its four seconds).
  */
 function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudGeometry>): BannerPlace | null {
   const c = m.card;
@@ -570,7 +575,10 @@ function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   const hard: Box[] = [...fixed.filter((z) => BANNER_NEVER.has(z.id)), ...(guests ? [guests] : [])];
   const soft = fixed.filter((z) => !BANNER_NEVER.has(z.id));
   const clear = (p: Box) => p.y >= 0 && p.y + p.h <= H && p.x >= 0 && p.x + p.w <= W && !hard.some((z) => overlaps(p, z));
-  if (clear(nominal)) return nominal;
+  // the heroes as it opened, and the rows they stand in across the screen
+  const heroes = c.heroes ?? [];
+  const band: Box | null = heroes.length ? { x: 0, y: Math.min(...heroes.map((z) => z.y)), w: W, h: Math.max(...heroes.map((z) => z.y + z.h)) - Math.min(...heroes.map((z) => z.y)) } : null;
+  const onPlay = (p: Box) => heroes.reduce((sum, z) => sum + HERO_COVER * overlapArea(p, z), 0) + (band ? BAND_COVER * overlapArea(p, band) : 0);
   // aside within the row from `top`: the widest free span around the middle, the plate as close to the middle as it goes
   const least = textWidthPx(c.title) + 4;
   const aside = (top: number): BannerPlace | null => {
@@ -586,17 +594,48 @@ function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
     const p = plate(Math.min(Math.max(Math.round(W / 2 - w / 2), a), b - w), top, w);
     return clear(p) ? p : null;
   };
-  const rows = [y, ...hard.filter((z) => overlaps(nominal, z) && z.y > y).map((z) => z.y - nominal.h - 1), whereZone(W, m, g).y + whereZone(W, m, g).h + 2, ...(guests ? [guests.y + guests.h + 2] : [])];
+  /** Aside of the heroes too, in the row from `top`: in each span free of them and of what it must never cover, as close to the middle as it goes. */
+  const besideHeroes = (top: number): BannerPlace[] => {
+    const cuts = [...hard, ...heroes].filter((z) => z.y < top + nominal.h && z.y + z.h > top).map((z) => [z.x - 2, z.x + z.w + 2] as const);
+    cuts.sort((a, b) => a[0] - b[0]);
+    const out: BannerPlace[] = [];
+    let from = 4;
+    for (const [a, b] of [...cuts, [W - 4, W - 4] as const]) {
+      const w = Math.min(wide, a - from);
+      if (w >= least) {
+        const p = plate(Math.min(Math.max(Math.round(W / 2 - w / 2), from), a - w), top, w);
+        if (clear(p)) out.push(p);
+      }
+      from = Math.max(from, b);
+    }
+    return out;
+  };
+  const under = whereZone(W, m, g);
+  const rows = [y, ...hard.filter((z) => overlaps(nominal, z) && z.y > y).map((z) => z.y - nominal.h - 1), under.y + under.h + 2, ...(guests ? [guests.y + guests.h + 2] : [])];
   const covered = (p: Box) => soft.reduce((sum, z) => sum + overlapArea(p, z), 0);
-  let best: BannerPlace | null = null;
-  for (const top of rows) {
-    const p = aside(top);
-    if (p && (!best || covered(p) < covered(best))) best = p;
-  }
-  if (best) return best;
-  // nowhere clear: under the strips, as it always went
-  return guests && overlaps(nominal, guests) ? plate(x, guests.y + guests.h + 2, wide, W / 2) : nominal;
+  const cheapest = (places: readonly BannerPlace[], cost: (p: Box) => number) => places.reduce<BannerPlace | null>((b, p) => (!b || cost(p) < cost(b) ? p : b), null);
+  const asides = rows.map(aside).filter((p) => p !== null);
+  // its place where it is clear, else aside; nowhere clear: under the strips, as it always went
+  const chosen = clear(nominal) ? nominal : (cheapest(asides, covered) ?? (guests && overlaps(nominal, guests) ? plate(x, guests.y + guests.h + 2, wide, W / 2) : nominal));
+  if (!band || !onPlay(chosen)) return chosen;
+  // over the heroes or their rows: aside of them in each row as well, the row under the strips
+  // first, then the screen's top, under anything it must not cover above them (≡, a boss's bar)
+  // and the row just above them; the least of the heroes and the HUD covered (`HERO_COVER`,
+  // `BAND_COVER`); under them only where every place up there is over one (a phone held upright
+  // with a boss's bar and the strips across it)
+  const places: BannerPlace[] = [];
+  const above = hard.filter((z) => z.y + z.h < band.y).map((z) => z.y + z.h + 2);
+  for (const top of [...(guests ? [guests.y + guests.h + 2] : []), ...rows, 4, ...above, band.y - nominal.h - 2]) places.push(...besideHeroes(top));
+  places.push(chosen, ...asides);
+  const overHero = (p: Box) => heroes.some((z) => overlaps(p, z, 0));
+  if (places.every(overHero)) places.push(...besideHeroes(band.y + band.h + 2));
+  return cheapest(places, (p) => covered(p) + onPlay(p))!;
 }
+
+/** What an art pixel of a hero (`card.heroes`) weighs where the banner would cover it, against one of the HUD it may cover (the top-left block, the gold). */
+const HERO_COVER = 16;
+/** What an art pixel of the rows the heroes stand in, across the screen, weighs (`bannerRect`). */
+const BAND_COVER = 4;
 
 /** What the centre banner never covers (`bannerRect`): the touch controls, the skill bar, the orbs, the XP bar, the minimap, a boss's bar, a moment's seconds left. */
 const BANNER_NEVER: ReadonlySet<HudBox['id']> = new Set(['control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss', 'time']);

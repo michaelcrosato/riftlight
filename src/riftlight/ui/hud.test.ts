@@ -549,6 +549,72 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
     expect(checked).toBe(SCREENS.length * PAGES.length * 4 * 2 * 3);
   });
 
+  /**
+   * The heroes on screen as the camera keeps a group (`Banner.heroes`, from `worldBox`, as a level
+   * opens; measured in the game): player 1 in the middle, its feet half a hero under the screen's
+   * middle, seat 2 a hero's height to its right, 3 to its left, 4 below (`besideSpot`), each about a
+   * ninth of the screen tall (a tenth on a phone held upright, which shows more).
+   */
+  /** Somewhere a `w` × `h` plate covers none of `avoid`, 2 px clear of each side by side and 4 px in from the screen's sides (as the banner keeps), or null. */
+  const room = (W: number, H: number, w: number, h: number, avoid: readonly Box[]): Box | null => {
+    for (let y = 0; y + h <= H; y++) {
+      for (let x = 4; x + w <= W - 4; x++) if (!avoid.some((z) => overlaps({ x: x - 2, y, w: w + 4, h }, z, 0))) return { x, y, w, h };
+    }
+    return null;
+  };
+  const heroesOn = (W: number, H: number, guests: number): Box[] => {
+    const h = Math.round(H * (H > W ? 0.092 : 0.112));
+    const w = Math.round(h * 0.47);
+    const feet = Math.round(H / 2 + 0.5 * h);
+    const at = [[0, 0], [1, 0], [-1, 0], [0, 1.5]].slice(0, 1 + guests);
+    return at.map(([dx, dy]) => ({ x: Math.round(W / 2 + dx! * h - w / 2), y: Math.round(feet + dy! * h) - h, w, h }));
+  };
+
+  it('a banner keeps off the heroes as they stood when it opened: never over one, out of their rows where the HUD leaves room (on a short landscape phone with three guests and the tuning’s rows, high up over the top-left block rather than over the heroes)', () => {
+    let checked = 0;
+    let heroFree = 0;
+    for (const [name, vw, vh, dpr] of SCREENS) {
+      for (const [touch, density] of PAGES) {
+        const f = controlsFor(vw, vh, dpr, 'fill', density);
+        const controls = touch ? f.boxes : [];
+        const { W, H } = f;
+        for (const guests of [0, 1, 2, 3]) {
+          for (const [boss, tuned, map] of CASES) {
+            for (const kind of ['card', 'levelup', 'clear'] as const) {
+              const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? `, ${tuned} tuned` : ''}${map ? '' : ', no minimap'}, a ${kind} banner`;
+              const heroes = heroesOn(W, H, guests);
+              const m: HudModel = { ...model(controls, { guests, boss, tuned, map }), card: { title: 'I · Embers', subtitle: 'Depth 1', age: 1, kind, heroes } };
+              const z = hudBoxes(W, H, m);
+              const banner = z.find((b) => b.id === 'banner')!;
+              expect(banner.x >= 0 && banner.y >= 0 && banner.x + banner.w <= W && banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
+              const never = ['guests', 'control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss', ...(W > H ? ['gold'] : [])];
+              for (const b of z.filter((b) => never.includes(b.id))) expect(overlaps(banner, b, 0), `${where}: the banner ${JSON.stringify(banner)} over the ${b.id} ${JSON.stringify(b)}`).toBe(false);
+              // over a hero only where no plate holding its title fits clear of them and of what it never covers
+              const over = heroes.find((hero) => overlaps(banner, hero, 0));
+              if (over) expect(room(W, H, textWidthPx('I · Embers') + 4, banner.h, [...z.filter((b) => never.includes(b.id) && b.id !== 'gold'), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over a hero ${JSON.stringify(over)}, with room elsewhere`).toBeNull();
+              else heroFree++;
+              // where it went without heroes to keep off was clear of their rows: it goes there still
+              const before = hudBoxes(W, H, { ...m, card: { ...m.card!, heroes: undefined } }).find((b) => b.id === 'banner')!;
+              const rows = { x: 0, y: Math.min(...heroes.map((b) => b.y)), w: W, h: Math.max(...heroes.map((b) => b.y + b.h)) - Math.min(...heroes.map((b) => b.y)) };
+              if (!overlaps(before, rows, 0)) expect(banner, `${where}: clear of the heroes' rows already`).toEqual(before);
+              checked++;
+            }
+          }
+        }
+      }
+    }
+    expect(checked).toBe(SCREENS.length * PAGES.length * 4 * CASES.length * 3);
+    expect(heroFree / checked, 'off the heroes nearly everywhere').toBeGreaterThan(0.98);
+    // the short landscape phones the verifier saw it over the heroes on (y 84-118 of 180 at 640×360): above them now
+    for (const [vw, vh, dpr, tuned] of [[640, 360, 3, 4], [568, 320, 2, 4], [568, 320, 2, 0]] as const) {
+      const { W, H, boxes } = controlsFor(vw, vh, dpr);
+      const heroes = heroesOn(W, H, 3);
+      const m: HudModel = { ...model(boxes, { guests: 3, boss: false, tuned, map: true }), card: { title: 'I · Embers', subtitle: 'Depth 1', age: 1, kind: 'card', heroes } };
+      const banner = hudBoxes(W, H, m).find((b) => b.id === 'banner')!;
+      expect(banner.y + banner.h, `${vw}×${vh} at DPR ${dpr}, three guests, ${tuned} tuned: the banner ${JSON.stringify(banner)} above the heroes ${JSON.stringify(heroes)}`).toBeLessThanOrEqual(Math.min(...heroes.map((b) => b.y)));
+    }
+  });
+
   it('a kill streak goes right of the strips where it would run into them, never over them', () => {
     let checked = 0;
     for (const [name, vw, vh, dpr] of SCREENS) {

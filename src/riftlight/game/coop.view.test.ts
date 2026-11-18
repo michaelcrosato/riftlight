@@ -90,7 +90,8 @@ describe('couch co-op on a phone held upright', () => {
       engine.input.setGamepads([pad(0), pad(1)]);
       expect(back, 'put back beside player 1').toBeGreaterThan(0);
       expect(guest.actor.position.distanceTo(game.hero.actor.position), 'beside player 1').toBeLessThan(COOP.beside + 0.3);
-      expect(far, 'short of the leash: the screen is narrower than it').toBeLessThan(COOP.leash);
+      // put back well short of the leash (a leash alone lets it walk to 12 m, off this screen)
+      expect(far, 'well short of the leash: the screen is narrower than it').toBeLessThan(COOP.leash - 2);
       expect(far, 'once the camera had zoomed out').toBeGreaterThan(6);
       expect(leastZoom, 'the camera zoomed out').toBeLessThan(zoom0 * 0.85);
       expect(worst, 'both heroes on screen all the way (NDC, feet and head)').toBeLessThanOrEqual(1);

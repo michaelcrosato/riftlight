@@ -361,7 +361,7 @@ export class LocalCoop {
     if (!this.guests.length) return;
     const tag = (a: ActorLike | undefined, seat: number, color: string) => {
       if (!a?.alive) return;
-      const at = project(a.position.clone().setY(a.position.y + 2.3), camera, ui);
+      const at = project(a.position.clone().setY(a.position.y + TAG_AT), camera, ui);
       if (at) ui.text(at.x, at.y, t('hud.coop.seat', { seat }), { align: 'center', color: parseInt(color.slice(1), 16), shadow: 'ink' });
     };
     tag(this.host.hero().actor, 1, HUB_COLORS[0]!);
@@ -400,5 +400,7 @@ export function guestIntent(pad: KeyReader, right: Vector3, forward: Vector3, fr
 
 const hostile = (a: ActorLike): boolean => a.faction === 'monster';
 
-/** A hero's head above its feet (m): the top of what must stay on screen. */
-const HEAD = 1.9;
+/** A hero's head above its feet (m): the top of what must stay on screen (and of what the centre banner keeps off: `Riftlight.heroBoxes`). */
+export const HEAD = 1.9;
+/** A seat tag's top over a hero's feet (m, `LocalCoop.draw`): with guests, the top of what the centre banner keeps off. */
+export const TAG_AT = 2.3;

@@ -3,14 +3,18 @@
 // (touch controls or not), held sideways, a laptop and a TV the line is shown whole, on screen,
 // over no other text (the place name, the gold, a prompt, the feed) and clear of the HUD's zones.
 // Couch co-op is not offered in a 52in1 round or the showcase: no pause entry, no line, no join.
+// The level card keeps off the heroes on a short landscape phone with three guests and the tuning's
+// rows (where the HUD left it nowhere but the middle of the screen, over them).
 import { afterEach, describe, expect, it } from 'vitest';
 import type { GamepadLike, Viewport } from '../../engine';
-import { type HeadlessRiftlight, headlessMoment, headlessRiftlight, type HudTextBox, hudOverlap, hudTexts } from '../headless';
+import { type HeadlessRiftlight, headlessMoment, headlessRiftlight, type HudTextBox, hudOverlap, hudTexts, settle } from '../headless';
 import { momentById } from '../session/moments';
 import { t } from '../lang';
 import { type HudModel, hudZones } from '../ui/hud';
 import { miniCovers, miniWidth } from '../ui/kit';
 import { type Box, overlaps } from '../ui/layout';
+import { worldBox } from '../ui/world';
+import { HEAD } from './coop';
 
 const SCREENS: readonly [string, Viewport, boolean][] = [
   ['390×844 phone, touch', { width: 390, height: 844, dpr: 3 }, true],
@@ -130,6 +134,54 @@ describe('couch co-op is not offered in a 52in1 round or the showcase', () => {
       h.game.showcase.photo.close();
       h.engine.step(2);
       expect(h.engine.errors).toEqual([]);
+    },
+    240_000,
+  );
+});
+
+describe('couch co-op: the level card on a short landscape phone', () => {
+  it(
+    'keeps off the heroes all the while it shows (three guests, the tuning’s rows: 640×360 and 568×320 with touch controls)',
+    async () => {
+      for (const viewport of [{ width: 640, height: 360, dpr: 3 }, { width: 568, height: 320, dpr: 2 }] as Viewport[]) {
+        const h = (open = await headlessRiftlight({ seed: 5, viewport, options: { touch: true } }));
+        h.rl.newRun({ seed: 5 });
+        h.rl.setDifficulty({ playerDamage: 1.5, playerLife: 1.5, enemyDamage: 1.5, enemyLife: 1.5 }); // four rows in the top-left block
+        h.engine.step(5);
+        // player 1 picks up pad 0; pads 1 to 3 join with Cross
+        const pads = [pad(0), pad(1), pad(2), pad(3)];
+        h.engine.input.setGamepads([pad(0, [3]), pad(1), pad(2), pad(3)]);
+        h.engine.step(2);
+        for (let slot = 1; slot <= 3; slot++) {
+          h.engine.input.setGamepads(pads.map((p, i) => (i === slot ? pad(i, [0]) : p)));
+          h.engine.step(4);
+          h.engine.input.setGamepads(pads);
+          h.engine.step(1);
+          await settle();
+        }
+        expect(h.game.coop.seats, `${viewport.width}×${viewport.height}`).toEqual([2, 3, 4]);
+        h.engine.input.noteTouch(); // player 1 on the touch controls
+        await h.rl.enterDepth(1);
+        h.rl.dev.ai = false; // nobody moves: the heroes stand where the level put them
+        h.game.settings.touchAutoAttack = false;
+        await settle();
+        const where = `${viewport.width}×${viewport.height} at DPR ${viewport.dpr}`;
+        const cam = h.engine.camera.camera;
+        const seen: Box[] = [];
+        for (let f = 0; f < 60 * 4; f++) {
+          h.engine.step(1);
+          const banner = h.game.hudRects().zones.find((z) => z.id === 'banner');
+          if (!banner) continue;
+          seen.push(banner);
+          const heroes = [h.game.hero, ...h.game.coop.guests.map((g) => g.hero!)].map((x) => worldBox(x.actor.position, HEAD, 0.9, cam, h.game.ui)!);
+          for (const hero of heroes) expect(overlaps(banner, hero, 0), `${where}, frame ${f}: the card ${JSON.stringify(banner)} over a hero ${JSON.stringify(hero)}`).toBe(false);
+        }
+        expect(seen.length, `${where}: the card showed`).toBeGreaterThan(60);
+        expect(new Set(seen.map((b) => JSON.stringify(b))).size, `${where}: the card stays put while it shows`).toBe(1);
+        expect(h.engine.errors, where).toEqual([]);
+        h.engine.dispose();
+        open = null;
+      }
     },
     240_000,
   );

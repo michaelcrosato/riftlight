@@ -119,7 +119,11 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
 - **Replays and save-states**: the guests' pads and their joins are recorded input, so a couch
   session replays to the same fingerprint (which holds the guests: `coop.view`); a save-state is
   refused while a guest plays (it holds player 1's hero alone; a restore sends guests home): replay
-  the recording instead. `rl.state().coop` lists the guests. Tested headless in
+  the recording instead. Where a guest about to leave the screen is put depends on the viewport
+  (`COOP.edge`, the camera's zoom: a phone held upright shows less across), as the HUD's layout and
+  pointer aim do: a recording keeps the viewport the level began with (`Recording.view`) and a
+  headless replay frames for it, but a page resized or turned mid-level is not followed, so from
+  there a replay can put a guest elsewhere (docs/engine/headless.md). `rl.state().coop` lists the guests. Tested headless in
   `game/coop.test.ts` (a two-pad clear of depth 1 and its replay) and in a page at 1920×1080 by
   the riftlight e2e suite (`runRiftlightCouch`).
 

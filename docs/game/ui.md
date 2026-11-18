@@ -31,7 +31,14 @@ banner never covers the strips, a touch control, the skill bar, an orb, the XP b
 boss's bar or a moment's seconds left: where its plate would, it moves aside in its row (narrower if
 it must, never narrower than its title: drawn centred on the plate), else up above what it hit,
 under the top-left block or under the strips, the spot covering least of the rest (on a phone held
-sideways the action cluster reaches up the right side). The 'under the minimap' place is for a
+sideways the action cluster reaches up the right side). It keeps off the heroes as they stood
+when it opened (`Banner.heroes`: feet to head, to the seat tags with guests, a quarter of that
+around; taken the first frame the camera is on player 1, and it shows from then, so it never jumps
+as they move): where its place would cover them or the rows they stand in, it moves aside of them in
+its row (the row under the strips first, else the screen's top, under ≡ or just above them), a hero
+weighing more than the top-left block it may cover then (`HERO_COVER`, `BAND_COVER`: on a short
+landscape phone with three guests and the tuning's rows it covers the block's last rows, not the
+heroes); under them only where no place up there is clear. The 'under the minimap' place is for a
 phone held upright only (a 568×320 phone's compact HUD keeps it at the top, beside the minimap).
 A kill streak goes right of the strips. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
 tap on the corner minimap) fits what the hero explored into the room between the HUD's top and
@@ -96,7 +103,7 @@ skills 1-4 on an arc around it, the dodge outside the arc and a contextual inter
 next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
 inventory, skills, tree and settings are) top-left. In 52in1 (the page's `window.AIHubSettings`,
 which the hub's companion script sets before the game's first script: `RIFTLIGHT_OPTIONS` reads it,
-and `TouchPad.buttons` by `engine.hubSettings.present`) ≡ sits lower, its top on the hub's wake band
+and `TouchPad.buttons` by `TouchPad.hub`, from `engine.hubSettings.present`, recorded) ≡ sits lower, its top on the hub's wake band
 (`HUB_WAKE`, 90 CSS px: a touch above it brings the hub's bar over the game), its centre 112 CSS px
 down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame.round`: a round has
 no pause menu, the hub's bar is the menu there). `TouchPad` drives them each frame from
@@ -114,7 +121,10 @@ where the page's controls would be on a page with touch controls while a finger 
 use (`touchLayout` in the recorded viewport, a hidden button keeping its place as on the page,
 mapped to art pixels with the page's arithmetic: `TouchPad.dataLayout`, all of it recorded), so a
 replay lays the HUD out, and its taps land, as the phone's; the phone e2e holds the two to the same
-art pixels, the floating stick's zone too, at DPR 2 and 3. One gap: a notched phone keeps its
+art pixels, the floating stick's zone too, at DPR 2 and 3. Whether ≡ was in 52in1's place is
+recorded too (`TouchPad.hub`: the setup's `{ rl: 'touch', hub }` command, and save-states), so a
+52in1 phone's session replays in Node, with no hub behind it, around the controls the player had
+(`touchLayout.headless.test.ts`). One gap: a notched phone keeps its
 controls inside the safe area (`env(safe-area-inset-*)` past the margins), which a recording does
 not keep, so a replay of such a phone's session without its page lays the HUD out around controls
 a few pixels off where the player saw them. What the last frame drew that a tap hits (the loot

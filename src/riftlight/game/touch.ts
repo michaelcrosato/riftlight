@@ -138,19 +138,26 @@ export class TouchPad {
   private readonly icons = new Map<string, HTMLCanvasElement>();
   private readonly state: TouchButtonState = {};
 
-  constructor(private readonly engine: Engine) {}
+  /**
+   * The page runs in 52in1 (the hub's settings on it: `engine.hubSettings.present`, as the page's
+   * options read `window.AIHubSettings`), so its ≡ is below the hub's wake band (`buttons`). The
+   * HUD lays out around it and a tap lands on that HUD, so a recording keeps it (`Riftlight`'s
+   * setup sends `{ rl: 'touch', hub }`): a replay with no hub behind it lays the controls out as
+   * the recorded page had them.
+   */
+  hub: boolean;
+
+  constructor(private readonly engine: Engine) {
+    this.hub = engine.hubSettings.present;
+  }
 
   get active(): boolean {
     return !!this.engine.touch;
   }
 
-  /**
-   * The buttons the page has (`RIFTLIGHT_OPTIONS.touchButtons`): in 52in1 (the hub's settings on
-   * the page: `engine.hubSettings.present`, as the page's options read `window.AIHubSettings`) ≡ is
-   * below the hub's wake band.
-   */
+  /** The buttons the page has (`RIFTLIGHT_OPTIONS.touchButtons`): in 52in1 (`hub`) ≡ is below the hub's wake band. */
   get buttons(): readonly TouchButton[] {
-    return this.engine.hubSettings.present ? RIFTLIGHT_HUB_TOUCH_BUTTONS : RIFTLIGHT_TOUCH_BUTTONS;
+    return this.hub ? RIFTLIGHT_HUB_TOUCH_BUTTONS : RIFTLIGHT_TOUCH_BUTTONS;
   }
 
   /**
