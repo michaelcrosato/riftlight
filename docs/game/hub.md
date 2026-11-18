@@ -41,10 +41,11 @@ fails (numbered as the catalogue numbers them; the script runs them 3, 2, 1):
    take a new copy when the hub changes it): the page's head, the file, the covers, and the game
    against the wall's (`--offline` skips the wall).
 2. **The session harness** (`scripts/hub/harness/`, vendored unmodified): the runs the protocol's
-   *Test it* names for the mode the page declares (`protocolRuns` in `scripts/e2e-hub.mjs`: two
-   players; ghost and shared world also four on a lossy network, and the host leaving; a shared
-   world also a server with no player). The `hub` e2e suite runs a shorter set in every mode on
-   development builds (docs/game/session.md, *Checking it*).
+   *Test it* says the hub runs for the mode the page declares (`protocolRuns` in
+   `scripts/e2e-hub.mjs`): parallel at 1 and 2 players, ghost and a shared world at 2, 3 and 4, each
+   on a poor network; once more with a player leaving; a shared world once more hosted by a server
+   with no player. The `hub` e2e suite runs a shorter set in every mode on development builds
+   (docs/game/session.md, *Checking it*).
 3. **The browser**: the picture reaches every edge at 1600×900, 2100×900 and 1200×900 (loaded at
    one, resized to the others: `engine.state().framing`). Under `?lang=en-XA`, `zh-XC` and `ar-XB`
    the page sets `<html lang>`, and every text the title and the town draw

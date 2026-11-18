@@ -1621,7 +1621,7 @@ const SUITES = {
     const helpers = { exe, openPage, ready, check, capture, checkClean, colorCount };
     await runWorld({ ...helpers, scenario: SCENARIOS[0] });
   },
-  hub: (exe) => runHub({ exe, root: ROOT, check, run, tail }),
+  hub: (exe) => runHub({ exe, root: ROOT, check, run, tail, port: PORT + 3 }),
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).

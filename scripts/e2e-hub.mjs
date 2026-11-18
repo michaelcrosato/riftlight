@@ -19,11 +19,19 @@ export const HUB_RUNS = [
   ['shared-world', 'players=2&scenario=server'],
 ];
 
-/** The runs the protocol's *Test it* names for a page in `mode`: what the hub runs when it joins. */
-export function protocolRuns(mode) {
-  const runs = ['players=2'];
-  if (mode === 'ghost' || mode === 'shared-world') runs.push(`players=4&${NET}`, `players=4&${NET}&scenario=host-leave`);
-  if (mode === 'shared-world') runs.push('players=2&scenario=server');
+/**
+ * The runs the protocol's *Test it* says the hub runs when a game in `mode` joins (52in1's
+ * hub-check), within the page's `seats`: parallel and moments at 1 and 2 players, ghost and a shared
+ * world at 2, 3 and 4, each on a poor network; once more with a player leaving (at 2 players, or at
+ * 3); a shared world once more at 2 players hosted by a server with no player of its own.
+ */
+export function protocolRuns(mode, seats = [1, 4]) {
+  const own = mode === 'parallel' || mode === 'moments';
+  const counts = (own ? [1, 2] : [2, 3, 4]).filter((n) => n >= seats[0] && n <= seats[1]);
+  const runs = counts.map((n) => `players=${n}&${NET}&play=8000`);
+  const leaving = Math.max(2, Math.min(3, Math.max(...counts, 0)));
+  if (leaving <= seats[1]) runs.push(`players=${leaving}&${NET}&play=8000&scenario=host-leave`);
+  if (mode === 'shared-world' && seats[0] <= 2 && seats[1] >= 2) runs.push(`players=2&${NET}&play=8000&scenario=server`);
   return runs;
 }
 

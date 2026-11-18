@@ -8,7 +8,12 @@
  * game's answers on its own card to the page that holds it. What
  * comes back from the network is checked again before it reaches the game,
  * and anything from another round is dropped, so a slow packet can never land
- * in the next game.
+ * in the next game. In a round of moments each moment is a frame of its own,
+ * with a bridge of its own (`step`): its messages to the coordinator carry the
+ * step, and the coordinator's for another step are dropped. A round can change
+ * hands (the session's host left, and the next one carries it on): `follow()`
+ * points the bridge at its new coordinator, and says again what the old one
+ * may never have passed on.
  *
  * The network is anything with `send(toKey, envelope, {reliable})`: the
  * simulated one below (harness, tests), a BroadcastChannel between tabs, or a
@@ -60,17 +65,25 @@ export function cleanProgress(p) {
  * @param {(on:boolean) => void} [o.onFullscreen]   the game asked for fullscreen (or out of it): the
  *        hub's page takes it, so the hub's own cards stay over the game
  * @param {(what:'ready'|'more') => void} [o.onAnswer]   this player answered on the game's own card
+ * @param {number|null} [o.step]     in a round of moments, the moment this frame plays (from 0)
  */
-export function createBridge({ key, round, coordinator, post, net, clock = Date, onIssue = () => {}, onProgress = () => {}, onFullscreen = () => {}, onAnswer = () => {} }) {
+export function createBridge({ key, round, coordinator, post, net, clock = Date, onIssue = () => {}, onProgress = () => {}, onFullscreen = () => {}, onAnswer = () => {}, step = null }) {
   let welcomed = false;
   let ended = false;
   let started = false;
   let helloSent = false;
   let ownsCard = false;
   let readySent = false;
+  /** The game's own card has been on screen (the page sent it a `card`): its answers count from then. */
+  let cardShown = false;
   let me = null;
   let keys = [];
   const gone = new Set();
+  /** The last hello and result this game sent, said again to a new coordinator (follow). */
+  let lastHello = null;
+  let lastResult = null;
+  /** The coordinator's kind of message from a key that is not this round's coordinator: kept a moment, in case the round is changing hands. */
+  const stray = [];
   const queue = [];
   let queuedBytes = 0;
   let tokens = LIMITS.burst;
@@ -80,7 +93,8 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
   const stats = { sent: 0, received: 0, bytesSent: 0, dropped: 0 };
 
   const toGame = (msg) => post({ aihub: 1, ...msg });
-  const toHub = (m) => net.send(coordinator, { k: 'c', r: round, m }, { reliable: true });
+  const moment = Number.isInteger(step) ? step : null;
+  const toHub = (m) => net.send(coordinator, { k: 'c', r: round, m: moment === null ? m : { ...m, step: moment } }, { reliable: true });
   const issue = (problem) => {
     const entry = { key, problem };
     issues.push(entry);
@@ -97,19 +111,23 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
         if (helloSent) return;
         helloSent = true;
         ownsCard = msg.card === true;
-        return toHub({ type: 'hello', v: msg.v, client: String(msg.client || ''), mode: msg.mode ?? null, seats: msg.seats ?? null, card: ownsCard });
+        lastHello = { type: 'hello', v: msg.v, client: String(msg.client || ''), mode: msg.mode ?? null, seats: msg.seats ?? null, card: ownsCard };
+        return toHub(lastHello);
       case 'ready':
         if (!welcomed) return issue('ready before welcome');
         readySent = true;
         return toHub({ type: 'ready' });
       case 'answer':
         if (!ownsCard) return issue('answer without its own card: connect({ card: true })');
-        if (!welcomed || started) return;
+        // Until the first card, the last round's results, rating, guess and reveal are over the game: a press there is for them.
+        if (!welcomed || started || !cardShown) return;
         if (msg.answer !== 'ready' && msg.answer !== 'more') return issue(`answer ${JSON.stringify(msg.answer)} is not ready or more`);
         return onAnswer(msg.answer);
       case 'result':
         if (!welcomed) return issue('result before welcome');
-        return toHub({ type: 'result', time: msg.time, score: msg.score, stats: msg.stats, awards: msg.awards });
+        // A moment's result says whether its player cleared it (won).
+        lastResult = { type: 'result', time: msg.time, score: msg.score, stats: msg.stats, awards: msg.awards, ...(typeof msg.won === 'boolean' ? { won: msg.won } : {}) };
+        return toHub(lastResult);
       case 'finish':
         if (!welcomed) return issue('finish before welcome');
         return toHub({ type: 'finish', standings: msg.standings, scores: msg.scores, won: msg.won, stats: msg.stats, awards: msg.awards });
@@ -201,7 +219,13 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
       queuedBytes += size;
       return;
     }
-    if (env.k !== 'h' || fromKey !== coordinator || !env.m) return;
+    if (env.k !== 'h' || !env.m) return;
+    // In a round of moments, what the coordinator says to another moment's frame is not for this one.
+    if (moment !== null && env.m.step !== moment) return;
+    if (fromKey !== coordinator) {
+      if (stray.length < 32) stray.push([fromKey, env]);
+      return;
+    }
     const m = env.m;
     switch (m.type) {
       case 'welcome': {
@@ -209,7 +233,7 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
         welcomed = true;
         me = m.me;
         keys = Array.isArray(m.keys) ? m.keys : [];
-        const { keys: _keys, round: _round, ...rest } = m;
+        const { keys: _keys, round: _round, step: _step, ...rest } = m;
         // The limits ride in the welcome, so a client of 1.3.0 or later follows whatever this hub enforces.
         toGame({ ...rest, round, limits: { maxBytes: LIMITS.maxBytes, ratePerS: LIMITS.ratePerS, burst: LIMITS.burst } });
         for (const [k, e] of queue.splice(0)) deliverGame(k, e);
@@ -217,9 +241,12 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
         return;
       }
       case 'start':
+        // Once: a round carried on by a new coordinator starts again any game that missed it.
+        if (started) return;
         started = true;
         return toGame({ type: 'start', in: Math.round(m.at - clock.now()) });
       case 'leave':
+        if (gone.has(m.id)) return;
         gone.add(m.id);
         return toGame({ type: 'leave', id: m.id, reason: m.reason });
       case 'time-up':
@@ -233,11 +260,33 @@ export function createBridge({ key, round, coordinator, post, net, clock = Date,
   return {
     key,
     round,
+    step: moment,
     fromGame,
     fromNet,
     /** The game's own card, while it is on: { left, paused, starting, ready, asking, asked } (lib/hub/README.md, "The card"). */
     card(state) {
-      if (ownsCard && welcomed && !started && !ended) toGame({ type: 'card', ...state });
+      if (!ownsCard || !welcomed || started || ended) return;
+      cardShown = true;
+      toGame({ type: 'card', ...state });
+    },
+    /**
+     * The round changed hands: from now on this game's messages go to `next`,
+     * and only its messages count. The hello, the ready and the result are
+     * said again, in case the old coordinator never passed them on (the new
+     * one ignores what it already has), and what `next` sent before this
+     * bridge heard of it arrives now.
+     */
+    follow(next) {
+      if (!next || next === coordinator) return;
+      coordinator = next;
+      for (const [from, env] of stray.splice(0)) if (from === next) fromNet(from, env);
+      if (ended) return;
+      if (lastHello) toHub(lastHello);
+      if (readySent && !started) toHub({ type: 'ready' });
+      if (lastResult) toHub(lastResult);
+    },
+    get coordinator() {
+      return coordinator;
     },
     /** The page holding this frame was hidden or shown: the coordinator watches the host's. */
     visibility(hidden) {

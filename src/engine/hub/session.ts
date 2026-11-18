@@ -1,6 +1,7 @@
 /**
- * AI Hub sessions (AI Hub Session Protocol v1, docs/engine/hub.md): up to four players, each on
- * their own device, play a round of a game together. The hub runs the lobby, the clock and the
+ * AI Hub sessions (AI Hub Session Protocol v1, https://52in1.com/lib/hub/README.md;
+ * docs/engine/hub.md): up to four players, each on their own device, play a round of a game
+ * together on 52in1 (players know the hub by that name). The hub runs the lobby, the clock and the
  * network; a game takes part through the hub's client, `window.AIHub` (`session.js`, pasted
  * unmodified as the page's first script by the build that targets the hub).
  *
@@ -11,10 +12,17 @@
  * game sends goes out bundled, under the hub's limits on size and rate.
  */
 
-/** How the copies of a game play a round together. */
-export type HubMode = 'parallel' | 'ghost' | 'shared-world';
+import { Rng } from '../random';
 
-export const HUB_MODES: readonly HubMode[] = ['parallel', 'ghost', 'shared-world'];
+/** How the copies of a game play a round together (`moments`: short moments of the game, one a load). */
+export type HubMode = 'parallel' | 'ghost' | 'shared-world' | 'moments';
+
+export const HUB_MODES: readonly HubMode[] = ['parallel', 'ghost', 'shared-world', 'moments'];
+
+/** How a shared world plays this round, when the page's `hub:multiplayer` names it. */
+export type HubPlay = 'co-op' | 'versus' | 'other';
+
+export const HUB_PLAYS: readonly HubPlay[] = ['co-op', 'versus', 'other'];
 
 /** The hub's seat colours: the colour follows the seat. */
 export const HUB_COLORS: readonly string[] = ['#e8443a', '#3b82f6', '#22c55e', '#f5b700'];
@@ -35,11 +43,16 @@ export interface HubInfo {
   readonly isHost: boolean;
   /** True on a copy that hosts a shared world with no player of its own. */
   readonly server: boolean;
+  /** The mode the hub picked for this round: one of those the game joined with. */
   readonly mode: HubMode;
+  /** In a shared world, how this round plays (co-op, versus, other) when `hub:multiplayer` names it; else null. */
+  readonly play: HubPlay | null;
+  /** In moments, the id of the moment this load plays (a `hub:moment` tag's); else null. */
+  readonly moment: string | null;
   readonly round: number;
-  /** The round's hard limit after the start, ms. */
+  /** The round's hard limit after the start, ms (in moments, the moment's length). */
   readonly limitMs: number;
-  /** The same on every copy. */
+  /** The same on every copy (behind `session.rng(label)`). */
   readonly seed: number;
 }
 
@@ -62,12 +75,14 @@ export type HubEvent =
   | { readonly type: 'time-up'; readonly graceMs: number }
   | { readonly type: 'end'; readonly reason: string; readonly standings: readonly (readonly number[])[] | null };
 
-/** A player's own outcome, in parallel and ghost. */
+/** A player's own outcome, in parallel and ghost; in moments, whether they cleared it (`won`) and when. */
 export interface HubResult {
-  /** Milliseconds of `time()`: lower wins. */
+  /** Milliseconds of `time()`: lower wins (in moments, `time()` when it was cleared or failed). */
   readonly time?: number;
   /** Higher wins. */
   readonly score?: number;
+  /** Moments: true when the player cleared the moment, false when they failed it. */
+  readonly won?: boolean;
   readonly stats?: Readonly<Record<string, string | number>>;
   readonly awards?: readonly { readonly title: string; readonly detail?: string }[];
 }
@@ -99,7 +114,8 @@ export const HUB_LIMITS: HubLimits = { maxBytes: 16_384, ratePerS: 20, burst: 40
 export interface HubClient {
   readonly active: boolean;
   readonly seeded?: boolean;
-  connect(opts: { mode: HubMode; seats: readonly [number, number]; card?: boolean }): Promise<(Partial<HubInfo> & { limits?: Partial<HubLimits> }) | null>;
+  /** `mode`: one, or every online mode the game offers (the hub picks one: the welcome's). */
+  connect(opts: { mode: HubMode | readonly HubMode[]; seats: readonly [number, number]; card?: boolean }): Promise<(Partial<HubInfo> & { limits?: Partial<HubLimits> }) | null>;
   ready(): void;
   answer(what: 'ready' | 'more'): void;
   time(): number;
@@ -123,6 +139,91 @@ export function headMeta(name: string): string | null {
   return document.querySelector(`meta[name="${name}"]`)?.getAttribute('content')?.trim() ?? null;
 }
 
+/** Older session tags the hub still plays: race as ghost, co-op and versus as a shared world. */
+const MODE_ALIASES: Readonly<Record<string, HubMode>> = { race: 'ghost', 'co-op': 'shared-world', versus: 'shared-world' };
+
+/** The mode a session tag names (older tags included), or null. */
+function hubModeOf(word: string | null | undefined): HubMode | null {
+  const w = String(word ?? '').trim().toLowerCase();
+  return (HUB_MODES as readonly string[]).includes(w) ? (w as HubMode) : (MODE_ALIASES[w] ?? null);
+}
+
+/** Where the players are on one device, in `hub:multiplayer` (the online four are `HUB_MODES`). */
+const ONE_DEVICE = ['same-screen', 'split-screen', 'hot-seat'];
+
+/** One way to play together that `hub:multiplayer` names: where, how (a shared world's or one device's), and how many. */
+export interface HubWay {
+  /** An online mode (`HubMode`) or one on one device (`same-screen`, `split-screen`, `hot-seat`). */
+  readonly where: string;
+  readonly play: HubPlay | null;
+  /** The fewest and most players. */
+  readonly seats: readonly [number, number];
+  readonly online: boolean;
+}
+
+/**
+ * `hub:multiplayer` read (AI Hub Catalogue v1, *Playing together*): `WHERE HOW MIN-MAX, ...`, how
+ * only for a shared world or one device. Entries that don't read are left out, as the hub leaves them.
+ */
+export function parseMultiplayer(text: string | null | undefined): HubWay[] {
+  const ways: HubWay[] = [];
+  for (const raw of String(text ?? '').split(',')) {
+    const words = raw.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (words.length < 2 || words.length > 3) continue;
+    const where = words[0]!;
+    const online = (HUB_MODES as readonly string[]).includes(where);
+    if (!online && !ONE_DEVICE.includes(where)) continue;
+    const play = words.length === 3 ? (words[1] as HubPlay) : null;
+    const race = where === 'parallel' || where === 'ghost' || where === 'moments';
+    if (race ? play !== null : !HUB_PLAYS.includes(play!)) continue;
+    const m = /^(\d+)(?:[-\u2013](\d+))?$/.exec(words.at(-1)!);
+    if (!m) continue;
+    const low = Number(m[1]);
+    const high = Number(m[2] ?? m[1]);
+    if (low < 1 || high < low || high > (online ? 4 : 8)) continue;
+    if (!online && high < 2) continue; // on one device it seats 2 or more
+    if (ways.some((w) => w.where === where && w.play === play)) continue;
+    ways.push({ where, play, seats: [low, high], online });
+  }
+  return ways;
+}
+
+/**
+ * The online modes a page offers, to join with: every one `hub:multiplayer` names, each once, with
+ * `hub:session-mode` (the one it plays when nothing says which) first; a page that names none in
+ * `hub:multiplayer` offers its session mode alone. Empty when neither names a mode.
+ */
+export function onlineModes(multiplayer: string | null | undefined, sessionMode: string | null | undefined): HubMode[] {
+  const modes: HubMode[] = [];
+  const main = hubModeOf(sessionMode);
+  if (main) modes.push(main);
+  for (const way of parseMultiplayer(multiplayer)) if (way.online && !modes.includes(way.where as HubMode)) modes.push(way.where as HubMode);
+  return modes;
+}
+
+/** What a page built for the hub joins a session with, from its head's tags. */
+export interface HeadSession {
+  /** Every online mode the page offers, the default first (`onlineModes`). */
+  readonly modes: readonly HubMode[];
+  /** The fewest and most players: `hub:session-players`, else every online mode's together. */
+  readonly seats: readonly [number, number];
+}
+
+/**
+ * This page's session tags read (`hub:session` 1, `hub:session-mode`, `hub:multiplayer`,
+ * `hub:session-players`): what to pass `HubSession.join`. Null for a page without them.
+ */
+export function headSession(meta: (name: string) => string | null = headMeta): HeadSession | null {
+  if (meta('hub:session') !== '1') return null;
+  const multiplayer = meta('hub:multiplayer');
+  const modes = onlineModes(multiplayer, meta('hub:session-mode'));
+  if (!modes.length) return null;
+  const given = meta('hub:session-players')?.match(/\d+/g)?.map(Number);
+  if (given?.length) return { modes, seats: [given[0]!, Math.max(given[0]!, given[1] ?? given[0]!)] };
+  const ways = parseMultiplayer(multiplayer).filter((w) => w.online);
+  return { modes, seats: ways.length ? [Math.min(...ways.map((w) => w.seats[0])), Math.max(...ways.map((w) => w.seats[1]))] : [1, 4] };
+}
+
 /** The hub events among a frame's input commands (`ctx.input.commands`), oldest first. */
 export function hubEvents(commands: readonly unknown[]): HubEvent[] {
   const out: HubEvent[] = [];
@@ -136,9 +237,11 @@ export function hubEvents(commands: readonly unknown[]): HubEvent[] {
 /** A number the hub can rank: finite, and a number (as the client checks it). */
 const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 
-/** Would the hub take this as a result: a finite time or score. */
-export function validResult(o: HubResult | null | undefined): boolean {
-  return !!o && typeof o === 'object' && (finite(o.time) || finite(o.score));
+/** Would the hub take this as a result: a finite time or score; in moments, `won` (true or false) and a finite time. */
+export function validResult(o: HubResult | null | undefined, mode?: HubMode): boolean {
+  if (!o || typeof o !== 'object') return false;
+  if (mode === 'moments') return typeof o.won === 'boolean' && finite(o.time);
+  return finite(o.time) || finite(o.score);
 }
 
 /** Would the hub take this as a finish: standings, an array of arrays of player ids. */
@@ -157,7 +260,8 @@ export interface HubHost {
 }
 
 export interface JoinOptions {
-  readonly mode: HubMode;
+  /** The mode the game plays, or every online mode it offers, its default first (the hub picks one each round: `info.mode`). */
+  readonly mode: HubMode | readonly HubMode[];
   /** The fewest and most players the game takes. */
   readonly seats: readonly [number, number];
   /** The game shows its own card (answer it with `answer()`). */
@@ -183,6 +287,20 @@ interface Pending {
   bytes: number;
 }
 
+/**
+ * The modes a game joins with, each once, in its order (its first is its default), the older names
+ * read as the hub reads them (race as ghost, co-op and versus as a shared world). Empty when none
+ * is a mode.
+ */
+function offeredModes(mode: HubMode | readonly HubMode[]): HubMode[] {
+  const list: HubMode[] = [];
+  for (const m of typeof mode === 'string' ? [mode] : [...mode]) {
+    const known = hubModeOf(m);
+    if (known && !list.includes(known)) list.push(known);
+  }
+  return list;
+}
+
 /** The longest queue of bundles kept per destination while the rate holds them back (then the oldest go). */
 const MAX_PENDING = 64;
 
@@ -198,8 +316,9 @@ export type HubPhase = 'card' | 'countdown' | 'time-up' | 'ended';
 /**
  * A game's side of one round. Join with `HubSession.join()`, `attach()` the engine (or a
  * `HubHost`) so the hub's events arrive as input commands, call `ready()` once the round can
- * start, then report: `progress()` and `result()` in parallel and ghost, `finish()` from a
- * shared world's host. `send()` reaches the other copies.
+ * start, then report: `progress()` and `result()` in parallel and ghost, `result({ won, time })`
+ * in moments, `finish()` from a shared world's host. `send()` reaches the other copies (ghost and
+ * a shared world). `rng(label)` draws what a set-up needs, the same on every copy.
  */
 export class HubSession {
   /** The round, as welcomed (players: who is still in, `leave` removes them). */
@@ -256,11 +375,16 @@ export class HubSession {
     return new HubSession(client, info, { mode: info.mode, seats: [1, 4], autoFlush: false });
   }
 
-  /** Connect to the hub. Null when there is none (outside a session): play as usual. */
+  /**
+   * Connect to the hub. Null when there is none (outside a session): play as usual. Several modes
+   * go to the hub as a list, one alone as itself (as hubs from before several modes read it).
+   */
   static async join(options: JoinOptions): Promise<HubSession | null> {
     const client = options.client === undefined ? hubClient() : options.client;
     if (!client || !client.active) return null;
-    const welcome = await client.connect({ mode: options.mode, seats: options.seats, card: options.card === true });
+    const offered = offeredModes(options.mode);
+    if (!offered.length) throw new Error(`HubSession: mode is one or more of ${HUB_MODES.join(', ')}`);
+    const welcome = await client.connect({ mode: offered.length === 1 ? offered[0]! : offered, seats: options.seats, card: options.card === true });
     if (!welcome) return null;
     return new HubSession(client, welcome, options);
   }
@@ -268,7 +392,13 @@ export class HubSession {
   private constructor(client: HubClient, welcome: Partial<HubInfo> & { limits?: Partial<HubLimits> }, options: JoinOptions) {
     this.client = client;
     const players = (welcome.players ?? []).map((p, i) => ({ id: Number(p.id), name: String(p.name ?? `Player ${i + 1}`), color: String(p.color ?? HUB_COLORS[i % 4]) }));
-    const mode = HUB_MODES.includes(welcome.mode as HubMode) ? (welcome.mode as HubMode) : options.mode;
+    // the hub's pick, when it is one the game offered; else the game's first (its default); a
+    // recording whose mode is none of today's replays in it as recorded
+    const offered = offeredModes(options.mode);
+    const picked = hubModeOf(welcome.mode);
+    const mode = picked && offered.includes(picked) ? picked : (offered[0] ?? (welcome.mode as HubMode));
+    const play = mode === 'shared-world' && HUB_PLAYS.includes(welcome.play as HubPlay) ? (welcome.play as HubPlay) : null;
+    const moment = mode === 'moments' && typeof welcome.moment === 'string' && welcome.moment ? welcome.moment : null;
     this.info = {
       me: Number(welcome.me ?? 0),
       players,
@@ -276,6 +406,8 @@ export class HubSession {
       isHost: welcome.isHost === true || welcome.me === welcome.host,
       server: welcome.server === true,
       mode,
+      play,
+      moment,
       round: Number(welcome.round ?? 1),
       limitMs: Number(welcome.limitMs ?? 0),
       seed: Number(welcome.seed ?? 0) >>> 0,
@@ -391,15 +523,33 @@ export class HubSession {
     return this.phase !== 'card' && this.phase !== 'ended' && this.time() >= 0;
   }
 
+  /**
+   * A generator of numbers in [0, 1), the same on every copy for the same label: the numbers the
+   * hub's `AIHub.rng(label)` gives, from `info.seed`. A set-up draws from it (a moment's start, a
+   * shared world's first spawn); the seed is recorded with the round's info, so a replay draws the
+   * same. Each call starts the label's stream afresh.
+   */
+  rng(label?: string): Rng {
+    const text = String(label === undefined ? '' : label); // as the client reads it: no label is ''
+    let h = 0x811c9dc5; // FNV-1a, as the client hashes the label
+    for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+    const rng = new Rng(1);
+    rng.state = (this.info.seed ^ h) >>> 0; // mulberry32 from the client's start (zero too)
+    return rng;
+  }
+
   /** Parallel and ghost: this player's standing, for the hub's scoreboard (it takes about one a second). */
   progress(score: number, label?: string): void {
-    if (this.ended || this.reported || this.mode === 'shared-world' || !finite(score)) return;
+    if (this.ended || this.reported || this.mode === 'shared-world' || this.mode === 'moments' || !finite(score)) return;
     this.client.progress(label === undefined ? { score } : { score, label: String(label).slice(0, 24) });
   }
 
-  /** Parallel and ghost: this player's round is over (a finite `time` or `score`). Once: false when not taken. */
+  /**
+   * This player's round is over: in parallel and ghost a finite `time` or `score`; in moments,
+   * whether they cleared it (`won`) and the hub's `time()` then. Once: false when not taken.
+   */
   result(outcome: HubResult): boolean {
-    if (this.ended || this.reported || this.mode === 'shared-world' || !validResult(outcome)) return false;
+    if (this.ended || this.reported || this.mode === 'shared-world' || !validResult(outcome, this.mode)) return false;
     this.reported = true;
     this.client.result(outcome);
     return true;
@@ -422,11 +572,11 @@ export class HubSession {
    * Send JSON to every other copy (or to the one player `to`) with the next flush. Data is
    * bundled, so a game can send as often as it likes: bundles leave as the hub's rate allows, and
    * while they wait they take more items (one destination's items stay in order; different
-   * destinations' may interleave). Ignored in parallel (copies send nothing), after the end, and
-   * for data that isn't JSON (false).
+   * destinations' may interleave). Ignored in parallel and moments (copies send nothing), after the
+   * end, and for data that isn't JSON (false).
    */
   send(data: unknown, to?: number): boolean {
-    if (this.ended || this.mode === 'parallel') return false;
+    if (this.ended || this.mode === 'parallel' || this.mode === 'moments') return false;
     let copy: unknown;
     try {
       copy = JSON.parse(JSON.stringify(data ?? null)) as unknown;
