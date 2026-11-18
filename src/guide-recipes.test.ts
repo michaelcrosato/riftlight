@@ -4,10 +4,12 @@
 // within its token budget. Then every recipe of the kit (GUIDE.md's Cliff Run, this guide's games,
 // ASSETS.md's Market Corner; CONTROLS.md's own games are src/guide-controls.test.ts's) meets
 // CONTROLS.md's checklist, played headless: a controls table, touch buttons of its own,
-// `touchDensity: 2` and the settings on a pad; every text it draws inside the HUD in every state on
-// every device, on a phone held either way, a tall narrow window and a TV, with a legend for the
-// keyboard and the pad; and what a player needs in view at every window shape. The bundle e2e suite
-// then plays their pages on a phone (real taps, the HUD clear of the controls) and on a TV with a pad.
+// `touchDensity: 2` and the settings on a pad; every text it draws inside the HUD, clear of the
+// others and in whole words, in every state on every device, on a phone held either way, a tall
+// narrow window and a TV, with a legend for the keyboard and the pad; what a player needs in view at
+// every window shape and under no text; the player's wheel and + / - zoom it, and the zoom stays.
+// The bundle e2e suite then plays their pages on a phone (real taps, the HUD clear of the controls)
+// and on a TV with a pad.
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -51,23 +53,38 @@ async function load(name: string): Promise<{ createGame: () => bundle.Game; star
   return (await import(/* @vite-ignore */ join(tmp, `${name}.mjs`))) as Awaited<ReturnType<typeof load>>;
 }
 
-/** The texts the next frame draws that reach outside the HUD (`what` says the state), each placed as `hud.text` places it. */
-function textsOutside(engine: bundle.Engine, what: string): string[] {
+/** The texts the next frame draws (`what` says the state), each with the box `hud.text` places it in. */
+function textBoxes(engine: bundle.Engine): { s: string; left: number; top: number; right: number; bottom: number; caption: boolean }[] {
   const { hud } = engine;
   const text = vi.spyOn(hud, 'text');
   try {
     engine.step(1);
-    const size = { width: hud.width, height: hud.height };
-    return text.mock.calls
-      .filter(([x, y, s, o = {}]) => {
-        const { width, height } = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
-        const [left, top] = bundle.hudPlace(x, y, width, height, o.anchor ?? 'top-left', size);
-        return left < 0 || top < 0 || left + width > size.width || top + height > size.height;
-      })
-      .map(([, , s]) => `${what} at ${size.width}x${size.height}: ${s}`);
+    return text.mock.calls.map(([x, y, s, o = {}]) => {
+      const { width, height } = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
+      const [left, top] = bundle.hudPlace(x, y, width, height, o.anchor ?? 'top-left', { width: hud.width, height: hud.height });
+      return { s, left, top, right: left + width, bottom: top + height, caption: o.shadow === false }; // a glyph's caption: no shadow
+    });
   } finally {
     text.mockRestore();
   }
+}
+
+/**
+ * What is amiss with the texts the next frame draws (`what` says the state): one reaching outside
+ * the HUD, one over another, or a piece of a word wrapped apart (a word neither the game's `code`
+ * nor the names of its controls on the device in use have; a glyph's caption aside).
+ */
+function textsAmiss(engine: bundle.Engine, what: string, code: string): string[] {
+  const words = (s: string) => s.toUpperCase().split(/[^\p{L}]+/u).filter(Boolean);
+  const known = new Set([...words(code), ...Object.keys(engine.game.controls ?? {}).flatMap((a) => words(engine.controls.label(a)))]);
+  const { width, height } = engine.hud;
+  const at = `${what} at ${width}x${height}`;
+  const boxes = textBoxes(engine);
+  return [
+    ...boxes.filter((b) => b.left < 0 || b.top < 0 || b.right > width || b.bottom > height).map((b) => `${at}: ${b.s}`),
+    ...boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map((b) => `${at}: ${a.s} over ${b.s}`)),
+    ...boxes.filter((b) => !b.caption).flatMap((b) => words(b.s).filter((w) => !known.has(w)).map((w) => `${at}: ${b.s} (${w}: a piece of a word)`)),
+  ];
 }
 
 /** The states each recipe's player reaches: a name and what puts the game there. */
@@ -147,10 +164,10 @@ describe("the kit's recipes meet CONTROLS.md", () => {
     }
   });
 
-  it('every text each draws is inside the HUD in every state, on every device, on a phone held either way, a tall window and a TV; on a TV the keyboard and a pad get a legend', async () => {
-    const outside: string[] = [];
+  it('every text each draws is inside the HUD, clear of the others and in whole words, in every state, on every device, on a phone held either way, a tall window and a TV; on a TV the keyboard and a pad get a legend', async () => {
+    const amiss: string[] = [];
     const legends: string[] = [];
-    for (const { name } of games) {
+    for (const { name, code } of games) {
       const { createGame, startOptions } = await load(name);
       for (const [width, height] of [[390, 844], [844, 390], [360, 1000], [1920, 1080]] as const) {
         for (const [state, enter] of STATES[name]!) {
@@ -162,7 +179,7 @@ describe("the kit's recipes meet CONTROLS.md", () => {
             for (const device of ['touch', 'keyboard', 'pad'] as const) {
               engine.input.noteDevice(device);
               const legend = vi.spyOn(engine.hud, 'legend');
-              outside.push(...textsOutside(engine, `${name} ${state} on ${device}`));
+              amiss.push(...textsAmiss(engine, `${name} ${state} on ${device}`, code));
               if (device !== 'touch' && width === 1920 && legend.mock.calls.length === 0) legends.push(`${name} ${state} on ${device} at ${width}x${height}`);
               legend.mockRestore();
             }
@@ -173,11 +190,11 @@ describe("the kit's recipes meet CONTROLS.md", () => {
         }
       }
     }
-    expect(outside).toEqual([]);
+    expect(amiss).toEqual([]);
     expect(legends, 'no legend').toEqual([]);
   });
 
-  it('what a player needs is in view at every window shape: the lane around Cliff Run’s hero, Lantern Night’s crates, Look Lab’s coins and crate, every model of Market Corner', async () => {
+  it('what a player needs is in view at every window shape, clear of the HUD’s texts: the lane around Cliff Run’s hero, Lantern Night’s crates and pads, Look Lab’s coins and crate, every model of Market Corner', async () => {
     const shapes = [[390, 844], [344, 882], [360, 1000], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const;
     const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
     /** What a player needs, a name, a point and a radius each, read from the game once it runs. */
@@ -186,7 +203,11 @@ describe("the kit's recipes meet CONTROLS.md", () => {
         const at = (g.model as THREE.Object3D).position;
         return [['the hero', at.clone(), 0.5], ['4 m ahead', at.clone().add(v(4, 0, 0)), 0.5], ['4 m behind', at.clone().add(v(-4, 0, 0)), 0.5]];
       },
-      'top-down': (g) => [['the hero', (g.model as THREE.Object3D).position.clone(), 0.5], ...(g.crates as { translation(): THREE.Vector3Like }[]).map((b, i): [string, THREE.Vector3, number] => [`crate ${i}`, v(b.translation().x, b.translation().y, b.translation().z), 0.5])],
+      'top-down': (g) => [
+        ['the hero', (g.model as THREE.Object3D).position.clone(), 0.5],
+        ...(g.crates as { translation(): THREE.Vector3Like }[]).map((b, i): [string, THREE.Vector3, number] => [`crate ${i}`, v(b.translation().x, b.translation().y, b.translation().z), 0.5]),
+        ...(g.pads as { x: number; z: number }[]).map((p, i): [string, THREE.Vector3, number] => [`pad ${i}`, v(p.x, 0, p.z), 0.6]),
+      ],
       looks: (g) => [['the hero', (g.model as THREE.Object3D).position.clone(), 0.5], ...(g.coins as THREE.Object3D[]).map((c, i): [string, THREE.Vector3, number] => [`coin ${i}`, c.position.clone(), 0.4]), ['the crate', v(3, 0.5, 2), 0.5]],
       market: (g) => (g.placed as { object: THREE.Object3D }[]).map((m, i): [string, THREE.Vector3, number] => [`model ${i}`, m.object.position.clone(), 0.8]),
     };
@@ -198,11 +219,20 @@ describe("the kit's recipes meet CONTROLS.md", () => {
         const engine = await bundle.Engine.headless(game, { ...startOptions, assets: nodeAssets(), touch: true, viewport: { width, height, dpr: 1 } });
         try {
           engine.step(60); // the camera settles on the player
-          const cam = engine.camera.camera;
-          const p = new THREE.Vector3();
-          for (const [what, at, r] of needs[name]!(game)) {
-            const corners = [-r, r].flatMap((dx) => [-r, r].map((dz) => p.copy(at).add(v(dx, 0, dz)).project(cam).clone()));
-            if (corners.some((c) => Math.abs(c.x) > 1 || Math.abs(c.y) > 1)) out.push(`${name} at ${width}x${height}: ${what} (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
+          for (const device of ['touch', 'keyboard', 'pad'] as const) {
+            engine.input.noteDevice(device);
+            const texts = textBoxes(engine);
+            const cam = engine.camera.camera;
+            const p = new THREE.Vector3();
+            for (const [what, at, r] of needs[name]!(game)) {
+              const corners = [-r, r].flatMap((dx) => [-r, r].map((dz) => p.copy(at).add(v(dx, 0, dz)).project(cam).clone()));
+              if (corners.some((c) => Math.abs(c.x) > 1 || Math.abs(c.y) > 1)) out.push(`${name} at ${width}x${height}: ${what} (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
+              // where it is on the HUD, in art pixels: under none of its texts
+              const xs = corners.map((c) => ((c.x + 1) / 2) * engine.hud.width);
+              const ys = corners.map((c) => ((1 - c.y) / 2) * engine.hud.height);
+              const under = texts.find((t) => t.left < Math.max(...xs) && Math.min(...xs) < t.right && t.top < Math.max(...ys) && Math.min(...ys) < t.bottom);
+              if (under) out.push(`${name} at ${width}x${height} on ${device}: ${what} under ${under.s}`);
+            }
           }
         } finally {
           engine.dispose();
@@ -211,4 +241,58 @@ describe("the kit's recipes meet CONTROLS.md", () => {
     }
     expect(out).toEqual([]);
   });
+
+  it('the player zooms each with the wheel and + / -, and the zoom stays; a phone held upright comes no closer than the game starts', async () => {
+    const out: string[] = [];
+    for (const { name } of games) {
+      const { createGame, startOptions } = await load(name);
+      for (const [width, height] of [[1280, 720], [390, 844]] as const) {
+        const engine = await bundle.Engine.headless(createGame(), { ...startOptions, assets: nodeAssets(), touch: true, viewport: { width, height, dpr: 1 } });
+        try {
+          out.push(...playerZooms(engine, `${name} at ${width}x${height}`, height > width));
+        } finally {
+          engine.dispose();
+        }
+      }
+    }
+    expect(out).toEqual([]);
+  });
 });
+
+/**
+ * What goes wrong when the player zooms `engine`'s game (`what` names it): six wheel notches out,
+ * Minus held (to the camera's `minZoom`), three notches in, Plus held, each still there half a
+ * second later. Coming back in, it stops where the game started when the window held the camera out
+ * (`heldOut`: a phone held upright, the camera's `minWidth` across), and goes on in otherwise.
+ * (src/guide-controls.test.ts zooms CONTROLS.md's games the same way.)
+ */
+function playerZooms(engine: bundle.Engine, what: string, heldOut: boolean): string[] {
+  const rig = () => engine.camera;
+  const clamp = (z: number) => Math.min(rig().maxZoom, Math.max(rig().minZoom, z));
+  const problems: string[] = [];
+  engine.step(2);
+  const start = rig().zoom;
+  let was = start;
+  const after = (did: string, act: () => void, ok: (z: number, was: number) => boolean) => {
+    act();
+    const z = rig().zoom;
+    engine.step(30);
+    if (!ok(z, was) || rig().zoom !== z) problems.push(`${what}: ${did}: ${was.toFixed(3)} → ${z.toFixed(3)}, ${rig().zoom.toFixed(3)} half a second later`);
+    was = rig().zoom;
+  };
+  const hold = (key: string, frames: number) => () => {
+    engine.input.setKey(key, true);
+    engine.step(frames);
+    engine.input.setKey(key, false);
+  };
+  const wheel = (notches: number) => () => {
+    engine.input.addPointer(0, 0, notches);
+    engine.step(1);
+  };
+  after('six wheel notches out', wheel(6), (z, from) => z < from && Math.abs(z - clamp(from / 1.12 ** 6)) < 1e-9);
+  after('Minus held', hold('Minus', 54), (z, from) => z < from || z === rig().minZoom);
+  after('three wheel notches in', wheel(-3), (z, from) => z > from && Math.abs(z - Math.min(start, clamp(from * 1.12 ** 3))) < 1e-9);
+  after('Plus held', hold('Equal', 6), (z, from) => (from < start ? z > from : z === from));
+  after('Plus held long', hold('Equal', 300), (z, from) => (heldOut ? z === start : z > from));
+  return problems;
+}

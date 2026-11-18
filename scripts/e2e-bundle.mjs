@@ -945,7 +945,7 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
       legend: ['WALK', 'SETTINGS'],
       /** The goal on screen, then both pads lit (the gate open) and out through it. */
       async more(page, at) {
-        const goal = /PUSH THE/.test((await at('goal')).texts.join(' '));
+        const goal = /CRATES ONTO PADS/.test((await at('goal')).texts.join(' '));
         await page.evaluate(() => window.__PIXEL_ENGINE__.game.pads.forEach((p) => (p.lit = true)));
         const open = await at('open');
         await page.evaluate(() => {
@@ -959,12 +959,12 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     {
       page: 'examples/looks.html',
       name: 'Look Lab',
-      buttons: ['< KeyQ', '> KeyE', 'PX KeyT'],
+      buttons: ['> KeyE', '< KeyQ', 'PX KeyT'],
       legend: ['PREV', 'NEXT', 'CHUNKY', 'WALK', 'SETTINGS'],
       /** The next look, the one before, chunky pixels: real taps on > < PX, or R1 L1 Triangle (the hero's lie, prone and grab, taken off it here). */
       async more(page, at, device) {
         const seen = [];
-        for (const [state, button, i] of [['next', 5, 1], ['prev', 4, 0], ['chunky', 3, 2]]) {
+        for (const [state, button, i] of [['next', 5, 0], ['prev', 4, 1], ['chunky', 3, 2]]) {
           if (device === 'touch') await tapOn(page, `.touch-ui button[data-i="${i}"]`);
           else await page.evaluate((b) => window.__kit.press(b), button);
           seen.push((await at(state)).status);

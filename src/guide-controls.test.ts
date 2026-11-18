@@ -6,10 +6,12 @@
 // itself and reports once in a LocalHub round); the names and codes its prose and its unnamed code
 // give are the engine's (dotted ones walked on a live engine and session, `Game.<x>` one of the
 // Game hooks; a bare option or field, `touchDensity: 2`, `micLater`, read from the engine's
-// source: EngineOptions, the touch controls, the 52in1 settings); a page holding its head
-// tags passes 52in1's catalogue checker on them, and they name the game's moments; it stays within
-// its token budget. The bundle e2e suite then plays its pages with check.mjs, on a phone too (the
-// touch buttons each game passes, a HUD clear of the controls).
+// source: EngineOptions and its camera config, the touch controls, the 52in1 settings); a page
+// holding its head tags passes 52in1's catalogue checker on them, and they name the game's
+// moments; it stays within its token budget; every text its games draw lies inside the HUD, clear
+// of the others and in whole words, what a player needs is in view at every window shape, and the
+// player's wheel and + / - zoom both. The bundle e2e suite then plays its pages with check.mjs, on
+// a phone too (the touch buttons each game passes, a HUD clear of the controls).
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -65,8 +67,8 @@ const flat = (map: Map<string, Set<string>>) => new Set([...map.keys(), ...[...m
 
 /** The `Game` hooks (`Game.controls`): a `Game.<x>` in the prose is one of them. */
 const GAME_HOOKS = new Set(members('src/engine/Engine.ts', 'Game').keys());
-/** An option the prose names as `name: value`: `Engine.start`'s (EngineOptions, its `settings`' under it) or a HUD text's (`scale: 2`). */
-const OPTIONS = new Map([...members('src/engine/Engine.ts', 'EngineOptions'), ...members('src/engine/hud/Hud.ts', 'HudOptions')]);
+/** An option the prose names as `name: value`: `Engine.start`'s (EngineOptions, its `settings`' and `camera`'s under it) or a HUD text's (`scale: 2`). */
+const OPTIONS = new Map([...members('src/engine/Engine.ts', 'EngineOptions'), ['camera', new Set(members('src/engine/camera.ts', 'CameraConfig').keys())], ...members('src/engine/hud/Hud.ts', 'HudOptions')]);
 /**
  * A bare lower-case name the prose gives (`touchButtons`, `micLater`, `zone`, `at`, `height`,
  * `update`): an option, a hook, a field of the touch controls (`ctx.engine.touch`, a button), the
@@ -117,26 +119,42 @@ async function load(name: string): Promise<Record<string, unknown>> {
   return (await import(/* @vite-ignore */ file)) as Record<string, unknown>;
 }
 
+/** The camera a page starts with, read from its start line (`Engine.headless`'s default is iso). */
+function cameraOf(name: string): bundle.CameraConfig {
+  const m = /camera: \{ preset: '(\w+)', minWidth: (\d+) \}/.exec(blocks.find((b) => b.name === name)!.code);
+  expect(m, `${name} starts a camera that keeps its ground's width in view`).not.toBeNull();
+  return { preset: m![1] as bundle.CameraPreset, minWidth: Number(m![2]) };
+}
+
 /** The engine's input, HUD, engine, controls, sessions, touch controls, audio, settings and lights: a bare call in the prose (`rects()`) is one of theirs. */
 const CLASSES = [bundle.Input, bundle.Hud, bundle.Engine, bundle.Controls, bundle.HubSession, bundle.LocalHub, bundle.HubSettings, bundle.DualSense, bundle.Lang, bundle.TouchControls, bundle.AudioManager, bundle.Settings, bundle.LightPool];
 
 /**
- * The texts the next frame draws that reach outside the HUD (`what` says the state), each placed as
- * `hud.text` places it: a phone held upright has 130 columns.
+ * What is amiss with the texts the next frame draws (`what` says the state), each placed as
+ * `hud.text` places it (a phone held upright has 130 columns, a tall narrow window 90): one reaching
+ * outside the HUD, one over another, or a piece of a word wrapped apart (a word neither the game's
+ * `code` nor the names of its controls on the device in use have; a glyph's caption, drawn with no
+ * shadow, aside).
  */
-function textsOutside(engine: bundle.Engine, what: string): string[] {
+function textsAmiss(engine: bundle.Engine, what: string, code: string): string[] {
   const { hud } = engine;
+  const words = (s: string) => s.toUpperCase().split(/[^\p{L}]+/u).filter(Boolean);
+  const known = new Set([...words(code), ...Object.keys(engine.game.controls ?? {}).flatMap((a) => words(engine.controls.label(a)))]);
   const text = vi.spyOn(hud, 'text');
   try {
     engine.step(1);
-    const size = { width: hud.width, height: hud.height };
-    return text.mock.calls
-      .filter(([x, y, s, o = {}]) => {
-        const { width, height } = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
-        const [left, top] = bundle.hudPlace(x, y, width, height, o.anchor ?? 'top-left', size);
-        return left < 0 || top < 0 || left + width > size.width || top + height > size.height;
-      })
-      .map(([, , s]) => `${what} at ${size.width}x${size.height}: ${s}`);
+    const { width, height } = hud;
+    const at = `${what} at ${width}x${height}`;
+    const boxes = text.mock.calls.map(([x, y, s, o = {}]) => {
+      const size = hud.measure(s, Math.max(1, Math.round(o.scale ?? 1)));
+      const [left, top] = bundle.hudPlace(x, y, size.width, size.height, o.anchor ?? 'top-left', { width, height });
+      return { s, left, top, right: left + size.width, bottom: top + size.height, caption: o.shadow === false };
+    });
+    return [
+      ...boxes.filter((b) => b.left < 0 || b.top < 0 || b.right > width || b.bottom > height).map((b) => `${at}: ${b.s}`),
+      ...boxes.flatMap((a, i) => boxes.slice(i + 1).filter((b) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom).map((b) => `${at}: ${a.s} over ${b.s}`)),
+      ...boxes.filter((b) => !b.caption).flatMap((b) => words(b.s).filter((w) => !known.has(w)).map((w) => `${at}: ${b.s} (${w}: a piece of a word)`)),
+    ];
   } finally {
     text.mockRestore();
   }
@@ -245,7 +263,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(unknownNames(spans)).toEqual([]);
     // the lists are the source's: an option or a field misspelt, or one the engine doesn't have, fails
     expect([...OPTIONS.keys()]).toEqual(expect.arrayContaining(['touchDensity', 'touchStick', 'touchButtons', 'aspect', 'settings', 'scale']));
-    expect(unknownNames(['touchDensity: 2', 'touchDensty: 2', 'touchStik', 'micLater', 'micLatr', 'zone', 'zones', 'settings: { padButton: true }', 'settings: { padButon: true }', 'gamepad', 'gamepads', 'time-up'])).toEqual(['touchDensty', 'touchStik', 'micLatr', 'zones', 'settings.padButon', 'gamepads']);
+    expect(unknownNames(['touchDensity: 2', 'touchDensty: 2', 'touchStik', 'micLater', 'micLatr', 'zone', 'zones', 'settings: { padButton: true }', 'settings: { padButon: true }', 'camera: { minWidth: 14 }', 'camera: { minWidht: 14 }', 'gamepad', 'gamepads', 'time-up'])).toEqual(['touchDensty', 'touchStik', 'micLatr', 'zones', 'settings.padButon', 'camera.minWidht', 'gamepads']);
   });
 
   it('Beacon Yard plays as it says: prompts follow the device, Options pauses as it is let go (never under 52in1’s chord), its menu', async () => {
@@ -408,9 +426,10 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     }
   });
 
-  it('every text its games draw is inside the HUD in every state, on a phone held either way (at the density their pages ask for) and on a TV', async () => {
-    const outside: string[] = [];
-    const shapes = [[390, 844], [844, 390], [1920, 1080]] as const;
+  it('every text its games draw is inside the HUD, clear of the others and in whole words, in every state, on a phone held either way (at the density their pages ask for), a tall narrow window and a TV', async () => {
+    const amiss: string[] = [];
+    const code = (name: string) => blocks.find((b) => b.name === name)!.code;
+    const shapes = [[390, 844], [844, 390], [360, 1000], [1920, 1080]] as const;
     const { createGame: yard } = await load('beacon-yard');
     type Yard = bundle.Game & { at: THREE.Vector3; menu: unknown; beacons: { mesh: THREE.Mesh }[]; light(ctx: bundle.GameContext, beacon: unknown): void };
     for (const [width, height] of shapes) {
@@ -420,15 +439,15 @@ describe('docs/GUIDE-CONTROLS.md', () => {
         for (const device of ['touch', 'keyboard', 'pad'] as const) {
           engine.input.noteDevice(device);
           game.at.set(0, 0.6, 0);
-          outside.push(...textsOutside(engine, `Beacon Yard on ${device}`));
+          amiss.push(...textsAmiss(engine, `Beacon Yard on ${device}`, code('beacon-yard')));
           game.at.copy(game.beacons[0]!.mesh.position);
           engine.step(1);
-          outside.push(...textsOutside(engine, `Beacon Yard by a beacon on ${device}`));
+          amiss.push(...textsAmiss(engine, `Beacon Yard by a beacon on ${device}`, code('beacon-yard')));
           engine.input.setKey('Escape', true);
           engine.step(1);
           engine.input.setKey('Escape', false);
           expect(game.menu, 'Esc opens the menu').not.toBeNull();
-          outside.push(...textsOutside(engine, `Beacon Yard's menu on ${device}`));
+          amiss.push(...textsAmiss(engine, `Beacon Yard's menu on ${device}`, code('beacon-yard')));
           engine.input.setKey('Escape', true);
           engine.step(1);
           engine.input.setKey('Escape', false);
@@ -436,7 +455,10 @@ describe('docs/GUIDE-CONTROLS.md', () => {
           expect(game.menu, 'Esc closes it').toBeNull();
         }
         for (const beacon of game.beacons) game.light(engine.context, beacon);
-        outside.push(...textsOutside(engine, 'Beacon Yard all lit'));
+        for (const device of ['touch', 'keyboard', 'pad'] as const) {
+          engine.input.noteDevice(device);
+          amiss.push(...textsAmiss(engine, `Beacon Yard all lit on ${device}`, code('beacon-yard')));
+        }
       } finally {
         engine.dispose();
       }
@@ -451,17 +473,17 @@ describe('docs/GUIDE-CONTROLS.md', () => {
           if (state === 'counting down') game.countdown = 2.5;
           if (state === 'cleared' || state === 'failed' || state === 'play again') game.finish(engine.context, state === 'cleared');
           if (state === 'play again') engine.step(70);
-          outside.push(...textsOutside(engine, `Gem Rush ${state}`));
+          amiss.push(...textsAmiss(engine, `Gem Rush ${state}`, code('gem-rush')));
         } finally {
           engine.dispose();
         }
       }
     }
-    expect(outside).toEqual([]);
+    expect(amiss).toEqual([]);
   });
 
   it('what a player needs is in view at every window shape: Gem Rush’s whole arena (every gem, the runner in each corner it reaches), every beacon from Beacon Yard’s start', async () => {
-    // (360x1000: a window so tall that Gem Rush's 19 m fit only below the camera's default minimum zoom, 0.35)
+    // (360x1000: a window so tall that Gem Rush's 19 m fit only below the camera's minimum zoom, 0.35)
     const shapes = [[390, 844], [344, 882], [360, 1000], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const;
     /** What of `things` (a name, a point and a radius) the camera leaves out of the picture. */
     const outOfView = (engine: bundle.Engine, what: string, things: [string, THREE.Vector3, number][]) => {
@@ -472,18 +494,15 @@ describe('docs/GUIDE-CONTROLS.md', () => {
         .filter(([, at, r]) => [-r, r].some((dx) => [-r, r].some((dz) => (p.copy(at).add(edge.set(dx, 0, dz)).project(cam), Math.abs(p.x) > 1 || Math.abs(p.y) > 1))))
         .map(([name, at]) => `${what} at ${engine.hud.width}x${engine.hud.height}: ${name} (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
     };
-    // the camera both pages start with (Engine.headless's default is iso), able to zoom out that far
-    const camera = { preset: 'topdown', minZoom: 0.25 } as const;
-    for (const { name, code } of blocks) expect(code, name).toContain("camera: { preset: 'topdown', minZoom: 0.25 }");
     const { createGame: rush } = await load('gem-rush');
     type Rush = bundle.Game & { gems: THREE.Mesh[]; runner: THREE.Mesh };
     const { createGame: yard } = await load('beacon-yard');
     type Yard = bundle.Game & { beacons: { mesh: THREE.Mesh }[] };
     const out: string[] = [];
     for (const [width, height] of shapes) {
-      const options = { camera, touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } };
+      const options = { touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } };
       const g = (rush as (session: null) => Rush)(null);
-      const engine = await bundle.Engine.headless(g, options);
+      const engine = await bundle.Engine.headless(g, { ...options, camera: cameraOf('gem-rush') });
       try {
         engine.step(2);
         out.push(...outOfView(engine, 'Gem Rush', g.gems.map((gem, i) => [`gem ${i}`, gem.position, 0.35])));
@@ -498,12 +517,28 @@ describe('docs/GUIDE-CONTROLS.md', () => {
         engine.dispose();
       }
       const y = (yard as () => Yard)();
-      const yardEngine = await bundle.Engine.headless(y, options);
+      const yardEngine = await bundle.Engine.headless(y, { ...options, camera: cameraOf('beacon-yard') });
       try {
         yardEngine.step(2);
         out.push(...outOfView(yardEngine, 'Beacon Yard’s start', y.beacons.map((b, i) => [`beacon ${i}`, b.mesh.position, 0.4])));
       } finally {
         yardEngine.dispose();
+      }
+    }
+    expect(out).toEqual([]);
+  });
+
+  it('the player zooms both games with the wheel and + / -, and the zoom stays; a phone held upright comes no closer than the game starts', async () => {
+    const out: string[] = [];
+    for (const name of ['beacon-yard', 'gem-rush']) {
+      const { createGame } = await load(name);
+      for (const [width, height] of [[1280, 720], [390, 844]] as const) {
+        const engine = await bundle.Engine.headless((createGame as (session?: null) => bundle.Game)(null), { camera: cameraOf(name), touch: true, touchDensity: 2, viewport: { width, height, dpr: 1 } });
+        try {
+          out.push(...playerZooms(engine, `${name} at ${width}x${height}`, height > width));
+        } finally {
+          engine.dispose();
+        }
       }
     }
     expect(out).toEqual([]);
@@ -540,3 +575,41 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     expect(guide.length / 4).toBeLessThan(6000);
   });
 });
+
+/**
+ * What goes wrong when the player zooms `engine`'s game (`what` names it): six wheel notches out,
+ * Minus held (to the camera's `minZoom`), three notches in, Plus held, each still there half a
+ * second later. Coming back in, it stops where the game started when the window held the camera out
+ * (`heldOut`: a phone held upright, the camera's `minWidth` across), and goes on in otherwise.
+ * (src/guide-recipes.test.ts zooms the kit's other pages the same way.)
+ */
+function playerZooms(engine: bundle.Engine, what: string, heldOut: boolean): string[] {
+  const rig = () => engine.camera;
+  const clamp = (z: number) => Math.min(rig().maxZoom, Math.max(rig().minZoom, z));
+  const problems: string[] = [];
+  engine.step(2);
+  const start = rig().zoom;
+  let was = start;
+  const after = (did: string, act: () => void, ok: (z: number, was: number) => boolean) => {
+    act();
+    const z = rig().zoom;
+    engine.step(30);
+    if (!ok(z, was) || rig().zoom !== z) problems.push(`${what}: ${did}: ${was.toFixed(3)} → ${z.toFixed(3)}, ${rig().zoom.toFixed(3)} half a second later`);
+    was = rig().zoom;
+  };
+  const hold = (key: string, frames: number) => () => {
+    engine.input.setKey(key, true);
+    engine.step(frames);
+    engine.input.setKey(key, false);
+  };
+  const wheel = (notches: number) => () => {
+    engine.input.addPointer(0, 0, notches);
+    engine.step(1);
+  };
+  after('six wheel notches out', wheel(6), (z, from) => z < from && Math.abs(z - clamp(from / 1.12 ** 6)) < 1e-9);
+  after('Minus held', hold('Minus', 54), (z, from) => z < from || z === rig().minZoom);
+  after('three wheel notches in', wheel(-3), (z, from) => z > from && Math.abs(z - Math.min(start, clamp(from * 1.12 ** 3))) < 1e-9);
+  after('Plus held', hold('Equal', 6), (z, from) => (from < start ? z > from : z === from));
+  after('Plus held long', hold('Equal', 300), (z, from) => (heldOut ? z === start : z > from));
+  return problems;
+}

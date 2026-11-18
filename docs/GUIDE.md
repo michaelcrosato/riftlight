@@ -418,10 +418,13 @@ const hum = ctx.audio.loop('coin', { volume: 0 }); // per frame: const s = spati
 | `first` | first person, mouse look (click locks the pointer) | `ctx.camera.hidesTarget`: hide your model |
 | `free`, `fixed` | authoring fly-cam; a frozen view | `{ preset: 'fixed', position, target, fov }` |
 
-Config: `{ preset, zoom, minZoom, maxZoom, viewHeight, pitch, yaw, fov, distance, stiffness }`.
-Players zoom with the wheel or + / -. `engine.setCamera(config, { syncUrl: false })` swaps
-the preset during play (a cutscene, a minigame); the game's `onCameraChange` fixes up
-anything preset-specific.
+Config:
+`{ preset, zoom, minZoom, maxZoom, viewHeight, minWidth, pitch, yaw, fov, distance, stiffness }`.
+Players zoom with the wheel or + / -. `minWidth` (ortho presets) keeps that many metres across in
+view: a phone held upright zooms out until they fit (past `minZoom` if it must), the player zooms
+within it, and a wider window has the zoom asked for back; pass it rather than zooming each frame.
+`engine.setCamera(config, { syncUrl: false })` swaps the preset during play (a cutscene, a
+minigame); the game's `onCameraChange` fixes up anything preset-specific.
 
 ### HUD
 
@@ -559,15 +562,13 @@ class CliffRun {
   from = new Vector3();
   target = new Vector3();
 
-  constructor(level = 0, zoom = null) {
+  constructor(level = 0) {
     this.level = level;
     this.data = LEVELS[level];
-    this.zoom = zoom; // the page's (?zoom= too), the closest the camera comes
   }
 
   async setup(ctx) {
     const { scene, physics, palette } = ctx;
-    this.zoom ??= ctx.camera.zoom;
     const parts = [];
     for (const [x0, x1, top] of this.data.platforms) {
       const w = x1 - x0;
@@ -677,10 +678,8 @@ class CliffRun {
     if (ground) this.shadow.place(feet.x, ground.y, feet.z, feet.y - ground.y);
     if (this.clearedAt !== null && ctx.time - this.clearedAt > 2.5 && !this.leaving) {
       this.leaving = true;
-      void ctx.engine.loadGame(new CliffRun((this.level + 1) % LEVELS.length, this.zoom));
+      void ctx.engine.loadGame(new CliffRun((this.level + 1) % LEVELS.length));
     }
-    // 10 m of the lane at least, a phone held upright too (the side camera is 11 m high at zoom 1)
-    ctx.camera.setZoom(Math.min(this.zoom, (11 * ctx.camera.aspect) / 10));
     const time = (this.clearedAt ?? ctx.time) - this.startTime;
     const { hud } = ctx;
     hud.clear();
@@ -710,7 +709,7 @@ class CliffRun {
   }
 }
 
-await Engine.start(new CliffRun(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2 }, background: PALETTE.sky, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
+await Engine.start(new CliffRun(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'side', zoom: 1.2, minWidth: 10 }, background: PALETTE.sky, settings: { padButton: true }, touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }], touchDensity: 2 }));
 ```
 
 ## 6. Rules

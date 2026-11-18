@@ -20,6 +20,12 @@ export interface CameraConfig {
   maxZoom?: number;
   /** Ortho presets: visible world height at zoom 1. */
   viewHeight?: number;
+  /**
+   * Ortho presets: the fewest metres the picture shows across. A narrow window (a phone held
+   * upright) zooms the camera out until they fit, past `minZoom` if it must; the zoom asked for
+   * (`zoom`, the player's wheel and + / -) holds within it and comes back on a wider window.
+   */
+  minWidth?: number;
   /** iso: degrees below horizon / around Y. */
   pitch?: number;
   yaw?: number;
@@ -65,6 +71,8 @@ export interface CameraRigState {
   readonly preset: CameraPreset;
   readonly focus: readonly number[];
   readonly zoom: number;
+  /** The zoom asked for (`zoom` is less where `minWidth` holds the camera out); an older snapshot has none. */
+  readonly wanted?: number;
   readonly aspect: number;
   readonly position: readonly number[];
   readonly quaternion: readonly number[];
@@ -79,9 +87,14 @@ export abstract class CameraRig {
   abstract readonly camera: OrthographicCamera | PerspectiveCamera;
   /** World point the rig is centred on (used for shadow framing). */
   readonly focus = new Vector3();
+  /** The zoom on screen: the one asked for, or less where `minWidth` needs it. */
   zoom: number;
   readonly minZoom: number;
   readonly maxZoom: number;
+  /** The fewest metres across the picture (`CameraConfig.minWidth`), or undefined. */
+  readonly minWidth: number | undefined;
+  /** The zoom asked for (`setZoom`: the config's, the player's), which `zoom` is when the window has room. */
+  private wanted: number;
   /** Whether zoom applies (all presets except first person). */
   readonly zoomable: boolean = true;
   /** First person hides the player model. */
@@ -97,9 +110,10 @@ export abstract class CameraRig {
   protected readonly stiffness: number;
 
   constructor(config: CameraConfig) {
-    this.zoom = config.zoom ?? 1;
+    this.zoom = this.wanted = config.zoom ?? 1;
     this.minZoom = config.minZoom ?? 0.35;
     this.maxZoom = config.maxZoom ?? 4;
+    this.minWidth = config.minWidth;
     this.stiffness = config.stiffness ?? 6;
   }
 
@@ -117,10 +131,28 @@ export abstract class CameraRig {
     dir.set(x, y, 1).unproject(cam).sub(origin).normalize();
   }
 
+  /** Ask for a zoom (clamped to `minZoom`..`maxZoom`); `zoom` comes no closer than `minWidth` allows. */
   setZoom(zoom: number): void {
     if (!this.zoomable) return;
-    this.zoom = MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+    this.wanted = MathUtils.clamp(zoom, this.minZoom, this.maxZoom);
+    this.fit();
     this.applyZoom();
+  }
+
+  /** The closest zoom that shows `minWidth` across at this aspect (Infinity without one). */
+  protected widestZoom(): number {
+    return Infinity;
+  }
+
+  /** `zoom` from the one asked for, no closer than `minWidth` allows (once the aspect or the zoom asked for changed). */
+  protected fit(): void {
+    if (this.zoomable) this.zoom = Math.min(this.wanted, this.widestZoom());
+  }
+
+  /** The player's zoom (the wheel, + / -), from the one on screen; closer does nothing while `minWidth` holds the camera out. */
+  private zoomBy(factor: number): void {
+    if (factor > 1 && this.zoom < this.wanted) return;
+    this.setZoom(this.zoom * factor);
   }
 
   /**
@@ -130,6 +162,7 @@ export abstract class CameraRig {
   setAspect(aspect: number): void {
     if (!(aspect > 0) || aspect === this.aspect) return;
     this.aspect = aspect;
+    this.fit();
     const cam = this.camera;
     if (cam instanceof PerspectiveCamera) {
       cam.aspect = aspect;
@@ -156,9 +189,9 @@ export abstract class CameraRig {
 
   update(u: CameraUpdate): void {
     this.setAspect(u.resolution.width / u.resolution.height);
-    if (this.zoomable && u.input.wheel !== 0) this.setZoom(this.zoom * Math.pow(1.12, -u.input.wheel));
-    if (this.zoomable && u.input.isDown('Equal', 'NumpadAdd')) this.setZoom(this.zoom * (1 + u.dt));
-    if (this.zoomable && u.input.isDown('Minus', 'NumpadSubtract')) this.setZoom(this.zoom / (1 + u.dt));
+    if (this.zoomable && u.input.wheel !== 0) this.zoomBy(Math.pow(1.12, -u.input.wheel));
+    if (this.zoomable && u.input.isDown('Equal', 'NumpadAdd')) this.zoomBy(1 + u.dt);
+    if (this.zoomable && u.input.isDown('Minus', 'NumpadSubtract')) this.zoomBy(1 / (1 + u.dt));
     // last frame's shake comes off first: rigs that keep their position between frames
     // (free, fixed) would otherwise drift by every offset ever added
     this.camera.position.sub(this.shaken);
@@ -188,13 +221,14 @@ export abstract class CameraRig {
 
   /** The rig as data, exact (`engine.snapshot()`). */
   state(): CameraRigState {
-    return { preset: this.preset, focus: this.focus.toArray(), zoom: this.zoom, aspect: this.aspect, position: this.camera.position.toArray(), quaternion: this.camera.quaternion.toArray(), shaken: this.shaken.toArray(), own: this.ownState() };
+    return { preset: this.preset, focus: this.focus.toArray(), zoom: this.zoom, wanted: this.wanted, aspect: this.aspect, position: this.camera.position.toArray(), quaternion: this.camera.quaternion.toArray(), shaken: this.shaken.toArray(), own: this.ownState() };
   }
 
   /** Put the rig back where `state()` found it (the same preset). */
   setState(s: CameraRigState): void {
     this.focus.fromArray(s.focus);
     this.zoom = s.zoom;
+    this.wanted = s.wanted ?? s.zoom;
     this.aspect = s.aspect;
     this.setOwnState(s.own);
     const cam = this.camera;
@@ -268,11 +302,16 @@ export class OrthoRig extends CameraRig {
     this.right.setFromMatrixColumn(this.camera.matrixWorld, 0);
     this.up.setFromMatrixColumn(this.camera.matrixWorld, 1);
     this.forward.setFromMatrixColumn(this.camera.matrixWorld, 2);
+    this.fit();
     this.applyZoom();
   }
 
   get viewHeight(): number {
     return this.baseViewHeight / this.zoom;
+  }
+
+  protected override widestZoom(): number {
+    return this.minWidth ? (this.baseViewHeight * this.aspect) / this.minWidth : Infinity;
   }
 
   protected applyZoom(): void {

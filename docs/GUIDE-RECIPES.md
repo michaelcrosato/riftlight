@@ -15,17 +15,17 @@ Each meets `CONTROLS.md`'s checklist the way a game of yours should:
 - **A HUD laid out from `hud.width` and `hud.height`**: short lines top left, a long one wrapped
   (`wrapText`) clear of the ⚙ in the top right; nothing low on the screen while the stick and
   buttons show there.
-- **The play area in view at every window shape**: the camera follows the player, and zooms out
-  by `ctx.camera.aspect` when the window is narrow (a phone held upright), never closer than the
-  page asked (`?zoom=` too).
+- **The play area in view at every window shape**: the camera follows the player and keeps
+  enough of the world across (`camera: { minWidth }`), so a phone held upright zooms out; the
+  page's zoom (`?zoom=` too) and the player's wheel and + / - work within it.
 - **Settings on every device**: `settings: { padButton: true }`, so Options and Esc open them, and
   the ⚙ on touch.
 
 ## 2. Lantern Night: lights, pushable crates, music, custom particles
 
 Top-down at night (`examples/top-down.html`). Walking does it all, so touch has the stick alone
-(`touchButtons: []`); the camera follows the lantern and zooms out by the window's aspect, so a
-phone held upright sees across the yard.
+(`touchButtons: []`); the camera follows the lantern and keeps 11 m across in view, so a phone
+held upright sees across the yard.
 
 ```js top-down
 // Lantern Night: walk (WASD, arrows, a stick), push both crates onto the glowing pads (walk into
@@ -57,7 +57,6 @@ class LanternNight {
 
   async setup(ctx) {
     const { scene, physics, palette, engine } = ctx;
-    this.zoom = ctx.camera.zoom; // the page's (?zoom= too), the closest the camera comes
     this.sparkle = ctx.random.fork('fireflies'); // drawn per frame (cosmetic): its own stream, so gameplay's never depends on the frame rate
     // Night: dim the engine's sun and ambient light (reset for the next game on unload).
     engine.sun.color.setHex(PALETTE.sky);
@@ -130,7 +129,7 @@ class LanternNight {
     setLookLayer(this.model, 'actors');
     this.shadow = new ContactShadow(0.42);
     scene.add(this.model, this.shadow);
-    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 5], lockDepth: ctx.camera.lockDepth });
+    this.hero = new PlatformerCharacter(physics, { position: [0, 0, 2], lockDepth: ctx.camera.lockDepth });
     this.hero.attachModel(this.model, compileClips(HERO_CLIPS, HERO_RIG, this.model), HERO_RIG);
     ctx.lights.request({ follow: this.model, offset: [0, 1.5, 0], color: 0xffe0a0, intensity: 5, radius: 6, priority: 8 }); // the lantern
 
@@ -176,14 +175,12 @@ class LanternNight {
       this.nextFirefly = ctx.time + 0.3;
       ctx.particles.burst('firefly', this.at.set(this.sparkle.range(-7, 7), this.sparkle.range(0.5, 2), this.sparkle.range(-7, 7)));
     }
-    // 11 m across at least, a phone held upright too (the top-down camera is 16 m high at zoom 1)
-    ctx.camera.setZoom(Math.min(this.zoom, (16 * ctx.camera.aspect) / 11));
     const lit = this.pads.filter((p) => p.lit).length;
     const { hud } = ctx;
     hud.clear();
     hud.text(6, 6, this.escaped ? 'YOU ESCAPED!' : this.solved ? 'GATE OPEN' : `PADS ${lit}/${this.pads.length}`, { color: 'sand' });
     // the goal, wrapped clear of the ⚙ (top right)
-    const goal = this.escaped ? '' : this.solved ? 'LEAVE BY THE NORTH GATE' : 'PUSH THE CRATES ONTO THE PADS';
+    const goal = this.escaped ? '' : this.solved ? 'OUT THE NORTH GATE' : 'CRATES ONTO PADS';
     wrapText(goal, hud.width - 36).forEach((line, i) => hud.text(6, 16 + i * 10, line));
     // the controls in use, what fits (touch has its stick)
     const legend = [['move', 'WALK'], ['settings', 'SETTINGS']];
@@ -192,8 +189,8 @@ class LanternNight {
   }
 
   cameraTarget() {
-    const p = this.model?.position ?? this.target.set(0, 0, 5);
-    return this.target.set(p.x, p.y + 0.9, p.z);
+    const p = this.model?.position ?? this.target.set(0, 0, 2);
+    return this.target.set(p.x, p.y + 0.9, p.z - 2); // 2 m ahead: the pads and the gate are north
   }
 
   status() {
@@ -201,7 +198,7 @@ class LanternNight {
   }
 }
 
-await Engine.start(new LanternNight(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', zoom: 1.1 }, look: LOOK_PRESETS.dream, settings: { padButton: true }, touchButtons: [], touchDensity: 2 }));
+await Engine.start(new LanternNight(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', zoom: 1.1, minWidth: 11 }, look: LOOK_PRESETS.dream, settings: { padButton: true }, touchButtons: [], touchDensity: 2 }));
 ```
 
 ## 3. Look Lab: mixing art styles per layer
@@ -234,8 +231,8 @@ const LOOKS = [
   ['sin city', LOOK_PRESETS.sin_city],
   ['handheld', LOOK_PRESETS.handheld],
 ];
-/** Touch: a button for each look key, beside the stick (each presses its key code). */
-const TOUCH = [{ label: '<', code: 'KeyQ', hint: 'look' }, { label: '>', code: 'KeyE', hint: 'look' }, { label: 'PX', code: 'KeyT', hint: 'chunky' }];
+/** Touch: a button for each look key (each presses its key code), the first in the corner: they read PX < >. */
+const TOUCH = [{ label: '>', code: 'KeyE', hint: 'look' }, { label: '<', code: 'KeyQ', hint: 'look' }, { label: 'PX', code: 'KeyT', hint: 'chunky' }];
 
 class LookLab {
   name = 'Look Lab';
@@ -252,7 +249,6 @@ class LookLab {
 
   async setup(ctx) {
     const { scene, physics, palette } = ctx;
-    this.zoom = ctx.camera.zoom; // the page's (?zoom= too), the closest the camera comes
     const parts = [];
     for (const [x, z, w, h, d, c] of [[0, 0, 16, 1, 12, 'green'], [-4, -3, 2, 2, 2, 'slate'], [4, -3, 3, 1, 2, 'sand'], [0, -5, 6, 3, 1, 'plum']]) {
       const y = c === 'green' ? -0.5 : h / 2;
@@ -315,8 +311,6 @@ class LookLab {
       STORYBOOK_HEROES.actors.pixel.size = STORYBOOK_HEROES.actors.pixel.size === 1 ? 3 : 1;
       if (this.current === 1) ctx.engine.setLook(STORYBOOK_HEROES);
     }
-    // 9 m across at least, a phone held upright too (the iso camera is 13.5 m high at zoom 1)
-    ctx.camera.setZoom(Math.min(this.zoom, (13.5 * ctx.camera.aspect) / 9));
     hud.clear();
     hud.text(6, 6, `LOOK ${this.current + 1}/${LOOKS.length}`, { color: 'sand' });
     wrapText(LOOKS[this.current][0].toUpperCase(), hud.width - 36).forEach((line, i) => hud.text(6, 16 + i * 10, line));
@@ -336,5 +330,5 @@ class LookLab {
   }
 }
 
-await Engine.start(new LookLab(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.3 }, look: STORYBOOK_HEROES, settings: { padButton: true }, touchButtons: TOUCH, touchDensity: 2 }));
+await Engine.start(new LookLab(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.3, minWidth: 9 }, look: STORYBOOK_HEROES, settings: { padButton: true }, touchButtons: TOUCH, touchDensity: 2 }));
 ```

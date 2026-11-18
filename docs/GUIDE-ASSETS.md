@@ -227,7 +227,6 @@ class MarketCorner {
 
   setup(ctx) {
     const { scene, physics, engine } = ctx;
-    this.zoom = ctx.camera.zoom; // the page's (?zoom= too), the closest the camera comes
     engine.sun.intensity = 1.4; // dusk, so the lamp shows (the engine resets it for the next game)
     engine.ambient.color.setHex(PALETTE.navy);
     scene.background = new Color(PALETTE.night);
@@ -259,11 +258,11 @@ class MarketCorner {
   update(ctx) {
     const { hud } = ctx;
     ctx.engine.touch?.show(false); // nothing to press: no stick, no buttons (touchButtons: [])
-    // the whole square, a phone held upright too (the iso camera is 13.5 m high at zoom 1)
-    ctx.camera.setZoom(Math.min(this.zoom, (13.5 * ctx.camera.aspect) / 12));
     hud.clear();
     hud.sprite(6, 6, this.icon.rows, this.icon.colors);
-    wrapText('MARKET CORNER', hud.width - 62).forEach((line, i) => hud.text(26, 10 + i * 10, line, { color: 'sand' })); // clear of the ⚙
+    // the title beside the icon, clear of the ⚙; under it where its longest word wouldn't fit
+    const beside = hud.measure('MARKET').width <= hud.width - 62;
+    wrapText('MARKET CORNER', hud.width - (beside ? 62 : 12)).forEach((line, i) => hud.text(beside ? 26 : 6, (beside ? 10 : 26) + i * 10, line, { color: 'sand' }));
     const legend = [['settings', 'SETTINGS']]; // touch: the ⚙
     if (ctx.input.device !== 'touch' && hud.legendWidth(legend) <= hud.width - 12) hud.legend(6, hud.height - 12, legend);
   }
@@ -277,7 +276,7 @@ class MarketCorner {
   }
 }
 
-await Engine.start(new MarketCorner(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.6 }, settings: { padButton: true }, touchButtons: [], touchDensity: 2 }));
+await Engine.start(new MarketCorner(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'iso', zoom: 1.6, minWidth: 12 }, settings: { padButton: true }, touchButtons: [], touchDensity: 2 }));
 ```
 
 ## 7. Credits

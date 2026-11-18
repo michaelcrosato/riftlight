@@ -36,10 +36,11 @@ another agent*):
   source declares: `EngineOptions`, the touch controls, the HUD, 52in1's settings), runs a page
   holding its head tags through 52in1's catalogue checker (`checkPage`,
   `scripts/hub/catalogue-check.mjs`) and holds its budget; every text the games draw lies inside the
-  HUD in every state, on a phone held either way and on a TV, and what a player needs is in view at
-  every window shape (Gem Rush's whole arena, every beacon from Beacon Yard's start: both zoom out
-  by the camera's aspect, a phone upright included, and lower the camera's `minZoom` so a 360x1000
-  window fits too); Gem Rush alone plays again once it is over. The `bundle` e2e suite plays Gem
+  HUD, clear of the others and in whole words, in every state, on a phone held either way, a
+  360x1000 window and a TV; what a player needs is in view at every window shape (Gem Rush's whole
+  arena, every beacon from Beacon Yard's start: both pass the camera a `minWidth`, so a phone held
+  upright zooms out, past `minZoom` for a 360x1000 window); the player's wheel and + / - zoom both
+  and the zoom stays; Gem Rush alone plays again once it is over. The `bundle` e2e suite plays Gem
   Rush's own page in a `LocalHub` round (no ⚙, Esc and Options never pause it), and every game page
   of the kit (the starter, Cliff Run, both games here, RECIPES.md's and Market Corner) on a phone
   (Playwright's touch screen, upright and sideways, real taps) and on a TV with a fake pad, in every
@@ -51,14 +52,15 @@ another agent*):
   CSS pixels a pixel at least.
 - `RECIPES.md` (docs/GUIDE-RECIPES.md, stamped): more whole games, each meeting CONTROLS.md's
   checklist the same way (a `controls` table and a legend of the device's controls, touch buttons of
-  its own, `touchDensity: 2`, the HUD from `hud.width` clear of the ⚙ and the controls, the camera
-  zoomed out by the window's aspect): Lantern Night (`examples/top-down.html`) and Look Lab
+  its own, `touchDensity: 2`, the HUD from `hud.width` clear of the ⚙ and the controls, the camera's
+  `minWidth`): Lantern Night (`examples/top-down.html`) and Look Lab
   (`examples/looks.html`, looks picked by Q / E, L1 / R1 or touch buttons). GUIDE.md section 5 has a
   line for each. `src/guide-recipes.test.ts` checks its imports, names and budget, then plays every
   recipe of the kit headless (Cliff Run, these two, Market Corner; CONTROLS.md's games are its own
-  test's): every text inside the HUD in every state on every device, on a phone held either way, a
-  360x1000 window and a TV (a legend there on the keyboard and a pad), and what a player needs in
-  view at every window shape.
+  test's): every text inside the HUD, clear of the others and in whole words, in every state on
+  every device, on a phone held either way, a 360x1000 window and a TV (a legend there on the
+  keyboard and a pad); what a player needs in view at every window shape and under no text; the
+  player's wheel and + / - zoom each, and the zoom stays.
 - `ASSETS.md` (docs/GUIDE-ASSETS.md, stamped): models and textures for outside agents, written for
   someone with only the kit (docs/ASSETS.md stays the in-repo guide). Its blocks are Market
   Corner, `examples/market.html`, and the module of the game's own models it imports
