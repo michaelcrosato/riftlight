@@ -48,7 +48,8 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   from the pause menu, as Circle does; Esc stays back first, then pause. The pause menu reaches
   every screen a pad has no button for (inventory, skills, tree, character, codex); Dev shows only
   with the developer tools on (the dev server, `?debug=1`). Tab / M / R3 / the DualSense's
-  touchpad press open the level's map over the play (`drawMap`: the world runs on under it).
+  touchpad press open the level's map over the play (`drawMap`: the world runs on under it; in a
+  session round too).
   Shift+Tab is the tab before in the item windows.
 - **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
   replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a

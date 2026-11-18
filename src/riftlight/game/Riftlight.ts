@@ -1494,6 +1494,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const input = ctx.input;
     const pressed = (codes: readonly string[]) => input.wasPressed(...codes);
     if (this.screen === 'title' || this.screen === 'loading') return;
+    // the map over the play: a HUD overlay (the world runs on), in a level; a session round's too
+    if (pressed(KEYS.map) && !this.layer.top) this.mapOpen = !this.mapOpen && !!this.level;
     // a session round has no menus or panels: the hub starts and ends rounds (and other players play on)
     if (this.round) return;
     if (this.dead) return;
@@ -1501,8 +1503,6 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.openPanel('pause');
       return;
     }
-    // the map over the play: a HUD overlay (the world runs on), in a level
-    if (pressed(KEYS.map) && !this.layer.top) this.mapOpen = !this.mapOpen && !!this.level;
     if (this.layer.top?.modal) return;
     const toggle = (id: Parameters<Riftlight['openPanel']>[0], panelId = id) => {
       if (this.layer.has(panelId)) this.layer.close(panelId);
