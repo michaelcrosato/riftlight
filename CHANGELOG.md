@@ -8,6 +8,22 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.52.0
+
+- **One pad scheme** (a game that read keys for the pad must add pad codes): standard-mapping buttons press `Pad*` codes (`GAMEPAD_BUTTONS`: `PadA` Cross / A, `PadB` Circle / B, `PadX` Square / X, `PadY` Triangle / Y, `PadLB` / `PadRB` L1 / R1, `PadLT` / `PadRT` L2 / R2, `PadBack` Create / View, `PadStart` Options / Menu, new `PadL3`, `PadR3`, `PadTouchpad` (button 17); the d-pad still presses the arrows) instead of keys. `KEYMAP` lists a pad code beside each key (jump `PadA`, attack `PadX`, crouch `PadB` / `PadRT`, grab `PadY`, prone `PadLB`, lie `PadRB`, walk `PadLT`, wave `PadBack`, sit `PadL3`), so `readMoveInput` plays on a pad and Options is free for a pause. The home button (16, `HOME_BUTTON`) is never read, even when mapped. The free camera flies with L2 / R2 and L3.
+- **`input.device`** (`InputDevice`: `'keyboard'`, `'pad'`, `'touch'`): the input used last, from real use only (a key, a click, the wheel, a mouse move; a pad button pressed, a stick moved past its deadzone, a trigger pulled; a finger, a touch control), never from a pad merely connected. It starts as `'touch'` on a touch-screen device, is recorded when it changes (`InputFrame.device`; recordings without it were made on the keyboard), kept by save-states and validated by `recordingProblem`. `input.noteDevice(d)`, `input.noteTouch()` (TouchControls call it), `input.padIndex`.
+- **Analog triggers and the right stick**: `input.triggers.left` / `.right` (0..1) and `input.lookAxis` (y up), recorded (`InputFrame.trig`, `look`). Stick deadzone 0.15 (`GAMEPAD_DEADZONE`, was 0.2).
+- **`input.rumble({ strong, weak, ms })`**: a `dual-rumble` on the pad in use when the frame ends (the frame's strongest request), scaled by the player's `settings.vibration` (`input.vibration`); never by the AI Hub's, which scales on top. Nothing headless, in a replay, at vibration 0, off the pad, or on a pad that can't rumble; a refused effect is caught. `Rumble`.
+- **Settings**: `PlayerSettings.padGlyphs` (`'playstation'` by default, or `'xbox'`; `PAD_GLYPHS`, `PadGlyphs`) and `vibration` (0..1, steps of 0.05).
+- **Menus on every device** (docs/engine/game-api.md *Menus on every device*): `MenuInput` (keys, the pad, the left stick and swipes → `MenuEvent`s with key repeat; `MENU_KEYS`, `MENU_REPEAT`, `MenuKeys`) and `FocusList` (a list's focus: the d-pad, hover, a click or tap, swipes to dismiss; `FocusRect`, `FocusResult`, `FocusListState`), `ndcToHud`. A quick one-finger flick on the canvas presses `SwipeLeft` / `SwipeRight` / `SwipeUp` / `SwipeDown` (`SWIPE_KEYS`, `SWIPE`, `swipeDirection`), recorded.
+- input.device needs a stick pushed past a quarter of its travel (reached that poll, or moved since). A stick resting or jittering at its deadzone no longer flips prompts.
+- A trigger first seen part-way reads 0 and is not a use until it moves. Triggers never count as a use the first time a pad is seen.
+- moveAxis(): a movement key held wins over the left stick unless the pad is in use and its stick leans past 0.25.
+- Recording.device (optional; the device the level began with, left out for the keyboard). engine.replay plays it to the level's setup through input.playFrom(); starting a replay never leaks the live device.
+- input.setGamepads(pads | null): a test hook that polls the given pads instead of navigator.getGamepads().
+- FocusList: a menu opened under a resting pointer keeps its focus, and a list that shrank clamps its focus and confirm.
+- KEYMAP.crouch drops PadRT (Circle crouches; R2 is left for a game's own).
+
 ## 0.51.0
 
 - **The default aspect is `fill`** (`EngineOptions.aspect`, `PixelRenderer`, `HeadlessView`, `computeFraming`): the picture reaches every edge at every window shape (16:9, 21:9, 4:3, a phone) and follows resizes, as a game in the 52in1 hub must. Only pixel density changes with the window, not the world in view: at 1600×900 the art is 534×300 at 3×, on a 390×844 phone 130×282 (3× at DPR 1, 9× at DPR 3). `adaptive` and `fixed` stay as opt-ins that letterbox (not for a 52in1 game). A game that wants the old bars back passes `aspect: 'adaptive'`.
