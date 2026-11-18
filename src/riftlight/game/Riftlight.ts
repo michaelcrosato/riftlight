@@ -1792,10 +1792,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       difficulty: changedSliders(tuning).map((k) => t(`hud.tuned.${difficultyLineId(k)}`, { value: lang().formatNumber(tuning[k], { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })),
       hurt: this.hurt,
       levelLabel: level ? levelTitle(level.spec) : t('place.emberfall'),
-      timer: level ? formatTime(this.levelTime) : null,
+      timer: level && !this.round?.moment ? formatTime(this.levelTime) : null, // a moment shows its own seconds left
       device: this.controlDevice(),
       padStyle: this.ctx.engine.controls.style,
-      progress: level ? level.progress() : null,
+      progress: level && !this.round?.moment ? level.progress() : null,
       timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
     };
   }
