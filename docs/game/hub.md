@@ -33,22 +33,6 @@ covers/riftlight/1.jpg, 2.jpg              a fight in a rift; Emberfall's plaza
 - **`--keep`** keeps the built page and takes the covers and runs the checks again; the page's own
   `hub:model` and `hub:effort` stand (a flag that differs is an error: build again).
 
-## What the head says
-
-`scripts/hub/riftlight.mjs` holds the words (the catalogue's *The head*); each says only what the
-game does. `src/riftlight/session/head.test.ts` runs the hub's checker on them and holds them to
-the game: the controls to its bindings (`KEYS`, `MOUSE`), the DualSense extras to the code that
-uses them, couch co-op to one device.
-
-| Tag | Riftlight's | Why |
-| --- | --- | --- |
-| `hub:tags` | `action-rpg, pixel art, co-op, gamepad, touch` | what it is; co-op (the default online mode, and the couch); `gamepad` and `touch` because it plays fully on a controller and by touch alone (52in1's input filters and the Friends view go by them). 5 is the cap: `isometric` and `loot` stay in the description |
-| `hub:controls` | `WASD to move; click to attack; right click or 1–4 for skills; Space to dodge; F to interact; Tab for the map; gamepad or touch to play; gamepads for players 2–4` | keys first, in the Couch's keycap words, at most 160 characters; then a pad or touch for it all, then the couch's pads (the catalogue: on one device `hub:controls` names them) |
-| `hub:dualsense` | `light bar, haptics, motion, touchpad, speaker` | the hero's life on the light bar and play's rumbles (`game/padFeel.ts`), motion aim (`turnAim`), the touchpad's press opens the map, the portal and loud drops on the `speaker` bus. No adaptive triggers (only Engine World's Drift Track has them), no microphone |
-| `hub:multiplayer` | `shared-world co-op 1-4, shared-world versus 2-4, ghost 1-4, parallel 1-4, moments 1-4, same-screen co-op 2-4` | the four online modes (sessions: docs/game/session.md) and couch co-op (docs/game/shell.md *Couch co-op*), the game's own menu's: never offered to a session, no card of its own |
-| `hub:players` | `1-4` | the most a shared world, a ghost round or the couch seats (parallel and moments aside) |
-| `hub:session-howto` | `WASD move · click attack · 1-4 skills · Space dodge · or a gamepad or touch` | the session card's controls, at most 80 characters; every online mode's card has the same |
-
 ## What a player reaches in the file
 
 `riftlight.html` carries every `?game=` (src/games.ts), but the hub opens the page with none: a
