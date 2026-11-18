@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { type GamepadLike, Input, type InputFrame, TWIN_POLLS } from './input';
+import { type GamepadLike, Input, type InputFrame, TWIN_SECONDS } from './input';
 import { type Recording, recordingProblem } from './replay';
 
 const target = () => new EventTarget() as unknown as Window;
@@ -324,7 +324,7 @@ describe('couch co-op in a recording: each pad on its own', () => {
       [tpad(0, [0, 0, 0, 0]), tpad(1, [0.7, -0.4, 0.2, 0.9], [2, 7])],
       [tpad(0, [0.5, 0, 0, 0], [1]), tpad(1, [0, 0, 0, 0], [12])], // player 1 on pad 0
       [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0])],
-      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0]), tpad(2, [0, 0, 0, 0], [0])], // pad 2 presses Cross: player 1 is on a pad, so it joins TWIN_POLLS - 1 polls on
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0]), tpad(2, [0, 0, 0, 0], [0])], // pad 2 presses Cross: player 1 is on a pad, so it joins 33 ms on (two polls at 60 Hz: TWIN_SECONDS.wait)
       [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])], // pad 1 unplugged
       [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])], // pad 2 joins
       [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])],
@@ -342,7 +342,7 @@ describe('couch co-op in a recording: each pad on its own', () => {
       live.endFrame();
     }
     expect(seen[1]!.joinedNow).toEqual([1]);
-    expect(TWIN_POLLS).toBe(3);
+    expect(TWIN_SECONDS.wait * 60).toBeCloseTo(2, 1);
     expect(seen.slice(6).map((s) => s.joinedNow)).toEqual([[], [], [2], []]);
     expect(seen[7]!.p1.axis, 'a pad whose join waits drives nothing of player 1’s').toEqual({ x: 0, y: 0 });
     expect(seen[3]!.pads[1]!.x, 'pad 1’s Square, its own').toBe(true);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_POLLS } from './input';
+import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_SECONDS } from './input';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -664,6 +664,9 @@ describe("motion aim's turn (input.motionTurn)", () => {
 });
 
 describe('couch co-op: each pad on its own (input.player)', () => {
+  /** At 60 Hz, the polls the twin window takes (50 ms: 3) and a join's wait (33 ms: 2): `TWIN_SECONDS`. */
+  const WINDOW = Math.round(TWIN_SECONDS.window * 60);
+  const WAIT = Math.ceil(TWIN_SECONDS.wait * 60);
   /** An Input reading `pads` (by slot) on their own; `frame` polls once and returns what the game would read. */
   function couch() {
     const input = new Input(null);
@@ -729,11 +732,11 @@ describe('couch co-op: each pad on its own (input.player)', () => {
     expect([input.device, input.padIndex]).toEqual(['pad', 0]);
     let f = frame([pad([0, 0, 0, 0], [0]), pad()]);
     expect([f.joined, f.p1.pressed]).toEqual([[], true]);
-    for (let n = 0; n < TWIN_POLLS; n++) frame([pad(), pad()]); // past the window a twin's press would come in
-    // pad 1's Cross: player 1 is on a pad, so the join waits TWIN_POLLS - 1 polls (a twin's press
+    for (let n = 0; n < WINDOW; n++) frame([pad(), pad()]); // past the window a twin's press would come in
+    // pad 1's Cross: player 1 is on a pad, so the join waits 33 ms (WAIT polls: a twin's press
     // would come by then), its pad driving nothing meanwhile; then it joins, and the press that
     // joined presses nothing (held, it reads as up until let go)
-    for (let n = 0; n < TWIN_POLLS - 1; n++) {
+    for (let n = 0; n < WAIT; n++) {
       f = frame([pad(), pad([0.9, 0, 0, 0], [0])]);
       expect([f.joined, [...input.joined], f.p1.pressed, f.p1.a, f.p1.move, f.p2.pressed, f.p2.a], `waiting, poll ${n}`).toEqual([[], [], false, false, { x: 0, y: 0 }, false, false]);
     }
@@ -774,9 +777,9 @@ describe('couch co-op: each pad on its own (input.player)', () => {
         frame(both([]));
       }
       // another controller (pad 2) still joins, once the twin's window and the wait are over
-      for (let n = 0; n < TWIN_POLLS; n++) frame([pad(), pad()]);
-      const joins = Array.from({ length: TWIN_POLLS }, () => frame([pad(), pad(), pad([0, 0, 0, 0], [0])]).joined);
-      expect([joins, [...input.joined]]).toEqual([[...Array.from({ length: TWIN_POLLS - 1 }, () => []), [2]], [2]]);
+      for (let n = 0; n < WINDOW; n++) frame([pad(), pad()]);
+      const joins = Array.from({ length: WAIT + 1 }, () => frame([pad(), pad(), pad([0, 0, 0, 0], [0])]).joined);
+      expect([joins, [...input.joined]]).toEqual([[...Array.from({ length: WAIT }, () => []), [2]], [2]]);
     }
   });
 
@@ -808,10 +811,59 @@ describe('couch co-op: each pad on its own (input.player)', () => {
         frame(alone([3]));
         frame(alone([]));
         expect(input.padIndex, `${where}: player 1 on its real pad`).toBe(mine);
-        for (let k = 0; k < TWIN_POLLS + 2; k++) frame(alone([0]));
+        for (let k = 0; k < WINDOW + 2; k++) frame(alone([0]));
         for (let k = 0; k < 4; k++) frame(pads([0], [0]));
         expect([...input.joined], `${where}: a twin seen first while player 1 holds Cross`).toEqual([]);
       }
+    }
+  });
+
+  it('the twin window (50 ms) and a join’s wait (33 ms) last as long at 120 Hz as at 60 Hz (timed by the frames’ dt, not counted in polls), a poll at least', () => {
+    // per frame rate: the most polls the twin's press may lag player 1's and still be its twin (under
+    // 50 ms, a poll at least), the most it may come first (within the wait), the polls a join waits
+    const RATES = [
+      { hz: 60, late: 2, early: 2, wait: 2 },
+      { hz: 120, late: 5, early: 4, wait: 4 },
+      { hz: 20, late: 1, early: 1, wait: 1 }, // slow frames: the next poll is still the window, the wait one poll
+    ] as const;
+    for (const { hz, late, early, wait } of RATES) {
+      const dt = 1 / hz;
+      /** A couch at `hz`, player 1 on pad 0; `frame` polls once (pads 0 to 2 pressing what `down` says) and returns the pads that joined. */
+      const couchAt = () => {
+        const input = new Input(null);
+        input.padPlayers = true;
+        input.joinWith = ['PadA'];
+        let t = 0;
+        const frame = (down: [boolean, boolean, boolean]) => {
+          t += dt;
+          input.beginFrame(t, dt, down.map((d, i) => ({ ...pad([0, 0, 0, 0], d ? [0] : []), index: i })));
+          const joined = [...input.joinedNow];
+          input.endFrame();
+          return joined;
+        };
+        input.beginFrame(dt, dt, [0, 1, 2].map((i) => ({ ...pad([0, 0, 0, 0], i === 0 ? [3] : []), index: i })));
+        input.endFrame();
+        frame([false, false, false]);
+        expect([input.device, input.padIndex], `${hz} Hz: player 1 on pad 0`).toEqual(['pad', 0]);
+        return { input, frame };
+      };
+      // another controller (pad 2) pressing Cross joins once the wait is over: 33 ms on
+      {
+        const { input, frame } = couchAt();
+        const at = Array.from({ length: hz / 10 }, () => frame([false, false, true])).findIndex((j) => j.includes(2));
+        expect([at, [...input.joined]], `${hz} Hz: pad 2 joined ${wait} poll(s) on`).toEqual([wait, [2]]);
+      }
+      // pad 1 is pad 0's twin, its Cross `lag` polls after player 1's (or before: `lag` < 0); a quick
+      // tap, down a poll, so player 1's pad no longer holds it when the twin's comes
+      const lagged = (lag: number) => {
+        const { input, frame } = couchAt();
+        for (let k = 0; k < 12; k++) frame([k === Math.max(0, -lag), k === Math.max(0, lag), false]);
+        return [...input.joined];
+      };
+      for (let lag = 1; lag <= late; lag++) expect(lagged(lag), `${hz} Hz: the twin's Cross ${Math.round(lag * dt * 1000)} ms late`).toEqual([]);
+      for (let lag = 1; lag <= early; lag++) expect(lagged(-lag), `${hz} Hz: the twin's Cross ${Math.round(lag * dt * 1000)} ms early`).toEqual([]);
+      // a press past the window is another player's: it joins
+      expect(lagged(late + 1), `${hz} Hz: a Cross ${Math.round((late + 1) * dt * 1000)} ms after player 1's`).toEqual([1]);
     }
   });
 
@@ -839,7 +891,7 @@ describe('couch co-op: each pad on its own (input.player)', () => {
     // player 1 on a pad: a join waiting when the game pauses is dropped (its pad is player 1's again, the press reading as up)
     input.joined.clear();
     poll([pad([0, 0, 0, 0], [3]), pad()], true);
-    for (let n = 0; n < TWIN_POLLS; n++) poll([pad(), pad()], true);
+    for (let n = 0; n < WINDOW; n++) poll([pad(), pad()], true);
     expect(input.device).toBe('pad');
     expect(poll([pad(), pad([0, 0, 0, 0], [0])], true)).toEqual([]);
     expect([poll([pad(), pad([0, 0, 0, 0], [0])], false), poll([pad(), pad([0, 0, 0, 0], [0])], false), poll([pad(), pad([0, 0, 0, 0], [0])], true), [...input.joined], input.isDown('PadA')]).toEqual([[], [], [], [], false]);

@@ -7,7 +7,7 @@
 // order.
 import { type Mesh, type MeshBasicNodeMaterial, Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { HUB_COLORS, type GamepadLike, type Recording, TWIN_POLLS } from '../../engine';
+import { HUB_COLORS, type GamepadLike, type Recording, TWIN_SECONDS } from '../../engine';
 import type { Actor } from '../actors/Actor';
 import { AIM } from '../actors/aim';
 import type { ActorLike } from '../core/types';
@@ -43,13 +43,16 @@ const tap = (slot: number, b: number) => {
   setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [] } : p)));
   h.engine.step(1);
 };
+/** Frames at 60 Hz past the window a twin's Cross would come in (50 ms), and a join's wait (33 ms): `TWIN_SECONDS`. */
+const WINDOW = Math.round(TWIN_SECONDS.window * 60);
+const WAIT = Math.ceil(TWIN_SECONDS.wait * 60);
 /**
- * Cross on pad `slot`, held for `TWIN_POLLS` frames and let go: a join (player 1 on a pad, the
- * engine waits `TWIN_POLLS` - 1 polls for a twin's press before it joins: `input.joinWith`).
+ * Cross on pad `slot`, held through the wait and let go: a join (player 1 on a pad, the engine
+ * waits `TWIN_SECONDS.wait` for a twin's press before it joins: `input.joinWith`).
  */
 const join = (slot: number) => {
   setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [0] } : p)));
-  h.engine.step(TWIN_POLLS);
+  h.engine.step(WAIT + 1);
   setPads(pads.map((p, i) => (i === slot ? { ...p, pressed: [] } : p)));
   h.engine.step(1);
 };
@@ -95,7 +98,7 @@ describe('couch co-op', () => {
       expect(rl.ui.widgets().map((w) => w.id)).toEqual(['seat1', 'seat2', 'seat3', 'seat4', 'g', 'join']);
       tap(0, 0); // player 1's own Cross joins nobody
       expect(game.coop.guests).toEqual([]);
-      engine.step(TWIN_POLLS); // past the window a twin's Cross would come in
+      engine.step(WINDOW); // past the window a twin's Cross would come in
       join(1); // Cross on pad 1: it joins
       await settle(); // the guest's hero is made (a model already loaded: microtasks)
       expect(game.coop.seats).toEqual([2]);

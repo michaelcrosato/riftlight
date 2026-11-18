@@ -85,7 +85,7 @@ export {
   TOUCH_KEY,
   TOUCHPAD,
   TOUCHPAD_KEYS,
-  TWIN_POLLS,
+  TWIN_SECONDS,
   applyDeadzone,
   swipeDirection,
   touchpadGesture,
