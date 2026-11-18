@@ -44,7 +44,15 @@ export async function runRiftlightPhone(h, orientation) {
     const { page, logs } = ctx;
     const R = (fn, arg) => page.evaluate(fn, arg);
     // a condition in the page, waited for but bounded: true once it holds, false if it never does
-    const until = (fn, arg, timeout = 10000) => page.waitForFunction(fn, arg, { timeout }).then(() => true, () => false);
+    // (only a timeout is false: a predicate that throws fails the suite with its own error)
+    const until = (fn, arg, timeout = 10000) =>
+      page.waitForFunction(fn, arg, { timeout }).then(
+        () => true,
+        (e) => {
+          if (e?.name === 'TimeoutError') return false;
+          throw e;
+        },
+      );
     // a screenshot needs the render loop (Engine.step does not present the 3D frame): a moment of real time first
     const shot = async (name) => {
       await R(() => (window.__PIXEL_ENGINE__.manual = false));
@@ -383,6 +391,8 @@ export async function runRiftlightPhone(h, orientation) {
       const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
       return { x: c.left + c.width * share, y: c.top + 4 };
     }, portrait ? 0.6 : 0.08);
+    // drawn and its canvas under the finger: every open builds a new panel and view (wire/tree.ts),
+    // whose frame count starts at 0, so a frame counted is this open's
     const onBar = await until(({ x, y }) => window.__RIFTLIGHT__.game.layer.find('tree')?.view?.debug().frames > 0 && document.elementFromPoint(x, y)?.dataset.riftTree === 'canvas', topBar);
     await touch('touchStart', [[topBar.x, topBar.y, 51]]);
     for (let k = 1; k <= 4; k++) await touch('touchMove', [[topBar.x, topBar.y + k * 40, 51]]);
