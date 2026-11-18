@@ -1494,7 +1494,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
     // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
     // frame); a press is used up here even when a panel takes it, so it never fires later
-    const press = input.consumeAny(MOUSE.left);
+    const fingerPress = input.consumeAny(FINGER);
+    const mousePress = input.consumeAny(MOUSE_LEFT);
+    const press = fingerPress || mousePress;
     const hold = input.anyDown(MOUSE.left);
     // a press this frame counts where it went down (a tap's finger: the pointer is placed after this step)
     let down: { x: number; y: number; touch: boolean } | null = null;
@@ -1510,8 +1512,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // it landed in: a second finger landing by then lets go of it (a pinch: `Input`), so a pinch is
     // no swing, its fingers a frame or two apart too (the mouse's button swings at once)
     const finger = input.anyDown(FINGER) && !input.anyDown(MOUSE_LEFT);
-    this.fingerHeld = !finger ? 0 : press ? 1 : this.fingerHeld + 1;
-    const left = (press || hold) && !this.pressTaken && !(finger && this.fingerHeld <= FINGER_WAIT);
+    this.fingerHeld = !finger ? 0 : fingerPress ? 1 : this.fingerHeld + 1;
+    // a finger's press never swings by itself, only a finger still down past the wait: a pinch's
+    // first finger let go before a step read it (a frame with no fixed step) is no swing either
+    const left = (mousePress || hold) && !this.pressTaken && !(finger && this.fingerHeld <= FINGER_WAIT);
     const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
     const onHud = this.pointerOnHud(down ?? this.pointer.art);
     // the keys' and buttons' actions (a couch guest's pad reads the same: `readActions`), then the mouse's

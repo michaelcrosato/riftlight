@@ -345,6 +345,18 @@ describe("a finger's taps", () => {
           });
           expect(seen.filter(Boolean).length, `a second finger ${apart} frame(s) later: no swing`).toBe(0);
         }
+        // the first finger lands in a frame no fixed step runs in (120 Hz), and the second comes
+        // before any step read it: its press is still queued when a step comes, and is no swing
+        const physics = engine.physics as unknown as { accumulator: number };
+        if (physics.accumulator > 0) engine.step(1, 1 / 60 - physics.accumulator);
+        expect(physics.accumulator, 'a zero accumulator').toBeCloseTo(0, 9);
+        const unread = attacks(() => {
+          finger(200, 120, true);
+          engine.step(1, 1 / 120); // no fixed step: nobody read the press yet
+          input.unpress('Touch'); // the second finger
+          engine.step(10);
+        });
+        expect(unread.filter(Boolean).length, 'a pinch whose first finger no step saw: no swing').toBe(0);
         // one finger alone: it swings from its third step
         const alone = attacks(() => {
           finger(200, 120, true);

@@ -163,13 +163,12 @@ engine.input.setButtons(2);                         // tests: hold the right but
 Mouse buttons on the canvas are keys (`MOUSE_BUTTONS`: `MouseLeft`, `MouseRight`, `MouseMiddle`),
 held and pressed like any key, so fixed-step code reads a click with `consumePress` (one shorter
 than a frame is not lost) and a chord (right while left is held) counts both. A finger is the key
-`Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one.
+`Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one; a second
+finger (a pinch) lets `Touch` go until every finger is up; two in one frame press nothing.
 `input.buttonEvents` lists this frame's presses and releases in order, each where the pointer
 was, so a UI reading clicks sees a drag a script makes between two frames start and end where it
 did. `input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
-mouse ray meets a plane (the Sandbox room's grab: a spring, so it still collides and can be
-thrown; a level plane when the camera looks down, an upright one facing it when it looks
-across). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;
+pointer's ray meets a plane (the Sandbox's grab: a spring, so it still collides and can be thrown). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;
 with `third` a left drag also turns the camera.
 
 ## Input: gamepads and press timing
@@ -229,7 +228,7 @@ both recorded: docs/engine/hub.md *Motion and the touchpad*.
 
 **Swipes**: a quick one-finger flick on the canvas (under 0.35 s, over 8% of its short side:
 `swipeDirection`) presses `SwipeLeft` / `SwipeRight` / `SwipeUp` / `SwipeDown` (`SWIPE_KEYS`) once,
-recorded like any press; a slow drag still orbits the camera and two fingers pinch.
+recorded like any press; a slow drag still orbits the camera (two fingers pinch).
 
 Keys whose browser default should not fire (a game's own F1 / F2 / Tab panels) go in
 `input.preventKeys` (arrows and Space always are).
