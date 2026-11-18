@@ -195,12 +195,17 @@ async function pauseStuck(debug) {
  * last state read while it ran (`seen`); whether it still draws; the console of every frame. When
  * its thread is stuck (`stuck`: a frame's script in a loop; the frames share the harness's
  * thread), the debugger enabled at the run's start (`debuggerOf`) pauses it: where its script is
- * (`stack`, or why there is none), and the state read where it stopped. Every read is bounded
- * (`BOUNDS`): a stuck page never holds the run.
+ * (`stack`, or why there is none), and the state read where it stopped. A page whose browser is
+ * gone (`closed`: an out-of-memory kill can take the whole browser) is not stuck; for it, as for a
+ * crash, `killed` holds what earlyoom killed meanwhile. Every read is bounded (`BOUNDS`): a stuck
+ * page never holds the run.
  */
 async function capture(page, debug, { consoleLines, seen, crashed, error, since }, evidence) {
-  let now = crashed ? 'the page crashed' : await within(page.evaluate(harnessState), BOUNDS.state, `the page did not answer in ${BOUNDS.state / 1000} s`);
-  const stuck = !crashed && typeof now === 'string';
+  // a page whose browser is gone (an out-of-memory kill can take all of it) answers nothing, and is no stuck thread
+  const closed = !crashed && (page.isClosed() || !page.context().browser()?.isConnected());
+  const silent = `the page did not answer in ${BOUNDS.state / 1000} s`;
+  let now = crashed ? 'the page crashed' : closed ? 'the page is gone: its browser closed' : await within(page.evaluate(harnessState), BOUNDS.state, silent);
+  const stuck = now === silent; // not an answer that is an error (`within` brackets those)
   let stack = null;
   if (stuck) {
     const at = await pauseStuck(debug);
@@ -211,8 +216,8 @@ async function capture(page, debug, { consoleLines, seen, crashed, error, since 
     now.drawing = await within(page.evaluate(() => Promise.race([new Promise((r) => requestAnimationFrame(() => r(true))), new Promise((r) => setTimeout(() => r(false), 1000))])), BOUNDS.drawing, null);
   }
   await mkdir(dirname(evidence), { recursive: true });
-  await writeFile(`${evidence}.json`, JSON.stringify({ at: new Date().toISOString(), url: page.url(), error, crashed, killed: crashed ? earlyoomKills(since) : null, stuck, now, seen, stack, console: consoleLines }, null, 1));
-  if (!crashed) await within(page.screenshot({ path: `${evidence}.png`, timeout: BOUNDS.picture - 2000 }), BOUNDS.picture, null);
+  await writeFile(`${evidence}.json`, JSON.stringify({ at: new Date().toISOString(), url: page.url(), error, crashed, closed, killed: crashed || closed ? earlyoomKills(since) : null, stuck, now, seen, stack, console: consoleLines }, null, 1));
+  if (!crashed && !closed) await within(page.screenshot({ path: `${evidence}.png`, timeout: BOUNDS.picture - 2000 }), BOUNDS.picture, null);
 }
 
 /**
@@ -411,31 +416,48 @@ async function busySeen(browser, dir, port) {
   return { pass, detail: `${r ? `ended in ${(took / 1000).toFixed(1)} s (${r.error})` : `still running after ${(took / 1000).toFixed(0)} s`}; its evidence: ${json ? `stuck ${json.stuck}, paused at ${top ?? 'nothing'}` : 'none'}` };
 }
 
+/** The harness page `url` ends with, once `browser` has opened it (null after 10 s). */
+async function openedPage(browser, url) {
+  const from = Date.now();
+  while (Date.now() - from < 10_000) {
+    const page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith(url));
+    if (page) return page;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return null;
+}
+
 /**
- * Whether a harness browser that dies fails only the run it was in: `harness` on a closed browser
- * returns its error (never throws), and `harnessBrowser` launches a new one for the next run.
+ * Whether a harness browser that dies in a run (as an out-of-memory kill can take it all) fails
+ * only that run: `harness` returns its error (never throws) at once, its evidence says the page is
+ * gone (`closed`), not that its thread is stuck, and `harnessBrowser` launches a new browser for
+ * the next run.
  */
-async function deadBrowserSeen(browsers, port) {
+async function deadBrowserSeen(browsers, dir, port) {
   const dead = await browsers.get();
+  const evidence = fileURLToPath(new URL('checks/dead', dir)); // not in evidence/: CI keeps that for runs that failed
+  await rm(`${evidence}.json`, { force: true });
+  const from = Date.now();
+  const run = harness(dead, `http://localhost:${port}/stuck.html`, { timeout: 30_000, evidence });
+  const opened = !!(await openedPage(dead, '/stuck.html'));
   await dead.close();
-  const r = await harness(dead, `http://localhost:${port}/busy.html`, { timeout: 5000 });
+  const r = await run;
+  const took = Date.now() - from;
+  const json = await readFile(`${evidence}.json`, 'utf8').then(JSON.parse, () => null);
   const next = await browsers.get();
-  return { pass: r.pass === false && /closed/.test(r.error ?? '') && next !== dead && next.isConnected(), detail: `the run: ${r.error ?? 'passed'}; the next: ${next !== dead && next.isConnected() ? 'a new browser' : 'no new browser'}` };
+  const renewed = next !== dead && next.isConnected();
+  const pass = opened && r.pass === false && /closed/.test(r.error ?? '') && took < 25_000 && json?.closed === true && json?.stuck === false && renewed;
+  return { pass, detail: `the run: ${r.error ?? 'passed'}, ended in ${(took / 1000).toFixed(1)} s; its evidence: ${json ? `closed ${json.closed}, stuck ${json.stuck}` : 'none'}; the next: ${renewed ? 'a new browser' : 'no new browser'}` };
 }
 
 /**
  * Whether `harness` ends a run whose page's renderer dies at once, as a crash: a page that never
  * finishes, crashed through the debugger (`Page.crash`, as earlyoom's kill or an out-of-memory would).
  */
-async function crashSeen(browser, dir, port) {
-  await writeFile(new URL('stuck.html', dir), '<!doctype html><meta charset="utf-8"><title>stuck</title><body>A page that never finishes.</body>');
+async function crashSeen(browser, port) {
   const from = Date.now();
   const run = harness(browser, `http://localhost:${port}/stuck.html`, { timeout: 30_000 });
-  let page = null;
-  while (!page && Date.now() - from < 10_000) {
-    page = browser.contexts().flatMap((c) => c.pages()).find((p) => p.url().endsWith('/stuck.html')) ?? null;
-    if (!page) await new Promise((r) => setTimeout(r, 100));
-  }
+  const page = await openedPage(browser, '/stuck.html');
   if (page) (await page.context().newCDPSession(page)).send('Page.crash').catch(() => {}); // it answers nothing: it is gone
   const r = await run;
   return !!page && r.crashed === true && r.error === CRASHED && Date.now() - from < 15_000;
@@ -447,11 +469,12 @@ async function crashSeen(browser, dir, port) {
  * time, and never takes the tool down.
  */
 export async function harnessChecks(browsers, dir, port, check) {
+  await writeFile(new URL('stuck.html', dir), '<!doctype html><meta charset="utf-8"><title>stuck</title><body>A page that never finishes.</body>');
   const busy = await busySeen(await browsers.get(), dir, port);
   check(busy.pass, `a harness page whose thread is stuck ends its run at its timeout, timed in Node (Playwright's waits never time out on it), and its evidence says where it is stuck: ${busy.detail}`);
-  const dead = await deadBrowserSeen(browsers, port);
-  check(dead.pass, `a harness browser that dies fails only its run (an error, not a crash of the tool), and the next run has a new one: ${dead.detail}`);
-  check(await crashSeen(await browsers.get(), dir, port), 'a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout)');
+  const dead = await deadBrowserSeen(browsers, dir, port);
+  check(dead.pass, `a harness browser that dies in a run fails only that run (an error, not a crash of the tool), its evidence says the page is gone (not stuck), and the next run has a new browser: ${dead.detail}`);
+  check(await crashSeen(await browsers.get(), port), 'a harness page whose renderer dies ends its run at once, as a crash (Playwright never notices one: it would sit out its timeout)');
 }
 
 /** Where the `hub` suite's runs that fail leave their evidence (CI keeps it: ci.yml's e2e job). */

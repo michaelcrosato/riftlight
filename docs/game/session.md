@@ -205,8 +205,8 @@ holds the round's phase).
   `stuck`, the stack where it paused and the state read there (or, in `stack`, why it could not
   pause). A page whose renderer dies ends its run at once, as a crash (`CRASHED`): Playwright's
   waits never notice a dead page and would sit out the whole timeout. A browser that dies fails
-  only the run it was in (`harness` returns its error), and the next run has a new one
-  (`harnessBrowser`). The suite checks all three on pages that fail on purpose (`harnessChecks`).
+  only the run it was in (`harness` returns its error; its evidence says `closed`, never `stuck`,
+  and what earlyoom killed meanwhile), and the next run has a new one (`harnessBrowser`). The suite checks all three on pages that fail on purpose (`harnessChecks`).
   A four-copy harness page is the biggest
   browser process on a machine (about 0.8 GB, and 0.5 GB more in its GPU process), the one an
   out-of-memory killer takes first: on a WSL machine with earlyoom, `journalctl --user -u earlyoom`
