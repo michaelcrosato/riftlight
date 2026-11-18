@@ -58,6 +58,7 @@ export function showcaseApi(game: Riftlight) {
       focus: m.focus?.entry?.name ?? null,
       child: m.altar.child ? { plan: m.altar.child.genome.plan, archetype: m.altar.child.genome.archetype, seed: m.altar.child.genome.seed, parts: m.altar.child.genome.parts.length, generation: m.altar.generation } : null,
       hero: m.heroLocal(),
+      heroState: m.heroState(),
     };
   };
 

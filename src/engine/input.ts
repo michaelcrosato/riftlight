@@ -69,8 +69,16 @@ export interface Rumble {
 export const GAMEPAD_DEADZONE = 0.15;
 /** How far an analog trigger must go before it counts as the pad being used (`device`). */
 const TRIGGER_USE = 0.3;
-/** How far a stick must move in a poll, past its deadzone, to count as used (a drifting stick sits still). */
-const STICK_USE = 0.05;
+/**
+ * How far a stick must lean (after its deadzone) to count as used (`device`), and to move the
+ * player while a movement key is held off the pad (`moveAxis`): a stick resting or jittering
+ * just past its deadzone does neither.
+ */
+const STICK_USE = 0.25;
+/** How far a stick must move in a poll, past `STICK_USE`, to count as used again (a stick held still is not a new use). */
+const STICK_MOVE = 0.05;
+/** How far a trigger first seen part-way must move before it reads (some pads report half until first pulled). */
+const TRIGGER_WAKE = 0.05;
 /** How far the mouse travels (CSS pixels) before it counts as used (`device`): a bumped desk does not. */
 const MOUSE_USE = 6;
 
@@ -270,6 +278,9 @@ export class Input {
     this._playing = on;
     this.playedPad = false;
     this.playedDevice = 'keyboard'; // a recording that never says otherwise was made on the keyboard
+    // the level's setup runs before the first played frame: it reads the recording's device, never
+    // the live one (`playFrom` sets the device the recorded level began with)
+    if (on) this._device = 'keyboard';
     this.rumbleWant = null;
     if (on) this.outbox = []; // what was sent before a replay is not part of it
   }
@@ -280,8 +291,10 @@ export class Input {
   private _padIndex = -1;
   /** The pad used last as this frame's poll saw it (what `rumble` shakes). */
   private rumblePad: GamepadLike | null = null;
-  /** Each pad's buttons and sticks at the poll before, by its index (what counts as using it). */
-  private padSeen = new Map<number, { buttons: boolean[]; left: [number, number]; right: [number, number] }>();
+  /** Each pad's buttons, sticks and resting triggers at the poll before, by its index (what counts as using it). */
+  private padSeen = new Map<number, PadSeen>();
+  /** The pads `setGamepads` set (tests), polled instead of the browser's. */
+  private fakePads: readonly (GamepadLike | null)[] | null = null;
   /** This frame's strongest rumble request. */
   private rumbleWant: Required<Rumble> | null = null;
   /** Mouse travel since another device was used, and where it last was (CSS pixels). */
@@ -447,10 +460,12 @@ export class Input {
 
   /**
    * The input used last: `keyboard` (keys, and the mouse: a click, the wheel, a move of a few
-   * pixels), `pad` (a button pressed, a stick moved past its deadzone, a trigger pulled) or `touch`
-   * (a finger on the canvas or on the touch controls). It starts as `touch` on a touch-screen
-   * device (a coarse pointer) and `keyboard` elsewhere; a pad that is merely connected changes
-   * nothing. Recorded when it changes (replays and save-states keep it), so a game may branch
+   * pixels), `pad` (a button pressed, a stick pushed past a quarter of its travel, a trigger
+   * pulled past 0.3) or `touch` (a finger on the canvas or on the touch controls). It starts as
+   * `touch` on a touch-screen device (a coarse pointer) and `keyboard` elsewhere; a pad that is
+   * merely connected, a stick resting or jittering near its deadzone and a trigger resting where
+   * it was first seen change nothing. Recorded when it changes (replays and save-states keep it;
+   * a recording keeps the one its level began with for the level's setup), so a game may branch
    * on it (prompts, touch assists, mouse aim) and still replay.
    */
   get device(): InputDevice {
@@ -670,18 +685,24 @@ export class Input {
 
   /**
    * -1..1 on each axis (x = right, y = forward): the touch joystick or a gamepad's left
-   * stick (whichever is tilted further), else WASD / arrow keys / d-pad.
+   * stick (whichever is tilted further), else WASD / arrow keys / d-pad. A movement key held
+   * wins over the pad's stick unless the pad is the device in use and its stick leans past
+   * `STICK_USE` (0.25): a connected pad's stick resting just past its deadzone never takes the
+   * keyboard's movement away, nor the d-pad's. All of it is recorded (`device` too), so a replay
+   * moves the same.
    */
   moveAxis(): { x: number; y: number } {
     const touch = Math.hypot(this.analog.x, this.analog.y);
     const pad = Math.hypot(this.padAxis.x, this.padAxis.y);
-    const stick = touch > 0.12 && touch >= pad ? this.analog : pad > 0 ? this.padAxis : null;
+    const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
+    const y = (this.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (this.isDown('KeyS', 'ArrowDown') ? 1 : 0);
+    const keys = x !== 0 || y !== 0;
+    const padWins = pad > 0 && (!keys || (this._device === 'pad' && pad >= STICK_USE));
+    const stick = touch > 0.12 && touch >= pad ? this.analog : padWins ? this.padAxis : null;
     if (stick) {
       const len = Math.hypot(stick.x, stick.y);
       return len > 1 ? { x: stick.x / len, y: stick.y / len } : { x: stick.x, y: stick.y };
     }
-    const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
-    const y = (this.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (this.isDown('KeyS', 'ArrowDown') ? 1 : 0);
     const len = Math.hypot(x, y);
     return len > 1 ? { x: x / len, y: y / len } : { x, y };
   }
@@ -854,14 +875,31 @@ export class Input {
     this._commands = f.commands ? (JSON.parse(JSON.stringify(f.commands)) as unknown[]) : []; // never the recording's own objects
   }
 
+  /**
+   * Replay, before the recorded level loads (`engine.replay`): the input used last when it began
+   * (`Recording.device`), what its setup reads as `device` until the first played frame.
+   */
+  playFrom(device: InputDevice | undefined): void {
+    if (!this._playing) return;
+    this._device = this.playedDevice = device && INPUT_DEVICES.includes(device) ? device : 'keyboard';
+  }
+
+  /**
+   * Test hook: poll these pads every frame instead of `navigator.getGamepads()` (a headless
+   * engine has none), as the browser would list them; null polls the browser's again.
+   */
+  setGamepads(pads: readonly (GamepadLike | null)[] | null): void {
+    this.fakePads = pads ? [...pads] : null;
+  }
+
   private press(code: string): void {
     this.pressed.add(code);
     this.queued.set(code, this.now);
   }
 
   private pollGamepads(dt: number, pads?: readonly (GamepadLike | null)[]): void {
-    let list: readonly (GamepadLike | null)[] = pads ?? [];
-    if (!pads) {
+    let list: readonly (GamepadLike | null)[] = pads ?? this.fakePads ?? [];
+    if (!pads && !this.fakePads) {
       try {
         list = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
       } catch {
@@ -877,7 +915,7 @@ export class Input {
     let used: { index: number; pad: GamepadLike } | null = null;
     let rumblePad: GamepadLike | null = null;
     const seen = this.padSeen;
-    const seenNow = new Map<number, { buttons: boolean[]; left: [number, number]; right: [number, number] }>();
+    const seenNow = new Map<number, PadSeen>();
     for (let n = 0; n < list.length; n++) {
       const pad = list[n];
       if (!pad || pad.connected === false) continue;
@@ -886,13 +924,22 @@ export class Input {
       if (pad.mapping !== undefined && pad.mapping !== 'standard') continue;
       connected = true;
       const index = Number.isInteger(pad.index) ? pad.index! : n;
-      const value = (i: number): number => {
+      const was = seen.get(index);
+      const raw = (i: number): number => {
         const b = pad.buttons[i];
         return !b ? 0 : Math.min(1, Math.max(0, Number.isFinite(b.value) ? b.value! : b.pressed ? 1 : 0));
       };
+      // A trigger seen for the first time part-way is resting there (some pads report half until
+      // first pulled): it reads 0 and presses nothing until it moves from that value. One pulled
+      // all the way (the press that showed the browser the pad) reads at once.
+      const partWay = (i: number) => (raw(i) > 0 && raw(i) < 1 ? raw(i) : null);
+      const rest: [number | null, number | null] = was ? [was.rest[0], was.rest[1]] : [partWay(6), partWay(7)];
+      for (const k of [0, 1] as const) if (rest[k] !== null && Math.abs(raw(6 + k) - rest[k]!) > TRIGGER_WAKE) rest[k] = null;
+      const resting = (i: number) => (i === 6 || i === 7) && rest[i - 6] !== null;
+      const value = (i: number): number => (resting(i) ? 0 : raw(i));
       const on = (i: number): boolean => {
         const b = pad.buttons[i];
-        return !!b && (b.pressed || (b.value ?? 0) > 0.5);
+        return !!b && !resting(i) && (b.pressed || (b.value ?? 0) > 0.5);
       };
       // View + Menu (Create + Options, buttons 8 and 9) held together belong to whatever hosts the
       // page (the AI Hub opens its bar on them): once both are down, neither means anything here
@@ -912,17 +959,18 @@ export class Input {
       this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
       left = Math.max(left, value(6));
       right = Math.max(right, value(7));
-      // Used, not merely connected: a button that went down, a trigger pulled, a stick that moved
-      // past its deadzone. A pad seen for the first time counts only for a button held (a stick
-      // resting off-centre is drift).
-      const was = seen.get(index);
-      const now = {
+      // Used, not merely connected: a button that went down, a trigger pulled past TRIGGER_USE, a
+      // stick that moved past STICK_USE. A pad seen for the first time counts only for a button
+      // held (the press that showed the browser the pad); its sticks and triggers are where they
+      // rest (drift, a trigger reading half).
+      const now: PadSeen = {
         buttons: pad.buttons.map((_, i) => mine(i) && (i === 6 || i === 7 ? value(i) > TRIGGER_USE : on(i))),
-        left: [l.x, l.y] as [number, number],
-        right: [r.x, r.y] as [number, number],
+        left: [l.x, l.y],
+        right: [r.x, r.y],
+        rest,
       };
       seenNow.set(index, now);
-      const pressedNow = now.buttons.some((b, i) => b && !was?.buttons[i]);
+      const pressedNow = now.buttons.some((b, i) => b && (was ? !was.buttons[i] : i !== 6 && i !== 7));
       if (pressedNow || (was && (stickUsed(was.left, now.left) || stickUsed(was.right, now.right)))) used = { index, pad };
       if (index === this._padIndex) rumblePad = pad;
     }
@@ -946,10 +994,24 @@ export class Input {
   }
 }
 
-/** A stick moved past its deadzone since the poll before (`now`, `was`: after the deadzone), not just sitting there. */
+/** What a poll saw of a pad (after the deadzone), for the next poll to tell use from rest. */
+interface PadSeen {
+  buttons: boolean[];
+  left: [number, number];
+  right: [number, number];
+  /** Each trigger's value when the pad was first seen part-way, while it rests there (null: it reads). */
+  rest: [number | null, number | null];
+}
+
+/**
+ * A stick used since the poll before (`was`, `now`: after the deadzone): it leans past `STICK_USE`
+ * and got there this poll or moved since. A stick resting or jittering near its deadzone (or a
+ * slightly drifting one) never counts.
+ */
 function stickUsed(was: readonly [number, number], now: readonly [number, number]): boolean {
-  if (!now[0] && !now[1]) return false;
-  return (!was[0] && !was[1]) || Math.hypot(now[0] - was[0], now[1] - was[1]) > STICK_USE;
+  const len = Math.hypot(now[0], now[1]);
+  if (len < STICK_USE) return false;
+  return Math.hypot(was[0], was[1]) < STICK_USE || Math.hypot(now[0] - was[0], now[1] - was[1]) > STICK_MOVE;
 }
 
 /** A value clamped to 0..1 (0 when it is not a number). */

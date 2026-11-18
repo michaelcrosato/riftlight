@@ -202,6 +202,39 @@ describe('Engine.headless', () => {
     engine.dispose();
   });
 
+  it('a level set up on a pad replays its setup on the pad, whatever the live device is', async () => {
+    /** Its setup branches on the device in use (prompts, a layout), as a game may. */
+    class SetupDevice implements Game {
+      readonly name = 'Setup device';
+      seen = '';
+      setup(ctx: GameContext): void {
+        this.seen = ctx.input.device;
+      }
+      update(): void {}
+      cameraTarget(ctx: GameContext) {
+        return ctx.camera.focus.clone();
+      }
+    }
+    const engine = await Engine.headless(new Dice());
+    engine.input.noteDevice('pad');
+    let game = new SetupDevice();
+    await engine.loadGame(game);
+    engine.step(3);
+    const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+    expect([rec.device, game.seen]).toEqual(['pad', 'pad']);
+    engine.input.noteDevice('touch'); // live, before the replay
+    await engine.replay(rec, () => engine.loadGame((game = new SetupDevice())));
+    expect(game.seen, 'its setup read the recorded device').toBe('pad');
+    engine.input.noteDevice('pad');
+    const kb = { ...rec, device: undefined }; // a recording begun on the keyboard leaves it out
+    await engine.replay(kb, () => engine.loadGame((game = new SetupDevice())));
+    expect(game.seen).toBe('keyboard');
+    engine.input.noteDevice('keyboard');
+    await engine.loadGame(new SetupDevice());
+    expect(engine.recording()!.device, 'left out for the keyboard').toBeUndefined();
+    engine.dispose();
+  });
+
   it('an asset load without a reader names the one to pass', async () => {
     setAssetReader(null); // the process has none yet (a reader set earlier stays: the Playground's)
     const engine = await Engine.headless(new Dice());

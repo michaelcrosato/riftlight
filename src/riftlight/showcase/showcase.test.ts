@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import { parseSong } from '../../engine/audio';
+import { Input } from '../../engine/input';
 import { Rng } from '../core/rng';
 import type { Genome } from '../core/types';
 import { exportSave, newSave, parseSave } from '../game/save';
 import { crossover, generateGenome, mutate, validateGenome } from '../monsters';
+import { ARCADE_KEYS, readArcadeInput } from './arcade/ArcadeStage';
 import { ARCADE_STAGE, ARCADE_SONG } from './arcade/stage';
 import { HALL_SONG } from './bestiary/hall';
 import { PHOTO_LOOKS } from './photo/PhotoMode';
+import { moveInput } from './visitor';
 import { ARCADE_REWARD, BESTIARY_LIMIT, type BestiaryEntry, exhibitOrder, recordArcadeRun, recordKill, sanitizeShowcase, showcaseOf, speciesKey } from './save';
 import { FILTER_IDS, FILTER_PRESETS } from '../../engine/render/filters';
 
@@ -93,6 +96,21 @@ describe('arcade', () => {
     const s0 = S.breakable[0]!;
     expect(solid(s0.x[0] - 0.5, s0.y[1] - 0.5)).toBe(true);
     expect(solid(S.breakable.at(-1)!.x[1] + 0.5, s0.y[1] + 0.5)).toBe(true);
+  });
+
+  it('plays on a pad: Cross jumps, Circle or L2 crouch, Square attacks, R2 held walks; no button does two moves', () => {
+    const read = (code: string) => {
+      const input = new Input(null);
+      input.setKey(code, true);
+      input.beginFrame(0, 1 / 60, []);
+      return readArcadeInput(input, moveInput());
+    };
+    expect(read('PadA').jump).toBe(true);
+    expect([read('PadB').crouch, read('PadLT').crouch]).toEqual([true, true]);
+    expect(read('PadX').attack).toBe(true);
+    expect(read('PadRT')).toMatchObject({ walk: true, crouch: false, jump: false });
+    const pads = Object.values(ARCADE_KEYS).flatMap((codes: readonly string[]) => codes.filter((c) => c.startsWith('Pad')));
+    expect(new Set(pads).size).toBe(pads.length);
   });
 
   it('songs parse', () => {

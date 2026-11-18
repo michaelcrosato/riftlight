@@ -146,16 +146,25 @@ Chrome) · the d-pad presses the arrows. A game binds them beside its keys (`KEY
 `['Space', 'PadA']`; `readMoveInput` plays the Playground on a pad), Options is left free for a
 pause, and Circle means back in menus. The home button (16, `HOME_BUTTON`) is never read, even when
 mapped, and Create + Options held together are the host's (the AI Hub's bar: `HOST_CHORD`). Remap
-with `input.gamepadButtons[2] = 'KeyF'`. Triggers, the right stick and the device are recorded.
+with `input.gamepadButtons[2] = 'KeyF'`. Triggers, the right stick and the device are recorded. A
+movement key held (WASD, the arrows, the d-pad) wins over the left stick in `moveAxis()` unless the
+pad is the device in use and its stick leans past a quarter of its travel, so a connected pad's
+stick resting just past the deadzone never takes the keyboard's movement away. A trigger the pad
+is first seen with part-way (some pads report half until first pulled) reads 0 until it moves.
+Headless tests feed pads with `input.setGamepads([...])` (`GamepadLike` objects; `null` for the
+browser's again).
 
 **The input used last** is `input.device`: `'keyboard'` (a key; the mouse's click, wheel or a move
-of a few pixels), `'pad'` (a button pressed, a stick moved past its deadzone, a trigger past 0.3)
-or `'touch'` (a finger on the canvas, a touch control: `TouchControls` call `input.noteTouch()`).
-It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a pad that is only
-connected (`gamepadConnected`) never changes it, so a keyboard player with a DualSense plugged in
-keeps key prompts and mouse aim. It is recorded when it changes (a recording without it was made on
-the keyboard) and kept by save-states, so prompts, menus and touch assists can follow it and still
-replay. `input.noteDevice(d)` sets it from a page's own controls or a test.
+of a few pixels), `'pad'` (a button pressed, a stick pushed past a quarter of its travel, a trigger
+past 0.3) or `'touch'` (a finger on the canvas, a touch control: `TouchControls` call
+`input.noteTouch()`). It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a
+pad that is only connected (`gamepadConnected`), a stick resting or jittering near its deadzone
+and a trigger resting where the pad was first seen never change it, so a keyboard player with a
+DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (a recording
+without it was made on the keyboard), a level's recording keeps the one it began with
+(`Recording.device`: what its setup read) and save-states keep it, so prompts, menus and touch
+assists can follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
+a test.
 
 **Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
 buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame
@@ -197,8 +206,8 @@ direction repeats after 0.35 s, `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `
 confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
 `key` events. `FocusList` moves with those events (left / right on a one-column list come back as
 `adjust`, for a slider), and with the pointer: hovering an item focuses it (only when the pointer
-moves, so a resting mouse never fights the d-pad), a press and release on the same item confirms
-it. Both read only `ctx.input`, so what a menu does replays; their state is data (`save` / `load`).
+moves, so a resting mouse never fights the d-pad, and a menu opened under it keeps its focus), a
+press and release on the same item confirms it; a list whose `count` shrank clamps its focus. Both read only `ctx.input`, so what a menu does replays; their state is data (`save` / `load`).
 Riftlight's menus and Engine World's panels run on `MenuInput`.
 
 ## Time: game speed and hitstop

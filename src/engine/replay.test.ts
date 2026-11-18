@@ -270,6 +270,8 @@ describe('recording and replaying input', () => {
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, gamepad: 1 }] })).toMatch(/gamepad/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, device: 'pad' }, { dt: 0.01, device: 'touch' }, { dt: 0.01, device: 'keyboard' }] })).toBeNull();
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, device: 'mouse' as never }] })).toMatch(/frame 0: device/);
+    expect(recordingProblem({ ...ok, device: 'pad' })).toBeNull(); // the device the level began with
+    expect(recordingProblem({ ...ok, device: 'mouse' as never })).toMatch(/^device/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, trig: [0.5] as never }] })).toMatch(/frame 0: trig/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, look: [0, Number.NaN] }] })).toMatch(/frame 0: look/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, sync: false }] })).toMatch(/sync/);

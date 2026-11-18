@@ -16,7 +16,7 @@
  * docs/engine/determinism.md *Recording and replay*.
  */
 import type { Viewport } from './framing';
-import { type InputFrame, INPUT_DEVICES } from './input';
+import { type InputDevice, type InputFrame, INPUT_DEVICES } from './input';
 import { type Snapshot, snapshotProblem } from './snapshot';
 
 export type { InputFrame } from './input';
@@ -39,6 +39,11 @@ export interface Recording {
   readonly truncated?: boolean;
   /** The save-state the frames start from (`engine.restore()` began this recording), if any. */
   readonly from?: Snapshot;
+  /**
+   * The input used last when the level began (`input.device`), what its setup read before the
+   * first frame; left out for the keyboard (and by recordings made before it was kept).
+   */
+  readonly device?: InputDevice;
   /**
    * The viewport it was recorded on, as it was when the level began (CSS pixels and DPR): the art
    * resolution, pointer aim and the HUD's layout follow it. A headless replay frames for it; a page
@@ -67,6 +72,7 @@ export function recordingProblem(v: unknown): string | null {
     const size = (x: unknown) => typeof x === 'number' && Number.isFinite(x) && x >= 0;
     if (!v || typeof v !== 'object' || !size(v.width) || !size(v.height) || !(size(v.dpr) && v.dpr! > 0)) return 'view must be { width, height, dpr } (sizes from 0, dpr above 0)';
   }
+  if (r.device !== undefined && !INPUT_DEVICES.includes(r.device)) return `device must be ${INPUT_DEVICES.join(', ')}`;
   if (r.from !== undefined) {
     const p = snapshotProblem(r.from);
     if (p) return `from: ${p}`;

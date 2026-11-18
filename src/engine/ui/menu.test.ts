@@ -101,6 +101,8 @@ describe('FocusList', () => {
   it('hover moves the focus when the pointer moves; a click or a tap on an item confirms it', () => {
     const input = new Input(target());
     const list = new FocusList(3);
+    input.setPointer(...ndc(10, 10)); // resting off the items
+    list.update([], input, hud, rects);
     const [x, y] = ndc(120, 75); // over item 1
     input.setPointer(x, y);
     expect(list.update([], input, hud, rects)).toMatchObject({ moved: true, confirm: -1 });
@@ -116,6 +118,29 @@ describe('FocusList', () => {
     input.setPointer(...ndc(120, 55), true);
     input.setPointer(...ndc(120, 95), false);
     expect(list.update([], input, hud, rects).confirm).toBe(-1);
+  });
+
+  it('a menu opened under a resting pointer keeps its focus until the pointer moves', () => {
+    const input = new Input(target());
+    input.setPointer(...ndc(120, 95)); // over item 2, where the mouse rests when the menu opens
+    const list = new FocusList(3);
+    expect(list.update([], input, hud, rects)).toMatchObject({ moved: false, confirm: -1 });
+    expect(list.index).toBe(0);
+    expect(list.update([], input, hud, rects).moved).toBe(false); // still resting
+    input.setPointer(...ndc(121, 95)); // nudged: now it hovers
+    expect(list.update([], input, hud, rects).moved).toBe(true);
+    expect(list.index).toBe(2);
+  });
+
+  it('a list that shrank never focuses nor confirms past its end', () => {
+    const input = new Input(target());
+    const list = new FocusList(5, { index: 4 });
+    list.count = 2;
+    expect(list.update([{ kind: 'confirm' }], input, hud)).toMatchObject({ confirm: 1, moved: false });
+    expect(list.index).toBe(1);
+    list.count = 0;
+    expect(list.update([{ kind: 'confirm' }], input, hud).confirm).toBe(-1);
+    expect(list.index).toBe(0);
   });
 
   it('a sideways swipe dismisses; vertical ones are left to scroll; its state is data', () => {

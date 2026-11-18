@@ -215,6 +215,45 @@ describe('The device used last', () => {
     expect(input.device).toBe('pad');
   });
 
+  it('a stick jittering across its deadzone never takes over from the keyboard; one pushed does, slowly or not', () => {
+    const t = target();
+    const input = new Input(t);
+    let now = 0;
+    const frame = (x: number) => {
+      input.beginFrame((now += 1 / 60), 1 / 60, [pad([x, 0, 0, 0])]);
+      input.endFrame();
+    };
+    frame(0);
+    for (const x of [0.149, 0.151, 0.148, 0.152, 0.149, 0.153, 0.147, 0.151]) {
+      t.dispatchEvent(key('keydown', 'KeyW'));
+      t.dispatchEvent(key('keyup', 'KeyW'));
+      frame(x);
+      expect(input.device, `a resting stick at ${x}`).toBe('keyboard');
+    }
+    for (let x = 0.15; x <= 0.6; x += 0.01) frame(x); // tilted slowly, a little each frame
+    expect(input.device).toBe('pad');
+  });
+
+  it('a key held wins over a stick resting past its deadzone; the pad in use, pushed, wins over the keys', () => {
+    const t = target();
+    const input = new Input(t);
+    t.dispatchEvent(key('keydown', 'KeyW'));
+    input.beginFrame(0, 1 / 60, [pad([0.17, 0, 0, 0])]); // a connected pad's stick resting just past the deadzone
+    expect(input.moveAxis()).toEqual({ x: 0, y: 1 }); // W still moves forward
+    expect(input.device).toBe('keyboard');
+    t.dispatchEvent(key('keyup', 'KeyW'));
+    input.beginFrame(1 / 60, 1 / 60, [pad([0.17, 0, 0, 0])]);
+    expect(input.moveAxis().x).toBeGreaterThan(0); // no key: the stick is all there is
+    // the d-pad (arrows) on the pad in use: the same drifting stick doesn't take it either
+    input.beginFrame(2 / 60, 1 / 60, [pad([0.17, 0, 0, 0], [12])]);
+    expect([input.device, input.moveAxis()]).toEqual(['pad', { x: 0, y: 1 }]);
+    // the pad in use, its stick pushed: it wins over a key still held
+    t.dispatchEvent(key('keydown', 'KeyW'));
+    input.beginFrame(3 / 60, 1 / 60, [pad([0.9, 0, 0, 0])]);
+    expect(input.device).toBe('pad');
+    expect(input.moveAxis()).toEqual({ x: (0.9 - 0.15) / 0.85, y: 0 });
+  });
+
   it('is recorded and replayed, kept by save-states, and live input cannot change it during a replay', () => {
     const live = new Input(target());
     live.noteDevice('pad');
@@ -228,7 +267,13 @@ describe('The device used last', () => {
     expect(b.device).toBe('keyboard');
     const t = target();
     const played = new Input(t);
+    played.noteDevice('pad'); // live, before the replay
     played.playing = true;
+    expect(played.device).toBe('keyboard'); // a level loading in a replay reads the recording's device, not the live one
+    played.playFrom('touch'); // the device the recorded level began with
+    expect(played.device).toBe('touch');
+    played.playFrom(undefined); // a recording without one: the keyboard
+    expect(played.device).toBe('keyboard');
     t.dispatchEvent(key('keydown', 'KeyW'));
     played.noteTouch();
     played.beginFrame(0, 1 / 60, [pad([0, 0, 0, 0], [0])]);
@@ -254,8 +299,10 @@ describe('The device used last', () => {
 describe('Analog triggers and the right stick', () => {
   it('read 0..1 per trigger and the right stick as an aim axis (y up), after its deadzone', () => {
     const input = new Input(target());
+    input.beginFrame(0, 1 / 60, [pad()]); // seen at rest first
+    input.endFrame();
     const buttons = Array.from({ length: 18 }, (_, i) => (i === 6 ? { pressed: false, value: 0.25 } : i === 7 ? { pressed: true, value: 0.75 } : { pressed: false, value: 0 }));
-    input.beginFrame(0, 1 / 60, [pad([0, 0, 0, -1], [], { buttons })]);
+    input.beginFrame(1 / 60, 1 / 60, [pad([0, 0, 0, -1], [], { buttons })]);
     expect(input.triggers).toEqual({ left: 0.25, right: 0.75 });
     expect([input.isDown('PadLT'), input.isDown('PadRT')]).toEqual([false, true]); // pressed, as the browser says (or past half)
     expect(input.lookAxis.x).toBe(0);
@@ -264,10 +311,29 @@ describe('Analog triggers and the right stick', () => {
     const f = input.snapshot(1 / 60);
     expect([f.trig, f.look?.[1]]).toEqual([[0.25, 0.75], input.lookAxis.y]);
     input.endFrame();
-    input.beginFrame(1 / 60, 1 / 60, [pad()]);
+    input.beginFrame(2 / 60, 1 / 60, [pad()]);
     expect([input.triggers, input.lookAxis, Object.is(input.lookAxis.x, -0)]).toEqual([{ left: 0, right: 0 }, { x: 0, y: 0 }, false]);
     const g = input.snapshot(1 / 60);
     expect([g.trig, g.look]).toEqual([undefined, undefined]);
+  });
+
+  it('a pad first seen with its triggers resting part-way (half, until first pulled) reads them as 0 and is not in use until they move', () => {
+    const input = new Input(target());
+    const half = (l: number, r = l) => pad([0, 0, 0, 0], [], { buttons: Array.from({ length: 18 }, (_, i) => (i === 6 ? { pressed: l > 0.1, value: l } : i === 7 ? { pressed: r > 0.1, value: r } : { pressed: false, value: 0 })) });
+    for (let f = 0; f < 5; f++) {
+      input.beginFrame(f / 60, 1 / 60, [half(0.5)]);
+      input.endFrame();
+    }
+    expect([input.device, input.triggers, input.isDown('PadLT', 'PadRT')]).toEqual(['keyboard', { left: 0, right: 0 }, false]);
+    input.beginFrame(5 / 60, 1 / 60, [half(0, 0.5)]); // the left one let go: it reads from now on
+    input.endFrame();
+    expect([input.device, input.triggers]).toEqual(['keyboard', { left: 0, right: 0 }]);
+    input.beginFrame(6 / 60, 1 / 60, [half(0.8, 0.5)]); // and pulled: the pad is in use
+    expect([input.device, input.triggers, input.isDown('PadLT'), input.isDown('PadRT')]).toEqual(['pad', { left: 0.8, right: 0 }, true, false]);
+    // one pulled all the way when the pad is first seen (the press that showed it) reads at once
+    const full = new Input(target());
+    full.beginFrame(0, 1 / 60, [half(0, 1)]);
+    expect([full.triggers.right, full.isDown('PadRT'), full.device]).toEqual([1, true, 'keyboard']);
   });
 });
 

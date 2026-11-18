@@ -8,12 +8,13 @@ import type { MoveInput, PlatformerCharacter } from './PlatformerCharacter';
  * PlayStation names in brackets) side by side. Movement is camera-relative for every preset
  * (strafing in first person; left/right only on a side-scroller lane, except while climbing or
  * hanging). Call from Game.fixedUpdate. Options / Menu (`PadStart`) is left free for a pause or
- * menu, and Circle / B means back in menus (`MenuInput`) while it crouches in play.
+ * menu, R2 / RT (`PadRT`), R3 and the touchpad for the game's own (an interact, a fire), and
+ * Circle / B means back in menus (`MenuInput`) while it crouches in play.
  *
  *   WASD / arrows / left stick / d-pad   move
  *   Space · A (Cross)                    jump
  *   Shift · LT (L2)                      walk / tiptoe
- *   C / Ctrl · B (Circle) / RT (R2)      crouch (air: ground pound)
+ *   C / Ctrl · B (Circle)                crouch (air: ground pound)
  *   Z · LB (L1)                          prone toggle
  *   X · RB (R1)                          lie down / get up
  *   F (hold) · Y (Triangle)              grab / pull
@@ -24,7 +25,7 @@ import type { MoveInput, PlatformerCharacter } from './PlatformerCharacter';
 export const KEYMAP = {
   jump: ['Space', 'PadA'],
   walk: ['ShiftLeft', 'ShiftRight', 'PadLT'],
-  crouch: ['KeyC', 'ControlLeft', 'ControlRight', 'PadB', 'PadRT'],
+  crouch: ['KeyC', 'ControlLeft', 'ControlRight', 'PadB'],
   prone: ['KeyZ', 'PadLB'],
   lie: ['KeyX', 'PadRB'],
   grab: ['KeyF', 'PadY'],

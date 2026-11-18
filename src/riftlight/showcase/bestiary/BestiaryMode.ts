@@ -363,6 +363,8 @@ export class BestiaryMode implements ShowcaseMode {
     const ctx = this.host.ctx;
     const walking = this.view === 'walk';
     const input = walking ? readMoveInput(ctx, v.hero, this.input) : this.still();
+    // F / Triangle and R2 are the hall's (inspect, walk / fly): nothing here is grabbed
+    input.grab = false;
     v.fixedUpdate(dt, input);
   }
 
@@ -370,6 +372,7 @@ export class BestiaryMode implements ShowcaseMode {
     const i = this.input;
     i.move.set(0, 0, 0);
     i.jump = i.jumpHeld = i.crouch = i.crouchPressed = i.attack = false;
+    i.walk = i.prone = i.lie = i.wave = i.sit = false;
     i.face = null;
     return i;
   }
@@ -635,6 +638,11 @@ export class BestiaryMode implements ShowcaseMode {
     const v = this.visitor;
     if (!v) return [0, 0, 0];
     return v.position.clone().sub(HALL_ORIGIN).toArray().map((n) => +n.toFixed(3));
+  }
+
+  /** For agents: the walking hero's move state (`crouch`, `idle`…), or null out of the hall. */
+  heroState(): string | null {
+    return this.visitor?.hero?.state ?? null;
   }
 
   /** For agents: stand at a pedestal, facing it. */

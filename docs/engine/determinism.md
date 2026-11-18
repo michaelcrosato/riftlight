@@ -19,7 +19,8 @@ line says why it needs real time (`// real time: <why>`: measurements, UI clocks
 interactive tools in `src/labs/` are exempt (docs/DOCTRINE.md, principle 1).
 
 **Recording and replay** (`src/engine/replay.ts`). The engine records every level it runs, from
-its start: the seed, the game's name, the game time it began at and each frame's input (held keys,
+its start: the seed, the game's name, the game time it began at, the device in use then (`device`,
+left out for the keyboard: what the level's setup read) and each frame's input (held keys,
 with gamepad and mouse buttons as keys, presses, sticks, triggers, pointer, wheel, gamepad connected, the device used last, touch,
 button presses and releases with where the pointer was, commands, `dt`), only what changed, and
 whether promise callbacks ran before the frame.

@@ -165,6 +165,53 @@ describe('the Loot Lab', () => {
     expect(lab.ui.isOpen, 'Escape closes the windows').toBe(false);
     expect(e.errors).toEqual([]);
   });
+
+  it('on a pad: Y picks up the nearest item; the stick moves a cursor in the open windows, X equips, B closes them', () => {
+    /** A pad in the standard layout: the left stick at `lx, ly` (y down), `pressed` buttons down. */
+    const pad = (pressed: number[] = [], lx = 0, ly = 0) => ({ connected: true, mapping: 'standard', index: 0, axes: [lx, ly, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i) })) });
+    /** Button `b` pressed for a frame and let go. */
+    const tap = (b: number) => {
+      e.input.setGamepads([pad([b])]);
+      e.step(1);
+      e.input.setGamepads([pad()]);
+      e.step(1);
+    };
+    try {
+      e.input.setGamepads([pad()]);
+      lab.hero.teleport([7, 0, 7]);
+      e.step(4);
+      const amulet = lab.give('lapis-amulet', 'magic').uid;
+      e.step(40);
+      tap(3); // Y (Triangle)
+      e.step(2);
+      expect(carried(amulet), 'pad Y picks up the nearest item').toBe(true);
+
+      press('KeyI');
+      e.step(1);
+      expect(lab.inventory.isOpen()).toBe(true);
+      // steer the cursor onto the amulet with the left stick
+      const at = lab.ui.itemCenter(amulet)!;
+      for (let i = 0; i < 240; i++) {
+        const dx = at.x - lab.ui.cursor.x;
+        const dy = at.y - lab.ui.cursor.y;
+        const len = Math.hypot(dx, dy);
+        if (len < 1) break;
+        const lean = 0.15 + 0.85 * Math.min(1, len / 30); // past the deadzone, slower when close
+        e.input.setGamepads([pad([], (dx / len) * lean, (dy / len) * lean)]);
+        e.step(1);
+      }
+      e.input.setGamepads([pad()]);
+      e.step(1);
+      expect(lab.ui.itemAtTarget(lab.ui.hit(Math.floor(lab.ui.cursor.x), Math.floor(lab.ui.cursor.y)))?.uid, 'the pad cursor is on the amulet').toBe(amulet);
+      tap(2); // X (Square): a right-click
+      expect(lab.store.state.equipment.amulet?.uid, 'pad X equips it').toBe(amulet);
+      tap(1); // B (Circle)
+      expect(lab.ui.isOpen, 'pad B closes the windows').toBe(false);
+      expect(e.errors).toEqual([]);
+    } finally {
+      e.input.setGamepads(null);
+    }
+  });
 });
 
 describe('the Loot Lab at every window shape', () => {

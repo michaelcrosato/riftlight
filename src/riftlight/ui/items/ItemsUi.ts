@@ -801,10 +801,11 @@ export class ItemsUi {
       if (this.cursorMode === 'pad') {
         const cx = Math.floor(this.cursor.x);
         const cy = Math.floor(this.cursor.y);
-        if (input.wasPressed('Space')) this.primary(cx, cy, { ctrl: false, shift: false });
-        if (input.wasPressed('KeyJ')) this.secondary(cx, cy);
-        if (input.wasPressed('KeyF')) this.primary(cx, cy, { ctrl: true, shift: false });
-        if (input.wasPressed('KeyC')) this.closeAll();
+        // the pad's buttons (`GAMEPAD_BUTTONS`): A (Cross) clicks, X (Square) right-clicks, Y (Triangle) Ctrl-clicks, B (Circle) closes
+        if (input.wasPressed('PadA')) this.primary(cx, cy, { ctrl: false, shift: false });
+        if (input.wasPressed('PadX')) this.secondary(cx, cy);
+        if (input.wasPressed('PadY')) this.primary(cx, cy, { ctrl: true, shift: false });
+        if (input.wasPressed('PadB')) this.closeAll();
       }
     }
     // a finger let go where these windows didn't hear it (another panel over them): no long-press

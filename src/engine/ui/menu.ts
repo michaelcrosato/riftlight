@@ -186,6 +186,8 @@ export class FocusList {
    * HUD pixels of `hud`'s size) over `rects` (each item's box, by index; left out: no pointer).
    */
   update(events: readonly MenuEvent[], input: Input, hud: { readonly width: number; readonly height: number }, rects: readonly FocusRect[] = []): FocusResult {
+    // the list may have shrunk since the frame before: never focus (or confirm) past its end
+    this.index = Math.max(0, Math.min(this.index, this.count - 1));
     const before = this.index;
     let confirm = -1;
     let back = false;
@@ -204,7 +206,8 @@ export class FocusList {
       const p = input.pointer;
       if (p.over) {
         const here = ndcToHud(p.x, p.y, hud);
-        const moved = !this.at || this.at[0] !== here[0] || this.at[1] !== here[1];
+        // the first sight of the pointer only notes where it rests: a menu opened under it keeps its focus
+        const moved = this.at !== null && (this.at[0] !== here[0] || this.at[1] !== here[1]);
         this.at = here;
         const i = moved ? hit(here[0], here[1]) : -1;
         if (i >= 0) this.index = i;

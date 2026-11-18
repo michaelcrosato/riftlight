@@ -157,6 +157,17 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
     'W walks down the aisle; inspect: the orbit camera and the card; a clip plays; the Rift Altar breeds two kills and mutates the child; Tab flies; out of the hall: iso camera, physics as before',
     () => {
       const { rl, engine } = h;
+      // a pad's R2 and Triangle are the hall's (inspect, walk / fly): the hero neither crouches nor grabs on them
+      const states = new Set<string | null>();
+      engine.input.setKey('PadRT', true);
+      for (let i = 0; i < 8; i++) {
+        engine.step(1);
+        states.add(rl.bestiary.state().heroState);
+      }
+      engine.input.setKey('PadRT', false);
+      if (rl.bestiary.state().view !== 'walk') rl.bestiary.view('walk');
+      engine.step(10);
+      expect([...states].filter((s) => s?.startsWith('crouch') || s === 'grab'), 'R2 does not crouch in the hall').toEqual([]);
       const z0 = rl.bestiary.state().hero[2]!;
       engine.input.setKey('KeyW', true);
       engine.step(40);

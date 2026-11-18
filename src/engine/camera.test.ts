@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Vector3 } from 'three/webgpu';
 import { CAMERA_PRESETS, FirstPersonRig, FreeRig, OrthoRig, ThirdPersonRig, createCameraRig } from './camera';
 import { RESOLUTIONS } from './framing';
+import { Input } from './input';
 import { decodeState, encodeState } from './snapshot';
 
 const fakeInput = (over: Partial<Record<string, unknown>> = {}) =>
@@ -97,6 +98,22 @@ describe('camera presets', () => {
     const a = new Vector3(0, 0, -1).applyEuler(free.camera.rotation);
     const b = new Vector3(0, 0, -1).applyEuler(fixed.camera.rotation);
     expect(a.distanceTo(b)).toBeLessThan(1e-3);
+  });
+
+  it('the free camera flies on a pad: R2 rises, L2 sinks, L3 held goes faster', () => {
+    const input = new Input(null);
+    const free = createCameraRig({ preset: 'free', position: [0, 5, 0], target: [0, 5, -10] }) as FreeRig;
+    const fly = (codes: string[]) => {
+      for (const c of codes) input.setKey(c, true);
+      const y = free.camera.position.y;
+      free.update({ target: new Vector3(), eye: new Vector3(), dt: 1 / 60, resolution: RESOLUTIONS.default, input, world: {} });
+      for (const c of codes) input.setKey(c, false);
+      return free.camera.position.y - y;
+    };
+    expect(fly(['PadRT'])).toBeCloseTo(6 / 60); // up, at the walking speed
+    expect(fly(['PadLT'])).toBeCloseTo(-6 / 60); // down
+    expect(fly(['PadRT', 'PadL3'])).toBeCloseTo(18 / 60); // L3 held: three times as fast
+    expect(fly([])).toBe(0);
   });
 });
 
