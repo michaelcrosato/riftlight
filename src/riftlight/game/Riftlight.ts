@@ -31,14 +31,14 @@ import type { Menu } from '../ui/menu';
 import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
-import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
+import { beacon, bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
 import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
-import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
+import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type MonsterHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker, type RecapState } from './recap';
@@ -54,6 +54,7 @@ import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
 import { GhostMode, type GhostHost } from '../session/ghosts';
+import { type MomentSpec, momentSpot } from '../session/moments';
 import { ClientWorld, HostWorld, type SharedShell } from '../session/shared';
 import { LevelStage } from '../wire/levels';
 import { lang, pageLanguage, t } from '../lang';
@@ -68,6 +69,9 @@ export type Screen = 'title' | 'town' | 'level' | 'loading';
  * zooms out by this much so the fight around the hero fits.
  */
 export const CAMERA = { title: 1.0, town: 1.22, level: 1.08, lead: 0.22, leadMax: 1.6, portrait: 0.8 } as const;
+
+/** A moment's spot to escape to is reached this close (metres), shown as a ring that wide. */
+const MOMENT_REACH = 1.5;
 
 interface MutableIntent {
   move: { x: number; z: number };
@@ -184,7 +188,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** New runs' seed when none is given: the `seed` option, else the page's `?seed=` (else the clock: a new run each time). */
   private readonly seed: number | null;
   /**
-   * An AI Hub round (docs/game/session.md): the page opens straight into it. Null outside a session
+   * A 52in1 round (docs/game/session.md): the page opens straight into it. Null outside a session
    * (a replay of a recorded round makes one when the round's command plays: `HubSession.offline`).
    */
   round: SessionRound | null;
@@ -195,8 +199,17 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // The real hero, levels and monsters (src/riftlight/wire) and the real loot and tree;
     // pass ports to replace any of them.
     this.ports = { ...corePorts(), loot: realLootPort(), tree: realTreePort(), ...ports };
-    this.store = options.store ?? new SaveStore();
+    // a session's runs are the hub's rounds, thrown away after each: memory only, never the player's slots
+    this.store = options.store ?? new SaveStore(options.session ? null : undefined);
     this.saves = this.store.view();
+  }
+
+  /**
+   * Saves go to the store: not in a replay (the player's slots are not the recording's), nor in a
+   * session round (its run is the hub's, thrown away after the round), whatever store it was given.
+   */
+  private get storing(): boolean {
+    return !this.replaying && !this.round;
   }
 
   get audio() {
@@ -389,7 +402,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.startRun();
     this.slot = slot;
     this.save = newSave(seed);
-    if (!this.replaying) this.store.save(slot, this.save);
+    if (this.storing) this.store.save(slot, this.save);
     viewSaved(this.saves, slot, this.save);
     this.applySave();
     this.note('run', `new run in slot ${slot + 1} seed ${seed}`);
@@ -649,9 +662,13 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const depth = this.level.spec.depth;
     const deeper = recordClear(this.save, depth, this.levelTime);
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
-    this.ctx.audio.play('rl.clear');
-    if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
-    else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
+    if (this.round?.moment) {
+      // a moment says its own cleared or failed, with its own sound (session/round.ts)
+    } else {
+      this.ctx.audio.play('rl.clear');
+      if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
+      else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
+    }
     this.hero.emote('victory');
     this.playMusic('level');
     this.autosave('clear');
@@ -675,6 +692,42 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.hero.snap?.(at, Math.PI);
       this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(0.9));
     }
+  }
+
+  /** A moment's targets (its monsters) and, to escape, its spot: set up by `startMoment`. */
+  momentAim: { readonly targets: readonly MonsterHandle[]; readonly spot: Vector3 | null } | null = null;
+
+  /**
+   * A moment's set-up (session/moments.ts): a fresh hero at the moment's level on `seed`, straight
+   * into its level, standing `back` metres short of its targets on the way in and facing them. The
+   * same on every copy: the level's design places the targets, the layout the spot.
+   */
+  async startMoment(moment: MomentSpec, seed: number): Promise<void> {
+    this.newRun(0, seed);
+    for (let l = 1; l < moment.heroLevel; l++) this.devGive('level');
+    this.feed = [];
+    await this.enterDepth(moment.depth);
+    const level = this.level;
+    if (!level) return;
+    const want = moment.target;
+    const targets = level.monsters().filter((m) => ('boss' in want ? m.rank === 'boss' : m.pack !== undefined && want.packs.includes(m.pack)));
+    if (!targets.length) throw new Error(`moment ${moment.id}: no ${'boss' in want ? 'boss' : `pack ${want.packs.join(', ')}`} in level ${moment.depth}`);
+    const aim = targets.reduce((sum, m) => sum.add(m.actor.position), new Vector3()).multiplyScalar(1 / targets.length);
+    const s = momentSpot(level.layout, aim, moment.back);
+    const at = new Vector3(s.x, level.start.y, s.z);
+    this.hero.snap?.(at, Math.atan2(aim.x - at.x, aim.z - at.z));
+    this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(0.9));
+    const away = moment.clear === 'escape' ? moment.spot : undefined;
+    if (moment.clear === 'escape' && !away) throw new Error(`moment ${moment.id}: an escape names its spot`);
+    this.momentAim = { targets, spot: away ? new Vector3(away.x, level.start.y, away.z) : null };
+  }
+
+  /** The moment's goal is met: its targets fallen, or (to escape) the hero at its spot. */
+  momentMet(): boolean {
+    const aim = this.momentAim;
+    if (!aim || this.dead) return false;
+    if (aim.spot) return Math.hypot(aim.spot.x - this.hero.actor.position.x, aim.spot.z - this.hero.actor.position.z) <= MOMENT_REACH;
+    return aim.targets.every((m) => !m.actor.alive);
   }
 
   /** Where a seat stands at the level's start (seats spread out, so four heroes aren't one), or null for the start itself. */
@@ -768,10 +821,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ctx.audio.play('hurt', { volume: 0.5 });
   }
 
-  /** A centre banner now (it takes over from whatever showed). */
-  banner(title: string, subtitle = '', seconds = 1.2): void {
+  /** A centre banner now (it takes over from whatever showed), `age` seconds into its showing (0: it opens). */
+  banner(title: string, subtitle = '', seconds = 1.2, age = 0): void {
     this.banners.clear();
-    this.banners.push('card', title, subtitle, { duration: seconds });
+    this.banners.push('card', title, subtitle, { duration: seconds, age });
   }
 
   /** Portal reached: the loot window if anything is left, else straight home. */
@@ -901,7 +954,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.ports.loot.write(this.save);
     const stats = (this.save.stats ??= emptyStats());
     stats.playtime = Math.round(this.playtime);
-    const ok = this.replaying || this.store.save(this.slot, this.save);
+    const ok = !this.storing || this.store.save(this.slot, this.save);
     viewSaved(this.saves, this.slot, this.save);
     if (!ok) this.ctx.input.send({ rl: 'storage', error: this.store.lastError || t('menu.slots.error.unwritable') });
     this.note('save', `${why} → slot ${this.slot + 1}${ok ? '' : ' (memory only)'}`);
@@ -1614,6 +1667,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       const p = this.hero.actor.position;
       if (near) this.prompt(t('prompt.pick_up', { item: near.label }));
       else if (!this.round && this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt(t('prompt.return'), t('prompt.return.sub'));
+      // a moment's spot to escape to, before the labels (the way out matters most): a ring on the
+      // ground with a chevron over it, else an arrow pointing the way, clear of the HUD
+      const spot = this.momentAim?.spot;
+      if (spot && this.round?.phase !== 'over') beacon(ui, cam, spot, MOMENT_REACH, 'cyan', this.time, layout);
       // labels: the focused one first, then loud ones, then by distance (near labels win)
       const labels = this.ports.loot
         .ground()
@@ -1716,6 +1773,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       };
     }
     const tuning = this.save.difficulty;
+    const left = this.round?.timeLeft() ?? null;
     return {
       time: this.time,
       vitals: this.hero.vitals(),
@@ -1734,10 +1792,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       difficulty: changedSliders(tuning).map((k) => t(`hud.tuned.${difficultyLineId(k)}`, { value: lang().formatNumber(tuning[k], { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })),
       hurt: this.hurt,
       levelLabel: level ? levelTitle(level.spec) : t('place.emberfall'),
-      timer: level ? formatTime(this.levelTime) : null,
+      timer: level && !this.round?.moment ? formatTime(this.levelTime) : null, // a moment shows its own seconds left
       device: this.controlDevice(),
       padStyle: this.ctx.engine.controls.style,
-      progress: level ? level.progress() : null,
+      progress: level && !this.round?.moment ? level.progress() : null,
+      timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
     };
   }
 
@@ -1854,7 +1913,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.dead,
       this.cleared,
       `${at(hero.position)} ${this.hero.actor instanceof Actor ? this.hero.actor.facing : ''} ${hero.life} ${hero.mana}`,
-      ...(this.round ? [`round ${this.round.phase} ${this.round.depth} ${this.round.respawnIn ?? ''} ${this.round.clearedAt !== null}`] : []),
+      ...(this.round ? [`round ${this.round.phase} ${this.round.depth} ${this.round.respawnIn ?? ''} ${this.round.clearedAt !== null}${this.round.moment ? ` ${this.round.moment.id} ${this.round.outcome}` : ''}`] : []),
       ...(this.level?.monsters() ?? []).map((m) => `${m.actor.id} ${at(m.actor.position)} ${m.actor instanceof Actor ? m.actor.facing : ''} ${m.actor.life}`),
       ...this.ports.loot.ground().map((l) => `${l.id} ${at(l.position)}`),
       this.town.fingerprint(),
@@ -1868,8 +1927,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * save and the slots it knows, the run's random stream, the id counters, the hero, the loot,
    * the town and everything the shell keeps (timers, the HUD's banners and numbers, the camera's
    * lead, the pointer) and, in a level, what the level was built from and its own state
-   * (`LevelHandle.saveState`). In town or a level, mid-fight included, with no panel open and
-   * nobody talked to. The settings kept are those play reads (`playSettings`); the rest are the player's.
+   * (`LevelHandle.saveState`). In town or a level, mid-fight included, with no panel open,
+   * nobody talked to and no 52in1 round on. The settings kept are those play reads (`playSettings`); the rest are the player's.
    */
   snapshot(): RiftSnapshot {
     const refuse = (why: string): never => {
@@ -1881,6 +1940,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.showcase.active) refuse('the showcase is open');
     if (this.layer.top) refuse(`a panel is open (${this.layer.top.panel.id}): close it first`);
     if (this.talkingTo) refuse('the hero is talking to someone');
+    // a round's state is the hub's as much as the game's (its clock, the other copies, a moment's
+    // targets): a round is replayed from its recording, not restored
+    if (this.round) refuse('a 52in1 round is on (replay its recording instead)');
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.saveState || !hero.loadState) refuse('this hero port keeps no state (saveState / loadState)');

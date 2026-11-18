@@ -7,7 +7,7 @@ import { Riftlight } from '../game/Riftlight';
 import { SaveStore } from '../game/save';
 import { type HeadlessRiftlight, headlessRiftlight, settle } from '../headless';
 import { type HeroStep, STEP } from './remote';
-import { ClientWorld, HostWorld, killStandings } from './shared';
+import { ClientWorld, HostWorld, killStandings, versusScores } from './shared';
 
 const T = 90_000;
 let open: HeadlessRiftlight | null = null;
@@ -16,10 +16,10 @@ afterEach(() => {
   open = null;
 });
 
-/** The real game as copy `me` of a two-player shared world; the other copy is the test's. */
-async function sharedRound(me: 0 | 1) {
-  const hub = new LocalHub({ mode: 'shared-world', players: 2, seed: 4242, latencyMs: 60 });
-  const session = (await HubSession.join({ mode: 'shared-world', seats: [1, 4], client: hub.client(me), autoFlush: false, clock: () => hub.now }))!;
+/** The real game as copy `me` of a two-player shared world (played co-op, or versus); the other copy is the test's. */
+async function sharedRound(me: 0 | 1, play: 'co-op' | 'versus' = 'co-op') {
+  const hub = new LocalHub({ mode: 'shared-world', play, players: 2, seed: 4242, latencyMs: 60 });
+  const session = (await HubSession.join({ mode: ['shared-world', 'ghost', 'parallel', 'moments'], seats: [1, 4], client: hub.client(me), autoFlush: false, clock: () => hub.now }))!;
   const game = new Riftlight({}, { store: new SaveStore(null), session });
   const h = await headlessRiftlight({ game, seed: session.info.seed });
   open = h;
@@ -50,6 +50,44 @@ describe('a shared world', () => {
   it('standings go by kills, ties together', () => {
     expect(killStandings([0, 1, 2, 3], new Map([[0, 5], [1, 9], [3, 5]]))).toEqual([[1], [0, 3], [2]]);
   });
+
+  it('versus scores a parallel round’s way: kills, a share of the boss’s life up to 50, 100 for felling it', () => {
+    const scores = versusScores([0, 1, 2], new Map([[0, 3], [1, 7]]), new Map([[0, 600], [1, 400]]), 1000, 0);
+    expect(Object.fromEntries(scores)).toEqual({ 0: 3 + 30 + 100, 1: 7 + 20, 2: 0 });
+    expect(killStandings([0, 1, 2], scores)).toEqual([[0], [1], [2]]);
+  });
+
+  it(
+    'versus: one world, every player for themselves: the host finishes with standings by score and no team result',
+    async () => {
+      const r = await sharedRound(0, 'versus');
+      expect(r.session.info.play).toBe('versus');
+      const world = r.game.round!.modes.find((m) => m instanceof HostWorld) as HostWorld;
+      const start = r.game.level!.start;
+      await r.frame(30, (f) => r.other.send({ b: [{ h: stand(1 + f / 60, start.x + 1, start.z) }] }));
+      const mate = world.remotes.get(1)!.hero!;
+      // their hero fells two monsters; ours hits the boss for half its life, then fells it
+      const stage = r.game.stageNow()!;
+      const prey = stage.units().filter((u) => u.actor.alive && u.rank !== 'boss').slice(0, 2);
+      for (const u of prey) (u.actor as Actor).takeHit({ source: mate.actor, tags: ['test'], damage: { chaos: 1e9 }, crit: false });
+      const boss = r.game.level!.monsters().find((m) => m.rank === 'boss')!;
+      (boss.actor as Actor).takeHit({ source: mate.actor, tags: ['test'], damage: { chaos: (boss.actor as Actor).maxLife * 0.2 }, crit: false });
+      (boss.actor as Actor).takeHit({ source: r.game.hero.actor, tags: ['test'], damage: { chaos: 1e9 }, crit: false });
+      await r.frame(10);
+      const done = r.hub.finished!;
+      expect(done.won).toBeUndefined(); // the standings say who won
+      expect(world.bossKiller).toBe(0);
+      // each hit on the boss counts for whoever struck it: theirs a fifth of its life, ours the rest
+      expect(world.bossDamage.get(1)).toBeCloseTo((boss.actor as Actor).maxLife * 0.2, 6);
+      // ours: a kill (the boss), its life's share (all of it: 50), felling it (100); theirs: two kills, a fifth of 50
+      expect(done.scores).toEqual({ 0: 1 + 50 + 100, 1: 2 + 10 });
+      expect(done.standings).toEqual([[0], [1]]);
+      expect(r.hub.endReason).toBe('finished');
+      expect(r.hub.problems).toEqual([]);
+      expect(r.engine.errors).toEqual([]);
+    },
+    T,
+  );
 
   it(
     'the host: the other player’s hero fights in its world, frames of the world go out, the boss’s fall is a team win',

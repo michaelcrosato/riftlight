@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.55.0
+
+- `HubSession.join` called with no mode (an untyped caller passing `undefined` or `null`) now throws its own "HubSession: mode is one or more of parallel, ghost, shared-world, moments" error instead of a TypeError ("mode is not iterable").
+- `LocalHub.timeUp()` does nothing before `start()`, as the hub's own round.js does: time is called only during the countdown or play, so calling it early no longer ends the round as 'finished' at the next `advance` past the grace.
+- `LocalHub` reads a hello's modes as the hub does: the older names count as their modes (race as ghost; co-op and versus as a shared world), and null or empty entries are dropped. A raw client offering 'race' to a ghost round no longer raises a false problem.
+
 ## 0.54.0
 
 - **52in1 sessions, every online mode** (docs/engine/hub.md, AI Hub Session Protocol v1, https://52in1.com/lib/hub/README.md): `moments` joins `HubMode`. Each moment is a fresh load, reported once with `session.result({ won, time })` (`HubResult.won`). `send` and `progress` refuse in moments, and `validResult(outcome, mode)` holds a moment to `won` plus a finite time.

@@ -145,7 +145,7 @@ export class RealHero implements HeroPort {
   private light: LightHandle | null = null;
   private readonly sources = new Map<string, readonly Mod[]>();
   /**
-   * Another player's hero shown in this copy (an AI Hub ghost: docs/game/session.md): it fights in
+   * Another player's hero shown in this copy (a 52in1 ghost: docs/game/session.md): it fights in
    * a combat world of its own in every stage, on an event bus of its own, so nothing it does touches
    * this copy's world; its own glow light stays off (its skills still light up).
    */

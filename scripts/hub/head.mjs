@@ -1,7 +1,7 @@
 // The head of a page built for the AI Hub (AI Hub Catalogue v1, Session Protocol v1, Languages v1):
 // `hubHead(o)` writes everything that goes right after `<meta charset>`, in the order the hub
 // reads it: the session client (session.js, unmodified, the page's first script), the viewport,
-// the title, description, theme colour and icon, the `hub:*` tags, the session's tags, then the
+// the title, description, theme colour and icon, the `hub:*` tags, the session's tags and moments, then the
 // `game-lines` block and (the hand-over build only) `game-translations`. `hubPage(html, head)`
 // puts it into a built page, replacing what the page had of the same.
 //
@@ -23,6 +23,7 @@ export const blockJson = (data) => JSON.stringify(data).replace(/</g, '\\u003c')
  * @param {string} o.icon             a data: URI
  * @param {Record<string, string | undefined>} o.tags     `hub:*` catalogue tags in order (undefined: left out)
  * @param {Record<string, string> | null} o.session        `hub:session-*` tags, or null (hub:session 0)
+ * @param {string[]} [o.moments]      each `hub:moment` tag's content (`ID VERB SECONDS GOAL`), the one tag given many times
  * @param {object} o.lines            the game-lines block
  * @param {object | null} [o.translations]  the game-translations block (hand-over build)
  * @param {boolean} [o.client]        carry the session client (pages with hub:session 1)
@@ -37,6 +38,7 @@ export function hubHead(o) {
   out.push(`<link rel="icon" href="${o.icon}">`);
   for (const [name, content] of Object.entries(o.tags)) if (content !== undefined && content !== '') out.push(`<meta name="${name}" content="${esc(content)}">`);
   for (const [name, content] of Object.entries(o.session ?? {})) out.push(`<meta name="${name}" content="${esc(content)}">`);
+  for (const content of o.moments ?? []) out.push(`<meta name="hub:moment" content="${esc(content)}">`);
   out.push(`<script type="application/json" id="game-lines">${blockJson(o.lines)}</script>`);
   if (o.translations && Object.keys(o.translations).length) out.push(`<script type="application/json" id="game-translations">${blockJson(o.translations)}</script>`);
   return out.join('\n');
@@ -55,4 +57,20 @@ export function hubPage(html, head, lang = 'en') {
   const charset = /<meta charset="[^"]*"\s*\/?>/i;
   if (!charset.test(page)) throw new Error('hubPage: the page has no <meta charset>');
   return page.replace(charset, () => `<meta charset="utf-8">\n${head}`);
+}
+
+const unescape = (s) => s.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+/**
+ * A page's `<meta name content>` tags as the hub reads them: `one(name)`, the first of a tag (or
+ * undefined), and `all(name)`, every one of it (`hub:moment` is given once a moment).
+ */
+export function readHead(html) {
+  const found = new Map();
+  for (const [m] of html.matchAll(/<meta\b[^>]*>/gi)) {
+    const name = /\bname="([^"]*)"/.exec(m)?.[1];
+    const content = /\bcontent="([^"]*)"/.exec(m)?.[1];
+    if (name && content !== undefined) found.set(name, [...(found.get(name) ?? []), unescape(content)]);
+  }
+  return { one: (name) => found.get(name)?.[0], all: (name) => found.get(name) ?? [] };
 }

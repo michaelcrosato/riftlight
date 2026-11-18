@@ -13,7 +13,7 @@
  * A round of moments plays one moment (each moment is a fresh load, with a hub of its own):
  * `new LocalHub({ mode: 'moments', moment: { id: 'forge-brute', seconds: 20 }, players: 2 })`.
  */
-import { HUB_COLORS, HUB_LIMITS, type HubCard, type HubClient, type HubFinish, type HubInfo, type HubMode, type HubPlay, type HubPlayer, type HubResult, validFinish, validResult } from './session';
+import { HUB_COLORS, HUB_LIMITS, type HubCard, type HubClient, type HubFinish, type HubInfo, type HubMode, type HubPlay, type HubPlayer, type HubResult, hubModeOf, validFinish, validResult } from './session';
 
 export interface LocalHubOptions {
   /** The mode the hub picked for this round (a copy's hello must offer it). */
@@ -241,8 +241,9 @@ export class LocalHub {
     const copy = this.copies.find((c) => c.id === id)!;
     copy.hello = true;
     copy.card = opts.card === true;
-    const named = typeof opts.mode === 'string' ? [opts.mode] : [...(opts.mode ?? [])];
-    if (named.length && !named.includes(this.mode)) this.problems.push(`${id}: hello says mode ${named.join(', ')}, the round is ${this.mode}`);
+    // as round.js reads a hello: every mode it names, the older names too (race, co-op, versus), empty ones dropped
+    const named = (Array.isArray(opts.mode) ? (opts.mode as readonly unknown[]) : [opts.mode]).filter((m) => m != null && m !== '');
+    if (named.length && !named.map((m) => hubModeOf(m as string)).includes(this.mode)) this.problems.push(`${id}: hello says mode ${named.join(', ')}, the round is ${this.mode}`);
     return {
       me: id,
       players: this.players.filter((p) => !this.copies.find((c) => c.id === p.id)?.out),
@@ -368,6 +369,7 @@ export class LocalHub {
 
   /** The hub calls time now: the game reports within the grace period (a moment's is shorter). */
   timeUp(graceMs: number = this.mode === 'moments' ? LOCAL_HUB_GRACE.momentGraceMs : LOCAL_HUB_GRACE.graceMs): void {
+    if (this.goAt === null) return; // as round.js: only once the round has started (its countdown, or play)
     this.callTime(this.now, graceMs);
   }
 

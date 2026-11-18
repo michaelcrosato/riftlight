@@ -368,6 +368,14 @@ describe('several modes', () => {
     await expect(HubSession.join({ mode: [], seats: [1, 4], client, autoFlush: false })).rejects.toThrow(/mode/);
   });
 
+  it('an untyped caller with no mode is told what a mode is, not thrown a TypeError', async () => {
+    for (const mode of [undefined, null, 7, { mode: 'ghost' }]) {
+      const client = stubClient(welcome({ mode: 'ghost' }));
+      await expect(HubSession.join({ mode: mode as unknown as HubMode, seats: [1, 4], client, autoFlush: false }), String(mode)).rejects.toThrow(/^HubSession: mode is one or more of parallel, ghost, shared-world, moments$/);
+      expect(client.asked).toEqual([]); // nothing said to the hub
+    }
+  });
+
   it('keeps how a shared world plays, and which moment a load plays; each only in its own mode', async () => {
     const versus = (await HubSession.join({ mode: ['shared-world', 'ghost'], seats: [1, 4], client: stubClient(welcome({ mode: 'shared-world', play: 'versus' })), autoFlush: false }))!;
     expect(versus.info).toMatchObject({ mode: 'shared-world', play: 'versus', moment: null });
@@ -405,6 +413,21 @@ describe('several modes', () => {
     const s = (await HubSession.join({ mode: ['parallel', 'shared-world'], seats: [1, 4], client: ok.client(0), autoFlush: false }))!;
     expect(s.info).toMatchObject({ mode: 'shared-world', play: 'co-op' });
     expect(ok.problems).toEqual([]);
+  });
+
+  it('LocalHub reads a raw hello as the hub does: the older names, empty entries dropped', async () => {
+    const hello = async (round: HubMode, mode: unknown): Promise<string[]> => {
+      const hub = new LocalHub({ mode: round, players: 1 });
+      await hub.client(0).connect({ mode: mode as HubMode, seats: [1, 4] });
+      return hub.problems;
+    };
+    expect(await hello('ghost', 'race')).toEqual([]); // race is ghost
+    expect(await hello('shared-world', ['co-op'])).toEqual([]);
+    expect(await hello('shared-world', ' Versus ')).toEqual([]);
+    expect(await hello('ghost', ['', null, 'race'])).toEqual([]);
+    expect(await hello('ghost', ['', null])).toEqual([]); // names nothing: nothing to flag
+    expect(await hello('ghost', null)).toEqual([]);
+    expect(await hello('ghost', ['parallel', ''])).toEqual(['0: hello says mode parallel, the round is ghost']);
   });
 });
 
@@ -522,6 +545,20 @@ describe('moments', () => {
     hub.client(1).result({ time: 400 } as HubResult);
     expect(hub.problems).toEqual(['0: result before start', '0: progress is for parallel and ghost, not moments', '0: send in moments, where the copies send nothing', "1: a moment's result says won: true or false"]);
     expect(hub.results.get(1)).toEqual({ won: false, time: 400 });
+  });
+
+  it('LocalHub.timeUp() before the start does nothing, as the hub’s: time is called only in the countdown or play', async () => {
+    const { hub, copies } = await moment();
+    hub.timeUp();
+    hub.advance(10_000);
+    expect(hub.timeUpAt).toBeNull();
+    expect(hub.endReason).toBeNull();
+    expect(events(copies[0]!.engine.commands)).toEqual([]);
+    hub.start();
+    hub.advance(1000);
+    hub.timeUp(); // in the countdown: called
+    expect(hub.timeUpAt).toBe(11_000);
+    expect(events(copies[0]!.engine.commands).map((e) => e.type)).toEqual(['start', 'time-up']);
   });
 
   it('one long step past the limit and the grace calls time, then ends the moment', async () => {

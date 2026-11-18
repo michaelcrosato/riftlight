@@ -145,6 +145,10 @@ rl.newRun({ seed: 1 }); await rl.enterDepth(1); rl.bot.start(); rl.bot.advance(1
 engine.input.send({ rl: 'tree', action: { kind: 'activate', id } }); engine.step(2); // as the tree's view sends it
 ```
 
+`headlessMoment(moment, { seed?, store? })` is a 52in1 moment's one copy against the hub in memory
+(engine `LocalHub`), loaded and ready; `playMoment(r, 'decent' | 'idle')` starts it and plays it
+until the hub has the result (docs/game/session.md, *Moments*).
+
 Without a page the passive tree opens with no view and applies the actions it is sent
 (`ui/tree/actions.ts`, shared with `TreeView`); the item windows keep their state and layout and
 paint nothing; save export / import, photo captures and pointer lock do nothing. The labs take

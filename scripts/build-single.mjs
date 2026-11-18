@@ -3,19 +3,19 @@
 // the pack models it uses as data URIs). Runs offline, from file://. CI publishes it from each
 // green main (the riftlight-html job): how we hand the game out and play-test it.
 //
-// The page is ready for the AI Hub (docs/game/session.md): its head carries the hub's session
-// client and catalogue tags (scripts/hub/riftlight.mjs) and the game's `game-lines` block (every
-// line a player reads, docs/game/lang.md). The translations stay out: the hand-over build adds
-// them (`--translations`).
+// The page is ready for 52in1 (docs/game/session.md): its head carries the hub's session client,
+// the catalogue and session tags with every online mode the game plays (scripts/hub/riftlight.mjs),
+// one hub:moment per moment (src/riftlight/session/moments.ts) and the game's `game-lines` block
+// (every line a player reads, docs/game/lang.md). The translations stay out: the hand-over build
+// adds them (`--translations`).
 //
-//   --mode <shared-world|ghost|parallel>   the session mode the page declares (default: scripts/hub/riftlight.mjs DEFAULT_MODE)
 //   --translations                         carry the game-translations block (src/riftlight/lang/translations/)
 //   --model <name> --effort <level>        what built it (hub:model, hub:effort; the hand-over build)
 //   --out <file>                           where to write it (default dist-single/riftlight.html)
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { build } from 'vite';
-import { CATALOGUE, DEFAULT_MODE, MODES, riftlightTags } from './hub/riftlight.mjs';
+import { CATALOGUE, riftlightTags } from './hub/riftlight.mjs';
 import { hubHead, hubPage } from './hub/head.mjs';
 import { helpExit } from './manual.mjs';
 
@@ -29,8 +29,7 @@ const opt = (name) => {
   if (v === undefined || v.startsWith('--')) throw new Error(`--${name} needs a value`);
   return v;
 };
-const mode = opt('mode') ?? DEFAULT_MODE;
-if (!MODES.includes(mode)) throw new Error(`--mode is one of ${MODES.join(', ')}`);
+if (argv.includes('--mode')) throw new Error('--mode is gone: the page offers every online mode (hub:multiplayer)');
 const withTranslations = argv.includes('--translations');
 
 const root = new URL('..', import.meta.url).pathname;
@@ -91,7 +90,8 @@ const { registerEngineHooks } = await import('./trace/hooks.ts');
 registerEngineHooks();
 const { riftlightLines } = await import('../src/riftlight/lang/index.ts');
 const { riftlightTranslations } = await import('../src/riftlight/lang/translations.ts');
-const { tags, session } = riftlightTags(mode, { model: opt('model'), effort: opt('effort') });
+const { momentTags } = await import('../src/riftlight/session/moments.ts');
+const { tags, session, moments } = riftlightTags({ model: opt('model'), effort: opt('effort'), moments: momentTags() });
 const head = hubHead({
   client: true,
   title: `${CATALOGUE.name} — ${CATALOGUE.tagline}`,
@@ -100,6 +100,7 @@ const head = hubHead({
   icon: `data:image/svg+xml;base64,${await b64(`${root}public/favicon.svg`)}`,
   tags,
   session,
+  moments,
   lines: riftlightLines(),
   translations: withTranslations ? riftlightTranslations() : null,
 });
@@ -125,6 +126,6 @@ if (out) {
   await writeFile(`${outDir}/riftlight.html`, html);
 }
 await rm(tmp, { recursive: true, force: true });
-console.log(`${out ?? 'dist-single/riftlight.html'}  ${(html.length / 1024 / 1024).toFixed(2)} MB (session mode ${mode}${withTranslations ? ', with translations' : ''})`);
+console.log(`${out ?? 'dist-single/riftlight.html'}  ${(html.length / 1024 / 1024).toFixed(2)} MB (${tags['hub:multiplayer']}; ${moments.length} moments${withTranslations ? '; with translations' : ''})`);
 // a module that imported the engine (the line list) keeps Node running: we are done
 process.exit(0);

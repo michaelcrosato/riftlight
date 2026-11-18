@@ -4,14 +4,19 @@ Panels, `UiEvent`s and `PanelHost`: docs/game/shell.md *Ports*.
 
 ## HUD layout (`ui/layout.ts`)
 
-The fixed HUD (`hudZones`: orbs, bar, minimap, boss bar,
+The fixed HUD (`hudZones`: orbs, bar, minimap, boss bar, a moment's seconds left,
 banner) reserves its rects each frame; world overlays are placed around them by priority with
-`HudLayout.place`: the prompt, the focused loot label, the other labels (loud first, then
-near), then damage numbers (which merge quick hits on one target and stack per target).
-Whatever finds no room is skipped for that frame. The centre banner is a `BannerQueue`: the
-level card, LEVEL CLEAR and level-ups show one at a time, a second level-up merges into the
-one showing, a clear cuts a level-up short. Under 300 art pixels wide the HUD is compact
-(`hudGeometry`): small orbs over a tight bar, a small minimap.
+`HudLayout.place`: the prompt, a moment's way-out mark (`beacon`), the focused loot label, the
+other labels (loud first, then near), then damage numbers (which merge quick hits on one target
+and stack per target). Whatever finds no room is skipped for that frame. The centre banner is a
+`BannerQueue`: the level card, LEVEL CLEAR and level-ups show one at a time, a second level-up
+merges into the one showing, a clear cuts a level-up short. Its plate keeps beside the minimap
+on a narrow wide screen, and its line under the title wraps (`bannerSub`: the normal font, else
+the mini font, at most four rows) with the plate growing to hold it. A 52in1 moment's seconds
+left (`HudModel.timeLeft`) go at the top centre, moved down under whatever they'd touch (the
+label, the minimap and gold, a boss's bar, a touch control), and the banner goes under them.
+Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar, a
+small minimap.
 
 ## On a touch screen (`game/touch.ts`)
 

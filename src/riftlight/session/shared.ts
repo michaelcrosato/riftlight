@@ -14,7 +14,8 @@
  *   stands; the host's copy follows), so the controls feel local.
  *
  * Every copy sends its own hero, one `HeroStep` per fixed step (as in ghost mode). The host reports
- * the round: a team win when the boss falls, a loss at time-up; standings by kills.
+ * the round when the boss falls or time runs out: in co-op a team win or loss, standings by kills;
+ * in versus (`info.play`), every player for themselves, standings by score (`versusScores`).
  */
 import { Vector3 } from 'three/webgpu';
 import type { GameContext, HubPlayer, HubSession } from '../../engine';
@@ -23,6 +24,7 @@ import type { Actor } from '../actors/Actor';
 import type { ActorLike, Genome } from '../core/types';
 import type { HeroIntent, HeroPort } from '../game/ports';
 import type { TelegraphSpec } from '../monsters';
+import { t } from '../lang';
 import type { UiCanvas } from '../ui/kit';
 import { project } from '../ui/world';
 import type { LevelStage } from '../wire/levels';
@@ -70,7 +72,7 @@ interface HostMessage {
 const FRAME_EVERY = 6;
 const r2 = (n: number): number => Math.round(n * 100) / 100;
 
-/** The players by kills, ties together: the hub's standings. */
+/** The players by kills (or any score), ties together: the hub's standings. */
 export function killStandings(players: readonly number[], kills: ReadonlyMap<number, number>): number[][] {
   const by = new Map<number, number[]>();
   for (const id of players) {
@@ -78,6 +80,14 @@ export function killStandings(players: readonly number[], kills: ReadonlyMap<num
     by.set(k, [...(by.get(k) ?? []), id]);
   }
   return [...by.entries()].sort((a, b) => b[0] - a[0]).map(([, ids]) => ids);
+}
+
+/**
+ * Versus scores: what a parallel round scores each player (`SessionRound.score`), shared out in one
+ * world: their kills, up to 50 for their share of the boss's life, and 100 for felling it.
+ */
+export function versusScores(players: readonly number[], kills: ReadonlyMap<number, number>, bossDamage: ReadonlyMap<number, number>, bossLife: number, bossKiller: number | null): Map<number, number> {
+  return new Map(players.map((id) => [id, (kills.get(id) ?? 0) + Math.round(Math.min(1, (bossDamage.get(id) ?? 0) / Math.max(1, bossLife)) * 50) + (bossKiller === id ? 100 : 0)]));
 }
 
 // ------------------------------------------------------------------ both sides
@@ -173,6 +183,10 @@ export class HostWorld extends SharedWorld implements MonsterObserver {
   private readonly downs = new Map<number, { deaths: number; up: boolean }>();
   private numbers = new Map<number, [number, number]>();
   private readonly offs: (() => void)[] = [];
+  /** Versus: each player's damage to the boss, and who felled it. */
+  readonly bossDamage = new Map<number, number>();
+  bossKiller: number | null = null;
+  private readonly boss: MonsterUnit['actor'] | null;
 
   constructor(session: HubSession, host: SharedShell, players: readonly HubPlayer[]) {
     super(session, host, players, true);
@@ -181,19 +195,23 @@ export class HostWorld extends SharedWorld implements MonsterObserver {
       stage.observer = this;
       stage.noDrops = true;
     }
+    this.boss = stage?.units().find((u) => u.rank === 'boss')?.actor ?? null;
     if (!session.server) this.owner.set(host.hero.actor, session.me);
     const events = stage?.services.events ?? null;
     if (events) {
       this.offs.push(
-        events.on('hit', ({ target, result }) => {
+        events.on('hit', ({ target, result, hit }) => {
           if (result.total <= 0) return;
           const n = this.numbers.get(target.id) ?? [0, 0];
           this.numbers.set(target.id, [n[0] + result.total, n[1] || (result.crit ? 1 : 0)]);
+          const who = target === this.boss && hit.source ? this.owner.get(hit.source) : undefined;
+          if (who !== undefined) this.bossDamage.set(who, (this.bossDamage.get(who) ?? 0) + result.total);
         }),
-        events.on('kill', ({ target, killer }) => {
+        events.on('kill', ({ target, killer, rank }) => {
           if (target.faction !== 'monster') return;
           const who = killer ? this.owner.get(killer) : undefined;
           if (who !== undefined) this.kills.set(who, (this.kills.get(who) ?? 0) + 1);
+          if (rank === 'boss' && who !== undefined) this.bossKiller = who;
         }),
         events.on('death', ({ actor }) => {
           if (actor.faction === 'monster') this.session.send({ d: actor.id } satisfies HostMessage);
@@ -272,12 +290,16 @@ export class HostWorld extends SharedWorld implements MonsterObserver {
     this.report(false);
   }
 
+  /** The round is over: co-op a team result by kills, versus standings by score (no team result: the standings say who won). */
   private report(won: boolean): void {
     const ids = this.session.players.map((p) => p.id);
-    const scores: Record<number, number> = {};
-    for (const id of ids) scores[id] = this.kills.get(id) ?? 0;
+    const versus = this.session.info.play === 'versus';
+    const by = versus ? versusScores(ids, this.kills, this.bossDamage, this.boss?.maxLife ?? 1, this.bossKiller) : new Map(ids.map((id) => [id, this.kills.get(id) ?? 0]));
+    const scores: Record<number, number> = Object.fromEntries(by);
+    // the results show the stats' names as written: in the host's language
+    const stats = Object.fromEntries(ids.map((id) => [id, { [t('round.stat.kills')]: this.kills.get(id) ?? 0 }]));
     this.sendFrame(); // the last word on who is where, before the round ends
-    this.session.finish({ standings: killStandings(ids, this.kills), scores, won, stats: Object.fromEntries(ids.map((id) => [id, { kills: scores[id]! }])) });
+    this.session.finish({ standings: killStandings(ids, by), scores, ...(versus ? {} : { won }), stats });
   }
 
   override dispose(): void {

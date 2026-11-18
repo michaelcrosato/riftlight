@@ -67,7 +67,7 @@ export interface MenuHost {
   engineWorld?(room?: string): unknown;
   /**
    * The game's languages (docs/game/lang.md): those it has (its own first), the one shown, whether
-   * the address names one (`?lang=`: the AI Hub always does; no Language menu then), and choosing
+   * the address names one (`?lang=`: 52in1 always does; no Language menu then), and choosing
    * one (saved, then the game reloads in it). Optional: hosts without it have no Language menu.
    */
   readonly language?: { readonly available: readonly string[]; readonly current: string; readonly asked: boolean; choose(code: string): void };

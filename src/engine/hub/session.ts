@@ -142,8 +142,8 @@ export function headMeta(name: string): string | null {
 /** Older session tags the hub still plays: race as ghost, co-op and versus as a shared world. */
 const MODE_ALIASES: Readonly<Record<string, HubMode>> = { race: 'ghost', 'co-op': 'shared-world', versus: 'shared-world' };
 
-/** The mode a session tag names (older tags included), or null. */
-function hubModeOf(word: string | null | undefined): HubMode | null {
+/** The mode a session tag or a hello names (older tags included), or null: round.js's `modeOf`. */
+export function hubModeOf(word: string | null | undefined): HubMode | null {
   const w = String(word ?? '').trim().toLowerCase();
   return (HUB_MODES as readonly string[]).includes(w) ? (w as HubMode) : (MODE_ALIASES[w] ?? null);
 }
@@ -292,9 +292,10 @@ interface Pending {
  * read as the hub reads them (race as ghost, co-op and versus as a shared world). Empty when none
  * is a mode.
  */
-function offeredModes(mode: HubMode | readonly HubMode[]): HubMode[] {
+function offeredModes(mode: HubMode | readonly HubMode[] | null | undefined): HubMode[] {
   const list: HubMode[] = [];
-  for (const m of typeof mode === 'string' ? [mode] : [...mode]) {
+  // an untyped caller's missing mode offers none (join's error says what a mode is), never a TypeError
+  for (const m of typeof mode === 'string' ? [mode] : Array.isArray(mode) ? (mode as readonly HubMode[]) : []) {
     const known = hubModeOf(m);
     if (known && !list.includes(known)) list.push(known);
   }

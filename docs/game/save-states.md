@@ -33,7 +33,8 @@ title, never half a moment.
 
 A snapshot is taken in town or in a level, mid-fight included (effects in flight, telegraphs
 winding up, hazards staged, adds and minions out, loot on the ground), with no panel open and
-nobody talked to; the title, loading and the showcase are refused, saying so.
+nobody talked to; the title, loading, the showcase and a 52in1 round (its state is the hub's as
+much as the game's: a round replays from its recording) are refused, saying so.
 
 **A level is built again, then loaded.** Entering a level is deterministic from the save, the
 run's random stream and the id counters, so `snapshot()` keeps what it was built from

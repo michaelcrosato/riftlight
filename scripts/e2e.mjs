@@ -94,8 +94,9 @@
 //                 updates in under 1 ms, a walk to the portal's frame. The gameplay:
 //                 src/riftlight/levels/levelLab.headless.test.ts.
 //
-// hub             the AI Hub's own session harness (scripts/e2e-hub.mjs, scripts/hub/harness/) plays the
-//                 built page in every session mode: parallel, ghost, a shared world (lossy, host leaves, server)
+// hub             52in1's own session harness (scripts/e2e-hub.mjs, scripts/hub/harness/) plays the built
+//                 page in every online mode it names: a shared world co-op (lossy, host leaves, server) and
+//                 versus, ghost, parallel, and moments (every moment the page names)
 // world           Engine World in the page (scripts/e2e-world.mjs): every room renders, the GPU rooms'
 //                 readbacks, the gallery's and workshop's pictures, a pointer on the canvas, the
 //                 sandbox's localStorage, live play recorded and replayed. The rooms' gameplay, the

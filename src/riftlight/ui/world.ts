@@ -7,7 +7,7 @@ import { type Camera, Vector3 } from 'three/webgpu';
 import type { PaletteColor } from '../../engine';
 import type { ControlAction } from '../game/controls';
 import { clip, type UiCanvas, wrap } from './kit';
-import type { HudLayout } from './layout';
+import type { Box, HudLayout } from './layout';
 
 const v = new Vector3();
 
@@ -187,4 +187,88 @@ export function hitbox(ui: UiCanvas, camera: Camera, at: Vector3, radius: number
     const p = project(v.set(at.x + Math.cos(a) * radius, at.y + 0.05, at.z + Math.sin(a) * radius), camera, ui);
     if (p) ui.rect(p.x, p.y, 1, 1, color);
   }
+}
+
+/**
+ * The way-out arrow, art pixels: a head `head` long and `half` either side at its base, on a stem
+ * `stem` long (an arrow, so it reads as pointing whichever way it turns).
+ */
+const ARROW = { head: 9, half: 5, stem: 6, stemHalf: 1 } as const;
+const ARROW_LENGTH = ARROW.head + ARROW.stem;
+
+/** Screen margin a spot's mark keeps (art pixels): nearer the edge, the arrow shows instead. */
+const BEACON_MARGIN = 18;
+
+/** The points of an arrow with its tip at (tx, ty) pointing along (dx, dy): rows across it, tip first. */
+function arrowPoints(tx: number, ty: number, dx: number, dy: number): { x: number; y: number }[] {
+  const out: { x: number; y: number }[] = [];
+  for (let s = 0; s <= ARROW_LENGTH; s++) {
+    const half = s <= ARROW.head ? (s * ARROW.half) / ARROW.head : ARROW.stemHalf;
+    for (let t = -half; t <= half + 1e-6; t += 1) out.push({ x: Math.round(tx - dx * s - dy * t), y: Math.round(ty - dy * s + dx * t) });
+  }
+  return out;
+}
+
+/** The box an arrow with its tip at (tx, ty) covers while it bobs (up to 4 px back along it), its ink edge included. */
+function arrowBox(tx: number, ty: number, dx: number, dy: number): Box {
+  const across = (s: number, half: number) => [-1, 1].flatMap((side) => [0, 4].map((back) => ({ x: tx - dx * (s + back) - dy * side * half, y: ty - dy * (s + back) + dx * side * half })));
+  const ends = [...across(0, 0), ...across(ARROW.head, ARROW.half), ...across(ARROW_LENGTH, ARROW.stemHalf)];
+  const x0 = Math.floor(Math.min(...ends.map((e) => e.x))) - 1;
+  const y0 = Math.floor(Math.min(...ends.map((e) => e.y))) - 1;
+  return { x: x0, y: y0, w: Math.ceil(Math.max(...ends.map((e) => e.x))) + 3 - x0, h: Math.ceil(Math.max(...ends.map((e) => e.y))) + 3 - y0 };
+}
+
+/**
+ * A spot to get to (a moment's escape). On screen, a ring on the ground (breathing) with a chevron
+ * bobbing over it; off screen (or with its chevron under the HUD), an arrowhead pointing the way:
+ * at the screen's edge toward the spot (or beside the HUD over it), stepped in toward the centre
+ * until it is clear of the HUD's zones (`layout`). The chevron or the arrow takes its place in the
+ * layout, so labels and damage numbers keep off it: place it before them. Drawn in art pixels with
+ * an ink edge, big enough to read from across a room.
+ */
+export function beacon(ui: UiCanvas, camera: Camera, at: Vector3, radius: number, color: PaletteColor, time: number, layout?: HudLayout): void {
+  const p = project(at, camera, ui, { x: 0, y: 0 });
+  if (!p) return;
+  const m = BEACON_MARGIN;
+  if (p.x >= m && p.x <= ui.w - m && p.y >= m && p.y <= ui.h - m) {
+    for (const r of [radius, radius * (0.6 + 0.15 * Math.sin(time * 4))]) {
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const q = project(v.set(at.x + Math.cos(a) * r, at.y + 0.05, at.z + Math.sin(a) * r), camera, ui);
+        if (q) ui.rect(q.x, q.y, 2, 1, color);
+      }
+    }
+    // the chevron (its bob and ink edge in its box), when the HUD leaves it room
+    const chevron = { x: p.x - 6, y: p.y - 25, w: 13, h: 11 };
+    if (chevron.y >= 1 && (!layout || layout.free(chevron))) {
+      layout?.reserve(chevron);
+      const y = p.y - 22 + Math.round(Math.sin(time * 5) * 2);
+      for (let i = 0; i < 5; i++) ui.rect(p.x - 6 + i, y + i - 1, 13 - i * 2, 2, 'ink');
+      ui.rect(p.x - 1, y + 5, 3, 1, 'ink');
+      for (let i = 0; i < 5; i++) ui.rect(p.x - 5 + i, y + i, 11 - i * 2, 1, color);
+      return;
+    }
+  }
+  const cx = ui.w / 2;
+  const cy = ui.h / 2;
+  const d = Math.hypot(p.x - cx, p.y - cy) || 1;
+  const dx = (p.x - cx) / d;
+  const dy = (p.y - cy) / d;
+  // the tip at the screen's edge toward the spot (at the spot itself when that is nearer), then in
+  // toward the centre, 2 px a step, until the arrow is clear of the HUD
+  const edge = Math.min((cx - m) / Math.max(1e-6, Math.abs(dx)), (cy - m) / Math.max(1e-6, Math.abs(dy)));
+  const from = Math.min(d, edge);
+  let k = from;
+  if (layout) {
+    let clear: number | null = null;
+    for (let kk = from; kk >= ARROW_LENGTH + 8 && clear === null; kk -= 2) if (layout.free(arrowBox(cx + dx * kk, cy + dy * kk, dx, dy))) clear = kk;
+    if (clear !== null) {
+      k = clear;
+      layout.reserve(arrowBox(cx + dx * k, cy + dy * k, dx, dy));
+    }
+  }
+  const bob = (Math.sin(time * 6) - 1) * 2; // in toward the centre and back
+  const points = arrowPoints(cx + dx * (k + bob), cy + dy * (k + bob), dx, dy);
+  for (const q of points) ui.rect(q.x - 1, q.y - 1, 4, 4, 'ink');
+  for (const q of points) ui.rect(q.x, q.y, 2, 2, color);
 }
