@@ -1,6 +1,6 @@
 // Generates the demo's local GLB assets (public/assets/*.glb) with three's GLTFExporter.
 // Deterministic: re-running produces byte-identical files, on Node 22 (CI's) and 24 alike.
-// Run with `npm run assets`.
+// Run with `npm run assets` (`help`, `--help` or `-h` prints this and writes nothing).
 //
 // Models are chunky low-poly primitives colored from the engine palette; the engine
 // re-shades every loaded material with its 3-band toon material, so only base colors matter.
@@ -8,6 +8,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
 import { hero } from './assets/hero.mjs';
+import { helpExit } from './manual.mjs';
+
+helpExit(import.meta.url);
 
 // GLTFExporter uses FileReader for binary output; Node has Blob but not FileReader.
 globalThis.FileReader ??= class {

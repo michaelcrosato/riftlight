@@ -57,6 +57,10 @@ server, or `vite preview` of the build; `--strictPort`, refuses a port someone e
 | `npm run model`, `npm run tex`, `npm run gate-b` | `scripts/model.ts`, `scripts/tex.ts`, `scripts/gate-b.ts` | docs/ASSETS.md, docs/assets/ |
 | `npm run inspect -- <target>` · `diff <a> [b]` | `scripts/inspect.ts`, `src/engine/inspect/` | the script's header |
 | `npm run monster`, `loot`, `tree`, `level`, `combat`, `balance`, `playtest` | `scripts/riftlight/` | docs/game/balance.md *Agent tools* |
+| `npm run replay -- <recording.json>` | `scripts/replay.ts`: a recording replayed in Node, no browser (`--expect <fingerprint>`) | docs/engine/headless.md *Replaying a recording* |
+| `npm run lang -- lines \| status \| todo \| apply \| check \| audit` | `scripts/lang.ts`: Riftlight's lines and stored translations, and their checks | docs/game/lang.md |
+| `npm run hub` | `scripts/hub/package.mjs`: the AI Hub package (the hand-over page and its checks) | docs/game/hub.md |
+| `npm run assets` | `scripts/generate-assets.mjs`: the deterministic GLBs in `public/assets/` (check.sh's `assets_unchanged`) | the script's header |
 | `npm run build:single` | writes `dist-single/riftlight.html`: one offline file (Rapier's `.wasm` inlined as a data: URL, the GLBs and every pack the code loads, cut to the models it names, in `__PIXEL_ASSETS__`) | |
 
 **Browser e2e.** `npm run build && npm run test:e2e` runs the production build headless in
