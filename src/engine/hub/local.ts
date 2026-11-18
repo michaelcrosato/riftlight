@@ -200,7 +200,9 @@ export class LocalHub {
   readonly problems: string[] = [];
   endReason: string | null = null;
   private readonly copies: Copy[];
-  private queue: { at: number; to: number; type: string; args: unknown[] }[] = [];
+  /** Messages on the wire; `held`: sent with no delay while a step delivers, so it waits for the next step. */
+  private queue: { at: number; to: number; type: string; args: unknown[]; held: boolean }[] = [];
+  private advancing = false;
 
   constructor(options: LocalHubOptions) {
     this.mode = options.mode;
@@ -301,22 +303,29 @@ export class LocalHub {
    */
   advance(ms: number): void {
     const until = this.now + ms;
-    for (;;) {
-      const msgAt = this.queue.reduce((first, m) => Math.min(first, m.at), Infinity);
-      const timeAt = this.goAt !== null && this.timeUpAt === null && !this.endReason ? this.goAt + this.limitMs : Infinity;
-      const endAt = this.timeUpAt !== null && !this.endReason ? this.timeUpAt + this.graceMs : Infinity;
-      const at = Math.min(msgAt, timeAt, endAt);
-      if (at > until) break;
-      this.now = Math.max(this.now, at);
-      if (msgAt === at) {
-        const due = this.queue.filter((m) => m.at <= at);
-        this.queue = this.queue.filter((m) => m.at > at);
-        for (const m of due) {
-          const copy = this.copies.find((c) => c.id === m.to);
-          if (copy && !copy.out) copy.client.emit(m.type, ...m.args);
-        }
-      } else if (timeAt === at) this.callTime(at);
-      else this.end(this.selfReported || this.finished ? 'finished' : 'void');
+    this.advancing = true;
+    try {
+      for (;;) {
+        // a reply sent with no delay as a message lands waits for the next step (a step always ends)
+        const msgAt = this.queue.reduce((first, m) => (m.held ? first : Math.min(first, m.at)), Infinity);
+        const timeAt = this.goAt !== null && this.timeUpAt === null && !this.endReason ? this.goAt + this.limitMs : Infinity;
+        const endAt = this.timeUpAt !== null && !this.endReason ? this.timeUpAt + this.graceMs : Infinity;
+        const at = Math.min(msgAt, timeAt, endAt);
+        if (at > until) break;
+        this.now = Math.max(this.now, at);
+        if (msgAt === at) {
+          const due = this.queue.filter((m) => m.at <= at && !m.held);
+          this.queue = this.queue.filter((m) => m.at > at || m.held);
+          for (const m of due) {
+            const copy = this.copies.find((c) => c.id === m.to);
+            if (copy && !copy.out) copy.client.emit(m.type, ...m.args);
+          }
+        } else if (timeAt === at) this.callTime(at);
+        else this.end(this.selfReported || this.finished ? 'finished' : 'void');
+      }
+    } finally {
+      this.advancing = false;
+      for (const m of this.queue) m.held = false;
     }
     this.now = until;
   }
@@ -324,7 +333,7 @@ export class LocalHub {
   route(from: number, data: unknown, to: number | undefined): void {
     for (const c of this.live()) {
       if (c.id === from || (to !== undefined && c.id !== to)) continue;
-      this.queue.push({ at: this.now + this.latencyMs, to: c.id, type: 'message', args: [data, from] });
+      this.queue.push({ at: this.now + this.latencyMs, to: c.id, type: 'message', args: [data, from], held: this.advancing && this.latencyMs <= 0 });
     }
   }
 

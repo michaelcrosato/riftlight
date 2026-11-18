@@ -170,7 +170,8 @@ is in `stats.refused` and `hub.problems`). It runs the round as the hub's coordi
 player still in has reported (a shared world: at the host's finish), and after time-up's grace (5 s,
 a moment's 2 s) it ends either way (a shared world with no finish: `void`); a round no player is
 left in is `void` in any mode. `advance(ms)` does what falls due in time order, each at its own time,
-so one long step can deliver messages, call time and end the round. `standings()` ranks as the hub
+so one long step can deliver messages, call time and end the round (a reply sent with no delay as
+a message lands waits for the next step, so a step always ends). `standings()` ranks as the hub
 does: in moments the cleared quickest first, then the failed (the last to fail first); otherwise by
 time, then score (a player's last progress when they gave no result); then those still in with
 nothing, tied; then those who left with nothing, tied last. Equal values share a place.

@@ -250,6 +250,21 @@ describe('HubSession', () => {
     expect(hub.endReason).toBe('finished'); // after the grace, ranked as it stands
   });
 
+  it('a step always ends: a reply sent with no delay as a message lands arrives with the next step', async () => {
+    const hub = new LocalHub({ mode: 'ghost', players: 2 }); // no latency
+    const [a, b] = [hub.client(0), hub.client(1)];
+    await a.connect({ mode: 'ghost', seats: [1, 4] });
+    await b.connect({ mode: 'ghost', seats: [1, 4] });
+    let got = 0;
+    a.on('message', (() => void (got++, a.send({ ping: got }))) as never);
+    b.on('message', (() => void (got++, b.send({ pong: got }))) as never);
+    a.send({ ping: 0 });
+    hub.advance(10);
+    expect(got).toBe(1); // b has the first; its reply is on the wire
+    hub.advance(10);
+    expect(got).toBe(2);
+  });
+
   it('ranks parallel by time, then score, then those with nothing, then those who left; equal values share a place', async () => {
     const { hub, copies } = await round('parallel', 6);
     hub.start();
