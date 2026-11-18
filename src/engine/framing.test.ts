@@ -2,27 +2,35 @@ import { describe, expect, it } from 'vitest';
 import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, frameView, snapToGrid, worldUnitsPerPixel } from './framing';
 
 describe('computeFraming', () => {
+  it('fills by default: the whole window at every shape (52in1), as EngineOptions.aspect', () => {
+    for (const [w, h] of [[1600, 900], [2100, 900], [1200, 900], [390, 844]] as const) {
+      const f = computeFraming(w, h, 1, RESOLUTIONS.default);
+      expect(f).toEqual(computeFraming(w, h, 1, RESOLUTIONS.default, 'fill'));
+      expect([f.offsetX <= 0, f.offsetY <= 0, f.offsetX + f.cssWidth >= w, f.offsetY + f.cssHeight >= h], `${w}×${h}`).toEqual([true, true, true, true]);
+    }
+  });
+
   it('uses the largest integer scale that fits (1080p, dpr 1)', () => {
-    const f = computeFraming(1920, 1080, 1, RESOLUTIONS.default);
+    const f = computeFraming(1920, 1080, 1, RESOLUTIONS.default, 'fixed');
     expect(f).toMatchObject({ scale: 4, integer: true, canvasWidth: 1920, canvasHeight: 1080, offsetX: 0, offsetY: 0 });
   });
 
   it('keeps the same on-screen framing for both resolutions at 1080p', () => {
-    const a = computeFraming(1920, 1080, 1, RESOLUTIONS.default);
-    const b = computeFraming(1920, 1080, 1, RESOLUTIONS.compare);
+    const a = computeFraming(1920, 1080, 1, RESOLUTIONS.default, 'fixed');
+    const b = computeFraming(1920, 1080, 1, RESOLUTIONS.compare, 'fixed');
     expect(b.scale).toBe(6);
     expect([b.cssWidth, b.cssHeight]).toEqual([a.cssWidth, a.cssHeight]);
   });
 
   it('letterboxes instead of stretching', () => {
-    const f = computeFraming(1000, 1000, 1, RESOLUTIONS.default);
+    const f = computeFraming(1000, 1000, 1, RESOLUTIONS.default, 'fixed');
     expect(f.scale).toBe(2);
     expect([f.canvasWidth, f.canvasHeight]).toEqual([960, 540]);
     expect([f.offsetX, f.offsetY]).toEqual([20, 230]);
   });
 
   it('works in device pixels on HiDPI screens', () => {
-    const f = computeFraming(1280, 720, 2, RESOLUTIONS.default);
+    const f = computeFraming(1280, 720, 2, RESOLUTIONS.default, 'fixed');
     expect(f.scale).toBe(5); // 2560/480 = 5.33
     expect(f.canvasWidth).toBe(2400);
     expect(f.cssWidth).toBe(1200);
@@ -32,7 +40,7 @@ describe('computeFraming', () => {
   it('never has a canvas larger than the viewport', () => {
     for (const [w, h, dpr] of [[1366, 768, 1], [390, 844, 3], [2560, 1440, 1.25], [800, 450, 1]] as const) {
       for (const res of Object.values(RESOLUTIONS)) {
-        const f = computeFraming(w, h, dpr, res);
+        const f = computeFraming(w, h, dpr, res, 'fixed');
         expect(f.cssWidth).toBeLessThanOrEqual(w);
         expect(f.cssHeight).toBeLessThanOrEqual(h);
         expect(f.canvasWidth / f.canvasHeight).toBeCloseTo(res.width / res.height, 5);
@@ -42,7 +50,7 @@ describe('computeFraming', () => {
   });
 
   it('falls back to a letterboxed downscale when the viewport is tiny', () => {
-    const f = computeFraming(240, 200, 1, RESOLUTIONS.default);
+    const f = computeFraming(240, 200, 1, RESOLUTIONS.default, 'fixed');
     expect(f).toMatchObject({ scale: 1, integer: false, canvasWidth: 480, canvasHeight: 270 });
     expect(f.cssWidth).toBe(240);
     expect(f.cssHeight).toBe(135);
@@ -54,7 +62,7 @@ describe('computeFraming (adaptive aspect)', () => {
 
   it('matches fixed framing on 16:9 screens', () => {
     for (const [w, h] of [[960, 540], [1920, 1080], [1280, 720]] as const) {
-      for (const res of Object.values(RESOLUTIONS)) expect(adaptive(w, h, 1, res)).toEqual(computeFraming(w, h, 1, res));
+      for (const res of Object.values(RESOLUTIONS)) expect(adaptive(w, h, 1, res)).toEqual(computeFraming(w, h, 1, res, 'fixed'));
     }
   });
 
@@ -68,7 +76,7 @@ describe('computeFraming (adaptive aspect)', () => {
     expect(f).toMatchObject({ scale: 9, integer: true, artHeight: 270, artWidth: 124 });
     expect((f.cssWidth * f.cssHeight) / (390 * 844)).toBeGreaterThan(0.9);
     // Fixed 16:9 shows a thin strip on the same screen.
-    const fixed = computeFraming(390, 844, 3, RESOLUTIONS.default);
+    const fixed = computeFraming(390, 844, 3, RESOLUTIONS.default, 'fixed');
     expect((fixed.cssWidth * fixed.cssHeight) / (390 * 844)).toBeLessThan(0.2);
   });
 
@@ -136,7 +144,7 @@ describe('computeFraming (fill)', () => {
 
   it('keeps exact 1080p framing and resolution switching unchanged', () => {
     for (const res of Object.values(RESOLUTIONS)) {
-      expect(computeFraming(1920, 1080, 1, res, 'fill')).toEqual(computeFraming(1920, 1080, 1, res));
+      expect(computeFraming(1920, 1080, 1, res, 'fill')).toEqual(computeFraming(1920, 1080, 1, res, 'fixed'));
     }
   });
 });

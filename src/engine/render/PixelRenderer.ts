@@ -67,7 +67,7 @@ export interface PixelRendererOptions {
   scene: Scene;
   camera: Camera;
   resolution?: Resolution;
-  /** `adaptive` (default): the art width follows the screen's aspect. `fixed`: always `resolution`. */
+  /** `fill` (default): the art covers the viewport. `adaptive` / `fixed` letterbox (`EngineOptions.aspect`). */
   aspect?: AspectMode;
   mode?: RenderMode;
   edges?: EdgeSettings;
@@ -212,7 +212,7 @@ export class PixelRenderer implements View {
     this._mode = options.mode ?? 'pixel';
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
-    this._aspect = options.aspect ?? 'adaptive';
+    this._aspect = options.aspect ?? 'fill';
     this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
     this.plan = planLook(this._look);
     this.syncLookState();

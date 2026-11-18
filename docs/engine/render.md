@@ -31,25 +31,27 @@ everything but the final copy.
   throws `NO_WEBGPU` and the page says so: "Failed to start: WebGPU unavailable: …".
   `renderer.backend` is `'WebGPU'`, shown in the debug UI. Development runs it in Chromium's
   headless shell on SwiftShader's Vulkan (`scripts/browser.mjs`), no display needed.
-- **Resolution.** 480×270 default, 320×180 comparison (`R`). The canvas backing store is
-  `art × scale` device pixels with the largest integer `scale` that fits, and
-  `pixelSize = scale`, so the pixelation pass renders at exactly the art resolution.
-  Letterboxed and centered. The orthographic camera's view height is fixed in world units,
-  so framing is identical at both resolutions. Math lives in `src/engine/framing.ts` (unit-tested).
-- **Aspect** (`EngineOptions.aspect`, `?aspect=`). `adaptive` (default) keeps the art
-  height (270) and gives the art the screen's aspect, clamped to 0.4–2.4 and still
-  integer-scaled: a portrait phone (390×844) gets 124×270 art filling ~92% of the screen
-  instead of a 16:9 strip covering ~15%; a landscape phone gets ~584×270. On 16:9 screens it
-  is identical to `fixed` (exactly `resolution`, letterboxed). Camera rigs follow the art
-  aspect (`rig.setAspect`); `renderer.resolution` is the art size actually rendered,
-  `renderer.baseResolution` the configured preset.
-- **Fill** (`aspect: 'fill'`, Riftlight's default; `?aspect=fill`). Both art dimensions
-  follow the viewport at the nearest whole device-pixel scale to the configured art
-  height. At 2560×1440, 480×270 becomes 512×288 at 5× and covers the entire screen.
-  A final partial art pixel can extend past the viewport and is clipped at its edge;
-  art pixels remain square and integer-scaled. Resizing, browser fullscreen and HiDPI
-  screens use the same layout, and the HUD and in-game tree follow it. Fixed and adaptive
-  modes keep their existing letterboxing.
+- **Resolution.** 480×270 default, 320×180 comparison (`R`): the art *height* the framing aims
+  for. The canvas backing store is `art × scale` device pixels with an integer `scale`, and
+  `pixelSize = scale`, so the pixelation pass renders at exactly the art resolution. The
+  orthographic camera's view height is fixed in world units, so framing is identical at both
+  resolutions. Math lives in `src/engine/framing.ts` (unit-tested).
+- **Aspect: fill** (`EngineOptions.aspect`, `?aspect=`; the default). Both art dimensions follow
+  the viewport at the whole device-pixel scale nearest the configured art height, so the
+  picture reaches every edge at every window shape (16:9, 21:9, 4:3, a phone) and follows
+  resizes, as a game in the 52in1 hub must. At 2560×1440, 480×270 becomes 512×288 at 5×; at
+  1600×900, 534×300 at 3×; a portrait phone (390×844) gets 130×282 at 3×. A final partial art
+  pixel can extend past the viewport and is clipped at its edge; art pixels stay square and
+  integer-scaled. Only the pixel density changes with the window: the world in view does not
+  (the ortho view height and perspective fov are fixed; width follows the aspect). Browser
+  fullscreen and HiDPI screens use the same layout, and the HUD and in-game tree follow it.
+  Camera rigs follow the art aspect (`rig.setAspect`); `renderer.resolution` is the art size
+  actually rendered, `renderer.baseResolution` the configured preset.
+- **Letterboxing opt-ins** (not for a 52in1 game: they leave bars). `adaptive` keeps the art
+  height (270) and gives the art the screen's aspect, clamped to 0.4–2.4, at the largest
+  integer scale that fits: a portrait phone gets 124×270 art covering ~92% of the screen, a
+  1600×900 window 480×270 at 3× with 80/45 px bars. `fixed` is exactly `resolution`, letterboxed
+  (a 16:9 strip on a phone). On 16:9 screens at an integer multiple both equal `fill`.
 - **Raw 3D mode** (`P`). Swaps the pipeline's `outputNode` from the pixelation pass to a
   plain full-res `pass()` (output transform only, no filters). Same renderer, pipeline,
   canvas, camera, physics, animation, lighting and framing.

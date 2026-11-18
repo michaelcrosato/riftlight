@@ -21,6 +21,7 @@ export interface HeadlessViewOptions {
   camera: Camera;
   viewport?: Viewport;
   resolution?: Resolution;
+  /** Default `fill`, as a page's (`EngineOptions.aspect`). */
   aspect?: AspectMode;
   mode?: RenderMode;
   edges?: EdgeSettings;
@@ -53,7 +54,7 @@ export class HeadlessView implements View {
     this._viewport = { ...(options.viewport ?? HEADLESS_VIEWPORT) };
     this._baseResolution = options.resolution ?? RESOLUTIONS.default;
     this._resolution = this._baseResolution;
-    this._aspect = options.aspect ?? 'adaptive';
+    this._aspect = options.aspect ?? 'fill';
     this._mode = options.mode ?? 'pixel';
     this._look = startingLook({ look: options.look, filters: options.filters, edges: options.edges ?? DEFAULT_EDGES });
     this.syncFilters();
