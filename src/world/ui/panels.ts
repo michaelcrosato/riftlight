@@ -85,9 +85,9 @@ export function guidePanel(def: RoomDef, pads: readonly Pad[], knobs: readonly K
   return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs, fill), { width: 250, height: 236 });
 }
 
-/** The field guide: every word, by section. */
-export function fieldGuide(fill: (text: string) => string = (s) => keyText(null, s)): Reader {
-  const blocks: Block[] = [{ kind: 'p', text: fill('Every word the station guides use. {key:tab} jumps between sections.') }];
+/** The field guide: every word, by section. `touch`: on a phone, which has no Tab to jump between them. */
+export function fieldGuide(fill: (text: string) => string = (s) => keyText(null, s), touch = false): Reader {
+  const blocks: Block[] = [{ kind: 'p', text: fill(touch ? 'Every word the station guides use; drag to scroll.' : 'Every word the station guides use. {key:tab} jumps between sections.') }];
   for (const [id, title] of Object.entries(SECTIONS)) {
     const terms = GLOSSARY.filter((t) => t.section === id);
     if (!terms.length) continue;
@@ -98,11 +98,13 @@ export function fieldGuide(fill: (text: string) => string = (s) => keyText(null,
 }
 
 /** The tweak panel: the room's knobs, then the engine's. `footer`: how to change and close it on the device in use. */
-export function tweakMenu(title: string, room: readonly Knob[], engine: readonly Knob[], onBack: () => void, footer: () => string = () => 'arrows change · esc closes'): Menu {
+export function tweakMenu(title: string, room: readonly Knob[], engine: readonly Knob[], onBack: () => void, footer: () => string = () => 'arrows change · esc closes', resetSettings?: () => void): Menu {
   const widgets = (): Widget[] => [
     ...(room.length ? [{ kind: 'label' as const, id: 'l-room', label: 'This room' }, ...room.map(knobWidget)] : []),
     { kind: 'label', id: 'l-engine', label: 'Engine' },
     ...engine.map(knobWidget),
+    // the player's settings back to the game's (a settings panel's Reset)
+    ...(resetSettings ? [{ kind: 'button' as const, id: 'reset-settings', label: 'Reset settings', onClick: resetSettings, hint: 'Your saved settings and volumes back to the defaults.' }] : []),
   ];
   return new Menu(widgets, { id: 'tweak', title, width: 236, labelWidth: 110, onBack, footer });
 }

@@ -16,7 +16,8 @@ import { miniCovers, miniWidth, type UiCanvas, wrapRow } from '../ui/kit';
  * while it owns the frame and gives the game's back when it lets go.
  *
  *   zoom        the wheel · R1 in, L1 out · a pinch          (the Hall's card; photo mode's field of view, where R1 steps it)
- *   photo_hide  H · L1 (Create too) · a sideways swipe from the panel (photo mode's panel; a tap on "show" brings it back)
+ *   photo_hide  H · L1 (Create too) · a sideways swipe from the panel (photo mode's panel)
+ *   show        H · L1 (Create too) · a tap on the hint      (photo mode's panel back: no swipe shows it)
  *   rise        Q / E · R2 up, L2 down                       (photo mode's free camera)
  *   next_wing   N · R1 (L1 back) · the < > at the sides      (the Hall)
  *   photo_save  P · Square · a tap on Save                   (photo mode)
@@ -29,6 +30,7 @@ export const SHOWCASE_CONTROLS: ControlTable = {
   ...CONTROLS,
   zoom: { key: 'Wheel', pad: 'PadRB', touch: 'TouchPinch' },
   photo_hide: { key: 'KeyH', pad: 'PadLB', touch: 'TouchSwipe' },
+  show: { key: 'KeyH', pad: 'PadLB', touch: 'TouchTap' },
   rise: { key: 'QE', pad: 'PadRT' },
   next_wing: { key: 'KeyN', pad: 'PadRB', touch: '< >' },
   photo_save: { key: 'KeyP', pad: 'PadX', touch: 'TouchTap' },

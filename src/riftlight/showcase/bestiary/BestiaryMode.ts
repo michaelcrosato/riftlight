@@ -15,7 +15,7 @@
  * Leaving: walk back out of the door, or Esc.
  */
 import { Color, type Object3D, Vector3 } from 'three/webgpu';
-import { type CameraConfig, FirstPersonRig, FreeRig, type LightHandle, PALETTE, type PaletteColor, readMoveInput, wrapText } from '../../../engine';
+import { type CameraConfig, FirstPersonRig, FreeRig, KEYMAP, type LightHandle, PALETTE, type PaletteColor, readMoveInput, wrapText } from '../../../engine';
 import { setLookLayer } from '../../../engine/render/lookLayer';
 import { Rng } from '../../core/rng';
 import type { Genome } from '../../core/types';
@@ -375,7 +375,8 @@ export class BestiaryMode implements ShowcaseMode {
     const walking = this.view === 'walk';
     // R1 / L1 are the hall's (the wing, the card's zoom), not the hero's lie down and prone
     ctx.input.clearQueued('PadLB', 'PadRB');
-    const input = walking ? readMoveInput(ctx, v.hero, this.input) : this.still();
+    // nor does the Circle that closed the card (photo mode, the pause) crouch it while held
+    const input = walking ? this.host.presses.mask(ctx.input, readMoveInput(ctx, v.hero, this.input), KEYMAP) : this.still();
     // F / Triangle and R2 are the hall's (inspect, walk / fly): nothing here is grabbed
     input.grab = false;
     v.fixedUpdate(dt, input);
@@ -414,6 +415,8 @@ export class BestiaryMode implements ShowcaseMode {
     if (this.altar.child) this.altar.child.built.object.rotation.y += dt * 0.5;
     const locked = typeof document !== 'undefined' && !!document.pointerLockElement;
     const esc = input.wasPressed('Escape', 'PadStart') && !this.wasLocked;
+    // a frame that began with the card up: its presses are the card's (Cross on Back never jumps, Circle never crouches)
+    const carded = this.view === 'inspect' || this.view === 'breed';
     this.wasLocked = locked;
     for (const e of events) if (e.kind === 'pointer' && e.type === 'down') this.downAt = { x: e.x, y: e.y };
 
@@ -457,6 +460,7 @@ export class BestiaryMode implements ShowcaseMode {
       // out through the door
       if (v.hero && v.position.z - hall.origin.z > HALL.exitZ) this.wantsLeave = true;
     }
+    if (carded) this.host.presses.take(input);
     input.wheel = 0;
   }
 
@@ -681,7 +685,7 @@ export class BestiaryMode implements ShowcaseMode {
     // a mini row the mini font can't draw (accents, other writing systems) takes a text row's height
     const rowH = (l: { text: string; mini?: boolean }) => (l.mini && miniCovers(l.text) ? 7 : 10);
     const rowsH = lines.reduce((s, l) => s + rowH(l), 0);
-    const help = wrapText(hints(['orbit', 'zoom', 'back']), cardW - 6, miniWidth);
+    const help = wrapText(hints(['orbit', 'zoom', 'card_back']), cardW - 6, miniWidth);
     const helpH = help.every(miniCovers) ? 7 : 9;
     const h = 8 + rowsH + 4 + buttons.length * 13 + 7 + help.length * helpH;
     ui.panel(x, y - 4, cardW, h, 'ink', 'slate');

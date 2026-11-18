@@ -182,7 +182,7 @@ export const DRIFT: RoomDef = {
             input.brake = (want < 0 && v > 1) || (want > 0 && v < -1);
             input.throttle = input.brake ? 0 : want;
             input.steer = keyX || ax.x;
-            input.handbrake = inp.anyDown(WORLD_KEYS.handbrake);
+            input.handbrake = room.held(...WORLD_KEYS.handbrake); // not the Cross that chose Resume
             if (inp.consumeAny(WORLD_KEYS.exit)) getOut();
           } else Object.assign(input, { throttle: 0, steer: 0, brake: false, handbrake: false });
         } else if (!driving) {
@@ -248,6 +248,8 @@ export const DRIFT: RoomDef = {
           scripted = true;
           Object.assign(input, { throttle, steer, handbrake, brake: false });
         },
+        /** What the player's input is to the car this step (throttle, steer, brake, handbrake). */
+        input: () => ({ ...input }),
         /** Back to the keyboard (tests): the keys drive again. */
         keys: () => {
           if (!driving) getIn();

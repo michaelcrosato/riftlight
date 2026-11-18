@@ -256,8 +256,8 @@ export const SANDBOX: RoomDef = {
     return {
       knobs,
       fixedUpdate() {
-        // not through a panel or the pause menu: only a click on the game itself grabs
-        const down = room.inputFree && (e.input.mouseButtons & 1) === 1 && e.input.pointer.over;
+        // not through a panel or the pause menu, nor the room card: only a click on the game itself grabs
+        const down = room.pointerFree && (e.input.mouseButtons & 1) === 1 && e.input.pointer.over;
         if (down && !wasDown && !grab?.carry) tryGrab();
         if (!down && grab && !grab.carry) {
           const v = grab.prop.body.linvel();
@@ -266,7 +266,7 @@ export const SANDBOX: RoomDef = {
         }
         wasDown = down;
         // a pad (or a phone's HOLD) carries what is in front of the hero; letting go throws it forward
-        const carrying = room.inputFree && e.input.anyDown(CARRY);
+        const carrying = room.inputFree && room.held(...CARRY);
         if (carrying && !carryWas && !grab) tryCarry();
         if (!carrying && grab?.carry) {
           const body = grab.prop.body;

@@ -9,7 +9,7 @@ import { Object3D, Vector3 } from 'three/webgpu';
 import { hudSprite, type LightHandle, type PaletteColor, searchDefs, SpriteBatch, spriteSheet, type TextureDef } from '../../engine';
 import { GAME_VIEW } from '../../engine/model/view';
 import { pageParam } from '../page';
-import { keyText, TOUCH_SLOTS, touchFloor, WORLD_KEYS } from '../controls';
+import { keyText, TOUCH_SLOTS, touchFloor, WORLD_CONTROLS, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef } from '../types';
 import { assetsOf, clean, count, libraryShelves, modelLine, packShelves, requestLight, type Shelf, sourceOf, spriteHeight, standModel, textureLine, tilePatch, wrap } from './shelves';
 
@@ -40,6 +40,8 @@ export const GALLERY: RoomDef = {
   wing: 'looks',
   about: 'Every model and texture the engine carries, one at a time on a turntable: the built-in library family by family, then every imported pack. {key:prev_item} and {key:next_item} step through a shelf, {key:prev_shelf} and {key:next_shelf} change shelf; the panel says what each asset is, how big it is and where it came from.',
   try: ['Step through a shelf with {key:next_item} (on a keyboard Shift+E: ten at a time)', 'Change shelf with {key:next_shelf}: the textures and imported packs come after the models', 'Pick level or town zoom in Tweak ({key:tweak}) to see an asset at the game’s own scale', 'Walk off to reach the pads; the next step brings the camera back to the exhibit'],
+  // a phone's three buttons are < > >>: the shelf before is its pad on the floor
+  controls: { prev_shelf: { ...WORLD_CONTROLS.prev_shelf, touch: '< SHELF' } },
   camera: { preset: 'iso', yaw: GAME_VIEW.yaw, pitch: GAME_VIEW.pitch, viewHeight: GAME_VIEW.viewHeight, stiffness: 9, minZoom: 0.3, maxZoom: 24 },
   spawn: [0, 0, 6],
   facing: Math.PI,

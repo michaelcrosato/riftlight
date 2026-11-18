@@ -24,7 +24,8 @@ import { SHOWCASE_CONTROLS } from '../hints';
 import { StagePause } from '../pause';
 import { moveInput } from '../visitor';
 import { arcadeAutopilot } from './autoplay';
-import { ARCADE_AGAIN, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
+import { HeldPresses } from '../held';
+import { ARCADE_AGAIN, ARCADE_KEYS, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
 import { ARCADE_SONG } from './stage';
 
 /**
@@ -55,6 +56,8 @@ export class ArcadeGame implements Game {
   pause: StagePause | null = null;
   private readonly input = moveInput();
   private readonly menu = new MenuInput(MENU_BINDINGS);
+  /** The pause's presses (`held.ts`): the Circle that resumed is not a crouch while it is held. */
+  private readonly presses = new HeldPresses(Object.values(ARCADE_KEYS).flat());
   private ui: UiCanvas | null = null;
   private best = 0;
 
@@ -94,7 +97,7 @@ export class ArcadeGame implements Game {
 
   fixedUpdate(ctx: GameContext, dt: number): void {
     if (this.pause) return; // the run stands still, its clock too
-    this.stage.fixedUpdate(dt, readArcadeInput(ctx.input, this.input));
+    this.stage.fixedUpdate(dt, this.presses.mask(ctx.input, readArcadeInput(ctx.input, this.input), ARCADE_KEYS));
   }
 
   update(ctx: GameContext, dt: number): void {
@@ -109,9 +112,10 @@ export class ArcadeGame implements Game {
       this.stage.drawHud(ctx.hud);
       this.pause.draw(ui);
       const pick = this.pause.update(events, input, ctx.hud).pick;
+      // what chose a row must not jump once the run goes on, nor crouch while it is held
+      this.presses.take(input);
       if (pick) {
         this.pause = null;
-        input.clearQueued(); // what chose a row must not jump once the run goes on
         if (pick === 'restart') this.stage.start();
       }
       return;

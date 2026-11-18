@@ -11,7 +11,7 @@ import { recordArcadeRun, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput } from '../visitor';
 import { arcadeAutopilot } from './autoplay';
-import { ARCADE_AGAIN, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
+import { ARCADE_AGAIN, ARCADE_KEYS, ArcadeStage, arcadeZoom, readArcadeInput } from './ArcadeStage';
 import { ARCADE_SONG } from './stage';
 
 /** Where the stage is built: far from the town and from any level (levels build around 0, 0). */
@@ -62,7 +62,9 @@ export class ArcadeMode implements ShowcaseMode {
   }
 
   fixedUpdate(dt: number): void {
-    this.stage?.fixedUpdate(dt, readArcadeInput(this.host.ctx.input, this.input));
+    const input = this.host.ctx.input;
+    // the Circle that closed the pause (photo mode) is not a crouch while it is held
+    this.stage?.fixedUpdate(dt, this.host.presses.mask(input, readArcadeInput(input, this.input), ARCADE_KEYS));
   }
 
   update(dt: number): void {

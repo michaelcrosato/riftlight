@@ -15,26 +15,30 @@
  */
 import { type Camera, Color, Vector3 } from 'three/webgpu';
 import {
+  type ControlTable,
   type Engine,
   FPS_OPTIONS,
   type Game,
   type GameContext,
   type HudColor,
   type InputDevice,
+  KEYMAP,
   type Look,
   LOOK_PRESETS,
   MenuInput,
   type MoveInput,
   PALETTE,
   PIXEL_SIZES,
+  QUALITY_OPTIONS,
   readMoveInput,
   TRANSITIONS,
   type TransitionKind,
 } from '../engine';
 import { HERO_MODEL } from '../game/hero';
-import { MENU_BINDINGS, Pointer } from '../riftlight/game/controls';
+import { MENU_BINDINGS, ndcToArt, Pointer } from '../riftlight/game/controls';
 import { inside, type Rect, UiCanvas, type UiEvent, wrap } from '../riftlight/ui/kit';
 import { UiLayer } from '../riftlight/ui/layer';
+import { HeldPresses } from '../riftlight/showcase/held';
 import { moveInput, Visitor } from '../riftlight/showcase/visitor';
 import { controlText, keyText, SHELL_PAD, touchStates, WORLD_CONTROLS, WORLD_KEYS, type WorldAction } from './controls';
 import { type KitHost, type Label, type Pad, RoomKit } from './kit/RoomKit';
@@ -60,6 +64,8 @@ const HINTS: Readonly<Record<'keyboard' | 'pad', readonly (readonly [WorldAction
   ],
 };
 const percent = (v: number) => `${Math.round(v * 100)}%`;
+/** What the hero and the rooms read held (`KEYMAP`, `WORLD_KEYS`): a press of one a panel took stays the panel's while held (`WorldShell.held`). */
+const HELD_CODES: readonly string[] = [...new Set<string>([...Object.values(KEYMAP).flat(), ...Object.values(WORLD_KEYS).flat()])];
 /** A swipe this far across sends a panel away (the engine's convention: vertical ones scroll). */
 const DISMISS = new Set(['left', 'right']);
 
@@ -108,8 +114,16 @@ export class WorldShell {
   private lastNow = -1;
   /** Game speed while a modal panel froze the room. */
   private frozenSpeed: number | null = null;
-  /** The last engine frame that began with a panel open or a room change under way: its presses were theirs. */
+  /** The last engine frame that began with a panel open or a room change under way (or whose click hid the card): its presses were theirs. */
   private swallowed = -1;
+  /** Pointer buttons (`MouseLeft`, `Touch`...) whose press sent the card or a toast away: the shell's until they let go. */
+  private readonly taken = new Set<string>();
+  /** Pointer buttons pressed while a panel or a room change owned the input (a row, the close box): theirs until they let go. */
+  private readonly panelHeld = new Set<string>();
+  /** Keys and pad buttons pressed while a panel or a room change owned the input: theirs while held. */
+  private readonly presses = new HeldPresses(HELD_CODES);
+  /** The engine frame `begin` ran in. */
+  private begun = -1;
 
   /** Once per page: the UI canvas, pointer, sounds and claimed keys. */
   attach(engine: Engine): void {
@@ -195,6 +209,85 @@ export class WorldShell {
     return !this.capturing && this.swallowed !== this.engine?.frame;
   }
 
+  /**
+   * A room may read the pointer's buttons itself (`RoomRuntime.pointerFree`): its input is free,
+   * and no click or tap that sent the card or a toast away, or that a panel took (its row, its
+   * close box), is still held. The Workshop must not place on the tap that hid the card or closed
+   * the guide when it lifts, nor the Sandbox grab what was under the menu's Resume.
+   */
+  get roomPointerFree(): boolean {
+    return this.roomInputFree && this.taken.size === 0 && this.panelHeld.size === 0;
+  }
+
+  /**
+   * Held, as the hero and a room read a held key (`RoomRuntime.held`): any of `codes` down, but not
+   * one still held from a press a panel took. The Circle that closed the guide never crouches the
+   * hero, nor does the Cross that chose Resume pull the car's handbrake.
+   */
+  held(codes: readonly string[]): boolean {
+    const input = this.engine?.input;
+    return !!input && this.presses.held(input, codes);
+  }
+
+  /** The hero's held moves (`readMoveInput`'s) without a key or button a panel's press still holds. */
+  heroHeld(m: MoveInput): MoveInput {
+    return this.engine ? this.presses.mask(this.engine.input, m, KEYMAP) : m;
+  }
+
+  /**
+   * Once a frame, before the room reads input (`RoomGame.fixedUpdate` calls it before the room's
+   * step, `frame` too): a click or a tap on the card or a toast is the shell's (`claimPointer`).
+   */
+  begin(): void {
+    const e = this.engine;
+    if (!e || this.begun === e.frame) return;
+    this.begun = e.frame;
+    this.claimPointer(e);
+  }
+
+  /**
+   * A click or a tap on the card or the toast sends it away, and the press is the shell's: taken
+   * before the room reads this frame's input (`begin`), its queued press dropped, the rest of the
+   * frame the shell's, and the button the shell's until it lets go (`roomPointerFree`). A press
+   * while a panel or a room change owns the input is theirs until it lets go too (a menu row and
+   * the close box act on the press, and the button is still down once the panel has gone). A press
+   * anywhere else is the room's.
+   */
+  private claimPointer(e: Engine): void {
+    const input = e.input;
+    for (const b of input.buttonEvents) {
+      if (!b.down) {
+        this.taken.delete(b.code);
+        this.panelHeld.delete(b.code);
+        continue;
+      }
+      if (this.busy || this.layer.top) {
+        this.panelHeld.add(b.code); // a panel's (frame hands it the pointer's events)
+        continue;
+      }
+      const at = ndcToArt(e, b.x, b.y);
+      if (!this.hideAt(at.x, at.y)) continue;
+      this.taken.add(b.code);
+      this.swallowed = e.frame;
+      input.clearQueued(b.code);
+    }
+    // every button up (a release lost to a blur is one too)
+    if (input.mouseButtons === 0) {
+      this.taken.clear();
+      this.panelHeld.clear();
+    }
+    // nor does a drag that started on the card turn the camera
+    else if (this.taken.size) input.mouseDelta.x = input.mouseDelta.y = 0;
+  }
+
+  /** The card (else the toast) away when (x, y) in art pixels is on it, as drawn last. True if it was. */
+  private hideAt(x: number, y: number): boolean {
+    if (this.cardTime > 0 && this.cardRect && inside(this.cardRect, x, y)) this.cardTime = 0;
+    else if (this.toastTime > 0 && this.toastRect && inside(this.toastRect, x, y)) this.toastTime = 0;
+    else return false;
+    return true;
+  }
+
   // ------------------------------------------------------------------ panels
 
   openGuide(): void {
@@ -207,7 +300,7 @@ export class WorldShell {
     const room = this.room;
     if (!room || !this.engine) return;
     this.layer.open(
-      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak'), () => this.keys('{key:change} change · {key:back} closes')),
+      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak'), () => this.keys('{key:change} change · {key:back} closes'), () => this.resetSettings()),
       { modal: false, dock: 'right', dim: false },
     );
   }
@@ -265,7 +358,7 @@ export class WorldShell {
   }
 
   openGlossary(): void {
-    this.layer.open(fieldGuide((s) => this.keys(s)), { modal: false, dock: 'right', dim: false });
+    this.layer.open(fieldGuide((s) => this.keys(s), this.engine?.controls.device === 'touch'), { modal: false, dock: 'right', dim: false });
   }
 
   showCard(seconds = 14): void {
@@ -287,7 +380,6 @@ export class WorldShell {
     const e = this.engine!;
     const looks = Object.keys(LOOK_PRESETS);
     const cams = ['iso', 'topdown', 'side', 'third', 'first', 'free'] as const;
-    const qualities = ['low', 'medium', 'high'] as const;
     return [
       {
         id: 'engine-speed',
@@ -320,7 +412,8 @@ export class WorldShell {
       { kind: 'toggle', id: 'engine-pixel', label: 'Pixel art', get: () => e.renderer.mode === 'pixel', set: (v) => e.settings.set({ pixelArt: v }) },
       // the room's own art resolution is fine; chunky halves it
       { kind: 'choice', id: 'engine-pixel-size', label: 'Pixel size', options: PIXEL_SIZES, get: () => PIXEL_SIZES.indexOf(e.settings.values.pixelSize ?? 'fine'), set: (i) => e.settings.set({ pixelSize: PIXEL_SIZES[i]! }) },
-      { kind: 'choice', id: 'engine-quality', label: 'Quality', options: qualities, get: () => qualities.indexOf(e.quality), set: (i) => e.settings.set({ quality: qualities[i]! }) },
+      // auto: the device's level (measured at start-up), as the page started; a level is the player's
+      { kind: 'choice', id: 'engine-quality', label: 'Quality', options: QUALITY_OPTIONS, get: () => Math.max(0, QUALITY_OPTIONS.indexOf(e.settings.values.quality ?? e.qualityOption)), set: (i) => e.settings.set({ quality: QUALITY_OPTIONS[i]! }) },
       { kind: 'choice', id: 'engine-fps', label: 'Frame rate', options: FPS_OPTIONS.map((f) => (f ? `${f} fps` : 'screen')), get: () => Math.max(0, FPS_OPTIONS.indexOf(e.maxFps)), set: (i) => e.settings.set({ fps: FPS_OPTIONS[i]! }) },
       { kind: 'choice', id: 'engine-transition', label: 'Room change', options: TRANSITIONS, get: () => TRANSITIONS.indexOf(this.transition), set: (i) => (this.transition = TRANSITIONS[i]!) },
       { id: 'engine-shake', label: 'Screen shake', min: 0, max: 2, step: 0.1, initial: 1, get: () => e.shake.strength, set: (v) => (e.shake.strength = v) },
@@ -333,6 +426,14 @@ export class WorldShell {
       { id: 'engine-vibration', label: 'Vibration', min: 0, max: 1, step: 0.05, get: () => e.settings.values.vibration ?? 1, set: (v) => e.settings.set({ vibration: v >= 1 ? undefined : v }), format: percent },
       { kind: 'toggle', id: 'engine-debug', label: 'Debug info', get: () => e.debugShown, set: (v) => e.settings.set({ debugInfo: v }), hint: 'The engine\'s panel: renderer, resolution, camera, frame rate, the room\'s state.' },
     ];
+  }
+
+  /** The player's settings and volumes back to the game's (Tweak's Reset settings row, as the ⚙ panel's Reset). */
+  resetSettings(): void {
+    const e = this.engine;
+    if (!e) return;
+    e.settings.reset();
+    e.audio.resetVolumes();
   }
 
   /**
@@ -380,6 +481,7 @@ export class WorldShell {
     this.cardTime = Math.max(0, this.cardTime - real);
     this.toastTime = Math.max(0, this.toastTime - real);
     const input = ctx.input;
+    this.begin(); // a click on the card is the shell's (once a frame: a fixed step may have run it)
     const hadPanel = !!this.layer.top;
     // the rest of this frame's input is the panel's (or the room change's), even once it closes
     if (hadPanel || this.busy) this.swallowed = e.frame;
@@ -394,8 +496,9 @@ export class WorldShell {
       ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
     }
     this.layer.update(real);
-    // keys pressed for a panel (Space, J, F confirm) must not reach the hero when it closes
-    if (hadPanel || this.busy) input.clearQueued();
+    // keys pressed for a panel (Space, J, F confirm) must not reach the hero when it closes, nor
+    // while they are held after (Circle's crouch, Cross's handbrake)
+    if (hadPanel || this.busy) this.presses.take(input);
     this.syncTouch(hadPanel);
     if (hadPanel) {
       const top = this.layer.top!.panel.id;
@@ -421,16 +524,12 @@ export class WorldShell {
     else if (input.wasPressed(...KEY.card)) this.toggleCard();
   }
 
-  /** A swipe, or a tap or click on it, sends the card (else the toast) away; the room under them plays on. */
+  /** A swipe sends the card (else the toast) away; the room under them plays on (a tap or a click on one: `claimPointer`). */
   private dismiss(events: readonly UiEvent[]): void {
     for (const ev of events) {
-      if (ev.kind === 'swipe') {
-        if (this.cardTime > 0) this.cardTime = 0;
-        else this.toastTime = 0;
-      } else if (ev.kind === 'pointer' && ev.type === 'down') {
-        if (this.cardTime > 0 && this.cardRect && inside(this.cardRect, ev.x, ev.y)) this.cardTime = 0;
-        else if (this.toastTime > 0 && this.toastRect && inside(this.toastRect, ev.x, ev.y)) this.toastTime = 0;
-      }
+      if (ev.kind !== 'swipe') continue;
+      if (this.cardTime > 0) this.cardTime = 0;
+      else this.toastTime = 0;
     }
   }
 
@@ -600,8 +699,8 @@ export const shell = new WorldShell();
 export class RoomGame implements Game {
   readonly name: string;
   readonly assets: readonly string[];
-  /** The World's actions and their keys, pad buttons and touch buttons: what prompts and `{key:action}` name. */
-  readonly controls = WORLD_CONTROLS;
+  /** The World's actions and their keys, pad buttons and touch buttons (with the room's own names, `RoomDef.controls`): what prompts and `{key:action}` name. */
+  readonly controls: ControlTable;
   visitor: Visitor | null = null;
   logic: RoomLogic = {};
   kit!: RoomKit;
@@ -619,6 +718,7 @@ export class RoomGame implements Game {
     readonly arrivedFrom: string | null = null,
   ) {
     this.name = `Engine World: ${def.title}`;
+    this.controls = def.controls ? { ...WORLD_CONTROLS, ...def.controls } : WORLD_CONTROLS;
     this.assets = [...(def.hero === false ? [] : [HERO_MODEL]), ...(def.assets ?? [])];
     this.spawnAt = def.spawn ?? [0, 0, 0];
     this.spawnFacing = def.facing ?? 0;
@@ -707,7 +807,9 @@ export class RoomGame implements Game {
     // Create, R3 and the touchpad are the shell's (rooms, the guide), a room's own pad buttons
     // its own: the hero never waves on Create or lies down on the Gallery's R1
     ctx.input.clearQueued(...SHELL_PAD, ...(this.logic.claims ?? []));
-    if (v?.hero) v.fixedUpdate(dt, shell.capturing || !ctx.camera.controlsCharacter ? this.idle : readMoveInput(ctx, v.hero, this.input));
+    // a click or a tap on the card or a toast is the shell's, before the room's step reads the pointer
+    shell.begin();
+    if (v?.hero) v.fixedUpdate(dt, shell.capturing || !ctx.camera.controlsCharacter ? this.idle : shell.heroHeld(readMoveInput(ctx, v.hero, this.input)));
     this.logic.fixedUpdate?.(dt);
   }
 
@@ -796,6 +898,10 @@ function roomRuntime(game: RoomGame): RoomRuntime {
     get inputFree() {
       return shell.roomInputFree;
     },
+    get pointerFree() {
+      return shell.roomPointerFree;
+    },
+    held: (...codes: string[]) => shell.held(codes),
   };
 }
 

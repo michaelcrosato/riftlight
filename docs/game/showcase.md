@@ -34,12 +34,15 @@ hero's lie down and prone), Create hides photo mode's panel, R2 / L2 fly it up a
 backs out of the Hall's card and of photo mode. A swipe acts only where it starts on what it
 moves, since a drag looks or orbits everywhere else (and a quick one is a swipe too): a sideways
 one from the Hall's card closes it, one from photo mode's panel hides it (a tap on "show" brings
-it back), and a finger presses a card button or a panel arrow when it lifts there without
-swiping (a click at once). On a
+it back, and its hint says tap: `show`), and a finger presses a card button or a panel arrow when it lifts there without
+swiping (a click at once). A press the card, the pause or photo mode took is theirs
+(`showcase/held.ts`, `Showcase.presses`): the Cross or Space that chose Back never jumps the
+hero, and the Circle that closed one never crouches it while it is held. On a
 phone (`Showcase.touch()` → `TouchPad.sync`) the stick, A, B (it jumps), ≡ and the mode's own
 interact (the Hall's LOOK, only at an exhibit; the nearest is enough there) show, no skill icons;
 none of them over the Hall's card, whose hint names its way back there as the swipe (`card_back`:
-Esc, Circle, a swipe from the card); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
+Esc, Circle, a swipe from the card; photo mode's `back` is the ≡, Options or Esc, which leave it
+there); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`).
 
 **The hero as a platformer** (`showcase/visitor.ts`). `Visitor` is the hero model on the engine's
 `PlatformerCharacter` (the whole Mario-64 moveset) with the playground's sounds and dust, clips

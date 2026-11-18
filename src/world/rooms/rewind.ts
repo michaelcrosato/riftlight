@@ -120,7 +120,7 @@ b.setLinvel({ x: f[k + 7]!, y: f[k + 8]!, z: f[k + 9]! }, true);`,
           ball.sleep();
           rewind.reset(); // history starts with the ball asleep
         }
-        const held = room.inputFree && e.input.anyDown(HOLD);
+        const held = room.inputFree && room.held(...HOLD);
         rewind.rewinding = (held || scripted > 0) && rewind.length > 0;
         if (scripted > 0) scripted--;
         if (rewind.rewinding) rewound++;

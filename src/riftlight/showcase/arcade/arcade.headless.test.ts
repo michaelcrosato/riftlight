@@ -45,7 +45,7 @@ describe('Rift Runner standalone: prompts', () => {
     expect(hudText().join(' ')).not.toContain(t('showcase.hint.leave'));
   });
 
-  it('Options (or Esc, ≡) pauses it: the clock stops; Circle resumes; Restart starts the course over', () => {
+  it('Options (or Esc, ≡) pauses it: the clock stops; Circle resumes (and never crouches the hero while held); Restart starts the course over', () => {
     const tap = (code: string) => {
       engine.input.setKey(code, true);
       engine.step(1);
@@ -61,8 +61,17 @@ describe('Rift Runner standalone: prompts', () => {
     engine.step(60);
     expect(game.stage.time, 'the clock stands still').toBe(clock);
     expect(hudText()).toContain(t('menu.pause.title'));
-    tap('PadB');
+    // Circle resumes, held a moment as a real press is: the run's hero does not crouch on it
+    engine.input.setKey('PadB', true);
+    const states = new Set<string>();
+    for (let i = 0; i < 8; i++) {
+      engine.step(1);
+      states.add(String(game.stage.hero?.hero?.state));
+    }
+    engine.input.setKey('PadB', false);
+    engine.step(1);
     expect(game.pause).toBeNull();
+    expect([...states].filter((s) => s.startsWith('crouch')), 'the Circle that resumed is not a crouch').toEqual([]);
     engine.step(30);
     expect(game.stage.time).toBeGreaterThan(clock);
     tap('Escape');

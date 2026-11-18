@@ -17,7 +17,7 @@
  */
 import { Vector3 } from 'three/webgpu';
 import type { CameraConfig, CameraPreset, GameContext, Look, MenuEvent, RenderMode } from '../../engine';
-import { lookFromFilters, OrthoRig } from '../../engine';
+import { KEYMAP, lookFromFilters, OrthoRig } from '../../engine';
 import { SONGS } from '../game/audio';
 import { sourceLang, t } from '../lang';
 import { CAMERA, type Riftlight } from '../game/Riftlight';
@@ -30,6 +30,8 @@ import { type PauseItem, StagePause } from './pause';
 import { PhotoMode } from './photo/PhotoMode';
 import { recordKill, showcaseOf } from './save';
 import { buildShowcaseProps, type ShowcaseProps } from './townProps';
+import { HeldPresses } from './held';
+import { ARCADE_KEYS } from './arcade/ArcadeStage';
 import type { Genome } from '../core/types';
 import type { Rank } from '../core/scaling';
 
@@ -83,6 +85,8 @@ interface Saved {
 
 const SWOOP = 0.8;
 const OPEN = 0.55;
+/** What a mode's hero reads held (the Hall's walk, the arcade's run): a press of one a menu or a card took stays theirs while held. */
+const SHOWCASE_HELD: readonly string[] = [...new Set<string>([...Object.values(KEYMAP).flat(), ...Object.values(ARCADE_KEYS).flat()])];
 
 export class Showcase {
   readonly arcade: ArcadeMode;
@@ -96,6 +100,11 @@ export class Showcase {
   private saved: Saved | null = null;
   /** The pause over a mode (Options, Esc, ≡: `pause.ts`), or null. */
   pause: StagePause | null = null;
+  /**
+   * Presses photo mode, the pause, the Hall's card or a transition took (`held.ts`): a mode's hero
+   * reads its held moves through `presses.mask`, so the Circle that closed one never crouches it.
+   */
+  readonly presses = new HeldPresses(SHOWCASE_HELD);
   private readonly target = new Vector3();
   private readonly unsubs: (() => void)[] = [];
   private time = 0;
@@ -299,8 +308,10 @@ export class Showcase {
     if (this.photo.active) {
       this.photo.update(dt, events);
       this.photo.draw(ui);
+      this.presses.take(ctx.input); // the Circle or the Cross that closed it is photo mode's
       return;
     }
+    if (this.iris || this.loading || this.pause) this.presses.take(ctx.input);
     if (this.iris) {
       const iris = this.iris;
       iris.t += dt;

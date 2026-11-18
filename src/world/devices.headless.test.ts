@@ -162,6 +162,26 @@ it('the menu names the control that opens each panel on the device in use, and h
       expect(engine.settings.values).toMatchObject({ pixelSize: 'chunky', fps: 30, debugInfo: true });
       expect(engine.maxFps).toBe(30);
       expect(engine.audio.volume.master).toBe(0.5);
+      // Quality: auto (the device's) and each level, and back to auto once a level was picked
+      const quality = w.knobs().find((k) => k.id === 'engine-quality') as unknown as { options: string[]; value: number };
+      expect(quality.options).toEqual(['auto', 'low', 'medium', 'high']);
+      expect(quality.value, 'auto until the player picks a level').toBe(0);
+      w.knob('engine-quality', 1);
+      expect(engine.settings.values.quality).toBe('low');
+      expect(engine.quality).toBe('low');
+      w.knob('engine-quality', 0);
+      expect(engine.settings.values.quality).toBe('auto');
+      expect((w.knobs().find((k) => k.id === 'engine-quality') as unknown as { value: number }).value).toBe(0);
+      // Reset settings: every one of the player's back to the defaults, the volumes too
+      w.knob('engine-quality', 3);
+      w.open('tweak');
+      const reset = (shell.layer.top!.panel as Menu).items().find((x) => x.id === 'reset-settings') as { onClick: () => void } | undefined;
+      expect(reset, 'Tweak has a Reset settings row').toBeDefined();
+      reset!.onClick();
+      w.close();
+      expect(engine.settings.values).toEqual({});
+      expect(engine.audio.volume.master, 'the default volume').toBe(master);
+      expect(engine.maxFps).not.toBe(30);
     } finally {
       engine.settings.set({ pixelSize: undefined, fps: undefined, debugInfo: undefined });
       engine.audio.setVolume('master', master);
@@ -504,6 +524,357 @@ it(
       expect(room().shots()).toBeGreaterThan(shots);
     } finally {
       rumble.mockRestore();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+/**
+ * A finger on the canvas at art (x, y), going down or lifting, for one frame: what a phone's touch
+ * does to the input (`Touch` held or let go, with its button event where it is).
+ */
+const finger = (x: number, y: number, down: boolean) => {
+  const input = engine.input;
+  pointAtArt(engine, x, y);
+  input.pointer.touch = true;
+  const events = vi.spyOn(input, 'buttonEvents', 'get').mockReturnValue([{ code: 'Touch', down, x: input.pointer.x, y: input.pointer.y }]);
+  input.setKey('Touch', down);
+  try {
+    engine.step(1);
+  } finally {
+    events.mockRestore();
+  }
+};
+/** A click at art (x, y): the mouse's left button down for `frames` frames, then up. */
+const click = (x: number, y: number, frames = 1) => {
+  pointAtArt(engine, x, y, true);
+  engine.step(frames);
+  pointAtArt(engine, x, y, false);
+  engine.step(1);
+};
+
+it(
+  'a click or a tap that hides the room card is the shell\'s: the Workshop places nothing behind it (nor when the finger lifts), a right click there takes nothing away',
+  async () => {
+    await w.goto('workshop', { instant: true });
+    engine.step(10);
+    room().clear();
+    engine.step(2);
+    const placed = () => (room().spawned() as unknown[]).length;
+    try {
+      shell.showCard(10);
+      engine.step(2);
+      expect(w.state().card).toBe(true);
+      click(60, 60);
+      expect(w.state().card).toBe(false);
+      expect(placed(), 'the click hid the card, and placed nothing behind it').toBe(0);
+      // a phone's tap: the finger down a few frames on the card, then lifted there
+      shell.showCard(10);
+      engine.step(2);
+      engine.input.noteDevice('touch');
+      finger(60, 60, true);
+      expect(w.state().card).toBe(false);
+      engine.step(4);
+      finger(60, 60, false);
+      engine.step(2);
+      expect(placed(), 'the tap hid the card, and placed nothing when it lifted').toBe(0);
+      keyboard();
+      // with no card there, the same click places (the spot is the floor) and a right click takes it away
+      click(60, 60);
+      expect(placed()).toBe(1);
+      shell.showCard(10);
+      engine.step(2);
+      pointAtArt(engine, 60, 60);
+      engine.input.setButtons(2);
+      engine.step(1);
+      engine.input.setButtons(0);
+      engine.step(1);
+      expect(w.state().card).toBe(false);
+      expect(placed(), 'the right click hid the card, and took nothing away').toBe(1);
+      // and a tap on a toast is the toast's too
+      shell.toast('Placed!', 5);
+      engine.step(2);
+      const at = hudTexts(engine).find((t) => t.text === 'PLACED!')!;
+      click(at.x + 2, at.y + 2);
+      expect(w.state().toast).toBeNull();
+      expect(placed(), 'the click hid the toast, and placed nothing').toBe(1);
+    } finally {
+      room().clear();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'a tap on the room card during the cutscene hides the card and does not skip the scene, nor does a swipe that sends the card away; a tap elsewhere skips when it lifts',
+  async () => {
+    await w.goto('cutscene', { instant: true });
+    engine.step(10);
+    try {
+      engine.input.noteDevice('touch');
+      room().play();
+      engine.step(30);
+      expect(room().playing()).toBe(true);
+      shell.showCard(10);
+      engine.step(2);
+      finger(60, 60, true);
+      engine.step(3);
+      finger(60, 60, false);
+      engine.step(3);
+      expect(w.state().card).toBe(false);
+      expect(room().playing(), 'the tap was the card\'s, not a skip').toBe(true);
+      // a swipe sends the card away from anywhere on a phone: from off the card, it skips nothing
+      shell.showCard(10);
+      engine.step(2);
+      const off = { x: engine.hud.width - 60, y: engine.hud.height - 60 };
+      finger(off.x, off.y, true);
+      engine.step(2);
+      engine.input.setKey('SwipeLeft', true); // the engine presses the swipe as the finger lifts
+      finger(off.x - 40, off.y, false);
+      engine.input.setKey('SwipeLeft', false);
+      engine.step(2);
+      expect(w.state().card, 'the swipe sent the card away').toBe(false);
+      expect(room().playing(), 'the swipe was no skip').toBe(true);
+      finger(60, 60, true);
+      engine.step(2);
+      expect(room().playing(), 'a tap skips when it lifts').toBe(true);
+      finger(60, 60, false);
+      engine.step(2);
+      expect(room().playing(), 'with the card gone, a tap skips').toBe(false);
+    } finally {
+      if (room().playing()) room().skip();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'the Sandbox grabs nothing under a toast that a click sends away; the same click with no toast grabs',
+  async () => {
+    await w.goto('sandbox', { instant: true });
+    engine.step(10);
+    room().clear();
+    teleport(engine, [-2, 0, -1]); // the bottom of the screen on the floor (from the spawn, it is past the wall)
+    engine.step(120);
+    const { width, height } = engine.renderer.resolution;
+    // a crate on the floor under the toast's line (bottom middle)
+    shell.toast('Driving', 5);
+    engine.step(2);
+    const line = hudTexts(engine).find((t) => t.text === 'DRIVING')!;
+    const ax = line.x + Math.floor(line.w / 2);
+    const ay = line.y + 3;
+    const nx = ((ax + 0.5) / width) * 2 - 1;
+    const ny = 1 - ((ay + 0.5) / height) * 2;
+    const [o, d] = room().ray(nx, ny) as [number[], number[]];
+    const s = (0.4 - o[1]!) / d[1]!;
+    room().spawn('crate', [o[0]! + d[0]! * s, 0.4, o[2]! + d[2]! * s]);
+    engine.step(30);
+    expect(room().pick(nx, ny), 'the crate is under the toast').toBe('crate');
+    try {
+      shell.toast('Driving', 5);
+      engine.step(2);
+      pointAtArt(engine, ax, ay, true);
+      engine.step(10);
+      expect(w.state().toast).toBeNull();
+      expect(room().holding(), 'the click was the toast\'s').toBeNull();
+      pointAtArt(engine, ax, ay, false);
+      engine.step(2);
+      pointAtArt(engine, ax, ay, true);
+      engine.step(10);
+      expect(room().holding(), 'with no toast, a click grabs').toBe('crate');
+    } finally {
+      pointAtArt(engine, ax, ay, false);
+      engine.step(2);
+      room().clear();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+/** The menu's close box (it closes on the press), in art pixels: the menu open, drawn. */
+const menuCloseBox = () => {
+  w.open('pause');
+  engine.step(2);
+  const r = shell.layer.top!.rect;
+  return { x: r.x + r.w - 6, y: r.y - 8 };
+};
+
+it(
+  'a click a panel took is its own until it lets go: the Sandbox grabs nothing under the menu\'s close box while the button stays down; the same click with nothing open grabs',
+  async () => {
+    await w.goto('sandbox', { instant: true });
+    engine.step(10);
+    room().clear();
+    teleport(engine, [-2, 0, -1]);
+    engine.step(120);
+    const box = menuCloseBox();
+    w.close();
+    engine.step(2);
+    // a crate on the floor under the close box
+    const { width, height } = engine.renderer.resolution;
+    const nx = ((box.x + 0.5) / width) * 2 - 1;
+    const ny = 1 - ((box.y + 0.5) / height) * 2;
+    const [o, d] = room().ray(nx, ny) as [number[], number[]];
+    const s = (0.4 - o[1]!) / d[1]!;
+    room().spawn('crate', [o[0]! + d[0]! * s, 0.4, o[2]! + d[2]! * s]);
+    engine.step(30);
+    expect(room().pick(nx, ny), 'the crate is under the close box').toBe('crate');
+    try {
+      menuCloseBox();
+      pointAtArt(engine, box.x, box.y, true);
+      engine.step(10);
+      expect(w.state().panel, 'the press closed the menu').toBeNull();
+      expect(room().holding(), 'the click was the menu\'s, held on').toBeNull();
+      pointAtArt(engine, box.x, box.y, false);
+      engine.step(2);
+      pointAtArt(engine, box.x, box.y, true);
+      engine.step(10);
+      expect(room().holding(), 'with nothing open, a click grabs').toBe('crate');
+    } finally {
+      pointAtArt(engine, box.x, box.y, false);
+      engine.step(2);
+      w.close();
+      room().clear();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'a tap a panel took is its own until it lifts: the Workshop places nothing where the finger that chose the menu\'s Resume lifts; the same tap with nothing open places',
+  async () => {
+    await w.goto('workshop', { instant: true });
+    engine.step(10);
+    room().clear();
+    engine.step(2);
+    const placed = () => (room().spawned() as unknown[]).length;
+    try {
+      if (w.state().card) press('KeyI'); // the room card away: a tap on it is the card's
+      expect(w.state().card).toBe(false);
+      engine.input.noteDevice('touch');
+      w.open('pause');
+      engine.step(2);
+      // the Resume row (the menu acts on the press), over the floor
+      const row = hudTexts(engine).find((t) => t.text === 'Resume')!;
+      const box = { x: row.x + 2, y: row.y + 3 };
+      finger(box.x, box.y, true);
+      expect(w.state().panel, 'the finger chose Resume').toBeNull();
+      engine.step(4);
+      finger(box.x, box.y, false);
+      engine.step(2);
+      expect(placed(), 'the tap was the menu\'s').toBe(0);
+      finger(box.x, box.y, true);
+      engine.step(4);
+      finger(box.x, box.y, false);
+      engine.step(2);
+      expect(placed(), 'with nothing open, the same tap places').toBe(1);
+    } finally {
+      w.close();
+      room().clear();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'a press a panel took is its own while it is held: the Circle that closes the guide or the menu never crouches the hero, the Cross that chose Resume never pulls the car\'s handbrake',
+  async () => {
+    await w.goto('atrium', { instant: true });
+    engine.step(10);
+    const hero = () => roomGame(engine).visitor!.hero!;
+    try {
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      for (const panel of ['guide', 'pause'] as const) {
+        w.open(panel);
+        engine.step(2);
+        engine.input.setGamepads([pad([1])]); // Circle, held as a real press is (a tenth of a second)
+        const states = new Set<string>();
+        for (let i = 0; i < 8; i++) {
+          engine.step(1);
+          states.add(hero().stance);
+        }
+        engine.input.setGamepads([pad()]);
+        engine.step(10);
+        expect(w.state().panel).toBeNull();
+        expect([...states], `the Circle that closed the ${panel} is not the hero's crouch`).toEqual(['stand']);
+      }
+      // with nothing open, Circle held crouches
+      engine.input.setGamepads([pad([1])]);
+      engine.step(8);
+      expect(hero().stance).toBe('crouch');
+      engine.input.setGamepads([pad()]);
+      engine.step(20);
+      // the car: Resume chosen with Cross (the handbrake), held on
+      await w.goto('drift', { instant: true });
+      engine.step(10);
+      room().keys();
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      w.open('pause');
+      engine.step(2);
+      engine.input.setGamepads([pad([0])]);
+      const pulled: boolean[] = [];
+      for (let i = 0; i < 8; i++) {
+        engine.step(1);
+        pulled.push(room().input().handbrake);
+      }
+      expect(w.state().panel, 'Cross chose Resume').toBeNull();
+      expect(pulled.some(Boolean), 'the Cross that chose Resume is not the handbrake').toBe(false);
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      engine.input.setGamepads([pad([0])]);
+      engine.step(3);
+      expect(room().input().handbrake, 'Cross with nothing open is').toBe(true);
+    } finally {
+      engine.input.setGamepads([pad()]);
+      engine.step(2);
+      w.close();
+      keyboard();
+    }
+  },
+  WORLD_T,
+);
+
+it(
+  'on a phone a room names only controls it has: the Gallery\'s shelf before is its floor pad (no <<), the Workshop\'s list is dragged and its panel\'s < > change shelf; the field guide names no Tab',
+  async () => {
+    const shown = () => Object.values(touchStates(roomGame(engine).logic.touch?.() ?? {})).filter((b) => !b.hidden).map((b) => b.label ?? '');
+    try {
+      await w.goto('gallery', { instant: true });
+      engine.step(5);
+      engine.input.noteDevice('touch');
+      const steps = ['prev_item', 'next_item', 'next_shelf'].map((a) => keyText(engine, `{key:${a}}`));
+      expect(steps).toEqual(['<', '>', '>>']);
+      for (const s of steps) expect(shown(), `the Gallery's ${s} button`).toContain(s);
+      expect(keyText(engine, '{key:prev_shelf}'), 'no << button: the < SHELF pad').toBe('< SHELF');
+      expect(roomGame(engine).kit.pads.map((p) => p.def.label)).toContain('< SHELF');
+      await w.goto('workshop', { instant: true });
+      engine.step(5);
+      const line = roomGame(engine).def.try[0]!;
+      expect(keyText(engine, line)).toBe('Scroll the list with the mouse wheel (or DRAG DOWN and DRAG UP); < and > change shelf');
+      expect(shown().filter((l) => /[<>]/.test(l)), 'no < > buttons in the Workshop: the panel has them').toEqual([]);
+      engine.input.noteDevice('pad');
+      expect(keyText(engine, line)).toBe('Scroll the list with the mouse wheel (or L1 and R1); L2 and R2 change shelf');
+      engine.input.noteDevice('touch');
+      w.open('glossary');
+      engine.step(1);
+      const words = hudTexts(engine).map((t) => t.text).join(' ');
+      expect(words.toLowerCase()).toContain('drag to scroll');
+      expect(words).not.toMatch(/\btab\b/i);
+      w.close();
+      keyboard();
+      w.open('glossary');
+      engine.step(1);
+      expect(hudTexts(engine).map((t) => t.text).join(' '), 'a keyboard has Tab').toMatch(/\btab jumps between sections/i);
+    } finally {
+      w.close();
       keyboard();
     }
   },

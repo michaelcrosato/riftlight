@@ -12,7 +12,7 @@ import { hudSprite, type LightHandle, type ModelBuild, type ModelDef, type Model
 import { GAME_VIEW } from '../../engine/model/view';
 import { inside, type Rect, UiCanvas } from '../../riftlight/ui/kit';
 import { pageParam } from '../page';
-import { TOUCH_SLOTS, WORLD_KEYS } from '../controls';
+import { TOUCH_SLOTS, WORLD_CONTROLS, WORLD_KEYS } from '../controls';
 import type { Knob, RoomDef, Vec3 } from '../types';
 
 /**
@@ -231,6 +231,13 @@ export const WORKSHOP: RoomDef = {
     'Press {key:def_view}: what the pick is made of (parts, palette slots, params)',
     'Step on FIND IT: one search across the library and every pack, models and textures together',
   ],
+  // a phone has no < > << >> here: a finger drags the list, and the panel's own < > change shelf
+  controls: {
+    prev_item: { ...WORLD_CONTROLS.prev_item, touch: 'DRAG DOWN' },
+    next_item: { ...WORLD_CONTROLS.next_item, touch: 'DRAG UP' },
+    prev_shelf: { ...WORLD_CONTROLS.prev_shelf, touch: '<' },
+    next_shelf: { ...WORLD_CONTROLS.next_shelf, touch: '>' },
+  },
   camera: { preset: 'iso', yaw: GAME_VIEW.yaw, pitch: GAME_VIEW.pitch, viewHeight: GAME_VIEW.viewHeight, zoom: GAME_VIEW.zooms.level, stiffness: 7, minZoom: 0.4, maxZoom: 3 }, // the game's own scale
   spawn: [0, 0, 4.5],
   facing: Math.PI,
@@ -703,12 +710,15 @@ const t = -origin.y / dir.y;`,
             scroll(Math.sign(input.wheel));
             input.wheel = 0;
           }
-          const tap = finger();
-          if (input.consumePress('MouseLeft') || tap) pressAt(p.x, p.y);
-          if (input.consumePress('MouseRight')) {
-            const hit = overPanel ? null : pickAt(p.x, p.y);
-            if (hit) remove(hit);
-          }
+          // not the click or tap that hid the room card, nor that finger when it lifts
+          if (room.pointerFree) {
+            const tap = finger();
+            if (input.consumePress('MouseLeft') || tap) pressAt(p.x, p.y);
+            if (input.consumePress('MouseRight')) {
+              const hit = overPanel ? null : pickAt(p.x, p.y);
+              if (hit) remove(hit);
+            }
+          } else touch.down = false;
         } else touch.down = false; // a panel took the finger
 
         const frame = Math.floor(clock * 8);

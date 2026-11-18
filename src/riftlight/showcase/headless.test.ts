@@ -150,7 +150,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
   );
 
   it(
-    'Esc (Options, ≡) pauses the run, its clock stopped; Circle resumes; the pause\'s Back to town walks back: iso camera, no filters, the hero shown, nothing left in the physics world',
+    'Esc (Options, ≡) pauses the run, its clock stopped; Circle resumes (no crouch while held); the pause\'s Back to town walks back: iso camera, no filters, the hero shown, nothing left in the physics world',
     async () => {
       const { rl, game, engine } = h;
       const stage = game.showcase.arcade.stage!;
@@ -161,8 +161,17 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       const clock = stage.time;
       engine.step(60);
       expect(stage.time, 'the run\'s clock stands still').toBe(clock);
-      rl.press('PadB'); // Circle: back to the run
+      // Circle: back to the run, held a moment as a real press is (the run's hero does not crouch on it)
+      engine.input.setKey('PadB', true);
+      const states = new Set<string>();
+      for (let i = 0; i < 8; i++) {
+        engine.step(1);
+        states.add(String(stage.hero?.hero?.state));
+      }
+      engine.input.setKey('PadB', false);
+      engine.step(1);
       expect(game.showcase.pause).toBeNull();
+      expect([...states].filter((s) => s.startsWith('crouch')), 'the Circle that resumed is not a crouch').toEqual([]);
       engine.step(30);
       expect(stage.time).toBeGreaterThan(clock);
       rl.press('Escape');
@@ -272,7 +281,8 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         engine.step(2);
         expect(sc.touch().interact?.verb).toBe(t('touch.verb.look'));
         engine.input.noteDevice('pad');
-        expect([t('showcase.hint.zoom'), t('showcase.hint.next_wing'), t('showcase.hint.photo'), t('showcase.hint.leave'), t('showcase.hint.back')]).toEqual(['R1 zoom', 'R1 next wing', 'Options photo', 'Options leave', 'Circle back']);
+        // the card's way back is Circle; photo mode's, Options (Circle too, from flying)
+        expect([t('showcase.hint.zoom'), t('showcase.hint.next_wing'), t('showcase.hint.photo'), t('showcase.hint.leave'), t('showcase.hint.card_back'), t('showcase.hint.back')]).toEqual(['R1 zoom', 'R1 next wing', 'Options photo', 'Options leave', 'Circle back', 'Options back']);
         rl.press('PadStart');
         expect(sc.pause?.items, 'Options: the pause, its Photo mode and Leave').toEqual(['resume', 'photo', 'leave']);
         rl.press('ArrowDown');
@@ -295,6 +305,67 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
       expect(engine.controls.table).toBe(game.controls);
       expect(t('showcase.hint.zoom')).toBe('Options zoom');
       engine.input.noteDevice('keyboard');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'a press the card, the pause or photo mode took is theirs: Cross or Space on the card\'s Back, or Cross on photo mode\'s Back to game, never jumps the hero; the Circle that closed one never crouches it while held',
+    async () => {
+      const { rl, game, engine } = h;
+      const sc = game.showcase;
+      await rl.bestiary.open();
+      engine.step(30);
+      const card = sc.bestiary as unknown as { buttons: { id: string }[]; cursor: number };
+      /** Hold `code` for a real press's length (8 frames), then let go: the hero's states over it and after. */
+      const hold = (code: string) => {
+        const states = new Set<string>();
+        engine.input.setKey(code, true);
+        for (let i = 0; i < 8; i++) {
+          engine.step(1);
+          states.add(String(rl.bestiary.state().heroState));
+        }
+        engine.input.setKey(code, false);
+        for (let i = 0; i < 20; i++) {
+          engine.step(1);
+          states.add(String(rl.bestiary.state().heroState));
+        }
+        return [...states].filter((s) => /jump|fall|crouch/i.test(s));
+      };
+      try {
+        expect(hold('PadA'), 'Cross in the hall jumps').toContain('jump');
+        engine.step(30);
+        for (const code of ['PadA', 'Space']) {
+          rl.bestiary.inspect(0);
+          engine.step(2);
+          card.cursor = card.buttons.findIndex((b) => b.id === 'back');
+          expect(hold(code), `${code} on the card's Back`).toEqual([]);
+          expect(rl.bestiary.state().view).toBe('walk');
+        }
+        rl.bestiary.inspect(0);
+        engine.step(2);
+        expect(hold('PadB'), 'the Circle that closed the card').toEqual([]);
+        rl.press('Escape');
+        expect(sc.pause).not.toBeNull();
+        expect(hold('PadB'), 'the Circle that closed the pause').toEqual([]);
+        expect(sc.pause).toBeNull();
+        sc.photo.open();
+        engine.step(2);
+        expect(hold('PadB'), 'the Circle that left photo mode').toEqual([]);
+        expect(sc.photo.active).toBe(false);
+        sc.photo.open();
+        engine.step(2);
+        rl.press('PadY'); // into the panel's rows
+        const photo = sc.photo as unknown as { row: number; rows(): string[] };
+        photo.row = photo.rows().indexOf('exit');
+        expect(hold('PadA'), 'the Cross on Back to game').toEqual([]);
+        expect(sc.photo.active).toBe(false);
+        expect(hold('PadB'), 'with nothing on top, Circle crouches').toContain('crouch');
+      } finally {
+        if (sc.photo.active) sc.photo.close();
+        rl.bestiary.close();
+      }
       expect(engine.errors).toEqual([]);
     },
     T,
@@ -331,7 +402,7 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         rl.bestiary.inspect(0);
         expect(sc.touch().controls, 'the card takes a phone\'s screen: no stick or A / B over its buttons').toBe(false);
         // and no ≡ either: the card's hint names its way back on a phone, a swipe from it
-        expect(t('showcase.hint.back')).toBe(`${t('key.touch.swipe')} back`);
+        expect(t('showcase.hint.card_back')).toBe(`${t('key.touch.swipe')} back`);
         const mini = vi.spyOn(UiCanvas.prototype, 'mini');
         try {
           engine.step(1);
@@ -402,14 +473,24 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
   );
 
   it(
-    'photo mode on a phone: a fast look drag keeps the panel, a sideways swipe from the panel hides it, a tap on "show" brings it back, a swipe from a row changes nothing',
+    'photo mode on a phone: its hints name the ≡ as the way back (no swipe leaves it), a fast look drag keeps the panel, a sideways swipe from the panel hides it, a tap on "show" (which says tap) brings it back, a swipe from a row changes nothing',
     () => {
       const { rl, game, engine } = h;
       const photo = game.showcase.photo;
       rl.photo.open();
       try {
         engine.input.noteDevice('touch');
-        engine.step(2);
+        const mini = vi.spyOn(UiCanvas.prototype, 'mini');
+        try {
+          engine.step(2);
+          // no swipe leaves photo mode (one from the panel hides it, elsewhere it looks): the ≡ does
+          const row = mini.mock.calls.map((c) => c[2]).join(' · ');
+          expect(row, 'the hints under the panel').toContain(t('showcase.hint.back'));
+          expect(row).not.toContain(`${t('key.touch.swipe')} back`);
+          expect(t('showcase.hint.back')).toBe('≡ back');
+        } finally {
+          mini.mockRestore();
+        }
         flick(engine.hud.width - 40, engine.hud.height - 50, -100); // on the world, right of the panel
         expect(photo.hidden, 'a look is no hide').toBe(false);
         const look = rl.photo.state().look;
@@ -417,7 +498,14 @@ describe('riftlight showcase: the arcade and the Hall of Beasts', () => {
         flick(arrow.x + 4, arrow.y + 5, -60);
         expect(photo.hidden, 'a swipe from the panel').toBe(true);
         expect(rl.photo.state().look, 'it changed no row').toBe(look);
-        engine.step(2); // the "show" hint is drawn
+        const shown = vi.spyOn(UiCanvas.prototype, 'mini');
+        try {
+          engine.step(2); // the "show" hint is drawn
+          // a tap on it brings the panel back (a swipe does not): it says so
+          expect(shown.mock.calls.map((c) => c[2]), 'the hint over the hidden panel').toContain(`${t('key.touch.tap')} show`);
+        } finally {
+          shown.mockRestore();
+        }
         finger(engine.hud.width - 8, engine.hud.height - 6, true);
         finger(engine.hud.width - 8, engine.hud.height - 6, false);
         expect(photo.hidden, 'a tap on "show"').toBe(false);

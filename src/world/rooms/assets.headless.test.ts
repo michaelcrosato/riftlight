@@ -203,6 +203,14 @@ function describe_workshop(): void {
   });
 
   it('asset workshop: a click on the floor places the pick under the pointer, a right click takes it away; over the panel, the preview and Enter keep the floor spot', () => {
+    // the room card away first (I): a click on it would be the card's, not the floor's
+    if (w.state().card) {
+      engine.input.setKey('KeyI', true);
+      engine.step(1);
+      engine.input.setKey('KeyI', false);
+      engine.step(1);
+    }
+    expect(w.state().card).toBe(false);
     const spot = ndc(-3, 0, 2);
     room().select('crate');
     click(spot.x, spot.y);

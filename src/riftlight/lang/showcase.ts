@@ -13,7 +13,8 @@ import { lineKey } from './area';
  * Space), `pound` (the arcade's C), `confirm` (Enter), `turn` (the Hall: mouse or Q / E),
  * `drag` (photo mode: drag the mouse), `orbit` (the Hall's card: drag or Q / E), `rise`
  * (photo mode: Q / E), `switch_view` (Tab / pad Y), `next_wing` (N), `photo_save` (P / pad X),
- * `photo_hide` (H / pad L1), `card_back` (the Hall's card: Esc, Circle, a swipe from it).
+ * `photo_hide` (H / pad L1), `card_back` (the Hall's card: Esc, Circle, a swipe from it; photo
+ * mode's way back is `pause`'s), `show` (photo mode's panel back: H, L1, a tap on the hint).
  */
 export const HINTS = {
   run: '{key:move} run',
@@ -29,14 +30,15 @@ export const HINTS = {
   photo: '{key:photo} photo',
   orbit: '{key:orbit} orbit',
   zoom: '{key:zoom} zoom',
-  back: '{key:card_back} back',
+  back: '{key:pause} back',
+  card_back: '{key:card_back} back',
   fly_camera: '{key:move} {key:rise} fly',
   drag_look: '{key:drag} look',
   field_of_view: '{key:zoom} field of view',
   edit: '{key:switch_view} edit',
   save: '{key:photo_save} save',
   hide: '{key:photo_hide} hide',
-  show: '{key:photo_hide} show',
+  show: '{key:show} show',
   pick: '{key:move} pick and change',
   change: '{key:confirm} change',
 } as const;
