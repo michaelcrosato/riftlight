@@ -203,8 +203,9 @@ holds the round's phase).
   share the harness's thread). The page's debugger is on from the run's start, because one turned
   on once the thread is stuck never answers: it pauses a stuck thread, and the evidence holds
   `stuck`, the stack where it paused and the state read there (or, in `stack`, why it could not
-  pause). A page whose renderer dies ends its run at once, as a crash (`CRASHED`): Playwright's
-  waits never notice a dead page and would sit out the whole timeout. A browser that dies fails
+  pause). A page whose renderer dies ends its run at once, as a crash (`CRASHED`; its evidence has
+  `killed` and `browserLog` too): Playwright's waits never notice a dead page and would sit out the
+  whole timeout. A browser that dies fails
   only the run it was in (`harness` returns its error; its evidence says `closed`, never `stuck`,
   what earlyoom killed meanwhile, and `browserLog`, the last 50 lines of the browser's own log:
   its stderr, where a Chromium FATAL line goes, and its process's exit code or signal), and the

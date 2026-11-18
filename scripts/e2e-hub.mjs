@@ -133,6 +133,7 @@ function keepLog(browser) {
   try {
     const ring = [];
     browser._connection.toImpl(browser).options.browserLogsCollector.onMessage((line) => {
+      if (/:INFO:CONSOLE[:(]/.test(line)) return; // Chromium's copies of pages' console (the evidence has those): the browser's own lines only
       ring.push(line.slice(0, 400));
       if (ring.length > LOG_LINES) ring.shift();
     });
@@ -453,8 +454,9 @@ async function busySeen(browser, dir, port) {
   const took = Date.now() - from;
   const json = await readFile(`${evidence}.json`, 'utf8').then(JSON.parse, () => null);
   const top = Array.isArray(json?.stack) ? json.stack[0] : json?.stack;
-  const pass = !!r && took <= timeout + CAPTURE_MS && r.error?.startsWith(UNFINISHED) && json?.stuck === true && /^spin busy\.html:2:/.test(top ?? '');
-  return { pass, detail: `${r ? `ended in ${(took / 1000).toFixed(1)} s (${r.error})` : `still running after ${(took / 1000).toFixed(0)} s`}; its evidence: ${json ? `stuck ${json.stuck}, paused at ${top ?? 'nothing'}` : 'none'}` };
+  // a page still alive keeps no browser log (that is for a browser that died: no wait for its exit line)
+  const pass = !!r && took <= timeout + CAPTURE_MS && r.error?.startsWith(UNFINISHED) && json?.stuck === true && /^spin busy\.html:2:/.test(top ?? '') && json?.browserLog === null;
+  return { pass, detail: `${r ? `ended in ${(took / 1000).toFixed(1)} s (${r.error})` : `still running after ${(took / 1000).toFixed(0)} s`}; its evidence: ${json ? `stuck ${json.stuck}, paused at ${top ?? 'nothing'}, browser log ${json.browserLog === null ? 'none' : 'kept'}` : 'none'}` };
 }
 
 /** The harness page `url` ends with, once `browser` has opened it (null after 10 s). */
