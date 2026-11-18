@@ -10,30 +10,14 @@
  *   looks     L look studio · H hides its panel (the arrows still tweak) · O photo mode
  *   items     click / Enter / pad A · X / pad X = right-click · V / pad Y = Ctrl-click
  *
- * Gamepad buttons are remapped to virtual `Pad*` codes (input.gamepadButtons) so menus can
- * tell "A = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat.
+ * Gamepad buttons press the engine's `Pad*` codes (`GAMEPAD_BUTTONS`), so menus can tell
+ * "A = confirm" from "Space = dodge". Menus get `UiEvent`s with key repeat from the engine's
+ * `MenuInput` (with `MENU_BINDINGS`).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import type { Engine, Input } from '../../engine';
+import type { Engine, MenuKeys } from '../../engine';
 import { t } from '../lang';
 import type { UiEvent } from '../ui/kit';
-
-export const PAD_BUTTONS: Record<number, string> = {
-  0: 'PadA',
-  1: 'PadB',
-  2: 'PadX',
-  3: 'PadY',
-  4: 'PadLB',
-  5: 'PadRB',
-  6: 'PadLT',
-  7: 'PadRT',
-  8: 'PadBack',
-  9: 'PadStart',
-  12: 'ArrowUp',
-  13: 'ArrowDown',
-  14: 'ArrowLeft',
-  15: 'ArrowRight',
-};
 
 export const KEYS = {
   attack: ['KeyJ', 'PadA'],
@@ -70,13 +54,26 @@ export const KEYS = {
   quick: ['KeyV', 'PadY'],
 } as const;
 
+/** The menus' bindings for the engine's `MenuInput` (Riftlight's own: F and J confirm too, no Q / E tabs since they are skills). */
+export const MENU_BINDINGS: Partial<MenuKeys> = {
+  confirm: KEYS.confirm,
+  back: KEYS.back,
+  up: KEYS.up,
+  down: KEYS.down,
+  left: KEYS.left,
+  right: KEYS.right,
+  tabNext: KEYS.tabNext,
+  tabPrev: KEYS.tabPrev,
+  keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide],
+};
+
 /** The pointer's buttons as the engine's keys (`MOUSE_BUTTONS`, `TOUCH_KEY`): left (or a finger on the world) attacks, right is skill 1. */
 export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as const;
 
 /**
  * The actions a line can name as a control tag, `{key:dodge}` (docs/game/lang.md), and the key
  * (an `event.code`, a mouse button or the wheel, or a name for several: `WASD`, `QE`), pad button
- * (`PAD_BUTTONS`' codes, `PadStick`) and touch button (its label, or a name for a gesture:
+ * (the engine's `GAMEPAD_BUTTONS` codes, `PadStick`) and touch button (its label, or a name for a gesture:
  * `TouchStick`, `TouchDrag`) that do each. Actions without a pad or touch button of their own
  * are in the pause menu (Start / ≡ opens it); the showcase's own (the arcade, the Hall of Beasts,
  * photo mode) show the key where a device has nothing for them.
@@ -285,51 +282,6 @@ export class Pointer {
 
   /** Nothing to let go of: the pointer is the engine's. */
   dispose(): void {}
-}
-
-/** Builds menu events from keys and the pad, with key repeat for held directions. */
-export class MenuInput {
-  private held = new Map<string, number>();
-
-  /** Directions held and for how long (key repeat), as data (save-states). */
-  save(): (readonly [string, number])[] {
-    return [...this.held];
-  }
-
-  load(held: readonly (readonly [string, number])[]): void {
-    this.held = new Map(held);
-  }
-
-  events(input: Input, dt: number): UiEvent[] {
-    const out: UiEvent[] = [];
-    const pressed = (codes: readonly string[]) => input.wasPressed(...codes);
-    for (const dir of ['up', 'down', 'left', 'right'] as const) {
-      const codes = KEYS[dir];
-      if (pressed(codes)) {
-        out.push({ kind: 'nav', dir });
-        this.held.set(dir, -0.35);
-      } else if (input.anyDown(codes) || this.stick(input, dir)) {
-        const t = (this.held.get(dir) ?? -0.35) + dt;
-        if (t >= 0.07) {
-          out.push({ kind: 'nav', dir });
-          this.held.set(dir, 0);
-        } else this.held.set(dir, t);
-      } else this.held.delete(dir);
-    }
-    if (pressed(KEYS.confirm)) out.push({ kind: 'confirm' });
-    if (pressed(KEYS.back)) out.push({ kind: 'back' });
-    if (pressed(KEYS.tabNext)) out.push({ kind: 'tab', dir: 1 });
-    if (pressed(KEYS.tabPrev)) out.push({ kind: 'tab', dir: -1 });
-    for (const code of new Set([...KEYS.secondary, ...KEYS.quick, ...KEYS.hide])) if (pressed([code])) out.push({ kind: 'key', code });
-    if (input.wheel) out.push({ kind: 'wheel', dy: input.wheel });
-    return out;
-  }
-
-  /** The left stick as a held direction (menus with a pad). */
-  private stick(input: Input, dir: 'up' | 'down' | 'left' | 'right'): boolean {
-    const a = input.padAxis;
-    return dir === 'up' ? a.y > 0.6 : dir === 'down' ? a.y < -0.6 : dir === 'left' ? a.x < -0.6 : a.x > 0.6;
-  }
 }
 
 /** Ground-plane camera basis (right, forward), allocation-free. */

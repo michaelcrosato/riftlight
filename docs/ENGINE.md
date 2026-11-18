@@ -10,7 +10,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/looks.md | filters (art vs display space, parameters, presets) and per-layer looks |
 | docs/engine/camera.md | camera presets, free → fixed workflow, `CameraConfig`, screen shake |
 | docs/engine/character.md | `PlatformerCharacter`: the moveset, touch controls, states, tuning, hurt, teleport |
-| docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads and press timing, game speed and hitstop |
+| docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads (the one pad scheme, the device used last, triggers, rumble, swipes) and press timing, menus on every device (`MenuInput`, `FocusList`), game speed and hitstop |
 | docs/engine/physics.md | triggers, movers and conveyors, force fields, joints, destruction, `InstancedBodies`, vehicles, bullets |
 | docs/engine/physics-soft.md | cloth, ropes, jelly, ragdolls, water and buoyancy |
 | docs/engine/audio.md | sound effects and songs as data, audio unlock, spatial sound and looping voices, the buses and the player's 52in1 volumes |

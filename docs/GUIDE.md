@@ -20,11 +20,11 @@ my-game/
   assets/             your own .glb models, if any (optional)
 ```
 
-The kit's `index.html` and `game.js` are exactly that: copy the kit folder and edit `game.js`.
-Split a bigger game into more modules (`import { Level } from './level.js'`) as usual.
+The kit's `index.html` and `game.js` are exactly that: copy the kit folder and edit `game.js`
+(split a bigger one into modules as usual).
 
-- **Serve it over HTTP.** ES modules don't load from `file://`. Any static server works:
-  `npx serve .`, `python3 -m http.server`, GitHub Pages, Netlify, an S3 bucket.
+- **Serve it over HTTP** (ES modules don't load from `file://`): `npx serve .`,
+  `python3 -m http.server`, any static host.
 - **One import.** `pixel-engine.js` is one self-contained ES module (about 4.8 MB, 1.6 MB
   gzipped). It holds the engine, three.js r186 (as `THREE` and `TSL`), Rapier physics with its
   wasm, the hero (model, rig and every animation clip), three built-in models (`assets/hero.glb`,
@@ -271,7 +271,7 @@ Controls (`readMoveInput`, camera-relative in every preset): WASD / arrows move 
 walks), Space jumps (again on landing: double, triple; wall kicks), C crouches (+ Space
 backflip; running: slide, long jump; in the air: ground pound), J punch / kick / dive, F grab
 and pull, Z prone, X lie down, V wave, B sit. Ledges, climbing (`climbable`), pushing
-(`pushable`), slopes and stairs just work. Gamepads and touch map onto the same keys.
+(`pushable`), slopes and stairs just work. Pads (`KEYMAP`) and touch play it too.
 
 The game drives it with: `hero.teleport([x, y, z])` (feet position; resets momentum),
 `hero.hurt(from)` (knocked back away from `from`, the direction from the hero to what hit it:
@@ -288,7 +288,9 @@ collider carries the `'character'` tag. For a simpler walk-and-jump capsule ther
 `ctx.input.isDown('KeyE')` (held), `wasPressed('KeyE')` (once, in `update`),
 `consumePress('KeyE')` (once, in `fixedUpdate`: it keeps a press for 150 ms so none is lost
 between steps), `moveAxis()` (`{ x, y }` from keys, stick or touch). Codes are
-`KeyboardEvent.code` values: `KeyA`, `Space`, `ArrowUp`, `Digit1`, `ShiftLeft`.
+`KeyboardEvent.code` values: `KeyA`, `Space`, `ArrowUp`, `Digit1`, `ShiftLeft`; a pad's are `Pad*`
+(`PadA` Cross, `PadB` Circle, `PadStart` Options...: `GAMEPAD_BUTTONS`; the d-pad is the arrows),
+so bind both: `isDown('Space', 'PadA')`. `input.device` is the input used last (prompts).
 
 ### Physics queries and triggers
 
@@ -1009,7 +1011,6 @@ await Engine.start(new LookLab(), withUrlOptions({ container: document.getElemen
 | A trigger never fires | wrong tag, or it doesn't overlap the body | `tag: 'character'` only matches the hero; level geometry needs `includeStatic: true` |
 | A colour is black or a material missing | a colour name that isn't in the palette | the 16 names in section 4 |
 | A model 404s | path not relative to the page | `assets/x.glb` next to `index.html`; built-ins need no file |
-| HUD text shows gaps | characters the 5×7 font doesn't have | uppercase letters, digits, common punctuation |
 | A key does nothing in `fixedUpdate` | `wasPressed` there | `consumePress` in `fixedUpdate`, `wasPressed` in `update` |
 | The ⚙ sits over the HUD's top-right corner on a phone | the settings button (on a mouse it shows only while the pointer moves) | `settings: { button: 'top-left' }`, or `false` and `engine.settings.open()` from your own menu |
 | Side-scroller hero drifts off the lane | `lockDepth` not passed | `lockDepth: ctx.camera.lockDepth` |
@@ -1065,7 +1066,7 @@ It plays on WebGPU in Chromium's headless shell, so it needs no display. It writ
 and your `status()`. Exit code 0: the game started, ran with no page, console, game or GPU
 errors and drew a real picture; 1: it didn't; 2: the tool couldn't run (a browser without
 WebGPU, bad arguments, no page, no browser; `--help` lists the options). It needs Node 20.15+ (or 22.2+) and Playwright
-(`npm i -D playwright && npx playwright install chromium`; a global install works too), or
+(`npm i -D playwright && npx playwright install chromium`), or
 `playwright-core` plus a Chromium in `CHROMIUM_PATH`. **Look at the PNGs**: a passing check only proves nothing crashed.
 
 **Play it in Node.** `Engine.headless(game, { assets })` runs a game as `Engine.start` does, minus
@@ -1099,8 +1100,8 @@ Code that touches `document` guards it, as the starter does.
 - [ ] `status()` reports the game's state, and it changes as you play.
 - [ ] No WebGL-era APIs, no second three.js, no `new PointLight`, no unknown palette names.
 - [ ] The controls are written down (the header comment of `game.js`, or on screen).
-- [ ] On a phone (or `?touch=1`) the game is playable with the touch buttons, or you set
-      `touchButtons` for its own actions.
+- [ ] It plays on a pad (each action has a `Pad*` button) and on a phone (or `?touch=1`) with
+      the touch buttons, or `touchButtons` of its own.
 
 ## 10. Versions
 

@@ -6,18 +6,21 @@ export const MOUSE_LEFT = 'MouseLeft';
 export const MOUSE_RIGHT = 'MouseRight';
 
 /**
- * The hero's ARPG key map, as data. Slot 0 is the basic attack combo; slots 1..5 are the
- * skill bar. W is movement (WASD), so the bar is RMB/K, Q, E, R, F (1..4 also work).
+ * The hero's ARPG key map, as data: keys and the engine's pad codes (`GAMEPAD_BUTTONS`) side by
+ * side. Slot 0 is the basic attack combo; slots 1..5 are the skill bar. W is movement (WASD), so
+ * the bar is RMB/K, Q, E, R, F (1..4 also work); on a pad X (Square) attacks, A (Cross) dodges,
+ * B / Y / LB / RB (Circle, Triangle, L1, R1) are skills 1-4 and RT (R2) the fifth. The right stick
+ * aims (it arrives as pointer movement).
  */
 export const HERO_KEYS = {
-  attack: [MOUSE_LEFT, 'KeyJ'],
-  dodge: ['Space'],
+  attack: [MOUSE_LEFT, 'KeyJ', 'PadX'],
+  dodge: ['Space', 'PadA'],
   slots: [
-    [MOUSE_RIGHT, 'KeyK'],
-    ['KeyQ', 'Digit1'],
-    ['KeyE', 'Digit2'],
-    ['KeyR', 'Digit3'],
-    ['KeyF', 'Digit4'],
+    [MOUSE_RIGHT, 'KeyK', 'PadB'],
+    ['KeyQ', 'Digit1', 'PadY'],
+    ['KeyE', 'Digit2', 'PadLB'],
+    ['KeyR', 'Digit3', 'PadRB'],
+    ['KeyF', 'Digit4', 'PadRT'],
   ],
 } as const;
 
@@ -37,24 +40,6 @@ export const HERO_TOUCH_BUTTONS: readonly TouchButton[] = [
   { label: '3', code: 'KeyE', hint: 'skill' },
   { label: '4', code: 'KeyR', hint: 'skill' },
 ];
-
-/**
- * Suggested gamepad mapping (assign to `input.gamepadButtons`): X attacks, A dodges, B / Y /
- * LB / RB are skills 1–4, RT the fifth. The right stick aims (it arrives as pointer movement).
- */
-export const HERO_GAMEPAD_BUTTONS: Readonly<Record<number, string>> = {
-  0: 'Space',
-  1: 'KeyK',
-  2: 'KeyJ',
-  3: 'KeyQ',
-  4: 'KeyE',
-  5: 'KeyR',
-  7: 'KeyF',
-  12: 'ArrowUp',
-  13: 'ArrowDown',
-  14: 'ArrowLeft',
-  15: 'ArrowRight',
-};
 
 /** R is a skill key: the engine's resolution hotkey (on with ?debug=1) moves to F2 (`rebindDebugKeys`). */
 export const HERO_DEBUG_KEYS: DebugKeyChanges = { resolution: 'F2' };

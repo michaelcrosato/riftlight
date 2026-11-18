@@ -82,7 +82,7 @@ it(
 );
 
 it(
-  'drift: W drives the car forward; it gets up to speed, the handbrake swings the tail out with skid marks; getting out puts the hero beside it',
+  'drift: W drives the car forward; it gets up to speed, the handbrake swings the tail out with skid marks; Circle gets out and puts the hero beside it',
   async () => {
     await w.goto('drift', { instant: true });
     engine.step(10);
@@ -105,7 +105,11 @@ it(
     expect(room().marks()).toBeGreaterThan(0);
     room().drive(0, 0);
     engine.step(120);
-    expect(room().getOut()).toBeTruthy();
+    room().keys(); // the keys and the pad drive again
+    engine.input.setKey('PadB', true); // Circle gets out (C on the keyboard)
+    engine.step(2);
+    engine.input.setKey('PadB', false);
+    expect(room().driving(), 'Circle gets out').toBe(false);
     engine.step(30);
     const car = room().car() as number[];
     const at = w.state().hero?.at ?? [99, 99, 99];

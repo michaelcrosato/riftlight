@@ -162,8 +162,8 @@ export const DRIFT: RoomDef = {
             input.brake = (want < 0 && v > 1) || (want > 0 && v < -1);
             input.throttle = input.brake ? 0 : want;
             input.steer = keyX || ax.x;
-            input.handbrake = inp.isDown('Space');
-            if (inp.consumePress('KeyC')) getOut();
+            input.handbrake = inp.isDown('Space', 'PadA');
+            if (inp.consumePress('KeyC', 'PadB')) getOut();
           } else Object.assign(input, { throttle: 0, steer: 0, brake: false, handbrake: false });
         } else if (!driving) {
           input.throttle = input.steer = 0;

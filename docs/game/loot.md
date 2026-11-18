@@ -2,8 +2,8 @@
 
 Code: `src/riftlight/loot/` (logic and data), `src/riftlight/ui/items/` (windows and
 tooltips), `scripts/riftlight/loot.ts` (the inspector). Public API: `src/riftlight/loot/index.ts`.
-`/?game=lootlab` is a small arena to try it all (K kill, F pick up, I inventory, T stash,
-U vendor, Alt filter).
+`/?game=lootlab` is a small arena to try it all (K kill, F or a pad's Y pick up, I inventory,
+T stash, U vendor, Alt filter).
 
 **Content is data** (`loot/data/`), held in registries (`loot/content.ts`):
 

@@ -27,7 +27,8 @@
 //                 with zero errors; every look renders; per-layer looks change only their
 //                 layer (pixel characters on a clean world, a grade on the environment only);
 //                 sliders don't rebuild the graph; Raw 3D mode bypasses filters.
-// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, ⓘ debug panel, and the
+// touch           phone-sized viewport: joystick, action buttons, drag-to-orbit, a flick = a swipe press,
+//                 touch as the device used last, ⓘ debug panel, and the
 //                 runtime button API a game drives (touch.set, rects, show).
 // phone           portrait viewport fills the screen (fill, the default aspect; integer blocks); a lost
 //                 GPU device is recovered with a working renderer;
@@ -770,6 +771,7 @@ async function runTouch(browserExe) {
     const cx = stick.x + stick.width / 2;
     const cy = stick.y + stick.height / 2;
     const t0 = (await state(page)).target;
+    await page.evaluate(() => window.__PIXEL_ENGINE__.input.noteDevice('keyboard')); // the joystick must make it touch, not the page's start
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx, cy - 60, { steps: 4 });
@@ -781,6 +783,7 @@ async function runTouch(browserExe) {
     check(mid.y > 0.8, `joystick drives the analog axis (y = ${mid.y.toFixed(2)})`);
     check(dist(t0, t1) > 1, `joystick moves the character (${dist(t0, t1).toFixed(2)})`);
     check(await page.evaluate(() => window.__PIXEL_ENGINE__.input.analog.y === 0), 'joystick recentres on release');
+    check((await page.evaluate(() => window.__PIXEL_ENGINE__.input.device)) === 'touch', 'the touch controls make touch the device used last (prompts follow it)');
 
     // A button = jump.
     const jumps0 = await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps);
@@ -800,6 +803,22 @@ async function runTouch(browserExe) {
     await page.mouse.up();
     await until(page, (e, yaw0) => Math.abs(e.camera.describe().yaw - yaw0) > 0.3, yaw0, 3);
     check(Math.abs((await state(page)).cameraRig.yaw - yaw0) > 0.3, 'dragging the game orbits the camera');
+
+    // A quick one-finger flick on the game is a swipe: one recorded press, which menus dismiss on.
+    const swiped = await page.evaluate(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const c = e.renderer.renderer.domElement;
+      const r = c.getBoundingClientRect();
+      const at = (type, x) => c.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 41, isPrimary: true, clientX: r.left + x, clientY: r.top + r.height / 2, bubbles: true }));
+      const from = e.recording().frames.length;
+      at('pointerdown', r.width * 0.7);
+      await new Promise((res) => setTimeout(res, 60));
+      at('pointermove', r.width * 0.5);
+      at('pointerup', r.width * 0.3);
+      await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+      return { pressed: e.recording().frames.slice(from).flatMap((f) => f.pressed ?? []), device: e.input.device };
+    });
+    check(swiped.pressed.includes('SwipeLeft') && swiped.device === 'touch', `a flick on the game presses SwipeLeft, recorded (${JSON.stringify(swiped)})`);
 
     // ⓘ shows the debug panel.
     await page.locator('.touch-ui .bar button').first().dispatchEvent('pointerdown');

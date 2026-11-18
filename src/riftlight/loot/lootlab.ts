@@ -1,8 +1,9 @@
 /**
  * Loot Lab (`/?game=lootlab`): a small arena to see and test loot end to end. Training
  * dummies die on K (or `__LOOTLAB__.kill()`), drops burst out and land, gold and currency
- * are walked over, items are picked up with F or a click on the label, I opens the
- * inventory, T the stash, U a vendor, Alt toggles the loot filter.
+ * are walked over, items are picked up with F (pad Y / Triangle) or a click on the label, I
+ * opens the inventory, T the stash, U a vendor, Alt toggles the loot filter. With a pad, the
+ * open windows have a cursor on the left stick: A clicks, X right-clicks, Y Ctrl-clicks, B closes.
  *
  * `window.__LOOTLAB__` exposes the world loot, the item windows, the store and the hero's
  * StatSheet for tools and the `riftlight-loot` e2e suite.
@@ -151,6 +152,8 @@ export class LootLab implements Game {
     for (const d of this.dummies) {
       if (d.respawn > 0 && (d.respawn -= dt) <= 0) d.mesh.visible = true;
     }
+    // F picks up the nearest item (WorldLoot); on a pad, Y (Triangle) does (Riftlight's Y is its own)
+    if (!this.ui.isOpen && input.wasPressed('PadY')) this.world.pickupNearest();
     ctx.hud.clear();
     this.world.update(dt);
     this.ui.update(dt);

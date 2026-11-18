@@ -68,9 +68,30 @@ export {
 export { loadModel, loadPack, loadPackIndex, setAssetReader, type AssetReader, type Model } from './assets';
 export { decodePng, PngError, type RgbaImage } from './png';
 export { ImportError } from './model/import/common';
-export { GAMEPAD_BUTTONS, HOST_CHORD, Input, MOUSE_BUTTONS, PRESS_WINDOW, TOUCH_KEY, applyDeadzone, type ButtonEvent, type GamepadLike, type InputState } from './input';
+export {
+  GAMEPAD_BUTTONS,
+  GAMEPAD_DEADZONE,
+  HOME_BUTTON,
+  HOST_CHORD,
+  INPUT_DEVICES,
+  Input,
+  MOUSE_BUTTONS,
+  PRESS_WINDOW,
+  SWIPE,
+  SWIPE_KEYS,
+  TOUCH_KEY,
+  applyDeadzone,
+  swipeDirection,
+  type ButtonEvent,
+  type GamepadLike,
+  type InputDevice,
+  type InputState,
+  type Rumble,
+  type SwipeDirection,
+} from './input';
+export { FocusList, MENU_KEYS, MENU_REPEAT, MenuInput, ndcToHud, type FocusListState, type FocusRect, type FocusResult, type MenuDirection, type MenuEvent, type MenuKeys } from './ui/menu';
 export { DEFAULT_DEBUG_KEYS, rebindDebugKeys, resolveDebugKeys, type DebugAction, type DebugKeyChanges, type DebugKeyMap, type DebugKeysOption } from './debugKeys';
-export { FPS_OPTIONS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, loadSettings, normalizeSettings, storeSettings, urlSettings, type PlayerSettings, type SettingsHost } from './settings';
+export { FPS_OPTIONS, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS, Settings, chunkyResolution, loadSettings, normalizeSettings, storeSettings, urlSettings, type PadGlyphs, type PlayerSettings, type SettingsHost } from './settings';
 export { SettingsPanel } from './SettingsPanel';
 export { clearScene, countObjects, disposeObject } from './lifecycle';
 export {

@@ -42,8 +42,9 @@ Both stages walk with it.
   `hud.width` (a phone in portrait is 130 art columns: the best time and the title stack under
   the coins, the controls wrap with `hintRows`, the results card shrinks its title and wraps;
   `arcade/hud.test.ts` checks every line stays on screen and apart).
-- **Input** (`readArcadeInput`): the stick's x runs along the course, down or C crouches (a
-  ground pound in the air), Space / pad A / touch B jumps. The character is created with
+- **Input** (`readArcadeInput`, `ARCADE_KEYS`): the stick's x runs along the course, down or C
+  (pad B or L2) crouches (a ground pound in the air), Space / pad A / touch B jumps, J / pad X
+  attacks, Shift / pad R2 held walks. The character is created with
   `lockDepth: true`, so any camera works, but the game uses `side` (`ARCADE_OPTIONS`:
   `{ preset: 'side', viewHeight: 12 }` and the `16bit` + `crt` look).
 - **The template** is `ArcadeGame.ts` (`?game=arcade`): about 60 lines around the stage.

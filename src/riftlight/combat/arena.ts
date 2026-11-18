@@ -7,7 +7,7 @@ import { flat } from '../core/mods';
 import { Rng } from '../core/rng';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
-import { HERO_DEBUG_KEYS, HERO_GAMEPAD_BUTTONS, SLOT_LABELS } from '../actors/controls';
+import { HERO_DEBUG_KEYS, SLOT_LABELS } from '../actors/controls';
 import { HeroController, type SlotSpec } from '../actors/HeroController';
 import { openFloor, GridMover } from '../actors/movers';
 import { buildSkill } from '../skills/build';
@@ -126,7 +126,7 @@ export class Arena implements Game {
   private readonly shadow = new ContactShadow(0.42);
   private readonly target = new Vector3();
   private readonly rng = new Rng('arena');
-  private savedInput: { keys: DebugKeyMap; pad: Record<number, string> } | null = null;
+  private savedInput: { keys: DebugKeyMap } | null = null;
   private respawnAt = -1;
   /** Hero damage dealt in the last seconds (HUD meter). */
   private readonly dealt: { t: number; amount: number }[] = [];
@@ -134,10 +134,9 @@ export class Arena implements Game {
 
   async setup(ctx: GameContext): Promise<void> {
     const { scene, physics } = ctx;
-    // R is a skill key here: move the resolution hotkey (when on) to F2; pad buttons to the ARPG layout
-    this.savedInput = { keys: ctx.engine.debugKeys, pad: { ...ctx.input.gamepadButtons } };
+    // R is a skill key here: move the resolution hotkey (when on) to F2 (the pad's buttons are in HERO_KEYS)
+    this.savedInput = { keys: ctx.engine.debugKeys };
     ctx.engine.debugKeys = rebindDebugKeys(ctx.engine.debugKeys, HERO_DEBUG_KEYS);
-    ctx.input.gamepadButtons = { ...HERO_GAMEPAD_BUTTONS };
 
     const s = ARENA.size;
     const floor = new Mesh(new BoxGeometry(s * 2, 1, s * 2), [toonMaterial(PALETTE.slate), toonMaterial(PALETTE.slate), toonMaterial(PALETTE.night), toonMaterial(PALETTE.slate), toonMaterial(PALETTE.slate), toonMaterial(PALETTE.slate)]);
@@ -314,7 +313,6 @@ export class Arena implements Game {
     this.combat?.dispose();
     if (this.savedInput) {
       ctx.engine.debugKeys = this.savedInput.keys;
-      ctx.input.gamepadButtons = this.savedInput.pad;
     }
   }
 }

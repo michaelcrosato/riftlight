@@ -4,20 +4,22 @@
 some) on Rapier's kinematic character controller. The hero model and rig (`scripts/assets/hero.mjs`:
 geometry and joints only: elbows/knees, a pelvis root, a springy cap) is animated by clips written as
 data (`HERO_CLIPS`, `src/game/hero/clips/`, docs/ANIMATION.md).
-`readMoveInput(ctx, hero, out?)` maps the default keys, camera-relative for every preset; pass
-a `MoveInput` you keep as `out` and it is filled in place (no garbage per step).
+`readMoveInput(ctx, hero, out?)` maps the default keys and pad buttons (`KEYMAP`: the engine's `Pad*`
+codes beside each key, PlayStation names first), camera-relative for every preset; pass a
+`MoveInput` you keep as `out` and it is filled in place (no garbage per step). Options / Menu is left
+free for the game's pause, and R2 / RT, R3 and the touchpad for the game's own (an interact, a fire).
 
-| Key | Action |
+| Key · pad | Action |
 | --- | --- |
-| WASD / arrows | tiptoe → walk → run (speed follows the stick's tilt; Mario-style turning; reverse at speed = **skid**, then a hop round = **skid turn**) |
-| Shift | walk / tiptoe |
-| Space | jump · again on landing = **double**, then **triple** (front flip; a press up to 0.12 s before touchdown counts) · while skidding = **side flip** · **wall kick** off walls (also from a **wall slide**) |
-| C / Ctrl (hold) | **crouch**, crouch-walk · while running = **crouch slide** · + Space = **backflip** · running + C + Space = **long jump** · in the air (press) = **ground pound** |
-| Z | **prone** / crawl (fits 0.75-high gaps); again to **get up** (only with headroom) |
-| X | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
-| F (hold) | **grab** a block, then pull (move away) or push (move toward) |
-| J | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
-| V / B | **wave** / **sit** (sits down; B, Space or the stick stands up again) |
+| WASD / arrows · left stick / d-pad | tiptoe → walk → run (speed follows the stick's tilt; Mario-style turning; reverse at speed = **skid**, then a hop round = **skid turn**) |
+| Shift · L2 (LT) | walk / tiptoe |
+| Space · Cross (A) | jump · again on landing = **double**, then **triple** (front flip; a press up to 0.12 s before touchdown counts) · while skidding = **side flip** · **wall kick** off walls (also from a **wall slide**) |
+| C / Ctrl (hold) · Circle (B) | **crouch**, crouch-walk · while running = **crouch slide** · + Space = **backflip** · running + C + Space = **long jump** · in the air (press) = **ground pound** |
+| Z · L1 (LB) | **prone** / crawl (fits 0.75-high gaps); again to **get up** (only with headroom) |
+| X · R1 (RB) | **lie down** on the back (dozes off: **sleep**); again to **get up**. Idle 16 s = lies down by itself |
+| F (hold) · Triangle (Y) | **grab** a block, then pull (move away) or push (move toward) |
+| J · Square (X) | **punch → punch → kick** combo · + C = **sweep kick** · in the air: **dive** (moving) or **jump kick** |
+| V / B · Create (View) / L3 | **wave** / **sit** (sits down; B, Space or the stick stands up again) |
 
 **Touch (phones/tablets):** shown automatically on coarse pointers (or `?touch=1`):
 joystick bottom-left, buttons **A** jump · **B** attack · **C** crouch · **G** grab · **Z** prone ·

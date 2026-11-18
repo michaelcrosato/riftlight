@@ -106,6 +106,23 @@ describe('player settings', () => {
     expect(normalizeSettings('noir')).toEqual({});
   });
 
+  it("keep the controller's button prompts (PlayStation or Xbox) and its vibration (0..1, in steps of 0.05)", () => {
+    expect(normalizeSettings({ padGlyphs: 'xbox', vibration: 0.5 })).toEqual({ padGlyphs: 'xbox', vibration: 0.5 });
+    expect(normalizeSettings({ padGlyphs: 'playstation', vibration: 0 })).toEqual({ padGlyphs: 'playstation', vibration: 0 });
+    expect(normalizeSettings({ vibration: 3 })).toEqual({ vibration: 1 });
+    expect(normalizeSettings({ vibration: -1 })).toEqual({ vibration: 0 });
+    expect(normalizeSettings({ vibration: 0.333 })).toEqual({ vibration: 0.35 });
+    expect(normalizeSettings({ padGlyphs: 'switch', vibration: Number.NaN })).toEqual({});
+    expect(normalizeSettings({ vibration: '1' })).toEqual({});
+    // saved per game like the rest, and cleared back to the defaults (PlayStation, full)
+    const s = new Settings(fakeHost(), 'pad');
+    s.start();
+    s.set({ padGlyphs: 'xbox', vibration: 0.25 });
+    expect(loadSettings('pad')).toEqual({ padGlyphs: 'xbox', vibration: 0.25 });
+    s.replace({});
+    expect(s.values).toEqual({});
+  });
+
   it('save per key, and read back only what is valid', () => {
     storeSettings('a', { look: 'noir', fps: 30 });
     storeSettings('b', { pixelArt: false });

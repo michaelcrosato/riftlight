@@ -2,18 +2,18 @@
 
 ## The hero's controls
 
-Riftlight's keys are `KEYS`, `MOUSE` and `PAD_BUTTONS` in `game/controls.ts` (its header lists
-them): WASD / left stick moves (camera-relative); the mouse aims at the ground under the cursor (with
-a pad, the nearest enemy ahead). LMB / J / pad A is the 3-hit combo (hold to keep swinging), RMB or
+Riftlight's keys are `KEYS` and `MOUSE` in `game/controls.ts` (its header lists them), the pad's
+buttons the engine's `Pad*` codes (`GAMEPAD_BUTTONS`): WASD / left stick moves (camera-relative);
+the mouse aims at the ground under the cursor (with a pad, the nearest enemy ahead). LMB / J / pad A is the 3-hit combo (hold to keep swinging), RMB or
 1 Q · 2 E · 3 R · 4 T / pad X Y LB RB are the skill bar, Space / pad B is the dodge roll, F / pad RT
-interacts. Pad buttons become virtual `Pad*` codes so menus tell A = confirm from Space = dodge.
+interacts. Pad buttons are `Pad*` codes, not keys, so menus tell A = confirm from Space = dodge.
 Presses buffer for 0.2 s, any action cancels into a dodge or the next action after its hit frame,
 casting slows movement instead of locking it (the legs keep running under the arms), and attack
 clips play at the rate attack / cast speed asks for. On a phone the touch buttons are the bar
 (docs/game/ui.md *On a touch screen*). The shell moves the engine's debug hotkeys P and R to F8 and
 F7 (`rebindDebugKeys`). The arena (`?game=arena`, `combat/arena.ts`) keeps its own map,
-`HERO_KEYS` in `actors/controls.ts` (RMB / K, Q, E, R, F, or 1–4), and passes
-`HERO_GAMEPAD_BUTTONS` and `HERO_DEBUG_KEYS` (R is a skill there, so with `?debug=1` the
+`HERO_KEYS` in `actors/controls.ts` (RMB / K, Q, E, R, F, or 1–4; pad X attacks, A dodges, B Y LB
+RB RT are the bar), and passes `HERO_DEBUG_KEYS` (R is a skill there, so with `?debug=1` the
 resolution hotkey moves to F2). Every timing is in `HERO_TUNING`.
 
 **All of it is `ctx.input`, so a session replays** (docs/engine/determinism.md *Recording and replay*):

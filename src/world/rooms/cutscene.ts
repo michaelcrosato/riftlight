@@ -229,7 +229,7 @@ export const CUTSCENE: RoomDef = {
         // another camera picked mid-scene (the T panel): the scene ends there, leaving it be
         if (e.camera !== rig) return skip();
         // consumed, not just seen: the hero is back next frame and must not jump on the same press
-        if (room.inputFree && ctx.input.consumePress('Space', 'Enter')) skip();
+        if (room.inputFree && ctx.input.consumePress('Space', 'Enter', 'PadA')) skip();
         const before = scene.camera();
         scene.update(dt);
         if (!playing) return; // ended this frame: the game camera is back

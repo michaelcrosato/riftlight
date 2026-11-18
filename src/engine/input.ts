@@ -1,38 +1,104 @@
 /**
- * Standard-mapping gamepad buttons → the key codes they press (see character/controls.ts
- * KEYMAP). Change `input.gamepadButtons` to remap. Indices follow the W3C "standard" layout:
- * 0 A · 1 B · 2 X · 3 Y · 4 LB · 5 RB · 6 LT · 7 RT · 8 Back · 9 Start · 12–15 d-pad.
+ * Standard-mapping gamepad buttons → the codes they press: `Pad*` codes, one scheme for every
+ * game, so a game binds a pad button beside its keys (`KEYMAP.jump: ['Space', 'PadA']`) and a menu
+ * can tell Cross (confirm) from Space. Indices follow the W3C "standard" layout, PlayStation names
+ * in brackets: 0 A (Cross) · 1 B (Circle) · 2 X (Square) · 3 Y (Triangle) · 4 LB (L1) · 5 RB (R1)
+ * · 6 LT (L2) · 7 RT (R2) · 8 View (Create) · 9 Menu (Options) · 10 L3 · 11 R3 · 12–15 the
+ * d-pad, which presses the arrow keys · 17 the DualSense touchpad's press (Chrome, Edge). 16, the
+ * PS / Xbox / Home button, is never read (`HOME_BUTTON`): it is the system's or the host's.
+ * Change `input.gamepadButtons` to remap.
  */
 export const GAMEPAD_BUTTONS: Readonly<Record<number, string>> = {
-  0: 'Space', // A: jump
-  1: 'KeyC', // B: crouch (in the air: ground pound)
-  2: 'KeyJ', // X: attack
-  3: 'KeyF', // Y: grab / pull
-  4: 'KeyZ', // LB: prone
-  5: 'KeyX', // RB: lie down
-  6: 'ShiftLeft', // LT: walk / tiptoe
-  7: 'KeyC', // RT: crouch
-  8: 'KeyV', // Back: wave
-  9: 'KeyB', // Start: sit
+  0: 'PadA',
+  1: 'PadB',
+  2: 'PadX',
+  3: 'PadY',
+  4: 'PadLB',
+  5: 'PadRB',
+  6: 'PadLT',
+  7: 'PadRT',
+  8: 'PadBack',
+  9: 'PadStart',
+  10: 'PadL3',
+  11: 'PadR3',
   12: 'ArrowUp',
   13: 'ArrowDown',
   14: 'ArrowLeft',
   15: 'ArrowRight',
+  17: 'PadTouchpad',
 };
+
+/** The standard mapping's home button (PS, Xbox, Home): never read, even when `gamepadButtons` maps it. */
+export const HOME_BUTTON = 16;
+
+/** The kind of input used last (`input.device`): the keyboard and mouse, a gamepad, or a touch screen. */
+export type InputDevice = 'keyboard' | 'pad' | 'touch';
+export const INPUT_DEVICES: readonly InputDevice[] = ['keyboard', 'pad', 'touch'];
+
+/**
+ * A quick one-finger swipe on the canvas presses one of these, once (never held): menus,
+ * dialogues and notifications read them to dismiss (`MenuInput` turns them into `swipe` events).
+ */
+export const SWIPE_KEYS = { left: 'SwipeLeft', right: 'SwipeRight', up: 'SwipeUp', down: 'SwipeDown' } as const;
+export type SwipeDirection = keyof typeof SWIPE_KEYS;
+
+/** A swipe lasts at most `ms` milliseconds and travels at least `share` of the canvas's short side. */
+export const SWIPE = { ms: 350, share: 0.08 } as const;
+
+/**
+ * The swipe a one-finger touch made (`dx`, `dy`: the CSS pixels it travelled, screen y down;
+ * `ms`: how long it was down; `short`: the canvas's short side), or null for a tap, a slow drag
+ * or one too short.
+ */
+export function swipeDirection(dx: number, dy: number, ms: number, short: number): SwipeDirection | null {
+  if (!(ms >= 0 && ms <= SWIPE.ms) || !(short > 0)) return null;
+  const ax = Math.abs(dx);
+  const ay = Math.abs(dy);
+  if (Math.max(ax, ay) < short * SWIPE.share) return null;
+  return ax >= ay ? (dx > 0 ? 'right' : 'left') : dy > 0 ? 'down' : 'up';
+}
+
+/** A rumble (`input.rumble`): the heavy low motor (`strong`) and the light high one (`weak`), 0..1, for `ms` milliseconds. */
+export interface Rumble {
+  strong?: number;
+  weak?: number;
+  ms?: number;
+}
+
+/** The radial stick deadzone the engine reads sticks with: about what console games keep (0.12 to 0.18). */
+export const GAMEPAD_DEADZONE = 0.15;
+/** How far an analog trigger must go before it counts as the pad being used (`device`). */
+const TRIGGER_USE = 0.3;
+/**
+ * How far a stick must lean (after its deadzone) to count as used (`device`), and to move the
+ * player while a movement key is held off the pad (`moveAxis`): a stick resting or jittering
+ * just past its deadzone does neither.
+ */
+const STICK_USE = 0.25;
+/** How far a stick must move in a poll, past `STICK_USE`, to count as used again (a stick held still is not a new use). */
+const STICK_MOVE = 0.05;
+/** How far a trigger first seen part-way must move before it reads (some pads report half until first pulled). */
+const TRIGGER_WAKE = 0.05;
+/** How far the mouse travels (CSS pixels) before it counts as used (`device`): a bumped desk does not. */
+const MOUSE_USE = 6;
 
 /** The parts of the Gamepad API that Input reads (tests can pass plain objects). */
 export interface GamepadLike {
   readonly connected?: boolean;
   readonly mapping?: string;
+  /** Its slot in `navigator.getGamepads()` (the position in the list when left out). */
+  readonly index?: number;
   readonly axes: readonly number[];
   readonly buttons: readonly { readonly pressed: boolean; readonly value?: number }[];
+  /** Rumble (`input.rumble`): Chrome, Edge and Safari have it; Firefox and some pads don't. */
+  readonly vibrationActuator?: { playEffect?(type: string, params: Record<string, number>): Promise<unknown> | unknown } | null;
 }
 
 /**
  * Radial deadzone with rescaling: inside `deadzone` reads 0, the rim reads 1, and the
  * direction is kept (no square-gate snapping to the axes).
  */
-export function applyDeadzone(x: number, y: number, deadzone = 0.2): { x: number; y: number } {
+export function applyDeadzone(x: number, y: number, deadzone = GAMEPAD_DEADZONE): { x: number; y: number } {
   const len = Math.hypot(x, y);
   if (len <= deadzone || len === 0) return { x: 0, y: 0 };
   const k = Math.min(1, (len - deadzone) / (1 - deadzone)) / len;
@@ -62,8 +128,14 @@ export interface InputFrame {
   wheel?: number;
   /** Pointer position (normalised device coordinates), over the canvas (1/0), buttons (`mouseButtons`: what `held` says). */
   pointer?: [number, number, number, number];
+  /** The analog triggers (`triggers`: left, right; 0..1), while either is pressed. */
+  trig?: [number, number];
+  /** The gamepad's right stick (`lookAxis`, after its deadzone; y = up), while it is tilted. */
+  look?: [number, number];
   /** Whether a gamepad is connected (`gamepadConnected`), when that changes. */
   gamepad?: boolean;
+  /** The input used last (`device`), when that changes; a recording without it was made on the keyboard. */
+  device?: InputDevice;
   /** Whether the pointer is a touch (`pointer.touch`), when that changes. */
   touch?: boolean;
   /** Pointer buttons pressed (1) and let go (0) this frame, in order, each where the pointer was (`buttonEvents`). */
@@ -84,6 +156,8 @@ export interface InputState {
   readonly queued: readonly (readonly [string, number])[];
   readonly pointer: readonly [number, number, number, number];
   readonly gamepad: boolean;
+  /** The input used last (left out by snapshots made before it was kept: the keyboard). */
+  readonly device?: InputDevice;
   /** Data sent (`send`) and not yet delivered: the next frame that runs delivers it. */
   readonly outbox: readonly unknown[];
 }
@@ -93,6 +167,7 @@ export interface SnapshotMemory {
   held: string;
   pointer: string;
   gamepad?: boolean;
+  device?: InputDevice;
   touch?: boolean;
 }
 
@@ -121,8 +196,11 @@ export interface ButtonEvent {
  * - Keys: held state, per-frame presses (`wasPressed`) and queued presses for fixed-step
  *   code (`consumePress`). Queued presses expire after `pressWindow` s of game time.
  * - Gamepads (standard mapping): the left stick feeds `moveAxis()` (radial deadzone), the
- *   right stick feeds the pointer delta (camera look), buttons press key codes
- *   (`gamepadButtons`). Polled once per frame by the engine (`beginFrame`).
+ *   right stick feeds the pointer delta (camera look) and `lookAxis` (aim), buttons press
+ *   `Pad*` codes (`gamepadButtons`), the analog triggers read 0..1 (`triggers`). Polled once
+ *   per frame by the engine (`beginFrame`). `rumble()` shakes the pad in use.
+ * - `device`: the input used last (keyboard and mouse, pad, touch), from real use only: a pad
+ *   that is merely connected changes nothing. Prompts and touch assists follow it.
  * - Pointer: accumulated movement per frame (while a button is held or the pointer is
  *   locked), wheel delta per frame, optional pointer lock (first-person). Mouse buttons on
  *   the canvas are keys too (`MOUSE_BUTTONS`: `MouseLeft`, `MouseRight`, `MouseMiddle`), and a
@@ -162,8 +240,17 @@ export class Input {
   readonly analog = { x: 0, y: 0 };
   /** Gamepad left stick after the deadzone, -1..1 (y = forward). */
   readonly padAxis = { x: 0, y: 0 };
-  /** True while any gamepad is connected. */
+  /** Gamepad right stick after the deadzone, -1..1 (y = up): aim with it (it also turns the camera, as pointer movement). */
+  readonly lookAxis = { x: 0, y: 0 };
+  /** The analog triggers, 0..1 (L2 / LT, R2 / RT): a throttle, a brake, a bowstring. Pressed (as the browser says, or past half), they also press `PadLT` / `PadRT`. */
+  readonly triggers = { left: 0, right: 0 };
+  /** True while any gamepad is connected (that alone never changes `device`). */
   gamepadConnected = false;
+  /**
+   * How strongly `rumble()` shakes the pad, 0..1: the player's vibration setting (the engine keeps
+   * it at `settings.vibration`). A host that scales rumbles itself (the AI Hub) does so on top.
+   */
+  vibration = 1;
   /**
    * Extra key codes whose browser default is blocked (arrows and Space always are): a game's
    * own F1 / F2 / Tab panels, so the browser's help page or focus change doesn't fire.
@@ -174,7 +261,7 @@ export class Input {
   /** The host's chord (View + Menu) is held: buttons 8 and 9 mean nothing until both are let go. */
   private hostChord = false;
   /** Stick deadzone (radial, 0..1). */
-  gamepadDeadzone = 0.2;
+  gamepadDeadzone = GAMEPAD_DEADZONE;
   /** Right stick look speed: pointer pixels per second at full tilt. */
   gamepadLookSpeed = 500;
   /** Game time (s) of the current frame; set by the engine through `beginFrame`. */
@@ -190,10 +277,29 @@ export class Input {
   set playing(on: boolean) {
     this._playing = on;
     this.playedPad = false;
+    this.playedDevice = 'keyboard'; // a recording that never says otherwise was made on the keyboard
+    // the level's setup runs before the first played frame: it reads the recording's device, never
+    // the live one (`playFrom` sets the device the recorded level began with)
+    if (on) this._device = 'keyboard';
+    this.rumbleWant = null;
     if (on) this.outbox = []; // what was sent before a replay is not part of it
   }
   private _playing = false;
   private playedPad = false;
+  private playedDevice: InputDevice = 'keyboard';
+  private _device: InputDevice = 'keyboard';
+  private _padIndex = -1;
+  /** The pad used last as this frame's poll saw it (what `rumble` shakes). */
+  private rumblePad: GamepadLike | null = null;
+  /** Each pad's buttons, sticks and resting triggers at the poll before, by its index (what counts as using it). */
+  private padSeen = new Map<number, PadSeen>();
+  /** The pads `setGamepads` set (tests), polled instead of the browser's. */
+  private fakePads: readonly (GamepadLike | null)[] | null = null;
+  /** This frame's strongest rumble request. */
+  private rumbleWant: Required<Rumble> | null = null;
+  /** Mouse travel since another device was used, and where it last was (CSS pixels). */
+  private mouseTravel = 0;
+  private readonly mouseAt = { x: 0, y: 0, known: false };
   /** Queued presses older than this many seconds of game time are dropped. */
   pressWindow = PRESS_WINDOW;
 
@@ -201,11 +307,13 @@ export class Input {
   constructor(private readonly target: Window | null = window) {
     const signal = this.listeners.signal;
     if (!target) return;
+    if (touchFirst()) this._device = 'touch'; // a phone or tablet: touch until something else is used
     target.addEventListener(
       'keydown',
       (e) => {
         if (isGameKey(e.code) || this.preventKeys.has(e.code)) e.preventDefault();
         if (this._playing) return;
+        this.use('keyboard');
         if (!e.repeat) this.press(e.code);
         this.held.add(e.code);
       },
@@ -228,13 +336,16 @@ export class Input {
   /**
    * Listen for pointer input on the game canvas. Only pointers that went down on the
    * canvas drive the camera (so a touch joystick doesn't orbit it). Two canvas touches
-   * pinch to zoom (emitted as wheel ticks).
+   * pinch to zoom (emitted as wheel ticks); one quick one-finger flick presses a swipe
+   * (`SWIPE_KEYS`).
    */
   attachPointer(el: HTMLElement): void {
     const signal = this.listeners.signal;
     this.lockTarget = el;
     const active = new Map<number, { x: number; y: number }>();
     let pinch = 0;
+    /** The one finger down that may be a swipe: where and when it went down (a second finger makes it a pinch). */
+    let flick: { id: number; x: number; y: number; t: number } | null = null;
     const spread = () => {
       const [a, b] = [...active.values()];
       return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
@@ -251,6 +362,7 @@ export class Input {
       this.pointer.y = locked ? 0 : 1 - ((e.clientY - r.top) / r.height) * 2;
       this.pointer.over = true;
       this.pointer.touch = e.pointerType === 'touch';
+      if (e.pointerType === 'mouse' && e.type === 'pointermove') this.mouseMoved(e.clientX, e.clientY);
       // a mouse button pressed or let go while another is held comes as a move that names it (a chord)
       if (e.type === 'pointermove' && e.pointerType !== 'touch' && e.button >= 0 && active.has(e.pointerId)) this.button(MOUSE_BUTTONS[e.button]?.[0], (e.buttons & (MOUSE_BUTTONS[e.button]?.[1] ?? 0)) !== 0);
     };
@@ -272,6 +384,8 @@ export class Input {
       'pointerdown',
       (e) => {
         if (this._playing) return;
+        this.use(e.pointerType === 'mouse' ? 'keyboard' : 'touch');
+        if (e.pointerType === 'touch') flick = active.size === 0 ? { id: e.pointerId, x: e.clientX, y: e.clientY, t: e.timeStamp } : null;
         active.set(e.pointerId, { x: e.clientX, y: e.clientY });
         capture(el, e.pointerId);
         this.button(e.pointerType === 'touch' ? TOUCH_KEY : MOUSE_BUTTONS[e.button]?.[0], true);
@@ -283,6 +397,13 @@ export class Input {
     const end = (e: PointerEvent) => {
       active.delete(e.pointerId);
       pinch = spread();
+      const f = flick;
+      if (f && f.id === e.pointerId) {
+        flick = null;
+        const r = el.getBoundingClientRect();
+        const dir = e.type === 'pointerup' && !this._playing ? swipeDirection(e.clientX - f.x, e.clientY - f.y, e.timeStamp - f.t, Math.min(r.width, r.height)) : null;
+        if (dir) this.press(SWIPE_KEYS[dir]);
+      }
       if (this._playing) return;
       if (e.pointerType === 'touch') {
         if (![...active.keys()].length) this.button(TOUCH_KEY, false);
@@ -320,6 +441,7 @@ export class Input {
         } else if (live) {
           this.mouseDelta.x += e.movementX;
           this.mouseDelta.y += e.movementY;
+          this.mouseTravelled(Math.hypot(e.movementX, e.movementY)); // mouse look under pointer lock
         }
       },
       { signal },
@@ -328,10 +450,102 @@ export class Input {
       'wheel',
       (e) => {
         e.preventDefault();
-        if (!this._playing) this.wheel += Math.sign(e.deltaY);
+        if (this._playing) return;
+        this.use('keyboard');
+        this.wheel += Math.sign(e.deltaY);
       },
       { passive: false, signal },
     );
+  }
+
+  /**
+   * The input used last: `keyboard` (keys, and the mouse: a click, the wheel, a move of a few
+   * pixels), `pad` (a button pressed, a stick pushed past a quarter of its travel, a trigger
+   * pulled past 0.3) or `touch` (a finger on the canvas or on the touch controls). It starts as
+   * `touch` on a touch-screen device (a coarse pointer) and `keyboard` elsewhere; a pad that is
+   * merely connected, a stick resting or jittering near its deadzone and a trigger resting where
+   * it was first seen change nothing. Recorded when it changes (replays and save-states keep it;
+   * a recording keeps the one its level began with for the level's setup), so a game may branch
+   * on it (prompts, touch assists, mouse aim) and still replay.
+   */
+  get device(): InputDevice {
+    return this._device;
+  }
+
+  /** The `navigator.getGamepads()` slot of the pad used last, or -1 (not recorded: `rumble` shakes it). */
+  get padIndex(): number {
+    return this._padIndex;
+  }
+
+  /** The player used `device` (a page's own controls; tests): `device` becomes it. Ignored during a replay. */
+  noteDevice(device: InputDevice): void {
+    if (!this._playing && INPUT_DEVICES.includes(device)) this.use(device);
+  }
+
+  /** A touch control was used (the engine's `TouchControls` call it on every press and stick touch). */
+  noteTouch(): void {
+    this.noteDevice('touch');
+  }
+
+  /**
+   * Shake the pad in use: `strong` (the heavy, low motor) and `weak` (the light buzz), 0..1, for
+   * `ms` milliseconds (default 100). Short, distinct pulses (a hit, a landing, an explosion) say
+   * more than a long rumble. The strongest request of a frame plays when the frame ends, scaled by
+   * `vibration` (the player's setting). Nothing happens unless the pad is the device in use, nor
+   * headless, during a replay, at vibration 0 or on a pad that can't rumble. Output only: never
+   * recorded.
+   */
+  rumble(r: Rumble): void {
+    if (this._playing || !this.target) return;
+    const strong = unit(r.strong);
+    const weak = unit(r.weak);
+    const ms = Math.min(5000, Math.max(0, Number.isFinite(r.ms) ? r.ms! : 100));
+    if (!(strong > 0 || weak > 0) || !(ms > 0)) return;
+    const w = this.rumbleWant;
+    if (!w) this.rumbleWant = { strong, weak, ms };
+    else {
+      w.strong = Math.max(w.strong, strong);
+      w.weak = Math.max(w.weak, weak);
+      w.ms = Math.max(w.ms, ms);
+    }
+  }
+
+  /** End of a frame: play the frame's strongest rumble on the pad in use. */
+  private playRumble(): void {
+    const r = this.rumbleWant;
+    this.rumbleWant = null;
+    if (!r || this._playing || !this.target || this._device !== 'pad') return;
+    const k = unit(this.vibration);
+    const actuator = this.rumblePad?.vibrationActuator;
+    if (!(k > 0) || !actuator || typeof actuator.playEffect !== 'function') return;
+    try {
+      const done = actuator.playEffect('dual-rumble', { startDelay: 0, duration: r.ms, strongMagnitude: r.strong * k, weakMagnitude: r.weak * k });
+      if (done && typeof (done as Promise<unknown>).catch === 'function') (done as Promise<unknown>).catch(() => {}); // unplugged, or another effect cut it short
+    } catch {
+      /* the pad can't rumble after all */
+    }
+  }
+
+  /** A live use of `device`: it becomes the input used last (the mouse's travel counts afresh after any other). */
+  private use(device: InputDevice): void {
+    if (this._playing) return;
+    this._device = device;
+    if (device !== 'keyboard') this.mouseTravel = 0;
+  }
+
+  /** The mouse moved to (x, y) (CSS pixels): a few pixels' travel is a use. */
+  private mouseMoved(x: number, y: number): void {
+    const at = this.mouseAt;
+    if (at.known) this.mouseTravelled(Math.hypot(x - at.x, y - at.y));
+    at.x = x;
+    at.y = y;
+    at.known = true;
+  }
+
+  private mouseTravelled(d: number): void {
+    if (this._playing || this._device === 'keyboard' || !(d > 0)) return;
+    this.mouseTravel += d;
+    if (this.mouseTravel >= MOUSE_USE) this.use('keyboard');
   }
 
   /** Remove every listener this Input added (window and canvas). */
@@ -348,6 +562,8 @@ export class Input {
     this.padHeld.clear();
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
+    this.lookAxis.x = this.lookAxis.y = 0;
+    this.triggers.left = this.triggers.right = 0;
   }
 
   /** Forget held keys, presses, sticks and pointer movement (e.g. when a level loads). */
@@ -357,6 +573,9 @@ export class Input {
     this.padHeld.clear();
     this.analog.x = this.analog.y = 0;
     this.padAxis.x = this.padAxis.y = 0;
+    this.lookAxis.x = this.lookAxis.y = 0;
+    this.triggers.left = this.triggers.right = 0;
+    this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
   }
 
@@ -375,6 +594,8 @@ export class Input {
     this.analog.y += 0;
     this.padAxis.x += 0;
     this.padAxis.y += 0;
+    this.lookAxis.x += 0;
+    this.lookAxis.y += 0;
     this.mouseDelta.x += 0;
     this.mouseDelta.y += 0;
     for (const [code, t] of this.queued) if (now - t > this.pressWindow) this.queued.delete(code);
@@ -428,6 +649,7 @@ export class Input {
       queued: [...this.queued].map(([code, t]) => [code, this.now - t] as const),
       pointer: [this.pointer.x, this.pointer.y, this.pointer.over ? 1 : 0, this.pointer.touch ? 1 : 0],
       gamepad: this.gamepadConnected,
+      device: this._device,
       outbox: JSON.parse(JSON.stringify(this.outbox)) as unknown[],
     };
   }
@@ -445,6 +667,7 @@ export class Input {
     this.pointer.touch = s.pointer[3] === 1;
     this.gamepadConnected = s.gamepad;
     this.playedPad = s.gamepad;
+    this._device = this.playedDevice = s.device && INPUT_DEVICES.includes(s.device) ? s.device : 'keyboard';
     this.outbox = JSON.parse(JSON.stringify(s.outbox)) as unknown[]; // what was sent since is not this moment's
     this.endFrame();
   }
@@ -462,24 +685,31 @@ export class Input {
 
   /**
    * -1..1 on each axis (x = right, y = forward): the touch joystick or a gamepad's left
-   * stick (whichever is tilted further), else WASD / arrow keys / d-pad.
+   * stick (whichever is tilted further), else WASD / arrow keys / d-pad. A movement key held
+   * wins over the pad's stick unless the pad is the device in use and its stick leans past
+   * `STICK_USE` (0.25): a connected pad's stick resting just past its deadzone never takes the
+   * keyboard's movement away, nor the d-pad's. All of it is recorded (`device` too), so a replay
+   * moves the same.
    */
   moveAxis(): { x: number; y: number } {
     const touch = Math.hypot(this.analog.x, this.analog.y);
     const pad = Math.hypot(this.padAxis.x, this.padAxis.y);
-    const stick = touch > 0.12 && touch >= pad ? this.analog : pad > 0 ? this.padAxis : null;
+    const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
+    const y = (this.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (this.isDown('KeyS', 'ArrowDown') ? 1 : 0);
+    const keys = x !== 0 || y !== 0;
+    const padWins = pad > 0 && (!keys || (this._device === 'pad' && pad >= STICK_USE));
+    const stick = touch > 0.12 && touch >= pad ? this.analog : padWins ? this.padAxis : null;
     if (stick) {
       const len = Math.hypot(stick.x, stick.y);
       return len > 1 ? { x: stick.x / len, y: stick.y / len } : { x: stick.x, y: stick.y };
     }
-    const x = (this.isDown('KeyD', 'ArrowRight') ? 1 : 0) - (this.isDown('KeyA', 'ArrowLeft') ? 1 : 0);
-    const y = (this.isDown('KeyW', 'ArrowUp') ? 1 : 0) - (this.isDown('KeyS', 'ArrowDown') ? 1 : 0);
     const len = Math.hypot(x, y);
     return len > 1 ? { x: x / len, y: y / len } : { x, y };
   }
 
-  /** Call at the end of each rendered frame. */
+  /** Call at the end of each rendered frame (the frame's rumble plays now). */
   endFrame(): void {
+    if (this.rumbleWant) this.playRumble();
     this.pressed.clear();
     this._commands = [];
     this._buttonEvents = [];
@@ -589,12 +819,15 @@ export class Input {
     if (this.pressed.size) f.pressed = [...this.pressed].sort();
     if (this.analog.x || this.analog.y) f.analog = [this.analog.x, this.analog.y];
     if (this.padAxis.x || this.padAxis.y) f.pad = [this.padAxis.x, this.padAxis.y];
+    if (this.lookAxis.x || this.lookAxis.y) f.look = [this.lookAxis.x, this.lookAxis.y];
+    if (this.triggers.left || this.triggers.right) f.trig = [this.triggers.left, this.triggers.right];
     if (this.mouseDelta.x || this.mouseDelta.y) f.delta = [this.mouseDelta.x, this.mouseDelta.y];
     if (this.wheel) f.wheel = this.wheel;
     const pointer: [number, number, number, number] = [this.pointer.x, this.pointer.y, this.pointer.over ? 1 : 0, this.mouseButtons];
     const pointerKey = pointer.join(',');
     if (!last || pointerKey !== last.pointer) f.pointer = pointer;
     if (!last || this.gamepadConnected !== last.gamepad) f.gamepad = this.gamepadConnected;
+    if (!last || this._device !== last.device) f.device = this._device;
     if (!last || last.touch === undefined || this.pointer.touch !== last.touch) f.touch = this.pointer.touch;
     if (this._commands.length) f.commands = JSON.parse(JSON.stringify(this._commands)) as unknown[]; // the game may change what it got
     if (this._buttonEvents.length) f.clicks = this._buttonEvents.map((e) => [e.code, e.down ? 1 : 0, e.x, e.y]);
@@ -602,6 +835,7 @@ export class Input {
       last.held = heldKey;
       last.pointer = pointerKey;
       last.gamepad = this.gamepadConnected;
+      last.device = this._device;
       last.touch = this.pointer.touch;
     }
     return f;
@@ -620,12 +854,16 @@ export class Input {
     for (const c of f.pressed ?? []) this.press(c);
   }
 
-  /** Replay, after `beginFrame` (which polled no gamepads): sticks, pointer, wheel, gamepad connection. */
+  /** Replay, after `beginFrame` (which polled no gamepads): sticks, triggers, pointer, wheel, gamepad connection, the device used last. */
   playAfter(f: InputFrame): void {
     if (f.gamepad !== undefined) this.playedPad = f.gamepad;
     this.gamepadConnected = this.playedPad;
+    if (f.device !== undefined) this.playedDevice = f.device;
+    this._device = this.playedDevice;
     [this.analog.x, this.analog.y] = f.analog ?? [0, 0];
     [this.padAxis.x, this.padAxis.y] = f.pad ?? [0, 0];
+    [this.lookAxis.x, this.lookAxis.y] = f.look ?? [0, 0];
+    [this.triggers.left, this.triggers.right] = f.trig ?? [0, 0];
     [this.mouseDelta.x, this.mouseDelta.y] = f.delta ?? [0, 0];
     this.wheel = f.wheel ?? 0;
     if (f.pointer) {
@@ -637,14 +875,31 @@ export class Input {
     this._commands = f.commands ? (JSON.parse(JSON.stringify(f.commands)) as unknown[]) : []; // never the recording's own objects
   }
 
+  /**
+   * Replay, before the recorded level loads (`engine.replay`): the input used last when it began
+   * (`Recording.device`), what its setup reads as `device` until the first played frame.
+   */
+  playFrom(device: InputDevice | undefined): void {
+    if (!this._playing) return;
+    this._device = this.playedDevice = device && INPUT_DEVICES.includes(device) ? device : 'keyboard';
+  }
+
+  /**
+   * Test hook: poll these pads every frame instead of `navigator.getGamepads()` (a headless
+   * engine has none), as the browser would list them; null polls the browser's again.
+   */
+  setGamepads(pads: readonly (GamepadLike | null)[] | null): void {
+    this.fakePads = pads ? [...pads] : null;
+  }
+
   private press(code: string): void {
     this.pressed.add(code);
     this.queued.set(code, this.now);
   }
 
   private pollGamepads(dt: number, pads?: readonly (GamepadLike | null)[]): void {
-    let list: readonly (GamepadLike | null)[] = pads ?? [];
-    if (!pads) {
+    let list: readonly (GamepadLike | null)[] = pads ?? this.fakePads ?? [];
+    if (!pads && !this.fakePads) {
       try {
         list = typeof navigator !== 'undefined' && navigator.getGamepads ? navigator.getGamepads() : [];
       } catch {
@@ -653,38 +908,123 @@ export class Input {
     }
     const down = new Set<string>();
     let stick = { x: 0, y: 0 };
+    let look = { x: 0, y: 0 };
+    let left = 0;
+    let right = 0;
     let connected = false;
-    for (const pad of list) {
+    let used: { index: number; pad: GamepadLike } | null = null;
+    let rumblePad: GamepadLike | null = null;
+    const seen = this.padSeen;
+    const seenNow = new Map<number, PadSeen>();
+    for (let n = 0; n < list.length; n++) {
+      const pad = list[n];
       if (!pad || pad.connected === false) continue;
       // Only the W3C "standard" layout has known button/axis meanings; other pads ('' mapping)
       // would press random actions. (Fakes without a mapping are treated as standard.)
       if (pad.mapping !== undefined && pad.mapping !== 'standard') continue;
       connected = true;
+      const index = Number.isInteger(pad.index) ? pad.index! : n;
+      const was = seen.get(index);
+      const raw = (i: number): number => {
+        const b = pad.buttons[i];
+        return !b ? 0 : Math.min(1, Math.max(0, Number.isFinite(b.value) ? b.value! : b.pressed ? 1 : 0));
+      };
+      // A trigger seen for the first time part-way is resting there (some pads report half until
+      // first pulled): it reads 0 and presses nothing until it moves from that value. One pulled
+      // all the way (the press that showed the browser the pad) reads at once.
+      const partWay = (i: number) => (raw(i) > 0 && raw(i) < 1 ? raw(i) : null);
+      const rest: [number | null, number | null] = was ? [was.rest[0], was.rest[1]] : [partWay(6), partWay(7)];
+      for (const k of [0, 1] as const) if (rest[k] !== null && Math.abs(raw(6 + k) - rest[k]!) > TRIGGER_WAKE) rest[k] = null;
+      const resting = (i: number) => (i === 6 || i === 7) && rest[i - 6] !== null;
+      const value = (i: number): number => (resting(i) ? 0 : raw(i));
       const on = (i: number): boolean => {
         const b = pad.buttons[i];
-        return !!b && (b.pressed || (b.value ?? 0) > 0.5);
+        return !!b && !resting(i) && (b.pressed || (b.value ?? 0) > 0.5);
       };
       // View + Menu (Create + Options, buttons 8 and 9) held together belong to whatever hosts the
       // page (the AI Hub opens its bar on them): once both are down, neither means anything here
       // until both are let go (letting one go first must not press the other).
       if (on(HOST_CHORD[0]) && on(HOST_CHORD[1])) this.hostChord = true;
       else if (!on(HOST_CHORD[0]) && !on(HOST_CHORD[1])) this.hostChord = false;
+      const mine = (i: number) => i !== HOME_BUTTON && !(this.hostChord && HOST_CHORD.includes(i));
       pad.buttons.forEach((_, i) => {
         const code = this.gamepadButtons[i];
-        if (code && on(i) && !(this.hostChord && HOST_CHORD.includes(i))) down.add(code);
+        if (code && on(i) && mine(i)) down.add(code);
       });
-      const left = applyDeadzone(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0), this.gamepadDeadzone);
-      if (Math.hypot(left.x, left.y) > Math.hypot(stick.x, stick.y)) stick = left;
-      const right = applyDeadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0, this.gamepadDeadzone);
-      this.mouseDelta.x += right.x * this.gamepadLookSpeed * dt;
-      this.mouseDelta.y += right.y * this.gamepadLookSpeed * dt;
+      const l = applyDeadzone(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0), this.gamepadDeadzone);
+      if (Math.hypot(l.x, l.y) > Math.hypot(stick.x, stick.y)) stick = l;
+      const r = applyDeadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0, this.gamepadDeadzone);
+      if (Math.hypot(r.x, r.y) > Math.hypot(look.x, look.y)) look = { x: r.x, y: -r.y };
+      this.mouseDelta.x += r.x * this.gamepadLookSpeed * dt;
+      this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
+      left = Math.max(left, value(6));
+      right = Math.max(right, value(7));
+      // Used, not merely connected: a button that went down, a trigger pulled past TRIGGER_USE, a
+      // stick that moved past STICK_USE. A pad seen for the first time counts only for a button
+      // held (the press that showed the browser the pad); its sticks and triggers are where they
+      // rest (drift, a trigger reading half).
+      const now: PadSeen = {
+        buttons: pad.buttons.map((_, i) => mine(i) && (i === 6 || i === 7 ? value(i) > TRIGGER_USE : on(i))),
+        left: [l.x, l.y],
+        right: [r.x, r.y],
+        rest,
+      };
+      seenNow.set(index, now);
+      const pressedNow = now.buttons.some((b, i) => b && (was ? !was.buttons[i] : i !== 6 && i !== 7));
+      if (pressedNow || (was && (stickUsed(was.left, now.left) || stickUsed(was.right, now.right)))) used = { index, pad };
+      if (index === this._padIndex) rumblePad = pad;
     }
+    this.padSeen = seenNow;
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
     this.padHeld.clear();
     for (const code of down) this.padHeld.add(code);
     this.padAxis.x = stick.x;
     this.padAxis.y = stick.y;
+    this.lookAxis.x = look.x;
+    this.lookAxis.y = look.y;
+    this.triggers.left = left;
+    this.triggers.right = right;
     this.gamepadConnected = connected;
+    if (used && !this._playing) {
+      this.use('pad');
+      this._padIndex = used.index;
+      rumblePad = used.pad;
+    }
+    this.rumblePad = rumblePad;
+  }
+}
+
+/** What a poll saw of a pad (after the deadzone), for the next poll to tell use from rest. */
+interface PadSeen {
+  buttons: boolean[];
+  left: [number, number];
+  right: [number, number];
+  /** Each trigger's value when the pad was first seen part-way, while it rests there (null: it reads). */
+  rest: [number | null, number | null];
+}
+
+/**
+ * A stick used since the poll before (`was`, `now`: after the deadzone): it leans past `STICK_USE`
+ * and got there this poll or moved since. A stick resting or jittering near its deadzone (or a
+ * slightly drifting one) never counts.
+ */
+function stickUsed(was: readonly [number, number], now: readonly [number, number]): boolean {
+  const len = Math.hypot(now[0], now[1]);
+  if (len < STICK_USE) return false;
+  return Math.hypot(was[0], was[1]) < STICK_USE || Math.hypot(now[0] - was[0], now[1] - was[1]) > STICK_MOVE;
+}
+
+/** A value clamped to 0..1 (0 when it is not a number). */
+function unit(v: number | undefined): number {
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v!)) : 0;
+}
+
+/** A phone or tablet (a coarse pointer, touch points): its player starts on touch. */
+function touchFirst(): boolean {
+  try {
+    return typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches && (typeof navigator === 'undefined' || (navigator.maxTouchPoints ?? 1) > 0);
+  } catch {
+    return false;
   }
 }
 

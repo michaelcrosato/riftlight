@@ -88,6 +88,33 @@ it('the panels open and close; the station guide is whole; closing the room list
   expect(engine.timeScale).toBe(1);
 });
 
+it('Options on a pad opens the menu and closes it again; Circle closes it too', () => {
+  /** A DualSense in the standard layout with `pressed` buttons down. */
+  const pad = (...pressed: number[]) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i) })) });
+  const hold = (...pressed: number[]) => {
+    engine.input.setGamepads([pad(...pressed)]);
+    engine.step(2);
+    engine.input.setGamepads([pad()]);
+    engine.step(2);
+  };
+  try {
+    engine.input.setGamepads([pad()]);
+    engine.step(2);
+    expect(w.state().panel).toBeNull();
+    hold(9); // Options
+    expect([w.state().panel, engine.input.device]).toEqual(['pause', 'pad']);
+    hold(9);
+    expect(w.state().panel, 'Options again closes it').toBeNull();
+    hold(9);
+    hold(1); // Circle: back
+    expect(w.state().panel, 'Circle closes it').toBeNull();
+    expect(engine.timeScale).toBe(1);
+  } finally {
+    engine.input.setGamepads(null);
+    engine.input.noteDevice('keyboard');
+  }
+});
+
 it(
   'the sun dial points the sun, and the light pool lends every light',
   async () => {

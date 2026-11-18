@@ -231,6 +231,7 @@ export class TouchControls {
       capture(el, e.pointerId);
       el.classList.add('on');
       if (view) view.down = true;
+      this.input.noteTouch(); // the input used last is touch (prompts follow it)
       this.input.setKey(code, true);
     };
     const up = () => {
@@ -268,6 +269,7 @@ export class TouchControls {
     };
     base.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      this.input.noteTouch();
       id = e.pointerId;
       capture(base, e.pointerId);
       const rect = base.getBoundingClientRect();

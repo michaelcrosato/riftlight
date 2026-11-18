@@ -6,7 +6,7 @@ const target = () => new EventTarget() as unknown as Window;
 const pad = (axes: number[], pressed: number[] = []): GamepadLike => ({ connected: true, mapping: 'standard', axes, buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i) })) });
 
 /** What game code could read from an input this frame (and what it consumes). */
-const KEYS = ['KeyW', 'KeyD', 'Space', 'KeyJ', 'ShiftLeft', 'MouseLeft', 'MouseRight'];
+const KEYS = ['KeyW', 'KeyD', 'Space', 'KeyJ', 'ShiftLeft', 'MouseLeft', 'MouseRight', 'PadA', 'PadLT'];
 const read = (input: Input) => ({
   down: KEYS.filter((c) => input.isDown(c)),
   pressed: KEYS.filter((c) => input.wasPressed(c)),
@@ -20,6 +20,9 @@ const read = (input: Input) => ({
   pointer: { ...input.pointer },
   buttons: input.mouseButtons,
   gamepad: input.gamepadConnected,
+  device: input.device,
+  look: { ...input.lookAxis },
+  triggers: { ...input.triggers },
 });
 
 describe('recording and replaying input', () => {
@@ -40,6 +43,9 @@ describe('recording and replaying input', () => {
       (i) => (i.setButtons(0), i.send('a'), i.send('b')),
       (i) => (i.setButtons(2), i.setButtons(0)), // a right click shorter than a frame: pressed, never held
       (i) => (i.pointer.touch = true), // a finger now
+      (i) => i.noteTouch(), // a touch control: touch is the input used last
+      () => {},
+      (i) => i.setKey('KeyD', true), // a key held by a script: not the keyboard being used
     ];
     const pads: (GamepadLike | null)[][] = between.map((_, f) => (f === 6 ? [pad([0.9, 0, 0.5, 0], [0, 6])] : f === 7 ? [pad([0, -1, 0, 0], [6])] : []));
     const frames: InputFrame[] = [];
@@ -71,7 +77,11 @@ describe('recording and replaying input', () => {
     // what was recorded: changes only (held and the pointer when they change), nothing when idle
     expect(frames[1]).toEqual({ dt: 1 / 60 });
     expect(frames[2]!.pressed).toEqual(['Space']);
-    expect(frames[6]!.held).toEqual(['KeyD', 'MouseLeft', 'ShiftLeft', 'Space']); // gamepad buttons as keys, the pointer held since frame 4
+    expect(frames[6]!.held).toEqual(['KeyD', 'MouseLeft', 'PadA', 'PadLT']); // gamepad buttons as their Pad codes, the pointer held since frame 4
+    // the device used last, recorded when it changes: the pad pressed on frame 6, a touch control on frame 13
+    expect(frames.map((f) => f.device)).toEqual(['keyboard', undefined, undefined, undefined, undefined, undefined, 'pad', undefined, undefined, undefined, undefined, undefined, undefined, 'touch', undefined, undefined]);
+    // the right stick (after its deadzone) and the triggers, while used
+    expect([frames[6]!.look?.[0], frames[6]!.look?.[1], frames[6]!.trig, frames[7]!.look, frames[7]!.trig, frames[8]!.trig]).toEqual([(0.5 - 0.15) / 0.85, 0, [1, 0], undefined, [1, 0], undefined]);
     expect(frames[9]!.held).toEqual(['MouseLeft', 'MouseRight']);
     expect(frames[9]!.commands).toEqual([{ save: { gold: 3 } }]); // as JSON: what a replay will read
     expect(seen[10]!.commands).toEqual(['a', 'b']);
@@ -101,7 +111,7 @@ describe('recording and replaying input', () => {
         now += 1 / 60;
         live.beginFrame(now, 1 / 60, f === 1 ? [pad([0, 0, 0, 0], [0])] : []);
         frames.push(live.snapshot(1 / 60, last));
-        if (f === ask) liveAnswer = live.consumePress('Space');
+        if (f === ask) liveAnswer = live.consumePress('PadA');
         live.endFrame();
       }
       const again = new Input(target());
@@ -112,7 +122,7 @@ describe('recording and replaying input', () => {
         now += fr.dt;
         again.beginFrame(now, fr.dt, []);
         again.playAfter(fr);
-        if (f === ask) replayed = again.consumePress('Space');
+        if (f === ask) replayed = again.consumePress('PadA');
         again.endFrame();
       });
       return [liveAnswer, replayed];
@@ -258,6 +268,12 @@ describe('recording and replaying input', () => {
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01 }, { dt: 0.01, delta: [1] }] })).toMatch(/frame 1: delta/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, pointer: [0, 0, 1] }] })).toMatch(/pointer/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, gamepad: 1 }] })).toMatch(/gamepad/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, device: 'pad' }, { dt: 0.01, device: 'touch' }, { dt: 0.01, device: 'keyboard' }] })).toBeNull();
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, device: 'mouse' as never }] })).toMatch(/frame 0: device/);
+    expect(recordingProblem({ ...ok, device: 'pad' })).toBeNull(); // the device the level began with
+    expect(recordingProblem({ ...ok, device: 'mouse' as never })).toMatch(/^device/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, trig: [0.5] as never }] })).toMatch(/frame 0: trig/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, look: [0, Number.NaN] }] })).toMatch(/frame 0: look/);
     expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, sync: false }] })).toMatch(/sync/);
     expect(recordingProblem({ ...ok, view: { width: 960, height: 540, dpr: 1 } })).toBeNull();
     expect(recordingProblem({ ...ok, view: { width: 0, height: 0, dpr: 2 } }), 'a hidden page records 0×0').toBeNull();

@@ -202,6 +202,39 @@ describe('Engine.headless', () => {
     engine.dispose();
   });
 
+  it('a level set up on a pad replays its setup on the pad, whatever the live device is', async () => {
+    /** Its setup branches on the device in use (prompts, a layout), as a game may. */
+    class SetupDevice implements Game {
+      readonly name = 'Setup device';
+      seen = '';
+      setup(ctx: GameContext): void {
+        this.seen = ctx.input.device;
+      }
+      update(): void {}
+      cameraTarget(ctx: GameContext) {
+        return ctx.camera.focus.clone();
+      }
+    }
+    const engine = await Engine.headless(new Dice());
+    engine.input.noteDevice('pad');
+    let game = new SetupDevice();
+    await engine.loadGame(game);
+    engine.step(3);
+    const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+    expect([rec.device, game.seen]).toEqual(['pad', 'pad']);
+    engine.input.noteDevice('touch'); // live, before the replay
+    await engine.replay(rec, () => engine.loadGame((game = new SetupDevice())));
+    expect(game.seen, 'its setup read the recorded device').toBe('pad');
+    engine.input.noteDevice('pad');
+    const kb = { ...rec, device: undefined }; // a recording begun on the keyboard leaves it out
+    await engine.replay(kb, () => engine.loadGame((game = new SetupDevice())));
+    expect(game.seen).toBe('keyboard');
+    engine.input.noteDevice('keyboard');
+    await engine.loadGame(new SetupDevice());
+    expect(engine.recording()!.device, 'left out for the keyboard').toBeUndefined();
+    engine.dispose();
+  });
+
   it('an asset load without a reader names the one to pass', async () => {
     setAssetReader(null); // the process has none yet (a reader set earlier stays: the Playground's)
     const engine = await Engine.headless(new Dice());
@@ -242,6 +275,11 @@ describe('Engine.headless', () => {
     expect(engine.audio.persist).toBe(false);
     engine.settings.set({ pixelSize: 'chunky', debugInfo: true });
     expect(engine.renderer.resolution).toEqual({ width: 320, height: 180 });
+    expect(engine.input.vibration).toBe(1);
+    engine.settings.set({ vibration: 0.4 }); // rumbles follow the player's vibration
+    expect(engine.input.vibration).toBe(0.4);
+    engine.settings.set({ vibration: undefined });
+    expect(engine.input.vibration).toBe(1);
     expect(engine.debugShown).toBe(false);
     engine.showDebug(true);
     expect(engine.debugShown).toBe(false);

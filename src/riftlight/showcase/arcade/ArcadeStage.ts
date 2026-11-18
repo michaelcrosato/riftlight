@@ -49,13 +49,16 @@ export interface ArcadeStageOptions {
   best?: number;
 }
 
-/** Keys for the side-scroller (keyboard, Riftlight's virtual pad codes and the touch buttons). */
+/**
+ * Keys for the side-scroller (keyboard, the engine's pad codes and the touch buttons): on a pad
+ * Cross (A) jumps, Circle (B) or L2 crouches, Square (X) attacks and R2 held walks.
+ */
 export const ARCADE_KEYS = {
   jump: ['Space', 'PadA', 'KeyK'],
   crouch: ['KeyC', 'ControlLeft', 'ControlRight', 'PadB', 'PadLT'],
   down: ['KeyS', 'ArrowDown'],
   attack: ['KeyJ', 'PadX'],
-  walk: ['ShiftLeft', 'ShiftRight'],
+  walk: ['ShiftLeft', 'ShiftRight', 'PadRT'],
 } as const;
 
 /**

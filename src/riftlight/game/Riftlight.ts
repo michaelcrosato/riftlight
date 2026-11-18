@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -34,7 +34,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, controlLabel, KEYS, MenuInput, MOUSE, PAD_BUTTONS, Pointer, type PointerState } from './controls';
+import { cameraBasis, controlLabel, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -110,7 +110,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private hudControls: Box[] = [];
   /** The last row the title's logo and tagline take (the title menu starts under it). */
   private titleBottom = 0;
-  private readonly menuInput = new MenuInput();
+  private readonly menuInput = new MenuInput(MENU_BINDINGS);
   private rng = new Rng(1);
   /**
    * Presentation's own random stream (screen shake, damage-number drift, sound pitch): forked
@@ -223,7 +223,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.savedKeys = engine.debugKeys;
     engine.debugKeys = rebindDebugKeys(engine.debugKeys, { mode: 'F8', resolution: 'F7' });
     this.savedGamepad = ctx.input.gamepadButtons;
-    ctx.input.gamepadButtons = { ...PAD_BUTTONS };
+    ctx.input.gamepadButtons = { ...GAMEPAD_BUTTONS }; // the engine's own pad codes (a lab before may have remapped them)
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
