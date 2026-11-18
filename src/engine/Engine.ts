@@ -249,7 +249,8 @@ export interface EngineOptions {
    * in a panel the ⚙ button opens. `button`: its corner (default, or true: 'top-right'; on a mouse
    * it shows while the pointer moves), or false for none: open the panel from your own menu
    * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
-   * a game with no pause menu of its own (default false: a game's Options is its own). `voice`: the
+   * a game with no pause menu of its own (default false: a game's Options is its own); Options acts as
+   * it is let go, never when Create joined it (`HOST_CHORD`, 52in1's bar). `voice`: the
    * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
    * aims by a DualSense's motion (`input.motion`), and the panel has Motion aim and its sensitivity
    * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`;
@@ -1624,9 +1625,9 @@ export class Engine {
       }
     }
     if (this.disposed) return; // a game hook disposed the engine during this frame
-    // Options (Esc) opens the panel once this frame has run as it was recorded (its keys still
-    // held): a replay never opens it, so the frame must not run with them let go. Not on the
-    // frame the panel closed (the Esc that closed it).
+    // Options (Esc) opens the panel once this frame has run as it was recorded (Esc still held;
+    // Options presses as it is let go, `HOST_CHORD`): a replay never opens it, so the frame must not
+    // run with them let go. Not on the frame the panel closed (the Esc that closed it).
     if (this.ready && !settingsOpen) this.openSettingsOnKey();
     this.renderer.screen.update(dt, this.camera.camera); // transitions run on real time, loads included
     this.renderer.render();

@@ -193,9 +193,11 @@ new LocalHub({ mode: 'moments', moment: { id: 'forge-brute', seconds: 20 }, play
 
 ## The controller's hub chord
 
-Holding View and Menu together (Create and Options, gamepad buttons 8 and 9: `HOST_CHORD`) opens
-the hub's bar, so once both are held the engine presses neither until both are let go (letting one
-go first presses nothing) (`input.ts`).
+Holding View and Menu together (Create and Options, gamepad buttons 8 and 9: `HOST_CHORD`) for a
+second opens the hub's bar, so once both are held the engine presses neither until both are let go
+(letting one go first presses nothing), and each presses only as it is let go, if the other never
+went down while it was held (`input.ts`): a thumb that reaches Options a poll before Create opens
+no pause or settings panel behind the bar. Every game's pause on `PadStart` has it for free.
 
 ## The player's settings and the DualSense
 
@@ -237,7 +239,8 @@ lets both go and gives the light back (`light(null)`) when a level unloads, and 
 round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,
 the team, danger): give it back on a title screen. Motion and the touchpad are input: they reach
 a game through `ctx.input` (recorded), never by reading `dualsense.gyro`, `accel` or `touches`
-itself (once a game reads the gyro, the hub's own Motion aim leaves the stick alone):
+itself (while a game reads the gyro, every poll, the hub's own Motion aim leaves the stick alone;
+half a second after the reads stop it has the stick back):
 `ctx.input.touchpad = true` turns touchpad swipes and taps into presses (`TOUCHPAD_KEYS`), and
 `settings: { motion: true }` gives the game motion aim with a settings row and its sensitivity
 (`input.motion`, on by default while the hub's own Motion aim is), both read through `hubPadInput`

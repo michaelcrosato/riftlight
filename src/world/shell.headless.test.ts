@@ -109,6 +109,14 @@ it('Options on a pad opens the menu and closes it again; Circle closes it too', 
     hold(1); // Circle: back
     expect(w.state().panel, 'Circle closes it').toBeNull();
     expect(engine.timeScale).toBe(1);
+    // Create + Options held for a second is 52in1's bar: Options a poll before Create opens nothing behind it
+    engine.input.setGamepads([pad(9)]);
+    engine.step(1);
+    engine.input.setGamepads([pad(8, 9)]);
+    engine.step(60);
+    engine.input.setGamepads([pad()]);
+    engine.step(2);
+    expect(w.state().panel, 'the hub’s chord, Options first').toBeNull();
   } finally {
     engine.input.setGamepads(null);
     engine.input.noteDevice('keyboard');

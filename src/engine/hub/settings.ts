@@ -9,10 +9,12 @@
  * as `engine.hubSettings` (the microphone's gate, the vibration) and `ctx.dualsense` (the
  * controller's extras, src/engine/hub/dualsense.ts). docs/engine/hub.md *The player's settings*.
  *
- * Never read `dualsense.gyro`, `accel` or `touches` here: reading them turns the hub's own Motion
- * aim off. They are input, and input reaches a game through `ctx.input` (recorded): `hubPadInput`
- * hands them to `input.dualsense`, which reads them only while a game asks (its motion aim on, its
- * touchpad on).
+ * Never read `dualsense.gyro`, `accel` or `touches` here. They are input, and input reaches a game
+ * through `ctx.input` (recorded): `hubPadInput` hands them to `input.dualsense`, which reads them only
+ * while a game asks (its motion aim on, its touchpad on). Reading the gyro or `accel` also holds the
+ * hub's own Motion aim off the right stick until half a second after the last read, and any of the
+ * three has the hub send the controller's motion every frame; reading `touches` takes nothing from
+ * the hub's Motion aim.
  */
 import type { DualSenseInput } from '../input';
 
@@ -67,9 +69,13 @@ export type TriggerEffect =
 
 /** `AIHubSettings.dualsense` as the hub gives it: the parts the engine uses. */
 export interface HubDualSenseSource extends Partial<DualSenseFlags> {
-  /** How fast the controller turns, degrees a second. Once read, the hub's own Motion aim leaves the stick alone (`hubPadInput` only). */
+  /**
+   * How fast the controller turns, degrees a second. While a game reads it (every poll), the hub's own
+   * Motion aim leaves the stick alone; half a second after the reads stop it has the stick back
+   * (`hubPadInput` only).
+   */
   readonly gyro?: { readonly x: number; readonly y: number; readonly z: number };
-  /** The fingers on the touchpad, at most two, `x` and `y` 0..1 from its top left (`hubPadInput` only). */
+  /** The fingers on the touchpad, at most two, `x` and `y` 0..1 from its top left; reading them takes nothing from the hub's Motion aim (`hubPadInput` only). */
   readonly touches?: readonly { readonly id: number; readonly x: number; readonly y: number }[];
   light?(colour: string | null): void;
   trigger?(which: TriggerSide, effect: TriggerEffect | null): void;

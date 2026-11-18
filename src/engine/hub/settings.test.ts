@@ -34,7 +34,7 @@ function fakeHub(o: { music?: number; effects?: number; mic?: boolean; micLater?
     trigger: (which: string, effect: TriggerEffect | null) => void calls.push(['trigger', which, effect]),
     openSpeaker: async () => (calls.push(['speaker']), speakerNode),
   };
-  // reading these turns the hub's Motion aim off: input comes through ctx.input, never from here
+  // input comes through ctx.input, never from here (a read of the gyro or accel also holds the hub's Motion aim off the stick)
   for (const field of ['gyro', 'accel', 'touches']) Object.defineProperty(dualsense, field, { enumerable: true, get: () => (read.push(field), field === 'touches' ? [] : { x: 0, y: 0, z: 0 }) });
   const source = Object.assign(new EventTarget(), {
     version: 1,

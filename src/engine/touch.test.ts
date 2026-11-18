@@ -3,14 +3,14 @@
 // touch density gives fewer, bigger art pixels without changing the world in view; and a legend
 // names the buttons on the device in use.
 import { OrthographicCamera, Vector3 } from 'three/webgpu';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { Controls } from './controls';
 import { DEFAULT_TOUCH_DENSITY, Engine, type Game, type GameContext } from './Engine';
 import { Hud } from './hud/Hud';
 import { Input, type InputDevice } from './input';
 import type { Recording } from './replay';
 import type { PlayerSettings } from './settings';
-import { TouchFollow } from './TouchControls';
+import { type TouchControls, TouchFollow } from './TouchControls';
 
 describe('touch controls follow the device in use (TouchFollow)', () => {
   it('step aside when a pad or the keyboard is picked up, and come back on the next touch; a device that only stays moves nothing', () => {
@@ -22,7 +22,7 @@ describe('touch controls follow the device in use (TouchFollow)', () => {
     expect([f.follow('touch'), f.away]).toEqual([true, false]);
   });
 
-  it('follow the recorded device, so a replay shows and hides them as the player saw', async () => {
+  it('the engine has them follow the device every frame, live and in a replay (recorded), so a replay shows and hides them as the player saw', async () => {
     class Watch implements Game {
       readonly name = 'Watch';
       devices: InputDevice[] = [];
@@ -36,24 +36,31 @@ describe('touch controls follow the device in use (TouchFollow)', () => {
     }
     let game = new Watch();
     const engine = await Engine.headless(game, { touch: true });
+    // headless has no controls on a page: a stand-in hears what the engine tells them
+    const follow = vi.fn<(device: InputDevice) => void>();
+    engine.touch = { follow, root: { remove() {} } } as unknown as TouchControls;
     engine.input.noteDevice('touch');
     await engine.loadGame(game);
+    follow.mockClear();
     const plan: InputDevice[] = ['touch', 'touch', 'pad', 'pad', 'touch', 'keyboard', 'keyboard', 'touch'];
     for (const d of plan) {
       engine.input.noteDevice(d);
       engine.step(1);
     }
+    expect(follow.mock.calls.map(([d]) => d), 'live: every frame, the device in use').toEqual(plan);
     const shown = (devices: readonly InputDevice[]) => {
       const f = new TouchFollow(devices[0]!);
       return devices.map((d) => (f.follow(d), !f.away));
     };
     const live = game.devices.slice();
+    expect(live).toEqual(plan);
     expect(shown(live)).toEqual([true, true, false, false, true, false, false, true]);
     const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
-    engine.input.noteDevice('keyboard'); // live, before the replay
+    engine.input.noteDevice('keyboard'); // live, before the replay: never what the replay shows
+    follow.mockClear();
     await engine.replay(rec, () => engine.loadGame((game = new Watch())));
+    expect(follow.mock.calls.map(([d]) => d), 'the replay: the recorded device, frame by frame').toEqual(plan);
     expect(game.devices).toEqual(live);
-    expect(shown(game.devices)).toEqual(shown(live));
     engine.dispose();
   });
 });
