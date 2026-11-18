@@ -21,6 +21,7 @@ import type { ActorLike, GameEvents, HitResult, Item, Rarity } from '../core/typ
 import { t } from '../lang';
 import { rollItem } from './generate';
 import { InventoryView, ItemsStore, ItemsUi, StashView, VendorView } from '../ui/items';
+import { wrapRow } from '../ui/kit';
 import { addGold, pickUp } from './inventory';
 import { vendorStock } from './vendor';
 import { WorldLoot } from './world';
@@ -153,9 +154,19 @@ export class LootLab implements Game {
     ctx.hud.clear();
     this.world.update(dt);
     this.ui.update(dt);
-    // a developer page: dev. lines (never translated)
-    ctx.hud.text(4, 4, t('dev.lootlab.status', { depth: this.depth, gold: this.store.state.gold }), { color: 'sand' });
-    ctx.hud.text(4, 14, t('dev.lootlab.keys', { filter: t(this.world.filterEnabled ? 'dev.lootlab.on' : 'dev.lootlab.off') }), { color: 'mist' });
+    // a developer page: dev. lines (never translated), their parts (two spaces apart) wrapped to
+    // the screen: fill gives a 4:3 window 320 art columns, a phone in portrait 130
+    const lines = [
+      [t('dev.lootlab.status', { depth: this.depth, gold: this.store.state.gold }), 'sand'],
+      [t('dev.lootlab.keys', { filter: t(this.world.filterEnabled ? 'dev.lootlab.on' : 'dev.lootlab.off') }), 'mist'],
+    ] as const;
+    let y = 4;
+    for (const [line, color] of lines) {
+      for (const row of wrapRow(line.split(/ {2,}/), ctx.hud.width - 8)) {
+        ctx.hud.text(4, y, row, { color });
+        y += 10;
+      }
+    }
   }
 
   cameraTarget(): Vector3 {

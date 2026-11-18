@@ -20,7 +20,8 @@ import { AnimationMixer, BoxGeometry, ConeGeometry, CylinderGeometry, Group, Mes
 import { type GameContext, type Hud, type Input, mergeStaticMeshes, type MoveInput, PALETTE, type PaletteColor, toonMaterial, type Trigger } from '../../../engine';
 import type RAPIER from '@dimforge/rapier3d';
 import { t } from '../../lang';
-import { hints } from '../hints';
+import { wrapRow } from '../../ui/kit';
+import { hintRows, hints } from '../hints';
 import { moveInput, Visitor } from '../visitor';
 import { ARCADE_COLORS, ARCADE_STAGE, type ArcadeBlock, type ArcadeScenery } from './stage';
 
@@ -93,6 +94,8 @@ interface Slab {
 }
 
 const READY_TIME = 1.1;
+/** Art pixels kept clear between the HUD's coins, title and best time. */
+const GAP = 6;
 const S = ARCADE_STAGE;
 
 export class ArcadeStage {
@@ -405,38 +408,73 @@ export class ArcadeStage {
     return this.target.set(p.x + ahead, Math.max(this.origin.y + 3.8, p.y + 1.6), this.origin.z);
   }
 
-  /** Coins, timer and best on the pixel HUD (the caller clears it first). Words are lines (lang/showcase.ts). */
+  /**
+   * Coins, timer and best on the pixel HUD (the caller clears it first). Words are lines
+   * (lang/showcase.ts). Laid out by the HUD's width: fill gives a phone in portrait 130 art
+   * columns, so what doesn't fit beside the coins goes under them, and the controls and the
+   * results card wrap.
+   */
   drawHud(hud: Hud): void {
+    const W = hud.width;
+    const coins = `${String(this.coins).padStart(2, '0')}/${this.total}`;
+    const best = this.best > 0 ? t('showcase.arcade.best', { time: formatRace(this.best) }) : t('showcase.arcade.best_none');
+    const title = t('showcase.arcade.name');
+    const coinsEnd = 16 + hud.measure(coins).width + GAP;
+    const bestStart = W - 6 - hud.measure(best).width - GAP;
+    // the best time beside the coins (top right), or under them; the title and the timer
+    // between the two, or under everything
+    const bestY = coinsEnd <= bestStart ? 6 : 16;
+    const titleW = hud.measure(title).width;
+    const titleX = Math.floor((W - titleW) / 2);
+    const titleY = bestY === 6 && titleX >= coinsEnd && titleX + titleW <= bestStart ? 5 : bestY + 12;
     hud.sprite(6, 6, COIN_ICON, COIN_COLORS);
-    hud.text(16, 6, `${String(this.coins).padStart(2, '0')}/${this.total}`, { color: 'sand', shadow: 'ink' });
-    hud.text(0, 5, t('showcase.arcade.name'), { anchor: 'top', color: 'white', shadow: 'ink' });
-    hud.text(0, 15, formatRace(this.time), { anchor: 'top', color: this.phase === 'done' ? 'lime' : 'sand', shadow: 'ink' });
-    hud.text(6, 6, this.best > 0 ? t('showcase.arcade.best', { time: formatRace(this.best) }) : t('showcase.arcade.best_none'), { anchor: 'top-right', color: 'mist', shadow: 'ink' });
+    hud.text(16, 6, coins, { color: 'sand', shadow: 'ink' });
+    hud.text(0, titleY, title, { anchor: 'top', color: 'white', shadow: 'ink' });
+    hud.text(0, titleY + 10, formatRace(this.time), { anchor: 'top', color: this.phase === 'done' ? 'lime' : 'sand', shadow: 'ink' });
+    hud.text(6, bestY, best, { anchor: 'top-right', color: 'mist', shadow: 'ink' });
     if (this.phase === 'ready') {
-      hud.text(0, -10, this.phaseTime < READY_TIME * 0.6 ? t('showcase.arcade.ready') : t('showcase.arcade.go'), { anchor: 'center', scale: 3, color: 'sand', shadow: 'ink' });
+      const word = this.phaseTime < READY_TIME * 0.6 ? t('showcase.arcade.ready') : t('showcase.arcade.go');
+      const scale = [3, 2].find((k) => hud.measure(word, k).width <= W - 8) ?? 1;
+      hud.text(0, -10, word, { anchor: 'center', scale, color: 'sand', shadow: 'ink' });
     } else if (this.phase === 'play' && this.time < 4) {
-      hud.text(0, 8, hints(['run', 'jump', 'pound', 'leave'], '   '), { anchor: 'bottom', color: 'white', shadow: 'ink' });
+      const rows = hintRows(['run', 'jump', 'pound', 'leave'], W - 8);
+      rows.forEach((row, i) => hud.text(0, 8 + (rows.length - 1 - i) * 10, row, { anchor: 'bottom', color: 'white', shadow: 'ink' }));
     }
     const r = this.result;
-    if (this.phase === 'done' && r) {
-      const title = t('showcase.arcade.clear');
-      const rows = [
-        r.newBest ? t('showcase.arcade.time_new_best', { time: formatRace(r.time) }) : t('showcase.arcade.time', { time: formatRace(r.time) }),
-        t('showcase.arcade.coins_par', { coins: r.coins, total: r.total, par: formatRace(S.par) }),
-        r.reward > 0 ? t('showcase.arcade.reward', { gold: r.reward }) : t('showcase.arcade.best', { time: formatRace(r.best) }),
-        hints(['again', 'leave'], '   '),
-      ];
-      // the card grows to its words (a longer language), never past the screen
-      const w = Math.min(hud.width - 8, Math.max(180, hud.measure(title, 2).width + 16, ...rows.map((x) => hud.measure(x).width + 12)));
-      const h = 74;
-      hud.rect(0, -6, w, h, 'ink', 'center');
-      hud.rect(0, -6, w - 4, h - 4, 'navy', 'center');
-      hud.text(0, -34, title, { anchor: 'center', scale: 2, color: 'sand', shadow: 'ink' });
-      hud.text(0, -14, rows[0]!, { anchor: 'center', color: r.newBest ? 'lime' : 'white' });
-      hud.text(0, -3, rows[1]!, { anchor: 'center', color: 'white' });
-      hud.text(0, 8, rows[2]!, { anchor: 'center', color: 'sand' });
-      if (this.phaseTime > 0.8) hud.text(0, 21, rows[3]!, { anchor: 'center', color: 'mist' });
+    if (this.phase === 'done' && r) this.drawResults(hud, r);
+  }
+
+  /** The results card: it grows to its words (a longer language), never past the screen, where its title shrinks and its lines wrap. */
+  private drawResults(hud: Hud, r: ArcadeResult): void {
+    const title = t('showcase.arcade.clear');
+    const rows: [string, PaletteColor][] = [
+      [r.newBest ? t('showcase.arcade.time_new_best', { time: formatRace(r.time) }) : t('showcase.arcade.time', { time: formatRace(r.time) }), r.newBest ? 'lime' : 'white'],
+      [t('showcase.arcade.coins_par', { coins: r.coins, total: r.total, par: formatRace(S.par) }), 'white'],
+      [r.reward > 0 ? t('showcase.arcade.reward', { gold: r.reward }) : t('showcase.arcade.best', { time: formatRace(r.best) }), 'sand'],
+    ];
+    const help = hints(['again', 'leave'], '   ');
+    const w = Math.min(hud.width - 8, Math.max(180, hud.measure(title, 2).width + 16, ...[...rows.map(([x]) => x), help].map((x) => hud.measure(x).width + 12)));
+    const ts = hud.measure(title, 2).width + 16 <= w ? 2 : 1;
+    // a line too wide breaks between its parts (two or more spaces apart: "Coins 20/20   Par 00:30.00")
+    const fit = (text: string): string[] => (hud.measure(text).width <= w - 12 ? [text] : wrapRow(text.split(/ {2,}/), w - 12));
+    // centre heights from the card's top: the title, then a line every 11 px, the controls 2 px lower
+    const lines: [string, PaletteColor, number][] = [];
+    let at = ts === 2 ? 29 : 19;
+    for (const [text, color] of rows) {
+      for (const line of fit(text)) {
+        lines.push([line, color, at]);
+        at += 11;
+      }
     }
+    const helpAt = at + 2;
+    const helpRows = hintRows(['again', 'leave'], w - 12);
+    const h = helpAt + (helpRows.length - 1) * 11 + 10;
+    const top = -6 - h / 2; // the card's centre stays 6 px above the screen's
+    hud.rect(0, -6, w, h, 'ink', 'center');
+    hud.rect(0, -6, w - 4, h - 4, 'navy', 'center');
+    hud.text(0, Math.round(top + (ts === 2 ? 9 : 6)), title, { anchor: 'center', scale: ts, color: 'sand', shadow: 'ink' });
+    for (const [line, color, y] of lines) hud.text(0, Math.round(top + y), line, { anchor: 'center', color });
+    if (this.phaseTime > 0.8) helpRows.forEach((row, i) => hud.text(0, Math.round(top + helpAt + i * 11), row, { anchor: 'center', color: 'mist' }));
   }
 
   /** Where the hero is, stage-local (agents, the autopilot). */

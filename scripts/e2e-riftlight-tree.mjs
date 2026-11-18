@@ -54,6 +54,20 @@ export async function runRiftlightTree(h) {
       return { w: c.width, h: c.height, cssW: r.width, cssH: r.height };
     });
     check(box.cssW === box.w * 2 && box.cssH === box.h * 2, `canvas is ${box.w}×${box.h} shown at exactly 2× (${box.cssW}×${box.cssH} CSS px)`);
+    // fill, the engine's default, on the page too: a window that isn't a 16:9 multiple of 270 still
+    // gets the tree at every edge (adaptive would letterbox 1600×900 to 1440×810 at 80,45)
+    for (const [width, height] of [[1600, 900], [960, 720], [390, 844]]) {
+      await page.setViewportSize({ width, height });
+      await frame();
+      const r = await E(() => {
+        const c = document.querySelector('canvas[data-rift-tree="canvas"]').getBoundingClientRect();
+        return { x: c.x, y: c.y, right: c.right, bottom: c.bottom };
+      });
+      const d = await dbg();
+      check(r.x <= 0 && r.y <= 0 && r.right >= width && r.bottom >= height && Number.isInteger(d.scale) && d.scale >= 1, `${width}×${height}: the tree covers every edge (${d.art.width}×${d.art.height} at ${d.scale}×, ${r.x},${r.y} to ${r.right},${r.bottom})`);
+    }
+    await page.setViewportSize({ width: 960, height: 540 });
+    await frame();
     const c0 = await colors();
     check(c0.count >= 6 && c0.count <= 16 && c0.lit > 2000 && c0.lit < 100000, `tree renders in palette colours (${c0.count} colours, ${c0.lit} lit pixels)`);
     await shot('start');

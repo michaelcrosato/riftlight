@@ -40,13 +40,14 @@ everything but the final copy.
   the viewport at the whole device-pixel scale nearest the configured art height, so the
   picture reaches every edge at every window shape (16:9, 21:9, 4:3, a phone) and follows
   resizes, as a game in the 52in1 hub must. At 2560×1440, 480×270 becomes 512×288 at 5×; at
-  1600×900, 534×300 at 3×; a portrait phone (390×844) gets 130×282 at 3×. A final partial art
-  pixel can extend past the viewport and is clipped at its edge; art pixels stay square and
-  integer-scaled. Only the pixel density changes with the window: the world in view does not
-  (the ortho view height and perspective fov are fixed; width follows the aspect). Browser
-  fullscreen and HiDPI screens use the same layout, and the HUD and in-game tree follow it.
-  Camera rigs follow the art aspect (`rig.setAspect`); `renderer.resolution` is the art size
-  actually rendered, `renderer.baseResolution` the configured preset.
+  1600×900, 534×300 at 3×; a portrait phone (390×844) gets 130×282 (3× at DPR 1, 9× on a DPR-3
+  phone). A final partial art pixel can extend past the viewport and is clipped at its edge; art
+  pixels stay square and integer-scaled. Only the pixel density changes with the window: the
+  world in view does not (the ortho view height and perspective fov are fixed; width follows the
+  aspect). Browser fullscreen and HiDPI screens use the same layout, and the HUD and the passive
+  tree (in a game and on /tree.html) follow it. Camera rigs follow the art aspect
+  (`rig.setAspect`); `renderer.resolution` is the art size actually rendered,
+  `renderer.baseResolution` the configured preset.
 - **Letterboxing opt-ins** (not for a 52in1 game: they leave bars). `adaptive` keeps the art
   height (270) and gives the art the screen's aspect, clamped to 0.4–2.4, at the largest
   integer scale that fits: a portrait phone gets 124×270 art covering ~92% of the screen, a

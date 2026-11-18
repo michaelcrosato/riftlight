@@ -1,7 +1,8 @@
 /**
  * The passive tree view: a full-screen pixel-art overlay. A 2D canvas at art resolution
  * (480×270 by default), using the engine's framing mode so it is exactly as crisp as
- * the HUD. Embedded views share the game's fill mode; standalone views use adaptive.
+ * the HUD. Embedded views share the game's aspect mode; standalone views (/tree.html) use the
+ * engine's default, fill: the tree reaches every edge of the window.
  *
  *   const view = new TreeView({ container, state, audio: ctx.audio, onChange: (c, s) => save(s) });
  *   view.open();  view.close();  view.isOpen();
@@ -42,7 +43,7 @@ export interface TreeViewOptions extends TreeRules {
   state?: TreeState;
   /** Art resolution height (and 16:9 fallback). Default 480×270. */
   resolution?: Resolution;
-  /** Match the containing game's presentation. Standalone views default to adaptive. */
+  /** Match the containing game's presentation. Default: fill, the engine's (the tree covers the window). */
   aspect?: AspectMode;
   /** Key codes that close the view. Default ['Escape']; [] = can't be closed by key. */
   closeKeys?: readonly string[];
@@ -661,7 +662,7 @@ export class TreeView {
     const w = c.clientWidth || window.innerWidth;
     const h = c.clientHeight || window.innerHeight;
     const res = this.options.resolution ?? RESOLUTIONS.default;
-    const f = (this.framing = computeFraming(w, h, window.devicePixelRatio || 1, res, this.options.aspect ?? 'adaptive'));
+    const f = (this.framing = computeFraming(w, h, window.devicePixelRatio || 1, res, this.options.aspect));
     if (f.artWidth !== this.buf.width || f.artHeight !== this.buf.height) {
       const [tx, ty] = [this.cam.x, this.cam.y];
       this.buf = new PixelBuffer(f.artWidth, f.artHeight);

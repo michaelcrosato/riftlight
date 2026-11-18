@@ -274,3 +274,18 @@ const PAD_ROUND = ['.ooooo.', 'occccco', 'occccco', 'occccco', 'occccco', 'occcc
 export function wrap(text: string, width: number, scale = 1): string[] {
   return wrapText(text, width, (s) => textWidthPx(s, scale));
 }
+
+/**
+ * A row of parts (control hints, a lab's key help) joined by `separator`, in lines of at most
+ * `width` art pixels at `scale`: broken between parts, as many as fit on each line; a part wider
+ * than a line wraps inside (`wrap`). A narrow screen (a phone in portrait) gets it on several lines.
+ */
+export function wrapRow(parts: readonly string[], width: number, separator = '  ', scale = 1): string[] {
+  const out: string[] = [];
+  for (const part of parts) {
+    const last = out.at(-1);
+    if (last !== undefined && textWidthPx(last + separator + part, scale) <= width) out[out.length - 1] = last + separator + part;
+    else out.push(...wrap(part, width, scale));
+  }
+  return out;
+}
