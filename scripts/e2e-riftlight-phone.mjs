@@ -440,8 +440,11 @@ export async function runRiftlightPhone(h, orientation) {
       });
       return { ...at, before, after, analog, closed };
     })();
+    // back, not just changed: sun and ambient step down (from 1, never at their floor), light and
+    // look go to the one before (from the first, round to the last)
+    const back = !photo.arrow ? false : ['sun', 'ambient'].includes(photo.arrow.row) ? photo.after < photo.before : photo.after === photo.before - 1 || (photo.before === 0 && photo.after > 0);
     check(
-      !!photo.arrow && photo.after !== photo.before,
+      back,
       `${orientation}: in photo mode a tap on a row's < inside the stick's zone steps the row back (${photo.arrow ? `${photo.arrow.row} ${photo.before} → ${photo.after}` : `no < in the zone: ${JSON.stringify(photo)}`})`,
     );
     check(photo.off === null || photo.analog > 0.3, `${orientation}: in photo mode a thumb in the zone off the panel still moves the stick (analog ${photo.analog})`);
