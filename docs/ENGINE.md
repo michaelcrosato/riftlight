@@ -11,6 +11,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/camera.md | camera presets, free → fixed workflow, `CameraConfig`, screen shake |
 | docs/engine/character.md | `PlatformerCharacter`: the moveset, touch controls (stepping aside for a pad or keys, the floating stick, a phone's touch density), states, tuning, hurt, teleport |
 | docs/engine/game-api.md | `Game` and `Engine.start`, `loadGame` and unloading, `?game=` ids, shipping options, player settings, mouse picking, gamepads (the one pad scheme, the device used last, triggers, rumble, swipes) and press timing, menus on every device (`MenuInput`, `FocusList`), prompts, glyphs and legends (`Game.controls`, `engine.controls`, `hud.glyph` / `hud.prompt` / `hud.legend`), the ten-foot settings panel, game speed and hitstop |
+| docs/engine/couch.md | couch co-op: each pad on its own (`input.player`), joining (`joinWith`, `joined`), recorded per pad |
 | docs/engine/physics.md | triggers, movers and conveyors, force fields, joints, destruction, `InstancedBodies`, vehicles, bullets |
 | docs/engine/physics-soft.md | cloth, ropes, jelly, ragdolls, water and buoyancy |
 | docs/engine/audio.md | sound effects and songs as data, audio unlock, spatial sound and looping voices, the buses and the player's 52in1 volumes |

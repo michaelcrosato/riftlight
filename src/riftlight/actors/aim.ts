@@ -77,6 +77,22 @@ export function stickAim<T extends { readonly position: Vector3; readonly alive:
 }
 
 /**
+ * Aim without a mouse or the right stick (keys, the left stick, a finger, a couch guest's pad at
+ * rest): the nearest target in the `AIM.cone` ahead along `move` (standing, along where it aimed
+ * last, `aim`), else the nearest within `around` m whichever way, else on along the move (3 m) or
+ * where it aimed, into `out`.
+ */
+export function autoAim<T extends { readonly position: Vector3; readonly alive: boolean }>(from: Vector3, move: { readonly x: number; readonly z: number }, aim: Vector3, around: number, targets: readonly T[], ok: (t: T) => boolean, out: Vector3): void {
+  const moving = Math.hypot(move.x, move.z) > 0.1;
+  const dx = moving ? move.x : aim.x - from.x;
+  const dz = moving ? move.z : aim.z - from.z;
+  const target = coneTarget(from, dx, dz, AIM.cone, AIM.range, targets, ok) ?? coneTarget(from, 1, 0, 180, around, targets, ok);
+  if (target) out.copy(target.position);
+  else if (moving) out.set(from.x + move.x * 3, from.y, from.z + move.z * 3);
+  else out.copy(aim);
+}
+
+/**
  * The ground direction (`dx`, `dz`) turned `deg` degrees as the screen shows it (+: clockwise, the
  * way a controller turned right turns the aim), on the camera's ground basis (`right`, `forward`:
  * unit, at right angles: `cameraBasis`).

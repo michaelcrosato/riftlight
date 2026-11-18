@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -35,7 +35,7 @@ import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/p
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, SHELL_MENU_BINDINGS } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, readActions, SHELL_MENU_BINDINGS } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -53,7 +53,8 @@ import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
 import { TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
-import { AIM, coneTarget, stickAim, turnOnScreen } from '../actors/aim';
+import { AIM, autoAim, stickAim, turnOnScreen } from '../actors/aim';
+import { COOP, LocalCoop } from './coop';
 import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
@@ -177,6 +178,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private motionWasOn = false;
   /** `input.motion.lean` before this game set it (given back at dispose). */
   private savedLean = true;
+  /** Couch co-op: the players 2 to 4 at this screen, a pad each (`game/coop.ts`). */
+  coop!: LocalCoop;
+  /** Where the camera follows a couch group (its centre). */
+  private readonly groupAt = new Vector3();
   private interactQueued = false;
   /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
   worldFocus: WalkTarget | null = null;
@@ -279,6 +284,19 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // motion aim turns a kept aim direction (`turnAim`), never leans the aim stick
     this.savedLean = ctx.input.motion.lean;
     ctx.input.motion.lean = false;
+    // couch co-op: every pad read on its own too, so players 2 to 4 can join (`game/coop.ts`)
+    ctx.input.padPlayers = true;
+    this.coop = new LocalCoop({
+      input: ctx.input,
+      hero: () => this.hero,
+      guestHero: (at, facing) => this.guestHero(at, facing),
+      fitGuest: (hero) => this.fitGuest(hero),
+      besideSpot: (p, seat) => this.besideSpot(p, seat),
+      enterStage: (hero, at, facing) => hero.enter(this.level ?? this.town, at, facing),
+      foes: () => this.level?.actors() ?? [],
+      basis: (right, forward) => cameraBasis(ctx.engine, right, forward),
+      feed: (text) => this.feedLine(text, 'cyan'),
+    });
     this.ui = new Canvas(ctx.hud);
     this.pointer = new Pointer(engine);
     this.touchPad = new TouchPad(engine);
@@ -349,6 +367,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.savedKeys) ctx.engine.debugKeys = this.savedKeys;
     if (this.savedGamepad) ctx.input.gamepadButtons = this.savedGamepad;
     ctx.input.motion.lean = this.savedLean;
+    this.coop?.dispose();
+    ctx.input.padPlayers = false;
+    ctx.input.joinWith = null;
     ctx.input.preventKeys.delete('Tab');
     this.level?.dispose();
     this.level = null;
@@ -434,6 +455,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Title screen: the town at dusk behind the logo and menu, no hero. */
   toTitle(): void {
     this.leaveLevel();
+    this.coop.leaveAll(); // couch guests leave with the run
     this.screen = 'title';
     this.layer.closeAll();
     this.hero.object.visible = false;
@@ -613,6 +635,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const at = reason === 'portal' ? this.town.portalSpawn : this.town.spawn;
     this.hero.enter(this.town, at, reason === 'portal' ? Math.PI * 0.75 : Math.PI * 0.75 + Math.PI);
     this.hero.restore();
+    this.coop.enter(at, reason === 'portal' ? Math.PI * 0.75 : Math.PI * 0.75 + Math.PI);
     this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(at.y + 0.9));
     this.zoomGoal = CAMERA.town;
     this.playMusic('town');
@@ -647,8 +670,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.hero.object.visible = true;
     this.hero.enter(level, level.start, Math.PI);
     this.hero.restore();
-    this.ctx.engine.camera.teleport(this.camTarget.copy(level.start).setY(0.9));
     this.screen = 'level';
+    this.coop.enter(level.start, Math.PI);
+    this.ctx.engine.camera.teleport(this.camTarget.copy(level.start).setY(0.9));
     this.zoomGoal = CAMERA.level;
     this.levelTime = 0;
     this.cleared = false;
@@ -867,13 +891,55 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       hero.dispose();
       return null;
     }
+    this.fitAsOurs(hero);
+    hero.enter(this.level, this.level.start, Math.PI);
+    hero.restore();
+    return hero;
+  }
+
+  /** Another hero levelled, skilled and geared as ours (a teammate, a couch guest). */
+  private fitAsOurs(hero: HeroPort): void {
     hero.setLevel(this.save.hero.level);
     hero.setSkills?.(this.save.hero.skills);
     hero.setMods('tree', this.ports.tree.mods(this.save.hero.allocated));
     for (const [source, mods] of Object.entries(this.ports.loot.gearMods())) hero.setMods(source, mods);
-    hero.enter(this.level, this.level.start, Math.PI);
+  }
+
+  /** A couch guest's hero (`game/coop.ts`): as ours, and our difficulty's, in the stage on now at `at` (none on a title or loading screen). */
+  async guestHero(at: Vector3, facing: number): Promise<HeroPort | null> {
+    const hero = await this.ports.hero.create(this.services, this.save.hero);
+    const stage = this.screen === 'level' ? this.level : this.screen === 'town' ? this.town : null;
+    if (!stage) {
+      hero.dispose();
+      return null;
+    }
+    this.fitGuest(hero);
+    hero.enter(stage, at, facing);
     hero.restore();
     return hero;
+  }
+
+  /** A couch guest's hero as ours again (a new stage: our level, skills, gear and difficulty may have changed). */
+  fitGuest(hero: HeroPort): void {
+    this.fitAsOurs(hero);
+    hero.setMods('difficulty', difficultyMods(this.save.difficulty, 'hero'));
+  }
+
+  /**
+   * Where a couch guest of `seat` stands beside `p`, as the screen shows it (seat 2 to the right,
+   * 3 to the left, 4 below, `COOP.below` down so that neither its body nor its tag covers player
+   * 1's), on ground a hero can stand on; else nearer or the other side, else `p` itself.
+   */
+  besideSpot(p: Vector3, seat: number): Vector3 {
+    const stage = this.stageNow();
+    cameraBasis(this.ctx.engine, this.right, this.forward);
+    const side = seat === 2 ? this.right : seat === 3 ? this.right.clone().negate() : this.forward.clone().negate();
+    // seat 4 nearer than `COOP.below` would cover player 1: above them instead (player 1 then covers nothing of it but its feet)
+    for (const r of seat === 4 ? [COOP.below, -COOP.below] : [COOP.beside, COOP.beside * 0.6, -COOP.beside]) {
+      const at = new Vector3(p.x + side.x * r, p.y, p.z + side.z * r);
+      if (this.screen === 'level' ? !stage || stage.walkable(at.x, at.z, false) : this.town.wall(p, at) === null) return at;
+    }
+    return p.clone();
   }
 
   /** A damage number over a spot (a shared world's client shows the host's). */
@@ -936,6 +1002,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (gained > 0) {
       this.hero.setLevel(this.save.hero.level);
       this.hero.restore();
+      for (const g of this.coop.guests) g.hero?.setLevel(this.save.hero.level); // couch guests are at player 1's level
       this.levelUpAge = 0;
       this.banners.push('levelup', t('banner.levelup', { level: this.save.hero.level }), t('banner.levelup.point'));
       this.ctx.audio.play('rl.levelUp');
@@ -1292,8 +1359,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /**
    * What input brings once a frame, taken as early as it can be (before the first fixed step, or in
-   * `update` on a frame without one): an agent's input (`agentInput`) and the controller's turn
-   * (`turnAim`).
+   * `update` on a frame without one): an agent's input (`agentInput`), the controller's turn
+   * (`turnAim`) and the couch guests who joined (`coop.frame`).
    */
   private frameInput(ctx: GameContext): void {
     const commands = ctx.input.commands;
@@ -1301,6 +1368,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.frameTaken = commands;
     this.agentInput(commands);
     this.turnAim(ctx);
+    this.coop.frame(); // pads that joined this frame take their seats
   }
 
   /**
@@ -1371,6 +1439,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.intent.move.x = this.intent.move.z = 0;
       this.hero.fixedUpdate(dt, { ...this.intent, attack: false, skill: -1, dodge: false, held: 0 });
     } else this.hero.fixedUpdate(dt, intent);
+    this.coop.fixedUpdate(dt);
     this.level?.fixedUpdate(dt, this.hero);
     this.round?.fixedUpdate(dt, intent);
     if (this.botIntent?.interact) this.interactQueued = true;
@@ -1422,19 +1491,16 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     let down: { x: number; y: number } | null = null;
     for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = ndcToArt(ctx.engine, e.x, e.y);
     const onHud = this.pointerOnHud(down ?? this.pointer.art);
-    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !onHud));
-    i.skill = -1;
-    for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
+    // the keys' and buttons' actions (a couch guest's pad reads the same: `readActions`), then the mouse's
+    readActions(input, i);
+    i.attack = !overUi && (i.attack || (left && !onHud));
     if (right && !overUi) i.skill = 0;
     // held skill keys keep channels (whirlwind, beams) going
-    let held = 0;
-    for (let s = 0; s < 4; s++) if (input.anyDown(KEYS.skill[s]!)) held |= 1 << s;
-    if (input.anyDown(MOUSE.right) && !overUi) held |= 1;
-    i.held = panelOpen ? 0 : held;
-    i.dodge = input.consumeAny(KEYS.dodge);
+    if (input.anyDown(MOUSE.right) && !overUi) i.held |= 1;
     if (panelOpen) {
       i.attack = false;
       i.skill = -1;
+      i.held = 0;
       i.dodge = false;
     }
     // motion aim holds while the hero acts along it, and lets go `AIM.hold` s after it last did or turned
@@ -1484,16 +1550,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * else the nearest one around (within `AIM_AROUND` m), else on along the move or where it aimed.
    */
   private autoAim(): Vector3 {
-    const hp = this.hero.actor.position;
-    const m = this.intent.move;
-    const moving = Math.hypot(m.x, m.z) > 0.1;
-    const foes = this.level?.actors() ?? [];
-    const dx = moving ? m.x : this.intent.aim.x - hp.x;
-    const dz = moving ? m.z : this.intent.aim.z - hp.z;
-    const target = coneTarget(hp, dx, dz, AIM.cone, AIM.range, foes, hostile) ?? coneTarget(hp, 1, 0, 180, AIM_AROUND, foes, hostile);
-    if (target) return target.position;
-    if (moving) return this.tmp.set(hp.x + m.x * 3, hp.y, hp.z + m.z * 3);
-    return this.tmp.copy(this.intent.aim);
+    autoAim(this.hero.actor.position, this.intent.move, this.intent.aim, AIM_AROUND, this.level?.actors() ?? [], hostile, this.tmp);
+    return this.tmp;
   }
 
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
@@ -1555,7 +1613,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.syncTouch();
     this.feel.update(dt);
     this.lightBar();
-    if (this.showcase.active) return this.showcase.update(dt, events);
+    if (this.showcase.active) {
+      ctx.input.joinWith = null; // nobody joins in the showcase (`joinPolicy` runs only out of it)
+      return this.showcase.update(dt, events);
+    }
     this.layer.update(dt);
     // Options from any screen of play: it pauses, and on the pause menu it resumes (a press no menu reads)
     let consumed = ctx.input.wasPressed(...KEYS.options) && this.options();
@@ -1599,12 +1660,47 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       else if (this.round) this.banners.update(dt); // a round's countdown shows over the still world
     }
     this.updateCamera(ctx, dt);
+    this.joinPolicy(ctx);
     this.draw(ctx);
     // the wheel zooms the camera through the settings (and is consumed so the rig doesn't)
     if (ctx.input.wheel && !this.layer.top) {
       this.settings.zoom = Math.max(0.6, Math.min(1.6, this.settings.zoom * Math.pow(1.08, -ctx.input.wheel)));
     }
     ctx.input.wheel = 0;
+  }
+
+  /**
+   * Couch co-op is offered (its pause menu entry, the town's line, joins): never in a 52in1 round
+   * (its players are the hub's) nor in the showcase.
+   */
+  private get couchOffered(): boolean {
+    return !this.round && !this.showcase?.active;
+  }
+
+  /** The Couch co-op menu's seats while couch co-op is offered (`MenuHost.couch`), else null. */
+  couch(): LocalCoop | null {
+    return this.couchOffered ? this.coop : null;
+  }
+
+  /**
+   * Couch co-op (`game/coop.ts`): who may join at the next poll (`input.joinWith`, Cross). In the
+   * Couch co-op menu any pad but player 1's in use; in town, while player 1 plays on a pad, another
+   * pad (player 1 on the keyboard picking a pad up must not join by mistake: the menu is the way
+   * then). Never in a 52in1 round or the showcase, nor with every seat taken. Joins themselves are
+   * recorded input.
+   */
+  private joinPolicy(ctx: GameContext): void {
+    const input = ctx.input;
+    const town = this.screen === 'town' && !this.layer.top && !this.dead && input.device === 'pad';
+    input.joinWith = this.coop.open && this.couchOffered && (this.layer.has('coop') || town) ? KEYS.join : null;
+  }
+
+  /** The town says how to join (`menu.coop.join`): couch co-op offered, player 1 on a pad, a seat free, and a pad that isn't player 1's connected. */
+  private joinHint(): boolean {
+    const input = this.ctx.input;
+    if (!this.coop.open || !this.couchOffered || this.layer.top || this.dead || input.device !== 'pad') return false;
+    for (let slot = 0; slot < MAX_PADS; slot++) if (input.player(slot).connected && !input.joined.has(slot) && slot !== input.padIndex) return true;
+    return false;
   }
 
   /** Shift+Tab: the tab before (the menus hear Tab as the next one). */
@@ -1845,6 +1941,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (playing) {
       this.playtime += dt;
       this.hero.update(dt);
+      this.coop.update(dt);
     }
     this.town.update(dt, this.screen === 'town' ? this.hero.actor.position : null);
     this.ports.loot.update(dt);
@@ -1912,13 +2009,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.screen === 'title') {
       this.town.titleTarget(this.time, this.camTarget);
     } else if (this.hero && (this.screen === 'town' || this.screen === 'level')) {
-      const p = this.round?.watch() ?? this.hero.actor.position;
+      // a couch group: its centre (`coop.centre`), no lead
+      const group = this.coop.guests.length > 0;
+      const p = this.round?.watch() ?? (group ? this.coop.centre(this.groupAt) : this.hero.actor.position);
       // lead a little toward where the hero aims
       const want = this.tmp.copy(this.intent.aim).sub(p).setY(0);
       if (this.botIntent) want.copy(this.botIntent.aim).sub(p).setY(0);
       want.multiplyScalar(CAMERA.lead);
       if (want.length() > CAMERA.leadMax) want.setLength(CAMERA.leadMax);
-      if (this.dead || this.layer.modal) want.set(0, 0, 0);
+      if (this.dead || this.layer.modal || group) want.set(0, 0, 0);
       else this.touchLift(ctx, want);
       this.lead.lerp(want, 1 - Math.exp(-3 * dt));
       this.camTarget.set(p.x + this.lead.x, p.y + 0.9, p.z + this.lead.z);
@@ -1932,7 +2031,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.shakeStrength = 0;
       this.shakeOffset.set(0, 0, 0);
     }
-    const goal = this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1);
+    const goal = this.zoomGoal * this.settings.zoom * (this.ui && this.ui.h > this.ui.w ? CAMERA.portrait : 1) * (this.screen === 'title' ? 1 : this.coop.zoom());
     if ('zoom' in rig && Math.abs(rig.zoom - goal) > 1e-3) rig.setZoom(rig.zoom + (goal - rig.zoom) * (1 - Math.exp(-4 * dt)));
   }
 
@@ -1998,11 +2097,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     layout.clear(ui.w, ui.h);
     for (const z of hudZones(ui.w, ui.h, model)) layout.reserve(z);
     // world overlays
+    this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
       for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
       if (it) this.prompt(it.prompt, it.title);
+      // couch co-op: another pad may join here (player 1 on a pad, a seat free): say how
+      if (this.joinHint()) this.joinLine();
     }
     // the mouse in the world (not over a panel, not a finger): the thing under it shows what a click does there
     const mouse = ui.pointer.used && !this.padGlyphs() && !this.layer.covers(ui.pointer.x, ui.pointer.y) && !this.showcase.active;
@@ -2076,6 +2178,26 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /** "[F] Talk to Brann" centred above the skill bar. */
+  /**
+   * Couch co-op's line in town (`joinHint`): how another pad joins, in rows that fit the screen. At
+   * the top centre while that is clear of the HUD (the place name, the gold), else above the bottom
+   * HUD and any prompt (a phone held upright); placed through the HUD's layout, so it covers no
+   * other text, and the loot feed goes around it.
+   */
+  private joinLine(): void {
+    const ui = this.ui;
+    const rows = wrapText(t('menu.coop.join'), ui.w - 12, (s) => ui.measure(s)).map((r) => clip(r, ui.w - 12, (s) => ui.measure(s)));
+    const w = Math.max(...rows.map((r) => ui.measure(r))) + 4;
+    const h = rows.length * 9 + 1;
+    const x = Math.round(ui.w / 2 - w / 2);
+    const layout = this.hudLayout;
+    let at: Box | null = { x, y: 3, w, h };
+    if (layout.free(at)) layout.reserve(at);
+    else at = layout.place({ x, y: hudGeometry(ui.w, ui.h, this.hudControls).top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
+    if (!at) return;
+    rows.forEach((r, i) => ui.text(ui.w / 2, at.y + 2 + i * 9, r, { align: 'center', color: 'mist', shadow: 'ink' }));
+  }
+
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
     const g = hudGeometry(ui.w, ui.h, this.hudControls);
@@ -2172,6 +2294,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       padStyle: this.ctx.engine.controls.style,
       progress: level && !this.round?.moment ? level.progress() : null,
       timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
+      guests: this.coop.strips(),
     };
   }
 
@@ -2288,6 +2411,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.dead,
       this.cleared,
       `${at(hero.position)} ${this.hero.actor instanceof Actor ? this.hero.actor.facing : ''} ${hero.life} ${hero.mana}`,
+      ...(this.coop.guests.length ? [`coop ${JSON.stringify(this.coop.view())}`] : []),
       ...(this.round ? [`round ${this.round.phase} ${this.round.depth} ${this.round.respawnIn ?? ''} ${this.round.clearedAt !== null}${this.round.moment ? ` ${this.round.moment.id} ${this.round.outcome}` : ''}`] : []),
       ...(this.level?.monsters() ?? []).map((m) => `${m.actor.id} ${at(m.actor.position)} ${m.actor instanceof Actor ? m.actor.facing : ''} ${m.actor.life}`),
       ...this.ports.loot.ground().map((l) => `${l.id} ${at(l.position)}`),
@@ -2318,6 +2442,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // a round's state is the hub's as much as the game's (its clock, the other copies, a moment's
     // targets): a round is replayed from its recording, not restored
     if (this.round) refuse('a 52in1 round is on (replay its recording instead)');
+    // a save-state holds player 1's hero alone: a couch session replays from its recording
+    if (this.coop.guests.length) refuse('couch co-op guests are playing (they leave first, or replay the recording instead)');
     const hero = this.hero;
     const loot = this.ports.loot;
     if (!hero.saveState || !hero.loadState) refuse('this hero port keeps no state (saveState / loadState)');
@@ -2418,6 +2544,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // leave whatever is on now, quietly (no autosave, no banners, no sounds)
     await this.beforeRestore(); // done already through engine.restore(); here for a direct call
     this.leaveLevel();
+    this.coop.leaveAll(); // a save-state holds no couch guests
     // the run as data
     this.slot = s.slot;
     this.save = s.save;

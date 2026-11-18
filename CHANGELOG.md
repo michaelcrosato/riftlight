@@ -8,6 +8,15 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.61.0
+
+- Couch co-op, a pad per player (docs/engine/couch.md): `input.padPlayers` (new, default false) also reads every pad on its own. `input.player(slot)` returns a `PadPlayer` for slots 0 to `MAX_PADS` - 1 (`MAX_PADS` = 4; any other slot throws RangeError). A `PadPlayer` implements the new `KeyReader` interface (the merged input's reading API: isDown, anyDown, wasPressed, consumePress, consumeAny, moveAxis, padAxis, lookAxis, triggers) plus `connected`. Create and Options press when released, as on the merged input. The merged input stays player 1's, so existing games are unchanged.
+- `input.joined` (Set of slots): a joined pad no longer drives the merged input: not its buttons, sticks or triggers, not `device`, `padIndex` or what `rumble` shakes. Games add a slot when a player joins and remove it when they leave.
+- `input.joinWith` (codes or null): while it is set and padPlayers is on, a pad that has not joined and is not player 1's pad in use joins when it presses one of these codes, before the press reaches anything. The joining press reads as up until it is released, and the slot appears in `input.joinedNow` for that frame. A pad pressing a join code that player 1's pad in use pressed in the same poll is that controller's twin (DS4Windows or Steam Input without HidHide shows one controller as two pads) and never joins.
+- Recorded and replayed: `InputFrame.pads` (`PadFrame` = [slot, held codes, lx, ly, rx, ry, lt, rt], one per connected joined pad, written only when a joined pad changes), `InputFrame.padPressed` ([slot, ...codes]) and `InputFrame.join` (slots), all validated by `recordingProblem`. Only joined pads are recorded on their own, so player 1's pad is not stored twice. A pad that has not joined reads only live, never in a replay. An older recording has one player, and a replay starts with no pad on its own and nobody joined.
+- Snapshots: `InputState.pads` ([slot, held, queued [code, age]]) and `InputState.joined`; an older snapshot has none.
+- New engine exports: `PadPlayer`, `MAX_PADS`, types `KeyReader` and `PadFrame`.
+
 ## 0.60.0
 
 - `input.motionTurn` ({ x, y }): how far motion aim turned the controller this frame, in degrees past a still hand (4°/s, MOTION_AIM.still) times `motion.sensitivity`, x right and y down like `mouseDelta`. It is 0 while motion aim is off, while the pad is not the device in use, and between turns; it resets at the end of the frame. It is recorded as the new optional `InputFrame.turn` ([x, y], present only while turning), replayed exactly, and checked by `recordingProblem` (two numbers).

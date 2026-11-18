@@ -186,6 +186,16 @@ export interface InputFrame {
   look?: [number, number];
   /** The controller's turn by motion aim this frame (`motionTurn`, degrees), while it turns. */
   turn?: [number, number];
+  /**
+   * Each joined pad on its own (`padPlayers`, `joined`, couch co-op: `player(slot)`), when any of
+   * them changed: one `PadFrame` per connected joined pad (a pad that has not joined drives the
+   * merged input, recorded as that). Left out, every pad is as the frame before.
+   */
+  pads?: PadFrame[];
+  /** Presses on each joined pad on its own this frame (`padPlayers`): [slot, ...codes]. */
+  padPressed?: [number, ...string[]][];
+  /** Pads that joined this frame (`joinWith`, `joinedNow`): their slots. */
+  join?: number[];
   /** Whether a gamepad is connected (`gamepadConnected`), when that changes. */
   gamepad?: boolean;
   /** The input used last (`device`), when that changes; a recording without it was made on the keyboard. */
@@ -214,6 +224,10 @@ export interface InputState {
   readonly device?: InputDevice;
   /** Data sent (`send`) and not yet delivered: the next frame that runs delivers it. */
   readonly outbox: readonly unknown[];
+  /** Each pad on its own (`padPlayers`): [slot, held, queued presses [code, age]] (left out: none). */
+  readonly pads?: readonly (readonly [number, readonly string[], readonly (readonly [string, number])[]])[];
+  /** The pads that play as players of their own (`joined`; left out: none). */
+  readonly joined?: readonly number[];
 }
 
 /** What the frame before held, for `snapshot()` to leave out what did not change. */
@@ -223,6 +237,129 @@ export interface SnapshotMemory {
   gamepad?: boolean;
   device?: InputDevice;
   touch?: boolean;
+  /** Each pad on its own as last recorded (`InputFrame.pads`). */
+  pads?: string;
+}
+
+/**
+ * A pad on its own in a recording (`InputFrame.pads`): its slot, the codes it holds (sorted), its
+ * left stick (x, y forward), its right stick (x, y up), both after the deadzone, and its triggers.
+ */
+export type PadFrame = [slot: number, held: string[], lx: number, ly: number, rx: number, ry: number, lt: number, rt: number];
+
+/** The pads read on their own (`player(slot)`): the Gamepad API's first four slots. */
+export const MAX_PADS = 4;
+
+/** The parts of `Input` a player's actions are read from: the merged input (player 1's) or one pad's own (`PadPlayer`). */
+export interface KeyReader {
+  isDown(...codes: string[]): boolean;
+  anyDown(codes: readonly string[]): boolean;
+  wasPressed(...codes: string[]): boolean;
+  consumePress(...codes: string[]): boolean;
+  consumeAny(codes: readonly string[]): boolean;
+  moveAxis(): { x: number; y: number };
+  readonly padAxis: { readonly x: number; readonly y: number };
+  readonly lookAxis: { readonly x: number; readonly y: number };
+  readonly triggers: { readonly left: number; readonly right: number };
+}
+
+/**
+ * One pad on its own (`input.player(slot)`, couch co-op), read the way the merged input is: its
+ * buttons' `Pad*` codes (the d-pad's arrows too) held, pressed this frame and queued for fixed-step
+ * code (`consumePress`, the same press window), its sticks after the deadzone and its triggers. Only
+ * while `input.padPlayers` is on; recorded per pad while it has joined (`joined`), so a replay
+ * reads a player's pad the same (one that has not joined reads as nothing in a replay).
+ */
+export class PadPlayer implements KeyReader {
+  /** A pad is in this slot. */
+  connected = false;
+  /** Left stick after the deadzone, -1..1 (y = forward). */
+  readonly padAxis = { x: 0, y: 0 };
+  /** Right stick after the deadzone, -1..1 (y = up). */
+  readonly lookAxis = { x: 0, y: 0 };
+  /** The analog triggers, 0..1. */
+  readonly triggers = { left: 0, right: 0 };
+  /** @internal Codes held now. */
+  readonly held = new Set<string>();
+  /** @internal Codes pressed this frame. */
+  readonly pressed = new Set<string>();
+  /** @internal Queued presses → the game time they happened at. */
+  readonly queued = new Map<string, number>();
+  /** @internal Codes that read as up until they are let go (the press that joined). */
+  readonly latched = new Set<string>();
+
+  constructor(
+    /** Its `navigator.getGamepads()` slot. */
+    readonly slot: number,
+    private readonly input: Pick<Input, 'now' | 'pressWindow'>,
+  ) {}
+
+  isDown(...codes: string[]): boolean {
+    return this.anyDown(codes);
+  }
+
+  anyDown(codes: readonly string[]): boolean {
+    for (const c of codes) if (this.held.has(c)) return true;
+    return false;
+  }
+
+  wasPressed(...codes: string[]): boolean {
+    return codes.some((c) => this.pressed.has(c));
+  }
+
+  consumePress(...codes: string[]): boolean {
+    return this.consumeAny(codes);
+  }
+
+  consumeAny(codes: readonly string[]): boolean {
+    let hit = false;
+    for (const c of codes) {
+      const t = this.queued.get(c);
+      if (t === undefined) continue;
+      this.queued.delete(c);
+      if (this.input.now - t <= this.input.pressWindow) hit = true;
+    }
+    return hit;
+  }
+
+  /** -1..1 on each axis (x = right, y = forward): the left stick, else the d-pad. */
+  moveAxis(): { x: number; y: number } {
+    if (this.padAxis.x || this.padAxis.y) {
+      const len = Math.hypot(this.padAxis.x, this.padAxis.y);
+      return len > 1 ? { x: this.padAxis.x / len, y: this.padAxis.y / len } : { x: this.padAxis.x, y: this.padAxis.y };
+    }
+    const x = (this.held.has('ArrowRight') ? 1 : 0) - (this.held.has('ArrowLeft') ? 1 : 0);
+    const y = (this.held.has('ArrowUp') ? 1 : 0) - (this.held.has('ArrowDown') ? 1 : 0);
+    const len = Math.hypot(x, y);
+    return len > 1 ? { x: x / len, y: y / len } : { x, y };
+  }
+
+  /** @internal A press now (queued at the frame before's time, as the merged input's are). */
+  press(code: string): void {
+    this.pressed.add(code);
+    this.queued.set(code, this.input.now);
+  }
+
+  /** @internal Gone: nothing held, sticks centred. */
+  clear(): void {
+    this.connected = false;
+    this.held.clear();
+    this.latched.clear();
+    this.padAxis.x = this.padAxis.y = this.lookAxis.x = this.lookAxis.y = 0;
+    this.triggers.left = this.triggers.right = 0;
+  }
+
+  /** @internal Gone, and every press it made forgotten too. */
+  forget(): void {
+    this.clear();
+    this.queued.clear();
+    this.pressed.clear();
+  }
+
+  /** @internal As a recording holds it (`PadFrame`). */
+  frame(): PadFrame {
+    return [this.slot, [...this.held].sort(), this.padAxis.x, this.padAxis.y, this.lookAxis.x, this.lookAxis.y, this.triggers.left, this.triggers.right];
+  }
 }
 
 /**
@@ -349,6 +486,30 @@ export class Input {
   /** True while any gamepad is connected (that alone never changes `device`). */
   gamepadConnected = false;
   /**
+   * Couch co-op: read every pad on its own too (`player(slot)`), each joined one recorded per pad
+   * (`InputFrame.pads`). Off (the default) nothing is read or recorded per pad.
+   */
+  padPlayers = false;
+  /**
+   * The pads that play as players of their own (couch co-op), by slot: they never drive the merged
+   * input, player 1's (its keys, sticks, triggers, presses, `device`, `rumble`), only `player(slot)`.
+   * A game adds a pad that joins (`joinWith` does it at once) and deletes one that leaves.
+   */
+  readonly joined = new Set<number>();
+  /**
+   * While set (and `padPlayers` is on), a pad pressing one of these codes joins (`joined`) before
+   * its press reaches anything: a pad that has not joined and is not player 1's pad in use (the pad
+   * is `device` and it is `padIndex`). The press that joins reads as up until let go, and the slot
+   * is in `joinedNow` for that frame (recorded). Null: nobody joins.
+   */
+  joinWith: readonly string[] | null = null;
+  /** Pads that joined this frame (`joinWith`; recorded, replayed). */
+  get joinedNow(): readonly number[] {
+    return this._joinedNow;
+  }
+  private _joinedNow: number[] = [];
+  private readonly pads: readonly PadPlayer[] = Array.from({ length: MAX_PADS }, (_, i) => new PadPlayer(i, this));
+  /**
    * How strongly `rumble()` shakes the pad, 0..1: the player's vibration setting (the engine keeps
    * it at `settings.vibration`). A host that scales rumbles itself (the AI Hub) does so on top.
    */
@@ -381,6 +542,11 @@ export class Input {
     // the level's setup runs before the first played frame: it reads the recording's device, never
     // the live one (`playFrom` sets the device the recorded level began with)
     if (on) this._device = 'keyboard';
+    if (on) {
+      // the recording says which pads play on their own, and what they hold
+      for (const p of this.pads) p.forget();
+      this.joined.clear();
+    }
     this.rumbleWant = null;
     if (on) this.outbox = []; // what was sent before a replay is not part of it
   }
@@ -587,6 +753,20 @@ export class Input {
     return this._padIndex;
   }
 
+  /**
+   * The pad in `slot` (its `navigator.getGamepads()` slot, 0 to `MAX_PADS` - 1) on its own, couch
+   * co-op's player input: read while `padPlayers` is on, recorded and replayed while it has joined
+   * (`joined`), kept by snapshots. The merged input stays player 1's: a game reads the pads of
+   * players 2 to 4 here, and lists them in `joined` so they no longer drive player 1 (and are
+   * recorded on their own). A pad that has not joined reads live only (what a game may show, such
+   * as how to join), never in a replay: play reads only joined pads.
+   */
+  player(slot: number): PadPlayer {
+    const p = this.pads[slot];
+    if (!p) throw new RangeError(`Input.player: no pad slot ${slot} (0 to ${MAX_PADS - 1})`);
+    return p;
+  }
+
   /** The player used `device` (a page's own controls; tests): `device` becomes it. Ignored during a replay. */
   noteDevice(device: InputDevice): void {
     if (!this._playing && INPUT_DEVICES.includes(device)) this.use(device);
@@ -701,6 +881,7 @@ export class Input {
     this.triggers.left = this.triggers.right = 0;
     this.pad1 = null;
     this.padMulti = false;
+    for (const p of this.pads) p.forget();
     this.dropTaps();
     this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
@@ -733,6 +914,13 @@ export class Input {
     this.mouseDelta.x += 0;
     this.mouseDelta.y += 0;
     for (const [code, t] of this.queued) if (now - t > this.pressWindow) this.queued.delete(code);
+    for (const p of this.pads) {
+      for (const a of [p.padAxis, p.lookAxis]) {
+        a.x += 0;
+        a.y += 0;
+      }
+      for (const [code, t] of p.queued) if (now - t > this.pressWindow) p.queued.delete(code);
+    }
   }
 
   get pointerLocked(): boolean {
@@ -785,7 +973,14 @@ export class Input {
       gamepad: this.gamepadConnected,
       device: this._device,
       outbox: JSON.parse(JSON.stringify(this.outbox)) as unknown[],
+      ...this.padState(),
     };
+  }
+
+  /** Each pad on its own and the pads that joined, for `state()` (left out while there are none). */
+  private padState(): Pick<InputState, 'pads' | 'joined'> {
+    const pads = this.pads.filter((p) => p.connected || p.queued.size).map((p) => [p.slot, [...p.held].sort(), [...p.queued].map(([code, t]) => [code, this.now - t] as const)] as const);
+    return { ...(pads.length ? { pads } : {}), ...(this.joined.size ? { joined: [...this.joined].sort((a, b) => a - b) } : {}) };
   }
 
   /** Back to `state()` at game time `now` (a restore): held keys are those the snapshot held, live ones let go. */
@@ -803,6 +998,16 @@ export class Input {
     this.playedPad = s.gamepad;
     this._device = this.playedDevice = s.device && INPUT_DEVICES.includes(s.device) ? s.device : 'keyboard';
     this.outbox = JSON.parse(JSON.stringify(s.outbox)) as unknown[]; // what was sent since is not this moment's
+    for (const p of this.pads) p.forget();
+    for (const [slot, held, queued] of s.pads ?? []) {
+      const p = this.pads[slot];
+      if (!p) continue;
+      p.connected = true;
+      for (const c of held) p.held.add(c);
+      for (const [code, age] of queued) p.queued.set(code, now - age);
+    }
+    this.joined.clear();
+    for (const slot of s.joined ?? []) this.joined.add(slot);
     this.endFrame();
   }
 
@@ -852,6 +1057,8 @@ export class Input {
     this.motionTurn.x = 0;
     this.motionTurn.y = 0;
     this.wheel = 0;
+    for (const p of this.pads) p.pressed.clear();
+    this._joinedNow = [];
   }
 
   /** Test hook: simulate a key being held (true) or released (false). */
@@ -968,7 +1175,17 @@ export class Input {
     if (!last || last.touch === undefined || this.pointer.touch !== last.touch) f.touch = this.pointer.touch;
     if (this._commands.length) f.commands = JSON.parse(JSON.stringify(this._commands)) as unknown[]; // the game may change what it got
     if (this._buttonEvents.length) f.clicks = this._buttonEvents.map((e) => [e.code, e.down ? 1 : 0, e.x, e.y]);
+    // each joined pad on its own (couch co-op), when any changed, and its presses: the others drive
+    // the merged input (player 1's), recorded already; the game reads only joined ones on their own
+    const own = this.pads.filter((p) => this.joined.has(p.slot));
+    const pads = own.filter((p) => p.connected).map((p) => p.frame());
+    const padsKey = JSON.stringify(pads);
+    if (padsKey !== (last?.pads ?? '[]')) f.pads = pads;
+    const padPressed = own.filter((p) => p.pressed.size).map((p): [number, ...string[]] => [p.slot, ...[...p.pressed].sort()]);
+    if (padPressed.length) f.padPressed = padPressed;
+    if (this._joinedNow.length) f.join = [...this._joinedNow];
     if (last) {
+      last.pads = padsKey;
       last.held = heldKey;
       last.pointer = pointerKey;
       last.gamepad = this.gamepadConnected;
@@ -989,6 +1206,7 @@ export class Input {
     }
     this.padHeld.clear(); // gamepad buttons were recorded as held keys
     for (const c of f.pressed ?? []) this.press(c);
+    for (const [slot, ...codes] of f.padPressed ?? []) for (const c of codes) this.pads[slot]?.press(c);
   }
 
   /** Replay, after `beginFrame` (which polled no gamepads): sticks, triggers, pointer, wheel, gamepad connection, the device used last. */
@@ -1009,6 +1227,18 @@ export class Input {
       this.pointer.over = f.pointer[2] === 1;
     }
     if (f.touch !== undefined) this.pointer.touch = f.touch;
+    if (f.pads) {
+      for (const p of this.pads) p.clear();
+      for (const [slot, held, lx, ly, rx, ry, lt, rt] of f.pads) {
+        const p = this.pads[slot];
+        if (!p) continue;
+        p.connected = true;
+        for (const c of held) p.held.add(c);
+        [p.padAxis.x, p.padAxis.y, p.lookAxis.x, p.lookAxis.y, p.triggers.left, p.triggers.right] = [lx, ly, rx, ry, lt, rt];
+      }
+    }
+    this._joinedNow = [...(f.join ?? [])];
+    for (const slot of this._joinedNow) this.joined.add(slot);
     this._buttonEvents = (f.clicks ?? []).map(([code, down, x, y]) => ({ code, down: down === 1, x, y }));
     this._commands = f.commands ? (JSON.parse(JSON.stringify(f.commands)) as unknown[]) : []; // never the recording's own objects
   }
@@ -1054,8 +1284,11 @@ export class Input {
     let connected = false;
     let used: { index: number; pad: GamepadLike } | null = null;
     let rumblePad: GamepadLike | null = null;
+    const owns: OwnPoll[] = [];
     const seen = this.padSeen;
     const seenNow = new Map<number, PadSeen>();
+    /** The join codes player 1's pad in use pressed in this poll: a pad pressing one of them now is its twin (one controller seen twice), never a join. */
+    const firstPressed = this.padPlayers && this.joinWith && this._device === 'pad' && !this._playing ? this.joinPressed(list, this._padIndex, seen) : null;
     /** Create and Options held alone: held, but they press only as they are let go (`taps`). */
     const chordHeld = new Set<string>();
     const taps: string[] = [];
@@ -1094,24 +1327,36 @@ export class Input {
       const chord = (create && options) || (!!was?.chord && (create || options));
       const mine = (i: number) => i !== HOME_BUTTON && !(chord && HOST_CHORD.includes(i));
       const tap: [boolean, boolean] = [false, false];
+      /** This pad's own: the codes it holds, Create and Options held alone (they press as let go), and those let go. */
+      const padDown = new Set<string>();
+      const padChord = new Set<string>();
+      const padTaps: string[] = [];
       HOST_CHORD.forEach((i, k) => {
         const code = this.gamepadButtons[i];
         if (chord || !code) return;
         if (on(i)) {
           tap[k] = was?.buttons[i] ? was.tap[k] === true : true; // went down alone now, or still held since
-          chordHeld.add(code);
-        } else if (was?.tap[k]) taps.push(code);
+          padChord.add(code);
+        } else if (was?.tap[k]) padTaps.push(code);
       });
       pad.buttons.forEach((_, i) => {
         const code = this.gamepadButtons[i];
-        if (code && on(i) && mine(i)) down.add(code);
+        if (code && on(i) && mine(i)) padDown.add(code);
       });
       const l = applyDeadzone(pad.axes[0] ?? 0, -(pad.axes[1] ?? 0), this.gamepadDeadzone);
-      if (Math.hypot(l.x, l.y) > Math.hypot(stick.x, stick.y)) stick = l;
       const r = applyDeadzone(pad.axes[2] ?? 0, pad.axes[3] ?? 0, this.gamepadDeadzone);
-      rights.push(r);
-      left = Math.max(left, value(6));
-      right = Math.max(right, value(7));
+      // couch co-op: the pad on its own; one that joins does so before its press reaches anything
+      const own = this.padPlayers && !this._playing && index < MAX_PADS ? this.pads[index]! : null;
+      if (own) {
+        const mineInUse = this._device === 'pad' && this._padIndex === index;
+        const fresh = this.joinWith?.filter((c) => padDown.has(c) && !own.held.has(c)) ?? [];
+        if (this.joinWith && !this.joined.has(index) && !mineInUse && fresh.length && !fresh.some((c) => firstPressed?.has(c))) {
+          this.joined.add(index);
+          this._joinedNow.push(index);
+          for (const c of this.joinWith) if (padDown.has(c)) own.latched.add(c); // the press that joined presses nothing
+        }
+        owns.push({ own, down: padDown, chord: padChord, taps: padTaps, l, r, lt: value(6), rt: value(7) });
+      }
       // Used, not merely connected: a button that went down, a trigger pulled past TRIGGER_USE, a
       // stick that moved past STICK_USE. A pad seen for the first time counts only for a button
       // held (the press that showed the browser the pad); its sticks and triggers are where they
@@ -1125,11 +1370,20 @@ export class Input {
         tap,
       };
       seenNow.set(index, now);
+      if (this.joined.has(index)) continue; // a player of its own: it never drives the merged input (player 1's)
+      for (const c of padDown) down.add(c);
+      for (const c of padChord) chordHeld.add(c);
+      taps.push(...padTaps);
+      if (Math.hypot(l.x, l.y) > Math.hypot(stick.x, stick.y)) stick = l;
+      rights.push(r);
+      left = Math.max(left, value(6));
+      right = Math.max(right, value(7));
       const pressedNow = now.buttons.some((b, i) => b && (was ? !was.buttons[i] : i !== 6 && i !== 7));
       if (pressedNow || (was && (stickUsed(was.left, now.left) || stickUsed(was.right, now.right)))) used = { index, pad };
       if (index === this._padIndex) rumblePad = pad;
     }
     this.padSeen = seenNow;
+    this.pollOwn(owns);
     // a button held through release() reads as up until it is let go
     for (const code of this.padLatched) if (!down.has(code)) this.padLatched.delete(code);
     for (const code of this.padLatched) down.delete(code);
@@ -1201,6 +1455,49 @@ export class Input {
   }
 
   /**
+   * The `joinWith` codes the pad at `index` (`navigator.getGamepads()` slot) went down on in this
+   * poll (not down at the poll before, `seen`). One controller can show the browser two pads (a
+   * virtual one beside the real one: DS4Windows or Steam Input without HidHide), every press on
+   * both: a pad pressing what player 1's pad in use pressed in the same poll is that twin, not
+   * another player joining.
+   */
+  private joinPressed(list: readonly (GamepadLike | null)[], index: number, seen: ReadonlyMap<number, PadSeen>): Set<string> {
+    const out = new Set<string>();
+    const n = list.findIndex((p, k) => !!p && p.connected !== false && (Number.isInteger(p.index) ? p.index : k) === index);
+    const pad = n >= 0 ? list[n] : null;
+    if (!pad || !this.joinWith) return out;
+    const was = seen.get(index);
+    pad.buttons.forEach((b, i) => {
+      const code = this.gamepadButtons[i];
+      if (code && b && this.joinWith!.includes(code) && (b.pressed || (b.value ?? 0) > 0.5) && !was?.buttons[i]) out.add(code);
+    });
+    return out;
+  }
+
+  /** Each pad on its own after a poll (`padPlayers`; never during a replay, which sets them from the recording). */
+  private pollOwn(owns: readonly OwnPoll[]): void {
+    if (this._playing) return;
+    const live = new Set<number>();
+    for (const { own, down, chord, taps, l, r, lt, rt } of owns) {
+      live.add(own.slot);
+      for (const c of own.latched) if (!down.has(c)) own.latched.delete(c);
+      for (const c of own.latched) down.delete(c);
+      for (const c of down) if (!own.held.has(c) && !chord.has(c)) own.press(c);
+      for (const c of taps) own.press(c);
+      own.held.clear();
+      for (const c of down) own.held.add(c);
+      own.connected = true;
+      own.padAxis.x = l.x;
+      own.padAxis.y = l.y;
+      own.lookAxis.x = r.x;
+      own.lookAxis.y = -r.y;
+      own.triggers.left = lt;
+      own.triggers.right = rt;
+    }
+    for (const p of this.pads) if (!live.has(p.slot)) p.clear();
+  }
+
+  /**
    * One poll of the touchpad's fingers (`touchpad`): a finger that went down and came up again
    * within a swipe's or a tap's time makes a gesture. One finger only: a second finger, or the pad's
    * click (its own button), spoils whatever ends before the pad is bare again, however the fingers
@@ -1230,6 +1527,18 @@ export class Input {
     f.t += dt;
     return null;
   }
+}
+
+/** A pad on its own as a poll saw it (`pollOwn`). */
+interface OwnPoll {
+  readonly own: PadPlayer;
+  readonly down: Set<string>;
+  readonly chord: ReadonlySet<string>;
+  readonly taps: readonly string[];
+  readonly l: { readonly x: number; readonly y: number };
+  readonly r: { readonly x: number; readonly y: number };
+  readonly lt: number;
+  readonly rt: number;
 }
 
 /** What a poll saw of a pad (after the deadzone), for the next poll to tell use from rest. */

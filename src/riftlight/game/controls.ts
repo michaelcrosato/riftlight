@@ -24,7 +24,7 @@
  * PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
+import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type KeyReader, type MenuKeys, type PadGlyphs, padName as enginePadName } from '../../engine';
 import { lang } from '../lang';
 import type { UiEvent } from '../ui/kit';
 
@@ -38,6 +38,8 @@ export const KEYS = {
     ['Digit4', 'KeyT', 'PadRB'],
   ],
   interact: ['KeyF', 'PadRT'],
+  /** Couch co-op: Cross on another pad joins (`input.joinWith`, `game/coop.ts`). */
+  join: ['PadA'],
   pause: ['Escape', 'PadStart'],
   /** Options alone: it pauses from any screen of play and resumes from the pause menu (Esc is back first). */
   options: ['PadStart'],
@@ -105,6 +107,30 @@ export const SHELL_MENU_BINDINGS: Partial<MenuKeys> = {
   tabPrev: KEYS.tabPrev,
   keys: [...KEYS.secondary, ...KEYS.quick, ...KEYS.hide, ...KEYS.pagePrev, ...KEYS.pageNext],
 };
+
+/** The hero's actions (`HeroIntent`), as the shell fills them each fixed step. */
+export interface Actions {
+  attack: boolean;
+  skill: number;
+  held: number;
+  dodge: boolean;
+}
+
+/**
+ * The actions a player's keys and buttons ask for this fixed step, into `i`: the attack held, the
+ * skill pressed (the last of the four wins), the skills held (channels go on while held, a bit
+ * each) and the dodge. One rule for player 1 (the merged input; the shell adds the mouse's buttons)
+ * and a couch guest's pad (`input.player(slot)`).
+ */
+export function readActions(input: KeyReader, i: Actions): void {
+  i.attack = input.anyDown(KEYS.attack);
+  i.skill = -1;
+  for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
+  let held = 0;
+  for (let s = 0; s < 4; s++) if (input.anyDown(KEYS.skill[s]!)) held |= 1 << s;
+  i.held = held;
+  i.dodge = input.consumeAny(KEYS.dodge);
+}
 
 /** The pointer's buttons as the engine's keys (`MOUSE_BUTTONS`, `TOUCH_KEY`): left (or a finger on the world) attacks, right is skill 1. */
 export const MOUSE = { left: ['MouseLeft', 'Touch'], right: ['MouseRight'] } as const;

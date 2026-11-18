@@ -16,7 +16,7 @@
  * docs/engine/determinism.md *Recording and replay*.
  */
 import type { Viewport } from './framing';
-import { type InputDevice, type InputFrame, INPUT_DEVICES } from './input';
+import { type InputDevice, type InputFrame, INPUT_DEVICES, MAX_PADS } from './input';
 import { type Snapshot, snapshotProblem } from './snapshot';
 
 export type { InputFrame } from './input';
@@ -99,6 +99,10 @@ export function recordingProblem(v: unknown): string | null {
     if (f.commands !== undefined && !Array.isArray(f.commands)) return bad('commands must be a list');
     if (f.clicks !== undefined && !(Array.isArray(f.clicks) && f.clicks.every((c) => Array.isArray(c) && c.length === 4 && typeof c[0] === 'string' && (c[1] === 0 || c[1] === 1) && Number.isFinite(c[2]) && Number.isFinite(c[3])))) return bad('clicks must be [key, 0 or 1, x, y] lists');
     if (f.sync !== undefined && f.sync !== true) return bad('sync must be true when there');
+    const slot = (v: unknown) => Number.isInteger(v) && (v as number) >= 0 && (v as number) < MAX_PADS;
+    if (f.pads !== undefined && !(Array.isArray(f.pads) && f.pads.every((p) => Array.isArray(p) && p.length === 8 && slot(p[0]) && codes(p[1]) && p.slice(2).every((x) => typeof x === 'number' && Number.isFinite(x))))) return bad('pads must be [slot, key codes, six numbers] lists');
+    if (f.padPressed !== undefined && !(Array.isArray(f.padPressed) && f.padPressed.every((p) => Array.isArray(p) && slot(p[0]) && codes(p.slice(1))))) return bad('padPressed must be [slot, ...key codes] lists');
+    if (f.join !== undefined && !(Array.isArray(f.join) && f.join.every(slot))) return bad(`join must be pad slots (0 to ${MAX_PADS - 1})`);
   }
   return null;
 }

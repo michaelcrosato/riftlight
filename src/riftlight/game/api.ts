@@ -22,6 +22,7 @@ import { gemProgress, normalizeSockets } from '../loot/sockets';
 import { type BotIntent, type BotReport, PlaytestBot } from './bot';
 import { gearScore, type TownReport, type TownVisitOptions, townVisit } from './botTown';
 import { sanitizeTuning } from './difficulty';
+import type { GuestView } from './coop';
 import type { HeroIntent } from './ports';
 import type { BotAct, Riftlight, SavedIntent } from './Riftlight';
 import { viewSaved } from './save';
@@ -47,6 +48,8 @@ export interface RiftlightState {
   codex: string[];
   session: Riftlight['session'];
   town: { timeOfDay: number; nearest: string | null } | null;
+  /** Couch co-op's guests (players 2 to 4): seat, pad slot, where their hero stands, life, seconds down (`game/coop.ts`). */
+  coop: GuestView[];
 }
 
 export interface IntentInput {
@@ -99,6 +102,7 @@ export function createApi(game: Riftlight) {
       codex: [...(game.save.codex ?? [])],
       session: { ...game.session },
       town: game.screen === 'town' || game.screen === 'title' ? { timeOfDay: game.town.dayTime, nearest: game.town.nearest(h.actor.position)?.id ?? null } : null,
+      coop: game.coop.view(),
     };
   };
 

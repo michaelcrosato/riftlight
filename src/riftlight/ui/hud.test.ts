@@ -8,7 +8,7 @@ import { bossNameShown } from '../lang/monsters';
 import { riftlightTranslations } from '../lang/translations';
 import { designedBoss } from '../monsters/bosses';
 import { MOMENTS, momentGoal } from '../session/moments';
-import { drawHud, hudGeometry, type HudModel, hudZones } from './hud';
+import { drawHud, type GuestStrip, hudGeometry, type HudModel, hudZones } from './hud';
 import { type Align, miniCovers, miniWidth, UiCanvas } from './kit';
 import { type Box, overlaps } from './layout';
 
@@ -260,5 +260,104 @@ describe('a 52in1 moment: its seconds left and its goal, on a phone and a wide s
       }
     }
     expect(checked).toBe(LANGUAGES.length * SCREENS.length * MOMENTS.length);
+  });
+});
+
+describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both ways, touch and pad, and wider screens', () => {
+  /** Phones held both ways (with touch controls, and on a pad without them), the narrowest phone, a laptop, the hub's frame of one player. */
+  const SCREENS = [
+    ['390×844 phone', 390, 844, 3],
+    ['390×844 phone dpr 2', 390, 844, 2],
+    ['360×740 phone', 360, 740, 2],
+    ['844×390 phone', 844, 390, 3],
+    ['844×390 phone dpr 2', 844, 390, 2],
+    ['1280×720', 1280, 720, 1],
+    ['the hub’s frame, 1000×850', 1000, 850, 1],
+  ] as const;
+  const minimap: HudModel['minimap'] = { width: 8, height: 8, cell: () => 1, explored: new Uint8Array(64), hero: { x: 4, z: 4 }, exit: null, boss: null, origin: { x: 0, z: 0 } };
+  const strip = (seat: number): GuestStrip => ({ seat, color: 0x3f7fff, life: 0.6, skills: [1, 0.4, -1, 0], rise: seat === 3 ? 3.2 : null });
+  function model(controls: Box[], o: { guests: number; boss: boolean; tuned: number; map: boolean }): HudModel {
+    return {
+      time: 0,
+      vitals: { life: 50, maxLife: 100, mana: 20, maxMana: 40, es: 0, maxEs: 0 },
+      levelUpAge: 99,
+      level: 7,
+      xp: 0.3,
+      skills: [],
+      buffs: [],
+      boss: o.boss ? { name: 'Vorgath', life: 90, maxLife: 100, phases: [0.5], phase: 0, position: new Vector3() } : null,
+      minimap: o.map ? minimap : null,
+      gold: 1234,
+      goldShown: 1234,
+      feed: [],
+      card: null,
+      streak: null,
+      difficulty: Array.from({ length: o.tuned }, (_, k) => `x${k + 2}`),
+      hurt: 0,
+      levelLabel: 'Depth 3 · The Gale Steps',
+      timer: '4:05',
+      device: controls.length ? 'touch' : 'pad',
+      padStyle: 'playstation',
+      progress: { killed: 12, total: 54 },
+      controls,
+      guests: Array.from({ length: o.guests }, (_, k) => strip(k + 2)),
+    };
+  }
+  /** The texts the HUD draws (normal and mini font) and the guests' strips' frames (their ink rects). */
+  function drawn(W: number, H: number, m: HudModel): Box[] {
+    const texts: Box[] = [];
+    const hud = {
+      width: W,
+      height: H,
+      rect() {},
+      sprite() {},
+      text(x: number, y: number, s: string, o: { scale?: number } = {}) {
+        const k = o.scale ?? 1;
+        texts.push({ x, y, w: textWidthPx(s, k) + k, h: 7 * k + k });
+      },
+      measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }),
+    };
+    class Recording extends UiCanvas {
+      override mini(x: number, y: number, s: string, color?: HudColor, align: Align = 'left', shadow?: HudColor | false): number {
+        if (s && miniCovers(s) && color !== 'ink') {
+          const w = miniWidth(s);
+          texts.push({ x: Math.round(align === 'center' ? x - Math.floor(w / 2) : align === 'right' ? x - w : x), y: Math.round(y), w: w + 1, h: 6 });
+        }
+        return super.mini(x, y, s, color, align, shadow);
+      }
+    }
+    drawHud(new Recording(hud as never), m);
+    return texts;
+  }
+
+  it('are on screen, clear of the minimap and gold, the top-left block, a boss’s bar, the orbs, the bars, every text and every touch control', () => {
+    let checked = 0;
+    for (const [name, vw, vh, dpr] of SCREENS) {
+      for (const touch of [true, false]) {
+        const f = controlsFor(vw, vh, dpr, 'fill');
+        const controls = touch ? f.boxes : [];
+        const { W, H } = f;
+        for (const guests of [1, 2, 3]) {
+          for (const [boss, tuned, map] of [[false, 0, true], [true, 2, true], [false, 0, false]] as const) {
+            const where = `${name} (${W}×${H}), ${touch ? 'touch' : 'pad'}, ${guests} guest(s)${boss ? ', a boss' : ''}${tuned ? ', tuned' : ''}${map ? '' : ', no minimap'}`;
+            const m = model(controls, { guests, boss, tuned, map });
+            const others = hudZones(W, H, { ...m, guests: [] });
+            const zones = hudZones(W, H, m);
+            const strips = zones.filter((z) => !others.some((o) => JSON.stringify(o) === JSON.stringify(z)));
+            expect(strips.length, `${where}: the strips' zone`).toBe(1);
+            const box = strips[0]!;
+            expect(box.x >= 0 && box.y >= 0 && box.x + box.w <= W && box.y + box.h <= H, `${where}: on screen ${JSON.stringify(box)}`).toBe(true);
+            for (const z of others) expect(overlaps(box, z, 0), `${where}: the strips ${JSON.stringify(box)} over the HUD's ${JSON.stringify(z)}`).toBe(false);
+            for (const c of controls) expect(overlaps(box, c, 0), `${where}: the strips under a control ${JSON.stringify(c)}`).toBe(false);
+            const own = drawn(W, H, m);
+            const without = drawn(W, H, { ...m, guests: [] });
+            for (const x of without) expect(overlaps(box, x, 0), `${where}: the strips over a text ${JSON.stringify(x)}`).toBe(false);
+            expect(own.length, `${where}: a guest down shows its seconds`).toBe(without.length + (guests >= 2 ? 1 : 0));
+            checked++;
+          }
+        }
+      }
+    }
+    expect(checked).toBe(SCREENS.length * 2 * 3 * 3);
   });
 });

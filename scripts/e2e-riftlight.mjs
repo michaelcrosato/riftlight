@@ -185,3 +185,83 @@ export async function runRiftlight(h) {
     await ctx?.browser.close();
   }
 }
+
+/**
+ * Couch co-op on a TV (docs/game/shell.md *Couch co-op*), in a 1920×1080 page: player 1 on a pad in
+ * town, a second pad's Cross joins (`input.setGamepads`, as e2e-systems feeds pads), the guest comes
+ * into depth 1 beside player 1 and walks off on its own stick; the frame shows both heroes (each
+ * projects inside the view) and the guest's strip and tag in seat 2's colour on the pixel HUD.
+ * Frames: .scratch/e2e/riftlight-couch-1080*.png.
+ */
+export async function runRiftlightCouch(h) {
+  const { exe, scenario: s, openPage, check, capture, state, checkClean, encodePng, OUT } = h;
+  console.log(`\n▶ riftlight couch co-op (${s.backend}, 1920×1080)`);
+  let ctx;
+  try {
+    ctx = await openPage(exe, s, 'game=riftlight&debug=0&seed=4242', { viewport: { width: 1920, height: 1080 } });
+    const { page, logs } = ctx;
+    await page.waitForFunction(() => window.__RIFTLIGHT__, null, { timeout: 60000 });
+    const R = (fn, arg) => page.evaluate(fn, arg);
+    /** Pads by slot (`l` the left stick, x right, y forward; `b` the buttons held), then two frames. */
+    const pads = (list) =>
+      R((l) => {
+        const make = (p, index) => (p ? { connected: true, mapping: 'standard', index, axes: [p.l?.[0] ?? 0, -(p.l?.[1] ?? 0), 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: (p.b ?? []).includes(i), value: (p.b ?? []).includes(i) ? 1 : 0 })) } : null);
+        window.__PIXEL_ENGINE__.input.setGamepads(l.map(make));
+        window.__PIXEL_ENGINE__.step(2);
+      }, list);
+    await R(() => window.__RIFTLIGHT__.newRun({ seed: 3 }));
+    await R(() => window.__PIXEL_ENGINE__.step(20));
+    await pads([{}, {}]);
+    await pads([{ b: [3] }, {}]); // player 1 picks up pad 0
+    await pads([{}, {}]);
+    await pads([{}, { b: [0] }]); // Cross on pad 1: it joins
+    await pads([{}, {}]);
+    const rs = await R(() => window.__RIFTLIGHT__.state());
+    check(rs.coop.length === 1 && rs.coop[0].seat === 2, `Cross on another pad in town joins as player 2 (seats ${JSON.stringify(rs.coop.map((g) => g.seat))})`);
+    await R(() => window.__RIFTLIGHT__.enterDepth(1));
+    await page.waitForFunction(() => window.__RIFTLIGHT__.state().screen === 'level', null, { timeout: 30000 });
+    await R(() => window.__PIXEL_ENGINE__.step(20));
+    for (let i = 0; i < 12; i++) await pads([{}, { l: [0.9, 0.2] }]); // the guest walks off on its own stick
+    await pads([{}, {}]);
+    await R(() => window.__PIXEL_ENGINE__.step(30)); // the camera settles on the pair
+    const frame = await capture(page, 'riftlight-couch-1080.png');
+    const view = await R(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const st = window.__RIFTLIGHT__.state();
+      const cam = e.camera.camera;
+      const inView = (p) => {
+        const v = cam.position.clone().set(p[0], p[1] + 0.9, p[2]).project(cam);
+        return Math.abs(v.x) < 0.95 && Math.abs(v.y) < 0.95;
+      };
+      const p1 = st.hero.position;
+      const g = st.coop[0]?.at;
+      // the guest's strip and tag in seat 2's colour on the pixel HUD (52in1's blue)
+      const c = document.querySelector('canvas[data-hud]');
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let blue = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] && d[i] === 0x3b && d[i + 1] === 0x82 && d[i + 2] === 0xf6) blue++;
+      return { p1: inView(p1), guest: !!g && inView(g), apart: g ? Math.hypot(g[0] - p1[0], g[2] - p1[2]) : 0, blue };
+    });
+    check(view.p1 && view.guest && view.apart > 1.5, `both heroes in view at 1920×1080, ${view.apart.toFixed(1)} m apart (player 1 ${view.p1}, the guest ${view.guest})`);
+    check(view.blue > 30, `the guest's strip and tag in seat 2's colour on the HUD (${view.blue} px)`);
+    if (encodePng && OUT) {
+      // the frame with the pixel HUD on top (the strip, the P2 tag)
+      const hud = await R(() => {
+        const c = document.querySelector('canvas[data-hud]');
+        return { w: c.width, h: c.height, data: [...c.getContext('2d').getImageData(0, 0, c.width, c.height).data] };
+      });
+      const px = frame.pixels;
+      for (let y = 0; y < frame.height; y++)
+        for (let x = 0; x < frame.width; x++) {
+          const i = (Math.floor((y * hud.h) / frame.height) * hud.w + Math.floor((x * hud.w) / frame.width)) * 4;
+          if (hud.data[i + 3] === 255) px.set(hud.data.slice(i, i + 3), (y * frame.width + x) * 4);
+        }
+      await writeFile(new URL('riftlight-couch-1080-hud.png', OUT), encodePng(frame));
+    }
+    checkClean(await state(page), logs);
+  } catch (e) {
+    check(false, `riftlight couch co-op crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}

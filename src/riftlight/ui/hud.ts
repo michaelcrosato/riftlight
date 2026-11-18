@@ -68,7 +68,21 @@ export interface HudModel {
    * (`timeLeftRect`); the centre banner goes under it. Absent outside a moment.
    */
   timeLeft?: { text: string; urgent: boolean } | null;
+  /** Couch co-op: a compact strip per guest (players 2 to 4) under the top-left block (`game/coop.ts`). */
+  guests?: readonly GuestStrip[];
 }
+
+/** A couch guest on the HUD: its seat, colour (0xrrggbb, 52in1's seat colours), life (0..1), its four skills' readiness (0..1, -1 empty) and the seconds until it rises (null: up). */
+export interface GuestStrip {
+  readonly seat: number;
+  readonly color: number;
+  readonly life: number;
+  readonly skills: readonly number[];
+  readonly rise: number | null;
+}
+
+/** A guest's strip, in art pixels: its width (narrower beside a phone's minimap, down to `min`), its height, the gap between strips. */
+const STRIP = { w: 66, min: 46, h: 13, gap: 2 } as const;
 
 const ORB_R = 22;
 
@@ -172,8 +186,7 @@ export function hudZones(W: number, H: number, m: HudModel): Box[] {
     z.push({ x: g.xp.x - 2, y: g.levelAt.y - 1, w: g.xp.w + 4, h: g.xp.y + 4 - g.levelAt.y + 1 });
   } else z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
   for (const o of [g.life, g.mana]) z.push({ x: o.x - g.orbR - 3, y: o.y - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
-  const map = minimapZone(W, m, g);
-  if (map) z.push(map);
+  z.push(minimapZone(W, m, g) ?? goldZone(W, m));
   z.push(whereZone(W, m, g));
   const boss = bossZone(W, m, g);
   if (boss) z.push(boss);
@@ -181,12 +194,67 @@ export function hudZones(W: number, H: number, m: HudModel): Box[] {
   if (left) z.push(left);
   const b = bannerRect(W, m, g);
   if (b) z.push(b);
+  const guests = guestsRect(W, m, g);
+  if (guests) z.push(guests);
   return z;
+}
+
+/**
+ * Where the couch guests' strips go: under the top-left block (and its difficulty rows), or null
+ * without guests. Beside a minimap they would run into (a phone held upright) they narrow to the
+ * gap, or, too narrow for that, go under the minimap and gold.
+ */
+function guestsRect(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
+  const n = m.guests?.length ?? 0;
+  if (!n) return null;
+  const rows = whereRows(W, m, g);
+  const step = g.compact ? 7 : 9;
+  let y = (g.compact ? 12 : 17) + (rows.length - 1) * WHERE_ROW + (m.timer ? step : 0) + (m.progress && m.progress.total > 0 ? step : 0);
+  if (m.difficulty.length) y += 2 + step + m.difficulty.length * (g.compact ? 6 : 9);
+  const where = whereZone(W, m, g);
+  y = Math.max(y + 3, where.y + where.h + 2);
+  let w: number = STRIP.w;
+  const map = minimapZone(W, m, g);
+  if (map && y < map.y + map.h && g.textX + w > map.x - 2) {
+    const room = map.x - 2 - g.textX;
+    if (room >= STRIP.min) w = room;
+    else y = map.y + map.h + 2;
+  }
+  return { x: g.textX, y, w, h: n * (STRIP.h + STRIP.gap) - STRIP.gap };
+}
+
+/** Each couch guest's strip: its seat tag in its colour, its life, its skills (bright when ready), and the seconds until it rises. */
+function drawGuests(ui: UiCanvas, m: HudModel, at: Box): void {
+  const lw = at.w - 21; // the life bar, and the four skills' pips under it
+  const pip = Math.floor((lw + 1) / 4) - 1;
+  (m.guests ?? []).forEach((s, k) => {
+    const x = at.x;
+    const y = at.y + k * (STRIP.h + STRIP.gap);
+    ui.rect(x, y, at.w, STRIP.h, 'ink');
+    ui.rect(x + 1, y + 1, at.w - 2, STRIP.h - 2, 'night');
+    ui.rect(x + 1, y + 1, 15, STRIP.h - 2, s.color);
+    ui.mini(x + 9, y + 4, t('hud.coop.seat', { seat: s.seat }), 'ink', 'center');
+    ui.rect(x + 18, y + 2, lw, 4, 'plum');
+    ui.rect(x + 18, y + 2, Math.round(lw * Math.max(0, Math.min(1, s.life))), 4, 'red');
+    s.skills.forEach((r, i) => {
+      if (r < 0) return;
+      const px = x + 18 + i * (pip + 1);
+      ui.rect(px, y + 8, pip, 2, 'slate');
+      ui.rect(px, y + 8, Math.round(pip * Math.max(0, Math.min(1, r))), 2, r >= 1 ? 'sky' : 'mist');
+    });
+    if (s.rise !== null) ui.mini(x + at.w - 3, y + 7, num(Math.max(1, Math.ceil(s.rise))), 'white', 'right', 'ink');
+  });
 }
 
 /** The minimap and the gold under it (top-right), or null without a minimap. */
 function minimapZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
   return m.minimap ? { x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 } : null;
+}
+
+/** The gold alone (top-right), without a minimap (town): as `drawHud` draws it, its coin and number. */
+function goldZone(W: number, m: HudModel): Box {
+  const gw = textWidthPx(lang().formatNumber(Math.round(m.goldShown))) + 8;
+  return { x: W - 7 - gw, y: 4, w: gw + 3, h: 10 };
 }
 
 /** The top-left block (where you are, the clock, progress), as wide as its widest row at least. */
@@ -504,6 +572,10 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
       ty += g.compact ? 6 : 9;
     }
   }
+
+  // couch guests' strips under the top-left block
+  const guests = guestsRect(W, m, g);
+  if (guests) drawGuests(ui, m, guests);
 
   // a moment's seconds left (top centre, placed clear of the rest)
   const left = timeLeftRect(W, m, g);

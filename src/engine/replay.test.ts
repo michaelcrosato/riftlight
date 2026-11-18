@@ -281,3 +281,93 @@ describe('recording and replaying input', () => {
     expect(recordingProblem({ ...ok, view: { width: 960 } as never })).toMatch(/view/);
   });
 });
+
+describe('couch co-op in a recording: each pad on its own', () => {
+  const tpad = (index: number, axes: number[], pressed: number[] = []): GamepadLike => ({ ...pad(axes, pressed), index });
+  /** What each player reads: player 1 (the merged input) and the joined pads on their own (what play reads; a pad that has not joined is recorded only as part of player 1's input). */
+  const readAll = (i: Input) => ({
+    p1: { down: KEYS.filter((c) => i.isDown(c)), axis: i.moveAxis(), look: { ...i.lookAxis }, device: i.device },
+    pads: [0, 1, 2].map((s) => !i.joined.has(s) ? null : ({ connected: i.player(s).connected, down: ['PadA', 'PadB', 'PadX', 'ArrowUp'].filter((c) => i.player(s).isDown(c)), pressed: i.player(s).wasPressed('PadA', 'PadX'), x: i.player(s).consumePress('PadX'), axis: i.player(s).moveAxis(), look: { ...i.player(s).lookAxis }, trig: { ...i.player(s).triggers } })),
+    joinedNow: [...i.joinedNow],
+    joined: [...i.joined].sort(),
+  });
+
+  it('records every joined pad on its own when they change, and the pads that join; a replay reads every player exactly', () => {
+    const live = new Input(target());
+    live.padPlayers = true;
+    live.joinWith = ['PadA'];
+    const script: (GamepadLike | null)[][] = [
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0])],
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0], [0])], // pad 1 joins
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0.7, -0.4, 0.2, 0.9], [0])],
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0.7, -0.4, 0.2, 0.9], [2, 7])],
+      [tpad(0, [0.5, 0, 0, 0], [1]), tpad(1, [0, 0, 0, 0], [12])], // player 1 on pad 0
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0])],
+      [tpad(0, [0, 0, 0, 0]), tpad(1, [0, 0, 0, 0]), tpad(2, [0, 0, 0, 0], [0])], // pad 2 joins
+      [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])], // pad 1 unplugged
+      [tpad(0, [0, 0, 0, 0]), null, tpad(2, [0, 0.8, 0, 0])],
+    ];
+    const frames: InputFrame[] = [];
+    const seen: ReturnType<typeof readAll>[] = [];
+    const last = { held: '', pointer: '' };
+    let now = 0;
+    for (const pads of script) {
+      now += 1 / 60;
+      live.beginFrame(now, 1 / 60, pads);
+      live.deliver();
+      frames.push(live.snapshot(1 / 60, last));
+      seen.push(readAll(live));
+      live.endFrame();
+    }
+    expect(seen[1]!.joinedNow).toEqual([1]);
+    expect(seen[6]!.joinedNow).toEqual([2]);
+    expect(seen[3]!.pads[1]!.x, 'pad 1’s Square, its own').toBe(true);
+    expect(seen[3]!.p1.down, 'none of pad 1 is player 1’s').toEqual([]);
+    expect(seen[8]!.pads[1]!.connected).toBe(false);
+    // left out while no joined pad changed; a pad that has not joined is never recorded on its own (player 1's pad 0 drives the merged input)
+    expect([frames[0]!.pads, frames[1]!.join, frames[8]!.pads]).toEqual([undefined, [1], undefined]);
+    expect(frames.flatMap((f) => f.pads ?? []).map((p) => p[0]).filter((slot) => slot === 0)).toEqual([]);
+    const again = new Input(target());
+    again.playing = true;
+    now = 0;
+    const replayed = (JSON.parse(JSON.stringify(frames)) as InputFrame[]).map((f) => {
+      again.playBefore(f);
+      now += f.dt;
+      again.beginFrame(now, f.dt, []);
+      again.playAfter(f);
+      const r = readAll(again);
+      again.endFrame();
+      return r;
+    });
+    expect(replayed).toEqual(seen);
+    expect(again.player(0).connected, 'a pad that never joined reads as nothing in a replay').toBe(false);
+    expect(recordingProblem({ format: 1, game: 'g', seed: 1, time: 0, frames })).toBeNull();
+  });
+
+  it('a recording without pads (an older one) has one player: nothing reads on its own, and nobody joins', () => {
+    const again = new Input(target());
+    again.playing = true;
+    again.playBefore({ dt: 1 / 60, held: ['PadA'], pressed: ['PadA'] });
+    again.beginFrame(1 / 60, 1 / 60, []);
+    again.playAfter({ dt: 1 / 60, held: ['PadA'], pressed: ['PadA'] });
+    expect([again.isDown('PadA'), again.player(0).connected, again.player(1).isDown('PadA'), [...again.joined]]).toEqual([true, false, false, []]);
+  });
+
+  it('a replay starts with no pad on its own and nobody joined, whatever was live before', () => {
+    const i = new Input(target());
+    i.padPlayers = true;
+    i.joined.add(1);
+    i.beginFrame(1 / 60, 1 / 60, [tpad(1, [0, 0, 0, 0], [0])]);
+    expect(i.player(1).isDown('PadA')).toBe(true);
+    i.endFrame();
+    i.playing = true;
+    expect([i.player(1).connected, i.player(1).isDown('PadA'), [...i.joined]]).toEqual([false, false, []]);
+  });
+
+  it('refuses a malformed pad frame', () => {
+    const ok = { format: 1, game: 'g', seed: 1, time: 0 };
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, pads: [[5, [], 0, 0, 0, 0, 0, 0]] }] })).toMatch(/frame 0: pads/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, padPressed: [[0, 3]] }] })).toMatch(/frame 0: padPressed/);
+    expect(recordingProblem({ ...ok, frames: [{ dt: 0.01, join: [-1] }] })).toMatch(/frame 0: join/);
+  });
+});

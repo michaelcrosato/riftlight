@@ -75,11 +75,7 @@ export class RemoteHero {
   attach(hero: HeroPort, o: { see?: boolean } = {}): void {
     this.hero = hero;
     if (o.see !== false) ghostly(hero.object);
-    const ring = new Mesh(new RingGeometry(0.42, 0.56, 28), new MeshBasicNodeMaterial({ color: this.color, transparent: true, opacity: 0.85, side: DoubleSide, depthWrite: false }));
-    ring.rotation.x = -Math.PI / 2;
-    ring.renderOrder = 2;
-    hero.object.add(ring);
-    this.ring = ring;
+    this.ring = seatRing(hero, this.color);
     const p = this.track.latest;
     if (p) hero.snap?.(this.at.set(p.x, p.y, p.z), p.facing);
   }
@@ -160,12 +156,27 @@ export class RemoteHero {
   }
 
   dispose(): void {
-    this.ring?.geometry.dispose();
-    (this.ring?.material as MeshBasicNodeMaterial | undefined)?.dispose();
+    disposeRing(this.ring);
     this.ring = null;
     this.hero?.dispose();
     this.hero = null;
   }
+}
+
+/** A ring at a hero's feet in its player's colour (`color`, '#rrggbb': the hub's seat colours), kept under its feet (`update`: place it). */
+export function seatRing(hero: HeroPort, color: string): Mesh {
+  const ring = new Mesh(new RingGeometry(0.42, 0.56, 28), new MeshBasicNodeMaterial({ color, transparent: true, opacity: 0.85, side: DoubleSide, depthWrite: false }));
+  ring.rotation.x = -Math.PI / 2;
+  ring.renderOrder = 2;
+  hero.object.add(ring);
+  return ring;
+}
+
+/** Free a `seatRing`. */
+export function disposeRing(ring: Mesh | null): void {
+  ring?.removeFromParent();
+  ring?.geometry.dispose();
+  (ring?.material as MeshBasicNodeMaterial | undefined)?.dispose();
 }
 
 /** Draw a body see-through (its own materials: the shared ones stay as they are). */
