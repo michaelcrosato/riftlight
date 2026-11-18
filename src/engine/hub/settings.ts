@@ -219,10 +219,10 @@ const num = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n)
 /**
  * A DualSense's motion and touchpad from 52in1 (`window.AIHubSettings.dualsense`) for
  * `input.dualsense`: `motion` / `touchpad` say whether the player lets games read them, and
- * `gyro()` / `touches()` read them, only when called (Input calls them only while a game has its
- * motion aim or its touchpad on; the engine reads `gyro` once at start for a game with a motion
- * setting, to claim it: once read, 52in1's own Motion aim leaves the stick alone). Null values where
- * the hub gives nothing usable.
+ * `gyro()` / `touches()` read them, only when called (Input calls them on every poll while a game
+ * has its motion aim or its touchpad on, and never otherwise: while a game reads the gyro, 52in1's
+ * own Motion aim leaves the stick alone, and half a second after it stops it has the stick back).
+ * Null values where the hub gives nothing usable.
  */
 export function hubPadInput(hub: HubSettings): DualSenseInput {
   const pad = () => {

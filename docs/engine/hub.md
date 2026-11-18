@@ -257,12 +257,13 @@ of the pad's height, a tap within 0.3 s), once, recorded, a use of the pad; its 
 }`; a game with `settings: { motion: true }` has the engine keep it at the player's setting,
 `engine.motionOn`): while on and the pad is in use, the controller's turns add to the right stick's,
 gyro × dt × sensitivity into `mouseDelta` (8 pointer pixels a degree past a 4°/s still hand,
-`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. Once a game
-reads the gyro, 52in1's own Motion aim leaves the stick alone for as long as the game runs, even
-while the game stops reading it. So a game with `settings: { motion: true }` claims the motion at
-start (the engine reads the gyro once as soon as 52in1 lets games have it): from then on the
-player's Motion aim row in the game decides alone, off as well as on, and 52in1 never steers behind
-a game whose motion aim is off. A game without that option never reads the gyro unless it turns
-`input.motion.on` itself, and 52in1's own Motion aim stays the player's. The touchpad's fingers
-never take anything from 52in1.
+`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. 52in1 leaves
+the stick alone only while the game reads the gyro: a game that stops reading it has 52in1's own
+Motion aim (if the player has it on) back on its right stick half a second later. So while the
+game's motion aim is on, the engine reads the gyro on every poll (the pad in use or not): 52in1
+leaves the stick alone and the game's sensitivity applies. While it is off the engine reads
+nothing, and 52in1's own Motion aim, if the player has it on, steers the right stick again half a
+second later (the engine sees it as the stick, recorded as any stick is). A game without
+`settings: { motion: true }` never reads the gyro unless it turns `input.motion.on` itself, and
+52in1's own Motion aim stays the player's. The touchpad's fingers never take anything from 52in1.
 

@@ -124,8 +124,9 @@ export interface DualSenseInput {
   readonly touchpad: boolean;
   /**
    * How fast the controller turns, degrees a second (`x` tips its front up, `y` turns it left, `z`
-   * rolls it left). Once a game reads it, 52in1's own Motion aim leaves the stick alone for good
-   * (while the game runs), whether or not the game goes on reading it.
+   * rolls it left). While a game reads it, 52in1's own Motion aim leaves the stick alone; a game
+   * that stops reading it (its own motion aim turned off) has 52in1's back on the stick half a
+   * second later, if the player has it on.
    */
   gyro(): { readonly x: number; readonly y: number; readonly z: number } | null;
   /** The fingers on the touchpad (at most two; `x`, `y` 0..1 from its top left). */
@@ -317,10 +318,10 @@ export class Input {
    * Motion aim: while `on` (the engine keeps it at the player's setting for a game with
    * `settings: { motion: true }`), and the pad is the device in use, the DualSense's turns add to the
    * right stick's camera turn (`mouseDelta`: gyro × dt × `sensitivity`) and to the aim stick
-   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place. The gyro
-   * is read only while on; a game with `settings: { motion: true }` has also claimed it once at
-   * start (the engine reads it then), so 52in1's own Motion aim leaves the stick alone even while
-   * this is off: the game's setting decides alone.
+   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place. While on,
+   * the gyro is read on every poll (the pad in use or not), so 52in1's own Motion aim leaves the
+   * stick alone and this sensitivity applies; while off nothing is read, and 52in1's own Motion aim
+   * (if the player has it on) steers the right stick again half a second later.
    */
   readonly motion = { on: false, sensitivity: 1 };
   /**
@@ -1133,8 +1134,9 @@ export class Input {
       this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
     }
     // Motion aim (52in1, while the game has it on): the controller's turns add to the stick's, on
-    // the pad in use. Read only while on (a game that never turns it on never takes the motion
-    // from 52in1's own Motion aim; one with a motion setting claimed it at start: Engine).
+    // the pad in use. Read on every poll while on, the pad in use or not (52in1's own Motion aim
+    // leaves the stick alone only while the game reads the gyro), and never while off (52in1's
+    // own, if the player has it on, has the stick back half a second later).
     const gyro = ds?.motion && this.motion.on ? ds.gyro() : null;
     if (gyro && padInUse) {
       const k = Number.isFinite(this.motion.sensitivity) ? Math.max(0, this.motion.sensitivity) : 1;

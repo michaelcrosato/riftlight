@@ -564,18 +564,12 @@ export class Engine {
     if (this.hubSettings.present) this.input.dualsense = hubPadInput(this.hubSettings);
     if (options.settings?.motion) {
       // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).
-      // The game claims the controller's motion as soon as 52in1 lets games have it (one read of
-      // the gyro): from then on 52in1's own Motion aim leaves the stick alone, so the player's
-      // setting here decides alone, off as well as on (52in1 never steers behind it).
-      let claimed = false;
+      // While it is on, Input reads the gyro on every poll: 52in1's own Motion aim leaves the stick
+      // alone and this game's sensitivity applies. While it is off nothing is read, and 52in1's own
+      // Motion aim (if the player has it on) steers the right stick again half a second later.
       const motion = () => {
         this.input.motion.on = this.motionOn;
         this.input.motion.sensitivity = this.settings.values.motionSensitivity ?? 1;
-        const ds = this.input.dualsense;
-        if (!claimed && ds?.motion) {
-          claimed = true;
-          ds.gyro();
-        }
       };
       motion();
       this.settings.onChange(motion);

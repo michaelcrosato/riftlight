@@ -64,8 +64,8 @@ around it, as around the buttons), or keep the stick `fixed`.
 in, `touchDensity: 2`, once its HUD fits a landscape phone's 181 to 195 rows. Then on a phone (the
 viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`) on a page with touch controls the art
 has at least that many CSS pixels per art pixel, in both orientations and again at every rotation
-(`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone at DPR 2 or 3 draws
-422×195 instead of 563×260, so text and targets are thumb-sized; the world in view (the camera's
+(`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone (844×390) at DPR 2 or 3
+draws 422×195 instead of 563×260 at DPR 2 (633×293 at DPR 3), so text and targets are thumb-sized; the world in view (the camera's
 view height, the field of view) is the same. It holds while the controls step aside for a pad or
 the keyboard too: the art size never changes with the device in use. Headless it follows
 `touch: true`, as a page with touch controls; a recording keeps it (`Recording.density`).

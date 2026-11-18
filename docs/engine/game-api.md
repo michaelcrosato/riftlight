@@ -132,9 +132,9 @@ the sandbox and Rift Runner turn it on). Open, it pauses the game; a key or pad 
 opens or closes reads as up until let go, and a stick held then reads centred until it goes back
 inside its deadzone (`input.release()`), so the press that opened it never acts in it, a stick still
 leaning from a run never steps its rows, and the Cross that changed a value never jumps the hero
-after. Options (Esc) opens it at the end of the frame it was pressed on, so that frame runs with the
-keys still held, as it was recorded (a replay, which never opens it, runs it the same). It stays shut
-while a replay plays; a replay never saves settings (`persist`) and puts the player's back when it ends.
+after. Options (Esc) opens it once its frame has run as recorded, keys still held (a replay never
+opens it). It stays shut while a replay plays; a replay never saves settings (`persist`) and puts
+the player's back when it ends.
 
 A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
 on only while 52in1 allows games the microphone (`hubSettings.micAllowed`), else shown off with a
@@ -143,9 +143,9 @@ outside 52in1: that it needs 52in1); `engine.voiceOn` says whether to open it. `
 true` (motion aim by a DualSense's motion, `input.motion`) adds **Motion aim** and its
 **sensitivity** under Controls, there to change while a DualSense's motion reaches games through
 52in1 (else off, with a line saying motion aim needs a DualSense in 52in1); on by default while
-52in1's own Motion aim is (`engine.motionOn`); `input.motion` follows both rows (off: the gyro adds
-nothing; the sensitivity scales its turns), and the game claims the motion from 52in1 at start, so
-these rows decide alone (docs/engine/hub.md *Motion and the touchpad*). Riftlight has the player
+52in1's own Motion aim is (`engine.motionOn`); `input.motion` follows both rows (on: the gyro is
+read every poll and the sensitivity scales its turns; off: nothing is read, so 52in1's own Motion
+aim, if on, has the stick back: docs/engine/hub.md *Motion and the touchpad*). Riftlight has the player
 settings in its own Settings menu: look, quality and the volumes on its page, the rest on its Engine
 page. Engine World's tweak panel (T) sets the same look, pixel art and quality.
 
