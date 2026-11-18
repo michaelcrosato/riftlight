@@ -18,7 +18,8 @@
 //   2. the session harness: the protocol's runs (its *Test it*) for every online mode the page names
 //   1. the hub's checker (scripts/hub/catalogue-check.mjs, vendored unmodified) on the folder
 //
-// and exits 1 if any fails. Pictures of the browser checks go to <dir>-checks/ (never the package).
+// and exits 1 if any fails. Pictures of the browser checks go to <dir>-checks/ (never the package),
+// and what a failed harness run's page was doing to <dir>-checks/harness-evidence/.
 //
 //   --model <name>      the model that wrote the game, as its maker names it (hub:model; required to
 //                       build; never stored in the repo)
