@@ -33,6 +33,20 @@ covers/riftlight/1.jpg, 2.jpg              a fight in a rift; Emberfall's plaza
 - **`--keep`** keeps the built page and takes the covers and runs the checks again; the page's own
   `hub:model` and `hub:effort` stand (a flag that differs is an error: build again).
 
+## What a player reaches in the file
+
+`riftlight.html` carries every `?game=` (src/games.ts), but the hub opens the page with none: a
+player reaches Riftlight, and from its title and the Engine Workshop in town Engine World and its
+Asset Gallery (`?game=world`). Those are player-facing and play fully on a pad (Options the menu,
+Circle back, Create the room list), with a mouse and keys, and on a phone, with prompts for the
+input in use (docs/WORLD.md *Playing it*). The World's own words stay English, the engine's tech
+demo by decision (docs/game/lang.md); the names of keys and buttons in its prompts are the game's
+lines. The other games are developer tools reached only by a typed URL: the arcade on its own
+(`arcade`, the side-scroller template), `playground` and `sandbox` (the engine's demos, on the
+engine's one pad scheme, `KEYMAP`), `arena`, `lootlab` and `levellab` (Riftlight's labs, on
+Riftlight's pad layout where they have a hero; their status lines are dev. lines). Nothing there is
+promised to a player, but each still plays on a pad.
+
 ## The checks
 
 The script runs the catalogue's three checks on the hand-over page itself, and exits 1 when one
