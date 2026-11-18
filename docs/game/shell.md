@@ -50,7 +50,15 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   with the developer tools on (the dev server, `?debug=1`). Tab / M / R3 / the DualSense's
   touchpad press open the level's map over the play (`drawMap`: the world runs on under it; in a
   session round too).
-  Shift+Tab is the tab before in the item windows.
+  Shift+Tab is the tab before in the item windows. The character screens are one ring (`PAGES`:
+  inventory, skills, tree, character, codex): L1 / R1 or Q / E page through it in place (a pause
+  menu under them stays), a strip across the top names them (each a button for the mouse); in the
+  stash, the vendor and the bench they are those windows' tabs, as are Tab and L2 / R2 everywhere.
+- **The mouse in the world** (the ARPG way): a townsperson, the stash, a showcase piece, a loot
+  label or the open portal under the mouse shows what a click does there (`thingLabel`, the mouse's
+  glyph and the prompt); a click does it in reach, else the hero walks there and does it on arrival
+  (`goTo`, `walkTo`, giving up when the player moves, attacks or opens a panel), and the press is
+  not a swing. A pad keeps the proximity prompts.
 - **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
   replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a
   level-up (two pulses), a rare or loud item landing in view, the portal opening and the hero's

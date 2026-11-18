@@ -21,20 +21,21 @@ import { Rng } from '../core/rng';
 import { RANK, SCALING } from '../core/scaling';
 import { type ActorLike, DAMAGE_COLORS, type DifficultyTuning, dominantType, type GameEvents, type LevelSpec, type SaveData } from '../core/types';
 import { loadRiftlightPacks } from '../packs';
-import { Town, type TownState } from '../town/Town';
+import { type Interactable, Town, type TownState } from '../town/Town';
 import { type HudModel, drawHud, drawMap, type FeedLine, hudGeometry, hudZones, mapView, type MinimapModel } from '../ui/hud';
 import { BannerQueue, type Box, HudLayout } from '../ui/layout';
-import { clip, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
+import { clip, inside, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { UiLayer } from '../ui/layer';
+import { drawPageStrip, type PageStrip, pagesLegend } from '../ui/legend';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
 import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
-import { beacon, bubble, Floaters, hitbox, lootLabel } from '../ui/world';
+import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, ndcToArt, Pointer, type PointerState } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -164,7 +165,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** The frame's commands `agentInput` took last (it runs once a frame). */
   private agentTaken: readonly unknown[] | null = null;
   private interactQueued = false;
-  /** The left button (or finger) now held went down on the map and opened or closed it: no attack until it is let go. */
+  /** What the mouse is over in the world as last drawn (a townsperson, the stash, a loot label, the open portal), or null. */
+  worldFocus: WalkTarget | null = null;
+  /** A thing clicked out of reach: the hero walks there and does it (`walk`, `arrive`); seconds on the way. */
+  walkTo: { target: WalkTarget; time: number } | null = null;
+  /**
+   * The left button (or finger) now held went down on something that took it (a thing in the
+   * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
+   */
   private pressTaken = false;
   private readonly right = new Vector3();
   private readonly forward = new Vector3();
@@ -185,6 +193,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private readonly unsubs: (() => void)[] = [];
   private playtime = 0;
   private lootFocus: WorldLoot | null = null;
+  /** The character screens' strip as last drawn (its names are buttons). */
+  private pageStrip: PageStrip['rects'] = [];
   private fileInput: HTMLInputElement | null = null;
   private gifts = 0;
   /** A level system already announced the clear (`levelClear`): the shell doesn't repeat it. */
@@ -259,6 +269,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.feel = new PadFeel(ctx);
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
+    this.layer.legendExtra = (panel) => (isPage(panel.id) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
     const rng = () => this.rng;
     this.services = {
       ctx,
@@ -1290,7 +1301,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.showcase?.active) return this.showcase.fixedUpdate(dt);
     if (this.screen !== 'town' && this.screen !== 'level') return;
     if (this.worldPaused) return;
-    const intent = this.botIntent ?? this.readIntent(ctx);
+    const intent = this.botIntent ?? this.readIntent(ctx, dt);
     if (this.dead) {
       this.intent.move.x = this.intent.move.z = 0;
       this.hero.fixedUpdate(dt, { ...this.intent, attack: false, skill: -1, dodge: false, held: 0 });
@@ -1306,7 +1317,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /** Player intent from keys, mouse, pad and touch (fixed step). */
-  private readIntent(ctx: GameContext): HeroIntent {
+  private readIntent(ctx: GameContext, dt: number): HeroIntent {
     const input = ctx.input;
     const i = this.intent;
     const panelOpen = !!this.layer.top;
@@ -1332,14 +1343,19 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const overUi = panelOpen && this.layer.top && this.ui.hover(this.layer.top.rect);
     // the mouse buttons are keys: held, or pressed since the last step (a click shorter than a
     // frame); a press is used up here even when a panel takes it, so it never fires later
-    const left = input.consumeAny(MOUSE.left) || input.anyDown(MOUSE.left);
+    const press = input.consumeAny(MOUSE.left);
+    const hold = input.anyDown(MOUSE.left);
+    // a click on a thing in the world (a townsperson, a loot label, the portal) goes there: no
+    // swing while that button stays down (nor while a press the map took stays down)
+    if (press) this.pressTaken = !!this.worldFocus;
+    else if (!hold) this.pressTaken = false;
+    const left = (press || hold) && !this.pressTaken;
     const right = input.consumeAny(MOUSE.right) || input.anyDown(MOUSE.right);
-    if (!input.anyDown(MOUSE.left)) this.pressTaken = false;
     // a press this frame counts where it went down (a tap's finger: the pointer is placed after this step)
     let down: { x: number; y: number } | null = null;
     for (const e of input.buttonEvents) if (e.down && (MOUSE.left as readonly string[]).includes(e.code)) down = ndcToArt(ctx.engine, e.x, e.y);
     const onHud = this.pointerOnHud(down ?? this.pointer.art);
-    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !this.pressTaken && !onHud));
+    i.attack = !overUi && (input.anyDown(KEYS.attack) || (left && !onHud));
     i.skill = -1;
     for (let s = 0; s < 4; s++) if (input.consumeAny(KEYS.skill[s]!)) i.skill = s;
     if (right && !overUi) i.skill = 0;
@@ -1354,7 +1370,32 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       i.skill = -1;
       i.dodge = false;
     }
+    this.walk(i, axis, panelOpen, dt);
     return i;
+  }
+
+  /**
+   * On the way to a thing clicked (`walkTo`): the hero walks straight at it, unless the player
+   * moves, attacks, casts or dodges, a panel opens, it is gone, or `WALK.giveUp` seconds pass.
+   * Arriving does it (`arrive`, in `update`).
+   */
+  private walk(i: MutableIntent, axis: { x: number; y: number }, panelOpen: boolean, dt: number): void {
+    const w = this.walkTo;
+    if (!w) return;
+    const goal = this.walkGoal(w.target);
+    w.time += dt;
+    const own = Math.hypot(axis.x, axis.y) > 0.1 || i.attack || i.skill >= 0 || i.dodge;
+    if (!goal || own || panelOpen || w.time > WALK.giveUp) {
+      this.walkTo = null;
+      return;
+    }
+    const p = this.hero.actor.position;
+    const dx = goal.x - p.x;
+    const dz = goal.z - p.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 1e-3) return;
+    i.move.x = dx / d;
+    i.move.z = dz / d;
   }
 
   /**
@@ -1426,7 +1467,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
     // pointer and menu input → the panel stack, then game hotkeys
-    const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)].map((e) => (e.kind === 'tab' && e.dir === 1 && this.shiftTab(ctx) ? { kind: 'tab', dir: -1 } : e));
+    const events: UiEvent[] = [...this.pointer.frame(dt), ...this.menuInput.events(ctx.input, dt)].map((e) => this.shellEvent(ctx, e));
     ui.pointer.x = this.pointer.art.x;
     ui.pointer.y = this.pointer.art.y;
     ui.pointer.used = this.pointer.idle < 4 && !this.pointer.touch;
@@ -1443,6 +1484,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         consumed = true;
         continue;
       }
+      // L1 / R1 (Q / E) on a character screen: the one before or after it in the ring; a click on the strip's names too
+      const dir = e.kind === 'key' ? pageDir(e.code) : 0;
+      const strip = e.kind === 'pointer' && e.type === 'down' ? this.pageStrip.find((r) => inside(r, e.x, e.y)) : undefined;
+      if ((dir && this.page(dir)) || (strip && this.showPage(strip.page))) {
+        consumed = true;
+        if (strip) ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
+        continue;
+      }
       if (this.layer.top && this.layer.input(e)) {
         consumed ||= e.kind !== 'pointer';
         // a click a panel took (Resume, a close box) is not an attack once the panel is gone
@@ -1456,9 +1505,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         ctx.input.clearQueued(...MOUSE.left);
         continue;
       }
-      // the world: a pointer press on a loot label picks it up
-      if (e.kind === 'pointer' && e.type === 'down' && this.lootFocus && this.screen === 'level') this.tryPickup(this.lootFocus);
+      // the world: a click on a townsperson, the stash, a loot label or the open portal goes there and does it
+      if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch && this.worldFocus) this.goTo(this.worldFocus);
     }
+    this.arrive();
     // a key a menu used this frame (Esc closing a panel) must not also reopen one
     if (!consumed) this.hotkeys(ctx);
 
@@ -1479,6 +1529,36 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Shift+Tab: the tab before (the menus hear Tab as the next one). */
   private shiftTab(ctx: GameContext): boolean {
     return ctx.input.wasPressed('Tab') && ctx.input.anyDown(SHIFT);
+  }
+
+  /**
+   * A menu event as the shell's panels take it: Shift+Tab is the tab before; in the stash, the
+   * vendor and the bench (no page of the ring) L1 / R1 and Q / E are their tabs, as before.
+   */
+  private shellEvent(ctx: GameContext, e: UiEvent): UiEvent {
+    if (e.kind === 'tab' && e.dir === 1 && this.shiftTab(ctx)) return { kind: 'tab', dir: -1 };
+    const dir = e.kind === 'key' ? pageDir(e.code) : 0;
+    const top = this.layer.top?.panel;
+    if (dir && top?.group === ITEM_GROUP && !isPage(top.id)) return { kind: 'tab', dir };
+    return e;
+  }
+
+  /** L1 / R1 (Q / E) on a character screen: the one before or after it in the ring (`PAGES`), in its place. */
+  page(dir: 1 | -1): boolean {
+    const top = this.layer.top?.panel.id;
+    if (!isPage(top)) return false;
+    const i = PAGES.indexOf(top);
+    for (let k = 1; k < PAGES.length; k++) if (this.showPage(PAGES[(i + dir * k + PAGES.length * k) % PAGES.length]!)) return true;
+    return false;
+  }
+
+  /** Open a character screen in place of the one showing (a pause menu under it stays). False when it can't open (no such view). */
+  showPage(page: Page): boolean {
+    const was = this.layer.top?.panel.id;
+    if (was === page) return false;
+    if (!this.openPanel(page)) return false;
+    if (isPage(was) && this.layer.has(was)) this.layer.close(was, true);
+    return true;
   }
 
   /**
@@ -1578,20 +1658,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const p = this.hero.actor.position;
     if (this.screen === 'town') {
       const it = this.town.nearest(p);
-      if (!it) return false;
-      if (it.action === 'stash') {
-        this.openPanel('stash');
-        return true;
-      }
-      if (it.action === 'showcase') return this.showcase.interact(it.id);
-      if (it.npc) {
-        this.talkingTo = it.npc;
-        this.dialogueLine = it.npc.talk();
-        this.ctx.audio.play('rl.bark');
-      }
-      const panel = it.action === 'craft' ? 'crafting' : it.action === 'vendor' ? 'vendor' : it.action === 'tree' ? 'respec' : it.action === 'rift' ? 'rift' : null;
-      if (panel) this.openPanel(panel);
-      return true;
+      return it ? this.interactWith(it) : false;
     }
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
@@ -1602,6 +1669,70 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
     }
     return false;
+  }
+
+  /**
+   * A click on a thing in the world (the ARPG way): done at once when the hero is in reach, else
+   * the hero walks there (`walkTo`) and does it on arrival.
+   */
+  goTo(target: WalkTarget): void {
+    this.walkTo = { target, time: 0 };
+    this.arrive();
+  }
+
+  /** Where the walk to `target` heads, or null when it is gone (left town, picked up, the portal shut). */
+  private walkGoal(target: WalkTarget): Vector3 | null {
+    if (target.kind === 'it') return this.screen === 'town' ? (this.town.interactables.find((x) => x.id === target.id)?.position ?? null) : null;
+    if (this.screen !== 'level' || !this.level) return null;
+    if (target.kind === 'portal') return this.level.exitOpen ? this.level.exit : null;
+    return this.ports.loot.ground().find((l) => l.id === target.id && !l.filtered)?.position ?? null;
+  }
+
+  /** The hero reached the thing it walks to: it is done (talk, open, pick up, the portal). True when it was. */
+  private arrive(): boolean {
+    const w = this.walkTo;
+    if (!w) return false;
+    const goal = this.dead ? null : this.walkGoal(w.target);
+    if (!goal) {
+      this.walkTo = null;
+      return false;
+    }
+    const p = this.hero.actor.position;
+    const d = Math.hypot(goal.x - p.x, goal.z - p.z);
+    const t = w.target;
+    if (t.kind === 'it') {
+      const it = this.town.interactables.find((x) => x.id === t.id)!;
+      if (d >= it.radius - 0.3) return false;
+      this.walkTo = null;
+      return this.interactWith(it);
+    }
+    if (t.kind === 'portal') {
+      if (d >= 2.4) return false;
+      this.walkTo = null;
+      this.atPortal();
+      return true;
+    }
+    if (d >= 2) return false; // within a pickup's reach (`tryPickup`)
+    this.walkTo = null;
+    const l = this.ports.loot.ground().find((x) => x.id === t.id);
+    return !!l && this.tryPickup(l);
+  }
+
+  /** Talk to a townsperson, open the stash, or play a showcase piece. */
+  private interactWith(it: Interactable): boolean {
+    if (it.action === 'stash') {
+      this.openPanel('stash');
+      return true;
+    }
+    if (it.action === 'showcase') return this.showcase.interact(it.id);
+    if (it.npc) {
+      this.talkingTo = it.npc;
+      this.dialogueLine = it.npc.talk();
+      this.ctx.audio.play('rl.bark');
+    }
+    const panel = it.action === 'craft' ? 'crafting' : it.action === 'vendor' ? 'vendor' : it.action === 'tree' ? 'respec' : it.action === 'rift' ? 'rift' : null;
+    if (panel) this.openPanel(panel);
+    return true;
   }
 
   private tryPickup(l: WorldLoot): boolean {
@@ -1789,6 +1920,18 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
       if (it) this.prompt(it.prompt, it.title);
     }
+    // the mouse in the world (not over a panel, not a finger): the thing under it shows what a click does there
+    const mouse = ui.pointer.used && !this.padGlyphs() && !this.layer.covers(ui.pointer.x, ui.pointer.y) && !this.showcase.active;
+    this.worldFocus = null;
+    if (this.screen === 'town' && mouse) {
+      for (const thing of this.town.interactables) {
+        const box = thingBox(thing, cam, ui);
+        if (!box || !ui.hover(box)) continue;
+        this.worldFocus = { kind: 'it', id: thing.id };
+        thingLabel(ui, box, thing.prompt, 'attack', layout);
+        break;
+      }
+    }
     this.lootFocus = null;
     if (this.screen === 'level' && this.level) {
       const near = this.nearestLoot(1.8);
@@ -1805,8 +1948,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         .filter((l) => !l.filtered && l.drop.kind !== 'gold' && l.position.distanceTo(p) <= 9)
         .sort((a, b) => Number(b === near) - Number(a === near) || Number(b.tier === 'loud') - Number(a.tier === 'loud') || a.position.distanceTo(p) - b.position.distanceTo(p));
       for (const l of labels) {
-        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near, l.tier, layout);
+        const r = lootLabel(ui, cam, l.position, l.label, l.color, l === near || this.walkTo?.target.kind === 'loot' && this.walkTo.target.id === l.id, l.tier, layout);
         if (r && this.ui.hover(r)) this.lootFocus = l;
+      }
+      if (mouse && this.lootFocus) this.worldFocus = { kind: 'loot', id: this.lootFocus.id };
+      // the open portal under the mouse: a click goes home
+      const portal = !this.round && this.level.exitOpen && mouse && !this.worldFocus ? worldBox(this.level.exit, 2.2, 1.6, cam, ui) : null;
+      if (portal && ui.hover(portal)) {
+        this.worldFocus = { kind: 'portal' };
+        thingLabel(ui, portal, t('prompt.return'), 'attack', layout);
       }
       if (this.dev.hitboxes) {
         hitbox(ui, cam, p, this.hero.actor.radius, 'lime');
@@ -1828,6 +1978,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (talk?.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
     this.layer.draw(ui, this.time);
     if (talk && !talk.panel.overlay) dialogue(ui, this.dialogueLine!, talk.rect);
+    // a character screen on top: the ring's strip across the top (the tree's view covers the screen: its own bar says it)
+    const top = this.layer.top?.panel.id;
+    this.pageStrip = isPage(top) && top !== 'tree' ? drawPageStrip(ui, top).rects : [];
     if (this.dead && !this.layer.has('death')) {
       const k = Math.min(1, this.deathTimer / 1.2);
       for (let y = 0; y < ui.h; y += 2) if ((y / 2) % 3 < k * 3) ui.rect(0, y, ui.w, 1, 'plum');
@@ -2119,6 +2272,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         interactQueued: this.interactQueued,
         pressTaken: this.pressTaken,
         map: this.mapOpen,
+        worldFocus: this.worldFocus,
+        walk: this.walkTo,
         lootFocus: this.lootFocus?.id ?? null,
         levelUpAge: this.levelUpAge,
         hurt: this.hurt,
@@ -2235,6 +2390,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.interactQueued = t.interactQueued;
     this.pressTaken = t.pressTaken ?? false;
     this.mapOpen = t.map ?? false;
+    this.worldFocus = t.worldFocus ?? null;
+    this.walkTo = t.walk ? { target: t.walk.target, time: t.walk.time } : null;
     this.levelUpAge = t.levelUpAge;
     this.hurt = t.hurt;
     this.goldShown = t.goldShown;
@@ -2263,8 +2420,25 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 }
 
+/** Where a click in the world sends the hero (`Riftlight.walkTo`): a town interactable, a ground drop, the level's open portal. */
+export type WalkTarget = { readonly kind: 'it'; readonly id: string } | { readonly kind: 'loot'; readonly id: number } | { readonly kind: 'portal' };
+
+/** A town interactable as the mouse's target on screen: a townsperson's body (they walk about), else the thing itself. */
+export function thingBox(it: Interactable, camera: import('three/webgpu').Camera, ui: UiCanvas): { x: number; y: number; w: number; h: number } | null {
+  return it.npc ? worldBox(it.npc.position, 1.9, 0.9, camera, ui) : worldBox(it.position, 1.4, 1.4, camera, ui);
+}
+
+/** A walk to a thing clicked gives up after this many seconds (something in the way). */
+const WALK = { giveUp: 6 } as const;
+
 /** Either Shift key. */
 const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
+
+/** A character screen's id (`PAGES`). */
+const isPage = (id: string | undefined): id is Page => (PAGES as readonly string[]).includes(id ?? '');
+
+/** The ring's way for a page key: -1 L1 / Q, 1 R1 / E, else 0. */
+const pageDir = (code: string): 1 | -1 | 0 => ((KEYS.pagePrev as readonly string[]).includes(code) ? -1 : (KEYS.pageNext as readonly string[]).includes(code) ? 1 : 0);
 
 /** Auto-aim's last resort: the nearest monster this close (m), whichever way it stands. */
 const AIM_AROUND = 7;
@@ -2314,10 +2488,13 @@ interface RiftSnapshot {
     readonly music: SongName | null;
     readonly session: Riftlight['session'];
     readonly interactQueued: boolean;
-    /** A held press the map took (left out by snapshots from before it). */
+    /** A held press a thing in the world or the map took (left out by snapshots from before it). */
     readonly pressTaken?: boolean;
     /** The map is open (left out by snapshots from before it). */
     readonly map?: boolean;
+    /** What the mouse was over in the world and the thing a click walks the hero to (left out by older snapshots). */
+    readonly worldFocus?: WalkTarget | null;
+    readonly walk?: { readonly target: WalkTarget; readonly time: number } | null;
     readonly lootFocus: number | null;
     readonly levelUpAge: number;
     readonly hurt: number;

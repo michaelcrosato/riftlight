@@ -6,9 +6,10 @@
 // so the engine's resolution hotkey sits on F2 when the hotkeys are on. The picture stays in e2e.
 // Tests run in order on one engine; the hotkey test boots its own after the first is disposed.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { Engine } from '../../engine';
+import type { Control, ControlTable, Engine } from '../../engine';
 import { HERO_KEYS } from '../actors/controls';
-import { headlessGame } from '../headless';
+import { heroCodes } from '../game/controls';
+import { headlessGame, hudTexts } from '../headless';
 import { Arena } from './arena';
 
 const T = 30_000;
@@ -52,6 +53,26 @@ describe('the combat arena', () => {
     expect([g.hero.basic.id, ...g.hero.slots.map((x) => x?.id ?? null)].join(',')).toBe('slash,cleave,fireball,frost-nova,leap-slam,whirlwind');
     // R is a skill key: the arena never turns the engine hotkeys on (none here, as with ?debug=0)
     expect(e.debugKeys.resolution).toEqual([]);
+  });
+
+  it('plays on the game’s one key map: its bar is labelled for the device in use, and a pad’s Square casts the first skill', () => {
+    const texts = () => hudTexts(e).map((t) => t.text);
+    e.input.noteDevice('keyboard');
+    expect(texts(), 'keys').toEqual(expect.arrayContaining(['LMB', '1', '2', '3', '4', 'F']));
+    const pad = (pressed: number[] = []) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i) })) });
+    e.input.setGamepads([pad()]);
+    e.step(30);
+    const mana = g.hero.actor.mana;
+    e.input.setGamepads([pad([2])]); // Square: slot 0, Cleave (the game's skill 1)
+    e.step(2);
+    e.input.setGamepads([pad()]);
+    e.step(1);
+    expect(e.input.device).toBe('pad');
+    expect(texts(), 'the pad’s buttons').toEqual(expect.arrayContaining(['Cross', 'Square', 'Triangle', 'L1', 'R1', 'R2']));
+    expect(g.hero.actor.mana, 'Cleave was cast').toBeLessThan(mana);
+    e.step(60);
+    e.input.setGamepads(null);
+    e.input.noteDevice('keyboard');
   });
 
   it(
@@ -137,14 +158,14 @@ describe('the combat arena', () => {
   );
 
   it(
-    'a fireball (Q) costs mana, flies as a projectile and hits a dummy',
+    'a fireball (E) costs mana, flies as a projectile and hits a dummy',
     () => {
       g.hero.teleport([0, 0, 4]);
       g.hero.facing = Math.PI;
       e.step(30);
       const mana0 = g.hero.actor.mana;
       const press = e.frame;
-      tap('KeyQ');
+      tap('KeyE');
       expect(mana0 - g.hero.actor.mana, 'fireball costs mana').toBeGreaterThan(0);
       let flying = 0;
       for (let i = 0; i < 30; i++) {
@@ -172,33 +193,33 @@ describe('the combat arena', () => {
   );
 
   it(
-    'its prompts name the buttons it plays with (HERO_KEYS: pad Square attacks, Cross dodges, Circle is the first skill), and the button named does it',
+    'its prompts name the buttons it plays with (the game\'s one key map: pad Cross attacks, Circle dodges, Square is the first skill), and the button named does it',
     () => {
-      const actions = ['attack', 'dodge', 'skill1', 'skill2', 'skill5'];
+      const actions = ['attack', 'dodge', 'skill1', 'skill2', 'interact'];
       e.input.noteDevice('pad');
       e.step(1);
-      expect(actions.map((a) => e.controls.label(a)), 'on a pad').toEqual(['Square', 'Cross', 'Circle', 'Triangle', 'R2']);
+      expect(actions.map((a) => e.controls.label(a)), 'on a pad').toEqual(['Cross', 'Circle', 'Square', 'Triangle', 'R2']);
       e.input.noteDevice('keyboard');
       e.step(1);
-      expect(actions.map((a) => e.controls.label(a)), 'on the keyboard').toEqual(['LMB', 'Space', 'RMB', 'Q', 'F']);
-      // every key and pad button the table names is one the hero reads for that action
-      const reads: Record<string, readonly string[]> = { attack: HERO_KEYS.attack, dodge: HERO_KEYS.dodge, ...Object.fromEntries(HERO_KEYS.slots.map((k, i) => [`skill${i + 1}`, k])) };
-      for (const [action, c] of Object.entries(g.controls)) {
-        if (action === 'move') continue;
-        expect(reads[action], action).toEqual(expect.arrayContaining([c.key, ...(c.pad ? [c.pad] : [])]));
+      expect(actions.map((a) => e.controls.label(a)), 'on the keyboard').toEqual(['LMB', 'Space', '1', '2', 'F']);
+      // every key and pad button the table names for the bar is one the hero reads for that action (heroCodes of its token)
+      const reads: Record<string, readonly string[]> = { attack: heroCodes(HERO_KEYS.attack), dodge: heroCodes(HERO_KEYS.dodge), ...Object.fromEntries(HERO_KEYS.slots.slice(0, 4).map((k, i) => [`skill${i + 1}`, heroCodes(k)])), interact: heroCodes(HERO_KEYS.slots[4]) };
+      for (const [action, codes] of Object.entries(reads)) {
+        const c: Control = (g.controls as ControlTable)[action]!;
+        expect(codes, action).toEqual(expect.arrayContaining([c.key, ...(c.pad ? [c.pad] : [])]));
       }
       // the pad button the dodge prompt names rolls, the attack's swings
       g.hero.teleport([0, 0, 10]);
       g.hero.facing = Math.PI / 2;
       e.step(10);
-      tap(g.controls.dodge!.pad!);
+      tap(g.controls.dodge.pad);
       e.step(2);
-      expect(g.hero.state, `${g.controls.dodge!.pad} dodges`).toBe('dodge');
+      expect(g.hero.state, `${g.controls.dodge.pad} dodges`).toBe('dodge');
       e.step(40);
       const before = g.hero.stats.attacks;
-      tap(g.controls.attack!.pad!);
+      tap(g.controls.attack.pad);
       e.step(30);
-      expect(g.hero.stats.attacks - before, `${g.controls.attack!.pad} attacks`).toBe(1);
+      expect(g.hero.stats.attacks - before, `${g.controls.attack.pad} attacks`).toBe(1);
     },
     T,
   );

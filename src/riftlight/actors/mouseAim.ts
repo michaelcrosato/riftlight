@@ -9,7 +9,7 @@ export interface PointerSource {
 /**
  * Mouse aiming for the ARPG controller: the cursor over the game canvas (`ctx.input.pointer`)
  * as a point on the ground plane under it. The mouse buttons are the engine's keys
- * (`MouseLeft` / `MouseRight`, HERO_KEYS), so they buffer and combine exactly like keyboard
+ * (`MouseLeft` / `MouseRight`, game/controls.ts `MOUSE`), so they buffer and combine exactly like keyboard
  * keys, and a recording replays the aim and the clicks alike.
  */
 export class MouseAim {

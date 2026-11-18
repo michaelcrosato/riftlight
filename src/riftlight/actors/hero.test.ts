@@ -10,6 +10,7 @@ import { Combat } from '../combat/Combat';
 import { Actor, actorIds, setActorIds } from './Actor';
 import { ActorManager } from './ActorManager';
 import { AIM } from './aim';
+import { heroCodes } from '../game/controls';
 import { HeroController, type InputLike } from './HeroController';
 import { GridMover, openFloor } from './movers';
 
@@ -23,7 +24,7 @@ async function heroModel(): Promise<Object3D> {
   return gltf.scene;
 }
 
-/** Keys held and presses queued, like the engine's Input. */
+/** Keys held and presses queued, like the engine's Input, read through the game's key map (the hero asks for its actions: `heroCodes`). */
 class FakeInput implements InputLike {
   held = new Set<string>();
   queued = new Set<string>();
@@ -33,13 +34,13 @@ class FakeInput implements InputLike {
   moveAxis() {
     return this.axis;
   }
-  consumeAny(codes: readonly string[]) {
+  consumeAny(tokens: readonly string[]) {
     let hit = false;
-    for (const c of codes) if (this.queued.delete(c)) hit = true;
+    for (const c of heroCodes(tokens)) if (this.queued.delete(c)) hit = true;
     return hit;
   }
-  anyDown(codes: readonly string[]) {
-    return codes.some((c) => this.held.has(c));
+  anyDown(tokens: readonly string[]) {
+    return heroCodes(tokens).some((c) => this.held.has(c));
   }
   press(code: string) {
     this.queued.add(code);
@@ -125,7 +126,7 @@ describe('HeroController', () => {
     const w = await world();
     w.input.press('KeyJ');
     w.step(3);
-    w.input.press('KeyQ'); // fireball, pressed mid-swing
+    w.input.press('KeyE'); // fireball, pressed mid-swing
     w.step(2);
     expect(w.hero.state).toBe('attack');
     w.step(12); // the swing reaches its cancel point (~15 steps): the queued cast starts
@@ -161,7 +162,7 @@ describe('HeroController', () => {
     w.input.axis = { x: 1, y: 0 };
     w.step(20);
     const free = w.hero.actor.velocity.length();
-    w.input.press('KeyQ');
+    w.input.press('KeyE');
     w.step(2);
     expect(w.hero.state).toBe('cast');
     const casting = w.hero.actor.velocity.length();
@@ -189,7 +190,7 @@ describe('HeroController', () => {
   it('no mana, no cast', async () => {
     const w = await world();
     w.hero.actor.mana = 0;
-    w.input.press('KeyQ');
+    w.input.press('KeyE');
     w.step(2);
     expect(w.hero.state).not.toBe('cast');
     expect(w.hero.feedback?.text).toBe('NO MANA');
@@ -200,7 +201,7 @@ describe('HeroController', () => {
     const castHit = async (staff: boolean) => {
       const v = await world({ mods: staff ? [{ stat: 'weapon.staff', kind: 'flag', value: 1 }] : [] });
       v.step(1);
-      v.input.press('KeyQ'); // fireball: a Cast
+      v.input.press('KeyE'); // fireball: a Cast
       let frames = 0;
       while (v.combat.effects.length === 0 && frames < 60) {
         v.step(1);
@@ -235,13 +236,13 @@ describe('HeroController', () => {
 });
 
 describe('HeroController save-states', () => {
-  /** Press and hold whirlwind (Q) for a second, then the beam (E) while the aim sweeps: input by step. */
+  /** Press and hold whirlwind (E) for a second, then the beam (R) while the aim sweeps: input by step. */
   const script = (input: FakeInput & { aim: Vector3 }, t: number) => {
     input.held.clear();
-    if (t === 10) input.press('KeyQ');
-    if (t >= 10 && t < 70) input.held.add('KeyQ');
-    if (t === 90) input.press('KeyE');
-    if (t >= 90 && t < 160) input.held.add('KeyE');
+    if (t === 10) input.press('KeyE');
+    if (t >= 10 && t < 70) input.held.add('KeyE');
+    if (t === 90) input.press('KeyR');
+    if (t >= 90 && t < 160) input.held.add('KeyR');
     input.aim.set(Math.sin(t * 0.06) * 5, 0, 5);
   };
   /** The hero on a plain mover (no physics to keep), dummies to hit, and a restore as the game's runs it. */

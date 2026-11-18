@@ -22,14 +22,14 @@ export async function runRiftlightCombat(h) {
     const { page, logs } = ctx;
 
     // ------------------------------------------------------------ the frame
-    // the arena mid-fight: a frost nova (E) among the dummies
+    // the arena mid-fight: a frost nova (R) among the dummies
     await page.evaluate(() => {
       const e = window.__PIXEL_ENGINE__;
       e.step(60); // the dummies walk up
       e.game.hero.teleport([0, 0, 3]);
-      e.input.setKey('KeyE', true);
+      e.input.setKey('KeyR', true);
       e.step(2);
-      e.input.setKey('KeyE', false);
+      e.input.setKey('KeyR', false);
       e.step(26);
     });
     const shot = await capture(page, `riftlight-combat-${tag}.png`);

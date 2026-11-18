@@ -55,10 +55,10 @@ never imports the line list), and areas stay function declarations.
   so a translation can reorder them.
 - **Controls** are tags, `{key:dodge}`, never a key written into the sentence. `CONTROLS`
   (`game/controls.ts`) maps each action to its key, pad button and touch button; it is
-  `Riftlight.controls` (and the standalone Rift Runner's and the Loot Lab's), so the engine names them on the device
-  in use (`engine.controls.device`) and in the player's button style (PlayStation's by default, Xbox's when
-  chosen). A lab that plays with other keys has a table of its own: the Arena's is `HERO_KEYS`'
-  (`heroControls`), the Level Lab's `LAB_CONTROLS`. The names are Riftlight's lines under the engine's ids (`key.space`, `pad.ps.cross`,
+  `Riftlight.controls` (and the standalone Rift Runner's, the Loot Lab's and the Arena's, which plays on the
+  game's key map: `heroCodes`), so the engine names them on the device in use (`engine.controls.device`) and in
+  the player's button style (PlayStation's by default, Xbox's when chosen). A lab that plays with other keys
+  has a table of its own: the Level Lab's `LAB_CONTROLS` (from its `LAB_KEYS`, through `controlOf`). The names are Riftlight's lines under the engine's ids (`key.space`, `pad.ps.cross`,
   `pad.lb`, `pad.xbox.menu`, `pad.stick.left`, `key.touch.tap`: docs/engine/game-api.md *Prompts*).
 - **Notes** say who speaks, to whom, where it shows; **max** the width of a tight spot (a button).
 - **Not lines**: debug text, numbers on their own, what players type, ids, a generated boss's

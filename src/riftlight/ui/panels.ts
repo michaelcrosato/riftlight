@@ -14,6 +14,7 @@ import { type Recap, recapTip } from '../game/recap';
 import { lang, lineKey, t } from '../lang';
 import { talkText } from '../town/npcs';
 import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
+import type { LegendItem } from './legend';
 
 /** A number in the player's language (12,500 · 12.500), `digits` after the point. */
 const num = (v: number, digits = 0): string => lang().formatNumber(v, { minimumFractionDigits: digits, maximumFractionDigits: digits });
@@ -71,13 +72,26 @@ export function sourceLabel(source: string): string {
 const pct = (v: number) => (Math.abs(v) <= 1.5 ? v * 100 : v);
 const valueOf = (sheet: StatSheet, row: (typeof SHEET)[number]) => (row.scale ? new StatQuery(sheet).scale(row.stat, row.tags) : sheet.get(row.stat, row.tags));
 
+/** The sheet's pages: its rows by what they are for (a short list reads from the couch). */
+export const SHEET_PAGES: readonly { readonly id: 'offence' | 'defence' | 'resistances'; readonly stats: readonly string[] }[] = [
+  { id: 'offence', stats: ['damage', 'attack.speed', 'cast.speed', 'crit.chance', 'move.speed'] },
+  { id: 'defence', stats: ['life', 'mana', 'es', 'armour', 'life.regen', 'mana.regen'] },
+  { id: 'resistances', stats: ['res.fire', 'res.cold', 'res.lightning'] },
+];
+
+/** A row of the list: the normal font's height and air between rows. */
+const ROW = 13;
+
 export class CharacterSheet implements Panel {
   readonly id = 'character';
   get title(): string {
     return t('panel.character.title');
   }
-  private focus = 3;
+  /** The page shown (`SHEET_PAGES`) and the row focused on it. */
+  page = 0;
+  private focus = 0;
   private rows: Rect[] = [];
+  private tabs: Rect[] = [];
   /** Room the shell has (`fit`): under 300 the explain column moves under the list. */
   private room = { w: 330, h: 244 };
 
@@ -90,7 +104,12 @@ export class CharacterSheet implements Panel {
   }
 
   get size(): { w: number; h: number } {
-    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 14 + SHEET.length * 11 + 64) } : { w: this.listWidth + 180, h: 176 };
+    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, 28 + 6 * ROW + 72) } : { w: this.listWidth + 190, h: 160 };
+  }
+
+  /** The rows of the page shown. */
+  private get list(): (typeof SHEET)[number][] {
+    return SHEET_PAGES[this.page]!.stats.map((s) => SHEET.find((r) => r.stat === s)!);
   }
 
   /** The list column (wide layout): room for the widest label beside the widest value, 150 to 200 (a longer language). */
@@ -106,33 +125,56 @@ export class CharacterSheet implements Panel {
     private readonly header: () => string,
   ) {}
 
+  /** L2 R2 (← →, Tab) turn the pages, back closes. */
+  legend(): LegendItem[] {
+    return [{ actions: ['tab_prev', 'tab_next'], label: t('legend.pages') }, { actions: ['back'], label: t('legend.back') }];
+  }
+
   draw(ui: UiCanvas, r: Rect): void {
     const sheet = this.sheet();
     const narrow = this.narrow;
     const header = this.header();
-    if (ui.measure(header) <= r.w - 4) ui.text(r.x + 2, r.y + 2, header, { color: 'sand' });
-    else ui.mini(r.x + 2, r.y + 3, header, 'sand');
+    ui.text(r.x + 2, r.y + 2, clip(header, r.w - 4, (s) => ui.measure(s)), { color: 'sand' });
+    // the pages as tabs (a click turns to one)
+    this.tabs = [];
+    let tx = r.x;
+    const tabW = Math.floor(r.w / SHEET_PAGES.length);
+    SHEET_PAGES.forEach((p, i) => {
+      const rect = narrow ? { x: r.x + i * tabW, y: r.y + 12, w: tabW - 1, h: 11 } : { x: tx, y: r.y + 12, w: ui.measure(t(`panel.character.page.${p.id}`)) + 8, h: 11 };
+      this.tabs.push(rect);
+      const on = i === this.page;
+      ui.rect(rect.x, rect.y, rect.w, rect.h, on ? 'navy' : 'ink');
+      if (on) ui.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, 'sand');
+      ui.text(rect.x + 4, rect.y + 2, clip(t(`panel.character.page.${p.id}`), rect.w - 6, (s) => ui.measure(s)), { color: on ? 'sand' : ui.hover(rect) ? 'white' : 'slate' });
+      tx += rect.w + 3;
+    });
     this.rows = [];
     const listW = narrow ? r.w : this.listWidth;
-    SHEET.forEach((row, i) => {
-      const y = r.y + 14 + i * 11;
-      const rect = { x: r.x, y: y - 1, w: listW, h: 10 };
+    const list = this.list;
+    this.focus = Math.min(this.focus, list.length - 1);
+    list.forEach((row, i) => {
+      const y = r.y + 28 + i * ROW;
+      const rect = { x: r.x, y: y - 2, w: listW, h: ROW - 1 };
       this.rows.push(rect);
-      if (i === this.focus) ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
+      if (i === this.focus) {
+        ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
+        ui.rect(rect.x, rect.y, 2, rect.h, 'sand');
+      }
       const value = row.fmt(valueOf(sheet, row));
       // a narrow sheet (or a long language) shortens labels that would run into their value
-      const label = clip(statLabel(row.stat), listW - ui.measure(value) - 8, (s) => ui.measure(s));
-      ui.text(r.x + 3, y, label, { color: i === this.focus ? 'white' : 'mist' });
+      const label = clip(statLabel(row.stat), listW - ui.measure(value) - 10, (s) => ui.measure(s));
+      ui.text(r.x + 5, y, label, { color: i === this.focus ? 'white' : 'mist' });
       ui.text(r.x + listW - 3, y, value, { align: 'right', color: 'white' });
     });
     // explain: where the focused stat comes from (a column on the right, or under the list)
-    const row = SHEET[this.focus]!;
+    const row = list[this.focus]!;
     const x = narrow ? r.x + 2 : r.x + listW + 10;
-    const top = narrow ? r.y + 16 + SHEET.length * 11 : r.y;
+    const top = narrow ? r.y + 30 + list.length * ROW : r.y + 26; // under the pages' tabs
     if (narrow) ui.rect(r.x, top - 3, r.w, 1, 'slate');
-    else ui.rect(x - 5, r.y, 1, r.h - 4, 'slate');
+    else ui.rect(x - 5, top, 1, r.y + r.h - top - 2, 'slate');
     const colW = r.x + r.w - x;
     let y = narrow ? top : top + 2;
+    const bottom = r.y + r.h - 11; // the final value's row
     if (!narrow) {
       for (const l of wrap(t('panel.character.explain', { stat: statLabel(row.stat) }), colW)) {
         ui.text(x, y, l, { color: 'sand' });
@@ -143,26 +185,40 @@ export class CharacterSheet implements Panel {
     const base = valueOf(sheet, row);
     const parts = sheet.explain(row.stat, row.tags);
     if (!parts.length) ui.text(x, y, t('panel.character.base_only'), { color: 'slate' });
-    for (const p of parts.slice(0, 12)) {
-      if (y > r.y + r.h - (narrow ? 22 : 20)) break;
-      const source = clip(sourceLabel(p.source), colW, miniWidth);
-      ui.mini(x, y, source, p.source === 'difficulty' ? 'orange' : 'slate');
-      y += miniStep(source, 6);
-      for (const line of wrap(describeMod(p.mod), colW)) {
-        if (y > r.y + r.h - 18) break;
+    // each source in the normal font, its bonus under it: as many as there is room for
+    for (const p of parts) {
+      const lines = wrap(describeMod(p.mod), colW);
+      if (y + 9 * (1 + Math.min(1, lines.length)) > bottom) break;
+      ui.text(x, y, clip(sourceLabel(p.source), colW, (s) => ui.measure(s)), { color: p.source === 'difficulty' ? 'orange' : 'slate' });
+      y += 9;
+      for (const line of lines) {
+        if (y + 9 > bottom) break;
         ui.text(x, y, line, { color: 'sky' });
         y += 9;
       }
+      y += 2;
     }
-    ui.mini(x, r.y + r.h - 8, t('panel.character.final', { value: row.fmt(base) }), 'white');
+    ui.text(x, bottom + 1, clip(t('panel.character.final', { value: row.fmt(base) }), colW, (s) => ui.measure(s)), { color: 'white' });
+  }
+
+  /** Turn to page `i` (the first row focused). */
+  private turn(i: number): true {
+    this.page = (i + SHEET_PAGES.length) % SHEET_PAGES.length;
+    this.focus = 0;
+    return true;
   }
 
   input(e: UiEvent): boolean {
+    const n = this.list.length;
     if (e.kind === 'nav' && (e.dir === 'up' || e.dir === 'down')) {
-      this.focus = (this.focus + (e.dir === 'up' ? -1 : 1) + SHEET.length) % SHEET.length;
+      this.focus = (this.focus + (e.dir === 'up' ? -1 : 1) + n) % n;
       return true;
     }
+    if (e.kind === 'nav') return this.turn(this.page + (e.dir === 'left' ? -1 : 1));
+    if (e.kind === 'tab') return this.turn(this.page + e.dir);
     if (e.kind === 'pointer') {
+      const tab = this.tabs.findIndex((r) => inside(r, e.x, e.y));
+      if (tab >= 0 && e.type === 'down') return this.turn(tab);
       const i = this.rows.findIndex((r) => inside(r, e.x, e.y));
       if (i >= 0) {
         this.focus = i;
@@ -258,13 +314,22 @@ export class Codex implements Panel {
       y += 18;
     } else for (const l of wrap(m.name, w)) line(l, 'sand');
     for (const l of wrap(m.description, w)) line(l, 'white');
+    // the headings in the normal font (a phone: the mini font, where it can draw them)
+    const heading = (text: string, color: PaletteColor) => {
+      if (y + 15 > bottom) return;
+      if (this.narrow) {
+        ui.mini(x, y, text, color);
+        y += miniStep(text, 7);
+      } else {
+        ui.text(x, y, text, { color });
+        y += 10;
+      }
+    };
     y += 4;
-    if (y + 15 <= bottom) ui.mini(x, y, t('panel.codex.bypass'), 'lime');
-    y += miniStep(t('panel.codex.bypass'), 7);
+    heading(t('panel.codex.bypass'), 'lime');
     for (const l of wrap(m.bypass, w)) line(l, 'mist');
     y += 4;
-    if (y + 15 <= bottom) ui.mini(x, y, t('panel.codex.exploit'), 'orange');
-    y += miniStep(t('panel.codex.exploit'), 7);
+    heading(t('panel.codex.exploit'), 'orange');
     for (const l of wrap(m.exploit, w)) line(l, 'mist');
   }
 
@@ -310,8 +375,12 @@ const TAP_ROW = 15;
 // ------------------------------------------------------------------ death recap
 
 export class DeathRecap implements Panel {
-  /** Agent API: 'continue'. */
+  /** Agent API: 'continue', or 'details' (the tables, or back to the summary). */
   activate(id: string): boolean {
+    if (id === 'details') {
+      this.details = !this.details;
+      return true;
+    }
     if (id !== 'continue') return false;
     this.onContinue();
     return true;
@@ -321,7 +390,11 @@ export class DeathRecap implements Panel {
   get title(): string {
     return t('panel.death.title');
   }
-  private button: Rect = { x: 0, y: 0, w: 0, h: 0 };
+  /** The tables show (damage by type, the worst enemies) instead of the summary: △ / Tab, or the Details button. */
+  details = false;
+  private buttons: { id: 'details' | 'continue'; rect: Rect }[] = [];
+  /** The button focused (wide layout): Return to town unless moved. */
+  private focus: 'details' | 'continue' = 'continue';
   /** Room the shell has (`fit`): a phone stacks the columns. */
   private room = { w: 300, h: 170 };
 
@@ -344,6 +417,11 @@ export class DeathRecap implements Panel {
     return this.narrow ? { w: this.room.w, h: Math.min(this.room.h, 236) } : { w: 300, h: 170 };
   }
 
+  /** △ (Tab) shows the tables or the summary again; the button says what Cross does. */
+  legend(): LegendItem[] {
+    return this.narrow ? [] : [{ actions: ['details'], label: t(this.details ? 'legend.summary' : 'legend.details') }];
+  }
+
   /** Who killed the hero (a monster's name in the player's language), as the recap's heading. */
   private slainBy(): string {
     const killer = this.recap.killer;
@@ -357,67 +435,109 @@ export class DeathRecap implements Panel {
     return t(b.crit ? 'panel.death.blow_crit' : 'panel.death.blow', { damage: Math.round(b.total), type: damageType(b.type) });
   }
 
-  draw(ui: UiCanvas, r: Rect, time: number): void {
+  draw(ui: UiCanvas, r: Rect): void {
     if (this.narrow) return this.drawNarrow(ui, r);
+    const measure = (s: string) => ui.measure(s);
+    // who, where and the blow: the slayer as big as it fits
+    const slain = this.slainBy();
+    const big = measure(slain) * 2 <= r.w - 8;
+    ui.text(r.x + r.w / 2, r.y + 2, big ? slain : clip(slain, r.w - 8, measure), { align: 'center', color: 'red', scale: big ? 2 : 1 });
+    let y = r.y + (big ? 19 : 12);
+    ui.text(r.x + r.w / 2, y, clip(this.where, r.w - 8, measure), { align: 'center', color: 'slate' });
+    y += 10;
+    for (const l of wrap(this.blow() ?? '', r.w - 8).filter(Boolean).slice(0, 2)) {
+      ui.text(r.x + r.w / 2, y, l, { align: 'center', color: 'orange' });
+      y += 9;
+    }
+    y += 3;
+    ui.rect(r.x + 2, y - 2, r.w - 4, 1, 'slate');
+    y += 2;
+    const bottom = r.y + r.h - 29; // the penalty line and the buttons
+    if (this.details) this.drawTables(ui, r, y, bottom);
+    else this.drawSummary(ui, r, y, bottom);
+    ui.text(r.x + r.w / 2, r.y + r.h - 27, clip(this.lost(), r.w - 8, measure), { align: 'center', color: 'orange' });
+    // Details (or Summary) and Return to town: a pad's Cross presses the focused one, △ toggles the tables
+    const bw = Math.floor((r.w - 18) / 2);
+    this.buttons = [
+      { id: 'details', rect: { x: r.x + 6, y: r.y + r.h - 16, w: bw, h: 14 } },
+      { id: 'continue', rect: { x: r.x + r.w - 6 - bw, y: r.y + r.h - 16, w: bw, h: 14 } },
+    ];
+    ui.button(this.buttons[0]!.rect, t(this.details ? 'legend.summary' : 'legend.details'), { focus: this.focus === 'details', glyph: 'confirm' });
+    ui.button(this.buttons[1]!.rect, t('panel.button.return_to_town'), { focus: this.focus === 'continue', glyph: 'confirm' });
+  }
+
+  /** What matters first: the damage taken, its biggest type as one bar, and the tip. */
+  private drawSummary(ui: UiCanvas, r: Rect, y: number, bottom: number): void {
+    const rc = this.recap;
+    const x = r.x + 6;
+    const w = r.w - 12;
+    const total = num(Math.round(rc.total));
+    ui.text(x + w, y, total, { align: 'right', color: 'white' });
+    for (const l of wrap(t('panel.death.damage_taken'), w - ui.measure(total) - 8)) {
+      ui.text(x, y, l, { color: 'sand' });
+      y += 9;
+    }
+    y += 2;
+    const worst = [...DAMAGE_TYPES].sort((a, b) => rc.byType[b] - rc.byType[a])[0]!;
+    const v = rc.byType[worst];
+    if (v > 0) {
+      const label = damageType(worst);
+      const share = percent(v / Math.max(1, rc.total));
+      const lw = Math.min(Math.floor(w / 3), ui.measure(label) + 6);
+      ui.text(x, y, clip(label, lw - 4, (s) => ui.measure(s)), { color: DAMAGE_COLORS[worst] });
+      ui.bar(x + lw, y + 1, w - lw - ui.measure(share) - 8, 5, v / Math.max(1, rc.total), DAMAGE_COLORS[worst], 'night');
+      ui.text(x + w, y, share, { align: 'right', color: 'white' });
+      y += 13;
+    }
+    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), w)) {
+      if (y + 8 > bottom) break;
+      ui.text(x, y, l, { color: 'lime' });
+      y += 9;
+    }
+  }
+
+  /** The tables: damage taken by type on the left, the worst enemies on the right, in the normal font. */
+  private drawTables(ui: UiCanvas, r: Rect, y0: number, bottom: number): void {
     const rc = this.recap;
     const measure = (s: string) => ui.measure(s);
-    ui.text(r.x + r.w / 2, r.y + 2, clip(this.slainBy(), r.w - 8, measure), { align: 'center', color: 'red', scale: 1 });
-    ui.text(r.x + r.w / 2, r.y + 12, clip(this.where, r.w - 8, measure), { align: 'center', color: 'slate' });
-    // the killing blow, wrapped when a language makes it long (what follows moves down)
-    let top = r.y + 22;
-    for (const l of wrapText(this.blow() ?? '', r.w - 8, miniWidth).filter(Boolean).slice(0, 2)) {
-      ui.mini(r.x + r.w / 2, top, l, 'orange', 'center');
-      top += 7;
-    }
-    const y0 = Math.max(r.y + 32, top + 3);
-    // damage taken by type on the left, worst enemies on the right: the left column takes the
-    // room its heading and labels need in a longer language (the right one gives it)
+    // the left column takes the room its heading and labels need in a longer language (the right one gives it)
     const heading = t('panel.death.damage_taken');
     const total = num(Math.round(rc.total));
-    const labels = Math.max(...DAMAGE_TYPES.map((d) => miniWidth(damageType(d))));
-    const split = Math.max(140, Math.min(r.w / 2 + 20, Math.max(measure(heading) + measure(total) + 8, labels + 4 + 24 + 16)));
+    const labels = Math.max(...DAMAGE_TYPES.map((d) => measure(damageType(d))));
+    const valueW = Math.max(...DAMAGE_TYPES.map((d) => measure(num(Math.round(rc.byType[d])))));
+    const split = Math.max(140, Math.min(Math.floor(r.w * 0.62), Math.max(measure(heading) + measure(total) + 8, labels + 4 + valueW + 34)));
     let y = y0;
-    // a heading too long for its column wraps (the total stays on its first row)
     ui.text(r.x + split, y, total, { align: 'right', color: 'white' });
     for (const l of wrap(heading, split - measure(total) - 8)) {
       ui.text(r.x + 4, y, l, { color: 'sand' });
       y += 9;
     }
-    y += 2;
+    y += 1;
     const max = Math.max(1, ...DAMAGE_TYPES.map((d) => rc.byType[d]));
-    const labelW = Math.min(split - 40, labels + 4);
+    const labelW = Math.min(split - valueW - 30, labels + 4);
     for (const d of DAMAGE_TYPES) {
+      if (y + 8 > bottom) break;
       const v = rc.byType[d];
-      ui.mini(r.x + 4, y + 1, clip(damageType(d), labelW - 4, miniWidth), v > 0 ? DAMAGE_COLORS[d] : 'slate');
-      ui.bar(r.x + 4 + labelW, y + 1, split - 24 - labelW, 4, v / max, DAMAGE_COLORS[d], 'night');
-      ui.mini(r.x + split, y + 1, num(Math.round(v)), v > 0 ? 'white' : 'slate', 'right');
+      const value = num(Math.round(v));
+      ui.text(r.x + 4, y, clip(damageType(d), labelW - 4, measure), { color: v > 0 ? DAMAGE_COLORS[d] : 'slate' });
+      ui.bar(r.x + 4 + labelW, y + 2, Math.max(8, split - 10 - labelW - valueW), 4, v / max, DAMAGE_COLORS[d], 'night');
+      ui.text(r.x + split, y, value, { align: 'right', color: v > 0 ? 'white' : 'slate' });
       y += 9;
     }
-    // sources
-    const sx = r.x + split + 16;
+    const sx = r.x + split + 14;
     let sy = y0;
     for (const l of wrap(t('panel.death.worst_enemies'), r.x + r.w - 4 - sx)) {
       ui.text(sx, sy, l, { color: 'sand' });
       sy += 9;
     }
-    sy += 2;
+    sy += 1;
     for (const s of rc.sources) {
+      if (sy + 17 > bottom) break;
       const hits = `${num(Math.round(s.total))} / ${num(s.hits)}`;
-      ui.mini(sx, sy + 1, clip(s.name, r.x + r.w - 8 - sx - miniWidth(hits), miniWidth), 'mist');
-      ui.mini(r.x + r.w - 4, sy + 1, hits, 'white', 'right');
-      sy += 9;
+      ui.text(sx, sy, clip(s.name, r.x + r.w - 4 - sx, measure), { color: 'mist' });
+      ui.text(r.x + r.w - 4, sy + 9, hits, { align: 'right', color: 'white' });
+      sy += 19;
     }
-    // tip and penalty
-    y = Math.max(y, sy) + 6;
-    ui.rect(r.x + 2, y - 3, r.w - 4, 1, 'slate');
-    for (const l of wrap(t('panel.death.tip', { tip: recapTip(rc.tip) }), r.w - 8)) {
-      if (y + 8 > r.y + r.h - 22) break;
-      ui.text(r.x + 4, y, l, { color: 'lime' });
-      y += 9;
-    }
-    ui.mini(r.x + 4, r.y + r.h - 22, clip(this.lost(), r.w - 8, miniWidth), 'orange');
-    this.button = { x: r.x + r.w / 2 - 60, y: r.y + r.h - 15, w: 120, h: 14 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: time % 1 < 0.5 || true, glyph: 'confirm' });
   }
 
   /** What the death cost ("Lost 120 XP and 45 gold"). */
@@ -487,14 +607,23 @@ export class DeathRecap implements Panel {
       y += 9;
     }
     ui.mini(r.x + r.w / 2, r.y + r.h - 26, clip(this.lost(), w, miniWidth), 'orange', 'center');
-    this.button = { x: r.x, y: r.y + r.h - 17, w: r.w, h: 16 };
-    ui.button(this.button, t('panel.button.return_to_town'), { focus: true, glyph: 'confirm' });
+    this.buttons = [{ id: 'continue', rect: { x: r.x, y: r.y + r.h - 17, w: r.w, h: 16 } }];
+    ui.button(this.buttons[0]!.rect, t('panel.button.return_to_town'), { focus: true, glyph: 'confirm' });
   }
 
   input(e: UiEvent): boolean {
-    if (e.kind === 'confirm' || (e.kind === 'pointer' && e.type === 'down' && inside(this.button, e.x, e.y))) {
-      this.onContinue();
-      return true;
+    const press = (id: 'details' | 'continue') => {
+      if (id === 'details') this.details = !this.details;
+      else this.onContinue();
+    };
+    if (e.kind === 'confirm') press(this.narrow ? 'continue' : this.focus);
+    else if ((e.kind === 'key' && (e.code === 'PadY' || e.code === 'KeyV')) || e.kind === 'tab') {
+      if (!this.narrow) this.details = !this.details;
+    } else if (e.kind === 'nav' && (e.dir === 'left' || e.dir === 'right') && !this.narrow) this.focus = e.dir === 'left' ? 'details' : 'continue';
+    else if (e.kind === 'pointer') {
+      const b = this.buttons.find((x) => inside(x.rect, e.x, e.y));
+      if (b && !this.narrow) this.focus = b.id;
+      if (b && e.type === 'down') press(b.id);
     }
     return true;
   }
@@ -569,8 +698,11 @@ export class LootWindow implements Panel {
     }
     y += 2;
     const items = this.loot();
-    ui.mini(r.x + 3, y, t(items.length ? 'panel.loot.still_on_floor' : 'panel.loot.nothing_left'), 'mist');
-    y += 8;
+    // counts and hints in the normal font (a phone: the mini font, where it can draw them)
+    const note = t(items.length ? 'panel.loot.still_on_floor' : 'panel.loot.nothing_left');
+    if (narrow) ui.mini(r.x + 3, y, note, 'mist');
+    else ui.text(r.x + 3, y, clip(note, r.w - 6, (s) => ui.measure(s)), { color: 'mist' });
+    y += narrow ? 8 : 10;
     this.rects = [];
     const rowH = narrow ? 14 : 10;
     const rows = items.slice(0, this.shown);
@@ -581,7 +713,11 @@ export class LootWindow implements Panel {
       ui.text(r.x + 4, y + (narrow ? 3 : 1), clip(l.label, r.w - 8, (s) => ui.measure(s)), { color: l.color });
       y += rowH;
     });
-    if (items.length > this.shown) ui.mini(r.x + 4, y + 1, t('panel.loot.more', { count: items.length - this.shown }), 'slate');
+    const more = t('panel.loot.more', { count: items.length - this.shown });
+    if (items.length > this.shown) {
+      if (narrow) ui.mini(r.x + 4, y + 1, more, 'slate');
+      else ui.text(r.x + 4, y + 1, more, { color: 'slate' });
+    }
     this.actions().forEach((a, i) => {
       const rect = narrow
         ? { x: r.x, y: r.y + r.h - (2 - i) * 17, w: r.w, h: 15 }

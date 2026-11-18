@@ -28,6 +28,7 @@ import type { Rng } from '../core/rng';
 import type { Rank } from '../core/scaling';
 import type { ActorLike, DifficultyTuning, GameEventBus, Genome, Item, LayoutLike, LevelSpec, SaveData } from '../core/types';
 import type { UiCanvas, UiEvent } from '../ui/kit';
+import type { LegendItem } from '../ui/legend';
 
 // ------------------------------------------------------------------ shared
 
@@ -468,6 +469,11 @@ export interface Panel {
   refresh?(): void;
   /** Optional: the focused control and its value, in one line (shown while the panel is hidden). */
   focusLine?(): string;
+  /**
+   * Optional: the button legend under its frame, for the device in use (ui/legend.ts). Left out:
+   * select and back (no back while it can't be closed); an empty list: none.
+   */
+  legend?(): readonly LegendItem[];
 }
 
 /** What a panel may ask of the shell (state it edits, money, sounds, closing itself). */
