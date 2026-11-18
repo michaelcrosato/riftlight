@@ -26,7 +26,13 @@ come and go), and side by side, two or three a row, where a column of them would
 of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); where none of
 that is clear (a short landscape phone, 360 to 412 CSS px tall, with the tuning's rows in the
 top-left block) beside the top-left block under a boss's bar at the top, else under the minimap and
-gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. The
+gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. Of the
+clear spots they take the first out of the rows the heroes stood in as they were placed
+(`HudModel.heroes`, the same boxes as the banner's: the shell takes them again only when the stage,
+the guests or the screen's size change, so the strips stay put all level): on a short landscape
+phone with the tuning's rows, beside the top-left block at the top, not two side by side under it
+across the middle, over the heroes. With no clear spot out of their rows, the one over the least of
+the heroes, beside the top-left block ahead of a row of strips across the screen's middle. The
 banner never covers the strips, a touch control, the skill bar, an orb, the XP bar, the minimap, a
 boss's bar or a moment's seconds left: where its plate would, it moves aside in its row (narrower if
 it must, never narrower than its title: drawn centred on the plate), else up above what it hit,

@@ -70,6 +70,12 @@ export interface HudModel {
   timeLeft?: { text: string; urgent: boolean } | null;
   /** Couch co-op: a compact strip per guest (players 2 to 4) under the top-left block (`game/coop.ts`). */
   guests?: readonly GuestStrip[];
+  /**
+   * The heroes on screen as the guests' strips were placed (art pixels, feet to seat tag: the shell
+   * takes them again when the stage, the guests or the screen's size change), which the strips keep
+   * off (`guestsRect`): where they stood then, so the strips stay put as they move. Absent: not known.
+   */
+  heroes?: readonly Box[];
 }
 
 /** A couch guest on the HUD: its seat, colour (0xrrggbb, 52in1's seat colours), life (0..1), its four skills' readiness (0..1, -1 empty) and the seconds until it rises (null: up). */
@@ -244,7 +250,10 @@ interface GuestsPlace extends Box {
  * row. Where none of that is clear (a short landscape phone with a long top-left block: the
  * tuning's rows) they go beside the top-left block, under a boss's bar at the top, else under the
  * minimap and gold on the right; and with no clear spot at all, the one covering the least of the
- * fixed HUD, never an orb.
+ * fixed HUD, never an orb. Of the clear spots, they take the first out of the rows the heroes stood
+ * in as they were placed (`m.heroes`: a short landscape phone's two or three side by side under the
+ * tuning's rows run across the middle of the screen, over the heroes, for the whole level), else
+ * the one over the least of the heroes (`offHeroes`).
  */
 function guestsRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudGeometry>): GuestsPlace | null {
   const n = m.guests?.length ?? 0;
@@ -288,14 +297,40 @@ function guestsRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
     spots.push({ ...p, x: W - 4 - p.w });
   }
   const onScreen = (p: Box) => p.x >= 0 && p.y >= 0 && p.x + p.w <= W && p.y + p.h <= H;
-  const clear = spots.find((p) => onScreen(p) && !around.some((z) => overlaps(p, z, 0)));
-  if (clear) return clear;
+  const clear = spots.filter((p) => onScreen(p) && !around.some((z) => overlaps(p, z, 0)));
+  if (clear.length) return offHeroes(clear, W, m.heroes ?? []);
   // no clear spot: the one covering the least of the fixed HUD (never an orb, while one doesn't)
   const orb = (p: Box) => around.some((z) => (z.id === 'life' || z.id === 'mana') && overlaps(p, z, 0));
   const covered = (p: Box) => around.reduce((sum, z) => sum + overlapArea(p, z), 0);
   const fair = spots.filter((p) => onScreen(p) && !orb(p));
   const pool = fair.length ? fair : spots.filter(onScreen).length ? spots.filter(onScreen) : spots;
   return pool.reduce((best, p) => (covered(p) < covered(best) ? p : best), pool[0]!);
+}
+
+/**
+ * Of the guests' spots clear of the fixed HUD (in `guestsRect`'s order), where they go with the
+ * heroes on screen: the first out of the heroes' rows (`heroRows`: the fight goes on there); with
+ * none, the one over the least of the heroes, and of those beside the top-left block (or anywhere
+ * else) rather than in a row of strips across the screen's middle, where the camera keeps them.
+ */
+function offHeroes(spots: readonly GuestsPlace[], W: number, heroes: readonly Box[]): GuestsPlace {
+  const rows = heroRows(W, heroes);
+  if (!rows) return spots[0]!;
+  const out = spots.find((p) => !overlaps(p, rows, 0));
+  if (out) return out;
+  const over = (p: Box) => heroes.reduce((sum, z) => sum + overlapArea(p, z), 0);
+  const across = (p: GuestsPlace) => p.cols > 1 && p.x < W / 2 && p.x + p.w > W / 2;
+  return spots.reduce((best, p) => {
+    const d = over(p) - over(best);
+    return d < 0 || (d === 0 && across(best) && !across(p)) ? p : best;
+  });
+}
+
+/** The rows the heroes stand in, across the screen (`HudModel.heroes`, `card.heroes`), or null without them. */
+function heroRows(W: number, heroes: readonly Box[]): Box | null {
+  if (!heroes.length) return null;
+  const top = Math.min(...heroes.map((z) => z.y));
+  return { x: 0, y: top, w: W, h: Math.max(...heroes.map((z) => z.y + z.h)) - top };
 }
 
 /** How many art pixels of `b` the box `a` covers. */
@@ -577,7 +612,7 @@ function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   const clear = (p: Box) => p.y >= 0 && p.y + p.h <= H && p.x >= 0 && p.x + p.w <= W && !hard.some((z) => overlaps(p, z));
   // the heroes as it opened, and the rows they stand in across the screen
   const heroes = c.heroes ?? [];
-  const band: Box | null = heroes.length ? { x: 0, y: Math.min(...heroes.map((z) => z.y)), w: W, h: Math.max(...heroes.map((z) => z.y + z.h)) - Math.min(...heroes.map((z) => z.y)) } : null;
+  const band = heroRows(W, heroes);
   const onPlay = (p: Box) => heroes.reduce((sum, z) => sum + HERO_COVER * overlapArea(p, z), 0) + (band ? BAND_COVER * overlapArea(p, band) : 0);
   // aside within the row from `top`: the widest free span around the middle, the plate as close to the middle as it goes
   const least = textWidthPx(c.title) + 4;
