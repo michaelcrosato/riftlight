@@ -1,5 +1,5 @@
 import { BoxGeometry, Group, Mesh, type Object3D, Vector3 } from 'three/webgpu';
-import { ContactShadow, mergeStaticMeshes, toonMaterial, type Game, type GameContext } from '../../engine';
+import { ContactShadow, DEFAULT_TOUCH_BUTTONS, mergeStaticMeshes, toonMaterial, type Game, type GameContext } from '../../engine';
 import { rebindDebugKeys, type DebugKeyMap } from '../../engine/debugKeys';
 import { PALETTE } from '../../engine/palette';
 import { HERO_CLIPS, HERO_MODEL } from '../../game/hero';
@@ -7,8 +7,7 @@ import { flat } from '../core/mods';
 import { Rng } from '../core/rng';
 import { Actor, type ActorWorld, type Brain } from '../actors/Actor';
 import { ActorManager } from '../actors/ActorManager';
-import { HERO_DEBUG_KEYS, SLOT_LABELS } from '../actors/controls';
-import { CONTROLS } from '../game/controls';
+import { HERO_DEBUG_KEYS, heroControls, SLOT_LABELS } from '../actors/controls';
 import { HeroController, type SlotSpec } from '../actors/HeroController';
 import { openFloor, GridMover } from '../actors/movers';
 import { buildSkill } from '../skills/build';
@@ -105,8 +104,12 @@ export interface ArenaOptions {
 
 export class Arena implements Game {
   readonly name = 'Riftlight Arena';
-  /** Riftlight's controls: its lines name them (`{key:dodge}`) for the device in use. */
-  readonly controls = CONTROLS;
+  /**
+   * The controls the Arena plays with (`HERO_KEYS`, not the shell's: pad Square attacks, Cross
+   * dodges), so a line's `{key:dodge}` names them for the device in use; its page has the engine's
+   * touch buttons.
+   */
+  readonly controls = heroControls(DEFAULT_TOUCH_BUTTONS);
   readonly assets = [HERO_MODEL];
 
   /** `args`: plain JSON (`Game.args`), so a recording of the arena replays with the same bar. */

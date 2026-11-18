@@ -738,7 +738,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    */
   async startMoment(moment: MomentSpec, seed: number): Promise<void> {
     this.newRun(0, seed);
+    this.quietLevels = true; // as a round's start: the moment's levels are not news, no rumble for each
     for (let l = 1; l < moment.heroLevel; l++) this.devGive('level');
+    this.quietLevels = false;
     this.feed = [];
     await this.enterDepth(moment.depth);
     const level = this.level;
@@ -892,7 +894,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   // ================================================================ progression
 
-  /** Levels given at once (a session round's start): no rumble for them. */
+  /** Levels given at once (a session round's or a moment's start): no rumble for them. */
   private quietLevels = false;
 
   gainXp(amount: number): void {
@@ -1312,10 +1314,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     cameraBasis(ctx.engine, this.right, this.forward);
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
-    // the mouse aims where it points; a pad's right stick along itself, snapped to a monster close
-    // to that line (aim assist: the hub's Motion aim adds the controller's turning speed to the
-    // stick, so it aims only while the controller turns); else, and with a finger, the nearest
-    // monster ahead (`autoAim`)
+    // the mouse aims where it points; a pad's right stick (while the pad is the device in use,
+    // recorded) along itself, snapped to a monster close to that line (aim assist: the hub's own
+    // Motion aim adds the controller's turning speed to the stick, so it aims only while the
+    // controller turns; the engine's motion input, `settings: { motion: true }` / `input.motion`,
+    // exists, and Riftlight doesn't opt in yet); else, and with a finger, the nearest monster ahead
+    // (`autoAim`)
     const mouseAim = input.device !== 'pad' && !this.pointer.touch && this.pointer.known && this.pointer.idle < 6;
     const hp = this.hero.actor.position;
     const look = input.lookAxis;

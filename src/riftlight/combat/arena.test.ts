@@ -1,12 +1,13 @@
 // The combat arena headless (was e2e `riftlight-combat`'s state checks): the arena boots (hero,
 // sword, dummies, skill bar), the basic combo lands on its hit frame with hit-stop, knockback, a
 // flash and a damage number, a dodge roll moves the hero with i-frames and cancels an attack, a
-// fireball pays mana, flies and hits, the left mouse button attacks, a kill emits kill and death
-// and the corpse pops and is removed; R is a skill key, so the engine's resolution hotkey sits on
-// F2 when the hotkeys are on. The picture stays in e2e. Tests run in order on one engine; the
-// hotkey test boots its own after the first is disposed.
+// fireball pays mana, flies and hits, the left mouse button attacks, its prompts name the buttons
+// it plays with, a kill emits kill and death and the corpse pops and is removed; R is a skill key,
+// so the engine's resolution hotkey sits on F2 when the hotkeys are on. The picture stays in e2e.
+// Tests run in order on one engine; the hotkey test boots its own after the first is disposed.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { Engine } from '../../engine';
+import { HERO_KEYS } from '../actors/controls';
 import { headlessGame } from '../headless';
 import { Arena } from './arena';
 
@@ -166,6 +167,38 @@ describe('the combat arena', () => {
       e.input.setButtons(0);
       e.step(30);
       expect(g.hero.stats.attacks - before).toBe(1);
+    },
+    T,
+  );
+
+  it(
+    'its prompts name the buttons it plays with (HERO_KEYS: pad Square attacks, Cross dodges, Circle is the first skill), and the button named does it',
+    () => {
+      const actions = ['attack', 'dodge', 'skill1', 'skill2', 'skill5'];
+      e.input.noteDevice('pad');
+      e.step(1);
+      expect(actions.map((a) => e.controls.label(a)), 'on a pad').toEqual(['Square', 'Cross', 'Circle', 'Triangle', 'R2']);
+      e.input.noteDevice('keyboard');
+      e.step(1);
+      expect(actions.map((a) => e.controls.label(a)), 'on the keyboard').toEqual(['LMB', 'Space', 'RMB', 'Q', 'F']);
+      // every key and pad button the table names is one the hero reads for that action
+      const reads: Record<string, readonly string[]> = { attack: HERO_KEYS.attack, dodge: HERO_KEYS.dodge, ...Object.fromEntries(HERO_KEYS.slots.map((k, i) => [`skill${i + 1}`, k])) };
+      for (const [action, c] of Object.entries(g.controls)) {
+        if (action === 'move') continue;
+        expect(reads[action], action).toEqual(expect.arrayContaining([c.key, ...(c.pad ? [c.pad] : [])]));
+      }
+      // the pad button the dodge prompt names rolls, the attack's swings
+      g.hero.teleport([0, 0, 10]);
+      g.hero.facing = Math.PI / 2;
+      e.step(10);
+      tap(g.controls.dodge!.pad!);
+      e.step(2);
+      expect(g.hero.state, `${g.controls.dodge!.pad} dodges`).toBe('dodge');
+      e.step(40);
+      const before = g.hero.stats.attacks;
+      tap(g.controls.attack!.pad!);
+      e.step(30);
+      expect(g.hero.stats.attacks - before, `${g.controls.attack!.pad} attacks`).toBe(1);
     },
     T,
   );

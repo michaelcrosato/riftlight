@@ -2,8 +2,9 @@
 // picks the monster ahead; Options pauses from any screen and resumes; the codex is in the pause
 // menu; the map opens on Tab, M, R3 and the touchpad's press; the pad rumbles on the moments that
 // matter and the DualSense's light bar says how the hero is (through a fake 52in1); the portal plays
-// from the controller's speaker. A fake standard pad (`input.setGamepads`) drives it, as a DualSense
-// in Chrome would. One engine for the file, tests in order.
+// from the controller's speaker; a moment's start gives levels without rumbling. A fake standard
+// pad (`input.setGamepads`) drives it, as a DualSense in Chrome would. One engine for the file,
+// tests in order.
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { HubSettingsSource } from '../../engine';
@@ -12,6 +13,7 @@ import type { ActorLike, Item } from '../core/types';
 import type { RealLoot } from '../wire/loot';
 import { type HeadlessRiftlight, headlessRiftlight, hudTexts, pointAtArt } from '../headless';
 import { t } from '../lang';
+import { momentById } from '../session/moments';
 import { cameraBasis } from './controls';
 import { LEVEL_GAP, RUMBLE } from './padFeel';
 
@@ -188,6 +190,7 @@ describe('Riftlight on a controller', () => {
     expect(attacks.includes(true), 'neither click is an attack').toBe(false);
     // on a phone the close prompt names the tap
     click(corner.x + corner.w / 2, corner.y + corner.h / 2);
+    engine.controls.touch = true; // a phone: the engine shows touch controls, so a touch is theirs (headless has none)
     engine.input.noteDevice('touch');
     const drawn = new Set<string>();
     (globalThis as { __PIXEL_TEXT_LOG__?: Set<string> }).__PIXEL_TEXT_LOG__ = drawn;
@@ -200,6 +203,7 @@ describe('Riftlight on a controller', () => {
     expect(drawn).toContain(t('hud.map.close'));
     click(Math.round(game.ui.w / 2), Math.round(game.ui.h / 2));
     expect(game.mapOpen).toBe(false);
+    engine.controls.touch = false;
     engine.input.noteDevice('pad');
     expect(engine.errors).toEqual([]);
   });
@@ -374,6 +378,26 @@ describe('Riftlight on a controller', () => {
     expect([game.showcase.photo.sub, game.showcase.photo.hidden], 'Triangle: edit, the panel stays').toEqual(['edit', false]);
     rl.photo.close();
     engine.step(1);
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('a moment’s start gives its hero levels without a rumble for each (they are not news)', async () => {
+    const { game, engine } = h;
+    engine.input.setGamepads([pad()]);
+    engine.input.noteDevice('pad');
+    engine.step(1);
+    const moment = momentById('skraal')!;
+    expect(moment.heroLevel, 'a moment that gives levels').toBeGreaterThan(2);
+    const rumble = vi.spyOn(engine.input, 'rumble');
+    try {
+      await game.startMoment(moment, 7);
+      engine.step(Math.ceil(LEVEL_GAP * 60) + 2); // a level-up's second pulse would come by now
+      expect(game.save.hero.level).toBe(moment.heroLevel);
+      expect(rumble, 'no rumble at a moment’s start').not.toHaveBeenCalled();
+    } finally {
+      rumble.mockRestore();
+      engine.input.setGamepads(null);
+    }
     expect(engine.errors).toEqual([]);
   });
 
