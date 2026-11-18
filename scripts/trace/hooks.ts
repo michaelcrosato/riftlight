@@ -10,8 +10,17 @@
 //
 // Synchronous, in-thread hooks (`module.registerHooks`, Node 22.15+): the off-thread ones that
 // `module.register` installs never ran under tsx on Node 24 (measured: the town failed to load,
-// V-HACD silently gave no hulls), while these run on 22 and 24 alike.
-import { registerHooks } from 'node:module';
+// V-HACD silently gave no hulls), while these run on 22 and 24 alike. An older Node says so
+// (`registerHooksApi`) instead of failing on a missing export (package.json `engines`).
+import * as nodeModule from 'node:module';
+
+type RegisterHooks = typeof nodeModule.registerHooks;
+
+/** `module.registerHooks`, or an error that names the Node the tools need (22.15 or newer). */
+export function registerHooksApi(m: { readonly registerHooks?: unknown } = nodeModule, version = process.versions.node): RegisterHooks {
+  if (typeof m.registerHooks === 'function') return m.registerHooks as RegisterHooks;
+  throw new Error(`Node ${version} is too old for the repository's tools: they need Node 22.15 or newer (module.registerHooks, scripts/trace/hooks.ts; package.json "engines"). Use a current Node 22 or Node 24 (\`nvm install 24\`).`);
+}
 
 /** The glue module's `.wasm` import (as vite.config.ts matches it): it becomes an empty module. */
 const GLUE = /@dimforge[\\/]rapier3d[\\/]rapier_wasm3d\.js$/;
@@ -22,6 +31,7 @@ let registered = false;
 /** Register the hooks once (later imports see them; earlier ones are unaffected). */
 export function registerEngineHooks(): void {
   if (registered) return;
+  const registerHooks = registerHooksApi();
   registered = true;
   registerHooks({
     resolve(spec, ctx, next) {

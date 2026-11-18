@@ -1,10 +1,13 @@
 // CI's e2e job runs one matrix entry per group in scripts/e2e.mjs (GROUPS); a group missing from
 // the matrix would never run, and e2e.mjs's own guard only sees GROUPS. The riftlight-html job
 // publishes the file `npm run build:single` writes, and never takes releases/latest from the kit.
+// Every workflow that runs Claude skips itself, with a notice, when no Claude secret is set. The
+// Node the tools need is package.json's `engines`, and an older one is told so.
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { registerHooksApi } from '../scripts/trace/hooks';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -31,5 +34,28 @@ describe('CI', () => {
     for (const publish of job!.match(/gh release (?:create|edit) (?:[^\n]*\\\n)*[^\n]*/g) ?? []) expect(publish).toContain('--prerelease --latest=false');
     expect(job!.match(/gh release (?:create|edit) /g)).toHaveLength(1);
     expect(job, 'a failed publish leaves main green').toContain('continue-on-error: true');
+  });
+
+  it('asks for the Node the tools need (module.registerHooks: 22.15+), and an older one is told so', () => {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { engines?: { node?: string } };
+    expect(pkg.engines?.node).toBe('>=22.15');
+    expect(() => registerHooksApi({}, '22.13.0')).toThrow(/^Node 22\.13\.0 is too old .* need Node 22\.15 or newer/);
+    expect(registerHooksApi()).toBeTypeOf('function'); // this Node has it
+  });
+
+  it('every Claude workflow skips itself with a notice when neither Claude secret is set', () => {
+    const dir = new URL('../.github/workflows/', import.meta.url);
+    const claude = readdirSync(dir)
+      .filter((f) => /\.ya?ml$/.test(f))
+      .map((f) => ({ f, y: readFileSync(new URL(f, dir), 'utf8') }))
+      .filter(({ y }) => y.includes('anthropics/claude-code-action@'));
+    expect(claude.map(({ f }) => f).sort()).toEqual(['claude-ci-autofix.yml', 'claude-maintenance.yml', 'claude-review.yml', 'claude.yml']);
+    for (const { f, y } of claude) {
+      expect(y, `${f}: HAS_CLAUDE from the two secrets`).toContain("HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}");
+      expect(y, `${f}: says why it skipped`).toMatch(/if \[ "\$HAS_CLAUDE" != "true" \]; then\n\s*echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret; skipping/);
+      const steps = y.split(/\n\s*- (?=name:|uses:)/).filter((step) => /uses: anthropics\/claude-code-action@/.test(step));
+      expect(steps.length, f).toBeGreaterThan(0);
+      for (const step of steps) expect(step, `${f}: the Claude step runs only when the guard says so`).toMatch(/\n\s*if: steps\.\w+\.outputs\.\w+ == '\w+'/);
+    }
   });
 });

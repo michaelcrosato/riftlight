@@ -38,7 +38,7 @@ one `Worlds` map (stage → `CombatWorld`).
   bus. The shell gives XP (× `xp.gain`); the level rolls drops through
   `LootPort.rollDrops(KillInfo)` (`KillInfo` carries the hero's `item.rarity`, `item.quantity`
   and `gold.find` as fractions above 1) and `spawn`s them at the corpse, and may drop a health
-  globe. `levelClear` fires once when the last monster dies.
+  globe. `levelClear` fires once, when the boss dies (`Level.clear` opens the exit portal).
 - **Feel.** Hit-stop and screen shake from the hit size (`Combat`; a killing blow holds two
   frames longer), damage numbers from `hit` (the shell), flinch and hit clips, corpses that
   pixel-dissolve (`BodyFx.dissolve`, the toon `dissolve` option), a boss bar with phase ticks.

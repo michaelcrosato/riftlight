@@ -7,7 +7,7 @@
 # - lets Actions open PRs (Autopilot fallback when AUTOMATION_TOKEN is unset, auto-revert)
 # - ruleset on the default branch: changes go through PRs, no force-push/deletion.
 #   Deliberately NO required status checks: PRs merge at once, CI runs on main after the
-#   merge, and a red main is reverted automatically (.github/workflows/claude-ci-autofix.yml).
+#   merge, and a red main is reverted automatically (.github/workflows/ci.yml, revert-red-main).
 #   Re-running this script removes a required check an older version added.
 # - creates the `claude` and `hold` labels
 set -euo pipefail

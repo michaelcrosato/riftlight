@@ -112,8 +112,11 @@ away, wisps lighting it, lanes aimed at pits), so exploiting them is always one 
 Each room gets packs by area × `SCALING.density(depth)`; each pack has a power budget
 `SCALING.monsterBudget(depth)`: a rare or magic leader by chance, normals up to 4–7 members,
 and the rest as per-member `power` for the monsters system (bigger bodies, parts, elite
-mods), so deep packs get stronger rather than bigger. The boss room holds the boss (the
-spec's `boss` genome) plus packs. Validation keeps spending within 80–120% of the budget.
+mods), so deep packs get stronger rather than bigger. The boss room holds the boss plus packs.
+The game spawns the monsters system's boss there: `designedBoss(depth)` for depths 1–12,
+`generateBoss` for rifts (`wire/levels.ts`, docs/game/monsters.md). The spec's `boss` genome is a
+placeholder (`bossGenome`): the plan takes the boss pack's archetype from it, nothing builds it.
+Validation keeps spending within 80–120% of the budget.
 
 ## Rifts (endless)
 

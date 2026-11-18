@@ -35,7 +35,7 @@ export const CLIPS: RoomDef = {
     ],
     uses: ['Hand-keyed clips as data: the Animation Lab (lab.html) previews and scrubs them in the real renderer.', 'Procedural locomotion: Overgrowth and Rain World generate gaits; the walk and run here come from a gait generator.', 'Pose-to-pose animation: classic 2D sprite games hold key poses (try the steps eases).'],
     ask: ['a new emote clip for the hero as data', 'a walk cycle from stride, lift and bounce numbers', 'check every clip for foot sliding', 'a contact sheet of the run cycle'],
-    cost: 'Per mannequin and frame: sampling a few dozen quaternion tracks and blending. Compiling all 90 clips takes a few milliseconds once per page.',
+    cost: `Per mannequin and frame: sampling a few dozen quaternion tracks and blending. Compiling all ${HERO_CLIP_NAMES.length} clips takes a few milliseconds once per page.`,
     code: [
       {
         title: 'A clip is data',

@@ -12,6 +12,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { type Line, type LineList, type Translation, type Translations } from '../../engine';
+import { HUB_LANGUAGES, lineWidth, PLURAL_FORMS } from '../../engine/lang/lang';
 import { riftlightLines } from './index';
 
 /** Where the translation files live. */
@@ -80,4 +81,73 @@ export function riftlightTranslations(dir = TRANSLATIONS_DIR, source: LineList =
     out[code] = { by: stored.by, ...(stored.names && Object.keys(stored.names).length ? { names: stored.names } : {}), lines };
   }
   return out;
+}
+
+/**
+ * The plural forms a language needs (Intl.PluralRules), always in `PLURAL_FORMS` order (zero, one,
+ * two, few, many, other): V8 lists a language's categories in an order that changes between Node
+ * versions (French is `one many other` on Node 24, `many one other` on Node 22), and the checks and
+ * `npm run lang -- todo` must say the same thing on every Node. An unknown code needs `other` only.
+ */
+export function pluralFormsOf(code: string): string[] {
+  let categories: readonly string[] = ['other'];
+  try {
+    categories = new Intl.PluralRules(code).resolvedOptions().pluralCategories;
+  } catch {
+    /* an unknown code: other only */
+  }
+  return PLURAL_FORMS.filter((f) => categories.includes(f));
+}
+
+const tagsOf = (s: string): string[] => s.match(/\{[^{}]*\}/g) ?? [];
+const texts = (l: Line): string[] => (typeof l === 'string' ? [l] : Object.values(l).filter((v): v is string => typeof v === 'string'));
+
+/**
+ * Problems with one translated line (empty when it can be filed), the checks of AI Hub Languages
+ * v1 *Translating*: the id is the game's (dev. lines skipped), a line is text or plural forms of
+ * text, it keeps the original's {tags} exactly (paired tags in order; {count} may go only where a
+ * form means one number), a plural line has the forms its language needs (Intl.PluralRules), and a
+ * line with a max keeps within it. `npm run lang -- apply` files only lines without any.
+ */
+export function lineProblems(code: string, id: string, line: unknown, source: LineList = riftlightLines()): string[] {
+  const orig = source.lines[id];
+  if (!orig) return [`${id}: not a line of the game`];
+  if (id.startsWith('dev.')) return [`${id}: dev. lines are not translated`];
+  const ok = (v: unknown): v is string => typeof v === 'string' && v.trim() !== '';
+  const bad: string[] = [];
+  if (typeof orig === 'string') {
+    if (!ok(line)) return [`${id}: a line is text`];
+    const want = tagsOf(orig).sort().join();
+    if (tagsOf(line).sort().join() !== want) bad.push(`${id}: tags ${tagsOf(line).join(' ')} ≠ ${tagsOf(orig).join(' ')}`);
+    const paired = (s: string) => tagsOf(s).filter((t) => /^\{\/?[a-z]+(=|\})/.test(t) && /^\{\/|=/.test(t));
+    if (paired(line).join() !== paired(orig).join()) bad.push(`${id}: paired tags out of order`);
+  } else {
+    if (!line || typeof line !== 'object' || Array.isArray(line)) return [`${id}: plural forms (an object)`];
+    const forms = line as Record<string, unknown>;
+    for (const f of pluralFormsOf(code)) if (!ok(forms[f])) bad.push(`${id}: needs the plural form ${f}`);
+    for (const [f, v] of Object.entries(forms)) {
+      if (!PLURAL_FORMS.includes(f as never)) bad.push(`${id}: ${f} is not a plural form`);
+      if (!ok(v)) bad.push(`${id}: form ${f} is empty`);
+      else {
+        const want = tagsOf(texts(orig)[0]!).filter((t) => t !== '{count}').sort().join();
+        if (tagsOf(v).filter((t) => t !== '{count}').sort().join() !== want) bad.push(`${id}.${f}: tags ${tagsOf(v).join(' ')}`);
+      }
+    }
+  }
+  const max = source.max?.[id];
+  if (max) for (const s of texts(line as Line)) if (lineWidth(s) > max) bad.push(`${id}: ${lineWidth(s)} wide, max ${max}`);
+  return bad;
+}
+
+/**
+ * Problems with a stored language (`npm run lang -- check`, and `npm test` through
+ * `lang/translations.test.ts`): a code the hub takes, and `lineProblems` for every current line,
+ * the ones the hand-over build ships. A stale line (its English changed since) is left out of the
+ * page and listed for the next translation pass, so changing the English never fails a check.
+ */
+export function translationProblems(code: string, stored: StoredTranslation, source: LineList = riftlightLines()): string[] {
+  const problems: string[] = [];
+  if (!HUB_LANGUAGES.includes(code) || code === source.language) problems.push(`${code} is not a language the hub takes`);
+  for (const id of translationStatus(stored, source).current) problems.push(...lineProblems(code, id, stored.lines[id], source));
+  return problems;
 }
