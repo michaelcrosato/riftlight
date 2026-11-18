@@ -170,7 +170,7 @@ const MENUS: LineArea = {
     'menu.settings.vibration': 'Vibration',
     'menu.settings.vibration.hint': 'How strongly the controller rumbles',
     'menu.settings.motion': 'Motion aim',
-    'menu.settings.motion.hint': 'Turn the controller to turn your aim',
+    'menu.settings.motion.hint': 'Turn the controller to aim. Off: 52in1 Motion aim, if on',
     'menu.settings.motion_sensitivity': 'Motion sensitivity',
     'menu.settings.motion_sensitivity.hint': 'How far your aim turns as the controller turns',
     'menu.settings.engine': 'Engine',
@@ -251,7 +251,8 @@ const MENUS: LineArea = {
     'menu.settings.pad_glyphs.xbox': 'The Xbox brand, as written in your language (usually unchanged).',
     'menu.settings.vibration': 'Setting (a slider, 0 to 100%): how strongly the game controller vibrates.',
     'menu.settings.motion': 'Setting (on/off): aim by turning the game controller (a PlayStation DualSense’s motion sensor) left and right.',
-    'menu.settings.motion.hint': 'Hint under the Motion aim setting: turning the controller turns where the hero aims.',
+    'menu.settings.motion.hint': 'Hint under the Motion aim setting: turning the game controller turns where the hero aims; switched off, 52in1’s own Motion aim (a setting of 52in1, the games hub Riftlight plays in) aims instead, if the player has that on there. "Off" as the switch beside it says it.',
+    'menu.settings.motion_sensitivity.hint': 'Hint under the Motion sensitivity slider: how far the hero’s aim turns for a turn of the game controller.',
     'menu.settings.motion_sensitivity': 'Setting (a slider, 25% to 300%): how far the aim turns for a turn of the game controller.',
     'menu.engine.pixel_art': 'Setting (on/off): render in pixel art, or as smooth 3D.',
     'menu.engine.pixel_size': 'Setting: how big the pixels are (Fine or Chunky).',
@@ -299,6 +300,13 @@ const MENUS: LineArea = {
     'menu.pause.look': 21,
     'menu.pause.photo': 21,
     'menu.pause.quit': 21,
+    // the Settings menu's label column and its hint line (240 art pixels wide, the menu's width: a
+    // hint in the mini font, which has A-Z, digits and a few signs; one with any other letter, as
+    // the labels, in the normal font, 39 letters: ui/menus.test.ts measures them in every language)
+    'menu.settings.motion': 21,
+    'menu.settings.motion_sensitivity': 21,
+    'menu.settings.motion.hint': 56,
+    'menu.settings.motion_sensitivity.hint': 56,
     'menu.on': 6,
     'menu.off': 6,
   },

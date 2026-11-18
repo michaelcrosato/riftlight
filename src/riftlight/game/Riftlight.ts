@@ -169,8 +169,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * Motion aim on the pad (a DualSense through 52in1): the ground direction (unit) the controller's
    * turns keep and turn (`turnAim`) and the right stick sets, and the seconds since it was last
    * turned or acted along (it lets go after `AIM.hold`); null while motion aim is not steering.
+   * It lets go too when motion aim goes off (`watchMotion`), and where the hero starts again: into
+   * town (a new run, a load) or a level, and at a death (so it rises without one).
    */
   private motionAim: { x: number; z: number; idle: number } | null = null;
+  /** Motion aim was on (`input.motion.on`) at the last live frame (`watchMotion`). */
+  private motionWasOn = false;
   /** `input.motion.lean` before this game set it (given back at dispose). */
   private savedLean = true;
   private interactQueued = false;
@@ -599,6 +603,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Into town: restore, autosave, music. */
   goTown(reason: 'new' | 'load' | 'portal' | 'death' | 'quit' = 'portal'): void {
     this.leaveLevel();
+    this.motionAim = null;
     this.layer.closeAll();
     this.screen = 'town';
     this.dead = false;
@@ -626,6 +631,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.screen = 'loading';
     this.portalSound();
     this.leaveLevel();
+    this.motionAim = null;
     this.town.deactivate();
     this.ctx.scene.background = new Color(PALETTE.ink);
     const spec = this.ports.levels.spec(d, this.save.seed);
@@ -693,6 +699,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private onHeroDeath(): void {
     this.feel.rumble(RUMBLE.death);
     this.dead = true;
+    this.motionAim = null;
     this.deathTimer = 0;
     this.session.deaths++;
     this.hero.emote('death');
@@ -1297,6 +1304,18 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   /**
+   * Motion aim going off (the Settings row, or 52in1 no longer lets games read the controller's
+   * motion: `input.motion.on`, which no recording holds) lets go of the direction it kept, through
+   * a command (`rl: 'motion'`, in `agentInput` next frame), so a replay lets go where the run did.
+   * Live frames only: a replay has the recorded commands.
+   */
+  private watchMotion(ctx: GameContext): void {
+    const on = ctx.input.motion.on;
+    if (this.motionWasOn && !on && this.motionAim && !this.replaying) ctx.input.send({ rl: 'motion', on: false });
+    this.motionWasOn = on;
+  }
+
+  /**
    * An agent's input this frame (`rl.step`, `rl.moveTo`, `rl.fight`, the bot: the intent it holds
    * and what the bot does besides), recorded like the keys, so an agent's run replays.
    */
@@ -1306,6 +1325,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       const m = c as Partial<RiftCommand> | null;
       if (m?.rl === 'intent' && typeof m.intent?.move?.x === 'number' && Array.isArray(m.intent.aim)) this.botIntent = fromSaved(m.intent);
       else if (m?.rl === 'bot') this.botAct(m.act);
+      else if (m?.rl === 'motion' && m.on === false) this.motionAim = null; // `watchMotion`
     }
   }
 
@@ -1321,14 +1341,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /**
    * Motion aim (a DualSense through 52in1, recorded as `input.motionTurn`): the controller's turn
    * this frame turns the pad's aim, `AIM.gyro` degrees a degree as the screen shows it (turned left:
-   * the aim turns left), from where motion aim keeps it, else from where the hero aims now. In play,
-   * on the pad, while the right stick lets it (the stick sets the direction itself: `readIntent`);
-   * the keyboard and mouse and touch never keep one.
+   * the aim turns left), from where motion aim keeps it, else from where the hero aims now. In play
+   * with no panel open (a turn while browsing the inventory never aims), on the pad, while the right
+   * stick lets it (the stick sets the direction itself: `readIntent`); the keyboard and mouse and
+   * touch never keep one.
    */
   private turnAim(ctx: GameContext): void {
     const input = ctx.input;
     const deg = input.device === 'pad' ? input.motionTurn.x * AIM.gyro : 0;
-    if (!deg || (this.screen !== 'town' && this.screen !== 'level') || this.worldPaused || this.dead || this.showcase?.active || this.botIntent) return;
+    if (!deg || (this.screen !== 'town' && this.screen !== 'level') || this.worldPaused || this.layer.top || this.dead || this.showcase?.active || this.botIntent) return;
     if (Math.hypot(input.lookAxis.x, input.lookAxis.y) > AIM.stick) return;
     cameraBasis(ctx.engine, this.right, this.forward);
     const hp = this.hero.actor.position;
@@ -1518,6 +1539,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   update(ctx: GameContext, dt: number): void {
     this.frameInput(ctx);
+    this.watchMotion(ctx);
     for (const c of ctx.input.commands) this.command(c);
     this.round?.update(ctx.input.commands, dt);
     this.time += dt;
@@ -2604,6 +2626,8 @@ type RiftCommand =
   | { readonly rl: 'storage'; readonly error: string }
   | { readonly rl: 'intent'; readonly intent: SavedIntent }
   | { readonly rl: 'bot'; readonly act: BotAct }
+  /** Motion aim went off: its kept direction lets go (`watchMotion`). */
+  | { readonly rl: 'motion'; readonly on: false }
   | RoundCommand;
 
 /**

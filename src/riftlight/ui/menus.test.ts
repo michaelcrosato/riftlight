@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
-import { RESOLUTIONS, type PlayerSettings } from '../../engine';
+import { Lang, RESOLUTIONS, textWidthPx, type PlayerSettings } from '../../engine';
 import { languageName } from '../../engine';
+import { installLanguage, riftlightLines } from '../lang';
+import { riftlightTranslations } from '../lang/translations';
+import { UiCanvas } from './kit';
 import { engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
@@ -118,6 +121,37 @@ describe("the settings' engine page", () => {
     expect(chosen.motionSensitivity).toBe(3);
     s.set!(0.3 as never); // a drag: in its steps
     expect(chosen.motionSensitivity).toBe(1);
+  });
+
+  it('in every stored language the motion rows fit the Settings menu: each label whole in its column, each hint whole on its line', () => {
+    const translations = riftlightTranslations();
+    /** Lines the menu cut short. */
+    const cut: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        const { dualsense, h } = engineHost();
+        dualsense.motion = true;
+        const menu = settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+        for (const id of ['motion', 'motionSensitivity']) {
+          menu.focusId(id); // its hint shows under the rows
+          /** What the menu writes, as written (cut with a "." where it didn't fit). */
+          const drawn: string[] = [];
+          const hud = { width: 480, height: 270, rect() {}, sprite() {}, text: (_x: number, _y: number, s: string) => drawn.push(s), measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+          const ui = new UiCanvas(hud as never);
+          const mini = ui.mini.bind(ui);
+          ui.mini = (x, y, s, ...more) => (drawn.push(s), mini(x, y, s, ...more));
+          const { w, h: height } = menu.size; // its own width (240), as at 1920×1080 and on a phone held sideways
+          menu.draw(ui, { x: 0, y: 0, w, h: height });
+          const shown = row(menu, id) as Row & { label: string; hint: string };
+          if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
+          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint: ${shown.hint}`);
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(cut).toEqual([]);
   });
 
   it('the settings open it', () => {

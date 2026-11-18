@@ -168,6 +168,89 @@ describe('motion aim in Riftlight', () => {
   );
 
   it(
+    'motion aim turned off lets go of the kept direction (the Settings row, or 52in1); so do a new run, a load, a level, town, a death; a panel open stops a turn turning it',
+    async () => {
+      const { rl, game, engine } = h;
+      engine.input.setGamepads([pad()]);
+      engine.input.noteDevice('pad');
+      engine.step(1);
+      /** The controller turned: motion aim keeps a direction. */
+      const steer = () => {
+        turn(-64, 5);
+        expect(inside().motionAim, 'steering').not.toBeNull();
+      };
+      /** Cross pressed and let go `n` times, a second apart: an attack each time. */
+      const crosses = (n: number) => {
+        for (let k = 0; k < n; k++) {
+          engine.input.setGamepads([pad([0, 0], [0])]);
+          engine.step(2);
+          engine.input.setGamepads([pad()]);
+          engine.step(58);
+        }
+      };
+      // off in the Settings menu: let go, and attacks never bring it back
+      steer();
+      expect(rl.ui.open('settings')).toBe(true);
+      rl.ui.click('motion');
+      expect(engine.input.motion.on).toBe(false);
+      rl.ui.close();
+      engine.step(2);
+      expect(inside().motionAim, 'let go when motion aim went off').toBeNull();
+      crosses(8);
+      turn(-200, 10);
+      expect(inside().motionAim, 'off: nothing turns').toBeNull();
+      engine.settings.set({ motion: undefined });
+      // 52in1 stops letting games read the controller's motion: the same
+      steer();
+      hub.dualsense.motion = false;
+      hub.target.dispatchEvent(new Event('change'));
+      engine.step(2);
+      expect([engine.input.motion.on, inside().motionAim]).toEqual([false, null]);
+      hub.dualsense.motion = true;
+      hub.target.dispatchEvent(new Event('change'));
+      engine.step(1);
+      // a panel open (the inventory: the world plays on under it): a turn browses, it doesn't aim
+      expect(rl.ui.open('inventory')).toBe(true);
+      turn(-64, 10);
+      expect(inside().motionAim, 'under the inventory').toBeNull();
+      rl.ui.close();
+      engine.step(1);
+      // a death, town, a level, a new run, a load: each starts without the old line
+      steer();
+      (game.hero.actor as unknown as { die(): void }).die();
+      engine.step(2);
+      expect([game.dead, inside().motionAim], 'dead').toEqual([true, null]);
+      rl.toTown();
+      engine.step(2);
+      steer();
+      await rl.enterDepth(1);
+      engine.step(1);
+      expect(inside().motionAim, 'into a level').toBeNull();
+      steer();
+      rl.toTown();
+      expect(inside().motionAim, 'into town').toBeNull();
+      engine.step(1);
+      steer();
+      rl.save();
+      rl.newRun({ seed: 616 });
+      expect(inside().motionAim, 'a new run').toBeNull();
+      engine.step(1);
+      steer();
+      expect(rl.load()).toBe(true);
+      expect(inside().motionAim, 'a load').toBeNull();
+      // back where the next test starts: depth 1, the monsters out of the way
+      await rl.enterDepth(1);
+      engine.step(3);
+      game.dev.ai = false;
+      game.dev.god = true;
+      for (const m of game.level!.monsters()) m.actor.life = 0;
+      engine.step(2);
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
     'a recording replays to the same aim, frame for frame, from a snapshot taken mid-turn',
     async () => {
       const { game, engine, rl } = h;
@@ -207,6 +290,12 @@ describe('motion aim in Riftlight', () => {
       turn(-40, 6);
       engine.input.setGamepads([pad()]);
       turn(50, 12);
+      // motion aim off for a moment (it lets go of the line), and on again
+      engine.settings.set({ motion: false });
+      engine.step(3);
+      expect(inside().motionAim, 'off: let go').toBeNull();
+      engine.settings.set({ motion: undefined });
+      turn(-30, 8);
       engine.step(5);
       const fingerprint = engine.fingerprint();
       const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
