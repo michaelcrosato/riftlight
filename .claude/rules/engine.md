@@ -19,9 +19,10 @@ Must not break:
   presentation only, never physics.
 - Lights come from `ctx.lights`, never a runtime `PointLight`; colours from `PALETTE`.
 - A change a game can see: export it from `src/engine/index.ts`, bump `package.json`'s version, add
-  a `CHANGELOG.md` section. docs/GUIDE.md, docs/GUIDE-CONTROLS.md (as `CONTROLS.md`) and
-  docs/GUIDE-ASSETS.md (as `ASSETS.md`) ship in the kit; their named code blocks are pinned by
-  `src/guide.test.ts` / `src/guide-controls.test.ts` / `src/guide-assets.test.ts`.
+  a `CHANGELOG.md` section. docs/GUIDE.md, docs/GUIDE-CONTROLS.md (as `CONTROLS.md`),
+  docs/GUIDE-RECIPES.md (as `RECIPES.md`) and docs/GUIDE-ASSETS.md (as `ASSETS.md`) ship in the kit;
+  their named code blocks are pinned by `src/guide.test.ts` / `src/guide-controls.test.ts` /
+  `src/guide-recipes.test.ts` / `src/guide-assets.test.ts`.
 
 Docs for a folder (read the one you need; docs/ENGINE.md is the index):
 - `render/` → docs/engine/render.md, `render/lights.ts` → lights.md, `render/filters.ts`, `look.ts` → looks.md

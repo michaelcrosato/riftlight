@@ -150,7 +150,7 @@ describe('docs/GUIDE-CONTROLS.md', () => {
     const names = blocks.map((b) => b.name);
     expect(names.length).toBeGreaterThanOrEqual(2);
     expect(new Set(names).size).toBe(names.length);
-    const others = [...guideBlocks(read('docs/GUIDE.md')), ...guideBlocks(read('docs/GUIDE-ASSETS.md'))].map((b) => b.name);
+    const others = ['docs/GUIDE.md', 'docs/GUIDE-RECIPES.md', 'docs/GUIDE-ASSETS.md'].flatMap((g) => guideBlocks(read(g))).map((b) => b.name);
     expect(names.filter((n) => others.includes(n))).toEqual([]);
     for (const [, page] of guide.matchAll(/examples\/([a-z0-9-]+)\.html/g)) expect(names, page).toContain(page);
     for (const name of names) expect(guide, `${name} has a page named in the prose`).toContain(`examples/${name}.html`);
@@ -461,7 +461,8 @@ describe('docs/GUIDE-CONTROLS.md', () => {
   });
 
   it('what a player needs is in view at every window shape: Gem Rush’s whole arena (every gem, the runner in each corner it reaches), every beacon from Beacon Yard’s start', async () => {
-    const shapes = [[390, 844], [344, 882], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const;
+    // (360x1000: a window so tall that Gem Rush's 19 m fit only below the camera's default minimum zoom, 0.35)
+    const shapes = [[390, 844], [344, 882], [360, 1000], [1024, 1366], [844, 390], [1920, 1080], [2100, 900], [1280, 720]] as const;
     /** What of `things` (a name, a point and a radius) the camera leaves out of the picture. */
     const outOfView = (engine: bundle.Engine, what: string, things: [string, THREE.Vector3, number][]) => {
       const cam = engine.camera.camera;
@@ -471,9 +472,9 @@ describe('docs/GUIDE-CONTROLS.md', () => {
         .filter(([, at, r]) => [-r, r].some((dx) => [-r, r].some((dz) => (p.copy(at).add(edge.set(dx, 0, dz)).project(cam), Math.abs(p.x) > 1 || Math.abs(p.y) > 1))))
         .map(([name, at]) => `${what} at ${engine.hud.width}x${engine.hud.height}: ${name} (${at.x.toFixed(1)}, ${at.z.toFixed(1)})`);
     };
-    // the camera both pages start with (Engine.headless's default is iso)
-    const camera = { preset: 'topdown' } as const;
-    for (const { name, code } of blocks) expect(code, name).toContain("camera: { preset: 'topdown' }");
+    // the camera both pages start with (Engine.headless's default is iso), able to zoom out that far
+    const camera = { preset: 'topdown', minZoom: 0.25 } as const;
+    for (const { name, code } of blocks) expect(code, name).toContain("camera: { preset: 'topdown', minZoom: 0.25 }");
     const { createGame: rush } = await load('gem-rush');
     type Rush = bundle.Game & { gems: THREE.Mesh[]; runner: THREE.Mesh };
     const { createGame: yard } = await load('beacon-yard');

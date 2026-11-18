@@ -174,7 +174,7 @@ class BeaconYard {
 /** A fresh game: the page starts one, `node check.mjs --headless` plays one. */
 export const createGame = () => new BeaconYard();
 
-if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, settings: { button: false }, touchButtons: TOUCH, touchStick: 'floating', touchDensity: 2 }));
+if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', minZoom: 0.25 }, settings: { button: false }, touchButtons: TOUCH, touchStick: 'floating', touchDensity: 2 }));
 ```
 
 ## 3. Menus at ten feet
@@ -197,7 +197,7 @@ pauses, Gem Rush turns both off (`settings: { button: !session, padButton: !sess
 - `touchButtons` places the buttons (each presses a key code; `at` puts one in a corner, sized
   for a thumb); `touchStick: 'floating'` brings the stick under the thumb in the lower left;
   `touchDensity: 2` keeps a phone's art at two CSS pixels a pixel or more (a HUD of about 180
-  rows). The stick and buttons take fingers at once.
+  rows).
 - **Context buttons**: `ctx.engine.touch?.set('KeyE', { hidden, label, cooldown, badge })` each
   frame from the game's state (`?.`: null headless and without touch controls).
 - **Swipes**: a quick flick presses `SwipeLeft`, `SwipeRight`, `SwipeUp` or `SwipeDown`
@@ -205,10 +205,10 @@ pauses, Gem Rush turns both off (`settings: { button: !session, padButton: !sess
 - **Assists** where precise thumbs are hard: aim at the nearest target, a longer reach, auto-run,
   when `ctx.input.device === 'touch'` (recorded: a replay agrees).
 - **Phones both ways**: in portrait the art can be 130 columns wide. Keep the play area in view
-  (both games zoom out by `ctx.camera.aspect`; or follow the player) and the HUD clear of the
-  controls while they show (`ctx.engine.touch?.visible`, `rects()`: a floating stick rests low in
-  its `zone`, which takes every touch in it); hide them (`ctx.engine.touch?.show(false)`) while a
-  menu or a result owns the screen.
+  (both games zoom out by `ctx.camera.aspect`, past the default minimum zoom; or follow the
+  player) and the HUD clear of the controls while they show (`ctx.engine.touch?.visible`,
+  `rects()`: a floating stick rests low in its `zone`, which takes every touch in it); hide them
+  (`ctx.engine.touch?.show(false)`) while a menu or a result owns the screen.
 
 ## 5. The player's settings and the DualSense
 
@@ -359,7 +359,7 @@ export const createGame = (session = null) => new GemRush(session);
 // In 52in1 (hub:session 1 in the head) join the round it picks; elsewhere headSession() is null: alone.
 const offer = headSession();
 const session = offer && (await HubSession.join({ mode: offer.modes, seats: offer.seats }));
-if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown' }, seed: session?.info.seed, settings: { button: !session, padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
+if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', minZoom: 0.25 }, seed: session?.info.seed, settings: { button: !session, padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
 ```
 
 - **In a session** the game opens straight into the round: no title, menu or prompt to press. It
