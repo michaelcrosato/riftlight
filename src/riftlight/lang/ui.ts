@@ -35,9 +35,9 @@ const ROUND: LineArea = {
     'round.stat.depth': 'A number’s name on the results after a round with friends: which level of the dungeon the round was. At most 16 letters.',
     'round.moment_cleared': 'Big banner when the player meets a moment’s goal (a few seconds of play against friends). Very short.',
     'round.moment_failed': 'Big banner when the player’s hero falls or time runs out in a moment. Very short.',
-    'round.moment_left': 'At the top of the screen during a moment: seconds left to meet its goal.',
+    'round.moment_left': 'At the top of the screen during a moment: seconds left to meet its goal (3 to 30). One short line across a phone held upright: at most 17 letters besides the number.',
   },
-  max: { 'round.go': 8, 'round.kills': 24, 'round.stat.kills': 16, 'round.stat.deaths': 16, 'round.stat.depth': 16, 'round.moment_cleared': 16, 'round.moment_failed': 16 },
+  max: { 'round.go': 8, 'round.kills': 24, 'round.stat.kills': 16, 'round.stat.deaths': 16, 'round.stat.depth': 16, 'round.moment_cleared': 16, 'round.moment_failed': 16, 'round.moment_left': 17 },
 };
 
 /**

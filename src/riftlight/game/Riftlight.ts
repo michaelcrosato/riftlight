@@ -1667,6 +1667,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       const p = this.hero.actor.position;
       if (near) this.prompt(t('prompt.pick_up', { item: near.label }));
       else if (!this.round && this.level.exitOpen && p.distanceTo(this.level.exit) < 4) this.prompt(t('prompt.return'), t('prompt.return.sub'));
+      // a moment's spot to escape to, before the labels (the way out matters most): a ring on the
+      // ground with a chevron over it, else an arrow pointing the way, clear of the HUD
+      const spot = this.momentAim?.spot;
+      if (spot && this.round?.phase !== 'over') beacon(ui, cam, spot, MOMENT_REACH, 'cyan', this.time, layout);
       // labels: the focused one first, then loud ones, then by distance (near labels win)
       const labels = this.ports.loot
         .ground()
@@ -1682,10 +1686,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         for (const t of this.level.telegraphs()) hitbox(ui, cam, t.at, t.radius, 'orange');
       }
       this.floaters.draw(ui, cam, layout);
-      // a moment's spot to escape to: a ring on the ground (an arrow at the edge while it is off screen)
-      const spot = this.momentAim?.spot;
-      if (spot && this.round?.phase !== 'over') beacon(ui, cam, spot, MOMENT_REACH, 'cyan', this.time);
-      this.round?.draw(ui, cam, model.boss ? 28 : 6); // the seconds left, under the boss's bar
+      this.round?.draw(ui, cam);
     }
     drawHud(ui, model, layout);
     // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
@@ -1772,6 +1773,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       };
     }
     const tuning = this.save.difficulty;
+    const left = this.round?.timeLeft() ?? null;
     return {
       time: this.time,
       vitals: this.hero.vitals(),
@@ -1794,6 +1796,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       device: this.controlDevice(),
       padStyle: this.ctx.engine.controls.style,
       progress: level ? level.progress() : null,
+      timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
     };
   }
 

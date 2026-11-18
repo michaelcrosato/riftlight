@@ -164,9 +164,10 @@ round's start (Riftlight: its `{ rl: 'round' }` command).
 shape of `window.AIHub`, held to the real client's and hub's rules (16 KB, 20 messages a second with
 bursts of 40 on the hub's clock; a result needs a finite time or score, after the start, and in
 moments `won`; a finish its standings and a shared world's host; a hello must offer the round's
-mode; no traffic in parallel or moments, no progress in a shared world or moments; what it refuses
+mode, read as the hub reads it: the older names too, empty entries dropped; no traffic in parallel or moments, no progress in a shared world or moments; what it refuses
 is in `stats.refused` and `hub.problems`). It runs the round as the hub's coordinator does
-(`round.js`): time is called at `limitMs` after play begins, the round ends `finished` once every
+(`round.js`): time is called at `limitMs` after play begins (`timeUp()` calls it now, once the
+round has started), the round ends `finished` once every
 player still in has reported (a shared world: at the host's finish), and after time-up's grace (5 s,
 a moment's 2 s) it ends either way (a shared world with no finish: `void`); a round no player is
 left in is `void` in any mode. `advance(ms)` does what falls due in time order, each at its own time,

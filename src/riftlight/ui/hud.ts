@@ -9,7 +9,7 @@ import { clusters, type HudColor, type InputDevice, type PadGlyphs, type Palette
 import type { ControlAction } from '../game/controls';
 import type { BossView, BuffView, SkillSlotView, Vitals } from '../game/ports';
 import { lang, t } from '../lang';
-import { clip, miniWidth, UI, type UiCanvas } from './kit';
+import { clip, miniCovers, miniWidth, UI, type UiCanvas } from './kit';
 import { BANNER_OPENS, type BannerKind, type Box, type HudLayout, overlaps } from './layout';
 
 export interface FeedLine {
@@ -62,6 +62,12 @@ export interface HudModel {
   progress: { killed: number; total: number } | null;
   /** Touch controls on screen, in art pixels: the HUD drops its skill bar and lays out around them. */
   controls?: readonly Box[];
+  /**
+   * A 52in1 moment's seconds left (`round.moment_left`), red in its last seconds: centred at the
+   * top, under a boss's bar, moved down clear of the label, the minimap and the controls
+   * (`timeLeftRect`); the centre banner goes under it. Absent outside a moment.
+   */
+  timeLeft?: { text: string; urgent: boolean } | null;
 }
 
 const ORB_R = 22;
@@ -166,12 +172,56 @@ export function hudZones(W: number, H: number, m: HudModel): Box[] {
     z.push({ x: g.xp.x - 2, y: g.levelAt.y - 1, w: g.xp.w + 4, h: g.xp.y + 4 - g.levelAt.y + 1 });
   } else z.push({ x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
   for (const o of [g.life, g.mana]) z.push({ x: o.x - g.orbR - 3, y: o.y - g.orbR - 3, w: g.orbR * 2 + 7, h: g.orbR * 2 + 7 });
-  if (m.minimap) z.push({ x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 });
-  z.push({ x: g.textX - 2, y: 4, w: Math.min(W / 2, 90), h: 12 + (whereRows(W, m, g).length - 1) * WHERE_ROW + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) });
-  if (m.boss) z.push({ x: Math.floor((W - g.bossW) / 2) - 2, y: 5, w: g.bossW + 20, h: 20 });
-  const b = bannerRect(W, m);
+  const map = minimapZone(W, m, g);
+  if (map) z.push(map);
+  z.push(whereZone(W, m, g));
+  const boss = bossZone(W, m, g);
+  if (boss) z.push(boss);
+  const left = timeLeftRect(W, m, g);
+  if (left) z.push(left);
+  const b = bannerRect(W, m, g);
   if (b) z.push(b);
   return z;
+}
+
+/** The minimap and the gold under it (top-right), or null without a minimap. */
+function minimapZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
+  return m.minimap ? { x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 } : null;
+}
+
+/** The top-left block (where you are, the clock, progress), as wide as its widest row at least. */
+function whereZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box {
+  const rows = whereRows(W, m, g);
+  const widest = Math.max(...rows.map((r) => (g.compact ? miniWidth(r) : textWidthPx(r))));
+  return { x: g.textX - 2, y: 4, w: Math.max(Math.min(W / 2, 90), widest + 4), h: 12 + (rows.length - 1) * WHERE_ROW + (m.timer ? 7 : 0) + (m.progress ? 7 : 0) };
+}
+
+/** A boss's name and bar (top centre), or null without a boss. */
+function bossZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
+  return m.boss ? { x: Math.floor((W - g.bossW) / 2) - 2, y: 5, w: g.bossW + 20, h: 20 } : null;
+}
+
+/** A moment's seconds left as drawn: cut to the screen only if a language's words could not fit it. */
+function timeLeftText(W: number, text: string): string {
+  return clip(text, W - 6, (s) => textWidthPx(s));
+}
+
+/**
+ * Where a moment's seconds left go (its shadow included), or null: centred at the top, then down
+ * under whatever it would touch (the top-left label, the minimap and gold, a boss's name and bar,
+ * a touch control), so on a phone it sits under the minimap and on a wide screen under a boss's bar.
+ */
+function timeLeftRect(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
+  if (!m.timeLeft) return null;
+  const w = textWidthPx(timeLeftText(W, m.timeLeft.text));
+  const box = { x: Math.max(1, Math.floor(W / 2 - w / 2)), y: 6, w: w + 1, h: 8 };
+  const around = [whereZone(W, m, g), minimapZone(W, m, g), bossZone(W, m, g), ...(m.controls ?? [])].filter((z): z is Box => z !== null);
+  for (let i = 0; i < around.length; i++) {
+    const hit = around.find((z) => overlaps(box, z));
+    if (!hit) break;
+    box.y = hit.y + hit.h + 1;
+  }
+  return box;
 }
 
 /** Rows of the top-left label (where you are), 9 pixels apart: room for accents above capitals. */
@@ -201,16 +251,56 @@ function whereRows(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): s
   return rows.length <= 3 ? rows : [rows[0]!, rows[1]!, clip(rows.slice(2).join(' '), room, (s) => textWidthPx(s))];
 }
 
-/** The banner's rect (null when none shows). */
-function bannerRect(W: number, m: HudModel): Box | null {
+/** A banner's line under its title, in rows that fit its plate: in the normal font or, when that takes more rows, the mini font. */
+interface BannerSub {
+  readonly rows: readonly string[];
+  readonly mini: boolean;
+}
+
+/** Most rows a banner's line under its title takes (the last one cut to fit). */
+const BANNER_SUB_ROWS = 4;
+
+/**
+ * The line under a banner's title in `room` art pixels: one row in the normal font, else one in the
+ * mini font, else two in the normal font, else wrapped in the mini font (when it can draw the
+ * words) or the normal font, at most `BANNER_SUB_ROWS` (a moment's goal on the narrowest phone
+ * takes up to four in a language with accents, which the mini font can't draw).
+ */
+function bannerSub(sub: string, room: number): BannerSub {
+  const normal = (s: string) => textWidthPx(s);
+  if (!sub) return { rows: [], mini: false };
+  if (normal(sub) <= room) return { rows: [sub], mini: false };
+  const mini = miniCovers(sub);
+  if (mini && miniWidth(sub) <= room) return { rows: [sub], mini: true };
+  const big = wrapText(sub, room, normal);
+  const small = mini ? wrapText(sub, room, miniWidth) : big;
+  const pick = big.length <= 2 || !mini ? { rows: big, measure: normal, mini: false } : { rows: small, measure: miniWidth, mini: true };
+  const rows = pick.rows.length <= BANNER_SUB_ROWS ? pick.rows : [...pick.rows.slice(0, BANNER_SUB_ROWS - 1), clip(pick.rows.slice(BANNER_SUB_ROWS - 1).join(' '), room, pick.measure)];
+  return { rows: rows.map((r) => clip(r, room, pick.measure)), mini: pick.mini };
+}
+
+/** Rows of a banner's line under its title, apart: the mini font's, and the normal font's (room for accents). */
+const SUB_ROW = { mini: 7, normal: 9 } as const;
+
+/**
+ * The banner's rect (null when none shows), whether it is the big plate, and its line under the
+ * title: its plate grows a row for each row more that line takes, keeps clear of the minimap, and
+ * goes under a moment's seconds left.
+ */
+function bannerRect(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): (Box & { big: boolean; sub: BannerSub }) | null {
   const c = m.card;
   if (!c || c.age < 0 || c.age >= (c.duration ?? 4)) return null;
   const big = (c.kind ?? 'card') !== 'levelup' && W >= 300;
   // a phone: under the minimap and the level label
-  const y = W < 300 ? (m.boss ? 60 : 50) : m.boss ? 34 : big ? 24 : 26;
-  const h = big ? 34 : 22;
-  const w = Math.min(W - 8, big ? 280 : 200);
-  return { x: Math.floor((W - w) / 2), y, w, h };
+  let y = W < 300 ? (m.boss ? 60 : 50) : m.boss ? 34 : big ? 24 : 26;
+  // beside the minimap on a narrow wide screen (a phone has it under the minimap)
+  const w = Math.min(W - 8, big ? 280 : 200, W >= 300 && m.minimap ? W - 2 * (g.map.w + 10) : Infinity);
+  const sub = bannerSub(c.subtitle, w - 6);
+  const h = (big ? 34 : 22) + Math.max(0, sub.rows.length - 1) * (sub.mini ? SUB_ROW.mini : SUB_ROW.normal);
+  const x = Math.floor((W - w) / 2);
+  const left = timeLeftRect(W, m, g);
+  if (left && overlaps({ x, y, w, h }, left)) y = left.y + left.h + 1;
+  return { x, y, w, h, big, sub };
 }
 
 /** One liquid orb: per-column fill with a travelling wave on the surface. */
@@ -410,6 +500,10 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     }
   }
 
+  // a moment's seconds left (top centre, placed clear of the rest)
+  const left = timeLeftRect(W, m, g);
+  if (left && m.timeLeft) ui.text(left.x, left.y, timeLeftText(W, m.timeLeft.text), { color: m.timeLeft.urgent ? 'red' : 'white', shadow: 'ink' });
+
   // boss bar
   if (m.boss) {
     const bw = g.bossW;
@@ -455,7 +549,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): void {
     ui.text(x, y + 8 * s, t(m.streak.count >= 10 ? 'hud.streak.rampage' : m.streak.count >= 6 ? 'hud.streak.slaughter' : 'hud.streak.streak'), { color: m.streak.age > 2.5 ? 'slate' : 'white' });
   }
 
-  drawBanner(ui, m);
+  drawBanner(ui, m, g);
 }
 
 /** How far a banner's plate is open (0 shut, 1 open): it opens over `BANNER_OPENS` s and closes over its last 0.3 s. */
@@ -471,9 +565,9 @@ export const BANNER_WORDS = 0.9;
  * The centre banner: the level card and LEVEL CLEAR are a framed plate that opens sideways;
  * a level-up is a smaller plate with its hint on one line, so it never covers the fight.
  */
-function drawBanner(ui: UiCanvas, m: HudModel): void {
+function drawBanner(ui: UiCanvas, m: HudModel, g: ReturnType<typeof hudGeometry>): void {
   const c = m.card;
-  const rect = bannerRect(ui.w, m);
+  const rect = bannerRect(ui.w, m, g);
   if (!c || !rect) return;
   const W = ui.w;
   const a = c.age;
@@ -486,16 +580,17 @@ function drawBanner(ui: UiCanvas, m: HudModel): void {
   ui.rect(x, rect.y, ww, 1, accent);
   ui.rect(x, rect.y + rect.h - 1, ww, 1, accent);
   if (open < BANNER_WORDS) return;
-  const big = rect.h > 30;
+  const big = rect.big;
   const scale = big && ui.measure(c.title, 2) <= rect.w - 8 ? 2 : 1;
   const flash = kind === 'levelup' && a < 0.6 && a % 0.2 < 0.1;
   const titleColor: PaletteColor = flash ? 'white' : kind === 'levelup' ? 'lime' : kind === 'clear' ? 'cyan' : 'sand';
   const ty = rect.y + (big ? 6 : 4) + (scale === 1 && big ? 3 : 0);
   ui.text(W / 2, ty, c.title, { align: 'center', scale, color: titleColor, shadow: kind === 'levelup' ? 'green' : 'plum' });
-  const sub = c.subtitle;
-  const sy = rect.y + rect.h - (big ? 11 : 9);
-  if (ui.measure(sub) <= rect.w - 6) ui.text(W / 2, sy, sub, { align: 'center', color: 'mist' });
-  else ui.mini(W / 2, sy + 1, clip(sub, rect.w - 6, miniWidth), 'mist', 'center');
+  // the line under the title, its last row where a one-row line goes
+  const { rows, mini } = rect.sub;
+  const gap = mini ? SUB_ROW.mini : SUB_ROW.normal;
+  const sy = rect.y + rect.h - (big ? 11 : 9) - (rows.length - 1) * gap;
+  rows.forEach((row, i) => (mini ? ui.mini(W / 2, sy + 1 + i * gap, row, 'mist', 'center') : ui.text(W / 2, sy + i * gap, row, { align: 'center', color: 'mist' })));
 }
 
 function drawMinimap(ui: UiCanvas, mm: MinimapModel, x: number, y: number, w: number, h: number, t: number): void {

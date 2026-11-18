@@ -123,12 +123,13 @@ export interface HeadlessMoment extends HeadlessRiftlight {
 /**
  * The real game as the one copy of moment `m` against the hub in memory (engine `LocalHub`, round
  * seed `seed`), loaded and ready: start it with `hub.start()` (docs/game/session.md, *Moments*).
+ * `viewport` and `options` as `headlessRiftlight`'s (a phone: its size and `touch`).
  */
-export async function headlessMoment(m: MomentSpec, o: { seed?: number; store?: SaveStore } = {}): Promise<HeadlessMoment> {
+export async function headlessMoment(m: MomentSpec, o: { seed?: number; store?: SaveStore; viewport?: Viewport; options?: Partial<EngineOptions> } = {}): Promise<HeadlessMoment> {
   const hub = new LocalHub({ mode: 'moments', moment: { id: m.id, seconds: m.seconds }, players: 1, seed: o.seed ?? 4242 });
   const session = (await HubSession.join({ mode: OFFERED, seats: [1, 4], client: hub.client(0), autoFlush: false, clock: () => hub.now }))!;
   const game = new Riftlight({}, { store: o.store ?? new SaveStore(null), session });
-  const h = await headlessRiftlight({ game, seed: session.info.seed });
+  const h = await headlessRiftlight({ game, seed: session.info.seed, viewport: o.viewport, options: o.options });
   session.attach(h.engine);
   const frame = async (step = () => h.engine.step(1)): Promise<void> => {
     step();

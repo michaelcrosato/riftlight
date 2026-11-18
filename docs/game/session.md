@@ -100,8 +100,11 @@ line `moment.*` whose English is the tag's GOAL, the boss's name filled in):
   (hero level, placement, which packs), never the game's balance, and measure it again
   (`session/moments.<id>.test.ts` plays seeds 1-3; headless `headlessMoment` and `playMoment`).
 - **Play**: frozen until the hub's start like any round; the countdown shows the goal
-  (`momentGoal`), the seconds left show at the top (`round.moment_left`), an escape's spot is a
-  cyan ring on the ground.
+  (`momentGoal`, wrapped onto more rows on a narrow screen), the seconds left show at the top
+  from the countdown on (`round.moment_left`, `SessionRound.timeLeft` → `HudModel.timeLeft`,
+  placed clear of the HUD: docs/game/ui.md *HUD layout*), an escape's spot is a cyan ring on the
+  ground with a chevron over it, or an arrow pointing the way when it is off screen or under the
+  HUD (`beacon`, clear of the HUD's zones).
 - **The end of it**: the goal met (`momentMet`: its targets fallen, or the ring reached) clears it;
   the hero falling fails it (no respawn); at `time-up` one still going is cleared when its goal is to
   last (`survive`), failed otherwise. Each reports once, `result({ won, time })` at the hub's time
@@ -178,7 +181,9 @@ holds the round's phase).
   versus standings); `session/moments.test.ts` (the tags as the hub reads them, the set-up the same
   on every copy, an escape's clear way out, the end's banner and sound, no saves, time-up, a
   replay); `session/moments.<id>.test.ts`, one per moment (`testMoments.ts`: cleared by a decent
-  player and failed idle, on three of the hub's seeds).
+  player and failed idle, on three of the hub's seeds); `session/moments.hud.test.ts` (the seconds
+  left, the goal and the way-out mark clear of the HUD on phones both ways, a laptop and the hub's
+  frame; `headlessMoment` takes a `viewport` and `touch`).
 - The hub's own harness (`harness.html`, `bridge.js`, `round.js` from 52in1.com/lib/hub): serve
   them next to the built page and open
   `harness.html?game=riftlight.html&mode=shared-world&how=co-op&players=4&latency=150&jitter=50&loss=5&auto=1`

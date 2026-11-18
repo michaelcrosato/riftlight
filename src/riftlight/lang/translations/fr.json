@@ -1812,9 +1812,9 @@
   "round.moment_cleared": "Réussi !",
   "round.moment_failed": "Échec",
   "round.moment_left": {
-   "one": "{count} seconde restante",
-   "many": "{count} secondes restantes",
-   "other": "{count} secondes restantes"
+   "one": "Encore {count} seconde",
+   "many": "Encore {count} secondes",
+   "other": "Encore {count} secondes"
   },
   "round.respawn": "Retour dans {seconds}…",
   "round.stat.deaths": "Morts",

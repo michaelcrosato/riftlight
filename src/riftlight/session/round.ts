@@ -210,13 +210,19 @@ export class SessionRound {
     for (const m of this.modes) m.fixedUpdate?.(dt, intent);
   }
 
-  /** The modes' overlays over the level; in a moment, the seconds left to meet its goal. */
-  draw(ui: UiCanvas, camera: Camera, top = 4): void {
+  /** The modes' overlays over the level. */
+  draw(ui: UiCanvas, camera: Camera): void {
     for (const m of this.modes) m.draw?.(ui, camera);
-    if (this.moment && this.phase === 'playing' && this.info) {
-      const left = Math.max(0, Math.ceil(this.info.limitMs / 1000 - this.playTime));
-      ui.text(ui.w / 2, top, t('round.moment_left', { count: left }), { align: 'center', color: left <= 3 ? 'red' : 'white', shadow: 'ink' });
-    }
+  }
+
+  /**
+   * A moment's whole seconds left to meet its goal, from its countdown (all of them) until it is
+   * over; else null. The HUD shows them (`HudModel.timeLeft`), so the banner over the countdown
+   * and GO! stays where it is when play begins.
+   */
+  timeLeft(): number | null {
+    if (!this.moment || !this.info || (this.phase !== 'countdown' && this.phase !== 'playing')) return null;
+    return Math.max(0, Math.ceil(this.info.limitMs / 1000 - this.playTime));
   }
 
   /** Score for the hub's board: kills, and the boss's lost life (it weighs most). */
