@@ -3,14 +3,16 @@
 // Workshop's panels) lies inside the screen, under none of the phone's controls (the joystick, the
 // hero's buttons, the room's own, ≡ GO ?), where the page lays them out from their data
 // (`worldTouchLayout`, which a page without its DOM, a replay, follows too), and clear of the
-// room's title. The frames stay in the e2e suite `world`. One engine for the file (the shell is
-// one per process).
+// room's title; a replay of a phone's recording without a page (`npm run replay`, which boots
+// with no touch option) lays it out as the phone did. With a mouse and a keyboard the rooms' lines
+// and panels stay where they always were. The frames stay in the e2e suite `world`. One engine for
+// the file (the shell is one per process).
 import { afterAll, beforeAll, expect, it } from 'vitest';
-import { type Engine, HeadlessView, hudPlace } from '../engine';
+import { type Engine, HeadlessView, hudPlace, type Recording } from '../engine';
 import { touchStates, worldTouchLayout } from './controls';
-import type { worldApi } from './index';
+import { type worldApi, worldGame } from './index';
 import { shell } from './shell';
-import { headlessWorld, roomGame, WORLD_T } from './testWorld';
+import { headlessWorld, roomApi, roomGame, WORLD_T } from './testWorld';
 
 let engine: Engine;
 let w: typeof worldApi;
@@ -119,6 +121,105 @@ it(
     }
     expect(amiss).toEqual([]);
     expect(drawn, 'the rooms drew their lines').toBeGreaterThan(30);
+    expect(engine.state().errors).toEqual([]);
+  },
+  240_000,
+);
+
+it(
+  'a replay of a phone\'s recording, booted with no touch option as `npm run replay` is, lays the HUD out around the phone\'s controls as the phone did',
+  async () => {
+    (engine.renderer as HeadlessView).setViewport({ width: 390, height: 844, dpr: 2 });
+    await w.goto('bullets', { instant: true }); // its line of counts over the joystick
+    engine.input.noteTouch();
+    const hudLine = shell.hudLine;
+    let tops: number[] = [];
+    shell.hudLine = (text, color) => {
+      const top = hudLine.call(shell, text, color);
+      tops.push(top);
+      return top;
+    };
+    try {
+      engine.step(30);
+      const live = tops;
+      const boxes = shell.touchBoxes();
+      expect(boxes.length, 'the phone\'s controls').toBeGreaterThan(5);
+      expect(live.at(-1), 'the line over them').toBeLessThan(engine.hud.height - 25);
+      const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
+      const replay = async (r: Recording) => {
+        engine.controls.touch = false; // a tool's engine: no page, no touch option
+        tops = [];
+        await engine.replay(r, () => engine.loadGame(worldGame(r.args as { room: string; from: string | null })));
+        return { tops, boxes: shell.touchBoxes() };
+      };
+      expect(await replay(rec)).toEqual({ tops: live, boxes });
+      // what the recording keeps decides it: one made without touch controls lays out for the keys
+      const desk = await replay({ ...rec, touch: undefined });
+      expect(desk.boxes).toEqual([]);
+      expect(desk.tops.at(-1), 'lower, over the shell\'s prompts only').toBeGreaterThan(live.at(-1)!);
+    } finally {
+      shell.hudLine = hudLine;
+      engine.controls.touch = true;
+    }
+    expect(engine.state().errors).toEqual([]);
+  },
+  120_000,
+);
+
+it(
+  'on a desktop (no touch controls) every room\'s line stays where it always was, and the Robot Yard\'s tree keeps every branch: whole where it fits, the ones that didn\'t run folded where not',
+  async () => {
+    const lines: { at: string; top: number; want: number }[] = [];
+    const hudLine = shell.hudLine;
+    engine.controls.touch = false; // a page without touch controls: a mouse and a keyboard
+    engine.input.noteDevice('keyboard');
+    let nodes = 0;
+    shell.hudLine = (text, color) => {
+      const top = hudLine.call(shell, text, color);
+      // one row, at the bottom left over the shell's prompts: anchored 18 rows up from the bottom, 7 tall
+      if (engine.hud.measure(text).width <= engine.hud.width - 8) lines.push({ at: `${roomGame(engine).def.id} at ${engine.hud.width}x${engine.hud.height}: ${text}`, top, want: engine.hud.height - 25 });
+      return top;
+    };
+    try {
+      const trees: Record<string, string[]> = {};
+      const under: string[] = [];
+      for (const viewport of [
+        { width: 1920, height: 1080, dpr: 1 },
+        { width: 1280, height: 720, dpr: 1 },
+      ]) {
+        (engine.renderer as HeadlessView).setViewport(viewport);
+        for (const r of w.rooms()) {
+          await w.goto(r.id, { instant: true });
+          engine.input.noteDevice('keyboard');
+          engine.step(20);
+          if (w.state().card) {
+            engine.input.setKey('KeyI', true);
+            engine.step(1);
+            engine.input.setKey('KeyI', false);
+            engine.step(1);
+          }
+          if (r.id === 'robots') {
+            const drawn = roomHud();
+            const line = drawn.find((b) => b.what.startsWith('DELIVERED'))!;
+            const panel = drawn.find((b) => b.what.includes('panel'))!;
+            if (panel.y + panel.h > line.y) under.push(`the tree's panel ${JSON.stringify(panel)} over the room's line ${JSON.stringify(line)} at ${viewport.width}x${viewport.height}`);
+            trees[`${viewport.width}x${viewport.height}`] = drawn.filter((b) => b !== line && b !== panel).map((b) => b.what.slice(2).trim());
+            nodes = (roomApi(w).trace() as unknown[]).length;
+          } else engine.step(1);
+        }
+      }
+      expect(lines.length, 'the rooms drew their lines').toBeGreaterThan(10);
+      expect(lines.filter((l) => l.top !== l.want)).toEqual([]);
+      // the tree over the room's line: its root and every branch under it, whole at 1920x1080; at
+      // 1280x720 what this tick never reached folded to its name, the whole tree doesn't fit
+      expect(under).toEqual([]);
+      const branches = ['ROBOT', 'FLEE', 'RECHARGE', 'DELIVER', 'COLLECT', 'WANDER'];
+      expect(trees['1920x1080']!.length, `the whole tree at 1920x1080: ${trees['1920x1080']!.join(', ')}`).toBe(1 + nodes); // the robot's name, then every node
+      for (const [at, rows] of Object.entries(trees)) for (const b of branches) expect(rows, `${b} in the tree at ${at}`).toContain(b);
+    } finally {
+      shell.hudLine = hudLine;
+      engine.controls.touch = true;
+    }
     expect(engine.state().errors).toEqual([]);
   },
   240_000,

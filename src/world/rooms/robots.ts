@@ -414,22 +414,37 @@ bt.sequence('recharge', bt.condition('battery low?', (b) => (b.needsCharge ||= b
         const b = bots[watched]!;
         const hud = ctx.hud;
         const line = room.hudLine(`DELIVERED ${delivered} · ${crystals.length} CRYSTALS LEFT`, 'cyan');
-        // the tree top left, under a phone's ≡ GO ? and the room's title: on a narrow screen
-        // indented less, and only the branch that ran this tick when the whole tree doesn't fit
-        // over the room's line
+        // the tree top left, under a phone's ≡ GO ? and the room's title, on a narrow screen indented less
         const indent = hud.width < 200 ? 4 : 8;
         const max = hud.width - 8;
         const measure = (s: string) => hud.measure(s).width;
         const rows = b.tree.trace().map((row) => {
           const x = 4 + row.depth * indent;
-          return { x, ran: !!row.status, text: clip(`${row.status ? STATUS_MARK[row.status] : ' '} ${row.name.toUpperCase()}`, max - (x - 4), measure), color: row.status ? STATUS_COLOR[row.status] : ('slate' as const) };
+          return { x, depth: row.depth, status: row.status, text: clip(`${row.status ? STATUS_MARK[row.status] : ' '} ${row.name.toUpperCase()}`, max - (x - 4), measure), color: row.status ? STATUS_COLOR[row.status] : ('slate' as const) };
         });
+        type Row = (typeof rows)[number];
         const head = wrap(`${b.name} · BATTERY ${Math.round(b.battery * 100)}%`, max); // the battery under the name on a narrow screen
         const width = Math.max(...head.map(measure), ...rows.map((r) => r.x - 4 + measure(r.text)));
         const top = room.hudTop(width + 6);
         const below = top + 14 + (head.length - 1) * 9;
         const space = Math.floor((Math.min(line - 3, room.hudFloor(1, width + 7)) - below - 2) / 9);
-        const shown = rows.length <= space ? rows : rows.filter((r) => r.ran).slice(0, Math.max(1, space));
+        /** The rows with what is under each row `shut` says folded away (the row itself stays, its mark and name). */
+        const fold = (shut: (r: Row) => boolean): Row[] => {
+          const out: Row[] = [];
+          let under = Infinity;
+          for (const r of rows) {
+            if (r.depth > under) continue;
+            under = r.depth > 0 && shut(r) ? r.depth : Infinity;
+            out.push(r);
+          }
+          return out;
+        };
+        // over the room's line: the whole tree where it fits; else what this tick never reached
+        // folded to its name; else every branch but the one that decided this tick folded; else (a
+        // phone) only the rows that ran
+        const shown =
+          [rows, fold((r) => !r.status), fold((r) => r.status !== 'running' && r.status !== 'success')].find((s) => s.length <= space) ??
+          rows.filter((r) => r.status).slice(0, Math.max(1, space));
         hud.rect(1, top, width + 6, below - top + 2 + shown.length * 9, 'ink');
         head.forEach((l, i) => hud.text(4, top + 3 + i * 9, l, { color: 'white' }));
         shown.forEach((r, i) => hud.text(r.x, below + i * 9, r.text, { color: r.color }));

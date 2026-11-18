@@ -577,7 +577,8 @@ export class WorldShell {
    * The phone's controls on screen, in art pixels, each `high` when it is along the top (≡ GO ?):
    * where the page lays them out (`touch.rects()`), or, without a page (headless, a replay of a
    * phone's recording), where their data puts them (`worldTouchLayout`) while a page would show
-   * them (touch controls on, a finger the device in use, no panel or room change). None otherwise.
+   * them (touch controls on: headless `touch: true`, or as the replayed recording kept them,
+   * `Recording.touch`; a finger the device in use, recorded; no panel or room change). None otherwise.
    * The HUD (the card, the title, a room's line and panels) keeps clear of them.
    */
   touchBoxes(): (Rect & { high: boolean })[] {
@@ -623,12 +624,13 @@ export class WorldShell {
 
   /**
    * Where a room's lines of HUD text start (`RoomRuntime.lineTop`): the top of the first of `rows`
-   * rows from the left edge, `width` art pixels wide, at the bottom left over the shell's prompts,
-   * and over a phone's joystick and buttons where they share its columns.
+   * rows from the left edge, `width` art pixels wide, at the bottom left over the shell's prompts
+   * (the last row's top 25 rows up from the bottom, where the rooms' lines always sat), and over a
+   * phone's joystick and buttons where they share its columns.
    */
   lineTop(width: number, rows = 1): number {
     const h = this.engine?.hud.height ?? 0;
-    return Math.min(h - 24, this.floor(4, 4 + width) - 9) - (rows - 1) * 9;
+    return Math.min(h - 25, this.floor(4, 4 + width) - 9) - (rows - 1) * 9;
   }
 
   /**
