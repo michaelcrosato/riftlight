@@ -89,7 +89,7 @@ describe('a DualSense’s touchpad in Riftlight', () => {
     expect(pressed, 'the swipes are input, recorded').toEqual(['PadTouchpadRight', 'PadTouchpadLeft', 'PadTouchpadLeft']);
     rl.press('Escape');
     expect(engine.errors).toEqual([]);
-  });
+  }, T);
 
   it('on the pad, the legend and the ring’s strip draw the swipes beside L1 / R1, and the tree’s bar names them', () => {
     const { rl, engine } = h;
@@ -102,7 +102,7 @@ describe('a DualSense’s touchpad in Riftlight', () => {
     engine.input.noteDevice('keyboard');
     expect(glyphs().filter((a) => a.startsWith('page_')), 'on the keyboard Q and E alone').toEqual(['page_prev', 'page_next', 'page_prev', 'page_next']);
     rl.press('Escape');
-  });
+  }, T);
 
   it('in play a swipe does nothing; the touchpad’s press opens the level’s map', async () => {
     const { rl, engine } = h;
@@ -136,5 +136,5 @@ describe('a DualSense’s touchpad in Riftlight', () => {
     hub.dualsense.touchpad = true;
     hub.target.dispatchEvent(new Event('change'));
     expect(engine.errors).toEqual([]);
-  });
+  }, T);
 });
