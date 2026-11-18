@@ -250,25 +250,30 @@ export interface EngineOptions {
    * it shows while the pointer moves), or false for none: open the panel from your own menu
    * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
    * a game with no pause menu of its own (default false: a game's Options is its own). `voice`: the
-   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `key`: where they
-   * are saved (localStorage `pixel-engine:settings:<key>`; default the first game's name), false:
-   * nowhere.
+   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
+   * aims by a DualSense's motion (`input.motion`), and the panel has Motion aim and its sensitivity
+   * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`;
+   * default the first game's name), false: nowhere.
    */
-  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean };
+  settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean; motion?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
   touch?: boolean;
   /**
-   * While the touch controls show on a phone (the viewport's short side under 500 CSS px, either
-   * orientation), at least this many CSS pixels per art pixel: fewer, bigger art pixels, so text
-   * and targets stay thumb-sized. The world in view is the same (the camera's view height and
-   * field of view are kept); only the pixel density changes, again on every resize and rotation.
-   * Under `fill` (the default aspect). Default 2; 0 keeps the art size the viewport gives.
+   * On a phone (the viewport's short side under 500 CSS px, either orientation) on a page with touch
+   * controls, at least this many CSS pixels per art pixel: fewer, bigger art pixels, so text and
+   * targets stay thumb-sized. It holds while the page has touch controls, also while they step
+   * aside for a pad or the keyboard (the art size never changes with the device in use). The world
+   * in view is the same (the camera's view height and field of view are kept); only the pixel
+   * density changes, again on every resize and rotation. Under `fill` (the default aspect).
+   * Default 0 (`DEFAULT_TOUCH_DENSITY`: the art size the viewport gives); pass 2 once the game's HUD
+   * fits about 180 rows (a landscape phone at 2 has 181 to 195).
    */
   touchDensity?: number;
   /**
    * The on-screen joystick: `fixed` (default) at the bottom left, or `floating`: its base appears
    * under the thumb anywhere in the lower left of the screen (about 45% of the width, the lower 60%
-   * in portrait and 75% in landscape, the placed buttons excepted).
+   * in portrait and 75% in landscape, the placed buttons excepted). That zone takes every touch in
+   * it: keep tappable HUD and swipe areas out of it (`engine.touch.rects().zone`).
    */
   touchStick?: 'fixed' | 'floating';
   /** On-screen action buttons. Default: the platformer's (DEFAULT_TOUCH_BUTTONS). */
@@ -312,8 +317,12 @@ interface BootSteps {
   finish(engine: Engine): void;
 }
 
-/** `EngineOptions.touchDensity`'s default: two CSS pixels per art pixel on a phone, at least. */
-export const DEFAULT_TOUCH_DENSITY = 2;
+/**
+ * `EngineOptions.touchDensity`'s default: none, the art size the viewport gives. A game opts in
+ * (2: two CSS pixels per art pixel on a phone, at least) once its HUD fits a landscape phone's
+ * 181 to 195 rows.
+ */
+export const DEFAULT_TOUCH_DENSITY = 0;
 
 /** Headless without `assets`: a load says what to pass. */
 const NO_READER: AssetReader = (path) => Promise.reject(new Error(`Engine.headless: no asset reader for ${path}; pass \`assets: nodeAssets()\` (src/engine/node.ts)`));
@@ -446,6 +455,17 @@ export class Engine {
     return this.hubSettings.micAllowed && this.settings.values.voice !== false;
   }
 
+  /**
+   * Motion aim is on (`EngineOptions.settings.motion`, the panel's Motion aim row; `input.motion`
+   * follows it): a DualSense's motion reaches games through 52in1
+   * (`hubSettings.values.dualsense.motion`) and the player has it on here (left out: on while 52in1's
+   * own Motion aim is).
+   */
+  get motionOn(): boolean {
+    const d = this.hubSettings.values.dualsense;
+    return d.motion && (this.settings.values.motion ?? d.aim);
+  }
+
   private settingsPanel: SettingsPanel | null = null;
   /** Whether the game was paused when the settings opened (they pause it, and give it back). */
   private pausedBeforeSettings = false;
@@ -543,10 +563,19 @@ export class Engine {
     // a DualSense's motion and touchpad through 52in1, read only while the game asks for them
     if (this.hubSettings.present) this.input.dualsense = hubPadInput(this.hubSettings);
     if (options.settings?.motion) {
-      // motion aim follows the player's setting (on by default while 52in1's own Motion aim is)
+      // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).
+      // The game claims the controller's motion as soon as 52in1 lets games have it (one read of
+      // the gyro): from then on 52in1's own Motion aim leaves the stick alone, so the player's
+      // setting here decides alone, off as well as on (52in1 never steers behind it).
+      let claimed = false;
       const motion = () => {
         this.input.motion.on = this.motionOn;
         this.input.motion.sensitivity = this.settings.values.motionSensitivity ?? 1;
+        const ds = this.input.dualsense;
+        if (!claimed && ds?.motion) {
+          claimed = true;
+          ds.gyro();
+        }
       };
       motion();
       this.settings.onChange(motion);
@@ -920,7 +949,7 @@ export class Engine {
     this.controls.touch = this.touch !== null;
     const o = options.settings ?? {};
     const corner = o.button;
-    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice }));
+    const panel = (this.settingsPanel = new SettingsPanel(this, container, corner === undefined || corner === true ? 'top-right' : corner, { voice: o.voice, motion: o.motion }));
     this.settingsKeys = o.padButton === true;
     this.settings.onOpen = () => {
       if (this.input.playing) return false; // a replay's input plays on untouched (pausing drops presses)

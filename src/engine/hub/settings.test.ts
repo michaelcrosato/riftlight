@@ -493,17 +493,50 @@ describe('a DualSense’s touchpad and motion through 52in1, as recorded input',
     expect(game.turn.at(-1)).toBe(0);
     const rec = JSON.parse(JSON.stringify(engine.recording())) as Recording;
     const turns = game.turn.slice();
-    engine.settings.set({ motion: false }); // turned off: the gyro is not read any more (52in1's own aim is back)
+    // turned off: nothing is read or added (the game claimed the motion at start, so 52in1's own
+    // Motion aim stays off: this setting decides alone)
+    engine.settings.set({ motion: false });
     expect(engine.input.motion.on).toBe(false);
     const reads = hub.read.length;
     engine.input.noteDevice('pad');
     engine.step(3);
-    expect(hub.read.length).toBe(reads);
+    expect([hub.read.length, game.turn.slice(-3), game.aim.slice(-3)]).toEqual([reads, [0, 0, 0], [0, 0, 0]]);
     const again = new Feel();
     engine.settings.set({ motion: true });
     await engine.replay(rec, () => engine.loadGame(again));
     expect([again.turn, hub.read.length]).toEqual([turns, reads]); // what was recorded, nothing read
     engine.dispose();
+  });
+
+  it('a game with motion aim claims the motion from 52in1 at start (one read of the gyro), so its own setting decides alone, even off', async () => {
+    const hub = movingHub({ aim: false }); // the player keeps 52in1's Motion aim off: the game's is off too
+    const game = new Feel();
+    const engine = await Engine.headless(game, { hubSettings: hub.source, settings: { motion: true } });
+    expect([engine.input.motion.on, hub.read]).toEqual([false, ['gyro']]); // claimed: 52in1 leaves the stick alone
+    engine.input.noteDevice('pad');
+    hub.now.gyro = { x: 0, y: -64, z: 0 };
+    engine.step(5);
+    expect([hub.read, game.turn.every((t) => t === 0)]).toEqual([['gyro'], true]); // off: nothing more read, nothing added
+    engine.settings.set({ motion: true });
+    engine.step(1);
+    expect([hub.read.length, game.turn.at(-1)! > 0]).toEqual([2, true]);
+    engine.dispose();
+    // no DualSense's motion yet: nothing to claim, until 52in1 lets games have it
+    const later = movingHub({ motion: false });
+    const engine2 = await Engine.headless(new Feel(), { hubSettings: later.source, settings: { motion: true } });
+    expect(later.read).toEqual([]);
+    later.dualsense.motion = true;
+    later.target.dispatchEvent(new Event('change'));
+    later.target.dispatchEvent(new Event('change'));
+    expect(later.read).toEqual(['gyro']); // once
+    engine2.dispose();
+    // a game without motion aim of its own never reads it: 52in1's Motion aim stays the player's
+    const none = movingHub();
+    const engine3 = await Engine.headless(new Feel(), { hubSettings: none.source });
+    engine3.input.noteDevice('pad');
+    engine3.step(3);
+    expect(none.read).toEqual([]);
+    engine3.dispose();
   });
 
   it('motion aim is off without a DualSense’s motion, and while 52in1’s own Motion aim is off until the player turns it on', async () => {

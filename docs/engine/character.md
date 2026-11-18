@@ -48,17 +48,27 @@ player picks up a pad or a keyboard (`input.device` turns `pad` or `keyboard`: t
 `touch.follow` every frame, and `touch.deviceHidden` says so), so the game looks like the pad or
 keyboard game, and the next touch brings them back; only a change of device moves them (a page that
 starts on the keyboard keeps the controls `?touch=1` asked for). The device is recorded, so a
-replay shows and hides them as the player saw. `touchStick: 'floating'`: a thumb anywhere in the
-lower left (`.stick-zone`, about 45% of the width, the lower 60% in portrait and 75% in landscape;
-the placed buttons stay on top of it) brings the joystick's base under it, still writing
-`input.analog` (`touch.rects().zone`). `touchDensity` (default 2, `DEFAULT_TOUCH_DENSITY`): while the
-touch controls show on a phone (the viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`)
-the art has at least that many CSS pixels per art pixel, in both orientations and again at every
-rotation (`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone at DPR 2
-or 3 draws 422×195 instead of 563×260, so text and targets are thumb-sized; the world in view (the
-camera's view height, the field of view) is the same. Headless it follows `touch: true`, as a page
-with touch controls. Riftlight and Rift Runner pass `touchDensity: 0` until their landscape HUDs
-fit 195 rows.
+replay shows and hides them as the player saw. A HUD laid out around the controls
+(`touch.rects()`) takes the pad or keyboard layout while `touch.deviceHidden` (its own skill bar,
+not the touch buttons' places), and the touch layout again when they come back; typing on a
+phone's soft keyboard (a text field) is not picking up a keyboard, so they stay.
+
+`touchStick: 'floating'`: a thumb anywhere in the lower left (`.stick-zone`, about 45% of the
+width, the lower 60% in portrait and 75% in landscape; the placed buttons stay on top of it) brings
+the joystick's base under it, still writing `input.analog` (`touch.rects().zone`). The zone takes
+every touch that lands in it: a camera drag, a swipe or a tap on the canvas there moves the stick
+instead. Keep the game's tappable HUD and its swipe areas out of `rects().zone` (lay them out
+around it, as around the buttons), or keep the stick `fixed`.
+
+`touchDensity` (default 0, `DEFAULT_TOUCH_DENSITY`: the art size the viewport gives): a game opts
+in, `touchDensity: 2`, once its HUD fits a landscape phone's 181 to 195 rows. Then on a phone (the
+viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`) on a page with touch controls the art
+has at least that many CSS pixels per art pixel, in both orientations and again at every rotation
+(`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone at DPR 2 or 3 draws
+422×195 instead of 563×260, so text and targets are thumb-sized; the world in view (the camera's
+view height, the field of view) is the same. It holds while the controls step aside for a pad or
+the keyboard too: the art size never changes with the device in use. Headless it follows
+`touch: true`, as a page with touch controls; a recording keeps it (`Recording.density`).
 
 Automatic moves: **step up / step down** (autostep 0.4; Rapier's autostep alone misses a
 riser met at speed, so `riseAhead` lifts the body onto a flat step found just ahead and holds

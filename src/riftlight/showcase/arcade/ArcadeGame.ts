@@ -27,9 +27,6 @@ export const ARCADE_OPTIONS: Partial<EngineOptions> = {
   camera: { preset: 'side', viewHeight: 12 },
   filters: ['16bit', 'crt'],
   settings: { padButton: true }, // no pause menu of its own: Options (Esc) opens the engine's settings
-  // the art size the viewport gives on a phone, for now: at the engine's 2 CSS px per art pixel
-  // the hint line at the bottom runs under the touch buttons of a landscape phone
-  touchDensity: 0,
 };
 
 export class ArcadeGame implements Game {

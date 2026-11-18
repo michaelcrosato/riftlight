@@ -67,7 +67,7 @@ export type TriggerEffect =
 
 /** `AIHubSettings.dualsense` as the hub gives it: the parts the engine uses. */
 export interface HubDualSenseSource extends Partial<DualSenseFlags> {
-  /** How fast the controller turns, degrees a second. Reading it turns the hub's own Motion aim off (`hubPadInput` only). */
+  /** How fast the controller turns, degrees a second. Once read, the hub's own Motion aim leaves the stick alone (`hubPadInput` only). */
   readonly gyro?: { readonly x: number; readonly y: number; readonly z: number };
   /** The fingers on the touchpad, at most two, `x` and `y` 0..1 from its top left (`hubPadInput` only). */
   readonly touches?: readonly { readonly id: number; readonly x: number; readonly y: number }[];
@@ -220,8 +220,9 @@ const num = (n: unknown): number => (typeof n === 'number' && Number.isFinite(n)
  * A DualSense's motion and touchpad from 52in1 (`window.AIHubSettings.dualsense`) for
  * `input.dualsense`: `motion` / `touchpad` say whether the player lets games read them, and
  * `gyro()` / `touches()` read them, only when called (Input calls them only while a game has its
- * motion aim or its touchpad on: reading `gyro` turns 52in1's own Motion aim off). Null values
- * where the hub gives nothing usable.
+ * motion aim or its touchpad on; the engine reads `gyro` once at start for a game with a motion
+ * setting, to claim it: once read, 52in1's own Motion aim leaves the stick alone). Null values where
+ * the hub gives nothing usable.
  */
 export function hubPadInput(hub: HubSettings): DualSenseInput {
   const pad = () => {

@@ -772,9 +772,21 @@ async function runTouch(browserExe) {
     const cx = stick.x + stick.width / 2;
     const cy = stick.y + stick.height / 2;
     const t0 = (await state(page)).target;
-    // a phone: fewer, bigger art pixels, two CSS pixels each at least (EngineOptions.touchDensity)
-    const dense = await state(page);
-    check(dense.framing.scale >= 2 && dense.resolution.height < 270, `on a landscape phone with touch controls the art is ${dense.resolution.width}×${dense.resolution.height} at ${dense.framing.scale} CSS px per art px`);
+    // a phone's touch density (EngineOptions.touchDensity): off unless the game opts in; at 2, fewer,
+    // bigger art pixels, two CSS pixels each at least, on the same page
+    const density = await page.evaluate(() => {
+      const e = window.__PIXEL_ENGINE__;
+      const art = () => `${e.renderer.resolution.width}×${e.renderer.resolution.height} at ${e.renderer.framing.scale}`;
+      const plain = { art: art(), scale: e.renderer.framing.scale, density: e.renderer.touchDensity };
+      e.renderer.setTouchDensity(2);
+      const dense = { art: art(), scale: e.renderer.framing.scale, height: e.renderer.resolution.height };
+      e.renderer.setTouchDensity(0);
+      return { plain, dense, back: art() };
+    });
+    check(
+      density.plain.density === 0 && density.plain.scale === 1 && density.dense.scale >= 2 && density.dense.height < 270 && density.back === density.plain.art,
+      `on a landscape phone with touch controls the art is the viewport's (${density.plain.art}) unless the game opts into touchDensity: 2 (${density.dense.art} CSS px per art px)`,
+    );
     await page.mouse.move(cx, cy);
     await page.mouse.down();
     await page.mouse.move(cx, cy - 60, { steps: 4 });
@@ -786,7 +798,21 @@ async function runTouch(browserExe) {
     check(mid.y > 0.8, `joystick drives the analog axis (y = ${mid.y.toFixed(2)})`);
     check(dist(t0, t1) > 1, `joystick moves the character (${dist(t0, t1).toFixed(2)})`);
     check(await page.evaluate(() => window.__PIXEL_ENGINE__.input.analog.y === 0), 'joystick recentres on release');
-    check((await page.evaluate(() => window.__PIXEL_ENGINE__.input.device)) === 'touch', 'the touch controls make touch the device used last (prompts follow it)');
+    // the joystick makes touch the device used last, not the page's start: the keyboard first, then
+    // a touch on the stick before a frame runs (a frame would put the controls aside for the keys)
+    const stickDevice = await page.evaluate(() => {
+      const e = window.__PIXEL_ENGINE__;
+      e.input.noteDevice('keyboard');
+      const before = e.input.device;
+      const s = document.querySelector('.touch-ui .stick');
+      const r = s.getBoundingClientRect();
+      const at = (type) => s.dispatchEvent(new PointerEvent(type, { pointerType: 'touch', pointerId: 91, isPrimary: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true }));
+      at('pointerdown');
+      const after = e.input.device;
+      at('pointerup');
+      return { before, after };
+    });
+    check(stickDevice.before === 'keyboard' && stickDevice.after === 'touch', `the touch controls make touch the device used last (prompts follow it): ${stickDevice.before} → ${stickDevice.after}`);
 
     // A button = jump.
     const jumps0 = await page.evaluate(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps);

@@ -94,7 +94,9 @@ export interface TouchControlsOptions {
   /**
    * `fixed` (default): the joystick waits at the bottom left. `floating`: a thumb anywhere in the
    * lower left (`.stick-zone`: about 45% of the width, the lower 60% in portrait and 75% in
-   * landscape; the placed buttons stay on top of it) brings the joystick's base under it.
+   * landscape; the placed buttons stay on top of it) brings the joystick's base under it. The zone
+   * takes every touch landing in it (a camera drag, a swipe, a tap there moves the stick): keep a
+   * game's tappable HUD and swipe areas out of `rects().zone`.
    */
   stick?: TouchStick;
 }
@@ -220,7 +222,8 @@ export class TouchControls {
    * Client rects (CSS pixels) of the controls on screen now: the joystick and every button,
    * with the key code it presses. A hidden button keeps its place (`hidden` says it isn't
    * drawn), so a HUD laid out around them doesn't move when a contextual button comes and goes.
-   * Nothing but the bar while `show(false)`.
+   * `zone`: a floating stick's zone, which takes every touch in it (lay tappable HUD out of it).
+   * Nothing but the bar while `show(false)` or while they step aside (`deviceHidden`).
    */
   rects(): { stick: DOMRect | null; zone: DOMRect | null; buttons: { code: string; label: string; hidden: boolean; rect: DOMRect }[]; bar: DOMRect | null } {
     if (!this.visible) return { stick: null, zone: null, buttons: [], bar: this.bar.isConnected ? this.bar.getBoundingClientRect() : null };

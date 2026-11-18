@@ -237,12 +237,12 @@ lets both go and gives the light back (`light(null)`) when a level unloads, and 
 round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,
 the team, danger): give it back on a title screen. Motion and the touchpad are input: they reach
 a game through `ctx.input` (recorded), never by reading `dualsense.gyro`, `accel` or `touches`
-itself (reading the gyro turns the hub's own Motion aim off): `ctx.input.touchpad = true` turns
-touchpad swipes and taps into presses (`TOUCHPAD_KEYS`), and `settings: { motion: true }` gives the
-game motion aim with a settings row and its sensitivity (`input.motion`, on by default while the
-hub's own Motion aim is), both read through `hubPadInput` only while asked for
-(*Motion and the touchpad*, below); `navigator.hid` and `getUserMedia`
-are never used (`npm run lint`). Tests pass a fake: `Engine.headless(game, { hubSettings })`
+itself (once a game reads the gyro, the hub's own Motion aim leaves the stick alone):
+`ctx.input.touchpad = true` turns touchpad swipes and taps into presses (`TOUCHPAD_KEYS`), and
+`settings: { motion: true }` gives the game motion aim with a settings row and its sensitivity
+(`input.motion`, on by default while the hub's own Motion aim is), both read through `hubPadInput`
+only while asked for (*Motion and the touchpad*, below); `navigator.hid` and `getUserMedia` are
+never used (`npm run lint`). Tests pass a fake: `Engine.headless(game, { hubSettings })`
 (`src/engine/hub/settings.test.ts`; the systems e2e suite does it in a page).
 
 ### Motion and the touchpad
@@ -257,7 +257,12 @@ of the pad's height, a tap within 0.3 s), once, recorded, a use of the pad; its 
 }`; a game with `settings: { motion: true }` has the engine keep it at the player's setting,
 `engine.motionOn`): while on and the pad is in use, the controller's turns add to the right stick's,
 gyro × dt × sensitivity into `mouseDelta` (8 pointer pixels a degree past a 4°/s still hand,
-`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. Reading the gyro
-turns 52in1's own Motion aim off, so it is read only while on; the touchpad's fingers never turn
-it off.
+`MOTION_AIM`) and a lean into `lookAxis` as 52in1's own Motion aim leans the stick. Once a game
+reads the gyro, 52in1's own Motion aim leaves the stick alone for as long as the game runs, even
+while the game stops reading it. So a game with `settings: { motion: true }` claims the motion at
+start (the engine reads the gyro once as soon as 52in1 lets games have it): from then on the
+player's Motion aim row in the game decides alone, off as well as on, and 52in1 never steers behind
+a game whose motion aim is off. A game without that option never reads the gyro unless it turns
+`input.motion.on` itself, and 52in1's own Motion aim stays the player's. The touchpad's fingers
+never take anything from 52in1.
 

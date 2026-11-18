@@ -5,7 +5,7 @@
 import { OrthographicCamera, Vector3 } from 'three/webgpu';
 import { describe, expect, it } from 'vitest';
 import { Controls } from './controls';
-import { Engine, type Game, type GameContext } from './Engine';
+import { DEFAULT_TOUCH_DENSITY, Engine, type Game, type GameContext } from './Engine';
 import { Hud } from './hud/Hud';
 import { Input, type InputDevice } from './input';
 import type { Recording } from './replay';
@@ -74,23 +74,25 @@ describe('touch density on a phone (EngineOptions.touchDensity)', () => {
     return out;
   };
 
-  it('with touch controls a landscape phone draws at 2 CSS pixels an art pixel or more; the world in view is the same', async () => {
+  it('a game that opts in (touchDensity: 2) draws a landscape phone with touch controls at 2 CSS pixels an art pixel or more; the world in view is the same', async () => {
     const plain = await frame({});
-    const touch = await frame({ touch: true });
     expect(plain.art).toEqual({ width: 563, height: 260 });
+    expect((await frame({ touch: true })).art).toEqual(plain.art); // off unless the game asks (DEFAULT_TOUCH_DENSITY 0)
+    expect(DEFAULT_TOUCH_DENSITY).toBe(0);
+    const touch = await frame({ touch: true, touchDensity: 2 });
     expect([touch.art, touch.css >= 2]).toEqual([{ width: 422, height: 195 }, true]);
     expect(touch.viewHeight).toBeCloseTo(plain.viewHeight, 6);
     expect(touch.aspect).toBeCloseTo(plain.aspect, 2);
-    expect((await frame({ touch: true, touchDensity: 0 })).art).toEqual(plain.art);
+    expect((await frame({ touchDensity: 2 })).art).toEqual(plain.art); // no touch controls: none
     expect((await frame({ touch: true, touchDensity: 3 })).css).toBeGreaterThanOrEqual(3);
     // a portrait phone already is; a laptop is not a phone
-    expect((await frame({ touch: true }, { width: 390, height: 844, dpr: 3 })).art).toEqual((await frame({}, { width: 390, height: 844, dpr: 3 })).art);
-    expect((await frame({ touch: true }, { width: 1280, height: 720, dpr: 1 })).art).toEqual({ width: 427, height: 240 });
+    expect((await frame({ touch: true, touchDensity: 2 }, { width: 390, height: 844, dpr: 3 })).art).toEqual((await frame({}, { width: 390, height: 844, dpr: 3 })).art);
+    expect((await frame({ touch: true, touchDensity: 2 }, { width: 1280, height: 720, dpr: 1 })).art).toEqual({ width: 427, height: 240 });
   });
 
   it('a recording keeps it, and a headless replay frames with it (pointer aim and the HUD match the phone)', async () => {
     const viewport = { width: 844, height: 390, dpr: 3 };
-    const phone = await Engine.headless(new Still(), { viewport, touch: true });
+    const phone = await Engine.headless(new Still(), { viewport, touch: true, touchDensity: 2 });
     phone.step(2);
     const rec = JSON.parse(JSON.stringify(phone.recording())) as Recording;
     phone.dispose();

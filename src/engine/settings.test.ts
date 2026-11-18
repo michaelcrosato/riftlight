@@ -106,10 +106,13 @@ describe('player settings', () => {
     expect(normalizeSettings('noir')).toEqual({});
   });
 
-  it('keep the voice feature switch', () => {
-    expect(normalizeSettings({ voice: false })).toEqual({ voice: false });
+  it('keep the voice feature and motion aim switches, and the motion sensitivity (0.25..3, in steps of 0.25)', () => {
+    expect(normalizeSettings({ voice: false, motion: true, motionSensitivity: 1.5 })).toEqual({ voice: false, motion: true, motionSensitivity: 1.5 });
     expect(normalizeSettings({ voice: true })).toEqual({ voice: true });
-    expect(normalizeSettings({ voice: 'on' })).toEqual({});
+    expect(normalizeSettings({ motionSensitivity: 9 })).toEqual({ motionSensitivity: 3 });
+    expect(normalizeSettings({ motionSensitivity: 0 })).toEqual({ motionSensitivity: 0.25 });
+    expect(normalizeSettings({ motionSensitivity: 1.1 })).toEqual({ motionSensitivity: 1 });
+    expect(normalizeSettings({ voice: 'on', motion: 1, motionSensitivity: Number.NaN })).toEqual({});
   });
 
   it("keep the controller's button prompts (PlayStation or Xbox) and its vibration (0..1, in steps of 0.05)", () => {

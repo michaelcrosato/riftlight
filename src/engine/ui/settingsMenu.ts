@@ -13,7 +13,7 @@ import { type Control, controlGlyph, type Glyph, type LineSource } from '../cont
 import type { Engine } from '../Engine';
 import type { Input } from '../input';
 import { LOOK_PRESETS, lookPresetLabel } from '../render/look';
-import { FPS_OPTIONS, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS } from '../settings';
+import { FPS_OPTIONS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS } from '../settings';
 import { FocusList, MenuInput } from './menu';
 
 /** The settings screen's words, by line id (English). A game translates one by having a line of the same id. */
@@ -52,6 +52,9 @@ export const SETTINGS_LINES = {
   'settings.pad_glyphs.playstation': 'PlayStation',
   'settings.pad_glyphs.xbox': 'Xbox',
   'settings.vibration': 'Vibration',
+  'settings.motion': 'Motion aim',
+  'settings.motion.none': 'Motion aim needs a DualSense in 52in1.',
+  'settings.motion_sensitivity': 'Motion sensitivity',
   'settings.change': 'Change',
   'settings.close': 'Close',
   'settings.reset': 'Reset',
@@ -68,6 +71,8 @@ export type SettingsPage = (typeof SETTINGS_PAGES)[number];
 export interface SettingsFeatures {
   /** A voice feature: a Microphone row (on only while 52in1 allows games the microphone). */
   readonly voice?: boolean;
+  /** Motion aim: Motion aim and Motion sensitivity rows (a DualSense's motion through 52in1, `input.motion`). */
+  readonly motion?: boolean;
 }
 
 /** A row as it is drawn. */
@@ -362,6 +367,9 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
   };
   const fpsValues = () => (FPS_OPTIONS.includes(e.maxFps) ? FPS_OPTIONS : [e.maxFps, ...FPS_OPTIONS]);
   const hub = e.hubSettings;
+  const motionAllowed = () => hub.values.dualsense.motion;
+  const m = MOTION_SENSITIVITY;
+  const sensitivities = Array.from({ length: Math.round((m.max - m.min) / m.step) + 1 }, (_, i) => m.min + i * m.step);
   return [
     choice('look', 'picture', 'settings.look', () => looks, () => s.values.look ?? '', (look) => s.set({ look: look || undefined }), lookName, {
       enabled: () => e.renderer.mode === 'pixel', // a look is drawn by the pixel pass: smooth 3D shows none
@@ -387,5 +395,21 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
       s.set({ vibration });
       e.input.rumble({ strong: 0.7, weak: 0.7, ms: 160 }); // feel it (on a pad; scaled by the new setting)
     }),
+    toggle('motion', 'controls', 'settings.motion', () => e.motionOn, (on) => s.set({ motion: on }), {
+      shown: () => features.motion === true,
+      enabled: motionAllowed,
+      note: () => t('settings.motion.none'),
+    }),
+    choice('motionSensitivity', 'controls', 'settings.motion_sensitivity', () => sensitivities, () => nearest(sensitivities, s.values.motionSensitivity ?? 1), (motionSensitivity) => s.set({ motionSensitivity }), (v) => `${Math.round(v * 100)}%`, {
+      round: false,
+      shown: () => features.motion === true,
+      enabled: () => motionAllowed() && e.motionOn,
+      note: () => (motionAllowed() ? '' : t('settings.motion.none')), // motion aim is off: nothing to say
+    }),
   ];
+}
+
+/** The value of `values` nearest to `v`. */
+function nearest(values: readonly number[], v: number): number {
+  return values.reduce((best, x) => (Math.abs(x - v) < Math.abs(best - v) ? x : best), values[0]!);
 }

@@ -5,10 +5,10 @@ import { PALETTE, type PaletteColor } from '../palette';
 import { type Controls, GLYPH_SIZE, type Glyph } from '../controls';
 
 /** Where an element is attached on screen; it is also aligned that way (right-anchored text grows left). */
+export type HudAnchor = 'top-left' | 'top' | 'top-right' | 'left' | 'center' | 'right' | 'bottom-left' | 'bottom' | 'bottom-right';
+
 /** One button of a legend (`hud.legend`): what does it (an action of `Game.controls`, or a code: `PadB`) and its words. */
 export type LegendItem = readonly [action: string, label: string];
-
-export type HudAnchor = 'top-left' | 'top' | 'top-right' | 'left' | 'center' | 'right' | 'bottom-left' | 'bottom' | 'bottom-right';
 
 export type HudColor = PaletteColor | number;
 

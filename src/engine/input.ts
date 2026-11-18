@@ -122,7 +122,11 @@ export interface DualSenseInput {
   readonly motion: boolean;
   /** The player lets games read the touchpad. */
   readonly touchpad: boolean;
-  /** How fast the controller turns, degrees a second (`x` tips its front up, `y` turns it left, `z` rolls it left). Reading it turns 52in1's own Motion aim off. */
+  /**
+   * How fast the controller turns, degrees a second (`x` tips its front up, `y` turns it left, `z`
+   * rolls it left). Once a game reads it, 52in1's own Motion aim leaves the stick alone for good
+   * (while the game runs), whether or not the game goes on reading it.
+   */
   gyro(): { readonly x: number; readonly y: number; readonly z: number } | null;
   /** The fingers on the touchpad (at most two; `x`, `y` 0..1 from its top left). */
   touches(): readonly { readonly id: number; readonly x: number; readonly y: number }[] | null;
@@ -313,7 +317,10 @@ export class Input {
    * Motion aim: while `on` (the engine keeps it at the player's setting for a game with
    * `settings: { motion: true }`), and the pad is the device in use, the DualSense's turns add to the
    * right stick's camera turn (`mouseDelta`: gyro × dt × `sensitivity`) and to the aim stick
-   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place.
+   * (`lookAxis`), as 52in1's own Motion aim would. Added to the stick, never in its place. The gyro
+   * is read only while on; a game with `settings: { motion: true }` has also claimed it once at
+   * start (the engine reads it then), so 52in1's own Motion aim leaves the stick alone even while
+   * this is off: the game's setting decides alone.
    */
   readonly motion = { on: false, sensitivity: 1 };
   /**
@@ -324,6 +331,8 @@ export class Input {
   touchpad = false;
   /** The finger on the touchpad that may be a gesture (`touchpad`). */
   private pad1: { id: number; x0: number; y0: number; x: number; y: number; t: number; spoilt: boolean } | null = null;
+  /** Two fingers or the touchpad's click were seen since the pad was last bare: nothing ending before it is bare again is a gesture. */
+  private padMulti = false;
   /** True while any gamepad is connected (that alone never changes `device`). */
   gamepadConnected = false;
   /**
@@ -393,7 +402,7 @@ export class Input {
       (e) => {
         if (isGameKey(e.code) || this.preventKeys.has(e.code)) e.preventDefault();
         if (this._playing) return;
-        this.use('keyboard');
+        if (!typing(e)) this.use('keyboard'); // a phone's soft keyboard in a text field is not a keyboard picked up
         if (e.repeat && this.keyLatched.has(e.code)) return; // held through release(): up until let go
         this.keyLatched.delete(e.code);
         if (!e.repeat) this.press(e.code);
@@ -678,6 +687,7 @@ export class Input {
     this.lookAxis.x = this.lookAxis.y = 0;
     this.triggers.left = this.triggers.right = 0;
     this.pad1 = null;
+    this.padMulti = false;
     this.rumbleWant = null; // a level's rumble ends with it
     this.endFrame();
   }
@@ -1084,7 +1094,12 @@ export class Input {
     for (const code of down) if (!this.padHeld.has(code) && !this.held.has(code)) this.press(code);
     // the DualSense's touchpad (52in1, when the game reads it): a swipe or a tap is a press, and a use
     const ds = this._playing ? null : this.dualsense;
-    const gesture = ds?.touchpad && this.touchpad ? this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad')) : ((this.pad1 = null), null);
+    let gesture: TouchpadGesture | null = null;
+    if (ds?.touchpad && this.touchpad) gesture = this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad'));
+    else {
+      this.pad1 = null;
+      this.padMulti = false;
+    }
     if (gesture) {
       this.press(TOUCHPAD_KEYS[gesture]);
       this.use('pad');
@@ -1118,7 +1133,8 @@ export class Input {
       this.mouseDelta.y += r.y * this.gamepadLookSpeed * dt;
     }
     // Motion aim (52in1, while the game has it on): the controller's turns add to the stick's, on
-    // the pad in use. Read only while on: reading the gyro turns 52in1's own Motion aim off.
+    // the pad in use. Read only while on (a game that never turns it on never takes the motion
+    // from 52in1's own Motion aim; one with a motion setting claimed it at start: Engine).
     const gyro = ds?.motion && this.motion.on ? ds.gyro() : null;
     if (gyro && padInUse) {
       const k = Number.isFinite(this.motion.sensitivity) ? Math.max(0, this.motion.sensitivity) : 1;
@@ -1137,25 +1153,32 @@ export class Input {
 
   /**
    * One poll of the touchpad's fingers (`touchpad`): a finger that went down and came up again
-   * within a swipe's or a tap's time makes a gesture (one finger only: a second spoils it, and so
-   * does the pad's click, which is its own button). Returns the gesture that ended, or null.
+   * within a swipe's or a tap's time makes a gesture. One finger only: a second finger, or the pad's
+   * click (its own button), spoils whatever ends before the pad is bare again, however the fingers
+   * lift (together or one at a time), and so does another finger taking the lead while fingers stay.
+   * Returns the gesture that ended, or null.
    */
   private touchpadFrame(touches: readonly { readonly id: number; readonly x: number; readonly y: number }[] | null, dt: number, clicked: boolean): TouchpadGesture | null {
     const list = Array.isArray(touches) ? touches : [];
     const f = this.pad1;
     const t = list[0];
     if (!t || !Number.isFinite(t.x) || !Number.isFinite(t.y)) {
+      const multi = this.padMulti;
       this.pad1 = null;
-      return f && !f.spoilt ? touchpadGesture(f.x - f.x0, f.y - f.y0, f.t) : null;
+      this.padMulti = false; // bare again: the next touch may be a gesture
+      if (!f || f.spoilt || multi) return null;
+      return touchpadGesture(f.x - f.x0, f.y - f.y0, f.t);
     }
-    if (!f || f.id !== t.id) {
-      this.pad1 = { id: t.id, x0: t.x, y0: t.y, x: t.x, y: t.y, t: 0, spoilt: list.length > 1 || clicked };
+    if (list.length > 1 || clicked) this.padMulti = true;
+    if (!f) {
+      this.pad1 = { id: t.id, x0: t.x, y0: t.y, x: t.x, y: t.y, t: 0, spoilt: this.padMulti };
       return null;
     }
+    if (f.id !== t.id || this.padMulti) f.spoilt = true; // the first finger lifted while another stays, or two at once
+    f.id = t.id;
     f.x = t.x;
     f.y = t.y;
     f.t += dt;
-    if (list.length > 1 || clicked) f.spoilt = true;
     return null;
   }
 }
@@ -1180,7 +1203,6 @@ function stickUsed(was: readonly [number, number], now: readonly [number, number
   return Math.hypot(was[0], was[1]) < STICK_USE || Math.hypot(now[0] - was[0], now[1] - was[1]) > STICK_MOVE;
 }
 
-/** A value clamped to 0..1 (0 when it is not a number). */
 /** How far `v` goes past ±`still` (0 inside it): a hand holding a controller still turns it a little. */
 function beyond(v: number, still: number): number {
   if (!Number.isFinite(v)) return 0;
@@ -1195,6 +1217,7 @@ function aimLean(past: number): number {
   return Math.sign(past) * push;
 }
 
+/** A value clamped to 0..1 (0 when it is not a number). */
 function unit(v: number | undefined): number {
   return Number.isFinite(v) ? Math.min(1, Math.max(0, v!)) : 0;
 }
@@ -1210,6 +1233,17 @@ function touchFirst(): boolean {
 
 /** Gamepad buttons that, held together, are the host page's (View and Menu: Create and Options). */
 export const HOST_CHORD: readonly [number, number] = [8, 9];
+
+/**
+ * A key typed into a text field (an input, a textarea, contenteditable) or by a phone's soft
+ * keyboard while it composes (`Unidentified`, keyCode 229): typing, not a keyboard picked up, so the
+ * device in use (and the touch controls) stay as they were.
+ */
+function typing(e: KeyboardEvent): boolean {
+  if (e.key === 'Unidentified' || e.isComposing || (e as { keyCode?: number }).keyCode === 229) return true;
+  const t = e.target as { tagName?: unknown; isContentEditable?: unknown } | null;
+  return !!t && (t.isContentEditable === true || t.tagName === 'INPUT' || t.tagName === 'TEXTAREA');
+}
 
 function isGameKey(code: string): boolean {
   return code.startsWith('Arrow') || code === 'Space';

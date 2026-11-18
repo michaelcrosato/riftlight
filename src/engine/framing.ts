@@ -63,10 +63,11 @@ export interface Viewport {
 export const PHONE_SHORT_SIDE = 500;
 
 /**
- * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) when touch
- * controls show at `cssPerArt` CSS pixels per art pixel or more (`EngineOptions.touchDensity`): on
- * a phone (the viewport's short side under `PHONE_SHORT_SIDE`) in either orientation, so text and
- * targets stay thumb-sized; 1 (no minimum) elsewhere, or when `cssPerArt` is 0.
+ * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) for at least
+ * `cssPerArt` CSS pixels per art pixel (`EngineOptions.touchDensity`, on a page with touch controls,
+ * also while they step aside for a pad or the keyboard): on a phone (the viewport's short side under
+ * `PHONE_SHORT_SIDE`) in either orientation, so text and targets stay thumb-sized; 1 (no minimum)
+ * elsewhere, or when `cssPerArt` is 0.
  */
 export function touchScale(viewport: Viewport, cssPerArt: number): number {
   if (!(cssPerArt > 0) || Math.min(viewport.width, viewport.height) >= PHONE_SHORT_SIDE) return 1;

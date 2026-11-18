@@ -34,7 +34,4 @@ export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   touchButtons: RIFTLIGHT_TOUCH_BUTTONS,
   touchBar: false,
   settings: { button: false },
-  // the art size the viewport gives on a phone, for now: at the engine's 2 CSS px per art pixel a
-  // landscape phone has 195 rows, and the HUD's minimap covers the mana orb there
-  touchDensity: 0,
 };
