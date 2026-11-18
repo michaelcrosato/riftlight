@@ -4,6 +4,9 @@
   "version": "0.49.0",
   "license": "MIT",
   "type": "module",
+  "engines": {
+    "node": ">=22.15"
+  },
   "description": "WebGPU-first 3D engine that renders authentic 2D pixel art, built for AI agents to generate classic games.",
   "homepage": "https://github.com/michaelcrosato/riftlight#readme",
   "repository": {

@@ -3,6 +3,7 @@ name: Claude Maintenance
 # Weekly unattended sweep: Claude finds the single highest-value improvement
 # (failing/flaky tests, outdated deps, dead code, missing tests, doc drift) and ships it.
 # Run on demand with a custom focus from the Actions tab.
+# Skips itself when neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set.
 
 on:
   schedule:
@@ -29,11 +30,23 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
+      - name: Is Claude configured?
+        id: claude
+        env:
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          echo "go=$HAS_CLAUDE" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CLAUDE" != "true" ]; then
+            echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret; skipping the maintenance sweep."
+          fi
+
       - uses: actions/checkout@v7
+        if: steps.claude.outputs.go == 'true'
         with:
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
+        if: steps.claude.outputs.go == 'true'
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}

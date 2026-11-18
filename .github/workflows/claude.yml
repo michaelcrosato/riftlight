@@ -3,6 +3,7 @@ name: Claude
 # @claude in any issue/PR comment or review, or an issue that is labeled `claude`
 # or mentions @claude. Claude implements on a claude/* branch;
 # autopilot.yml then opens the PR and merges it.
+# Skips itself when neither CLAUDE_CODE_OAUTH_TOKEN nor ANTHROPIC_API_KEY is set.
 
 on:
   issue_comment:
@@ -37,11 +38,23 @@ jobs:
       id-token: write
       actions: read
     steps:
+      - name: Is Claude configured?
+        id: claude
+        env:
+          HAS_CLAUDE: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN != '' || secrets.ANTHROPIC_API_KEY != '' }}
+        run: |
+          echo "go=$HAS_CLAUDE" >> "$GITHUB_OUTPUT"
+          if [ "$HAS_CLAUDE" != "true" ]; then
+            echo "::notice::No CLAUDE_CODE_OAUTH_TOKEN or ANTHROPIC_API_KEY secret; skipping Claude."
+          fi
+
       - uses: actions/checkout@v7
+        if: steps.claude.outputs.go == 'true'
         with:
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
+        if: steps.claude.outputs.go == 'true'
         with:
           # Set ONE of these repo secrets. OAuth token = Claude subscription (`claude setup-token`).
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}

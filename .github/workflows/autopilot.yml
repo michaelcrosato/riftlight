@@ -1,7 +1,7 @@
 name: Autopilot
 
 # No-touch merge path. Nothing waits for CI: there are no required status checks; a red
-# main is reverted automatically instead (claude-ci-autofix.yml).
+# main is reverted automatically instead (ci.yml's revert-red-main job).
 #   push to claude/*       -> open a PR if none exists
 #   any ready PR           -> squash-merge it now (auto-merge if GitHub makes it wait)
 #   label `hold` on a PR   -> disable auto-merge (the one brake)

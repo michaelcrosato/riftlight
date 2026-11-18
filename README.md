@@ -8,7 +8,7 @@ post-processing, WebGPU only, Rapier physics, local GLB assets.
 zip with the engine as a single ES module, its guide, a starter game and a browser check.
 Download the newest release
 (`curl -fLO https://github.com/michaelcrosato/riftlight/releases/latest/download/pixel-engine.zip && unzip pixel-engine.zip && cd pixel-engine`)
-or build it here in about a minute
+or build it here in about a minute with Node 22.15 or newer (package.json `engines`)
 (`git clone --depth 1 https://github.com/michaelcrosato/riftlight && cd riftlight && npm ci && npm run bundle`)
 and copy `bundle/pixel-engine/` to where the game will live. Then read the kit's `README.md` and
 `GUIDE.md`. Work in this repository only to change the engine itself
