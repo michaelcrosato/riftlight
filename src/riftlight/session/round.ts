@@ -1,12 +1,14 @@
 /**
- * Riftlight in an AI Hub session (docs/game/session.md): a round is one designed level, played
+ * Riftlight in a 52in1 session (docs/game/session.md): a round is one designed level, played
  * from the hub's seed with a fresh hero levelled for its depth, straight from the page's load: no
  * title, menus or town. The boss's death clears it.
  *
  * - **parallel**: every player clears their own copy; the hub ranks clear times, then scores.
  * - **ghost**: as parallel, and each copy shows the others' heroes where they are (`ghosts.ts`).
  * - **shared-world**: one level for everyone, run by the host's copy (`shared.ts`); the host
- *   reports a team result.
+ *   reports a team result in co-op, standings by score in versus.
+ * - **moments**: one short moment of the game a load (`moments.ts`): set up the same on every copy,
+ *   cleared or failed in seconds, reported once (`result({ won, time })`); nothing sent.
  *
  * The round's start comes from the page as a recorded command (`{ rl: 'round' }`), and the hub's
  * events as input commands (engine `hubEvents`), so a session replays like any other run. Play
@@ -18,6 +20,7 @@ import { type GameContext, type HubEvent, type HubInfo, type HubMode, hubEvents,
 import type { HeroIntent } from '../game/ports';
 import type { UiCanvas } from '../ui/kit';
 import { t } from '../lang';
+import { MOMENTS, momentById, momentGoal, type MomentSpec } from './moments';
 
 /** Depths a round can be (designed levels short enough for a session round), by round number. */
 export const ROUND_DEPTHS: readonly number[] = [1, 2, 3];
@@ -48,6 +51,10 @@ export interface RoundHost {
   banner(title: string, subtitle?: string, seconds?: number): void;
   /** What the round's mode adds (ghosts, a shared world), once the level is built. */
   roundModes(info: HubInfo): RoundMode[];
+  /** Moments: a fresh run on `seed`, the moment's level built and its hero placed (resolves when built). */
+  startMoment(moment: MomentSpec, seed: number): Promise<void>;
+  /** Moments: its goal is met (its targets fallen, its spot reached). */
+  momentMet(): boolean;
 }
 
 /** The round's commands from the page: what the hub said in its welcome, and the moment play began. */
@@ -104,6 +111,9 @@ export class SessionRound {
   respawnIn: number | null = null;
   /** Players still in the round. */
   players: number[] = [];
+  /** Moments: the moment this load plays, and how it went (null while it is on). */
+  moment: MomentSpec | null = null;
+  outcome: 'cleared' | 'failed' | null = null;
   readonly modes: RoundMode[] = [];
   private lastShown = -1;
   private reported = false;
@@ -125,10 +135,19 @@ export class SessionRound {
     if (this.info) return;
     this.info = info;
     this.players = info.players.map((p) => p.id);
-    this.depth = roundDepth(info.round);
-    const seat = info.server ? 0 : Math.max(0, info.players.findIndex((p) => p.id === info.me));
-    void this.host
-      .startRound(info.seed, this.depth, roundHeroLevel(this.depth), seat)
+    let built: Promise<void>;
+    if (this.mode === 'moments') {
+      // the moment the hub named (every copy the same), its set-up drawn from the hub's seed for it
+      const moment = momentById(info.moment) ?? MOMENTS[0]!;
+      this.moment = moment;
+      this.depth = moment.depth;
+      built = this.host.startMoment(moment, this.session.rng(moment.id).int(1, 2 ** 31 - 2));
+    } else {
+      this.depth = roundDepth(info.round);
+      const seat = info.server ? 0 : Math.max(0, info.players.findIndex((p) => p.id === info.me));
+      built = this.host.startRound(info.seed, this.depth, roundHeroLevel(this.depth), seat);
+    }
+    void built
       .then(() => {
         this.modes.push(...this.host.roundModes(info));
         if (this.phase === 'loading') this.phase = 'waiting';
@@ -164,12 +183,14 @@ export class SessionRound {
       const shown = Math.ceil(this.countdown);
       if (shown !== this.lastShown) {
         this.lastShown = shown;
-        this.host.banner(shown > 0 ? String(shown) : t('round.go'), shown > 0 ? t('round.get_ready') : t('round.clear_the_rift'), shown > 0 ? 1.05 : 1.2); // each number until the next replaces it
+        const goal = this.moment ? momentGoal(this.moment) : t('round.clear_the_rift');
+        this.host.banner(shown > 0 ? String(shown) : t('round.go'), shown > 0 && !this.moment ? t('round.get_ready') : goal, shown > 0 ? 1.05 : 1.2); // each number until the next replaces it
         if (shown > 0) this.host.ctx.audio.play('rl.bark', { volume: 0.5 });
       }
     }
     if (this.playing) {
       this.playTime += dt;
+      if (this.moment && this.outcome === null && this.host.momentMet()) this.finishMoment(true);
       this.progress();
       if (this.respawnIn !== null) {
         this.respawnIn -= dt;
@@ -188,9 +209,13 @@ export class SessionRound {
     for (const m of this.modes) m.fixedUpdate?.(dt, intent);
   }
 
-  /** The modes' overlays over the level. */
-  draw(ui: UiCanvas, camera: Camera): void {
+  /** The modes' overlays over the level; in a moment, the seconds left to meet its goal. */
+  draw(ui: UiCanvas, camera: Camera, top = 4): void {
     for (const m of this.modes) m.draw?.(ui, camera);
+    if (this.moment && this.phase === 'playing' && this.info) {
+      const left = Math.max(0, Math.ceil(this.info.limitMs / 1000 - this.playTime));
+      ui.text(ui.w / 2, top, t('round.moment_left', { count: left }), { align: 'center', color: left <= 3 ? 'red' : 'white', shadow: 'ink' });
+    }
   }
 
   /** Score for the hub's board: kills, and the boss's lost life (it weighs most). */
@@ -205,14 +230,18 @@ export class SessionRound {
     this.countdown = 0;
   }
 
-  /** The hero fell: up again after a moment (a round never ends on a death). */
+  /** The hero fell: up again after a moment (a round never ends on a death); a moment is failed. */
   heroDied(): void {
+    if (this.moment) {
+      if (this.playing && this.outcome === null) this.finishMoment(false);
+      return;
+    }
     if (this.playing && this.respawnIn === null) this.respawnIn = RESPAWN_SECONDS;
   }
 
-  /** The boss fell: this player's round is over (parallel and ghost report their time). */
+  /** The boss fell: this player's round is over (parallel and ghost report their time). A moment's own goal says when it is over. */
   cleared(): void {
-    if (this.clearedAt !== null || !this.playing) return;
+    if (this.clearedAt !== null || !this.playing || this.moment) return;
     this.clearedAt = this.session.time();
     this.phase = 'over';
     if (this.mode !== 'shared-world') this.report(true);
@@ -228,17 +257,35 @@ export class SessionRound {
     return null;
   }
 
+  /**
+   * The moment is over for this player: cleared (its goal met; at time-up, one whose goal is to
+   * last) or failed (the hero fell; at time-up, any other). Reported once, at the hub's time then
+   * (a replay has no hub clock: its game time, sent nowhere).
+   */
+  private finishMoment(won: boolean): void {
+    if (this.outcome !== null || !this.moment || !this.info) return;
+    this.outcome = won ? 'cleared' : 'failed';
+    this.phase = 'over';
+    this.reported = true;
+    const now = this.session.time();
+    const time = Math.round(Math.min(this.info.limitMs, Math.max(0, Number.isFinite(now) ? now : this.playTime * 1000)));
+    this.session.result({ won, time, stats: { [t('round.stat.kills')]: this.host.session.kills } });
+    this.host.banner(won ? t('round.moment_cleared') : t('round.moment_failed'), momentGoal(this.moment), 3);
+    if (won) this.host.ctx.audio.play('rl.clear');
+  }
+
   private progress(): void {
-    if (this.mode === 'shared-world' || this.reported) return;
+    if (this.mode === 'shared-world' || this.mode === 'moments' || this.reported) return;
     const kills = this.host.session.kills;
     this.session.progress(this.score(), t('round.kills', { count: kills })); // the hub shows it as written: in the player's language
   }
 
   /** Parallel and ghost: the result, once (a clear time, or the score when time ran out). */
   report(clear: boolean): void {
-    if (this.reported || this.mode === 'shared-world') return;
+    if (this.reported || this.mode === 'shared-world' || this.mode === 'moments') return;
     this.reported = true;
-    const stats = { kills: this.host.session.kills, deaths: this.host.session.deaths, depth: this.depth };
+    // the results show the stats' names as written: in the player's language
+    const stats = { [t('round.stat.kills')]: this.host.session.kills, [t('round.stat.deaths')]: this.host.session.deaths, [t('round.stat.depth')]: this.depth };
     if (clear && this.clearedAt !== null && Number.isFinite(this.clearedAt)) this.session.result({ time: Math.max(0, Math.round(this.clearedAt)), stats });
     else this.session.result({ score: this.score(), stats });
   }
@@ -256,7 +303,9 @@ export class SessionRound {
       this.players = this.players.filter((id) => id !== e.id);
       for (const m of this.modes) m.leave?.(e.id);
     } else if (e.type === 'time-up') {
-      if (this.mode !== 'shared-world') this.report(false);
+      // a moment still going: cleared when its goal is to last until time runs out, failed otherwise
+      if (this.moment) this.finishMoment(this.moment.clear === 'survive' && this.outcome === null && this.phase === 'playing');
+      else if (this.mode !== 'shared-world') this.report(false);
       else if (this.clearedAt === null) for (const m of this.modes) m.timeUp?.();
     } else if (e.type === 'end') {
       this.phase = 'ended';

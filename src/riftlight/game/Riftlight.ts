@@ -31,14 +31,14 @@ import type { Menu } from '../ui/menu';
 import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
 import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
-import { bubble, Floaters, hitbox, lootLabel } from '../ui/world';
+import { beacon, bubble, Floaters, hitbox, lootLabel } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
 import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MENU_BINDINGS, MOUSE, Pointer, type PointerState } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
-import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
+import { type DevFlags, type HeroIntent, type HeroPort, ITEM_GROUP, type LevelHandle, type MonsterHandle, type Panel, type PanelHost, type RiftlightPorts, type ShellServices, type WorldLoot } from './ports';
 import { addGemXp } from '../loot/sockets';
 import { addXp, applyDeath, emptyStats, formatTime, killXp, levelTitle, recordClear, unlockedDepths, xpFraction } from './progress';
 import { RecapTracker, type RecapState } from './recap';
@@ -54,6 +54,7 @@ import { PropTarget } from '../levels/mechanics/common';
 import { HubSession } from '../../engine';
 import { type RoundCommand, type RoundHost, type RoundMode, SessionRound } from '../session/round';
 import { GhostMode, type GhostHost } from '../session/ghosts';
+import { type MomentSpec, momentSpot } from '../session/moments';
 import { ClientWorld, HostWorld, type SharedShell } from '../session/shared';
 import { LevelStage } from '../wire/levels';
 import { lang, pageLanguage, t } from '../lang';
@@ -68,6 +69,9 @@ export type Screen = 'title' | 'town' | 'level' | 'loading';
  * zooms out by this much so the fight around the hero fits.
  */
 export const CAMERA = { title: 1.0, town: 1.22, level: 1.08, lead: 0.22, leadMax: 1.6, portrait: 0.8 } as const;
+
+/** A moment's spot to escape to is reached this close (metres), shown as a ring that wide. */
+const MOMENT_REACH = 1.5;
 
 interface MutableIntent {
   move: { x: number; z: number };
@@ -184,7 +188,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** New runs' seed when none is given: the `seed` option, else the page's `?seed=` (else the clock: a new run each time). */
   private readonly seed: number | null;
   /**
-   * An AI Hub round (docs/game/session.md): the page opens straight into it. Null outside a session
+   * A 52in1 round (docs/game/session.md): the page opens straight into it. Null outside a session
    * (a replay of a recorded round makes one when the round's command plays: `HubSession.offline`).
    */
   round: SessionRound | null;
@@ -650,7 +654,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const deeper = recordClear(this.save, depth, this.levelTime);
     if (!this.clearEmitted) this.events.emit('levelClear', { depth, time: this.levelTime });
     this.ctx.audio.play('rl.clear');
-    if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
+    if (this.round?.moment) {
+      // a moment says its own cleared or failed (session/round.ts)
+    } else if (this.round) this.banners.push('clear', t('round.cleared'), t('round.cleared_in', { time: formatTime(this.levelTime) }));
     else this.banners.push('clear', t('banner.clear'), deeper ? t('banner.clear.unlocked', { time: formatTime(this.levelTime) }) : formatTime(this.levelTime));
     this.hero.emote('victory');
     this.playMusic('level');
@@ -675,6 +681,41 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.hero.snap?.(at, Math.PI);
       this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(0.9));
     }
+  }
+
+  /** A moment's targets (its monsters) and, to escape, its spot: set up by `startMoment`. */
+  momentAim: { readonly targets: readonly MonsterHandle[]; readonly spot: Vector3 | null } | null = null;
+
+  /**
+   * A moment's set-up (session/moments.ts): a fresh hero at the moment's level on `seed`, straight
+   * into its level, standing `back` metres short of its targets on the way in and facing them. The
+   * same on every copy: the level's design places the targets, the layout the spot.
+   */
+  async startMoment(moment: MomentSpec, seed: number): Promise<void> {
+    this.newRun(0, seed);
+    for (let l = 1; l < moment.heroLevel; l++) this.devGive('level');
+    this.feed = [];
+    await this.enterDepth(moment.depth);
+    const level = this.level;
+    if (!level) return;
+    const want = moment.target;
+    const targets = level.monsters().filter((m) => ('boss' in want ? m.rank === 'boss' : m.pack !== undefined && want.packs.includes(m.pack)));
+    if (!targets.length) throw new Error(`moment ${moment.id}: no ${'boss' in want ? 'boss' : `pack ${want.packs.join(', ')}`} in level ${moment.depth}`);
+    const aim = targets.reduce((sum, m) => sum.add(m.actor.position), new Vector3()).multiplyScalar(1 / targets.length);
+    const s = momentSpot(level.layout, aim, moment.back);
+    const at = new Vector3(s.x, level.start.y, s.z);
+    this.hero.snap?.(at, Math.atan2(aim.x - at.x, aim.z - at.z));
+    this.ctx.engine.camera.teleport(this.camTarget.copy(at).setY(0.9));
+    const away = moment.clear === 'escape' ? momentSpot(level.layout, aim, moment.away ?? moment.back * 2) : null;
+    this.momentAim = { targets, spot: away ? new Vector3(away.x, level.start.y, away.z) : null };
+  }
+
+  /** The moment's goal is met: its targets fallen, or (to escape) the hero at its spot. */
+  momentMet(): boolean {
+    const aim = this.momentAim;
+    if (!aim || this.dead) return false;
+    if (aim.spot) return Math.hypot(aim.spot.x - this.hero.actor.position.x, aim.spot.z - this.hero.actor.position.z) <= MOMENT_REACH;
+    return aim.targets.every((m) => !m.actor.alive);
   }
 
   /** Where a seat stands at the level's start (seats spread out, so four heroes aren't one), or null for the start itself. */
@@ -1629,7 +1670,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         for (const t of this.level.telegraphs()) hitbox(ui, cam, t.at, t.radius, 'orange');
       }
       this.floaters.draw(ui, cam, layout);
-      this.round?.draw(ui, cam);
+      // a moment's spot to escape to: a ring on the ground (an arrow at the edge while it is off screen)
+      const spot = this.momentAim?.spot;
+      if (spot && this.round?.phase !== 'over') beacon(ui, cam, spot, MOMENT_REACH, 'cyan', this.time);
+      this.round?.draw(ui, cam, model.boss ? 28 : 6); // the seconds left, under the boss's bar
     }
     drawHud(ui, model, layout);
     // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
@@ -1854,7 +1898,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.dead,
       this.cleared,
       `${at(hero.position)} ${this.hero.actor instanceof Actor ? this.hero.actor.facing : ''} ${hero.life} ${hero.mana}`,
-      ...(this.round ? [`round ${this.round.phase} ${this.round.depth} ${this.round.respawnIn ?? ''} ${this.round.clearedAt !== null}`] : []),
+      ...(this.round ? [`round ${this.round.phase} ${this.round.depth} ${this.round.respawnIn ?? ''} ${this.round.clearedAt !== null}${this.round.moment ? ` ${this.round.moment.id} ${this.round.outcome}` : ''}`] : []),
       ...(this.level?.monsters() ?? []).map((m) => `${m.actor.id} ${at(m.actor.position)} ${m.actor instanceof Actor ? m.actor.facing : ''} ${m.actor.life}`),
       ...this.ports.loot.ground().map((l) => `${l.id} ${at(l.position)}`),
       this.town.fingerprint(),

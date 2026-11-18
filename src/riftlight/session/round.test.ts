@@ -1,9 +1,10 @@
-// A session round played headless: the real game against the AI Hub in memory (engine LocalHub).
+// A session round played headless: the real game against 52in1 in memory (engine LocalHub).
 import { afterEach, describe, expect, it } from 'vitest';
 import { HubSession, type HubMode, LocalHub } from '../../engine';
 import { Riftlight } from '../game/Riftlight';
 import { SaveStore } from '../game/save';
 import { type HeadlessRiftlight, headlessRiftlight, settle } from '../headless';
+import { t } from '../lang';
 import { RESPAWN_SECONDS, roundDepth, roundHeroLevel } from './round';
 
 const T = 60_000;
@@ -100,7 +101,7 @@ describe('a session round', () => {
       expect(r.game.layer.has('loot')).toBe(false);
       const result = r.hub.results.get(0)!;
       expect(result.time).toBeGreaterThan(5000);
-      expect(result.stats).toMatchObject({ kills: r.game.session.kills, depth: 1 });
+      expect(result.stats).toEqual({ [t('round.stat.kills')]: r.game.session.kills, [t('round.stat.deaths')]: 0, [t('round.stat.depth')]: 1 }); // named in the player's language
       expect(r.hub.progress.get(0)!.score).toBeGreaterThan(0);
       expect(r.hub.client(0).stats.sent).toBe(0); // parallel copies send nothing
       expect(r.engine.errors).toEqual([]);
@@ -127,7 +128,7 @@ describe('a session round', () => {
       // the hub calls time: a score (not a time) goes back at once
       r.hub.timeUp();
       await r.frame(2);
-      expect(r.hub.results.get(0)).toMatchObject({ score: expect.any(Number), stats: { deaths: 1 } });
+      expect(r.hub.results.get(0)).toMatchObject({ score: expect.any(Number), stats: { [t('round.stat.deaths')]: 1 } });
       expect(r.hub.results.get(0)!.time).toBeUndefined();
       r.hub.end();
       await r.frame(2);

@@ -188,3 +188,36 @@ export function hitbox(ui: UiCanvas, camera: Camera, at: Vector3, radius: number
     if (p) ui.rect(p.x, p.y, 1, 1, color);
   }
 }
+
+/**
+ * A spot to get to (a moment's escape): on screen, a ring on the ground (breathing) with a chevron
+ * bobbing over it; off screen, an arrowhead at the screen's edge pointing the way. Drawn in art pixels,
+ * big enough to read from across a room.
+ */
+export function beacon(ui: UiCanvas, camera: Camera, at: Vector3, radius: number, color: PaletteColor, time: number): void {
+  const p = project(at, camera, ui, { x: 0, y: 0 });
+  if (!p) return;
+  const m = 18;
+  if (p.x >= m && p.x <= ui.w - m && p.y >= m && p.y <= ui.h - m) {
+    for (const r of [radius, radius * (0.6 + 0.15 * Math.sin(time * 4))]) {
+      for (let i = 0; i < 32; i++) {
+        const a = (i / 32) * Math.PI * 2;
+        const q = project(v.set(at.x + Math.cos(a) * r, at.y + 0.05, at.z + Math.sin(a) * r), camera, ui);
+        if (q) ui.rect(q.x, q.y, 2, 1, color);
+      }
+    }
+    const y = p.y - 22 + Math.round(Math.sin(time * 5) * 2);
+    for (let i = 0; i < 5; i++) ui.rect(p.x - 5 + i, y + i, 11 - i * 2, 1, color);
+    return;
+  }
+  // an arrowhead on the edge, its tip toward the spot
+  const cx = ui.w / 2;
+  const cy = ui.h / 2;
+  const d = Math.hypot(p.x - cx, p.y - cy) || 1;
+  const dx = (p.x - cx) / d;
+  const dy = (p.y - cy) / d;
+  const k = Math.min((cx - m) / Math.max(1e-6, Math.abs(dx)), (cy - m) / Math.max(1e-6, Math.abs(dy))) - 2 + Math.sin(time * 6) * 2;
+  const tx = cx + dx * k;
+  const ty = cy + dy * k;
+  for (let s = 0; s <= 12; s++) for (let t = -s; t <= s; t++) ui.rect(Math.round(tx - dx * s - dy * t * 0.7), Math.round(ty - dy * s + dx * t * 0.7), 2, 2, color);
+}

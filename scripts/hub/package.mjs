@@ -1,6 +1,6 @@
-// npm run hub -- --model <name> [--effort <level>] [--mode <mode>] [--out <dir>] [--offline] [--keep]
+// npm run hub -- --model <name> [--effort <level>] [--out <dir>] [--offline] [--keep]
 //
-// Riftlight's AI Hub package (AI Hub Catalogue v1, docs/game/hub.md), laid out the way the hub is:
+// Riftlight's 52in1 package (AI Hub Catalogue v1, docs/game/hub.md), laid out the way the hub is:
 //
 //   <dir>/games/riftlight-v<version>.<build>.html  the hand-over build: every translation, the model
 //                                                  that built it (<build>: the commit's UTC time,
@@ -15,7 +15,7 @@
 //   3. a browser: the picture reaches every edge at 1600×900, 2100×900 and 1200×900; ?lang=en-XA,
 //      zh-XC and ar-XB set <html lang> and draw only test-language text on the title and in town
 //      (`__PIXEL_TEXT_LOG__`: a word that isn't a line fails); nothing logs an error
-//   2. the session harness: the protocol's runs (its *Test it*) for the mode the page declares
+//   2. the session harness: the protocol's runs (its *Test it*) for every online mode the page names
 //   1. the hub's checker (scripts/hub/catalogue-check.mjs, vendored unmodified) on the folder
 //
 // and exits 1 if any fails. Pictures of the browser checks go to <dir>-checks/ (never the package).
@@ -23,23 +23,22 @@
 //   --model <name>      the model that wrote the game, as its maker names it (hub:model; required to
 //                       build; never stored in the repo)
 //   --effort <level>    its effort setting (hub:effort: low, medium, high, xhigh, max, ultra)
-//   --mode <mode>       the session mode the page declares (default scripts/hub/riftlight.mjs DEFAULT_MODE)
 //   --out <dir>         the package folder (default .scratch/hub-package; emptied first, and refused
 //                       if it holds anything but a package's games/ and covers/)
 //   --offline           the checker skips comparing the game with the wall's
 //   --keep              keep the built page: take the covers and run the checks again (the page's own
-//                       hub:model, hub:effort and mode stand; flags that differ are an error)
+//                       hub:model and hub:effort stand; flags that differ are an error)
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readdir, readFile, rm } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { launchChromium } from '../browser.mjs';
-import { harness, protocolRuns, serve } from '../e2e-hub.mjs';
+import { HARNESS_FILES, harness, pageModes, protocolRuns, serve } from '../e2e-hub.mjs';
 import { strays } from '../lang-strays.mjs';
 import { helpExit } from '../manual.mjs';
 import { engineReady } from '../page.mjs';
-import { MODES } from './riftlight.mjs';
+import { readHead } from './head.mjs';
 
 helpExit(import.meta.url);
 
@@ -58,6 +57,7 @@ const fail = (message) => {
 };
 
 const SLUG = 'riftlight';
+if (argv.includes('--mode')) fail('--mode is gone: the page offers every online mode (hub:multiplayer), and the harness plays each');
 const keep = argv.includes('--keep');
 const out = resolve(opt('out') ?? join(root, '.scratch/hub-package'));
 const covers = join(out, 'covers', SLUG);
@@ -66,26 +66,15 @@ if (existsSync(out)) {
   if (other.length || out === resolve(root)) fail(`${out} holds ${other.join(', ') || 'the repository'}: not a package folder (give a new or empty one)`);
 }
 
-/** A page's `<meta name content>` tags, by name. */
-const metaTags = (html) => {
-  const tags = {};
-  for (const [m] of html.matchAll(/<meta\b[^>]*>/gi)) {
-    const name = /\bname="([^"]*)"/.exec(m)?.[1];
-    const content = /\bcontent="([^"]*)"/.exec(m)?.[1];
-    if (name && content !== undefined) tags[name] = content.replace(/&quot;/g, '"').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-  }
-  return tags;
-};
-
 // 1. The page: built (or, with --keep, the one already there).
 let page;
 if (keep) {
   const pages = existsSync(join(out, 'games')) ? (await readdir(join(out, 'games'))).filter((f) => f.endsWith('.html')) : [];
   if (pages.length !== 1) fail(`--keep: ${join(out, 'games')} holds ${pages.length} pages, not one (build without --keep)`);
   page = join(out, 'games', pages[0]);
-  const tags = metaTags(await readFile(page, 'utf8'));
-  for (const [flag, tag] of [['model', 'hub:model'], ['effort', 'hub:effort'], ['mode', 'hub:session-mode']]) {
-    if (opt(flag) !== undefined && opt(flag) !== tags[tag]) fail(`--keep: the page's ${tag} is ${JSON.stringify(tags[tag] ?? null)}, not ${JSON.stringify(opt(flag))} (build without --keep)`);
+  const head = readHead(await readFile(page, 'utf8'));
+  for (const [flag, tag] of [['model', 'hub:model'], ['effort', 'hub:effort']]) {
+    if (opt(flag) !== undefined && opt(flag) !== head.one(tag)) fail(`--keep: the page's ${tag} is ${JSON.stringify(head.one(tag) ?? null)}, not ${JSON.stringify(opt(flag))} (build without --keep)`);
   }
 } else {
   const model = opt('model');
@@ -97,13 +86,12 @@ if (keep) {
   await mkdir(join(out, 'games'), { recursive: true });
   const args = ['tsx', 'scripts/build-single.mjs', '--translations', '--model', model, '--out', page];
   if (opt('effort')) args.push('--effort', opt('effort'));
-  if (opt('mode')) args.push('--mode', opt('mode'));
   const built = spawnSync('npx', args, { cwd: root, stdio: 'inherit' });
   if (built.status !== 0) fail(`build:single failed (${built.error?.message ?? `exit ${built.status ?? built.signal}`})`);
 }
-const declared = metaTags(await readFile(page, 'utf8'))['hub:session-mode'];
+const offer = pageModes(await readFile(page, 'utf8'));
 const problems = [];
-if (!MODES.includes(declared)) problems.push(`the page declares the session mode ${JSON.stringify(declared ?? null)}: one of ${MODES.join(', ')}`);
+if (!offer.modes.length) problems.push('the page names no online mode (hub:multiplayer, hub:session-mode)');
 
 await rm(covers, { recursive: true, force: true });
 await mkdir(covers, { recursive: true });
@@ -240,21 +228,21 @@ try {
   await browser.close();
 }
 
-// 4. The session harness (the catalogue's *Checks*, 2): the protocol's runs for the page's mode, on
-// the hand-over page itself (the `hub` e2e suite runs a shorter set in every mode on development builds).
-if (MODES.includes(declared)) {
+// 4. The session harness (the catalogue's *Checks*, 2): the protocol's runs for every online mode the
+// page names, on the hand-over page itself (the `hub` e2e suite runs a shorter set on development builds).
+if (offer.modes.length) {
   const bench = join(shots, 'harness') + '/';
   await mkdir(bench, { recursive: true });
-  for (const f of ['harness.html', 'bridge.js', 'round.js']) await copyFile(join(root, 'scripts/hub/harness', f), join(bench, f));
+  for (const f of HARNESS_FILES) await copyFile(join(root, 'scripts/hub/harness', f), join(bench, f));
   await copyFile(page, join(bench, 'game.html'));
   const port = Number(process.env.HUB_PORT) || 4795;
   const server = await serve(pathToFileURL(bench), port);
   browser = await launchChromium();
   try {
-    for (const q of protocolRuns(declared)) {
+    for (const q of protocolRuns(offer)) {
       const r = await harness(browser, `http://localhost:${port}/harness.html?game=game.html&${q}&auto=1`);
-      if (!r.pass) problems.push(`the session harness, ${declared} ${q}: ${r.error ?? r.bad.join('; ')}`);
-      console.log(`${r.pass ? '✓' : '✗'} the session harness: ${declared} ${q}${r.pass ? ` (${r.checks} checks)` : ''}`);
+      if (!r.pass) problems.push(`the session harness, ${q}: ${r.error ?? r.bad.join('; ')}`);
+      console.log(`${r.pass ? '✓' : '✗'} the session harness: ${q}${r.pass ? ` (${r.checks} checks)` : ''}`);
     }
   } finally {
     await browser.close();

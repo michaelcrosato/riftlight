@@ -221,7 +221,7 @@ export interface HeroPort {
 }
 
 export interface HeroFactory {
-  /** `phantom`: another player's hero in an AI Hub round, touching nothing in this copy (docs/game/session.md). */
+  /** `phantom`: another player's hero in a 52in1 round, touching nothing in this copy (docs/game/session.md). */
   create(services: ShellServices, save: SaveData['hero'], options?: { readonly phantom?: boolean }): Promise<HeroPort>;
 }
 
@@ -333,6 +333,8 @@ export interface MonsterHandle {
   readonly name: string;
   readonly rank: Rank;
   readonly genome: Genome;
+  /** The level plan's pack it was made for (`LevelPlan.packs` id); undefined for the boss, adds and spawns. */
+  readonly pack?: number;
   /** The attack it is winding up, if any. */
   telegraph(): Telegraph | null;
   fixedUpdate(dt: number, ai: { hero: ActorLike; enabled: boolean }): void;
