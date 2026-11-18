@@ -164,11 +164,12 @@ export const PAGES = ['inventory', 'skills', 'tree', 'character', 'codex'] as co
 export type Page = (typeof PAGES)[number];
 
 /**
- * A DualSense's touchpad swipes page the ring: 52in1 lets games read its touchpad, and the game
- * does (`input.touchpad`). Prompts then draw a swipe beside L1 / R1 (`UiCanvas.touchpad`).
+ * A DualSense's touchpad swipes page player 1's ring: 52in1 lets games read its touchpad, the game
+ * does (`input.touchpad`), and the DualSense is not a couch guest's (`input.dualSenseGuest`: its
+ * swipes are that guest's). Prompts then draw a swipe beside L1 / R1 (`UiCanvas.touchpad`).
  */
 export function touchpadSwipes(engine: Engine): boolean {
-  return engine.input.touchpad && engine.hubSettings.values.dualsense.touchpad;
+  return engine.input.touchpad && engine.hubSettings.values.dualsense.touchpad && !engine.input.dualSenseGuest;
 }
 
 /** The pad's controls that page the ring, as prompts draw them: L1 / R1, and the touchpad's swipes while they do (`touchpadSwipes`). */

@@ -580,7 +580,7 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
     expect([...frame(a(0.5)), ...frame(b(0.5)), ...frame()]).toEqual([]); // one lifted as another landed, in one poll
   });
 
-  it('a couch guest’s DualSense (its `id`) swipes on its own pad, recorded and replayed, never on player 1’s; its turns never turn player 1', () => {
+  it('a couch guest’s DualSense (its `id`) swipes on its own pad, recorded and replayed, never on player 1’s; its turns never turn player 1; `dualSenseGuest` says so', () => {
     const input = new Input(null);
     let touches: Finger[] = [];
     let turning = { x: 0, y: 0, z: 0 };
@@ -601,7 +601,7 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
       input.beginFrame(t, 1 / 60, list);
       frames.push(input.snapshot(1 / 60, memory));
       const pressed = (r: { wasPressed(...c: string[]): boolean }) => Object.values(TOUCHPAD_KEYS).filter((c) => r.wasPressed(c));
-      const out = { p1: pressed(input), guest: pressed(input.player(1)), turn: input.motionTurn.x, device: input.device };
+      const out = { p1: pressed(input), guest: pressed(input.player(1)), turn: input.motionTurn.x, device: input.device, isGuests: input.dualSenseGuest };
       input.endFrame();
       return out;
     };
@@ -609,19 +609,20 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
     const swipe = (list: GamepadLike[]) => {
       const seen = [0.2, 0.4, 0.6, 0.8].map((x) => frame(list, a(x)));
       seen.push(frame(list));
-      return { p1: seen.flatMap((f) => f.p1), guest: seen.flatMap((f) => f.guest), turn: seen.reduce((s, f) => s + f.turn, 0), device: seen.at(-1)!.device };
+      return { p1: seen.flatMap((f) => f.p1), guest: seen.flatMap((f) => f.guest), turn: seen.reduce((s, f) => s + f.turn, 0), device: seen.at(-1)!.device, isGuests: seen.every((f) => f.isGuests) };
     };
     // the DualSense joins as player 2; player 1 is on the keyboard
-    frame(pads());
+    expect(frame(pads()).isGuests, 'nobody joined: player 1’s DualSense').toBe(false);
     input.joined.add(1);
     input.noteDevice('keyboard');
     turning = { x: 0, y: -64, z: 0 };
-    expect(swipe(pads()), 'the guest’s swipe: its own, player 1’s device untouched').toEqual({ p1: [], guest: ['PadTouchpadRight'], turn: 0, device: 'keyboard' });
+    expect(swipe(pads()), 'the guest’s swipe: its own, player 1’s device untouched; `dualSenseGuest` says so').toEqual({ p1: [], guest: ['PadTouchpadRight'], turn: 0, device: 'keyboard', isGuests: true });
+    expect(JSON.stringify(frames), '`dualSenseGuest` is presentation: never recorded').not.toMatch(/guest/i);
     const at = frames.findIndex((f) => f.padPressed?.some(([slot, ...codes]) => slot === 1 && codes.includes('PadTouchpadRight')));
     expect([at >= 0, frames.some((f) => f.pressed?.includes('PadTouchpadRight'))], 'recorded with its pad, not player 1’s').toEqual([true, false]);
     // player 1 picks up the Xbox pad: the guest's DualSense turning never turns player 1's aim
     frame(pads([3]));
-    expect(swipe(pads()), 'player 1 on a pad: still the guest’s alone').toEqual({ p1: [], guest: ['PadTouchpadRight'], turn: 0, device: 'pad' });
+    expect(swipe(pads()), 'player 1 on a pad: still the guest’s alone').toEqual({ p1: [], guest: ['PadTouchpadRight'], turn: 0, device: 'pad', isGuests: true });
     // replayed: the guest's swipe presses on its pad again
     const again = new Input(null);
     let rt = 0;
@@ -630,17 +631,17 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
       rt += f.dt;
       again.beginFrame(rt, f.dt, []);
       again.playAfter(f);
-      const out = [again.player(1).wasPressed('PadTouchpadRight'), again.wasPressed('PadTouchpadRight')];
+      const out = [again.player(1).wasPressed('PadTouchpadRight'), again.wasPressed('PadTouchpadRight'), again.dualSenseGuest];
       again.endFrame();
       return out;
     });
-    expect(replayed[at], 'replayed on the guest’s pad').toEqual([true, false]);
+    expect(replayed[at], 'replayed on the guest’s pad (`dualSenseGuest` false: a replay never reads the DualSense)').toEqual([true, false, false]);
     // the DualSense plays player 1 again (it left), or no pad's id names it: player 1's, as ever
     input.joined.delete(1);
-    expect(swipe(pads()), 'not joined: player 1’s').toMatchObject({ p1: ['PadTouchpadRight'], guest: [] });
+    expect(swipe(pads()), 'not joined: player 1’s').toMatchObject({ p1: ['PadTouchpadRight'], guest: [], isGuests: false });
     expect(swipe(pads()).turn, 'its turns turn player 1').toBeGreaterThan(0);
     input.joined.add(1);
-    expect(swipe(pads([], false)), 'no id names it: player 1’s').toMatchObject({ p1: ['PadTouchpadRight'], guest: [] });
+    expect(swipe(pads([], false)), 'no id names it: player 1’s').toMatchObject({ p1: ['PadTouchpadRight'], guest: [], isGuests: false });
   });
 
   it("the pad's click held is no tap", () => {

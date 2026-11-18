@@ -54,12 +54,14 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   inventory, skills, tree, character, codex): L1 / R1 or Q / E page through it in place (a pause
   menu under them stays), and so does a swipe left or right on a DualSense's touchpad through 52in1
   (`input.touchpad`: its gestures are recorded input; the legend, the strip and the tree's bar draw
-  the swipes beside L1 / R1 while 52in1 lets the game read the touchpad, `touchpadSwipes`; outside
-  52in1, or with its touchpad off, only the press reaches the game, as the map), a strip across the
+  the swipes beside L1 / R1 while 52in1 lets the game read the touchpad and the DualSense is not a
+  couch guest's, `touchpadSwipes`; outside 52in1, or with its touchpad off, only the press reaches
+  the game, as the map), a strip across the
   top names them (each a button for the mouse; the
   tree's view covers the screen, so its own bottom bar names them: the shell passes the TreeView
   `pages`, and it leaves Q / E to the game instead of zooming with them); in the
-  stash, the vendor and the bench they are those windows' tabs, as are Tab and L2 / R2 everywhere.
+  stash, the vendor and the bench they (and the swipes, drawn in their legend) are those windows'
+  tabs, as are Tab and L2 / R2 everywhere.
 - **The mouse in the world** (the ARPG way): a townsperson, the stash, a showcase piece, a loot
   label or the open portal under the mouse shows what a click does there (`thingLabel`, the mouse's
   glyph and the prompt, under the thing near the top of the screen); a click does it in reach, else

@@ -497,6 +497,17 @@ export class Input {
    * guest's DualSense (its pad `joined`, told by its `id`) presses on that pad alone (`player(slot)`).
    */
   touchpad = false;
+  /**
+   * Couch co-op: the DualSense 52in1 reads is a guest's (every pad whose `id` names one has
+   * `joined`), so its touchpad presses on that guest's pad (`touchpad`) and its turns never reach
+   * player 1 (`motion`): player 1's prompts leave its gestures out. Set by each poll. Presentation
+   * only: never recorded, and false in a replay (which never reads `dualsense`), so nothing a replay
+   * must repeat may depend on it.
+   */
+  get dualSenseGuest(): boolean {
+    return this._dualSenseGuest;
+  }
+  private _dualSenseGuest = false;
   /** The finger on the touchpad that may be a gesture (`touchpad`). */
   private pad1: { id: number; x0: number; y0: number; x: number; y: number; t: number; spoilt: boolean } | null = null;
   /** Two fingers or the touchpad's click were seen since the pad was last bare: nothing ending before it is bare again is a gesture. */
@@ -1497,6 +1508,7 @@ export class Input {
     // a couch guest's DualSense (`dualSenseGuests`) presses on that guest's own pad, never player 1's
     const ds = this._playing ? null : this.dualsense;
     const guests = ds ? this.dualSenseGuests(list) : null;
+    this._dualSenseGuest = !!guests;
     let gesture: TouchpadGesture | null = null;
     if (ds?.touchpad && this.touchpad) gesture = this.touchpadFrame(ds.touches(), dt, down.has('PadTouchpad') || !!guests?.some((s) => this.pads[s]?.held.has('PadTouchpad')));
     else {

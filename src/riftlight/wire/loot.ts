@@ -565,10 +565,10 @@ export class ItemsPanel implements Panel {
     return this.loot.active === this && this.loot.itemsUi().covers(x, y);
   }
 
-  /** Under the windows: select and back, and the controls that switch the stash's or the vendor's tabs (L1 R1, Q E). */
+  /** Under the windows: select and back, and the controls that switch the stash's or the vendor's tabs (L1 R1, Q E, and a DualSense's swipes while they page: `touchpadSwipes`). */
   legend(): LegendItem[] {
     const tabs = this.loot.active === this && this.loot.itemsUi().tabbed();
-    return [...menuLegend(), ...(tabs ? [{ actions: ['page_prev', 'page_next'] as const, label: t('legend.tabs') }] : [])];
+    return [...menuLegend(), ...(tabs ? [{ actions: ['page_prev', 'page_next'] as const, touchpad: ['page_swipe_prev', 'page_swipe_next'] as const, label: t('legend.tabs') }] : [])];
   }
 
   legendAt(w: number, avoid: readonly LegendAvoid[]): { x: number; y: number } | null {
