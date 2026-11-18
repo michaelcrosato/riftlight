@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
-import { RESOLUTIONS, type PlayerSettings } from '../../engine';
+import { Lang, RESOLUTIONS, textWidthPx, type PlayerSettings } from '../../engine';
 import { languageName } from '../../engine';
+import { installLanguage, riftlightLines } from '../lang';
+import { riftlightTranslations } from '../lang/translations';
+import { UiCanvas } from './kit';
 import { engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
 import { titleMenu } from './menus';
 
@@ -67,14 +70,18 @@ describe("the settings' engine page", () => {
     const chosen: PlayerSettings = {};
     const audio = { muted: false, setMuted: (m: boolean) => (audio.muted = m), volume: { master: 1, music: 1, sfx: 1 }, setVolume: () => {} };
     const rumbles: unknown[] = [];
+    /** 52in1's DualSense: whether games may read its motion (the motion aim rows show then). */
+    const dualsense = { motion: false };
     const engine = {
       settings: { values: chosen, set: (p: PlayerSettings) => Object.assign(chosen, p) },
       input: { rumble: (r: unknown) => rumbles.push(r) },
+      hubSettings: { values: { dualsense } },
+      get motionOn() { return dualsense.motion && chosen.motion !== false; },
       renderer: { get mode() { return chosen.pixelArt === false ? 'raw' : 'pixel'; }, get baseResolution() { return chosen.pixelSize === 'chunky' ? RESOLUTIONS.compare : RESOLUTIONS.default; } },
       get maxFps() { return chosen.fps ?? 60; },
       get debugShown() { return chosen.debugInfo ?? false; },
     };
-    return { chosen, audio, rumbles, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
+    return { chosen, audio, rumbles, dualsense, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
   };
   type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void };
   const row = (menu: { items(): readonly unknown[] }, id: string) => menu.items().find((w) => (w as Row).id === id) as Row;
@@ -92,6 +99,59 @@ describe("the settings' engine page", () => {
     expect(row(menu, 'vibration').get!()).toBe(1);
     row(menu, 'vibration').set!(0.42 as never);
     expect([chosen.vibration, rumbles.length]).toEqual([0.4, 1]); // in steps of 0.05, and a pulse to feel it
+  });
+
+  it('motion aim and its sensitivity are there while 52in1 lets games read a DualSense’s motion, as the engine’s settings', () => {
+    const { chosen, dualsense, h } = engineHost();
+    const menu = () => settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    const ids = () => menu().items().map((w) => (w as Row).id);
+    expect(ids()).not.toContain('motion');
+    dualsense.motion = true;
+    expect(ids()).toEqual(expect.arrayContaining(['vibration', 'motion', 'motionSensitivity']));
+    expect(row(menu(), 'motion').get!()).toBe(true); // on by default (the engine's motionOn)
+    row(menu(), 'motion').set!(false as never);
+    expect([chosen.motion, row(menu(), 'motion').get!()]).toEqual([false, false]);
+    const s = row(menu(), 'motionSensitivity') as Row & { step: (u: number, d: 1 | -1) => number; format: () => string };
+    expect(s.get!()).toBeCloseTo((1 - 0.25) / 2.75, 9);
+    s.set!(s.step(s.get!() as number, 1) as never);
+    expect(chosen.motionSensitivity).toBe(1.25);
+    s.set!(1 as never);
+    expect(chosen.motionSensitivity).toBe(3);
+    s.set!(s.step(1, 1) as never); // past the end: held to it
+    expect(chosen.motionSensitivity).toBe(3);
+    s.set!(0.3 as never); // a drag: in its steps
+    expect(chosen.motionSensitivity).toBe(1);
+  });
+
+  it('in every stored language the motion rows fit the Settings menu: each label whole in its column, each hint whole on its line', () => {
+    const translations = riftlightTranslations();
+    /** Lines the menu cut short. */
+    const cut: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        const { dualsense, h } = engineHost();
+        dualsense.motion = true;
+        const menu = settingsMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+        for (const id of ['motion', 'motionSensitivity']) {
+          menu.focusId(id); // its hint shows under the rows
+          /** What the menu writes, as written (cut with a "." where it didn't fit). */
+          const drawn: string[] = [];
+          const hud = { width: 480, height: 270, rect() {}, sprite() {}, text: (_x: number, _y: number, s: string) => drawn.push(s), measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+          const ui = new UiCanvas(hud as never);
+          const mini = ui.mini.bind(ui);
+          ui.mini = (x, y, s, ...more) => (drawn.push(s), mini(x, y, s, ...more));
+          const { w, h: height } = menu.size; // its own width (240), as at 1920×1080 and on a phone held sideways
+          menu.draw(ui, { x: 0, y: 0, w, h: height });
+          const shown = row(menu, id) as Row & { label: string; hint: string };
+          if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
+          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint: ${shown.hint}`);
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(cut).toEqual([]);
   });
 
   it('the settings open it', () => {

@@ -45,6 +45,8 @@ export const NAMES: string[] = [
   'Mega Drive',
   'SNES',
   'C64',
+  // the games hub Riftlight plays in (its own settings, such as its Motion aim)
+  '52in1',
 ];
 
 export const BRIEF = [

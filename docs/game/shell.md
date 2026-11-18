@@ -117,7 +117,7 @@ playtime, best time per depth); `positions` (grid cells of the bag and the stash
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
 store, and the engine's own settings (the controller's button prompts and vibration on the Settings
-page; pixel art, pixel size, frame rate, debug info: Settings → Engine) in
+page, and motion aim and its sensitivity there while 52in1 lets games read a DualSense's motion; pixel art, pixel size, frame rate, debug info: Settings → Engine) in
 `pixel-engine:settings:riftlight`. Prompts follow the input used last (`engine.controls.device`: a
 touch names the keys while no touch controls show) by themselves, the HUD's glyphs as the lines'
 `{key:action}`: there is no setting for which device they show. The menus never read storage: they read `Riftlight.saves` (`SavesView`),
@@ -131,7 +131,7 @@ Typed as `RiftlightApi` (`game/api.ts`), installed in `Riftlight.ready` (it exis
 intent)`, `moveTo`, `fight` and the bot hold reaches the game as recorded input, never a write to
 it: the intent as `{ rl: 'intent' }`, for the frame it arrives in only, and what the bot does
 besides (a panel closed, home after a death or through the portal) as `{ rl: 'bot' }`
-(`Riftlight.agentInput`, taken once a frame before its first fixed step). So a bot run is in the
+(`Riftlight.agentInput`, taken once a frame before its first fixed step: `frameInput`). So a bot run is in the
 recording: restore a snapshot to start one (`engine.restore(await engine.snapshot())`) and it
 replays, `npm run replay` included, to the same fingerprint, then plays on as the live game would
 (`game/botReplay.test.ts`). Calls that change the game between frames are not input, so a replay

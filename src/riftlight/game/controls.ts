@@ -2,9 +2,9 @@
  * Input for Riftlight: one action map for keyboard, mouse, touch and gamepad.
  *
  *   move      WASD / arrows / left stick / touch joystick
- *   aim       mouse cursor on the ground; with a pad, the right stick with aim assist, else the nearest
- *             enemy ahead (the AI Hub's own Motion aim adds to the stick only while the controller turns;
- *             the engine's motion input, `settings: { motion: true }`, exists: Riftlight doesn't opt in yet)
+ *   aim       mouse cursor on the ground; with a pad, the right stick with aim assist, and motion aim (a
+ *             DualSense through 52in1: turning the controller turns the aim, `turnAim`), else the nearest
+ *             enemy ahead
  *   attack    LMB / J / pad Cross (A) / touch A          dodge   Space / pad Circle (B) / touch B
  *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
