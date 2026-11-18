@@ -86,7 +86,8 @@ const TRIGGER_WAKE = 0.05;
  * either order, are one controller seen twice (DS4Windows and Steam Input feed the virtual pad a
  * few milliseconds after the real one, so its press often lands a poll later, or a poll earlier);
  * `wait` (33 ms), how long a join waits for that twin's press while player 1 is on a pad. Each is a
- * poll at least (a slow frame's next poll is still within the window).
+ * poll at least (a slow frame's next poll is still within the window). Game time: slow motion
+ * (`timeScale`) and a hitstop lengthen both.
  */
 export const TWIN_SECONDS = { window: 0.05, wait: 0.033 } as const;
 /** Float slack on `TWIN_SECONDS` (polls of 1/60 s add up to 50 ms a hair over or under). */

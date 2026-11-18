@@ -42,7 +42,8 @@ for (const slot of ctx.input.joinedNow) seat(slot); // the pads that joined this
   while player 1's pad holds that code, does not join. So a join waits `TWIN_SECONDS.wait` (33 ms)
   while player 1 is on a pad, the pad driving nothing meanwhile; with player 1 on the keyboard it
   joins at once. Both are timed by the frames' `dt` (two polls of the wait at 60 fps, four at the
-  120 fps setting), a poll at least; the joins are recorded, so a replay never times them. A game
+  120 fps setting), a poll at least; that is game time, so slow motion (`timeScale`) and a hitstop
+  lengthen them. The joins are recorded, so a replay never times them. A game
   removes a pad that leaves with `joined.delete(slot)`; it then drives player 1 again.
 - **Recorded**: every joined pad on its own as `InputFrame.pads` (`PadFrame`: slot, held codes,
   sticks, triggers; left out while no joined pad changed), their presses as `padPressed`, and the
