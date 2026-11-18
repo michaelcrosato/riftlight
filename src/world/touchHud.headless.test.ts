@@ -31,7 +31,7 @@ interface Box {
   w: number;
   h: number;
 }
-const overlaps = (a: Box, b: Box) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+const overlaps = (a: Omit<Box, 'what'>, b: Omit<Box, 'what'>) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 
 /** The phone's controls this room shows, in art pixels, from their data on the page's viewport (CSS px). */
 function controls(): Box[] {

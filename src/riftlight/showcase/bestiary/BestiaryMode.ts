@@ -645,10 +645,10 @@ export class BestiaryMode implements ShowcaseMode {
     // run under it (a phone held upright, a long language), else under it
     const corner = boxes.filter((b) => b.y < ui.h / 4 && b.x < ui.w / 2).reduce((c, b) => ({ right: Math.max(c.right, b.x + b.w + 2), bottom: Math.max(c.bottom, b.y + b.h + 2) }), { right: 0, bottom: 0 });
     const wide = Math.max(ui.measure(name), miniCovers(summary) ? miniWidth(summary) : ui.measure(summary));
-    const beside = ui.w / 2 - wide / 2 >= corner.right ? ui.w / 2 : wide <= ui.w - 2 - corner.right ? Math.floor((corner.right + ui.w - 2) / 2) : null;
-    const headY = beside === null ? corner.bottom : 4;
-    ui.text(beside ?? ui.w / 2, headY, name, { align: 'center', color: 'sand', shadow: 'ink' });
-    ui.mini(beside ?? ui.w / 2, headY + 9, summary, 'mist', 'center');
+    const headX = ui.w / 2 - wide / 2 >= corner.right ? ui.w / 2 : wide <= ui.w - 2 - corner.right ? Math.floor((corner.right + ui.w - 2) / 2) : null;
+    const headY = headX === null ? corner.bottom : 4;
+    ui.text(headX ?? ui.w / 2, headY, name, { align: 'center', color: 'sand', shadow: 'ink' });
+    ui.mini(headX ?? ui.w / 2, headY + 9, summary, 'mist', 'center');
     if (this.view === 'walk' || this.view === 'fly') {
       // plaques over the exhibits near the camera
       for (const ex of this.exhibits) {
