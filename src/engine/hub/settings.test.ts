@@ -365,6 +365,34 @@ describe('the engine with the player’s 52in1 settings', () => {
     }
   });
 
+  it('a replay plays the speaker bus with the other sounds: the controller’s speaker is an output too', async () => {
+    const hub = fakeHub({ dualsense: { speaker: true } });
+    const seen: boolean[] = [];
+    const engine = await Engine.headless(new Lamp(), { hubSettings: hub.source });
+    try {
+      const use = vi.spyOn(engine.audio, 'useSpeaker');
+      /** The opener the engine last gave the speaker bus: the controller's speaker, or none (with the rest). */
+      const routed = () => (use.mock.lastCall ? use.mock.lastCall[0] !== null : true);
+      const radio = new (class extends Lamp {
+        override update(ctx: GameContext): void {
+          super.update(ctx);
+          seen.push(routed());
+        }
+      })();
+      await engine.loadGame(radio);
+      engine.step(3);
+      expect(seen, 'live: the controller’s speaker').toEqual([true, true, true]);
+      const rec = engine.recording()!;
+      seen.length = 0;
+      await engine.replay(rec, () => engine.loadGame(radio));
+      expect(seen, 'a replay: never the controller’s speaker').toEqual([false, false, false]);
+      engine.step(1);
+      expect(seen.at(-1), 'live again: the controller’s speaker').toBe(true);
+    } finally {
+      engine.dispose();
+    }
+  });
+
   it('a round’s end gives the light bar back and lets the triggers go for good', async () => {
     const hub = fakeHub();
     const local = new LocalHub({ mode: 'ghost', players: 2 });

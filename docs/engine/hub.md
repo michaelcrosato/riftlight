@@ -233,10 +233,9 @@ ctx.audio.play('radio', { bus: 'speaker' });               // the controller's s
 ```
 
 Call them as often as you like: the controller is sent only what changed, and what the game
-wants is sent again, a let-go too, when the player turns an extra back on (or plugs the controller
-in again). Letting go (`null`) is sent even while an extra is off, so nothing given back then stays
-on the controller. They are outputs: nothing is sent
-outside 52in1, headless or during a replay. The engine lets the triggers go while it is paused,
+wants is sent again when the player turns an extra back on (or plugs it back in). A let-go (`null`) is sent even while an extra is off, so nothing stays on the controller.
+They are outputs: nothing is sent outside 52in1, headless or during a replay (the `speaker` bus
+plays with the other sounds then). The engine lets the triggers go while it is paused,
 lets both go and gives the light back (`light(null)`) when a level unloads, and for good at a
 round's `end` and at `dispose` (`release()`, `close()`). The light should say something (health,
 the team, danger): give it back on a title screen. Motion and the touchpad are input: they reach
