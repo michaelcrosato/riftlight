@@ -2,12 +2,14 @@
  * The showcase's pause: Options, Esc or ≡ in the arcade (Riftlight's cabinet and `?game=arcade`)
  * and the Hall of Beasts. The stage stands still behind a short menu (Resume, Restart, Photo mode,
  * Leave; standalone Rift Runner's Settings, the engine's panel), on every device: the d-pad or the stick and Cross, Circle, Options again or a sideways
- * swipe to resume, hover and click, a tap. Reads only `ctx.input` (the engine's `MenuInput`
- * events and `FocusList`), so a recording replays it.
+ * swipe to resume, hover and click, a tap; its legend names Select and Back on the device in use, as
+ * every shell menu's does. Reads only `ctx.input` (the engine's `MenuInput` events and `FocusList`),
+ * so a recording replays it.
  */
 import { FocusList, type FocusRect, type Input, type MenuEvent } from '../../engine';
 import { t } from '../lang';
 import { clip, type UiCanvas } from '../ui/kit';
+import { drawLegend, menuLegend } from '../ui/legend';
 
 /** A row of the pause. */
 export type PauseItem = 'resume' | 'restart' | 'photo' | 'settings' | 'leave';
@@ -38,7 +40,7 @@ export class StagePause {
     return { pick: r.confirm >= 0 ? (this.items[r.confirm] ?? null) : null, moved: r.moved };
   }
 
-  /** The menu over the dimmed stage, centred. */
+  /** The menu over the dimmed stage, centred, with the shell's menus' legend under it (✕ Select · ○ Back; none on a touch screen). */
   draw(ui: UiCanvas): void {
     const title = t('menu.pause.title');
     const measure = (s: string) => ui.measure(s);
@@ -55,5 +57,6 @@ export class StagePause {
       ui.button(r, pauseLabel(item), { focus, accent: item === 'leave' ? 'plum' : undefined, glyph: focus ? 'confirm' : undefined });
       return r;
     });
+    drawLegend(ui, menuLegend(), ui.w / 2, y + h + 4, ui.w - 4);
   }
 }

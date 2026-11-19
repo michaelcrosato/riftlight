@@ -12,6 +12,10 @@ import { PHOTO_LOOKS } from './photo/PhotoMode';
 import { moveInput } from './visitor';
 import { ARCADE_REWARD, BESTIARY_LIMIT, type BestiaryEntry, exhibitOrder, recordArcadeRun, recordKill, sanitizeShowcase, showcaseOf, speciesKey } from './save';
 import { FILTER_IDS, FILTER_PRESETS } from '../../engine/render/filters';
+import { textWidthPx } from '../../engine';
+import { t } from '../lang';
+import { UiCanvas } from '../ui/kit';
+import { StagePause } from './pause';
 
 const genome = (seed: number, o: Parameters<typeof generateGenome>[1] = {}): Genome => generateGenome(new Rng(seed), { depth: 3, ...o });
 
@@ -124,5 +128,33 @@ describe('photo mode', () => {
     const stacks = PHOTO_LOOKS.map((l) => l.filters.join());
     for (const p of Object.values(FILTER_PRESETS)) expect(stacks).toContain(p.join());
     for (const id of FILTER_IDS) expect(stacks).toContain(id);
+  });
+});
+
+describe('the pause (the Hall, Rift Runner)', () => {
+  it('draws the shell menus\' legend under its rows for the device in use (✕ Select · ○ Back on a pad, Enter Select · Esc Back on the keyboard), none on a touch screen', () => {
+    for (const device of ['pad', 'keyboard', 'touch'] as const) {
+      const texts: { s: string; y: number }[] = [];
+      const sprites: number[] = [];
+      const hud = {
+        width: 480,
+        height: 270,
+        rect() {},
+        sprite: (_x: number, y: number) => sprites.push(y),
+        text: (_x: number, y: number, s: string) => texts.push({ s, y }),
+        measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }),
+      };
+      const ui = new UiCanvas(hud as never);
+      ui.device = device;
+      const pause = new StagePause(['resume', 'photo', 'leave']);
+      pause.draw(ui);
+      const rows = texts.filter((x) => x.s === t('menu.pause.resume') || x.s === t('showcase.pause.leave'));
+      const legend = texts.filter((x) => x.s === t('legend.select') || x.s === t('legend.back'));
+      if (device === 'touch') expect(legend, 'none on a touch screen').toEqual([]);
+      else {
+        expect(legend.map((x) => x.s), device).toEqual([t('legend.select'), t('legend.back')]);
+        expect(Math.min(...legend.map((x) => x.y)), `${device}: under the rows`).toBeGreaterThan(Math.max(...rows.map((x) => x.y)) + 10);
+      }
+    }
   });
 });

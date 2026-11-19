@@ -25,7 +25,7 @@ import { buildMonster, type BuiltMonster, crossover, MonsterRuntime, mutate, val
 import type { UiCanvas, UiEvent, Rect } from '../../ui/kit';
 import { clip, inside, miniCovers, miniWidth, wrap } from '../../ui/kit';
 import { monsterName } from '../../wire/monsters';
-import { clearAbove, controlBoxes, drawHints, hints, hintsAt } from '../hints';
+import { clearAbove, controlBoxes, drawHints, hintFont, hints, hintsAt } from '../hints';
 import { type BestiaryEntry, exhibitOrder, showcaseOf } from '../save';
 import type { Showcase, ShowcaseMode } from '../Showcase';
 import { moveInput, Visitor } from '../visitor';
@@ -677,11 +677,13 @@ export class BestiaryMode implements ShowcaseMode {
         title.forEach((l, i) => ui.text(ui.w / 2, y0 + i * 9, l, { align: 'center', color: 'mist', shadow: 'ink' }));
         hint.forEach((l, i) => ui.text(ui.w / 2, y0 + title.length * 9 + 3 + i * 9, l, { align: 'center', color: 'slate', shadow: 'ink' }));
       }
-      // a phone has no button to fly with: its hints leave it out
+      // a phone has no button to fly with: its hints leave it out; photo mode is the pause menu's
+      // where its control is the menu's (Options, ≡: one hint, the menu), its own where not (O)
       const touch = ctx.engine.controls.device === 'touch';
-      const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), 'photo', 'leave']);
+      const photo = lang().controlLabel('photo') !== lang().controlLabel('pause');
+      const help = hints(['move', 'look', ...(touch ? [] : [this.view === 'walk' ? ('fly' as const) : ('walk' as const)]), ...(this.wings > 1 ? (['next_wing'] as const) : []), ...(photo ? (['photo'] as const) : []), 'menu']);
       // the hints along the bottom: between a phone's stick and its buttons where they leave room, else over them
-      const top = drawHints(ui, hintsAt(ui, help, boxes, ui.h - 9), 'mist');
+      const top = drawHints(ui, hintsAt(ui, help, boxes, { bottom: ui.h - 9, font: hintFont(this.host.game, ui) }), 'mist');
       const near = this.view === 'walk' ? this.nearest() : null;
       if (near) {
         const label = near === 'altar' ? t('showcase.bestiary.prompt.altar') : t('showcase.bestiary.prompt.inspect', { name: entryName(near.entry!) });
