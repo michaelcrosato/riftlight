@@ -74,7 +74,14 @@ export interface Voice {
 /** Low-pass cutoff (Hz) for a muffle of 0..1: wide open to a dull thud. */
 export const muffleCutoff = (muffle: number): number => 20000 * Math.pow(400 / 20000, Math.max(0, Math.min(1, muffle)));
 
-const STORAGE_KEY = 'pixel-engine:audio';
+/**
+ * Where a game's volumes and mute are saved: `pixel-engine:audio:<key>`, the game's settings key
+ * (`EngineOptions.settings.key`, the same as `pixel-engine:settings:<key>`), so each game on a shared
+ * origin (52in1's games all share one) keeps its own.
+ */
+export const audioStorageKey = (key: string): string => `pixel-engine:audio:${key}`;
+/** The one key every game once shared: read once, by a game with none of its own yet; never written. */
+const SHARED_KEY = 'pixel-engine:audio';
 const DEFAULTS: AudioSettings = { master: 0.8, sfx: 1, music: 0.6, muted: false };
 const LOOKAHEAD = 0.25; // seconds of music scheduled ahead of the audio clock
 // Events that count as a user activation somewhere (iOS Safari: touchend / click, not
@@ -84,7 +91,7 @@ const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'cli
 /**
  * Web Audio for games: procedural retro sound effects (`SFX`, data), a small chiptune
  * sequencer (`Song`, data), optional audio files, and master / sfx / music volume + mute
- * persisted in localStorage. Available as `ctx.audio`.
+ * saved per game in localStorage (`audioStorageKey`). Available as `ctx.audio`.
  *
  * Browsers only allow sound after a user gesture, so the AudioContext is created on the
  * first key / pointer / touch input. Before that, and wherever Web Audio does not exist
@@ -121,8 +128,21 @@ export class AudioManager {
   private readonly loading = new Set<string>();
   private disposed = false;
 
-  constructor(target: EventTarget | null = typeof window !== 'undefined' ? window : null) {
-    this.settings = { ...DEFAULTS, ...readSettings() };
+  /**
+   * `target`: where the unlocking input is heard (the window; null: nowhere, headless). `key`: the
+   * game's settings key, which its volumes are saved under (`audioStorageKey`); null keeps them for
+   * this session only. A game with no volumes of its own yet takes those every game once shared
+   * (`pixel-engine:audio`), once: they are saved under its own key at once, and the shared key is
+   * never written.
+   */
+  constructor(
+    target: EventTarget | null = typeof window !== 'undefined' ? window : null,
+    readonly key: string | null = null,
+  ) {
+    const own = key === null ? null : readSettings(audioStorageKey(key));
+    const shared = key !== null && own === null ? readSettings(SHARED_KEY) : null;
+    this.settings = { ...DEFAULTS, ...(own ?? shared ?? {}) };
+    if (shared) this.save();
     if (!AudioManager.supported || !target) return;
     this.target = target;
     this.armUnlock();
@@ -357,13 +377,18 @@ export class AudioManager {
   setVolume(channel: VolumeChannel, value: number): void {
     this.settings[channel] = Math.min(1, Math.max(0, value));
     this.applyVolumes();
-    if (this.persist) writeSettings(this.settings);
+    this.save();
   }
 
   setMuted(muted: boolean): void {
     this.settings.muted = muted;
     this.applyVolumes();
-    if (this.persist) writeSettings(this.settings);
+    this.save();
+  }
+
+  /** The volumes to storage, under the game's own key (none: nowhere), unless `persist` is off. */
+  private save(): void {
+    if (this.persist && this.key !== null) writeSettings(audioStorageKey(this.key), this.settings);
   }
 
   toggleMute(): boolean {
@@ -415,7 +440,7 @@ export class AudioManager {
   resetVolumes(): void {
     Object.assign(this.settings, DEFAULTS);
     this.applyVolumes();
-    if (this.persist) writeSettings(this.settings);
+    this.save();
   }
 
   /** Engine: once per rendered frame. Schedules the next notes of the song. */
@@ -648,23 +673,24 @@ class LoopVoice implements Voice {
   }
 }
 
-function readSettings(): Partial<AudioSettings> {
+/** The volumes saved under `key`: null when there are none (or storage is blocked or holds junk). */
+function readSettings(key: string): Partial<AudioSettings> | null {
   try {
-    const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
-    if (!raw) return {};
+    const raw = globalThis.localStorage?.getItem(key);
+    if (!raw) return null;
     const v = JSON.parse(raw) as Partial<AudioSettings>;
     const out: Partial<AudioSettings> = {};
     for (const k of ['master', 'sfx', 'music'] as const) if (typeof v[k] === 'number' && v[k] >= 0 && v[k] <= 1) out[k] = v[k];
     if (typeof v.muted === 'boolean') out.muted = v.muted;
-    return out;
+    return Object.keys(out).length ? out : null;
   } catch {
-    return {}; // storage blocked (privacy mode, sandboxed iframe) or corrupt
+    return null; // storage blocked (privacy mode, sandboxed iframe) or corrupt
   }
 }
 
-function writeSettings(s: AudioSettings): void {
+function writeSettings(key: string, s: AudioSettings): void {
   try {
-    globalThis.localStorage?.setItem(STORAGE_KEY, JSON.stringify(s));
+    globalThis.localStorage?.setItem(key, JSON.stringify(s));
   } catch {
     /* storage blocked: settings last for this session only */
   }

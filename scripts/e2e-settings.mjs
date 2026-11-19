@@ -16,7 +16,9 @@
 //            info, sound, volume, button prompts, vibration; smooth 3D draws no look, so Look is
 //            off then; the legend shows the keys; Escape closes it and the game goes on
 //   saved    the choices are saved per game and applied at the next start; a review flag in
-//            the URL (?look=) wins over the saved look; the legend's Reset, pressed twice (the
+//            the URL (?look=) wins over the saved look; the volumes are saved under the game's
+//            own key (pixel-engine:audio:<key>), the key all games once shared read once and never
+//            written; the legend's Reset, pressed twice (the
 //            first says Press again to reset), gives the game its own picture
 //   pad      Options opens it (and the press that opened it does not close it), the legend shows
 //            the pad's buttons (Xbox's when chosen), the d-pad moves and changes, R1 turns the
@@ -225,6 +227,28 @@ export async function runSettings(h) {
     check(
       flagged.look === (await lookOf('handheld')) && flagged.mode === 'raw' && flagged.debug && flagged.keys === 0,
       `?look=handheld wins over the saved look; with no ?debug the saved debug panel shows (${flagged.debug}) and the hotkeys stay off; the rest still apply`,
+    );
+
+    // ---------------------------------------------------------------- the volumes: this game's own key
+    // (52in1's games share one origin): the sound saved above is under it, never the key every game
+    // once shared; a game with none of its own takes that shared key's volumes once, then keeps its own
+    const keys = () => E(() => ({ own: JSON.parse(localStorage.getItem('pixel-engine:audio:playground') ?? 'null'), shared: localStorage.getItem('pixel-engine:audio') }));
+    const ownSound = await keys();
+    await E(() => {
+      localStorage.removeItem('pixel-engine:audio:playground');
+      localStorage.setItem('pixel-engine:audio', JSON.stringify({ master: 0.8, sfx: 1, music: 0.25, muted: true }));
+    });
+    await page.reload();
+    await ready(page);
+    const adopted = { music: await E(() => window.__PIXEL_ENGINE__.audio.volume.music), ...(await keys()) };
+    await E(() => localStorage.setItem('pixel-engine:audio', JSON.stringify({ master: 0.8, sfx: 1, music: 0.9, muted: false })));
+    await page.reload();
+    await ready(page);
+    const kept = { music: await E(() => window.__PIXEL_ENGINE__.audio.volume.music), muted: await E(() => window.__PIXEL_ENGINE__.audio.muted), ...(await keys()) };
+    await E(() => localStorage.removeItem('pixel-engine:audio'));
+    check(
+      ownSound.own?.muted === true && ownSound.shared === null && adopted.music === 0.25 && adopted.own?.music === 0.25 && kept.music === 0.25 && kept.muted && kept.shared === JSON.stringify({ master: 0.8, sfx: 1, music: 0.9, muted: false }),
+      `the volumes are saved under this game's own key (${JSON.stringify(ownSound.own)}; the shared key ${ownSound.shared}); with none of its own it takes the shared key's once (music ${adopted.music}, saved ${adopted.own?.music}), then keeps its own (music ${kept.music} after the shared key changed)`,
     );
 
     // ---------------------------------------------------------------- Reset

@@ -36,7 +36,7 @@ function saved(): string[] {
 }
 
 const state = TreeState.load(tree, saved(), points);
-const audio = new AudioManager();
+const audio = new AudioManager(window, 'riftlight'); // Riftlight's own volumes (its settings key)
 const container = document.getElementById('app')!;
 // no engine here to say which device is in use: a phone's or a tablet's coarse pointer is a finger
 // (the bottom bar names taps before the first touch), anything else the mouse and keys; what then

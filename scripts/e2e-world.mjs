@@ -6,7 +6,7 @@
 //                the gallery's and the workshop's exhibits are drawn (hiding them changes the
 //                frame), a flat tile hides the plinth, a mosaic covers the frame and reveals it
 //   GPU          the swarm's compute shader and the views' render targets, read back
-//   page         a pointer event on the canvas lands where aimed, the sandbox saves to the
+//   page         a pointer event on the canvas lands where aimed, the sandbox saves (its own key) to the
 //                browser's storage, no engine hotkeys without ?debug=1, live play at the
 //                browser's pace (requestAnimationFrame) records and replays, also in a fresh page
 //
@@ -148,12 +148,24 @@ export async function runWorld(h) {
       const mapped = Math.hypot(e.input.pointer.x - top.x, e.input.pointer.y - top.y);
       const saved = w.room.save();
       const before = JSON.stringify(w.room.layout());
+      // under Engine World's own key (52in1's games share one origin), never the shared one
+      const keys = { own: !!localStorage.getItem('pixel-engine:sandbox:world'), shared: localStorage.getItem('pixel-engine:sandbox') };
       w.room.clear();
       const loaded = w.room.restore();
-      return { mapped, saved, loaded, same: JSON.stringify(w.room.layout()) === before, count: w.room.count() };
+      const same = JSON.stringify(w.room.layout()) === before;
+      // a layout saved before under the shared key still loads while none is saved under its own
+      localStorage.setItem('pixel-engine:sandbox', localStorage.getItem('pixel-engine:sandbox:world'));
+      localStorage.removeItem('pixel-engine:sandbox:world');
+      w.room.clear();
+      const old = w.room.restore() && JSON.stringify(w.room.layout()) === before;
+      localStorage.removeItem('pixel-engine:sandbox');
+      return { mapped, saved, loaded, same, keys, old, count: w.room.count() };
     });
     check(sandbox.mapped < 1e-3, `a pointer event on the canvas lands where it was aimed (off by ${sandbox.mapped.toExponential(1)})`);
-    check(sandbox.saved && sandbox.loaded && sandbox.same, `a sandbox layout saves to the browser's storage and loads back the same (${sandbox.count} props)`);
+    check(
+      sandbox.saved && sandbox.loaded && sandbox.same && sandbox.keys.own && sandbox.keys.shared === null && sandbox.old,
+      `a sandbox layout saves to the browser's storage under the World's own key (pixel-engine:sandbox:world; the shared key ${sandbox.keys.shared}) and loads back the same (${sandbox.count} props); one saved under the old shared key still loads (${sandbox.old})`,
+    );
 
     // ------------------------------------------------------------- live play at the browser's pace
     // frames at the browser's own pace, a pause, and a game acting in a promise callback (a

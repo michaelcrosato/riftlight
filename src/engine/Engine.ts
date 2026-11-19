@@ -253,8 +253,8 @@ export interface EngineOptions {
    * it is let go, never when Create joined it (`HOST_CHORD`, 52in1's bar). `voice`: the
    * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
    * aims by a DualSense's motion (`input.motion`), and the panel has Motion aim and its sensitivity
-   * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`;
-   * default the first game's name), false: nowhere.
+   * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`, the
+   * volumes `pixel-engine:audio:<key>`; default the first game's name), false: nowhere.
    */
   settings?: { button?: TouchCorner | boolean; key?: string | false; padButton?: boolean; voice?: boolean; motion?: boolean };
   /** On-screen joystick + buttons. Default: auto (coarse pointer), or ?touch=1 / ?touch=0. */
@@ -541,8 +541,11 @@ export class Engine {
     // a page listens to the window and saves the player's settings; headless nothing does, and
     // the settings are kept only under a key asked for
     const page = renderer.container !== null;
+    const key = options.settings?.key;
+    const settingsKey = key === false ? null : (key ?? (page ? game.name : null));
     this.input = new Input(page ? window : null);
-    this.audio = page ? new AudioManager() : new AudioManager(null);
+    // the volumes are saved beside the settings, per game (52in1's games share one origin)
+    this.audio = page ? new AudioManager(window, settingsKey) : new AudioManager(null);
     if (!page) this.audio.persist = false;
     // the player's 52in1 settings: their volumes multiply the game's own, the controller's speaker
     // takes the `speaker` bus; outputs go quiet during a replay (input.playing)
@@ -557,8 +560,7 @@ export class Engine {
     };
     hub();
     this.hubSettings.onChange(hub);
-    const key = options.settings?.key;
-    this.settings = new Settings(this, key === false ? null : (key ?? (page ? game.name : null)));
+    this.settings = new Settings(this, settingsKey);
     // rumbles follow the player's vibration (a host's, such as the AI Hub's, scales on top of it)
     this.input.vibration = this.settings.values.vibration ?? 1;
     this.settings.onChange((v) => (this.input.vibration = v.vibration ?? 1));

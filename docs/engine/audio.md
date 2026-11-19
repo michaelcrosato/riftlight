@@ -45,7 +45,11 @@ pointer / touch input (`touchend` / `click` on iOS), and the engine keeps listen
 is actually running; it resumes again after the tab comes back or iOS interrupts audio
 (at the next input if the browser insists on one). Before that, and without Web Audio (headless), every call is a
 silent no-op that still counts plays in `audio.counts` / `audio.log`, so tests can assert on
-sounds. Volumes and mute live in `localStorage` (`pixel-engine:audio`), with try/catch.
+sounds. Volumes and mute live in `localStorage` per game, beside its settings
+(`pixel-engine:audio:<settings key>`, `audioStorageKey`; no key, as in the labs: this session
+only), with try/catch. 52in1's games share one origin, so no key is shared: a game with no volumes
+of its own yet takes those of the key every game once shared (`pixel-engine:audio`) once, saves them
+as its own, and never writes that key.
 
 Hero sounds without touching the character: compare `hero.stats`, `hero.state`,
 `hero.jumpKind` and `hero.anim` with last step's values in `fixedUpdate`, as

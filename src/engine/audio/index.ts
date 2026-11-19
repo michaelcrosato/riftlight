@@ -1,4 +1,4 @@
-export { type AudioBus, type AudioLevels, AudioManager, type AudioSettings, type HubVolumes, muffleCutoff, type PlayOptions, type Voice, type VoiceSettings, type VolumeChannel } from './AudioManager';
+export { type AudioBus, type AudioLevels, AudioManager, type AudioSettings, audioStorageKey, type HubVolumes, muffleCutoff, type PlayOptions, type Voice, type VoiceSettings, type VolumeChannel } from './AudioManager';
 export { SFX, type SfxName } from './sfx';
 export { PLAYGROUND_SONG, noteSound, parseSong, type Instrument, type ParsedSong, type Song, type SongNote } from './music';
 export { envelope, frequencyAt, noteFrequency, renderSound, soundDuration, type SoundDef, type Wave } from './synth';
