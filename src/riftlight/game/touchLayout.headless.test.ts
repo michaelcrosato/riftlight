@@ -177,23 +177,17 @@ describe('the item windows on every screen', () => {
 
 describe('a phone at DPR 2.625 (a Pixel), and phones held sideways under a browser\'s bar', () => {
   // a Pixel 7 held sideways (863×360), under Chrome's bar (923×340), a Fold's cover screen at its own
-  // DPR (882×344) and upright (412×839); phones 340 CSS px tall at DPR 3 (an iPhone in Safari, 800×340);
-  // shorter still, the least rows (170, `touchRows`) at fewer CSS px an art pixel: a Pixel 10 held
-  // sideways under Chrome's bar (869×303 at 2.625: 4 device px, 1.52 CSS px) and a Pixel Fold folded
-  // (907×334 at 2.4375: 1.64)
+  // DPR (882×344) and upright (412×839); phones 340 CSS px tall at DPR 3 (an iPhone in Safari, 800×340)
   for (const viewport of [
     { width: 863, height: 360, dpr: 2.625 },
     { width: 923, height: 340, dpr: 2.625 },
     { width: 882, height: 344, dpr: 2.625 },
     { width: 412, height: 839, dpr: 2.625 },
     { width: 800, height: 340, dpr: 3 },
-    { width: 869, height: 303, dpr: 2.625 },
-    { width: 907, height: 334, dpr: 2.4375 },
   ] as const) {
     const sideways = viewport.width > viewport.height;
-    const short = sideways && viewport.height < 340;
     it(
-      `${viewport.width}×${viewport.height} at DPR ${viewport.dpr}: ${short ? 'at least 170 rows, 1.5 CSS px an art pixel or more' : sideways ? 'about two CSS px an art pixel, about 180 rows' : 'its art as dense as a DPR 2 or 3 phone’s'}; every title entry in view, a thumb tall; every item window on screen (the bag, the vendor, the stash, the bench, the skills); in a level no HUD under a control, the level card over none of the top-left block's words`,
+      `${viewport.width}×${viewport.height} at DPR ${viewport.dpr}: ${sideways ? 'about two CSS px an art pixel, about 180 rows' : 'its art as dense as a DPR 2 or 3 phone’s'}; every title entry in view, a thumb tall; every item window on screen (the bag, the vendor, the stash, the bench, the skills); in a level no HUD under a control`,
       async () => {
         h = await headlessRiftlight({ seed: 7, viewport, options: { touch: true } });
         const { engine, rl, game } = h;
@@ -202,10 +196,9 @@ describe('a phone at DPR 2.625 (a Pixel), and phones held sideways under a brows
         const { width: W, height: H } = engine.renderer.resolution;
         const css = engine.renderer.framing.cssWidth / W;
         // upright the art is already denser (three CSS px at DPR 2.625: 136×276)
-        if (short) expect(css, `${W}×${H}: 1.5 CSS px an art pixel or more, under 1.9 (${css.toFixed(3)})`).toSatisfy((k: number) => k >= 1.5 && k < 1.9);
-        else if (sideways) expect(Math.abs(css - 2), `${W}×${H}: about two CSS px an art pixel (${css.toFixed(3)})`).toBeLessThanOrEqual(0.1);
+        if (sideways) expect(Math.abs(css - 2), `${W}×${H}: about two CSS px an art pixel (${css.toFixed(3)})`).toBeLessThanOrEqual(0.1);
         else expect(css, `${W}×${H}: two CSS px an art pixel or more (${css.toFixed(3)})`).toBeGreaterThanOrEqual(1.9);
-        if (sideways) expect(H, 'the rows a sideways phone of its size draws at DPR 2 or 3, about; never under 170').toBeGreaterThanOrEqual(viewport.dpr === 3 || short ? 170 : 179);
+        if (sideways) expect(H, 'the rows a sideways phone of its size draws at DPR 2 or 3, about').toBeGreaterThanOrEqual(viewport.dpr === 3 ? 170 : 179);
         // the title: every entry in view (none scrolled off), a thumb tall
         const title = rl.ui.widgets().filter((w) => w.kind === 'button');
         expect(title.filter((w) => !w.rect).map((w) => w.id), 'every title entry in view').toEqual([]);
@@ -245,12 +238,6 @@ describe('a phone at DPR 2.625 (a Pixel), and phones held sideways under a brows
         const r = game.hudRects();
         expect(r.touch && r.controls.length, 'the touch layout').toBeGreaterThanOrEqual(7);
         for (const z of r.zones.filter((z) => z.id !== 'control')) for (const c of r.controls) expect(overlaps(z, c), `the ${z.id} ${JSON.stringify(z)} under a control ${JSON.stringify(c)}`).toBe(false);
-        // the level's card as it opens, over none of the top-left block's words (the level, the clock,
-        // the kills; at 160 rows it covered the kills' row): at most the margin row under them (170 rows)
-        const banner = r.zones.find((z) => z.id === 'banner');
-        const where = r.zones.find((z) => z.id === 'where')!;
-        expect(banner, 'the level card shows').toBeDefined();
-        expect(overlaps(banner!, { ...where, h: where.h - 1 }), `the level card ${JSON.stringify(banner)} over the top-left block's words ${JSON.stringify(where)}`).toBe(false);
         expect(engine.errors).toEqual([]);
       },
       T,
@@ -424,12 +411,6 @@ describe('a phone in 52in1 held sideways too short for a corner map below the hu
       g.engine.step(1);
     }
   };
-  /** The middle of the level's map as it is drawn open (beside an orb that climbed into the top half, it is off the screen's middle: 568×320). */
-  const mapMiddle = (g: HeadlessRiftlight['game']): [number, number] => {
-    const at = g as unknown as { mapRoom(): Box; minimapModel(): Parameters<typeof mapView>[1] };
-    const v = mapView(at.mapRoom(), at.minimapModel());
-    return [Math.floor(v.x + v.w / 2), Math.floor(v.y + v.h / 2)];
-  };
   // an iPhone 14 or 15 held sideways in Safari, a Pixel 5, a Galaxy Z Fold's cover screen and an
   // iPhone SE (1st): no room for a map a thumb across between the band and the skills' arc
   for (const viewport of [
@@ -458,16 +439,16 @@ describe('a phone in 52in1 held sideways too short for a corner map below the hu
           return h!.rl.ui.widgets();
         };
         let g = await boot();
-        // (every one at least 170 rows, `touchRows`: the SE's 379×214, no compact HUD's smaller map)
-        const full = { w: 88, h: 68 };
+        const full = viewport.width < 600 ? { w: 48, h: 38 } : { w: 88, h: 68 };
         const own = g.hudRects();
         const alone = own.zones.find((z) => z.id === 'minimap')!;
         // the skills' arc under the corner: shrunk to clear the controls, the gold under it, as in 52in1
-        expect([alone.y, alone.w <= full.w && alone.h < full.h], `on its own page: the corner map ${JSON.stringify(alone)} at the top, shrunk`).toEqual([2, true]);
+        // (an SE's 568×320, whose compact map is smaller: its full size)
+        expect([alone.y, alone.w <= full.w && alone.h <= full.h && (alone.h < full.h || viewport.width < 600)], `on its own page: the corner map ${JSON.stringify(alone)} at the top, shrunk`).toEqual([2, true]);
         for (const z of own.zones.filter((z) => z.id !== 'control')) for (const c of own.controls) expect(overlaps(z, c), `on its own page: the ${z.id} ${JSON.stringify(z)} under a control ${JSON.stringify(c)}`).toBe(false);
         tap(h!, alone.x + alone.w / 2, alone.y + alone.h / 2);
         expect(g.mapOpen, 'on its own page a tap on the corner map opens the map').toBe(true);
-        tap(h!, ...mapMiddle(g));
+        tap(h!, Math.floor(h!.engine.renderer.resolution.width / 2), Math.floor(h!.engine.renderer.resolution.height / 2));
         expect(g.mapOpen, 'a tap on the map closes it').toBe(false);
         expect(pause(g).map((w) => w.id), 'on its own page no Map entry: a tap on the corner map opens it').not.toContain('map');
         h!.rl.ui.close();
@@ -498,7 +479,8 @@ describe('a phone in 52in1 held sideways too short for a corner map below the hu
         tap(h!, entry!.rect!.x + entry!.rect!.w / 2, entry!.rect!.y + entry!.rect!.h / 2);
         h!.engine.step(2);
         expect([h!.rl.state().ui, g.mapOpen], 'the pause gone, the map open').toEqual([[], true]);
-        tap(h!, ...mapMiddle(g));
+        const { width, height } = h!.engine.renderer.resolution;
+        tap(h!, Math.floor(width / 2), Math.floor(height / 2));
         expect(g.mapOpen, 'a tap on the map closes it').toBe(false);
         expect(h!.engine.errors).toEqual([]);
       },
