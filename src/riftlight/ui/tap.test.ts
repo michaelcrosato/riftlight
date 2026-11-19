@@ -12,7 +12,7 @@ import { StatSheet } from '../core/mods';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { installLanguage, lineKey, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
-import { type Rect, UiCanvas } from './kit';
+import { miniWidth, type Rect, UiCanvas } from './kit';
 import { tapArt, TAP_CSS, UiLayer } from './layer';
 import { Menu, type Widget } from './menu';
 import { pauseMenu, slotsMenu, titleMenu } from './menus';
@@ -403,6 +403,43 @@ describe('a thumb on the panels', () => {
       // the rows inside the menu, under its buttons
       const button = menu.rects.get('b')!;
       for (const row of texts.filter((x) => rows.includes(x.s))) expect(row.y).toBeGreaterThanOrEqual(button.y + button.h);
+    }
+  });
+
+  it('a list that scrolls anyway (World\'s room list on a TV) gives its footer the rows its longest needs, three at most, and keeps them clear of the arrow that says there is more below', () => {
+    const hints = {
+      r1: 'Creatures whose walk is worked out every frame instead of played from clips', // three rows of the normal font
+      r2: 'Creatures whose walk is worked out every frame instead of...', // two
+      r3: 'Creatures whose walk is worked out every frame instead of played from clips, their legs reaching for the ground', // more than three: the mini font
+    };
+    const widgets: Widget[] = Array.from({ length: 30 }, (_, i) => ({ kind: 'button', id: `r${i}`, label: `Room ${i}`, onClick: () => {}, hint: hints[`r${i}` as keyof typeof hints] ?? hints.r2 }) as Widget);
+    for (const [focus, hint] of Object.entries(hints)) {
+      const menu = new Menu(widgets, { id: 'rooms', title: 'Go to a room', width: 220 });
+      menu.fit(468, 240, 0);
+      const { ui, texts, rects } = canvas(480, 270);
+      const minis: { x: number; y: number; s: string }[] = [];
+      const mini = ui.mini.bind(ui);
+      ui.mini = (x, y, s, color, align, ...more) => (minis.push({ x: x - Math.floor(miniWidth(s) / 2), y, s }), mini(x, y, s, color, align, ...more));
+      const r = { x: 4, y: 20, w: menu.size.w, h: 200 }; // its room: the rows take more
+      menu.focusId(focus);
+      menu.draw(ui, r);
+      // the arrow under the rows (sand, at the right edge, its tip lowest): the view ends 4 above its tip
+      const arrow = rects.filter((x) => x.color === 'sand' && x.x >= r.x + r.w - 9 && x.x + x.w <= r.x + r.w - 3 && x.y > r.y + 10);
+      expect(arrow.length, `${focus}: the list scrolls, the arrow under it`).toBe(3);
+      const tip = Math.max(...arrow.map((x) => x.y));
+      expect(r.y + r.h - (tip - 4), `${focus}: its footer takes three rows (14 + 2 × 9), its longest's, whichever has the focus`).toBe(32);
+      const labels = new Set(widgets.map((w) => ('label' in w ? w.label : '')));
+      const rows = texts.filter((x) => !labels.has(x.s) && x.y > tip - 9);
+      expect([...rows.map((x) => x.s), ...minis.map((x) => x.s)].join(' '), `${focus}: the footer whole`).toBe(hint);
+      expect([rows.length, minis.length], `${focus}: the normal font where three rows hold it, else the mini font`).toEqual(focus === 'r1' ? [3, 0] : focus === 'r2' ? [2, 0] : [0, 3]);
+      // clear of the arrow: every row of the normal font (its shadow too) ends left of it, centred;
+      // the mini font's start under it
+      const left = Math.min(...arrow.map((x) => x.x));
+      for (const row of rows) {
+        expect(row.x + row.w + 1, `${focus}: a footer row ends left of the arrow`).toBeLessThan(left);
+        expect(Math.abs(row.x - r.x - (r.x + r.w - (row.x + row.w))), `${focus}: centred`).toBeLessThanOrEqual(2);
+      }
+      for (const row of minis) expect(row.y, `${focus}: a mini row under the arrow`).toBeGreaterThan(tip);
     }
   });
 

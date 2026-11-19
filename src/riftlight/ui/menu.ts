@@ -135,13 +135,13 @@ export class Menu implements Panel {
   /** One column's height with rows `tap` + 2 tall, its footer's rows included (`footH`). */
   private columnH(tap: number): number {
     const rows = this.widgets.reduce((s, x) => s + this.rowH(x, this.colW, tap), 0);
-    return rows + this.footH(this.footW(this.colW), this.roomH - rows);
+    return rows + this.footH(this.colW, this.roomH - rows);
   }
 
   /** A grid's height with tiles `tap` + 2 tall, its footer's rows included (`footH`). */
   private gridH(tap: number): number {
     const rows = this.gridRows() * this.tileH(tap);
-    return rows + this.footH(this.footW(2 * this.tileW + GRID_GAP), this.roomH - rows);
+    return rows + this.footH(2 * this.tileW + GRID_GAP, this.roomH - rows);
   }
 
   /**
@@ -149,34 +149,45 @@ export class Menu implements Panel {
    * of the normal font where it fits; else on a mouse's or a pad's screen (a TV's) the normal font
    * on as many rows as `h` holds (at most `FOOT_ROWS`) where they hold it whole, and on a phone's
    * layout (narrow, or touch: `tap`) or where they don't, the mini font on as many rows as `h`
-   * holds of it (at most `FOOT_ROWS`), cut on the last.
+   * holds of it (at most `FOOT_ROWS`), cut on the last. `normal`: how wide the normal font's rows
+   * may run (`footW`: narrower while the list scrolls).
    */
-  private footLines(text: string, width: number, h = Infinity): { lines: string[]; mini: boolean } {
-    if (textWidthPx(text) <= width) return { lines: [text], mini: false };
+  private footLines(text: string, width: number, h = Infinity, normal = width): { lines: string[]; mini: boolean } {
+    if (textWidthPx(text) <= normal) return { lines: [text], mini: false };
     const rows = (step: number) => Math.min(FOOT_ROWS, 1 + Math.max(0, Math.floor((h - FOOT_H) / step)));
     const mini = miniCovers(text);
-    if (!mini || (!this.narrow && this.tap <= 0 && wrapText(text, width).length <= rows(LABEL_LINE))) return { lines: wrapTo(text, width, rows(LABEL_LINE)), mini: false };
+    if (!mini || (!this.narrow && this.tap <= 0 && wrapText(text, normal).length <= rows(LABEL_LINE))) return { lines: wrapTo(text, normal, rows(LABEL_LINE)), mini: false };
     return { lines: wrapTo(text, width, rows(MINI_LINE), miniWidth), mini: true };
   }
 
-  /** The footer's width under a menu `w` wide: the menu's, or its `footWidth` up to its room. */
-  private footW(w: number): number {
-    return Math.max(w, Math.min(this.o.footWidth ?? 0, this.room));
+  /**
+   * How wide the footer's words run under a menu `w` wide: the menu's, or its `footWidth` up to its
+   * room; and its normal font while the list scrolls, whose first row would reach the arrow at the
+   * menu's right edge that says there is more below: clear of it (`ARROW_ROOM` each side, so it
+   * stays centred). The mini font's rows start under the arrow.
+   */
+  private footW(w: number, scrolls: boolean): { width: number; normal: number } {
+    const width = Math.max(w, Math.min(this.o.footWidth ?? 0, this.room)) - 2;
+    return { width, normal: scrolls ? Math.min(width, w - 2 * ARROW_ROOM) : width };
   }
 
   /**
-   * The rows under the widgets for the footer, art pixels, where the widgets leave `free` of the
-   * menu's room: room for the longest of it and every hint (so the menu never jumps as the focus
-   * moves), but never so much that a menu whose rows fit over one footer row scrolls: then only
-   * what they leave (`footLines` wraps or cuts the footer into it). A list that scrolls all the
-   * same (a phone's settings, World's room list) gives up a row of its view for them.
+   * The rows under the widgets for the footer, art pixels, under a menu `w` wide whose widgets
+   * leave `free` of its room: room for the longest of it and every hint (so the menu never jumps
+   * as the focus moves), but never so much that a menu whose rows fit over one footer row scrolls:
+   * then only what they leave (`footLines` wraps or cuts the footer into it). A list that scrolls
+   * all the same (a phone's settings, World's room list, the look studio: less than a footer row
+   * free) gives its view's last rows to its longest, whole where `FOOT_ROWS` rows hold it (a TV's
+   * normal font: the look studio's French hints at 1920×1080 take three).
    */
-  private footH(width: number, free: number): number {
-    const texts = [this.o.footer?.(), ...this.widgets.map((w) => (w as { hint?: string }).hint)].filter((x): x is string => !!x);
+  private footH(w: number, free: number): number {
+    const scrolls = free < FOOT_H;
+    const { width, normal } = this.footW(w, scrolls);
+    const texts = [this.o.footer?.(), ...this.widgets.map((x) => (x as { hint?: string }).hint)].filter((x): x is string => !!x);
     // the layout asks often (`plan` tries row heights): wrapped again only when what it wraps changed
-    const key = `${width} ${this.narrow || this.tap > 0}\n${texts.join('\n')}`;
-    if (this.foot?.key !== key) this.foot = { key, h: FOOT_H + Math.max(0, ...texts.map((x) => this.footLines(x, width - 2)).map((f) => (f.lines.length - 1) * (f.mini ? MINI_LINE : LABEL_LINE))) };
-    return free >= FOOT_H ? Math.min(this.foot.h, free) : this.foot.h;
+    const key = `${width} ${normal} ${this.narrow || this.tap > 0}\n${texts.join('\n')}`;
+    if (this.foot?.key !== key) this.foot = { key, h: FOOT_H + Math.max(0, ...texts.map((x) => this.footLines(x, width, Infinity, normal)).map((f) => (f.lines.length - 1) * (f.mini ? MINI_LINE : LABEL_LINE))) };
+    return scrolls ? this.foot.h : Math.min(this.foot.h, free);
   }
 
   /** `footH`'s longest footer and what it was for. */
@@ -320,7 +331,7 @@ export class Menu implements Panel {
     // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
     const heights = this.widgets.map((w) => this.rowH(w, r.w, plan.tap));
     const total = heights.reduce((a, b) => a + b, 0);
-    const foot = this.footH(this.footW(r.w), r.h - total); // the footer's rows
+    const foot = this.footH(r.w, r.h - total); // the footer's rows
     const view = r.h - foot;
     this.scrolls = total > view;
     if (this.scrolls) {
@@ -403,12 +414,13 @@ export class Menu implements Panel {
     this.drawFooter(ui, r, foot);
   }
 
-  /** The focused widget's hint, else the menu's footer, on the last rows, `h` of them (`footLines`: wrapped, cut only where they can't hold it). */
+  /** The focused widget's hint, else the menu's footer, on the last rows, `h` of them (`footLines`: wrapped, cut only where they can't hold it; clear of the scroll's arrow). */
   private drawFooter(ui: UiCanvas, r: Rect, h: number): void {
     const hint = (this.widgets[this.focus] as { hint?: string } | undefined)?.hint;
     const foot = hint ?? this.o.footer?.();
     if (!foot) return;
-    const { lines, mini } = this.footLines(foot, this.footW(r.w) - 2, h);
+    const { width, normal } = this.footW(r.w, this.scrolls);
+    const { lines, mini } = this.footLines(foot, width, h, normal);
     const step = mini ? MINI_LINE : LABEL_LINE;
     lines.forEach((line, i) => {
       const y = r.y + r.h - (mini ? 9 : 10) - (lines.length - 1 - i) * step;
@@ -427,7 +439,7 @@ export class Menu implements Panel {
       const row: Rect = { x: r.x + (k % 2) * (r.w - w), y: r.y + 3 + Math.floor(k / 2) * h, w, h: h - 2 };
       this.rects.set(b.id, ui.button(row, b.label, { focus: i === this.focus, disabled: b.disabled, accent: b.accent }));
     });
-    this.drawFooter(ui, r, this.footH(this.footW(r.w), r.h - this.gridRows() * h));
+    this.drawFooter(ui, r, this.footH(r.w, r.h - this.gridRows() * h));
   }
 
   /**
@@ -608,5 +620,7 @@ const LABEL_LINE = 9;
 const FOOT_H = 14;
 const MINI_LINE = 7;
 const FOOT_ROWS = 3;
+/** Art pixels a scrolling list's footer in the normal font keeps clear on each side: the arrow at its right edge that says there is more below (`draw`). */
+const ARROW_ROOM = 10;
 const labelLines = (label: string, width: number): string[] => wrapText(label, width - 4);
 const rowHeight = (w: Widget, width: number) => (w.kind === 'gap' ? (w.h ?? 6) : w.kind === 'button' ? BUTTON_H + 3 : w.kind === 'label' ? 12 + (labelLines(w.label, width).length - 1) * LABEL_LINE : ROW);
