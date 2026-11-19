@@ -8,8 +8,8 @@ hub that runs the games.
 - [ ] **Controller first, at ten feet.** Every action, menus included, plays on any standard pad,
   the DualSense first: a pad button beside each key (`isDown('Space', 'PadA')`), Options
   (`PadStart`) pauses, Circle (`PadB`) goes back. PS and Create + Options together are 52in1's
-  bar (`HOST_CHORD`): the engine never reads PS, and presses Options as it is let go, never under
-  the chord.
+  bar (`HOST_CHORD`): the engine never reads PS, and presses Options (or Create) as it is let go,
+  never under the chord, so no pause opens behind the bar.
 - [ ] **Keyboard and mouse native for the genre**: WASD and the mouse to aim in a shooter, WASD or
   the arrows and Space in a platformer, clicks in a strategy game; never the pad's layout on keys.
 - [ ] **Prompts follow the device used last** (`input.device`: `'keyboard'`, `'pad'`, `'touch'`),
@@ -19,9 +19,10 @@ hub that runs the games.
   time, a focus the d-pad moves, a legend of the buttons; no hover-only controls, small links,
   forms or scroll boxes: `MenuInput` and `FocusList` (section 3).
 - [ ] **Touch is an add-on.** A phone held either way plays it, the stick and a button at once;
-  the controls step aside while a pad or keys are used; a swipe dismisses; touch gets assists.
-- [ ] **The whole window at every shape.** `aspect: 'fill'` (the default) reaches every edge;
-  lay the HUD out from `ctx.hud.width` / `height`, never 480 × 270.
+  the controls step aside while a pad or keys are used and come back on the next touch. A swipe
+  dismisses, an action's button shows when there is something to do, and touch gets assists.
+- [ ] **The whole window at every shape.** `aspect: 'fill'` (the default) reaches every edge at
+  16:9, 21:9, 4:3 and a phone's; lay the HUD out from `ctx.hud.width` / `height`, never 480 × 270.
 - [ ] **The player's 52in1 settings.** Volumes and vibration apply by themselves; a DualSense's
   extras where they fit (light bar, rumble, triggers, touchpad, motion aim, speaker), each adding
   to a control that works without it; the microphone only once 52in1 allows it.
@@ -41,8 +42,8 @@ hub that runs the games.
 
 A game's `controls` (`Game.controls`, read at each level) names each action's key, pad button
 and touch button; `{key:action}` in a line (`lang.t`), `hud.prompt`, `hud.legend` and
-`hud.glyph` show the one in use. Read input by codes (`consumePress('KeyE', 'PadA')`): a touch
-button presses its key code (`touchButtons`).
+`hud.glyph` show the one in use. Read input by codes (`consumePress('KeyE', 'PadA')` in
+`fixedUpdate`): a touch button presses its key code (`touchButtons`).
 
 Pad codes: `PadA` Cross / A · `PadB` Circle / B · `PadX` Square / X · `PadY` Triangle / Y ·
 `PadLB` `PadRB` L1 R1 · `PadLT` `PadRT` L2 R2 · `PadBack` Create / View · `PadStart` Options /
@@ -185,34 +186,32 @@ if (typeof document !== 'undefined') await Engine.start(createGame(), withUrlOpt
 
 `MenuInput` turns the keys, the pad, the left stick and swipes into menu events (a held direction
 repeats); `FocusList` keeps a list's focus and takes the pointer (hover, click, tap). Read both in
-`update` (only `ctx.input`: a menu replays). Call `input.release()` as a menu opens or
-closes (the press that opened it never acts in it, a stick held from a run steps no row) and
-`input.clearQueued()` as it closes (the Cross on Resume never reaches `fixedUpdate`).
-
-The engine's settings panel (picture, sound, controls; saved per game) works the same. A pause
-menu opens it (`ctx.engine.settings.open()`) and hides the ⚙ (`settings: { button: false }`); with
-no pause menu, `settings: { padButton: true }` lets Options and Esc open it (the kit's `game.js`).
-Gem Rush turns both off in a 52in1 round, which never pauses.
+`update` (only `ctx.input`: a menu replays); call `input.release()` as a menu opens or closes and
+`input.clearQueued()` as it closes (GUIDE.md, *Input*). The engine's settings panel works the
+same: a pause menu opens it (`ctx.engine.settings.open()`), else `settings: { padButton: true }`
+lets Options and Esc open it (GUIDE.md, *Starting*).
 
 ## 4. Touch as an add-on
 
-- `touchButtons` places the buttons (each presses a key code; `at` puts one in a corner, thumb
-  sized); `touchStick: 'floating'` brings the stick under the thumb; `touchDensity: 2`
-  keeps a phone's art at two CSS pixels a pixel or more.
+- **Set up** with `touchButtons` (`at` puts one in a corner), `touchStick: 'floating'` and
+  `touchDensity: 2` (GUIDE.md, *Starting*).
 - **Context buttons**: `ctx.engine.touch?.set('KeyE', { hidden, label, cooldown, badge })` each
-  frame (`?.`: null without them).
+  frame from the game's state (`?.`: null headless and without touch controls).
 - **Swipes** press `SwipeLeft`, `SwipeRight`, `SwipeUp` or `SwipeDown` (`SWIPE_KEYS`): dismiss a
   dialogue or a card; `FocusList` closes on a sideways one.
-- **Assists** (the nearest target, a longer reach, auto-run) when `ctx.input.device === 'touch'`.
+- **Assists** (the nearest target, a longer reach, auto-run) when `ctx.input.device === 'touch'`
+  (recorded: a replay agrees).
 - **Phones both ways**: upright, the art can be 130 columns wide. Keep the play area in view
-  (`camera: { minWidth }`: the ground's width) and the HUD clear of the controls while they show
-  (`ctx.engine.touch?.visible`, `rects()`: a floating stick rests low in its `zone`, which takes
-  every touch in it); hide them under a menu (`ctx.engine.touch?.show(false)`).
+  (`camera: { minWidth }`: the ground's width; or follow the player) and the HUD clear of the
+  controls while they show (`ctx.engine.touch?.visible`, `rects()`, a floating stick's `zone`:
+  GUIDE.md, *Starting*); hide them (`ctx.engine.touch?.show(false)`) while a menu or a result owns
+  the screen.
 
 ## 5. The player's settings and the DualSense
 
 In 52in1 the player sets volumes, vibration and a DualSense's extras once for every game; the
-engine applies them (never a master volume). Outside 52in1 everything still plays.
+engine applies the volumes (music on the music bus, everything else as effects: never a master
+volume) and the hub scales rumble. Outside 52in1 everything still plays.
 
 ```js
 Engine.start(game, { settings: { motion: true, voice: true } }); // the panel's Motion aim and Microphone rows
@@ -227,8 +226,8 @@ ctx.audio.play('hurt', { bus: 'speaker' }); // from the controller's speaker, el
 if (ctx.engine.voiceOn) mic = await ctx.engine.hubSettings.openMicrophone(); // only once 52in1 allows it
 ```
 
-- A button does what a touchpad swipe does. The engine gives the light bar back between levels, a
-  trigger while paused.
+- A button does what a touchpad swipe does. The engine gives the light bar back between levels
+  and lets a trigger go while paused.
 - Motion and the touchpad are input: read them through `ctx.input` (recorded), never
   `window.AIHubSettings.dualsense`, `navigator.hid` or `navigator.mediaDevices`.
 - A voice feature's row stays off until 52in1 allows the microphone
@@ -360,17 +359,16 @@ const session = offer && (await HubSession.join({ mode: offer.modes, seats: offe
 if (typeof document !== 'undefined') await Engine.start(createGame(session), withUrlOptions({ container: document.getElementById('app'), camera: { preset: 'topdown', minWidth: 19 }, seed: session?.info.seed, settings: { button: !session, padButton: !session }, touchButtons: [], touchStick: 'floating', touchDensity: 2 }));
 ```
 
-- **In a session** it opens straight into the round (no title, menu or prompt), sets up from
-  `session.rng(label)` (the same on every copy and in a replay), readies up by itself, waits still
-  until `start` and counts the countdown in game time.
+- **In a session** it opens straight into the round (no title, menu, prompt or ⚙: a round never
+  pauses), sets up from `session.rng(label)` (the same on every copy and in a replay), readies up
+  by itself, waits still until `start` and counts the countdown in game time.
 - **Moments** are short stretches it already has (3 to 30 s), one a load: `info.moment` names it,
   `session.result({ won, time })` reports it once; at `time-up` it is cleared only if its goal is
   to last.
 - **Reports**: parallel and ghost `session.progress(score)`, then one `result({ time })` or
   `result({ score })`; a shared world's host one `session.finish({ standings })`.
-- **Test without the hub**: `LocalHub` plays a round in memory (`new LocalHub({ mode: 'moments',
-  moment: { id: 'gem-dash', seconds: 8 }, players: 2 })`, its `client(i)` to `HubSession.join`),
-  then 52in1's harness on the built page, every mode.
+- **Test without the hub**: a `LocalHub` round (GUIDE.md section 8), then 52in1's harness on the
+  built page, every mode.
 
 Its head is 52in1's catalogue (https://52in1.com/lib/hub/catalogue.md), after `<meta charset>`
 and the session client: copy both, fill in yours, and hand in the package (three covers) once its

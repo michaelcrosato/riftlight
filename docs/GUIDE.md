@@ -220,9 +220,18 @@ await engine.loadGame(new Level2());     // next level: same renderer, camera, i
 
 Shipping options: the debug panel and the engine hotkeys (P, R, \`, [, ], M) are off outside
 `?debug=1`; players get a settings panel (picture, sound, controls; saved per game) from the ⚙
-button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it; `padButton: true`:
-Options opens it). A game that uses R, P or M itself moves that hotkey for `?debug=1` with
-`debugKeys: { resolution: 'F2' }`; `touchButtons` replaces the on-screen buttons (CONTROLS.md).
+button, top right (`settings: { button: 'top-left' }` moves it, `false` hides it). A game with a
+pause menu opens the panel from there (`ctx.engine.settings.open()`) and hides the ⚙; one with
+none passes `padButton: true`, so Options and Esc open it (the kit's `game.js`). In a 52in1 round,
+which never pauses, Gem Rush turns both off (CONTROLS.md). A game that uses R, P or M itself
+moves that hotkey for `?debug=1` with `debugKeys: { resolution: 'F2' }`.
+
+Touch (CONTROLS.md): `touchButtons` replaces the on-screen buttons (each presses a key code; `at`
+puts one in a corner, thumb sized), `touchStick: 'floating'` brings the stick under the thumb, and
+`touchDensity: 2` keeps a phone's art at two CSS pixels a pixel or more;
+`ctx.engine.touch?.rects()` says where they are (a floating stick rests low in its `zone`, which
+takes every touch in it).
+
 `loadGame` works from anywhere (a trigger, `update`); the swap happens after the frame and
 frees the old game's scene objects, physics, triggers, particles, HUD, music and lights.
 
@@ -297,6 +306,11 @@ between steps), `moveAxis()` (`{ x, y }` from keys, stick or touch). Codes are
 (`PadA` Cross, `PadB` Circle, `PadStart` Options...: `GAMEPAD_BUTTONS`; the d-pad is the arrows),
 so bind both: `isDown('Space', 'PadA')`. **`CONTROLS.md` is the standard every game meets** (pads,
 prompts, menus, touch, 52in1): read it.
+
+As a menu opens or closes, `input.release()` lets go of everything held: the press that opened
+it never acts in it, and a stick held from a run steps no row until it is back in its deadzone. As
+it closes, `input.clearQueued()` also drops the presses `consumePress` still keeps, so the Cross
+that chose Resume never reaches `fixedUpdate`.
 
 Several players on one device (`same-screen`, `split-screen`, `hot-seat`, CONTROLS.md section 7):
 the input is player 1's (keys, mouse, touch, every pad) until the game turns on
@@ -854,6 +868,11 @@ console.log(engine.state().status, engine.fingerprint() === end);
 ```
 
 Code that touches `document` guards it, as the starter does.
+
+**A 52in1 round in Node** (CONTROLS.md section 6): `LocalHub` plays one in memory, on a manual
+clock: `new LocalHub({ mode: 'moments', moment: { id: 'gem-dash', seconds: 8 }, players: 2 })`,
+its `client(i)` passed to `HubSession.join` for each copy of the game, `hub.advance(ms)` to move
+time. Then run 52in1's harness on the built page, in every mode the game offers.
 
 ## 9. Before you hand back
 

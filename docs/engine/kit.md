@@ -76,8 +76,9 @@ another agent*):
   carries came from (each def's `source`, as `npm run model -- credits` reads it, and three.js's
   and Rapier's licence texts).
 - `API.md`: every export with its signature and doc comment, grouped by subsystem, generated
-  from the TypeScript program (`scripts/bundle/api.mjs`), nothing cut: whole docs, whole types
-  (no `... 4 more ...`; `src/bundle-api.test.ts`). Mark a public member that games
+  from the TypeScript program (`scripts/bundle/api.mjs`), nothing cut: whole docs (a member's
+  later paragraphs indented under its bullet), whole types (no `... 4 more ...`;
+  `src/bundle-api.test.ts`). Mark a public member that games
   shouldn't use `/** @internal */`: it leaves API.md and the `.d.ts`.
 - `pixel-engine.d.ts` + `types/`: declarations (`stripInternal`); a strict TypeScript game
   typechecks against them (the `bundle` e2e suite does it).
