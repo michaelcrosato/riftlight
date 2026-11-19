@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "names": {
   "Riftlight": "रिफ़्टलाइट",
   "Emberfall": "एम्बरफ़ॉल",
@@ -1797,6 +1797,8 @@
   "pad.stick": "स्टिक",
   "pad.stick.left": "बायाँ स्टिक",
   "pad.stick.right": "दायाँ स्टिक",
+  "pad.touchpad_left": "टचपैड बाएँ",
+  "pad.touchpad_right": "टचपैड दाएँ",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "मेनू",
   "pad.xbox.rs": "RS",
@@ -4977,6 +4979,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

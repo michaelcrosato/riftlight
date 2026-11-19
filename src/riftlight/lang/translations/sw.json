@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "lines": {
   "ailment.bleed": "Kuvuja damu",
   "ailment.chill": "Kupozwa",
@@ -1759,6 +1759,8 @@
   "pad.stick": "Kijiti",
   "pad.stick.left": "Kijiti cha kushoto",
   "pad.stick.right": "Kijiti cha kulia",
+  "pad.touchpad_left": "Kibao cha kugusa kushoto",
+  "pad.touchpad_right": "Kibao cha kugusa kulia",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "Menyu",
   "pad.xbox.rs": "RS",
@@ -4939,6 +4941,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

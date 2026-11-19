@@ -66,6 +66,8 @@ const KEYS: LineArea = {
     'pad.stick.left': 'Left stick',
     'pad.stick.right': 'Right stick',
     'pad.dpad': 'D-pad',
+    'pad.touchpad_left': 'Touchpad left',
+    'pad.touchpad_right': 'Touchpad right',
   },
   notes: {
     'key.space': 'The space bar, as a key cap and inside lines ("Space to dodge"). Use the name players in your language know it by.',
@@ -114,6 +116,8 @@ const KEYS: LineArea = {
     'pad.stick.left': 'A game controller’s left stick, inside lines ("Left stick move").',
     'pad.stick.right': 'A game controller’s right stick, inside lines ("Right stick look").',
     'pad.dpad': 'A game controller’s directional pad (the four-way cross on its left), inside lines ("D-pad move"), as players in your language call it.',
+    'pad.touchpad_left': 'A swipe to the left on a PlayStation controller’s touchpad (the wide pad in its middle): it pages the character screens back, as L1 does. Usually drawn as a picture; the words are for screen readers and lines. Short.',
+    'pad.touchpad_right': 'A swipe to the right on a PlayStation controller’s touchpad: it pages the character screens on, as R1 does. Usually drawn as a picture; the words are for screen readers and lines. Short.',
   },
   max: {
     'key.space.short': 3,

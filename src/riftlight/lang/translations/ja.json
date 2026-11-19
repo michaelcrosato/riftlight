@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "names": {
   "Riftlight": "リフトライト",
   "Emberfall": "エンバーフォール",
@@ -1784,6 +1784,8 @@
   "pad.stick": "スティック",
   "pad.stick.left": "左スティック",
   "pad.stick.right": "右スティック",
+  "pad.touchpad_left": "タッチパッド左",
+  "pad.touchpad_right": "タッチパッド右",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "メニュー",
   "pad.xbox.rs": "RS",
@@ -4953,6 +4955,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

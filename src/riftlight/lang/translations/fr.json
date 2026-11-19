@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "lines": {
   "ailment.bleed": "Saignement",
   "ailment.chill": "Refroidissement",
@@ -1772,6 +1772,8 @@
   "pad.stick": "Stick",
   "pad.stick.left": "Stick gauche",
   "pad.stick.right": "Stick droit",
+  "pad.touchpad_left": "Pavé tactile à gauche",
+  "pad.touchpad_right": "Pavé tactile à droite",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "Menu",
   "pad.xbox.rs": "RS",
@@ -4963,6 +4965,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

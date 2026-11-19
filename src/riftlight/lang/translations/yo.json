@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "lines": {
   "ailment.bleed": "Ìṣẹ̀jẹ̀",
   "ailment.chill": "Ìtutù",
@@ -1746,6 +1746,8 @@
   "pad.stick": "Ọ̀pá ìdarí",
   "pad.stick.left": "Ọ̀pá ìdarí òsì",
   "pad.stick.right": "Ọ̀pá ìdarí ọ̀tún",
+  "pad.touchpad_left": "Pátákó ìfọwọ́kàn sí òsì",
+  "pad.touchpad_right": "Pátákó ìfọwọ́kàn sí ọ̀tún",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "Àkójọ",
   "pad.xbox.rs": "RS",
@@ -4915,6 +4917,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

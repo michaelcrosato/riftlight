@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "lines": {
   "ailment.bleed": "Kanama",
   "ailment.chill": "Üşüme",
@@ -1759,6 +1759,8 @@
   "pad.stick": "Çubuk",
   "pad.stick.left": "Sol çubuk",
   "pad.stick.right": "Sağ çubuk",
+  "pad.touchpad_left": "Dokunmatik yüzey sola",
+  "pad.touchpad_right": "Dokunmatik yüzey sağa",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "Menü",
   "pad.xbox.rs": "RS",
@@ -4939,6 +4941,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

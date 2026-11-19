@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "names": {
   "Riftlight": "Рифтлайт",
   "Emberfall": "Эмберфолл",
@@ -1823,6 +1823,8 @@
   "pad.stick": "Стик",
   "pad.stick.left": "Левый стик",
   "pad.stick.right": "Правый стик",
+  "pad.touchpad_left": "Сенсорная панель влево",
+  "pad.touchpad_right": "Сенсорная панель вправо",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "Меню",
   "pad.xbox.rs": "RS",
@@ -5025,6 +5027,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",

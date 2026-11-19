@@ -1,5 +1,5 @@
 {
- "by": "AI translation (Claude Code)",
+ "by": "Claude Opus 5.5",
  "names": {
   "Riftlight": "ሪፍትላይት",
   "Emberfall": "ኤምበርፎል",
@@ -1797,6 +1797,8 @@
   "pad.stick": "ጆይስቲክ",
   "pad.stick.left": "የግራ ጆይስቲክ",
   "pad.stick.right": "የቀኝ ጆይስቲክ",
+  "pad.touchpad_left": "የንክኪ ሰሌዳ ወደ ግራ",
+  "pad.touchpad_right": "የንክኪ ሰሌዳ ወደ ቀኝ",
   "pad.xbox.ls": "LS",
   "pad.xbox.menu": "ምናሌ",
   "pad.xbox.rs": "RS",
@@ -4977,6 +4979,8 @@
   "pad.stick": "13ksm3r",
   "pad.stick.left": "gofv00",
   "pad.stick.right": "b865mh",
+  "pad.touchpad_left": "gz1axq",
+  "pad.touchpad_right": "65ij1v",
   "pad.xbox.ls": "wpih60",
   "pad.xbox.menu": "7q5wa",
   "pad.xbox.rs": "uiy7te",
