@@ -119,7 +119,11 @@ jobs:
   revert-red-main:
     # CI failed on main: revert the commit that turned it red (scripts/ci/revert-red-main.sh).
     # It runs here, not in a workflow_run workflow: GitHub doesn't fire workflow_run for the
-    # runs Autopilot dispatches with GITHUB_TOKEN.
+    # runs Autopilot dispatches with GITHUB_TOKEN. GITHUB_TOKEN can't push .github/workflows/, so
+    # a revert keeps those as main has them; with the optional REVERT_TOKEN secret (a token with
+    # the workflows permission) checkout's credential, which git push uses, and GH_TOKEN, which
+    # merges, are that token, and workflow changes revert too (FULL_REVERT). Every other gh call
+    # keeps the job's own token (JOB_TOKEN), so it fires no workflows, as before.
     needs: [check, e2e]
     if: failure() && github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
     runs-on: ubuntu-latest
@@ -128,15 +132,18 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      actions: write # re-run CI on main after the revert
+      actions: write # read the parent's CI runs; re-run CI on main, or cancel the revert branch's run
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
+          token: ${{ secrets.REVERT_TOKEN || github.token }}
       - run: scripts/ci/revert-red-main.sh
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.REVERT_TOKEN || github.token }}
+          JOB_TOKEN: ${{ github.token }}
+          FULL_REVERT: ${{ secrets.REVERT_TOKEN != '' }}
           GH_REPO: ${{ github.repository }}
           BASE: ${{ github.event.repository.default_branch }}
           SHA: ${{ github.sha }}

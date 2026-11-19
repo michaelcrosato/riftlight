@@ -101,6 +101,12 @@ branch's run. The one brake: the **`hold`** label on a PR (or draft) stops the m
 `revert-red-main` pushes with `GITHUB_TOKEN`, which can't change `.github/workflows/`: a revert
 leaves those files as `main` has them (its PR and issue name them; a conflict only in them takes
 `main`'s side), and a commit that changes nothing else is left to a person, in a `claude` issue.
+With the optional `REVERT_TOKEN` secret (*One-time setup*) it pushes the revert and merges it with
+that token instead, so workflow changes revert like any other (a conflict only in them still takes
+`main`'s side, and is named); that merge's push starts CI on `main` itself. Its PR, comment and
+issue still come from `GITHUB_TOKEN` and start nothing, as before. The token's push of the
+revert branch does wake CI there (the script cancels that run) and Autopilot, whose run fails
+harmlessly: the PR is merged and the branch gone by then.
 
 ## One-time setup
 
@@ -115,6 +121,14 @@ leaves those files as `main` has them (its PR and issue name them; a conflict on
      write). Events made with the default `GITHUB_TOKEN` trigger no workflows; with this
      token the PRs, merges and review issues it creates do (e.g. a review issue starts
      Claude right away instead of waiting for the weekly maintenance sweep).
+   - `REVERT_TOKEN` *(optional)* — lets `revert-red-main` revert `.github/workflows/` changes
+     too. Create a fine-grained PAT (your GitHub Settings → Developer settings → Personal access
+     tokens → Fine-grained tokens) for this repository only, with Contents, Workflows and Pull
+     requests: read and write (Metadata: read comes with it; Issues and Actions aren't needed),
+     then add it in this repo's Settings → Secrets and variables → Actions → New repository
+     secret, named `REVERT_TOKEN`. Without it the job works as it did before. Renew it before
+     it expires, or delete the secret: while it is invalid or short of a permission, the job
+     fails and nothing is reverted.
    - Variable `CLAUDE_MODEL` *(optional)* — overrides the model (default `claude-opus-5-5`).
 3. **Configure the repo** (auto-merge, squash-only, PRs required on `main` but no required
    status checks, labels, `main` as default):

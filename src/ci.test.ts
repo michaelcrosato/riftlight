@@ -3,8 +3,10 @@
 // and what a failed 52in1 harness run's page was doing (the hub suite's EVIDENCE: each run's own, an
 // earlier run's emptied). The riftlight-html job
 // publishes the file `npm run build:single` writes, and never takes releases/latest from the kit.
-// Every workflow that runs Claude skips itself, with a notice, when no Claude secret is set. The
-// Node the tools need is package.json's `engines`, and an older one is told so.
+// revert-red-main pushes and merges with REVERT_TOKEN when it is set (and says so to the script),
+// and makes every other gh call with the job's own token. Every workflow that runs Claude skips
+// itself, with a notice, when no Claude secret is set. The Node the tools need is package.json's
+// `engines`, and an older one is told so.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -72,6 +74,20 @@ describe('CI', () => {
     for (const publish of job!.match(/gh release (?:create|edit) (?:[^\n]*\\\n)*[^\n]*/g) ?? []) expect(publish).toContain('--prerelease --latest=false');
     expect(job!.match(/gh release (?:create|edit) /g)).toHaveLength(1);
     expect(job, 'a failed publish leaves main green').toContain('continue-on-error: true');
+  });
+
+  it('reverts a red main with REVERT_TOKEN when it is set, for the push and the merge, else GITHUB_TOKEN', () => {
+    const ci = readFileSync(new URL('../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    const job = /^ {2}revert-red-main:\n([\s\S]*?)(?=^ {2}\S)/m.exec(ci)?.[1];
+    expect(job, 'ci.yml: a revert-red-main job').toBeDefined();
+    const token = '${{ secrets.REVERT_TOKEN || github.token }}';
+    const checkout = /uses: actions\/checkout@\S+\n\s*with:\n((?:\s+[\w-]+: .*\n)+)/.exec(job!)?.[1] ?? '';
+    expect(checkout, "checkout's persisted credential is the one the script's git push uses").toContain(`token: ${token}\n`);
+    expect(checkout).not.toContain('persist-credentials: false');
+    const env = /- run: scripts\/ci\/revert-red-main\.sh\n\s*env:\n((?:\s+\w+: .*\n?)+)/.exec(job!)?.[1] ?? '';
+    expect(env).toContain(`GH_TOKEN: ${token}`);
+    expect(env).toContain("FULL_REVERT: ${{ secrets.REVERT_TOKEN != '' }}");
+    expect(env, 'every gh call but the merge: it fires no workflows').toContain('JOB_TOKEN: ${{ github.token }}');
   });
 
   it('asks for the Node the tools need (module.registerHooks: 22.15+), and an older one is told so', () => {

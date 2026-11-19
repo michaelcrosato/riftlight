@@ -79,6 +79,7 @@ secrets=$(gh secret list --repo "$repo" --json name --jq '.[].name' 2>/dev/null 
 grep -qx CLAUDE_CODE_OAUTH_TOKEN <<<"$secrets" || grep -qx ANTHROPIC_API_KEY <<<"$secrets" \
   || missing+=("CLAUDE_CODE_OAUTH_TOKEN (run 'claude setup-token') or ANTHROPIC_API_KEY")
 grep -qx AUTOMATION_TOKEN <<<"$secrets" || missing+=("AUTOMATION_TOKEN (optional, recommended: fine-grained PAT with contents+pull-requests write)")
+grep -qx REVERT_TOKEN <<<"$secrets" || missing+=("REVERT_TOKEN (optional: fine-grained PAT with contents+workflows+pull-requests write; auto-revert then undoes .github/workflows/ changes too)")
 if (( ${#missing[@]} )); then
   echo; echo "Secrets still to add (gh secret set NAME --repo $repo):"
   printf '  - %s\n' "${missing[@]}"
