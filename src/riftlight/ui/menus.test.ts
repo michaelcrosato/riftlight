@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
 import { defaultLook, Lang, normalizeLook, RESOLUTIONS, textWidthPx, type PlayerSettings, wrapText } from '../../engine';
 import { languageName } from '../../engine';
-import { installLanguage, riftlightLines } from '../lang';
+import { installLanguage, riftlightLines, t } from '../lang';
+import { skillName } from '../lang/skills';
 import { riftlightTranslations } from '../lang/translations';
+import { SHOUT_SKILL } from '../game/controls';
 import { NORMAL } from '../game/difficulty';
 import { miniCovers, type Rect, UiCanvas } from './kit';
 import { type OpenOptions, UiLayer } from './layer';
@@ -111,18 +113,21 @@ describe("the settings' engine page", () => {
     const rumbles: unknown[] = [];
     /** 52in1's DualSense: whether games may read its motion (the motion aim rows show then). */
     const dualsense = { motion: false };
+    /** 52in1's microphone: in 52in1 at all, allowed to games, allowed since the game opened. */
+    const mic = { present: true, micAllowed: false, micLater: false };
     const engine = {
       settings: { values: chosen, set: (p: PlayerSettings) => Object.assign(chosen, p) },
       input: { rumble: (r: unknown) => rumbles.push(r) },
-      hubSettings: { values: { dualsense } },
+      hubSettings: Object.assign(mic, { values: { dualsense } }),
       get motionOn() { return dualsense.motion && chosen.motion !== false; },
+      get voiceOn() { return mic.micAllowed && chosen.voice !== false; },
       renderer: { get mode() { return chosen.pixelArt === false ? 'raw' : 'pixel'; }, get baseResolution() { return chosen.pixelSize === 'chunky' ? RESOLUTIONS.compare : RESOLUTIONS.default; } },
       get maxFps() { return chosen.fps ?? 60; },
       get debugShown() { return chosen.debugInfo ?? false; },
     };
-    return { chosen, audio, rumbles, dualsense, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
+    return { chosen, audio, rumbles, dualsense, mic, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
   };
-  type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void };
+  type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void; hint?: string; disabled?: boolean };
   const row = (menu: { items(): readonly unknown[] }, id: string) => menu.items().find((w) => (w as Row).id === id) as Row;
 
   it("the settings open the controller's page: button prompts (PlayStation or Xbox) and vibration, the engine's own settings", () => {
@@ -135,7 +140,7 @@ describe("the settings' engine page", () => {
     const menu = opened as unknown as ReturnType<typeof controllerMenu>;
     expect(menu.id).toBe('controller');
     const ids = menu.items().map((w) => (w as Row).id);
-    expect(ids).toEqual(['padGlyphs', 'vibration']);
+    expect(ids).toEqual(['padGlyphs', 'vibration', 'voice']);
     expect(ids).not.toContain('glyphs'); // prompts follow the device used last by themselves
     expect(row(menu, 'padGlyphs').get!()).toBe(0); // PlayStation unless chosen
     row(menu, 'padGlyphs').set!(1 as never);
@@ -151,7 +156,7 @@ describe("the settings' engine page", () => {
     const ids = () => menu().items().map((w) => (w as Row).id);
     expect(ids()).not.toContain('motion');
     dualsense.motion = true;
-    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity']);
+    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice']);
     expect(row(menu(), 'motion').get!()).toBe(true); // on by default (the engine's motionOn)
     row(menu(), 'motion').set!(false as never);
     expect([chosen.motion, row(menu(), 'motion').get!()]).toEqual([false, false]);
@@ -167,6 +172,36 @@ describe("the settings' engine page", () => {
     expect(chosen.motionSensitivity).toBe(1);
   });
 
+  it('the Voice row (a shout uses War Cry) is off, and stays off, with 52in1’s line until 52in1 allows the microphone; then on with its hint, and it turns off', () => {
+    const { chosen, mic, h } = engineHost();
+    const voice = () => row(controllerMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never), 'voice');
+    const seen = () => [voice().get!(), voice().disabled, voice().hint];
+    expect(seen(), 'not allowed: where 52in1 allows it').toEqual([false, true, t('menu.settings.voice.allow')]);
+    voice().set!(true as never);
+    expect([chosen.voice, voice().get!()], 'it doesn’t change').toEqual([undefined, false]);
+    mic.micLater = true;
+    expect(seen(), 'allowed since the game opened: open it again').toEqual([false, true, t('menu.settings.voice.later')]);
+    Object.assign(mic, { micLater: false, micAllowed: true });
+    expect(seen(), 'allowed: on, its hint').toEqual([true, false, t('menu.settings.voice.hint', { skill: skillName(SHOUT_SKILL) })]);
+    expect(voice().hint).toBe('Shout to use War Cry');
+    voice().set!(false as never);
+    expect([chosen.voice, voice().get!()]).toEqual([false, false]);
+    voice().set!(true as never);
+    expect([chosen.voice, voice().get!()]).toEqual([true, true]);
+  });
+
+  it('outside 52in1 the Controller page has no Voice row, as it has no motion rows; the Controller button says what its page holds', () => {
+    const { dualsense, mic, h } = engineHost();
+    const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
+    const page = () => [controllerMenu(host).items().map((w) => (w as Row).id), row(settingsMenu(host), 'controller').hint];
+    expect(page(), 'in 52in1: the voice').toEqual([['padGlyphs', 'vibration', 'voice'], 'Button prompts, vibration, voice']);
+    dualsense.motion = true;
+    expect(page(), 'and motion aim').toEqual([['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice'], 'Button prompts, vibration, motion aim, voice']);
+    Object.assign(dualsense, { motion: false });
+    Object.assign(mic, { present: false });
+    expect(page(), 'outside 52in1: neither').toEqual([['padGlyphs', 'vibration'], 'Button prompts, vibration']);
+  });
+
   it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its rows', () => {
     const translations = riftlightTranslations();
     /** Lines the menu cut short. */
@@ -174,10 +209,15 @@ describe("the settings' engine page", () => {
     try {
       for (const code of ['en', ...Object.keys(translations)]) {
         installLanguage(new Lang(riftlightLines(), translations, { code }));
-        const { dualsense, h } = engineHost();
+        const { dualsense, mic, h } = engineHost();
         const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
-        for (const [id, motion] of [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false]] as const) {
+        // the Voice row's hint: its own while allowed, else 52in1's line (where it allows it, open the
+        // game again); the Controller button's: with motion aim and the voice, the voice, neither (outside 52in1)
+        const voice = { allowed: { micAllowed: true }, allow: {}, later: { micLater: true }, hub: { present: false } };
+        const cases = [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false], ['controller', false, 'hub'], ...['allowed', 'allow', 'later'].map((k) => ['voice', true, k])] as [string, boolean, keyof typeof voice | undefined][];
+        for (const [id, motion, hub] of cases) {
           dualsense.motion = motion;
+          Object.assign(mic, { present: true, micAllowed: false, micLater: false }, hub ? voice[hub] : {});
           const menu = id === 'controller' ? settingsMenu(host) : controllerMenu(host);
           menu.focusId(id); // its hint shows under the rows
           /** What the menu writes, as written (cut with a "." where it didn't fit). */
@@ -190,7 +230,7 @@ describe("the settings' engine page", () => {
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const shown = row(menu, id) as Row & { label: string; hint: string };
           if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
-          if (!whole(drawn, shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
+          if (!whole(drawn, shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}${hub ? ` (${hub})` : ''}: ${shown.hint}`);
         }
       }
     } finally {

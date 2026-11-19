@@ -341,3 +341,187 @@ export async function runRiftlightCouch(h) {
     await ctx?.browser.close();
   }
 }
+
+/**
+ * A shout uses War Cry (docs/game/actors.md *The hero's controls*, docs/engine/hub.md *Shouts*), in
+ * a page with a fake `window.AIHubSettings` from its first script on, as 52in1's companion sets it.
+ * The microphone not allowed yet: Settings → Controller's Voice row is off with 52in1's line, so is
+ * the engine panel's Microphone row, and `openMicrophone` is never called though the game listens
+ * (War Cry on the bar). Allowed: the engine opens it once, a stream from an OscillatorNode
+ * (`createMediaStreamDestination`) the test turns loud, then quiet, and War Cry fires once, through
+ * one recorded `VoiceShout`; the Voice setting turned off stops the stream's tracks. With a DualSense's
+ * speaker open, the portal from it is an echo: the microphone loud all through it presses nothing,
+ * and once it has ended (and `SHOUT.echoS` after) a shout presses once.
+ * Frames: .scratch/e2e/riftlight-voice-*.png.
+ */
+export async function runRiftlightVoice(h) {
+  const { exe, scenario: s, openPage, check, state, checkClean, OUT } = h;
+  console.log(`\n▶ riftlight voice (${s.backend}, 52in1's microphone)`);
+  let ctx;
+  try {
+    ctx = await openPage(exe, s, 'game=riftlight&debug=0&save=memory&seed=4242');
+    const { page, logs } = ctx;
+    await page.addInitScript(() => {
+      const mic = (window.__mic = { calls: 0, gain: null, stream: null });
+      window.AIHubSettings = Object.assign(new EventTarget(), {
+        version: 1,
+        music: 1,
+        effects: 1,
+        vibration: 1,
+        mic: false,
+        micLater: false,
+        muted: false,
+        dualsense: { connected: false },
+        // the microphone: a tone the test turns up and down (its gain), in a context of the hub's own
+        openMicrophone: async () => {
+          mic.calls++;
+          const ac = new AudioContext();
+          const tone = ac.createOscillator();
+          tone.frequency.value = 220;
+          mic.gain = ac.createGain();
+          mic.gain.gain.value = 0;
+          const out = ac.createMediaStreamDestination();
+          tone.connect(mic.gain).connect(out);
+          tone.start();
+          await ac.resume();
+          return (mic.stream = out.stream);
+        },
+      });
+    });
+    await page.reload(); // the page again, 52in1's settings there from its first script on
+    await page.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+    const R = (fn, arg) => page.evaluate(fn, arg);
+    const shot = (name) => page.screenshot({ path: new URL(`riftlight-voice-${name}.png`, OUT).pathname });
+    await page.keyboard.press('ShiftLeft'); // a gesture: the engine's sound starts (it measures the microphone)
+    const into = await R(async () => {
+      const rl = window.__RIFTLIGHT__;
+      const e = window.__PIXEL_ENGINE__;
+      rl.newRun({ slot: 0, seed: 4242 });
+      await rl.enterDepth(1);
+      rl.dev.ai = false;
+      rl.dev.god = true;
+      for (const m of rl.game.level.monsters()) m.actor.life = 0;
+      e.step(150); // past the hero's pose on arriving
+      return { hub: e.hubSettings.present, mic: !!e.microphone, bar: rl.game.hero.skills().some((k) => k.id === 'war-cry'), listening: e.input.voice, on: e.voiceOn, sound: e.audio.unlocked, calls: window.__mic.calls };
+    });
+    check(into.hub && into.mic && into.bar && into.listening && into.sound, `in 52in1 with War Cry on the bar the game listens for shouts (52in1 ${into.hub}, microphone ${into.mic}, War Cry ${into.bar}, listening ${into.listening}, sound ${into.sound})`);
+    // not allowed: Riftlight's Voice row off, with 52in1's line, and it doesn't change
+    const row = await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      const e = window.__PIXEL_ENGINE__;
+      rl.ui.open('settings');
+      rl.ui.click('controller');
+      const menu = rl.game.layer.top.panel;
+      menu.focusId('voice');
+      rl.ui.click('voice');
+      e.step(2);
+      const w = menu.items().find((x) => x.id === 'voice');
+      return { on: w.get(), disabled: !!w.disabled, hint: w.hint, setting: e.settings.values.voice ?? null };
+    });
+    await shot('off');
+    check(!row.on && row.disabled && row.setting === null && row.hint === 'Allow the microphone in 52in1 Settings, under Sound', `not allowed: Settings → Controller's Voice row is off and stays off, with 52in1's line (${row.on ? 'on' : 'off'}, "${row.hint}")`);
+    // and the engine panel's Microphone row (Sound page), as 52in1 asks of a voice feature
+    await R(() => {
+      const rl = window.__RIFTLIGHT__;
+      rl.ui.close();
+      rl.ui.close();
+      window.__PIXEL_ENGINE__.manual = false; // the panel runs in the live loop
+      window.__PIXEL_ENGINE__.settings.open();
+    });
+    await page.waitForFunction(() => document.querySelector('.settings-ui .row'), null, { timeout: 10000 });
+    await page.keyboard.press('KeyE'); // the Sound page
+    await page.waitForFunction(() => document.querySelector('.settings-ui .row[data-row="voice"]'), null, { timeout: 10000 });
+    const panel = await R(() => {
+      const r = document.querySelector('.settings-ui .row[data-row="voice"]');
+      return { label: r.querySelector('.label').textContent, value: r.querySelector('.value').textContent, off: r.classList.contains('off'), note: r.querySelector('.note').textContent };
+    });
+    await shot('panel');
+    await R(() => window.__PIXEL_ENGINE__.settings.close());
+    check(panel.value === 'Off' && panel.off && panel.note === '52in1 allows the microphone in its Settings, under Sound.', `not allowed: the settings panel's ${panel.label} row is off with 52in1's line (${panel.value}, "${panel.note}")`);
+    await page.waitForTimeout(500); // the game listening in the live loop
+    const never = await R(() => ({ calls: window.__mic.calls, open: window.__PIXEL_ENGINE__.microphone.open, listening: window.__PIXEL_ENGINE__.input.voice }));
+    check(never.calls === 0 && !never.open && never.listening, `not allowed: openMicrophone is never called while the game listens (${never.calls} calls)`);
+
+    // allowed (the player, in 52in1's Settings): the engine opens it once, and hears it
+    await R(() => {
+      Object.assign(window.AIHubSettings, { mic: true });
+      window.AIHubSettings.dispatchEvent(new Event('change'));
+    });
+    await page.waitForFunction(() => window.__PIXEL_ENGINE__.microphone.level() !== null, null, { timeout: 10000 });
+    /** The microphone's loudness as the engine hears it, over `ms`: the highest. */
+    const hear = (ms) =>
+      R(async (ms) => {
+        let top = 0;
+        for (const t = performance.now(); performance.now() - t < ms; await new Promise((r) => setTimeout(r, 20))) top = Math.max(top, window.__PIXEL_ENGINE__.microphone.level() ?? 0);
+        return top;
+      }, ms);
+    const quiet = await hear(300);
+    const shouts = () => R(() => window.__PIXEL_ENGINE__.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length);
+    const before = { shouts: await shouts(), cast: await R(() => window.__RIFTLIGHT__.game.hero.actor.hasBuff('war-cry')) };
+    // a shout: loud for 0.8 s, then quiet
+    await R(() => (window.__mic.gain.gain.value = 0.8));
+    const loud = await hear(800);
+    await R(() => (window.__mic.gain.gain.value = 0));
+    await hear(800);
+    const after = await R(() => {
+      const hero = window.__RIFTLIGHT__.game.hero;
+      return { cast: hero.actor.hasBuff('war-cry'), cooldown: hero.skills().find((k) => k.id === 'war-cry').remaining, calls: window.__mic.calls };
+    });
+    const shouted = await shouts();
+    await shot('cry');
+    check(quiet < 0.01 && loud > 0.2, `the engine hears the microphone's stream: quiet ${quiet.toFixed(3)}, loud ${loud.toFixed(3)} (RMS)`);
+    check(before.shouts === 0 && !before.cast && shouted === 1 && after.cast && after.cooldown > 0, `allowed: a shout fires War Cry once, through one recorded VoiceShout (${shouted} shouts; its buff ${after.cast}, cooldown ${after.cooldown.toFixed(1)} s)`);
+    check(after.calls === 1, `the engine opens the microphone once (${after.calls} calls)`);
+    // the Voice setting off: the stream's tracks stop
+    const off = await R(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      e.settings.set({ voice: false });
+      await new Promise((r) => setTimeout(r, 300));
+      const tracks = window.__mic.stream.getTracks().map((t) => t.readyState);
+      const open = e.microphone.open;
+      e.settings.set({ voice: undefined });
+      return { tracks, open };
+    });
+    check(off.tracks.length > 0 && off.tracks.every((t) => t === 'ended') && !off.open, `the Voice setting off stops the stream's tracks (${off.tracks.join(', ')})`);
+
+    // a DualSense's speaker (52in1 opens it for the game): the portal from it, the microphone loud
+    // all through, is no shout; still loud once it has ended (and a moment after), a shout
+    const echo = await R(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const speaker = async (c) => {
+        const g = c.createGain();
+        g.connect(c.destination);
+        return g;
+      };
+      Object.assign(window.AIHubSettings, { dualsense: { connected: true, speaker: true, openSpeaker: speaker } });
+      window.AIHubSettings.dispatchEvent(new Event('change'));
+      for (let k = 0; k < 100 && !(e.audio.speakerRouted && e.microphone.level() !== null); k++) await wait(20);
+      const shouts = () => e.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length;
+      const before = shouts();
+      window.__mic.gain.gain.value = 0.8;
+      e.audio.play('rl.portal', { bus: 'speaker' });
+      const t0 = performance.now(); // real time: how long the speaker kept the shout out
+      let echoes = 0;
+      let top = 0;
+      while (e.audio.speakerPlaying(0.3) && performance.now() - t0 < 5000) {
+        echoes += e.microphone.echo ? 1 : 0;
+        top = Math.max(top, e.microphone.level() ?? 0);
+        await wait(20);
+      }
+      const guarded = performance.now() - t0;
+      const during = shouts() - before;
+      await wait(600);
+      window.__mic.gain.gain.value = 0;
+      await wait(400);
+      return { routed: e.audio.speakerRouted, guarded, echoes, top, during, after: shouts() - before - during };
+    });
+    check(echo.routed && echo.echoes > 0 && echo.top > 0.2 && echo.guarded > 600, `the portal from the controller's speaker is an echo while it plays and 0.3 s after (${echo.guarded.toFixed(0)} ms, loud ${echo.top.toFixed(3)})`);
+    check(echo.during === 0 && echo.after === 1, `a shout heard through the controller's speaker presses nothing; still loud after it, one press (${echo.during} during, ${echo.after} after)`);
+    checkClean(await state(page), logs, 'voice: ');
+  } catch (e) {
+    check(false, `riftlight voice crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);
+  } finally {
+    await ctx?.browser.close();
+  }
+}

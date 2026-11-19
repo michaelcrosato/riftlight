@@ -18,8 +18,9 @@ import { type DebugKeyMap, type DebugKeysOption, resolveDebugKeys, startingDebug
 import { type AspectMode, RESOLUTIONS, type Resolution, type Viewport, snapToGrid } from './framing';
 import { Hud } from './hud/Hud';
 import { DualSense } from './hub/dualsense';
+import { Microphone } from './hub/microphone';
 import { HubSettings, type HubSettingsSource, hubPadInput, hubSettingsSource } from './hub/settings';
-import { Input, type InputDevice, type InputFrame, type SnapshotMemory } from './input';
+import { Input, type InputDevice, type InputFrame, SHOUT, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
@@ -452,11 +453,15 @@ export class Engine {
   /**
    * The game's voice feature is on (`EngineOptions.settings.voice`, the panel's Microphone row):
    * the player has allowed games the microphone in 52in1 (`hubSettings.micAllowed`) and not turned
-   * it off here. Open it with `hubSettings.openMicrophone()`; never ask the browser yourself.
+   * it off here. A shout presses `VoiceShout` while the game listens (`input.voice`: the engine opens
+   * the microphone itself); other uses open it with `hubSettings.openMicrophone()`, never the browser's.
    */
   get voiceOn(): boolean {
     return this.hubSettings.micAllowed && this.settings.values.voice !== false;
   }
+
+  /** 52in1's microphone on a page (`input.microphone`, heard while the game listens: `input.voice`); null headless and outside 52in1. */
+  readonly microphone: Microphone | null = null;
 
   /**
    * Motion aim is on (`EngineOptions.settings.motion`, the panel's Motion aim row; `input.motion`
@@ -569,6 +574,13 @@ export class Engine {
     this.settings.onChange((v) => (this.input.vibration = v.vibration ?? 1));
     // a DualSense's motion and touchpad through 52in1, read only while the game asks for them
     if (this.hubSettings.present) this.input.dualsense = hubPadInput(this.hubSettings);
+    // 52in1's microphone, open only while the game listens for shouts (`input.voice`) and its voice
+    // feature is on: a page's alone (headless, tests hand Input a `VoiceInput` of their own). What it
+    // hears while the controller's speaker plays, and a moment after, is no shout (`SHOUT.echoS`)
+    if (page && this.hubSettings.present) {
+      const speaker = () => this.audio.speakerPlaying(SHOUT.echoS);
+      this.input.microphone = this.microphone = new Microphone(this.hubSettings, () => this.voiceOn, () => this.audio.context, speaker);
+    }
     if (options.settings?.motion) {
       // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).
       // While it is on, Input reads the gyro on every poll: 52in1's own Motion aim leaves the stick
@@ -1276,6 +1288,7 @@ export class Engine {
     if (g.__PIXEL_ENGINE__ === this) delete g.__PIXEL_ENGINE__; // don't keep a disposed engine alive
     this.renderer.setAnimationLoop(null);
     this.ready = false;
+    this.microphone?.close(); // its tracks stopped
     this.audio.dispose();
     this.dualsense.close(); // the triggers go and the light bar is the hub's again
     this.hubSettings.dispose();

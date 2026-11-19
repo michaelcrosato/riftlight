@@ -36,7 +36,7 @@ import { talkText } from '../town/npcs';
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
-import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, readActions, SHELL_MENU_BINDINGS, touchpadSwipes } from './controls';
+import { cameraBasis, CONTROLS, type ControlDevice, KEYS, MOUSE, ndcToArt, type Page, PAGES, Pointer, type PointerState, readActions, SHELL_MENU_BINDINGS, SHOUT_SKILL, touchpadSwipes } from './controls';
 import { changedSliders, difficultyLineId, difficultyMods, sanitizeTuning } from './difficulty';
 import { registerFx } from './fx';
 import { LightPool } from './lights';
@@ -410,6 +410,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (this.savedGamepad) ctx.input.gamepadButtons = this.savedGamepad;
     ctx.input.motion.lean = this.savedLean;
     ctx.input.touchpad = false;
+    ctx.input.voice = false;
     this.coop?.dispose();
     ctx.input.padPlayers = false;
     ctx.input.joinWith = null;
@@ -1502,6 +1503,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return this.screen === 'loading' || this.layer.modal || (this.round?.frozen ?? false);
   }
 
+  /** The bar's slot that holds War Cry (`SHOUT_SKILL`: what a shout uses), or -1. */
+  private shoutSlot(): number {
+    const slot = this.hero.skills().find((s) => typeof s.slot === 'number' && s.id === SHOUT_SKILL)?.slot;
+    return typeof slot === 'number' ? slot : -1;
+  }
+
   /** Player intent from keys, mouse, pad and touch (fixed step). */
   private readIntent(ctx: GameContext, dt: number): HeroIntent {
     const input = ctx.input;
@@ -1562,6 +1569,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const onHud = this.pointerOnHud(down ?? this.pointer.art);
     // the keys' and buttons' actions (a couch guest's pad reads the same: `readActions`), then the mouse's
     readActions(input, i);
+    // a shout into the microphone (52in1's: `input.voice`, a recorded press) uses War Cry from the
+    // bar as its button does; a button pressed with it wins, and the shout is used up either way
+    if (input.consumeAny(KEYS.shout) && i.skill < 0) i.skill = this.shoutSlot();
     i.attack = !overUi && (i.attack || (left && !onHud));
     if (right && !overUi) i.skill = 0;
     // held skill keys keep channels (whirlwind, beams) going
@@ -1863,6 +1873,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
     ui.touchpad = touchpadSwipes(ctx.engine);
+    // the game listens for shouts while War Cry is on the bar in play (the engine opens 52in1's
+    // microphone only then, and only while the player has it allowed, its Voice setting on, not muted)
+    ctx.input.voice = this.screen !== 'title' && !this.showcase.active && this.shoutSlot() >= 0;
     // rows and tabs a thumb tall on a page with touch controls (the art size: recorded)
     this.layer.tap = tapArt(ctx.engine.renderer);
     // pointer and menu input → the panel stack, then game hotkeys

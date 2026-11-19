@@ -22,7 +22,9 @@ import { formatTime } from '../game/progress';
 import { lootFilterOptions } from '../loot/names';
 import type { SavesView } from '../game/save';
 import type { Settings } from '../game/settings';
+import { SHOUT_SKILL } from '../game/controls';
 import { lang, t } from '../lang';
+import { skillName } from '../lang/skills';
 import { lookName } from './lookStudio';
 import { Menu, type Widget } from './menu';
 
@@ -33,7 +35,7 @@ export interface MenuHost {
   readonly dev: DevFlags;
   readonly audio: AudioManager;
   /** The engine's own player settings (pixel art, pixel size, frame rate, debug info: `engine.settings`, saved by the engine) and what they show. */
-  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input' | 'hubSettings' | 'motionOn' | 'controls'>;
+  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input' | 'hubSettings' | 'motionOn' | 'voiceOn' | 'controls'>;
   slot: number;
   screen: string;
   difficulty(): DifficultyTuning;
@@ -265,8 +267,8 @@ export function settingsMenu(h: MenuHost): Menu {
             { kind: 'toggle' as const, id: 'touchAim', label: t('menu.settings.touch_aim'), get: () => s.touchAimAssist, set: (v: boolean) => change(() => (s.touchAimAssist = v))(), hint: t('menu.settings.touch_aim.hint') },
           ]
         : []),
-      // the controller's own page: button prompts, vibration, motion aim (a list that fits at 1920×1080 with all of them)
-      { kind: 'button', id: 'controller', label: t('menu.settings.controller'), onClick: () => h.openMenu(controllerMenu(h)), hint: motionAllowed(h) ? t('menu.settings.controller.hint_motion') : t('menu.settings.controller.hint') },
+      // the controller's own page: button prompts, vibration, motion aim, the voice (a list that fits at 1920×1080 with all of them)
+      { kind: 'button', id: 'controller', label: t('menu.settings.controller'), onClick: () => h.openMenu(controllerMenu(h)), hint: t(controllerHint(h)) },
       { kind: 'button', id: 'engine', label: t('menu.settings.engine'), onClick: () => h.openMenu(engineMenu(h)), hint: t('menu.settings.engine.hint') },
     ],
     { id: 'settings', title: t('menu.settings.title'), width: 240, labelWidth: 104, onSound: sound(h) },
@@ -276,10 +278,14 @@ export function settingsMenu(h: MenuHost): Menu {
 /** 52in1 lets games read a DualSense's motion: the Controller page has motion aim's rows. */
 const motionAllowed = (h: MenuHost): boolean => h.engine.hubSettings.values.dualsense.motion;
 
+/** The Controller button's hint, what its page holds: the voice in 52in1 (`voiceRow`), motion aim while 52in1 allows it. */
+const controllerHint = (h: MenuHost): string => (!h.engine.hubSettings.present ? 'menu.settings.controller.hint' : motionAllowed(h) ? 'menu.settings.controller.hint_motion_voice' : 'menu.settings.controller.hint_voice');
+
 /**
  * Settings → Controller: the controller's settings, the engine's (`engine.settings`, which saves
- * them): button prompts (prompts follow the input used last by themselves), vibration, and motion
- * aim and its sensitivity while 52in1 lets games read a DualSense's motion.
+ * them): button prompts (prompts follow the input used last by themselves), vibration, motion aim
+ * and its sensitivity while 52in1 lets games read a DualSense's motion, and in 52in1 the voice (a
+ * shout uses War Cry), off until 52in1 allows the microphone.
  */
 export function controllerMenu(h: MenuHost): Menu {
   return new Menu(
@@ -297,9 +303,31 @@ export function controllerMenu(h: MenuHost): Menu {
       },
       // motion aim (the engine's `motion` and `motionSensitivity`): only while 52in1 lets games read a DualSense's motion
       ...(motionAllowed(h) ? motionRows(h) : []),
+      // the voice: only in 52in1 (outside it there is no microphone to allow), as the catalogue asks
+      ...(h.engine.hubSettings.present ? [voiceRow(h)] : []),
     ],
     { id: 'controller', title: t('menu.controller.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
+}
+
+/**
+ * The voice, in 52in1 (the engine's `voice`: `engine.voiceOn`, the Microphone row of its panel): a
+ * shout into the microphone uses War Cry (`KEYS.shout`). Off, and it doesn't change, until the
+ * player allows games the microphone in 52in1 (catalogue *The microphone*): its hint says where, or
+ * to open the game again when they allowed it since (`micLater`).
+ */
+function voiceRow(h: MenuHost): Widget {
+  const hub = h.engine.hubSettings;
+  const why = hub.micLater ? 'menu.settings.voice.later' : 'menu.settings.voice.allow';
+  return {
+    kind: 'toggle',
+    id: 'voice',
+    label: t('menu.settings.voice'),
+    get: () => h.engine.voiceOn,
+    set: (v) => hub.micAllowed && h.engine.settings.set({ voice: v }),
+    disabled: !hub.micAllowed,
+    hint: hub.micAllowed ? t('menu.settings.voice.hint', { skill: skillName(SHOUT_SKILL) }) : t(why),
+  };
 }
 
 /** Motion sensitivity as a slider: its steps over 0..1. */

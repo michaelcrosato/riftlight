@@ -46,10 +46,11 @@ export const CATALOGUE = {
    * A DualSense's extras it uses through 52in1 (`hub:dualsense`): the light bar (the hero's life,
    * game/padFeel.ts), the adaptive triggers (R2, interact, works a latch while there is something
    * to interact with: `LATCH`), haptics (play's rumbles), motion aim (`turnAim`), the touchpad (a
-   * swipe pages the character screens as L1 / R1 do, `KEYS.pagePrev`; its press opens the map) and
-   * the speaker (the portal and loud drops on the `speaker` bus). No microphone.
+   * swipe pages the character screens as L1 / R1 do, `KEYS.pagePrev`; its press opens the map), the
+   * speaker (the portal and loud drops on the `speaker` bus) and the microphone (a shout uses War
+   * Cry from the bar, `KEYS.shout`; the Voice row of Settings → Controller).
    */
-  dualsense: 'light bar, adaptive triggers, haptics, motion, touchpad, speaker',
+  dualsense: 'light bar, adaptive triggers, haptics, motion, touchpad, speaker, microphone',
   /** The agent tool that builds it (the model and its effort are given to the hand-over build). */
   harness: 'Claude Code',
   webgpu: 'required',

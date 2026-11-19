@@ -266,6 +266,53 @@ describe('AudioManager buses: music, sfx and the controller’s speaker', () => 
     audio.dispose();
   });
 
+  it('says while a sound plays from the controller’s speaker, and for a tail after it (the microphone beside it would hear it)', async () => {
+    vi.stubGlobal('AudioContext', FakeContext);
+    FakeContext.made = [];
+    const audio = new AudioManager(new EventTarget());
+    const call: SoundDef = { wave: 'square', freq: 440, sustain: 0.5 };
+    audio.register('call', call);
+    audio.unlock();
+    const ctx = FakeContext.made[0]!;
+    const long = renderSound(call, ctx.sampleRate).length / ctx.sampleRate; // its buffer's seconds
+    const tail = 0.3;
+    const at = (t: number) => ((ctx.currentTime = t), [audio.speakerPlaying(), audio.speakerPlaying(tail)]);
+    expect(audio.play('call', { bus: 'speaker' })).toBe(true);
+    expect(at(0), 'the speaker bus with the other sounds: not the controller’s speaker').toEqual([false, false]);
+    audio.useSpeaker(async () => new FakeNode() as unknown as AudioNode);
+    await Promise.resolve();
+    expect(audio.speakerRouted).toBe(true);
+    expect(at(0), 'routed while it plays: the bus takes it to the controller’s speaker').toEqual([true, true]);
+    audio.play('call', { volume: 1 });
+    expect(at(10), 'an sfx').toEqual([false, false]);
+    audio.play('call', { bus: 'speaker' });
+    expect(at(10 + long - 0.01), 'while it plays').toEqual([true, true]);
+    expect(at(10 + long + 0.01), 'ended: the tail').toEqual([false, true]);
+    expect(at(10 + long + tail + 0.01), 'past the tail').toEqual([false, false]);
+    const t0 = ctx.currentTime;
+    audio.play('call', { bus: 'speaker', pitch: 12 }); // an octave up: twice as fast
+    expect(at(t0 + long / 2 + 0.01)).toEqual([false, true]);
+    audio.setMuted(true);
+    audio.play('call', { bus: 'speaker' }); // muted: nothing plays
+    expect(at(t0 + long / 2 + tail + 0.02), 'muted').toEqual([false, false]);
+    audio.setMuted(false);
+    // a loop on the speaker bus: while it plays, and the fade and tail after it stops
+    const hum = audio.loop('call', { bus: 'speaker' });
+    expect(at(100), 'a loop, however long').toEqual([true, true]);
+    hum.stop();
+    expect(at(100.05), 'its fade').toEqual([true, true]);
+    expect(at(100.2), 'faded').toEqual([false, true]);
+    expect(at(100.5)).toEqual([false, false]);
+    audio.loop('call').stop();
+    audio.loop('call');
+    expect(at(101), 'an sfx loop').toEqual([false, false]);
+    audio.play('call', { bus: 'speaker' });
+    audio.useSpeaker(null); // the player turned the speaker off: with the other sounds again
+    expect(at(101.01)).toEqual([false, false]);
+    audio.dispose();
+    expect(audio.speakerPlaying(tail), 'no context').toBe(false);
+  });
+
   it('a speaker opener that throws, gives no promise or no node only leaves the speaker bus with the other sounds', async () => {
     vi.stubGlobal('AudioContext', FakeContext);
     FakeContext.made = [];

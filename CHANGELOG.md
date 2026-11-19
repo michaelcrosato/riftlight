@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.73.0
+
+- Shouts as recorded input. With `ctx.input.voice = true`, a shout into 52in1's microphone presses `VoiceShout` (`VOICE_KEYS.shout`) once, recorded like a key. It is never heard headless or during a replay, which presses what was recorded.
+- New exports: `SHOUT` (`loud` 0.2 RMS for `holdS` 0.15 s; nothing more until under `quiet` 0.06 for `quietS` 0.25 s; `echoS` 0.3 s), `shoutStep`, `ShoutState` and `VoiceInput` (`on`, `level()`, optional `listen()` and `echo`). Tests set their own `input.microphone`.
+- `Microphone` (`engine.microphone`, a page in 52in1 only):
+  - It opens the stream through `hubSettings.openMicrophone()` once, only while the game listens, `engine.voiceOn` holds and the microphone isn't muted.
+  - It measures the stream with an AnalyserNode in the engine's AudioContext.
+  - It stops the stream's tracks when any of those end; a stream that arrives after a close is stopped at once.
+  - A stream whose tracks end by themselves (a DualSense unplugged) is let go and 52in1 asked again; one that arrives already ended counts as none.
+- New `AudioManager.speakerPlaying(tail)`: a sound plays from the controller's speaker (the `speaker` bus routed there), or ended less than `tail` seconds ago. While it is true, plus `SHOUT.echoS`, the microphone is an echo (`Microphone.echo` / `VoiceInput.echo`): no shout grows from what it hears, and one already pressed stays pressed.
+- Prompts: the line `key.voice_shout` ("Shout"), and `keyGlyph('VoiceShout')` draws a microphone. `controlGlyph` treats `Voice*` codes as keyboard controls.
+- The `engine.voiceOn` docs now say a shout goes through `input.voice`. The kit's CONTROLS.md shows `ctx.input.voice = true` and says to give the shout a button that does the same.
+- docs/engine/hub.md *Shouts* has the thresholds and their tuning status: tuned on a test tone, not yet on a DualSense.
+
 ## 0.72.0
 
 - `MenuInput`: the left stick now steps a menu on the frame it leans past its threshold, as a d-pad press does, then repeats as a held d-pad does. Before, a held stick moved only after the repeat's pause plus one step (about 0.42 s), and a quick flick did nothing. A direction the stick holds lets go only under 0.45, so a thumb resting near the threshold is one step. A stick still leaning from play reads centred after `input.release()`, as before.

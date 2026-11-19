@@ -149,6 +149,66 @@ export interface DualSenseInput {
   touches(): readonly { readonly id: number; readonly x: number; readonly y: number }[] | null;
 }
 
+/**
+ * A shout into the microphone (`input.voice`) presses `shout`, once, recorded like a key. The
+ * microphone is 52in1's (`engine.voiceOn`), heard only while a game listens, never in a replay.
+ */
+export const VOICE_KEYS = { shout: 'VoiceShout' } as const;
+
+/**
+ * A shout (`shoutStep`), by the microphone's loudness (RMS, 0..1): `loud` or more for `holdS`
+ * seconds presses once; nothing more until it has stayed under `quiet` for `quietS` seconds, so a
+ * shout held on (or a pause between its words) never presses again. Between `quiet` and `loud` a
+ * shout neither grows nor ends. While a sound plays from the controller's speaker, and for `echoS`
+ * seconds after, nothing heard makes a shout (`VoiceInput.echo`). Tuned on a test tone, not yet on
+ * a DualSense (docs/engine/hub.md *Shouts*).
+ */
+export const SHOUT = { loud: 0.2, quiet: 0.06, holdS: 0.15, quietS: 0.25, echoS: 0.3 } as const;
+
+/** Where a shout stands (`shoutStep`): plain data. */
+export interface ShoutState {
+  /** Seconds loud so far. */
+  loud: number;
+  /** Seconds quiet so far. */
+  quiet: number;
+  /** This shout has pressed: nothing more until it is quiet again. */
+  fired: boolean;
+}
+
+/** One poll of the microphone's loudness `level` over `dt` seconds (`SHOUT`): true when a shout is complete, once per shout. */
+export function shoutStep(s: ShoutState, level: number, dt: number): boolean {
+  if (level >= SHOUT.loud) {
+    s.quiet = 0;
+    if (s.fired) return false;
+    s.loud += dt;
+    if (s.loud < SHOUT.holdS - 1e-6) return false;
+    s.fired = true;
+    return true;
+  }
+  if (level < SHOUT.quiet) {
+    s.loud = 0;
+    s.quiet += dt;
+    if (s.quiet >= SHOUT.quietS - 1e-6) s.fired = false;
+  } else s.quiet = 0;
+  return false;
+}
+
+/** Where a shout's loudness comes from (`input.microphone`; the engine's is 52in1's microphone, `Microphone`). Tests pass numbers. */
+export interface VoiceInput {
+  /** The player lets the game hear them now: its voice feature on (`engine.voiceOn`), the microphone not muted. */
+  readonly on: boolean;
+  /** How loud it is now (the RMS of the last few hundredths of a second, 0..1), or null while nothing is heard. */
+  level(): number | null;
+  /**
+   * The game's own sound may be what it hears now (the engine's: a sound from the DualSense's
+   * speaker, beside its microphone, or `SHOUT.echoS` after one): no shout grows then, and one
+   * already pressed stays pressed until quiet.
+   */
+  readonly echo?: boolean;
+  /** Input says on every poll whether the game listens (`voice`, not a replay): the engine's microphone is open only while it does and `on` holds. */
+  listen?(listening: boolean): void;
+}
+
 /** The parts of the Gamepad API that Input reads (tests can pass plain objects). */
 export interface GamepadLike {
   readonly connected?: boolean;
@@ -497,6 +557,16 @@ export class Input {
    * guest's DualSense (its pad `joined`, told by its `id`) presses on that pad alone (`player(slot)`).
    */
   touchpad = false;
+  /**
+   * Listen for shouts (a game turns this on while a shout does something): a shout into the
+   * microphone presses `VoiceShout` (`VOICE_KEYS`, `SHOUT`), once, recorded. The microphone
+   * (`microphone`) is open only while this is on and the player lets the game hear them, and never
+   * during a replay, which presses what was recorded. Give the shout a button that does the same.
+   */
+  voice = false;
+  /** Where shouts are heard: 52in1's microphone on a page (the engine sets it); null headless and outside 52in1 (tests set one). */
+  microphone: VoiceInput | null = null;
+  private readonly shout: ShoutState = { loud: 0, quiet: 0, fired: false };
   /**
    * Couch co-op: the DualSense 52in1 reads is a guest's (every pad whose `id` names one has
    * `joined`), so its touchpad presses on that guest's pad (`touchpad`) and its turns never reach
@@ -932,6 +1002,7 @@ export class Input {
     this.triggers.left = this.triggers.right = 0;
     this.pad1 = null;
     this.padMulti = false;
+    Object.assign(this.shout, { loud: 0, quiet: 0, fired: false });
     for (const p of this.pads) p.forget();
     this.joinHold.clear();
     this.dropTaps();
@@ -954,6 +1025,7 @@ export class Input {
     // gamepad presses queue at the frame before's time, like keys pressed since then (so a
     // recording, which replays every press that way, gives them the same expiry)
     this.pollGamepads(dt, pads, runs);
+    this.pollVoice(dt, runs);
     this.now = now;
     // no negative zeros (a stick at rest reads -0): JSON writes them as 0, so a recording would
     // replay a different number, and atan2(-0, x) is not atan2(0, x)
@@ -1655,6 +1727,29 @@ export class Input {
       own.triggers.right = rt;
     }
     for (const p of this.pads) if (!live.has(p.slot)) p.clear();
+  }
+
+  /**
+   * One poll of the microphone (`voice`): a shout presses `VoiceShout` (`shoutStep`), in a frame
+   * that runs (one completed while paused presses nothing, then or later), never from an echo of the
+   * game's own sound (`VoiceInput.echo`). Never during a replay:
+   * the microphone is told the game stops listening, and the recording presses what it pressed.
+   */
+  private pollVoice(dt: number, runs: boolean): void {
+    const mic = this.microphone;
+    const listening = this.voice && !this._playing;
+    mic?.listen?.(listening);
+    const level = listening && mic?.on ? mic.level() : null;
+    if (level === null || !Number.isFinite(level)) {
+      Object.assign(this.shout, { loud: 0, quiet: 0, fired: false });
+      return;
+    }
+    // the game's own sound may be what it hears: a shout counts from after it (one pressed stays pressed)
+    if (mic?.echo) {
+      this.shout.loud = 0;
+      return;
+    }
+    if (shoutStep(this.shout, level, dt) && runs) this.press(VOICE_KEYS.shout);
   }
 
   /**

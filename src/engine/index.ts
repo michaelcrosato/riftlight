@@ -86,7 +86,10 @@ export {
   TOUCHPAD,
   TOUCHPAD_KEYS,
   TWIN_SECONDS,
+  SHOUT,
+  VOICE_KEYS,
   applyDeadzone,
+  shoutStep,
   swipeDirection,
   touchpadGesture,
   type ButtonEvent,
@@ -98,7 +101,9 @@ export {
   type PadFrame,
   type Rumble,
   type SwipeDirection,
+  type ShoutState,
   type TouchpadGesture,
+  type VoiceInput,
 } from './input';
 export {
   CONTROL_LINES,
@@ -229,6 +234,7 @@ export {
   type TriggerSide,
 } from './hub/settings';
 export { DualSense, type DualSenseSent } from './hub/dualsense';
+export { Microphone } from './hub/microphone';
 export { lerpAngle, RemoteTrack, type RemoteTrackOptions } from './hub/track';
 export { DEFAULT_TOUCH_BUTTONS, TouchControls, TouchFollow, type TouchButton, type TouchButtonState, type TouchControlsOptions, type TouchCorner, type TouchStick } from './TouchControls';
 export { PALETTE, type PaletteColor } from './palette';

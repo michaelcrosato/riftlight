@@ -215,10 +215,12 @@ the hub's `change`. They are the player's, not the game's: never stored, never r
   `micLater` (allowed after this game was opened: it reaches the game once it is opened again),
   `micMuted` (the DualSense's mute button). A voice feature's settings row is off, with a line
   saying 52in1 allows the microphone in its Settings, under Sound (while `micLater`: to open the
-  game again), until `micAllowed`: the engine's settings panel has that row for a game that passes
-  `settings: { voice: true }` (docs/engine/game-api.md *Player settings*), and `engine.voiceOn`
-  says it is on; then `await hubSettings.openMicrophone()` gives a stream or null. The game never asks the browser itself, and nothing opens during a replay. What a voice
-  feature hears is input: it reaches gameplay through `ctx.input.send`, so it replays.
+  game again; outside 52in1: that it needs 52in1), until `micAllowed`: the engine's settings panel
+  has that row for a game that passes `settings: { voice: true }` (docs/engine/game-api.md *Player
+  settings*), and `engine.voiceOn` says it is on. What a voice feature hears is input: a shout is a
+  recorded press (*Shouts*, below), anything else reaches gameplay through `ctx.input.send`, from
+  `await hubSettings.openMicrophone()` (a stream or null). The game never asks the browser itself,
+  and nothing opens headless or during a replay.
 
 `ctx.dualsense` (`DualSense`, `src/engine/hub/dualsense.ts`) is the controller's outputs, each
 only while its flag (`dualsense.flags`) is true, so the game plays the same without them:
@@ -277,3 +279,36 @@ second later (the engine sees it as the stick, recorded as any stick is). A game
 `settings: { motion: true }` never reads the gyro unless it turns `input.motion.on` itself, and
 52in1's own Motion aim stays the player's. The touchpad's fingers never take anything from 52in1.
 
+### Shouts
+
+52in1's microphone is recorded input the same way: heard only while the game asks, never headless
+or in a replay. `ctx.input.voice = true` while a shout does something: a shout presses `VoiceShout`
+(`VOICE_KEYS.shout`) once, recorded like a key, by the loudness (the RMS of the last 43 ms) and the
+numbers in `SHOUT` (`shoutStep`, plain data):
+
+| `SHOUT` | Value | What it does |
+| --- | --- | --- |
+| `loud`, `holdS` | 0.2, 0.15 s | this loud for this long is a shout: it presses then |
+| `quiet`, `quietS` | 0.06, 0.25 s | nothing more until this quiet for this long: a shout held on, or a breath between its words, presses once; between `quiet` and `loud` a shout neither grows nor ends |
+| `echoS` | 0.3 s | while a sound plays from the controller's speaker, and this long after, nothing heard makes a shout (`VoiceInput.echo`): a shout counts from after it, one pressed stays pressed |
+
+**Tuning status: unverified on hardware.** The numbers were tuned on a test tone in headless
+Chromium (the e2e's microphone: quiet 0.000, loud 0.57) and never on a DualSense's microphone or a
+device's in 52in1. The companion opens it with `getUserMedia({ audio: true })`, so the browser's
+gain control, noise suppression and echo cancellation shape the levels, and its echo cancellation
+may not cover the controller's speaker (a device of its own beside the microphone): that is why
+`echoS` exists (the engine knows what it plays there, `audio.speakerPlaying`). To tune: in 52in1,
+read `engine.microphone.level()` while talking, shouting and with the portal on the speaker; put
+`loud` between talk and a shout, `quiet` under talk, and lengthen `echoS` if a speaker sound fires.
+
+A shout that ends in a frame that never runs (paused, loading) presses nothing, then or later. While
+the game listens, its voice feature is on (`engine.voiceOn`) and the mute button is off, the engine
+opens the microphone once through `hubSettings.openMicrophone()` (`Microphone`, `input.microphone`)
+and measures it with an `AnalyserNode` in its AudioContext (there after the first key, click or
+touch); when any of it ends (the game stops listening, the setting goes off, muted, no longer
+allowed, a replay) it stops the stream's tracks. A stream whose tracks end by themselves (the
+DualSense's microphone unplugged) is let go and 52in1 asked again. Listen only while a shout does
+something (the browser shows the microphone in use), give the shout a button that does the same
+(Riftlight: War Cry, from the bar), and name it in `hub:dualsense` (`microphone`). Prompts name it
+with the line `key.voice_shout` and draw a microphone (`keyGlyph`). Tests set `input.microphone` to
+a `VoiceInput` (`on`, `level()`, `echo`) and feed numbers (`src/engine/hub/microphone.test.ts`).

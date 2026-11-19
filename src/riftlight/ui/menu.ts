@@ -31,7 +31,18 @@ export type Widget =
       /** Drawn indented, under the row it belongs to (a filter's preset and sliders). */
       indent?: boolean;
     }
-  | { kind: 'toggle'; id: string; label: string; get: () => boolean; set: (v: boolean) => void; hint?: string; name?: string; indent?: boolean }
+  | {
+      kind: 'toggle';
+      id: string;
+      label: string;
+      get: () => boolean;
+      set: (v: boolean) => void;
+      hint?: string;
+      name?: string;
+      indent?: boolean;
+      /** Shown dimmed and it doesn't change, though it takes the focus (its hint says why: the voice before 52in1 allows the microphone). */
+      disabled?: boolean;
+    }
   | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string; name?: string; indent?: boolean }
   | { kind: 'label'; id: string; label: string; color?: HudColor }
   | { kind: 'gap'; id: string; h?: number };
@@ -354,7 +365,8 @@ export class Menu implements Panel {
         this.rects.set(w.id, row);
         if (focus || ui.hover(row)) ui.rect(row.x, row.y, row.w, row.h, 'night');
         if (focus) ui.rect(row.x, row.y, 2, row.h, UI.focus);
-        const color = focus ? 'white' : 'mist';
+        const off = w.kind === 'toggle' && w.disabled === true;
+        const color = off ? 'slate' : focus ? 'white' : 'mist';
         const cx = r.x + labelW;
         const cw = r.w - labelW - 4;
         // a row a thumb tall (`tap`): its words and control in the middle of it
@@ -382,7 +394,7 @@ export class Menu implements Panel {
           const on = w.get();
           ui.rect(cx, y + 2, 17, 9, 'ink');
           ui.rect(cx + 1, y + 3, 15, 7, on ? 'green' : 'night');
-          ui.rect(on ? cx + 9 : cx + 1, y + 3, 7, 7, focus ? UI.focus : 'white');
+          ui.rect(on ? cx + 9 : cx + 1, y + 3, 7, 7, off ? 'slate' : focus ? UI.focus : 'white');
           ui.text(cx + 22, y + 3, t(on ? 'menu.on' : 'menu.off'), { color: on ? UI.good : 'slate' });
         } else if (w.kind === 'choice') {
           const label = w.options[w.get()] ?? '?';
@@ -520,6 +532,7 @@ export class Menu implements Panel {
       return true;
     }
     if (w.kind === 'toggle') {
+      if (w.disabled) return true;
       w.set(!w.get());
       this.o.onSound?.('click');
       return true;

@@ -82,8 +82,8 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   light bar (`lightFor`) is the town's orange, the hero's life in a level (green, amber, red pulsing
   under a quarter; red in a boss fight; plum dead), the hub's own on the title and in a showcase
   mode. R2 interacts: with something in reach on the pad, its adaptive trigger is a latch
-  (`LATCH`, `syncLatch`) that pushes back just before the press lands and clicks halfway down,
-  held through that pull till R2 is up. The portal and a loud drop's chime play on the `speaker`
+  (`LATCH`, `syncLatch`) pushing back just before the press lands, clicking halfway, held
+  through that pull till R2 is up. The portal and a loud drop's chime play on the `speaker`
   bus (the controller's, when the player allows it).
 - **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
   arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
@@ -180,8 +180,8 @@ playtime, best time per depth); `positions` (grid cells of the bag and the stash
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
 store (`pixel-engine:audio:riftlight`: every key has the game's name in it, as 52in1's shared
-storage asks), and the engine's own settings (the controller's button prompts and vibration, and motion aim
-and its sensitivity while 52in1 lets games read a DualSense's motion: Settings → Controller, so the
+storage asks), and the engine's own settings (the controller's button prompts and vibration, motion aim
+and its sensitivity while 52in1 lets games read a DualSense's motion, the voice in 52in1: Settings → Controller, so the
 Settings list fits a 1920×1080 screen with them; pixel art, pixel size, frame rate, debug info:
 Settings → Engine) in
 `pixel-engine:settings:riftlight`. Prompts follow the input used last (`engine.controls.device`: a

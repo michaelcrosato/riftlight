@@ -51,8 +51,11 @@
 //                 flow for its pictures and the page (title, town, level, Tuning, the look studio,
 //                 death, a real reload → Continue; the HUD canvas, localStorage, no ⚙ button). Then
 //                 the item windows' frames (scripts/e2e-riftlight-items.mjs), a click on the tree's
-//                 canvas, its own Escape, a label click after a lost device, a phone. The gameplay
-//                 checks are headless: src/riftlight/game/flow*.test.ts, ui/items/*.headless.test.ts,
+//                 canvas, its own Escape, a label click after a lost device, a phone; couch co-op on a
+//                 TV; a shout into a fake 52in1's microphone (a tone) fires War Cry once, nothing
+//                 opens it before 52in1 allows it, and the portal on the controller's speaker can't
+//                 fire one. The gameplay checks are headless:
+//                 src/riftlight/game/flow*.test.ts, voice.test.ts, ui/items/*.headless.test.ts,
 //                 ui/tree/tree.headless.test.ts.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).
 // riftlight-loot  the Loot Lab's pictures, its tooltip pixels and canvas (scripts/e2e-riftlight-loot.mjs;
@@ -133,7 +136,7 @@ import { chromium } from 'playwright-core';
 import { headlessShell, WEBGL_ARGS, WEBGPU_ARGS } from './browser.mjs';
 import { engineReady, startServer, watchConsole } from './page.mjs';
 import { PAGE_HELPERS } from './e2e-moves.mjs';
-import { runRiftlight, runRiftlightCouch } from './e2e-riftlight.mjs';
+import { runRiftlight, runRiftlightCouch, runRiftlightVoice } from './e2e-riftlight.mjs';
 import { runRiftlightItems } from './e2e-riftlight-items.mjs';
 import { runRiftlightTree } from './e2e-riftlight-tree.mjs';
 import { runSettings } from './e2e-settings.mjs';
@@ -1784,6 +1787,7 @@ const SUITES = {
     await runRiftlight({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightItems({ ...helpers, scenario: SCENARIOS[0] });
     await runRiftlightCouch({ ...helpers, scenario: SCENARIOS[0] });
+    await runRiftlightVoice({ ...helpers, scenario: SCENARIOS[0] });
   },
   tools: (exe) => runTools(exe),
   bundle: (exe) => runBundle({ exe, root: ROOT, out: OUT, base: BASE, scenarios: SCENARIOS, launch, ready, check, run, tail }),

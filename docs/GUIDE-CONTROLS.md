@@ -223,16 +223,16 @@ const throttle = ctx.input.triggers.right; // 0..1, every pad's analog trigger
 const aim = ctx.input.lookAxis; // the right stick, y up (motion aim adds to it)
 ctx.input.touchpad = true; // swipes and taps press PadTouchpadLeft ... Tap
 ctx.audio.play('hurt', { bus: 'speaker' }); // from the controller's speaker, else with the rest
-if (ctx.engine.voiceOn) mic = await ctx.engine.hubSettings.openMicrophone(); // only once 52in1 allows it
+ctx.input.voice = true; // a shout presses VOICE_KEYS.shout, once 52in1 allows the microphone
 ```
 
 - A button does what a touchpad swipe does. The engine gives the light bar back between levels
   and lets a trigger go while paused.
-- Motion and the touchpad are input: read them through `ctx.input` (recorded), never
+- Motion, the touchpad and shouts are input: read them through `ctx.input` (recorded), never
   `window.AIHubSettings.dualsense`, `navigator.hid` or `navigator.mediaDevices`.
 - A voice feature's row stays off until 52in1 allows the microphone
-  (`ctx.engine.hubSettings.micAllowed`; `micLater`: since this game opened, so after a reload);
-  what it hears reaches gameplay through `ctx.input.send`.
+  (`ctx.engine.hubSettings.micAllowed`; `micLater`: since this game opened, so after a reload).
+  Give a shout (`VOICE_KEYS.shout`) a button that does the same; listen only while it does.
 
 ## 6. 52in1 sessions and the head
 

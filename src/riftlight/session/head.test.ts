@@ -9,7 +9,7 @@ import { describe, expect, it } from 'vitest';
 import { checkPage, DUALSENSE, readMultiplayer } from '../../../scripts/hub/catalogue-check.mjs';
 import { hubHead, hubPage, readHead } from '../../../scripts/hub/head.mjs';
 import { CATALOGUE, riftlightTags } from '../../../scripts/hub/riftlight.mjs';
-import { headSession, TOUCHPAD_KEYS } from '../../engine';
+import { headSession, TOUCHPAD_KEYS, VOICE_KEYS } from '../../engine';
 import { COOP } from '../game/coop';
 import { KEYS, MOUSE } from '../game/controls';
 import { RIFTLIGHT_OPTIONS } from '../index';
@@ -92,10 +92,11 @@ describe('Riftlight’s 52in1 head', () => {
       // its gestures, not only its press (which a browser reports as a button with 52in1's touchpad off): the game reads them, and a binding uses one
       touchpad: /\binput\.touchpad = true\b/.test(src) && Object.values(TOUCHPAD_KEYS).some((code) => (Object.values(KEYS).flat(2) as string[]).includes(code)),
       speaker: /\bbus: 'speaker'/.test(src),
-      microphone: /\bopenMicrophone\(/.test(src),
+      // its shouts: the voice feature on (the settings' Microphone row), the game listening (`input.voice` set to more than false), and a binding of the shout
+      microphone: RIFTLIGHT_OPTIONS.settings?.voice === true && /\binput\.voice = (?!false\b)/.test(src) && (Object.values(KEYS).flat(2) as string[]).includes(VOICE_KEYS.shout),
     };
     expect(one('hub:dualsense')).toBe(DUALSENSE.filter((x) => uses[x]).join(', '));
-    expect(one('hub:dualsense')).toBe('light bar, adaptive triggers, haptics, motion, touchpad, speaker');
+    expect(one('hub:dualsense')).toBe('light bar, adaptive triggers, haptics, motion, touchpad, speaker, microphone');
   });
 
   it('offers couch co-op on one device, and only the online modes to a session', () => {
