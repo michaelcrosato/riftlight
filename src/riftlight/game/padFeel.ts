@@ -70,11 +70,19 @@ export function lightFor(s: LightState): string | null {
 }
 
 /**
- * R2 is interact: while it would take, talk to, open or go through something, a DualSense's R2
- * works a latch (an adaptive trigger: it pushes back partway, then gives way with a click). The
- * press itself registers where the browser says (early in the travel), as on any pad.
+ * Where a browser says an analog trigger is pressed, of its travel (Chrome: past 30/255). R2's
+ * press registers there, as on any pad.
  */
-export const LATCH = { kind: 'weapon', from: 0.2, to: 0.5, strength: 0.5 } as const satisfies TriggerEffect;
+export const PRESS = 30 / 255;
+
+/**
+ * R2 is interact: while it would take, talk to, open or go through something, a DualSense's R2
+ * works a latch (an adaptive trigger). It pushes back from just before the browser's press point
+ * (`PRESS`), so the press lands in the push back, and gives way with a click halfway down. The
+ * press fires before the click, so the shell keeps the latch through the pull that used it
+ * (`PadFeel.latched`) and lets go once R2 is up.
+ */
+export const LATCH = { kind: 'weapon', from: 0.1, to: 0.5, strength: 0.5 } as const satisfies TriggerEffect;
 
 /**
  * The pad's rumbles (some a beat later: a level-up's second pulse), the light bar and R2's latch.
@@ -85,8 +93,7 @@ export const LATCH = { kind: 'weapon', from: 0.2, to: 0.5, strength: 0.5 } as co
 export class PadFeel {
   private readonly later: { at: number; r: Rumble }[] = [];
   private time = 0;
-  /** R2's latch as last asked of the engine (live: never during a replay). */
-  private latched = false;
+  private on = false;
 
   constructor(private readonly ctx: GameContext) {}
 
@@ -112,16 +119,15 @@ export class PadFeel {
    * plays (it would drop the call), so the frame after one hands control back sets it right.
    */
   latch(on: boolean): void {
-    if (on === this.latched || this.ctx.input.playing) return;
-    this.latched = on;
+    if (on === this.on || this.ctx.input.playing) return;
+    this.on = on;
     if (on) this.ctx.dualsense.trigger('right', LATCH);
     else this.ctx.dualsense.trigger('both', null);
   }
 
-  /** Let both triggers go now, whatever was asked (the game's dispose). */
-  release(): void {
-    this.latched = false;
-    this.ctx.dualsense.trigger('both', null);
+  /** R2's latch as last asked of the engine (live: never during a replay). */
+  get latched(): boolean {
+    return this.on;
   }
 
   /** Pulses still to come (tests). */

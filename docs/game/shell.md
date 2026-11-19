@@ -78,13 +78,13 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
 - **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
   replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a
   level-up (two pulses), a rare or loud item landing in view, the portal opening and the hero's
-  death, never in menus (`input.rumble`, scaled by the player's vibration and the hub's). The
-  DualSense's light bar (`lightFor`) is the town's orange, the hero's life in a level (green, amber,
-  red pulsing under a quarter; red in a boss fight; plum dead), the hub's own on the title and in a
-  showcase mode. R2 interacts, so its adaptive trigger works a latch (`LATCH`: it pushes back, then
-  gives way) while play on the pad has something in reach to interact with (`syncLatch`), and lets
-  go otherwise. The portal and a loud drop's chime play on the `speaker` bus (the controller's
-  speaker while the player allows it).
+  death, never in menus (`input.rumble`, × the player's vibration and the hub's). The DualSense's
+  light bar (`lightFor`) is the town's orange, the hero's life in a level (green, amber, red pulsing
+  under a quarter; red in a boss fight; plum dead), the hub's own on the title and in a showcase
+  mode. R2 interacts: with something in reach on the pad, its adaptive trigger is a latch
+  (`LATCH`, `syncLatch`) that pushes back just before the press lands and clicks halfway down,
+  held through that pull till R2 is up. The portal and a loud drop's chime play on the `speaker`
+  bus (the controller's, when the player allows it).
 - **Music** (`game/audio.ts`, the engine's song format): title, town, level, a combat
   arrangement of the level loop that a combat-intensity meter swaps in with hysteresis, and a
   boss song near a boss. UI and game sounds are `rl.*` SFX data.

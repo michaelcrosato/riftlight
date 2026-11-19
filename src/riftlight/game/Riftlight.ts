@@ -400,7 +400,6 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   dispose(ctx: GameContext): void {
     this.layer.closeAll(); // first: closing a talk plays the townsperson's goodbye, before the town goes
-    this.feel?.release(); // both triggers let go
     this.showcase?.dispose();
     for (const u of this.unsubs) u();
     this.disposeApi?.();
@@ -2062,12 +2061,15 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
    * R2 interacts, so a DualSense's R2 works a latch (`LATCH`) while there is something to interact
    * with (`interactOffer`) and player 1 plays on the pad; it lets go in a panel, menu or the pause,
    * on the title, loading, dead, in a showcase mode or a session round (R2 does nothing there), and
-   * off the pad or with the DualSense in a couch guest's hands.
+   * off the pad or with the DualSense in a couch guest's hands. The press registers early in R2's
+   * travel (`PRESS`), before the latch gives way, so the pull that used it keeps it till R2 is up,
+   * whatever the press did (a window, the item taken, the portal home).
    */
   private syncLatch(): void {
     const input = this.ctx.input;
+    const pad = input.device === 'pad' && !input.dualSenseGuest;
     const play = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top && !this.showcase.active && !this.round;
-    this.feel.latch(play && input.device === 'pad' && !input.dualSenseGuest && this.interactOffer() !== null);
+    this.feel.latch(pad && ((play && this.interactOffer() !== null) || (this.feel.latched && input.isDown('PadRT'))));
   }
 
   /** The touch buttons follow the game: shown while you play, the bar's icons and cooldowns, what F does here. */

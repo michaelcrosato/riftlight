@@ -4,7 +4,7 @@
 // during a replay goes out once play is live; a pulse still to come is dropped by `cancel`.
 import { describe, expect, it, vi } from 'vitest';
 import { DualSense, type GameContext, HubSettings, type HubSettingsSource, type Rumble, type TriggerEffect } from '../../engine';
-import { LATCH, PadFeel, RUMBLE } from './padFeel';
+import { LATCH, PadFeel, PRESS, RUMBLE } from './padFeel';
 
 /** A fake 52in1 with a DualSense whose light bar the game may colour; what it was sent goes in `sent`. */
 const hub = (sent: (string | null)[]): HubSettingsSource => ({ dualsense: { connected: true, lightbar: true, triggers: true, motion: false, touchpad: false, speaker: false, aim: true, light: (c: string | null) => void sent.push(c), trigger: () => {} } as never });
@@ -42,13 +42,16 @@ describe('PadFeel', () => {
     feel.latch(false); // nothing asked yet: nothing to let go
     feel.latch(true);
     feel.latch(true);
+    expect(feel.latched).toBe(true);
     feel.latch(false);
+    expect(feel.latched).toBe(false);
     expect(asked.mock.calls, 'only the changes').toEqual([
       ['right', LATCH],
       ['both', null],
     ]);
     replaying = true;
     feel.latch(true); // the replay's frames: not asked (the engine would drop it)
+    expect(feel.latched, 'what the engine was asked').toBe(false);
     replaying = false;
     feel.latch(true); // the first live frame
     expect(sent, 'the controller').toEqual([
@@ -56,8 +59,11 @@ describe('PadFeel', () => {
       ['right', null],
       ['right', LATCH],
     ]);
-    feel.release();
-    expect(sent.at(-1), 'released').toEqual(['right', null]);
+  });
+
+  it('R2’s latch pushes back before a browser says R2 is pressed, and gives way well after', () => {
+    expect(LATCH.from, 'the push back comes first').toBeLessThan(PRESS);
+    expect(LATCH.to - PRESS, 'then a stretch of it, and the click').toBeGreaterThanOrEqual(0.25);
   });
 
   it('cancel drops a pulse still to come', () => {
