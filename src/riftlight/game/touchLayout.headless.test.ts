@@ -24,6 +24,7 @@ import { momentById } from '../session/moments';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import type { Box } from '../ui/layout';
+import { mapView } from '../ui/hud';
 import type { RealLoot } from '../wire/loot';
 import { CONTROLS, KEYS } from './controls';
 import { ARENA_TOUCH_BUTTONS } from '../combat/arena';
@@ -461,6 +462,11 @@ describe('a 52in1 round on a phone held sideways with no room for a corner map b
           const room = (g as unknown as { mapRoom(): Box }).mapRoom();
           expect(room.h, `the map's room ${JSON.stringify(room)}`).toBeGreaterThanOrEqual(engine.renderer.resolution.height * 0.4);
           for (const orb of g.hudRects().zones.filter((z) => z.id === 'life' || z.id === 'mana')) expect(overlaps(room, orb), `the map's room ${JSON.stringify(room)} over the ${orb.id} orb ${JSON.stringify(orb)}`).toBe(false);
+          // the map as drawn in it (its frame too) is clear of the HUD's top-left block (the level, the
+          // clock, the kills) and the round's seconds
+          const v = mapView(room, (g as unknown as { minimapModel(): Parameters<typeof mapView>[1] }).minimapModel());
+          const drawn = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
+          for (const z of g.hudRects().zones.filter((z) => z.id === 'where' || z.id === 'time')) expect(overlaps(drawn, z), `the map ${JSON.stringify(drawn)} over the HUD's ${z.id} ${JSON.stringify(z)}`).toBe(false);
           expect(g.touchFrame().map, 'and stays to close it').toBe(true);
           await press();
           expect(g.mapOpen, 'again: it closes').toBe(false);

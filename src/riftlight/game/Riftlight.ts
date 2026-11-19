@@ -1874,7 +1874,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       if (l - left >= right - r) right = Math.min(right, l);
       else left = Math.max(left, r);
     }
-    const beside = { x: left, y: top, w: right - left, h: floor - 6 - top };
+    // beside the orb it starts at the screen's edge, where the HUD's top-left block (the level's
+    // name, the clock, the kills) and a round's seconds are: under them
+    const model = this.hudModel();
+    model.controls = this.hudControls;
+    model.minimap = null;
+    const over = hudBoxes(ui.w, ui.h, model).filter((z) => (z.id === 'where' || z.id === 'time') && z.x < right && z.x + z.w > left && z.y < floor / 2);
+    const under = Math.max(top, ...over.map((z) => z.y + z.h + 4));
+    const beside = { x: left, y: under, w: right - left, h: floor - 6 - under };
     return beside.w * beside.h > room.w * room.h ? beside : room;
   }
 
