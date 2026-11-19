@@ -138,6 +138,8 @@ export class TreePanel implements Panel {
       // shell's own read) page from the tree too; Oru's respec is no screen of the ring (Q / E zoom there)
       pages: this.pages,
       gold: () => host.gold(),
+      // what Oru said as he opened the respec: under the view's top bar (the shell's line would be under its canvas)
+      talk: () => host.talk?.() ?? null,
       onClose: () => {
         if (!this.closing) host.close();
       },
@@ -157,11 +159,14 @@ export class TreePanel implements Panel {
     return treeHints({ mode, refunds: !this.rules?.refundBlocked?.(), style: this.host.services.ctx.engine.controls.style, pages: this.pages });
   }
 
-  /** Tooling and tests: the node under the cursor and where it is (the view's, or without a page the pad's own). */
-  debug(): { hover: string | null; cursor: { x: number; y: number } } {
+  /**
+   * Tooling and tests: the node under the cursor and where it is (the view's, or without a page the
+   * pad's own), and the townsperson's line the view shows (without a page: the one it would show).
+   */
+  debug(): { hover: string | null; cursor: { x: number; y: number }; talk: string | null } {
     const v = this.view?.debug();
-    if (v) return { hover: v.hover, cursor: v.cursor };
-    return { hover: this.nav?.hover ?? null, cursor: { ...(this.nav?.cursor ?? { x: 0, y: 0 }) } };
+    if (v) return { hover: v.hover, cursor: v.cursor, talk: v.talk?.text ?? null };
+    return { hover: this.nav?.hover ?? null, cursor: { ...(this.nav?.cursor ?? { x: 0, y: 0 }) }, talk: this.host.talk?.() ?? null };
   }
 
   close(): void {

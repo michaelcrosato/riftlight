@@ -7,7 +7,7 @@ import { controlLabel } from '../game/controls';
 import { type Recap, RecapTracker } from '../game/recap';
 import { installLanguage, lang, riftlightLines, t } from '../lang';
 import type { UiCanvas } from './kit';
-import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, SHEET_PAGES, SHEET_STATS, sourceLabel } from './panels';
+import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, SHEET_PAGES, SHEET_STATS, sourceLabel, talkPlace } from './panels';
 
 // The panels' words are lines (docs/game/lang.md): drawn under the test language en-XA, every word
 // they write themselves is bracketed; what they are handed (a monster's name, a mod, a mechanic)
@@ -115,7 +115,7 @@ describe('the panels in any language', () => {
         const window = new LootWindow(() => items, () => ['[Çléáréd] · [12 kíllś]'], () => true, () => {});
         window.draw(ui, fit(window));
       }
-      dialogue(ui, 'town.npc.brann.talk.1', RECT(200, 100));
+      dialogue(ui, talkPlace(ui, 'town.npc.brann.talk.1', [{ ...RECT(200, 100), y: 60 }])); // room above the panel: one wide box
       const titles = [character, codex, new DeathRecap(recap, { xp: 0, gold: 0 } as never, '', () => {}), new LootWindow(() => [], () => [], () => true, () => {})].map((p) => p.title);
       expect(strays([...drawn, ...titles].filter((s) => !outside.has(s))), `${w}x${h}`).toEqual([]);
       // the wide panels make room for a longer language; a phone's sheet shortens its labels (the last resort)

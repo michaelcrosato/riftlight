@@ -37,6 +37,7 @@ import { toScreen, toTree, zoomAt, type TreeCam } from './camera';
 import { BOTTOM, TOP, TreeCursor, type TreePadInput } from './cursor';
 import { css, glyphWidth, pack, PixelBuffer, textWidth } from './pixels';
 import { activateNode, refundNode, registerTreeSounds, type TreeAction, type TreeOutcome, type TreeRules } from './actions';
+import { talkSeconds } from '../talk';
 
 export type { TreeAction, TreeAudio } from './actions';
 
@@ -76,6 +77,11 @@ export interface TreeViewOptions extends TreeRules {
   onClose?: () => void;
   /** Current gold, shown in the top bar. */
   gold?: () => number;
+  /**
+   * What the townsperson who opened the view said (Oru's line at the respec: the speaker and the
+   * words), or null: under the top bar for a while (`talkSeconds`), or until a tap on it.
+   */
+  talk?: () => string | null;
   /**
    * Take what the player does instead of doing it (a game: `ctx.input.send` it, then `perform`
    * it when it arrives, so the recording keeps it). Absent: it happens at once.
@@ -193,6 +199,8 @@ export class TreeView {
   private tipShown: string[] = [];
   /** What the top bar's search box showed (its placeholder or the search), or null when it wasn't drawn (a pad): `debug().search`. */
   private searchShown: string | null = null;
+  /** The townsperson's line (`TreeViewOptions.talk`): what it says, until when it shows (view time), put away by a tap, and its box as last drawn. */
+  private talk: { said: string | null; until: number; gone: boolean; box: { x: number; y: number; w: number; h: number } | null } = { said: null, until: 0, gone: false, box: null };
   private readonly ac = new AbortController();
   private openAc: AbortController | null = null;
 
@@ -414,6 +422,8 @@ export class TreeView {
       pages: this.pagesShown,
       tip: [...this.tipShown],
       search: this.searchShown,
+      /** The townsperson's line as last drawn, and its box (art pixels), or null. */
+      talk: this.talk.box ? { text: this.talk.said, box: { ...this.talk.box } } : null,
     };
   }
 
@@ -459,6 +469,13 @@ export class TreeView {
     const close = this.closeBox();
     if (close && x >= close.x && y < close.h && this.pointers.size === 0) {
       this.act({ kind: 'close' });
+      return;
+    }
+    // a tap (or the start of a swipe) on the townsperson's line puts it away
+    const said = this.talk.box;
+    if (said && x >= said.x && y >= said.y && x < said.x + said.w && y < said.y + said.h && this.pointers.size === 0) {
+      this.talk.gone = true;
+      this.dirty = true;
       return;
     }
     this.pointers.set(e.pointerId, { x, y, type: e.pointerType });
@@ -765,6 +782,7 @@ export class TreeView {
     if (this.pulses.size || this.matches.size || document.activeElement === this.search) this.dirty = true;
     if (this.options.device && this.options.device() !== this.deviceShown) this.dirty = true; // the bottom bar names another device's controls
     if (this.pagesPad() !== this.pagesShown) this.dirty = true; // the host's screens' controls changed (52in1's touchpad setting, a DualSense guest)
+    if (this.talk.box && this.time >= this.talk.until) this.dirty = true; // the townsperson's line goes
     if (this.dirty) this.render();
   }
 
@@ -910,6 +928,7 @@ export class TreeView {
     const device = (this.deviceShown = this.options.device?.());
     const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
     this.drawChrome(owned, mode);
+    this.drawTalk();
     if (this.showStats) this.drawStats();
     this.tipShown = [];
     if (this.hover) this.drawTooltip(this.tree.node(this.hover), path, mode);
@@ -923,6 +942,29 @@ export class TreeView {
       rows.forEach((r, i) => b.text(r, mx, my + i * 9, this.message!.color));
     }
     this.blit();
+  }
+
+  /**
+   * The townsperson's line (`TreeViewOptions.talk`: Oru's at the respec) under the top bar, centred,
+   * in rows that fit the view, for `talkSeconds` from when it was first drawn, unless a tap put it
+   * away; the shell's own line would be under the view's canvas.
+   */
+  private drawTalk(): void {
+    const said = this.options.talk?.() ?? null;
+    const talk = this.talk;
+    if (said !== talk.said) Object.assign(talk, { said, until: said ? this.time + talkSeconds(said) : 0, gone: false });
+    talk.box = null;
+    if (!said || talk.gone || this.time >= talk.until) return;
+    const b = this.buf;
+    const rows = wrapText(said, Math.min(400, b.width - 18), (s) => textWidth(s));
+    const w = Math.max(...rows.map((r) => textWidth(r))) + 10;
+    const h = rows.length * 9 + 5;
+    const x = Math.round((b.width - w) / 2);
+    const y = TOP + 3;
+    b.panel(x, y, w, h, C.ink);
+    b.frame(x, y, w, h, C.slate);
+    rows.forEach((r, i) => b.text(r, x + 5, y + 3 + i * 9, C.white));
+    talk.box = { x, y, w, h };
   }
 
   /** The host's screens' pad controls now (`TreePages.pad`, joined: a getter, read each time). */

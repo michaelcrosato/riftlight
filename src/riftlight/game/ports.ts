@@ -482,6 +482,17 @@ export interface Panel {
   readonly overlay?: boolean;
   /** Overlay: true when art pixel (x, y) is on the view (pointer presses there are the UI's). */
   covers?(x: number, y: number): boolean;
+  /**
+   * Overlay: the boxes it draws, in art pixels (the item windows): a townsperson's line is laid out
+   * clear of them (`talkPlace`). An overlay without them covers the screen and shows the line
+   * itself, if at all (`PanelHost.talk`: the passive tree's view).
+   */
+  boxes?(): readonly { readonly x: number; readonly y: number; readonly w: number; readonly h: number }[];
+  /**
+   * Overlay: draw a townsperson's line over its boxes (its canvas is over the shell's HUD), where
+   * the screen has no free space for it (`talkPlace`'s `over`: a phone held upright); null: none.
+   */
+  talkOver?(talk: { readonly box: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }; readonly rows: readonly string[] } | null): void;
   /** Views sharing one overlay (the item windows): opening one closes the others in its group. */
   readonly group?: string;
   /** Optional: rebuild from the state it shows (a hidden panel still takes keys: `UiLayer.togglePeek`). */
@@ -529,6 +540,11 @@ export interface PanelHost {
   close(): void;
   /** Controller glyphs instead of keys. */
   glyphs(): boolean;
+  /**
+   * What the townsperson who opened it said (the speaker and the words, in the player's language),
+   * or null: a panel that covers the screen shows it itself (the passive tree's top bar).
+   */
+  talk?(): string | null;
 }
 
 /** `Panel.group` of the item windows (inventory, stash, vendor, crafting bench, skills): they share one overlay, and I closes any of them. */

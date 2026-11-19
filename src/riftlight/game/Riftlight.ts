@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { type Camera, Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, SWIPE_KEYS, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -26,12 +26,13 @@ import { type HudModel, drawHud, drawMap, type FeedLine, hudBoxes, hudGeometry, 
 import { BannerQueue, type Box, HudLayout, overlaps } from '../ui/layout';
 import { clip, inside, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { tapArt, UiLayer } from '../ui/layer';
-import { drawPageStrip, type PageStrip, pagesLegend } from '../ui/legend';
+import { drawPageStrip, LEGEND_ROOM, type PageStrip, pagesLegend } from '../ui/legend';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
 import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
-import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
+import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, talkPlace, type TalkPlace, talkSeconds } from '../ui/panels';
+import { talkText } from '../town/npcs';
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
@@ -166,6 +167,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private deathTimer = 0;
   private dialogueLine: string | null = null;
   private talkingTo: import('../town/npcs').Npc | null = null;
+  /**
+   * The NPC's line on screen (`talkPlace`): when it was said (game time: one over the panels goes
+   * after `talkSeconds`), a tap on it put it away, a press on it is down, and where it was laid out
+   * last (kept while the line and what it keeps clear of stay the same).
+   */
+  private talk = { said: 0, gone: false, press: false, key: '', place: null as TalkPlace | null, box: null as Box | null };
   // camera
   private readonly camTarget = new Vector3();
   private readonly lead = new Vector3();
@@ -334,7 +341,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     this.layer.legends = true; // the button legends under panels name this shell's controls
-    this.layer.avoid = () => this.hudZonesShown;
+    this.layer.avoid = () => (this.talk.box ? [...this.hudZonesShown, { ...this.talk.box, weight: 100 }] : this.hudZonesShown);
     this.layer.legendExtra = (panel) => (pageOf(panel) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
     const rng = () => this.rng;
     this.services = {
@@ -1306,6 +1313,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       sound: (s) => this.sound(s),
       close: () => (self.panel ? this.layer.close(self.panel.id) : this.layer.close()),
       glyphs: () => this.padGlyphs(),
+      talk: () => (this.dialogueLine ? talkText(this.dialogueLine) : null),
     };
   }
 
@@ -1672,9 +1680,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const on = (r: Box | null | undefined) => !!r && inside(r, at.x, at.y);
     const top = this.layer.top;
     if (top) {
-      // the line where it shows: over a framed panel all of it, under the item windows (an
-      // overlay) only between them (a swipe on a window is the window's)
-      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky && !(top.panel.overlay && this.layer.covers(at.x, at.y))) {
+      // the line where it shows (over the panels: `talkPlace`)
+      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky) {
         this.layer.close(top.panel.id);
         return true;
       }
@@ -1711,6 +1718,39 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const label = this.touchable.loot.find((l) => inside(l.rect, x, y));
     if (label) return { kind: 'loot', id: label.id };
     return !this.round && this.level.exitOpen && on(worldBox(this.level.exit, 2.2, 1.6, cam, ui)) ? { kind: 'portal' } : null;
+  }
+
+  /** Where the NPC's line goes, clear of `blocked` (a panel, the item windows) and the HUD (`talkPlace`; laid out again only when something changed). */
+  private placeTalk(blocked: readonly Box[]): TalkPlace {
+    const ui = this.ui;
+    const all = [...blocked, ...this.hudZonesShown.map(({ x, y, w, h }) => ({ x, y, w, h }))];
+    const key = `${this.dialogueLine}|${ui.w}x${ui.h}|${all.map((b) => `${b.x},${b.y},${b.w},${b.h}`).join(';')}`;
+    if (key !== this.talk.key || !this.talk.place) {
+      this.talk.key = key;
+      this.talk.place = talkPlace(ui, this.dialogueLine!, all);
+    }
+    return this.talk.place;
+  }
+
+  /** The NPC's line shows: in free space while the talk lasts, over the panels for `talkSeconds` after it was said. */
+  private talkShows(place: TalkPlace): boolean {
+    return !place.over || this.time - this.talk.said < talkSeconds(talkText(this.dialogueLine ?? ''));
+  }
+
+  /**
+   * A pointer on the NPC's line as last drawn: a press there is the line's (not the panel's under
+   * it); let go without a swipe (a tap, a click) the line goes, and with one the talk ends
+   * (`swipe`). True when the event was the line's.
+   */
+  private talkPointer(ctx: GameContext, e: Extract<UiEvent, { kind: 'pointer' }>): boolean {
+    if (e.type === 'down') {
+      this.talk.press = !!this.touchable.dialogue && inside(this.touchable.dialogue, e.x, e.y) && !!this.layer.top;
+      return this.talk.press;
+    }
+    if (e.type !== 'up' || !this.talk.press) return false;
+    this.talk.press = false;
+    if (!ctx.input.wasPressed(...Object.values(SWIPE_KEYS))) this.talk.gone = true;
+    return true;
   }
 
   /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
@@ -1839,6 +1879,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       if ((dir && this.page(dir)) || (strip && this.showPage(strip.page))) {
         consumed = true;
         if (strip) ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
+        continue;
+      }
+      // a tap (or click) on an NPC's line puts it away, a swipe on it ends the talk (`swipe`): the
+      // press is the line's, never the window's under it
+      if (e.kind === 'pointer' && this.talkPointer(ctx, e)) {
+        ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
         continue;
       }
       if (this.layer.top && this.layer.input(e)) {
@@ -2154,6 +2200,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (it.npc) {
       this.talkingTo = it.npc;
       this.dialogueLine = it.npc.talk();
+      Object.assign(this.talk, { said: this.time, gone: false, press: false });
       this.ctx.audio.play('rl.bark');
     }
     const panel = it.action === 'craft' ? 'crafting' : it.action === 'vendor' ? 'vendor' : it.action === 'tree' ? 'respec' : it.action === 'rift' ? 'rift' : null;
@@ -2371,20 +2418,27 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // (the prompt, the focused loot label, other labels, damage numbers)
     const model = this.hudModel();
     model.controls = this.hudControls = this.touchPad.zones((x, y) => this.pointer.toArt(x, y));
+    const talking = this.touchable.dialogue; // the NPC's line as last placed (it stays put: `placeTalk`)
     this.touchable = { loot: [], prompt: null, feed: [], dialogue: null };
     const layout = this.hudLayout;
     layout.clear(ui.w, ui.h);
     this.hudZonesShown = hudBoxes(ui.w, ui.h, model).map(({ id, x, y, w, h }) => ({ x, y, w, h, weight: id === 'banner' || id === 'boss' || id === 'where' || id === 'time' ? 1 : 10 }));
     for (const { x, y, w, h } of this.hudZonesShown) layout.reserve({ x, y, w, h });
+    // the world's bubbles and labels keep off an NPC's line over a panel too
+    if (talking && this.layer.top) layout.reserve(talking);
     // world overlays
     this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
-      for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
       if (it) this.prompt(it.prompt, it.title);
       // couch co-op: another pad may join here (player 1 on a pad, a seat free): say how
       if (this.joinHint()) this.joinLine();
+      // townsfolk's speech bubbles through the HUD's layout, the speaker nearest the hero first: one
+      // that would cover another (or the HUD, the prompt) is nudged up off it, else waits its turn
+      const hp = this.hero.actor.position;
+      const said = this.town.bubbles().sort((a, b) => Math.hypot(a.at.x - hp.x, a.at.z - hp.z) - Math.hypot(b.at.x - hp.x, b.at.z - hp.z));
+      for (const b of said) bubble(ui, cam, b.at, b.text, b.t, layout);
     }
     // the mouse in the world (not over a panel, not a finger): the thing under it shows what a click does there
     const mouse = ui.pointer.used && !this.padGlyphs() && !this.layer.covers(ui.pointer.x, ui.pointer.y) && !this.showcase.active;
@@ -2439,12 +2493,24 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       model.minimap = null;
     }
     this.touchable.feed = drawHud(ui, model, layout).feed;
-    // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
-    // and under an item window
-    const talk = this.dialogueLine && this.layer.top ? this.layer.top : null;
-    if (talk?.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
+    // an NPC's line in free space (`talkPlace`), clear of the HUD and of the item windows (placed
+    // before the layer, so their legend keeps clear of it) or of a framed panel and its legend
+    // (after it, the frame where it is now), drawn over them; with no free spot, across the top
+    // over them for a while (`talkSeconds`: the item windows' canvas draws it there, the HUD being
+    // under it). A panel that covers the screen (the passive tree's view) shows it itself
+    // (`PanelHost.talk`)
+    const said = this.dialogueLine && !this.talk.gone ? this.layer.top : undefined;
+    let talk = said?.panel.overlay && said.panel.boxes ? this.placeTalk(said.panel.boxes()) : null;
+    this.talk.box = talk && this.talkShows(talk) ? talk.box : null; // the legend keeps clear of it
     this.layer.draw(ui, this.time);
-    if (talk && !talk.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
+    if (said && !said.panel.overlay) {
+      const r = said.rect;
+      talk = this.placeTalk([{ x: r.x - 6, y: r.y - 16, w: r.w + 12, h: r.h + 22 + LEGEND_ROOM }]);
+    }
+    const shows = !!talk && this.talkShows(talk);
+    const over = this.layer.top?.panel.overlay ? this.layer.top.panel.talkOver : undefined;
+    over?.call(this.layer.top!.panel, shows && talk!.over ? talk : null);
+    if (shows) this.touchable.dialogue = talk!.over && over ? talk!.box : dialogue(ui, talk!);
     // a character screen on top: the ring's strip across the top (the tree's view covers the screen: its own bar says it)
     const top = pageOf(this.layer.top?.panel);
     this.pageStrip = top && top !== 'tree' ? drawPageStrip(ui, top).rects : [];

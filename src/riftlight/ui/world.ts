@@ -148,17 +148,27 @@ export class Floaters {
   }
 }
 
-/** A speech bubble with a tail, above a point. */
-export function bubble(ui: UiCanvas, camera: Camera, at: Vector3, text: string, age: number): void {
+/**
+ * A speech bubble with a tail, above a point. With the HUD's `layout` it is placed through it
+ * (nudged up off what is there, else skipped this frame); returns where it went, or null.
+ */
+export function bubble(ui: UiCanvas, camera: Camera, at: Vector3, text: string, age: number, layout?: HudLayout): Box | null {
   const p = project(at, camera, ui);
-  if (!p) return;
+  if (!p) return null;
   const lines = wrap(text, 120);
   const w = Math.max(...lines.map((l) => ui.measure(l))) + 8;
   const h = lines.length * 9 + 5;
   // pop in
   const k = Math.min(1, age / 0.12);
   const x = Math.round(Math.max(2, Math.min(ui.w - w - 2, p.x - w / 2)));
-  const y = Math.round(p.y - h - 6 + (1 - k) * 4);
+  let y = Math.round(p.y - h - 6 + (1 - k) * 4);
+  // through the HUD's layout (`HudLayout`), its tail with it: nudged up a little off what is there
+  // (the HUD, the prompt, a bubble placed before it), else not drawn this frame
+  if (layout) {
+    const spot = layout.place({ x, y, w, h: h + 3 }, { dir: -1, step: 4, tries: 3 });
+    if (!spot) return null;
+    y = spot.y;
+  }
   ui.rect(x + 1, y, w - 2, h, 'ink');
   ui.rect(x, y + 1, w, h - 2, 'ink');
   ui.rect(x + 1, y + 1, w - 2, h - 2, 'white');
@@ -175,6 +185,7 @@ export function bubble(ui: UiCanvas, camera: Camera, at: Vector3, text: string, 
   ui.rect(tx + 3, y + h + 1, 1, 1, 'ink');
   ui.rect(tx + 2, y + h + 2, 1, 1, 'ink');
   lines.forEach((l, i) => ui.text(x + 4, y + 3 + i * 9, l, { color: 'ink', shadow: false }));
+  return { x, y, w, h: h + 3 };
 }
 
 /** "[F] Talk to Brann" over a point: the glyph of the control that does `action`, then the label. */

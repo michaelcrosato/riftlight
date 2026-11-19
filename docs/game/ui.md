@@ -147,7 +147,7 @@ so a replay from a save-state taps the same.
 a swipe left, right or down that starts on a panel's frame closes it as back does (`UiLayer.swipe`;
 never a sticky one; a list that scrolls keeps up and down for itself and a slider its sideways
 swipe, `Panel.swipes`, though its title bar always closes it); one that starts on an NPC's line
-over its panel ends the talk (where the line shows: under the item windows only between them); with no panel, one from the centre banner ends it (`BannerQueue.skip`,
+ends the talk, and a tap on it puts it away; with no panel, one from the centre banner ends it (`BannerQueue.skip`,
 not in a 52in1 round) and one from the loot feed's lines clears them (a finger that lands on either
 is no swing for as long as it stays down and wherever it slides: `pressTaken`).
 The item windows close on a swipe down from a window's title bar (`Panel.swipeCloses`: elsewhere a

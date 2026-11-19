@@ -16,7 +16,7 @@ import { gameById } from '../../games';
 import { type HeadlessRiftlight, headlessRiftlight, makeRiftlight } from '../headless';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
-import { type Box, overlaps } from '../ui/layout';
+import type { Box } from '../ui/layout';
 import type { RealLoot } from '../wire/loot';
 import { CONTROLS, KEYS } from './controls';
 import { ARENA_TOUCH_BUTTONS } from '../combat/arena';

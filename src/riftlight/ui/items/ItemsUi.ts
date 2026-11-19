@@ -222,6 +222,16 @@ export class ItemsUi {
   private vendorCache: { stock: readonly Item[]; grid: Grid } = { stock: [], grid: emptyGrid(VENDOR_SIZE.w, VENDOR_SIZE.h) };
   private size = { w: 480, h: 270 };
   private drawnKey = '';
+  /** A townsperson's line drawn over the windows (`talkOver`), or null. */
+  private said: { readonly box: Rect; readonly rows: readonly string[] } | null = null;
+
+  /**
+   * A townsperson's line over the windows, where the screen has no free space for it (a phone held
+   * upright: `talkPlace`'s `over`); the shell's HUD is under this canvas. Null: none.
+   */
+  talkOver(talk: { readonly box: Rect; readonly rows: readonly string[] } | null): void {
+    this.said = talk;
+  }
   /** The last paint drew text in the device's font: the canvas is painted at the screen's resolution. */
   private deviceText = false;
 
@@ -1459,7 +1469,7 @@ export class ItemsUi {
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.said ? JSON.stringify(this.said) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });
@@ -1479,6 +1489,12 @@ export class ItemsUi {
       const y = this.size.h - h - 3;
       panel(p, x, y, w, h, UI.panelEdge);
       lines.forEach((l, i) => p.text(x + 4, y + 3 + i * 9, l, UI.text));
+    }
+    // a townsperson's line on top (the shell lays it out: `talkPlace`)
+    if (this.said) {
+      const { x, y, w, h } = this.said.box;
+      panel(p, x, y, w, h, UI.panelEdge);
+      this.said.rows.forEach((l, i) => p.text(x + 5, y + 4 + i * 9, l, UI.text));
     }
     // text in the device's font came (or went): paint again at the resolution it needs
     if (p.device !== this.deviceText) {
