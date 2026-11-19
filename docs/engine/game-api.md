@@ -82,9 +82,9 @@ Engine.start(game, {
 ```
 
 Touch controls step aside while a pad or the keyboard is in use, can float under the thumb
-(`touchStick`), and, for a game that opts in once its HUD fits about 180 rows, keep a phone's art at
-about 2 CSS pixels a pixel (`touchDensity`, default off): docs/engine/character.md *Touch is an
-add-on*.
+(`touchStick`), and, for a game that opts in once its HUD fits 170 rows, keep a phone's art at
+about 2 CSS pixels a pixel, 170 rows or more (`touchDensity`, default off): docs/engine/character.md
+*Touch is an add-on*.
 
 The hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the panel on
 demand) · `nextLook` ] · `prevLook` [ · `mute` M. They are developer tools: on with the debug

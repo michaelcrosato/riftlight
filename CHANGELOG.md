@@ -8,6 +8,17 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.77.0
+
+- **A phone held sideways keeps at least 170 art rows at `touchDensity: 2`** (`touchRows(cssPerArt)`, `TOUCH_ROWS_SIDE`: the rows a 340 CSS px side has, 170 at 2, 113 at 3; new exports). Where the nearest whole number of device pixels would leave its short side fewer, `touchScale` takes the largest whole number that keeps them:
+  - a Pixel 10 held sideways under Chrome's bar (869×303 at DPR 2.625) draws 571×199 at 4 device px, 1.52 CSS px (was 457×160);
+  - a folded Pixel Fold (907×334 at DPR 2.4375) draws 553×204 (was 443×163);
+  - 568×320 at DPR 2 draws 379×214 (was 284×160);
+  - phones 360 CSS px tall at DPR 1.75, 2.25 and 2.75 draw 198 to 210 rows (were 158 to 165).
+
+  Phones that already drew 170 rows or more are unchanged, and so is every phone upright. On a phone shorter still it can reach 1 device pixel a pixel (1 CSS px at DPR 1). A game opting into `touchDensity: 2` can lay its HUD out for 170 rows.
+- It is still a pure function of `Recording.view` and `Recording.density`, so a replay frames the same way. A recording made on such a phone by an older engine frames differently when replayed (`Recording.engine` names the engine it came from).
+
 ## 0.76.0
 
 - **52in1's hush now holds the engine's sound.** 52in1's companion script, first in every game page the hub serves, holds a game's AudioContext while the hub's cards are up (a game night's next round loads under them) and gives it back when the round starts. It recognises the context by a source started in it, but it only hooks `AudioScheduledSourceNode`'s `start`, and an AudioBufferSourceNode (every engine sound) has its own `start`. So the engine's context was never held, and a game's music played on under the cards. As `unlock` creates the context, `AudioManager` now starts and stops a silent ConstantSourceNode connected to nothing, so the companion sees the context: it is held under the cards, and on the wall the hub can hush it too. If a hush lifts while the companion's own suspend is still in flight, the context stays suspended until the next input brings it back. `src/engine/hub/companion.test.ts` runs the real companion against Web Audio shaped like a browser's.

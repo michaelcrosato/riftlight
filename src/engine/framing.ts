@@ -63,6 +63,21 @@ export interface Viewport {
 export const PHONE_SHORT_SIDE = 500;
 
 /**
+ * The short side, CSS pixels, whose art rows at a game's touch density every phone keeps at least
+ * (`touchRows`): a phone held sideways is laid out for 340 CSS px and more (a Pixel under Chrome's
+ * bar, an iPhone in Safari), 170 rows at 2 CSS px an art pixel.
+ */
+export const TOUCH_ROWS_SIDE = 340;
+
+/**
+ * The least art rows on a phone's short side at `cssPerArt` CSS pixels per art pixel
+ * (`EngineOptions.touchDensity`): those of a `TOUCH_ROWS_SIDE` side (170 at 2, 113 at 3); 0 for none.
+ */
+export function touchRows(cssPerArt: number): number {
+  return cssPerArt > 0 ? Math.floor(TOUCH_ROWS_SIDE / cssPerArt + 1e-9) : 0;
+}
+
+/**
  * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) for about
  * `cssPerArt` CSS pixels per art pixel (`EngineOptions.touchDensity`, on a page with touch controls,
  * also while they step aside for a pad or the keyboard): on a phone (the viewport's short side under
@@ -71,13 +86,24 @@ export const PHONE_SHORT_SIDE = 500;
  * pixels (a tie takes the bigger): exactly that at DPR 1, 1.5, 2, 2.5, 3 or 3.5; at a fractional DPR
  * whose `cssPerArt` CSS pixels fall between two whole device pixels, the nearer, so the art keeps
  * about the rows the game was laid out for (a Pixel's DPR 2.625 takes 5 device pixels at 2, 1.9 CSS
- * pixels: 189 rows held sideways at 360 CSS px, where 6 (2.3 CSS px) left 158). A pure function of
- * the viewport and the density, both recorded (`Recording.view`, `Recording.density`): a replay
- * frames the same way.
+ * pixels: 189 rows held sideways at 360 CSS px, where 6 (2.3 CSS px) left 158). Where that leaves
+ * the short side fewer than `touchRows` rows (a phone held sideways under a browser's bar: a Pixel
+ * 10's 303 CSS px would draw 160 at 5), the largest whole number of device pixels that keeps them
+ * (4 there: 1.52 CSS px, 199 rows), held sideways only; on a phone shorter still that can reach 1
+ * device pixel (1 CSS px at DPR 1: small text, the rows kept). A pure function of the viewport and the density, both recorded
+ * (`Recording.view`, `Recording.density`): a replay frames the same way.
  */
 export function touchScale(viewport: Viewport, cssPerArt: number): number {
-  if (!(cssPerArt > 0) || Math.min(viewport.width, viewport.height) >= PHONE_SHORT_SIDE) return 1;
-  return Math.max(1, Math.floor(cssPerArt * (viewport.dpr > 0 ? viewport.dpr : 1) + 0.5 + 1e-9));
+  const side = Math.min(viewport.width, viewport.height);
+  if (!(cssPerArt > 0) || side >= PHONE_SHORT_SIDE) return 1;
+  const dpr = viewport.dpr > 0 ? viewport.dpr : 1;
+  // the short side in device pixels as `computeFraming` rounds it under `fill`, and its rows
+  const device = Math.max(1, Math.ceil(side * dpr));
+  const rows = touchRows(cssPerArt);
+  let scale = Math.max(1, Math.floor(cssPerArt * dpr + 0.5 + 1e-9));
+  // held sideways only: upright the short side is the width, and the art's rows are its height
+  if (viewport.width > viewport.height) while (scale > 1 && Math.ceil(device / scale) < rows) scale--;
+  return scale;
 }
 
 /**
