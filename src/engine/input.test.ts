@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_SECONDS } from './input';
+import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SHOUT, shoutStep, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_SECONDS, VOICE_KEYS, type VoiceInput } from './input';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -651,6 +651,119 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
     frame(a(0.5));
     input.setGamepads([]);
     expect([...frame(a(0.5)), ...frame()]).toEqual([]);
+  });
+});
+
+describe('a shout into the microphone (input.voice)', () => {
+  const dt = 1 / 60;
+  /** An Input hearing a microphone the test sets the loudness of; `frame` polls it once and says whether it pressed `VoiceShout`. */
+  function mic() {
+    const input = new Input(null);
+    const heard = { level: 0 as number | null, on: true, reads: 0, listening: [] as boolean[] };
+    input.microphone = {
+      get on() {
+        return heard.on;
+      },
+      level: () => (heard.reads++, heard.level),
+      listen: (on) => void heard.listening.push(on),
+    } satisfies VoiceInput;
+    input.voice = true;
+    input.setGamepads([]);
+    let t = 0;
+    const frames: InputFrame[] = [];
+    const last = { held: '', pointer: '' };
+    const frame = (level: number | null, runs = true) => {
+      heard.level = level;
+      t += dt;
+      input.beginFrame(t, dt, undefined, runs);
+      frames.push(input.snapshot(dt, last));
+      const pressed = input.wasPressed(VOICE_KEYS.shout);
+      input.endFrame();
+      return pressed;
+    };
+    /** `seconds` of polls at `level`: how many pressed. */
+    const hold = (level: number | null, seconds: number, runs = true) => {
+      let presses = 0;
+      for (let k = 0; k < Math.round(seconds / dt); k++) presses += frame(level, runs) ? 1 : 0;
+      return presses;
+    };
+    return { input, heard, frame, hold, frames };
+  }
+  const LOUD = 0.5;
+
+  it('a shout as loud as `SHOUT.loud`, held `SHOUT.holdS`, presses once; quieter or shorter never does', () => {
+    const { hold, frame } = mic();
+    expect(hold(SHOUT.loud * 0.95, 1), 'just under the threshold, for a second').toBe(0);
+    expect(hold(LOUD, SHOUT.holdS - 2 * dt) + hold(0, SHOUT.quietS), 'loud, but too short').toBe(0);
+    // the press comes the poll the shout has lasted `holdS`, not before
+    const polls = Math.round(SHOUT.holdS / dt);
+    const at = Array.from({ length: polls + 3 }, () => frame(SHOUT.loud)).indexOf(true);
+    expect(at, 'the poll it has lasted holdS').toBe(polls - 1);
+    expect(shoutStep({ loud: 0, quiet: 0, fired: false }, 1, SHOUT.holdS), 'one long poll is a whole shout').toBe(true);
+  });
+
+  it('one shout is one press: held on, or dipping between words, it never presses again until quiet for `SHOUT.quietS`', () => {
+    const { hold } = mic();
+    expect(hold(LOUD, 2), 'held two seconds').toBe(1);
+    const between = (SHOUT.quiet + SHOUT.loud) / 2;
+    expect(hold(between, 0.5) + hold(LOUD, 0.5), 'softer, then loud again: the same shout').toBe(0);
+    expect(hold(0, SHOUT.quietS - 3 * dt) + hold(LOUD, 0.5), 'a breath between words: the same shout').toBe(0);
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, 0.5), 'quiet long enough: a new shout').toBe(1);
+    // softer than loud keeps a shout's count: it neither grows nor ends there
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2) + hold(between, 0.3) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, softer, loud: one shout').toBe(1);
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2) + hold(0, 2 * dt) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, quiet, loud: two short ones, no shout').toBe(0);
+  });
+
+  it('nothing is heard or pressed while the game is not listening, the microphone is off or muted, or nothing is heard yet; the microphone is told', () => {
+    const { input, heard, hold } = mic();
+    input.voice = false;
+    expect(hold(LOUD, 1), 'the game not listening').toBe(0);
+    expect([heard.reads, heard.listening.at(-1)], 'never read; the microphone told to close').toEqual([0, false]);
+    input.voice = true;
+    heard.on = false; // the voice feature off, the microphone not allowed, or muted (`VoiceInput.on`)
+    expect(hold(LOUD, 1), 'the player lets the game hear nothing').toBe(0);
+    expect([heard.reads, heard.listening.at(-1)], 'never read; the game still listens').toEqual([0, true]);
+    heard.on = true;
+    expect(hold(null, 1), 'no stream yet').toBe(0);
+    expect(hold(Number.NaN, 0.5) + hold(LOUD, SHOUT.holdS), 'a broken reading, then a shout').toBe(1);
+    // a shout half done when the player mutes is gone: unmuted, it takes a whole shout again
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2), 'half a shout').toBe(0);
+    heard.on = false;
+    hold(LOUD, dt);
+    heard.on = true;
+    expect(hold(LOUD, SHOUT.holdS - 2 * dt), 'the rest of it, unmuted').toBe(0);
+  });
+
+  it('a shout completed in a frame that never runs (paused, loading) presses nothing, then or after', () => {
+    const { hold } = mic();
+    expect(hold(LOUD, 0.5, false), 'paused').toBe(0);
+    expect(hold(LOUD, 0.5), 'the same shout, play resumed').toBe(0);
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, 0.5), 'the next one').toBe(1);
+  });
+
+  it('is recorded as a press and replayed exactly, never hearing the microphone in the replay', () => {
+    const { input, heard, frames, hold } = mic();
+    hold(0, 0.2);
+    hold(LOUD, 0.5);
+    hold(0, 0.5);
+    const at = frames.findIndex((f) => f.pressed?.includes(VOICE_KEYS.shout));
+    expect([at, frames.filter((f) => f.pressed?.includes(VOICE_KEYS.shout)).length], 'one press, recorded').toEqual([Math.round(0.2 / dt) + Math.round(SHOUT.holdS / dt) - 1, 1]);
+    // replayed on the same Input, its microphone still there and loud: only the recording presses
+    input.playing = true;
+    heard.reads = 0;
+    heard.level = LOUD;
+    let t = 0;
+    const replayed = (JSON.parse(JSON.stringify(frames)) as InputFrame[]).map((f) => {
+      input.playBefore(f);
+      t += f.dt;
+      input.beginFrame(t, f.dt, []);
+      input.playAfter(f);
+      const out = input.wasPressed(VOICE_KEYS.shout);
+      input.endFrame();
+      return out;
+    });
+    expect([replayed.indexOf(true), replayed.filter(Boolean).length]).toEqual([at, 1]);
+    expect([heard.reads, heard.listening.at(-1)], 'the microphone never read in a replay, and told to close').toEqual([0, false]);
   });
 });
 

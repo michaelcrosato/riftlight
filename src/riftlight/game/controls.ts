@@ -6,7 +6,8 @@
  *             DualSense through 52in1: turning the controller turns the aim, `turnAim`), else the nearest
  *             enemy ahead
  *   attack    LMB / J / pad Cross (A) / touch A          dodge   Space / pad Circle (B) / touch B
- *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4
+ *   skills    RMB or 1 Q · 2 E · 3 R · 4 T / pad Square Triangle L1 R1 (X Y LB RB) / touch 1-4; a shout
+ *             into the microphone uses War Cry from the bar (52in1, its Voice setting on: `KEYS.shout`)
  *   interact  F / pad R2 (RT) / touch TALK…                pause   Esc / pad Options (Menu) / touch ≡
  *   panels    I inventory · G skills · P passive tree · C character · K codex (pad Create = inventory;
  *             the rest in the pause menu: Options opens it from any screen, and Options or Circle resume);
@@ -25,7 +26,7 @@
  * PlayStation or Xbox buttons as the player chose).
  */
 import { Raycaster, Vector2, Vector3 } from 'three/webgpu';
-import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type KeyReader, type MenuKeys, type PadGlyphs, padName as enginePadName, TOUCHPAD_KEYS } from '../../engine';
+import { type ControlTable, controlName, type Engine, type InputDevice, keyCap as engineKeyCap, type KeyReader, type MenuKeys, type PadGlyphs, padName as enginePadName, TOUCHPAD_KEYS, VOICE_KEYS } from '../../engine';
 import { lang } from '../lang';
 import type { UiEvent } from '../ui/kit';
 
@@ -78,7 +79,15 @@ export const KEYS = {
   /** Item windows: X / pad X = right-click (equip, socket, use), V / pad Y = Ctrl-click (move, sell, buy). */
   secondary: ['KeyX', 'PadX'],
   quick: ['KeyV', 'PadY'],
+  /**
+   * A shout into the microphone (52in1's, through the engine: `input.voice`, recorded as a press)
+   * uses War Cry (`SHOUT_SKILL`) while it is on the skill bar, as its button does.
+   */
+  shout: [VOICE_KEYS.shout],
 } as const;
+
+/** The skill a shout uses (`KEYS.shout`), from wherever it is on the bar. */
+export const SHOUT_SKILL = 'war-cry';
 
 /**
  * The bindings for menus of Riftlight's UI kit (the engine's `MenuInput`) in any host, Engine World

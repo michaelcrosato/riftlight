@@ -8,6 +8,15 @@ LMB / J / pad Cross is the 3-hit combo (hold to keep swinging), RMB or 1 Q · 2 
 Square Triangle L1 R1 are the skill bar, Space / pad Circle is the dodge roll, F / pad R2 interacts.
 Pad buttons are `Pad*` codes, not keys, so menus tell Cross = confirm from Space = dodge.
 
+**A shout uses War Cry** (52in1's microphone: `RIFTLIGHT_OPTIONS.settings.voice`, docs/engine/hub.md
+*Shouts*): while War Cry (`SHOUT_SKILL`) is on the bar in town or a level, the shell listens
+(`input.voice`), so the engine opens the microphone while the player allows it, its Voice setting is
+on and it isn't muted; a shout presses `VoiceShout` (`KEYS.shout`, recorded), and `readIntent` asks
+for War Cry's slot as its button does (a button pressed in the same step wins; a panel open, nothing).
+Settings → Controller has **Voice** (the engine's `voice`, `engine.voiceOn`): off and unchangeable,
+its hint 52in1's line, until 52in1 allows games the microphone; then on, its hint *Shout to use War
+Cry*. Without a microphone, or War Cry, the game plays as ever.
+
 **Aim, one rule** (`actors/aim.ts`, the shell's `readIntent` and `HeroController.updateAim` alike):
 the mouse aims at the ground under the cursor (while it is in use: moved, clicked, or a button
 held); a pad's right stick (`input.lookAxis`, past `AIM.stick`) aims along itself, snapped to the

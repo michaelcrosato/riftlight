@@ -180,8 +180,8 @@ playtime, best time per depth); `positions` (grid cells of the bag and the stash
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,
 damage numbers, loot filter, shake) live in `riftlight:settings`; volumes in the engine's audio
 store (`pixel-engine:audio:riftlight`: every key has the game's name in it, as 52in1's shared
-storage asks), and the engine's own settings (the controller's button prompts and vibration, and motion aim
-and its sensitivity while 52in1 lets games read a DualSense's motion: Settings → Controller, so the
+storage asks), and the engine's own settings (the controller's button prompts and vibration, motion aim
+and its sensitivity while 52in1 lets games read a DualSense's motion, the voice: Settings → Controller, so the
 Settings list fits a 1920×1080 screen with them; pixel art, pixel size, frame rate, debug info:
 Settings → Engine) in
 `pixel-engine:settings:riftlight`. Prompts follow the input used last (`engine.controls.device`: a

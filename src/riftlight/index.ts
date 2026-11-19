@@ -29,8 +29,9 @@ export { HUB_WAKE, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, riftlig
  * thumb anywhere in the lower left), a phone's art at two CSS pixels per art pixel at least
  * (`touchDensity`: the HUD and the panels lay out in a landscape phone's 195 rows, with targets a
  * thumb tall), no engine tool bar on phones (it shows with `?debug=1`), no ⚙ button: Riftlight's
- * own Settings menu holds the engine's options, and motion aim (a DualSense's turns through 52in1
- * turn the pad's aim: its rows are in that menu).
+ * own Settings menu holds the engine's options, motion aim (a DualSense's turns through 52in1
+ * turn the pad's aim: its rows are in that menu) and the voice (a shout into 52in1's microphone uses
+ * War Cry: `KEYS.shout`; its Voice row is in that menu too, the engine panel's Microphone row).
  */
 export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   aspect: 'fill',
@@ -40,5 +41,5 @@ export const RIFTLIGHT_OPTIONS: Partial<EngineOptions> = {
   touchDensity: 2,
   touchStick: 'floating',
   touchBar: false,
-  settings: { button: false, motion: true },
+  settings: { button: false, motion: true, voice: true },
 };

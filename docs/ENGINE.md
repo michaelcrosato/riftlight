@@ -23,7 +23,7 @@ art. Read only the topic file you need. Stack and hard constraints: AGENTS.md.
 | docs/engine/procgen.md | noise, terrain and erosion, wave function collapse, L-systems |
 | docs/engine/procedural-motion.md | spring chains, squash, leg steppers, two-bone IK |
 | docs/engine/tooling.md | `window.__PIXEL_ENGINE__`, the CLIs, browser e2e, how to build an agent tool |
-| docs/engine/hub.md | 52in1 sessions: `HubSession` (parallel, ghost, shared world, moments; several modes; rng), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests; the player's 52in1 settings (`engine.hubSettings`, the microphone's gate) and a DualSense's light bar, triggers and speaker (`ctx.dualsense`), its touchpad and motion as recorded input |
+| docs/engine/hub.md | 52in1 sessions: `HubSession` (parallel, ghost, shared world, moments; several modes; rng), the hub's events as input, reporting, sending, `RemoteTrack`, `LocalHub` for tests; the player's 52in1 settings (`engine.hubSettings`, the microphone's gate) and a DualSense's light bar, triggers and speaker (`ctx.dualsense`), its touchpad, motion and shouts into the microphone as recorded input |
 | docs/engine/lang.md | languages: lines and translations (`Lang`, `t()`), choosing the language, the test languages, text in every writing system (accented pixel capitals, the device font), wrapping |
 | docs/engine/kit.md | the engine kit for outside agents (`npm run bundle`), its diagnostics, build size |
 

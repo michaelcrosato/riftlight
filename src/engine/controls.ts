@@ -74,6 +74,7 @@ export const CONTROL_LINES = {
   'pad.touchpad_up': 'Touchpad up',
   'pad.touchpad_down': 'Touchpad down',
   'pad.touchpad_tap': 'Touchpad tap',
+  'key.voice_shout': 'Shout',
   'pad.lb': 'LB',
   'pad.rb': 'RB',
   'pad.lt': 'LT',
@@ -259,6 +260,10 @@ const TOUCHPAD: Readonly<Record<string, readonly string[]>> = {
   PadTouchpadDown: ['.......', '.ffsff.', 'fffsfff', 'fsfsfsf', 'ffsssff', '.ffsff.', '.......'],
   PadTouchpadTap: ['.......', '.fffff.', 'fffsfff', 'ffsssff', 'fffsfff', '.fffff.', '.......'],
 };
+/** A shout into the microphone (`VOICE_KEYS`): a microphone (`s`) on a cap's slate (`f`). */
+const VOICE: Readonly<Record<string, readonly string[]>> = {
+  VoiceShout: ['.fffff.', 'ffsssff', 'ffsssff', 'fsfsfsf', 'ffsssff', 'fffsfff', '.fffff.'],
+};
 /** The mouse: its body, the button (or the wheel) that does it lit (`s`). */
 const MOUSE: Readonly<Record<string, readonly string[]>> = {
   MouseLeft: ['.ooooo.', 'ossowwo', 'ossowwo', 'ooooooo', 'owwwwwo', 'owwwwwo', '.ooooo.'],
@@ -267,10 +272,12 @@ const MOUSE: Readonly<Record<string, readonly string[]>> = {
   Wheel: ['.ooooo.', 'owwswwo', 'owwswwo', 'ooosooo', 'owwwwwo', 'owwwwwo', '.ooooo.'],
 };
 
-/** The glyph of a key or mouse button: the mouse drawn, else a key cap with its short name. */
+/** The glyph of a key or mouse button: the mouse (or a shout's microphone) drawn, else a key cap with its short name. */
 export function keyGlyph(code: string, names?: LineSource | null): Glyph {
   const mouse = MOUSE[code];
   if (mouse) return { kind: 'sprite', rows: mouse, colors: { o: 'ink', w: 'white', s: 'sand' } };
+  const voice = VOICE[code];
+  if (voice) return { kind: 'sprite', rows: voice, colors: { f: 'slate', s: 'white' } };
   return { kind: 'cap', text: keyCap(code, names), round: false };
 }
 
@@ -303,7 +310,7 @@ export function controlGlyph(c: Control, device: InputDevice, style: PadGlyphs =
 function codeControl(code: string): { control: Control; device: InputDevice } | null {
   if (code.startsWith('Pad') || code === 'DPad') return { control: { key: code, pad: code }, device: 'pad' };
   if (code.startsWith('Touch')) return { control: { key: code, touch: code }, device: 'touch' };
-  if (/^(Key|Digit|Numpad|Mouse|Arrow|Shift|Control|Alt)|^(Space|Escape|Enter|Tab|Backspace|Wheel|WASD|Arrows)$/.test(code)) return { control: { key: code }, device: 'keyboard' };
+  if (/^(Key|Digit|Numpad|Mouse|Arrow|Shift|Control|Alt|Voice)|^(Space|Escape|Enter|Tab|Backspace|Wheel|WASD|Arrows)$/.test(code)) return { control: { key: code }, device: 'keyboard' };
   return null;
 }
 
