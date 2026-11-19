@@ -92,7 +92,9 @@ never imports the line list), and areas stay function declarations.
 - **Tests per area** draw their screens under `en-XA` and fail on any word that isn't a line
   (`ui/panels.test.ts`, `showcase/words.test.ts`, `tree/tree.test.ts`, `lang/levels.headless.test.ts`,
   `ui/items/items.test.ts`); `lang/lines.test.ts` keeps every id, form and width valid and every
-  `t('literal')` in the code a line.
+  `t('literal')` in the code a line; `game/controls.test.ts` walks every key, pad button and gesture
+  Riftlight binds (its control tables and key maps) and fails on a name that is neither a Riftlight
+  line nor the key's own letter (the arrows, Ctrl and the d-pad are lines: `key.left`, `pad.dpad`).
 - **`npm run lang -- audit [--lang en-XA]`** (after `npm run build`) plays the built game under a
   test language and lists every string drawn that isn't a line (`.scratch/lang/audit.json`, a
   picture per screen). The test, `strays()`, is `scripts/lang-strays.mjs`, shared with the tests

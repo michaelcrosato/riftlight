@@ -15,8 +15,8 @@ on a narrow wide screen, and its line under the title wraps (`bannerSub`: the no
 the mini font, at most four rows) with the plate growing to hold it. A 52in1 moment's seconds
 left (`HudModel.timeLeft`) go at the top centre, moved down under whatever they'd touch (the
 label, the minimap and gold, a boss's bar, a touch control), and the banner goes under them.
-Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar, a
-small minimap. The top-left block reserves every row it draws (where you are, the clock, the kills,
+Under 300 art pixels wide the HUD is compact (`hudGeometry`): small orbs over a tight bar (each
+slot's button glyph where it fits the slot: a pad's always), a small minimap. The top-left block reserves every row it draws (where you are, the clock, the kills,
 the tuning: a longer language's are wider). A boss's name and bar go at the top centre between the
 minimap and its mirror on the left (`bossPlace`), and where the bar would be shorter than 100 there
 (a phone in portrait, a window narrower than about 330) across the screen under the minimap, the
@@ -26,9 +26,16 @@ come and go), and side by side, two or three a row, where a column of them would
 of the HUD (a landscape phone's 195 rows: the stick and the life orb under them); where none of
 that is clear (a short landscape phone, 360 to 412 CSS px tall, with the tuning's rows in the
 top-left block) beside the top-left block under a boss's bar at the top, else under the minimap and
-gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. The
+gold; with no clear spot at all, the one covering the least of the fixed HUD, never an orb. Of the
+clear spots they take the first out of the rows the heroes stood in as they were placed
+(`HudModel.heroes`, the same boxes as the banner's: the shell takes them again only when a stage
+opens, a guest's hero comes or goes or the screen's size changes, so the strips stay put all level): on a short landscape
+phone with the tuning's rows, beside the top-left block at the top, not two side by side under it
+across the middle, over the heroes. With no clear spot out of their rows, the one over the least of
+the heroes, beside the top-left block ahead of a row of strips across the screen's middle. The
 banner never covers the strips, a touch control, the skill bar, an orb, the XP bar, the minimap, a
-boss's bar or a moment's seconds left: where its plate would, it moves aside in its row (narrower if
+boss's bar or a moment's seconds left (nor, held sideways, the gold, wherever that leaves it room):
+where its plate would, it moves aside in its row (narrower if
 it must, never narrower than its title: drawn centred on the plate), else up above what it hit,
 under the top-left block or under the strips, the spot covering least of the rest (on a phone held
 sideways the action cluster reaches up the right side). It keeps off the heroes as they stood

@@ -4,9 +4,11 @@
 // over no other text (the place name, the gold, a prompt, the feed) and clear of the HUD's zones.
 // Couch co-op is not offered in a 52in1 round or the showcase: no pause entry, no line, no join.
 // The level card keeps off the heroes on a short landscape phone with three guests and the tuning's
-// rows (where the HUD left it nowhere but the middle of the screen, over them).
+// rows (where the HUD left it nowhere but the middle of the screen, over them), and so do the
+// guests' strips all level with two (they ran side by side across the middle, over the heroes);
+// a guest who joins mid-stage is among the heroes they keep off once its hero is made.
 import { afterEach, describe, expect, it } from 'vitest';
-import type { GamepadLike, Viewport } from '../../engine';
+import { type GamepadLike, TWIN_SECONDS, type Viewport } from '../../engine';
 import { type HeadlessRiftlight, headlessMoment, headlessRiftlight, type HudTextBox, hudOverlap, hudTexts, settle } from '../headless';
 import { momentById } from '../session/moments';
 import { t } from '../lang';
@@ -182,6 +184,110 @@ describe('couch co-op: the level card on a short landscape phone', () => {
         h.engine.dispose();
         open = null;
       }
+    },
+    240_000,
+  );
+});
+
+describe('couch co-op: the guests’ strips on a short landscape phone', () => {
+  it(
+    'keep off the heroes and their rows all level, and stay put (two guests, the tuning’s rows: 640×360 and 568×320 with touch controls)',
+    async () => {
+      for (const viewport of [{ width: 640, height: 360, dpr: 3 }, { width: 568, height: 320, dpr: 2 }] as Viewport[]) {
+        const h = (open = await headlessRiftlight({ seed: 5, viewport, options: { touch: true } }));
+        h.rl.newRun({ seed: 5 });
+        h.rl.setDifficulty({ playerDamage: 1.5, playerLife: 1.5, enemyDamage: 1.5, enemyLife: 1.5 }); // four rows in the top-left block
+        h.engine.step(5);
+        // player 1 picks up pad 0; pads 1 and 2 join with Cross
+        const pads = [pad(0), pad(1), pad(2)];
+        h.engine.input.setGamepads([pad(0, [3]), pad(1), pad(2)]);
+        h.engine.step(2);
+        for (let slot = 1; slot <= 2; slot++) {
+          h.engine.input.setGamepads(pads.map((p, i) => (i === slot ? pad(i, [0]) : p)));
+          h.engine.step(4);
+          h.engine.input.setGamepads(pads);
+          h.engine.step(1);
+          await settle();
+        }
+        expect(h.game.coop.seats, `${viewport.width}×${viewport.height}`).toEqual([2, 3]);
+        h.engine.input.noteTouch(); // player 1 on the touch controls
+        await h.rl.enterDepth(1);
+        h.rl.dev.ai = false; // nobody moves: the heroes stand where the level put them
+        h.game.settings.touchAutoAttack = false;
+        await settle();
+        h.engine.step(2); // the stage's first frames: the camera on player 1, the heroes known
+        const where = `${viewport.width}×${viewport.height} at DPR ${viewport.dpr}`;
+        const cam = h.engine.camera.camera;
+        const seen = new Set<string>();
+        for (let f = 0; f < 60 * 3; f++) {
+          h.engine.step(1);
+          const strips = h.game.hudRects().zones.find((z) => z.id === 'guests');
+          expect(strips, `${where}, frame ${f}: the strips`).toBeDefined();
+          seen.add(JSON.stringify(strips));
+          const heroes = [h.game.hero, ...h.game.coop.guests.map((g) => g.hero!)].map((x) => worldBox(x.actor.position, HEAD, 0.9, cam, h.game.ui)!);
+          const rows: Box = { x: 0, y: Math.min(...heroes.map((b) => b.y)), w: h.game.ui.w, h: Math.max(...heroes.map((b) => b.y + b.h)) - Math.min(...heroes.map((b) => b.y)) };
+          for (const hero of heroes) expect(overlaps(strips!, hero, 0), `${where}, frame ${f}: the strips ${JSON.stringify(strips)} over a hero ${JSON.stringify(hero)}`).toBe(false);
+          expect(overlaps(strips!, rows, 0), `${where}, frame ${f}: the strips ${JSON.stringify(strips)} in the heroes' rows ${JSON.stringify(rows)}`).toBe(false);
+        }
+        expect([...seen], `${where}: the strips stay put`).toHaveLength(1);
+        expect(h.engine.errors, where).toEqual([]);
+        h.engine.dispose();
+        open = null;
+      }
+    },
+    240_000,
+  );
+});
+
+describe('couch co-op: a guest who joins mid-stage', () => {
+  it(
+    'is among the heroes the strips keep off once its hero is made (it comes a tick after the join); the heroes are plain data, taken anew on another stage and dropped once the last guest leaves',
+    async () => {
+      const h = (open = await headlessRiftlight({ seed: 5, viewport: { width: 640, height: 360, dpr: 3 } }));
+      const pads = [pad(0), pad(1)];
+      /** Pad `slot`'s button `b` held for `frames` frames and let go. */
+      const press = (slot: number, b: number, frames = 1) => {
+        h.engine.input.setGamepads(pads.map((p, i) => (i === slot ? pad(i, [b]) : p)));
+        h.engine.step(frames);
+        h.engine.input.setGamepads(pads);
+        h.engine.step(1);
+      };
+      const model = () => (h.game as unknown as { hudModel(): HudModel }).hudModel();
+      h.rl.newRun({ seed: 5 });
+      await h.rl.enterDepth(1);
+      h.rl.dev.ai = false; // nobody moves
+      h.engine.step(3);
+      h.engine.input.setGamepads(pads);
+      press(0, 3); // player 1 picks up pad 0
+      expect(model().heroes, 'no guests: no heroes for strips').toBeUndefined();
+      press(0, 9); // Options: the pause menu
+      for (let n = 0; n < 12 && h.rl.ui.widgets().find((w) => w.focus)?.id !== 'coop'; n++) press(0, 13); // the d-pad down to Couch co-op
+      press(0, 0); // Cross
+      expect(h.rl.ui.stack()).toEqual(['pause', 'coop']);
+      h.engine.step(10);
+      press(1, 0, Math.ceil(TWIN_SECONDS.wait * 60) + 1); // Cross on pad 1, held through the join's wait: it joins
+      expect(h.game.coop.seats).toEqual([2]);
+      await settle(); // its hero is made
+      const guest = h.game.coop.guests[0]!.hero!;
+      expect(guest, 'the guest’s hero').toBeTruthy();
+      press(0, 1); // Circle: back to the pause menu
+      press(0, 1); // Circle: play
+      h.engine.step(5);
+      const cam = h.engine.camera.camera;
+      const heroes = model().heroes ?? [];
+      const at = worldBox(guest.actor.position, HEAD, 0.9, cam, h.game.ui)!;
+      expect(heroes.length, `player 1 and the guest: ${JSON.stringify(heroes)}`).toBe(2);
+      expect(heroes.some((b) => overlaps(b, at, 0)), `the guest ${JSON.stringify(at)} among ${JSON.stringify(heroes)}`).toBe(true);
+      const kept = () => (h.game as unknown as { stripHeroes: { boxes: Box[] } | null }).stripHeroes;
+      expect(JSON.parse(JSON.stringify(kept())), 'plain data (no stage held)').toEqual(kept());
+      h.game.goTown('portal'); // another stage: its heroes are taken anew once they are known
+      expect(kept(), 'dropped as the stage opens').toBeNull();
+      h.engine.step(3);
+      expect(kept()?.boxes.length, 'taken again in town').toBe(2);
+      h.game.coop.leave(2);
+      h.engine.step(2);
+      expect([model().heroes, kept()], 'the last guest left: nothing kept').toEqual([undefined, null]);
+      expect(h.engine.errors).toEqual([]);
     },
     240_000,
   );
