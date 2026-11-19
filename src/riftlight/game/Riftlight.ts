@@ -1533,8 +1533,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // finger's tap on a loot label or the interact prompt does it (`update`); a finger on the loot
     // feed or the centre banner may swipe it away: no swing while that button stays down (nor
     // while a press the map took stays down). `update` takes a finger's press there as well, for a
-    // finger that lands in a frame no fixed step runs in
-    if (press) this.pressTaken = !!this.worldFocus || (!!down?.touch && this.fingerTaken(down.x, down.y));
+    // finger that lands in a frame no fixed step runs in; a click is hit-tested where it went down
+    // (`worldAt`: the hover's label may be gone from a mouse at rest)
+    if (press) this.pressTaken = !!(down && !down.touch ? this.worldAt(down.x, down.y) : this.worldFocus) || (!!down?.touch && this.fingerTaken(down.x, down.y));
     else if (!hold) this.pressTaken = false;
     // a finger alone on the world swings once it has stayed down `FINGER_WAIT` steps after the one
     // it landed in: a second finger landing by then lets go of it (a pinch: `Input`), so a pinch is
@@ -1691,6 +1692,27 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return false;
   }
 
+  /**
+   * The thing in the world at (`x`, `y`) art pixels as last drawn, for a click there (`goTo`): a
+   * townsperson or the stash, a loot label, the level's open portal; null on a panel, in a showcase
+   * mode, or on nothing. Hit-tested at the press, so a click where the mouse came to rest (its hover
+   * label gone after `ui.pointer.used`'s four seconds: `worldFocus` is the hover's) still goes there.
+   */
+  private worldAt(x: number, y: number): WalkTarget | null {
+    if (this.showcase?.active || this.layer.covers(x, y)) return null;
+    const ui = this.ui;
+    const cam = this.ctx.engine.camera.camera;
+    const on = (b: Box | null) => !!b && inside(b, x, y);
+    if (this.screen === 'town') {
+      const thing = this.town.interactables.find((it) => on(thingBox(it, cam, ui)));
+      return thing ? { kind: 'it', id: thing.id } : null;
+    }
+    if (this.screen !== 'level' || !this.level) return null;
+    const label = this.touchable.loot.find((l) => inside(l.rect, x, y));
+    if (label) return { kind: 'loot', id: label.id };
+    return !this.round && this.level.exitOpen && on(worldBox(this.level.exit, 2.2, 1.6, cam, ui)) ? { kind: 'portal' } : null;
+  }
+
   /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
   private fingerTaken(x: number, y: number): boolean {
     return this.touchTarget(x, y) !== null || this.onDismissable(x, y);
@@ -1825,8 +1847,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         ctx.input.clearQueued(...MOUSE.left);
         continue;
       }
-      // the world: a click on a townsperson, the stash, a loot label or the open portal goes there and does it
-      if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch && this.worldFocus) this.goTo(this.worldFocus);
+      // the world: a click on a townsperson, the stash, a loot label or the open portal goes there
+      // and does it, hit-tested where it went down (`worldAt`), its hover label shown or not
+      if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch) {
+        const at = this.worldAt(e.x, e.y);
+        if (at) this.goTo(at);
+      }
       // a finger's tap on a loot label picks it up (walking there), on the interact prompt does it;
       // one there, on the loot feed or on the centre banner (a swipe from there dismisses it) is no
       // swing while it stays down, whether or not a fixed step ran in the frame it landed (`readIntent`)
