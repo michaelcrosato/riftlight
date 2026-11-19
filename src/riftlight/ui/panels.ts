@@ -839,17 +839,57 @@ export class LootWindow implements Panel {
 
 // ------------------------------------------------------------------ a line of dialogue over a view
 
+export { talkSeconds } from './talk';
+
+/** Where an NPC's line goes (`talkPlace`): its box in art pixels, its rows, and whether it covers what is there (`over`). */
+export interface TalkPlace {
+  readonly box: Rect;
+  readonly rows: readonly string[];
+  readonly over: boolean;
+}
+
 /**
- * Small header panel for NPC lines (shown above the vendor / tree / rift panels): `line` is what
- * `Npc.talk` returned (a line id: the speaker and their words, `talkText`) or text to show as it is.
+ * Where an NPC's line goes (`line`: what `Npc.talk` returned, a line id, or text to show as it is):
+ * in free space, clear of `blocked` (the panel's frame and legend, the item windows, the HUD), the
+ * top-most spot first and there as wide as fits (up to 400 art pixels; between two windows it wraps
+ * to the gap). With no spot free (a phone held upright: its windows stacked) across the top of the
+ * screen over what is there (`over`: the shell shows it a while, `talkSeconds`).
  */
-export function dialogue(ui: UiCanvas, line: string, panel: Rect): Rect {
-  const lines = wrap(talkText(line), Math.min(400, ui.w - 20));
-  const w = Math.max(...lines.map((l) => ui.measure(l))) + 10;
-  const x = Math.floor((ui.w - w) / 2);
-  const y = Math.max(2, panel.y - 30 - lines.length * 9);
-  ui.rect(x, y, w, lines.length * 9 + 6, 'ink');
-  ui.outline(x, y, w, lines.length * 9 + 6, UI.edge);
-  lines.forEach((l, i) => ui.text(x + 5, y + 4 + i * 9, l, { color: 'white' }));
-  return { x, y, w, h: lines.length * 9 + 6 };
+export function talkPlace(ui: UiCanvas, line: string, blocked: readonly Rect[]): TalkPlace {
+  const text = talkText(line);
+  const max = Math.min(400, ui.w - 8);
+  // its shapes, widest first: for each number of rows the narrowest box that takes them
+  const shapes: { rows: string[]; w: number; h: number }[] = [];
+  for (let width = max; width >= Math.min(max, 64); width -= 6) {
+    const rows = wrap(text, width - 10);
+    const w = Math.max(...rows.map((r) => textWidthPx(r))) + 10; // as `wrap` measures (the scan draws nothing)
+    const h = rows.length * 9 + 6;
+    const same = shapes.find((s) => s.rows.length === rows.length);
+    if (same) Object.assign(same, w < same.w ? { rows, w } : {});
+    else shapes.push({ rows, w, h });
+  }
+  const clear = (b: Rect) => b.x >= 2 && b.x + b.w <= ui.w - 2 && b.y + b.h <= ui.h - 2 && !blocked.some((r) => b.x < r.x + r.w + 1 && b.x + b.w + 1 > r.x && b.y < r.y + r.h + 1 && b.y + b.h + 1 > r.y);
+  const mid = Math.floor(ui.w / 2);
+  for (let y = 2; y < ui.h; y += 2) {
+    for (const s of shapes) {
+      if (y + s.h > ui.h - 2) continue;
+      // centred, else beside each thing in the way, the nearest the centre first
+      const xs = [mid - Math.floor(s.w / 2), ...blocked.flatMap((r) => [r.x + r.w + 2, r.x - 2 - s.w])].sort((a, b) => Math.abs(a + s.w / 2 - mid) - Math.abs(b + s.w / 2 - mid));
+      for (const x of xs) {
+        const box = { x, y, w: s.w, h: s.h };
+        if (clear(box)) return { box, rows: s.rows, over: false };
+      }
+    }
+  }
+  const s = shapes[0]!;
+  return { box: { x: Math.floor((ui.w - s.w) / 2), y: 2, w: s.w, h: s.h }, rows: s.rows, over: true };
+}
+
+/** An NPC's line where `talkPlace` put it (over the panels: drawn after them). Returns its box. */
+export function dialogue(ui: UiCanvas, place: TalkPlace): Rect {
+  const { x, y, w, h } = place.box;
+  ui.rect(x, y, w, h, 'ink');
+  ui.outline(x, y, w, h, UI.edge);
+  place.rows.forEach((l, i) => ui.text(x + 5, y + 4 + i * 9, l, { color: 'white' }));
+  return place.box;
 }

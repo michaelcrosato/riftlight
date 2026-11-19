@@ -636,7 +636,7 @@ describe('a picked item\'s buttons and its tooltip', () => {
 
 describe('in town by touch', () => {
   it(
-    'a tap on the interact prompt does what F does (the stash opens); a swipe on an NPC\'s line over its panel ends the talk',
+    'a tap on the interact prompt does what F does (the stash opens); an NPC\'s line shows clear of the item windows: a swipe on it ends the talk, a tap puts it away',
     () => {
       const { rl, engine, game } = h;
       engine.input.noteTouch();
@@ -653,21 +653,27 @@ describe('in town by touch', () => {
       expect(stack(), 'the stash opened').toContain('stash');
       rl.ui.close();
       engine.step(2);
-      // Brann's anvil: his line over the panel
+      // Brann's anvil: his line in free space, clear of the item windows (`talkPlace`)
+      const line = () => (game as unknown as { touchable: { dialogue: Box | null } }).touchable.dialogue;
       expect(rl.talkTo('brann').ok).toBe(true);
       engine.step(2);
-      const line = (game as unknown as { touchable: { dialogue: Box | null } }).touchable.dialogue;
-      expect(line, 'his line shows').not.toBeNull();
+      const said = line()!;
+      expect(said, 'his line shows').not.toBeNull();
       const talking = stack();
-      expect(talking.length).toBeGreaterThan(0);
-      // the item windows go over his line: a swipe from a window where they cover it is the window's
+      expect(talking).toEqual(['crafting']);
       const windows = (game.ports.loot as RealLoot).ui!.rects();
-      const under = windows.map((w) => ({ x: Math.max(w.x, line!.x) + 2, y: Math.max(w.y, line!.y) + 2, w })).find((p) => inside(line!, p.x, p.y) && inside(p.w, p.x, p.y));
-      expect(under, `a window ${JSON.stringify(windows)} over his line ${JSON.stringify(line)}`).toBeDefined();
-      swipe(under!.x, under!.y, 'up');
-      expect(stack(), 'a swipe up from a window over the line: still talking').toEqual(talking);
-      expect(windows.some((w) => inside(w, mid(line!).x, mid(line!).y)), 'its middle shows between the windows').toBe(false);
-      swipe(mid(line!).x, mid(line!).y, 'right');
+      for (const w of windows) expect(said.x + said.w <= w.x || w.x + w.w <= said.x || said.y + said.h <= w.y || w.y + w.h <= said.y, `his line ${JSON.stringify(said)} clear of a window ${JSON.stringify(w)}`).toBe(true);
+      // a tap on it puts it away (the press is the line's: the talk goes on)
+      tapAt(mid(said).x, mid(said).y);
+      engine.step(1);
+      expect(line(), 'a tap put it away').toBeNull();
+      expect(stack(), 'still at the anvil').toEqual(talking);
+      rl.ui.close();
+      engine.step(2);
+      // a swipe on it ends the talk
+      expect(rl.talkTo('brann').ok).toBe(true);
+      engine.step(2);
+      swipe(mid(line()!).x, mid(line()!).y, 'right');
       expect(stack(), 'the talk is over').toEqual([]);
       expect(engine.errors).toEqual([]);
     },

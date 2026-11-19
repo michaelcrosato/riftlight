@@ -25,6 +25,8 @@ const act = (action: { kind: 'activate' | 'refund'; id: string }) => {
 
 describe('riftlight passive tree', () => {
   let node = { id: '', stat: '', tags: [] as string[] };
+  /** The node under the pad's cursor as a test closed the tree. */
+  let left: string | null = null;
 
   it(
     "P opens the passive tree with the hero's points, the world pauses",
@@ -124,10 +126,61 @@ describe('riftlight passive tree', () => {
       tap(1, 0); // player 1's
       engine.step(2);
       expect(allocated(hover!), "player 1's Cross takes it").toBe(true);
+      left = hover;
       const sent = engine.recording()!.frames.flatMap((f) => (f.commands ?? []) as { rl?: string; action?: { kind: string; id?: string } }[]);
       expect(sent.filter((c) => c.rl === 'tree').map((c) => c.action), 'what the pad did to the tree is recorded').toContainEqual({ kind: 'activate', id: hover });
       expect(rl.press('PadB').ui).toEqual([]);
       game.coop.leave(2);
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
+  it(
+    'opened with the pad in use (Pause → Passive tree, R1 from another screen) its cursor is on a node at once, the node hovered last; Cross takes it',
+    () => {
+      const { rl, engine } = h;
+      const pad = (pressed: number[] = []) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+      const tap = (b: number) => {
+        engine.input.setGamepads([pad([b])]);
+        engine.step(1);
+        engine.input.setGamepads([pad()]);
+        engine.step(1);
+      };
+      engine.input.setGamepads([pad()]);
+      engine.step(1);
+      tap(9); // Options: the pause menu, the pad in use
+      expect(rl.state().ui).toEqual(['pause']);
+      expect(engine.input.device).toBe('pad');
+      expect(rl.ui.click('tree')).toBe(true);
+      expect(rl.state().ui).toEqual(['pause', 'tree']);
+      // the node the last test left the cursor on (where the pad's cursor starts with none: view.test.ts)
+      const start = panel().debug().hover;
+      expect(start, 'a node under the cursor at once, no stick or d-pad yet').toBe(left);
+      // the d-pad steps off the start to a node to take, and Cross takes it
+      let next: string | null = start;
+      for (let i = 0; i < 6 && (next === start || allocated(next!) || !panel().state!.canAllocate(next!)); i++) {
+        tap(15);
+        next = panel().debug().hover;
+      }
+      expect(panel().state!.canAllocate(next!), `${next} can be taken`).toBe(true);
+      tap(0); // Cross
+      engine.step(2);
+      expect(allocated(next!), 'Cross takes the node under the cursor').toBe(true);
+      tap(1); // Circle: back to the pause menu
+      expect(rl.state().ui).toEqual(['pause']);
+      tap(9);
+      // another screen, then R1 round the ring to the tree: the cursor where it was left
+      tap(8); // Create: the inventory
+      expect(rl.state().ui).toEqual(['inventory']);
+      tap(5); // R1: skills
+      tap(5); // R1: the tree
+      expect(rl.state().ui).toEqual(['tree']);
+      expect(panel().debug().hover, 'the node hovered last').toBe(next);
+      tap(1);
+      expect(rl.state().ui).toEqual([]);
       engine.input.setGamepads(null);
       engine.input.noteDevice('keyboard');
       expect(engine.errors).toEqual([]);

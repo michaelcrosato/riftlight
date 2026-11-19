@@ -217,13 +217,78 @@ describe('the Arena on a phone', () => {
     expect(codes).not.toContain(TOUCH_CODES.interact);
     const keys = new Set<string>([...KEYS.attack, ...KEYS.dodge, ...KEYS.skill.flat()]);
     for (const b of ARENA_TOUCH_BUTTONS) expect(keys.has(b.code), `${b.label} presses ${b.code}`).toBe(true);
-    // the labels are the controls' touch names (A attack, B dodge, 1-4 the skills)
+    // the labels are the controls' touch names (A attack, 1-4 the skills); B the dodge, which a line
+    // names on a phone (`key.touch.dodge`: in Riftlight's play the button draws an icon, no letter)
     const labels = Object.fromEntries(ARENA_TOUCH_BUTTONS.map((b) => [b.code, b.label]));
     expect(labels[TOUCH_CODES.attack]).toBe(CONTROLS.attack.touch);
-    expect(labels[TOUCH_CODES.dodge]).toBe(CONTROLS.dodge.touch);
+    expect([labels[TOUCH_CODES.dodge], CONTROLS.dodge.touch]).toEqual(['B', 'TouchDodge']);
     TOUCH_CODES.skills.forEach((c, i) => expect(labels[c]).toBe(CONTROLS[`skill${i + 1}` as 'skill1'].touch));
     expect(ARENA_TOUCH_BUTTONS.length).toBe(RIFTLIGHT_TOUCH_BUTTONS.length - 2);
   });
+});
+
+describe('a phone in 52in1: the corner map', () => {
+  /** A finger's tap at art pixel (x, y), as the page's canvas tells the engine. */
+  const tap = (g: HeadlessRiftlight, x: number, y: number) => {
+    const { width, height } = g.engine.renderer.resolution;
+    for (const down of [true, false]) {
+      g.engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2);
+      (g.engine.input.pointer as { touch: boolean }).touch = true;
+      (g.engine.input as unknown as { button(code: string, down: boolean): void }).button('Touch', down);
+      g.engine.step(1);
+    }
+  };
+  for (const [viewport, moves] of [
+    [{ width: 390, height: 844, dpr: 3 }, true],
+    [{ width: 360, height: 800, dpr: 3 }, true],
+    // on its side the skills' arc is under the corner: the map stays, its part below the band the target
+    [{ width: 740, height: 360, dpr: 2 }, false],
+    [{ width: 844, height: 390, dpr: 2 }, false],
+  ] as const) {
+    it(
+      `${viewport.width}×${viewport.height}: a tap target, it ${moves ? 'sits below the hub’s wake band as ≡ does' : 'takes a tap only below the hub’s wake band'} (on its own page at the top), and a tap there opens the level's map`,
+      async () => {
+        const top = async (hubSettings?: object) => {
+          h?.engine.dispose();
+          h = await headlessRiftlight({ seed: 12, viewport, options: { touch: true, ...(hubSettings ? { hubSettings } : {}) } });
+          h.engine.input.send({ rl: 'run', slot: 0, seed: 12 });
+          h.engine.input.noteTouch();
+          h.engine.step(30);
+          await h.rl.enterDepth(1);
+          h.engine.step(30);
+          const f = h.engine.renderer.framing;
+          const map = h.game.hudRects().zones.find((z) => z.id === 'minimap')!;
+          expect(map, 'a corner map in a level').toBeDefined();
+          return { map, css: (y: number) => f.offsetY + (y / f.artHeight) * f.cssHeight };
+        };
+        const alone = await top();
+        expect(alone.map.y, 'on its own page: at the top').toBe(2);
+        const hub = await top({});
+        const g = h!.game;
+        const wake = g.touchPad.wakeArt();
+        expect(hub.css(wake), 'the band in art pixels').toBeGreaterThanOrEqual(HUB_WAKE);
+        if (moves) {
+          expect(hub.map.y, `in 52in1 its top is below the wake band (${HUB_WAKE} CSS px)`).toBe(wake);
+          // the HUD around it: the gold under it, clear of the controls
+          const gold = g.hudRects().zones.find((z) => z.id === 'gold')!;
+          expect(gold.y, 'the gold under the map').toBeGreaterThanOrEqual(hub.map.y + hub.map.h - 1);
+          for (const c of g.hudRects().controls) expect(overlaps(c, { ...hub.map, h: gold.y + gold.h - hub.map.y }), `clear of ${JSON.stringify(c)}`).toBe(false);
+        } else expect(hub.map.y, 'at the top, over the skills’ arc no more').toBe(2);
+        // what takes a tap: its part below the band, a thumb tall at least (44 CSS px)
+        const target = { x: hub.map.x, y: Math.max(hub.map.y, wake), w: hub.map.w, h: hub.map.y + hub.map.h - Math.max(hub.map.y, wake) };
+        expect(hub.css(target.y + target.h) - hub.css(target.y), 'a thumb tall').toBeGreaterThanOrEqual(44);
+        if (!moves) {
+          // a tap on its part in the band is the hub's: no map (and no swing)
+          tap(h!, target.x + target.w / 2, Math.floor(wake / 2));
+          expect(g.mapOpen, 'a tap in the wake band opens nothing').toBe(false);
+        }
+        tap(h!, target.x + target.w / 2, target.y + target.h / 2);
+        expect(g.mapOpen, 'a tap below the band on the corner map opens the map').toBe(true);
+        expect(h!.engine.errors).toEqual([]);
+      },
+      T,
+    );
+  }
 });
 
 describe('a phone in 52in1, replayed without the hub', () => {

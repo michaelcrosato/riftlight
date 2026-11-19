@@ -38,7 +38,7 @@ import { t } from '../lang';
 import { type Drop, ITEM_GROUP, type KillInfo, type LegendAvoid, type LootPort, type Panel, type PanelHost, type ShellServices, type StageWorld, type WorldLoot } from '../game/ports';
 import { ItemsStore } from '../ui/items/store';
 import { type ItemsViewState, ItemsUi, type LeftPanel } from '../ui/items/ItemsUi';
-import type { UiCanvas, UiEvent } from '../ui/kit';
+import type { Rect, UiCanvas, UiEvent } from '../ui/kit';
 import { type LegendItem, menuLegend } from '../ui/legend';
 
 /** Label colours by item class (the shell's labels use palette names). */
@@ -563,6 +563,16 @@ export class ItemsPanel implements Panel {
 
   covers(x: number, y: number): boolean {
     return this.loot.active === this && this.loot.itemsUi().covers(x, y);
+  }
+
+  /** The windows as drawn (a townsperson's line keeps clear of them). */
+  boxes(): readonly Rect[] {
+    return this.loot.active === this ? this.loot.itemsUi().rects() : [];
+  }
+
+  /** A townsperson's line over the windows, with no free space for it (`ItemsUi.talkOver`). */
+  talkOver(talk: { readonly box: Rect; readonly rows: readonly string[] } | null): void {
+    if (this.loot.active === this) this.loot.itemsUi().talkOver(talk);
   }
 
   /** Under the windows: select and back, and the controls that switch the stash's or the vendor's tabs (L1 R1, Q E, and a DualSense's swipes while they page: `touchpadSwipes`). */

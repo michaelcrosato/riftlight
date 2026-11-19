@@ -63,6 +63,12 @@ export interface HudModel {
   /** Touch controls on screen, in art pixels: the HUD drops its skill bar and lays out around them. */
   controls?: readonly Box[];
   /**
+   * 52in1's wake band on this page, in art pixels from the top (`HUB_WAKE`, `TouchPad.wakeArt`;
+   * 0 or absent: none): with touch controls the corner map, a tap target, sits below it as ≡ does
+   * (a tap there would bring the hub's bar over the game too).
+   */
+  wake?: number;
+  /**
    * A 52in1 moment's seconds left (`round.moment_left`), red in its last seconds: centred at the
    * top, under a boss's bar, moved down clear of the label, the minimap and the controls
    * (`timeLeftRect`); the centre banner goes under it. Absent outside a moment.
@@ -106,9 +112,11 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * corner's third of the screen around the controls (beside the joystick and the button cluster
  * on a wide screen, above them on a phone in portrait), the XP bar runs between the orbs when
  * they share a row (else it sits over the life orb), and the top-left text starts right of
- * any control in the top-left corner (the ≡ button, at the top or, in 52in1, lower down).
+ * any control in the top-left corner (the ≡ button, at the top or, in 52in1, lower down). In 52in1
+ * (`wake`: its wake band in art pixels) the corner map's frame (`map.y`) is below the band too
+ * where that keeps clear of the controls.
  */
-export function hudGeometry(W: number, H: number, controls: readonly Box[] = []) {
+export function hudGeometry(W: number, H: number, controls: readonly Box[] = [], wake = 0) {
   const compact = W < 300;
   const touch = controls.length > 0;
   const slot = compact ? 16 : 20;
@@ -120,7 +128,15 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [])
   const orbR = compact ? 12 : ORB_R;
   const orbY = compact ? by - 12 - orbR : H - 30;
   const orbX = compact ? orbR + 4 : 30;
-  const map = compact ? { w: 44, h: 34 } : { w: 84, h: 64 };
+  const map = { ...(compact ? { w: 44, h: 34 } : { w: 84, h: 64 }), y: 2 };
+  // the corner map's frame: at the top; with touch controls in 52in1 below the hub's wake band
+  // (`wake`) as ≡ is, where it and the gold under it stay clear of the controls (a phone upright).
+  // Where they don't (a phone on its side: the skills' arc) it stays at the top, and only its part
+  // below the band takes a tap (`Riftlight.onMap`)
+  if (touch && wake > 0) {
+    const y = Math.max(2, Math.ceil(wake));
+    if (!controls.some((c) => overlaps({ x: W - map.w - 10, y, w: map.w + 10, h: map.h + 18 }, c, 0))) map.y = y;
+  }
   const bossW = Math.min(200, W - 30);
   let life = { x: orbX, y: orbY };
   let mana = { x: W - orbX, y: orbY };
@@ -139,7 +155,7 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [])
     // a landscape phone's button cluster is wider than a third of the screen: the orbs may look
     // as far as the middle for a spot on the bottom row; never under the minimap and the gold
     const reach = W > H ? W / 2 : W / 3;
-    const around = [...controls, { x: W - map.w - 10, y: 0, w: map.w + 10, h: map.h + 20 }];
+    const around = [...controls, { x: W - map.w - 10, y: 0, w: map.w + 10, h: map.y + map.h + 18 }];
     const l = lowestSpot(W, H, around, 'left', size, reach);
     const m = lowestSpot(W, H, around, 'right', size, reach);
     life = { x: l.x + orbR + 2, y: l.y + orbR + 2 };
@@ -204,7 +220,7 @@ export type HudBox = Box & { readonly id: 'control' | 'bar' | 'xp' | 'life' | 'm
  * centre banner and the couch guests' strips.
  */
 export function hudBoxes(W: number, H: number, m: HudModel): HudBox[] {
-  const g = hudGeometry(W, H, m.controls);
+  const g = hudGeometry(W, H, m.controls, m.wake);
   const z = fixedBoxes(W, H, m, g);
   const b = bannerRect(W, H, m, g);
   if (b) z.push({ id: 'banner', x: b.x, y: b.y, w: b.w, h: b.h });
@@ -222,7 +238,7 @@ function fixedBoxes(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   } else z.push({ id: 'bar', x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
   z.push({ id: 'life', ...orbZone(g.life, g.orbR) }, { id: 'mana', ...orbZone(g.mana, g.orbR) });
   // the corner map and its frame (`minimapZone` reserves the row of gold under it as well)
-  if (m.minimap) z.push({ id: 'minimap', x: W - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 });
+  if (m.minimap) z.push({ id: 'minimap', x: W - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 });
   z.push({ id: 'gold', ...goldZone(W, m, g) });
   z.push({ id: 'where', ...whereZone(W, m, g) });
   const boss = bossZone(W, m, g);
@@ -362,15 +378,18 @@ function drawGuests(ui: UiCanvas, m: HudModel, at: GuestsPlace): void {
 
 /** The minimap and the gold under it (top-right), or null without a minimap. */
 function minimapZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
-  return m.minimap ? { x: W - g.map.w - 6, y: 2, w: g.map.w + 6, h: g.map.h + 18 } : null;
+  return m.minimap ? { x: W - g.map.w - 6, y: g.map.y, w: g.map.w + 6, h: g.map.h + 18 } : null;
 }
+
+/** The gold counter's row (its coin's top): under the minimap, or in the top-right corner without one. */
+const goldY = (m: HudModel, g: ReturnType<typeof hudGeometry>): number => (m.minimap ? g.map.y + g.map.h + 8 : 6);
 
 /** The gold counter's words: the number, rolling up to what the hero has. */
 const goldText = (m: HudModel): string => lang().formatNumber(Math.round(m.goldShown));
 
 /** The gold counter and its coin (`drawHud`): right-aligned under the minimap, or in the top-right corner without one. */
 function goldZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box {
-  const gy = m.minimap ? g.map.h + 10 : 6;
+  const gy = goldY(m, g);
   const gw = textWidthPx(goldText(m)) + 8;
   return { x: W - 6 - gw, y: gy - 1, w: gw + 1, h: 8 };
 }
@@ -786,7 +805,7 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): HudDrawn
   const time = m.time;
   ui.device = m.device;
   ui.padStyle = m.padStyle;
-  const g = hudGeometry(W, H, m.controls);
+  const g = hudGeometry(W, H, m.controls, m.wake);
   const SLOT = g.slot;
 
   // hurt flash: red corners
@@ -858,8 +877,8 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): HudDrawn
 
   // minimap, gold under it (top-right); the counter glows while it rolls up
   const mw = g.map.w;
-  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, 4, mw, g.map.h, time);
-  const gy = m.minimap ? g.map.h + 10 : 6;
+  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, g.map.y + 2, mw, g.map.h, time);
+  const gy = goldY(m, g);
   const gold = goldText(m);
   const gw = ui.measure(gold) + 8;
   ui.sprite(W - 6 - gw, gy, ['.ooo.', 'oyyyo', 'oywyo', 'oyyyo', '.ooo.'], { o: 'orange', y: 'sand', w: 'white' });

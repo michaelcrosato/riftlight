@@ -30,7 +30,8 @@
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px
 //   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
-//     px or lower), the top-left block right of it, the data's layout the page's
+//     px or lower), the top-left block right of it, the data's layout the page's; the corner map
+//     takes a real tap only below the band (a thumb tall at least), one in the band opens nothing
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -644,6 +645,29 @@ export async function runRiftlightPhone(h, orientation) {
       const same = JSON.stringify(hub.page) === JSON.stringify(hub.data);
       check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${orientation} in 52in1: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
       check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${orientation} in 52in1: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
+      // the corner map, a tap target: below the wake band where it fits (upright), else only its part
+      // below the band takes a tap (on its side the skills' arc is under it); a real finger's tap there
+      // opens the level's map, one on its part in the band (the hub's) opens nothing
+      const map = await pageH.evaluate(() => {
+        const e = window.__PIXEL_ENGINE__;
+        const z = window.__RIFTLIGHT__.ui.hud().zones.find((b) => b.id === 'minimap');
+        const c = e.renderer.renderer.domElement.getBoundingClientRect();
+        const res = e.renderer.resolution;
+        return { x: c.left + ((z.x + z.w / 2) / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, bottom: c.top + ((z.y + z.h) / res.height) * c.height };
+      });
+      const below = { top: Math.max(map.top, 90), bottom: map.bottom };
+      const tapMap = async (y) => {
+        await pageH.touchscreen.tap(map.x, y);
+        return pageH.evaluate(() => {
+          window.__PIXEL_ENGINE__.step(2);
+          return window.__RIFTLIGHT__.game.mapOpen;
+        });
+      };
+      const inBand = map.top < 90 ? await tapMap((map.top + 90) / 2) : false;
+      const opened = await tapMap((below.top + below.bottom) / 2);
+      check(!inBand && opened && below.bottom - below.top >= 44, `${orientation} in 52in1: the corner map takes a tap only below the wake band (map ${Math.round(map.top)}-${Math.round(map.bottom)} CSS px; a tap in the band opened ${inBand ? 'the map' : 'nothing'}, below it ${opened ? 'the map' : 'nothing'})`);
+      await pageH.screenshot({ path: new URL(`${tag}-hub-map.png`, OUT).pathname });
+      await tapMap(pageH.viewportSize().height / 2); // a tap on the big map closes it
       await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
       await pageH.waitForTimeout(1000);
       await pageH.screenshot({ path: new URL(`${tag}-hub.png`, OUT).pathname });

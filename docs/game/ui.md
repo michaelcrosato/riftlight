@@ -115,7 +115,9 @@ which the hub's companion script sets before the game's first script: `RIFTLIGHT
 and `TouchPad.buttons` by `TouchPad.hub`, from `engine.hubSettings.present`, recorded) ≡ sits lower, its top on the hub's wake band
 (`HUB_WAKE`, 90 CSS px: a touch above it brings the hub's bar over the game), its centre 112 CSS px
 down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame.round`: a round has
-no pause menu, the hub's bar is the menu there). `TouchPad` drives them each frame from
+no pause menu, the hub's bar is the menu there). The corner map, a tap target, goes below the band
+there too (`TouchPad.wakeArt`, `HudModel.wake`) where it and the gold stay clear of the controls (a
+phone upright); on its side it stays at the top and only its part below the band takes a tap. `TouchPad` drives them each frame from
 `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
@@ -145,7 +147,7 @@ so a replay from a save-state taps the same.
 a swipe left, right or down that starts on a panel's frame closes it as back does (`UiLayer.swipe`;
 never a sticky one; a list that scrolls keeps up and down for itself and a slider its sideways
 swipe, `Panel.swipes`, though its title bar always closes it); one that starts on an NPC's line
-over its panel ends the talk (where the line shows: under the item windows only between them); with no panel, one from the centre banner ends it (`BannerQueue.skip`,
+ends the talk, and a tap on it puts it away; with no panel, one from the centre banner ends it (`BannerQueue.skip`,
 not in a 52in1 round) and one from the loot feed's lines clears them (a finger that lands on either
 is no swing for as long as it stays down and wherever it slides: `pressTaken`).
 The item windows close on a swipe down from a window's title bar (`Panel.swipeCloses`: elsewhere a

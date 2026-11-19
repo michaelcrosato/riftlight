@@ -4,6 +4,8 @@ import { clampZoom, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMIT
 import { css, pack, PixelBuffer, textWidth } from './pixels';
 import { t } from '../../lang';
 import { tipControl, treeHints, type TreeHintMode } from './TreeView';
+import { startNode, TreeCursor } from './cursor';
+import { defaultTree } from '../../tree/tree';
 
 describe('tree camera', () => {
   const cam = { x: 100, y: -50, zoom: 0.25 };
@@ -40,6 +42,35 @@ describe('tree camera', () => {
     expect(stepToward(pts[0]!, 1, 0, pts)?.id).toBe('b');
     expect(stepToward(pts[0]!, 0, 1, pts)?.id).toBe('c');
     expect(stepToward(pts[0]!, -1, 0, pts)).toBeNull();
+  });
+});
+
+describe('the pad’s cursor as the tree opens', () => {
+  it('starts on the node hovered last, else on the start the allocation grows from: the cross, the focus and Cross on it at once', () => {
+    const tree = defaultTree();
+    const roots = [...tree.roots];
+    const nav = new TreeCursor(tree);
+    expect([nav.padCursor, nav.hover], 'before: no cross, nothing focused').toEqual([false, null]);
+    nav.padStart(null, new Set());
+    expect([nav.padCursor, nav.hover], 'nothing allocated: the first start').toEqual([true, roots[0]]);
+    // an allocation grown from another start: that start
+    const other = roots[3]!;
+    const grown = new Set([tree.neighbours(other).find((n) => !tree.roots.has(n))!]);
+    expect(startNode(tree, grown)?.id).toBe(other);
+    const fresh = new TreeCursor(tree);
+    fresh.padStart(null, grown);
+    expect(fresh.hover).toBe(other);
+    // the node hovered last wins, on screen and under the cross (the camera follows it)
+    const last = tree.nodes.find((n) => n.kind === 'notable')!;
+    const again = new TreeCursor(tree);
+    again.padStart(last.id, grown);
+    expect(again.hover).toBe(last.id);
+    const [sx, sy] = toScreen(again.cam, again.width, again.height, last.x, last.y);
+    expect([Math.round(again.cursor.x), Math.round(again.cursor.y)]).toEqual([Math.round(sx), Math.round(sy)]);
+    // one that no longer exists (a changed tree): the start
+    const gone = new TreeCursor(tree);
+    gone.padStart('no-such-node', new Set());
+    expect(gone.hover).toBe(roots[0]);
   });
 });
 

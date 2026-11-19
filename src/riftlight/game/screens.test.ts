@@ -1,7 +1,8 @@
 // Riftlight's screens at ten feet, headless: L1 / R1 (Q / E) page round the character screens and
 // the strip's names are buttons; every framed panel says what the controls do for the device in
 // use; the character sheet in pages; the death recap's summary first and its tables behind Details;
-// the mouse in the world (a click on a townsperson walks there and talks, no swing); the pad's
+// the mouse in the world (a click on a townsperson walks there and talks, no swing, after the
+// mouse came to rest there too: hit-tested where it was pressed); the pad's
 // focus framed round a whole item; the HUD's clock and counts in the normal font. One engine for
 // the file, tests in order. `rl.press` is the engine's input, not the page's: the tree's view
 // takes the page's keyboard, so real Q / E through the tree are scripts/e2e-riftlight-items.mjs'.
@@ -283,6 +284,39 @@ describe('Riftlight at ten feet', () => {
     expect(stack(), 'walked there and talked').toContain('crafting');
     expect(states.has('attack'), 'no swing').toBe(false);
     expect(game.walkTo).toBeNull();
+    rl.press('Escape');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('a click where the mouse came to rest on a thing (its label gone four seconds on) still walks there and does it, with no swing', () => {
+    const { rl, game, engine } = h;
+    engine.input.noteDevice('keyboard');
+    const stash = game.town.interactables.find((x) => x.id === 'stash')!;
+    game.hero.enter(game.town, game.town.spawn, 0);
+    engine.step(30);
+    expect(stash.position.distanceTo(game.hero.actor.position), 'out of reach').toBeGreaterThan(stash.radius + 1);
+    const box = thingBox(stash, engine.camera.camera, game.ui)!;
+    pointAtArt(engine, box.x + box.w / 2, box.y + box.h / 2);
+    engine.step(2);
+    expect(game.worldFocus, 'hovered: its label').toEqual({ kind: 'it', id: 'stash' });
+    engine.step(5 * 60); // the mouse at rest: the label goes (a keyboard or pad player's screen)
+    expect(game.worldFocus, 'no label after a rest').toBeNull();
+    expect(texts()).not.toContain(stash.prompt);
+    const hc = (game.hero as RealHero).hc;
+    const states = new Set<string>();
+    // the camera eased back as the mouse's aim let go: the click lands where the stash shows now,
+    // pressed in the frame the mouse got there (no hover drawn there yet)
+    const now = thingBox(stash, engine.camera.camera, game.ui)!;
+    pointAtArt(engine, now.x + now.w / 2, now.y + now.h / 2, true);
+    engine.step(1);
+    engine.input.setButtons(0);
+    expect(game.walkTo?.target, 'the click went where it was pressed').toEqual({ kind: 'it', id: 'stash' });
+    for (let i = 0; i < 360 && !stack().includes('stash'); i++) {
+      engine.step(1);
+      states.add(hc.state);
+    }
+    expect(stack(), 'walked there and opened it').toContain('stash');
+    expect(states.has('attack'), 'no swing').toBe(false);
     rl.press('Escape');
     expect(engine.errors).toEqual([]);
   });

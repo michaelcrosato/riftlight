@@ -14,7 +14,7 @@
  * disposes. `loadGame` would rebuild and re-upload all of that on every trip to town.
  */
 import { type Camera, Color, Vector3 } from 'three/webgpu';
-import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
+import { chooseLanguage, defaultLook, GAMEPAD_BUTTONS, type Game, type GameContext, type Look, LOOK_PRESETS, lookPresetOf, looksEqual, MAX_PADS, MenuInput, PALETTE, pageLanguageSources, type PaletteColor, rebindDebugKeys, SWIPE_KEYS, type SwipeDirection, TOUCH_KEY, wrapText } from '../../engine';
 import { HERO_MODEL } from '../../game/hero';
 import { EventBus } from '../core/events';
 import { Rng } from '../core/rng';
@@ -26,12 +26,13 @@ import { type HudModel, drawHud, drawMap, type FeedLine, hudBoxes, hudGeometry, 
 import { BannerQueue, type Box, HudLayout, overlaps } from '../ui/layout';
 import { clip, inside, miniCovers, miniWidth, type UiCanvas, UiCanvas as Canvas, type UiEvent } from '../ui/kit';
 import { tapArt, UiLayer } from '../ui/layer';
-import { drawPageStrip, type PageStrip, pagesLegend } from '../ui/legend';
+import { drawPageStrip, LEGEND_ROOM, type PageStrip, pagesLegend } from '../ui/legend';
 import { drawLogo, drawRift, logoScale } from '../ui/logo';
 import type { Menu } from '../ui/menu';
 import { type LookHost, lookStudio } from '../ui/lookStudio';
 import { devMenu, type MenuHost, pauseMenu, riftMenu, settingsMenu, slotsMenu, titleMenu, tuningMenu } from '../ui/menus';
-import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow } from '../ui/panels';
+import { CharacterSheet, Codex, DeathRecap, dialogue, LootWindow, talkPlace, type TalkPlace, talkSeconds } from '../ui/panels';
+import { talkText } from '../town/npcs';
 import { beacon, bubble, Floaters, hitbox, lootLabel, thingLabel, worldBox } from '../ui/world';
 import { installApi } from './api';
 import { registerAudio, SONGS, type SongName } from './audio';
@@ -166,6 +167,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private deathTimer = 0;
   private dialogueLine: string | null = null;
   private talkingTo: import('../town/npcs').Npc | null = null;
+  /** The panel the townsperson opened as they spoke (`openPanel`'s id): the one `PanelHost.talk` gives their line to. */
+  private talkPanel: string | null = null;
+  /**
+   * The NPC's line on screen (`talkPlace`): when it was said (game time: one over the panels goes
+   * after `talkSeconds`), a tap on it put it away, a press on it is down, and where it was laid out
+   * last (kept while the line and what it keeps clear of stay the same).
+   */
+  private talk = { said: 0, gone: false, press: false, key: '', place: null as TalkPlace | null, box: null as Box | null };
   // camera
   private readonly camTarget = new Vector3();
   private readonly lead = new Vector3();
@@ -201,6 +210,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   worldFocus: WalkTarget | null = null;
   /** A thing clicked out of reach: the hero walks there along the way (`HeroWalk`) and does it on arrival (`walk`, `arrive`). */
   walkTo: WalkTo | null = null;
+  /**
+   * The stash, the vendor or the bench the hero opened at its place (`interactWith`): its panel and
+   * the interactable's id. It closes once the hero is out of that one's reach (`keepInReach`).
+   */
+  private counter: { readonly panel: string; readonly id: string } | null = null;
   /**
    * The left button (or finger) now held went down on something that took it (a thing in the
    * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
@@ -329,7 +343,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.lights = new LightPool(ctx.lights); // the engine's pool: the one light system
     this.layer.onSound = (s) => this.sound(s);
     this.layer.legends = true; // the button legends under panels name this shell's controls
-    this.layer.avoid = () => this.hudZonesShown;
+    this.layer.avoid = () => (this.talk.box ? [...this.hudZonesShown, { ...this.talk.box, weight: 100 }] : this.hudZonesShown);
     this.layer.legendExtra = (panel) => (pageOf(panel) ? [pagesLegend()] : []); // L1 R1: the character screens' ring
     const rng = () => this.rng;
     this.services = {
@@ -1286,7 +1300,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   // ================================================================ panels
 
   /** What a panel may ask of the shell; `close` closes that panel (`self` is set once it exists). */
-  private panelHost(self: { panel?: Panel } = {}): PanelHost {
+  private panelHost(self: { panel?: Panel; as?: string } = {}): PanelHost {
     return {
       services: this.services,
       save: () => this.save,
@@ -1301,12 +1315,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       sound: (s) => this.sound(s),
       close: () => (self.panel ? this.layer.close(self.panel.id) : this.layer.close()),
       glyphs: () => this.padGlyphs(),
+      // the line is the panel's the townsperson opened (Oru's respec), never one opened over it (P over Ilsa's vendor)
+      talk: () => (this.dialogueLine && self.as === this.talkPanel ? talkText(this.dialogueLine) : null),
     };
   }
 
   openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots' | 'look'): Panel | null {
     if (this.screen === 'title' && !['settings', 'slots', 'look'].includes(id)) return null;
-    const self: { panel?: Panel } = {};
+    const self: { panel?: Panel; as?: string } = { as: id };
     const host = this.panelHost(self);
     const loot = this.ports.loot;
     let panel: Panel;
@@ -1387,6 +1403,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.talkingTo?.endTalk();
     this.talkingTo = null;
     this.dialogueLine = null;
+    this.talkPanel = null;
   }
 
   // ================================================================ per frame
@@ -1489,7 +1506,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const input = ctx.input;
     const i = this.intent;
     const panelOpen = !!this.layer.top;
-    const axis = input.moveAxis();
+    // a window on top takes navigation (every panel does: the item windows, the character sheet,
+    // the menus): its d-pad, left stick, WASD and arrows move its focus and hold the hero still,
+    // as Engine World's panels do; the world runs on under a window that is not modal (a touch
+    // screen's floating stick hides under a panel, so a finger moved nothing there already)
+    const axis = panelOpen ? HELD : input.moveAxis();
     cameraBasis(ctx.engine, this.right, this.forward);
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
@@ -1524,8 +1545,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // finger's tap on a loot label or the interact prompt does it (`update`); a finger on the loot
     // feed or the centre banner may swipe it away: no swing while that button stays down (nor
     // while a press the map took stays down). `update` takes a finger's press there as well, for a
-    // finger that lands in a frame no fixed step runs in
-    if (press) this.pressTaken = !!this.worldFocus || (!!down?.touch && this.fingerTaken(down.x, down.y));
+    // finger that lands in a frame no fixed step runs in; a click is hit-tested where it went down
+    // (`worldAt`: the hover's label may be gone from a mouse at rest)
+    if (press) this.pressTaken = !!(down && !down.touch ? this.worldAt(down.x, down.y) : this.worldFocus) || (!!down?.touch && this.fingerTaken(down.x, down.y));
     else if (!hold) this.pressTaken = false;
     // a finger alone on the world swings once it has stayed down `FINGER_WAIT` steps after the one
     // it landed in: a second finger landing by then lets go of it (a pinch: `Input`), so a pinch is
@@ -1662,9 +1684,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const on = (r: Box | null | undefined) => !!r && inside(r, at.x, at.y);
     const top = this.layer.top;
     if (top) {
-      // the line where it shows: over a framed panel all of it, under the item windows (an
-      // overlay) only between them (a swipe on a window is the window's)
-      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky && !(top.panel.overlay && this.layer.covers(at.x, at.y))) {
+      // the line where it shows (over the panels: `talkPlace`)
+      if (this.dialogueLine && on(this.touchable.dialogue) && !top.sticky) {
         this.layer.close(top.panel.id);
         return true;
       }
@@ -1680,6 +1701,73 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       return true;
     }
     return false;
+  }
+
+  /**
+   * The thing in the world at (`x`, `y`) art pixels as last drawn, for a click there (`goTo`): a
+   * townsperson or the stash, a loot label, the level's open portal; null on a panel, in a showcase
+   * mode, or on nothing. Hit-tested at the press, so a click where the mouse came to rest (its hover
+   * label gone after `ui.pointer.used`'s four seconds: `worldFocus` is the hover's) still goes there.
+   */
+  private worldAt(x: number, y: number): WalkTarget | null {
+    if (this.showcase?.active || this.layer.covers(x, y)) return null;
+    const ui = this.ui;
+    const cam = this.ctx.engine.camera.camera;
+    const on = (b: Box | null) => !!b && inside(b, x, y);
+    if (this.screen === 'town') {
+      const thing = this.town.interactables.find((it) => on(thingBox(it, cam, ui)));
+      return thing ? { kind: 'it', id: thing.id } : null;
+    }
+    if (this.screen !== 'level' || !this.level) return null;
+    const label = this.touchable.loot.find((l) => inside(l.rect, x, y));
+    if (label) return { kind: 'loot', id: label.id };
+    return !this.round && this.level.exitOpen && on(worldBox(this.level.exit, 2.2, 1.6, cam, ui)) ? { kind: 'portal' } : null;
+  }
+
+  /**
+   * The item windows (`boxes`) and, while the panels draw their legends (a pad or the keys), the row
+   * above them where the windows' legend goes when the one under them would cover the HUD
+   * (`ItemsUi.legendAt`): what an NPC's line keeps clear of over the item windows.
+   */
+  private windowsAndLegend(boxes: readonly Box[]): Box[] {
+    if (!boxes.length || !this.layer.legendsOn(this.ui.device)) return [...boxes];
+    const left = Math.min(...boxes.map((b) => b.x));
+    const top = Math.min(...boxes.map((b) => b.y));
+    const right = Math.max(...boxes.map((b) => b.x + b.w));
+    return [...boxes, { x: left, y: Math.max(0, top - 12), w: right - left, h: Math.min(12, top) }];
+  }
+
+  /** Where the NPC's line goes, clear of `blocked` (a panel, the item windows) and the HUD (`talkPlace`; laid out again only when something changed). */
+  private placeTalk(blocked: readonly Box[]): TalkPlace {
+    const ui = this.ui;
+    const all = [...blocked, ...this.hudZonesShown.map(({ x, y, w, h }) => ({ x, y, w, h }))];
+    const key = `${this.dialogueLine}|${ui.w}x${ui.h}|${all.map((b) => `${b.x},${b.y},${b.w},${b.h}`).join(';')}`;
+    if (key !== this.talk.key || !this.talk.place) {
+      this.talk.key = key;
+      this.talk.place = talkPlace(ui, this.dialogueLine!, all);
+    }
+    return this.talk.place;
+  }
+
+  /** The NPC's line shows: in free space while the talk lasts, over the panels for `talkSeconds` after it was said. */
+  private talkShows(place: TalkPlace): boolean {
+    return !place.over || this.time - this.talk.said < talkSeconds(talkText(this.dialogueLine ?? ''));
+  }
+
+  /**
+   * A pointer on the NPC's line as last drawn: a press there is the line's (not the panel's under
+   * it); let go without a swipe (a tap, a click) the line goes, and with one the talk ends
+   * (`swipe`). True when the event was the line's.
+   */
+  private talkPointer(ctx: GameContext, e: Extract<UiEvent, { kind: 'pointer' }>): boolean {
+    if (e.type === 'down') {
+      this.talk.press = !!this.touchable.dialogue && inside(this.touchable.dialogue, e.x, e.y) && !!this.layer.top;
+      return this.talk.press;
+    }
+    if (e.type !== 'up' || !this.talk.press) return false;
+    this.talk.press = false;
+    if (!ctx.input.wasPressed(...Object.values(SWIPE_KEYS))) this.talk.gone = true;
+    return true;
   }
 
   /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
@@ -1703,15 +1791,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
-    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
+    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y, true);
   }
 
-  /** (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or tap there opens or closes it (and is no attack). */
-  private onMap(x: number, y: number): boolean {
+  /**
+   * (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or
+   * tap there opens or closes it (and is no attack). `band`: the corner map's part in 52in1's wake
+   * band counts too (no attack there either, though a tap there is the hub's and opens nothing).
+   */
+  private onMap(x: number, y: number, band = false): boolean {
     if (!this.level || this.layer.top || this.screen !== 'level') return false;
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
-    let box: Box = { x: ui.w - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 };
+    const g = this.geometry();
+    // in 52in1 on a touch page only below the hub's wake band, where `hudGeometry` could not move it
+    // (a tap in the band is the hub's: it brings its bar over the game)
+    const wake = g.touch && !band ? this.touchPad.wakeArt() : 0;
+    let box: Box = { x: ui.w - g.map.w - 6, y: Math.max(g.map.y, wake), w: g.map.w + 4, h: g.map.y + g.map.h + 4 - Math.max(g.map.y, wake) };
     if (this.mapOpen) {
       const v = mapView(this.mapRoom(), this.minimapModel()!);
       box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
@@ -1722,7 +1817,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD. */
   private mapRoom(): Box {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const boss = this.level?.boss();
     let top = 8;
     if (boss && boss.life > 0) {
@@ -1803,6 +1898,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         if (strip) ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
         continue;
       }
+      // a tap (or click) on an NPC's line puts it away, a swipe on it ends the talk (`swipe`): the
+      // press is the line's, never the window's under it
+      if (e.kind === 'pointer' && this.talkPointer(ctx, e)) {
+        ctx.input.clearQueued(...MOUSE.left, ...MOUSE.right);
+        continue;
+      }
       if (this.layer.top && this.layer.input(e)) {
         consumed ||= e.kind !== 'pointer';
         // a click a panel took (Resume, a close box) is not an attack once the panel is gone
@@ -1816,8 +1917,12 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         ctx.input.clearQueued(...MOUSE.left);
         continue;
       }
-      // the world: a click on a townsperson, the stash, a loot label or the open portal goes there and does it
-      if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch && this.worldFocus) this.goTo(this.worldFocus);
+      // the world: a click on a townsperson, the stash, a loot label or the open portal goes there
+      // and does it, hit-tested where it went down (`worldAt`), its hover label shown or not
+      if (e.kind === 'pointer' && e.type === 'down' && (e.button ?? 0) === 0 && !e.touch) {
+        const at = this.worldAt(e.x, e.y);
+        if (at) this.goTo(at);
+      }
       // a finger's tap on a loot label picks it up (walking there), on the interact prompt does it;
       // one there, on the loot feed or on the centre banner (a swipe from there dismisses it) is no
       // swing while it stays down, whether or not a fixed step ran in the frame it landed (`readIntent`)
@@ -1832,6 +1937,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
     }
     this.arrive();
+    this.keepInReach();
     // a key a menu used this frame (Esc closing a panel) must not also reopen one
     if (!consumed) this.hotkeys(ctx);
 
@@ -2079,8 +2185,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return !!l && this.tryPickup(l);
   }
 
+  /**
+   * The stash, the vendor or the bench opened at its place (`counter`) closes once the hero is out
+   * of that one's reach (its `radius`, F's rule, and `REACH_SLACK` for a nudge): the windows hold
+   * the hero still, but an agent's walk or anything else that moves it leaves no counter open
+   * behind it. One opened from elsewhere (the agent API, the developer tools) has no place and stays.
+   */
+  private keepInReach(): void {
+    const c = this.counter;
+    if (!c) return;
+    const it = this.screen === 'town' ? this.town.interactables.find((x) => x.id === c.id) : undefined;
+    if (!this.layer.has(c.panel) || !it) {
+      this.counter = null;
+      return;
+    }
+    const p = this.hero.actor.position;
+    if (Math.hypot(p.x - it.position.x, p.z - it.position.z) < it.radius + REACH_SLACK) return;
+    this.counter = null;
+    this.layer.close(c.panel);
+  }
+
   /** Talk to a townsperson, open the stash, or play a showcase piece. */
   private interactWith(it: Interactable): boolean {
+    const counter = it.action ? COUNTERS[it.action] : undefined;
+    this.counter = counter ? { panel: counter, id: it.id } : null;
     if (it.action === 'stash') {
       this.openPanel('stash');
       return true;
@@ -2089,9 +2217,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     if (it.npc) {
       this.talkingTo = it.npc;
       this.dialogueLine = it.npc.talk();
+      Object.assign(this.talk, { said: this.time, gone: false, press: false });
       this.ctx.audio.play('rl.bark');
     }
     const panel = it.action === 'craft' ? 'crafting' : it.action === 'vendor' ? 'vendor' : it.action === 'tree' ? 'respec' : it.action === 'rift' ? 'rift' : null;
+    if (it.npc) this.talkPanel = panel;
     if (panel) this.openPanel(panel);
     return true;
   }
@@ -2242,7 +2372,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private touchLift(ctx: GameContext, want: Vector3): void {
     const ui = this.ui;
     if (!this.hudControls.length || ui.h <= ui.w) return;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const rows = Math.max(0, ui.h - g.top - 40) / 2; // the top HUD takes ~40 rows of its own
     const rig = ctx.camera as { viewHeight?: number };
     const view = rig.viewHeight ?? 15;
@@ -2306,20 +2436,29 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // (the prompt, the focused loot label, other labels, damage numbers)
     const model = this.hudModel();
     model.controls = this.hudControls = this.touchPad.zones((x, y) => this.pointer.toArt(x, y));
+    const talking = this.touchable.dialogue; // the NPC's line as last placed (it stays put: `placeTalk`)
     this.touchable = { loot: [], prompt: null, feed: [], dialogue: null };
     const layout = this.hudLayout;
     layout.clear(ui.w, ui.h);
     this.hudZonesShown = hudBoxes(ui.w, ui.h, model).map(({ id, x, y, w, h }) => ({ x, y, w, h, weight: id === 'banner' || id === 'boss' || id === 'where' || id === 'time' ? 1 : 10 }));
     for (const { x, y, w, h } of this.hudZonesShown) layout.reserve({ x, y, w, h });
+    // the world's bubbles and labels keep off an NPC's line over a panel too, and off the item
+    // windows (their canvas is over the HUD: one there would show cut)
+    if (talking && this.layer.top) layout.reserve(talking);
+    for (const b of this.layer.top?.panel.boxes?.() ?? []) layout.reserve(b);
     // world overlays
     this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
-      for (const b of this.town.bubbles()) bubble(ui, cam, b.at, b.text, b.t);
       const it = !this.layer.top ? this.town.nearest(this.hero.actor.position) : null;
       // interaction prompts sit above the skill bar (the world has bubbles and labels)
       if (it) this.prompt(it.prompt, it.title);
       // couch co-op: another pad may join here (player 1 on a pad, a seat free): say how
       if (this.joinHint()) this.joinLine();
+      // townsfolk's speech bubbles through the HUD's layout, the speaker nearest the hero first: one
+      // that would cover another (or the HUD, the prompt) is nudged up off it, else waits its turn
+      const hp = this.hero.actor.position;
+      const said = this.town.bubbles().sort((a, b) => Math.hypot(a.at.x - hp.x, a.at.z - hp.z) - Math.hypot(b.at.x - hp.x, b.at.z - hp.z));
+      for (const b of said) bubble(ui, cam, b.at, b.text, b.t, layout);
     }
     // the mouse in the world (not over a panel, not a finger): the thing under it shows what a click does there
     const mouse = ui.pointer.used && !this.padGlyphs() && !this.layer.covers(ui.pointer.x, ui.pointer.y) && !this.showcase.active;
@@ -2374,12 +2513,24 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       model.minimap = null;
     }
     this.touchable.feed = drawHud(ui, model, layout).feed;
-    // an NPC's line goes over a framed panel (after the layer, so a modal's dim doesn't cover it)
-    // and under an item window
-    const talk = this.dialogueLine && this.layer.top ? this.layer.top : null;
-    if (talk?.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
+    // an NPC's line in free space (`talkPlace`), clear of the HUD and of the item windows (placed
+    // before the layer, so their legend keeps clear of it) or of a framed panel and its legend
+    // (after it, the frame where it is now), drawn over them; with no free spot, across the top
+    // over them for a while (`talkSeconds`: the item windows' canvas draws it there, the HUD being
+    // under it). A panel that covers the screen (the passive tree's view) shows it itself
+    // (`PanelHost.talk`)
+    const said = this.dialogueLine && !this.talk.gone ? this.layer.top : undefined;
+    let talk = said?.panel.overlay && said.panel.boxes ? this.placeTalk(this.windowsAndLegend(said.panel.boxes())) : null;
+    this.talk.box = talk && this.talkShows(talk) ? talk.box : null; // the legend keeps clear of it
     this.layer.draw(ui, this.time);
-    if (talk && !talk.panel.overlay) this.touchable.dialogue = dialogue(ui, this.dialogueLine!, talk.rect);
+    if (said && !said.panel.overlay) {
+      const r = said.rect;
+      talk = this.placeTalk([{ x: r.x - 6, y: r.y - 16, w: r.w + 12, h: r.h + 22 + LEGEND_ROOM }]);
+    }
+    const shows = !!talk && this.talkShows(talk);
+    const over = this.layer.top?.panel.overlay ? this.layer.top.panel.talkOver : undefined;
+    over?.call(this.layer.top!.panel, shows && talk!.over ? talk : null);
+    if (shows) this.touchable.dialogue = talk!.over && over ? talk!.box : dialogue(ui, talk!);
     // a character screen on top: the ring's strip across the top (the tree's view covers the screen: its own bar says it)
     const top = pageOf(this.layer.top?.panel);
     this.pageStrip = top && top !== 'tree' ? drawPageStrip(ui, top).rects : [];
@@ -2409,14 +2560,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const layout = this.hudLayout;
     let at: Box | null = { x, y: 3, w, h };
     if (layout.free(at)) layout.reserve(at);
-    else at = layout.place({ x, y: hudGeometry(ui.w, ui.h, this.hudControls).top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
+    else at = layout.place({ x, y: this.geometry().top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
     if (!at) return;
     rows.forEach((r, i) => ui.text(ui.w / 2, at.y + 2 + i * 9, r, { align: 'center', color: 'mist', shadow: 'ink' }));
   }
 
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     // above the bar; on a phone above the orbs (and the touch controls), with the label cut to the screen
     let y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
     // on a touch screen the interact button says what F does: the prompt has no key glyph
@@ -2467,7 +2618,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** The fixed HUD's rects in art pixels and the touch controls (agent API `ui.hud()`, the phone e2e). */
   hudRects(): { art: { w: number; h: number }; touch: boolean; controls: Box[]; zones: (Box & { id: string })[] } {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const r = g.orbR;
     const orb = (id: string, o: { x: number; y: number }) => ({ id, x: o.x - r - 2, y: o.y - r - 2, w: 2 * r + 5, h: 2 * r + 5 });
     const zones: (Box & { id: string })[] = [orb('life', g.life), orb('mana', g.mana), { id: 'xp', x: g.xp.x, y: g.xp.y, w: g.xp.w, h: 3 }];
@@ -2524,6 +2675,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     };
   }
 
+  /** The fixed HUD's geometry on this screen: around the touch controls as last laid out, the corner map below 52in1's wake band on a touch page there (`hudGeometry`). */
+  private geometry(): ReturnType<typeof hudGeometry> {
+    return hudGeometry(this.ui.w, this.ui.h, this.hudControls, this.touchPad.wakeArt());
+  }
+
   private hudModel(): HudModel {
     const level = this.level;
     const boss = level?.boss() ?? null;
@@ -2551,6 +2707,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       timer: level && !this.round?.moment ? formatTime(this.levelTime) : null, // a moment shows its own seconds left
       device: this.controlDevice(),
       padStyle: this.ctx.engine.controls.style,
+      wake: this.touchPad.wakeArt(),
       progress: level && !this.round?.moment ? level.progress() : null,
       timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
       guests: this.coop.strips(),
@@ -2938,6 +3095,12 @@ const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 
 /** `MOUSE.left`'s finger and its mouse button, apart (`readIntent`: a finger's swing waits, the mouse's doesn't). */
 const FINGER = [TOUCH_KEY] as const;
+/** The move a window on top leaves the hero (`readIntent`): none. */
+const HELD: Readonly<{ x: number; y: number }> = { x: 0, y: 0 };
+/** The windows a townsperson or the stash opens at their place, by the interactable's action (`keepInReach`). */
+const COUNTERS: Readonly<Partial<Record<NonNullable<Interactable['action']>, string>>> = { stash: 'stash', vendor: 'vendor', craft: 'crafting' };
+/** Metres past an interactable's reach a counter's window stays open (`keepInReach`): a townsperson brushing past is no walk away. */
+const REACH_SLACK = 0.25;
 const MOUSE_LEFT = ['MouseLeft'] as const;
 
 /**

@@ -69,7 +69,12 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   a level's grid route, round whatever is in the way) and does it on arrival by the F rule (the
   townsperson it went to is the one in reach: `Town.nearest`), giving up when the player moves,
   attacks or opens a panel, or when it gets no closer for 4 s (`goTo`, `walkTo`: a snapshot keeps a
-  walk in progress); the press is not a swing. A pad keeps the proximity prompts.
+  walk in progress); the press is not a swing. A click is hit-tested where it was pressed
+  (`worldAt`), so one where the mouse came to rest (its label gone) still goes there. A pad keeps
+  the proximity prompts. A window on top (an item window, the character sheet, a menu) takes the
+  d-pad, the left stick, WASD and the arrows for its focus and holds the hero still (the world runs
+  on under the item windows and the sheet); the stash, the vendor and the bench close once the
+  hero is out of their reach.
 - **What the controller says back** (`game/padFeel.ts`, outputs only: nothing headless, in a
   replay or off the pad): `RUMBLE` pulses on a hit taken (by its share of life), a crit dealt, a
   level-up (two pulses), a rare or loud item landing in view, the portal opening and the hero's

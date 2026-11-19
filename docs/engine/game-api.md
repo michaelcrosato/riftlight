@@ -173,9 +173,8 @@ with `third` a left drag also turns the camera.
 
 ## Input: gamepads and press timing
 
-Gamepads with the W3C **standard** mapping (`gamepad.mapping === 'standard'`, what Chrome,
-Firefox and Safari report for DualSense / Xbox / Switch Pro and most others) need no
-setup; pads with an unknown layout are ignored rather than guessed at. For them: the left stick
+Gamepads with the W3C **standard** mapping (`gamepad.mapping === 'standard'`: DualSense, Xbox,
+Switch Pro and most others) need no setup; pads with an unknown layout are ignored. For them: the left stick
 feeds `input.moveAxis()` (radial deadzone 0.15, `GAMEPAD_DEADZONE`, `applyDeadzone`), the right
 stick turns into pointer movement (camera look, `input.gamepadLookSpeed`; the AI Hub's gyro aim
 adds to it) and reads as `input.lookAxis` (y up: twin-stick aim) while the pad is the device in use
@@ -195,7 +194,7 @@ opens behind the bar, whichever went down first (`isDown` reads it at once). Rem
 movement key held (WASD, the arrows, the d-pad) wins over the left stick in `moveAxis()` unless the
 pad is the device in use and its stick leans past a quarter of its travel, so a connected pad's
 stick resting just past the deadzone never takes the keyboard's movement away. A trigger the pad
-is first seen with part-way (some pads report half until first pulled) reads 0 until it moves.
+is first seen with part-way reads 0 until it moves.
 Headless tests feed pads with `input.setGamepads([...])` (`GamepadLike` objects; `null` for the
 browser's again).
 
@@ -206,11 +205,11 @@ past 0.3) or `'touch'` (a finger on the canvas, a touch control: `TouchControls`
 `engine.controls.touch`: a tap on a touch-screen laptop). It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a
 pad that is only connected (`gamepadConnected`), a stick resting or jittering near its deadzone
 and a trigger resting where the pad was first seen never change it, so a keyboard player with a
-DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (a recording
-without it was made on the keyboard), a level's recording keeps the one it began with
-(`Recording.device`: what its setup read) and save-states keep it, so prompts, menus and touch
-assists can follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
-a test.
+DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (none: the
+keyboard), a level's recording keeps the one it began with (`Recording.device`) and save-states
+keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
+a test. With the pad in use or the pointer locked (not in a replay) the OS pointer hides over the
+canvas (`PointerCursor`); the mouse's travel shows it again.
 
 **Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
 buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame

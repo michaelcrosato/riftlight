@@ -33,6 +33,18 @@ export interface TreePadAsk {
   readonly close: boolean;
 }
 
+/**
+ * The start node an allocation grows from: the first start (in the tree's order) next to an
+ * allocated node, else the first start. Where the pad's cursor goes when the tree opens with nothing
+ * hovered before (`TreeCursor.padStart`).
+ */
+export function startNode(tree: PassiveTree, allocated: ReadonlySet<string>): TreeNode | undefined {
+  const roots = [...tree.roots];
+  const grown = roots.find((r) => tree.neighbours(r).some((n) => allocated.has(n)));
+  const id = grown ?? roots[0];
+  return id ? tree.get(id) : undefined;
+}
+
 /** The d-pad: its codes (`GAMEPAD_BUTTONS`) and the way each steps. */
 const STEPS: readonly (readonly [string, number, number])[] = [
   ['ArrowUp', 0, -1],
@@ -124,6 +136,16 @@ export class TreeCursor {
     const n = this.index.nearest(tx, ty, 48 / this.cam.zoom);
     if (n) this.moveTo(n);
     return !!n;
+  }
+
+  /**
+   * The tree opened with the pad in use: its cursor on `id` (the node hovered last, when the host
+   * keeps one), else on the start the allocation grows from (`startNode`), so the cross, the focused
+   * node and its tooltip show at once and Cross takes it.
+   */
+  padStart(id: string | null, allocated: ReadonlySet<string>): void {
+    const n = (id ? this.tree.get(id) : undefined) ?? startNode(this.tree, allocated);
+    if (n) this.moveTo(n);
   }
 
   /** The pad's cursor on a node (the camera follows when it is near an edge). */
