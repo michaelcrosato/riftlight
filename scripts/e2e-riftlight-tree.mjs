@@ -6,14 +6,15 @@
 // colours; drag, WASD and wheel move/zoom the camera; hovering a node shows it; a click
 // allocates the path (with a sound), a right-click refunds a leaf and refuses a node others
 // depend on; search highlights matches; Tab shows the stat summary; a standard gamepad moves
-// the snapping cursor and A allocates (the page polls it through the engine's input); refreshing
-// keeps the allocation; zero console errors; the bottom bar names clicks on a mouse's page and a
-// finger's gestures on a phone's before any touch, and the search box names / with the keys, no key
-// on a phone, and hides on a pad (nothing to type with); a node's tooltip names the click, the pad's
-// button or the tap that takes or refunds it.
+// the snapping cursor and A allocates (the page polls it through the engine's input), and the OS
+// pointer hides over the view until the mouse moves; refreshing keeps the allocation; zero console
+// errors; the bottom bar names clicks on a mouse's page and a finger's gestures on a phone's before
+// any touch, and the search box names / with the keys, no key on a phone, and hides on a pad
+// (nothing to type with); a node's tooltip names the click, the pad's button or the tap that takes
+// or refunds it.
 //
 // Frames land in .scratch/e2e/riftlight-tree-*.png. Self-contained: e2e.mjs passes its helpers in.
-/* global window, document */
+/* global window, document, getComputedStyle */
 
 /**
  * @param {object} h helpers from e2e.mjs: { exe, launch, check, BASE, OUT }
@@ -193,7 +194,10 @@ export async function runRiftlightTree(h) {
       fake.buttons[0] = { pressed: false, value: 0 };
       await wait(80);
       navigator.getGamepads = real;
-      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds(), search: t.view.debug().search, tip: t.view.debug().tip };
+      const c = document.querySelector('canvas[data-rift-tree="canvas"]').getBoundingClientRect();
+      const mid = [c.left + c.width / 2, c.top + c.height / 2];
+      const cursor = getComputedStyle(document.elementFromPoint(mid[0], mid[1])).cursor;
+      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds(), search: t.view.debug().search, tip: t.view.debug().tip, cursor, mid };
     });
     check(pad.moved > 10 && pad.snapped !== null, `left stick moves the cursor and it snaps to a node (${pad.snapped})`);
     check(pad.stepped !== null && pad.gained >= 1, `d-pad steps to ${pad.stepped}, A allocates (+${pad.gained})`);
@@ -201,6 +205,13 @@ export async function runRiftlightTree(h) {
     // the node just taken: its tooltip names Square, the pad's refund, and no mouse button
     check(pad.tip.includes('Square: refund') && !pad.tip.some((l) => /click/i.test(l)), `on a pad the tooltip names the pad's buttons, not the mouse's (${pad.tip.join(' | ')})`);
     await shot('pad');
+    // the pad drives the view: no resting OS pointer over it; the mouse moving brings it back
+    check(pad.cursor === 'none', `on a pad the OS pointer is hidden over the view (${pad.cursor})`);
+    await page.mouse.move(pad.mid[0] - 20, pad.mid[1] - 10);
+    await page.mouse.move(pad.mid[0], pad.mid[1], { steps: 4 });
+    await frame();
+    const mouseCursor = await E((p) => getComputedStyle(document.elementFromPoint(p[0], p[1])).cursor, pad.mid);
+    check(mouseCursor !== 'none', `the mouse moved: the OS pointer shows again (${mouseCursor})`);
 
     // ------------------------------------------------------------ persistence and cleanliness
     const before = await E(() => window.__RIFT_TREE__.state.serialize());

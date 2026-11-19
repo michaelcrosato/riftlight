@@ -3,7 +3,9 @@
 // for what only a page shows: the pictures, the pixel HUD, what is stored in localStorage, the
 // page's own parts and a real reload.
 //
-//   title (the town behind the logo, the HUD drawn) → New Run (keys) → town → Vex → rift menu →
+//   title (the town behind the logo, the HUD drawn) → New Run (keys) → town → Oru on a pad (his
+//   line in the tree's own view, tapped away or gone after a while; no OS pointer over the view
+//   while the pad drives it, none hidden in a replay, back once the mouse moves) → Vex → rift menu →
 //   level 1 → cleared → pause → Tuning → Settings → Engine (saved in localStorage, no ⚙, no
 //   engine hotkeys without ?debug=1) → look studio (L): Game Boy on the characters, remembered in
 //   localStorage, H hides the panel → death recap → town → save → reload → Continue (the town
@@ -80,6 +82,72 @@ export async function runRiftlight(h) {
     need(rs.screen === 'town', `a new run starts in town (${rs.screen})`);
     await R(() => window.__PIXEL_ENGINE__.step(30));
     await capture(page, `riftlight-${tag}-town.png`);
+
+    // ---------------------------------------------------------------- Oru's respec on a pad: the tree's own view
+    // his line under the view's top bar (the shell's would be under its canvas) until a tap puts it
+    // away, else for its reading time; no OS pointer over the view while the pad drives it (never in
+    // a replay), and back once the mouse moves
+    const treeView = () => R(() => window.__RIFTLIGHT__.game.layer.find('tree')?.debug() ?? null);
+    /** The tree's view drawn again (its own frames), then the OS pointer's style at `at` (default: the middle). */
+    const treePointer = (at) =>
+      R(async (p) => {
+        const v = window.__RIFTLIGHT__.game.layer.find('tree').view;
+        const f = v.debug().frames;
+        v.refresh();
+        for (let i = 0; i < 120 && v.debug().frames === f; i++) await new Promise((r) => requestAnimationFrame(r));
+        const c = document.querySelector('canvas[data-rift-tree="canvas"]').getBoundingClientRect();
+        const [x, y] = p ?? [c.left + c.width / 2, c.top + c.height / 2];
+        return getComputedStyle(document.elementFromPoint(x, y)).cursor;
+      }, at);
+    const oru = await R(() => {
+      window.__PIXEL_ENGINE__.input.noteDevice('pad');
+      return window.__RIFTLIGHT__.talkTo('oru');
+    });
+    need(oru.ok && oru.state.ui.join() === 'tree', `walk to Oru on a pad, talk: the respec's tree opens (ui ${oru.state.ui.join(',')})`);
+    await page.waitForFunction(() => window.__RIFTLIGHT__.game.layer.find('tree')?.debug().talk, null, { timeout: 10000 }).catch(() => {});
+    const oruSaid = await R(() => window.__RIFTLIGHT__.game.layer.find('tree').host.talk());
+    let tv = await treeView();
+    check(!!oruSaid && tv?.talk === oruSaid, `Oru's line shows in the tree's own view (${JSON.stringify(tv?.talk)})`);
+    check((await treePointer()) === 'none', 'the pad drives the tree: no OS pointer over its view');
+    await R(() => (window.__PIXEL_ENGINE__.input.playing = true)); // as in a replay of a pad recording
+    const inReplay = await treePointer();
+    await R(() => {
+      const e = window.__PIXEL_ENGINE__;
+      e.input.playing = false;
+      e.input.noteDevice('pad');
+    });
+    check(inReplay !== 'none', `a replay keeps the OS pointer over the tree's view (${inReplay})`);
+    await captureWithHud(page, `riftlight-${tag}-oru-hud.png`);
+    await page.screenshot({ path: new URL(`riftlight-${tag}-oru-tree.png`, OUT).pathname });
+    // the mouse moves onto Oru's line: the pointer shows; a click on the line puts it away
+    tv = await treeView();
+    const lineAt = await R((box) => {
+      const c = document.querySelector('canvas[data-rift-tree="canvas"]').getBoundingClientRect();
+      const art = window.__RIFTLIGHT__.game.layer.find('tree').view.debug().art;
+      return [c.left + ((box.x + box.w / 2) / art.width) * c.width, c.top + ((box.y + box.h / 2) / art.height) * c.height];
+    }, (await R(() => window.__RIFTLIGHT__.game.layer.find('tree').view.debug().talk?.box)) ?? { x: 0, y: 0, w: 0, h: 0 });
+    await page.mouse.move(lineAt[0] - 30, lineAt[1] + 20);
+    await page.mouse.move(lineAt[0], lineAt[1], { steps: 4 });
+    const moved = await treePointer(lineAt);
+    check(moved !== 'none', `the mouse moved over the tree: the OS pointer shows again (${moved})`);
+    await page.mouse.click(lineAt[0], lineAt[1]);
+    await treePointer();
+    tv = await treeView();
+    check(tv?.talk === null, `a click on Oru's line puts it away (${JSON.stringify(tv?.talk)})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('PadB'));
+    need(rs.ui.length === 0, `pad B closes the tree (ui ${rs.ui.join(',')})`);
+    // again, left alone: the line goes after its reading time (the view's own clock)
+    await R(() => window.__RIFTLIGHT__.talkTo('oru'));
+    await page.waitForFunction(() => window.__RIFTLIGHT__.game.layer.find('tree')?.debug().talk, null, { timeout: 10000 }).catch(() => {});
+    const shown = (await treeView())?.talk;
+    const gone = await page
+      .waitForFunction(() => window.__RIFTLIGHT__.game.layer.find('tree')?.debug().talk === null, null, { timeout: 15000 })
+      .then(() => true)
+      .catch(() => false);
+    check(!!shown && gone, `left alone, Oru's line goes after its reading time (${JSON.stringify(shown)} → ${gone ? 'gone' : 'still there'})`);
+    rs = await R(() => window.__RIFTLIGHT__.press('PadB'));
+    need(rs.ui.length === 0, `pad B closes the tree (ui ${rs.ui.join(',')})`);
+    await R(() => window.__PIXEL_ENGINE__.input.noteDevice('keyboard'));
 
     // ---------------------------------------------------------------- town → rift keeper → level 1
     const talk = await R(() => window.__RIFTLIGHT__.talkTo('vex'));

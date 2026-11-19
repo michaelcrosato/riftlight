@@ -131,6 +131,7 @@ export class TreePanel implements Panel {
       aspect: ctx.engine.renderer.aspect,
       touchDensity: ctx.engine.renderer.touchDensity, // a phone's art density, as the game's
       device: () => ctx.engine.controls.device, // its hints name the device in use
+      hidePointer: () => !ctx.engine.input.playing, // the OS pointer hides on the pad as over the canvas, never in a replay
       closeKeys: ['Escape', 'KeyP'],
       padCloses: false, // pad B arrives as the shell's `back`
       padGlyphs: () => ctx.engine.controls.style,

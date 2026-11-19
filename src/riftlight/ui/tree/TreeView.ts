@@ -60,6 +60,12 @@ export interface TreeViewOptions extends TreeRules {
    * once a finger has used the view, else the mouse and keys.
    */
   device?: () => 'keyboard' | 'pad' | 'touch';
+  /**
+   * The OS pointer over the view hides while the pad drives it (the bottom bar names the pad's
+   * buttons) and shows once the mouse moves on it, as the engine's does over its canvas; false here
+   * keeps it (a replay: the engine's rule, `hidesPointer`). Default: it hides.
+   */
+  hidePointer?: () => boolean;
   /** Key codes that close the view. Default ['Escape']; [] = can't be closed by key. */
   closeKeys?: readonly string[];
   /** Gamepad B closes the view (default true when closeKeys isn't empty). */
@@ -927,6 +933,8 @@ export class TreeView {
     // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
     const device = (this.deviceShown = this.options.device?.());
     const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
+    // the pad drives the view: no resting arrow over it (the view covers the engine's canvas, which hides its own)
+    this.root.style.cursor = mode === 'pad' && (this.options.hidePointer?.() ?? true) ? 'none' : '';
     this.drawChrome(owned, mode);
     this.drawTalk();
     if (this.showStats) this.drawStats();
