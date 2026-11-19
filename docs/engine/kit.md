@@ -76,14 +76,17 @@ another agent*):
   carries came from (each def's `source`, as `npm run model -- credits` reads it, and three.js's
   and Rapier's licence texts).
 - `API.md`: every export with its signature and doc comment, grouped by subsystem, generated
-  from the TypeScript program (`scripts/bundle/api.mjs`). Mark a public member that games
+  from the TypeScript program (`scripts/bundle/api.mjs`), nothing cut: whole docs, whole types
+  (no `... 4 more ...`; `src/bundle-api.test.ts`). Mark a public member that games
   shouldn't use `/** @internal */`: it leaves API.md and the `.d.ts`.
 - `pixel-engine.d.ts` + `types/`: declarations (`stripInternal`); a strict TypeScript game
   typechecks against them (the `bundle` e2e suite does it).
 - `check.mjs` (`scripts/bundle/check.mjs`): the receiving agent's test tool (Playwright beside
   the game or installed globally, found through `npm root -g`). It serves the kit
-  folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, where a `Pad*`
-  code is held on a fake standard pad so the pad's prompts show; `--cameras`, `--looks`; a page
+  folder, plays a page in headless Chromium on WebGPU (`--keys KeyD*60,Space*4`, where a pad's
+  button, d-pad (`PadUp` ...) or stick (`PadLStick:1,0`, y up) is held on a fake standard pad so
+  the pad's prompts show, `Mouse@x,y` / `MouseLeft@x,y` point and click at art pixels with the
+  browser's own mouse, and any other code is refused; `--cameras`, `--looks`; a page
   with `?touch=1` plays as on a phone, Playwright's touch screen, touch the device in use, and adds
   `<page>-page.png`, the page with its touch controls, and the controls' rects as `report.touch`),
   saves PNGs with the HUD and a `report.json`, and exits 1 on any page,
