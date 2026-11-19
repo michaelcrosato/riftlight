@@ -1734,15 +1734,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
-    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
+    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y, true);
   }
 
-  /** (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or tap there opens or closes it (and is no attack). */
-  private onMap(x: number, y: number): boolean {
+  /**
+   * (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or
+   * tap there opens or closes it (and is no attack). `band`: the corner map's part in 52in1's wake
+   * band counts too (no attack there either, though a tap there is the hub's and opens nothing).
+   */
+  private onMap(x: number, y: number, band = false): boolean {
     if (!this.level || this.layer.top || this.screen !== 'level') return false;
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
-    let box: Box = { x: ui.w - g.map.w - 6, y: 2, w: g.map.w + 4, h: g.map.h + 4 };
+    const g = this.geometry();
+    // in 52in1 on a touch page only below the hub's wake band, where `hudGeometry` could not move it
+    // (a tap in the band is the hub's: it brings its bar over the game)
+    const wake = g.touch && !band ? this.touchPad.wakeArt() : 0;
+    let box: Box = { x: ui.w - g.map.w - 6, y: Math.max(g.map.y, wake), w: g.map.w + 4, h: g.map.y + g.map.h + 4 - Math.max(g.map.y, wake) };
     if (this.mapOpen) {
       const v = mapView(this.mapRoom(), this.minimapModel()!);
       box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
@@ -1753,7 +1760,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD. */
   private mapRoom(): Box {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const boss = this.level?.boss();
     let top = 8;
     if (boss && boss.life > 0) {
@@ -2137,7 +2144,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /** Talk to a townsperson, open the stash, or play a showcase piece. */
   private interactWith(it: Interactable): boolean {
-    const counter = COUNTERS[it.action];
+    const counter = it.action ? COUNTERS[it.action] : undefined;
     this.counter = counter ? { panel: counter, id: it.id } : null;
     if (it.action === 'stash') {
       this.openPanel('stash');
@@ -2300,7 +2307,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private touchLift(ctx: GameContext, want: Vector3): void {
     const ui = this.ui;
     if (!this.hudControls.length || ui.h <= ui.w) return;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const rows = Math.max(0, ui.h - g.top - 40) / 2; // the top HUD takes ~40 rows of its own
     const rig = ctx.camera as { viewHeight?: number };
     const view = rig.viewHeight ?? 15;
@@ -2467,14 +2474,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const layout = this.hudLayout;
     let at: Box | null = { x, y: 3, w, h };
     if (layout.free(at)) layout.reserve(at);
-    else at = layout.place({ x, y: hudGeometry(ui.w, ui.h, this.hudControls).top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
+    else at = layout.place({ x, y: this.geometry().top - 4 - h, w, h }, { step: 3, tries: Math.floor(ui.h / 3) });
     if (!at) return;
     rows.forEach((r, i) => ui.text(ui.w / 2, at.y + 2 + i * 9, r, { align: 'center', color: 'mist', shadow: 'ink' }));
   }
 
   private prompt(label: string, sub?: string): void {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     // above the bar; on a phone above the orbs (and the touch controls), with the label cut to the screen
     let y = g.touch ? g.top - 16 - (sub ? 8 : 0) : g.compact ? g.orbY - g.orbR - 18 - (sub ? 8 : 0) : ui.h - 66;
     // on a touch screen the interact button says what F does: the prompt has no key glyph
@@ -2525,7 +2532,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** The fixed HUD's rects in art pixels and the touch controls (agent API `ui.hud()`, the phone e2e). */
   hudRects(): { art: { w: number; h: number }; touch: boolean; controls: Box[]; zones: (Box & { id: string })[] } {
     const ui = this.ui;
-    const g = hudGeometry(ui.w, ui.h, this.hudControls);
+    const g = this.geometry();
     const r = g.orbR;
     const orb = (id: string, o: { x: number; y: number }) => ({ id, x: o.x - r - 2, y: o.y - r - 2, w: 2 * r + 5, h: 2 * r + 5 });
     const zones: (Box & { id: string })[] = [orb('life', g.life), orb('mana', g.mana), { id: 'xp', x: g.xp.x, y: g.xp.y, w: g.xp.w, h: 3 }];
@@ -2582,6 +2589,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     };
   }
 
+  /** The fixed HUD's geometry on this screen: around the touch controls as last laid out, the corner map below 52in1's wake band on a touch page there (`hudGeometry`). */
+  private geometry(): ReturnType<typeof hudGeometry> {
+    return hudGeometry(this.ui.w, this.ui.h, this.hudControls, this.touchPad.wakeArt());
+  }
+
   private hudModel(): HudModel {
     const level = this.level;
     const boss = level?.boss() ?? null;
@@ -2609,6 +2621,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       timer: level && !this.round?.moment ? formatTime(this.levelTime) : null, // a moment shows its own seconds left
       device: this.controlDevice(),
       padStyle: this.ctx.engine.controls.style,
+      wake: this.touchPad.wakeArt(),
       progress: level && !this.round?.moment ? level.progress() : null,
       timeLeft: left === null ? null : { text: t('round.moment_left', { count: left }), urgent: left <= 3 },
       guests: this.coop.strips(),
@@ -2999,7 +3012,7 @@ const FINGER = [TOUCH_KEY] as const;
 /** The move a window on top leaves the hero (`readIntent`): none. */
 const HELD: Readonly<{ x: number; y: number }> = { x: 0, y: 0 };
 /** The windows a townsperson or the stash opens at their place, by the interactable's action (`keepInReach`). */
-const COUNTERS: Readonly<Partial<Record<Interactable['action'], string>>> = { stash: 'stash', vendor: 'vendor', craft: 'crafting' };
+const COUNTERS: Readonly<Partial<Record<NonNullable<Interactable['action']>, string>>> = { stash: 'stash', vendor: 'vendor', craft: 'crafting' };
 /** Metres past an interactable's reach a counter's window stays open (`keepInReach`): a townsperson brushing past is no walk away. */
 const REACH_SLACK = 0.25;
 const MOUSE_LEFT = ['MouseLeft'] as const;

@@ -156,6 +156,18 @@ export class TouchPad {
     return !!this.engine.touch;
   }
 
+  /**
+   * 52in1's wake band in art pixels from the top (`HUB_WAKE` CSS px by the view's framing), on a
+   * page with touch controls in 52in1 (`hub`, recorded; the art density, recorded), else 0: the HUD
+   * keeps the corner map, a tap target, below it as ≡ is (`HudModel.wake`).
+   */
+  wakeArt(): number {
+    const e = this.engine;
+    if (!this.hub || !(e.renderer.touchDensity > 0)) return 0;
+    const f = e.renderer.framing;
+    return f.cssHeight > 0 ? Math.max(0, Math.ceil(((HUB_WAKE - f.offsetY) / f.cssHeight) * f.artHeight)) : 0;
+  }
+
   /** The buttons the page has (`RIFTLIGHT_OPTIONS.touchButtons`): in 52in1 (`hub`) ≡ is below the hub's wake band. */
   get buttons(): readonly TouchButton[] {
     return this.hub ? RIFTLIGHT_HUB_TOUCH_BUTTONS : RIFTLIGHT_TOUCH_BUTTONS;

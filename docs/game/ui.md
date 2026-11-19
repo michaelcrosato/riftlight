@@ -115,7 +115,9 @@ which the hub's companion script sets before the game's first script: `RIFTLIGHT
 and `TouchPad.buttons` by `TouchPad.hub`, from `engine.hubSettings.present`, recorded) ≡ sits lower, its top on the hub's wake band
 (`HUB_WAKE`, 90 CSS px: a touch above it brings the hub's bar over the game), its centre 112 CSS px
 down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame.round`: a round has
-no pause menu, the hub's bar is the menu there). `TouchPad` drives them each frame from
+no pause menu, the hub's bar is the menu there). The corner map, a tap target, goes below the band
+there too (`TouchPad.wakeArt`, `HudModel.wake`) where it and the gold stay clear of the controls (a
+phone upright); on its side it stays at the top and only its part below the band takes a tap. `TouchPad` drives them each frame from
 `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
