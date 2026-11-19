@@ -207,9 +207,9 @@ pad that is only connected (`gamepadConnected`), a stick resting or jittering ne
 and a trigger resting where the pad was first seen never change it, so a keyboard player with a
 DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (none: the
 keyboard), a level's recording keeps the one it began with (`Recording.device`) and save-states
-keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
-a test. With the pad in use or the pointer locked (not in a replay) the OS pointer hides over the
-canvas (`PointerCursor`); the mouse's travel shows it again.
+keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it from a page's controls or
+a test. With the pad in use or the pointer locked (no replay) the OS pointer hides over the
+canvas and the settings panel (`PointerCursor`); mouse travel shows it.
 
 **Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
 buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame
@@ -251,8 +251,8 @@ if (r.back) close();                                  // Esc / Backspace / Circl
 ```
 
 `MenuInput` (`src/engine/ui/menu.ts`, `MENU_KEYS`): Enter / Space / Cross confirm, Esc /
-Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a press, a
-lean steps at once; held, it repeats after 0.35 s: `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
+Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a press or a
+lean steps at once, held repeats after 0.35 s: `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
 confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
 `key` events. `FocusList` moves with those events (left / right on a one-column list as `adjust`,
 for a slider), and with the pointer: hovering an item focuses it (only when the pointer moves, so a
