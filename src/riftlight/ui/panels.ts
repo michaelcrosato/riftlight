@@ -13,7 +13,7 @@ import type { Penalty } from '../game/progress';
 import { type Recap, recapTip } from '../game/recap';
 import { lang, lineKey, t } from '../lang';
 import { talkText } from '../town/npcs';
-import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap } from './kit';
+import { clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrap, wrapTo } from './kit';
 import type { LegendItem } from './legend';
 
 /** A number in the player's language (12,500 · 12.500), `digits` after the point. */
@@ -81,6 +81,8 @@ export const SHEET_PAGES: readonly { readonly id: 'offence' | 'defence' | 'resis
 
 /** A row of the list: the normal font's height and air between rows. */
 const ROW = 13;
+/** A row whose label takes two rows of the normal font (a narrow sheet). */
+const TWO_ROW = 20;
 
 export class CharacterSheet implements Panel {
   readonly id = 'character';
@@ -108,19 +110,50 @@ export class CharacterSheet implements Panel {
     return this.room.w < 300;
   }
 
-  /** The tabs' height, the list's first text row (from the top), and a row's height: a thumb's on a touch screen, as tall as the room lets the longest page be. */
-  private get metrics(): { tabH: number; listTop: number; rowH: number } {
+  /**
+   * The tabs' height, the list's first text row (from the top), a row's height (a thumb's on a
+   * touch screen, as tall as the room lets the longest page be) and the header's rows (a narrow
+   * sheet wraps a long one onto two).
+   */
+  private get metrics(): { tabH: number; listTop: number; rowH: number; header: string[] } {
     const tabH = Math.max(11, this.tap);
-    const listTop = 17 + tabH;
+    const header = this.narrow ? wrapTo(this.header(), this.width - 4, 2) : [this.header()];
+    const listTop = 17 + tabH + (header.length - 1) * 9;
     const most = Math.max(...SHEET_PAGES.map((p) => p.stats.length));
     const fits = Math.floor((this.room.h - listTop - (this.narrow ? 72 : 4)) / most);
-    return { tabH, listTop, rowH: Math.max(ROW, Math.min(Math.max(ROW, this.tap), fits)) };
+    return { tabH, listTop, rowH: Math.max(ROW, Math.min(Math.max(ROW, this.tap), fits)), header };
+  }
+
+  /** The sheet's width: a narrow one's, or the list column and the explain column. */
+  private get width(): number {
+    return this.narrow ? Math.min(170, this.room.w) : this.listWidth + 190;
+  }
+
+  /**
+   * A row's label as drawn beside its value in a list `listW` wide: whole where it fits; on a
+   * narrow sheet on two rows where it doesn't (`TWO_ROW`, the row taller), else cut (a long language).
+   */
+  private labelRows(stat: string, value: string, listW: number): string[] {
+    const room = listW - textWidthPx(value) - 10;
+    const label = statLabel(stat);
+    if (textWidthPx(label) <= room) return [label];
+    return this.narrow ? wrapTo(label, room, 2) : [clip(label, room, textWidthPx)];
+  }
+
+  /** The rows of page `i` (each row's height): a two-row label's row taller. */
+  private rowHeights(i: number, rowH: number): number[] {
+    const sheet = this.sheet();
+    const listW = this.narrow ? this.width : this.listWidth;
+    return SHEET_PAGES[i]!.stats.map((stat) => {
+      const row = SHEET.find((r) => r.stat === stat)!;
+      return this.labelRows(stat, row.fmt(valueOf(sheet, row)), listW).length > 1 ? Math.max(rowH, TWO_ROW) : rowH;
+    });
   }
 
   get size(): { w: number; h: number } {
     const { listTop, rowH } = this.metrics;
-    const list = 6 * rowH;
-    return this.narrow ? { w: Math.min(170, this.room.w), h: Math.min(this.room.h, listTop + list + 72) } : { w: this.listWidth + 190, h: Math.max(160, listTop + list + 4) };
+    const list = Math.max(6 * rowH, ...SHEET_PAGES.map((_, i) => this.rowHeights(i, rowH).reduce((a, b) => a + b, 0)));
+    return this.narrow ? { w: this.width, h: Math.min(this.room.h, listTop + list + 72) } : { w: this.width, h: Math.max(160, listTop + list + 4) };
   }
 
   /** The rows of the page shown. */
@@ -151,12 +184,12 @@ export class CharacterSheet implements Panel {
    * their thirds a pager: ‹ the page's name in full, a dot for each page, › (a tap on either side
    * turns), so no name is ever cut.
    */
-  private drawTabs(ui: UiCanvas, r: Rect, tabH: number): void {
+  private drawTabs(ui: UiCanvas, r: Rect, tabH: number, top: number): void {
     this.tabs = [];
     this.pager = null;
     const names = SHEET_PAGES.map((p) => t(`panel.character.page.${p.id}`));
     const tabW = Math.floor(r.w / SHEET_PAGES.length);
-    const y = r.y + 12;
+    const y = top;
     const ty = y + Math.floor((tabH - 7) / 2);
     if (this.narrow && names.some((n) => ui.measure(n) > tabW - 6)) {
       const third = Math.floor(r.w / 3);
@@ -191,32 +224,36 @@ export class CharacterSheet implements Panel {
   draw(ui: UiCanvas, r: Rect): void {
     const sheet = this.sheet();
     const narrow = this.narrow;
-    const header = this.header();
-    const { tabH, listTop, rowH } = this.metrics;
-    ui.text(r.x + 2, r.y + 2, clip(header, r.w - 4, (s) => ui.measure(s)), { color: 'sand' });
-    this.drawTabs(ui, r, tabH);
+    const { tabH, listTop, rowH, header } = this.metrics;
+    // the header (a narrow sheet's on two rows where it is long: 'Level 7 · Deepest 12'), then the pages' tabs
+    header.forEach((line, i) => ui.text(r.x + 2, r.y + 2 + i * 9, clip(line, r.w - 4, (s) => ui.measure(s)), { color: 'sand' }));
+    this.drawTabs(ui, r, tabH, r.y + 12 + (header.length - 1) * 9);
     this.rows = [];
     const listW = narrow ? r.w : this.listWidth;
     const list = this.list;
+    const heights = this.rowHeights(this.page, rowH);
     this.focus = Math.min(this.focus, list.length - 1);
+    let ry = r.y + listTop - 2;
     list.forEach((row, i) => {
-      const rect = { x: r.x, y: r.y + listTop - 2 + i * rowH, w: listW, h: rowH - 1 };
-      const y = rect.y + Math.floor((rowH - 9) / 2);
+      const h = heights[i]!;
+      const rect = { x: r.x, y: ry, w: listW, h: h - 1 };
+      ry += h;
       this.rows.push(rect);
       if (i === this.focus) {
         ui.rect(rect.x, rect.y, rect.w, rect.h, 'night');
         ui.rect(rect.x, rect.y, 2, rect.h, 'sand');
       }
       const value = row.fmt(valueOf(sheet, row));
-      // a narrow sheet (or a long language) shortens labels that would run into their value
-      const label = clip(statLabel(row.stat), listW - ui.measure(value) - 10, (s) => ui.measure(s));
-      ui.text(r.x + 5, y, label, { color: i === this.focus ? 'white' : 'mist' });
-      ui.text(r.x + listW - 3, y, value, { align: 'right', color: 'white' });
+      // a label too long beside its value: on two rows on a narrow sheet (a phone), else cut (a long language)
+      const label = this.labelRows(row.stat, value, listW);
+      const y = rect.y + Math.floor((h - 9 * label.length) / 2);
+      label.forEach((l, k) => ui.text(r.x + 5, y + k * 9, l, { color: i === this.focus ? 'white' : 'mist' }));
+      ui.text(r.x + listW - 3, rect.y + Math.floor((h - 9) / 2), value, { align: 'right', color: 'white' });
     });
     // explain: where the focused stat comes from (a column on the right, or under the list)
     const row = list[this.focus]!;
     const x = narrow ? r.x + 2 : r.x + listW + 10;
-    const top = narrow ? r.y + listTop + 2 + list.length * rowH : r.y + listTop - 2; // under the pages' tabs
+    const top = narrow ? ry + 4 : r.y + listTop - 2; // under the list, or under the pages' tabs
     if (narrow) ui.rect(r.x, top - 3, r.w, 1, 'slate');
     else ui.rect(x - 5, top, 1, r.y + r.h - top - 2, 'slate');
     const colW = r.x + r.w - x;

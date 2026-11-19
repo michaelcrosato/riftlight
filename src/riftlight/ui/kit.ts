@@ -65,7 +65,7 @@ const MINI: Record<string, string> = {
   '=': '000111000111000', '[': '110100100100110', ']': '011001001001011', '<': '001010100010001', '>': '100010001010100', '{': '011010110010011',
   '}': '110010011010110', ';': '000010000010100', '&': '010101010101011', '|': '010010010010010', '_': '000000000000111', '*': '000101010101000',
   '"': '101101000000000', '$': '011110010011110', '~': '000011110000000', '^': '010101000000000', '\\': '100100010001001', '`': '100010000000000',
-  '@': '111101111100011',
+  '@': '111101111100011', '’': '010010000000000',
 };
 
 /**
@@ -102,6 +102,19 @@ export function clip(text: string, width: number, measure: (s: string) => number
   while (n > 1 && measure(letters.slice(0, n).join('') + '.') > width) n--;
   return letters.slice(0, n).join('').trimEnd() + '.';
 }
+
+/**
+ * `text` wrapped to at most `rows` lines of `width` art pixels (`measure`: the font it is drawn
+ * in), broken where the language breaks words; what doesn't fit the last line is cut there (`clip`).
+ */
+export function wrapTo(text: string, width: number, rows: number, measure: (s: string) => number = textWidthPx): string[] {
+  const lines = wrapText(text, width, measure);
+  if (lines.length <= rows) return lines;
+  return [...lines.slice(0, rows - 1), clip(lines.slice(rows - 1).join(' '), width, measure)];
+}
+
+/** A button's height, art pixels, that holds its label on two rows (`UiCanvas.button` wraps a long label there). */
+export const BUTTON_TWO_ROWS = 22;
 
 /**
  * Drawing helpers over `Hud` in absolute art pixels, plus the pointer in art pixels.
@@ -193,7 +206,9 @@ export class UiCanvas {
 
   /**
    * A button; focus/hover draws it highlighted. With `glyph`, the focused button shows the glyph of
-   * what presses it before its label while a pad is in use (✕ Return to town). Returns its rect.
+   * what presses it before its label while a pad is in use (✕ Return to town). A label wider than
+   * the button wraps onto a second row where the button is tall enough for two (`BUTTON_TWO_ROWS`:
+   * a phone's thumb-tall rows), else it is cut. Returns its rect.
    */
   button(r: Rect, label: string, state: { focus?: boolean; disabled?: boolean; accent?: HudColor; glyph?: ControlAction } = {}): Rect {
     const hot = state.focus || this.hover(r);
@@ -203,17 +218,19 @@ export class UiCanvas {
     this.rect(r.x + 1, r.y + 1, r.w - 2, r.h - 2, hot && !state.disabled ? UI.focus : 'slate');
     this.rect(r.x + 2, r.y + 2, r.w - 4, r.h - 4, fill);
     const color = state.disabled ? 'slate' : hot ? 'white' : 'mist';
-    const ty = r.y + Math.floor((r.h - 7) / 2);
     const glyph = state.glyph && state.focus && !state.disabled && this.pad ? state.glyph : null;
+    const gw = glyph ? this.glyphWidth(glyph) + 3 : 0;
+    const room = r.w - 6 - gw;
+    const measure = (t: string) => this.measure(t);
+    const lines = r.h >= BUTTON_TWO_ROWS && measure(label) > room ? wrapTo(label, room, 2, measure) : [clip(label, room, measure)];
+    const ty = r.y + Math.floor((r.h - 7 - (lines.length - 1) * 9) / 2);
     if (!glyph) {
-      this.text(r.x + r.w / 2, ty, clip(label, r.w - 6, (t) => this.measure(t)), { align: 'center', color });
+      lines.forEach((l, i) => this.text(r.x + r.w / 2, ty + i * 9, l, { align: 'center', color }));
       return r;
     }
-    const gw = this.glyphWidth(glyph);
-    const text = clip(label, r.w - 9 - gw, (t) => this.measure(t));
-    const left = r.x + Math.floor((r.w - gw - 3 - this.measure(text)) / 2);
+    const left = r.x + Math.floor((r.w - gw - Math.max(...lines.map(measure))) / 2);
     this.glyph(left, ty, glyph);
-    this.text(left + gw + 3, ty, text, { color });
+    lines.forEach((l, i) => this.text(left + gw, ty + i * 9, l, { color }));
     return r;
   }
 

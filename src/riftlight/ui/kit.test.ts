@@ -11,6 +11,7 @@ describe('the mini font', () => {
     expect(miniCovers('LV 12')).toBe(true);
     expect(miniCovers('lv 12')).toBe(true); // drawn in capitals
     expect(miniWidth('LV 12')).toBe(5 * 4 - 1);
+    expect(miniCovers('The engine’s demo'), 'the typographic apostrophe the lines use').toBe(true);
     // accents, other alphabets: the normal font, measured as it draws
     for (const s of ['NIVEAU É', 'Уровень', '等级']) {
       expect(miniCovers(s), s).toBe(false);

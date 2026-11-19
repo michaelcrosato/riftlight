@@ -8,7 +8,7 @@
 import { type HudColor, textWidthPx, wrapText } from '../../engine';
 import type { Panel } from '../game/ports';
 import { t } from '../lang';
-import { clip, inside, miniWidth, type Rect, UI, type UiCanvas, type UiEvent } from './kit';
+import { BUTTON_TWO_ROWS, clip, inside, miniCovers, miniWidth, type Rect, UI, type UiCanvas, type UiEvent, wrapTo } from './kit';
 
 export type Widget =
   | { kind: 'button'; id: string; label: string; onClick: () => void; disabled?: boolean; hint?: string; accent?: HudColor }
@@ -47,6 +47,11 @@ export interface MenuOptions {
   labelWidth?: number;
   /** Footer text (hints). */
   footer?: () => string;
+  /**
+   * How wide the footer (and a hint in its place) may run where the menu is narrower, up to its
+   * room: a bare menu's, which no frame holds in (the title's, under the logo).
+   */
+  footWidth?: number;
   onBack?: () => void;
   onSound?: (s: 'click' | 'move') => void;
   /**
@@ -111,10 +116,13 @@ export class Menu implements Panel {
     this.tap = tap;
   }
 
-  /** A widget's row, art pixels: a button or a control at least `tap` + 2 tall (a thumb's), the control's label over it when narrow. */
+  /**
+   * A widget's row, art pixels: a button or a control at least `tap` + 2 tall (a thumb's), the
+   * control's label over it when narrow, and a narrow button's label too wide for it on two rows.
+   */
   private rowH(w: Widget, width: number, tap: number): number {
     const base = rowHeight(w, width);
-    if (w.kind === 'button') return Math.max(base, tap + 2);
+    if (w.kind === 'button') return Math.max(this.narrow && textWidthPx(w.label) > width - 6 ? BUTTON_TWO_ROWS + 3 : base, tap + 2);
     if (isControl(w)) return Math.max(base, tap + 2) + (this.narrow ? NARROW_EXTRA : 0);
     return base;
   }
@@ -126,12 +134,35 @@ export class Menu implements Panel {
 
   /** One column's height with rows `tap` + 2 tall, its footer line included. */
   private columnH(tap: number): number {
-    return this.widgets.reduce((s, x) => s + this.rowH(x, this.colW, tap), 0) + 14;
+    return this.widgets.reduce((s, x) => s + this.rowH(x, this.colW, tap), 0) + this.footH(this.footW(this.colW));
   }
 
   /** A grid's height with tiles `tap` + 2 tall, its footer line included. */
   private gridH(tap: number): number {
-    return this.gridRows() * this.tileH(tap) + 14;
+    return this.gridRows() * this.tileH(tap) + this.footH(this.footW(2 * this.tileW + GRID_GAP));
+  }
+
+  /**
+   * A footer (or a hint in its place) as drawn `width` wide: one row of the normal font where it
+   * fits; else on a mouse's or a pad's screen (a TV's) the normal font on up to `FOOT_ROWS` rows,
+   * and on a phone's layout (narrow, or touch: `tap`) the mini font, on as few rows as it takes.
+   * What doesn't fit the last row is cut there.
+   */
+  private footLines(text: string, width: number): { lines: string[]; mini: boolean } {
+    if (textWidthPx(text) <= width) return { lines: [text], mini: false };
+    const mini = (this.narrow || this.tap > 0) && miniCovers(text);
+    return { lines: wrapTo(text, width, FOOT_ROWS, mini ? miniWidth : textWidthPx), mini };
+  }
+
+  /** The footer's width under a menu `w` wide: the menu's, or its `footWidth` up to its room. */
+  private footW(w: number): number {
+    return Math.max(w, Math.min(this.o.footWidth ?? 0, this.room));
+  }
+
+  /** The rows under the widgets for the footer, art pixels: room for the longest of it and every hint (so the menu never jumps as the focus moves). */
+  private footH(width: number): number {
+    const texts = [this.o.footer?.(), ...this.widgets.map((w) => (w as { hint?: string }).hint)].filter((x): x is string => !!x);
+    return 14 + Math.max(0, ...texts.map((x) => this.footLines(x, width - 2)).map((f) => (f.lines.length - 1) * (f.mini ? MINI_LINE : LABEL_LINE)));
   }
 
   /**
@@ -272,7 +303,7 @@ export class Menu implements Panel {
     // more rows than the screen has room for (a phone): the list scrolls to keep the focus in view
     const heights = this.widgets.map((w) => this.rowH(w, r.w, plan.tap));
     const total = heights.reduce((a, b) => a + b, 0);
-    const view = r.h - 14; // the footer line
+    const view = r.h - this.footH(this.footW(r.w)); // the footer's rows
     this.scrolls = total > view;
     if (this.scrolls) {
       const fy = heights.slice(0, Math.max(0, this.focus)).reduce((a, b) => a + b, 0);
@@ -354,15 +385,18 @@ export class Menu implements Panel {
     this.drawFooter(ui, r);
   }
 
-  /** The focused widget's hint, else the menu's footer, on the last row. */
+  /** The focused widget's hint, else the menu's footer, on the last rows (`footLines`: wrapped, never cut mid-line where its rows hold it). */
   private drawFooter(ui: UiCanvas, r: Rect): void {
     const hint = (this.widgets[this.focus] as { hint?: string } | undefined)?.hint;
     const foot = hint ?? this.o.footer?.();
-    if (foot) {
-      // a narrow menu (a phone) falls back to the mini font, cut to the width
-      if (ui.measure(foot) <= r.w - 2) ui.text(r.x + r.w / 2, r.y + r.h - 10, foot, { align: 'center', color: 'slate' });
-      else ui.mini(r.x + r.w / 2, r.y + r.h - 9, clip(foot, r.w - 2, miniWidth), 'slate', 'center');
-    }
+    if (!foot) return;
+    const { lines, mini } = this.footLines(foot, this.footW(r.w) - 2);
+    const step = mini ? MINI_LINE : LABEL_LINE;
+    lines.forEach((line, i) => {
+      const y = r.y + r.h - (mini ? 9 : 10) - (lines.length - 1 - i) * step;
+      if (mini) ui.mini(r.x + r.w / 2, y, line, 'slate', 'center');
+      else ui.text(r.x + r.w / 2, y, line, { align: 'center', color: 'slate' });
+    });
   }
 
   /** Two columns of tiles, row by row (`columns`). */
@@ -552,5 +586,8 @@ const isControl = (w: Widget) => w.kind === 'slider' || w.kind === 'toggle' || w
 const focusable = (w: Widget) => w.kind !== 'label' && w.kind !== 'gap' && !(w.kind === 'button' && w.disabled);
 /** A label's rows: wrapped to the menu's width (a long notice, a longer language). */
 const LABEL_LINE = 9;
+/** A footer's rows in the mini font (a phone's), and how many rows a footer takes at most. */
+const MINI_LINE = 7;
+const FOOT_ROWS = 3;
 const labelLines = (label: string, width: number): string[] => wrapText(label, width - 4);
 const rowHeight = (w: Widget, width: number) => (w.kind === 'gap' ? (w.h ?? 6) : w.kind === 'button' ? BUTTON_H + 3 : w.kind === 'label' ? 12 + (labelLines(w.label, width).length - 1) * LABEL_LINE : ROW);

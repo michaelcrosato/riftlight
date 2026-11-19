@@ -15,6 +15,7 @@ import { touchStates, worldTouchLayout } from './controls';
 import { type worldApi, worldGame } from './index';
 import { shell } from './shell';
 import { headlessWorld, roomApi, roomGame, WORLD_T } from './testWorld';
+import type { Menu } from '../riftlight/ui/menu';
 
 let engine: Engine;
 let w: typeof worldApi;
@@ -315,6 +316,56 @@ it(
       shell.hudLine = hudLine;
       engine.controls.touch = true;
     }
+    expect(engine.state().errors).toEqual([]);
+  },
+  240_000,
+);
+
+/** `text` drawn whole among `drawn` (a frame's texts): on one row, or wrapped onto rows one after another; never cut with a '.'. */
+function whole(drawn: ReadonlySet<string>, text: string): boolean {
+  if (drawn.has(text)) return true;
+  for (const row of drawn) if (row && text.startsWith(row) && /^\s/.test(text.slice(row.length)) && whole(drawn, text.slice(row.length).trimStart())) return true;
+  return false;
+}
+
+it(
+  'on a 360×800 phone (120 art columns) the panels\' words are whole: the menus\' buttons on two rows where they are long, the room list\'s line for each room, the station guide\'s title',
+  async () => {
+    const log = globalThis as { __PIXEL_TEXT_LOG__?: Set<string> };
+    const amiss: string[] = [];
+    (engine.renderer as HeadlessView).setViewport({ width: 360, height: 800, dpr: 3 });
+    await w.goto('atrium', { instant: true });
+    engine.input.noteTouch();
+    engine.step(5);
+    expect(engine.hud.width, 'a 360 px phone held upright draws 120 art columns').toBe(120);
+    try {
+      for (const id of ['pause', 'rooms', 'guide', 'tweak', 'glossary'] as const) {
+        w.open(id);
+        engine.step(10); // opened
+        const panel = shell.layer.top!.panel;
+        const menu = panel as Partial<Menu>;
+        // a menu: each button focused in turn (a long list scrolls it into view), its label and its line whole
+        const buttons = menu.items ? menu.items().filter((x) => x.kind === 'button') : [null];
+        for (const b of buttons) {
+          if (b) menu.focusId!(b.id);
+          const drawn = new Set<string>();
+          log.__PIXEL_TEXT_LOG__ = drawn;
+          engine.step(1);
+          log.__PIXEL_TEXT_LOG__ = undefined;
+          const at = `${id}${b ? ` (${b.id})` : ''}`;
+          if (!whole(drawn, panel.title)) amiss.push(`${at}: its title cut: ${panel.title}`);
+          if (b && !whole(drawn, b.label)) amiss.push(`${at}: its label cut: ${b.label}`);
+          const hint = b?.hint;
+          if (hint && !whole(drawn, hint)) amiss.push(`${at}: its line cut: ${hint}`);
+          if (hint?.includes('{')) amiss.push(`${at}: a control's tag in its line: ${hint}`);
+        }
+        w.close();
+        engine.step(2);
+      }
+    } finally {
+      log.__PIXEL_TEXT_LOG__ = undefined;
+    }
+    expect(amiss).toEqual([]);
     expect(engine.state().errors).toEqual([]);
   },
   240_000,

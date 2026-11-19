@@ -10,6 +10,15 @@ import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
 
+/** `text` drawn whole: on one row, or on rows one after another (a footer wrapped where the language breaks it), none cut. */
+const whole = (drawn: readonly string[], text: string): boolean =>
+  drawn.some((_, i) =>
+    [1, 2, 3].some((n) => {
+      const rows = drawn.slice(i, i + n);
+      return rows.length === n && (rows.join(' ') === text || rows.join('') === text);
+    }),
+  );
+
 describe('links between Riftlight and Engine World', () => {
   it('the title offers Engine World when the host can open it, and opens it', () => {
     let opened = 0;
@@ -153,7 +162,7 @@ describe("the settings' engine page", () => {
     expect(chosen.motionSensitivity).toBe(1);
   });
 
-  it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its line', () => {
+  it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its rows', () => {
     const translations = riftlightTranslations();
     /** Lines the menu cut short. */
     const cut: string[] = [];
@@ -176,7 +185,7 @@ describe("the settings' engine page", () => {
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const shown = row(menu, id) as Row & { label: string; hint: string };
           if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
-          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
+          if (!whole(drawn, shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
         }
       }
     } finally {
@@ -245,7 +254,7 @@ describe('the Couch co-op hints', () => {
           const { w, h: height } = menu.size; // their own widths, as on a TV and a phone held sideways
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const hint = (menu.items().find((x) => x.id === id) as { hint: string }).hint;
-          if (!drawn.includes(hint)) cut.push(`${code} ${id}'s hint: ${hint}`);
+          if (!whole(drawn, hint)) cut.push(`${code} ${id}'s hint: ${hint}`);
         }
       }
     } finally {

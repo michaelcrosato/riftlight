@@ -335,7 +335,7 @@ export class WorldShell {
   openRooms(): void {
     const current = this.room?.def.id ?? '';
     this.layer.open(
-      roomsMenu(registry, current, this.visited, (id) => void this.goto(id), () => this.layer.close('rooms')),
+      roomsMenu(registry, current, this.visited, (id) => void this.goto(id), () => this.layer.close('rooms'), (text) => this.keys(text)),
       { modal: true, onClose: () => this.unfreeze() },
     );
     this.freeze();
