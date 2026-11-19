@@ -67,7 +67,7 @@ brings the stick; `[]` gives the whole zone back; a photo mode's rows), or keep 
 a HUD laid out around it stays put.
 
 `touchDensity` (default 0, `DEFAULT_TOUCH_DENSITY`: the art size the viewport gives): a game opts
-in, `touchDensity: 2`, once its HUD fits 170 rows (a landscape phone at 2 has 170 to about 210).
+in, `touchDensity: 2`, once its HUD fits 170 rows (a landscape phone at 2 has 170 or more).
 Then on a phone (the viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`) on a page with
 touch controls the art
 has about that many CSS pixels per art pixel, in both orientations and again at every rotation

@@ -89,7 +89,8 @@ export function touchRows(cssPerArt: number): number {
  * pixels: 189 rows held sideways at 360 CSS px, where 6 (2.3 CSS px) left 158). Where that leaves
  * the short side fewer than `touchRows` rows (a phone held sideways under a browser's bar: a Pixel
  * 10's 303 CSS px would draw 160 at 5), the largest whole number of device pixels that keeps them
- * (4 there: 1.52 CSS px, 199 rows). A pure function of the viewport and the density, both recorded
+ * (4 there: 1.52 CSS px, 199 rows), held sideways only; on a phone shorter still that can reach 1
+ * device pixel (1 CSS px at DPR 1: small text, the rows kept). A pure function of the viewport and the density, both recorded
  * (`Recording.view`, `Recording.density`): a replay frames the same way.
  */
 export function touchScale(viewport: Viewport, cssPerArt: number): number {
@@ -100,7 +101,8 @@ export function touchScale(viewport: Viewport, cssPerArt: number): number {
   const device = Math.max(1, Math.ceil(side * dpr));
   const rows = touchRows(cssPerArt);
   let scale = Math.max(1, Math.floor(cssPerArt * dpr + 0.5 + 1e-9));
-  while (scale > 1 && Math.ceil(device / scale) < rows) scale--;
+  // held sideways only: upright the short side is the width, and the art's rows are its height
+  if (viewport.width > viewport.height) while (scale > 1 && Math.ceil(device / scale) < rows) scale--;
   return scale;
 }
 

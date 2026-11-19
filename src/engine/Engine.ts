@@ -274,7 +274,7 @@ export interface EngineOptions {
    * in view is the same (the camera's view height and field of view are kept); only the pixel
    * density changes, again on every resize and rotation. Under `fill` (the default aspect).
    * Default 0 (`DEFAULT_TOUCH_DENSITY`: the art size the viewport gives); pass 2 once the game's HUD
-   * fits 170 rows (a landscape phone at 2 has 170 to about 210).
+   * fits 170 rows (a landscape phone at 2 has 170 or more).
    */
   touchDensity?: number;
   /**

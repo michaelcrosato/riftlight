@@ -300,6 +300,7 @@ describe('touch density on a phone (touchScale, EngineOptions.touchDensity)', ()
       { width: 360, height: 800, dpr: 3 },
       { width: 320, height: 568, dpr: 2 },
       { width: 303, height: 869, dpr: 2.625 },
+      { width: 320, height: 460, dpr: 2 }, // an iPhone SE (1st gen) upright in Safari: the floor is for sideways
     ]) {
       const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
       expect(f, `${v.width}×${v.height} at DPR ${v.dpr}`).toEqual(frameView(v, base, 'fill', base, Math.max(1, Math.floor(2 * v.dpr + 0.5))).framing);
