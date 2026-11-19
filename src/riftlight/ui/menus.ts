@@ -81,8 +81,9 @@ export interface MenuHost {
    */
   couch?(): { readonly seats: readonly number[]; leave(seat: number): void } | null;
   /**
-   * Opening the level's map, where a touch page has no corner map to tap (52in1 on a phone held
-   * sideways too short for one below the hub's wake band); null elsewhere: no Map entry. Optional.
+   * Opening the level's map, where a touch page's corner map takes no tap (52in1 on a phone held
+   * sideways too short for one below the hub's wake band: it is drawn in the band, whose taps are
+   * the hub's); null elsewhere: no Map entry. Optional.
    */
   levelMap?(): (() => void) | null;
   /**

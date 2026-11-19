@@ -132,20 +132,25 @@ describe('hudGeometry with touch controls', () => {
   });
 
   it(
-    'in 52in1 a phone held sideways has the whole corner map and the gold below the hub’s wake band, a thumb across, over no control and none of the HUD (a boss’s bar, a banner, couch guests, a moment’s seconds, the tuning’s rows, a long level name); one too short for that has none, the gold in its corner; a boss’s bar and the label stay where they are with the map at the top, the banner clear of its column; on its own page and on a pad, at the top as ever',
+    'in 52in1 a phone held sideways has the whole corner map and the gold below the hub’s wake band, a thumb across, over no control and none of the HUD (a boss’s bar, a banner, couch guests, a moment’s seconds, the tuning’s rows, a long level name); one too short for that has it at the top still, drawn in the band, the gold under it, over none of them, and taking no tap: no tap target of the HUD in the band; a boss’s bar and the label stay where they are with the map at the top, the banner clear of its column; on its own page and on a pad, at the top as ever',
     () => {
       const boss = 'Nyx-Hollow, the Lantern Eater';
       const LONG = 'XII · The Very Long Hollow of Lanterns';
+      // a German-length name (299 art px): at 844×390 it wraps before the full map's column (as on the
+      // game's own page) though one row of it would fit before the shrunk map's edge
+      const GERMAN = 'XII · Die Höhle der verlorenen Laternenträgerinnen';
       const strip = (seat: number): GuestStrip => ({ seat, color: 0x3f7fff, life: 0.6, skills: [1, 0.4, -1, 0], rise: seat === 3 ? 3.2 : null });
       const one = (z: readonly HudBox[], id: HudBox['id']) => z.find((b) => b.id === id);
       let checked = 0;
-      // [CSS px wide, high, DPR, the gold: beside the corner map, or with none in its corner below the
-      // band or at the top]. 915×356 is a Pixel held sideways under Chrome's toolbar (the interact
-      // button is beside the map's top rows: the gold goes left of it, 16 of the map's rows a thumb
-      // at its CSS scale); 844×346 an iPhone under a browser's bars, 882×344 a Galaxy Z Fold's cover
-      // screen (441×172 art at DPR 3, 386×151 at its own 2.625) and 568×320 an iPhone SE (1st) have no
-      // room for a map a thumb across between the band and the skills' arc (on 844×346 16 rows would
-      // fit: 40 CSS px, under a thumb)
+      // [CSS px wide, high, DPR, the corner map: below the band (a tap target, the gold beside it), or at
+      // the top (drawn in the band, the gold under it; no tap target)]. 915×356 is a Pixel held
+      // sideways under Chrome's toolbar (the interact button is beside the map's top rows: the gold goes
+      // left of it, 16 of the map's rows a thumb at its CSS scale). The rest have no room for a map a
+      // thumb across between the band and the skills' arc: phones held sideways under a browser's bars
+      // (iPhones in Safari: 844×346, 734×343, 750×340 and 750×342, a mini's 712×325, an 11 Pro's
+      // 724×325; a Pixel 5's 802×294), a Galaxy Z Fold's cover screen (882×344: 441×172 art at DPR 3,
+      // 386×151 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
+      // px, under a thumb)
       const SCREENS = [
         [844, 390, 2, 'beside'],
         [844, 390, 3, 'beside'],
@@ -158,17 +163,26 @@ describe('hudGeometry with touch controls', () => {
         [740, 360, 4, 'beside'],
         [640, 360, 3, 'beside'],
         [915, 356, 2.625, 'beside'],
-        [844, 346, 2, 'below'],
-        [882, 344, 3, 'below'],
+        [844, 346, 2, 'top'],
+        [734, 343, 3, 'top'],
+        [750, 340, 2, 'top'],
+        [750, 342, 3, 'top'],
+        [712, 325, 3, 'top'],
+        [724, 325, 3, 'top'],
+        [802, 294, 2.75, 'top'],
+        [882, 344, 3, 'top'],
         [882, 344, 2.625, 'top'],
-        [568, 320, 2, 'below'],
+        [568, 320, 2, 'top'],
       ] as const;
       for (const [vw, vh, dpr, spot] of SCREENS) {
-        const cornerMap = spot === 'beside';
+        const below = spot === 'beside';
         const { W, H, boxes, wake, css } = controlsFor(vw, vh, dpr, 'fill', RIFTLIGHT_OPTIONS.touchDensity ?? 0, RIFTLIGHT_HUB_TOUCH_BUTTONS);
-        expect(hudGeometry(W, H, boxes, wake).map.off, `${vw}×${vh}: ${cornerMap ? 'a' : 'no'} corner map`).toBe(!cornerMap);
+        const g = hudGeometry(W, H, boxes, wake);
+        expect(g.map.tap, `${vw}×${vh}: the corner map ${below ? 'below the band, a tap target' : 'at the top, in the band: no tap target'}`).toBe(below);
         const full = W < 300 ? { w: 44, h: 34 } : { w: 84, h: 64 };
-        for (const label of ['II · Gloom', LONG]) {
+        // outside 52in1 (≡ in the corner, no band): where the top-left block goes there
+        const alone = controlsFor(vw, vh, dpr);
+        for (const label of ['II · Gloom', LONG, GERMAN]) {
           for (const guests of [0, 1, 2, 3]) {
             for (const [big, tuned] of [[false, 0], [true, 0], [true, 4], [false, 4]] as const) {
               for (const card of [null, 'card', 'levelup', 'clear'] as const) {
@@ -184,25 +198,28 @@ describe('hudGeometry with touch controls', () => {
                     timeLeft: moment ? { text: t('round.moment_left', { count: 30 }), urgent: false } : null,
                   };
                   const z = hudBoxes(W, H, m);
-                  const map = one(z, 'minimap');
+                  // the corner map is always drawn (it never goes)
+                  const map = one(z, 'minimap')!;
                   const gold = one(z, 'gold')!;
-                  if (cornerMap) {
-                    expect(map, `${where}: a corner map`).toBeDefined();
+                  expect(map, `${where}: a corner map, drawn`).toBeDefined();
+                  expect(overlaps(map, gold, 0), `${where}: the gold ${JSON.stringify(gold)} over the map ${JSON.stringify(map)}`).toBe(false);
+                  expect(map.w <= full.w + 4 && map.h <= full.h + 4 && map.w >= 48 && map.h >= 20, `${where}: the corner map ${JSON.stringify(map)} its full size or shrunk, no less than 44×16 inside its frame`).toBe(true);
+                  if (below) {
                     expect(gold.y, `${where}: the gold ${JSON.stringify(gold)} below the band`).toBeGreaterThanOrEqual(wake);
-                    expect(map!.y, `${where}: the map ${JSON.stringify(map)} below the band`).toBeGreaterThanOrEqual(wake);
-                    expect(overlaps(map!, gold, 0), `${where}: the gold ${JSON.stringify(gold)} over the map ${JSON.stringify(map)}`).toBe(false);
-                    expect(gold.x + gold.w <= map!.x && gold.y < map!.y + 10, `${where}: the gold ${JSON.stringify(gold)} beside the map ${JSON.stringify(map)}, on its left`).toBe(true);
+                    expect(map.y, `${where}: the map ${JSON.stringify(map)} below the band`).toBeGreaterThanOrEqual(wake);
+                    expect(gold.x + gold.w <= map.x && gold.y < map.y + 10, `${where}: the gold ${JSON.stringify(gold)} beside the map ${JSON.stringify(map)}, on its left`).toBe(true);
                     // a tap target (`Riftlight.onMap`): a thumb across both ways
-                    expect(Math.min(map!.w, map!.h) * css, `${where}: the corner map ${JSON.stringify(map)} a thumb across`).toBeGreaterThanOrEqual(44);
+                    expect(Math.min(map.w, map.h) * css, `${where}: the corner map ${JSON.stringify(map)} a thumb across`).toBeGreaterThanOrEqual(44);
                   } else {
-                    // none (the pause menu opens the level's map): the gold in its corner, below the band
-                    // where the skills' arc leaves it room, else at the top as on a page without a corner
-                    // map (882×344: the interact button is in its way)
-                    expect(map, `${where}: no corner map`).toBeUndefined();
-                    expect(gold.x + gold.w, `${where}: the gold ${JSON.stringify(gold)} in its corner`).toBe(W - 5);
-                    if (spot === 'below') expect(gold.y, `${where}: the gold ${JSON.stringify(gold)} below the band`).toBeGreaterThanOrEqual(wake);
-                    else expect(gold, `${where}: the gold in its corner at the top`).toEqual(one(hudBoxes(W, H, { ...m, minimap: null }), 'gold'));
+                    // at the top as on the game's own page, in the band (drawing there is fine, a tap
+                    // there is the hub's: it takes none, the pause menu opens the level's map), shrunk to
+                    // clear the controls, the gold under it in its corner
+                    expect(map.y, `${where}: the map ${JSON.stringify(map)} at the top, in the band`).toBe(2);
+                    expect(gold.y >= map.y + map.h - 1 && gold.x + gold.w === W - 5, `${where}: the gold ${JSON.stringify(gold)} under the map ${JSON.stringify(map)}, in its corner`).toBe(true);
                   }
+                  // what takes a tap on the HUD (the corner map where `map.tap`) is wholly below the band:
+                  // a touch there is the hub's (its companion script wakes its bar under 90 CSS px)
+                  for (const target of g.map.tap ? [map] : []) expect(target.y, `${where}: the tap target ${JSON.stringify(target)} below the band (${wake} rows)`).toBeGreaterThanOrEqual(wake);
                   // a known gap: at 640×360 with three guests' strips and a moment's seconds a big banner (the
                   // level card, LEVEL CLEAR) has no place clear of them and of the gold beside the map, and
                   // covers part of the gold for its four seconds (`bannerRect`'s last resort; on the game's
@@ -226,21 +243,30 @@ describe('hudGeometry with touch controls', () => {
                   if (banner) expect(banner.w, `${where}: the banner ${JSON.stringify(banner)} between the map's full column and its mirror`).toBeLessThanOrEqual(W - 2 * (full.w + 10));
                   const block = one(z, 'where')!;
                   if (block.y + block.h <= gold.y) expect(block, `${where}: the top-left block where it is with the map at the top`).toEqual(one(atTop, 'where'));
+                  // and where it is outside 52in1 (≡ in the corner, no band) with neither a boss nor the
+                  // tuning's rows: its rows wrap as they do there, before the full map's column (the
+                  // German name in two rows at 844×390, though one would fit before the shrunk map)
+                  if (!big && !tuned && block.y + block.h <= gold.y) expect(block, `${where}: the top-left block where it is outside 52in1`).toEqual(one(hudBoxes(W, H, { ...m, controls: alone.boxes, wake: 0 }), 'where'));
                   checked++;
                 }
               }
             }
           }
         }
+        // the German name at 844×390 wraps (as outside 52in1): two rows of the label over the clock
+        if (vw === 844 && vh === 390) {
+          const block = one(hudBoxes(W, H, { ...hudModel(boxes, { label: GERMAN }), wake }), 'where')!;
+          const one_row = one(hudBoxes(W, H, { ...hudModel(boxes, { label: 'II · Gloom' }), wake }), 'where')!;
+          expect(block.h - one_row.h, `${vw}×${vh}: “${GERMAN}” in two rows (the block ${JSON.stringify(block)}, one row's ${JSON.stringify(one_row)})`).toBe(9);
+        }
         // on its own page (≡ in the corner: no band), and on a pad there or in 52in1 (no controls): at the top, its full size, the gold under it
-        const alone = controlsFor(vw, vh, dpr);
         for (const [controls, w] of [[alone.boxes, 0], [[], 0], [[], wake]] as const) {
           const z = hudBoxes(W, H, { ...hudModel([...controls]), wake: w });
           expect(one(z, 'minimap'), `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the corner map`).toEqual({ id: 'minimap', x: W - full.w - 6, y: 2, w: full.w + 4, h: full.h + 4 });
           expect(one(z, 'gold')!.y, `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the gold under it`).toBe(full.h + 9);
         }
       }
-      expect(checked).toBe(SCREENS.length * 2 * 4 * 4 * 4 * 2);
+      expect(checked).toBe(SCREENS.length * 3 * 4 * 4 * 4 * 2);
     },
     60_000,
   );
@@ -832,8 +858,8 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
               const over = heroes.find((hero) => overlaps(banner, hero, 0));
               if (over) expect(room(W, H, least, banner.h, [...z.filter((b) => never.includes(b.id)), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over a hero ${JSON.stringify(over)}, with room elsewhere`).toBeNull();
               // a phone held sideways keeps it off the gold as well, but where only a place over the gold
-              // is off the heroes (a hero weighs more: in 52in1 a phone too short for a corner map has that
-              // place in its corner, the gold under it)
+              // is off the heroes (a hero weighs more: with no corner map, in town, that place may be in
+              // its corner)
               const gold = z.find((b) => b.id === 'gold')!;
               if (W > H && overlaps(banner, gold, 0)) expect(room(W, H, least, banner.h, [...z.filter((b) => never.includes(b.id) || b.id === 'gold'), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over the gold ${JSON.stringify(gold)}, with room off it and off the heroes`).toBeNull();
               else heroFree++;

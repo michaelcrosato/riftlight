@@ -102,15 +102,16 @@ const ORB_R = 22;
 
 /**
  * The least a corner map shrinks to (`hudGeometry`: a phone held sideways in 52in1), its frame
- * aside: `h` rows where the screen's CSS scale makes that and its frame a thumb across (`THUMB`),
- * more where it doesn't (18 at a phone's two CSS px per art pixel).
+ * aside. Below the hub's wake band, a tap target: `h` rows where the screen's CSS scale makes that
+ * and its frame a thumb across (`THUMB`), more where it doesn't (18 at a phone's two CSS px per art
+ * pixel); at the top, in the band (no tap target there), these.
  */
 const MAP_LEAST = { w: 44, h: 16 } as const;
 
 /** A thumb across, in CSS px: the least a tap target on a phone is, the corner map's frame and all. */
 const THUMB = 44;
 
-/** The room the gold takes beside a shrunk corner map (`hudGeometry`): a big purse's coin and digits, one row. */
+/** The room the gold takes beside a shrunk corner map, or under one in the band (`hudGeometry`): a big purse's coin and digits, one row. */
 const GOLD_BESIDE = { w: 60, h: 10 } as const;
 
 /** A number on its own on the HUD, in the language's digits (no grouping: it sits in a tight spot). */
@@ -127,11 +128,11 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * on a wide screen, above them on a phone in portrait), the XP bar runs between the orbs when
  * they share a row (else it sits over the life orb), and the top-left text starts right of
  * any control in the top-left corner (the ≡ button, at the top or, in 52in1, lower down). In 52in1
- * (`wake`: its wake band in art pixels, `HUB_WAKE` CSS px) the corner map's frame (`map.y`) and the
- * gold are below the band too: on a phone held sideways the map shrinks to fit above the skills'
- * arc, the gold beside it (`map.gold`); on one too short for a map a thumb across there, there is
- * none (`map.off`: the pause menu opens the level's map), the gold in its corner below the band
- * where the arc leaves room, else at the top.
+ * (`wake`: its wake band in art pixels, `HUB_WAKE` CSS px: a touch there is the hub's, whatever is
+ * drawn there) the corner map, a tap target, and the gold are below the band too: on a phone held
+ * sideways the map shrinks to fit above the skills' arc, the gold beside it (`map.gold`); on one too
+ * short for a map a thumb across there, it stays at the top, in the band, the gold under it,
+ * shrunk to clear the controls, and takes no tap (`map.tap`: the pause menu opens the level's map).
  */
 export function hudGeometry(W: number, H: number, controls: readonly Box[] = [], wake = 0) {
   const compact = W < 300;
@@ -148,19 +149,22 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
   /**
    * The corner map's frame (its top `y`, its size); `col`: its full width, whose column the top rows
    * (the top-left label, a boss's bar at the top, the banner) keep clear of as they would at the top,
-   * so they stay put when it shrinks or is off; `off`: none drawn and none to tap (52in1 on a phone
-   * held sideways too short for one a thumb across); `gold`: the gold's right edge and its coin's row
-   * beside a shrunk map (on its left, in its top rows) or, with it off, in its corner below the band;
-   * null: under the map (with it off: in its corner at the top, as on a page without one).
+   * so they stay put when it shrinks; `tap`: a tap on it opens the level's map (not in 52in1 on a
+   * phone held sideways too short for one a thumb across below the hub's wake band: it is drawn at
+   * the top, in the band, whose taps are the hub's); `gold`: the gold's right edge and its coin's row
+   * beside a shrunk map (on its left, in its top rows); null: under the map.
    */
-  const map: { w: number; h: number; col: number; y: number; off: boolean; gold: { right: number; y: number } | null } = { ...(compact ? { w: 44, h: 34, col: 44 } : { w: 84, h: 64, col: 84 }), y: 2, off: false, gold: null };
+  const map: { w: number; h: number; col: number; y: number; tap: boolean; gold: { right: number; y: number } | null } = { ...(compact ? { w: 44, h: 34, col: 44 } : { w: 84, h: 64, col: 84 }), y: 2, tap: true, gold: null };
   // at the top; with touch controls in 52in1 below the hub's wake band (`wake`) as ≡ is (a tap in
-  // the band is the hub's). A phone upright has room there for it and the gold under it; on its side
-  // the skills' arc is under the corner, so the map shrinks to the biggest that fits between the band
-  // and the controls (no smaller than `MAP_LEAST`), the gold beside it: right beside it where the
-  // arc leaves room, else left of the arc's buttons in its row (a phone shorter still: the interact
-  // button). Where no map fits (shorter still) there is none (`off`: the pause menu opens the level's
-  // map then), the gold in its corner below the band where the arc leaves it room, else at the top
+  // the band is the hub's: the hub's companion script wakes its bar on a press less than `HUB_WAKE`
+  // CSS px from the frame's top). A phone upright has room there for it and the gold under it; on
+  // its side the skills' arc is under the corner, so the map shrinks to the biggest that fits between
+  // the band and the controls (no smaller than `MAP_LEAST`), the gold beside it: right beside it
+  // where the arc leaves room, else left of the arc's buttons in its row (a phone shorter still: the
+  // interact button). Where none a thumb across fits there with the gold beside it (shorter still)
+  // it stays at the top, drawn in the band with the gold under it as on the game's own page, shrunk
+  // to clear the controls, and takes no tap (`tap`: a tap there wakes the hub; the pause menu opens
+  // the level's map). It never goes: drawing in the band is fine, only its taps are the hub's
   if (touch && wake > 0) {
     const y = Math.max(2, Math.ceil(wake));
     const clear = (b: Box) => !controls.some((c) => overlaps(b, c, 0));
@@ -192,8 +196,17 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
       }
       if (best) Object.assign(map, { w: best.w, h: best.h, y, gold: { right: best.right, y: y + 2 } });
       else {
-        map.off = true;
-        if (clear({ x: W - 6 - GOLD_BESIDE.w, y, w: GOLD_BESIDE.w, h: GOLD_BESIDE.h })) map.gold = { right: W - 6, y: y + 2 };
+        // at the top, in the band: the biggest that clears the controls with a big purse under it (no
+        // smaller than `MAP_LEAST`, that small where none clears them: drawn still, under a button)
+        map.tap = false;
+        let top: { w: number; h: number } | null = null;
+        for (let w = map.w; w >= MAP_LEAST.w; w -= 2) {
+          const x = W - Math.max(w + 10, GOLD_BESIDE.w + 6);
+          let h = map.h;
+          while (h >= MAP_LEAST.h && !clear({ x, y: map.y, w: W - x, h: h + 18 })) h -= 2;
+          if (h >= MAP_LEAST.h && (!top || w * h > top.w * top.h)) top = { w, h };
+        }
+        Object.assign(map, top ?? MAP_LEAST);
       }
     }
   }
@@ -298,7 +311,7 @@ function fixedBoxes(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   } else z.push({ id: 'bar', x: g.bx - 6, y: g.by - 14, w: g.barW + 6, h: H - g.by + 14 }); // bar + XP
   z.push({ id: 'life', ...orbZone(g.life, g.orbR) }, { id: 'mana', ...orbZone(g.mana, g.orbR) });
   // the corner map and its frame (`minimapZone` reserves the row of gold under it as well)
-  if (m.minimap && !g.map.off) z.push({ id: 'minimap', x: W - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 });
+  if (m.minimap) z.push({ id: 'minimap', x: W - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 });
   z.push({ id: 'gold', ...goldZone(W, m, g) });
   z.push({ id: 'where', ...whereZone(W, m, g) });
   const boss = bossZone(W, m, g);
@@ -438,16 +451,16 @@ function drawGuests(ui: UiCanvas, m: HudModel, at: GuestsPlace): void {
   });
 }
 
-/** The minimap and the gold under it or beside it (top-right), or null without a minimap (or with it off: `map.off`; the gold is a fixed zone of its own). */
+/** The minimap and the gold under it or beside it (top-right), or null without a minimap. */
 function minimapZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box | null {
-  if (!m.minimap || g.map.off) return null;
+  if (!m.minimap) return null;
   if (!g.map.gold) return { x: W - g.map.w - 6, y: g.map.y, w: g.map.w + 6, h: g.map.h + 18 };
   const x = goldZone(W, m, g).x;
   return { x, y: g.map.y, w: W - x, h: g.map.h + 4 };
 }
 
-/** The gold counter's row (its coin's top): under the minimap (beside it, or in its corner below the band with it off: `map.gold`), or in the top-right corner without one (or with it off). */
-const goldY = (m: HudModel, g: ReturnType<typeof hudGeometry>): number => (!m.minimap ? 6 : g.map.gold ? g.map.gold.y : g.map.off ? 6 : g.map.y + g.map.h + 8);
+/** The gold counter's row (its coin's top): under the minimap (or beside it: `map.gold`), or in the top-right corner without one. */
+const goldY = (m: HudModel, g: ReturnType<typeof hudGeometry>): number => (!m.minimap ? 6 : g.map.gold ? g.map.gold.y : g.map.y + g.map.h + 8);
 
 /** The gold counter's right edge: the screen's, or beside the shrunk minimap (`map.gold`). */
 const goldRight = (W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): number => (m.minimap && g.map.gold ? g.map.gold.right : W - 6);
@@ -455,7 +468,7 @@ const goldRight = (W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): n
 /** The gold counter's words: the number, rolling up to what the hero has. */
 const goldText = (m: HudModel): string => lang().formatNumber(Math.round(m.goldShown));
 
-/** The gold counter and its coin (`drawHud`): right-aligned under the minimap or beside it, or in the top-right corner without one (or with it off). */
+/** The gold counter and its coin (`drawHud`): right-aligned under the minimap or beside it, or in the top-right corner without one. */
 function goldZone(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): Box {
   const gy = goldY(m, g);
   const gw = textWidthPx(goldText(m)) + 8;
@@ -602,10 +615,10 @@ function bossName(room: number, name: string): { text: string; mini: boolean } {
 
 /**
  * Where the top-left label's room ends: before the minimap's column (`map.col`, as at the top: it
- * stays put when the map shrinks or is off) and before a boss's name and bar at the top; before the
- * gold beside a shrunk minimap (or in its corner below the band with it off: `map.gold`) only where
- * the block's rows reach the gold's row (the tuning's rows on a short screen), so a long level name
- * wraps as it does on the game's own page.
+ * stays put when the map shrinks) and before a boss's name and bar at the top; before the gold
+ * beside a shrunk minimap (`map.gold`), or under one drawn in 52in1's wake band (no `map.tap`),
+ * only where the block's rows reach the gold's row (the tuning's rows on a short screen), so a long
+ * level name wraps as it does on the game's own page.
  */
 function whereRight(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): number {
   let right = W - (m.minimap ? g.map.col + 10 : 6);
@@ -615,7 +628,7 @@ function whereRight(W: number, m: HudModel, g: ReturnType<typeof hudGeometry>): 
     const nameW = name.mini ? miniWidth(name.text) : textWidthPx(name.text);
     right = Math.min(right, Math.floor(Math.min((W - top.w) / 2, (W - nameW) / 2)) - 4);
   }
-  const gold = m.minimap && g.map.gold ? goldZone(W, m, g) : null;
+  const gold = m.minimap && (g.map.gold || !g.map.tap) ? goldZone(W, m, g) : null;
   if (gold && gold.x - 4 < right && leftBottom(leftRows(W, m, g, right), g) > gold.y) right = gold.x - 4;
   return right;
 }
@@ -775,8 +788,8 @@ function bannerRect(W: number, H: number, m: HudModel, g: ReturnType<typeof hudG
   };
   // a phone held sideways keeps off the gold under the minimap as well, wherever that leaves it a
   // clear place (with the strips beside the top-left block, its row at the top is theirs) off the
-  // heroes: a hero weighs more than the gold (in 52in1 a phone too short for a corner map has room
-  // for it over the gold, in that corner); nowhere clear: under the strips, as it always went
+  // heroes: a hero weighs more than the gold (in town, with no corner map, there may be room for it
+  // over the gold, in that corner); nowhere clear: under the strips, as it always went
   const strict = W > H ? settle((z) => BANNER_NEVER.has(z.id) || z.id === 'gold') : null;
   const loose = strict && !overHero(strict) ? null : settle((z) => BANNER_NEVER.has(z.id));
   return (strict && (!loose || overHero(loose)) ? strict : loose) ?? (guests && overlaps(nominal, guests) ? plate(x, guests.y + guests.h + 2, wide, W / 2) : nominal);
@@ -959,9 +972,9 @@ export function drawHud(ui: UiCanvas, m: HudModel, layout?: HudLayout): HudDrawn
     if (b.stacks && b.stacks > 1) ui.mini(x + 11, y - 2, num(b.stacks), 'white', 'right', 'ink');
   });
 
-  // minimap, gold under it (top-right; beside it, or with it off in its corner: `goldY`); the counter glows while it rolls up
+  // minimap, gold under it (top-right; or beside it: `goldY`); the counter glows while it rolls up
   const mw = g.map.w;
-  if (m.minimap && !g.map.off) drawMinimap(ui, m.minimap, W - mw - 4, g.map.y + 2, mw, g.map.h, time);
+  if (m.minimap) drawMinimap(ui, m.minimap, W - mw - 4, g.map.y + 2, mw, g.map.h, time);
   const gy = goldY(m, g);
   const gr = goldRight(W, m, g);
   const gold = goldText(m);

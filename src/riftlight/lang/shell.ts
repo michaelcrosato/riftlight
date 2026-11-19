@@ -344,7 +344,7 @@ const MENUS: LineArea = {
     'legend.back': 'Under a menu, after the button that goes back or closes it (a controller’s Circle, the Esc key).',
     'menu.pause.coop': 'Pause menu button: couch co-op, two to four players on one screen with a game controller each (same-screen co-op).',
     'menu.pause.coop.hint': 'Hint under the Couch co-op button of the pause menu: up to four people play on this one screen, each with a game controller of their own.',
-    'menu.pause.map': 'Pause menu button: opens the level’s map (shown only on a phone screen too small for the little map in the corner, which a tap opens otherwise).',
+    'menu.pause.map': 'Pause menu button: opens the level’s map (shown only on a phone screen where tapping the little map in the corner, which opens it otherwise, cannot work).',
     'menu.pause.map.hint': 'Hint under the Map button of the pause menu: the map shows the places of the level explored so far and the way out (the exit).',
     'menu.coop.leave.hint': 'Hint under a Leave button of the couch co-op menu: that player’s hero goes, and their game controller moves player 1 (the first player) again.',
     'menu.coop.you': 'In the couch co-op menu: the first player’s seat ({seat} is 1), the person holding the keyboard or the first controller.',

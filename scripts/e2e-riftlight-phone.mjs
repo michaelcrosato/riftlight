@@ -36,8 +36,9 @@
 //     layout the page's; the corner map and the gold wholly below the band, the map a thumb across,
 //     over no touch control's DOM rect and none of the HUD, three couch guests and a boss's bar too;
 //     a real tap on the map opens it, one in the band above it nothing. At 882×344 (a Galaxy Z
-//     Fold's cover screen) no map a thumb across fits there: none, the gold over nothing, a tap in
-//     that corner opens nothing, and ≡'s pause menu has Map, which a tap opens
+//     Fold's cover screen) no map a thumb across fits there: it stays at the top, drawn in the band
+//     (shrunk to clear the controls, the gold under it, over nothing), a tap on it opens nothing,
+//     and ≡'s pause menu has Map, which a tap opens
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -730,7 +731,8 @@ export async function runRiftlightPhone(h, orientation) {
     // hub's wake band (a touch above 90 CSS px brings the hub's bar over the game), the top-left
     // text right of it, the data's layout the page's; held sideways at 740×360 too (the shortest
     // phone the corner map has room on below the band), and at 882×344 (a Galaxy Z Fold's cover
-    // screen, too short for one: none, the pause menu opens the level's map)
+    // screen, too short for one there: it stays at the top, drawn in the band, and takes no tap; the
+    // pause menu opens the level's map)
     for (const vp of portrait ? [viewport] : [viewport, { width: 740, height: 360 }, { width: 882, height: 344, short: true }]) {
       const at = `${orientation}${vp === viewport ? '' : ` ${vp.width}×${vp.height}`} in 52in1`;
       const shotTag = `${tag}${vp === viewport ? '' : `-${vp.width}`}`;
@@ -761,25 +763,46 @@ export async function runRiftlightPhone(h, orientation) {
       check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${at}: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
       check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${at}: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
       if (vp.short) {
-        // no corner map: the gold over no touch control's DOM rect and none of the HUD; a real tap in
-        // that corner (in the band, and under it right of the interact button) opens nothing; ≡'s
-        // pause menu has Map, and a tap on it opens the level's map
-        const off = await pageH.evaluate(() => {
+        // no room for a corner map a thumb across below the band: it stays at the top, drawn in the
+        // band (its frame on the HUD's canvas) and shrunk to clear the controls, the gold under it,
+        // both over no touch control's DOM rect and none of the HUD; it takes no tap: a real tap on it
+        // (in the band, and on its rows under the band) opens nothing; ≡'s pause menu has Map, and a
+        // tap on it opens the level's map
+        const top = await pageH.evaluate(() => {
           const e = window.__PIXEL_ENGINE__;
           e.step(2);
           const c = e.renderer.renderer.domElement.getBoundingClientRect();
           const res = e.renderer.resolution;
+          const css = (z) => ({ left: c.left + (z.x / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, right: c.left + ((z.x + z.w) / res.width) * c.width, bottom: c.top + ((z.y + z.h) / res.height) * c.height });
           const hud = window.__RIFTLIGHT__.ui.hud();
-          const gold = hud.zones.find((b) => b.id === 'gold');
-          const g = { left: c.left + (gold.x / res.width) * c.width, top: c.top + (gold.y / res.height) * c.height, right: c.left + ((gold.x + gold.w) / res.width) * c.width, bottom: c.top + ((gold.y + gold.h) / res.height) * c.height };
           const meet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
           const r = e.touch.rects();
-          const over = [];
-          for (const o of [...hud.controls.map((b) => ({ ...b, id: 'control' })), ...hud.zones.filter((b) => b !== gold)]) if (meet(gold, o)) over.push(`the gold over the ${o.id} ${JSON.stringify(o)}`);
-          for (const d of [r.stick, ...r.buttons.filter((b) => !b.hidden).map((b) => b.rect)].filter((b) => b && b.width > 0)) if (g.left < d.right && d.left < g.right && g.top < d.bottom && d.top < g.bottom) over.push(`the gold over a touch control's DOM rect ${JSON.stringify(d)}`);
-          return { ids: hud.zones.map((z) => z.id), over, gold: g };
+          const dom = [r.stick, ...r.buttons.filter((b) => !b.hidden).map((b) => b.rect)].filter((b) => b && b.width > 0);
+          const out = { ids: hud.zones.map((z) => z.id), over: [], drawn: 0 };
+          for (const id of ['minimap', 'gold']) {
+            const z = hud.zones.find((b) => b.id === id);
+            if (!z) continue;
+            out[id] = { ...css(z), art: z };
+            for (const o of [...hud.controls.map((b) => ({ ...b, id: 'control' })), ...hud.zones.filter((b) => b.id !== 'minimap' && b.id !== 'gold')]) if (meet(z, o)) out.over.push(`the ${id} over the ${o.id} ${JSON.stringify(o)}`);
+            for (const d of dom) if (out[id].left < d.right && d.left < out[id].right && out[id].top < d.bottom && d.top < out[id].bottom) out.over.push(`the ${id} over a touch control's DOM rect ${JSON.stringify(d)}`);
+          }
+          // drawn: the share of the map's box the HUD's canvas paints (its frame and cells)
+          const hc = document.querySelector('canvas[data-hud]');
+          const m = out.minimap?.art;
+          if (m && hc?.width) {
+            const k = hc.width / res.width;
+            const d = hc.getContext('2d').getImageData(Math.round(m.x * k), Math.round(m.y * k), Math.round(m.w * k), Math.round(m.h * k)).data;
+            let n = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i]) n++;
+            out.drawn = n / (d.length / 4);
+          }
+          return out;
         });
-        check(!off.ids.includes('minimap') && off.over.length === 0, `${at}: no corner map, the gold (${Math.round(off.gold.left)}-${Math.round(off.gold.right)} × ${Math.round(off.gold.top)}-${Math.round(off.gold.bottom)} CSS px) over nothing${off.ids.includes('minimap') ? ' (a corner map is there)' : ''}${off.over.length ? `: ${off.over.join('; ')}` : ''}`);
+        const mp = top.minimap;
+        check(
+          !!mp && mp.top < 90 && mp.art.y === 2 && top.drawn > 0.9 && top.gold && top.gold.top >= mp.bottom - 3 && top.over.length === 0,
+          `${at}: the corner map at the top, drawn in the band (${mp ? `${Math.round(mp.left)}-${Math.round(mp.right)} × ${Math.round(mp.top)}-${Math.round(mp.bottom)} CSS px, ${Math.round(top.drawn * 100)}% of it painted` : 'none'}), the gold under it (${top.gold ? `from ${Math.round(top.gold.top)} px` : 'none'}), over nothing${top.over.length ? `: ${top.over.join('; ')}` : ''}`,
+        );
         const tapAt = async (x, y) => {
           await pageH.touchscreen.tap(x, y);
           return pageH.evaluate(() => {
@@ -787,7 +810,9 @@ export async function runRiftlightPhone(h, orientation) {
             return { map: window.__RIFTLIGHT__.game.mapOpen, ui: window.__RIFTLIGHT__.state().ui };
           });
         };
-        const corner = [await tapAt(vp.width - 24, 45), await tapAt(vp.width - 24, 100)];
+        // on the map: its middle in the band (the hub's: a touch there wakes its bar), its bottom rows
+        // (under the band where it reaches there), its right edge
+        const corner = mp ? [await tapAt((mp.left + mp.right) / 2, (mp.top + Math.min(mp.bottom, 90)) / 2), await tapAt((mp.left + mp.right) / 2, mp.bottom - 3), await tapAt(mp.right - 4, mp.top + 6)] : [{ map: true }];
         // ≡ (its DOM button) opens the pause menu; its Map entry's rect on the canvas, in CSS px
         const pauseAt = await pageH.evaluate(() => window.__PIXEL_ENGINE__.touch.rects().buttons.find((b) => b.code === 'Escape').rect);
         const paused = await tapAt(pauseAt.left + pauseAt.width / 2, pauseAt.top + pauseAt.height / 2);
@@ -804,7 +829,7 @@ export async function runRiftlightPhone(h, orientation) {
         const shut = await tapAt(vp.width / 2, vp.height / 2);
         check(
           corner.every((c) => !c.map) && paused.ui.includes('pause') && entry && entry.h >= entry.resume && opened?.map && opened.ui.length === 0 && !shut.map,
-          `${at}: a tap in the corner opens nothing (${corner.map((c) => (c.map ? 'the map' : 'nothing')).join(', ')}), ≡ opens the pause menu (${paused.ui.join(',') || 'nothing'}), its Map entry (${entry ? `${Math.round(entry.h)} CSS px tall, Resume ${Math.round(entry.resume)}` : 'missing'}) opens the level's map (${opened ? `${opened.map ? 'open' : 'shut'}, panels ${opened.ui.join(',') || 'none'}` : 'no tap'}), a tap on it closes it (${shut.map ? 'still open' : 'closed'})`,
+          `${at}: a tap on the corner map opens nothing (${corner.map((c) => (c.map ? 'the map' : 'nothing')).join(', ')}), ≡ opens the pause menu (${paused.ui.join(',') || 'nothing'}), its Map entry (${entry ? `${Math.round(entry.h)} CSS px tall, Resume ${Math.round(entry.resume)}` : 'missing'}) opens the level's map (${opened ? `${opened.map ? 'open' : 'shut'}, panels ${opened.ui.join(',') || 'none'}` : 'no tap'}), a tap on it closes it (${shut.map ? 'still open' : 'closed'})`,
         );
         await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
         await pageH.waitForTimeout(1000);

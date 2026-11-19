@@ -1802,20 +1802,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
-    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
+    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y, true);
   }
 
   /**
    * (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or
    * tap there opens or closes it (and is no attack). In 52in1 on a touch page the corner map is below
-   * the hub's wake band (`hudGeometry`), or off on a phone held sideways too short for one: nothing
-   * to tap then (the pause menu opens the level's map: `levelMap`).
+   * the hub's wake band (`hudGeometry`), or, on a phone held sideways too short for one there, drawn
+   * at the top in the band, where it takes no tap (`map.tap`: a tap in the band is the hub's, it
+   * brings its bar over the game; the pause menu opens the level's map: `levelMap`). `drawn`: the
+   * corner map as drawn counts there too (no attack on it, though it opens nothing).
    */
-  private onMap(x: number, y: number): boolean {
+  private onMap(x: number, y: number, drawn = false): boolean {
     if (!this.level || this.layer.top || this.screen !== 'level') return false;
     const ui = this.ui;
     const g = this.geometry();
-    let box: Box | null = g.map.off ? null : { x: ui.w - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 };
+    let box: Box | null = drawn || g.map.tap ? { x: ui.w - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 } : null;
     if (this.mapOpen) {
       const v = mapView(this.mapRoom(), this.minimapModel()!);
       box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
@@ -1823,9 +1825,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return !!box && x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
   }
 
-  /** The level's map from the pause menu, where a touch page has no corner map to tap (`hudGeometry`'s `map.off`); null elsewhere (no Map entry). */
+  /** The level's map from the pause menu, where a touch page's corner map takes no tap (`hudGeometry`'s `map.tap`: 52in1's wake band); null elsewhere (no Map entry). */
   levelMap(): (() => void) | null {
-    if (!this.level || this.screen !== 'level' || !this.geometry().map.off) return null;
+    if (!this.level || this.screen !== 'level' || this.geometry().map.tap) return null;
     return () => {
       this.resume();
       this.mapOpen = true;
