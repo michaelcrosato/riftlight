@@ -208,8 +208,8 @@ and a trigger resting where the pad was first seen never change it, so a keyboar
 DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (none: the
 keyboard), a level's recording keeps the one it began with (`Recording.device`) and save-states
 keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
-a test. With the pad in use or the pointer locked the OS pointer is hidden over the canvas
-(`PointerCursor`, presentation only); the mouse's travel shows it again.
+a test. With the pad in use or the pointer locked (not in a replay) the OS pointer hides over the
+canvas (`PointerCursor`); the mouse's travel shows it again.
 
 **Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
 buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame

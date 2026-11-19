@@ -26,7 +26,7 @@ import { Particles } from './particles/Particles';
 import { type TouchButton, TouchControls, type TouchCorner } from './TouchControls';
 import { Settings, urlSettings } from './settings';
 import { type ControlTable, Controls, setActiveControls } from './controls';
-import { PointerCursor } from './cursor';
+import { hidesPointer, PointerCursor } from './cursor';
 import { SettingsPanel } from './SettingsPanel';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
@@ -1189,11 +1189,12 @@ export class Engine {
   /**
    * The OS mouse pointer over the canvas (`PointerCursor`): hidden while the pad is the device in
    * use (`controls.device`) or the pointer is locked, shown again once the mouse travels (the
-   * device turns back to the keyboard and mouse). Presentation only; nothing headless.
+   * device turns back to the keyboard and mouse). Presentation only: nothing headless, nor in a
+   * replay (`hidesPointer`).
    */
   private followCursor(): void {
     const el = this.gpu?.renderer.domElement ?? null;
-    this.cursor.follow(el, !!el && (this.controls.device === 'pad' || this.input.pointerLocked));
+    this.cursor.follow(el, !!el && hidesPointer({ device: this.controls.device, locked: this.input.pointerLocked, playing: this.input.playing }));
   }
 
   /**

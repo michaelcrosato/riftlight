@@ -3,9 +3,15 @@
  * while the pad is the device in use (`controls.device`) or the pointer is locked, so a resting
  * arrow never sits over a game played on a pad at ten feet; shown again once the mouse travels (the
  * device in use turns back to the keyboard and mouse: `Input`'s few pixels of travel).
- * Presentation only: nothing is recorded and no gameplay reads it. A cursor style the game set on
- * the canvas comes back as it was, and one it sets while the pointer is hidden is kept.
+ * Presentation only: nothing is recorded and no gameplay reads it, and a replay hides nothing (its
+ * device is the recording's, and the viewer's mouse could not bring the pointer back). A cursor
+ * style the game set on the canvas comes back as it was, and one it sets while hidden is kept.
  */
+
+/** The engine's rule (`Engine`, each frame): the pointer hides while the pad is in use or the pointer is locked, never while a replay plays. */
+export function hidesPointer(o: { readonly device: string; readonly locked: boolean; readonly playing: boolean }): boolean {
+  return !o.playing && (o.device === 'pad' || o.locked);
+}
 
 /** What the pointer's style is set on: the engine's canvas (anything with a `style.cursor`). */
 export interface CursorTarget {

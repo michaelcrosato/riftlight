@@ -175,6 +175,19 @@ export async function runSystems(h) {
     });
     check(afterMouse.device === 'keyboard', `a mouse move over the canvas is the keyboard and mouse again (${afterMouse.device})`);
     check(afterMouse.cursor !== 'none', `and the OS pointer shows again (${afterMouse.cursor})`);
+    // a replay of a pad recording hides nothing: its device is the recording's, the viewer's mouse could not bring it back
+    const replayed = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      e.input.playing = true;
+      e.input.playFrom('pad'); // what a pad recording's level began with
+      await window.__T.frames(2);
+      const r = { device: e.controls.device, cursor: getComputedStyle(e.renderer.renderer.domElement).cursor };
+      e.input.playing = false;
+      e.input.noteDevice('keyboard');
+      await window.__T.frames(2);
+      return r;
+    });
+    check(replayed.device === 'pad' && replayed.cursor !== 'none', `a replay of the pad keeps the OS pointer over the canvas (${replayed.device}: ${replayed.cursor})`);
 
     // ---------------------------------------------------------------- capture freshness
     // renderer.capture() right after engine.step() in a frame the loop already rendered

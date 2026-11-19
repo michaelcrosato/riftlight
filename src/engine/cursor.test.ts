@@ -1,7 +1,7 @@
 // The OS pointer over the canvas (`PointerCursor`): hidden while the pad is in use or the pointer
 // is locked, given back as it was once the mouse travels; a cursor the game set is never lost.
 import { describe, expect, it } from 'vitest';
-import { PointerCursor } from './cursor';
+import { hidesPointer, PointerCursor } from './cursor';
 
 const canvas = (cursor = '') => ({ style: { cursor } });
 
@@ -34,6 +34,15 @@ describe('the OS pointer over the canvas', () => {
     // headless (no canvas), or the engine disposed: shown
     c.follow(null, false);
     expect([next.style.cursor, c.isHidden]).toEqual(['', false]);
+  });
+
+  it('hides on the pad or a locked pointer, never in a replay (its device is the recording’s; the mouse could not bring it back)', () => {
+    expect(hidesPointer({ device: 'keyboard', locked: false, playing: false })).toBe(false);
+    expect(hidesPointer({ device: 'touch', locked: false, playing: false })).toBe(false);
+    expect(hidesPointer({ device: 'pad', locked: false, playing: false })).toBe(true);
+    expect(hidesPointer({ device: 'keyboard', locked: true, playing: false })).toBe(true);
+    expect(hidesPointer({ device: 'pad', locked: false, playing: true }), 'a pad recording replayed').toBe(false);
+    expect(hidesPointer({ device: 'keyboard', locked: true, playing: true })).toBe(false);
   });
 
   it('a game that hides the pointer itself keeps it hidden', () => {
