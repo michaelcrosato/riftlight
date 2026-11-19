@@ -175,20 +175,47 @@ export function measureTooltip(lines: readonly TipLine[]): { w: number; h: numbe
   return { w, h };
 }
 
-/** Paint a tooltip with its top-left at (x, y); returns its size. */
-export function drawTooltip(p: Painter, x: number, y: number, lines: readonly TipLine[], edge?: number): { w: number; h: number } {
+/**
+ * A tooltip `h` art rows tall at most (one taller than the screen) scrolled down `scroll` rows:
+ * each line's top in the box (`y` from the box's top), the lines wholly inside it only.
+ */
+export function tooltipView(lines: readonly TipLine[], view?: { readonly h: number; readonly scroll: number }): { line: TipLine; y: number }[] {
+  const h = view ? Math.min(measureTooltip(lines).h, view.h) : Infinity;
+  const out: { line: TipLine; y: number }[] = [];
+  let y = 4 - (view?.scroll ?? 0);
+  for (const line of lines) {
+    // a text line's glyphs are 7 rows (LINE_H with its gap), a rule 1 row 2 below its top
+    if (y >= 3 && y + (line.sep ? 3 : 7) <= h - 3) out.push({ line, y });
+    y += line.sep ? 5 : LINE_H;
+  }
+  return out;
+}
+
+/**
+ * Paint a tooltip with its top-left at (x, y); returns its size. With `view` (one taller than the
+ * screen) a box `view.h` tall shows the lines scrolled `view.scroll` rows down (`tooltipView`) and a
+ * bar at its right edge where they are.
+ */
+export function drawTooltip(p: Painter, x: number, y: number, lines: readonly TipLine[], edge?: number, view?: { readonly h: number; readonly scroll: number }): { w: number; h: number } {
   const size = measureTooltip(lines);
-  panel(p, x, y, size.w, size.h, edge ?? lines[0]?.color ?? UI.panelEdge);
-  let cy = y + 4;
-  for (const l of lines) {
+  const h = view ? Math.min(size.h, view.h) : size.h;
+  panel(p, x, y, size.w, h, edge ?? lines[0]?.color ?? UI.panelEdge);
+  for (const { line: l, y: ly } of tooltipView(lines, view)) {
+    const cy = y + ly;
     if (l.sep) {
       p.rect(x + 4, cy + 2, size.w - 8, 1, UI.panelEdge);
-      cy += 5;
       continue;
     }
     const tx = l.center ? x + Math.floor((size.w - textWidth(l.text)) / 2) : x + 5;
     p.text(tx, cy, l.text, l.color);
-    cy += LINE_H;
   }
-  return size;
+  if (view && h < size.h) {
+    // the scroll bar: its track the box's inside, its thumb the part in view
+    const track = h - 8;
+    const thumb = Math.max(4, Math.round((track * h) / size.h));
+    const at = Math.round(((track - thumb) * Math.min(view.scroll, size.h - h)) / (size.h - h));
+    p.rect(x + size.w - 3, y + 4, 1, track, UI.cell);
+    p.rect(x + size.w - 3, y + 4 + at, 1, thumb, UI.panelHi);
+  }
+  return { w: size.w, h };
 }

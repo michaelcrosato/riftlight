@@ -585,7 +585,7 @@ export class ItemsPanel implements Panel {
     return this.loot.active === this ? this.loot.itemsUi().legendAt(w, avoid) : null;
   }
 
-  /** A swipe down from a window's title bar closes the windows (`ItemsUi.swipeCloses`); a quick drag elsewhere moves an item. */
+  /** A swipe down or sideways from a window's title bar closes the windows (`ItemsUi.swipeCloses`); a quick drag elsewhere moves an item. */
   swipeCloses(dir: SwipeDirection, x: number, y: number): boolean {
     return this.loot.active === this && this.loot.itemsUi().swipeCloses(dir, x, y);
   }

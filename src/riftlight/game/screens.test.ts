@@ -2,18 +2,24 @@
 // the strip's names are buttons; every framed panel says what the controls do for the device in
 // use; the character sheet in pages; the death recap's summary first and its tables behind Details;
 // the mouse in the world (a click on a townsperson walks there and talks, no swing, after the
-// mouse came to rest there too: hit-tested where it was pressed); the pad's
-// focus framed round a whole item; the HUD's clock and counts in the normal font. One engine for
+// mouse came to rest there too: hit-tested where it was pressed); the pad's focus framed round a
+// whole item; the item windows' tooltips off the other window's title bar, one taller than the
+// screen scrolled by the right stick or the wheel (desktop sizes: `setViewport`); the HUD's clock
+// and counts in the normal font. One engine for
 // the file, tests in order. `rl.press` is the engine's input, not the page's: the tree's view
 // takes the page's keyboard, so real Q / E through the tree are scripts/e2e-riftlight-items.mjs'.
 import { Vector3 } from 'three/webgpu';
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Snapshot } from '../../engine';
+import { HEADLESS_VIEWPORT, type HeadlessView, type Snapshot } from '../../engine';
 import type { Item } from '../core/types';
 import type { Interactable } from '../town/Town';
 import { type HeadlessRiftlight, headlessRiftlight, hudTexts, pointAtArt } from '../headless';
 import { t } from '../lang';
-import { CELL } from '../ui/items/ItemsUi';
+import { CELL, FOCUS, HEADER } from '../ui/items/ItemsUi';
+import { type Painter, textWidth } from '../ui/items/paint';
+import { RARITY_COLOURS } from '../loot/filter';
+import { SKILLS } from '../skills/actives';
+import { PALETTE } from '../../engine/palette';
 import type { CharacterSheet, DeathRecap } from '../ui/panels';
 import type { RealHero } from '../wire/hero';
 import type { RealLoot } from '../wire/loot';
@@ -28,8 +34,8 @@ import { thingBox } from './Riftlight';
 const T = 30_000;
 let h: HeadlessRiftlight;
 
-/** A pad in the standard layout with `pressed` buttons down. */
-const pad = (pressed: number[] = []) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+/** A pad in the standard layout with `pressed` buttons down (and its sticks at `axes`). */
+const pad = (pressed: number[] = [], axes = [0, 0, 0, 0]) => ({ connected: true, mapping: 'standard', index: 0, axes, buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
 /** Pad button `b` pressed for a frame and let go. */
 const tap = (b: number) => {
   h.engine.input.setGamepads([pad([b])]);
@@ -38,10 +44,23 @@ const tap = (b: number) => {
   h.engine.step(1);
 };
 const stack = () => h.rl.state().ui;
+/** The headless page (its size: `setViewport`). */
+const view = () => h.engine.renderer as HeadlessView;
 const texts = () => hudTexts(h.engine, 1).map((x) => x.text);
 const loot = () => h.game.ports.loot as RealLoot;
 /** The item windows last used with the mouse (their cursor is kept while they are shut). */
 const mouseLast = () => loot().itemsUi().setViewState({ ...loot().itemsUi().viewState(), cursorMode: 'pointer' });
+/** What the item windows draw now (headless nothing is painted): each rect, and each text in the normal font (the mini font is rects). */
+const drawn = () => {
+  const rects: { x: number; y: number; w: number; h: number; color: number }[] = [];
+  const texts: { x: number; y: number; text: string }[] = [];
+  const p: Painter = {
+    rect: (x, y, w, h, color) => void rects.push({ x, y, w, h, color }),
+    text: (x, y, text) => (texts.push({ x, y, text }), textWidth(text)),
+  };
+  loot().ui!.drawOn(p);
+  return { rects, texts };
+};
 
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 616 });
@@ -185,7 +204,68 @@ describe('Riftlight at ten feet', () => {
     const r = ui.focusRect()!;
     expect(r.h, 'a sword is taller than a cell: the frame takes all of it').toBeGreaterThan(CELL);
     expect(r.w).toBe(CELL - 1);
+    // its shape sets it apart, not its colour: a double frame (white, ink, white) where an item's is
+    // one pixel, a rare's sand as every rare's around it, some skill gems' white (Cleave's)
+    const framed = (own: number, what: string) => {
+      const f = ui.focusRect()!;
+      const { rects } = drawn();
+      /** The colour of the last left edge drawn `d` pixels outside the focused box. */
+      const edge = (d: number) => rects.filter((q) => q.x === f.x - d && q.y === f.y - d && q.w === 1 && q.h === f.h + 2 * d).at(-1)?.color;
+      expect(edge(0), `${what}: its own frame`).toBe(own);
+      expect([edge(1), edge(2), edge(3)], `${what}: white, ink, white`).toEqual([FOCUS, PALETTE.ink, FOCUS]);
+      // every double frame drawn (a 1-px white left edge with an ink one a pixel inside it): the focus's alone
+      const doubles = rects.filter((a) => a.w === 1 && a.color === FOCUS && rects.some((b) => b.w === 1 && b.color === PALETTE.ink && b.x === a.x + 1 && b.y === a.y + 1 && b.h === a.h - 2));
+      expect(
+        doubles.map((a) => [a.x, a.y]),
+        `${what}: no item’s frame is double`,
+      ).toEqual([[f.x - 3, f.y - 3]]);
+    };
+    const rare = loot().give(h.game.services.rng, 10, 'rare')!;
+    expect(rare, 'a rare in the bag').not.toBeNull();
+    for (let k = 0; k < 4; k++) expect(loot().give(h.game.services.rng, 10, 'rare'), 'more rares round it').not.toBeNull();
+    ui.cursor = { ...ui.itemCenter(rare.uid)! };
+    framed(RARITY_COLOURS.rare, 'a rare in a bag of rares');
+    rl.press('Tab'); // the skill panel beside the bag, the focus on its selected skill's gem
+    expect(ui.left).toBe('skills');
+    const white = loot().store.skills.findIndex((s) => s.gem && SKILLS.has(s.gem.gem!.id) && SKILLS.get(s.gem.gem!.id).look.color === 'white');
+    expect(white, 'a skill gem framed white (Cleave’s)').toBeGreaterThanOrEqual(0);
+    ui.cursor = { ...ui.socketCenter(white, -1) };
+    framed(FOCUS, 'a skill gem framed white');
     rl.press('Escape');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('at ten feet the skill panel’s rows are in the normal font, names and costs whole (the window wider for them)', () => {
+    const { rl, engine } = h;
+    mouseLast();
+    expect(rl.ui.open('skills')).toBe(true);
+    engine.step(2);
+    const ui = loot().ui!;
+    expect(ui.tenFoot(), 'a desktop’s screen, no touch controls').toBe(true);
+    const win = ui.leftRect();
+    const { texts } = drawn();
+    const rows = ui.numbers();
+    expect(rows.filter(Boolean).length, 'the starter gems').toBe(4);
+    for (const n of rows) {
+      if (!n) continue;
+      const name = texts.find((x) => x.text === n.name);
+      expect(name, `${n.name}: in the normal font, whole`).toBeDefined();
+      expect(name!.x + textWidth(n.name), `${n.name}: inside the window`).toBeLessThanOrEqual(win.x + win.w - 3);
+      const costs = texts.filter((x) => x.y === name!.y + 9 && x.x === name!.x).map((x) => x.text);
+      expect(costs, `${n.name}: its cost under it in the normal font`).toEqual([expect.stringMatching(/ MP/)]);
+      expect(costs[0]!.endsWith('.'), `${costs[0]}: whole, not clipped`).toBe(false);
+    }
+    // the pad's focus round a skill's gem keeps clear of the slot's number (the sockets further in)
+    ui.cursorMode = 'pad';
+    for (let s = 0; s < 4; s++) {
+      ui.cursor = { ...ui.socketCenter(s, -1) };
+      const f = ui.focusRect()!;
+      const key = drawn().texts.find((x) => x.text === String(s + 1) && x.x < f.x && x.y >= f.y - 3 && x.y < f.y + f.h);
+      expect(key, `slot ${s + 1}: its number`).toBeDefined();
+      expect(f.x - 3, `slot ${s + 1}: the focus right of its number`).toBeGreaterThanOrEqual(key!.x + textWidth(key!.text));
+    }
+    rl.ui.close();
+    engine.step(1);
     expect(engine.errors).toEqual([]);
   });
 
@@ -256,6 +336,177 @@ describe('Riftlight at ten feet', () => {
     expect(stack()).toEqual([]);
     engine.input.setGamepads(null);
     engine.input.noteDevice('keyboard');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('a window that gains focus takes the pad’s: R1 from a bag item to Skills puts it in the skill panel and the item’s tooltip goes; L1, Tab and the stash do the same', () => {
+    const { rl, engine } = h;
+    const ui = loot().itemsUi();
+    /** The pad's focus is inside window `r`. */
+    const focusIn = (r: { x: number; y: number; w: number; h: number }) => {
+      const f = ui.focusRect();
+      return !!f && f.x >= r.x && f.y >= r.y && f.x + f.w <= r.x + r.w && f.y + f.h <= r.y + r.h;
+    };
+    mouseLast();
+    engine.input.setGamepads([pad()]);
+    engine.step(1);
+    tap(8); // Create: the inventory, with the pad in use
+    expect(stack()).toEqual(['inventory']);
+    ui.cursor = { ...ui.itemCenter('tv-sword')! }; // the focus on a bag item: its tooltip shows
+    engine.step(1);
+    const sword = ui.tipText();
+    expect(sword?.[0], 'the sword’s tooltip').toBe('Arming Sword');
+    tap(5); // R1: the next screen, Skills
+    expect(stack()).toEqual(['skills']);
+    expect(focusIn(ui.leftRect()), 'the focus in the skill panel').toBe(true);
+    expect(ui.cursor, 'on the selected skill’s gem').toEqual(ui.socketCenter(ui.skillSlot, -1));
+    expect(ui.tipText()?.[0], 'its gem’s tooltip, not the bag item’s over the skills').not.toBe(sword![0]);
+    tap(4); // L1: back to the inventory
+    expect(stack()).toEqual(['inventory']);
+    expect(focusIn(ui.rightRect()), 'the focus back in the bag').toBe(true);
+    // the keys drive the same focus: Tab shows the skill panel beside the bag (the focus goes in), Tab again hides it
+    engine.input.setGamepads(null);
+    engine.input.noteDevice('keyboard');
+    rl.press('Tab');
+    expect(ui.left).toBe('skills');
+    expect(focusIn(ui.leftRect()), 'Tab: the focus in the skill panel').toBe(true);
+    rl.press('Tab');
+    expect(ui.left).toBeNull();
+    expect(focusIn(ui.rightRect()), 'Tab again: back in the bag').toBe(true);
+    rl.press('Escape');
+    expect(stack()).toEqual([]);
+    // the stash opens with the focus in it, not on the bag item it was last on
+    ui.cursor = { ...ui.itemCenter('tv-sword')! };
+    rl.talkTo('stash');
+    expect(stack()).toEqual(['stash']);
+    expect(focusIn(ui.leftRect()), 'the stash window has the focus').toBe(true);
+    rl.press('Escape');
+    expect(stack()).toEqual([]);
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('R1 to Skills on a desktop: the focused gem’s tooltip, beside the wide skill panel and over the bag, keeps off the bag’s title bar (its name, the Gems button)', () => {
+    const { engine } = h;
+    const ui = loot().itemsUi();
+    try {
+      for (const viewport of [
+        { width: 1280, height: 720, dpr: 1 },
+        { width: 1920, height: 1080, dpr: 1 },
+      ]) {
+        const where = `${viewport.width}×${viewport.height}`;
+        view().setViewport(viewport);
+        mouseLast();
+        engine.input.setGamepads([pad()]);
+        engine.step(1);
+        tap(8); // Create: the inventory, with the pad in use
+        tap(5); // R1: Skills, the focus on the selected skill's gem
+        expect(stack()).toEqual(['skills']);
+        const tip = ui.cursorTip();
+        expect(tip?.lines[0], `${where}: the gem’s tooltip`).toBe(ui.tipText()?.[0]);
+        const bag = ui.rightRect();
+        const bar = { ...bag, h: HEADER };
+        expect(overlaps(tip!.rect, bag, 0), `${where}: it reaches over the bag`).toBe(true);
+        expect(overlaps(tip!.rect, bar, 0), `${where}: clear of the bag’s title bar`).toBe(false);
+        expect(tip!.max, `${where}: whole`).toBe(0);
+        tap(1);
+        expect(stack()).toEqual([]);
+      }
+    } finally {
+      view().setViewport(HEADLESS_VIEWPORT);
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      engine.step(1);
+    }
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('a tooltip taller than a desktop’s screen (a vendor’s rare at 1280×720) shows what fits and scrolls: by the right stick on the pad, the wheel with the mouse', () => {
+    const { game, engine } = h;
+    const ui = loot().itemsUi();
+    try {
+      view().setViewport({ width: 1280, height: 720, dpr: 1 });
+      mouseLast();
+      engine.input.setGamepads([pad()]);
+      engine.step(1);
+      const ilsa = game.town.interactables.find((x) => x.id === 'ilsa')!;
+      game.hero.enter(game.town, ilsa.position.clone(), 0);
+      engine.step(2);
+      tap(7); // R2: Ilsa's wares, with the pad's focus
+      expect(stack()).toEqual(['vendor']);
+      expect(ui.cursorMode).toBe('pad');
+      // her wares' tallest tooltip (a rare's: its stats, the price, the comparison with the gear, the hint)
+      const over = (i: Item) => {
+        ui.cursor = { ...ui.itemCenter(i.uid)! };
+        return ui.cursorTip()?.max ?? 0;
+      };
+      const tall = loot().store.vendor.stock.reduce((a, b) => (over(b) > over(a) ? b : a));
+      ui.cursor = { ...ui.itemCenter(tall.uid)! };
+      engine.step(1);
+      const all = ui.tipText()!;
+      const before = ui.cursorTip()!;
+      expect(before.max, 'taller than the screen').toBeGreaterThan(0);
+      expect(before.rect.y + before.rect.h, 'what fits, above the screen’s bottom').toBeLessThanOrEqual(engine.renderer.resolution.height - 2);
+      expect([before.scroll, before.lines[0]], 'from its top: its name').toEqual([0, all[0]]);
+      expect(before.lines, 'its last line (the hint) cut off').not.toContain(all.at(-1));
+      // the right stick down: its last lines come up; up: back to its top
+      const stick = (y: number, frames: number) => {
+        engine.input.setGamepads([pad([], [0, 0, 0, y])]);
+        engine.step(frames);
+        engine.input.setGamepads([pad()]);
+        engine.step(1);
+      };
+      expect(before.max, 'more than two lines over').toBeGreaterThan(18);
+      stick(1, 6);
+      const part = ui.cursorTip()!.scroll;
+      expect(part, 'a moment’s tilt: some of the way').toBeGreaterThan(0);
+      expect(part).toBeLessThan(before.max);
+      stick(1, 120);
+      const end = ui.cursorTip()!;
+      expect([end.scroll, end.lines.at(-1)], 'the stick: to its end, the hint in view').toEqual([before.max, all.at(-1)]);
+      expect(ui.cursorMode, 'still the pad’s focus').toBe('pad');
+      expect(stack()).toEqual(['vendor']);
+      stick(-1, 120);
+      expect(ui.cursorTip()!.scroll, 'up: its top').toBe(0);
+      // the focus leaves it and comes back: it shows from its top again
+      stick(1, 120);
+      ui.cursor = { ...ui.cellCenter('inventory', 0, 0) };
+      engine.step(1);
+      ui.cursor = { ...ui.itemCenter(tall.uid)! };
+      engine.step(1);
+      expect(ui.cursorTip()!.scroll, 'left and back: from its top').toBe(0);
+      // the mouse over it: the wheel scrolls its tooltip (beside the window), and nothing else
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      const at = ui.itemCenter(tall.uid)!;
+      pointAtArt(engine, at.x, at.y);
+      engine.step(2);
+      expect(ui.cursorMode).toBe('pointer');
+      const zoom = (game as unknown as { settings: { zoom: number } }).settings.zoom;
+      const wheel = (ticks: number) => {
+        engine.input.addPointer(0, 0, ticks);
+        engine.step(1);
+      };
+      const hover = ui.cursorTip()!;
+      const words = ui.tipText()!; // its hints the mouse's
+      expect([hover.scroll, hover.lines[0]], 'the mouse’s tooltip from its top').toEqual([0, words[0]]);
+      expect(hover.max).toBeGreaterThan(0);
+      wheel(1);
+      expect(ui.cursorTip()!.scroll, 'a tick: two lines').toBe(18);
+      for (let k = 0; k < 20; k++) wheel(1);
+      const down = ui.cursorTip()!;
+      expect([down.scroll, down.lines.at(-1)], 'the wheel: to its end, the hint in view').toEqual([hover.max, words.at(-1)]);
+      for (let k = 0; k < 20; k++) wheel(-1);
+      expect(ui.cursorTip()!.scroll, 'back up: its top').toBe(0);
+      expect((game as unknown as { settings: { zoom: number } }).settings.zoom, 'the camera never zoomed').toBe(zoom);
+      expect(stack()).toEqual(['vendor']);
+      h.rl.press('Escape');
+      expect(stack()).toEqual([]);
+    } finally {
+      view().setViewport(HEADLESS_VIEWPORT);
+      engine.input.setGamepads(null);
+      engine.input.noteDevice('keyboard');
+      engine.step(1);
+    }
     expect(engine.errors).toEqual([]);
   });
 
