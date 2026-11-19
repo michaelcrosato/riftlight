@@ -7,6 +7,8 @@
 //   over the mana orb, the skill bar and the minimap);
 // - a landscape phone draws Riftlight's denser art (two CSS pixels per art pixel at least);
 // - the Arena (?game=arena) gets Riftlight's touch buttons, each naming a control it has;
+// - a phone in 52in1, held either way, has the whole corner map (a tap target) and the gold below the
+//   hub's wake band, over no control and none of the HUD, couch guests and a boss's bar too;
 // - a phone's recording (and save-state) made in 52in1 replays with ≡ where 52in1 put it, below the
 //   hub's wake band, with no hub behind the replay: the HUD it lays out, and a tap lands on, is the
 //   recorded one.
@@ -238,15 +240,18 @@ describe('a phone in 52in1: the corner map', () => {
       g.engine.step(1);
     }
   };
-  for (const [viewport, moves] of [
-    [{ width: 390, height: 844, dpr: 3 }, true],
-    [{ width: 360, height: 800, dpr: 3 }, true],
-    // on its side the skills' arc is under the corner: the map stays, its part below the band the target
-    [{ width: 740, height: 360, dpr: 2 }, false],
-    [{ width: 844, height: 390, dpr: 2 }, false],
+  for (const viewport of [
+    { width: 390, height: 844, dpr: 3 },
+    { width: 360, height: 800, dpr: 3 },
+    // on its side the skills' arc is under the corner: the map shrinks to fit above it, the gold beside it
+    { width: 740, height: 360, dpr: 2 },
+    { width: 844, height: 390, dpr: 2 },
+    { width: 915, height: 412, dpr: 2.625 },
+    { width: 812, height: 375, dpr: 3 },
   ] as const) {
+    const sideways = viewport.width > viewport.height;
     it(
-      `${viewport.width}×${viewport.height}: a tap target, it ${moves ? 'sits below the hub’s wake band as ≡ does' : 'takes a tap only below the hub’s wake band'} (on its own page at the top), and a tap there opens the level's map`,
+      `${viewport.width}×${viewport.height}: a tap target, the whole of it sits below the hub’s wake band as ≡ does, the gold ${sideways ? 'beside' : 'under'} it, over no control and none of the HUD, with couch guests and a boss's bar too (on its own page at the top, its full size); a tap on it opens the level's map, one in the band nothing`,
       async () => {
         const top = async (hubSettings?: object) => {
           h?.engine.dispose();
@@ -262,28 +267,42 @@ describe('a phone in 52in1: the corner map', () => {
           return { map, css: (y: number) => f.offsetY + (y / f.artHeight) * f.cssHeight };
         };
         const alone = await top();
-        expect(alone.map.y, 'on its own page: at the top').toBe(2);
+        expect([alone.map.y, alone.map.h], 'on its own page: at the top, its full size').toEqual([2, sideways ? 68 : 38]);
         const hub = await top({});
         const g = h!.game;
         const wake = g.touchPad.wakeArt();
         expect(hub.css(wake), 'the band in art pixels').toBeGreaterThanOrEqual(HUB_WAKE);
-        if (moves) {
-          expect(hub.map.y, `in 52in1 its top is below the wake band (${HUB_WAKE} CSS px)`).toBe(wake);
-          // the HUD around it: the gold under it, clear of the controls
-          const gold = g.hudRects().zones.find((z) => z.id === 'gold')!;
-          expect(gold.y, 'the gold under the map').toBeGreaterThanOrEqual(hub.map.y + hub.map.h - 1);
-          for (const c of g.hudRects().controls) expect(overlaps(c, { ...hub.map, h: gold.y + gold.h - hub.map.y }), `clear of ${JSON.stringify(c)}`).toBe(false);
-        } else expect(hub.map.y, 'at the top, over the skills’ arc no more').toBe(2);
-        // what takes a tap: its part below the band, a thumb tall at least (44 CSS px)
-        const target = { x: hub.map.x, y: Math.max(hub.map.y, wake), w: hub.map.w, h: hub.map.y + hub.map.h - Math.max(hub.map.y, wake) };
-        expect(hub.css(target.y + target.h) - hub.css(target.y), 'a thumb tall').toBeGreaterThanOrEqual(44);
-        if (!moves) {
-          // a tap on its part in the band is the hub's: no map (and no swing)
-          tap(h!, target.x + target.w / 2, Math.floor(wake / 2));
-          expect(g.mapOpen, 'a tap in the wake band opens nothing').toBe(false);
+        /** The corner map and the gold: below the band, over no control and none of the rest of the HUD (the level's banner too). */
+        const clear = (where: string) => {
+          const r = g.hudRects();
+          const map = r.zones.find((z) => z.id === 'minimap')!;
+          const gold = r.zones.find((z) => z.id === 'gold')!;
+          for (const own of [map, gold]) {
+            expect(own.y, `${where}: the ${own.id} ${JSON.stringify(own)} below the wake band (${wake} rows)`).toBeGreaterThanOrEqual(wake);
+            for (const z of [...r.controls, ...r.zones.filter((z) => z !== map && z !== gold)]) expect(overlaps(own, z), `${where}: the ${own.id} ${JSON.stringify(own)} over ${JSON.stringify(z)}`).toBe(false);
+          }
+          if (sideways) expect(gold.x + gold.w <= map.x && gold.y < map.y + 10, `${where}: the gold ${JSON.stringify(gold)} beside the map ${JSON.stringify(map)}`).toBe(true);
+          else expect(gold.y, `${where}: the gold under the map`).toBeGreaterThanOrEqual(map.y + map.h - 1);
+          return map;
+        };
+        const map = clear('a level, its banner up');
+        expect(map).toEqual(hub.map);
+        // couch guests (players 2 to 4) and a boss's bar: the map stays put, they keep off it and the gold
+        const boss = (g.level as unknown as { bossUnit: { actor: { life: number; maxLife: number } } }).bossUnit;
+        boss.actor.life = boss.actor.maxLife * 0.8; // its bar shows
+        for (const slot of [1, 2, 3]) {
+          expect(g.coop.join(slot), `a guest on pad ${slot}`).not.toBeNull();
+          h!.engine.step(2);
+          expect(g.hudRects().zones.filter((z) => z.id === 'boss' || z.id === 'guests').length, "the boss's bar and the strips").toBe(2);
+          expect(clear(`${slot} guest(s) and a boss`), 'where it was').toEqual(map);
         }
-        tap(h!, target.x + target.w / 2, target.y + target.h / 2);
-        expect(g.mapOpen, 'a tap below the band on the corner map opens the map').toBe(true);
+        // what takes a tap: all of it, a thumb tall at least (44 CSS px)
+        expect(hub.css(map.y + map.h) - hub.css(map.y), 'a thumb tall').toBeGreaterThanOrEqual(44);
+        // a tap in the band above it is the hub's: no map
+        tap(h!, map.x + map.w / 2, Math.floor(wake / 2));
+        expect(g.mapOpen, 'a tap in the wake band opens nothing').toBe(false);
+        tap(h!, map.x + map.w / 2, map.y + map.h / 2);
+        expect(g.mapOpen, 'a tap on the corner map opens the map').toBe(true);
         expect(h!.engine.errors).toEqual([]);
       },
       T,

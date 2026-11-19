@@ -31,9 +31,11 @@
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px; on a 360×800 phone (120 art columns) the character sheet's
 //     labels and header and the save slots' entries are whole (two rows where long), never cut
-//   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
-//     px or lower), the top-left block right of it, the data's layout the page's; the corner map
-//     takes a real tap only below the band (a thumb tall at least), one in the band opens nothing
+//   - in 52in1 (window.AIHubSettings on the page; landscape at 740×360 too): ≡ below the hub's wake
+//     band (its top at 90 CSS px or lower), the top-left block right of it, the data's layout the
+//     page's; the corner map and the gold wholly below the band, the map a thumb across, over no
+//     touch control's DOM rect and none of the HUD, three couch guests and a boss's bar too; a real
+//     tap on the map opens it, one in the band above it nothing
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -724,9 +726,12 @@ export async function runRiftlightPhone(h, orientation) {
 
     // in 52in1 (its companion sets window.AIHubSettings before the game's first script): ≡ below the
     // hub's wake band (a touch above 90 CSS px brings the hub's bar over the game), the top-left
-    // text right of it, the data's layout the page's
-    ctx = await launch(exe, s, { viewport, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
-    {
+    // text right of it, the data's layout the page's; held sideways at 740×360 too (the shortest
+    // phone the corner map has room on below the band)
+    for (const vp of portrait ? [viewport] : [viewport, { width: 740, height: 360 }]) {
+      const at = `${orientation}${vp === viewport ? '' : ` ${vp.width}×${vp.height}`} in 52in1`;
+      const shotTag = `${tag}${vp === viewport ? '' : `-${vp.width}`}`;
+      ctx = await launch(exe, s, { viewport: vp, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
       const pageH = ctx.page;
       await pageH.addInitScript(() => {
         const dualsense = { connected: false, lightbar: false, triggers: false, motion: false, touchpad: false, speaker: false, aim: false };
@@ -750,38 +755,72 @@ export async function runRiftlightPhone(h, orientation) {
         return { hub: e.hubSettings.present, top: menu.rect.top, cy: menu.rect.top + menu.rect.height / 2, hidden: menu.hidden, page: rl.ui.hud().controls, data: g.touchPad.dataLayout(), where, menuArt: m };
       });
       const same = JSON.stringify(hub.page) === JSON.stringify(hub.data);
-      check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${orientation} in 52in1: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
-      check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${orientation} in 52in1: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
-      // the corner map, a tap target: below the wake band where it fits (upright), else only its part
-      // below the band takes a tap (on its side the skills' arc is under it); a real finger's tap there
-      // opens the level's map, one on its part in the band (the hub's) opens nothing
-      const map = await pageH.evaluate(() => {
-        const e = window.__PIXEL_ENGINE__;
-        const z = window.__RIFTLIGHT__.ui.hud().zones.find((b) => b.id === 'minimap');
-        const c = e.renderer.renderer.domElement.getBoundingClientRect();
-        const res = e.renderer.resolution;
-        return { x: c.left + ((z.x + z.w / 2) / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, bottom: c.top + ((z.y + z.h) / res.height) * c.height };
+      check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${at}: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
+      check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${at}: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
+      // the corner map, a tap target, and the gold under it (beside it on a phone held sideways, the
+      // map shrunk to fit above the skills' arc): wholly below the band, a thumb across, over no
+      // touch control on the page (their DOM rects) and none of the rest of the HUD (`ui.hud()`), with
+      // couch guests and a boss's bar too; a real finger's tap on it opens the level's map, one in
+      // the band above it (the hub's) opens nothing
+      const corner = () =>
+        pageH.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          e.step(2);
+          const c = e.renderer.renderer.domElement.getBoundingClientRect();
+          const res = e.renderer.resolution;
+          const css = (z) => ({ left: c.left + (z.x / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, right: c.left + ((z.x + z.w) / res.width) * c.width, bottom: c.top + ((z.y + z.h) / res.height) * c.height });
+          const hud = window.__RIFTLIGHT__.ui.hud();
+          const meet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          const r = e.touch.rects();
+          const dom = [r.stick, ...r.buttons.filter((b) => !b.hidden).map((b) => b.rect)].filter((b) => b && b.width > 0);
+          const out = { ids: hud.zones.map((z) => z.id), over: [] };
+          for (const id of ['minimap', 'gold']) {
+            const z = hud.zones.find((b) => b.id === id);
+            out[id] = { ...css(z), art: z };
+            for (const o of [...hud.controls.map((b) => ({ ...b, id: 'control' })), ...hud.zones.filter((b) => b.id !== 'minimap' && b.id !== 'gold')]) if (meet(z, o)) out.over.push(`the ${id} over the ${o.id} ${JSON.stringify(o)}`);
+            for (const d of dom) if (out[id].left < d.right && d.left < out[id].right && out[id].top < d.bottom && d.top < out[id].bottom) out.over.push(`the ${id} over a touch control's DOM rect ${JSON.stringify(d)}`);
+          }
+          return out;
+        });
+      const alone = await corner();
+      const { minimap: map, gold } = alone;
+      const holds = (c, where) =>
+        check(
+          c.minimap.top >= 90 && c.gold.top >= 90 && c.over.length === 0 && Math.min(c.minimap.right - c.minimap.left, c.minimap.bottom - c.minimap.top) >= 40 && JSON.stringify(c.minimap.art) === JSON.stringify(map.art),
+          `${at}${where}: the corner map (${Math.round(c.minimap.left)}-${Math.round(c.minimap.right)} × ${Math.round(c.minimap.top)}-${Math.round(c.minimap.bottom)} CSS px) and the gold (from ${Math.round(c.gold.top)} px) wholly below the wake band, a thumb across, where they were, over nothing${c.over.length ? `: ${c.over.join('; ')}` : ''}`,
+        );
+      holds(alone, '');
+      const busy = await pageH.evaluate(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const boss = g.level.bossUnit;
+        boss.actor.life = boss.actor.maxLife * 0.8; // its bar shows
+        for (const slot of [1, 2, 3]) g.coop.join(slot);
+        window.__PIXEL_ENGINE__.input.noteTouch();
+        window.__PIXEL_ENGINE__.step(30);
+        return g.coop.strips().length;
       });
-      const below = { top: Math.max(map.top, 90), bottom: map.bottom };
-      const tapMap = async (y) => {
-        await pageH.touchscreen.tap(map.x, y);
+      const crowd = await corner();
+      check(busy === 3 && crowd.ids.includes('boss') && crowd.ids.includes('guests'), `${at}: three couch guests' strips and a boss's bar on the HUD (${busy} guests, zones ${crowd.ids.join(',')})`);
+      holds(crowd, ', three guests and a boss');
+      const tapMap = async (y, x = (map.left + map.right) / 2) => {
+        await pageH.touchscreen.tap(x, y);
         return pageH.evaluate(() => {
           window.__PIXEL_ENGINE__.step(2);
           return window.__RIFTLIGHT__.game.mapOpen;
         });
       };
-      const inBand = map.top < 90 ? await tapMap((map.top + 90) / 2) : false;
-      const opened = await tapMap((below.top + below.bottom) / 2);
-      check(!inBand && opened && below.bottom - below.top >= 44, `${orientation} in 52in1: the corner map takes a tap only below the wake band (map ${Math.round(map.top)}-${Math.round(map.bottom)} CSS px; a tap in the band opened ${inBand ? 'the map' : 'nothing'}, below it ${opened ? 'the map' : 'nothing'})`);
-      await pageH.screenshot({ path: new URL(`${tag}-hub-map.png`, OUT).pathname });
-      await tapMap(pageH.viewportSize().height / 2); // a tap on the big map closes it
+      const inBand = await tapMap(45);
+      const opened = await tapMap((map.top + map.bottom) / 2);
+      await pageH.screenshot({ path: new URL(`${shotTag}-hub-map.png`, OUT).pathname });
+      const shut = !(await tapMap(vp.height / 2, vp.width / 2)); // a tap on the big map (the screen's middle) closes it
+      check(!inBand && opened && shut, `${at}: a tap on the corner map opens the level's map, one in the band above it nothing, one on the big map closes it (a tap in the band opened ${inBand ? 'the map' : 'nothing'}, on the map ${opened ? 'the map' : 'nothing'}; ${shut ? 'closed' : 'still open'}; the gold ${Math.round(gold.left)}-${Math.round(gold.right)} CSS px)`);
       await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
       await pageH.waitForTimeout(1000);
-      await pageH.screenshot({ path: new URL(`${tag}-hub.png`, OUT).pathname });
-      checkClean(await state(pageH), ctx.logs, `${orientation} in 52in1: `);
+      await pageH.screenshot({ path: new URL(`${shotTag}-hub.png`, OUT).pathname });
+      checkClean(await state(pageH), ctx.logs, `${at}: `);
+      await ctx.browser.close();
+      ctx = null;
     }
-    await ctx.browser.close();
-    ctx = null;
 
     // ?debug=1 brings the engine's tool bar back
     ctx = await launch(exe, s, { viewport, deviceScaleFactor: 1, hasTouch: true, isMobile: true });
