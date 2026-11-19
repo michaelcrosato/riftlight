@@ -26,6 +26,7 @@ import { Particles } from './particles/Particles';
 import { type TouchButton, TouchControls, type TouchCorner } from './TouchControls';
 import { Settings, urlSettings } from './settings';
 import { type ControlTable, Controls, setActiveControls } from './controls';
+import { PointerCursor } from './cursor';
 import { SettingsPanel } from './SettingsPanel';
 import { PALETTE } from './palette';
 import { Physics } from './physics/Physics';
@@ -484,6 +485,8 @@ export class Engine {
   /** True once the first start has finished: `step()` before it is a tool's race, and throws. */
   private started = false;
   private disposed = false;
+  /** The OS pointer over the canvas, hidden while the pad is in use or the pointer is locked (`followCursor`). */
+  private readonly cursor = new PointerCursor();
   /** Incremented by every loadGame() and by dispose(): a load that is no longer the latest stops. */
   private loadToken = 0;
   /** The load in flight (loads run one at a time), if any. */
@@ -1176,10 +1179,21 @@ export class Engine {
 
   /** The end of every frame: input's per-frame state goes, and a marker notes when promise callbacks run. */
   private endFrame(): void {
+    this.followCursor();
     this.input.endFrame();
     this.frame++;
     this.drained = false;
     queueMicrotask(this.markDrained);
+  }
+
+  /**
+   * The OS mouse pointer over the canvas (`PointerCursor`): hidden while the pad is the device in
+   * use (`controls.device`) or the pointer is locked, shown again once the mouse travels (the
+   * device turns back to the keyboard and mouse). Presentation only; nothing headless.
+   */
+  private followCursor(): void {
+    const el = this.gpu?.renderer.domElement ?? null;
+    this.cursor.follow(el, !!el && (this.controls.device === 'pad' || this.input.pointerLocked));
   }
 
   /**
@@ -1264,6 +1278,7 @@ export class Engine {
     this.hubSettings.dispose();
     this.debug?.root.remove();
     this.touch?.root.remove();
+    this.cursor.follow(null, false); // the canvas's own pointer back
     this.settingsPanel?.dispose();
     this.input.dispose();
     setActiveControls(null, this.controls);

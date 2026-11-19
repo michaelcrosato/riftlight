@@ -155,16 +155,26 @@ export async function runSystems(h) {
     check(pad.jumped === 1, 'gamepad A jumps');
     check(pad.connectedOnly === 'keyboard' && pad.used === 'pad', `the device follows use, not connection (${pad.connectedOnly} → ${pad.used})`);
     check(JSON.stringify(pad.rumbles) === JSON.stringify([['dual-rumble', 0.5, 1]]), `rumble plays a dual-rumble on the pad in use (${JSON.stringify(pad.rumbles)})`);
-    // the mouse moving over the canvas takes the device back to the keyboard and mouse
-    const box = await E(() => {
-      window.__PIXEL_ENGINE__.input.noteDevice('pad'); // as if the pad was in use
-      const r = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
-      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    // the mouse moving over the canvas takes the device back to the keyboard and mouse; while the
+    // pad is in use the OS pointer is hidden over the canvas, and it shows again as the mouse moves
+    const box = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      e.input.noteDevice('pad'); // as if the pad was in use
+      await window.__T.frames(2);
+      const c = e.renderer.renderer.domElement;
+      const r = c.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2, cursor: getComputedStyle(c).cursor };
     });
+    check(box.cursor === 'none', `the pad in use hides the OS pointer over the canvas (${box.cursor})`);
     await page.mouse.move(box.x, box.y);
     await page.mouse.move(box.x + 40, box.y + 10, { steps: 4 });
-    const afterMouse = await E(() => window.__PIXEL_ENGINE__.input.device);
-    check(afterMouse === 'keyboard', `a mouse move over the canvas is the keyboard and mouse again (${afterMouse})`);
+    const afterMouse = await E(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      await window.__T.frames(2);
+      return { device: e.input.device, cursor: getComputedStyle(e.renderer.renderer.domElement).cursor };
+    });
+    check(afterMouse.device === 'keyboard', `a mouse move over the canvas is the keyboard and mouse again (${afterMouse.device})`);
+    check(afterMouse.cursor !== 'none', `and the OS pointer shows again (${afterMouse.cursor})`);
 
     // ---------------------------------------------------------------- capture freshness
     // renderer.capture() right after engine.step() in a frame the loop already rendered
