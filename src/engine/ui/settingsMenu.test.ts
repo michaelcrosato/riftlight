@@ -230,7 +230,7 @@ describe('the settings screen', () => {
     e.input.noteDevice('pad');
     expect(glyphs().map((g) => (g?.kind === 'sprite' ? g.colors.s : g))).toEqual(['blue', 'red', 'teal']); // ✕ ○ △
     e.settings.set({ padGlyphs: 'xbox' });
-    expect(glyphs().map((g) => (g?.kind === 'sprite' ? g.colors.f : g))).toEqual(['green', 'red', 'sand']); // A B Y
+    expect(glyphs().map((g) => (g?.kind === 'sprite' ? g.colors.f : g))).toEqual(['green', 'red', 'orange']); // A B Y
     expect(menu.legend().map((l) => l.act)).toEqual([true, true, true]);
     e.input.noteDevice('touch'); // no touch controls headless: a touch is the keyboard's
     expect(glyphs()[0]).toEqual({ kind: 'cap', text: 'Enter', round: false });

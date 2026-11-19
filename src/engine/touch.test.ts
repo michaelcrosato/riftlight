@@ -202,7 +202,7 @@ describe('hud.legend', () => {
     hud.clear();
     values.padGlyphs = 'xbox';
     hud.legend(0, 0, legend);
-    expect(items(hud).filter((i) => i.kind === 'sprite').map((i) => i.colors!.f)).toEqual(['green', 'red', 'sand']); // A B Y
+    expect(items(hud).filter((i) => i.kind === 'sprite').map((i) => i.colors!.f)).toEqual(['green', 'red', 'orange']); // A B Y
     hud.clear();
     input.noteDevice('touch');
     controls.touch = true; // the engine shows touch controls
