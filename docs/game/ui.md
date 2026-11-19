@@ -48,8 +48,9 @@ landscape phone with three guests and the tuning's rows it covers the block's la
 heroes); under them only where no place up there is clear. The 'under the minimap' place is for a
 phone held upright only (a 568×320 phone's compact HUD keeps it at the top, beside the minimap).
 A kill streak goes right of the strips. The level's map (`drawMap`, Tab / M / R3 / the touchpad's press, or a click or
-tap on the corner minimap) fits what the hero explored into the room between the HUD's top and
-bottom (`mapView`, up to 5 art pixels a cell; around the hero when it can't fit), on a
+tap on the corner minimap, or the Map button) fits what the hero explored into the room between the HUD's top and
+bottom (`mapView`, up to 5 art pixels a cell; around the hero when it can't fit; beside an orb
+up in the top half), on a
 see-through plate under the HUD (ink on two pixel rows of every three, `PLATE_GAP`: it reads
 over a bright level at ten feet; the corner minimap hides meanwhile), its title and the control
 that closes it on its frame (Esc, or a tap on the map, closes it too).
@@ -127,12 +128,38 @@ next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the paus
 inventory, skills, tree and settings are) top-left. In 52in1 (the page's `window.AIHubSettings`,
 which the hub's companion script sets before the game's first script: `RIFTLIGHT_OPTIONS` reads it,
 and `TouchPad.buttons` by `TouchPad.hub`, from `engine.hubSettings.present`, recorded) ≡ sits lower, its top on the hub's wake band
-(`HUB_WAKE`, 90 CSS px: a touch above it brings the hub's bar over the game), its centre 112 CSS px
+(`HUB_WAKE`, 90 CSS px), its centre 112 CSS px
 down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame.round`: a round has
-no pause menu, the hub's bar is the menu there). The corner map, a tap target, goes below the band
-there too (`TouchPad.wakeArt`, `HudModel.wake`) where it and the gold stay clear of the controls (a
-phone upright); on its side it stays at the top and only its part below the band takes a tap. `TouchPad` drives them each frame from
-`hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
+no pause menu, the hub's bar is the menu there). Where the corner map takes no tap there (case 2),
+the Map button (`TouchFrame.map`, `MAP_ICON`) takes ≡'s place: it presses M, recorded.
+
+**The wake band is about taps, not pixels.** The hub's companion script
+([`lib/hub/companion.js`](https://raw.githubusercontent.com/michaelcrosato/ai-hub/main/lib/hub/companion.js),
+its `onTouch` and `onMouse`) brings the hub's bar over the game on a touch or a mouse press less
+than 90 CSS px from the top of the game's frame. So in 52in1 on a touch page nothing the game draws
+in the band may take a tap, while drawing there is fine. Two cases:
+
+1. **A map fits below the band.** The corner map, a tap target, and the gold go below the band
+   (`TouchPad.wakeArt`, `HudModel.wake`), clear of the controls, leaving the orbs a spot. Upright, the gold
+   is under the map and the banner under the gold. On its side the skills' arc is under the corner,
+   so the map shrinks to the biggest that fits between the band and the controls (a thumb across,
+   frame and all: `MAP_LEAST`, `THUMB` at the screen's CSS scale). The gold goes on its left
+   (`map.gold`), or left of the interact button where that is in the way.
+2. **No map fits below the band.** A phone held sideways under about 350 CSS px tall:
+   an iPhone in Safari (734×343, 750×340, 712×325, 724×325), a Pixel 5 (802×294), a Galaxy Z Fold's
+   cover (882×344), 568×320; also 600-620 × 428-454 at DPR 3, where the skills' arc would leave the
+   mana orb no spot. The corner map stays at the top (y 2), drawn in the band with the gold
+   under it, as on the game's own page. It shrinks to clear the controls (no smaller than
+   `MAP_LEAST`) and takes no tap (`map.tap` false): a tap on it is the hub's. The full map opens from ≡'s pause menu, which gets Map (`MenuHost.levelMap`), or from
+   R3, the touchpad, Tab or M; in a round, from the Map button. The map never goes.
+
+In both cases a boss's bar, the banner and the top-left label keep clear of the full map's column
+(`map.col`), so they stay where they are on the game's own page. The label clears the gold only
+where the block's rows reach the gold's row. Guests' strips beside the top-left block run to the
+screen's edge where they end above the map. A sideways banner keeps off the gold unless the only
+place off the heroes is over it.
+
+`TouchPad` drives the buttons each frame from `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each
 orb takes the lowest free spot in its corner third, half the width on a landscape phone, never

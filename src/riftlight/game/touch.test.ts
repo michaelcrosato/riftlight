@@ -1,9 +1,11 @@
 // Riftlight's touch buttons in 52in1: ≡ below the hub's wake band (a touch above 90 CSS px brings
 // the hub's bar over the game), the page's and the data's layout alike; hidden in a 52in1 round,
-// which has no pause menu (the hub's bar is the menu there). On its own page ≡ stays in the corner.
-import { describe, expect, it } from 'vitest';
+// which has no pause menu (the hub's bar is the menu there), the Map button in its place where the
+// corner map takes no tap. On its own page ≡ stays in the corner, and there is no Map button.
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Engine, TouchButtonState } from '../../engine';
-import { HUB_WAKE, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES, TouchPad, touchLayout } from './touch';
+import { KEYS } from './controls';
+import { HUB_WAKE, MAP_ICON, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES, TouchPad, touchLayout } from './touch';
 
 /** An engine with touch controls that records what the pad sets on them, in 52in1 (`hub`) or not. */
 function fakeEngine(hub: boolean) {
@@ -30,8 +32,8 @@ describe('≡ in 52in1', () => {
     expect(menu(RIFTLIGHT_HUB_TOUCH_BUTTONS).y, 'its top on the wake band').toBeGreaterThanOrEqual(HUB_WAKE);
     expect(menu(RIFTLIGHT_HUB_TOUCH_BUTTONS).y + menu(RIFTLIGHT_HUB_TOUCH_BUTTONS).h / 2).toBeGreaterThanOrEqual(112);
     expect(menu().y + menu().h, 'on its own page: in the corner').toBeLessThan(HUB_WAKE);
-    // the rest of the cluster is the same either way
-    expect(RIFTLIGHT_HUB_TOUCH_BUTTONS.slice(0, -1)).toEqual(RIFTLIGHT_TOUCH_BUTTONS.slice(0, -1));
+    // the rest of the cluster is the same either way (52in1's has the Map button too)
+    expect(RIFTLIGHT_HUB_TOUCH_BUTTONS.slice(0, -1).filter((b) => b.code !== TOUCH_CODES.map)).toEqual(RIFTLIGHT_TOUCH_BUTTONS.slice(0, -1));
     // where there is no page (headless, a replay) the data lays the controls out as the page would
     const inHub = new TouchPad(fakeEngine(true).engine).dataLayout().at(-1)!;
     const alone = new TouchPad(fakeEngine(false).engine).dataLayout().at(-1)!;
@@ -46,5 +48,39 @@ describe('≡ in 52in1', () => {
     expect(set.get(TOUCH_CODES.menu)?.hidden, 'in a round').toBe(true);
     pad.sync({ playing: true, skills: [], interact: null });
     expect(set.get(TOUCH_CODES.menu)?.hidden, 'out of one').toBe(false);
+  });
+});
+
+describe('the Map button in 52in1', () => {
+  afterEach(() => void vi.unstubAllGlobals());
+
+  it('sits where ≡ does, below the hub’s wake band and a thumb across, pressing the map’s key; none on the game’s own page', () => {
+    const at = (code: string) => touchLayout(390, 844, RIFTLIGHT_HUB_TOUCH_BUTTONS)[1 + RIFTLIGHT_HUB_TOUCH_BUTTONS.findIndex((b) => b.code === code)]!;
+    const map = RIFTLIGHT_HUB_TOUCH_BUTTONS.find((b) => b.code === TOUCH_CODES.map);
+    expect(map, '52in1 has a Map button').toBeDefined();
+    expect(KEYS.map as readonly string[], 'it presses a key the map opens with').toContain(map!.code);
+    expect(at(TOUCH_CODES.map), 'in ≡’s place').toEqual(at(TOUCH_CODES.menu));
+    expect(at(TOUCH_CODES.map).y, 'below the wake band').toBeGreaterThanOrEqual(HUB_WAKE);
+    expect(Math.min(at(TOUCH_CODES.map).w, at(TOUCH_CODES.map).h), 'a thumb across').toBeGreaterThanOrEqual(44);
+    expect(RIFTLIGHT_HUB_TOUCH_BUTTONS.at(-1)!.code, '≡ still last').toBe(TOUCH_CODES.menu);
+    expect(RIFTLIGHT_TOUCH_BUTTONS.map((b) => b.code), 'none on its own page').not.toContain(TOUCH_CODES.map);
+  });
+
+  it('shows, drawn as a map, only in a round where the corner map takes no tap; hidden out of one, where the map takes a tap and in the showcase', () => {
+    // the icon's canvas (the page's), as a stand-in that draws nothing
+    vi.stubGlobal('document', { createElement: () => ({ width: 0, height: 0, getContext: () => null }) });
+    const { engine, set } = fakeEngine(true);
+    const pad = new TouchPad(engine);
+    pad.sync({ playing: true, round: true, map: true, skills: [], interact: null });
+    expect(set.get(TOUCH_CODES.map)?.hidden, 'a round, the corner map no tap target').toBe(false);
+    expect(set.get(TOUCH_CODES.map)?.icon, 'drawn as a map').toBeTruthy();
+    expect(set.get(TOUCH_CODES.menu)?.hidden, '≡ hidden under it').toBe(true);
+    pad.sync({ playing: true, round: true, skills: [], interact: null });
+    expect(set.get(TOUCH_CODES.map)?.hidden, 'a round where the corner map takes a tap').toBe(true);
+    pad.sync({ playing: true, map: true, showcase: true, skills: [], interact: null });
+    expect(set.get(TOUCH_CODES.map)?.hidden, 'the showcase').toBe(true);
+    pad.sync({ playing: true, skills: [], interact: null });
+    expect(set.get(TOUCH_CODES.map)?.hidden, 'out of a round: ≡, whose pause menu has Map').toBe(true);
+    expect(MAP_ICON.rows.every((r) => r.length === MAP_ICON.rows[0]!.length), 'a rectangle of pixels').toBe(true);
   });
 });

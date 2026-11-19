@@ -7,20 +7,28 @@
 //   over the mana orb, the skill bar and the minimap);
 // - a landscape phone draws Riftlight's denser art (two CSS pixels per art pixel at least);
 // - the Arena (?game=arena) gets Riftlight's touch buttons, each naming a control it has;
+// - a phone in 52in1, held either way, has the whole corner map (a tap target) and the gold below the
+//   hub's wake band, over no control and none of the HUD, couch guests and a boss's bar too; one held
+//   sideways too short for a map a thumb across there has it at the top still, drawn in the band (a
+//   touch there is the hub's), shrunk to clear the controls, taking no tap, and its pause menu opens
+//   the map; in a round there (no pause menu, no ≡) the Map button in ≡'s place opens it, recorded;
 // - a phone's recording (and save-state) made in 52in1 replays with ≡ where 52in1 put it, below the
 //   hub's wake band, with no hub behind the replay: the HUD it lays out, and a tap lands on, is the
 //   recorded one.
 import { afterEach, describe, expect, it } from 'vitest';
 import { Lang } from '../../engine';
 import { gameById } from '../../games';
-import { type HeadlessRiftlight, headlessRiftlight, makeRiftlight } from '../headless';
+import { type HeadlessMoment, type HeadlessRiftlight, headlessMoment, headlessRiftlight, makeRiftlight } from '../headless';
+import { Riftlight } from '../index';
+import { momentById } from '../session/moments';
 import { installLanguage, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import type { Box } from '../ui/layout';
+import { mapView } from '../ui/hud';
 import type { RealLoot } from '../wire/loot';
 import { CONTROLS, KEYS } from './controls';
 import { ARENA_TOUCH_BUTTONS } from '../combat/arena';
-import { HUB_WAKE, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES } from './touch';
+import { HUB_WAKE, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES, touchLayout } from './touch';
 import { SaveStore } from './save';
 
 const T = 60_000;
@@ -238,15 +246,18 @@ describe('a phone in 52in1: the corner map', () => {
       g.engine.step(1);
     }
   };
-  for (const [viewport, moves] of [
-    [{ width: 390, height: 844, dpr: 3 }, true],
-    [{ width: 360, height: 800, dpr: 3 }, true],
-    // on its side the skills' arc is under the corner: the map stays, its part below the band the target
-    [{ width: 740, height: 360, dpr: 2 }, false],
-    [{ width: 844, height: 390, dpr: 2 }, false],
+  for (const viewport of [
+    { width: 390, height: 844, dpr: 3 },
+    { width: 360, height: 800, dpr: 3 },
+    // on its side the skills' arc is under the corner: the map shrinks to fit above it, the gold beside it
+    { width: 740, height: 360, dpr: 2 },
+    { width: 844, height: 390, dpr: 2 },
+    { width: 915, height: 412, dpr: 2.625 },
+    { width: 812, height: 375, dpr: 3 },
   ] as const) {
+    const sideways = viewport.width > viewport.height;
     it(
-      `${viewport.width}×${viewport.height}: a tap target, it ${moves ? 'sits below the hub’s wake band as ≡ does' : 'takes a tap only below the hub’s wake band'} (on its own page at the top), and a tap there opens the level's map`,
+      `${viewport.width}×${viewport.height}: a tap target, the whole of it sits below the hub’s wake band as ≡ does, the gold ${sideways ? 'beside' : 'under'} it, over no control and none of the HUD, with couch guests and a boss's bar too (on its own page at the top, its full size); a tap on it opens the level's map, one in the band nothing`,
       async () => {
         const top = async (hubSettings?: object) => {
           h?.engine.dispose();
@@ -262,29 +273,215 @@ describe('a phone in 52in1: the corner map', () => {
           return { map, css: (y: number) => f.offsetY + (y / f.artHeight) * f.cssHeight };
         };
         const alone = await top();
-        expect(alone.map.y, 'on its own page: at the top').toBe(2);
+        expect([alone.map.y, alone.map.h], 'on its own page: at the top, its full size').toEqual([2, sideways ? 68 : 38]);
         const hub = await top({});
         const g = h!.game;
         const wake = g.touchPad.wakeArt();
         expect(hub.css(wake), 'the band in art pixels').toBeGreaterThanOrEqual(HUB_WAKE);
-        if (moves) {
-          expect(hub.map.y, `in 52in1 its top is below the wake band (${HUB_WAKE} CSS px)`).toBe(wake);
-          // the HUD around it: the gold under it, clear of the controls
-          const gold = g.hudRects().zones.find((z) => z.id === 'gold')!;
-          expect(gold.y, 'the gold under the map').toBeGreaterThanOrEqual(hub.map.y + hub.map.h - 1);
-          for (const c of g.hudRects().controls) expect(overlaps(c, { ...hub.map, h: gold.y + gold.h - hub.map.y }), `clear of ${JSON.stringify(c)}`).toBe(false);
-        } else expect(hub.map.y, 'at the top, over the skills’ arc no more').toBe(2);
-        // what takes a tap: its part below the band, a thumb tall at least (44 CSS px)
-        const target = { x: hub.map.x, y: Math.max(hub.map.y, wake), w: hub.map.w, h: hub.map.y + hub.map.h - Math.max(hub.map.y, wake) };
-        expect(hub.css(target.y + target.h) - hub.css(target.y), 'a thumb tall').toBeGreaterThanOrEqual(44);
-        if (!moves) {
-          // a tap on its part in the band is the hub's: no map (and no swing)
-          tap(h!, target.x + target.w / 2, Math.floor(wake / 2));
-          expect(g.mapOpen, 'a tap in the wake band opens nothing').toBe(false);
+        /** The corner map and the gold: below the band, over no control and none of the rest of the HUD (the level's banner too). */
+        const clear = (where: string) => {
+          const r = g.hudRects();
+          const map = r.zones.find((z) => z.id === 'minimap')!;
+          const gold = r.zones.find((z) => z.id === 'gold')!;
+          for (const own of [map, gold]) {
+            expect(own.y, `${where}: the ${own.id} ${JSON.stringify(own)} below the wake band (${wake} rows)`).toBeGreaterThanOrEqual(wake);
+            for (const z of [...r.controls, ...r.zones.filter((z) => z !== map && z !== gold)]) expect(overlaps(own, z), `${where}: the ${own.id} ${JSON.stringify(own)} over ${JSON.stringify(z)}`).toBe(false);
+          }
+          if (sideways) expect(gold.x + gold.w <= map.x && gold.y < map.y + 10, `${where}: the gold ${JSON.stringify(gold)} beside the map ${JSON.stringify(map)}`).toBe(true);
+          else expect(gold.y, `${where}: the gold under the map`).toBeGreaterThanOrEqual(map.y + map.h - 1);
+          return map;
+        };
+        const map = clear('a level, its banner up');
+        expect(map).toEqual(hub.map);
+        // couch guests (players 2 to 4) and a boss's bar: the map stays put, they keep off it and the gold
+        const boss = (g.level as unknown as { bossUnit: { actor: { life: number; maxLife: number } } }).bossUnit;
+        boss.actor.life = boss.actor.maxLife * 0.8; // its bar shows
+        for (const slot of [1, 2, 3]) {
+          expect(g.coop.join(slot), `a guest on pad ${slot}`).not.toBeNull();
+          h!.engine.step(2);
+          expect(g.hudRects().zones.filter((z) => z.id === 'boss' || z.id === 'guests').length, "the boss's bar and the strips").toBe(2);
+          expect(clear(`${slot} guest(s) and a boss`), 'where it was').toEqual(map);
         }
-        tap(h!, target.x + target.w / 2, target.y + target.h / 2);
-        expect(g.mapOpen, 'a tap below the band on the corner map opens the map').toBe(true);
+        // what takes a tap: all of it, a thumb tall at least (44 CSS px)
+        expect(hub.css(map.y + map.h) - hub.css(map.y), 'a thumb tall').toBeGreaterThanOrEqual(44);
+        // a tap in the band above it is the hub's: no map
+        tap(h!, map.x + map.w / 2, Math.floor(wake / 2));
+        expect(g.mapOpen, 'a tap in the wake band opens nothing').toBe(false);
+        tap(h!, map.x + map.w / 2, map.y + map.h / 2);
+        expect(g.mapOpen, 'a tap on the corner map opens the map').toBe(true);
         expect(h!.engine.errors).toEqual([]);
+      },
+      T,
+    );
+  }
+});
+
+describe('a phone in 52in1 held sideways too short for a corner map below the hub’s wake band', () => {
+  /** A finger's tap at art pixel (x, y), as the page's canvas tells the engine. */
+  const tap = (g: HeadlessRiftlight, x: number, y: number) => {
+    const { width, height } = g.engine.renderer.resolution;
+    for (const down of [true, false]) {
+      g.engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2);
+      (g.engine.input.pointer as { touch: boolean }).touch = true;
+      (g.engine.input as unknown as { button(code: string, down: boolean): void }).button('Touch', down);
+      g.engine.step(1);
+    }
+  };
+  // an iPhone 14 or 15 held sideways in Safari, a Pixel 5, a Galaxy Z Fold's cover screen and an
+  // iPhone SE (1st): no room for a map a thumb across between the band and the skills' arc
+  for (const viewport of [
+    { width: 734, height: 343, dpr: 3 },
+    { width: 802, height: 294, dpr: 2.75 },
+    { width: 882, height: 344, dpr: 2.625 },
+    { width: 568, height: 320, dpr: 2 },
+  ] as const) {
+    it(
+      `${viewport.width}×${viewport.height}: the corner map stays, drawn at the top in the band (shrunk to clear the controls, the gold under it) over no control and none of the HUD, and takes no tap: one on it, in the band or under it, opens nothing (on its own page it does, its full size); the pause menu’s Map opens the level's map (none on its own page), a tap on it closes it`,
+      async () => {
+        const boot = async (hubSettings?: object) => {
+          h?.engine.dispose();
+          h = await headlessRiftlight({ seed: 12, viewport, options: { touch: true, ...(hubSettings ? { hubSettings } : {}) } });
+          h.engine.input.send({ rl: 'run', slot: 0, seed: 12 });
+          h.engine.input.noteTouch();
+          h.engine.step(30);
+          await h.rl.enterDepth(1);
+          h.engine.step(30);
+          return h.game;
+        };
+        /** The pause menu's entries. */
+        const pause = (g: HeadlessRiftlight['game']) => {
+          expect(g.openPanel('pause'), 'the pause menu').not.toBeNull();
+          h!.engine.step(2);
+          return h!.rl.ui.widgets();
+        };
+        let g = await boot();
+        const full = viewport.width < 600 ? { w: 48, h: 38 } : { w: 88, h: 68 };
+        const alone = g.hudRects().zones.find((z) => z.id === 'minimap')!;
+        expect(alone, 'on its own page: the corner map at the top, its full size').toMatchObject({ y: 2, ...full });
+        tap(h!, alone.x + alone.w / 2, alone.y + alone.h / 2);
+        expect(g.mapOpen, 'on its own page a tap on the corner map opens the map').toBe(true);
+        tap(h!, Math.floor(h!.engine.renderer.resolution.width / 2), Math.floor(h!.engine.renderer.resolution.height / 2));
+        expect(g.mapOpen, 'a tap on the map closes it').toBe(false);
+        expect(pause(g).map((w) => w.id), 'on its own page no Map entry: a tap on the corner map opens it').not.toContain('map');
+        h!.rl.ui.close();
+        g = await boot({});
+        const wake = g.touchPad.wakeArt();
+        expect(wake, 'in 52in1: the wake band').toBeGreaterThan(0);
+        const f = h!.engine.renderer.framing;
+        const css = (y: number) => f.offsetY + (y / f.artHeight) * f.cssHeight;
+        const r = g.hudRects();
+        const map = r.zones.find((z) => z.id === 'minimap')!;
+        const gold = r.zones.find((z) => z.id === 'gold')!;
+        // drawn: the map never goes (drawing in the band is fine; only a tap there is the hub's)
+        expect(map, 'in 52in1: the corner map, drawn').toBeDefined();
+        expect([map.y, css(map.y) < HUB_WAKE], 'at the top, in the band').toEqual([2, true]);
+        expect(map.w <= full.w && map.h <= full.h && map.w >= 48 && map.h >= 20, `the map ${JSON.stringify(map)} shrunk to clear the controls, no less than 44×16 inside its frame`).toBe(true);
+        expect(gold.y, `the gold ${JSON.stringify(gold)} under the map ${JSON.stringify(map)}`).toBeGreaterThanOrEqual(map.y + map.h - 1);
+        for (const own of [map, gold]) for (const z of [...r.controls, ...r.zones.filter((z) => z !== map && z !== gold)]) expect(overlaps(own, z), `the ${own.id} ${JSON.stringify(own)} over ${JSON.stringify(z)}`).toBe(false);
+        // no tap on it: in the band (a touch there is the hub's) nor on its rows under the band
+        for (const x of [map.x + 3, map.x + map.w / 2, map.x + map.w - 3]) {
+          for (const y of [map.y + 3, Math.min(wake, map.y + map.h) - 2, map.y + map.h - 2]) {
+            tap(h!, x, y);
+            expect(g.mapOpen, `a tap on the corner map at (${x}, ${y}) opens nothing`).toBe(false);
+          }
+        }
+        // the pause menu's Map: the pause closes, the level's map opens; a tap on it closes it
+        const entry = pause(g).find((w) => w.id === 'map');
+        expect(entry?.rect, 'the pause menu has Map').toBeDefined();
+        tap(h!, entry!.rect!.x + entry!.rect!.w / 2, entry!.rect!.y + entry!.rect!.h / 2);
+        h!.engine.step(2);
+        expect([h!.rl.state().ui, g.mapOpen], 'the pause gone, the map open').toEqual([[], true]);
+        const { width, height } = h!.engine.renderer.resolution;
+        tap(h!, Math.floor(width / 2), Math.floor(height / 2));
+        expect(g.mapOpen, 'a tap on the map closes it').toBe(false);
+        expect(h!.engine.errors).toEqual([]);
+      },
+      T,
+    );
+  }
+});
+
+describe('a 52in1 round on a phone held sideways with no room for a corner map below the hub’s wake band', () => {
+  // a round has no pause menu (no ≡, no Map entry) and its corner map takes no tap: the Map button.
+  // 600×428 has room for a map there, but not for the mana orb beside one: at the top too, the orb
+  // climbed beside the controls (where it is on the game's own page)
+  for (const viewport of [
+    { width: 734, height: 343, dpr: 3 },
+    { width: 882, height: 344, dpr: 2.625 },
+    { width: 600, height: 428, dpr: 3 },
+  ] as const) {
+    it(
+      `${viewport.width}×${viewport.height}: the Map button in ≡'s place, below the band and a thumb across, opens the level's map by touch during the round and closes it; recorded, a replay with no hub behind it opens it too`,
+      async () => {
+        let r: HeadlessMoment | null = null;
+        try {
+          r = await headlessMoment(momentById('gale-escape')!, { seed: 1, viewport, options: { touch: true, hubSettings: {} } });
+          const { engine, game: g } = r;
+          engine.input.noteTouch();
+          r.hub.start();
+          for (let f = 0; f < 400 && !g.round!.playing; f++) await r.frame();
+          for (let f = 0; f < 30; f++) await r.frame();
+          expect(g.round!.phase, 'the round is on').toBe('playing');
+          // the corner map is drawn at the top, in the band: a tap on it is the hub's, it opens nothing
+          const corner = g.hudRects().zones.find((z) => z.id === 'minimap')!;
+          expect(corner.y, 'the corner map at the top, in the band').toBe(2);
+          const { width, height } = engine.renderer.resolution;
+          for (const down of [true, false]) {
+            engine.input.setPointer(((corner.x + corner.w / 2 + 0.5) / width) * 2 - 1, 1 - ((corner.y + corner.h - 2.5) / height) * 2);
+            (engine.input.pointer as { touch: boolean }).touch = true;
+            (engine.input as unknown as { button(code: string, down: boolean): void }).button('Touch', down);
+            await r.frame();
+          }
+          expect(g.mapOpen, 'a tap on the corner map opens nothing').toBe(false);
+          // no ≡ in a round; the Map button in its place, below the band, a thumb across
+          const frame = g.touchFrame();
+          expect([frame.round, frame.map], 'a round: the Map button shows').toEqual([true, true]);
+          const buttons = g.touchPad.buttons;
+          const map = buttons.find((b) => b.code === TOUCH_CODES.map);
+          expect(map, 'the Map button').toBeDefined();
+          const css = touchLayout(viewport.width, viewport.height, buttons);
+          const rect = css[1 + buttons.indexOf(map!)]!;
+          expect(rect, 'in ≡’s place').toEqual(css[1 + buttons.findIndex((b) => b.code === TOUCH_CODES.menu)]);
+          expect(rect.y, 'below the wake band').toBeGreaterThanOrEqual(HUB_WAKE);
+          expect(Math.min(rect.w, rect.h), 'a thumb across').toBeGreaterThanOrEqual(44);
+          // the HUD lays out around it (the data's controls, the button among them)
+          const art = g.touchPad.dataLayout()[1 + buttons.indexOf(map!)]!;
+          expect(g.hudRects().controls, 'the HUD around it').toContainEqual(art);
+          for (const z of g.hudRects().zones.filter((z) => z.id !== 'control')) expect(overlaps(z, art), `the HUD's ${z.id} ${JSON.stringify(z)} under the Map button ${JSON.stringify(art)}`).toBe(false);
+          /** A finger on the button, as the page's button presses its key. */
+          const press = async () => {
+            engine.input.noteTouch();
+            engine.input.setKey(map!.code, true);
+            await r!.frame();
+            engine.input.setKey(map!.code, false);
+            await r!.frame();
+          };
+          await press();
+          expect(g.mapOpen, 'the Map button opens the level’s map in the round').toBe(true);
+          // a room of its own: not a sliver above an orb that climbed beside the controls (600×428)
+          const room = (g as unknown as { mapRoom(): Box }).mapRoom();
+          expect(room.h, `the map's room ${JSON.stringify(room)}`).toBeGreaterThanOrEqual(engine.renderer.resolution.height * 0.4);
+          for (const orb of g.hudRects().zones.filter((z) => z.id === 'life' || z.id === 'mana')) expect(overlaps(room, orb), `the map's room ${JSON.stringify(room)} over the ${orb.id} orb ${JSON.stringify(orb)}`).toBe(false);
+          // the map as drawn in it (its frame too) is clear of the HUD's top-left block (the level, the
+          // clock, the kills) and the round's seconds
+          const v = mapView(room, (g as unknown as { minimapModel(): Parameters<typeof mapView>[1] }).minimapModel());
+          const drawn = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
+          for (const z of g.hudRects().zones.filter((z) => z.id === 'where' || z.id === 'time')) expect(overlaps(drawn, z), `the map ${JSON.stringify(drawn)} over the HUD's ${z.id} ${JSON.stringify(z)}`).toBe(false);
+          expect(g.touchFrame().map, 'and stays to close it').toBe(true);
+          await press();
+          expect(g.mapOpen, 'again: it closes').toBe(false);
+          await press();
+          expect(g.mapOpen).toBe(true);
+          expect(engine.errors).toEqual([]);
+          // recorded: a replay with no hub behind it opens the map as the round did
+          const rec = engine.recording()!;
+          await engine.replay(rec, () => engine.loadGame(new Riftlight({}, { store: new SaveStore(null) })));
+          const again = engine.game as Riftlight;
+          expect([again.round?.moment?.id, again.mapOpen], 'replayed: the round, its map open').toEqual(['gale-escape', true]);
+          expect(engine.errors).toEqual([]);
+        } finally {
+          r?.engine.dispose();
+        }
       },
       T,
     );

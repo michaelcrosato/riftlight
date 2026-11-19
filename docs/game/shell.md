@@ -43,13 +43,13 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   than wide zooms out (`CAMERA.portrait`, 0.8×) so the fight around the hero fits 124 art
   pixels, and with touch controls on screen the target slides toward the camera so the hero
   stands in the middle of the room left above them.
-- **On a controller** (`game/controls.ts`): Options pauses from any screen of play (over an item
-  window, the character sheet, the codex or a townsperson's menu it closes them first) and resumes
-  from the pause menu, as Circle does; Esc stays back first, then pause. The pause menu reaches
+- **On a controller** (`game/controls.ts`): Options pauses from any screen of play (closing an item
+  window, the sheet, the codex or a townsperson's menu first) and resumes from the pause menu, as
+  Circle does; Esc stays back first, then pause. The pause menu reaches
   every screen a pad has no button for (inventory, skills, tree, character, codex); Dev shows only
-  with the developer tools on (the dev server, `?debug=1`). Tab / M / R3 / the DualSense's
-  touchpad press open the level's map over the play (`drawMap`: the world runs on under it; in a
-  session round too).
+  with the developer tools on (`?debug=1`). Tab / M / R3 / the DualSense's
+  touchpad press open the level's map (`drawMap`: the world runs under it; in a round too, a
+  Map button where a phone's corner map takes no tap).
   Shift+Tab is the tab before in the item windows. The character screens are one ring (`PAGES`:
   inventory, skills, tree, character, codex): L1 / R1 or Q / E page through it in place (a pause
   menu under them stays), and so does a swipe left or right on a DualSense's touchpad through 52in1

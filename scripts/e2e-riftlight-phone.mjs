@@ -31,9 +31,16 @@
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
 //     targets of at least 40 CSS px; on a 360×800 phone (120 art columns) the character sheet's
 //     labels and header and the save slots' entries are whole (two rows where long), never cut
-//   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
-//     px or lower), the top-left block right of it, the data's layout the page's; the corner map
-//     takes a real tap only below the band (a thumb tall at least), one in the band opens nothing
+//   - in 52in1 (window.AIHubSettings on the page; landscape at 740×360 and 882×344 too): ≡ below the
+//     hub's wake band (its top at 90 CSS px or lower), the top-left block right of it, the data's
+//     layout the page's; the corner map and the gold wholly below the band, the map a thumb across,
+//     over no touch control's DOM rect and none of the HUD, three couch guests and a boss's bar too;
+//     a real tap on the map opens it, one in the band above it nothing. At 882×344 (a Galaxy Z
+//     Fold's cover screen) no map a thumb across fits there: it stays at the top, drawn in the band
+//     (shrunk to clear the controls, the gold under it, over nothing), a tap on it opens nothing,
+//     and ≡'s pause menu has Map, which a tap opens; in a 52in1 round there (faked: the round's
+//     command with no hub behind it) ≡ is hidden and the Map button in its place (below the band, a
+//     thumb across, drawn as a map) opens the level's map with a real tap, and closes it
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -724,9 +731,14 @@ export async function runRiftlightPhone(h, orientation) {
 
     // in 52in1 (its companion sets window.AIHubSettings before the game's first script): ≡ below the
     // hub's wake band (a touch above 90 CSS px brings the hub's bar over the game), the top-left
-    // text right of it, the data's layout the page's
-    ctx = await launch(exe, s, { viewport, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
-    {
+    // text right of it, the data's layout the page's; held sideways at 740×360 too (the shortest
+    // phone the corner map has room on below the band), and at 882×344 (a Galaxy Z Fold's cover
+    // screen, too short for one there: it stays at the top, drawn in the band, and takes no tap; the
+    // pause menu opens the level's map)
+    for (const vp of portrait ? [viewport] : [viewport, { width: 740, height: 360 }, { width: 882, height: 344, short: true }]) {
+      const at = `${orientation}${vp === viewport ? '' : ` ${vp.width}×${vp.height}`} in 52in1`;
+      const shotTag = `${tag}${vp === viewport ? '' : `-${vp.width}`}`;
+      ctx = await launch(exe, s, { viewport: { width: vp.width, height: vp.height }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
       const pageH = ctx.page;
       await pageH.addInitScript(() => {
         const dualsense = { connected: false, lightbar: false, triggers: false, motion: false, touchpad: false, speaker: false, aim: false };
@@ -750,38 +762,199 @@ export async function runRiftlightPhone(h, orientation) {
         return { hub: e.hubSettings.present, top: menu.rect.top, cy: menu.rect.top + menu.rect.height / 2, hidden: menu.hidden, page: rl.ui.hud().controls, data: g.touchPad.dataLayout(), where, menuArt: m };
       });
       const same = JSON.stringify(hub.page) === JSON.stringify(hub.data);
-      check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${orientation} in 52in1: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
-      check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${orientation} in 52in1: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
-      // the corner map, a tap target: below the wake band where it fits (upright), else only its part
-      // below the band takes a tap (on its side the skills' arc is under it); a real finger's tap there
-      // opens the level's map, one on its part in the band (the hub's) opens nothing
-      const map = await pageH.evaluate(() => {
-        const e = window.__PIXEL_ENGINE__;
-        const z = window.__RIFTLIGHT__.ui.hud().zones.find((b) => b.id === 'minimap');
-        const c = e.renderer.renderer.domElement.getBoundingClientRect();
-        const res = e.renderer.resolution;
-        return { x: c.left + ((z.x + z.w / 2) / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, bottom: c.top + ((z.y + z.h) / res.height) * c.height };
+      check(hub.hub && !hub.hidden && hub.top >= 90 && hub.cy >= 112, `${at}: ≡ below the hub's wake band (top ${Math.round(hub.top)} CSS px, centre ${Math.round(hub.cy)})`);
+      check(same && hub.where && hub.where.x > hub.menuArt.x + hub.menuArt.w - 1, `${at}: the controls from their data are where the page lays them, the top-left block right of ≡ (${same ? `block at x ${hub.where?.x}, ≡ to ${hub.menuArt.x + hub.menuArt.w}` : `page ${JSON.stringify(hub.page)} vs data ${JSON.stringify(hub.data)}`})`);
+      if (vp.short) {
+        // no room for a corner map a thumb across below the band: it stays at the top, drawn in the
+        // band (its frame on the HUD's canvas) and shrunk to clear the controls, the gold under it,
+        // both over no touch control's DOM rect and none of the HUD; it takes no tap: a real tap on it
+        // (in the band, and on its rows under the band) opens nothing; ≡'s pause menu has Map, and a
+        // tap on it opens the level's map
+        const top = await pageH.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          e.step(2);
+          const c = e.renderer.renderer.domElement.getBoundingClientRect();
+          const res = e.renderer.resolution;
+          const css = (z) => ({ left: c.left + (z.x / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, right: c.left + ((z.x + z.w) / res.width) * c.width, bottom: c.top + ((z.y + z.h) / res.height) * c.height });
+          const hud = window.__RIFTLIGHT__.ui.hud();
+          const meet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          const r = e.touch.rects();
+          const dom = [r.stick, ...r.buttons.filter((b) => !b.hidden).map((b) => b.rect)].filter((b) => b && b.width > 0);
+          const out = { ids: hud.zones.map((z) => z.id), over: [], drawn: 0 };
+          for (const id of ['minimap', 'gold']) {
+            const z = hud.zones.find((b) => b.id === id);
+            if (!z) continue;
+            out[id] = { ...css(z), art: z };
+            for (const o of [...hud.controls.map((b) => ({ ...b, id: 'control' })), ...hud.zones.filter((b) => b.id !== 'minimap' && b.id !== 'gold')]) if (meet(z, o)) out.over.push(`the ${id} over the ${o.id} ${JSON.stringify(o)}`);
+            for (const d of dom) if (out[id].left < d.right && d.left < out[id].right && out[id].top < d.bottom && d.top < out[id].bottom) out.over.push(`the ${id} over a touch control's DOM rect ${JSON.stringify(d)}`);
+          }
+          // drawn: the share of the map's box the HUD's canvas paints (its frame and cells)
+          const hc = document.querySelector('canvas[data-hud]');
+          const m = out.minimap?.art;
+          if (m && hc?.width) {
+            const k = hc.width / res.width;
+            const d = hc.getContext('2d').getImageData(Math.round(m.x * k), Math.round(m.y * k), Math.round(m.w * k), Math.round(m.h * k)).data;
+            let n = 0;
+            for (let i = 3; i < d.length; i += 4) if (d[i]) n++;
+            out.drawn = n / (d.length / 4);
+          }
+          return out;
+        });
+        const mp = top.minimap;
+        check(
+          !!mp && mp.top < 90 && mp.art.y === 2 && top.drawn > 0.9 && top.gold && top.gold.top >= mp.bottom - 3 && top.over.length === 0,
+          `${at}: the corner map at the top, drawn in the band (${mp ? `${Math.round(mp.left)}-${Math.round(mp.right)} × ${Math.round(mp.top)}-${Math.round(mp.bottom)} CSS px, ${Math.round(top.drawn * 100)}% of it painted` : 'none'}), the gold under it (${top.gold ? `from ${Math.round(top.gold.top)} px` : 'none'}), over nothing${top.over.length ? `: ${top.over.join('; ')}` : ''}`,
+        );
+        const tapAt = async (x, y) => {
+          await pageH.touchscreen.tap(x, y);
+          return pageH.evaluate(() => {
+            window.__PIXEL_ENGINE__.step(2);
+            return { map: window.__RIFTLIGHT__.game.mapOpen, ui: window.__RIFTLIGHT__.state().ui };
+          });
+        };
+        // on the map: its middle in the band (the hub's: a touch there wakes its bar), its bottom rows
+        // (under the band where it reaches there), its right edge
+        const corner = mp ? [await tapAt((mp.left + mp.right) / 2, (mp.top + Math.min(mp.bottom, 90)) / 2), await tapAt((mp.left + mp.right) / 2, mp.bottom - 3), await tapAt(mp.right - 4, mp.top + 6)] : [{ map: true }];
+        // ≡ (its DOM button) opens the pause menu; its Map entry's rect on the canvas, in CSS px
+        const pauseAt = await pageH.evaluate(() => window.__PIXEL_ENGINE__.touch.rects().buttons.find((b) => b.code === 'Escape').rect);
+        const paused = await tapAt(pauseAt.left + pauseAt.width / 2, pauseAt.top + pauseAt.height / 2);
+        const entry = await pageH.evaluate(() => {
+          const ws = window.__RIFTLIGHT__.ui.widgets();
+          const w = ws.find((x) => x.id === 'map');
+          const resume = ws.find((x) => x.id === 'resume');
+          const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+          const k = c.width / window.__RIFTLIGHT__.game.ui.w;
+          return w?.rect ? { x: c.left + (w.rect.x + w.rect.w / 2) * k, y: c.top + (w.rect.y + w.rect.h / 2) * k, h: w.rect.h * k, resume: (resume?.rect?.h ?? 0) * k } : null;
+        });
+        const opened = entry ? await tapAt(entry.x, entry.y) : null;
+        await pageH.screenshot({ path: new URL(`${shotTag}-hub-map.png`, OUT).pathname });
+        const shut = await tapAt(vp.width / 2, vp.height / 2);
+        check(
+          corner.every((c) => !c.map) && paused.ui.includes('pause') && entry && entry.h >= entry.resume && opened?.map && opened.ui.length === 0 && !shut.map,
+          `${at}: a tap on the corner map opens nothing (${corner.map((c) => (c.map ? 'the map' : 'nothing')).join(', ')}), ≡ opens the pause menu (${paused.ui.join(',') || 'nothing'}), its Map entry (${entry ? `${Math.round(entry.h)} CSS px tall, Resume ${Math.round(entry.resume)}` : 'missing'}) opens the level's map (${opened ? `${opened.map ? 'open' : 'shut'}, panels ${opened.ui.join(',') || 'none'}` : 'no tap'}), a tap on it closes it (${shut.map ? 'still open' : 'closed'})`,
+        );
+        // a 52in1 round there, faked: the round's command as the hub's welcome makes it (no hub behind
+        // it: `HubSession.offline`, as a replay has), then the hub's start and Go. A round has no pause
+        // menu: ≡ is hidden, and the Map button is in its place (below the band, a thumb across, drawn
+        // as a folded map); a real tap on it opens the level's map, another closes it
+        await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
+        await pageH.waitForTimeout(1000);
+        await pageH.screenshot({ path: new URL(`${shotTag}-hub.png`, OUT).pathname });
+        await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = true));
+        const phase = await pageH.evaluate(async () => {
+          const e = window.__PIXEL_ENGINE__;
+          const g = window.__RIFTLIGHT__.game;
+          e.input.send({ rl: 'round', info: { me: 0, players: [{ id: 0, name: 'P1', color: '#ef7d57' }], host: 0, isHost: true, server: false, mode: 'moments', play: null, moment: 'gale-escape', round: 1, limitMs: 30000, seed: 7 } });
+          for (const t0 = Date.now(); Date.now() < t0 + 30000 && g.round?.phase !== 'waiting'; ) {
+            e.step(1);
+            await new Promise((r) => setTimeout(r, 10));
+          }
+          e.input.send({ hub: { type: 'start', in: 0 } });
+          e.step(2);
+          e.input.send({ rl: 'round-go' });
+          e.step(2);
+          e.input.noteTouch();
+          e.step(10);
+          return g.round?.phase ?? null;
+        });
+        const roundAt = () =>
+          pageH.evaluate(() => {
+            const e = window.__PIXEL_ENGINE__;
+            e.step(2);
+            const r = e.touch.rects();
+            const b = (code) => {
+              const x = r.buttons.find((y) => y.code === code);
+              return x && { hidden: x.hidden, left: x.rect.left, top: x.rect.top, width: x.rect.width, height: x.rect.height };
+            };
+            const el = document.querySelector('.touch-ui > button[data-code="KeyM"]');
+            return { visible: e.touch.visible, menu: b('Escape'), map: b('KeyM'), drawn: !!el && el.classList.contains('has-icon') && getComputedStyle(el).visibility === 'visible', open: window.__RIFTLIGHT__.game.mapOpen, corner: window.__RIFTLIGHT__.ui.hud().zones.find((z) => z.id === 'minimap') };
+          });
+        const inRound = await roundAt();
+        const mb = inRound.map;
+        check(
+          phase === 'playing' && inRound.visible && inRound.menu?.hidden && mb && !mb.hidden && inRound.drawn && mb.top >= 90 && Math.min(mb.width, mb.height) >= 44 && mb.left === inRound.menu.left && mb.top === inRound.menu.top && inRound.corner?.y === 2,
+          `${at}, a round (${phase}): ≡ hidden (${inRound.menu?.hidden}), the Map button in its place, drawn as a map (${mb ? `${mb.hidden ? 'hidden' : 'shown'}, ${inRound.drawn ? 'its icon' : 'no icon'}, ${Math.round(mb.width)}×${Math.round(mb.height)} CSS px from ${Math.round(mb.top)} px` : 'none'}), the corner map at the top (y ${inRound.corner?.y})`,
+        );
+        if (mb) {
+          await pageH.touchscreen.tap(mb.left + mb.width / 2, mb.top + mb.height / 2);
+          const opened = await roundAt();
+          await pageH.screenshot({ path: new URL(`${shotTag}-hub-round-map.png`, OUT).pathname });
+          await pageH.touchscreen.tap(mb.left + mb.width / 2, mb.top + mb.height / 2);
+          const closed = await roundAt();
+          check(opened.open && !closed.open && !closed.map.hidden, `${at}, a round: a real tap on the Map button opens the level's map (${opened.open ? 'open' : 'shut'}), another closes it (${closed.open ? 'still open' : 'closed'})`);
+        }
+        await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
+        await pageH.waitForTimeout(1000);
+        await pageH.screenshot({ path: new URL(`${shotTag}-hub-round.png`, OUT).pathname });
+        checkClean(await state(pageH), ctx.logs, `${at}: `);
+        await ctx.browser.close();
+        ctx = null;
+        continue;
+      }
+      // the corner map, a tap target, and the gold under it (beside it on a phone held sideways, the
+      // map shrunk to fit above the skills' arc): wholly below the band, a thumb across, over no
+      // touch control on the page (their DOM rects) and none of the rest of the HUD (`ui.hud()`), with
+      // couch guests and a boss's bar too; a real finger's tap on it opens the level's map, one in
+      // the band above it (the hub's) opens nothing
+      const corner = () =>
+        pageH.evaluate(() => {
+          const e = window.__PIXEL_ENGINE__;
+          e.step(2);
+          const c = e.renderer.renderer.domElement.getBoundingClientRect();
+          const res = e.renderer.resolution;
+          const css = (z) => ({ left: c.left + (z.x / res.width) * c.width, top: c.top + (z.y / res.height) * c.height, right: c.left + ((z.x + z.w) / res.width) * c.width, bottom: c.top + ((z.y + z.h) / res.height) * c.height });
+          const hud = window.__RIFTLIGHT__.ui.hud();
+          const meet = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+          const r = e.touch.rects();
+          const dom = [r.stick, ...r.buttons.filter((b) => !b.hidden).map((b) => b.rect)].filter((b) => b && b.width > 0);
+          const out = { ids: hud.zones.map((z) => z.id), over: [] };
+          for (const id of ['minimap', 'gold']) {
+            const z = hud.zones.find((b) => b.id === id);
+            out[id] = { ...css(z), art: z };
+            for (const o of [...hud.controls.map((b) => ({ ...b, id: 'control' })), ...hud.zones.filter((b) => b.id !== 'minimap' && b.id !== 'gold')]) if (meet(z, o)) out.over.push(`the ${id} over the ${o.id} ${JSON.stringify(o)}`);
+            for (const d of dom) if (out[id].left < d.right && d.left < out[id].right && out[id].top < d.bottom && d.top < out[id].bottom) out.over.push(`the ${id} over a touch control's DOM rect ${JSON.stringify(d)}`);
+          }
+          return out;
+        });
+      const alone = await corner();
+      const { minimap: map, gold } = alone;
+      const holds = (c, where) =>
+        check(
+          c.minimap.top >= 90 && c.gold.top >= 90 && c.over.length === 0 && Math.min(c.minimap.right - c.minimap.left, c.minimap.bottom - c.minimap.top) >= 40 && JSON.stringify(c.minimap.art) === JSON.stringify(map.art),
+          `${at}${where}: the corner map (${Math.round(c.minimap.left)}-${Math.round(c.minimap.right)} × ${Math.round(c.minimap.top)}-${Math.round(c.minimap.bottom)} CSS px) and the gold (from ${Math.round(c.gold.top)} px) wholly below the wake band, a thumb across, where they were, over nothing${c.over.length ? `: ${c.over.join('; ')}` : ''}`,
+        );
+      holds(alone, '');
+      const busy = await pageH.evaluate(() => {
+        const g = window.__RIFTLIGHT__.game;
+        const boss = g.level.bossUnit;
+        boss.actor.life = boss.actor.maxLife * 0.8; // its bar shows
+        for (const slot of [1, 2, 3]) g.coop.join(slot);
+        window.__PIXEL_ENGINE__.input.noteTouch();
+        window.__PIXEL_ENGINE__.step(30);
+        return g.coop.strips().length;
       });
-      const below = { top: Math.max(map.top, 90), bottom: map.bottom };
-      const tapMap = async (y) => {
-        await pageH.touchscreen.tap(map.x, y);
+      const crowd = await corner();
+      check(busy === 3 && crowd.ids.includes('boss') && crowd.ids.includes('guests'), `${at}: three couch guests' strips and a boss's bar on the HUD (${busy} guests, zones ${crowd.ids.join(',')})`);
+      holds(crowd, ', three guests and a boss');
+      const tapMap = async (y, x = (map.left + map.right) / 2) => {
+        await pageH.touchscreen.tap(x, y);
         return pageH.evaluate(() => {
           window.__PIXEL_ENGINE__.step(2);
           return window.__RIFTLIGHT__.game.mapOpen;
         });
       };
-      const inBand = map.top < 90 ? await tapMap((map.top + 90) / 2) : false;
-      const opened = await tapMap((below.top + below.bottom) / 2);
-      check(!inBand && opened && below.bottom - below.top >= 44, `${orientation} in 52in1: the corner map takes a tap only below the wake band (map ${Math.round(map.top)}-${Math.round(map.bottom)} CSS px; a tap in the band opened ${inBand ? 'the map' : 'nothing'}, below it ${opened ? 'the map' : 'nothing'})`);
-      await pageH.screenshot({ path: new URL(`${tag}-hub-map.png`, OUT).pathname });
-      await tapMap(pageH.viewportSize().height / 2); // a tap on the big map closes it
+      const inBand = await tapMap(45);
+      const opened = await tapMap((map.top + map.bottom) / 2);
+      await pageH.screenshot({ path: new URL(`${shotTag}-hub-map.png`, OUT).pathname });
+      const shut = !(await tapMap(vp.height / 2, vp.width / 2)); // a tap on the big map (the screen's middle) closes it
+      check(!inBand && opened && shut, `${at}: a tap on the corner map opens the level's map, one in the band above it nothing, one on the big map closes it (a tap in the band opened ${inBand ? 'the map' : 'nothing'}, on the map ${opened ? 'the map' : 'nothing'}; ${shut ? 'closed' : 'still open'}; the gold ${Math.round(gold.left)}-${Math.round(gold.right)} CSS px)`);
       await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
       await pageH.waitForTimeout(1000);
-      await pageH.screenshot({ path: new URL(`${tag}-hub.png`, OUT).pathname });
-      checkClean(await state(pageH), ctx.logs, `${orientation} in 52in1: `);
+      await pageH.screenshot({ path: new URL(`${shotTag}-hub.png`, OUT).pathname });
+      checkClean(await state(pageH), ctx.logs, `${at}: `);
+      await ctx.browser.close();
+      ctx = null;
     }
-    await ctx.browser.close();
-    ctx = null;
 
     // ?debug=1 brings the engine's tool bar back
     ctx = await launch(exe, s, { viewport, deviceScaleFactor: 1, hasTouch: true, isMobile: true });

@@ -52,7 +52,7 @@ import { corePorts } from '../wire';
 import { realLootPort } from '../wire/loot';
 import { realTreePort } from '../wire/tree';
 import { Showcase } from '../showcase/Showcase';
-import { TouchPad } from './touch';
+import { type TouchFrame, TouchPad } from './touch';
 import { Actor, actorIds, setActorIds } from '../actors/Actor';
 import { AIM, attackReach, autoAim, coneTarget, stickAim, TOUCH_AIM, turnOnScreen } from '../actors/aim';
 import { COOP, type CoopView, HEAD, LocalCoop, TAG_AT } from './coop';
@@ -1807,25 +1807,45 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   /**
    * (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or
-   * tap there opens or closes it (and is no attack). `band`: the corner map's part in 52in1's wake
-   * band counts too (no attack there either, though a tap there is the hub's and opens nothing).
+   * tap there opens or closes it (and is no attack). In 52in1 on a touch page the corner map is below
+   * the hub's wake band (`hudGeometry`), or, on a phone held sideways with no room for one there, drawn
+   * at the top in the band, where it takes no tap (`map.tap`: a tap in the band is the hub's, it
+   * brings its bar over the game; the pause menu opens the level's map, `levelMap`, and in a round the
+   * Map button: `mapUntapped`). `drawn`: the
+   * corner map as drawn counts there too (no attack on it, though it opens nothing).
    */
-  private onMap(x: number, y: number, band = false): boolean {
+  private onMap(x: number, y: number, drawn = false): boolean {
     if (!this.level || this.layer.top || this.screen !== 'level') return false;
     const ui = this.ui;
     const g = this.geometry();
-    // in 52in1 on a touch page only below the hub's wake band, where `hudGeometry` could not move it
-    // (a tap in the band is the hub's: it brings its bar over the game)
-    const wake = g.touch && !band ? this.touchPad.wakeArt() : 0;
-    let box: Box = { x: ui.w - g.map.w - 6, y: Math.max(g.map.y, wake), w: g.map.w + 4, h: g.map.y + g.map.h + 4 - Math.max(g.map.y, wake) };
+    let box: Box | null = drawn || g.map.tap ? { x: ui.w - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 } : null;
     if (this.mapOpen) {
       const v = mapView(this.mapRoom(), this.minimapModel()!);
       box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
     }
-    return x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+    return !!box && x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
   }
 
-  /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD. */
+  /**
+   * A level's corner map takes no tap here (`hudGeometry`'s `map.tap`: 52in1 on a touch page, a phone
+   * held sideways with no room for one below the hub's wake band): the pause menu's Map opens the
+   * level's map (`levelMap`), and in a round, which has no pause menu, the Map button in ≡'s place
+   * (`TouchFrame.map`).
+   */
+  private mapUntapped(): boolean {
+    return !!this.level && this.screen === 'level' && !this.geometry().map.tap;
+  }
+
+  /** The level's map from the pause menu, where a touch page's corner map takes no tap (`mapUntapped`); null elsewhere (no Map entry). */
+  levelMap(): (() => void) | null {
+    if (!this.mapUntapped()) return null;
+    return () => {
+      this.resume();
+      this.mapOpen = true;
+    };
+  }
+
+  /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD (beside an orb that climbed into the top half). */
   private mapRoom(): Box {
     const ui = this.ui;
     const g = this.geometry();
@@ -1839,7 +1859,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       const bar = hudBoxes(ui.w, ui.h, model).find((b) => b.id === 'boss');
       top = Math.max(30, bar ? bar.y + bar.h + 5 : 0);
     }
-    return { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
+    const room = { x: 6, y: top, w: ui.w - 12, h: g.top - 6 - top };
+    // an orb that climbed into the top half beside a phone's controls (held sideways, about 300 art
+    // px wide: `hudGeometry`'s `lowestSpot`) is no floor for the map, which would shrink to a sliver
+    // above it: the map goes down to the bottom HUD under it, beside it on its bigger side
+    const up = g.touch ? [g.life, g.mana].filter((o) => o.y < ui.h / 2) : [];
+    if (!up.length) return room;
+    const floor = Math.min(g.levelAt.y, ...[g.life, g.mana].filter((o) => !up.includes(o)).map((o) => o.y - g.orbR));
+    let left = room.x;
+    let right = room.x + room.w;
+    for (const o of up) {
+      const l = o.x - g.orbR - 5;
+      const r = o.x + g.orbR + 5;
+      if (l - left >= right - r) right = Math.min(right, l);
+      else left = Math.max(left, r);
+    }
+    // beside the orb it starts at the screen's edge, where the HUD's top-left block (the level's
+    // name, the clock, the kills) and a round's seconds are: under them
+    const model = this.hudModel();
+    model.controls = this.hudControls;
+    model.minimap = null;
+    const over = hudBoxes(ui.w, ui.h, model).filter((z) => (z.id === 'where' || z.id === 'time') && z.x < right && z.x + z.w > left && z.y < floor / 2);
+    const under = Math.max(top, ...over.map((z) => z.y + z.h + 4));
+    const beside = { x: left, y: under, w: right - left, h: floor - 6 - under };
+    return beside.w * beside.h > room.w * room.h ? beside : room;
   }
 
   /** The page has touch controls (its art density is a touch page's: recorded): a finger's assists apply, and Settings shows their rows (`MenuHost.touchControls`). */
@@ -2085,11 +2128,20 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.feel.latch(pad && ((play && this.interactOffer() !== null) || (this.feel.latched && input.isDown('PadRT'))));
   }
 
-  /** The touch buttons follow the game: shown while you play, the bar's icons and cooldowns, what F does here. */
+  /** The touch buttons follow the game (`touchFrame`): shown while you play, the bar's icons and cooldowns, what F does here. */
   private syncTouch(): void {
-    if (!this.touchPad.active) return;
+    if (this.touchPad.active) this.touchPad.sync(this.touchFrame());
+  }
+
+  /**
+   * What the touch buttons show this frame (`TouchPad.sync`; headless, where there are none, what
+   * they would): shown while you play, no ≡ in a 52in1 round and the Map button in its place where
+   * the corner map takes no tap (`mapUntapped`), the bar's icons and cooldowns, what F does here.
+   */
+  touchFrame(): TouchFrame {
     const playing = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top;
-    this.touchPad.sync({ playing, round: !!this.round, showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null });
+    const round = !!this.round;
+    return { playing, round, map: playing && round && this.mapUntapped(), showcase: this.showcase.active && this.showcase.touch(), skills: playing ? this.hero.skills() : [], interact: playing ? this.interactOffer() : null };
   }
 
   /** What F (the touch interact button) would do now: the verb and its target, or null. */

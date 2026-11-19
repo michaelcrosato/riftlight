@@ -8,7 +8,8 @@
  *                 (TALK, OPEN, TAKE, GO) that shows only when there is something to use
  *   top-left      ≡ (the pause menu: inventory, skills, tree, settings...); in 52in1 lower, out of
  *                 the hub's wake band (`HUB_WAKE`), and hidden in a 52in1 round (the hub's bar is
- *                 the menu there)
+ *                 the menu there). In a round where the corner map takes no tap (drawn in the band:
+ *                 `hudGeometry`'s `map.tap`) a Map button, drawn as a folded map, is in its place
  *
  * The buttons ARE the skill bar on a touch screen: each one shows its gem's icon
  * (`skills/icons.ts`, the same pixels as the HUD's bar), its cooldown shutter and seconds, its
@@ -38,7 +39,10 @@ export const TOUCH_LAYOUT = {
   dodge: { angle: 38, r: 172, size: 52 },
   interact: { angle: 56, r: 182, size: 50 },
   menu: { x: 26, y: 26, size: 44 },
-  /** ≡ in 52in1 (`RIFTLIGHT_HUB_TOUCH_BUTTONS`): its top edge on the hub's wake band (`HUB_WAKE`), its centre 112 CSS px down. */
+  /**
+   * ≡ in 52in1 (`RIFTLIGHT_HUB_TOUCH_BUTTONS`): its top edge on the hub's wake band (`HUB_WAKE`), its
+   * centre 112 CSS px down. The Map button takes this place in a round (`TouchFrame.map`), where ≡ is hidden.
+   */
   menuHub: { x: 26, y: 104, size: 44 },
 } as const;
 
@@ -55,14 +59,22 @@ const polar = (angle: number, r: number, size: number) => {
   return { x: Math.round(L.attack.x + Math.cos(a) * r), y: Math.round(L.attack.y + Math.sin(a) * r), size };
 };
 
-/** Key codes the buttons press (the shell's `KEYS`: J attack, Space dodge, 1-4 skills, F interact, Esc pause). */
-export const TOUCH_CODES = { attack: 'KeyJ', dodge: 'Space', skills: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], interact: 'KeyF', menu: 'Escape' } as const;
+/** Key codes the buttons press (the shell's `KEYS`: J attack, Space dodge, 1-4 skills, F interact, Esc pause, M the level's map). */
+export const TOUCH_CODES = { attack: 'KeyJ', dodge: 'Space', skills: ['Digit1', 'Digit2', 'Digit3', 'Digit4'], interact: 'KeyF', menu: 'Escape', map: 'KeyM' } as const;
+
+/** The Map button's picture (`TouchPad.sync`: a folded map, its route to an X; the skill icons' format, an ink outline added). */
+export const MAP_ICON = {
+  rows: ['....dddd....', 'hhhhddddhhhh', 'hhhhddddhrhr', 'hhhhddddhhrh', 'hhhhdddrhrhr', 'hhhhddrdhhhh', 'hhrhrdddhhhh', 'hrhhddddhhhh', 'hhhh....hhhh'],
+  colors: { h: 'sand', d: 'orange', r: 'red' },
+} as const satisfies { rows: readonly string[]; colors: Readonly<Record<string, PaletteColor>> };
 
 /**
  * Riftlight's on-screen buttons for phones (`EngineOptions.touchButtons`), with ≡ in the top-left
- * corner, or (`hub`: in 52in1) below the hub's wake band. The attack comes first (the engine colours
- * the first button). The page is made before the game's language is chosen: `TouchPad.sync` puts
- * the hints in it (lines `touch.hint.*`) once the game runs.
+ * corner, or (`hub`: in 52in1) below the hub's wake band, the Map button in the same place (shown
+ * only in a round, where ≡ is hidden, on a screen whose corner map takes no tap: `TouchFrame.map`;
+ * it presses M, recorded as every button's key). ≡ comes last. The attack comes first (the engine
+ * colours the first button). The page is made before the game's language is chosen: `TouchPad.sync`
+ * puts the hints in it (lines `touch.hint.*`) once the game runs.
  */
 export function riftlightTouchButtons(hub: boolean): readonly TouchButton[] {
   return [
@@ -70,13 +82,14 @@ export function riftlightTouchButtons(hub: boolean): readonly TouchButton[] {
     ...TOUCH_CODES.skills.map((code, i) => ({ label: String(i + 1), code, hint: 'skill', at: polar(L.angles[i]!, L.ring, L.skill) })),
     { label: 'B', code: TOUCH_CODES.dodge, hint: 'dodge', at: polar(L.dodge.angle, L.dodge.r, L.dodge.size) },
     { label: 'F', code: TOUCH_CODES.interact, hint: 'talk', at: polar(L.interact.angle, L.interact.r, L.interact.size) },
+    ...(hub ? [{ label: 'M', code: TOUCH_CODES.map, at: { ...L.menuHub, corner: 'top-left' as const } }] : []),
     { label: '≡', code: TOUCH_CODES.menu, at: { ...(hub ? L.menuHub : L.menu), corner: 'top-left' } },
   ];
 }
 
 /** Riftlight's on-screen buttons on its own page (`riftlightTouchButtons`): ≡ in the top-left corner. */
 export const RIFTLIGHT_TOUCH_BUTTONS = riftlightTouchButtons(false);
-/** Riftlight's on-screen buttons in 52in1 (`riftlightTouchButtons`): ≡ below the hub's wake band (`HUB_WAKE`). */
+/** Riftlight's on-screen buttons in 52in1 (`riftlightTouchButtons`): ≡ below the hub's wake band (`HUB_WAKE`), and the Map button in its place for a round. */
 export const RIFTLIGHT_HUB_TOUCH_BUTTONS = riftlightTouchButtons(true);
 
 /** The engine's joystick at rest (style.css `.touch-ui .stick`): 16 CSS px from the bottom-left corner, 128 px and a 2 px border. */
@@ -119,6 +132,12 @@ export interface TouchFrame {
   playing: boolean;
   /** A 52in1 round: no ≡ (a round has no pause menu; the hub's bar is the menu there). */
   round?: boolean;
+  /**
+   * The Map button shows in ≡'s place (52in1's buttons): a round's level on a screen whose corner
+   * map takes no tap (drawn in the hub's wake band: `hudGeometry`'s `map.tap`), so a finger opens
+   * the level's map there, as the pause menu's Map does out of a round (`Riftlight.touchFrame`).
+   */
+  map?: boolean;
   /**
    * A showcase mode (arcade, hall, photo) owns the game: stick, attack, jump, ≡ and its own interact
    * (`Showcase.touch`: the Hall's exhibit near, none in the arcade), no skills and no skill icons;
@@ -285,8 +304,10 @@ export class TouchPad {
     const it = f.showcase ? (typeof f.showcase === 'object' ? f.showcase.interact : null) : f.interact;
     // the hint under the verb is the target's name, cut to the button (whole letters)
     touch.set(TOUCH_CODES.interact, it ? { hidden: false, label: it.verb, hint: clusters(it.name).slice(0, 9).join('') } : { hidden: true });
-    // a 52in1 round has no pause menu: ≡ would do nothing (the hub's bar is the menu there)
+    // a 52in1 round has no pause menu: ≡ would do nothing (the hub's bar is the menu there); the Map
+    // button takes its place where the corner map takes no tap (52in1's buttons only)
     touch.set(TOUCH_CODES.menu, { hidden: !!f.round });
+    touch.set(TOUCH_CODES.map, f.map && !f.showcase ? { hidden: false, icon: this.icon(TOUCH_CODES.map, 'map', MAP_ICON.rows, MAP_ICON.colors) } : { hidden: true });
   }
 
   /** One skill button from its bar slot: icon, shutter, seconds, cost, dimmed when unaffordable. */
