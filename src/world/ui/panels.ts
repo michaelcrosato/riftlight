@@ -85,9 +85,12 @@ export function guidePanel(def: RoomDef, pads: readonly Pad[], knobs: readonly K
   return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs, fill), { width: 250, height: 236, short: def.title });
 }
 
-/** The field guide: every word, by section. `touch`: on a phone, which has no Tab to jump between them. */
+/**
+ * The field guide: every word, by section. Its legend says how to jump between them (Shift+Tab /
+ * Tab or L1 / R1: Headings); `touch`: on a phone, which draws no legend, it says how to scroll.
+ */
 export function fieldGuide(fill: (text: string) => string = (s) => keyText(null, s), touch = false): Reader {
-  const blocks: Block[] = [{ kind: 'p', text: fill(touch ? 'Every word the station guides use; drag to scroll.' : 'Every word the station guides use. {key:tab} jumps between sections.') }];
+  const blocks: Block[] = [{ kind: 'p', text: fill(touch ? 'Every word the station guides use; drag to scroll.' : 'Every word the station guides use.') }];
   for (const [id, title] of Object.entries(SECTIONS)) {
     const terms = GLOSSARY.filter((t) => t.section === id);
     if (!terms.length) continue;
