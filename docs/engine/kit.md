@@ -52,8 +52,8 @@ another agent*):
   Lab's looks): each has the touch buttons its guide gives it (Beacon Yard's LIGHT only by a dark
   beacon, none over its menu; none on Market Corner, nothing to press), the pad's legend on a TV,
   every HUD text lies inside the HUD and clear of the controls (the stick, its zone, a button, the
-  ⚙) and other texts, every tap target is reachable, and a phone held sideways shows the art at two
-  CSS pixels a pixel at least.
+  ⚙) and other texts, every tap target is reachable, and a phone held sideways shows the art at about two
+  CSS pixels a pixel.
 - `RECIPES.md` (docs/GUIDE-RECIPES.md, stamped): more whole games, each meeting CONTROLS.md's
   checklist the same way (a `controls` table and a legend of the device's controls, touch buttons of
   its own, `touchDensity: 2`, the HUD from `hud.width` clear of the ⚙ and the controls, the camera's

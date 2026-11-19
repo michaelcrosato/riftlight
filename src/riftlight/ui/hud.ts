@@ -143,7 +143,8 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * controls, and takes no tap (`map.tap`: the pause menu opens the level's map; in a round, which has
  * none, the Map button in ≡'s place: `TouchFrame.map`). On the game's own page it is at the top, a
  * tap target, shrunk the same way where it and the gold under it would reach the controls (a phone
- * held sideways under a browser's bars), so no HUD sits under a control.
+ * held sideways under a browser's bars), down to `MAP_LEAST`: on the shortest (about 129 rows) the
+ * gold under it can still reach a skill button.
  */
 export function hudGeometry(W: number, H: number, controls: readonly Box[] = [], wake = 0) {
   const compact = W < 300;

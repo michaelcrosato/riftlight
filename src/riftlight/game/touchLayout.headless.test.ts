@@ -44,6 +44,8 @@ const itemsUi = (g: HeadlessRiftlight) =>
     hint(id: string, pad: string): string;
     vendorHint(mode: 'pad' | 'touch' | 'mouse'): { mini: boolean; rows: string[] };
     leftRect(): Box;
+    tabRect(i: number): Box;
+    vendorTabs(): readonly unknown[];
     legendAt(w: number, avoid: readonly Box[]): { x: number; y: number } | null;
     rects(): Box[];
   };
@@ -74,6 +76,10 @@ describe('the item windows on every screen', () => {
       expect(ui.hint('item.vendor.hint', 'PadY'), 'a finger: the touch hint on a wide screen').toBe(t('item.vendor.hint_touch'));
       const touchRect = ui.leftRect();
       expect(touchRect.h, 'the window holds a finger\'s hint').toBe(VENDOR_H + (ui.vendorHint('touch').rows.length - 1) * 9 + 1);
+      // its tabs (wares, gems, gamble) inside the window, clear of its frame
+      const tabs = ui.vendorTabs().map((_, i) => ui.tabRect(i));
+      expect(tabs.length, 'three tabs').toBe(3);
+      for (const tab of tabs) expect(tab.x + tab.w, `a tab ${JSON.stringify(tab)} inside the window ${JSON.stringify(touchRect)}`).toBeLessThanOrEqual(touchRect.x + touchRect.w - 4);
       // the keyboard picked up: its hint, the window where it was
       engine.input.noteDevice('keyboard');
       engine.step(2);

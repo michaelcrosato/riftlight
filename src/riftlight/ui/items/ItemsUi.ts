@@ -597,7 +597,11 @@ export class ItemsUi {
   /** A stash tab (1..4) or a vendor tab (wares, gems). */
   tabRect(i: number): Rect {
     const r = this.leftRect();
-    if (this.left === 'vendor') return { x: r.x + 4 + i * 42, y: r.y + HEADER + 1, w: 40, h: 12 };
+    if (this.left === 'vendor') {
+      // at most 42 apart, closer where the window's tabs would run onto its frame (wares, gems, gamble)
+      const step = Math.min(42, Math.floor((r.w - 8) / Math.max(1, this.vendorTabs().length)));
+      return { x: r.x + 4 + i * step, y: r.y + HEADER + 1, w: step - 2, h: 12 };
+    }
     return { x: r.x + 4 + i * 16, y: r.y + HEADER + 1, w: 14, h: 12 };
   }
 
