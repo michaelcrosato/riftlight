@@ -343,10 +343,12 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
       `--keys Mouse@x,y hovers and MouseLeft@x,y clicks at art pixels: Beacon Yard's menu stays under a hover, its focus on Restart (${focus}: ${hr.shots[0]?.file}) ("${hr.state?.status}"), and a click on Resume closes it, in the page ("${cr.state?.status}") and in Node ("${cn.status}"); a spot off the art fails${hover.code || click.code || clickNode.code || off.code !== 1 ? ':\n    ' + tail(hover.out + click.out + clickNode.out + off.out) : ''}`,
     );
     // a code check.mjs can't hold is refused before anything runs (exit 2, naming it)
-    const refused = await Promise.all(['PadLStick*60', 'PadJump*3', 'Mouse*3', 'PadLStick:2,0*3', 'KeyD@3,4'].map((k) => checkTool(join(kitPath, 'index.html'), ['--keys', k])));
+    // (an object's own names, toString and constructor, are no d-pad direction either)
+    const refused = await Promise.all(['PadLStick*60', 'PadJump*3', 'Mouse*3', 'PadLStick:2,0*3', 'KeyD@3,4', 'toString*3', 'constructor'].map((k) => checkTool(join(kitPath, 'index.html'), ['--keys', k])));
     check(
-      refused.every((r) => r.code === 2) && /"PadLStick\*60": say where the stick is held/.test(refused[0].out) && /"PadJump" is not a code check.mjs can hold/.test(refused[1].out) && /say where the mouse goes/.test(refused[2].out) && /each -1..1/.test(refused[3].out) && /only the mouse takes a spot/.test(refused[4].out),
-      `--keys refuses what it can't hold, naming it (a stick with no direction, a made-up code, the mouse with no spot, a stick past 1, a key at a spot: exit ${refused.map((r) => r.code).join(', ')})`,
+      refused.every((r) => r.code === 2) && /"PadLStick\*60": say where the stick is held/.test(refused[0].out) && /"PadJump" is not a code check.mjs can hold/.test(refused[1].out) && /say where the mouse goes/.test(refused[2].out) && /each -1..1/.test(refused[3].out) && /only the mouse takes a spot/.test(refused[4].out) &&
+        /"toString" is not a code check.mjs can hold/.test(refused[5].out) && /"constructor" is not a code check.mjs can hold/.test(refused[6].out),
+      `--keys refuses what it can't hold, naming it (a stick with no direction, a made-up code, the mouse with no spot, a stick past 1, a key at a spot, toString, constructor: exit ${refused.map((r) => r.code).join(', ')})`,
     );
     // "page.html?touch=1": a phone's touch screen, so touch is the device in use (its prompts), the
     // report says where each touch control is, and a shot of the page shows them

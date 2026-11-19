@@ -114,7 +114,7 @@ const KEY_CODES = new Set([
   ...['MouseLeft', 'MouseRight', 'MouseMiddle', 'Touch', 'SwipeLeft', 'SwipeRight', 'SwipeUp', 'SwipeDown'],
   ...['Left', 'Right', 'Up', 'Down', 'Tap'].map((g) => `PadTouchpad${g}`),
 ]);
-/** The standard pad's buttons (the engine's GAMEPAD_BUTTONS codes), and its d-pad's by index. */
+/** The standard pad's buttons (the engine's GAMEPAD_BUTTONS codes), and its d-pad's by index (`Object.hasOwn`: `toString` is none). */
 const PAD_BUTTONS = new Set(['PadA', 'PadB', 'PadX', 'PadY', 'PadLB', 'PadRB', 'PadLT', 'PadRT', 'PadBack', 'PadStart', 'PadL3', 'PadR3', 'PadTouchpad']);
 const DPAD = { PadUp: 12, PadDown: 13, PadLeft: 14, PadRight: 15 };
 const STICKS = new Set(['PadLStick', 'PadRStick']);
@@ -151,7 +151,7 @@ function parseKeys(text) {
     } else if (code === null) steps.push({ kind: 'idle', code, frames });
     else if (STICKS.has(code)) fail(`--keys: "${said}": say where the stick is held, ${code}:x,y (x right, y up, each -1..1: ${code}:1,0 is right)`);
     else if (code === 'Mouse') fail(`--keys: "${said}": say where the mouse goes, Mouse@x,y in art pixels`);
-    else if (PAD_BUTTONS.has(code) || code in DPAD) steps.push({ kind: 'pad', code, frames });
+    else if (PAD_BUTTONS.has(code) || Object.hasOwn(DPAD, code)) steps.push({ kind: 'pad', code, frames });
     else if (POINTER.has(code)) steps.push({ kind: 'pointer', code, at: null, frames });
     else if (KEY_CODES.has(code)) steps.push({ kind: 'key', code, frames });
     else fail(`--keys: "${code}" is not a code check.mjs can hold: ${kinds}`);
@@ -300,7 +300,8 @@ function holdKey(e, step, down) {
   if (step === null) return e.input.setGamepads([pad]);
   if (step.kind === 'key') return e.input.setKey(step.code, down);
   if (step.kind === 'pad') {
-    const dpad = { PadUp: 12, PadDown: 13, PadLeft: 14, PadRight: 15 }[step.code];
+    const dpadAt = { PadUp: 12, PadDown: 13, PadLeft: 14, PadRight: 15 }; // DPAD's (this runs in the page too)
+    const dpad = Object.hasOwn(dpadAt, step.code) ? dpadAt[step.code] : undefined;
     const button = dpad ?? Number(Object.keys(e.input.gamepadButtons).find((i) => e.input.gamepadButtons[i] === step.code));
     if (!Number.isInteger(button)) throw new Error(`check.mjs: no button of the pad presses ${step.code} in this game (input.gamepadButtons)`);
     if (down) pad.buttons[button] = { pressed: true, value: 1 };
