@@ -167,6 +167,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   private deathTimer = 0;
   private dialogueLine: string | null = null;
   private talkingTo: import('../town/npcs').Npc | null = null;
+  /** The panel the townsperson opened as they spoke (`openPanel`'s id): the one `PanelHost.talk` gives their line to. */
+  private talkPanel: string | null = null;
   /**
    * The NPC's line on screen (`talkPlace`): when it was said (game time: one over the panels goes
    * after `talkSeconds`), a tap on it put it away, a press on it is down, and where it was laid out
@@ -1298,7 +1300,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   // ================================================================ panels
 
   /** What a panel may ask of the shell; `close` closes that panel (`self` is set once it exists). */
-  private panelHost(self: { panel?: Panel } = {}): PanelHost {
+  private panelHost(self: { panel?: Panel; as?: string } = {}): PanelHost {
     return {
       services: this.services,
       save: () => this.save,
@@ -1313,13 +1315,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       sound: (s) => this.sound(s),
       close: () => (self.panel ? this.layer.close(self.panel.id) : this.layer.close()),
       glyphs: () => this.padGlyphs(),
-      talk: () => (this.dialogueLine ? talkText(this.dialogueLine) : null),
+      // the line is the panel's the townsperson opened (Oru's respec), never one opened over it (P over Ilsa's vendor)
+      talk: () => (this.dialogueLine && self.as === this.talkPanel ? talkText(this.dialogueLine) : null),
     };
   }
 
   openPanel(id: 'inventory' | 'skills' | 'tree' | 'character' | 'codex' | 'vendor' | 'stash' | 'crafting' | 'respec' | 'rift' | 'pause' | 'tuning' | 'settings' | 'dev' | 'slots' | 'look'): Panel | null {
     if (this.screen === 'title' && !['settings', 'slots', 'look'].includes(id)) return null;
-    const self: { panel?: Panel } = {};
+    const self: { panel?: Panel; as?: string } = { as: id };
     const host = this.panelHost(self);
     const loot = this.ports.loot;
     let panel: Panel;
@@ -1400,6 +1403,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.talkingTo?.endTalk();
     this.talkingTo = null;
     this.dialogueLine = null;
+    this.talkPanel = null;
   }
 
   // ================================================================ per frame
@@ -2217,6 +2221,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.ctx.audio.play('rl.bark');
     }
     const panel = it.action === 'craft' ? 'crafting' : it.action === 'vendor' ? 'vendor' : it.action === 'tree' ? 'respec' : it.action === 'rift' ? 'rift' : null;
+    if (it.npc) this.talkPanel = panel;
     if (panel) this.openPanel(panel);
     return true;
   }

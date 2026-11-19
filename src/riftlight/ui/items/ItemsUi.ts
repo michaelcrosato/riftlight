@@ -340,6 +340,7 @@ export class ItemsUi {
       this.touchAt = null;
       this.downAt = null;
       this.longPressed = false;
+      this.said = null; // a townsperson's line goes with the windows (the next to open never shows it)
       this.paint(); // hide the canvas now: a hosted view gets no more updates once closed
     }
   }

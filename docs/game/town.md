@@ -78,4 +78,5 @@ Vex the rift menu, the chest the stash. Their bubbles go through the HUD's layou
 nearest the hero first, so none covers another (or the HUD, the prompt). The line one says as their
 view opens is laid out in free space (`talkPlace`: clear of the item windows or the panel and its
 legend, and of the HUD; between two windows it wraps to the gap); a phone held upright has none, so
-it goes over the windows a while (`talkSeconds`); the passive tree's view shows Oru's under its top bar.
+it goes over the windows a while (`talkSeconds`) and goes with them; the passive tree's view shows Oru's under its top bar.
+Only the view a townsperson opened shows their line (`PanelHost.talk`: the tree opened over Ilsa's vendor shows none).

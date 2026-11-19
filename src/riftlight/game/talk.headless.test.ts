@@ -3,8 +3,10 @@
 //   nearest the hero first: one that would cover another waits its turn);
 // - the line a townsperson says as a window opens (Ilsa's vendor, Brann's anvil) is laid out in free
 //   space, whole, clear of the item windows, the HUD and the windows' legend; where a phone has no
-//   room for it, it goes over the windows (their canvas draws it) a while, then out of the way;
-// - Oru's line shows in the passive tree's own view (the shell's would be under its canvas).
+//   room for it, it goes over the windows (their canvas draws it) a while, then out of the way, and
+//   goes with them (the next window to open never shows it); the legend keeps off it wherever it is;
+// - Oru's line shows in the passive tree's own view (the shell's would be under its canvas), and
+//   only the panel a townsperson opened shows their line (the tree opened over Ilsa's vendor shows none).
 // One engine per screen, tests in order.
 import { Vector3 } from 'three/webgpu';
 import { afterAll, describe, expect, it } from 'vitest';
@@ -35,7 +37,8 @@ for (const view of [
   { name: '844×390', viewport: { width: 844, height: 390, dpr: 2 }, touch: true },
 ]) {
   describe(`townsfolk's words at ${view.name}`, () => {
-    const shell = () => h!.game as unknown as { talk: { place: TalkPlace | null }; touchable: { dialogue: Rect | null } };
+    const shell = () => h!.game as unknown as { talk: { place: TalkPlace | null; key: string }; touchable: { dialogue: Rect | null } };
+    const legendRows = () => [t('legend.select'), t('legend.back'), t('legend.tabs')];
     const items = () => (h!.game.ports.loot as RealLoot).itemsUi() as unknown as { rects(): Rect[]; said: { box: Rect; rows: readonly string[] } | null };
 
     it(
@@ -108,7 +111,7 @@ for (const view of [
             for (const o of others) expect(apart(box, o), `"${o.text}" ${JSON.stringify(o)} clear of the line ${JSON.stringify(box)}`).toBe(true);
             if (!view.touch) {
               // the legend shows, and keeps its place clear of the HUD (the line left it room)
-              const legend = texts.filter((x) => [t('legend.select'), t('legend.back'), t('legend.tabs')].includes(x.text));
+              const legend = texts.filter((x) => legendRows().includes(x.text));
               expect(legend.length, 'the legend shows').toBeGreaterThan(0);
               const hud = rl.ui.hud().zones.filter((z) => ['skillbar', 'life', 'mana', 'level'].includes(z.id));
               for (const l of legend) for (const z of hud) expect(apart(l, z), `the legend's "${l.text}" clear of the HUD's ${z.id}`).toBe(true);
@@ -128,6 +131,69 @@ for (const view of [
         T,
       );
     }
+
+    if (!view.touch)
+      it(
+        'the legend keeps off the line wherever it is laid out (the line put on the legend’s row: the legend moves)',
+        () => {
+          const { rl, engine } = h!;
+          expect(rl.talkTo('ilsa').ok).toBe(true);
+          engine.step(3);
+          const legend = (texts: readonly HudTextBox[]) => texts.filter((x) => legendRows().includes(x.text));
+          const before = legend(hudTexts(engine, 1));
+          expect(before.length, 'the legend shows').toBeGreaterThan(0);
+          // the line's own spots keep clear of the legend's usual row (`windowsAndLegend`): lay it out
+          // there by hand (its place is kept while nothing it keeps clear of changes) and the legend,
+          // laid out after it, has to move
+          const at = union(before);
+          const box = { x: at.x - 4, y: at.y - 3, w: at.w + 8, h: at.h + 5 };
+          shell().talk.place = { box, rows: ['…'], over: false };
+          const after = legend(hudTexts(engine, 1));
+          expect(shell().touchable.dialogue, 'the line shows there').toEqual(box);
+          expect(after.length, 'the legend still shows').toBeGreaterThan(0);
+          for (const l of after) expect(apart(l, box), `the legend's "${l.text}" ${JSON.stringify(l)} clear of the line ${JSON.stringify(box)}`).toBe(true);
+          rl.press('Escape');
+          expect(rl.state().ui).toEqual([]);
+          expect(engine.errors).toEqual([]);
+        },
+        T,
+      );
+
+    if (view.name === '390×844')
+      it(
+        'the line over the windows goes with them: the next window to open never shows it',
+        () => {
+          const { rl, engine } = h!;
+          expect(rl.talkTo('ilsa').ok).toBe(true);
+          engine.step(3);
+          expect(items().said, 'over the vendor').not.toBeNull();
+          rl.press('Escape');
+          expect(rl.state().ui).toEqual([]);
+          expect(items().said, 'gone as the vendor closes').toBeNull();
+          rl.press('KeyI');
+          expect(rl.state().ui).toEqual(['inventory']);
+          expect(items().said, 'the inventory opens without it').toBeNull();
+          rl.press('Escape');
+          expect(engine.errors).toEqual([]);
+        },
+        T,
+      );
+
+    it(
+      "Ilsa's line stays her vendor's: the passive tree opened over it (P) shows none",
+      () => {
+        const { rl, game, engine } = h!;
+        expect(rl.talkTo('ilsa').ok).toBe(true);
+        rl.press('KeyP');
+        expect(rl.state().ui).toEqual(['vendor', 'tree']);
+        expect((game.layer.find('tree') as TreePanel).debug().talk, 'not Ilsa’s').toBeNull();
+        rl.press('PadB');
+        rl.press('PadB');
+        expect(rl.state().ui).toEqual([]);
+        expect(engine.errors).toEqual([]);
+      },
+      T,
+    );
 
     it(
       "Oru's line shows in the passive tree's own view, not under its canvas",
