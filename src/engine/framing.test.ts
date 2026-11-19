@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, computeFraming, frameView, snapToGrid, touchScale, worldUnitsPerPixel } from './framing';
+import { ADAPTIVE_ASPECT, RESOLUTIONS, type Resolution, TOUCH_ROWS_SIDE, computeFraming, frameView, snapToGrid, touchRows, touchScale, worldUnitsPerPixel } from './framing';
 
 describe('computeFraming', () => {
   it('fills by default: the whole window at every shape (52in1), as EngineOptions.aspect', () => {
@@ -220,7 +220,8 @@ describe('touch density on a phone (touchScale, EngineOptions.touchDensity)', ()
       [3.5, 7],
       [4, 8],
     ] as const) {
-      const v = { width: 863, height: 360, dpr };
+      // (412 CSS px tall, a Pixel's whole short side, keeps 170 rows at each: `touchRows` takes no part)
+      const v = { width: 915, height: 412, dpr };
       expect(touchScale(v, 2), `DPR ${dpr}`).toBe(scale);
       expect(Math.abs(scale / dpr - 2), `DPR ${dpr}: about 2 CSS px an art pixel`).toBeLessThanOrEqual(0.5 / dpr + 1e-9);
     }
@@ -240,6 +241,70 @@ describe('touch density on a phone (touchScale, EngineOptions.touchDensity)', ()
         const at = frameView({ ...v, dpr }, base, 'fill', base, touchScale({ ...v, dpr }, 2)).framing.artHeight;
         expect(Math.abs(f.artHeight - at) / at, `${w}×${hgt}: rows at 2.625 (${f.artHeight}) vs at DPR ${dpr} (${at})`).toBeLessThanOrEqual(0.06);
       }
+    }
+  });
+
+  it("a phone held sideways too short for the density's rows (under a browser's bar) keeps at least those of a 340 CSS px side (170 at 2): the largest whole number of device pixels that does", () => {
+    const base = RESOLUTIONS.default;
+    expect([TOUCH_ROWS_SIDE, touchRows(2), touchRows(3), touchRows(0)]).toEqual([340, 170, 113, 0]);
+    // [width, height, DPR, device px per art px, rows]: a Pixel 10 held sideways under Chrome's bar
+    // (869×303 at 2.625: 5 device px, 1.9 CSS px, would draw 160 rows), a Pixel Fold folded (907×334
+    // at 2.4375: 5 would draw 163), an iPhone SE (1st) held sideways (568×320 at 2: 4 would draw 160)
+    for (const [w, hgt, dpr, scale, rows] of [
+      [869, 303, 2.625, 4, 199],
+      [907, 334, 2.4375, 4, 204],
+      [568, 320, 2, 3, 214],
+    ] as const) {
+      const v = { width: w, height: hgt, dpr };
+      expect(touchScale(v, 2), `${w}×${hgt} at DPR ${dpr}`).toBe(scale);
+      const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect([f.artHeight, f.scale, f.integer], `${w}×${hgt} at DPR ${dpr}`).toEqual([rows, scale, true]);
+      // one device px more (the density's nearest, or nearer it) would leave fewer than 170
+      expect(Math.ceil(Math.ceil(hgt * dpr) / (scale + 1)), `${w}×${hgt}: ${scale + 1} device px`).toBeLessThan(170);
+      // still the whole window, edge to edge
+      expect([f.offsetX <= 0, f.offsetY <= 0, f.offsetX + f.cssWidth >= w, f.offsetY + f.cssHeight >= hgt]).toEqual([true, true, true, true]);
+    }
+    // 360 CSS px tall at a DPR whose nearest leaves fewer: 2.75 (6 device px, a tie: 165 rows) takes 5
+    // (198), 2.25 (5: 162) 4 (203), 1.75 (4: 158) 3 (210)
+    for (const [dpr, scale, rows] of [
+      [2.75, 5, 198],
+      [2.25, 4, 203],
+      [1.75, 3, 210],
+    ] as const) {
+      const v = { width: 863, height: 360, dpr };
+      const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect([f.scale, f.artHeight], `863×360 at DPR ${dpr}`).toEqual([scale, rows]);
+    }
+    // the rows follow the density: at 3 CSS px, those of a 340 CSS px side at 3 (113): 869×303 at
+    // DPR 2.625 takes 7 device px (114 rows), where its nearest, 8, would draw 100
+    expect(touchScale({ width: 869, height: 303, dpr: 2.625 }, 3)).toBe(7);
+    // a phone that keeps 170 rows or more at the density's nearest keeps it: unchanged
+    for (const [w, hgt, dpr, scale, rows] of [
+      [844, 390, 3, 6, 195],
+      [844, 390, 2, 4, 195],
+      [863, 360, 2.625, 5, 189],
+      [923, 340, 2.625, 5, 179],
+      [882, 344, 2.625, 5, 181],
+      [740, 360, 3, 6, 180],
+      [800, 340, 3, 6, 170],
+      [640, 360, 3, 6, 180],
+    ] as const) {
+      const v = { width: w, height: hgt, dpr };
+      const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect([f.artHeight, f.scale], `${w}×${hgt} at DPR ${dpr}`).toEqual([rows, scale]);
+    }
+    // upright the short side is the width, and the art already denser (the preset's rows): unchanged
+    for (const v of [
+      { width: 390, height: 844, dpr: 3 },
+      { width: 412, height: 839, dpr: 2.625 },
+      { width: 360, height: 800, dpr: 3 },
+      { width: 320, height: 568, dpr: 2 },
+      { width: 303, height: 869, dpr: 2.625 },
+      { width: 320, height: 460, dpr: 2 }, // an iPhone SE (1st gen) upright in Safari: the floor is for sideways
+    ]) {
+      const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect(f, `${v.width}×${v.height} at DPR ${v.dpr}`).toEqual(frameView(v, base, 'fill', base, Math.max(1, Math.floor(2 * v.dpr + 0.5))).framing);
+      expect(f.scale / v.dpr, `${v.width}×${v.height}: 2 CSS px an art pixel or more`).toBeGreaterThanOrEqual(1.9);
     }
   });
 

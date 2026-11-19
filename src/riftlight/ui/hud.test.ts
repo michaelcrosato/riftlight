@@ -808,10 +808,15 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
               // below the hub's wake band, a boss's bar under it) has no room above the heroes for
               // three guests' strips under the tuning's rows
               const gap = hub && H > W && guests === 3 && boss && tuned > 0;
+              // and one kept out of the rows' list alone: a small phone held sideways at its least
+              // rows (568×320 at 1.5 CSS px an art pixel, 379×214, `touchRows`: its touch controls take
+              // more of the art, the mana orb climbs beside the top-left block) has no room out of the
+              // heroes' rows for three guests' strips under the tuning's rows: they narrow off the heroes
+              const rowsGap = touch && name === '568×320 phone' && guests === 3 && tuned > 0;
               if (heroes && !gap) {
                 const hero = heroes.find((b) => overlaps(box, b, 0));
                 if (hero) overHero.push(`${where}: the strips ${JSON.stringify(box)} over a hero ${JSON.stringify(hero)}`);
-                if (overlaps(box, rowsOf(W, heroes), 0)) inRows.push(`${where}: the strips ${JSON.stringify(box)} in the heroes’ rows`);
+                if (overlaps(box, rowsOf(W, heroes), 0) && !rowsGap) inRows.push(`${where}: the strips ${JSON.stringify(box)} in the heroes’ rows`);
               }
               checked++;
             }
@@ -824,7 +829,8 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
     expect(overHero).toEqual([]);
     expect(inRows).toEqual([]);
     // the short landscape phones they lay over the heroes on all level, two side by side under the
-    // tuning's rows across the middle (x 32-166, y 85-98 of 180 at 640×360; x 31-165, y 63-76 of 160 at 568×320)
+    // tuning's rows across the middle (x 32-166, y 85-98 of 180 at 640×360; x 31-165, y 63-76 of 160
+    // at 568×320 when it drew 284×160)
     for (const [vw, vh, dpr] of [[640, 360, 3], [568, 320, 2]] as const) {
       for (const [touch, density, hub] of PAGES) {
         const f = controlsFor(vw, vh, dpr, 'fill', density, hub ? RIFTLIGHT_HUB_TOUCH_BUTTONS : RIFTLIGHT_TOUCH_BUTTONS);
@@ -836,7 +842,8 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
             const box = hudBoxes(W, H, m).find((b) => b.id === 'guests')!;
             const where = `${vw}×${vh} at DPR ${dpr}${touch ? ', touch' : ''}${density ? '' : ', no touch density'}, ${guests} guest(s)${boss ? ', a boss' : ''}, 4 tuned`;
             for (const hero of heroes) expect(overlaps(box, hero, 0), `${where}: the strips ${JSON.stringify(box)} over a hero ${JSON.stringify(hero)}`).toBe(false);
-            expect(overlaps(box, rowsOf(W, heroes), 0), `${where}: the strips ${JSON.stringify(box)} in the heroes' rows ${JSON.stringify(rowsOf(W, heroes))}`).toBe(false);
+            // (the gap above: three guests at 568×320 with touch controls, off the heroes in their rows)
+            if (!(touch && vw === 568 && guests === 3)) expect(overlaps(box, rowsOf(W, heroes), 0), `${where}: the strips ${JSON.stringify(box)} in the heroes' rows ${JSON.stringify(rowsOf(W, heroes))}`).toBe(false);
           }
         }
       }
@@ -844,8 +851,10 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
   }, 30_000);
 
   it('with no place clear of the heroes’ rows: over none of them, and beside the top-left block rather than side by side across the middle of the screen', () => {
-    // a hero the height of the screen at its right edge: its rows are every row, and it is under none of the places on the left
-    for (const [vw, vh, dpr] of [[640, 360, 3], [568, 320, 2]] as const) {
+    // a hero the height of the screen at its right edge: its rows are every row, and it is under none
+    // of the places on the left. At 568×320 (379×214 at 1.5 CSS px an art pixel, `touchRows`) the mana
+    // orb climbs beside the top-left block: one column under it, never side by side across the middle
+    for (const [vw, vh, dpr, beside] of [[640, 360, 3, true], [568, 320, 2, false]] as const) {
       const { W, H, boxes } = controlsFor(vw, vh, dpr);
       const heroes = [{ x: W - 3, y: 0, w: 2, h: H }];
       const m: HudModel = { ...model(boxes, { guests: 2, boss: false, tuned: 4, map: true }), heroes };
@@ -854,8 +863,11 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
       const where = z.find((b) => b.id === 'where')!;
       const at = `${vw}×${vh} at DPR ${dpr}: the strips ${JSON.stringify(box)}`;
       for (const hero of heroes) expect(overlaps(box, hero, 0), `${at} over a hero ${JSON.stringify(hero)}`).toBe(false);
-      expect(box.x, `${at} beside the top-left block ${JSON.stringify(where)}`).toBeGreaterThan(where.x + where.w);
-      expect(box.y, `${at} beside the top-left block ${JSON.stringify(where)}`).toBeLessThan(where.y + where.h);
+      expect(box.x < W / 2 && box.x + box.w > W / 2, `${at} across the middle of the ${W}-wide screen`).toBe(false);
+      if (beside) {
+        expect(box.x, `${at} beside the top-left block ${JSON.stringify(where)}`).toBeGreaterThan(where.x + where.w);
+        expect(box.y, `${at} beside the top-left block ${JSON.stringify(where)}`).toBeLessThan(where.y + where.h);
+      } else expect([Math.abs(box.x - where.x) <= 4, box.y >= where.y + where.h, box.h > 13], `${at} one column under the top-left block ${JSON.stringify(where)}`).toEqual([true, true, true]);
     }
   });
 

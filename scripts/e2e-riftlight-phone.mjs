@@ -45,7 +45,8 @@
 //     about two CSS px an art pixel (5 device px; landscape about 180 rows, as at DPR 2 or 3), every
 //     title entry in view, the bag's, the vendor's and the stash's windows on screen, no HUD element
 //     under a touch control; a real tap on a loot label inside the floating stick's zone picks the
-//     item up (the zone gives way to the labels drawn), a thumb in the zone beside it moves the stick
+//     item up (the zone gives way to the labels drawn), a thumb in the zone beside it moves the stick;
+//     the same shorter still (869×303 at 2.625, 907×334 at 2.4375): at least 170 rows, 1.5 CSS px or more
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -965,11 +966,20 @@ export async function runRiftlightPhone(h, orientation) {
     // or 3 phone of its size draws (5 device px an art pixel, 1.9 CSS px), so every title entry is in
     // view, every item window on screen and no HUD under a control (its DOM rect); a real touch on a
     // loot label inside the floating stick's zone picks the item up (the zone gives way to the labels
-    // as drawn), one in the zone beside it moves the stick
-    for (const vp of portrait ? [{ width: 412, height: 839 }] : [{ width: 863, height: 360 }, { width: 923, height: 340 }]) {
-      const at = `${orientation} ${vp.width}×${vp.height} at DPR 2.625`;
+    // as drawn), one in the zone beside it moves the stick. Shorter still (a Pixel 10 under Chrome's
+    // bar, 869×303; a Pixel Fold folded, 907×334 at DPR 2.4375): at least 170 rows (`touchRows`), at
+    // fewer CSS px an art pixel (4 device px: 1.52, 1.64), the same checks
+    const shortSideways = [
+      { width: 863, height: 360, dpr: 2.625 },
+      { width: 923, height: 340, dpr: 2.625 },
+      { width: 869, height: 303, dpr: 2.625 },
+      { width: 907, height: 334, dpr: 2.4375 },
+    ];
+    for (const { dpr, ...vp } of portrait ? [{ width: 412, height: 839, dpr: 2.625 }] : shortSideways) {
+      const at = `${orientation} ${vp.width}×${vp.height} at DPR ${dpr}`;
       const shotTag = `${tag}-${vp.width}x${vp.height}`;
-      ctx = await launch(exe, s, { viewport: vp, deviceScaleFactor: 2.625, hasTouch: true, isMobile: true });
+      const short = !portrait && vp.height < 340;
+      ctx = await launch(exe, s, { viewport: vp, deviceScaleFactor: dpr, hasTouch: true, isMobile: true });
       const pg = ctx.page;
       const RR = (fn, arg) => pg.evaluate(fn, arg);
       const snap = async (name) => {
@@ -992,8 +1002,9 @@ export async function runRiftlightPhone(h, orientation) {
         const ws = rl.ui.widgets().filter((w) => w.kind === 'button');
         return { art: { ...e.renderer.resolution }, k, top: rl.state().ui.at(-1), ids: ws.map((w) => w.id), hidden: ws.filter((w) => !w.rect).map((w) => w.id), least: Math.min(...ws.filter((w) => w.rect).map((w) => w.rect.h * k)) };
       });
-      check(Math.abs(first.k - 2) <= 0.1 || (portrait && first.k >= 1.9), `${at}: about two CSS px an art pixel, or more upright (${first.art.width}×${first.art.height}, ${first.k.toFixed(3)} CSS px)`);
-      if (!portrait) check(first.art.height >= 179, `${at}: about the rows a DPR 2 or 3 phone of its size draws (${first.art.height})`);
+      if (short) check(first.k >= 1.5 && first.k < 1.9 && first.art.height >= 170, `${at}: at least 170 rows, at 1.5 CSS px an art pixel or more (${first.art.width}×${first.art.height}, ${first.k.toFixed(3)} CSS px)`);
+      else check(Math.abs(first.k - 2) <= 0.1 || (portrait && first.k >= 1.9), `${at}: about two CSS px an art pixel, or more upright (${first.art.width}×${first.art.height}, ${first.k.toFixed(3)} CSS px)`);
+      if (!portrait && !short) check(first.art.height >= 179, `${at}: about the rows a DPR 2 or 3 phone of its size draws (${first.art.height})`);
       check(first.top === 'title' && first.ids.length >= 4 && first.hidden.length === 0 && first.least >= 40, `${at}: every title entry shows, at least 40 CSS px tall (${first.ids.join(' ')}; hidden ${first.hidden.join(' ') || 'none'}; ${Math.round(first.least)} CSS px)`);
       await snap('title');
       // the item windows: the bag, the vendor's and the stash's, wholly on screen
