@@ -165,6 +165,35 @@ describe('R2’s latch', () => {
     expect(engine.errors).toEqual([]);
   });
 
+  it('a pull that started with nothing on offer never latches: on the title, and in the open stash (R2 its next tab)', { timeout: T }, () => {
+    const { rl, engine } = h;
+    /** R2's effect each frame of a full pull (`RAMP`) on the pad. */
+    const during = () => {
+      engine.input.noteDevice('pad');
+      return RAMP.map((rt) => {
+        engine.input.setGamepads([pad([], [0, 0], rt)]);
+        engine.step(1);
+        return r2();
+      });
+    };
+    rl.toTitle();
+    engine.step(1);
+    expect(during().filter(Boolean), 'the title: never latched').toEqual([]);
+    rl.newRun({ seed: 616 });
+    visit('stash');
+    expect(r2(), 'the stash in reach').toEqual(LATCH);
+    rl.ui.open('stash');
+    engine.step(1);
+    expect(stack()[0]).toBe('stash');
+    expect(r2(), 'its window open: let go').toBeNull();
+    expect(during().filter(Boolean), 'R2 pages the stash: never latched').toEqual([]);
+    rl.ui.close('stash');
+    engine.input.setGamepads([pad()]);
+    engine.step(2);
+    expect(r2(), 'closed, in reach again: latched').toEqual(LATCH);
+    expect(engine.errors).toEqual([]);
+  });
+
   it('lets go loading a level; loot latches it, and an item window, the pause and photo mode let go; R2 takes it and lets go once up; walking away lets go; the portal holds through the pull that goes home', { timeout: T }, async () => {
     const { rl, game, engine } = h;
     expect(r2(), 'the stash in reach').toEqual(LATCH);
