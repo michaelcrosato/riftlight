@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.68.0
+
+- **The engine's default touch buttons** (`DEFAULT_TOUCH_BUTTONS`, the platformer's) are named by their moves (JUMP, HIT, DUCK, GRAB, PRONE, LIE) instead of the letters A B C G Z X with hints, which contradicted a pad's buttons (touch B attacked while pad B crouches). In the default grid a label longer than four characters is drawn smaller (`long`) so it fits the button.
+- **Kit: `examples/gem-rush.html` joins a 52in1 round as handed out**: it carries 52in1's session client (aihub-session 1.4.0, unmodified) as its first script after `<meta charset>`, then its `hub:*` tags. Its head block in CONTROLS.md is now a named fence (`html gem-rush`), from which the kit's pages take a game's head. Gem Rush reports its progress to the hub from the start of a parallel round, as 52in1's session harness requires of every copy. The kit's CREDITS.md lists the session client (no licence declared; escalation #175).
+
 ## 0.67.0
 
 - **`padGlyph` draws a DualSense's touchpad gestures** (`PadTouchpadLeft` / `Right` / `Up` / `Down` / `Tap`, the `TOUCHPAD_KEYS` codes) as sprites: the pad with the swipe's direction as an arrow, or a dot for a tap. Before, they drew as round caps with the code's name. A prompt can draw a gesture beside the button that does the same thing.
