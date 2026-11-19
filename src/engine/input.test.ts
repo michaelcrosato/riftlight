@@ -486,6 +486,59 @@ describe('Rumble', () => {
     expect(() => input.endFrame()).not.toThrow();
   });
 
+  it('a couch player’s pad rumbles alone (`player(slot).rumble`), as player 1’s does: the strongest, scaled, once; never headless, in a replay, at vibration 0 or with no pad there', () => {
+    /** Player 1's pad in slot 0 (in use), a guest's in slot 1 (joined); what each was asked to play. */
+    const couch = (target_: Window | null = target()) => {
+      const one = actuator();
+      const two = actuator();
+      const input = new Input(target_);
+      input.padPlayers = true;
+      const pads = () => [pad([0, 0, 0, 0], [0], { index: 0, vibrationActuator: one }), pad([0, 0, 0, 0], [], { index: 1, vibrationActuator: two })];
+      input.beginFrame(0, 1 / 60, pads());
+      input.joined.add(1);
+      input.endFrame();
+      input.beginFrame(1 / 60, 1 / 60, pads());
+      return { input, one: one.calls, two: two.calls };
+    };
+    const c = couch();
+    c.input.vibration = 0.5;
+    c.input.player(1).rumble({ strong: 0.2, weak: 0.6, ms: 80 });
+    c.input.player(1).rumble({ strong: 0.6, weak: 0.2, ms: 40 });
+    expect(c.two, 'when the frame ends').toEqual([]);
+    c.input.endFrame();
+    expect(c.two).toEqual([['dual-rumble', { startDelay: 0, duration: 80, strongMagnitude: 0.3, weakMagnitude: 0.3 }]]);
+    expect(c.one, 'player 1’s pad: nothing').toEqual([]);
+    c.input.endFrame();
+    expect(c.two.length, 'once').toBe(1);
+    // player 1's rumble shakes player 1's pad alone
+    const p1 = couch();
+    p1.input.rumble({ strong: 1 });
+    p1.input.endFrame();
+    expect([p1.one.length, p1.two.length]).toEqual([1, 0]);
+    const quiet = (setup: (i: Input) => void, target_: Window | null = target(), slot = 1) => {
+      const q = couch(target_);
+      setup(q.input);
+      q.input.player(slot).rumble({ strong: 1, weak: 1 });
+      expect(() => q.input.endFrame()).not.toThrow();
+      return q.two.length;
+    };
+    expect(quiet(() => {})).toBe(1);
+    expect(quiet((i) => (i.vibration = 0))).toBe(0);
+    expect(quiet(() => {}, null), 'headless').toBe(0);
+    // a replay: its pads are the recording's (`playing` forgets the live ones); one still holding a
+    // live pad shakes nothing either
+    expect(quiet((i) => (i.playing = true)), 'a replay').toBe(0);
+    expect(
+      quiet((i) => {
+        const live = i.player(1).gamepad;
+        i.playing = true;
+        Object.assign(i.player(1), { gamepad: live, connected: true });
+      }),
+      'a replay, a live pad left in the slot',
+    ).toBe(0);
+    expect(quiet(() => {}, target(), 2), 'no pad in that slot').toBe(0);
+  });
+
   it('a pad that refuses (unplugged, Firefox, a rejected effect) logs nothing', async () => {
     const input = new Input(target());
     let rejected = 0;
@@ -614,10 +667,18 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
     };
     // the DualSense joins as player 2; player 1 is on the keyboard
     expect(frame(pads()).isGuests, 'nobody joined: player 1’s DualSense').toBe(false);
+    expect(input.dualSenseGuestSlot, 'nobody joined: no guest’s').toBe(null);
     input.joined.add(1);
     input.noteDevice('keyboard');
     turning = { x: 0, y: -64, z: 0 };
     expect(swipe(pads()), 'the guest’s swipe: its own, player 1’s device untouched; `dualSenseGuest` says so').toEqual({ p1: [], guest: ['PadTouchpadRight'], turn: 0, device: 'keyboard', isGuests: true });
+    expect(input.dualSenseGuestSlot, 'whose: the guest in slot 1 (its light bar)').toBe(1);
+    // a second guest on a DualSense: whose 52in1 reads is unknown
+    input.joined.add(2);
+    frame([...pads(), pad([0, 0, 0, 0], [], { index: 2, id: SENSE })]);
+    expect([input.dualSenseGuest, input.dualSenseGuestSlot], 'two guests’ DualSenses: a guest’s, whose unknown').toEqual([true, null]);
+    input.joined.delete(2);
+    frame(pads());
     expect(JSON.stringify(frames), '`dualSenseGuest` is presentation: never recorded').not.toMatch(/guest/i);
     const at = frames.findIndex((f) => f.padPressed?.some(([slot, ...codes]) => slot === 1 && codes.includes('PadTouchpadRight')));
     expect([at >= 0, frames.some((f) => f.pressed?.includes('PadTouchpadRight'))], 'recorded with its pad, not player 1’s').toEqual([true, false]);

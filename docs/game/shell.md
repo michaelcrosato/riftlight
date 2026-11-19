@@ -99,8 +99,8 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
   `joinPolicy`): in the pause menu's **Couch co-op** (`coopMenu`: the seats, a Leave button per
   guest, *Press ✕ on another controller to join*), any pad but player 1's in use; in town, while
   player 1 plays on a pad, any other pad, and the town says so (`joinHint`, `joinLine`: at the top
-  centre while that is clear of the HUD, else above the bottom HUD and any prompt, a phone held
-  upright; wrapped and placed through the HUD's layout, over no other text). Player 1 on the
+  centre while that is clear of the HUD, else above the bottom HUD and any prompt; placed through
+  the HUD's layout, over no other text). Player 1 on the
   keyboard picking a pad up in town joins nobody (the menu is the way then). Couch co-op is not
   offered in a 52in1 round (its players are the hub's) nor in the showcase (`couchOffered`: no
   pause entry, no town line, nobody joins). A guest takes the first free seat, 2 to 4, in 52in1's
@@ -116,13 +116,14 @@ other player has a pad of their own (`input.player(slot)`, which never drives pl
   own: what it kills is player 1's XP, gold and loot. It reads its pad by player 1's rules
   (`guestIntent`: `readActions` for the attack, skills and dodge; the right stick's aim with
   `AIM.assist`, else `autoAim` along the move), enters each stage beside player 1 (`besideSpot`:
-  seat 2 to the right, 3 to the left, 4 `COOP.below` (3.2 m) below, so that no hero's body or tag
-  covers another's on screen),
+  seat 2 to the right, 3 to the left, 4 `COOP.below` (3.2 m) below: no hero hides another),
   is put beside player 1 when it strays past `COOP.leash` (12 m) or past `COOP.edge` (0.95) of the
-  screen as the camera shows it, its feet or its head (a phone held upright shows less across than
-  the leash: there a guest walking sideways comes back at about 9 m, never off screen), and rises
+  screen as the camera shows it, its feet or its head (a phone held upright: at about 9 m), and rises
   beside player 1 `COOP.rise` (5) s after it falls. Player 1's death is the run's, as always (the
-  recap, then town with everyone). Monsters stay as they are for one player: balance is not part of this.
+  recap, then town with everyone). Monsters stay as for one player.
+- **Pad feel**: a guest's pad rumbles for its hero (`PadPlayer.rumble`: hits, crits, its fall);
+  the light bar shows the hero of whoever holds the DualSense (`input.dualSenseGuestSlot`); a
+  shout is player 1's.
 - **The camera** follows the group's centre (`coop.centre`, no aim lead) and zooms out as it
   spreads, down to `COOP.zoomOut` of its zoom (`coop.zoom`): every hero standing projected into the
   view (`CoopHost.view`: the camera's screen axes, the picture's aspect), the zoom that keeps them

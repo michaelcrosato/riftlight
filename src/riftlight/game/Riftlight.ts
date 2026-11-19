@@ -440,7 +440,14 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
         if (result.total > 0) this.feel.rumble(RUMBLE.hurt(result.total / Math.max(1, this.hero.vitals().maxLife)));
         return;
       }
+      // a couch guest's pad rumbles for its own hero (`PadPlayer.rumble`): hit, its crits (its fall: 'death')
+      const guest = result.total > 0 && !result.killed ? this.coop?.guestOf(target) : undefined;
+      if (guest?.hero) this.ctx.input.player(guest.slot).rumble(RUMBLE.hurt(result.total / Math.max(1, guest.hero.vitals().maxLife)));
       if (result.crit && result.total > 0 && this.hero && hit.source === this.hero.actor) this.feel.rumble(RUMBLE.crit);
+      else if (result.crit && result.total > 0) {
+        const by = this.coop?.guestOf(hit.source);
+        if (by) this.ctx.input.player(by.slot).rumble(RUMBLE.crit);
+      }
       const at = target.position.clone().setY(1.2);
       this.combatHeat = Math.min(1, this.combatHeat + 0.25);
       this.combatSince = 0;
@@ -478,6 +485,8 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     });
     on('death', ({ actor }) => {
       if (this.hero && actor === this.hero.actor && !this.dead) this.onHeroDeath();
+      const guest = this.coop?.guestOf(actor);
+      if (guest) this.ctx.input.player(guest.slot).rumble(RUMBLE.death); // a hit or a poison's last tick
     });
     on('mechanic', ({ id }) => this.unlockCodex(id));
     on('landed', ({ item, loud }) => {
@@ -2122,12 +2131,21 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return true;
   }
 
-  /** The light bar says how the hero is (`lightFor`), asked every frame (the engine sends changes); the hub's own on the title and in a showcase mode. */
+  /**
+   * The light bar says how the hero is (`lightFor`), asked every frame (the engine sends changes);
+   * the hub's own on the title and in a showcase mode. With the DualSense in a couch guest's hands
+   * (`input.dualSenseGuestSlot`) it says how that guest's hero is, and gives the light back while
+   * whose it is is unknown (two guests' DualSenses) or the guest's hero is still being made.
+   */
   private lightBar(): void {
     if (this.screen === 'loading') return; // between the town and a level: as it was
-    const off = this.screen === 'title' || this.showcase.active;
-    const v = this.hero.vitals();
-    this.feel.light(lightFor({ where: off ? 'off' : this.screen === 'town' ? 'town' : 'level', dead: this.dead, life: v.maxLife > 0 ? v.life / v.maxLife : 0, boss: this.music === 'boss', time: this.time }));
+    const input = this.ctx.input;
+    const guest = input.dualSenseGuest ? this.coop?.guests.find((g) => g.slot === input.dualSenseGuestSlot)?.hero : null;
+    const off = this.screen === 'title' || this.showcase.active || (input.dualSenseGuest && !guest);
+    const hero = guest ?? this.hero;
+    const v = hero.vitals();
+    const dead = guest ? !guest.actor.alive : this.dead;
+    this.feel.light(lightFor({ where: off ? 'off' : this.screen === 'town' ? 'town' : 'level', dead, life: v.maxLife > 0 ? v.life / v.maxLife : 0, boss: this.music === 'boss', time: this.time }));
   }
 
   /**
