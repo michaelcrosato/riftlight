@@ -749,6 +749,7 @@ describe('a shout into the microphone (input.voice)', () => {
     heard.echo = true;
     expect(hold(LOUD, 0.5), 'the speaker plays').toBe(0);
     heard.echo = false;
+    expect(hold(LOUD, SHOUT.holdS - 2 * dt), 'loud on after it, short of a whole shout: the half before the speaker is gone').toBe(0);
     expect(hold(0, SHOUT.quietS), 'quiet after').toBe(0);
     // a shout that pressed, held on through the speaker's sound: still the one press
     expect(hold(LOUD, 0.5), 'a shout').toBe(1);
