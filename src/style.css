@@ -212,6 +212,12 @@ canvas[data-engine-canvas] {
   --glyph-scale: 3;
 }
 
+/* the pad drives it: no OS pointer over it (SettingsPanel.followPointer), as over the canvas */
+.settings-ui.no-pointer,
+.settings-ui.no-pointer * {
+  cursor: none !important;
+}
+
 @media (min-width: 1000px) and (min-height: 700px) {
   .settings-ui {
     --glyph-scale: 4;

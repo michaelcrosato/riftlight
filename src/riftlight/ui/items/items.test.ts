@@ -147,6 +147,10 @@ describe('hints for the device that drives the windows', () => {
     expect(windowHint('item.vendor.hint', 'PadY', 'touch', 'playstation')).toBe('Tap twice: buy. Drop: sell');
     expect(windowHint('item.skill.hint', 'PadX', 'pad', 'playstation')).toBe('Square on a gem in your bag to socket it');
     expect(windowHint('item.bench.orb_hint', 'PadA', 'pad', 'xbox')).toBe('A on an orb to use it');
+    // the keys driving the focus: the key that does it (Enter, X, V), whatever the pad's style
+    expect(windowHint('item.vendor.hint', 'PadY', 'keys', 'playstation')).toBe('V: buy / sell');
+    expect(windowHint('item.skill.hint', 'PadX', 'keys', 'xbox')).toBe('X on a gem in your bag to socket it');
+    expect(windowHint('item.bench.orb_hint', 'PadA', 'keys', 'playstation')).toBe('Enter on an orb to use it');
   });
 
   it('an orb says how to use it with the pad cursor: Square, then Cross on an item (X, then A)', () => {
@@ -160,5 +164,8 @@ describe('hints for the device that drives the windows', () => {
     expect(messageText({ id: 'item.say.apply_orb_pad', values: { orb: 'Kindling Shard' }, pad: 'PadA' }, 'playstation')).toBe('Apply Kindling Shard: Cross on an item');
     expect(messageText({ id: 'item.say.apply_orb_pad', values: { orb: 'Kindling Shard' }, pad: 'PadA' }, 'xbox')).toBe('Apply Kindling Shard: A on an item');
     expect(messageText({ id: 'item.say.apply_orb', values: { orb: 'Kindling Shard' } }, 'xbox')).toBe('Apply Kindling Shard: click an item');
+    // with the keys on the focus: X, then Enter
+    expect(padOrbHint('playstation', 'keys')).toBe('X, then Enter on an item to use');
+    expect(messageText({ id: 'item.say.apply_orb_pad', values: { orb: 'Kindling Shard' }, key: 'Enter' }, 'playstation')).toBe('Apply Kindling Shard: Enter on an item');
   });
 });

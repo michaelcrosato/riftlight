@@ -12,7 +12,7 @@ import { StatSheet } from '../core/mods';
 import { RIFTLIGHT_OPTIONS } from '../index';
 import { installLanguage, lineKey, riftlightLines, t } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
-import { type Rect, UiCanvas } from './kit';
+import { miniWidth, type Rect, UiCanvas } from './kit';
 import { tapArt, TAP_CSS, UiLayer } from './layer';
 import { Menu, type Widget } from './menu';
 import { pauseMenu, slotsMenu, titleMenu } from './menus';
@@ -230,7 +230,7 @@ describe('a thumb on the panels', () => {
     expect(menu.size.h).toBe(6 * 16 + 6 + 15 + 14);
   });
 
-  it('a menu that scrolls anyway (the settings on a landscape phone) keeps its thumb-tall rows and shows a scroll bar beside them', () => {
+  it('a menu that scrolls anyway (the settings on a landscape phone) keeps its thumb-tall rows and shows a scroll bar beside them, an arrow under it while there is more below and over it while there is more above', () => {
     const widgets: Widget[] = Array.from({ length: 14 }, (_, i) => ({ kind: 'toggle', id: `t${i}`, label: `Toggle ${i}`, get: () => false, set: () => {} }));
     const menu = new Menu(widgets, { id: 'many', title: 'Many', width: 200 });
     menu.fit(410, 158, 22);
@@ -240,16 +240,27 @@ describe('a thumb on the panels', () => {
     const shown = widgets.filter((w) => menu.rects.get(w.id));
     expect(shown.length).toBeLessThan(widgets.length);
     for (const w of shown) expect(menu.rects.get(w.id)!.h).toBeGreaterThanOrEqual(22);
-    const bar = rects.filter((x) => x.x === r.x + r.w + 1 && x.w === 2);
-    expect(bar.map((x) => x.color), 'a track and its thumb in the gutter').toEqual(['night', 'sand']);
+    /** The gutter's sand and night: the track and its thumb, and the arrows over and under them. */
+    const gutter = (drawn: typeof rects) => drawn.filter((x) => x.x >= r.x + r.w && (x.color === 'night' || x.color === 'sand'));
+    const bar = gutter(rects);
+    expect(bar.map((x) => x.color), 'a track and its thumb in the gutter, an arrow under them').toEqual(['night', 'sand', 'sand', 'sand']);
     expect(bar[1]!.y, 'the thumb at the top').toBe(r.y + 2);
-    // scrolled to the end: the thumb at the bottom of its track
+    const end = bar[0]!.y + bar[0]!.h;
+    expect(bar.slice(2), 'more below: an arrow under the track, its tip down').toEqual([
+      { x: r.x + r.w, y: end + 1, w: 4, h: 1, color: 'sand' },
+      { x: r.x + r.w + 1, y: end + 2, w: 2, h: 1, color: 'sand' },
+    ]);
+    // scrolled to the end: the thumb at the bottom of its track, the arrow over it
     for (let i = 0; i < widgets.length; i++) menu.input({ kind: 'nav', dir: 'down' });
     menu.focusId('t13');
     const again = canvas(422, 195);
     menu.draw(again.ui, r);
-    const [track, thumb] = again.rects.filter((x) => x.x === r.x + r.w + 1 && x.w === 2);
+    const [track, thumb, ...arrow] = gutter(again.rects);
     expect(thumb!.y + thumb!.h).toBe(track!.y + track!.h);
+    expect(arrow, 'more above: an arrow over the track, its tip up').toEqual([
+      { x: r.x + r.w + 1, y: r.y - 1, w: 2, h: 1, color: 'sand' },
+      { x: r.x + r.w, y: r.y, w: 4, h: 1, color: 'sand' },
+    ]);
     // a menu that fits draws none
     const few = new Menu(widgets.slice(0, 3), { id: 'few', title: 'Few', width: 200 });
     few.fit(410, 158, 22);
@@ -403,6 +414,51 @@ describe('a thumb on the panels', () => {
       // the rows inside the menu, under its buttons
       const button = menu.rects.get('b')!;
       for (const row of texts.filter((x) => rows.includes(x.s))) expect(row.y).toBeGreaterThanOrEqual(button.y + button.h);
+    }
+  });
+
+  it("a list that scrolls anyway (World's room list on a TV) gives its footer the rows its longest needs, three at most, at the menu's width; the arrow that says there is more below sits under its scroll bar, clear of them", () => {
+    const hints = {
+      r1: 'Creatures whose walks are worked out every frame instead of played from clips', // three rows of the normal font, the first nearly as wide as the menu
+      r2: 'Creatures whose walks are worked out every frame instead of...', // two
+      r3: 'Creatures whose walks are worked out every frame instead of played from clips, their legs reaching for the ground', // more than three: the mini font
+    };
+    const widgets: Widget[] = Array.from({ length: 30 }, (_, i) => ({ kind: 'button', id: `r${i}`, label: `Room ${i}`, onClick: () => {}, hint: hints[`r${i}` as keyof typeof hints] ?? hints.r2 }) as Widget);
+    for (const [focus, hint] of Object.entries(hints)) {
+      const menu = new Menu(widgets, { id: 'rooms', title: 'Go to a room', width: 220 });
+      menu.fit(468, 240, 0);
+      const { ui, texts, rects } = canvas(480, 270);
+      const minis: { x: number; y: number; s: string }[] = [];
+      const mini = ui.mini.bind(ui);
+      ui.mini = (x, y, s, color, align, ...more) => (minis.push({ x: x - Math.floor(miniWidth(s) / 2), y, s }), mini(x, y, s, color, align, ...more));
+      const r = { x: 4, y: 20, w: menu.size.w, h: 200 }; // its room: the rows take more
+      menu.focusId(focus);
+      menu.draw(ui, r);
+      // the scroll bar's track in the gutter beside the rows, as tall as the view; the arrow under
+      // its foot (sand, its tip lowest), none over its top (nothing above)
+      const track = rects.find((x) => x.color === 'night' && x.x === r.x + r.w + 1 && x.w === 2)!;
+      const end = track.y + track.h;
+      const arrow = rects.filter((x) => x.color === 'sand' && x.y >= end);
+      expect(arrow, `${focus}: the list scrolls, the arrow under its scroll bar`).toEqual([
+        { x: r.x + r.w, y: end + 1, w: 4, h: 1, color: 'sand' },
+        { x: r.x + r.w + 1, y: end + 2, w: 2, h: 1, color: 'sand' },
+      ]);
+      expect(rects.filter((x) => x.color === 'sand' && x.y < track.y), `${focus}: nothing above`).toEqual([]);
+      expect(r.h - track.h, `${focus}: its footer takes three rows (14 + 2 × 9), its longest's, whichever has the focus`).toBe(32);
+      const labels = new Set(widgets.map((w) => ('label' in w ? w.label : '')));
+      const rows = texts.filter((x) => !labels.has(x.s) && x.y >= end);
+      expect([...rows.map((x) => x.s), ...minis.map((x) => x.s)].join(' '), `${focus}: the footer whole`).toBe(hint);
+      expect([rows.length, minis.length], `${focus}: the normal font where three rows hold it, else the mini font`).toEqual(focus === 'r1' ? [3, 0] : focus === 'r2' ? [2, 0] : [0, 3]);
+      // every row of the normal font (its shadow too) centred under the rows, as wide as the menu
+      // lets it run, and clear of the arrow; the mini font's start under it
+      const left = Math.min(...arrow.map((x) => x.x));
+      const tip = Math.max(...arrow.map((x) => x.y));
+      for (const row of rows) {
+        expect(row.x + row.w + 1, `${focus}: a footer row ends left of the arrow`).toBeLessThanOrEqual(left);
+        expect(Math.abs(row.x - r.x - (r.x + r.w - (row.x + row.w))), `${focus}: centred`).toBeLessThanOrEqual(2);
+      }
+      if (focus !== 'r3') expect(rows[0]!.w, `${focus}: the first row runs into the rows' last 8 columns (an arrow there would cover it)`).toBeGreaterThan(r.w - 2 * 8);
+      for (const row of minis) expect(row.y, `${focus}: a mini row under the arrow`).toBeGreaterThan(tip);
     }
   });
 

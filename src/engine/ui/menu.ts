@@ -65,13 +65,17 @@ export const MENU_KEYS: MenuKeys = {
 export const MENU_REPEAT = { delay: 0.35, rate: 0.07 } as const;
 /** How far the left stick must lean (after its deadzone) to count as a held direction. */
 const STICK_NAV = 0.6;
+/** A direction the stick holds stays held until it leans back under this (a thumb resting near `STICK_NAV` never steps again and again). */
+const STICK_LET_GO = 0.45;
 const DIRECTIONS = ['up', 'down', 'left', 'right'] as const;
 const SWIPES = Object.keys(SWIPE_KEYS) as SwipeDirection[];
 
 /**
  * Builds menu events from keys, the pad and the left stick, with key repeat for held directions,
- * and from swipes. Read it once per rendered frame, in `update` (`wasPressed`: this frame's
- * presses). Its repeat timers are data (`save` / `load`, for save-states).
+ * and from swipes. A press of a key or the d-pad steps at once, and so does the left stick as it
+ * leans past `STICK_NAV`; held, either repeats (`MENU_REPEAT`), and a flick of the stick is one
+ * step. Read it once per rendered frame, in `update` (`wasPressed`: this frame's presses). Its
+ * repeat timers are data (`save` / `load`, for save-states).
  */
 export class MenuInput {
   readonly keys: MenuKeys;
@@ -98,10 +102,13 @@ export class MenuInput {
     const pressed = (codes: readonly string[]) => codes.length > 0 && input.wasPressed(...codes);
     for (const dir of DIRECTIONS) {
       const codes = k[dir];
-      if (pressed(codes)) {
+      const held = this.held.has(dir);
+      // a press, or the stick leaning into the direction (a stick still leaning from play reads
+      // centred until it rests: `Input.release`): a step at once, then the repeat's pause
+      if (pressed(codes) || (!held && stickHeld(input, dir, STICK_NAV))) {
         out.push({ kind: 'nav', dir });
         this.held.set(dir, -MENU_REPEAT.delay);
-      } else if (input.anyDown(codes) || stickHeld(input, dir)) {
+      } else if (input.anyDown(codes) || stickHeld(input, dir, held ? STICK_LET_GO : STICK_NAV)) {
         const t = (this.held.get(dir) ?? -MENU_REPEAT.delay) + dt;
         if (t >= MENU_REPEAT.rate) {
           out.push({ kind: 'nav', dir });
@@ -120,10 +127,10 @@ export class MenuInput {
   }
 }
 
-/** The left stick as a held direction (menus with a pad). */
-function stickHeld(input: Input, dir: MenuDirection): boolean {
+/** The left stick leaning `past` into a direction (menus with a pad). */
+function stickHeld(input: Input, dir: MenuDirection, past: number): boolean {
   const a = input.padAxis;
-  return dir === 'up' ? a.y > STICK_NAV : dir === 'down' ? a.y < -STICK_NAV : dir === 'left' ? a.x < -STICK_NAV : a.x > STICK_NAV;
+  return dir === 'up' ? a.y > past : dir === 'down' ? a.y < -past : dir === 'left' ? a.x < -past : a.x > past;
 }
 
 /** An item's box on the HUD, in art pixels from its top-left (what `ctx.hud` draws in). */

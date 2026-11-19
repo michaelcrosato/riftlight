@@ -385,6 +385,69 @@ describe('Riftlight at ten feet', () => {
     expect(engine.errors).toEqual([]);
   });
 
+  it('the item windows name the controls of the device that drives them: the keys’ focus its keys (E to Skills at 1280×720: X: take out), the pad’s its buttons, a finger and the mouse their words', () => {
+    const { rl, engine } = h;
+    const ui = loot().itemsUi();
+    const tip = () => ui.tipText()?.join(' ') ?? '';
+    /** The words the item windows draw in the normal font now (a hint's rows run on). */
+    const words = () => drawn().texts.map((x) => x.text).join(' ');
+    try {
+      view().setViewport({ width: 1280, height: 720, dpr: 1 });
+      mouseLast();
+      engine.input.noteDevice('keyboard');
+      engine.step(1);
+      rl.press('KeyI');
+      rl.press('Enter'); // the keys take the focus
+      rl.press('KeyE'); // Skills, the focus on the selected skill's gem
+      expect([stack(), ui.cursorMode, ui.hintMode()]).toEqual([['skills'], 'pad', 'keys']);
+      expect(tip(), 'the keys’ focus: X, the key the legend’s Enter / Esc / Q E go with').toContain(`${t('item.hint.take_out', { button: 'X' })}`);
+      expect(tip()).not.toMatch(/Square|Right-click/i);
+      engine.input.noteDevice('pad'); // the pad picked up
+      engine.step(1);
+      expect(tip(), 'the pad’s focus: its button').toContain(t('item.hint.take_out', { button: 'Square' }));
+      engine.input.noteDevice('keyboard');
+      rl.press('Escape');
+      // the vendor: its hint under the goods, and a bag item's
+      mouseLast();
+      expect(rl.talkTo('ilsa').state.ui).toEqual(['vendor']);
+      engine.step(1);
+      const height = ui.leftRect().h;
+      expect([ui.cursorMode, ui.hintMode()], 'opened from the keyboard: the mouse’s').toEqual(['pointer', 'mouse']);
+      expect(words()).toContain(t('item.vendor.hint'));
+      rl.press('Enter'); // the keys take the focus
+      expect(ui.hintMode()).toBe('keys');
+      expect(words(), 'V, as the keys buy and sell').toContain(t('item.vendor.hint_pad', { button: 'V' }));
+      expect(ui.leftRect().h, 'the window keeps its height between the keys and the mouse').toBe(height);
+      ui.cursor = { ...ui.itemCenter('tv-sword')! };
+      expect(tip(), 'a bag item: X equips').toContain(t('item.hint.equip', { button: 'X' }));
+      engine.input.noteDevice('pad');
+      engine.step(1);
+      expect(words(), 'the pad: Triangle').toContain(t('item.vendor.hint_pad', { button: 'Triangle' }));
+      expect(tip()).toContain(t('item.hint.equip', { button: 'Square' }));
+      engine.controls.touch = true; // a phone: a touch is the touch controls'
+      engine.input.noteDevice('touch');
+      engine.step(1);
+      expect(ui.hintMode()).toBe('touch');
+      expect(words(), 'a finger: its words').toContain(t('item.vendor.hint_touch'));
+      engine.controls.touch = false;
+      engine.input.noteDevice('keyboard');
+      rl.press('Escape');
+      // the bench: Enter on an item, as the keys put one on it
+      expect(rl.talkTo('brann').ok).toBe(true);
+      engine.step(1);
+      rl.press('Enter');
+      expect(words(), 'the bench’s hint names Enter').toContain(t('item.bench.hint_pad', { button: 'Enter' }));
+      rl.press('Escape');
+      expect(stack()).toEqual([]);
+    } finally {
+      engine.controls.touch = false;
+      view().setViewport(HEADLESS_VIEWPORT);
+      engine.input.noteDevice('keyboard');
+      engine.step(1);
+    }
+    expect(engine.errors).toEqual([]);
+  });
+
   it('R1 to Skills on a desktop: the focused gem’s tooltip, beside the wide skill panel and over the bag, keeps off the bag’s title bar (its name, the Gems button)', () => {
     const { engine } = h;
     const ui = loot().itemsUi();

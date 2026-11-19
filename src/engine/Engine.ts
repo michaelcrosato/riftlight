@@ -1189,12 +1189,14 @@ export class Engine {
   /**
    * The OS mouse pointer over the canvas (`PointerCursor`): hidden while the pad is the device in
    * use (`controls.device`) or the pointer is locked, shown again once the mouse travels (the
-   * device turns back to the keyboard and mouse). Presentation only: nothing headless, nor in a
-   * replay (`hidesPointer`).
+   * device turns back to the keyboard and mouse); over the open settings panel too while the pad
+   * drives it. Presentation only: nothing headless, nor in a replay (`hidesPointer`).
    */
   private followCursor(): void {
     const el = this.gpu?.renderer.domElement ?? null;
-    this.cursor.follow(el, !!el && hidesPointer({ device: this.controls.device, locked: this.input.pointerLocked, playing: this.input.playing }));
+    const hide = hidesPointer({ device: this.controls.device, locked: this.input.pointerLocked, playing: this.input.playing });
+    this.cursor.follow(el, !!el && hide);
+    this.settingsPanel?.followPointer(hide && this.controls.device === 'pad');
   }
 
   /**

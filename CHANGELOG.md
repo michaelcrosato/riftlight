@@ -8,6 +8,12 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.72.0
+
+- `MenuInput`: the left stick now steps a menu on the frame it leans past its threshold, as a d-pad press does, then repeats as a held d-pad does. Before, a held stick moved only after the repeat's pause plus one step (about 0.42 s), and a quick flick did nothing. A direction the stick holds lets go only under 0.45, so a thumb resting near the threshold is one step. A stick still leaning from play reads centred after `input.release()`, as before.
+- The settings panel hides the OS mouse pointer while the pad drives it, as the canvas does: over the panel, its rows, tabs and buttons, and never during a replay. Once the mouse travels a few pixels over the panel, the pointer shows again and the keyboard and mouse become the device in use, so the legend names the keys.
+- API.md writes each public constructor's doc on its `new X(...)` bullet; nine constructors gain theirs, among them AudioManager's `target` and `key`. Each `@param`, `@returns` and `@remarks` tag becomes a line of its own (computeFraming's parameters, ContactShadow.place's), so API.md cuts nothing.
+
 ## 0.71.0
 
 - Xbox button prompts: the Y glyph is now a white Y on the palette's orange disc, a bright letter on a darker disc like A, B and X. The old dark Y on a sand disc read as a 'W' at TV distance. `padGlyph('PadY', 'xbox')`'s colours are now `{ f: 'orange', l: 'white' }`; a game that drew its own sand Y should switch to `padGlyph`'s colours.

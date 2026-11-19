@@ -929,7 +929,7 @@ it(
 );
 
 it(
-  'on a phone a room names only controls it has: the Gallery\'s shelf before is its floor pad (no <<), the Workshop\'s list is dragged and its panel\'s < > change shelf; the field guide names no Tab',
+  'on a phone a room names only controls it has: the Gallery\'s shelf before is its floor pad (no <<), the Workshop\'s list is dragged and its panel\'s < > change shelf; the field guide names no Tab (on a pad and a keyboard its legend does, and its words don\'t again)',
   async () => {
     const shown = () => Object.values(touchStates(roomGame(engine).logic.touch?.() ?? {})).filter((b) => !b.hidden).map((b) => b.label ?? '');
     try {
@@ -955,10 +955,18 @@ it(
       expect(words.toLowerCase()).toContain('drag to scroll');
       expect(words).not.toMatch(/\btab\b/i);
       w.close();
-      keyboard();
-      w.open('glossary');
-      engine.step(1);
-      expect(hudTexts(engine).map((t) => t.text).join(' '), 'a keyboard has Tab').toMatch(/\btab jumps between sections/i);
+      // a pad and a keyboard: the legend says how to jump between the sections (Headings), and the
+      // guide's first words don't say it again
+      for (const device of ['pad', 'keyboard'] as const) {
+        w.close();
+        engine.input.noteDevice(device);
+        w.open('glossary');
+        engine.step(10); // opened: the legend shows
+        const shown = hudTexts(engine).map((t) => t.text);
+        expect(shown, `${device}: the legend's Headings`).toContain(t('legend.headings'));
+        expect(shown.join(' '), `${device}: said once, by the legend`).not.toMatch(/jumps between sections/i);
+        expect(shown.join(' ').toLowerCase(), `${device}: its first words`).toContain('every word the station guides use.');
+      }
     } finally {
       w.close();
       keyboard();

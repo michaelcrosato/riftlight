@@ -93,7 +93,7 @@ export const TWIN_SECONDS = { window: 0.05, wait: 0.033 } as const;
 /** Float slack on `TWIN_SECONDS` (polls of 1/60 s add up to 50 ms a hair over or under). */
 const TWIN_SLACK = 1e-6;
 /** How far the mouse travels (CSS pixels) before it counts as used (`device`): a bumped desk does not. */
-const MOUSE_USE = 6;
+export const MOUSE_USE = 6;
 
 /**
  * A DualSense's touchpad gestures (`input.touchpad`): a quick swipe presses a direction, a tap

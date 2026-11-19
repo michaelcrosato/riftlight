@@ -11,6 +11,7 @@ import type { TreePanel } from '../../wire/tree';
 import type { Item } from '../../core/types';
 import type { RealLoot } from '../../wire/loot';
 import type { GroundDrop } from '../../loot/world';
+import { messageText } from './ItemsUi';
 
 const T = 30_000;
 const store = new SaveStore(null); // the saves outlive the first engine: a reload
@@ -277,7 +278,7 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
   );
 
   it(
-    'an orb’s tooltip says how to use it on the device that drives the windows: right-click and click with the mouse, Square then Cross with the pad cursor',
+    'an orb’s tooltip says how to use it on the device that drives the windows: right-click and click with the mouse, X then Enter with the keys’ focus, Square then Cross with the pad’s',
     () => {
       const { rl, engine } = h;
       loot().add(item({ uid: 'e2e-tip-orb', base: 'kindling-shard', name: 'Kindling Shard', quantity: 2 } as Partial<Item> & Pick<Item, 'uid' | 'base'>));
@@ -288,15 +289,24 @@ describe('riftlight items: loot, inventory, skills, vendor, crafting, stash', ()
       engine.step(2);
       expect(ui().cursorMode).toBe('pointer');
       expect(ui().tipText()?.join(' '), 'the mouse').toContain('Right-click, then click an item to use');
-      rl.press('Enter'); // the keys / pad take over the cursor
+      rl.press('Enter'); // the keys take over the cursor
       expect(ui().cursorMode).toBe('pad');
       ui().cursor = { ...at };
+      const keys = ui().tipText()?.join(' ') ?? '';
+      expect(keys, 'the keys’ focus: its keys (X, Enter: the legend’s), not the pad’s buttons').toContain('X, then Enter on an item to use');
+      expect(keys).not.toMatch(/click|Square|Cross/i);
+      rl.press('KeyX'); // the orb picked: the message names the key that uses it
+      expect(messageText(ui().message!, engine.controls.style), 'the keys: Enter on an item').toMatch(/: Enter on an item$/);
+      rl.press('Escape'); // put back
+      engine.input.noteDevice('pad'); // the pad picked up
+      engine.step(1);
       const pad = ui().tipText()?.join(' ') ?? '';
       expect(pad, 'the pad cursor').toContain('Square, then Cross on an item to use');
       expect(pad).not.toMatch(/click/i);
       engine.settings.set({ padGlyphs: 'xbox' });
       expect(ui().tipText()?.join(' '), 'in Xbox’s buttons when chosen').toContain('X, then A on an item to use');
       engine.settings.set({ padGlyphs: undefined });
+      engine.input.noteDevice('keyboard');
       rl.press('Escape');
       expect(engine.errors).toEqual([]);
     },

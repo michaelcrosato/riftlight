@@ -165,11 +165,14 @@ export class Menu implements Panel {
   }
 
   /**
-   * The rows under the widgets for the footer, art pixels, where the widgets leave `free` of the
-   * menu's room: room for the longest of it and every hint (so the menu never jumps as the focus
-   * moves), but never so much that a menu whose rows fit over one footer row scrolls: then only
-   * what they leave (`footLines` wraps or cuts the footer into it). A list that scrolls all the
-   * same (a phone's settings, World's room list) gives up a row of its view for them.
+   * The rows under the widgets for the footer, art pixels, `width` wide (`footW`), where the
+   * widgets leave `free` of the menu's room: room for the longest of it and every hint (so the
+   * menu never jumps as the focus moves), but never so much that a menu whose rows fit over one
+   * footer row scrolls: then only what they leave (`footLines` wraps or cuts the footer into it).
+   * A list that scrolls all the same (a phone's settings, World's room list, the look studio: less
+   * than a footer row free) gives its view's last rows to its longest, whole where `FOOT_ROWS` rows
+   * hold it (a TV's normal font: the look studio's French hints at 1920×1080 take three), and none
+   * to its scroll's arrows (`draw`: at its scroll bar's ends).
    */
   private footH(width: number, free: number): number {
     const texts = [this.o.footer?.(), ...this.widgets.map((w) => (w as { hint?: string }).hint)].filter((x): x is string => !!x);
@@ -390,15 +393,22 @@ export class Menu implements Panel {
       }
       y = y0 + h;
     });
-    // more above / below: a small arrow at the right edge
-    if (this.scroll > 0) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + k, 1 + 2 * k, 1, 'sand');
-    if (this.scroll < total - view) for (let k = 0; k < 3; k++) ui.rect(r.x + r.w - 6 - k, r.y + view + 4 - k, 1 + 2 * k, 1, 'sand');
-    // and a scroll bar in the gutter beside the rows (inside a panel's frame): how much more there is, and where the view is
+    // a scroll bar in the gutter beside the rows (inside a panel's frame): how much more there is,
+    // and where the view is; a small arrow over its top while there is more above, under its foot
+    // while there is more below (in the gutter too, beside the footer's rows: never over their words)
     if (this.scrolls) {
       const bx = Math.min(r.x + r.w + 1, ui.w - 3);
       const th = Math.max(6, Math.round((view * view) / total));
       ui.rect(bx, r.y + 2, 2, view, 'night');
       ui.rect(bx, r.y + 2 + Math.round(((view - th) * this.scroll) / Math.max(1, total - view)), 2, th, 'sand');
+      if (this.scroll > 0) {
+        ui.rect(bx, r.y - 1, 2, 1, 'sand');
+        ui.rect(bx - 1, r.y, 4, 1, 'sand');
+      }
+      if (this.scroll < total - view) {
+        ui.rect(bx - 1, r.y + view + 3, 4, 1, 'sand');
+        ui.rect(bx, r.y + view + 4, 2, 1, 'sand');
+      }
     }
     this.drawFooter(ui, r, foot);
   }

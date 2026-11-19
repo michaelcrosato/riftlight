@@ -77,7 +77,7 @@ where, the killing blow, the damage taken and its biggest type, the tip, the cos
 (damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
 kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
 the normal font, as are the skill panel's rows (names and costs: `ItemsUi.tenFoot`, the panel wider
-for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). A menu's footer (or the focused row's hint) longer than the menu wraps whole onto up to three rows, the menu keeping room for its longest (`Menu.footLines`): the normal font on a TV or a desktop, the mini font on a phone's layout (a bare menu's runs wider: `MenuOptions.footWidth`, the title's under the logo). Those rows never make a menu scroll: one whose rows fit over one footer row takes only the room they leave, the footer wrapped into it (the mini font where the normal can't hold it whole) or cut there (the settings at 1280×720); a list that scrolls anyway gives a row of its view (World's room list). The showcase's hint rows are in the normal font there too, on an ink plate (`hintFont`, `drawHints`). The
+for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). A menu's footer (or the focused row's hint) longer than the menu wraps whole onto up to three rows, the menu keeping room for its longest (`Menu.footLines`): the normal font on a TV or a desktop, the mini font on a phone's layout (a bare menu's runs wider: `MenuOptions.footWidth`, the title's under the logo). Those rows never make a menu scroll: one whose rows fit over one footer row takes only the room they leave, the footer wrapped into it (the mini font where the normal can't hold it whole) or cut there (the settings at 1280×720); a list that scrolls anyway gives its longest the rows it needs, up to three (the look studio's French hints whole at 1920×1080), and none to the arrows that say there is more above or below: they sit over and under its scroll bar, clear of the footer (World's room list). The showcase's hint rows are in the normal font there too, on an ink plate (`hintFont`, `drawHints`). The
 pad's focus in the item windows frames the whole item, slot, socket or orb under it
 (`ItemsUi.focusRect`: a double white frame, ink between its lines, `FOCUS`; its shape sets it
 apart, as no item's frame is double, though a rare's is sand and some skill gems' white), there as
@@ -115,7 +115,7 @@ touch screen, its art at the game's density: `TreeViewOptions.touchDensity`; `/t
 finger's gestures on a coarse pointer before the first touch) and the item windows' (`windowHint`
 by `engine.controls.device`; on a page with touch controls the vendor window keeps the size of
 the taller of a finger's and the mouse's hint, so a tap lands where it was aimed whichever device
-the hint names, while a desktop's holds its own hint: the mouse's, as it always did). The Arena
+the hint names, while a desktop's holds the taller of the mouse's and the keys'). The Arena
 (`?game=arena`) gets the same cluster (`ARENA_TOUCH_BUTTONS` in `combat/arena.ts`: no ≡ and no F).
 
 The engine's touch buttons are the skill bar, laid out as

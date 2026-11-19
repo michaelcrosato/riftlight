@@ -1,7 +1,7 @@
 import type { Glyph } from './controls';
 import type { HudColor } from './hud/Hud';
 import type { Engine } from './Engine';
-import { swipeDirection } from './input';
+import { MOUSE_USE, swipeDirection } from './input';
 import { PALETTE, type PaletteColor } from './palette';
 import type { TouchCorner } from './TouchControls';
 import { SETTINGS_CONTROLS, type SettingsFeatures, SettingsMenu, type SettingsRow } from './ui/settingsMenu';
@@ -48,6 +48,8 @@ export class SettingsPanel {
   private swiped = false;
   /** Where the mouse last was over a row (hover moves the focus only when it moves). */
   private hoverAt = '';
+  /** The mouse over the panel while another device is in use: where it last was, and how far it went since (`MOUSE_USE`, as over the canvas). */
+  private mouse: { x: number; y: number; travel: number } | null = null;
 
   constructor(
     private readonly engine: Engine,
@@ -145,6 +147,21 @@ export class SettingsPanel {
       },
       { signal },
     );
+    // the mouse travelling over the panel is the mouse in use, as over the canvas (a few pixels: a
+    // bumped desk is not): the pointer the pad hid shows again, and the legend names the keys
+    this.root.addEventListener(
+      'pointermove',
+      (e) => {
+        if (e.pointerType !== 'mouse') return;
+        const was = this.mouse;
+        const keys = engine.controls.device === 'keyboard';
+        this.mouse = { x: e.clientX, y: e.clientY, travel: keys || !was ? 0 : was.travel + Math.hypot(e.clientX - was.x, e.clientY - was.y) };
+        if (keys || this.mouse.travel < MOUSE_USE) return;
+        engine.input.noteDevice('keyboard');
+        this.followPointer(false);
+      },
+      { signal },
+    );
     // a new window size gives the pages new heights
     window.addEventListener('resize', () => !this.root.hidden && this.holdHeight(), { signal });
     this.list.addEventListener(
@@ -212,6 +229,7 @@ export class SettingsPanel {
   hide(): void {
     this.root.hidden = true;
     this.flick = null;
+    this.followPointer(false);
     const focused = document.activeElement;
     if (focused instanceof HTMLElement && this.root.contains(focused)) focused.blur();
   }
@@ -255,6 +273,18 @@ export class SettingsPanel {
     if (scroll) this.rowEls[m.list.index]?.scrollIntoView?.({ block: 'nearest' });
     const e = this.engine;
     if (e.debug?.visible) e.debug.update(e.game.status?.(e.context) ?? '');
+  }
+
+  /**
+   * @internal The engine's, each frame (`Engine.followCursor`): the OS pointer over the open panel
+   * hidden while the pad drives it (`hide`: the pad in use, and `hidesPointer`: never in a
+   * replay), as over the canvas; shown again once the mouse travels over it. Presentation only.
+   */
+  followPointer(hide: boolean): void {
+    const none = hide && !this.root.hidden;
+    if (this.root.classList.contains('no-pointer') === none) return;
+    this.root.classList.toggle('no-pointer', none); // style.css: cursor none over it, its rows, tabs and buttons too
+    if (none) this.mouse = null; // the mouse's travel counts afresh from here
   }
 
   dispose(): void {

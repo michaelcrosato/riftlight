@@ -166,8 +166,7 @@ than a frame is not lost) and a chord (right while left is held) counts both. A 
 `Touch` (`TOUCH_KEY`), not a click, and `pointer.touch` says whether the pointer is one; a second
 finger (a pinch) lets `Touch` go until every finger is up; two in one frame press nothing.
 `input.buttonEvents` lists this frame's presses and releases in order, each where the pointer
-was, so a UI reading clicks sees a drag a script makes between two frames start and end where it
-did. `input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
+was, so a UI sees a script's drag between two frames start and end where it did. `input.mouseButtons` is the same keys as bits (1 left or a finger, 2 right, 4 middle); drag a body by giving it a velocity toward where the
 pointer's ray meets a plane (the Sandbox's grab: a spring, so it still collides and can be thrown). Under pointer lock (`first`, `free`) `pointer` is the screen's centre, the crosshair;
 with `third` a left drag also turns the camera.
 
@@ -205,11 +204,11 @@ past 0.3) or `'touch'` (a finger on the canvas, a touch control: `TouchControls`
 `engine.controls.touch`: a tap on a touch-screen laptop). It starts as `'touch'` on a touch-screen device, `'keyboard'` elsewhere; a
 pad that is only connected (`gamepadConnected`), a stick resting or jittering near its deadzone
 and a trigger resting where the pad was first seen never change it, so a keyboard player with a
-DualSense plugged in keeps key prompts and mouse aim. It is recorded when it changes (none: the
+pad plugged in keeps key prompts and mouse aim. It is recorded when it changes (none: the
 keyboard), a level's recording keeps the one it began with (`Recording.device`) and save-states
-keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it from a page's own controls or
-a test. With the pad in use or the pointer locked (not in a replay) the OS pointer hides over the
-canvas (`PointerCursor`); the mouse's travel shows it again.
+keep it, so prompts, menus and touch assists follow it and still replay. `input.noteDevice(d)` sets it (a page's controls,
+a test). With the pad in use or the pointer locked (no replay) the OS pointer hides over the
+canvas (`PointerCursor`), and over the settings panel while the pad drives it; mouse travel shows it.
 
 **Rumble**: `input.rumble({ strong, weak, ms })` (0..1 each: the heavy low motor and the light
 buzz) plays a `dual-rumble` on the pad in use (`input.padIndex`, the one used last) when the frame
@@ -251,8 +250,8 @@ if (r.back) close();                                  // Esc / Backspace / Circl
 ```
 
 `MenuInput` (`src/engine/ui/menu.ts`, `MENU_KEYS`): Enter / Space / Cross confirm, Esc /
-Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a held
-direction repeats after 0.35 s, `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
+Backspace / Circle go back, the arrows / WASD / the d-pad and the left stick move (a press or a
+lean steps at once, held repeats after 0.35 s: `MENU_REPEAT`), Q / E and L1 / R1 change tabs; `new MenuInput({
 confirm: [...], keys: ['KeyX', 'PadX'] })` changes bindings and passes a menu's own shortcuts on as
 `key` events. `FocusList` moves with those events (left / right on a one-column list as `adjust`,
 for a slider), and with the pointer: hovering an item focuses it (only when the pointer moves, so a

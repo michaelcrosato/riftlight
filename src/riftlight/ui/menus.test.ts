@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
-import { defaultLook, Lang, normalizeLook, RESOLUTIONS, textWidthPx, type PlayerSettings } from '../../engine';
+import { defaultLook, Lang, normalizeLook, RESOLUTIONS, textWidthPx, type PlayerSettings, wrapText } from '../../engine';
 import { languageName } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
@@ -398,5 +398,77 @@ describe('a menu footer on a desktop and a TV, with a pad', () => {
     // scroll as they did, their hints whole at 1920×1080.)
     const fits = [...['pause', 'settings', 'tuning'].flatMap((n) => SCREENS.map(([screen]) => `${n}@${screen}`)), 'pause+couch@1366×768', 'pause+couch@1920×1080'];
     for (const [code, did] of fit) expect(fits.filter((x) => !did.has(x)), `${code}: these scroll`).toEqual([]);
+  });
+
+  it("the look studio scrolls on a TV: its footer takes the rows its longest hint needs at the panel's width and no more, so its view holds as many rows (English at 1920×1080: down to Clear), and the arrows at its scroll bar's ends never cover the footer's words, in every stored language", () => {
+    const translations = riftlightTranslations();
+    /** What went wrong. */
+    const bad: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        for (const [screen, W, H] of SCREENS) {
+          const what = `${code} at ${screen}`;
+          const menu = lookStudio(shell(false));
+          const layer = new UiLayer();
+          layer.legends = true;
+          layer.open(menu, { modal: true, ...MENUS.find(([name]) => name === 'look studio')![2] });
+          for (let i = 0; i < 10; i++) layer.update(0.05); // opened, where it stays
+          /** The frame drawn: its rects, and each text where it starts and how wide. */
+          const draw = () => {
+            const rects: { x: number; y: number; w: number; h: number; color: string }[] = [];
+            const texts: { x: number; y: number; w: number; s: string }[] = [];
+            const hud = {
+              width: W,
+              height: H,
+              rect: (x: number, y: number, w: number, h: number, color: string) => rects.push({ x, y, w, h, color }),
+              sprite() {},
+              text: (x: number, y: number, s: string) => texts.push({ x, y, w: textWidthPx(s), s }),
+              measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }),
+            };
+            const ui = new UiCanvas(hud as never);
+            ui.device = 'pad';
+            layer.draw(ui, 0);
+            return { rects, texts };
+          };
+          draw();
+          const r: Rect = layer.top!.rect;
+          // the footer's rows: those of the longest of it and the hints wrapped at the panel's
+          // width (each whole on three at most), none taken for the arrows
+          const texts = [menu.footer() ?? '', ...menu.items().map((w) => (w as { hint?: string }).hint ?? '')].filter((x) => x);
+          const rows = Math.max(...texts.map((x) => wrapText(x, r.w - 2).length));
+          if (rows > 3) bad.push(`${what}: a hint on ${rows} rows`);
+          const foot = 14 + 9 * (Math.min(3, rows) - 1);
+          /** The scroll bar's track beside the rows: as tall as the view. */
+          const trackOf = (drawn: { x: number; w: number; color: string }[]) => drawn.find((x) => x.color === 'night' && x.w === 2 && x.x >= r.x + r.w) as Rect | undefined;
+          const first = trackOf(draw().rects);
+          if (!first) bad.push(`${what}: no scroll bar`);
+          else if (first.h !== r.h - foot) bad.push(`${what}: a view ${first.h} tall over a footer ${r.h - first.h} tall (its longest takes ${rows} rows: ${foot})`);
+          // English at 1920×1080, the focus on the first row: the rows down to Clear in view
+          if (code === 'en' && screen === '1920×1080' && !menu.rects.has('clear')) bad.push(`${what}: Clear out of view with the focus on the first row`);
+          const last = menu.items().at(-1)!.id;
+          for (const w of menu.items()) {
+            if (!('hint' in w) || !w.hint || !menu.focusId(w.id)) continue;
+            const { rects, texts: drawn } = draw();
+            const track = trackOf(rects);
+            if (!track) continue;
+            // the footer's words (under the view, inside the panel), each with its shadow; the
+            // arrows: the sand over the track (more above) and under it (more below)
+            const end = track.y + track.h;
+            const words = drawn.filter((x) => x.y >= end && x.y < r.y + r.h);
+            if (!words.length) bad.push(`${what}, ${w.id}: no footer`);
+            const above = rects.filter((x) => x.color === 'sand' && x.y + x.h <= track.y && x.y >= r.y - 2);
+            const below = rects.filter((x) => x.color === 'sand' && x.y >= end && x.y < r.y + r.h);
+            if (!below.length && !menu.rects.has(last)) bad.push(`${what}, ${w.id}: more below, and no arrow says so`);
+            for (const a of [...above, ...below])
+              for (const t of words)
+                if (a.x < t.x + t.w + 1 && t.x < a.x + a.w && a.y < t.y + 8 && t.y < a.y + a.h) bad.push(`${what}, ${w.id}: an arrow at ${a.x},${a.y} over "${t.s}" (${t.x}..${t.x + t.w}, ${t.y})`);
+          }
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(bad).toEqual([]);
   });
 });
