@@ -12,10 +12,12 @@
 //   sideways too short for a map a thumb across there has it at the top still, drawn in the band (a
 //   touch there is the hub's), shrunk to clear the controls, taking no tap, and its pause menu opens
 //   the map; in a round there (no pause menu, no ≡) the Map button in ≡'s place opens it, recorded;
+// - a phone in 52in1: a finger held in the hub's wake band is the hub's, no swing (on its own page,
+//   and under the band, it swings);
 // - a phone's recording (and save-state) made in 52in1 replays with ≡ where 52in1 put it, below the
 //   hub's wake band, with no hub behind the replay: the HUD it lays out, and a tap lands on, is the
 //   recorded one.
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Lang } from '../../engine';
 import { gameById } from '../../games';
 import { type HeadlessMoment, type HeadlessRiftlight, headlessMoment, headlessRiftlight, makeRiftlight } from '../headless';
@@ -29,6 +31,7 @@ import type { RealLoot } from '../wire/loot';
 import { CONTROLS, KEYS } from './controls';
 import { ARENA_TOUCH_BUTTONS } from '../combat/arena';
 import { HUB_WAKE, RIFTLIGHT_TOUCH_BUTTONS, TOUCH_CODES, touchLayout } from './touch';
+import type { HeroIntent } from './ports';
 import { SaveStore } from './save';
 
 const T = 60_000;
@@ -608,6 +611,62 @@ describe('a phone in 52in1, replayed without the hub', () => {
       h.engine.step(1);
       expect(h.game.hudRects().controls, 'restored: the controls as they were').toEqual(live.controls);
       expect(h.engine.errors).toEqual([]);
+    },
+    T,
+  );
+});
+
+describe('a phone in 52in1: a finger in the hub’s wake band', () => {
+  it(
+    'is the hub’s (its companion brings the bar back): held there it never swings, on its own page at the same height it does, and under the band too',
+    async () => {
+      const viewport = { width: 390, height: 844, dpr: 3 } as const;
+      /** Riftlight in a level by touch (in 52in1 with `hubSettings`), its auto attack off: only a finger swings. */
+      const boot = async (hubSettings?: object) => {
+        h?.engine.dispose();
+        h = await headlessRiftlight({ seed: 12, viewport, options: { touch: true, ...(hubSettings ? { hubSettings } : {}) } });
+        h.engine.input.send({ rl: 'run', slot: 0, seed: 12 });
+        h.engine.input.noteTouch();
+        h.engine.step(30);
+        await h.rl.enterDepth(1);
+        h.rl.dev.ai = false;
+        h.engine.step(240); // the level's banner gone (a finger on it is no swing either)
+        h.game.settings.touchAutoAttack = false;
+        return h;
+      };
+      /** The fixed steps' attack intents while a finger stays down at art pixel (x, y) a fifth of a second, then lifts. */
+      const held = (g: HeadlessRiftlight, x: number, y: number): boolean[] => {
+        const out: boolean[] = [];
+        const step = g.game.hero.fixedUpdate.bind(g.game.hero);
+        const spy = vi.spyOn(g.game.hero, 'fixedUpdate').mockImplementation((dt: number, i: HeroIntent) => (out.push(i.attack), step(dt, i)));
+        const { width, height } = g.engine.renderer.resolution;
+        try {
+          for (const down of [true, false]) {
+            g.engine.input.setPointer(((x + 0.5) / width) * 2 - 1, 1 - ((y + 0.5) / height) * 2);
+            (g.engine.input.pointer as { touch: boolean }).touch = true;
+            (g.engine.input as unknown as { button(code: string, down: boolean): void }).button('Touch', down);
+            g.engine.step(down ? 12 : 30); // then the swing's end
+          }
+        } finally {
+          spy.mockRestore();
+        }
+        return out;
+      };
+      let g = await boot({});
+      const wake = g.game.touchPad.wakeArt();
+      const { width, height } = g.engine.renderer.resolution;
+      const mid = Math.floor(width / 2);
+      expect(wake, 'in 52in1: the wake band').toBeGreaterThan(0);
+      const band = held(g, mid, Math.floor(wake / 2));
+      expect(band.length, 'steps ran').toBeGreaterThan(10);
+      expect(band.filter(Boolean).length, 'a finger held in the wake band: no swing').toBe(0);
+      expect([g.game.mapOpen, g.rl.state().ui], 'nor anything else').toEqual([false, []]);
+      expect(held(g, mid, Math.floor(height / 3)).some(Boolean), 'under the band it swings').toBe(true);
+      expect(g.engine.errors).toEqual([]);
+      g = await boot();
+      expect(g.game.touchPad.wakeArt(), 'on its own page: no band').toBe(0);
+      expect(held(g, mid, Math.floor(wake / 2)).some(Boolean), 'on its own page a finger there swings').toBe(true);
+      expect(g.engine.errors).toEqual([]);
     },
     T,
   );
