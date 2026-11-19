@@ -68,7 +68,7 @@ export function hubSide(hushed = false) {
     settings: { volume: { master: 1, music: 1, effects: 1 }, vibration: 1, mic: false, muted: false, dualsense: null },
     controller: { gyro: [0, 0, 0], accel: [0, 1, 0], touches: [] },
     link(frame) {
-      const link = { frame, wantInput: false };
+      const link = { frame, wantInput: false, index: links.size }; // each frame told apart in `heard`
       links.set(frame, link);
       tell(link);
     },
@@ -87,7 +87,7 @@ export function hubSide(hushed = false) {
     if (!msg || typeof msg !== 'object' || typeof msg.hubFrame !== 'string') return;
     for (const link of links.values()) {
       if (link.frame.contentWindow !== event.source) continue;
-      const note = { at: Math.round(performance.now()), frame: link.frame.title || 'game', ...msg };
+      const note = { at: Math.round(performance.now()), frame: link.frame.title || `game ${link.index}`, ...msg };
       if (msg.hubFrame === 'pads') note.pads = (Array.isArray(msg.pads) ? msg.pads : []).map((p) => p?.id);
       hub.heard.push(note);
       if (hub.heard.length > 400) hub.heard.splice(0, hub.heard.length - 400);
@@ -425,7 +425,8 @@ export async function gameNight(browser, url, check) {
         await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
         await until(async () => (await copy(frames[0]))?.sound !== null, 3000);
         await sleep(500);
-        under = { ...(await copy(frames[0])), hushed: await page.evaluate(() => window.__hub.heard.filter((h) => h.hubFrame === 'hushed' && h.on).length) };
+        // the copies that said they were hushed (each says so at its link and at its hello: counted once)
+        under = { ...(await copy(frames[0])), hushed: await page.evaluate(() => new Set(window.__hub.heard.filter((h) => h.hubFrame === 'hushed' && h.on).map((h) => h.frame)).size) };
       }
       // the round starts in every copy (its countdown): the cards are gone, the hub gives the sound back
       if (under && !lifted && copies.length === 2 && copies.every((c) => c?.phase === 'countdown' || c?.phase === 'playing')) {

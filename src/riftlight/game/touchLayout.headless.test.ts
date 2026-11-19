@@ -662,10 +662,19 @@ describe('a phone in 52in1: a finger in the hub’s wake band', () => {
       expect(band.filter(Boolean).length, 'a finger held in the wake band: no swing').toBe(0);
       expect([g.game.mapOpen, g.rl.state().ui], 'nor anything else').toEqual([false, []]);
       expect(held(g, mid, Math.floor(height / 3)).some(Boolean), 'under the band it swings').toBe(true);
+      /** What a tap at (x, y) does with a loot label drawn there (as the last frame's `touchable`). */
+      const tapOn = (r: HeadlessRiftlight, x: number, y: number) => {
+        const game = r.game as unknown as { touchable: { loot: { id: number; rect: Box }[] }; touchTarget(x: number, y: number): unknown };
+        game.touchable.loot = [{ id: 7, rect: { x: x - 10, y: y - 4, w: 20, h: 8 } }];
+        return game.touchTarget(x, y);
+      };
+      expect(tapOn(g, mid, Math.floor(wake / 2)), 'a loot label in the band: the hub’s, no pick-up').toBeNull();
+      expect(tapOn(g, mid, Math.floor(height / 3)), 'under the band it is a label').toEqual({ loot: 7 });
       expect(g.engine.errors).toEqual([]);
       g = await boot();
       expect(g.game.touchPad.wakeArt(), 'on its own page: no band').toBe(0);
       expect(held(g, mid, Math.floor(wake / 2)).some(Boolean), 'on its own page a finger there swings').toBe(true);
+      expect(tapOn(g, mid, Math.floor(wake / 2)), 'on its own page a label there is tapped').toEqual({ loot: 7 });
       expect(g.engine.errors).toEqual([]);
     },
     T,
