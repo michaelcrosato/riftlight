@@ -2,11 +2,11 @@
 // e2e suite "bundle": the engine kit that `npm run build` puts in dist/engine (scripts/bundle.mjs),
 // used the way an agent outside this repo uses it:
 //
-//   files     README, GUIDE, CONTROLS, RECIPES, ASSETS, LIBRARY, CREDITS, API, CHANGELOG, the engine
+//   files     README, GUIDE, CONTROLS, RECIPES, ASSETS, LIBRARY, CREDITS, API (nothing in it cut short), CHANGELOG, the engine
 //             with its types, the starter game, one page per named game block of docs/GUIDE.md,
 //             docs/GUIDE-CONTROLS.md, docs/GUIDE-RECIPES.md and docs/GUIDE-ASSETS.md (its models
 //             module beside them, with no page; Gem Rush's with 52in1's session client and its head
-//             tags), check.mjs;
+//             tags, which 52in1's own checker passes but for the model and covers each game gives), check.mjs;
 //             manifest.json lists every file with its size; the kit says where newer versions are
 //             (manifest.json's latest, releases and source, README.md's build line, all from
 //             package.json's repository); the zip holds them all; the repository README's download
@@ -14,7 +14,9 @@
 //   types     a TypeScript game typechecks against pixel-engine.d.ts (strict, no skipLibCheck).
 //   check     the kit's own check.mjs plays every page (WebGPU, headless): exit
 //             0, the expected backend, a picture; with --keys, --cameras and --looks it saves
-//             every shot; --keys holds a Pad* code on a fake pad; "page.html?touch=1" plays as on a
+//             every shot; --keys holds a pad button, the d-pad and a stick on a fake pad (the device
+//             turns pad; the hero moves), points and clicks the mouse at art pixels (Beacon Yard's
+//             menu), and refuses a code it can't hold; "page.html?touch=1" plays as on a
 //             phone (touch in use, its controls in the report, a shot of the page); copied away
 //             from any node_modules, it plays with a global Playwright.
 //   play      every recipe does what the guide says: Coin Garden's coins, Cliff Run's
@@ -50,8 +52,9 @@ import { cp, mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node
 import { tmpdir } from 'node:os';
 import { extname, join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { inflateRawSync } from 'node:zlib';
+import { inflateRawSync, inflateSync } from 'node:zlib';
 import { harness, HARNESS_FILES } from './e2e-hub.mjs';
+import { checkGame } from './hub/catalogue-check.mjs';
 import { readHead, SESSION_CLIENT } from './hub/head.mjs';
 
 /** The zip's entries (name and inflated bytes), read through its central directory. */
@@ -72,6 +75,17 @@ function unzip(buf) {
     p += 46 + nameLen + extra + comment;
   }
   return entries;
+}
+
+/** A pixel's colour in a PNG check.mjs wrote (8-bit RGBA, no filter on any row), at art pixel (x, y) of an art `width` wide. */
+function shotPixel(buf, width, x, y) {
+  const w = buf.readUInt32BE(16);
+  const idat = [];
+  for (let o = 8; o < buf.length; o += 12 + buf.readUInt32BE(o)) if (buf.toString('ascii', o + 4, o + 8) === 'IDAT') idat.push(buf.subarray(o + 8, o + 8 + buf.readUInt32BE(o)));
+  const raw = inflateSync(Buffer.concat(idat));
+  const k = w / width;
+  const i = Math.floor(y * k) * (w * 4 + 1) + 1 + Math.floor(x * k) * 4;
+  return [raw[i], raw[i + 1], raw[i + 2]];
 }
 
 /** A static server for a folder (the error pages live outside dist). */
@@ -137,6 +151,14 @@ export async function runBundle(h) {
       controls.includes(`Pixel Engine **${version}**`) && controls.includes('```js beacon-yard') && readme.includes('`CONTROLS.md`') && readme.includes('`--keys PadA*10`') && readme.includes('`"index.html?touch=1" --size 390x844`'),
       'CONTROLS.md (docs/GUIDE-CONTROLS.md) is stamped with the version, holds its games, and README.md sends readers to it and says how check.mjs plays its checklist’s devices (a fake pad, a phone)',
     );
+    // API.md cuts nothing: no doc ends in "…", no type reads "... 4 more ..."; KEYMAP's pad buttons whole
+    const apiMd = await readFile(new URL('API.md', kit), 'utf8');
+    const cut = apiMd.split('\n').filter((l) => /…`?$/.test(l) || /\.\.\. \d+ more \.\.\./.test(l));
+    const keymap = apiMd.slice(apiMd.indexOf('### KEYMAP'), apiMd.indexOf('\n### ', apiMd.indexOf('### KEYMAP') + 1));
+    check(
+      cut.length === 0 && /readonly sit: readonly \["KeyB", "PadL3"\]/.test(keymap) && /B · L3\s+sit/.test(keymap),
+      `API.md writes every doc and type whole (${cut.length} cut${cut.length ? `: ${cut.slice(0, 3).map((l) => l.slice(0, 80)).join(' | ')}` : ''}); KEYMAP's type and table name every pad button`,
+    );
     const recipes = await readFile(new URL('RECIPES.md', kit), 'utf8');
     check(
       recipes.includes(`Pixel Engine **${version}**`) && recipes.includes('```js top-down') && recipes.includes('```js looks') && readme.includes('`RECIPES.md`'),
@@ -150,11 +172,31 @@ export async function runBundle(h) {
     const pages = Object.fromEntries(await Promise.all(manifest.examples.map(async (p) => [p, await readFile(new URL(p, kit), 'utf8')])));
     const gem = readHead(pages['examples/gem-rush.html'] ?? '');
     check(
-      (pages['examples/gem-rush.html'] ?? '').includes(`<meta charset="utf-8" />\n    <script>${SESSION_CLIENT}</script>\n    <meta name="hub:`) &&
+      (pages['examples/gem-rush.html'] ?? '').includes(`<meta charset="utf-8" />\n    <script>${SESSION_CLIENT}</script>\n    <meta name="viewport"`) &&
+        (pages['examples/gem-rush.html'] ?? '').includes('<title>Gem Rush — ') &&
         gem.one('hub:session') === '1' && gem.one('hub:multiplayer') === 'parallel 1-4, moments 1-4' && gem.all('hub:moment').length === 3 &&
         Object.entries(pages).every(([p, html]) => p === 'examples/gem-rush.html' || !html.includes('aihub-session')),
       `examples/gem-rush.html carries 52in1's session client (unmodified, its first script) and its head tags (hub:session ${gem.one('hub:session')}, ${gem.all('hub:moment').length} moments); no other page has the client`,
     );
+    // 52in1's own checker on Gem Rush handed in as the kit ships it (a folder game: its page, its
+    // module, the engine beside them): what is left is what each game fills in, the model and the covers
+    const pkg = await mkdtemp(join(tmpdir(), 'gem-rush-package-'));
+    try {
+      const game = join(pkg, 'games/gem-rush');
+      await mkdir(game, { recursive: true });
+      await mkdir(join(pkg, 'covers/gem-rush'), { recursive: true });
+      await writeFile(join(game, 'index.html'), pages['examples/gem-rush.html'] ?? '');
+      await writeFile(join(game, 'gem-rush.js'), (await readFile(new URL('examples/gem-rush.js', kit), 'utf8')).replaceAll(`'../pixel-engine.js'`, `'./pixel-engine.js'`));
+      await cp(fileURLToPath(new URL('pixel-engine.js', kit)), join(game, 'pixel-engine.js'));
+      const result = checkGame({ file: join(game, 'index.html'), folder: game, coversDir: join(pkg, 'covers'), rel: 'games/gem-rush' });
+      const left = result.problems.map((x) => `${x.level === 'error' ? '✗' : '!'} ${x.text.split(': ')[0]}`);
+      check(
+        JSON.stringify(left) === JSON.stringify(['✗ no hub:model', '✗ covers/gem-rush/0.jpg is missing', '✗ covers/gem-rush/1.jpg is missing', '✗ covers/gem-rush/2.jpg is missing']),
+        `52in1's checker on Gem Rush as the kit ships it asks only for what a game fills in, its model and covers (${left.join('; ')})`,
+      );
+    } finally {
+      await rm(pkg, { recursive: true, force: true });
+    }
     // LIBRARY.md: a row per model and texture (variants share one), the library's by family, then each pack's.
     // CREDITS.md: every one of them either our own work (counted) or imported (listed by id under
     // its source), the palettes, the code's licences. library.json: the same assets as data.
@@ -267,6 +309,44 @@ void Engine.start(game, { camera: { preset: 'sideways' } });
     check(
       onPad.code === 0 && padReport.state?.status === 'beacons 0/4, pad' && padNode.code === 0 && padNodeReport.status === 'beacons 0/4, pad',
       `--keys PadA*3 presses Cross on a fake pad: the device is the pad in the page ("${padReport.state?.status}") and headless ("${padNodeReport.status}", replayed)${onPad.code || padNode.code ? ':\n    ' + tail(onPad.out + padNode.out) : ''}`,
+    );
+    // a stick and the d-pad are held on the fake pad (the device stays the pad): the starter's hero
+    // runs one way on the stick and the other on the d-pad; in Node, Beacon Yard's keeper goes 5 m
+    // right in a second at 5 m/s and half way back, and the run replays
+    const idle = (await report('webgpu-index')).state?.target ?? [0, 0, 0];
+    const onStick = await checkTool(join(kitPath, 'index.html'), ['--keys', 'PadLStick:1,0*45', '--out', fileURLToPath(new URL('flags-stick', out))]);
+    const onDpad = await checkTool(join(kitPath, 'index.html'), ['--keys', 'PadLeft*45', '--out', fileURLToPath(new URL('flags-dpad', out))]);
+    const [stick, dpad] = [await report('flags-stick'), await report('flags-dpad')];
+    const moved = (r) => (r.state?.target ?? idle).map((v, i) => v - idle[i]);
+    const [ms, md] = [moved(stick), moved(dpad)];
+    const stickNode = await checkTool('', ['--headless', join(kitPath, 'examples/beacon-yard.js'), '--keys', 'PadLStick:1,0*60,PadLeft*30', '--out', fileURLToPath(new URL('flags-stick-node', out))]);
+    const sn = await report('flags-stick-node');
+    check(
+      onStick.code === 0 && onDpad.code === 0 && stick.device === 'pad' && dpad.device === 'pad' && Math.hypot(ms[0], ms[2]) > 1 && Math.hypot(md[0], md[2]) > 1 && ms[0] * md[0] + ms[2] * md[2] < 0 &&
+        stickNode.code === 0 && sn.device === 'pad' && Math.abs(sn.state.target[0] - 2.5) < 0.01 && sn.replayed === sn.fingerprint,
+      `--keys PadLStick:1,0*45 and PadLeft*45 move the starter's hero on the fake pad (the device ${stick.device}, ${dpad.device}; ${ms.map((v) => v.toFixed(1))} and ${md.map((v) => v.toFixed(1))} from rest), and in Node Beacon Yard's keeper ends at x ${sn.state?.target[0]} (5 right, 2.5 back), replayed${onStick.code || onDpad.code || stickNode.code ? ':\n    ' + tail(onStick.out + onDpad.out + stickNode.out) : ''}`,
+    );
+    // the mouse at art pixels: in Beacon Yard's pause menu (Options) hovering Restart moves the focus
+    // there and keeps the menu, a click on Resume closes it; the mouse is then the device in use
+    const hover = await checkTool(join(kitPath, 'examples/beacon-yard.html'), ['--keys', 'PadStart*3,Mouse@240,162*3', '--out', fileURLToPath(new URL('flags-hover', out))]);
+    const click = await checkTool(join(kitPath, 'examples/beacon-yard.html'), ['--keys', 'PadStart*3,MouseLeft@240,106*3', '--out', fileURLToPath(new URL('flags-click', out))]);
+    const clickNode = await checkTool('', ['--headless', join(kitPath, 'examples/beacon-yard.js'), '--keys', 'PadStart*3,MouseLeft@240,106*3', '--out', fileURLToPath(new URL('flags-click-node', out))]);
+    const [hr, cr, cn] = [await report('flags-hover'), await report('flags-click'), await report('flags-click-node')];
+    // the focused row is sand, the others navy: Restart's (y 151..172 at 480×270) and Resume's (95..116)
+    const hoverPng = hr.shots[0] ? await readFile(hr.shots[0].file) : null;
+    const sand = (c) => c[0] > 200 && c[1] > 170 && c[2] < 160;
+    const focus = hoverPng ? [sand(shotPixel(hoverPng, hr.state.resolution.width, 165, 160)), sand(shotPixel(hoverPng, hr.state.resolution.width, 165, 100))] : [];
+    const off = await checkTool(join(kitPath, 'examples/beacon-yard.html'), ['--keys', 'Mouse@480,10', '--out', fileURLToPath(new URL('flags-off', out))]);
+    check(
+      hover.code === 0 && hr.state?.status === 'beacons 0/4, keyboard, menu' && JSON.stringify(focus) === '[true,false]' && click.code === 0 && cr.state?.status === 'beacons 0/4, keyboard' && clickNode.code === 0 && cn.status === 'beacons 0/4, keyboard' && cn.replayed === cn.fingerprint &&
+        off.code === 1 && /Mouse@480,10 is off the art \(480×270 pixels\)/.test(off.out),
+      `--keys Mouse@x,y hovers and MouseLeft@x,y clicks at art pixels: Beacon Yard's menu stays under a hover, its focus on Restart (${focus}: ${hr.shots[0]?.file}) ("${hr.state?.status}"), and a click on Resume closes it, in the page ("${cr.state?.status}") and in Node ("${cn.status}"); a spot off the art fails${hover.code || click.code || clickNode.code || off.code !== 1 ? ':\n    ' + tail(hover.out + click.out + clickNode.out + off.out) : ''}`,
+    );
+    // a code check.mjs can't hold is refused before anything runs (exit 2, naming it)
+    const refused = await Promise.all(['PadLStick*60', 'PadJump*3', 'Mouse*3', 'PadLStick:2,0*3', 'KeyD@3,4'].map((k) => checkTool(join(kitPath, 'index.html'), ['--keys', k])));
+    check(
+      refused.every((r) => r.code === 2) && /"PadLStick\*60": say where the stick is held/.test(refused[0].out) && /"PadJump" is not a code check.mjs can hold/.test(refused[1].out) && /say where the mouse goes/.test(refused[2].out) && /each -1..1/.test(refused[3].out) && /only the mouse takes a spot/.test(refused[4].out),
+      `--keys refuses what it can't hold, naming it (a stick with no direction, a made-up code, the mouse with no spot, a stick past 1, a key at a spot: exit ${refused.map((r) => r.code).join(', ')})`,
     );
     // "page.html?touch=1": a phone's touch screen, so touch is the device in use (its prompts), the
     // report says where each touch control is, and a shot of the page shows them

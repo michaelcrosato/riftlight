@@ -34,19 +34,22 @@ export function guideHeads(markdown) {
 /**
  * A page of the kit for `script`: with `head` (a game's `html <name>` fence), 52in1's session client
  * (`client`: scripts/hub/session.js, `SESSION_CLIENT`) is its first script, right after <meta charset>,
- * and the tags follow it before anything else, where 52in1's catalogue looks for them.
+ * and the tags follow it before anything else, where 52in1's catalogue looks for them. A head that
+ * gives the page's title and icon (52in1's catalogue does) keeps them: `title` and the blank icon
+ * are for a page without.
  */
 export function examplePage({ title, script, head = '', client = '' }) {
   if (head && !client.startsWith('/*! aihub-session ')) throw new Error(`bundle: ${script}'s page has hub tags but no session client`);
   // the client byte for byte (52in1 replaces an unmodified copy with each new version)
-  const hub = head ? `\n    <script>${client}</script>\n${head.replace(/^(?=.)/gm, '    ').trimEnd()}` : '';
+  const tags = head ? `\n${head.replace(/^(?=.)/gm, '    ').trimEnd()}` : '';
+  const icon = /<link rel="icon"/.test(head) ? '' : '\n    <link rel="icon" href="data:," />';
+  const own = /<title>/.test(head) ? '' : `\n    <title>${title}</title>`;
+  // the viewport before the head's tags (its game-lines block is a script: nothing of the catalogue's after it)
   return `<!doctype html>
 <html lang="en">
   <head>
-    <meta charset="utf-8" />${hub}
-    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
-    <link rel="icon" href="data:," />
-    <title>${title}</title>
+    <meta charset="utf-8" />${head ? `\n    <script>${client}</script>` : ''}
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />${tags}${icon}${own}
     <style>html, body { margin: 0; height: 100%; background: #0d0b14; } #app { position: fixed; inset: 0; }</style>
   </head>
   <body>
