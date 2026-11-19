@@ -202,6 +202,47 @@ describe('touch density on a phone (touchScale, EngineOptions.touchDensity)', ()
     }
   });
 
+  it('at a fractional DPR, the whole number of device pixels nearest the density (a tie the bigger): a Pixel (DPR 2.625) held sideways keeps about the rows a DPR 2 or 3 phone of its size draws', () => {
+    const base = RESOLUTIONS.default;
+    // [DPR, device px per art px, CSS px per art px about]: 2 × 2.625 = 5.25 → 5 (1.9 CSS px), not 6
+    // (2.3: 17% fewer rows than asked); 2 × 2.75 = 5.5, a tie → 6; 2 × 2.25 = 4.5 → 5; 2 × 2.2 = 4.4 → 4
+    for (const [dpr, scale] of [
+      [1, 2],
+      [1.5, 3],
+      [1.75, 4],
+      [2, 4],
+      [2.2, 4],
+      [2.25, 5],
+      [2.5, 5],
+      [2.625, 5],
+      [2.75, 6],
+      [3, 6],
+      [3.5, 7],
+      [4, 8],
+    ] as const) {
+      const v = { width: 863, height: 360, dpr };
+      expect(touchScale(v, 2), `DPR ${dpr}`).toBe(scale);
+      expect(Math.abs(scale / dpr - 2), `DPR ${dpr}: about 2 CSS px an art pixel`).toBeLessThanOrEqual(0.5 / dpr + 1e-9);
+    }
+    // the art rows held sideways at DPR 2.625 (a Pixel 7: 863×360, 923×340 under Chrome's bar, 882×344,
+    // its full 915×412) are about those of a DPR 2 or 3 phone of the same CSS size (180, 170, 172, 206),
+    // never 15% fewer (they were 158, 149, 151, 181 at 6 device px)
+    for (const [w, hgt, rows] of [
+      [863, 360, 189],
+      [923, 340, 179],
+      [882, 344, 181],
+      [915, 412, 217],
+    ] as const) {
+      const v = { width: w, height: hgt, dpr: 2.625 };
+      const f = frameView(v, base, 'fill', base, touchScale(v, 2)).framing;
+      expect([f.artHeight, f.scale, f.integer], `${w}×${hgt} at DPR 2.625`).toEqual([rows, 5, true]);
+      for (const dpr of [2, 3]) {
+        const at = frameView({ ...v, dpr }, base, 'fill', base, touchScale({ ...v, dpr }, 2)).framing.artHeight;
+        expect(Math.abs(f.artHeight - at) / at, `${w}×${hgt}: rows at 2.625 (${f.artHeight}) vs at DPR ${dpr} (${at})`).toBeLessThanOrEqual(0.06);
+      }
+    }
+  });
+
   it('a portrait phone already is (3 CSS pixels an art pixel): unchanged; so are tablets, laptops, TVs, and a density of 0', () => {
     const base = RESOLUTIONS.default;
     for (const v of [

@@ -29,7 +29,7 @@ export interface View {
   /** The configured resolution preset. */
   readonly baseResolution: Resolution;
   readonly aspect: AspectMode;
-  /** The least CSS pixels per art pixel on a phone, on a page with touch controls (`EngineOptions.touchDensity`), 0 for none. */
+  /** About how many CSS pixels per art pixel on a phone, on a page with touch controls (`EngineOptions.touchDensity`, `touchScale`), 0 for none. */
   readonly touchDensity: number;
   readonly mode: RenderMode;
   readonly filters: readonly string[];

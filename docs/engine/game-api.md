@@ -77,13 +77,13 @@ Engine.start(game, {
   touchButtons: [{ label: 'A', code: 'Space', hint: 'jump' }, { label: 'B', code: 'KeyJ' }],
   touchBar: false,                             // no ⓘ P R ◐ ♪ hotkey bar on phones unless ?debug=1
   touchStick: 'floating',                      // the joystick's base comes under the thumb (default 'fixed')
-  touchDensity: 2,                             // on a phone with touch controls, ≥ 2 CSS px per art px (default 0: off)
+  touchDensity: 2,                             // on a phone with touch controls, ~2 CSS px per art px (default 0: off)
 });
 ```
 
 Touch controls step aside while a pad or the keyboard is in use, can float under the thumb
 (`touchStick`), and, for a game that opts in once its HUD fits about 180 rows, keep a phone's art at
-2 CSS pixels a pixel or more (`touchDensity`, default off): docs/engine/character.md *Touch is an
+about 2 CSS pixels a pixel (`touchDensity`, default off): docs/engine/character.md *Touch is an
 add-on*.
 
 The hotkeys (`DEFAULT_DEBUG_KEYS`): `mode` P · `resolution` R · `debug` \` (creates the panel on

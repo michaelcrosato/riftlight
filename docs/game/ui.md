@@ -92,7 +92,7 @@ and `wheel`; from its top each time it shows). Their hints follow the device in 
 
 ## On a touch screen (`game/touch.ts`)
 
-On a phone Riftlight draws its art at two CSS pixels per art pixel at least (`touchDensity: 2`;
+On a phone Riftlight draws its art at about two CSS pixels per art pixel (`touchDensity: 2`;
 422×195 on an 844×390 landscape phone at DPR 2 or 3, 130×282 in portrait), so the HUD and the
 panels lay out in about 195 rows in landscape. On a page with touch controls every panel gets a
 thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44 CSS px, 22 art

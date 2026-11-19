@@ -21,7 +21,7 @@ another agent*):
   it names exactly the kit's pages, that its lists (palette, looks, filters, sounds, particles,
   cameras, URL flags, built-in models) are the engine's and that the starter's legend fits the HUD
   at every window shape (played headless, a phone held either way too, and as a touch page at the
-  `touchDensity` it passes: two CSS pixels a pixel at least, sideways too); the `bundle` e2e suite
+  `touchDensity` it passes: about two CSS pixels a pixel, sideways too); the `bundle` e2e suite
   plays every one of them.
 - `CONTROLS.md` (docs/GUIDE-CONTROLS.md, stamped): the standard every game built on the kit meets
   (controller first at ten feet, keyboard and mouse native, prompts for the device in use, menus,

@@ -63,15 +63,21 @@ export interface Viewport {
 export const PHONE_SHORT_SIDE = 500;
 
 /**
- * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) for at least
+ * The least device pixels per art pixel a view keeps (`computeFraming`'s `minScale`) for about
  * `cssPerArt` CSS pixels per art pixel (`EngineOptions.touchDensity`, on a page with touch controls,
  * also while they step aside for a pad or the keyboard): on a phone (the viewport's short side under
  * `PHONE_SHORT_SIDE`) in either orientation, so text and targets stay thumb-sized; 1 (no minimum)
- * elsewhere, or when `cssPerArt` is 0.
+ * elsewhere, or when `cssPerArt` is 0. The whole number of device pixels nearest `cssPerArt` CSS
+ * pixels (a tie takes the bigger): exactly that at DPR 1, 1.5, 2, 2.5, 3 or 3.5; at a fractional DPR
+ * whose `cssPerArt` CSS pixels fall between two whole device pixels, the nearer, so the art keeps
+ * about the rows the game was laid out for (a Pixel's DPR 2.625 takes 5 device pixels at 2, 1.9 CSS
+ * pixels: 189 rows held sideways at 360 CSS px, where 6 (2.3 CSS px) left 158). A pure function of
+ * the viewport and the density, both recorded (`Recording.view`, `Recording.density`): a replay
+ * frames the same way.
  */
 export function touchScale(viewport: Viewport, cssPerArt: number): number {
   if (!(cssPerArt > 0) || Math.min(viewport.width, viewport.height) >= PHONE_SHORT_SIDE) return 1;
-  return Math.max(1, Math.ceil(cssPerArt * (viewport.dpr > 0 ? viewport.dpr : 1) - 1e-9));
+  return Math.max(1, Math.floor(cssPerArt * (viewport.dpr > 0 ? viewport.dpr : 1) + 0.5 + 1e-9));
 }
 
 /**

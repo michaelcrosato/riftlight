@@ -17,8 +17,8 @@ import { type Box, overlaps } from './layout';
 /**
  * The touch controls of a phone screen in art pixels, from the button data and the engine's
  * CSS (stick 128 px + 2 px border, 16 px from the corner; placed buttons from an 8 px safe
- * margin), on the art the game draws there (`fill`, at Riftlight's `touchDensity`: two CSS pixels
- * per art pixel at least on a phone). The e2e `phone` suite checks the same thing against the
+ * margin), on the art the game draws there (`fill`, at Riftlight's `touchDensity`: about two CSS
+ * pixels per art pixel on a phone). The e2e `phone` suite checks the same thing against the
  * real DOM rects. `wake`: 52in1's wake band there in art pixels, as `TouchPad.wakeArt` has it;
  * `css`: CSS px per art pixel.
  */
@@ -80,8 +80,10 @@ describe('hudGeometry with touch controls', () => {
   ] as const)
     it(`landscape ${vw}×${vh} at DPR ${dpr}: the phone's denser art, the orbs beside the controls on the bottom row with the XP bar between them, clear of the minimap and the gold`, () => {
       const { W, H, boxes } = controlsFor(vw, vh, dpr);
-      expect(H, 'a landscape phone draws about 180 to 200 rows (two CSS pixels per art pixel)').toBeGreaterThanOrEqual(175);
-      expect(H).toBeLessThanOrEqual(210);
+      // about two CSS pixels per art pixel: 180 to 200 rows, 217 on a Pixel's 412 CSS px at DPR 2.625
+      // (5 device pixels, the nearest whole number to 2 CSS px: 1.9)
+      expect(H, 'a landscape phone draws about 180 to 220 rows (about two CSS pixels per art pixel)').toBeGreaterThanOrEqual(175);
+      expect(H).toBeLessThanOrEqual(220);
       const g = hudGeometry(W, H, boxes);
       expect(g.life.y).toBe(g.mana.y);
       expect(g.life.y + g.orbR).toBeGreaterThan(H - 12);
@@ -149,7 +151,7 @@ describe('hudGeometry with touch controls', () => {
       // thumb across between the band and the skills' arc: phones held sideways under a browser's bars
       // (iPhones in Safari: 844×346, 734×343, 750×340 and 750×342, a mini's 712×325, an 11 Pro's
       // 724×325; a Pixel 5's 802×294), a Galaxy Z Fold's cover screen (882×344: 441×172 art at DPR 3,
-      // 386×151 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
+      // 464×181 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
       // px, under a thumb). 600×428 to 620×454 at DPR 3 (300 to 310 art px wide) have room for a map
       // below the band, but the skills' arc leaves the mana orb no spot beside one (it would fall back
       // over the buttons and the map): at the top there too, the orb where it is on the game's own page

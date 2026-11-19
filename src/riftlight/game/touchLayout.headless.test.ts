@@ -5,7 +5,7 @@
 //   (the mouse's hint alone: touch never changes a mouse's or a pad's layout);
 // - the item windows' button legend keeps clear of the HUD (at 960×540 the inventory's would sit
 //   over the mana orb, the skill bar and the minimap);
-// - a landscape phone draws Riftlight's denser art (two CSS pixels per art pixel at least);
+// - a landscape phone draws Riftlight's denser art (about two CSS pixels per art pixel);
 // - the Arena (?game=arena) gets Riftlight's touch buttons, each naming a control it has;
 // - a phone in 52in1, held either way, has the whole corner map (a tap target) and the gold below the
 //   hub's wake band, over no control and none of the HUD, couch guests and a boss's bar too; one held
