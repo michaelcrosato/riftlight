@@ -1720,6 +1720,19 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return !this.round && this.level.exitOpen && on(worldBox(this.level.exit, 2.2, 1.6, cam, ui)) ? { kind: 'portal' } : null;
   }
 
+  /**
+   * The item windows (`boxes`) and, while the panels draw their legends (a pad or the keys), the row
+   * above them where the windows' legend goes when the one under them would cover the HUD
+   * (`ItemsUi.legendAt`): what an NPC's line keeps clear of over the item windows.
+   */
+  private windowsAndLegend(boxes: readonly Box[]): Box[] {
+    if (!boxes.length || !this.layer.legendsOn(this.ui.device)) return [...boxes];
+    const left = Math.min(...boxes.map((b) => b.x));
+    const top = Math.min(...boxes.map((b) => b.y));
+    const right = Math.max(...boxes.map((b) => b.x + b.w));
+    return [...boxes, { x: left, y: Math.max(0, top - 12), w: right - left, h: Math.min(12, top) }];
+  }
+
   /** Where the NPC's line goes, clear of `blocked` (a panel, the item windows) and the HUD (`talkPlace`; laid out again only when something changed). */
   private placeTalk(blocked: readonly Box[]): TalkPlace {
     const ui = this.ui;
@@ -2424,8 +2437,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     layout.clear(ui.w, ui.h);
     this.hudZonesShown = hudBoxes(ui.w, ui.h, model).map(({ id, x, y, w, h }) => ({ x, y, w, h, weight: id === 'banner' || id === 'boss' || id === 'where' || id === 'time' ? 1 : 10 }));
     for (const { x, y, w, h } of this.hudZonesShown) layout.reserve({ x, y, w, h });
-    // the world's bubbles and labels keep off an NPC's line over a panel too
+    // the world's bubbles and labels keep off an NPC's line over a panel too, and off the item
+    // windows (their canvas is over the HUD: one there would show cut)
     if (talking && this.layer.top) layout.reserve(talking);
+    for (const b of this.layer.top?.panel.boxes?.() ?? []) layout.reserve(b);
     // world overlays
     this.coop.draw(ui, cam); // each couch guest's tag over its head
     if (this.screen === 'town') {
@@ -2500,7 +2515,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     // under it). A panel that covers the screen (the passive tree's view) shows it itself
     // (`PanelHost.talk`)
     const said = this.dialogueLine && !this.talk.gone ? this.layer.top : undefined;
-    let talk = said?.panel.overlay && said.panel.boxes ? this.placeTalk(said.panel.boxes()) : null;
+    let talk = said?.panel.overlay && said.panel.boxes ? this.placeTalk(this.windowsAndLegend(said.panel.boxes())) : null;
     this.talk.box = talk && this.talkShows(talk) ? talk.box : null; // the legend keeps clear of it
     this.layer.draw(ui, this.time);
     if (said && !said.panel.overlay) {

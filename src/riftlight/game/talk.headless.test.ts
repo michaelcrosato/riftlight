@@ -106,7 +106,13 @@ for (const view of [
             // nothing else the HUD draws runs into it: the legend, the place name, the gold
             const others = texts.filter((x) => !place.rows.includes(x.text));
             for (const o of others) expect(apart(box, o), `"${o.text}" ${JSON.stringify(o)} clear of the line ${JSON.stringify(box)}`).toBe(true);
-            if (!view.touch) expect(texts.some((x) => x.text === t('legend.select')), 'the legend shows').toBe(true);
+            if (!view.touch) {
+              // the legend shows, and keeps its place clear of the HUD (the line left it room)
+              const legend = texts.filter((x) => [t('legend.select'), t('legend.back'), t('legend.tabs')].includes(x.text));
+              expect(legend.length, 'the legend shows').toBeGreaterThan(0);
+              const hud = rl.ui.hud().zones.filter((z) => ['skillbar', 'life', 'mana', 'level'].includes(z.id));
+              for (const l of legend) for (const z of hud) expect(apart(l, z), `the legend's "${l.text}" clear of the HUD's ${z.id}`).toBe(true);
+            }
           } else {
             // the windows' canvas draws it on top, for a while
             expect(items().said?.box, 'drawn over the windows').toEqual(place.box);
