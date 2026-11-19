@@ -132,11 +132,16 @@ down (`RIFTLIGHT_HUB_TOUCH_BUTTONS`); in a 52in1 round it is hidden (`TouchFrame
 no pause menu, the hub's bar is the menu there). The corner map, a tap target, and the gold go below
 the band there too (`TouchPad.wakeArt`, `HudModel.wake`), clear of the controls: the gold under the
 map on a phone upright (the banner under the gold); on its side the skills' arc is under the corner,
-so the map shrinks to the biggest that fits between the band and the controls (`MAP_LEAST` at
-least, a thumb across) with the gold on its left (`map.beside`), while a boss's bar and the banner
-keep clear of the full map's column (`map.col`) and so stay put. On a screen shorter still (none
-fits) it stays at the top and only its part below the band takes a tap. Guests' strips beside the
-top-left block run to the screen's edge where they end above the map. `TouchPad` drives them each frame from
+so the map shrinks to the biggest that fits between the band and the controls (a thumb across,
+frame and all: `MAP_LEAST`, `THUMB` at the screen's CSS scale) with the gold on its left
+(`map.gold`, left of the interact button where that is in its way), while a boss's bar, the
+banner and the top-left label keep clear of the full map's column (`map.col`) and so stay put (the
+label clears the gold only where the block's rows reach its row). On a screen too short for that
+(882×344, a Galaxy Z Fold's cover; 568×320) there is no corner map (`map.off`): the gold takes its
+corner, below the band where the arc leaves room (else at the top), and the pause menu gets Map
+(`MenuHost.levelMap`; a 52in1 round has no pause menu: no map there by touch). Guests' strips
+beside the top-left block run to the screen's edge where they end above the map. A sideways
+banner keeps off the gold unless only a place over it is off the heroes. `TouchPad` drives them each frame from
 `hero.skills()`: the gem's icon (`skills/icons.ts`), the cooldown shutter and seconds, the
 mana cost, dimmed when it can't be paid. The HUD then draws no bar of its own and lays the
 rest out around the controls' rects (`TouchPad.zones` → `hudGeometry(W, H, controls)`): each

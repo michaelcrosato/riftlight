@@ -81,6 +81,11 @@ export interface MenuHost {
    */
   couch?(): { readonly seats: readonly number[]; leave(seat: number): void } | null;
   /**
+   * Opening the level's map, where a touch page has no corner map to tap (52in1 on a phone held
+   * sideways too short for one below the hub's wake band); null elsewhere: no Map entry. Optional.
+   */
+  levelMap?(): (() => void) | null;
+  /**
    * The game's languages (docs/game/lang.md): those it has (its own first), the one shown, whether
    * the address names one (`?lang=`: 52in1 always does; no Language menu then), and choosing
    * one (saved, then the game reloads in it). Optional: hosts without it have no Language menu.
@@ -133,6 +138,7 @@ export function pauseMenu(h: MenuHost): Menu {
   return new Menu(
     [
       { kind: 'button', id: 'resume', label: t('menu.pause.resume'), onClick: () => h.resume() },
+      ...(h.levelMap?.() ? [{ kind: 'button' as const, id: 'map', label: t('menu.pause.map'), onClick: () => h.levelMap?.()?.(), hint: t('menu.pause.map.hint') }] : []),
       { kind: 'button', id: 'tuning', label: t('menu.pause.tuning'), onClick: () => h.openMenu(tuningMenu(h)), hint: t('menu.pause.tuning.hint') },
       { kind: 'button', id: 'inventory', label: t('menu.pause.inventory'), onClick: () => h.openPanel('inventory'), hint: t('menu.pause.inventory.hint') },
       { kind: 'button', id: 'skills', label: t('menu.pause.skills'), onClick: () => h.openPanel('skills'), hint: t('menu.pause.skills.hint') },

@@ -10,7 +10,7 @@ import { riftlightTranslations } from '../lang/translations';
 import { designedBoss } from '../monsters/bosses';
 import { MOMENTS, momentGoal } from '../session/moments';
 import type { SkillSlotView } from '../game/ports';
-import { drawHud, type GuestStrip, hudBoxes, hudGeometry, type HudModel, hudZones } from './hud';
+import { drawHud, type GuestStrip, type HudBox, hudBoxes, hudGeometry, type HudModel, hudZones } from './hud';
 import { type Align, miniCovers, miniWidth, UiCanvas } from './kit';
 import { type Box, overlaps } from './layout';
 
@@ -131,52 +131,119 @@ describe('hudGeometry with touch controls', () => {
     }
   });
 
-  it('in 52in1 a phone held sideways has the whole corner map and the gold below the hub’s wake band, a thumb across, over no control and none of the HUD (a boss’s bar, a banner, couch guests, a moment’s seconds, the tuning’s rows); on its own page and on a pad, at the top as ever', () => {
-    const boss = 'Nyx-Hollow, the Lantern Eater';
-    const strip = (seat: number): GuestStrip => ({ seat, color: 0x3f7fff, life: 0.6, skills: [1, 0.4, -1, 0], rise: seat === 3 ? 3.2 : null });
-    let checked = 0;
-    for (const [vw, vh, dpr] of [[844, 390, 2], [844, 390, 3], [852, 393, 3], [915, 412, 2.625], [812, 375, 3], [800, 360, 3], [780, 360, 3], [740, 360, 2], [740, 360, 4]] as const) {
-      const { W, H, boxes, wake, css } = controlsFor(vw, vh, dpr, 'fill', RIFTLIGHT_OPTIONS.touchDensity ?? 0, RIFTLIGHT_HUB_TOUCH_BUTTONS);
-      for (const guests of [0, 1, 2, 3]) {
-        for (const [big, tuned] of [[false, 0], [true, 0], [true, 4], [false, 4]] as const) {
-          for (const card of [null, 'card', 'levelup', 'clear'] as const) {
-            for (const moment of [false, true]) {
-              const where = `${vw}×${vh} at DPR ${dpr} (${W}×${H}, the band ${wake} rows), ${guests} guest(s)${big ? ', a boss' : ''}${tuned ? `, ${tuned} tuned` : ''}${card ? `, a ${card} banner` : ''}${moment ? ', a moment' : ''}`;
-              const m: HudModel = {
-                ...hudModel(boxes, { boss: big ? boss : null, difficulty: Array.from({ length: tuned }, (_, k) => `x${k + 2}`) }),
-                gold: 9_876_543,
-                goldShown: 9_876_543,
-                wake,
-                guests: Array.from({ length: guests }, (_, k) => strip(k + 2)),
-                card: card ? { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind: card } : null,
-                timeLeft: moment ? { text: t('round.moment_left', { count: 30 }), urgent: false } : null,
-              };
-              const z = hudBoxes(W, H, m);
-              const map = z.find((b) => b.id === 'minimap')!;
-              const gold = z.find((b) => b.id === 'gold')!;
-              for (const own of [map, gold]) {
-                expect(own.y, `${where}: the ${own.id} ${JSON.stringify(own)} below the band`).toBeGreaterThanOrEqual(wake);
-                expect(own.x >= 0 && own.x + own.w <= W && own.y + own.h <= H, `${where}: the ${own.id} ${JSON.stringify(own)} on screen`).toBe(true);
-                for (const o of z) if (o !== map && o !== gold) expect(overlaps(own, o, 0), `${where}: the ${own.id} ${JSON.stringify(own)} over the ${o.id} ${JSON.stringify(o)}`).toBe(false);
+  it(
+    'in 52in1 a phone held sideways has the whole corner map and the gold below the hub’s wake band, a thumb across, over no control and none of the HUD (a boss’s bar, a banner, couch guests, a moment’s seconds, the tuning’s rows, a long level name); one too short for that has none, the gold in its corner; a boss’s bar and the label stay where they are with the map at the top, the banner clear of its column; on its own page and on a pad, at the top as ever',
+    () => {
+      const boss = 'Nyx-Hollow, the Lantern Eater';
+      const LONG = 'XII · The Very Long Hollow of Lanterns';
+      const strip = (seat: number): GuestStrip => ({ seat, color: 0x3f7fff, life: 0.6, skills: [1, 0.4, -1, 0], rise: seat === 3 ? 3.2 : null });
+      const one = (z: readonly HudBox[], id: HudBox['id']) => z.find((b) => b.id === id);
+      let checked = 0;
+      // [CSS px wide, high, DPR, the gold: beside the corner map, or with none in its corner below the
+      // band or at the top]. 915×356 is a Pixel held sideways under Chrome's toolbar (the interact
+      // button is beside the map's top rows: the gold goes left of it, 16 of the map's rows a thumb
+      // at its CSS scale); 844×346 an iPhone under a browser's bars, 882×344 a Galaxy Z Fold's cover
+      // screen (441×172 art at DPR 3, 386×151 at its own 2.625) and 568×320 an iPhone SE (1st) have no
+      // room for a map a thumb across between the band and the skills' arc (on 844×346 16 rows would
+      // fit: 40 CSS px, under a thumb)
+      const SCREENS = [
+        [844, 390, 2, 'beside'],
+        [844, 390, 3, 'beside'],
+        [852, 393, 3, 'beside'],
+        [915, 412, 2.625, 'beside'],
+        [812, 375, 3, 'beside'],
+        [800, 360, 3, 'beside'],
+        [780, 360, 3, 'beside'],
+        [740, 360, 2, 'beside'],
+        [740, 360, 4, 'beside'],
+        [640, 360, 3, 'beside'],
+        [915, 356, 2.625, 'beside'],
+        [844, 346, 2, 'below'],
+        [882, 344, 3, 'below'],
+        [882, 344, 2.625, 'top'],
+        [568, 320, 2, 'below'],
+      ] as const;
+      for (const [vw, vh, dpr, spot] of SCREENS) {
+        const cornerMap = spot === 'beside';
+        const { W, H, boxes, wake, css } = controlsFor(vw, vh, dpr, 'fill', RIFTLIGHT_OPTIONS.touchDensity ?? 0, RIFTLIGHT_HUB_TOUCH_BUTTONS);
+        expect(hudGeometry(W, H, boxes, wake).map.off, `${vw}×${vh}: ${cornerMap ? 'a' : 'no'} corner map`).toBe(!cornerMap);
+        const full = W < 300 ? { w: 44, h: 34 } : { w: 84, h: 64 };
+        for (const label of ['II · Gloom', LONG]) {
+          for (const guests of [0, 1, 2, 3]) {
+            for (const [big, tuned] of [[false, 0], [true, 0], [true, 4], [false, 4]] as const) {
+              for (const card of [null, 'card', 'levelup', 'clear'] as const) {
+                for (const moment of [false, true]) {
+                  const where = `${vw}×${vh} at DPR ${dpr} (${W}×${H}, the band ${wake} rows), “${label}”, ${guests} guest(s)${big ? ', a boss' : ''}${tuned ? `, ${tuned} tuned` : ''}${card ? `, a ${card} banner` : ''}${moment ? ', a moment' : ''}`;
+                  const m: HudModel = {
+                    ...hudModel(boxes, { boss: big ? boss : null, label, difficulty: Array.from({ length: tuned }, (_, k) => `x${k + 2}`) }),
+                    gold: 9_876_543,
+                    goldShown: 9_876_543,
+                    wake,
+                    guests: Array.from({ length: guests }, (_, k) => strip(k + 2)),
+                    card: card ? { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind: card } : null,
+                    timeLeft: moment ? { text: t('round.moment_left', { count: 30 }), urgent: false } : null,
+                  };
+                  const z = hudBoxes(W, H, m);
+                  const map = one(z, 'minimap');
+                  const gold = one(z, 'gold')!;
+                  if (cornerMap) {
+                    expect(map, `${where}: a corner map`).toBeDefined();
+                    expect(gold.y, `${where}: the gold ${JSON.stringify(gold)} below the band`).toBeGreaterThanOrEqual(wake);
+                    expect(map!.y, `${where}: the map ${JSON.stringify(map)} below the band`).toBeGreaterThanOrEqual(wake);
+                    expect(overlaps(map!, gold, 0), `${where}: the gold ${JSON.stringify(gold)} over the map ${JSON.stringify(map)}`).toBe(false);
+                    expect(gold.x + gold.w <= map!.x && gold.y < map!.y + 10, `${where}: the gold ${JSON.stringify(gold)} beside the map ${JSON.stringify(map)}, on its left`).toBe(true);
+                    // a tap target (`Riftlight.onMap`): a thumb across both ways
+                    expect(Math.min(map!.w, map!.h) * css, `${where}: the corner map ${JSON.stringify(map)} a thumb across`).toBeGreaterThanOrEqual(44);
+                  } else {
+                    // none (the pause menu opens the level's map): the gold in its corner, below the band
+                    // where the skills' arc leaves it room, else at the top as on a page without a corner
+                    // map (882×344: the interact button is in its way)
+                    expect(map, `${where}: no corner map`).toBeUndefined();
+                    expect(gold.x + gold.w, `${where}: the gold ${JSON.stringify(gold)} in its corner`).toBe(W - 5);
+                    if (spot === 'below') expect(gold.y, `${where}: the gold ${JSON.stringify(gold)} below the band`).toBeGreaterThanOrEqual(wake);
+                    else expect(gold, `${where}: the gold in its corner at the top`).toEqual(one(hudBoxes(W, H, { ...m, minimap: null }), 'gold'));
+                  }
+                  // a known gap: at 640×360 with three guests' strips and a moment's seconds a big banner (the
+                  // level card, LEVEL CLEAR) has no place clear of them and of the gold beside the map, and
+                  // covers part of the gold for its four seconds (`bannerRect`'s last resort; on the game's
+                  // own page it is in that place too)
+                  const gap = vw === 640 && guests === 3 && moment && (card === 'card' || card === 'clear');
+                  for (const own of [map, gold]) {
+                    if (!own) continue;
+                    expect(own.x >= 0 && own.x + own.w <= W && own.y + own.h <= H, `${where}: the ${own.id} ${JSON.stringify(own)} on screen`).toBe(true);
+                    for (const o of z) if (o !== map && o !== gold && !(gap && own === gold && o.id === 'banner')) expect(overlaps(own, o, 0), `${where}: the ${own.id} ${JSON.stringify(own)} over the ${o.id} ${JSON.stringify(o)}`).toBe(false);
+                  }
+                  // a boss's bar at the top and the top-left block (above the gold's row: the tuning's rows
+                  // reaching it keep clear of it) stay where they are with the corner map at the top, and the
+                  // banner is no wider than the room between the map's full column and its mirror: they keep
+                  // clear of that column as they do at the top, so they don't change as the map shrinks or goes
+                  // (a bar with no room at the top goes under the map, wherever that is)
+                  const atTop = hudBoxes(W, H, { ...m, wake: 0 });
+                  const bar = one(atTop, 'boss');
+                  if (bar && bar.y < wake) expect(one(z, 'boss'), `${where}: a boss's bar where it is with the map at the top`).toEqual(bar);
+                  else if (bar) expect(one(z, 'boss')!.y, `${where}: a boss's bar under the map, as with the map at the top`).toBeGreaterThanOrEqual(wake);
+                  const banner = one(z, 'banner');
+                  if (banner) expect(banner.w, `${where}: the banner ${JSON.stringify(banner)} between the map's full column and its mirror`).toBeLessThanOrEqual(W - 2 * (full.w + 10));
+                  const block = one(z, 'where')!;
+                  if (block.y + block.h <= gold.y) expect(block, `${where}: the top-left block where it is with the map at the top`).toEqual(one(atTop, 'where'));
+                  checked++;
+                }
               }
-              expect(overlaps(map, gold, 0), `${where}: the gold ${JSON.stringify(gold)} over the map ${JSON.stringify(map)}`).toBe(false);
-              // a tap target (`Riftlight.onMap`): a thumb across both ways
-              expect(Math.min(map.w, map.h) * css, `${where}: the corner map ${JSON.stringify(map)} a thumb across`).toBeGreaterThanOrEqual(40);
-              checked++;
             }
           }
         }
+        // on its own page (≡ in the corner: no band), and on a pad there or in 52in1 (no controls): at the top, its full size, the gold under it
+        const alone = controlsFor(vw, vh, dpr);
+        for (const [controls, w] of [[alone.boxes, 0], [[], 0], [[], wake]] as const) {
+          const z = hudBoxes(W, H, { ...hudModel([...controls]), wake: w });
+          expect(one(z, 'minimap'), `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the corner map`).toEqual({ id: 'minimap', x: W - full.w - 6, y: 2, w: full.w + 4, h: full.h + 4 });
+          expect(one(z, 'gold')!.y, `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the gold under it`).toBe(full.h + 9);
+        }
       }
-      // on its own page (≡ in the corner: no band), and on a pad there or in 52in1 (no controls): at the top, its full size, the gold under it
-      const alone = controlsFor(vw, vh, dpr);
-      for (const [controls, w] of [[alone.boxes, 0], [[], 0], [[], wake]] as const) {
-        const z = hudBoxes(W, H, { ...hudModel([...controls]), wake: w });
-        expect(z.find((b) => b.id === 'minimap'), `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the corner map`).toEqual({ id: 'minimap', x: W - 90, y: 2, w: 88, h: 68 });
-        expect(z.find((b) => b.id === 'gold')!.y, `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the gold under it`).toBe(73);
-      }
-    }
-    expect(checked).toBe(9 * 4 * 4 * 4 * 2);
-  });
+      expect(checked).toBe(SCREENS.length * 2 * 4 * 4 * 4 * 2);
+    },
+    60_000,
+  );
 
   it('without controls it is the desktop / compact layout', () => {
     const g = hudGeometry(480, 270);
@@ -683,7 +750,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
         }
       }
     }
-  });
+  }, 30_000);
 
   it('with no place clear of the heroes’ rows: over none of them, and beside the top-left block rather than side by side across the middle of the screen', () => {
     // a hero the height of the screen at its right edge: its rows are every row, and it is under none of the places on the left
@@ -731,7 +798,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
       }
     }
     expect(checked).toBe(SCREENS.length * PAGES.length * 4 * 2 * 3);
-  });
+  }, 30_000);
 
   /** Somewhere a `w` × `h` plate covers none of `avoid`, 2 px clear of each side by side and 4 px in from the screen's sides (as the banner keeps), or null. */
   const room = (W: number, H: number, w: number, h: number, avoid: readonly Box[]): Box | null => {
@@ -758,11 +825,17 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
               const z = hudBoxes(W, H, m);
               const banner = z.find((b) => b.id === 'banner')!;
               expect(banner.x >= 0 && banner.y >= 0 && banner.x + banner.w <= W && banner.y + banner.h <= H, `${where}: the banner on screen ${JSON.stringify(banner)}`).toBe(true);
-              const never = ['guests', 'control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss', ...(W > H ? ['gold'] : [])];
+              const never = ['guests', 'control', 'bar', 'life', 'mana', 'xp', 'minimap', 'boss'];
               for (const b of z.filter((b) => never.includes(b.id))) expect(overlaps(banner, b, 0), `${where}: the banner ${JSON.stringify(banner)} over the ${b.id} ${JSON.stringify(b)}`).toBe(false);
               // over a hero only where no plate holding its title fits clear of them and of what it never covers
+              const least = textWidthPx('I · Embers') + 4;
               const over = heroes.find((hero) => overlaps(banner, hero, 0));
-              if (over) expect(room(W, H, textWidthPx('I · Embers') + 4, banner.h, [...z.filter((b) => never.includes(b.id) && b.id !== 'gold'), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over a hero ${JSON.stringify(over)}, with room elsewhere`).toBeNull();
+              if (over) expect(room(W, H, least, banner.h, [...z.filter((b) => never.includes(b.id)), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over a hero ${JSON.stringify(over)}, with room elsewhere`).toBeNull();
+              // a phone held sideways keeps it off the gold as well, but where only a place over the gold
+              // is off the heroes (a hero weighs more: in 52in1 a phone too short for a corner map has that
+              // place in its corner, the gold under it)
+              const gold = z.find((b) => b.id === 'gold')!;
+              if (W > H && overlaps(banner, gold, 0)) expect(room(W, H, least, banner.h, [...z.filter((b) => never.includes(b.id) || b.id === 'gold'), ...heroes]), `${where}: the banner ${JSON.stringify(banner)} over the gold ${JSON.stringify(gold)}, with room off it and off the heroes`).toBeNull();
               else heroFree++;
               // where it went without heroes to keep off was clear of their rows: it goes there still
               const before = hudBoxes(W, H, { ...m, card: { ...m.card!, heroes: undefined } }).find((b) => b.id === 'banner')!;
@@ -784,7 +857,7 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
       const banner = hudBoxes(W, H, m).find((b) => b.id === 'banner')!;
       expect(banner.y + banner.h, `${vw}×${vh} at DPR ${dpr}, three guests, ${tuned} tuned: the banner ${JSON.stringify(banner)} above the heroes ${JSON.stringify(heroes)}`).toBeLessThanOrEqual(Math.min(...heroes.map((b) => b.y)));
     }
-  });
+  }, 30_000);
 
   it('a kill streak goes right of the strips where it would run into them, never over them', () => {
     let checked = 0;
@@ -808,5 +881,5 @@ describe('couch co-op: the guests’ strips (players 2 to 4) on phones held both
       }
     }
     expect(checked).toBe(SCREENS.length * PAGES.length * 3 * 2 * 2);
-  });
+  }, 30_000);
 });

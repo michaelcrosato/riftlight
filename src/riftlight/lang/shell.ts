@@ -177,6 +177,8 @@ const MENUS: LineArea = {
     'menu.pause.look.hint': 'Pixel, cel, palettes... per layer ({key:look})',
     'menu.pause.photo': 'Photo mode',
     'menu.pause.photo.hint': 'Free camera, filters, save a PNG ({key:photo})',
+    'menu.pause.map': 'Map',
+    'menu.pause.map.hint': 'Where you have been, and the way out',
     'menu.pause.quit': 'Save & quit',
 
     'menu.settings.title': 'Settings',
@@ -342,6 +344,8 @@ const MENUS: LineArea = {
     'legend.back': 'Under a menu, after the button that goes back or closes it (a controller’s Circle, the Esc key).',
     'menu.pause.coop': 'Pause menu button: couch co-op, two to four players on one screen with a game controller each (same-screen co-op).',
     'menu.pause.coop.hint': 'Hint under the Couch co-op button of the pause menu: up to four people play on this one screen, each with a game controller of their own.',
+    'menu.pause.map': 'Pause menu button: opens the level’s map (shown only on a phone screen too small for the little map in the corner, which a tap opens otherwise).',
+    'menu.pause.map.hint': 'Hint under the Map button of the pause menu: the map shows the places of the level explored so far and the way out (the exit).',
     'menu.coop.leave.hint': 'Hint under a Leave button of the couch co-op menu: that player’s hero goes, and their game controller moves player 1 (the first player) again.',
     'menu.coop.you': 'In the couch co-op menu: the first player’s seat ({seat} is 1), the person holding the keyboard or the first controller.',
     'menu.coop.free': 'In the couch co-op menu: a seat nobody has taken yet ({seat} is 2, 3 or 4).',
@@ -371,6 +375,7 @@ const MENUS: LineArea = {
     'menu.pause.coop': 21,
     'menu.pause.look': 21,
     'menu.pause.photo': 21,
+    'menu.pause.map': 21,
     'menu.pause.quit': 21,
     // the Settings menu's label column and its hint line (240 art pixels wide, the menu's width: a
     // hint in the mini font, which has A-Z, digits and a few signs; one with any other letter, as

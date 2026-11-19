@@ -1802,27 +1802,34 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   }
 
   private pointerOnHud(p: { readonly x: number; readonly y: number } = this.pointer.art): boolean {
-    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y, true);
+    return (p.y > this.ui.h - 36 && Math.abs(p.x - this.ui.w / 2) < 90) || this.onMap(p.x, p.y);
   }
 
   /**
    * (`x`, `y`) in art pixels is on the corner map, or on the level's map while it is open: a click or
-   * tap there opens or closes it (and is no attack). `band`: the corner map's part in 52in1's wake
-   * band counts too (no attack there either, though a tap there is the hub's and opens nothing).
+   * tap there opens or closes it (and is no attack). In 52in1 on a touch page the corner map is below
+   * the hub's wake band (`hudGeometry`), or off on a phone held sideways too short for one: nothing
+   * to tap then (the pause menu opens the level's map: `levelMap`).
    */
-  private onMap(x: number, y: number, band = false): boolean {
+  private onMap(x: number, y: number): boolean {
     if (!this.level || this.layer.top || this.screen !== 'level') return false;
     const ui = this.ui;
     const g = this.geometry();
-    // in 52in1 on a touch page only below the hub's wake band, where `hudGeometry` could not move it
-    // (a tap in the band is the hub's: it brings its bar over the game)
-    const wake = g.touch && !band ? this.touchPad.wakeArt() : 0;
-    let box: Box = { x: ui.w - g.map.w - 6, y: Math.max(g.map.y, wake), w: g.map.w + 4, h: g.map.y + g.map.h + 4 - Math.max(g.map.y, wake) };
+    let box: Box | null = g.map.off ? null : { x: ui.w - g.map.w - 6, y: g.map.y, w: g.map.w + 4, h: g.map.h + 4 };
     if (this.mapOpen) {
       const v = mapView(this.mapRoom(), this.minimapModel()!);
       box = { x: v.x - 3, y: v.y - 3, w: v.w + 6, h: v.h + 6 };
     }
-    return x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+    return !!box && x >= box.x && y >= box.y && x < box.x + box.w && y < box.y + box.h;
+  }
+
+  /** The level's map from the pause menu, where a touch page has no corner map to tap (`hudGeometry`'s `map.off`); null elsewhere (no Map entry). */
+  levelMap(): (() => void) | null {
+    if (!this.level || this.screen !== 'level' || !this.geometry().map.off) return null;
+    return () => {
+      this.resume();
+      this.mapOpen = true;
+    };
   }
 
   /** Where the level's map goes (art pixels): the play's middle, under a boss's bar and above the bottom HUD. */
