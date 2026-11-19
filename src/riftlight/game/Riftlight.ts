@@ -699,6 +699,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.endTalk();
     this.screen = 'loading';
     this.syncTouch(); // no frame runs while the level builds: the controls step aside now
+    this.syncLatch(); // and R2 lets go
     this.portalSound();
     this.leaveLevel();
     this.motionAim = null;
@@ -1874,6 +1875,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     this.lightBar();
     if (this.showcase.active) {
       ctx.input.joinWith = null; // nobody joins in the showcase (`joinPolicy` runs only out of it)
+      this.syncLatch();
       return this.showcase.update(dt, events);
     }
     this.layer.update(dt);
@@ -1948,6 +1950,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     }
     this.updateCamera(ctx, dt);
     this.joinPolicy(ctx);
+    this.syncLatch(); // after this frame's presses: a panel R2 opened lets go at once
     this.draw(ctx);
     // the wheel zooms the camera through the settings (and is consumed so the rig doesn't)
     if (ctx.input.wheel && !this.layer.top) {
@@ -2052,6 +2055,21 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const off = this.screen === 'title' || this.showcase.active;
     const v = this.hero.vitals();
     this.feel.light(lightFor({ where: off ? 'off' : this.screen === 'town' ? 'town' : 'level', dead: this.dead, life: v.maxLife > 0 ? v.life / v.maxLife : 0, boss: this.music === 'boss', time: this.time }));
+  }
+
+  /**
+   * R2 interacts, so a DualSense's R2 works a latch (`LATCH`) while there is something to interact
+   * with (`interactOffer`) and player 1 plays on the pad; it lets go in a panel, menu or the pause,
+   * on the title, loading, dead, in a showcase mode or a session round (R2 does nothing there), and
+   * off the pad or with the DualSense in a couch guest's hands. The press registers early in R2's
+   * travel (`PRESS`), before the latch gives way, so the pull that used it keeps it till R2 is up,
+   * whatever the press did (a window, the item taken, the portal home).
+   */
+  private syncLatch(): void {
+    const input = this.ctx.input;
+    const pad = input.device === 'pad' && !input.dualSenseGuest;
+    const play = (this.screen === 'town' || this.screen === 'level') && !this.dead && !this.layer.top && !this.showcase.active && !this.round;
+    this.feel.latch(pad && ((play && this.interactOffer() !== null) || (this.feel.latched && input.isDown('PadRT'))));
   }
 
   /** The touch buttons follow the game: shown while you play, the bar's icons and cooldowns, what F does here. */
@@ -2983,6 +3001,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       this.town.loadState(s.town);
       this.screen = 'loading';
       this.syncTouch(); // no frame runs while the level builds: the controls step aside now
+      this.syncLatch(); // and R2 lets go
       this.ctx.scene.background = new Color(PALETTE.ink);
       this.rng.state = e.rng;
       setActorIds(e.actors);
