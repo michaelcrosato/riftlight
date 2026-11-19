@@ -29,7 +29,7 @@ reverted on the default branch, and the PR number if any.
      `.github/workflows/` changes in place (CI's token can't push them; the
      revert names them): they are still on the default branch, so check them too.
    - On the default branch, **not reverted** (it was already red, or the revert
-     conflicted): create `claude/fix-ci-<short-topic>` from the current default
+     conflicted outside `.github/workflows/`): create `claude/fix-ci-<short-topic>` from the current default
      branch, fix forward, and push.
 7. **Can't fix it?** (missing secret, external outage, needs a human decision)
    Comment on the PR (`gh pr comment`), or open an issue when there is no PR,
