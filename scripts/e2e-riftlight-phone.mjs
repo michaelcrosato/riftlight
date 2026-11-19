@@ -38,7 +38,9 @@
 //     a real tap on the map opens it, one in the band above it nothing. At 882×344 (a Galaxy Z
 //     Fold's cover screen) no map a thumb across fits there: it stays at the top, drawn in the band
 //     (shrunk to clear the controls, the gold under it, over nothing), a tap on it opens nothing,
-//     and ≡'s pause menu has Map, which a tap opens
+//     and ≡'s pause menu has Map, which a tap opens; in a 52in1 round there (faked: the round's
+//     command with no hub behind it) ≡ is hidden and the Map button in its place (below the band, a
+//     thumb across, drawn as a map) opens the level's map with a real tap, and closes it
 // Screens land in .scratch/e2e/riftlight-phone-*.png (DOM included: the controls show).
 
 /**
@@ -831,9 +833,59 @@ export async function runRiftlightPhone(h, orientation) {
           corner.every((c) => !c.map) && paused.ui.includes('pause') && entry && entry.h >= entry.resume && opened?.map && opened.ui.length === 0 && !shut.map,
           `${at}: a tap on the corner map opens nothing (${corner.map((c) => (c.map ? 'the map' : 'nothing')).join(', ')}), ≡ opens the pause menu (${paused.ui.join(',') || 'nothing'}), its Map entry (${entry ? `${Math.round(entry.h)} CSS px tall, Resume ${Math.round(entry.resume)}` : 'missing'}) opens the level's map (${opened ? `${opened.map ? 'open' : 'shut'}, panels ${opened.ui.join(',') || 'none'}` : 'no tap'}), a tap on it closes it (${shut.map ? 'still open' : 'closed'})`,
         );
+        // a 52in1 round there, faked: the round's command as the hub's welcome makes it (no hub behind
+        // it: `HubSession.offline`, as a replay has), then the hub's start and Go. A round has no pause
+        // menu: ≡ is hidden, and the Map button is in its place (below the band, a thumb across, drawn
+        // as a folded map); a real tap on it opens the level's map, another closes it
         await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
         await pageH.waitForTimeout(1000);
         await pageH.screenshot({ path: new URL(`${shotTag}-hub.png`, OUT).pathname });
+        await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = true));
+        const phase = await pageH.evaluate(async () => {
+          const e = window.__PIXEL_ENGINE__;
+          const g = window.__RIFTLIGHT__.game;
+          e.input.send({ rl: 'round', info: { me: 0, players: [{ id: 0, name: 'P1', color: '#ef7d57' }], host: 0, isHost: true, server: false, mode: 'moments', play: null, moment: 'gale-escape', round: 1, limitMs: 30000, seed: 7 } });
+          for (const t0 = Date.now(); Date.now() < t0 + 30000 && g.round?.phase !== 'waiting'; ) {
+            e.step(1);
+            await new Promise((r) => setTimeout(r, 10));
+          }
+          e.input.send({ hub: { type: 'start', in: 0 } });
+          e.step(2);
+          e.input.send({ rl: 'round-go' });
+          e.step(2);
+          e.input.noteTouch();
+          e.step(10);
+          return g.round?.phase ?? null;
+        });
+        const roundAt = () =>
+          pageH.evaluate(() => {
+            const e = window.__PIXEL_ENGINE__;
+            e.step(2);
+            const r = e.touch.rects();
+            const b = (code) => {
+              const x = r.buttons.find((y) => y.code === code);
+              return x && { hidden: x.hidden, left: x.rect.left, top: x.rect.top, width: x.rect.width, height: x.rect.height };
+            };
+            const el = document.querySelector('.touch-ui > button[data-code="KeyM"]');
+            return { visible: e.touch.visible, menu: b('Escape'), map: b('KeyM'), drawn: !!el && el.classList.contains('has-icon') && getComputedStyle(el).visibility === 'visible', open: window.__RIFTLIGHT__.game.mapOpen, corner: window.__RIFTLIGHT__.ui.hud().zones.find((z) => z.id === 'minimap') };
+          });
+        const inRound = await roundAt();
+        const mb = inRound.map;
+        check(
+          phase === 'playing' && inRound.visible && inRound.menu?.hidden && mb && !mb.hidden && inRound.drawn && mb.top >= 90 && Math.min(mb.width, mb.height) >= 44 && mb.left === inRound.menu.left && mb.top === inRound.menu.top && inRound.corner?.y === 2,
+          `${at}, a round (${phase}): ≡ hidden (${inRound.menu?.hidden}), the Map button in its place, drawn as a map (${mb ? `${mb.hidden ? 'hidden' : 'shown'}, ${inRound.drawn ? 'its icon' : 'no icon'}, ${Math.round(mb.width)}×${Math.round(mb.height)} CSS px from ${Math.round(mb.top)} px` : 'none'}), the corner map at the top (y ${inRound.corner?.y})`,
+        );
+        if (mb) {
+          await pageH.touchscreen.tap(mb.left + mb.width / 2, mb.top + mb.height / 2);
+          const opened = await roundAt();
+          await pageH.screenshot({ path: new URL(`${shotTag}-hub-round-map.png`, OUT).pathname });
+          await pageH.touchscreen.tap(mb.left + mb.width / 2, mb.top + mb.height / 2);
+          const closed = await roundAt();
+          check(opened.open && !closed.open && !closed.map.hidden, `${at}, a round: a real tap on the Map button opens the level's map (${opened.open ? 'open' : 'shut'}), another closes it (${closed.open ? 'still open' : 'closed'})`);
+        }
+        await pageH.evaluate(() => (window.__PIXEL_ENGINE__.manual = false));
+        await pageH.waitForTimeout(1000);
+        await pageH.screenshot({ path: new URL(`${shotTag}-hub-round.png`, OUT).pathname });
         checkClean(await state(pageH), ctx.logs, `${at}: `);
         await ctx.browser.close();
         ctx = null;

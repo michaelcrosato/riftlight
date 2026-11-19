@@ -111,6 +111,13 @@ const MAP_LEAST = { w: 44, h: 16 } as const;
 /** A thumb across, in CSS px: the least a tap target on a phone is, the corner map's frame and all. */
 const THUMB = 44;
 
+/**
+ * `hudGeometry`'s corner map in 52in1 with touch controls for the last screen, controls and band it
+ * searched (a pure function of them, asked many times a frame: the search tries every size, and the
+ * orbs' spots around each).
+ */
+let hubMapLast: { readonly key: string; readonly map: { w: number; h: number; col: number; y: number; tap: boolean; gold: { right: number; y: number } | null } } | null = null;
+
 /** The room the gold takes beside a shrunk corner map, or under one in the band (`hudGeometry`): a big purse's coin and digits, one row. */
 const GOLD_BESIDE = { w: 60, h: 10 } as const;
 
@@ -130,9 +137,11 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * any control in the top-left corner (the ≡ button, at the top or, in 52in1, lower down). In 52in1
  * (`wake`: its wake band in art pixels, `HUB_WAKE` CSS px: a touch there is the hub's, whatever is
  * drawn there) the corner map, a tap target, and the gold are below the band too: on a phone held
- * sideways the map shrinks to fit above the skills' arc, the gold beside it (`map.gold`); on one too
- * short for a map a thumb across there, it stays at the top, in the band, the gold under it,
- * shrunk to clear the controls, and takes no tap (`map.tap`: the pause menu opens the level's map).
+ * sideways the map shrinks to fit above the skills' arc, the gold beside it (`map.gold`), where the
+ * orbs still have a spot; on one too short for a map a thumb across there (or whose arc leaves the
+ * orbs no spot beside one) it stays at the top, in the band, the gold under it, shrunk to clear the
+ * controls, and takes no tap (`map.tap`: the pause menu opens the level's map; in a round, which has
+ * none, the Map button in ≡'s place: `TouchFrame.map`).
  */
 export function hudGeometry(W: number, H: number, controls: readonly Box[] = [], wake = 0) {
   const compact = W < 300;
@@ -151,21 +160,39 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
    * (the top-left label, a boss's bar at the top, the banner) keep clear of as they would at the top,
    * so they stay put when it shrinks; `tap`: a tap on it opens the level's map (not in 52in1 on a
    * phone held sideways too short for one a thumb across below the hub's wake band: it is drawn at
-   * the top, in the band, whose taps are the hub's); `gold`: the gold's right edge and its coin's row
+   * the top, in the band, whose taps are the hub's; nor where the orbs would have no spot beside one
+   * there); `gold`: the gold's right edge and its coin's row
    * beside a shrunk map (on its left, in its top rows); null: under the map.
    */
   const map: { w: number; h: number; col: number; y: number; tap: boolean; gold: { right: number; y: number } | null } = { ...(compact ? { w: 44, h: 34, col: 44 } : { w: 84, h: 64, col: 84 }), y: 2, tap: true, gold: null };
+  /** An orb and its frame, with touch controls (`lowestSpot`'s box), and how far from its side it may look: half the width on a landscape phone (its button cluster is wider than a third), else a third. */
+  const orbBox = orbR * 2 + 5;
+  const reach = W > H ? W / 2 : W / 3;
+  /** What the orbs keep clear of with touch controls: the controls, and the corner map (`mp`) with the gold under it or beside it (`mp.gold`). */
+  const around = (mp: typeof map): Box[] => [
+    ...controls,
+    mp.gold
+      ? { x: mp.gold.right - GOLD_BESIDE.w, y: 0, w: W - mp.gold.right + GOLD_BESIDE.w, h: Math.max(mp.y + mp.h + 6, mp.gold.y + GOLD_BESIDE.h) }
+      : { x: W - mp.w - 10, y: 0, w: mp.w + 10, h: mp.y + mp.h + 18 },
+  ];
+  /** Both orbs have a spot around the corner map `mp` (`freeSpot`), clear of the controls. */
+  const orbsFit = (mp: typeof map): boolean => freeSpot(W, H, around(mp), 'right', orbBox, reach) !== null && freeSpot(W, H, around(mp), 'left', orbBox, reach) !== null;
   // at the top; with touch controls in 52in1 below the hub's wake band (`wake`) as ≡ is (a tap in
   // the band is the hub's: the hub's companion script wakes its bar on a press less than `HUB_WAKE`
   // CSS px from the frame's top). A phone upright has room there for it and the gold under it; on
   // its side the skills' arc is under the corner, so the map shrinks to the biggest that fits between
   // the band and the controls (no smaller than `MAP_LEAST`), the gold beside it: right beside it
   // where the arc leaves room, else left of the arc's buttons in its row (a phone shorter still: the
-  // interact button). Where none a thumb across fits there with the gold beside it (shorter still)
-  // it stays at the top, drawn in the band with the gold under it as on the game's own page, shrunk
-  // to clear the controls, and takes no tap (`tap`: a tap there wakes the hub; the pause menu opens
-  // the level's map). It never goes: drawing in the band is fine, only its taps are the hub's
-  if (touch && wake > 0) {
+  // interact button). Only where the orbs still have a spot around it (`orbsFit`: else they would
+  // fall back over the buttons). Where none a thumb across fits there with the gold beside it
+  // (shorter still), or none leaves the orbs a spot, it stays at the top, drawn in the band with the
+  // gold under it as on the game's own page, shrunk to clear the controls, and takes no tap (`tap`: a
+  // tap there wakes the hub; the pause menu opens the level's map, in a round the Map button in ≡'s
+  // place). It never goes: drawing in the band is fine, only its taps are the hub's
+  // (the same screen, controls and band as the last call: its map, without the search again)
+  const key = touch && wake > 0 ? `${W}x${H}:${wake}:${controls.map((c) => `${c.x},${c.y},${c.w},${c.h}`).join(';')}` : '';
+  if (key && hubMapLast?.key === key) Object.assign(map, hubMapLast.map, { gold: hubMapLast.map.gold && { ...hubMapLast.map.gold } });
+  else if (key) {
     const y = Math.max(2, Math.ceil(wake));
     const clear = (b: Box) => !controls.some((c) => overlaps(b, c, 0));
     /** The gold's right edge in the row under the band, from `right` leftwards past the controls in its way, in the screen's right half; null where it has none. */
@@ -179,21 +206,22 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
       }
       return null;
     };
-    if (clear({ x: W - map.w - 10, y, w: map.w + 10, h: map.h + 18 })) map.y = y;
+    if (clear({ x: W - map.w - 10, y, w: map.w + 10, h: map.h + 18 }) && orbsFit({ ...map, y })) map.y = y;
     else {
       // a thumb across, its frame and all: `MAP_LEAST.h` rows, more where the CSS scale is smaller
       // (the band's `wake` rows are `HUB_WAKE` CSS px)
       const least = Math.max(MAP_LEAST.h, Math.ceil((THUMB * y) / HUB_WAKE) - 4);
-      let best: { w: number; h: number; right: number; beside: boolean } | null = null;
+      const fits: { w: number; h: number; right: number; beside: boolean }[] = [];
       for (let w = map.w; w >= MAP_LEAST.w; w -= 2) {
         let h = map.h;
         while (h >= least && !clear({ x: W - w - 10, y, w: w + 10, h: h + 6 })) h -= 2;
         const right = h >= least ? goldBeside(W - w - 10) : null;
-        if (right === null) continue;
-        // right beside it first, then the biggest
-        const beside = right === W - w - 10;
-        if (!best || (beside && !best.beside) || (beside === best.beside && w * h > best.w * best.h)) best = { w, h, right, beside };
+        if (right !== null) fits.push({ w, h, right, beside: right === W - w - 10 });
       }
+      // right beside it first, then the biggest, that leaves the orbs a spot (where none does, the
+      // orbs would fall back over the controls: at the top, as on a shorter phone)
+      fits.sort((a, b) => Number(b.beside) - Number(a.beside) || b.w * b.h - a.w * a.h);
+      const best = fits.find((f) => orbsFit({ ...map, w: f.w, h: f.h, y, gold: { right: f.right, y: y + 2 } }));
       if (best) Object.assign(map, { w: best.w, h: best.h, y, gold: { right: best.right, y: y + 2 } });
       else {
         // at the top, in the band: the biggest that clears the controls with a big purse under it (no
@@ -209,6 +237,7 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
         Object.assign(map, top ?? MAP_LEAST);
       }
     }
+    hubMapLast = { key, map: { ...map, gold: map.gold && { ...map.gold } } };
   }
   const bossW = Math.min(200, W - 30);
   let life = { x: orbX, y: orbY };
@@ -224,13 +253,11 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
   /** The buff row (above the life orb). */
   let buffs = { x: 6, y: compact ? orbY - orbR - 16 : H - 70 };
   if (touch) {
-    const size = orbR * 2 + 5; // the orb and its frame
+    const size = orbBox; // the orb and its frame
     // a landscape phone's button cluster is wider than a third of the screen: the orbs may look
-    // as far as the middle for a spot on the bottom row; never under the minimap and the gold
-    const reach = W > H ? W / 2 : W / 3;
-    const around = [...controls, map.gold ? { x: map.gold.right - GOLD_BESIDE.w, y: 0, w: W - map.gold.right + GOLD_BESIDE.w, h: Math.max(map.y + map.h + 6, map.gold.y + GOLD_BESIDE.h) } : { x: W - map.w - 10, y: 0, w: map.w + 10, h: map.y + map.h + 18 }];
-    const l = lowestSpot(W, H, around, 'left', size, reach);
-    const m = lowestSpot(W, H, around, 'right', size, reach);
+    // as far as the middle for a spot on the bottom row (`reach`); never under the minimap and the gold
+    const l = lowestSpot(W, H, around(map), 'left', size, reach);
+    const m = lowestSpot(W, H, around(map), 'right', size, reach);
     life = { x: l.x + orbR + 2, y: l.y + orbR + 2 };
     mana = { x: m.x + orbR + 2, y: m.y + orbR + 2 };
     const between = m.x - (l.x + size) - 8;
@@ -258,6 +285,11 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
  * be 6 px lower to beat one nearer the corner). Returns the box's top-left.
  */
 function lowestSpot(W: number, H: number, controls: readonly Box[], side: 'left' | 'right', size: number, reach = W / 3): { x: number; y: number } {
+  return freeSpot(W, H, controls, side, size, reach) ?? { x: side === 'left' ? 3 : W - 3 - size, y: Math.floor(H / 2) };
+}
+
+/** `lowestSpot`'s spot, or null where none is clear of `controls` (it falls back to the side's middle, over them). */
+function freeSpot(W: number, H: number, controls: readonly Box[], side: 'left' | 'right', size: number, reach = W / 3): { x: number; y: number } | null {
   const m = 3;
   const span = Math.max(0, Math.floor(reach) - size - m);
   let best: { x: number; y: number } | null = null;
@@ -272,7 +304,7 @@ function lowestSpot(W: number, H: number, controls: readonly Box[], side: 'left'
     if (y < 0) continue;
     if (!best || y > best.y + 6) best = { x, y };
   }
-  return best ?? { x: side === 'left' ? m : W - m - size, y: Math.floor(H / 2) };
+  return best;
 }
 
 /**

@@ -150,7 +150,9 @@ describe('hudGeometry with touch controls', () => {
       // (iPhones in Safari: 844×346, 734×343, 750×340 and 750×342, a mini's 712×325, an 11 Pro's
       // 724×325; a Pixel 5's 802×294), a Galaxy Z Fold's cover screen (882×344: 441×172 art at DPR 3,
       // 386×151 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
-      // px, under a thumb)
+      // px, under a thumb). 600×428 to 620×454 at DPR 3 (300 to 310 art px wide) have room for a map
+      // below the band, but the skills' arc leaves the mana orb no spot beside one (it would fall back
+      // over the buttons and the map): at the top there too, the orb where it is on the game's own page
       const SCREENS = [
         [844, 390, 2, 'beside'],
         [844, 390, 3, 'beside'],
@@ -173,6 +175,9 @@ describe('hudGeometry with touch controls', () => {
         [882, 344, 3, 'top'],
         [882, 344, 2.625, 'top'],
         [568, 320, 2, 'top'],
+        [600, 428, 3, 'top'],
+        [610, 440, 3, 'top'],
+        [620, 454, 3, 'top'],
       ] as const;
       for (const [vw, vh, dpr, spot] of SCREENS) {
         const below = spot === 'beside';
@@ -198,6 +203,8 @@ describe('hudGeometry with touch controls', () => {
                     timeLeft: moment ? { text: t('round.moment_left', { count: 30 }), urgent: false } : null,
                   };
                   const z = hudBoxes(W, H, m);
+                  // the orbs have a spot of their own: over no control, never the corner map or the gold
+                  for (const orb of z.filter((b) => b.id === 'life' || b.id === 'mana')) for (const c of boxes) expect(overlaps(orb, c, 0), `${where}: the ${orb.id} orb ${JSON.stringify(orb)} over a control ${JSON.stringify(c)}`).toBe(false);
                   // the corner map is always drawn (it never goes)
                   const map = one(z, 'minimap')!;
                   const gold = one(z, 'gold')!;

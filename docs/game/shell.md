@@ -49,7 +49,7 @@ title (town at dusk behind the logo) ─ Continue / New Run (slot) / Load·Impor
   every screen a pad has no button for (inventory, skills, tree, character, codex); Dev shows only
   with the developer tools on (the dev server, `?debug=1`). Tab / M / R3 / the DualSense's
   touchpad press open the level's map over the play (`drawMap`: the world runs on under it; in a
-  session round too).
+  session round too, where a phone whose corner map takes no tap has a Map button pressing M).
   Shift+Tab is the tab before in the item windows. The character screens are one ring (`PAGES`:
   inventory, skills, tree, character, codex): L1 / R1 or Q / E page through it in place (a pause
   menu under them stays), and so does a swipe left or right on a DualSense's touchpad through 52in1
