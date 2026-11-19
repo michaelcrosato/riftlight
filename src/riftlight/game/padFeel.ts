@@ -1,12 +1,12 @@
 /**
  * What the controller says back during play: short, distinct rumbles on the moments that matter
- * (any pad that rumbles: `input.rumble`) and the DualSense's light bar (`ctx.dualsense.light`).
- * Outputs only, never recorded: the engine plays nothing headless, during a replay or off the pad,
- * scales rumbles by the player's vibration (the AI Hub by its own on top) and lights the bar only
- * while the player lets games colour it. Nothing here rumbles in menus: the shell calls it from
- * play's events.
+ * (any pad that rumbles: `input.rumble`), the DualSense's light bar (`ctx.dualsense.light`) and
+ * R2's latch (`ctx.dualsense.trigger`). Outputs only, never recorded: the engine plays nothing
+ * headless, during a replay or off the pad, scales rumbles by the player's vibration (the AI Hub by
+ * its own on top), lights the bar and pushes the triggers back only while the player lets games.
+ * Nothing here rumbles in menus: the shell calls it from play's events.
  */
-import { type GameContext, PALETTE, type Rumble } from '../../engine';
+import { type GameContext, PALETTE, type Rumble, type TriggerEffect } from '../../engine';
 
 /** Each moment's rumble: `strong` the heavy low motor, `weak` the light buzz (0..1), `ms` how long. */
 export const RUMBLE = {
@@ -70,13 +70,23 @@ export function lightFor(s: LightState): string | null {
 }
 
 /**
- * The pad's rumbles (some a beat later: a level-up's second pulse) and the light bar. The colour
- * is asked for every frame: the engine's `ctx.dualsense` sends only changes, and drops what is
- * asked while a replay plays, so the frame after one hands control back puts the right colour on.
+ * R2 is interact: while it would take, talk to, open or go through something, a DualSense's R2
+ * works a latch (an adaptive trigger: it pushes back partway, then gives way with a click). The
+ * press itself registers where the browser says (early in the travel), as on any pad.
+ */
+export const LATCH = { kind: 'weapon', from: 0.2, to: 0.5, strength: 0.5 } as const satisfies TriggerEffect;
+
+/**
+ * The pad's rumbles (some a beat later: a level-up's second pulse), the light bar and R2's latch.
+ * The colour is asked for every frame: the engine's `ctx.dualsense` sends only changes, and drops
+ * what is asked while a replay plays, so the frame after one hands control back puts the right
+ * colour on. The latch too, though it calls the engine only when it changes.
  */
 export class PadFeel {
   private readonly later: { at: number; r: Rumble }[] = [];
   private time = 0;
+  /** R2's latch as last asked of the engine (live: never during a replay). */
+  private latched = false;
 
   constructor(private readonly ctx: GameContext) {}
 
@@ -94,6 +104,24 @@ export class PadFeel {
   /** The light bar's colour (null: the hub's), every frame (the engine sends it when it changed). */
   light(colour: string | null): void {
     this.ctx.dualsense.light(colour);
+  }
+
+  /**
+   * R2's latch (`LATCH`) on or let go, every frame; letting go lets both triggers go (nothing else
+   * of Riftlight's pushes back). The engine is called only when it changes, and not while a replay
+   * plays (it would drop the call), so the frame after one hands control back sets it right.
+   */
+  latch(on: boolean): void {
+    if (on === this.latched || this.ctx.input.playing) return;
+    this.latched = on;
+    if (on) this.ctx.dualsense.trigger('right', LATCH);
+    else this.ctx.dualsense.trigger('both', null);
+  }
+
+  /** Let both triggers go now, whatever was asked (the game's dispose). */
+  release(): void {
+    this.latched = false;
+    this.ctx.dualsense.trigger('both', null);
   }
 
   /** Pulses still to come (tests). */

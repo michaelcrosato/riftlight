@@ -85,7 +85,8 @@ describe('Riftlight’s 52in1 head', () => {
     const src = code(join(root, 'src/riftlight'));
     const uses: Record<string, boolean> = {
       'light bar': /\bdualsense\.light\(/.test(src),
-      'adaptive triggers': /\bdualsense\.trigger\(/.test(src),
+      // R2's latch (game/padFeel.ts `LATCH`): pushed on R2, the interact button, and the shell asks for it every frame
+      'adaptive triggers': /\bdualsense\.trigger\('right', LATCH\)/.test(src) && /\bthis\.feel\.latch\(/.test(src) && (KEYS.interact as readonly string[]).includes('PadRT'),
       haptics: /\binput\.rumble\(/.test(src),
       motion: RIFTLIGHT_OPTIONS.settings?.motion === true && /\bmotionTurn\b/.test(src),
       // its gestures, not only its press (which a browser reports as a button with 52in1's touchpad off): the game reads them, and a binding uses one
@@ -94,7 +95,7 @@ describe('Riftlight’s 52in1 head', () => {
       microphone: /\bopenMicrophone\(/.test(src),
     };
     expect(one('hub:dualsense')).toBe(DUALSENSE.filter((x) => uses[x]).join(', '));
-    expect(one('hub:dualsense')).toBe('light bar, haptics, motion, touchpad, speaker');
+    expect(one('hub:dualsense')).toBe('light bar, adaptive triggers, haptics, motion, touchpad, speaker');
   });
 
   it('offers couch co-op on one device, and only the online modes to a session', () => {
