@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.79.0
+
+- A replay plays the `speaker` bus with the other sounds, never from the controller's speaker: like the light bar, the triggers and rumble, the speaker is an output and sends nothing during a replay (docs/engine/hub.md).
+
 ## 0.78.0
 
 - **Kit: 52in1's session client is MIT.** The client that `examples/gem-rush.html` carries (aihub-session) is licensed by the `LICENSE` beside it in 52in1's `lib/hub/`, and the kit's CREDITS.md now names it MIT with the licence text, where it said "no licence declared".

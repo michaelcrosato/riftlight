@@ -561,18 +561,19 @@ export class Engine {
     this.audio = page ? new AudioManager(window, settingsKey) : new AudioManager(null);
     if (!page) this.audio.persist = false;
     // the player's 52in1 settings: their volumes multiply the game's own, the controller's speaker
-    // takes the `speaker` bus; outputs go quiet during a replay (input.playing)
+    // takes the `speaker` bus; outputs go quiet during a replay (input.playing): the speaker bus
+    // plays with the other sounds then (`replay()` syncs it as it starts and ends)
     const live = () => !this.input.playing;
     this.hubSettings = new HubSettings(options.hubSettings !== undefined ? options.hubSettings : page ? hubSettingsSource() : null, live);
     this.dualsense = new DualSense(this.hubSettings, live);
     const speaker = (c: AudioContext) => this.dualsense.openSpeaker(c);
-    const hub = () => {
+    this.syncHubAudio = () => {
       const s = this.hubSettings.values;
       this.audio.setHubVolumes({ music: s.music, effects: s.effects });
-      this.audio.useSpeaker(s.dualsense.speaker ? speaker : null);
+      this.audio.useSpeaker(s.dualsense.speaker && live() ? speaker : null);
     };
-    hub();
-    this.hubSettings.onChange(hub);
+    this.syncHubAudio();
+    this.hubSettings.onChange(this.syncHubAudio);
     this.settings = new Settings(this, settingsKey);
     // rumbles follow the player's vibration (a host's, such as the AI Hub's, scales on top of it)
     this.input.vibration = this.settings.values.vibration ?? 1;
@@ -1360,6 +1361,8 @@ export class Engine {
   /** The running level's recording (from its start), and whether a replay is driving the frames. */
   private rec: { game: string; args?: unknown; seed: number; time: number; view: Viewport; density: number; touch: boolean; device: InputDevice; frames: InputFrame[]; last: SnapshotMemory; truncated: boolean; from?: Snapshot } | null = null;
   private replaying = false;
+  /** The hub's volumes and speaker onto the AudioManager (the speaker not while a replay plays). */
+  private readonly syncHubAudio: () => void;
   private readonly recordLimit: number;
   /** Whether promise callbacks (microtasks) ran since the last frame ended (`InputFrame.sync`). */
   private drained = true;
@@ -1438,12 +1441,14 @@ export class Engine {
     const settings = this.settings.values;
     const persist = { audio: this.audio.persist, settings: this.settings.persist }; // headless never stores them
     this.input.playing = true;
+    this.syncHubAudio(); // the controller's speaker is an output: the speaker bus plays with the rest
     this.input.playFrom(rec.device); // what the level's setup read: the device the recorded level began with
     this.audio.persist = false;
     this.settings.persist = false;
     const live = () => {
       this.replaying = false;
       this.input.playing = false;
+      this.syncHubAudio();
       for (const ch of ['master', 'sfx', 'music'] as const) this.audio.setVolume(ch, volumes[ch]);
       this.audio.setMuted(volumes.muted);
       this.audio.persist = persist.audio;
