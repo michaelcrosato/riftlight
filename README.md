@@ -98,6 +98,9 @@ Agents write, verify, merge and fix CI here (the loop is in `AGENTS.md`). The pi
 A merge made with the default `GITHUB_TOKEN` fires no push event, so Autopilot dispatches `ci.yml`
 on `main` itself (with `AUTOMATION_TOKEN` the merge's own push starts it) and cancels the PR
 branch's run. The one brake: the **`hold`** label on a PR (or draft) stops the merge.
+`revert-red-main` pushes with `GITHUB_TOKEN`, which can't change `.github/workflows/`: a revert
+leaves those files as `main` has them (its PR and issue name them; a conflict only in them takes
+`main`'s side), and a commit that changes nothing else is left to a person, in a `claude` issue.
 
 ## One-time setup
 
