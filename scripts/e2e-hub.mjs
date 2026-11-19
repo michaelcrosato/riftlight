@@ -496,17 +496,32 @@ async function deadBrowserSeen(browsers, dir, port) {
 
 /**
  * Whether `harness` ends a run whose page's renderer dies at once, as a crash: a page that never
- * finishes, crashed through the debugger (`Page.crash`, as earlyoom's kill or an out-of-memory would).
+ * finishes, its renderer killed as earlyoom kills one (SIGKILL: no crash handler to catch it).
+ * `Page.crash` through the debugger is no stand-in: on CI's runners the renderer it crashes was
+ * never seen to die (no 'crash' event in 30 s), while a real kill is seen at once everywhere.
  */
 async function crashSeen(browser, port) {
   const run = harness(browser, `http://localhost:${port}/stuck.html`, { timeout: 30_000 });
   const page = await openedPage(browser, '/stuck.html', 30_000); // a slow machine (CI) may take a while to open it
-  const at = Date.now(); // timed from the crash: how long the page took to open is the machine's
-  if (page) (await page.context().newCDPSession(page)).send('Page.crash').catch(() => {}); // it answers nothing: it is gone
+  // the browser's renderers (the check's browser has only this page): their process ids
+  const cdp = await browser.newBrowserCDPSession();
+  const renderers = await cdp
+    .send('SystemInfo.getProcessInfo')
+    .then(({ processInfo }) => processInfo.filter((p) => p.type === 'renderer').map((p) => p.id))
+    .catch(() => []);
+  await cdp.detach().catch(() => {});
+  const at = Date.now(); // timed from the kill: how long the page took to open is the machine's
+  for (const pid of renderers) {
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {
+      /* already gone */
+    }
+  }
   const r = await run;
   const took = Date.now() - at;
-  const pass = !!page && r.crashed === true && r.error === CRASHED && took < 10_000;
-  return { pass, detail: page ? `ended ${(took / 1000).toFixed(1)} s after the crash: ${r.crashed ? 'a crash' : 'not called a crash'} (${r.error ?? 'passed'})` : 'the page never opened' };
+  const pass = !!page && renderers.length > 0 && r.crashed === true && r.error === CRASHED && took < 10_000;
+  return { pass, detail: !page ? 'the page never opened' : !renderers.length ? 'no renderer process to kill (SystemInfo.getProcessInfo)' : `${renderers.length} renderer(s) killed; the run ended ${(took / 1000).toFixed(1)} s later: ${r.crashed ? 'a crash' : 'not called a crash'} (${r.error ?? 'passed'})` };
 }
 
 /**
