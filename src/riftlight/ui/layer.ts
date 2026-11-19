@@ -148,6 +148,11 @@ export class UiLayer {
    */
   legends = false;
 
+  /** Whether the panels draw their legends on `device` (none on a touch screen): a footer that says the same leaves it out there. */
+  legendsOn(device: UiCanvas['device']): boolean {
+    return this.legends && device !== 'touch';
+  }
+
   /**
    * The least height, in art pixels, of something a finger presses (`tapArt`: about 44 CSS px on a
    * page with touch controls; 0 elsewhere): handed to the panels with their room (`Panel.fit`).
@@ -171,7 +176,7 @@ export class UiLayer {
    * back, then the shell's. An overlay (the item windows, the tree) has one only when it says so.
    */
   private legendOf(o: Open, ui: UiCanvas): readonly LegendItem[] {
-    if (!this.legends || ui.device === 'touch' || (o.panel.overlay && !o.panel.legend)) return [];
+    if (!this.legendsOn(ui.device) || (o.panel.overlay && !o.panel.legend)) return [];
     const own = o.panel.legend?.() ?? menuLegend(!o.sticky);
     const items = [...own, ...(this.legendExtra?.(o.panel) ?? [])];
     if (o.peek) items.push({ actions: ['hide'], label: t('legend.hide') });

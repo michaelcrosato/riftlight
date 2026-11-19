@@ -16,6 +16,7 @@ complete, small example of an engine system, written to be copied.
 | **T** | in the menu | in the menu | tweak: the room's live settings, then the engine's (game speed, camera, the room-change transition, shake) and every one of the player's, saved (look, pixel art, pixel size, quality (auto or a level), frame rate, sound, volume, music, effects, the controller's buttons, vibration, debug info), and Reset settings |
 | **I** | in the menu | a tap on it | the room's card again, or away |
 | Esc / Backspace | Circle | a sideways swipe, the close box | close a panel |
+| Tab / Shift+Tab | R1 / L1 | drag | a guide's next or previous heading |
 
 Walk into a door to enter a room; every room has its pads on the floor: step on one to
 change something (the toast says what and why; the guide lists them all). A swipe or a tap sends

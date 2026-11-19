@@ -9,7 +9,8 @@
 //   panel, Ilsa's gems, Brann's anvil, the stash) → the passive tree's canvas: a click on a node
 //   allocates it; real Escape closes it without the pause menu; P toggles it; real Q / E page round
 //   the character screens through the tree, whose bar names them; with two pads only player 1's
-//   (the engine's input) moves the tree's cursor and takes a node → a loot label click
+//   (the engine's input) moves the tree's cursor and takes a node; open on a pad and idle, its bar
+//   is redrawn as 52in1's touchpad setting turns its swipes on and off → a loot label click
 //   after a GPU device loss → a portrait phone (390×844): every window and a tap's tooltip as
 //   frames, the tree's canvas fills the screen.
 //
@@ -195,6 +196,53 @@ export async function runRiftlightItems(h) {
     check(pads.p1 !== null && pads.p1 !== pads.start && pads.p1Took >= 1, `player 1's pad (slot 1) steps the tree's cursor to ${pads.p1} and Cross takes it (+${pads.p1Took})`);
     rs = await st();
     check(rs.ui.length === 0, `Escape closes the tree again (ui ${rs.ui.join(',') || 'none'})`);
+    // the tree open on a pad and idle (it draws only when something changed): 52in1's touchpad setting
+    // turned on, then off again, redraws its bar with the swipes beside L1 R1 and without them, no input
+    const idle = await R(async () => {
+      const rl = window.__RIFTLIGHT__;
+      const engine = window.__PIXEL_ENGINE__;
+      const hub = engine.hubSettings;
+      const real = navigator.getGamepads;
+      const pad = (pressed = []) => ({ connected: true, mapping: 'standard', index: 0, id: 'pad 0', axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      let listed = [pad([12])];
+      navigator.getGamepads = () => listed;
+      engine.step(1); // the d-pad: the pad in use
+      listed = [pad()];
+      engine.step(1);
+      rl.press('KeyP');
+      engine.step(2);
+      const view = rl.game.layer.find('tree').view;
+      await wait(300); // it draws on its own frames, then idles
+      const before = view.debug();
+      await wait(300);
+      const still = view.debug().frames;
+      const values = hub.values;
+      // the player lets games read the DualSense's touchpad (the hub's setting, as its change event brings it)
+      Object.defineProperty(hub, 'values', { configurable: true, get: () => ({ ...values, dualsense: { ...values.dualsense, touchpad: true } }) });
+      await wait(300);
+      const on = view.debug();
+      window.__E2E_IDLE_TREE__ = real;
+      return { device: engine.input.device, before, still, on };
+    });
+    await shot('tree-pad-swipes');
+    idle.off = await R(async () => {
+      const rl = window.__RIFTLIGHT__;
+      const engine = window.__PIXEL_ENGINE__;
+      const view = rl.game.layer.find('tree').view;
+      delete engine.hubSettings.values; // the setting off again (the class's own)
+      await new Promise((r) => setTimeout(r, 300));
+      const off = view.debug();
+      navigator.getGamepads = window.__E2E_IDLE_TREE__;
+      delete window.__E2E_IDLE_TREE__;
+      rl.press('Escape');
+      engine.step(2);
+      return off;
+    });
+    const bar = (d) => `${d.frames} frames, ${d.pages}: ${d.hints.join(' ')}`;
+    check(idle.device === 'pad' && idle.still === idle.before.frames && idle.before.pages === 'PadLB,PadRB' && idle.before.hints.includes('screens'), `the tree open on a pad and idle draws nothing new, its bar L1 R1 screens (${idle.device}; ${bar(idle.before)}, then ${idle.still} frames)`);
+    check(idle.on.frames > idle.still && idle.on.pages === 'PadLB,PadRB,PadTouchpadLeft,PadTouchpadRight' && idle.on.hints.includes('screens'), `52in1's touchpad turned on while the tree idles: the bar is redrawn with the swipes, no input (${bar(idle.on)})`);
+    check(idle.off.frames > idle.on.frames && idle.off.pages === 'PadLB,PadRB', `and off again: redrawn without them (${bar(idle.off)})`);
     // the character screens' ring on a real keyboard: E round it from the inventory, through the
     // tree (its view takes the keyboard, but Q / E are the ring's, not its zoom), Q back onto it;
     // the tree's bar names them

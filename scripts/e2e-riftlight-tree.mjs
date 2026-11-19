@@ -9,7 +9,8 @@
 // the snapping cursor and A allocates (the page polls it through the engine's input); refreshing
 // keeps the allocation; zero console errors; the bottom bar names clicks on a mouse's page and a
 // finger's gestures on a phone's before any touch, and the search box names / with the keys, no key
-// on a phone, and hides on a pad (nothing to type with).
+// on a phone, and hides on a pad (nothing to type with); a node's tooltip names the click, the pad's
+// button or the tap that takes or refunds it.
 //
 // Frames land in .scratch/e2e/riftlight-tree-*.png. Self-contained: e2e.mjs passes its helpers in.
 /* global window, document */
@@ -111,7 +112,9 @@ export async function runRiftlightTree(h) {
     const at = await E((id) => window.__RIFT_TREE__.view.screenOf(id), target);
     await page.mouse.move(at[0] * 2 + 1, at[1] * 2 + 1);
     await page.waitForFunction((id) => window.__RIFT_TREE__.view.debug().hover === id, target, { timeout: 5000 }).catch(() => {});
-    check((await dbg()).hover === target, `hovering shows ${target}`);
+    const hovered = await dbg();
+    check(hovered.hover === target, `hovering shows ${target}`);
+    check(hovered.tip.includes('Click: take 1 point (40 left)'), `a mouse's tooltip names the click that takes it (${hovered.tip.join(' | ')})`);
     await shot('hover');
     await page.mouse.click(at[0] * 2 + 1, at[1] * 2 + 1);
     const afterClick = await E(() => ({ spent: window.__RIFT_TREE__.state.spent, sounds: window.__RIFT_TREE__.sounds() }));
@@ -137,6 +140,8 @@ export async function runRiftlightTree(h) {
     const leafAt = await E((id) => window.__RIFT_TREE__.view.screenOf(id), far.id);
     await page.mouse.move(leafAt[0] * 2 + 1, leafAt[1] * 2 + 1);
     await page.waitForFunction((id) => window.__RIFT_TREE__.view.debug().hover === id, far.id, { timeout: 5000 }).catch(() => {});
+    const leafTip = (await dbg()).tip;
+    check(leafTip.includes('R-click: refund'), `a mouse's tooltip on a leaf names the right click that refunds it (${leafTip.join(' | ')})`);
     await page.mouse.click(leafAt[0] * 2 + 1, leafAt[1] * 2 + 1, { button: 'right' });
     const afterRefund = await E(() => ({ spent: window.__RIFT_TREE__.state.spent, sounds: window.__RIFT_TREE__.sounds() }));
     check(afterRefund.spent === 3 && afterRefund.sounds.treeRefund >= 1, `right-click refunds a leaf (spent ${afterRefund.spent})`);
@@ -188,11 +193,13 @@ export async function runRiftlightTree(h) {
       fake.buttons[0] = { pressed: false, value: 0 };
       await wait(80);
       navigator.getGamepads = real;
-      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds(), search: t.view.debug().search };
+      return { moved: c1.x - c0.x, snapped, stepped, gained: t.state.spent - spent, sounds: t.sounds(), search: t.view.debug().search, tip: t.view.debug().tip };
     });
     check(pad.moved > 10 && pad.snapped !== null, `left stick moves the cursor and it snaps to a node (${pad.snapped})`);
     check(pad.stepped !== null && pad.gained >= 1, `d-pad steps to ${pad.stepped}, A allocates (+${pad.gained})`);
     check(pad.search === null, `on a pad the top bar draws no search box (${JSON.stringify(pad.search)})`);
+    // the node just taken: its tooltip names Square, the pad's refund, and no mouse button
+    check(pad.tip.includes('Square: refund') && !pad.tip.some((l) => /click/i.test(l)), `on a pad the tooltip names the pad's buttons, not the mouse's (${pad.tip.join(' | ')})`);
     await shot('pad');
 
     // ------------------------------------------------------------ persistence and cleanliness
@@ -217,6 +224,23 @@ export async function runRiftlightTree(h) {
     check(phone.hints.includes('tap') && !phone.hints.includes('take') && !phone.hints.includes('zoom'), `a phone: the bottom bar names a finger's taps before any touch, not clicks (${phone.hints.join(', ')})`);
     check(phone.search === 'Find', `a phone: the search box names no key, a tap opens it (${phone.search})`);
     await ctx.page.screenshot({ path: new URL('riftlight-tree-phone.png', OUT).pathname });
+    // a tap on a node beside a gate shows its tooltip: a second tap takes it, a finger's words
+    const tapAt = await ctx.page.evaluate(async () => {
+      const { tree, view } = window.__RIFT_TREE__;
+      const id = tree.node('start:might').links.find((l) => l.startsWith('p:'));
+      view.focus(id, 0.4);
+      await new Promise((r) => setTimeout(r, 150));
+      const [x, y] = view.screenOf(id);
+      const c = document.querySelector('canvas[data-rift-tree="canvas"]').getBoundingClientRect();
+      const art = view.debug().art;
+      return { id, x: c.left + ((x + 0.5) / art.width) * c.width, y: c.top + ((y + 0.5) / art.height) * c.height };
+    });
+    await ctx.page.touchscreen.tap(tapAt.x, tapAt.y);
+    await ctx.page.waitForFunction((id) => window.__RIFT_TREE__.view.debug().hover === id, tapAt.id, { timeout: 5000 }).catch(() => {});
+    await ctx.page.waitForTimeout(150);
+    const tapped = await ctx.page.evaluate(() => window.__RIFT_TREE__.view.debug());
+    check(tapped.hover === tapAt.id && tapped.tip.join(' ').includes('Tap twice: take 1 point (40 left)') && tapped.spent === 0, `a phone: one tap shows a node's tooltip, which names the second tap that takes it (${tapped.hover}: ${tapped.tip.join(' | ')}; spent ${tapped.spent}; a phone's narrow tooltip wraps its lines)`);
+    await ctx.page.screenshot({ path: new URL('riftlight-tree-phone-tip.png', OUT).pathname });
     check(ctx.logs.length === 0, `a phone: zero console errors/warnings${ctx.logs.length ? ':\n    ' + ctx.logs.join('\n    ') : ''}`);
   } catch (e) {
     check(false, `riftlight-tree crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);

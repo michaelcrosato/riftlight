@@ -22,7 +22,7 @@
  * instead of happening, and the game hands it back to `perform` from its recorded input, so a
  * replay of the game does the same to the tree.
  */
-import { type Glyph, keyGlyph, padGlyph } from '../../../engine/controls';
+import { type Glyph, keyGlyph, padGlyph, padName } from '../../../engine/controls';
 import { computeFraming, RESOLUTIONS, touchScale, type AspectMode, type Framing, type Resolution } from '../../../engine/framing';
 import type { PadGlyphs } from '../../../engine/settings';
 import { drawDeviceText, surfaceScale } from '../../../engine/hud/deviceText';
@@ -125,6 +125,17 @@ export function treeHints(o: { mode: TreeHintMode; refunds: boolean; style: PadG
   ];
 }
 
+/**
+ * What does `act` to the node under the cursor on the device in use, as its tooltip names it: the
+ * pad's button (✕ takes and turns a mastery to its next choice, □ refunds: Cross / A, Square / X in
+ * the player's style), a finger's gesture (a second tap, a long press) or the mouse's click.
+ */
+export function tipControl(act: 'take' | 'refund', mode: TreeHintMode, style: PadGlyphs): string {
+  if (mode === 'pad') return padName(act === 'take' ? 'PadA' : 'PadX', style, lang());
+  if (mode === 'touch') return t(act === 'take' ? 'tree.tip.tap_twice' : 'tree.tip.hold');
+  return t(act === 'take' ? 'tree.tip.click' : 'tree.tip.right_click');
+}
+
 const C = Object.fromEntries(Object.entries(PALETTE).map(([k]) => [k, pack(k as PaletteColor)])) as Record<PaletteColor, number>;
 const PULSE = 0.45;
 
@@ -163,6 +174,8 @@ export class TreeView {
   private used: 'touch' | 'mouse' | null = null;
   /** The host's device the bottom bar last named (`TreeViewOptions.device`). */
   private deviceShown: 'keyboard' | 'pad' | 'touch' | undefined;
+  /** The host's screens' pad controls the bottom bar last named (`TreePages.pad`, joined: a DualSense's swipes come and go). */
+  private pagesShown = '';
   private tapped: { id: string; at: number } | null = null;
   private preview: { id: string; path: string[] | null; version: number } | null = null;
   private ownedCache: { version: number; owned: Set<string>; frontier: Set<string> } | null = null;
@@ -176,6 +189,8 @@ export class TreeView {
   private statsScroll = 0;
   /** The bottom bar's hints as last drawn (their ids, in order: `debug().hints`). */
   private hintsShown: string[] = [];
+  /** The tooltip's lines as last drawn (none: no node under the cursor): `debug().tip`. */
+  private tipShown: string[] = [];
   /** What the top bar's search box showed (its placeholder or the search), or null when it wasn't drawn (a pad): `debug().search`. */
   private searchShown: string | null = null;
   private readonly ac = new AbortController();
@@ -380,6 +395,9 @@ export class TreeView {
       showStats: this.showStats,
       cursor: { ...this.cursor },
       hints: [...this.hintsShown],
+      /** The host's screens' pad controls the bar last named (`TreePages.pad`, joined by commas). */
+      pages: this.pagesShown,
+      tip: [...this.tipShown],
       search: this.searchShown,
     };
   }
@@ -731,6 +749,7 @@ export class TreeView {
     for (const [id, p] of this.pulses) if (this.time - p.t0 > PULSE) this.pulses.delete(id);
     if (this.pulses.size || this.matches.size || document.activeElement === this.search) this.dirty = true;
     if (this.options.device && this.options.device() !== this.deviceShown) this.dirty = true; // the bottom bar names another device's controls
+    if (this.pagesPad() !== this.pagesShown) this.dirty = true; // the host's screens' controls changed (52in1's touchpad setting, a DualSense guest)
     if (this.dirty) this.render();
   }
 
@@ -872,9 +891,13 @@ export class TreeView {
         b.set(cx + dx, cy + dy, C.white);
     }
 
-    this.drawChrome(owned);
+    // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
+    const device = (this.deviceShown = this.options.device?.());
+    const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
+    this.drawChrome(owned, mode);
     if (this.showStats) this.drawStats();
-    if (this.hover) this.drawTooltip(this.tree.node(this.hover), path);
+    this.tipShown = [];
+    if (this.hover) this.drawTooltip(this.tree.node(this.hover), path, mode);
     if (this.message) {
       const rows = wrapText(this.message.text, W - 16);
       const tw = Math.max(...rows.map((r) => textWidth(r)));
@@ -887,7 +910,12 @@ export class TreeView {
     this.blit();
   }
 
-  private drawChrome(owned: Set<string>): void {
+  /** The host's screens' pad controls now (`TreePages.pad`, joined: a getter, read each time). */
+  private pagesPad(): string {
+    return this.options.pages?.pad.join() ?? '';
+  }
+
+  private drawChrome(owned: Set<string>, mode: TreeHintMode): void {
     const b = this.buf;
     const W = b.width;
     const H = b.height;
@@ -896,9 +924,6 @@ export class TreeView {
     const narrow = this.narrowBar;
     const box = this.searchBox();
     const s = this.stateRef;
-    // the device in use names the controls (the pad cursor, a finger or the mouse on the view, else the host's device)
-    const device = (this.deviceShown = this.options.device?.());
-    const mode: TreeHintMode = this.padCursor ? 'pad' : (this.used ?? (device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse'));
     const close = this.closeBox();
     const right = close ? close.x - 3 : W - 4;
     // the right of the bar: points (and gold where it pays for something), short forms when the long ones don't fit
@@ -949,6 +974,7 @@ export class TreeView {
     // pad, each is its button's glyph (PlayStation's or Xbox's, as the player chose) and a verb.
     b.panel(0, H - BOTTOM, W, BOTTOM, C.night);
     const refunds = !this.options.refundBlocked?.();
+    this.pagesShown = this.pagesPad();
     const hints = treeHints({ mode, refunds, style: this.options.padGlyphs?.() ?? 'playstation', pages: this.options.pages });
     const priority = ['take', 'close', 'tap', 'refund', 'hold', 'stats', 'screens', 'find', 'move', 'pan', 'pinch', 'zoom'];
     const glyphs = (h: TreeHint) => h.glyphs.reduce((w, g) => w + glyphWidth(g) + 1, h.glyphs.length ? 2 : 0);
@@ -995,7 +1021,7 @@ export class TreeView {
     lines.slice(this.statsScroll, this.statsScroll + rows).forEach((l, i) => b.text(l.text, x + 5, y + 4 + i * 9, l.color));
   }
 
-  private drawTooltip(n: TreeNode, path: Set<string>): void {
+  private drawTooltip(n: TreeNode, path: Set<string>, mode: TreeHintMode): void {
     const b = this.buf;
     const W = b.width;
     const H = b.height;
@@ -1011,20 +1037,24 @@ export class TreeView {
     for (const l of nodeLines(n, s.masteries.get(n.id))) add(l, C.white);
     const flavour = n.kind !== 'small' ? nodeFlavour(n) : null;
     if (flavour) add(flavour, C.slate);
+    // what the control in use does to it: a click, the pad's button, a finger's gesture
+    const style = this.options.padGlyphs?.() ?? 'playstation';
     if (this.tree.roots.has(n.id)) add(t('tree.tip.gate'), C.lime);
     else if (s.allocated.has(n.id)) {
       const cost = this.options.refundCost?.(1) ?? 0;
-      if (n.options?.length) add(t('tree.tip.next_choice'), C.cyan);
+      if (n.options?.length) add(t('tree.tip.next_choice', { control: tipControl('take', mode, style) }), C.cyan);
       const blocked = this.options.refundBlocked?.() ?? null;
+      const control = tipControl('refund', mode, style);
       if (blocked) add(blocked, C.slate);
-      else if (s.canDeallocate(n.id)) add(cost ? t('tree.tip.refund_cost', { cost }) : t('tree.tip.refund'), C.orange);
+      else if (s.canDeallocate(n.id)) add(cost ? t('tree.tip.refund_cost', { cost, control }) : t('tree.tip.refund', { control }), C.orange);
       else add(t('tree.tip.depends'), C.slate);
     } else if (!this.preview?.path) add(t('tree.tip.unreachable'), C.red);
     else {
       const cost = path.size;
-      if (cost <= s.unspent) add(t('tree.tip.take', { count: cost, left: s.unspent }), C.cyan);
+      if (cost <= s.unspent) add(t('tree.tip.take', { count: cost, left: s.unspent, control: tipControl('take', mode, style) }), C.cyan);
       else add(t('tree.tip.needs', { count: cost, left: Math.max(0, s.unspent) }), C.red);
     }
+    this.tipShown = lines.map((l) => l.text);
     const w = Math.max(...lines.map((l) => textWidth(l.text))) + 10;
     const h = lines.length * 9 + 6;
     const [nx, ny] = toScreen(this.cam, W, H, n.x, n.y);

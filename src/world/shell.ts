@@ -49,6 +49,8 @@ import { wing } from './wings';
 
 /** Keys the shell claims from the browser (F1 help, Tab focus). */
 const SHELL_KEYS = ['F1', 'F2', 'Tab'];
+/** Shift held with Tab: the tab before (`frame`). */
+const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 const KEY = WORLD_KEYS;
 /** The prompts along the bottom while nothing is open, most wanted first (a narrow screen drops from the end). */
 const HINTS: Readonly<Record<'keyboard' | 'pad', readonly (readonly [WorldAction, string])[]>> = {
@@ -302,7 +304,8 @@ export class WorldShell {
     const room = this.room;
     if (!room || !this.engine) return;
     this.layer.open(
-      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak'), () => this.keys('{key:change} change · {key:back} closes'), () => this.resetSettings()),
+      // the footer says how to change a row, and how to close the panel where no legend under it says so (a phone)
+      tweakMenu(`Tweak: ${room.def.title}`, room.logic.knobs ?? [], this.engineKnobs(), () => this.layer.close('tweak'), () => this.keys(this.layer.legendsOn(this.ui.device) ? '{key:change} change' : '{key:change} change · {key:back} closes'), () => this.resetSettings()),
       { modal: false, dock: 'right', dim: false },
     );
   }
@@ -507,7 +510,10 @@ export class WorldShell {
     const hadPanel = !!this.layer.top;
     // the rest of this frame's input is the panel's (or the room change's), even once it closes
     if (hadPanel || this.busy) this.swallowed = e.frame;
-    const events = [...(this.pointer?.frame(real) ?? []), ...this.menuInput.events(input, real)];
+    // Shift+Tab is the tab before (a guide's heading before), as in the Riftlight shell: the menus hear Tab as the next
+    const shiftTab = input.wasPressed('Tab') && input.anyDown(SHIFT);
+    const menu = this.menuInput.events(input, real).map((ev): UiEvent => (shiftTab && ev.kind === 'tab' && ev.dir === 1 ? { kind: 'tab', dir: -1 } : ev));
+    const events = [...(this.pointer?.frame(real) ?? []), ...menu];
     const ui = this.ui;
     ui.time += real;
     ui.device = e.controls.device; // prompts follow the input used last, in the player's button style

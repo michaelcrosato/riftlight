@@ -66,7 +66,7 @@ else over them, slid along its row clear of the HUD (`UiLayer.avoid`: the shell'
 an orb, the bar or the minimap matter more than a passing banner or the top-left text), and where
 nothing is clear over as little of it as it can; with L1 R1 Tabs in the stash and the vendor. The title's
 bare menu asks for one (`OpenOptions.legend`: ✕ Select under its tiles). Engine World's layer draws
-them too (`UiLayer.legends`), for its `MENU_BINDINGS` (a reader's L1 R1, or Tab: Headings) where the
+them too (`UiLayer.legends`), for its `MENU_BINDINGS` (a reader's L1 R1, or Shift+Tab Tab: Headings) where the
 shell's are `SHELL_MENU_BINDINGS`. The
 **character sheet** is pages (Offence, Defence, Resistances: L2 / R2, ← →, Tab or a click), each a
 short list with its sources in the normal font; a narrow sheet whose page names don't fit as tabs

@@ -202,6 +202,11 @@ export class Menu implements Panel {
     return this.widgets;
   }
 
+  /** The footer line as it reads now (the focused widget's hint shows in its place): tools and tests. */
+  footer(): string | null {
+    return this.o.footer?.() ?? null;
+  }
+
   /** Focus a widget by id (agent API, menus that open on a sub-item). */
   focusId(id: string): boolean {
     const i = this.widgets.findIndex((w) => w.id === id);

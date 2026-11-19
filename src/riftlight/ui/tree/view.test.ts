@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { setTextLocale } from '../../../engine/animation/font';
 import { clampZoom, PointIndex, stepToward, toScreen, toTree, zoomAt, ZOOM_LIMITS } from './camera';
 import { css, pack, PixelBuffer, textWidth } from './pixels';
-import { treeHints } from './TreeView';
+import { t } from '../../lang';
+import { tipControl, treeHints, type TreeHintMode } from './TreeView';
 
 describe('tree camera', () => {
   const cam = { x: 100, y: -50, zoom: 0.25 };
@@ -109,5 +110,29 @@ describe('bottom bar hints', () => {
     expect(keys.at(-1)).toEqual({ id: 'screens', text: 'screens', glyphs: [{ kind: 'cap', text: 'Q', round: false }, { kind: 'cap', text: 'E', round: false }] });
     // the tree page (no host): none
     expect(treeHints({ mode: 'mouse', refunds: false, style: 'playstation' }).map((h) => h.id)).not.toContain('screens');
+  });
+});
+
+describe('a node’s tooltip', () => {
+  /** A tooltip line with the control that does `act` on `mode` in it, as the view draws it. */
+  const tip = (id: string, act: 'take' | 'refund', mode: TreeHintMode, style: 'playstation' | 'xbox' = 'playstation', values: Record<string, number> = {}) => t(id, { ...values, control: tipControl(act, mode, style) });
+
+  it('names what the pad’s buttons do on a pad (in the player’s style), a finger’s gestures on a touch screen, the mouse’s clicks with the keyboard and mouse', () => {
+    // a pad: ✕ takes and turns a mastery, □ refunds
+    expect(tip('tree.tip.take', 'take', 'pad', 'playstation', { count: 2, left: 5 })).toBe('Cross: take 2 points (5 left)');
+    expect(tip('tree.tip.next_choice', 'take', 'pad')).toBe('Cross: next choice');
+    expect(tip('tree.tip.refund', 'refund', 'pad')).toBe('Square: refund');
+    expect(tip('tree.tip.refund', 'refund', 'pad', 'xbox')).toBe('X: refund');
+    expect(tip('tree.tip.refund_cost', 'refund', 'pad', 'xbox', { cost: 40 })).toBe('X: refund (40 gold)');
+    expect(tip('tree.tip.take', 'take', 'pad', 'xbox', { count: 1, left: 3 })).toBe('A: take 1 point (3 left)');
+    // a finger: a second tap takes, a long press refunds (the bottom bar's Tap twice: take, Hold refund)
+    expect(tip('tree.tip.take', 'take', 'touch', 'playstation', { count: 1, left: 3 })).toBe('Tap twice: take 1 point (3 left)');
+    expect(tip('tree.tip.next_choice', 'take', 'touch')).toBe('Tap twice: next choice');
+    expect(tip('tree.tip.refund', 'refund', 'touch')).toBe('Hold: refund');
+    // the keyboard and mouse: its clicks, as before
+    expect(tip('tree.tip.take', 'take', 'mouse', 'playstation', { count: 2, left: 5 })).toBe('Click: take 2 points (5 left)');
+    expect(tip('tree.tip.next_choice', 'take', 'mouse')).toBe('Click: next choice');
+    expect(tip('tree.tip.refund', 'refund', 'mouse')).toBe('R-click: refund');
+    expect(tip('tree.tip.refund_cost', 'refund', 'mouse', 'xbox', { cost: 40 })).toBe('R-click: refund (40 gold)');
   });
 });
