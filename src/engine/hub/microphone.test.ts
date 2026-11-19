@@ -110,6 +110,7 @@ describe('Microphone (52in1’s, for shouts)', () => {
     w.mic.listen(true);
     w.mic.listen(false);
     await settle();
+    expect([w.streams[0]!.track.stopped, w.mic.open], 'stopped as it arrives, not kept').toEqual([true, false]);
     w.mic.listen(false);
     expect([w.streams[0]!.track.stopped, w.mic.open]).toEqual([true, false]);
     w.source.openMicrophone.mockImplementation(async () => null as unknown as MediaStream);
