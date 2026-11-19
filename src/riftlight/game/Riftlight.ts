@@ -202,6 +202,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
   /** A thing clicked out of reach: the hero walks there along the way (`HeroWalk`) and does it on arrival (`walk`, `arrive`). */
   walkTo: WalkTo | null = null;
   /**
+   * The stash, the vendor or the bench the hero opened at its place (`interactWith`): its panel and
+   * the interactable's id. It closes once the hero is out of that one's reach (`keepInReach`).
+   */
+  private counter: { readonly panel: string; readonly id: string } | null = null;
+  /**
    * The left button (or finger) now held went down on something that took it (a thing in the
    * world: a click there, not a swing; the map, opened or closed): no attack until it is let go.
    */
@@ -1489,7 +1494,11 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     const input = ctx.input;
     const i = this.intent;
     const panelOpen = !!this.layer.top;
-    const axis = input.moveAxis();
+    // a window on top takes navigation (every panel does: the item windows, the character sheet,
+    // the menus): its d-pad, left stick, WASD and arrows move its focus and hold the hero still,
+    // as Engine World's panels do; the world runs on under a window that is not modal (a touch
+    // screen's floating stick hides under a panel, so a finger moved nothing there already)
+    const axis = panelOpen ? HELD : input.moveAxis();
     cameraBasis(ctx.engine, this.right, this.forward);
     i.move.x = this.right.x * axis.x + this.forward.x * axis.y;
     i.move.z = this.right.z * axis.x + this.forward.z * axis.y;
@@ -1832,6 +1841,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
       }
     }
     this.arrive();
+    this.keepInReach();
     // a key a menu used this frame (Esc closing a panel) must not also reopen one
     if (!consumed) this.hotkeys(ctx);
 
@@ -2079,8 +2089,30 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return !!l && this.tryPickup(l);
   }
 
+  /**
+   * The stash, the vendor or the bench opened at its place (`counter`) closes once the hero is out
+   * of that one's reach (its `radius`, F's rule, and `REACH_SLACK` for a nudge): the windows hold
+   * the hero still, but an agent's walk or anything else that moves it leaves no counter open
+   * behind it. One opened from elsewhere (the agent API, the developer tools) has no place and stays.
+   */
+  private keepInReach(): void {
+    const c = this.counter;
+    if (!c) return;
+    const it = this.screen === 'town' ? this.town.interactables.find((x) => x.id === c.id) : undefined;
+    if (!this.layer.has(c.panel) || !it) {
+      this.counter = null;
+      return;
+    }
+    const p = this.hero.actor.position;
+    if (Math.hypot(p.x - it.position.x, p.z - it.position.z) < it.radius + REACH_SLACK) return;
+    this.counter = null;
+    this.layer.close(c.panel);
+  }
+
   /** Talk to a townsperson, open the stash, or play a showcase piece. */
   private interactWith(it: Interactable): boolean {
+    const counter = COUNTERS[it.action];
+    this.counter = counter ? { panel: counter, id: it.id } : null;
     if (it.action === 'stash') {
       this.openPanel('stash');
       return true;
@@ -2938,6 +2970,12 @@ const SHIFT = ['ShiftLeft', 'ShiftRight'] as const;
 
 /** `MOUSE.left`'s finger and its mouse button, apart (`readIntent`: a finger's swing waits, the mouse's doesn't). */
 const FINGER = [TOUCH_KEY] as const;
+/** The move a window on top leaves the hero (`readIntent`): none. */
+const HELD: Readonly<{ x: number; y: number }> = { x: 0, y: 0 };
+/** The windows a townsperson or the stash opens at their place, by the interactable's action (`keepInReach`). */
+const COUNTERS: Readonly<Partial<Record<Interactable['action'], string>>> = { stash: 'stash', vendor: 'vendor', craft: 'crafting' };
+/** Metres past an interactable's reach a counter's window stays open (`keepInReach`): a townsperson brushing past is no walk away. */
+const REACH_SLACK = 0.25;
 const MOUSE_LEFT = ['MouseLeft'] as const;
 
 /**
