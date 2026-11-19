@@ -1830,11 +1830,13 @@ const SUITES = {
 };
 
 // CI runs one job per group, in parallel (.github/workflows/ci.yml: `test:e2e -- @core`).
-// Every suite must be in exactly one group, or CI would silently skip it.
+// Every suite must be in exactly one group, or CI would silently skip it. Each job has 15 minutes
+// (ci.yml), setup included: `bundle` (the kit's pages, check.mjs on a pad and a phone) takes up to
+// about 11 of them on a slow runner, so its group holds little else.
 const GROUPS = {
   '@core': ['webgpu', 'no-webgpu', 'touch', 'phone', 'fullscreen', 'moves', 'settings', 'riftlight', 'riftlight-combat'],
-  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase'],
-  '@filters': ['filters-webgpu', 'tools', 'bundle', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+  '@cameras': ['cameras', 'camera-swap', 'lab', 'riftlight-tree', 'riftlight-levels', 'riftlight-builds', 'riftlight-showcase', 'tools', 'systems', 'riftlight-loot', 'riftlight-monsters'],
+  '@filters': ['filters-webgpu', 'bundle'],
   '@world': ['world', 'riftlight-replay', 'riftlight-snapshot', 'hub'],
   // every library model drawn, in slices: the library grows (MODEL_SHARDS)
   '@assets': ['asset-lab', 'asset-lab-models-1'],
