@@ -79,11 +79,15 @@ kills and tuning, the loot window's counts, the codex's headings and the item wi
 the normal font, as are the skill panel's rows (names and costs: `ItemsUi.tenFoot`, the panel wider
 for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). The
 pad's focus in the item windows frames the whole item, slot, socket or orb under it
-(`ItemsUi.focusRect`: a double white frame, ink between its lines, `FOCUS`; no item's frame looks
-like it, a rare's is one pixel of sand), there as they open with the pad in use; a window that
-gains focus takes it (`padInto`: it opens, L1 R1 page to it, Tab or the Gems button shows it, the
-one it was in closes), so no other window keeps a focus mark or its tooltip. Their hints follow the
-device in use.
+(`ItemsUi.focusRect`: a double white frame, ink between its lines, `FOCUS`; its shape sets it
+apart, as no item's frame is double, though a rare's is sand and some skill gems' white), there as
+they open with the pad in use; a window that gains focus takes it (`padInto`: it opens, L1 R1 page
+to it, Tab or the Gems button shows it, the one it was in closes), so no other window keeps a focus
+mark or its tooltip. A tooltip beside a window keeps off the title bar of the other one it lies
+over where it fits below it (`tipRect`: a gem's beside the wide skill panel, clear of the bag's
+name and Gems button); one taller than the screen (a vendor's rare at 1280×720) shows what fits with
+a scroll bar, scrolled by the right stick or the wheel over its item (`cursorTip`, recorded `look`
+and `wheel`; from its top each time it shows). Their hints follow the device in use.
 
 ## On a touch screen (`game/touch.ts`)
 

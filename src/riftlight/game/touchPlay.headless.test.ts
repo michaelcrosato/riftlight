@@ -642,7 +642,7 @@ describe('a picked item\'s buttons and its tooltip', () => {
 
 describe('a picked item\'s tooltip taller than the screen', () => {
   it(
-    'scrolls with a finger\'s drag on it (its comparison with the gear comes into view), lets go with no tap, and a swipe from it over a title bar closes nothing',
+    'scrolls with a finger\'s drag on it (its comparison with the gear comes into view), lets go with no tap, a finger resting on it is no long-press, and a swipe from it over a title bar closes nothing',
     async () => {
       let overBar = 0;
       for (const viewport of [
@@ -681,8 +681,13 @@ describe('a picked item\'s tooltip taller than the screen', () => {
           const s = all.shown;
           const from = { x: s.x + Math.floor(s.w / 2), y: s.y + s.h - 4 };
           const bag = JSON.stringify(loot.store.state.inventory);
+          const gear = JSON.stringify(loot.store.state.equipment);
           finger(from.x, from.y, true, p.engine);
           p.engine.step(1);
+          // a finger resting on it reads it: no long-press (the right-click: Equip, Use) on what is under it
+          p.engine.step(40);
+          expect(ui.pickedTip(), `${where}: a finger resting on it: still picked`).not.toBeNull();
+          expect([JSON.stringify(loot.store.state.inventory), JSON.stringify(loot.store.state.equipment)], `${where}: nothing equipped or used`).toEqual([bag, gear]);
           for (let d = 4; d <= tall!.max + 12; d += 4) {
             slide(from.x, from.y - d, p.engine);
             p.engine.step(1);

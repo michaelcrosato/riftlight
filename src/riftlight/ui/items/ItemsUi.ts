@@ -7,13 +7,15 @@
  * (ui/kit.ts: bevelled frame, navy title bar, close box).
  *
  * Input: mouse (click to pick up / drop, drag and drop, right-click to equip, socket or use,
- * Ctrl-click to stash / sell / buy, Alt for affix tiers), touch (a tap picks an item: its
+ * Ctrl-click to stash / sell / buy, Alt for affix tiers, the wheel over an item scrolls its tooltip
+ * taller than the screen), touch (a tap picks an item: its
  * tooltip and, under it, a row of buttons a thumb can hit for what it can do there, Equip / Use /
  * Socket / Sell / To stash / Move...: `touchActions`; a second tap still acts, a long-press is still
  * the right-click; a drag on a tooltip taller than the screen scrolls it; a swipe down or sideways
  * from a window's title bar closes the windows) and keys or a gamepad (a focus that steps
  * between cells and slots, in the window that last gained focus: confirm = click, X = right-click,
- * Y / V = Ctrl-click, tab = the next tab, back = put the held item back / close). Every change is a pure
+ * Y / V = Ctrl-click, tab = the next tab, back = put the held item back / close; the right stick
+ * scrolls a tooltip taller than the screen). Every change is a pure
  * `loot/inventory` or `loot/sockets` operation committed to the ItemsStore.
  *
  * The mouse and touch come from `ctx.input`: the canvas takes no pointer events itself, so a
@@ -84,10 +86,14 @@ const VENDOR_SIZE = { w: 12, h: 10 };
 /** Screens narrower than this stack the windows (phones in portrait). */
 const WIDE = PANEL_W * 2 + 12;
 /**
- * The pad's focus: a double frame of white (ink between its lines), read from the couch. No item
- * wears it: a rarity's frame is one pixel of its colour (rare: sand), a normal item's dark.
+ * The pad's focus: a double frame of white (ink between its lines), read from the couch. Its shape
+ * sets it apart, not its colour: an item's frame is one pixel (a rarity's colour, rare: sand; a
+ * skill gem's look colour, white for some; a normal item's dark), never a double one.
  */
 export const FOCUS = PALETTE.white;
+/** A pad's or a mouse's tooltip taller than the screen: art rows a wheel tick scrolls it (two lines), and a second at the right stick's full tilt. */
+const TIP_WHEEL = 18;
+const TIP_STICK = 150;
 
 export interface Rect {
   x: number;
@@ -227,6 +233,11 @@ export class ItemsUi {
   private touchAt: { x: number; y: number } | null = null;
   /** How far (art rows) a finger scrolled the picked item's tooltip that is taller than the screen (`pickLayout`'s `max` at most). */
   private tipScroll = 0;
+  /**
+   * How far (art rows) the right stick or the wheel scrolled the pad's or the mouse's tooltip taller
+   * than the screen, and whose it is (`cursorTipLayout`'s `key`): another item's shows from its top.
+   */
+  private tipRead = { key: '', scroll: 0 };
   private lastTouch = false;
   private hoverOrb: string | null = null;
   private messageTime = 0;
@@ -412,6 +423,7 @@ export class ItemsUi {
       this.touchPick = null;
       this.touchAt = null;
       this.tipScroll = 0;
+      this.tipRead = { key: '', scroll: 0 };
       this.downAt = null;
       this.longPressed = false;
       this.said = null; // a townsperson's line goes with the windows (the next to open never shows it)
@@ -1088,7 +1100,8 @@ export class ItemsUi {
         return this.covers(e.x, e.y);
       }
       case 'wheel':
-        return this.covers(this.cursor.x, this.cursor.y);
+        // over the item whose tooltip is taller than the screen (the tooltip beside its window): it scrolls
+        return this.scrollTip(e.dy * TIP_WHEEL) || this.covers(this.cursor.x, this.cursor.y);
       case 'swipe':
         return false; // dragging items: a quick drag is not a dismissal
     }
@@ -1195,6 +1208,13 @@ export class ItemsUi {
         if (input.wasPressed('PadB')) this.closeAll();
       }
     }
+    // the right stick scrolls a pad's or a mouse's tooltip taller than the screen (tilted down: its
+    // last lines come up), the wheel too standalone (hosted: the shell's `wheel` events, `handle`);
+    // both recorded input (`look`, `wheel`), so a replay scrolls the same
+    // (a tooltip shows from its top each time: the focus or the mouse left the item it scrolled)
+    if (this.tipRead.key && this.tipRead.key !== this.cursorTipAt()?.key) this.tipRead = { key: '', scroll: 0 };
+    if (this.isOpen && input.lookAxis.y) this.scrollTip(-input.lookAxis.y * TIP_STICK * dt);
+    if (this.isOpen && !this.opts.hosted && input.wheel) this.scrollTip(input.wheel * TIP_WHEEL);
     // a finger let go where these windows didn't hear it (another panel over them): no long-press
     if (this.downAt?.touch && !input.isDown('Touch')) this.downAt = null;
     const d = this.downAt;
@@ -1581,7 +1601,7 @@ export class ItemsUi {
     }
     Object.assign(c.style, { display: '', width: `${f.cssWidth}px`, height: `${f.cssHeight}px`, left: `${f.offsetX}px`, top: `${f.offsetY}px` });
     const sheet = this.sheet();
-    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.tipScroll}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.said ? JSON.stringify(this.said) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
+    const key = `${this.store.version}|${this.inventoryOpen}|${this.left}|${this.stashTab}|${this.store.vendor.kind}|${Math.floor(this.cursor.x)},${Math.floor(this.cursor.y)}|${this.held?.item.uid}|${this.applying}|${this.benchItem}|${this.skillSlot}|${this.touchPick}|${this.tipScroll}|${this.tipRead.key}:${Math.floor(this.tipRead.scroll)}|${this.hoverOrb}|${this.altHeld}|${this.message ? JSON.stringify(this.message) : ''}|${this.said ? JSON.stringify(this.said) : ''}|${this.cursorMode}|${this.ctx.engine.controls.style}|${this.ctx.engine.controls.device}|${this.store.heroLevel}|${sheet?.version}|${c.width}x${c.height}`;
     if (key === this.drawnKey) return;
     this.drawnKey = key;
     const g = c.getContext('2d', { willReadFrequently: true });
@@ -1901,11 +1921,12 @@ export class ItemsUi {
       this.drawItem(p, this.held.item, cx - Math.floor((s.w * CELL) / 2), cy - Math.floor((s.h * CELL) / 2), s.w * CELL - 1, s.h * CELL - 1);
     } else {
       // a finger's picked item: its tooltip where it was tapped, and its row of action buttons clear of it
+      // (else the pad's or the mouse's tooltip); one taller than the screen shows the part on screen,
+      // scrolled where a finger's drag left it, or the right stick or the wheel
       const picked = this.pickLayout();
-      const shown = picked ? null : this.tipTarget(t);
-      // one taller than the screen: the part on screen, scrolled where a finger's drag left it
-      if (picked) drawTooltip(p, picked.tip.x, picked.tip.y, picked.lines, undefined, picked.max > 0 ? { h: picked.shown.h, scroll: Math.min(this.tipScroll, picked.max) } : undefined);
-      else if (shown) this.drawTip(p, shown.item, shown.at, cx, cy);
+      const at = picked ? null : this.cursorTipLayout();
+      const tip = picked ?? at;
+      if (tip) drawTooltip(p, tip.tip.x, tip.tip.y, tip.lines, undefined, tip.max > 0 ? { h: tip.shown.h, scroll: at ? this.cursorTipScroll(at) : Math.min(this.tipScroll, tip.max) } : undefined);
       for (const a of picked?.actions ?? []) {
         panel(p, a.rect.x, a.rect.y, a.rect.w, a.rect.h, UI.title);
         shadowText(p, a.rect.x + Math.floor((a.rect.w - textWidth(a.label)) / 2), a.rect.y + Math.floor((a.rect.h - 7) / 2), a.label, PALETTE.white);
@@ -1917,7 +1938,7 @@ export class ItemsUi {
     if (this.cursorMode === 'pad') {
       // the pad's focus, read from the couch: a double white frame round what Cross would press
       // (the item's whole footprint, a slot, a socket, an orb), ink between its lines (`FOCUS`: no
-      // item's frame looks like it, a rare's is one pixel of sand); as wide as the old one, so it
+      // item's frame is double, though some skill gems' are white); as wide as the old one, so it
       // covers no more of a socket's slot number or the items beside it
       const r = this.held ? null : this.targetRect(t);
       if (r) {
@@ -1989,14 +2010,48 @@ export class ItemsUi {
   /** A finger's picked item's tooltip as it shows (tools and tests): the lines in view, how far it is scrolled and can be (0: it fits), or null. */
   pickedTip(): { lines: string[]; scroll: number; max: number } | null {
     const laid = this.pickLayout();
-    if (!laid) return null;
-    const scroll = Math.min(this.tipScroll, laid.max);
-    const view = laid.max > 0 ? { h: laid.shown.h, scroll } : undefined;
-    return { lines: tooltipView(laid.lines, view).flatMap((v) => (v.line.sep ? [] : [v.line.text])), scroll, max: laid.max };
+    return laid ? tipShown(laid, Math.min(this.tipScroll, laid.max)) : null;
   }
 
-  private drawTip(p: Painter, item: Item, at: Target, cx: number, cy: number): void {
-    this.placeTip(p, this.tipLines(item, at), cx, cy);
+  /** The pad's or the mouse's tooltip as it shows (tools and tests): where on screen, the lines in view, how far it is scrolled and can be (0: it fits), or null. */
+  cursorTip(): { rect: Rect; lines: string[]; scroll: number; max: number } | null {
+    const laid = this.cursorTipLayout();
+    return laid ? { rect: { ...laid.shown }, ...tipShown(laid, this.cursorTipScroll(laid)) } : null;
+  }
+
+  /**
+   * The tooltip of the item at the pad's focus or under the mouse (none while a finger's picked one
+   * shows: `pickLayout`), placed (`tipRect`): `shown` the part on screen, one taller than the screen
+   * scrolling by `max` rows at most (the right stick, the wheel: `tipRead`, by `key`, its item's).
+   */
+  private cursorTipLayout(): { lines: TipLine[]; tip: Rect; shown: Rect; max: number; key: string } | null {
+    const at = this.cursorTipAt();
+    if (!at) return null;
+    const lines = this.tipLines(at.item, at.at);
+    const tip = this.tipRect(lines, Math.floor(this.cursor.x), Math.floor(this.cursor.y));
+    const shown = { ...tip, h: Math.max(0, Math.min(tip.h, this.size.h - 2 - tip.y)) };
+    return { lines, tip, shown, max: tip.h - shown.h, key: at.key };
+  }
+
+  /** The item whose tooltip the pad's focus or the mouse shows, where, and its `key` (`tipRead`'s): none while a finger's picked one shows. */
+  private cursorTipAt(): { item: Item; at: Target; key: string } | null {
+    if (this.picked()) return null;
+    const at = this.tipTarget(this.hit(Math.floor(this.cursor.x), Math.floor(this.cursor.y)));
+    return at ? { ...at, key: `${at.item.uid}|${at.at.kind}` } : null;
+  }
+
+  /** How far the pad's or the mouse's tooltip is scrolled: where the right stick or the wheel left it, if it is that item's (whole rows). */
+  private cursorTipScroll(laid: { max: number; key: string }): number {
+    return this.tipRead.key === laid.key ? Math.floor(Math.min(this.tipRead.scroll, laid.max)) : 0;
+  }
+
+  /** Scroll the pad's or the mouse's tooltip taller than the screen by `rows` (down: its last lines come up). False when none shows. */
+  private scrollTip(rows: number): boolean {
+    const laid = this.cursorTipLayout();
+    if (!laid || laid.max <= 0) return false;
+    const from = this.tipRead.key === laid.key ? Math.min(this.tipRead.scroll, laid.max) : 0;
+    this.tipRead = { key: laid.key, scroll: Math.max(0, Math.min(laid.max, from + rows)) };
+    return true;
   }
 
   /** An item's tooltip at `at`: its lines, with the price and the hint for the device that drives the windows. */
@@ -2031,13 +2086,12 @@ export class ItemsUi {
     return tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(orbHint ? { orbHint } : {}), ...(extra ? { extra } : {}) });
   }
 
-  /** Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`), and drawn there. */
-  private placeTip(p: Painter, lines: readonly TipLine[], cx: number, cy: number): void {
-    const r = this.tipRect(lines, cx, cy);
-    drawTooltip(p, r.x, r.y, lines);
-  }
-
-  /** Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`) (pure: the action row goes under it). */
+  /**
+   * Where a tooltip of `lines` goes for the cursor at (`cx`, `cy`) (pure: the action row goes under
+   * it). On a wide screen beside the item's window, and under the title bar (its name, close box and
+   * Gems button) of another window it lies over, where it fits there: a skill gem's tooltip beside
+   * the wide skill panel reaches over the bag.
+   */
   private tipRect(lines: readonly TipLine[], cx: number, cy: number): Rect {
     const size = measureTooltip(lines);
     let x: number;
@@ -2059,9 +2113,19 @@ export class ItemsUi {
       }
       x = Math.max(2, Math.min(this.size.w - size.w - 2, x));
       y = Math.max(2, Math.min(this.size.h - size.h - 2, cy - Math.floor(size.h / 2)));
+      // off the title bars of the windows it lies over (not the item's own): as far down as it fits
+      const over = [l, rr].filter((r): r is Rect => !!r && !inside(r) && x < r.x + r.w && x + size.w > r.x);
+      const below = Math.max(0, ...over.map((r) => r.y + HEADER + 1));
+      y = Math.max(y, Math.min(below, this.size.h - size.h - 2));
     }
     return { x, y, w: size.w, h: size.h };
   }
+}
+
+/** A tooltip laid out (`pickLayout`, `cursorTipLayout`) as it shows scrolled `scroll` rows: the text lines in view (tools and tests). */
+function tipShown(laid: { lines: readonly TipLine[]; shown: Rect; max: number }, scroll: number): { lines: string[]; scroll: number; max: number } {
+  const view = laid.max > 0 ? { h: laid.shown.h, scroll } : undefined;
+  return { lines: tooltipView(laid.lines, view).flatMap((v) => (v.line.sep ? [] : [v.line.text])), scroll, max: laid.max };
 }
 
 /** Numbers for the skill panel in the language's way: 1,234 · 12.3 · 0.62. */
