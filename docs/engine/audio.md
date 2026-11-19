@@ -92,6 +92,14 @@ recorded, and never a master volume (the hub applies its master itself, in front
 speakers). `audio.levels` is what the gains are (`{ master, sfx, music }`, headless too) and
 `audio.hubVolumes` the hub's part (1 and 1 outside the hub).
 
+52in1's companion script, first in every game page the hub serves, holds a game's AudioContext
+while the hub's cards are up (a game night's round loads under them) and gives it back as the round
+starts. It knows the context by a source started in it, hearing only `AudioScheduledSourceNode`'s
+`start`, which an AudioBufferSourceNode (every sound here) overrides: as `unlock` makes the context
+it starts and stops a silent ConstantSourceNode, connected to nothing, so the companion sees it
+(`src/engine/hub/companion.test.ts` runs the real one). A resume the hush holds back waits; a context
+it suspends re-arms the unlock listeners, so the next input brings the sound back.
+
 The `speaker` bus plays from a DualSense's speaker while the player allows it
 (`dualsense.speaker`): the engine hands `audio.useSpeaker` the hub's `openSpeaker`, which gives a
 node in the game's AudioContext once audio unlocks. Until then, and without one (an opener that

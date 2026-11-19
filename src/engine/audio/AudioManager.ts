@@ -91,6 +91,25 @@ const LOOP_FADE_S = 0.08;
 const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'click', 'keydown'] as const;
 
 /**
+ * Shows the page which AudioContext is the game's, before anything resumes it: a silent
+ * ConstantSourceNode (connected to nothing) started and stopped at once. 52in1's companion (the
+ * hub's first script in a game's page: docs/engine/hub.md *The player's settings*) knows a game's
+ * context by a source started in it, and holds it while the hub's cards are up (a game night's
+ * round loads under them, `?aihub=1`) until play starts; it hears `AudioScheduledSourceNode`'s
+ * `start`, which an AudioBufferSourceNode (every sound here) overrides with its own, so without
+ * this the game's music would play on under the cards. A browser without it: nothing to say.
+ */
+function announce(ctx: AudioContext): void {
+  try {
+    const source = ctx.createConstantSource();
+    source.start();
+    source.stop();
+  } catch {
+    /* no ConstantSourceNode */
+  }
+}
+
+/**
  * Web Audio for games: procedural retro sound effects (`SFX`, data), a small chiptune
  * sequencer (`Song`, data), optional audio files, and master / sfx / music volume + mute
  * saved per game in localStorage (`audioStorageKey`). Available as `ctx.audio`.
@@ -191,6 +210,7 @@ export class AudioManager {
       if (!this.context) {
         const ctx = new AudioContext();
         this.context = ctx;
+        announce(ctx);
         this.master = ctx.createGain();
         this.master.connect(ctx.destination);
         for (const bus of ['sfx', 'music', 'speaker'] as const) {
