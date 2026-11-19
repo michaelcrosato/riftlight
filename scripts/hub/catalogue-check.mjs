@@ -1185,7 +1185,11 @@ export function libraryProblems({ slug, version, fields }, index) {
   if (existing && !version) problems.push({ level: 'error', text: `the wall already has ${slug} (${existing.name}): choose another file name` });
   else if (existing) problems.push({ level: 'note', text: `${slug} is on the wall as ${existing.name}: this is its build ${version}` });
   const sameName = fields.name && index.names.get(nameKey(fields.name));
-  if (sameName && sameName.slug !== slug) problems.push({ level: 'warning', text: `the wall already shows a game called ${quoted(fields.name)} (${sameName.slug}): this one would show as ${quoted(`${fields.name} (2)`)} or later` });
+  if (sameName && sameName.slug !== slug) {
+    // The wall tells namesakes apart in brackets: the model and effort, else the subtitle, else a nameTag (scripts/lib/names.mjs).
+    const madeBy = [String(fields.model ?? '').replace(/^Claude\s+/i, ''), fields.effort].filter(Boolean).join(' ');
+    problems.push({ level: 'warning', text: `the wall already shows a game called ${quoted(fields.name)} (${sameName.slug}): this one would show as ${quoted(`${fields.name} (${madeBy || 'its subtitle'})`)}, and a "nameTag" in data/overrides.json can choose other words` });
+  }
 
   if (fields.source) {
     const exact = index.sources.get(fields.source);

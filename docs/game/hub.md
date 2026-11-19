@@ -69,8 +69,9 @@ The script runs the catalogue's three checks on the hand-over page itself, and e
 fails (numbered as the catalogue numbers them; the script runs them 3, 2, 1):
 
 1. **The hub's checker**, `scripts/hub/catalogue-check.mjs` (vendored **unmodified** from the hub;
-   take a new copy when the hub changes it): the page's head, the file, the covers, and the game
-   against the wall's (`--offline` skips the wall).
+   take a new copy when the hub changes it, and record its commit in `scripts/hub/harness/README.md`,
+   which names the commit all five vendored files are from): the page's head, the file, the covers,
+   and the game against the wall's (`--offline` skips the wall).
 2. **The session harness** (`scripts/hub/harness/`, vendored unmodified): the runs the protocol's
    *Test it* says the hub runs for every online mode the page's `hub:multiplayer` names
    (`protocolRuns` in `scripts/e2e-hub.mjs`, reading the page as the hub does: `pageModes`):
