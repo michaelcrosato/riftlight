@@ -4,6 +4,7 @@ import { GLOSSARY, term } from './glossary';
 import { worldGame } from './index';
 import { ROOMS } from './rooms';
 import { doorLayout, inFrontOf } from './rooms/atrium';
+import { knobWidget } from './ui/panels';
 import { WINGS } from './wings';
 
 describe('Engine World rooms', () => {
@@ -98,5 +99,16 @@ describe('the Atrium', () => {
       expect(Math.hypot(p.at[0] - d.at[0], p.at[2] - d.at[2])).toBeCloseTo(1.8, 5);
       expect(Math.abs(p.at[0]) + Math.abs(p.at[2])).toBeLessThan(Math.abs(d.at[0]) + Math.abs(d.at[2]) + 1e-6);
     }
+  });
+});
+
+describe('the tweak panel', () => {
+  it('a knob’s slider marks the room’s starting value, and none without one', () => {
+    const knob = { id: 'k', label: 'Fog', min: 0, max: 2, step: 0.1, get: () => 1.5, set: () => {} };
+    const mark = (initial?: number) => {
+      const w = knobWidget({ ...knob, initial });
+      return w.kind === 'slider' ? w.mark : 'not a slider';
+    };
+    expect([mark(0.5), mark(undefined)]).toEqual([0.25, undefined]);
   });
 });

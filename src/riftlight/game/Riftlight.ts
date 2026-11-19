@@ -1916,9 +1916,10 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     ui.device = this.controlDevice();
     ui.padStyle = ctx.engine.controls.style;
     ui.touchpad = touchpadSwipes(ctx.engine);
-    // the game listens for shouts while War Cry is on the bar in play (the engine opens 52in1's
-    // microphone only then, and only while the player has it allowed, its Voice setting on, not muted)
-    ctx.input.voice = this.screen !== 'title' && !this.showcase.active && this.shoutSlot() >= 0;
+    // the game listens for shouts while War Cry is on the bar in play, and while Settings → Controller
+    // is open for its Voice row's meter (the engine opens 52in1's microphone only then, and only while
+    // the player has it allowed, its Voice setting on, not muted); a shout there uses nothing
+    ctx.input.voice = (this.screen !== 'title' && !this.showcase.active && this.shoutSlot() >= 0) || this.layer.top?.panel.id === 'controller';
     // rows and tabs a thumb tall on a page with touch controls (the art size: recorded)
     this.layer.tap = tapArt(ctx.engine.renderer);
     // pointer and menu input → the panel stack, then game hotkeys

@@ -283,23 +283,55 @@ second later (the engine sees it as the stick, recorded as any stick is). A game
 
 52in1's microphone is recorded input the same way: heard only while the game asks, never headless
 or in a replay. `ctx.input.voice = true` while a shout does something: a shout presses `VoiceShout`
-(`VOICE_KEYS.shout`) once, recorded like a key, by the loudness (the RMS of the last 43 ms) and the
-numbers in `SHOUT` (`shoutStep`, plain data):
+(`VOICE_KEYS.shout`) once, recorded like a key, by the loudness (the RMS of the last 43 ms) against
+the room's floor, by `SHOUT` (`shoutStep`; plain data from `newShout()`; a 0.73.0 `{ loud, quiet,
+fired }` is filled in):
 
 | `SHOUT` | Value | What it does |
 | --- | --- | --- |
-| `loud`, `holdS` | 0.2, 0.15 s | this loud for this long is a shout: it presses then |
-| `quiet`, `quietS` | 0.06, 0.25 s | nothing more until this quiet for this long: a shout held on, or a breath between its words, presses once; between `quiet` and `loud` a shout neither grows nor ends |
-| `echoS` | 0.3 s | while a sound plays from the controller's speaker, and this long after, nothing heard makes a shout (`VoiceInput.echo`): a shout counts from after it, one pressed stays pressed |
+| `loud`, `holdS` | 0.2, 0.15 s | this loud, and `floorLoud` times the floor, this long: it presses |
+| `quiet`, `quietS` | 0.06, 0.25 s | then nothing until under this, or `floorQuiet` times the floor, this long |
+| `floorS`, `learnS` | 1 s, 0.5 s | the floor: the level's average over about 1 s; a stream's first 0.5 s learn it (no press) |
+| `floorLoud`, `floorQuiet` | 1.5, 1.1 | a shout is over the room's sound (a hum), and that sound ends it |
+| `echoS` | 0.3 s | while the controller's speaker plays, and this long after, nothing heard shouts or moves the floor |
 
-**Tuning status: unverified on hardware.** The numbers were tuned on a test tone in headless
-Chromium (the e2e's microphone: quiet 0.000, loud 0.57) and never on a DualSense's microphone or a
-device's in 52in1. The companion opens it with `getUserMedia({ audio: true })`, so the browser's
-gain control, noise suppression and echo cancellation shape the levels, and its echo cancellation
-may not cover the controller's speaker (a device of its own beside the microphone): that is why
-`echoS` exists (the engine knows what it plays there, `audio.speakerPlaying`). To tune: in 52in1,
-read `engine.microphone.level()` while talking, shouting and with the portal on the speaker; put
-`loud` between talk and a shout, `quiet` under talk, and lengthen `echoS` if a speaker sound fires.
+Nothing locks out a shout well over the room: it must reach about 1.6× the room's average (it
+lifts the floor while it lasts; Shout sensitivity can't lower that part), the floor follows the room
+within a second or two, and a quarter second under it re-arms. **Simulated rooms** (`input.test.ts`; a shout: 0.4
+RMS for 0.3 s), at Shout sensitivity 50% / 100% / 200% / 300%. *Alone*: presses in 60 s with nobody
+shouting. *Wait*: the longest a player shouting once a second, from any moment, waits for a press
+(s). A room turned on starts after 5 s of quiet.
+
+| Room (RMS) | Alone | Wait |
+| --- | --- | --- |
+| quiet, 0.005; a fan's hum, 0.25 | 0 / 0 / 0 / 0 | 0.15 everywhere |
+| the hum turned on | 0 / 1 / 1 / 1 | 0.15 everywhere |
+| music swelling at 0.5 Hz, 0 to 0.3 | 0 / 30 / 30 / 30 | 0.15 / 1.15 / 1.15 / 1.15 |
+| a TV's words, 0.1 to 0.25 | 0 / 19 / 26 / 26 | 0.15 / 2.14 / 2.15 / 2.15 |
+| the TV turned on | 0 / 17 / 24 / 24 | 0.15 / 2.15 / 2.15 / 2.15 |
+| talk near the microphone, 0.15 to 0.35 | 0 / 23 / 23 / 23 | 0.15 / 3.14 / 3.14 / 3.14 |
+| that talk, turned on | 0 / 22 / 22 / 22 | 0.15 / 4.14 / 4.14 / 4.14 |
+
+The cost is *Alone*: music or talk as loud as a shout presses on its own at 100% and up (its peaks
+top the average); 50% stops it in every room. A soft shout (0.12) is under `loud` at 100% and a
+shout at 200%; in a silent room at 300% one needs exactly `loud / 3`. After 5 s of loud music (0.3
+to 0.5) a shout counts from 0.5 s on.
+
+**Shout sensitivity**: `input.shoutSensitivity` divides `loud` and `quiet`, the floor still in force
+(`shoutLevels`); with `settings: { voice: true }` the engine keeps it at the player's
+`voiceSensitivity` (`VOICE_SENSITIVITY`, 0.5 to 3 by 0.5). `input.shoutMeter` is a level meter's
+reading: the level, what a shout needs now, whether one pressed (null in a replay or while nothing
+is heard). **A player tunes it** by the meter (Riftlight: Settings → Controller, Voice): the bar is
+what the microphone hears, the mark what a shout needs, lit once one counts. If the room lights it,
+turn Shout sensitivity down until it stops; if a shout falls short, turn it up.
+
+**Tuning status: unverified on hardware.** Tuned on the rooms above and the e2e's test tone (a hum
+of 0.23, over which a shout needs 0.34), never on a DualSense in 52in1, whose `getUserMedia` gain
+control, noise suppression and echo cancellation shape the levels (the last may miss the
+controller's speaker: `echoS`). Watch `engine.input.shoutMeter` in silence, talking, shouting, with
+a TV on and the portal on the speaker: `loud` between talk and a shout, `floorLoud` between a room
+and a shout over it, `echoS` longer if a speaker sound fires. Add a room to the test first; keep
+*Wait* finite.
 
 A shout that ends in a frame that never runs (paused, loading) presses nothing, then or later. While
 the game listens, its voice feature is on (`engine.voiceOn`) and the mute button is off, the engine
@@ -308,7 +340,8 @@ and measures it with an `AnalyserNode` in its AudioContext (there after the firs
 touch); when any of it ends (the game stops listening, the setting goes off, muted, no longer
 allowed, a replay) it stops the stream's tracks. A stream whose tracks end by themselves (the
 DualSense's microphone unplugged) is let go and 52in1 asked again. Listen only while a shout does
-something (the browser shows the microphone in use), give the shout a button that does the same
-(Riftlight: War Cry, from the bar), and name it in `hub:dualsense` (`microphone`). Prompts name it
-with the line `key.voice_shout` and draw a microphone (`keyGlyph`). Tests set `input.microphone` to
-a `VoiceInput` (`on`, `level()`, `echo`) and feed numbers (`src/engine/hub/microphone.test.ts`).
+something, or a meter shows it (the browser shows the microphone in use), give the shout a button
+that does the same (Riftlight: War Cry, from the bar), and name it in `hub:dualsense`
+(`microphone`). Prompts name it with the line `key.voice_shout` and draw a microphone (`keyGlyph`).
+Tests set `input.microphone` to a `VoiceInput` (`on`, `level()`, `echo`) and feed numbers
+(`src/engine/hub/microphone.test.ts`, `input.test.ts`).

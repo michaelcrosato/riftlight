@@ -127,6 +127,7 @@ function paramSlider(id: string, label: string, p: FilterParam, get: () => numbe
     step: (u, dir) => (clampParam(p, p.min + u * span + dir * p.step) - p.min) / span,
     format: () => formatParam(p, get()),
     changed: () => Math.abs(get() - p.default) > 1e-9,
+    mark: (p.default - p.min) / span,
     hint,
   };
 }

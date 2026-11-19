@@ -156,16 +156,34 @@ export interface DualSenseInput {
 export const VOICE_KEYS = { shout: 'VoiceShout' } as const;
 
 /**
- * A shout (`shoutStep`), by the microphone's loudness (RMS, 0..1): `loud` or more for `holdS`
- * seconds presses once; nothing more until it has stayed under `quiet` for `quietS` seconds, so a
- * shout held on (or a pause between its words) never presses again. Between `quiet` and `loud` a
- * shout neither grows nor ends. While a sound plays from the controller's speaker, and for `echoS`
- * seconds after, nothing heard makes a shout (`VoiceInput.echo`). Tuned on a test tone, not yet on
- * a DualSense (docs/engine/hub.md *Shouts*).
+ * A shout (`shoutStep`), by the microphone's loudness (RMS, 0..1): loud for `holdS` seconds presses
+ * once; nothing more until it has stayed quiet for `quietS` seconds, so a shout held on (or a breath
+ * between its words) never presses again. Between quiet and loud a shout neither grows nor ends.
+ * Loud is the higher of `loud` and `floorLoud` times the room's floor; quiet is under the higher of
+ * `quiet` and `floorQuiet` times the floor (`shoutLevels`); the player's sensitivity
+ * (`input.shoutSensitivity`) divides `loud` and `quiet`. The floor is the room's average level,
+ * rising and falling over `floorS` seconds (a time constant), so a fan's hum ends under a shout and a
+ * shout over it presses; the first `learnS` seconds of each stream learn it (their average; nothing
+ * presses then). While a sound plays from the controller's speaker, and for `echoS` seconds after,
+ * nothing heard makes a shout or moves the floor (`VoiceInput.echo`). Tuned on simulated rooms and a
+ * test tone, not yet on a DualSense (docs/engine/hub.md *Shouts*).
  */
-export const SHOUT = { loud: 0.2, quiet: 0.06, holdS: 0.15, quietS: 0.25, echoS: 0.3 } as const;
+export const SHOUT = {
+  loud: 0.2,
+  quiet: 0.06,
+  holdS: 0.15,
+  quietS: 0.25,
+  echoS: 0.3,
+  floorLoud: 1.5,
+  floorQuiet: 1.1,
+  floorS: 1,
+  learnS: 0.5,
+} as const;
 
-/** Where a shout stands (`shoutStep`): plain data. */
+/**
+ * Where a shout stands (`shoutStep`): plain data. A new one: `newShout()`. `floor` and `heard` left
+ * out (a state written for 0.73.0, `{ loud, quiet, fired }`) are 0: `shoutStep` fills them in.
+ */
 export interface ShoutState {
   /** Seconds loud so far. */
   loud: number;
@@ -173,19 +191,47 @@ export interface ShoutState {
   quiet: number;
   /** This shout has pressed: nothing more until it is quiet again. */
   fired: boolean;
+  /** The room's floor: its average level over the last `SHOUT.floorS` or so (RMS). */
+  floor?: number;
+  /** Seconds heard, up to `SHOUT.learnS`: until then the floor is the average heard, and nothing presses. */
+  heard?: number;
 }
 
-/** One poll of the microphone's loudness `level` over `dt` seconds (`SHOUT`): true when a shout is complete, once per shout. */
-export function shoutStep(s: ShoutState, level: number, dt: number): boolean {
-  if (level >= SHOUT.loud) {
+/** A shout's state with nothing heard yet (`shoutStep`). */
+export const newShout = (): ShoutState => ({ loud: 0, quiet: 0, fired: false, floor: 0, heard: 0 });
+
+/** A sensitivity divides the thresholds: a positive number, else 1. */
+const sensitive = (sensitivity: number) => (sensitivity > 0 && Number.isFinite(sensitivity) ? sensitivity : 1);
+/** A state's floor or seconds heard: a number of 0 or more, else 0 (left out, as in 0.73.0's). */
+const known = (v: number | undefined) => (v !== undefined && v >= 0 ? v : 0);
+
+/** How loud a shout must be now (`loud`) and how quiet it must go to end (`quiet`), over the floor heard so far, at a sensitivity (`SHOUT`). */
+export function shoutLevels(s: Pick<ShoutState, 'floor'>, sensitivity = 1): { loud: number; quiet: number } {
+  const floor = known(s.floor);
+  const k = sensitive(sensitivity);
+  return { loud: Math.max(SHOUT.loud / k, floor * SHOUT.floorLoud), quiet: Math.max(SHOUT.quiet / k, floor * SHOUT.floorQuiet) };
+}
+
+/**
+ * One poll of the microphone's loudness `level` over `dt` seconds (`SHOUT`) at the player's
+ * `sensitivity` (1: `SHOUT`'s levels; 2: half as loud): true when a shout is complete, once per shout.
+ */
+export function shoutStep(s: ShoutState, level: number, dt: number, sensitivity = 1): boolean {
+  const { loud, quiet } = shoutLevels(s, sensitivity);
+  const learnt = known(s.heard) >= SHOUT.learnS - 1e-6;
+  // the room's floor: the average heard while it is learnt, then a slow average of everything
+  s.heard = Math.min(SHOUT.learnS, known(s.heard) + dt);
+  const over = learnt ? SHOUT.floorS : s.heard;
+  s.floor = known(s.floor) + (level - known(s.floor)) * (over > 0 ? Math.min(1, dt / over) : 1);
+  if (!learnt) return false;
+  if (level >= loud) {
     s.quiet = 0;
-    if (s.fired) return false;
     s.loud += dt;
-    if (s.loud < SHOUT.holdS - 1e-6) return false;
+    if (s.fired || s.loud < SHOUT.holdS - 1e-6) return false;
     s.fired = true;
     return true;
   }
-  if (level < SHOUT.quiet) {
+  if (level < quiet) {
     s.loud = 0;
     s.quiet += dt;
     if (s.quiet >= SHOUT.quietS - 1e-6) s.fired = false;
@@ -566,7 +612,25 @@ export class Input {
   voice = false;
   /** Where shouts are heard: 52in1's microphone on a page (the engine sets it); null headless and outside 52in1 (tests set one). */
   microphone: VoiceInput | null = null;
-  private readonly shout: ShoutState = { loud: 0, quiet: 0, fired: false };
+  /**
+   * How easily a shout counts: `SHOUT.loud` and `SHOUT.quiet` are divided by it (2: half as loud),
+   * the room's floor still in force (`shoutLevels`). A game with `settings: { voice: true }` has the
+   * engine keep it at the player's Shout sensitivity (`PlayerSettings.voiceSensitivity`).
+   */
+  shoutSensitivity = 1;
+  private readonly shout: ShoutState = newShout();
+  /** The loudness heard at the last poll (`shoutMeter`), or null. */
+  private heardLevel: number | null = null;
+  /**
+   * What the microphone hears, for a level meter beside a game's voice setting: its loudness at the
+   * last poll (`level`), how loud a shout must be now (`loud`: the room's floor and the sensitivity in
+   * it) and whether a shout has pressed and goes on (`shouted`). Presentation only: never recorded,
+   * null while nothing is heard (not listening, the microphone off or muted, headless, a replay).
+   */
+  get shoutMeter(): { readonly level: number; readonly loud: number; readonly shouted: boolean } | null {
+    const level = this.heardLevel;
+    return level === null ? null : { level, loud: shoutLevels(this.shout, this.shoutSensitivity).loud, shouted: this.shout.fired };
+  }
   /**
    * Couch co-op: the DualSense 52in1 reads is a guest's (every pad whose `id` names one has
    * `joined`), so its touchpad presses on that guest's pad (`touchpad`) and its turns never reach
@@ -1002,7 +1066,7 @@ export class Input {
     this.triggers.left = this.triggers.right = 0;
     this.pad1 = null;
     this.padMulti = false;
-    Object.assign(this.shout, { loud: 0, quiet: 0, fired: false });
+    Object.assign(this.shout, { loud: 0, quiet: 0, fired: false }); // the room's floor stays: the same microphone hears on
     for (const p of this.pads) p.forget();
     this.joinHold.clear();
     this.dropTaps();
@@ -1734,6 +1798,8 @@ export class Input {
    * that runs (one completed while paused presses nothing, then or later), never from an echo of the
    * game's own sound (`VoiceInput.echo`). Never during a replay:
    * the microphone is told the game stops listening, and the recording presses what it pressed.
+   * Nothing heard (not listening, off, no stream yet) forgets the room's floor too: the next stream
+   * may be another microphone, in another room, so its first `SHOUT.learnS` learn it again.
    */
   private pollVoice(dt: number, runs: boolean): void {
     const mic = this.microphone;
@@ -1741,15 +1807,18 @@ export class Input {
     mic?.listen?.(listening);
     const level = listening && mic?.on ? mic.level() : null;
     if (level === null || !Number.isFinite(level)) {
-      Object.assign(this.shout, { loud: 0, quiet: 0, fired: false });
+      Object.assign(this.shout, newShout());
+      this.heardLevel = null;
       return;
     }
-    // the game's own sound may be what it hears: a shout counts from after it (one pressed stays pressed)
+    this.heardLevel = level;
+    // the game's own sound may be what it hears: a shout counts from after it (one pressed stays
+    // pressed), and the room's floor stays as it was
     if (mic?.echo) {
       this.shout.loud = 0;
       return;
     }
-    if (shoutStep(this.shout, level, dt) && runs) this.press(VOICE_KEYS.shout);
+    if (shoutStep(this.shout, level, dt, this.shoutSensitivity) && runs) this.press(VOICE_KEYS.shout);
   }
 
   /**

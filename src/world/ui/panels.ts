@@ -27,6 +27,7 @@ export function knobWidget(k: Knob): Widget {
     step: (u, dir) => toU(snap(k.min + u * span + dir * k.step)),
     format: () => (k.format ? k.format(k.get()) : formatNumber(k.get())),
     changed: () => k.initial !== undefined && Math.abs(k.get() - k.initial) > k.step / 2,
+    mark: k.initial === undefined ? undefined : toU(k.initial),
     hint: k.hint,
   };
 }

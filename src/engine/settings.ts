@@ -32,6 +32,11 @@ export interface PlayerSettings {
    */
   voice?: boolean;
   /**
+   * How easily a shout counts (`input.shoutSensitivity`, beside the voice feature's row), 0.5 to 3 in
+   * steps of 0.5 (left out: 1): 2 counts one half as loud, the room's floor still in force.
+   */
+  voiceSensitivity?: number;
+  /**
    * Motion aim (`settings: { motion: true }`: a DualSense's motion through 52in1, `input.motion`).
    * Left out: on while the player has 52in1's own Motion aim on (`engine.motionOn`).
    */
@@ -40,7 +45,7 @@ export interface PlayerSettings {
   motionSensitivity?: number;
 }
 
-const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration', 'voice', 'motion', 'motionSensitivity'] as const satisfies readonly (keyof PlayerSettings)[];
+const SETTING_FIELDS = ['look', 'pixelArt', 'pixelSize', 'quality', 'fps', 'debugInfo', 'padGlyphs', 'vibration', 'voice', 'voiceSensitivity', 'motion', 'motionSensitivity'] as const satisfies readonly (keyof PlayerSettings)[];
 export const PIXEL_SIZES = ['fine', 'chunky'] as const;
 export const QUALITY_OPTIONS: readonly QualityOption[] = ['auto', 'low', 'medium', 'high'];
 export const FPS_OPTIONS: readonly number[] = [60, 30, 0];
@@ -49,6 +54,11 @@ export const PAD_GLYPHS = ['playstation', 'xbox'] as const;
 export type PadGlyphs = (typeof PAD_GLYPHS)[number];
 /** Motion aim's sensitivity range (`PlayerSettings.motionSensitivity`). */
 export const MOTION_SENSITIVITY = { min: 0.25, max: 3, step: 0.25 } as const;
+/** A shout's sensitivity range (`PlayerSettings.voiceSensitivity`). */
+export const VOICE_SENSITIVITY = { min: 0.5, max: 3, step: 0.5 } as const;
+
+/** `v` held to `range` and rounded to its steps. */
+const inSteps = (v: number, range: { readonly min: number; readonly max: number; readonly step: number }) => Math.round(Math.min(range.max, Math.max(range.min, v)) / range.step) * range.step;
 
 /** Keep only fields with a valid value: what storage or a caller handed over may be anything. */
 export function normalizeSettings(raw: unknown): PlayerSettings {
@@ -67,8 +77,8 @@ export function normalizeSettings(raw: unknown): PlayerSettings {
   if (typeof v.voice === 'boolean') out.voice = v.voice;
   if (typeof v.motion === 'boolean') out.motion = v.motion;
   // a sensitivity in its steps, held to its range
-  const m = MOTION_SENSITIVITY;
-  if (typeof v.motionSensitivity === 'number' && Number.isFinite(v.motionSensitivity)) out.motionSensitivity = Math.round(Math.min(m.max, Math.max(m.min, v.motionSensitivity)) / m.step) * m.step;
+  if (typeof v.voiceSensitivity === 'number' && Number.isFinite(v.voiceSensitivity)) out.voiceSensitivity = inSteps(v.voiceSensitivity, VOICE_SENSITIVITY);
+  if (typeof v.motionSensitivity === 'number' && Number.isFinite(v.motionSensitivity)) out.motionSensitivity = inSteps(v.motionSensitivity, MOTION_SENSITIVITY);
   return out;
 }
 

@@ -115,6 +115,15 @@ describe('player settings', () => {
     expect(normalizeSettings({ voice: 'on', motion: 1, motionSensitivity: Number.NaN })).toEqual({});
   });
 
+  it('keep the shout sensitivity (0.5..3, in steps of 0.5)', () => {
+    expect(normalizeSettings({ voice: true, voiceSensitivity: 2 })).toEqual({ voice: true, voiceSensitivity: 2 });
+    expect(normalizeSettings({ voiceSensitivity: 9 })).toEqual({ voiceSensitivity: 3 });
+    expect(normalizeSettings({ voiceSensitivity: 0 })).toEqual({ voiceSensitivity: 0.5 });
+    expect(normalizeSettings({ voiceSensitivity: 1.3 })).toEqual({ voiceSensitivity: 1.5 });
+    expect(normalizeSettings({ voiceSensitivity: Number.NaN })).toEqual({});
+    expect(normalizeSettings({ voiceSensitivity: '2' })).toEqual({});
+  });
+
   it("keep the controller's button prompts (PlayStation or Xbox) and its vibration (0..1, in steps of 0.05)", () => {
     expect(normalizeSettings({ padGlyphs: 'xbox', vibration: 0.5 })).toEqual({ padGlyphs: 'xbox', vibration: 0.5 });
     expect(normalizeSettings({ padGlyphs: 'playstation', vibration: 0 })).toEqual({ padGlyphs: 'playstation', vibration: 0 });

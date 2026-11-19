@@ -351,7 +351,10 @@ export async function runRiftlightCouch(h) {
  * (`createMediaStreamDestination`) the test turns loud, then quiet, and War Cry fires once, through
  * one recorded `VoiceShout`; the Voice setting turned off stops the stream's tracks. With a DualSense's
  * speaker open, the portal from it is an echo: the microphone loud all through it presses nothing,
- * and once it has ended (and `SHOUT.echoS` after) a shout presses once.
+ * and once it has ended (and `SHOUT.echoS` after) a shout presses once. A steady hum louder than
+ * `SHOUT.loud`, in a new stream from its first sample, is the room's floor: it never fires War Cry,
+ * and a shout over it does; Settings → Controller shows the level beside Voice, a mark where a shout
+ * counts (the meter).
  * Frames: .scratch/e2e/riftlight-voice-*.png.
  */
 export async function runRiftlightVoice(h) {
@@ -362,7 +365,8 @@ export async function runRiftlightVoice(h) {
     ctx = await openPage(exe, s, 'game=riftlight&debug=0&save=memory&seed=4242');
     const { page, logs } = ctx;
     await page.addInitScript(() => {
-      const mic = (window.__mic = { calls: 0, gain: null, stream: null });
+      // `start`: the tone's gain as a stream opens (a room's hum from its first sample)
+      const mic = (window.__mic = { calls: 0, gain: null, stream: null, start: 0 });
       window.AIHubSettings = Object.assign(new EventTarget(), {
         version: 1,
         music: 1,
@@ -379,7 +383,7 @@ export async function runRiftlightVoice(h) {
           const tone = ac.createOscillator();
           tone.frequency.value = 220;
           mic.gain = ac.createGain();
-          mic.gain.gain.value = 0;
+          mic.gain.gain.value = mic.start;
           const out = ac.createMediaStreamDestination();
           tone.connect(mic.gain).connect(out);
           tone.start();
@@ -455,7 +459,7 @@ export async function runRiftlightVoice(h) {
         for (const t = performance.now(); performance.now() - t < ms; await new Promise((r) => setTimeout(r, 20))) top = Math.max(top, window.__PIXEL_ENGINE__.microphone.level() ?? 0);
         return top;
       }, ms);
-    const quiet = await hear(300);
+    const quiet = await hear(800); // the room (quiet) learnt: `SHOUT.learnS`
     const shouts = () => R(() => window.__PIXEL_ENGINE__.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length);
     const before = { shouts: await shouts(), cast: await R(() => window.__RIFTLIGHT__.game.hero.actor.hasBuff('war-cry')) };
     // a shout: loud for 0.8 s, then quiet
@@ -497,6 +501,7 @@ export async function runRiftlightVoice(h) {
       Object.assign(window.AIHubSettings, { dualsense: { connected: true, speaker: true, openSpeaker: speaker } });
       window.AIHubSettings.dispatchEvent(new Event('change'));
       for (let k = 0; k < 100 && !(e.audio.speakerRouted && e.microphone.level() !== null); k++) await wait(20);
+      await wait(800); // the new stream's room learnt (`SHOUT.learnS`)
       const shouts = () => e.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length;
       const before = shouts();
       window.__mic.gain.gain.value = 0.8;
@@ -518,6 +523,56 @@ export async function runRiftlightVoice(h) {
     });
     check(echo.routed && echo.echoes > 0 && echo.top > 0.2 && echo.guarded > 600, `the portal from the controller's speaker is an echo while it plays and 0.3 s after (${echo.guarded.toFixed(0)} ms, loud ${echo.top.toFixed(3)})`);
     check(echo.during === 0 && echo.after === 1, `a shout heard through the controller's speaker presses nothing; still loud after it, one press (${echo.during} during, ${echo.after} after)`);
+
+    // a steady hum (a fan, a TV) louder than `SHOUT.loud` (0.2), in a new stream from its first
+    // sample: the room's floor, so it never fires War Cry; a shout over it (`SHOUT.floorLoud` times it) does
+    const hum = await R(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const hero = window.__RIFTLIGHT__.game.hero;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const shouts = () => e.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length;
+      const ready = () => !hero.actor.hasBuff('war-cry') && hero.skills().find((k) => k.id === 'war-cry').remaining <= 0;
+      /** The highest loudness heard over `ms`. */
+      const top = async (ms) => {
+        let t = 0;
+        for (const t0 = performance.now(); performance.now() - t0 < ms; await wait(20)) t = Math.max(t, e.microphone.level() ?? 0);
+        return t;
+      };
+      Object.assign(window.AIHubSettings, { dualsense: { connected: false } }); // the speaker gone again
+      window.AIHubSettings.dispatchEvent(new Event('change'));
+      for (let k = 0; k < 300 && !ready(); k++) await wait(50); // War Cry's buff and cooldown over (6 s)
+      hero.actor.mana = hero.actor.maxMana;
+      e.settings.set({ voice: false }); // the stream closed: the next one is a new room
+      await wait(200);
+      window.__mic.start = 0.32; // a sine this loud: 0.23 RMS
+      e.settings.set({ voice: undefined });
+      for (let k = 0; k < 100 && e.microphone.level() === null; k++) await wait(20);
+      const before = shouts();
+      const humTop = await top(3000);
+      const during = { shouts: shouts() - before, cast: hero.actor.hasBuff('war-cry'), ready: ready(), need: e.input.shoutMeter?.loud ?? 0 };
+      window.__mic.gain.gain.value = 1.5; // a shout over it
+      const shoutTop = await top(600);
+      window.__mic.gain.gain.value = 0.32;
+      await wait(1000);
+      return { humTop, during, shoutTop, over: shouts() - before - during.shouts, cast: hero.actor.hasBuff('war-cry') };
+    });
+    check(hum.humTop > 0.2 && hum.during.shouts === 0 && !hum.during.cast && hum.during.ready, `a steady hum louder than a shout's 0.2 (${hum.humTop.toFixed(3)} RMS), heard from its stream's start, fires nothing in 3 s (${hum.during.shouts} shouts; War Cry ready ${hum.during.ready}); a shout needs ${hum.during.need.toFixed(3)} over it`);
+    check(hum.shoutTop > hum.during.need && hum.over === 1 && hum.cast, `a shout over the hum (${hum.shoutTop.toFixed(3)} RMS) fires War Cry once (${hum.over} shouts, cast ${hum.cast})`);
+    // Settings → Controller: the level beside Voice, a mark where a shout counts (presentation only)
+    const meter = await R(async () => {
+      const rl = window.__RIFTLIGHT__;
+      rl.ui.open('settings');
+      rl.ui.click('controller');
+      await new Promise((r) => setTimeout(r, 400));
+      const menu = rl.game.layer.top.panel;
+      return { rect: menu.rects.get('voice:meter') ?? null, ids: menu.items().map((w) => w.id), heard: window.__PIXEL_ENGINE__.input.shoutMeter };
+    });
+    await shot('meter');
+    await R(() => {
+      window.__RIFTLIGHT__.ui.close();
+      window.__RIFTLIGHT__.ui.close();
+    });
+    check(!!meter.rect && meter.ids.includes('voiceSensitivity') && meter.heard?.level > 0.2, `Settings → Controller: Shout sensitivity under Voice, and a meter beside Voice (${meter.rect ? `${meter.rect.w}×${meter.rect.h} art px` : 'none'}, level ${meter.heard?.level.toFixed(3)} of ${meter.heard?.loud.toFixed(3)})`);
     checkClean(await state(page), logs, 'voice: ');
   } catch (e) {
     check(false, `riftlight voice crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);

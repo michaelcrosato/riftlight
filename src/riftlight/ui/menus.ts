@@ -4,7 +4,7 @@
  * the rift keeper's depth list.
  * They talk to the game through `MenuHost`, which `Riftlight` implements.
  */
-import { FPS_OPTIONS, languageName, LOOK_PRESETS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, type AudioManager, type Engine, type QualityLevel } from '../../engine';
+import { FPS_OPTIONS, languageName, LOOK_PRESETS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, VOICE_SENSITIVITY, type AudioManager, type Engine, type QualityLevel } from '../../engine';
 import type { DifficultyTuning } from '../core/types';
 import {
   DIFFICULTY_KEYS,
@@ -21,7 +21,7 @@ import type { DevFlags } from '../game/ports';
 import { formatTime } from '../game/progress';
 import { lootFilterOptions } from '../loot/names';
 import type { SavesView } from '../game/save';
-import type { Settings } from '../game/settings';
+import { DEFAULT_SETTINGS, type Settings } from '../game/settings';
 import { SHOUT_SKILL } from '../game/controls';
 import { lang, t } from '../lang';
 import { skillName } from '../lang/skills';
@@ -215,6 +215,7 @@ export function tuningMenu(h: MenuHost): Menu {
           step: (_u, dir) => multiplierToSlider(nudge(h.difficulty()[k], dir)),
           format: () => times(h.difficulty()[k]),
           changed: () => h.difficulty()[k] !== 1,
+          mark: multiplierToSlider(1),
           hint: t('menu.tuning.slider.hint'),
         });
       }
@@ -263,10 +264,11 @@ export function settingsMenu(h: MenuHost): Menu {
         step: (u, d) => Math.min(1, Math.max(0, u + d * 0.05)),
         format: () => t('menu.settings.zoom.value', { value: num(s.zoom, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }),
         changed: () => s.zoom !== 1,
+        mark: DEFAULT_SETTINGS.zoom - 0.6,
       },
       { kind: 'toggle', id: 'numbers', label: t('menu.settings.numbers'), get: () => s.damageNumbers, set: (v) => change(() => (s.damageNumbers = v))() },
       { kind: 'choice', id: 'filter', label: t('menu.settings.filter'), options: lootFilterOptions(), get: () => s.lootFilter, set: (i) => change(() => (s.lootFilter = i))() },
-      { kind: 'slider', id: 'shake', label: t('menu.settings.shake'), get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake) },
+      { kind: 'slider', id: 'shake', label: t('menu.settings.shake'), get: () => s.screenShake, set: (u) => change(() => (s.screenShake = Math.round(u * 20) / 20))(), step: (u, d) => Math.min(1, Math.max(0, u + d * 0.1)), format: () => pct(s.screenShake), mark: DEFAULT_SETTINGS.screenShake },
       // a finger's assists (`Riftlight.touchAssist`), on a page with touch controls only
       ...(h.touchControls
         ? [
@@ -306,35 +308,65 @@ export function controllerMenu(h: MenuHost): Menu {
         set: (u) => (h.engine.settings.set({ vibration: Math.round(u * 20) / 20 }), h.engine.input.rumble({ strong: 0.6, weak: 0.6, ms: 140 })), // feel the new strength
         step: (u, d) => Math.min(1, Math.max(0, Math.round((u + d * 0.1) * 20) / 20)),
         format: () => pct(h.engine.settings.values.vibration ?? 1),
+        mark: 1, // the engine's default: full strength
         hint: t('menu.settings.vibration.hint'),
       },
       // motion aim (the engine's `motion` and `motionSensitivity`): only while 52in1 lets games read a DualSense's motion
       ...(motionAllowed(h) ? motionRows(h) : []),
-      // the voice: only in 52in1 (outside it there is no microphone to allow), as the catalogue asks
-      ...(h.engine.hubSettings.present ? [voiceRow(h)] : []),
+      // the voice and how easily a shout counts: only in 52in1 (outside it there is no microphone to allow), as the catalogue asks
+      ...(h.engine.hubSettings.present ? voiceRows(h) : []),
     ],
     { id: 'controller', title: t('menu.controller.title'), width: 240, labelWidth: 104, onSound: sound(h) },
   );
 }
 
+/** The voice's meter: a shout's threshold this far along it, so the room's level shows under the mark. */
+const METER_MARK = 2 / 3;
+
 /**
  * The voice, in 52in1 (the engine's `voice`: `engine.voiceOn`, the Microphone row of its panel): a
  * shout into the microphone uses War Cry (`KEYS.shout`). Off, and it doesn't change, until the
  * player allows games the microphone in 52in1 (catalogue *The microphone*): its hint says where, or
- * to open the game again when they allowed it since (`micLater`).
+ * to open the game again when they allowed it since (`micLater`). While the microphone is heard
+ * (the shell listens while this page is open) a meter beside it shows the level, a mark where a
+ * shout counts (`input.shoutMeter`), lit while a shout has counted. Under it, Shout sensitivity
+ * (the engine's `voiceSensitivity`), dimmed while Voice is off (as the engine's panel has it), with
+ * Voice's hint until 52in1 allows the microphone; the Menu rebuilds it as Voice turns on or off.
  */
-function voiceRow(h: MenuHost): Widget {
+function voiceRows(h: MenuHost): Widget[] {
   const hub = h.engine.hubSettings;
-  const why = hub.micLater ? 'menu.settings.voice.later' : 'menu.settings.voice.allow';
-  return {
-    kind: 'toggle',
-    id: 'voice',
-    label: t('menu.settings.voice'),
-    get: () => h.engine.voiceOn,
-    set: (v) => hub.micAllowed && h.engine.settings.set({ voice: v }),
-    disabled: !hub.micAllowed,
-    hint: hub.micAllowed ? t('menu.settings.voice.hint', { skill: skillName(SHOUT_SKILL) }) : t(why),
-  };
+  const why = t(hub.micLater ? 'menu.settings.voice.later' : 'menu.settings.voice.allow');
+  const S = VOICE_SENSITIVITY;
+  const sensitivity = () => h.engine.settings.values.voiceSensitivity ?? 1;
+  const set = (v: number) => h.engine.settings.set({ voiceSensitivity: Math.min(S.max, Math.max(S.min, Math.round(v / S.step) * S.step)) });
+  return [
+    {
+      kind: 'toggle',
+      id: 'voice',
+      label: t('menu.settings.voice'),
+      get: () => h.engine.voiceOn,
+      set: (v) => hub.micAllowed && h.engine.settings.set({ voice: v }),
+      disabled: !hub.micAllowed,
+      hint: hub.micAllowed ? t('menu.settings.voice.hint', { skill: skillName(SHOUT_SKILL) }) : why,
+      meter: () => {
+        const m = h.engine.input?.shoutMeter;
+        return m ? { level: (m.level / m.loud) * METER_MARK, mark: METER_MARK, lit: m.shouted } : null;
+      },
+    },
+    {
+      kind: 'slider',
+      id: 'voiceSensitivity',
+      label: t('menu.settings.voice_sensitivity'),
+      get: () => (sensitivity() - S.min) / (S.max - S.min),
+      set: (u) => h.engine.voiceOn && set(S.min + u * (S.max - S.min)),
+      step: (_u, d) => (sensitivity() + d * S.step - S.min) / (S.max - S.min),
+      format: () => pct(sensitivity()),
+      changed: () => sensitivity() !== 1,
+      mark: (1 - S.min) / (S.max - S.min),
+      disabled: !h.engine.voiceOn,
+      hint: !hub.micAllowed ? why : h.engine.voiceOn ? t('menu.settings.voice_sensitivity.hint') : t('menu.settings.voice_sensitivity.off'),
+    },
+  ];
 }
 
 /** Motion sensitivity as a slider: its steps over 0..1. */
@@ -355,6 +387,7 @@ function motionRows(h: MenuHost): Widget[] {
       step: (_u, d) => (sensitivity(h) + d * SENS.step - SENS.min) / (SENS.max - SENS.min),
       format: () => pct(sensitivity(h)),
       changed: () => sensitivity(h) !== 1,
+      mark: (1 - SENS.min) / (SENS.max - SENS.min),
       hint: t('menu.settings.motion_sensitivity.hint'),
     },
   ];

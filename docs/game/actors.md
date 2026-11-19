@@ -15,8 +15,11 @@ on and it isn't muted; a shout presses `VoiceShout` (`KEYS.shout`, recorded), an
 for War Cry's slot as its button does (a button pressed in the same step wins; a panel open, nothing).
 In 52in1 Settings → Controller has **Voice** (the engine's `voice`, `engine.voiceOn`; outside it no
 row, as for motion aim): off and unchangeable, its hint 52in1's line, until 52in1 allows games the
-microphone; then on, its hint *Shout to use War Cry*. The Controller button's hint names it there.
-Without a microphone, or War Cry, the game plays as ever.
+microphone; then on, its hint *Shout to use War Cry*. Under it **Shout sensitivity** (the engine's
+`voiceSensitivity`, 50% to 300%), dimmed while Voice is off (with 52in1's line until it allows it). While the page is open the
+shell listens too (a shout there uses nothing), so Voice shows a meter: the level, a mark where a
+shout counts over the room's floor (`input.shoutMeter`), lit once one has. The Controller button's
+hint names the voice there. Without a microphone, or War Cry, the game plays as ever.
 
 **Aim, one rule** (`actors/aim.ts`, the shell's `readIntent` and `HeroController.updateAim` alike):
 the mouse aims at the ground under the cursor (while it is in use: moved, clicked, or a button

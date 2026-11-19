@@ -214,7 +214,7 @@ engine applies the volumes (music on the music bus, everything else as effects: 
 volume) and the hub scales rumble. Outside 52in1 everything still plays.
 
 ```js
-Engine.start(game, { settings: { motion: true, voice: true } }); // the panel's Motion aim and Microphone rows
+Engine.start(game, { settings: { motion: true, voice: true } }); // Motion aim, Microphone, Shout sensitivity rows
 ctx.input.rumble({ strong: 0.3, weak: 0.6, ms: 120 }); // the pad in use, × the player's vibration
 ctx.dualsense.light(PALETTE.red); // the light bar; null gives it back
 ctx.dualsense.trigger('right', { kind: 'weapon', from: 0.3, to: 0.6, strength: 0.8 }); // resist | weapon | vibrate
@@ -223,7 +223,7 @@ const throttle = ctx.input.triggers.right; // 0..1, every pad's analog trigger
 const aim = ctx.input.lookAxis; // the right stick, y up (motion aim adds to it)
 ctx.input.touchpad = true; // swipes and taps press PadTouchpadLeft ... Tap
 ctx.audio.play('hurt', { bus: 'speaker' }); // from the controller's speaker, else with the rest
-ctx.input.voice = true; // a shout presses VOICE_KEYS.shout, once 52in1 allows the microphone
+ctx.input.voice = true; // a shout presses VOICE_KEYS.shout once 52in1 allows the mic
 ```
 
 - A button does what a touchpad swipe does. The engine gives the light bar back between levels
@@ -232,7 +232,8 @@ ctx.input.voice = true; // a shout presses VOICE_KEYS.shout, once 52in1 allows t
   `window.AIHubSettings.dualsense`, `navigator.hid` or `navigator.mediaDevices`.
 - A voice feature's row stays off until 52in1 allows the microphone
   (`ctx.engine.hubSettings.micAllowed`; `micLater`: since this game opened, so after a reload).
-  Give a shout (`VOICE_KEYS.shout`) a button that does the same; listen only while it does.
+  Give a shout (`VOICE_KEYS.shout`) a button that does the same; listen only while it does;
+  `ctx.input.shoutMeter` draws a meter by the row.
 
 ## 6. 52in1 sessions and the head
 

@@ -27,7 +27,7 @@ afterEach(() => {
 });
 
 async function open(o: { hub?: HubSettingsSource; voice?: boolean; motion?: boolean } = {}) {
-  engine = await Engine.headless(new Still(), { hubSettings: o.hub ?? null, settings: { motion: o.motion } });
+  engine = await Engine.headless(new Still(), { hubSettings: o.hub ?? null, settings: { motion: o.motion, voice: o.voice } });
   const e = engine;
   const menu = new SettingsMenu(e, { voice: o.voice, motion: o.motion });
   let t = 0;
@@ -70,7 +70,7 @@ describe('the settings screen', () => {
     engine!.dispose();
     const more = (await open({ voice: true, motion: true })).menu;
     more.showPage('sound');
-    expect(more.rows().map((r) => r.id)).toEqual(['sound', 'master', 'music', 'sfx', 'voice']);
+    expect(more.rows().map((r) => r.id)).toEqual(['sound', 'master', 'music', 'sfx', 'voice', 'voiceSensitivity']);
     more.showPage('controls');
     expect(more.rows().map((r) => r.id)).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity']);
   });
@@ -204,6 +204,27 @@ describe('the settings screen', () => {
     const alone = await open({ voice: true }); // outside 52in1
     alone.menu.showPage('sound');
     expect(alone.menu.rows().find((r) => r.id === 'voice')!.note).toBe('The microphone needs 52in1.');
+  });
+
+  it('Shout sensitivity sits beside the Microphone: off with its line until 52in1 allows the microphone, then 50% to 300%, driving input.shoutSensitivity; off while the Microphone is', async () => {
+    const hub = Object.assign(new EventTarget(), { mic: false, micLater: false });
+    const { e, menu } = await open({ hub, voice: true });
+    menu.showPage('sound');
+    const row = () => menu.rows().find((r) => r.id === 'voiceSensitivity')!;
+    expect([row().label, row().value, row().enabled, row().note, e.input.shoutSensitivity]).toEqual(['Shout sensitivity', '100%', false, '52in1 allows the microphone in its Settings, under Sound.', 1]);
+    hub.mic = true;
+    hub.dispatchEvent(new Event('change'));
+    expect([row().enabled, row().note]).toEqual([true, '']);
+    menu.step(5, 1);
+    expect([row().value, e.settings.values.voiceSensitivity, e.input.shoutSensitivity]).toEqual(['150%', 1.5, 1.5]);
+    for (let k = 0; k < 9; k++) menu.step(5, 1);
+    expect([row().value, row().right], 'held at its end').toEqual(['300%', false]);
+    for (let k = 0; k < 9; k++) menu.step(5, -1);
+    expect([row().value, e.input.shoutSensitivity, row().left]).toEqual(['50%', 0.5, false]);
+    menu.activate(4); // the Microphone off
+    expect([row().enabled, row().note]).toEqual([false, '']);
+    e.settings.set({ voiceSensitivity: undefined });
+    expect(e.input.shoutSensitivity, 'left out: 1').toBe(1);
   });
 
   it("motion aim is there only with a DualSense's motion through 52in1, on when 52in1's own Motion aim is, with its sensitivity; the rows drive input.motion", async () => {

@@ -53,8 +53,9 @@
 //                 the item windows' frames (scripts/e2e-riftlight-items.mjs), a click on the tree's
 //                 canvas, its own Escape, a label click after a lost device, a phone; couch co-op on a
 //                 TV; a shout into a fake 52in1's microphone (a tone) fires War Cry once, nothing
-//                 opens it before 52in1 allows it, and the portal on the controller's speaker can't
-//                 fire one. The gameplay checks are headless:
+//                 opens it before 52in1 allows it, the portal on the controller's speaker can't fire
+//                 one, nor can a steady hum, but a shout over the hum does; Settings → Controller
+//                 shows the level beside Voice. The gameplay checks are headless:
 //                 src/riftlight/game/flow*.test.ts, voice.test.ts, ui/items/*.headless.test.ts,
 //                 ui/tree/tree.headless.test.ts.
 // riftlight-tree  the passive tree page /tree.html (scripts/e2e-riftlight-tree.mjs).

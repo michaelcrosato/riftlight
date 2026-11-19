@@ -25,11 +25,15 @@ export type Widget =
       format: () => string;
       /** Highlight when not default. */
       changed?: () => boolean;
+      /** Where its default sits (0..1, as `get` gives it): a mark on the track there; none without one. */
+      mark?: number;
       hint?: string;
       /** What the control is, on its own (the focus line while its menu is hidden); default: the label. */
       name?: string;
       /** Drawn indented, under the row it belongs to (a filter's preset and sliders). */
       indent?: boolean;
+      /** Shown dimmed and it doesn't move, though it takes the focus (its hint says why: Shout sensitivity while Voice is off). */
+      disabled?: boolean;
     }
   | {
       kind: 'toggle';
@@ -42,6 +46,11 @@ export type Widget =
       indent?: boolean;
       /** Shown dimmed and it doesn't change, though it takes the focus (its hint says why: the voice before 52in1 allows the microphone). */
       disabled?: boolean;
+      /**
+       * A level meter after On / Off (presentation: what it reads is never recorded): `level` filled
+       * from the left, a mark at `mark` (both 0..1 of its width), drawn lit while `lit`; null: none.
+       */
+      meter?: () => { level: number; mark: number; lit: boolean } | null;
     }
   | { kind: 'choice'; id: string; label: string; options: readonly string[]; get: () => number; set: (i: number) => void; hint?: string; name?: string; indent?: boolean }
   | { kind: 'label'; id: string; label: string; color?: HudColor }
@@ -365,7 +374,7 @@ export class Menu implements Panel {
         this.rects.set(w.id, row);
         if (focus || ui.hover(row)) ui.rect(row.x, row.y, row.w, row.h, 'night');
         if (focus) ui.rect(row.x, row.y, 2, row.h, UI.focus);
-        const off = w.kind === 'toggle' && w.disabled === true;
+        const off = (w.kind === 'toggle' || w.kind === 'slider') && w.disabled === true;
         const color = off ? 'slate' : focus ? 'white' : 'mist';
         const cx = r.x + labelW;
         const cw = r.w - labelW - 4;
@@ -384,18 +393,32 @@ export class Menu implements Panel {
           this.rects.set(`${w.id}:track`, { x: cx - 2, y: narrow ? y : row.y, w: tw + 4, h: row.h });
           ui.rect(track.x, track.y, track.w, track.h, 'ink');
           const u = Math.min(1, Math.max(0, w.get()));
-          ui.rect(track.x, track.y + 1, Math.round(track.w * u), 1, w.changed?.() ? UI.accent : 'sky');
-          ui.rect(track.x + Math.round(track.w / 2), track.y - 1, 1, 5, 'slate'); // centre (default) mark
+          const changed = !off && w.changed?.() === true;
+          ui.rect(track.x, track.y + 1, Math.round(track.w * u), 1, off ? 'slate' : changed ? UI.accent : 'sky');
+          if (w.mark !== undefined) ui.rect(track.x + Math.round(track.w * Math.min(1, Math.max(0, w.mark))), track.y - 1, 1, 5, 'slate'); // the default's mark
           const kx = track.x + Math.round(track.w * u);
           ui.rect(kx - 2, track.y - 3, 5, 9, 'ink');
-          ui.rect(kx - 1, track.y - 2, 3, 7, focus ? UI.focus : 'white');
-          ui.text(r.x + r.w - 4, y + 3, value, { align: 'right', color: w.changed?.() ? UI.accent : color });
+          ui.rect(kx - 1, track.y - 2, 3, 7, off ? 'slate' : focus ? UI.focus : 'white');
+          ui.text(r.x + r.w - 4, y + 3, value, { align: 'right', color: changed ? UI.accent : color });
         } else if (w.kind === 'toggle') {
           const on = w.get();
           ui.rect(cx, y + 2, 17, 9, 'ink');
           ui.rect(cx + 1, y + 3, 15, 7, on ? 'green' : 'night');
           ui.rect(on ? cx + 9 : cx + 1, y + 3, 7, 7, off ? 'slate' : focus ? UI.focus : 'white');
-          ui.text(cx + 22, y + 3, t(on ? 'menu.on' : 'menu.off'), { color: on ? UI.good : 'slate' });
+          const word = t(on ? 'menu.on' : 'menu.off');
+          ui.text(cx + 22, y + 3, word, { color: on ? UI.good : 'slate' });
+          // a meter in the rest of the row: what the microphone hears, a mark where a shout counts
+          const m = w.meter?.();
+          const mx = cx + 22 + ui.measure(word) + 6;
+          const mw = r.x + r.w - 5 - mx;
+          if (m && mw >= 16) {
+            const at = (u: number) => Math.round((mw - 2) * Math.min(1, Math.max(0, u)));
+            ui.rect(mx, y + 4, mw, 5, 'ink');
+            ui.rect(mx + 1, y + 6, mw - 2, 1, 'slate'); // its range, empty
+            ui.rect(mx + 1, y + 5, at(m.level), 3, m.lit ? UI.good : 'sky');
+            ui.rect(mx + 1 + at(m.mark), y + 2, 1, 9, m.lit ? UI.good : 'white');
+            this.rects.set(`${w.id}:meter`, { x: mx, y: y + 2, w: mw, h: 9 });
+          }
         } else if (w.kind === 'choice') {
           const label = w.options[w.get()] ?? '?';
           ui.text(cx, y + 3, '<', { color: focus ? UI.focus : 'slate' });
@@ -527,6 +550,7 @@ export class Menu implements Panel {
 
   private adjust(w: Widget, dir: 1 | -1): boolean {
     if (w.kind === 'slider') {
+      if (w.disabled) return true;
       w.set(w.step(w.get(), dir));
       this.o.onSound?.('move');
       return true;
@@ -535,6 +559,7 @@ export class Menu implements Panel {
       if (w.disabled) return true;
       w.set(!w.get());
       this.o.onSound?.('click');
+      this.refresh(); // the rows it shows or enables (Voice: Shout sensitivity) are right before the next input
       return true;
     }
     if (w.kind === 'choice') {
@@ -611,6 +636,7 @@ export class Menu implements Panel {
       this.focus = i;
       const t = this.rects.get(`${w.id}:track`);
       if (w.kind === 'slider' && t && inside(t, x, y)) {
+        if (w.disabled) return true;
         this.dragging = w.id;
         w.set(Math.min(1, Math.max(0, (x - t.x - 2) / (t.w - 4))));
         return true;
