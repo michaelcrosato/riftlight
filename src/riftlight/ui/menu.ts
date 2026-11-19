@@ -162,8 +162,14 @@ export class Menu implements Panel {
   /** The rows under the widgets for the footer, art pixels: room for the longest of it and every hint (so the menu never jumps as the focus moves). */
   private footH(width: number): number {
     const texts = [this.o.footer?.(), ...this.widgets.map((w) => (w as { hint?: string }).hint)].filter((x): x is string => !!x);
-    return 14 + Math.max(0, ...texts.map((x) => this.footLines(x, width - 2)).map((f) => (f.lines.length - 1) * (f.mini ? MINI_LINE : LABEL_LINE)));
+    // the layout asks often (`plan` tries row heights): wrapped again only when what it wraps changed
+    const key = `${width} ${this.narrow || this.tap > 0}\n${texts.join('\n')}`;
+    if (this.foot?.key !== key) this.foot = { key, h: 14 + Math.max(0, ...texts.map((x) => this.footLines(x, width - 2)).map((f) => (f.lines.length - 1) * (f.mini ? MINI_LINE : LABEL_LINE))) };
+    return this.foot.h;
   }
+
+  /** `footH`'s last answer and what it was for. */
+  private foot: { key: string; h: number } | null = null;
 
   /**
    * How the menu lays out in its room (`fit`), on a page with touch controls (`tap` > 0; elsewhere
