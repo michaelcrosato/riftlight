@@ -349,7 +349,9 @@ export async function runRiftlightCouch(h) {
  * the engine panel's Microphone row, and `openMicrophone` is never called though the game listens
  * (War Cry on the bar). Allowed: the engine opens it once, a stream from an OscillatorNode
  * (`createMediaStreamDestination`) the test turns loud, then quiet, and War Cry fires once, through
- * one recorded `VoiceShout`; the Voice setting turned off stops the stream's tracks.
+ * one recorded `VoiceShout`; the Voice setting turned off stops the stream's tracks. With a DualSense's
+ * speaker open, the portal from it is an echo: the microphone loud all through it presses nothing,
+ * and once it has ended (and `SHOUT.echoS` after) a shout presses once.
  * Frames: .scratch/e2e/riftlight-voice-*.png.
  */
 export async function runRiftlightVoice(h) {
@@ -481,6 +483,41 @@ export async function runRiftlightVoice(h) {
       return { tracks, open };
     });
     check(off.tracks.length > 0 && off.tracks.every((t) => t === 'ended') && !off.open, `the Voice setting off stops the stream's tracks (${off.tracks.join(', ')})`);
+
+    // a DualSense's speaker (52in1 opens it for the game): the portal from it, the microphone loud
+    // all through, is no shout; still loud once it has ended (and a moment after), a shout
+    const echo = await R(async () => {
+      const e = window.__PIXEL_ENGINE__;
+      const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+      const speaker = async (c) => {
+        const g = c.createGain();
+        g.connect(c.destination);
+        return g;
+      };
+      Object.assign(window.AIHubSettings, { dualsense: { connected: true, speaker: true, openSpeaker: speaker } });
+      window.AIHubSettings.dispatchEvent(new Event('change'));
+      for (let k = 0; k < 100 && !(e.audio.speakerRouted && e.microphone.level() !== null); k++) await wait(20);
+      const shouts = () => e.recording().frames.filter((f) => f.pressed?.includes('VoiceShout')).length;
+      const before = shouts();
+      window.__mic.gain.gain.value = 0.8;
+      e.audio.play('rl.portal', { bus: 'speaker' });
+      const t0 = performance.now(); // real time: how long the speaker kept the shout out
+      let echoes = 0;
+      let top = 0;
+      while (e.audio.speakerPlaying(0.3) && performance.now() - t0 < 5000) {
+        echoes += e.microphone.echo ? 1 : 0;
+        top = Math.max(top, e.microphone.level() ?? 0);
+        await wait(20);
+      }
+      const guarded = performance.now() - t0;
+      const during = shouts() - before;
+      await wait(600);
+      window.__mic.gain.gain.value = 0;
+      await wait(400);
+      return { routed: e.audio.speakerRouted, guarded, echoes, top, during, after: shouts() - before - during };
+    });
+    check(echo.routed && echo.echoes > 0 && echo.top > 0.2 && echo.guarded > 600, `the portal from the controller's speaker is an echo while it plays and 0.3 s after (${echo.guarded.toFixed(0)} ms, loud ${echo.top.toFixed(3)})`);
+    check(echo.during === 0 && echo.after === 1, `a shout heard through the controller's speaker presses nothing; still loud after it, one press (${echo.during} during, ${echo.after} after)`);
     checkClean(await state(page), logs, 'voice: ');
   } catch (e) {
     check(false, `riftlight voice crashed: ${e.message}\n    ${ctx?.logs.join('\n    ') ?? ''}`);

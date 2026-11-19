@@ -97,4 +97,7 @@ The `speaker` bus plays from a DualSense's speaker while the player allows it
 node in the game's AudioContext once audio unlocks. Until then, and without one (an opener that
 throws or gives no node too: audio still unlocks), the bus plays with the other sounds at the same
 volume (`audio.speakerRouted` says which). Use it for what
-belongs in the player's hands: a radio call, a reload, a ringing phone.
+belongs in the player's hands: a radio call, a reload, a ringing phone. `audio.speakerPlaying(tail)`
+says a sound plays from the controller's speaker (routed there), or ended less than `tail` seconds
+ago: the engine's microphone, beside it on a DualSense, counts no shout then (docs/engine/hub.md
+*Shouts*).

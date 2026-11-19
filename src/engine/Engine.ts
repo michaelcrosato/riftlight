@@ -20,7 +20,7 @@ import { Hud } from './hud/Hud';
 import { DualSense } from './hub/dualsense';
 import { Microphone } from './hub/microphone';
 import { HubSettings, type HubSettingsSource, hubPadInput, hubSettingsSource } from './hub/settings';
-import { Input, type InputDevice, type InputFrame, type SnapshotMemory } from './input';
+import { Input, type InputDevice, type InputFrame, SHOUT, type SnapshotMemory } from './input';
 import { clearScene } from './lifecycle';
 import { LoadingScreen } from './LoadingScreen';
 import { Particles } from './particles/Particles';
@@ -575,8 +575,12 @@ export class Engine {
     // a DualSense's motion and touchpad through 52in1, read only while the game asks for them
     if (this.hubSettings.present) this.input.dualsense = hubPadInput(this.hubSettings);
     // 52in1's microphone, open only while the game listens for shouts (`input.voice`) and its voice
-    // feature is on: a page's alone (headless, tests hand Input a `VoiceInput` of their own)
-    if (page && this.hubSettings.present) this.input.microphone = this.microphone = new Microphone(this.hubSettings, () => this.voiceOn, () => this.audio.context);
+    // feature is on: a page's alone (headless, tests hand Input a `VoiceInput` of their own). What it
+    // hears while the controller's speaker plays, and a moment after, is no shout (`SHOUT.echoS`)
+    if (page && this.hubSettings.present) {
+      const speaker = () => this.audio.speakerPlaying(SHOUT.echoS);
+      this.input.microphone = this.microphone = new Microphone(this.hubSettings, () => this.voiceOn, () => this.audio.context, speaker);
+    }
     if (options.settings?.motion) {
       // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).
       // While it is on, Input reads the gyro on every poll: 52in1's own Motion aim leaves the stick

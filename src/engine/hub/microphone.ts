@@ -34,17 +34,28 @@ export class Microphone implements VoiceInput {
 
   /**
    * `hub`: the player's 52in1 settings (`engine.hubSettings`); `allowed`: the game's voice feature
-   * is on (`engine.voiceOn`); `context`: the engine's AudioContext, or null before the first input.
+   * is on (`engine.voiceOn`); `context`: the engine's AudioContext, or null before the first input;
+   * `speaker`: a sound plays from the controller's speaker, or did a moment ago (the engine's
+   * `audio.speakerPlaying(SHOUT.echoS)`).
    */
   constructor(
     private readonly hub: Pick<HubSettings, 'micMuted' | 'openMicrophone'>,
     private readonly allowed: () => boolean,
     private readonly context: () => AudioContext | null,
+    private readonly speaker: () => boolean = () => false,
   ) {}
 
   /** The player lets the game hear them now: its voice feature on and the microphone not muted. */
   get on(): boolean {
     return this.allowed() && !this.hub.micMuted;
+  }
+
+  /**
+   * It may hear the game's own sound now: the controller's speaker plays beside a DualSense's
+   * microphone (52in1 gives that one when the controller is plugged in), so Input counts no shout.
+   */
+  get echo(): boolean {
+    return this.speaker();
   }
 
   /** A stream is open (tools and tests). */

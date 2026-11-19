@@ -659,10 +659,13 @@ describe('a shout into the microphone (input.voice)', () => {
   /** An Input hearing a microphone the test sets the loudness of; `frame` polls it once and says whether it pressed `VoiceShout`. */
   function mic() {
     const input = new Input(null);
-    const heard = { level: 0 as number | null, on: true, reads: 0, listening: [] as boolean[] };
+    const heard = { level: 0 as number | null, on: true, echo: false, reads: 0, listening: [] as boolean[] };
     input.microphone = {
       get on() {
         return heard.on;
+      },
+      get echo() {
+        return heard.echo;
       },
       level: () => (heard.reads++, heard.level),
       listen: (on) => void heard.listening.push(on),
@@ -732,6 +735,28 @@ describe('a shout into the microphone (input.voice)', () => {
     hold(LOUD, dt);
     heard.on = true;
     expect(hold(LOUD, SHOUT.holdS - 2 * dt), 'the rest of it, unmuted').toBe(0);
+  });
+
+  it('while the game’s own sound may reach the microphone (`echo`: the controller’s speaker playing beside it), nothing it hears makes a shout, and a shout held through it presses once', () => {
+    const { heard, hold } = mic();
+    heard.echo = true;
+    expect(hold(LOUD, 1), 'loud all through the speaker’s sound').toBe(0);
+    heard.echo = false;
+    expect(hold(LOUD, SHOUT.holdS - 2 * dt), 'still loud after it: a shout counts from the end of it').toBe(0);
+    expect(hold(LOUD, 2 * dt), 'loud for holdS after it').toBe(1);
+    // a shout half done when the speaker starts is not finished by it
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2), 'half a shout').toBe(0);
+    heard.echo = true;
+    expect(hold(LOUD, 0.5), 'the speaker plays').toBe(0);
+    heard.echo = false;
+    expect(hold(0, SHOUT.quietS), 'quiet after').toBe(0);
+    // a shout that pressed, held on through the speaker's sound: still the one press
+    expect(hold(LOUD, 0.5), 'a shout').toBe(1);
+    heard.echo = true;
+    expect(hold(LOUD, 0.5) + hold(0, SHOUT.quietS - 3 * dt), 'held on through the speaker, a breath under it').toBe(0);
+    heard.echo = false;
+    expect(hold(LOUD, 0.5), 'still the same shout').toBe(0);
+    expect(hold(0, SHOUT.quietS) + hold(LOUD, 0.5), 'the next one').toBe(1);
   });
 
   it('a shout completed in a frame that never runs (paused, loading) presses nothing, then or after', () => {

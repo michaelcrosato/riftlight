@@ -37,13 +37,15 @@ function world(o: { mic?: boolean; muted?: boolean; context?: boolean } = {}) {
   };
   const context = { createAnalyser: () => analyser, createMediaStreamSource: (s: MediaStream) => ({ connect: (n: unknown) => connected.push([s, n]), disconnect: () => connected.pop() }) } as unknown as AudioContext;
   const ctx = { now: o.context === false ? null : context };
-  const mic = new Microphone(hub, () => hub.micAllowed && heard.on, () => ctx.now);
+  /** The controller's speaker plays (a sound on the `speaker` bus, or its tail). */
+  const speaker = { playing: false };
+  const mic = new Microphone(hub, () => hub.micAllowed && heard.on, () => ctx.now, () => speaker.playing);
   /** The hub changes a setting (the player, in 52in1's Settings; the DualSense's mute button). */
   const change = (patch: { mic?: boolean; muted?: boolean }) => {
     Object.assign(source, patch);
     source.dispatchEvent(new Event('change'));
   };
-  return { mic, source, streams, heard, ctx, context, change, connected };
+  return { mic, source, streams, heard, ctx, context, change, connected, speaker };
 }
 
 /** Let the hub's answer arrive. */
@@ -187,6 +189,33 @@ describe('Microphone (52in1’s, for shouts)', () => {
     for (let k = 0; k < 5; k++) frame();
     await settle();
     expect(w.source.openMicrophone, 'never asked during it').toHaveBeenCalledTimes(1);
+  });
+
+  it('while the controller’s speaker plays (and a tail after) it is an echo: a shout through it presses nothing then', async () => {
+    const w = world();
+    const input = new Input(null);
+    input.microphone = w.mic;
+    input.voice = true;
+    input.setGamepads([]);
+    let t = 0;
+    const frames = (n: number) => {
+      let presses = 0;
+      for (let k = 0; k < n; k++) {
+        t += 1 / 60;
+        input.beginFrame(t, 1 / 60);
+        presses += input.wasPressed(VOICE_KEYS.shout) ? 1 : 0;
+        input.endFrame();
+      }
+      return presses;
+    };
+    frames(1);
+    await settle();
+    expect(w.mic.echo).toBe(false);
+    w.speaker.playing = true; // the portal from the DualSense's speaker, beside its microphone
+    w.heard.loud = 0.5;
+    expect([w.mic.echo, frames(60)], 'the speaker heard: no shout').toEqual([true, 0]);
+    w.speaker.playing = false;
+    expect([w.mic.echo, frames(30)], 'the player still shouting after it').toEqual([false, 1]);
   });
 
   it('headless, the engine makes none, even with 52in1’s settings allowing the microphone', async () => {

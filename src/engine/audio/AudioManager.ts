@@ -84,6 +84,8 @@ export const audioStorageKey = (key: string): string => `pixel-engine:audio:${ke
 const SHARED_KEY = 'pixel-engine:audio';
 const DEFAULTS: AudioSettings = { master: 0.8, sfx: 1, music: 0.6, muted: false };
 const LOOKAHEAD = 0.25; // seconds of music scheduled ahead of the audio clock
+/** Seconds a stopped loop fades out over before its source stops (no click). */
+const LOOP_FADE_S = 0.08;
 // Events that count as a user activation somewhere (iOS Safari: touchend / click, not
 // pointerdown on touch). Listeners stay until the context actually runs.
 const UNLOCK_EVENTS = ['pointerdown', 'pointerup', 'mousedown', 'touchend', 'click', 'keydown'] as const;
@@ -113,6 +115,8 @@ export class AudioManager {
   private speakerNode: AudioNode | null = null;
   private speakerOpen: ((context: AudioContext) => Promise<AudioNode | null>) | null = null;
   private speakerToken = 0;
+  /** When the sounds played on the `speaker` bus so far end, a stopped loop's fade too (the AudioContext's clock). */
+  private speakerUntil = 0;
   private readonly settings: AudioSettings;
   private readonly hub: HubVolumes = { music: 1, effects: 1 };
   private readonly buffers = new WeakMap<SoundDef, AudioBuffer>();
@@ -263,6 +267,8 @@ export class AudioManager {
     } else buffer = this.bufferFor(sound);
     if (!buffer) return false;
     this.start(buffer, bus, ctx.currentTime, options);
+    // how long it sounds (its pitch plays it faster or slower): `speakerPlaying`
+    if (options.bus === 'speaker') this.speakerUntil = Math.max(this.speakerUntil, ctx.currentTime + buffer.length / ctx.sampleRate / Math.pow(2, (options.pitch ?? 0) / 12));
     return true;
   }
 
@@ -319,9 +325,10 @@ export class AudioManager {
     src.start();
   }
 
-  /** @internal */
+  /** @internal A voice stopped (its nodes still set while it fades). */
   forgetVoice(voice: LoopVoice): void {
     this.voices.delete(voice);
+    if (voice.bus === 'speaker' && voice.nodes && this.context) this.speakerUntil = Math.max(this.speakerUntil, this.context.currentTime + LOOP_FADE_S);
   }
 
   /** @internal */
@@ -434,6 +441,20 @@ export class AudioManager {
   /** The `speaker` bus plays from the controller's speaker now (else with the other sounds). */
   get speakerRouted(): boolean {
     return this.speakerNode !== null;
+  }
+
+  /**
+   * A sound plays from the controller's speaker now (the `speaker` bus routed there,
+   * `speakerRouted`: a sound played on it, a loop on it), or ended less than `tail` seconds ago, by
+   * the AudioContext's clock. A DualSense's microphone sits beside its speaker: the engine's
+   * microphone counts no shout then (`SHOUT.echoS`). False while the bus plays with the other
+   * sounds, and with no Web Audio.
+   */
+  speakerPlaying(tail = 0): boolean {
+    const ctx = this.context;
+    if (!ctx || !this.speakerNode) return false;
+    for (const v of this.voices) if (v.bus === 'speaker' && v.nodes) return true;
+    return ctx.currentTime < this.speakerUntil + tail;
   }
 
   /** The default volumes, sound on (the settings panel's Reset). */
@@ -645,7 +666,7 @@ class LoopVoice implements Voice {
     try {
       const t = ctx?.currentTime ?? 0;
       n.gain.gain.setTargetAtTime(0, t, 0.015);
-      n.src.stop(t + 0.08);
+      n.src.stop(t + LOOP_FADE_S);
     } catch {
       n.src.onended(new Event('ended')); // already stopped, or the context is gone
     }

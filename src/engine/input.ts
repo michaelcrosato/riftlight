@@ -159,9 +159,11 @@ export const VOICE_KEYS = { shout: 'VoiceShout' } as const;
  * A shout (`shoutStep`), by the microphone's loudness (RMS, 0..1): `loud` or more for `holdS`
  * seconds presses once; nothing more until it has stayed under `quiet` for `quietS` seconds, so a
  * shout held on (or a pause between its words) never presses again. Between `quiet` and `loud` a
- * shout neither grows nor ends.
+ * shout neither grows nor ends. While a sound plays from the controller's speaker, and for `echoS`
+ * seconds after, nothing heard makes a shout (`VoiceInput.echo`). Tuned on a test tone, not yet on
+ * a DualSense (docs/engine/hub.md *Shouts*).
  */
-export const SHOUT = { loud: 0.2, quiet: 0.06, holdS: 0.15, quietS: 0.25 } as const;
+export const SHOUT = { loud: 0.2, quiet: 0.06, holdS: 0.15, quietS: 0.25, echoS: 0.3 } as const;
 
 /** Where a shout stands (`shoutStep`): plain data. */
 export interface ShoutState {
@@ -197,6 +199,12 @@ export interface VoiceInput {
   readonly on: boolean;
   /** How loud it is now (the RMS of the last few hundredths of a second, 0..1), or null while nothing is heard. */
   level(): number | null;
+  /**
+   * The game's own sound may be what it hears now (the engine's: a sound from the DualSense's
+   * speaker, beside its microphone, or `SHOUT.echoS` after one): no shout grows then, and one
+   * already pressed stays pressed until quiet.
+   */
+  readonly echo?: boolean;
   /** Input says on every poll whether the game listens (`voice`, not a replay): the engine's microphone is open only while it does and `on` holds. */
   listen?(listening: boolean): void;
 }
@@ -1723,7 +1731,8 @@ export class Input {
 
   /**
    * One poll of the microphone (`voice`): a shout presses `VoiceShout` (`shoutStep`), in a frame
-   * that runs (one completed while paused presses nothing, then or later). Never during a replay:
+   * that runs (one completed while paused presses nothing, then or later), never from an echo of the
+   * game's own sound (`VoiceInput.echo`). Never during a replay:
    * the microphone is told the game stops listening, and the recording presses what it pressed.
    */
   private pollVoice(dt: number, runs: boolean): void {
@@ -1733,6 +1742,11 @@ export class Input {
     const level = listening && mic?.on ? mic.level() : null;
     if (level === null || !Number.isFinite(level)) {
       Object.assign(this.shout, { loud: 0, quiet: 0, fired: false });
+      return;
+    }
+    // the game's own sound may be what it hears: a shout counts from after it (one pressed stays pressed)
+    if (mic?.echo) {
+      this.shout.loud = 0;
       return;
     }
     if (shoutStep(this.shout, level, dt) && runs) this.press(VOICE_KEYS.shout);
