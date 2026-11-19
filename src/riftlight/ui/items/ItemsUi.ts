@@ -1209,12 +1209,13 @@ export class ItemsUi {
       }
     }
     // the right stick scrolls a pad's or a mouse's tooltip taller than the screen (tilted down: its
-    // last lines come up), the wheel too standalone (hosted: the shell's `wheel` events, `handle`);
-    // both recorded input (`look`, `wheel`), so a replay scrolls the same
+    // last lines come up), the wheel too standalone (hosted: the shell's `wheel` events, `handle`),
+    // its tick then the tooltip's alone (the camera's zoom reads it after); both recorded input
+    // (`look`, `wheel`), so a replay scrolls the same
     // (a tooltip shows from its top each time: the focus or the mouse left the item it scrolled)
     if (this.tipRead.key && this.tipRead.key !== this.cursorTipAt()?.key) this.tipRead = { key: '', scroll: 0 };
     if (this.isOpen && input.lookAxis.y) this.scrollTip(-input.lookAxis.y * TIP_STICK * dt);
-    if (this.isOpen && !this.opts.hosted && input.wheel) this.scrollTip(input.wheel * TIP_WHEEL);
+    if (this.isOpen && !this.opts.hosted && input.wheel && this.scrollTip(input.wheel * TIP_WHEEL)) input.wheel = 0;
     // a finger let go where these windows didn't hear it (another panel over them): no long-press
     if (this.downAt?.touch && !input.isDown('Touch')) this.downAt = null;
     const d = this.downAt;

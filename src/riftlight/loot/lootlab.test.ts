@@ -251,6 +251,57 @@ describe('the Loot Lab', () => {
   });
 });
 
+describe('the Loot Lab’s wheel over a tooltip taller than the screen', () => {
+  it(
+    'scrolls the tooltip, and the camera keeps its zoom (the wheel is the tooltip’s there)',
+    async () => {
+      const lab = new LootLab();
+      const e = await headlessGame(lab, { viewport: { width: 1280, height: 720, dpr: 1 } });
+      try {
+        e.step(2);
+        const press = (code: string) => {
+          e.input.setKey(code, true);
+          e.step(1);
+          e.input.setKey(code, false);
+          e.step(1);
+        };
+        press('KeyI');
+        press('KeyU'); // the smith's wares beside the bag
+        expect(lab.vendor.isOpen() && lab.inventory.isOpen(), 'the vendor and the bag open').toBe(true);
+        // her tallest tooltip under the mouse (a rare's: its stats, the price, the comparison, the hint)
+        const over = (uid: string) => {
+          const at = lab.ui.itemCenter(uid)!;
+          pointAtArt(e, at.x, at.y);
+          e.step(1);
+          return lab.ui.cursorTip()?.max ?? 0;
+        };
+        const tall = lab.store.vendor.stock.reduce((a, b) => (over(b.uid) > over(a.uid) ? b : a));
+        expect(over(tall.uid), 'a tooltip taller than the screen').toBeGreaterThan(0);
+        expect(lab.ui.cursorMode).toBe('pointer');
+        const zoom = e.camera.zoom;
+        expect(lab.ui.cursorTip()!.scroll, 'from its top').toBe(0);
+        e.input.addPointer(0, 0, 1); // a tick of the wheel, down
+        e.step(1);
+        expect(lab.ui.cursorTip()!.scroll, 'the wheel scrolls the tooltip').toBeGreaterThan(0);
+        expect(e.camera.zoom, 'and leaves the camera’s zoom alone').toBe(zoom);
+        // away from the windows the wheel is the camera's again
+        const { width } = e.renderer.resolution;
+        const free = Array.from({ length: width }, (_, x) => x).find((x) => !lab.ui.hit(x, 4));
+        expect(free, 'a column clear of the windows').toBeDefined();
+        pointAtArt(e, free!, 4);
+        e.step(1);
+        e.input.addPointer(0, 0, 1);
+        e.step(1);
+        expect(e.camera.zoom, 'the wheel off the tooltip zooms the camera').not.toBe(zoom);
+        expect(e.errors).toEqual([]);
+      } finally {
+        e.dispose();
+      }
+    },
+    T,
+  );
+});
+
 describe('the Loot Lab at every window shape', () => {
   // fill, the engine's default, gives the art the window's shape: 960×720 (the hub's cover) is
   // 320 art columns, a phone in portrait 130; its two lines of status and keys wrap to the width
