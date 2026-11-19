@@ -13,7 +13,7 @@ import { type Control, controlGlyph, type Glyph, type LineSource } from '../cont
 import type { Engine } from '../Engine';
 import type { Input } from '../input';
 import { LOOK_PRESETS, lookPresetLabel } from '../render/look';
-import { FPS_OPTIONS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS } from '../settings';
+import { FPS_OPTIONS, MOTION_SENSITIVITY, PAD_GLYPHS, PIXEL_SIZES, QUALITY_OPTIONS, VOICE_SENSITIVITY } from '../settings';
 import { FocusList, MenuInput } from './menu';
 
 /** The settings screen's words, by line id (English). A game translates one by having a line of the same id. */
@@ -48,6 +48,7 @@ export const SETTINGS_LINES = {
   'settings.voice.allow': '52in1 allows the microphone in its Settings, under Sound.',
   'settings.voice.later': 'Open the game again to use the microphone.',
   'settings.voice.hub': 'The microphone needs 52in1.',
+  'settings.voice_sensitivity': 'Shout sensitivity',
   'settings.pad_glyphs': 'Button prompts',
   'settings.pad_glyphs.playstation': 'PlayStation',
   'settings.pad_glyphs.xbox': 'Xbox',
@@ -69,7 +70,7 @@ export type SettingsPage = (typeof SETTINGS_PAGES)[number];
 
 /** The rows a game adds to the standard ones (`EngineOptions.settings`). */
 export interface SettingsFeatures {
-  /** A voice feature: a Microphone row (on only while 52in1 allows games the microphone). */
+  /** A voice feature: Microphone and Shout sensitivity rows (on only while 52in1 allows games the microphone). */
   readonly voice?: boolean;
   /** Motion aim: Motion aim and Motion sensitivity rows (a DualSense's motion through 52in1, `input.motion`). */
   readonly motion?: boolean;
@@ -368,8 +369,12 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
   const fpsValues = () => (FPS_OPTIONS.includes(e.maxFps) ? FPS_OPTIONS : [e.maxFps, ...FPS_OPTIONS]);
   const hub = e.hubSettings;
   const motionAllowed = () => hub.values.dualsense.motion;
-  const m = MOTION_SENSITIVITY;
-  const sensitivities = Array.from({ length: Math.round((m.max - m.min) / m.step) + 1 }, (_, i) => m.min + i * m.step);
+  /** A sensitivity's steps, its range's ends included. */
+  const steps = (m: { readonly min: number; readonly max: number; readonly step: number }) => Array.from({ length: Math.round((m.max - m.min) / m.step) + 1 }, (_, i) => m.min + i * m.step);
+  const sensitivities = steps(MOTION_SENSITIVITY);
+  const shouts = steps(VOICE_SENSITIVITY);
+  const percentOf = (v: number) => `${Math.round(v * 100)}%`;
+  const voiceNote = () => t(!hub.present ? 'settings.voice.hub' : hub.micLater ? 'settings.voice.later' : 'settings.voice.allow');
   return [
     choice('look', 'picture', 'settings.look', () => looks, () => s.values.look ?? '', (look) => s.set({ look: look || undefined }), lookName, {
       enabled: () => e.renderer.mode === 'pixel', // a look is drawn by the pixel pass: smooth 3D shows none
@@ -388,7 +393,14 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
     toggle('voice', 'sound', 'settings.voice', () => e.voiceOn, (on) => s.set({ voice: on }), {
       shown: () => features.voice === true,
       enabled: () => hub.micAllowed,
-      note: () => t(!hub.present ? 'settings.voice.hub' : hub.micLater ? 'settings.voice.later' : 'settings.voice.allow'),
+      note: voiceNote,
+    }),
+    // how easily a shout counts (`input.shoutSensitivity`), beside the microphone it is heard by
+    choice('voiceSensitivity', 'sound', 'settings.voice_sensitivity', () => shouts, () => nearest(shouts, s.values.voiceSensitivity ?? 1), (voiceSensitivity) => s.set({ voiceSensitivity }), percentOf, {
+      round: false,
+      shown: () => features.voice === true,
+      enabled: () => hub.micAllowed && e.voiceOn,
+      note: () => (hub.micAllowed ? '' : voiceNote()), // the microphone off: nothing to say
     }),
     choice('padGlyphs', 'controls', 'settings.pad_glyphs', () => PAD_GLYPHS, () => s.values.padGlyphs ?? 'playstation', (padGlyphs) => s.set({ padGlyphs }), (g) => t(`settings.pad_glyphs.${g}`)),
     percent('vibration', 'controls', 'settings.vibration', () => s.values.vibration ?? 1, (vibration) => {
@@ -400,7 +412,7 @@ function rowDefs(e: Engine, features: SettingsFeatures, t: (id: SettingsLineId) 
       enabled: motionAllowed,
       note: () => t('settings.motion.none'),
     }),
-    choice('motionSensitivity', 'controls', 'settings.motion_sensitivity', () => sensitivities, () => nearest(sensitivities, s.values.motionSensitivity ?? 1), (motionSensitivity) => s.set({ motionSensitivity }), (v) => `${Math.round(v * 100)}%`, {
+    choice('motionSensitivity', 'controls', 'settings.motion_sensitivity', () => sensitivities, () => nearest(sensitivities, s.values.motionSensitivity ?? 1), (motionSensitivity) => s.set({ motionSensitivity }), percentOf, {
       round: false,
       shown: () => features.motion === true,
       enabled: () => motionAllowed() && e.motionOn,

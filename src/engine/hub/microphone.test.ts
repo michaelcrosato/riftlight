@@ -6,7 +6,7 @@
 import { Vector3 } from 'three/webgpu';
 import { describe, expect, it, vi } from 'vitest';
 import { Engine } from '../Engine';
-import { Input, VOICE_KEYS } from '../input';
+import { Input, SHOUT, VOICE_KEYS } from '../input';
 import { Microphone } from './microphone';
 import { HubSettings } from './settings';
 
@@ -50,6 +50,8 @@ function world(o: { mic?: boolean; muted?: boolean; context?: boolean } = {}) {
 
 /** Let the hub's answer arrive. */
 const settle = () => new Promise((r) => setTimeout(r, 0));
+/** Polls (at 60 a second) a stream's first `SHOUT.learnS` takes: the room's floor learnt, nothing pressed. */
+const LEARN = Math.round(SHOUT.learnS * 60);
 
 describe('Microphone (52in1’s, for shouts)', () => {
   it('opens through the hub once while the game listens, and hears the stream’s loudness (RMS)', async () => {
@@ -181,6 +183,7 @@ describe('Microphone (52in1’s, for shouts)', () => {
     };
     frame();
     await settle();
+    expect(Array.from({ length: LEARN }, frame).filter(Boolean), 'a quiet room, learnt').toHaveLength(0);
     w.heard.loud = 0.5;
     expect(Array.from({ length: 30 }, frame).filter(Boolean)).toHaveLength(1);
     input.playing = true;
@@ -210,7 +213,7 @@ describe('Microphone (52in1’s, for shouts)', () => {
     };
     frames(1);
     await settle();
-    expect(w.mic.echo).toBe(false);
+    expect([w.mic.echo, frames(LEARN)], 'a quiet room, learnt').toEqual([false, 0]);
     w.speaker.playing = true; // the portal from the DualSense's speaker, beside its microphone
     w.heard.loud = 0.5;
     expect([w.mic.echo, frames(60)], 'the speaker heard: no shout').toEqual([true, 0]);

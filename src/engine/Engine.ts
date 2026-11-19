@@ -253,7 +253,8 @@ export interface EngineOptions {
    * (`engine.settings.open()`). `padButton`: Options (Esc on the keyboard) opens and closes it, for
    * a game with no pause menu of its own (default false: a game's Options is its own); Options acts as
    * it is let go, never when Create joined it (`HOST_CHORD`, 52in1's bar). `voice`: the
-   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`). `motion`: the game
+   * game has a voice feature, and the panel a Microphone row (`engine.voiceOn`) and Shout
+   * sensitivity (`input.shoutSensitivity` follows it). `motion`: the game
    * aims by a DualSense's motion (`input.motion`), and the panel has Motion aim and its sensitivity
    * (`engine.motionOn`). `key`: where they are saved (localStorage `pixel-engine:settings:<key>`, the
    * volumes `pixel-engine:audio:<key>`; default the first game's name), false: nowhere.
@@ -580,6 +581,12 @@ export class Engine {
     if (page && this.hubSettings.present) {
       const speaker = () => this.audio.speakerPlaying(SHOUT.echoS);
       this.input.microphone = this.microphone = new Microphone(this.hubSettings, () => this.voiceOn, () => this.audio.context, speaker);
+    }
+    if (options.settings?.voice) {
+      // how easily a shout counts follows the player's Shout sensitivity (beside the Microphone row)
+      const shout = () => (this.input.shoutSensitivity = this.settings.values.voiceSensitivity ?? 1);
+      shout();
+      this.settings.onChange(shout);
     }
     if (options.settings?.motion) {
       // Motion aim follows the player's setting (on by default while 52in1's own Motion aim is).

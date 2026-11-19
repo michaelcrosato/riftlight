@@ -6,7 +6,7 @@ import { installLanguage, riftlightLines, t } from '../lang';
 import { skillName } from '../lang/skills';
 import { riftlightTranslations } from '../lang/translations';
 import { SHOUT_SKILL } from '../game/controls';
-import { NORMAL } from '../game/difficulty';
+import { DIFFICULTY_KEYS, NORMAL } from '../game/difficulty';
 import { miniCovers, type Rect, UiCanvas } from './kit';
 import { type OpenOptions, UiLayer } from './layer';
 import { LEGEND_ROOM } from './legend';
@@ -115,9 +115,11 @@ describe("the settings' engine page", () => {
     const dualsense = { motion: false };
     /** 52in1's microphone: in 52in1 at all, allowed to games, allowed since the game opened. */
     const mic = { present: true, micAllowed: false, micLater: false };
+    /** What the engine's microphone hears (`input.shoutMeter`): null, nothing. */
+    const heard = { meter: null as { level: number; loud: number; shouted: boolean } | null };
     const engine = {
       settings: { values: chosen, set: (p: PlayerSettings) => Object.assign(chosen, p) },
-      input: { rumble: (r: unknown) => rumbles.push(r) },
+      input: { rumble: (r: unknown) => rumbles.push(r), get shoutMeter() { return heard.meter; } },
       hubSettings: Object.assign(mic, { values: { dualsense } }),
       get motionOn() { return dualsense.motion && chosen.motion !== false; },
       get voiceOn() { return mic.micAllowed && chosen.voice !== false; },
@@ -125,9 +127,9 @@ describe("the settings' engine page", () => {
       get maxFps() { return chosen.fps ?? 60; },
       get debugShown() { return chosen.debugInfo ?? false; },
     };
-    return { chosen, audio, rumbles, dualsense, mic, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
+    return { chosen, audio, rumbles, dualsense, mic, heard, h: host({ engine, audio, settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 } }) };
   };
-  type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void; hint?: string; disabled?: boolean };
+  type Row = { id: string; kind: string; get?: () => unknown; set?: (v: never) => void; hint?: string; disabled?: boolean; step?: (u: number, d: 1 | -1) => number; format?: () => string };
   const row = (menu: { items(): readonly unknown[] }, id: string) => menu.items().find((w) => (w as Row).id === id) as Row;
 
   it("the settings open the controller's page: button prompts (PlayStation or Xbox) and vibration, the engine's own settings", () => {
@@ -140,7 +142,7 @@ describe("the settings' engine page", () => {
     const menu = opened as unknown as ReturnType<typeof controllerMenu>;
     expect(menu.id).toBe('controller');
     const ids = menu.items().map((w) => (w as Row).id);
-    expect(ids).toEqual(['padGlyphs', 'vibration', 'voice']);
+    expect(ids).toEqual(['padGlyphs', 'vibration', 'voice', 'voiceSensitivity']);
     expect(ids).not.toContain('glyphs'); // prompts follow the device used last by themselves
     expect(row(menu, 'padGlyphs').get!()).toBe(0); // PlayStation unless chosen
     row(menu, 'padGlyphs').set!(1 as never);
@@ -156,7 +158,7 @@ describe("the settings' engine page", () => {
     const ids = () => menu().items().map((w) => (w as Row).id);
     expect(ids()).not.toContain('motion');
     dualsense.motion = true;
-    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice']);
+    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice', 'voiceSensitivity']);
     expect(row(menu(), 'motion').get!()).toBe(true); // on by default (the engine's motionOn)
     row(menu(), 'motion').set!(false as never);
     expect([chosen.motion, row(menu(), 'motion').get!()]).toEqual([false, false]);
@@ -190,13 +192,132 @@ describe("the settings' engine page", () => {
     expect([chosen.voice, voice().get!()]).toEqual([true, true]);
   });
 
+  it('Shout sensitivity, under Voice, is dimmed with 52in1’s line and doesn’t move until 52in1 allows the microphone; then 50% to 300% in steps of 50%, the engine’s voiceSensitivity', () => {
+    const { chosen, mic, h } = engineHost();
+    const menu = () => controllerMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    const s = () => row(menu(), 'voiceSensitivity');
+    const seen = () => [s().get!(), s().format!(), s().disabled, s().hint];
+    expect(seen(), 'not allowed: where 52in1 allows it').toEqual([0.2, '100%', true, t('menu.settings.voice.allow')]);
+    s().set!(1 as never);
+    const m = menu();
+    m.focusId('voiceSensitivity');
+    m.input({ kind: 'nav', dir: 'right' });
+    expect([chosen.voiceSensitivity, s().format!()], 'it doesn’t move').toEqual([undefined, '100%']);
+    mic.micLater = true;
+    expect(seen(), 'allowed since the game opened: open it again').toEqual([0.2, '100%', true, t('menu.settings.voice.later')]);
+    Object.assign(mic, { micLater: false, micAllowed: true });
+    expect(seen(), 'allowed: its hint').toEqual([0.2, '100%', false, t('menu.settings.voice_sensitivity.hint')]);
+    s().set!(s().step!(s().get!() as number, 1) as never);
+    expect(chosen.voiceSensitivity).toBe(1.5);
+    s().set!(1 as never);
+    expect([chosen.voiceSensitivity, s().format!()]).toEqual([3, '300%']);
+    s().set!(s().step!(1, 1) as never); // past the end: held to it
+    expect(chosen.voiceSensitivity).toBe(3);
+    s().set!(0 as never);
+    expect(chosen.voiceSensitivity).toBe(0.5);
+    s().set!(0.45 as never); // a drag: in its steps (0.5 + 0.45 × 2.5 = 1.625)
+    expect(chosen.voiceSensitivity).toBe(1.5);
+  });
+
+  it('Shout sensitivity is dimmed while Voice is off, as on the engine’s panel, with a hint to turn Voice on; turned on in the same menu, it moves at once', () => {
+    const { chosen, mic, h } = engineHost();
+    Object.assign(mic, { micAllowed: true });
+    chosen.voice = false;
+    const menu = controllerMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    const s = () => row(menu, 'voiceSensitivity');
+    expect([s().disabled, s().hint], 'Voice off').toEqual([true, t('menu.settings.voice_sensitivity.off')]);
+    menu.focusId('voiceSensitivity');
+    menu.input({ kind: 'nav', dir: 'right' });
+    s().set!(1 as never);
+    expect(chosen.voiceSensitivity, 'it doesn’t move').toBeUndefined();
+    // Voice turned on from the menu, then straight down and right: no frame drawn between
+    menu.focusId('voice');
+    menu.input({ kind: 'nav', dir: 'right' });
+    menu.input({ kind: 'nav', dir: 'down' });
+    menu.input({ kind: 'nav', dir: 'right' });
+    expect([chosen.voice, chosen.voiceSensitivity, s().disabled, s().hint]).toEqual([true, 1.5, false, t('menu.settings.voice_sensitivity.hint')]);
+  });
+
+  it('the Voice row’s meter: none while nothing is heard; the level against a mark where a shout counts, lit once a shout has counted', () => {
+    const { mic, heard, h } = engineHost();
+    Object.assign(mic, { micAllowed: true });
+    const menu = controllerMenu({ ...(h as object), openMenu: () => {}, applySettings: () => {} } as never);
+    /** The menu drawn: the meter's rect, and the rects drawn inside it (x, w, colour). */
+    const draw = () => {
+      const rects: { x: number; y: number; w: number; h: number; c: string }[] = [];
+      const hud = { width: 480, height: 270, rect: (x: number, y: number, w: number, hh: number, c: string) => rects.push({ x, y, w, h: hh, c }), sprite() {}, text() {}, measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+      menu.refresh();
+      menu.draw(new UiCanvas(hud as never), { x: 0, y: 0, ...menu.size });
+      const at = menu.rects.get('voice:meter');
+      return { at, inside: at ? rects.filter((r) => r.x >= at.x && r.x + r.w <= at.x + at.w && r.y >= at.y && r.y + r.h <= at.y + at.h) : [] };
+    };
+    expect(draw().at, 'nothing heard').toBeUndefined();
+    heard.meter = { level: 0.1, loud: 0.2, shouted: false };
+    const half = draw();
+    expect(half.at, 'heard: a meter in the rest of the row').toBeDefined();
+    const [frame, range, fill, mark] = half.inside;
+    const inner = half.at!.w - 2;
+    expect([frame!.w, range!.w, range!.c, fill!.w, mark!.x - half.at!.x - 1, fill!.c, mark!.c], 'half a shout: filled to half its mark').toEqual([half.at!.w, inner, 'slate', Math.round(inner / 3), Math.round((inner * 2) / 3), 'sky', 'white']);
+    heard.meter = { level: 0.5, loud: 0.2, shouted: true };
+    const [, , full, lit] = draw().inside;
+    expect([full!.w, full!.c, lit!.c], 'a shout counted: full, lit').toEqual([inner, 'lime', 'lime']);
+  });
+
+  it('a slider draws its default’s mark where its default sits (`mark`), and none without one', () => {
+    /** Where the slider's 1-pixel marks are drawn, as 0..1 along its track. */
+    const marks = (mark?: number) => {
+      const menu = new Menu([{ kind: 'slider', id: 's', label: 'Shout', get: () => 0.6, set: () => {}, step: (u) => u, format: () => '', mark }], { id: 'm', title: '', width: 240, labelWidth: 104 });
+      const rects: { x: number; y: number; w: number; h: number }[] = [];
+      const hud = { width: 480, height: 270, rect: (x: number, y: number, w: number, hh: number) => rects.push({ x, y, w, h: hh }), sprite() {}, text() {}, measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+      menu.draw(new UiCanvas(hud as never), { x: 0, y: 0, ...menu.size });
+      const t = menu.rects.get('s:track')!;
+      const track = { x: t.x + 2, w: t.w - 4 };
+      return rects.filter((r) => r.w === 1 && r.h === 5).map((r) => Math.round(((r.x - track.x) / track.w) * 100) / 100);
+    };
+    expect([marks(0.2), marks(1), marks(undefined)]).toEqual([[0.2], [1], []]);
+  });
+
+  it('every slider of the settings, the Controller page and the tuning page sits on its mark at its default', () => {
+    const { dualsense, mic, h } = engineHost();
+    Object.assign(mic, { micAllowed: true });
+    dualsense.motion = true;
+    const host = { ...(h as object), openMenu: () => {}, applySettings: () => {}, difficulty: () => ({ ...NORMAL }), setDifficulty: () => {} } as never;
+    const sliders = [settingsMenu(host), controllerMenu(host), tuningMenu(host)].flatMap((m) => m.items().filter((w): w is Extract<Widget, { kind: 'slider' }> => w.kind === 'slider'));
+    const off = sliders.filter((w) => !w.id.startsWith('vol.')).map((w) => [w.id, w.mark === undefined ? 'no mark' : Math.abs(w.get() - w.mark) < 1e-9 ? 'on it' : `knob ${w.get()}, mark ${w.mark}`]);
+    expect(off.filter(([, at]) => at !== 'on it'), 'a slider at its default off its mark').toEqual([]);
+    expect(off.map(([id]) => id), 'every one').toEqual(['zoom', 'shake', 'vibration', 'motionSensitivity', 'voiceSensitivity', ...DIFFICULTY_KEYS]);
+    // the volumes have no default the page shows (their own, the engine audio's): no mark
+    expect(sliders.filter((w) => w.id.startsWith('vol.')).map((w) => w.mark)).toEqual([undefined, undefined, undefined]);
+  });
+
+  it('a disabled slider takes the focus, drawn dimmed, and moves for no key, button, click or drag', () => {
+    const sets: number[] = [];
+    const slider = (disabled: boolean): Widget => ({ kind: 'slider', id: 's', label: 'Shout', get: () => 0.5, set: (u) => sets.push(u), step: (u, d) => u + d * 0.1, format: () => '50%', disabled });
+    const menu = new Menu([slider(true)], { id: 'm', title: '', width: 240, labelWidth: 104 });
+    const drawn: string[] = [];
+    const hud = { width: 480, height: 270, rect: (_x: number, _y: number, _w: number, _h: number, c: string) => drawn.push(c), sprite() {}, text: (_x: number, _y: number, _s: string, o?: { color?: string }) => drawn.push(`text:${o?.color}`), measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+    menu.draw(new UiCanvas(hud as never), { x: 0, y: 0, ...menu.size });
+    const track = menu.rects.get('s:track')!;
+    expect([menu.focus, drawn.includes('text:slate'), drawn.includes('sky')], 'focused, its words and fill slate').toEqual([0, true, false]);
+    menu.input({ kind: 'nav', dir: 'right' });
+    menu.input({ kind: 'nav', dir: 'left' });
+    menu.input({ kind: 'confirm' });
+    menu.input({ kind: 'pointer', type: 'down', x: track.x + track.w - 3, y: track.y + track.h / 2 });
+    menu.input({ kind: 'pointer', type: 'move', x: track.x + 3, y: track.y + track.h / 2 });
+    menu.input({ kind: 'pointer', type: 'up', x: track.x + 3, y: track.y + track.h / 2 });
+    expect(sets).toEqual([]);
+    const live = new Menu([slider(false)], { id: 'm', title: '', width: 240, labelWidth: 104 });
+    live.input({ kind: 'nav', dir: 'right' });
+    expect(sets, 'enabled, it moves').toEqual([0.6]);
+  });
+
   it('outside 52in1 the Controller page has no Voice row, as it has no motion rows; the Controller button says what its page holds', () => {
     const { dualsense, mic, h } = engineHost();
     const host = { ...(h as object), openMenu: () => {}, applySettings: () => {} } as never;
     const page = () => [controllerMenu(host).items().map((w) => (w as Row).id), row(settingsMenu(host), 'controller').hint];
-    expect(page(), 'in 52in1: the voice').toEqual([['padGlyphs', 'vibration', 'voice'], 'Button prompts, vibration, voice']);
+    expect(page(), 'in 52in1: the voice').toEqual([['padGlyphs', 'vibration', 'voice', 'voiceSensitivity'], 'Button prompts, vibration, voice']);
     dualsense.motion = true;
-    expect(page(), 'and motion aim').toEqual([['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice'], 'Button prompts, vibration, motion aim, voice']);
+    expect(page(), 'and motion aim').toEqual([['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice', 'voiceSensitivity'], 'Button prompts, vibration, motion aim, voice']);
     Object.assign(dualsense, { motion: false });
     Object.assign(mic, { present: false });
     expect(page(), 'outside 52in1: neither').toEqual([['padGlyphs', 'vibration'], 'Button prompts, vibration']);
@@ -214,7 +335,7 @@ describe("the settings' engine page", () => {
         // the Voice row's hint: its own while allowed, else 52in1's line (where it allows it, open the
         // game again); the Controller button's: with motion aim and the voice, the voice, neither (outside 52in1)
         const voice = { allowed: { micAllowed: true }, allow: {}, later: { micLater: true }, hub: { present: false } };
-        const cases = [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false], ['controller', false, 'hub'], ...['allowed', 'allow', 'later'].map((k) => ['voice', true, k])] as [string, boolean, keyof typeof voice | undefined][];
+        const cases = [['motion', true], ['motionSensitivity', true], ['controller', true], ['controller', false], ['controller', false, 'hub'], ...['allowed', 'allow', 'later'].flatMap((k) => [['voice', true, k], ['voiceSensitivity', true, k]])] as [string, boolean, keyof typeof voice | undefined][];
         for (const [id, motion, hub] of cases) {
           dualsense.motion = motion;
           Object.assign(mic, { present: true, micAllowed: false, micLater: false }, hub ? voice[hub] : {});

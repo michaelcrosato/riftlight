@@ -8,6 +8,20 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.74.0
+
+- Shouts are judged against the room's sound. `shoutStep(s, level, dt, sensitivity = 1)` keeps a floor in the shout's state: the room's average level, rising and falling over `SHOUT.floorS` (1 s). A level counts as loud when it reaches both `SHOUT.loud / sensitivity` and `floorLoud` (1.5) times the floor. It counts as quiet when it is under either `SHOUT.quiet / sensitivity` or `floorQuiet` (1.1) times the floor.
+- Each stream's first `SHOUT.learnS` (0.5 s) learns the room, and nothing presses then. `loud`, `quiet`, `holdS`, `quietS` (0.25 s) and `echoS` are unchanged.
+- A steady hum louder than `SHOUT.loud` no longer presses, but a shout over it does. A sound that starts and stays presses once at most, as a shout would. While the controller's speaker plays (`echo`), the floor stays as it was.
+- New exports: `newShout()` makes a fresh `ShoutState` and is the documented way to make one; `shoutLevels(state, sensitivity)` gives the current loud and quiet thresholds.
+- `ShoutState` gains optional `floor` and `heard`. A state shaped as in 0.73.0 (`{ loud, quiet, fired }`) still works: `shoutStep` fills in the missing fields (0, as `newShout()` sets them), so it learns the room for its first 0.5 s and then presses.
+- New `input.shoutSensitivity` (default 1): `SHOUT.loud` and `SHOUT.quiet` are divided by it, and the room's floor still applies.
+- New `input.shoutMeter`: `{ level, loud, shouted }` for a level meter. It is presentation only and never recorded; it is null while nothing is heard and during a replay.
+- When nothing is heard (the game not listening, the microphone off or muted, no stream yet), the floor is forgotten and the next stream learns the room again. `input.reset()` keeps the floor.
+- Settings: new `PlayerSettings.voiceSensitivity`, from 0.5 to 3 in steps of 0.5 (`VOICE_SENSITIVITY`, a new export); left out, it is 1.
+- A game with `settings: { voice: true }` gets a Shout sensitivity row beside the Microphone (line `settings.voice_sensitivity`). The row is enabled only while 52in1 allows the microphone and the Microphone is on, and the engine keeps `input.shoutSensitivity` at its value.
+- What to expect: no room locks shouts out. At 100% and above, music or talk as loud as a shout near the microphone can press on its own; 50% stops it in every simulated room. docs/engine/hub.md *Shouts* has the model, the simulated rooms' counts at each sensitivity, and how a player tunes it with the meter. The thresholds are still unverified on a DualSense.
+
 ## 0.73.0
 
 - Shouts as recorded input. With `ctx.input.voice = true`, a shout into 52in1's microphone presses `VoiceShout` (`VOICE_KEYS.shout`) once, recorded like a key. It is never heard headless or during a replay, which presses what was recorded.

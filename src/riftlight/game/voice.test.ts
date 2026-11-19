@@ -78,7 +78,7 @@ describe('a shout uses War Cry', () => {
     rl.ui.click('settings');
     rl.ui.click('controller');
     engine.step(1);
-    expect(rl.ui.widgets().map((w) => w.id)).toEqual(['padGlyphs', 'vibration', 'voice']);
+    expect(rl.ui.widgets().map((w) => w.id)).toEqual(['padGlyphs', 'vibration', 'voice', 'voiceSensitivity']);
     expect(rl.ui.widgets().filter((w) => !w.rect).map((w) => w.id), 'every row in view').toEqual([]);
     expect([row()!.get(), row()!.disabled, row()!.hint]).toEqual([false, true, t('menu.settings.voice.allow')]);
     rl.ui.click('voice');
@@ -96,6 +96,34 @@ describe('a shout uses War Cry', () => {
     rl.ui.close();
     rl.ui.close();
     engine.step(1);
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('Shout sensitivity, under Voice, sets how easily a shout counts; while the Controller page is open the game listens and the Voice row shows the level against a shout’s mark', () => {
+    const { rl, engine, game } = h;
+    const menu = () => game.layer.top?.panel as Menu;
+    engine.step(1); // a frame's poll comes before its update: the last page's listening ends a frame after it
+    expect([engine.input.voice, engine.input.shoutMeter], 'on the title: not listening, nothing heard').toEqual([false, null]);
+    rl.ui.click('settings');
+    rl.ui.click('controller');
+    heard.reads = 0;
+    heard.level = 0.01;
+    engine.step(40); // a new stream: the room learnt (`SHOUT.learnS`)
+    expect([engine.input.voice, heard.reads > 0], 'the Controller page open: listening, heard').toEqual([true, true]);
+    expect(engine.input.shoutMeter).toEqual({ level: 0.01, loud: 0.2, shouted: false });
+    expect(menu().rects.get('voice:meter'), 'the meter, beside Voice').toBeDefined();
+    rl.ui.click('voiceSensitivity');
+    expect([engine.settings.values.voiceSensitivity, engine.input.shoutSensitivity, engine.input.shoutMeter?.loud]).toEqual([1.5, 1.5, 0.2 / 1.5]);
+    // a shout here counts on the meter, and uses nothing (no hero on the title)
+    heard.level = 0.5;
+    engine.step(20);
+    expect(engine.input.shoutMeter?.shouted, 'lit').toBe(true);
+    heard.level = 0;
+    engine.settings.set({ voiceSensitivity: undefined });
+    rl.ui.close();
+    rl.ui.close();
+    engine.step(2);
+    expect([engine.input.voice, engine.input.shoutMeter, engine.input.shoutSensitivity], 'closed: not listening').toEqual([false, null, 1]);
     expect(engine.errors).toEqual([]);
   });
 

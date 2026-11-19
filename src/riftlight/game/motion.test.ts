@@ -69,7 +69,7 @@ describe('motion aim in Riftlight', () => {
     expect(rl.ui.widgets().filter((w) => !w.rect).map((w) => w.id), 'every row in view, none behind a ▼').toEqual([]);
     rl.ui.click('controller');
     engine.step(1);
-    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice']); // and the voice (voice.test.ts)
+    expect(ids()).toEqual(['padGlyphs', 'vibration', 'motion', 'motionSensitivity', 'voice', 'voiceSensitivity']); // and the voice (voice.test.ts)
     expect(rl.ui.widgets().filter((w) => !w.rect).map((w) => w.id), 'the Controller page: every row in view at 1920×1080').toEqual([]);
     rl.ui.click('motion');
     expect([engine.settings.values.motion, engine.input.motion.on]).toEqual([false, false]);

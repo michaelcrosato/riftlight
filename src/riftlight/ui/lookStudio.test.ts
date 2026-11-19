@@ -99,7 +99,10 @@ describe('look studio', () => {
     const again = s.pages.at(-1)!;
     const dither = again.items().find((w) => w.id === 'gameboy.dither');
     expect(dither?.kind).toBe('slider');
-    if (dither?.kind === 'slider') dither.set(0);
+    if (dither?.kind === 'slider') {
+      expect(dither.mark, 'its mark where the dither’s default sits').toBeCloseTo(dither.get(), 9);
+      dither.set(0);
+    }
     expect(s.look.environment.filters[0]!.params!.dither).toBe(0);
     const choice = again.items().find((w) => w.id === 'gameboy.preset');
     // on a preset the options are just the presets (cycling never sticks on "custom")

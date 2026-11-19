@@ -99,7 +99,8 @@ keys that are off off. The touch top bar follows them, and the debug panel lists
 look, pixel art, pixel size, quality, frame rate, debug info, the controller's button prompts
 `padGlyphs`, `'playstation'` (left out, the default) or `'xbox'` (`PAD_GLYPHS`), and its
 `vibration`, 0..1 in steps of 0.05 (left out: 1; `input.rumble` follows it), a voice feature's
-`voice`, and motion aim's `motion` and `motionSensitivity` (0.25..3 in steps of 0.25); sound is
+`voice` and `voiceSensitivity` (0.5..3, steps of 0.5), motion aim's `motion` and
+`motionSensitivity` (0.25..3, steps of 0.25); sound is
 `audio`'s), applies them over the game's own choices and saves them per game in localStorage
 (`pixel-engine:settings:<key>`; `settings.key`, default the first game's name, `false` for none). A
 field left out is the game's: `set({ look: undefined })` gives one back, `reset()` all of them. A
@@ -137,8 +138,8 @@ Esc opens it once its frame has run as recorded (keys still held), Options as it
 puts the player's back when it ends.
 
 A game's extras add rows: `settings.voice: true` (a voice feature) adds **Microphone** under Sound,
-on only while 52in1 allows games the microphone, else off with 52in1's line (`engine.voiceOn`, a
-shout's press: docs/engine/hub.md *Shouts*). `settings.motion:
+on only while 52in1 allows games the microphone, else off with 52in1's line (`engine.voiceOn`), and
+**Shout sensitivity** (`input.shoutSensitivity`: docs/engine/hub.md *Shouts*). `settings.motion:
 true` (motion aim by a DualSense's motion, `input.motion`) adds **Motion aim** and its
 **sensitivity** under Controls, there to change while a DualSense's motion reaches games through
 52in1 (else off, with a line saying motion aim needs a DualSense in 52in1); on by default while

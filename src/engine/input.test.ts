@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, SHOUT, shoutStep, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_SECONDS, VOICE_KEYS, type VoiceInput } from './input';
+import { applyDeadzone, type DualSenseInput, GAMEPAD_BUTTONS, GAMEPAD_DEADZONE, type GamepadLike, HOME_BUTTON, Input, type InputFrame, MOTION_AIM, newShout, SHOUT, type ShoutState, shoutLevels, shoutStep, SWIPE_KEYS, swipeDirection, TOUCHPAD_KEYS, TWIN_SECONDS, VOICE_KEYS, type VoiceInput } from './input';
+import { VOICE_SENSITIVITY } from './settings';
 
 const target = () => new EventTarget() as unknown as Window;
 const key = (type: string, code: string) => Object.assign(new Event(type), { code, repeat: false });
@@ -656,8 +657,12 @@ describe("the DualSense's touchpad (input.touchpad)", () => {
 
 describe('a shout into the microphone (input.voice)', () => {
   const dt = 1 / 60;
-  /** An Input hearing a microphone the test sets the loudness of; `frame` polls it once and says whether it pressed `VoiceShout`. */
-  function mic() {
+  /**
+   * An Input hearing a microphone the test sets the loudness of; `frame` polls it once and says
+   * whether it pressed `VoiceShout`. It has heard a quiet room for `SHOUT.learnS` (`learn`: the
+   * room's floor learnt), unless `learnt` is false.
+   */
+  function mic(learnt = true) {
     const input = new Input(null);
     const heard = { level: 0 as number | null, on: true, echo: false, reads: 0, listening: [] as boolean[] };
     input.microphone = {
@@ -690,35 +695,41 @@ describe('a shout into the microphone (input.voice)', () => {
       for (let k = 0; k < Math.round(seconds / dt); k++) presses += frame(level, runs) ? 1 : 0;
       return presses;
     };
-    return { input, heard, frame, hold, frames };
+    /** The room heard at `level` while the floor is learnt (`SHOUT.learnS`): nothing presses. */
+    const learn = (level = 0) => hold(level, SHOUT.learnS);
+    if (learnt) {
+      learn();
+      frames.length = 0;
+      heard.reads = 0;
+    }
+    return { input, heard, frame, hold, learn, frames };
   }
   const LOUD = 0.5;
 
   it('a shout as loud as `SHOUT.loud`, held `SHOUT.holdS`, presses once; quieter or shorter never does', () => {
+    expect(mic().hold(SHOUT.loud * 0.95, 1), 'just under the threshold, for a second').toBe(0);
     const { hold, frame } = mic();
-    expect(hold(SHOUT.loud * 0.95, 1), 'just under the threshold, for a second').toBe(0);
     expect(hold(LOUD, SHOUT.holdS - 2 * dt) + hold(0, SHOUT.quietS), 'loud, but too short').toBe(0);
     // the press comes the poll the shout has lasted `holdS`, not before
     const polls = Math.round(SHOUT.holdS / dt);
     const at = Array.from({ length: polls + 3 }, () => frame(SHOUT.loud)).indexOf(true);
     expect(at, 'the poll it has lasted holdS').toBe(polls - 1);
-    expect(shoutStep({ loud: 0, quiet: 0, fired: false }, 1, SHOUT.holdS), 'one long poll is a whole shout').toBe(true);
+    expect(shoutStep({ ...newShout(), heard: SHOUT.learnS }, 1, SHOUT.holdS), 'one long poll is a whole shout').toBe(true);
   });
 
-  it('one shout is one press: held on, or dipping between words, it never presses again until quiet for `SHOUT.quietS`', () => {
+  it('one shout is one press: held on, or a breath between its words, it never presses again until quiet for `SHOUT.quietS`', () => {
     const { hold } = mic();
-    expect(hold(LOUD, 2), 'held two seconds').toBe(1);
+    expect(hold(LOUD, 1), 'held a second').toBe(1);
+    expect(hold(0, SHOUT.quietS - 3 * dt) + hold(LOUD, 0.3), 'a breath between words: the same shout').toBe(0);
+    expect(hold(0, 1) + hold(LOUD, 0.3), 'quiet a second: a new shout').toBe(1);
+    // softer than loud, louder than quiet, keeps a shout's count: it neither grows nor ends there
     const between = (SHOUT.quiet + SHOUT.loud) / 2;
-    expect(hold(between, 0.5) + hold(LOUD, 0.5), 'softer, then loud again: the same shout').toBe(0);
-    expect(hold(0, SHOUT.quietS - 3 * dt) + hold(LOUD, 0.5), 'a breath between words: the same shout').toBe(0);
-    expect(hold(0, SHOUT.quietS) + hold(LOUD, 0.5), 'quiet long enough: a new shout').toBe(1);
-    // softer than loud keeps a shout's count: it neither grows nor ends there
-    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2) + hold(between, 0.3) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, softer, loud: one shout').toBe(1);
-    expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2) + hold(0, 2 * dt) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, quiet, loud: two short ones, no shout').toBe(0);
+    expect(hold(0, 1) + hold(LOUD, SHOUT.holdS / 2) + hold(between, 0.2) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, softer, loud: one shout').toBe(1);
+    expect(hold(0, 1) + hold(LOUD, SHOUT.holdS / 2) + hold(0, 2 * dt) + hold(LOUD, SHOUT.holdS / 2 + dt), 'loud, quiet, loud: two short ones, no shout').toBe(0);
   });
 
   it('nothing is heard or pressed while the game is not listening, the microphone is off or muted, or nothing is heard yet; the microphone is told', () => {
-    const { input, heard, hold } = mic();
+    const { input, heard, hold, learn } = mic();
     input.voice = false;
     expect(hold(LOUD, 1), 'the game not listening').toBe(0);
     expect([heard.reads, heard.listening.at(-1)], 'never read; the microphone told to close').toEqual([0, false]);
@@ -728,7 +739,7 @@ describe('a shout into the microphone (input.voice)', () => {
     expect([heard.reads, heard.listening.at(-1)], 'never read; the game still listens').toEqual([0, true]);
     heard.on = true;
     expect(hold(null, 1), 'no stream yet').toBe(0);
-    expect(hold(Number.NaN, 0.5) + hold(LOUD, SHOUT.holdS), 'a broken reading, then a shout').toBe(1);
+    expect(hold(Number.NaN, 0.5) + learn() + hold(LOUD, SHOUT.holdS), 'a broken reading, then the room learnt again, then a shout').toBe(1);
     // a shout half done when the player mutes is gone: unmuted, it takes a whole shout again
     expect(hold(0, SHOUT.quietS) + hold(LOUD, SHOUT.holdS / 2), 'half a shout').toBe(0);
     heard.on = false;
@@ -790,6 +801,263 @@ describe('a shout into the microphone (input.voice)', () => {
     });
     expect([replayed.indexOf(true), replayed.filter(Boolean).length]).toEqual([at, 1]);
     expect([heard.reads, heard.listening.at(-1)], 'the microphone never read in a replay, and told to close').toEqual([0, false]);
+  });
+
+  // the room's floor (`SHOUT.floorLoud`, `floorQuiet`, `floorS`, `learnS`): the room's average level,
+  // so a hum ends under a shout and a shout over it presses
+  const HUM = 0.25;
+
+  it('a steady hum louder than `SHOUT.loud`, heard from the start, never presses; a shout over it does, and the hum ends it', () => {
+    const { hold } = mic(false);
+    expect(HUM, 'a shout, were the threshold fixed').toBeGreaterThan(SHOUT.loud);
+    expect(hold(HUM, 10), 'ten seconds of a hum (a fan, a TV)').toBe(0);
+    const over = HUM * SHOUT.floorLoud * 1.2;
+    expect(hold(over, 0.3) + hold(HUM, 1), 'a shout over it, the hum after').toBe(1);
+    expect(hold(over, 0.3) + hold(HUM, 1), 'the next: the hum ended the last').toBe(1);
+    expect(hold(HUM * SHOUT.floorLoud * 0.9, 2), 'louder than the hum, short of `floorLoud` times it').toBe(0);
+  });
+
+  it('a sound that starts and stays (a fan turned on) presses once at most, as a shout would; the floor follows it within seconds (`SHOUT.floorS`), and a shout over it presses', () => {
+    const { input, hold } = mic();
+    expect(hold(HUM, 0.5), 'it starts, as loud as a shout').toBe(1);
+    expect(hold(HUM, 20), 'twenty seconds on').toBe(0);
+    expect(input.shoutMeter?.loud, 'the floor now').toBeCloseTo(HUM * SHOUT.floorLoud, 6);
+    expect(hold(HUM * SHOUT.floorLoud * 1.2, 0.3) + hold(HUM, 1), 'a shout over it').toBe(1);
+  });
+
+  it('a shout lifts the floor only for a moment: shouts a second apart each press', () => {
+    const { input, hold } = mic();
+    expect(Array.from({ length: 6 }, () => hold(LOUD, 0.3) + hold(0, 1)), 'six shouts, a second of quiet between').toEqual([1, 1, 1, 1, 1, 1]);
+    expect(input.shoutMeter?.loud, 'what a shout needs: the quiet room’s again').toBe(SHOUT.loud);
+  });
+
+  it('the first `SHOUT.learnS` of each stream learn the room: loud from the first poll heard presses nothing and is the floor, until the room is quiet again', () => {
+    const { input, hold } = mic(false);
+    expect(hold(LOUD, 1), 'loud from the first poll').toBe(0);
+    expect(input.shoutMeter?.loud, 'the room it learnt').toBeCloseTo(LOUD * SHOUT.floorLoud, 6);
+    expect(hold(LOUD * SHOUT.floorLoud * 1.2, 0.3), 'a shout over it').toBe(1);
+    expect(hold(0, 3) + hold(LOUD, 0.3), 'quiet three seconds: the floor fallen, as loud is a shout').toBe(1);
+    expect(hold(0, 1) + hold(null, 0.1) + hold(LOUD, 1), 'a new stream (nothing heard between), loud from its first poll').toBe(0);
+    // part-way through a shout while learning: nothing presses until `learnS` is heard
+    expect(shoutStep({ ...newShout(), loud: SHOUT.holdS }, 1, 1 / 50), 'learning').toBe(false);
+    expect(shoutStep({ ...newShout(), loud: SHOUT.holdS, heard: SHOUT.learnS }, 1, 1 / 50), 'learnt').toBe(true);
+  });
+
+  it('a state written for 0.73.0 (`{ loud, quiet, fired }`) is filled in by `shoutStep`: it learns the room as `newShout()` does, then presses', () => {
+    const old: ShoutState = { loud: 0, quiet: 0, fired: false };
+    const polls = (level: number, seconds: number) => Array.from({ length: Math.round(seconds / dt) }, () => shoutStep(old, level, dt)).filter(Boolean).length;
+    expect(shoutLevels(old), 'no floor yet: `SHOUT`’s levels').toEqual({ loud: SHOUT.loud, quiet: SHOUT.quiet });
+    expect(polls(0.01, SHOUT.learnS), 'a quiet room, learnt').toBe(0);
+    expect([old.heard, old.floor]).toEqual([expect.closeTo(SHOUT.learnS, 9), 0.01]);
+    expect(polls(LOUD, 0.3) + polls(0.01, 1) + polls(LOUD, 0.3), 'two shouts').toBe(2);
+    const broken: ShoutState = { loud: 0, quiet: 0, fired: false, floor: Number.NaN, heard: Number.NaN };
+    expect([shoutStep(broken, 0.01, dt), broken.floor, broken.heard], 'NaN: as left out').toEqual([false, 0.01, dt]);
+  });
+
+  it('what is heard while the game’s own sound may reach the microphone (`echo`) leaves the floor alone', () => {
+    const { input, heard, hold } = mic();
+    const mid = SHOUT.loud * 0.9; // under a shout, and `floorLoud` times it over one
+    heard.echo = true;
+    expect(hold(mid, 3), 'the speaker playing, a sound under a shout').toBe(0);
+    heard.echo = false;
+    expect(input.shoutMeter?.loud, 'the floor still the quiet room’s').toBe(SHOUT.loud);
+    expect(hold(SHOUT.loud * 1.1, 0.5), 'a shout just over `loud`').toBe(1);
+    // the same sound heard with no speaker playing is the room's: that shout is under it
+    const room = mic();
+    expect(room.hold(mid, 10), 'heard, not an echo').toBe(0);
+    expect(room.input.shoutMeter?.loud, 'the floor').toBeCloseTo(mid * SHOUT.floorLoud, 3);
+    expect(room.hold(SHOUT.loud * 1.1, 0.5), 'the same shout, under it').toBe(0);
+  });
+
+  it('a quiet microphone (low gain), at the most sensitive, presses under `SHOUT.loud` over a quiet room; over a noisy one a shout must be `floorLoud` times the room', () => {
+    /** An Input in a room as loud as `level`, learnt, at the highest sensitivity. */
+    const room = (level: number) => {
+      const m = mic(false);
+      m.input.shoutSensitivity = VOICE_SENSITIVITY.max;
+      m.learn(level);
+      m.hold(level, 1);
+      return { shout: (loud: number) => m.hold(loud, 0.5) + m.hold(level, 0.5) };
+    };
+    const soft = SHOUT.loud / 2; // a low-gain microphone's shout
+    expect(room(0.004).shout(soft), 'a quiet room').toBe(1);
+    const noisy = 0.08; // over `SHOUT.loud / 3`, so the room's floor decides
+    expect(room(noisy).shout(noisy * SHOUT.floorLoud * 0.9), 'a noisy room: under `floorLoud` times it').toBe(0);
+    expect(room(noisy).shout(noisy * SHOUT.floorLoud * 1.2), 'a noisy room: a shout over it').toBe(1);
+    const plain = mic();
+    expect(plain.hold(soft, 0.5), 'the same shout at sensitivity 1').toBe(0);
+  });
+
+  it('the player’s sensitivity (`input.shoutSensitivity`) divides `SHOUT.loud` and `quiet`: higher presses on less, lower needs more', () => {
+    /** A half-second sound at `level` and sensitivity `k`, over a quiet room: how many pressed. */
+    const at = (k: number, level: number) => {
+      const { input, hold } = mic();
+      input.shoutSensitivity = k;
+      return hold(level, 0.5);
+    };
+    expect(at(1, SHOUT.loud * 0.6), 'at 1: too soft').toBe(0);
+    expect(at(2, SHOUT.loud * 0.6), 'at 2: a shout').toBe(1);
+    expect(at(0.5, SHOUT.loud * 1.5), 'at 0.5: loud is not enough').toBe(0);
+    expect(at(0.5, SHOUT.loud * 2.5), 'at 0.5: twice as loud').toBe(1);
+    expect([shoutLevels({ floor: 0 }, 2), shoutLevels({ floor: 0 }, 0), shoutLevels({ floor: 0 }, Number.NaN), shoutLevels({ floor: 0.1 }, 2)]).toEqual([
+      { loud: SHOUT.loud / 2, quiet: SHOUT.quiet / 2 },
+      { loud: SHOUT.loud, quiet: SHOUT.quiet },
+      { loud: SHOUT.loud, quiet: SHOUT.quiet },
+      { loud: 0.1 * SHOUT.floorLoud, quiet: 0.1 * SHOUT.floorQuiet }, // the floor still in force
+    ]);
+  });
+
+  it('`shoutMeter` says what it hears and what a shout needs, for a meter beside a voice setting: never in a replay, nor while nothing is heard', () => {
+    const { input, hold, learn } = mic(false);
+    expect(input.shoutMeter, 'nothing heard yet').toBeNull();
+    learn(0.01);
+    expect(input.shoutMeter).toEqual({ level: 0.01, loud: SHOUT.loud, shouted: false });
+    input.shoutSensitivity = 2;
+    expect(input.shoutMeter?.loud).toBe(SHOUT.loud / 2);
+    expect(hold(LOUD, SHOUT.holdS), 'a shout').toBe(1);
+    expect(input.shoutMeter, 'it pressed').toMatchObject({ level: LOUD, shouted: true });
+    expect(input.shoutMeter!.loud, 'the shout lifts the floor, slowly').toBeGreaterThan(SHOUT.loud / 2);
+    expect(input.shoutMeter!.loud, 'the shout lifts the floor, slowly').toBeLessThan(LOUD);
+    hold(HUM, 8); // a hum: the floor
+    expect(input.shoutMeter!.loud, 'a hum lifts what a shout needs').toBeCloseTo(HUM * SHOUT.floorLoud, 2);
+    input.playing = true;
+    input.beginFrame(100, dt, []);
+    expect(input.shoutMeter, 'a replay').toBeNull();
+    input.playing = false;
+    hold(LOUD, dt);
+    expect(input.shoutMeter?.level, 'heard again').toBe(LOUD);
+    input.voice = false;
+    hold(LOUD, dt);
+    expect(input.shoutMeter, 'not listening').toBeNull();
+  });
+});
+
+// The numbers in `SHOUT` against simulated rooms, at 60 polls a second (`shoutStep`); the tables in
+// docs/engine/hub.md *Shouts* are these. No room may lock shouts out: a player shouting (0.4 RMS for
+// 0.3 s, once a second) from any moment presses within a few seconds, at every sensitivity. A room
+// may press on its own (loud talk or music near the microphone): those presses are counted here,
+// and a lower sensitivity has fewer.
+describe('shouts in simulated rooms: none locks a shout out, and a lower sensitivity presses less on its own', () => {
+  const dt = 1 / 60;
+  /** A room's loudness (RMS) at `t` seconds. */
+  type Sound = (t: number) => number;
+  const QUIET: Sound = () => 0.005;
+  /** A fan's hum, louder than `SHOUT.loud`. */
+  const HUM: Sound = (t) => 0.25 * (1 + 0.03 * Math.sin(37 * t));
+  /** Music that swells and dips at 0.5 Hz, 0 to 0.3. */
+  const MUSIC: Sound = (t) => 0.15 * (1 - Math.cos(Math.PI * t));
+  /** Loud music, 0.3 to 0.5. */
+  const LOUD_MUSIC: Sound = (t) => 0.4 + 0.1 * Math.sin(4 * Math.PI * t);
+  /**
+   * Words: each 0.12 to 0.45 s at `low` to `high` RMS, 0.04 to 0.2 s apart, a pause of 0.4 to 1.2 s
+   * after every 3 to 8, under them 0.02 (a seeded random, the same every run).
+   */
+  const words = (low: number, high: number, seed: number): Sound => {
+    const random = () => {
+      seed = (seed + 0x6d2b79f5) >>> 0;
+      let x = Math.imul(seed ^ (seed >>> 15), seed | 1);
+      x ^= x + Math.imul(x ^ (x >>> 7), x | 61);
+      return ((x ^ (x >>> 14)) >>> 0) / 4294967296;
+    };
+    const polls = new Float64Array(Math.round(70 / dt)).fill(0.02);
+    for (let t = 0; t < 70; t += 0.4 + random() * 0.8) {
+      for (let n = 3 + Math.floor(random() * 6); n > 0; n--) {
+        const [length, level] = [0.12 + random() * 0.33, low + random() * (high - low)];
+        polls.fill(level, Math.round(t / dt), Math.round((t + length) / dt));
+        t += length + 0.04 + random() * 0.16;
+      }
+    }
+    return (t) => polls[Math.round(t / dt)] ?? 0.02;
+  };
+  /** A TV's words, 0.1 to 0.25. */
+  const TV = words(0.1, 0.25, 1);
+  /** Talk near the microphone, 0.15 to 0.35. */
+  const TALK = words(0.15, 0.35, 7);
+  /** A shout of `level` for 0.3 s at each of `at` (seconds) over `room`: their powers add. */
+  const shouts = (room: Sound, at: readonly number[], level = 0.4): Sound => (t) => Math.hypot(room(t), at.some((s) => t >= s && t < s + 0.3) ? level : 0);
+  /** `room` from `from` seconds on, the quiet room before (talk starting mid-listen). */
+  const from = (from: number, room: Sound): Sound => (t) => (t < from ? QUIET(t) : room(t - from));
+  /** The seconds a new stream hearing `room` for `seconds` presses at. */
+  const presses = (room: Sound, seconds: number, sensitivity = 1) => {
+    const s = newShout();
+    const at: number[] = [];
+    for (let k = 0; k < Math.round(seconds / dt); k++) if (shoutStep(s, room(k * dt), dt, sensitivity)) at.push(k * dt);
+    return at;
+  };
+  /**
+   * A player shouting once a second over `room`, from any moment between 8 and 50 s: the longest
+   * from the first shout to a press during one (seconds, to 0.01), Infinity if none in ten.
+   */
+  const wait = (room: Sound, sensitivity: number) => {
+    let longest = 0;
+    for (let start = 8; start < 50; start += 0.37) {
+      const at = Array.from({ length: 10 }, (_, k) => start + k);
+      const first = presses(shouts(room, at), start + 10, sensitivity).find((p) => at.some((s) => p >= s && p < s + 0.3));
+      longest = Math.max(longest, first === undefined ? Infinity : Math.round((first - start) * 100) / 100);
+    }
+    return longest;
+  };
+  /** The player's sensitivities: 50%, 100% (the default), 200%, 300% (`VOICE_SENSITIVITY`). */
+  const SENSITIVITIES = [0.5, 1, 2, 3];
+  const ROOMS: Record<string, Sound> = {
+    quiet: QUIET,
+    hum: HUM,
+    'hum turned on': from(5, HUM),
+    music: MUSIC,
+    tv: TV,
+    'tv turned on': from(5, TV),
+    talk: TALK,
+    'talk turned on': from(5, TALK),
+  };
+  const table = (cell: (room: Sound, sensitivity: number) => number) => Object.fromEntries(Object.entries(ROOMS).map(([name, room]) => [name, SENSITIVITIES.map((k) => cell(room, k))]));
+
+  it('nobody shouting for 60 s: the presses at 50%, 100%, 200% and 300%, fewer at a lower sensitivity and none at 50%', () => {
+    const alone = table((room, k) => presses(room, 60, k).length);
+    expect(alone).toEqual({
+      quiet: [0, 0, 0, 0],
+      hum: [0, 0, 0, 0],
+      'hum turned on': [0, 1, 1, 1], // as it starts, as a shout would
+      music: [0, 30, 30, 30], // every swell
+      tv: [0, 19, 26, 26],
+      'tv turned on': [0, 17, 24, 24],
+      talk: [0, 23, 23, 23],
+      'talk turned on': [0, 22, 22, 22],
+    });
+    for (const [name, counts] of Object.entries(alone)) expect(counts, name).toEqual([0, ...counts.slice(1)].sort((a, b) => a - b));
+  });
+
+  it('no room locks a shout out: shouting once a second from any moment presses within a few seconds, at every sensitivity', () => {
+    const waits = table(wait);
+    expect(waits).toEqual({
+      quiet: [0.15, 0.15, 0.15, 0.15], // the first shout presses, as it has lasted `SHOUT.holdS`
+      hum: [0.15, 0.15, 0.15, 0.15],
+      'hum turned on': [0.15, 0.15, 0.15, 0.15],
+      music: [0.15, 1.15, 1.15, 1.15], // the second at most: the first may come as a swell has pressed
+      tv: [0.15, 2.14, 2.15, 2.15],
+      'tv turned on': [0.15, 2.15, 2.15, 2.15],
+      talk: [0.15, 3.14, 3.14, 3.14],
+      'talk turned on': [0.15, 4.14, 4.14, 4.14],
+    });
+    expect(Math.max(...Object.values(waits).flat()), 'the longest wait').toBeLessThan(5);
+  }, 30_000); // millions of shout steps: ~1.2 s alone, more on a loaded box or CI's runner
+
+  it('a shout alone presses once; a soft one (0.12) is under `SHOUT.loud` at 1, a shout at 2', () => {
+    expect(presses(shouts(QUIET, [5]), 8)).toHaveLength(1);
+    expect([presses(shouts(QUIET, [5], 0.12), 8).length, presses(shouts(QUIET, [5], 0.12), 8, 2).length]).toEqual([0, 1]);
+  });
+
+  it('a silent room at the most sensitive (3): its floor is 0, and a shout needs `SHOUT.loud / 3`, no more', () => {
+    const s = newShout();
+    for (let k = 0; k < 120; k++) shoutStep(s, 0, dt, VOICE_SENSITIVITY.max);
+    expect([s.floor, shoutLevels(s, VOICE_SENSITIVITY.max)]).toEqual([0, { loud: SHOUT.loud / 3, quiet: SHOUT.quiet / 3 }]);
+    const silent: Sound = () => 0;
+    expect([presses(shouts(silent, [5]), 8, 3).length, presses(shouts(silent, [5], (SHOUT.loud / 3) * 1.01), 8, 3).length, presses(shouts(silent, [5], (SHOUT.loud / 3) * 0.99), 8, 3).length]).toEqual([1, 1, 0]);
+  });
+
+  it('five seconds of loud music press once as they start, as a shout would; a shout counts from half a second after they end', () => {
+    const music: Sound = (t) => (t < 5 ? LOUD_MUSIC(t) : QUIET(t));
+    expect(presses(from(5, music), 22), 'the music starts').toHaveLength(1);
+    const after = (seconds: number) => presses(shouts(from(5, music), [10 + seconds]), 22).filter((t) => t >= 10).length;
+    expect([after(0), after(0.3), after(0.5), after(1), after(2)], 'a shout 0, 0.3, 0.5, 1 and 2 s after the music').toEqual([0, 0, 1, 1, 1]);
   });
 });
 
