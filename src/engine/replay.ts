@@ -52,7 +52,8 @@ export interface Recording {
   readonly view?: Viewport;
   /**
    * The touch density it framed with (`EngineOptions.touchDensity`, on a page with touch controls:
-   * the least CSS pixels per art pixel on a phone); left out for none. A headless replay frames with it.
+   * about how many CSS pixels per art pixel on a phone, `touchScale`); left out for none. A headless
+   * replay frames with it.
    */
   readonly density?: number;
   /**

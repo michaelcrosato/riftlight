@@ -101,10 +101,10 @@ const STRIP = { w: 66, min: 46, h: 13, gap: 2 } as const;
 const ORB_R = 22;
 
 /**
- * The least a corner map shrinks to (`hudGeometry`: a phone held sideways in 52in1), its frame
- * aside. Below the hub's wake band, a tap target: `h` rows where the screen's CSS scale makes that
- * and its frame a thumb across (`THUMB`), more where it doesn't (18 at a phone's two CSS px per art
- * pixel); at the top, in the band (no tap target there), these.
+ * The least a corner map shrinks to (`hudGeometry`: a phone held sideways, in 52in1 or too short for
+ * it above the controls), its frame aside. Below the hub's wake band, a tap target: `h` rows where
+ * the screen's CSS scale makes that and its frame a thumb across (`THUMB`), more where it doesn't (18
+ * at a phone's two CSS px per art pixel); at the top (in the band, or on the game's own page), these.
  */
 const MAP_LEAST = { w: 44, h: 16 } as const;
 
@@ -112,11 +112,11 @@ const MAP_LEAST = { w: 44, h: 16 } as const;
 const THUMB = 44;
 
 /**
- * `hudGeometry`'s corner map in 52in1 with touch controls for the last screen, controls and band it
- * searched (a pure function of them, asked many times a frame: the search tries every size, and the
- * orbs' spots around each).
+ * `hudGeometry`'s corner map with touch controls for the last screen, controls and band (52in1's,
+ * or none) it searched (a pure function of them, asked many times a frame: the search tries every
+ * size, and the orbs' spots around each).
  */
-let hubMapLast: { readonly key: string; readonly map: { w: number; h: number; col: number; y: number; tap: boolean; gold: { right: number; y: number } | null } } | null = null;
+let mapLast: { readonly key: string; readonly map: { w: number; h: number; col: number; y: number; tap: boolean; gold: { right: number; y: number } | null } } | null = null;
 
 /** The room the gold takes beside a shrunk corner map, or under one in the band (`hudGeometry`): a big purse's coin and digits, one row. */
 const GOLD_BESIDE = { w: 60, h: 10 } as const;
@@ -141,7 +141,10 @@ const num = (n: number): string => lang().formatNumber(n, { useGrouping: false }
  * orbs still have a spot; on one too short for a map a thumb across there (or whose arc leaves the
  * orbs no spot beside one) it stays at the top, in the band, the gold under it, shrunk to clear the
  * controls, and takes no tap (`map.tap`: the pause menu opens the level's map; in a round, which has
- * none, the Map button in ≡'s place: `TouchFrame.map`).
+ * none, the Map button in ≡'s place: `TouchFrame.map`). On the game's own page it is at the top, a
+ * tap target, shrunk the same way where it and the gold under it would reach the controls (a phone
+ * held sideways under a browser's bars), down to `MAP_LEAST`: on the shortest (about 129 rows) the
+ * gold under it can still reach a skill button.
  */
 export function hudGeometry(W: number, H: number, controls: readonly Box[] = [], wake = 0) {
   const compact = W < 300;
@@ -188,13 +191,32 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
   // (shorter still), or none leaves the orbs a spot, it stays at the top, drawn in the band with the
   // gold under it as on the game's own page, shrunk to clear the controls, and takes no tap (`tap`: a
   // tap there wakes the hub; the pause menu opens the level's map, in a round the Map button in ≡'s
-  // place). It never goes: drawing in the band is fine, only its taps are the hub's
+  // place). It never goes: drawing in the band is fine, only its taps are the hub's. On the game's own
+  // page (no band) it is at the top, a tap target, shrunk the same way where its rows and the gold
+  // under it would reach the controls (a phone held sideways under a browser's bars: the skills' arc
+  // climbs to the corner)
   // (the same screen, controls and band as the last call: its map, without the search again)
-  const key = touch && wake > 0 ? `${W}x${H}:${wake}:${controls.map((c) => `${c.x},${c.y},${c.w},${c.h}`).join(';')}` : '';
-  if (key && hubMapLast?.key === key) Object.assign(map, hubMapLast.map, { gold: hubMapLast.map.gold && { ...hubMapLast.map.gold } });
-  else if (key) {
+  const key = touch ? `${W}x${H}:${wake}:${controls.map((c) => `${c.x},${c.y},${c.w},${c.h}`).join(';')}` : '';
+  const clear = (b: Box) => !controls.some((c) => overlaps(b, c, 0));
+  /**
+   * At the top: its full size where it and a big purse under it (`minimapZone`, `goldZone`) clear
+   * the controls, else the biggest that does (no smaller than `MAP_LEAST`, that small where none
+   * does: drawn still, under a button).
+   */
+  const shrinkAtTop = () => {
+    const fits = (w: number, h: number) => clear({ x: W - w - 6, y: map.y, w: w + 4, h: h + 4 }) && clear({ x: W - 6 - GOLD_BESIDE.w, y: map.y + h + 7, w: GOLD_BESIDE.w + 1, h: 8 });
+    if (fits(map.w, map.h)) return;
+    let top: { w: number; h: number } | null = null;
+    for (let w = map.w; w >= MAP_LEAST.w; w -= 2) {
+      let h = map.h;
+      while (h >= MAP_LEAST.h && !fits(w, h)) h -= 2;
+      if (h >= MAP_LEAST.h && (!top || w * h > top.w * top.h)) top = { w, h };
+    }
+    Object.assign(map, top ?? MAP_LEAST);
+  };
+  if (key && mapLast?.key === key) Object.assign(map, mapLast.map, { gold: mapLast.map.gold && { ...mapLast.map.gold } });
+  else if (key && wake > 0) {
     const y = Math.max(2, Math.ceil(wake));
-    const clear = (b: Box) => !controls.some((c) => overlaps(b, c, 0));
     /** The gold's right edge in the row under the band, from `right` leftwards past the controls in its way, in the screen's right half; null where it has none. */
     const goldBeside = (right: number): number | null => {
       for (let guard = 0; guard < 8; guard++) {
@@ -224,20 +246,15 @@ export function hudGeometry(W: number, H: number, controls: readonly Box[] = [],
       const best = fits.find((f) => orbsFit({ ...map, w: f.w, h: f.h, y, gold: { right: f.right, y: y + 2 } }));
       if (best) Object.assign(map, { w: best.w, h: best.h, y, gold: { right: best.right, y: y + 2 } });
       else {
-        // at the top, in the band: the biggest that clears the controls with a big purse under it (no
-        // smaller than `MAP_LEAST`, that small where none clears them: drawn still, under a button)
+        // at the top, in the band, taking no tap
         map.tap = false;
-        let top: { w: number; h: number } | null = null;
-        for (let w = map.w; w >= MAP_LEAST.w; w -= 2) {
-          const x = W - Math.max(w + 10, GOLD_BESIDE.w + 6);
-          let h = map.h;
-          while (h >= MAP_LEAST.h && !clear({ x, y: map.y, w: W - x, h: h + 18 })) h -= 2;
-          if (h >= MAP_LEAST.h && (!top || w * h > top.w * top.h)) top = { w, h };
-        }
-        Object.assign(map, top ?? MAP_LEAST);
+        shrinkAtTop();
       }
     }
-    hubMapLast = { key, map: { ...map, gold: map.gold && { ...map.gold } } };
+    mapLast = { key, map: { ...map, gold: map.gold && { ...map.gold } } };
+  } else if (key) {
+    shrinkAtTop();
+    mapLast = { key, map: { ...map, gold: map.gold && { ...map.gold } } };
   }
   const bossW = Math.min(200, W - 30);
   let life = { x: orbX, y: orbY };

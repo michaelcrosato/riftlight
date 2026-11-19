@@ -69,8 +69,10 @@ a HUD laid out around it stays put.
 `touchDensity` (default 0, `DEFAULT_TOUCH_DENSITY`: the art size the viewport gives): a game opts
 in, `touchDensity: 2`, once its HUD fits a landscape phone's 181 to 195 rows. Then on a phone (the
 viewport's short side under 500 CSS px, `PHONE_SHORT_SIDE`) on a page with touch controls the art
-has at least that many CSS pixels per art pixel, in both orientations and again at every rotation
-(`touchScale`, `computeFraming`'s `minScale`, under `fill`): a landscape phone (844×390) at DPR 2 or 3
+has about that many CSS pixels per art pixel, in both orientations and again at every rotation
+(`touchScale`, `computeFraming`'s `minScale`, under `fill`): the whole number of device pixels
+nearest it, a tie the bigger (2 CSS px at DPR 2 or 3; 1.9 at a Pixel's 2.625, 5 device px, so its
+863×360 held sideways draws 189 rows, where 6 would leave 158). A landscape phone (844×390) at DPR 2 or 3
 draws 422×195 instead of 563×260 at DPR 2 (633×293 at DPR 3), so text and targets are thumb-sized; the world in view (the camera's
 view height, the field of view) is the same. It holds while the controls step aside for a pad or
 the keyboard too: the art size never changes with the device in use. Headless it follows

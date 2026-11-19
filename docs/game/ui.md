@@ -92,7 +92,7 @@ and `wheel`; from its top each time it shows). Their hints follow the device in 
 
 ## On a touch screen (`game/touch.ts`)
 
-On a phone Riftlight draws its art at two CSS pixels per art pixel at least (`touchDensity: 2`;
+On a phone Riftlight draws its art at about two CSS pixels per art pixel (`touchDensity: 2`;
 422×195 on an 844×390 landscape phone at DPR 2 or 3, 130×282 in portrait), so the HUD and the
 panels lay out in about 195 rows in landscape. On a page with touch controls every panel gets a
 thumb's height for what a finger presses (`UiLayer.tap` = `tapArt(renderer)`: 44 CSS px, 22 art
@@ -121,8 +121,8 @@ the hint names, while a desktop's holds the taller of the mouse's and the keys')
 
 The engine's touch buttons are the skill bar, laid out as
 an action cluster: a floating joystick (`touchStick: 'floating'`: its base comes under the thumb
-anywhere in the lower left; the HUD lays out around where it rests, and keeps what a finger taps,
-the corner map, out of its zone); a big attack button in the bottom-right corner,
+anywhere in the lower left; the HUD lays out around where it rests, keeps the corner map out of its
+zone, which gives way to loot labels: `TouchFrame.giveWay`); a big attack button in the bottom-right corner,
 skills 1-4 on an arc around it, the dodge outside the arc and a contextual interact button
 next to it (TALK, OPEN, TAKE, GO: only when F would do something); ≡ (the pause menu, where the
 inventory, skills, tree and settings are) top-left. In 52in1 (the page's `window.AIHubSettings`,
@@ -210,7 +210,7 @@ under the row); a tooltip taller than the screen (a rare's on a 360×800 or a 74
 what fits with a scroll bar at its edge, and a finger's drag on it scrolls it to its last lines
 (the comparison with the gear: `tipScroll`, no tap where the drag ends nor a long-press while it
 rests there). A second tap and a long-press still work. A 740×360 phone held sideways has 180
-rows, fewer than the inventory's 182: there its gaps close up (`INV_SHORT_H`, 172 rows). **Assists**
+rows, fewer than the inventory's 182: there its gaps close up (`INV_SHORT_H`, 172 rows; 168 at 170 rows). **Assists**
 (`Riftlight.touchAssist`, a finger on a page with touch controls only: the recorded `input.device`
 and density, each a setting shown on such a page, where it applies, and on by default, kept by
 recordings as play settings; a touch on a desktop's page, a touchscreen laptop's, gets none): auto attack (`touchAutoAttack`: the basic attack on the

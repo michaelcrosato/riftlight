@@ -36,7 +36,8 @@
 //                 Riftlight as a player opens it on a phone, portrait and landscape,
 //                 no ?debug (scripts/e2e-riftlight-phone.mjs): no engine tool bar,
 //                 a touch button for every skill-bar slot that reaches the game, no HUD element
-//                 under a control, controls off the menus, panels that fit with big targets.
+//                 under a control, controls off the menus, panels that fit with big targets; a
+//                 Pixel's DPR 2.625 too (a loot label in the stick's zone takes a real tap).
 // moves           Engine.step's exact frames and a capture in the live page. The moveset is
 //                 headless: src/game/playground.moves.test.ts.
 // lab             Animation Lab (/lab.html): clips, metrics API, views, scrubbing, contact

@@ -8,6 +8,11 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.75.0
+
+- **`touchDensity` / `touchScale`: the whole number of device pixels nearest the density.** It used to round up: a tie now goes to the bigger pixel, and the art is "about N CSS px a pixel" rather than "at least". Exactly 2 CSS px at DPR 1, 1.5, 2, 2.5, 3 and 3.5. At a fractional DPR the art takes the nearer whole device px, so a Pixel's DPR 2.625 takes 5 device px per art pixel (1.9 CSS px), not 6 (2.3). Held sideways it now draws about the rows a DPR 2 or 3 phone of its size does: 863×360 draws 454×189 (was 378×158), 923×340 under Chrome's bar 485×179 (was 404×149), 882×344 464×181 (was 386×151), 915×412 481×217 (was 402×181). It is still a pure function of `Recording.view` and `Recording.density`, so a replay frames the same way. A recording made at a fractional DPR by an older engine frames differently when replayed (`Recording.version` says a different engine may not replay the same).
+- **`TouchControls.giveWay`** cuts its gaps on whole CSS px (outward), so rects that move a fraction of a pixel from frame to frame (Riftlight's loot labels, which the floating stick's zone now gives way to) rewrite no clip.
+
 ## 0.74.0
 
 - Shouts are judged against the room's sound. `shoutStep(s, level, dt, sensitivity = 1)` keeps a floor in the shout's state: the room's average level, rising and falling over `SHOUT.floorS` (1 s). A level counts as loud when it reaches both `SHOUT.loud / sensitivity` and `floorLoud` (1.5) times the floor. It counts as quiet when it is under either `SHOUT.quiet / sensitivity` or `floorQuiet` (1.1) times the floor.

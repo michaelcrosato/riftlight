@@ -283,6 +283,8 @@ describe("a finger's taps", () => {
       engine.step(40);
       const labels = (game as unknown as { touchable: { loot: { id: number; rect: Box }[] } }).touchable.loot;
       expect(labels.length, 'its label shows').toBeGreaterThan(0);
+      // the floating stick's zone gives way to the labels as drawn (a tap on one in the zone reaches the game: the phone e2e)
+      expect(game.touchFrame().giveWay, 'the zone gives way to the labels').toEqual(labels.map((l) => l.rect));
       const intents: boolean[] = [];
       const step = game.hero.fixedUpdate.bind(game.hero);
       const spy = vi.spyOn(game.hero, 'fixedUpdate').mockImplementation((dt: number, i: HeroIntent) => (intents.push(i.attack), step(dt, i)));

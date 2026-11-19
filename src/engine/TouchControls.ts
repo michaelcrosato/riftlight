@@ -261,8 +261,9 @@ export class TouchControls {
     if (!zone || (!rects.length && !this.gaps)) return;
     const z = zone.getBoundingClientRect(); // nothing while the controls are hidden: none to cut
     const r2 = (v: number) => Math.round(v * 100) / 100;
+    // the gaps on whole CSS px (outward): rects that moved a fraction of a pixel rewrite no clip
     const gaps = rects
-      .map((r) => ({ x0: r2(Math.max(0, r.x - z.left)), y0: r2(Math.max(0, r.y - z.top)), x1: r2(Math.min(z.width, r.x + r.w - z.left)), y1: r2(Math.min(z.height, r.y + r.h - z.top)) }))
+      .map((r) => ({ x0: Math.max(0, Math.floor(r.x - z.left)), y0: Math.max(0, Math.floor(r.y - z.top)), x1: Math.min(r2(z.width), Math.ceil(r.x + r.w - z.left)), y1: Math.min(r2(z.height), Math.ceil(r.y + r.h - z.top)) }))
       .filter((g) => g.x1 > g.x0 && g.y1 > g.y0);
     const key = gaps.length ? `${r2(z.width)}x${r2(z.height)}:${gaps.map((g) => `${g.x0},${g.y0},${g.x1},${g.y1}`).join(';')}` : '';
     if (key === this.gaps) return;

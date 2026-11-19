@@ -27,7 +27,7 @@ export interface HeadlessViewOptions {
   edges?: EdgeSettings;
   filters?: readonly string[];
   look?: Look;
-  /** The least CSS pixels per art pixel on a phone (`touchScale`), as a page's with touch controls. */
+  /** About how many CSS pixels per art pixel on a phone (`touchScale`), as a page's with touch controls. */
   touchDensity?: number;
 }
 

@@ -76,7 +76,7 @@ export interface PixelRendererOptions {
   filters?: readonly string[];
   /** A full look (per-layer pixel art and filters); wins over `filters` and `edges`. */
   look?: Look;
-  /** The least CSS pixels per art pixel on a phone (`touchScale`; `EngineOptions.touchDensity`), 0 for none. */
+  /** About how many CSS pixels per art pixel on a phone (`touchScale`; `EngineOptions.touchDensity`), 0 for none. */
   touchDensity?: number;
 }
 

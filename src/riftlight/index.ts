@@ -26,7 +26,7 @@ export { HUB_WAKE, RIFTLIGHT_HUB_TOUCH_BUTTONS, RIFTLIGHT_TOUCH_BUTTONS, riftlig
  * Engine options the game is designed for: the iso preset at an ARPG angle and zoom, the
  * touch action cluster (`game/touch.ts`; in 52in1, its page's `window.AIHubSettings` set by the
  * hub's first script, ≡ below the hub's wake band) with a floating joystick (its base comes under the
- * thumb anywhere in the lower left), a phone's art at two CSS pixels per art pixel at least
+ * thumb anywhere in the lower left), a phone's art at about two CSS pixels per art pixel
  * (`touchDensity`: the HUD and the panels lay out in a landscape phone's 195 rows, with targets a
  * thumb tall), no engine tool bar on phones (it shows with `?debug=1`), no ⚙ button: Riftlight's
  * own Settings menu holds the engine's options, motion aim (a DualSense's turns through 52in1

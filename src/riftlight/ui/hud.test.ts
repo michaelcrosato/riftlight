@@ -17,8 +17,8 @@ import { type Box, overlaps } from './layout';
 /**
  * The touch controls of a phone screen in art pixels, from the button data and the engine's
  * CSS (stick 128 px + 2 px border, 16 px from the corner; placed buttons from an 8 px safe
- * margin), on the art the game draws there (`fill`, at Riftlight's `touchDensity`: two CSS pixels
- * per art pixel at least on a phone). The e2e `phone` suite checks the same thing against the
+ * margin), on the art the game draws there (`fill`, at Riftlight's `touchDensity`: about two CSS
+ * pixels per art pixel on a phone). The e2e `phone` suite checks the same thing against the
  * real DOM rects. `wake`: 52in1's wake band there in art pixels, as `TouchPad.wakeArt` has it;
  * `css`: CSS px per art pixel.
  */
@@ -80,8 +80,10 @@ describe('hudGeometry with touch controls', () => {
   ] as const)
     it(`landscape ${vw}×${vh} at DPR ${dpr}: the phone's denser art, the orbs beside the controls on the bottom row with the XP bar between them, clear of the minimap and the gold`, () => {
       const { W, H, boxes } = controlsFor(vw, vh, dpr);
-      expect(H, 'a landscape phone draws about 180 to 200 rows (two CSS pixels per art pixel)').toBeGreaterThanOrEqual(175);
-      expect(H).toBeLessThanOrEqual(210);
+      // about two CSS pixels per art pixel: 180 to 200 rows, 217 on a Pixel's 412 CSS px at DPR 2.625
+      // (5 device pixels, the nearest whole number to 2 CSS px: 1.9)
+      expect(H, 'a landscape phone draws about 180 to 220 rows (about two CSS pixels per art pixel)').toBeGreaterThanOrEqual(175);
+      expect(H).toBeLessThanOrEqual(220);
       const g = hudGeometry(W, H, boxes);
       expect(g.life.y).toBe(g.mana.y);
       expect(g.life.y + g.orbR).toBeGreaterThan(H - 12);
@@ -149,7 +151,7 @@ describe('hudGeometry with touch controls', () => {
       // thumb across between the band and the skills' arc: phones held sideways under a browser's bars
       // (iPhones in Safari: 844×346, 734×343, 750×340 and 750×342, a mini's 712×325, an 11 Pro's
       // 724×325; a Pixel 5's 802×294), a Galaxy Z Fold's cover screen (882×344: 441×172 art at DPR 3,
-      // 386×151 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
+      // 464×181 at its own 2.625) and an iPhone SE (1st, 568×320; on 844×346 16 rows would fit: 40 CSS
       // px, under a thumb). 600×428 to 620×454 at DPR 3 (300 to 310 art px wide) have room for a map
       // below the band, but the skills' arc leaves the mana orb no spot beside one (it would fall back
       // over the buttons and the map): at the top there too, the orb where it is on the game's own page
@@ -266,14 +268,70 @@ describe('hudGeometry with touch controls', () => {
           const one_row = one(hudBoxes(W, H, { ...hudModel(boxes, { label: 'II · Gloom' }), wake }), 'where')!;
           expect(block.h - one_row.h, `${vw}×${vh}: “${GERMAN}” in two rows (the block ${JSON.stringify(block)}, one row's ${JSON.stringify(one_row)})`).toBe(9);
         }
-        // on its own page (≡ in the corner: no band), and on a pad there or in 52in1 (no controls): at the top, its full size, the gold under it
-        for (const [controls, w] of [[alone.boxes, 0], [[], 0], [[], wake]] as const) {
-          const z = hudBoxes(W, H, { ...hudModel([...controls]), wake: w });
-          expect(one(z, 'minimap'), `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the corner map`).toEqual({ id: 'minimap', x: W - full.w - 6, y: 2, w: full.w + 4, h: full.h + 4 });
-          expect(one(z, 'gold')!.y, `${vw}×${vh}${controls.length ? '' : ', a pad'}${w ? ' in 52in1' : ''}: the gold under it`).toBe(full.h + 9);
+        // on a pad on its own page or in 52in1 (no controls): at the top, its full size, the gold under it
+        for (const w of [0, wake]) {
+          const z = hudBoxes(W, H, { ...hudModel([]), wake: w });
+          expect(one(z, 'minimap'), `${vw}×${vh}, a pad${w ? ' in 52in1' : ''}: the corner map`).toEqual({ id: 'minimap', x: W - full.w - 6, y: 2, w: full.w + 4, h: full.h + 4 });
+          expect(one(z, 'gold')!.y, `${vw}×${vh}, a pad${w ? ' in 52in1' : ''}: the gold under it`).toBe(full.h + 9);
         }
+        // on its own page (≡ in the corner: no band): at the top, a tap target, the gold under it, its
+        // full size where it and a big purse clear the controls, else shrunk to (the next test)
+        const own = hudBoxes(W, H, { ...hudModel(alone.boxes), gold: 9_876_543, goldShown: 9_876_543 });
+        const ownMap = one(own, 'minimap')!;
+        expect([ownMap.y, ownMap.x + ownMap.w, hudGeometry(W, H, alone.boxes).map.tap], `${vw}×${vh} on its own page: the corner map ${JSON.stringify(ownMap)} at the top, a tap target`).toEqual([2, W - 2, true]);
+        expect(one(own, 'gold')!.y, `${vw}×${vh} on its own page: the gold under it`).toBe(ownMap.h + 5);
+        for (const b of [ownMap, one(own, 'gold')!]) for (const c of alone.boxes) expect(overlaps(b, c, 0), `${vw}×${vh} on its own page: the ${b.id} ${JSON.stringify(b)} under a control ${JSON.stringify(c)}`).toBe(false);
       }
       expect(checked).toBe(SCREENS.length * 3 * 4 * 4 * 4 * 2);
+    },
+    60_000,
+  );
+
+  it(
+    'on its own page, a phone held sideways (a Pixel at DPR 2.625 under Chrome\'s bar, a Fold\'s cover screen, phones 340 to 412 CSS px tall): no HUD under a control, the corner map at the top shrunk where its rows and the gold under it would reach the skills\' arc (no smaller than 44×16, a tap target); its full size where they don\'t',
+    () => {
+      const one = (z: readonly HudBox[], id: HudBox['id']) => z.find((b) => b.id === id);
+      // [CSS px wide, high, DPR, the corner map its full size]: under the arc or the gold under it was
+      // (a big purse) at all the shorter ones, a hidden interact button's place too
+      const SCREENS = [
+        [863, 360, 2.625, false],
+        [923, 340, 2.625, false],
+        [882, 344, 2.625, false],
+        [882, 344, 3, false],
+        [863, 340, 2.625, false],
+        [863, 360, 3, false],
+        [863, 360, 2, false],
+        [800, 340, 3, false],
+        [800, 360, 3, false],
+        [780, 360, 3, false],
+        [740, 360, 3, false],
+        [851, 393, 2.75, false],
+        [844, 390, 2.625, true],
+        [915, 412, 2.625, true],
+        [844, 390, 2, true],
+        [844, 390, 3, true],
+      ] as const;
+      for (const [vw, vh, dpr, whole] of SCREENS) {
+        const { W, H, boxes, css } = controlsFor(vw, vh, dpr);
+        const g = hudGeometry(W, H, boxes);
+        const full = W < 300 ? { w: 44, h: 34 } : { w: 84, h: 64 };
+        expect(g.map.tap, `${vw}×${vh} at DPR ${dpr}: the corner map a tap target`).toBe(true);
+        expect([g.map.w, g.map.h].join('×') === [full.w, full.h].join('×'), `${vw}×${vh} at DPR ${dpr}: the corner map ${g.map.w}×${g.map.h} its full size`).toBe(whole);
+        expect(g.map.w >= 44 && g.map.h >= 16 && (g.map.h + 4) * css >= 40, `${vw}×${vh} at DPR ${dpr}: the corner map ${g.map.w}×${g.map.h} no smaller than 44×16 inside its frame, and about a thumb tall`).toBe(true);
+        for (const card of [null, 'card', 'levelup', 'clear'] as const) {
+          for (const big of [false, true]) {
+            for (const label of ['II · Gloom', 'XII · The Very Long Hollow of Lanterns']) {
+              const where = `${vw}×${vh} at DPR ${dpr} (${W}×${H})${card ? `, a ${card} banner` : ''}${big ? ', a boss' : ''}, “${label}”`;
+              const m: HudModel = { ...hudModel(boxes, { boss: big ? 'Nyx-Hollow, the Lantern Eater' : null, label }), gold: 9_876_543, goldShown: 9_876_543, card: card ? { title: 'The Gale Steps', subtitle: 'Depth 3', age: 1, kind: card } : null };
+              const z = hudBoxes(W, H, m);
+              // no HUD zone under a control (the controls' rects in art pixels, a hidden interact button's place too)
+              for (const b of z.filter((x) => x.id !== 'control')) for (const c of boxes) expect(overlaps(b, c, 0), `${where}: the ${b.id} ${JSON.stringify(b)} under a control ${JSON.stringify(c)}`).toBe(false);
+              const map = one(z, 'minimap')!;
+              expect([map.y, map.w, map.h], `${where}: the corner map at the top`).toEqual([2, g.map.w + 4, g.map.h + 4]);
+            }
+          }
+        }
+      }
     },
     60_000,
   );
