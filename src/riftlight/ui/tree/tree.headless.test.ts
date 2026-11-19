@@ -139,9 +139,9 @@ describe('riftlight passive tree', () => {
   );
 
   it(
-    'opened with the pad in use (Pause → Passive tree, R1 from another screen) its cursor is on a node at once: the start, then the node hovered last; Cross takes it',
+    'opened with the pad in use (Pause → Passive tree, R1 from another screen) its cursor is on a node at once, the node hovered last; Cross takes it',
     () => {
-      const { rl, game, engine } = h;
+      const { rl, engine } = h;
       const pad = (pressed: number[] = []) => ({ connected: true, mapping: 'standard', index: 0, axes: [0, 0, 0, 0], buttons: Array.from({ length: 18 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })) });
       const tap = (b: number) => {
         engine.input.setGamepads([pad([b])]);

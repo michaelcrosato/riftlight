@@ -105,7 +105,7 @@ const SLOT_ACTIONS: readonly ControlAction[] = ['attack', 'skill1', 'skill2', 's
 /**
  * The Arena's buttons on a phone (`EngineOptions.touchButtons`): Riftlight's attack, skills 1-4 and
  * dodge where the game puts them, pressing the game's keys (`heroCodes`), so `CONTROLS`' touch
- * labels name them. No interact (the fifth slot has no phone button) and no ≡ (the Arena has no pause).
+ * labels name them (the dodge's by a line, "Dodge button": in Riftlight's play it draws an icon). No interact (the fifth slot has no phone button) and no ≡ (the Arena has no pause).
  */
 export const ARENA_TOUCH_BUTTONS = RIFTLIGHT_TOUCH_BUTTONS.filter((b) => b.code !== TOUCH_CODES.interact && b.code !== TOUCH_CODES.menu);
 

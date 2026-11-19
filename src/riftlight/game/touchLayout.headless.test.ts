@@ -217,10 +217,11 @@ describe('the Arena on a phone', () => {
     expect(codes).not.toContain(TOUCH_CODES.interact);
     const keys = new Set<string>([...KEYS.attack, ...KEYS.dodge, ...KEYS.skill.flat()]);
     for (const b of ARENA_TOUCH_BUTTONS) expect(keys.has(b.code), `${b.label} presses ${b.code}`).toBe(true);
-    // the labels are the controls' touch names (A attack, B dodge, 1-4 the skills)
+    // the labels are the controls' touch names (A attack, 1-4 the skills); B the dodge, which a line
+    // names on a phone (`key.touch.dodge`: in Riftlight's play the button draws an icon, no letter)
     const labels = Object.fromEntries(ARENA_TOUCH_BUTTONS.map((b) => [b.code, b.label]));
     expect(labels[TOUCH_CODES.attack]).toBe(CONTROLS.attack.touch);
-    expect(labels[TOUCH_CODES.dodge]).toBe(CONTROLS.dodge.touch);
+    expect([labels[TOUCH_CODES.dodge], CONTROLS.dodge.touch]).toEqual(['B', 'TouchDodge']);
     TOUCH_CODES.skills.forEach((c, i) => expect(labels[c]).toBe(CONTROLS[`skill${i + 1}` as 'skill1'].touch));
     expect(ARENA_TOUCH_BUTTONS.length).toBe(RIFTLIGHT_TOUCH_BUTTONS.length - 2);
   });
