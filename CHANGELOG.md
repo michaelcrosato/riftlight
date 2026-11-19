@@ -8,6 +8,10 @@ When a change alters the public API (`src/bundle.ts` exports) or something a gam
 bump the version (minor while it is 0.x) and add its section here; `npm test` fails when
 `package.json`'s version has no section.
 
+## 0.71.0
+
+- Xbox button prompts: the Y glyph is now a white Y on the palette's orange disc, a bright letter on a darker disc like A, B and X. The old dark Y on a sand disc read as a 'W' at TV distance. `padGlyph('PadY', 'xbox')`'s colours are now `{ f: 'orange', l: 'white' }`; a game that drew its own sand Y should switch to `padGlyph`'s colours.
+
 ## 0.70.0
 
 - The engine hides the OS mouse pointer over its canvas (`cursor: none`) while the pad is the device in use (`controls.device`) or the pointer is locked. It shows it again once the mouse moves a few pixels, and never hides it during a replay (`input.playing`): a replay's device is the recording's, and the viewer's mouse could not bring it back. Any cursor style the game set on the canvas comes back, including one set while it was hidden. Presentation only: nothing is recorded, and nothing changes headless.

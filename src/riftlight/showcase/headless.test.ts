@@ -3,10 +3,11 @@
 // check stay in the browser); then what needs a page (pointer lock, a picture, a file download or
 // picker) does nothing, and the game plays on. One engine for the file, tests in order.
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
-import { FirstPersonRig, FreeRig } from '../../engine';
+import { FirstPersonRig, FreeRig, type HeadlessView, type HudColor } from '../../engine';
 import { type HeadlessRiftlight, headlessRiftlight, pointAtArt, stepUntil } from '../headless';
 import { t } from '../lang';
 import { UiCanvas } from '../ui/kit';
+import { hints } from './hints';
 import { FOV_STEPS, nextFovStep } from './photo/PhotoMode';
 import { showcaseOf } from './save';
 
@@ -561,6 +562,87 @@ it(
     game.importSlot(0);
     engine.step(2);
     game.engineWorld(); // leaving for Engine World: no page to leave headless
+    expect(engine.errors).toEqual([]);
+  },
+  T,
+);
+
+/** The next frame's texts (the normal font's, from their left edge, and the mini font's) and its ink rects, as drawn. */
+function frame(): { texts: { s: string; x: number; y: number; w: number; mini: boolean }[]; plates: { x: number; y: number; w: number; h: number }[] } {
+  const hud = h.engine.hud;
+  const texts: { s: string; x: number; y: number; w: number; mini: boolean }[] = [];
+  const plates: { x: number; y: number; w: number; h: number }[] = [];
+  const { text, rect, clear } = hud;
+  const mini = UiCanvas.prototype.mini;
+  hud.clear = () => {
+    texts.length = 0;
+    plates.length = 0;
+    clear.call(hud);
+  };
+  hud.text = (x, y, s, o = {}) => {
+    texts.push({ s, x, y, w: hud.measure(s).width, mini: false });
+    text.call(hud, x, y, s, o);
+  };
+  hud.rect = (x: number, y: number, w: number, hh: number, color: HudColor, ...more) => {
+    if (color === 'ink') plates.push({ x, y, w, h: hh });
+    rect.call(hud, x, y, w, hh, color, ...more);
+  };
+  UiCanvas.prototype.mini = function (x, y, s, ...more) {
+    texts.push({ s, x, y, w: 0, mini: true });
+    return mini.call(this, x, y, s, ...more);
+  };
+  try {
+    h.engine.step(1);
+  } finally {
+    Object.assign(hud, { text, rect, clear });
+    UiCanvas.prototype.mini = mini;
+  }
+  return { texts, plates };
+}
+
+it(
+  'at ten feet (1920×1080, a pad, no touch controls) the Hall\'s and photo mode\'s hints are in the normal font on an ink plate along the bottom; the Hall names Options once (its menu), the keyboard O for photo mode and Esc for the menu',
+  async () => {
+    const { engine, rl } = h;
+    (engine.renderer as HeadlessView).setViewport({ width: 1920, height: 1080, dpr: 1 });
+    const out: string[] = [];
+    const check = (where: string, want: string[]) => {
+      const { texts, plates } = frame();
+      const rows = texts.filter((x) => want.some((w) => x.s.includes(w)));
+      if (!rows.length) return out.push(`${where}: no hints (${texts.map((x) => x.s).join(' | ')})`);
+      for (const r of rows) {
+        if (r.mini) out.push(`${where}: ${r.s} in the mini font`);
+        if (!plates.some((p) => p.x <= r.x - 1 && p.x + p.w >= r.x + r.w + 1 && p.y <= r.y - 1 && p.y + p.h >= r.y + 8)) out.push(`${where}: ${r.s} on no plate`);
+        if (r.y < engine.hud.height - 30) out.push(`${where}: ${r.s} not along the bottom (y ${r.y})`);
+      }
+      const all = rows.map((x) => x.s).join(' ');
+      for (const w of want) if (!all.includes(w)) out.push(`${where}: no ${w} in ${all}`);
+      return all;
+    };
+    if (rl.photo.state().active) rl.photo.close(); // the test before leaves it open
+    engine.controls.touch = false; // a TV: no touch controls
+    rl.newRun({ seed: 5 });
+    await rl.bestiary.open();
+    try {
+      engine.input.noteDevice('pad');
+      engine.step(5);
+      const pad = check('the Hall on a pad', [hints(['menu'])]);
+      expect(pad, 'one Options, for the menu').not.toContain(hints(['photo']));
+      engine.input.noteDevice('keyboard');
+      engine.step(2);
+      check('the Hall on the keyboard', [hints(['photo']), hints(['menu'])]);
+    } finally {
+      await rl.bestiary.close();
+    }
+    rl.photo.open();
+    try {
+      engine.input.noteDevice('pad');
+      engine.step(5);
+      check('photo mode on a pad', [hints(['save']), hints(['back'])]);
+    } finally {
+      rl.photo.close();
+    }
+    expect(out).toEqual([]);
     expect(engine.errors).toEqual([]);
   },
   T,

@@ -82,7 +82,7 @@ function guideOf(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[]): Bl
 }
 
 export function guidePanel(def: RoomDef, pads: readonly Pad[], knobs: readonly Knob[], fill?: (text: string) => string): Reader {
-  return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs, fill), { width: 250, height: 236 });
+  return new Reader('guide', `${def.title}: how it works`, guideBlocks(def, pads, knobs, fill), { width: 250, height: 236, short: def.title });
 }
 
 /** The field guide: every word, by section. `touch`: on a phone, which has no Tab to jump between them. */
@@ -109,8 +109,8 @@ export function tweakMenu(title: string, room: readonly Knob[], engine: readonly
   return new Menu(widgets, { id: 'tweak', title, width: 236, labelWidth: 110, onBack, footer });
 }
 
-/** The room list (G): every room by wing; visited ones are ticked. */
-export function roomsMenu(rooms: readonly RoomDef[], current: string, visited: ReadonlySet<string>, go: (id: string) => void, onBack: () => void): Menu {
+/** The room list (G): every room by wing; visited ones are ticked. `fill` names a line's controls (`{key:action}`) on the device in use. */
+export function roomsMenu(rooms: readonly RoomDef[], current: string, visited: ReadonlySet<string>, go: (id: string) => void, onBack: () => void, fill: (text: string) => string = (s) => keyText(null, s)): Menu {
   const widgets: Widget[] = [];
   for (const w of WINGS) {
     const list = rooms.filter((r) => r.wing === w.id);
@@ -118,10 +118,23 @@ export function roomsMenu(rooms: readonly RoomDef[], current: string, visited: R
     widgets.push({ kind: 'label', id: `wing-${w.id}`, label: w.title, color: w.color });
     for (const r of list) {
       const mark = r.id === current ? '> ' : visited.has(r.id) ? '* ' : '';
-      widgets.push({ kind: 'button', id: `room-${r.id}`, label: `${mark}${r.title}`, onClick: () => go(r.id), hint: r.about.split('. ')[0]!.slice(0, 60) });
+      widgets.push({ kind: 'button', id: `room-${r.id}`, label: `${mark}${r.title}`, onClick: () => go(r.id), hint: roomHint(fill(r.about)) });
     }
   }
   return new Menu(widgets, { id: 'rooms', title: 'Go to a room', width: 220, onBack });
+}
+
+/**
+ * A room's line in the list's footer: the words before its paragraph's first colon (else its
+ * first sentence), in whole words up to 60 characters ('...' where it stops short: the footer's
+ * mini font on a phone has no ellipsis).
+ */
+export function roomHint(about: string): string {
+  const first = about.split(/(?<=[.!?])\s+/)[0]!.replace(/[.!?]$/, '');
+  const colon = first.search(/:\s/);
+  const head = colon > 0 ? first.slice(0, colon) : first;
+  if (head.length <= 60) return head;
+  return `${head.slice(0, 58).replace(/[\s,;(]+\S*$/, '')}...`;
 }
 
 export interface PauseActions {
@@ -156,5 +169,6 @@ export function pauseMenu(inAtrium: boolean, a: PauseActions, tags: { guide?: st
     { kind: 'button', id: 'reset', label: 'Reset room', onClick: a.reset },
     { kind: 'button', id: 'riftlight', label: 'Play Riftlight', onClick: a.riftlight, hint: 'the game built on this engine' },
   ];
-  return new Menu(widgets, { id: 'pause', title: 'Engine World', width: 170, onBack: a.resume });
+  // as wide as its longest line on a TV ('the game built on this engine': one row of the normal font)
+  return new Menu(widgets, { id: 'pause', title: 'Engine World', width: 176, onBack: a.resume });
 }

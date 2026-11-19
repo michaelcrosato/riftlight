@@ -28,6 +28,7 @@ export const HINTS = {
   walk: '{key:switch_view} walk',
   next_wing: '{key:next_wing} next wing',
   photo: '{key:photo} photo',
+  menu: '{key:pause} menu',
   orbit: '{key:orbit} orbit',
   zoom: '{key:zoom} zoom',
   back: '{key:pause} back',

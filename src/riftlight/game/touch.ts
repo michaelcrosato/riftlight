@@ -176,11 +176,12 @@ export class TouchPad {
   /**
    * The controls on screen, in art pixels (`toArt` maps client → art), for the HUD layout.
    * While they are hidden (a panel is open) the last rects stand in, so the HUD under a menu
-   * keeps its touch layout instead of jumping back to the desktop bar.
+   * keeps its touch layout instead of jumping back to the desktop bar. `shows`: only the buttons
+   * whose code it keeps (the joystick always); left out, every placed one, a hidden one too.
    */
-  zones(toArt: (x: number, y: number) => { x: number; y: number }): Box[] {
+  zones(toArt: (x: number, y: number) => { x: number; y: number }, shows?: (code: string) => boolean): Box[] {
     const touch = this.engine.touch;
-    if (!touch) return this.fromData();
+    if (!touch) return this.fromData(shows);
     if (touch.deviceHidden) return []; // a pad or the keyboard in use: their layout, with its skill bar
     if (!touch.visible) return this.last;
     const r = touch.rects();
@@ -192,8 +193,8 @@ export class TouchPad {
       out.push({ x: a.x, y: a.y, w: b.x - a.x + 1, h: b.y - a.y + 1 });
     };
     if (r.stick) add(r.stick);
-    for (const b of r.buttons) add(b.rect);
-    this.last = out;
+    for (const b of r.buttons) if (!shows || shows(b.code)) add(b.rect);
+    if (!shows) this.last = out;
     return out;
   }
 
@@ -210,10 +211,11 @@ export class TouchPad {
    * use (recorded), from their data (`dataLayout`); none otherwise. So the HUD a replay draws, and
    * what a tap on it hits, is the phone's (but for a notch's safe area: `touchLayout`).
    */
-  private fromData(): Box[] {
+  private fromData(shows?: (code: string) => boolean): Box[] {
     const e = this.engine;
     if (!(e.renderer.touchDensity > 0) || e.input.device !== 'touch') return [];
-    return this.dataLayout();
+    const placed = this.buttons.filter((b) => b.at);
+    return this.dataLayout().filter((_, i) => i === 0 || !shows || shows(placed[i - 1]!.code));
   }
 
   /**

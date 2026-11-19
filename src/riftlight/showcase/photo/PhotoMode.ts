@@ -18,7 +18,7 @@ import { Vector3 } from 'three/webgpu';
 import { type CameraConfig, FILTER_IDS, FILTER_PRESETS, FirstPersonRig, FreeRig, type LightHandle, type Look, OrthoRig, PALETTE, type RenderMode, type Resolution } from '../../../engine';
 import { lang, lineKey, t } from '../../lang';
 import { clip, inside, miniWidth, type Rect, type UiCanvas, type UiEvent } from '../../ui/kit';
-import { controlBoxes, drawHints, hints, hintsAt, touchFloor } from '../hints';
+import { controlBoxes, drawHints, hintFont, hints, hintsAt, STAGE_BUTTONS, touchFloor } from '../hints';
 import type { Showcase } from '../Showcase';
 
 /** The free camera's zooms R1 steps through on a pad (`nextFovStep`): wide to close, then wide again. */
@@ -433,11 +433,14 @@ export class PhotoMode {
     // the panel as wide as its words up to the HUD's width (a phone held upright has 130 columns):
     // narrower than a row's label and < value > side by side, each value wraps under its label
     const want = 6 + labelW + 6 + 8 + valueW + 4 + 9;
-    const w = Math.min(ui.w - 12, Math.max(150, want));
-    const wrapped = want > w;
     const choice = (id: RowId) => id !== 'capture' && id !== 'exit';
-    const rowH = (id: RowId) => (wrapped && choice(id) ? 17 : 12);
-    const h = rows.reduce((n, id) => n + rowH(id), 0) + (wrapped ? 17 : 26);
+    const size = (most: number) => {
+      const w = Math.min(ui.w - 12, most, Math.max(150, want));
+      const wrapped = want > w;
+      const rowH = (id: RowId) => (wrapped && choice(id) ? 17 : 12);
+      return { w, wrapped, rowH, h: rows.reduce((n, id) => n + rowH(id), 0) + (wrapped ? 17 : 26) };
+    };
+    let { w, wrapped, rowH, h } = size(Infinity);
     // a phone's ≡ (top left) beside the title where it ends over the first row (held upright),
     // else the panel under it; right of the joystick where the panel reaches down to it and the
     // screen has the room (held sideways)
@@ -446,8 +449,21 @@ export class PhotoMode {
     const cornerBottom = corner.reduce((m, b) => Math.max(m, b.y + b.h + 2), 0);
     const cornerRight = corner.reduce((m, b) => Math.max(m, b.x + b.w + 2), 0);
     let y = cornerBottom <= 22 ? 22 : cornerBottom + 14;
-    const stick = boxes.filter((b) => b.y >= ui.h / 4 && b.x < ui.w / 3 && b.x < 6 + w && b.y < y - 14 + h).reduce((m, b) => Math.max(m, b.x + b.w + 2), 0);
-    const x = stick && stick + w <= ui.w - 6 ? stick : 6;
+    const place = () => {
+      const stick = boxes.filter((b) => b.y >= ui.h / 4 && b.x < ui.w / 3 && b.x < 6 + w && b.y < y - 14 + h).reduce((m, b) => Math.max(m, b.x + b.w + 2), 0);
+      return stick && stick + w <= ui.w - 6 ? stick : 6;
+    };
+    let x = place();
+    // and no wider than the room before a button it would cover on its right (a small phone held
+    // sideways: its B), its values wrapped under their labels there
+    const right = controlBoxes(game, STAGE_BUTTONS).filter((b) => b.y >= ui.h / 4 && b.x > x && b.x < x + w && b.y < y - 14 + h && b.y + b.h > y - 14);
+    const room = Math.min(...right.map((b) => b.x - 2)) - x;
+    if (right.length && room >= 120) {
+      ({ w, wrapped, rowH, h } = size(room));
+      x = place();
+      // taller so: up beside the ≡ where it would run off the bottom (the ≡ is left of it)
+      if (y - 14 + h > ui.h - 2 && x >= cornerRight) y = Math.max(22, ui.h - 2 - h + 14);
+    }
     const arrowL = x + Math.min(6 + labelW + 6, w - 70);
     ui.panel(x, y - 14, w, h, 'ink', this.sub === 'edit' ? 'sand' : 'slate');
     this.panelRect = { x, y: y - 14, w, h };
@@ -484,15 +500,19 @@ export class PhotoMode {
       }
       y += rowH(id);
     });
-    // a phone taps the panel's rows and swipes it away (from the panel): no fly up and down, no edit switch
+    // a phone taps the panel's rows and swipes it away (from the panel): no fly up and down, no edit
+    // switch, and no save, which its row names (Save PNG · Tap): the hints then fit under the panel
+    // on a small phone
     const touch = this.engine.controls.device === 'touch';
     const help = touch
-      ? hints(['move', 'drag_look', 'field_of_view', 'save', 'hide', 'back'])
+      ? hints(['move', 'drag_look', 'field_of_view', 'hide', 'back'])
       : this.sub === 'fly'
         ? hints(['fly_camera', 'drag_look', 'field_of_view', 'edit', 'save', 'hide', 'back'])
         : hints(['pick', 'change', 'fly', 'save', 'back']);
-    // along the bottom: between a phone's stick and its buttons where they leave room, else over them
-    drawHints(ui, hintsAt(ui, help, boxes), 'mist', 'ink');
+    // along the bottom: between a phone's stick and its buttons where they leave room, else over
+    // them; never over the panel (a small phone's: under it, or beside it held sideways)
+    // (the buttons photo mode hides keep no room: it never shows them)
+    drawHints(ui, hintsAt(ui, help, controlBoxes(game, STAGE_BUTTONS), { font: hintFont(game, ui), avoid: [this.panelRect] }), 'mist', 'ink');
   }
 
   /** The free camera's focus: a point ahead of it (the light pool lights what it looks at). */

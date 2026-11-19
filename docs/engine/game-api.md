@@ -284,8 +284,8 @@ set at each level) and follows `input.device` (the input used last) and the play
 draw it. On a pad that is PlayStation's buttons unless the player chose Xbox's: Cross, Circle,
 Square and Triangle as round buttons with their symbol in its colour (blue, red, pink: the palette's
 plum, green: its teal) on a light face; Xbox's A B X Y as round buttons in their colours (green, red,
-blue, yellow) with the letter; L1 / R1 / L2 / R2 / L3 / R3 / Create / Options / Touchpad (LB RB LT
-RT LS RS View Menu) as dark caps with their name; the sticks (`PadStick`, `PadLStick`, `PadRStick`)
+blue, orange) with a white letter; L1 / R1 / L2 / R2 / L3 / R3 / Create / Options / Touchpad (LB RB LT
+RT LS RS View Menu) as dark caps named; the sticks (`PadStick`, `PadLStick`, `PadRStick`)
 and the d-pad (`DPad`, its arms the arrow codes) drawn. On the keyboard a key is a light key cap
 with its short name (`keyCap`: `Space` → Spc), the mouse's buttons and wheel are drawn; on a touch
 screen it is the touch button's label or a gesture's name (`TouchTap` → Tap). Glyph sprites are 7×7

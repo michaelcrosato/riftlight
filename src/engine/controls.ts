@@ -224,12 +224,16 @@ const PS_FACES: Readonly<Record<string, { readonly rows: readonly string[]; read
   PadX: { color: 'plum', rows: round(['fffff', 'fsssf', 'fsfsf', 'fsssf', 'fffff']) },
   PadY: { color: 'teal', rows: round(['fffff', 'ffsff', 'fsfsf', 'sssss', 'fffff']) },
 };
-/** Xbox's face buttons: a round button in its colour with its letter (A green, B red, X blue, Y yellow, the palette's sand). */
+/**
+ * Xbox's face buttons: a round button in its colour with a bright letter, readable at ten feet (A
+ * green, B red, X blue, Y yellow: the palette's orange, a white Y on it; a dark letter on a bright
+ * disc read as a 'W' from the couch).
+ */
 const XBOX_FACES: Readonly<Record<string, { readonly rows: readonly string[]; readonly color: HudColor; readonly letter: HudColor }>> = {
   PadA: { color: 'green', letter: 'white', rows: round(['fflff', 'flflf', 'flllf', 'flflf', 'flflf']) },
   PadB: { color: 'red', letter: 'white', rows: round(['fllff', 'flflf', 'fllff', 'flflf', 'fllff']) },
   PadX: { color: 'blue', letter: 'white', rows: round(['flflf', 'flflf', 'fflff', 'flflf', 'flflf']) },
-  PadY: { color: 'sand', letter: 'ink', rows: round(['flflf', 'flflf', 'fflff', 'fflff', 'fflff']) },
+  PadY: { color: 'orange', letter: 'white', rows: round(['flflf', 'flflf', 'fflff', 'fflff', 'fflff']) },
 };
 /** The sticks (a cap with a dot, or L / R for the left and right one) and the d-pad (the pressed arm lit). */
 const STICKS: Readonly<Record<string, readonly string[]>> = {

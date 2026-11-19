@@ -6,7 +6,7 @@
 import type { HudColor } from '../../engine';
 import type { Panel } from '../../riftlight/game/ports';
 import { t } from '../../riftlight/lang';
-import { type Rect, type UiCanvas, type UiEvent, wrap } from '../../riftlight/ui/kit';
+import { miniWidth, type Rect, type UiCanvas, type UiEvent, wrap } from '../../riftlight/ui/kit';
 import type { LegendItem } from '../../riftlight/ui/legend';
 
 export type Block =
@@ -35,15 +35,23 @@ export class Reader implements Panel {
   private drag: { y: number; scroll: number } | null = null;
   private width: number;
   private height: number;
+  private readonly short?: string;
 
+  /** `short`: the title on a screen too narrow for `title` even in the mini font (a phone held upright: the station guide's room alone). */
   constructor(
     readonly id: string,
-    public title: string,
+    private full: string,
     private blocks: readonly Block[],
-    o: { width?: number; height?: number } = {},
+    o: { width?: number; height?: number; short?: string } = {},
   ) {
     this.width = o.width ?? 236;
     this.height = o.height ?? 230;
+    this.short = o.short;
+  }
+
+  /** The title on its frame: whole, or the short one where the frame can't hold it (the layer draws a title cut past its close box). */
+  get title(): string {
+    return this.short && miniWidth(this.full) > this.width - 14 ? this.short : this.full;
   }
 
   get size() {
@@ -75,7 +83,7 @@ export class Reader implements Panel {
 
   setBlocks(blocks: readonly Block[], title?: string): void {
     this.blocks = blocks;
-    if (title) this.title = title;
+    if (title) this.full = title;
     this.laidFor = -1;
     this.scroll = 0;
   }

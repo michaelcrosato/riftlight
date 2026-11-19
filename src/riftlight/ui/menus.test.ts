@@ -1,14 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { pauseMenu } from '../../world/ui/panels';
-import { Lang, RESOLUTIONS, textWidthPx, type PlayerSettings } from '../../engine';
+import { defaultLook, Lang, normalizeLook, RESOLUTIONS, textWidthPx, type PlayerSettings } from '../../engine';
 import { languageName } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
-import { UiCanvas } from './kit';
-import { controllerMenu, coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu, slotsMenu } from './menus';
+import { NORMAL } from '../game/difficulty';
+import { miniCovers, type Rect, UiCanvas } from './kit';
+import { type OpenOptions, UiLayer } from './layer';
+import { LEGEND_ROOM } from './legend';
+import { lookStudio } from './lookStudio';
+import { Menu, type Widget } from './menu';
+import { controllerMenu, coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu, slotsMenu, tuningMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
+
+/** `text` drawn whole: on one row, or on rows one after another (a footer wrapped where the language breaks it), none cut. */
+const whole = (drawn: readonly string[], text: string): boolean =>
+  drawn.some((_, i) =>
+    [1, 2, 3].some((n) => {
+      const rows = drawn.slice(i, i + n);
+      return rows.length === n && (rows.join(' ') === text || rows.join('') === text);
+    }),
+  );
 
 describe('links between Riftlight and Engine World', () => {
   it('the title offers Engine World when the host can open it, and opens it', () => {
@@ -153,7 +167,7 @@ describe("the settings' engine page", () => {
     expect(chosen.motionSensitivity).toBe(1);
   });
 
-  it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its line', () => {
+  it('in every stored language the motion rows fit the Controller page, and the Controller button its Settings: each label whole in its column, each hint whole on its rows', () => {
     const translations = riftlightTranslations();
     /** Lines the menu cut short. */
     const cut: string[] = [];
@@ -176,7 +190,7 @@ describe("the settings' engine page", () => {
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const shown = row(menu, id) as Row & { label: string; hint: string };
           if (!drawn.includes(shown.label)) cut.push(`${code} ${id}: ${shown.label}`);
-          if (!drawn.includes(shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
+          if (!whole(drawn, shown.hint)) cut.push(`${code} ${id}'s hint${motion ? '' : ' without motion'}: ${shown.hint}`);
         }
       }
     } finally {
@@ -245,7 +259,7 @@ describe('the Couch co-op hints', () => {
           const { w, h: height } = menu.size; // their own widths, as on a TV and a phone held sideways
           menu.draw(ui, { x: 0, y: 0, w, h: height });
           const hint = (menu.items().find((x) => x.id === id) as { hint: string }).hint;
-          if (!drawn.includes(hint)) cut.push(`${code} ${id}'s hint: ${hint}`);
+          if (!whole(drawn, hint)) cut.push(`${code} ${id}'s hint: ${hint}`);
         }
       }
     } finally {
@@ -271,5 +285,118 @@ describe('the Couch co-op entry', () => {
     menu.refresh();
     expect(ids(menu)).not.toContain('join');
     expect(ids(riftPauseMenu(host({ openMenu: () => {} })))).not.toContain('coop'); // a host without couch co-op
+  });
+});
+
+describe('a menu footer on a desktop and a TV, with a pad', () => {
+  /** Screens and their art (`computeFraming`): 427×240, 456×256 and 480×270. */
+  const SCREENS = [
+    ['1280×720', 427, 240],
+    ['1366×768', 456, 256],
+    ['1920×1080', 480, 270],
+  ] as const;
+  /** The shell's host in a level: couch co-op only while another player may join. */
+  const shell = (couch: boolean) => {
+    let look = normalizeLook(defaultLook());
+    return host({
+      ...(couch ? { couch: () => ({ seats: [], leave: () => {} }) } : {}),
+      resume: () => {},
+      openMenu: () => {},
+      openPanel: () => {},
+      saveAndQuit: () => {},
+      photoMode: () => {},
+      lookStudio: () => {},
+      difficulty: () => NORMAL,
+      setDifficulty: () => {},
+      applySettings: () => {},
+      audio: { muted: false, setMuted: () => {}, volume: { master: 1, music: 1, sfx: 1 }, setVolume: () => {} },
+      engine: { settings: { values: {} }, hubSettings: { values: { dualsense: { motion: false } } } },
+      settings: { look: '', quality: 'auto', zoom: 1, screenShake: 0.7, damageNumbers: true, lootFilter: 0 },
+      // the look studio's (`LookHost`): its Hide panel row too, as the game opens it
+      look: () => look,
+      setLook: (l: never) => (look = normalizeLook(l)),
+      openStudioPage: () => {},
+      peek: () => {},
+    });
+  };
+  /** The menus, opened as the shell opens them (the look studio docked right, hideable). */
+  const MENUS: [string, (h: never) => Menu, OpenOptions][] = [
+    ['pause', (h) => riftPauseMenu(h), {}],
+    ['settings', (h) => settingsMenu(h), {}],
+    ['tuning', (h) => tuningMenu(h), {}],
+    ['look studio', (h) => lookStudio(h), { dock: 'right', dim: false, solo: true, peek: 'H shows the panel' }],
+  ];
+  /** A canvas recording each text drawn, its top row and whether in the mini font. */
+  const canvas = (W: number, H: number) => {
+    const drawn: { y: number; s: string; mini: boolean }[] = [];
+    const hud = { width: W, height: H, rect() {}, sprite() {}, text: (_x: number, y: number, s: string) => drawn.push({ y, s, mini: false }), measure: (s: string, scale = 1) => ({ width: textWidthPx(s, scale), height: 7 * scale }) };
+    const ui = new UiCanvas(hud as never);
+    const mini = ui.mini.bind(ui);
+    ui.mini = (x, y, s, ...more) => (miniCovers(s) && drawn.push({ y, s, mini: true }), mini(x, y, s, ...more));
+    ui.device = 'pad';
+    return { ui, drawn };
+  };
+
+  it('never makes a menu scroll: pause, settings, tuning and the look studio fit wherever their rows and one footer row do, in every stored language, the hint under the rows; at 1920×1080 every hint is whole', () => {
+    const translations = riftlightTranslations();
+    /** What went wrong. */
+    const bad: string[] = [];
+    /** The menus that fit their screen without scrolling, per language. */
+    const fit = new Map<string, Set<string>>();
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        fit.set(code, new Set());
+        for (const [screen, W, H] of SCREENS)
+          for (const couch of [false, true])
+            for (const [name, make, open] of MENUS) {
+              if (couch && name !== 'pause') continue;
+              const what = `${code} ${name}${couch ? ' with couch co-op' : ''} at ${screen}`;
+              const menu = make(shell(couch));
+              const layer = new UiLayer();
+              layer.legends = true;
+              layer.open(menu, { modal: true, ...open });
+              for (let i = 0; i < 10; i++) layer.update(0.05); // opened, where it stays
+              const draw = () => {
+                const c = canvas(W, H);
+                layer.draw(c.ui, 0);
+                return c.drawn;
+              };
+              draw();
+              // the room the shell gives a framed menu over its legend (`UiLayer.draw`), and the
+              // rows' own height with one footer row: what fitted before footers wrapped
+              const room = { w: W - 12, h: H - 26 - LEGEND_ROOM };
+              const rows = new Menu(menu.items().map((w) => ({ ...w, hint: undefined }) as Widget), { id: 'rows', title: '', width: menu.size.w });
+              rows.fit(room.w, room.h, 0);
+              const scrolls = menu.swipes('up', 0, 0);
+              if (rows.size.h <= room.h && (scrolls || menu.size.h > room.h)) bad.push(`${what}: ${menu.size.h} rows tall in ${room.h}, its rows ${rows.size.h - 14}: it scrolls`);
+              if (!scrolls) fit.get(code)!.add(`${name}${couch ? '+couch' : ''}@${screen}`);
+              // each hint (the footer's place) under the rows, inside the menu; whole at 1920×1080
+              const r: Rect = layer.top!.rect;
+              for (const w of menu.items()) {
+                const hint = (w as { hint?: string }).hint;
+                if (!hint || !menu.focusId(w.id)) continue;
+                const texts = draw();
+                const shown = [...menu.rects.values()];
+                const under = Math.max(...shown.map((x) => x.y + x.h));
+                const foot = texts.filter((x) => x.y >= under && x.y < r.y + r.h);
+                // its rows as written (a language without spaces, a word broken at its hyphen: compared without them)
+                const said = foot.map((x) => x.s).join(' ');
+                const bare = (s: string) => s.replace(/\s/g, '');
+                if (!foot.length || foot.some((x) => x.y + 7 > r.y + r.h)) bad.push(`${what}, ${w.id}'s hint: not under the rows inside the menu (${JSON.stringify(foot)})`);
+                else if (W === 480 ? bare(said) !== bare(hint) : !bare(hint).startsWith(bare(said.replace(/\.$/, '')))) bad.push(`${what}, ${w.id}'s hint: "${said}" for "${hint}"`);
+              }
+            }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(bad).toEqual([]);
+    // what fitted with a one-row footer fits still, in every language: the pause menu, the settings and
+    // the tuning on all three, the pause menu with couch co-op from 1366×768. (Its rows at 1280×720,
+    // and the look studio's with its Hide panel row on all three, are taller than the room: they
+    // scroll as they did, their hints whole at 1920×1080.)
+    const fits = [...['pause', 'settings', 'tuning'].flatMap((n) => SCREENS.map(([screen]) => `${n}@${screen}`)), 'pause+couch@1366×768', 'pause+couch@1920×1080'];
+    for (const [code, did] of fit) expect(fits.filter((x) => !did.has(x)), `${code}: these scroll`).toEqual([]);
   });
 });

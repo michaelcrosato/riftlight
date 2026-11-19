@@ -77,7 +77,7 @@ where, the killing blow, the damage taken and its biggest type, the tip, the cos
 (damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
 kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
 the normal font, as are the skill panel's rows (names and costs: `ItemsUi.tenFoot`, the panel wider
-for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). The
+for them, `SKILLS_WIDE_W`; the mini font only on a narrow screen or a page with touch controls). A menu's footer (or the focused row's hint) longer than the menu wraps whole onto up to three rows, the menu keeping room for its longest (`Menu.footLines`): the normal font on a TV or a desktop, the mini font on a phone's layout (a bare menu's runs wider: `MenuOptions.footWidth`, the title's under the logo). Those rows never make a menu scroll: one whose rows fit over one footer row takes only the room they leave, the footer wrapped into it (the mini font where the normal can't hold it whole) or cut there (the settings at 1280×720); a list that scrolls anyway gives a row of its view (World's room list). The showcase's hint rows are in the normal font there too, on an ink plate (`hintFont`, `drawHints`). The
 pad's focus in the item windows frames the whole item, slot, socket or orb under it
 (`ItemsUi.focusRect`: a double white frame, ink between its lines, `FOCUS`; its shape sets it
 apart, as no item's frame is double, though a rare's is sand and some skill gems' white), there as
@@ -103,8 +103,13 @@ the tiles narrower than the menu on a small one, 284×160, while each holds the 
 d-pad moves through the grid, passing over a disabled tile), and any menu shrinks its rows to
 its room when that keeps them all in view (the save slots, the tuning, the rift keeper's depths on
 a landscape phone); one that scrolls even so (the settings, the languages) keeps its thumb-tall
-rows and shows a scroll bar beside them. A mouse's or a pad's screen keeps its layout (`tap` 0),
-whatever device was used last. Hints name the device in use, never the screen's width: the tree's
+rows and shows a scroll bar beside them. On a 360 px phone (120 art columns) nothing is cut: a
+narrow menu's button too narrow for its label takes two rows (`UiCanvas.button` wraps a label in a
+button two rows tall: the slots, Engine World's room list), and the narrow character sheet wraps a
+long stat label and breaks its header between its parts (Level 7 / deepest 12: `wrapParts`, as the
+showcase's hint rows). The phone's codex opens an entry as the finger lifts on its row
+(never on the press), so a swipe from the list closes the codex. A mouse's or a pad's screen
+keeps its layout (`tap` 0), whatever device was used last. Hints name the device in use, never the screen's width: the tree's
 bottom bar (`TreeViewOptions.device`: Drag pan · Pinch zoom · Tap twice: take · Hold refund on a
 touch screen, its art at the game's density: `TreeViewOptions.touchDensity`; `/tree.html` names a
 finger's gestures on a coarse pointer before the first touch) and the item windows' (`windowHint`

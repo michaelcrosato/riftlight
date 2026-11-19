@@ -1,4 +1,4 @@
-// The Hall of Beasts and photo mode on a phone held either way (390×844 and 844×390, touch),
+// The Hall of Beasts and photo mode on a phone held either way (390×844 and 844×390, 360×800 and 740×360, touch),
 // headless, where the HUD lays itself out around the controls from their data as a replay of a
 // phone's recording does (`TouchPad.zones`): the Hall's hints and its inspect prompt along the
 // bottom clear of the stick and the buttons and of the exhibits' plaques; the inspect card short
@@ -37,6 +37,9 @@ afterAll(() => h?.engine.dispose());
 const PHONES = [
   { width: 390, height: 844, dpr: 2 },
   { width: 844, height: 390, dpr: 2 },
+  // the small ones: a 360 px phone held upright (120 art columns) and a 740×360 one held sideways (180 rows)
+  { width: 360, height: 800, dpr: 3 },
+  { width: 740, height: 360, dpr: 3 },
 ] as const;
 
 interface Drawn extends Box {
@@ -125,7 +128,7 @@ describe('the Hall of Beasts and photo mode on a phone held either way', () => {
           const pads = controls();
           out.push(...amiss('the Hall', drawn, pads));
           // the hints (the mini font's rows, and a row it can't draw) against everything else drawn
-          const hint = drawn.filter((b) => /move|look|photo|leave/i.test(b.what) && !/inspect|action/i.test(b.what));
+          const hint = drawn.filter((b) => /move|look|photo|leave|menu/i.test(b.what) && !/inspect|action/i.test(b.what));
           expect(hint.length, 'the hints are drawn').toBeGreaterThan(0);
           for (const a of hint) for (const b of drawn) if (!hint.includes(b) && overlaps(a, b)) out.push(`the Hall at ${engine.hud.width}x${engine.hud.height}: the hints' ${a.what} over ${b.what}`);
           // as low as the controls let them: at the bottom on a phone held sideways (room between the stick and the buttons)

@@ -6,16 +6,17 @@
 // scroll bar; a narrow character sheet turns its pages with a pager instead of cutting their
 // names; a mouse's or a pad's screen keeps its layout.
 import { describe, expect, it } from 'vitest';
-import { textWidthPx } from '../../engine';
+import { Lang, textWidthPx } from '../../engine';
 import { computeFraming, RESOLUTIONS, touchScale } from '../../engine/framing';
 import { StatSheet } from '../core/mods';
 import { RIFTLIGHT_OPTIONS } from '../index';
-import { t } from '../lang';
+import { installLanguage, lineKey, riftlightLines, t } from '../lang';
+import { riftlightTranslations } from '../lang/translations';
 import { type Rect, UiCanvas } from './kit';
-import { tapArt, TAP_CSS } from './layer';
+import { tapArt, TAP_CSS, UiLayer } from './layer';
 import { Menu, type Widget } from './menu';
 import { pauseMenu, slotsMenu, titleMenu } from './menus';
-import { CharacterSheet, SHEET_PAGES } from './panels';
+import { CharacterSheet, Codex, SHEET_PAGES } from './panels';
 import { NORMAL } from '../game/difficulty';
 
 /** The renderer's view on a page: its framing at Riftlight's density, touch controls or not. */
@@ -61,6 +62,9 @@ const host = (o: { last?: number | null; languages?: number; opened?: string[]; 
   }) as never;
 
 const inside = (a: Rect, b: Rect) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
+
+/** `text` drawn whole among `drawn` (in order): on one row, or on rows one after another (broken at a space or between its parts at a ' · '), none cut. */
+const whole = (drawn: readonly string[], text: string): boolean => drawn.some((_, i) => [1, 2, 3].some((n) => i + n <= drawn.length && [' ', ' · '].some((gap) => drawn.slice(i, i + n).join(gap) === text)));
 
 describe('a thumb on the panels', () => {
   it('a target is about 44 CSS px on a page with touch controls, in either orientation; none elsewhere', () => {
@@ -298,5 +302,155 @@ describe('a thumb on the panels', () => {
     expect(clicked, 'a finger sliding sideways: nothing').toBe(1);
     press(true, 1);
     expect(clicked, 'a finger\'s tap').toBe(2);
+  });
+
+  it('on a 360×800 phone (120 art columns, a room 108 wide) the character sheet\'s labels and header and the save slots\' entries are whole: a long one on two rows of its taller row', () => {
+    const sheet = new CharacterSheet(() => new StatSheet({ 'move.speed': 5.6, damage: 0.3 }), () => t('character.subtitle', { level: 7, depth: 12 }));
+    sheet.fit(108, 241, 15);
+    expect(sheet.narrow).toBe(true);
+    const r = { x: 6, y: 16, w: sheet.size.w, h: sheet.size.h };
+    expect(r.h, 'the sheet fits its room').toBeLessThanOrEqual(241);
+    const cut: string[] = [];
+    for (const [i, page] of SHEET_PAGES.entries()) {
+      const { ui, texts } = canvas(120, 267);
+      sheet.page = i;
+      sheet.draw(ui, r);
+      const drawn = texts.map((x) => x.s);
+      for (const stat of page.stats) if (!whole(drawn, t(lineKey('panel.character.stat', stat)))) cut.push(`${page.id}: ${t(lineKey('panel.character.stat', stat))}`);
+      if (!whole(drawn, t('character.subtitle', { level: 7, depth: 12 }))) cut.push(`${page.id}: the header`);
+      // every row inside the sheet, none over another
+      const rows = (sheet as unknown as { rows: Rect[] }).rows;
+      for (const [k, row] of rows.entries()) {
+        expect(inside(row, r), `${page.id} row ${k}`).toBe(true);
+        if (k) expect(row.y, `${page.id} row ${k} under the one before`).toBeGreaterThanOrEqual(rows[k - 1]!.y + rows[k - 1]!.h);
+      }
+    }
+    expect(cut).toEqual([]);
+    // the slots: 'Slot 1: lv 4 deepest 12' on two rows of a thumb-tall button
+    const slots = slotsMenu({ ...(host() as object), saves: { last: 0, slots: [0, 1, 2].map((slot) => ({ slot, empty: slot !== 0, error: false, level: 4, deepest: 12 })), volatile: false, lastError: '' } } as never, 'load');
+    slots.fit(108, 241, 15);
+    const { ui, texts } = canvas(120, 267);
+    const sr = { x: 6, y: 16, w: slots.size.w, h: Math.min(241, slots.size.h) };
+    slots.draw(ui, sr);
+    for (const b of slots.items().filter((x) => x.kind === 'button')) {
+      expect(slots.rects.get(b.id), `${b.id} shows`).toBeDefined();
+      expect(whole(texts.map((x) => x.s), b.label), `${b.id}: ${b.label} whole`).toBe(true);
+    }
+  });
+
+  it('on a 360×800 phone the character sheet breaks a long header between its parts (Level 4 / deepest 1), never leaving a number alone, in every stored language', () => {
+    const translations = riftlightTranslations();
+    const bad: string[] = [];
+    try {
+      for (const code of ['en', ...Object.keys(translations)]) {
+        installLanguage(new Lang(riftlightLines(), translations, { code }));
+        for (const [level, depth] of [
+          [4, 1],
+          [7, 12],
+          [23, 140],
+        ] as const) {
+          const header = t('character.subtitle', { level, depth });
+          const sheet = new CharacterSheet(() => new StatSheet({}), () => header);
+          sheet.fit(108, 241, 15);
+          const { ui, texts } = canvas(120, 267);
+          const r = { x: 6, y: 16, w: sheet.size.w, h: sheet.size.h };
+          sheet.draw(ui, r);
+          // its rows: drawn first, 9 apart from its top, over the pages' tabs
+          const rows: string[] = [];
+          for (const x of texts) if (x.y === r.y + 2 + rows.length * 9) rows.push(x.s);
+          else break;
+          const parts = header.split(' · ');
+          if (code === 'en' && level === 4 && JSON.stringify(rows) !== JSON.stringify(['Level 4', 'deepest 1'])) bad.push(`en: ${JSON.stringify(rows)}`);
+          // where each of its parts fits a row, every row is whole parts ('·' between them)
+          if (parts.length > 1 && parts.every((x) => textWidthPx(x) <= r.w - 4) && rows.join(' · ') !== header) bad.push(`${code}: ${JSON.stringify(rows)} for "${header}"`);
+          // and none cut
+          const bare = (s: string) => s.replace(/[\s·]/g, '');
+          if (bare(rows.join('')) !== bare(header)) bad.push(`${code}: ${JSON.stringify(rows)} cuts "${header}"`);
+        }
+      }
+    } finally {
+      installLanguage(new Lang(riftlightLines()));
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('a footer longer than its menu wraps whole: in the normal font on a TV (World\'s room list at 1920×1080), in the mini font on a phone; the menu keeps room for its longest', () => {
+    const hint = 'Why some hits feel heavy: a few frames of freeze, a shake';
+    const widgets: Widget[] = [
+      { kind: 'button', id: 'a', label: 'Game Feel Lab', onClick: () => {}, hint },
+      { kind: 'button', id: 'b', label: 'Camera Bench', onClick: () => {}, hint: 'Seven cameras' },
+    ];
+    for (const [room, tap, font] of [
+      [468, 0, 'text'],
+      [108, 15, 'mini'],
+    ] as const) {
+      const menu = new Menu(widgets, { id: 'rooms', title: 'Go to a room', width: 220 });
+      menu.fit(room, 240, tap);
+      const { ui, texts } = canvas(480, 270);
+      const minis: string[] = [];
+      const mini = ui.mini.bind(ui);
+      ui.mini = (x, y, s, ...more) => (minis.push(s), mini(x, y, s, ...more));
+      const r = { x: 4, y: 20, w: menu.size.w, h: menu.size.h };
+      const before = menu.size.h;
+      menu.focusId('b');
+      expect(menu.size.h, 'the same height whichever row has the focus').toBe(before);
+      menu.focusId('a');
+      menu.draw(ui, r);
+      const rows = font === 'text' ? texts.map((x) => x.s).filter((s) => !widgets.some((w) => 'label' in w && w.label === s)) : minis;
+      expect(rows.length, `${font}: on more than one row`).toBeGreaterThan(1);
+      expect(rows.join(' '), `${font}: whole`).toBe(hint);
+      if (font === 'text') expect(minis, 'no mini font on a TV').toEqual([]);
+      // the rows inside the menu, under its buttons
+      const button = menu.rects.get('b')!;
+      for (const row of texts.filter((x) => rows.includes(x.s))) expect(row.y).toBeGreaterThanOrEqual(button.y + button.h);
+    }
+  });
+
+  it('the codex on a phone held upright: a tap on a row opens its entry as the finger lifts there; a swipe from the list opens nothing and closes the codex', () => {
+    const mechanics = ['mire', 'gale', 'ember'].map((id) => ({ id, name: id, description: 'What it does.', bypass: 'Walk round.', exploit: 'Dash.' }));
+    const reading = (c: Codex) => (c as unknown as { reading: boolean }).reading;
+    const open = () => {
+      const layer = new UiLayer();
+      layer.tap = 15;
+      const codex = new Codex(() => mechanics, () => ['mire', 'gale']);
+      layer.open(codex);
+      for (let i = 0; i < 10; i++) layer.update(0.05); // opened (its rows where they stay)
+      layer.draw(canvas(124, 260).ui, 0);
+      const rows = (codex as unknown as { rows: Rect[] }).rows;
+      expect(codex.narrow, 'a phone\'s list').toBe(true);
+      return { layer, codex, row: rows[1]! };
+    };
+    const finger = (layer: UiLayer, type: 'down' | 'move' | 'up', x: number, y: number) => layer.input({ kind: 'pointer', type, x, y, touch: true });
+    // a tap: nothing on the press, the entry as the finger lifts on the row
+    {
+      const { layer, codex, row } = open();
+      finger(layer, 'down', row.x + 20, row.y + 5);
+      expect(reading(codex), 'not on the press').toBe(false);
+      finger(layer, 'up', row.x + 21, row.y + 5);
+      expect(reading(codex), 'opened as it lifts').toBe(true);
+    }
+    // a swipe sideways or down from a row: no entry, and the swipe closes the codex
+    for (const [dir, dx, dy] of [
+      ['left', -30, 0],
+      ['right', 30, 0],
+      ['down', 0, 30],
+    ] as const) {
+      const { layer, codex, row } = open();
+      const x = row.x + row.w / 2;
+      const y = row.y + 5;
+      finger(layer, 'down', x, y);
+      finger(layer, 'move', x + dx, y + dy);
+      finger(layer, 'up', x + dx, y + dy);
+      expect(reading(codex), `${dir}: no entry`).toBe(false);
+      expect(layer.swipe(dir, x, y), `${dir}: the swipe closes it`).toBe(true);
+      expect(layer.top, dir).toBeUndefined();
+    }
+    // a press that lifts on another row opens neither
+    {
+      const { layer, codex, row } = open();
+      finger(layer, 'down', row.x + 20, row.y + 5);
+      finger(layer, 'up', row.x + 20, row.y + row.h + 5);
+      expect(reading(codex)).toBe(false);
+    }
   });
 });

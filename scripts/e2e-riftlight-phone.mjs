@@ -22,13 +22,15 @@
 //   - the pause menu's rows are at least 40 CSS px in both orientations (two columns of tiles in
 //     landscape); the passive tree draws at the game's art size and names a finger's gestures
 //   - real touches (CDP): a quick swipe from the pause menu closes it, one down from the tree's top
-//     bar closes the tree; the floating stick and a skill button work at once; two fingers on the
-//     world pinch the zoom and hold no press, and are no swing landing a frame apart
+//     bar closes the tree, one sideways from a row of the codex's list (portrait) closes the codex
+//     and a tap on a row opens its entry; the floating stick and a skill button work at once; two
+//     fingers on the world pinch the zoom and hold no press, and are no swing landing a frame apart
 //   - photo mode: the floating stick's zone gives way to its open panel (a tap on a row's < inside
 //     the zone steps that row back), a thumb in the zone off the panel still moves the stick, and ≡
 //     leaves photo mode with the whole zone the stick's again
 //   - portrait: the pause menu, codex, loot window and death recap fit the screen with tap
-//     targets of at least 40 CSS px
+//     targets of at least 40 CSS px; on a 360×800 phone (120 art columns) the character sheet's
+//     labels and header and the save slots' entries are whole (two rows where long), never cut
 //   - in 52in1 (window.AIHubSettings on the page): ≡ below the hub's wake band (its top at 90 CSS
 //     px or lower), the top-left block right of it, the data's layout the page's; the corner map
 //     takes a real tap only below the band (a thumb tall at least), one in the band opens nothing
@@ -491,6 +493,49 @@ export async function runRiftlightPhone(h, orientation) {
     check(onBar && treeLifted && !treeUi.includes('tree'), `${orientation}: a swipe down from the tree's top bar closes it (ui ${treeUi.join(',') || 'none'}${onBar ? '' : '; the tree was not open under the finger'}${treeLifted ? '' : '; the page never had the pointerup'})`);
     if (treeUi.includes('tree')) await R(() => window.__RIFTLIGHT__.ui.close('tree'));
     if (portrait) {
+      // the codex's list (a phone held upright): a quick swipe sideways from one of its rows closes
+      // the codex (a press opens an entry only as the finger lifts on the row, never on a swipe)
+      const codexRow = await R(() => {
+        const rl = window.__RIFTLIGHT__;
+        rl.ui.open('codex');
+        window.__PIXEL_ENGINE__.step(10);
+        const p = rl.game.layer.top;
+        const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / rl.game.ui.w;
+        const r = p.panel.rows[1];
+        return { narrow: p.panel.narrow, x: c.left + (r.x + r.w / 2) * k, y: c.top + (r.y + r.h / 2) * k };
+      });
+      await touch('touchStart', [[codexRow.x, codexRow.y, 61]]);
+      for (let k = 1; k <= 4; k++) await touch('touchMove', [[codexRow.x - k * 30, codexRow.y, 61]]);
+      const codexLifted = await lift();
+      const codex = await R(() => {
+        window.__PIXEL_ENGINE__.step(3);
+        const top = window.__RIFTLIGHT__.game.layer.top;
+        return { ui: window.__RIFTLIGHT__.state().ui, reading: top?.panel.id === 'codex' ? top.panel.reading : null };
+      });
+      check(codexRow.narrow && codexLifted && !codex.ui.includes('codex'), `${orientation}: a quick swipe sideways from a row of the codex's list closes the codex (ui ${codex.ui.join(',') || 'none'}${codex.reading ? ', an entry opened' : ''}${codexRow.narrow ? '' : '; the codex was not a phone\'s list'}${codexLifted ? '' : '; the page never had the pointerup'})`);
+      if (codex.ui.includes('codex')) await R(() => window.__RIFTLIGHT__.ui.close('codex'));
+      // a tap on a row opens its entry as the finger lifts
+      const tapRow = await R(() => {
+        const rl = window.__RIFTLIGHT__;
+        rl.ui.open('codex');
+        window.__PIXEL_ENGINE__.step(10);
+        const c = window.__PIXEL_ENGINE__.renderer.renderer.domElement.getBoundingClientRect();
+        const k = c.width / rl.game.ui.w;
+        const r = rl.game.layer.top.panel.rows[0];
+        return { x: c.left + (r.x + r.w / 2) * k, y: c.top + (r.y + r.h / 2) * k };
+      });
+      await touch('touchStart', [[tapRow.x, tapRow.y, 62]]);
+      const tapLifted = await lift();
+      const opened = await R(() => {
+        window.__PIXEL_ENGINE__.step(3);
+        const top = window.__RIFTLIGHT__.game.layer.top;
+        const reading = top?.panel.id === 'codex' && top.panel.reading;
+        window.__RIFTLIGHT__.ui.close('codex');
+        window.__PIXEL_ENGINE__.step(2);
+        return reading;
+      });
+      check(tapLifted && opened, `${orientation}: a tap on a row of the codex's list opens its entry${tapLifted ? '' : ' (the page never had the pointerup)'}`);
       // the settings menu is taller than a phone: a drag scrolls it until its last row shows
       const before = await R(() => {
         const rl = window.__RIFTLIGHT__;
@@ -614,6 +659,68 @@ export async function runRiftlightPhone(h, orientation) {
     }
     await ctx.browser.close();
     ctx = null;
+
+    if (portrait) {
+      // a 360×800 phone (120 art columns): the character sheet's labels and header and the slots'
+      // entries whole (a long one on two rows, the header broken between its parts), never cut with a '.'
+      ctx = await launch(exe, s, { viewport: { width: 360, height: 800 }, deviceScaleFactor: 3, hasTouch: true, isMobile: true });
+      const page360 = ctx.page;
+      await page360.goto(`${BASE}?game=riftlight&touch=1&save=memory&seed=4242`);
+      await ready(page360);
+      await page360.waitForFunction(() => window.__RIFTLIGHT__?.state, null, { timeout: 60000 });
+      const small = await page360.evaluate(async () => {
+        const rl = window.__RIFTLIGHT__;
+        const e = window.__PIXEL_ENGINE__;
+        rl.newRun({ slot: 0, seed: 4242 });
+        await rl.enterDepth(1);
+        rl.dev.ai = false;
+        rl.save(0);
+        e.input.noteTouch();
+        e.step(10);
+        /** The texts the next frame draws. */
+        const frame = () => {
+          window.__PIXEL_TEXT_LOG__ = new Set();
+          e.step(1);
+          const drawn = [...window.__PIXEL_TEXT_LOG__];
+          window.__PIXEL_TEXT_LOG__ = undefined;
+          return drawn;
+        };
+        /** `text` drawn whole: on one row, or on rows one after another (broken at a space, or between parts at a ' · '). */
+        const whole = (drawn, text) => drawn.includes(text) || drawn.some((row) => row && text.startsWith(row) && /^\s/.test(text.slice(row.length)) && whole(drawn, text.slice(row.length).trimStart().replace(/^·\s+/, '')));
+        const cut = [];
+        const g = rl.game;
+        g.openPanel('character');
+        e.step(10);
+        const sheet = g.layer.top.panel;
+        // its pages (English: the page has no ?lang): the labels that ran into their values whole,
+        // and nothing cut short with a '.' (none of its words end with one)
+        const labels = [['Attack damage', 'Attack speed', 'Move speed'], ['Energy shield', 'Life regen'], ['Lightning res']];
+        for (const [i, want] of labels.entries()) {
+          sheet.page = i;
+          const drawn = frame();
+          for (const label of want) if (!whole(drawn, label)) cut.push(`the sheet's ${label}`);
+          for (const text of drawn) if (/\.$/.test(text)) cut.push(`the sheet's ${text}`);
+          if (!whole(drawn, sheet.header())) cut.push(`the sheet's header ${sheet.header()}`);
+        }
+        rl.ui.close();
+        g.openPanel('slots');
+        e.step(10);
+        const slots = frame();
+        for (const w of g.layer.top.panel.items().filter((x) => x.kind === 'button' && g.layer.top.panel.rects.has(x.id))) if (!whole(slots, w.label)) cut.push(`the slots' ${w.label}`);
+        rl.ui.close();
+        return { art: [e.hud.width, e.hud.height], cut, shown: slots.length };
+      });
+      check(small.art[0] === 120 && small.cut.length === 0 && small.shown > 3, `portrait 360×800 (${small.art.join('×')} art): the character sheet's labels and header and the slots' entries are whole${small.cut.length ? `; cut: ${small.cut.join(', ')}` : ''}`);
+      await page360.evaluate(() => {
+        window.__RIFTLIGHT__.game.openPanel('character');
+        window.__PIXEL_ENGINE__.manual = false;
+      });
+      await page360.waitForTimeout(1000);
+      await page360.screenshot({ path: new URL(`${tag}-360-character.png`, OUT).pathname });
+      checkClean(await state(page360), ctx.logs, 'portrait 360×800: ');
+      await ctx.browser.close();
+      ctx = null;
+    }
 
     // in 52in1 (its companion sets window.AIHubSettings before the game's first script): ≡ below the
     // hub's wake band (a touch above 90 CSS px brings the hub's bar over the game), the top-left

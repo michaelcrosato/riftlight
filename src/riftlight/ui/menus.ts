@@ -108,7 +108,7 @@ export function titleMenu(h: MenuHost): Menu {
       return w;
     },
     // a landscape phone: two columns of tiles under the logo, every entry in view (`MenuOptions.grid`)
-    { id: 'title', title: 'Riftlight', width: 130, onSound: sound(h), grid: true },
+    { id: 'title', title: 'Riftlight', width: 130, footWidth: 280, onSound: sound(h), grid: true },
   );
 }
 

@@ -111,7 +111,9 @@ own from the URL.
 
 **Rooms are mostly data.** A `RoomDef` holds the card (`about`, `try`; where all of it doesn't fit, a
 summary and the tries that fit, each whole, wider held sideways if need be: `touchHud.headless.test.ts`
-checks every room's on a phone held either way and a desktop), the station guide
+checks every room's on a phone held either way and a desktop; on a 360 px phone the menus' long
+buttons take two rows, the room list's line is the words before `about`'s colon, and the guide is
+titled by its room), the station guide
 (`guide`: what you are seeing, how it works step by step, where games use it, what to ask
 for, what it costs, the engine's code, field-guide words) and a `build(room)` that uses the
 kit. Floors and walls can be an ASCII map (one character per metre, merged into boxes);
