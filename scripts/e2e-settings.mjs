@@ -23,8 +23,10 @@
 //   pad      Options opens it (and the press that opened it does not close it), the legend shows
 //            the pad's buttons (Xbox's when chosen), the d-pad moves and changes, R1 turns the
 //            page, Circle closes; the Cross pressed in it never jumps the hero after; the pad's
-//            glyphs are drawn at a whole multiple of their 7 art pixels; a left stick still held
-//            from a run when Options opens it steps nothing until it goes back to rest
+//            glyphs are drawn at a whole multiple of their 7 art pixels; no OS pointer over the
+//            panel while the pad drives it (none hidden in a replay; a mouse move shows it); a
+//            left stick still held from a run when Options opens it steps nothing until it goes
+//            back to rest
 //   mouse    hover moves the focus, a click on ▶ changes the row and leaves the keys the panel's
 //            (the next Enter steps once; after a click on Reset, Enter changes the row only), a
 //            click beside it closes
@@ -67,6 +69,7 @@ export async function runSettings(h) {
           open: e.settings.isOpen,
           values: e.settings.values,
           panel: !document.querySelector('.settings-ui').hidden,
+          device: e.input.device,
         };
       });
     /** The panel as drawn: its page, the focused row, each row's value, the legend's words and glyphs. */
@@ -89,6 +92,8 @@ export async function runSettings(h) {
           aria: root.querySelector('.rows').getAttribute('aria-activedescendant') === rows.find((r) => r.classList.contains('focus'))?.id && document.activeElement === root.querySelector('.rows'),
           glyphs: [...root.querySelectorAll('.legend canvas')].map((c) => parseFloat(getComputedStyle(c).width)),
           resetWords: root.querySelector('.legend [data-act="reset"] > span')?.textContent,
+          // the OS pointer over the panel and over a row (a row's own is a hand)
+          pointer: [getComputedStyle(root).cursor, rows[0] ? getComputedStyle(rows[0]).cursor : ''],
         };
       });
     const lookOf = (name) => E((n) => JSON.stringify(window.__PIXEL_ENGINE__.lookPresets[n]), name);
@@ -312,6 +317,30 @@ export async function runSettings(h) {
       padPanel.glyphs.length === 3 && padPanel.glyphs.every((w) => w >= 21 && w % 7 === 0),
       `the pad's glyphs are drawn at a whole multiple of their 7 art pixels (${padPanel.glyphs.join(', ')} px)`,
     );
+    // no OS pointer over the panel while the pad drives it (as over the canvas), never in a replay,
+    // and back once the mouse travels over it (beside the rows: hover would move the focus)
+    await E(() => {
+      const input = window.__PIXEL_ENGINE__.input;
+      input.playing = true; // as in a replay of a pad recording: the device is the recording's
+      input._device = 'pad';
+    });
+    await waitFrames(page, 3);
+    const replayPointer = [(await engine()).device, ...(await panel()).pointer];
+    await E(() => {
+      const input = window.__PIXEL_ENGINE__.input;
+      input.playing = false;
+      input.noteDevice('pad');
+    });
+    await waitFrames(page, 3);
+    const padAgain = await panel();
+    await page.mouse.move(20, 20);
+    await page.mouse.move(60, 34, { steps: 4 });
+    await waitFrames(page, 3);
+    const moused = await panel();
+    check(
+      padPanel.pointer.join() === 'none,none' && replayPointer[0] === 'pad' && !replayPointer.includes('none') && padAgain.pointer.join() === 'none,none' && moused.device === 'keyboard' && !moused.pointer.includes('none'),
+      `the pad drives the panel: no OS pointer over it or its rows (${padPanel.pointer.join(', ')}), none hidden in a replay (${replayPointer.join(', ')}; after it ${padAgain.device}: ${padAgain.pointer.join(', ')}); the mouse moved over it shows it again (${moused.device}: ${moused.pointer.join(', ')})`,
+    );
     await press([13]); // d-pad down
     await press([15]); // right: pixel art off
     const stepped = await panel();
@@ -327,6 +356,7 @@ export async function runSettings(h) {
       stepped.focus === 'pixelArt' && stepped.values.pixelArt === 'Off' && xbox.page === 'controls' && xbox.values.padGlyphs === 'Xbox' && xbox.pageGlyphs.join() === 'LB,RB' && vib.values.vibration === 0.9,
       `the d-pad moves and changes, R1 turns the page, Cross changes, and the legend follows the style (${stepped.focus} ${stepped.values.pixelArt}; ${xbox.page} ${xbox.values.padGlyphs}, pages ${xbox.pageGlyphs.join(' ')}; vibration ${vib.values.vibration})`,
     );
+    check(stepped.device === 'pad' && stepped.pointer.join() === 'none,none', `the pad used again hides the pointer again (${stepped.device}: ${stepped.pointer.join(', ')})`);
     const jumps0 = await E(() => window.__PIXEL_ENGINE__.game.hero.stats.jumps);
     await E(() => window.__pad.buttons[0].pressed = true); // Cross held as Circle closes it
     await press([0, 1]);
