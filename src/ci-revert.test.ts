@@ -194,6 +194,17 @@ describe('revert-red-main', () => {
     expect(r.output()).not.toContain('reverted=true');
   });
 
+  it('stops when the revert fails with nothing unmerged (main already undid it by hand): never an empty revert', () => {
+    // the revert has nothing to do: git fails with no conflicted path, which is no workflow-only conflict
+    const r = revertRed({ 'game.txt': 'v2\n' }, { 'game.txt': 'v1\n' });
+    expect(r.result.status).toBe(1);
+    expect(r.result.out).toContain('needs a fix forward');
+    expect(r.branches, 'no revert branch pushed').toEqual(['main']);
+    expect(r.call('pr', 'create')).toBeUndefined();
+    expect(r.call('issue', 'create')).toBeUndefined();
+    expect(r.output()).not.toContain('reverted=true');
+  });
+
   // The red commit and what main did since; in the second, the revert is empty once main's side is taken.
   const onlyWorkflows: [string, Record<string, string>, Record<string, string>][] = [
     ['', { [WORKFLOW]: 'on: [push, pull_request]\n', '.github/workflows/y.yml': 'on: push\n' }, {}],
