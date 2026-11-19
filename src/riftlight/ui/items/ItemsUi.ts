@@ -34,7 +34,7 @@
  * the normal font, never the mini one (the skill panel wider for it).
  */
 import type { GameContext, LineValues } from '../../../engine';
-import { padName } from '../../../engine/controls';
+import { keyName, padName } from '../../../engine/controls';
 import type { PadGlyphs } from '../../../engine/settings';
 import { surfaceScale } from '../../../engine/hud/deviceText';
 import { noteText } from '../../../engine/animation/font';
@@ -42,6 +42,7 @@ import { PALETTE } from '../../../engine/palette';
 import type { StatSheet } from '../../core/mods';
 import type { Item } from '../../core/types';
 import { compareEquip, type StatDelta } from '../../loot/compare';
+import { KEYS } from '../../game/controls';
 import { lang, t } from '../../lang';
 import { CURRENCY } from '../../loot/content';
 import { applyCurrency, craftBlocker } from '../../loot/craft';
@@ -163,28 +164,48 @@ export interface ItemsMessage {
   readonly values?: LineValues;
   /** A pad button (`PadA`) whose name fills the line's `{button}`, in the player's style when drawn. */
   readonly pad?: string;
+  /** Or the key (`Enter`) whose name fills it: the keys drive the focus. */
+  readonly key?: string;
   /** An older snapshot's finished words (before messages were ids): shown as they are. */
   readonly text?: string;
 }
 
+/** The pad buttons the windows' focus acts with: Cross (A) clicks, Square (X) right-clicks, Triangle (Y) Ctrl-clicks. */
+export type WindowButton = 'PadA' | 'PadX' | 'PadY';
+
+/** The keys that do what each pad button does while the keys drive the focus (the shell's: `handle`): Enter, X, V. */
+export const WINDOW_KEYS: Readonly<Record<WindowButton, string>> = { PadA: KEYS.confirm[0], PadX: KEYS.secondary[0], PadY: KEYS.quick[0] };
+
 /**
- * A window's hint for the device that drives it: with the pad `<id>_pad`, its `{button}` the pad
- * button that does it in the player's style (`PadY` → Triangle or Y); on a phone `<id>_touch`; else
+ * Whose controls the windows' hints name: the pad's buttons (`pad`), the keys while they drive the
+ * focus (`keys`), a finger's or the mouse's words.
+ */
+export type HintMode = 'pad' | 'keys' | 'touch' | 'mouse';
+
+/** What does `button`'s job on the focus: the pad's button in the player's style (`PadY` → Triangle or Y), or the key that does it (`keys`: V). */
+export function buttonName(button: WindowButton, mode: 'pad' | 'keys', style: PadGlyphs): string {
+  return mode === 'keys' ? keyName(WINDOW_KEYS[button], lang()) : padName(button, style, lang());
+}
+
+/**
+ * A window's hint for the device that drives it: with the pad or the keys on the focus `<id>_pad`,
+ * its `{button}` what does it (`buttonName`: Triangle or Y, or V); on a phone `<id>_touch`; else
  * the mouse's `<id>` ("Ctrl-click: buy / sell").
  */
-export function windowHint(id: string, padButton: string, mode: 'pad' | 'touch' | 'mouse', style: PadGlyphs): string {
-  if (mode === 'pad') return t(`${id}_pad`, { button: padName(padButton, style, lang()) });
+export function windowHint(id: string, padButton: WindowButton, mode: HintMode, style: PadGlyphs): string {
+  if (mode === 'pad' || mode === 'keys') return t(`${id}_pad`, { button: buttonName(padButton, mode, style) });
   return t(mode === 'touch' ? `${id}_touch` : id);
 }
 
-/** An orb's tooltip with the pad cursor: Square (X) picks the orb, then Cross (A) on an item uses it. */
-export function padOrbHint(style: PadGlyphs): string {
-  return t('item.tip.use_orb_pad', { button: padName('PadX', style, lang()), button2: padName('PadA', style, lang()) });
+/** An orb's tooltip with the focus: Square (X) picks the orb, then Cross (A) on an item uses it; with the keys X, then Enter. */
+export function padOrbHint(style: PadGlyphs, mode: 'pad' | 'keys' = 'pad'): string {
+  return t('item.tip.use_orb_pad', { button: buttonName('PadX', mode, style), button2: buttonName('PadA', mode, style) });
 }
 
-/** A message's words in the player's language, a pad button in its style (`PadA` → Cross or A). */
+/** A message's words in the player's language, a pad button in its style (`PadA` → Cross or A), or a key. */
 export function messageText(m: ItemsMessage, style: PadGlyphs): string {
-  return t(m.id, m.pad ? { ...m.values, button: padName(m.pad, style, lang()) } : m.values);
+  const button = m.key ? keyName(m.key, lang()) : m.pad ? padName(m.pad, style, lang()) : undefined;
+  return t(m.id, button ? { ...m.values, button } : m.values);
 }
 
 /** A reason a loot action can't be done, as a message. */
@@ -463,17 +484,29 @@ export class ItemsUi {
       // finger's and the mouse's (the layout never changes between them: a tap lands where it was
       // aimed); elsewhere the hint's own (a mouse's and a pad's screen keep their layout)
       const extra = (hint: { mini: boolean; rows: string[] }) => (hint.mini ? 0 : (hint.rows.length - 1) * 9 + 1);
+      // (the keys' and the mouse's too: they take the focus from each other)
       const mode = this.hintMode();
-      const modes = mode !== 'pad' && this.ctx.engine.renderer.touchDensity > 0 ? (['touch', 'mouse'] as const) : [mode];
+      const keys = this.opts.hosted ? (['keys', 'mouse'] as const) : (['mouse'] as const);
+      const modes: readonly HintMode[] = mode === 'pad' ? [mode] : this.ctx.engine.renderer.touchDensity > 0 ? ['touch', ...keys] : mode === 'touch' ? [mode] : keys;
       return VENDOR_H + Math.max(...modes.map((m) => extra(this.vendorHint(m))));
     }
     return this.left === 'bench' ? BENCH_H : this.left === 'skills' ? SKILLS_H : STASH_H;
   }
 
-  /** Whose controls the windows' hints name: the device in use's (a pad's, a finger's, or the mouse's), never the screen's width. */
-  hintMode(): 'pad' | 'touch' | 'mouse' {
+  /**
+   * Whose controls the windows' hints name: the device in use's (a pad's, a finger's, or the
+   * mouse's; the keyboard's keys while they drive the focus, as the shell's keys do: hosted), never
+   * the screen's width.
+   */
+  hintMode(): HintMode {
     const device = this.ctx.engine.controls.device;
-    return device === 'pad' ? 'pad' : device === 'touch' ? 'touch' : 'mouse';
+    if (device === 'pad' || device === 'touch') return device;
+    return this.cursorMode === 'pad' && this.opts.hosted ? 'keys' : 'mouse';
+  }
+
+  /** What does `button`'s job on the focus, by the device in use: the keys' while they drive it (`hintMode`), else the pad's button. */
+  private focusMode(): 'pad' | 'keys' {
+    return this.hintMode() === 'keys' ? 'keys' : 'pad';
   }
 
   /**
@@ -488,7 +521,7 @@ export class ItemsUi {
   }
 
   /** A window's hint for the device that drives it (`windowHint`, `hintMode`). */
-  private hint(id: string, padButton: string, mode = this.hintMode()): string {
+  private hint(id: string, padButton: WindowButton, mode = this.hintMode()): string {
     return windowHint(id, padButton, mode, this.ctx.engine.controls.style);
   }
 
@@ -1331,7 +1364,8 @@ export class ItemsUi {
         if (this.left === 'bench' && this.benchTarget()) return this.benchOrb(item.base);
         this.applying = item.uid;
         // the next item clicked gets it: with the pad cursor, Cross (A) on it
-        this.say(this.cursorMode === 'pad' ? { id: 'item.say.apply_orb_pad', values: { orb: itemName(item) }, pad: 'PadA' } : { id: 'item.say.apply_orb', values: { orb: itemName(item) } }, null);
+        const values = { orb: itemName(item) };
+        this.say(this.cursorMode !== 'pad' ? { id: 'item.say.apply_orb', values } : { id: 'item.say.apply_orb_pad', values, ...(this.focusMode() === 'keys' ? { key: WINDOW_KEYS.PadA } : { pad: 'PadA' }) }, null);
       } else if (isGem(item)) {
         if (this.left !== 'skills') return this.say({ id: 'item.say.open_skills' });
         const ref = autoSocket(this.store.skills, item, this.skillSlot);
@@ -2060,8 +2094,10 @@ export class ItemsUi {
     const forSale = at.kind === 'vendor';
     const inInventory = at.kind === 'grid' && at.where === 'inventory';
     const price = forSale ? { kind: 'buy' as const, gold: buyPrice(item), affordable: buyPrice(item) <= this.store.state.gold } : this.left === 'vendor' && inInventory ? { kind: 'sell' as const, gold: sellPrice(item) } : undefined;
-    // the control that does it: on a touch screen hold, on a pad Square (X), else the right mouse button
-    const button = this.lastTouch && this.cursorMode === 'pointer' ? t('item.button.hold') : this.cursorMode === 'pad' ? padName('PadX', this.ctx.engine.controls.style, lang()) : t('item.button.right_click');
+    // the control that does it: on a touch screen hold, with the focus Square (X) on a pad or X on
+    // the keys, else the right mouse button
+    const style = this.ctx.engine.controls.style;
+    const button = this.lastTouch && this.cursorMode === 'pointer' ? t('item.button.hold') : this.cursorMode === 'pad' ? buttonName('PadX', this.focusMode(), style) : t('item.button.right_click');
     const hint =
       inInventory && isEquipment(item)
         ? this.left === 'bench'
@@ -2083,7 +2119,7 @@ export class ItemsUi {
       const ok = supportApplies(this.store.skills[at.slot]!, item);
       if (ok === false) extra = [{ text: t('item.tip.not_supported', { skill: itemName(this.store.skills[at.slot]!.gem!) }), color: UI.bad }];
     }
-    const orbHint = this.cursorMode === 'pad' ? padOrbHint(this.ctx.engine.controls.style) : undefined;
+    const orbHint = this.cursorMode === 'pad' ? padOrbHint(style, this.focusMode()) : undefined;
     return tooltipLines(item, { showTiers: this.altHeld, compare: at.kind === 'slot' ? [] : this.comparison(item), heroLevel: this.store.heroLevel, width, ...(price ? { price } : {}), ...(hint ? { hint } : {}), ...(orbHint ? { orbHint } : {}), ...(extra ? { extra } : {}) });
   }
 

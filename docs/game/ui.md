@@ -115,7 +115,7 @@ touch screen, its art at the game's density: `TreeViewOptions.touchDensity`; `/t
 finger's gestures on a coarse pointer before the first touch) and the item windows' (`windowHint`
 by `engine.controls.device`; on a page with touch controls the vendor window keeps the size of
 the taller of a finger's and the mouse's hint, so a tap lands where it was aimed whichever device
-the hint names, while a desktop's holds its own hint: the mouse's, as it always did). The Arena
+the hint names, while a desktop's holds the taller of the mouse's and the keys'). The Arena
 (`?game=arena`) gets the same cluster (`ARENA_TOUCH_BUTTONS` in `combat/arena.ts`: no ≡ and no F).
 
 The engine's touch buttons are the skill bar, laid out as
