@@ -1781,9 +1781,22 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return true;
   }
 
-  /** A finger down at (`x`, `y`) art pixels is no swing: it taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the centre banner (`onDismissable`). */
+  /**
+   * A finger down at (`x`, `y`) art pixels is no swing: it lands in 52in1's wake band (`inWake`),
+   * taps a loot label or the interact prompt (`touchTarget`), or may swipe away the loot feed or the
+   * centre banner (`onDismissable`).
+   */
   private fingerTaken(x: number, y: number): boolean {
-    return this.touchTarget(x, y) !== null || this.onDismissable(x, y);
+    return this.inWake(y) || this.touchTarget(x, y) !== null || this.onDismissable(x, y);
+  }
+
+  /**
+   * Art row `y` is in 52in1's wake band on this touch page (`TouchPad.wakeArt`, recorded; none
+   * elsewhere): a finger landing there is the hub's (its companion brings the hub's bar back over
+   * the game), so it neither swings, held, nor taps anything there.
+   */
+  private inWake(y: number): boolean {
+    return y < this.touchPad.wakeArt();
   }
 
   /** (`x`, `y`) art pixels is on the loot feed or the centre banner as last drawn (a swipe from there dismisses it). */
@@ -1793,9 +1806,9 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
     return !!banner && inside(banner, x, y);
   }
 
-  /** What a finger's tap at (`x`, `y`) art pixels does in the world, as last drawn: the interact prompt, a loot label, or nothing (null). */
+  /** What a finger's tap at (`x`, `y`) art pixels does in the world, as last drawn: the interact prompt, a loot label, or nothing (null; in 52in1's wake band always). */
   private touchTarget(x: number, y: number): 'prompt' | { loot: number } | null {
-    if (this.layer.top || this.showcase?.active) return null;
+    if (this.layer.top || this.showcase?.active || this.inWake(y)) return null;
     if (this.touchable.prompt && inside(this.touchable.prompt, x, y)) return 'prompt';
     const label = this.touchable.loot.find((l) => inside(l.rect, x, y));
     return label ? { loot: label.id } : null;

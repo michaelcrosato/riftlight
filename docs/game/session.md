@@ -214,3 +214,6 @@ holds the round's phase).
   browser process on a machine (about 0.8 GB, and 0.5 GB more in its GPU process), the one an
   out-of-memory killer takes first: on a WSL machine with earlyoom, `journalctl --user -u earlyoom`
   says whether it did.
+- With 52in1's companion script first in the page, as the hub serves it: the same suite plays a
+  round of parallel for two hushed under the hub's cards until it starts, and the page on the wall
+  in a hub page of its own (docs/game/hub.md *In 52in1's frame*).
