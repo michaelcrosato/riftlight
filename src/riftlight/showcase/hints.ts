@@ -86,6 +86,23 @@ export function hintFont(game: Riftlight, ui: UiCanvas): HintFont {
   return game.layer.tap > 0 || ui.device === 'touch' || ui.w < 300 ? 'mini' : 'text';
 }
 
+/**
+ * A row of hints (`hints`: joined with ' · ') in lines no wider than `width` (`measure`: the font
+ * it is drawn in): broken between hints, as many as fit on each line (a hint wider than a line
+ * wraps inside), unless that takes more lines than breaking anywhere the language breaks words
+ * (a small phone's few rows of room).
+ */
+function wrapHints(text: string, width: number, measure: (s: string) => number): string[] {
+  const out: string[] = [];
+  for (const part of text.split(' · ')) {
+    const last = out.at(-1);
+    if (last !== undefined && measure(`${last} · ${part}`) <= width) out[out.length - 1] = `${last} · ${part}`;
+    else out.push(...wrapText(part, width, measure));
+  }
+  const words = wrapText(text, width, measure);
+  return out.length <= words.length ? out : words;
+}
+
 /** A row of hints placed (`hintsAt`): its rows in `font`, centred on `x`, the last at `y`, `step` apart. */
 export interface HintSpot {
   readonly x: number;
@@ -117,7 +134,7 @@ export function hintsAt(ui: UiCanvas, text: string, boxes: readonly Box[], o: { 
   const controls = boxes.filter((b) => b.y + b.h > ui.h / 3);
   const low = [...controls, ...(o.avoid ?? [])];
   const place = (width: number) => {
-    const rows = wrapText(text, width, metrics(font, []).measure);
+    const rows = wrapHints(text, width, metrics(font, []).measure);
     const m = metrics(font, rows);
     return { rows, step: m.step, w: Math.max(0, ...rows.map((r) => m.measure(r))) };
   };

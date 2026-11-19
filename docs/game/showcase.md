@@ -29,7 +29,8 @@ Restart in the arcade, Photo mode, Back to town; the stage and its clock stand s
 pause's Back to town is the way out (standalone Rift Runner's pause has Settings instead: the
 engine's panel, which a pad drives, over the pause). While the showcase owns the frame it puts
 `SHOWCASE_CONTROLS` (`hints.ts`) in `engine.controls`, so every `{key:...}` hint names what its
-screens do: R1 / L1 zoom the card (the wheel and a pinch on the others), R1 steps photo mode's
+screens do (the pause draws the shell menus' ✕ Select · ○ Back legend; the Hall's row names
+Options once, `menu`, and the keyboard's O photo apart): R1 / L1 zoom the card (the wheel and a pinch on the others), R1 steps photo mode's
 field of view, R1 / L1 or the < > at the screen's sides on a phone turn the Hall's wing (never the
 hero's lie down and prone), L1 (`photo_hide`) or Create hides photo mode's panel, R2 / L2 fly it up and down; Circle
 backs out of the Hall's card and of photo mode. A swipe acts only where it starts on what it
@@ -46,8 +47,11 @@ Esc, Circle, a swipe from the card; photo mode's `back` is the ≡, Options or E
 there); HUDs keep clear of the buttons (`touchFloor`, `touchLeft`; `controlBoxes` gives them
 where the page lays them out, or from their data without a page, as a replay of a phone's
 recording draws them), and hints along the bottom sit in a gap between the stick and the buttons
-where one holds them, else over them (`hintsAt`, `drawHints`; the prompt over them, `clearAbove`):
-`phone.headless.test.ts` checks the Hall and photo mode on a phone held either way.
+where one holds them, else over them (`hintsAt`, `drawHints`; the prompt over them, `clearAbove`),
+never over what `avoid` names (photo mode's panel, its hints clear of only the buttons it shows:
+`STAGE_BUTTONS`); in the normal font on an ink plate on a TV, the mini font on a phone
+(`hintFont`). `phone.headless.test.ts` checks the Hall and photo mode on phones held either way,
+390×844, 844×390, 360×800 and 740×360 (there photo mode's panel narrows before B and rises beside ≡).
 
 **The hero as a platformer** (`showcase/visitor.ts`). `Visitor` is the hero model on the engine's
 `PlatformerCharacter` (the whole Mario-64 moveset) with the playground's sounds and dust, clips
