@@ -167,7 +167,8 @@ savedAt, data: SaveData }`; `riftlight:meta` remembers the last slot (Continue).
 in try/catch; blocked storage (or `?save=memory`) keeps saves in memory for the session.
 `migrate()` upgrades older shapes step by step (v0 = pre-release saves) and fills missing fields;
 a save from a newer build is refused, not mangled. Export / import is the same envelope as a
-JSON file (Load / Import menu, or `__RIFTLIGHT__.exportSave()`). Autosave on town entry and
+JSON file (Load / Import menu with the keyboard and mouse outside 52in1, `slotFiles`; or
+`__RIFTLIGHT__.exportSave()`). Autosave on town entry and
 level clear. `SaveData` gained optional `codex` and `stats` (runs, clears, deaths, kills,
 playtime, best time per depth); `positions` (grid cells of the bag and the stash) and the skill
 sockets survive a load. Device settings (look, the look studio's custom look, quality, zoom,

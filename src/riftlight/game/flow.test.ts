@@ -1,9 +1,15 @@
 // The Riftlight shell end to end, headless (part 1 of the flow that e2e `riftlight` keeps one
-// browser run of): title → New Run by keys → town → a walk to every district of the outskirts
+// browser run of): the title's legend on every screen → title → New Run by keys → town → a walk to every district of the outskirts
 // and back → a Blink stops at the town's walls → Vex → the rift menu → depth 1. One engine for
 // the file (module state outlives an engine), tests in order: each starts where the last ended.
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { type HeadlessRiftlight, headlessRiftlight, stepUntil } from '../headless';
+import type { HeadlessView } from '../../engine';
+import { RIFTLIGHT_OPTIONS } from '../index';
+import { type HeadlessRiftlight, headlessRiftlight, hudTexts, stepUntil } from '../headless';
+import { t } from '../lang';
+import { miniWidth } from '../ui/kit';
+import { overlaps } from '../ui/layout';
+import type { Menu } from '../ui/menu';
 import type { RealHero } from '../wire/hero';
 import type { MonsterUnit } from '../wire/monsters';
 
@@ -16,6 +22,56 @@ beforeAll(async () => {
 afterAll(() => h?.engine.dispose());
 
 describe('Riftlight flow: title to depth 1', () => {
+  it(
+    'the title, the first screen a pad meets, says what Cross (Enter) does under its tiles, clear of all else on it at a TV, a laptop and a phone held either way; nothing on a touch screen',
+    () => {
+      const { engine, game } = h;
+      const renderer = engine.renderer as HeadlessView;
+      const view = { ...renderer.viewport };
+      const select = t('legend.select');
+      engine.step(10); // the title's menu opens (its legend shows once it has)
+      try {
+        for (const [width, height, dpr, touch] of [[1920, 1080, 1, false], [1280, 720, 1, false], [844, 390, 2, true], [390, 844, 3, true]] as const) {
+          renderer.setViewport({ width, height, dpr });
+          // a phone's page shows touch controls (headless has none), at the game's art density there
+          renderer.setTouchDensity(touch ? (RIFTLIGHT_OPTIONS.touchDensity ?? 0) : 0);
+          engine.controls.touch = touch;
+          // the first tile focused, and one with a hint (Engine World's) on the row under the tiles
+          for (const [device, focus] of [['pad', 'new'], ['pad', 'world'], ['keyboard', 'world'], ['touch', 'world']] as const) {
+            engine.input.noteDevice(device);
+            const menu = game.layer.find('title') as Menu;
+            menu.focusId(focus);
+            engine.step(2);
+            const at = `${width}×${height} ${device}, ${focus} focused`;
+            const boxes = hudTexts(engine, 1);
+            const words = boxes.find((b) => b.text === select);
+            if (device === 'touch' && touch) {
+              expect(words, `${at}: none`).toBeUndefined();
+              continue;
+            }
+            expect(words, `${at}: ✕ Select`).toBeDefined();
+            const { w: W, h: H } = game.ui;
+            const row = { x: words!.x - 12, y: words!.y - 3, w: words!.w + 15, h: 11 }; // its glyph, on its plate
+            const mark = { x: W - 4 - miniWidth('RIFTLIGHT'), y: H - 8, w: miniWidth('RIFTLIGHT'), h: 5 }; // the corner's RIFTLIGHT
+            const shown = game.layer.stack.find((o) => o.panel === menu)!.rect; // its tiles and the hint row under them
+            const others = [...boxes.filter((b) => b !== words), shown, ...menu.rects.values(), mark];
+            expect(others.filter((o) => overlaps(row, o, 0)), `${at}: clear of the tiles, their hint and the rest`).toEqual([]);
+            expect(row.x >= 0 && row.x + row.w <= W && row.y + row.h <= H, `${at}: on screen`).toBe(true);
+          }
+          (game.layer.find('title') as Menu).focusId('new');
+        }
+      } finally {
+        renderer.setViewport(view);
+        renderer.setTouchDensity(0);
+        engine.controls.touch = false;
+        engine.input.noteDevice('keyboard');
+        engine.step(2);
+      }
+      expect(engine.errors).toEqual([]);
+    },
+    T,
+  );
+
   it(
     'opens on the title screen; Enter on New Run opens the slot picker, Enter on slot 1 starts a run in town',
     () => {

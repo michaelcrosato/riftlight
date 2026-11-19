@@ -33,7 +33,7 @@ export interface MenuHost {
   readonly dev: DevFlags;
   readonly audio: AudioManager;
   /** The engine's own player settings (pixel art, pixel size, frame rate, debug info: `engine.settings`, saved by the engine) and what they show. */
-  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input' | 'hubSettings' | 'motionOn'>;
+  readonly engine: Pick<Engine, 'settings' | 'renderer' | 'maxFps' | 'debugShown' | 'input' | 'hubSettings' | 'motionOn' | 'controls'>;
   slot: number;
   screen: string;
   difficulty(): DifficultyTuning;
@@ -345,6 +345,15 @@ export function engineMenu(h: MenuHost): Menu {
   );
 }
 
+/**
+ * A save slot as a JSON file (export: a download and the clipboard; import: the browser's file
+ * chooser) is for the keyboard and mouse outside 52in1: a pad can't drive the chooser, a phone's
+ * player has no files to hand, and inside 52in1 it would be a browser dialog over the hub.
+ */
+export function slotFiles(h: MenuHost): boolean {
+  return h.engine?.controls.device === 'keyboard' && !h.engine.hubSettings.present;
+}
+
 export function slotsMenu(h: MenuHost, mode: 'new' | 'load'): Menu {
   return new Menu(
     () => {
@@ -363,8 +372,10 @@ export function slotsMenu(h: MenuHost, mode: 'new' | 'load'): Menu {
       }
       w.push({ kind: 'gap', id: 'g' });
       w.push({ kind: 'choice', id: 'target', label: t('menu.slots.target'), options: [1, 2, 3].map((n) => num(n)), get: () => h.slot, set: (i) => (h.slot = i), hint: t('menu.slots.target.hint') });
-      w.push({ kind: 'button', id: 'export', label: t('menu.slots.export'), onClick: () => h.exportSlot(h.slot) });
-      w.push({ kind: 'button', id: 'import', label: t('menu.slots.import'), onClick: () => h.importSlot(h.slot) });
+      if (slotFiles(h)) {
+        w.push({ kind: 'button', id: 'export', label: t('menu.slots.export'), onClick: () => h.exportSlot(h.slot) });
+        w.push({ kind: 'button', id: 'import', label: t('menu.slots.import'), onClick: () => h.importSlot(h.slot) });
+      }
       w.push({ kind: 'button', id: 'delete', label: t('menu.slots.delete'), onClick: () => h.deleteSlot(h.slot), accent: 'plum' });
       if (h.saves.volatile) w.push({ kind: 'label', id: 'vol', label: t('menu.slots.volatile'), color: 'orange' });
       // what the browser said (its own words: not a line), in a line

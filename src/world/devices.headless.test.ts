@@ -4,11 +4,13 @@
 // and panels away, and the rooms' own actions play on a pad and a phone: the Time Lab's rewind,
 // the Gallery's shelves, the car's analog triggers, the Sandbox's carry, Bullet Hell's rumble and
 // a phone's auto-fire; a phone's PRONE in the Moveset Playground, the room card on a pad (the
-// menu), a DualSense's triggers let go in the menu. One engine for the file (the World shell is
+// menu), a DualSense's triggers let go in the menu; every panel's button legend, as Riftlight's. One engine for the file (the World shell is
 // one per process), with a fake 52in1 hub's DualSense so what the controller is sent shows.
 import { afterAll, beforeAll, expect, it, vi } from 'vitest';
 import { type Engine, type HubSettingsSource, KEYMAP } from '../engine';
 import { hudTexts, pointAtArt } from '../riftlight/headless';
+import { controlLabel } from '../riftlight/game/controls';
+import { t } from '../riftlight/lang';
 import type { Menu } from '../riftlight/ui/menu';
 import { keyText, touchStates, WORLD_CONTROLS, WORLD_TOUCH_BUTTONS } from './controls';
 import type { worldApi } from './index';
@@ -189,6 +191,37 @@ it('the menu names the control that opens each panel on the device in use, and h
     }
   } finally {
     w.close();
+    keyboard();
+  }
+});
+
+it('every panel says what the controls do on a pad and the keyboard (✕ Select ○ Back; a guide L1 R1 or Tab Headings), none on a phone', () => {
+  const words = [t('legend.select'), t('legend.back'), t('legend.headings')];
+  /** The legend's words, and the controls it draws (the glyphs' actions: `CONTROLS`), under `panel` open. */
+  const look = (panel: 'pause' | 'rooms' | 'tweak' | 'guide' | 'glossary') => {
+    w.open(panel);
+    step(10); // it opens (the legend shows once it has)
+    const glyph = vi.spyOn(shell.ui, 'glyph');
+    try {
+      const shown = texts().filter((s) => words.includes(s));
+      return [shown, glyph.mock.calls.map((c) => c[2])];
+    } finally {
+      glyph.mockRestore();
+      w.close();
+      step(1);
+    }
+  };
+  try {
+    for (const device of ['pad', 'keyboard'] as const) {
+      engine.input.noteDevice(device);
+      for (const panel of ['pause', 'rooms', 'tweak'] as const) expect(look(panel), `${device}: ${panel}`).toEqual([[t('legend.select'), t('legend.back')], ['confirm', 'back']]);
+      const headings = device === 'pad' ? ['heading_prev', 'heading_next'] : ['heading_next'];
+      for (const panel of ['guide', 'glossary'] as const) expect(look(panel), `${device}: ${panel}`).toEqual([[t('legend.headings'), t('legend.back')], [...headings, 'back']]);
+    }
+    expect([controlLabel('heading_prev', 'pad'), controlLabel('heading_next', 'pad', 'xbox'), controlLabel('heading_next', 'keyboard')], 'L1 R1 (LB RB), Tab').toEqual(['L1', 'RB', 'Tab']);
+    engine.input.noteDevice('touch');
+    for (const panel of ['pause', 'guide'] as const) expect(look(panel), `a phone: ${panel}`).toEqual([[], []]);
+  } finally {
     keyboard();
   }
 });

@@ -496,7 +496,7 @@ export class Riftlight implements Game, MenuHost, LookHost, RoundHost, GhostHost
 
   private openTitleMenu(): void {
     this.layer.closeAll();
-    this.layer.open(titleMenu(this), { modal: false, bare: true, sticky: true, silent: true, below: () => this.titleBottom + 6 });
+    this.layer.open(titleMenu(this), { modal: false, bare: true, sticky: true, silent: true, below: () => this.titleBottom + 6, legend: true });
   }
 
   /** Start a fresh run in a slot. */

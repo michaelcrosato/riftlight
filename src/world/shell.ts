@@ -94,7 +94,8 @@ export function roomById(id: string): RoomDef | undefined {
 export class WorldShell {
   engine: Engine | null = null;
   ui!: UiCanvas;
-  readonly layer = new UiLayer();
+  /** The panels; a legend under each names the World's controls (`MENU_BINDINGS`), none on a phone. */
+  readonly layer = Object.assign(new UiLayer(), { legends: true });
   pointer: Pointer | null = null;
   private readonly menuInput = new MenuInput(MENU_BINDINGS);
   readonly visited = new Set<string>();

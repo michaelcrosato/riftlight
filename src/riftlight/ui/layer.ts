@@ -58,6 +58,8 @@ export interface Open {
   peek?: string;
   /** The first row a bare panel may use, read as it draws (the title menu stays under the logo). */
   below?: () => number;
+  /** A bare panel's legend all the same, under it (the title's tiles: ✕ Select, the first screen a pad meets). */
+  legend?: boolean;
 }
 
 export type OpenOptions = {
@@ -71,6 +73,7 @@ export type OpenOptions = {
   solo?: boolean;
   peek?: string;
   below?: () => number;
+  legend?: boolean;
 };
 
 export class UiLayer {
@@ -112,6 +115,7 @@ export class UiLayer {
       solo: o.solo,
       peek: o.peek,
       below: o.below,
+      legend: o.legend,
     });
     panel.open?.();
     if (!o.silent) this.onSound?.('open');
@@ -139,8 +143,8 @@ export class UiLayer {
   }
 
   /**
-   * Button legends under the top panel (ui/legend.ts), for hosts whose controls they name: the
-   * Riftlight shell turns them on; another host of these panels (Engine World) keeps its own hints.
+   * Button legends under the top panel (ui/legend.ts), for hosts whose controls they name (the
+   * Riftlight shell's and Engine World's: `SHELL_MENU_BINDINGS`, `MENU_BINDINGS`) turn them on.
    */
   legends = false;
 
@@ -271,8 +275,8 @@ export class UiLayer {
       }
       // the room inside a frame (a phone in portrait is 124 art pixels wide): panels that can
       // lay out narrower do (`fit`), and nothing is ever drawn wider than the screen; the top
-      // framed panel keeps rows under its frame for its button legend
-      const legend = last && !o.bare && !this.peeking ? this.legendOf(o, ui) : [];
+      // framed panel keeps rows under its frame for its button legend (a bare one that asks, under it)
+      const legend = last && (!o.bare || o.legend) && !this.peeking ? this.legendOf(o, ui) : [];
       const roomW = ui.w - (o.bare ? 4 : 12);
       const floor = o.below?.() ?? 0; // rows above it are someone else's (the title's logo)
       const roomH = ui.h - (o.bare ? 4 : 26) - Math.max(0, floor - 2) - (legend.length ? LEGEND_ROOM : 0);
@@ -299,7 +303,7 @@ export class UiLayer {
       }
       o.panel.draw(ui, o.rect, time);
       // under the frame, what the controls do here (none on a touch screen)
-      if (legend.length && open >= 1) drawLegend(ui, legend, x + w / 2, y + h + 9, ui.w - 4);
+      if (legend.length && open >= 1) drawLegend(ui, legend, x + w / 2, y + h + (o.bare ? 3 : 9), ui.w - 4);
     });
     const top = this.top;
     if (this.peeking && top?.peek) {

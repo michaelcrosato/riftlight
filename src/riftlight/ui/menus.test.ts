@@ -5,7 +5,7 @@ import { languageName } from '../../engine';
 import { installLanguage, riftlightLines } from '../lang';
 import { riftlightTranslations } from '../lang/translations';
 import { UiCanvas } from './kit';
-import { controllerMenu, coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu } from './menus';
+import { controllerMenu, coopMenu, engineMenu, languageMenu, pauseMenu as riftPauseMenu, settingsMenu, slotsMenu } from './menus';
 import { titleMenu } from './menus';
 
 const host = (more: object = {}) => ({ saves: { last: null, slots: [], volatile: false, lastError: '' }, sound: () => {}, ...more }) as never;
@@ -61,6 +61,31 @@ describe('the Language menu', () => {
     expect(menu.items().map((w) => (w as { label: string }).label)).toEqual(['English', languageName('es-419'), '繁體中文']);
     menu.activate('lang.es-419');
     expect(chosen).toEqual(['es-419']);
+  });
+});
+
+describe('the save slots (title → Load / Import)', () => {
+  /** The slots menu's rows with `device` in use, in 52in1 (`hub`) or not. */
+  const rows = (device: string, hub = false) => {
+    const slots = [0, 1, 2].map((slot) => ({ slot, empty: slot !== 0, error: false, level: 3, deepest: 2 }));
+    const h = host({ slot: 0, saves: { last: 0, slots, volatile: false, lastError: '' }, engine: { controls: { device }, hubSettings: { present: hub } } });
+    return slotsMenu(h, 'load').items().map((w) => w.id);
+  };
+
+  it('export and import as JSON only with the keyboard and mouse outside 52in1 (a download and the browser’s file chooser); load and delete on every device', () => {
+    expect(rows('keyboard'), 'the keyboard and mouse').toEqual(['slot0', 'slot1', 'slot2', 'g', 'target', 'export', 'import', 'delete']);
+    for (const [device, hub] of [['pad', false], ['touch', false], ['keyboard', true], ['pad', true]] as const) {
+      expect(rows(device, hub), `${device}${hub ? ' in 52in1' : ''}`).toEqual(['slot0', 'slot1', 'slot2', 'g', 'target', 'delete']);
+    }
+  });
+
+  it('the pad picked up on Export or Import: the focus goes up to the slot choice, never down onto Delete', () => {
+    const engine = { controls: { device: 'keyboard' }, hubSettings: { present: false } };
+    const menu = slotsMenu(host({ slot: 0, saves: { last: null, slots: [], volatile: false, lastError: '' }, engine }), 'load');
+    expect(menu.focusId('import')).toBe(true);
+    engine.controls.device = 'pad';
+    menu.refresh();
+    expect(menu.items()[menu.focus]?.id).toBe('target');
   });
 });
 

@@ -220,10 +220,16 @@ export class Menu implements Panel {
   /** Rebuild the widgets from the factory (if any), keeping the focus on the same widget. */
   refresh(): void {
     if (!this.source) return;
-    const id = this.widgets[this.focus]?.id;
+    const was = this.widgets;
+    const at = (id: string | undefined) => this.widgets.findIndex((w) => w.id === id && focusable(w));
+    const id = was[this.focus]?.id;
     this.widgets = this.source();
     const again = this.widgets.findIndex((w) => w.id === id);
-    this.focus = again >= 0 ? again : Math.min(this.focus, this.widgets.length - 1);
+    if (again >= 0) return void (this.focus = again);
+    // the focused row went (the slots' files on a pad): the row above it that is still there, never
+    // the one that slid up into its place (a Delete)
+    for (let i = this.focus - 1; i >= 0; i--) if (at(was[i]?.id) >= 0) return void (this.focus = at(was[i]?.id));
+    this.focus = Math.min(this.focus, this.widgets.length - 1);
   }
 
   /** A list that scrolls moves with a swipe up or down, a slider with one sideways from its track: not a swipe that closes the menu (`UiLayer.swipe`). */

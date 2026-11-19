@@ -16,6 +16,8 @@ export interface LegendItem {
   readonly actions: readonly ControlAction[];
   /** A DualSense's touchpad gestures that do it too, drawn after `actions` while they do (`UiCanvas.touchpad`, a pad in use). */
   readonly touchpad?: readonly ControlAction[];
+  /** The controls drawn on the keyboard instead, where they are fewer (a reader's Tab alone: the next heading). */
+  readonly keys?: readonly ControlAction[];
   readonly label: string;
 }
 
@@ -36,7 +38,7 @@ export const pagesLegend = (): LegendItem => ({ actions: ['page_prev', 'page_nex
 const swipes = (ui: UiCanvas): boolean => ui.device === 'pad' && ui.touchpad;
 
 /** The glyphs `item` draws on the device in use. */
-const glyphsOf = (ui: UiCanvas, item: LegendItem): readonly ControlAction[] => (swipes(ui) && item.touchpad ? [...item.actions, ...item.touchpad] : item.actions);
+const glyphsOf = (ui: UiCanvas, item: LegendItem): readonly ControlAction[] => (ui.device === 'keyboard' && item.keys ? item.keys : swipes(ui) && item.touchpad ? [...item.actions, ...item.touchpad] : item.actions);
 
 const glyphsWidth = (ui: UiCanvas, actions: readonly ControlAction[]): number => actions.reduce((w, a, i) => w + ui.glyphWidth(a) + (i ? 2 : 0), 0);
 

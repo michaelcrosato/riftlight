@@ -43,7 +43,7 @@ function canvas(W: number, H: number) {
   return { ui: new UiCanvas(hud as never), texts, rects };
 }
 
-const host = (o: { last?: number | null; languages?: number; opened?: string[] } = {}) =>
+const host = (o: { last?: number | null; languages?: number; opened?: string[]; device?: string } = {}) =>
   ({
     saves: { last: o.last ?? null, slots: [0, 1, 2].map((slot) => ({ slot, empty: slot !== 0, error: false, level: 3, deepest: 2 })), volatile: false, lastError: '' },
     slot: 0,
@@ -56,6 +56,8 @@ const host = (o: { last?: number | null; languages?: number; opened?: string[] }
     lookStudio: () => {},
     engineWorld: () => {},
     language: o.languages ? { available: ['en', 'de', 'fr', 'ja'].slice(0, o.languages), current: 'en', asked: false, choose: () => {} } : undefined,
+    // the device in use (the slots' export and import are the keyboard's: `slotFiles`)
+    engine: { controls: { device: o.device ?? 'keyboard' }, hubSettings: { present: false } },
   }) as never;
 
 const inside = (a: Rect, b: Rect) => a.x >= b.x && a.y >= b.y && a.x + a.w <= b.x + b.w && a.y + a.h <= b.y + b.h;
@@ -201,7 +203,11 @@ describe('a thumb on the panels', () => {
     expect(menu.size, 'a desktop\'s title menu as it always was').toEqual({ w: 130, h: 7 * 16 + 14 });
   });
 
-  it('a menu whose thumb-tall rows would scroll shrinks them to its room where they then all show (the slots on a landscape phone); a mouse\'s keeps its rows', () => {
+  it('a menu whose thumb-tall rows would scroll shrinks them to its room where they then all show (the keyboard\'s slots in a landscape phone\'s room); a mouse\'s keeps its rows', () => {
+    // a phone's own slots (no export or import there) fit its room at a thumb's height
+    const phone = slotsMenu(host({ last: 0, device: 'touch' }), 'load');
+    phone.fit(410, 169, 22);
+    expect(phone.size.h).toBe(4 * 24 + 6 + 24 + 14);
     const menu = slotsMenu(host({ last: 0 }), 'load');
     // a landscape phone's room inside a frame (422×195: 410×169, less the legend's row)
     menu.fit(410, 158, 22);

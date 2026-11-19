@@ -160,7 +160,7 @@ describe('the item windows on every screen', () => {
 
 describe('the menus on a desktop', () => {
   it(
-    'lay out as they always did, the same for the keys, a pad and a touch (a touchscreen laptop): one column, rows a mouse\'s height, no grid',
+    'lay out as they always did, the same for the keys, a pad and a touch (a touchscreen laptop): one column, rows a mouse\'s height, no grid (a pad\'s slots without the files\' rows)',
     async () => {
       for (const viewport of [
         { width: 1920, height: 1080, dpr: 1 },
@@ -190,7 +190,13 @@ describe('the menus on a desktop', () => {
         expect(buttons.every((w) => w.rect && w.rect.h === 14 && w.rect.x === buttons[0]!.rect!.x), 'one column of a mouse\'s rows').toBe(true);
         engine.input.noteDevice('pad');
         engine.step(2);
-        expect(menus(), `${viewport.width}×${viewport.height}: a pad's menus are the keys'`).toEqual(keys);
+        // the same, but for the slots' export and import as JSON (the keyboard's: `slotFiles`)
+        type Shown = { widgets: { id: string; kind: string; rect: Box | null }[] };
+        const { slots: padSlots, ...pad } = menus();
+        const { slots: keySlots, ...rest } = keys;
+        expect(pad, `${viewport.width}×${viewport.height}: a pad's menus are the keys'`).toEqual(rest);
+        const rows = (m: unknown) => (m as Shown).widgets.map((w) => [w.id, w.kind, w.rect?.x, w.rect?.w, w.rect?.h]);
+        expect(rows(padSlots), 'its slots: the keys\' rows less the files\'').toEqual(rows(keySlots).filter(([id]) => id !== 'export' && id !== 'import'));
         engine.input.noteTouch();
         engine.step(2);
         expect(menus(), `${viewport.width}×${viewport.height}: a touch moves nothing`).toEqual(keys);

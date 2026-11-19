@@ -19,6 +19,7 @@ import type { RealLoot } from '../wire/loot';
 import { MENU_BINDINGS, SHELL_MENU_BINDINGS } from './controls';
 import { bfs } from './nav';
 import { UiLayer } from '../ui/layer';
+import { WorldShell } from '../../world/shell';
 import { HudLayout, overlaps } from '../ui/layout';
 import { thingLabel } from '../ui/world';
 import { thingBox } from './Riftlight';
@@ -38,6 +39,8 @@ const tap = (b: number) => {
 const stack = () => h.rl.state().ui;
 const texts = () => hudTexts(h.engine, 1).map((x) => x.text);
 const loot = () => h.game.ports.loot as RealLoot;
+/** The item windows last used with the mouse (their cursor is kept while they are shut). */
+const mouseLast = () => loot().itemsUi().setViewState({ ...loot().itemsUi().viewState(), cursorMode: 'pointer' });
 
 beforeAll(async () => {
   h = await headlessRiftlight({ seed: 616 });
@@ -119,7 +122,7 @@ describe('Riftlight at ten feet', () => {
     rl.press('Escape');
   });
 
-  it('only the Riftlight shell draws legends: another host of the UI kit (Engine World) keeps its own hints, and L1 / R1 its tabs', () => {
+  it('the hosts of the UI kit draw legends naming their controls (Engine World’s too: src/world/devices.headless.test.ts), and L1 / R1 are the World’s headings', () => {
     const { game, engine } = h;
     engine.input.noteDevice('pad');
     const drawn = (layer: UiLayer) => {
@@ -136,8 +139,8 @@ describe('Riftlight at ten feet', () => {
     };
     expect(drawn(game.layer), 'the shell').toContain(t('legend.select'));
     game.layer.closeAll();
-    const world = new UiLayer(); // as Engine World makes it
-    expect(drawn(world), 'Engine World: no legend').not.toContain(t('legend.select'));
+    expect(drawn(new WorldShell().layer), 'Engine World').toContain(t('legend.select'));
+    expect(drawn(new UiLayer()), 'a layer no host has turned them on for: none').not.toContain(t('legend.select'));
     expect([MENU_BINDINGS.tabNext, MENU_BINDINGS.tabPrev], 'the World’s reader jumps headings on L1 / R1').toEqual([expect.arrayContaining(['PadRB']), expect.arrayContaining(['PadLB'])]);
     expect(SHELL_MENU_BINDINGS.keys, 'the shell pages its screens with them').toEqual(expect.arrayContaining(['PadLB', 'PadRB', 'KeyQ', 'KeyE']));
     engine.input.noteDevice('keyboard');
@@ -172,6 +175,7 @@ describe('Riftlight at ten feet', () => {
   it('the pad’s focus in the item windows frames the whole item under it, a thick frame read from the couch', () => {
     const { rl, engine } = h;
     loot().add({ uid: 'tv-sword', base: 'arming-sword', rarity: 'normal', level: 1, name: 'Arming Sword', affixes: [] } as unknown as Item);
+    mouseLast();
     rl.press('KeyI');
     const ui = loot().ui!;
     rl.press('Enter'); // the keys and the pad take over the cursor
@@ -181,6 +185,44 @@ describe('Riftlight at ten feet', () => {
     expect(r.h, 'a sword is taller than a cell: the frame takes all of it').toBeGreaterThan(CELL);
     expect(r.w).toBe(CELL - 1);
     rl.press('Escape');
+    expect(engine.errors).toEqual([]);
+  });
+
+  it('the item windows a pad opens (Create, R2 at Ilsa’s) open with the pad’s focus and its hints, as do open ones once the pad is picked up', () => {
+    const { rl, game, engine } = h;
+    const ui = loot().itemsUi();
+    mouseLast();
+    engine.input.setGamepads([pad()]);
+    engine.step(1);
+    tap(8); // Create: the inventory, with the pad in use
+    expect(stack()).toEqual(['inventory']);
+    expect([ui.cursorMode, ui.hintMode()], 'the pad’s focus at once, and its hints').toEqual(['pad', 'pad']);
+    expect(ui.focusRect(), 'framed on the first cell').not.toBeNull();
+    const first = { ...ui.cursor };
+    tap(15); // the d-pad: the first press moves the focus, none is spent placing it
+    expect(ui.cursor.x, 'one cell right').toBe(first.x + CELL);
+    tap(1);
+    expect(stack()).toEqual([]);
+    mouseLast();
+    const ilsa = game.town.interactables.find((x) => x.id === 'ilsa')!;
+    game.hero.enter(game.town, ilsa.position.clone(), 0);
+    engine.step(2);
+    tap(7); // R2: talk to her
+    expect(stack()).toEqual(['vendor']);
+    expect([ui.cursorMode, ui.hintMode()], 'the vendor: the pad’s focus and hints (Triangle: buy / sell)').toEqual(['pad', 'pad']);
+    tap(1);
+    // the keyboard opens them as the mouse's; the pad picked up while they are open takes the focus
+    mouseLast();
+    engine.input.noteDevice('keyboard');
+    expect(rl.press('KeyI').ui).toEqual(['inventory']);
+    expect([ui.cursorMode, ui.hintMode()], 'the keyboard and mouse').toEqual(['pointer', 'mouse']);
+    engine.input.noteDevice('pad');
+    engine.step(1);
+    expect([ui.cursorMode, ui.hintMode()], 'the pad picked up').toEqual(['pad', 'pad']);
+    tap(1);
+    expect(stack()).toEqual([]);
+    engine.input.setGamepads(null);
+    engine.input.noteDevice('keyboard');
     expect(engine.errors).toEqual([]);
   });
 

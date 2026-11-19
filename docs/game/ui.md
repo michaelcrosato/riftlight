@@ -64,9 +64,10 @@ select and back; the layer keeps its rows free; the shell adds L1 R1 for the cha
 overlay that says so has one too, where it says (`Panel.legendAt`): the item windows' under them,
 else over them, slid along its row clear of the HUD (`UiLayer.avoid`: the shell's zones, weighted:
 an orb, the bar or the minimap matter more than a passing banner or the top-left text), and where
-nothing is clear over as little of it as it can; with L1 R1 Tabs in the stash and the vendor. Legends are the Riftlight shell's (`UiLayer.legends`):
-another host of these panels (Engine World) keeps its own hints, and its menus `MENU_BINDINGS`
-(L1 / R1 tabs: a reader's headings) where the shell's are `SHELL_MENU_BINDINGS`. The
+nothing is clear over as little of it as it can; with L1 R1 Tabs in the stash and the vendor. The title's
+bare menu asks for one (`OpenOptions.legend`: ✕ Select under its tiles). Engine World's layer draws
+them too (`UiLayer.legends`), for its `MENU_BINDINGS` (a reader's L1 R1, or Tab: Headings) where the
+shell's are `SHELL_MENU_BINDINGS`. The
 **character sheet** is pages (Offence, Defence, Resistances: L2 / R2, ← →, Tab or a click), each a
 short list with its sources in the normal font; a narrow sheet whose page names don't fit as tabs
 turns them with a pager (‹ the page's name whole, a dot per page ›; a tap on either half). Oru's
@@ -76,7 +77,8 @@ where, the killing blow, the damage taken and its biggest type, the tip, the cos
 (damage by type, the worst enemies) are behind Details (△ / Tab, or the button). The HUD's clock,
 kills and tuning, the loot window's counts, the codex's headings and the item windows' hints are in
 the normal font. The pad's focus in the item windows frames the whole item, slot, socket or orb
-under it (`ItemsUi.focusRect`: a two-pixel sand frame with an ink rim).
+under it (`ItemsUi.focusRect`: a two-pixel sand frame with an ink rim), there as they open with the
+pad in use; their hints follow the device in use.
 
 ## On a touch screen (`game/touch.ts`)
 
